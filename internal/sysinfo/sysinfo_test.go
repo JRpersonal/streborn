@@ -40,7 +40,7 @@ func TestDeviceIDFallback(t *testing.T) {
 	}
 	// Muss Uppercase Hex sein
 	for _, r := range id {
-		if !((r >= '0' && r <= '9') || (r >= 'A' && r <= 'F')) {
+		if (r < '0' || r > '9') && (r < 'A' || r > 'F') {
 			t.Errorf("DeviceID enthaelt non hex: %s", id)
 			break
 		}

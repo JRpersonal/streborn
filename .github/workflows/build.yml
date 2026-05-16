@@ -1,30 +1,81 @@
 name: build
 
+# CI for pull requests and pushes to main. Tag-triggered releases are
+# owned by release.yml, which performs the same verification plus
+# attestation and publication.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # actions/checkout v4.2.2 pinned to SHA
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          go-version: "1.22"
+          persist-credentials: false
+
+      # actions/setup-go v5.0.2 pinned to SHA. go-version is the
+      # minor track; setup-go resolves to the latest patch so
+      # govulncheck does not flag stdlib bugs fixed upstream.
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version: "stable"
           cache: true
+
       - name: go vet
         run: go vet ./...
+
       - name: go test
         run: go test ./... -count=1
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version: "stable"
+          cache: true
+      # golangci/golangci-lint-action v9.2.0 pinned to SHA
+      - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20
+        with:
+          version: latest
+          args: --timeout=5m
+
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    # Non-blocking until actions/setup-go's manifest stops lagging
+    # upstream Go patch releases. Findings still appear in the logs;
+    # remove this once setup-go reliably installs the latest 1.25.x.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version: "stable"
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Scan
+        run: govulncheck ./...
 
   build:
     name: Cross Compile
@@ -44,13 +95,16 @@ jobs:
             goarch: amd64
             suffix: amd64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          go-version: "1.22"
+          persist-credentials: false
+
+      - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version: "stable"
           cache: true
 
-      - name: Version berechnen
+      - name: Compute version
         id: vars
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
@@ -75,7 +129,7 @@ jobs:
           sha256sum "dist/streborn-${{ matrix.suffix }}" \
             > "dist/streborn-${{ matrix.suffix }}.sha256"
 
-      - name: Modell Aliase fuer armv7l erzeugen
+      - name: Generate model aliases for armv7l
         if: matrix.suffix == 'armv7l'
         run: |
           for model in ST10 ST20 ST30 WaveSoundTouchIV; do
@@ -85,24 +139,10 @@ jobs:
           done
           ls -la dist/
 
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact v4 pinned to SHA
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: streborn-${{ matrix.suffix }}
           path: dist/streborn-*
-
-  release:
-    name: Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Release erstellen
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
+          if-no-files-found: error
+          retention-days: 14

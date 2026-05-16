@@ -5,9 +5,9 @@
 // once with UAC elevation.
 //
 // An empty stub file at embedded/winformat.exe is committed so that
-// go:embed succeeds on a clean checkout. CI overwrites the stub
-// with the real binary during release. Local developers who need a
-// working winformat can build it with:
+// the embed directive succeeds on a clean checkout. CI overwrites
+// the stub with the real binary during release. Local developers
+// who need a working winformat can build it with:
 //
 //	go build -ldflags "-s -w" -o sticksetup/embedded/winformat.exe ./cmd/winformat
 

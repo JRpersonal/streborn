@@ -1,13 +1,10 @@
 name: Website Build und FTP Deploy
 
-# Triggert bei jedem Push auf main wenn etwas im website/ Ordner geaendert wurde.
-# Manueller Trigger ueber GitHub Actions UI mit "Run workflow" geht auch.
+# The website is being maintained in a separate repository. This
+# workflow stays for history but only runs on manual dispatch so
+# it does not fail on every push. Remove the file once the website
+# folder is deleted from this repo.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'website/**'
-      - '.github/workflows/website-deploy.yml'
   workflow_dispatch:
 
 # Minimale Berechtigungen by default. Workflow darf nur Repo lesen, nichts schreiben.
