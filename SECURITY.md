@@ -25,13 +25,13 @@ Include:
 - your assessment of impact
 - whether you wish to be credited
 
-Response timeline:
+STR is maintained in spare time, so there is no formal SLA — but
+reports get attention as quickly as the maintainer can manage,
+typically within a few days.
 
-- initial acknowledgment within 72 hours
-- triage within 7 days
-- fix or mitigation depending on severity (typically within 30 days)
-
-For severe issues a patched release and a public advisory will be published. Reporters who follow responsible disclosure will be credited in the advisory (unless they prefer to stay anonymous).
+Critical findings will be patched and a short advisory published in
+GitHub Releases. Reporters who follow responsible disclosure are
+credited unless they prefer to stay anonymous.
 
 ## Threat Model
 
