@@ -21,8 +21,9 @@
 !/sticksetup/embedded/
 !/sticksetup/embedded/winformat.exe
 # Same idea for desktop-app/main.go's //go:embed all:frontend/dist —
-# wails build replaces the directory contents.
+# track only the stub, ignore everything wails/vite drops in there.
 !/desktop-app/frontend/dist/
+/desktop-app/frontend/dist/*
 !/desktop-app/frontend/dist/.gitkeep
 
 # Astro Webseite Build
