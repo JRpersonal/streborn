@@ -72,7 +72,11 @@ Issues and pull requests welcome. By submitting a contribution you agree to lice
 
 ## Support the project
 
-If STR helped bring your speaker back to life, please consider a donation. Sponsor button at the top of the repo or links on [st-reborn.de](https://st-reborn.de/#donate).
+If STR helped bring your speaker back to life, please consider a donation.
+
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/JRpersonal?label=Sponsor%20on%20GitHub&logo=GitHub&color=ea4aaa)](https://github.com/sponsors/JRpersonal)
+
+More payment options on [st-reborn.de](https://st-reborn.de/#donate).
 
 ## Disclaimer
 

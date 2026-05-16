@@ -528,7 +528,7 @@ func (a *App) AppInfo() AppInfo {
 	return AppInfo{
 		Version:           appVersion,
 		Build:             appBuild,
-		Author:            "Jens R. (JRpersonal)",
+		Author:            "Jens Roggenfelder (JRpersonal)",
 		GitHubURL:         "https://github.com/JRpersonal/streborn",
 		WebsiteURL:        "", // gefuellt sobald Website live ist
 		DonateURL:         "", // gefuellt sobald PayPal Link auf der Website ist
