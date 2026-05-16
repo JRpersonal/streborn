@@ -794,6 +794,12 @@ let musicVolTimer = null;
 let musicVolBox = null;
 const musicVolEl = $('musicVolume');
 const musicVolValEl = $('musicVolumeVal');
+// Drag-busy + grace period so the 2 s periodic refresh in
+// refreshStatus does not yank the thumb out from under the user
+// while they are wischen. musicVolUntil is the timestamp at which
+// auto-refresh is allowed to take over again after a release.
+state.musicVolBusy = false;
+state.musicVolUntil = 0;
 if (musicVolEl) {
   musicVolEl.oninput = () => {
     if (musicVolValEl) musicVolValEl.textContent = musicVolEl.value;
@@ -807,6 +813,45 @@ if (musicVolEl) {
         parseInt(musicVolEl.value, 10)).catch(showError);
     }, 200);
   };
+  // pointerdown/up flag is the most reliable cross-device drag
+  // signal. Keyboard arrows fire only `change`, which is already
+  // wired above, so the busy flag is unnecessary there. Add a
+  // ~1.2 s grace period after release so the network round-trip
+  // to the box (and its own state update) does not race with us.
+  const beginBusy = () => { state.musicVolBusy = true; };
+  const endBusy = () => {
+    state.musicVolBusy = false;
+    state.musicVolUntil = Date.now() + 1200;
+  };
+  musicVolEl.addEventListener('pointerdown', beginBusy);
+  musicVolEl.addEventListener('pointerup', endBusy);
+  musicVolEl.addEventListener('pointercancel', endBusy);
+  musicVolEl.addEventListener('pointerleave', () => {
+    if (state.musicVolBusy) endBusy();
+  });
+}
+
+// syncMusicTabVolumeFromBox refreshes the music-tab slider so
+// hardware-button volume changes on the box (or any other client
+// changing the volume out from under us) show up here within ~2 s.
+// Called from refreshStatus on every poll. Cheap to call: BoxSettings
+// caches well on the agent side.
+async function syncMusicTabVolumeFromBox() {
+  const box = state.currentBox;
+  if (!box || !musicVolEl) return;
+  if (state.view !== 'box') return;
+  if (state.musicVolBusy) return;
+  if (Date.now() < (state.musicVolUntil || 0)) return;
+  try {
+    const data = await BoxSettings(box.host, box.port);
+    const vol = (data && data.volume && data.volume.actual);
+    if (typeof vol !== 'number') return;
+    const current = parseInt(musicVolEl.value, 10);
+    if (current !== vol) {
+      musicVolEl.value = String(vol);
+      if (musicVolValEl) musicVolValEl.textContent = String(vol);
+    }
+  } catch {}
 }
 
 // checkSshBanner prueft via /api/stick/status ob auf der aktuellen
@@ -1071,6 +1116,12 @@ function selectBox(box) {
   refreshStatus();
   checkBoxUpdate();
   loadTaxonomy();
+  // Pull the current volume so the music-tab slider does not start
+  // at 0 — otherwise the first touch yanks it to whatever value the
+  // slider was last left at. The tab-switch path in switchView()
+  // also calls this, but a tab switch is not always involved (the
+  // box-select buttons can fire without leaving the music view).
+  loadMusicTabVolume();
   // Region vom Stick holen und als Default fuer Radio Suche nutzen.
   // Wenn der User schon manuell ein Land im Dropdown gewaehlt hat, nicht
   // ueberschreiben.
@@ -1669,6 +1720,10 @@ async function action(kind) {
 
 async function refreshStatus() {
   if (!state.currentBox || state.view !== 'box') return;
+  // Reflect hardware-button volume changes back into the slider.
+  // Fired in parallel with the Status fetch so a slow Status call
+  // does not delay the volume update. Cheap, drag-aware.
+  syncMusicTabVolumeFromBox();
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
     const name = decodeXmlEntities((xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
