@@ -638,3 +638,25 @@ jobs:
           generate_release_notes: false
           draft: false
           prerelease: false
+
+      # Releases created via the default GITHUB_TOKEN deliberately do
+      # NOT fire `release: published` workflow triggers downstream — a
+      # GitHub-side safeguard against accidental loops. So a separate
+      # notify-website workflow listening for that event never runs
+      # after a tag-driven release. Dispatch directly from here using
+      # a fine-grained PAT instead; the website repo's deploy listens
+      # for repository_dispatch / app-release-published.
+      - name: Notify streborn-website
+        # peter-evans/repository-dispatch v3.0.0
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WEBSITE_DISPATCH_PAT }}
+          repository: JRpersonal/streborn-website
+          event-type: app-release-published
+          client-payload: |
+            {
+              "tag": "${{ needs.build-agent.outputs.version }}",
+              "url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.build-agent.outputs.version }}",
+              "build": "${{ needs.build-agent.outputs.build_stamp }}",
+              "commit": "${{ github.sha }}"
+            }
