@@ -2,21 +2,21 @@
 
 **Cloud free firmware project for Bose SoundTouch speakers.**
 
-Bose discontinued their SoundTouch cloud service in February 2026. STR keeps the speakers usable: a small Go agent runs on a USB stick that stays plugged into the speaker. It emulates the missing cloud locally, talks to the speaker over the home network, and brings the hardware preset buttons back to life.
+Bose discontinued their SoundTouch cloud service in February 2026. STR keeps the speakers usable: a USB stick installs a small Go agent onto the speaker that emulates the missing cloud locally, talks to the speaker over the home network, and brings the hardware preset buttons back to life. **Once the agent is installed, the stick can be removed** — the agent persists on the speaker and survives reboots.
 
 ## What works
 
 - Internet Radio playback over the physical preset buttons 1 to 6
 - Desktop app for Windows and Mac with station search via radio-browser.info
-- Automatic discovery of all sticks on the LAN through mDNS
-- Multiple speakers in the same network, one stick each
-- Self contained on a USB stick, no separate server, no cloud account
+- Automatic discovery of every running agent on the LAN through mDNS
+- Multiple speakers in the same network; one USB stick is enough to install onto all of them in turn
+- No separate server, no cloud account
 
 Tested on SoundTouch 10. Other models on the roadmap.
 
 ## How it works in one paragraph
 
-The stick boots when the speaker is powered on and starts a small Go service. It hosts a stand in for the Bose cloud on the loopback interface and redirects the relevant DNS names so the speaker treats it as the real cloud. Internet Radio playback then happens over UPnP AVTransport on the speaker, which is supported natively. The hardware preset buttons are wired through the speaker's local WebSocket so a button press triggers playback of the saved station.
+After the first boot with the stick attached, the agent copies itself into the speaker's persistent storage and from then on starts automatically every time the speaker powers on — no stick required for normal use. It hosts a stand-in for the Bose cloud on the loopback interface and redirects the relevant DNS names so the speaker treats it as the real cloud. Internet Radio playback then happens over UPnP AVTransport on the speaker, which is supported natively. The hardware preset buttons are wired through the speaker's local WebSocket so a button press triggers playback of the saved station.
 
 ## Quick start for developers
 
