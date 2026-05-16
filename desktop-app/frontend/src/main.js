@@ -47,6 +47,12 @@ const state = {
   searchResults: [],
   drives: [],
   selectedDrive: null,
+  // Set right after a successful prepare+eject. While set,
+  // refreshDrives() hides that path from the list until it either
+  // disappears (physical pull) or comes back with a valid FAT32
+  // mount. Prevents the wizard re-rendering the ejected stick as
+  // "unknown format". Cleared by the "Neu suchen" button.
+  justEjectedPath: null,
   appInfo: null,
   nowLocation: '',     // aktueller stream url aus now_playing
   nowName: '',         // aktueller itemName aus now_playing
@@ -3227,8 +3233,30 @@ async function prefillWizardFromStick(path) {
 
 async function refreshDrives(clearResult) {
   state.selectedDrive = null;
+  // Manual "Neu suchen" click clears the just-ejected guard so the
+  // wizard returns to its normal listing behaviour.
+  if (clearResult) {
+    state.justEjectedPath = null;
+  }
   try {
     state.drives = await ListDrives() || [];
+    // Filter out a stick we just ejected: Windows reports the
+    // dismounted volume for a few seconds with totalBytes=0 and an
+    // empty filesystem, which the wizard otherwise reads as "unknown
+    // format, must be reformatted" — confusing right after a
+    // successful prepare. If the same path comes back with a valid
+    // FAT32 mount (user pulled and re-inserted), allow it again.
+    if (state.justEjectedPath) {
+      state.drives = state.drives.filter(d => {
+        if (d.path !== state.justEjectedPath) return true;
+        const looksMounted = d.totalBytes > 0 && (d.filesystem || '').toUpperCase() === 'FAT32';
+        if (looksMounted) {
+          state.justEjectedPath = null;
+          return true;
+        }
+        return false;
+      });
+    }
     // Erfolgsmeldung nur loeschen wenn der User AKTIV neu gesucht hat
     // (Button Klick). Beim automatischen Refresh nach Setup soll die
     // Erfolgsmeldung sichtbar bleiben.
@@ -3424,6 +3452,14 @@ async function doSetup() {
       await EjectDrive(drive.path);
       html += '<p>Stick wurde ausgeworfen. Jetzt entnehmen und in den USB Port der Bose Box stecken. Beim ersten Boot dauert es etwa eine Minute, dann kannst du im Tab <b>Musik hoeren</b> die Box bedienen.</p>';
       html += '<p class="setup-warn"><b>Wichtig:</b> Der Stick ist jetzt fuer genau diese Box konfiguriert. Beim ersten Boot wendet die Box die Einstellungen an und loescht alle Geheimnisse (z.B. WLAN Passwort) vom Stick. Wenn du spaeter eine andere Box einrichten oder geaenderte Werte aufspielen willst, musst du den Stick zuerst wieder hier vorbereiten.</p>';
+      // Remember the path we just ejected. Windows keeps reporting the
+      // dismounted volume for a few seconds with totalBytes=0 and an
+      // empty filesystem string. refreshDrives would then auto-select
+      // it and updateDrivePanels would render the misleading "Stick ist
+      // unbekannt formatiert" warning right under the success message.
+      // Hide it until the user either pulls + re-inserts (path becomes
+      // valid again) or clicks "Neu suchen" explicitly.
+      state.justEjectedPath = drive.path;
     } catch (ejErr) {
       html += '<p class="setup-warn">Die Daten sind drauf, aber das automatische Auswerfen ging nicht: <small>' + escapeHtml(String(ejErr)) + '</small> Bitte ueber den Explorer "Auswerfen".</p>';
     }

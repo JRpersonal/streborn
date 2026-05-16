@@ -1,14 +1,22 @@
 #!/bin/sh
-# provision-wlan.sh: liest /media/sda1/wlan.conf und uebermittelt das WLAN
-# Profil an die BoseApp HTTP API damit sich die Box automatisch verbindet.
+# provision-wlan.sh: DEPRECATED.
 #
-# wlan.conf Format (key=value):
+# WLAN provisioning is now handled inline by run.sh: it parses the
+# JSON wlan.conf written by the Desktop App setup wizard
+# ({"ssid":"...","password":"..."}) and writes
+# /etc/wpa_supplicant.conf directly, then restarts wpa_supplicant.
+# That path is reliable and does not depend on the BoseApp HTTP API
+# being up early enough.
+#
+# This script remains on the stick as a manual fallback only. It
+# expects a key=value wlan.conf and posts an addWirelessProfile to
+# the BoseApp HTTP API. The Desktop App does NOT produce that
+# format. If you need to run this manually, write wlan.conf as:
 #   ssid=MyHomeWifi
 #   security=wpa2     (oder wpa, wpa_or_wpa2, wep, open)
 #   passphrase=secret-password
-#
-# Aufruf:  sh /media/sda1/provision-wlan.sh
-# Logs:    /mnt/nv/streborn/wlan-provision.log
+# Then: sh /media/sda1/provision-wlan.sh
+# Logs: /mnt/nv/streborn/wlan-provision.log
 
 set -u
 
