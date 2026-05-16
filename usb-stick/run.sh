@@ -33,11 +33,38 @@ fi
 STICK_BIN="$STICK/streborn-armv7l"
 [ -e "$STICK_BIN" ] || STICK_BIN="$STICK/streborn"
 CACHED_BIN="$PERSIST/bin/streborn-armv7l"
+STICK_VER_FILE="$STICK/version.txt"
+NAND_VER_FILE="$PERSIST/version.txt"
 
 mkdir -p "$PERSIST/bin" "$PERSIST/logs" "$PERSIST/state" 2>/dev/null
 
 log() {
     echo "$(date): $*" >> "$LOG"
+}
+
+# Auto-sync trigger: a freshly prepared stick (Setup-Wizard) ships a
+# version.txt. If that string differs from the version we recorded
+# for the NAND cache the stick is authoritative — the user just
+# prepared it explicitly, so apply it. Without this, sync only
+# happens when something else touches $SYNC_FLAG, but the flag
+# path is on NAND and the Setup Wizard cannot write there.
+maybe_force_sync_on_version_mismatch() {
+    if [ ! -r "$STICK_VER_FILE" ]; then
+        return 0
+    fi
+    STICK_VER=$(cat "$STICK_VER_FILE" 2>/dev/null | tr -d '\r\n')
+    NAND_VER=""
+    if [ -r "$NAND_VER_FILE" ]; then
+        NAND_VER=$(cat "$NAND_VER_FILE" 2>/dev/null | tr -d '\r\n')
+    fi
+    if [ -z "$STICK_VER" ]; then
+        return 0
+    fi
+    if [ "$STICK_VER" = "$NAND_VER" ]; then
+        return 0
+    fi
+    log "version mismatch: stick='$STICK_VER' nand='$NAND_VER' — forcing sync"
+    touch "$SYNC_FLAG"
 }
 
 # NUR wenn Sync Flag gesetzt ist: Stick -> NAND kopieren.
@@ -55,6 +82,13 @@ sync_from_stick_if_requested() {
         chmod +x "$CACHED_BIN.new"
         mv "$CACHED_BIN.new" "$CACHED_BIN"
         log "Stick Binary in NAND Cache gesynct"
+        # Record the version that now lives in the NAND cache so
+        # the next boot's version check has something to compare
+        # against.
+        if [ -r "$STICK_VER_FILE" ]; then
+            cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
+            log "NAND version.txt aktualisiert: $(cat "$NAND_VER_FILE" 2>/dev/null)"
+        fi
         rm -f "$SYNC_FLAG"
         return 0
     fi
@@ -64,6 +98,7 @@ sync_from_stick_if_requested() {
     return 1
 }
 
+maybe_force_sync_on_version_mismatch
 sync_from_stick_if_requested
 
 # Binary Auswahl: NAND Cache zuerst, Stick als Fallback.
