@@ -254,11 +254,16 @@ body {
 .btn-source-icon svg { display: block; }
 .volume-control { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1; min-width: 180px; max-width: 300px; }
 .volume-control .vol-icon { font-size: 16px; opacity: 0.7; }
-.volume-control input[type=range] { flex: 1; -webkit-appearance: none; appearance: none; background: transparent; height: 22px; }
-.volume-control input[type=range]::-webkit-slider-runnable-track { background: #333; height: 4px; border-radius: 2px; }
-.volume-control input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; background: var(--brand); width: 14px; height: 14px; border-radius: 50%; margin-top: -5px; cursor: pointer; }
-.volume-control input[type=range]::-moz-range-track { background: #333; height: 4px; border-radius: 2px; }
-.volume-control input[type=range]::-moz-range-thumb { background: var(--brand); width: 14px; height: 14px; border-radius: 50%; border: none; cursor: pointer; }
+/* Music tab volume slider: native control with accent-color so the
+   filled portion on the left renders in brand blue — matches the
+   slider in Box Einstellungen exactly. The previous custom -webkit
+   pseudo-elements drew their own gray track and blocked accent-color
+   from doing its job, leaving only the thumb visible in brand
+   colour. */
+.volume-control input[type=range] {
+  flex: 1;
+  accent-color: var(--brand);
+}
 .volume-control .vol-val { font-size: 12px; color: #aaa; min-width: 28px; text-align: right; }
 .btn { background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
 .btn:hover { background: #3a3a3a; }
