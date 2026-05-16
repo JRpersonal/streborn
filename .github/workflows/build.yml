@@ -26,10 +26,13 @@ jobs:
         with:
           persist-credentials: false
 
-      # actions/setup-go v5.0.2 pinned to SHA
+      # actions/setup-go v5.0.2 pinned to SHA. go-version is the
+      # minor track; setup-go resolves to the latest patch so
+      # govulncheck does not flag stdlib bugs fixed upstream.
       - uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
         with:
-          go-version-file: go.mod
+          go-version: "1.25"
+          check-latest: true
           cache: true
 
       - name: go vet
