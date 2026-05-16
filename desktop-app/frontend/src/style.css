@@ -464,6 +464,25 @@ body {
 }
 .chip:hover { background: #2a2a2a; color: #ddd; }
 .chip.active { background: var(--brand-bg); color: var(--brand-text); border-color: var(--brand); }
+/* Country-boost chips — bubbled up from GENRE_BY_COUNTRY because the
+   genre is locally relevant. Slightly warmer outline so the row is
+   visibly distinct from the global core set, but still calm enough
+   that the user does not feel ad-spammed. */
+.chip--boost {
+  border-color: var(--brand);
+  color: var(--brand-text);
+  background: var(--brand-bg-soft);
+}
+.chip--boost:hover { background: var(--brand-bg); color: var(--brand-text); }
+.chip--boost.active { background: var(--brand-bg); color: var(--brand-text); border-color: var(--brand); }
+/* "Mehr Genres" toggle — visually a chip but stylistically a button so
+   it does not look like another filter. */
+.chip--more {
+  background: transparent;
+  border-style: dashed;
+  color: #888;
+}
+.chip--more:hover { color: var(--brand-text); border-color: var(--brand); }
 
 /* Mehr laden */
 .load-more-row { display: flex; justify-content: center; margin-top: 8px; }
