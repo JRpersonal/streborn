@@ -106,7 +106,7 @@ The attestation proves:
 
 ## What Users Can Do
 
-- Always download from the official sources: `https://github.com/JRpersonal/streborn/releases` or `https://streborn.app`.
+- Always download from the official sources: `https://github.com/JRpersonal/streborn/releases` or `https://st-reborn.de`.
 - Verify the SHA256 checksum before running an installer.
 - Inspect the source code on GitHub if you are technical.
 - Run the desktop app on a network where the SoundTouch lives only.
