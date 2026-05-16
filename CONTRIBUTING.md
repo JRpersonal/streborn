@@ -24,12 +24,7 @@ every model we get tested by a real user makes it more useful.
 1. Open a Discussion or Issue first if the change is non-trivial
    (more than a typo, more than a one-file fix). It saves both
    sides time and avoids parallel work.
-2. Read [`CLAUDE.md`](CLAUDE.md). It is written for AI assistants
-   but is also the shortest tour of the architecture, conventions,
-   and runtime quirks. Sections that matter for contributors:
-   *Conventions in this repo*, *What never goes into this repo*,
-   *Build and embed quirks*, *Runtime quirks worth remembering*.
-3. Read [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) if you are
+2. Read [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) if you are
    touching anything under `internal/autopair/`,
    `internal/tlsgen/`, `usb-stick/setup-tls.sh`, or
    `usb-stick/iptables-setup.sh`.
@@ -67,8 +62,7 @@ The `desktop-app/agentbin/streborn-armv7l` and
 `sticksetup/embedded/winformat.exe` files are empty stubs in the
 repo. CI overwrites them with the real binaries during release.
 On a developer machine `agentbin.Available()` returns `false`, and
-the desktop app falls back to a configured external path. See
-*Build and embed quirks* in [`CLAUDE.md`](CLAUDE.md).
+the desktop app falls back to a configured external path.
 
 ## Code style and conventions
 
@@ -93,11 +87,8 @@ Tick these in your PR description:
 - [ ] `go vet ./...` and `go test ./...` pass locally.
 - [ ] If the change touches the stick agent, I have either tested
       on real hardware or noted in the PR that I have not.
-- [ ] If the change touches the website, I built it locally and
-      checked that legal pages still render.
 - [ ] No personal data, real LAN IPs, MAC addresses, or device
-      serial numbers were added (see *What never goes into this
-      repo* in `CLAUDE.md`).
+      serial numbers were added.
 - [ ] If a new dependency was added, it is on a current, supported
       version.
 
@@ -109,8 +100,10 @@ license it under the same terms. The full text is in
 
 ## Conduct
 
-Be civil. Disagree on the technical merits. Assume good intent.
-Maintainers will close threads that turn into personal attacks.
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+Be civil, disagree on the technical merits, assume good intent.
+Report incidents to the address listed in
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## Maintainers
 
