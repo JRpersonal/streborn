@@ -203,7 +203,7 @@ func (m *Manager) generate() (*Bundle, error) {
 	// Server Schluessel
 	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("Server Key: %w", err)
+		return nil, fmt.Errorf("server key: %w", err)
 	}
 	serverSerial, err := randomSerial()
 	if err != nil {
@@ -224,11 +224,11 @@ func (m *Manager) generate() (*Bundle, error) {
 	// Mit Root CA signieren
 	rootCert, err := x509.ParseCertificate(rootDER)
 	if err != nil {
-		return nil, fmt.Errorf("Root Cert parsen: %w", err)
+		return nil, fmt.Errorf("parse root cert: %w", err)
 	}
 	serverDER, err := x509.CreateCertificate(rand.Reader, serverTpl, rootCert, &serverKey.PublicKey, rootKey)
 	if err != nil {
-		return nil, fmt.Errorf("Server Cert signieren: %w", err)
+		return nil, fmt.Errorf("sign server cert: %w", err)
 	}
 
 	// PEM kodieren
