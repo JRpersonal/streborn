@@ -20,8 +20,9 @@ them back **without any Bose cloud dependency**.
 - **Desktop App (ST Reborn)** — Wails application for Windows, macOS,
   Linux. Discovers sticks on the LAN via mDNS, ships a web UI for
   browsing internet radio, managing presets, and controlling playback.
-- **Website** — Astro site (English and German) at `streborn.app`
-  with downloads, FAQ, privacy, imprint.
+- **Website** — Astro site (English and German) at `st-reborn.de`
+  with downloads, FAQ, privacy, imprint. Maintained in a separate
+  repository.
 
 ### Architecture in one picture
 

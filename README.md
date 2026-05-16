@@ -54,7 +54,7 @@ Requirements: Go 1.22 or newer, Node 20 or newer, Wails CLI v2 for the desktop a
 
 ## Downloads and end user documentation
 
-See [streborn.app](https://streborn.app).
+See [st-reborn.de](https://st-reborn.de).
 
 ## Security
 
@@ -72,7 +72,7 @@ Issues and pull requests welcome. By submitting a contribution you agree to lice
 
 ## Support the project
 
-If STR helped bring your speaker back to life, please consider a donation. Sponsor button at the top of the repo or links on [streborn.app](https://streborn.app/#donate).
+If STR helped bring your speaker back to life, please consider a donation. Sponsor button at the top of the repo or links on [st-reborn.de](https://st-reborn.de/#donate).
 
 ## Disclaimer
 
