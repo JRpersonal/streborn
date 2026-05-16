@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -629,6 +630,13 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	const dst = "/mnt/nv/streborn/bin/streborn-armv7l"
+	// On a fresh speaker the parent /mnt/nv/streborn/bin directory may
+	// not exist yet — first OTA after install hits this. Create it so
+	// the write does not 500 on "no such file or directory".
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		http.Error(w, "mkdir parent: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	tmp := dst + ".new"
 	if err := os.WriteFile(tmp, body, 0o755); err != nil {
 		http.Error(w, "write tmp: "+err.Error(), http.StatusInternalServerError)
