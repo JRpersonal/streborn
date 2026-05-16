@@ -137,9 +137,23 @@ body {
   cursor: pointer;
   font-size: 14px;
   border-bottom: 2px solid transparent;
+  position: relative;
 }
 .tab-btn:hover { color: #ccc; }
 .tab-btn.active { color: var(--brand); border-bottom-color: var(--brand); }
+/* Blue dot indicator: a tab carries pending work (e.g. one of the
+   discovered boxes needs a software update). */
+.tab-btn.has-update::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2f80ed;
+  box-shadow: 0 0 0 2px #1a1a1a;
+}
 .view.hidden { display: none; }
 .hidden { display: none !important; }
 
