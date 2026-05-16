@@ -15,6 +15,12 @@
 /desktop-app/agentbin/*.bin
 /sticksetup/embedded/
 
+# Empty stubs that must remain tracked so go:embed succeeds on a fresh
+# clone. CI overwrites them with the real binaries during release.
+!/desktop-app/agentbin/streborn-armv7l
+!/sticksetup/embedded/
+!/sticksetup/embedded/winformat.exe
+
 # Astro Webseite Build
 /website/dist/
 /website/node_modules/
