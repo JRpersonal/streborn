@@ -92,9 +92,14 @@ func New() *Client {
 }
 
 // SearchOpts buendelt alle Such Parameter.
+//
+// TagList is a list of substrings, each of which must match SOME tag
+// of a station (AND across the list, substring per element). Set this
+// for multi-word queries — see SearchSmart.
 type SearchOpts struct {
 	Name     string
 	Tag      string
+	TagList  []string
 	Country  string
 	Language string
 	Order    string
@@ -114,6 +119,9 @@ func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error)
 	}
 	if opts.Tag != "" {
 		q.Set("tag", opts.Tag)
+	}
+	if len(opts.TagList) > 0 {
+		q.Set("tagList", strings.Join(opts.TagList, ","))
 	}
 	if opts.Country != "" {
 		q.Set("countrycode", strings.ToUpper(opts.Country))
@@ -143,6 +151,112 @@ func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error)
 	var out []Station
 	err := c.fetchJSON(ctx, "/stations/search?"+q.Encode(), &out)
 	return out, err
+}
+
+// SearchSmart runs Search with the literal Name plus a tag-based
+// fallback for multi-word queries and merges the results. It exists
+// because radio-browser's `name` parameter is a plain substring match
+// against the station name field — multi-word queries like
+// "rap old school" almost never appear there literally, so users see
+// an empty list even though plenty of stations are tagged that way.
+//
+// Strategy:
+//
+//  1. Run the original Search (matches station names).
+//  2. If Name has two or more whitespace-separated tokens, run a
+//     second Search with TagList set to those tokens. radio-browser
+//     AND-matches the list, substring per element — so a station
+//     tagged "hip hop, rap, old school" satisfies all three of
+//     {rap, old, school}.
+//
+// Both queries respect the other filters (Country, Language, OnlyOK,
+// Order). Results are merged, deduplicated by station UUID, capped
+// at opts.Limit, and returned in vote order. Callers that have
+// already constrained the search to a tag chip (Tag != "") get the
+// plain Search behaviour — the user already narrowed the scope and
+// we should not widen it back.
+func (c *Client) SearchSmart(ctx context.Context, opts SearchOpts) ([]Station, error) {
+	if opts.Limit <= 0 {
+		opts.Limit = 30
+	}
+	if opts.Name == "" || opts.Tag != "" {
+		return c.Search(ctx, opts)
+	}
+	tokens := tokenize(opts.Name)
+
+	type result struct {
+		stations []Station
+		err      error
+	}
+	nameCh := make(chan result, 1)
+	tagCh := make(chan result, 1)
+
+	go func() {
+		st, err := c.Search(ctx, opts)
+		nameCh <- result{st, err}
+	}()
+	if len(tokens) >= 2 {
+		go func() {
+			tagOpts := opts
+			tagOpts.Name = ""
+			tagOpts.TagList = tokens
+			// Tag-based hits are often plentiful; fetch a wider
+			// page so the dedup-and-cap step has material to
+			// promote into the visible window.
+			tagOpts.Limit = opts.Limit * 2
+			st, err := c.Search(ctx, tagOpts)
+			tagCh <- result{st, err}
+		}()
+	} else {
+		close(tagCh)
+	}
+
+	nameRes := <-nameCh
+	var tagStations []Station
+	if r, ok := <-tagCh; ok {
+		tagStations = r.stations
+	}
+
+	if nameRes.err != nil && len(tagStations) == 0 {
+		return nil, nameRes.err
+	}
+
+	seen := make(map[string]bool, len(nameRes.stations)+len(tagStations))
+	merged := make([]Station, 0, len(nameRes.stations)+len(tagStations))
+	add := func(stations []Station) {
+		for _, s := range stations {
+			key := s.StationUUID
+			if key == "" {
+				key = s.Name + "|" + s.URL
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			merged = append(merged, s)
+		}
+	}
+	add(nameRes.stations)
+	add(tagStations)
+
+	if len(merged) > opts.Limit {
+		merged = merged[:opts.Limit]
+	}
+	return merged, nil
+}
+
+// tokenize splits a free-text query into trimmed, non-empty,
+// lowercase substrings on whitespace. Used by SearchSmart.
+func tokenize(s string) []string {
+	fields := strings.Fields(s)
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		f = strings.ToLower(strings.TrimSpace(f))
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // TopVote liefert die meistgevoteten Sender, gefiltert nach country.

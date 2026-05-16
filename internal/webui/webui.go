@@ -419,7 +419,7 @@ func (s *Server) handleRadioSearch(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("offset"); v != "" {
 		fmt.Sscanf(v, "%d", &offset)
 	}
-	stations, err := rb.Search(ctx, radiobrowser.SearchOpts{
+	stations, err := rb.SearchSmart(ctx, radiobrowser.SearchOpts{
 		Name:     q.Get("q"),
 		Tag:      q.Get("tag"),
 		Country:  q.Get("cc"),
