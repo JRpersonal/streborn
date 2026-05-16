@@ -940,8 +940,13 @@ async function checkSshBanner() {
     const r = await fetch(`http://${box.host}:${box.port}/api/stick/status`);
     if (!r.ok) return;
     const data = await r.json();
-    if (data && data.sshOpen) gb.classList.remove('hidden');
-    else gb.classList.add('hidden');
+    // Only warn once the stick is no longer mounted on the box. While
+    // mounted, the agent is mid-setup or mid-update — SSH is expected
+    // to be open, the user cannot act on the warning yet, and the
+    // banner is just noise. After the stick is removed (or the next
+    // setup phase has unmounted it), the SSH state is meaningful.
+    const show = !!(data && data.sshOpen && !data.mounted);
+    gb.classList.toggle('hidden', !show);
   } catch {}
 }
 
@@ -2645,14 +2650,14 @@ function renderBoxSettings(s, box) {
       }
     } catch {}
 
-    // Globalen Top Banner toggeln — sshOpen ist die Quelle der Wahrheit
-    // (wir pruefen aktiv ob Port 22 listened). Mounted Stick allein
-    // reicht nicht, weil ein Stick ohne remote_services Datei den
-    // SSH Dienst nicht aktiviert.
+    // Show the warning banner only once the stick is no longer
+    // mounted — while a stick is in the box, the agent is either
+    // doing initial install or applying an update, SSH is expected
+    // to be open in that window, and the banner is just noise.
     const gb = $('globalSecurityBanner');
     if (gb) {
-      if (sshOpen) gb.classList.remove('hidden');
-      else gb.classList.add('hidden');
+      const show = sshOpen && !stickMounted;
+      gb.classList.toggle('hidden', !show);
     }
 
     const securityWarn = sshOpen ? `
@@ -3079,7 +3084,7 @@ function debounce(fn, ms) {
 
 $('view-setup').innerHTML = `
   <h2>USB-Stick vorbereiten</h2>
-  <p class="setup-intro">Stecke einen USB-Stick (mindestens 4 GB) in den Rechner. Die App findet ihn automatisch. Waehle ihn aus und klicke auf den Knopf unten. Danach wird der Stick automatisch ausgeworfen, und du steckst ihn in die Bose Box.</p>
+  <p class="setup-intro">Stecke einen USB-Stick (mindestens 4 GB) in den Rechner. Die App findet ihn automatisch. Waehle ihn aus und klicke auf den Knopf unten. Danach wird der Stick ausgeworfen — steck ihn <b>einmalig</b> in die Bose Box, damit sich der Agent von dort in den internen Speicher der Box installiert. Sobald die Box ueber den Stick neu gebootet hat (WLAN-LED leuchtet) kannst du den Stick wieder abziehen; die Box laeuft dann selbststaendig weiter. Den Stick brauchst du erst wieder fuer ein spaeteres Box-Update.</p>
   <div class="setup-section">
     <div class="setup-section-head">
       <h3>1. USB-Stick auswaehlen</h3>
