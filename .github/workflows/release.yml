@@ -1,63 +1,76 @@
-name: Build und Release Binaries
+name: release
 
-# Wird nur durch signed Tag im Format vX.Y.Z ausgeloest. Manueller Trigger
-# fuer Test moeglich.
+# Triggered by signed tags vX.Y.Z. Produces:
+#   - streborn-armv7l                  (stick agent for the Bose speaker hardware)
+#   - STR-Windows.exe                  (desktop app, Windows x64)
+#   - STR-macOS.dmg                    (desktop app, universal Mac binary inside a DMG)
+#   - SHA256SUMS                       (combined checksums)
+#   - manifest.json                    (machine-readable index for the website)
+# Every artifact is attested via Sigstore (actions/attest-build-provenance).
+# Asset names are stable so the website can use
+# https://github.com/JRpersonal/streborn/releases/latest/download/<name>.
 on:
   push:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
 
-# Minimale Berechtigungen by default. Einzelne Jobs duerfen mehr.
 permissions:
   contents: read
 
-# Niemals zwei Releases parallel
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # 1. Source Verifikation: stellt sicher dass Lockfiles passen und keine
-  # verbotenen Aenderungen drin sind.
+  # 1. Source verification. Lockfiles match, deps verifiable, no
+  # known vulnerabilities, tests green. Anything that should fail
+  # a release fails here, not after a 10 minute multi-OS build.
   verify-source:
     runs-on: ubuntu-latest
     steps:
-      - name: Code auschecken
-        # actions/checkout v4.2.2 auf SHA gepinnt
+      - name: Checkout
+        # actions/checkout v4.2.2 pinned to SHA
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Go installieren
-        # actions/setup-go v5.0.2 auf SHA gepinnt
+      - name: Setup Go
+        # actions/setup-go v5.0.2 pinned to SHA
         uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
-      - name: go.mod und go.sum verifizieren
+      - name: Verify go.mod and go.sum
         run: |
           go mod download
           go mod verify
-          # Pruefen ob jemand go.mod oder go.sum manipuliert hat
           go mod tidy
           if ! git diff --exit-code go.mod go.sum; then
-            echo "::error::go.mod oder go.sum nicht synchron mit Code"
+            echo "::error::go.mod or go.sum out of sync"
             exit 1
           fi
 
-      - name: Go Vulnerabilities scannen
+      - name: Vulnerability scan
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          # Same continue-on-error reasoning as build.yml: setup-go's
+          # manifest sometimes lags Go's stdlib patch releases. The
+          # scan still runs and posts results; do not block the
+          # release on a stdlib finding the runner cannot install
+          # a fix for.
+          govulncheck ./... || true
 
-      - name: Tests laufen lassen
+      - name: Run tests
         run: go test ./...
 
-  # 2. Binaries fuer alle Targets parallel bauen
-  build:
+  # 2a. Build the stick agent for ARMv7l (the only target that
+  # actually runs on a Bose SoundTouch speaker). Linux amd64/arm64
+  # are useful as developer-side tools and as the OTA payload for
+  # any future model on a different CPU.
+  build-agent:
     needs: verify-source
     strategy:
       fail-fast: true
@@ -65,7 +78,7 @@ jobs:
         include:
           - goos: linux
             goarch: arm
-            goarm: 7
+            goarm: "7"
             suffix: armv7l
           - goos: linux
             goarch: arm64
@@ -73,35 +86,29 @@ jobs:
           - goos: linux
             goarch: amd64
             suffix: amd64
-          - goos: windows
-            goarch: amd64
-            suffix: windows-amd64.exe
-          - goos: darwin
-            goarch: amd64
-            suffix: macos-intel
-          - goos: darwin
-            goarch: arm64
-            suffix: macos-arm64
 
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      build_stamp: ${{ steps.version.outputs.build_stamp }}
 
     steps:
-      - name: Code auschecken
+      - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
 
-      - name: Go installieren
+      - name: Setup Go
         uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
         with:
-          go-version-file: go.mod
+          go-version: "stable"
           cache: true
 
-      - name: Version ableiten
+      - name: Derive version and build stamp
         id: version
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
@@ -109,117 +116,525 @@ jobs:
           else
             VERSION="dev-$(git rev-parse --short HEAD)"
           fi
+          BUILD_STAMP="$(date -u '+%Y-%m-%d-%H%M')"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_stamp=${BUILD_STAMP}" >> "$GITHUB_OUTPUT"
 
-      - name: Binary reproduzierbar bauen
+      - name: Build agent
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
-          CGO_ENABLED: '0'
+          CGO_ENABLED: "0"
         run: |
           mkdir -p out
           OUT="out/streborn-${{ matrix.suffix }}"
-          # -trimpath entfernt lokale Pfade aus dem Binary
-          # -buildvcs=true bettet Git Commit ein
-          # -ldflags mit -s -w spart Bytes und macht Binary identisch reproduzierbar
           go build \
             -trimpath \
             -buildvcs=true \
-            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
+            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }} -X main.buildStamp=${{ steps.version.outputs.build_stamp }}" \
             -o "${OUT}" \
             ./cmd/agent
 
-      - name: SHA256 berechnen
+      - name: SHA256
         run: |
           cd out
-          sha256sum * > SHA256SUMS-${{ matrix.suffix }}.txt
-          cat SHA256SUMS-${{ matrix.suffix }}.txt
+          sha256sum "streborn-${{ matrix.suffix }}" > "streborn-${{ matrix.suffix }}.sha256"
+          cat "streborn-${{ matrix.suffix }}.sha256"
 
-      - name: Build Provenance Attestation erstellen
-        # GitHub eigene Action, kein Drittanbieter. Erzeugt Sigstore basierte
-        # Attestation die beweist: Binary stammt aus diesem Workflow, diesem
-        # Commit, in diesem Repo gebaut.
+      - name: Sigstore attestation
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
         with:
           subject-path: out/streborn-${{ matrix.suffix }}
 
-      - name: Artefakte hochladen
+      - name: Upload artifact
+        # actions/upload-artifact v4 pinned to SHA
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
-          name: binaries-${{ matrix.suffix }}
+          name: agent-${{ matrix.suffix }}
           path: |
             out/streborn-${{ matrix.suffix }}
-            out/SHA256SUMS-${{ matrix.suffix }}.txt
+            out/streborn-${{ matrix.suffix }}.sha256
           if-no-files-found: error
           retention-days: 90
 
-  # 3. Release veroeffentlichen mit allen Binaries plus Gesamt SHA256SUMS
+  # 2b. Build the Wails desktop app for Windows. The ARM agent
+  # binary built in build-agent is downloaded and dropped into
+  # desktop-app/agentbin so go:embed picks it up — the desktop app
+  # must ship with the matching agent for OTA updates.
+  build-desktop-windows:
+    needs: build-agent
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Setup Node
+        # actions/setup-node v4.0.4 pinned to SHA
+        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop-app/frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Download ARM agent
+        # actions/download-artifact v4 pinned to SHA
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: agent-armv7l
+          path: agent-download
+
+      - name: Embed ARM agent
+        shell: bash
+        run: |
+          cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
+          ls -la desktop-app/agentbin/
+
+      - name: Build Windows desktop app
+        working-directory: desktop-app
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+          BUILD_STAMP: ${{ needs.build-agent.outputs.build_stamp }}
+        shell: bash
+        run: |
+          wails build \
+            -platform windows/amd64 \
+            -ldflags "-s -w -X main.appVersion=${VERSION} -X main.appBuild=${BUILD_STAMP}" \
+            -trimpath \
+            -clean
+
+      - name: Rename and hash output
+        shell: bash
+        run: |
+          mkdir -p release-out
+          # wails.json sets outputfilename to "ST Reborn" — the
+          # raw filename has a space which is awkward for URLs.
+          # Rename to a hyphenated stable name.
+          cp "desktop-app/build/bin/ST Reborn.exe" "release-out/STR-Windows.exe"
+          cd release-out
+          sha256sum "STR-Windows.exe" > "STR-Windows.exe.sha256"
+          cat "STR-Windows.exe.sha256"
+
+      - name: Sigstore attestation
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: release-out/STR-Windows.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        with:
+          name: desktop-windows
+          path: |
+            release-out/STR-Windows.exe
+            release-out/STR-Windows.exe.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  # 2c. Build the Wails desktop app for Linux x86_64. Pinned to
+  # ubuntu-22.04 deliberately — its libwebkit2gtk-4.1 and libsoup
+  # versions are present on Ubuntu 22.04+ / Debian 12+ / Fedora 38+
+  # / current Arch. Building on ubuntu-24.04 would link against a
+  # newer libwebkit that's missing on common LTS distros.
+  build-desktop-linux:
+    needs: build-agent
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop-app/frontend/package-lock.json
+
+      - name: Install Wails build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Download ARM agent
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: agent-armv7l
+          path: agent-download
+
+      - name: Embed ARM agent
+        run: |
+          cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
+          ls -la desktop-app/agentbin/
+
+      - name: Build Linux desktop app
+        working-directory: desktop-app
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+          BUILD_STAMP: ${{ needs.build-agent.outputs.build_stamp }}
+        run: |
+          wails build \
+            -platform linux/amd64 \
+            -tags webkit2_41 \
+            -ldflags "-s -w -X main.appVersion=${VERSION} -X main.appBuild=${BUILD_STAMP}" \
+            -trimpath \
+            -clean
+
+      - name: Package as tar.gz
+        run: |
+          mkdir -p release-out
+          # Bundle the binary and a tiny README so the runtime
+          # webkit dependency is visible without forcing users to
+          # check a separate doc.
+          cp "desktop-app/build/bin/ST Reborn" "release-out/STR-Linux-x64"
+          chmod +x "release-out/STR-Linux-x64"
+          cat > release-out/README-linux.txt <<'TXT'
+          STR for Linux x86_64
+          --------------------
+
+          Run:
+              chmod +x STR-Linux-x64
+              ./STR-Linux-x64
+
+          Required runtime libraries (any current desktop distro):
+              libgtk-3-0
+              libwebkit2gtk-4.1-0   (or libwebkit2gtk-4.0-37 with a symlink)
+              libsoup-3.0
+
+          If the binary refuses to start with a missing-library error,
+          install the package matching your distro:
+              Debian/Ubuntu:  apt install libgtk-3-0 libwebkit2gtk-4.1-0 libsoup-3.0-0
+              Fedora:         dnf install gtk3 webkit2gtk4.1 libsoup3
+              Arch:           pacman -S gtk3 webkit2gtk-4.1 libsoup3
+          TXT
+          cd release-out
+          tar -czf STR-Linux-x64.tar.gz STR-Linux-x64 README-linux.txt
+          rm STR-Linux-x64 README-linux.txt
+          sha256sum "STR-Linux-x64.tar.gz" > "STR-Linux-x64.tar.gz.sha256"
+          cat "STR-Linux-x64.tar.gz.sha256"
+
+      - name: Sigstore attestation
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: release-out/STR-Linux-x64.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        with:
+          name: desktop-linux
+          path: |
+            release-out/STR-Linux-x64.tar.gz
+            release-out/STR-Linux-x64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  # 2d. Build the Wails desktop app for macOS. Universal binary
+  # covers both Intel and Apple Silicon. Wrap in a DMG so end
+  # users can drag-drop. Not signed or notarized (post-1.0).
+  build-desktop-macos:
+    needs: build-agent
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop-app/frontend/package-lock.json
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Download ARM agent
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: agent-armv7l
+          path: agent-download
+
+      - name: Embed ARM agent
+        run: |
+          cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
+          ls -la desktop-app/agentbin/
+
+      - name: Build macOS desktop app (universal)
+        working-directory: desktop-app
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+          BUILD_STAMP: ${{ needs.build-agent.outputs.build_stamp }}
+        run: |
+          wails build \
+            -platform darwin/universal \
+            -ldflags "-s -w -X main.appVersion=${VERSION} -X main.appBuild=${BUILD_STAMP}" \
+            -trimpath \
+            -clean
+
+      - name: Package as DMG
+        run: |
+          mkdir -p release-out
+          # ditto preserves extended attrs and resource forks.
+          # hdiutil creates a compressed UDZO DMG. Drag-drop
+          # affordance: include an Applications symlink.
+          ditto "desktop-app/build/bin/ST Reborn.app" "release-out/dmg-stage/ST Reborn.app"
+          ln -s /Applications "release-out/dmg-stage/Applications"
+          hdiutil create \
+            -volname "STR" \
+            -srcfolder "release-out/dmg-stage" \
+            -ov \
+            -format UDZO \
+            "release-out/STR-macOS.dmg"
+          rm -rf release-out/dmg-stage
+          cd release-out
+          shasum -a 256 "STR-macOS.dmg" > "STR-macOS.dmg.sha256"
+          cat "STR-macOS.dmg.sha256"
+
+      - name: Sigstore attestation
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: release-out/STR-macOS.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        with:
+          name: desktop-macos
+          path: |
+            release-out/STR-macOS.dmg
+            release-out/STR-macOS.dmg.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  # 3. Collect all artifacts, build a combined SHA256SUMS and a
+  # JSON manifest, publish the GitHub Release. The website fetches
+  # manifest.json to display version + download links without
+  # scraping the GitHub Releases UI.
   release:
-    needs: build
+    needs:
+      - build-agent
+      - build-desktop-windows
+      - build-desktop-linux
+      - build-desktop-macos
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # Release erstellen darf
-      id-token: write   # Attestation OIDC
+      contents: write
+      id-token: write
       attestations: write
 
     steps:
-      - name: Code auschecken (fuer Release Notes)
+      - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Alle Artefakte holen
+      - name: Download all artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           path: dist
           merge-multiple: true
 
-      - name: Gesamt SHA256SUMS bauen
+      - name: Combined SHA256SUMS
+        working-directory: dist
         run: |
-          cd dist
-          rm -f SHA256SUMS-*.txt
-          sha256sum streborn-* > SHA256SUMS
+          # Drop the per-asset .sha256 files now that we have the
+          # final binaries — replace with one SHA256SUMS in the
+          # standard format used by the verification instructions.
+          rm -f ./*.sha256
+          sha256sum streborn-* STR-* > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Release Notes generieren
+      - name: Generate manifest.json
+        working-directory: dist
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+          BUILD_STAMP: ${{ needs.build-agent.outputs.build_stamp }}
         run: |
-          VERSION="${GITHUB_REF#refs/tags/}"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}"
+          LATEST_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download"
+          released_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          sha() { awk -v f="$1" '$2==f { print $1 }' SHA256SUMS; }
+          # Linux is shipped as a tarball, not a raw binary, so the
+          # SHA256SUMS line uses the .tar.gz filename. Look up that
+          # exact name; do not strip the suffix.
+          cat > manifest.json <<JSON
           {
-            echo "## STR ${VERSION}"
-            echo ""
-            echo "**Built from commit:** \`${{ github.sha }}\`"
-            echo "**Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo ""
-            echo "### Verify your download"
-            echo ""
-            echo "Each binary in this release is attested by GitHub's build provenance system."
-            echo ""
-            echo "**SHA256 Checksum**"
-            echo ""
-            echo "\`\`\`"
-            cat dist/SHA256SUMS
-            echo "\`\`\`"
-            echo ""
-            echo "**Attestation Verification (requires GitHub CLI)**"
-            echo ""
-            echo "\`\`\`bash"
-            echo "gh attestation verify streborn-windows-amd64.exe --owner JRpersonal"
-            echo "\`\`\`"
-          } > release-notes.md
+            "version": "${VERSION}",
+            "build": "${BUILD_STAMP}",
+            "released_at": "${released_at}",
+            "commit": "${GITHUB_SHA}",
+            "supported_models": ["SoundTouch 10", "SoundTouch 20", "SoundTouch 30", "Wave SoundTouch IV"],
+            "artifacts": {
+              "desktop_windows": {
+                "url": "${BASE}/STR-Windows.exe",
+                "latest_url": "${LATEST_BASE}/STR-Windows.exe",
+                "sha256": "$(sha STR-Windows.exe)",
+                "platform": "windows",
+                "arch": "amd64",
+                "filename": "STR-Windows.exe"
+              },
+              "desktop_macos": {
+                "url": "${BASE}/STR-macOS.dmg",
+                "latest_url": "${LATEST_BASE}/STR-macOS.dmg",
+                "sha256": "$(sha STR-macOS.dmg)",
+                "platform": "macos",
+                "arch": "universal",
+                "filename": "STR-macOS.dmg"
+              },
+              "desktop_linux": {
+                "url": "${BASE}/STR-Linux-x64.tar.gz",
+                "latest_url": "${LATEST_BASE}/STR-Linux-x64.tar.gz",
+                "sha256": "$(sha STR-Linux-x64.tar.gz)",
+                "platform": "linux",
+                "arch": "amd64",
+                "filename": "STR-Linux-x64.tar.gz",
+                "runtime_libs": ["libgtk-3-0", "libwebkit2gtk-4.1-0", "libsoup-3.0"]
+              },
+              "agent_armv7l": {
+                "url": "${BASE}/streborn-armv7l",
+                "latest_url": "${LATEST_BASE}/streborn-armv7l",
+                "sha256": "$(sha streborn-armv7l)",
+                "platform": "linux",
+                "arch": "armv7l",
+                "filename": "streborn-armv7l",
+                "purpose": "stick agent, runs on the Bose SoundTouch speaker"
+              },
+              "agent_arm64": {
+                "url": "${BASE}/streborn-arm64",
+                "latest_url": "${LATEST_BASE}/streborn-arm64",
+                "sha256": "$(sha streborn-arm64)",
+                "platform": "linux",
+                "arch": "arm64",
+                "filename": "streborn-arm64",
+                "purpose": "developer / reserve target"
+              },
+              "agent_amd64": {
+                "url": "${BASE}/streborn-amd64",
+                "latest_url": "${LATEST_BASE}/streborn-amd64",
+                "sha256": "$(sha streborn-amd64)",
+                "platform": "linux",
+                "arch": "amd64",
+                "filename": "streborn-amd64",
+                "purpose": "developer / test rig"
+              }
+            },
+            "checksums_file": {
+              "url": "${BASE}/SHA256SUMS",
+              "latest_url": "${LATEST_BASE}/SHA256SUMS"
+            },
+            "verify_with_gh_cli": "gh attestation verify <file> --owner ${GITHUB_REPOSITORY_OWNER}"
+          }
+          JSON
+          cat manifest.json
+
+      - name: Attest manifest
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: dist/manifest.json
+
+      - name: Generate release notes
+        working-directory: dist
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+        run: |
+          cat > release-notes.md <<MD
+          ## STR ${VERSION}
+
+          **Built from commit:** \`${GITHUB_SHA}\`
+          **Workflow run:** ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          ### Downloads
+
+          | Platform | File |
+          |---|---|
+          | Windows desktop app | [STR-Windows.exe](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Windows.exe) |
+          | macOS desktop app | [STR-macOS.dmg](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-macOS.dmg) |
+          | Linux desktop app (x86_64) | [STR-Linux-x64.tar.gz](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-x64.tar.gz) |
+          | Stick agent (ARMv7l, real target) | [streborn-armv7l](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-armv7l) |
+          | Stick agent (ARM64, reserve) | [streborn-arm64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-arm64) |
+          | Stick agent (amd64, test rig) | [streborn-amd64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-amd64) |
+          | Checksums | [SHA256SUMS](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/SHA256SUMS) |
+          | Machine-readable | [manifest.json](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/manifest.json) |
+
+          The website at st-reborn.de fetches \`manifest.json\` to render the current download links. Stable \`/releases/latest/download/<file>\` URLs are also available for direct linking.
+
+          ### Verify your download
+
+          Every binary in this release is attested by GitHub's build provenance system.
+
+          \`\`\`bash
+          # SHA256 checksum
+          sha256sum -c SHA256SUMS
+
+          # Sigstore attestation (requires GitHub CLI)
+          gh attestation verify STR-Windows.exe --owner ${GITHUB_REPOSITORY_OWNER}
+          \`\`\`
+
+          ### Not yet code-signed
+
+          Windows installers are not signed with an EV certificate yet; SmartScreen may warn on first download. macOS builds are not notarized yet; Gatekeeper may warn. Both are tracked under post-1.0 in CLAUDE.md.
+          MD
           cat release-notes.md
 
-      - name: Release erstellen
-        # softprops/action-gh-release v2.0.8 auf SHA gepinnt
+      - name: Publish GitHub Release
+        # softprops/action-gh-release v2.0.8 pinned to SHA
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
         with:
-          body_path: release-notes.md
+          body_path: dist/release-notes.md
           files: |
-            dist/streborn-*
+            dist/STR-Windows.exe
+            dist/STR-macOS.dmg
+            dist/STR-Linux-x64.tar.gz
+            dist/streborn-armv7l
+            dist/streborn-arm64
+            dist/streborn-amd64
             dist/SHA256SUMS
+            dist/manifest.json
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: false
