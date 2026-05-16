@@ -14,6 +14,11 @@ on:
     tags:
       - 'v*.*.*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (must match vX.Y.Z, e.g. v0.3.0)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -110,9 +115,21 @@ jobs:
 
       - name: Derive version and build stamp
         id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
+          # Three ways to enter this workflow:
+          #   1. push of a vX.Y.Z tag      → use the tag
+          #   2. workflow_dispatch + input → validate + use the input
+          #   3. workflow_dispatch w/o input (legacy) → dev build
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
+          elif [[ -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION}"
+            if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::version input '$VERSION' does not match vX.Y.Z[-suffix]"
+              exit 1
+            fi
           else
             VERSION="dev-$(git rev-parse --short HEAD)"
           fi
@@ -458,7 +475,12 @@ jobs:
       - build-desktop-windows
       - build-desktop-linux
       - build-desktop-macos
-    if: startsWith(github.ref, 'refs/tags/')
+    # Publish either on tag push or on a manual workflow_dispatch
+    # that supplies a version input. Plain workflow_dispatch with no
+    # input remains a build-only dry-run.
+    if: |
+      startsWith(github.ref, 'refs/tags/') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -621,9 +643,15 @@ jobs:
           cat release-notes.md
 
       - name: Publish GitHub Release
-        # softprops/action-gh-release v2.0.8 pinned to SHA
+        # softprops/action-gh-release v2.0.8 pinned to SHA.
+        # tag_name is explicit so the workflow_dispatch path works:
+        # the action creates the tag at github.sha when it does not
+        # already exist. The tag-push path uses the same value (the
+        # version derived from the pushed tag), so behaviour matches.
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
         with:
+          tag_name: ${{ needs.build-agent.outputs.version }}
+          target_commitish: ${{ github.sha }}
           body_path: dist/release-notes.md
           files: |
             dist/STR-Windows.exe
@@ -638,3 +666,25 @@ jobs:
           generate_release_notes: false
           draft: false
           prerelease: false
+
+      # Releases created via the default GITHUB_TOKEN deliberately do
+      # NOT fire `release: published` workflow triggers downstream — a
+      # GitHub-side safeguard against accidental loops. So a separate
+      # notify-website workflow listening for that event never runs
+      # after a tag-driven release. Dispatch directly from here using
+      # a fine-grained PAT instead; the website repo's deploy listens
+      # for repository_dispatch / app-release-published.
+      - name: Notify streborn-website
+        # peter-evans/repository-dispatch v3.0.0
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WEBSITE_DISPATCH_PAT }}
+          repository: JRpersonal/streborn-website
+          event-type: app-release-published
+          client-payload: |
+            {
+              "tag": "${{ needs.build-agent.outputs.version }}",
+              "url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.build-agent.outputs.version }}",
+              "build": "${{ needs.build-agent.outputs.build_stamp }}",
+              "commit": "${{ github.sha }}"
+            }
