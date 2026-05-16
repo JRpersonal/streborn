@@ -1,0 +1,34 @@
+name: Notify website on release
+
+# Sobald hier ein Release veröffentlicht wird, feuern wir ein
+# repository_dispatch Event in das JRpersonal/streborn-website Repo, damit
+# dort der website-deploy.yml Workflow startet und die Site mit der neuen
+# Release Info neu gebaut wird.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Repository dispatch to streborn-website
+        # peter-evans/repository-dispatch v3.0.0. Tag reference,
+        # Dependabot will pin to a SHA on first update.
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WEBSITE_DISPATCH_PAT }}
+          repository: JRpersonal/streborn-website
+          event-type: app-release-published
+          client-payload: |
+            {
+              "tag": "${{ github.event.release.tag_name }}",
+              "url": "${{ github.event.release.html_url }}",
+              "published_at": "${{ github.event.release.published_at }}"
+            }
