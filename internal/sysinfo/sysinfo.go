@@ -38,10 +38,10 @@ func DeviceID(prefer []string) (string, error) {
 	// Fallback: alle Interfaces durchgehen und die erste non zero MAC nehmen
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return "", fmt.Errorf("Interfaces lesen: %w", err)
+		return "", fmt.Errorf("read interfaces: %w", err)
 	}
 	for _, iface := range ifaces {
-		if iface.HardwareAddr == nil || len(iface.HardwareAddr) == 0 {
+		if len(iface.HardwareAddr) == 0 {
 			continue
 		}
 		// Loopback ueberspringen
@@ -64,7 +64,7 @@ func MACOf(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if iface.HardwareAddr == nil || len(iface.HardwareAddr) == 0 {
+	if len(iface.HardwareAddr) == 0 {
 		return "", nil
 	}
 	return iface.HardwareAddr.String(), nil

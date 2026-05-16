@@ -175,7 +175,7 @@ func (m *Manager) generate() (*Bundle, error) {
 	// Root CA Schluessel
 	rootKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("Root Key: %w", err)
+		return nil, fmt.Errorf("root key: %w", err)
 	}
 
 	rootSerial, err := randomSerial()
@@ -197,7 +197,7 @@ func (m *Manager) generate() (*Bundle, error) {
 	}
 	rootDER, err := x509.CreateCertificate(rand.Reader, rootTpl, rootTpl, &rootKey.PublicKey, rootKey)
 	if err != nil {
-		return nil, fmt.Errorf("Root CA signieren: %w", err)
+		return nil, fmt.Errorf("sign root CA: %w", err)
 	}
 
 	// Server Schluessel

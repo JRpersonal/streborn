@@ -95,7 +95,7 @@ func formatFAT32Impl(path, label string) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("Format auf dieser Plattform aktuell nicht implementiert. Bitte mit Systemwerkzeugen (mkfs.vfat) formatieren.")
+		return fmt.Errorf("format on this platform is not implemented yet; please format with system tools (e.g. mkfs.vfat)")
 	}
 }
 

@@ -1,0 +1,18 @@
+version: "2"
+
+# Conservative starting set: govet, ineffassign, staticcheck are
+# enforced now. errcheck and unused are temporarily disabled because
+# the existing codebase has accumulated a backlog of `_ = resp.Body.Close()`
+# omissions and a handful of intentionally unused helpers reserved for
+# upcoming Marge endpoints. Track in a single follow-up cleanup PR
+# and re-enable here once the backlog is at zero.
+
+linters:
+  default: none
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+
+run:
+  timeout: 5m

@@ -623,7 +623,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// ELF Magic Check
-	if !(body[0] == 0x7f && body[1] == 'E' && body[2] == 'L' && body[3] == 'F') {
+	if body[0] != 0x7f || body[1] != 'E' || body[2] != 'L' || body[3] != 'F' {
 		http.Error(w, "not an ELF binary", http.StatusBadRequest)
 		return
 	}
