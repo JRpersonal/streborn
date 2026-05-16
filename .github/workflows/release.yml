@@ -213,7 +213,7 @@ jobs:
 
       - name: Release erstellen
         # softprops/action-gh-release v2.0.8 auf SHA gepinnt
-        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
         with:
           body_path: release-notes.md
           files: |
