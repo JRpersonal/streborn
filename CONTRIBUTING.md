@@ -109,3 +109,12 @@ Report incidents to the address listed in
 
 See [`.github/CODEOWNERS`](.github/CODEOWNERS) for the current
 owners of each part of the tree.
+
+## Support the project
+
+If you cannot contribute code but want to help anyway, a donation
+keeps the lights on.
+
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/JRpersonal?label=Sponsor%20on%20GitHub&logo=GitHub&color=ea4aaa)](https://github.com/sponsors/JRpersonal)
+
+More payment options are listed on [st-reborn.de](https://st-reborn.de/#donate).
