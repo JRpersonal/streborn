@@ -22,24 +22,9 @@ updates:
       go-minor-patch:
         update-types: ["minor", "patch"]
 
-  # NPM fuer die Webseite
-  - package-ecosystem: "npm"
-    directory: "/website"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "08:00"
-      timezone: "Europe/Berlin"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "website"
-    commit-message:
-      prefix: "deps(web)"
-      include: "scope"
-    groups:
-      web-minor-patch:
-        update-types: ["minor", "patch"]
+  # Website npm dependencies have moved to a separate repository.
+  # When the /website folder is removed from this repo, drop nothing
+  # else here — this section already does not exist.
 
   # GitHub Actions selbst aktualisieren wenn neue Versionen verfuegbar
   - package-ecosystem: "github-actions"
