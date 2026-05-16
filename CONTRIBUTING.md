@@ -109,8 +109,10 @@ license it under the same terms. The full text is in
 
 ## Conduct
 
-Be civil. Disagree on the technical merits. Assume good intent.
-Maintainers will close threads that turn into personal attacks.
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+Be civil, disagree on the technical merits, assume good intent.
+Report incidents to the address listed in
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## Maintainers
 
