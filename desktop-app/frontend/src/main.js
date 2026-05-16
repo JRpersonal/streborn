@@ -637,6 +637,9 @@ async function renderFooter() {
   });
   renderDonateSidebar();
   checkAppUpdate();
+  // appInfo may have arrived after the first discovery completed; the
+  // badge function defers until both are known.
+  updateSettingsTabBadge();
 }
 
 function renderDonateSidebar() {
@@ -953,6 +956,7 @@ async function discoverBoxes() {
       }
     }
     renderBoxSelect();
+    updateSettingsTabBadge();
     // Auto Retry: wenn nach Setup/Reboot noch eine Box ihren neuen
     // Namen nicht ueber mDNS gemeldet hat, alle 4 s nochmal suchen
     // bis maximal 90 s. Das wird ueber pendingNames gesteuert.
@@ -1200,6 +1204,29 @@ function renderLanguageOptions() {
   }
   sel.innerHTML = opts.join('');
   sel.value = state.searchLang;
+}
+
+// updateSettingsTabBadge shows a small blue dot on the "Box Einstellungen"
+// tab whenever at least one discovered box reports a version different
+// from the desktop app's own version. The dot signals: there is work to
+// do in this tab, namely OTA-update at least one box.
+//
+// Version data comes from the mDNS TXT record so no extra HTTP call is
+// needed — the badge updates as the box list refreshes.
+function updateSettingsTabBadge() {
+  const btn = document.querySelector('.tab-btn[data-view="settings"]');
+  if (!btn) return;
+  const appVer = state.appInfo && state.appInfo.version;
+  let needsUpdate = false;
+  if (appVer) {
+    for (const b of state.boxes) {
+      if (b && b.version && b.version !== appVer) {
+        needsUpdate = true;
+        break;
+      }
+    }
+  }
+  btn.classList.toggle('has-update', needsUpdate);
 }
 
 async function checkBoxUpdate() {
