@@ -12,14 +12,17 @@ them back **without any Bose cloud dependency**.
 
 ### Components
 
-- **Stick Agent** — a small Go binary on a USB flash drive that stays
-  plugged into the speaker. It emulates `streaming.bose.com` and the
-  Bose `bmx-cloud` services locally so the speaker pairs and accepts
-  presets. The agent persists itself to the speaker's NAND so it
-  survives reboots even if the stick is later removed.
+- **Stick Agent** — a small Go binary delivered via a USB stick used
+  for the initial install. The agent copies itself to the speaker's
+  NAND on first boot and from then on runs entirely from there — the
+  stick can be removed for normal operation. It emulates
+  `streaming.bose.com` and the Bose `bmx-cloud` services locally so
+  the speaker pairs and accepts presets.
 - **Desktop App (ST Reborn)** — Wails application for Windows, macOS,
-  Linux. Discovers sticks on the LAN via mDNS, ships a web UI for
-  browsing internet radio, managing presets, and controlling playback.
+  Linux. Discovers running agents on the LAN via mDNS, ships a web
+  UI for browsing internet radio, managing presets, and controlling
+  playback. Also performs the initial USB-stick provisioning and
+  later OTA agent updates.
 - **Website** — Astro site (English and German) at `st-reborn.de`
   with downloads, FAQ, privacy, imprint. Maintained in a separate
   repository.

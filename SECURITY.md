@@ -35,7 +35,7 @@ credited unless they prefer to stay anonymous.
 
 ## Threat Model
 
-STR (SoundTouch Reborn) runs on a USB stick plugged into a Bose SoundTouch speaker inside a user's home network. It also ships a desktop application and a website.
+STR (SoundTouch Reborn) installs a small agent onto a Bose SoundTouch speaker via a USB stick that is used for the initial install. After the install, the agent runs from the speaker's own persistent storage and the stick can be removed. It also ships a desktop application and a website.
 
 Critical trust boundaries:
 

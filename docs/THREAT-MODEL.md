@@ -14,8 +14,10 @@ companion.
 
 STR runs in a residential LAN and consists of:
 
-1. A small Go agent on a USB stick plugged into a Bose SoundTouch
-   speaker.
+1. A small Go agent installed onto a Bose SoundTouch speaker via a
+   USB stick. After the install the agent runs from the speaker's
+   own persistent storage; the stick is only needed for setup and
+   later for OTA agent updates.
 2. A cross-platform desktop application that discovers sticks via
    mDNS and offers a web UI.
 3. A static website that hosts downloads and documentation.
