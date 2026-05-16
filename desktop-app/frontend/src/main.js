@@ -256,6 +256,73 @@ const GENRE_DE = {
   'minimal': 'Minimal', 'dubstep': 'Dubstep',
   'pop rock': 'Pop Rock', 'hard rock': 'Hard Rock', 'soft rock': 'Soft Rock',
   'classic rock': 'Classic Rock', 'indie rock': 'Indie Rock', 'alternative rock': 'Alternative Rock',
+  // Country-boost labels (kept in English where the genre name itself
+  // is a proper noun the audience would recognise everywhere).
+  'country': 'Country', 'deutschrap': 'Deutschrap', 'latin': 'Latin',
+  'reggaeton': 'Reggaeton', 'salsa': 'Salsa', 'samba': 'Samba',
+  'sertanejo': 'Sertanejo', 'bossa nova': 'Bossa Nova',
+  'j-pop': 'J-Pop', 'jpop': 'J-Pop', 'anime': 'Anime',
+  'bollywood': 'Bollywood', 'bhangra': 'Bhangra', 'hindi': 'Hindi',
+  'chanson': 'Chanson', 'variété': 'Variété', 'variete': 'Variété',
+  'italo': 'Italo', 'italian': 'Italienisch', 'italiano': 'Italienisch',
+  'levenslied': 'Levenslied', 'nederlandstalig': 'Niederländisch',
+  'turkish': 'Türkisch', 'tuerkisch': 'Türkisch', 'halk': 'Halk',
+  'disco polo': 'Disco Polo', 'polski': 'Polnisch',
+  'russian': 'Russisch', 'retro': 'Retro',
+};
+
+// GENRE_CORE: 14 globally relevant pills, always rendered regardless
+// of how many stations the current country actually has on each tag.
+// Ordered roughly by mass-appeal so the visible row reads top-down.
+// Curated from radio-browser's global tag stationcount distribution
+// plus Statista/Nielsen radio-format share data.
+const GENRE_CORE = [
+  'pop', 'rock', 'hits', 'oldies',
+  'jazz', 'classical', 'chillout',
+  'dance', 'electronic', 'house',
+  'hip hop', 'latin',
+  '80s', '90s',
+  'news',
+];
+
+// GENRE_BY_COUNTRY: bubble these tags up as the "for your country"
+// row, in front of the core pills. Max 2 per country to keep the
+// visual budget tight. Country code matches state.searchCountry (ISO
+// 3166 alpha-2, uppercase).
+const GENRE_BY_COUNTRY = {
+  'DE': ['schlager', 'deutschrap'],
+  'AT': ['schlager', 'volksmusik'],
+  'CH': ['schlager', 'volksmusik'],
+  'US': ['country', 'rnb'],
+  'CA': ['country', 'rnb'],
+  'AU': ['country', 'indie'],
+  'GB': ['indie', 'rnb'],
+  'IE': ['folk', 'indie'],
+  'FR': ['chanson', 'variété'],
+  'IT': ['italo', 'italian'],
+  'ES': ['reggaeton', 'salsa'],
+  'PT': ['fado', 'pimba'],
+  'MX': ['reggaeton', 'salsa'],
+  'AR': ['reggaeton', 'salsa'],
+  'CO': ['reggaeton', 'salsa'],
+  'CL': ['reggaeton', 'salsa'],
+  'PE': ['reggaeton', 'salsa'],
+  'VE': ['reggaeton', 'salsa'],
+  'BR': ['sertanejo', 'samba'],
+  'JP': ['j-pop', 'anime'],
+  'KR': ['k-pop', 'kpop'],
+  'IN': ['bollywood', 'bhangra'],
+  'NL': ['levenslied', 'nederlandstalig'],
+  'BE': ['chanson', 'levenslied'],
+  'TR': ['turkish', 'halk'],
+  'PL': ['disco polo', 'polski'],
+  'RU': ['russian', 'retro'],
+  'UA': ['ukrainian', 'retro'],
+  'GR': ['greek', 'laika'],
+  'SE': ['svensk', 'nordic'],
+  'NO': ['norsk', 'nordic'],
+  'DK': ['dansk', 'nordic'],
+  'FI': ['suomi', 'nordic'],
 };
 
 function translateCountry(name) {
@@ -865,6 +932,11 @@ $('searchCountry').onchange = () => {
   // dann genau die Stations in DIESEM Land wider, nicht global.
   state.languages = [];
   loadLanguagesForCountry();
+  // Country-boost pills depend on the selected country — re-render
+  // so the highlighted row matches. Collapse the "Mehr" expansion
+  // since the previous tail may not apply anymore.
+  state.showMoreGenres = false;
+  renderGenreChips();
   doRefilter();
 };
 
@@ -1129,33 +1201,92 @@ async function loadTaxonomy() {
   }
 }
 
+// Tracks whether the user has clicked "Mehr Genres" to expand the
+// long tail of auto-fetched tags. Resets on every fresh page load.
+state.showMoreGenres = false;
+
 function renderGenreChips() {
   const wrap = $('genreChips');
   if (!wrap) return;
-  if (!state.tags.length) { wrap.innerHTML = ''; return; }
-  // Buckets: kanonisierte Tag-Liste, Stationcount summieren.
-  const buckets = {};
+
+  // 1. Aggregate the live counts from radio-browser so each chip can
+  //    show "N Sender" in its tooltip. State.tags may be empty on
+  //    first paint — that's fine, core chips still render with 0.
+  const liveCounts = {};
   for (const t of state.tags) {
     const canon = canonGenre(t.name);
     if (!canon) continue;
-    if (!buckets[canon]) {
-      buckets[canon] = { canon, label: translateGenre(t.name), count: 0 };
-    }
-    buckets[canon].count += (t.stationcount || 0);
+    liveCounts[canon] = (liveCounts[canon] || 0) + (t.stationcount || 0);
   }
-  const merged = Object.values(buckets)
-    .filter(b => b.count > 0)
-    .sort((a, b) => b.count - a.count);
 
-  const chips = ['<button class="chip' + (!state.searchTag ? ' active' : '') + '" data-tag="">Alle</button>'].concat(
-    merged.map(b => {
-      const active = state.searchTag === b.canon ? ' active' : '';
-      return `<button class="chip${active}" data-tag="${escapeAttr(b.canon)}" title="${formatNumber(b.count)} Sender">${escapeHtml(b.label)}</button>`;
-    })
-  );
-  wrap.innerHTML = chips.join('');
+  // 2. Country-boost pills (max 2). state.searchCountry is the user's
+  //    selected country in the search filter — it falls back to the
+  //    stick's region.txt if the user hasn't manually picked one.
+  const cc = (state.searchCountry || '').toUpperCase();
+  const boost = GENRE_BY_COUNTRY[cc] || [];
+
+  const chipHtml = (canon, label, count, extraClass) => {
+    const active = state.searchTag === canon ? ' active' : '';
+    const cls = ['chip', active.trim(), extraClass || ''].filter(Boolean).join(' ');
+    const title = count > 0 ? `${formatNumber(count)} Sender` : '';
+    return `<button class="${cls}" data-tag="${escapeAttr(canon)}" title="${escapeAttr(title)}">${escapeHtml(label)}</button>`;
+  };
+  const labelFor = (canon) => translateGenre(canon) || canon.replace(/\b\w/g, c => c.toUpperCase());
+
+  const seen = new Set();
+  const parts = [];
+
+  parts.push('<button class="chip' + (!state.searchTag ? ' active' : '') + '" data-tag="">Alle</button>');
+
+  for (const canon of boost) {
+    if (!canon || seen.has(canon)) continue;
+    seen.add(canon);
+    parts.push(chipHtml(canon, labelFor(canon), liveCounts[canon] || 0, 'chip--boost'));
+  }
+  for (const canon of GENRE_CORE) {
+    if (seen.has(canon)) continue;
+    seen.add(canon);
+    parts.push(chipHtml(canon, labelFor(canon), liveCounts[canon] || 0));
+  }
+
+  // 3. Long tail: tags from state.tags that the user might recognise
+  //    but we did not promote into the core set. Shown only when the
+  //    user expands via "Mehr Genres".
+  const tail = Object.keys(liveCounts)
+    .filter(canon => !seen.has(canon) && liveCounts[canon] > 0)
+    .map(canon => ({ canon, count: liveCounts[canon] }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 24);
+
+  if (state.showMoreGenres) {
+    for (const t of tail) {
+      seen.add(t.canon);
+      parts.push(chipHtml(t.canon, labelFor(t.canon), t.count));
+    }
+  }
+
+  // 4. Toggle button at the end. Hidden when there is no tail to
+  //    reveal, or when the currently selected tag is in the tail (so
+  //    the user does not lose their selection by collapsing).
+  const showSelectedInTail = state.searchTag && !seen.has(state.searchTag);
+  if (tail.length > 0 || state.showMoreGenres) {
+    const label = state.showMoreGenres ? 'Weniger' : `Mehr Genres (${tail.length})`;
+    parts.push(`<button class="chip chip--more" id="genreMoreToggle">${escapeHtml(label)}</button>`);
+  }
+  if (showSelectedInTail) {
+    // Selection points to a tag the tail dropdown is hiding — force
+    // expand so the user sees their own filter.
+    state.showMoreGenres = true;
+  }
+
+  wrap.innerHTML = parts.join('');
   wrap.querySelectorAll('.chip').forEach(btn => {
     btn.onclick = () => {
+      if (btn.id === 'genreMoreToggle') {
+        state.showMoreGenres = !state.showMoreGenres;
+        renderGenreChips();
+        return;
+      }
       state.searchTag = btn.dataset.tag || '';
       renderGenreChips();
       doRefilter();

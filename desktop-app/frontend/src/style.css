@@ -478,6 +478,27 @@ body {
 }
 .chip:hover { background: #2a2a2a; color: #ddd; }
 .chip.active { background: var(--brand-bg); color: var(--brand-text); border-color: var(--brand); }
+/* Country-boost chips — bubbled up from GENRE_BY_COUNTRY because the
+   genre is locally relevant. Marked with a brand-coloured strip on
+   the left edge, but otherwise the same neutral fill as a regular
+   chip — must never visually resemble the .active state or the user
+   thinks these pills are permanently selected. */
+.chip--boost {
+  border-left: 3px solid var(--brand);
+  padding-left: 8px;
+}
+/* .chip--boost.active falls through to the regular .chip.active
+   rule, which provides the selected-state colours. The left strip
+   remains visible on top, marking the chip as both selected and
+   locally promoted. */
+/* "Mehr Genres" toggle — visually a chip but stylistically a button so
+   it does not look like another filter. */
+.chip--more {
+  background: transparent;
+  border-style: dashed;
+  color: #888;
+}
+.chip--more:hover { color: var(--brand-text); border-color: var(--brand); }
 
 /* Mehr laden */
 .load-more-row { display: flex; justify-content: center; margin-top: 8px; }
