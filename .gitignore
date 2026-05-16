@@ -20,6 +20,10 @@
 !/desktop-app/agentbin/streborn-armv7l
 !/sticksetup/embedded/
 !/sticksetup/embedded/winformat.exe
+# Same idea for desktop-app/main.go's //go:embed all:frontend/dist —
+# wails build replaces the directory contents.
+!/desktop-app/frontend/dist/
+!/desktop-app/frontend/dist/.gitkeep
 
 # Astro Webseite Build
 /website/dist/

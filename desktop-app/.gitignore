@@ -1,3 +1,8 @@
 build/bin
 node_modules
 frontend/dist
+# Keep an empty stub so main.go's //go:embed all:frontend/dist
+# succeeds on a clean checkout before `wails build` has populated
+# the real output.
+!frontend/dist/
+!frontend/dist/.gitkeep
