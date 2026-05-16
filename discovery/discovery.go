@@ -19,20 +19,30 @@ import (
 )
 
 const (
-	// ServiceType ist der DNS-SD Service Identifier. Clients browsen
-	// _streborn._tcp.local um alle Sticks im LAN zu finden.
+	// ServiceType is the current DNS-SD service identifier. New agents
+	// announce as _streborn._tcp; clients browse the same.
 	ServiceType = "_streborn._tcp"
-	Domain      = "local."
+
+	// LegacyServiceType is the pre-rename service identifier. NAND-
+	// installed agents from earlier releases still announce under this
+	// name and cannot be reached by clients that only browse the new
+	// one. Browse() and Announce() handle both so a mixed-version
+	// network still discovers every box.
+	LegacyServiceType = "_soundtouchstick._tcp"
+
+	Domain = "local."
 )
 
-// Announcer haelt einen aktiven mDNS Server. Der FriendlyName kann zur
-// Laufzeit geaendert werden (UpdateFriendlyName) — wenn der User die Box
-// in der App umbenennt, soll sich das auch im mDNS Announce wiederfinden.
+// Announcer holds the active mDNS servers. We announce on both the
+// current and the legacy service type so clients running either
+// vintage can discover this stick. FriendlyName can be changed at
+// runtime (UpdateFriendlyName).
 type Announcer struct {
-	logger *slog.Logger
-	mu     sync.Mutex
-	server *zeroconf.Server
-	cfg    Config
+	logger       *slog.Logger
+	mu           sync.Mutex
+	server       *zeroconf.Server // current ServiceType
+	legacyServer *zeroconf.Server // LegacyServiceType
+	cfg          Config
 }
 
 // Config beschreibt was im mDNS Record steht.
@@ -72,8 +82,9 @@ func Announce(logger *slog.Logger, cfg Config) (*Announcer, error) {
 	return a, nil
 }
 
-// register baut den TXT Record aus a.cfg und registriert den Service neu.
-// Lock muss vom Aufrufer gehalten werden ausser beim ersten Aufruf.
+// register builds the TXT record from a.cfg and registers both the
+// current and legacy service entries. Caller must hold a.mu except on
+// the first call.
 func (a *Announcer) register() error {
 	txt := []string{
 		"version=" + nz(a.cfg.Version, "dev"),
@@ -83,29 +94,36 @@ func (a *Announcer) register() error {
 		"path=/api",
 	}
 	ifaces := pickAnnounceIfaces(a.logger)
-	server, err := zeroconf.Register(
-		a.cfg.InstanceName,
-		ServiceType,
-		Domain,
-		a.cfg.Port,
-		txt,
-		ifaces,
-	)
+
+	server, err := zeroconf.Register(a.cfg.InstanceName, ServiceType, Domain, a.cfg.Port, txt, ifaces)
 	if err != nil {
 		return fmt.Errorf("mDNS register: %w", err)
 	}
 	a.server = server
-	a.logger.Info("mDNS Announce aktiv",
+
+	// Legacy announce is best-effort: if it fails we keep the current
+	// one running rather than aborting the whole agent startup.
+	legacy, lerr := zeroconf.Register(a.cfg.InstanceName, LegacyServiceType, Domain, a.cfg.Port, txt, ifaces)
+	if lerr != nil {
+		a.logger.Warn("legacy mDNS register failed, continuing with current only",
+			slog.String("legacy", LegacyServiceType), slog.Any("err", lerr))
+	} else {
+		a.legacyServer = legacy
+	}
+
+	a.logger.Info("mDNS announce active",
 		slog.String("instance", a.cfg.InstanceName),
 		slog.String("friendlyName", a.cfg.FriendlyName),
 		slog.String("service", ServiceType),
+		slog.String("legacyService", LegacyServiceType),
+		slog.Bool("legacyAnnounced", legacy != nil),
 		slog.Int("port", a.cfg.Port),
 	)
 	return nil
 }
 
-// UpdateFriendlyName aktualisiert den Display Namen im TXT Record und
-// macht ein Re-Announce. No-op wenn der Name sich nicht geaendert hat.
+// UpdateFriendlyName updates the display name in the TXT record and
+// re-announces both service types. No-op if the name has not changed.
 func (a *Announcer) UpdateFriendlyName(name string) error {
 	if a == nil {
 		return nil
@@ -120,22 +138,34 @@ func (a *Announcer) UpdateFriendlyName(name string) error {
 		a.server.Shutdown()
 		a.server = nil
 	}
+	if a.legacyServer != nil {
+		a.legacyServer.Shutdown()
+		a.legacyServer = nil
+	}
 	return a.register()
 }
 
-// Close stoppt den mDNS Server sauber.
+// Close stops the mDNS announce on both service types.
 func (a *Announcer) Close() {
 	if a == nil {
 		return
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.server == nil {
-		return
+	stopped := false
+	if a.server != nil {
+		a.server.Shutdown()
+		a.server = nil
+		stopped = true
 	}
-	a.server.Shutdown()
-	a.server = nil
-	a.logger.Info("mDNS Announce gestoppt")
+	if a.legacyServer != nil {
+		a.legacyServer.Shutdown()
+		a.legacyServer = nil
+		stopped = true
+	}
+	if stopped {
+		a.logger.Info("mDNS announce stopped")
+	}
 }
 
 // Run blockiert bis ctx abgebrochen wird und schliesst dann den Announcer.
@@ -157,19 +187,43 @@ type Instance struct {
 	Version      string
 }
 
-// Browse sucht alle Sticks im LAN. Blockiert bis ctx abgebrochen wird
-// oder das Channel ausgelesen wird.
+// Browse searches the LAN for sticks announcing either the current or
+// the legacy service type and returns a single merged channel.
+// Duplicate boxes (announced under both names by a single new agent)
+// are deduplicated by instance name.
 func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
-	resolver, err := zeroconf.NewResolver(nil)
+	out := make(chan Instance, 16)
+
+	// One resolver per service type. zeroconf.NewResolver returns a
+	// short-lived resolver tied to a single Browse call.
+	curResolver, err := zeroconf.NewResolver(nil)
 	if err != nil {
-		return nil, fmt.Errorf("resolver: %w", err)
+		return nil, fmt.Errorf("resolver (current): %w", err)
 	}
-	entries := make(chan *zeroconf.ServiceEntry, 8)
-	out := make(chan Instance, 8)
+	legacyResolver, err := zeroconf.NewResolver(nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolver (legacy): %w", err)
+	}
+
+	curEntries := make(chan *zeroconf.ServiceEntry, 8)
+	legacyEntries := make(chan *zeroconf.ServiceEntry, 8)
+
+	if err := curResolver.Browse(ctx, ServiceType, Domain, curEntries); err != nil {
+		return nil, fmt.Errorf("browse current: %w", err)
+	}
+	if err := legacyResolver.Browse(ctx, LegacyServiceType, Domain, legacyEntries); err != nil {
+		return nil, fmt.Errorf("browse legacy: %w", err)
+	}
 
 	go func() {
 		defer close(out)
-		for e := range entries {
+		seen := map[string]bool{}
+		emit := func(e *zeroconf.ServiceEntry, legacy bool) {
+			key := e.Instance + "|" + e.HostName
+			if seen[key] {
+				return
+			}
+			seen[key] = true
 			inst := Instance{
 				Name: e.Instance,
 				Host: e.HostName,
@@ -191,13 +245,32 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 					inst.Version = v
 				}
 			}
+			if logger != nil {
+				logger.Debug("mDNS discovered",
+					slog.String("instance", inst.Name),
+					slog.Bool("legacyServiceType", legacy),
+					slog.Any("ipv4", inst.IPv4))
+			}
 			out <- inst
+		}
+		for curEntries != nil || legacyEntries != nil {
+			select {
+			case e, ok := <-curEntries:
+				if !ok {
+					curEntries = nil
+					continue
+				}
+				emit(e, false)
+			case e, ok := <-legacyEntries:
+				if !ok {
+					legacyEntries = nil
+					continue
+				}
+				emit(e, true)
+			}
 		}
 	}()
 
-	if err := resolver.Browse(ctx, ServiceType, Domain, entries); err != nil {
-		return nil, fmt.Errorf("browse: %w", err)
-	}
 	return out, nil
 }
 

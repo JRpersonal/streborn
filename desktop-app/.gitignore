@@ -3,6 +3,8 @@ node_modules
 frontend/dist
 # Keep an empty stub so main.go's //go:embed all:frontend/dist
 # succeeds on a clean checkout before `wails build` has populated
-# the real output.
+# the real output. Pattern: re-include the directory, re-ignore its
+# contents, then re-include just the stub.
 !frontend/dist/
+frontend/dist/*
 !frontend/dist/.gitkeep
