@@ -6,7 +6,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   schedule:
     # Mondays 06:30 UTC. Avoid the top of the hour to dodge GitHub's
     # scheduler congestion.
