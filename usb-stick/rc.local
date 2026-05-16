@@ -14,6 +14,44 @@ mkdir -p "$LOGDIR" 2>/dev/null || true
 # Erster Reboot Marker, hilft beim Debuggen falls Stick fehlt
 echo "$(date): rc.local triggered" >> "$LOGDIR/boot.log"
 
+# USB stick is mounted async by udev. Both the NAND override path
+# and the fallback path need /media/sda1 (binary, version.txt,
+# wlan.conf). Wait up to 30s for the stick before deciding —
+# otherwise run.sh fires, finds an empty NAND cache plus a
+# not-yet-mounted stick, and aborts with "weder NAND Cache noch
+# Stick Binary verfuegbar". The stick may legitimately never
+# appear (post-install, user pulled it). In that case we still
+# fall back to NAND override below.
+i=0
+while [ $i -lt 30 ]; do
+    if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ]; then
+        echo "$(date): stick detected after ${i}s" >> "$LOGDIR/boot.log"
+        break
+    fi
+    sleep 1
+    i=$((i+1))
+done
+
+# Self-update from stick if present and newer. This is what makes
+# the stick the single repair channel — once an updated stick is
+# inserted, the next boot picks up new rc.local + run-override.sh
+# without anyone running install.sh again.
+#   * rc.local update takes effect on the NEXT boot (this run is
+#     already past the wait loop, but cannot safely re-exec itself
+#     without risking a loop).
+#   * run-override.sh update takes effect on THIS boot because we
+#     invoke it immediately below.
+if [ -f /media/sda1/rc.local ] && [ /media/sda1/rc.local -nt /mnt/nv/rc.local ]; then
+    cp /media/sda1/rc.local /mnt/nv/rc.local 2>/dev/null
+    chmod +x /mnt/nv/rc.local 2>/dev/null
+    echo "$(date): /mnt/nv/rc.local updated from stick (effective next boot)" >> "$LOGDIR/boot.log"
+fi
+if [ -f /media/sda1/run.sh ] && [ /media/sda1/run.sh -nt /mnt/nv/streborn/run-override.sh ]; then
+    cp /media/sda1/run.sh /mnt/nv/streborn/run-override.sh 2>/dev/null
+    chmod +x /mnt/nv/streborn/run-override.sh 2>/dev/null
+    echo "$(date): /mnt/nv/streborn/run-override.sh updated from stick (effective this boot)" >> "$LOGDIR/boot.log"
+fi
+
 # NAND Override hat Prioritaet. Damit koennen Updates ueberleben auch
 # wenn die SD Karte read only ist oder eine alte run.sh hat.
 NAND_OVERRIDE="/mnt/nv/streborn/run-override.sh"
@@ -23,18 +61,12 @@ if [ -x "$NAND_OVERRIDE" ]; then
     exit 0
 fi
 
-# Auf USB Stick warten (bis zu 30 Sekunden)
-i=0
-while [ $i -lt 30 ]; do
-    if [ -x /media/sda1/run.sh ]; then
-        echo "$(date): run.sh gefunden nach $i s" >> "$LOGDIR/boot.log"
-        # Detached starten, damit shelby_local sofort weiter kommt
-        nohup /media/sda1/run.sh > "$LOGDIR/run.out" 2>&1 &
-        exit 0
-    fi
-    sleep 1
-    i=$((i+1))
-done
+# Fallback ohne NAND override: stick run.sh direkt starten falls da.
+if [ -x /media/sda1/run.sh ]; then
+    echo "$(date): kein NAND override, nutze /media/sda1/run.sh" >> "$LOGDIR/boot.log"
+    nohup /media/sda1/run.sh > "$LOGDIR/run.out" 2>&1 &
+    exit 0
+fi
 
-echo "$(date): run.sh nach 30 s nicht gefunden, USB Stick fehlt" >> "$LOGDIR/boot.log"
+echo "$(date): weder NAND override noch /media/sda1/run.sh — USB Stick fehlt" >> "$LOGDIR/boot.log"
 exit 1

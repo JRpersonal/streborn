@@ -98,6 +98,39 @@ sync_from_stick_if_requested() {
     return 1
 }
 
+# Defense in depth: if the NAND cache is empty and the stick mount
+# is still racing in (rc.local should have waited, but a direct
+# invocation of run.sh may skip that), give the stick up to 20s to
+# appear. Otherwise the version-mismatch sync below has nothing to
+# work with and we abort immediately.
+if [ ! -x "$CACHED_BIN" ]; then
+    j=0
+    while [ $j -lt 20 ]; do
+        if [ -e "$STICK_BIN" ] || [ -e "$STICK_VER_FILE" ]; then
+            log "stick became visible after ${j}s wait"
+            break
+        fi
+        sleep 1
+        j=$((j+1))
+    done
+fi
+
+# Defense in depth: redeploy rc.local + run-override.sh from stick
+# if newer. rc.local itself does the same — but if a buggy
+# rc.local on NAND skipped that step (e.g. older release without
+# the self-update block), this run.sh invocation can still fix it
+# so the NEXT boot uses the fresh files.
+if [ -f /media/sda1/rc.local ] && [ /media/sda1/rc.local -nt /mnt/nv/rc.local ]; then
+    cp /media/sda1/rc.local /mnt/nv/rc.local 2>/dev/null
+    chmod +x /mnt/nv/rc.local 2>/dev/null
+    log "redeployed /mnt/nv/rc.local from stick (effective next boot)"
+fi
+if [ -f /media/sda1/run.sh ] && [ /media/sda1/run.sh -nt /mnt/nv/streborn/run-override.sh ]; then
+    cp /media/sda1/run.sh /mnt/nv/streborn/run-override.sh 2>/dev/null
+    chmod +x /mnt/nv/streborn/run-override.sh 2>/dev/null
+    log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)"
+fi
+
 maybe_force_sync_on_version_mismatch
 sync_from_stick_if_requested
 
