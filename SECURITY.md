@@ -13,7 +13,7 @@ Use the most recent release. Older builds may contain known vulnerabilities or c
 
 If you discover a security issue please do **not** open a public GitHub issue. Send an email to:
 
-**kontakt@jr-it-design.de**
+**str@sichtbar-app.de**
 
 Subject line: `[security] STR (SoundTouch Reborn)`
 

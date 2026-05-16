@@ -51,7 +51,7 @@ project in public spaces.
 Instances of abusive, harassing, or otherwise unacceptable behavior
 may be reported privately to:
 
-**kontakt@jr-it-design.de**
+**str@sichtbar-app.de**
 
 Subject line: `[code-of-conduct] STR`
 
