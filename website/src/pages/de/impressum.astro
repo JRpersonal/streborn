@@ -1,0 +1,50 @@
+---
+import Base from '../../layouts/Base.astro';
+
+const lang = 'de';
+const title = 'Impressum';
+const description = 'Impressum STR';
+---
+
+<Base title={title} description={description} lang={lang}>
+  <article class="section">
+    <div class="container-prose max-w-prose prose prose-stone">
+      <h1 class="heading-2">Impressum</h1>
+
+      <h2 class="mt-8 font-semibold text-lg">Angaben gemaess Paragraph 5 TMG</h2>
+      <p>
+        Jens Rabe<br/>
+        TODO Strasse Nummer<br/>
+        TODO PLZ Ort<br/>
+        Deutschland
+      </p>
+
+      <h2 class="mt-8 font-semibold text-lg">Kontakt</h2>
+      <p>Email: kontakt@jr-it-design.de</p>
+
+      <h2 class="mt-8 font-semibold text-lg">Umsatzsteuer ID</h2>
+      <p>TODO falls vorhanden, sonst Zeile entfernen.</p>
+
+      <h2 class="mt-8 font-semibold text-lg">Redaktionell Verantwortlicher</h2>
+      <p>Jens Rabe (Anschrift wie oben)</p>
+
+      <h2 class="mt-8 font-semibold text-lg">Verbraucherstreitbeilegung</h2>
+      <p>
+        Die EU Kommission stellt eine Plattform zur Online Streitbeilegung bereit:
+        <a href="https://ec.europa.eu/consumers/odr" class="underline">ec.europa.eu/consumers/odr</a>.
+        Wir sind nicht bereit oder verpflichtet, an Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.
+      </p>
+
+      <h2 class="mt-8 font-semibold text-lg">Haftungsausschluss</h2>
+      <p>
+        STR (Abkuerzung fuer "SoundTouch Reborn") ist ein unabhaengiges Open Source Projekt. Die Buchstabenfolge "ST" verweist nur auf die Kompatibilitaet mit Bose SoundTouch Lautsprechern. STR steht in keiner Verbindung zur Bose Corporation. Die Marken "Bose" und "SoundTouch" sind eingetragene Marken der Bose Corporation. STR existiert ausschliesslich um die Grundfunktionen dieser Lautsprecher nach der Abschaltung des Bose Cloud Dienstes im Februar 2026 wiederherzustellen.
+      </p>
+      <p>Die Software wird ohne Gewaehr bereitgestellt. Die Nutzung erfolgt auf eigene Gefahr.</p>
+
+      <h2 class="mt-8 font-semibold text-lg">Spenden</h2>
+      <p>
+        Spenden sind freiwillige Zahlungen ohne Gegenleistung und ohne Anspruch auf Lieferung oder Leistung. Es besteht kein Rueckgaberecht. Spenden werden zur Weiterentwicklung der App und fuer Betriebskosten verwendet. Jaehrliche Transparenzberichte werden auf dieser Webseite veroeffentlicht.
+      </p>
+    </div>
+  </article>
+</Base>

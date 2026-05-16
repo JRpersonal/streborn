@@ -1,0 +1,24 @@
+---
+import Base from '../layouts/Base.astro';
+import Hero from '../components/Hero.astro';
+import Features from '../components/Features.astro';
+import Compatibility from '../components/Compatibility.astro';
+import Download from '../components/Download.astro';
+import Verify from '../components/Verify.astro';
+import Donate from '../components/Donate.astro';
+import FAQ from '../components/FAQ.astro';
+
+const lang = 'en';
+const title = 'STR: Internet Radio for Bose SoundTouch without the Cloud';
+const description = 'Bose ended their cloud service. STR (SoundTouch Reborn) keeps your SoundTouch speakers running on their own. Internet Radio, preset buttons, all through a USB stick. Open Source under MIT.';
+---
+
+<Base title={title} description={description} lang={lang}>
+  <Hero lang={lang} />
+  <Features lang={lang} />
+  <Compatibility lang={lang} />
+  <Download lang={lang} />
+  <Verify lang={lang} />
+  <Donate lang={lang} />
+  <FAQ lang={lang} />
+</Base>

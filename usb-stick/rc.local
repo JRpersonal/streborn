@@ -1,0 +1,40 @@
+#!/bin/sh
+# rc.local: wird von /etc/init.d/shelby_local beim Boot ausgefuehrt.
+#
+# Diese Datei landet via install.sh in /mnt/nv/rc.local (NAND, read write).
+# Sie ist absichtlich klein und stabil. Die eigentliche Bootstrap Logik
+# liegt auf dem USB Stick in run.sh und kann dort jederzeit aktualisiert
+# werden ohne /mnt/nv anzufassen.
+
+set -u
+
+LOGDIR="/mnt/nv/streborn"
+mkdir -p "$LOGDIR" 2>/dev/null || true
+
+# Erster Reboot Marker, hilft beim Debuggen falls Stick fehlt
+echo "$(date): rc.local triggered" >> "$LOGDIR/boot.log"
+
+# NAND Override hat Prioritaet. Damit koennen Updates ueberleben auch
+# wenn die SD Karte read only ist oder eine alte run.sh hat.
+NAND_OVERRIDE="/mnt/nv/streborn/run-override.sh"
+if [ -x "$NAND_OVERRIDE" ]; then
+    echo "$(date): NAND override aktiv, nutze $NAND_OVERRIDE" >> "$LOGDIR/boot.log"
+    nohup "$NAND_OVERRIDE" > "$LOGDIR/run.out" 2>&1 &
+    exit 0
+fi
+
+# Auf USB Stick warten (bis zu 30 Sekunden)
+i=0
+while [ $i -lt 30 ]; do
+    if [ -x /media/sda1/run.sh ]; then
+        echo "$(date): run.sh gefunden nach $i s" >> "$LOGDIR/boot.log"
+        # Detached starten, damit shelby_local sofort weiter kommt
+        nohup /media/sda1/run.sh > "$LOGDIR/run.out" 2>&1 &
+        exit 0
+    fi
+    sleep 1
+    i=$((i+1))
+done
+
+echo "$(date): run.sh nach 30 s nicht gefunden, USB Stick fehlt" >> "$LOGDIR/boot.log"
+exit 1

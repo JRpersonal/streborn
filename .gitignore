@@ -1,0 +1,45 @@
+# Build Output
+/bin/
+/dist/
+*.exe
+*.dmg
+*.tar.gz
+*.zip
+
+# Wails App Build Output
+/desktop-app/build/
+/desktop-app/frontend/dist/
+/desktop-app/frontend/node_modules/
+/desktop-app/desktop-app/
+/desktop-app/agentbin/streborn-*
+/desktop-app/agentbin/*.bin
+/sticksetup/embedded/
+
+# Astro Webseite Build
+/website/dist/
+/website/node_modules/
+/website/.astro/
+
+# Node
+node_modules/
+
+# Env
+.env
+.env.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Go Build
+/agent.exe
+*.test
+*.out
+
+# Tmp
+*.tmp
+*.bak
+.cache/

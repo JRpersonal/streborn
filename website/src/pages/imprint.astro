@@ -1,0 +1,39 @@
+---
+import Base from '../layouts/Base.astro';
+
+const lang = 'en';
+const title = 'Imprint';
+const description = 'Imprint and legal notice for STR';
+---
+
+<Base title={title} description={description} lang={lang}>
+  <article class="section">
+    <div class="container-prose max-w-prose prose prose-stone">
+      <h1 class="heading-2">Imprint</h1>
+
+      <h2 class="mt-8 font-semibold text-lg">Responsible person</h2>
+      <p>
+        Jens Rabe<br/>
+        TODO street and number<br/>
+        TODO postal code, city<br/>
+        Germany
+      </p>
+
+      <h2 class="mt-8 font-semibold text-lg">Contact</h2>
+      <p>Email: kontakt@jr-it-design.de</p>
+
+      <h2 class="mt-8 font-semibold text-lg">Disclaimer</h2>
+      <p>
+        STR (an acronym for "SoundTouch Reborn") is an independent open source project. The "ST" abbreviation references compatibility with Bose SoundTouch family speakers. STR is not affiliated with, endorsed by, sponsored by, or in any way connected to Bose Corporation. "Bose" and "SoundTouch" are registered trademarks of Bose Corporation in the United States and other countries. STR exists solely to restore basic functionality of these speakers after the official Bose cloud service shutdown in February 2026.
+      </p>
+      <p>
+        The software is provided without any warranty. Use at your own risk.
+      </p>
+
+      <h2 class="mt-8 font-semibold text-lg">Donations</h2>
+      <p>
+        Donations are voluntary payments without consideration. No refund obligation, no claim to delivery or service. Donations are used to develop the app, test additional hardware, and cover hosting costs. A yearly transparency report is published on this site.
+      </p>
+    </div>
+  </article>
+</Base>

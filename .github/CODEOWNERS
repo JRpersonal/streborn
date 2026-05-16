@@ -1,0 +1,14 @@
+# Code Owners. Bei PRs werden diese automatisch als Reviewer hinzugefuegt.
+# Eintraege gewinnen nach Spezifitaet, die letzte Regel hat Vorrang.
+
+# Default: alles geht zu Jens
+*       @JRpersonal
+
+# Sensible Bereiche extra absichern. Auch wenn aktuell nur ein Owner: bei
+# spaeterem Team Wachstum wichtig.
+/.github/                @JRpersonal
+/SECURITY.md             @JRpersonal
+/LICENSE                 @JRpersonal
+/cmd/agent/              @JRpersonal
+/internal/tlsgen/        @JRpersonal
+/internal/marge/         @JRpersonal

@@ -1,0 +1,64 @@
+---
+import '../styles/globals.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import { getLangFromUrl, useTranslations, type Lang } from '../i18n/ui';
+
+interface Props {
+  title: string;
+  description: string;
+  lang?: Lang;
+  canonical?: string;
+}
+
+const { title, description, canonical } = Astro.props;
+const lang: Lang = Astro.props.lang ?? getLangFromUrl(Astro.url);
+const t = useTranslations(lang);
+
+const siteUrl = import.meta.env.PUBLIC_SITE_URL || 'https://streborn.app';
+const canonicalHref = canonical ?? new URL(Astro.url.pathname, siteUrl).toString();
+
+// GoatCounter Pfad. Wenn nicht gesetzt, wird kein Analytics geladen.
+const goatcounterCode = import.meta.env.PUBLIC_GOATCOUNTER_CODE;
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalHref} />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate" hreflang="en" href={`${siteUrl}/`} />
+    <link rel="alternate" hreflang="de" href={`${siteUrl}/de/`} />
+    <link rel="alternate" hreflang="x-default" href={`${siteUrl}/`} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalHref} />
+    <meta property="og:site_name" content="STR" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    {goatcounterCode && (
+      <script
+        is:inline
+        defer
+        data-goatcounter={`https://${goatcounterCode}.goatcounter.com/count`}
+        src="//gc.zgo.at/count.js"></script>
+    )}
+  </head>
+  <body class="bg-brand-50 text-brand-900 antialiased">
+    <a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 bg-brand-900 text-brand-50 px-3 py-2 rounded">Skip to content</a>
+    <Header lang={lang} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer lang={lang} />
+  </body>
+</html>

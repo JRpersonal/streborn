@@ -1,0 +1,49 @@
+---
+import Base from '../layouts/Base.astro';
+
+const lang = 'en';
+const title = 'Privacy Policy';
+const description = 'Privacy policy for the STR website.';
+---
+
+<Base title={title} description={description} lang={lang}>
+  <article class="section">
+    <div class="container-prose max-w-prose prose prose-stone">
+      <h1 class="heading-2">Privacy Policy</h1>
+      <p class="text-sm text-brand-700">Last updated: TODO date</p>
+
+      <h2 class="mt-8 font-semibold text-lg">1. Controller</h2>
+      <p>
+        Jens Rabe<br/>
+        TODO address as on imprint page<br/>
+        Email: kontakt@jr-it-design.de
+      </p>
+
+      <h2 class="mt-8 font-semibold text-lg">2. What we do not collect</h2>
+      <p>
+        This website does not use cookies. No personal data is collected for marketing. There are no tracking pixels, no embedded social media widgets with tracking, no profiling.
+      </p>
+
+      <h2 class="mt-8 font-semibold text-lg">3. Server logs</h2>
+      <p>
+        When you visit this site our hosting provider automatically processes technically necessary data such as IP address, time of access, URL requested, browser type, and referrer. Logs are deleted after 14 days. Legal basis: Art 6 (1) (f) GDPR (legitimate interest in operating the website).
+      </p>
+
+      <h2 class="mt-8 font-semibold text-lg">4. Visitor statistics</h2>
+      <p>
+        We use <strong>GoatCounter</strong> for visitor statistics. GoatCounter does not store personal data, does not set cookies, and does not generate a persistent visitor ID. A short-lived hash of IP address and user agent is computed and deleted after at most eight hours.
+      </p>
+      <p>Legal basis: Art 6 (1) (f) GDPR. You can opt out by enabling Do Not Track in your browser.</p>
+
+      <h2 class="mt-8 font-semibold text-lg">5. External links</h2>
+      <p>
+        The site links to external providers such as GitHub, Buy Me a Coffee, Ko-Fi, PayPal, Liberapay, and Open Collective. Their respective privacy policies apply once you visit them.
+      </p>
+
+      <h2 class="mt-8 font-semibold text-lg">6. Your rights</h2>
+      <p>
+        Under Art 15 to 21 GDPR you have the right to access, rectification, deletion, restriction of processing, data portability, and objection. You may file complaints with your competent data protection supervisory authority.
+      </p>
+    </div>
+  </article>
+</Base>

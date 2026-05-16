@@ -1,0 +1,96 @@
+name: Website Build und FTP Deploy
+
+# Triggert bei jedem Push auf main wenn etwas im website/ Ordner geaendert wurde.
+# Manueller Trigger ueber GitHub Actions UI mit "Run workflow" geht auch.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/website-deploy.yml'
+  workflow_dispatch:
+
+# Minimale Berechtigungen by default. Workflow darf nur Repo lesen, nichts schreiben.
+permissions:
+  contents: read
+
+# Verhindert dass zwei Deploys parallel laufen
+concurrency:
+  group: website-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Code auschecken
+        # actions/checkout v4.2.2 auf SHA gepinnt. Dependabot pflegt das automatisch.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Node 20 installieren
+        # actions/setup-node v4.0.4 auf SHA gepinnt
+        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Lockfile pruefen
+        working-directory: website
+        run: |
+          if [[ ! -f package-lock.json ]]; then
+            echo "::error::package-lock.json fehlt"
+            exit 1
+          fi
+
+      - name: Abhaengigkeiten mit Lockfile installieren
+        working-directory: website
+        # npm ci nutzt strikt das Lockfile, keine Aktualisierungen
+        run: npm ci --no-audit --no-fund
+
+      - name: Audit fuer bekannte Vulnerabilities
+        working-directory: website
+        # nicht-blockierend, damit ein nicht-fixbarer dev dep das Deploy nicht stoppt
+        continue-on-error: true
+        run: npm audit --omit=dev
+
+      - name: Webseite bauen
+        working-directory: website
+        env:
+          PUBLIC_SITE_URL: ${{ vars.PUBLIC_SITE_URL }}
+          PUBLIC_GOATCOUNTER_CODE: ${{ vars.PUBLIC_GOATCOUNTER_CODE }}
+        run: npm run build
+
+      - name: Build pruefen
+        run: |
+          test -f website/dist/index.html || (echo "::error::Build fehlgeschlagen, index.html fehlt" && exit 1)
+          test -f website/dist/en/index.html || (echo "::error::Englische Seite fehlt" && exit 1)
+          test -f website/dist/.htaccess || (echo "::error::.htaccess fehlt im dist/" && exit 1)
+          echo "Build OK, Dateien:"
+          find website/dist -maxdepth 2 -type f | head -50
+
+      - name: Per FTP zum Hoster hochladen
+        # SamKirkland/FTP-Deploy-Action v4.3.5 auf SHA gepinnt
+        uses: SamKirkland/FTP-Deploy-Action@0617c01bc0fefb0fc4327fa5d4f53d5a8da77e02
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./website/dist/
+          server-dir: ${{ vars.FTP_REMOTE_DIR || '/' }}
+          # State Datei auf Server damit nur Diffs hochgeladen werden
+          state-name: .ftp-deploy-state.json
+          # Loesche auf dem Server was lokal nicht mehr existiert
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/.env
+
+      - name: Erfolg melden
+        if: success()
+        run: echo "Webseite live auf ${{ vars.PUBLIC_SITE_URL }}"

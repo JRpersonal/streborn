@@ -1,0 +1,8 @@
+[
+  {
+    "slot": 1,
+    "name": "Beispielsender",
+    "stream_url": "http://stream.example.com/stream.mp3",
+    "type": "radio"
+  }
+]

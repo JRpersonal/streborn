@@ -1,0 +1,225 @@
+name: Build und Release Binaries
+
+# Wird nur durch signed Tag im Format vX.Y.Z ausgeloest. Manueller Trigger
+# fuer Test moeglich.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+# Minimale Berechtigungen by default. Einzelne Jobs duerfen mehr.
+permissions:
+  contents: read
+
+# Niemals zwei Releases parallel
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # 1. Source Verifikation: stellt sicher dass Lockfiles passen und keine
+  # verbotenen Aenderungen drin sind.
+  verify-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken
+        # actions/checkout v4.2.2 auf SHA gepinnt
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Go installieren
+        # actions/setup-go v5.0.2 auf SHA gepinnt
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go.mod und go.sum verifizieren
+        run: |
+          go mod download
+          go mod verify
+          # Pruefen ob jemand go.mod oder go.sum manipuliert hat
+          go mod tidy
+          if ! git diff --exit-code go.mod go.sum; then
+            echo "::error::go.mod oder go.sum nicht synchron mit Code"
+            exit 1
+          fi
+
+      - name: Go Vulnerabilities scannen
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Tests laufen lassen
+        run: go test ./...
+
+  # 2. Binaries fuer alle Targets parallel bauen
+  build:
+    needs: verify-source
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - goos: linux
+            goarch: arm
+            goarm: 7
+            suffix: armv7l
+          - goos: linux
+            goarch: arm64
+            suffix: arm64
+          - goos: linux
+            goarch: amd64
+            suffix: amd64
+          - goos: windows
+            goarch: amd64
+            suffix: windows-amd64.exe
+          - goos: darwin
+            goarch: amd64
+            suffix: macos-intel
+          - goos: darwin
+            goarch: arm64
+            suffix: macos-arm64
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Go installieren
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Version ableiten
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="dev-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Binary reproduzierbar bauen
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p out
+          OUT="out/streborn-${{ matrix.suffix }}"
+          # -trimpath entfernt lokale Pfade aus dem Binary
+          # -buildvcs=true bettet Git Commit ein
+          # -ldflags mit -s -w spart Bytes und macht Binary identisch reproduzierbar
+          go build \
+            -trimpath \
+            -buildvcs=true \
+            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" \
+            -o "${OUT}" \
+            ./cmd/agent
+
+      - name: SHA256 berechnen
+        run: |
+          cd out
+          sha256sum * > SHA256SUMS-${{ matrix.suffix }}.txt
+          cat SHA256SUMS-${{ matrix.suffix }}.txt
+
+      - name: Build Provenance Attestation erstellen
+        # GitHub eigene Action, kein Drittanbieter. Erzeugt Sigstore basierte
+        # Attestation die beweist: Binary stammt aus diesem Workflow, diesem
+        # Commit, in diesem Repo gebaut.
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: out/streborn-${{ matrix.suffix }}
+
+      - name: Artefakte hochladen
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        with:
+          name: binaries-${{ matrix.suffix }}
+          path: |
+            out/streborn-${{ matrix.suffix }}
+            out/SHA256SUMS-${{ matrix.suffix }}.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  # 3. Release veroeffentlichen mit allen Binaries plus Gesamt SHA256SUMS
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # Release erstellen darf
+      id-token: write   # Attestation OIDC
+      attestations: write
+
+    steps:
+      - name: Code auschecken (fuer Release Notes)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Alle Artefakte holen
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Gesamt SHA256SUMS bauen
+        run: |
+          cd dist
+          rm -f SHA256SUMS-*.txt
+          sha256sum streborn-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Release Notes generieren
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          {
+            echo "## STR ${VERSION}"
+            echo ""
+            echo "**Built from commit:** \`${{ github.sha }}\`"
+            echo "**Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "### Verify your download"
+            echo ""
+            echo "Each binary in this release is attested by GitHub's build provenance system."
+            echo ""
+            echo "**SHA256 Checksum**"
+            echo ""
+            echo "\`\`\`"
+            cat dist/SHA256SUMS
+            echo "\`\`\`"
+            echo ""
+            echo "**Attestation Verification (requires GitHub CLI)**"
+            echo ""
+            echo "\`\`\`bash"
+            echo "gh attestation verify streborn-windows-amd64.exe --owner JRpersonal"
+            echo "\`\`\`"
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Release erstellen
+        # softprops/action-gh-release v2.0.8 auf SHA gepinnt
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
+        with:
+          body_path: release-notes.md
+          files: |
+            dist/streborn-*
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          draft: false
+          prerelease: false

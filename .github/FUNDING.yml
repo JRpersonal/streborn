@@ -1,0 +1,26 @@
+# Diese Datei zeigt auf der GitHub Repo Seite einen "Sponsor" Button.
+# Trage hier deine Spenden Kanaele ein. Mehrere Werte sind moeglich.
+
+# GitHub Sponsors: erst musst du dich unter
+# https://github.com/sponsors als Empfaenger registrieren und freischalten lassen.
+github: [JRpersonal]
+
+# Buy Me a Coffee: nach Anmeldung dort dein Username eintragen
+buy_me_a_coffee: jrpersonal
+
+# Ko-Fi: nach Anmeldung dort dein Username eintragen
+ko_fi: jrpersonal
+
+# Liberapay: Open Source freundliche EU Plattform
+liberapay: JRpersonal
+
+# Open Collective: transparent, gut fuer groessere Communities
+# open_collective: streborn
+
+# Patreon: fuer monatliche Unterstuetzung
+# patreon: jrpersonal
+
+# Eigene Spenden URL: PayPal me, eigene Webseite
+custom:
+  - "https://paypal.me/JRpersonal"
+  - "https://streborn.app/#donate"
