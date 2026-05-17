@@ -160,7 +160,7 @@ jobs:
           cat "streborn-${{ matrix.suffix }}.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
         with:
           subject-path: out/streborn-${{ matrix.suffix }}
 
@@ -248,7 +248,7 @@ jobs:
           cat "STR-Windows.exe.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
         with:
           subject-path: release-out/STR-Windows.exe
 
@@ -362,7 +362,7 @@ jobs:
           cat "STR-Linux-x64.tar.gz.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
         with:
           subject-path: release-out/STR-Linux-x64.tar.gz
 
@@ -451,7 +451,7 @@ jobs:
           cat "STR-macOS.dmg.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
         with:
           subject-path: release-out/STR-macOS.dmg
 
@@ -594,7 +594,7 @@ jobs:
           cat manifest.json
 
       - name: Attest manifest
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
         with:
           subject-path: dist/manifest.json
 
