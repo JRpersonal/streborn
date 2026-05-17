@@ -30,8 +30,8 @@ jobs:
         language: [go]
 
     steps:
-      # actions/checkout v4.2.2 pinned to SHA
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      # actions/checkout v5.0.0 pinned to SHA
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
 

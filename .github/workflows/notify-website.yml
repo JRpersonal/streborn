@@ -19,9 +19,8 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: Repository dispatch to streborn-website
-        # peter-evans/repository-dispatch v3.0.0. Tag reference,
-        # Dependabot will pin to a SHA on first update.
-        uses: peter-evans/repository-dispatch@v3
+        # peter-evans/repository-dispatch v4.0.1 pinned to SHA
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697
         with:
           token: ${{ secrets.WEBSITE_DISPATCH_PAT }}
           repository: JRpersonal/streborn-website
