@@ -36,9 +36,26 @@ export function iconServicesFor(host) {
   ];
 }
 
+// stationLogoCandidates returns an ordered list of icon URLs to try
+// for a station. The browser's onerror cascade walks the list and
+// keeps the first one that loads.
+//
+// Ordering rule: derived DuckDuckGo icon-service URLs come BEFORE the
+// station's own `favicon` field. Empirically the favicon URLs that
+// radio-browser.info hands out are unreliable — REYFM's
+// www.reyfm.de/icon.png returns 402 (Cloudflare paywall), other
+// stations point at HTTP-only URLs the secure context blocks as
+// mixed content, others 404 outright. DDG's icon service returns a
+// clean 200 or clean 404 with no surprises and is much friendlier
+// in DevTools. We still keep the station's own favicon at the end
+// of the list so we never give up an image that only the station
+// itself can provide.
 export function stationLogoCandidates(s) {
   const out = [];
-  if (s.favicon) out.push(s.favicon);
+
+  // 1. DDG icon URLs derived from the station's known hostnames.
+  //    Multiple hosts (homepage / stream URL / resolved URL) plus
+  //    their root domains feed in — the first one DDG knows wins.
   const hosts = [];
   for (const u of [s.homepage, s.url, s.url_resolved]) {
     const h = extractHost(u);
@@ -51,6 +68,13 @@ export function stationLogoCandidates(s) {
       if (!out.includes(svc)) out.push(svc);
     }
   }
+
+  // 2. Last resort: the favicon field from radio-browser.info itself.
+  //    Likely original-quality where it works, but also the most
+  //    likely candidate to 402/403/mixed-content fail. Kept so we
+  //    do not lose stations that DDG genuinely does not know.
+  if (s.favicon && !out.includes(s.favicon)) out.push(s.favicon);
+
   return out;
 }
 

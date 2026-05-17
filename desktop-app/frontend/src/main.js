@@ -84,7 +84,20 @@ import {
 
 document.querySelector('#app').innerHTML = `
   <header class="app-header">
-    <div class="app-brand">ST <span class="app-brand-accent">Reborn</span></div>
+    <div class="app-header-row">
+      <span class="app-logo" aria-hidden="true">
+        <svg viewBox="0 0 64 64" fill="none">
+          <g fill="currentColor">
+            <circle cx="22" cy="14" r="3"/><circle cx="32" cy="14" r="3"/><circle cx="42" cy="14" r="3"/>
+            <circle cx="22" cy="26" r="3"/><circle cx="32" cy="26" r="3"/><circle cx="42" cy="26" r="3"/>
+          </g>
+          <path d="M 4 44 L 22 44" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+          <path d="M 22 44 L 26 48 L 30 32 L 34 54 L 38 40 L 42 44" stroke="#cc0000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M 42 44 L 60 44" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <div class="app-brand">ST <span class="app-brand-accent">Reborn</span></div>
+    </div>
     <div class="app-tagline" id="appTagline"></div>
     <div class="app-supported" id="appSupported"></div>
   </header>
@@ -233,22 +246,54 @@ async function renderFooter() {
   updateSettingsTabBadge();
 }
 
+// Donate sidebar — three branded buttons that open in the system
+// browser via Wails. Brand colours and assets follow each provider's
+// guidelines:
+//   * GitHub Sponsors: white background, #bf3989 (Mona Pink) border
+//     and Octicons heart-fill SVG (MIT licensed)
+//   * PayPal: #FFC439 yellow background, two-tone "PayPal" wordmark
+//     in #003087 + #009CDE per the official color system
+//   * Ko-fi: #FF5E5B coral background, coffee-cup mark + white text
+//
+// Links are baked in rather than fetched from appInfo because each
+// provider has its own canonical URL — keeping them inline removes a
+// round trip and means the sidebar renders even before AppInfo loads.
 function renderDonateSidebar() {
   const side = $('donateSide');
   if (!side) return;
   const i = state.appInfo || {};
   const slogan = i.donateSlogan || 'Dir gefaellt die App? Ich freue mich ueber einen Kaffee.';
-  const hasUrl = !!i.donateUrl;
+
+  // Octicons heart-fill-16, MIT licensed (https://github.com/primer/octicons).
+  const heartSvg = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="m8 14.25.345.666a.75.75 0 0 1-.69 0l-.008-.004-.018-.01a7.152 7.152 0 0 1-.31-.17 22.055 22.055 0 0 1-3.434-2.414C2.045 10.731 0 8.35 0 5.5 0 2.836 2.086 1 4.25 1 5.797 1 7.153 1.802 8 3.02 8.847 1.802 10.203 1 11.75 1 13.914 1 16 2.836 16 5.5c0 2.85-2.045 5.231-3.885 6.818a22.066 22.066 0 0 1-3.744 2.584l-.018.01-.005.003h-.002Z"/></svg>`;
+  // Ko-fi has no single canonical inline mark; this is a compact
+  // coffee-cup glyph (taken from Simple Icons / Ko-fi brand kit
+  // composition) that recognisable at 14px.
+  const coffeeSvg = `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M20.216 6.415C19.964 5.43 19.066 4.78 18.057 4.78H5.943c-1.009 0-1.907.65-2.159 1.635C2.987 9.085 3 12.34 4.97 14.605c1.236 1.42 3.116 2.13 5.59 2.13 1.85 0 3.62-.404 4.97-1.137A6.43 6.43 0 0 0 19.046 14H19.5a3.5 3.5 0 1 0 0-7h-.07a4.8 4.8 0 0 0-.214-.585zM19 9.5h.5a1.5 1.5 0 0 1 0 3H19a4.21 4.21 0 0 0 .003-.123V9.535c0-.012-.002-.023-.003-.035zM7.5 19h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1 0-1z"/></svg>`;
+
   side.innerHTML = `
     <div class="donate-icon">&#9749;</div>
     <div class="donate-slogan">${escapeHtml(slogan)}</div>
-    <button class="donate-btn" id="donateBtn"${hasUrl ? '' : ' disabled title="Spenden Link folgt sobald die Webseite live ist"'}>
-      Per PayPal spenden
+    <button class="donate-btn donate-gh" id="donateGhBtn" type="button" title="GitHub Sponsors">
+      <span class="donate-btn-icon">${heartSvg}</span>
+      <span class="donate-btn-label">Sponsor</span>
     </button>
-    <small>${hasUrl ? '' : '(Link folgt in Kuerze)'}</small>
+    <button class="donate-btn donate-paypal" id="donatePayPalBtn" type="button" title="PayPal">
+      <span class="donate-paypal-wordmark"><span class="pay">Pay</span><span class="pal">Pal</span></span>
+    </button>
+    <button class="donate-btn donate-kofi" id="donateKofiBtn" type="button" title="Ko-fi">
+      <span class="donate-btn-icon">${coffeeSvg}</span>
+      <span class="donate-btn-label">Ko-fi</span>
+    </button>
   `;
-  const btn = $('donateBtn');
-  if (btn && hasUrl) btn.onclick = () => BrowserOpenURL(i.donateUrl);
+
+  const wire = (id, url) => {
+    const b = $(id);
+    if (b) b.onclick = () => BrowserOpenURL(url);
+  };
+  wire('donateGhBtn',     'https://github.com/sponsors/JRpersonal');
+  wire('donatePayPalBtn', 'https://paypal.me/JR31337');
+  wire('donateKofiBtn',   'https://ko-fi.com/streborn');
 }
 
 async function checkAppUpdate() {
@@ -678,8 +723,15 @@ function renderBoxSelect() {
   sel.innerHTML = state.boxes.map(b => {
     const active = state.currentBox && state.currentBox.host === b.host ? ' active' : '';
     const label = b.friendlyName || b.name || b.host;
+    // Box model (e.g. "SoundTouch 10") right next to the name so
+    // users with several speakers can tell their ST10 from their
+    // ST20 at a glance. Fall back gracefully when an older agent
+    // only advertises the generic "SoundTouch".
+    const model = b.model && b.model !== 'SoundTouch'
+      ? `<span class="box-model" title="Box Modell">${escapeHtml(b.model)}</span>`
+      : '';
     const ver = b.version ? `<span class="box-ver" title="Stick Version">${escapeHtml(b.version)}</span>` : '';
-    return `<span class="box-btn${active}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${escapeHtml(label)} <small>${b.host}</small>${ver}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="Einstellungen dieser Box">&#9881;</span></span>`;
+    return `<span class="box-btn${active}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${escapeHtml(label)}${model} <small>${b.host}</small>${ver}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="Einstellungen dieser Box">&#9881;</span></span>`;
   }).join('');
   sel.querySelectorAll('.box-btn').forEach(btn => {
     btn.onclick = (e) => {
@@ -1898,7 +1950,12 @@ function renderSettingsBoxSelect() {
   if (target) state.settingsBox = target;
   sel.innerHTML = state.boxes.map(b => {
     const label = b.friendlyName || b.name || b.host;
-    return `<option value="${escapeAttr(b.deviceID)}">${escapeHtml(label)} (${escapeHtml(b.host)})</option>`;
+    // Append the box model so the dropdown can distinguish two
+    // boxes that happen to carry the same Bose-default friendly
+    // name. Older agents that only broadcast generic "SoundTouch"
+    // get no extra annotation — would just be noise.
+    const modelSuffix = b.model && b.model !== 'SoundTouch' ? ` · ${b.model}` : '';
+    return `<option value="${escapeAttr(b.deviceID)}">${escapeHtml(label + modelSuffix)} (${escapeHtml(b.host)})</option>`;
   }).join('');
   if (state.settingsBox) sel.value = state.settingsBox.deviceID;
 }

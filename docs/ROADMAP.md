@@ -13,6 +13,31 @@ For the security-specific roadmap see
 - Additional verified speaker models (ST20, ST30, Portable).
 - Wails sandboxing on macOS and Windows.
 
+## In-flight engineering
+
+These are tracked here because they span multiple PRs and need a
+durable home so future sessions do not re-scope or duplicate the
+work. Distinct from the post-1.0 items above: scheduling here is
+"next few PRs", not "after v1.0".
+
+### Frontend refactor of `desktop-app/frontend/src/main.js`
+
+Started 2026-05-17. Goal: split the ~3500-line monolith into
+focused modules, add i18n, switch the default UI to English.
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| A | Extract leaf modules (`state`, `utils`, `localization`, `logos`, `api`) out of `main.js`. All comments and identifiers English. | merged via [#40](https://github.com/JRpersonal/streborn/pull/40) (or about to be — check the branch) |
+| B | Extract view modules: `views/box-discovery.js`, `views/presets.js`, `views/playback.js`, `views/search.js`, `views/settings.js`, `views/setup.js`, `views/footer.js`. After this `main.js` shrinks to the DOM skeleton + view dispatcher (~150 lines). | not started |
+| C | i18n system: minimal `t()` helper plus `en` and `de` bundles in `desktop-app/frontend/src/i18n/`. Locale detected from `navigator.language`, with explicit override stored in `localStorage`. **Default is English** per the global-audience rule — German remains a first-class supported locale but is no longer the implicit fallback. | not started |
+| D | Translate the remaining inline German comments and the few mixed-language handler strings still sitting in `main.js` (and any view module that ends up holding them after Phase B). Closes the CLAUDE.md "all code/comments/identifiers in English" rule. | not started, naturally falls out of Phase B+C |
+
+Why this is on the roadmap rather than just done: Phase A alone
+was ~600 lines of careful diff and surfaced six unrelated bugs
+that we durably fixed in flight (see #40). Phase B+C are bigger
+still — the right move is one PR per phase so each is reviewable
+and any regression can be bisected to its phase.
+
 ## Under consideration
 
 ### iOS web app (PWA) installable from the website

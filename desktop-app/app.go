@@ -536,7 +536,7 @@ func (a *App) AppInfo() AppInfo {
 		Build:             appBuild,
 		Author:            "Jens Roggenfelder (JRpersonal)",
 		GitHubURL:         "https://github.com/JRpersonal/streborn",
-		WebsiteURL:        "", // gefuellt sobald Website live ist
+		WebsiteURL:        "https://st-reborn.de",
 		DonateURL:         "", // gefuellt sobald PayPal Link auf der Website ist
 		DonateSlogan:      "Dir gefaellt die App? Ich freue mich ueber einen Kaffee.",
 		UpdateManifestURL: "", // gefuellt sobald die Manifest URL feststeht
