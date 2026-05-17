@@ -166,7 +166,7 @@ jobs:
 
       - name: Upload artifact
         # actions/upload-artifact v4 pinned to SHA
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: agent-${{ matrix.suffix }}
           path: |
@@ -253,7 +253,7 @@ jobs:
           subject-path: release-out/STR-Windows.exe
 
       - name: Upload artifact
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: desktop-windows
           path: |
@@ -367,7 +367,7 @@ jobs:
           subject-path: release-out/STR-Linux-x64.tar.gz
 
       - name: Upload artifact
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: desktop-linux
           path: |
@@ -456,7 +456,7 @@ jobs:
           subject-path: release-out/STR-macOS.dmg
 
       - name: Upload artifact
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: desktop-macos
           path: |
