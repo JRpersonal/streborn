@@ -40,17 +40,17 @@ jobs:
           go-version: "stable"
           cache: true
 
-      # github/codeql-action v3 pinned to SHA
+      # github/codeql-action v4.35.5 pinned to SHA
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@458d36d7d4f47d0dd16ca424c1d3cda0060f1360
+        uses: github/codeql-action/init@7c1e4cf0b20d7c1872b26569c00ba908797a59bf
         with:
           languages: ${{ matrix.language }}
           queries: security-and-quality
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@458d36d7d4f47d0dd16ca424c1d3cda0060f1360
+        uses: github/codeql-action/autobuild@7c1e4cf0b20d7c1872b26569c00ba908797a59bf
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@458d36d7d4f47d0dd16ca424c1d3cda0060f1360
+        uses: github/codeql-action/analyze@7c1e4cf0b20d7c1872b26569c00ba908797a59bf
         with:
           category: "/language:${{ matrix.language }}"
