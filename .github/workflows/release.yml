@@ -16,8 +16,16 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (must match vX.Y.Z, e.g. v0.3.0)'
-        required: true
+        # Leave empty for a build-only dry-run: the full pipeline
+        # runs (verify-source, build-agent, all three desktop OS
+        # builds, Sigstore attestation of every artifact) but the
+        # final publish step is skipped. Use this after any
+        # Dependabot bump of a release-only action
+        # (attest-build-provenance, action-gh-release, or
+        # upload-artifact's release.yml usage pattern) to confirm
+        # the next real tag will work.
+        description: 'Release version (vX.Y.Z, e.g. v0.3.0). Leave empty for a build-only dry-run.'
+        required: false
         type: string
 
 permissions:
