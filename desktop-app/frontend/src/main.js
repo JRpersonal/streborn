@@ -33,533 +33,52 @@ import {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
-} from '../wailsjs/go/main/App';
-import {BrowserOpenURL} from '../wailsjs/runtime/runtime';
+  BrowserOpenURL,
+} from './api.js';
 
-// ---------- State ----------
+import {
+  state,
+  loadLastBox,
+  saveLastBox,
+  loadCachedBoxes,
+  saveCachedBoxes,
+} from './state.js';
 
-const state = {
-  view: 'box',
-  boxes: [],
-  currentBox: null,
-  settingsBox: null,   // Box deren Einstellungen wir gerade bearbeiten
-  presets: [],
-  searchResults: [],
-  drives: [],
-  selectedDrive: null,
-  // Set right after a successful prepare+eject. While set,
-  // refreshDrives() hides that path from the list until it either
-  // disappears (physical pull) or comes back with a valid FAT32
-  // mount. Prevents the wizard re-rendering the ejected stick as
-  // "unknown format". Cleared by the "Neu suchen" button.
-  justEjectedPath: null,
-  appInfo: null,
-  nowLocation: '',     // aktueller stream url aus now_playing
-  nowName: '',         // aktueller itemName aus now_playing
-  nowPlayState: '',    // aktueller PlayState
-  nowIcon: '',         // letztes bekanntes Sender Logo (favicon)
-  nowUUID: '',         // letzte radio-browser UUID
-  optimisticUntil: 0,  // Zeitpunkt ab dem refreshStatus wieder die Box als Quelle der Wahrheit nimmt
-  presetErrors: {},    // slot → letzte Fehlermeldung (rot anzeigen)
-  searchOrder: 'votes',
-  searchCountry: 'DE',
-  searchLang: '',
-  searchTag: '',       // aktive Genre Chip
-  searchOnlyOK: true,
-  searchOnlyBose: true,
-  searchOffset: 0,
-  searchLastMode: 'top', // "top" oder "search" — fuer "mehr laden"
-  searchLastQuery: '',
-  tags: [],            // Cache der Top Tags fuer Chips
-  languages: [],       // Cache der Sprachen
-  // Pending Names: Box ID -> { name, until } — nach lokaler Umbenennung
-  // ueberschreiben wir damit jeden mDNS Eintrag fuer max 90s. Genug bis
-  // der Stick seinen TXT Record neu announciert hat.
-  pendingNames: {},
-};
+import {
+  $,
+  escapeHtml,
+  escapeAttr,
+  decodeXmlEntities,
+  formatNumber,
+  debounce,
+  sleep,
+  confirmWarn,
+  closeWarn,
+  showError,
+  showToast,
+} from './utils.js';
 
-// Persistente Selection: deviceID aus localStorage, reload nach Refresh.
-function loadLastBox() {
-  try { return localStorage.getItem('lastBoxDeviceID') || null; } catch { return null; }
-}
-function saveLastBox(id) {
-  try { localStorage.setItem('lastBoxDeviceID', id || ''); } catch {}
-}
+import {
+  COUNTRIES,
+  ORDERS,
+  GENRE_CORE,
+  GENRE_BY_COUNTRY,
+  translateCountry,
+  canonGenre,
+  translateGenre,
+  translateTags,
+  flagFromCC,
+} from './localization.js';
 
-// Persistenter Cache der zuletzt gesehenen Boxen Liste. Damit kann die
-// App beim Start oder Tab Wechsel sofort die Box anzeigen ohne 4
-// Sekunden auf mDNS zu warten. Im Hintergrund refresht discoverBoxes
-// und ueberschreibt.
-function loadCachedBoxes() {
-  try {
-    const raw = localStorage.getItem('cachedBoxes');
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr;
-  } catch { return []; }
-}
-function saveCachedBoxes(list) {
-  try { localStorage.setItem('cachedBoxes', JSON.stringify(list || [])); } catch {}
-}
-
-// ---------- Lokalisierung Land + Genres ----------
-// radio-browser liefert country + tags auf Englisch / techsprech. Wir
-// uebersetzen die haeufigen Werte ins Deutsche und kapitalisieren den
-// Rest automatisch. Sender Namen bleiben unangetastet.
-
-const COUNTRY_DE = {
-  'germany': 'Deutschland',
-  'austria': 'Oesterreich',
-  'switzerland': 'Schweiz',
-  'netherlands': 'Niederlande',
-  'belgium': 'Belgien',
-  'france': 'Frankreich',
-  'italy': 'Italien',
-  'spain': 'Spanien',
-  'portugal': 'Portugal',
-  'united kingdom': 'Vereinigtes Koenigreich',
-  'ireland': 'Irland',
-  'denmark': 'Daenemark',
-  'sweden': 'Schweden',
-  'norway': 'Norwegen',
-  'finland': 'Finnland',
-  'iceland': 'Island',
-  'poland': 'Polen',
-  'czech republic': 'Tschechien',
-  'czechia': 'Tschechien',
-  'slovakia': 'Slowakei',
-  'hungary': 'Ungarn',
-  'romania': 'Rumaenien',
-  'bulgaria': 'Bulgarien',
-  'greece': 'Griechenland',
-  'turkey': 'Tuerkei',
-  'russia': 'Russland',
-  'ukraine': 'Ukraine',
-  'united states of america': 'USA',
-  'united states': 'USA',
-  'canada': 'Kanada',
-  'mexico': 'Mexiko',
-  'brazil': 'Brasilien',
-  'argentina': 'Argentinien',
-  'australia': 'Australien',
-  'new zealand': 'Neuseeland',
-  'japan': 'Japan',
-  'china': 'China',
-  'india': 'Indien',
-  'south korea': 'Suedkorea',
-  'the united states of america': 'USA',
-};
-
-// SKIP_TAGS: aussagelos / Sprachen / Laender / Regionen / Eigennamen.
-// Werden weder als Chip noch als Tag Pill am Sender angezeigt. Sprache
-// und Land sind in den dedizierten Dropdowns abgedeckt.
-const SKIP_TAGS = new Set([
-  // generisch
-  'music', 'música', 'musica', 'musik', 'sound', 'sounds',
-  'radio', 'radios', 'radyo', 'station', 'estación', 'estacion',
-  'fm', 'am', 'ukw',
-  'live', 'online', 'internet', 'internet radio', 'streaming',
-  '24/7', '24 7', '24h', 'free', 'best', 'good', 'good music', 'best music',
-  'mp3', 'aac', 'flac',
-  // Sprachen
-  'español', 'spanish', 'espanol',
-  'deutsch', 'german', 'germany',
-  'english', 'englisch',
-  'français', 'francais', 'french',
-  'italiano', 'italian',
-  'português', 'portuguese',
-  // Laender / Regionen / Kontinente
-  'mexico', 'méxico', 'brazil', 'brasil', 'argentina', 'chile', 'colombia',
-  'peru', 'venezuela', 'usa', 'canada', 'kanada',
-  'norteamérica', 'norteamerica', 'sudamérica', 'sudamerica',
-  'latinoamérica', 'latinoamerica', 'latin america',
-  'américa', 'america', 'europa', 'europe', 'asia', 'africa', 'oceania',
-  // bekannter Muell aus den Beispielen
-  'moi merino',
-]);
-
-// GENRE_ALIAS: kanonisiere haeufige Doubletten auf einen Wert.
-const GENRE_ALIAS = {
-  'pop music': 'pop',
-  'pop musik': 'pop',
-  'rock music': 'rock',
-  'rock musik': 'rock',
-  'classic': 'classical',
-  'classic music': 'classical',
-  'classical music': 'classical',
-  'classic rock': 'classic rock', // bleibt eigen, nicht zu rock kollabieren
-  'klassik': 'classical',
-  'klassische musik': 'classical',
-  'dance music': 'dance',
-  'electronic music': 'electronic',
-  'electro music': 'electro',
-  '80s80s': '80s',
-  '90s90s': '90s',
-  '2000s': '00s',
-  '2010s': '10s',
-  'top40': 'top 40',
-  'r&b': 'rnb',
-  'r and b': 'rnb',
-  'rhythm and blues': 'rnb',
-  'hip-hop': 'hip hop',
-  'hiphop': 'hip hop',
-  'heavy-metal': 'heavy metal',
-  'oeffentlich rechtlich': 'public radio',
-  'oeffentlich-rechtlich': 'public radio',
-  'news talk': 'news',
-  'news radio': 'news',
-  'nachrichten': 'news',
-  'sport': 'sports',
-  'electronica': 'electronic',
-};
-
-const GENRE_DE = {
-  'rock': 'Rock', 'pop': 'Pop', 'jazz': 'Jazz', 'classical': 'Klassik',
-  'classic': 'Klassik', 'klassik': 'Klassik',
-  'news': 'Nachrichten', 'talk': 'Talk', 'sport': 'Sport', 'sports': 'Sport',
-  'oldies': 'Oldies', 'hits': 'Hits',
-  '80s': '80er', '90s': '90er', '70s': '70er', '60s': '60er', '50s': '50er',
-  '80s80s': '80er', '90s90s': '90er',
-  'metal': 'Metal', 'heavy metal': 'Heavy Metal', 'death metal': 'Death Metal',
-  'punk': 'Punk', 'indie': 'Indie', 'alternative': 'Alternative',
-  'electronic': 'Elektronisch', 'electro': 'Elektro', 'techno': 'Techno',
-  'house': 'House', 'trance': 'Trance', 'edm': 'EDM',
-  'hip hop': 'Hip Hop', 'hip-hop': 'Hip Hop', 'rap': 'Rap',
-  'rnb': 'RnB', 'r&b': 'R&B', 'soul': 'Soul', 'funk': 'Funk', 'disco': 'Disco',
-  'reggae': 'Reggae', 'ska': 'Ska', 'blues': 'Blues', 'country': 'Country',
-  'folk': 'Folk', 'volksmusik': 'Volksmusik', 'schlager': 'Schlager',
-  'chillout': 'Chill', 'chill': 'Chill', 'lounge': 'Lounge',
-  'ambient': 'Ambient', 'dance': 'Dance',
-  'public radio': 'Oeffentlich Rechtlich', 'public': 'Oeffentlich Rechtlich',
-  'ard': 'ARD', 'wdr': 'WDR', 'ndr': 'NDR', 'mdr': 'MDR', 'rbb': 'RBB',
-  'swr': 'SWR', 'br': 'BR', 'hr': 'HR', 'orf': 'ORF', 'srf': 'SRF', 'bbc': 'BBC',
-  'top 40': 'Top 40', 'charts': 'Charts',
-  'christian': 'Christlich', 'religious': 'Religioes', 'gospel': 'Gospel',
-  'culture': 'Kultur', 'comedy': 'Comedy', 'kids': 'Kinder', 'children': 'Kinder',
-  'german': 'Deutsch', 'english': 'Englisch',
-  'world music': 'Weltmusik', 'world': 'Welt',
-  'instrumental': 'Instrumental', 'orchestra': 'Orchester',
-  'movie': 'Film', 'soundtrack': 'Soundtrack',
-  'news talk': 'Nachrichten Talk', 'news radio': 'Nachrichten',
-  'easy listening': 'Easy Listening',
-  'live': 'Live', 'local': 'Lokal',
-  'variety': 'Vielfalt', 'mix': 'Mix',
-  'eurodance': 'Eurodance', 'eurodisco': 'Eurodisco',
-  'entretenimiento': 'Unterhaltung', 'entertainment': 'Unterhaltung',
-  'sports': 'Sport', 'sport': 'Sport',
-  'family': 'Familie', 'kinder': 'Kinder',
-  'evergreen': 'Evergreens', 'evergreens': 'Evergreens',
-  'love songs': 'Liebeslieder', 'romantic': 'Romantik',
-  'party': 'Party', 'dj': 'DJ', 'mixtape': 'Mixtape',
-  'workout': 'Workout', 'fitness': 'Fitness',
-  'meditation': 'Meditation', 'relax': 'Entspannung', 'relaxation': 'Entspannung',
-  'piano': 'Klavier', 'guitar': 'Gitarre',
-  'opera': 'Oper', 'musical': 'Musical',
-  'singer-songwriter': 'Singer Songwriter', 'singer songwriter': 'Singer Songwriter',
-  'experimental': 'Experimentell', 'underground': 'Underground',
-  'drum and bass': 'Drum & Bass', 'dnb': 'Drum & Bass', 'd&b': 'Drum & Bass',
-  'minimal': 'Minimal', 'dubstep': 'Dubstep',
-  'pop rock': 'Pop Rock', 'hard rock': 'Hard Rock', 'soft rock': 'Soft Rock',
-  'classic rock': 'Classic Rock', 'indie rock': 'Indie Rock', 'alternative rock': 'Alternative Rock',
-  // Country-boost labels (kept in English where the genre name itself
-  // is a proper noun the audience would recognise everywhere).
-  'country': 'Country', 'deutschrap': 'Deutschrap', 'latin': 'Latin',
-  'reggaeton': 'Reggaeton', 'salsa': 'Salsa', 'samba': 'Samba',
-  'sertanejo': 'Sertanejo', 'bossa nova': 'Bossa Nova',
-  'j-pop': 'J-Pop', 'jpop': 'J-Pop', 'anime': 'Anime',
-  'bollywood': 'Bollywood', 'bhangra': 'Bhangra', 'hindi': 'Hindi',
-  'chanson': 'Chanson', 'variété': 'Variété', 'variete': 'Variété',
-  'italo': 'Italo', 'italian': 'Italienisch', 'italiano': 'Italienisch',
-  'levenslied': 'Levenslied', 'nederlandstalig': 'Niederländisch',
-  'turkish': 'Türkisch', 'tuerkisch': 'Türkisch', 'halk': 'Halk',
-  'disco polo': 'Disco Polo', 'polski': 'Polnisch',
-  'russian': 'Russisch', 'retro': 'Retro',
-};
-
-// GENRE_CORE: 14 globally relevant pills, always rendered regardless
-// of how many stations the current country actually has on each tag.
-// Ordered roughly by mass-appeal so the visible row reads top-down.
-// Curated from radio-browser's global tag stationcount distribution
-// plus Statista/Nielsen radio-format share data.
-const GENRE_CORE = [
-  'pop', 'rock', 'hits', 'oldies',
-  'jazz', 'classical', 'chillout',
-  'dance', 'electronic', 'house',
-  'hip hop', 'latin',
-  '80s', '90s',
-  'news',
-];
-
-// GENRE_BY_COUNTRY: bubble these tags up as the "for your country"
-// row, in front of the core pills. Max 2 per country to keep the
-// visual budget tight. Country code matches state.searchCountry (ISO
-// 3166 alpha-2, uppercase).
-const GENRE_BY_COUNTRY = {
-  'DE': ['schlager', 'deutschrap'],
-  'AT': ['schlager', 'volksmusik'],
-  'CH': ['schlager', 'volksmusik'],
-  'US': ['country', 'rnb'],
-  'CA': ['country', 'rnb'],
-  'AU': ['country', 'indie'],
-  'GB': ['indie', 'rnb'],
-  'IE': ['folk', 'indie'],
-  'FR': ['chanson', 'variété'],
-  'IT': ['italo', 'italian'],
-  'ES': ['reggaeton', 'salsa'],
-  'PT': ['fado', 'pimba'],
-  'MX': ['reggaeton', 'salsa'],
-  'AR': ['reggaeton', 'salsa'],
-  'CO': ['reggaeton', 'salsa'],
-  'CL': ['reggaeton', 'salsa'],
-  'PE': ['reggaeton', 'salsa'],
-  'VE': ['reggaeton', 'salsa'],
-  'BR': ['sertanejo', 'samba'],
-  'JP': ['j-pop', 'anime'],
-  'KR': ['k-pop', 'kpop'],
-  'IN': ['bollywood', 'bhangra'],
-  'NL': ['levenslied', 'nederlandstalig'],
-  'BE': ['chanson', 'levenslied'],
-  'TR': ['turkish', 'halk'],
-  'PL': ['disco polo', 'polski'],
-  'RU': ['russian', 'retro'],
-  'UA': ['ukrainian', 'retro'],
-  'GR': ['greek', 'laika'],
-  'SE': ['svensk', 'nordic'],
-  'NO': ['norsk', 'nordic'],
-  'DK': ['dansk', 'nordic'],
-  'FI': ['suomi', 'nordic'],
-};
-
-function translateCountry(name) {
-  if (!name) return '';
-  const key = name.toLowerCase().trim();
-  return COUNTRY_DE[key] || name;
-}
-
-// canonGenre kanonisiert einen Tag fuer Filter Zwecke. Liefert leeren
-// String falls der Tag in SKIP_TAGS ist (soll ausgeblendet werden).
-function canonGenre(t) {
-  const key = (t || '').toLowerCase().trim();
-  if (!key) return '';
-  if (SKIP_TAGS.has(key)) return '';
-  return GENRE_ALIAS[key] || key;
-}
-
-// translateGenre kanonisiert und uebersetzt einen Tag fuer die Anzeige.
-function translateGenre(t) {
-  const key = canonGenre(t);
-  if (!key) return '';
-  if (GENRE_DE[key]) return GENRE_DE[key];
-  if (/^[A-Z0-9]{2,5}$/.test(t)) return t;
-  return key.replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function translateTags(tagsCsv) {
-  if (!tagsCsv) return [];
-  const seen = new Set();
-  const out = [];
-  for (const raw of tagsCsv.split(',')) {
-    const t = translateGenre(raw);
-    if (t && !seen.has(t.toLowerCase())) {
-      seen.add(t.toLowerCase());
-      out.push(t);
-    }
-  }
-  return out;
-}
-
-function formatNumber(n) {
-  if (!n || isNaN(n)) return '0';
-  return Number(n).toLocaleString('de-DE');
-}
-
-// ---------- Logo / Icon Resolution ----------
-// Viele radio-browser Eintraege haben kein favicon gesetzt. Wenn das
-// passiert, leiten wir aus homepage / stream URL die Domain ab und
-// nutzen den DuckDuckGo Icon Service als Fallback. Bei Fehler erneut
-// kaskadieren via onerror.
-
-function extractHost(u) {
-  if (!u) return '';
-  try { return new URL(u).hostname; } catch { return ''; }
-}
-
-// rootDomain entfernt die erste Subdomain. "stream.rockland-digital.de"
-// → "rockland-digital.de", "icecast.wdr.de" → "wdr.de". So treffen die
-// Favicon Services oft auch wenn der Streaming Host kein Logo hat.
-function rootDomain(host) {
-  if (!host) return '';
-  const parts = host.split('.');
-  if (parts.length < 3) return host;
-  return parts.slice(1).join('.');
-}
-
-// iconServicesFor liefert mehrere Favicon Service URLs fuer einen Host.
-// DDG ist Hauptquelle, Google als Backup (decken meist verschiedene
-// Domains ab).
-function iconServicesFor(host) {
-  if (!host) return [];
-  return [
-    `https://icons.duckduckgo.com/ip3/${host}.ico`,
-    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`,
-  ];
-}
-
-function stationLogoCandidates(s) {
-  const out = [];
-  if (s.favicon) out.push(s.favicon);
-  const hosts = [];
-  for (const u of [s.homepage, s.url, s.url_resolved]) {
-    const h = extractHost(u);
-    if (h && !hosts.includes(h)) hosts.push(h);
-    const r = rootDomain(h);
-    if (r && !hosts.includes(r)) hosts.push(r);
-  }
-  for (const h of hosts) {
-    for (const svc of iconServicesFor(h)) {
-      if (!out.includes(svc)) out.push(svc);
-    }
-  }
-  return out;
-}
-
-// onerrorChain feuert den naechsten Kandidaten im data-attribute. Wenn
-// keine mehr, blendet das img aus (CSS zeigt dann den Placeholder).
-function logoImgTag(s, cssClass) {
-  const candidates = stationLogoCandidates(s);
-  if (candidates.length === 0) return '<div class="fav-empty"></div>';
-  const first = candidates[0];
-  const rest = candidates.slice(1).join('|');
-  return `<img class="${cssClass}"
-            src="${escapeAttr(first)}"
-            data-fallbacks="${escapeAttr(rest)}"
-            onerror="window.__nextLogoFallback(this)"/>`;
-}
-
-// Global helper das vom onerror Handler gerufen wird. Cycled durch
-// data-fallbacks bis eines laedt oder das Element ausgeblendet ist.
-window.__nextLogoFallback = function(img) {
-  const list = (img.dataset.fallbacks || '').split('|').filter(Boolean);
-  if (list.length === 0) {
-    img.onerror = null;
-    img.style.display = 'none';
-    return;
-  }
-  const next = list.shift();
-  img.dataset.fallbacks = list.join('|');
-  img.src = next;
-};
-
-// bestLogoForStation liefert die beste verfuegbare Logo URL fuer eine
-// Station. Wird beim Speichern als Preset Art verwendet damit auch im
-// Preset Button + auf der Box ein Logo da ist.
-function bestLogoForStation(s) {
-  return stationLogoCandidates(s)[0] || '';
-}
-
-// stationLogoChain liefert alle Logo Kandidaten als pipe-separierte
-// Kette. Persistieren wir das in preset.art, kann das Frontend bei
-// onerror durch alle Fallbacks kaskadieren — auch nach App Neustart.
-// Der Stick splittet pipe-separated art beim PlayURL und nutzt nur den
-// ersten Eintrag fuer den UPnP albumArtURI.
-function stationLogoChain(s) {
-  return stationLogoCandidates(s).join('|');
-}
-
-// ---------- Country Code → Flag Emoji ----------
-// ISO 3166-1 alpha-2 zu Regional Indicator Symbol (Unicode Flag).
-function flagFromCC(cc) {
-  if (!cc || cc.length !== 2) return '';
-  const A = 0x1F1E6;
-  const c0 = cc.toUpperCase().charCodeAt(0) - 65;
-  const c1 = cc.toUpperCase().charCodeAt(1) - 65;
-  if (c0 < 0 || c0 > 25 || c1 < 0 || c1 > 25) return '';
-  return String.fromCodePoint(A + c0) + String.fromCodePoint(A + c1);
-}
-
-// Laenderliste fuer Filter Dropdown. Wir zeigen nur die haeufigsten — der
-// User kann jederzeit ohne Filter suchen um alles zu sehen.
-// Alle unterstuetzten Laender, ungeordnet — Sortierung passiert unten
-// (alphabetisch nach deutschem Namen, DACH oben fuer den Default User).
-const COUNTRIES_ALL = [
-  { cc: 'DE', name: 'Deutschland' },
-  { cc: 'AT', name: 'Oesterreich' },
-  { cc: 'CH', name: 'Schweiz' },
-  { cc: 'NL', name: 'Niederlande' },
-  { cc: 'BE', name: 'Belgien' },
-  { cc: 'LU', name: 'Luxemburg' },
-  { cc: 'FR', name: 'Frankreich' },
-  { cc: 'IT', name: 'Italien' },
-  { cc: 'ES', name: 'Spanien' },
-  { cc: 'PT', name: 'Portugal' },
-  { cc: 'GB', name: 'Vereinigtes Koenigreich' },
-  { cc: 'IE', name: 'Irland' },
-  { cc: 'DK', name: 'Daenemark' },
-  { cc: 'SE', name: 'Schweden' },
-  { cc: 'NO', name: 'Norwegen' },
-  { cc: 'FI', name: 'Finnland' },
-  { cc: 'IS', name: 'Island' },
-  { cc: 'PL', name: 'Polen' },
-  { cc: 'CZ', name: 'Tschechien' },
-  { cc: 'SK', name: 'Slowakei' },
-  { cc: 'HU', name: 'Ungarn' },
-  { cc: 'RO', name: 'Rumaenien' },
-  { cc: 'BG', name: 'Bulgarien' },
-  { cc: 'GR', name: 'Griechenland' },
-  { cc: 'HR', name: 'Kroatien' },
-  { cc: 'SI', name: 'Slowenien' },
-  { cc: 'TR', name: 'Tuerkei' },
-  { cc: 'RU', name: 'Russland' },
-  { cc: 'UA', name: 'Ukraine' },
-  { cc: 'US', name: 'USA' },
-  { cc: 'CA', name: 'Kanada' },
-  { cc: 'MX', name: 'Mexiko' },
-  { cc: 'BR', name: 'Brasilien' },
-  { cc: 'AR', name: 'Argentinien' },
-  { cc: 'CL', name: 'Chile' },
-  { cc: 'CO', name: 'Kolumbien' },
-  { cc: 'PE', name: 'Peru' },
-  { cc: 'JP', name: 'Japan' },
-  { cc: 'CN', name: 'China' },
-  { cc: 'TW', name: 'Taiwan' },
-  { cc: 'HK', name: 'Hongkong' },
-  { cc: 'KR', name: 'Suedkorea' },
-  { cc: 'IN', name: 'Indien' },
-  { cc: 'TH', name: 'Thailand' },
-  { cc: 'VN', name: 'Vietnam' },
-  { cc: 'ID', name: 'Indonesien' },
-  { cc: 'PH', name: 'Philippinen' },
-  { cc: 'MY', name: 'Malaysia' },
-  { cc: 'SG', name: 'Singapur' },
-  { cc: 'IL', name: 'Israel' },
-  { cc: 'AE', name: 'Vereinigte Arabische Emirate' },
-  { cc: 'SA', name: 'Saudi Arabien' },
-  { cc: 'EG', name: 'Aegypten' },
-  { cc: 'MA', name: 'Marokko' },
-  { cc: 'AU', name: 'Australien' },
-  { cc: 'NZ', name: 'Neuseeland' },
-  { cc: 'ZA', name: 'Suedafrika' },
-];
-
-const COUNTRIES_TOP = ['DE', 'AT', 'CH'];
-
-const COUNTRIES = (() => {
-  const top = COUNTRIES_TOP
-    .map(cc => COUNTRIES_ALL.find(c => c.cc === cc))
-    .filter(Boolean);
-  const rest = COUNTRIES_ALL
-    .filter(c => !COUNTRIES_TOP.includes(c.cc))
-    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
-  return [{ cc: '', name: 'alle Laender' }, ...top, ...rest];
-})();
-
-const ORDERS = [
-  { v: 'votes',      label: 'Beliebtheit' },
-  { v: 'clickcount', label: 'Hoererzahlen' },
-  { v: 'clicktrend', label: 'Trend' },
-  { v: 'name',       label: 'Name' },
-];
+import {
+  extractHost,
+  rootDomain,
+  iconServicesFor,
+  stationLogoCandidates,
+  logoImgTag,
+  bestLogoForStation,
+  stationLogoChain,
+} from './logos.js';
 
 // ---------- DOM Skeleton ----------
 
@@ -621,7 +140,6 @@ document.querySelector('#app').innerHTML = `
   <footer class="app-footer" id="appFooter"></footer>
 `;
 
-const $ = (id) => document.getElementById(id);
 
 // Tabs
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1400,20 +918,34 @@ function renderLanguageOptions() {
 }
 
 // updateSettingsTabBadge shows a small blue dot on the "Box Einstellungen"
-// tab whenever at least one discovered box reports a version different
-// from the desktop app's own version. The dot signals: there is work to
-// do in this tab, namely OTA-update at least one box.
+// tab whenever at least one discovered box reports a version or build
+// stamp different from the desktop app's own. The dot signals: there is
+// work to do in this tab, namely OTA-update at least one box.
 //
-// Version data comes from the mDNS TXT record so no extra HTTP call is
-// needed — the badge updates as the box list refreshes.
+// Compared against BOTH version and build because two local dev builds
+// often share the same `git describe` version but carry distinct build
+// stamps — without the build check the badge silently agrees while
+// the Box-Einstellungen status line is screaming "Update verfügbar".
+//
+// Version + build data comes from the mDNS TXT record so no extra HTTP
+// call is needed — the badge updates as the box list refreshes.
 function updateSettingsTabBadge() {
   const btn = document.querySelector('.tab-btn[data-view="settings"]');
   if (!btn) return;
-  const appVer = state.appInfo && state.appInfo.version;
+  const appVer   = state.appInfo && state.appInfo.version;
+  const appBuild = state.appInfo && state.appInfo.build;
   let needsUpdate = false;
   if (appVer) {
     for (const b of state.boxes) {
-      if (b && b.version && b.version !== appVer) {
+      if (!b || !b.version) continue;
+      const verDiffers   = b.version !== appVer;
+      // Three build-related cases to flag as drift:
+      //   - both sides populated and different
+      //   - we have a build, box has none (older agent that does not
+      //     yet broadcast `build=` in mDNS — guaranteed pre-update)
+      const buildDiffers = appBuild && b.build && b.build !== appBuild;
+      const buildMissing = appBuild && !b.build;
+      if (verDiffers || buildDiffers || buildMissing) {
         needsUpdate = true;
         break;
       }
@@ -1432,15 +964,20 @@ async function checkBoxUpdate() {
     const boxBuild = v.build || '';
     const appVer = state.appInfo.version;
     const appBuild = state.appInfo.build || '';
-    // Banner zeigen wir nur bei echtem Version Unterschied. Build
-    // Stamp Differenzen (jeder Rebuild bekommt neuen Stamp) sind
-    // nicht alarmierend genug fuer ein prominentes Update Banner.
-    if (boxVer === appVer) return;
+    // Show the banner on any version OR build difference. Stamp-only
+    // drift used to be ignored as "not alarming enough", but in
+    // practice it is exactly the case the Box-Einstellungen status
+    // line already flags as "Update verfügbar" — keeping the
+    // music-tab banner silent in that situation produced confusing
+    // inconsistency across the two tabs.
+    const sameVer   = boxVer === appVer;
+    const sameBuild = boxBuild === appBuild;
+    if (sameVer && sameBuild) return;
     const boxLabel = boxBuild ? `${boxVer} (Build ${boxBuild})` : boxVer;
     const appLabel = appBuild ? `${appVer} (Build ${appBuild})` : appVer;
     banner.innerHTML = `
       <div class="update-msg">
-        <b>Box Software Update verfuegbar</b>
+        <b>Box Software Update verfuegbar</b><br>
         <small>Box: ${escapeHtml(boxLabel)} &middot; App: ${escapeHtml(appLabel)}</small>
       </div>
       <button class="btn btn-primary btn-mini" id="boxUpdateBtn">Aktualisieren</button>
@@ -1451,7 +988,7 @@ async function checkBoxUpdate() {
     if (state.currentBox.version && state.currentBox.version !== state.appInfo.version) {
       banner.innerHTML = `
         <div class="update-msg">
-          <b>Box Software Update verfuegbar</b>
+          <b>Box Software Update verfuegbar</b><br>
           <small>Box laeuft mit Version ${escapeHtml(state.currentBox.version)}, die App hat Version ${escapeHtml(state.appInfo.version)}.</small>
         </div>
         <button class="btn btn-primary btn-mini" id="boxUpdateBtn">Aktualisieren</button>
@@ -1464,25 +1001,56 @@ async function checkBoxUpdate() {
 
 async function doBoxUpdate() {
   if (!state.currentBox) return;
-  // Beide Update Buttons gleichzeitig steuern (Banner oben + Stick Info Sektion)
-  const buttons = ['boxUpdateBtn', 'stickInfoUpdateBtn'].map(id => $(id)).filter(Boolean);
-  const setStatus = (text) => buttons.forEach(b => { b.textContent = text; b.disabled = true; });
-  const reset = () => buttons.forEach(b => { b.disabled = false; b.textContent = 'Aktualisieren'; });
+  // Drive both update buttons together (banner up top + stick info section)
+  const buttons = () => ['boxUpdateBtn', 'stickInfoUpdateBtn'].map(id => $(id)).filter(Boolean);
+  const setStatus = (text) => buttons().forEach(b => { b.textContent = text; b.disabled = true; });
+  const reset = () => buttons().forEach(b => { b.disabled = false; b.textContent = 'Aktualisieren'; });
   setStatus('Hochladen...');
+  const targetBox = state.currentBox;
+  const appBuild  = state.appInfo && state.appInfo.build;
   try {
-    await UpdateBoxAgent(state.currentBox.host, state.currentBox.port);
-    setStatus('Software startet neu...');
-    showToast('Update hochgeladen. Software auf der Box startet in ca. 10 Sekunden neu.');
-    setTimeout(async () => {
-      setStatus('Suche Box...');
-      await discoverBoxes();
-      setStatus('Pruefe Version...');
-      setTimeout(() => {
-        checkBoxUpdate();
-        if (state.view === 'settings') loadBoxSettings();
-        reset();
-      }, 3000);
-    }, 10000);
+    await UpdateBoxAgent(targetBox.host, targetBox.port);
+    // Agent has accepted the binary. It will detach, sleep ~70 s
+    // (TIME_WAIT for listener ports — see internal/webui handleAgentUpdate),
+    // then exec the new binary. During that whole window the box is
+    // unreachable; the previous UI would re-enable the button after a
+    // fixed 13 s timer, which invited the user to click again while
+    // the agent was still mid-restart.
+    showToast('Update hochgeladen. Box braucht jetzt etwa 90 Sekunden bis sie wieder antwortet.');
+    setStatus('Box laeuft neu hoch (bis zu 2 Min)...');
+    // Active poll: hit /api/agent/version until the box answers with
+    // a build matching the app's appBuild. Up to 3 minutes, 5 s
+    // between attempts. As long as the build is wrong or the box
+    // is unreachable, the buttons stay locked.
+    const startMs = Date.now();
+    const deadlineMs = startMs + 180_000;
+    let confirmed = false;
+    while (Date.now() < deadlineMs) {
+      await sleep(5_000);
+      try {
+        const v = await BoxAgentVersion(targetBox.host, targetBox.port);
+        if (v && v.build && (!appBuild || v.build === appBuild)) {
+          confirmed = true;
+          break;
+        }
+        const waited = Math.round((Date.now() - startMs) / 1000);
+        setStatus(`Box antwortet noch alter Build (${waited}s)...`);
+      } catch {
+        const waited = Math.round((Date.now() - startMs) / 1000);
+        setStatus(`Warte auf Box (${waited}s)...`);
+      }
+    }
+    if (confirmed) {
+      showToast('Update fertig.');
+    } else {
+      showToast('Box braucht laenger als erwartet. Pruefe Strom / Netzwerk.');
+    }
+    // Refresh app state regardless of confirmation so the user sees
+    // current truth (either updated or still in OTA).
+    await discoverBoxes();
+    checkBoxUpdate();
+    if (state.view === 'settings') loadBoxSettings();
+    reset();
   } catch (e) {
     showError('Update fehlgeschlagen: ' + e + '\n\nFalls die Box danach nicht mehr antwortet, trenne kurz den Strom und stecke sie wieder an.');
     reset();
@@ -2454,7 +2022,6 @@ function friendlySettingsError(err) {
   return 'Verbindung fehlgeschlagen. ' + s;
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function renderBoxSettings(s, box) {
   const info = s.info || {};
@@ -3083,13 +2650,6 @@ const debouncedSetBass = debounce(async (box, defaultBass) => {
   } catch (e) { showError(e); }
 }, 200);
 
-function debounce(fn, ms) {
-  let t = null;
-  return (...args) => {
-    if (t) clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
-  };
-}
 
 // ---------- Setup View ----------
 
@@ -3480,68 +3040,6 @@ async function doSetup() {
   $('setupGo').disabled = false;
 }
 
-// ---------- Modals ----------
-
-let warnResolve = null;
-$('warnCancel').onclick = () => { closeWarn(); if (warnResolve) warnResolve(false); };
-$('warnConfirm').onclick = () => { closeWarn(); if (warnResolve) warnResolve(true); };
-function confirmWarn(title, bodyHtml) {
-  $('warnModal').querySelector('.warn-title').innerHTML = '<span class="warn-icon">&#9888;</span> ' + escapeHtml(title);
-  $('warnBody').innerHTML = bodyHtml;
-  $('warnModal').classList.remove('hidden');
-  return new Promise(res => { warnResolve = res; });
-}
-function closeWarn() { $('warnModal').classList.add('hidden'); }
-
-$('errorClose').onclick = () => $('errorModal').classList.add('hidden');
-$('errorCopy').onclick = async () => {
-  const txt = $('errorText').value;
-  try {
-    await navigator.clipboard.writeText(txt);
-    $('errorCopy').textContent = 'Kopiert!';
-    setTimeout(() => $('errorCopy').textContent = 'Kopieren', 1500);
-  } catch {
-    $('errorText').select();
-    document.execCommand('copy');
-  }
-};
-function showError(msg) {
-  $('errorText').value = String(msg || 'Unbekannter Fehler');
-  $('errorModal').classList.remove('hidden');
-}
-
-let toastTimer = null;
-function showToast(msg) {
-  const t = $('toast');
-  if (!t) return;
-  t.textContent = msg;
-  t.classList.add('show');
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
-}
-
-// ---------- Helper ----------
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function escapeAttr(s) { return escapeHtml(s); }
-
-// decodeXmlEntities macht aus "Rock &amp; Roll" wieder "Rock & Roll".
-// Bose liefert in /now_playing XML escaped — wenn wir den String 1:1
-// als Preset Name speichern, kommt er beim naechsten Render doppelt
-// escaped raus.
-function decodeXmlEntities(s) {
-  if (!s) return s;
-  return String(s)
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
-}
 
 renderFooter();
 
@@ -3561,6 +3059,12 @@ renderFooter();
     refreshStatus();
     loadTaxonomy();
     loadStickRegion();
+    // Also fire the OTA-check on boot. Without this, an app that
+    // boots while box version === app version skips checkBoxUpdate
+    // (it only fires from discoverBoxes on `changed=true`), and the
+    // Musik-hören banner never reflects a build-stamp mismatch
+    // even though Box-Einstellungen surfaces it independently.
+    checkBoxUpdate();
   } else {
     renderBoxSelect();
   }

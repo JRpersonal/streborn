@@ -34,6 +34,7 @@ export namespace main {
 	    friendlyName: string;
 	    model: string;
 	    version: string;
+	    build: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new BoxInfo(source);
@@ -48,6 +49,7 @@ export namespace main {
 	        this.friendlyName = source["friendlyName"];
 	        this.model = source["model"];
 	        this.version = source["version"];
+	        this.build = source["build"];
 	    }
 	}
 	export class Preset {

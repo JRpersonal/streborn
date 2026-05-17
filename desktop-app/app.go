@@ -49,6 +49,11 @@ type BoxInfo struct {
 	FriendlyName string `json:"friendlyName"`
 	Model        string `json:"model"`
 	Version      string `json:"version"`
+	// Build is the agent's build stamp (YYYY-MM-DD-HHMM) as
+	// announced via mDNS TXT. Empty if the box runs an older agent
+	// that did not yet broadcast build. Used by the frontend update
+	// indicators to flag stamp drift even when version strings match.
+	Build        string `json:"build"`
 }
 
 // DiscoverBoxes durchsucht das LAN nach Sticks via mDNS und blockiert max
@@ -79,6 +84,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 			FriendlyName: inst.FriendlyName,
 			Model:        inst.Model,
 			Version:      inst.Version,
+			Build:        inst.Build,
 		}
 	}
 

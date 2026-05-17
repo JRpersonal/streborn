@@ -224,6 +224,7 @@ func run() error {
 			FriendlyName: "Bose SoundTouch " + lastN(deviceID, 6),
 			Model:        "SoundTouch",
 			Version:      version,
+			Build:        buildStamp,
 		},
 	)
 	if mdnsErr != nil {
