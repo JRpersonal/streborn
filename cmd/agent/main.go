@@ -644,13 +644,17 @@ func proxyStreamURL(slot int) string {
 
 // initialBoxPresetSync wartet auf den Box Boot und synct alle Stick
 // Presets an den Box internen Preset Store. Mit Retry Loop: bei
-// fehlgeschlagenen Slots wird nach 10s erneut versucht, bis zu 6 mal.
+// fehlgeschlagenen Slots wird nach 10s erneut versucht, bis zu 12 mal.
 // Hintergrund: die Bose Firmware ist beim Boot manchmal noch nicht
 // bereit fuer AddPreset Calls (autopair noch nicht durch, marge state
 // noch nicht initialisiert). Ohne Retry blieben Slots dauerhaft ohne
 // Box Eintrag — Hardware Tasten 1-6 wuerden dann nichts ausloesen.
+// Initial 30 s Warten (war 12 s): in der Praxis gemessen, dass die
+// Bose Firmware nach einem Cold Boot ~60 s braucht bis /info auf 8090
+// antwortet und marge State steht. 12 s war optimistisch.
+// 12 Retry Slots mit je 10 s Pause = ~2 Minuten gesamter Runway.
 func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Logger) {
-	time.Sleep(12 * time.Second)
+	time.Sleep(30 * time.Second)
 	specs := make([]boxcli.PresetSpec, 0, 6)
 	for _, p := range store.All() {
 		specs = append(specs, boxcli.PresetSpec{
@@ -667,7 +671,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 		pending[p.Slot] = p
 	}
 
-	for attempt := 0; attempt < 6 && len(pending) > 0; attempt++ {
+	for attempt := 0; attempt < 12 && len(pending) > 0; attempt++ {
 		if attempt > 0 {
 			time.Sleep(10 * time.Second)
 		}
