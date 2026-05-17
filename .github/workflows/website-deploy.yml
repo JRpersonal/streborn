@@ -22,8 +22,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Code auschecken
-        # actions/checkout v4.2.2 auf SHA gepinnt. Dependabot pflegt das automatisch.
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        # actions/checkout v5.0.0 auf SHA gepinnt. Dependabot pflegt das automatisch.
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
 

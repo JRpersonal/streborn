@@ -21,8 +21,8 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      # actions/checkout v4.2.2 pinned to SHA
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      # actions/checkout v5.0.0 pinned to SHA
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
 
@@ -44,7 +44,7 @@ jobs:
     name: golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
@@ -65,7 +65,7 @@ jobs:
     # remove this once setup-go reliably installs the latest 1.25.x.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
@@ -95,7 +95,7 @@ jobs:
             goarch: amd64
             suffix: amd64
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
           persist-credentials: false
 
