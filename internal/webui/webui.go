@@ -437,15 +437,18 @@ func (s *Server) handleRadioSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stations)
 }
 
-// handleRadioTop liefert die meistgevoteten Sender, default Deutschland.
+// handleRadioTop liefert die meistgevoteten Sender. Country Filter
+// kommt strikt vom Client. Frueher defaultete der Server still auf
+// "DE" wenn cc fehlte — das hat den Frontend-Filter "alle Laender"
+// (der cc=leer schickt) sabotiert: User bekam trotzdem nur DE Sender.
+// Jetzt: cc leer = keine Country Filter, Top global. Wenn der User
+// DE will, schickt das Frontend cc=DE explizit, was es per Default
+// auch tut (state.searchCountry: 'DE' bis der User aktiv umschaltet).
 // Respektiert ALLE Filter (tag, lang, order, onlyok, offset). Default
 // sort ist votes desc; mit q.Get("order") explizit ueberschreibbar.
 func (s *Server) handleRadioTop(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	cc := q.Get("cc")
-	if cc == "" {
-		cc = "DE"
-	}
 	limit := 30
 	if v := q.Get("limit"); v != "" {
 		fmt.Sscanf(v, "%d", &limit)
@@ -654,23 +657,28 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Self-Restart: rc.local startet uns NICHT bei Prozesstod (nur beim
-	// Boot). Wir delegieren den Restart an einen detached `sh -c sleep
-	// 3 && exec ...` Prozess. Der wartet bis unsere Listener Sockets
-	// vom Kernel wirklich freigegeben sind (TIME_WAIT), erst dann bindet
-	// das neue Binary auf :8888 / :8081 / :9080 / :443. Ohne den Sleep
-	// gibt es race "bind: address already in use" beim BMX Listener und
-	// der neue Agent crashed sofort, Watchdog laeuft erst 60 s spaeter
-	// wieder los.
+	// Boot). Wir delegieren den Restart an einen detached
+	// `sh -c sleep 70 && exec ...` Prozess. Der Sleep wartet bis die
+	// Listener Sockets vom Kernel freigegeben sind. Auf den Ports
+	// :8081 (bmx) und :9080 (marge) haelt die Bose Firmware long-lived
+	// Verbindungen offen — wenn der Agent stirbt, gehen die Sockets
+	// in TIME_WAIT fuer tcp_fin_timeout (60 s auf diesem Kernel). Die
+	// fruehere Version benutzte `sleep 3`, was viel zu kurz war: das
+	// neue Binary scheiterte am Bind mit "address already in use" und
+	// landete in einem 60 s Crash Loop, der von der Watchdog Schleife
+	// in run.sh genau im TIME_WAIT Takt am Leben gehalten wurde
+	// (gesehen am 2026-05-17 in einem Produktion Box Log). 70 s gibt
+	// 60 s TIME_WAIT plus 10 s Sicherheit.
 	go func() {
 		time.Sleep(1 * time.Second)
-		s.logger.Info("agent self-restart: detached sh sleep 3 + exec")
+		s.logger.Info("agent self-restart: detached sh sleep 70 + exec")
 
 		// Args schoen quoten damit sh keine Wortgrenzen falsch versteht
 		quoted := make([]string, 0, len(os.Args))
 		for _, a := range os.Args {
 			quoted = append(quoted, "'"+strings.ReplaceAll(a, "'", "'\\''")+"'")
 		}
-		shCmd := "sleep 3 && exec " + strings.Join(quoted, " ") + " >> /tmp/streborn-agent.log 2>&1"
+		shCmd := "sleep 70 && exec " + strings.Join(quoted, " ") + " >> /tmp/streborn-agent.log 2>&1"
 		// Erstes Args[0] auf neuen Binary Pfad zeigen lassen (wir haben
 		// gerade den Pfad ueberschrieben — neuer Binary an gleicher Stelle).
 		_ = dst

@@ -2038,7 +2038,12 @@ function buildSearchURL() {
     offset: String(state.searchOffset),
     order: ord,
   });
-  if (state.searchCountry) params.set('cc', state.searchCountry);
+  // Country: leerer String bedeutet "alle Laender". Wir schicken den
+  // Filter dann explizit als leeren Wert (cc=) statt ihn ganz wegzulassen,
+  // damit der Server unterscheiden kann zwischen "Filter nicht gesetzt"
+  // und "User will keinen Filter". Sonst defaultet die alte Server
+  // Variante stillschweigend auf DE.
+  params.set('cc', state.searchCountry || '');
   if (state.searchLang)    params.set('lang', state.searchLang);
   if (state.searchTag)     params.set('tag', state.searchTag);
   if (state.searchOnlyOK)  params.set('onlyok', '1');

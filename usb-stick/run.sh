@@ -330,9 +330,16 @@ log "Agent gestartet mit PID $AGENT_PID"
 # 1 sleep + 1 read aus Page Cache + 1 kill -0 Syscall — vernachlaessigbar
 # (~50us pro Minute). Kein Flash Write im Normalbetrieb, nur bei
 # tatsaechlichem Restart wird agent.pid einmal neu geschrieben.
+#
+# Sleep 90 s statt 60: TIME_WAIT auf den Listener Ports ist
+# tcp_fin_timeout (60 s) lang. Wenn der Agent stirbt waehrend die
+# Bose Firmware noch offene Verbindungen zu :8081 (bmx) oder :9080
+# (marge) hat, wuerde ein Sleep 60 Watchdog Respawn exakt am Ende des
+# TIME_WAIT Fensters feuern und am bind scheitern — was sich dann
+# selbst aufrecht erhaelt. 90 s lassen TIME_WAIT erst sicher ablaufen.
 (
     while true; do
-        sleep 60
+        sleep 90
         if [ ! -f "$PIDFILE" ]; then
             break  # PID File weg, run.sh wird neu durchlaufen
         fi
