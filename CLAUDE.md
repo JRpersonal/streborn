@@ -140,7 +140,9 @@ measurable, not aspirational:
    their German equivalents have no placeholder text.
 
 Code signing, notarization, additional models, and Wails sandboxing
-are post-1.0.
+are post-1.0. Forward-looking ideas beyond v1.0 — currently an iOS
+PWA proposal and a factory-reset wizard for the desktop app — live
+in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Release pipeline dry-run
 
