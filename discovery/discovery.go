@@ -60,6 +60,11 @@ type Config struct {
 	Model string
 	// Version ist die Stick Agent Version.
 	Version string
+	// Build is the agent build stamp (YYYY-MM-DD-HHMM). Announced
+	// alongside Version so the desktop app's "update available"
+	// indicators can detect stamp drift between two binaries that
+	// happen to share the same git-describe version string.
+	Build string
 }
 
 // Announce startet einen mDNS Server der den Stick announciert. Stop mit
@@ -88,6 +93,7 @@ func Announce(logger *slog.Logger, cfg Config) (*Announcer, error) {
 func (a *Announcer) register() error {
 	txt := []string{
 		"version=" + nz(a.cfg.Version, "dev"),
+		"build=" + nz(a.cfg.Build, ""),
 		"deviceID=" + nz(a.cfg.DeviceID, ""),
 		"model=" + nz(a.cfg.Model, ""),
 		"friendlyName=" + nz(a.cfg.FriendlyName, ""),
@@ -185,6 +191,7 @@ type Instance struct {
 	Model        string
 	FriendlyName string
 	Version      string
+	Build        string
 }
 
 // Browse searches the LAN for sticks announcing either the current or
@@ -243,6 +250,8 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 					inst.FriendlyName = v
 				case "version":
 					inst.Version = v
+				case "build":
+					inst.Build = v
 				}
 			}
 			if logger != nil {

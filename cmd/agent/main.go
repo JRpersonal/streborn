@@ -213,6 +213,23 @@ func run() error {
 		webui.WithRegionFile(*regionFile),
 		webui.WithStreamProxy(streamProxySrv))
 
+	// Box model — ask the local Bose firmware which actual model
+	// it is (SoundTouch 10 vs 20 vs 30 vs Portable). Falls back to
+	// the generic "SoundTouch" if /info is not yet answering on a
+	// cold boot. Used by the desktop app to disambiguate multiple
+	// boxes on the same LAN.
+	model := "SoundTouch"
+	{
+		infoCtx, infoCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if settings, err := boxapi.New(*boxHost).LoadSettings(infoCtx); err == nil && settings.Info.Type != "" {
+			model = settings.Info.Type
+			logger.Info("Box Modell erkannt", "type", model)
+		} else if err != nil {
+			logger.Debug("Box /info noch nicht erreichbar, nutze Fallback Model", "err", err)
+		}
+		infoCancel()
+	}
+
 	// mDNS Announce damit die Desktop App den Stick im LAN findet.
 	// Bei mehreren Boxen im Netz ist jeder Stick eine eigene Instance,
 	// die Desktop App listet alle.
@@ -222,8 +239,9 @@ func run() error {
 			Port:         8888,
 			DeviceID:     deviceID,
 			FriendlyName: "Bose SoundTouch " + lastN(deviceID, 6),
-			Model:        "SoundTouch",
+			Model:        model,
 			Version:      version,
+			Build:        buildStamp,
 		},
 	)
 	if mdnsErr != nil {

@@ -410,7 +410,7 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRadioSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
 	defer cancel()
 	limit := 30
 	if v := q.Get("limit"); v != "" {
@@ -462,7 +462,7 @@ func (s *Server) handleRadioTop(w http.ResponseWriter, r *http.Request) {
 		order = "votes"
 	}
 	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
 	defer cancel()
 	stations, err := rb.Search(ctx, radiobrowser.SearchOpts{
 		Country:  cc,
@@ -489,7 +489,7 @@ func (s *Server) handleRadioTags(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscanf(v, "%d", &limit)
 	}
 	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
 	defer cancel()
 	tags, err := rb.TopTags(ctx, limit)
 	if err != nil {
@@ -513,7 +513,7 @@ func (s *Server) handleRadioLanguages(w http.ResponseWriter, r *http.Request) {
 	country := strings.ToUpper(strings.TrimSpace(q.Get("country")))
 
 	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
 	defer cancel()
 
 	if country != "" {

@@ -22,16 +22,28 @@ import (
 	"time"
 )
 
-// Mirrors sind die Server die wir der Reihe nach probieren. Erster
-// erfolgreicher gewinnt; bei Fehler oder Timeout wandern wir zum
-// naechsten. Reihenfolge wird im Speicher beibehalten und rotiert bei
-// erfolgreichem Call (ein gerade erfolgreicher Mirror bleibt vorne).
+// Mirrors are the servers we try in order. First success wins; on
+// error or timeout we move to the next. Order is kept across calls
+// and the most recent successful mirror moves to the front, so a
+// stable mirror stays primary as long as it answers.
+//
+// As of 2026-05-17 radio-browser.info has consolidated their
+// infrastructure: their own discovery endpoint
+// (https://all.api.radio-browser.info/json/servers) only returns
+// de1.api.radio-browser.info as an alive server — de2/at1/nl1/fi1
+// no longer resolve. The hardcoded list mirrors that reality:
+//   - `de1.api...`     — the named primary
+//   - `all.api...`     — DNS round-robin fallback that resolves to
+//                        whichever server is currently alive (one
+//                        request away from being self-healing if
+//                        radio-browser adds new servers).
+//   - `91.98.4.78`     — de1's current IPv4 hard-coded as last-
+//                        resort if DNS itself is down on the
+//                        speaker's network.
 var Mirrors = []string{
 	"https://de1.api.radio-browser.info/json",
-	"https://de2.api.radio-browser.info/json",
-	"https://at1.api.radio-browser.info/json",
-	"https://nl1.api.radio-browser.info/json",
-	"https://fi1.api.radio-browser.info/json",
+	"https://all.api.radio-browser.info/json",
+	"https://91.98.4.78/json",
 }
 
 // Station beschreibt einen einzelnen Sender wie er von der API kommt.
@@ -359,9 +371,21 @@ func (c *Client) Click(ctx context.Context, uuid string) error {
 	return c.fetchJSON(ctx, "/url/"+url.PathEscape(uuid), &out)
 }
 
+// perMirrorTimeout caps every individual attempt against a single
+// mirror. Smaller than the outer handler ctx so several mirrors can
+// be tried within the user-perceived wait — without this the first
+// slow mirror used to consume the entire 8 s handler budget and
+// failover was effectively dead.
+const perMirrorTimeout = 3 * time.Second
+
 // fetchJSON probiert alle Mirrors der Reihe nach. Erster erfolgreicher
 // gewinnt. Bei Erfolg merken wir uns den Mirror als "primary" damit der
 // naechste Call denselben Server bevorzugt.
+//
+// Each attempt runs under its own derived context with a 3 s timeout
+// instead of sharing the outer handler ctx. That way a single slow
+// or hung mirror cannot eat the whole budget — five mirrors at 3 s
+// each fit inside the webui handler's 15 s outer timeout with margin.
 func (c *Client) fetchJSON(ctx context.Context, path string, out any) error {
 	c.mu.Lock()
 	mirrors := append([]string(nil), c.mirrors...)
@@ -369,44 +393,63 @@ func (c *Client) fetchJSON(ctx context.Context, path string, out any) error {
 
 	var lastErr error
 	for i, base := range mirrors {
-		full := base + path
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if c.UA != "" {
-			req.Header.Set("User-Agent", c.UA)
-		}
-		resp, err := c.HTTP.Do(req)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			n := len(body)
-			if n > 256 {
-				n = 256
+		// Outer ctx cancelled (handler timeout fired, client went
+		// away): stop trying further mirrors.
+		if err := ctx.Err(); err != nil {
+			if lastErr == nil {
+				lastErr = err
 			}
-			lastErr = fmt.Errorf("mirror %s: %d: %s", base, resp.StatusCode, string(body[:n]))
-			continue
+			break
 		}
-		if err := json.Unmarshal(body, out); err != nil {
-			lastErr = fmt.Errorf("decode %s: %w", base, err)
-			continue
+		err := c.tryMirror(ctx, base, path, out)
+		if err == nil {
+			// Erfolg: Mirror nach vorne sortieren wenn nicht schon erster
+			if i > 0 {
+				c.mu.Lock()
+				c.mirrors[0], c.mirrors[i] = c.mirrors[i], c.mirrors[0]
+				c.mu.Unlock()
+			}
+			return nil
 		}
-		// Erfolg: Mirror nach vorne sortieren wenn nicht schon erster
-		if i > 0 {
-			c.mu.Lock()
-			c.mirrors[0], c.mirrors[i] = c.mirrors[i], c.mirrors[0]
-			c.mu.Unlock()
-		}
-		return nil
+		lastErr = err
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("kein mirror erreichbar")
 	}
 	return lastErr
+}
+
+// tryMirror executes a single mirror attempt under its own short ctx.
+// Returns nil on success, error otherwise (timeout, non-200, decode
+// failure). Caller is responsible for falling through to the next
+// mirror on error.
+func (c *Client) tryMirror(parent context.Context, base, path string, out any) error {
+	ctx, cancel := context.WithTimeout(parent, perMirrorTimeout)
+	defer cancel()
+
+	full := base + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
+	if err != nil {
+		return err
+	}
+	if c.UA != "" {
+		req.Header.Set("User-Agent", c.UA)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		n := len(body)
+		if n > 256 {
+			n = 256
+		}
+		return fmt.Errorf("mirror %s: %d: %s", base, resp.StatusCode, string(body[:n]))
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode %s: %w", base, err)
+	}
+	return nil
 }

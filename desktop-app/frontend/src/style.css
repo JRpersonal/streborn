@@ -59,26 +59,74 @@ body {
   color: var(--brand-text);
   line-height: 1.4;
 }
+/* Three donate buttons, each branded per the provider's official
+   guidelines. Common shell: 130px wide, 32px tall, inline icon + text.
+   The brand-specific class overrides background / text / border. */
 .donate-side .donate-btn {
-  display: inline-block;
-  background: linear-gradient(135deg, #0070ba 0%, #003087 100%);
-  color: #fff;
-  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 130px;
+  padding: 7px 10px;
   border-radius: 18px;
   font-weight: 600;
+  font-size: 12px;
   text-decoration: none;
   cursor: pointer;
-  font-size: 12px;
-  box-shadow: 0 2px 8px rgba(0, 112, 186, 0.4);
-  border: none;
+  border: 1px solid transparent;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
 }
 .donate-side .donate-btn:hover { transform: translateY(-1px); }
-.donate-side .donate-btn[disabled] {
-  background: #444;
-  color: #888;
-  cursor: not-allowed;
-  box-shadow: none;
+.donate-side .donate-btn-icon { display: inline-flex; align-items: center; }
+.donate-side .donate-btn-label { line-height: 1; }
+
+/* GitHub Sponsors — Mona Pink #bf3989 on white. */
+.donate-side .donate-gh {
+  background: #ffffff;
+  color: #24292f;
+  border-color: #bf3989;
+  box-shadow: 0 2px 6px rgba(191, 57, 137, 0.25);
 }
+.donate-side .donate-gh:hover {
+  background: #fff5fa;
+  box-shadow: 0 3px 10px rgba(191, 57, 137, 0.45);
+}
+.donate-side .donate-gh .donate-btn-icon { color: #bf3989; }
+
+/* PayPal — official yellow #FFC439, hover #F5B81F. Two-tone wordmark
+   "Pay" #003087 + "Pal" #009CDE in italic-bold (PayPal Sans isn't
+   licensed for free use; italic + bold is the closest free fallback
+   that still reads as the PayPal mark). */
+.donate-side .donate-paypal {
+  background: #ffc439;
+  box-shadow: 0 2px 6px rgba(255, 196, 57, 0.4);
+}
+.donate-side .donate-paypal:hover {
+  background: #f5b81f;
+  box-shadow: 0 3px 10px rgba(245, 184, 31, 0.55);
+}
+.donate-side .donate-paypal-wordmark {
+  font-style: italic;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: -0.3px;
+  font-family: Helvetica, Arial, sans-serif;
+}
+.donate-side .donate-paypal-wordmark .pay { color: #003087; }
+.donate-side .donate-paypal-wordmark .pal { color: #009cde; }
+
+/* Ko-fi — coral #FF5E5B with white text and icon. */
+.donate-side .donate-kofi {
+  background: #ff5e5b;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(255, 94, 91, 0.4);
+}
+.donate-side .donate-kofi:hover {
+  background: #e63946;
+  box-shadow: 0 3px 10px rgba(230, 57, 70, 0.55);
+}
+
 .donate-side small { color: #666; font-size: 10px; }
 /* Bei zu schmalen Fenstern ueberlappt der Donate sonst die App
    — dann ausblenden, der Footer Link bleibt als Backup. */
@@ -105,6 +153,22 @@ body {
   flex-direction: column;
   margin-bottom: 6px;
   padding-bottom: 4px;
+}
+.app-header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.app-logo {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  color: #eee; /* drives the dots + horizontal lines via currentColor;
+                 the red heartbeat stays #cc0000 in the SVG itself */
+}
+.app-logo svg {
+  width: 100%;
+  height: 100%;
 }
 .app-brand {
   font-size: 20px;
@@ -246,6 +310,7 @@ body {
 }
 .box-edit:hover { color: var(--brand); background: rgba(102, 187, 221, 0.12); }
 .box-ver { background: #333; color: #aaa; font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
+.box-model { color: #888; font-size: 11px; font-weight: 500; margin-left: 8px; }
 
 /* ---------- Status Bar (Signal-Farben!) ---------- */
 .status-bar { background: #222; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; min-height: 36px; display: flex; align-items: center; font-size: 13px; }
