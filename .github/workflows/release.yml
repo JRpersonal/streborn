@@ -200,7 +200,7 @@ jobs:
 
       - name: Setup Node
         # actions/setup-node v4.0.4 pinned to SHA
-        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20
           cache: npm
@@ -287,7 +287,7 @@ jobs:
           cache: true
 
       - name: Setup Node
-        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20
           cache: npm
@@ -399,7 +399,7 @@ jobs:
           cache: true
 
       - name: Setup Node
-        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20
           cache: npm
