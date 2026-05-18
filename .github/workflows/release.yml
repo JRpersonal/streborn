@@ -219,7 +219,7 @@ jobs:
 
       - name: Download ARM agent
         # actions/download-artifact v7.0.0 pinned to SHA
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: agent-armv7l
           path: agent-download
@@ -313,7 +313,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Download ARM agent
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: agent-armv7l
           path: agent-download
@@ -417,7 +417,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Download ARM agent
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: agent-armv7l
           path: agent-download
@@ -503,7 +503,7 @@ jobs:
           persist-credentials: false
 
       - name: Download all artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           path: dist
           merge-multiple: true
