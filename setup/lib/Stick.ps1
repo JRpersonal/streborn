@@ -237,8 +237,9 @@ function Select-Stick {
 
     if ($sel.FileSystem -ne "FAT32") {
         Write-Warn "Laufwerk ist $($sel.FileSystem), nicht FAT32"
-        $confirm = Read-Host "    Trotzdem weitermachen? (j/n)"
-        if ($confirm -ne "j") { throw "Vom User abgebrochen wegen Filesystem" }
+        if (-not (Read-YesNo "    Trotzdem weitermachen? / Continue anyway?")) {
+            throw "Vom User abgebrochen wegen Filesystem"
+        }
     }
 
     Set-CachedConfig "lastStickDrive" $drive

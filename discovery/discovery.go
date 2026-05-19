@@ -9,8 +9,10 @@
 //   _soundtouchstick._tcp.local  legacy STR pre-rename, still in use
 //                                on speakers that have not been
 //                                OTA-updated yet
-//   _bose-soundtouch._tcp.local  stock Bose speakers (informational
-//                                only, not announced by STR)
+//   _soundtouch._tcp.local       stock Bose speakers, primary name
+//                                observed in the wild (ST10/20/30)
+//   _bose-soundtouch._tcp.local  alternate stock spelling seen on
+//                                some firmware variants
 //
 // Multiple speakers on the same network are supported. The desktop
 // app lists every announced stick via DNS-SD browse plus every
@@ -40,14 +42,23 @@ const (
 	// network still discovers every box.
 	LegacyServiceType = "_soundtouchstick._tcp"
 
-	// StockServiceType is the mDNS service that stock Bose SoundTouch
-	// firmware advertises out of the box. STR does not announce under
-	// this name; Browse() scans for it so the desktop app can show
-	// "needs STR install" speakers next to already-flashed ones.
-	StockServiceType = "_bose-soundtouch._tcp"
+	// StockServiceType is the primary mDNS service that stock Bose
+	// SoundTouch firmware advertises out of the box (observed on
+	// ST10/20/30 with firmware 27.0.6). Browse() scans for it so the
+	// desktop app can show "needs STR install" speakers next to
+	// already-flashed ones. STR itself does not announce under it.
+	StockServiceType = "_soundtouch._tcp"
 
 	Domain = "local."
 )
+
+// StockServiceTypeAliases lists additional mDNS service names that
+// some Bose SoundTouch firmware variants use instead of (or in
+// addition to) StockServiceType. Browse() iterates over all of them
+// so we do not depend on a single spelling being correct everywhere.
+var StockServiceTypeAliases = []string{
+	"_bose-soundtouch._tcp",
+}
 
 // Kind enumerates how a discovered speaker reports itself.
 //   - KindSTR:   announces an STR agent (current or legacy service)
@@ -243,14 +254,10 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolver (legacy): %w", err)
 	}
-	stockResolver, err := zeroconf.NewResolver(nil)
-	if err != nil {
-		return nil, fmt.Errorf("resolver (stock): %w", err)
-	}
 
 	curEntries := make(chan *zeroconf.ServiceEntry, 8)
 	legacyEntries := make(chan *zeroconf.ServiceEntry, 8)
-	stockEntries := make(chan *zeroconf.ServiceEntry, 8)
+	stockEntries := make(chan *zeroconf.ServiceEntry, 16)
 
 	if err := curResolver.Browse(ctx, ServiceType, Domain, curEntries); err != nil {
 		return nil, fmt.Errorf("browse current: %w", err)
@@ -258,16 +265,45 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 	if err := legacyResolver.Browse(ctx, LegacyServiceType, Domain, legacyEntries); err != nil {
 		return nil, fmt.Errorf("browse legacy: %w", err)
 	}
-	if err := stockResolver.Browse(ctx, StockServiceType, Domain, stockEntries); err != nil {
-		// Stock browse is best-effort. If it fails, keep going with
-		// STR discovery only so a flaky network stack does not
-		// disable the desktop app's main path.
-		if logger != nil {
-			logger.Warn("stock mDNS browse failed, continuing without it",
-				slog.String("service", StockServiceType), slog.Any("err", err))
+
+	// Stock browse is best-effort across every spelling we know about.
+	// Each alias needs its own resolver and its own per-alias entries
+	// channel because zeroconf.Browse closes the channel when ctx ends
+	// and we cannot have multiple Browse() writing into one channel
+	// without risking a double-close panic. We fan them all into
+	// stockEntries via forwarder goroutines and close stockEntries
+	// when every alias is done.
+	stockNames := append([]string{StockServiceType}, StockServiceTypeAliases...)
+	var stockWG sync.WaitGroup
+	for _, svc := range stockNames {
+		r, err := zeroconf.NewResolver(nil)
+		if err != nil {
+			if logger != nil {
+				logger.Warn("stock mDNS resolver create failed",
+					slog.String("service", svc), slog.Any("err", err))
+			}
+			continue
 		}
-		stockEntries = nil
+		per := make(chan *zeroconf.ServiceEntry, 8)
+		if err := r.Browse(ctx, svc, Domain, per); err != nil {
+			if logger != nil {
+				logger.Warn("stock mDNS browse failed, continuing",
+					slog.String("service", svc), slog.Any("err", err))
+			}
+			continue
+		}
+		stockWG.Add(1)
+		go func() {
+			defer stockWG.Done()
+			for e := range per {
+				stockEntries <- e
+			}
+		}()
 	}
+	go func() {
+		stockWG.Wait()
+		close(stockEntries)
+	}()
 
 	go func() {
 		defer close(out)
@@ -291,38 +327,34 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 			for _, ip := range e.AddrIPv4 {
 				inst.IPv4 = append(inst.IPv4, ip.String())
 			}
+			// TXT key handling is case-insensitive. STR uses
+			// camelCase, stock Bose firmware tends to use UPPERCASE
+			// (MAC, MODEL, NAME, SOFTWAREVERSION) on most variants
+			// but we have also seen lowercase on a few. Treat them
+			// uniformly so a casing change in a future firmware does
+			// not silently break discovery.
 			for _, kv := range e.Text {
 				k, v, _ := strings.Cut(kv, "=")
-				switch k {
-				case "deviceID":
-					inst.DeviceID = v
-				case "model":
-					inst.Model = v
-				case "friendlyName":
-					inst.FriendlyName = v
-				case "version":
-					inst.Version = v
-				case "build":
-					inst.Build = v
-				// Stock Bose firmware uses different TXT keys.
-				// MAC: hex MAC address of the speaker
-				// MODEL: short product code (e.g. "soundtouch_10")
-				// SOFTWAREVERSION: stock firmware version
-				case "MAC":
+				switch strings.ToLower(k) {
+				case "deviceid", "mac":
 					if inst.DeviceID == "" {
-						inst.DeviceID = strings.ToUpper(v)
+						inst.DeviceID = strings.ToUpper(strings.ReplaceAll(v, ":", ""))
 					}
-				case "MODEL":
+				case "model":
 					if inst.Model == "" {
 						inst.Model = stockModelLabel(v)
 					}
-				case "NAME":
+				case "friendlyname", "name":
 					if inst.FriendlyName == "" {
 						inst.FriendlyName = v
 					}
-				case "SOFTWAREVERSION":
+				case "version", "softwareversion":
 					if inst.Version == "" {
 						inst.Version = v
+					}
+				case "build":
+					if inst.Build == "" {
+						inst.Build = v
 					}
 				}
 			}
