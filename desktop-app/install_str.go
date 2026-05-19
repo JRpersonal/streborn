@@ -113,6 +113,7 @@ func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
 func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
 	args := append(append([]string{}, sshFlags...), "root@"+host, cmd)
 	c := exec.Command("ssh", args...)
+	hideCmdWindow(c)
 	// CombinedOutput catches both streams which is what we want for
 	// install.sh log capture.
 	done := make(chan struct {
@@ -141,6 +142,7 @@ func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
 func boxSSHFireAndForget(host, cmd string, timeout time.Duration) error {
 	args := append(append([]string{}, sshFlags...), "root@"+host, cmd)
 	c := exec.Command("ssh", args...)
+	hideCmdWindow(c)
 	done := make(chan error, 1)
 	go func() { done <- c.Run() }()
 	select {
