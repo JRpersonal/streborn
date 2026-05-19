@@ -42,6 +42,18 @@ log() {
     echo "$(date): $*" >> "$LOG"
 }
 
+# setup_log mirrors the message to a stick-local setup.log so the
+# user can pull the diagnostic without SSH. The path lives on the
+# FAT32 stick and survives a Bose factory reset (Bose's reset wipes
+# NAND, not the stick). Append mode so multiple boot cycles
+# accumulate. Best-effort: if /media/sda1 is read-only or full, we
+# silently fall through; the in-tmpfs log() above still has it.
+SETUP_LOG="$STICK/setup.log"
+setup_log() {
+    log "$*"
+    echo "$(date): $*" >> "$SETUP_LOG" 2>/dev/null
+}
+
 # Auto-sync trigger: a freshly prepared stick (Setup-Wizard) ships a
 # version.txt. If that string differs from the version we recorded
 # for the NAND cache the stick is authoritative — the user just
@@ -163,23 +175,32 @@ if [ -x "$STICK/update.sh" ]; then
     "$STICK/update.sh" 2>&1 | tee -a "$LOG" || true
 fi
 
-# === WLAN Provisioning aus wlan.conf vom Stick ===
-# Wenn der User beim Stick Setup in der Desktop App WLAN Daten eingegeben
-# hat, liegt eine wlan.conf JSON Datei auf der SD Karte. Wir verarbeiten
-# die einmal und loeschen sie danach damit Credentials nicht offen liegen.
+# === WLAN Provisioning aus wlan.conf vom Stick (multi-approach) ===
+#
+# Eine factory-reset Bose schreibt /etc/wpa_supplicant.conf beim
+# Boot aus ihrer eigenen NetManager DB. Wenn dort kein Profil hinter
+# legt ist, schmeisst sie unsere Direct-Write Variante beim naechsten
+# Boot wieder raus. Deshalb fahren wir BEIDE Wege parallel:
+#
+#   A) Direct write nach /etc/wpa_supplicant.conf + wpa_supplicant
+#      Restart. Greift sofort, Box ist binnen Sekunden im WLAN.
+#   B) addWirelessProfile API call gegen 127.0.0.1:8090. Persistiert
+#      das Profil in NetManagers eigener DB, ueberlebt damit den
+#      naechsten Reboot ohne dass wir wlan.conf wieder lesen muessen.
+#
+# Was zuerst erfolgreich ist gewinnt. Jeder Schritt wird in
+# /media/sda1/setup.log mit Timestamp geschrieben damit ein User
+# das Stick einfach abziehen und Diagnose-Log via App hochladen kann
+# (Bose's Factory Reset wischt NAND, der Stick bleibt unberuehrt).
 WLAN_CONF="$STICK/wlan.conf"
 if [ -f "$WLAN_CONF" ]; then
+    setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) ==="
     SSID=$(sed -n 's/.*"ssid":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
     PASS=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
-    if [ -n "$SSID" ]; then
-        log "wlan.conf gefunden, provisioniere wpa_supplicant fuer SSID '$SSID'"
-        # Bose wpa_supplicant laeuft mit -c /etc/wpa_supplicant.conf.
-        # WICHTIG: wir schreiben die Datei KOMPLETT neu mit nur einem
-        # network={} Block. Frueheres Append fuehrt zu Chaos wenn alte
-        # Profile drin sind — Box probiert dann nicht erreichbare Netze
-        # zuerst und kann ewig hangen. Sauberer Reset = ein WLAN gilt.
+    setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
+    if [ -n "$SSID" ] && [ -n "$PASS" ]; then
+        # --- Approach A: direct /etc/wpa_supplicant.conf write ---
         WPA_CONF="/etc/wpa_supplicant.conf"
-        # Header in tmp Datei aufbauen, dann atomar nach Ziel
         TMP="/tmp/wpa_supplicant.conf.new"
         cat > "$TMP" <<WPAEOF
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root
@@ -195,28 +216,83 @@ network={
     key_mgmt=WPA-PSK
 }
 WPAEOF
-        # Backup der alten Config (falls /etc Schreiben fehl schlaegt
-        # ueberleben wir mit dem Backup im Persist Bereich).
         cp "$WPA_CONF" "$PERSIST/wpa_supplicant.conf.bak" 2>/dev/null
-        # Direktes Schreiben — falls /etc read only ist, faellt das hier
-        # auf, dann muessen wir den Inhalt streamen statt mv.
         if cat "$TMP" > "$WPA_CONF" 2>/dev/null; then
-            log "wpa_supplicant.conf komplett ueberschrieben mit nur '$SSID'"
+            setup_log "A: wpa_supplicant.conf direct-write OK ($(wc -c < "$WPA_CONF") bytes)"
         else
-            log "WARN: /etc/wpa_supplicant.conf nicht schreibbar — versuche bind mount"
-            mount --bind "$TMP" "$WPA_CONF" 2>/dev/null && log "bind mount aktiv"
+            setup_log "A: WARN /etc/wpa_supplicant.conf not writable, trying bind mount"
+            if mount --bind "$TMP" "$WPA_CONF" 2>/dev/null; then
+                setup_log "A: bind mount active"
+            else
+                setup_log "A: FAIL both direct-write and bind mount"
+            fi
         fi
-        # Restart wpa_supplicant damit neue Config sofort greift.
-        # Bei Reload haengt sich die Box manchmal — daher Restart statt SIGHUP.
         if pidof wpa_supplicant >/dev/null 2>&1; then
             killall wpa_supplicant 2>/dev/null
             sleep 1
             wpa_supplicant -B -i wlan0 -s -c "$WPA_CONF" -D nl80211 2>/dev/null &
+            setup_log "A: wpa_supplicant restarted"
+        else
+            setup_log "A: no wpa_supplicant process to restart (Bose may bring it up later)"
         fi
-        # WLAN config nur einmal anwenden, dann loeschen damit das Passwort
-        # nicht auf der SD card stehen bleibt
+
+        # --- Approach B: addWirelessProfile API against BoseApp ---
+        # NetManager persists the profile in /mnt/nv/BoseApp-Persistence
+        # so it survives the next reboot even if /etc/wpa_supplicant.conf
+        # is overwritten by Bose's own init logic.
+        BOSE_API="http://127.0.0.1:8090"
+        setup_log "B: waiting for BoseApp on $BOSE_API"
+        i=0
+        while [ $i -lt 30 ]; do
+            if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
+                setup_log "B: BoseApp reachable after ${i}s"
+                break
+            fi
+            sleep 2
+            i=$((i + 2))
+        done
+        if [ $i -ge 30 ]; then
+            setup_log "B: BoseApp did not respond within 60s, skipping API call"
+        else
+            # Pre-state for diagnosis.
+            NETINFO=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
+            setup_log "B: /networkInfo before: $NETINFO"
+            # XML body. SSID and password are inside attribute values,
+            # so escape only the XML-significant chars: & < > " '
+            # (we do NOT touch backslashes — wpa_supplicant treats
+            # double-quoted PSKs literally).
+            xml_escape() {
+                printf '%s' "$1" | sed \
+                    -e 's/\&/\&amp;/g' \
+                    -e 's/</\&lt;/g' \
+                    -e 's/>/\&gt;/g' \
+                    -e 's/"/\&quot;/g' \
+                    -e "s/'/\&apos;/g"
+            }
+            ESSID=$(xml_escape "$SSID")
+            EPASS=$(xml_escape "$PASS")
+            BODY="<AddWirelessProfile timeout=\"30\"><profile ssid=\"$ESSID\" password=\"$EPASS\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
+            RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
+                   --post-data="$BODY" "$BOSE_API/addWirelessProfile" 2>&1)
+            RC=$?
+            setup_log "B: POST addWirelessProfile rc=$RC response='$(echo "$RESP" | head -c 200)'"
+            if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
+                setup_log "B: API persisted profile successfully"
+            else
+                setup_log "B: API call did not confirm success (rc=$RC)"
+            fi
+            # Post-state, with grace period for the box to attempt
+            # association from the just-stored profile.
+            sleep 5
+            NETINFO2=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
+            setup_log "B: /networkInfo after: $NETINFO2"
+        fi
+
         rm -f "$WLAN_CONF" 2>/dev/null
-        log "WLAN provisioniert, wlan.conf vom Stick geloescht"
+        setup_log "wlan.conf removed from stick"
+        setup_log "=== WLAN provisioning end ==="
+    else
+        setup_log "wlan.conf invalid (SSID or PASS empty), aborting WLAN provisioning"
     fi
 fi
 
