@@ -63,17 +63,33 @@ func openLogFile() (*os.File, error) {
 	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 }
 
-// newFileLogger returns a slog.Logger that writes to BOTH the file
-// at LogFilePath() and stderr (so wails dev still shows logs in the
-// console), plus the underlying file handle so the caller can Sync
-// it before reading the file (e.g. when bundling for export).
-// If the file cannot be opened, the file return is nil and the
-// logger falls back to stderr-only.
+// safeWriter wraps an io.Writer and never returns its errors. Used
+// for the stderr leg of the multi-writer below: in Wails production
+// builds there is no attached console and stderr writes fail. The
+// io.MultiWriter contract stops at the first error from any writer,
+// which would prevent the file leg from receiving any output. We
+// keep the stderr leg purely so wails dev still shows logs, but its
+// errors must not cascade and silently swallow the file write.
+type safeWriter struct{ w io.Writer }
+
+func (s safeWriter) Write(p []byte) (int, error) {
+	_, _ = s.w.Write(p)
+	return len(p), nil
+}
+
+// newFileLogger returns a slog.Logger that writes to the file at
+// LogFilePath() and (best-effort) stderr. File writes come first in
+// the multi-writer so a dead stderr in a production Wails build
+// cannot prevent the file from being written. Also returns the
+// underlying file handle so the caller can Sync it before reading
+// the file (e.g. when bundling for export). If the file cannot be
+// opened, the file return is nil and the logger falls back to
+// safe-stderr only.
 func newFileLogger(level slog.Level) (*slog.Logger, *os.File) {
-	var w io.Writer = os.Stderr
+	var w io.Writer = safeWriter{os.Stderr}
 	var file *os.File
 	if f, err := openLogFile(); err == nil {
-		w = io.MultiWriter(os.Stderr, f)
+		w = io.MultiWriter(f, safeWriter{os.Stderr})
 		file = f
 	}
 	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})), file
