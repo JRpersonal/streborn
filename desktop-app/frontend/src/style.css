@@ -380,6 +380,30 @@ body {
 .box-edit:hover { color: var(--brand); background: rgba(102, 187, 221, 0.12); }
 .box-ver { background: #333; color: #aaa; font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
 .box-model { color: #888; font-size: 11px; font-weight: 500; margin-left: 8px; }
+.box-btn.stock {
+  background: #1f1f1f;
+  border-style: dashed;
+  border-color: #555;
+  color: #bbb;
+  padding-right: 10px;
+}
+.box-btn.stock:hover {
+  background: #292929;
+  border-color: var(--brand);
+  color: #eee;
+}
+.box-stock-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(204, 0, 0, 0.18);
+  color: #f08080;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
 
 /* ---------- Status Bar (Signal-Farben!) ---------- */
 .status-bar { background: #222; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; min-height: 36px; display: flex; align-items: center; font-size: 13px; }

@@ -49,6 +49,10 @@
   "speaker.rebootConfirmTitle": "Lautsprecher jetzt neu starten?",
   "speaker.rebootConfirmBody": "Hast du den USB-Stick bereits gezogen? Sonst bleibt SSH nach dem Reboot weiter offen. Aktuelle Wiedergabe wird unterbrochen.",
   "speaker.rebootingToast": "Lautsprecher startet neu. Er ist gleich wieder verfügbar.",
+  "speaker.needsInstallBadge": "STR-Installation nötig",
+  "speaker.stockTooltip": "Original-Bose-Firmware. STR ist auf diesem Lautsprecher noch nicht installiert.",
+  "speaker.stockConfirmTitle": "STR auf diesem Lautsprecher installieren?",
+  "speaker.stockConfirmBody": "<b>{{label}}</b> läuft noch mit der Original-Bose-Firmware. Um ihn von dieser App zu steuern, musst du den STR-Agent zuerst per USB-Stick installieren.<br><br>Jetzt die USB-Stick-Einrichtung öffnen?",
 
   "controls.pause": "Pause",
   "controls.stop": "Stop",

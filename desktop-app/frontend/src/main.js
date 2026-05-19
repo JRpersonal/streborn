@@ -765,7 +765,9 @@ function renderBoxSelect() {
     return;
   }
   sel.innerHTML = state.boxes.map(b => {
-    const active = state.currentBox && state.currentBox.host === b.host ? ' active' : '';
+    const isStock = b.kind === 'stock';
+    const active = state.currentBox && state.currentBox.host === b.host && !isStock ? ' active' : '';
+    const stockCls = isStock ? ' stock' : '';
     const label = b.friendlyName || b.name || b.host;
     // Model (e.g. "SoundTouch 10") right next to the name so users
     // with several speakers can tell ST10 from ST20 at a glance.
@@ -774,17 +776,32 @@ function renderBoxSelect() {
     const model = b.model && b.model !== 'SoundTouch'
       ? `<span class="box-model" title="${escapeAttr(t('speaker.modelTitle'))}">${escapeHtml(b.model)}</span>`
       : '';
+    if (isStock) {
+      return `<span class="box-btn${stockCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(t('speaker.stockTooltip'))}">${escapeHtml(label)}${model} <small>${b.host}</small><span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span></span>`;
+    }
     const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
     return `<span class="box-btn${active}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${escapeHtml(label)}${model} <small>${b.host}</small>${ver}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
   }).join('');
   sel.querySelectorAll('.box-btn').forEach(btn => {
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.
       if (e.target.closest('.box-edit')) return;
       const host = btn.dataset.host;
       const port = parseInt(btn.dataset.port, 10);
       const box = state.boxes.find(b => b.host === host && b.port === port);
+      if (!box) return;
+      if (box.kind === 'stock') {
+        // Stock speaker: the desktop app cannot control it directly.
+        // Offer to jump to the USB stick setup flow.
+        const label = box.friendlyName || box.name || box.host;
+        const ok = await confirmWarn(
+          t('speaker.stockConfirmTitle'),
+          t('speaker.stockConfirmBody', { label: escapeHtml(label) }),
+        );
+        if (ok) switchView('setup');
+        return;
+      }
       selectBox(box);
     };
   });
@@ -801,9 +818,13 @@ function renderBoxSelect() {
     };
   });
   if (!state.currentBox) {
+    // Auto-select only STR speakers. Stock speakers cannot be
+    // controlled and would put the music tab into a permanent
+    // "loading" state.
+    const strBoxes = state.boxes.filter(b => b.kind !== 'stock');
     const lastID = loadLastBox();
-    let target = lastID ? state.boxes.find(b => b.deviceID === lastID) : null;
-    if (!target && state.boxes.length === 1) target = state.boxes[0];
+    let target = lastID ? strBoxes.find(b => b.deviceID === lastID) : null;
+    if (!target && strBoxes.length === 1) target = strBoxes[0];
     if (target) selectBox(target);
   }
   updateBoxUiVisibility();
@@ -1141,9 +1162,13 @@ async function doBoxUpdate() {
 
 function updateBoxUiVisibility() {
   const hasBox = !!state.currentBox;
-  const hasAny = state.boxes.length > 0;
+  const hasSTR = state.boxes.some(b => b.kind !== 'stock');
+  // Show controls only when a selected STR speaker exists. Show the
+  // "pick a speaker" hint when STR speakers exist but none is
+  // selected; stock-only LAN scenarios fall through to the empty
+  // state rendered by renderBoxSelect (the badge speaks for itself).
   $('boxControls').classList.toggle('hidden', !hasBox);
-  $('boxHint').classList.toggle('hidden', !hasAny || hasBox);
+  $('boxHint').classList.toggle('hidden', !hasSTR || hasBox);
 }
 
 async function loadPresets(retry = 0) {

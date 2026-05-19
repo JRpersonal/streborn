@@ -41,24 +41,30 @@ func (a *App) startup(ctx context.Context) {
 }
 
 // BoxInfo is the speaker entry passed to the frontend for selection.
+// Kind distinguishes STR-equipped speakers from stock Bose speakers
+// that still need a USB-stick install.
 type BoxInfo struct {
 	Name         string `json:"name"`
 	Host         string `json:"host"` // IPv4 for the REST API
-	Port         int    `json:"port"` // typically 8888
+	Port         int    `json:"port"` // typically 8888 for STR, 8090 for stock
 	DeviceID     string `json:"deviceID"`
 	FriendlyName string `json:"friendlyName"`
 	Model        string `json:"model"`
 	Version      string `json:"version"`
 	// Build is the agent's build stamp (YYYY-MM-DD-HHMM) as
 	// announced via mDNS TXT. Empty if the speaker runs an older
-	// agent that does not yet broadcast build. Used by the frontend
-	// update indicators to flag stamp drift even when version
-	// strings match.
+	// agent that does not yet broadcast build, or if Kind == "stock".
+	// Used by the frontend update indicators to flag stamp drift
+	// even when version strings match.
 	Build string `json:"build"`
+	// Kind is "str" for speakers running an STR agent, "stock" for
+	// vanilla Bose SoundTouch speakers that the desktop app can
+	// offer to flash. Frontend renders the two kinds differently.
+	Kind string `json:"kind"`
 }
 
-// DiscoverBoxes scans the LAN for sticks via mDNS and blocks at most
-// timeoutSec seconds.
+// DiscoverBoxes durchsucht das LAN nach Sticks via mDNS und blockiert max
+// timeoutSec Sekunden.
 func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 4
@@ -77,6 +83,17 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		if host == "" {
 			continue
 		}
+		kind := string(inst.Kind)
+		if kind == "" {
+			kind = "str"
+		}
+		// STR-announced speaker wins over a stock entry for the same
+		// device. The discovery layer already prefers STR; we also
+		// guard here against the deduplication key collisions across
+		// different mDNS announces.
+		if prev, ok := seen[inst.Name]; ok && prev.Kind == "str" && kind == "stock" {
+			continue
+		}
 		seen[inst.Name] = BoxInfo{
 			Name:         inst.Name,
 			Host:         host,
@@ -86,6 +103,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 			Model:        inst.Model,
 			Version:      inst.Version,
 			Build:        inst.Build,
+			Kind:         kind,
 		}
 	}
 

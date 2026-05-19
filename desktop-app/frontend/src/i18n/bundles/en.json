@@ -49,6 +49,10 @@
   "speaker.rebootConfirmTitle": "Restart speaker now?",
   "speaker.rebootConfirmBody": "Have you removed the USB stick? Otherwise SSH stays open after the reboot. Current playback will be interrupted.",
   "speaker.rebootingToast": "Speaker is restarting. It will be available again shortly.",
+  "speaker.needsInstallBadge": "needs STR install",
+  "speaker.stockTooltip": "Stock Bose firmware. STR is not installed on this speaker yet.",
+  "speaker.stockConfirmTitle": "Install STR on this speaker?",
+  "speaker.stockConfirmBody": "<b>{{label}}</b> still runs the stock Bose firmware. To control it from this app, install the STR agent via a USB stick first.<br><br>Open the USB stick setup now?",
 
   "controls.pause": "Pause",
   "controls.stop": "Stop",
