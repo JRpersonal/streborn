@@ -180,6 +180,75 @@ body {
   color: var(--brand);
   font-style: italic;
 }
+.app-locale {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.locale-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1f1f1f;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: #ddd;
+  opacity: 0.85;
+  transition: opacity 120ms ease, border-color 120ms ease,
+              background-color 120ms ease, box-shadow 120ms ease;
+}
+.locale-flag-code {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #ddd;
+}
+.locale-flag.active .locale-flag-code {
+  color: #fff;
+}
+.locale-flag:hover {
+  opacity: 1;
+  border-color: #6a6a6a;
+  background: #262626;
+}
+.locale-flag:focus-visible {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(204, 0, 0, 0.35);
+}
+.locale-flag.active {
+  opacity: 1;
+  border-color: var(--brand);
+  background: rgba(204, 0, 0, 0.18);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+.locale-flag.active:hover {
+  border-color: var(--brand);
+  background: rgba(204, 0, 0, 0.24);
+}
+.locale-flag-emoji {
+  display: inline-block;
+  /* Emoji font on Windows lacks coloured regional indicators by
+     default; fall back to Segoe UI Emoji which does ship them. */
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
+               "Twemoji Mozilla", system-ui, sans-serif;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .app-tagline {
   font-size: 12px;
   color: #888;

@@ -1,60 +1,14 @@
-// localization.js — country code/name/flag handling plus genre and
-// tag translation tables.
+// localization.js: country code helpers, genre canonicalisation, and
+// translation tables for radio-browser tags.
 //
 // radio-browser.info emits country and tag strings in English (or a
-// techie short form). This module bundles all translation tables and
-// helpers so view modules only call simple t-like functions instead
-// of juggling dicts. Phase B (i18n) will swap the hardcoded German
-// fallbacks for locale-aware lookups; for now German is the only
-// non-English target and the canonical tag is the same as the
-// English tag the radio-browser API hands us.
-//
-// User-facing German strings inside the data tables (country names,
-// order labels, "alle Laender") are intentionally left as-is at this
-// stage — Phase B will move them into the i18n bundle.
+// techie short form). Display labels live in the i18n bundles under
+// the prefixes "country.<lowercased name>" and "genre.<canonical
+// tag>". This module is locale-agnostic: it canonicalises the input
+// and hands the canonical key to tLookup, so a single bundle swap in
+// i18n flips every country and genre label.
 
-const COUNTRY_DE = {
-  'germany': 'Deutschland',
-  'austria': 'Oesterreich',
-  'switzerland': 'Schweiz',
-  'netherlands': 'Niederlande',
-  'belgium': 'Belgien',
-  'france': 'Frankreich',
-  'italy': 'Italien',
-  'spain': 'Spanien',
-  'portugal': 'Portugal',
-  'united kingdom': 'Vereinigtes Koenigreich',
-  'ireland': 'Irland',
-  'denmark': 'Daenemark',
-  'sweden': 'Schweden',
-  'norway': 'Norwegen',
-  'finland': 'Finnland',
-  'iceland': 'Island',
-  'poland': 'Polen',
-  'czech republic': 'Tschechien',
-  'czechia': 'Tschechien',
-  'slovakia': 'Slowakei',
-  'hungary': 'Ungarn',
-  'romania': 'Rumaenien',
-  'bulgaria': 'Bulgarien',
-  'greece': 'Griechenland',
-  'turkey': 'Tuerkei',
-  'russia': 'Russland',
-  'ukraine': 'Ukraine',
-  'united states of america': 'USA',
-  'united states': 'USA',
-  'canada': 'Kanada',
-  'mexico': 'Mexiko',
-  'brazil': 'Brasilien',
-  'argentina': 'Argentinien',
-  'australia': 'Australien',
-  'new zealand': 'Neuseeland',
-  'japan': 'Japan',
-  'china': 'China',
-  'india': 'Indien',
-  'south korea': 'Suedkorea',
-  'the united states of america': 'USA',
-};
+import { t, tLookup } from './i18n/index.js';
 
 // SKIP_TAGS: tags that are meaningless / are languages / are countries
 // / regions / proper nouns. Filtered out before chip rendering or
@@ -120,72 +74,6 @@ const GENRE_ALIAS = {
   'electronica': 'electronic',
 };
 
-// German display labels for canonical genre tags. The English/canonical
-// tag is the key; Phase B will replace this map with a per-locale
-// lookup driven by the active locale.
-const GENRE_DE = {
-  'rock': 'Rock', 'pop': 'Pop', 'jazz': 'Jazz', 'classical': 'Klassik',
-  'classic': 'Klassik', 'klassik': 'Klassik',
-  'news': 'Nachrichten', 'talk': 'Talk', 'sport': 'Sport', 'sports': 'Sport',
-  'oldies': 'Oldies', 'hits': 'Hits',
-  '80s': '80er', '90s': '90er', '70s': '70er', '60s': '60er', '50s': '50er',
-  '80s80s': '80er', '90s90s': '90er',
-  'metal': 'Metal', 'heavy metal': 'Heavy Metal', 'death metal': 'Death Metal',
-  'punk': 'Punk', 'indie': 'Indie', 'alternative': 'Alternative',
-  'electronic': 'Elektronisch', 'electro': 'Elektro', 'techno': 'Techno',
-  'house': 'House', 'trance': 'Trance', 'edm': 'EDM',
-  'hip hop': 'Hip Hop', 'hip-hop': 'Hip Hop', 'rap': 'Rap',
-  'rnb': 'RnB', 'r&b': 'R&B', 'soul': 'Soul', 'funk': 'Funk', 'disco': 'Disco',
-  'reggae': 'Reggae', 'ska': 'Ska', 'blues': 'Blues', 'country': 'Country',
-  'folk': 'Folk', 'volksmusik': 'Volksmusik', 'schlager': 'Schlager',
-  'chillout': 'Chill', 'chill': 'Chill', 'lounge': 'Lounge',
-  'ambient': 'Ambient', 'dance': 'Dance',
-  'public radio': 'Oeffentlich Rechtlich', 'public': 'Oeffentlich Rechtlich',
-  'ard': 'ARD', 'wdr': 'WDR', 'ndr': 'NDR', 'mdr': 'MDR', 'rbb': 'RBB',
-  'swr': 'SWR', 'br': 'BR', 'hr': 'HR', 'orf': 'ORF', 'srf': 'SRF', 'bbc': 'BBC',
-  'top 40': 'Top 40', 'charts': 'Charts',
-  'christian': 'Christlich', 'religious': 'Religioes', 'gospel': 'Gospel',
-  'culture': 'Kultur', 'comedy': 'Comedy', 'kids': 'Kinder', 'children': 'Kinder',
-  'german': 'Deutsch', 'english': 'Englisch',
-  'world music': 'Weltmusik', 'world': 'Welt',
-  'instrumental': 'Instrumental', 'orchestra': 'Orchester',
-  'movie': 'Film', 'soundtrack': 'Soundtrack',
-  'news talk': 'Nachrichten Talk', 'news radio': 'Nachrichten',
-  'easy listening': 'Easy Listening',
-  'live': 'Live', 'local': 'Lokal',
-  'variety': 'Vielfalt', 'mix': 'Mix',
-  'eurodance': 'Eurodance', 'eurodisco': 'Eurodisco',
-  'entretenimiento': 'Unterhaltung', 'entertainment': 'Unterhaltung',
-  'sports': 'Sport', 'sport': 'Sport',
-  'family': 'Familie', 'kinder': 'Kinder',
-  'evergreen': 'Evergreens', 'evergreens': 'Evergreens',
-  'love songs': 'Liebeslieder', 'romantic': 'Romantik',
-  'party': 'Party', 'dj': 'DJ', 'mixtape': 'Mixtape',
-  'workout': 'Workout', 'fitness': 'Fitness',
-  'meditation': 'Meditation', 'relax': 'Entspannung', 'relaxation': 'Entspannung',
-  'piano': 'Klavier', 'guitar': 'Gitarre',
-  'opera': 'Oper', 'musical': 'Musical',
-  'singer-songwriter': 'Singer Songwriter', 'singer songwriter': 'Singer Songwriter',
-  'experimental': 'Experimentell', 'underground': 'Underground',
-  'drum and bass': 'Drum & Bass', 'dnb': 'Drum & Bass', 'd&b': 'Drum & Bass',
-  'minimal': 'Minimal', 'dubstep': 'Dubstep',
-  'pop rock': 'Pop Rock', 'hard rock': 'Hard Rock', 'soft rock': 'Soft Rock',
-  'classic rock': 'Classic Rock', 'indie rock': 'Indie Rock', 'alternative rock': 'Alternative Rock',
-  // Country-boost labels (kept in English where the genre name itself
-  // is a proper noun the audience would recognise everywhere).
-  'country': 'Country', 'deutschrap': 'Deutschrap', 'latin': 'Latin',
-  'reggaeton': 'Reggaeton', 'salsa': 'Salsa', 'samba': 'Samba',
-  'sertanejo': 'Sertanejo', 'bossa nova': 'Bossa Nova',
-  'j-pop': 'J-Pop', 'jpop': 'J-Pop', 'anime': 'Anime',
-  'bollywood': 'Bollywood', 'bhangra': 'Bhangra', 'hindi': 'Hindi',
-  'chanson': 'Chanson', 'variété': 'Variété', 'variete': 'Variété',
-  'italo': 'Italo', 'italian': 'Italienisch', 'italiano': 'Italienisch',
-  'levenslied': 'Levenslied', 'nederlandstalig': 'Niederländisch',
-  'turkish': 'Türkisch', 'tuerkisch': 'Türkisch', 'halk': 'Halk',
-  'disco polo': 'Disco Polo', 'polski': 'Polnisch',
-  'russian': 'Russisch', 'retro': 'Retro',
-};
-
 // GENRE_CORE: 14 globally relevant pills, always rendered regardless
 // of how many stations the current country actually has on each tag.
 // Ordered roughly by mass-appeal so the visible row reads top-down.
@@ -240,10 +128,12 @@ export const GENRE_BY_COUNTRY = {
   'FI': ['suomi', 'nordic'],
 };
 
+// translateCountry looks up the display name for a country emitted by
+// radio-browser. The input arrives in mixed case English; the bundle
+// keys are lowercased English. Unknown countries return the raw input.
 export function translateCountry(name) {
   if (!name) return '';
-  const key = name.toLowerCase().trim();
-  return COUNTRY_DE[key] || name;
+  return tLookup('country', name) || name;
 }
 
 // canonGenre canonicalises a tag for filtering. Returns empty string
@@ -256,11 +146,13 @@ export function canonGenre(t) {
 }
 
 // translateGenre canonicalises a tag and translates it for display.
-export function translateGenre(t) {
-  const key = canonGenre(t);
+export function translateGenre(tag) {
+  const key = canonGenre(tag);
   if (!key) return '';
-  if (GENRE_DE[key]) return GENRE_DE[key];
-  if (/^[A-Z0-9]{2,5}$/.test(t)) return t;
+  const localized = tLookup('genre', key);
+  if (localized) return localized;
+  // Acronyms (BBC, WDR, ORF, ...) stay verbatim.
+  if (/^[A-Z0-9]{2,5}$/.test(tag)) return tag;
   return key.replace(/\b\w/g, c => c.toUpperCase());
 }
 
@@ -269,10 +161,10 @@ export function translateTags(tagsCsv) {
   const seen = new Set();
   const out = [];
   for (const raw of tagsCsv.split(',')) {
-    const t = translateGenre(raw);
-    if (t && !seen.has(t.toLowerCase())) {
-      seen.add(t.toLowerCase());
-      out.push(t);
+    const tag = translateGenre(raw);
+    if (tag && !seen.has(tag.toLowerCase())) {
+      seen.add(tag.toLowerCase());
+      out.push(tag);
     }
   }
   return out;
@@ -289,87 +181,98 @@ export function flagFromCC(cc) {
   return String.fromCodePoint(A + c0) + String.fromCodePoint(A + c1);
 }
 
-// Country list for the filter dropdown. Only the most relevant
-// countries are listed by default — the user can always pick "all
-// countries" to see the global pool.
-// All supported countries, unsorted. Sorting happens below
-// (alphabetical by translated name, DACH pinned to the top for the
-// default user).
-const COUNTRIES_ALL = [
-  { cc: 'DE', name: 'Deutschland' },
-  { cc: 'AT', name: 'Oesterreich' },
-  { cc: 'CH', name: 'Schweiz' },
-  { cc: 'NL', name: 'Niederlande' },
-  { cc: 'BE', name: 'Belgien' },
-  { cc: 'LU', name: 'Luxemburg' },
-  { cc: 'FR', name: 'Frankreich' },
-  { cc: 'IT', name: 'Italien' },
-  { cc: 'ES', name: 'Spanien' },
-  { cc: 'PT', name: 'Portugal' },
-  { cc: 'GB', name: 'Vereinigtes Koenigreich' },
-  { cc: 'IE', name: 'Irland' },
-  { cc: 'DK', name: 'Daenemark' },
-  { cc: 'SE', name: 'Schweden' },
-  { cc: 'NO', name: 'Norwegen' },
-  { cc: 'FI', name: 'Finnland' },
-  { cc: 'IS', name: 'Island' },
-  { cc: 'PL', name: 'Polen' },
-  { cc: 'CZ', name: 'Tschechien' },
-  { cc: 'SK', name: 'Slowakei' },
-  { cc: 'HU', name: 'Ungarn' },
-  { cc: 'RO', name: 'Rumaenien' },
-  { cc: 'BG', name: 'Bulgarien' },
-  { cc: 'GR', name: 'Griechenland' },
-  { cc: 'HR', name: 'Kroatien' },
-  { cc: 'SI', name: 'Slowenien' },
-  { cc: 'TR', name: 'Tuerkei' },
-  { cc: 'RU', name: 'Russland' },
-  { cc: 'UA', name: 'Ukraine' },
-  { cc: 'US', name: 'USA' },
-  { cc: 'CA', name: 'Kanada' },
-  { cc: 'MX', name: 'Mexiko' },
-  { cc: 'BR', name: 'Brasilien' },
-  { cc: 'AR', name: 'Argentinien' },
-  { cc: 'CL', name: 'Chile' },
-  { cc: 'CO', name: 'Kolumbien' },
-  { cc: 'PE', name: 'Peru' },
-  { cc: 'JP', name: 'Japan' },
-  { cc: 'CN', name: 'China' },
-  { cc: 'TW', name: 'Taiwan' },
-  { cc: 'HK', name: 'Hongkong' },
-  { cc: 'KR', name: 'Suedkorea' },
-  { cc: 'IN', name: 'Indien' },
-  { cc: 'TH', name: 'Thailand' },
-  { cc: 'VN', name: 'Vietnam' },
-  { cc: 'ID', name: 'Indonesien' },
-  { cc: 'PH', name: 'Philippinen' },
-  { cc: 'MY', name: 'Malaysia' },
-  { cc: 'SG', name: 'Singapur' },
-  { cc: 'IL', name: 'Israel' },
-  { cc: 'AE', name: 'Vereinigte Arabische Emirate' },
-  { cc: 'SA', name: 'Saudi Arabien' },
-  { cc: 'EG', name: 'Aegypten' },
-  { cc: 'MA', name: 'Marokko' },
-  { cc: 'AU', name: 'Australien' },
-  { cc: 'NZ', name: 'Neuseeland' },
-  { cc: 'ZA', name: 'Suedafrika' },
+// Country dropdown source. Each entry has a stable English lookup key
+// (used for tLookup) and the ISO code; the display name comes from
+// the active locale at render time so a language switch reflects
+// immediately.
+const COUNTRIES_RAW = [
+  { cc: 'DE', key: 'germany' },
+  { cc: 'AT', key: 'austria' },
+  { cc: 'CH', key: 'switzerland' },
+  { cc: 'NL', key: 'netherlands' },
+  { cc: 'BE', key: 'belgium' },
+  { cc: 'LU', key: 'luxembourg' },
+  { cc: 'FR', key: 'france' },
+  { cc: 'IT', key: 'italy' },
+  { cc: 'ES', key: 'spain' },
+  { cc: 'PT', key: 'portugal' },
+  { cc: 'GB', key: 'united kingdom' },
+  { cc: 'IE', key: 'ireland' },
+  { cc: 'DK', key: 'denmark' },
+  { cc: 'SE', key: 'sweden' },
+  { cc: 'NO', key: 'norway' },
+  { cc: 'FI', key: 'finland' },
+  { cc: 'IS', key: 'iceland' },
+  { cc: 'PL', key: 'poland' },
+  { cc: 'CZ', key: 'czech republic' },
+  { cc: 'SK', key: 'slovakia' },
+  { cc: 'HU', key: 'hungary' },
+  { cc: 'RO', key: 'romania' },
+  { cc: 'BG', key: 'bulgaria' },
+  { cc: 'GR', key: 'greece' },
+  { cc: 'HR', key: 'croatia' },
+  { cc: 'SI', key: 'slovenia' },
+  { cc: 'TR', key: 'turkey' },
+  { cc: 'RU', key: 'russia' },
+  { cc: 'UA', key: 'ukraine' },
+  { cc: 'US', key: 'united states' },
+  { cc: 'CA', key: 'canada' },
+  { cc: 'MX', key: 'mexico' },
+  { cc: 'BR', key: 'brazil' },
+  { cc: 'AR', key: 'argentina' },
+  { cc: 'CL', key: 'chile' },
+  { cc: 'CO', key: 'colombia' },
+  { cc: 'PE', key: 'peru' },
+  { cc: 'JP', key: 'japan' },
+  { cc: 'CN', key: 'china' },
+  { cc: 'TW', key: 'taiwan' },
+  { cc: 'HK', key: 'hong kong' },
+  { cc: 'KR', key: 'south korea' },
+  { cc: 'IN', key: 'india' },
+  { cc: 'TH', key: 'thailand' },
+  { cc: 'VN', key: 'vietnam' },
+  { cc: 'ID', key: 'indonesia' },
+  { cc: 'PH', key: 'philippines' },
+  { cc: 'MY', key: 'malaysia' },
+  { cc: 'SG', key: 'singapore' },
+  { cc: 'IL', key: 'israel' },
+  { cc: 'AE', key: 'united arab emirates' },
+  { cc: 'SA', key: 'saudi arabia' },
+  { cc: 'EG', key: 'egypt' },
+  { cc: 'MA', key: 'morocco' },
+  { cc: 'AU', key: 'australia' },
+  { cc: 'NZ', key: 'new zealand' },
+  { cc: 'ZA', key: 'south africa' },
 ];
 
+// COUNTRIES_TOP pin to the head of the dropdown. STR has a meaningful
+// DACH user base, so DE/AT/CH always come first; everything else is
+// sorted alphabetically by display name in the active locale.
 const COUNTRIES_TOP = ['DE', 'AT', 'CH'];
 
-export const COUNTRIES = (() => {
+// getCountries returns the dropdown content for the active locale.
+// Recomputed on every call so a locale switch reflects immediately.
+export function getCountries() {
+  const enriched = COUNTRIES_RAW.map(c => ({ cc: c.cc, name: translateCountry(c.key) }));
   const top = COUNTRIES_TOP
-    .map(cc => COUNTRIES_ALL.find(c => c.cc === cc))
+    .map(cc => enriched.find(c => c.cc === cc))
     .filter(Boolean);
-  const rest = COUNTRIES_ALL
+  const rest = enriched
     .filter(c => !COUNTRIES_TOP.includes(c.cc))
-    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
-  return [{ cc: '', name: 'alle Laender' }, ...top, ...rest];
-})();
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return [{ cc: '', name: t('common.allCountries') }, ...top, ...rest];
+}
+
+// COUNTRIES is the canonical export consumed by main.js. Stays a
+// getter-style array so call sites don't need to know it's recomputed.
+// Snapshot once at module load: main.js currently reads it eagerly
+// for dropdown render; locale switches trigger a full reload, so the
+// stale snapshot is replaced on the next page lifecycle.
+export const COUNTRIES = getCountries();
 
 export const ORDERS = [
-  { v: 'votes',      label: 'Beliebtheit' },
-  { v: 'clickcount', label: 'Hoererzahlen' },
-  { v: 'clicktrend', label: 'Trend' },
-  { v: 'name',       label: 'Name' },
+  { v: 'votes',      label: t('order.votes') },
+  { v: 'clickcount', label: t('order.clickcount') },
+  { v: 'clicktrend', label: t('order.clicktrend') },
+  { v: 'name',       label: t('order.name') },
 ];
