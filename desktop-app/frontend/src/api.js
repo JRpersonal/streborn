@@ -42,6 +42,8 @@ export {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
+  ScanForSetupAPs,
+  BootstrapBoxOnSetupAP,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL } from '../wailsjs/runtime/runtime';

@@ -36,6 +36,8 @@ import {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
+  ScanForSetupAPs,
+  BootstrapBoxOnSetupAP,
   BrowserOpenURL,
 } from './api.js';
 
@@ -3179,43 +3181,87 @@ async function doSetup() {
     state.presets = [];
     refreshDrives();
     discoverBoxes();
-    // Kick off the post-eject wait loop in the background. It polls
-    // for the speaker on the LAN and once it shows up as a stock
-    // (Bose-only) box, auto-installs STR via SSH so the user does
-    // not need the PowerShell wizard anymore.
-    waitForBoxAndAutoInstall(html);
+    // Kick off the combined post-eject wait loop. It does three
+    // things in priority order:
+    //   1. Poll the home LAN for the box (covers boxes that already
+    //      had Wi-Fi).
+    //   2. If a Bose setup-AP is visible AND credentials are known,
+    //      cold-bootstrap the box onto the home Wi-Fi.
+    //   3. Once a stock box is found (either via #1 or #2), run the
+    //      in-app STR installer via SSH so the user does not need
+    //      the PowerShell wizard anymore.
+    waitForBoxAfterSetup({ ssid, pass, html });
   } catch (e) {
     $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('common.error'))}: ${escapeHtml(String(e))}</div>`;
   }
   $('setupGo').disabled = false;
 }
 
-// waitForBoxAndAutoInstall polls the home LAN for the speaker after
-// the stick has been ejected. When the box appears as kind=="stock"
-// (Bose firmware up but no STR agent), the function triggers the
-// in-app installer via SSH (passwordless root works on the box for
-// the duration the stick is plugged in). Caps at 5 min, then leaves
-// a "did not appear" message.
-async function waitForBoxAndAutoInstall(baseHtml) {
+// waitForBoxAfterSetup runs after the stick has been ejected. It
+// covers three end-user paths in priority order:
+//   1. Box is already on the home LAN (had Wi-Fi before) -> just
+//      proceed to step 3 once mDNS or the active probe surfaces it.
+//   2. Box is brand-new / factory-reset and is broadcasting a Bose
+//      setup-AP -> auto cold-bootstrap it onto the home Wi-Fi using
+//      the credentials the user already entered for the stick.
+//   3. Once a stock box is reachable, run the in-app STR installer
+//      via SSH so the user does not need the PowerShell wizard.
+//
+// Credentials are kept only in this closure and never persisted.
+async function waitForBoxAfterSetup({ ssid, pass, html }) {
+  const baseHtml = html;
+  const startTs = Date.now();
   const setupResult = $('setupResult');
   if (!setupResult) return;
   const render = (extra) => { setupResult.innerHTML = baseHtml + extra; };
 
-  const start = Date.now();
-  const deadline = start + 5 * 60 * 1000;
-  let foundBox = null;
+  function progressLine(elapsedSec, ap) {
+    const apHint = ap
+      ? `<div class="setup-ok">${escapeHtml(t('setup.setupAPDetected', { ssid: ap.ssid }))}</div>`
+      : '';
+    return apHint + `<div class="muted small">${escapeHtml(t('setup.waitingForBox', { sec: elapsedSec }))}</div>`;
+  }
 
-  while (Date.now() < deadline) {
+  let foundBox = null;
+  let bootstrapTriggered = false;
+
+  // Up to 5 minutes to find a reachable box. The discovery + cold-
+  // bootstrap legs run sequentially per iteration; the install leg
+  // runs after the loop, once a box has been confirmed reachable.
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline && !foundBox) {
     try {
       const list = await DiscoverBoxes(4);
-      // Prefer stock matches; if STR is already on the LAN nothing
-      // to install, fall through to the success branch.
       foundBox = (list || []).find(b => b && b.host && (b.kind === 'stock' || b.kind === 'str'));
       if (foundBox) break;
     } catch {}
-    const sec = Math.floor((Date.now() - start) / 1000);
-    render(`<div class="muted small">${escapeHtml(t('setup.waitingForBox', { sec }))}</div>`);
-    await sleep(4000);
+
+    if (!bootstrapTriggered && ssid) {
+      try {
+        const aps = await ScanForSetupAPs();
+        if (aps && aps.length > 0) {
+          const ap = aps[0];
+          bootstrapTriggered = true;
+          render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                 `<div class="muted small">${escapeHtml(t('setup.bootstrapStarting'))}</div>`);
+          try {
+            const res = await BootstrapBoxOnSetupAP(ap.ssid, ssid, pass, 'wpa_or_wpa2');
+            if (res && res.ok && res.boxIP) {
+              foundBox = { host: res.boxIP, kind: 'stock' };
+              break;
+            }
+            render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                   `<div class="setup-warn">${escapeHtml(t('setup.bootstrapFailed', { msg: (res && res.message) || 'unknown' }))}</div>`);
+          } catch (bsErr) {
+            render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                   `<div class="setup-err">${escapeHtml(t('setup.bootstrapFailed', { msg: String(bsErr) }))}</div>`);
+          }
+        }
+      } catch {}
+    }
+
+    render(progressLine(Math.floor((Date.now() - startTs) / 1000), null));
+    await sleep(3000);
   }
 
   if (!foundBox) {
@@ -3229,7 +3275,7 @@ async function waitForBoxAndAutoInstall(baseHtml) {
     return;
   }
 
-  // Stock box: run installer.
+  // Stock box (LAN-found or cold-bootstrapped): run installer.
   render(`<div class="setup-ok">${escapeHtml(t('setup.boxFoundOnLAN', { ip: foundBox.host }))}</div>` +
          `<div class="muted small">${escapeHtml(t('setup.installRunning'))}</div>`);
   let result;
@@ -3241,14 +3287,14 @@ async function waitForBoxAndAutoInstall(baseHtml) {
   }
   if (!result || !result.ok) {
     const msg = (result && result.message) || 'unknown';
-    const log = (result && result.log) ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>` : '';
+    const log = (result && result.log)
+      ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>`
+      : '';
     render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + log);
     return;
   }
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
          `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`);
-  // Refresh main speaker list so the freshly-flashed box shows up
-  // in the Music tab without needing a manual refresh.
   discoverBoxes();
 }
 
