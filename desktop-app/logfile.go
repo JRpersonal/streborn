@@ -65,11 +65,16 @@ func openLogFile() (*os.File, error) {
 
 // newFileLogger returns a slog.Logger that writes to BOTH the file
 // at LogFilePath() and stderr (so wails dev still shows logs in the
-// console). If the file cannot be opened, falls back to stderr only.
-func newFileLogger(level slog.Level) *slog.Logger {
+// console), plus the underlying file handle so the caller can Sync
+// it before reading the file (e.g. when bundling for export).
+// If the file cannot be opened, the file return is nil and the
+// logger falls back to stderr-only.
+func newFileLogger(level slog.Level) (*slog.Logger, *os.File) {
 	var w io.Writer = os.Stderr
+	var file *os.File
 	if f, err := openLogFile(); err == nil {
 		w = io.MultiWriter(os.Stderr, f)
+		file = f
 	}
-	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})), file
 }
