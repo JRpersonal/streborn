@@ -373,6 +373,8 @@
 
   "settingsView.noSpeakerFoundTitle": "No speaker found on the network.",
   "settingsView.noSpeakerFoundHelp": "To edit speaker settings, a prepared ST Reborn stick must be present. Prepare a stick first.",
+  "settingsView.stockBoxTitle": "STR not installed yet",
+  "settingsView.stockBoxHelp": "{{name}} runs the stock Bose firmware. There are no settings to edit until STR is installed. Open the USB stick setup to flash it.",
   "settingsView.loadingData": "Reading speaker data...",
   "settingsView.speakerUnreachable": "Speaker not reachable right now.",
   "settingsView.retryIn": "Next try in 4 seconds, {{remaining}} attempts left.",

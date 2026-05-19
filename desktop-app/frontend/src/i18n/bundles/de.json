@@ -373,6 +373,8 @@
 
   "settingsView.noSpeakerFoundTitle": "Kein Lautsprecher im Netzwerk gefunden.",
   "settingsView.noSpeakerFoundHelp": "Damit die Einstellungen eines Lautsprechers bearbeitet werden können, muss in ihm ein vorbereiteter ST Reborn Stick stecken. Lege den Stick zuerst an.",
+  "settingsView.stockBoxTitle": "STR ist auf diesem Lautsprecher noch nicht installiert",
+  "settingsView.stockBoxHelp": "{{name}} läuft mit der Original-Bose-Firmware. Es gibt nichts einzustellen bis STR drauf ist. Öffne die USB-Stick-Einrichtung zum Installieren.",
   "settingsView.loadingData": "Lautsprecher-Daten werden gelesen ...",
   "settingsView.speakerUnreachable": "Lautsprecher gerade nicht erreichbar.",
   "settingsView.retryIn": "Nächster Versuch in 4 Sekunden, noch {{remaining}} Versuche bis zur Aufgabe.",
