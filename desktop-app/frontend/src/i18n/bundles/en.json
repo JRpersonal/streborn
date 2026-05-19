@@ -358,6 +358,9 @@
   "combobox.noSuggestions": "no suggestions",
 
   "footer.website": "Website",
+  "footer.saveLogs": "Save diagnostic logs",
+  "footer.saveLogsHint": "Bundle the app log + per-speaker state into a zip you can attach to a GitHub issue. IPs and device IDs are anonymized.",
+  "footer.saveLogsDone": "Saved {{size}} KB to {{path}}",
   "footer.donateSlogan": "Do you like the app? I'd appreciate a coffee.",
 
   "banner.recommendationShort": "Recommendation",

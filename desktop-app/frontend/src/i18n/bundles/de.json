@@ -358,6 +358,9 @@
   "combobox.noSuggestions": "keine Vorschläge",
 
   "footer.website": "Webseite",
+  "footer.saveLogs": "Diagnose-Log speichern",
+  "footer.saveLogsHint": "Sammelt App-Log + Status pro Lautsprecher in einem Zip, das du an ein GitHub-Issue hängen kannst. IPs und Geräte-IDs werden anonymisiert.",
+  "footer.saveLogsDone": "{{size}} KB gespeichert nach {{path}}",
   "footer.donateSlogan": "Dir gefällt die App? Ich freue mich über einen Kaffee.",
 
   "banner.recommendationShort": "Empfehlung",

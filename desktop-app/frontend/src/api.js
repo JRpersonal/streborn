@@ -39,6 +39,8 @@ export {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  SaveDiagnosticBundle,
+  GetLogFilePath,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL } from '../wailsjs/runtime/runtime';

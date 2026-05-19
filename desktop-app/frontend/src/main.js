@@ -33,6 +33,8 @@ import {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  SaveDiagnosticBundle,
+  GetLogFilePath,
   BrowserOpenURL,
 } from './api.js';
 
@@ -272,6 +274,7 @@ async function renderFooter() {
   const links = [];
   if (i.githubUrl)  links.push(`<a href="#" data-url="${escapeAttr(i.githubUrl)}" class="footer-link">GitHub</a>`);
   if (i.websiteUrl) links.push(`<a href="#" data-url="${escapeAttr(i.websiteUrl)}" class="footer-link">${escapeHtml(t('footer.website'))}</a>`);
+  links.push(`<a href="#" id="footerSaveLogs" class="footer-link" title="${escapeAttr(t('footer.saveLogsHint'))}">${escapeHtml(t('footer.saveLogs'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
   $('appFooter').innerHTML = `
     <div class="footer-left">
@@ -280,9 +283,29 @@ async function renderFooter() {
     </div>
     <div class="footer-right">${links.join(' &middot; ')}</div>
   `;
-  $('appFooter').querySelectorAll('.footer-link').forEach(a => {
+  $('appFooter').querySelectorAll('.footer-link[data-url]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(a.dataset.url); };
   });
+  const saveLogsBtn = $('footerSaveLogs');
+  if (saveLogsBtn) {
+    saveLogsBtn.onclick = async (e) => {
+      e.preventDefault();
+      saveLogsBtn.classList.add('working');
+      try {
+        const hosts = (state.boxes || []).map(b => b && b.host).filter(Boolean);
+        const res = await SaveDiagnosticBundle(hosts, true);
+        if (res && res.savePath) {
+          showToast(t('footer.saveLogsDone', { path: res.savePath, size: Math.round((res.bytes || 0) / 1024) }));
+        }
+        // If user cancelled the dialog, savePath comes back empty —
+        // no toast on cancel.
+      } catch (err) {
+        showError(String(err));
+      } finally {
+        saveLogsBtn.classList.remove('working');
+      }
+    };
+  }
   renderDonateSidebar();
   checkAppUpdate();
   // appInfo may have arrived after the first discovery completed; the

@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -31,7 +30,7 @@ type App struct {
 // NewApp erstellt eine neue App Instance.
 func NewApp() *App {
 	return &App{
-		logger:     slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		logger:     newFileLogger(slog.LevelInfo),
 		httpClient: &http.Client{Timeout: 6 * time.Second},
 	}
 }
