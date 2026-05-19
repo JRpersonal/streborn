@@ -26,6 +26,24 @@ export namespace main {
 	        this.updateManifestUrl = source["updateManifestUrl"];
 	    }
 	}
+	export class BootstrapResult {
+	    step: string;
+	    ok: boolean;
+	    message: string;
+	    boxIP: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BootstrapResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.step = source["step"];
+	        this.ok = source["ok"];
+	        this.message = source["message"];
+	        this.boxIP = source["boxIP"];
+	    }
+	}
 	export class BoxInfo {
 	    name: string;
 	    host: string;
@@ -52,6 +70,24 @@ export namespace main {
 	        this.version = source["version"];
 	        this.build = source["build"];
 	        this.kind = source["kind"];
+	    }
+	}
+	export class InstallResult {
+	    step: string;
+	    ok: boolean;
+	    message: string;
+	    log: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new InstallResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.step = source["step"];
+	        this.ok = source["ok"];
+	        this.message = source["message"];
+	        this.log = source["log"];
 	    }
 	}
 	export class LibraryContainer {
@@ -158,6 +194,36 @@ export namespace main {
 	        this.address = source["address"];
 	    }
 	}
+	export class LogExportRequest {
+	    savePath: string;
+	    boxHosts: string[];
+	    anonymize: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new LogExportRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.savePath = source["savePath"];
+	        this.boxHosts = source["boxHosts"];
+	        this.anonymize = source["anonymize"];
+	    }
+	}
+	export class LogExportResult {
+	    savePath: string;
+	    bytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new LogExportResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.savePath = source["savePath"];
+	        this.bytes = source["bytes"];
+	    }
+	}
 	export class Preset {
 	    slot: number;
 	    name: string;
@@ -176,6 +242,22 @@ export namespace main {
 	        this.stream_url = source["stream_url"];
 	        this.type = source["type"];
 	        this.art = source["art"];
+	    }
+	}
+	export class SetupAP {
+	    ssid: string;
+	    interface: string;
+	    signal: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SetupAP(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ssid = source["ssid"];
+	        this.interface = source["interface"];
+	        this.signal = source["signal"];
 	    }
 	}
 

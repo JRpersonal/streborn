@@ -47,10 +47,42 @@ func (a *App) ScanForSetupAPs() ([]SetupAP, error) {
 	c := exec.Command("netsh", "wlan", "show", "networks", "mode=Bssid")
 	hideCmdWindow(c)
 	out, err := c.CombinedOutput()
+	// Windows 11 24H2 silently blocks netsh wlan unless the calling
+	// app has Location permission ("Allow desktop apps to access your
+	// location" in Settings -> Privacy -> Location). Without it, netsh
+	// prints a German/English notice and returns no networks, and the
+	// cold-bootstrap path stays stuck on "no setup-AP found" forever.
+	// Detect that specific failure and surface it loudly so the user
+	// can fix it in two clicks instead of debugging the wizard.
 	if err != nil {
+		if isLocationDenied(string(out)) {
+			return nil, fmt.Errorf("windows-location-denied: %s",
+				"Standort-Berechtigung fehlt. Settings -> Datenschutz -> Standort -> "+
+					"'Desktop-Apps der Zugriff auf Ihren Standort erlauben' aktivieren, "+
+					"dann STR neu starten")
+		}
 		return nil, fmt.Errorf("netsh wlan show networks: %w", err)
 	}
+	if isLocationDenied(string(out)) {
+		return nil, fmt.Errorf("windows-location-denied: %s",
+			"Standort-Berechtigung fehlt. Settings -> Datenschutz -> Standort -> "+
+				"'Desktop-Apps der Zugriff auf Ihren Standort erlauben' aktivieren, "+
+				"dann STR neu starten")
+	}
 	return parseSetupAPs(string(out)), nil
+}
+
+// isLocationDenied detects the Windows 11 24H2 location-permission
+// notice in netsh output. Match on stable substrings present in both
+// the English and German variants so locale changes do not silently
+// bypass the check.
+func isLocationDenied(s string) bool {
+	low := strings.ToLower(s)
+	return strings.Contains(low, "standortberechtigung") ||
+		strings.Contains(low, "location permission") ||
+		strings.Contains(low, "privacy-location") ||
+		strings.Contains(low, "wlanqueryinterface") ||
+		strings.Contains(low, "erhöhte rechte")
 }
 
 func parseSetupAPs(netshOutput string) []SetupAP {

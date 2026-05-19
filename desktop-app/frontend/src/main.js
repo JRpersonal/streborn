@@ -3305,7 +3305,19 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
                    `<div class="setup-err">${escapeHtml(t('setup.bootstrapFailed', { msg: String(bsErr) }))}</div>`);
           }
         }
-      } catch {}
+      } catch (scanErr) {
+        // Windows 11 24H2 blocks netsh wlan unless desktop apps have
+        // Location permission. Detect and surface a one-click fix
+        // panel instead of silently looping forever.
+        const msg = String(scanErr || '');
+        if (msg.includes('windows-location-denied')) {
+          render(progressLine(Math.floor((Date.now() - startTs) / 1000), null) +
+                 `<div class="setup-err"><b>${escapeHtml(t('setup.locationPermNeededTitle'))}</b><br>` +
+                 `${escapeHtml(t('setup.locationPermNeededBody'))}<br>` +
+                 `<a href="ms-settings:privacy-location" target="_blank">${escapeHtml(t('setup.locationPermOpenSettings'))}</a></div>`);
+          return;
+        }
+      }
     }
 
     render(progressLine(Math.floor((Date.now() - startTs) / 1000), null));

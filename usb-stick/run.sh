@@ -54,12 +54,21 @@ log() {
 # read "Mon Jul  6 20:15:06 GMT 2015" and only become real after
 # association). Uptime is monotonic from kernel boot and unaffected.
 SETUP_LOG="$STICK/setup.log"
+# NAND mirror so a stick-less normal-boot (no /media/sda1 mount or
+# stick yanked) still records the WLAN provisioning trace. Without
+# this every reboot without the stick was a black box — we could
+# not see whether Approach C/D even ran. NAND survives reboot,
+# survives a Bose factory reset (we have observed this), and rotates
+# only via the previous.log copy at the top of run.sh.
+SETUP_LOG_NAND="$PERSIST/setup.log"
 uptime_s() {
     awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "?"
 }
 setup_log() {
     log "$*"
-    echo "[up=$(uptime_s)s] $(date): $*" >> "$SETUP_LOG" 2>/dev/null
+    line="[up=$(uptime_s)s] $(date): $*"
+    echo "$line" >> "$SETUP_LOG" 2>/dev/null
+    echo "$line" >> "$SETUP_LOG_NAND" 2>/dev/null
 }
 
 # initial_snapshot writes a one-shot record of "what does the box
@@ -117,10 +126,12 @@ initial_snapshot() {
 # does not freeze the boot.
 wait_for_ready() {
     setup_log "wait-for-ready: begin"
-    # /etc writable — needed by Approach A direct-write. Bind mount
-    # is a fallback if this never goes true.
+    # /etc writable: Bose rootfs is ALWAYS ro, the 60s wait we used
+    # to do here was pure latency burn — bind-mount fallback works
+    # immediately. 3s spin is enough to catch a rare case where Bose
+    # remounts late on a future firmware variant.
     i=0
-    while [ $i -lt 60 ]; do
+    while [ $i -lt 3 ]; do
         if touch /etc/.streborn-write-probe 2>/dev/null; then
             rm -f /etc/.streborn-write-probe
             setup_log "wait-for-ready: /etc writable after ${i}s wait"
@@ -129,14 +140,15 @@ wait_for_ready() {
         sleep 1
         i=$((i + 1))
     done
-    if [ $i -ge 60 ]; then
-        setup_log "wait-for-ready: /etc still ro after 60s, continuing (bind-mount fallback)"
+    if [ $i -ge 3 ]; then
+        setup_log "wait-for-ready: /etc ro (expected on Bose) — A uses bind-mount fallback"
     fi
-    # wpa_supplicant — needed by Approach A so killall+restart can
-    # actually reload the new config. If it never starts in time
-    # Approach B carries us.
+    # wpa_supplicant: needed by Approach A for killall+restart and by
+    # Approach C for wpa_cli ctrl interface. Phase probe on rhino ST10
+    # showed it consistently up by uptime=34s; 25s cap covers boot
+    # variance without burning idle time on slower variants.
     i=0
-    while [ $i -lt 60 ]; do
+    while [ $i -lt 25 ]; do
         if pidof wpa_supplicant >/dev/null 2>&1; then
             setup_log "wait-for-ready: wpa_supplicant pid present after ${i}s wait"
             break
@@ -144,8 +156,8 @@ wait_for_ready() {
         sleep 1
         i=$((i + 1))
     done
-    if [ $i -ge 60 ]; then
-        setup_log "wait-for-ready: wpa_supplicant not running after 60s, A will not restart it"
+    if [ $i -ge 25 ]; then
+        setup_log "wait-for-ready: wpa_supplicant not running after 25s, A skips restart"
     fi
     setup_log "wait-for-ready: end at $(uptime | tr -s ' ')"
 }
@@ -352,21 +364,87 @@ fi
 # /media/sda1/setup.log mit Timestamp geschrieben damit ein User
 # das Stick einfach abziehen und Diagnose-Log via App hochladen kann
 # (Bose's Factory Reset wischt NAND, der Stick bleibt unberuehrt).
+# NAND-persisted credentials cache: once one of the WLAN provisioning
+# approaches actually succeeded on a previous boot, we wrote the
+# SSID+pass into $PERSIST/wlan-creds so subsequent boots can replay
+# wpa_cli even though Bose's NetManager forgot the profile. Without
+# this every reboot drops the box back to yellow because NetManager
+# does not persist a wpa_cli-added network into its own DB.
+WLAN_CREDS_NAND="$PERSIST/wlan-creds"
 WLAN_CONF="$STICK/wlan.conf"
+SSID=""
+PASS=""
+WLAN_SOURCE=""
 if [ -f "$WLAN_CONF" ]; then
-    setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) ==="
     SSID=$(sed -n 's/.*"ssid":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
     PASS=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
+    WLAN_SOURCE="stick wlan.conf"
+elif [ -r "$WLAN_CREDS_NAND" ]; then
+    SSID=$(sed -n 's/^SSID=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
+    PASS=$(sed -n 's/^PASS=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
+    WLAN_SOURCE="NAND wlan-creds (replay)"
+fi
+if [ -n "$SSID" ] && [ -n "$PASS" ]; then
+    setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) source=$WLAN_SOURCE ==="
     setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
     if [ -n "$SSID" ] && [ -n "$PASS" ]; then
-        # Block until Bose's stack is far enough along that the
-        # provisioning approaches below actually have something to
-        # talk to. Without this we used to hit /etc at uptime=0 (ro)
-        # and wpa_supplicant wasn't even spawned yet — Approach A
-        # then never wins, only B does, exactly the symptom Jens
-        # saw on the rhino ST10 first boot.
-        wait_for_ready
-        # --- Approach A: direct /etc/wpa_supplicant.conf write ---
+        # CRITICAL TIMING WINDOW. The very first time this code ran
+        # successfully on a freshly factory-reset rhino ST10, B's
+        # POST /addWirelessProfile returned 200 + AddWirelessProfileResponse
+        # and wifiProfileCount went 0 → 1 — persistent for every later
+        # boot, no flapping, no preset-press required. That run hit
+        # the API at uptime ~16s, when /networkInfo before showed
+        # wlan1 state="NETWORK_WIFI_DISCONNECTED" (NetManager had NOT
+        # yet flipped into setup-AP mode). Every later run that
+        # arrived AFTER NetManager had already moved wlan1 to
+        # mode="ACCESS_POINT" got HTTP 500 instead and we lost
+        # persistence forever. The 60s wait_for_ready that used to be
+        # here guaranteed we missed the window on every retry — it is
+        # gone now. Approach B fires first, as fast as possible.
+        BOSE_API="http://127.0.0.1:8090"
+        setup_log "B: waiting for BoseApp on $BOSE_API"
+        i=0
+        while [ $i -lt 30 ]; do
+            if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
+                setup_log "B: BoseApp reachable after ${i}s"
+                break
+            fi
+            sleep 1
+            i=$((i + 1))
+        done
+        B_OK=""
+        if [ $i -ge 30 ]; then
+            setup_log "B: BoseApp did not respond within 30s, skipping API call"
+        else
+            NETINFO=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
+            setup_log "B: /networkInfo before: $NETINFO"
+            xml_escape() {
+                printf '%s' "$1" | sed \
+                    -e 's/\&/\&amp;/g' \
+                    -e 's/</\&lt;/g' \
+                    -e 's/>/\&gt;/g' \
+                    -e 's/"/\&quot;/g' \
+                    -e "s/'/\&apos;/g"
+            }
+            ESSID=$(xml_escape "$SSID")
+            EPASS=$(xml_escape "$PASS")
+            BODY="<AddWirelessProfile timeout=\"30\"><profile ssid=\"$ESSID\" password=\"$EPASS\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
+            RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
+                   --post-data="$BODY" "$BOSE_API/addWirelessProfile" 2>&1)
+            RC=$?
+            setup_log "B: POST addWirelessProfile rc=$RC response='$(echo "$RESP" | head -c 400)'"
+            if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
+                setup_log "B: API persisted profile successfully — NetManager-DB updated"
+                B_OK=1
+            fi
+        fi
+
+        # If B persisted: NetManager has the profile in its DB,
+        # everything else is unnecessary. Skip A/C/D.
+        if [ "$B_OK" = "1" ]; then
+            setup_log "B succeeded — skipping A/C/D fallbacks"
+        else
+        # --- Approach A: direct /etc/wpa_supplicant.conf write (fallback) ---
         WPA_CONF="/etc/wpa_supplicant.conf"
         TMP="/tmp/wpa_supplicant.conf.new"
         cat > "$TMP" <<WPAEOF
@@ -402,64 +480,178 @@ WPAEOF
         else
             setup_log "A: no wpa_supplicant process to restart (Bose may bring it up later)"
         fi
-
-        # --- Approach B: addWirelessProfile API against BoseApp ---
-        # NetManager persists the profile in /mnt/nv/BoseApp-Persistence
-        # so it survives the next reboot even if /etc/wpa_supplicant.conf
-        # is overwritten by Bose's own init logic.
-        BOSE_API="http://127.0.0.1:8090"
-        setup_log "B: waiting for BoseApp on $BOSE_API"
-        i=0
-        while [ $i -lt 30 ]; do
-            if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
-                setup_log "B: BoseApp reachable after ${i}s"
-                break
-            fi
-            sleep 2
-            i=$((i + 2))
-        done
-        if [ $i -ge 30 ]; then
-            setup_log "B: BoseApp did not respond within 60s, skipping API call"
-        else
-            # Pre-state for diagnosis.
-            NETINFO=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
-            setup_log "B: /networkInfo before: $NETINFO"
-            # XML body. SSID and password are inside attribute values,
-            # so escape only the XML-significant chars: & < > " '
-            # (we do NOT touch backslashes — wpa_supplicant treats
-            # double-quoted PSKs literally).
-            xml_escape() {
-                printf '%s' "$1" | sed \
-                    -e 's/\&/\&amp;/g' \
-                    -e 's/</\&lt;/g' \
-                    -e 's/>/\&gt;/g' \
-                    -e 's/"/\&quot;/g' \
-                    -e "s/'/\&apos;/g"
-            }
-            ESSID=$(xml_escape "$SSID")
-            EPASS=$(xml_escape "$PASS")
-            BODY="<AddWirelessProfile timeout=\"30\"><profile ssid=\"$ESSID\" password=\"$EPASS\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
+        # Re-attempt the API once after Approach A has done its
+        # bind-mount and (maybe) restart — sometimes that nudges
+        # NetManager hard enough to accept the call even when the
+        # initial probe got 500. Cheap, harmless on success.
+        if [ -n "$BODY" ]; then
             RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
                    --post-data="$BODY" "$BOSE_API/addWirelessProfile" 2>&1)
             RC=$?
-            setup_log "B: POST addWirelessProfile rc=$RC response='$(echo "$RESP" | head -c 200)'"
+            setup_log "B: post-A retry addWirelessProfile rc=$RC response='$(echo "$RESP" | head -c 400)'"
             if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
                 setup_log "B: API persisted profile successfully"
             else
-                setup_log "B: API call did not confirm success (rc=$RC)"
+                setup_log "B: API call did not confirm success (rc=$RC), retrying after 4s"
+                sleep 4
+                RESP2=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
+                       --post-data="$BODY" "$BOSE_API/addWirelessProfile" 2>&1)
+                RC2=$?
+                setup_log "B: retry POST addWirelessProfile rc=$RC2 response='$(echo "$RESP2" | head -c 400)'"
             fi
+
+            # --- Approach C: wpa_cli direct ---
+            # Talks to whichever wpa_supplicant instance is currently
+            # alive on the box (Bose's or ours). add_network /
+            # set_network / select_network / save_config is the
+            # canonical wpa_supplicant.conf-independent path. If the
+            # ctrl interface is reachable, this works even when
+            # /addWirelessProfile is refusing service.
+            if command -v wpa_cli >/dev/null 2>&1; then
+                NETID=$(wpa_cli -i wlan0 add_network 2>/dev/null | tail -1)
+                setup_log "C: wpa_cli add_network on wlan0 -> id=$NETID"
+                if [ -n "$NETID" ] && [ "$NETID" -ge 0 ] 2>/dev/null; then
+                    SSID_ESC=$(printf '%s' "$SSID" | sed 's/"/\\"/g')
+                    PSK_ESC=$(printf '%s' "$PASS" | sed 's/"/\\"/g')
+                    wpa_cli -i wlan0 set_network "$NETID" ssid "\"$SSID_ESC\"" >/dev/null 2>&1
+                    R1=$?
+                    wpa_cli -i wlan0 set_network "$NETID" psk "\"$PSK_ESC\"" >/dev/null 2>&1
+                    R2=$?
+                    wpa_cli -i wlan0 set_network "$NETID" key_mgmt WPA-PSK >/dev/null 2>&1
+                    R3=$?
+                    wpa_cli -i wlan0 enable_network "$NETID" >/dev/null 2>&1
+                    R4=$?
+                    wpa_cli -i wlan0 select_network "$NETID" >/dev/null 2>&1
+                    R5=$?
+                    wpa_cli -i wlan0 save_config >/dev/null 2>&1
+                    R6=$?
+                    setup_log "C: wpa_cli set ssid=$R1 psk=$R2 key_mgmt=$R3 enable=$R4 select=$R5 save=$R6"
+                    # Persist creds into NAND so subsequent boots
+                    # (when stick wlan.conf is gone) can replay this
+                    # exact wpa_cli dance — Bose's NetManager does
+                    # NOT remember wpa_cli-added networks across
+                    # reboot. Without this every reboot drops back
+                    # to yellow LED. Stored next to other NAND
+                    # state, fat32-safe newlines.
+                    if [ "$R1" = "0" ] && [ "$R2" = "0" ] && [ "$R4" = "0" ]; then
+                        { printf 'SSID=%s\n' "$SSID"
+                          printf 'PASS=%s\n' "$PASS"
+                        } > "$WLAN_CREDS_NAND.new" 2>/dev/null
+                        if [ -s "$WLAN_CREDS_NAND.new" ]; then
+                            mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
+                            chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
+                            setup_log "C: persisted wlan creds to NAND for replay on next boot"
+                        fi
+                    fi
+                fi
+            else
+                setup_log "C: wpa_cli not in PATH, skipping"
+            fi
+            # --- Approach D: kill setup-AP processes so NetManager
+            # falls back to station mode ---
+            #
+            # Empirical: on factory-reset rhino ST10, Approach C writes
+            # a valid wpa_supplicant profile but wlan0 stays DISCONNECTED
+            # because Bose's NetManager keeps wlan1 in setup-AP mode and
+            # never re-evaluates wlan0. A physical preset button press
+            # WAS observed to break this (LED goes white within seconds);
+            # the CLI equivalent `sys presetkey N p` is accepted with
+            # ->OK but does NOT propagate the same NetworkManager side
+            # effect (six slots tried, all wlan0 state=up ip=none).
+            #
+            # So we go one level lower: kill the userland processes that
+            # actually run the setup-AP (hostapd serves the AP, udhcpd
+            # hands out 192.0.2.x leases). With those gone, NetManager
+            # has nothing to keep alive and the station-mode profile we
+            # already loaded becomes the next thing to try.
+            #
+            # Backgrounded so run.sh does not block. Best-effort: each
+            # kill is silent on absence.
+            (
+                sleep 8
+                setup_log "D: setup-AP teardown attempt"
+                # Snapshot what's actually running so we can refine the
+                # kill list on other firmware variants without guessing.
+                AP_PROCS=$(ps 2>/dev/null | grep -E 'hostapd|udhcpd|dnsmasq|nodogsplash' | grep -v grep | tr '\n' '|' | head -c 400)
+                setup_log "D: AP-related procs: $AP_PROCS"
+                killall hostapd 2>/dev/null && setup_log "D: hostapd killed"
+                killall udhcpd 2>/dev/null && setup_log "D: udhcpd killed"
+                # Some Bose builds use dnsmasq instead.
+                killall dnsmasq 2>/dev/null && setup_log "D: dnsmasq killed"
+                sleep 2
+                # Force wpa_supplicant to retry association with the
+                # config we just wrote. reassociate is the cheap path;
+                # reconfigure re-reads the file in case Bose's NetManager
+                # rewrote it from underneath us between our write and now.
+                wpa_cli -i wlan0 reassociate >/dev/null 2>&1 \
+                    && setup_log "D: wlan0 reassociate sent"
+                wpa_cli -i wlan0 reconfigure >/dev/null 2>&1 \
+                    && setup_log "D: wlan0 reconfigure sent"
+                # Give the radio time to scan + 4-way handshake + DHCP.
+                for wait in 6 10 15 20; do
+                    sleep "$wait"
+                    STATE=$(cat /sys/class/net/wlan0/operstate 2>/dev/null)
+                    IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+                    setup_log "D: t+${wait}s wlan0 state=$STATE ip=${IP:-none}"
+                    if [ "$STATE" = "up" ] && [ -n "$IP" ]; then
+                        setup_log "D: associated — teardown approach won"
+                        return 0
+                    fi
+                done
+                # Last resort: simulated hardware presses. Jens-observed
+                # pattern on rhino ST10: a single CLI press has no
+                # NetManager effect, but a RAPID BURST of presses does
+                # — as if Bose has a user-interaction counter that
+                # must cross a threshold before the state machine flips
+                # out of setup-AP. So we send a burst first, then
+                # spaced retries to nudge the NetManager state without
+                # spamming.
+                if command -v nc >/dev/null 2>&1; then
+                    setup_log "D-fallback: burst phase (8x slot 2, 1s apart)"
+                    for _ in 1 2 3 4 5 6 7 8; do
+                        printf 'sys presetkey 2 p\n' | nc -w 1 127.0.0.1 17000 >/dev/null 2>&1
+                        sleep 1
+                    done
+                    sleep 6
+                    IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+                    setup_log "D-fallback: after burst wlan0 ip=${IP:-none}"
+                    if [ -n "$IP" ]; then
+                        setup_log "D-fallback: burst won — associated ip=$IP"
+                        return 0
+                    fi
+                    # Spaced retries across all slots in case slot 2 is
+                    # specifically suppressed by Bose's preset handler.
+                    setup_log "D-fallback: spaced phase (slots 2..1, 12s apart)"
+                    for slot in 2 3 4 5 6 1; do
+                        printf 'sys presetkey %d p\n' "$slot" | nc -w 2 127.0.0.1 17000 >/dev/null 2>&1
+                        setup_log "D-fallback: spaced presetkey $slot sent"
+                        sleep 12
+                        IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+                        setup_log "D-fallback: after slot $slot wlan0 ip=${IP:-none}"
+                        if [ -n "$IP" ]; then
+                            setup_log "D-fallback: spaced won — associated after slot $slot ip=$IP"
+                            return 0
+                        fi
+                    done
+                fi
+                setup_log "D: all approaches exhausted — manual preset press needed"
+            ) &
+
             # Post-state, with grace period for the box to attempt
             # association from the just-stored profile.
             sleep 5
             NETINFO2=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
             setup_log "B: /networkInfo after: $NETINFO2"
         fi
+        fi
 
-        rm -f "$WLAN_CONF" 2>/dev/null
-        setup_log "wlan.conf removed from stick"
+        if [ -f "$WLAN_CONF" ]; then
+            rm -f "$WLAN_CONF" 2>/dev/null
+            setup_log "wlan.conf removed from stick"
+        fi
         setup_log "=== WLAN provisioning end ==="
     else
-        setup_log "wlan.conf invalid (SSID or PASS empty), aborting WLAN provisioning"
+        setup_log "wlan creds invalid (SSID or PASS empty), aborting WLAN provisioning"
     fi
 fi
 
@@ -632,6 +824,16 @@ log "Bootstrap abgeschlossen"
 #      gestartet weil remote_services auf dem Stick lag. Nach umount
 #      ist diese Datei nicht mehr lesbar; wir stoppen sshd zusaetzlich.
 #
+# Debug opt-out: if /media/sda1/keep-open exists, skip the entire
+# cleanup so SSH stays reachable and the stick stays mounted. Used
+# during interactive debugging when we want to read /mnt/nv state
+# live over SSH without rebooting the box. Removed by deleting the
+# file (e.g. del E:\keep-open from Jens' laptop) — next boot
+# returns to normal cleanup behavior.
+if [ -e "$STICK/keep-open" ]; then
+    setup_log "keep-open marker on stick — skipping umount + sshd kill for live debug"
+else
+#
 # Detached Hintergrund Block damit run.sh sofort returnen kann
 # (shelby_local will dass rc.local schnell durchlaeuft). Lange
 # Wartezeit + aktive Pruefung dass kein Prozess mehr den Stick
@@ -679,3 +881,4 @@ log "Bootstrap abgeschlossen"
         fi
     fi
 ) &
+fi

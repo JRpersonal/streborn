@@ -10,6 +10,10 @@ export function AppVersion() {
   return window['go']['main']['App']['AppVersion']();
 }
 
+export function BootstrapBoxOnSetupAP(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['BootstrapBoxOnSetupAP'](arg1, arg2, arg3, arg4);
+}
+
 export function BoxAgentVersion(arg1, arg2) {
   return window['go']['main']['App']['BoxAgentVersion'](arg1, arg2);
 }
@@ -42,12 +46,24 @@ export function EjectDrive(arg1) {
   return window['go']['main']['App']['EjectDrive'](arg1);
 }
 
+export function ExportDiagnosticLogs(arg1) {
+  return window['go']['main']['App']['ExportDiagnosticLogs'](arg1);
+}
+
 export function FormatStick(arg1) {
   return window['go']['main']['App']['FormatStick'](arg1);
 }
 
+export function GetLogFilePath() {
+  return window['go']['main']['App']['GetLogFilePath']();
+}
+
 export function GetPresets(arg1, arg2) {
   return window['go']['main']['App']['GetPresets'](arg1, arg2);
+}
+
+export function InstallSTROnBox(arg1) {
+  return window['go']['main']['App']['InstallSTROnBox'](arg1);
 }
 
 export function IsBoseStick(arg1) {
@@ -80,6 +96,14 @@ export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6) {
 
 export function RebootBox(arg1, arg2) {
   return window['go']['main']['App']['RebootBox'](arg1, arg2);
+}
+
+export function SaveDiagnosticBundle(arg1, arg2) {
+  return window['go']['main']['App']['SaveDiagnosticBundle'](arg1, arg2);
+}
+
+export function ScanForSetupAPs() {
+  return window['go']['main']['App']['ScanForSetupAPs']();
 }
 
 export function SelectBoxSource(arg1, arg2, arg3) {
