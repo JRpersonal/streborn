@@ -2090,6 +2090,23 @@ async function loadBoxSettings() {
     if (go) go.onclick = () => switchView('setup');
     return;
   }
+  // Stock Bose speakers do not run the STR agent, so /api/box/settings
+  // (an STR endpoint on port 8888) would hit Bose's RomPager web
+  // server and return a 404 with a confusing HTML error. Render a
+  // clear "install STR first" panel instead.
+  if (state.settingsBox && state.settingsBox.kind === 'stock') {
+    body.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-title">${escapeHtml(t('settingsView.stockBoxTitle'))}</div>
+        <div class="empty-state-text">
+          ${escapeHtml(t('settingsView.stockBoxHelp', { name: state.settingsBox.friendlyName || state.settingsBox.name || state.settingsBox.host }))}
+        </div>
+        <button class="btn btn-primary btn-mini" id="settingsGoSetup">${escapeHtml(t('speaker.goSetup'))}</button>
+      </div>`;
+    const go = document.getElementById('settingsGoSetup');
+    if (go) go.onclick = () => switchView('setup');
+    return;
+  }
   // If content is already rendered, do not overwrite it. The user
   // should keep seeing the previous values while we fetch fresh data.
   // Otherwise show a hint.
