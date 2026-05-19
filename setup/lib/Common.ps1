@@ -10,6 +10,29 @@ $script:SshFlags = @(
     "-oStrictHostKeyChecking=accept-new"
 )
 
+# === Yes/No Prompt ===
+#
+# Read-YesNo accepts both English (y, yes) and German (j, ja) for yes,
+# and (n, no, nein) for no. The wizard runs on Windows hosts of any
+# locale; hard-coding "j" silently rejected every English user's "y"
+# and aborted half-done stick builds (see GH #44).
+function Read-YesNo {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [switch]$DefaultYes
+    )
+    $suffix = if ($DefaultYes) { " (Y/n) [yes]" } else { " (y/N) [no]" }
+    $answer = Read-Host ($Prompt + $suffix)
+    if ([string]::IsNullOrWhiteSpace($answer)) {
+        return [bool]$DefaultYes
+    }
+    switch -Regex ($answer.Trim().ToLower()) {
+        '^(y|yes|j|ja)$'  { return $true }
+        '^(n|no|nein)$'   { return $false }
+        default           { return [bool]$DefaultYes }
+    }
+}
+
 # === Logging Helpers ===
 
 function Write-Step($message) {

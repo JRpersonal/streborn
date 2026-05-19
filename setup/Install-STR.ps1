@@ -258,8 +258,7 @@ function Action-Presets {
         $stick = Select-Stick -PreferredDrive (Get-CachedConfig "lastStickDrive")
         Open-PresetEditor -StickPath $stick
         Write-Host ""
-        $eject = Read-Host "  Karte jetzt auswerfen? (j/n)"
-        if ($eject -eq "j") {
+        if (Read-YesNo "  Karte jetzt auswerfen? / Eject the card now?") {
             Eject-Stick -StickPath $stick
         }
         return
@@ -298,8 +297,7 @@ function Action-Presets {
 
     Write-Host ""
     Write-Host "  Damit der Agent die neuen Presets nutzt, muss er neu starten."
-    $restart = Read-Host "  Agent jetzt neu starten? (j/n)"
-    if ($restart -eq "j") {
+    if (Read-YesNo "  Agent jetzt neu starten? / Restart the agent now?") {
         Restart-AgentOnBox -BoxIP $box
     } else {
         Write-Info "Agent laeuft weiter mit alten Presets. Bei naechstem Reboot werden neue geladen."
@@ -346,8 +344,9 @@ function Action-UpdateStick {
         $stick = Select-Stick -PreferredDrive (Get-CachedConfig "lastStickDrive")
         $bin = Get-Binary -RepoRoot $repoRoot -CustomPath $BinaryPath
         Update-StickFiles -StickPath $stick -RepoRoot $repoRoot -BinaryPath $bin
-        $eject = Read-Host "  Karte jetzt auswerfen? (j/n)"
-        if ($eject -eq "j") { Eject-Stick -StickPath $stick }
+        if (Read-YesNo "  Karte jetzt auswerfen? / Eject the card now?") {
+            Eject-Stick -StickPath $stick
+        }
         return
     }
 
@@ -380,8 +379,7 @@ function Action-UpdateStick {
 
     Write-OK "Files uebertragen"
 
-    $restart = Read-Host "  Agent jetzt neu starten? (j/n)"
-    if ($restart -eq "j") {
+    if (Read-YesNo "  Agent jetzt neu starten? / Restart the agent now?") {
         Restart-AgentOnBox -BoxIP $box
         Start-Sleep -Seconds 5
         Show-BoxStatus -BoxIP $box
@@ -393,8 +391,7 @@ function Action-RemoveBootstrap {
     $box = Find-Box -PreferredIP $BoxIP
     Remove-Bootstrap -BoxIP $box
     Write-Host ""
-    $reboot = Read-Host "  Box jetzt rebooten? (j/n)"
-    if ($reboot -eq "j") {
+    if (Read-YesNo "  Box jetzt rebooten? / Reboot the box now?") {
         Reboot-Box -BoxIP $box
     }
 }
@@ -405,13 +402,11 @@ function Action-Phase2 {
     Write-Host "  Vorteil: automatischer Neustart bei Crash."
     Write-Host "  Phase 1 wird dabei automatisch deaktiviert."
     Write-Host ""
-    $confirm = Read-Host "  Fortfahren? (j/n)"
-    if ($confirm -ne "j") { return }
+    if (-not (Read-YesNo "  Fortfahren? / Continue?")) { return }
 
     $box = Find-Box -PreferredIP $BoxIP
     Install-Bootstrap -BoxIP $box -Mode "phase2"
-    $reboot = Read-Host "  Box jetzt rebooten? (j/n)"
-    if ($reboot -eq "j") {
+    if (Read-YesNo "  Box jetzt rebooten? / Reboot the box now?") {
         Reboot-Box -BoxIP $box
         Show-BoxStatus -BoxIP $box
     }

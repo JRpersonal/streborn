@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JRpersonal/streborn/discovery"
@@ -63,21 +64,51 @@ type BoxInfo struct {
 	Kind string `json:"kind"`
 }
 
-// DiscoverBoxes durchsucht das LAN nach Sticks via mDNS und blockiert max
-// timeoutSec Sekunden.
+// DiscoverBoxes durchsucht das LAN nach Sticks via mDNS. Wenn mDNS
+// nichts findet (z.B. Windows Firewall blockt 5353, oder die Stock
+// Firmware announct unter einem Service Namen den wir noch nicht
+// kennen), startet ein einmaliger leichter HTTP Probe Sweep auf Port
+// 8090 als Fallback. Der Fallback laeuft NICHT bei jeder Discovery
+// und nur auf einem Port, damit ein erfolgreicher mDNS Lauf kein
+// Portscan auf dem lokalen Netz triggert.
 func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	if timeoutSec <= 0 {
-		timeoutSec = 4
+		timeoutSec = 6
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
-	results, err := discovery.Browse(ctx, a.logger)
+	// mDNS gets the bulk of the budget. The fallback probe only fires
+	// if mDNS came back empty.
+	mdnsBudget := time.Duration(timeoutSec) * 8 * time.Second / 10
+	mdnsCtx, mdnsCancel := context.WithTimeout(ctx, mdnsBudget)
+	defer mdnsCancel()
+
+	results, err := discovery.Browse(mdnsCtx, a.logger)
 	if err != nil {
 		return nil, fmt.Errorf("browse: %w", err)
 	}
 
 	seen := map[string]BoxInfo{}
+	upsert := func(b BoxInfo) {
+		if b.Host == "" {
+			return
+		}
+		key := b.DeviceID
+		if key == "" {
+			key = b.Name + "@" + b.Host
+		}
+		prev, exists := seen[key]
+		if exists {
+			// STR announcement always wins over a stock entry for
+			// the same physical device.
+			if prev.Kind == "str" && b.Kind == "stock" {
+				return
+			}
+		}
+		seen[key] = b
+	}
+
 	for inst := range results {
 		host := pickReachableIP(inst.IPv4)
 		if host == "" {
@@ -87,14 +118,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		if kind == "" {
 			kind = "str"
 		}
-		// STR-announced speaker wins over a stock entry for the same
-		// device. The discovery layer already prefers STR; we also
-		// guard here against the deduplication key collisions across
-		// different mDNS announces.
-		if prev, ok := seen[inst.Name]; ok && prev.Kind == "str" && kind == "stock" {
-			continue
-		}
-		seen[inst.Name] = BoxInfo{
+		upsert(BoxInfo{
 			Name:         inst.Name,
 			Host:         host,
 			Port:         inst.Port,
@@ -104,6 +128,16 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 			Version:      inst.Version,
 			Build:        inst.Build,
 			Kind:         kind,
+		})
+	}
+
+	// Fallback only when mDNS turned up nothing. Probes a single
+	// well-known port per host (8090, the Bose web API) so we stay
+	// well below "this looks like a portscan" thresholds even on the
+	// loudest IDS-running APs.
+	if len(seen) == 0 {
+		for _, probed := range a.probeLANForStock(ctx) {
+			upsert(probed)
 		}
 	}
 
@@ -112,6 +146,174 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		out = append(out, b)
 	}
 	return out, nil
+}
+
+// probeLANForStock walks every local IPv4 /24 and HTTP-probes each
+// host on port 8090 for the stock Bose /info XML. This is the
+// fallback path used when mDNS returned no speakers at all: we
+// assume STR-equipped speakers will be found by mDNS, and the only
+// reason to actively probe is to surface a vanilla SoundTouch that
+// needs the install. Single port keeps the sweep below "looks like
+// a portscan" thresholds on consumer routers and IDS-enabled APs.
+func (a *App) probeLANForStock(ctx context.Context) []BoxInfo {
+	subnets := localIPv4Subnets()
+	if len(subnets) == 0 {
+		return nil
+	}
+
+	hits := make(chan BoxInfo, 32)
+	sem := make(chan struct{}, 32)
+	var wg sync.WaitGroup
+
+	probeOne := func(ip string) {
+		defer wg.Done()
+		defer func() { <-sem }()
+		if b, ok := probeStock(ctx, ip); ok {
+			hits <- b
+		}
+	}
+
+	for _, subnet := range subnets {
+		base := subnet
+		for i := 1; i <= 254; i++ {
+			select {
+			case <-ctx.Done():
+				goto done
+			case sem <- struct{}{}:
+			}
+			wg.Add(1)
+			go probeOne(base + fmt.Sprintf("%d", i))
+		}
+	}
+done:
+	go func() { wg.Wait(); close(hits) }()
+
+	var out []BoxInfo
+	for h := range hits {
+		out = append(out, h)
+	}
+	return out
+}
+
+// localIPv4Subnets returns the unique "first three octets + dot" of
+// every non-loopback non-link-local IPv4 interface address on this
+// host. The probe sweep uses these as scan bases. Filtered to /24-ish
+// private ranges so we never sweep public addresses by accident.
+func localIPv4Subnets() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	for _, a := range addrs {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip4 := ipnet.IP.To4()
+		if ip4 == nil || ip4.IsLoopback() || ip4.IsLinkLocalUnicast() {
+			continue
+		}
+		// Only sweep RFC1918 ranges. Skips the carrier-grade NAT and
+		// public IPs that should never host a SoundTouch.
+		if !(ip4[0] == 10 ||
+			(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) ||
+			(ip4[0] == 192 && ip4[1] == 168)) {
+			continue
+		}
+		base := fmt.Sprintf("%d.%d.%d.", ip4[0], ip4[1], ip4[2])
+		if _, dup := seen[base]; dup {
+			continue
+		}
+		seen[base] = struct{}{}
+		out = append(out, base)
+	}
+	return out
+}
+
+// probeStock checks ip:8090/info for the Bose SoundTouch device XML.
+// Conservative timeouts so a sweep across 254 hosts stays cheap on a
+// LAN where most addresses do not respond.
+func probeStock(ctx context.Context, ip string) (BoxInfo, bool) {
+	url := fmt.Sprintf("http://%s:8090/info", ip)
+	body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 4096)
+	if !ok {
+		return BoxInfo{}, false
+	}
+	s := string(body)
+	if !strings.Contains(s, "<info ") || !strings.Contains(s, "deviceID=") {
+		return BoxInfo{}, false
+	}
+	deviceID := strings.ToUpper(extractAttr(s, "deviceID"))
+	name := extractTag(s, "name")
+	model := extractTag(s, "type")
+	return BoxInfo{
+		Name:         "stock-" + lastN(deviceID, 6),
+		Host:         ip,
+		Port:         8090,
+		DeviceID:     deviceID,
+		FriendlyName: name,
+		Model:        model,
+		Kind:         "stock",
+	}, true
+}
+
+func httpGetSmall(ctx context.Context, url string, timeout time.Duration, max int64) ([]byte, bool) {
+	c, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(c, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false
+	}
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, max))
+	if err != nil {
+		return nil, false
+	}
+	return b, true
+}
+
+func extractAttr(xml, key string) string {
+	needle := key + "=\""
+	i := strings.Index(xml, needle)
+	if i < 0 {
+		return ""
+	}
+	j := strings.Index(xml[i+len(needle):], "\"")
+	if j < 0 {
+		return ""
+	}
+	return xml[i+len(needle) : i+len(needle)+j]
+}
+
+func extractTag(xml, tag string) string {
+	open := "<" + tag + ">"
+	close := "</" + tag + ">"
+	i := strings.Index(xml, open)
+	if i < 0 {
+		return ""
+	}
+	j := strings.Index(xml[i+len(open):], close)
+	if j < 0 {
+		return ""
+	}
+	return xml[i+len(open) : i+len(open)+j]
+}
+
+func lastN(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
 }
 
 // Preset Format passt zu internal/presets.Preset JSON.
