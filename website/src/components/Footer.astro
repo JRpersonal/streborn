@@ -5,8 +5,8 @@ const { lang } = Astro.props;
 const t = useTranslations(lang);
 const year = new Date().getFullYear();
 
-// Pfade je Sprache. Beide Sprachen haben unterschiedliche Slugs fuer
-// rechtliche Seiten weil deutscher und englischer Begriff abweichen.
+// Paths per locale. The slugs for legal pages differ between German
+// and English because the words themselves differ.
 const imprintPath = lang === 'de' ? '/de/impressum/' : '/imprint/';
 const privacyPath = lang === 'de' ? '/de/datenschutz/' : '/privacy/';
 ---

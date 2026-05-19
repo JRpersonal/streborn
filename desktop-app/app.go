@@ -40,24 +40,25 @@ func (a *App) startup(ctx context.Context) {
 	a.logger.Info("Desktop App startet")
 }
 
-// BoxInfo wird ans Frontend gegeben fuer die Box Auswahl.
+// BoxInfo is the speaker entry passed to the frontend for selection.
 type BoxInfo struct {
 	Name         string `json:"name"`
-	Host         string `json:"host"`         // IPv4 fuer REST API
-	Port         int    `json:"port"`         // 8888 typisch
+	Host         string `json:"host"` // IPv4 for the REST API
+	Port         int    `json:"port"` // typically 8888
 	DeviceID     string `json:"deviceID"`
 	FriendlyName string `json:"friendlyName"`
 	Model        string `json:"model"`
 	Version      string `json:"version"`
 	// Build is the agent's build stamp (YYYY-MM-DD-HHMM) as
-	// announced via mDNS TXT. Empty if the box runs an older agent
-	// that did not yet broadcast build. Used by the frontend update
-	// indicators to flag stamp drift even when version strings match.
-	Build        string `json:"build"`
+	// announced via mDNS TXT. Empty if the speaker runs an older
+	// agent that does not yet broadcast build. Used by the frontend
+	// update indicators to flag stamp drift even when version
+	// strings match.
+	Build string `json:"build"`
 }
 
-// DiscoverBoxes durchsucht das LAN nach Sticks via mDNS und blockiert max
-// timeoutSec Sekunden.
+// DiscoverBoxes scans the LAN for sticks via mDNS and blocks at most
+// timeoutSec seconds.
 func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 4
@@ -278,7 +279,7 @@ func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 	// und freundlich melden.
 	ct := resp.Header.Get("Content-Type")
 	if !strings.Contains(ct, "json") {
-		return nil, fmt.Errorf("Stick Agent ist zu alt fuer diese Funktion. Bitte zuerst den Stick aktualisieren (Update Banner oben).")
+		return nil, fmt.Errorf("stick agent is too old for this operation. Please update the stick first (update banner at the top).")
 	}
 	var out map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -537,14 +538,17 @@ func (a *App) AppInfo() AppInfo {
 		Author:            "Jens Roggenfelder (JRpersonal)",
 		GitHubURL:         "https://github.com/JRpersonal/streborn",
 		WebsiteURL:        "https://st-reborn.de",
-		DonateURL:         "", // gefuellt sobald PayPal Link auf der Website ist
-		DonateSlogan:      "Dir gefaellt die App? Ich freue mich ueber einen Kaffee.",
-		UpdateManifestURL: "", // gefuellt sobald die Manifest URL feststeht
+		DonateURL:         "", // populated once the PayPal link on the website is live
+		// DonateSlogan is left empty so the frontend renders the
+		// locale-aware fallback from the i18n bundle. Hardcoding
+		// German here would shadow the bundle for every locale.
+		DonateSlogan:      "",
+		UpdateManifestURL: "", // populated once the manifest URL is fixed
 	}
 }
 
-// CheckAppUpdate fragt die UpdateManifestURL ab und liefert das Manifest
-// zurueck, sofern die remote Version groesser ist als die eigene. Wenn
+// CheckAppUpdate fetches the UpdateManifestURL and returns the
+// manifest when the remote version is greater than the running one.
 // kein Manifest URL gesetzt ist oder Version gleich, leere Map.
 func (a *App) CheckAppUpdate() (map[string]string, error) {
 	info := a.AppInfo()
@@ -606,7 +610,7 @@ func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) 
 func (a *App) UpdateBoxAgent(host string, port int) error {
 	bin := agentbin.Bytes()
 	if len(bin) == 0 {
-		return fmt.Errorf("kein eingebettetes Stick Binary verfuegbar")
+		return fmt.Errorf("no embedded stick binary available")
 	}
 	url := a.baseURL(host, port) + "/api/agent/update"
 	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost, url, strings.NewReader(string(bin)))
