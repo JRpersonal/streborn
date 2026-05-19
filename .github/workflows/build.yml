@@ -77,6 +77,33 @@ jobs:
       - name: Scan
         run: govulncheck ./...
 
+  # Vite build for the Wails frontend. Catches broken template
+  # literals, JSON parse errors in i18n bundles and missing imports
+  # at PR time rather than at the next release. The build only
+  # exercises the Vite pipeline; the Wails-Go glue is covered by
+  # release.yml's full desktop builds on tag push.
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop-app/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: desktop-app/frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Build frontend
+        working-directory: desktop-app/frontend
+        run: npm run build
+
   build:
     name: Cross Compile
     needs: test

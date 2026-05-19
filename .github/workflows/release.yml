@@ -27,6 +27,13 @@ on:
         description: 'Release version (vX.Y.Z, e.g. v0.3.0). Leave empty for a build-only dry-run.'
         required: false
         type: string
+  schedule:
+    # Weekly automatic dry-run, Sundays 04:30 UTC. Catches breakage
+    # introduced by Dependabot bumps of release-only actions
+    # (attest-build-provenance, action-gh-release, upload-artifact)
+    # before the next real tag. The publish step is gated on a
+    # non-empty version input, so a scheduled run is build-only.
+    - cron: "30 4 * * 0"
 
 permissions:
   contents: read

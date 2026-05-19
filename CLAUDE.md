@@ -146,43 +146,25 @@ in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Release pipeline dry-run
 
-After Dependabot bumps a release-only action — `attest-build-provenance`,
-`action-gh-release`, or the release.yml usage of `upload-artifact` —
-the change is not exercised by PR CI (those actions only live in
-`release.yml`, which runs on tag push or `workflow_dispatch`).
+`release.yml` runs a weekly automatic dry-run (Sundays 04:30 UTC) so
+Dependabot bumps of release-only actions like
+`attest-build-provenance`, `action-gh-release`, or
+`upload-artifact`'s release-only usage pattern are exercised before
+the next real tag. PR CI does not exercise these actions.
 
-To smoke-test before the next real tag, dispatch the release workflow
-without a version input:
-
-```bash
-gh workflow run release.yml
-```
-
-The pipeline runs verify-source, builds the agent and all three
-desktop OS packages, and attests every artifact via Sigstore. The
-final `Publish GitHub Release` step is skipped automatically when
-the version input is empty. If this green-checks, the next real
-`vX.Y.Z` tag will work.
-
-## Release pipeline dry-run
-
-After Dependabot bumps a release-only action — `attest-build-provenance`,
-`action-gh-release`, or the release.yml usage of `upload-artifact` —
-the change is not exercised by PR CI (those actions only live in
-`release.yml`, which runs on tag push or `workflow_dispatch`).
-
-To smoke-test before the next real tag, dispatch the release workflow
-without a version input:
+To trigger a dry-run manually (e.g. after a Dependabot bump you do
+not want to wait a week for), dispatch the release workflow without
+a version input:
 
 ```bash
 gh workflow run release.yml
 ```
 
-The pipeline runs verify-source, builds the agent and all three
+Either path runs verify-source, builds the agent and all three
 desktop OS packages, and attests every artifact via Sigstore. The
 final `Publish GitHub Release` step is skipped automatically when
-the version input is empty. If this green-checks, the next real
-`vX.Y.Z` tag will work.
+no `version` input is supplied. If a dry-run green-checks, the next
+real `vX.Y.Z` tag will work.
 
 ## Build version stamping
 
