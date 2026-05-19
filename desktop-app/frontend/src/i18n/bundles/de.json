@@ -539,7 +539,7 @@
   "setup.awaitBoxReadyTitle": "Mach das jetzt am Lautsprecher:",
   "setup.awaitStep1": "Stick aus diesem Computer ziehen.",
   "setup.awaitStep2": "Stick in den USB-Port des Lautsprechers stecken.",
-  "setup.awaitStep3": "Lautsprecher kurz vom Strom trennen, wieder anschließen und warten bis die LEDs ruhig leuchten (etwa 60 bis 90 Sekunden).",
+  "setup.awaitStep3": "Lautsprecher kurz vom Strom trennen, wieder anschließen und etwa 60 bis 90 Sekunden warten bis er fertig gebootet hat (ST10: LED-Ring ruhig; ST20/ST30: Display zeigt das WLAN-Icon).",
   "setup.awaitConfirmBtn": "Lautsprecher ist bereit, STR jetzt installieren",
 
   "lang.german": "Deutsch",
