@@ -451,6 +451,16 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			name = p.Name
 		}
 		icon = p.Art
+		// Fallback: NetManager occasionally fires nowSelectionUpdated
+		// with an empty location — observed when Bose's preset cache
+		// was populated while BoseApp had not yet fully loaded the
+		// NetManager DB at boot. Our own store always has the
+		// authoritative URL, so use it whenever the event field is
+		// empty. Symmetric with the software-preset code path.
+		if url == "" && p.StreamURL != "" {
+			url = p.StreamURL
+			h.logger.Info("hardware preset location empty, falling back to store URL", "slot", slot)
+		}
 	}
 	if url == "" {
 		h.logger.Info("hardware preset gedrueckt, kein Mapping", "slot", slot)

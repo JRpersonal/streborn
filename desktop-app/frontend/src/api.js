@@ -39,6 +39,13 @@ export {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  SaveDiagnosticBundle,
+  GetLogFilePath,
+  InstallSTROnBox,
+  ScanForSetupAPs,
+  BootstrapBoxOnSetupAP,
+  ListMediaServers,
+  BrowseLibrary,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL } from '../wailsjs/runtime/runtime';

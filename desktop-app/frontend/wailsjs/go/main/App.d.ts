@@ -8,9 +8,13 @@ export function AppInfo():Promise<main.AppInfo>;
 
 export function AppVersion():Promise<string>;
 
+export function BootstrapBoxOnSetupAP(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.BootstrapResult>;
+
 export function BoxAgentVersion(arg1:string,arg2:number):Promise<Record<string, string>>;
 
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;
+
+export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.LibraryPage>;
 
 export function CheckAppUpdate():Promise<Record<string, string>>;
 
@@ -22,13 +26,21 @@ export function DiscoverBoxes(arg1:number):Promise<Array<main.BoxInfo>>;
 
 export function EjectDrive(arg1:string):Promise<void>;
 
+export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.LogExportResult>;
+
 export function FormatStick(arg1:string):Promise<void>;
 
+export function GetLogFilePath():Promise<string>;
+
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
+
+export function InstallSTROnBox(arg1:string):Promise<main.InstallResult>;
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
 
 export function ListDrives():Promise<Array<sticksetup.Drive>>;
+
+export function ListMediaServers(arg1:number):Promise<Array<main.LibraryServer>>;
 
 export function ListWiFiProfiles():Promise<Array<wifiprofiles.Profile>>;
 
@@ -39,6 +51,10 @@ export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;
 export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string):Promise<void>;
 
 export function RebootBox(arg1:string,arg2:number):Promise<void>;
+
+export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
+
+export function ScanForSetupAPs():Promise<Array<main.SetupAP>>;
 
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;
 

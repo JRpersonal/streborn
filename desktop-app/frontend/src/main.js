@@ -33,6 +33,13 @@ import {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  SaveDiagnosticBundle,
+  GetLogFilePath,
+  InstallSTROnBox,
+  ScanForSetupAPs,
+  BootstrapBoxOnSetupAP,
+  ListMediaServers,
+  BrowseLibrary,
   BrowserOpenURL,
 } from './api.js';
 
@@ -127,6 +134,7 @@ document.querySelector('#app').innerHTML = `
   </header>
   <div class="tabs">
     <button class="tab-btn active" data-view="box">${escapeHtml(t('nav.music'))}</button>
+    <button class="tab-btn" data-view="library">${escapeHtml(t('nav.library'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
     <button class="tab-btn" data-view="settings">${escapeHtml(t('nav.speakerSettings'))}</button>
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
   </div>
@@ -138,6 +146,7 @@ document.querySelector('#app').innerHTML = `
     <button class="btn btn-mini" id="globalSecurityRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
   </div>
   <div id="view-box" class="view"></div>
+  <div id="view-library" class="view hidden"></div>
   <div id="view-settings" class="view hidden"></div>
   <div id="view-setup" class="view hidden"></div>
 
@@ -237,6 +246,7 @@ function switchView(view) {
     b.classList.toggle('active', b.dataset.view === view);
   });
   $('view-box').classList.toggle('hidden', view !== 'box');
+  $('view-library').classList.toggle('hidden', view !== 'library');
   $('view-settings').classList.toggle('hidden', view !== 'settings');
   $('view-setup').classList.toggle('hidden', view !== 'setup');
   // Global SSH banner: the Setup tab has no speaker context, so hide
@@ -258,6 +268,7 @@ function switchView(view) {
     loadMusicTabVolume();
   }
   if (view === 'settings') loadBoxSettings();
+  if (view === 'library') openLibrary();
 }
 
 // ---------- Footer ----------
@@ -272,6 +283,7 @@ async function renderFooter() {
   const links = [];
   if (i.githubUrl)  links.push(`<a href="#" data-url="${escapeAttr(i.githubUrl)}" class="footer-link">GitHub</a>`);
   if (i.websiteUrl) links.push(`<a href="#" data-url="${escapeAttr(i.websiteUrl)}" class="footer-link">${escapeHtml(t('footer.website'))}</a>`);
+  links.push(`<a href="#" id="footerSaveLogs" class="footer-link" title="${escapeAttr(t('footer.saveLogsHint'))}">${escapeHtml(t('footer.saveLogs'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
   $('appFooter').innerHTML = `
     <div class="footer-left">
@@ -280,9 +292,29 @@ async function renderFooter() {
     </div>
     <div class="footer-right">${links.join(' &middot; ')}</div>
   `;
-  $('appFooter').querySelectorAll('.footer-link').forEach(a => {
+  $('appFooter').querySelectorAll('.footer-link[data-url]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(a.dataset.url); };
   });
+  const saveLogsBtn = $('footerSaveLogs');
+  if (saveLogsBtn) {
+    saveLogsBtn.onclick = async (e) => {
+      e.preventDefault();
+      saveLogsBtn.classList.add('working');
+      try {
+        const hosts = (state.boxes || []).map(b => b && b.host).filter(Boolean);
+        const res = await SaveDiagnosticBundle(hosts, true);
+        if (res && res.savePath) {
+          showToast(t('footer.saveLogsDone', { path: res.savePath, size: Math.round((res.bytes || 0) / 1024) }));
+        }
+        // If user cancelled the dialog, savePath comes back empty —
+        // no toast on cancel.
+      } catch (err) {
+        showError(String(err));
+      } finally {
+        saveLogsBtn.classList.remove('working');
+      }
+    };
+  }
   renderDonateSidebar();
   checkAppUpdate();
   // appInfo may have arrived after the first discovery completed; the
@@ -2058,6 +2090,23 @@ async function loadBoxSettings() {
     if (go) go.onclick = () => switchView('setup');
     return;
   }
+  // Stock Bose speakers do not run the STR agent, so /api/box/settings
+  // (an STR endpoint on port 8888) would hit Bose's RomPager web
+  // server and return a 404 with a confusing HTML error. Render a
+  // clear "install STR first" panel instead.
+  if (state.settingsBox && state.settingsBox.kind === 'stock') {
+    body.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-title">${escapeHtml(t('settingsView.stockBoxTitle'))}</div>
+        <div class="empty-state-text">
+          ${escapeHtml(t('settingsView.stockBoxHelp', { name: state.settingsBox.friendlyName || state.settingsBox.name || state.settingsBox.host }))}
+        </div>
+        <button class="btn btn-primary btn-mini" id="settingsGoSetup">${escapeHtml(t('speaker.goSetup'))}</button>
+      </div>`;
+    const go = document.getElementById('settingsGoSetup');
+    if (go) go.onclick = () => switchView('setup');
+    return;
+  }
   // If content is already rendered, do not overwrite it. The user
   // should keep seeing the previous values while we fetch fresh data.
   // Otherwise show a hint.
@@ -3155,12 +3204,415 @@ async function doSetup() {
     state.presets = [];
     refreshDrives();
     discoverBoxes();
+    // Show a confirmation panel first. We do NOT start the discovery
+    // + auto-install loop yet: the user just clicked "GO", the stick
+    // is still in the laptop, the speaker has not been touched.
+    // Starting the loop now would race the user and almost always
+    // probe a stale stock state (box up from a previous session,
+    // stick not yet inserted) which fails install.sh.
+    showAwaitBoxReadyPanel({ ssid, pass, html });
   } catch (e) {
     $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('common.error'))}: ${escapeHtml(String(e))}</div>`;
   }
   $('setupGo').disabled = false;
 }
 
+// showAwaitBoxReadyPanel renders the "do this on the speaker now"
+// instruction set with a confirmation button. The discovery /
+// auto-install loop only starts after the user clicks the button,
+// because nothing else can prove the stick has actually been moved
+// into the speaker and the box has booted with it mounted.
+function showAwaitBoxReadyPanel({ ssid, pass, html }) {
+  const setupResult = $('setupResult');
+  if (!setupResult) return;
+  setupResult.innerHTML = html +
+    `<div class="setup-section setup-await-ready">` +
+    `<div class="setup-ok"><b>${escapeHtml(t('setup.awaitBoxReadyTitle'))}</b></div>` +
+    `<ol class="setup-await-steps">` +
+    `<li>${escapeHtml(t('setup.awaitStep1'))}</li>` +
+    `<li>${escapeHtml(t('setup.awaitStep2'))}</li>` +
+    `<li>${escapeHtml(t('setup.awaitStep3'))}</li>` +
+    `</ol>` +
+    `<button class="btn btn-primary" id="setupSpeakerReady">${escapeHtml(t('setup.awaitConfirmBtn'))}</button>` +
+    `</div>`;
+  const btn = $('setupSpeakerReady');
+  if (btn) {
+    btn.onclick = () => {
+      btn.disabled = true;
+      waitForBoxAfterSetup({ ssid, pass, html });
+    };
+  }
+}
+
+// waitForBoxAfterSetup runs after the user has confirmed the stick
+// is in the speaker and the speaker has booted. It covers three
+// end-user paths in priority order:
+//   1. Box is already on the home LAN (had Wi-Fi before) -> just
+//      proceed to step 3 once mDNS or the active probe surfaces it.
+//   2. Box is brand-new / factory-reset and is broadcasting a Bose
+//      setup-AP -> auto cold-bootstrap it onto the home Wi-Fi using
+//      the credentials the user already entered for the stick.
+//   3. Once a stock box is reachable, run the in-app STR installer
+//      via SSH so the user does not need the PowerShell wizard.
+//
+// Credentials are kept only in this closure and never persisted.
+async function waitForBoxAfterSetup({ ssid, pass, html }) {
+  const baseHtml = html;
+  const startTs = Date.now();
+  const setupResult = $('setupResult');
+  if (!setupResult) return;
+  const render = (extra) => { setupResult.innerHTML = baseHtml + extra; };
+
+  function progressLine(elapsedSec, ap) {
+    const apHint = ap
+      ? `<div class="setup-ok">${escapeHtml(t('setup.setupAPDetected', { ssid: ap.ssid }))}</div>`
+      : '';
+    return apHint + `<div class="muted small">${escapeHtml(t('setup.waitingForBox', { sec: elapsedSec }))}</div>`;
+  }
+
+  let foundBox = null;
+  let bootstrapTriggered = false;
+
+  // Up to 5 minutes to find a reachable box. The discovery + cold-
+  // bootstrap legs run sequentially per iteration; the install leg
+  // runs after the loop, once a box has been confirmed reachable.
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline && !foundBox) {
+    try {
+      const list = await DiscoverBoxes(4);
+      foundBox = (list || []).find(b => b && b.host && (b.kind === 'stock' || b.kind === 'str'));
+      if (foundBox) break;
+    } catch {}
+
+    if (!bootstrapTriggered && ssid) {
+      try {
+        const aps = await ScanForSetupAPs();
+        if (aps && aps.length > 0) {
+          const ap = aps[0];
+          bootstrapTriggered = true;
+          render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                 `<div class="muted small">${escapeHtml(t('setup.bootstrapStarting'))}</div>`);
+          try {
+            const res = await BootstrapBoxOnSetupAP(ap.ssid, ssid, pass, 'wpa_or_wpa2');
+            if (res && res.ok && res.boxIP) {
+              foundBox = { host: res.boxIP, kind: 'stock' };
+              break;
+            }
+            render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                   `<div class="setup-warn">${escapeHtml(t('setup.bootstrapFailed', { msg: (res && res.message) || 'unknown' }))}</div>`);
+          } catch (bsErr) {
+            render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                   `<div class="setup-err">${escapeHtml(t('setup.bootstrapFailed', { msg: String(bsErr) }))}</div>`);
+          }
+        }
+      } catch (scanErr) {
+        // Windows 11 24H2 blocks netsh wlan unless desktop apps have
+        // Location permission. Detect and surface a one-click fix
+        // panel instead of silently looping forever.
+        const msg = String(scanErr || '');
+        if (msg.includes('windows-location-denied')) {
+          render(progressLine(Math.floor((Date.now() - startTs) / 1000), null) +
+                 `<div class="setup-err"><b>${escapeHtml(t('setup.locationPermNeededTitle'))}</b><br>` +
+                 `${escapeHtml(t('setup.locationPermNeededBody'))}<br>` +
+                 `<a href="ms-settings:privacy-location" target="_blank">${escapeHtml(t('setup.locationPermOpenSettings'))}</a></div>`);
+          return;
+        }
+      }
+    }
+
+    render(progressLine(Math.floor((Date.now() - startTs) / 1000), null));
+    await sleep(3000);
+  }
+
+  if (!foundBox) {
+    render(`<div class="setup-warn">${escapeHtml(t('setup.waitForBoxTimeout'))}</div>`);
+    return;
+  }
+
+  if (foundBox.kind === 'str') {
+    render(`<div class="setup-ok">${escapeHtml(t('setup.alreadyInstalled', { ip: foundBox.host }))}</div>`);
+    discoverBoxes();
+    return;
+  }
+
+  // Stock box (LAN-found or cold-bootstrapped): run installer.
+  render(`<div class="setup-ok">${escapeHtml(t('setup.boxFoundOnLAN', { ip: foundBox.host }))}</div>` +
+         `<div class="muted small">${escapeHtml(t('setup.installRunning'))}</div>`);
+  let result;
+  try {
+    result = await InstallSTROnBox(foundBox.host);
+  } catch (err) {
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`);
+    return;
+  }
+  if (!result || !result.ok) {
+    const msg = (result && result.message) || 'unknown';
+    const log = (result && result.log)
+      ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>`
+      : '';
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + log);
+    return;
+  }
+  render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
+         `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`);
+  discoverBoxes();
+}
+
+
+// ---------- Library (DLNA MediaServer browse, BETA) ----------
+//
+// Per-session state. servers is the discovered MediaServer list,
+// keyed by UDN. currentUDN is the one the user picked. stack is the
+// folder navigation breadcrumb, where each entry is {id, title}.
+const libState = {
+  servers: [],
+  currentUDN: '',
+  stack: [{ id: '0', title: '' }],
+  page: null,
+  loading: false,
+};
+
+async function openLibrary() {
+  renderLibrary();
+  if (libState.servers.length === 0) {
+    await loadMediaServers();
+  } else if (libState.currentUDN) {
+    await libraryBrowseCurrent();
+  }
+}
+
+async function loadMediaServers() {
+  libState.loading = true;
+  renderLibrary();
+  try {
+    const list = await ListMediaServers(3);
+    libState.servers = list || [];
+    if (libState.servers.length === 1) {
+      libState.currentUDN = libState.servers[0].udn;
+      libState.stack = [{ id: '0', title: libState.servers[0].friendlyName || '' }];
+      await libraryBrowseCurrent();
+      return;
+    }
+    libState.currentUDN = '';
+    libState.page = null;
+  } catch (e) {
+    showError(`ListMediaServers: ${e}`);
+  } finally {
+    libState.loading = false;
+    renderLibrary();
+  }
+}
+
+async function libraryPickServer(udn) {
+  const srv = libState.servers.find(s => s.udn === udn);
+  if (!srv) return;
+  libState.currentUDN = udn;
+  libState.stack = [{ id: '0', title: srv.friendlyName || '' }];
+  await libraryBrowseCurrent();
+}
+
+async function libraryBrowseCurrent() {
+  if (!libState.currentUDN) return;
+  const top = libState.stack[libState.stack.length - 1];
+  libState.loading = true;
+  renderLibrary();
+  try {
+    libState.page = await BrowseLibrary(libState.currentUDN, top.id, 0, 100);
+  } catch (e) {
+    showError(`BrowseLibrary: ${e}`);
+    libState.page = null;
+  } finally {
+    libState.loading = false;
+    renderLibrary();
+  }
+}
+
+async function libraryEnter(container) {
+  libState.stack.push({ id: container.id, title: container.title });
+  await libraryBrowseCurrent();
+}
+
+async function libraryGoTo(depth) {
+  // Truncate breadcrumb to the clicked depth.
+  if (depth < 0 || depth >= libState.stack.length) return;
+  libState.stack = libState.stack.slice(0, depth + 1);
+  await libraryBrowseCurrent();
+}
+
+async function libraryPlay(item) {
+  if (!state.currentBox) {
+    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    return;
+  }
+  if (!item.streamURL) {
+    showError(t('library.errorNoURL'));
+    return;
+  }
+  try {
+    await PlayURL(state.currentBox.host, state.currentBox.port,
+      item.streamURL, item.title || '', item.albumArtURL || '', '');
+    showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
+  } catch (e) {
+    showError(`PlayURL: ${e}`);
+  }
+}
+
+function librarySaveAsPreset(item) {
+  if (!state.currentBox) {
+    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    return;
+  }
+  if (!item.streamURL) {
+    showError(t('library.errorNoURL'));
+    return;
+  }
+  // Inline slot picker, mirroring openPick() further up. Refactoring
+  // both into one helper is post-MVP; the duplication here is small
+  // and keeps the existing radio-preset flow untouched.
+  $('pickTitle').textContent = t('library.assignTitle');
+  $('pickSub').textContent = [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '';
+  const grid = $('pickGrid');
+  grid.innerHTML = '';
+  for (let i = 1; i <= 6; i++) {
+    const p = state.presets.find(x => x.slot === i);
+    const b = document.createElement('button');
+    b.className = 'pick-slot' + (p ? ' has' : '');
+    b.innerHTML = '<div class="ps-num">' + escapeHtml(t('preset.key', { n: i })) + '</div><div class="ps-name">' + (p ? escapeHtml(p.name) : escapeHtml(t('preset.pickEmpty'))) + '</div>';
+    b.onclick = async () => {
+      try {
+        await SetPreset(state.currentBox.host, state.currentBox.port, i,
+          item.title || '(track)', item.streamURL, item.albumArtURL || '');
+        $('pickModal').classList.add('hidden');
+        await loadPresets();
+        showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));
+      } catch (err) { showError(err); }
+    };
+    grid.appendChild(b);
+  }
+  $('pickModal').classList.remove('hidden');
+}
+
+function renderLibrary() {
+  const el = $('view-library');
+  if (!el) return;
+  const intro = `
+    <div class="library-header">
+      <h2>${escapeHtml(t('library.title'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h2>
+      <p class="library-sub">${escapeHtml(t('library.subtitle'))}</p>
+    </div>`;
+
+  if (libState.loading) {
+    el.innerHTML = intro + `<p class="library-loading">${escapeHtml(t('library.loading'))}</p>`;
+    return;
+  }
+
+  // Server picker section.
+  let serverPicker = '';
+  if (libState.servers.length === 0) {
+    serverPicker = `
+      <div class="library-empty">
+        <p>${escapeHtml(t('library.noServers'))}</p>
+        <button class="btn" id="libRefreshBtn">${escapeHtml(t('library.refresh'))}</button>
+      </div>`;
+  } else {
+    const opts = libState.servers.map(s => {
+      const sel = s.udn === libState.currentUDN ? ' selected' : '';
+      const sub = s.modelName ? ` (${escapeHtml(s.modelName)})` : '';
+      return `<option value="${escapeAttr(s.udn)}"${sel}>${escapeHtml(s.friendlyName || s.address)}${sub}</option>`;
+    }).join('');
+    serverPicker = `
+      <div class="library-server-row">
+        <label class="library-label">${escapeHtml(t('library.server'))}</label>
+        <select class="library-select" id="libServerSelect">${opts}</select>
+        <button class="btn btn-mini" id="libRefreshBtn" title="${escapeAttr(t('library.refresh'))}">&#8634;</button>
+      </div>`;
+  }
+
+  // Breadcrumb + folder/track listing.
+  let body = '';
+  if (libState.currentUDN && libState.page) {
+    const crumbs = libState.stack.map((s, i) => {
+      const lbl = s.title || t('library.root');
+      const isLast = i === libState.stack.length - 1;
+      return isLast
+        ? `<span class="library-crumb-active">${escapeHtml(lbl)}</span>`
+        : `<a href="#" class="library-crumb" data-depth="${i}">${escapeHtml(lbl)}</a>`;
+    }).join(' <span class="library-crumb-sep">&rsaquo;</span> ');
+
+    const containers = (libState.page.containers || []).map(c => `
+      <li class="library-row library-row-folder" data-cid="${escapeAttr(c.id)}">
+        <span class="library-icon">&#128194;</span>
+        <span class="library-title">${escapeHtml(c.title)}</span>
+        ${c.childCount > 0 ? `<span class="library-meta">${c.childCount}</span>` : ''}
+      </li>`).join('');
+
+    const items = (libState.page.items || []).map(it => {
+      const meta = [it.artist, it.album].filter(Boolean).join(' — ');
+      const dur = it.durationSec > 0 ? ` <span class="library-duration">${formatDuration(it.durationSec)}</span>` : '';
+      return `
+        <li class="library-row library-row-track" data-iid="${escapeAttr(it.id)}">
+          <span class="library-icon">&#9835;</span>
+          <span class="library-title">
+            <span class="library-track-title">${escapeHtml(it.title)}</span>
+            ${meta ? `<span class="library-track-meta">${escapeHtml(meta)}</span>` : ''}
+          </span>
+          ${dur}
+          <span class="library-actions">
+            <button class="btn btn-mini lib-play-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.play'))}">${escapeHtml(t('library.play'))}</button>
+            <button class="btn btn-mini btn-secondary lib-preset-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.saveAsPreset'))}">${escapeHtml(t('library.saveAsPreset'))}</button>
+          </span>
+        </li>`;
+    }).join('');
+
+    const empty = (!containers && !items) ? `<p class="library-empty-folder">${escapeHtml(t('library.emptyFolder'))}</p>` : '';
+
+    body = `
+      <div class="library-crumbs">${crumbs}</div>
+      <ul class="library-list">${containers}${items}</ul>
+      ${empty}`;
+  } else if (libState.servers.length > 0 && !libState.currentUDN) {
+    body = `<p class="library-pick-server">${escapeHtml(t('library.pickServer'))}</p>`;
+  }
+
+  el.innerHTML = intro + serverPicker + body;
+
+  // Wire interactions.
+  const sel = $('libServerSelect');
+  if (sel) sel.onchange = () => libraryPickServer(sel.value);
+  const ref = $('libRefreshBtn');
+  if (ref) ref.onclick = () => loadMediaServers();
+
+  el.querySelectorAll('.library-crumb').forEach(a => {
+    a.onclick = (e) => { e.preventDefault(); libraryGoTo(parseInt(a.dataset.depth, 10)); };
+  });
+  el.querySelectorAll('.library-row-folder').forEach(row => {
+    row.onclick = () => {
+      const id = row.dataset.cid;
+      const c = (libState.page.containers || []).find(x => x.id === id);
+      if (c) libraryEnter(c);
+    };
+  });
+  el.querySelectorAll('.lib-play-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const it = (libState.page.items || []).find(x => x.id === btn.dataset.iid);
+      if (it) libraryPlay(it);
+    };
+  });
+  el.querySelectorAll('.lib-preset-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const it = (libState.page.items || []).find(x => x.id === btn.dataset.iid);
+      if (it) librarySaveAsPreset(it);
+    };
+  });
+}
+
+function formatDuration(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 renderFooter();
 
