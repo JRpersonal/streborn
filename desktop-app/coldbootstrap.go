@@ -44,7 +44,9 @@ type SetupAP struct {
 // "SoundTouch*"). Best-effort, returns empty slice on errors so the
 // caller can simply fall through to "no setup AP found".
 func (a *App) ScanForSetupAPs() ([]SetupAP, error) {
-	out, err := exec.Command("netsh", "wlan", "show", "networks", "mode=Bssid").CombinedOutput()
+	c := exec.Command("netsh", "wlan", "show", "networks", "mode=Bssid")
+	hideCmdWindow(c)
+	out, err := c.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("netsh wlan show networks: %w", err)
 	}
@@ -239,6 +241,7 @@ func xmlEscape(s string) string {
 
 func netshRun(args ...string) error {
 	cmd := exec.Command("netsh", args...)
+	hideCmdWindow(cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("netsh %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
@@ -247,7 +250,9 @@ func netshRun(args ...string) error {
 }
 
 func currentWifiSSID() string {
-	out, err := exec.Command("netsh", "wlan", "show", "interfaces").CombinedOutput()
+	c := exec.Command("netsh", "wlan", "show", "interfaces")
+	hideCmdWindow(c)
+	out, err := c.CombinedOutput()
 	if err != nil {
 		return ""
 	}
