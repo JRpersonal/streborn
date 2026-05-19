@@ -98,7 +98,12 @@ Privacy:
 		return LogExportResult{}, err
 	}
 
-	// 2. App log (truncated + sanitized).
+	// 2. App log (truncated + sanitized). Flush the live writer
+	// first so anything slog buffered for this session lands on
+	// disk before we read it back.
+	if a.logFile != nil {
+		_ = a.logFile.Sync()
+	}
 	logBytes, _ := os.ReadFile(LogFilePath())
 	if req.Anonymize {
 		logBytes = sanitizeLog(logBytes)

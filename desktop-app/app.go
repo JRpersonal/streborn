@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -24,20 +25,30 @@ import (
 type App struct {
 	ctx        context.Context
 	logger     *slog.Logger
+	logFile    *os.File // kept so ExportDiagnosticLogs can Sync before reading
 	httpClient *http.Client
 }
 
 // NewApp erstellt eine neue App Instance.
 func NewApp() *App {
+	logger, logFile := newFileLogger(slog.LevelInfo)
 	return &App{
-		logger:     newFileLogger(slog.LevelInfo),
+		logger:     logger,
+		logFile:    logFile,
 		httpClient: &http.Client{Timeout: 6 * time.Second},
 	}
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.logger.Info("Desktop App startet")
+	// Verbose startup line so users always see SOMETHING in the
+	// log when they hit "Save diagnostic logs", even on a session
+	// where they did not poke any features that emit further logs.
+	a.logger.Info("Desktop App startet",
+		"version", appVersion,
+		"build", appBuild,
+		"logFile", LogFilePath(),
+		"agentbinAvailable", agentbin.Available())
 }
 
 // BoxInfo is the speaker entry passed to the frontend for selection.
