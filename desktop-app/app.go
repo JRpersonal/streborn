@@ -94,16 +94,29 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		if b.Host == "" {
 			return
 		}
-		key := b.DeviceID
-		if key == "" {
-			key = b.Name + "@" + b.Host
-		}
+		// Dedup primary key is host (the IPv4 address). Two records
+		// at the same IP are the same physical device, regardless
+		// of which port they expose (STR runs on 8888, stock Bose
+		// API on 8090). Using DeviceID was fragile because some
+		// Bose mDNS announcements (the stock _soundtouch._tcp
+		// service surfaced through our v0.4.1 scan) do not include
+		// MAC in their TXT, so STR and stock records for the same
+		// speaker landed under different keys and the user saw the
+		// box listed twice.
+		key := b.Host
 		prev, exists := seen[key]
 		if exists {
 			// STR announcement always wins over a stock entry for
-			// the same physical device.
+			// the same physical device. If both are STR (or both
+			// stock), the richer record wins (longer FriendlyName,
+			// non-empty Version).
 			if prev.Kind == "str" && b.Kind == "stock" {
 				return
+			}
+			if prev.Kind == b.Kind {
+				if len(prev.FriendlyName) >= len(b.FriendlyName) && prev.Version != "" {
+					return
+				}
 			}
 		}
 		seen[key] = b
@@ -620,6 +633,12 @@ func pickReachableIP(ips []string) string {
 			public = ipStr
 		}
 	}
+	// No "default: return ips[0]" fallback. If the only IP we got
+	// was loopback or TEST-NET-3, returning it would cause the
+	// desktop app to show an entry that cannot actually be reached
+	// (and dedup against the real entry would fail because the IPs
+	// differ). Better to drop the unreachable record and let the
+	// other discovery path or a refresh pick up the real IP.
 	switch {
 	case lan != "":
 		return lan
@@ -628,7 +647,7 @@ func pickReachableIP(ips []string) string {
 	case public != "":
 		return public
 	default:
-		return ips[0] // fallback
+		return ""
 	}
 }
 
