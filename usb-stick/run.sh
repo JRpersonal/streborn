@@ -48,11 +48,171 @@ log() {
 # NAND, not the stick). Append mode so multiple boot cycles
 # accumulate. Best-effort: if /media/sda1 is read-only or full, we
 # silently fall through; the in-tmpfs log() above still has it.
+#
+# Each line carries kernel-uptime so we can correlate phases without
+# the Bose clock (which is wrong until WLAN+NTP succeed — early lines
+# read "Mon Jul  6 20:15:06 GMT 2015" and only become real after
+# association). Uptime is monotonic from kernel boot and unaffected.
 SETUP_LOG="$STICK/setup.log"
+uptime_s() {
+    awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "?"
+}
 setup_log() {
     log "$*"
-    echo "$(date): $*" >> "$SETUP_LOG" 2>/dev/null
+    echo "[up=$(uptime_s)s] $(date): $*" >> "$SETUP_LOG" 2>/dev/null
 }
+
+# initial_snapshot writes a one-shot record of "what does the box
+# look like the moment run.sh starts" so we can compare variants and
+# see what was already initialised by Bose vs what we had to wait
+# for. Cheap: a handful of file reads, no network.
+initial_snapshot() {
+    # Fat boot-marker so that the same stick visiting multiple
+    # speakers (or the same speaker over many boots) produces a log
+    # a human can scroll through and instantly see boundaries. The
+    # hostname / variant / MAC fields below identify which box a
+    # block belongs to even if Jens swaps the stick between rooms.
+    {
+        echo ""
+        echo "########################################################################"
+        echo "### BOOT MARKER  $(date)  uptime=$(uptime_s)s"
+        echo "###   host=$(hostname 2>/dev/null)  mac0=$(cat /sys/class/net/wlan0/address 2>/dev/null)  mac1=$(cat /sys/class/net/wlan1/address 2>/dev/null)"
+        echo "###   variant=$(head -c 40 /etc/Variant 2>/dev/null | tr -d '\n')  version=$(head -c 80 /etc/version 2>/dev/null | tr -d '\n')"
+        echo "########################################################################"
+    } >> "$SETUP_LOG" 2>/dev/null
+    setup_log "=== initial snapshot ==="
+    setup_log "kernel: $(uname -a 2>/dev/null | head -c 200)"
+    if [ -r /etc/version ]; then
+        setup_log "bose /etc/version: $(head -c 200 /etc/version 2>/dev/null | tr '\n' ' ')"
+    fi
+    if [ -r /etc/Variant ]; then
+        setup_log "bose /etc/Variant: $(head -c 80 /etc/Variant 2>/dev/null | tr '\n' ' ')"
+    fi
+    setup_log "loadavg: $(cat /proc/loadavg 2>/dev/null)"
+    setup_log "meminfo: $(grep -E 'MemTotal|MemFree|MemAvailable' /proc/meminfo 2>/dev/null | tr '\n' ' ')"
+    # Mount state: which filesystems are up and how (ro/rw matters
+    # most — rootfs read-only is the reason Approach A had to fall
+    # back to bind mount on the first run).
+    setup_log "mounts: $(mount 2>/dev/null | awk '{print $1\":\"$3\":\"$6}' | tr '\n' '|' | head -c 600)"
+    # Probe writability of the four paths we care about.
+    for p in /etc /mnt/nv /tmp /media/sda1; do
+        if [ -d "$p" ] && touch "$p/.streborn-write-probe" 2>/dev/null; then
+            rm -f "$p/.streborn-write-probe"
+            setup_log "writable: $p YES"
+        else
+            setup_log "writable: $p NO"
+        fi
+    done
+    setup_log "interfaces: $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
+    setup_log "wpa_supplicant pid: $(pidof wpa_supplicant 2>/dev/null || echo none)"
+    setup_log "processes (head): $(ps 2>/dev/null | head -20 | tr '\n' '|' | head -c 800)"
+    setup_log "=== /initial snapshot ==="
+}
+
+# wait_for_ready blocks until the prerequisites for talking to Bose
+# are actually in place. Without this we used to hit /etc/wpa_supplicant.conf
+# at uptime 0 — the rootfs was still ro and wpa_supplicant had not
+# even started, so Approach A always degraded to bind mount and B
+# had to wait alone. The gate has hard timeouts so a broken box
+# does not freeze the boot.
+wait_for_ready() {
+    setup_log "wait-for-ready: begin"
+    # /etc writable — needed by Approach A direct-write. Bind mount
+    # is a fallback if this never goes true.
+    i=0
+    while [ $i -lt 60 ]; do
+        if touch /etc/.streborn-write-probe 2>/dev/null; then
+            rm -f /etc/.streborn-write-probe
+            setup_log "wait-for-ready: /etc writable after ${i}s wait"
+            break
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    if [ $i -ge 60 ]; then
+        setup_log "wait-for-ready: /etc still ro after 60s, continuing (bind-mount fallback)"
+    fi
+    # wpa_supplicant — needed by Approach A so killall+restart can
+    # actually reload the new config. If it never starts in time
+    # Approach B carries us.
+    i=0
+    while [ $i -lt 60 ]; do
+        if pidof wpa_supplicant >/dev/null 2>&1; then
+            setup_log "wait-for-ready: wpa_supplicant pid present after ${i}s wait"
+            break
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    if [ $i -ge 60 ]; then
+        setup_log "wait-for-ready: wpa_supplicant not running after 60s, A will not restart it"
+    fi
+    setup_log "wait-for-ready: end at $(uptime | tr -s ' ')"
+}
+
+# background_phase_probe records the first uptime at which each known
+# Bose service becomes reachable, then writes a one-line summary.
+# Pure observation — never blocks, never retries provisioning. The
+# summary is what we use to tune timeouts on new firmware variants
+# without needing SSH.
+background_phase_probe() {
+    (
+        BOSE_HTTP=0; BOSE_WS=0; AVT=0; WPA=0; WLAN_UP=0
+        DEADLINE_UP=$(( $(uptime_s) + 240 ))
+        while [ "$(uptime_s)" -lt "$DEADLINE_UP" ]; do
+            UP=$(uptime_s)
+            if [ "$WPA" -eq 0 ] && pidof wpa_supplicant >/dev/null 2>&1; then
+                WPA=$UP
+                setup_log "phase: wpa_supplicant up at uptime=${UP}s"
+            fi
+            if [ "$BOSE_HTTP" -eq 0 ] && wget -qO- -T 2 http://127.0.0.1:8090/info >/dev/null 2>&1; then
+                BOSE_HTTP=$UP
+                setup_log "phase: BoseApp HTTP :8090 up at uptime=${UP}s"
+            fi
+            if [ "$BOSE_WS" -eq 0 ]; then
+                # gabbo speaks HTTP-Upgrade; a plain GET returns 400
+                # but that proves the socket is bound. wget returns
+                # non-zero on 400 so we look at connect via /dev/tcp
+                # if shell supports it, else TCP-only probe via nc.
+                if (echo > /dev/tcp/127.0.0.1/8080) >/dev/null 2>&1 \
+                    || nc -z 127.0.0.1 8080 >/dev/null 2>&1; then
+                    BOSE_WS=$UP
+                    setup_log "phase: gabbo WS :8080 listening at uptime=${UP}s"
+                fi
+            fi
+            if [ "$AVT" -eq 0 ]; then
+                if (echo > /dev/tcp/127.0.0.1/8091) >/dev/null 2>&1 \
+                    || nc -z 127.0.0.1 8091 >/dev/null 2>&1; then
+                    AVT=$UP
+                    setup_log "phase: AVTransport :8091 listening at uptime=${UP}s"
+                fi
+            fi
+            if [ "$WLAN_UP" -eq 0 ] && [ -r /sys/class/net/wlan0/operstate ]; then
+                STATE=$(cat /sys/class/net/wlan0/operstate 2>/dev/null)
+                if [ "$STATE" = "up" ]; then
+                    WLAN_UP=$UP
+                    IPADDR=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+                    setup_log "phase: wlan0 link up at uptime=${UP}s ip=${IPADDR:-none}"
+                fi
+            fi
+            # Done early once everything is up.
+            if [ "$WPA" -gt 0 ] && [ "$BOSE_HTTP" -gt 0 ] \
+                && [ "$BOSE_WS" -gt 0 ] && [ "$AVT" -gt 0 ] \
+                && [ "$WLAN_UP" -gt 0 ]; then
+                break
+            fi
+            sleep 3
+        done
+        setup_log "phase summary: wpa=${WPA}s boseHTTP=${BOSE_HTTP}s gabbo=${BOSE_WS}s avt=${AVT}s wlan0Up=${WLAN_UP}s"
+    ) &
+}
+
+# Snapshot the boot state right away and start the background phase
+# probe so we capture First-Seen timestamps for BoseApp, gabbo, AVT,
+# wlan0 — even if nothing further in this script touches them.
+# Probe is best-effort: failures are silent, only successes log.
+initial_snapshot
+background_phase_probe
 
 # Auto-sync trigger: a freshly prepared stick (Setup-Wizard) ships a
 # version.txt. If that string differs from the version we recorded
@@ -199,6 +359,13 @@ if [ -f "$WLAN_CONF" ]; then
     PASS=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
     setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
     if [ -n "$SSID" ] && [ -n "$PASS" ]; then
+        # Block until Bose's stack is far enough along that the
+        # provisioning approaches below actually have something to
+        # talk to. Without this we used to hit /etc at uptime=0 (ro)
+        # and wpa_supplicant wasn't even spawned yet — Approach A
+        # then never wins, only B does, exactly the symptom Jens
+        # saw on the rhino ST10 first boot.
+        wait_for_ready
         # --- Approach A: direct /etc/wpa_supplicant.conf write ---
         WPA_CONF="/etc/wpa_supplicant.conf"
         TMP="/tmp/wpa_supplicant.conf.new"
