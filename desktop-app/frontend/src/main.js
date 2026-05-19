@@ -3173,23 +3173,52 @@ async function doSetup() {
     state.presets = [];
     refreshDrives();
     discoverBoxes();
-    // Kick off the post-eject wait loop in the background. It polls
-    // for the speaker on the LAN and once it shows up as a stock
-    // (Bose-only) box, auto-installs STR via SSH so the user does
-    // not need the PowerShell wizard anymore.
-    waitForBoxAndAutoInstall(html);
+    // Show a confirmation panel. We do NOT start the discovery +
+    // auto-install loop yet: the user just clicked "GO", the stick
+    // is still in the laptop, the speaker has not been touched.
+    // Starting the loop now would race the user and almost always
+    // probe a stale stock state (box up from a previous session,
+    // stick not yet inserted) which fails install.sh.
+    showAwaitBoxReadyPanel(html);
   } catch (e) {
     $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('common.error'))}: ${escapeHtml(String(e))}</div>`;
   }
   $('setupGo').disabled = false;
 }
 
+// showAwaitBoxReadyPanel renders the "do this on the speaker now"
+// instruction set with a confirmation button. The discovery /
+// auto-install loop only starts after the user clicks the button,
+// because nothing else can prove the stick has actually been moved
+// into the speaker and the box has booted with it mounted.
+function showAwaitBoxReadyPanel(baseHtml) {
+  const setupResult = $('setupResult');
+  if (!setupResult) return;
+  setupResult.innerHTML = baseHtml +
+    `<div class="setup-section setup-await-ready">` +
+    `<div class="setup-ok"><b>${escapeHtml(t('setup.awaitBoxReadyTitle'))}</b></div>` +
+    `<ol class="setup-await-steps">` +
+    `<li>${escapeHtml(t('setup.awaitStep1'))}</li>` +
+    `<li>${escapeHtml(t('setup.awaitStep2'))}</li>` +
+    `<li>${escapeHtml(t('setup.awaitStep3'))}</li>` +
+    `</ol>` +
+    `<button class="btn btn-primary" id="setupSpeakerReady">${escapeHtml(t('setup.awaitConfirmBtn'))}</button>` +
+    `</div>`;
+  const btn = $('setupSpeakerReady');
+  if (btn) {
+    btn.onclick = () => {
+      btn.disabled = true;
+      waitForBoxAndAutoInstall(baseHtml);
+    };
+  }
+}
+
 // waitForBoxAndAutoInstall polls the home LAN for the speaker after
-// the stick has been ejected. When the box appears as kind=="stock"
-// (Bose firmware up but no STR agent), the function triggers the
-// in-app installer via SSH (passwordless root works on the box for
-// the duration the stick is plugged in). Caps at 5 min, then leaves
-// a "did not appear" message.
+// the user has confirmed the stick is inserted and the speaker is
+// up. When the box appears as kind=="stock" (Bose firmware up but
+// no STR agent), the function triggers the in-app installer via SSH
+// (passwordless root works on the box for the duration the stick is
+// plugged in). Caps at 5 min, then leaves a "did not appear" message.
 async function waitForBoxAndAutoInstall(baseHtml) {
   const setupResult = $('setupResult');
   if (!setupResult) return;

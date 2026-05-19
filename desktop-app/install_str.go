@@ -55,15 +55,25 @@ func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
 	}
 	a.logger.Info("install_str: starting", "host", host)
 
-	// Step 1: stick mounted, install.sh present.
+	// Step 1: stick mounted, install.sh present. Retry up to ~60 s
+	// because sshd answers before the USB stack has finished
+	// mounting /media/sda1 on first boot.
 	res.Step = "check-stick"
-	probe, err := boxSSHOutput(host, "test -x /media/sda1/install.sh && echo READY || echo MISSING", 8*time.Second)
-	if err != nil {
-		return res, fmt.Errorf("ssh probe failed: %w", err)
-	}
-	if !strings.Contains(probe, "READY") {
-		res.Message = "install.sh is not on /media/sda1. Is the STR stick plugged into the speaker, and did the speaker mount it on this boot?"
-		return res, nil
+	var probe string
+	var probeErr error
+	for attempt := 0; attempt < 20; attempt++ {
+		probe, probeErr = boxSSHOutput(host, "test -x /media/sda1/install.sh && echo READY || echo MISSING", 6*time.Second)
+		if probeErr == nil && strings.Contains(probe, "READY") {
+			break
+		}
+		if attempt == 19 {
+			if probeErr != nil {
+				return res, fmt.Errorf("ssh probe failed after retries: %w", probeErr)
+			}
+			res.Message = "install.sh did not appear on /media/sda1 within 60 s. Is the STR stick plugged into the speaker, and did the speaker mount it on this boot?"
+			return res, nil
+		}
+		time.Sleep(3 * time.Second)
 	}
 
 	// Step 2: run install.sh install.

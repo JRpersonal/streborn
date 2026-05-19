@@ -511,6 +511,11 @@
   "setup.installLogToggle": "Install-Log anzeigen",
   "setup.installDone": "STR ist auf dem Lautsprecher installiert und läuft.",
   "setup.installDoneHint": "Wechsle zum Tab Musik hören, um ihn zu benutzen. Du kannst den Stick jetzt aus dem Lautsprecher ziehen.",
+  "setup.awaitBoxReadyTitle": "Mach das jetzt am Lautsprecher:",
+  "setup.awaitStep1": "Stick aus diesem Computer ziehen.",
+  "setup.awaitStep2": "Stick in den USB-Port des Lautsprechers stecken.",
+  "setup.awaitStep3": "Lautsprecher kurz vom Strom trennen, wieder anschließen und warten bis die LEDs ruhig leuchten (etwa 60 bis 90 Sekunden).",
+  "setup.awaitConfirmBtn": "Lautsprecher ist bereit, STR jetzt installieren",
 
   "lang.german": "Deutsch",
   "lang.english": "Englisch",
