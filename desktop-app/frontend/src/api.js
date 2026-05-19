@@ -39,6 +39,8 @@ export {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  ListMediaServers,
+  BrowseLibrary,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL } from '../wailsjs/runtime/runtime';

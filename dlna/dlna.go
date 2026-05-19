@@ -1,0 +1,523 @@
+// Package dlna is a minimal DLNA / UPnP MediaServer client. It
+// discovers MediaServer devices on the LAN via SSDP, fetches their
+// device description, and walks the ContentDirectory tree via
+// Browse SOAP calls.
+//
+// Used by the desktop app's Library tab so users can play music
+// from FRITZ!Box, Synology, Plex and similar servers on their
+// SoundTouch without typing URLs. Playback itself goes through
+// internal/upnp on the renderer side; this package is only the
+// browse half.
+//
+// Top-level package (not internal/) so a future PWA / second
+// frontend can reuse the same code, mirroring discovery/.
+package dlna
+
+import (
+	"bytes"
+	"context"
+	"encoding/xml"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+)
+
+const (
+	ssdpAddr        = "239.255.255.250:1900"
+	mediaServerST   = "urn:schemas-upnp-org:device:MediaServer:1"
+	cdsServiceType  = "urn:schemas-upnp-org:service:ContentDirectory:1"
+	defaultMXSecs   = 2
+	defaultDiscover = 3 * time.Second
+)
+
+// Server is a single discovered DLNA MediaServer on the LAN.
+type Server struct {
+	// UDN is the unique device identifier (uuid:...), stable across
+	// reboots. Used by the desktop app as the dropdown key.
+	UDN string
+	// FriendlyName as advertised by the device, e.g. "FRITZ!Box 7590".
+	FriendlyName string
+	// Manufacturer / ModelName let the UI show a useful subtitle.
+	Manufacturer string
+	ModelName    string
+	// Address is "host:port" of the device description endpoint.
+	Address string
+	// CDSControlURL is the fully resolved URL to call ContentDirectory
+	// SOAP actions against. Empty if the server does not expose CDS
+	// (in which case it is unusable for browse).
+	CDSControlURL string
+	// IconURL is the first usable icon URL the device advertised.
+	IconURL string
+}
+
+// DiscoverServers sends an SSDP M-SEARCH for MediaServer devices,
+// collects unique responses for the given timeout, then resolves
+// each device description in parallel and returns the populated
+// Server list. Honors ctx for cancellation.
+//
+// Implementation notes:
+//   - Binds a single wildcard IPv4 UDP socket (net.IPv4zero) via
+//     net.ListenUDP. An earlier per-interface bind variant looked
+//     correct on paper but on Windows blocked all incoming
+//     responses; the wildcard socket gets every reply.
+//   - Sends BOTH a typed M-SEARCH (ST: MediaServer:1) AND a broad
+//     one (ST: ssdp:all). Some servers (and some firmware bugs)
+//     only respond to one of the two. Cheap to send both.
+//   - Filters responses on LOCATION presence; the server type
+//     filter happens at device-description fetch time because a
+//     root device may host the MediaServer as a sub-device.
+func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, error) {
+	if timeout <= 0 {
+		timeout = defaultDiscover
+	}
+	dctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	if err != nil {
+		return nil, fmt.Errorf("ssdp listen: %w", err)
+	}
+	defer conn.Close()
+
+	mcAddr, err := net.ResolveUDPAddr("udp4", ssdpAddr)
+	if err != nil {
+		return nil, fmt.Errorf("ssdp resolve: %w", err)
+	}
+
+	mkMsg := func(st string) []byte {
+		return []byte(strings.Join([]string{
+			"M-SEARCH * HTTP/1.1",
+			"HOST: " + ssdpAddr,
+			"MAN: \"ssdp:discover\"",
+			fmt.Sprintf("MX: %d", defaultMXSecs),
+			"ST: " + st,
+			"USER-AGENT: STR/1 UPnP/1.0",
+			"", "",
+		}, "\r\n"))
+	}
+	typedMsg := mkMsg(mediaServerST)
+	allMsg := mkMsg("ssdp:all")
+
+	for i := 0; i < 2; i++ {
+		if _, err := conn.WriteToUDP(typedMsg, mcAddr); err != nil {
+			return nil, fmt.Errorf("ssdp write typed: %w", err)
+		}
+		if _, err := conn.WriteToUDP(allMsg, mcAddr); err != nil {
+			return nil, fmt.Errorf("ssdp write all: %w", err)
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+
+	deadline, _ := dctx.Deadline()
+	if !deadline.IsZero() {
+		_ = conn.SetReadDeadline(deadline)
+	}
+
+	locations := map[string]struct{}{}
+	buf := make([]byte, 4096)
+	for {
+		select {
+		case <-dctx.Done():
+			goto resolve
+		default:
+		}
+		n, _, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			break
+		}
+		loc := headerValue(buf[:n], "LOCATION")
+		st := headerValue(buf[:n], "ST")
+		if loc == "" {
+			continue
+		}
+		if st != "" && !strings.Contains(st, "MediaServer") && !strings.Contains(st, "rootdevice") {
+			continue
+		}
+		locations[loc] = struct{}{}
+	}
+
+resolve:
+	if len(locations) == 0 {
+		return nil, nil
+	}
+
+	// Separate context for the description fetches. The discovery
+	// context (dctx) is consumed by the SSDP read loop and may be
+	// expired by the time we get here; using it for the HTTP
+	// fetches would have every fetch fail with deadline exceeded.
+	// Parent ctx is still alive (caller's overall budget).
+	fctx, fcancel := context.WithTimeout(ctx, 5*time.Second)
+	defer fcancel()
+
+	type result struct {
+		s   Server
+		err error
+	}
+	results := make(chan result, len(locations))
+	for loc := range locations {
+		go func(loc string) {
+			s, err := fetchDeviceDescription(fctx, loc)
+			results <- result{s: s, err: err}
+		}(loc)
+	}
+
+	out := make([]Server, 0, len(locations))
+	seen := map[string]struct{}{}
+	for i := 0; i < len(locations); i++ {
+		r := <-results
+		if r.err != nil || r.s.UDN == "" || r.s.CDSControlURL == "" {
+			continue
+		}
+		if _, dup := seen[r.s.UDN]; dup {
+			continue
+		}
+		seen[r.s.UDN] = struct{}{}
+		out = append(out, r.s)
+	}
+	return out, nil
+}
+
+func headerValue(packet []byte, header string) string {
+	lines := bytes.Split(packet, []byte("\r\n"))
+	prefix := strings.ToLower(header) + ":"
+	for _, l := range lines {
+		if len(l) <= len(prefix) {
+			continue
+		}
+		if strings.EqualFold(string(l[:len(prefix)]), prefix) {
+			return strings.TrimSpace(string(l[len(prefix):]))
+		}
+	}
+	return ""
+}
+
+// rootDevice is the relevant subset of an upnp:rootDevice
+// description XML.
+type rootDevice struct {
+	XMLName xml.Name `xml:"root"`
+	URLBase string   `xml:"URLBase"`
+	Device  device   `xml:"device"`
+}
+
+type device struct {
+	DeviceType   string    `xml:"deviceType"`
+	FriendlyName string    `xml:"friendlyName"`
+	Manufacturer string    `xml:"manufacturer"`
+	ModelName    string    `xml:"modelName"`
+	UDN          string    `xml:"UDN"`
+	Icons        []icon    `xml:"iconList>icon"`
+	Services     []service `xml:"serviceList>service"`
+	SubDevices   []device  `xml:"deviceList>device"`
+}
+
+type icon struct {
+	MimeType string `xml:"mimetype"`
+	Width    int    `xml:"width"`
+	URL      string `xml:"url"`
+}
+
+type service struct {
+	ServiceType string `xml:"serviceType"`
+	ControlURL  string `xml:"controlURL"`
+}
+
+func fetchDeviceDescription(ctx context.Context, location string) (Server, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, location, nil)
+	if err != nil {
+		return Server{}, err
+	}
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return Server{}, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return Server{}, err
+	}
+	var root rootDevice
+	if err := xml.Unmarshal(body, &root); err != nil {
+		return Server{}, fmt.Errorf("device xml: %w", err)
+	}
+
+	baseURL, _ := url.Parse(location)
+	if root.URLBase != "" {
+		if u, err := url.Parse(root.URLBase); err == nil {
+			baseURL = u
+		}
+	}
+
+	s := Server{
+		FriendlyName: root.Device.FriendlyName,
+		Manufacturer: root.Device.Manufacturer,
+		ModelName:    root.Device.ModelName,
+		UDN:          root.Device.UDN,
+		Address:      baseURL.Host,
+	}
+
+	// Walk root device + sub-devices to find ContentDirectory and
+	// an icon. FRITZ!Box nests MediaServer under a root device.
+	var walk func(d device)
+	walk = func(d device) {
+		if s.CDSControlURL == "" {
+			for _, svc := range d.Services {
+				if svc.ServiceType == cdsServiceType {
+					s.CDSControlURL = absURL(baseURL, svc.ControlURL)
+					break
+				}
+			}
+		}
+		if s.IconURL == "" && len(d.Icons) > 0 {
+			best := d.Icons[0]
+			for _, ic := range d.Icons {
+				if ic.Width > best.Width {
+					best = ic
+				}
+			}
+			s.IconURL = absURL(baseURL, best.URL)
+		}
+		if s.FriendlyName == "" {
+			s.FriendlyName = d.FriendlyName
+		}
+		if s.UDN == "" {
+			s.UDN = d.UDN
+		}
+		for _, sub := range d.SubDevices {
+			walk(sub)
+		}
+	}
+	walk(root.Device)
+
+	return s, nil
+}
+
+func absURL(base *url.URL, ref string) string {
+	if ref == "" || base == nil {
+		return ref
+	}
+	u, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	return base.ResolveReference(u).String()
+}
+
+// === Browse ===
+
+// BrowseResult holds one page of a ContentDirectory:Browse response.
+type BrowseResult struct {
+	Containers   []Container
+	Items        []Item
+	TotalMatches int
+	Returned     int
+}
+
+// Container is a folder / album / playlist node.
+type Container struct {
+	ID         string
+	ParentID   string
+	Title      string
+	ChildCount int
+}
+
+// Item is a single playable object (track, photo, video). For the
+// MVP the desktop app filters to audio items only.
+type Item struct {
+	ID          string
+	ParentID    string
+	Title       string
+	Artist      string
+	Album       string
+	Class       string
+	MimeType    string
+	StreamURL   string
+	AlbumArtURL string
+	DurationSec int
+}
+
+// Browse calls ContentDirectory:Browse on the server. objectID "0"
+// is the server root. start is the offset for paging, count the
+// page size (0 means server default).
+func Browse(ctx context.Context, srv Server, objectID string, start, count int) (BrowseResult, error) {
+	if srv.CDSControlURL == "" {
+		return BrowseResult{}, fmt.Errorf("server has no ContentDirectory control URL")
+	}
+	if objectID == "" {
+		objectID = "0"
+	}
+	if count <= 0 {
+		count = 50
+	}
+	body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>%s</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>%d</StartingIndex><RequestedCount>%d</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>`,
+		xmlEscape(objectID), start, count)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.CDSControlURL, strings.NewReader(body))
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	req.Header.Set("Content-Type", `text/xml; charset="utf-8"`)
+	req.Header.Set("SOAPACTION", `"urn:schemas-upnp-org:service:ContentDirectory:1#Browse"`)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return BrowseResult{}, fmt.Errorf("browse status %d: %s", resp.StatusCode, truncate(string(raw), 240))
+	}
+	return parseBrowseResponse(raw)
+}
+
+// soapBrowseEnvelope is the relevant subset of a Browse SOAP
+// response.
+type soapBrowseEnvelope struct {
+	XMLName xml.Name `xml:"Envelope"`
+	Body    struct {
+		BrowseResponse struct {
+			Result         string `xml:"Result"`
+			NumberReturned int    `xml:"NumberReturned"`
+			TotalMatches   int    `xml:"TotalMatches"`
+		} `xml:"BrowseResponse"`
+	} `xml:"Body"`
+}
+
+// didlLite mirrors the embedded DIDL-Lite XML returned in <Result>.
+type didlLite struct {
+	XMLName    xml.Name        `xml:"DIDL-Lite"`
+	Containers []didlContainer `xml:"container"`
+	Items      []didlItem      `xml:"item"`
+}
+
+type didlContainer struct {
+	ID         string `xml:"id,attr"`
+	ParentID   string `xml:"parentID,attr"`
+	ChildCount int    `xml:"childCount,attr"`
+	Title      string `xml:"title"`
+	Class      string `xml:"class"`
+}
+
+type didlItem struct {
+	ID       string  `xml:"id,attr"`
+	ParentID string  `xml:"parentID,attr"`
+	Title    string  `xml:"title"`
+	Class    string  `xml:"class"`
+	Artist   string  `xml:"artist"`
+	Album    string  `xml:"album"`
+	AlbumArt string  `xml:"albumArtURI"`
+	Res      []didlR `xml:"res"`
+}
+
+type didlR struct {
+	ProtocolInfo string `xml:"protocolInfo,attr"`
+	Duration     string `xml:"duration,attr"`
+	Value        string `xml:",chardata"`
+}
+
+func parseBrowseResponse(raw []byte) (BrowseResult, error) {
+	var env soapBrowseEnvelope
+	if err := xml.Unmarshal(raw, &env); err != nil {
+		return BrowseResult{}, fmt.Errorf("soap envelope: %w", err)
+	}
+	res := env.Body.BrowseResponse.Result
+	if res == "" {
+		return BrowseResult{
+			TotalMatches: env.Body.BrowseResponse.TotalMatches,
+			Returned:     env.Body.BrowseResponse.NumberReturned,
+		}, nil
+	}
+	var didl didlLite
+	if err := xml.Unmarshal([]byte(res), &didl); err != nil {
+		return BrowseResult{}, fmt.Errorf("didl-lite: %w", err)
+	}
+	out := BrowseResult{
+		TotalMatches: env.Body.BrowseResponse.TotalMatches,
+		Returned:     env.Body.BrowseResponse.NumberReturned,
+	}
+	for _, c := range didl.Containers {
+		out.Containers = append(out.Containers, Container{
+			ID: c.ID, ParentID: c.ParentID, Title: c.Title,
+			ChildCount: c.ChildCount,
+		})
+	}
+	for _, it := range didl.Items {
+		stream := ""
+		mime := ""
+		duration := 0
+		if len(it.Res) > 0 {
+			stream = it.Res[0].Value
+			mime = mimeFromProtocolInfo(it.Res[0].ProtocolInfo)
+			duration = parseHMS(it.Res[0].Duration)
+		}
+		out.Items = append(out.Items, Item{
+			ID: it.ID, ParentID: it.ParentID, Title: it.Title,
+			Class: it.Class, Artist: it.Artist, Album: it.Album,
+			AlbumArtURL: it.AlbumArt, StreamURL: stream,
+			MimeType: mime, DurationSec: duration,
+		})
+	}
+	return out, nil
+}
+
+func mimeFromProtocolInfo(pi string) string {
+	// protocolInfo is "http-get:*:audio/mpeg:*". We only need the
+	// third field.
+	parts := strings.Split(pi, ":")
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[2]
+}
+
+func parseHMS(d string) int {
+	if d == "" {
+		return 0
+	}
+	// "0:03:42" or "0:03:42.000"
+	if idx := strings.Index(d, "."); idx >= 0 {
+		d = d[:idx]
+	}
+	parts := strings.Split(d, ":")
+	if len(parts) != 3 {
+		return 0
+	}
+	h, m, s := 0, 0, 0
+	fmt.Sscanf(parts[0], "%d", &h)
+	fmt.Sscanf(parts[1], "%d", &m)
+	fmt.Sscanf(parts[2], "%d", &s)
+	return h*3600 + m*60 + s
+}
+
+func xmlEscape(s string) string {
+	var b strings.Builder
+	xml.EscapeText(&b, []byte(s))
+	return b.String()
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+// IsAudioItem reports whether the item is an audio track that the
+// SoundTouch renderer can play. Photos, videos, m3u playlists and
+// unrecognized items are filtered out by the Library UI.
+func (it Item) IsAudioItem() bool {
+	if strings.HasPrefix(strings.ToLower(it.MimeType), "audio/") {
+		return true
+	}
+	c := strings.ToLower(it.Class)
+	return strings.Contains(c, "audioitem") || strings.Contains(c, "musictrack")
+}

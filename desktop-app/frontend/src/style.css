@@ -405,6 +405,94 @@ body {
   letter-spacing: 0.3px;
 }
 
+/* ---------- Beta pill (used on the Library tab and elsewhere) ---------- */
+.beta-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(255, 165, 0, 0.18);
+  color: #ffb74d;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  vertical-align: middle;
+}
+
+/* ---------- Library view ---------- */
+.library-header h2 { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.library-sub { color: #aaa; font-size: 13px; margin-bottom: 16px; }
+.library-loading { color: #888; font-style: italic; padding: 12px 0; }
+.library-server-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.library-label { color: #ccc; font-size: 13px; }
+.library-select {
+  flex: 1;
+  background: #1c1c1c;
+  border: 1px solid #333;
+  color: #eee;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.library-empty {
+  background: #1c1c1c;
+  border: 1px dashed #333;
+  border-radius: 6px;
+  padding: 18px;
+  text-align: center;
+  color: #aaa;
+}
+.library-empty p { margin-bottom: 10px; }
+.library-pick-server { color: #aaa; font-style: italic; padding: 12px 0; }
+.library-crumbs {
+  background: #181818;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #888;
+  overflow-wrap: anywhere;
+}
+.library-crumb { color: var(--brand); text-decoration: none; }
+.library-crumb:hover { text-decoration: underline; }
+.library-crumb-active { color: #eee; font-weight: 600; }
+.library-crumb-sep { color: #555; padding: 0 4px; }
+.library-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.library-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #222;
+  font-size: 13px;
+  cursor: default;
+}
+.library-row:last-child { border-bottom: none; }
+.library-row-folder { cursor: pointer; }
+.library-row-folder:hover { background: #1f1f1f; }
+.library-row-track:hover { background: #1a1a1a; }
+.library-icon { color: #888; min-width: 18px; text-align: center; }
+.library-title { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.library-track-title { color: #eee; }
+.library-track-meta { color: #888; font-size: 11px; }
+.library-duration { color: #666; font-size: 11px; font-variant-numeric: tabular-nums; }
+.library-meta { color: #666; font-size: 11px; }
+.library-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.library-empty-folder { color: #888; font-style: italic; padding: 12px 0; }
+
 /* ---------- Status Bar (Signal-Farben!) ---------- */
 .status-bar { background: #222; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; min-height: 36px; display: flex; align-items: center; font-size: 13px; }
 .status-bar .now { color: var(--signal-green); font-weight: 600; }

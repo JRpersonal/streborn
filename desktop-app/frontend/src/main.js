@@ -33,6 +33,8 @@ import {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  ListMediaServers,
+  BrowseLibrary,
   BrowserOpenURL,
 } from './api.js';
 
@@ -127,6 +129,7 @@ document.querySelector('#app').innerHTML = `
   </header>
   <div class="tabs">
     <button class="tab-btn active" data-view="box">${escapeHtml(t('nav.music'))}</button>
+    <button class="tab-btn" data-view="library">${escapeHtml(t('nav.library'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
     <button class="tab-btn" data-view="settings">${escapeHtml(t('nav.speakerSettings'))}</button>
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
   </div>
@@ -138,6 +141,7 @@ document.querySelector('#app').innerHTML = `
     <button class="btn btn-mini" id="globalSecurityRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
   </div>
   <div id="view-box" class="view"></div>
+  <div id="view-library" class="view hidden"></div>
   <div id="view-settings" class="view hidden"></div>
   <div id="view-setup" class="view hidden"></div>
 
@@ -237,6 +241,7 @@ function switchView(view) {
     b.classList.toggle('active', b.dataset.view === view);
   });
   $('view-box').classList.toggle('hidden', view !== 'box');
+  $('view-library').classList.toggle('hidden', view !== 'library');
   $('view-settings').classList.toggle('hidden', view !== 'settings');
   $('view-setup').classList.toggle('hidden', view !== 'setup');
   // Global SSH banner: the Setup tab has no speaker context, so hide
@@ -258,6 +263,7 @@ function switchView(view) {
     loadMusicTabVolume();
   }
   if (view === 'settings') loadBoxSettings();
+  if (view === 'library') openLibrary();
 }
 
 // ---------- Footer ----------
@@ -3161,6 +3167,261 @@ async function doSetup() {
   $('setupGo').disabled = false;
 }
 
+
+// ---------- Library (DLNA MediaServer browse, BETA) ----------
+//
+// Per-session state. servers is the discovered MediaServer list,
+// keyed by UDN. currentUDN is the one the user picked. stack is the
+// folder navigation breadcrumb, where each entry is {id, title}.
+const libState = {
+  servers: [],
+  currentUDN: '',
+  stack: [{ id: '0', title: '' }],
+  page: null,
+  loading: false,
+};
+
+async function openLibrary() {
+  renderLibrary();
+  if (libState.servers.length === 0) {
+    await loadMediaServers();
+  } else if (libState.currentUDN) {
+    await libraryBrowseCurrent();
+  }
+}
+
+async function loadMediaServers() {
+  libState.loading = true;
+  renderLibrary();
+  try {
+    const list = await ListMediaServers(3);
+    libState.servers = list || [];
+    if (libState.servers.length === 1) {
+      libState.currentUDN = libState.servers[0].udn;
+      libState.stack = [{ id: '0', title: libState.servers[0].friendlyName || '' }];
+      await libraryBrowseCurrent();
+      return;
+    }
+    libState.currentUDN = '';
+    libState.page = null;
+  } catch (e) {
+    showError(`ListMediaServers: ${e}`);
+  } finally {
+    libState.loading = false;
+    renderLibrary();
+  }
+}
+
+async function libraryPickServer(udn) {
+  const srv = libState.servers.find(s => s.udn === udn);
+  if (!srv) return;
+  libState.currentUDN = udn;
+  libState.stack = [{ id: '0', title: srv.friendlyName || '' }];
+  await libraryBrowseCurrent();
+}
+
+async function libraryBrowseCurrent() {
+  if (!libState.currentUDN) return;
+  const top = libState.stack[libState.stack.length - 1];
+  libState.loading = true;
+  renderLibrary();
+  try {
+    libState.page = await BrowseLibrary(libState.currentUDN, top.id, 0, 100);
+  } catch (e) {
+    showError(`BrowseLibrary: ${e}`);
+    libState.page = null;
+  } finally {
+    libState.loading = false;
+    renderLibrary();
+  }
+}
+
+async function libraryEnter(container) {
+  libState.stack.push({ id: container.id, title: container.title });
+  await libraryBrowseCurrent();
+}
+
+async function libraryGoTo(depth) {
+  // Truncate breadcrumb to the clicked depth.
+  if (depth < 0 || depth >= libState.stack.length) return;
+  libState.stack = libState.stack.slice(0, depth + 1);
+  await libraryBrowseCurrent();
+}
+
+async function libraryPlay(item) {
+  if (!state.currentBox) {
+    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    return;
+  }
+  if (!item.streamURL) {
+    showError(t('library.errorNoURL'));
+    return;
+  }
+  try {
+    await PlayURL(state.currentBox.host, state.currentBox.port,
+      item.streamURL, item.title || '', item.albumArtURL || '', '');
+    showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
+  } catch (e) {
+    showError(`PlayURL: ${e}`);
+  }
+}
+
+function librarySaveAsPreset(item) {
+  if (!state.currentBox) {
+    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    return;
+  }
+  if (!item.streamURL) {
+    showError(t('library.errorNoURL'));
+    return;
+  }
+  // Inline slot picker, mirroring openPick() further up. Refactoring
+  // both into one helper is post-MVP; the duplication here is small
+  // and keeps the existing radio-preset flow untouched.
+  $('pickTitle').textContent = t('library.assignTitle');
+  $('pickSub').textContent = [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '';
+  const grid = $('pickGrid');
+  grid.innerHTML = '';
+  for (let i = 1; i <= 6; i++) {
+    const p = state.presets.find(x => x.slot === i);
+    const b = document.createElement('button');
+    b.className = 'pick-slot' + (p ? ' has' : '');
+    b.innerHTML = '<div class="ps-num">' + escapeHtml(t('preset.key', { n: i })) + '</div><div class="ps-name">' + (p ? escapeHtml(p.name) : escapeHtml(t('preset.pickEmpty'))) + '</div>';
+    b.onclick = async () => {
+      try {
+        await SetPreset(state.currentBox.host, state.currentBox.port, i,
+          item.title || '(track)', item.streamURL, item.albumArtURL || '');
+        $('pickModal').classList.add('hidden');
+        await loadPresets();
+        showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));
+      } catch (err) { showError(err); }
+    };
+    grid.appendChild(b);
+  }
+  $('pickModal').classList.remove('hidden');
+}
+
+function renderLibrary() {
+  const el = $('view-library');
+  if (!el) return;
+  const intro = `
+    <div class="library-header">
+      <h2>${escapeHtml(t('library.title'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h2>
+      <p class="library-sub">${escapeHtml(t('library.subtitle'))}</p>
+    </div>`;
+
+  if (libState.loading) {
+    el.innerHTML = intro + `<p class="library-loading">${escapeHtml(t('library.loading'))}</p>`;
+    return;
+  }
+
+  // Server picker section.
+  let serverPicker = '';
+  if (libState.servers.length === 0) {
+    serverPicker = `
+      <div class="library-empty">
+        <p>${escapeHtml(t('library.noServers'))}</p>
+        <button class="btn" id="libRefreshBtn">${escapeHtml(t('library.refresh'))}</button>
+      </div>`;
+  } else {
+    const opts = libState.servers.map(s => {
+      const sel = s.udn === libState.currentUDN ? ' selected' : '';
+      const sub = s.modelName ? ` (${escapeHtml(s.modelName)})` : '';
+      return `<option value="${escapeAttr(s.udn)}"${sel}>${escapeHtml(s.friendlyName || s.address)}${sub}</option>`;
+    }).join('');
+    serverPicker = `
+      <div class="library-server-row">
+        <label class="library-label">${escapeHtml(t('library.server'))}</label>
+        <select class="library-select" id="libServerSelect">${opts}</select>
+        <button class="btn btn-mini" id="libRefreshBtn" title="${escapeAttr(t('library.refresh'))}">&#8634;</button>
+      </div>`;
+  }
+
+  // Breadcrumb + folder/track listing.
+  let body = '';
+  if (libState.currentUDN && libState.page) {
+    const crumbs = libState.stack.map((s, i) => {
+      const lbl = s.title || t('library.root');
+      const isLast = i === libState.stack.length - 1;
+      return isLast
+        ? `<span class="library-crumb-active">${escapeHtml(lbl)}</span>`
+        : `<a href="#" class="library-crumb" data-depth="${i}">${escapeHtml(lbl)}</a>`;
+    }).join(' <span class="library-crumb-sep">&rsaquo;</span> ');
+
+    const containers = (libState.page.containers || []).map(c => `
+      <li class="library-row library-row-folder" data-cid="${escapeAttr(c.id)}">
+        <span class="library-icon">&#128194;</span>
+        <span class="library-title">${escapeHtml(c.title)}</span>
+        ${c.childCount > 0 ? `<span class="library-meta">${c.childCount}</span>` : ''}
+      </li>`).join('');
+
+    const items = (libState.page.items || []).map(it => {
+      const meta = [it.artist, it.album].filter(Boolean).join(' — ');
+      const dur = it.durationSec > 0 ? ` <span class="library-duration">${formatDuration(it.durationSec)}</span>` : '';
+      return `
+        <li class="library-row library-row-track" data-iid="${escapeAttr(it.id)}">
+          <span class="library-icon">&#9835;</span>
+          <span class="library-title">
+            <span class="library-track-title">${escapeHtml(it.title)}</span>
+            ${meta ? `<span class="library-track-meta">${escapeHtml(meta)}</span>` : ''}
+          </span>
+          ${dur}
+          <span class="library-actions">
+            <button class="btn btn-mini lib-play-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.play'))}">${escapeHtml(t('library.play'))}</button>
+            <button class="btn btn-mini btn-secondary lib-preset-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.saveAsPreset'))}">${escapeHtml(t('library.saveAsPreset'))}</button>
+          </span>
+        </li>`;
+    }).join('');
+
+    const empty = (!containers && !items) ? `<p class="library-empty-folder">${escapeHtml(t('library.emptyFolder'))}</p>` : '';
+
+    body = `
+      <div class="library-crumbs">${crumbs}</div>
+      <ul class="library-list">${containers}${items}</ul>
+      ${empty}`;
+  } else if (libState.servers.length > 0 && !libState.currentUDN) {
+    body = `<p class="library-pick-server">${escapeHtml(t('library.pickServer'))}</p>`;
+  }
+
+  el.innerHTML = intro + serverPicker + body;
+
+  // Wire interactions.
+  const sel = $('libServerSelect');
+  if (sel) sel.onchange = () => libraryPickServer(sel.value);
+  const ref = $('libRefreshBtn');
+  if (ref) ref.onclick = () => loadMediaServers();
+
+  el.querySelectorAll('.library-crumb').forEach(a => {
+    a.onclick = (e) => { e.preventDefault(); libraryGoTo(parseInt(a.dataset.depth, 10)); };
+  });
+  el.querySelectorAll('.library-row-folder').forEach(row => {
+    row.onclick = () => {
+      const id = row.dataset.cid;
+      const c = (libState.page.containers || []).find(x => x.id === id);
+      if (c) libraryEnter(c);
+    };
+  });
+  el.querySelectorAll('.lib-play-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const it = (libState.page.items || []).find(x => x.id === btn.dataset.iid);
+      if (it) libraryPlay(it);
+    };
+  });
+  el.querySelectorAll('.lib-preset-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const it = (libState.page.items || []).find(x => x.id === btn.dataset.iid);
+      if (it) librarySaveAsPreset(it);
+    };
+  });
+}
+
+function formatDuration(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 renderFooter();
 
