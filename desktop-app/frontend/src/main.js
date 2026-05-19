@@ -33,6 +33,8 @@ import {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  ScanForSetupAPs,
+  BootstrapBoxOnSetupAP,
   BrowserOpenURL,
 } from './api.js';
 
@@ -3155,10 +3157,100 @@ async function doSetup() {
     state.presets = [];
     refreshDrives();
     discoverBoxes();
+
+    // Start the post-eject wait loop in the background so the result
+    // panel updates live while the user inserts the stick and powers
+    // the box. The wait does two things in parallel: poll mDNS /
+    // active probe for the box appearing on the home LAN, and scan
+    // visible Wi-Fi for a Bose setup-AP. The setup-AP path only
+    // matters for brand-new or factory-reset boxes; for boxes that
+    // already had Wi-Fi the LAN discovery wins first and the
+    // setup-AP branch is silently ignored.
+    waitForBoxAfterSetup({ ssid, pass, html });
   } catch (e) {
     $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('common.error'))}: ${escapeHtml(String(e))}</div>`;
   }
   $('setupGo').disabled = false;
+}
+
+// waitForBoxAfterSetup runs after the stick has been ejected. It
+// shows a live "waiting for box" panel and offers a cold-bootstrap
+// path if a Bose setup-AP shows up before the box reaches the LAN.
+//
+// Called with the WLAN credentials the user just entered for the
+// stick. They are kept only in this closure and never persisted.
+async function waitForBoxAfterSetup({ ssid, pass, html }) {
+  const baseHtml = html;
+  const startTs = Date.now();
+  const setupResult = $('setupResult');
+  if (!setupResult) return;
+
+  function render(extra) {
+    setupResult.innerHTML = baseHtml + extra;
+  }
+
+  let bootstrapTriggered = false;
+  let bootstrapDone = false;
+  let foundBoxIP = null;
+
+  function progressLine(elapsedSec, ap) {
+    const apHint = ap
+      ? `<div class="setup-ok">${escapeHtml(t('setup.setupAPDetected', { ssid: ap.ssid }))}</div>`
+      : '';
+    const status = `<div class="muted small">${escapeHtml(t('setup.waitingForBox', { sec: elapsedSec }))}</div>`;
+    return apHint + status;
+  }
+
+  // Background loop: poll for box on LAN + scan for setup-AP.
+  // 5-minute cap, then we stop polling and leave the last state.
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline && !bootstrapDone && !foundBoxIP) {
+    try {
+      const list = await DiscoverBoxes(4);
+      const ours = (list || []).find(b => b.kind === 'str' || b.kind === 'stock');
+      if (ours) {
+        foundBoxIP = ours.host;
+        break;
+      }
+    } catch {}
+
+    if (!bootstrapTriggered && ssid) {
+      try {
+        const aps = await ScanForSetupAPs();
+        if (aps && aps.length > 0) {
+          const ap = aps[0];
+          bootstrapTriggered = true;
+          render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                 `<div class="muted small">${escapeHtml(t('setup.bootstrapStarting'))}</div>`);
+          try {
+            const res = await BootstrapBoxOnSetupAP(ap.ssid, ssid, pass, 'wpa_or_wpa2');
+            if (res && res.ok) {
+              foundBoxIP = res.boxIP || foundBoxIP;
+              bootstrapDone = true;
+              break;
+            } else {
+              render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                     `<div class="setup-warn">${escapeHtml(t('setup.bootstrapFailed', { msg: (res && res.message) || 'unknown' }))}</div>`);
+            }
+          } catch (bsErr) {
+            render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
+                   `<div class="setup-err">${escapeHtml(t('setup.bootstrapFailed', { msg: String(bsErr) }))}</div>`);
+          }
+        }
+      } catch {}
+    }
+
+    render(progressLine(Math.floor((Date.now() - startTs) / 1000), null));
+    await sleep(3000);
+  }
+
+  if (foundBoxIP) {
+    render(`<div class="setup-ok">${escapeHtml(t('setup.boxFoundOnLAN', { ip: foundBoxIP }))}</div>` +
+           `<div class="muted small">${escapeHtml(t('setup.boxFoundHint'))}</div>`);
+    discoverBoxes();
+  } else {
+    render(`<div class="setup-warn">${escapeHtml(t('setup.waitForBoxTimeout'))}</div>`);
+  }
 }
 
 

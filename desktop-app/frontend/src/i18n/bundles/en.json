@@ -500,6 +500,13 @@
   "setup.ejectedBody": "Stick was ejected. Pull it out and plug it into the USB port of the Bose speaker. The first boot takes about a minute, then you can control the speaker from the <b>Listen to music</b> tab.",
   "setup.ejectedWarn": "<b>Important:</b> The stick is now configured for exactly this speaker. On first boot the speaker applies the settings and deletes all secrets (for example the Wi-Fi password) from the stick. If you later want to set up a different speaker or change values, prepare the stick here first.",
   "setup.ejectFailed": "The data is on the stick, but the automatic eject failed: <small>{{err}}</small> Please eject via the system file manager.",
+  "setup.waitingForBox": "Searching for the speaker on the LAN... ({{sec}} s)",
+  "setup.setupAPDetected": "Brand-new speaker detected in setup mode (SSID: {{ssid}}). Configuring it for your Wi-Fi.",
+  "setup.bootstrapStarting": "Joining the speaker's setup network and pushing your Wi-Fi credentials...",
+  "setup.bootstrapFailed": "Could not configure the speaker from its setup network: {{msg}}. You can still install via the PowerShell wizard.",
+  "setup.boxFoundOnLAN": "Speaker is on the LAN at {{ip}}.",
+  "setup.boxFoundHint": "It will show up in the Listen to music tab. Run the STR install from the PowerShell wizard (until the in-app installer ships) to enable preset playback.",
+  "setup.waitForBoxTimeout": "Did not see the speaker on the LAN within 5 minutes. Check power, Wi-Fi credentials, and try inserting the stick again.",
 
   "lang.german": "German",
   "lang.english": "English",
