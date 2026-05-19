@@ -35,6 +35,7 @@ import {
   SelectBoxSource,
   SaveDiagnosticBundle,
   GetLogFilePath,
+  InstallSTROnBox,
   BrowserOpenURL,
 } from './api.js';
 
@@ -3178,10 +3179,77 @@ async function doSetup() {
     state.presets = [];
     refreshDrives();
     discoverBoxes();
+    // Kick off the post-eject wait loop in the background. It polls
+    // for the speaker on the LAN and once it shows up as a stock
+    // (Bose-only) box, auto-installs STR via SSH so the user does
+    // not need the PowerShell wizard anymore.
+    waitForBoxAndAutoInstall(html);
   } catch (e) {
     $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('common.error'))}: ${escapeHtml(String(e))}</div>`;
   }
   $('setupGo').disabled = false;
+}
+
+// waitForBoxAndAutoInstall polls the home LAN for the speaker after
+// the stick has been ejected. When the box appears as kind=="stock"
+// (Bose firmware up but no STR agent), the function triggers the
+// in-app installer via SSH (passwordless root works on the box for
+// the duration the stick is plugged in). Caps at 5 min, then leaves
+// a "did not appear" message.
+async function waitForBoxAndAutoInstall(baseHtml) {
+  const setupResult = $('setupResult');
+  if (!setupResult) return;
+  const render = (extra) => { setupResult.innerHTML = baseHtml + extra; };
+
+  const start = Date.now();
+  const deadline = start + 5 * 60 * 1000;
+  let foundBox = null;
+
+  while (Date.now() < deadline) {
+    try {
+      const list = await DiscoverBoxes(4);
+      // Prefer stock matches; if STR is already on the LAN nothing
+      // to install, fall through to the success branch.
+      foundBox = (list || []).find(b => b && b.host && (b.kind === 'stock' || b.kind === 'str'));
+      if (foundBox) break;
+    } catch {}
+    const sec = Math.floor((Date.now() - start) / 1000);
+    render(`<div class="muted small">${escapeHtml(t('setup.waitingForBox', { sec }))}</div>`);
+    await sleep(4000);
+  }
+
+  if (!foundBox) {
+    render(`<div class="setup-warn">${escapeHtml(t('setup.waitForBoxTimeout'))}</div>`);
+    return;
+  }
+
+  if (foundBox.kind === 'str') {
+    render(`<div class="setup-ok">${escapeHtml(t('setup.alreadyInstalled', { ip: foundBox.host }))}</div>`);
+    discoverBoxes();
+    return;
+  }
+
+  // Stock box: run installer.
+  render(`<div class="setup-ok">${escapeHtml(t('setup.boxFoundOnLAN', { ip: foundBox.host }))}</div>` +
+         `<div class="muted small">${escapeHtml(t('setup.installRunning'))}</div>`);
+  let result;
+  try {
+    result = await InstallSTROnBox(foundBox.host);
+  } catch (err) {
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`);
+    return;
+  }
+  if (!result || !result.ok) {
+    const msg = (result && result.message) || 'unknown';
+    const log = (result && result.log) ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>` : '';
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + log);
+    return;
+  }
+  render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
+         `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`);
+  // Refresh main speaker list so the freshly-flashed box shows up
+  // in the Music tab without needing a manual refresh.
+  discoverBoxes();
 }
 
 

@@ -41,6 +41,7 @@ export {
   SelectBoxSource,
   SaveDiagnosticBundle,
   GetLogFilePath,
+  InstallSTROnBox,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL } from '../wailsjs/runtime/runtime';
