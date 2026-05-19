@@ -39,6 +39,7 @@ export {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  InstallSTROnBox,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL } from '../wailsjs/runtime/runtime';
