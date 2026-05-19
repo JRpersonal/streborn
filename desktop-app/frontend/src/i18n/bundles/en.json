@@ -536,6 +536,11 @@
   "setup.installLogToggle": "Show install log",
   "setup.installDone": "STR is installed and running on the speaker.",
   "setup.installDoneHint": "Switch to the Listen to music tab to use it. You can now safely remove the stick from the speaker.",
+  "setup.awaitBoxReadyTitle": "Now do this on the speaker:",
+  "setup.awaitStep1": "Remove the stick from this computer.",
+  "setup.awaitStep2": "Plug it into the USB port on the speaker.",
+  "setup.awaitStep3": "Briefly unplug the speaker, plug it back in, and wait until the LEDs stop blinking (about 60 to 90 seconds).",
+  "setup.awaitConfirmBtn": "Speaker is ready, install STR now",
 
   "lang.german": "German",
   "lang.english": "English",

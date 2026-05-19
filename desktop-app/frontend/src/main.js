@@ -3204,24 +3204,49 @@ async function doSetup() {
     state.presets = [];
     refreshDrives();
     discoverBoxes();
-    // Kick off the combined post-eject wait loop. It does three
-    // things in priority order:
-    //   1. Poll the home LAN for the box (covers boxes that already
-    //      had Wi-Fi).
-    //   2. If a Bose setup-AP is visible AND credentials are known,
-    //      cold-bootstrap the box onto the home Wi-Fi.
-    //   3. Once a stock box is found (either via #1 or #2), run the
-    //      in-app STR installer via SSH so the user does not need
-    //      the PowerShell wizard anymore.
-    waitForBoxAfterSetup({ ssid, pass, html });
+    // Show a confirmation panel first. We do NOT start the discovery
+    // + auto-install loop yet: the user just clicked "GO", the stick
+    // is still in the laptop, the speaker has not been touched.
+    // Starting the loop now would race the user and almost always
+    // probe a stale stock state (box up from a previous session,
+    // stick not yet inserted) which fails install.sh.
+    showAwaitBoxReadyPanel({ ssid, pass, html });
   } catch (e) {
     $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('common.error'))}: ${escapeHtml(String(e))}</div>`;
   }
   $('setupGo').disabled = false;
 }
 
-// waitForBoxAfterSetup runs after the stick has been ejected. It
-// covers three end-user paths in priority order:
+// showAwaitBoxReadyPanel renders the "do this on the speaker now"
+// instruction set with a confirmation button. The discovery /
+// auto-install loop only starts after the user clicks the button,
+// because nothing else can prove the stick has actually been moved
+// into the speaker and the box has booted with it mounted.
+function showAwaitBoxReadyPanel({ ssid, pass, html }) {
+  const setupResult = $('setupResult');
+  if (!setupResult) return;
+  setupResult.innerHTML = html +
+    `<div class="setup-section setup-await-ready">` +
+    `<div class="setup-ok"><b>${escapeHtml(t('setup.awaitBoxReadyTitle'))}</b></div>` +
+    `<ol class="setup-await-steps">` +
+    `<li>${escapeHtml(t('setup.awaitStep1'))}</li>` +
+    `<li>${escapeHtml(t('setup.awaitStep2'))}</li>` +
+    `<li>${escapeHtml(t('setup.awaitStep3'))}</li>` +
+    `</ol>` +
+    `<button class="btn btn-primary" id="setupSpeakerReady">${escapeHtml(t('setup.awaitConfirmBtn'))}</button>` +
+    `</div>`;
+  const btn = $('setupSpeakerReady');
+  if (btn) {
+    btn.onclick = () => {
+      btn.disabled = true;
+      waitForBoxAfterSetup({ ssid, pass, html });
+    };
+  }
+}
+
+// waitForBoxAfterSetup runs after the user has confirmed the stick
+// is in the speaker and the speaker has booted. It covers three
+// end-user paths in priority order:
 //   1. Box is already on the home LAN (had Wi-Fi before) -> just
 //      proceed to step 3 once mDNS or the active probe surfaces it.
 //   2. Box is brand-new / factory-reset and is broadcasting a Bose
