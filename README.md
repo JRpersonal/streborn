@@ -71,14 +71,11 @@ make build-arm
 # Build the desktop app (requires Wails v2 CLI)
 cd desktop-app
 wails build
-
-# Run the website locally
-cd website
-npm install
-npm run dev
 ```
 
 Requirements: Go 1.22 or newer, Node 20 or newer, Wails CLI v2 for the desktop app.
+
+The website (st-reborn.de) lives in a separate repository, [`JRpersonal/streborn-website`](https://github.com/JRpersonal/streborn-website). A release here triggers a build there via `repository_dispatch`.
 
 ## Repository layout
 
@@ -88,9 +85,8 @@ Requirements: Go 1.22 or newer, Node 20 or newer, Wails CLI v2 for the desktop a
 | `internal/` | Marge cloud stub, BMX, UPnP, mDNS, WebSocket hook, preset store |
 | `usb-stick/` | Bootstrap and runtime scripts on the speaker |
 | `setup/` | Setup wizard (PowerShell) |
-| `desktop-app/` | Cross platform Wails app |
-| `website/` | Static Astro plus Tailwind website |
-| `.github/` | Release and website deploy workflows |
+| `desktop-app/` | Cross-platform Wails app |
+| `.github/` | CI and release workflows |
 | `docs/` | Public documentation |
 
 ## Downloads and end user documentation
