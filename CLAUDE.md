@@ -244,10 +244,13 @@ internal/        Stick-agent-only packages (boxapi, marge, autopair, ...)
 setup/           Setup wizard helpers
 sticksetup/      Embedded setup workflow
 usb-stick/       Stick filesystem layout and run.sh
-website/         Astro site
 wifiprofiles/    Cross-platform Wi-Fi profile reader for the wizard
 .github/         Workflows, dependabot, CODEOWNERS, security policies
 ```
+
+The website (st-reborn.de) lives in a separate repository
+(`JRpersonal/streborn-website`). A release here triggers a build
+there via `repository_dispatch`.
 
 `discovery/` lives at the top level on purpose. The desktop app
 imports it, and Go forbids importing from another module's
