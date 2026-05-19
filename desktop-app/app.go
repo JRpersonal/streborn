@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/discovery"
+	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/sticksetup"
 	"github.com/JRpersonal/streborn/wifiprofiles"
 	"streborn-app/agentbin"
@@ -25,13 +26,21 @@ type App struct {
 	ctx        context.Context
 	logger     *slog.Logger
 	httpClient *http.Client
+
+	// libraryServers caches the result of the most recent
+	// ListMediaServers call so subsequent BrowseLibrary calls can
+	// resolve a UDN to a Server without a fresh SSDP sweep on every
+	// folder click. Cleared and rebuilt on ListMediaServers.
+	libraryMu      sync.Mutex
+	libraryServers map[string]dlna.Server
 }
 
 // NewApp erstellt eine neue App Instance.
 func NewApp() *App {
 	return &App{
-		logger:     newFileLogger(slog.LevelInfo),
-		httpClient: &http.Client{Timeout: 6 * time.Second},
+		logger:         newFileLogger(slog.LevelInfo),
+		httpClient:     &http.Client{Timeout: 6 * time.Second},
+		libraryServers: map[string]dlna.Server{},
 	}
 }
 
@@ -881,4 +890,125 @@ func (a *App) Status(host string, port int) (string, error) {
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
 	return string(b), nil
+}
+
+// === Library (DLNA / UPnP MediaServer browsing) ===
+//
+// MVP scope: discover MediaServers on the LAN, browse one server's
+// ContentDirectory tree, play a track via the existing PlayURL path,
+// optionally save the track as one of the six STR presets via the
+// existing SetPreset path. No queue, no search, no transcoding.
+// Audio items only; the frontend filters the rest out.
+
+// LibraryServer is the flat DTO sent to the frontend dropdown.
+// Mirrors dlna.Server but trims it to JSON-friendly fields.
+type LibraryServer struct {
+	UDN          string `json:"udn"`
+	FriendlyName string `json:"friendlyName"`
+	Manufacturer string `json:"manufacturer"`
+	ModelName    string `json:"modelName"`
+	IconURL      string `json:"iconURL"`
+	Address      string `json:"address"`
+}
+
+// LibraryContainer is a folder / album node in the browse view.
+type LibraryContainer struct {
+	ID         string `json:"id"`
+	ParentID   string `json:"parentID"`
+	Title      string `json:"title"`
+	ChildCount int    `json:"childCount"`
+}
+
+// LibraryItem is a single playable track.
+type LibraryItem struct {
+	ID          string `json:"id"`
+	ParentID    string `json:"parentID"`
+	Title       string `json:"title"`
+	Artist      string `json:"artist"`
+	Album       string `json:"album"`
+	MimeType    string `json:"mimeType"`
+	StreamURL   string `json:"streamURL"`
+	AlbumArtURL string `json:"albumArtURL"`
+	DurationSec int    `json:"durationSec"`
+}
+
+// LibraryPage is one page of a browse call.
+type LibraryPage struct {
+	Containers   []LibraryContainer `json:"containers"`
+	Items        []LibraryItem      `json:"items"`
+	TotalMatches int                `json:"totalMatches"`
+	Returned     int                `json:"returned"`
+}
+
+// ListMediaServers does an SSDP sweep for DLNA MediaServers on the
+// LAN and returns the list. Result is cached so BrowseLibrary can
+// look up the server by UDN without rediscovering.
+func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
+	if timeoutSec <= 0 {
+		timeoutSec = 3
+	}
+	servers, err := dlna.DiscoverServers(a.ctx, time.Duration(timeoutSec)*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	a.libraryMu.Lock()
+	a.libraryServers = map[string]dlna.Server{}
+	for _, s := range servers {
+		a.libraryServers[s.UDN] = s
+	}
+	a.libraryMu.Unlock()
+
+	out := make([]LibraryServer, 0, len(servers))
+	for _, s := range servers {
+		out = append(out, LibraryServer{
+			UDN:          s.UDN,
+			FriendlyName: s.FriendlyName,
+			Manufacturer: s.Manufacturer,
+			ModelName:    s.ModelName,
+			IconURL:      s.IconURL,
+			Address:      s.Address,
+		})
+	}
+	return out, nil
+}
+
+// BrowseLibrary returns one page of children under objectID on the
+// server identified by udn. objectID "0" or empty is the server root.
+// Items that are not audio are filtered out so the Library tab only
+// shows things the SoundTouch can actually play.
+func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage, error) {
+	a.libraryMu.Lock()
+	srv, ok := a.libraryServers[udn]
+	a.libraryMu.Unlock()
+	if !ok {
+		return LibraryPage{}, fmt.Errorf("unknown media server %q, call ListMediaServers first", udn)
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 12*time.Second)
+	defer cancel()
+	res, err := dlna.Browse(ctx, srv, objectID, start, count)
+	if err != nil {
+		return LibraryPage{}, err
+	}
+	page := LibraryPage{
+		TotalMatches: res.TotalMatches,
+		Returned:     res.Returned,
+	}
+	for _, c := range res.Containers {
+		page.Containers = append(page.Containers, LibraryContainer{
+			ID: c.ID, ParentID: c.ParentID, Title: c.Title,
+			ChildCount: c.ChildCount,
+		})
+	}
+	for _, it := range res.Items {
+		if !it.IsAudioItem() {
+			continue
+		}
+		page.Items = append(page.Items, LibraryItem{
+			ID: it.ID, ParentID: it.ParentID, Title: it.Title,
+			Artist: it.Artist, Album: it.Album, MimeType: it.MimeType,
+			StreamURL: it.StreamURL, AlbumArtURL: it.AlbumArtURL,
+			DurationSec: it.DurationSec,
+		})
+	}
+	return page, nil
 }

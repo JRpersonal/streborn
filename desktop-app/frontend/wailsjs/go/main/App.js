@@ -18,6 +18,10 @@ export function BoxSettings(arg1, arg2) {
   return window['go']['main']['App']['BoxSettings'](arg1, arg2);
 }
 
+export function BrowseLibrary(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['BrowseLibrary'](arg1, arg2, arg3, arg4);
+}
+
 export function CheckAppUpdate() {
   return window['go']['main']['App']['CheckAppUpdate']();
 }
@@ -52,6 +56,10 @@ export function IsBoseStick(arg1) {
 
 export function ListDrives() {
   return window['go']['main']['App']['ListDrives']();
+}
+
+export function ListMediaServers(arg1) {
+  return window['go']['main']['App']['ListMediaServers'](arg1);
 }
 
 export function ListWiFiProfiles() {

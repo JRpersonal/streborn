@@ -12,6 +12,8 @@ export function BoxAgentVersion(arg1:string,arg2:number):Promise<Record<string, 
 
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.LibraryPage>;
+
 export function CheckAppUpdate():Promise<Record<string, string>>;
 
 export function CurrentWiFi():Promise<string>;
@@ -29,6 +31,8 @@ export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
 export function IsBoseStick(arg1:string):Promise<boolean>;
 
 export function ListDrives():Promise<Array<sticksetup.Drive>>;
+
+export function ListMediaServers(arg1:number):Promise<Array<main.LibraryServer>>;
 
 export function ListWiFiProfiles():Promise<Array<wifiprofiles.Profile>>;
 
