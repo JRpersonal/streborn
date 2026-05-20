@@ -51,6 +51,28 @@ export const state = {
   musicVolUntil: 0,
   // showMoreGenres: user clicked "more" on the genre chip row
   showMoreGenres: false,
+  // otaInProgress is set true at the start of doBoxUpdate (in
+  // main.js) and reset when the OTA verify poll exits. The SSH
+  // recommendation banner reads it: while an OTA is in flight, the
+  // box reboots through a window where SSH is open but the user
+  // must NOT reboot manually (it would interrupt the agent restart
+  // and may leave the box in a half-flashed state). Without this
+  // flag the banner appears with its prominent "Reboot now" button
+  // exactly during the OTA reboot window, tempting users into the
+  // exactly wrong action.
+  otaInProgress: false,
+  // setupTarget is the speaker the USB-stick prep flow is currently
+  // bound to. Set by the user via the target picker at the top of
+  // the Setup view; cleared on view-switch only when discoverBoxes
+  // confirms the previously selected box is no longer reachable
+  // (otherwise a brief mDNS gap would keep yanking the choice from
+  // the user). Shape:
+  //   { kind: 'str' | 'stock' | 'factory-reset', box: BoxInfo | null }
+  // box is null only for kind === 'factory-reset'. Without an
+  // explicit target the wizard refuses to start so users do not
+  // accidentally prepare a stick "into the void" and then have the
+  // install step land on the wrong speaker.
+  setupTarget: null,
 };
 
 // Persistent box selection: deviceID in localStorage, reloaded after
