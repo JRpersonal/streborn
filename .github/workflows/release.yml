@@ -237,6 +237,20 @@ jobs:
           cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
           ls -la desktop-app/agentbin/
 
+      # Build the winformat helper the desktop app embeds via
+      # go:embed. Without this step the empty stub in
+      # sticksetup/embedded/winformat.exe ends up inside the
+      # released ST Reborn.exe and the in-app "format stick" button
+      # fails with "Format failed: winformat Helper fehlt im Build"
+      # (observed live by a v0.5.1 user on Windows, issue #44).
+      # Built on the windows runner so the resulting binary is a
+      # real PE32 .exe that Wails can embed.
+      - name: Build winformat helper
+        shell: bash
+        run: |
+          go build -trimpath -ldflags "-s -w" -o sticksetup/embedded/winformat.exe ./cmd/winformat
+          ls -la sticksetup/embedded/winformat.exe
+
       - name: Build Windows desktop app
         working-directory: desktop-app
         env:

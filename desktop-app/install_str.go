@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,40 +42,99 @@ type InstallResult struct {
 	Log     string `json:"log"`
 }
 
-// sshFlags are the OpenSSH options needed to talk to a Bose
-// SoundTouch box without interactive prompts.
+// sshFlagSets is a fallback chain of OpenSSH option lists, tried
+// in order until one negotiates successfully. Whatever set wins
+// the very first call is cached in sshFlagsActive and reused for
+// every subsequent call in the same session — we only pay the
+// trial-and-error cost on the first probe.
 //
-// Why so many legacy algorithms: Bose SoundTouch firmware ships an
-// OpenSSH from ~2014 that only offers ssh-rsa host keys, SHA1 MACs,
-// the diffie-hellman-group{1,14}-sha1 KEX, and CBC ciphers. Modern
-// OpenSSH on macOS Sequoia (9.x) disables all of these by default
-// and returns exit 255 with no useful stderr in the wizard UI. We
-// patch every algorithm class explicitly so the wizard works on
-// macOS, Windows, and Linux without users having to drop SSH config
-// into ~/.ssh themselves.
+// Why a chain instead of one set: OpenSSH option names have churned
+// over the years and STR ships to users on every OpenSSH from
+// macOS Big Sur (8.1, 2020) to current Linux/Windows (10.x).
+// v0.5.2 used PubkeyAcceptedAlgorithms (8.5+ only) and was rejected
+// on Big Sur with "Bad configuration option" before negotiation
+// even started. A static single set will keep tripping on someone
+// somewhere; a fallback chain self-heals against future renames.
 //
-// StrictHostKeyChecking is set to "no" instead of "accept-new"
-// because: (a) the Bose box's host key rotates on factory reset,
-// which we trigger as part of bootstrap, so accept-new would refuse
-// the very next install attempt on a re-flashed box; (b) the
-// connection is over the user's home LAN to a device whose IP they
-// just selected from a discovery list — there is no realistic MITM
-// vector to defend against here. UserKnownHostsFile=/dev/null keeps
-// the rotating Bose key out of the user's known_hosts entirely.
-var sshFlags = []string{
-	"-oHostKeyAlgorithms=+ssh-rsa,ssh-dss",
-	"-oPubkeyAcceptedAlgorithms=+ssh-rsa,ssh-dss",
-	"-oKexAlgorithms=+diffie-hellman-group1-sha1,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1",
-	"-oCiphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc",
-	"-oMACs=+hmac-sha1,hmac-sha1-96,hmac-md5",
-	"-oStrictHostKeyChecking=no",
-	"-oUserKnownHostsFile=" + nullDevice,
-	"-oGlobalKnownHostsFile=" + nullDevice,
-	"-oBatchMode=yes",
-	"-oConnectTimeout=8",
-	"-oServerAliveInterval=5",
-	"-oServerAliveCountMax=3",
+// Set order (most aggressive first, simplest last):
+//
+//  1. "full-legacy" — every legacy class explicitly patched: host
+//     key, KEX, ciphers, MACs. Needed for the 2014-era Bose sshd
+//     that only offers ssh-rsa / SHA1 / CBC. Works on every OpenSSH
+//     from 6.x through current 10.x.
+//
+//  2. "host-key-only" — only -oHostKeyAlgorithms=+ssh-rsa,ssh-dss
+//     plus the connection-hygiene flags. If the user's ssh barfs
+//     on any one of the algo-class options (some BSD-derived ssh
+//     forks have spelled them differently), this strict subset
+//     still lets the connection start: the box's ssh-rsa host key
+//     will be accepted, the rest of the negotiation falls back to
+//     whatever the user's ssh and the box can agree on out of the
+//     box. Slightly less reliable against very modern OpenSSH that
+//     disabled SHA1 KEX entirely, but works in more places.
+//
+//  3. "bare" — only connection hygiene (StrictHostKeyChecking=no,
+//     known-hosts → /dev/null, BatchMode, ConnectTimeout). Last
+//     resort: if the user's ssh rejects EVERY algo option,
+//     including HostKeyAlgorithms, there's nothing else for us to
+//     touch — we hand off to whatever the user's ssh defaults are
+//     and hope the user's ~/.ssh/config covers the gap. On Bose's
+//     2014 sshd this will usually fail at host-key verification,
+//     but the resulting error ("Host key verification failed") is
+//     actionable: the user can manually accept by adjusting their
+//     ssh config. Better than a hard wall.
+//
+// StrictHostKeyChecking=no + UserKnownHostsFile=/dev/null are
+// present in EVERY set because: (a) the Bose box's host key rotates
+// on factory reset, which we trigger as part of bootstrap, so
+// accept-new would refuse the very next install attempt on a
+// re-flashed box; (b) the connection is over the user's home LAN
+// to a device whose IP they just selected from a discovery list —
+// there is no realistic MITM vector to defend against.
+var sshFlagSets = [][]string{
+	// Set 1: full-legacy
+	{
+		"-oHostKeyAlgorithms=+ssh-rsa,ssh-dss",
+		"-oKexAlgorithms=+diffie-hellman-group1-sha1,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1",
+		"-oCiphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc",
+		"-oMACs=+hmac-sha1,hmac-sha1-96,hmac-md5",
+		"-oStrictHostKeyChecking=no",
+		"-oUserKnownHostsFile=" + nullDevice,
+		"-oGlobalKnownHostsFile=" + nullDevice,
+		"-oBatchMode=yes",
+		"-oConnectTimeout=8",
+		"-oServerAliveInterval=5",
+		"-oServerAliveCountMax=3",
+	},
+	// Set 2: host-key-only
+	{
+		"-oHostKeyAlgorithms=+ssh-rsa,ssh-dss",
+		"-oStrictHostKeyChecking=no",
+		"-oUserKnownHostsFile=" + nullDevice,
+		"-oGlobalKnownHostsFile=" + nullDevice,
+		"-oBatchMode=yes",
+		"-oConnectTimeout=8",
+	},
+	// Set 3: bare
+	{
+		"-oStrictHostKeyChecking=no",
+		"-oUserKnownHostsFile=" + nullDevice,
+		"-oBatchMode=yes",
+		"-oConnectTimeout=8",
+	},
 }
+
+// sshFlagsActive caches the index of the flag set that worked on
+// the first successful call. Subsequent calls skip the fallback
+// trial and use this set directly. -1 means "not chosen yet".
+//
+// Guarded by sshFlagsMu so concurrent install attempts (the user
+// can fire several speakers in a row before the first one
+// finishes) cannot wedge a half-written value.
+var (
+	sshFlagsMu     sync.Mutex
+	sshFlagsActive = -1
+)
 
 // stickProbePaths are the candidate mount paths checked for the STR
 // install.sh on the box. Bose's udev rule normally lands USB sticks
@@ -243,6 +303,15 @@ func buildStickProbeCmd(paths []string) string {
 func classifySSHError(out string, err error) string {
 	low := strings.ToLower(out)
 	switch {
+	case strings.Contains(low, "bad configuration option"):
+		// Local OpenSSH refused one of our -o flags before connecting
+		// at all. Almost always an option-name skew between OpenSSH
+		// versions (the v0.5.2 release used PubkeyAcceptedAlgorithms
+		// which only exists in OpenSSH 8.5+; older macOS shipped 8.1).
+		// Surface the exact unknown option so the user can paste it
+		// into a bug report and we can ship the rename quickly.
+		return "your local SSH client refused an option: " + extractBadOption(out) +
+			". Please file a bug with this exact line and your `ssh -V` output."
 	case strings.Contains(low, "host key verification failed"),
 		strings.Contains(low, "remote host identification has changed"):
 		return "host key changed on the speaker (factory reset?). The next install attempt should succeed because UserKnownHostsFile is /dev/null in this build."
@@ -265,14 +334,89 @@ func classifySSHError(out string, err error) string {
 	return "no STR_SSH_OK marker received (check Wi-Fi to speaker)"
 }
 
+// extractBadOption pulls the offending option name out of OpenSSH's
+// "command-line: line 0: Bad configuration option: <name>" error
+// line, lower-cased exactly as OpenSSH emits it. Used by
+// classifySSHError so the user-facing message names the actual
+// option that needs renaming for our next release.
+func extractBadOption(out string) string {
+	const marker = "bad configuration option:"
+	low := strings.ToLower(out)
+	i := strings.Index(low, marker)
+	if i < 0 {
+		return "<unknown>"
+	}
+	tail := strings.TrimSpace(out[i+len(marker):])
+	if nl := strings.IndexAny(tail, "\r\n"); nl >= 0 {
+		tail = tail[:nl]
+	}
+	if tail == "" {
+		return "<unknown>"
+	}
+	return tail
+}
+
 // boxSSHOutput runs cmd on the box over SSH and returns combined
 // stdout+stderr. timeout caps the whole call.
+//
+// Walks sshFlagSets in order: if a set is rejected with "Bad
+// configuration option" (the user's local OpenSSH does not know
+// one of our -o flags), the next set is tried automatically. The
+// first set that returns ANYTHING other than "Bad configuration
+// option" wins and is cached for the rest of the session.
+//
+// timeout applies to each set individually so a transient stall
+// on set 1 does not eat the whole budget. Total worst-case is
+// len(sshFlagSets) * timeout.
 func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
-	args := append(append([]string{}, sshFlags...), "root@"+host, cmd)
+	start, _ := getCachedFlagSetIndex()
+	var lastOut string
+	var lastErr error
+	for i := start; i < len(sshFlagSets); i++ {
+		out, err := runSSHWithFlags(sshFlagSets[i], host, cmd, timeout)
+		if isBadOptionError(out) {
+			// Local ssh refuses this set's flags. Move on without
+			// caching — the next call may still want to try this
+			// index again with a different command (and the cache
+			// also gets updated below when a non-bad-option result
+			// arrives).
+			lastOut, lastErr = out, err
+			continue
+		}
+		// Anything else (success OR real network/auth/algo failure)
+		// counts as "this set's flags were at least accepted by the
+		// local ssh". Cache so the rest of the session skips the
+		// trial-and-error.
+		cacheFlagSetIndex(i)
+		return out, err
+	}
+	return lastOut, lastErr
+}
+
+// boxSSHFireAndForget runs cmd but does not require it to exit
+// cleanly. Used for "reboot" where the connection dropping is
+// expected. Same fallback-chain semantics as boxSSHOutput.
+func boxSSHFireAndForget(host, cmd string, timeout time.Duration) error {
+	start, _ := getCachedFlagSetIndex()
+	for i := start; i < len(sshFlagSets); i++ {
+		out, _ := runSSHWithFlags(sshFlagSets[i], host, cmd, timeout)
+		if isBadOptionError(out) {
+			continue
+		}
+		cacheFlagSetIndex(i)
+		return nil
+	}
+	return nil
+}
+
+// runSSHWithFlags is the single subprocess invocation used by both
+// boxSSHOutput and boxSSHFireAndForget. Returns combined stdout +
+// stderr so the fallback-chain caller can scan for "Bad
+// configuration option" markers.
+func runSSHWithFlags(flags []string, host, cmd string, timeout time.Duration) (string, error) {
+	args := append(append([]string{}, flags...), "root@"+host, cmd)
 	c := exec.Command("ssh", args...)
 	hideCmdWindow(c)
-	// CombinedOutput catches both streams which is what we want for
-	// install.sh log capture.
 	done := make(chan struct {
 		out []byte
 		err error
@@ -293,21 +437,32 @@ func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
 	}
 }
 
-// boxSSHFireAndForget runs cmd but does not require it to exit
-// cleanly. Used for "reboot" where the connection dropping is
-// expected.
-func boxSSHFireAndForget(host, cmd string, timeout time.Duration) error {
-	args := append(append([]string{}, sshFlags...), "root@"+host, cmd)
-	c := exec.Command("ssh", args...)
-	hideCmdWindow(c)
-	done := make(chan error, 1)
-	go func() { done <- c.Run() }()
-	select {
-	case <-done:
-		return nil // ignore exit code, reboot is expected to disconnect
-	case <-time.After(timeout):
-		_ = c.Process.Kill()
-		return nil
+// isBadOptionError reports whether the combined ssh output starts
+// with OpenSSH's "Bad configuration option" stanza. That happens
+// before any network I/O, so it's safe to retry the same logical
+// SSH call with a different flag set.
+func isBadOptionError(out string) bool {
+	return strings.Contains(strings.ToLower(out), "bad configuration option")
+}
+
+// getCachedFlagSetIndex returns the cached active-set index, or 0
+// (try from the start) if not yet chosen. The bool is the
+// "was-set" flag — currently unused by callers but handy for
+// log breadcrumbs later.
+func getCachedFlagSetIndex() (int, bool) {
+	sshFlagsMu.Lock()
+	defer sshFlagsMu.Unlock()
+	if sshFlagsActive < 0 {
+		return 0, false
+	}
+	return sshFlagsActive, true
+}
+
+func cacheFlagSetIndex(i int) {
+	sshFlagsMu.Lock()
+	defer sshFlagsMu.Unlock()
+	if sshFlagsActive < 0 {
+		sshFlagsActive = i
 	}
 }
 
