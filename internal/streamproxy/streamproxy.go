@@ -20,15 +20,42 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/presets"
 )
+
+// safeHTTPURL rejects everything that is not http or https. Used at
+// every outbound HTTP call site that takes a URL from a
+// not-strictly-trusted source (preset store, base64-decoded query
+// param). Belt-and-braces: handleRaw already pre-checks the
+// HasPrefix path, but streamOne is also reachable via handle()
+// where the URL comes straight from the preset store and could in
+// principle contain anything. CodeQL flagged streamOne's outbound
+// Do() exactly for this reason. Centralising the check keeps the
+// policy obvious.
+func safeHTTPURL(raw string) error {
+	if raw == "" {
+		return errors.New("url is empty")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("parse url: %w", err)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("disallowed url scheme %q (only http/https accepted)", u.Scheme)
+	}
+}
 
 type Server struct {
 	store  *presets.Store
@@ -150,6 +177,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 // sinnvoll). Returnt false wenn Bose disconnected hat (kein Reconnect
 // noetig).
 func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.Request, url string, sendHeaders bool) bool {
+	if err := safeHTTPURL(url); err != nil {
+		s.logger.Warn("stream proxy refusing url", "url", url, "err", err)
+		if sendHeaders {
+			http.Error(w, "invalid stream url", http.StatusBadRequest)
+		}
+		return false
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		s.logger.Warn("stream proxy NewRequest fail", "err", err)

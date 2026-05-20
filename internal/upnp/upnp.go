@@ -9,9 +9,35 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
+
+// safeHTTPURL accepts a URL only if its scheme is http or https.
+// This is the project's belt-and-braces filter at every outbound
+// HTTP call site that takes a URL from a not-strictly-trusted
+// source (preset store written by the local user, radio-browser
+// search results, playlist auto-discovery). Defense-in-depth: in
+// practice we never see other schemes, but a single rogue preset
+// with file://, ftp:// or jar:// would otherwise reach Go's stdlib
+// HTTP client and become an SSRF vector. CodeQL flagged exactly
+// these call sites; the helper makes the policy explicit.
+func safeHTTPURL(raw string) error {
+	if raw == "" {
+		return errors.New("url is empty")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("parse url: %w", err)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("disallowed url scheme %q (only http/https accepted)", u.Scheme)
+	}
+}
 
 // Renderer haelt die Adresse eines AVTransport Endpoints.
 type Renderer struct {
@@ -118,6 +144,9 @@ func ResolveStreamURL(ctx context.Context, u string) (string, error) {
 // extractStreamFromPlaylist laedt eine .pls / .m3u Datei und gibt die
 // erste Stream URL zurueck. Leer wenn nichts gefunden / Fehler.
 func extractStreamFromPlaylist(ctx context.Context, u string) string {
+	if err := safeHTTPURL(u); err != nil {
+		return ""
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return ""
@@ -150,6 +179,9 @@ func extractStreamFromPlaylist(ctx context.Context, u string) string {
 // isStreamReachable prueft mit GET Range 0-0 ob der Server antwortet.
 // HEAD wird von vielen Streaming Servern nicht unterstuetzt.
 func isStreamReachable(ctx context.Context, u string) bool {
+	if err := safeHTTPURL(u); err != nil {
+		return false
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, u, nil)
