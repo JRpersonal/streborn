@@ -51,6 +51,18 @@ export const state = {
   musicVolUntil: 0,
   // showMoreGenres: user clicked "more" on the genre chip row
   showMoreGenres: false,
+  // setupTarget is the speaker the USB-stick prep flow is currently
+  // bound to. Set by the user via the target picker at the top of
+  // the Setup view; cleared on view-switch only when discoverBoxes
+  // confirms the previously selected box is no longer reachable
+  // (otherwise a brief mDNS gap would keep yanking the choice from
+  // the user). Shape:
+  //   { kind: 'str' | 'stock' | 'factory-reset', box: BoxInfo | null }
+  // box is null only for kind === 'factory-reset'. Without an
+  // explicit target the wizard refuses to start so users do not
+  // accidentally prepare a stick "into the void" and then have the
+  // install step land on the wrong speaker.
+  setupTarget: null,
 };
 
 // Persistent box selection: deviceID in localStorage, reloaded after

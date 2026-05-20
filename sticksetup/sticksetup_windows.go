@@ -120,14 +120,16 @@ func formatFAT32Impl(path, label string) error {
 	letter := strings.TrimSuffix(path, ":\\")
 	letter = strings.TrimSuffix(letter, ":/")
 	if len(letter) == 0 {
-		return fmt.Errorf("kein Drive Letter in %q", path)
+		return fmt.Errorf("no drive letter found in %q", path)
 	}
 	if label == "" {
 		label = "REBORN"
 	}
 
 	if len(winformatBinary) == 0 {
-		return fmt.Errorf("winformat Helper fehlt im Build (sticksetup/embedded/winformat.exe nicht eingebettet)")
+		return fmt.Errorf("winformat helper missing from this build " +
+			"(sticksetup/embedded/winformat.exe was not embedded; " +
+			"please re-download the installer from the GitHub release page)")
 	}
 
 	// Helper in TEMP extrahieren. Eindeutiger Name pro Aufruf damit
@@ -137,7 +139,7 @@ func formatFAT32Impl(path, label string) error {
 	helperPath := filepath.Join(tmpDir, fmt.Sprintf("st-winformat-%d.exe", stamp))
 	statusPath := filepath.Join(tmpDir, fmt.Sprintf("st-winformat-%d.status", stamp))
 	if err := os.WriteFile(helperPath, winformatBinary, 0o755); err != nil {
-		return fmt.Errorf("helper schreiben: %w", err)
+		return fmt.Errorf("write format helper to temp: %w", err)
 	}
 	defer os.Remove(helperPath)
 	defer os.Remove(statusPath)
@@ -169,26 +171,26 @@ func formatFAT32Impl(path, label string) error {
 	// Kein OK Status → entweder UAC abgelehnt oder Helper hat Fehler gemeldet.
 	if runErr != nil {
 		msg := strings.TrimSpace(string(out))
-		// Exit Code 1223 = ERROR_CANCELLED (UAC vom User abgelehnt).
+		// Exit Code 1223 = ERROR_CANCELLED (UAC declined by user).
 		if strings.Contains(msg, "1223") || strings.Contains(strings.ToLower(msg), "cancel") {
-			return fmt.Errorf("Admin Berechtigung wurde abgelehnt — bitte beim UAC Dialog auf Ja klicken")
+			return fmt.Errorf("admin permission was declined, please click Yes on the UAC dialog")
 		}
 		if status != "" {
-			return fmt.Errorf("Format fehlgeschlagen: %s", strings.TrimPrefix(status, "ERR "))
+			return fmt.Errorf("format failed: %s", strings.TrimPrefix(status, "ERR "))
 		}
 		if msg != "" {
-			return fmt.Errorf("Format fehlgeschlagen (PowerShell): %s", msg)
+			return fmt.Errorf("format failed (PowerShell): %s", msg)
 		}
-		return fmt.Errorf("Format fehlgeschlagen: %v", runErr)
+		return fmt.Errorf("format failed: %v", runErr)
 	}
 
 	if status != "" {
-		return fmt.Errorf("Format fehlgeschlagen: %s", strings.TrimPrefix(status, "ERR "))
+		return fmt.Errorf("format failed: %s", strings.TrimPrefix(status, "ERR "))
 	}
-	// Kein Status File geschrieben + kein Error → Helper ist nie gelaufen
-	// (z.B. weil User UAC vor dem Prompt schon geklickt hatte oder
-	// AntiVirus den Helper geblockt hat).
-	return fmt.Errorf("Format fehlgeschlagen: Helper wurde nicht ausgefuehrt (UAC abgelehnt oder AV Block?)")
+	// No status file written and no error returned: helper never ran
+	// (UAC dismissed before the prompt, or anti-virus blocked the
+	// helper binary).
+	return fmt.Errorf("format failed: helper never executed (UAC declined or antivirus blocked it?)")
 }
 
 // ejectImpl wirft das Volume sauber aus via Win32 API direkt.

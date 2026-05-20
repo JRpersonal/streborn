@@ -62,14 +62,14 @@ type WLANConfig struct {
 // Returns Liste der geschriebenen Files.
 func WriteStickFiles(targetPath string, binaryBytes []byte, stickVersion string) ([]string, error) {
 	if targetPath == "" {
-		return nil, fmt.Errorf("targetPath leer")
+		return nil, fmt.Errorf("targetPath is empty")
 	}
 	st, err := os.Stat(targetPath)
 	if err != nil {
-		return nil, fmt.Errorf("target nicht erreichbar: %w", err)
+		return nil, fmt.Errorf("target not reachable: %w", err)
 	}
 	if !st.IsDir() {
-		return nil, fmt.Errorf("target ist kein Verzeichnis: %s", targetPath)
+		return nil, fmt.Errorf("target is not a directory: %s", targetPath)
 	}
 
 	written := []string{}
@@ -93,7 +93,7 @@ func WriteStickFiles(targetPath string, binaryBytes []byte, stickVersion string)
 		}
 		dst := filepath.Join(targetPath, path)
 		if err := writeFile(dst, data); err != nil {
-			return fmt.Errorf("schreibe %s: %w", path, err)
+			return fmt.Errorf("write %s: %w", path, err)
 		}
 		written = append(written, path)
 		return nil
@@ -107,7 +107,7 @@ func WriteStickFiles(targetPath string, binaryBytes []byte, stickVersion string)
 		dstName := "streborn-armv7l"
 		dstPath := filepath.Join(targetPath, dstName)
 		if err := writeFile(dstPath, binaryBytes); err != nil {
-			return written, fmt.Errorf("binary schreiben: %w", err)
+			return written, fmt.Errorf("write agent binary: %w", err)
 		}
 		written = append(written, dstName)
 	}
@@ -195,7 +195,7 @@ func ReadStickConfigs(path string) StickConfigs {
 // wpa_supplicant entsprechend.
 func WriteWLANConfig(targetPath string, cfg WLANConfig) error {
 	if cfg.SSID == "" {
-		return fmt.Errorf("SSID darf nicht leer sein")
+		return fmt.Errorf("SSID must not be empty")
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -217,7 +217,7 @@ type RegionConfig struct {
 // vom Stick.
 func WriteRegionConfig(targetPath string, cfg RegionConfig) error {
 	if cfg.Country == "" {
-		return fmt.Errorf("country darf nicht leer sein")
+		return fmt.Errorf("country must not be empty")
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -237,7 +237,7 @@ type NameConfig struct {
 // WriteNameConfig schreibt eine name.conf JSON Datei auf den Stick.
 func WriteNameConfig(targetPath string, cfg NameConfig) error {
 	if cfg.Name == "" {
-		return fmt.Errorf("name darf nicht leer sein")
+		return fmt.Errorf("name must not be empty")
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {

@@ -258,7 +258,14 @@ function switchView(view) {
   } else {
     checkSshBanner();
   }
-  if (view === 'setup') refreshDrives();
+  if (view === 'setup') {
+    refreshDrives();
+    // Re-render the target picker on every entry into the Setup
+    // tab. The list may have changed (newly powered speaker,
+    // freshly installed STR) and the user just opened the tab to
+    // start a prep flow — make sure they see the right targets.
+    renderSetupTargetPicker();
+  }
   if (view === 'box') {
     // Refresh the mDNS list on every switch to the music view so a
     // recently renamed speaker or a speaker that went offline does
@@ -725,6 +732,10 @@ async function discoverBoxes() {
     }
     renderBoxSelect();
     updateSettingsTabBadge();
+    // Setup-tab target picker reuses the same state.boxes feed.
+    // Re-render so newly arrived speakers appear as choices without
+    // making the user leave and re-enter the Setup tab.
+    renderSetupTargetPicker();
     // Auto retry: if a recently set up speaker has not yet
     // re-announced its new name via mDNS, search again every 4 s for
     // up to 90 s. Driven by pendingNames.
@@ -2826,6 +2837,11 @@ const debouncedSetBass = debounce(async (box, defaultBass) => {
 $('view-setup').innerHTML = `
   <h2>${escapeHtml(t('setup.heading'))}</h2>
   <p class="setup-intro">${escapeHtml(t('setup.intro'))}</p>
+  <div class="setup-section setup-target-section" id="setupTargetSection">
+    <h3>${escapeHtml(t('setup.targetHeading'))}</h3>
+    <p class="muted small">${escapeHtml(t('setup.targetIntro'))}</p>
+    <div id="setupTargetBody"></div>
+  </div>
   <div class="setup-section">
     <div class="setup-section-head">
       <h3>${escapeHtml(t('setup.step1Heading'))}</h3>
@@ -2899,6 +2915,175 @@ $('setupGo').onclick = doSetup;
 $('wlanRefresh').onclick = loadWifiProfiles;
 $('wlanSelect').onchange = onWifiSelect;
 $('wlanShowPass').onclick = togglePasswordVisibility;
+
+// ---------- Setup target picker ----------
+//
+// Pierre's failure mode (#44): when more than one stock Bose speaker
+// is on the LAN, the install-after-prep step picked an arbitrary
+// one — the user had no way to see *which* speaker the wizard
+// would target until install.sh ran against the wrong box. Picker
+// also covers brand-new / factory-reset speakers that are not yet
+// on the network at all (cold-bootstrap target).
+//
+// Three target kinds:
+//   - "str"           — speaker already runs STR. Stick prep = update.
+//   - "stock"         — speaker on LAN, factory firmware. Install via SSH.
+//   - "factory-reset" — no box yet on the LAN, cold-bootstrap from
+//                       its Bose setup-AP after the stick boots.
+//
+// state.setupTarget holds the active choice. renderSetupTargetPicker
+// is called whenever discoverBoxes() refreshes state.boxes so newly
+// arrived speakers appear in the picker, but the user's chosen
+// target is preserved unless the chosen speaker actually drops off
+// the LAN (brief mDNS gaps would otherwise yank the choice).
+
+function renderSetupTargetPicker() {
+  const body = $('setupTargetBody');
+  if (!body) return;
+
+  // Pull the candidate list from state. dedup by host so a speaker
+  // that announced twice (mDNS + active-probe fallback) only shows
+  // up once. Sort: stock first (most common bootstrap target),
+  // then STR, alphabetically inside each kind.
+  const seen = new Set();
+  const stockBoxes = [];
+  const strBoxes = [];
+  for (const b of (state.boxes || [])) {
+    if (!b || !b.host) continue;
+    if (seen.has(b.host)) continue;
+    seen.add(b.host);
+    if (b.kind === 'stock') stockBoxes.push(b);
+    else if (b.kind === 'str') strBoxes.push(b);
+  }
+  const byName = (a, b) => (a.friendlyName || a.name || '').localeCompare(b.friendlyName || b.name || '');
+  stockBoxes.sort(byName);
+  strBoxes.sort(byName);
+
+  // If the previously chosen STR/stock box has vanished from the
+  // LAN, drop the cached target so the picker UI does not show a
+  // dead row as "selected". Factory-reset target is preserved
+  // regardless (the box is by definition not on the LAN).
+  if (state.setupTarget && state.setupTarget.box) {
+    const stillThere = state.setupTarget.kind === 'factory-reset'
+      || (state.boxes || []).some(b => b && b.host === state.setupTarget.box.host);
+    if (!stillThere) state.setupTarget = null;
+  }
+
+  // Default selection: prefer the box currently focused in the
+  // Music tab (most common path: user picked a speaker, then went
+  // to Setup). If that does not match a candidate (or is null),
+  // fall back to the first stock box, then the first STR box,
+  // then factory-reset.
+  if (!state.setupTarget) {
+    const cur = state.currentBox;
+    if (cur && (cur.kind === 'stock' || cur.kind === 'str')) {
+      const match = [...stockBoxes, ...strBoxes].find(b => b.host === cur.host);
+      if (match) state.setupTarget = { kind: match.kind, box: match };
+    }
+    if (!state.setupTarget && stockBoxes.length > 0) {
+      state.setupTarget = { kind: 'stock', box: stockBoxes[0] };
+    }
+    if (!state.setupTarget && strBoxes.length > 0) {
+      state.setupTarget = { kind: 'str', box: strBoxes[0] };
+    }
+    // We deliberately do NOT auto-select factory-reset as the
+    // default — that path triggers a different post-prep flow
+    // (cold-bootstrap), so the user should pick it consciously.
+  }
+
+  const sel = state.setupTarget;
+  const isSelected = (kind, host) => sel
+    && sel.kind === kind
+    && ((kind === 'factory-reset' && !host) || (sel.box && sel.box.host === host));
+
+  const cardHTML = (kind, host, label, sublabel, badge, badgeClass = '') => {
+    const cls = `setup-target-card${isSelected(kind, host) ? ' selected' : ''}`;
+    return `<button type="button" class="${cls}" data-kind="${kind}" data-host="${escapeAttr(host || '')}">` +
+      `<div class="stc-row1"><span class="stc-label">${escapeHtml(label)}</span>` +
+      `<span class="stc-badge ${badgeClass}">${escapeHtml(badge)}</span></div>` +
+      (sublabel ? `<div class="stc-sublabel">${escapeHtml(sublabel)}</div>` : '') +
+      `</button>`;
+  };
+
+  let cards = '';
+  if (stockBoxes.length === 0 && strBoxes.length === 0) {
+    cards += `<div class="muted small setup-target-empty">${escapeHtml(t('setup.targetEmpty'))}</div>`;
+  }
+  for (const b of stockBoxes) {
+    const label = b.friendlyName || b.name || b.host;
+    cards += cardHTML('stock', b.host, label,
+      `${t('setup.targetCardKindStock')} · ${b.host}`,
+      t('setup.targetCardBadgeStock'), 'badge-warn');
+  }
+  for (const b of strBoxes) {
+    const label = b.friendlyName || b.name || b.host;
+    cards += cardHTML('str', b.host, label,
+      `${t('setup.targetCardKindSTR')} · ${b.host}`,
+      t('setup.targetCardBadgeSTR'), 'badge-ok');
+  }
+  // Factory-reset card is always shown. Append the macOS hint
+  // inline only if we're on macOS, otherwise just the standard help.
+  const isMac = (typeof navigator !== 'undefined' &&
+                 /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || ''));
+  cards += cardHTML('factory-reset', '', t('setup.targetCardKindFactory'), '', t('setup.targetCardBadgeFactory'));
+  if (isSelected('factory-reset', '')) {
+    cards += `<div class="setup-target-factory-help muted small">${escapeHtml(t('setup.targetCardFactoryHelp'))}</div>`;
+    if (isMac) {
+      cards += `<div class="setup-target-factory-mac">${escapeHtml(t('setup.targetCardFactoryMacHint'))}</div>`;
+    }
+  }
+
+  // Locked pill summarising the current choice, rendered below the
+  // cards. Hidden when no target is selected (very rare; the
+  // default fallbacks above usually populate something).
+  let pill = '';
+  if (sel) {
+    const targetLabel = sel.kind === 'factory-reset'
+      ? t('setup.targetFactoryLabel')
+      : `${sel.box.friendlyName || sel.box.name || sel.box.host} (${sel.box.host})`;
+    pill = `<div class="setup-target-pill"><span class="muted small">${escapeHtml(t('setup.targetPickedFor'))}</span> ` +
+           `<b>${escapeHtml(targetLabel)}</b></div>`;
+  }
+
+  body.innerHTML = `<div class="setup-target-cards">${cards}</div>${pill}`;
+
+  body.querySelectorAll('.setup-target-card').forEach(el => {
+    el.onclick = () => {
+      const kind = el.getAttribute('data-kind');
+      const host = el.getAttribute('data-host');
+      if (kind === 'factory-reset') {
+        state.setupTarget = { kind: 'factory-reset', box: null };
+      } else {
+        const list = kind === 'stock' ? stockBoxes : strBoxes;
+        const box = list.find(b => b.host === host);
+        if (!box) return;
+        state.setupTarget = { kind, box };
+      }
+      renderSetupTargetPicker();
+      updateSetupGoButtonLabel();
+    };
+  });
+}
+
+// updateSetupGoButtonLabel keeps the "Prepare" button text in sync
+// with the chosen target. Used so users see "Prepare USB stick for
+// Living Room ST20" rather than the generic label, which makes the
+// connection between Step 0 and Step 5 explicit and was the
+// concrete thing Pierre (#44) asked for.
+function updateSetupGoButtonLabel() {
+  const btn = $('setupGo');
+  if (!btn) return;
+  const sel = state.setupTarget;
+  if (sel && sel.kind === 'factory-reset') {
+    btn.textContent = t('setup.goBtnFactory');
+    return;
+  }
+  // For str/stock targets, fall back to whatever refreshDrives()
+  // computed last (it sets the text to one of goBtn /
+  // goBtnFormatPrepare / goBtnUpdate based on stick state). Do
+  // nothing here — refreshDrives ran already during drive pick
+  // and the existing label is correct for the picked stick.
+}
 
 function togglePasswordVisibility() {
   const input = $('wlanPass');
@@ -3273,16 +3458,42 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   let foundBox = null;
   let bootstrapTriggered = false;
 
+  // Honour the target the user picked in Step 0 if any. Without
+  // this the loop would lock onto an arbitrary speaker on a LAN
+  // with multiple Bose units — exactly Pierre's failure mode in
+  // #44 where the install ran against the wrong speaker.
+  //
+  // Three cases:
+  //   - target.kind === 'stock' / 'str' with a host  → only accept
+  //     a discovered box whose host matches. mDNS may briefly drop
+  //     the target during reboot; the loop keeps trying for 5 min.
+  //   - target.kind === 'factory-reset'              → ignore the
+  //     LAN entirely on the first pass; jump straight to setup-AP
+  //     scan + cold-bootstrap. Once bootstrap finishes the result's
+  //     boxIP is treated as the target host from then on.
+  //   - target null (legacy, can happen if Step 0 was skipped)     → fall
+  //     back to "first stock/STR box that shows up on the LAN" so
+  //     the old behaviour is preserved on edge paths.
+  const target = state.setupTarget;
+  const isFactory = target && target.kind === 'factory-reset';
+  const wantedHost = (target && target.box) ? target.box.host : '';
+
   // Up to 5 minutes to find a reachable box. The discovery + cold-
   // bootstrap legs run sequentially per iteration; the install leg
   // runs after the loop, once a box has been confirmed reachable.
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline && !foundBox) {
-    try {
-      const list = await DiscoverBoxes(4);
-      foundBox = (list || []).find(b => b && b.host && (b.kind === 'stock' || b.kind === 'str'));
-      if (foundBox) break;
-    } catch {}
+    if (!isFactory) {
+      try {
+        const list = await DiscoverBoxes(4);
+        if (wantedHost) {
+          foundBox = (list || []).find(b => b && b.host === wantedHost);
+        } else {
+          foundBox = (list || []).find(b => b && b.host && (b.kind === 'stock' || b.kind === 'str'));
+        }
+        if (foundBox) break;
+      } catch {}
+    }
 
     if (!bootstrapTriggered && ssid) {
       try {
