@@ -12,7 +12,21 @@
 
 set -u
 
+# STICK path discovery: Bose's udev rule mounts the USB stick at
+# /media/sda1 on every model we have observed (ST10 micro-USB,
+# ST20/30 USB-A — same /etc/udev/scripts/mount.sh). Keep sda1 as
+# the primary path so existing boxes do not change behaviour, and
+# probe /media/sd[a-d]1 as a fallback if a firmware variant ever
+# numbers differently (defensive, no live evidence of this yet).
 STICK="/media/sda1"
+if [ ! -e "$STICK/run.sh" ] && [ ! -e "$STICK/streborn-armv7l" ]; then
+    for cand in /media/sdb1 /media/sdc1 /media/sdd1; do
+        if [ -e "$cand/run.sh" ] || [ -e "$cand/streborn-armv7l" ]; then
+            STICK="$cand"
+            break
+        fi
+    done
+fi
 PERSIST="/mnt/nv/streborn"
 # Aktiver Log liegt in tmpfs (/tmp) damit der NAND Flash im Dauerbetrieb
 # nicht abgenutzt wird. Bei jedem Start retten wir den vorherigen Log
@@ -304,13 +318,13 @@ fi
 # rc.local on NAND skipped that step (e.g. older release without
 # the self-update block), this run.sh invocation can still fix it
 # so the NEXT boot uses the fresh files.
-if [ -f /media/sda1/rc.local ] && [ /media/sda1/rc.local -nt /mnt/nv/rc.local ]; then
-    cp /media/sda1/rc.local /mnt/nv/rc.local 2>/dev/null
+if [ -f "$STICK/rc.local" ] && [ "$STICK/rc.local" -nt /mnt/nv/rc.local ]; then
+    cp "$STICK/rc.local" /mnt/nv/rc.local 2>/dev/null
     chmod +x /mnt/nv/rc.local 2>/dev/null
     log "redeployed /mnt/nv/rc.local from stick (effective next boot)"
 fi
-if [ -f /media/sda1/run.sh ] && [ /media/sda1/run.sh -nt /mnt/nv/streborn/run-override.sh ]; then
-    cp /media/sda1/run.sh /mnt/nv/streborn/run-override.sh 2>/dev/null
+if [ -f "$STICK/run.sh" ] && [ "$STICK/run.sh" -nt /mnt/nv/streborn/run-override.sh ]; then
+    cp "$STICK/run.sh" /mnt/nv/streborn/run-override.sh 2>/dev/null
     chmod +x /mnt/nv/streborn/run-override.sh 2>/dev/null
     log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)"
 fi

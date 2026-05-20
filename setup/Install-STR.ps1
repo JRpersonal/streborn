@@ -209,7 +209,11 @@ function Action-Setup {
     Write-Host ""
     Write-Host "  Schritt 2:" -ForegroundColor Cyan -NoNewline
     Write-Host " Karte in den USB Port der Bose SoundTouch stecken"
-    Write-Host "             ST10/20/30: Micro USB Port auf der Rueckseite oder Unterseite."
+    Write-Host "             SoundTouch 10: Micro-USB Port unten an der Box."
+    Write-Host "                            Du brauchst dafuer einen OTG-faehigen Stick"
+    Write-Host "                            oder einen Micro-USB-OTG-Adapter."
+    Write-Host "             SoundTouch 20 / 30: USB-A Port auf der Rueckseite."
+    Write-Host "                                 Normaler USB-Stick passt direkt rein."
     Write-Host "             Karte komplett einstecken bis sie sitzt."
     Write-Host ""
     Write-Host "  Schritt 3:" -ForegroundColor Cyan -NoNewline
