@@ -168,6 +168,29 @@ jobs:
             -o "${OUT}" \
             ./cmd/agent
 
+      # Regression guard: the agent binary must carry the version
+      # string we just stamped. A previous local-build workflow
+      # forgot the -X flags entirely, producing binaries that
+      # forever reported `{"version":"1.0.0","build":"dev"}` even
+      # though the user had clearly installed a newer release.
+      # The desktop-app's update banner then claimed "update
+      # available" on every refresh. Tested by grepping the
+      # stripped binary for the literal version string we passed in.
+      - name: Verify agent version stamp
+        run: |
+          OUT="out/streborn-${{ matrix.suffix }}"
+          VER="${{ steps.version.outputs.version }}"
+          STAMP="${{ steps.version.outputs.build_stamp }}"
+          if ! grep -q "${VER}" "${OUT}"; then
+            echo "::error::agent binary ${OUT} does not contain version string ${VER}; ldflags not applied"
+            exit 1
+          fi
+          if ! grep -q "${STAMP}" "${OUT}"; then
+            echo "::error::agent binary ${OUT} does not contain build stamp ${STAMP}; ldflags not applied"
+            exit 1
+          fi
+          echo "agent ${OUT} contains version=${VER} build=${STAMP}"
+
       - name: SHA256
         run: |
           cd out
@@ -250,6 +273,17 @@ jobs:
         run: |
           go build -trimpath -ldflags "-s -w" -o sticksetup/embedded/winformat.exe ./cmd/winformat
           ls -la sticksetup/embedded/winformat.exe
+
+      # Regression guard for #44: assert the embed slot is actually
+      # populated. The release_assert build tag selects a stricter
+      # test variant that fails when the embed is empty (PR CI
+      # without this step would also fail, which is why we tag it).
+      # Runs AFTER 'Build winformat helper' on purpose so a future
+      # reorder of these steps cannot silently break it.
+      - name: Verify winformat embed
+        shell: bash
+        run: |
+          go test -tags=release_assert -run TestWinformatEmbedIsNonEmptyInReleaseBuild ./sticksetup/...
 
       - name: Build Windows desktop app
         working-directory: desktop-app

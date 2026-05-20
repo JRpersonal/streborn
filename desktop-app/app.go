@@ -77,6 +77,14 @@ type BoxInfo struct {
 	// Used by the frontend update indicators to flag stamp drift
 	// even when version strings match.
 	Build string `json:"build"`
+	// SerialNumber is the human-readable Bose PackagedProduct serial
+	// (the sticker on the bottom of the speaker, e.g.
+	// "069236P60560580AE"). Pulled from /info on 8090; empty if the
+	// box was not reachable on that port during discovery. Used by
+	// the Setup-target picker so users with two or three identical
+	// speakers on the same LAN can tell them apart by something other
+	// than the Bose-default friendly name "SoundTouch 20".
+	SerialNumber string `json:"serialNumber"`
 	// Kind is "str" for speakers running an STR agent, "stock" for
 	// vanilla Bose SoundTouch speakers that the desktop app can
 	// offer to flash. Frontend renders the two kinds differently.
@@ -173,11 +181,63 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		}
 	}
 
+	// Enrich every box with the serial number and model from
+	// /info on :8090. Stock boxes already have these from
+	// probeStock, but STR-flashed boxes do not because the mDNS
+	// TXT record never carried the Bose-printed serial. Without
+	// this, users with two identical ST20s cannot tell them apart
+	// in the Setup target picker. Run in parallel with a tight
+	// per-box budget so a slow/dead :8090 cannot stall discovery.
+	a.enrichSeenBoxes(ctx, seen)
+
 	out := make([]BoxInfo, 0, len(seen))
 	for _, b := range seen {
 		out = append(out, b)
 	}
 	return out, nil
+}
+
+// enrichSeenBoxes fans out enrichBoxWithStockInfo for every box in
+// seen that is still missing a SerialNumber, then writes the
+// enriched record back into seen under the same key. Bounded
+// parallelism (8 in flight) keeps the discovery latency low even
+// on a LAN with many speakers; per-call timeout (1.5s, inside
+// enrichBoxWithStockInfo) caps the worst case.
+func (a *App) enrichSeenBoxes(ctx context.Context, seen map[string]BoxInfo) {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	var mu sync.Mutex
+	for key, b := range seen {
+		if b.SerialNumber != "" && b.Model != "" {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(key string, b BoxInfo) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			enriched := a.enrichBoxWithStockInfo(ctx, b)
+			if enriched.SerialNumber == b.SerialNumber && enriched.Model == b.Model {
+				return // nothing to update, /info was unreachable
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			// The box may have been upserted again by the time we
+			// got the lock (concurrent mDNS announcement). Only
+			// overwrite the specific fields we enriched, leave the
+			// rest untouched.
+			if cur, ok := seen[key]; ok {
+				if cur.SerialNumber == "" {
+					cur.SerialNumber = enriched.SerialNumber
+				}
+				if cur.Model == "" {
+					cur.Model = enriched.Model
+				}
+				seen[key] = cur
+			}
+		}(key, b)
+	}
+	wg.Wait()
 }
 
 // probeLANForStock walks every local IPv4 /24 and HTTP-probes each
@@ -280,6 +340,7 @@ func probeStock(ctx context.Context, ip string) (BoxInfo, bool) {
 	deviceID := strings.ToUpper(extractAttr(s, "deviceID"))
 	name := extractTag(s, "name")
 	model := extractTag(s, "type")
+	serial := extractPackagedProductSerial(s)
 	return BoxInfo{
 		Name:         "stock-" + lastN(deviceID, 6),
 		Host:         ip,
@@ -287,8 +348,80 @@ func probeStock(ctx context.Context, ip string) (BoxInfo, bool) {
 		DeviceID:     deviceID,
 		FriendlyName: name,
 		Model:        model,
+		SerialNumber: serial,
 		Kind:         "stock",
 	}, true
+}
+
+// extractPackagedProductSerial pulls the human-readable Bose serial
+// out of the /info XML. The XML has multiple <component> blocks; the
+// one that matches the physical sticker on the speaker is the one
+// with <componentCategory>PackagedProduct</componentCategory> (the
+// SCM block has the mainboard serial, which is different and not
+// printed anywhere the user can see). Returns the first match or
+// "" if no PackagedProduct component exists.
+//
+// We parse with substring scanning rather than encoding/xml because
+// the Bose /info XML is small, well-structured, and we already use
+// the same approach for other tags here. No new dependencies.
+func extractPackagedProductSerial(infoXML string) string {
+	const cat = "<componentCategory>PackagedProduct</componentCategory>"
+	idx := strings.Index(infoXML, cat)
+	if idx < 0 {
+		return ""
+	}
+	// Walk forward to the next </component> closing tag and pull
+	// the <serialNumber>...</serialNumber> inside this block.
+	end := strings.Index(infoXML[idx:], "</component>")
+	if end < 0 {
+		return ""
+	}
+	block := infoXML[idx : idx+end]
+	const open, close = "<serialNumber>", "</serialNumber>"
+	s := strings.Index(block, open)
+	if s < 0 {
+		return ""
+	}
+	e := strings.Index(block[s+len(open):], close)
+	if e < 0 {
+		return ""
+	}
+	return strings.TrimSpace(block[s+len(open) : s+len(open)+e])
+}
+
+// enrichBoxWithStockInfo fetches /info on :8090 for an already-known
+// box and copies Model + SerialNumber into the BoxInfo if they were
+// missing. Used to give STR-flashed speakers the same identifying
+// info as stock ones in the Setup target picker, where users with
+// two identical ST20s rely on the serial sticker to tell them
+// apart. Best-effort and short-timeout: a slow or missing /info
+// just leaves the fields empty and the picker still renders.
+func (a *App) enrichBoxWithStockInfo(ctx context.Context, b BoxInfo) BoxInfo {
+	if b.Host == "" {
+		return b
+	}
+	if b.SerialNumber != "" && b.Model != "" {
+		return b
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+	url := fmt.Sprintf("http://%s:8090/info", b.Host)
+	body, ok := httpGetSmall(probeCtx, url, 1200*time.Millisecond, 4096)
+	if !ok {
+		return b
+	}
+	xml := string(body)
+	if b.Model == "" {
+		if m := extractTag(xml, "type"); m != "" {
+			b.Model = m
+		}
+	}
+	if b.SerialNumber == "" {
+		if sn := extractPackagedProductSerial(xml); sn != "" {
+			b.SerialNumber = sn
+		}
+	}
+	return b
 }
 
 func httpGetSmall(ctx context.Context, url string, timeout time.Duration, max int64) ([]byte, bool) {

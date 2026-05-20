@@ -51,6 +51,16 @@ export const state = {
   musicVolUntil: 0,
   // showMoreGenres: user clicked "more" on the genre chip row
   showMoreGenres: false,
+  // otaInProgress is set true at the start of doBoxUpdate (in
+  // main.js) and reset when the OTA verify poll exits. The SSH
+  // recommendation banner reads it: while an OTA is in flight, the
+  // box reboots through a window where SSH is open but the user
+  // must NOT reboot manually (it would interrupt the agent restart
+  // and may leave the box in a half-flashed state). Without this
+  // flag the banner appears with its prominent "Reboot now" button
+  // exactly during the OTA reboot window, tempting users into the
+  // exactly wrong action.
+  otaInProgress: false,
   // setupTarget is the speaker the USB-stick prep flow is currently
   // bound to. Set by the user via the target picker at the top of
   // the Setup view; cleared on view-switch only when discoverBoxes

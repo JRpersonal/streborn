@@ -587,6 +587,10 @@ async function checkSshBanner() {
   // The Setup tab has no current speaker context, so the banner would
   // be free-floating and just noise. Otherwise check sshOpen status.
   if (!box || state.view === 'setup') { gb.classList.add('hidden'); return; }
+  // OTA window: agent restarts, SSH may flap, and the banner's
+  // "Reboot now" button would interrupt the agent exec. Suppress
+  // until doBoxUpdate clears the flag (finally{} guaranteed).
+  if (state.otaInProgress) { gb.classList.add('hidden'); return; }
   try {
     const r = await fetch(`http://${box.host}:${box.port}/api/stick/status`);
     if (!r.ok) return;
@@ -1152,6 +1156,14 @@ async function doBoxUpdate() {
   const setStatus = (text) => buttons().forEach(b => { b.textContent = text; b.disabled = true; });
   const reset = () => buttons().forEach(b => { b.disabled = false; b.textContent = t('update.refreshBtn'); });
   setStatus(t('update.uploading'));
+  // Suppress the SSH "remove stick and reboot" banner for the whole
+  // OTA window. The agent restarts mid-OTA and SSH is briefly open
+  // during that restart; the banner's "Reboot now" button would
+  // interrupt the agent exec and may leave the box half-flashed.
+  // The flag is reset in finally{} below so it never sticks if
+  // something explodes mid-update.
+  state.otaInProgress = true;
+  checkSshBanner();
   const targetBox = state.currentBox;
   const appBuild  = state.appInfo && state.appInfo.build;
   try {
@@ -1200,6 +1212,11 @@ async function doBoxUpdate() {
   } catch (e) {
     showError(t('update.failed', { err: String(e) }));
     reset();
+  } finally {
+    // Always clear the OTA-in-flight gate so the SSH banner can
+    // come back if it still applies, even if we threw mid-poll.
+    state.otaInProgress = false;
+    checkSshBanner();
   }
 }
 
@@ -2432,13 +2449,16 @@ function renderBoxSettings(s, box) {
     // mounted — while a stick is in the box, the agent is either
     // doing initial install or applying an update, SSH is expected
     // to be open in that window, and the banner is just noise.
+    // Also suppress while an OTA update is in flight: the agent is
+    // mid-restart and SSH state is transient; the banner's "Reboot
+    // now" button would interrupt the update.
     const gb = $('globalSecurityBanner');
     if (gb) {
-      const show = sshOpen && !stickMounted;
+      const show = sshOpen && !stickMounted && !state.otaInProgress;
       gb.classList.toggle('hidden', !show);
     }
 
-    const securityWarn = sshOpen ? `
+    const securityWarn = (sshOpen && !state.otaInProgress) ? `
       <div class="security-warn">
         <div class="security-warn-title">${escapeHtml(t('banner.recommendationShort'))}</div>
         <div class="security-warn-text">
@@ -3009,16 +3029,31 @@ function renderSetupTargetPicker() {
   if (stockBoxes.length === 0 && strBoxes.length === 0) {
     cards += `<div class="muted small setup-target-empty">${escapeHtml(t('setup.targetEmpty'))}</div>`;
   }
+  // boxIdentLine builds the sublabel pieces (model, serial, host)
+  // that help users distinguish two or three identical speakers on
+  // the same LAN. Each piece is skipped when empty so we never
+  // render dangling separators. Serial is shown in full because the
+  // Bose-printed sticker on the bottom of the speaker is what users
+  // will compare against; truncating to "last 6" would defeat the
+  // point.
+  const boxIdentLine = (b, kindLabel) => {
+    const parts = [];
+    if (b.model) parts.push(b.model);
+    parts.push(kindLabel);
+    if (b.serialNumber) parts.push(`SN ${b.serialNumber}`);
+    parts.push(b.host);
+    return parts.join(' · ');
+  };
   for (const b of stockBoxes) {
     const label = b.friendlyName || b.name || b.host;
     cards += cardHTML('stock', b.host, label,
-      `${t('setup.targetCardKindStock')} · ${b.host}`,
+      boxIdentLine(b, t('setup.targetCardKindStock')),
       t('setup.targetCardBadgeStock'), 'badge-warn');
   }
   for (const b of strBoxes) {
     const label = b.friendlyName || b.name || b.host;
     cards += cardHTML('str', b.host, label,
-      `${t('setup.targetCardKindSTR')} · ${b.host}`,
+      boxIdentLine(b, t('setup.targetCardKindSTR')),
       t('setup.targetCardBadgeSTR'), 'badge-ok');
   }
   // Factory-reset card is always shown. Append the macOS hint
@@ -3038,9 +3073,18 @@ function renderSetupTargetPicker() {
   // default fallbacks above usually populate something).
   let pill = '';
   if (sel) {
-    const targetLabel = sel.kind === 'factory-reset'
-      ? t('setup.targetFactoryLabel')
-      : `${sel.box.friendlyName || sel.box.name || sel.box.host} (${sel.box.host})`;
+    let targetLabel;
+    if (sel.kind === 'factory-reset') {
+      targetLabel = t('setup.targetFactoryLabel');
+    } else {
+      const b = sel.box;
+      const friendly = b.friendlyName || b.name || b.host;
+      const idTail = [];
+      if (b.model) idTail.push(b.model);
+      if (b.serialNumber) idTail.push(`SN ${b.serialNumber}`);
+      idTail.push(b.host);
+      targetLabel = `${friendly} (${idTail.join(' · ')})`;
+    }
     pill = `<div class="setup-target-pill"><span class="muted small">${escapeHtml(t('setup.targetPickedFor'))}</span> ` +
            `<b>${escapeHtml(targetLabel)}</b></div>`;
   }
