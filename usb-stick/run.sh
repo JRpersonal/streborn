@@ -775,18 +775,103 @@ start_agent() {
 start_agent
 log "Agent gestartet mit PID $AGENT_PID"
 
-# Watchdog: Agent neu starten wenn er crashed. Kosten pro Check:
-# 1 sleep + 1 read aus Page Cache + 1 kill -0 Syscall — vernachlaessigbar
-# (~50us pro Minute). Kein Flash Write im Normalbetrieb, nur bei
-# tatsaechlichem Restart wird agent.pid einmal neu geschrieben.
+# === Aggressive Boot-Race Watchdog (Phase A: t=0..120s) ===
 #
-# Sleep 90 s statt 60: TIME_WAIT auf den Listener Ports ist
-# tcp_fin_timeout (60 s) lang. Wenn der Agent stirbt waehrend die
-# Bose Firmware noch offene Verbindungen zu :8081 (bmx) oder :9080
-# (marge) hat, wuerde ein Sleep 60 Watchdog Respawn exakt am Ende des
-# TIME_WAIT Fensters feuern und am bind scheitern — was sich dann
-# selbst aufrecht erhaelt. 90 s lassen TIME_WAIT erst sicher ablaufen.
+# Hintergrund: Auf langsameren ST20-Varianten haben Reporter
+# beobachtet, dass die Box nach dem Stick-Boot zwar rebootet, aber
+# Port 8888 nie öffnet. Ursache ist nicht reproduzierbar — Verdacht
+# fällt auf Bose's Service-Manager (shepherdd / SCM), der waehrend
+# der ersten ~90s nach dem Boot eigene Aufraeumarbeiten faehrt und
+# unter Last unseren nohup-Prozess mit verreisst, oder auf OOM-
+# Kills (RAM-Druck im Boot). Der bestehende 90s-Watchdog unten
+# fängt das ein, aber erst NACH dem ersten Zyklus — dadurch ist
+# der Agent auf einer langsamen Box fuer bis zu 90s tot, der User
+# sieht "Install failed" und gibt auf.
+#
+# Diese Phase-A-Schleife prueft ALLE 5s die ersten 120s ob (a) der
+# Agent-PID noch lebt UND (b) :8888 tatsaechlich gebunden ist.
+# Wenn entweder ausfaellt, sofort neustarten. Kosten pro Check:
+# 1 kill -0, 1 nc/ss-Lookup. Bei stabilem Agent feuert kein cp,
+# kein Flash-Write. Nach 120s übergibt es an den langsamen
+# 90s-Watchdog (Phase B).
+agent_port_bound() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltn 2>/dev/null | grep -q ':8888 '
+        return $?
+    fi
+    if command -v netstat >/dev/null 2>&1; then
+        netstat -ltn 2>/dev/null | grep -q ':8888 '
+        return $?
+    fi
+    # Last resort: try /dev/tcp self-probe. If shell does not
+    # support it, assume bound (we cannot tell — better not
+    # respawn-loop on a working agent).
+    if (echo > /dev/tcp/127.0.0.1/8888) >/dev/null 2>&1; then
+        return 0
+    fi
+    return 0
+}
+
 (
+    # 24 checks * 5s = 120s aggressive phase. After that, the slow
+    # Phase-B loop below takes over. No flash writes while agent
+    # stays up.
+    BOOT_RESTARTS=0
+    i=0
+    while [ $i -lt 24 ]; do
+        sleep 5
+        i=$((i+1))
+        if [ ! -f "$PIDFILE" ]; then
+            break  # PID File weg, slow watchdog uebernimmt
+        fi
+        CUR_PID=$(cat "$PIDFILE" 2>/dev/null || echo 0)
+        ALIVE=0
+        if [ -n "$CUR_PID" ] && [ "$CUR_PID" -gt 0 ] && kill -0 "$CUR_PID" 2>/dev/null; then
+            ALIVE=1
+        fi
+        BOUND=0
+        if agent_port_bound; then
+            BOUND=1
+        fi
+        if [ "$ALIVE" = "1" ] && [ "$BOUND" = "1" ]; then
+            continue
+        fi
+        # Hard cap: 6 restarts in 120s. If we still cannot keep the
+        # agent up, something fundamental is wrong (binary corrupt,
+        # NAND full, ...) and respawning faster will not help.
+        if [ "$BOOT_RESTARTS" -ge 6 ]; then
+            setup_log "boot-watchdog: 6 restarts in 120s exhausted, falling back to slow loop"
+            break
+        fi
+        BOOT_RESTARTS=$((BOOT_RESTARTS+1))
+        setup_log "boot-watchdog: agent dead/unbound at t=$(uptime_s)s pid=$CUR_PID alive=$ALIVE bound=$BOUND, fast respawn #$BOOT_RESTARTS"
+        # Briefly wait so TIME_WAIT on a just-died agent does not
+        # block the new bind. 3s is short enough that the user does
+        # not perceive a stall but long enough for SO_REUSEADDR to
+        # be irrelevant.
+        sleep 3
+        start_agent
+        setup_log "boot-watchdog: agent respawned PID $AGENT_PID"
+    done
+) &
+
+# === Slow Watchdog (Phase B: t=120s.. forever) ===
+# Cost per check: 1 sleep + 1 read from page cache + 1 kill -0
+# syscall — negligible (~50us/min). No flash writes while agent
+# stays up; only an actual restart rewrites agent.pid once.
+#
+# Sleep 90 s instead of 60: TIME_WAIT on the listener ports is
+# tcp_fin_timeout (60 s) long. If the agent dies while Bose's
+# firmware still holds open connections to :8081 (bmx) or :9080
+# (marge), a 60 s watchdog respawn would fire exactly at the end
+# of the TIME_WAIT window and fail to bind — self-perpetuating.
+# 90 s lets TIME_WAIT expire safely.
+(
+    # Give the aggressive phase its 120s head start, plus a 20s
+    # buffer so the two loops do not both reach start_agent at
+    # exactly the same instant (which would double-launch and fail
+    # the second bind).
+    sleep 140
     while true; do
         sleep 90
         if [ ! -f "$PIDFILE" ]; then

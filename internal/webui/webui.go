@@ -966,6 +966,8 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 	state := map[string]any{
 		"agent_log_tail":  readTail("/tmp/streborn-agent.log"),
 		"previous_log":    readTail("/mnt/nv/streborn/previous.log"),
+		"setup_log":       readTail("/mnt/nv/streborn/setup.log"),
+		"boot_log":        readTail("/mnt/nv/streborn/boot.log"),
 		"wpa_supplicant":  readTail("/mnt/nv/wpa_supplicant.conf"),
 		"region_txt":      readTail("/mnt/nv/streborn/region.txt"),
 		"name_txt":        readTail("/mnt/nv/streborn/name.txt"),

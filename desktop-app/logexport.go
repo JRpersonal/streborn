@@ -169,6 +169,37 @@ type boxSnapshot struct {
 	ReachableSSH  bool           `json:"reachableSSH"`
 	Reachable8090 bool           `json:"reachable8090"`
 	Reachable8888 bool           `json:"reachable8888"`
+	// DebugState is /api/debug/state on 8888, if reachable. Contains
+	// the boot-race trace (setup.log, boot.log, agent_log_tail).
+	// Always present when the STR agent is up — the single most
+	// useful field for diagnosing failed installs that did succeed
+	// far enough for the agent to bind 8888 but then misbehave.
+	DebugState map[string]any `json:"debugState,omitempty"`
+	// SSHFallback holds box-side files pulled over SSH when the STR
+	// agent is NOT up (port 8888 closed) but SSH is reachable.
+	// Without this the user has zero visibility into why install
+	// did not bring up the agent — and that is exactly the failure
+	// mode we have been chasing on ST20 reports.
+	SSHFallback *sshFallback `json:"sshFallback,omitempty"`
+}
+
+// sshFallback bundles the box-side text files we pull when we can
+// ssh in but the STR agent never bound port 8888. Each field is a
+// best-effort tail; an "ERR: ..." string surfaces if the file was
+// not present or unreadable.
+type sshFallback struct {
+	BootLog        string   `json:"bootLog"`
+	SetupLog       string   `json:"setupLog"`
+	PreviousLog    string   `json:"previousLog"`
+	AgentLogTail   string   `json:"agentLogTail"`
+	StickListing   string   `json:"stickListing"`
+	MediaListing   string   `json:"mediaListing"`
+	NVListing      string   `json:"nvListing"`
+	ProcMounts     string   `json:"procMounts"`
+	UptimeSeconds  string   `json:"uptimeSeconds"`
+	RunningProcs   string   `json:"runningProcs"`
+	StickInstallSh string   `json:"stickInstallShPresent"`
+	Probed         []string `json:"probedMountPaths"`
 }
 
 func captureBoxSnapshot(host string) boxSnapshot {
@@ -185,8 +216,68 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)
 		}
+		// /api/debug/state holds the boot-race trace (setup.log,
+		// boot.log, agent_log_tail). Single most useful payload for
+		// "agent came up but is misbehaving" diagnostics.
+		debugRaw := httpGetText(fmt.Sprintf("http://%s:8888/api/debug/state", host), 256*1024)
+		if debugRaw != "" {
+			var ds map[string]any
+			if err := json.Unmarshal([]byte(debugRaw), &ds); err == nil {
+				s.DebugState = ds
+			}
+		}
+	}
+	// SSH fallback: when 8888 is NOT up but SSH is, pull the box-
+	// side logs over ssh. This is the failure mode every recent
+	// ST20 report has exhibited — without these tails we are
+	// guessing. Best-effort: if ssh is not installed locally or
+	// negotiation fails, the field stays nil and the bundle still
+	// contains everything else.
+	if s.ReachableSSH && !s.Reachable8888 {
+		s.SSHFallback = pullSSHFallback(host)
 	}
 	return s
+}
+
+// pullSSHFallback fetches the diagnostic tails over SSH using the
+// same legacy-algorithm flags install_str.go uses. Total time
+// budgeted to ~30 s so a misbehaving box does not stall the whole
+// diagnostic export. Each command runs with its own short timeout
+// so a single hang does not consume the budget.
+func pullSSHFallback(host string) *sshFallback {
+	type field struct {
+		name string
+		cmd  string
+		ms   int
+		dest *string
+	}
+	out := &sshFallback{}
+	// Probed path list mirrors install_str.go stickProbePaths plus
+	// a free /media + /mnt scan so we always know where the stick
+	// landed (or that it never mounted at all).
+	out.Probed = []string{"/media/sda1", "/media/sdb1", "/media/sdc1",
+		"/media/sdd1", "/mnt/sda1", "/mnt/usb",
+		"/run/media/sda1"}
+	fields := []field{
+		{"bootLog", "tail -c 8192 /mnt/nv/streborn/boot.log 2>/dev/null", 6000, &out.BootLog},
+		{"setupLog", "tail -c 16384 /mnt/nv/streborn/setup.log 2>/dev/null", 6000, &out.SetupLog},
+		{"previousLog", "tail -c 8192 /mnt/nv/streborn/previous.log 2>/dev/null", 6000, &out.PreviousLog},
+		{"agentLogTail", "tail -c 8192 /tmp/streborn-agent.log 2>/dev/null", 6000, &out.AgentLogTail},
+		{"stickListing", "ls -la /media/sda1 2>&1 | head -50", 5000, &out.StickListing},
+		{"mediaListing", "ls -la /media /mnt /run/media 2>&1 | head -80", 5000, &out.MediaListing},
+		{"nvListing", "ls -la /mnt/nv/streborn 2>&1 | head -40", 5000, &out.NVListing},
+		{"procMounts", "cat /proc/mounts 2>/dev/null | head -40", 5000, &out.ProcMounts},
+		{"uptimeSeconds", "awk '{print int($1)}' /proc/uptime 2>/dev/null", 4000, &out.UptimeSeconds},
+		{"runningProcs", "ps 2>/dev/null | head -40", 5000, &out.RunningProcs},
+		{"stickInstall", "for p in /media/sda1 /media/sdb1 /media/sdc1 /media/sdd1 /mnt/sda1 /mnt/usb /run/media/sda1; do " +
+			`if [ -e "$p/install.sh" ]; then echo "INSTALL_SH_AT=$p"; fi; done`,
+			5000, &out.StickInstallSh},
+	}
+	for _, f := range fields {
+		txt, _ := boxSSHOutput(host, f.cmd, time.Duration(f.ms)*time.Millisecond)
+		*f.dest = strings.TrimSpace(txt)
+	}
+	return out
 }
 
 // === Sanitization ===
@@ -208,8 +299,61 @@ func sanitizeLog(b []byte) []byte {
 func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 	s.Host = maskIP(s.Host)
 	s.BoseInfo = anonymizeBoseInfoXML(s.BoseInfo)
-	s.STRStatus = ipv4Regex.ReplaceAllStringFunc(s.STRStatus, func(ip string) string { return maskIP(ip) })
+	s.STRStatus = anonymizeText(s.STRStatus)
+	if s.DebugState != nil {
+		s.DebugState = anonymizeDebugState(s.DebugState)
+	}
+	if s.SSHFallback != nil {
+		s.SSHFallback.BootLog = anonymizeText(s.SSHFallback.BootLog)
+		s.SSHFallback.SetupLog = anonymizeText(s.SSHFallback.SetupLog)
+		s.SSHFallback.PreviousLog = anonymizeText(s.SSHFallback.PreviousLog)
+		s.SSHFallback.AgentLogTail = anonymizeText(s.SSHFallback.AgentLogTail)
+		s.SSHFallback.StickListing = anonymizeText(s.SSHFallback.StickListing)
+		s.SSHFallback.MediaListing = anonymizeText(s.SSHFallback.MediaListing)
+		s.SSHFallback.NVListing = anonymizeText(s.SSHFallback.NVListing)
+		s.SSHFallback.ProcMounts = anonymizeText(s.SSHFallback.ProcMounts)
+		s.SSHFallback.RunningProcs = anonymizeText(s.SSHFallback.RunningProcs)
+		s.SSHFallback.StickInstallSh = anonymizeText(s.SSHFallback.StickInstallSh)
+	}
 	return s
+}
+
+// anonymizeText scrubs IPs, MACs, and SSID hints from a text blob
+// using the same rules as sanitizeLog above. Used for box-side
+// logs we pull over SSH so the user can safely attach them to a
+// public GitHub issue.
+func anonymizeText(s string) string {
+	s = ipv4Regex.ReplaceAllStringFunc(s, func(ip string) string { return maskIP(ip) })
+	s = macRegex.ReplaceAllStringFunc(s, func(m string) string { return "MAC#" + hashShort(m) })
+	s = ssidHintRegex.ReplaceAllString(s, "<SSID-REDACTED>")
+	return s
+}
+
+// anonymizeDebugState walks the /api/debug/state map and scrubs
+// every string value. Nested maps and slices are walked
+// recursively. Non-string leaves are untouched (booleans, numbers).
+func anonymizeDebugState(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = anonymizeAny(v)
+	}
+	return out
+}
+
+func anonymizeAny(v any) any {
+	switch t := v.(type) {
+	case string:
+		return anonymizeText(t)
+	case []any:
+		for i, item := range t {
+			t[i] = anonymizeAny(item)
+		}
+		return t
+	case map[string]any:
+		return anonymizeDebugState(t)
+	default:
+		return v
+	}
 }
 
 func anonymizeBoseInfoXML(xml string) string {
