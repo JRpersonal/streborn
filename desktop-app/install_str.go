@@ -57,28 +57,48 @@ func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
 
 	// Step 1: stick mounted, install.sh present. Retry up to ~60 s
 	// because sshd answers before the USB stack has finished
-	// mounting /media/sda1 on first boot.
+	// mounting the stick on first boot.
+	//
+	// Mount path: Bose's udev rule lands the first USB block device
+	// at /media/sda1 across every model we have observed (ST10
+	// micro-USB, ST20/30 USB-A — same /etc/udev/scripts/mount.sh).
+	// /media/sda1 stays the primary check; the probe also tries the
+	// next few /media/sd[b-d]1 slots so a firmware variant that
+	// numbers differently is not a hard fail. The first hit is
+	// echoed back as STICKPATH=... so step 2 reuses it.
 	res.Step = "check-stick"
+	const probeCmd = `for p in /media/sda1 /media/sdb1 /media/sdc1 /media/sdd1; do ` +
+		`if [ -x "$p/install.sh" ]; then echo "STICKPATH=$p"; exit 0; fi; ` +
+		`done; echo MISSING`
 	var probe string
 	var probeErr error
+	stickPath := "/media/sda1"
 	for attempt := 0; attempt < 20; attempt++ {
-		probe, probeErr = boxSSHOutput(host, "test -x /media/sda1/install.sh && echo READY || echo MISSING", 6*time.Second)
-		if probeErr == nil && strings.Contains(probe, "READY") {
+		probe, probeErr = boxSSHOutput(host, probeCmd, 6*time.Second)
+		if probeErr == nil && strings.Contains(probe, "STICKPATH=") {
+			for _, line := range strings.Split(probe, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "STICKPATH=") {
+					stickPath = strings.TrimPrefix(line, "STICKPATH=")
+					break
+				}
+			}
 			break
 		}
 		if attempt == 19 {
 			if probeErr != nil {
 				return res, fmt.Errorf("ssh probe failed after retries: %w", probeErr)
 			}
-			res.Message = "install.sh did not appear on /media/sda1 within 60 s. Is the STR stick plugged into the speaker, and did the speaker mount it on this boot?"
+			res.Message = "install.sh did not appear on /media/sda[a-d]1 within 60 s. Is the STR stick plugged into the speaker, and did the speaker mount it on this boot?"
 			return res, nil
 		}
 		time.Sleep(3 * time.Second)
 	}
+	a.logger.Info("install_str: stick found", "host", host, "path", stickPath)
 
 	// Step 2: run install.sh install.
 	res.Step = "run-install"
-	out, err := boxSSHOutput(host, "sh /media/sda1/install.sh install 2>&1", 60*time.Second)
+	out, err := boxSSHOutput(host, "sh "+stickPath+"/install.sh install 2>&1", 60*time.Second)
 	res.Log = out
 	if err != nil {
 		return res, fmt.Errorf("install.sh failed: %w", err)

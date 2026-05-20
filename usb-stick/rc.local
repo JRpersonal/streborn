@@ -15,22 +15,47 @@ mkdir -p "$LOGDIR" 2>/dev/null || true
 echo "$(date): rc.local triggered" >> "$LOGDIR/boot.log"
 
 # USB stick is mounted async by udev. Both the NAND override path
-# and the fallback path need /media/sda1 (binary, version.txt,
-# wlan.conf). Wait up to 30s for the stick before deciding —
-# otherwise run.sh fires, finds an empty NAND cache plus a
-# not-yet-mounted stick, and aborts with "weder NAND Cache noch
-# Stick Binary verfuegbar". The stick may legitimately never
+# and the fallback path need the stick directory (binary,
+# version.txt, wlan.conf). Wait up to 30s for the stick before
+# deciding — otherwise run.sh fires, finds an empty NAND cache
+# plus a not-yet-mounted stick, and aborts with "weder NAND Cache
+# noch Stick Binary verfuegbar". The stick may legitimately never
 # appear (post-install, user pulled it). In that case we still
 # fall back to NAND override below.
+#
+# Mount path discovery: Bose's udev rule almost always lands the
+# first USB block device at /media/sda1 across all SoundTouch
+# models (ST10 micro-USB, ST20/30 USB-A; same udev script). On a
+# firmware variant that numbers differently (e.g. /media/sdb1 if
+# something else claimed sda first), we still find the stick.
+# /media/sda1 stays the primary check so existing behaviour is
+# preserved on every box that already worked.
+STICK_PATH=""
 i=0
 while [ $i -lt 30 ]; do
-    if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ]; then
-        echo "$(date): stick detected after ${i}s" >> "$LOGDIR/boot.log"
+    for cand in /media/sda1 /media/sdb1 /media/sdc1 /media/sdd1; do
+        if [ -e "$cand/run.sh" ] || [ -e "$cand/streborn-armv7l" ]; then
+            STICK_PATH="$cand"
+            break
+        fi
+    done
+    if [ -n "$STICK_PATH" ]; then
+        echo "$(date): stick detected at $STICK_PATH after ${i}s" >> "$LOGDIR/boot.log"
         break
     fi
     sleep 1
     i=$((i+1))
 done
+# Backwards compatibility: downstream code still references
+# /media/sda1 hardcoded in many places. If the stick landed
+# elsewhere, expose it via a symlink so legacy paths keep working
+# without touching the agent binary or run.sh internals.
+if [ -n "$STICK_PATH" ] && [ "$STICK_PATH" != "/media/sda1" ]; then
+    if [ ! -e /media/sda1 ]; then
+        ln -s "$STICK_PATH" /media/sda1 2>/dev/null \
+            && echo "$(date): /media/sda1 -> $STICK_PATH symlink set for legacy paths" >> "$LOGDIR/boot.log"
+    fi
+fi
 
 # Self-update from stick if present and newer. This is what makes
 # the stick the single repair channel — once an updated stick is
