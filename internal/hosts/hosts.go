@@ -144,12 +144,18 @@ func writeAtomic(path string, content []byte) error {
 			// Rename gescheitert, faellt durch zu in-place
 		}
 	}
-	// In-place Truncate write
+	// In-place Truncate write. Close error is checked explicitly:
+	// on a tmpfs-over-ro-rootfs (the actual deploy target on Bose)
+	// a silently-swallowed Close error after a partial write would
+	// leave /etc/hosts truncated until the next boot.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = f.Write(content)
-	return err
+	_, writeErr := f.Write(content)
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }

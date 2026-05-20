@@ -265,6 +265,12 @@ func FormatFAT32(path, label string) error {
 // im Lazy Write Cache halten und beim Stick Ziehen ohne sauberen Eject
 // gehen sie verloren — genau das hat dazu gefuehrt dass conf Files vom
 // Setup nicht auf der Box ankamen.
+//
+// Close errors on the error path are intentionally discarded with
+// `_ = f.Close()`: we are about to os.Remove the tmp file anyway,
+// so a Close failure cannot lose data we still care about. The
+// explicit discard signals to CodeQL (and humans) that this is a
+// deliberate decision, not an oversight.
 func writeFile(path string, data []byte) error {
 	tmp := path + ".new"
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
@@ -272,17 +278,17 @@ func writeFile(path string, data []byte) error {
 		return err
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, path)
