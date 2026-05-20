@@ -8,8 +8,8 @@ github: [JRpersonal]
 # Buy Me a Coffee: nach Anmeldung dort dein Username eintragen
 buy_me_a_coffee: jrpersonal
 
-# Ko-Fi: nach Anmeldung dort dein Username eintragen
-ko_fi: jrpersonal
+# Ko-Fi: Account ist ko-fi.com/streborn (siehe st-reborn.de)
+ko_fi: streborn
 
 # Liberapay: Open Source freundliche EU Plattform
 liberapay: JRpersonal
@@ -20,7 +20,7 @@ liberapay: JRpersonal
 # Patreon: fuer monatliche Unterstuetzung
 # patreon: jrpersonal
 
-# Eigene Spenden URL: PayPal me, eigene Webseite
+# Eigene Spenden URL: PayPal me (matched mit st-reborn.de), eigene Webseite
 custom:
-  - "https://paypal.me/JRpersonal"
+  - "https://paypal.me/JR31337"
   - "https://st-reborn.de/#donate"
