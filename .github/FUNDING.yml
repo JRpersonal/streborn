@@ -1,11 +1,9 @@
 # Diese Datei zeigt auf der GitHub Repo Seite einen "Sponsor" Button.
-# Hier nur Eintraege die wirklich auf existierende Accounts zeigen,
-# sonst landet ein Spender ins Leere und das wirkt unserioes.
+# Hier nur Eintraege die wirklich auf existierende Accounts zeigen.
 
 # Ko-Fi: Account ist ko-fi.com/streborn (siehe st-reborn.de)
 ko_fi: streborn
 
-# Eigene Spenden URLs: PayPal me (matched mit st-reborn.de) und Webseite
+# PayPal me, matched mit dem Spenden Bereich auf st-reborn.de
 custom:
   - "https://paypal.me/JR31337"
-  - "https://st-reborn.de/#donate"
