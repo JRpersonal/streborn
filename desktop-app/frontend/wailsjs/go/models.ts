@@ -53,6 +53,7 @@ export namespace main {
 	    model: string;
 	    version: string;
 	    build: string;
+	    serialNumber: string;
 	    kind: string;
 	
 	    static createFrom(source: any = {}) {
@@ -69,6 +70,7 @@ export namespace main {
 	        this.model = source["model"];
 	        this.version = source["version"];
 	        this.build = source["build"];
+	        this.serialNumber = source["serialNumber"];
 	        this.kind = source["kind"];
 	    }
 	}
