@@ -155,6 +155,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
+	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
+	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
 
@@ -900,6 +902,44 @@ func (s *Server) handleBoxBass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"value": req.Value})
+}
+
+// handleBoxZone liest die aktuelle SoundTouch Multiroom Zone der Box.
+// Read-only. Antwort ist {"master":"...","senderIP":"...","members":[...]}.
+// Bei einer Box ohne Zone ist master leer und members leer.
+func (s *Server) handleBoxZone(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	c := boxapi.New(s.boxHost)
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	z, err := c.GetZone(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, z)
+}
+
+// handleBoxGroup liest die aktuelle Stereo-Pair-Group der Box.
+// Read-only. Antwort ist {"id":"...","name":"...","members":[...]}.
+// Bei einer Box ohne Pair ist id leer und members leer.
+func (s *Server) handleBoxGroup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	c := boxapi.New(s.boxHost)
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	g, err := c.GetGroup(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
 }
 
 // handleStickStatus liefert ob der USB Stick aktuell in der Box steckt

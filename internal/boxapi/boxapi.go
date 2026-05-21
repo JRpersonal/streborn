@@ -238,6 +238,97 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 
 // ---------- Write ----------
 
+// ---------- Multiroom (read-only) ----------
+
+// ZoneMember beschreibt einen Slave in einer SoundTouch Zone.
+// Die Bose Firmware liefert je Member die deviceID als Element-Text
+// und die LAN-IP als Attribut.
+type ZoneMember struct {
+	DeviceID string `json:"deviceID"`
+	IP       string `json:"ip"`
+	Role     string `json:"role,omitempty"`
+}
+
+// Zone ist der Zustand der klassischen SoundTouch Multiroom Gruppe.
+// Master ist die deviceID des Boxes die den Stream broadcasts; Members
+// sind alle Boxen die dem Stream folgen. SenderIP ist die LAN-IP des
+// Masters. Bei einer alleine stehenden Box liefert die Firmware ein
+// leeres `<zone />` Element — dann sind Master und Members leer.
+type Zone struct {
+	Master   string       `json:"master,omitempty"`
+	SenderIP string       `json:"senderIP,omitempty"`
+	Members  []ZoneMember `json:"members"`
+}
+
+// Group ist der Zustand des neueren Stereo-Pair-Group-Konzepts
+// (zwei ST10 als L/R Paar). Auch hier liefert die Firmware bei einer
+// einzelnen Box ein leeres `<group />`.
+type Group struct {
+	ID      string       `json:"id,omitempty"`
+	Name    string       `json:"name,omitempty"`
+	Members []ZoneMember `json:"members"`
+}
+
+// GetZone liest /getZone und liefert die aktuelle Multiroom Zone.
+// Bei einer alleinstehenden Box ist Zone leer (Master == "").
+func (c *Client) GetZone(ctx context.Context) (Zone, error) {
+	var raw struct {
+		Master   string `xml:"master,attr"`
+		SenderIP string `xml:"senderIPAddress,attr"`
+		Members  []struct {
+			DeviceID string `xml:",chardata"`
+			IP       string `xml:"ipaddress,attr"`
+			Role     string `xml:"role,attr"`
+		} `xml:"member"`
+	}
+	if err := c.getXML(ctx, "/getZone", &raw); err != nil {
+		return Zone{}, err
+	}
+	z := Zone{
+		Master:   strings.TrimSpace(raw.Master),
+		SenderIP: strings.TrimSpace(raw.SenderIP),
+		Members:  make([]ZoneMember, 0, len(raw.Members)),
+	}
+	for _, m := range raw.Members {
+		z.Members = append(z.Members, ZoneMember{
+			DeviceID: strings.TrimSpace(m.DeviceID),
+			IP:       strings.TrimSpace(m.IP),
+			Role:     strings.TrimSpace(m.Role),
+		})
+	}
+	return z, nil
+}
+
+// GetGroup liest /getGroup (Stereo Pair). Bei einer ST10 die nicht im
+// Pair laeuft ist die Antwort leer.
+func (c *Client) GetGroup(ctx context.Context) (Group, error) {
+	var raw struct {
+		ID      string `xml:"id,attr"`
+		Name    string `xml:"name"`
+		Members []struct {
+			DeviceID string `xml:",chardata"`
+			IP       string `xml:"ipaddress,attr"`
+			Role     string `xml:"role,attr"`
+		} `xml:"groupMember"`
+	}
+	if err := c.getXML(ctx, "/getGroup", &raw); err != nil {
+		return Group{}, err
+	}
+	g := Group{
+		ID:      strings.TrimSpace(raw.ID),
+		Name:    strings.TrimSpace(raw.Name),
+		Members: make([]ZoneMember, 0, len(raw.Members)),
+	}
+	for _, m := range raw.Members {
+		g.Members = append(g.Members, ZoneMember{
+			DeviceID: strings.TrimSpace(m.DeviceID),
+			IP:       strings.TrimSpace(m.IP),
+			Role:     strings.TrimSpace(m.Role),
+		})
+	}
+	return g, nil
+}
+
 // SetName aendert den Anzeigenamen der Box. Achtung: Bose setzt
 // dabei in der Box State auch die margeURL zurueck auf den Default
 // Update Server. Unser autoPair haengt das im naechsten Tick wieder ein.
