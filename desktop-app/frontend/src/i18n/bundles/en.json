@@ -461,6 +461,7 @@
   "settingsView.swOutdated": "outdated",
   "settingsView.stickDetected": "detected",
   "settingsView.stickNotDetected": "not detected",
+  "settingsView.stickRemoved": "removed (normal after install)",
   "settingsView.speakerNameSavedToast": "Speaker name saved: {{name}}",
 
   "fw.updateBtn": "Update",

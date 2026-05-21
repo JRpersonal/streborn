@@ -2426,7 +2426,10 @@ function renderBoxSettings(s, box) {
           stickMounted = true;
           stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>` + (data.version ? ` <span class="muted small">${escapeHtml(data.version)}</span>` : '');
         } else {
-          stickLine = `<span class="fw-old">${escapeHtml(t('settingsView.stickNotDetected'))}</span>`;
+          // After a clean install the stick is pulled, so "not mounted" is
+          // the expected steady state. Show it informationally, not as an
+          // error in signal-red.
+          stickLine = `<span class="muted small">${escapeHtml(t('settingsView.stickRemoved'))}</span>`;
         }
         sshOpen = !!data.sshOpen;
       } else {
@@ -2439,7 +2442,7 @@ function renderBoxSettings(s, box) {
             stickMounted = true;
             stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>`;
           } else {
-            stickLine = `<span class="fw-old">${escapeHtml(t('settingsView.stickNotDetected'))}</span>`;
+            stickLine = `<span class="muted small">${escapeHtml(t('settingsView.stickRemoved'))}</span>`;
           }
         }
       }
