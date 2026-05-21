@@ -224,6 +224,18 @@ func run() error {
 		if settings, err := boxapi.New(*boxHost).LoadSettings(infoCtx); err == nil && settings.Info.Type != "" {
 			model = settings.Info.Type
 			logger.Info("Box Modell erkannt", "type", model)
+			// Bose's countryCode is set at the factory or during the
+			// original Bose pairing flow and is rarely the user's
+			// actual location after STR install. STR uses region.txt
+			// (written by the setup wizard) for radio defaults. Log
+			// the mismatch once so it is documented in diagnostic
+			// bundles and not mistaken for a bug; nothing in STR
+			// reads Bose's countryCode at runtime.
+			boseCC := strings.ToUpper(strings.TrimSpace(settings.Info.CountryCode))
+			if region != "" && boseCC != "" && region != boseCC {
+				logger.Info("Region: STR uses region.txt for radio defaults; Bose firmware countryCode is informational only",
+					"strRegion", region, "boseCountryCode", boseCC)
+			}
 		} else if err != nil {
 			logger.Debug("Box /info noch nicht erreichbar, nutze Fallback Model", "err", err)
 		}
