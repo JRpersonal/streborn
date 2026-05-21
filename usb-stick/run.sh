@@ -398,7 +398,27 @@ elif [ -r "$WLAN_CREDS_NAND" ]; then
     PASS=$(sed -n 's/^PASS=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
     WLAN_SOURCE="NAND wlan-creds (replay)"
 fi
-if [ -n "$SSID" ] && [ -n "$PASS" ]; then
+# Ethernet-only short-circuit. If neither wlan0 nor wlan1 exists in
+# /sys/class/net, the box has no wireless radio (driver did not load,
+# or the chip is dead). Observed live on a scm-variant ST20 in #60
+# where /addWirelessProfile sat on slow 500 responses for ~4 minutes
+# per attempt, starving the agent start that lives after this block.
+# We instead skip the whole block: the speaker is already reachable
+# on its Ethernet cable per Bose's /networkInfo, and the desktop app
+# install path works fine against eth0.
+if [ ! -d /sys/class/net/wlan0 ] && [ ! -d /sys/class/net/wlan1 ]; then
+    setup_log "WLAN: no wlan0/wlan1 interface present, ethernet-only mode (skip provisioning)"
+    echo "ethernet-only" > "$PERSIST/wlan-mode" 2>/dev/null
+    SSID=""
+    PASS=""
+fi
+
+# Whole block runs in a backgrounded subshell so a slow Bose API
+# (4 minute /addWirelessProfile loops, observed on #60) cannot delay
+# start_agent below. Agent binds :8888 within seconds and the install
+# wizard's 180s poll window succeeds even when WLAN provisioning is
+# still trying its A/B/C/D fallbacks.
+( if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) source=$WLAN_SOURCE ==="
     setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
     if [ -n "$SSID" ] && [ -n "$PASS" ]; then
@@ -668,6 +688,7 @@ WPAEOF
         setup_log "wlan creds invalid (SSID or PASS empty), aborting WLAN provisioning"
     fi
 fi
+) &
 
 # === Region Provisioning aus region.conf vom Stick ===
 # User hat im Setup Wizard ein Land gewaehlt. Persistieren nach NAND,
@@ -940,10 +961,23 @@ else
 # wir den Agent zu verwirren weil seine Goroutines (syncRunOverride,
 # initialBoxPresetSync) noch lesen.
 (
-    # 60 s grundsaetzliche Wartezeit: deckt syncRunOverrideFromStick
-    # (5 s) + initialBoxPresetSync (12 s) + autopair Timing + Sicherheits
-    # Puffer. Sollte fuer alle einmal-pro-Boot Stick Lesevorgaenge reichen.
-    sleep 60
+    # Pre-cleanup wait. Pre-1.0 we run it long, on purpose: the box
+    # is on the user's LAN and the SSH cost is real, but right now
+    # losing the debug channel costs us more than leaving it open
+    # does. 300 s covers (a) syncRunOverrideFromStick + initial preset
+    # sync + autopair timing (the old 60 s lower bound), (b) the
+    # backgrounded WLAN provisioning chain which on a failing scm-
+    # variant ST20 spans ~4 minutes of slow /addWirelessProfile 500s,
+    # (c) slow agent boot races on weak hardware, and (d) a healthy
+    # buffer before we commit to closing SSH. The :8888 gate below
+    # also still applies — if the agent never came up we never close
+    # SSH regardless of the timer.
+    #
+    # Trade-off accepted: stick stays mounted writable for 5 minutes,
+    # so a user who yanks it mid-bootstrap may see a dirty FAT on
+    # Windows. We accept that during dev. Tighten before broad
+    # release (see SECURITY.md hardening section).
+    sleep 300
 
     if ! mountpoint -q "$STICK" 2>/dev/null && ! mount | grep -q " $STICK "; then
         exit 0  # schon ausgehaengt, nichts zu tun
@@ -965,7 +999,30 @@ else
         WAIT_BUSY=$((WAIT_BUSY+5))
     done
 
+    # Agent reachability gate: never close the SSH escape hatch while
+    # the STR agent is missing. Observed live on #60: install timed
+    # out, agent never bound :8888, cleanup killed sshd anyway, and
+    # the diagnostic bundle came back empty because the on-box pull
+    # had no way in. Probe :8888 from inside the box before deciding.
+    AGENT_OK=0
+    if (echo > /dev/tcp/127.0.0.1/8888) >/dev/null 2>&1; then
+        AGENT_OK=1
+    elif command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 8888 >/dev/null 2>&1; then
+        AGENT_OK=1
+    fi
+
     sync
+    if [ "$AGENT_OK" = "0" ]; then
+        log "post-bootstrap: agent NOT bound on :8888 — leaving stick mounted + sshd alive for diagnostics"
+        setup_log "post-bootstrap: agent NOT bound on :8888 — leaving stick mounted + sshd alive"
+        # Read-only remount so a yanked stick does not corrupt FAT,
+        # but DO NOT umount and DO NOT stop sshd. Lets the desktop
+        # app's diagnostic bundle pull box-side logs after a failed
+        # install without the user typing anything.
+        mount -o remount,ro "$STICK" 2>/dev/null \
+            && log "USB Stick read-only remounted (sshd kept alive)"
+        exit 0
+    fi
     if umount "$STICK" 2>/dev/null; then
         log "USB Stick ausgehaengt — kann sicher gezogen werden"
         if [ -x /etc/init.d/sshd ]; then

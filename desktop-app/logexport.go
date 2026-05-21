@@ -199,7 +199,17 @@ type sshFallback struct {
 	UptimeSeconds  string   `json:"uptimeSeconds"`
 	RunningProcs   string   `json:"runningProcs"`
 	StickInstallSh string   `json:"stickInstallShPresent"`
-	Probed         []string `json:"probedMountPaths"`
+	// Network interface state pulled because "no wlan, only eth0"
+	// turned out to be the actual cause of #60's failing ST20 and
+	// only became visible after we asked the user to SSH manually.
+	// Including this in the bundle by default means future reports
+	// of the same shape arrive already diagnosed.
+	IPLinkShow string `json:"ipLinkShow"`
+	SysClassNet string `json:"sysClassNet"`
+	ProcNetDev  string `json:"procNetDev"`
+	DmesgWlan   string `json:"dmesgWlan"`
+	WlanMode    string `json:"wlanMode"`
+	Probed      []string `json:"probedMountPaths"`
 }
 
 func captureBoxSnapshot(host string) boxSnapshot {
@@ -272,6 +282,19 @@ func pullSSHFallback(host string) *sshFallback {
 		{"stickInstall", "for p in /media/sda1 /media/sdb1 /media/sdc1 /media/sdd1 /mnt/sda1 /mnt/usb /run/media/sda1; do " +
 			`if [ -e "$p/install.sh" ]; then echo "INSTALL_SH_AT=$p"; fi; done`,
 			5000, &out.StickInstallSh},
+		// Network state. ip link show is the canonical "what
+		// interfaces does the kernel know about" view; /sys/class/net
+		// catches the case where ip is missing on a stripped
+		// BusyBox. /proc/net/dev cross-checks that and shows packet
+		// counters so we can tell whether eth0 ever saw traffic.
+		// dmesg | grep wlan picks up driver load failures from the
+		// 2014-era SMSC chip on older ST20s that booted without a
+		// radio in #60.
+		{"ipLinkShow", "ip link show 2>&1 | head -40", 4000, &out.IPLinkShow},
+		{"sysClassNet", "ls /sys/class/net 2>&1", 3000, &out.SysClassNet},
+		{"procNetDev", "cat /proc/net/dev 2>/dev/null | head -20", 3000, &out.ProcNetDev},
+		{"dmesgWlan", "dmesg 2>/dev/null | grep -iE 'wlan|wifi|smsc|wireless|brcm|mt76|cfg80211|mac80211' | tail -30", 5000, &out.DmesgWlan},
+		{"wlanMode", "cat /mnt/nv/streborn/wlan-mode 2>/dev/null", 3000, &out.WlanMode},
 	}
 	for _, f := range fields {
 		txt, _ := boxSSHOutput(host, f.cmd, time.Duration(f.ms)*time.Millisecond)
@@ -314,6 +337,11 @@ func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 		s.SSHFallback.ProcMounts = anonymizeText(s.SSHFallback.ProcMounts)
 		s.SSHFallback.RunningProcs = anonymizeText(s.SSHFallback.RunningProcs)
 		s.SSHFallback.StickInstallSh = anonymizeText(s.SSHFallback.StickInstallSh)
+		s.SSHFallback.IPLinkShow = anonymizeText(s.SSHFallback.IPLinkShow)
+		s.SSHFallback.SysClassNet = anonymizeText(s.SSHFallback.SysClassNet)
+		s.SSHFallback.ProcNetDev = anonymizeText(s.SSHFallback.ProcNetDev)
+		s.SSHFallback.DmesgWlan = anonymizeText(s.SSHFallback.DmesgWlan)
+		s.SSHFallback.WlanMode = anonymizeText(s.SSHFallback.WlanMode)
 	}
 	return s
 }
