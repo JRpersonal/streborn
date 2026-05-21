@@ -280,6 +280,27 @@ function switchView(view) {
 
 // ---------- Footer ----------
 
+// withAppReferrer appends UTM parameters to URLs pointing at the
+// project's own website so the site's visitor analytics can attribute
+// traffic that originated in the desktop app. Vendor URLs (GitHub,
+// PayPal, Ko-fi, GitHub Sponsors) are returned unchanged because
+// their analytics do not respect UTM tags and a few of them refuse
+// query strings on canonical paths.
+function withAppReferrer(url, campaign) {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)st-reborn\.de$/i.test(u.hostname)) return url;
+    if (!u.searchParams.has('utm_source'))   u.searchParams.set('utm_source',   'st-reborn-app');
+    if (!u.searchParams.has('utm_medium'))   u.searchParams.set('utm_medium',   'desktop');
+    if (!u.searchParams.has('utm_campaign')) u.searchParams.set('utm_campaign', campaign || 'app');
+    const ver = (state.appInfo && state.appInfo.version) || '';
+    if (ver && !u.searchParams.has('utm_content')) u.searchParams.set('utm_content', ver);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 async function renderFooter() {
   try {
     state.appInfo = await AppInfo();
@@ -300,7 +321,7 @@ async function renderFooter() {
     <div class="footer-right">${links.join(' &middot; ')}</div>
   `;
   $('appFooter').querySelectorAll('.footer-link[data-url]').forEach(a => {
-    a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(a.dataset.url); };
+    a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(withAppReferrer(a.dataset.url, 'footer')); };
   });
   const saveLogsBtn = $('footerSaveLogs');
   if (saveLogsBtn) {
