@@ -25,8 +25,8 @@ Include:
 - your assessment of impact
 - whether you wish to be credited
 
-STR is maintained in spare time, so there is no formal SLA — but
-reports get attention as quickly as the maintainer can manage,
+STR is maintained in spare time, so there is no formal SLA.
+Reports get attention as quickly as the maintainer can manage,
 typically within a few days.
 
 Critical findings will be patched and a short advisory published in

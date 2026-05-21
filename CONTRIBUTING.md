@@ -7,8 +7,8 @@ every model we get tested by a real user makes it more useful.
 ## Ways to help
 
 - **Test on your speaker model.** ST10 is the reference target.
-  Reports — even just "ST20 works, presets survive standby cycle"
-  — are a contribution. Open a [Discussion][discussions] under
+  Reports are a contribution, even just "ST20 works, presets
+  survive standby cycle". Open a [Discussion][discussions] under
   Hardware, or attach to an existing thread.
 - **File a bug.** Use Issues for things that are reproducibly
   broken. Use [Discussions][discussions] for questions, ideas,
@@ -24,7 +24,12 @@ every model we get tested by a real user makes it more useful.
 1. Open a Discussion or Issue first if the change is non-trivial
    (more than a typo, more than a one-file fix). It saves both
    sides time and avoids parallel work.
-2. Read [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) if you are
+2. Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the
+   component map, tech stack, port table, and the sequence
+   diagrams showing discovery, playback, marge emulation, install,
+   and OTA. It is the shortest path to understanding how the
+   pieces interact.
+3. Read [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) if you are
    touching anything under `internal/autopair/`,
    `internal/tlsgen/`, `usb-stick/setup-tls.sh`, or
    `usb-stick/iptables-setup.sh`.
@@ -72,7 +77,7 @@ the desktop app falls back to a configured external path.
 - **Go.** `gofmt` clean, `go vet ./...` clean, `golangci-lint`
   clean. Tests in `_test.go` next to the code they cover. Logging
   via `log/slog`.
-- **Frontend.** Whatever Wails generated — small project, no extra
+- **Frontend.** Whatever Wails generated. Small project, no extra
   framework opinions.
 - **Commits.** Imperative mood, present tense. One logical change
   per commit. Reference the Issue or Discussion if there is one:

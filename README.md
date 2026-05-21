@@ -1,8 +1,8 @@
-# STR — SoundTouch Reborn
+# STR, SoundTouch Reborn
 
 **Cloud free firmware project for Bose SoundTouch speakers.**
 
-Bose discontinued their SoundTouch cloud service in February 2026. STR keeps the speakers usable: a USB stick installs a small Go agent onto the speaker that emulates the missing cloud locally, talks to the speaker over the home network, and brings the hardware preset buttons back to life. **Once the agent is installed, the stick can be removed** — the agent persists on the speaker and survives reboots.
+Bose discontinued their SoundTouch cloud service in February 2026. STR keeps the speakers usable: a USB stick installs a small Go agent onto the speaker that stands in for the discontinued cloud locally, talks to the speaker over the home network, and brings the hardware preset buttons back to life. **Once the agent is installed, the stick can be removed**: the agent persists on the speaker and survives reboots.
 
 ## How it works in one paragraph
 
@@ -27,7 +27,7 @@ Targets: SoundTouch 10, 20, 30, Portable. My reference target is the ST10. ST20 
 ### What I do for security
 
 - DNS pinning for the Bose hostnames (`streaming.bose.com`, `bmx-cloud.*`, TuneIn partner subdomain) to `127.0.0.1` via an `/etc/hosts` bind-mount. The speaker no longer makes outbound queries for these names. This closes the residual domain-squat risk if Bose lets the DNS lapse and someone re-registers it.
-- Per-box local TLS CA, generated on first boot, stored in `/mnt/nv/streborn/ca/`, installed in the speaker's own trust store. Only valid for the hijacked hostnames. Never transmitted. TLS only on loopback.
+- Per-box local TLS CA, generated on first boot, stored in `/mnt/nv/streborn/ca/`, installed in the speaker's own trust store. Only valid for the loopback-redirected hostnames. Never transmitted. TLS only on loopback.
 
 ### What I do not do for security yet
 
@@ -77,6 +77,10 @@ Requirements: Go 1.22 or newer, Node 20 or newer, Wails CLI v2 for the desktop a
 
 The website (st-reborn.de) lives in a separate repository, [`JRpersonal/streborn-website`](https://github.com/JRpersonal/streborn-website). A release here triggers a build there via `repository_dispatch`.
 
+## Architecture
+
+If you want to understand how the agent, the desktop app, and the speaker's stock firmware fit together (components, ports, data flows for discovery, playback, marge emulation, install, OTA), read [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md). It is short, has diagrams, and is the right starting point for contributors.
+
 ## Repository layout
 
 | Path | Description |
@@ -87,7 +91,7 @@ The website (st-reborn.de) lives in a separate repository, [`JRpersonal/streborn
 | `setup/` | Setup wizard (PowerShell) |
 | `desktop-app/` | Cross-platform Wails app |
 | `.github/` | CI and release workflows |
-| `docs/` | Public documentation |
+| `docs/` | Public documentation (architecture, threat model, models, roadmap) |
 
 ## Downloads and end user documentation
 

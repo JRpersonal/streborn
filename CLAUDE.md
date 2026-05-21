@@ -1,4 +1,4 @@
-# STR (SoundTouch Reborn) — Briefing for Claude Code
+# STR (SoundTouch Reborn): briefing for Claude Code
 
 This file is the entry point for any Claude Code session working on
 this repository. Read it first.
@@ -12,18 +12,18 @@ them back **without any Bose cloud dependency**.
 
 ### Components
 
-- **Stick Agent** — a small Go binary delivered via a USB stick used
+- **Stick Agent**: a small Go binary delivered via a USB stick used
   for the initial install. The agent copies itself to the speaker's
-  NAND on first boot and from then on runs entirely from there — the
-  stick can be removed for normal operation. It emulates
+  NAND on first boot and from then on runs entirely from there, so
+  the stick can be removed for normal operation. It stands in for
   `streaming.bose.com` and the Bose `bmx-cloud` services locally so
   the speaker pairs and accepts presets.
-- **Desktop App (ST Reborn)** — Wails application for Windows, macOS,
+- **Desktop App (ST Reborn)**: Wails application for Windows, macOS,
   Linux. Discovers running agents on the LAN via mDNS, ships a web
   UI for browsing internet radio, managing presets, and controlling
   playback. Also performs the initial USB-stick provisioning and
   later OTA agent updates.
-- **Website** — Astro site (English and German) at `st-reborn.de`
+- **Website**: Astro site (English and German) at `st-reborn.de`
   with downloads, FAQ, privacy, imprint. Maintained in a separate
   repository.
 
@@ -128,8 +128,8 @@ measurable, not aspirational:
    reference target today. One additional model (ST20 or ST30)
    confirmed by a maintainer or a trusted contributor on real
    hardware.
-2. **Hardware presets 1–6 work after a cold boot, a standby cycle,
-   and a Wi-Fi outage** — no manual reset required.
+2. **Hardware presets 1 to 6 work after a cold boot, a standby cycle,
+   and a Wi-Fi outage**: no manual reset required.
 3. **First-install experience is honest.** SmartScreen / Gatekeeper
    warnings are documented on the website Verify page with the exact
    click path; SHA256 sums and Sigstore attestations are linked.
@@ -140,8 +140,8 @@ measurable, not aspirational:
    their German equivalents have no placeholder text.
 
 Code signing, notarization, additional models, and Wails sandboxing
-are post-1.0. Forward-looking ideas beyond v1.0 — currently an iOS
-PWA proposal and a factory-reset wizard for the desktop app — live
+are post-1.0. Forward-looking ideas beyond v1.0, currently an iOS
+PWA proposal and a factory-reset wizard for the desktop app, live
 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Release pipeline dry-run
@@ -172,7 +172,7 @@ The Wails desktop app embeds the ARM stick agent binary and is the
 only component that initiates an over-the-air agent update on the
 speaker. If the desktop app and the embedded agent are built from
 different commits, the version-comparison logic flags the stick as
-out of date even right after a successful update — the OTA banner
+out of date even right after a successful update: the OTA banner
 then loops.
 
 The release workflow builds both from the same checkout in a single
@@ -253,10 +253,14 @@ at the repository settings level.
 
 1. Read this file end to end.
 2. Skim `README.md` for the user-facing pitch.
-3. Check [`docs/MODELS.md`](docs/MODELS.md) for hardware support
+3. Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the
+   component map, tech stack, port table, and the sequence diagrams
+   that show how discovery, playback, marge emulation, install, and
+   OTA actually flow.
+4. Check [`docs/MODELS.md`](docs/MODELS.md) for hardware support
    state and [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for
    security context.
-4. Run `go build ./...` and `cd desktop-app && wails dev` once to
+5. Run `go build ./...` and `cd desktop-app && wails dev` once to
    confirm the local environment is healthy. The stick agent
    contains Linux-only syscalls; on Windows or macOS hosts use
    `GOOS=linux GOARCH=arm GOARM=7 go build ./...` to cross-compile

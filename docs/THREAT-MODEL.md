@@ -42,9 +42,10 @@ Each boundary is covered in detail in
 
 ## What STR mitigates
 
-- The dead Bose cloud cannot phone home, exfiltrate, or be impersonated
-  by a third party against the speaker — the agent serves the
-  emulated endpoints only on the loopback interface of the speaker.
+- The discontinued Bose cloud cannot phone home, exfiltrate, or be
+  impersonated by a third party against the speaker: the agent
+  serves the stand-in endpoints only on the loopback interface of
+  the speaker.
 - The locally issued TLS certificate is generated on first boot,
   stored in NAND, never transmitted, and is only valid for the
   hostnames the speaker resolves to `127.0.0.1`.
@@ -69,7 +70,7 @@ STR:
 
 If your speaker is on a network with untrusted devices (guest Wi-Fi,
 shared student housing, public-facing IoT segment), put it on a
-dedicated VLAN or trusted SSID before installing STR — the same
+dedicated VLAN or trusted SSID before installing STR. The same
 advice applies whether or not STR is installed.
 
 ## Hardening roadmap

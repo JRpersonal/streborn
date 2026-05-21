@@ -27,15 +27,15 @@ focused modules, add i18n, switch the default UI to English.
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| A | Extract leaf modules (`state`, `utils`, `localization`, `logos`, `api`) out of `main.js`. All comments and identifiers English. | merged via [#40](https://github.com/JRpersonal/streborn/pull/40) (or about to be — check the branch) |
+| A | Extract leaf modules (`state`, `utils`, `localization`, `logos`, `api`) out of `main.js`. All comments and identifiers English. | merged via [#40](https://github.com/JRpersonal/streborn/pull/40) (or about to be, check the branch) |
 | B | Extract view modules: `views/box-discovery.js`, `views/presets.js`, `views/playback.js`, `views/search.js`, `views/settings.js`, `views/setup.js`, `views/footer.js`. After this `main.js` shrinks to the DOM skeleton + view dispatcher (~150 lines). | not started |
-| C | i18n system: minimal `t()` helper plus `en` and `de` bundles in `desktop-app/frontend/src/i18n/`. Locale detected from `navigator.language`, with explicit override stored in `localStorage`. **Default is English** per the global-audience rule — German remains a first-class supported locale but is no longer the implicit fallback. | not started |
+| C | i18n system: minimal `t()` helper plus `en` and `de` bundles in `desktop-app/frontend/src/i18n/`. Locale detected from `navigator.language`, with explicit override stored in `localStorage`. **Default is English** per the global-audience rule; German remains a first-class supported locale but is no longer the implicit fallback. | not started |
 | D | Translate the remaining inline German comments and the few mixed-language handler strings still sitting in `main.js` (and any view module that ends up holding them after Phase B). Closes the CLAUDE.md "all code/comments/identifiers in English" rule. | not started, naturally falls out of Phase B+C |
 
 Why this is on the roadmap rather than just done: Phase A alone
 was ~600 lines of careful diff and surfaced six unrelated bugs
 that we durably fixed in flight (see #40). Phase B+C are bigger
-still — the right move is one PR per phase so each is reviewable
+still; the right move is one PR per phase so each is reviewable
 and any regression can be bisected to its phase.
 
 ## Under consideration
@@ -50,7 +50,7 @@ Scope on day one would be the same surface the desktop app exposes:
 discover running agents on the LAN, browse internet radio, manage
 presets, control playback.
 
-**Feasibility — needs a study before this gets scheduled.** Several
+**Feasibility: needs a study before this gets scheduled.** Several
 hard blockers exist and a clean answer to each is a prerequisite:
 
 1. **Mixed content / TLS.** A PWA served from `https://st-reborn.de`
@@ -100,7 +100,7 @@ runs:
 
 1. **Reset STR data only.** Clears the preset store and any
    per-device settings on the agent. Wi-Fi, the NAND override, and
-   the agent binary stay in place. Reversible — the user can
+   the agent binary stay in place. Reversible: the user can
    re-add presets.
 2. **Reset Wi-Fi.** Rewrites `/etc/wpa_supplicant.conf` to drop the
    current network so the speaker comes back up in its own setup
@@ -135,7 +135,8 @@ Tracked as a GitHub issue under the `enhancement` label.
 
 - Android version of the same PWA, with the same feasibility caveats
   except Android allows arbitrary CA install slightly more easily.
-- Multi-room grouping across speakers, if it can be implemented over
-  UPnP without resurrecting Bose's proprietary group protocol.
+- Multi-room grouping across speakers using the speaker's existing
+  local zone API on port 8090 (no cloud involved). Tracked as a
+  separate issue with a research write-up.
 - Optional Spotify Connect on the speaker, only if it can be done
   without re-introducing a cloud dependency.
