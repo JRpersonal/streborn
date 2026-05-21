@@ -27,10 +27,18 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/presets"
 )
+
+// failLogSuppressWindow is the minimum spacing between identical
+// "upstream fail" warnings for the same URL. Bose's UPnP player
+// re-hits the proxy when a station is unreachable, so without this
+// the agent log fills with the same NXDOMAIN line several times a
+// minute for a single dead preset.
+const failLogSuppressWindow = 30 * time.Second
 
 // safeHTTPURL rejects everything that is not http or https. Used at
 // every outbound HTTP call site that takes a URL from a
@@ -61,6 +69,9 @@ type Server struct {
 	store  *presets.Store
 	logger *slog.Logger
 	client *http.Client
+
+	failMu  sync.Mutex
+	lastFail map[string]time.Time
 }
 
 func New(store *presets.Store, logger *slog.Logger) *Server {
@@ -70,8 +81,25 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		// Eigener Client damit wir Redirect Verhalten kontrollieren.
 		// Default ist Follow bis 10 — passt fuer Streamonkey & Co.
 		// Kein Timeout: Streams sind endlos, wir lesen bis EOF.
-		client: &http.Client{},
+		client:   &http.Client{},
+		lastFail: make(map[string]time.Time),
 	}
+}
+
+// shouldLogFail returns true if a fresh WARN line should be emitted
+// for this URL. Within failLogSuppressWindow of the previous emit it
+// returns false so the agent log does not repeat the same
+// "upstream fail" line every time Bose's UPnP player retries an
+// unreachable station.
+func (s *Server) shouldLogFail(url string) bool {
+	s.failMu.Lock()
+	defer s.failMu.Unlock()
+	now := time.Now()
+	if last, ok := s.lastFail[url]; ok && now.Sub(last) < failLogSuppressWindow {
+		return false
+	}
+	s.lastFail[url] = now
+	return true
 }
 
 // Handler registriert /stream/<slot> sowie /stream/raw fuer ad-hoc URLs
@@ -201,7 +229,14 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			return false
 		}
-		s.logger.Warn("stream proxy upstream fail", "url", url, "err", err)
+		// Dedupe identical failures: Bose's UPnP player re-hits the
+		// proxy when a station is unreachable, so the same NXDOMAIN
+		// would otherwise spam the agent log.
+		if s.shouldLogFail(url) {
+			s.logger.Warn("stream proxy upstream fail", "url", url, "err", err)
+		} else {
+			s.logger.Debug("stream proxy upstream fail (dedup)", "url", url, "err", err)
+		}
 		if sendHeaders {
 			http.Error(w, "upstream unreachable", http.StatusBadGateway)
 			return false
@@ -212,13 +247,23 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		s.logger.Warn("stream proxy upstream status", "status", resp.StatusCode, "url", url)
+		if s.shouldLogFail(url) {
+			s.logger.Warn("stream proxy upstream status", "status", resp.StatusCode, "url", url)
+		} else {
+			s.logger.Debug("stream proxy upstream status (dedup)", "status", resp.StatusCode, "url", url)
+		}
 		if sendHeaders {
 			http.Error(w, "upstream status: "+resp.Status, http.StatusBadGateway)
 			return false
 		}
 		return true
 	}
+
+	// Successful reach — clear any dedup entry so a future failure
+	// for this URL produces a fresh WARN immediately.
+	s.failMu.Lock()
+	delete(s.lastFail, url)
+	s.failMu.Unlock()
 
 	if sendHeaders {
 		for k, vv := range resp.Header {
