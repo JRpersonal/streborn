@@ -44,6 +44,7 @@ export {
   InstallSTROnBox,
   ScanForSetupAPs,
   BootstrapBoxOnSetupAP,
+  CheckCurrentWifi,
   ListMediaServers,
   BrowseLibrary,
 } from '../wailsjs/go/main/App';

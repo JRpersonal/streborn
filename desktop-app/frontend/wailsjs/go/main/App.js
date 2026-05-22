@@ -30,6 +30,10 @@ export function CheckAppUpdate() {
   return window['go']['main']['App']['CheckAppUpdate']();
 }
 
+export function CheckCurrentWifi() {
+  return window['go']['main']['App']['CheckCurrentWifi']();
+}
+
 export function CurrentWiFi() {
   return window['go']['main']['App']['CurrentWiFi']();
 }
