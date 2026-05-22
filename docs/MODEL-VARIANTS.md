@@ -13,12 +13,41 @@ fact only.
 For the user-facing "which release asset do I download" mapping, see
 [`MODELS.md`](MODELS.md).
 
+## Reference: last official Bose firmware per model
+
+The final firmware Bose shipped before the cloud shutdown on 2026-02. Anything older than this means the speaker missed at least one published update and may behave differently from samples captured here.
+
+| Model | Latest Bose `softwareVersion` (SCM) | Build date |
+| --- | --- | --- |
+| SoundTouch 10 | (to be confirmed from a diagnostic) | (to be confirmed) |
+| SoundTouch 20 | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | **2022-08-04** |
+| SoundTouch 30 | (to be confirmed from a diagnostic) | (to be confirmed) |
+| SoundTouch Portable | (to be confirmed from a diagnostic) | (to be confirmed) |
+
 ## SoundTouch 20
 
-| `moduleType` | Bose `softwareVersion` (SCM) | `variant` | `variantMode` | Components present | WLAN interfaces | `countryCode` / `regionCode` samples |
-| --- | --- | --- | --- | --- | --- | --- |
-| `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | `spotty` | `normal` | SCM, PackagedProduct | `wlan0`, `wlan1` | `GB` / `GB` |
-| `scm` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | `spotty` | `normal` | SCM, PackagedProduct, Lightswitch, SMSC | varies (ethernet-only observed) | `EU` / `` (empty) |
+| `moduleType` | SCM `softwareVersion` | Build year | Latest official? | `variant` | `variantMode` | Components present | WLAN interfaces | `countryCode` / `regionCode` samples |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `spotty` | `normal` | SCM, PackagedProduct | `wlan0`, `wlan1` | `GB` / `GB` |
+| `scm` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `spotty` | `normal` | SCM, PackagedProduct, **Lightswitch**, **SMSC** | varies (ethernet-only observed) | `EU` / `` (empty) |
+
+### Critical differences (what actually changes STR's code path)
+
+1. **`moduleType=sm2` vs `scm`** — wireless module generation. Same `type="SoundTouch 20"` label hides the split. Check this first.
+2. **WLAN interface presence varies on `scm`** — a `scm` box can boot with **no `wlan0`/`wlan1` at all** (only `eth0 lo usb0`). Every WLAN-provisioning approach on the stick is wasted effort against such a box; STR must fall back to ethernet-only mode. `sm2` boxes consistently expose both `wlan0` and `wlan1`.
+3. **Extra components on `scm`** — `Lightswitch` (LED ring / touch panel, empty serial) and `SMSC` (Microchip SMSC2014 USB-Ethernet bridge IC with its own firmware string `I<imageDate>; B<buildDate> <buildCode> <imageID>`, image 2014-10-20, build 2013-06-11). STR does not talk to either directly today, but their presence is the cleanest indicator of the older hardware revision.
+4. **`regionCode` may be empty on EU `scm` samples** — Bose did not populate the field on newer EU shipments. Any STR code path that reads `regionCode` must fall back to `countryCode`, and ultimately to STR's own `region.txt`.
+5. **`margeAccountUUID` populated vs empty** — populated means the box has at least once been paired against a marge endpoint (Bose's, or STR's stub). Empty means jungfräulich / post-factory-reset / never reached the pair flow.
+6. **`margeURL` state** — `https://streaming.bose.com` is the Bose factory default; STR's autopair flow rewrites it to `http://no-streaming.bose.com` via `setMargeAccount` + the marge stub's `adddeviceresponse`. The field is a reliable post-install truth-check for "did pairing actually land".
+
+### Common to both ST20 variants
+
+- Bose `/etc/version`: `201507061523`
+- Kernel: `Linux spotty 3.14.43+ #137 Wed Oct 25 21:06:53 EDT 2017 armv7l`
+- `MemTotal`: ~122 MB (`122 484 kB`)
+- Last Bose firmware build epoch: 2022-08-04 (the final SoundTouch firmware before Bose cloud shutdown on 2026-02)
+- `networkInfo` emits two entries (SCM + SMSC) with separate MACs but the same Layer-3 IP. The speaker bridges internally; STR sees one address per box.
+- Root `/etc` is read-only (ubifs `ro,relatime`); `/mnt/nv` is read-write (ubifs `rw,relatime`); `/tmp` is tmpfs.
 
 ### Common to both ST20 variants
 
