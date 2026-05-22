@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"strings"
@@ -147,6 +148,8 @@ func run() error {
 
 	logger := newLogger(*logLevel)
 	logger.Info("streborn starting", "version", version)
+
+	ensureSshdRunning(logger)
 
 	// DeviceID aus MAC ermitteln, damit Marge Antworten die echte Box ID
 	// zurueckgeben. Wenn keine MAC gefunden wird, weiter mit leerer ID.
@@ -864,6 +867,40 @@ func lastN(s string, n int) string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+// ensureSshdRunning keeps the box reachable via SSH whether the agent
+// boot came in via a fresh stick run.sh (which has its own
+// ensure_sshd_running shell function) or via OTA-only update (which
+// replaces only the binary and leaves the on-NAND run-override.sh
+// untouched). Without this the OTA path loses the diagnostic channel
+// the first time the agent crashes, and `SaveDiagnosticBundle`'s
+// SSH-fallback layer comes back empty.
+//
+// Pre-1.0 we explicitly prefer diagnostic access over the residual
+// risk of a known-default Bose root password; tracked under the
+// existing box-security-hardening roadmap.
+//
+// Best-effort: if sshd is already running, the init script
+// no-ops; if no sshd init script exists (unexpected on Bose
+// firmware), we just log and continue.
+func ensureSshdRunning(logger *slog.Logger) {
+	// Cheap pre-check: avoid spawning the init script if sshd is
+	// already up — saves a fork on every agent restart.
+	if out, err := exec.Command("pidof", "sshd").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+		return
+	}
+	for _, attempt := range [][]string{
+		{"/etc/init.d/sshd", "start"},
+		{"/usr/sbin/sshd"},
+	} {
+		cmd := exec.Command(attempt[0], attempt[1:]...)
+		if err := cmd.Run(); err == nil {
+			logger.Info("sshd started", "via", attempt[0])
+			return
+		}
+	}
+	logger.Warn("sshd start: no usable init script found, SSH will not come up from agent")
 }
 
 func newLogger(level string) *slog.Logger {
