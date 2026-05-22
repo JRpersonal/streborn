@@ -272,25 +272,25 @@ sync_from_stick_if_requested() {
         return 0
     fi
     if [ ! -r "$STICK_BIN" ]; then
-        log "Sync angefordert aber Stick Binary nicht lesbar, ignoriere"
+        log "sync requested but stick binary unreadable, ignoring"
         rm -f "$SYNC_FLAG"
         return 1
     fi
     if cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null; then
         chmod +x "$CACHED_BIN.new"
         mv "$CACHED_BIN.new" "$CACHED_BIN"
-        log "Stick Binary in NAND Cache gesynct"
+        log "stick binary synced to NAND cache"
         # Record the version that now lives in the NAND cache so
         # the next boot's version check has something to compare
         # against.
         if [ -r "$STICK_VER_FILE" ]; then
             cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
-            log "NAND version.txt aktualisiert: $(cat "$NAND_VER_FILE" 2>/dev/null)"
+            log "NAND version.txt updated: $(cat "$NAND_VER_FILE" 2>/dev/null)"
         fi
         rm -f "$SYNC_FLAG"
         return 0
     fi
-    log "Sync gescheitert (Stick I/O Error?), behalte NAND Cache"
+    log "sync failed (stick I/O error?), keeping NAND cache"
     rm -f "$CACHED_BIN.new"
     rm -f "$SYNC_FLAG"
     return 1
@@ -339,7 +339,7 @@ elif [ -x "$STICK_BIN" ]; then
     BIN="$STICK_BIN"
     log "Kein NAND Cache, nutze Stick Binary direkt"
 else
-    log "FEHLER: weder NAND Cache noch Stick Binary verfuegbar"
+    log "ERROR: neither NAND cache nor stick binary available"
     exit 1
 fi
 
@@ -347,7 +347,7 @@ fi
 if [ -f "$PIDFILE" ]; then
     OLDPID=$(cat "$PIDFILE" 2>/dev/null || echo 0)
     if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
-        log "Alter Agent laeuft noch (PID $OLDPID), stoppe ihn"
+        log "previous agent still running (PID $OLDPID), stopping it"
         kill -TERM "$OLDPID" 2>/dev/null
         sleep 2
         kill -KILL "$OLDPID" 2>/dev/null
@@ -357,7 +357,7 @@ fi
 
 # === Optional Update anwenden ===
 if [ -x "$STICK/update.sh" ]; then
-    log "Pruefe Update via $STICK/update.sh"
+    log "checking for update via $STICK/update.sh"
     "$STICK/update.sh" 2>&1 | tee -a "$LOG" || true
 fi
 
@@ -699,7 +699,7 @@ if [ -f "$REGION_CONF" ]; then
     CC=$(sed -n 's/.*"country":"\([^"]*\)".*/\1/p' "$REGION_CONF" | head -1)
     if [ -n "$CC" ]; then
         echo "$CC" > "$REGION_NAND"
-        log "Region '$CC' aus region.conf nach NAND persistiert"
+        log "region '$CC' from region.conf persisted to NAND"
         rm -f "$REGION_CONF" 2>/dev/null
     fi
 fi
@@ -713,7 +713,7 @@ if [ -f "$NAME_CONF" ]; then
     NAME=$(sed -n 's/.*"name":"\([^"]*\)".*/\1/p' "$NAME_CONF" | head -1)
     if [ -n "$NAME" ]; then
         echo "$NAME" > "$NAME_NAND"
-        log "Box Name '$NAME' aus name.conf nach NAND persistiert"
+        log "box name '$NAME' from name.conf persisted to NAND"
         rm -f "$NAME_CONF" 2>/dev/null
     fi
 fi
@@ -727,13 +727,13 @@ mount | grep -q '/etc/hosts' || {
 
 # === iptables NAT optional ===
 if command -v iptables >/dev/null 2>&1; then
-    log "iptables NAT verfuegbar"
+    log "iptables NAT available"
 else
-    log "iptables NAT nicht verfuegbar, Marge laeuft direkt auf 443"
+    log "iptables NAT unavailable, marge will listen directly on :443"
 fi
 
-log "bind mount auf /etc/hosts aktiv"
-log "Starte Agent Version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
+log "bind mount on /etc/hosts active"
+log "starting agent version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
 
 # === Stick Binary → NAND Auto Update ===
 # Wenn der User die App aktualisiert hat und einen frischen Stick
@@ -774,6 +774,84 @@ if [ ! -f "$PRESETS_NAND" ] && [ -r "$STICK/presets.json" ]; then
     log "presets.json von Stick nach NAND uebertragen"
 fi
 
+# ports_busy returns 0 if ANY of the agent's listener ports is still
+# bound, 1 if all are free. Used by wait_ports_clear before respawn so
+# the new agent does not race into the previous instance's sockets.
+# The agent now sets SO_REUSEADDR (see internal/netutil/listener.go),
+# which makes TIME_WAIT irrelevant for binding — but this remains a
+# belt-and-suspenders guard against the case where the old process is
+# still alive AND holding the listener fd (kill -KILL not yet
+# delivered, or shell waiting on TERM grace).
+ports_busy() {
+    for p in 8081 8888 9080 8091 8080; do
+        if command -v ss >/dev/null 2>&1; then
+            ss -ltn 2>/dev/null | grep -q ":$p "
+            if [ $? = 0 ]; then return 0; fi
+        elif command -v netstat >/dev/null 2>&1; then
+            netstat -ltn 2>/dev/null | grep -q ":$p "
+            if [ $? = 0 ]; then return 0; fi
+        else
+            if (echo > /dev/tcp/127.0.0.1/$p) >/dev/null 2>&1; then
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+# wait_ports_clear loops until ports_busy reports clear or up to
+# max_seconds (default 30) elapse. Returns 0 either way; the caller
+# proceeds and start_agent's own bind will surface a real failure.
+wait_ports_clear() {
+    max=${1:-30}
+    i=0
+    while [ $i -lt $max ]; do
+        if ! ports_busy; then
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    setup_log "wait_ports_clear: gave up after ${max}s, proceeding with start_agent"
+    return 0
+}
+
+# try_http_date_sync best-effort sets the box clock from a public
+# HTTP Date header. Bose's RTC reads 2015 right after power-on which
+# breaks any TLS handshake against the stick before NTP catches up.
+# Runs once, with a tight timeout, before start_agent so the agent's
+# loopback TLS endpoint is reachable for the auto-pair flow. Tries
+# wget first (busybox), then curl, then fails silently — the agent's
+# autopair clock-gate (internal/autopair/autopair.go) is the
+# fallback.
+try_http_date_sync() {
+    # Already past 2024? Nothing to do.
+    yr=$(date -u +%Y 2>/dev/null)
+    case "$yr" in
+        2024|2025|2026|2027|2028|2029|203[0-9])
+            return 0
+            ;;
+    esac
+    for host in www.google.com www.cloudflare.com www.bose.com; do
+        d=""
+        if command -v wget >/dev/null 2>&1; then
+            d=$(wget -qSO /dev/null --max-redirect=0 --tries=1 --timeout=4 "http://$host/" 2>&1 | sed -n 's/^[[:space:]]*Date:[[:space:]]*\(.*\)$/\1/p' | head -1)
+        fi
+        if [ -z "$d" ] && command -v curl >/dev/null 2>&1; then
+            d=$(curl -sI --max-time 4 "http://$host/" 2>/dev/null | sed -n 's/^Date:[[:space:]]*\(.*\)$/\1/p' | head -1 | tr -d '\r')
+        fi
+        if [ -n "$d" ]; then
+            # busybox `date -s` parses "Day, DD Mon YYYY HH:MM:SS GMT".
+            if date -u -s "$d" >/dev/null 2>&1; then
+                setup_log "clock-sync: set from HTTP Date via $host -> $(date -u)"
+                return 0
+            fi
+        fi
+    done
+    setup_log "clock-sync: no HTTP Date source reachable, leaving RTC as-is"
+    return 1
+}
+
 start_agent() {
     nohup "$BIN" \
         --presets "$PRESETS_NAND" \
@@ -793,8 +871,9 @@ start_agent() {
     echo "$AGENT_PID" > "$PIDFILE"
 }
 
+try_http_date_sync
 start_agent
-log "Agent gestartet mit PID $AGENT_PID"
+log "agent started with PID $AGENT_PID"
 
 # === Aggressive Boot-Race Watchdog (Phase A: t=0..120s) ===
 #
@@ -866,11 +945,12 @@ agent_port_bound() {
         fi
         BOOT_RESTARTS=$((BOOT_RESTARTS+1))
         setup_log "boot-watchdog: agent dead/unbound at t=$(uptime_s)s pid=$CUR_PID alive=$ALIVE bound=$BOUND, fast respawn #$BOOT_RESTARTS"
-        # Briefly wait so TIME_WAIT on a just-died agent does not
-        # block the new bind. 3s is short enough that the user does
-        # not perceive a stall but long enough for SO_REUSEADDR to
-        # be irrelevant.
-        sleep 3
+        # Drain listener ports before respawn. The agent uses
+        # SO_REUSEADDR so TIME_WAIT alone would not block bind, but
+        # the previous instance may still be alive briefly after
+        # kill -KILL has been queued. Cap at 10 s in Phase A so the
+        # respawn cadence stays tight.
+        wait_ports_clear 10
         start_agent
         setup_log "boot-watchdog: agent respawned PID $AGENT_PID"
     done
@@ -902,9 +982,13 @@ agent_port_bound() {
         if [ -n "$CUR_PID" ] && [ "$CUR_PID" -gt 0 ] && kill -0 "$CUR_PID" 2>/dev/null; then
             continue  # Agent laeuft noch
         fi
-        log "Watchdog: Agent (PID $CUR_PID) gestorben, restart"
+        log "watchdog: agent (PID $CUR_PID) died, restarting"
+        # Belt-and-suspenders: even though the agent has SO_REUSEADDR,
+        # poll the listener ports to make sure no leftover process
+        # holds the fd before we respawn. Caps at 30 s.
+        wait_ports_clear 30
         start_agent
-        log "Watchdog: Agent neu gestartet mit PID $AGENT_PID"
+        log "watchdog: agent restarted with PID $AGENT_PID"
     done
 ) &
 
@@ -917,7 +1001,7 @@ while [ ! -r "$ROOT_CA" ] && [ "$WAIT" -lt 20 ]; do
 done
 
 if [ -r "$ROOT_CA" ]; then
-    log "Root CA vorhanden nach ${WAIT}s, setze bind mount"
+    log "root CA available after ${WAIT}s, applying bind mount"
 
     for target in /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt; do
         if [ ! -f "$target" ]; then continue; fi
@@ -932,7 +1016,7 @@ if [ -r "$ROOT_CA" ]; then
     done
 fi
 
-log "Bootstrap abgeschlossen"
+log "bootstrap complete"
 
 # === USB Stick komplett aushaengen + SSH schliessen ===
 # Bootstrap ist durch — alle Configs (wlan/region/name/presets/binary)
