@@ -1033,6 +1033,8 @@ code { background: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-size: 12p
 .setup-ok { color: var(--signal-green); }
 .setup-err { color: var(--signal-red); }
 .setup-warn { color: #f88; }
+.setup-ok-actions { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.setup-ok-actions .muted { max-width: 38rem; }
 .fw-stale {
   display: inline-block;
   background: #3a2a1a;

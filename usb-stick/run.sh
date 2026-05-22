@@ -85,6 +85,46 @@ setup_log() {
     echo "$line" >> "$SETUP_LOG_NAND" 2>/dev/null
 }
 
+# ensure_sshd_running keeps the box reachable by SSH from boot until
+# next reboot, on every boot regardless of whether the stick is
+# inserted. Pre-1.0 we explicitly prefer debug visibility over
+# security: when an install or OTA leaves the agent stuck, SSH is
+# the only channel that still lets the desktop app's diagnostic
+# bundle pull /tmp/streborn-agent.log, /mnt/nv/streborn/setup.log
+# etc. Without it every "no luck yet" report ended in a stick-yank
+# cycle.
+#
+# Box default state: Bose's /etc/init.d/shelby_local starts sshd
+# only when /media/sda1/remote_services exists. On a steady-state
+# boot (no stick, NAND override only) that file is absent, so sshd
+# never comes up. This function plugs that gap by starting sshd
+# unconditionally from run.sh. If sshd is already running (e.g. the
+# stick is in and Bose already started it), the start call is a
+# cheap no-op.
+#
+# Security note: the speaker's root password is the well-known Bose
+# default. As soon as the v1.0 hardening lands ([[project-box-
+# security-hardening]]), this function becomes opt-in via a stick
+# marker file, not opt-out. Tracked separately.
+ensure_sshd_running() {
+    if pidof sshd >/dev/null 2>&1; then
+        setup_log "sshd already running, leaving it alone"
+        return 0
+    fi
+    if [ -x /etc/init.d/sshd ]; then
+        /etc/init.d/sshd start >/dev/null 2>&1 \
+            && setup_log "sshd started via /etc/init.d/sshd" \
+            && return 0
+    fi
+    if [ -x /usr/sbin/sshd ]; then
+        /usr/sbin/sshd >/dev/null 2>&1 \
+            && setup_log "sshd started via /usr/sbin/sshd direct" \
+            && return 0
+    fi
+    setup_log "sshd start: no init script and no /usr/sbin/sshd found"
+    return 1
+}
+
 # initial_snapshot writes a one-shot record of "what does the box
 # look like the moment run.sh starts" so we can compare variants and
 # see what was already initialised by Bose vs what we had to wait
@@ -239,6 +279,10 @@ background_phase_probe() {
 # Probe is best-effort: failures are silent, only successes log.
 initial_snapshot
 background_phase_probe
+
+# Keep SSH up across stick + stickless boots. Has to happen early so
+# the channel is available even if the agent never binds.
+ensure_sshd_running
 
 # Auto-sync trigger: a freshly prepared stick (Setup-Wizard) ships a
 # version.txt. If that string differs from the version we recorded
@@ -916,7 +960,24 @@ agent_port_bound() {
     # 24 checks * 5s = 120s aggressive phase. After that, the slow
     # Phase-B loop below takes over. No flash writes while agent
     # stays up.
+    #
+    # Boot grace window: for the first 30 s after start_agent the
+    # watchdog only checks ALIVE, not BOUND. The Go agent does a
+    # sequence of pre-listen init steps (presets.Load, hosts.Apply,
+    # tlsgen.EnsureBundle which generates a CA on first run, mDNS
+    # announce, a 5 s timeout against the Bose firmware /info
+    # endpoint) before startHTTP fires. On weak hardware those steps
+    # can take 20-25 s end to end. Previously the t=5 s check saw
+    # alive=1 bound=0, killed the process during init, and the box
+    # ended up in a respawn loop with no listener ever reaching its
+    # bind call. Observed live in deqw #60 v0.5.5 setup_log at t=57s.
+    #
+    # During grace we still respawn if the process is GONE (ALIVE=0)
+    # because that means it crashed — we want to recover. After the
+    # grace window the full BOUND check kicks in so a hung agent
+    # that never binds also gets restarted.
     BOOT_RESTARTS=0
+    GRACE_S=30
     i=0
     while [ $i -lt 24 ]; do
         sleep 5
@@ -933,7 +994,17 @@ agent_port_bound() {
         if agent_port_bound; then
             BOUND=1
         fi
+        NOW_S=$(uptime_s)
+        IN_GRACE=0
+        if [ "$NOW_S" != "?" ] && [ "$i" -lt $((GRACE_S / 5)) ]; then
+            IN_GRACE=1
+        fi
         if [ "$ALIVE" = "1" ] && [ "$BOUND" = "1" ]; then
+            continue
+        fi
+        if [ "$ALIVE" = "1" ] && [ "$IN_GRACE" = "1" ]; then
+            # Process is alive, bind has not happened yet, still in
+            # the 30 s pre-listen init window. Let it cook.
             continue
         fi
         # Hard cap: 6 restarts in 120s. If we still cannot keep the
@@ -944,7 +1015,7 @@ agent_port_bound() {
             break
         fi
         BOOT_RESTARTS=$((BOOT_RESTARTS+1))
-        setup_log "boot-watchdog: agent dead/unbound at t=$(uptime_s)s pid=$CUR_PID alive=$ALIVE bound=$BOUND, fast respawn #$BOOT_RESTARTS"
+        setup_log "boot-watchdog: agent dead/unbound at t=$(uptime_s)s pid=$CUR_PID alive=$ALIVE bound=$BOUND grace=$IN_GRACE, fast respawn #$BOOT_RESTARTS"
         # Drain listener ports before respawn. The agent uses
         # SO_REUSEADDR so TIME_WAIT alone would not block bind, but
         # the previous instance may still be alive briefly after
@@ -1018,24 +1089,28 @@ fi
 
 log "bootstrap complete"
 
-# === USB Stick komplett aushaengen + SSH schliessen ===
+# === USB Stick aushaengen ===
 # Bootstrap ist durch — alle Configs (wlan/region/name/presets/binary)
 # sind nach NAND uebernommen. Den Stick brauchen wir zur Laufzeit
-# nicht mehr. Wir haengen ihn aktiv aus damit:
-#   1. User den Stick im Betrieb ziehen kann ohne dirty FS (Windows
-#      muss dann keine FAT Reparatur mehr machen).
-#   2. SSH wird sauber gestoppt — Bose's sshd Init hat ihn nur
-#      gestartet weil remote_services auf dem Stick lag. Nach umount
-#      ist diese Datei nicht mehr lesbar; wir stoppen sshd zusaetzlich.
+# nicht mehr. Wir haengen ihn aktiv aus damit der User den Stick im
+# Betrieb ziehen kann ohne dirty FS (Windows muss dann keine FAT
+# Reparatur mehr machen).
+#
+# SSH wird absichtlich NICHT gestoppt — pre-1.0 lassen wir den Kanal
+# offen damit die Desktop App ihren Diagnostic Bundle Pull auch bei
+# kaputtem Agent durchziehen kann (siehe ensure_sshd_running am
+# Anfang von run.sh). Die fruehere Logik hat sshd hier explizit
+# beendet sobald der Agent auf :8888 erreichbar war, was bei jedem
+# spaeteren Crash den Pfad zu den Logs verschloss.
 #
 # Debug opt-out: if /media/sda1/keep-open exists, skip the entire
-# cleanup so SSH stays reachable and the stick stays mounted. Used
-# during interactive debugging when we want to read /mnt/nv state
-# live over SSH without rebooting the box. Removed by deleting the
-# file (e.g. del E:\keep-open from Jens' laptop) — next boot
-# returns to normal cleanup behavior.
+# cleanup so the stick stays mounted. Used during interactive
+# debugging when we want to read live /media/sda1 state without
+# rebooting the box. Removed by deleting the file (e.g. del
+# E:\keep-open from Jens' laptop) — next boot returns to normal
+# cleanup behavior.
 if [ -e "$STICK/keep-open" ]; then
-    setup_log "keep-open marker on stick — skipping umount + sshd kill for live debug"
+    setup_log "keep-open marker on stick — skipping umount for live debug"
 else
 #
 # Detached Hintergrund Block damit run.sh sofort returnen kann
@@ -1083,11 +1158,11 @@ else
         WAIT_BUSY=$((WAIT_BUSY+5))
     done
 
-    # Agent reachability gate: never close the SSH escape hatch while
-    # the STR agent is missing. Observed live on #60: install timed
-    # out, agent never bound :8888, cleanup killed sshd anyway, and
-    # the diagnostic bundle came back empty because the on-box pull
-    # had no way in. Probe :8888 from inside the box before deciding.
+    # Agent reachability gate: if the agent is still down we keep the
+    # stick MOUNTED (not just sshd alive) so manual recovery via the
+    # stick's run.sh / install.sh stays possible. Probe :8888 from
+    # inside the box. sshd itself stays alive in either branch — that
+    # decision moved to ensure_sshd_running at boot time.
     AGENT_OK=0
     if (echo > /dev/tcp/127.0.0.1/8888) >/dev/null 2>&1; then
         AGENT_OK=1
@@ -1097,23 +1172,18 @@ else
 
     sync
     if [ "$AGENT_OK" = "0" ]; then
-        log "post-bootstrap: agent NOT bound on :8888 — leaving stick mounted + sshd alive for diagnostics"
-        setup_log "post-bootstrap: agent NOT bound on :8888 — leaving stick mounted + sshd alive"
+        log "post-bootstrap: agent NOT bound on :8888 — leaving stick mounted for diagnostics"
+        setup_log "post-bootstrap: agent NOT bound on :8888 — leaving stick mounted"
         # Read-only remount so a yanked stick does not corrupt FAT,
-        # but DO NOT umount and DO NOT stop sshd. Lets the desktop
-        # app's diagnostic bundle pull box-side logs after a failed
-        # install without the user typing anything.
+        # but DO NOT umount. Lets the desktop app's diagnostic bundle
+        # pull box-side logs after a failed install without the user
+        # typing anything.
         mount -o remount,ro "$STICK" 2>/dev/null \
-            && log "USB Stick read-only remounted (sshd kept alive)"
+            && log "USB Stick read-only remounted"
         exit 0
     fi
     if umount "$STICK" 2>/dev/null; then
         log "USB Stick ausgehaengt — kann sicher gezogen werden"
-        if [ -x /etc/init.d/sshd ]; then
-            /etc/init.d/sshd stop 2>/dev/null && log "sshd gestoppt"
-        else
-            killall sshd 2>/dev/null && log "sshd via killall beendet"
-        fi
     else
         log "umount fehlgeschlagen (Prozess haelt Stick), versuche read only remount"
         if mount -o remount,ro "$STICK" 2>/dev/null; then

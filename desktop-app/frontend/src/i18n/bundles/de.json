@@ -553,6 +553,8 @@
   "setup.bootstrapFailed": "Konfiguration über das Setup-Netz fehlgeschlagen: {{msg}}.",
   "setup.boxFoundOnLAN": "Lautsprecher ist im LAN auf {{ip}}. Installiere STR ...",
   "setup.alreadyInstalled": "Lautsprecher auf {{ip}} läuft schon mit STR. Nichts zu installieren.",
+  "setup.alreadyInstalledUpdateBtn": "Agent auf diesen Stand aktualisieren",
+  "setup.alreadyInstalledUpdateHint": "Schiebt den Agent, der mit dieser App-Version mitgeliefert wird, auf den Lautsprecher. Nutze das, wenn der Lautsprecher auf einem älteren Build läuft als die Desktop-App.",
   "setup.installRunning": "install.sh läuft per SSH auf dem Lautsprecher, dann Reboot. Dauert etwa 2 Minuten.",
   "setup.installFailed": "Installation fehlgeschlagen: {{msg}}",
   "setup.installLogToggle": "Install-Log anzeigen",

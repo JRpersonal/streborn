@@ -3661,7 +3661,27 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   }
 
   if (foundBox.kind === 'str') {
-    render(`<div class="setup-ok">${escapeHtml(t('setup.alreadyInstalled', { ip: foundBox.host }))}</div>`);
+    // Show "already runs STR" PLUS an inline "Update agent" CTA so
+    // users in this state are not stuck. Without the button the
+    // setup view is a dead end: it told the user STR is installed,
+    // but the only way to actually push a newer embedded agent to
+    // the box was a separate OTA banner elsewhere in the UI that
+    // multiple testers missed. Observed live in #60: tester wrote
+    // a fresh v0.5.9 stick to upgrade a v0.5.5 box, the setup
+    // screen said "Nothing to install" and they had no way to
+    // proceed. The button calls the existing doBoxUpdate() flow
+    // which uploads the embedded ARM binary over /api/agent/update
+    // and waits for the box to come back on the new build.
+    state.currentBox = foundBox;
+    render(`<div class="setup-ok">${escapeHtml(t('setup.alreadyInstalled', { ip: foundBox.host }))}</div>` +
+           `<div class="setup-ok-actions">` +
+             `<button id="setupUpdateAgentBtn" class="btn">${escapeHtml(t('setup.alreadyInstalledUpdateBtn'))}</button>` +
+             `<div class="muted small">${escapeHtml(t('setup.alreadyInstalledUpdateHint'))}</div>` +
+           `</div>`);
+    const btn = $('setupUpdateAgentBtn');
+    if (btn) {
+      btn.onclick = () => { doBoxUpdate(); };
+    }
     discoverBoxes();
     return;
   }

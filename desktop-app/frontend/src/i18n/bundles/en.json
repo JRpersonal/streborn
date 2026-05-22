@@ -553,6 +553,8 @@
   "setup.bootstrapFailed": "Could not configure the speaker from its setup network: {{msg}}.",
   "setup.boxFoundOnLAN": "Speaker is on the LAN at {{ip}}. Installing STR...",
   "setup.alreadyInstalled": "Speaker at {{ip}} already runs STR. Nothing to install.",
+  "setup.alreadyInstalledUpdateBtn": "Update box agent to this build",
+  "setup.alreadyInstalledUpdateHint": "Pushes the agent that ships with this version of the app to the speaker. Use this when the speaker is on an older build than the desktop app.",
   "setup.installRunning": "Running install.sh on the speaker via SSH, then rebooting. This takes about 2 minutes.",
   "setup.installFailed": "Install failed: {{msg}}",
   "setup.installLogToggle": "Show install log",
