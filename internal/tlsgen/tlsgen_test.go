@@ -141,7 +141,7 @@ func TestRootCAIstCA(t *testing.T) {
 		t.Error("Root Cert hat IsCA=false")
 	}
 	if root.KeyUsage&x509.KeyUsageCertSign == 0 {
-		t.Error("Root Cert kann nicht signieren")
+		t.Error("root cert cannot sign")
 	}
 }
 
@@ -161,6 +161,40 @@ func TestServerCertHatSANs(t *testing.T) {
 	}
 	if !have["streaming.bose.com"] || !have["content.api.bose.io"] {
 		t.Errorf("SAN fehlt: %v", cert.DNSNames)
+	}
+}
+
+// TestNotBeforeBackdated guards against a regression of the
+// "tls: expired certificate" failure observed in issue #60: the Bose
+// box's RTC reads 2015 right after boot and rejects future-dated
+// certs. The CA NotBefore must therefore be well before any plausible
+// box clock — at least several years in the past. Cert is
+// loopback-only so backdating costs nothing security-wise.
+func TestNotBeforeBackdated(t *testing.T) {
+	m := newTestManager(t)
+	bundle, err := m.EnsureBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		label string
+		pem   []byte
+	}{
+		{"root", bundle.RootCAPEM},
+		{"server", bundle.ServerCertPEM},
+	} {
+		cert, err := parseFirstCert(c.pem)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Must be at least 5 years in the past so a freshly-booted
+		// Bose box reading 2015 still sees the cert as valid before
+		// NTP sync catches up. Generator uses -12 years.
+		minBackdate := 5 * 365 * 24 * time.Hour
+		if time.Since(cert.NotBefore) < minBackdate {
+			t.Errorf("%s NotBefore=%v is not backdated enough (must be >= %v in the past so 2015 box clocks accept it)",
+				c.label, cert.NotBefore, minBackdate)
+		}
 	}
 }
 

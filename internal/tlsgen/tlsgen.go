@@ -100,22 +100,22 @@ func New(dir string, domains []string, logger *slog.Logger) *Manager {
 func (m *Manager) EnsureBundle() (*Bundle, error) {
 	bundle, err := m.load()
 	if err == nil {
-		m.logger.Info("TLS Bundle geladen", "dir", m.dir)
+		m.logger.Info("TLS bundle loaded", "dir", m.dir)
 		return bundle, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("Bundle Laden fehlgeschlagen, regeneriere nicht weil Fehler: %w", err)
+		return nil, fmt.Errorf("loading bundle failed (not regenerating because the failure was not a missing file): %w", err)
 	}
 
-	m.logger.Info("TLS Bundle nicht vorhanden, generiere neu", "dir", m.dir)
+	m.logger.Info("TLS bundle not present, generating", "dir", m.dir)
 	bundle, err = m.generate()
 	if err != nil {
-		return nil, fmt.Errorf("generieren: %w", err)
+		return nil, fmt.Errorf("generate: %w", err)
 	}
 	if err := m.save(bundle); err != nil {
-		return nil, fmt.Errorf("speichern: %w", err)
+		return nil, fmt.Errorf("save: %w", err)
 	}
-	m.logger.Info("TLS Bundle persistiert", "dir", m.dir)
+	m.logger.Info("TLS bundle persisted", "dir", m.dir)
 	return bundle, nil
 }
 
@@ -182,13 +182,22 @@ func (m *Manager) generate() (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The Bose box's RTC reads "2015-07-06" right after a power-on
+	// and only catches up once NTP runs (a few minutes later). If
+	// NotBefore is set to "now" the box rejects the cert as
+	// "not yet valid" (which appears as
+	// `tls: expired certificate` in the agent log because the box's
+	// clock is *before* NotBefore). The cert is loopback-only, so a
+	// generous backdate carries no real security cost — it just lets
+	// the box's pre-NTP clock accept it.
+	notBeforeBackdate := time.Now().AddDate(-12, 0, 0)
 	rootTpl := &x509.Certificate{
 		SerialNumber: rootSerial,
 		Subject: pkix.Name{
 			CommonName:   "STR Root CA",
 			Organization: []string{"STR"},
 		},
-		NotBefore:             time.Now().Add(-1 * time.Hour),
+		NotBefore:             notBeforeBackdate,
 		NotAfter:              time.Now().Add(rootValidity),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
@@ -215,7 +224,9 @@ func (m *Manager) generate() (*Bundle, error) {
 			CommonName:   m.domains[0],
 			Organization: []string{"STR"},
 		},
-		NotBefore:   time.Now().Add(-1 * time.Hour),
+		// Same backdating rationale as the root CA above: the box
+		// clock is 2015 at cold boot and rejects future-dated certs.
+		NotBefore:   notBeforeBackdate,
 		NotAfter:    time.Now().Add(serverValidity),
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},

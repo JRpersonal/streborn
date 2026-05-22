@@ -160,7 +160,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 
 	var u updates
 	if err := xml.Unmarshal(data, &u); err != nil {
-		c.logger.Debug("xml parse fehler", "err", err)
+		c.logger.Debug("xml parse error", "err", err)
 		return
 	}
 	pe := u.NowSelectionUpdated

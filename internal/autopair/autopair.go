@@ -113,23 +113,71 @@ func (m *Manager) Pair(ctx context.Context) error {
 
 // EnsurePaired prueft den Status und triggert Pair falls noetig.
 // Idempotent: laeuft Box bereits gepaart, macht es nichts.
+//
+// Before the first Pair attempt this also checks that the box's own
+// clock is past 2024. The Bose firmware's RTC reads 2015 right after
+// power-on and only catches up once the box reaches NTP. Calling Pair
+// while the clock is in 2015 fails with `tls: expired certificate`
+// (the box sees STR's 2026-issued cert as not-yet-valid even though
+// it's already backdated, depending on how far back NotBefore goes).
+// Gating here lets the periodic ticker simply retry until the clock
+// is sane.
 func (m *Manager) EnsurePaired(ctx context.Context) error {
 	paired, err := m.IsPaired(ctx)
 	if err != nil {
 		return fmt.Errorf("status pruefen: %w", err)
 	}
 	if paired {
-		// Auf Debug damit der Heartbeat alle 5 min nicht den Log
-		// auf dem NAND vollschreibt. Nur State Changes sind interessant.
-		m.logger.Debug("Box ist bereits gepaart, kein Re-Pair noetig")
+		// Debug-level so the 5-min heartbeat does not flood the NAND
+		// log. Only state changes are interesting.
+		m.logger.Debug("box already paired, no re-pair needed")
 		return nil
 	}
-	m.logger.Info("Box nicht gepaart, starte Auto Pair", "accountID", m.cfg.AccountID)
+	if ok, when := m.boxClockSane(ctx); !ok {
+		m.logger.Info("auto pair deferred, box clock not yet synced (will retry next tick)",
+			"boxDate", when)
+		return nil
+	}
+	m.logger.Info("box not paired, starting auto pair", "accountID", m.cfg.AccountID)
 	if err := m.Pair(ctx); err != nil {
 		return fmt.Errorf("pair: %w", err)
 	}
-	m.logger.Info("Box erfolgreich gepaart", "accountID", m.cfg.AccountID)
+	m.logger.Info("box paired successfully", "accountID", m.cfg.AccountID)
 	return nil
+}
+
+// boxClockSane returns true if the box's own clock — as reported by
+// the Date header on /info — is past 2024. Returns false on any error
+// reading the header so callers default to "not sane" and retry
+// later. The second return value is the parsed (or raw) date string
+// for logging.
+func (m *Manager) boxClockSane(ctx context.Context) (bool, string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("http://%s:8090/info", m.cfg.BoxHost), nil)
+	if err != nil {
+		return false, "request-build-failed"
+	}
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return false, "request-failed"
+	}
+	defer resp.Body.Close()
+	dh := resp.Header.Get("Date")
+	if dh == "" {
+		// Older Bose firmware variants do not always emit a Date
+		// header on /info. Be lenient: if the box did answer, fall
+		// through and let Pair proceed — the worst case is a single
+		// failed handshake that the ticker retries.
+		return true, "no-date-header"
+	}
+	t, err := http.ParseTime(dh)
+	if err != nil {
+		return true, "unparseable: " + dh
+	}
+	if t.Year() < 2024 {
+		return false, t.UTC().Format(time.RFC3339)
+	}
+	return true, t.UTC().Format(time.RFC3339)
 }
 
 // RunBackground laeuft im Hintergrund, paart einmal beim Start nach delay,
@@ -151,7 +199,7 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 	defer tick.Stop()
 	for {
 		if err := m.EnsurePaired(ctx); err != nil {
-			m.logger.Warn("auto pair fehlgeschlagen, retry beim naechsten Tick", "err", err)
+			m.logger.Warn("auto pair failed, will retry next tick", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -165,7 +213,7 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 // Ticker. Nuetzlich z.B. wenn boxws ein Reconnect signalisiert.
 func (m *Manager) TriggerNow(ctx context.Context) {
 	if err := m.EnsurePaired(ctx); err != nil {
-		m.logger.Warn("auto pair trigger fehlgeschlagen", "err", err)
+		m.logger.Warn("auto pair trigger failed", "err", err)
 	}
 }
 
