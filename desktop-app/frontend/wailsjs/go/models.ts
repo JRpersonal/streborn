@@ -262,6 +262,22 @@ export namespace main {
 	        this.signal = source["signal"];
 	    }
 	}
+	export class WifiCheck {
+	    ssid: string;
+	    onBoseSetupAP: boolean;
+	    hint: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new WifiCheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ssid = source["ssid"];
+	        this.onBoseSetupAP = source["onBoseSetupAP"];
+	        this.hint = source["hint"];
+	    }
+	}
 
 }
 

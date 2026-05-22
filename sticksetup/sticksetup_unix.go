@@ -86,17 +86,70 @@ func detectFs(path string) string {
 
 // formatFAT32Impl stub fuer Mac/Linux — aktuell nicht implementiert.
 // User auf diesen Plattformen formatiert vorerst selbst.
+//
+// macOS note (issue #58): `diskutil eraseDisk` requires a whole-disk
+// node (`/dev/diskN`), not a mounted volume path (`/Volumes/BOSE`).
+// Passing the volume produced
+//   "A volume was specified instead of a whole disk: /Volumes/BOSE"
+// We therefore resolve the volume to its ParentWholeDisk via
+// `diskutil info -plist <path>` before calling eraseDisk.
 func formatFAT32Impl(path, label string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		cmd := exec.Command("diskutil", "eraseDisk", "MS-DOS", label, "MBRFormat", path)
+		whole, err := macParentWholeDisk(path)
+		if err != nil {
+			return fmt.Errorf("resolve whole disk for %q: %w", path, err)
+		}
+		// Sanity check: never call eraseDisk on disk0 (boot drive).
+		// Even if diskutil would refuse, we'd rather error early than
+		// rely on diskutil's safety net.
+		if whole == "/dev/disk0" {
+			return fmt.Errorf("refusing to format internal boot disk %s", whole)
+		}
+		cmd := exec.Command("diskutil", "eraseDisk", "MS-DOS", label, "MBRFormat", whole)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("diskutil format: %v: %s", err, string(out))
+			return fmt.Errorf("diskutil eraseDisk %s: %v: %s", whole, err, string(out))
 		}
 		return nil
 	default:
 		return fmt.Errorf("format on this platform is not implemented yet; please format with system tools (e.g. mkfs.vfat)")
 	}
+}
+
+// macParentWholeDisk takes a Volume path like "/Volumes/BOSE" and
+// returns the whole-disk device node like "/dev/disk4". Implemented
+// by parsing `diskutil info -plist <path>` for the ParentWholeDisk
+// key. We use a regex against the plist text rather than pulling in
+// plist parsing — the format is stable across macOS versions and the
+// dependency surface stays small.
+func macParentWholeDisk(volumePath string) (string, error) {
+	cmd := exec.Command("diskutil", "info", "-plist", volumePath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("diskutil info %s: %v: %s", volumePath, err, strings.TrimSpace(string(out)))
+	}
+	// Look for: <key>ParentWholeDisk</key>\n\t<string>disk4</string>
+	idx := strings.Index(string(out), "<key>ParentWholeDisk</key>")
+	if idx < 0 {
+		return "", fmt.Errorf("ParentWholeDisk not present in diskutil info plist for %s", volumePath)
+	}
+	tail := string(out)[idx:]
+	openIdx := strings.Index(tail, "<string>")
+	closeIdx := strings.Index(tail, "</string>")
+	if openIdx < 0 || closeIdx < 0 || closeIdx <= openIdx {
+		return "", fmt.Errorf("ParentWholeDisk value not parseable in diskutil info plist")
+	}
+	disk := strings.TrimSpace(tail[openIdx+len("<string>") : closeIdx])
+	if disk == "" {
+		return "", fmt.Errorf("ParentWholeDisk empty in diskutil info plist")
+	}
+	// disk is returned as "disk4" (no /dev prefix) — eraseDisk
+	// accepts both forms but the canonical one in scripts is
+	// /dev/disk4 so we normalize.
+	if !strings.HasPrefix(disk, "/dev/") {
+		disk = "/dev/" + disk
+	}
+	return disk, nil
 }
 
 // ejectImpl auf Mac/Linux via OS Commands.

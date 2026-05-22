@@ -27,6 +27,7 @@ import (
 	"github.com/JRpersonal/streborn/discovery"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/shepherd"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -56,7 +57,7 @@ func main() {
 		switch os.Args[1] {
 		case "shepherd":
 			if err := runShepherdCmd(os.Args[2:]); err != nil {
-				fmt.Fprintln(os.Stderr, "fehler:", err)
+				fmt.Fprintln(os.Stderr, "error:", err)
 				os.Exit(1)
 			}
 			return
@@ -64,7 +65,7 @@ func main() {
 	}
 
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "fehler:", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
@@ -145,26 +146,26 @@ func run() error {
 	}
 
 	logger := newLogger(*logLevel)
-	logger.Info("streborn startet", "version", version)
+	logger.Info("streborn starting", "version", version)
 
 	// DeviceID aus MAC ermitteln, damit Marge Antworten die echte Box ID
 	// zurueckgeben. Wenn keine MAC gefunden wird, weiter mit leerer ID.
 	deviceID, err := sysinfo.DeviceID(nil)
 	if err != nil {
-		logger.Warn("DeviceID konnte nicht ermittelt werden", "err", err)
+		logger.Warn("could not determine DeviceID", "err", err)
 		deviceID = ""
 	} else {
-		logger.Info("DeviceID erkannt", "deviceID", deviceID)
+		logger.Info("DeviceID detected", "deviceID", deviceID)
 	}
 
 	// Presets laden. Bei Fehler nicht crashen sondern mit leerer Liste weitermachen,
 	// damit der Agent zumindest auf seinen Listenern lebt und korrigierbar bleibt.
 	store, err := presets.Load(*presetsPath)
 	if err != nil {
-		logger.Warn("Presets nicht ladbar, weiter mit leerer Liste", "err", err, "datei", *presetsPath)
+		logger.Warn("presets not loadable, continuing with empty list", "err", err, "file", *presetsPath)
 		store = presets.New()
 	} else {
-		logger.Info("Presets geladen", "anzahl", len(store.All()), "datei", *presetsPath)
+		logger.Info("presets loaded", "count", len(store.All()), "file", *presetsPath)
 	}
 
 	// Hosts Datei manipulieren
@@ -172,7 +173,7 @@ func run() error {
 	if *applyHosts {
 		hostsMgr = hosts.New(*hostsPath, logger)
 		if err := hostsMgr.Apply(hosts.DefaultEntries()); err != nil {
-			logger.Warn("hosts Datei konnte nicht angepasst werden", "err", err)
+			logger.Warn("hosts file could not be modified", "err", err)
 			hostsMgr = nil
 		}
 	}
@@ -237,7 +238,7 @@ func run() error {
 					"strRegion", region, "boseCountryCode", boseCC)
 			}
 		} else if err != nil {
-			logger.Debug("Box /info noch nicht erreichbar, nutze Fallback Model", "err", err)
+			logger.Debug("box /info not yet reachable, using fallback model", "err", err)
 		}
 		infoCancel()
 	}
@@ -257,7 +258,7 @@ func run() error {
 		},
 	)
 	if mdnsErr != nil {
-		logger.Warn("mDNS Announce fehlgeschlagen, weiter ohne", "err", mdnsErr)
+		logger.Warn("mDNS announce failed, continuing without", "err", mdnsErr)
 	}
 
 	// Box Name dynamisch in mDNS halten: regelmaessig info.name pollen
@@ -310,11 +311,11 @@ func run() error {
 		tlsMgr := tlsgen.New(*tlsDir, nil, logger.With("comp", "tlsgen"))
 		bundle, err := tlsMgr.EnsureBundle()
 		if err != nil {
-			logger.Error("TLS Bundle nicht verfuegbar, fahre ohne TLS Listener fort", "err", err)
+			logger.Error("TLS bundle unavailable, continuing without TLS listener", "err", err)
 		} else {
 			cert, err := bundle.TLSCert()
 			if err != nil {
-				logger.Error("TLS Cert nicht ladbar, fahre ohne TLS Listener fort", "err", err)
+				logger.Error("TLS cert not loadable, continuing without TLS listener", "err", err)
 			} else {
 				tlsConfig := &tls.Config{
 					Certificates: []tls.Certificate{cert},
@@ -351,15 +352,15 @@ func run() error {
 		autoPair.RunBackground(ctx, 8*time.Second, 5*time.Minute)
 	}()
 
-	logger.Info("alle Subsysteme gestartet")
+	logger.Info("all subsystems started")
 
 	var firstErr error
 	select {
 	case <-ctx.Done():
-		logger.Info("Shutdown Signal empfangen")
+		logger.Info("shutdown signal received")
 	case err := <-errs:
 		firstErr = err
-		logger.Error("Subsystem Fehler, fahre herunter", "err", err)
+		logger.Error("subsystem error, shutting down", "err", err)
 		cancel()
 	}
 
@@ -371,15 +372,19 @@ func run() error {
 
 	if hostsMgr != nil {
 		if err := hostsMgr.Restore(); err != nil {
-			logger.Warn("hosts Datei wiederherstellen fehlgeschlagen", "err", err)
+			logger.Warn("hosts file restore failed", "err", err)
 		}
 	}
 
-	logger.Info("streborn beendet")
+	logger.Info("streborn exited")
 	return firstErr
 }
 
 // startHTTP startet einen HTTP Server in einer Goroutine und meldet Fehler an errs.
+//
+// The listener is opened via netutil.ListenTCP, which sets SO_REUSEADDR on
+// the socket. Without that, a watchdog-driven respawn while the previous
+// listener is still in TIME_WAIT fails with "address already in use".
 func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name, addr string, handler http.Handler, logger *slog.Logger) {
 	wg.Add(1)
 	go func() {
@@ -389,10 +394,15 @@ func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name,
 			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
+		ln, err := netutil.ListenTCP(ctx, addr)
+		if err != nil {
+			errs <- fmt.Errorf("%s: listen %s: %w", name, addr, err)
+			return
+		}
 		serveErr := make(chan error, 1)
 		go func() {
 			logger.Info("HTTP Server startet", "comp", name, "addr", addr)
-			serveErr <- srv.ListenAndServe()
+			serveErr <- srv.Serve(ln)
 		}()
 		select {
 		case <-ctx.Done():
@@ -419,11 +429,17 @@ func startHTTPS(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name
 			TLSConfig:         tlsConfig,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
+		ln, err := netutil.ListenTCP(ctx, addr)
+		if err != nil {
+			errs <- fmt.Errorf("%s: listen %s: %w", name, addr, err)
+			return
+		}
+		// ServeTLS upgrades the listener with the supplied TLSConfig.
+		// We pass empty paths since the cert is in TLSConfig.Certificates.
 		serveErr := make(chan error, 1)
 		go func() {
 			logger.Info("HTTPS Server startet", "comp", name, "addr", addr)
-			// ListenAndServeTLS mit leeren Paths, Cert kommt aus TLSConfig
-			serveErr <- srv.ListenAndServeTLS("", "")
+			serveErr <- srv.ServeTLS(ln, "", "")
 		}()
 		select {
 		case <-ctx.Done():
@@ -496,7 +512,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := h.renderer.PlayURL(playCtx, url, name, icon); err != nil {
-		h.logger.Error("upnp play fehlgeschlagen", "slot", slot, "err", err)
+		h.logger.Error("upnp play failed", "slot", slot, "err", err)
 		return
 	}
 	h.logger.Info("hardware preset zu upnp gemapped", "slot", slot, "name", name)
@@ -511,7 +527,7 @@ func loadRegion(path string, logger *slog.Logger) string {
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		logger.Debug("region file nicht lesbar", "path", path, "err", err)
+		logger.Debug("region file not readable", "path", path, "err", err)
 		return ""
 	}
 	cc := ""
@@ -550,7 +566,7 @@ func syncRunOverrideFromStick(logger *slog.Logger) {
 
 	stickData, err := os.ReadFile(stickPath)
 	if err != nil {
-		logger.Debug("run.sh vom Stick nicht lesbar, kein Sync", "err", err)
+		logger.Debug("run.sh on stick not readable, skipping sync", "err", err)
 		return
 	}
 	nandData, _ := os.ReadFile(nandPath)
@@ -559,15 +575,15 @@ func syncRunOverrideFromStick(logger *slog.Logger) {
 	}
 	tmp := nandPath + ".new"
 	if err := os.WriteFile(tmp, stickData, 0o755); err != nil {
-		logger.Warn("run-override.sh Sync schreiben fehlgeschlagen", "err", err)
+		logger.Warn("run-override.sh sync write failed", "err", err)
 		return
 	}
 	if err := os.Rename(tmp, nandPath); err != nil {
-		logger.Warn("run-override.sh Sync rename fehlgeschlagen", "err", err)
+		logger.Warn("run-override.sh sync rename failed", "err", err)
 		os.Remove(tmp)
 		return
 	}
-	logger.Info("run-override.sh vom Stick auf NAND aktualisiert", "bytes", len(stickData))
+	logger.Info("run-override.sh updated on NAND from stick", "bytes", len(stickData))
 }
 
 func bytesEqual(a, b []byte) bool {
@@ -620,7 +636,7 @@ func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, lo
 			_ = os.Remove(path)
 			return
 		}
-		logger.Debug("Box Name setzen fehlgeschlagen, retry", "attempt", attempt, "err", err)
+		logger.Debug("box name set failed, will retry", "attempt", attempt, "err", err)
 		select {
 		case <-ctx.Done():
 			return
@@ -655,10 +671,10 @@ func pollBoxName(ctx context.Context, boxHost string, ann *discovery.Announcer, 
 			return
 		}
 		if err := ann.UpdateFriendlyName(name); err != nil {
-			logger.Warn("mDNS UpdateFriendlyName fehlgeschlagen", "err", err)
+			logger.Warn("mDNS UpdateFriendlyName failed", "err", err)
 			return
 		}
-		logger.Info("mDNS FriendlyName aktualisiert", "name", name)
+		logger.Info("mDNS FriendlyName updated", "name", name)
 		last = name
 	}
 	doOne()
@@ -723,16 +739,16 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 		for slot, err := range errs {
 			if err == nil {
 				delete(pending, slot)
-				logger.Info("box preset gesynct", "slot", slot, "name", pending[slot].Name, "attempt", attempt)
+				logger.Info("box preset synced", "slot", slot, "name", pending[slot].Name, "attempt", attempt)
 			} else if attempt == 5 {
-				logger.Warn("box preset sync endgueltig fehlgeschlagen", "slot", slot, "err", err)
+				logger.Warn("box preset sync failed permanently", "slot", slot, "err", err)
 			} else {
 				logger.Debug("box preset sync fail, retry", "slot", slot, "attempt", attempt, "err", err)
 			}
 		}
 	}
 	if len(pending) == 0 {
-		logger.Info("alle box presets erfolgreich gesynct")
+		logger.Info("all box presets synced successfully")
 	}
 }
 
@@ -759,7 +775,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger) {
 	}
 	boxSlots, err := fetchBoxPresetSlots(boxHost)
 	if err != nil {
-		logger.Debug("preset reconcile: box presets nicht lesbar", "err", err)
+		logger.Debug("preset reconcile: box presets not readable", "err", err)
 		return
 	}
 	var missing []boxcli.PresetSpec

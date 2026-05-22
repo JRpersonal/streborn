@@ -19,7 +19,7 @@ CURRENT="$(cat "${VERSION_FILE}" 2>/dev/null || echo none)"
 # api.github.com mit wget, T 10 fuer 10 Sekunden Timeout
 TMP="/tmp/streborn-release.json"
 if ! wget -qO "$TMP" -T 10 "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null; then
-    echo "$(date) update: GitHub API nicht erreichbar" >&2
+    echo "$(date) update: GitHub API unreachable" >&2
     exit 0
 fi
 
@@ -27,12 +27,12 @@ LATEST="$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$T
 rm -f "$TMP"
 
 if [ -z "${LATEST}" ]; then
-    echo "$(date) update: konnte neueste Version nicht ermitteln" >&2
+    echo "$(date) update: could not determine latest version" >&2
     exit 0
 fi
 
 if [ "${CURRENT}" = "${LATEST}" ]; then
-    echo "$(date) update: bereits aktuell (${CURRENT})"
+    echo "$(date) update: already up to date (${CURRENT})"
     exit 0
 fi
 
@@ -42,9 +42,9 @@ if wget -qO "${BIN}.new" -T 60 "${URL}" 2>/dev/null; then
     chmod +x "${BIN}.new"
     mv "${BIN}.new" "${BIN}"
     echo "${LATEST}" > "${VERSION_FILE}"
-    echo "$(date) update: auf ${LATEST} abgeschlossen"
+    echo "$(date) update: completed to ${LATEST}"
 else
-    echo "$(date) update: Download fehlgeschlagen, kein Tausch" >&2
+    echo "$(date) update: download failed, kept existing binary" >&2
     rm -f "${BIN}.new"
     exit 1
 fi

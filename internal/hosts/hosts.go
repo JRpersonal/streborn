@@ -68,10 +68,10 @@ func (m *Manager) Apply(entries []Entry) error {
 	merged = append(merged, block...)
 
 	if err := writeAtomic(m.path, merged); err != nil {
-		return fmt.Errorf("hosts schreiben: %w", err)
+		return fmt.Errorf("hosts write: %w", err)
 	}
 	if m.logger != nil {
-		m.logger.Info("hosts Block aktiv", "path", m.path, "entries", len(entries))
+		m.logger.Info("hosts block active", "path", m.path, "entries", len(entries))
 	}
 	return nil
 }

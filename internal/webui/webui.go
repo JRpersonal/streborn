@@ -24,6 +24,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/radiobrowser"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -167,10 +168,16 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
+	// SO_REUSEADDR so the agent can rebind after a watchdog respawn
+	// while the previous listener is still in TIME_WAIT.
+	ln, err := netutil.ListenTCP(ctx, s.addr)
+	if err != nil {
+		return fmt.Errorf("webui listen %s: %w", s.addr, err)
+	}
 	errCh := make(chan error, 1)
 	go func() {
 		s.logger.Info("Webui Server startet", "addr", s.addr)
-		errCh <- srv.ListenAndServe()
+		errCh <- srv.Serve(ln)
 	}()
 
 	select {
@@ -256,7 +263,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 			proxyURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
 			if err := boxcli.AddPreset(boxCtx, s.boxHost, slot, p.Name, proxyURL); err != nil {
-				s.logger.Warn("box preset sync fehlgeschlagen", "slot", slot, "err", err)
+				s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
 			}
 			cancel()
 		}
@@ -311,9 +318,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	playURL := "http://127.0.0.1:8888/stream/raw?u=" + base64.RawURLEncoding.EncodeToString([]byte(req.URL))
 	if err := s.renderer.PlayURL(r.Context(), playURL, req.Title, req.Icon); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{
-			"error":   "Sender konnte nicht abgespielt werden",
-			"detail":  guessErrorReason(err),
-			"url":     req.URL,
+			"error":  "Station could not be played",
+			"detail": guessErrorReason(err),
+			"url":    req.URL,
 		})
 		return
 	}
@@ -358,7 +365,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	playURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
 	if err := s.renderer.PlayURL(r.Context(), playURL, p.Name, p.Art); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error":  "Sender konnte nicht abgespielt werden",
+			"error":  "Station could not be played",
 			"detail": guessErrorReason(err),
 			"slot":   slot,
 			"name":   p.Name,
@@ -652,7 +659,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.Info("agent update geschrieben, Selbst-Restart in 1s", "size", len(body))
+	s.logger.Info("agent update written, self-restart in 1s", "size", len(body))
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "ok",
 		"restart": "in 1s",
@@ -688,7 +695,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		cmd := exec.Command("sh", "-c", shCmd)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		if err := cmd.Start(); err != nil {
-			s.logger.Error("self-restart spawn fehlgeschlagen, triggere Box Reboot als Fallback", "err", err)
+			s.logger.Error("self-restart spawn failed, triggering box reboot as fallback", "err", err)
 			_ = exec.Command("reboot").Run()
 			return
 		}
@@ -727,13 +734,13 @@ func guessErrorReason(err error) string {
 	s := err.Error()
 	switch {
 	case strings.Contains(s, "402") || strings.Contains(s, "No URI"):
-		return "Der Stream konnte nicht geladen werden. Manche Sender liefern Playlist Dateien (.pls/.m3u) oder HTTPS Streams die die Box nicht direkt abspielen kann. Probiere einen anderen Sender."
+		return "The stream could not be loaded. Some stations serve playlist files (.pls/.m3u) or HTTPS streams that the speaker cannot play directly. Try a different station."
 	case strings.Contains(s, "no such host") || strings.Contains(s, "lookup"):
-		return "Server der Stream URL ist nicht erreichbar."
+		return "Could not reach the stream URL server."
 	case strings.Contains(s, "timeout"):
-		return "Box antwortet nicht. Eventuell im Standby, probiere es nochmal."
+		return "Speaker did not respond. It may be in standby — try again."
 	case strings.Contains(s, "connection refused"):
-		return "Box lehnt die Verbindung ab."
+		return "Speaker refused the connection."
 	default:
 		return s
 	}
@@ -1048,7 +1055,7 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 	for slot, err := range errs {
 		if err != nil {
 			failed = append(failed, slot)
-			s.logger.Warn("preset sync fehlgeschlagen", "slot", slot, "err", err)
+			s.logger.Warn("preset sync failed", "slot", slot, "err", err)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -1136,7 +1143,7 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	// loggen wir nur — beim naechsten Box Boot wird die Conf eh
 	// gelesen.
 	if err := sighupWPA(); err != nil {
-		s.logger.Warn("SIGHUP wpa_supplicant fehlgeschlagen", "err", err)
+		s.logger.Warn("SIGHUP to wpa_supplicant failed", "err", err)
 	}
 	s.logger.Info("WLAN umgeschaltet", "ssid", req.SSID)
 	writeJSON(w, http.StatusOK, map[string]string{
@@ -1267,7 +1274,7 @@ func (s *Server) handleRegion(w http.ResponseWriter, r *http.Request) {
 		s.regionMu.Unlock()
 		if path != "" {
 			if err := os.WriteFile(path, []byte(cc+"\n"), 0o644); err != nil {
-				s.logger.Warn("region.txt schreiben fehlgeschlagen", "err", err)
+				s.logger.Warn("region.txt write failed", "err", err)
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]string{

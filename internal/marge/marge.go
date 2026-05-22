@@ -25,6 +25,8 @@ import (
 	"sync"
 	"text/template"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
 // Server hält die Konfiguration und den HTTP Handler für die Marge Emulation.
@@ -106,10 +108,16 @@ func (s *Server) Handler() http.Handler {
 
 // Run startet einen optionalen eigenständigen Listener (für Tests).
 // Im Produktivbetrieb wird Handler() in den zentralen Listener gemountet.
+// Uses SO_REUSEADDR so test runs can rebind a freshly-released port
+// without a TIME_WAIT cooldown.
 func (s *Server) Run(ctx context.Context, addr string) error {
 	srv := &http.Server{Addr: addr, Handler: s.Handler()}
+	ln, err := netutil.ListenTCP(ctx, addr)
+	if err != nil {
+		return err
+	}
 	errCh := make(chan error, 1)
-	go func() { errCh <- srv.ListenAndServe() }()
+	go func() { errCh <- srv.Serve(ln) }()
 	select {
 	case <-ctx.Done():
 		return srv.Close()

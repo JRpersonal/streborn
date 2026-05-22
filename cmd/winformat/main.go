@@ -130,7 +130,7 @@ func openLockDismount(letter string) (uintptr, error) {
 	}
 	if !locked {
 		closeHandle.Call(h)
-		return 0, fmt.Errorf("lock fehlgeschlagen (Volume wird von anderem Prozess gehalten)")
+		return 0, fmt.Errorf("lock failed (volume is held by another process)")
 	}
 	if r, _, e := deviceIoControl.Call(h, fsctlDismountVol, 0, 0, 0, 0,
 		uintptr(unsafe.Pointer(&bytesReturned)), 0); r == 0 {
