@@ -214,71 +214,6 @@ func run() error {
 		webui.WithRegionFile(*regionFile),
 		webui.WithStreamProxy(streamProxySrv))
 
-	// Box model — ask the local Bose firmware which actual model
-	// it is (SoundTouch 10 vs 20 vs 30 vs Portable). Falls back to
-	// the generic "SoundTouch" if /info is not yet answering on a
-	// cold boot. Used by the desktop app to disambiguate multiple
-	// boxes on the same LAN.
-	model := "SoundTouch"
-	{
-		infoCtx, infoCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if settings, err := boxapi.New(*boxHost).LoadSettings(infoCtx); err == nil && settings.Info.Type != "" {
-			model = settings.Info.Type
-			logger.Info("Box Modell erkannt", "type", model)
-			// Bose's countryCode is set at the factory or during the
-			// original Bose pairing flow and is rarely the user's
-			// actual location after STR install. STR uses region.txt
-			// (written by the setup wizard) for radio defaults. Log
-			// the mismatch once so it is documented in diagnostic
-			// bundles and not mistaken for a bug; nothing in STR
-			// reads Bose's countryCode at runtime.
-			boseCC := strings.ToUpper(strings.TrimSpace(settings.Info.CountryCode))
-			if region != "" && boseCC != "" && region != boseCC {
-				logger.Info("Region: STR uses region.txt for radio defaults; Bose firmware countryCode is informational only",
-					"strRegion", region, "boseCountryCode", boseCC)
-			}
-		} else if err != nil {
-			logger.Debug("box /info not yet reachable, using fallback model", "err", err)
-		}
-		infoCancel()
-	}
-
-	// mDNS Announce damit die Desktop App den Stick im LAN findet.
-	// Bei mehreren Boxen im Netz ist jeder Stick eine eigene Instance,
-	// die Desktop App listet alle.
-	mdnsAnnouncer, mdnsErr := discovery.Announce(
-		logger.With("comp", "discovery"),
-		discovery.Config{
-			Port:         8888,
-			DeviceID:     deviceID,
-			FriendlyName: "Bose SoundTouch " + lastN(deviceID, 6),
-			Model:        model,
-			Version:      version,
-			Build:        buildStamp,
-		},
-	)
-	if mdnsErr != nil {
-		logger.Warn("mDNS announce failed, continuing without", "err", mdnsErr)
-	}
-
-	// Box Name dynamisch in mDNS halten: regelmaessig info.name pollen
-	// und bei Aenderung den Announce TXT Record refreshen. Damit bekommt
-	// die Desktop App den neuen Namen sofort mit ohne Box Neustart.
-	if mdnsAnnouncer != nil {
-		go pollBoxName(context.Background(), *boxHost, mdnsAnnouncer, logger)
-	}
-
-	if *pendingNameFile != "" {
-		go applyPendingBoxName(context.Background(), *boxHost, *pendingNameFile, deviceID, logger)
-	}
-
-	// Wenn der USB Stick ein neueres run.sh hat als das NAND
-	// run-override.sh: kopieren. Das ist der Selbst-Update-Pfad fuer
-	// den Bootstrap. Ohne das laeuft die alte run-override.sh aus dem
-	// allerersten Setup auf ewig und neue Setup Wizard Configs werden
-	// ignoriert.
-	go syncRunOverrideFromStick(logger)
-
 	// Hardware Preset Tasten: Box sendet via WebSocket auf 8080 (gabbo Protocol)
 	// einen presetSelectionUpdated event wenn der User physisch eine Taste
 	// drueckt. Wir hooken den Event und triggern unseren UPnP Player.
@@ -302,31 +237,18 @@ func run() error {
 	var wg sync.WaitGroup
 	errs := make(chan error, 3)
 
+	// === Listener boot FIRST ===
+	// Bind marge / bmx / webui before any slow init (box /info,
+	// TLS bundle generation, mDNS announce). The boot-watchdog in
+	// usb-stick/run.sh checks ALIVE + BOUND every 5s starting at
+	// t=5s; on weak SoundTouch hardware the previous order spent
+	// 20-30s on pre-listen work (5s boxapi /info timeout, first-
+	// boot CA generation, etc.) and the watchdog killed the agent
+	// mid-init in a respawn loop. Listeners up first means :8888
+	// answers in 1-2s and the watchdog sees BOUND=1 from the
+	// first check.
 	startHTTP(ctx, &wg, errs, "marge", *margeAddr, margeSrv.Handler(), logger)
 	startHTTP(ctx, &wg, errs, "bmx", *bmxAddr, bmxSrv.Handler(), logger)
-
-	// TLS Termination fuer Marge auf 8443. iptables redirected die echte
-	// Box Anfrage von 443 dorthin. Wenn TLS deaktiviert wird, ueberspringen.
-	if *tlsEnabled {
-		tlsMgr := tlsgen.New(*tlsDir, nil, logger.With("comp", "tlsgen"))
-		bundle, err := tlsMgr.EnsureBundle()
-		if err != nil {
-			logger.Error("TLS bundle unavailable, continuing without TLS listener", "err", err)
-		} else {
-			cert, err := bundle.TLSCert()
-			if err != nil {
-				logger.Error("TLS cert not loadable, continuing without TLS listener", "err", err)
-			} else {
-				tlsConfig := &tls.Config{
-					Certificates: []tls.Certificate{cert},
-					MinVersion:   tls.VersionTLS12,
-				}
-				startHTTPS(ctx, &wg, errs, "marge-tls", *margeTLSAddr,
-					margeSrv.Handler(), tlsConfig, logger)
-			}
-		}
-	}
-
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -352,7 +274,118 @@ func run() error {
 		autoPair.RunBackground(ctx, 8*time.Second, 5*time.Minute)
 	}()
 
-	logger.Info("all subsystems started")
+	// === Deferred heavy init (background) ===
+	// Everything below this point runs while the agent's listeners
+	// are already serving. Slow steps are isolated in their own
+	// goroutines so a stall in one (e.g. TLS CA generation on a
+	// flash-bound NAND) does not delay another (e.g. mDNS announce).
+	// All goroutines respect ctx so shutdown still terminates them
+	// promptly.
+	//
+	// Order within each goroutine is preserved from the previous
+	// sync flow; only the cross-goroutine ordering changes.
+
+	// mDNS announce: detect model from box /info, then announce. The
+	// model lookup is a 5 s blocking call against the Bose firmware
+	// which on a cold boot may not yet be answering. Doing it here
+	// (after listeners are up) costs nothing user-visible — the
+	// desktop app's discovery retries until the announce lands.
+	var (
+		mdnsMu        sync.Mutex
+		mdnsAnnouncer *discovery.Announcer
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		model := "SoundTouch"
+		infoCtx, infoCancel := context.WithTimeout(ctx, 5*time.Second)
+		if settings, err := boxapi.New(*boxHost).LoadSettings(infoCtx); err == nil && settings.Info.Type != "" {
+			model = settings.Info.Type
+			logger.Info("Box Modell erkannt", "type", model)
+			// Bose's countryCode is set at the factory or during the
+			// original Bose pairing flow and is rarely the user's
+			// actual location after STR install. STR uses region.txt
+			// (written by the setup wizard) for radio defaults. Log
+			// the mismatch once so it is documented in diagnostic
+			// bundles and not mistaken for a bug; nothing in STR
+			// reads Bose's countryCode at runtime.
+			boseCC := strings.ToUpper(strings.TrimSpace(settings.Info.CountryCode))
+			if region != "" && boseCC != "" && region != boseCC {
+				logger.Info("Region: STR uses region.txt for radio defaults; Bose firmware countryCode is informational only",
+					"strRegion", region, "boseCountryCode", boseCC)
+			}
+		} else if err != nil {
+			logger.Debug("box /info not yet reachable, using fallback model", "err", err)
+		}
+		infoCancel()
+
+		// mDNS Announce damit die Desktop App den Stick im LAN findet.
+		// Bei mehreren Boxen im Netz ist jeder Stick eine eigene Instance,
+		// die Desktop App listet alle.
+		ann, err := discovery.Announce(
+			logger.With("comp", "discovery"),
+			discovery.Config{
+				Port:         8888,
+				DeviceID:     deviceID,
+				FriendlyName: "Bose SoundTouch " + lastN(deviceID, 6),
+				Model:        model,
+				Version:      version,
+				Build:        buildStamp,
+			},
+		)
+		if err != nil {
+			logger.Warn("mDNS announce failed, continuing without", "err", err)
+			return
+		}
+		mdnsMu.Lock()
+		mdnsAnnouncer = ann
+		mdnsMu.Unlock()
+
+		// Box Name dynamisch in mDNS halten: regelmaessig info.name pollen
+		// und bei Aenderung den Announce TXT Record refreshen. Damit bekommt
+		// die Desktop App den neuen Namen sofort mit ohne Box Neustart.
+		go pollBoxName(ctx, *boxHost, ann, logger)
+	}()
+
+	if *pendingNameFile != "" {
+		go applyPendingBoxName(context.Background(), *boxHost, *pendingNameFile, deviceID, logger)
+	}
+
+	// Wenn der USB Stick ein neueres run.sh hat als das NAND
+	// run-override.sh: kopieren. Das ist der Selbst-Update-Pfad fuer
+	// den Bootstrap. Ohne das laeuft die alte run-override.sh aus dem
+	// allerersten Setup auf ewig und neue Setup Wizard Configs werden
+	// ignoriert.
+	go syncRunOverrideFromStick(logger)
+
+	// TLS Termination fuer Marge auf 8443. iptables redirected die echte
+	// Box Anfrage von 443 dorthin. Wenn TLS deaktiviert wird, ueberspringen.
+	// EnsureBundle generates a per-box CA on the very first boot, which
+	// touches NAND and can take several seconds — keep this off the
+	// listener-boot path.
+	if *tlsEnabled {
+		go func() {
+			tlsMgr := tlsgen.New(*tlsDir, nil, logger.With("comp", "tlsgen"))
+			bundle, err := tlsMgr.EnsureBundle()
+			if err != nil {
+				logger.Error("TLS bundle unavailable, continuing without TLS listener", "err", err)
+				return
+			}
+			cert, err := bundle.TLSCert()
+			if err != nil {
+				logger.Error("TLS cert not loadable, continuing without TLS listener", "err", err)
+				return
+			}
+			tlsConfig := &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				MinVersion:   tls.VersionTLS12,
+			}
+			startHTTPS(ctx, &wg, errs, "marge-tls", *margeTLSAddr,
+				margeSrv.Handler(), tlsConfig, logger)
+		}()
+	}
+
+	logger.Info("agent listeners bound, deferred init continues in background")
 
 	var firstErr error
 	select {
@@ -366,8 +399,11 @@ func run() error {
 
 	wg.Wait()
 
-	if mdnsAnnouncer != nil {
-		mdnsAnnouncer.Close()
+	mdnsMu.Lock()
+	mdnsAnn := mdnsAnnouncer
+	mdnsMu.Unlock()
+	if mdnsAnn != nil {
+		mdnsAnn.Close()
 	}
 
 	if hostsMgr != nil {
