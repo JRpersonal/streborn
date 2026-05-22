@@ -2,6 +2,11 @@
 
 Welches Release Asset gehoert zu welcher Box. Stand der Validierung.
 
+> Per-variant hardware fingerprint (moduleType, components, firmware
+> build stamps, kernel, RAM, WLAN-interface presence) lives in
+> [`MODEL-VARIANTS.md`](MODEL-VARIANTS.md). Update that file when a
+> new diagnostic bundle reveals a previously unseen combination.
+
 ## Asset zu Modell Zuordnung
 
 | Asset Name                      | Bose Modell                | Hardware Plattform | Status         |

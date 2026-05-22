@@ -258,8 +258,11 @@ at the repository settings level.
    that show how discovery, playback, marge emulation, install, and
    OTA actually flow.
 4. Check [`docs/MODELS.md`](docs/MODELS.md) for hardware support
-   state and [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for
-   security context.
+   state, [`docs/MODEL-VARIANTS.md`](docs/MODEL-VARIANTS.md) for the
+   per-variant fingerprint table (moduleType, firmware, kernel,
+   components) that incoming diagnostics get matched against, and
+   [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for security
+   context.
 5. Run `go build ./...` and `cd desktop-app && wails dev` once to
    confirm the local environment is healthy. The stick agent
    contains Linux-only syscalls; on Windows or macOS hosts use
