@@ -38,6 +38,7 @@ import {
   InstallSTROnBox,
   ScanForSetupAPs,
   BootstrapBoxOnSetupAP,
+  CheckCurrentWifi,
   ListMediaServers,
   BrowseLibrary,
   BrowserOpenURL,
@@ -265,6 +266,13 @@ function switchView(view) {
     // freshly installed STR) and the user just opened the tab to
     // start a prep flow — make sure they see the right targets.
     renderSetupTargetPicker();
+    // Surface a banner if the host is currently associated to the
+    // Bose speaker's setup-AP. New users coming from the Bose
+    // smartphone flow expect to join that network first, but for
+    // STR's stick-based install that is the wrong network — the
+    // stick carries the home Wi-Fi credentials and the speaker
+    // joins home Wi-Fi on its own after first stick boot. Issue #60.
+    refreshSetupWifiHint();
   }
   if (view === 'box') {
     // Refresh the mDNS list on every switch to the music view so a
@@ -2860,6 +2868,7 @@ const debouncedSetBass = debounce(async (box, defaultBass) => {
 $('view-setup').innerHTML = `
   <h2>${escapeHtml(t('setup.heading'))}</h2>
   <p class="setup-intro">${escapeHtml(t('setup.intro'))}</p>
+  <div id="setupWifiHint" class="setup-wifi-hint" hidden></div>
   <div class="setup-section setup-target-section" id="setupTargetSection">
     <h3>${escapeHtml(t('setup.targetHeading'))}</h3>
     <p class="muted small">${escapeHtml(t('setup.targetIntro'))}</p>
@@ -2959,6 +2968,49 @@ $('wlanShowPass').onclick = togglePasswordVisibility;
 // arrived speakers appear in the picker, but the user's chosen
 // target is preserved unless the chosen speaker actually drops off
 // the LAN (brief mDNS gaps would otherwise yank the choice).
+
+// refreshSetupWifiHint asks the Go side whether the host is currently
+// associated with a Bose setup-AP. If it is, render an inline banner
+// at the top of the Setup view explaining that the stick-based install
+// does NOT require joining that network — the stick carries the home
+// Wi-Fi credentials and the speaker joins home Wi-Fi on its own after
+// first boot. New users coming from the Bose smartphone flow assume
+// they need to be on the Bose AP (issue #60); the banner clears that.
+async function refreshSetupWifiHint() {
+  const el = $('setupWifiHint');
+  if (!el) return;
+  try {
+    const r = await CheckCurrentWifi();
+    if (r && r.onBoseSetupAP) {
+      // Localized text is short and matches the EN hint from the
+      // backend in spirit. The frontend rewrites the message here so
+      // translations live in i18n keys, not in Go strings.
+      const head = t('setup.wifiHint.head') || 'You are on the Bose setup network';
+      const explain = t('setup.wifiHint.explain')
+        || 'You do not need to join the Bose speaker\'s setup network. The USB stick carries your home Wi-Fi credentials, and the speaker will join your home Wi-Fi on its own after the first boot from the stick.';
+      const action = t('setup.wifiHint.action')
+        || 'Please switch your computer back to your home Wi-Fi.';
+      const ssidLine = r.ssid
+        ? `<div class="setup-wifi-hint-ssid muted small">${escapeHtml(t('setup.wifiHint.currentLabel') || 'Currently connected to:')} <strong>${escapeHtml(r.ssid)}</strong></div>`
+        : '';
+      el.innerHTML =
+        `<div class="setup-wifi-hint-head">${escapeHtml(head)}</div>` +
+        ssidLine +
+        `<div class="setup-wifi-hint-body">${escapeHtml(explain)}</div>` +
+        `<div class="setup-wifi-hint-action">${escapeHtml(action)}</div>`;
+      el.hidden = false;
+      return;
+    }
+    el.hidden = true;
+    el.innerHTML = '';
+  } catch (err) {
+    // SSID lookup is best-effort. If the platform tool is missing
+    // (Linux without iwgetid/nmcli) we just hide the banner — same
+    // behavior as "user is on a normal Wi-Fi".
+    el.hidden = true;
+    el.innerHTML = '';
+  }
+}
 
 function renderSetupTargetPicker() {
   const body = $('setupTargetBody');

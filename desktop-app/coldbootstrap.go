@@ -281,23 +281,9 @@ func netshRun(args ...string) error {
 	return nil
 }
 
-func currentWifiSSID() string {
-	c := exec.Command("netsh", "wlan", "show", "interfaces")
-	hideCmdWindow(c)
-	out, err := c.CombinedOutput()
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		l := strings.TrimSpace(line)
-		if strings.HasPrefix(l, "SSID") && !strings.HasPrefix(l, "SSID-BSSID") && !strings.HasPrefix(l, "BSSID") {
-			if i := strings.Index(l, " : "); i > 0 {
-				return strings.TrimSpace(l[i+3:])
-			}
-		}
-	}
-	return ""
-}
+// currentWifiSSID lives in wifi_ssid_<goos>.go so the cold-bootstrap
+// path on Windows shares the same accessor with the cross-platform
+// "are you on a Bose AP?" warning surfaced before the wizard opens.
 
 // waitForIPOn polls local interface IPs for one in the 192.0.2.0/24
 // (TEST-NET-1) range used by Bose's setup-AP. The first octet
