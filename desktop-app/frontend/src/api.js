@@ -42,9 +42,6 @@ export {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
-  ScanForSetupAPs,
-  BootstrapBoxOnSetupAP,
-  CheckCurrentWifi,
   ListMediaServers,
   BrowseLibrary,
 } from '../wailsjs/go/main/App';

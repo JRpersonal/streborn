@@ -52,11 +52,25 @@ const (
 	rootKeyFile    = "root.key"
 	serverCertFile = "server.crt"
 	serverKeyFile  = "server.key"
+)
 
-	// CA Cert gilt 10 Jahre (Box wird vermutlich nicht laenger leben).
-	rootValidity = 10 * 365 * 24 * time.Hour
-	// Server Cert gilt 9 Jahre, also etwas weniger als die CA.
-	serverValidity = 9 * 365 * 24 * time.Hour
+// Fixed-date validity window. The Bose box's RTC reads 2015-07-06
+// right after a power-on and only catches up once HTTP-Date sync
+// runs a few seconds later. The previous "now + 10y" approach broke
+// when the cert was generated before clock sync — NotAfter ended up
+// in 2024 from the box's 2015 viewpoint, and the cert appeared
+// genuinely expired once the clock jumped to 2026. Live evidence:
+// deqw #60 on .180, 2026-05-22.
+//
+// Fixed absolute dates eliminate the dependency on time.Now(). The
+// cert is loopback-only and signed by an STR-internal CA that we
+// also install into the box's trust store, so a wide validity window
+// has zero real security cost. Picked to safely cover every box
+// clock state we have ever observed (2014 pre-NTP, present day, and
+// a generous future).
+var (
+	notBeforeFixed = time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC)
+	notAfterFixed  = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
 )
 
 // Bundle haelt die geladenen Zertifikate und Keys zusammen.
@@ -97,17 +111,30 @@ func New(dir string, domains []string, logger *slog.Logger) *Manager {
 
 // EnsureBundle laedt die Bundle aus dem Verzeichnis oder generiert ein neues
 // wenn nichts da ist. Idempotent.
+//
+// Also re-generates an existing bundle if its server cert was signed
+// with the old "now + 9y" scheme and now has NotAfter in the past or
+// in the immediate future. Otherwise stale bundles generated before
+// the clock synced (cold-boot RTC=2015) carry forward and present as
+// "expired" once NTP catches up — observed on deqw #60 .180,
+// 2026-05-22. The fresh bundle uses the fixed 2010-2099 window and
+// is safe forever.
 func (m *Manager) EnsureBundle() (*Bundle, error) {
 	bundle, err := m.load()
 	if err == nil {
-		m.logger.Info("TLS bundle loaded", "dir", m.dir)
-		return bundle, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
+		if m.bundleNeedsRegen(bundle) {
+			m.logger.Warn("TLS bundle has stale validity window, regenerating",
+				"dir", m.dir)
+		} else {
+			m.logger.Info("TLS bundle loaded", "dir", m.dir)
+			return bundle, nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("loading bundle failed (not regenerating because the failure was not a missing file): %w", err)
+	} else {
+		m.logger.Info("TLS bundle not present, generating", "dir", m.dir)
 	}
 
-	m.logger.Info("TLS bundle not present, generating", "dir", m.dir)
 	bundle, err = m.generate()
 	if err != nil {
 		return nil, fmt.Errorf("generate: %w", err)
@@ -117,6 +144,31 @@ func (m *Manager) EnsureBundle() (*Bundle, error) {
 	}
 	m.logger.Info("TLS bundle persisted", "dir", m.dir)
 	return bundle, nil
+}
+
+// bundleNeedsRegen returns true if the loaded server cert has a
+// NotAfter that is in the past or within the next year, which is a
+// good proxy for "this was generated with the pre-2026-05 relative
+// validity scheme and is unsafe to keep". A bundle generated with
+// the fixed 2010-2099 window always has NotAfter way out in 2099 and
+// passes this check trivially.
+func (m *Manager) bundleNeedsRegen(b *Bundle) bool {
+	if b == nil || len(b.ServerCertPEM) == 0 {
+		return true
+	}
+	block, _ := pem.Decode(b.ServerCertPEM)
+	if block == nil {
+		return true
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return true
+	}
+	// Threshold: regenerate if the cert is "soon" expiring or already
+	// expired by box clock standards. One year is plenty given the
+	// new bundles last decades.
+	threshold := time.Now().Add(365 * 24 * time.Hour)
+	return cert.NotAfter.Before(threshold)
 }
 
 // load liest alle vier Files aus dem Verzeichnis. ErrNotExist wenn auch nur
@@ -182,23 +234,14 @@ func (m *Manager) generate() (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The Bose box's RTC reads "2015-07-06" right after a power-on
-	// and only catches up once NTP runs (a few minutes later). If
-	// NotBefore is set to "now" the box rejects the cert as
-	// "not yet valid" (which appears as
-	// `tls: expired certificate` in the agent log because the box's
-	// clock is *before* NotBefore). The cert is loopback-only, so a
-	// generous backdate carries no real security cost — it just lets
-	// the box's pre-NTP clock accept it.
-	notBeforeBackdate := time.Now().AddDate(-12, 0, 0)
 	rootTpl := &x509.Certificate{
 		SerialNumber: rootSerial,
 		Subject: pkix.Name{
 			CommonName:   "STR Root CA",
 			Organization: []string{"STR"},
 		},
-		NotBefore:             notBeforeBackdate,
-		NotAfter:              time.Now().Add(rootValidity),
+		NotBefore:             notBeforeFixed,
+		NotAfter:              notAfterFixed,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -224,10 +267,8 @@ func (m *Manager) generate() (*Bundle, error) {
 			CommonName:   m.domains[0],
 			Organization: []string{"STR"},
 		},
-		// Same backdating rationale as the root CA above: the box
-		// clock is 2015 at cold boot and rejects future-dated certs.
-		NotBefore:   notBeforeBackdate,
-		NotAfter:    time.Now().Add(serverValidity),
+		NotBefore:   notBeforeFixed,
+		NotAfter:    notAfterFixed,
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:    m.domains,

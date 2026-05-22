@@ -973,11 +973,16 @@ body {
 /* ---------- Setup View ---------- */
 #view-setup h2 { margin: 0 0 8px 0; color: var(--brand); }
 .setup-intro { color: #aaa; font-size: 13px; margin-bottom: 18px; }
-.setup-wifi-hint { background: #2f1f0f; border-left: 3px solid #d97706; border-radius: 4px; padding: 10px 12px; margin: 0 0 10px 0; color: #e5d4b8; }
-.setup-wifi-hint-head { font-weight: 600; color: #f5b658; margin-bottom: 4px; }
-.setup-wifi-hint-ssid { margin-bottom: 6px; }
-.setup-wifi-hint-body { font-size: 13px; line-height: 1.4; margin-bottom: 6px; }
-.setup-wifi-hint-action { font-size: 13px; font-weight: 600; color: #fff; }
+.setup-stay-on-wifi-note {
+  background: #1a2a1f;
+  border-left: 3px solid #4caf50;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 0 0 10px 0;
+  color: #c8e6c9;
+  font-size: 13px;
+  line-height: 1.4;
+}
 .setup-section { background: #222; padding: 12px; border-radius: 6px; margin-bottom: 10px; }
 .setup-section h3 { margin: 0 0 10px 0; font-size: 14px; color: #ccc; font-weight: 500; }
 .setup-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }

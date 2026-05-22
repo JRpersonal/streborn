@@ -36,9 +36,6 @@ import {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
-  ScanForSetupAPs,
-  BootstrapBoxOnSetupAP,
-  CheckCurrentWifi,
   ListMediaServers,
   BrowseLibrary,
   BrowserOpenURL,
@@ -266,13 +263,6 @@ function switchView(view) {
     // freshly installed STR) and the user just opened the tab to
     // start a prep flow — make sure they see the right targets.
     renderSetupTargetPicker();
-    // Surface a banner if the host is currently associated to the
-    // Bose speaker's setup-AP. New users coming from the Bose
-    // smartphone flow expect to join that network first, but for
-    // STR's stick-based install that is the wrong network — the
-    // stick carries the home Wi-Fi credentials and the speaker
-    // joins home Wi-Fi on its own after first stick boot. Issue #60.
-    refreshSetupWifiHint();
   }
   if (view === 'box') {
     // Refresh the mDNS list on every switch to the music view so a
@@ -2889,7 +2879,7 @@ const debouncedSetBass = debounce(async (box, defaultBass) => {
 $('view-setup').innerHTML = `
   <h2>${escapeHtml(t('setup.heading'))}</h2>
   <p class="setup-intro">${escapeHtml(t('setup.intro'))}</p>
-  <div id="setupWifiHint" class="setup-wifi-hint" hidden></div>
+  <div class="setup-stay-on-wifi-note">${escapeHtml(t('setup.stayOnHomeWifi'))}</div>
   <div class="setup-section setup-target-section" id="setupTargetSection">
     <h3>${escapeHtml(t('setup.targetHeading'))}</h3>
     <p class="muted small">${escapeHtml(t('setup.targetIntro'))}</p>
@@ -2989,49 +2979,6 @@ $('wlanShowPass').onclick = togglePasswordVisibility;
 // arrived speakers appear in the picker, but the user's chosen
 // target is preserved unless the chosen speaker actually drops off
 // the LAN (brief mDNS gaps would otherwise yank the choice).
-
-// refreshSetupWifiHint asks the Go side whether the host is currently
-// associated with a Bose setup-AP. If it is, render an inline banner
-// at the top of the Setup view explaining that the stick-based install
-// does NOT require joining that network — the stick carries the home
-// Wi-Fi credentials and the speaker joins home Wi-Fi on its own after
-// first boot. New users coming from the Bose smartphone flow assume
-// they need to be on the Bose AP (issue #60); the banner clears that.
-async function refreshSetupWifiHint() {
-  const el = $('setupWifiHint');
-  if (!el) return;
-  try {
-    const r = await CheckCurrentWifi();
-    if (r && r.onBoseSetupAP) {
-      // Localized text is short and matches the EN hint from the
-      // backend in spirit. The frontend rewrites the message here so
-      // translations live in i18n keys, not in Go strings.
-      const head = t('setup.wifiHint.head') || 'You are on the Bose setup network';
-      const explain = t('setup.wifiHint.explain')
-        || 'You do not need to join the Bose speaker\'s setup network. The USB stick carries your home Wi-Fi credentials, and the speaker will join your home Wi-Fi on its own after the first boot from the stick.';
-      const action = t('setup.wifiHint.action')
-        || 'Please switch your computer back to your home Wi-Fi.';
-      const ssidLine = r.ssid
-        ? `<div class="setup-wifi-hint-ssid muted small">${escapeHtml(t('setup.wifiHint.currentLabel') || 'Currently connected to:')} <strong>${escapeHtml(r.ssid)}</strong></div>`
-        : '';
-      el.innerHTML =
-        `<div class="setup-wifi-hint-head">${escapeHtml(head)}</div>` +
-        ssidLine +
-        `<div class="setup-wifi-hint-body">${escapeHtml(explain)}</div>` +
-        `<div class="setup-wifi-hint-action">${escapeHtml(action)}</div>`;
-      el.hidden = false;
-      return;
-    }
-    el.hidden = true;
-    el.innerHTML = '';
-  } catch (err) {
-    // SSID lookup is best-effort. If the platform tool is missing
-    // (Linux without iwgetid/nmcli) we just hide the banner — same
-    // behavior as "user is on a normal Wi-Fi".
-    el.hidden = true;
-    el.innerHTML = '';
-  }
-}
 
 function renderSetupTargetPicker() {
   const body = $('setupTargetBody');
@@ -3569,14 +3516,13 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   const render = (extra) => { setupResult.innerHTML = baseHtml + extra; };
 
   function progressLine(elapsedSec, ap) {
-    const apHint = ap
-      ? `<div class="setup-ok">${escapeHtml(t('setup.setupAPDetected', { ssid: ap.ssid }))}</div>`
-      : '';
-    return apHint + `<div class="muted small">${escapeHtml(t('setup.waitingForBox', { sec: elapsedSec }))}</div>`;
+    // ap is always null since the cold-bootstrap path was removed
+    // (was the only producer of an AP object). Signature kept stable
+    // so the surrounding renders do not need to change.
+    return `<div class="muted small">${escapeHtml(t('setup.waitingForBox', { sec: elapsedSec }))}</div>`;
   }
 
   let foundBox = null;
-  let bootstrapTriggered = false;
 
   // Honour the target the user picked in Step 0 if any. Without
   // this the loop would lock onto an arbitrary speaker on a LAN
@@ -3598,58 +3544,28 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   const isFactory = target && target.kind === 'factory-reset';
   const wantedHost = (target && target.box) ? target.box.host : '';
 
-  // Up to 5 minutes to find a reachable box. The discovery + cold-
-  // bootstrap legs run sequentially per iteration; the install leg
-  // runs after the loop, once a box has been confirmed reachable.
+  // Up to 5 minutes to find a reachable box via mDNS discovery on the
+  // home LAN. The cold-bootstrap path (PC joins the speaker's setup
+  // network, pushes Wi-Fi credentials over the air) was removed in
+  // 2026-05 because (a) it required the Windows location permission
+  // on Win11 24H2 — Microsoft ties any `netsh wlan show networks`
+  // call to that, and a music app asking for location is a real
+  // trust hit — and (b) the stick-based install does the same
+  // provisioning without ever needing the PC to leave the home Wi-Fi.
+  // Anyone with a stock or factory-reset speaker now writes the stick
+  // here, inserts it, power-cycles the speaker; the speaker joins
+  // home Wi-Fi from the stick's wlan.conf on its own.
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline && !foundBox) {
-    if (!isFactory) {
-      try {
-        const list = await DiscoverBoxes(4);
-        if (wantedHost) {
-          foundBox = (list || []).find(b => b && b.host === wantedHost);
-        } else {
-          foundBox = (list || []).find(b => b && b.host && (b.kind === 'stock' || b.kind === 'str'));
-        }
-        if (foundBox) break;
-      } catch {}
-    }
-
-    if (!bootstrapTriggered && ssid) {
-      try {
-        const aps = await ScanForSetupAPs();
-        if (aps && aps.length > 0) {
-          const ap = aps[0];
-          bootstrapTriggered = true;
-          render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
-                 `<div class="muted small">${escapeHtml(t('setup.bootstrapStarting'))}</div>`);
-          try {
-            const res = await BootstrapBoxOnSetupAP(ap.ssid, ssid, pass, 'wpa_or_wpa2');
-            if (res && res.ok && res.boxIP) {
-              foundBox = { host: res.boxIP, kind: 'stock' };
-              break;
-            }
-            render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
-                   `<div class="setup-warn">${escapeHtml(t('setup.bootstrapFailed', { msg: (res && res.message) || 'unknown' }))}</div>`);
-          } catch (bsErr) {
-            render(progressLine(Math.floor((Date.now() - startTs) / 1000), ap) +
-                   `<div class="setup-err">${escapeHtml(t('setup.bootstrapFailed', { msg: String(bsErr) }))}</div>`);
-          }
-        }
-      } catch (scanErr) {
-        // Windows 11 24H2 blocks netsh wlan unless desktop apps have
-        // Location permission. Detect and surface a one-click fix
-        // panel instead of silently looping forever.
-        const msg = String(scanErr || '');
-        if (msg.includes('windows-location-denied')) {
-          render(progressLine(Math.floor((Date.now() - startTs) / 1000), null) +
-                 `<div class="setup-err"><b>${escapeHtml(t('setup.locationPermNeededTitle'))}</b><br>` +
-                 `${escapeHtml(t('setup.locationPermNeededBody'))}<br>` +
-                 `<a href="ms-settings:privacy-location" target="_blank">${escapeHtml(t('setup.locationPermOpenSettings'))}</a></div>`);
-          return;
-        }
+    try {
+      const list = await DiscoverBoxes(4);
+      if (wantedHost) {
+        foundBox = (list || []).find(b => b && b.host === wantedHost);
+      } else {
+        foundBox = (list || []).find(b => b && b.host && (b.kind === 'stock' || b.kind === 'str'));
       }
-    }
+      if (foundBox) break;
+    } catch {}
 
     render(progressLine(Math.floor((Date.now() - startTs) / 1000), null));
     await sleep(3000);
