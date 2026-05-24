@@ -119,31 +119,42 @@ func New(dir string, domains []string, logger *slog.Logger) *Manager {
 // "expired" once NTP catches up — observed on deqw #60 .180,
 // 2026-05-22. The fresh bundle uses the fixed 2010-2099 window and
 // is safe forever.
-func (m *Manager) EnsureBundle() (*Bundle, error) {
+//
+// The second return value is true when an existing bundle was
+// replaced (i.e. the on-NAND root CA changed). First-ever generation
+// returns false: in that case run.sh's bind-mount block on the stick
+// reads the just-written root.crt and the trust store is consistent
+// from the start. The regenerated=true signal is what the agent uses
+// to trigger RefreshTrustStore, because the trust store overlay was
+// already populated with the now-superseded root.crt before EnsureBundle
+// ran — see deqw #60 .180, bleco .144 (May 2026).
+func (m *Manager) EnsureBundle() (*Bundle, bool, error) {
+	regenerated := false
 	bundle, err := m.load()
 	if err == nil {
 		if m.bundleNeedsRegen(bundle) {
 			m.logger.Warn("TLS bundle has stale validity window, regenerating",
 				"dir", m.dir)
+			regenerated = true
 		} else {
 			m.logger.Info("TLS bundle loaded", "dir", m.dir)
-			return bundle, nil
+			return bundle, false, nil
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("loading bundle failed (not regenerating because the failure was not a missing file): %w", err)
+		return nil, false, fmt.Errorf("loading bundle failed (not regenerating because the failure was not a missing file): %w", err)
 	} else {
 		m.logger.Info("TLS bundle not present, generating", "dir", m.dir)
 	}
 
 	bundle, err = m.generate()
 	if err != nil {
-		return nil, fmt.Errorf("generate: %w", err)
+		return nil, false, fmt.Errorf("generate: %w", err)
 	}
 	if err := m.save(bundle); err != nil {
-		return nil, fmt.Errorf("save: %w", err)
+		return nil, false, fmt.Errorf("save: %w", err)
 	}
 	m.logger.Info("TLS bundle persisted", "dir", m.dir)
-	return bundle, nil
+	return bundle, regenerated, nil
 }
 
 // bundleNeedsRegen returns true if the loaded server cert has a

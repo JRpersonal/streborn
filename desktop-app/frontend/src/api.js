@@ -42,6 +42,7 @@ export {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
+  ProbeSetupAP,
   ListMediaServers,
   BrowseLibrary,
 } from '../wailsjs/go/main/App';

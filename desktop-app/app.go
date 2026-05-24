@@ -171,15 +171,60 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		})
 	}
 
-	// Fallback only when mDNS turned up nothing. Probes a single
-	// well-known port per host (8090, the Bose web API) so we stay
-	// well below "this looks like a portscan" thresholds even on the
-	// loudest IDS-running APs.
-	if len(seen) == 0 {
-		for _, probed := range a.probeLANForStock(ctx) {
+	// Fallback only when mDNS turned up nothing. Probes two well-
+	// known ports per host: 8090 (stock Bose web API) and 8888 (STR
+	// agent web UI). Two ports across a /24 still stays well below
+	// "this looks like a portscan" thresholds; we need both because
+	// an STR-flashed speaker stops answering :8090 with the stock
+	// /info shape and an unflashed Portable in setup-AP mode does
+	// not announce mDNS at all on the home LAN. Observed live
+	// 2026-05-23 on a Windows laptop where zeroconf-go returned 0
+	// instances despite the ST10 on the same LAN answering :8888
+	// with HTTP 200 — see #69-followup.
+	mdnsHits := len(seen)
+	a.logger.Info("discovery: mDNS phase done", "instancesFromMDNS", mdnsHits)
+
+	// TCP fallback ALWAYS runs, not just when mDNS came back empty.
+	// On Windows hosts with two active interfaces (home Wi-Fi + USB
+	// Wi-Fi dongle for the Bose setup AP), zeroconf-go finishes its
+	// browse as soon as ANY response arrives. Observed live 2026-05-24:
+	// the Portable on 192.168.1.1 (Setup-AP, Wi-Fi 2) answered first,
+	// browse closed, the ST10 on 192.168.178.66 (Wi-Fi 1) never made
+	// it into the result channel even though both interfaces were
+	// joined for multicast. Running the TCP sweep unconditionally
+	// catches every speaker the user actually has — the upsert dedupe
+	// downstream collapses any double-counts. Cost: ~12 s of parallel
+	// HTTP probes per refresh; acceptable given the auto-refresh
+	// cadence is throttled to a few times per minute.
+	fallbackCtx, fallbackCancel := context.WithTimeout(a.ctx, 12*time.Second)
+	var fbWG sync.WaitGroup
+	var fbMu sync.Mutex
+	var stockHits, strHits int
+	fbWG.Add(2)
+	go func() {
+		defer fbWG.Done()
+		hits := a.probeLANForStock(fallbackCtx)
+		fbMu.Lock()
+		defer fbMu.Unlock()
+		stockHits = len(hits)
+		for _, probed := range hits {
 			upsert(probed)
 		}
-	}
+	}()
+	go func() {
+		defer fbWG.Done()
+		hits := a.probeLANForSTR(fallbackCtx)
+		fbMu.Lock()
+		defer fbMu.Unlock()
+		strHits = len(hits)
+		for _, probed := range hits {
+			upsert(probed)
+		}
+	}()
+	fbWG.Wait()
+	fallbackCancel()
+	a.logger.Info("discovery: TCP fallback done", "stockHits", stockHits, "strHits", strHits)
+	a.logger.Info("discovery: returning", "totalBoxes", len(seen), "fromMDNS", mdnsHits)
 
 	// Enrich every box with the serial number and model from
 	// /info on :8090. Stock boxes already have these from
@@ -322,6 +367,132 @@ func localIPv4Subnets() []string {
 		out = append(out, base)
 	}
 	return out
+}
+
+// probeLANForSTR walks every local IPv4 /24 and HTTP-probes each
+// host on port 8888 for the STR agent's /api/agent/version JSON. The
+// counterpart to probeLANForStock: when mDNS returns nothing AND no
+// stock box answers /info, we still want STR-flashed speakers in the
+// box list so the user can press play. Same single-port-per-host
+// budget, same parallelism cap.
+func (a *App) probeLANForSTR(ctx context.Context) []BoxInfo {
+	subnets := localIPv4Subnets()
+	if len(subnets) == 0 {
+		return nil
+	}
+
+	hits := make(chan BoxInfo, 32)
+	sem := make(chan struct{}, 32)
+	var wg sync.WaitGroup
+
+	probeOne := func(ip string) {
+		defer wg.Done()
+		defer func() { <-sem }()
+		if b, ok := probeSTR(ctx, ip); ok {
+			hits <- b
+		}
+	}
+
+	for _, subnet := range subnets {
+		base := subnet
+		for i := 1; i <= 254; i++ {
+			select {
+			case <-ctx.Done():
+				goto done
+			case sem <- struct{}{}:
+			}
+			wg.Add(1)
+			go probeOne(base + fmt.Sprintf("%d", i))
+		}
+	}
+done:
+	go func() { wg.Wait(); close(hits) }()
+
+	var out []BoxInfo
+	for h := range hits {
+		out = append(out, h)
+	}
+	return out
+}
+
+// probeSTR checks ip:8888/api/agent/version for the STR agent JSON
+// envelope. On hit returns a BoxInfo with Kind="str" so the upsert
+// dedupe in DiscoverBoxes treats it the same as an mDNS-announced
+// STR speaker. Tight timeout: 1.2s per host so a /24 sweep stays
+// under ~10s wall time across 32-way fan-out.
+//
+// On hit we also pull /info from :8090 on the same box — the Bose
+// firmware keeps answering that endpoint even after STR is installed,
+// and without it the box list shows "str-192.168.x.x" with no
+// FriendlyName/DeviceID/Model, which the frontend renders as if the
+// box were unprovisioned. Observed live 2026-05-24: .66 appeared as
+// "str-192.168.178.66" with no human name until enrichment landed.
+func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
+	url := fmt.Sprintf("http://%s:8888/api/agent/version", ip)
+	body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 1024)
+	if !ok {
+		return BoxInfo{}, false
+	}
+	s := string(body)
+	// Cheap sniff for the JSON shape {"build":"...","version":"..."}
+	// without pulling in encoding/json on the hot path.
+	if !strings.Contains(s, `"version"`) {
+		return BoxInfo{}, false
+	}
+	version := jsonStringField(s, "version")
+	build := jsonStringField(s, "build")
+
+	box := BoxInfo{
+		Name:    "str-" + ip,
+		Host:    ip,
+		Port:    8888,
+		Version: version,
+		Build:   build,
+		Kind:    "str",
+	}
+	// Best-effort enrichment from the underlying Bose firmware's
+	// /info endpoint. Failure is OK: caller still gets a usable
+	// box, just less labelled.
+	if info, ok := probeStock(ctx, ip); ok {
+		box.FriendlyName = info.FriendlyName
+		box.Model = info.Model
+		box.DeviceID = info.DeviceID
+		box.SerialNumber = info.SerialNumber
+	}
+	return box, true
+}
+
+// jsonStringField pulls the value of a top-level string field from
+// a small JSON envelope by substring scanning. Matches `"key":"val"`
+// optionally separated by whitespace; returns "" on no match. Used
+// for the STR /api/agent/version probe which has a known fixed
+// shape and one of two short fields per call — adding encoding/json
+// for that one call would bloat the desktop binary's startup graph
+// for no observable benefit.
+func jsonStringField(s, key string) string {
+	needle := `"` + key + `"`
+	i := strings.Index(s, needle)
+	if i < 0 {
+		return ""
+	}
+	rest := s[i+len(needle):]
+	c := strings.IndexByte(rest, ':')
+	if c < 0 {
+		return ""
+	}
+	rest = rest[c+1:]
+	for len(rest) > 0 && (rest[0] == ' ' || rest[0] == '\t') {
+		rest = rest[1:]
+	}
+	if len(rest) == 0 || rest[0] != '"' {
+		return ""
+	}
+	rest = rest[1:]
+	e := strings.IndexByte(rest, '"')
+	if e < 0 {
+		return ""
+	}
+	return rest[:e]
 }
 
 // probeStock checks ip:8090/info for the Bose SoundTouch device XML.

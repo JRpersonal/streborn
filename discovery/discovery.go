@@ -244,13 +244,45 @@ type Instance struct {
 func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 	out := make(chan Instance, 16)
 
+	// Pick the same interface set we announce on. zeroconf's default
+	// (NewResolver(nil)) lets the underlying multicast library choose
+	// one interface and on multi-NIC Windows hosts that pick is
+	// frequently the wrong one — observed live 2026-05-23 on a laptop
+	// with Intel Wi-Fi on the home LAN plus a Realtek USB Wi-Fi dongle
+	// on the Bose setup AP: Browse returned 0 instances even though
+	// the ST10 on the home LAN was announcing 3 mDNS services on :5353
+	// and ARP for it was cached on the right adapter. Filtering on
+	// "up, non-loopback, non-usb-gadget, has a non-TEST-NET-3 IPv4"
+	// (pickAnnounceIfaces) picks both real interfaces and zeroconf
+	// sends the query on each — Bonjour responses come back over
+	// whichever interface the speaker is on.
+	// IPv4-only: zeroconf's default IPv4AndIPv6 listenOn forces an
+	// IPv6 multicast join too. On Windows hosts where IPv6 multicast
+	// is funky (Bonjour Service holding the port, no usable v6
+	// interface for ff02::fb, etc.) the v6 join can succeed-but-eat-
+	// responses or surface as "no suitable IPv6 interface" — bleco's
+	// agent log 2026-05-23. The Bose speakers only announce on IPv4
+	// and the desktop app's home LAN is IPv4 in every realistic
+	// deployment, so pinning the resolver to v4 removes a class of
+	// silent-failure paths without losing any reachable speaker.
+	resolverOpts := func() []zeroconf.ClientOption {
+		opts := []zeroconf.ClientOption{
+			zeroconf.SelectIPTraffic(zeroconf.IPv4),
+		}
+		ifaces := pickAnnounceIfaces(logger)
+		if len(ifaces) > 0 {
+			opts = append(opts, zeroconf.SelectIfaces(ifaces))
+		}
+		return opts
+	}
+
 	// One resolver per service type. zeroconf.NewResolver returns a
 	// short-lived resolver tied to a single Browse call.
-	curResolver, err := zeroconf.NewResolver(nil)
+	curResolver, err := zeroconf.NewResolver(resolverOpts()...)
 	if err != nil {
 		return nil, fmt.Errorf("resolver (current): %w", err)
 	}
-	legacyResolver, err := zeroconf.NewResolver(nil)
+	legacyResolver, err := zeroconf.NewResolver(resolverOpts()...)
 	if err != nil {
 		return nil, fmt.Errorf("resolver (legacy): %w", err)
 	}
@@ -276,7 +308,7 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 	stockNames := append([]string{StockServiceType}, StockServiceTypeAliases...)
 	var stockWG sync.WaitGroup
 	for _, svc := range stockNames {
-		r, err := zeroconf.NewResolver(nil)
+		r, err := zeroconf.NewResolver(resolverOpts()...)
 		if err != nil {
 			if logger != nil {
 				logger.Warn("stock mDNS resolver create failed",
