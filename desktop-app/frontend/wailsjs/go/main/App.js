@@ -10,10 +10,6 @@ export function AppVersion() {
   return window['go']['main']['App']['AppVersion']();
 }
 
-export function BootstrapBoxOnSetupAP(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['BootstrapBoxOnSetupAP'](arg1, arg2, arg3, arg4);
-}
-
 export function BoxAgentVersion(arg1, arg2) {
   return window['go']['main']['App']['BoxAgentVersion'](arg1, arg2);
 }
@@ -28,10 +24,6 @@ export function BrowseLibrary(arg1, arg2, arg3, arg4) {
 
 export function CheckAppUpdate() {
   return window['go']['main']['App']['CheckAppUpdate']();
-}
-
-export function CheckCurrentWifi() {
-  return window['go']['main']['App']['CheckCurrentWifi']();
 }
 
 export function CurrentWiFi() {
@@ -98,16 +90,16 @@ export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
+export function ProbeSetupAP() {
+  return window['go']['main']['App']['ProbeSetupAP']();
+}
+
 export function RebootBox(arg1, arg2) {
   return window['go']['main']['App']['RebootBox'](arg1, arg2);
 }
 
 export function SaveDiagnosticBundle(arg1, arg2) {
   return window['go']['main']['App']['SaveDiagnosticBundle'](arg1, arg2);
-}
-
-export function ScanForSetupAPs() {
-  return window['go']['main']['App']['ScanForSetupAPs']();
 }
 
 export function SelectBoxSource(arg1, arg2, arg3) {

@@ -8,8 +8,6 @@ export function AppInfo():Promise<main.AppInfo>;
 
 export function AppVersion():Promise<string>;
 
-export function BootstrapBoxOnSetupAP(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.BootstrapResult>;
-
 export function BoxAgentVersion(arg1:string,arg2:number):Promise<Record<string, string>>;
 
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;
@@ -17,8 +15,6 @@ export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>
 export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.LibraryPage>;
 
 export function CheckAppUpdate():Promise<Record<string, string>>;
-
-export function CheckCurrentWifi():Promise<main.WifiCheck>;
 
 export function CurrentWiFi():Promise<string>;
 
@@ -52,11 +48,11 @@ export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string):Promise<void>;
 
+export function ProbeSetupAP():Promise<main.BoxInfo|boolean>;
+
 export function RebootBox(arg1:string,arg2:number):Promise<void>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
-
-export function ScanForSetupAPs():Promise<Array<main.SetupAP>>;
 
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;
 

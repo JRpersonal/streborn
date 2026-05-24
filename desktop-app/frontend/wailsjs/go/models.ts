@@ -26,24 +26,6 @@ export namespace main {
 	        this.updateManifestUrl = source["updateManifestUrl"];
 	    }
 	}
-	export class BootstrapResult {
-	    step: string;
-	    ok: boolean;
-	    message: string;
-	    boxIP: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new BootstrapResult(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.step = source["step"];
-	        this.ok = source["ok"];
-	        this.message = source["message"];
-	        this.boxIP = source["boxIP"];
-	    }
-	}
 	export class BoxInfo {
 	    name: string;
 	    host: string;
@@ -244,38 +226,6 @@ export namespace main {
 	        this.stream_url = source["stream_url"];
 	        this.type = source["type"];
 	        this.art = source["art"];
-	    }
-	}
-	export class SetupAP {
-	    ssid: string;
-	    interface: string;
-	    signal: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new SetupAP(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.ssid = source["ssid"];
-	        this.interface = source["interface"];
-	        this.signal = source["signal"];
-	    }
-	}
-	export class WifiCheck {
-	    ssid: string;
-	    onBoseSetupAP: boolean;
-	    hint: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new WifiCheck(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.ssid = source["ssid"];
-	        this.onBoseSetupAP = source["onBoseSetupAP"];
-	        this.hint = source["hint"];
 	    }
 	}
 
