@@ -36,6 +36,7 @@ import {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
+  ProbeSetupAP,
   ListMediaServers,
   BrowseLibrary,
   BrowserOpenURL,
@@ -3566,6 +3567,26 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
       }
       if (foundBox) break;
     } catch {}
+
+    // Setup-AP fallback. A factory-fresh wireless-only speaker
+    // (SoundTouch Portable, variant "taigan") cannot join home Wi-Fi
+    // until the stick install has run once. mDNS never sees it on
+    // the home LAN because it is on its own setup-AP subnet at
+    // 192.168.1.1. When the user temporarily joins their laptop to
+    // "Bose SoundTouch Wi-Fi Network" the probe lights up and we
+    // feed the synthetic stock BoxInfo straight into the existing
+    // install path. The probe is a single TCP dial — no Wi-Fi scan,
+    // no location permission. Skipped when the user pinned a
+    // specific home-LAN target in Step 0.
+    if (!foundBox && !wantedHost) {
+      try {
+        const ap = await ProbeSetupAP();
+        if (ap && ap.host) {
+          foundBox = ap;
+          break;
+        }
+      } catch {}
+    }
 
     render(progressLine(Math.floor((Date.now() - startTs) / 1000), null));
     await sleep(3000);

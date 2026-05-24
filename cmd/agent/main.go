@@ -369,10 +369,22 @@ func run() error {
 	if *tlsEnabled {
 		go func() {
 			tlsMgr := tlsgen.New(*tlsDir, nil, logger.With("comp", "tlsgen"))
-			bundle, err := tlsMgr.EnsureBundle()
+			bundle, regenerated, err := tlsMgr.EnsureBundle()
 			if err != nil {
 				logger.Error("TLS bundle unavailable, continuing without TLS listener", "err", err)
 				return
+			}
+			// run.sh's bind-mount block reads /mnt/nv/streborn/ca/root.crt
+			// before the agent starts. When EnsureBundle has just
+			// replaced a stale bundle, that mount is now serving the
+			// previous root CA and Bose will reject our new server cert
+			// with `tls: unknown certificate authority`. Patch the live
+			// overlays in place via O_APPEND so the new root joins the
+			// trust set without a remount.
+			if regenerated {
+				if err := tlsgen.RefreshTrustStore(bundle.RootCAPEM, logger.With("comp", "tlsgen")); err != nil {
+					logger.Warn("trust store refresh after CA regen failed, Bose may reject our cert until next boot", "err", err)
+				}
 			}
 			cert, err := bundle.TLSCert()
 			if err != nil {
