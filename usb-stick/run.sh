@@ -431,388 +431,297 @@ elif [ -r "$WLAN_CREDS_NAND" ]; then
     PASS=$(sed -n 's/^PASS=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
     WLAN_SOURCE="NAND wlan-creds (replay)"
 fi
-# Wireless-interface detection. Three cases:
-#   1. rhino/spotty/sm2/scm/maple: wireless is /sys/class/net/wlan0
-#      (sometimes wlan1). wpa_supplicant + wpa_cli present.
-#   2. taigan (SoundTouch Portable, BCO chassis): wireless chip is
-#      exposed as /sys/class/net/eth0 with type=1 (Ethernet) — no
-#      wlan* iface at all, and wpa_supplicant / wpa_cli BINARIES are
-#      missing on this firmware. NetManager talks to the chip directly
-#      via HTTP /addWirelessProfile + TAP CLI `network wifi profiles`.
-#      Detection: /proc/variant says "taigan", or /sbin/has-bco exists,
-#      or — fallback — eth0 is present without any wlan*.
-#   3. Genuine ethernet-only / dead radio: no wlan*, no eth0 in the
-#      "single non-loopback iface" pattern, or eth0 carries a real
-#      cable. Skip provisioning, the desktop install path works on
-#      a wired connection anyway. Observed scm-variant ST20 in #60
-#      where /addWirelessProfile sat on slow 500 responses for ~4
-#      minutes per attempt, starving start_agent below.
+# Wireless-interface detection. Two real cases on SoundTouch hardware
+# (every model has Wi-Fi — the Portable has ONLY Wi-Fi, no RJ45):
+#
+#   1. Classic-stack variants where the Wi-Fi chip is enumerated as
+#      /sys/class/net/wlan0 (sometimes wlan1) with full wpa_supplicant
+#      + wpa_cli userland: rhino (ST10), some sm2/scm ST20 builds, etc.
+#
+#   2. BCO-stack variants where the Wi-Fi chip is enumerated as
+#      /sys/class/net/eth0 (no wlan* iface at all) and wpa_supplicant /
+#      wpa_cli binaries are missing. NetManager talks to the chip via
+#      TAP CLI on :17000 under the `network wifi` namespace; the HTTP
+#      /addWirelessProfile + /performWirelessSiteSurvey endpoints are
+#      unwired in this build and reliably return 500/400.
+#      Confirmed BCO codenames so far: `taigan` (Portable), `spotty`
+#      (ST20 rev observed in #60). The list is extended as new
+#      diagnostic bundles surface more codenames.
+#
+# Structural fallback: if hostname matches none of the known BCO
+# codenames, but /sys/class/net has eth0 and no wlan*, we still run
+# the BCO/TAP-CLI provisioning path. Reasoning: every SoundTouch model
+# has Wi-Fi; "no wlan*" + "eth0 only" implies the chip is exposed as
+# eth0 (the BCO pattern). A real ethernet-cable-only scenario WOULD
+# still be reachable on the LAN, so over-provisioning Wi-Fi on top is
+# at worst a wasted 60s — better than the v0.5.13 mis-classification
+# that silently skipped provisioning on spotty boxes that needed it.
 WLAN_IFACE=""
-TAIGAN_MODE=""
+BCO_MODE=""
 if [ -d /sys/class/net/wlan0 ]; then
     WLAN_IFACE="wlan0"
 elif [ -d /sys/class/net/wlan1 ]; then
     WLAN_IFACE="wlan1"
 elif [ -d /sys/class/net/eth0 ]; then
-    # Three independent taigan indicators. We accept any one because
-    # individual ones have been observed missing across FW rev's:
-    # /proc/variant is unreadable on some images, has-bco lives in
-    # /sbin OR /usr/sbin depending on build, but `uname -n` reliably
-    # mirrors the Bose codename ("Linux taigan 3.14...") which we see
-    # in EVERY captured setup.log across variants.
+    # Known BCO codenames + structural fallback. `uname -n` reliably
+    # mirrors the Bose codename ("Linux taigan ...", "Linux spotty ...")
+    # in every captured setup.log. /proc/variant is unreadable on some
+    # FW revisions and has-bco lives in /sbin OR /usr/sbin depending on
+    # build, so we check all three plus the structural pattern.
     VARIANT=$(cat /proc/variant 2>/dev/null | tr -d '\n\r ' | head -c 32)
     HOSTID=$(uname -n 2>/dev/null | tr -d '\n\r ' | head -c 32)
-    if [ "$VARIANT" = "taigan" ] || [ "$HOSTID" = "taigan" ] \
+    case "$VARIANT" in taigan|spotty) BCO_BY_VARIANT=1 ;; *) BCO_BY_VARIANT="" ;; esac
+    case "$HOSTID"  in taigan|spotty) BCO_BY_HOST=1    ;; *) BCO_BY_HOST=""    ;; esac
+    if [ -n "$BCO_BY_VARIANT" ] || [ -n "$BCO_BY_HOST" ] \
        || [ -x /sbin/has-bco ] || [ -x /usr/sbin/has-bco ]; then
-        TAIGAN_MODE=1
+        BCO_MODE=1
         WLAN_IFACE="eth0"
-        setup_log "WLAN: taigan/BCO detected (variant=${VARIANT:-?} host=${HOSTID:-?}), using eth0 as wireless interface"
+        setup_log "WLAN: BCO chassis detected (variant=${VARIANT:-?} host=${HOSTID:-?}), Wi-Fi-via-eth0"
+    else
+        # Structural fallback: SoundTouch hardware always has Wi-Fi,
+        # so eth0-only + no wlan* almost certainly means the chip is
+        # exposed as eth0 under a codename we haven't catalogued yet.
+        BCO_MODE=1
+        WLAN_IFACE="eth0"
+        setup_log "WLAN: eth0-only with no wlan*, assuming BCO pattern (variant=${VARIANT:-?} host=${HOSTID:-?}) — codename not in known list, treating as Wi-Fi-via-eth0"
     fi
 fi
 if [ -z "$WLAN_IFACE" ]; then
-    setup_log "WLAN: no wireless interface present, ethernet-only mode (skip provisioning)"
+    setup_log "WLAN: no wireless interface present (no wlan*, no eth0), ethernet-only mode (skip provisioning)"
     echo "ethernet-only" > "$PERSIST/wlan-mode" 2>/dev/null
     SSID=""
     PASS=""
 fi
 
-# Whole block runs in a backgrounded subshell so a slow Bose API
-# (4 minute /addWirelessProfile loops, observed on #60) cannot delay
-# start_agent below. Agent binds :8888 within seconds and the install
-# wizard's 180s poll window succeeds even when WLAN provisioning is
-# still trying its A/B/C/D fallbacks.
+# Whole block runs in a backgrounded subshell so any slow upstream
+# (4 minute /addWirelessProfile loops observed on #60, async TAP CLI
+# responses landing 15s after the request, hostapd teardown waits)
+# cannot delay start_agent below. Agent binds :8888 within seconds
+# and the install wizard's 180s poll window succeeds even when this
+# block is still trying its later fallbacks.
+#
+# Architecture: every WLAN provisioning method we have learned across
+# the SoundTouch product line is tried IN SEQUENCE on every box, in
+# order of "fastest path that has the highest historical success rate
+# for the most boxes" and skipped only when its hard preconditions are
+# missing (e.g. wpa_supplicant binary absent ⇒ skip Approach A, nc
+# binary absent ⇒ skip TAP CLI). After each method we check whether
+# the box has a real STA lease yet; the first one to succeed wins
+# and the rest is skipped. The same pipeline is used on rhino, sm2,
+# scm, spotty, taigan and any future variant — we no longer split
+# the code path by model because individual ST20 boxes vary by HW
+# revision and stock firmware in ways that make a single switch
+# unreliable. The model-detection above is informational only (logs
+# what we know about the box, does not control what we try).
 ( WLAN_T0=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
 
-# Snapshot Bose state up front, ALWAYS, regardless of whether we have
-# creds and regardless of which WLAN code-path we'll take. Without
-# probes in the ethernet-only path we cannot tell from a diagnostic
-# bundle why a given box was classified the way it was. Each command
-# is silent on absence (taigan has no nc, some images have no wpa_cli).
+# Snapshot box capabilities up front, ALWAYS. Without probes in the
+# ethernet-only path we cannot tell from a remote diagnostic bundle
+# why a given box was classified the way it was, or which methods
+# would have been skipped. Each command is silent on absence.
 setup_log "probe: /sys/class/net = $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
 setup_log "probe: uname -n = $(uname -n 2>/dev/null)"
 setup_log "probe: /proc/variant = $(cat /proc/variant 2>/dev/null | head -c 64 || echo missing)"
-if command -v wpa_cli >/dev/null 2>&1; then
-    setup_log "probe: wpa_cli present"
-else
-    setup_log "probe: wpa_cli MISSING"
-fi
-if command -v wpa_supplicant >/dev/null 2>&1; then
-    setup_log "probe: wpa_supplicant binary present"
-else
-    setup_log "probe: wpa_supplicant binary MISSING"
-fi
-if command -v nc >/dev/null 2>&1; then
+HAS_WPA_CLI=""; HAS_WPA_SUP=""; HAS_NC=""; HAS_TIMEOUT=""
+TAP_CMD=""
+if command -v wpa_cli >/dev/null 2>&1;        then HAS_WPA_CLI=1; setup_log "probe: wpa_cli present";         else setup_log "probe: wpa_cli MISSING"; fi
+if command -v wpa_supplicant >/dev/null 2>&1; then HAS_WPA_SUP=1; setup_log "probe: wpa_supplicant present";  else setup_log "probe: wpa_supplicant MISSING"; fi
+if command -v nc >/dev/null 2>&1;             then HAS_NC=1;      setup_log "probe: nc present";              else setup_log "probe: nc MISSING"; fi
+if command -v timeout >/dev/null 2>&1;        then HAS_TIMEOUT=1;                                                                                                fi
+# Build the TAP CLI invocation once. BusyBox `nc -w SECS` is a connect/
+# final-read idle timeout, NOT a session cap — the TAP server on
+# :17000 keeps the socket open after the last command, so nc would
+# block forever. `timeout` is a hard wall-clock cap, but its argument
+# syntax differs: BusyBox uses `timeout -t SECS CMD`, GNU coreutils
+# uses `timeout SECS CMD`. Probe which.
+if [ "$HAS_NC" = "1" ]; then
+    if [ "$HAS_TIMEOUT" = "1" ]; then
+        if timeout --help 2>&1 | grep -q '\-t '; then
+            TAP_CMD="timeout -t 80 nc 127.0.0.1 17000"
+        else
+            TAP_CMD="timeout 80 nc 127.0.0.1 17000"
+        fi
+    else
+        TAP_CMD="nc -w 70 127.0.0.1 17000"
+    fi
     TAP_VER=$(printf 'sys ver\n' | nc -w 2 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 200)
     setup_log "probe: TAP :17000 sys ver = ${TAP_VER:-no-response}"
     TAP_NET=$(printf 'network status\n' | nc -w 2 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 300)
     setup_log "probe: TAP :17000 network status = ${TAP_NET:-no-response}"
+    TAP_WIFI=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 300)
+    setup_log "probe: TAP :17000 wifi profiles info = ${TAP_WIFI:-no-response}"
 else
-    setup_log "probe: nc MISSING — TAP CLI probes skipped"
+    setup_log "probe: TAP CLI probes skipped (nc missing)"
 fi
+
+# Helpers used by every method below.
+is_real_sta_addr() {
+    # Setup-AP gateway IPs the speaker hosts itself on. Anything else
+    # is a real DHCP lease (even 192.168.1.x from a home router whose
+    # subnet happens to match — only the literal .1 / .0.2.1 gateway
+    # addresses are setup-AP). A correctness fix vs the earlier
+    # 192.168.1.0/24 wildcard, which broke any user whose home LAN
+    # used the very common 192.168.1.0/24 default.
+    case "$1" in
+        ""|192.168.1.1|192.0.2.1) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+current_sta_lease() {
+    # Walks every wireless-candidate iface (wlan0, wlan1, eth0 on
+    # BCO chassis) and prints "iface|ip" for the first real STA lease
+    # it finds. Returns 1 if none.
+    for _iface in wlan0 wlan1 eth0; do
+        [ -d "/sys/class/net/$_iface" ] || continue
+        for _ip in $(ip -4 addr show "$_iface" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p'); do
+            if is_real_sta_addr "$_ip"; then
+                printf '%s|%s' "$_iface" "$_ip"
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+wait_for_sta_lease() {
+    # $1 = total seconds to wait, polling every 5s.
+    _budget="$1"
+    while [ "$_budget" -gt 0 ]; do
+        if current_sta_lease >/dev/null; then return 0; fi
+        sleep 5
+        _budget=$((_budget - 5))
+    done
+    return 1
+}
 
 if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) source=$WLAN_SOURCE ==="
     setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
 
-    if [ -n "$SSID" ] && [ -n "$PASS" ]; then
-        # CRITICAL TIMING WINDOW. The very first time this code ran
-        # successfully on a freshly factory-reset rhino ST10, B's
-        # POST /addWirelessProfile returned 200 + AddWirelessProfileResponse
-        # and wifiProfileCount went 0 → 1 — persistent for every later
-        # boot, no flapping, no preset-press required. That run hit
-        # the API at uptime ~16s, when /networkInfo before showed
-        # wlan1 state="NETWORK_WIFI_DISCONNECTED" (NetManager had NOT
-        # yet flipped into setup-AP mode). Every later run that
-        # arrived AFTER NetManager had already moved wlan1 to
-        # mode="ACCESS_POINT" got HTTP 500 instead and we lost
-        # persistence forever. The 60s wait_for_ready that used to be
-        # here guaranteed we missed the window on every retry — it is
-        # gone now. Approach B fires first, as fast as possible.
-        BOSE_API="http://127.0.0.1:8090"
-        setup_log "B: waiting for BoseApp on $BOSE_API"
-        i=0
-        while [ $i -lt 30 ]; do
-            if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
-                setup_log "B: BoseApp reachable after ${i}s"
-                break
-            fi
-            sleep 1
-            i=$((i + 1))
-        done
-        B_OK=""
-        if [ $i -ge 30 ]; then
-            setup_log "B: BoseApp did not respond within 30s, skipping API call"
-        elif [ "$TAIGAN_MODE" = "1" ]; then
-            # taigan path: Bose's HTTP /performWirelessSiteSurvey
-            # returns 400 and /addWirelessProfile returns 500 on this
-            # firmware — both endpoints are simply not wired in the
-            # taigan/BCO build. Live-verified 2026-05-24 on Portable
-            # .79 across two cold boots. The TAP CLI on :17000
-            # accepts the same operations under the `network wifi`
-            # namespace, so we route the taigan provisioning through
-            # that instead. See [[taigan-quirks]] for the validated
-            # command set.
-            #
-            # Single persistent socket because async TAP responses
-            # come back on the same connection that issued the
-            # command — closing the socket after each command drops
-            # the response and may abort the request mid-flight. The
-            # nc -w window must cover the longest expected wait
-            # (the wifi scan is asynchronous, results land 5-10s
-            # after the request).
-            NETINFO=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
-            setup_log "B-taigan: /networkInfo before: $NETINFO"
-            if ! command -v nc >/dev/null 2>&1; then
-                setup_log "B-taigan: nc missing — cannot drive TAP CLI, giving up"
-            else
-                # BusyBox `nc -w SECS` is a connect / final-read
-                # idle timeout, NOT a session cap. The TAP server on
-                # :17000 keeps the socket open after the last command
-                # waiting for more input, so nc never sees "idle for
-                # 25s" and run.sh's $() blocks indefinitely. Live-
-                # verified 2026-05-25: WLAN block hung for 2+ minutes
-                # with a 25s -w value and the SUMMARY line never
-                # fired. `timeout SECS CMD` (BusyBox has it) is a
-                # hard wall-clock cap on the whole nc invocation.
-                # We pick 30s because the inner sleeps total 16s and
-                # we need slack for the BusyBox nc startup plus the
-                # async wifi-scan response landing late.
-                # `timeout` syntax differs between GNU coreutils
-                # (`timeout SECS CMD`) and BusyBox (`timeout -t SECS
-                # CMD`). The Bose firmware ships BusyBox 1.19 which
-                # uses the `-t` form — GNU-style invocation tried to
-                # exec the literal string "60" and died immediately
-                # (live-verified 2026-05-25, Portable .79). Probe
-                # which form works by checking the help text.
-                if command -v timeout >/dev/null 2>&1; then
-                    if timeout --help 2>&1 | grep -q '\-t '; then
-                        TAP_CMD="timeout -t 80 nc 127.0.0.1 17000"
-                    else
-                        TAP_CMD="timeout 80 nc 127.0.0.1 17000"
-                    fi
-                else
-                    # Fallback for the unlikely BusyBox build that
-                    # ships nc but no timeout. -w is at least
-                    # something, even though it can leak.
-                    TAP_CMD="nc -w 70 127.0.0.1 17000"
-                fi
-                # Timing matters here. Both `network wifi scan` and
-                # `network wifi profiles add` are ASYNC on taigan —
-                # the initial OK only confirms "request accepted",
-                # the actual completion lands on the same socket
-                # 5-15s later (NetManager has to drive the radio).
-                # Live-verified 2026-05-25 on Portable: 8s after
-                # scan was not enough, profiles info still showed
-                # empty, and `network mode auto` fired before any
-                # association attempt could happen. New cadence:
-                #   - scan + 15s grace for async scan results
-                #   - clear (synchronous)
-                #   - add + 15s grace for async add completion
-                #   - profiles info (verification)
-                #   - mode auto (kick NetManager from setup-AP to
-                #     station mode now that DB has the profile)
-                #   - 5s settle so the verify loop below has a real
-                #     pre-state snapshot to compare against
-                TAP_OUT=$(
-                    (
-                        printf 'async_responses on\n'
-                        sleep 1
-                        printf 'network wifi scan\n'
-                        sleep 25
-                        printf 'network wifi profiles clear\n'
-                        sleep 2
-                        printf 'network wifi profiles add %s wpa_or_wpa2 %s\n' "$SSID" "$PASS"
-                        sleep 20
-                        printf 'network wifi profiles info\n'
-                        sleep 2
-                        # `network mode auto` alone is not enough on
-                        # taigan: NetManager stays in setup-AP mode
-                        # because the chassis has no separate radio
-                        # for station + AP at the same time. Live-
-                        # verified 2026-05-25 on Portable: after
-                        # profile add + mode auto, eth0 still
-                        # carried the setup-AP IP 192.168.1.1.
-                        # `airplay setupap exit` explicitly drops
-                        # the setup-AP listener, which frees the
-                        # chip to associate as a station using the
-                        # profile we just added.
-                        printf 'airplay setupap exit\n'
-                        sleep 5
-                        printf 'network mode auto\n'
-                        sleep 8
-                    ) | $TAP_CMD 2>&1
-                )
-                # Persist the full TAP response trace to NAND so the
-                # diagnostic bundle has the complete async-response
-                # stream (the inline log is truncated to 800 chars and
-                # late async responses get cut off there).
-                echo "$TAP_OUT" > "$PERSIST/tap-trace.log" 2>/dev/null
-                setup_log "B-taigan: TAP sequence response (first 800c)='$(echo "$TAP_OUT" | tr '\n' '|' | head -c 800)'"
-                setup_log "B-taigan: full TAP trace persisted to $PERSIST/tap-trace.log ($(wc -c < "$PERSIST/tap-trace.log" 2>/dev/null || echo 0) bytes)"
-                # Acceptance check: with async_responses on, the
-                # success indicators we can rely on are the OK
-                # acknowledgements ("Profiles Deleted", "Add
-                # requested", "mode set to auto"). Any of these
-                # means NetManager processed the command — final
-                # association success is tested by the B-verify
-                # loop afterward via /sys/class/net/$WLAN_IFACE.
-                # If we cannot even see "Add requested" it means
-                # the TAP path itself is broken on this firmware
-                # variant and there is no point waiting for an IP.
-                #
-                # SSID is checked with `grep -F` (fixed-string, not
-                # regex) because it can contain regex metacharacters
-                # (`.`, `(`, `[`, `*`) which would either silently
-                # mis-match or break the pattern entirely. The other
-                # two indicators are literal anyway, so we run three
-                # separate fixed-string greps and OR the results.
-                if echo "$TAP_OUT" | grep -qiF "Add requested" \
-                   || echo "$TAP_OUT" | grep -qF "$SSID" \
-                   || echo "$TAP_OUT" | grep -qiF "mode set to auto"; then
-                    setup_log "B-taigan: TAP profile add accepted by NetManager"
-                    B_OK=1
-                else
-                    setup_log "B-taigan: TAP profile add rejected or no confirmation"
-                fi
-            fi
-        else
-            NETINFO=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
-            setup_log "B: /networkInfo before: $NETINFO"
-            xml_escape() {
-                printf '%s' "$1" | sed \
-                    -e 's/\&/\&amp;/g' \
-                    -e 's/</\&lt;/g' \
-                    -e 's/>/\&gt;/g' \
-                    -e 's/"/\&quot;/g' \
-                    -e "s/'/\&apos;/g"
-            }
-            ESSID=$(xml_escape "$SSID")
-            EPASS=$(xml_escape "$PASS")
-            BODY="<AddWirelessProfile timeout=\"30\"><profile ssid=\"$ESSID\" password=\"$EPASS\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
-            RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
-                   --post-data="$BODY" "$BOSE_API/addWirelessProfile" 2>&1)
-            RC=$?
-            setup_log "B: POST addWirelessProfile rc=$RC response='$(echo "$RESP" | head -c 400)'"
-            if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
-                setup_log "B: API persisted profile successfully — NetManager-DB updated"
-                B_OK=1
-            fi
-        fi
+    BOSE_API="http://127.0.0.1:8090"
+    WINNER="none"
 
-        # If B persisted: NetManager has the profile in its DB.
-        # But HTTP 200 only means "accepted into DB", not "associated".
-        # On taigan (Portable) we observed 2026-05-24 live that B
-        # returns 200 yet wlan0 never gets an IP — NetManager kept
-        # the profile but never reassociated. Verify via DHCP-wait.
-        #
-        # Setup-AP IP discrimination: the Bose setup-AP serves itself
-        # at the LITERAL gateway address 192.168.1.1 (and 192.0.2.1
-        # on some FW). Any OTHER IP — including 192.168.1.50, 192.168.1.42
-        # etc — is a real STA lease from the user's home router. The
-        # earlier `192.168.1.*` /24 wildcard was a correctness bug: it
-        # made any home network that uses 192.168.1.0/24 (very common
-        # default, e.g. Speedport, TP-Link, many ISPs) get classified
-        # as "still setup-AP" and B-verify would falsely fail.
-        # `ip addr` enumeration must look at ALL inet entries because
-        # NetManager has been seen to briefly carry both the setup-AP
-        # alias and the new STA lease at the same time during the
-        # handover, in which order is undefined.
-        is_real_sta_addr() {
-            # $1 = ip address
-            case "$1" in
-                ""|192.168.1.1|192.0.2.1) return 1 ;;
-                *) return 0 ;;
-            esac
-        }
-        # Taigan reassoc + DHCP can be slow (drop setup-AP, reconfigure
-        # radio, scan, 4-way handshake, DHCP DISCOVER → 60s headroom).
-        # Non-taigan has working A/C/D fallbacks so we keep the original
-        # 30s budget there to fall through faster.
-        if [ "$TAIGAN_MODE" = "1" ]; then
-            VERIFY_WAITS="5 5 10 10 10 10 10"
-        else
-            VERIFY_WAITS="5 5 5 5 5 5"
+    # Wait for BoseApp HTTP server up to 30s. M1 needs it; M2..M6
+    # do not and run regardless. If BoseApp never comes up we still
+    # try TAP CLI / wpa_supplicant / wpa_cli paths.
+    setup_log "M0: waiting for BoseApp on $BOSE_API (timeout 30s)"
+    i=0
+    BOSE_OK=""
+    while [ $i -lt 30 ]; do
+        if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
+            setup_log "M0: BoseApp reachable after ${i}s"
+            BOSE_OK=1
+            break
         fi
-        B_VERIFIED=""
-        if [ "$B_OK" = "1" ]; then
-            for wait in $VERIFY_WAITS; do
-                sleep "$wait"
-                STV=$(cat "/sys/class/net/$WLAN_IFACE/operstate" 2>/dev/null)
-                # Enumerate ALL inet addrs on the iface, pick the first
-                # that is NOT a setup-AP gateway IP. If none are real
-                # STA addresses, IPV stays empty and B-verify keeps
-                # waiting.
-                IPV=""
-                IPS_ALL=$(ip -4 addr show "$WLAN_IFACE" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p')
-                for cand in $IPS_ALL; do
-                    if is_real_sta_addr "$cand"; then
-                        IPV="$cand"
-                        break
-                    fi
-                done
-                setup_log "B-verify: $WLAN_IFACE state=${STV:-?} all_ips='$(echo "$IPS_ALL" | tr '\n' ' ')' real_sta_ip=${IPV:-none}"
-                if [ "$STV" = "up" ] && [ -n "$IPV" ]; then
-                    B_VERIFIED=1
-                    setup_log "Approach B: result=YES ip=$IPV reason=NetManager-DB-replay"
-                    break
-                fi
-            done
-            if [ -z "$B_VERIFIED" ]; then
-                setup_log "Approach B: result=NO reason=API-200-but-no-real-STA-IP-within-verify-window, falling through to A/C/D"
-                B_OK=""
+        sleep 1
+        i=$((i + 1))
+    done
+    [ -z "$BOSE_OK" ] && setup_log "M0: BoseApp did not respond within 30s, will skip BoseApp-dependent methods"
+
+    if [ "$BOSE_OK" = "1" ]; then
+        NETINFO_BEFORE=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
+        setup_log "pre-state: $NETINFO_BEFORE"
+    fi
+
+    xml_escape() {
+        printf '%s' "$1" | sed \
+            -e 's/\&/\&amp;/g' \
+            -e 's/</\&lt;/g' \
+            -e 's/>/\&gt;/g' \
+            -e 's/"/\&quot;/g' \
+            -e "s/'/\&apos;/g"
+    }
+    ESSID=$(xml_escape "$SSID")
+    EPASS=$(xml_escape "$PASS")
+    HTTP_BODY="<AddWirelessProfile timeout=\"30\"><profile ssid=\"$ESSID\" password=\"$EPASS\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
+
+    # =====================================================================
+    # SHOTGUN PIPELINE.
+    # Every method known to work on any SoundTouch variant is tried in
+    # sequence on every box. After each method we wait briefly for a
+    # real STA lease; first method that produces one wins, rest is
+    # skipped. Methods whose hard preconditions are missing (binary
+    # absent, endpoint not present) are logged as SKIP with reason.
+    #
+    # Order (cheapest + highest historical success first):
+    #   M1  HTTP B            (/addWirelessProfile on :8090)
+    #   M2  TAP B             (network wifi profiles add via :17000)
+    #   M3  Approach A        (write /etc/wpa_supplicant.conf + restart)
+    #   M4  Approach C        (wpa_cli add_network)
+    #   M5  TAP nudge         (airplay setupap exit + network mode auto)
+    #   M6  Approach D        (setup-AP teardown + preset-key burst,
+    #                          backgrounded so SUMMARY can still fire)
+    # =====================================================================
+
+    # ---- M1: HTTP B — POST /addWirelessProfile ------------------------
+    if [ "$BOSE_OK" = "1" ]; then
+        setup_log "M1: POST $BOSE_API/addWirelessProfile"
+        RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
+               --post-data="$HTTP_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
+        RC=$?
+        setup_log "M1: rc=$RC response='$(echo "$RESP" | head -c 400)'"
+        if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
+            setup_log "M1: API persisted profile (NetManager DB updated)"
+        fi
+        if wait_for_sta_lease 30; then
+            RES=$(current_sta_lease)
+            WINNER="M1-http"
+            setup_log "M1: result=YES lease=$RES"
+        else
+            setup_log "M1: result=NO no real STA lease within 30s"
+        fi
+    else
+        setup_log "M1: SKIP reason=BoseApp-not-reachable"
+    fi
+
+    # ---- M2: TAP B — network wifi profiles add via :17000 -------------
+    if [ "$WINNER" = "none" ]; then
+        if [ -n "$TAP_CMD" ]; then
+            setup_log "M2: TAP CLI sequence (scan, profiles clear/add, mode auto, setupap exit)"
+            TAP_OUT=$(
+                (
+                    printf 'async_responses on\n'
+                    sleep 1
+                    printf 'network wifi scan\n'
+                    sleep 25
+                    printf 'network wifi profiles clear\n'
+                    sleep 2
+                    printf 'network wifi profiles add %s wpa_or_wpa2 %s\n' "$SSID" "$PASS"
+                    sleep 20
+                    printf 'network wifi profiles info\n'
+                    sleep 2
+                    printf 'airplay setupap exit\n'
+                    sleep 5
+                    printf 'network mode auto\n'
+                    sleep 8
+                ) | $TAP_CMD 2>&1
+            )
+            echo "$TAP_OUT" > "$PERSIST/tap-trace.log" 2>/dev/null
+            setup_log "M2: response (first 800c)='$(echo "$TAP_OUT" | tr '\n' '|' | head -c 800)'"
+            setup_log "M2: full trace -> $PERSIST/tap-trace.log ($(wc -c < "$PERSIST/tap-trace.log" 2>/dev/null || echo 0) bytes)"
+            if echo "$TAP_OUT" | grep -qiF "Add requested" \
+               || echo "$TAP_OUT" | grep -qF "$SSID" \
+               || echo "$TAP_OUT" | grep -qiF "mode set to auto"; then
+                setup_log "M2: NetManager accepted the sequence"
             fi
-        else
-            setup_log "Approach B: result=NO reason=API-call-rejected-or-unreachable"
-        fi
-        if [ "$B_OK" = "1" ]; then
-            setup_log "B verified — skipping A/C/D fallbacks"
-        elif [ "$TAIGAN_MODE" = "1" ]; then
-            # taigan has no wpa_supplicant binary and no wpa_cli, so
-            # Approach A (file write + restart) and Approach C (wpa_cli
-            # add_network) are both impossible. D's preset-burst is
-            # also not useful: the Portable's preset buttons are routed
-            # through BoseApp not NetManager, so a CLI burst has no
-            # association side-effect.
-            #
-            # The earlier HTTP-only B-retry was useless work: the same
-            # /addWirelessProfile endpoint that returned 500 in the
-            # primary attempt will return 500 again — taigan/BCO does
-            # not implement the HTTP endpoint at all. We only re-run
-            # the path that actually has a chance: another TAP CLI
-            # sequence with `mode auto` + setup-AP-exit, in case the
-            # first sequence raced NetManager's scan cache.
-            setup_log "Approach A: result=NO reason=skipped-on-taigan (no wpa_supplicant binary)"
-            setup_log "Approach C: result=NO reason=skipped-on-taigan (no wpa_cli binary)"
-            setup_log "Approach D: result=NO reason=skipped-on-taigan (preset keys do not affect NetManager on BCO)"
-            if command -v nc >/dev/null 2>&1; then
-                # Reuse the same timeout-wrapped TAP_CMD if it was set
-                # in the primary attempt. If not (nc-only fallback),
-                # use a short -w on a single command.
-                if [ -n "$TAP_CMD" ]; then
-                    RETRY_OUT=$(
-                        (
-                            printf 'async_responses on\n'
-                            sleep 1
-                            printf 'airplay setupap exit\n'
-                            sleep 4
-                            printf 'network mode auto\n'
-                            sleep 6
-                            printf 'network wifi profiles info\n'
-                            sleep 2
-                        ) | $TAP_CMD 2>&1
-                    )
-                else
-                    RETRY_OUT=$(printf 'network mode auto\n' | nc -w 3 127.0.0.1 17000 2>/dev/null)
-                fi
-                setup_log "B-taigan-retry: TAP nudge (first 400c)='$(echo "$RETRY_OUT" | tr '\n' '|' | head -c 400)'"
+            if wait_for_sta_lease 60; then
+                RES=$(current_sta_lease)
+                WINNER="M2-tap"
+                setup_log "M2: result=YES lease=$RES"
             else
-                setup_log "B-taigan-retry: no nc — cannot nudge NetManager"
+                setup_log "M2: result=NO no real STA lease within 60s"
             fi
         else
-        # --- Approach A: direct /etc/wpa_supplicant.conf write (fallback) ---
-        WPA_CONF="/etc/wpa_supplicant.conf"
-        TMP="/tmp/wpa_supplicant.conf.new"
-        cat > "$TMP" <<WPAEOF
+            setup_log "M2: SKIP reason=nc-missing (TAP CLI unavailable)"
+        fi
+    fi
+
+    # ---- M3: Approach A — write /etc/wpa_supplicant.conf + restart ----
+    if [ "$WINNER" = "none" ]; then
+        if [ "$HAS_WPA_SUP" = "1" ]; then
+            setup_log "M3: write /etc/wpa_supplicant.conf + restart"
+            WPA_CONF="/etc/wpa_supplicant.conf"
+            TMP="/tmp/wpa_supplicant.conf.new"
+            cat > "$TMP" <<WPAEOF
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root
 update_config=1
 eapol_version=1
@@ -826,248 +735,187 @@ network={
     key_mgmt=WPA-PSK
 }
 WPAEOF
-        cp "$WPA_CONF" "$PERSIST/wpa_supplicant.conf.bak" 2>/dev/null
-        if cat "$TMP" > "$WPA_CONF" 2>/dev/null; then
-            setup_log "A: wpa_supplicant.conf direct-write OK ($(wc -c < "$WPA_CONF") bytes)"
-        else
-            setup_log "A: WARN /etc/wpa_supplicant.conf not writable, trying bind mount"
-            if mount --bind "$TMP" "$WPA_CONF" 2>/dev/null; then
-                setup_log "A: bind mount active"
+            cp "$WPA_CONF" "$PERSIST/wpa_supplicant.conf.bak" 2>/dev/null
+            if cat "$TMP" > "$WPA_CONF" 2>/dev/null; then
+                setup_log "M3: direct-write OK ($(wc -c < "$WPA_CONF") bytes)"
+            elif mount --bind "$TMP" "$WPA_CONF" 2>/dev/null; then
+                setup_log "M3: bind-mount active (read-only /etc workaround)"
             else
-                setup_log "A: FAIL both direct-write and bind mount"
+                setup_log "M3: WARN could not write /etc/wpa_supplicant.conf (direct + bind both failed)"
             fi
-        fi
-        if pidof wpa_supplicant >/dev/null 2>&1; then
-            killall wpa_supplicant 2>/dev/null
-            sleep 1
-            wpa_supplicant -B -i wlan0 -s -c "$WPA_CONF" -D nl80211 2>/dev/null &
-            setup_log "A: wpa_supplicant restarted"
-        else
-            setup_log "A: no wpa_supplicant process to restart (Bose may bring it up later)"
-        fi
-        # Re-attempt the API once after Approach A has done its
-        # bind-mount and (maybe) restart — sometimes that nudges
-        # NetManager hard enough to accept the call even when the
-        # initial probe got 500. Cheap, harmless on success.
-        if [ -n "$BODY" ]; then
-            RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
-                   --post-data="$BODY" "$BOSE_API/addWirelessProfile" 2>&1)
-            RC=$?
-            setup_log "B: post-A retry addWirelessProfile rc=$RC response='$(echo "$RESP" | head -c 400)'"
-            if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
-                setup_log "B: API persisted profile successfully"
+            if pidof wpa_supplicant >/dev/null 2>&1; then
+                killall wpa_supplicant 2>/dev/null
+                sleep 1
+                _WI="wlan0"
+                [ -d /sys/class/net/wlan1 ] && [ ! -d /sys/class/net/wlan0 ] && _WI="wlan1"
+                wpa_supplicant -B -i "$_WI" -s -c "$WPA_CONF" -D nl80211 2>/dev/null &
+                setup_log "M3: wpa_supplicant restarted on $_WI"
             else
-                setup_log "B: API call did not confirm success (rc=$RC), retrying after 4s"
-                sleep 4
-                RESP2=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
-                       --post-data="$BODY" "$BOSE_API/addWirelessProfile" 2>&1)
-                RC2=$?
-                setup_log "B: retry POST addWirelessProfile rc=$RC2 response='$(echo "$RESP2" | head -c 400)'"
+                setup_log "M3: wpa_supplicant not running (Bose may bring it up later)"
             fi
+            if wait_for_sta_lease 30; then
+                RES=$(current_sta_lease)
+                WINNER="M3-confwrite"
+                setup_log "M3: result=YES lease=$RES"
+            else
+                setup_log "M3: result=NO no real STA lease within 30s"
+            fi
+        else
+            setup_log "M3: SKIP reason=wpa_supplicant-binary-missing"
+        fi
+    fi
 
-            # --- Approach C: wpa_cli direct ---
-            # Talks to whichever wpa_supplicant instance is currently
-            # alive on the box (Bose's or ours). add_network /
-            # set_network / select_network / save_config is the
-            # canonical wpa_supplicant.conf-independent path. If the
-            # ctrl interface is reachable, this works even when
-            # /addWirelessProfile is refusing service.
-            if command -v wpa_cli >/dev/null 2>&1; then
-                NETID=$(wpa_cli -i wlan0 add_network 2>/dev/null | tail -1)
-                setup_log "C: wpa_cli add_network on wlan0 -> id=$NETID"
-                if [ -n "$NETID" ] && [ "$NETID" -ge 0 ] 2>/dev/null; then
-                    SSID_ESC=$(printf '%s' "$SSID" | sed 's/"/\\"/g')
-                    PSK_ESC=$(printf '%s' "$PASS" | sed 's/"/\\"/g')
-                    wpa_cli -i wlan0 set_network "$NETID" ssid "\"$SSID_ESC\"" >/dev/null 2>&1
-                    R1=$?
-                    wpa_cli -i wlan0 set_network "$NETID" psk "\"$PSK_ESC\"" >/dev/null 2>&1
-                    R2=$?
-                    wpa_cli -i wlan0 set_network "$NETID" key_mgmt WPA-PSK >/dev/null 2>&1
-                    R3=$?
-                    wpa_cli -i wlan0 enable_network "$NETID" >/dev/null 2>&1
-                    R4=$?
-                    wpa_cli -i wlan0 select_network "$NETID" >/dev/null 2>&1
-                    R5=$?
-                    wpa_cli -i wlan0 save_config >/dev/null 2>&1
-                    R6=$?
-                    setup_log "C: wpa_cli set ssid=$R1 psk=$R2 key_mgmt=$R3 enable=$R4 select=$R5 save=$R6"
-                    # Persist creds into NAND so subsequent boots
-                    # (when stick wlan.conf is gone) can replay this
-                    # exact wpa_cli dance — Bose's NetManager does
-                    # NOT remember wpa_cli-added networks across
-                    # reboot. Without this every reboot drops back
-                    # to yellow LED. Stored next to other NAND
-                    # state, fat32-safe newlines.
-                    if [ "$R1" = "0" ] && [ "$R2" = "0" ] && [ "$R4" = "0" ]; then
-                        { printf 'SSID=%s\n' "$SSID"
-                          printf 'PASS=%s\n' "$PASS"
-                        } > "$WLAN_CREDS_NAND.new" 2>/dev/null
-                        if [ -s "$WLAN_CREDS_NAND.new" ]; then
-                            mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
-                            chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
-                            setup_log "C: persisted wlan creds to NAND for replay on next boot"
-                        fi
+    # ---- M4: Approach C — wpa_cli add_network -------------------------
+    if [ "$WINNER" = "none" ]; then
+        if [ "$HAS_WPA_CLI" = "1" ]; then
+            _WI="wlan0"
+            [ -d /sys/class/net/wlan1 ] && [ ! -d /sys/class/net/wlan0 ] && _WI="wlan1"
+            setup_log "M4: wpa_cli add_network on $_WI"
+            NETID=$(wpa_cli -i "$_WI" add_network 2>/dev/null | tail -1)
+            setup_log "M4: add_network -> id=$NETID"
+            if [ -n "$NETID" ] && [ "$NETID" -ge 0 ] 2>/dev/null; then
+                SSID_ESC=$(printf '%s' "$SSID" | sed 's/"/\\"/g')
+                PSK_ESC=$(printf '%s' "$PASS" | sed 's/"/\\"/g')
+                wpa_cli -i "$_WI" set_network "$NETID" ssid "\"$SSID_ESC\"" >/dev/null 2>&1; R1=$?
+                wpa_cli -i "$_WI" set_network "$NETID" psk "\"$PSK_ESC\""   >/dev/null 2>&1; R2=$?
+                wpa_cli -i "$_WI" set_network "$NETID" key_mgmt WPA-PSK    >/dev/null 2>&1; R3=$?
+                wpa_cli -i "$_WI" enable_network "$NETID"                  >/dev/null 2>&1; R4=$?
+                wpa_cli -i "$_WI" select_network "$NETID"                  >/dev/null 2>&1; R5=$?
+                wpa_cli -i "$_WI" save_config                              >/dev/null 2>&1; R6=$?
+                setup_log "M4: set ssid=$R1 psk=$R2 key_mgmt=$R3 enable=$R4 select=$R5 save=$R6"
+                if [ "$R1" = "0" ] && [ "$R2" = "0" ] && [ "$R4" = "0" ]; then
+                    { printf 'SSID=%s\n' "$SSID"
+                      printf 'PASS=%s\n' "$PASS"
+                    } > "$WLAN_CREDS_NAND.new" 2>/dev/null
+                    if [ -s "$WLAN_CREDS_NAND.new" ]; then
+                        mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
+                        chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
+                        setup_log "M4: persisted creds to NAND for next-boot replay"
                     fi
                 fi
-            else
-                setup_log "C: wpa_cli not in PATH, skipping"
             fi
-            # --- Approach D: kill setup-AP processes so NetManager
-            # falls back to station mode ---
-            #
-            # Empirical: on factory-reset rhino ST10, Approach C writes
-            # a valid wpa_supplicant profile but wlan0 stays DISCONNECTED
-            # because Bose's NetManager keeps wlan1 in setup-AP mode and
-            # never re-evaluates wlan0. A physical preset button press
-            # WAS observed to break this (LED goes white within seconds);
-            # the CLI equivalent `sys presetkey N p` is accepted with
-            # ->OK but does NOT propagate the same NetworkManager side
-            # effect (six slots tried, all wlan0 state=up ip=none).
-            #
-            # So we go one level lower: kill the userland processes that
-            # actually run the setup-AP (hostapd serves the AP, udhcpd
-            # hands out 192.0.2.x leases). With those gone, NetManager
-            # has nothing to keep alive and the station-mode profile we
-            # already loaded becomes the next thing to try.
-            #
-            # Backgrounded so run.sh does not block. Best-effort: each
-            # kill is silent on absence.
-            (
-                sleep 8
-                setup_log "D: setup-AP teardown attempt"
-                # Snapshot what's actually running so we can refine the
-                # kill list on other firmware variants without guessing.
-                AP_PROCS=$(ps 2>/dev/null | grep -E 'hostapd|udhcpd|dnsmasq|nodogsplash' | grep -v grep | tr '\n' '|' | head -c 400)
-                setup_log "D: AP-related procs: $AP_PROCS"
-                killall hostapd 2>/dev/null && setup_log "D: hostapd killed"
-                killall udhcpd 2>/dev/null && setup_log "D: udhcpd killed"
-                # Some Bose builds use dnsmasq instead.
-                killall dnsmasq 2>/dev/null && setup_log "D: dnsmasq killed"
-                sleep 2
-                # Force wpa_supplicant to retry association with the
-                # config we just wrote. reassociate is the cheap path;
-                # reconfigure re-reads the file in case Bose's NetManager
-                # rewrote it from underneath us between our write and now.
-                wpa_cli -i wlan0 reassociate >/dev/null 2>&1 \
-                    && setup_log "D: wlan0 reassociate sent"
-                wpa_cli -i wlan0 reconfigure >/dev/null 2>&1 \
-                    && setup_log "D: wlan0 reconfigure sent"
-                # Give the radio time to scan + 4-way handshake + DHCP.
-                for wait in 6 10 15 20; do
-                    sleep "$wait"
-                    STATE=$(cat /sys/class/net/wlan0/operstate 2>/dev/null)
-                    IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
-                    setup_log "D: t+${wait}s wlan0 state=$STATE ip=${IP:-none}"
-                    if [ "$STATE" = "up" ] && [ -n "$IP" ]; then
-                        setup_log "D: associated — teardown approach won"
+            if wait_for_sta_lease 30; then
+                RES=$(current_sta_lease)
+                WINNER="M4-wpacli"
+                setup_log "M4: result=YES lease=$RES"
+            else
+                setup_log "M4: result=NO no real STA lease within 30s"
+            fi
+        else
+            setup_log "M4: SKIP reason=wpa_cli-binary-missing"
+        fi
+    fi
+
+    # ---- M5: TAP nudge — airplay setupap exit + network mode auto -----
+    if [ "$WINNER" = "none" ]; then
+        if [ -n "$TAP_CMD" ]; then
+            setup_log "M5: TAP nudge (setupap exit, mode auto)"
+            NUDGE=$(
+                (
+                    printf 'async_responses on\n'
+                    sleep 1
+                    printf 'airplay setupap exit\n'
+                    sleep 4
+                    printf 'network mode auto\n'
+                    sleep 6
+                    printf 'network wifi profiles info\n'
+                    sleep 2
+                ) | $TAP_CMD 2>&1
+            )
+            setup_log "M5: response (first 400c)='$(echo "$NUDGE" | tr '\n' '|' | head -c 400)'"
+            if wait_for_sta_lease 30; then
+                RES=$(current_sta_lease)
+                WINNER="M5-tapnudge"
+                setup_log "M5: result=YES lease=$RES"
+            else
+                setup_log "M5: result=NO no real STA lease within 30s"
+            fi
+        else
+            setup_log "M5: SKIP reason=nc-missing"
+        fi
+    fi
+
+    # ---- M6: Approach D — setup-AP teardown + preset-key burst --------
+    # Always backgrounded so the SUMMARY line below fires whether D
+    # is still trying or already done. D's own result lines land
+    # later in the same log when it completes.
+    if [ "$WINNER" = "none" ]; then
+        setup_log "M6: spawning backgrounded setup-AP teardown + preset burst"
+        (
+            sleep 8
+            setup_log "M6: setup-AP teardown attempt"
+            AP_PROCS=$(ps 2>/dev/null | grep -E 'hostapd|udhcpd|dnsmasq|nodogsplash' | grep -v grep | tr '\n' '|' | head -c 400)
+            setup_log "M6: AP-related procs: $AP_PROCS"
+            killall hostapd  2>/dev/null && setup_log "M6: hostapd killed"
+            killall udhcpd   2>/dev/null && setup_log "M6: udhcpd killed"
+            killall dnsmasq  2>/dev/null && setup_log "M6: dnsmasq killed"
+            sleep 2
+            if [ "$HAS_WPA_CLI" = "1" ]; then
+                _WI="wlan0"
+                [ -d /sys/class/net/wlan1 ] && [ ! -d /sys/class/net/wlan0 ] && _WI="wlan1"
+                wpa_cli -i "$_WI" reassociate >/dev/null 2>&1 && setup_log "M6: $_WI reassociate sent"
+                wpa_cli -i "$_WI" reconfigure >/dev/null 2>&1 && setup_log "M6: $_WI reconfigure sent"
+            fi
+            for wait in 6 10 15 20; do
+                sleep "$wait"
+                if current_sta_lease >/dev/null; then
+                    setup_log "M6: result=YES lease=$(current_sta_lease) after teardown"
+                    return 0
+                fi
+                setup_log "M6: still no lease at t+${wait}s"
+            done
+            if [ "$HAS_NC" = "1" ]; then
+                setup_log "M6-burst: 8x slot-2, 1s apart"
+                for _ in 1 2 3 4 5 6 7 8; do
+                    printf 'sys presetkey 2 p\n' | nc -w 1 127.0.0.1 17000 >/dev/null 2>&1
+                    sleep 1
+                done
+                sleep 6
+                if current_sta_lease >/dev/null; then
+                    setup_log "M6-burst: result=YES lease=$(current_sta_lease)"
+                    return 0
+                fi
+                setup_log "M6-burst: spaced phase (slots 2..1, 12s apart)"
+                for slot in 2 3 4 5 6 1; do
+                    printf 'sys presetkey %d p\n' "$slot" | nc -w 2 127.0.0.1 17000 >/dev/null 2>&1
+                    setup_log "M6-burst: slot $slot sent"
+                    sleep 12
+                    if current_sta_lease >/dev/null; then
+                        setup_log "M6-burst: result=YES lease=$(current_sta_lease) after slot $slot"
                         return 0
                     fi
                 done
-                # Last resort: simulated hardware presses. Jens-observed
-                # pattern on rhino ST10: a single CLI press has no
-                # NetManager effect, but a RAPID BURST of presses does
-                # — as if Bose has a user-interaction counter that
-                # must cross a threshold before the state machine flips
-                # out of setup-AP. So we send a burst first, then
-                # spaced retries to nudge the NetManager state without
-                # spamming.
-                if command -v nc >/dev/null 2>&1; then
-                    setup_log "D-fallback: burst phase (8x slot 2, 1s apart)"
-                    for _ in 1 2 3 4 5 6 7 8; do
-                        printf 'sys presetkey 2 p\n' | nc -w 1 127.0.0.1 17000 >/dev/null 2>&1
-                        sleep 1
-                    done
-                    sleep 6
-                    IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
-                    setup_log "D-fallback: after burst wlan0 ip=${IP:-none}"
-                    if [ -n "$IP" ]; then
-                        setup_log "D-fallback: burst won — associated ip=$IP"
-                        return 0
-                    fi
-                    # Spaced retries across all slots in case slot 2 is
-                    # specifically suppressed by Bose's preset handler.
-                    setup_log "D-fallback: spaced phase (slots 2..1, 12s apart)"
-                    for slot in 2 3 4 5 6 1; do
-                        printf 'sys presetkey %d p\n' "$slot" | nc -w 2 127.0.0.1 17000 >/dev/null 2>&1
-                        setup_log "D-fallback: spaced presetkey $slot sent"
-                        sleep 12
-                        IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
-                        setup_log "D-fallback: after slot $slot wlan0 ip=${IP:-none}"
-                        if [ -n "$IP" ]; then
-                            setup_log "D-fallback: spaced won — associated after slot $slot ip=$IP"
-                            return 0
-                        fi
-                    done
-                fi
-                setup_log "D: all approaches exhausted — manual preset press needed"
-            ) &
-
-            # Post-state, with grace period for the box to attempt
-            # association from the just-stored profile.
-            sleep 5
-            NETINFO2=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
-            setup_log "B: /networkInfo after: $NETINFO2"
-        fi
-        fi
-
-        if [ -f "$WLAN_CONF" ]; then
-            rm -f "$WLAN_CONF" 2>/dev/null
-            setup_log "wlan.conf removed from stick"
-        fi
-
-        # Final summary line: parseable, one-shot, captures the outcome
-        # of the entire WLAN block so diagnostic bundles surface the
-        # winner without needing to grep multi-line approach traces.
-        # Note: Approach D runs backgrounded and may still be deciding
-        # when this line fires; that is fine — its own result lines
-        # land later in the same log.
-        WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
-        WLAN_ELAPSED=$(( ${WLAN_T1:-0} - ${WLAN_T0:-0} ))
-        FINAL_STATE=$(cat "/sys/class/net/$WLAN_IFACE/operstate" 2>/dev/null)
-        # Same is_real_sta_addr discrimination as B-verify so the
-        # summary line cannot lie about success on taigan AND cannot
-        # mis-classify a STA lease that happens to be 192.168.1.x
-        # from a home router on 192.168.1.0/24.
-        FINAL_IP=""
-        FINAL_IPS_ALL=$(ip -4 addr show "$WLAN_IFACE" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p')
-        for cand in $FINAL_IPS_ALL; do
-            if is_real_sta_addr "$cand"; then
-                FINAL_IP="$cand"
-                break
             fi
-        done
-        WINNER="none"
-        if [ "$B_VERIFIED" = "1" ]; then
-            WINNER="B"
-        elif [ "$FINAL_STATE" = "up" ] && [ -n "$FINAL_IP" ]; then
-            # B did not verify but the wireless iface came up anyway
-            # with a non-setup-AP IP. On rhino/spotty/maple this is
-            # typically A (direct wpa_supplicant.conf write + restart)
-            # or C (wpa_cli add_network). On taigan it would be the
-            # post-survey B retry or NetManager picking up the profile
-            # after `network mode auto`. D runs backgrounded and may
-            # still be deciding at this point — its own result line in
-            # the log distinguishes if D actually finished the job
-            # after this summary fired.
-            WINNER="A_or_C_or_taigan-retry"
-        fi
-        SETUPAP_ACTIVE=""
-        case "$FINAL_IPS_ALL" in
-            *192.168.1.1*|*192.0.2.1*) SETUPAP_ACTIVE=1 ;;
-        esac
-        setup_log "Approach SUMMARY: winner=$WINNER elapsed=${WLAN_ELAPSED}s iface=$WLAN_IFACE state=${FINAL_STATE:-?} ip=${FINAL_IP:-none}${SETUPAP_ACTIVE:+ (setup-AP-alias-still-present)} taigan=${TAIGAN_MODE:-0}"
-        setup_log "=== WLAN provisioning end ==="
-    else
-        # Ethernet-only / no-creds path. Still emit a SUMMARY line so the
-        # diagnostic bundle has a parseable single-line winner record on
-        # every boot regardless of WLAN code-path taken.
-        WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
-        WLAN_ELAPSED=$(( ${WLAN_T1:-0} - ${WLAN_T0:-0} ))
-        ETH_STATE=$(cat /sys/class/net/eth0/operstate 2>/dev/null)
-        ETH_IP=$(ip -4 addr show eth0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p' | head -1)
-        setup_log "wlan creds invalid or absent (SSID/PASS empty), aborting WLAN provisioning"
-        setup_log "Approach SUMMARY: winner=ethernet-only elapsed=${WLAN_ELAPSED}s iface=${WLAN_IFACE:-none} eth0_state=${ETH_STATE:-?} eth0_ip=${ETH_IP:-none} taigan=${TAIGAN_MODE:-0}"
+            setup_log "M6: all approaches exhausted — manual preset press may be required"
+        ) &
     fi
+
+    if [ "$BOSE_OK" = "1" ]; then
+        sleep 2
+        NETINFO_AFTER=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
+        setup_log "post-state: $NETINFO_AFTER"
+    fi
+
+    if [ -f "$WLAN_CONF" ]; then
+        rm -f "$WLAN_CONF" 2>/dev/null
+        setup_log "wlan.conf removed from stick"
+    fi
+
+    WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+    WLAN_ELAPSED=$(( ${WLAN_T1:-0} - ${WLAN_T0:-0} ))
+    FINAL_LEASE=$(current_sta_lease)
+    FINAL_IFACE=${FINAL_LEASE%%|*}
+    FINAL_IP=${FINAL_LEASE##*|}
+    [ "$FINAL_IFACE" = "$FINAL_LEASE" ] && FINAL_IFACE="" && FINAL_IP=""
+    setup_log "Approach SUMMARY: winner=$WINNER elapsed=${WLAN_ELAPSED}s iface=${FINAL_IFACE:-?} ip=${FINAL_IP:-none} bco=${BCO_MODE:-0} probes='wpa_cli=$HAS_WPA_CLI wpa_sup=$HAS_WPA_SUP nc=$HAS_NC tap=${TAP_CMD:+yes}'"
+    setup_log "=== WLAN provisioning end ==="
+else
+    WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+    WLAN_ELAPSED=$(( ${WLAN_T1:-0} - ${WLAN_T0:-0} ))
+    ETH_STATE=$(cat /sys/class/net/eth0/operstate 2>/dev/null)
+    ETH_IP=$(ip -4 addr show eth0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p' | head -1)
+    setup_log "no WLAN creds (SSID/PASS empty), skipping provisioning pipeline"
+    setup_log "Approach SUMMARY: winner=ethernet-only elapsed=${WLAN_ELAPSED}s iface=${WLAN_IFACE:-none} eth0_state=${ETH_STATE:-?} eth0_ip=${ETH_IP:-none} bco=${BCO_MODE:-0}"
 fi
 ) &
 
