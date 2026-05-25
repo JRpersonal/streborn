@@ -300,38 +300,25 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		model := "SoundTouch"
-		infoCtx, infoCancel := context.WithTimeout(ctx, 5*time.Second)
-		if settings, err := boxapi.New(*boxHost).LoadSettings(infoCtx); err == nil && settings.Info.Type != "" {
-			model = settings.Info.Type
-			logger.Info("Box Modell erkannt", "type", model)
-			// Bose's countryCode is set at the factory or during the
-			// original Bose pairing flow and is rarely the user's
-			// actual location after STR install. STR uses region.txt
-			// (written by the setup wizard) for radio defaults. Log
-			// the mismatch once so it is documented in diagnostic
-			// bundles and not mistaken for a bug; nothing in STR
-			// reads Bose's countryCode at runtime.
-			boseCC := strings.ToUpper(strings.TrimSpace(settings.Info.CountryCode))
-			if region != "" && boseCC != "" && region != boseCC {
-				logger.Info("Region: STR uses region.txt for radio defaults; Bose firmware countryCode is informational only",
-					"strRegion", region, "boseCountryCode", boseCC)
-			}
-		} else if err != nil {
-			logger.Debug("box /info not yet reachable, using fallback model", "err", err)
-		}
-		infoCancel()
 
-		// mDNS Announce damit die Desktop App den Stick im LAN findet.
-		// Bei mehreren Boxen im Netz ist jeder Stick eine eigene Instance,
-		// die Desktop App listet alle.
+		// Announce mDNS IMMEDIATELY with a generic fallback model.
+		// Reading /info synchronously here used to race the Bose
+		// firmware's :8090 endpoint, which on rhino ST10 comes up
+		// at uptime ~43s but the agent's bootstrap finishes at
+		// uptime ~22s. The 5s-timeout LoadSettings then got
+		// connection-refused and we silently fell back to
+		// model="SoundTouch", a generic string the desktop app's
+		// stockModelLabel() does not map to any friendly name, so
+		// the box picker's model column stayed empty forever
+		// (observed live 2026-05-24 on ST10 .66 v0.5.12). pollBoxInfo
+		// below replaces the fallback once /info responds for real.
 		ann, err := discovery.Announce(
 			logger.With("comp", "discovery"),
 			discovery.Config{
 				Port:         8888,
 				DeviceID:     deviceID,
 				FriendlyName: "Bose SoundTouch " + lastN(deviceID, 6),
-				Model:        model,
+				Model:        "SoundTouch",
 				Version:      version,
 				Build:        buildStamp,
 			},
@@ -344,10 +331,10 @@ func run() error {
 		mdnsAnnouncer = ann
 		mdnsMu.Unlock()
 
-		// Box Name dynamisch in mDNS halten: regelmaessig info.name pollen
-		// und bei Aenderung den Announce TXT Record refreshen. Damit bekommt
-		// die Desktop App den neuen Namen sofort mit ohne Box Neustart.
-		go pollBoxName(ctx, *boxHost, ann, logger)
+		// Background poll: refresh name AND model in mDNS TXT as
+		// soon as /info on :8090 responds, then continue watching
+		// for renames the user might do via the BoseApp HTTP API.
+		go pollBoxInfo(ctx, *boxHost, region, ann, logger)
 	}()
 
 	if *pendingNameFile != "" {
@@ -697,45 +684,99 @@ func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, lo
 	logger.Warn("Box Name aus Setup konnte nicht gesetzt werden, gebe auf", "path", path)
 }
 
-// pollBoxName fragt regelmaessig den Box Display Namen ab und aktualisiert
-// den mDNS FriendlyName entsprechend. Damit kennt die Desktop App den
-// neuen Namen sobald der User die Box umbenennt — ohne Box Reboot.
+// pollBoxInfo fragt regelmaessig die Box /info ab und haelt die mDNS TXT
+// Felder fuer FriendlyName und Model aktuell. Damit:
 //
-// Erster Aufruf nach kurzem Delay damit Bose Webserver hochgefahren ist.
-func pollBoxName(ctx context.Context, boxHost string, ann *discovery.Announcer, logger *slog.Logger) {
+//   1. Der Desktop App kennt den Namen sobald der User die Box umbenennt
+//      (z.B. via BoseApp HTTP), ohne Box Reboot.
+//   2. Das model TXT Feld wird auf den echten Wert ("SoundTouch 10" etc)
+//      hochgezogen, sobald die Bose Firmware /info auf :8090 ausliefert.
+//      Beim ersten Announce steht dort noch der generische Fallback
+//      "SoundTouch" weil :8090 typisch 20+ Sekunden nach dem Agent-Start
+//      hochkommt — der Loop hier dichtet die Race ab ohne den Boot zu
+//      blockieren.
+//
+// Erste Runde nach kurzem Delay, dann mit kurzem Ticker bis Model
+// erkannt ist (race-Recovery), danach geht der Ticker auf 30s zurueck.
+func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Announcer, logger *slog.Logger) {
 	if boxHost == "" || ann == nil {
 		return
 	}
-	time.Sleep(8 * time.Second)
+	time.Sleep(2 * time.Second)
 	client := boxapi.New(boxHost)
-	var last string
+	var (
+		lastName       string
+		lastModel      string
+		regionLogged   bool
+		modelEverFound bool
+	)
 	doOne := func() {
 		fetchCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 		defer cancel()
 		s, err := client.LoadSettings(fetchCtx)
 		if err != nil {
-			logger.Debug("pollBoxName fail", "err", err)
+			logger.Debug("pollBoxInfo fail", "err", err)
 			return
 		}
-		name := s.Info.Name
-		if name == "" || name == last {
-			return
+		if model := strings.TrimSpace(s.Info.Type); model != "" {
+			if !modelEverFound {
+				logger.Info("Box Modell erkannt", "type", model)
+				modelEverFound = true
+			}
+			if model != lastModel {
+				if err := ann.UpdateModel(model); err != nil {
+					logger.Warn("mDNS UpdateModel failed", "err", err)
+				} else {
+					logger.Info("mDNS model updated", "model", model)
+					lastModel = model
+				}
+			}
 		}
-		if err := ann.UpdateFriendlyName(name); err != nil {
-			logger.Warn("mDNS UpdateFriendlyName failed", "err", err)
-			return
+		if name := strings.TrimSpace(s.Info.Name); name != "" && name != lastName {
+			if err := ann.UpdateFriendlyName(name); err != nil {
+				logger.Warn("mDNS UpdateFriendlyName failed", "err", err)
+			} else {
+				logger.Info("mDNS FriendlyName updated", "name", name)
+				lastName = name
+			}
 		}
-		logger.Info("mDNS FriendlyName updated", "name", name)
-		last = name
+		if !regionLogged {
+			// Bose's countryCode is set at the factory or during
+			// the original Bose pairing flow and is rarely the
+			// user's actual location after STR install. STR uses
+			// region.txt (written by the setup wizard) for radio
+			// defaults. Log the mismatch once so it is documented
+			// in diagnostic bundles and not mistaken for a bug.
+			boseCC := strings.ToUpper(strings.TrimSpace(s.Info.CountryCode))
+			if region != "" && boseCC != "" && region != boseCC {
+				logger.Info("Region: STR uses region.txt for radio defaults; Bose firmware countryCode is informational only",
+					"strRegion", region, "boseCountryCode", boseCC)
+			}
+			regionLogged = true
+		}
 	}
+	// Fast cadence until we have a real model, then back off to 30s.
+	// Without backoff we'd keep hitting :8090 every 4s forever even
+	// after model is stable — overkill, since name changes are rare
+	// and 30s catches them within one UI refresh cycle.
+	fast := time.NewTicker(4 * time.Second)
+	defer fast.Stop()
 	doOne()
-	t := time.NewTicker(30 * time.Second)
-	defer t.Stop()
+	for !modelEverFound {
+		select {
+		case <-ctx.Done():
+			return
+		case <-fast.C:
+			doOne()
+		}
+	}
+	slow := time.NewTicker(30 * time.Second)
+	defer slow.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-slow.C:
 			doOne()
 		}
 	}

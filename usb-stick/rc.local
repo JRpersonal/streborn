@@ -57,24 +57,43 @@ if [ -n "$STICK_PATH" ] && [ "$STICK_PATH" != "/media/sda1" ]; then
     fi
 fi
 
-# Self-update from stick if present and newer. This is what makes
-# the stick the single repair channel — once an updated stick is
-# inserted, the next boot picks up new rc.local + run-override.sh
-# without anyone running install.sh again.
+# Unconditional self-update from stick. Brute force: if the stick
+# has the file, we copy it. No mtime comparison, no version check.
+#
+# Why unconditional: the previous `-nt` mtime guard was a reliability
+# tax. The box's RTC starts at 2015 on cold boot, NTP sync may or may
+# not have run when this copy fires, and FAT32 mtimes have 2s
+# resolution. The combination meant a freshly-prepared stick could
+# look "older" than the NAND copy and be silently skipped. Result:
+# the box stayed on a stale binary across multiple cold boots, the
+# user could not figure out why, the Setup Wizard looked broken.
+# Live-verified 2026-05-24 on ST10 .66.
+#
+# Risk vector: a broken stick now bricks the bootstrap. Mitigated
+# by the fact that the stick IS the repair channel — the user can
+# re-prepare it from any working Setup Wizard and the next boot
+# heals. The fail-closed "stick wins, every time" model matches the
+# user's mental model: "what I just put on the stick is what the
+# box will run".
+#
+# Each `cp` is followed by chmod so a stick that lost +x (sync via
+# Windows file-manager strips perms) still produces an executable
+# script on NAND.
+#
 #   * rc.local update takes effect on the NEXT boot (this run is
 #     already past the wait loop, but cannot safely re-exec itself
 #     without risking a loop).
 #   * run-override.sh update takes effect on THIS boot because we
 #     invoke it immediately below.
-if [ -f /media/sda1/rc.local ] && [ /media/sda1/rc.local -nt /mnt/nv/rc.local ]; then
+if [ -f /media/sda1/rc.local ]; then
     cp /media/sda1/rc.local /mnt/nv/rc.local 2>/dev/null
     chmod +x /mnt/nv/rc.local 2>/dev/null
-    echo "$(date): /mnt/nv/rc.local updated from stick (effective next boot)" >> "$LOGDIR/boot.log"
+    echo "$(date): /mnt/nv/rc.local redeployed from stick (effective next boot)" >> "$LOGDIR/boot.log"
 fi
-if [ -f /media/sda1/run.sh ] && [ /media/sda1/run.sh -nt /mnt/nv/streborn/run-override.sh ]; then
+if [ -f /media/sda1/run.sh ]; then
     cp /media/sda1/run.sh /mnt/nv/streborn/run-override.sh 2>/dev/null
     chmod +x /mnt/nv/streborn/run-override.sh 2>/dev/null
-    echo "$(date): /mnt/nv/streborn/run-override.sh updated from stick (effective this boot)" >> "$LOGDIR/boot.log"
+    echo "$(date): /mnt/nv/streborn/run-override.sh redeployed from stick (effective this boot)" >> "$LOGDIR/boot.log"
 fi
 
 # NAND Override hat Prioritaet. Damit koennen Updates ueberleben auch

@@ -188,6 +188,34 @@ func (a *Announcer) UpdateFriendlyName(name string) error {
 	return a.register()
 }
 
+// UpdateModel updates the model field in the TXT record and re-announces
+// both service types. No-op if the model has not changed. Used to recover
+// from the boot-time race where the Bose firmware's :8090 endpoint is
+// not yet listening when the agent first tries to read /info — the
+// agent then announces with a generic fallback ("SoundTouch") and this
+// method is called once the real model can be read so the desktop app's
+// box picker shows the proper model name.
+func (a *Announcer) UpdateModel(model string) error {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if model == a.cfg.Model {
+		return nil
+	}
+	a.cfg.Model = model
+	if a.server != nil {
+		a.server.Shutdown()
+		a.server = nil
+	}
+	if a.legacyServer != nil {
+		a.legacyServer.Shutdown()
+		a.legacyServer = nil
+	}
+	return a.register()
+}
+
 // Close stops the mDNS announce on both service types.
 func (a *Announcer) Close() {
 	if a == nil {

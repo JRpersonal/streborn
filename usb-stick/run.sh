@@ -34,7 +34,6 @@ PERSIST="/mnt/nv/streborn"
 LOG="/tmp/streborn-agent.log"
 PREV_LOG="$PERSIST/previous.log"
 PIDFILE="$PERSIST/agent.pid"
-SYNC_FLAG="$PERSIST/sync-from-stick"
 
 # Vorherige Session in NAND retten bevor wir den tmpfs Log
 # ueberschreiben — damit haben wir nach jedem Crash / Reboot noch den
@@ -284,59 +283,51 @@ background_phase_probe
 # the channel is available even if the agent never binds.
 ensure_sshd_running
 
-# Auto-sync trigger: a freshly prepared stick (Setup-Wizard) ships a
-# version.txt. If that string differs from the version we recorded
-# for the NAND cache the stick is authoritative — the user just
-# prepared it explicitly, so apply it. Without this, sync only
-# happens when something else touches $SYNC_FLAG, but the flag
-# path is on NAND and the Setup Wizard cannot write there.
-maybe_force_sync_on_version_mismatch() {
-    if [ ! -r "$STICK_VER_FILE" ]; then
-        return 0
-    fi
-    STICK_VER=$(cat "$STICK_VER_FILE" 2>/dev/null | tr -d '\r\n')
-    NAND_VER=""
-    if [ -r "$NAND_VER_FILE" ]; then
-        NAND_VER=$(cat "$NAND_VER_FILE" 2>/dev/null | tr -d '\r\n')
-    fi
-    if [ -z "$STICK_VER" ]; then
-        return 0
-    fi
-    if [ "$STICK_VER" = "$NAND_VER" ]; then
-        return 0
-    fi
-    log "version mismatch: stick='$STICK_VER' nand='$NAND_VER' — forcing sync"
-    touch "$SYNC_FLAG"
-}
-
-# NUR wenn Sync Flag gesetzt ist: Stick -> NAND kopieren.
-# Standard: NAND ist Source of Truth.
-sync_from_stick_if_requested() {
-    if [ ! -f "$SYNC_FLAG" ]; then
-        return 0
-    fi
+# Unconditional Stick -> NAND sync. Every boot with a stick present
+# copies the stick binary AND the stick version.txt to NAND, no
+# version check, no mtime guard.
+#
+# Why brute force: the previous version-string + mtime gated logic
+# silently refused to sync in several scenarios:
+#   - identical version strings across two different builds (e.g.
+#     v0.5.12 + dev iterations both stamped v0.5.12)
+#   - box RTC at 2015 on cold boot while FAT32 stick mtimes are at
+#     real time, so the `-nt` mtime comparison flipped both ways
+#     depending on whether NTP sync had run yet
+#   - partial-sync recovery: SYNC_FLAG could be cleared by an earlier
+#     half-failed copy, leaving NAND binary mid-state until next mismatch
+#
+# Result was that the Setup Wizard "prepare stick" felt broken from
+# the user's perspective even though the stick had the right files.
+# Live-verified 2026-05-24 on ST10 .66 across three back-to-back
+# cold boots with a freshly-prepared stick.
+#
+# The fail-closed "stick wins, every time" model matches the user
+# mental model: "what I just put on the stick is what the box runs
+# on the next boot, period." The CACHED_BIN.new + mv atomic-replace
+# pattern keeps the binary swap safe under power loss mid-copy.
+# Removing SYNC_FLAG removes the only state that could go out of
+# sync with reality across boots.
+sync_stick_to_nand_always() {
     if [ ! -r "$STICK_BIN" ]; then
-        log "sync requested but stick binary unreadable, ignoring"
-        rm -f "$SYNC_FLAG"
-        return 1
+        return 0
     fi
     if cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null; then
         chmod +x "$CACHED_BIN.new"
-        mv "$CACHED_BIN.new" "$CACHED_BIN"
-        log "stick binary synced to NAND cache"
-        # Record the version that now lives in the NAND cache so
-        # the next boot's version check has something to compare
-        # against.
-        if [ -r "$STICK_VER_FILE" ]; then
-            cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
-            log "NAND version.txt updated: $(cat "$NAND_VER_FILE" 2>/dev/null)"
+        if mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
+            log "stick binary deployed to NAND cache ($(wc -c < "$CACHED_BIN") bytes)"
+            if [ -r "$STICK_VER_FILE" ]; then
+                cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
+                log "NAND version.txt updated: $(cat "$NAND_VER_FILE" 2>/dev/null)"
+            fi
+            return 0
         fi
-        rm -f "$SYNC_FLAG"
-        return 0
+        log "stick -> NAND mv failed, keeping previous NAND binary"
+        rm -f "$CACHED_BIN.new"
+        return 1
     fi
-    log "sync failed (stick I/O error?), keeping NAND cache"
+    log "stick -> NAND cp failed (stick I/O error?), keeping previous NAND binary"
     rm -f "$CACHED_BIN.new"
-    rm -f "$SYNC_FLAG"
     return 1
 }
 
@@ -358,23 +349,21 @@ if [ ! -x "$CACHED_BIN" ]; then
 fi
 
 # Defense in depth: redeploy rc.local + run-override.sh from stick
-# if newer. rc.local itself does the same — but if a buggy
-# rc.local on NAND skipped that step (e.g. older release without
-# the self-update block), this run.sh invocation can still fix it
-# so the NEXT boot uses the fresh files.
-if [ -f "$STICK/rc.local" ] && [ "$STICK/rc.local" -nt /mnt/nv/rc.local ]; then
+# unconditionally. rc.local itself does the same; this duplicate path
+# heals a box whose NAND rc.local is an older release that skipped
+# the self-update block entirely.
+if [ -f "$STICK/rc.local" ]; then
     cp "$STICK/rc.local" /mnt/nv/rc.local 2>/dev/null
     chmod +x /mnt/nv/rc.local 2>/dev/null
     log "redeployed /mnt/nv/rc.local from stick (effective next boot)"
 fi
-if [ -f "$STICK/run.sh" ] && [ "$STICK/run.sh" -nt /mnt/nv/streborn/run-override.sh ]; then
+if [ -f "$STICK/run.sh" ]; then
     cp "$STICK/run.sh" /mnt/nv/streborn/run-override.sh 2>/dev/null
     chmod +x /mnt/nv/streborn/run-override.sh 2>/dev/null
     log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)"
 fi
 
-maybe_force_sync_on_version_mismatch
-sync_from_stick_if_requested
+sync_stick_to_nand_always
 
 # Binary Auswahl: NAND Cache zuerst, Stick als Fallback.
 if [ -x "$CACHED_BIN" ]; then
@@ -442,16 +431,46 @@ elif [ -r "$WLAN_CREDS_NAND" ]; then
     PASS=$(sed -n 's/^PASS=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
     WLAN_SOURCE="NAND wlan-creds (replay)"
 fi
-# Ethernet-only short-circuit. If neither wlan0 nor wlan1 exists in
-# /sys/class/net, the box has no wireless radio (driver did not load,
-# or the chip is dead). Observed live on a scm-variant ST20 in #60
-# where /addWirelessProfile sat on slow 500 responses for ~4 minutes
-# per attempt, starving the agent start that lives after this block.
-# We instead skip the whole block: the speaker is already reachable
-# on its Ethernet cable per Bose's /networkInfo, and the desktop app
-# install path works fine against eth0.
-if [ ! -d /sys/class/net/wlan0 ] && [ ! -d /sys/class/net/wlan1 ]; then
-    setup_log "WLAN: no wlan0/wlan1 interface present, ethernet-only mode (skip provisioning)"
+# Wireless-interface detection. Three cases:
+#   1. rhino/spotty/sm2/scm/maple: wireless is /sys/class/net/wlan0
+#      (sometimes wlan1). wpa_supplicant + wpa_cli present.
+#   2. taigan (SoundTouch Portable, BCO chassis): wireless chip is
+#      exposed as /sys/class/net/eth0 with type=1 (Ethernet) — no
+#      wlan* iface at all, and wpa_supplicant / wpa_cli BINARIES are
+#      missing on this firmware. NetManager talks to the chip directly
+#      via HTTP /addWirelessProfile + TAP CLI `network wifi profiles`.
+#      Detection: /proc/variant says "taigan", or /sbin/has-bco exists,
+#      or — fallback — eth0 is present without any wlan*.
+#   3. Genuine ethernet-only / dead radio: no wlan*, no eth0 in the
+#      "single non-loopback iface" pattern, or eth0 carries a real
+#      cable. Skip provisioning, the desktop install path works on
+#      a wired connection anyway. Observed scm-variant ST20 in #60
+#      where /addWirelessProfile sat on slow 500 responses for ~4
+#      minutes per attempt, starving start_agent below.
+WLAN_IFACE=""
+TAIGAN_MODE=""
+if [ -d /sys/class/net/wlan0 ]; then
+    WLAN_IFACE="wlan0"
+elif [ -d /sys/class/net/wlan1 ]; then
+    WLAN_IFACE="wlan1"
+elif [ -d /sys/class/net/eth0 ]; then
+    # Three independent taigan indicators. We accept any one because
+    # individual ones have been observed missing across FW rev's:
+    # /proc/variant is unreadable on some images, has-bco lives in
+    # /sbin OR /usr/sbin depending on build, but `uname -n` reliably
+    # mirrors the Bose codename ("Linux taigan 3.14...") which we see
+    # in EVERY captured setup.log across variants.
+    VARIANT=$(cat /proc/variant 2>/dev/null | tr -d '\n\r ' | head -c 32)
+    HOSTID=$(uname -n 2>/dev/null | tr -d '\n\r ' | head -c 32)
+    if [ "$VARIANT" = "taigan" ] || [ "$HOSTID" = "taigan" ] \
+       || [ -x /sbin/has-bco ] || [ -x /usr/sbin/has-bco ]; then
+        TAIGAN_MODE=1
+        WLAN_IFACE="eth0"
+        setup_log "WLAN: taigan/BCO detected (variant=${VARIANT:-?} host=${HOSTID:-?}), using eth0 as wireless interface"
+    fi
+fi
+if [ -z "$WLAN_IFACE" ]; then
+    setup_log "WLAN: no wireless interface present, ethernet-only mode (skip provisioning)"
     echo "ethernet-only" > "$PERSIST/wlan-mode" 2>/dev/null
     SSID=""
     PASS=""
@@ -462,9 +481,39 @@ fi
 # start_agent below. Agent binds :8888 within seconds and the install
 # wizard's 180s poll window succeeds even when WLAN provisioning is
 # still trying its A/B/C/D fallbacks.
-( if [ -n "$SSID" ] && [ -n "$PASS" ]; then
+( WLAN_T0=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+
+# Snapshot Bose state up front, ALWAYS, regardless of whether we have
+# creds and regardless of which WLAN code-path we'll take. Without
+# probes in the ethernet-only path we cannot tell from a diagnostic
+# bundle why a given box was classified the way it was. Each command
+# is silent on absence (taigan has no nc, some images have no wpa_cli).
+setup_log "probe: /sys/class/net = $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
+setup_log "probe: uname -n = $(uname -n 2>/dev/null)"
+setup_log "probe: /proc/variant = $(cat /proc/variant 2>/dev/null | head -c 64 || echo missing)"
+if command -v wpa_cli >/dev/null 2>&1; then
+    setup_log "probe: wpa_cli present"
+else
+    setup_log "probe: wpa_cli MISSING"
+fi
+if command -v wpa_supplicant >/dev/null 2>&1; then
+    setup_log "probe: wpa_supplicant binary present"
+else
+    setup_log "probe: wpa_supplicant binary MISSING"
+fi
+if command -v nc >/dev/null 2>&1; then
+    TAP_VER=$(printf 'sys ver\n' | nc -w 2 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 200)
+    setup_log "probe: TAP :17000 sys ver = ${TAP_VER:-no-response}"
+    TAP_NET=$(printf 'network status\n' | nc -w 2 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 300)
+    setup_log "probe: TAP :17000 network status = ${TAP_NET:-no-response}"
+else
+    setup_log "probe: nc MISSING — TAP CLI probes skipped"
+fi
+
+if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) source=$WLAN_SOURCE ==="
     setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
+
     if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         # CRITICAL TIMING WINDOW. The very first time this code ran
         # successfully on a freshly factory-reset rhino ST10, B's
@@ -493,6 +542,139 @@ fi
         B_OK=""
         if [ $i -ge 30 ]; then
             setup_log "B: BoseApp did not respond within 30s, skipping API call"
+        elif [ "$TAIGAN_MODE" = "1" ]; then
+            # taigan path: Bose's HTTP /performWirelessSiteSurvey
+            # returns 400 and /addWirelessProfile returns 500 on this
+            # firmware — both endpoints are simply not wired in the
+            # taigan/BCO build. Live-verified 2026-05-24 on Portable
+            # .79 across two cold boots. The TAP CLI on :17000
+            # accepts the same operations under the `network wifi`
+            # namespace, so we route the taigan provisioning through
+            # that instead. See [[taigan-quirks]] for the validated
+            # command set.
+            #
+            # Single persistent socket because async TAP responses
+            # come back on the same connection that issued the
+            # command — closing the socket after each command drops
+            # the response and may abort the request mid-flight. The
+            # nc -w window must cover the longest expected wait
+            # (the wifi scan is asynchronous, results land 5-10s
+            # after the request).
+            NETINFO=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
+            setup_log "B-taigan: /networkInfo before: $NETINFO"
+            if ! command -v nc >/dev/null 2>&1; then
+                setup_log "B-taigan: nc missing — cannot drive TAP CLI, giving up"
+            else
+                # BusyBox `nc -w SECS` is a connect / final-read
+                # idle timeout, NOT a session cap. The TAP server on
+                # :17000 keeps the socket open after the last command
+                # waiting for more input, so nc never sees "idle for
+                # 25s" and run.sh's $() blocks indefinitely. Live-
+                # verified 2026-05-25: WLAN block hung for 2+ minutes
+                # with a 25s -w value and the SUMMARY line never
+                # fired. `timeout SECS CMD` (BusyBox has it) is a
+                # hard wall-clock cap on the whole nc invocation.
+                # We pick 30s because the inner sleeps total 16s and
+                # we need slack for the BusyBox nc startup plus the
+                # async wifi-scan response landing late.
+                # `timeout` syntax differs between GNU coreutils
+                # (`timeout SECS CMD`) and BusyBox (`timeout -t SECS
+                # CMD`). The Bose firmware ships BusyBox 1.19 which
+                # uses the `-t` form — GNU-style invocation tried to
+                # exec the literal string "60" and died immediately
+                # (live-verified 2026-05-25, Portable .79). Probe
+                # which form works by checking the help text.
+                if command -v timeout >/dev/null 2>&1; then
+                    if timeout --help 2>&1 | grep -q '\-t '; then
+                        TAP_CMD="timeout -t 80 nc 127.0.0.1 17000"
+                    else
+                        TAP_CMD="timeout 80 nc 127.0.0.1 17000"
+                    fi
+                else
+                    # Fallback for the unlikely BusyBox build that
+                    # ships nc but no timeout. -w is at least
+                    # something, even though it can leak.
+                    TAP_CMD="nc -w 70 127.0.0.1 17000"
+                fi
+                # Timing matters here. Both `network wifi scan` and
+                # `network wifi profiles add` are ASYNC on taigan —
+                # the initial OK only confirms "request accepted",
+                # the actual completion lands on the same socket
+                # 5-15s later (NetManager has to drive the radio).
+                # Live-verified 2026-05-25 on Portable: 8s after
+                # scan was not enough, profiles info still showed
+                # empty, and `network mode auto` fired before any
+                # association attempt could happen. New cadence:
+                #   - scan + 15s grace for async scan results
+                #   - clear (synchronous)
+                #   - add + 15s grace for async add completion
+                #   - profiles info (verification)
+                #   - mode auto (kick NetManager from setup-AP to
+                #     station mode now that DB has the profile)
+                #   - 5s settle so the verify loop below has a real
+                #     pre-state snapshot to compare against
+                TAP_OUT=$(
+                    (
+                        printf 'async_responses on\n'
+                        sleep 1
+                        printf 'network wifi scan\n'
+                        sleep 25
+                        printf 'network wifi profiles clear\n'
+                        sleep 2
+                        printf 'network wifi profiles add %s wpa_or_wpa2 %s\n' "$SSID" "$PASS"
+                        sleep 20
+                        printf 'network wifi profiles info\n'
+                        sleep 2
+                        # `network mode auto` alone is not enough on
+                        # taigan: NetManager stays in setup-AP mode
+                        # because the chassis has no separate radio
+                        # for station + AP at the same time. Live-
+                        # verified 2026-05-25 on Portable: after
+                        # profile add + mode auto, eth0 still
+                        # carried the setup-AP IP 192.168.1.1.
+                        # `airplay setupap exit` explicitly drops
+                        # the setup-AP listener, which frees the
+                        # chip to associate as a station using the
+                        # profile we just added.
+                        printf 'airplay setupap exit\n'
+                        sleep 5
+                        printf 'network mode auto\n'
+                        sleep 8
+                    ) | $TAP_CMD 2>&1
+                )
+                # Persist the full TAP response trace to NAND so the
+                # diagnostic bundle has the complete async-response
+                # stream (the inline log is truncated to 800 chars and
+                # late async responses get cut off there).
+                echo "$TAP_OUT" > "$PERSIST/tap-trace.log" 2>/dev/null
+                setup_log "B-taigan: TAP sequence response (first 800c)='$(echo "$TAP_OUT" | tr '\n' '|' | head -c 800)'"
+                setup_log "B-taigan: full TAP trace persisted to $PERSIST/tap-trace.log ($(wc -c < "$PERSIST/tap-trace.log" 2>/dev/null || echo 0) bytes)"
+                # Acceptance check: with async_responses on, the
+                # success indicators we can rely on are the OK
+                # acknowledgements ("Profiles Deleted", "Add
+                # requested", "mode set to auto"). Any of these
+                # means NetManager processed the command — final
+                # association success is tested by the B-verify
+                # loop afterward via /sys/class/net/$WLAN_IFACE.
+                # If we cannot even see "Add requested" it means
+                # the TAP path itself is broken on this firmware
+                # variant and there is no point waiting for an IP.
+                #
+                # SSID is checked with `grep -F` (fixed-string, not
+                # regex) because it can contain regex metacharacters
+                # (`.`, `(`, `[`, `*`) which would either silently
+                # mis-match or break the pattern entirely. The other
+                # two indicators are literal anyway, so we run three
+                # separate fixed-string greps and OR the results.
+                if echo "$TAP_OUT" | grep -qiF "Add requested" \
+                   || echo "$TAP_OUT" | grep -qF "$SSID" \
+                   || echo "$TAP_OUT" | grep -qiF "mode set to auto"; then
+                    setup_log "B-taigan: TAP profile add accepted by NetManager"
+                    B_OK=1
+                else
+                    setup_log "B-taigan: TAP profile add rejected or no confirmation"
+                fi
+            fi
         else
             NETINFO=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
             setup_log "B: /networkInfo before: $NETINFO"
@@ -517,10 +699,115 @@ fi
             fi
         fi
 
-        # If B persisted: NetManager has the profile in its DB,
-        # everything else is unnecessary. Skip A/C/D.
+        # If B persisted: NetManager has the profile in its DB.
+        # But HTTP 200 only means "accepted into DB", not "associated".
+        # On taigan (Portable) we observed 2026-05-24 live that B
+        # returns 200 yet wlan0 never gets an IP — NetManager kept
+        # the profile but never reassociated. Verify via DHCP-wait.
+        #
+        # Setup-AP IP discrimination: the Bose setup-AP serves itself
+        # at the LITERAL gateway address 192.168.1.1 (and 192.0.2.1
+        # on some FW). Any OTHER IP — including 192.168.1.50, 192.168.1.42
+        # etc — is a real STA lease from the user's home router. The
+        # earlier `192.168.1.*` /24 wildcard was a correctness bug: it
+        # made any home network that uses 192.168.1.0/24 (very common
+        # default, e.g. Speedport, TP-Link, many ISPs) get classified
+        # as "still setup-AP" and B-verify would falsely fail.
+        # `ip addr` enumeration must look at ALL inet entries because
+        # NetManager has been seen to briefly carry both the setup-AP
+        # alias and the new STA lease at the same time during the
+        # handover, in which order is undefined.
+        is_real_sta_addr() {
+            # $1 = ip address
+            case "$1" in
+                ""|192.168.1.1|192.0.2.1) return 1 ;;
+                *) return 0 ;;
+            esac
+        }
+        # Taigan reassoc + DHCP can be slow (drop setup-AP, reconfigure
+        # radio, scan, 4-way handshake, DHCP DISCOVER → 60s headroom).
+        # Non-taigan has working A/C/D fallbacks so we keep the original
+        # 30s budget there to fall through faster.
+        if [ "$TAIGAN_MODE" = "1" ]; then
+            VERIFY_WAITS="5 5 10 10 10 10 10"
+        else
+            VERIFY_WAITS="5 5 5 5 5 5"
+        fi
+        B_VERIFIED=""
         if [ "$B_OK" = "1" ]; then
-            setup_log "B succeeded — skipping A/C/D fallbacks"
+            for wait in $VERIFY_WAITS; do
+                sleep "$wait"
+                STV=$(cat "/sys/class/net/$WLAN_IFACE/operstate" 2>/dev/null)
+                # Enumerate ALL inet addrs on the iface, pick the first
+                # that is NOT a setup-AP gateway IP. If none are real
+                # STA addresses, IPV stays empty and B-verify keeps
+                # waiting.
+                IPV=""
+                IPS_ALL=$(ip -4 addr show "$WLAN_IFACE" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p')
+                for cand in $IPS_ALL; do
+                    if is_real_sta_addr "$cand"; then
+                        IPV="$cand"
+                        break
+                    fi
+                done
+                setup_log "B-verify: $WLAN_IFACE state=${STV:-?} all_ips='$(echo "$IPS_ALL" | tr '\n' ' ')' real_sta_ip=${IPV:-none}"
+                if [ "$STV" = "up" ] && [ -n "$IPV" ]; then
+                    B_VERIFIED=1
+                    setup_log "Approach B: result=YES ip=$IPV reason=NetManager-DB-replay"
+                    break
+                fi
+            done
+            if [ -z "$B_VERIFIED" ]; then
+                setup_log "Approach B: result=NO reason=API-200-but-no-real-STA-IP-within-verify-window, falling through to A/C/D"
+                B_OK=""
+            fi
+        else
+            setup_log "Approach B: result=NO reason=API-call-rejected-or-unreachable"
+        fi
+        if [ "$B_OK" = "1" ]; then
+            setup_log "B verified — skipping A/C/D fallbacks"
+        elif [ "$TAIGAN_MODE" = "1" ]; then
+            # taigan has no wpa_supplicant binary and no wpa_cli, so
+            # Approach A (file write + restart) and Approach C (wpa_cli
+            # add_network) are both impossible. D's preset-burst is
+            # also not useful: the Portable's preset buttons are routed
+            # through BoseApp not NetManager, so a CLI burst has no
+            # association side-effect.
+            #
+            # The earlier HTTP-only B-retry was useless work: the same
+            # /addWirelessProfile endpoint that returned 500 in the
+            # primary attempt will return 500 again — taigan/BCO does
+            # not implement the HTTP endpoint at all. We only re-run
+            # the path that actually has a chance: another TAP CLI
+            # sequence with `mode auto` + setup-AP-exit, in case the
+            # first sequence raced NetManager's scan cache.
+            setup_log "Approach A: result=NO reason=skipped-on-taigan (no wpa_supplicant binary)"
+            setup_log "Approach C: result=NO reason=skipped-on-taigan (no wpa_cli binary)"
+            setup_log "Approach D: result=NO reason=skipped-on-taigan (preset keys do not affect NetManager on BCO)"
+            if command -v nc >/dev/null 2>&1; then
+                # Reuse the same timeout-wrapped TAP_CMD if it was set
+                # in the primary attempt. If not (nc-only fallback),
+                # use a short -w on a single command.
+                if [ -n "$TAP_CMD" ]; then
+                    RETRY_OUT=$(
+                        (
+                            printf 'async_responses on\n'
+                            sleep 1
+                            printf 'airplay setupap exit\n'
+                            sleep 4
+                            printf 'network mode auto\n'
+                            sleep 6
+                            printf 'network wifi profiles info\n'
+                            sleep 2
+                        ) | $TAP_CMD 2>&1
+                    )
+                else
+                    RETRY_OUT=$(printf 'network mode auto\n' | nc -w 3 127.0.0.1 17000 2>/dev/null)
+                fi
+                setup_log "B-taigan-retry: TAP nudge (first 400c)='$(echo "$RETRY_OUT" | tr '\n' '|' | head -c 400)'"
+            else
+                setup_log "B-taigan-retry: no nc — cannot nudge NetManager"
+            fi
         else
         # --- Approach A: direct /etc/wpa_supplicant.conf write (fallback) ---
         WPA_CONF="/etc/wpa_supplicant.conf"
@@ -727,9 +1014,59 @@ WPAEOF
             rm -f "$WLAN_CONF" 2>/dev/null
             setup_log "wlan.conf removed from stick"
         fi
+
+        # Final summary line: parseable, one-shot, captures the outcome
+        # of the entire WLAN block so diagnostic bundles surface the
+        # winner without needing to grep multi-line approach traces.
+        # Note: Approach D runs backgrounded and may still be deciding
+        # when this line fires; that is fine — its own result lines
+        # land later in the same log.
+        WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+        WLAN_ELAPSED=$(( ${WLAN_T1:-0} - ${WLAN_T0:-0} ))
+        FINAL_STATE=$(cat "/sys/class/net/$WLAN_IFACE/operstate" 2>/dev/null)
+        # Same is_real_sta_addr discrimination as B-verify so the
+        # summary line cannot lie about success on taigan AND cannot
+        # mis-classify a STA lease that happens to be 192.168.1.x
+        # from a home router on 192.168.1.0/24.
+        FINAL_IP=""
+        FINAL_IPS_ALL=$(ip -4 addr show "$WLAN_IFACE" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p')
+        for cand in $FINAL_IPS_ALL; do
+            if is_real_sta_addr "$cand"; then
+                FINAL_IP="$cand"
+                break
+            fi
+        done
+        WINNER="none"
+        if [ "$B_VERIFIED" = "1" ]; then
+            WINNER="B"
+        elif [ "$FINAL_STATE" = "up" ] && [ -n "$FINAL_IP" ]; then
+            # B did not verify but the wireless iface came up anyway
+            # with a non-setup-AP IP. On rhino/spotty/maple this is
+            # typically A (direct wpa_supplicant.conf write + restart)
+            # or C (wpa_cli add_network). On taigan it would be the
+            # post-survey B retry or NetManager picking up the profile
+            # after `network mode auto`. D runs backgrounded and may
+            # still be deciding at this point — its own result line in
+            # the log distinguishes if D actually finished the job
+            # after this summary fired.
+            WINNER="A_or_C_or_taigan-retry"
+        fi
+        SETUPAP_ACTIVE=""
+        case "$FINAL_IPS_ALL" in
+            *192.168.1.1*|*192.0.2.1*) SETUPAP_ACTIVE=1 ;;
+        esac
+        setup_log "Approach SUMMARY: winner=$WINNER elapsed=${WLAN_ELAPSED}s iface=$WLAN_IFACE state=${FINAL_STATE:-?} ip=${FINAL_IP:-none}${SETUPAP_ACTIVE:+ (setup-AP-alias-still-present)} taigan=${TAIGAN_MODE:-0}"
         setup_log "=== WLAN provisioning end ==="
     else
-        setup_log "wlan creds invalid (SSID or PASS empty), aborting WLAN provisioning"
+        # Ethernet-only / no-creds path. Still emit a SUMMARY line so the
+        # diagnostic bundle has a parseable single-line winner record on
+        # every boot regardless of WLAN code-path taken.
+        WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+        WLAN_ELAPSED=$(( ${WLAN_T1:-0} - ${WLAN_T0:-0} ))
+        ETH_STATE=$(cat /sys/class/net/eth0/operstate 2>/dev/null)
+        ETH_IP=$(ip -4 addr show eth0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p' | head -1)
+        setup_log "wlan creds invalid or absent (SSID/PASS empty), aborting WLAN provisioning"
+        setup_log "Approach SUMMARY: winner=ethernet-only elapsed=${WLAN_ELAPSED}s iface=${WLAN_IFACE:-none} eth0_state=${ETH_STATE:-?} eth0_ip=${ETH_IP:-none} taigan=${TAIGAN_MODE:-0}"
     fi
 fi
 ) &
@@ -779,34 +1116,13 @@ fi
 log "bind mount on /etc/hosts active"
 log "starting agent version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
 
-# === Stick Binary → NAND Auto Update ===
-# Wenn der User die App aktualisiert hat und einen frischen Stick
-# beschrieben, liegt das neue Binary auf dem Stick. Wir wollen dass die
-# Box es automatisch uebernimmt — sonst bleibt sie ewig auf dem Build
-# von der Erst Provisionierung haengen. Vergleich via version.txt:
-# Stick schreibt da seinen Build Stamp rein, NAND bekommt eine Kopie
-# nach erfolgreichem Update.
-STICK_BIN="$STICK/streborn-armv7l"
-NAND_BIN="/mnt/nv/streborn/bin/streborn-armv7l"
-STICK_VER=$(cat "$STICK/version.txt" 2>/dev/null | head -1)
-NAND_VER=$(cat "$PERSIST/version.txt" 2>/dev/null | head -1)
-if [ -n "$STICK_VER" ] && [ "$STICK_VER" != "$NAND_VER" ] && [ -f "$STICK_BIN" ]; then
-    log "Auto Update: Stick Version '$STICK_VER' != NAND Version '$NAND_VER' — Binary uebernehmen"
-    if cp "$STICK_BIN" "${NAND_BIN}.new" 2>/dev/null; then
-        chmod +x "${NAND_BIN}.new"
-        if mv "${NAND_BIN}.new" "$NAND_BIN" 2>/dev/null; then
-            echo "$STICK_VER" > "$PERSIST/version.txt"
-            log "Auto Update OK: NAND Binary jetzt $STICK_VER"
-            # BIN ist die Variable die start_agent unten verwendet —
-            # zeigt automatisch auf NAND_BIN, kein extra Reload noetig.
-        else
-            log "Auto Update FAIL: mv NAND_BIN gescheitert"
-            rm -f "${NAND_BIN}.new"
-        fi
-    else
-        log "Auto Update FAIL: cp Stick -> NAND.new gescheitert"
-    fi
-fi
+# The earlier "Auto Update" version-compare block that lived here is
+# gone: sync_stick_to_nand_always already mirrored stick -> NAND
+# unconditionally during the early-boot phase of this script. By the
+# time we get here, $CACHED_BIN is already the stick's binary (or
+# the previous NAND binary if the stick was unreadable, which the
+# early sync logs). Re-running the sync here would just double the
+# work.
 
 # === Agent starten ===
 # Presets liegen auf NAND (read/write). SD card ist FAT32 und wirft oft

@@ -557,7 +557,7 @@
   "setup.awaitBoxReadyTitle": "Now do this on the speaker:",
   "setup.awaitStep1": "Remove the stick from this computer.",
   "setup.awaitStep2": "Plug it into the USB port on the speaker.",
-  "setup.awaitStep3": "Briefly unplug the speaker, plug it back in, and wait about 60 to 90 seconds until it has finished booting (ST10: LED ring stops blinking; ST20/ST30: display shows the Wi-Fi icon).",
+  "setup.awaitStep3": "Briefly unplug the speaker, plug it back in, and wait about 60 to 90 seconds until it has finished booting. On ST10 the LED ring is yellow for 10 to 20 seconds while joining Wi-Fi, then flips to white. ST20/ST30: display shows the Wi-Fi icon. Do not pull the stick during the yellow phase.",
   "setup.awaitConfirmBtn": "Speaker is ready, install STR now",
 
   "lang.german": "German",
