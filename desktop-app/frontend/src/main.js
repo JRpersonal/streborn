@@ -93,22 +93,6 @@ const LOCALE_FLAG_CC = {
   de: 'DE',
 };
 
-// boxURL builds the REST API base URL for the given box. Default
-// scheme is plain HTTP on the discovery-reported port (e.g. 8888 for
-// classic STR boxes). For taigan/Portable boxes the discovery
-// fallback reaches the agent via the marge-tls listener on :443 and
-// stores scheme="https" on the BoxInfo, in which case we build an
-// HTTPS URL. Frontend direct fetch() to https://host:443 with a
-// per-box self-signed cert needs the user's browser/Wails WebView2
-// to trust the cert; until that ships the critical paths (play,
-// status, presets) go through Wails methods on the Go backend which
-// uses InsecureSkipVerify. Radio-browse-side direct fetches below
-// are best-effort on taigan.
-function boxURL(box, path) {
-  const scheme = (box && box.scheme) ? box.scheme : 'http';
-  return `${scheme}://${box.host}:${box.port}${path}`;
-}
-
 import {
   extractHost,
   rootDomain,
@@ -686,8 +670,8 @@ async function loadLanguagesForCountry() {
   try {
     const cc = state.searchCountry || '';
     const url = cc
-      ? `${state.currentBox.scheme || 'http'}://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?country=${encodeURIComponent(cc)}&limit=60`
-      : `${state.currentBox.scheme || 'http'}://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?limit=40`;
+      ? `http://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?country=${encodeURIComponent(cc)}&limit=60`
+      : `http://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?limit=40`;
     const r = await fetch(url);
     if (r.ok) {
       state.languages = await r.json() || [];
@@ -937,7 +921,7 @@ let regionLoaded = false;
 async function loadStickRegion() {
   if (regionLoaded || !state.currentBox) return;
   try {
-    const r = await fetch(`${state.currentBox.scheme || 'http'}://${state.currentBox.host}:${state.currentBox.port}/api/region`);
+    const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/region`);
     if (!r.ok) return;
     const data = await r.json();
     if (data && data.country) {
@@ -964,7 +948,7 @@ async function loadTaxonomy() {
   if (!state.currentBox) return;
   if (state.tags.length === 0) {
     try {
-      const r = await fetch(`${state.currentBox.scheme || 'http'}://${state.currentBox.host}:${state.currentBox.port}/api/radio/tags?limit=24`);
+      const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/radio/tags?limit=24`);
       if (r.ok) {
         state.tags = await r.json() || [];
         renderGenreChips();
@@ -973,7 +957,7 @@ async function loadTaxonomy() {
   }
   if (state.languages.length === 0) {
     try {
-      const r = await fetch(`${state.currentBox.scheme || 'http'}://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?limit=40`);
+      const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?limit=40`);
       if (r.ok) {
         state.languages = await r.json() || [];
         renderLanguageOptions();
@@ -1309,7 +1293,7 @@ async function healPresetLogos() {
         // high enough to find an exact name match among several
         // stations sharing the same name.
         const params = new URLSearchParams({ q: p.name, limit: '12', order: 'votes' });
-        const r = await fetch(`${state.currentBox.scheme || 'http'}://${state.currentBox.host}:${state.currentBox.port}/api/radio/search?${params}`);
+        const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/radio/search?${params}`);
         if (!r.ok) return;
         const list = await r.json() || [];
         const wanted = p.name.toLowerCase().trim();
@@ -1829,9 +1813,9 @@ function buildSearchURL() {
   if (state.searchOnlyOK)  params.set('onlyok', '1');
   if (isSearch) {
     params.set('q', state.searchLastQuery);
-    return `${state.currentBox.scheme || 'http'}://${state.currentBox.host}:${state.currentBox.port}/api/radio/search?${params.toString()}`;
+    return `http://${state.currentBox.host}:${state.currentBox.port}/api/radio/search?${params.toString()}`;
   }
-  return `${state.currentBox.scheme || 'http'}://${state.currentBox.host}:${state.currentBox.port}/api/radio/top?${params.toString()}`;
+  return `http://${state.currentBox.host}:${state.currentBox.port}/api/radio/top?${params.toString()}`;
 }
 
 async function fetchSearchPage(append) {

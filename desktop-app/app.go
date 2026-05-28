@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,14 +29,6 @@ type App struct {
 	logFile    *os.File // kept so ExportDiagnosticLogs can Sync before reading
 	httpClient *http.Client
 
-	// boxSchemes caches the URL scheme to use per box host. Populated
-	// during DiscoverBoxes when probeSTR has to fall back to HTTPS on
-	// :443 (taigan/Portable). Keyed by box host (IP string). Default
-	// scheme when a host is absent is "http" on the BoxInfo.Port,
-	// matching legacy behavior on classic ST10/ST20/ST30 boxes.
-	boxSchemesMu sync.Mutex
-	boxSchemes   map[string]string
-
 	// libraryServers caches the result of the most recent
 	// ListMediaServers call so subsequent BrowseLibrary calls can
 	// resolve a UDN to a Server without a fresh SSDP sweep on every
@@ -50,21 +41,9 @@ type App struct {
 func NewApp() *App {
 	logger, logFile := newFileLogger(slog.LevelInfo)
 	return &App{
-		logger:  logger,
-		logFile: logFile,
-		// Single shared http.Client with InsecureSkipVerify on the
-		// TLS side: lets the same client speak HTTP to :8888 on
-		// classic STR boxes and HTTPS to :443 on taigan/Portable
-		// (where the home-wifi-side filter blocks :8888). The marge
-		// listener serves a per-box self-signed cert; we trust by
-		// IP rather than chain. Plain HTTP requests are unaffected.
-		httpClient: &http.Client{
-			Timeout: 6 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		},
-		boxSchemes:     map[string]string{},
+		logger:         logger,
+		logFile:        logFile,
+		httpClient:     &http.Client{Timeout: 6 * time.Second},
 		libraryServers: map[string]dlna.Server{},
 	}
 }
@@ -85,17 +64,9 @@ func (a *App) startup(ctx context.Context) {
 // Kind distinguishes STR-equipped speakers from stock Bose speakers
 // that still need a USB-stick install.
 type BoxInfo struct {
-	Name string `json:"name"`
-	Host string `json:"host"` // IPv4 for the REST API
-	Port int    `json:"port"` // typically 8888 for STR, 8090 for stock
-	// Scheme is "http" (default) for STR REST API on :8888 and Bose
-	// HTTP on :8090. On taigan/Portable the home-wifi side blocks
-	// :8888 inbound (Bose wifi-driver-level filter), so STR also
-	// serves /api/* on the :443 marge-tls listener — when probeSTR
-	// picks the :443 path, Scheme becomes "https" and callers must
-	// honor it (with InsecureSkipVerify against the per-box marge
-	// self-signed cert).
-	Scheme       string `json:"scheme,omitempty"`
+	Name         string `json:"name"`
+	Host         string `json:"host"` // IPv4 for the REST API
+	Port         int    `json:"port"` // typically 8888 for STR, 8090 for stock
 	DeviceID     string `json:"deviceID"`
 	FriendlyName string `json:"friendlyName"`
 	Model        string `json:"model"`
@@ -439,13 +410,6 @@ done:
 
 	var out []BoxInfo
 	for h := range hits {
-		// Record the scheme so future baseURL(host, port) calls for
-		// this box pick the right transport. Empty Scheme means the
-		// :8888 plain-HTTP probe succeeded and there is nothing to
-		// override.
-		if h.Scheme != "" {
-			a.rememberBoxScheme(h.Host, h.Scheme)
-		}
 		out = append(out, h)
 	}
 	return out
@@ -466,26 +430,8 @@ done:
 func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 	url := fmt.Sprintf("http://%s:8888/api/agent/version", ip)
 	body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 1024)
-	probePort := 8888
-	probeScheme := "http"
 	if !ok {
-		// Fall back to HTTPS on :443. On taigan/Portable the Bose
-		// wifi-driver-level filter blocks :8888 inbound on the
-		// home-wifi side (verified live 2026-05-28 with deqw and
-		// the Portable: tcpdump shows SYNs to :8888 never reach
-		// eth0, iptables INPUT is empty so it is below netfilter).
-		// STR mounts the same /api/* routes on the :443 marge-tls
-		// listener via composeMargeWithWebui, so we can still find
-		// the agent there with a TLS probe. InsecureSkipVerify is
-		// fine: we trust the host by IP, the cert is the per-box
-		// self-signed marge cert that the agent generates locally.
-		tlsURL := fmt.Sprintf("https://%s:443/api/agent/version", ip)
-		body, ok = httpGetSmallTLS(ctx, tlsURL, 1200*time.Millisecond, 1024)
-		if !ok {
-			return BoxInfo{}, false
-		}
-		probePort = 443
-		probeScheme = "https"
+		return BoxInfo{}, false
 	}
 	s := string(body)
 	// Cheap sniff for the JSON shape {"build":"...","version":"..."}
@@ -499,8 +445,7 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 	box := BoxInfo{
 		Name:    "str-" + ip,
 		Host:    ip,
-		Port:    probePort,
-		Scheme:  probeScheme,
+		Port:    8888,
 		Version: version,
 		Build:   build,
 		Kind:    "str",
@@ -673,39 +618,6 @@ func httpGetSmall(ctx context.Context, url string, timeout time.Duration, max in
 	return b, true
 }
 
-// httpGetSmallTLS is the HTTPS twin of httpGetSmall used for the
-// taigan-reachability probe on :443. The marge-tls listener serves a
-// per-box self-signed cert, so the desktop app trusts by IP rather
-// than chain — InsecureSkipVerify is intentional and scoped to this
-// discovery hot path. Plain HTTP probes are tried first; this falls
-// in only when :8888 was blocked, so we do not pay the TLS handshake
-// cost on healthy STR boxes.
-func httpGetSmallTLS(ctx context.Context, url string, timeout time.Duration, max int64) ([]byte, bool) {
-	c, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(c, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, false
-	}
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Timeout: timeout, Transport: tr}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, false
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, max))
-	if err != nil {
-		return nil, false
-	}
-	return b, true
-}
-
 func extractAttr(xml, key string) string {
 	needle := key + "=\""
 	i := strings.Index(xml, needle)
@@ -750,38 +662,10 @@ type Preset struct {
 }
 
 func (a *App) baseURL(host string, port int) string {
-	// Default scheme is http; switched to https only when discovery
-	// learned the box is reachable via the marge-tls :443 path
-	// (taigan/Portable). Cache lookup is cheap (single map read
-	// under a small mutex) and keeps Wails method signatures stable
-	// — frontend keeps calling Wails wrappers with (host, port).
-	scheme := "http"
-	a.boxSchemesMu.Lock()
-	if s, ok := a.boxSchemes[host]; ok && s != "" {
-		scheme = s
-	}
-	a.boxSchemesMu.Unlock()
 	if port == 0 {
-		if scheme == "https" {
-			port = 443
-		} else {
-			port = 8888
-		}
+		port = 8888
 	}
-	return fmt.Sprintf("%s://%s:%d", scheme, host, port)
-}
-
-// rememberBoxScheme records the discovered URL scheme for a box host
-// so subsequent API calls via baseURL pick the correct transport.
-// Called from probeSTR (and the mDNS path once it learns scheme) at
-// discovery time.
-func (a *App) rememberBoxScheme(host, scheme string) {
-	if host == "" || scheme == "" {
-		return
-	}
-	a.boxSchemesMu.Lock()
-	a.boxSchemes[host] = scheme
-	a.boxSchemesMu.Unlock()
+	return fmt.Sprintf("http://%s:%d", host, port)
 }
 
 // GetPresets ruft GET /api/presets des angegebenen Sticks.

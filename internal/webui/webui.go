@@ -122,16 +122,16 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	return s
 }
 
-// Handler builds the full webui route tree (HTML index, /healthz,
-// every /api/* endpoint, and the streamproxy paths) and returns it
-// wrapped in the CORS middleware. Pure factory: no listener side
-// effects. Used by Run() to serve the plain-HTTP :8888 path AND by
-// internal/marge so the same routes are also reachable on the TLS
-// :443 listener (which is the only externally-reachable port on
-// taigan/Portable, where the Bose wifi-driver-level filter blocks
-// :8888 on the home-wifi side regardless of iptables — verified
-// live 2026-05-28).
-func (s *Server) Handler() http.Handler {
+// Run startet den Server und blockiert bis ctx abgebrochen wird.
+//
+// Every step that can fail or block emits a phase-marker log at WARN
+// level so that even on a `--log-level warn` deployment (or with the
+// diagnostic capturing only the tail of /tmp/streborn-agent.log) the
+// bundle shows which step the agent reached. Without these markers an
+// agent that bound :8090 but silently failed :8888 looked identical
+// in the bundle to one that crashed mid-init.
+func (s *Server) Run(ctx context.Context) error {
+	s.logger.Warn("webui phase: Run entered", "addr", s.addr)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -175,22 +175,7 @@ func (s *Server) Handler() http.Handler {
 		s.streamProxy.Register(mux)
 	}
 
-	return corsMiddleware(mux)
-}
-
-// Run startet den Server und blockiert bis ctx abgebrochen wird.
-//
-// Every step that can fail or block emits a phase-marker log at WARN
-// level so that even on a `--log-level warn` deployment (or with the
-// diagnostic capturing only the tail of /tmp/streborn-agent.log) the
-// bundle shows which step the agent reached. Without these markers an
-// agent that bound :8090 but silently failed :8888 looked identical
-// in the bundle to one that crashed mid-init.
-func (s *Server) Run(ctx context.Context) error {
-	s.logger.Warn("webui phase: Run entered", "addr", s.addr)
-	handler := s.Handler()
-
-	srv := &http.Server{Addr: s.addr, Handler: handler}
+	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
 	s.logger.Warn("webui phase: mux ready, calling ListenTCP", "addr", s.addr)
 	// SO_REUSEADDR so the agent can rebind after a watchdog respawn
 	// while the previous listener is still in TIME_WAIT.

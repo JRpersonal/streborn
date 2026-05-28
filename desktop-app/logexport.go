@@ -21,7 +21,6 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -224,30 +223,19 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	s.Reachable8090 = portOpen(host, 8090, 1200)
 	s.Reachable8888 = portOpen(host, 8888, 1200)
 	s.ReachableSSH = portOpen(host, 22, 1200)
-	// On taigan/Portable :8888 is blocked from the home-wifi side
-	// but STR also serves the API on :443 via marge-tls. If :8888
-	// is unreachable but :443 is, route the diagnostic STR calls
-	// through the TLS path so the bundle still gets STRStatus,
-	// agent version, and debug state from those boxes.
-	strBase := fmt.Sprintf("http://%s:8888", host)
-	strReachable := s.Reachable8888
-	if !strReachable && portOpen(host, 443, 1200) {
-		strBase = fmt.Sprintf("https://%s:443", host)
-		strReachable = true
-	}
 	if s.Reachable8090 {
 		s.BoseInfo = httpGetText(fmt.Sprintf("http://%s:8090/info", host), 4096)
 	}
-	if strReachable {
-		s.STRStatus = httpGetText(strBase+"/api/status", 4096)
-		raw := httpGetText(strBase+"/api/agent/version", 1024)
+	if s.Reachable8888 {
+		s.STRStatus = httpGetText(fmt.Sprintf("http://%s:8888/api/status", host), 4096)
+		raw := httpGetText(fmt.Sprintf("http://%s:8888/api/agent/version", host), 1024)
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)
 		}
 		// /api/debug/state holds the boot-race trace (setup.log,
 		// boot.log, agent_log_tail). Single most useful payload for
 		// "agent came up but is misbehaving" diagnostics.
-		debugRaw := httpGetText(strBase+"/api/debug/state", 256*1024)
+		debugRaw := httpGetText(fmt.Sprintf("http://%s:8888/api/debug/state", host), 256*1024)
 		if debugRaw != "" {
 			var ds map[string]any
 			if err := json.Unmarshal([]byte(debugRaw), &ds); err == nil {
@@ -477,12 +465,7 @@ func httpGetText(url string, max int64) string {
 	if err != nil {
 		return ""
 	}
-	// InsecureSkipVerify for the HTTPS path on taigan/Portable, where
-	// the diagnostic export reaches STR through the marge-tls :443
-	// listener with a per-box self-signed cert. Plain HTTP requests
-	// are unaffected; the TLSClientConfig only applies to https URLs.
-	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-	cli := &http.Client{Timeout: 4 * time.Second, Transport: tr}
+	cli := &http.Client{Timeout: 4 * time.Second}
 	resp, err := cli.Do(req)
 	if err != nil {
 		return ""
