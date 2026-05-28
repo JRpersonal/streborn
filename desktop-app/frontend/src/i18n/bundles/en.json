@@ -164,6 +164,7 @@
   "update.doneToast": "Update done.",
   "update.tookLongerToast": "Speaker takes longer than expected. Check power / network.",
   "update.failed": "Update failed: {{err}}\n\nIf the speaker no longer answers, briefly unplug power and plug it back in.",
+  "update.otherBoxRunning": "Update running on {{name}} ...",
 
   "settingsView.title": "Speaker settings",
   "settingsView.forSpeaker": "Settings for:",

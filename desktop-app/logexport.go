@@ -192,6 +192,12 @@ type sshFallback struct {
 	SetupLog       string   `json:"setupLog"`
 	PreviousLog    string   `json:"previousLog"`
 	AgentLogTail   string   `json:"agentLogTail"`
+	// AgentLogNAND is the NAND-persisted /mnt/nv/streborn/agent.log
+	// which gets the entire slog output, mirrored from stderr. Unlike
+	// AgentLogTail (8 KB tail of /tmp/streborn-agent.log on tmpfs)
+	// this survives reboot and we pull a much larger tail so the
+	// listener-bring-up phase logs are always in the bundle.
+	AgentLogNAND   string   `json:"agentLogNand"`
 	StickListing   string   `json:"stickListing"`
 	MediaListing   string   `json:"mediaListing"`
 	NVListing      string   `json:"nvListing"`
@@ -215,21 +221,27 @@ type sshFallback struct {
 func captureBoxSnapshot(host string) boxSnapshot {
 	s := boxSnapshot{Host: host}
 	s.Reachable8090 = portOpen(host, 8090, 1200)
-	s.Reachable8888 = portOpen(host, 8888, 1200)
+	// :17008 is STR's external entry point via the SoftwareUpdate
+	// shim hijack — the chipset-whitelisted slot reachable on every
+	// SoundTouch variant. Reachable8888 stays in the field name for
+	// schema continuity with existing diagnostic readers, but the
+	// probe now targets the hijack port. STR's actual :8888 listener
+	// is loopback-only externally on all firmwares we have tested.
+	s.Reachable8888 = portOpen(host, 17008, 1200)
 	s.ReachableSSH = portOpen(host, 22, 1200)
 	if s.Reachable8090 {
 		s.BoseInfo = httpGetText(fmt.Sprintf("http://%s:8090/info", host), 4096)
 	}
 	if s.Reachable8888 {
-		s.STRStatus = httpGetText(fmt.Sprintf("http://%s:8888/api/status", host), 4096)
-		raw := httpGetText(fmt.Sprintf("http://%s:8888/api/agent/version", host), 1024)
+		s.STRStatus = httpGetText(fmt.Sprintf("http://%s:17008/api/status", host), 4096)
+		raw := httpGetText(fmt.Sprintf("http://%s:17008/api/agent/version", host), 1024)
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)
 		}
 		// /api/debug/state holds the boot-race trace (setup.log,
 		// boot.log, agent_log_tail). Single most useful payload for
 		// "agent came up but is misbehaving" diagnostics.
-		debugRaw := httpGetText(fmt.Sprintf("http://%s:8888/api/debug/state", host), 256*1024)
+		debugRaw := httpGetText(fmt.Sprintf("http://%s:17008/api/debug/state", host), 256*1024)
 		if debugRaw != "" {
 			var ds map[string]any
 			if err := json.Unmarshal([]byte(debugRaw), &ds); err == nil {
@@ -273,6 +285,11 @@ func pullSSHFallback(host string) *sshFallback {
 		{"setupLog", "tail -c 16384 /mnt/nv/streborn/setup.log 2>/dev/null", 6000, &out.SetupLog},
 		{"previousLog", "tail -c 8192 /mnt/nv/streborn/previous.log 2>/dev/null", 6000, &out.PreviousLog},
 		{"agentLogTail", "tail -c 8192 /tmp/streborn-agent.log 2>/dev/null", 6000, &out.AgentLogTail},
+		// 64 KB from the NAND-persisted agent log: covers ~10 boots of
+		// slog output on a slow speaker without bloating the bundle.
+		// /mnt/nv/streborn/agent.log is the io.MultiWriter target the
+		// Go agent opens in newLogger.
+		{"agentLogNand", "tail -c 65536 /mnt/nv/streborn/agent.log 2>/dev/null", 8000, &out.AgentLogNAND},
 		{"stickListing", "ls -la /media/sda1 2>&1 | head -50", 5000, &out.StickListing},
 		{"mediaListing", "ls -la /media /mnt /run/media 2>&1 | head -80", 5000, &out.MediaListing},
 		{"nvListing", "ls -la /mnt/nv/streborn 2>&1 | head -40", 5000, &out.NVListing},
@@ -331,6 +348,7 @@ func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 		s.SSHFallback.SetupLog = anonymizeText(s.SSHFallback.SetupLog)
 		s.SSHFallback.PreviousLog = anonymizeText(s.SSHFallback.PreviousLog)
 		s.SSHFallback.AgentLogTail = anonymizeText(s.SSHFallback.AgentLogTail)
+		s.SSHFallback.AgentLogNAND = anonymizeText(s.SSHFallback.AgentLogNAND)
 		s.SSHFallback.StickListing = anonymizeText(s.SSHFallback.StickListing)
 		s.SSHFallback.MediaListing = anonymizeText(s.SSHFallback.MediaListing)
 		s.SSHFallback.NVListing = anonymizeText(s.SSHFallback.NVListing)

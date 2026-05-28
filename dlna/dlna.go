@@ -19,10 +19,12 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -60,28 +62,32 @@ type Server struct {
 // Server list. Honors ctx for cancellation.
 //
 // Implementation notes:
-//   - Binds a single wildcard IPv4 UDP socket (net.IPv4zero) via
-//     net.ListenUDP. An earlier per-interface bind variant looked
-//     correct on paper but on Windows blocked all incoming
-//     responses; the wildcard socket gets every reply.
+//   - Multi-NIC: enumerates all non-loopback IPv4 interfaces with an
+//     address, opens one UDP socket per interface, and sends the
+//     M-SEARCH from each. An earlier wildcard-only variant
+//     (net.IPv4zero) sent on whichever interface Windows picked by
+//     route priority, which lost media servers on hosts with two
+//     active wifi adapters (home wifi + a Bose-Setup-AP USB dongle
+//     was the original failure mode; the same applies any time the
+//     user has Wi-Fi 1 + Wi-Fi 2 connected to different LANs).
 //   - Sends BOTH a typed M-SEARCH (ST: MediaServer:1) AND a broad
 //     one (ST: ssdp:all). Some servers (and some firmware bugs)
 //     only respond to one of the two. Cheap to send both.
 //   - Filters responses on LOCATION presence; the server type
 //     filter happens at device-description fetch time because a
 //     root device may host the MediaServer as a sub-device.
+//
+// Set Logger before calling for visibility into per-interface
+// behavior — DLNA scans that surface zero results in the UI are
+// otherwise indistinguishable from "no servers on LAN".
+var Logger *slog.Logger = slog.Default()
+
 func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, error) {
 	if timeout <= 0 {
 		timeout = defaultDiscover
 	}
 	dctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
-	if err != nil {
-		return nil, fmt.Errorf("ssdp listen: %w", err)
-	}
-	defer conn.Close()
 
 	mcAddr, err := net.ResolveUDPAddr("udp4", ssdpAddr)
 	if err != nil {
@@ -102,45 +108,79 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 	typedMsg := mkMsg(mediaServerST)
 	allMsg := mkMsg("ssdp:all")
 
-	for i := 0; i < 2; i++ {
-		if _, err := conn.WriteToUDP(typedMsg, mcAddr); err != nil {
-			return nil, fmt.Errorf("ssdp write typed: %w", err)
-		}
-		if _, err := conn.WriteToUDP(allMsg, mcAddr); err != nil {
-			return nil, fmt.Errorf("ssdp write all: %w", err)
-		}
-		time.Sleep(80 * time.Millisecond)
+	// Enumerate candidate source IPs. Skip loopback, link-local
+	// (169.254.x.x), and any v6 addresses since SSDP here is v4 only.
+	ips := candidateIPv4Addrs()
+	if len(ips) == 0 {
+		Logger.Warn("dlna: no usable IPv4 interfaces, falling back to wildcard")
+		ips = []net.IP{net.IPv4zero}
 	}
+	Logger.Info("dlna: SSDP M-SEARCH starting", "interfaces", len(ips), "timeout", timeout.String())
 
-	deadline, _ := dctx.Deadline()
-	if !deadline.IsZero() {
-		_ = conn.SetReadDeadline(deadline)
-	}
-
+	locationsMu := sync.Mutex{}
 	locations := map[string]struct{}{}
-	buf := make([]byte, 4096)
-	for {
-		select {
-		case <-dctx.Done():
-			goto resolve
-		default:
-		}
-		n, _, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			break
-		}
-		loc := headerValue(buf[:n], "LOCATION")
-		st := headerValue(buf[:n], "ST")
-		if loc == "" {
-			continue
-		}
-		if st != "" && !strings.Contains(st, "MediaServer") && !strings.Contains(st, "rootdevice") {
-			continue
-		}
-		locations[loc] = struct{}{}
-	}
+	var ifaceWg sync.WaitGroup
+	for _, ip := range ips {
+		ifaceWg.Add(1)
+		go func(srcIP net.IP) {
+			defer ifaceWg.Done()
+			conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: srcIP, Port: 0})
+			if err != nil {
+				Logger.Warn("dlna: ListenUDP failed", "src", srcIP.String(), "err", err.Error())
+				return
+			}
+			defer conn.Close()
 
-resolve:
+			sent := 0
+			for i := 0; i < 2; i++ {
+				if _, err := conn.WriteToUDP(typedMsg, mcAddr); err == nil {
+					sent++
+				}
+				if _, err := conn.WriteToUDP(allMsg, mcAddr); err == nil {
+					sent++
+				}
+				time.Sleep(80 * time.Millisecond)
+			}
+
+			deadline, _ := dctx.Deadline()
+			if !deadline.IsZero() {
+				_ = conn.SetReadDeadline(deadline)
+			}
+
+			localHits := 0
+			buf := make([]byte, 4096)
+			for {
+				select {
+				case <-dctx.Done():
+					goto done
+				default:
+				}
+				n, _, err := conn.ReadFromUDP(buf)
+				if err != nil {
+					break
+				}
+				loc := headerValue(buf[:n], "LOCATION")
+				st := headerValue(buf[:n], "ST")
+				if loc == "" {
+					continue
+				}
+				if st != "" && !strings.Contains(st, "MediaServer") && !strings.Contains(st, "rootdevice") {
+					continue
+				}
+				locationsMu.Lock()
+				if _, dup := locations[loc]; !dup {
+					locations[loc] = struct{}{}
+					localHits++
+				}
+				locationsMu.Unlock()
+			}
+		done:
+			Logger.Info("dlna: SSDP interface done", "src", srcIP.String(), "sent", sent, "newLocations", localHits)
+		}(ip)
+	}
+	ifaceWg.Wait()
+
+	Logger.Info("dlna: SSDP M-SEARCH done", "totalLocations", len(locations))
 	if len(locations) == 0 {
 		return nil, nil
 	}
@@ -179,6 +219,47 @@ resolve:
 		out = append(out, r.s)
 	}
 	return out, nil
+}
+
+// candidateIPv4Addrs returns the routable IPv4 addresses we should
+// send SSDP M-SEARCH from. Excludes loopback, link-local
+// (169.254.x.x) and any non-up interface. The result drives the
+// per-interface multicast send so a LAN that lives on Wi-Fi 1
+// gets probed even when Wi-Fi 2 is connected to a different network
+// (e.g. a Bose setup-AP) at the same time.
+func candidateIPv4Addrs() []net.IP {
+	var out []net.IP
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return out
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip4 := ipnet.IP.To4()
+			if ip4 == nil {
+				continue
+			}
+			if ip4.IsLoopback() || ip4.IsLinkLocalUnicast() || ip4.IsLinkLocalMulticast() {
+				continue
+			}
+			out = append(out, ip4)
+		}
+	}
+	return out
 }
 
 func headerValue(packet []byte, header string) string {

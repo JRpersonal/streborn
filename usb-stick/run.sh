@@ -49,7 +49,19 @@ CACHED_BIN="$PERSIST/bin/streborn-armv7l"
 STICK_VER_FILE="$STICK/version.txt"
 NAND_VER_FILE="$PERSIST/version.txt"
 
-mkdir -p "$PERSIST/bin" "$PERSIST/logs" "$PERSIST/state" 2>/dev/null
+# LD_PRELOAD shim for chipset-whitelist hijack of Bose's SoftwareUpdate
+# daemon. The shim is a tiny .so that hooks accept() on port 17008 and
+# proxies incoming connections to STR webui on 127.0.0.1:8888. Without
+# this hijack STR's :8888 listener is unreachable from outside on every
+# SoundTouch variant we have tested — the BCO wifi chipset firmware
+# whitelists only listeners bound by binaries linked against Bose's
+# libProtobufMessagingIPC / libIPC / libSoundTouchInternal libraries.
+# See usb-stick/shim/README.md for the full story and
+# project_taigan_chipset_whitelist memory.
+STICK_SHIM="$STICK/str-shim.so"
+NAND_SHIM="$PERSIST/lib/str-shim.so"
+
+mkdir -p "$PERSIST/bin" "$PERSIST/lib" "$PERSIST/logs" "$PERSIST/state" 2>/dev/null
 
 log() {
     echo "$(date): $*" >> "$LOG"
@@ -223,7 +235,15 @@ wait_for_ready() {
 background_phase_probe() {
     (
         BOSE_HTTP=0; BOSE_WS=0; AVT=0; WPA=0; WLAN_UP=0
+        STR_API=0; STR_MARGE=0; STR_BMX=0; STR_TLS=0
         DEADLINE_UP=$(( $(uptime_s) + 240 ))
+        # tcp_probe tries /dev/tcp first (cheap, no fork) and falls back
+        # to nc -z. Returns 0 on connect, non-zero on refusal/timeout.
+        tcp_probe() {
+            p=$1
+            (echo > /dev/tcp/127.0.0.1/"$p") >/dev/null 2>&1 \
+                || nc -z 127.0.0.1 "$p" >/dev/null 2>&1
+        }
         while [ "$(uptime_s)" -lt "$DEADLINE_UP" ]; do
             UP=$(uptime_s)
             if [ "$WPA" -eq 0 ] && pidof wpa_supplicant >/dev/null 2>&1; then
@@ -234,23 +254,34 @@ background_phase_probe() {
                 BOSE_HTTP=$UP
                 setup_log "phase: BoseApp HTTP :8090 up at uptime=${UP}s"
             fi
-            if [ "$BOSE_WS" -eq 0 ]; then
-                # gabbo speaks HTTP-Upgrade; a plain GET returns 400
-                # but that proves the socket is bound. wget returns
-                # non-zero on 400 so we look at connect via /dev/tcp
-                # if shell supports it, else TCP-only probe via nc.
-                if (echo > /dev/tcp/127.0.0.1/8080) >/dev/null 2>&1 \
-                    || nc -z 127.0.0.1 8080 >/dev/null 2>&1; then
-                    BOSE_WS=$UP
-                    setup_log "phase: gabbo WS :8080 listening at uptime=${UP}s"
-                fi
+            if [ "$BOSE_WS" -eq 0 ] && tcp_probe 8080; then
+                BOSE_WS=$UP
+                setup_log "phase: gabbo WS :8080 listening at uptime=${UP}s"
             fi
-            if [ "$AVT" -eq 0 ]; then
-                if (echo > /dev/tcp/127.0.0.1/8091) >/dev/null 2>&1 \
-                    || nc -z 127.0.0.1 8091 >/dev/null 2>&1; then
-                    AVT=$UP
-                    setup_log "phase: AVTransport :8091 listening at uptime=${UP}s"
-                fi
+            if [ "$AVT" -eq 0 ] && tcp_probe 8091; then
+                AVT=$UP
+                setup_log "phase: AVTransport :8091 listening at uptime=${UP}s"
+            fi
+            # STR agent listeners. Probing these explicitly is the
+            # whole point of the rewrite: when :8888 silently never
+            # binds (observed on Brecht's ST20 v0.5.10..v0.5.12), the
+            # phase summary line is the first place a remote diagnostic
+            # bundle reveals it.
+            if [ "$STR_API" -eq 0 ] && tcp_probe 8888; then
+                STR_API=$UP
+                setup_log "phase: STR webui :8888 listening at uptime=${UP}s"
+            fi
+            if [ "$STR_MARGE" -eq 0 ] && tcp_probe 9080; then
+                STR_MARGE=$UP
+                setup_log "phase: STR marge :9080 listening at uptime=${UP}s"
+            fi
+            if [ "$STR_BMX" -eq 0 ] && tcp_probe 8081; then
+                STR_BMX=$UP
+                setup_log "phase: STR bmx :8081 listening at uptime=${UP}s"
+            fi
+            if [ "$STR_TLS" -eq 0 ] && tcp_probe 443; then
+                STR_TLS=$UP
+                setup_log "phase: STR marge-tls :443 listening at uptime=${UP}s"
             fi
             if [ "$WLAN_UP" -eq 0 ] && [ -r /sys/class/net/wlan0/operstate ]; then
                 STATE=$(cat /sys/class/net/wlan0/operstate 2>/dev/null)
@@ -260,15 +291,19 @@ background_phase_probe() {
                     setup_log "phase: wlan0 link up at uptime=${UP}s ip=${IPADDR:-none}"
                 fi
             fi
-            # Done early once everything is up.
+            # Done early once everything is up — including the four
+            # STR listener phases so we always log them even on a
+            # WLAN-free ethernet-only setup.
             if [ "$WPA" -gt 0 ] && [ "$BOSE_HTTP" -gt 0 ] \
                 && [ "$BOSE_WS" -gt 0 ] && [ "$AVT" -gt 0 ] \
-                && [ "$WLAN_UP" -gt 0 ]; then
+                && [ "$WLAN_UP" -gt 0 ] \
+                && [ "$STR_API" -gt 0 ] && [ "$STR_MARGE" -gt 0 ] \
+                && [ "$STR_BMX" -gt 0 ] && [ "$STR_TLS" -gt 0 ]; then
                 break
             fi
             sleep 3
         done
-        setup_log "phase summary: wpa=${WPA}s boseHTTP=${BOSE_HTTP}s gabbo=${BOSE_WS}s avt=${AVT}s wlan0Up=${WLAN_UP}s"
+        setup_log "phase summary: wpa=${WPA}s boseHTTP=${BOSE_HTTP}s gabbo=${BOSE_WS}s avt=${AVT}s wlan0Up=${WLAN_UP}s strAPI=${STR_API}s strMarge=${STR_MARGE}s strBmx=${STR_BMX}s strTLS=${STR_TLS}s"
     ) &
 }
 
@@ -365,6 +400,171 @@ fi
 
 sync_stick_to_nand_always
 
+# === Shim deploy + LATE swap (after Bose mesh stabilizes) ===
+#
+# Live-verified 2026-05-28 22:32: bind-mounting the wrapper BEFORE
+# Bose's init starts SoftwareUpdate means the wrapped SU is the
+# first instance the IPC mesh registers — and that breaks the mesh
+# (BoseApp /info returns HTTP 500). The wrapper's intermediate
+# /bin/sh + env layers between shepherdd's fork() and the final
+# SU-real exec disrupt some handshake that the mesh expects.
+#
+# Strategy that works (manual test at 22:23 verified):
+#   1. Let Bose's init start the ORIGINAL SoftwareUpdate.
+#   2. Wait for the mesh to fully stabilize — Bose /info on :8090
+#      returning valid <info ...> for at least 30 s steady.
+#   3. NOW set up the bind-mount.
+#   4. SIGTERM the original SU.
+#   5. nohup-relaunch via /opt/Bose/SoftwareUpdate (now bind-mounted).
+#      The wrapper exec's SoftwareUpdate-real with LD_PRELOAD. The
+#      new SU has the shim active and the mesh — already stable —
+#      survives the SU re-registration cleanly.
+#
+# shepherdd does NOT auto-restart SoftwareUpdate (it is not in
+# Shepherd-taigan.xml), so the kill is race-free.
+sync_shim_to_nand() {
+    if [ -r "$STICK_SHIM" ]; then
+        if cp "$STICK_SHIM" "$NAND_SHIM.new" 2>/dev/null && \
+           mv "$NAND_SHIM.new" "$NAND_SHIM" 2>/dev/null; then
+            chmod 644 "$NAND_SHIM" 2>/dev/null
+            log "shim deployed: $NAND_SHIM ($(wc -c < "$NAND_SHIM") bytes)"
+        else
+            log "shim deploy: cp/mv failed, keeping previous NAND shim"
+            rm -f "$NAND_SHIM.new" 2>/dev/null
+        fi
+    elif [ ! -r "$NAND_SHIM" ]; then
+        log "shim deploy: stick has no $STICK_SHIM and NAND has no $NAND_SHIM, hijack disabled this boot"
+    fi
+}
+sync_shim_to_nand
+
+SHIM_DISABLE="$PERSIST/state/shim-disable"
+SHIM_BACKUP="$PERSIST/lib/SoftwareUpdate-real"
+SHIM_WRAPPER="$PERSIST/lib/SU-wrapper.sh"
+
+# Stage wrapper + binary snapshot unconditionally. The bind-mount
+# itself is deferred to the late-swap background runner below.
+shim_stage_wrapper() {
+    if [ -e "$SHIM_DISABLE" ]; then
+        log "shim stage: disabled via $SHIM_DISABLE marker"
+        return 0
+    fi
+    if [ ! -r "$NAND_SHIM" ]; then
+        log "shim stage: no shim .so at $NAND_SHIM, skip"
+        return 0
+    fi
+    if [ ! -e /opt/Bose/SoftwareUpdate ]; then
+        log "shim stage: /opt/Bose/SoftwareUpdate absent, skip"
+        return 0
+    fi
+    # Snapshot the real binary if we have not already cached it. We
+    # do this BEFORE any bind-mount so the cp reads the original
+    # rootfs file, not our wrapper.
+    if [ ! -x "$SHIM_BACKUP" ]; then
+        if cp /opt/Bose/SoftwareUpdate "$SHIM_BACKUP.new" 2>/dev/null \
+           && mv "$SHIM_BACKUP.new" "$SHIM_BACKUP" 2>/dev/null; then
+            chmod +x "$SHIM_BACKUP"
+            log "shim stage: cached real SU at $SHIM_BACKUP ($(wc -c < "$SHIM_BACKUP") bytes)"
+        else
+            log "shim stage: cp /opt/Bose/SoftwareUpdate -> $SHIM_BACKUP failed"
+            rm -f "$SHIM_BACKUP.new" 2>/dev/null
+            return 1
+        fi
+    fi
+    # Write wrapper. `export + exec` keeps the exec chain shorter
+    # than `exec env LD_PRELOAD=... binary`: only one /bin/sh
+    # intermediate before the real binary takes over.
+    cat > "$SHIM_WRAPPER.new" <<'WRAP_EOF'
+#!/bin/sh
+# Auto-generated by STR's run.sh — do not edit directly.
+export LD_PRELOAD=/mnt/nv/streborn/lib/str-shim.so
+exec /mnt/nv/streborn/lib/SoftwareUpdate-real "$@"
+WRAP_EOF
+    mv "$SHIM_WRAPPER.new" "$SHIM_WRAPPER" 2>/dev/null
+    chmod +x "$SHIM_WRAPPER"
+}
+shim_stage_wrapper
+
+# Late-swap background runner: wait for Bose's IPC mesh to fully
+# stabilize, THEN set up the bind-mount and swap SoftwareUpdate
+# under LD_PRELOAD. Doing this early — before /info has been
+# answering with valid XML for a sustained period — broke the mesh
+# (BoseApp returned HTTP 500 indefinitely until a power-cycle).
+shim_late_swap() {
+    if [ -e "$SHIM_DISABLE" ]; then
+        log "shim late swap: disabled via $SHIM_DISABLE marker"
+        return 0
+    fi
+    if [ ! -x "$SHIM_BACKUP" ] || [ ! -x "$SHIM_WRAPPER" ]; then
+        log "shim late swap: wrapper/backup not staged, skip"
+        return 0
+    fi
+    # Health-wait: /info must return a body containing `<info ` for
+    # 30 s continuously before we touch anything. Hard cap at 4 min
+    # of waiting; if mesh never stabilizes we skip the swap and let
+    # the box stay as the user-visible-stock-Bose-on-this-boot.
+    healthy_for=0
+    waited=0
+    while [ $waited -lt 240 ]; do
+        if wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | grep -q "<info "; then
+            healthy_for=$((healthy_for + 5))
+            if [ $healthy_for -ge 30 ]; then break; fi
+        else
+            healthy_for=0
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
+    if [ $healthy_for -lt 30 ]; then
+        log "shim late swap: Bose API never reached 30 s of steady health in 240 s, abort"
+        return 0
+    fi
+    log "shim late swap: Bose mesh stable for ${healthy_for}s at uptime=$(uptime_s)s, beginning swap"
+
+    # Bind-mount now (mesh has settled — wrapping a NEW SU instance
+    # at this point does not disrupt the registered original).
+    if ! mount 2>/dev/null | grep -q " /opt/Bose/SoftwareUpdate "; then
+        if mount --bind "$SHIM_WRAPPER" /opt/Bose/SoftwareUpdate 2>/dev/null; then
+            log "shim late swap: bind-mount $SHIM_WRAPPER -> /opt/Bose/SoftwareUpdate active"
+        else
+            log "shim late swap: mount --bind failed"
+            return 1
+        fi
+    fi
+
+    # SIGTERM the running SoftwareUpdate. shepherdd does not respawn
+    # SU (verified live — SU not in Shepherd-taigan.xml), so the
+    # kill is race-free.
+    OLDSU=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+    if [ -n "$OLDSU" ]; then
+        log "shim late swap: SIGTERM SU PID=$OLDSU"
+        kill -TERM "$OLDSU" 2>/dev/null
+        for i in 1 2 3 4 5; do
+            sleep 1
+            if ! kill -0 "$OLDSU" 2>/dev/null; then break; fi
+        done
+    fi
+    # Relaunch via the bind-mounted path so the wrapper sets
+    # LD_PRELOAD and exec's SoftwareUpdate-real.
+    nohup /opt/Bose/SoftwareUpdate >/dev/null 2>&1 &
+    sleep 2
+    NEWSU=$(pidof SoftwareUpdate-real 2>/dev/null | awk '{print $1}')
+    [ -z "$NEWSU" ] && NEWSU=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+    log "shim late swap: relaunched SU at PID=${NEWSU:-?} uptime=$(uptime_s)s"
+
+    # Verify Bose /info still responds AFTER the swap. If it dropped,
+    # log the regression — we will diagnose via the diagnostic bundle
+    # rather than try to recover here (the box still has SSH up and
+    # the disable marker is one `touch` away).
+    sleep 5
+    if wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | grep -q "<info "; then
+        log "shim late swap: Bose /info HEALTHY after swap"
+    else
+        log "shim late swap: WARN Bose /info NOT healthy after swap — mesh may be damaged"
+    fi
+}
+(shim_late_swap) &
+
 # Binary Auswahl: NAND Cache zuerst, Stick als Fallback.
 if [ -x "$CACHED_BIN" ]; then
     BIN="$CACHED_BIN"
@@ -458,10 +658,13 @@ fi
 # that silently skipped provisioning on spotty boxes that needed it.
 WLAN_IFACE=""
 BCO_MODE=""
+IS_TAIGAN=""
 if [ -d /sys/class/net/wlan0 ]; then
     WLAN_IFACE="wlan0"
+    echo "wlan0" > "$PERSIST/wlan-mode" 2>/dev/null
 elif [ -d /sys/class/net/wlan1 ]; then
     WLAN_IFACE="wlan1"
+    echo "wlan1" > "$PERSIST/wlan-mode" 2>/dev/null
 elif [ -d /sys/class/net/eth0 ]; then
     # Known BCO codenames + structural fallback. `uname -n` reliably
     # mirrors the Bose codename ("Linux taigan ...", "Linux spotty ...")
@@ -472,10 +675,24 @@ elif [ -d /sys/class/net/eth0 ]; then
     HOSTID=$(uname -n 2>/dev/null | tr -d '\n\r ' | head -c 32)
     case "$VARIANT" in taigan|spotty) BCO_BY_VARIANT=1 ;; *) BCO_BY_VARIANT="" ;; esac
     case "$HOSTID"  in taigan|spotty) BCO_BY_HOST=1    ;; *) BCO_BY_HOST=""    ;; esac
-    if [ -n "$BCO_BY_VARIANT" ] || [ -n "$BCO_BY_HOST" ] \
+    # taigan-specific flag: on this firmware build the documented WLAN
+    # provisioning channels are all dead (HTTP /addWirelessProfile 500,
+    # TAP CLI accepts add but never persists, wpa_* binaries missing).
+    # The ONLY working channel is the Bose iOS app via BLE — see
+    # [[taigan-quirks]] memory. Skipping A/B saves ~7 min of futile
+    # retries per boot and stops the 5-min Bose-Setup-AP reboot loop.
+    case "$VARIANT" in taigan) IS_TAIGAN=1 ;; esac
+    case "$HOSTID"  in taigan) IS_TAIGAN=1 ;; esac
+    if [ -n "$IS_TAIGAN" ]; then
+        BCO_MODE=1
+        WLAN_IFACE="eth0"
+        echo "taigan-bco" > "$PERSIST/wlan-mode" 2>/dev/null
+        setup_log "WLAN: taigan/BCO chassis (variant=${VARIANT:-?} host=${HOSTID:-?}), Wi-Fi-via-eth0, documented APIs dead — see Bose iOS app channel"
+    elif [ -n "$BCO_BY_VARIANT" ] || [ -n "$BCO_BY_HOST" ] \
        || [ -x /sbin/has-bco ] || [ -x /usr/sbin/has-bco ]; then
         BCO_MODE=1
         WLAN_IFACE="eth0"
+        echo "bco" > "$PERSIST/wlan-mode" 2>/dev/null
         setup_log "WLAN: BCO chassis detected (variant=${VARIANT:-?} host=${HOSTID:-?}), Wi-Fi-via-eth0"
     else
         # Structural fallback: SoundTouch hardware always has Wi-Fi,
@@ -483,6 +700,7 @@ elif [ -d /sys/class/net/eth0 ]; then
         # exposed as eth0 under a codename we haven't catalogued yet.
         BCO_MODE=1
         WLAN_IFACE="eth0"
+        echo "bco" > "$PERSIST/wlan-mode" 2>/dev/null
         setup_log "WLAN: eth0-only with no wlan*, assuming BCO pattern (variant=${VARIANT:-?} host=${HOSTID:-?}) — codename not in known list, treating as Wi-Fi-via-eth0"
     fi
 fi
@@ -600,6 +818,43 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     BOSE_API="http://127.0.0.1:8090"
     WINNER="none"
 
+    # ---- M0a: Pre-flight bypass — already on wifi? ----
+    # If the box already has a real STA lease (e.g. user provisioned
+    # via Bose iOS app before this STR install, or a previous STR
+    # boot's profile is still in NetManager's DB and Bose just
+    # associated to it), DO NOT run any of the M1..M6 provisioning
+    # methods. M2's `network wifi profiles clear` would wipe whatever
+    # is in the DB; M1's HTTP /addWirelessProfile would race the
+    # in-flight associate; M3 would overwrite /etc/wpa_supplicant.conf;
+    # M5/M6 would tear down the very network we already have. All of
+    # those are destructive when the user-visible network already
+    # works — observed live on taigan/Portable 2026-05-28 where
+    # STR's profiles clear wiped JJ3 right after Bose iOS app
+    # provisioned it, and applies equally to ST10/20/30 if the user
+    # re-installs STR on top of a working box.
+    #
+    # Bose's stack is idempotent on STA lease (it does not unjoin and
+    # rejoin every boot), so if a lease is present we know the box
+    # is fine without us. STR's REST API, mDNS announce, marge stub,
+    # autopair etc. all run downstream of this block, unaffected.
+    if PRE_LEASE=$(current_sta_lease 2>/dev/null) && [ -n "$PRE_LEASE" ]; then
+        setup_log "M0a: pre-flight detected real STA lease ($PRE_LEASE) — skipping all WLAN provisioning, leaving Bose state intact"
+        setup_log "Approach SUMMARY: winner=already-on-wifi elapsed=0s iface=${PRE_LEASE%%|*} ip=${PRE_LEASE#*|} bco=${BCO_MODE:-0} taigan=${IS_TAIGAN:-0}"
+        setup_log "=== WLAN provisioning end (skipped) ==="
+        # Persist the credentials anyway — they may differ from what's
+        # currently in NetManager's DB, and a future Bose factory
+        # reset that wipes that DB should still let us replay from
+        # NAND on the next boot.
+        { printf 'SSID=%s\n' "$SSID"
+          printf 'PASS=%s\n' "$PASS"
+        } > "$WLAN_CREDS_NAND.new" 2>/dev/null
+        if [ -s "$WLAN_CREDS_NAND.new" ]; then
+            mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
+            chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
+        fi
+        WINNER="M0a-prelease"
+    fi
+
     # Wait for BoseApp HTTP server up to 30s. M1 needs it; M2..M6
     # do not and run regardless. If BoseApp never comes up we still
     # try TAP CLI / wpa_supplicant / wpa_cli paths.
@@ -653,7 +908,13 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # =====================================================================
 
     # ---- M1: HTTP B — POST /addWirelessProfile ------------------------
-    if [ "$BOSE_OK" = "1" ]; then
+    if [ -n "$IS_TAIGAN" ]; then
+        # Live-verified 2026-05-25 + 2026-05-28: this endpoint returns
+        # HTTP 500 on every taigan firmware build observed. The
+        # operation is simply not wired in WebServer-taigan.xml. Skipping
+        # avoids 8 s of wget + 30 s of lease-wait on every boot.
+        setup_log "M1: SKIP reason=taigan-firmware (/addWirelessProfile returns 500 — use Bose iOS app via BLE)"
+    elif [ "$BOSE_OK" = "1" ]; then
         setup_log "M1: POST $BOSE_API/addWirelessProfile"
         RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
                --post-data="$HTTP_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
@@ -674,7 +935,17 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     fi
 
     # ---- M2: TAP B — network wifi profiles add via :17000 -------------
-    if [ "$WINNER" = "none" ]; then
+    if [ "$WINNER" = "none" ] && [ -n "$IS_TAIGAN" ]; then
+        # On taigan the TAP sequence accepts every command with OK but
+        # `network wifi profiles info` returns <WiFiProfiles /> (empty)
+        # right after the supposedly-successful add. Verified across
+        # password variants, scan-wait durations, and security_type
+        # spellings — see [[taigan-quirks]] memory. Skip to avoid the
+        # 60 s lease-wait that always fails and the misleading "M2:
+        # NetManager accepted the sequence" log line.
+        setup_log "M2: SKIP reason=taigan-firmware (TAP CLI accepts add but never persists — use Bose iOS app via BLE)"
+    fi
+    if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
         if [ -n "$TAP_CMD" ]; then
             setup_log "M2: TAP CLI sequence (scan, profiles clear/add, mode auto, setupap exit)"
             TAP_OUT=$(
@@ -807,7 +1078,15 @@ WPAEOF
     fi
 
     # ---- M5: TAP nudge — airplay setupap exit + network mode auto -----
-    if [ "$WINNER" = "none" ]; then
+    if [ "$WINNER" = "none" ] && [ -n "$IS_TAIGAN" ]; then
+        # M5 is structurally fine on taigan (the TAP namespaces it uses
+        # exist), but with no profile to fall back to it just bounces
+        # NetManager between setup-AP and station-with-no-profile,
+        # contributing to the 5-min Bose-reset reboot loop. Skip and let
+        # the box sit in setup-AP waiting for the Bose iOS app.
+        setup_log "M5: SKIP reason=taigan-firmware (no profile in DB, nudge would just churn state — wait for Bose iOS app via BLE)"
+    fi
+    if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
         if [ -n "$TAP_CMD" ]; then
             setup_log "M5: TAP nudge (setupap exit, mode auto)"
             NUDGE=$(
@@ -839,7 +1118,15 @@ WPAEOF
     # Always backgrounded so the SUMMARY line below fires whether D
     # is still trying or already done. D's own result lines land
     # later in the same log when it completes.
-    if [ "$WINNER" = "none" ]; then
+    if [ "$WINNER" = "none" ] && [ -n "$IS_TAIGAN" ]; then
+        # M6 kills hostapd/udhcpd/dnsmasq + bursts preset keys to force
+        # the Bose stack to reassociate. On taigan there is no hostapd
+        # to kill, no wpa_cli to reassociate with, and the preset-key
+        # burst cannot help because no profile is in the DB to associate
+        # to. Skip and leave the box in setup-AP for the Bose iOS app.
+        setup_log "M6: SKIP reason=taigan-firmware (no profile in DB and no AP daemons to tear down — wait for Bose iOS app via BLE)"
+    fi
+    if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
         setup_log "M6: spawning backgrounded setup-AP teardown + preset burst"
         (
             sleep 8
@@ -907,7 +1194,7 @@ WPAEOF
     FINAL_IFACE=${FINAL_LEASE%%|*}
     FINAL_IP=${FINAL_LEASE##*|}
     [ "$FINAL_IFACE" = "$FINAL_LEASE" ] && FINAL_IFACE="" && FINAL_IP=""
-    setup_log "Approach SUMMARY: winner=$WINNER elapsed=${WLAN_ELAPSED}s iface=${FINAL_IFACE:-?} ip=${FINAL_IP:-none} bco=${BCO_MODE:-0} probes='wpa_cli=$HAS_WPA_CLI wpa_sup=$HAS_WPA_SUP nc=$HAS_NC tap=${TAP_CMD:+yes}'"
+    setup_log "Approach SUMMARY: winner=$WINNER elapsed=${WLAN_ELAPSED}s iface=${FINAL_IFACE:-?} ip=${FINAL_IP:-none} bco=${BCO_MODE:-0} taigan=${IS_TAIGAN:-0} probes='wpa_cli=$HAS_WPA_CLI wpa_sup=$HAS_WPA_SUP nc=$HAS_NC tap=${TAP_CMD:+yes}'"
     setup_log "=== WLAN provisioning end ==="
 else
     WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
@@ -960,6 +1247,90 @@ if command -v iptables >/dev/null 2>&1; then
 else
     log "iptables NAT unavailable, marge will listen directly on :443"
 fi
+
+# === iptables INPUT ACCEPT for our listener ports ===
+#
+# Series-I SoundTouch (SMSC/SCM components, no wlan0 interface) ships
+# a Bose stock firewall that REJECTs every TCP port outside a small
+# whitelist (8080/8090/8091/80/443). STR's :8888 / :9080 / :8081 /
+# :8443 listeners bind fine and `netstat -ltn` shows LISTEN, but every
+# inbound SYN from a desktop client gets RST'd at the INPUT chain.
+# Reported live by @deqw on #60 with `nc -vz <lan-ip> 8888` returning
+# RST while `nc -vz <lan-ip> 8091` succeeds, and matches Brecht's
+# ST20 email thread where `reachable8888=false` despite a healthy
+# agent bootstrap.
+#
+# Insert ACCEPT rules at position 1 of the INPUT chain so they win
+# over the Bose firmware's DROP/REJECT entries. The streborn-fw
+# marker lets us identify the rules later for clean removal.
+#
+# Two complications observed live on ST10 .66 v0.5.13 setup.log:
+#
+#   1. The filter table is NOT loaded yet at uptime ~22 s when our
+#      run.sh block first runs. Bose's `/etc/init.d/Firewalls/
+#      update_iptables` script (PID seen alive in the post-start
+#      snapshot) does the modprobe + chain build later in boot. Our
+#      first iptables -I INPUT calls returned non-zero and logged
+#      "FAILED (filter table missing?)" — Series-II boxes still work
+#      because Bose's eventual rule #3 accepts all LAN traffic, but
+#      Series-I boxes silently kept rejecting :8888 because we never
+#      retried.
+#
+#   2. Bose's Firewall script may re-build the chain later (init or
+#      periodic), flushing our rules. A one-shot install is therefore
+#      not enough.
+#
+# Solution: do the install in a background subshell that waits up to
+# 60 s for the filter table to appear, installs, then re-asserts the
+# rules every 30 s for the lifetime of run.sh. iptables -C is the
+# idempotency guard: it returns 0 if the rule already exists, so a
+# re-assert is cheap and writes nothing when nothing changed.
+INPUT_ACCEPT_PORTS="8888 9080 8081 8443"
+iptables_install_streborn_fw() {
+    rc_total=0
+    for port in $INPUT_ACCEPT_PORTS; do
+        if iptables -C INPUT -p tcp --dport "$port" \
+            -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+            continue  # rule already present, no-op
+        fi
+        if iptables -I INPUT 1 -p tcp --dport "$port" \
+            -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+            setup_log "iptables INPUT ACCEPT tcp/$port installed at uptime=$(uptime_s)s"
+        else
+            rc_total=$((rc_total + 1))
+        fi
+    done
+    return $rc_total
+}
+(
+    # Wait up to 60 s for Bose's Firewall init to load the filter
+    # table. Probe via `iptables -nL INPUT` which is the cheapest
+    # query that fails when the kernel module is absent or the table
+    # is not yet attached.
+    w=0
+    while [ $w -lt 60 ]; do
+        if iptables -nL INPUT >/dev/null 2>&1; then
+            setup_log "iptables filter table ready at uptime=$(uptime_s)s (wait=${w}s)"
+            break
+        fi
+        sleep 1
+        w=$((w + 1))
+    done
+    if [ $w -ge 60 ]; then
+        setup_log "iptables filter table never came up after 60 s, skipping INPUT ACCEPT"
+        exit 0
+    fi
+    # First install pass.
+    iptables_install_streborn_fw
+    # Watchdog: re-assert every 30 s in case Bose's Firewall init
+    # script flushes the chain after we set up. iptables -C inside
+    # iptables_install_streborn_fw makes this a no-op when our rules
+    # are still present. Runs for the lifetime of run.sh.
+    while true; do
+        sleep 30
+        iptables_install_streborn_fw
+    done
+) &
 
 log "bind mount on /etc/hosts active"
 log "starting agent version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
@@ -1061,6 +1432,13 @@ try_http_date_sync() {
 }
 
 start_agent() {
+    # log-level info, not warn. Earlier builds passed `warn` and the
+    # consequence was that the listener bring-up logs (`Webui Server
+    # startet`, `HTTP Server startet`, ...) were suppressed entirely.
+    # When :8888 silently failed to bind on a user's box we had no
+    # signal in the diagnostic bundle at all. info is loud enough to
+    # tell us which step reached its bind call without producing
+    # tick-rate spam (autopair/zeroconf are bounded).
     nohup "$BIN" \
         --presets "$PRESETS_NAND" \
         --region-file "$PERSIST/region.txt" \
@@ -1073,7 +1451,7 @@ start_agent() {
         --hosts /etc/hosts \
         --apply-hosts=true \
         --tls=true \
-        --log-level warn \
+        --log-level info \
         >> "$LOG" 2>&1 &
     AGENT_PID=$!
     echo "$AGENT_PID" > "$PIDFILE"
@@ -1082,6 +1460,227 @@ start_agent() {
 try_http_date_sync
 start_agent
 log "agent started with PID $AGENT_PID"
+
+# === Chipset-whitelist hijack via LD_PRELOAD on SoftwareUpdate ===
+#
+# On Series-I boxes (moduleType=scm, codenames taigan/spotty) the
+# BCO wifi chipset firmware drops inbound external TCP to STR's
+# :8888 / :9080 / :8081 at the chipset level, regardless of iptables
+# state. The only externally-reachable ports are those bound by
+# specific Bose binaries (libProtobufMessagingIPC magic). Verified
+# live 2026-05-28 on the Portable.
+#
+# Fix on Series-I: keep Bose's SoftwareUpdate binary as the listener
+# on :17008 (chipset stays happy) but launch it under LD_PRELOAD of
+# our str-shim.so, which hooks accept() and forwards every inbound
+# connection to 127.0.0.1:8888 (STR webui). SoftwareUpdate has no
+# remaining purpose post-cloud-shutdown so hijacking it costs
+# nothing functional.
+#
+# On Series-II boxes (moduleType=sm2, codenames rhino/maple/etc.)
+# the chipset is permissive — STR's own :8888 is directly reachable
+# from outside. The shim would hijack :17008 which is closed there
+# anyway. Hijack runs only when IS_SERIES_ONE is detected.
+#
+# Stick-to-NAND sync of the .so happens here so a stickless boot can
+# still re-hijack via the NAND copy. Watchdog re-asserts every 30 s
+# in case shepherdd respawns SoftwareUpdate without our env.
+sync_shim_to_nand() {
+    if [ -r "$STICK_SHIM" ]; then
+        if cp "$STICK_SHIM" "$NAND_SHIM.new" 2>/dev/null && \
+           mv "$NAND_SHIM.new" "$NAND_SHIM" 2>/dev/null; then
+            chmod 644 "$NAND_SHIM" 2>/dev/null
+            log "shim deployed: $NAND_SHIM ($(wc -c < "$NAND_SHIM") bytes)"
+        else
+            log "shim deploy: cp/mv failed, keeping previous NAND shim"
+            rm -f "$NAND_SHIM.new" 2>/dev/null
+        fi
+    elif [ ! -r "$NAND_SHIM" ]; then
+        log "shim deploy: stick has no $STICK_SHIM and NAND has no $NAND_SHIM, hijack disabled this boot"
+    fi
+}
+sync_shim_to_nand
+
+# === Bind-mount wrapper: hijack /opt/Bose/SoftwareUpdate non-destructively ===
+#
+# Previous attempt killed SoftwareUpdate AFTER Bose's init had
+# already registered it in the internal IPC mesh, then re-launched
+# under LD_PRELOAD. Result on Series-I: BoseApp /info returns 500
+# until full power-cycle reboot. The mesh has no graceful re-
+# registration path.
+#
+# Better: bind-mount a small wrapper script over Bose's binary path
+# BEFORE Bose's init runs SoftwareUpdate. Bose's init then exec's
+# /opt/Bose/SoftwareUpdate, the kernel sees `#!/bin/sh` on the
+# wrapper (RAM-overlaid via mount --bind), runs the wrapper which
+# in turn exec's the real binary with LD_PRELOAD set. The very
+# first SoftwareUpdate process in the mesh has the shim active,
+# accept() on :17008 is hijacked, no kill, no mesh disruption.
+#
+# Disable knob: `touch $PERSIST/state/shim-disable` to suppress the
+# bind-mount + late swap on the next boot.
+
+# Series-I detection. Live-verified pattern: moduleType=scm in
+# Bose's /info OR variant codename in {taigan, spotty} → Series-I,
+# chipset whitelist blocks STR's :8888 / :9080 / :8081 externally,
+# shim hijack on SoftwareUpdate :17008 is required. Everything else
+# (sm2, rhino, maple, ...) is Series-II with a permissive chipset
+# that lets external clients hit STR's own listeners directly; the
+# shim would only block :17008 on those without offering any new
+# reachability, so we skip it.
+#
+# The matching table is fed by user diagnostic bundles. Known
+# entries 2026-05-28:
+#   scm + taigan     → Portable          → Series-I → shim ON
+#   scm + spotty     → ST20 (rev A, #60) → Series-I → shim ON
+#   sm2 + (none/rhino/maple) → ST10/20/30 → Series-II → shim OFF
+detect_series_one() {
+    case "$VARIANT" in taigan|spotty) echo 1; return; esac
+    case "$HOSTID"  in taigan|spotty) echo 1; return; esac
+    MT=$(wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null \
+         | sed -n 's/.*<moduleType>\([^<]*\)<\/moduleType>.*/\1/p' \
+         | head -c 16)
+    case "$MT" in scm) echo 1; return; esac
+    echo ""
+}
+IS_SERIES_ONE=$(detect_series_one)
+setup_log "shim gate: variant='${VARIANT:-?}' host='${HOSTID:-?}' moduleType='$(wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | sed -n 's/.*<moduleType>\([^<]*\)<\/moduleType>.*/\1/p' | head -c 16)' is_series_one='${IS_SERIES_ONE:-0}'"
+
+# SoftwareUpdate-Hijack-Logik: returnt 0 wenn der lokale Listener-PID
+# auf :17008 wirklich von einem SoftwareUpdate-Prozess kommt UND
+# dieser Prozess unsere LD_PRELOAD-Env-Var bereits gesetzt hat.
+shim_already_active() {
+    SU_PID=$(pidof SoftwareUpdate 2>/dev/null | head -c 16 | awk '{print $1}')
+    [ -n "$SU_PID" ] || return 1
+    if grep -qa "LD_PRELOAD=.*str-shim.so" "/proc/$SU_PID/environ" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# hijack_softwareupdate: kill the running SoftwareUpdate (Bose-init's
+# instance, no LD_PRELOAD) and relaunch /opt/Bose/SoftwareUpdate with
+# our shim preloaded. The chipset whitelist tracks the binary content,
+# not the process identity — restarting with LD_PRELOAD keeps the
+# whitelist slot valid.
+hijack_softwareupdate() {
+    if [ ! -r "$NAND_SHIM" ]; then
+        return 1
+    fi
+    if [ ! -x /opt/Bose/SoftwareUpdate ]; then
+        setup_log "shim: /opt/Bose/SoftwareUpdate not present, cannot hijack"
+        return 1
+    fi
+    # Bose's instance has to be killed first; we hold the port via
+    # SO_REUSEADDR-less default so a race-free swap requires the old
+    # listener gone before we bind. start_agent has SO_REUSEADDR but
+    # SoftwareUpdate does not, hence the explicit wait.
+    killall SoftwareUpdate 2>/dev/null
+    # Wait up to 5 s for the port to free.
+    j=0
+    while [ $j -lt 5 ]; do
+        if ! (echo > /dev/tcp/127.0.0.1/17008) 2>/dev/null; then
+            break
+        fi
+        sleep 1
+        j=$((j + 1))
+    done
+    LD_PRELOAD="$NAND_SHIM" nohup /opt/Bose/SoftwareUpdate >/dev/null 2>&1 &
+    setup_log "shim: SoftwareUpdate relaunched under LD_PRELOAD=$NAND_SHIM (took ${j}s for port to free)"
+    return 0
+}
+
+# Shim activation is currently DISABLED — verified live 2026-05-28
+# evening on the Portable that the kill+restart of SoftwareUpdate
+# AFTER Bose's init phase breaks Bose's internal IPC mesh: /info
+# and /now_playing on :8090 return HTTP 500 from BoseApp, presets
+# do not trigger playback, the display gets stuck. Even reverting
+# to the original SoftwareUpdate without LD_PRELOAD does not heal
+# the mesh — only a full reboot does. So the kill-after-init
+# approach is too invasive.
+#
+# Next iteration will use a bind-mount wrapper: write
+# /mnt/nv/streborn/lib/SU-wrapper.sh that exec's the real binary
+# with LD_PRELOAD set, and mount --bind that wrapper over
+# /opt/Bose/SoftwareUpdate BEFORE Bose's init runs. Bose's init
+# then naturally launches SoftwareUpdate-with-shim as the first
+# instance, mesh registration stays intact. Tracked separately.
+#
+# In the meantime the shim .so stays deployed (sync_shim_to_nand
+# above) and ready, the discovery probe in desktop-app probeSTR
+# already tries both :8888 and :17008 in parallel, and STR remains
+# fully functional locally on the box — only external desktop-app
+# reachability on Series-I is degraded until the bind-mount
+# approach lands.
+if [ -n "$IS_SERIES_ONE" ]; then
+    setup_log "shim: Series-I box, hijack DISABLED this iteration (kill+restart breaks Bose IPC mesh — bind-mount approach pending)"
+else
+    setup_log "shim: Series-II box (chipset permissive), STR :8888 reachable directly, hijack skipped"
+fi
+
+# One-shot diagnostic snapshot 90 s after start_agent. By then any
+# fast respawn churn has settled and either :8888 is up or it never
+# will be. The snapshot dumps listening sockets and process tree into
+# setup.log (NAND-persisted, captured in full by the diagnostic),
+# replacing the SSH session we cannot run on a user's box.
+(
+    sleep 90
+    setup_log "=== one-shot post-start snapshot (uptime=$(uptime_s)s) ==="
+    if command -v ss >/dev/null 2>&1; then
+        setup_log "listening sockets (ss -ltnp):"
+        ss -ltnp 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    elif command -v netstat >/dev/null 2>&1; then
+        setup_log "listening sockets (netstat -ltnp):"
+        netstat -ltnp 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    else
+        setup_log "listening sockets: ss and netstat both unavailable"
+    fi
+    setup_log "process tree (ps -ef or busybox ps):"
+    if ps -ef >/dev/null 2>&1; then
+        ps -ef 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    else
+        ps 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    fi
+    if [ -f "$PIDFILE" ]; then
+        CUR_PID=$(cat "$PIDFILE" 2>/dev/null)
+        if [ -n "$CUR_PID" ] && [ -r "/proc/$CUR_PID/status" ]; then
+            setup_log "agent /proc/$CUR_PID/status (head):"
+            head -20 "/proc/$CUR_PID/status" 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+        else
+            setup_log "agent PID $CUR_PID not alive at snapshot time"
+        fi
+    fi
+    # iptables state. Critical for Series-I boxes (SMSC/SCM, no wlan0)
+    # where Bose firmware installs a restrictive INPUT chain that
+    # silently RSTs our :8888 listener even though it is correctly
+    # bound. Without this dump in the bundle the case looks identical
+    # to a broken bind (see issue #60 deqw 2026-05-28).
+    setup_log "iptables filter INPUT:"
+    iptables -L INPUT -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    setup_log "iptables nat PREROUTING:"
+    iptables -t nat -L PREROUTING -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    # Try a localhost loopback connect to :8888 vs the LAN-IP connect.
+    # When the two disagree (local ok, lan refused) the firewall is
+    # the reason — exactly the deqw / Brecht pattern.
+    LAN_IP=$(ip -4 addr show eth0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+    if [ -z "$LAN_IP" ]; then
+        LAN_IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+    fi
+    setup_log "self-connect probe: lan_ip=${LAN_IP:-unknown}"
+    if (echo > /dev/tcp/127.0.0.1/8888) >/dev/null 2>&1; then
+        setup_log "  127.0.0.1:8888 -> OK"
+    else
+        setup_log "  127.0.0.1:8888 -> refused"
+    fi
+    if [ -n "$LAN_IP" ]; then
+        if (echo > /dev/tcp/"$LAN_IP"/8888) >/dev/null 2>&1; then
+            setup_log "  $LAN_IP:8888 -> OK"
+        else
+            setup_log "  $LAN_IP:8888 -> refused (firewall? Series-I box?)"
+        fi
+    fi
+    setup_log "=== /one-shot post-start snapshot ==="
+) &
 
 # === Aggressive Boot-Race Watchdog (Phase A: t=0..120s) ===
 #
@@ -1103,19 +1702,42 @@ log "agent started with PID $AGENT_PID"
 # kein Flash-Write. Nach 120s übergibt es an den langsamen
 # 90s-Watchdog (Phase B).
 agent_port_bound() {
+    # ss is the cheapest probe but BusyBox often ships without it.
     if command -v ss >/dev/null 2>&1; then
-        ss -ltn 2>/dev/null | grep -q ':8888 '
-        return $?
+        if ss -ltn 2>/dev/null | grep -q ':8888 '; then
+            return 0
+        fi
+        return 1
     fi
     if command -v netstat >/dev/null 2>&1; then
-        netstat -ltn 2>/dev/null | grep -q ':8888 '
-        return $?
+        if netstat -ltn 2>/dev/null | grep -q ':8888 '; then
+            return 0
+        fi
+        return 1
     fi
-    # Last resort: try /dev/tcp self-probe. If shell does not
-    # support it, assume bound (we cannot tell — better not
-    # respawn-loop on a working agent).
+    # /dev/tcp self-probe — works on many busybox sh builds but not all.
     if (echo > /dev/tcp/127.0.0.1/8888) >/dev/null 2>&1; then
         return 0
+    fi
+    # nc as the third option. Some images ship nc, others don't.
+    if command -v nc >/dev/null 2>&1; then
+        if nc -z 127.0.0.1 8888 >/dev/null 2>&1; then
+            return 0
+        fi
+        return 1
+    fi
+    # Truly no probe available. Log once per minute (gated by the
+    # AGENT_PORT_PROBE_UNKNOWN_T marker so the watchdog loop does not
+    # spam the log) and treat as bound. Returning 1 here would cause
+    # the watchdog to restart-loop a working agent because it cannot
+    # confirm bind — strictly worse than a silent assumption. The new
+    # `phase: STR webui :8888 listening` line from background_phase_probe
+    # is the authoritative signal in the diagnostic bundle.
+    NOW=$(uptime_s)
+    LAST=${AGENT_PORT_PROBE_UNKNOWN_T:-0}
+    if [ $((NOW - LAST)) -gt 60 ]; then
+        setup_log "agent_port_bound: ss/netstat/dev-tcp/nc all unavailable, cannot confirm :8888 bind, assuming up"
+        AGENT_PORT_PROBE_UNKNOWN_T=$NOW
     fi
     return 0
 }

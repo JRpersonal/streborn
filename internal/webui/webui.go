@@ -123,7 +123,15 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 }
 
 // Run startet den Server und blockiert bis ctx abgebrochen wird.
+//
+// Every step that can fail or block emits a phase-marker log at WARN
+// level so that even on a `--log-level warn` deployment (or with the
+// diagnostic capturing only the tail of /tmp/streborn-agent.log) the
+// bundle shows which step the agent reached. Without these markers an
+// agent that bound :8090 but silently failed :8888 looked identical
+// in the bundle to one that crashed mid-init.
 func (s *Server) Run(ctx context.Context) error {
+	s.logger.Warn("webui phase: Run entered", "addr", s.addr)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -168,15 +176,17 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
+	s.logger.Warn("webui phase: mux ready, calling ListenTCP", "addr", s.addr)
 	// SO_REUSEADDR so the agent can rebind after a watchdog respawn
 	// while the previous listener is still in TIME_WAIT.
 	ln, err := netutil.ListenTCP(ctx, s.addr)
 	if err != nil {
+		s.logger.Error("webui phase: ListenTCP failed", "addr", s.addr, "err", err)
 		return fmt.Errorf("webui listen %s: %w", s.addr, err)
 	}
+	s.logger.Warn("webui phase: ListenTCP succeeded, starting Serve", "addr", s.addr, "local", ln.Addr().String())
 	errCh := make(chan error, 1)
 	go func() {
-		s.logger.Info("Webui Server startet", "addr", s.addr)
 		errCh <- srv.Serve(ln)
 	}()
 

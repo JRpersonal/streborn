@@ -1128,6 +1128,19 @@ async function checkBoxUpdate() {
   if (!state.currentBox || !state.appInfo) return;
   const banner = $('boxUpdateBanner');
   banner.classList.add('hidden');
+  // If an OTA is in flight on a DIFFERENT box, the update button on
+  // the currently-viewed box must be locked. We still need the
+  // banner to be visible so the user has a clear reason for the
+  // disabled state. The version-mismatch check runs first so we
+  // know whether to show the banner at all; the OTA gate then
+  // decides what to put inside it.
+  const otaElsewhere = state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== state.currentBox.host;
+  const renderUpdateBtn = () => {
+    if (otaElsewhere) {
+      return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
+    }
+    return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+  };
   try {
     const v = await BoxAgentVersion(state.currentBox.host, state.currentBox.port);
     const boxVer = v.version || t('common.unknown');
@@ -1150,10 +1163,10 @@ async function checkBoxUpdate() {
         <b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
         <small>${escapeHtml(t('update.speakerAppLine', { box: boxLabel, app: appLabel }))}</small>
       </div>
-      <button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>
+      ${renderUpdateBtn()}
     `;
     banner.classList.remove('hidden');
-    $('boxUpdateBtn').onclick = doBoxUpdate;
+    if (!otaElsewhere) $('boxUpdateBtn').onclick = doBoxUpdate;
   } catch {
     if (state.currentBox.version && state.currentBox.version !== state.appInfo.version) {
       banner.innerHTML = `
@@ -1161,28 +1174,50 @@ async function checkBoxUpdate() {
           <b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
           <small>${escapeHtml(t('update.speakerRunningOld', { boxVersion: state.currentBox.version, appVersion: state.appInfo.version }))}</small>
         </div>
-        <button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>
+        ${renderUpdateBtn()}
       `;
       banner.classList.remove('hidden');
-      $('boxUpdateBtn').onclick = doBoxUpdate;
+      if (!otaElsewhere) $('boxUpdateBtn').onclick = doBoxUpdate;
     }
   }
 }
 
 async function doBoxUpdate() {
   if (!state.currentBox) return;
+  // Hard-lock: while an OTA is in flight on ANY box, refuse to start
+  // a second one. The UI also renders the button disabled in that
+  // case via checkBoxUpdate(), but the redundant check here guards
+  // against races where the user clicked through a stale render.
+  if (state.otaInProgress) return;
   // Drive both update buttons together (banner up top + stick info section)
   const buttons = () => ['boxUpdateBtn', 'stickInfoUpdateBtn'].map(id => $(id)).filter(Boolean);
-  const setStatus = (text) => buttons().forEach(b => { b.textContent = text; b.disabled = true; });
-  const reset = () => buttons().forEach(b => { b.disabled = false; b.textContent = t('update.refreshBtn'); });
-  setStatus(t('update.uploading'));
+  // Mutate the DOM buttons only when the user is still LOOKING at
+  // the box being updated. If they switched to another box,
+  // checkBoxUpdate() has rendered a fresh button for that other
+  // box — overwriting it with our progress text would lie about
+  // what the other box is doing. The state.otaTargetHost guard
+  // below in checkBoxUpdate() takes care of rendering the right
+  // "Update running on <name>" label there.
+  const setStatus = (text) => {
+    if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
+    buttons().forEach(b => { b.textContent = text; b.disabled = true; });
+  };
+  const reset = () => {
+    if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
+    buttons().forEach(b => { b.disabled = false; b.textContent = t('update.refreshBtn'); });
+  };
+  // Mark this box as the OTA target AND flip the global in-flight
+  // flag BEFORE first setStatus() so checkBoxUpdate() and the
+  // setStatus guard both see a consistent (target, in-flight)
+  // pair at every point in this flow. Reset together in finally{}.
+  state.otaTargetHost = state.currentBox.host;
+  state.otaTargetName = state.currentBox.friendlyName || state.currentBox.name || state.currentBox.host;
   // Suppress the SSH "remove stick and reboot" banner for the whole
   // OTA window. The agent restarts mid-OTA and SSH is briefly open
   // during that restart; the banner's "Reboot now" button would
   // interrupt the agent exec and may leave the box half-flashed.
-  // The flag is reset in finally{} below so it never sticks if
-  // something explodes mid-update.
   state.otaInProgress = true;
+  setStatus(t('update.uploading'));
   checkSshBanner();
   const targetBox = state.currentBox;
   const appBuild  = state.appInfo && state.appInfo.build;
@@ -1236,7 +1271,13 @@ async function doBoxUpdate() {
     // Always clear the OTA-in-flight gate so the SSH banner can
     // come back if it still applies, even if we threw mid-poll.
     state.otaInProgress = false;
+    state.otaTargetHost = null;
+    state.otaTargetName = null;
     checkSshBanner();
+    // Force a re-render of the current view's update button so any
+    // other-box "Update running on …" placeholder is replaced with
+    // the regular Update button immediately.
+    checkBoxUpdate();
   }
 }
 
@@ -2424,10 +2465,18 @@ function renderBoxSettings(s, box) {
         softwareLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.swCurrent'))}</span> <span class="muted small">${escapeHtml(boxVer)}${buildSuffix}</span>`;
       } else if (sameVer && !sameBuild) {
         softwareLine = `<span class="fw-pending">${escapeHtml(t('settingsView.swUpdateAvail'))}</span> <span class="muted small">${escapeHtml(boxBuild)} &rarr; ${escapeHtml(appBuild)}</span>`;
-        softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+        if (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host) {
+          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
+        } else {
+          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+        }
       } else {
         softwareLine = `<span class="fw-old">${escapeHtml(t('settingsView.swOutdated'))}</span> <span class="muted small">${escapeHtml(boxVer)} &rarr; ${escapeHtml(appVer)}</span>`;
-        softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+        if (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host) {
+          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
+        } else {
+          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+        }
       }
     } catch {}
 

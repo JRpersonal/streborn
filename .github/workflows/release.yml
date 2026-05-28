@@ -197,10 +197,46 @@ jobs:
           sha256sum "streborn-${{ matrix.suffix }}" > "streborn-${{ matrix.suffix }}.sha256"
           cat "streborn-${{ matrix.suffix }}.sha256"
 
+      # Build the LD_PRELOAD shim that hijacks Bose's SoftwareUpdate
+      # daemon on :17008 and forwards inbound connections to the STR
+      # webui on 127.0.0.1:8888. Only the armv7l matrix entry runs
+      # this step — the shim is loaded by the Bose binary on the
+      # speaker and not used on any host architecture. Targets
+      # glibc-2.15 explicitly because Bose firmware ships 2.15;
+      # newer default targets pull in GLIBC_2.34 and refuse to load.
+      # See usb-stick/shim/README.md for the chipset-whitelist story.
+      - name: Setup zig (for shim cross-compile)
+        if: matrix.suffix == 'armv7l'
+        # mlugg/setup-zig v2.0.5 pinned by tag.
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Build shim
+        if: matrix.suffix == 'armv7l'
+        run: |
+          zig cc -target arm-linux-gnueabihf.2.15 -shared -fPIC -O2 \
+                 -ldl -lpthread \
+                 -o out/str-shim.so usb-stick/shim/shim.c
+          ls -la out/str-shim.so
+          sha256sum out/str-shim.so > out/str-shim.so.sha256
+          # Sanity check the resulting ELF: must be ARM EABI shared object.
+          # `file` is not on the Go runner image by default; head the magic.
+          if [ "$(head -c 4 out/str-shim.so | xxd -p)" != "7f454c46" ]; then
+            echo "::error::shim build produced something that is not ELF"
+            exit 1
+          fi
+
       - name: Sigstore attestation
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
         with:
           subject-path: out/streborn-${{ matrix.suffix }}
+
+      - name: Sigstore attestation (shim)
+        if: matrix.suffix == 'armv7l'
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
+        with:
+          subject-path: out/str-shim.so
 
       - name: Upload artifact
         # actions/upload-artifact v4 pinned to SHA
@@ -210,6 +246,17 @@ jobs:
           path: |
             out/streborn-${{ matrix.suffix }}
             out/streborn-${{ matrix.suffix }}.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload shim artifact
+        if: matrix.suffix == 'armv7l'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: shim-armv7l
+          path: |
+            out/str-shim.so
+            out/str-shim.so.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -254,11 +301,18 @@ jobs:
           name: agent-armv7l
           path: agent-download
 
-      - name: Embed ARM agent
+      - name: Download shim
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: shim-armv7l
+          path: shim-download
+
+      - name: Embed ARM agent + shim
         shell: bash
         run: |
           cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
-          ls -la desktop-app/agentbin/
+          cp shim-download/str-shim.so usb-stick/str-shim.so
+          ls -la desktop-app/agentbin/ usb-stick/str-shim.so
 
       # Build the winformat helper the desktop app embeds via
       # go:embed. Without this step the empty stub in
@@ -570,7 +624,7 @@ jobs:
           # final binaries — replace with one SHA256SUMS in the
           # standard format used by the verification instructions.
           rm -f ./*.sha256
-          sha256sum streborn-* STR-* > SHA256SUMS
+          sha256sum streborn-* STR-* str-shim.so > SHA256SUMS
           cat SHA256SUMS
 
       - name: Generate manifest.json
@@ -723,6 +777,7 @@ jobs:
             dist/streborn-armv7l
             dist/streborn-arm64
             dist/streborn-amd64
+            dist/str-shim.so
             dist/SHA256SUMS
             dist/manifest.json
           fail_on_unmatched_files: true
