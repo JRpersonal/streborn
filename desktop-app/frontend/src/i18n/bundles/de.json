@@ -164,6 +164,7 @@
   "update.doneToast": "Update fertig.",
   "update.tookLongerToast": "Lautsprecher braucht länger als erwartet. Prüfe Strom / Netzwerk.",
   "update.failed": "Update fehlgeschlagen: {{err}}\n\nFalls der Lautsprecher danach nicht mehr antwortet, trenne kurz den Strom und stecke ihn wieder an.",
+  "update.otherBoxRunning": "Update läuft auf {{name}} ...",
 
   "settingsView.title": "Lautsprecher-Einstellungen",
   "settingsView.forSpeaker": "Einstellungen für:",
