@@ -221,21 +221,27 @@ type sshFallback struct {
 func captureBoxSnapshot(host string) boxSnapshot {
 	s := boxSnapshot{Host: host}
 	s.Reachable8090 = portOpen(host, 8090, 1200)
-	s.Reachable8888 = portOpen(host, 8888, 1200)
+	// :17008 is STR's external entry point via the SoftwareUpdate
+	// shim hijack — the chipset-whitelisted slot reachable on every
+	// SoundTouch variant. Reachable8888 stays in the field name for
+	// schema continuity with existing diagnostic readers, but the
+	// probe now targets the hijack port. STR's actual :8888 listener
+	// is loopback-only externally on all firmwares we have tested.
+	s.Reachable8888 = portOpen(host, 17008, 1200)
 	s.ReachableSSH = portOpen(host, 22, 1200)
 	if s.Reachable8090 {
 		s.BoseInfo = httpGetText(fmt.Sprintf("http://%s:8090/info", host), 4096)
 	}
 	if s.Reachable8888 {
-		s.STRStatus = httpGetText(fmt.Sprintf("http://%s:8888/api/status", host), 4096)
-		raw := httpGetText(fmt.Sprintf("http://%s:8888/api/agent/version", host), 1024)
+		s.STRStatus = httpGetText(fmt.Sprintf("http://%s:17008/api/status", host), 4096)
+		raw := httpGetText(fmt.Sprintf("http://%s:17008/api/agent/version", host), 1024)
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)
 		}
 		// /api/debug/state holds the boot-race trace (setup.log,
 		// boot.log, agent_log_tail). Single most useful payload for
 		// "agent came up but is misbehaving" diagnostics.
-		debugRaw := httpGetText(fmt.Sprintf("http://%s:8888/api/debug/state", host), 256*1024)
+		debugRaw := httpGetText(fmt.Sprintf("http://%s:17008/api/debug/state", host), 256*1024)
 		if debugRaw != "" {
 			var ds map[string]any
 			if err := json.Unmarshal([]byte(debugRaw), &ds); err == nil {

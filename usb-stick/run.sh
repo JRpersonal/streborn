@@ -49,7 +49,19 @@ CACHED_BIN="$PERSIST/bin/streborn-armv7l"
 STICK_VER_FILE="$STICK/version.txt"
 NAND_VER_FILE="$PERSIST/version.txt"
 
-mkdir -p "$PERSIST/bin" "$PERSIST/logs" "$PERSIST/state" 2>/dev/null
+# LD_PRELOAD shim for chipset-whitelist hijack of Bose's SoftwareUpdate
+# daemon. The shim is a tiny .so that hooks accept() on port 17008 and
+# proxies incoming connections to STR webui on 127.0.0.1:8888. Without
+# this hijack STR's :8888 listener is unreachable from outside on every
+# SoundTouch variant we have tested — the BCO wifi chipset firmware
+# whitelists only listeners bound by binaries linked against Bose's
+# libProtobufMessagingIPC / libIPC / libSoundTouchInternal libraries.
+# See usb-stick/shim/README.md for the full story and
+# project_taigan_chipset_whitelist memory.
+STICK_SHIM="$STICK/str-shim.so"
+NAND_SHIM="$PERSIST/lib/str-shim.so"
+
+mkdir -p "$PERSIST/bin" "$PERSIST/lib" "$PERSIST/logs" "$PERSIST/state" 2>/dev/null
 
 log() {
     echo "$(date): $*" >> "$LOG"
@@ -1283,6 +1295,119 @@ start_agent() {
 try_http_date_sync
 start_agent
 log "agent started with PID $AGENT_PID"
+
+# === Chipset-whitelist hijack via LD_PRELOAD on SoftwareUpdate ===
+#
+# The BCO wifi chipset firmware on every SoundTouch model blocks
+# inbound external TCP to listeners not bound by a Bose binary
+# (libProtobufMessagingIPC / libIPC magic). STR's :8888 webui is
+# therefore unreachable from outside on default Bose firmware. Fix:
+# replace the running SoftwareUpdate daemon (cloud-only, dead post-
+# shutdown) with the same binary launched under LD_PRELOAD of our
+# str-shim.so, which hooks accept() on :17008 and forwards every
+# inbound connection to 127.0.0.1:8888.
+#
+# Deployed UNIVERSALLY (not taigan-only) because:
+#   - SoundTouch Portable proved chipset whitelist behavior live 2026-05-28
+#   - SoftwareUpdate has no remaining purpose post-cloud-shutdown
+#   - Discovery becomes single-port (:17008) across every variant
+#
+# Stick-to-NAND sync of the .so happens here so a stickless boot can
+# still re-hijack via the NAND copy. Watchdog re-asserts every 30 s
+# in case shepherdd respawns SoftwareUpdate without our env.
+sync_shim_to_nand() {
+    if [ -r "$STICK_SHIM" ]; then
+        if cp "$STICK_SHIM" "$NAND_SHIM.new" 2>/dev/null && \
+           mv "$NAND_SHIM.new" "$NAND_SHIM" 2>/dev/null; then
+            chmod 644 "$NAND_SHIM" 2>/dev/null
+            log "shim deployed: $NAND_SHIM ($(wc -c < "$NAND_SHIM") bytes)"
+        else
+            log "shim deploy: cp/mv failed, keeping previous NAND shim"
+            rm -f "$NAND_SHIM.new" 2>/dev/null
+        fi
+    elif [ ! -r "$NAND_SHIM" ]; then
+        log "shim deploy: stick has no $STICK_SHIM and NAND has no $NAND_SHIM, hijack disabled this boot"
+    fi
+}
+sync_shim_to_nand
+
+# SoftwareUpdate-Hijack-Logik: returnt 0 wenn der lokale Listener-PID
+# auf :17008 wirklich von einem SoftwareUpdate-Prozess kommt UND
+# dieser Prozess unsere LD_PRELOAD-Env-Var bereits gesetzt hat.
+shim_already_active() {
+    SU_PID=$(pidof SoftwareUpdate 2>/dev/null | head -c 16 | awk '{print $1}')
+    [ -n "$SU_PID" ] || return 1
+    if grep -qa "LD_PRELOAD=.*str-shim.so" "/proc/$SU_PID/environ" 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# hijack_softwareupdate: kill the running SoftwareUpdate (Bose-init's
+# instance, no LD_PRELOAD) and relaunch /opt/Bose/SoftwareUpdate with
+# our shim preloaded. The chipset whitelist tracks the binary content,
+# not the process identity — restarting with LD_PRELOAD keeps the
+# whitelist slot valid.
+hijack_softwareupdate() {
+    if [ ! -r "$NAND_SHIM" ]; then
+        return 1
+    fi
+    if [ ! -x /opt/Bose/SoftwareUpdate ]; then
+        setup_log "shim: /opt/Bose/SoftwareUpdate not present, cannot hijack"
+        return 1
+    fi
+    # Bose's instance has to be killed first; we hold the port via
+    # SO_REUSEADDR-less default so a race-free swap requires the old
+    # listener gone before we bind. start_agent has SO_REUSEADDR but
+    # SoftwareUpdate does not, hence the explicit wait.
+    killall SoftwareUpdate 2>/dev/null
+    # Wait up to 5 s for the port to free.
+    j=0
+    while [ $j -lt 5 ]; do
+        if ! (echo > /dev/tcp/127.0.0.1/17008) 2>/dev/null; then
+            break
+        fi
+        sleep 1
+        j=$((j + 1))
+    done
+    LD_PRELOAD="$NAND_SHIM" nohup /opt/Bose/SoftwareUpdate >/dev/null 2>&1 &
+    setup_log "shim: SoftwareUpdate relaunched under LD_PRELOAD=$NAND_SHIM (took ${j}s for port to free)"
+    return 0
+}
+
+# Background runner: wait until SoftwareUpdate is up, hijack it, then
+# loop watchdog every 30 s to re-hijack if shepherdd respawned.
+(
+    # Wait up to 90 s for the initial SoftwareUpdate to come alive.
+    # On a cold boot Bose's stack typically brings it up at uptime
+    # ~40 s after init finishes.
+    w=0
+    while [ $w -lt 90 ]; do
+        if pidof SoftwareUpdate >/dev/null 2>&1; then
+            setup_log "shim: SoftwareUpdate first seen at uptime=$(uptime_s)s (wait=${w}s)"
+            break
+        fi
+        sleep 1
+        w=$((w + 1))
+    done
+    if [ $w -ge 90 ]; then
+        setup_log "shim: SoftwareUpdate never appeared in 90 s, hijack skipped (variant without SU?)"
+        exit 0
+    fi
+    hijack_softwareupdate
+
+    # Watchdog
+    while true; do
+        sleep 30
+        if shim_already_active; then
+            continue
+        fi
+        # SoftwareUpdate is either dead or running without our env.
+        # Re-hijack either way.
+        setup_log "shim watchdog: SU running without LD_PRELOAD at uptime=$(uptime_s)s, re-hijacking"
+        hijack_softwareupdate
+    done
+) &
 
 # One-shot diagnostic snapshot 90 s after start_agent. By then any
 # fast respawn churn has settled and either :8888 is up or it never

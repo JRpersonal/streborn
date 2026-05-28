@@ -8,7 +8,7 @@ import (
 	"io/fs"
 )
 
-//go:embed *.sh *.local *.json *.txt
+//go:embed *.sh *.local *.json *.txt *.so
 var raw embed.FS
 
 // Files liefert alle eingebetteten Stick Template Files als io/fs.FS.

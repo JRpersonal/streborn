@@ -415,20 +415,29 @@ done:
 	return out
 }
 
-// probeSTR checks ip:8888/api/agent/version for the STR agent JSON
-// envelope. On hit returns a BoxInfo with Kind="str" so the upsert
-// dedupe in DiscoverBoxes treats it the same as an mDNS-announced
-// STR speaker. Tight timeout: 1.2s per host so a /24 sweep stays
-// under ~10s wall time across 32-way fan-out.
+// probeSTR checks ip:17008/api/agent/version for the STR agent JSON
+// envelope. Port 17008 is the chipset-whitelisted SoftwareUpdate slot
+// that STR hijacks via an LD_PRELOAD accept() shim — the only port
+// reachable from outside on every SoundTouch variant we have tested
+// (Portable/taigan verified, ST10/20/30 same chipset architecture).
+// On hit returns a BoxInfo with Kind="str" so the upsert dedupe in
+// DiscoverBoxes treats it the same as an mDNS-announced STR speaker.
+// Tight timeout: 1.2s per host so a /24 sweep stays under ~10s wall
+// time across 32-way fan-out.
+//
+// :8888 is no longer probed externally because (a) the chipset
+// firmware drops :8888 SYNs on Series-I boxes (Brecht, deqw, the
+// Portable), (b) on Series-II it works but adds a second probe pass
+// for no gain over the now-universal :17008. STR still binds :8888
+// locally for the marge stub and self-probes.
 //
 // On hit we also pull /info from :8090 on the same box — the Bose
 // firmware keeps answering that endpoint even after STR is installed,
 // and without it the box list shows "str-192.168.x.x" with no
 // FriendlyName/DeviceID/Model, which the frontend renders as if the
-// box were unprovisioned. Observed live 2026-05-24: .66 appeared as
-// "str-192.168.178.66" with no human name until enrichment landed.
+// box were unprovisioned.
 func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
-	url := fmt.Sprintf("http://%s:8888/api/agent/version", ip)
+	url := fmt.Sprintf("http://%s:17008/api/agent/version", ip)
 	body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 1024)
 	if !ok {
 		return BoxInfo{}, false
@@ -445,7 +454,7 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 	box := BoxInfo{
 		Name:    "str-" + ip,
 		Host:    ip,
-		Port:    8888,
+		Port:    17008,
 		Version: version,
 		Build:   build,
 		Kind:    "str",
@@ -662,8 +671,12 @@ type Preset struct {
 }
 
 func (a *App) baseURL(host string, port int) string {
+	// Default to the chipset-whitelisted hijack port. Classic frontend
+	// callers that pre-discovery hard-coded 8888 still work because
+	// they pass port=8888 explicitly; this fallback only kicks in for
+	// freshly-resolved boxes where port was left zero.
 	if port == 0 {
-		port = 8888
+		port = 17008
 	}
 	return fmt.Sprintf("http://%s:%d", host, port)
 }
