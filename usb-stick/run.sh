@@ -641,6 +641,43 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     BOSE_API="http://127.0.0.1:8090"
     WINNER="none"
 
+    # ---- M0a: Pre-flight bypass — already on wifi? ----
+    # If the box already has a real STA lease (e.g. user provisioned
+    # via Bose iOS app before this STR install, or a previous STR
+    # boot's profile is still in NetManager's DB and Bose just
+    # associated to it), DO NOT run any of the M1..M6 provisioning
+    # methods. M2's `network wifi profiles clear` would wipe whatever
+    # is in the DB; M1's HTTP /addWirelessProfile would race the
+    # in-flight associate; M3 would overwrite /etc/wpa_supplicant.conf;
+    # M5/M6 would tear down the very network we already have. All of
+    # those are destructive when the user-visible network already
+    # works — observed live on taigan/Portable 2026-05-28 where
+    # STR's profiles clear wiped JJ3 right after Bose iOS app
+    # provisioned it, and applies equally to ST10/20/30 if the user
+    # re-installs STR on top of a working box.
+    #
+    # Bose's stack is idempotent on STA lease (it does not unjoin and
+    # rejoin every boot), so if a lease is present we know the box
+    # is fine without us. STR's REST API, mDNS announce, marge stub,
+    # autopair etc. all run downstream of this block, unaffected.
+    if PRE_LEASE=$(current_sta_lease 2>/dev/null) && [ -n "$PRE_LEASE" ]; then
+        setup_log "M0a: pre-flight detected real STA lease ($PRE_LEASE) — skipping all WLAN provisioning, leaving Bose state intact"
+        setup_log "Approach SUMMARY: winner=already-on-wifi elapsed=0s iface=${PRE_LEASE%%|*} ip=${PRE_LEASE#*|} bco=${BCO_MODE:-0} taigan=${IS_TAIGAN:-0}"
+        setup_log "=== WLAN provisioning end (skipped) ==="
+        # Persist the credentials anyway — they may differ from what's
+        # currently in NetManager's DB, and a future Bose factory
+        # reset that wipes that DB should still let us replay from
+        # NAND on the next boot.
+        { printf 'SSID=%s\n' "$SSID"
+          printf 'PASS=%s\n' "$PASS"
+        } > "$WLAN_CREDS_NAND.new" 2>/dev/null
+        if [ -s "$WLAN_CREDS_NAND.new" ]; then
+            mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
+            chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
+        fi
+        WINNER="M0a-prelease"
+    fi
+
     # Wait for BoseApp HTTP server up to 30s. M1 needs it; M2..M6
     # do not and run regardless. If BoseApp never comes up we still
     # try TAP CLI / wpa_supplicant / wpa_cli paths.
