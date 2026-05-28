@@ -383,8 +383,18 @@ func run() error {
 				Certificates: []tls.Certificate{cert},
 				MinVersion:   tls.VersionTLS12,
 			}
+			// Compose marge handler with the STR webui handler so the
+			// :443 TLS listener also serves /api/*, /healthz, /, and
+			// the streamproxy paths. On taigan / Portable the Bose
+			// wifi-driver-level filter blocks :8888 inbound on the
+			// home-wifi side even though iptables INPUT is empty —
+			// the only externally-reachable port that STR owns is
+			// :443. By mounting webui under the same TLS listener
+			// the desktop app can talk to taigan boxes over
+			// https://host:443/api/* without any new ports.
+			tlsHandler := composeMargeWithWebui(margeSrv.Handler(), webuiSrv.Handler(), logger.With("comp", "tls-mux"))
 			startHTTPS(ctx, &wg, errs, "marge-tls", *margeTLSAddr,
-				margeSrv.Handler(), tlsConfig, logger)
+				tlsHandler, tlsConfig, logger)
 		}()
 	}
 
@@ -1038,6 +1048,38 @@ func openNandLog() *os.File {
 		return nil
 	}
 	return f
+}
+
+// composeMargeWithWebui returns an http.Handler that serves the STR
+// webui routes (`/`, `/healthz`, `/api/*`, `/stream/*`) and falls
+// through to the marge handler for everything else (Bose's
+// `/streaming/*`, `/bmx/*`, and the marge catchall).
+//
+// Why this matters: on taigan/Portable the home-wifi side blocks
+// :8888 at the Bose wifi-chipset filter regardless of iptables, so
+// the only externally-reachable STR-owned port is :443 (marge-tls).
+// Mounting the webui under the same listener gives the desktop app
+// a working REST path on those boxes. On ST10/ST20/ST30 the webui
+// on :8888 still works as before; serving the same routes on :443
+// is harmless extra reachability.
+//
+// We pick the routing by URL path prefix rather than method or
+// content-type because marge has a wide catchall on `/` that would
+// otherwise swallow `/api/agent/version` and the like. The check is
+// O(1) — a few cheap string prefix matches per request.
+func composeMargeWithWebui(margeHandler, webuiHandler http.Handler, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		switch {
+		case strings.HasPrefix(p, "/api/"),
+			strings.HasPrefix(p, "/stream/"),
+			p == "/",
+			p == "/healthz":
+			webuiHandler.ServeHTTP(w, r)
+		default:
+			margeHandler.ServeHTTP(w, r)
+		}
+	})
 }
 
 // selfProbeTarget names a TCP endpoint the agent should be able to
