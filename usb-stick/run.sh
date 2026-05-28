@@ -998,20 +998,75 @@ fi
 #
 # Insert ACCEPT rules at position 1 of the INPUT chain so they win
 # over the Bose firmware's DROP/REJECT entries. The streborn-fw
-# marker lets us identify the rules later for clean removal. On
-# Series-II boxes without that INPUT chain the rules are harmless.
-# Failure is non-fatal: we log it and continue; the box may still
-# work on a permissive firmware build.
-if command -v iptables >/dev/null 2>&1; then
-    for port in 8888 9080 8081 8443; do
+# marker lets us identify the rules later for clean removal.
+#
+# Two complications observed live on ST10 .66 v0.5.13 setup.log:
+#
+#   1. The filter table is NOT loaded yet at uptime ~22 s when our
+#      run.sh block first runs. Bose's `/etc/init.d/Firewalls/
+#      update_iptables` script (PID seen alive in the post-start
+#      snapshot) does the modprobe + chain build later in boot. Our
+#      first iptables -I INPUT calls returned non-zero and logged
+#      "FAILED (filter table missing?)" — Series-II boxes still work
+#      because Bose's eventual rule #3 accepts all LAN traffic, but
+#      Series-I boxes silently kept rejecting :8888 because we never
+#      retried.
+#
+#   2. Bose's Firewall script may re-build the chain later (init or
+#      periodic), flushing our rules. A one-shot install is therefore
+#      not enough.
+#
+# Solution: do the install in a background subshell that waits up to
+# 60 s for the filter table to appear, installs, then re-asserts the
+# rules every 30 s for the lifetime of run.sh. iptables -C is the
+# idempotency guard: it returns 0 if the rule already exists, so a
+# re-assert is cheap and writes nothing when nothing changed.
+INPUT_ACCEPT_PORTS="8888 9080 8081 8443"
+iptables_install_streborn_fw() {
+    rc_total=0
+    for port in $INPUT_ACCEPT_PORTS; do
+        if iptables -C INPUT -p tcp --dport "$port" \
+            -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+            continue  # rule already present, no-op
+        fi
         if iptables -I INPUT 1 -p tcp --dport "$port" \
             -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
-            setup_log "iptables INPUT ACCEPT tcp/$port installed"
+            setup_log "iptables INPUT ACCEPT tcp/$port installed at uptime=$(uptime_s)s"
         else
-            setup_log "iptables INPUT ACCEPT tcp/$port FAILED (filter table missing?)"
+            rc_total=$((rc_total + 1))
         fi
     done
-fi
+    return $rc_total
+}
+(
+    # Wait up to 60 s for Bose's Firewall init to load the filter
+    # table. Probe via `iptables -nL INPUT` which is the cheapest
+    # query that fails when the kernel module is absent or the table
+    # is not yet attached.
+    w=0
+    while [ $w -lt 60 ]; do
+        if iptables -nL INPUT >/dev/null 2>&1; then
+            setup_log "iptables filter table ready at uptime=$(uptime_s)s (wait=${w}s)"
+            break
+        fi
+        sleep 1
+        w=$((w + 1))
+    done
+    if [ $w -ge 60 ]; then
+        setup_log "iptables filter table never came up after 60 s, skipping INPUT ACCEPT"
+        exit 0
+    fi
+    # First install pass.
+    iptables_install_streborn_fw
+    # Watchdog: re-assert every 30 s in case Bose's Firewall init
+    # script flushes the chain after we set up. iptables -C inside
+    # iptables_install_streborn_fw makes this a no-op when our rules
+    # are still present. Runs for the lifetime of run.sh.
+    while true; do
+        sleep 30
+        iptables_install_streborn_fw
+    done
+) &
 
 log "bind mount on /etc/hosts active"
 log "starting agent version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
