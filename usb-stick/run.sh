@@ -1406,43 +1406,30 @@ hijack_softwareupdate() {
     return 0
 }
 
-# Background runner: wait until SoftwareUpdate is up, hijack it, then
-# loop watchdog every 30 s to re-hijack if shepherdd respawned. On
-# Series-II boxes the chipset whitelist is permissive and STR's :8888
-# is directly reachable externally, so the hijack is unnecessary and
-# is skipped to avoid breaking any localhost callers of SoftwareUpdate.
+# Shim activation is currently DISABLED — verified live 2026-05-28
+# evening on the Portable that the kill+restart of SoftwareUpdate
+# AFTER Bose's init phase breaks Bose's internal IPC mesh: /info
+# and /now_playing on :8090 return HTTP 500 from BoseApp, presets
+# do not trigger playback, the display gets stuck. Even reverting
+# to the original SoftwareUpdate without LD_PRELOAD does not heal
+# the mesh — only a full reboot does. So the kill-after-init
+# approach is too invasive.
+#
+# Next iteration will use a bind-mount wrapper: write
+# /mnt/nv/streborn/lib/SU-wrapper.sh that exec's the real binary
+# with LD_PRELOAD set, and mount --bind that wrapper over
+# /opt/Bose/SoftwareUpdate BEFORE Bose's init runs. Bose's init
+# then naturally launches SoftwareUpdate-with-shim as the first
+# instance, mesh registration stays intact. Tracked separately.
+#
+# In the meantime the shim .so stays deployed (sync_shim_to_nand
+# above) and ready, the discovery probe in desktop-app probeSTR
+# already tries both :8888 and :17008 in parallel, and STR remains
+# fully functional locally on the box — only external desktop-app
+# reachability on Series-I is degraded until the bind-mount
+# approach lands.
 if [ -n "$IS_SERIES_ONE" ]; then
-    (
-        # Wait up to 90 s for the initial SoftwareUpdate to come alive.
-        # On a cold boot Bose's stack typically brings it up at uptime
-        # ~40 s after init finishes.
-        w=0
-        while [ $w -lt 90 ]; do
-            if pidof SoftwareUpdate >/dev/null 2>&1; then
-                setup_log "shim: SoftwareUpdate first seen at uptime=$(uptime_s)s (wait=${w}s)"
-                break
-            fi
-            sleep 1
-            w=$((w + 1))
-        done
-        if [ $w -ge 90 ]; then
-            setup_log "shim: SoftwareUpdate never appeared in 90 s, hijack skipped (variant without SU?)"
-            exit 0
-        fi
-        hijack_softwareupdate
-
-        # Watchdog
-        while true; do
-            sleep 30
-            if shim_already_active; then
-                continue
-            fi
-            # SoftwareUpdate is either dead or running without our env.
-            # Re-hijack either way.
-            setup_log "shim watchdog: SU running without LD_PRELOAD at uptime=$(uptime_s)s, re-hijacking"
-            hijack_softwareupdate
-        done
-    ) &
+    setup_log "shim: Series-I box, hijack DISABLED this iteration (kill+restart breaks Bose IPC mesh — bind-mount approach pending)"
 else
     setup_log "shim: Series-II box (chipset permissive), STR :8888 reachable directly, hijack skipped"
 fi
