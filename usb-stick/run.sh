@@ -984,6 +984,35 @@ else
     log "iptables NAT unavailable, marge will listen directly on :443"
 fi
 
+# === iptables INPUT ACCEPT for our listener ports ===
+#
+# Series-I SoundTouch (SMSC/SCM components, no wlan0 interface) ships
+# a Bose stock firewall that REJECTs every TCP port outside a small
+# whitelist (8080/8090/8091/80/443). STR's :8888 / :9080 / :8081 /
+# :8443 listeners bind fine and `netstat -ltn` shows LISTEN, but every
+# inbound SYN from a desktop client gets RST'd at the INPUT chain.
+# Reported live by @deqw on #60 with `nc -vz <lan-ip> 8888` returning
+# RST while `nc -vz <lan-ip> 8091` succeeds, and matches Brecht's
+# ST20 email thread where `reachable8888=false` despite a healthy
+# agent bootstrap.
+#
+# Insert ACCEPT rules at position 1 of the INPUT chain so they win
+# over the Bose firmware's DROP/REJECT entries. The streborn-fw
+# marker lets us identify the rules later for clean removal. On
+# Series-II boxes without that INPUT chain the rules are harmless.
+# Failure is non-fatal: we log it and continue; the box may still
+# work on a permissive firmware build.
+if command -v iptables >/dev/null 2>&1; then
+    for port in 8888 9080 8081 8443; do
+        if iptables -I INPUT 1 -p tcp --dport "$port" \
+            -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
+            setup_log "iptables INPUT ACCEPT tcp/$port installed"
+        else
+            setup_log "iptables INPUT ACCEPT tcp/$port FAILED (filter table missing?)"
+        fi
+    done
+fi
+
 log "bind mount on /etc/hosts active"
 log "starting agent version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
 
