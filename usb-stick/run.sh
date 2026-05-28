@@ -481,10 +481,13 @@ fi
 # that silently skipped provisioning on spotty boxes that needed it.
 WLAN_IFACE=""
 BCO_MODE=""
+IS_TAIGAN=""
 if [ -d /sys/class/net/wlan0 ]; then
     WLAN_IFACE="wlan0"
+    echo "wlan0" > "$PERSIST/wlan-mode" 2>/dev/null
 elif [ -d /sys/class/net/wlan1 ]; then
     WLAN_IFACE="wlan1"
+    echo "wlan1" > "$PERSIST/wlan-mode" 2>/dev/null
 elif [ -d /sys/class/net/eth0 ]; then
     # Known BCO codenames + structural fallback. `uname -n` reliably
     # mirrors the Bose codename ("Linux taigan ...", "Linux spotty ...")
@@ -495,10 +498,24 @@ elif [ -d /sys/class/net/eth0 ]; then
     HOSTID=$(uname -n 2>/dev/null | tr -d '\n\r ' | head -c 32)
     case "$VARIANT" in taigan|spotty) BCO_BY_VARIANT=1 ;; *) BCO_BY_VARIANT="" ;; esac
     case "$HOSTID"  in taigan|spotty) BCO_BY_HOST=1    ;; *) BCO_BY_HOST=""    ;; esac
-    if [ -n "$BCO_BY_VARIANT" ] || [ -n "$BCO_BY_HOST" ] \
+    # taigan-specific flag: on this firmware build the documented WLAN
+    # provisioning channels are all dead (HTTP /addWirelessProfile 500,
+    # TAP CLI accepts add but never persists, wpa_* binaries missing).
+    # The ONLY working channel is the Bose iOS app via BLE — see
+    # [[taigan-quirks]] memory. Skipping A/B saves ~7 min of futile
+    # retries per boot and stops the 5-min Bose-Setup-AP reboot loop.
+    case "$VARIANT" in taigan) IS_TAIGAN=1 ;; esac
+    case "$HOSTID"  in taigan) IS_TAIGAN=1 ;; esac
+    if [ -n "$IS_TAIGAN" ]; then
+        BCO_MODE=1
+        WLAN_IFACE="eth0"
+        echo "taigan-bco" > "$PERSIST/wlan-mode" 2>/dev/null
+        setup_log "WLAN: taigan/BCO chassis (variant=${VARIANT:-?} host=${HOSTID:-?}), Wi-Fi-via-eth0, documented APIs dead — see Bose iOS app channel"
+    elif [ -n "$BCO_BY_VARIANT" ] || [ -n "$BCO_BY_HOST" ] \
        || [ -x /sbin/has-bco ] || [ -x /usr/sbin/has-bco ]; then
         BCO_MODE=1
         WLAN_IFACE="eth0"
+        echo "bco" > "$PERSIST/wlan-mode" 2>/dev/null
         setup_log "WLAN: BCO chassis detected (variant=${VARIANT:-?} host=${HOSTID:-?}), Wi-Fi-via-eth0"
     else
         # Structural fallback: SoundTouch hardware always has Wi-Fi,
@@ -506,6 +523,7 @@ elif [ -d /sys/class/net/eth0 ]; then
         # exposed as eth0 under a codename we haven't catalogued yet.
         BCO_MODE=1
         WLAN_IFACE="eth0"
+        echo "bco" > "$PERSIST/wlan-mode" 2>/dev/null
         setup_log "WLAN: eth0-only with no wlan*, assuming BCO pattern (variant=${VARIANT:-?} host=${HOSTID:-?}) — codename not in known list, treating as Wi-Fi-via-eth0"
     fi
 fi
@@ -676,7 +694,13 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # =====================================================================
 
     # ---- M1: HTTP B — POST /addWirelessProfile ------------------------
-    if [ "$BOSE_OK" = "1" ]; then
+    if [ -n "$IS_TAIGAN" ]; then
+        # Live-verified 2026-05-25 + 2026-05-28: this endpoint returns
+        # HTTP 500 on every taigan firmware build observed. The
+        # operation is simply not wired in WebServer-taigan.xml. Skipping
+        # avoids 8 s of wget + 30 s of lease-wait on every boot.
+        setup_log "M1: SKIP reason=taigan-firmware (/addWirelessProfile returns 500 — use Bose iOS app via BLE)"
+    elif [ "$BOSE_OK" = "1" ]; then
         setup_log "M1: POST $BOSE_API/addWirelessProfile"
         RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
                --post-data="$HTTP_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
@@ -697,7 +721,17 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     fi
 
     # ---- M2: TAP B — network wifi profiles add via :17000 -------------
-    if [ "$WINNER" = "none" ]; then
+    if [ "$WINNER" = "none" ] && [ -n "$IS_TAIGAN" ]; then
+        # On taigan the TAP sequence accepts every command with OK but
+        # `network wifi profiles info` returns <WiFiProfiles /> (empty)
+        # right after the supposedly-successful add. Verified across
+        # password variants, scan-wait durations, and security_type
+        # spellings — see [[taigan-quirks]] memory. Skip to avoid the
+        # 60 s lease-wait that always fails and the misleading "M2:
+        # NetManager accepted the sequence" log line.
+        setup_log "M2: SKIP reason=taigan-firmware (TAP CLI accepts add but never persists — use Bose iOS app via BLE)"
+    fi
+    if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
         if [ -n "$TAP_CMD" ]; then
             setup_log "M2: TAP CLI sequence (scan, profiles clear/add, mode auto, setupap exit)"
             TAP_OUT=$(
@@ -830,7 +864,15 @@ WPAEOF
     fi
 
     # ---- M5: TAP nudge — airplay setupap exit + network mode auto -----
-    if [ "$WINNER" = "none" ]; then
+    if [ "$WINNER" = "none" ] && [ -n "$IS_TAIGAN" ]; then
+        # M5 is structurally fine on taigan (the TAP namespaces it uses
+        # exist), but with no profile to fall back to it just bounces
+        # NetManager between setup-AP and station-with-no-profile,
+        # contributing to the 5-min Bose-reset reboot loop. Skip and let
+        # the box sit in setup-AP waiting for the Bose iOS app.
+        setup_log "M5: SKIP reason=taigan-firmware (no profile in DB, nudge would just churn state — wait for Bose iOS app via BLE)"
+    fi
+    if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
         if [ -n "$TAP_CMD" ]; then
             setup_log "M5: TAP nudge (setupap exit, mode auto)"
             NUDGE=$(
@@ -862,7 +904,15 @@ WPAEOF
     # Always backgrounded so the SUMMARY line below fires whether D
     # is still trying or already done. D's own result lines land
     # later in the same log when it completes.
-    if [ "$WINNER" = "none" ]; then
+    if [ "$WINNER" = "none" ] && [ -n "$IS_TAIGAN" ]; then
+        # M6 kills hostapd/udhcpd/dnsmasq + bursts preset keys to force
+        # the Bose stack to reassociate. On taigan there is no hostapd
+        # to kill, no wpa_cli to reassociate with, and the preset-key
+        # burst cannot help because no profile is in the DB to associate
+        # to. Skip and leave the box in setup-AP for the Bose iOS app.
+        setup_log "M6: SKIP reason=taigan-firmware (no profile in DB and no AP daemons to tear down — wait for Bose iOS app via BLE)"
+    fi
+    if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
         setup_log "M6: spawning backgrounded setup-AP teardown + preset burst"
         (
             sleep 8
@@ -930,7 +980,7 @@ WPAEOF
     FINAL_IFACE=${FINAL_LEASE%%|*}
     FINAL_IP=${FINAL_LEASE##*|}
     [ "$FINAL_IFACE" = "$FINAL_LEASE" ] && FINAL_IFACE="" && FINAL_IP=""
-    setup_log "Approach SUMMARY: winner=$WINNER elapsed=${WLAN_ELAPSED}s iface=${FINAL_IFACE:-?} ip=${FINAL_IP:-none} bco=${BCO_MODE:-0} probes='wpa_cli=$HAS_WPA_CLI wpa_sup=$HAS_WPA_SUP nc=$HAS_NC tap=${TAP_CMD:+yes}'"
+    setup_log "Approach SUMMARY: winner=$WINNER elapsed=${WLAN_ELAPSED}s iface=${FINAL_IFACE:-?} ip=${FINAL_IP:-none} bco=${BCO_MODE:-0} taigan=${IS_TAIGAN:-0} probes='wpa_cli=$HAS_WPA_CLI wpa_sup=$HAS_WPA_SUP nc=$HAS_NC tap=${TAP_CMD:+yes}'"
     setup_log "=== WLAN provisioning end ==="
 else
     WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
