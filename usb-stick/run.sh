@@ -481,6 +481,66 @@ WRAP_EOF
 }
 setup_shim_bindmount
 
+# One-shot SoftwareUpdate respawn so the new instance picks up the
+# bind-mounted wrapper (and LD_PRELOAD). Necessary because Bose's
+# init starts SoftwareUpdate at ~uptime=20-30s, BEFORE rc.local
+# fires run.sh — so the initial SU instance ran from the un-bind-
+# mounted /opt/Bose/SoftwareUpdate directly, no shim.
+#
+# Live-verified 2026-05-28: shepherdd does NOT have SoftwareUpdate
+# in its auto-restart config (Shepherd-taigan.xml lists scmmond,
+# APServer, UpnpSource, WebServer, BoseApp, NetManager, TPDA, IoT,
+# STSCertified, LegacyProduct, BatteryMonitor — no SoftwareUpdate),
+# so SIGTERM + manual nohup launch is race-free. Bose's IPC mesh
+# stays intact (Bose /info on :8090 keeps returning valid XML
+# throughout) because SoftwareUpdate is cloud-only and post-shutdown
+# nothing actively depends on its mesh registration.
+shim_swap_softwareupdate() {
+    if [ -e "$SHIM_DISABLE" ]; then return 0; fi
+    if ! mount 2>/dev/null | grep -q " /opt/Bose/SoftwareUpdate "; then
+        log "shim swap: bind-mount not active, skip"
+        return 0
+    fi
+    # Wait up to 60 s for Bose's init to bring SU up.
+    j=0
+    while [ $j -lt 60 ]; do
+        OLDSU=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+        if [ -n "$OLDSU" ]; then break; fi
+        sleep 1
+        j=$((j + 1))
+    done
+    if [ -z "$OLDSU" ]; then
+        log "shim swap: SoftwareUpdate never appeared in 60 s"
+        return 0
+    fi
+    # SIGTERM gracefully; killall caused mesh breakage on earlier
+    # builds, kill -TERM <pid> for a single specific PID does not.
+    log "shim swap: original SU PID=$OLDSU at uptime=$(uptime_s)s"
+    kill -TERM "$OLDSU" 2>/dev/null
+    for i in 1 2 3 4 5; do
+        sleep 1
+        if ! kill -0 "$OLDSU" 2>/dev/null; then break; fi
+    done
+    # Launch the new instance via the bind-mounted path. The wrapper
+    # script exec's /mnt/nv/streborn/lib/SoftwareUpdate-real with
+    # LD_PRELOAD=/mnt/nv/streborn/lib/str-shim.so, the chipset
+    # whitelist accepts because the running binary content is the
+    # original Bose SoftwareUpdate, the shim hooks accept() on :17008
+    # and forwards to STR webui on 127.0.0.1:8888.
+    nohup /opt/Bose/SoftwareUpdate >/dev/null 2>&1 &
+    sleep 2
+    NEWSU=$(pidof SoftwareUpdate-real 2>/dev/null | awk '{print $1}')
+    if [ -z "$NEWSU" ]; then
+        # Some shells / ps configurations report SU as SoftwareUpdate
+        # even after exec; check both names.
+        NEWSU=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+    fi
+    log "shim swap: relaunched SU at PID=${NEWSU:-?} uptime=$(uptime_s)s"
+}
+# Background so run.sh main path is unblocked (the 60 s SU-wait
+# could otherwise hold up everything downstream).
+(shim_swap_softwareupdate) &
+
 # Binary Auswahl: NAND Cache zuerst, Stick als Fallback.
 if [ -x "$CACHED_BIN" ]; then
     BIN="$CACHED_BIN"
