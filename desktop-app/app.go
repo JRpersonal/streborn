@@ -415,21 +415,23 @@ done:
 	return out
 }
 
-// probeSTR checks ip:17008/api/agent/version for the STR agent JSON
-// envelope. Port 17008 is the chipset-whitelisted SoftwareUpdate slot
-// that STR hijacks via an LD_PRELOAD accept() shim — the only port
-// reachable from outside on every SoundTouch variant we have tested
-// (Portable/taigan verified, ST10/20/30 same chipset architecture).
-// On hit returns a BoxInfo with Kind="str" so the upsert dedupe in
-// DiscoverBoxes treats it the same as an mDNS-announced STR speaker.
-// Tight timeout: 1.2s per host so a /24 sweep stays under ~10s wall
-// time across 32-way fan-out.
+// probeSTR checks both :8888 and :17008 on the host for the STR
+// agent JSON envelope. Bose's BCO wifi chipset has a different
+// whitelist on each model family:
 //
-// :8888 is no longer probed externally because (a) the chipset
-// firmware drops :8888 SYNs on Series-I boxes (Brecht, deqw, the
-// Portable), (b) on Series-II it works but adds a second probe pass
-// for no gain over the now-universal :17008. STR still binds :8888
-// locally for the marge stub and self-probes.
+//   - Series-II classic boxes (ST10/20/30 verified live 2026-05-28
+//     on ST10 .66 build 1944): :8888 / :9080 / :8081 are reachable
+//     externally without any hijack. STR's agent answers :8888
+//     directly.
+//   - Series-I taigan boxes (Portable verified): :8888 SYNs are
+//     dropped at the chipset level. STR's agent uses an LD_PRELOAD
+//     shim inside Bose's SoftwareUpdate process to make :17008
+//     forward to localhost:8888. On these boxes :17008 is the only
+//     externally-reachable port.
+//
+// Both ports are probed in parallel; whichever responds with the
+// STR JSON wins. The BoxInfo.Port records the actual reachable port
+// so subsequent API calls hit the right entry point.
 //
 // On hit we also pull /info from :8090 on the same box — the Bose
 // firmware keeps answering that endpoint even after STR is installed,
@@ -437,24 +439,41 @@ done:
 // FriendlyName/DeviceID/Model, which the frontend renders as if the
 // box were unprovisioned.
 func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
-	url := fmt.Sprintf("http://%s:17008/api/agent/version", ip)
-	body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 1024)
-	if !ok {
+	type result struct {
+		port int
+		body []byte
+	}
+	hits := make(chan result, 2)
+	for _, port := range []int{8888, 17008} {
+		p := port
+		go func() {
+			url := fmt.Sprintf("http://%s:%d/api/agent/version", ip, p)
+			body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 1024)
+			if !ok || !strings.Contains(string(body), `"version"`) {
+				hits <- result{}
+				return
+			}
+			hits <- result{port: p, body: body}
+		}()
+	}
+	var winner result
+	for i := 0; i < 2; i++ {
+		r := <-hits
+		if r.port != 0 && winner.port == 0 {
+			winner = r
+		}
+	}
+	if winner.port == 0 {
 		return BoxInfo{}, false
 	}
-	s := string(body)
-	// Cheap sniff for the JSON shape {"build":"...","version":"..."}
-	// without pulling in encoding/json on the hot path.
-	if !strings.Contains(s, `"version"`) {
-		return BoxInfo{}, false
-	}
+	s := string(winner.body)
 	version := jsonStringField(s, "version")
 	build := jsonStringField(s, "build")
 
 	box := BoxInfo{
 		Name:    "str-" + ip,
 		Host:    ip,
-		Port:    17008,
+		Port:    winner.port,
 		Version: version,
 		Build:   build,
 		Kind:    "str",

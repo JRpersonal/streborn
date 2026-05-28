@@ -1298,19 +1298,24 @@ log "agent started with PID $AGENT_PID"
 
 # === Chipset-whitelist hijack via LD_PRELOAD on SoftwareUpdate ===
 #
-# The BCO wifi chipset firmware on every SoundTouch model blocks
-# inbound external TCP to listeners not bound by a Bose binary
-# (libProtobufMessagingIPC / libIPC magic). STR's :8888 webui is
-# therefore unreachable from outside on default Bose firmware. Fix:
-# replace the running SoftwareUpdate daemon (cloud-only, dead post-
-# shutdown) with the same binary launched under LD_PRELOAD of our
-# str-shim.so, which hooks accept() on :17008 and forwards every
-# inbound connection to 127.0.0.1:8888.
+# On Series-I boxes (moduleType=scm, codenames taigan/spotty) the
+# BCO wifi chipset firmware drops inbound external TCP to STR's
+# :8888 / :9080 / :8081 at the chipset level, regardless of iptables
+# state. The only externally-reachable ports are those bound by
+# specific Bose binaries (libProtobufMessagingIPC magic). Verified
+# live 2026-05-28 on the Portable.
 #
-# Deployed UNIVERSALLY (not taigan-only) because:
-#   - SoundTouch Portable proved chipset whitelist behavior live 2026-05-28
-#   - SoftwareUpdate has no remaining purpose post-cloud-shutdown
-#   - Discovery becomes single-port (:17008) across every variant
+# Fix on Series-I: keep Bose's SoftwareUpdate binary as the listener
+# on :17008 (chipset stays happy) but launch it under LD_PRELOAD of
+# our str-shim.so, which hooks accept() and forwards every inbound
+# connection to 127.0.0.1:8888 (STR webui). SoftwareUpdate has no
+# remaining purpose post-cloud-shutdown so hijacking it costs
+# nothing functional.
+#
+# On Series-II boxes (moduleType=sm2, codenames rhino/maple/etc.)
+# the chipset is permissive — STR's own :8888 is directly reachable
+# from outside. The shim would hijack :17008 which is closed there
+# anyway. Hijack runs only when IS_SERIES_ONE is detected.
 #
 # Stick-to-NAND sync of the .so happens here so a stickless boot can
 # still re-hijack via the NAND copy. Watchdog re-asserts every 30 s
@@ -1330,6 +1335,32 @@ sync_shim_to_nand() {
     fi
 }
 sync_shim_to_nand
+
+# Series-I detection. Live-verified pattern: moduleType=scm in
+# Bose's /info OR variant codename in {taigan, spotty} → Series-I,
+# chipset whitelist blocks STR's :8888 / :9080 / :8081 externally,
+# shim hijack on SoftwareUpdate :17008 is required. Everything else
+# (sm2, rhino, maple, ...) is Series-II with a permissive chipset
+# that lets external clients hit STR's own listeners directly; the
+# shim would only block :17008 on those without offering any new
+# reachability, so we skip it.
+#
+# The matching table is fed by user diagnostic bundles. Known
+# entries 2026-05-28:
+#   scm + taigan     → Portable          → Series-I → shim ON
+#   scm + spotty     → ST20 (rev A, #60) → Series-I → shim ON
+#   sm2 + (none/rhino/maple) → ST10/20/30 → Series-II → shim OFF
+detect_series_one() {
+    case "$VARIANT" in taigan|spotty) echo 1; return; esac
+    case "$HOSTID"  in taigan|spotty) echo 1; return; esac
+    MT=$(wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null \
+         | sed -n 's/.*<moduleType>\([^<]*\)<\/moduleType>.*/\1/p' \
+         | head -c 16)
+    case "$MT" in scm) echo 1; return; esac
+    echo ""
+}
+IS_SERIES_ONE=$(detect_series_one)
+setup_log "shim gate: variant='${VARIANT:-?}' host='${HOSTID:-?}' moduleType='$(wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | sed -n 's/.*<moduleType>\([^<]*\)<\/moduleType>.*/\1/p' | head -c 16)' is_series_one='${IS_SERIES_ONE:-0}'"
 
 # SoftwareUpdate-Hijack-Logik: returnt 0 wenn der lokale Listener-PID
 # auf :17008 wirklich von einem SoftwareUpdate-Prozess kommt UND
@@ -1376,38 +1407,45 @@ hijack_softwareupdate() {
 }
 
 # Background runner: wait until SoftwareUpdate is up, hijack it, then
-# loop watchdog every 30 s to re-hijack if shepherdd respawned.
-(
-    # Wait up to 90 s for the initial SoftwareUpdate to come alive.
-    # On a cold boot Bose's stack typically brings it up at uptime
-    # ~40 s after init finishes.
-    w=0
-    while [ $w -lt 90 ]; do
-        if pidof SoftwareUpdate >/dev/null 2>&1; then
-            setup_log "shim: SoftwareUpdate first seen at uptime=$(uptime_s)s (wait=${w}s)"
-            break
+# loop watchdog every 30 s to re-hijack if shepherdd respawned. On
+# Series-II boxes the chipset whitelist is permissive and STR's :8888
+# is directly reachable externally, so the hijack is unnecessary and
+# is skipped to avoid breaking any localhost callers of SoftwareUpdate.
+if [ -n "$IS_SERIES_ONE" ]; then
+    (
+        # Wait up to 90 s for the initial SoftwareUpdate to come alive.
+        # On a cold boot Bose's stack typically brings it up at uptime
+        # ~40 s after init finishes.
+        w=0
+        while [ $w -lt 90 ]; do
+            if pidof SoftwareUpdate >/dev/null 2>&1; then
+                setup_log "shim: SoftwareUpdate first seen at uptime=$(uptime_s)s (wait=${w}s)"
+                break
+            fi
+            sleep 1
+            w=$((w + 1))
+        done
+        if [ $w -ge 90 ]; then
+            setup_log "shim: SoftwareUpdate never appeared in 90 s, hijack skipped (variant without SU?)"
+            exit 0
         fi
-        sleep 1
-        w=$((w + 1))
-    done
-    if [ $w -ge 90 ]; then
-        setup_log "shim: SoftwareUpdate never appeared in 90 s, hijack skipped (variant without SU?)"
-        exit 0
-    fi
-    hijack_softwareupdate
-
-    # Watchdog
-    while true; do
-        sleep 30
-        if shim_already_active; then
-            continue
-        fi
-        # SoftwareUpdate is either dead or running without our env.
-        # Re-hijack either way.
-        setup_log "shim watchdog: SU running without LD_PRELOAD at uptime=$(uptime_s)s, re-hijacking"
         hijack_softwareupdate
-    done
-) &
+
+        # Watchdog
+        while true; do
+            sleep 30
+            if shim_already_active; then
+                continue
+            fi
+            # SoftwareUpdate is either dead or running without our env.
+            # Re-hijack either way.
+            setup_log "shim watchdog: SU running without LD_PRELOAD at uptime=$(uptime_s)s, re-hijacking"
+            hijack_softwareupdate
+        done
+    ) &
+else
+    setup_log "shim: Series-II box (chipset permissive), STR :8888 reachable directly, hijack skipped"
+fi
 
 # One-shot diagnostic snapshot 90 s after start_agent. By then any
 # fast respawn churn has settled and either :8888 is up or it never
