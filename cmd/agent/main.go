@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -387,7 +388,26 @@ func run() error {
 		}()
 	}
 
-	logger.Info("agent listeners bound, deferred init continues in background")
+	logger.Warn("agent listeners spawned, deferred init continues in background",
+		"webui", *webuiAddr, "marge", *margeAddr, "bmx", *bmxAddr, "tlsEnabled", *tlsEnabled, "margeTLS", *margeTLSAddr)
+
+	// Self-probe loopback connect to each listener address. When the
+	// box is reachable but :8888 silently does not answer, the bash
+	// watchdog (agent_port_bound in run.sh) cannot always tell on a
+	// BusyBox without ss/netstat. The Go side has full net access and
+	// can prove from inside the agent process whether each port is
+	// actually accepting connections. Logs at WARN so the result shows
+	// in any diagnostic capture.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runSelfProbe(ctx, logger.With("comp", "selfprobe"), []selfProbeTarget{
+			{name: "webui", addr: *webuiAddr},
+			{name: "marge", addr: *margeAddr},
+			{name: "bmx", addr: *bmxAddr},
+			{name: "marge-tls", addr: *margeTLSAddr},
+		})
+	}()
 
 	var firstErr error
 	select {
@@ -423,7 +443,11 @@ func run() error {
 // The listener is opened via netutil.ListenTCP, which sets SO_REUSEADDR on
 // the socket. Without that, a watchdog-driven respawn while the previous
 // listener is still in TIME_WAIT fails with "address already in use".
+//
+// Phase-marker logs are at WARN level on purpose: visible on any
+// --log-level setting and in the diagnostic bundle's tail capture.
 func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name, addr string, handler http.Handler, logger *slog.Logger) {
+	logger.Warn("listener phase: spawn", "comp", name, "addr", addr)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -432,14 +456,16 @@ func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name,
 			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
+		logger.Warn("listener phase: calling ListenTCP", "comp", name, "addr", addr)
 		ln, err := netutil.ListenTCP(ctx, addr)
 		if err != nil {
+			logger.Error("listener phase: ListenTCP failed", "comp", name, "addr", addr, "err", err)
 			errs <- fmt.Errorf("%s: listen %s: %w", name, addr, err)
 			return
 		}
+		logger.Warn("listener phase: ListenTCP succeeded", "comp", name, "addr", addr, "local", ln.Addr().String())
 		serveErr := make(chan error, 1)
 		go func() {
-			logger.Info("HTTP Server startet", "comp", name, "addr", addr)
 			serveErr <- srv.Serve(ln)
 		}()
 		select {
@@ -458,6 +484,7 @@ func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name,
 // startHTTPS startet einen HTTPS Server analog zu startHTTP, mit der
 // uebergebenen TLS Konfiguration.
 func startHTTPS(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name, addr string, handler http.Handler, tlsConfig *tls.Config, logger *slog.Logger) {
+	logger.Warn("listener phase: spawn TLS", "comp", name, "addr", addr)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -467,16 +494,18 @@ func startHTTPS(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name
 			TLSConfig:         tlsConfig,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
+		logger.Warn("listener phase: calling ListenTCP TLS", "comp", name, "addr", addr)
 		ln, err := netutil.ListenTCP(ctx, addr)
 		if err != nil {
+			logger.Error("listener phase: ListenTCP TLS failed", "comp", name, "addr", addr, "err", err)
 			errs <- fmt.Errorf("%s: listen %s: %w", name, addr, err)
 			return
 		}
+		logger.Warn("listener phase: ListenTCP TLS succeeded", "comp", name, "addr", addr, "local", ln.Addr().String())
 		// ServeTLS upgrades the listener with the supplied TLSConfig.
 		// We pass empty paths since the cert is in TLSConfig.Certificates.
 		serveErr := make(chan error, 1)
 		go func() {
-			logger.Info("HTTPS Server startet", "comp", name, "addr", addr)
 			serveErr <- srv.ServeTLS(ln, "", "")
 		}()
 		select {
@@ -956,6 +985,19 @@ func ensureSshdRunning(logger *slog.Logger) {
 	logger.Warn("sshd start: no usable init script found, SSH will not come up from agent")
 }
 
+// nandLogPath is the persistent log file on UBIFS. It is captured in
+// full by the diagnostic bundle (unlike /tmp/streborn-agent.log which
+// the bundle only grabs the last 8 KB of). All slog output is mirrored
+// here so remote-box bug reports include the whole agent startup, not
+// just the tail after the listener loops have already settled.
+const nandLogPath = "/mnt/nv/streborn/agent.log"
+
+// nandLogMax caps the persistent log so a long-running agent does not
+// fill the small NAND volume. On overflow the file is rotated to
+// agent.log.1 and a fresh agent.log starts. 1 MiB covers ~10 fresh
+// boots worth of debug output on a slow speaker.
+const nandLogMax = 1 * 1024 * 1024
+
 func newLogger(level string) *slog.Logger {
 	var lvl slog.Level
 	switch level {
@@ -968,5 +1010,103 @@ func newLogger(level string) *slog.Logger {
 	default:
 		lvl = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
+
+	// Mirror to NAND so the diagnostic bundle sees more than the last
+	// 8 KB of /tmp/streborn-agent.log. Best-effort: if NAND is read
+	// only or full, fall back to stderr-only — agent must boot either
+	// way. Rotation happens on open if the existing file already
+	// exceeds nandLogMax.
+	var writer io.Writer = os.Stderr
+	if f := openNandLog(); f != nil {
+		writer = io.MultiWriter(os.Stderr, f)
+	}
+	return slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{Level: lvl}))
+}
+
+// openNandLog opens /mnt/nv/streborn/agent.log in append mode, rotating
+// it to agent.log.1 first if it already exceeds nandLogMax. Returns
+// nil on any error so the caller falls back to stderr-only.
+func openNandLog() *os.File {
+	if st, err := os.Stat(nandLogPath); err == nil && st.Size() > nandLogMax {
+		// Best-effort rotate. Failure here just means we keep appending
+		// to a slightly oversized log; not worth bailing.
+		_ = os.Rename(nandLogPath, nandLogPath+".1")
+	}
+	f, err := os.OpenFile(nandLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "newLogger: NAND log unavailable, stderr only:", err)
+		return nil
+	}
+	return f
+}
+
+// selfProbeTarget names a TCP endpoint the agent should be able to
+// reach via loopback right after its listeners are spawned.
+type selfProbeTarget struct {
+	name string
+	addr string // ":8888" — leading colon ok, normalised below
+}
+
+// runSelfProbe attempts loopback connect to each target every 2 s for
+// the first 30 s, then once a minute for the next 5 minutes. Each
+// outcome (ok / refused / timeout) is logged at WARN with the elapsed
+// time since probe start, so the diagnostic bundle shows exactly when
+// (or whether) each listener accepted its first connection.
+//
+// This is purely observational; the probe never restarts a listener.
+// It is the inside-the-agent counterpart to run.sh's agent_port_bound,
+// useful when BusyBox lacks ss/netstat and the bash probe is blind.
+func runSelfProbe(ctx context.Context, logger *slog.Logger, targets []selfProbeTarget) {
+	start := time.Now()
+	probe := func() {
+		for _, t := range targets {
+			addr := t.addr
+			if strings.HasPrefix(addr, ":") {
+				addr = "127.0.0.1" + addr
+			}
+			elapsed := time.Since(start).Round(time.Second)
+			d := net.Dialer{Timeout: 2 * time.Second}
+			conn, err := d.DialContext(ctx, "tcp", addr)
+			if err != nil {
+				logger.Warn("self-probe: connect failed", "target", t.name, "addr", addr, "elapsed", elapsed.String(), "err", err.Error())
+				continue
+			}
+			_ = conn.Close()
+			logger.Warn("self-probe: connect ok", "target", t.name, "addr", addr, "elapsed", elapsed.String())
+		}
+	}
+
+	// Phase 1: every 2 s for 30 s — listener bring-up window.
+	fastTicker := time.NewTicker(2 * time.Second)
+	defer fastTicker.Stop()
+	deadline := time.NewTimer(30 * time.Second)
+	defer deadline.Stop()
+	probe()
+fast:
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline.C:
+			break fast
+		case <-fastTicker.C:
+			probe()
+		}
+	}
+
+	// Phase 2: once a minute for 5 minutes — covers slow boot variants.
+	slowTicker := time.NewTicker(60 * time.Second)
+	defer slowTicker.Stop()
+	slowDeadline := time.NewTimer(5 * time.Minute)
+	defer slowDeadline.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-slowDeadline.C:
+			return
+		case <-slowTicker.C:
+			probe()
+		}
+	}
 }

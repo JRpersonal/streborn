@@ -223,7 +223,15 @@ wait_for_ready() {
 background_phase_probe() {
     (
         BOSE_HTTP=0; BOSE_WS=0; AVT=0; WPA=0; WLAN_UP=0
+        STR_API=0; STR_MARGE=0; STR_BMX=0; STR_TLS=0
         DEADLINE_UP=$(( $(uptime_s) + 240 ))
+        # tcp_probe tries /dev/tcp first (cheap, no fork) and falls back
+        # to nc -z. Returns 0 on connect, non-zero on refusal/timeout.
+        tcp_probe() {
+            p=$1
+            (echo > /dev/tcp/127.0.0.1/"$p") >/dev/null 2>&1 \
+                || nc -z 127.0.0.1 "$p" >/dev/null 2>&1
+        }
         while [ "$(uptime_s)" -lt "$DEADLINE_UP" ]; do
             UP=$(uptime_s)
             if [ "$WPA" -eq 0 ] && pidof wpa_supplicant >/dev/null 2>&1; then
@@ -234,23 +242,34 @@ background_phase_probe() {
                 BOSE_HTTP=$UP
                 setup_log "phase: BoseApp HTTP :8090 up at uptime=${UP}s"
             fi
-            if [ "$BOSE_WS" -eq 0 ]; then
-                # gabbo speaks HTTP-Upgrade; a plain GET returns 400
-                # but that proves the socket is bound. wget returns
-                # non-zero on 400 so we look at connect via /dev/tcp
-                # if shell supports it, else TCP-only probe via nc.
-                if (echo > /dev/tcp/127.0.0.1/8080) >/dev/null 2>&1 \
-                    || nc -z 127.0.0.1 8080 >/dev/null 2>&1; then
-                    BOSE_WS=$UP
-                    setup_log "phase: gabbo WS :8080 listening at uptime=${UP}s"
-                fi
+            if [ "$BOSE_WS" -eq 0 ] && tcp_probe 8080; then
+                BOSE_WS=$UP
+                setup_log "phase: gabbo WS :8080 listening at uptime=${UP}s"
             fi
-            if [ "$AVT" -eq 0 ]; then
-                if (echo > /dev/tcp/127.0.0.1/8091) >/dev/null 2>&1 \
-                    || nc -z 127.0.0.1 8091 >/dev/null 2>&1; then
-                    AVT=$UP
-                    setup_log "phase: AVTransport :8091 listening at uptime=${UP}s"
-                fi
+            if [ "$AVT" -eq 0 ] && tcp_probe 8091; then
+                AVT=$UP
+                setup_log "phase: AVTransport :8091 listening at uptime=${UP}s"
+            fi
+            # STR agent listeners. Probing these explicitly is the
+            # whole point of the rewrite: when :8888 silently never
+            # binds (observed on Brecht's ST20 v0.5.10..v0.5.12), the
+            # phase summary line is the first place a remote diagnostic
+            # bundle reveals it.
+            if [ "$STR_API" -eq 0 ] && tcp_probe 8888; then
+                STR_API=$UP
+                setup_log "phase: STR webui :8888 listening at uptime=${UP}s"
+            fi
+            if [ "$STR_MARGE" -eq 0 ] && tcp_probe 9080; then
+                STR_MARGE=$UP
+                setup_log "phase: STR marge :9080 listening at uptime=${UP}s"
+            fi
+            if [ "$STR_BMX" -eq 0 ] && tcp_probe 8081; then
+                STR_BMX=$UP
+                setup_log "phase: STR bmx :8081 listening at uptime=${UP}s"
+            fi
+            if [ "$STR_TLS" -eq 0 ] && tcp_probe 443; then
+                STR_TLS=$UP
+                setup_log "phase: STR marge-tls :443 listening at uptime=${UP}s"
             fi
             if [ "$WLAN_UP" -eq 0 ] && [ -r /sys/class/net/wlan0/operstate ]; then
                 STATE=$(cat /sys/class/net/wlan0/operstate 2>/dev/null)
@@ -260,15 +279,19 @@ background_phase_probe() {
                     setup_log "phase: wlan0 link up at uptime=${UP}s ip=${IPADDR:-none}"
                 fi
             fi
-            # Done early once everything is up.
+            # Done early once everything is up — including the four
+            # STR listener phases so we always log them even on a
+            # WLAN-free ethernet-only setup.
             if [ "$WPA" -gt 0 ] && [ "$BOSE_HTTP" -gt 0 ] \
                 && [ "$BOSE_WS" -gt 0 ] && [ "$AVT" -gt 0 ] \
-                && [ "$WLAN_UP" -gt 0 ]; then
+                && [ "$WLAN_UP" -gt 0 ] \
+                && [ "$STR_API" -gt 0 ] && [ "$STR_MARGE" -gt 0 ] \
+                && [ "$STR_BMX" -gt 0 ] && [ "$STR_TLS" -gt 0 ]; then
                 break
             fi
             sleep 3
         done
-        setup_log "phase summary: wpa=${WPA}s boseHTTP=${BOSE_HTTP}s gabbo=${BOSE_WS}s avt=${AVT}s wlan0Up=${WLAN_UP}s"
+        setup_log "phase summary: wpa=${WPA}s boseHTTP=${BOSE_HTTP}s gabbo=${BOSE_WS}s avt=${AVT}s wlan0Up=${WLAN_UP}s strAPI=${STR_API}s strMarge=${STR_MARGE}s strBmx=${STR_BMX}s strTLS=${STR_TLS}s"
     ) &
 }
 
@@ -1061,6 +1084,13 @@ try_http_date_sync() {
 }
 
 start_agent() {
+    # log-level info, not warn. Earlier builds passed `warn` and the
+    # consequence was that the listener bring-up logs (`Webui Server
+    # startet`, `HTTP Server startet`, ...) were suppressed entirely.
+    # When :8888 silently failed to bind on a user's box we had no
+    # signal in the diagnostic bundle at all. info is loud enough to
+    # tell us which step reached its bind call without producing
+    # tick-rate spam (autopair/zeroconf are bounded).
     nohup "$BIN" \
         --presets "$PRESETS_NAND" \
         --region-file "$PERSIST/region.txt" \
@@ -1073,7 +1103,7 @@ start_agent() {
         --hosts /etc/hosts \
         --apply-hosts=true \
         --tls=true \
-        --log-level warn \
+        --log-level info \
         >> "$LOG" 2>&1 &
     AGENT_PID=$!
     echo "$AGENT_PID" > "$PIDFILE"
@@ -1082,6 +1112,70 @@ start_agent() {
 try_http_date_sync
 start_agent
 log "agent started with PID $AGENT_PID"
+
+# One-shot diagnostic snapshot 90 s after start_agent. By then any
+# fast respawn churn has settled and either :8888 is up or it never
+# will be. The snapshot dumps listening sockets and process tree into
+# setup.log (NAND-persisted, captured in full by the diagnostic),
+# replacing the SSH session we cannot run on a user's box.
+(
+    sleep 90
+    setup_log "=== one-shot post-start snapshot (uptime=$(uptime_s)s) ==="
+    if command -v ss >/dev/null 2>&1; then
+        setup_log "listening sockets (ss -ltnp):"
+        ss -ltnp 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    elif command -v netstat >/dev/null 2>&1; then
+        setup_log "listening sockets (netstat -ltnp):"
+        netstat -ltnp 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    else
+        setup_log "listening sockets: ss and netstat both unavailable"
+    fi
+    setup_log "process tree (ps -ef or busybox ps):"
+    if ps -ef >/dev/null 2>&1; then
+        ps -ef 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    else
+        ps 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    fi
+    if [ -f "$PIDFILE" ]; then
+        CUR_PID=$(cat "$PIDFILE" 2>/dev/null)
+        if [ -n "$CUR_PID" ] && [ -r "/proc/$CUR_PID/status" ]; then
+            setup_log "agent /proc/$CUR_PID/status (head):"
+            head -20 "/proc/$CUR_PID/status" 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+        else
+            setup_log "agent PID $CUR_PID not alive at snapshot time"
+        fi
+    fi
+    # iptables state. Critical for Series-I boxes (SMSC/SCM, no wlan0)
+    # where Bose firmware installs a restrictive INPUT chain that
+    # silently RSTs our :8888 listener even though it is correctly
+    # bound. Without this dump in the bundle the case looks identical
+    # to a broken bind (see issue #60 deqw 2026-05-28).
+    setup_log "iptables filter INPUT:"
+    iptables -L INPUT -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    setup_log "iptables nat PREROUTING:"
+    iptables -t nat -L PREROUTING -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    # Try a localhost loopback connect to :8888 vs the LAN-IP connect.
+    # When the two disagree (local ok, lan refused) the firewall is
+    # the reason — exactly the deqw / Brecht pattern.
+    LAN_IP=$(ip -4 addr show eth0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+    if [ -z "$LAN_IP" ]; then
+        LAN_IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+    fi
+    setup_log "self-connect probe: lan_ip=${LAN_IP:-unknown}"
+    if (echo > /dev/tcp/127.0.0.1/8888) >/dev/null 2>&1; then
+        setup_log "  127.0.0.1:8888 -> OK"
+    else
+        setup_log "  127.0.0.1:8888 -> refused"
+    fi
+    if [ -n "$LAN_IP" ]; then
+        if (echo > /dev/tcp/"$LAN_IP"/8888) >/dev/null 2>&1; then
+            setup_log "  $LAN_IP:8888 -> OK"
+        else
+            setup_log "  $LAN_IP:8888 -> refused (firewall? Series-I box?)"
+        fi
+    fi
+    setup_log "=== /one-shot post-start snapshot ==="
+) &
 
 # === Aggressive Boot-Race Watchdog (Phase A: t=0..120s) ===
 #
@@ -1103,19 +1197,42 @@ log "agent started with PID $AGENT_PID"
 # kein Flash-Write. Nach 120s übergibt es an den langsamen
 # 90s-Watchdog (Phase B).
 agent_port_bound() {
+    # ss is the cheapest probe but BusyBox often ships without it.
     if command -v ss >/dev/null 2>&1; then
-        ss -ltn 2>/dev/null | grep -q ':8888 '
-        return $?
+        if ss -ltn 2>/dev/null | grep -q ':8888 '; then
+            return 0
+        fi
+        return 1
     fi
     if command -v netstat >/dev/null 2>&1; then
-        netstat -ltn 2>/dev/null | grep -q ':8888 '
-        return $?
+        if netstat -ltn 2>/dev/null | grep -q ':8888 '; then
+            return 0
+        fi
+        return 1
     fi
-    # Last resort: try /dev/tcp self-probe. If shell does not
-    # support it, assume bound (we cannot tell — better not
-    # respawn-loop on a working agent).
+    # /dev/tcp self-probe — works on many busybox sh builds but not all.
     if (echo > /dev/tcp/127.0.0.1/8888) >/dev/null 2>&1; then
         return 0
+    fi
+    # nc as the third option. Some images ship nc, others don't.
+    if command -v nc >/dev/null 2>&1; then
+        if nc -z 127.0.0.1 8888 >/dev/null 2>&1; then
+            return 0
+        fi
+        return 1
+    fi
+    # Truly no probe available. Log once per minute (gated by the
+    # AGENT_PORT_PROBE_UNKNOWN_T marker so the watchdog loop does not
+    # spam the log) and treat as bound. Returning 1 here would cause
+    # the watchdog to restart-loop a working agent because it cannot
+    # confirm bind — strictly worse than a silent assumption. The new
+    # `phase: STR webui :8888 listening` line from background_phase_probe
+    # is the authoritative signal in the diagnostic bundle.
+    NOW=$(uptime_s)
+    LAST=${AGENT_PORT_PROBE_UNKNOWN_T:-0}
+    if [ $((NOW - LAST)) -gt 60 ]; then
+        setup_log "agent_port_bound: ss/netstat/dev-tcp/nc all unavailable, cannot confirm :8888 bind, assuming up"
+        AGENT_PORT_PROBE_UNKNOWN_T=$NOW
     fi
     return 0
 }
