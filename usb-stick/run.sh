@@ -1102,28 +1102,85 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         # Gate 2: marge account. Placeholder fields — the real STR
         # autopair runs downstream on the home LAN and replaces these
         # with stub@local credentials once the speaker is reachable.
+        #
+        # Body capture rationale: `wget -qO-` silently discards response
+        # bodies on HTTP 5xx, which is exactly when we need them.
+        # NetManager's MargeHSM is believed to return rich diagnostic
+        # XML (e.g. <MargeHSMError code=... reason=...>) on the
+        # rejection path, but on every spotty/scm box analysed in #89
+        # the literal string "MargeHSM" never appears in any captured
+        # log because wget swallowed the body. We now also write to a
+        # tmpfile via -O and emit whatever bytes wget did manage to
+        # store. BusyBox 1.19 wget behaviour on 5xx is inconsistent,
+        # so the stderr line ("server returned error: HTTP/1.1 500")
+        # remains the primary signal; the tmpfile is best-effort
+        # extra context.
         MARGE_BODY='<?xml version="1.0" encoding="UTF-8" ?><PairDeviceWithAccount><accountId>stick-bootstrap</accountId><userAuthToken>stick-bootstrap</userAuthToken><accountEmail>stick@local</accountEmail></PairDeviceWithAccount>'
-        setup_log "M1: gate-2 POST $BOSE_API/setMargeAccount"
-        MARGE_RESP=$(wget -qO- -T 10 --header="Content-Type: application/xml" \
-               --post-data="$MARGE_BODY" "$BOSE_API/setMargeAccount" 2>&1)
-        setup_log "M1: marge rc=$? response='$(echo "$MARGE_RESP" | head -c 200)'"
+        # H2 (TOCTOU hypothesis): NetManager's MargeHSM is an IPC peer
+        # that may finish initialising AFTER BoseApp's HTTP server is
+        # reachable, so a single-shot POST at boot+44s lands too early
+        # on scm/spotty and gets a 500. Retry up to 3 times with 15s
+        # backoff so a slow HSM still gets the account. Body is
+        # captured via -O so the rejection reason is visible if the
+        # HSM is permanently in the wrong state vs just not ready yet.
+        # First success or non-500 breaks the loop.
+        _m1_marge_body_file=/tmp/m1-marge.body
+        _m1_marge_winner=""
+        for _m1_marge_try in 1 2 3; do
+            setup_log "M1: gate-2 POST $BOSE_API/setMargeAccount (try $_m1_marge_try/3)"
+            rm -f "$_m1_marge_body_file" 2>/dev/null
+            MARGE_RESP=$(wget -O "$_m1_marge_body_file" -T 10 --header="Content-Type: application/xml" \
+                   --post-data="$MARGE_BODY" "$BOSE_API/setMargeAccount" 2>&1)
+            _m1_marge_rc=$?
+            _m1_marge_body=$(head -c 512 "$_m1_marge_body_file" 2>/dev/null | tr '\r\n' '  ')
+            setup_log "M1: marge try=$_m1_marge_try rc=$_m1_marge_rc stderr='$(echo "$MARGE_RESP" | head -c 200)' body='$_m1_marge_body'"
+            if [ "$_m1_marge_rc" = "0" ]; then
+                _m1_marge_winner="$_m1_marge_try"
+                break
+            fi
+            case "$MARGE_RESP" in
+                *"500 Internal Server Error"*)
+                    if [ "$_m1_marge_try" -lt 3 ]; then
+                        setup_log "M1: gate-2 sleeping 15s before next retry (HSM may be initialising)"
+                        sleep 15
+                    fi
+                    ;;
+                *)
+                    setup_log "M1: gate-2 non-500 error, not retrying"
+                    break
+                    ;;
+            esac
+        done
+        if [ -n "$_m1_marge_winner" ]; then
+            setup_log "M1: gate-2 succeeded on try $_m1_marge_winner"
+        fi
 
         # Survey wakes the radio; matches the Bose webpage's getNetworks().
         SURVEY_BODY='<PerformWirelessSiteSurvey timeout="5"/>'
         setup_log "M1: survey POST $BOSE_API/performWirelessSiteSurvey"
-        SURVEY_RESP=$(wget -qO- -T 12 --header="Content-Type: text/xml" \
+        _m1_survey_body_file=/tmp/m1-survey.body
+        rm -f "$_m1_survey_body_file" 2>/dev/null
+        SURVEY_RESP=$(wget -O "$_m1_survey_body_file" -T 12 --header="Content-Type: text/xml" \
                --post-data="$SURVEY_BODY" "$BOSE_API/performWirelessSiteSurvey" 2>&1)
-        setup_log "M1: survey rc=$? response='$(echo "$SURVEY_RESP" | head -c 240)'"
+        _m1_survey_rc=$?
+        _m1_survey_body=$(head -c 512 "$_m1_survey_body_file" 2>/dev/null | tr '\r\n' '  ')
+        setup_log "M1: survey rc=$_m1_survey_rc stderr='$(echo "$SURVEY_RESP" | head -c 240)' body='$_m1_survey_body'"
 
         # The final add. -T 30 because the response normally arrives as
         # an RST around the 16 s mark when NetManager tears down the
         # setup-AP loopback; we do not strictly need a clean response
-        # body, the STA-lease poll below is authoritative.
+        # body, the STA-lease poll below is authoritative. Same body
+        # capture as gate-2: on spotty/scm this returns HTTP 500 and
+        # we want NetManager's actual rejection reason rather than the
+        # wget cover line.
         setup_log "M1: POST $BOSE_API/addWirelessProfile body='$(echo "$HTTP_BODY" | head -c 200)'"
-        RESP=$(wget -qO- -T 30 --header="Content-Type: text/xml" \
+        _m1_add_body_file=/tmp/m1-add.body
+        rm -f "$_m1_add_body_file" 2>/dev/null
+        RESP=$(wget -O "$_m1_add_body_file" -T 30 --header="Content-Type: text/xml" \
                --post-data="$HTTP_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
         RC=$?
-        setup_log "M1: rc=$RC response='$(echo "$RESP" | head -c 400)'"
+        _m1_add_body=$(head -c 512 "$_m1_add_body_file" 2>/dev/null | tr '\r\n' '  ')
+        setup_log "M1: rc=$RC stderr='$(echo "$RESP" | head -c 400)' body='$_m1_add_body'"
         if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
             setup_log "M1: API persisted profile (NetManager DB updated)"
         fi
@@ -1192,11 +1249,23 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     fi
     if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
         if [ -n "$TAP_CMD" ]; then
-            setup_log "M2: TAP CLI sequence (scan, profiles clear/add, mode auto, setupap exit)"
+            # H3 (untested hypothesis): `network mode wifisetup` as
+            # explicit pre-state before `profiles add`. Documented in
+            # samhobbs.co.uk and bosefirmware/Soundtouch-without-the-app
+            # as a real TAP mode; STR has historically jumped straight
+            # to `mode auto` after the add. On scm/spotty NetManager
+            # may refuse `profiles add` unless first put into the
+            # wifi-setup mode. Harmless on taigan (taigan skips M2
+            # entirely upstream) and on sm2 (already accepts add in
+            # the current pipeline). After the add we transition back
+            # to `mode auto` as before.
+            setup_log "M2: TAP CLI sequence (mode wifisetup, scan, profiles clear/add, info, setupap exit, mode auto)"
             TAP_OUT=$(
                 (
                     printf 'async_responses on\n'
                     sleep 1
+                    printf 'network mode wifisetup\n'
+                    sleep 3
                     printf 'network wifi scan\n'
                     sleep 25
                     printf 'network wifi profiles clear\n'
