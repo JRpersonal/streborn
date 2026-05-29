@@ -48,6 +48,7 @@ import {
   saveLastBox,
   loadCachedBoxes,
   saveCachedBoxes,
+  saveSearchCountry,
 } from './state.js';
 
 import {
@@ -653,6 +654,7 @@ $('searchCountry').onchange = () => {
   if (ls) ls.value = '';
   updateFilterIndicators();
   try { localStorage.setItem('userTouchedRegion', '1'); } catch {}
+  saveSearchCountry(state.searchCountry);
   // Reload the language list scoped to the selected country so the
   // counts reflect stations in THIS country, not the global pool.
   state.languages = [];
@@ -748,6 +750,7 @@ async function discoverBoxes() {
           refreshStatus();
           checkBoxUpdate();
         }
+        updateSourceButtonVisibility();
       } else {
         state.currentBox = null;
         state.presets = [];
@@ -915,6 +918,24 @@ function selectBox(box) {
   // Fetch the stick's region and use it as a default for radio search.
   // Do not overwrite a country the user has already picked manually.
   loadStickRegion();
+  // Some models do not have Bluetooth hardware. Hide the source
+  // button for those instead of letting the user click it and hit
+  // the box's 1005 UNKNOWN_SOURCE_ERROR.
+  updateSourceButtonVisibility();
+}
+
+// updateSourceButtonVisibility hides source buttons for hardware that
+// the currently-selected box does not have. SoundTouch Portable ships
+// without Bluetooth so the BT button gets hidden there; AUX and
+// STANDBY are available on every model. Run after every selectBox()
+// AND after every discovery refresh so the visibility tracks model
+// detection that lands later (Bose stock /info enrichment).
+function updateSourceButtonVisibility() {
+  const btBtn = document.querySelector('.btn-source[data-source="BLUETOOTH"]');
+  if (!btBtn) return;
+  const model = (state.currentBox && state.currentBox.model) || '';
+  const noBluetooth = /portable/i.test(model);
+  btBtn.classList.toggle('hidden', noBluetooth);
 }
 
 let regionLoaded = false;
@@ -2630,6 +2651,7 @@ function renderBoxSettings(s, box) {
         try { localStorage.removeItem('userTouchedRegion'); } catch {}
         state.searchCountry = data.country;
         state.searchLang = data.language;
+        saveSearchCountry(state.searchCountry);
         const cs = $('searchCountry');
         if (cs) cs.value = data.country;
         updateFilterIndicators();
@@ -2705,6 +2727,7 @@ function wireWlanSwitch(box) {
     const v = $('boxWlanSelect').value;
     if (!v) return;
     $('boxWlanSSID').value = v;
+    if (isMacOS) return; // #88: don't trigger System-keychain admin prompt
     try {
       const pw = await TryWiFiPassword(v);
       if (pw) $('boxWlanPass').value = pw;
@@ -3216,6 +3239,15 @@ function togglePasswordVisibility() {
   }
 }
 
+// macOS gates the System keychain behind an admin prompt for every
+// `security find-generic-password -ga`. Auto-firing the password
+// fetch at app startup pops the prompt every single launch (#88).
+// We still want auto-fill on Windows (netsh -> no prompt for
+// user-saved profiles) and Linux (nmcli -> no prompt). On macOS,
+// the SSID gets auto-selected but the password field stays empty
+// until the user clicks the explicit fill-from-keychain button.
+const isMacOS = /Mac OS X|Macintosh/.test(navigator.userAgent);
+
 async function loadWifiProfiles() {
   const sel = $('wlanSelect');
   try {
@@ -3226,7 +3258,11 @@ async function loadWifiProfiles() {
       const current = await CurrentWiFi();
       if (current && profiles.some(p => p.ssid === current)) {
         sel.value = current;
-        onWifiSelect();
+        if (isMacOS) {
+          $('wlanSsid').value = current;
+        } else {
+          onWifiSelect();
+        }
       }
     } catch {}
   } catch {
@@ -3238,6 +3274,7 @@ async function onWifiSelect() {
   const v = $('wlanSelect').value;
   if (!v) return;
   $('wlanSsid').value = v;
+  if (isMacOS) return;
   try {
     const pw = await TryWiFiPassword(v);
     if (pw) $('wlanPass').value = pw;

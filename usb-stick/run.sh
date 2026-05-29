@@ -830,17 +830,62 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # those are destructive when the user-visible network already
     # works — observed live on taigan/Portable 2026-05-28 where
     # STR's profiles clear wiped JJ3 right after Bose iOS app
-    # provisioned it, and applies equally to ST10/20/30 if the user
-    # re-installs STR on top of a working box.
+    # provisioned it, and live again on Series-I scm-variant ST20
+    # 2026-05-29 (#60 deqw) where pre-stick the box was on Wi-Fi,
+    # M0a logged "skipping" but the pipeline kept running because
+    # M1 lacked a $WINNER guard, then on the next cold boot the
+    # replay path tore down the working profile.
     #
     # Bose's stack is idempotent on STA lease (it does not unjoin and
     # rejoin every boot), so if a lease is present we know the box
     # is fine without us. STR's REST API, mDNS announce, marge stub,
     # autopair etc. all run downstream of this block, unaffected.
-    if PRE_LEASE=$(current_sta_lease 2>/dev/null) && [ -n "$PRE_LEASE" ]; then
+    #
+    # Lease detection window: a one-shot probe at uptime~30s is too
+    # early on a cold boot — Bose's stack typically takes 30-60s to
+    # reassociate after power-on. If `network wifi profiles info`
+    # reports any stored profile (or BoseApp's /networkInfo shows
+    # wifiProfileCount > 0), we know the box has somewhere to
+    # associate to and it's worth waiting. Without that signal we
+    # exit M0a immediately to fall through to provisioning.
+    PRE_LEASE=$(current_sta_lease 2>/dev/null || true)
+    if [ -z "$PRE_LEASE" ]; then
+        HAS_STORED_PROFILE=""
+        if [ -n "$TAP_CMD" ]; then
+            # Reuse the boot-time probe value if present, otherwise re-probe.
+            _info_xml="${TAP_WIFI}"
+            if [ -z "$_info_xml" ]; then
+                _info_xml=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ')
+            fi
+            # Non-empty <profile/> means there is at least one
+            # stored entry; "<WiFiProfiles />" (self-closing) means
+            # the DB is empty.
+            case "$_info_xml" in
+                *"<profile "*|*"<profile>"*) HAS_STORED_PROFILE=1 ;;
+            esac
+        fi
+        if [ -z "$HAS_STORED_PROFILE" ]; then
+            _ni=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | head -c 400)
+            case "$_ni" in
+                *'wifiProfileCount="0"'*) ;;
+                *'wifiProfileCount="'*) HAS_STORED_PROFILE=1 ;;
+            esac
+        fi
+        if [ -n "$HAS_STORED_PROFILE" ]; then
+            setup_log "M0a: no STA lease yet but stored profile present, polling up to 60s for cold-boot reassociation"
+            _b=60
+            while [ "$_b" -gt 0 ]; do
+                sleep 5
+                _b=$((_b - 5))
+                if PRE_LEASE=$(current_sta_lease 2>/dev/null) && [ -n "$PRE_LEASE" ]; then
+                    setup_log "M0a: STA lease appeared after $((60 - _b))s — $PRE_LEASE"
+                    break
+                fi
+            done
+        fi
+    fi
+    if [ -n "$PRE_LEASE" ]; then
         setup_log "M0a: pre-flight detected real STA lease ($PRE_LEASE) — skipping all WLAN provisioning, leaving Bose state intact"
-        setup_log "Approach SUMMARY: winner=already-on-wifi elapsed=0s iface=${PRE_LEASE%%|*} ip=${PRE_LEASE#*|} bco=${BCO_MODE:-0} taigan=${IS_TAIGAN:-0}"
-        setup_log "=== WLAN provisioning end (skipped) ==="
         # Persist the credentials anyway — they may differ from what's
         # currently in NetManager's DB, and a future Bose factory
         # reset that wipes that DB should still let us replay from
@@ -855,6 +900,14 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         WINNER="M0a-prelease"
     fi
 
+    # Hard guard: every block below mutates Bose state (POSTs to
+    # /addWirelessProfile, runs `network wifi profiles clear`,
+    # overwrites /etc/wpa_supplicant.conf, kills hostapd...). If
+    # M0a won, none of them must run. The post-state + cleanup +
+    # SUMMARY block at the very end of the WLAN section still runs
+    # for both paths so the diagnostic bundle gets a uniform
+    # summary line.
+    if [ "$WINNER" = "none" ]; then
     # Wait for BoseApp HTTP server up to 30s. M1 needs it; M2..M6
     # do not and run regardless. If BoseApp never comes up we still
     # try TAP CLI / wpa_supplicant / wpa_cli paths.
@@ -908,27 +961,84 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # =====================================================================
 
     # ---- M1: HTTP B — POST /addWirelessProfile ------------------------
-    if [ -n "$IS_TAIGAN" ]; then
-        # Live-verified 2026-05-25 + 2026-05-28: this endpoint returns
-        # HTTP 500 on every taigan firmware build observed. The
-        # operation is simply not wired in WebServer-taigan.xml. Skipping
-        # avoids 8 s of wget + 30 s of lease-wait on every boot.
-        setup_log "M1: SKIP reason=taigan-firmware (/addWirelessProfile returns 500 — use Bose iOS app via BLE)"
-    elif [ "$BOSE_OK" = "1" ]; then
-        setup_log "M1: POST $BOSE_API/addWirelessProfile"
-        RESP=$(wget -qO- -T 8 --header="Content-Type: application/xml" \
+    #
+    # Live-verified 2026-05-29 on a freshly-factory-reset taigan
+    # Portable: NetManager rejects /addWirelessProfile in OOB state
+    # until TWO preconditions are met, the same ones the Bose iOS app
+    # walks through during initial setup:
+    #
+    #   1. /language   — POST <sysLanguage>N</sysLanguage>
+    #      Advances /setup systemstate from SETUP_LANG_NOT_SET to
+    #      SETUP_LANG_SET. Without this, /addWirelessProfile returns
+    #      HTTP 500 immediately. Verified by the on-box display: after
+    #      this POST the "download the SoundTouch app" rolling-language
+    #      splash stops, and the box settles on the language picked.
+    #
+    #   2. /setMargeAccount — POST PairDeviceWithAccount XML
+    #      Sets margeAccountUUID (initially empty after factory reset).
+    #      Without this, /addWirelessProfile gets accepted by Allegro
+    #      but NetManager silently never processes the IPC, so Allegro
+    #      eventually emits a 1046 ALLEGROWEBSERVER_TIMEOUT after ~2 min.
+    #      The same XML STR's autopair sends on a working box; here we
+    #      send a placeholder account because the real autopair runs
+    #      downstream once the box is on the LAN.
+    #
+    # Then /performWirelessSiteSurvey wakes the radio (matches the
+    # Bose webpage's ap.js getNetworks() call before submitForm), and
+    # finally /addWirelessProfile with the Bose-original body shape
+    # (PascalCase root, <profile/> with ssid/password/securityType
+    # attributes, content-type text/xml).
+    #
+    # With both gates open, NetManager actually processes the call,
+    # tears down the setup-AP, and associates to the target SSID.
+    # The HTTP response is typically a TCP RST (~16 s in) because the
+    # setup-AP loopback dies during the WLAN switch — so we treat RST
+    # / connection-closed as success and rely on the STA-lease poll
+    # rather than the HTTP body for confirmation.
+    if [ "$BOSE_OK" = "1" ]; then
+        # Gate 1: language. sysLanguage=1 maps to a non-English locale
+        # in the firmware enum; the exact mapping does not matter for
+        # gate purposes — any valid integer clears SETUP_LANG_NOT_SET.
+        setup_log "M1: gate-1 POST $BOSE_API/language sysLanguage=1"
+        LANG_RESP=$(wget -qO- -T 5 --header="Content-Type: text/xml" \
+               --post-data='<sysLanguage>1</sysLanguage>' \
+               "$BOSE_API/language" 2>&1)
+        setup_log "M1: language rc=$? response='$(echo "$LANG_RESP" | head -c 160)'"
+
+        # Gate 2: marge account. Placeholder fields — the real STR
+        # autopair runs downstream on the home LAN and replaces these
+        # with stub@local credentials once the speaker is reachable.
+        MARGE_BODY='<?xml version="1.0" encoding="UTF-8" ?><PairDeviceWithAccount><accountId>stick-bootstrap</accountId><userAuthToken>stick-bootstrap</userAuthToken><accountEmail>stick@local</accountEmail></PairDeviceWithAccount>'
+        setup_log "M1: gate-2 POST $BOSE_API/setMargeAccount"
+        MARGE_RESP=$(wget -qO- -T 10 --header="Content-Type: application/xml" \
+               --post-data="$MARGE_BODY" "$BOSE_API/setMargeAccount" 2>&1)
+        setup_log "M1: marge rc=$? response='$(echo "$MARGE_RESP" | head -c 200)'"
+
+        # Survey wakes the radio; matches the Bose webpage's getNetworks().
+        SURVEY_BODY='<PerformWirelessSiteSurvey timeout="5"/>'
+        setup_log "M1: survey POST $BOSE_API/performWirelessSiteSurvey"
+        SURVEY_RESP=$(wget -qO- -T 12 --header="Content-Type: text/xml" \
+               --post-data="$SURVEY_BODY" "$BOSE_API/performWirelessSiteSurvey" 2>&1)
+        setup_log "M1: survey rc=$? response='$(echo "$SURVEY_RESP" | head -c 240)'"
+
+        # The final add. -T 30 because the response normally arrives as
+        # an RST around the 16 s mark when NetManager tears down the
+        # setup-AP loopback; we do not strictly need a clean response
+        # body, the STA-lease poll below is authoritative.
+        setup_log "M1: POST $BOSE_API/addWirelessProfile body='$(echo "$HTTP_BODY" | head -c 200)'"
+        RESP=$(wget -qO- -T 30 --header="Content-Type: text/xml" \
                --post-data="$HTTP_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
         RC=$?
         setup_log "M1: rc=$RC response='$(echo "$RESP" | head -c 400)'"
         if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
             setup_log "M1: API persisted profile (NetManager DB updated)"
         fi
-        if wait_for_sta_lease 30; then
+        if wait_for_sta_lease 60; then
             RES=$(current_sta_lease)
             WINNER="M1-http"
             setup_log "M1: result=YES lease=$RES"
         else
-            setup_log "M1: result=NO no real STA lease within 30s"
+            setup_log "M1: result=NO no real STA lease within 60s"
         fi
     else
         setup_log "M1: SKIP reason=BoseApp-not-reachable"
@@ -944,6 +1054,35 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         # 60 s lease-wait that always fails and the misleading "M2:
         # NetManager accepted the sequence" log line.
         setup_log "M2: SKIP reason=taigan-firmware (TAP CLI accepts add but never persists — use Bose iOS app via BLE)"
+    fi
+    if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
+        if [ -n "$TAP_CMD" ]; then
+            # Belt-and-suspenders: even with M0a's prelease guard upstream,
+            # re-probe NetManager's profile DB right here. If it already
+            # contains anything (because M0a's lease detection missed,
+            # e.g. the Bose stack hadn't reassociated within M0a's
+            # 60s window but the stored profile is still good), refuse
+            # to run the destructive `profiles clear`. Verified live on
+            # Series-I scm-variant ST20 #60 where M2's clear wiped the
+            # working profile and the box went orange-Wi-Fi forever.
+            M2_PRE_INFO=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ')
+            M2_HAS_PROFILE=""
+            case "$M2_PRE_INFO" in
+                *"<profile "*|*"<profile>"*) M2_HAS_PROFILE=1 ;;
+            esac
+            if [ -n "$M2_HAS_PROFILE" ]; then
+                setup_log "M2: SKIP reason=existing-profile-in-DB ('profiles clear' would wipe the working profile — info='$(echo "$M2_PRE_INFO" | head -c 240)')"
+                # Wait a generous additional window for the existing
+                # profile to associate. If it does we treat as M0a-late
+                # and refuse to provision at all. If not, fall through
+                # to M3..M6 which do not wipe the profile DB.
+                if wait_for_sta_lease 90; then
+                    RES=$(current_sta_lease)
+                    WINNER="M0a-late"
+                    setup_log "M2: STA lease appeared during deferred wait — $RES (treating as already-on-wifi)"
+                fi
+            fi
+        fi
     fi
     if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
         if [ -n "$TAP_CMD" ]; then
@@ -1176,8 +1315,9 @@ WPAEOF
             setup_log "M6: all approaches exhausted — manual preset press may be required"
         ) &
     fi
+    fi  # end of "if [ "$WINNER" = "none" ]" guard around M0..M6
 
-    if [ "$BOSE_OK" = "1" ]; then
+    if [ "$BOSE_OK" = "1" ] && [ "$WINNER" != "M0a-prelease" ]; then
         sleep 2
         NETINFO_AFTER=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
         setup_log "post-state: $NETINFO_AFTER"
