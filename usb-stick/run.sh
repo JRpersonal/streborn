@@ -818,6 +818,18 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     BOSE_API="http://127.0.0.1:8090"
     WINNER="none"
 
+    # Hoisted above M0a because the M0a-refresh branch
+    # (password rotation while staying on the same SSID) needs the
+    # escape helper before the main pipeline runs.
+    xml_escape() {
+        printf '%s' "$1" | sed \
+            -e 's/\&/\&amp;/g' \
+            -e 's/</\&lt;/g' \
+            -e 's/>/\&gt;/g' \
+            -e 's/"/\&quot;/g' \
+            -e "s/'/\&apos;/g"
+    }
+
     # ---- M0a: Pre-flight bypass — already on wifi? ----
     # If the box already has a real STA lease (e.g. user provisioned
     # via Bose iOS app before this STR install, or a previous STR
@@ -885,19 +897,70 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         fi
     fi
     if [ -n "$PRE_LEASE" ]; then
-        setup_log "M0a: pre-flight detected real STA lease ($PRE_LEASE) — skipping all WLAN provisioning, leaving Bose state intact"
-        # Persist the credentials anyway — they may differ from what's
-        # currently in NetManager's DB, and a future Bose factory
-        # reset that wipes that DB should still let us replay from
-        # NAND on the next boot.
-        { printf 'SSID=%s\n' "$SSID"
-          printf 'PASS=%s\n' "$PASS"
-        } > "$WLAN_CREDS_NAND.new" 2>/dev/null
-        if [ -s "$WLAN_CREDS_NAND.new" ]; then
-            mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
-            chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
+        # Network-switch detection: skip provisioning ONLY when the
+        # stick's wlan.conf SSID matches the SSID Bose already has
+        # stored. If they differ, the user explicitly intended a
+        # network change by booting with new credentials — fall
+        # through to provisioning so the new SSID actually takes.
+        # Sources for "what is Bose already configured for":
+        #   1. TAP `network wifi profiles info` ssid="..." attributes
+        #   2. BoseApp /networkInfo wireless block (later models)
+        # If we can't read either reliably, default to the safe
+        # "skip" behaviour to preserve the working network rather
+        # than risk wiping it.
+        M0A_SSID_MATCH=""
+        M0A_SSID_DIFFER=""
+        _stored_info="${TAP_WIFI}"
+        if [ -z "$_stored_info" ] && [ -n "$TAP_CMD" ]; then
+            _stored_info=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ')
         fi
-        WINNER="M0a-prelease"
+        case "$_stored_info" in
+            *"ssid=\"$SSID\""*|*"ssid='$SSID'"*) M0A_SSID_MATCH=1 ;;
+            *"<profile "*ssid=*) M0A_SSID_DIFFER=1 ;;
+        esac
+        if [ -z "$M0A_SSID_MATCH" ] && [ -z "$M0A_SSID_DIFFER" ]; then
+            _ni_full=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | head -c 800)
+            case "$_ni_full" in
+                *"ssid=\"$SSID\""*) M0A_SSID_MATCH=1 ;;
+                *ssid=*) M0A_SSID_DIFFER=1 ;;
+            esac
+        fi
+        if [ -n "$M0A_SSID_DIFFER" ] && [ -z "$M0A_SSID_MATCH" ]; then
+            setup_log "M0a: STA lease present BUT stored SSID differs from stick wlan.conf SSID='$SSID' — falling through to provisioning so the network switch can take effect"
+            PRE_LEASE=""
+        else
+            setup_log "M0a: pre-flight detected real STA lease ($PRE_LEASE) — skipping destructive provisioning, leaving Bose state intact (ssid match=${M0A_SSID_MATCH:-unknown})"
+            # Persist the credentials so a future Bose factory reset
+            # that wipes the NetManager DB can replay from NAND.
+            { printf 'SSID=%s\n' "$SSID"
+              printf 'PASS=%s\n' "$PASS"
+            } > "$WLAN_CREDS_NAND.new" 2>/dev/null
+            if [ -s "$WLAN_CREDS_NAND.new" ]; then
+                mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
+                chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
+            fi
+            # Password-rotation refresh: the box is associated under
+            # SSID X with the OLD password and the user booted with
+            # a stick that has SSID X with a NEW password (e.g. they
+            # rotated their router PSK and want to update the box).
+            # Push the new password into NetManager's DB via a single
+            # non-destructive POST. No `profiles clear`, no setup-AP
+            # teardown — NetManager's /addWirelessProfile updates the
+            # entry for the same SSID in-place. If the new PSK is
+            # wrong NetManager will reject and the live association
+            # is unaffected. Skips on taigan where the endpoint is
+            # known to silently fail (see [[taigan-quirks]]).
+            if [ "$WLAN_SOURCE" = "stick wlan.conf" ] && [ -z "$IS_TAIGAN" ] \
+               && wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
+                ESSID_R=$(xml_escape "$SSID" 2>/dev/null || printf '%s' "$SSID")
+                EPASS_R=$(xml_escape "$PASS" 2>/dev/null || printf '%s' "$PASS")
+                REFRESH_BODY="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$ESSID_R\" password=\"$EPASS_R\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
+                REFRESH_RESP=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
+                       --post-data="$REFRESH_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
+                setup_log "M0a-refresh: non-destructive /addWirelessProfile rc=$? response='$(echo "$REFRESH_RESP" | head -c 200)'"
+            fi
+            WINNER="M0a-prelease"
+        fi
     fi
 
     # Hard guard: every block below mutates Bose state (POSTs to
@@ -930,14 +993,6 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         setup_log "pre-state: $NETINFO_BEFORE"
     fi
 
-    xml_escape() {
-        printf '%s' "$1" | sed \
-            -e 's/\&/\&amp;/g' \
-            -e 's/</\&lt;/g' \
-            -e 's/>/\&gt;/g' \
-            -e 's/"/\&quot;/g' \
-            -e "s/'/\&apos;/g"
-    }
     ESSID=$(xml_escape "$SSID")
     EPASS=$(xml_escape "$PASS")
     HTTP_BODY="<AddWirelessProfile timeout=\"30\"><profile ssid=\"$ESSID\" password=\"$EPASS\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"

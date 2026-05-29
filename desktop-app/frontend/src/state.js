@@ -28,7 +28,13 @@ export const state = {
   optimisticUntil: 0,  // timestamp until which refreshStatus trusts our optimistic state over the box
   presetErrors: {},    // slot → last error message (rendered red)
   searchOrder: 'votes',
-  searchCountry: 'DE',
+  // searchCountry is the user's pinned country filter on the Music
+  // tab. We persist the last pick across app restarts so the choice
+  // is preserved (issue #86) and we do NOT bias new installs to a
+  // single country: empty means "all countries" until the stick
+  // region pull (loadStickRegion) sets a sensible default OR the
+  // user manually picks one.
+  searchCountry: loadSearchCountry(),
   searchLang: '',
   searchTag: '',       // active genre chip
   searchOnlyOK: true,
@@ -82,6 +88,16 @@ export function loadLastBox() {
 }
 export function saveLastBox(id) {
   try { localStorage.setItem('lastBoxDeviceID', id || ''); } catch {}
+}
+
+// Persistent Music-tab country filter (issue #86). Stored as ISO-3166
+// alpha-2; empty string means "all countries". Hoisted above `state`
+// so the initial state literal can call loadSearchCountry().
+export function loadSearchCountry() {
+  try { return localStorage.getItem('searchCountry') || ''; } catch { return ''; }
+}
+export function saveSearchCountry(cc) {
+  try { localStorage.setItem('searchCountry', cc || ''); } catch {}
 }
 
 // isRoutableHost returns true if a string looks like a host we could
