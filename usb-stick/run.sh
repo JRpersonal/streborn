@@ -1891,6 +1891,40 @@ setup_log "shim gate: variant='${VARIANT:-?}' host='${HOSTID:-?}' moduleType='$(
 # external reachability via the normal listener bind. Repeats
 # every 30 s same as the INPUT ACCEPT install.
 REDIRECT_PORTS="8888 9080 8081 8443"
+
+# Probe whether the kernel nat table is available before attempting
+# REDIRECT installs. v0.5.19 had the install code itself but every
+# spotty bundle showed empty PREROUTING chain with no success log
+# AND no error log, because `iptables -t nat -L` was silenced via
+# 2>/dev/null. Most likely cause: iptable_nat kernel module not
+# auto-loaded by Bose's init. Probe explicitly, log the stderr,
+# and try a one-shot modprobe before giving up. Returns 0 if nat
+# is usable, 1 otherwise.
+iptables_nat_probe_and_modprobe() {
+    NAT_OUT=$(iptables -t nat -L PREROUTING -n 2>&1)
+    NAT_RC=$?
+    if [ "$NAT_RC" = "0" ]; then
+        setup_log "iptables nat table available (probe rc=0)"
+        return 0
+    fi
+    setup_log "iptables nat table NOT available initially (probe rc=$NAT_RC, output='$(echo "$NAT_OUT" | tr '\n' ' ' | head -c 240)')"
+    if [ -x /sbin/modprobe ] || [ -x /usr/sbin/modprobe ]; then
+        MODPROBE_OUT=$(modprobe iptable_nat 2>&1)
+        MODPROBE_RC=$?
+        setup_log "modprobe iptable_nat rc=$MODPROBE_RC output='$(echo "$MODPROBE_OUT" | tr '\n' ' ' | head -c 240)'"
+    else
+        setup_log "modprobe binary not found, cannot load iptable_nat"
+    fi
+    NAT_OUT2=$(iptables -t nat -L PREROUTING -n 2>&1)
+    NAT_RC2=$?
+    if [ "$NAT_RC2" = "0" ]; then
+        setup_log "iptables nat table available after modprobe (probe rc=0)"
+        return 0
+    fi
+    setup_log "iptables nat table STILL unavailable after modprobe (probe rc=$NAT_RC2). REDIRECT cannot be installed on this firmware."
+    return 1
+}
+
 iptables_install_redirect_series_one() {
     [ "$IS_SERIES_ONE" = "1" ] || return 0
     LEASE=$(current_sta_lease 2>/dev/null)
@@ -1903,11 +1937,17 @@ iptables_install_redirect_series_one() {
             -m comment --comment "streborn-redirect" -j REDIRECT --to-ports "$port" 2>/dev/null; then
             continue
         fi
-        if iptables -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport "$port" \
-            -m comment --comment "streborn-redirect" -j REDIRECT --to-ports "$port" 2>/dev/null; then
+        INS_OUT=$(iptables -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport "$port" \
+            -m comment --comment "streborn-redirect" -j REDIRECT --to-ports "$port" 2>&1)
+        INS_RC=$?
+        if [ "$INS_RC" = "0" ]; then
             setup_log "iptables nat PREROUTING REDIRECT tcp/$port -> loopback installed for $LANIP at uptime=$(uptime_s)s"
         else
             rc_redirect=$((rc_redirect + 1))
+            # Only log the failure once per port per install pass to
+            # avoid log spam from the 30s watchdog re-asserting against
+            # a missing nat table for the lifetime of the box.
+            setup_log "iptables nat PREROUTING REDIRECT tcp/$port FAILED rc=$INS_RC output='$(echo "$INS_OUT" | tr '\n' ' ' | head -c 240)'"
         fi
     done
     return $rc_redirect
@@ -1926,6 +1966,17 @@ iptables_install_redirect_series_one() {
         w=$((w + 2))
     done
     if [ "$IS_SERIES_ONE" = "1" ]; then
+        # Probe nat-table availability once at startup before the
+        # watchdog loop. Logs the iptables -V output and whether
+        # modprobe was needed and successful, so the next bundle
+        # from a Series-I box says exactly why REDIRECT did or did
+        # not land. If nat is permanently unavailable, the watchdog
+        # still runs but the install function just logs failures
+        # once per pass; the user will see "still unavailable" and
+        # know this firmware needs the LD_PRELOAD shim path instead.
+        IPTABLES_V=$(iptables -V 2>&1 | head -c 200)
+        setup_log "iptables version: $IPTABLES_V"
+        iptables_nat_probe_and_modprobe
         iptables_install_redirect_series_one
         while true; do
             sleep 30
