@@ -63,7 +63,7 @@ type InstallResult struct {
 //     that only offers ssh-rsa / SHA1 / CBC. Works on every OpenSSH
 //     from 6.x through current 10.x.
 //
-//  2. "host-key-only" — only -oHostKeyAlgorithms=+ssh-rsa,ssh-dss
+//  2. "host-key-only" — only -oHostKeyAlgorithms=+ssh-rsa
 //     plus the connection-hygiene flags. If the user's ssh barfs
 //     on any one of the algo-class options (some BSD-derived ssh
 //     forks have spelled them differently), this strict subset
@@ -94,7 +94,7 @@ type InstallResult struct {
 var sshFlagSets = [][]string{
 	// Set 1: full-legacy
 	{
-		"-oHostKeyAlgorithms=+ssh-rsa,ssh-dss",
+		"-oHostKeyAlgorithms=+ssh-rsa",
 		"-oKexAlgorithms=+diffie-hellman-group1-sha1,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1",
 		"-oCiphers=+aes128-cbc,aes192-cbc,aes256-cbc,3des-cbc",
 		"-oMACs=+hmac-sha1,hmac-sha1-96,hmac-md5",
@@ -108,7 +108,7 @@ var sshFlagSets = [][]string{
 	},
 	// Set 2: host-key-only
 	{
-		"-oHostKeyAlgorithms=+ssh-rsa,ssh-dss",
+		"-oHostKeyAlgorithms=+ssh-rsa",
 		"-oStrictHostKeyChecking=no",
 		"-oUserKnownHostsFile=" + nullDevice,
 		"-oGlobalKnownHostsFile=" + nullDevice,

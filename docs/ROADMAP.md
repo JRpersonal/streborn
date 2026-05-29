@@ -131,35 +131,12 @@ Hard requirements that must hold before this ships:
 
 Tracked as a GitHub issue under the `enhancement` label.
 
-### Hardware long-press preset save (INTERNET_RADIO re-sourcing spike)
-
-Tracked in [#69](https://github.com/JRpersonal/streborn/issues/69).
-
-The hardware long-press of keys 1-6 currently does not save the
-playing station. Live `/gabbo` analysis on ST10 (Bose FW 27.0.6)
-confirms the speaker firmware emits **no** WebSocket frame for a
-hardware long-press, so the existing STR hook on
-`nowSelectionUpdated` has nothing to attach to. The save path is
-firmware-internal and gated on the live `ContentItem`
-`isPresetable="true"` flag, which the firmware hardcodes to `false`
-for our UPnP-routed audio.
-
-The only architecture that can re-enable native long-press is to make
-the firmware see the live stream as `INTERNET_RADIO` (where
-`isPresetable="true"` is the firmware default). That requires:
-
-1. Mapping the TUNEIN partner endpoint advertised by marge's
-   `/bmx/registry/v1/services` and proxying enough of it to satisfy
-   the firmware's source-validation path.
-2. Routing radio playback through that proxied source instead of
-   raw UPnP.
-3. Making sure short-press, app-driven save, and standby recovery
-   still work end to end after the source switch.
-
-Low priority: the in-app preset workflow already covers the use
-case (the user has to play the station first either way), so the
-incremental user benefit is small relative to a multi-PR spike.
-Kept on the roadmap so the live-analysis findings are not lost.
+**Status:** Level 2 was partially shipped in v0.5.17 as
+`TrueFactoryReset` (commit `5ddc6e8`). The button lives at Speaker
+Settings → Actions and wipes Bose's persistence files plus STR's
+NAND wlan-creds before rebooting, so the speaker returns to clean
+OOB state. The bigger wizard with level 1 (presets reset) and
+level 3 (full STR uninstall) is still open.
 
 ### Other ideas (loose)
 
