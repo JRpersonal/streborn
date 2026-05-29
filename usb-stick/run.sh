@@ -1861,6 +1861,79 @@ detect_series_one() {
 IS_SERIES_ONE=$(detect_series_one)
 setup_log "shim gate: variant='${VARIANT:-?}' host='${HOSTID:-?}' moduleType='$(wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | sed -n 's/.*<moduleType>\([^<]*\)<\/moduleType>.*/\1/p' | head -c 16)' is_series_one='${IS_SERIES_ONE:-0}'"
 
+# ============================================================
+# Cheap experiment for #90 (Series-I :8888 unreachable from LAN)
+# ============================================================
+# Hypothesis from deqw 2026-05-29 on #60: the scm chipset routes
+# external TCP differently than internal. Self-connect to
+# LAN_IP:8888 from the box itself works (proven by every spotty
+# setup.log dump), but external clients on the same LAN get
+# refused even though the listener is bound to 0.0.0.0:8888 and
+# iptables INPUT ACCEPT is in place. That points at a chipset
+# whitelist that filters by process identity rather than the
+# kernel-level firewall.
+#
+# Cheap test path BEFORE the heavier LD_PRELOAD bind-mount shim:
+# install an iptables PREROUTING REDIRECT rule for STR's listener
+# ports. Inbound traffic to <LAN_IP>:PORT gets rewritten to
+# 127.0.0.1:PORT before the chipset filter sees the destination,
+# and STR's loopback listener accepts it.
+#
+#   - If the chipset filter is at the routing/socket-owner layer
+#     (after iptables PREROUTING), REDIRECT bypasses it and the
+#     port becomes externally reachable. WIN.
+#   - If the chipset filter is in NIC hardware (before iptables),
+#     REDIRECT does nothing and the box stays unreachable.
+#     Still safe: PREROUTING rules are no-ops on traffic that
+#     never arrives.
+#
+# Restricted to Series-I only because Series-II boxes already get
+# external reachability via the normal listener bind. Repeats
+# every 30 s same as the INPUT ACCEPT install.
+REDIRECT_PORTS="8888 9080 8081 8443"
+iptables_install_redirect_series_one() {
+    [ "$IS_SERIES_ONE" = "1" ] || return 0
+    LEASE=$(current_sta_lease 2>/dev/null)
+    [ -n "$LEASE" ] || return 0
+    LANIP=${LEASE##*|}
+    [ -n "$LANIP" ] && [ "$LANIP" != "127.0.0.1" ] || return 0
+    rc_redirect=0
+    for port in $REDIRECT_PORTS; do
+        if iptables -t nat -C PREROUTING -p tcp ! -i lo -d "$LANIP" --dport "$port" \
+            -m comment --comment "streborn-redirect" -j REDIRECT --to-ports "$port" 2>/dev/null; then
+            continue
+        fi
+        if iptables -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport "$port" \
+            -m comment --comment "streborn-redirect" -j REDIRECT --to-ports "$port" 2>/dev/null; then
+            setup_log "iptables nat PREROUTING REDIRECT tcp/$port -> loopback installed for $LANIP at uptime=$(uptime_s)s"
+        else
+            rc_redirect=$((rc_redirect + 1))
+        fi
+    done
+    return $rc_redirect
+}
+(
+    # First wait for an STA lease, then install. The LAN IP is
+    # what the REDIRECT keys on, so without a lease there is no
+    # destination to match. Loop forever to re-assert after any
+    # NetManager flush AND re-discover the IP if DHCP rebinds.
+    w=0
+    while [ $w -lt 120 ]; do
+        if [ -n "$(current_sta_lease 2>/dev/null)" ]; then
+            break
+        fi
+        sleep 2
+        w=$((w + 2))
+    done
+    if [ "$IS_SERIES_ONE" = "1" ]; then
+        iptables_install_redirect_series_one
+        while true; do
+            sleep 30
+            iptables_install_redirect_series_one
+        done
+    fi
+) &
+
 # SoftwareUpdate-Hijack-Logik: returnt 0 wenn der lokale Listener-PID
 # auf :17008 wirklich von einem SoftwareUpdate-Prozess kommt UND
 # dieser Prozess unsere LD_PRELOAD-Env-Var bereits gesetzt hat.
