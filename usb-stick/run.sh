@@ -863,28 +863,45 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     PRE_LEASE=$(current_sta_lease 2>/dev/null || true)
     if [ -z "$PRE_LEASE" ]; then
         HAS_STORED_PROFILE=""
-        if [ -n "$TAP_CMD" ]; then
-            # Reuse the boot-time probe value if present, otherwise re-probe.
+        HAS_STORED_PROFILE_SRC=""
+        # Source 1: NetManager's persisted profile DB on disk.
+        # NetworkProfiles.xml is written by Bose's NetManager and lives
+        # at /mnt/nv/BoseApp-Persistence/1/NetworkProfiles.xml. It is
+        # available BEFORE BoseApp's HTTP server comes up (so we do
+        # not get bitten by the wget timeout race that v0.5.16 had,
+        # where /networkInfo returned empty because BoseApp was not
+        # ready at uptime ~31s and M0a defaulted to "no profile" then
+        # fell through to destructive M1+M2). Ground truth of what
+        # NetManager will associate to on the next iteration.
+        _profile_xml="/mnt/nv/BoseApp-Persistence/1/NetworkProfiles.xml"
+        if [ -s "$_profile_xml" ] && grep -q "<profile " "$_profile_xml" 2>/dev/null; then
+            HAS_STORED_PROFILE=1
+            HAS_STORED_PROFILE_SRC="file"
+        fi
+        # Source 2: TAP CLI runtime view. May be empty at cold boot
+        # even when the on-disk XML has an entry, but useful on
+        # variants where the file path differs.
+        if [ -z "$HAS_STORED_PROFILE" ] && [ -n "$TAP_CMD" ]; then
             _info_xml="${TAP_WIFI}"
             if [ -z "$_info_xml" ]; then
                 _info_xml=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ')
             fi
-            # Non-empty <profile/> means there is at least one
-            # stored entry; "<WiFiProfiles />" (self-closing) means
-            # the DB is empty.
             case "$_info_xml" in
-                *"<profile "*|*"<profile>"*) HAS_STORED_PROFILE=1 ;;
+                *"<profile "*|*"<profile>"*) HAS_STORED_PROFILE=1; HAS_STORED_PROFILE_SRC="tap" ;;
             esac
         fi
+        # Source 3: BoseApp /networkInfo HTTP. Slowest, racy at boot,
+        # only last-resort. Quick timeout so we do not stall when
+        # BoseApp is not yet up.
         if [ -z "$HAS_STORED_PROFILE" ]; then
             _ni=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | head -c 400)
             case "$_ni" in
                 *'wifiProfileCount="0"'*) ;;
-                *'wifiProfileCount="'*) HAS_STORED_PROFILE=1 ;;
+                *'wifiProfileCount="'*) HAS_STORED_PROFILE=1; HAS_STORED_PROFILE_SRC="http" ;;
             esac
         fi
         if [ -n "$HAS_STORED_PROFILE" ]; then
-            setup_log "M0a: no STA lease yet but stored profile present, polling up to 60s for cold-boot reassociation"
+            setup_log "M0a: no STA lease yet but stored profile present (src=$HAS_STORED_PROFILE_SRC), polling up to 60s for cold-boot reassociation"
             _b=60
             while [ "$_b" -gt 0 ]; do
                 sleep 5
@@ -1051,14 +1068,36 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # / connection-closed as success and rely on the STA-lease poll
     # rather than the HTTP body for confirmation.
     if [ "$BOSE_OK" = "1" ]; then
-        # Gate 1: language. sysLanguage=1 maps to a non-English locale
-        # in the firmware enum; the exact mapping does not matter for
-        # gate purposes — any valid integer clears SETUP_LANG_NOT_SET.
-        setup_log "M1: gate-1 POST $BOSE_API/language sysLanguage=1"
-        LANG_RESP=$(wget -qO- -T 5 --header="Content-Type: text/xml" \
-               --post-data='<sysLanguage>1</sysLanguage>' \
-               "$BOSE_API/language" 2>&1)
-        setup_log "M1: language rc=$? response='$(echo "$LANG_RESP" | head -c 160)'"
+        # Gate 1: language. NetManager rejects /addWirelessProfile
+        # while /setup systemstate is SETUP_LANG_NOT_SET. Any valid
+        # integer clears that state. v0.5.16 hardcoded sysLanguage=1
+        # which on the firmware enum maps to a Nordic locale; that
+        # POST persists and changed users' radio voice prompts to
+        # Finnish/Swedish (reported in #60 deqw 2026-05-29: "the
+        # radio changed language to Finnish or Swedish"). v0.5.17:
+        # GET /language first; if a value is already set (gate open
+        # from a prior provisioning, prior factory life, or because
+        # a non-OOB box does not need this gate), skip the POST so
+        # we do not overwrite the user's preferred language. If we
+        # really do need to POST, send sysLanguage=0 which maps to
+        # English in the same enum and is the least surprising
+        # fallback for an internationally-shipped tool.
+        setup_log "M1: gate-1 GET $BOSE_API/language"
+        LANG_GET=$(wget -qO- -T 5 "$BOSE_API/language" 2>&1)
+        setup_log "M1: language GET rc=$? response='$(echo "$LANG_GET" | head -c 160)'"
+        LANG_NEED_POST=1
+        case "$LANG_GET" in
+            *"<sysLanguage>"[0-9]*"</sysLanguage>"*) LANG_NEED_POST="" ;;
+        esac
+        if [ -n "$LANG_NEED_POST" ]; then
+            setup_log "M1: gate-1 POST $BOSE_API/language sysLanguage=0 (English, neutral)"
+            LANG_RESP=$(wget -qO- -T 5 --header="Content-Type: text/xml" \
+                   --post-data='<sysLanguage>0</sysLanguage>' \
+                   "$BOSE_API/language" 2>&1)
+            setup_log "M1: language POST rc=$? response='$(echo "$LANG_RESP" | head -c 160)'"
+        else
+            setup_log "M1: gate-1 skipped, sysLanguage already set, preserving user locale"
+        fi
 
         # Gate 2: marge account. Placeholder fields — the real STR
         # autopair runs downstream on the home LAN and replaces these
@@ -1111,31 +1150,43 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         setup_log "M2: SKIP reason=taigan-firmware (TAP CLI accepts add but never persists — use Bose iOS app via BLE)"
     fi
     if [ "$WINNER" = "none" ] && [ -z "$IS_TAIGAN" ]; then
-        if [ -n "$TAP_CMD" ]; then
-            # Belt-and-suspenders: even with M0a's prelease guard upstream,
-            # re-probe NetManager's profile DB right here. If it already
-            # contains anything (because M0a's lease detection missed,
-            # e.g. the Bose stack hadn't reassociated within M0a's
-            # 60s window but the stored profile is still good), refuse
-            # to run the destructive `profiles clear`. Verified live on
-            # Series-I scm-variant ST20 #60 where M2's clear wiped the
-            # working profile and the box went orange-Wi-Fi forever.
+        # Belt-and-suspenders: even with M0a's prelease guard upstream,
+        # re-probe NetManager's profile DB right here. If it already
+        # contains anything (because M0a's lease detection missed,
+        # e.g. the Bose stack had not reassociated within M0a's 60s
+        # window but the stored profile is still good), refuse to run
+        # the destructive `profiles clear`. Verified live on Series-I
+        # scm-variant ST20 #60 where M2's clear wiped the working
+        # profile and the box went orange-Wi-Fi forever.
+        #
+        # v0.5.17 source-priority: NetworkProfiles.xml on disk (most
+        # reliable, available immediately) > TAP runtime info > nothing.
+        # v0.5.16 used only TAP, which returns "<WiFiProfiles />"
+        # (self-closing, empty) at cold boot even when the disk file
+        # has an entry, so the guard misfired and M2 wiped the profile.
+        M2_HAS_PROFILE=""
+        M2_HAS_PROFILE_SRC=""
+        _profile_xml="/mnt/nv/BoseApp-Persistence/1/NetworkProfiles.xml"
+        if [ -s "$_profile_xml" ] && grep -q "<profile " "$_profile_xml" 2>/dev/null; then
+            M2_HAS_PROFILE=1
+            M2_HAS_PROFILE_SRC="file"
+        fi
+        if [ -z "$M2_HAS_PROFILE" ] && [ -n "$TAP_CMD" ]; then
             M2_PRE_INFO=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ')
-            M2_HAS_PROFILE=""
             case "$M2_PRE_INFO" in
-                *"<profile "*|*"<profile>"*) M2_HAS_PROFILE=1 ;;
+                *"<profile "*|*"<profile>"*) M2_HAS_PROFILE=1; M2_HAS_PROFILE_SRC="tap" ;;
             esac
-            if [ -n "$M2_HAS_PROFILE" ]; then
-                setup_log "M2: SKIP reason=existing-profile-in-DB ('profiles clear' would wipe the working profile — info='$(echo "$M2_PRE_INFO" | head -c 240)')"
-                # Wait a generous additional window for the existing
-                # profile to associate. If it does we treat as M0a-late
-                # and refuse to provision at all. If not, fall through
-                # to M3..M6 which do not wipe the profile DB.
-                if wait_for_sta_lease 90; then
-                    RES=$(current_sta_lease)
-                    WINNER="M0a-late"
-                    setup_log "M2: STA lease appeared during deferred wait — $RES (treating as already-on-wifi)"
-                fi
+        fi
+        if [ -n "$M2_HAS_PROFILE" ]; then
+            setup_log "M2: SKIP reason=existing-profile-in-DB (src=$M2_HAS_PROFILE_SRC; 'profiles clear' would wipe the working profile)"
+            # Wait a generous additional window for the existing
+            # profile to associate. If it does we treat as M0a-late
+            # and refuse to provision at all. If not, fall through
+            # to M3..M6 which do not wipe the profile DB.
+            if wait_for_sta_lease 90; then
+                RES=$(current_sta_lease)
+                WINNER="M0a-late"
+                setup_log "M2: STA lease appeared during deferred wait — $RES (treating as already-on-wifi)"
             fi
         fi
     fi

@@ -266,6 +266,14 @@ function switchView(view) {
     // freshly installed STR) and the user just opened the tab to
     // start a prep flow — make sure they see the right targets.
     renderSetupTargetPicker();
+    // Lazy-load saved WiFi profiles (deqw #88 followup). v0.5.16
+    // gated the macOS keychain auto-prompt that fired on app start;
+    // v0.5.17 defers the lookup entirely to Setup-tab activation so
+    // Windows (netsh wlan show profiles) and Linux (nmcli) also do
+    // not run the OS call for users who only use Music or Settings.
+    // Idempotent: re-runs on every Setup-tab open so a refreshed
+    // OS profile list is picked up too.
+    if (typeof loadWifiProfiles === 'function') loadWifiProfiles();
   }
   if (view === 'box') {
     // Refresh the mDNS list on every switch to the music view so a
@@ -4060,5 +4068,9 @@ renderFooter();
 })();
 
 discoverBoxes();
-loadWifiProfiles();
+// loadWifiProfiles() no longer fires at app start. Defers the OS
+// WiFi profile lookup to Setup-tab activation (see switchView).
+// Was the cause of the macOS keychain prompt on every launch (#88)
+// even after the v0.5.16 isMacOS gate, and is also redundant on
+// Windows / Linux for users who never visit the Setup tab.
 setInterval(refreshStatus, 2000);
