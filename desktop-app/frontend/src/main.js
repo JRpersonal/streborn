@@ -135,9 +135,11 @@ document.querySelector('#app').innerHTML = `
   </header>
   <div class="tabs">
     <button class="tab-btn active" data-view="box">${escapeHtml(t('nav.music'))}</button>
-    <button class="tab-btn" data-view="library">${escapeHtml(t('nav.library'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
+    <button class="tab-btn" data-view="library">${escapeHtml(t('nav.library'))}</button>
     <button class="tab-btn" data-view="settings">${escapeHtml(t('nav.speakerSettings'))}</button>
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
+    <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
+    <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
   </div>
   <div id="appUpdateBanner" class="app-update-banner hidden"></div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">
@@ -150,6 +152,8 @@ document.querySelector('#app').innerHTML = `
   <div id="view-library" class="view hidden"></div>
   <div id="view-settings" class="view hidden"></div>
   <div id="view-setup" class="view hidden"></div>
+  <div id="view-multiroom" class="view hidden"></div>
+  <div id="view-spotify" class="view hidden"></div>
 
   <div class="modal hidden" id="pickModal">
     <div class="modal-content">
@@ -250,6 +254,8 @@ function switchView(view) {
   $('view-library').classList.toggle('hidden', view !== 'library');
   $('view-settings').classList.toggle('hidden', view !== 'settings');
   $('view-setup').classList.toggle('hidden', view !== 'setup');
+  $('view-multiroom').classList.toggle('hidden', view !== 'multiroom');
+  $('view-spotify').classList.toggle('hidden', view !== 'spotify');
   // Global SSH banner: the Setup tab has no speaker context, so hide
   // the banner there unconditionally. Otherwise let checkSshBanner
   // decide.
@@ -285,6 +291,61 @@ function switchView(view) {
   }
   if (view === 'settings') loadBoxSettings();
   if (view === 'library') openLibrary();
+  if (view === 'multiroom') renderMultiroomAlpha();
+  if (view === 'spotify') renderSpotifyAlpha();
+}
+
+// Alpha-stage placeholder for the multi-room / SoundTouch zone feature
+// (#70). No backend wiring; a static visible-progress page so users
+// know it is on the roadmap and can leave input on the issue.
+function renderMultiroomAlpha() {
+  const root = $('view-multiroom');
+  if (!root || root.dataset.rendered === '1') return;
+  root.dataset.rendered = '1';
+  root.innerHTML = `
+    <div class="alpha-stage">
+      <h2>${escapeHtml(t('multiroom.heading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></h2>
+      <p>${escapeHtml(t('multiroom.intro1'))}</p>
+      <ul class="alpha-checklist">
+        <li>${escapeHtml(t('multiroom.bullet1'))}</li>
+        <li>${escapeHtml(t('multiroom.bullet2'))}</li>
+        <li>${escapeHtml(t('multiroom.bullet3'))}</li>
+      </ul>
+      <p>${t('multiroom.feedbackPrompt')}</p>
+      <p><a href="#" id="multiroomIssueLink">${escapeHtml(t('multiroom.issueLink'))}</a></p>
+    </div>
+  `;
+  const link = $('multiroomIssueLink');
+  if (link) link.onclick = (e) => {
+    e.preventDefault();
+    try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/70'); } catch {}
+  };
+}
+
+// Alpha-stage placeholder for Spotify Connect / streaming integration
+// (#78). Same pattern as renderMultiroomAlpha.
+function renderSpotifyAlpha() {
+  const root = $('view-spotify');
+  if (!root || root.dataset.rendered === '1') return;
+  root.dataset.rendered = '1';
+  root.innerHTML = `
+    <div class="alpha-stage">
+      <h2>${escapeHtml(t('spotify.heading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></h2>
+      <p>${escapeHtml(t('spotify.intro1'))}</p>
+      <ul class="alpha-checklist">
+        <li>${escapeHtml(t('spotify.bullet1'))}</li>
+        <li>${escapeHtml(t('spotify.bullet2'))}</li>
+        <li>${escapeHtml(t('spotify.bullet3'))}</li>
+      </ul>
+      <p>${t('spotify.feedbackPrompt')}</p>
+      <p><a href="#" id="spotifyIssueLink">${escapeHtml(t('spotify.issueLink'))}</a></p>
+    </div>
+  `;
+  const link = $('spotifyIssueLink');
+  if (link) link.onclick = (e) => {
+    e.preventDefault();
+    try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/78'); } catch {}
+  };
 }
 
 // ---------- Footer ----------
@@ -2193,6 +2254,24 @@ function renderSettingsBoxSelect() {
   if (state.settingsBox) sel.value = state.settingsBox.deviceID;
 }
 
+// langOptionsHtml: Bose sysLanguage int enum is only partially known
+// (see project_bose_language_enum memory). We render 0..29 honestly:
+// values we have confirmed labels for show them, the rest are
+// "sysLanguage=N (unknown)" so adventurous users can pick one, see
+// what the box does, and report back. Crowdsourcing the enum.
+const BOSE_LANG_LABELS = {
+  0: 'English',
+  1: 'Danish',
+};
+function langOptionsHtml() {
+  const out = [];
+  for (let i = 0; i < 30; i++) {
+    const label = BOSE_LANG_LABELS[i] || t('settingsView.langUnknown');
+    out.push(`<option value="${i}">${escapeHtml(`${i}: ${label}`)}</option>`);
+  }
+  return out.join('');
+}
+
 async function loadBoxSettings() {
   renderSettingsBoxSelect();
   const body = $('settingsBody');
@@ -2383,7 +2462,7 @@ function renderBoxSettings(s, box) {
     </div>
 
     <div class="settings-section">
-      <h3>${escapeHtml(t('settingsView.wlanHeading'))}</h3>
+      <h3>${escapeHtml(t('settingsView.wlanHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h3>
       ${wifi ? `
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSsid'))}</span><span class="kv-val">${escapeHtml(wifi.ssid || '-')}</span></div>
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanIp'))}</span><span class="kv-val">${escapeHtml(wifi.ipAddress || '-')}</span></div>
@@ -2404,6 +2483,26 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-danger btn-mini" id="boxWlanSave">${escapeHtml(t('settingsView.wlanSaveBtn'))}</button>
         <small class="muted small">${escapeHtml(t('settingsView.wlanWarn'))}</small>
       </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.langHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h3>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.langCurrent'))}</span><span class="kv-val" id="boxLangCurrent">${escapeHtml(t('common.loading'))}</span></div>
+      <div class="setting-row">
+        <select id="boxLangSelect">${langOptionsHtml()}</select>
+        <button class="btn btn-mini" id="boxLangSave">${escapeHtml(t('common.save'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.langHelp'))}</small>
+    </div>
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.clockHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h3>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.clockCurrent'))}</span><span class="kv-val" id="boxClockCurrent">${escapeHtml(t('common.loading'))}</span></div>
+      <div class="setting-row">
+        <button class="btn btn-mini" id="boxClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini" id="boxClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.clockHelp'))}</small>
     </div>
 
     <div class="settings-section">
@@ -2666,6 +2765,83 @@ function renderBoxSettings(s, box) {
       }
     };
   }
+
+  // Language (BETA): GET /language on :8090 of the box, parse the
+  // sysLanguage integer, show in the label and pre-select the
+  // dropdown. POST on Save. Errors surface via showError; the
+  // dropdown stays editable so users can keep trying.
+  const langCurrent = $('boxLangCurrent');
+  const langSel = $('boxLangSelect');
+  const langSave = $('boxLangSave');
+  const boseHost = box.host;
+  const boseUrl = (p) => `http://${boseHost}:8090${p}`;
+  if (langCurrent && langSel) {
+    (async () => {
+      try {
+        const r = await fetch(boseUrl('/language'));
+        const txt = await r.text();
+        const m = txt.match(/<sysLanguage>(\d+)<\/sysLanguage>/);
+        const v = m ? m[1] : '';
+        langCurrent.textContent = v
+          ? `${v}: ${BOSE_LANG_LABELS[v] || t('settingsView.langUnknown')}`
+          : t('settingsView.langNoValue');
+        if (v) langSel.value = v;
+      } catch {
+        langCurrent.textContent = t('settingsView.langUnreachable');
+      }
+    })();
+  }
+  if (langSave) {
+    langSave.onclick = async () => {
+      const v = langSel.value;
+      try {
+        const r = await fetch(boseUrl('/language'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/xml' },
+          body: `<sysLanguage>${v}</sysLanguage>`,
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        showToast(t('settingsView.langSavedToast', { v }));
+        langCurrent.textContent = `${v}: ${BOSE_LANG_LABELS[v] || t('settingsView.langUnknown')}`;
+      } catch (e) { showError(e); }
+    };
+  }
+
+  // Clock display (BETA): GET /clockDisplay to see current state,
+  // POST to toggle. The endpoint is undocumented in the public Bose
+  // Web API PDF and may not exist on every model. On 404 / 500 we
+  // surface "not supported" rather than burying the failure.
+  const clockCurrent = $('boxClockCurrent');
+  const clockOn = $('boxClockOn');
+  const clockOff = $('boxClockOff');
+  const refreshClock = async () => {
+    if (!clockCurrent) return;
+    try {
+      const r = await fetch(boseUrl('/clockDisplay'));
+      if (!r.ok) { clockCurrent.textContent = t('settingsView.clockNotSupported'); return; }
+      const txt = await r.text();
+      const m = txt.match(/<clockDisplay[^>]*>([^<]*)<\/clockDisplay>/i)
+             || txt.match(/clockDisplay[^=]*=["']?(true|false|on|off|1|0)/i);
+      clockCurrent.textContent = m ? m[1] : t('settingsView.clockUnknown');
+    } catch {
+      clockCurrent.textContent = t('settingsView.clockNotSupported');
+    }
+  };
+  refreshClock();
+  const postClock = async (enable) => {
+    try {
+      const r = await fetch(boseUrl('/clockDisplay'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/xml' },
+        body: `<clockDisplay enable="${enable}"/>`,
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      showToast(t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
+      await refreshClock();
+    } catch (e) { showError(e); }
+  };
+  if (clockOn) clockOn.onclick = () => postClock('true');
+  if (clockOff) clockOff.onclick = () => postClock('false');
 
   // App Region dropdown fuellen + aktuelle Region selektieren
   const regSel = $('appRegionSelect');

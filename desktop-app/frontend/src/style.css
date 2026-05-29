@@ -419,6 +419,34 @@ body {
   letter-spacing: 0.4px;
   vertical-align: middle;
 }
+/* Alpha pill: same shape, redder accent to signal that this is more
+ * experimental than BETA and may not work at all yet. */
+.alpha-pill {
+  background: rgba(244, 67, 54, 0.22);
+  color: #ef9a9a;
+}
+
+/* ---------- Alpha-stage placeholder pages (Spotify, Multi-room) ---------- */
+.alpha-stage {
+  max-width: 720px;
+  margin: 32px auto;
+  padding: 0 16px;
+  line-height: 1.55;
+  color: #d8d8d8;
+}
+.alpha-stage h2 {
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.alpha-stage p { margin: 12px 0; }
+.alpha-stage a { color: #ffb74d; }
+.alpha-checklist {
+  margin: 16px 0;
+  padding-left: 22px;
+}
+.alpha-checklist li { margin: 6px 0; }
 
 /* ---------- Library view ---------- */
 .library-header h2 { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
