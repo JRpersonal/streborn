@@ -42,6 +42,7 @@ export {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
+  TrueFactoryReset,
   ProbeSetupAP,
   ListMediaServers,
   BrowseLibrary,

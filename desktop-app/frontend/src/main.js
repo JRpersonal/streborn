@@ -36,6 +36,7 @@ import {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
+  TrueFactoryReset,
   ProbeSetupAP,
   ListMediaServers,
   BrowseLibrary,
@@ -2431,6 +2432,10 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
         <button class="btn btn-mini btn-danger" id="boxRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
       </div>
+      <div class="setting-row" style="margin-top:8px">
+        <button class="btn btn-mini btn-danger" id="boxTrueFactoryResetBtn">${escapeHtml(t('settingsView.trueFactoryResetBtn'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.trueFactoryResetHelp'))}</small>
     </div>
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.speakerInfoHeading'))}</h3>
@@ -2615,6 +2620,42 @@ function renderBoxSettings(s, box) {
         // The speaker is gone for ~30 s, then trigger discovery again.
         setTimeout(discoverBoxes, 35000);
       } catch (e) { showError(e); }
+    };
+  }
+
+  // True factory reset: wipes Bose's persistence files via SSH so
+  // the speaker truly returns to OOB. Required for the Bose iOS app
+  // to be able to re-onboard the speaker — Bose's hardware reset
+  // (Preset 1 + Vol-) leaves NetworkProfiles.xml intact, the
+  // speaker auto-rejoins its last WiFi, and the iOS app's WAC
+  // discovery sees an "already configured" speaker and gives up.
+  const tfrBtn = $('boxTrueFactoryResetBtn');
+  if (tfrBtn) {
+    tfrBtn.onclick = async () => {
+      const ok = await confirmWarn(
+        t('settingsView.trueFactoryResetConfirmTitle'),
+        t('settingsView.trueFactoryResetConfirmBody', { name: box.friendlyName || box.name || box.host })
+      );
+      if (!ok) return;
+      tfrBtn.disabled = true;
+      tfrBtn.textContent = t('settingsView.trueFactoryResetRunning');
+      try {
+        const r = await TrueFactoryReset(box.host);
+        if (r && r.ok) {
+          showToast(t('settingsView.trueFactoryResetDoneToast', { n: (r.wipedFiles || []).length }));
+          // Speaker reboots into OOB, will not be on the LAN for a
+          // while. Trigger discovery in 60 s so the UI catches it
+          // when the iOS app brings it back onto JJ3.
+          setTimeout(discoverBoxes, 60000);
+        } else {
+          showError(t('settingsView.trueFactoryResetFailed', { msg: (r && r.message) || '?' }));
+        }
+      } catch (e) {
+        showError(e);
+      } finally {
+        tfrBtn.disabled = false;
+        tfrBtn.textContent = t('settingsView.trueFactoryResetBtn');
+      }
     };
   }
 

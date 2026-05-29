@@ -228,6 +228,26 @@ export namespace main {
 	        this.art = source["art"];
 	    }
 	}
+	export class TrueFactoryResetResult {
+	    step: string;
+	    ok: boolean;
+	    message: string;
+	    log: string;
+	    wipedFiles: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TrueFactoryResetResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.step = source["step"];
+	        this.ok = source["ok"];
+	        this.message = source["message"];
+	        this.log = source["log"];
+	        this.wipedFiles = source["wipedFiles"];
+	    }
+	}
 
 }
 

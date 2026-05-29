@@ -74,6 +74,8 @@ export function Stop(arg1:string,arg2:number):Promise<void>;
 
 export function SyncBoxPresets(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function TrueFactoryReset(arg1:string):Promise<main.TrueFactoryResetResult>;
+
 export function TryWiFiPassword(arg1:string):Promise<string>;
 
 export function UpdateBoxAgent(arg1:string,arg2:number):Promise<void>;

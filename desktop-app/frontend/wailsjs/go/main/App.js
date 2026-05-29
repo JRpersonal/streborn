@@ -142,6 +142,10 @@ export function SyncBoxPresets(arg1, arg2) {
   return window['go']['main']['App']['SyncBoxPresets'](arg1, arg2);
 }
 
+export function TrueFactoryReset(arg1) {
+  return window['go']['main']['App']['TrueFactoryReset'](arg1);
+}
+
 export function TryWiFiPassword(arg1) {
   return window['go']['main']['App']['TryWiFiPassword'](arg1);
 }
