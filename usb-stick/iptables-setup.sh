@@ -36,8 +36,8 @@ HTTPS_PORT=443
 # tiny whitelist (8090, 8091, 8080 ...). The Go listener on :8888
 # binds fine and `netstat -ltn` shows it LISTEN, but every connect
 # attempt from a desktop client gets "connection refused" (TCP RST
-# from the firewall). Reported live by @deqw on issue #60 with
-# `nc -vz 192.168.20.185 8888` failing while `nc -vz ... 8091` works.
+# from the firewall). See #60: `nc -vz 192.0.2.66 8888` fails while
+# `nc -vz 192.0.2.66 8091` works on an affected Series-I ST20.
 # Fix: insert ACCEPT rules at the TOP of the INPUT chain so the box
 # answers our ports before reaching the Bose DROP rule. On later
 # (Series-II) boxes without that INPUT chain the rules are harmless.

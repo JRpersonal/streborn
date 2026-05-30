@@ -209,8 +209,8 @@ func TestNotBeforeBackdated(t *testing.T) {
 	}
 }
 
-// TestEnsureBundleReportsRegenOnStale guards the deqw #60 .180 /
-// bleco #80 .144 fix: EnsureBundle must signal regenerated=true when
+// TestEnsureBundleReportsRegenOnStale guards the #60 .180 /
+// #80 .144 fix: EnsureBundle must signal regenerated=true when
 // it replaces a bundle whose NotAfter is in the near past or near
 // future, so the caller knows to refresh the bind-mounted trust store
 // overlays. Without this signal Bose rejects every TLS handshake with

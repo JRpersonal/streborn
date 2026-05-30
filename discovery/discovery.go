@@ -303,8 +303,8 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 	// IPv6 multicast join too. On Windows hosts where IPv6 multicast
 	// is funky (Bonjour Service holding the port, no usable v6
 	// interface for ff02::fb, etc.) the v6 join can succeed-but-eat-
-	// responses or surface as "no suitable IPv6 interface" — bleco's
-	// agent log 2026-05-23. The Bose speakers only announce on IPv4
+	// responses or surface as "no suitable IPv6 interface" — observed
+	// in a 2026-05-23 agent log (#80). The Bose speakers only announce on IPv4
 	// and the desktop app's home LAN is IPv4 in every realistic
 	// deployment, so pinning the resolver to v4 removes a class of
 	// silent-failure paths without losing any reachable speaker.

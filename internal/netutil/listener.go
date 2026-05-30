@@ -9,7 +9,7 @@
 // TIME_WAIT for ~60 s on the Bose kernel (Linux 3.14, tcp_fin_timeout
 // default). Without SO_REUSEADDR the new agent dies on bind with
 // "address already in use", the watchdog respawns it, same failure,
-// perpetual loop. Issue #60 (deqw, 2026-05-22) hit exactly that.
+// perpetual loop. Issue #60 (2026-05-22) hit exactly that.
 package netutil
 
 import (

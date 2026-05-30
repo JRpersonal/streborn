@@ -60,7 +60,7 @@ const (
 // when the cert was generated before clock sync — NotAfter ended up
 // in 2024 from the box's 2015 viewpoint, and the cert appeared
 // genuinely expired once the clock jumped to 2026. Live evidence:
-// deqw #60 on .180, 2026-05-22.
+// #60 on .180, 2026-05-22.
 //
 // Fixed absolute dates eliminate the dependency on time.Now(). The
 // cert is loopback-only and signed by an STR-internal CA that we
@@ -116,7 +116,7 @@ func New(dir string, domains []string, logger *slog.Logger) *Manager {
 // with the old "now + 9y" scheme and now has NotAfter in the past or
 // in the immediate future. Otherwise stale bundles generated before
 // the clock synced (cold-boot RTC=2015) carry forward and present as
-// "expired" once NTP catches up — observed on deqw #60 .180,
+// "expired" once NTP catches up — observed on #60 .180,
 // 2026-05-22. The fresh bundle uses the fixed 2010-2099 window and
 // is safe forever.
 //
@@ -127,7 +127,7 @@ func New(dir string, domains []string, logger *slog.Logger) *Manager {
 // from the start. The regenerated=true signal is what the agent uses
 // to trigger RefreshTrustStore, because the trust store overlay was
 // already populated with the now-superseded root.crt before EnsureBundle
-// ran — see deqw #60 .180, bleco .144 (May 2026).
+// ran — see #60 .180 and #80 .144 (May 2026).
 func (m *Manager) EnsureBundle() (*Bundle, bool, error) {
 	regenerated := false
 	bundle, err := m.load()

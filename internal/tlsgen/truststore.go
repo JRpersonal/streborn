@@ -29,7 +29,7 @@ const (
 // Trust Store Overlays an. Wird aufgerufen wenn EnsureBundle eine alte
 // CA durch eine frisch generierte ersetzt hat — sonst zeigt der Trust
 // Store noch die alte CA und Bose verwirft unsere Server Cert mit
-// `tls: unknown certificate authority` (deqw #60 .180, bleco #80 .144).
+// `tls: unknown certificate authority` (#60 .180 and #80 .144).
 //
 // Wir schreiben mit O_APPEND damit der Inode erhalten bleibt und der
 // bestehende bind mount den neuen Inhalt sofort sieht — kein umount,
