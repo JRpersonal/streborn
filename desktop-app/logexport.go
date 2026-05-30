@@ -393,15 +393,23 @@ func pullSSHFallback(host string) *sshFallback {
 		"/media/sdd1", "/mnt/sda1", "/mnt/usb",
 		"/run/media/sda1"}
 	fields := []field{
-		{"bootLog", "tail -c 8192 /mnt/nv/streborn/boot.log 2>/dev/null", 6000, &out.BootLog},
-		{"setupLog", "tail -c 16384 /mnt/nv/streborn/setup.log 2>/dev/null", 6000, &out.SetupLog},
-		{"previousLog", "tail -c 8192 /mnt/nv/streborn/previous.log 2>/dev/null", 6000, &out.PreviousLog},
-		{"agentLogTail", "tail -c 8192 /tmp/streborn-agent.log 2>/dev/null", 6000, &out.AgentLogTail},
+		// 5 MB tails across the board so a multi-week box's full
+		// setup.log + agent.log + boot.log + previous.log fit. The
+		// previous 8 KB / 16 KB / 64 KB caps cost real diagnostic
+		// time chasing early-boot shim and OOB markers that fell off
+		// the end of the tail window. ZIP compression keeps the
+		// final bundle reasonable; the wire copy is a one-time SSH
+		// transfer per box per export. Files smaller than the cap
+		// transfer in whole.
+		{"bootLog", "tail -c 5242880 /mnt/nv/streborn/boot.log 2>/dev/null", 15000, &out.BootLog},
+		{"setupLog", "tail -c 5242880 /mnt/nv/streborn/setup.log 2>/dev/null", 30000, &out.SetupLog},
+		{"previousLog", "tail -c 5242880 /mnt/nv/streborn/previous.log 2>/dev/null", 15000, &out.PreviousLog},
+		{"agentLogTail", "tail -c 5242880 /tmp/streborn-agent.log 2>/dev/null", 15000, &out.AgentLogTail},
 		// 64 KB from the NAND-persisted agent log: covers ~10 boots of
 		// slog output on a slow speaker without bloating the bundle.
 		// /mnt/nv/streborn/agent.log is the io.MultiWriter target the
 		// Go agent opens in newLogger.
-		{"agentLogNand", "tail -c 65536 /mnt/nv/streborn/agent.log 2>/dev/null", 8000, &out.AgentLogNAND},
+		{"agentLogNand", "tail -c 5242880 /mnt/nv/streborn/agent.log 2>/dev/null", 30000, &out.AgentLogNAND},
 		{"stickListing", "ls -la /media/sda1 2>&1 | head -50", 5000, &out.StickListing},
 		{"mediaListing", "ls -la /media /mnt /run/media 2>&1 | head -80", 5000, &out.MediaListing},
 		{"nvListing", "ls -la /mnt/nv/streborn 2>&1 | head -40", 5000, &out.NVListing},
