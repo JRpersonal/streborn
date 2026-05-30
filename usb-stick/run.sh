@@ -1335,21 +1335,40 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         # really do need to POST, send sysLanguage=0 which maps to
         # English in the same enum and is the least surprising
         # fallback for an internationally-shipped tool.
-        setup_log "M1: gate-1 GET $BOSE_API/language"
-        LANG_GET=$(wget -qO- -T 5 "$BOSE_API/language" 2>&1)
-        setup_log "M1: language GET rc=$? response='$(echo "$LANG_GET" | head -c 160)'"
+        # Gate-1 logic correction (2026-05-30 live-verified on a
+        # factory-reset taigan Portable). The OLD check looked at
+        # /language's value: if any digit pattern was present in the
+        # response, we skipped the POST as "already set". That was
+        # wrong on factory-reset boxes: /language returns
+        # <sysLanguage>0</sysLanguage> by default AND /setup returns
+        # systemstate=SETUP_LANG_NOT_SET. So the value is "set" only
+        # in the trivial sense that there is a number — the GATE is
+        # still closed. We now key off systemstate, which is the
+        # authoritative gate signal.
+        #
+        # The OTHER trap: POSTing sysLanguage=0 from a factory state
+        # is a no-op for the gate. systemstate stays NOT_SET. Only
+        # values >= 1 advance the state. [[bose-language-enum]]:
+        # 1=Danish, 2=German confirmed. We POST 2 here because the
+        # confirmed-German user base is larger than confirmed-Danish.
+        # English-locale users see a one-time German splash; they can
+        # change it via the in-app /language picker once on home LAN.
+        setup_log "M1: gate-1 GET $BOSE_API/setup"
+        SETUP_GET=$(wget -qO- -T 5 "$BOSE_API/setup" 2>&1)
+        setup_log "M1: setup GET rc=$? response='$(echo "$SETUP_GET" | head -c 160)'"
         LANG_NEED_POST=1
-        case "$LANG_GET" in
-            *"<sysLanguage>"[0-9]*"</sysLanguage>"*) LANG_NEED_POST="" ;;
+        case "$SETUP_GET" in
+            *"systemstate=\"SETUP_LANG_NOT_SET\""*) LANG_NEED_POST=1 ;;
+            *"systemstate="*) LANG_NEED_POST="" ;;
         esac
         if [ -n "$LANG_NEED_POST" ]; then
-            setup_log "M1: gate-1 POST $BOSE_API/language sysLanguage=0 (English, neutral)"
+            setup_log "M1: gate-1 POST $BOSE_API/language sysLanguage=2 (German, confirmed non-zero gate opener)"
             LANG_RESP=$(wget -qO- -T 5 --header="Content-Type: text/xml" \
-                   --post-data='<sysLanguage>0</sysLanguage>' \
+                   --post-data='<sysLanguage>2</sysLanguage>' \
                    "$BOSE_API/language" 2>&1)
             setup_log "M1: language POST rc=$? response='$(echo "$LANG_RESP" | head -c 160)'"
         else
-            setup_log "M1: gate-1 skipped, sysLanguage already set, preserving user locale"
+            setup_log "M1: gate-1 skipped, systemstate already past SETUP_LANG_NOT_SET, preserving user locale"
         fi
 
         # Gate 2: marge account. Placeholder fields — the real STR
