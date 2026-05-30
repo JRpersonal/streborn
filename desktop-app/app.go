@@ -1333,8 +1333,20 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// Kick the agent. Fully detached so the SSH session can return cleanly
 	// even though pkill kills a sibling of the SSH-spawned shell. run.sh's
 	// boot watchdog (wait_ports_clear + start_agent loop) respawns within
-	// seconds and the new binary takes over.
-	_ = boxSSHFireAndForget(host, "(sleep 1; pkill -TERM streborn-armv7l) </dev/null >/dev/null 2>&1 &", 5*time.Second)
+	// seconds and the new binary takes over. If the watchdog fails to
+	// respawn within 12 s — observed live on scm/spotty 2026-05-30 where
+	// pkill went through but the agent stayed dead until manual power-cycle
+	// — fall back to a clean reboot so the box self-recovers without the
+	// user needing to unplug it.
+	kickAndRebootIfStuck := "(" +
+		"sleep 1; " +
+		"pkill -TERM streborn-armv7l; " +
+		"sleep 12; " +
+		"if ! pidof streborn-armv7l >/dev/null 2>&1; then " +
+		"sync; /sbin/reboot; " +
+		"fi" +
+		") </dev/null >/dev/null 2>&1 &"
+	_ = boxSSHFireAndForget(host, kickAndRebootIfStuck, 5*time.Second)
 	return nil
 }
 

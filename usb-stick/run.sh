@@ -1042,15 +1042,56 @@ current_sta_lease() {
     # Walks every wireless-candidate iface (wlan0, wlan1, eth0 on
     # BCO chassis) and prints "iface|ip" for the first real STA lease
     # it finds. Returns 1 if none.
+    #
+    # The regex matches "inet 10.0.0.5/24" AND "inet 10.0.0.5 peer ..."
+    # (no slash after the IP). Brechts spotty 2026-05-30 bundle showed
+    # the second form coming out of busybox ip on this firmware, which
+    # made the older slash-mandatory regex return empty and the
+    # REDIRECT install loop bail with "no wlan0/wlan1/eth0 STA address
+    # yet" for the lifetime of the box.
     for _iface in wlan0 wlan1 eth0; do
         [ -d "/sys/class/net/$_iface" ] || continue
-        for _ip in $(ip -4 addr show "$_iface" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p'); do
+        for _ip in $(ip -4 addr show "$_iface" 2>/dev/null | sed -n 's/.*inet \([0-9][0-9.]*\).*/\1/p'); do
+            if is_real_sta_addr "$_ip"; then
+                printf '%s|%s' "$_iface" "$_ip"
+                return 0
+            fi
+        done
+        # ifconfig fallback for boxes where ip output format differs
+        # enough that the sed above still misses.
+        for _ip in $(ifconfig "$_iface" 2>/dev/null | sed -n 's/.*inet addr:\([0-9][0-9.]*\).*/\1/p'); do
             if is_real_sta_addr "$_ip"; then
                 printf '%s|%s' "$_iface" "$_ip"
                 return 0
             fi
         done
     done
+    # Last-resort fallback: ask Bose itself what network IP it has,
+    # via /info on :8090. This is the same IP STR uses for autopair,
+    # so if BoseApp answers we know the box is on a real network even
+    # if our ip/ifconfig parsing failed.
+    if command -v wget >/dev/null 2>&1; then
+        _info_ip=$(wget -qO- -T 2 "http://127.0.0.1:8090/info" 2>/dev/null \
+            | sed -n 's/.*<ipAddress>\([0-9][0-9.]*\)<.*/\1/p' | head -1)
+        if [ -n "$_info_ip" ] && is_real_sta_addr "$_info_ip"; then
+            # Prefer the iface that actually has it; fall back to the
+            # first existing wireless candidate so the LEASE token
+            # stays well-formed.
+            for _iface in wlan0 wlan1 eth0; do
+                [ -d "/sys/class/net/$_iface" ] || continue
+                if ip -4 addr show "$_iface" 2>/dev/null | grep -q "$_info_ip"; then
+                    printf '%s|%s' "$_iface" "$_info_ip"
+                    return 0
+                fi
+            done
+            for _iface in eth0 wlan0 wlan1; do
+                if [ -d "/sys/class/net/$_iface" ]; then
+                    printf '%s|%s' "$_iface" "$_info_ip"
+                    return 0
+                fi
+            done
+        fi
+    fi
     return 1
 }
 wait_for_sta_lease() {
@@ -2733,10 +2774,22 @@ else
     # stick's run.sh / install.sh stays possible. Probe :8888 from
     # inside the box. sshd itself stays alive in either branch — that
     # decision moved to ensure_sshd_running at boot time.
+    #
+    # Multiple probe sources so a single failing primitive does not
+    # produce a false "agent NOT bound" entry. Brechts spotty bundle
+    # 2026-05-30 showed netstat reporting PID 2500 streborn-armv7l
+    # LISTEN on 0.0.0.0:8888 while this probe still logged "agent NOT
+    # bound" — the busybox /dev/tcp + nc -z primitives apparently
+    # answered no during a momentary load spike. netstat is the
+    # authoritative source: if the kernel says it's listening, it is.
     AGENT_OK=0
     if (echo > /dev/tcp/127.0.0.1/8888) >/dev/null 2>&1; then
         AGENT_OK=1
     elif command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 8888 >/dev/null 2>&1; then
+        AGENT_OK=1
+    elif netstat -ltn 2>/dev/null | grep -q ':8888 .*LISTEN'; then
+        AGENT_OK=1
+    elif pidof streborn-armv7l >/dev/null 2>&1; then
         AGENT_OK=1
     fi
 
