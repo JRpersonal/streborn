@@ -422,6 +422,18 @@ sync_stick_to_nand_always
 #
 # shepherdd does NOT auto-restart SoftwareUpdate (it is not in
 # Shepherd-taigan.xml), so the kill is race-free.
+
+# Early VARIANT / HOSTID detection. The full block in the WLAN-iface
+# detection section sets these too but only runs at line ~860, AFTER
+# shim_stage_wrapper. A 2026-05-30 scm/spotty bundle proved the gap:
+# shim stage logged "variant=? host=?" and the Shepherd-XML probe
+# looked for Shepherd-unknown.xml — useless. Hoisting just this read
+# pair so the shim stage has real values, with empty fallbacks so a
+# firmware that hides /proc/variant does not break the strict-mode
+# expansion downstream.
+VARIANT=$(cat /proc/variant 2>/dev/null | tr -d '\n\r ' | head -c 32)
+HOSTID=$(uname -n 2>/dev/null | tr -d '\n\r ' | head -c 32)
+
 sync_shim_to_nand() {
     if [ -r "$STICK_SHIM" ]; then
         STICK_SHIM_SIZE=$(wc -c < "$STICK_SHIM" 2>/dev/null || echo "?")
@@ -660,9 +672,32 @@ shim_late_swap() {
         fi
     fi
 
+    # Isolation probe BEFORE the relaunch: can the shim be loaded at
+    # all on this firmware? A 2026-05-30 scm/spotty bundle showed the
+    # wrapper-launch produce no SU process whatsoever (new_pid=?),
+    # which is the signature of an LD_PRELOAD load failure (the loader
+    # bails before main(), the shell wrapper exec'd is gone). Running
+    # LD_PRELOAD=$NAND_SHIM against /bin/true lets us catch the
+    # loader's stderr in isolation. Output is the smoking gun: if the
+    # shim cannot load on this variant, we will see the loader error
+    # right here — glibc version mismatch, missing symbol, wrong
+    # architecture, all surface here.
+    SHIM_ISOLATION_OUT=$(LD_PRELOAD="$NAND_SHIM" /bin/true 2>&1)
+    SHIM_ISOLATION_RC=$?
+    if [ "$SHIM_ISOLATION_RC" = "0" ] && [ -z "$SHIM_ISOLATION_OUT" ]; then
+        setup_log "shim late-swap: shim isolation probe OK — LD_PRELOAD=$NAND_SHIM /bin/true returned cleanly"
+    else
+        setup_log "shim late-swap: shim isolation probe FAIL rc=$SHIM_ISOLATION_RC output='$(echo "$SHIM_ISOLATION_OUT" | tr '\n' ' ' | head -c 400)' — the .so cannot be loaded on this firmware, wrapper launch will fail the same way"
+    fi
+
     # Relaunch via the bind-mounted path so the wrapper sets
-    # LD_PRELOAD and exec's SoftwareUpdate-real.
-    nohup /opt/Bose/SoftwareUpdate >/dev/null 2>&1 &
+    # LD_PRELOAD and exec's SoftwareUpdate-real. Capture stderr into
+    # a tmpfile so the next bundle shows WHY the wrapper died if it
+    # does (previous "/dev/null 2>&1" swallowed every loader message
+    # and left "new_pid=?" as the only signal).
+    NOHUP_ERR="/tmp/streborn-shim-nohup.err"
+    rm -f "$NOHUP_ERR" 2>/dev/null
+    nohup /opt/Bose/SoftwareUpdate >/dev/null 2>"$NOHUP_ERR" &
     LAUNCH_RC=$?
     sleep 2
     NEWSU=$(pidof SoftwareUpdate-real 2>/dev/null | awk '{print $1}')
@@ -671,6 +706,31 @@ shim_late_swap() {
     NEWSU_EXE=$(readlink /proc/${NEWSU:-1}/exe 2>/dev/null | head -c 160)
     NEWSU_PRELOAD=$(grep -aoE 'LD_PRELOAD=[^[:cntrl:]]*str-shim.so' /proc/${NEWSU:-1}/environ 2>/dev/null | head -c 160)
     setup_log "shim late-swap: relaunched (launch_rc=$LAUNCH_RC) new_pid=${NEWSU:-?} ppid=$NEWSU_PPID exe='$NEWSU_EXE' preload='${NEWSU_PRELOAD:-not-set}' uptime=$(uptime_s)s"
+    if [ -s "$NOHUP_ERR" ]; then
+        setup_log "shim late-swap: nohup stderr captured: '$(tr '\n' ' ' < "$NOHUP_ERR" | head -c 400)'"
+    fi
+
+    # Fallback launch WITHOUT the wrapper if the first attempt left
+    # no SU process. Goes straight to the cached backup binary with
+    # no LD_PRELOAD set, so a successful launch here proves the
+    # binary itself runs but the LD_PRELOAD path is the culprit. A
+    # failure here proves it is the bind-mount or something deeper.
+    # Either way the next bundle separates the two hypotheses cleanly.
+    if [ -z "$NEWSU" ] && [ -x "$SHIM_BACKUP" ]; then
+        FALLBACK_ERR="/tmp/streborn-shim-fallback.err"
+        rm -f "$FALLBACK_ERR" 2>/dev/null
+        nohup "$SHIM_BACKUP" >/dev/null 2>"$FALLBACK_ERR" &
+        FALLBACK_RC=$?
+        sleep 2
+        FALLBACK_PID=$(pidof SoftwareUpdate-real 2>/dev/null | awk '{print $1}')
+        [ -z "$FALLBACK_PID" ] && FALLBACK_PID=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+        if [ -n "$FALLBACK_PID" ]; then
+            setup_log "shim late-swap: fallback launch (no shim, direct $SHIM_BACKUP) OK pid=$FALLBACK_PID rc=$FALLBACK_RC — LD_PRELOAD path is the culprit, binary itself runs fine"
+        else
+            setup_log "shim late-swap: fallback launch (no shim, direct $SHIM_BACKUP) ALSO FAILED rc=$FALLBACK_RC stderr='$(tr '\n' ' ' < "$FALLBACK_ERR" 2>/dev/null | head -c 400)' — bind-mount or something deeper is the culprit"
+        fi
+        NEWSU="$FALLBACK_PID"
+    fi
 
     # Verify Bose /info still responds AFTER the swap. If it dropped,
     # log the regression — we will diagnose via the diagnostic bundle
