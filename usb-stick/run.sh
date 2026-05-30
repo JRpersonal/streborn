@@ -264,9 +264,9 @@ background_phase_probe() {
             fi
             # STR agent listeners. Probing these explicitly is the
             # whole point of the rewrite: when :8888 silently never
-            # binds (observed on Brecht's ST20 v0.5.10..v0.5.12), the
-            # phase summary line is the first place a remote diagnostic
-            # bundle reveals it.
+            # binds (observed on a scm/spotty ST20 across v0.5.10..
+            # v0.5.12), the phase summary line is the first place a
+            # remote diagnostic bundle reveals it.
             if [ "$STR_API" -eq 0 ] && tcp_probe 8888; then
                 STR_API=$UP
                 setup_log "phase: STR webui :8888 listening at uptime=${UP}s"
@@ -424,16 +424,19 @@ sync_stick_to_nand_always
 # Shepherd-taigan.xml), so the kill is race-free.
 sync_shim_to_nand() {
     if [ -r "$STICK_SHIM" ]; then
+        STICK_SHIM_SIZE=$(wc -c < "$STICK_SHIM" 2>/dev/null || echo "?")
         if cp "$STICK_SHIM" "$NAND_SHIM.new" 2>/dev/null && \
            mv "$NAND_SHIM.new" "$NAND_SHIM" 2>/dev/null; then
             chmod 644 "$NAND_SHIM" 2>/dev/null
-            log "shim deployed: $NAND_SHIM ($(wc -c < "$NAND_SHIM") bytes)"
+            setup_log "shim deploy: synced stick -> NAND (stick=${STICK_SHIM_SIZE}B nand=$(wc -c < "$NAND_SHIM" 2>/dev/null)B at $NAND_SHIM)"
         else
-            log "shim deploy: cp/mv failed, keeping previous NAND shim"
+            setup_log "shim deploy: cp/mv stick -> NAND FAILED, keeping previous NAND copy (nand_existed=$([ -r "$NAND_SHIM" ] && echo yes || echo no))"
             rm -f "$NAND_SHIM.new" 2>/dev/null
         fi
     elif [ ! -r "$NAND_SHIM" ]; then
-        log "shim deploy: stick has no $STICK_SHIM and NAND has no $NAND_SHIM, hijack disabled this boot"
+        setup_log "shim deploy: stick has no $STICK_SHIM and NAND has no $NAND_SHIM — hijack permanently disabled this boot"
+    else
+        setup_log "shim deploy: stick has no $STICK_SHIM, reusing NAND copy ($(wc -c < "$NAND_SHIM" 2>/dev/null)B at $NAND_SHIM)"
     fi
 }
 sync_shim_to_nand
@@ -444,19 +447,54 @@ SHIM_WRAPPER="$PERSIST/lib/SU-wrapper.sh"
 
 # Stage wrapper + binary snapshot unconditionally. The bind-mount
 # itself is deferred to the late-swap background runner below.
+#
+# Observability rationale: every step writes to setup.log (not the
+# volatile /tmp log) so a remote diagnostic bundle can answer "did
+# the shim stage succeed, and if not, where did it bail?" without
+# SSH access. The pre-stage analysis block also captures the box's
+# Bose-side state at this moment — Shepherd config, mount options,
+# SU binary attributes — so a scm/spotty bundle can tell us in one
+# look what is different vs the working taigan path.
 shim_stage_wrapper() {
+    setup_log "shim stage: enter (variant=${VARIANT:-?} host=${HOSTID:-?} is_series_one=${IS_SERIES_ONE:-0})"
     if [ -e "$SHIM_DISABLE" ]; then
-        log "shim stage: disabled via $SHIM_DISABLE marker"
+        setup_log "shim stage: BAIL — disabled via $SHIM_DISABLE marker"
         return 0
     fi
     if [ ! -r "$NAND_SHIM" ]; then
-        log "shim stage: no shim .so at $NAND_SHIM, skip"
+        setup_log "shim stage: BAIL — no shim .so at $NAND_SHIM (sync_shim_to_nand must have failed earlier)"
         return 0
     fi
     if [ ! -e /opt/Bose/SoftwareUpdate ]; then
-        log "shim stage: /opt/Bose/SoftwareUpdate absent, skip"
+        setup_log "shim stage: BAIL — /opt/Bose/SoftwareUpdate absent (firmware variant we have not seen?)"
         return 0
     fi
+
+    # Pre-stage analysis — captures the state we are about to swap.
+    # Mount options for /opt/Bose tell us whether bind-mount will be
+    # rejected (ro? noexec?). File-type of SU confirms it is an ELF,
+    # not already a script wrapper. Shepherd XML for this variant
+    # tells us whether shepherdd will respawn SU on our kill — the
+    # key difference between taigan (SU not in Shepherd) and
+    # potentially scm/rhino (SU in Shepherd → race condition).
+    SHIM_VARIANT_FOR_XML="${VARIANT:-${HOSTID:-unknown}}"
+    SHEPHERD_XML="/opt/Bose/etc/Shepherd-${SHIM_VARIANT_FOR_XML}.xml"
+    SHIM_OPT_BOSE_MOUNT=$(mount 2>/dev/null | awk '$3=="/opt/Bose" || $3=="/" {print $3":"$5":"$6; exit}' | head -c 200)
+    SHIM_SU_TYPE=$(head -c 4 /opt/Bose/SoftwareUpdate 2>/dev/null | od -An -c | tr -s ' ' | head -c 32)
+    SHIM_SU_SIZE=$(wc -c < /opt/Bose/SoftwareUpdate 2>/dev/null || echo "?")
+    SHIM_SU_INODE=$(stat -c %i /opt/Bose/SoftwareUpdate 2>/dev/null || echo "?")
+    if [ -r "$SHEPHERD_XML" ]; then
+        if grep -q "SoftwareUpdate" "$SHEPHERD_XML" 2>/dev/null; then
+            SHEPHERD_HAS_SU="YES — shepherdd WILL respawn SU after our kill (race condition)"
+        else
+            SHEPHERD_HAS_SU="no — kill is race-free (taigan-style)"
+        fi
+    else
+        SHEPHERD_HAS_SU="Shepherd XML missing at $SHEPHERD_XML (could be different filename on this variant)"
+    fi
+    setup_log "shim stage: pre-state SU=/opt/Bose/SoftwareUpdate size=${SHIM_SU_SIZE}B inode=$SHIM_SU_INODE magic='$SHIM_SU_TYPE' mount=${SHIM_OPT_BOSE_MOUNT:-?}"
+    setup_log "shim stage: shepherd check $SHEPHERD_XML -> $SHEPHERD_HAS_SU"
+
     # Snapshot the real binary if we have not already cached it. We
     # do this BEFORE any bind-mount so the cp reads the original
     # rootfs file, not our wrapper.
@@ -464,12 +502,15 @@ shim_stage_wrapper() {
         if cp /opt/Bose/SoftwareUpdate "$SHIM_BACKUP.new" 2>/dev/null \
            && mv "$SHIM_BACKUP.new" "$SHIM_BACKUP" 2>/dev/null; then
             chmod +x "$SHIM_BACKUP"
-            log "shim stage: cached real SU at $SHIM_BACKUP ($(wc -c < "$SHIM_BACKUP") bytes)"
+            BACKUP_INODE=$(stat -c %i "$SHIM_BACKUP" 2>/dev/null || echo "?")
+            setup_log "shim stage: cached real SU at $SHIM_BACKUP ($(wc -c < "$SHIM_BACKUP")B inode=$BACKUP_INODE) — chipset-whitelist proof"
         else
-            log "shim stage: cp /opt/Bose/SoftwareUpdate -> $SHIM_BACKUP failed"
+            setup_log "shim stage: FAIL — cp /opt/Bose/SoftwareUpdate -> $SHIM_BACKUP failed (rc=$? errno=$(echo $?))"
             rm -f "$SHIM_BACKUP.new" 2>/dev/null
             return 1
         fi
+    else
+        setup_log "shim stage: $SHIM_BACKUP already cached ($(wc -c < "$SHIM_BACKUP" 2>/dev/null)B)"
     fi
     # Write wrapper. `export + exec` keeps the exec chain shorter
     # than `exec env LD_PRELOAD=... binary`: only one /bin/sh
@@ -480,8 +521,13 @@ shim_stage_wrapper() {
 export LD_PRELOAD=/mnt/nv/streborn/lib/str-shim.so
 exec /mnt/nv/streborn/lib/SoftwareUpdate-real "$@"
 WRAP_EOF
-    mv "$SHIM_WRAPPER.new" "$SHIM_WRAPPER" 2>/dev/null
-    chmod +x "$SHIM_WRAPPER"
+    if mv "$SHIM_WRAPPER.new" "$SHIM_WRAPPER" 2>/dev/null && chmod +x "$SHIM_WRAPPER"; then
+        setup_log "shim stage: wrapper written at $SHIM_WRAPPER ($(wc -c < "$SHIM_WRAPPER" 2>/dev/null)B)"
+    else
+        setup_log "shim stage: FAIL — could not finalise wrapper at $SHIM_WRAPPER"
+        return 1
+    fi
+    setup_log "shim stage: ready — backup+wrapper both in place, late-swap will run after Bose mesh stabilises"
 }
 shim_stage_wrapper
 
@@ -490,78 +536,196 @@ shim_stage_wrapper
 # under LD_PRELOAD. Doing this early — before /info has been
 # answering with valid XML for a sustained period — broke the mesh
 # (BoseApp returned HTTP 500 indefinitely until a power-cycle).
+#
+# Observability rationale: a 2026-05-30 scm/spotty diagnostic bundle
+# had ZERO shim log lines anywhere — because the original `log()`
+# wrote to /tmp/streborn-agent.log (volatile, sometimes lost,
+# definitely interleaved with the Go agent's slog). All shim phase
+# markers now go via setup_log so a remote bundle says exactly
+# where the swap fell over on a non-taigan box. Each phase boundary
+# includes the state we observed AT THAT MOMENT — Bose mesh health,
+# SU PID, mount state, listening sockets on :17008 — so we never
+# have to guess about ordering.
 shim_late_swap() {
+    setup_log "shim late-swap: enter (will wait up to 240s for /info to be stable for 30s)"
     if [ -e "$SHIM_DISABLE" ]; then
-        log "shim late swap: disabled via $SHIM_DISABLE marker"
+        setup_log "shim late-swap: BAIL — $SHIM_DISABLE marker present"
         return 0
     fi
     if [ ! -x "$SHIM_BACKUP" ] || [ ! -x "$SHIM_WRAPPER" ]; then
-        log "shim late swap: wrapper/backup not staged, skip"
+        setup_log "shim late-swap: BAIL — staging did not produce backup ($([ -x "$SHIM_BACKUP" ] && echo present || echo missing)) and/or wrapper ($([ -x "$SHIM_WRAPPER" ] && echo present || echo missing))"
         return 0
     fi
     # Health-wait: /info must return a body containing `<info ` for
-    # 30 s continuously before we touch anything. Hard cap at 4 min
-    # of waiting; if mesh never stabilizes we skip the swap and let
-    # the box stay as the user-visible-stock-Bose-on-this-boot.
+    # 30 s continuously before we touch anything. Progress is logged
+    # every 60 s so a bundle pulled mid-wait shows how far we got.
     healthy_for=0
     waited=0
+    last_logged=0
     while [ $waited -lt 240 ]; do
         if wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | grep -q "<info "; then
             healthy_for=$((healthy_for + 5))
             if [ $healthy_for -ge 30 ]; then break; fi
         else
+            if [ $healthy_for -gt 0 ]; then
+                setup_log "shim late-swap: /info health DROPPED at waited=${waited}s (was healthy_for=${healthy_for}s) — restarting streak"
+            fi
             healthy_for=0
+        fi
+        if [ $((waited - last_logged)) -ge 60 ]; then
+            setup_log "shim late-swap: health-wait progress waited=${waited}s healthy_for=${healthy_for}s (target 30s)"
+            last_logged=$waited
         fi
         sleep 5
         waited=$((waited + 5))
     done
     if [ $healthy_for -lt 30 ]; then
-        log "shim late swap: Bose API never reached 30 s of steady health in 240 s, abort"
+        setup_log "shim late-swap: ABORT — Bose /info never reached 30s steady health in 240s (final healthy_for=${healthy_for}s)"
         return 0
     fi
-    log "shim late swap: Bose mesh stable for ${healthy_for}s at uptime=$(uptime_s)s, beginning swap"
+    setup_log "shim late-swap: Bose mesh stable for ${healthy_for}s at uptime=$(uptime_s)s — beginning swap"
+
+    # Pre-swap snapshot: who owns :17008, what is mounted on the SU
+    # path, exact PID of the SU process we are about to evict. If
+    # the swap goes wrong on scm/spotty, this snapshot is the
+    # baseline we compare the post-state against.
+    PRESW_SU_PID=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+    PRESW_SU_REAL_PID=$(pidof SoftwareUpdate-real 2>/dev/null | awk '{print $1}')
+    PRESW_17008=$(netstat -ltnp 2>/dev/null | awk '$4 ~ /:17008$/ {print $7; exit}')
+    PRESW_MOUNT_BIND=$(mount 2>/dev/null | awk '$3=="/opt/Bose/SoftwareUpdate" {print; exit}' | head -c 200)
+    setup_log "shim late-swap: pre-state pid_SU=${PRESW_SU_PID:-none} pid_SU-real=${PRESW_SU_REAL_PID:-none} owner_17008=${PRESW_17008:-none} existing_bindmount='${PRESW_MOUNT_BIND:-none}'"
 
     # Bind-mount now (mesh has settled — wrapping a NEW SU instance
     # at this point does not disrupt the registered original).
-    if ! mount 2>/dev/null | grep -q " /opt/Bose/SoftwareUpdate "; then
-        if mount --bind "$SHIM_WRAPPER" /opt/Bose/SoftwareUpdate 2>/dev/null; then
-            log "shim late swap: bind-mount $SHIM_WRAPPER -> /opt/Bose/SoftwareUpdate active"
+    if [ -z "$PRESW_MOUNT_BIND" ]; then
+        BIND_OUT=$(mount --bind "$SHIM_WRAPPER" /opt/Bose/SoftwareUpdate 2>&1)
+        BIND_RC=$?
+        if [ "$BIND_RC" = "0" ]; then
+            NEW_MOUNT=$(mount 2>/dev/null | awk '$3=="/opt/Bose/SoftwareUpdate" {print; exit}' | head -c 240)
+            setup_log "shim late-swap: bind-mount OK — '$NEW_MOUNT'"
         else
-            log "shim late swap: mount --bind failed"
+            setup_log "shim late-swap: FAIL — mount --bind rc=$BIND_RC output='$(echo "$BIND_OUT" | tr '\n' ' ' | head -c 240)' — most likely /opt/Bose mounted ro or noexec on this variant"
             return 1
+        fi
+    else
+        setup_log "shim late-swap: bind-mount already present from earlier boot — skipping re-mount"
+    fi
+
+    # SIGTERM the running SoftwareUpdate. On taigan SU is NOT in
+    # Shepherd-taigan.xml (verified live) so the kill is race-free.
+    # On rhino/scm shepherd config might list it — the post-kill
+    # watchdog below logs whether shepherdd respawned with our
+    # bind-mounted path or with some Shepherd-cached invocation
+    # that bypasses our wrapper. That signal alone tells us whether
+    # to switch to a different approach on the affected variant.
+    OLDSU=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+    if [ -n "$OLDSU" ]; then
+        setup_log "shim late-swap: SIGTERM SoftwareUpdate PID=$OLDSU"
+        kill -TERM "$OLDSU" 2>/dev/null
+        KILL_WAITED=0
+        for i in 1 2 3 4 5; do
+            sleep 1
+            KILL_WAITED=$((KILL_WAITED + 1))
+            if ! kill -0 "$OLDSU" 2>/dev/null; then break; fi
+        done
+        if kill -0 "$OLDSU" 2>/dev/null; then
+            setup_log "shim late-swap: WARN — old SU PID=$OLDSU still alive after ${KILL_WAITED}s of SIGTERM, sending SIGKILL"
+            kill -KILL "$OLDSU" 2>/dev/null
+            sleep 1
+        else
+            setup_log "shim late-swap: old SU PID=$OLDSU gone after ${KILL_WAITED}s"
+        fi
+    else
+        setup_log "shim late-swap: WARN — no SU process found at swap time (already exited?)"
+    fi
+
+    # Wait briefly for any shepherd-driven respawn to fire OR for the
+    # port to free. Two distinct possibilities to log:
+    #  - Fast respawn (<2 s): shepherdd picked it up. PID will differ
+    #    from OLDSU, parent will be shepherdd, our wrapper may or may
+    #    not have been used (depends on whether shepherd cached the
+    #    exec path or re-evaluates it).
+    #  - Slow respawn (no respawn): we do the explicit launch below.
+    SHEPHERD_RESPAWN_PID=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+    if [ -n "$SHEPHERD_RESPAWN_PID" ] && [ "$SHEPHERD_RESPAWN_PID" != "$OLDSU" ]; then
+        SR_PPID=$(awk '/^PPid:/ {print $2}' /proc/$SHEPHERD_RESPAWN_PID/status 2>/dev/null)
+        SR_LDPRELOAD=$(grep -aoE 'LD_PRELOAD=[^[:cntrl:]]*str-shim.so' /proc/$SHEPHERD_RESPAWN_PID/environ 2>/dev/null | head -c 160)
+        SR_EXE=$(readlink /proc/$SHEPHERD_RESPAWN_PID/exe 2>/dev/null | head -c 160)
+        if [ -n "$SR_LDPRELOAD" ]; then
+            setup_log "shim late-swap: shepherdd-respawn DETECTED with shim active (PID=$SHEPHERD_RESPAWN_PID ppid=$SR_PPID exe=$SR_EXE preload='$SR_LDPRELOAD') — explicit launch skipped"
+        else
+            setup_log "shim late-swap: shepherdd-respawn DETECTED but WITHOUT shim (PID=$SHEPHERD_RESPAWN_PID ppid=$SR_PPID exe=$SR_EXE) — our bind-mount was bypassed, will retry explicit launch"
+            kill -TERM "$SHEPHERD_RESPAWN_PID" 2>/dev/null
+            sleep 2
         fi
     fi
 
-    # SIGTERM the running SoftwareUpdate. shepherdd does not respawn
-    # SU (verified live — SU not in Shepherd-taigan.xml), so the
-    # kill is race-free.
-    OLDSU=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
-    if [ -n "$OLDSU" ]; then
-        log "shim late swap: SIGTERM SU PID=$OLDSU"
-        kill -TERM "$OLDSU" 2>/dev/null
-        for i in 1 2 3 4 5; do
-            sleep 1
-            if ! kill -0 "$OLDSU" 2>/dev/null; then break; fi
-        done
-    fi
     # Relaunch via the bind-mounted path so the wrapper sets
     # LD_PRELOAD and exec's SoftwareUpdate-real.
     nohup /opt/Bose/SoftwareUpdate >/dev/null 2>&1 &
+    LAUNCH_RC=$?
     sleep 2
     NEWSU=$(pidof SoftwareUpdate-real 2>/dev/null | awk '{print $1}')
     [ -z "$NEWSU" ] && NEWSU=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
-    log "shim late swap: relaunched SU at PID=${NEWSU:-?} uptime=$(uptime_s)s"
+    NEWSU_PPID=$(awk '/^PPid:/ {print $2}' /proc/${NEWSU:-1}/status 2>/dev/null)
+    NEWSU_EXE=$(readlink /proc/${NEWSU:-1}/exe 2>/dev/null | head -c 160)
+    NEWSU_PRELOAD=$(grep -aoE 'LD_PRELOAD=[^[:cntrl:]]*str-shim.so' /proc/${NEWSU:-1}/environ 2>/dev/null | head -c 160)
+    setup_log "shim late-swap: relaunched (launch_rc=$LAUNCH_RC) new_pid=${NEWSU:-?} ppid=$NEWSU_PPID exe='$NEWSU_EXE' preload='${NEWSU_PRELOAD:-not-set}' uptime=$(uptime_s)s"
 
     # Verify Bose /info still responds AFTER the swap. If it dropped,
     # log the regression — we will diagnose via the diagnostic bundle
     # rather than try to recover here (the box still has SSH up and
     # the disable marker is one `touch` away).
     sleep 5
-    if wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | grep -q "<info "; then
-        log "shim late swap: Bose /info HEALTHY after swap"
+    POSTSW_INFO=$(wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | head -c 200)
+    if echo "$POSTSW_INFO" | grep -q "<info "; then
+        setup_log "shim late-swap: post-swap Bose /info HEALTHY"
     else
-        log "shim late swap: WARN Bose /info NOT healthy after swap — mesh may be damaged"
+        setup_log "shim late-swap: WARN — post-swap Bose /info NOT healthy, body='$POSTSW_INFO' — mesh may be damaged, will continue monitoring"
     fi
+    POSTSW_17008=$(netstat -ltnp 2>/dev/null | awk '$4 ~ /:17008$/ {print $7; exit}')
+    setup_log "shim late-swap: post-swap owner of :17008 = ${POSTSW_17008:-none}"
+
+    # Final correctness probe: connect to localhost:17008/api/agent/version.
+    # If the shim is forwarding to STR's :8888, we get JSON with a
+    # "version" field. If we get Bose's SoftwareUpdate response (HTML
+    # or other), the forwarding never happened. This is THE test —
+    # everything above is preparation.
+    SELF_PROBE_BODY=$(wget -qO- -T 3 http://127.0.0.1:17008/api/agent/version 2>/dev/null | head -c 200)
+    if echo "$SELF_PROBE_BODY" | grep -q '"version"'; then
+        setup_log "shim late-swap: SUCCESS — :17008 self-probe returned STR JSON ('$(echo "$SELF_PROBE_BODY" | head -c 80)')"
+    else
+        setup_log "shim late-swap: FAIL — :17008 self-probe NOT STR (body='$SELF_PROBE_BODY' length=$(echo "$SELF_PROBE_BODY" | wc -c)) — the shim is not forwarding to :8888"
+    fi
+
+    # Post-swap watchdog: 5 minutes of every-60s liveness checks.
+    # On variants where shepherdd respawns SU without our wrapper,
+    # the PID will change AND :17008 will start serving Bose's
+    # native HTTP again. Detecting that signal in the bundle is the
+    # whole point of this watchdog — without it we cannot tell a
+    # taigan-style "kill once, shim persists" outcome from an
+    # rhino-style "shepherdd keeps overwriting our work".
+    (
+        WATCH_PID="$NEWSU"
+        for n in 1 2 3 4 5; do
+            sleep 60
+            CUR_PID=$(pidof SoftwareUpdate-real 2>/dev/null | awk '{print $1}')
+            [ -z "$CUR_PID" ] && CUR_PID=$(pidof SoftwareUpdate 2>/dev/null | awk '{print $1}')
+            CUR_OWNER=$(netstat -ltnp 2>/dev/null | awk '$4 ~ /:17008$/ {print $7; exit}')
+            CUR_PROBE=$(wget -qO- -T 2 http://127.0.0.1:17008/api/agent/version 2>/dev/null | head -c 80)
+            if echo "$CUR_PROBE" | grep -q '"version"'; then
+                CUR_STATE="STR-forwarding"
+            else
+                CUR_STATE="not-STR"
+            fi
+            if [ "$CUR_PID" != "$WATCH_PID" ]; then
+                setup_log "shim watchdog t+${n}m: PID changed $WATCH_PID -> ${CUR_PID:-none} (probable shepherd respawn), :17008 owner=$CUR_OWNER state=$CUR_STATE"
+                WATCH_PID="$CUR_PID"
+            else
+                setup_log "shim watchdog t+${n}m: PID stable=$CUR_PID owner=$CUR_OWNER state=$CUR_STATE"
+            fi
+        done
+    ) &
 }
 (shim_late_swap) &
 
@@ -622,6 +786,35 @@ WLAN_CONF="$STICK/wlan.conf"
 SSID=""
 PASS=""
 WLAN_SOURCE=""
+
+# persist_wlan_creds writes the live SSID+PASS into NAND so a future
+# reboot can replay via the elif branch above when the stick has been
+# yanked and NetManager's own profile DB is stale or wiped. Idempotent —
+# safe to call from every winner branch and from a single post-summary
+# call site. Skips silently when SSID/PASS are empty (ethernet-only or
+# WLAN-creds-not-loaded paths).
+#
+# 2026-05-30 — a rhino ST10 diagnostic bundle proved how badly the
+# previous scheme failed: three boots in a row M1-http won with the
+# stick's credentials, but M1 had no inline persist, so wlan-creds
+# stayed whatever it was before. Then a True Factory Reset wiped
+# wlan-creds AND Bose's NetworkProfiles.xml AND stick wlan.conf had
+# already been removed by the previous "rm \$WLAN_CONF" line — every
+# credential channel was empty on the next boot, and the box dropped
+# straight into Setup-AP. Centralising persistence here means every
+# M-winner benefits without per-branch boilerplate.
+persist_wlan_creds() {
+    [ -n "$SSID" ] || return 0
+    [ -n "$PASS" ] || return 0
+    { printf 'SSID=%s\n' "$SSID"
+      printf 'PASS=%s\n' "$PASS"
+    } > "$WLAN_CREDS_NAND.new" 2>/dev/null
+    if [ -s "$WLAN_CREDS_NAND.new" ]; then
+        mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
+        chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
+        setup_log "wlan-creds persisted to NAND for next-boot replay"
+    fi
+}
 if [ -f "$WLAN_CONF" ]; then
     SSID=$(sed -n 's/.*"ssid":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
     PASS=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
@@ -843,7 +1036,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # works — observed live on taigan/Portable 2026-05-28 where
     # STR's profiles clear wiped JJ3 right after Bose iOS app
     # provisioned it, and live again on Series-I scm-variant ST20
-    # 2026-05-29 (#60 deqw) where pre-stick the box was on Wi-Fi,
+    # 2026-05-29 (#60) where pre-stick the box was on Wi-Fi,
     # M0a logged "skipping" but the pipeline kept running because
     # M1 lacked a $WINNER guard, then on the next cold boot the
     # replay path tore down the working profile.
@@ -1073,7 +1266,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         # integer clears that state. v0.5.16 hardcoded sysLanguage=1
         # which on the firmware enum maps to a Nordic locale; that
         # POST persists and changed users' radio voice prompts to
-        # Finnish/Swedish (reported in #60 deqw 2026-05-29: "the
+        # Finnish/Swedish (reported in #60 on 2026-05-29: "the
         # radio changed language to Finnish or Swedish"). v0.5.17:
         # GET /language first; if a value is already set (gate open
         # from a prior provisioning, prior factory life, or because
@@ -1492,17 +1685,28 @@ WPAEOF
     fi
     fi  # end of "if [ "$WINNER" = "none" ]" guard around M0..M6
 
-    if [ "$BOSE_OK" = "1" ] && [ "$WINNER" != "M0a-prelease" ]; then
+    # ${BOSE_OK:-} guard: BOSE_OK is only set inside the `if [ "$WINNER" = "none" ]`
+    # block above. The M0a-prelease path skips that block entirely, so a bare
+    # $BOSE_OK reference trips set -u and emits "BOSE_OK: unbound variable" to
+    # stderr (observed live 2026-05-30 on a scm/spotty ST20 diagnostic).
+    # BusyBox sh keeps going past the warning but the line is still a real bug.
+    if [ "${BOSE_OK:-}" = "1" ] && [ "$WINNER" != "M0a-prelease" ]; then
         sleep 2
         NETINFO_AFTER=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
         setup_log "post-state: $NETINFO_AFTER"
     fi
 
-    if [ -f "$WLAN_CONF" ]; then
-        rm -f "$WLAN_CONF" 2>/dev/null
-        setup_log "wlan.conf removed from stick"
-    fi
-
+    # Stick wlan.conf is kept on disk. See [[stick-is-recovery]]:
+    # the stick MUST stay re-insertable as a credentials channel even
+    # after a True Factory Reset has wiped NetworkProfiles.xml and
+    # /mnt/nv/streborn/wlan-creds. Previous behaviour was to `rm` it
+    # right here after one successful provisioning, which guaranteed
+    # the next TFR+reboot left zero credential sources reachable from
+    # the box (rhino ST10 diagnostic, 2026-05-30). M0a-prelease's
+    # SSID-match short-circuit + M0a-refresh's password rotation
+    # already handle the "same SSID, do nothing" case cheaply, so
+    # carrying wlan.conf forward costs nothing and prevents a class
+    # of unrecoverable Setup-AP traps.
     WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
     WLAN_ELAPSED=$(( ${WLAN_T1:-0} - ${WLAN_T0:-0} ))
     FINAL_LEASE=$(current_sta_lease)
@@ -1510,6 +1714,14 @@ WPAEOF
     FINAL_IP=${FINAL_LEASE##*|}
     [ "$FINAL_IFACE" = "$FINAL_LEASE" ] && FINAL_IFACE="" && FINAL_IP=""
     setup_log "Approach SUMMARY: winner=$WINNER elapsed=${WLAN_ELAPSED}s iface=${FINAL_IFACE:-?} ip=${FINAL_IP:-none} bco=${BCO_MODE:-0} taigan=${IS_TAIGAN:-0} probes='wpa_cli=$HAS_WPA_CLI wpa_sup=$HAS_WPA_SUP nc=$HAS_NC tap=${TAP_CMD:+yes}'"
+    # Persist wlan-creds for every real winner (any M1..M6 path), not
+    # just M0a-prelease and M4-wpacli which had inline persist calls.
+    # Without this, an M1 winner left wlan-creds untouched and a later
+    # TFR left the box with no credential source at all.
+    case "$WINNER" in
+        none|ethernet-only) ;;
+        *) persist_wlan_creds ;;
+    esac
     setup_log "=== WLAN provisioning end ==="
 else
     WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
@@ -1570,10 +1782,10 @@ fi
 # whitelist (8080/8090/8091/80/443). STR's :8888 / :9080 / :8081 /
 # :8443 listeners bind fine and `netstat -ltn` shows LISTEN, but every
 # inbound SYN from a desktop client gets RST'd at the INPUT chain.
-# Reported live by @deqw on #60 with `nc -vz <lan-ip> 8888` returning
-# RST while `nc -vz <lan-ip> 8091` succeeds, and matches Brecht's
-# ST20 email thread where `reachable8888=false` despite a healthy
-# agent bootstrap.
+# See #60: `nc -vz <lan-ip> 8888` returns RST while `nc -vz <lan-ip>
+# 8091` succeeds on an affected Series-I ST20, and the desktop's
+# diagnostic-bundle field `reachable8888=false` co-occurs with a
+# healthy agent bootstrap on the same bundle.
 #
 # Insert ACCEPT rules at position 1 of the INPUT chain so they win
 # over the Bose firmware's DROP/REJECT entries. The streborn-fw
@@ -1802,16 +2014,19 @@ log "agent started with PID $AGENT_PID"
 # in case shepherdd respawns SoftwareUpdate without our env.
 sync_shim_to_nand() {
     if [ -r "$STICK_SHIM" ]; then
+        STICK_SHIM_SIZE=$(wc -c < "$STICK_SHIM" 2>/dev/null || echo "?")
         if cp "$STICK_SHIM" "$NAND_SHIM.new" 2>/dev/null && \
            mv "$NAND_SHIM.new" "$NAND_SHIM" 2>/dev/null; then
             chmod 644 "$NAND_SHIM" 2>/dev/null
-            log "shim deployed: $NAND_SHIM ($(wc -c < "$NAND_SHIM") bytes)"
+            setup_log "shim deploy: synced stick -> NAND (stick=${STICK_SHIM_SIZE}B nand=$(wc -c < "$NAND_SHIM" 2>/dev/null)B at $NAND_SHIM)"
         else
-            log "shim deploy: cp/mv failed, keeping previous NAND shim"
+            setup_log "shim deploy: cp/mv stick -> NAND FAILED, keeping previous NAND copy (nand_existed=$([ -r "$NAND_SHIM" ] && echo yes || echo no))"
             rm -f "$NAND_SHIM.new" 2>/dev/null
         fi
     elif [ ! -r "$NAND_SHIM" ]; then
-        log "shim deploy: stick has no $STICK_SHIM and NAND has no $NAND_SHIM, hijack disabled this boot"
+        setup_log "shim deploy: stick has no $STICK_SHIM and NAND has no $NAND_SHIM — hijack permanently disabled this boot"
+    else
+        setup_log "shim deploy: stick has no $STICK_SHIM, reusing NAND copy ($(wc -c < "$NAND_SHIM" 2>/dev/null)B at $NAND_SHIM)"
     fi
 }
 sync_shim_to_nand
@@ -1864,7 +2079,7 @@ setup_log "shim gate: variant='${VARIANT:-?}' host='${HOSTID:-?}' moduleType='$(
 # ============================================================
 # Cheap experiment for #90 (Series-I :8888 unreachable from LAN)
 # ============================================================
-# Hypothesis from deqw 2026-05-29 on #60: the scm chipset routes
+# Hypothesis from a 2026-05-29 comment on #60: the scm chipset routes
 # external TCP differently than internal. Self-connect to
 # LAN_IP:8888 from the box itself works (proven by every spotty
 # setup.log dump), but external clients on the same LAN get
@@ -1928,9 +2143,35 @@ iptables_nat_probe_and_modprobe() {
 iptables_install_redirect_series_one() {
     [ "$IS_SERIES_ONE" = "1" ] || return 0
     LEASE=$(current_sta_lease 2>/dev/null)
-    [ -n "$LEASE" ] || return 0
+    # Bail-reason logging. A scm/spotty ST20 bundle 2026-05-30 showed
+    # "iptables nat table available (probe rc=0)" followed by ZERO output
+    # from this function across a 115s window where the watchdog must have
+    # called it at least 4 times. The three silent `return 0` guards below
+    # ate every call without trace. /tmp sentinel rate-limits the bail log
+    # to one line per state, so a permanently-failing 30s watchdog does not
+    # spam setup.log. Sentinels clear when state recovers so a transient
+    # lease loss followed by recovery still produces a fresh entry log.
+    if [ -z "$LEASE" ]; then
+        if [ ! -f /tmp/.streborn-redirect-no-lease ]; then
+            setup_log "REDIRECT install: bail — current_sta_lease returned empty (no wlan0/wlan1/eth0 STA address yet)"
+            touch /tmp/.streborn-redirect-no-lease 2>/dev/null
+        fi
+        return 0
+    fi
+    rm -f /tmp/.streborn-redirect-no-lease 2>/dev/null
     LANIP=${LEASE##*|}
-    [ -n "$LANIP" ] && [ "$LANIP" != "127.0.0.1" ] || return 0
+    if [ -z "$LANIP" ] || [ "$LANIP" = "127.0.0.1" ]; then
+        if [ ! -f /tmp/.streborn-redirect-bad-lanip ]; then
+            setup_log "REDIRECT install: bail — LANIP='$LANIP' is empty or loopback (LEASE='$LEASE')"
+            touch /tmp/.streborn-redirect-bad-lanip 2>/dev/null
+        fi
+        return 0
+    fi
+    rm -f /tmp/.streborn-redirect-bad-lanip 2>/dev/null
+    if [ ! -f /tmp/.streborn-redirect-entered ]; then
+        setup_log "REDIRECT install: enter LEASE='$LEASE' LANIP='$LANIP' ports='$REDIRECT_PORTS'"
+        touch /tmp/.streborn-redirect-entered 2>/dev/null
+    fi
     rc_redirect=0
     for port in $REDIRECT_PORTS; do
         if iptables -t nat -C PREROUTING -p tcp ! -i lo -d "$LANIP" --dport "$port" \
@@ -1987,13 +2228,24 @@ iptables_install_redirect_series_one() {
 
 # SoftwareUpdate-Hijack-Logik: returnt 0 wenn der lokale Listener-PID
 # auf :17008 wirklich von einem SoftwareUpdate-Prozess kommt UND
-# dieser Prozess unsere LD_PRELOAD-Env-Var bereits gesetzt hat.
+# dieser Prozess unsere LD_PRELOAD-Env-Var bereits gesetzt hat. The
+# log line emitted on every call lets a remote bundle answer "did
+# the shim ever fully take hold" without staring at process-tree
+# dumps for matching string fragments — particularly useful on
+# scm/spotty where the SoftwareUpdate-real codepath may show but
+# the LD_PRELOAD env may be absent (shepherdd re-exec without env).
 shim_already_active() {
-    SU_PID=$(pidof SoftwareUpdate 2>/dev/null | head -c 16 | awk '{print $1}')
-    [ -n "$SU_PID" ] || return 1
+    SU_PID=$(pidof SoftwareUpdate-real 2>/dev/null | head -c 16 | awk '{print $1}')
+    [ -n "$SU_PID" ] || SU_PID=$(pidof SoftwareUpdate 2>/dev/null | head -c 16 | awk '{print $1}')
+    if [ -z "$SU_PID" ]; then
+        setup_log "shim status check: no SoftwareUpdate process found"
+        return 1
+    fi
     if grep -qa "LD_PRELOAD=.*str-shim.so" "/proc/$SU_PID/environ" 2>/dev/null; then
+        setup_log "shim status check: ACTIVE — PID=$SU_PID has str-shim.so in LD_PRELOAD"
         return 0
     fi
+    setup_log "shim status check: NOT active — PID=$SU_PID exists but LD_PRELOAD does not contain str-shim.so"
     return 1
 }
 
@@ -2029,32 +2281,20 @@ hijack_softwareupdate() {
     return 0
 }
 
-# Shim activation is currently DISABLED — verified live 2026-05-28
-# evening on the Portable that the kill+restart of SoftwareUpdate
-# AFTER Bose's init phase breaks Bose's internal IPC mesh: /info
-# and /now_playing on :8090 return HTTP 500 from BoseApp, presets
-# do not trigger playback, the display gets stuck. Even reverting
-# to the original SoftwareUpdate without LD_PRELOAD does not heal
-# the mesh — only a full reboot does. So the kill-after-init
-# approach is too invasive.
-#
-# Next iteration will use a bind-mount wrapper: write
-# /mnt/nv/streborn/lib/SU-wrapper.sh that exec's the real binary
-# with LD_PRELOAD set, and mount --bind that wrapper over
-# /opt/Bose/SoftwareUpdate BEFORE Bose's init runs. Bose's init
-# then naturally launches SoftwareUpdate-with-shim as the first
-# instance, mesh registration stays intact. Tracked separately.
-#
-# In the meantime the shim .so stays deployed (sync_shim_to_nand
-# above) and ready, the discovery probe in desktop-app probeSTR
-# already tries both :8888 and :17008 in parallel, and STR remains
-# fully functional locally on the box — only external desktop-app
-# reachability on Series-I is degraded until the bind-mount
-# approach lands.
+# Status marker: the real swap logic lives in `shim_late_swap`
+# (background, fires after Bose mesh stabilises). The Series-I
+# distinction is purely advisory here — the bind-mount approach
+# runs unconditionally on every box where staging produced a
+# wrapper, because the late-swap is non-destructive on Series-II
+# (the wrapper is invisible if /opt/Bose/SoftwareUpdate is never
+# externally invoked). A 2026-05-30 rhino (Series-II ST10) bundle
+# shows SoftwareUpdate-real running cleanly, proving the late-swap
+# is safe on Series-II — so the previous "hijack DISABLED" message
+# was wrong from the moment late-swap replaced kill+restart. Removed.
 if [ -n "$IS_SERIES_ONE" ]; then
-    setup_log "shim: Series-I box, hijack DISABLED this iteration (kill+restart breaks Bose IPC mesh — bind-mount approach pending)"
+    setup_log "shim status: Series-I box (variant=${VARIANT:-?} host=${HOSTID:-?}) — late-swap is the only path to external :8888 reachability, follow shim_late_swap log lines for outcome"
 else
-    setup_log "shim: Series-II box (chipset permissive), STR :8888 reachable directly, hijack skipped"
+    setup_log "shim status: Series-II box (chipset permissive, STR :8888 reachable directly) — late-swap still runs as a no-op safety net; if it succeeds the box gains :17008 as an additional reachable port"
 fi
 
 # One-shot diagnostic snapshot 90 s after start_agent. By then any
@@ -2093,14 +2333,14 @@ fi
     # where Bose firmware installs a restrictive INPUT chain that
     # silently RSTs our :8888 listener even though it is correctly
     # bound. Without this dump in the bundle the case looks identical
-    # to a broken bind (see issue #60 deqw 2026-05-28).
+    # to a broken bind (see issue #60, 2026-05-28).
     setup_log "iptables filter INPUT:"
     iptables -L INPUT -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
     setup_log "iptables nat PREROUTING:"
     iptables -t nat -L PREROUTING -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
     # Try a localhost loopback connect to :8888 vs the LAN-IP connect.
     # When the two disagree (local ok, lan refused) the firewall is
-    # the reason — exactly the deqw / Brecht pattern.
+    # the reason — the canonical #60 / Series-I scm/spotty pattern.
     LAN_IP=$(ip -4 addr show eth0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
     if [ -z "$LAN_IP" ]; then
         LAN_IP=$(ip -4 addr show wlan0 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
@@ -2195,7 +2435,7 @@ agent_port_bound() {
     # can take 20-25 s end to end. Previously the t=5 s check saw
     # alive=1 bound=0, killed the process during init, and the box
     # ended up in a respawn loop with no listener ever reaching its
-    # bind call. Observed live in deqw #60 v0.5.5 setup_log at t=57s.
+    # bind call. Observed live in a #60 v0.5.5 setup_log at t=57s.
     #
     # During grace we still respawn if the process is GONE (ALIVE=0)
     # because that means it crashed — we want to recover. After the
