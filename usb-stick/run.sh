@@ -1427,6 +1427,32 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             setup_log "M1: gate-2 succeeded on try $_m1_marge_winner"
         fi
 
+        # Gate 3: /name. Live-verified 2026-05-30 on a factory-reset
+        # taigan Portable that this POST is the difference between
+        # LED-stays-yellow and LED-goes-white after the WLAN switch.
+        # The Bose iOS app posts a name unconditionally at this step.
+        # We use NAME from name.conf if the stick provided one; else
+        # we re-post whatever /name currently returns so we still
+        # trip the gate without changing the user-visible value.
+        NAME_FROM_STICK=""
+        if [ -f "$STICK/name.conf" ]; then
+            NAME_FROM_STICK=$(sed -n 's/.*"name":"\([^"]*\)".*/\1/p' "$STICK/name.conf" | head -1)
+        fi
+        if [ -z "$NAME_FROM_STICK" ]; then
+            NAME_FROM_BOX=$(wget -qO- -T 5 "$BOSE_API/name" 2>/dev/null \
+                | sed -n 's:.*<name>\([^<]*\)</name>.*:\1:p' | head -1)
+            NAME_CHOICE="${NAME_FROM_BOX:-SoundTouch}"
+            setup_log "M1: gate-3 no name on stick, re-posting existing /name='$NAME_CHOICE' to fire gate"
+        else
+            NAME_CHOICE="$NAME_FROM_STICK"
+            setup_log "M1: gate-3 using name from stick name.conf='$NAME_CHOICE'"
+        fi
+        NAME_ESC=$(xml_escape "$NAME_CHOICE" 2>/dev/null || printf '%s' "$NAME_CHOICE")
+        NAME_RESP=$(wget -qO- -T 5 --header="Content-Type: text/xml" \
+               --post-data="<name>${NAME_ESC}</name>" \
+               "$BOSE_API/name" 2>&1)
+        setup_log "M1: gate-3 POST $BOSE_API/name rc=$? response='$(echo "$NAME_RESP" | head -c 160)'"
+
         # Survey wakes the radio; matches the Bose webpage's getNetworks().
         SURVEY_BODY='<PerformWirelessSiteSurvey timeout="5"/>'
         setup_log "M1: survey POST $BOSE_API/performWirelessSiteSurvey"

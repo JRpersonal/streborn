@@ -107,18 +107,34 @@ func (a *App) PushWLANToBox(host, ssid, password, name string) (SetupAPPushResul
 		res.LogTail = append(res.LogTail, "marge OK: "+msg)
 	}
 
-	// Step 3 (optional): /name. The iOS app sets this after marge,
-	// matching the "Where is the speaker?" prompt. It is not a gate
-	// for addWirelessProfile (live-verified 2026-05-30 without it),
-	// but persisting it now means the box advertises the right
-	// friendlyName as soon as it joins the home LAN. Best-effort.
-	if name != "" {
-		res.Step = "name"
-		if msg, err := boseSetName(a.ctx, host, name); err != nil {
-			res.LogTail = append(res.LogTail, "name SKIP (best-effort): "+err.Error())
+	// Step 3: /name. ALWAYS post — live-verified 2026-05-30 on the
+	// factory-reset taigan Portable that this is the difference
+	// between LED-stays-yellow and LED-goes-white after the WLAN
+	// switch. Without /name the box associates to STA but appears
+	// to stay in setup-pending color; with /name the LED flips. The
+	// iOS app posts a name unconditionally at this step. If the
+	// caller did not supply a friendly name, we re-post whatever
+	// /name currently returns so we still trip the gate without
+	// changing the user-visible device name.
+	res.Step = "name"
+	chosenName := name
+	if chosenName == "" {
+		if existing, gerr := boseGetName(a.ctx, host); gerr == nil && existing != "" {
+			chosenName = existing
+			res.LogTail = append(res.LogTail, "name: using existing /name='"+existing+"' as gate trigger")
 		} else {
-			res.LogTail = append(res.LogTail, "name OK: "+msg)
+			// Fall back to a generic value so the gate still fires
+			// on a box whose default name is somehow empty.
+			chosenName = "SoundTouch"
+			res.LogTail = append(res.LogTail, "name: no existing name readable, falling back to 'SoundTouch'")
 		}
+	}
+	if msg, err := boseSetName(a.ctx, host, chosenName); err != nil {
+		res.LogTail = append(res.LogTail, "name FAIL: "+err.Error())
+		res.Message = "name gate failed: " + err.Error()
+		return res, err
+	} else {
+		res.LogTail = append(res.LogTail, "name OK ("+chosenName+"): "+msg)
 	}
 
 	// Step 4: site survey. Wakes the radio for STA scan. Returns 500
@@ -186,9 +202,43 @@ func boseSetMargeAccount(ctx context.Context, host string) (string, error) {
 	return shorten(resp), nil
 }
 
-// boseSetName POSTs the device friendly name. Best-effort: not
-// required to open addWirelessProfile, but the iOS app sets it here
-// so STR matches that flow.
+// boseGetName reads the current friendly name from /name. Returns
+// the unwrapped XML value (no <name> tags). Used as a fallback so
+// the unconditional /name POST can preserve the existing value when
+// the caller has no preference.
+func boseGetName(ctx context.Context, host string) (string, error) {
+	url := fmt.Sprintf("http://%s:8090/name", host)
+	reqCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	client := &http.Client{Timeout: 0}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	// Body is <?xml ...?><name>Foo Bar</name>. Pluck the inner text.
+	const open, close = "<name>", "</name>"
+	s := string(body)
+	i := strings.Index(s, open)
+	if i < 0 {
+		return "", fmt.Errorf("no <name> tag in body %q", shorten(s))
+	}
+	j := strings.Index(s[i+len(open):], close)
+	if j < 0 {
+		return "", fmt.Errorf("no </name> close in body %q", shorten(s))
+	}
+	return strings.TrimSpace(s[i+len(open) : i+len(open)+j]), nil
+}
+
+// boseSetName POSTs the device friendly name. Always called as a
+// gate step (not best-effort): the 2026-05-30 live test on taigan
+// confirmed this is the difference between LED-yellow and LED-white
+// after the WLAN switch.
 func boseSetName(ctx context.Context, host, name string) (string, error) {
 	body := "<name>" + xmlEscape(name) + "</name>"
 	resp, err := bosePost(ctx, host, "/name", "text/xml", body, 5*time.Second)
