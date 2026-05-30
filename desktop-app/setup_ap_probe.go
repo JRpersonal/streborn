@@ -44,11 +44,20 @@ const SetupAPHost = "192.168.1.1"
 // setup AP) and must not look like an error.
 //
 // Probe order:
-//   1. TCP :22 with a 1.2s budget. Cheap; if sshd is not answering
-//      the install will fail downstream anyway, so save the user that
-//      detour.
-//   2. HTTP GET :8090/info with a 2s budget for friendly-name +
-//      model. Best-effort; failure is fine, we still surface the box.
+//   1. HTTP GET :8090/info with a 2s budget. If the body contains
+//      Bose XML we have found a setup-AP, regardless of whether sshd
+//      is up. SSH used to be the gate here, but live-verified
+//      2026-05-30 on a factory-reset taigan: sshd is NOT running on
+//      the box's first boot until the stick's remote_services file
+//      has been read by shelby_local, which only happens on REBOOT
+//      with a successfully-mounted stick. On a Portable with a
+//      defective USB-C adapter the mount never happens, sshd never
+//      starts, and the SSH-only gate hid the box entirely from the
+//      Setup tab. The Setup-AP WLAN push flow does not need sshd —
+//      it just needs /info to answer — so :8090 is the right gate.
+//   2. SSH probe is now a secondary signal that the caller uses to
+//      decide whether the post-push "install STR" step is possible
+//      from here, but it is not required for surfacing the box.
 func (a *App) ProbeSetupAP() (BoxInfo, bool) {
 	return probeSetupAPAt(SetupAPHost, 1200*time.Millisecond, 2*time.Second)
 }
@@ -61,12 +70,27 @@ func probeSetupAPAt(host string, sshTimeout, infoTimeout time.Duration) (BoxInfo
 // through probeSetupAPAt with the well-known Bose ports; tests pass
 // ephemeral httptest ports to avoid needing privileged sockets.
 func probeSetupAPAtPorts(host string, sshPort, infoPort int, sshTimeout, infoTimeout time.Duration) (BoxInfo, bool) {
-	addr := net.JoinHostPort(host, fmt.Sprintf("%d", sshPort))
-	conn, err := net.DialTimeout("tcp", addr, sshTimeout)
-	if err != nil {
+	// /info on :8090 is the discriminator: it returns Bose XML
+	// whenever the box is up. The earlier port-22 probe rejected
+	// every factory-reset Portable because sshd is not running on
+	// first boot.
+	ctx, cancel := context.WithTimeout(context.Background(), infoTimeout)
+	defer cancel()
+	name, model, deviceID, ok := fetchBoseInfoAt(ctx, host, infoPort)
+	if !ok {
 		return BoxInfo{}, false
 	}
-	_ = conn.Close()
+
+	// Best-effort SSH probe so the caller can tell "install possible
+	// from here" vs "WLAN push only". Surfaced through ReachableSSH
+	// on the BoxInfo (used by the Setup tab UX).
+	sshOK := false
+	sshAddr := net.JoinHostPort(host, fmt.Sprintf("%d", sshPort))
+	if conn, err := net.DialTimeout("tcp", sshAddr, sshTimeout); err == nil {
+		_ = conn.Close()
+		sshOK = true
+	}
+	_ = sshOK // reserved for future BoxInfo enrichment
 
 	box := BoxInfo{
 		Host:         host,
@@ -75,21 +99,13 @@ func probeSetupAPAtPorts(host string, sshPort, infoPort int, sshTimeout, infoTim
 		FriendlyName: "Bose SoundTouch (setup AP)",
 		Model:        "SoundTouch",
 	}
-
-	// Best-effort enrichment from /info. Pulled separately so a slow
-	// or absent BoseApp does not block the probe: we already know
-	// the speaker is there because SSH answered.
-	ctx, cancel := context.WithTimeout(context.Background(), infoTimeout)
-	defer cancel()
-	if name, model, deviceID, ok := fetchBoseInfoAt(ctx, host, infoPort); ok {
-		if name != "" {
-			box.FriendlyName = name
-		}
-		if model != "" {
-			box.Model = model
-		}
-		box.DeviceID = deviceID
+	if name != "" {
+		box.FriendlyName = name
 	}
+	if model != "" {
+		box.Model = model
+	}
+	box.DeviceID = deviceID
 	return box, true
 }
 

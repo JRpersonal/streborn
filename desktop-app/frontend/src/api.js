@@ -44,6 +44,7 @@ export {
   InstallSTROnBox,
   TrueFactoryReset,
   ProbeSetupAP,
+  PushWLANToBox,
   ListMediaServers,
   BrowseLibrary,
 } from '../wailsjs/go/main/App';
