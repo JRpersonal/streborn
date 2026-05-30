@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -55,7 +56,10 @@ func PowerOn(ctx context.Context, host string) error {
 // `sys power` und pollt `/now_playing` bis source != STANDBY oder Timeout.
 // Box reagiert manchmal verzoegert oder ignoriert sys power komplett wenn
 // sie in Deep Standby ist; in dem Fall wird mehrmals gesendet.
-func WakeAndWait(ctx context.Context, host string, maxWait time.Duration) error {
+//
+// logger may be nil; when present, per-iteration phase markers are emitted
+// so a diagnostic bundle shows the standby-exit timeline (#60).
+func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger *slog.Logger) error {
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -65,25 +69,48 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration) error 
 	deadline := time.Now().Add(maxWait)
 	client := &http.Client{Timeout: 2 * time.Second}
 	infoURL := fmt.Sprintf("http://%s:8090/now_playing", host)
+	start := time.Now()
+	logPhase := func(msg string, kv ...any) {
+		if logger == nil {
+			return
+		}
+		kv = append(kv, "elapsed_ms", time.Since(start).Milliseconds())
+		logger.Warn(msg, kv...)
+	}
+
+	logPhase("wake phase: start", "host", host, "max_wait", maxWait.String())
 
 	for i := 0; ; i++ {
 		// Erst pruefen: ist Box vielleicht schon wach?
-		if state, err := readSource(ctx, client, infoURL); err == nil && state != "STANDBY" {
+		state, err := readSource(ctx, client, infoURL)
+		if err == nil && state != "STANDBY" {
+			logPhase("wake phase: already awake", "attempt", i, "source", state)
 			return nil
 		}
+		if err != nil {
+			logPhase("wake phase: pre-check read failed", "attempt", i, "err", err.Error())
+		} else {
+			logPhase("wake phase: STANDBY, sending sys power", "attempt", i, "source", state)
+		}
 		// Standby oder unklarer State -> power on senden.
-		_ = PowerOn(ctx, host)
+		if pwrErr := PowerOn(ctx, host); pwrErr != nil {
+			logPhase("wake phase: sys power write failed", "attempt", i, "err", pwrErr.Error())
+		}
 		// Kurze Pause damit Box den Befehl verarbeiten kann.
 		select {
 		case <-ctx.Done():
+			logPhase("wake phase: ctx cancelled", "attempt", i, "err", ctx.Err().Error())
 			return ctx.Err()
 		case <-time.After(800 * time.Millisecond):
 		}
 		// Nochmal checken
-		if state, err := readSource(ctx, client, infoURL); err == nil && state != "STANDBY" {
+		state, err = readSource(ctx, client, infoURL)
+		if err == nil && state != "STANDBY" {
+			logPhase("wake phase: woke", "attempt", i, "source", state)
 			return nil
 		}
 		if time.Now().After(deadline) {
+			logPhase("wake phase: timeout", "attempts", i+1, "last_source", state)
 			return fmt.Errorf("box bleibt im STANDBY nach %d Versuchen", i+1)
 		}
 	}

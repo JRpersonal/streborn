@@ -164,12 +164,29 @@ func run() error {
 
 	// Presets laden. Bei Fehler nicht crashen sondern mit leerer Liste weitermachen,
 	// damit der Agent zumindest auf seinen Listenern lebt und korrigierbar bleibt.
+	//
+	// Phase-marker logs at WARN level so a remote diagnostic bundle shows
+	// exactly which path was taken — was the file there? was it empty?
+	// did parse succeed? how many slots ended up in the in-memory store?
+	// Without this, an "empty presets" report (#60) is indistinguishable
+	// from a fresh install, a corrupt file, or an agent restart racing
+	// the store load.
+	if st, statErr := os.Stat(*presetsPath); statErr == nil {
+		logger.Warn("preset store phase: file present",
+			"file", *presetsPath, "bytes", st.Size(), "mtime", st.ModTime().UTC().Format(time.RFC3339))
+	} else if os.IsNotExist(statErr) {
+		logger.Warn("preset store phase: file absent", "file", *presetsPath)
+	} else {
+		logger.Warn("preset store phase: file stat failed", "file", *presetsPath, "err", statErr)
+	}
 	store, err := presets.Load(*presetsPath)
 	if err != nil {
-		logger.Warn("presets not loadable, continuing with empty list", "err", err, "file", *presetsPath)
+		logger.Warn("preset store phase: load failed, continuing with empty list",
+			"err", err, "file", *presetsPath)
 		store = presets.New()
 	} else {
-		logger.Info("presets loaded", "count", len(store.All()), "file", *presetsPath)
+		logger.Warn("preset store phase: ready",
+			"count", len(store.All()), "file", *presetsPath)
 	}
 
 	// Hosts Datei manipulieren
@@ -565,7 +582,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// Box aufwecken aus Standby + Pair sicherstellen.
 	if h.boxHost != "" {
 		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second); err != nil {
+		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
 			h.logger.Warn("Box konnte nicht aus STANDBY geholt werden", "err", err)
 		}
 		cancel()

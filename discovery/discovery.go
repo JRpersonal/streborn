@@ -154,13 +154,20 @@ func (a *Announcer) register() error {
 		a.legacyServer = legacy
 	}
 
-	a.logger.Info("mDNS announce active",
+	// Phase marker at WARN so a remote diagnostic bundle pinpoints
+	// when each (re-)announce happened. Critical for #60-style
+	// "speaker disappeared from STR after standby" investigations:
+	// the bundle must show whether mDNS ever announced, and whether
+	// it was re-announced around the time the desktop app lost it.
+	a.logger.Warn("mDNS phase: announce active",
 		slog.String("instance", a.cfg.InstanceName),
 		slog.String("friendlyName", a.cfg.FriendlyName),
+		slog.String("model", a.cfg.Model),
 		slog.String("service", ServiceType),
 		slog.String("legacyService", LegacyServiceType),
 		slog.Bool("legacyAnnounced", legacy != nil),
 		slog.Int("port", a.cfg.Port),
+		slog.Int("ifaces", len(ifaces)),
 	)
 	return nil
 }
@@ -176,6 +183,10 @@ func (a *Announcer) UpdateFriendlyName(name string) error {
 	if name == a.cfg.FriendlyName {
 		return nil
 	}
+	a.logger.Warn("mDNS phase: re-announce trigger",
+		slog.String("reason", "friendlyName change"),
+		slog.String("old", a.cfg.FriendlyName),
+		slog.String("new", name))
 	a.cfg.FriendlyName = name
 	if a.server != nil {
 		a.server.Shutdown()
@@ -204,6 +215,10 @@ func (a *Announcer) UpdateModel(model string) error {
 	if model == a.cfg.Model {
 		return nil
 	}
+	a.logger.Warn("mDNS phase: re-announce trigger",
+		slog.String("reason", "model change"),
+		slog.String("old", a.cfg.Model),
+		slog.String("new", model))
 	a.cfg.Model = model
 	if a.server != nil {
 		a.server.Shutdown()
@@ -235,7 +250,7 @@ func (a *Announcer) Close() {
 		stopped = true
 	}
 	if stopped {
-		a.logger.Info("mDNS announce stopped")
+		a.logger.Warn("mDNS phase: announce stopped")
 	}
 }
 

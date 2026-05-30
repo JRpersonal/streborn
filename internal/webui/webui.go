@@ -101,7 +101,7 @@ func WithStreamProxy(p *streamproxy.Server) Option {
 func (s *Server) ensureBoxReady(ctx context.Context) {
 	if s.boxHost != "" {
 		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		if err := boxcli.WakeAndWait(wakeCtx, s.boxHost, 6*time.Second); err != nil {
+		if err := boxcli.WakeAndWait(wakeCtx, s.boxHost, 6*time.Second, s.logger); err != nil {
 			s.logger.Warn("Box konnte nicht aus STANDBY geholt werden", "err", err)
 		}
 		cancel()
@@ -168,6 +168,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
+	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
 
 	// Stream Proxy: stabile URLs fuer Radio Streams mit Token Expiry.
 	// Siehe internal/streamproxy fuer Details.
@@ -226,7 +227,19 @@ func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.presets.All())
+		all := s.presets.All()
+		// Phase marker for the "presets reported empty" symptom on #60.
+		// A WARN log on every empty GET makes it directly visible in the
+		// diagnostic bundle whether the desktop app actually polled the
+		// agent and received an empty array (vs the agent never being
+		// reached). Non-empty responses stay at Debug to avoid noise.
+		if len(all) == 0 {
+			s.logger.Warn("preset store phase: GET /api/presets returned empty",
+				"remote", r.RemoteAddr)
+		} else {
+			s.logger.Debug("GET /api/presets", "count", len(all), "remote", r.RemoteAddr)
+		}
+		writeJSON(w, http.StatusOK, all)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -1034,6 +1047,85 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		"proc_mounts":     readTail("/proc/mounts"),
 	}
 	writeJSON(w, http.StatusOK, state)
+}
+
+// handleDebugProbe issues an HTTP request from inside the box to a
+// caller-supplied URL and returns the raw response (status, headers,
+// body) as JSON. Built as a temporary diagnostic to verify whether
+// the BCO wifi-chipset HTTP responder on :80 also answers on the
+// loopback interface (it is documented as not having a Linux socket,
+// but the chipset may intercept lo traffic too). LAN-only, 5 s
+// timeout, body capped to keep the JSON small.
+//
+// Query parameters:
+//   url     full URL to probe (required)
+//   method  HTTP method (default GET)
+//   body    request body, sent verbatim
+func (s *Server) handleDebugProbe(w http.ResponseWriter, r *http.Request) {
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "debug only from LAN", http.StatusForbidden)
+		return
+	}
+	target := r.URL.Query().Get("url")
+	if target == "" {
+		http.Error(w, "missing url query parameter", http.StatusBadRequest)
+		return
+	}
+	method := r.URL.Query().Get("method")
+	if method == "" {
+		method = http.MethodGet
+	}
+	bodyStr := r.URL.Query().Get("body")
+	timeoutSec := 5
+	if t := r.URL.Query().Get("timeout"); t != "" {
+		if v, err := strconv.Atoi(t); err == nil && v >= 1 && v <= 120 {
+			timeoutSec = v
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+	var reqBody io.Reader
+	if bodyStr != "" {
+		reqBody = strings.NewReader(bodyStr)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, reqBody)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"target": target,
+			"phase":  "build-request",
+			"error":  err.Error(),
+		})
+		return
+	}
+	client := &http.Client{Timeout: time.Duration(timeoutSec) * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"target": target,
+			"method": method,
+			"phase":  "do-request",
+			"error":  err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+	const maxBody = 8 * 1024
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	hdrs := map[string]string{}
+	for k, v := range resp.Header {
+		if len(v) > 0 {
+			hdrs[k] = v[0]
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"target":      target,
+		"method":      method,
+		"status_code": resp.StatusCode,
+		"status":      resp.Status,
+		"headers":     hdrs,
+		"body":        string(respBody),
+		"body_bytes":  len(respBody),
+	})
 }
 
 // handleBoxSyncPresets ueberschreibt die Box eigene Preset Liste mit

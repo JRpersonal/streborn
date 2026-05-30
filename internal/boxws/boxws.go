@@ -96,7 +96,9 @@ func (c *Client) runOnce(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	c.logger.Info("box websocket verbunden", "url", c.url)
+	// Phase marker at WARN so a reconnect after standby/resume is
+	// visible in the diagnostic bundle without raising log level.
+	c.logger.Warn("box websocket phase: connected", "url", c.url)
 
 	// Reader Loop
 	for {
@@ -138,6 +140,20 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	c.logger.Debug("box ws frame", "bytes", len(data), "preview", preview(data, 400))
 
 	s := string(data)
+
+	// Phase markers for standby/resume diagnostics (#60). The gabbo
+	// stream announces power, connection and now-playing transitions;
+	// flagging them at WARN gives the bundle a clear timeline of what
+	// the box was doing without needing full DEBUG capture.
+	switch {
+	case strings.Contains(s, "powerStateUpdated"):
+		c.logger.Warn("box ws phase: powerState event", "preview", preview(data, 200))
+	case strings.Contains(s, "connectionStateUpdated"):
+		c.logger.Warn("box ws phase: connectionState event", "preview", preview(data, 200))
+	case strings.Contains(s, "nowPlayingUpdated") && !strings.Contains(s, "nowSelectionUpdated"):
+		c.logger.Info("box ws phase: nowPlaying event", "preview", preview(data, 200))
+	}
+
 	if !strings.Contains(s, "nowSelectionUpdated") && !strings.Contains(s, "presetSelectionUpdated") {
 		return
 	}

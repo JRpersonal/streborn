@@ -40,6 +40,14 @@ type Manager struct {
 	logger *slog.Logger
 	cfg    Config
 	client *http.Client
+
+	// lastPaired is the result of the most recent EnsurePaired call.
+	// nil = unknown (no successful status read yet), &true / &false
+	// for the last known state. Used to emit phase-marker logs only
+	// on transitions so a diagnostic bundle has a clean timeline
+	// without the 5-min heartbeat drowning everything else.
+	lastPaired *bool
+	tickCount  int
 }
 
 // New erstellt einen Manager mit sinnvollen Defaults.
@@ -125,11 +133,19 @@ func (m *Manager) Pair(ctx context.Context) error {
 func (m *Manager) EnsurePaired(ctx context.Context) error {
 	paired, err := m.IsPaired(ctx)
 	if err != nil {
+		// Status read failure is a phase marker on its own: it tells the
+		// diagnostic bundle whether the box was reachable at all during
+		// e.g. the standby window. Logged at WARN even though the loop
+		// will retry, because "box silent for N ticks" is exactly the
+		// signal we need for #60.
+		m.logger.Warn("autopair phase: /info read failed", "err", err)
 		return fmt.Errorf("status pruefen: %w", err)
 	}
+	m.recordPairedState(paired)
 	if paired {
-		// Debug-level so the 5-min heartbeat does not flood the NAND
-		// log. Only state changes are interesting.
+		// Debug-level on the steady-state tick; the every-Nth heartbeat
+		// emitted by RunBackground keeps the diagnostic bundle honest
+		// without flooding the log on a healthy box.
 		m.logger.Debug("box already paired, no re-pair needed")
 		return nil
 	}
@@ -138,12 +154,31 @@ func (m *Manager) EnsurePaired(ctx context.Context) error {
 			"boxDate", when)
 		return nil
 	}
-	m.logger.Info("box not paired, starting auto pair", "accountID", m.cfg.AccountID)
+	m.logger.Warn("autopair phase: box not paired, starting auto pair", "accountID", m.cfg.AccountID)
 	if err := m.Pair(ctx); err != nil {
 		return fmt.Errorf("pair: %w", err)
 	}
-	m.logger.Info("box paired successfully", "accountID", m.cfg.AccountID)
+	m.logger.Warn("autopair phase: box paired successfully", "accountID", m.cfg.AccountID)
 	return nil
+}
+
+// recordPairedState emits a phase marker on every transition (paired
+// <-> not paired). The first observation also counts as a transition,
+// so the diagnostic bundle always carries an explicit "initial state"
+// line right after agent start.
+func (m *Manager) recordPairedState(paired bool) {
+	if m.lastPaired == nil {
+		m.logger.Warn("autopair phase: initial state observed", "paired", paired)
+		v := paired
+		m.lastPaired = &v
+		return
+	}
+	if *m.lastPaired != paired {
+		m.logger.Warn("autopair phase: paired state changed",
+			"from", *m.lastPaired, "to", paired)
+		v := paired
+		m.lastPaired = &v
+	}
 }
 
 // boxClockSane returns true if the box's own clock — as reported by
@@ -195,11 +230,29 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 		}
 	}
 
+	// Every 6th tick (~30 min at the default 5-min interval) emit a
+	// phase-marker heartbeat at WARN even when nothing changed, so a
+	// diagnostic bundle proves the autopair loop is still alive across
+	// the standby window. Without this, a healthy paired box looks
+	// indistinguishable from a stalled goroutine in the log.
+	const heartbeatEvery = 6
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
+		m.tickCount++
 		if err := m.EnsurePaired(ctx); err != nil {
 			m.logger.Warn("auto pair failed, will retry next tick", "err", err)
+		} else if m.tickCount%heartbeatEvery == 0 {
+			state := "unknown"
+			if m.lastPaired != nil {
+				if *m.lastPaired {
+					state = "paired"
+				} else {
+					state = "not paired"
+				}
+			}
+			m.logger.Warn("autopair phase: heartbeat",
+				"tick", m.tickCount, "state", state, "interval", interval.String())
 		}
 		select {
 		case <-ctx.Done():
