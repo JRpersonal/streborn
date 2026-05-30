@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1204,14 +1205,70 @@ func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) 
 	return out, nil
 }
 
-// UpdateBoxAgent schickt das eingebettete ARM Binary an die Box. Box
-// schreibt es atomar nach NAND und restartet sich selbst (rc.local
-// startet sie wieder). Returns nach erfolgreichem Upload, vor Box Restart.
+// UpdateBoxAgent ships the embedded ARM binary to the speaker. Preferred
+// path is HTTP POST to /api/agent/update on host:port — but only when a
+// preflight confirms STR's agent really answers there. On Series-I boxes
+// (scm/spotty, taigan) where the LD_PRELOAD shim has not hijacked
+// SoftwareUpdate's :17008 listener, that port belongs to Bose's own
+// SoftwareUpdate HTTP service. Its work buffer is 1.5 KB, and the 10 MB
+// agent binary returns "Request Too Large" (verified live 2026-05-30 on
+// a scm/spotty ST20 diagnostic bundle — see [[bose-http-buffer]]).
+//
+// On preflight failure we fall back to SSH: stream the binary via stdin
+// into /mnt/nv/streborn/bin/streborn-armv7l.new, size-verify, atomic-
+// rename, SIGTERM the running agent. run.sh's boot watchdog respawns it
+// from the new file within seconds.
 func (a *App) UpdateBoxAgent(host string, port int) error {
 	bin := agentbin.Bytes()
 	if len(bin) == 0 {
 		return fmt.Errorf("no embedded stick binary available")
 	}
+	if perr := a.updateAgentPreflight(host, port); perr != nil {
+		a.logger.Warn("update agent: HTTP preflight rejected, switching to SSH-OTA",
+			"host", host, "port", port, "reason", perr)
+		if sshErr := a.updateAgentViaSSH(host, bin); sshErr != nil {
+			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %v)", port, sshErr, perr)
+		}
+		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
+		return nil
+	}
+	return a.updateAgentViaHTTP(host, port, bin)
+}
+
+// updateAgentPreflight checks that /api/agent/version on host:port really
+// answers as STR (JSON envelope containing a "version" key). A success
+// here is the green light for the 10 MB HTTP POST. Any other response
+// shape (HTML error, plain text, missing field, non-200) means the
+// listener is something else — almost certainly Bose's SoftwareUpdate
+// service on a Series-I box without an active shim, where the 1.5 KB
+// POST buffer guarantees failure.
+func (a *App) updateAgentPreflight(host string, port int) error {
+	url := a.baseURL(host, port) + "/api/agent/version"
+	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	snip := string(body)
+	if len(snip) > 200 {
+		snip = snip[:200] + "..."
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %d at %s — body=%q", resp.StatusCode, url, snip)
+	}
+	var probe map[string]any
+	if jerr := json.Unmarshal(body, &probe); jerr != nil || probe["version"] == nil {
+		return fmt.Errorf("listener at :%d is not STR (ct=%q body=%q) — likely Bose SoftwareUpdate, agent OTA via HTTP would hit the 1.5 KB POST buffer",
+			port, resp.Header.Get("Content-Type"), snip)
+	}
+	return nil
+}
+
+func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 	url := a.baseURL(host, port) + "/api/agent/update"
 	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost, url, strings.NewReader(string(bin)))
 	if err != nil {
@@ -1229,6 +1286,44 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
+	return nil
+}
+
+// updateAgentViaSSH streams bin into /mnt/nv/streborn/bin/streborn-armv7l
+// over SSH, then SIGTERMs the running agent so run.sh's watchdog respawns
+// it from the new file. Each step's failure is reported with concrete
+// context so the desktop's error toast tells the user what to look at
+// instead of "ssh: exit 1".
+func (a *App) updateAgentViaSSH(host string, bin []byte) error {
+	if hello, err := boxSSHOutput(host, "echo STR_SSH_OK", 8*time.Second); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
+		return fmt.Errorf("ssh handshake failed: %v (%s)", err, strings.TrimSpace(hello))
+	}
+	// mkdir + cat in one ssh-with-stdin session so a missing parent dir on
+	// a freshly-installed box does not need a separate round-trip. The
+	// 120 s timeout covers a 10 MB upload over slow Wi-Fi with the
+	// speaker's modest CPU spending time on SSH crypto.
+	uploadCmd := "mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new"
+	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
+		return fmt.Errorf("ssh upload (%d bytes) failed: %v (%s)", len(bin), err, strings.TrimSpace(out))
+	}
+	// Size-verify before the atomic rename so a half-uploaded file never
+	// becomes the live agent. Sentinel "OK_<size>" so the caller can
+	// distinguish a successful rename from any stderr noise.
+	verifyCmd := fmt.Sprintf(
+		"size=$(wc -c < /mnt/nv/streborn/bin/streborn-armv7l.new) && "+
+			"[ \"$size\" = \"%d\" ] && "+
+			"chmod 0755 /mnt/nv/streborn/bin/streborn-armv7l.new && "+
+			"mv /mnt/nv/streborn/bin/streborn-armv7l.new /mnt/nv/streborn/bin/streborn-armv7l && "+
+			"echo OK_%d", len(bin), len(bin))
+	sentinel := fmt.Sprintf("OK_%d", len(bin))
+	if out, err := boxSSHOutput(host, verifyCmd, 15*time.Second); err != nil || !strings.Contains(out, sentinel) {
+		return fmt.Errorf("ssh size-verify or rename failed: %v (%s)", err, strings.TrimSpace(out))
+	}
+	// Kick the agent. Fully detached so the SSH session can return cleanly
+	// even though pkill kills a sibling of the SSH-spawned shell. run.sh's
+	// boot watchdog (wait_ports_clear + start_agent loop) respawns within
+	// seconds and the new binary takes over.
+	_ = boxSSHFireAndForget(host, "(sleep 1; pkill -TERM streborn-armv7l) </dev/null >/dev/null 2>&1 &", 5*time.Second)
 	return nil
 }
 

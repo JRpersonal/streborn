@@ -13,6 +13,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os/exec"
 	"runtime"
@@ -391,6 +392,53 @@ func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
 		return out, err
 	}
 	return lastOut, lastErr
+}
+
+// boxSSHUploadStdin is boxSSHOutput plus an stdin stream. Same flag-set
+// fallback chain. Used by UpdateBoxAgent's SSH-OTA path to pipe the 10 MB
+// ARM binary into a remote `cat > file` — the HTTP-OTA route is unusable
+// on Series-I boxes where the LD_PRELOAD shim is not active (the listener
+// reachable from the LAN is Bose's own SoftwareUpdate HTTP service, which
+// has a 1.5 KB POST buffer — see [[bose-http-buffer]] / #90).
+func boxSSHUploadStdin(host, cmd string, in io.Reader, timeout time.Duration) (string, error) {
+	start, _ := getCachedFlagSetIndex()
+	var lastOut string
+	var lastErr error
+	for i := start; i < len(sshFlagSets); i++ {
+		out, err := runSSHWithFlagsStdin(sshFlagSets[i], host, cmd, in, timeout)
+		if isBadOptionError(out) {
+			lastOut, lastErr = out, err
+			continue
+		}
+		cacheFlagSetIndex(i)
+		return out, err
+	}
+	return lastOut, lastErr
+}
+
+func runSSHWithFlagsStdin(flags []string, host, cmd string, in io.Reader, timeout time.Duration) (string, error) {
+	args := append(append([]string{}, flags...), "root@"+host, cmd)
+	c := exec.Command("ssh", args...)
+	hideCmdWindow(c)
+	c.Stdin = in
+	done := make(chan struct {
+		out []byte
+		err error
+	}, 1)
+	go func() {
+		out, err := c.CombinedOutput()
+		done <- struct {
+			out []byte
+			err error
+		}{out, err}
+	}()
+	select {
+	case r := <-done:
+		return string(r.out), r.err
+	case <-time.After(timeout):
+		_ = c.Process.Kill()
+		return "", fmt.Errorf("ssh upload timeout after %s", timeout)
+	}
 }
 
 // boxSSHFireAndForget runs cmd but does not require it to exit
