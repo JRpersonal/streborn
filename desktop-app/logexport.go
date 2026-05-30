@@ -28,6 +28,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -35,6 +36,8 @@ import (
 	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"github.com/JRpersonal/streborn/sticksetup"
 )
 
 // LogExportRequest is the JSON the frontend hands to the export
@@ -85,6 +88,8 @@ Contents:
   README.txt            this file
   app.log               desktop app log (rolling, up to 2 MB)
   box-<n>.json          per-box snapshot (Bose /info + STR /api/status + /api/agent/version)
+  stick-<n>/setup.log   FAT32 setup.log if an STR stick is plugged into this PC
+  stick-<n>/_meta.json  drive metadata (path, label, free space)
   manifest.json         summary
 
 Privacy:
@@ -143,6 +148,83 @@ Privacy:
 			return LogExportResult{}, err
 		}
 	}
+	// 4. Host-side stick pickup. When the user pulls the stick out of
+	// the box and plugs it into the PC running the desktop app, the
+	// stick's FAT32 setup.log holds the full multi-boot trace of the
+	// run.sh state machine. That trace is the ONLY useful signal when
+	// the box is currently unreachable (Setup-AP, dead WLAN, swapped
+	// to a different network) and the SSH fallback in captureBoxSnapshot
+	// returns nothing. Without this pickup we kept asking users to
+	// open Explorer / Finder and attach files manually. Now they just
+	// leave the stick plugged in and the diagnostic ZIP grabs it.
+	//
+	// We enumerate every removable drive, look for a marker file that
+	// proves it is an STR stick (setup.log, version.txt, or run.sh),
+	// then bundle each candidate as stick-<n>/<file>. SSID-scrub runs
+	// over setup.log when anonymize=true since the credentials JSON
+	// the wizard wrote can leak the password otherwise.
+	stickIndex := 0
+	if drives, derr := sticksetup.ListDrives(); derr == nil {
+		for _, d := range drives {
+			if !d.Removable || d.Path == "" {
+				continue
+			}
+			markers := []string{"setup.log", "version.txt", "run.sh"}
+			isStick := false
+			for _, m := range markers {
+				if _, err := os.Stat(filepath.Join(d.Path, m)); err == nil {
+					isStick = true
+					break
+				}
+			}
+			if !isStick {
+				continue
+			}
+			// 1 MB cap per file — setup.log can grow with cumulative boots
+			// (a stick visiting many boxes can run into many MB). The tail
+			// is what matters anyway; cap from the end via stat + offset.
+			pull := []string{"setup.log", "version.txt", "wlan-mode", "boot.log"}
+			for _, name := range pull {
+				src := filepath.Join(d.Path, name)
+				info, ierr := os.Stat(src)
+				if ierr != nil {
+					continue
+				}
+				body, rerr := readTail(src, info.Size(), 1024*1024)
+				if rerr != nil {
+					continue
+				}
+				if req.Anonymize && (name == "setup.log" || name == "boot.log") {
+					body = sanitizeLog(body)
+				}
+				zipName := fmt.Sprintf("stick-%d/%s", stickIndex, name)
+				if werr := writeZipEntry(zw, zipName, body); werr != nil {
+					return LogExportResult{}, werr
+				}
+			}
+			// Drive metadata for the manifest so the receiver knows
+			// which physical stick the files came from.
+			driveLabel := d.Label
+			if req.Anonymize {
+				driveLabel = ""
+			}
+			meta := map[string]any{
+				"drivePath":   d.Path,
+				"driveLabel":  driveLabel,
+				"filesystem":  d.Filesystem,
+				"totalBytes":  d.TotalBytes,
+				"freeBytes":   d.FreeBytes,
+			}
+			mbBytes, _ := json.MarshalIndent(meta, "", "  ")
+			if err := writeZipEntry(zw, fmt.Sprintf("stick-%d/_meta.json", stickIndex), mbBytes); err != nil {
+				return LogExportResult{}, err
+			}
+			stickIndex++
+		}
+	} else {
+		a.logger.Warn("log export: ListDrives failed, no host-side stick pickup", "err", derr)
+	}
+
 	mb, _ := json.MarshalIndent(manifest, "", "  ")
 	if err := writeZipEntry(zw, "manifest.json", mb); err != nil {
 		return LogExportResult{}, err
@@ -152,8 +234,26 @@ Privacy:
 	}
 
 	st, _ := f.Stat()
-	a.logger.Info("log export written", "path", req.SavePath, "bytes", st.Size(), "boxes", len(hosts))
+	a.logger.Info("log export written", "path", req.SavePath, "bytes", st.Size(), "boxes", len(hosts), "sticksFromHost", stickIndex)
 	return LogExportResult{SavePath: req.SavePath, Bytes: st.Size()}, nil
+}
+
+// readTail returns the last cap bytes of the file at path. When the
+// file is smaller than cap, returns the whole file. Used so a stick
+// that has visited many boxes does not blow the zip up with
+// historical boot traces nobody is going to read.
+func readTail(path string, size, cap int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if size > cap {
+		if _, err := f.Seek(size-cap, 0); err != nil {
+			return nil, err
+		}
+	}
+	return io.ReadAll(f)
 }
 
 type boxIndexEntry struct {
