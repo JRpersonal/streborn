@@ -355,7 +355,19 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	// guessing. Best-effort: if ssh is not installed locally or
 	// negotiation fails, the field stays nil and the bundle still
 	// contains everything else.
-	if s.ReachableSSH && !s.Reachable8888 {
+	// SSH-fallback gate. We previously only triggered when :17008 was
+	// TCP-closed, but Brecht's 2026-05-30 v0.5.23 bundle exposed the
+	// hole: on a scm/spotty ST20 with STR installed, :17008 stays
+	// TCP-open because Bose's own SoftwareUpdate listens there. If
+	// the LD_PRELOAD shim has not (yet) hijacked the process, the
+	// STR JSON probes return empty bodies — same evidence as "STR
+	// API just down" — but the old gate skipped the SSH pull
+	// entirely. Net result: zero diagnostic content for the exact
+	// scenario we most need to debug. We now also pull SSH-side when
+	// the box failed to surface STR JSON at /api/agent/version,
+	// which is the authoritative "STR alive externally" signal.
+	strAlive := s.STRAgentVer != nil && len(s.STRAgentVer) > 0
+	if s.ReachableSSH && (!s.Reachable8888 || !strAlive) {
 		s.SSHFallback = pullSSHFallback(host)
 	}
 	return s
