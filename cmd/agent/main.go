@@ -3,12 +3,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -37,6 +39,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/tlsgen"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webui"
+	usbstick "github.com/JRpersonal/streborn/usb-stick"
 )
 
 // version ist die Semver Version. Build Datum wird separat ueber -ldflags
@@ -149,6 +152,21 @@ func run() error {
 
 	logger := newLogger(*logLevel)
 	logger.Info("streborn starting", "version", version)
+
+	// Self-heal the bootstrap layer if the agent OTA brought a newer
+	// binary onto a box whose run.sh / rc.local still date from an
+	// older release. Without this, an HTTP- or SSH-OTA only refreshes
+	// the agent binary; the on-NAND run.sh and rc.local stay at
+	// whatever vintage the last stick install wrote, and the resulting
+	// mix-of-versions produces silent feature gaps (shim path missing,
+	// WLAN-creds not persisted, sysLanguage gate POSTed at 0, etc.).
+	// Live-verified on a scm/spotty ST20 on 2026-05-30: an SSH-OTA to
+	// the v0.5.23 agent left the v2 (15.05.2026) run-override.sh in
+	// place because nothing replaced it. The agent embeds the matching
+	// run.sh and rc.local via usbstick.Files() and writes them out on
+	// startup whenever the disk copies differ from the embedded ones.
+	// Best-effort: any write failure is logged and the agent continues.
+	syncBootstrapFromEmbedded(logger)
 
 	ensureSshdRunning(logger)
 
@@ -980,6 +998,78 @@ func lastN(s string, n int) string {
 // risk of a known-default Bose root password; tracked under the
 // existing box-security-hardening roadmap.
 //
+// bootstrapTargets lists the on-NAND files the agent will replace
+// when their disk content differs from what is embedded in the
+// agent binary. /mnt/nv/rc.local is read once by /etc/init.d/
+// shelby_local at boot; /mnt/nv/streborn/run-override.sh is what
+// that rc.local exec's. Both must stay in sync with the agent
+// version so the boot path uses the same shim / WLAN / gate logic
+// the running agent expects.
+var bootstrapTargets = []struct {
+	embedded string
+	target   string
+	desc     string
+}{
+	{"run.sh", "/mnt/nv/streborn/run-override.sh", "boot bootstrap script"},
+	{"rc.local", "/mnt/nv/rc.local", "shelby_local entry point"},
+}
+
+// syncBootstrapFromEmbedded compares the bootstrap files embedded
+// in this agent binary against the on-NAND copies and replaces any
+// that differ. Runs once on agent startup. Atomic via tmp-file +
+// rename; on any failure we leave the existing file in place and
+// log so the next diagnostic bundle captures the reason. Skipped
+// silently in dev environments where /mnt/nv does not exist.
+func syncBootstrapFromEmbedded(logger *slog.Logger) {
+	if _, err := os.Stat("/mnt/nv"); err != nil {
+		// Not on the box (developer machine, CI). No-op.
+		return
+	}
+	stickFS := usbstick.Files()
+	for _, t := range bootstrapTargets {
+		embedded, err := fs.ReadFile(stickFS, t.embedded)
+		if err != nil {
+			logger.Warn("bootstrap sync: embedded file not readable",
+				"name", t.embedded, "err", err)
+			continue
+		}
+		current, _ := os.ReadFile(t.target)
+		if bytes.Equal(embedded, current) {
+			// Already current. Quiet path.
+			continue
+		}
+		// Ensure parent directory exists. /mnt/nv/streborn may be
+		// missing on a freshly-flashed-and-reset box that still has
+		// the old rc.local but no streborn dir tree yet.
+		if i := strings.LastIndex(t.target, "/"); i > 0 {
+			_ = os.MkdirAll(t.target[:i], 0o755)
+		}
+		tmp := t.target + ".str-bootstrap-sync"
+		_ = os.Remove(tmp) // tolerate stale tmp from a previous crashed run
+		if err := os.WriteFile(tmp, embedded, 0o755); err != nil {
+			logger.Warn("bootstrap sync: write failed",
+				"tmp", tmp, "err", err)
+			continue
+		}
+		if err := os.Rename(tmp, t.target); err != nil {
+			logger.Warn("bootstrap sync: atomic rename failed, leaving old in place",
+				"tmp", tmp, "target", t.target, "err", err)
+			_ = os.Remove(tmp)
+			continue
+		}
+		// WARN so a diagnostic bundle pinpoints the boot where the
+		// bootstrap layer caught up. The replacement only takes effect
+		// on the NEXT boot: this boot's already-running shelby_local
+		// and run-override.sh are whatever they were before the sync.
+		logger.Warn("bootstrap sync: replaced on-NAND file with embedded copy",
+			"target", t.target,
+			"desc", t.desc,
+			"oldBytes", len(current),
+			"newBytes", len(embedded),
+			"effective", "next boot")
+	}
+}
+
 // Best-effort: if sshd is already running, the init script
 // no-ops; if no sshd init script exists (unexpected on Bose
 // firmware), we just log and continue.
