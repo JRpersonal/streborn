@@ -50,6 +50,19 @@ export function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// formatRemaining turns a remaining-ms value into a "m:ss" string for
+// countdown UI. Negative or zero inputs return "0:00". Used by the
+// stick-install and OTA-wait flows where the previous implementation
+// showed elapsed seconds that jumped 3-6s at a time (the value was
+// updated once per polling cycle, which is uneven), confusing users
+// who could not tell how much wait was left.
+export function formatRemaining(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 // ---------- Modals ----------
 //
 // The three modals (warn, error, toast) live in the DOM skeleton in

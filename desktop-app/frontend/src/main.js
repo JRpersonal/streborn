@@ -60,6 +60,7 @@ import {
   formatNumber,
   debounce,
   sleep,
+  formatRemaining,
   confirmWarn,
   closeWarn,
   showError,
@@ -1326,23 +1327,39 @@ async function doBoxUpdate() {
     // a build matching the app's appBuild. Up to 3 minutes, 5 s
     // between attempts. As long as the build is wrong or the box
     // is unreachable, the buttons stay locked.
-    const startMs = Date.now();
-    const deadlineMs = startMs + 180_000;
+    const deadlineMs = Date.now() + 180_000;
+    // Phase state shared between the 1 s display ticker and the 5 s
+    // polling loop: "answered-with-old-build" vs "not-answering-yet".
+    // The previous code updated only after each 5 s poll, so the
+    // visible counter jumped 5+ seconds at a time and looked frozen
+    // mid-poll. Now the ticker re-renders every second, with the
+    // current phase text picked from this variable.
+    let lastPhase = 'waitingForSpeaker';
+    const renderStatus = () => {
+      const remaining = formatRemaining(deadlineMs - Date.now());
+      const key = lastPhase === 'oldBuild' ? 'update.oldBuildWait' : 'update.waitingForSpeaker';
+      setStatus(t(key, { remaining }));
+    };
+    renderStatus();
+    const tickHandle = setInterval(renderStatus, 1000);
     let confirmed = false;
-    while (Date.now() < deadlineMs) {
-      await sleep(5_000);
-      try {
-        const v = await BoxAgentVersion(targetBox.host, targetBox.port);
-        if (v && v.build && (!appBuild || v.build === appBuild)) {
-          confirmed = true;
-          break;
+    try {
+      while (Date.now() < deadlineMs) {
+        await sleep(5_000);
+        try {
+          const v = await BoxAgentVersion(targetBox.host, targetBox.port);
+          if (v && v.build && (!appBuild || v.build === appBuild)) {
+            confirmed = true;
+            break;
+          }
+          lastPhase = 'oldBuild';
+        } catch {
+          lastPhase = 'waitingForSpeaker';
         }
-        const waited = Math.round((Date.now() - startMs) / 1000);
-        setStatus(t('update.oldBuildWait', { sec: waited }));
-      } catch {
-        const waited = Math.round((Date.now() - startMs) / 1000);
-        setStatus(t('update.waitingForSpeaker', { sec: waited }));
+        renderStatus();
       }
+    } finally {
+      clearInterval(tickHandle);
     }
     if (confirmed) {
       showToast(t('update.doneToast'));
@@ -3750,7 +3767,6 @@ async function doSetup() {
       $('setupResult').innerHTML = html + `<div class="muted small">${escapeHtml(t('setup.ejecting'))}</div>`;
       await EjectDrive(drive.path);
       html += `<p>${t('setup.ejectedBody')}</p>`;
-      html += `<p class="setup-warn">${t('setup.ejectedWarn')}</p>`;
       // Remember the path we just ejected. Windows keeps reporting the
       // dismounted volume for a few seconds with totalBytes=0 and an
       // empty filesystem string. refreshDrives would then auto-select
@@ -3822,17 +3838,32 @@ function showAwaitBoxReadyPanel({ ssid, pass, html }) {
 // Credentials are kept only in this closure and never persisted.
 async function waitForBoxAfterSetup({ ssid, pass, html }) {
   const baseHtml = html;
-  const startTs = Date.now();
   const setupResult = $('setupResult');
   if (!setupResult) return;
   const render = (extra) => { setupResult.innerHTML = baseHtml + extra; };
 
-  function progressLine(elapsedSec, ap) {
-    // ap is always null since the cold-bootstrap path was removed
-    // (was the only producer of an AP object). Signature kept stable
-    // so the surrounding renders do not need to change.
-    return `<div class="muted small">${escapeHtml(t('setup.waitingForBox', { sec: elapsedSec }))}</div>`;
+  // 5 minutes max. Computed up front so progressLine + tick share
+  // the same deadline.
+  const deadline = Date.now() + 5 * 60 * 1000;
+
+  function progressLine() {
+    const remaining = formatRemaining(deadline - Date.now());
+    return `<div class="muted small">${escapeHtml(t('setup.waitingForBox', { remaining }))}</div>`;
   }
+
+  // Smooth 1 s countdown so the value ticks predictably between
+  // polling cycles. The earlier "elapsed seconds, rendered once per
+  // poll" pattern made the number jump 3-6 seconds at a time and
+  // sometimes appeared frozen during a slow Discover call.
+  let tickHandle = null;
+  const startTicker = () => {
+    if (tickHandle) return;
+    render(progressLine());
+    tickHandle = setInterval(() => render(progressLine()), 1000);
+  };
+  const stopTicker = () => {
+    if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+  };
 
   let foundBox = null;
 
@@ -3867,7 +3898,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   // Anyone with a stock or factory-reset speaker now writes the stick
   // here, inserts it, power-cycles the speaker; the speaker joins
   // home Wi-Fi from the stick's wlan.conf on its own.
-  const deadline = Date.now() + 5 * 60 * 1000;
+  startTicker();
   while (Date.now() < deadline && !foundBox) {
     try {
       const list = await DiscoverBoxes(4);
@@ -3899,9 +3930,9 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
       } catch {}
     }
 
-    render(progressLine(Math.floor((Date.now() - startTs) / 1000), null));
     await sleep(3000);
   }
+  stopTicker();
 
   if (!foundBox) {
     render(`<div class="setup-warn">${escapeHtml(t('setup.waitForBoxTimeout'))}</div>`);
