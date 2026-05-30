@@ -562,6 +562,15 @@ body {
 .btn-primary:disabled { background: #444; color: #777; border-color: #444; cursor: not-allowed; }
 .btn-danger { background: var(--signal-red); color: white; border-color: var(--signal-red); }
 .btn-danger:hover { background: #d55; }
+.btn-warning { background: #d97a1d; color: white; border-color: #d97a1d; }
+.btn-warning:hover { background: #e68a30; }
+.btn-warning:disabled { background: #6a4a30; color: #aa8; border-color: #6a4a30; cursor: not-allowed; }
+
+/* ---------- Settings actions panel ---------- */
+.actions-row { display: grid; grid-template-columns: minmax(180px, auto) 1fr; gap: 10px 14px; align-items: start; margin-top: 10px; }
+.actions-row .btn { justify-self: start; min-width: 180px; }
+.actions-row p { margin: 0; line-height: 1.4; }
+.actions-divider { margin: 14px 0 8px; border: 0; border-top: 1px solid #333; }
 
 /* ---------- Preset Grid ---------- */
 /* 3 Spalten passend zur Hardware (1 2 3 / 4 5 6). Auf schmalen Fenstern

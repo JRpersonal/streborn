@@ -38,6 +38,7 @@ import {
   InstallSTROnBox,
   TrueFactoryReset,
   ProbeSetupAP,
+  PushWLANToBox,
   ListMediaServers,
   BrowseLibrary,
   BrowserOpenURL,
@@ -615,17 +616,24 @@ const musicVolValEl = $('musicVolumeVal');
 state.musicVolBusy = false;
 state.musicVolUntil = 0;
 if (musicVolEl) {
+  // Live-update during drag: each input event throttles a
+  // SetBoxVolume call so the user sees the level move on the
+  // speaker WHILE they wipe, not only on release. The throttle
+  // collapses bursts so the box's tiny HTTP server never has more
+  // than one volume PUT in flight at a time.
   musicVolEl.oninput = () => {
     if (musicVolValEl) musicVolValEl.textContent = musicVolEl.value;
+    const box = state.currentBox;
+    if (!box) return;
+    musicVolBox = box;
+    throttledSetVolume(box.host, box.port, parseInt(musicVolEl.value, 10));
   };
+  // Keyboard arrows fire only `change`, not `input`, so we still
+  // dispatch on change as a safety net for that path.
   musicVolEl.onchange = () => {
     musicVolBox = state.currentBox;
     if (!musicVolBox) return;
-    if (musicVolTimer) clearTimeout(musicVolTimer);
-    musicVolTimer = setTimeout(() => {
-      SetBoxVolume(musicVolBox.host, musicVolBox.port,
-        parseInt(musicVolEl.value, 10)).catch(showError);
-    }, 200);
+    throttledSetVolume(musicVolBox.host, musicVolBox.port, parseInt(musicVolEl.value, 10));
   };
   // pointerdown/up flag is the most reliable cross-device drag
   // signal. Keyboard arrows fire only `change`, which is already
@@ -2276,9 +2284,15 @@ function renderSettingsBoxSelect() {
 // values we have confirmed labels for show them, the rest are
 // "sysLanguage=N (unknown)" so adventurous users can pick one, see
 // what the box does, and report back. Crowdsourcing the enum.
+// Bose sysLanguage enum: confirmed values only. 0 displays English
+// text on EU-shipped boxes BUT is treated as the "no user choice
+// yet" sentinel by the box's setup state machine — POSTing 0 is
+// a no-op for the gate (live-verified 2026-05-30 on a taigan
+// Portable). Values >= 1 actually advance systemstate.
 const BOSE_LANG_LABELS = {
-  0: 'English',
+  0: 'Default (no gate)',
   1: 'Danish',
+  2: 'German',
 };
 function langOptionsHtml() {
   const out = [];
@@ -2551,15 +2565,19 @@ function renderBoxSettings(s, box) {
     </div>
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.actionsHeading'))}</h3>
-      <p class="muted small">${escapeHtml(t('settingsView.actionsHelp'))}</p>
-      <div class="setting-row">
+      <div class="actions-row">
         <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
-        <button class="btn btn-mini btn-danger" id="boxRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.syncHardwareKeysHelp'))}</p>
       </div>
-      <div class="setting-row" style="margin-top:8px">
+      <div class="actions-row">
+        <button class="btn btn-mini btn-warning" id="boxRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.rebootHelp'))}</p>
+      </div>
+      <hr class="actions-divider" />
+      <div class="actions-row">
         <button class="btn btn-mini btn-danger" id="boxTrueFactoryResetBtn">${escapeHtml(t('settingsView.trueFactoryResetBtn'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.trueFactoryResetHelpShort'))}</p>
       </div>
-      <small class="muted small">${escapeHtml(t('settingsView.trueFactoryResetHelp'))}</small>
     </div>
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.speakerInfoHeading'))}</h3>
@@ -2831,17 +2849,26 @@ function renderBoxSettings(s, box) {
   const clockCurrent = $('boxClockCurrent');
   const clockOn = $('boxClockOn');
   const clockOff = $('boxClockOff');
+  // refreshClock reads the current /clockDisplay state. Previously
+  // any non-200 / fetch failure surfaced "not supported on this
+  // model", but live-verified 2026-05-30 on a SoundTouch Portable
+  // (taigan): the GET path returns 200 most of the time but the
+  // box sometimes responds slowly or briefly drops the request
+  // during BoseApp restart, and that one missed GET painted the
+  // settings panel as "permanently unsupported" even though POST
+  // toggles work fine. Don't draw conclusions from a single GET:
+  // unknown means unknown, not unsupported.
   const refreshClock = async () => {
     if (!clockCurrent) return;
     try {
       const r = await fetch(boseUrl('/clockDisplay'));
-      if (!r.ok) { clockCurrent.textContent = t('settingsView.clockNotSupported'); return; }
+      if (!r.ok) { clockCurrent.textContent = t('settingsView.clockUnknown'); return; }
       const txt = await r.text();
       const m = txt.match(/<clockDisplay[^>]*>([^<]*)<\/clockDisplay>/i)
              || txt.match(/clockDisplay[^=]*=["']?(true|false|on|off|1|0)/i);
       clockCurrent.textContent = m ? m[1] : t('settingsView.clockUnknown');
     } catch {
-      clockCurrent.textContent = t('settingsView.clockNotSupported');
+      clockCurrent.textContent = t('settingsView.clockUnknown');
     }
   };
   refreshClock();
@@ -2928,10 +2955,22 @@ function renderBoxSettings(s, box) {
       renderBoxSelect();
     } catch (e) { showError(e); }
   };
-  $('boxVolume').oninput = () => { $('boxVolumeVal').textContent = $('boxVolume').value; };
-  $('boxVolume').onchange = () => debouncedSetVolume(box);
-  $('boxBass').oninput = () => { $('boxBassVal').textContent = formatRel($('boxBass').value); };
-  $('boxBass').onchange = () => debouncedSetBass(box, bass.default || 0);
+  $('boxVolume').oninput = () => {
+    $('boxVolumeVal').textContent = $('boxVolume').value;
+    throttledSetVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
+  };
+  $('boxVolume').onchange = () => {
+    throttledSetVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
+  };
+  $('boxBass').oninput = () => {
+    $('boxBassVal').textContent = formatRel($('boxBass').value);
+    const rel = parseInt($('boxBass').value, 10);
+    throttledSetBass(box.host, box.port, rel + (bass.default || 0));
+  };
+  $('boxBass').onchange = () => {
+    const rel = parseInt($('boxBass').value, 10);
+    throttledSetBass(box.host, box.port, rel + (bass.default || 0));
+  };
   $('boxBassReset').onclick = async () => {
     $('boxBass').value = 0;
     $('boxBassVal').textContent = formatRel(0);
@@ -3173,6 +3212,47 @@ function rollupSources(raw) {
   });
 }
 
+// Volume update plumbing. The slider has to behave like the
+// hardware: the level changes WHILE the user drags, not only on
+// release. A naive "fire on every input event" floods the box with
+// PUTs (60+ events per drag-second), each of which holds a request
+// slot on the Bose firmware's tiny HTTP server and blocks the next.
+// Symptom on a stock-Bose-on-:17008 box: every PUT times out at the
+// 6 s httpClient cap and the user sees a wall of red error toasts.
+//
+// makeOneInFlightThrottle gives us "fire the first immediately,
+// drop intermediate calls, replay the most recent args after the
+// current call finishes". Net effect during a 1 s drag: 3 to 5
+// actual PUTs with the very last value being whatever the user
+// released on, regardless of how fast they wiped.
+function makeOneInFlightThrottle(fn) {
+  let inFlight = false;
+  let pending = null;
+  const fire = async (args) => {
+    inFlight = true;
+    try {
+      await fn(...args);
+    } catch (e) {
+      // Quiet during drag: showError would stack-up toasts. The
+      // periodic status poll recovers the visible value anyway.
+      console.warn('throttled box update failed', e);
+    } finally {
+      inFlight = false;
+      if (pending) {
+        const next = pending;
+        pending = null;
+        fire(next);
+      }
+    }
+  };
+  return (...args) => {
+    if (inFlight) { pending = args; return; }
+    fire(args);
+  };
+}
+const throttledSetVolume = makeOneInFlightThrottle(SetBoxVolume);
+const throttledSetBass = makeOneInFlightThrottle(SetBoxBass);
+
 const debouncedSetVolume = debounce(async (box) => {
   try {
     await SetBoxVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
@@ -3404,6 +3484,13 @@ function renderSetupTargetPicker() {
     if (isMac) {
       cards += `<div class="setup-target-factory-mac">${escapeHtml(t('setup.targetCardFactoryMacHint'))}</div>`;
     }
+    // Setup-AP-Push panel: when the user is currently joined to a
+    // Bose setup-AP (PC IP 192.168.1.100, box at 192.168.1.1), we
+    // offer a direct WLAN credentials push that skips the stick
+    // entirely. Live-verified 2026-05-30 on a factory-reset taigan
+    // Portable. Renders into the placeholder div after the picker
+    // commits, so the async ProbeSetupAP does not block the picker.
+    cards += `<div id="setupAPPushPanel" class="setup-ap-push-panel"></div>`;
   }
 
   // Locked pill summarising the current choice, rendered below the
@@ -3445,6 +3532,153 @@ function renderSetupTargetPicker() {
       updateSetupGoButtonLabel();
     };
   });
+
+  // Async fill of the Setup-AP push panel (only present when
+  // factory-reset is the current selection). Decoupled from the
+  // picker render so a slow probe does not stall the page.
+  if (sel && sel.kind === 'factory-reset') {
+    renderSetupAPPushPanel().catch(err => {
+      console.warn('setup-ap push panel render failed', err);
+    });
+  }
+}
+
+// renderSetupAPPushPanel populates the in-card panel that drives
+// the direct WLAN-credentials push to a Bose setup-AP. Probes once
+// for a reachable box at 192.168.1.1; on hit, shows the push form
+// pre-filled from the saved Wi-Fi profile of whatever home network
+// the user picked. On miss, shows the "switch your PC to the Bose
+// SoundTouch Wi-Fi" guidance plus a retry button.
+async function renderSetupAPPushPanel() {
+  const panel = $('setupAPPushPanel');
+  if (!panel) return;
+
+  panel.innerHTML = `<div class="setup-ap-push-loading muted small">${escapeHtml(t('setupAPPush.probing'))}</div>`;
+  let probe;
+  try {
+    probe = await ProbeSetupAP();
+  } catch {
+    probe = null;
+  }
+  // Wails returns multi-value as an array on the JS side; guard for
+  // shape so we don't crash if the binding shape ever changes.
+  const found = Array.isArray(probe) ? probe[1] : probe && probe.found;
+  const box = Array.isArray(probe) ? probe[0] : probe && probe.box;
+
+  if (!found || !box) {
+    panel.innerHTML = `
+      <div class="setup-ap-push-not-found">
+        <h4>${escapeHtml(t('setupAPPush.title'))}</h4>
+        <p class="muted small">${escapeHtml(t('setupAPPush.instructionsBody'))}</p>
+        <ol class="setup-ap-push-steps">
+          <li>${escapeHtml(t('setupAPPush.step1'))}</li>
+          <li>${escapeHtml(t('setupAPPush.step2'))}</li>
+          <li>${escapeHtml(t('setupAPPush.step3'))}</li>
+        </ol>
+        <button class="btn" id="apPushRetry">${escapeHtml(t('setupAPPush.retryBtn'))}</button>
+      </div>
+    `;
+    const retry = $('apPushRetry');
+    if (retry) retry.onclick = () => renderSetupAPPushPanel().catch(() => {});
+    return;
+  }
+
+  // We have a setup-AP. Pull the WiFi-profile list so the SSID
+  // dropdown picks up the user's saved networks (most users tested
+  // this with a single home Wi-Fi).
+  let profiles = [];
+  try { profiles = await ListWiFiProfiles() || []; } catch {}
+
+  const ssidOpts = profiles.length
+    ? profiles.map(p => `<option value="${escapeAttr(p.ssid)}">${escapeHtml(p.ssid)}</option>`).join('')
+    : `<option value="">${escapeHtml(t('setupAPPush.noSavedProfile'))}</option>`;
+
+  panel.innerHTML = `
+    <div class="setup-ap-push-found">
+      <h4>${escapeHtml(t('setupAPPush.foundTitle', { model: box.model || 'Bose SoundTouch' }))}</h4>
+      <p class="muted small">${escapeHtml(t('setupAPPush.foundBody'))}</p>
+      <div class="setup-ap-push-form">
+        <label class="setup-ap-push-row">
+          <span>${escapeHtml(t('setupAPPush.ssidLabel'))}</span>
+          <select id="apPushSSID">${ssidOpts}</select>
+        </label>
+        <label class="setup-ap-push-row">
+          <span>${escapeHtml(t('setupAPPush.passLabel'))}</span>
+          <input type="password" id="apPushPass" placeholder="${escapeAttr(t('setupAPPush.passPlaceholder'))}" />
+        </label>
+        <label class="setup-ap-push-row">
+          <span>${escapeHtml(t('setupAPPush.nameLabel'))}</span>
+          <input type="text" id="apPushName" placeholder="${escapeAttr(t('setupAPPush.namePlaceholder'))}" />
+        </label>
+        <button class="btn btn-primary" id="apPushGo">${escapeHtml(t('setupAPPush.pushBtn'))}</button>
+        <div id="apPushOutput" class="setup-ap-push-output"></div>
+      </div>
+    </div>
+  `;
+
+  // Auto-pull the saved password for whichever SSID is currently
+  // picked, mirroring the existing box-wlan form behaviour.
+  const ssidSel = $('apPushSSID');
+  const passInp = $('apPushPass');
+  const fillPassword = async () => {
+    if (!ssidSel || !passInp) return;
+    const v = ssidSel.value;
+    if (!v) return;
+    if (isMacOS) return; // macOS would prompt for Keychain admin
+    try {
+      const pw = await TryWiFiPassword(v);
+      if (pw) passInp.value = pw;
+    } catch {}
+  };
+  if (ssidSel) {
+    ssidSel.onchange = fillPassword;
+    fillPassword().catch(() => {});
+  }
+
+  const goBtn = $('apPushGo');
+  if (goBtn) {
+    goBtn.onclick = async () => {
+      const ssid = ($('apPushSSID') || {}).value || '';
+      const pass = ($('apPushPass') || {}).value || '';
+      const name = ($('apPushName') || {}).value || '';
+      if (!ssid) { showError(t('setupAPPush.ssidEmpty')); return; }
+      goBtn.disabled = true;
+      const out = $('apPushOutput');
+      if (out) out.innerHTML = `<div class="muted small">${escapeHtml(t('setupAPPush.pushing'))}</div>`;
+      try {
+        const result = await PushWLANToBox(box.host, ssid, pass, name);
+        if (result && result.ok) {
+          if (out) {
+            const logHtml = (result.logTail || []).map(l => `<div>${escapeHtml(l)}</div>`).join('');
+            out.innerHTML = `
+              <div class="setup-ok">${escapeHtml(t('setupAPPush.successTitle'))}</div>
+              <p>${escapeHtml(t('setupAPPush.successHint'))}</p>
+              <details class="muted small">
+                <summary>${escapeHtml(t('setupAPPush.detailsToggle'))}</summary>
+                <div class="setup-ap-push-log">${logHtml}</div>
+              </details>
+            `;
+          }
+        } else {
+          const msg = (result && result.message) || t('setupAPPush.unknownFailure');
+          if (out) {
+            const logHtml = ((result && result.logTail) || []).map(l => `<div>${escapeHtml(l)}</div>`).join('');
+            out.innerHTML = `
+              <div class="setup-warn">${escapeHtml(msg)}</div>
+              <details class="muted small">
+                <summary>${escapeHtml(t('setupAPPush.detailsToggle'))}</summary>
+                <div class="setup-ap-push-log">${logHtml}</div>
+              </details>
+            `;
+          }
+          goBtn.disabled = false;
+        }
+      } catch (e) {
+        if (out) out.innerHTML = `<div class="setup-warn">${escapeHtml(String(e))}</div>`;
+        goBtn.disabled = false;
+      }
+    };
+  }
 }
 
 // updateSetupGoButtonLabel keeps the "Prepare" button text in sync

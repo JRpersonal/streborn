@@ -839,9 +839,20 @@ func (a *App) SelectBoxSource(host string, port int, source string) error {
 }
 
 func (a *App) boxPut(host string, port int, path string, body any) error {
+	// Short per-call timeout. boxPut is used for the small settings
+	// PUTs (volume, bass, name, source, wlan). Sub-3s box-side
+	// responses are normal; anything slower indicates the box's
+	// HTTP server is hung (Series-I :17008 SoftwareUpdate when the
+	// shim is not active, stock Bose firmware on a not-yet-flashed
+	// speaker, etc.). The default 6 s httpClient cap then lets a
+	// rapid volume drag pile up requests and the UI throws a wall
+	// of timeout errors. Cap at 3 s so a single dead PUT does not
+	// hold the throttle queue for half the drag.
+	ctx, cancel := context.WithTimeout(a.ctx, 3*time.Second)
+	defer cancel()
 	url := a.baseURL(host, port) + path
 	b, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(b)))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, url, strings.NewReader(string(b)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
