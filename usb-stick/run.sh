@@ -507,8 +507,8 @@ shim_stage_wrapper() {
     setup_log "shim stage: enter (variant=${VARIANT:-?} host=${HOSTID:-?} is_series_one=${IS_SERIES_ONE:-0})"
     if [ "${STR_FORCE_SHIM_TAIGAN:-0}" != "1" ]; then
         case "${VARIANT}|${HOSTID}" in
-            *taigan*)
-                setup_log "shim stage: SKIP — taigan (Portable). The LD_PRELOAD late-swap kills SoftwareUpdate, which on taigan races shepherdd's respawn and can wedge scm_finalize / the whole Bose boot (live 2026-05-31: boot bar stuck, NO setup-AP at all). External :8888 on taigan is served by the iptables PREROUTING REDIRECT path instead, which never touches SoftwareUpdate. STR_FORCE_SHIM_TAIGAN=1 overrides."
+            *taigan*|*spotty*)
+                setup_log "shim stage: SKIP — BCO chassis (${VARIANT:-?}/${HOSTID:-?}). The LD_PRELOAD late-swap kills SoftwareUpdate, which on BCO boxes never actually forwards :8888 (spotty :17008 self-probe NOT STR) and races shepherdd's respawn, wedging scm_finalize / the Bose mesh init (live 2026-05-31: taigan boot bar stuck with NO setup-AP; spotty BoseApp never answers within 180s, M0 times out). External :8888 on BCO is served by the iptables PREROUTING REDIRECT path instead, which never touches SoftwareUpdate. STR_FORCE_SHIM_TAIGAN=1 overrides."
                 return 0 ;;
         esac
     fi
@@ -605,8 +605,8 @@ shim_late_swap() {
     setup_log "shim late-swap: enter (will wait up to 240s for /info to be stable for 30s)"
     if [ "${STR_FORCE_SHIM_TAIGAN:-0}" != "1" ]; then
         case "${VARIANT}|${HOSTID}" in
-            *taigan*)
-                setup_log "shim late-swap: SKIP — taigan (Portable); SoftwareUpdate left untouched so the Bose boot cannot wedge. External :8888 via the REDIRECT path. STR_FORCE_SHIM_TAIGAN=1 overrides."
+            *taigan*|*spotty*)
+                setup_log "shim late-swap: SKIP — BCO chassis (${VARIANT:-?}/${HOSTID:-?}); SoftwareUpdate left untouched so the Bose mesh init cannot wedge. External :8888 via the REDIRECT path. STR_FORCE_SHIM_TAIGAN=1 overrides."
                 return 0 ;;
         esac
     fi
