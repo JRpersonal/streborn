@@ -228,6 +228,24 @@ export namespace main {
 	        this.art = source["art"];
 	    }
 	}
+	export class SetupAPPushResult {
+	    step: string;
+	    message: string;
+	    ok: boolean;
+	    logTail: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SetupAPPushResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.step = source["step"];
+	        this.message = source["message"];
+	        this.ok = source["ok"];
+	        this.logTail = source["logTail"];
+	    }
+	}
 	export class TrueFactoryResetResult {
 	    step: string;
 	    ok: boolean;

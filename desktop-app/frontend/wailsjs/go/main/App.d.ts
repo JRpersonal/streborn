@@ -50,6 +50,8 @@ export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:str
 
 export function ProbeSetupAP():Promise<main.BoxInfo|boolean>;
 
+export function PushWLANToBox(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.SetupAPPushResult>;
+
 export function RebootBox(arg1:string,arg2:number):Promise<void>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
