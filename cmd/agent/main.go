@@ -179,6 +179,15 @@ func run() error {
 		maybeRebootAfterBootstrapSync(logger)
 	}
 
+	// Keep the on-box version.txt in lockstep with the running binary.
+	// The desktop reads version.txt (via the stick / SSH diagnostic
+	// fallback) to display a box's version, but only stick-prep ever
+	// wrote it, never the OTA path, so after an agent OTA the box kept
+	// reporting the pre-update version (#94). Stamping it here means any
+	// update path (HTTP-OTA, SSH-OTA, manual) is reflected the moment the
+	// new binary boots. Best-effort.
+	stampVersionFiles(logger)
+
 	ensureSshdRunning(logger)
 
 	// DeviceID aus MAC ermitteln, damit Marge Antworten die echte Box ID
@@ -1176,6 +1185,37 @@ func maybeRebootAfterBootstrapSync(logger *slog.Logger) {
 	time.Sleep(2 * time.Second)
 	if err := exec.Command("reboot").Run(); err != nil {
 		logger.Error("bootstrap reboot: reboot command failed, continuing on stale boot path", "err", err)
+	}
+}
+
+// stampVersionFiles writes this binary's version (semver + build stamp)
+// to the on-box version.txt files so the desktop always sees the
+// version that is actually running, not whatever the last stick-prep
+// wrote. Without it, an OTA (which replaces only the binary) left
+// version.txt at the old build and the box kept reporting the
+// pre-update version (#94). NAND is the reliable target; the FAT32
+// stick copy is best-effort (one small write, not in the boot-critical
+// path). Atomic via tmp + rename; skipped where the parent dir is
+// absent (dev host, no stick).
+func stampVersionFiles(logger *slog.Logger) {
+	stamp := version
+	if buildStamp != "" && buildStamp != "dev" {
+		stamp = version + "+" + buildStamp
+	}
+	for _, p := range []string{"/mnt/nv/streborn/version.txt", "/media/sda1/version.txt"} {
+		dir := p[:strings.LastIndex(p, "/")]
+		if _, err := os.Stat(dir); err != nil {
+			continue
+		}
+		tmp := p + ".str-new"
+		if err := os.WriteFile(tmp, []byte(stamp+"\n"), 0o644); err != nil {
+			logger.Debug("version stamp: write failed", "path", p, "err", err)
+			continue
+		}
+		if err := os.Rename(tmp, p); err != nil {
+			logger.Debug("version stamp: rename failed", "path", p, "err", err)
+			_ = os.Remove(tmp)
+		}
 	}
 }
 
