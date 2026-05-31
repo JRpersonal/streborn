@@ -940,6 +940,16 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger) {
 	if len(stick) == 0 {
 		return
 	}
+	// Do not push presets while the box is still in out-of-box setup.
+	// In OOB the Marge state machine is NotAssociated, so every
+	// AddPreset fails with "MargeHSM is in the wrong state" and just
+	// spams BoseApp's log (and ours) once per cycle. Wait until the box
+	// has joined a network. Live-observed on a taigan Portable in OOB,
+	// 2026-05-31.
+	if boxInSetupOOB(boxHost) {
+		logger.Debug("preset reconcile: box still in OOB setup (MargeHSM not associated), skipping until it joins a network")
+		return
+	}
 	boxSlots, err := fetchBoxPresetSlots(boxHost)
 	if err != nil {
 		logger.Debug("preset reconcile: box presets not readable", "err", err)
@@ -988,6 +998,23 @@ func fetchBoxPresetSlots(boxHost string) (map[int]bool, error) {
 }
 
 var presetIDRegex = regexp.MustCompile(`<preset id="(\d+)"`)
+
+// boxInSetupOOB reports whether BoseApp's /setup says the box is still
+// in out-of-box setup (SETUP_AP_OOB). Pushing presets in that state
+// fails with "MargeHSM is in the wrong state" and only spams the log,
+// so the reconciler waits until the box has joined a network. On any
+// read error we return false (proceed) so a firmware whose /setup
+// differs never silently stops reconciling on a working box.
+func boxInSetupOOB(boxHost string) bool {
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://%s:8090/setup", boxHost))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	return strings.Contains(string(body), "SETUP_AP_OOB")
+}
 
 // lastN gibt die letzten n Zeichen von s zurueck.
 func lastN(s string, n int) string {
