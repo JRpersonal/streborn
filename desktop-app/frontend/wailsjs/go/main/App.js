@@ -94,6 +94,10 @@ export function ProbeSetupAP() {
   return window['go']['main']['App']['ProbeSetupAP']();
 }
 
+export function PushWLANToBox(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['PushWLANToBox'](arg1, arg2, arg3, arg4);
+}
+
 export function RebootBox(arg1, arg2) {
   return window['go']['main']['App']['RebootBox'](arg1, arg2);
 }
