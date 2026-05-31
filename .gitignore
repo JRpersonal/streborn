@@ -54,3 +54,8 @@ Thumbs.db
 *.tmp
 *.bak
 .cache/
+
+# Claude Code working directory. Holds sensitive, non-project material
+# (network captures, Bose firmware binaries, API docs, local settings,
+# agent memory/notes). MUST NEVER be committed.
+.claude/
