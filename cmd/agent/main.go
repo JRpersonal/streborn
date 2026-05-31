@@ -5,7 +5,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -166,7 +168,16 @@ func run() error {
 	// run.sh and rc.local via usbstick.Files() and writes them out on
 	// startup whenever the disk copies differ from the embedded ones.
 	// Best-effort: any write failure is logged and the agent continues.
-	syncBootstrapFromEmbedded(logger)
+	if syncBootstrapFromEmbedded(logger) {
+		// The on-NAND boot path (run-override.sh / rc.local) was stale
+		// relative to this binary and has just been refreshed. Those
+		// scripts only take effect on the NEXT boot, so the rest of THIS
+		// boot would still run the old WLAN / shim / gate logic. Rather
+		// than leave the box one manual power-cycle short of a clean
+		// state, reboot ourselves once (guarded against loops) so the
+		// very next boot runs the boot path that matches this binary.
+		maybeRebootAfterBootstrapSync(logger)
+	}
 
 	ensureSshdRunning(logger)
 
@@ -1020,10 +1031,10 @@ var bootstrapTargets = []struct {
 // rename; on any failure we leave the existing file in place and
 // log so the next diagnostic bundle captures the reason. Skipped
 // silently in dev environments where /mnt/nv does not exist.
-func syncBootstrapFromEmbedded(logger *slog.Logger) {
+func syncBootstrapFromEmbedded(logger *slog.Logger) (changed bool) {
 	if _, err := os.Stat("/mnt/nv"); err != nil {
 		// Not on the box (developer machine, CI). No-op.
-		return
+		return false
 	}
 	stickFS := usbstick.Files()
 	for _, t := range bootstrapTargets {
@@ -1067,6 +1078,77 @@ func syncBootstrapFromEmbedded(logger *slog.Logger) {
 			"oldBytes", len(current),
 			"newBytes", len(embedded),
 			"effective", "next boot")
+		changed = true
+	}
+	return changed
+}
+
+// bootstrapRebootStampPath records the fingerprint of the embedded
+// bootstrap set we last rebooted for. It is the loop breaker: if a
+// NAND write silently fails to persist, syncBootstrapFromEmbedded
+// would report "changed" on every boot, and an unconditional
+// post-sync reboot would turn that into a boot loop that bricks the
+// box. We reboot at most once per embedded fingerprint.
+const bootstrapRebootStampPath = "/mnt/nv/streborn/.str-bootstrap-reboot-stamp"
+
+// embeddedBootstrapStamp is a stable fingerprint of the bootstrap
+// files embedded in THIS binary. It changes only when the embedded
+// run.sh / rc.local change, i.e. across agent releases that touch the
+// boot path. Returns "" if the embedded files cannot be read, in
+// which case the caller must not reboot (it cannot guard the loop).
+func embeddedBootstrapStamp() string {
+	h := sha256.New()
+	stickFS := usbstick.Files()
+	for _, t := range bootstrapTargets {
+		b, err := fs.ReadFile(stickFS, t.embedded)
+		if err != nil {
+			return ""
+		}
+		_, _ = h.Write([]byte(t.embedded))
+		_, _ = h.Write(b)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// maybeRebootAfterBootstrapSync reboots the box once so a freshly
+// written run-override.sh / rc.local take effect immediately instead
+// of on the user's next manual power-cycle. This is the "STR reboots
+// itself into a clean state" path: after a stick install or agent OTA
+// the running boot used the OLD scripts; one clean reboot lands the
+// box on the boot path that matches the running binary.
+//
+// Guarded so it can never loop:
+//   - If the embedded fingerprint cannot be computed, do not reboot.
+//   - If we already rebooted for exactly this fingerprint (marker
+//     matches) yet the sync still reported a change, the NAND write is
+//     not persisting; rebooting again would loop, so we stay up in a
+//     degraded state and log loudly instead.
+func maybeRebootAfterBootstrapSync(logger *slog.Logger) {
+	stamp := embeddedBootstrapStamp()
+	if stamp == "" {
+		logger.Warn("bootstrap reboot: skipped, cannot fingerprint embedded boot files (no loop guard possible)")
+		return
+	}
+	if prev, err := os.ReadFile(bootstrapRebootStampPath); err == nil &&
+		strings.TrimSpace(string(prev)) == stamp {
+		logger.Error("bootstrap reboot: on-NAND boot files STILL differ after a prior reboot for this exact version - the NAND write is not persisting; refusing to reboot again to avoid a boot loop, continuing on the stale boot path",
+			"stamp", stamp)
+		return
+	}
+	if err := os.WriteFile(bootstrapRebootStampPath, []byte(stamp+"\n"), 0o644); err != nil {
+		logger.Warn("bootstrap reboot: could not persist loop-guard stamp, refusing to reboot",
+			"path", bootstrapRebootStampPath, "err", err)
+		return
+	}
+	logger.Warn("bootstrap reboot: boot path was refreshed, rebooting once so the new run-override.sh/rc.local run this cycle instead of waiting for a manual power-cycle",
+		"stamp", stamp)
+	// Flush pending writes (the stick log, the bootstrap files and the
+	// guard stamp on NAND) before we pull the rug out. busybox `sync`
+	// keeps this portable at compile time, matching the reboot exec.
+	_ = exec.Command("sync").Run()
+	time.Sleep(2 * time.Second)
+	if err := exec.Command("reboot").Run(); err != nil {
+		logger.Error("bootstrap reboot: reboot command failed, continuing on stale boot path", "err", err)
 	}
 }
 
