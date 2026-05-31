@@ -195,6 +195,11 @@ initial_snapshot() {
     if [ -r /etc/version ]; then
         setup_log "bose /etc/version: $(head -c 200 /etc/version 2>/dev/null | tr '\n' ' ')"
     fi
+    # STR's own version. The NAND copy survives reboot; the stick copy
+    # may not be mounted this early. Without this line a setup.log /
+    # diagnostic bundle never says which STR build produced it, so every
+    # triage started by guessing the version from behaviour.
+    setup_log "STR version: $(cat "$NAND_VER_FILE" 2>/dev/null || cat "$STICK_VER_FILE" 2>/dev/null || echo unknown)"
     if [ -r /etc/Variant ]; then
         setup_log "bose /etc/Variant: $(head -c 80 /etc/Variant 2>/dev/null | tr '\n' ' ')"
     fi
@@ -402,21 +407,35 @@ sync_stick_to_nand_always() {
     return 1
 }
 
-# Defense in depth: if the NAND cache is empty and the stick mount
-# is still racing in (rc.local should have waited, but a direct
-# invocation of run.sh may skip that), give the stick up to 20s to
-# appear. Otherwise the version-mismatch sync below has nothing to
-# work with and we abort immediately.
-if [ ! -x "$CACHED_BIN" ]; then
-    j=0
-    while [ $j -lt 20 ]; do
-        if [ -e "$STICK_BIN" ] || [ -e "$STICK_VER_FILE" ]; then
-            log "stick became visible after ${j}s wait"
+# Wait for the USB stick to finish mounting before ANY stick read this
+# boot: the binary + version.txt sync below, the rc.local/run-override
+# redeploy, the WLAN credentials (M0/M1), and region/name. The stick
+# filesystem mounts late on a cold boot; reading /media/sda1 too early
+# returns empty and we silently fall through to "no creds ->
+# ethernet-only" (box never provisions, LED stuck yellow) or skip the
+# binary/version sync (stale NAND version, #94). The old guard only
+# waited on a first install ([ ! -x CACHED_BIN ]); every steady-state
+# cold boot skipped it and raced the mount.
+#
+# Gate the wait on a USB BLOCK DEVICE being present. By the time run.sh
+# runs (~boot+30s, after the Bose mesh is up) USB has long since
+# enumerated, so an absent /sys/block/sda means the box is genuinely
+# stickless: we add ZERO delay to the normal NAND-only steady-state
+# boot. Only when a stick IS plugged (block device present, filesystem
+# possibly still mounting) do we wait, up to 25s, for /media/sda1.
+if [ -e /sys/block/sda ] || [ -e /dev/sda1 ]; then
+    _stick_wait=0
+    while [ $_stick_wait -lt 25 ]; do
+        if [ -e "$STICK_BIN" ] || [ -e "$STICK_VER_FILE" ] || [ -e "$STICK/run.sh" ] || [ -e "$STICK/wlan.conf" ]; then
+            [ $_stick_wait -gt 0 ] && setup_log "stick: filesystem mounted after ${_stick_wait}s wait"
             break
         fi
         sleep 1
-        j=$((j+1))
+        _stick_wait=$((_stick_wait + 1))
     done
+    [ "$_stick_wait" -ge 25 ] && setup_log "stick: USB block device present but /media/sda1 not mounted after ${_stick_wait}s, continuing"
+else
+    setup_log "stick: no USB block device, stickless NAND-only boot (no wait)"
 fi
 
 # Defense in depth: redeploy rc.local + run-override.sh from stick
