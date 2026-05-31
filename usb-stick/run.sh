@@ -92,9 +92,45 @@ uptime_s() {
 setup_log() {
     log "$*"
     line="[up=$(uptime_s)s] $(date): $*"
-    echo "$line" >> "$SETUP_LOG" 2>/dev/null
+    # NAND only. Per-line appends to the FAT32 stick during early boot
+    # caused enough IO contention to wedge the Bose mesh init on taigan:
+    # the one-shot post-start snapshot alone fans ps -ef / netstat / ss
+    # out to ~150 individual setup_log calls, and on a slow stick each
+    # append is a multi-ms open+seek+FAT-update. Live-observed 2026-05-31
+    # the stick boot hanging hard enough that the box brought up NO wifi
+    # at all, while the same box boots clean without the stick. The stick
+    # copy is now produced by a slow bulk mirror instead
+    # (start_stick_log_mirror), so the pull-the-stick-and-read workflow
+    # still works without thousands of tiny FAT32 ops in the
+    # boot-critical window.
     echo "$line" >> "$SETUP_LOG_NAND" 2>/dev/null
 }
+
+# Mirror the NAND setup.log to the stick on a slow cadence so a yanked
+# or stickless box still carries a near-current trace, without the
+# per-line FAT32 IO the old dual-write setup_log incurred. The first
+# tick is deferred 60s so the boot-critical window (Bose mesh + network
+# bring-up) sees ZERO stick writes; thereafter one bulk copy every 25s,
+# a handful of FAT32 ops vs the thousands a dual-write did. Best-effort:
+# the stick may be unmounted (early boot) or read-only; failures are
+# ignored and retried next tick. Copy-then-rename so a reader never sees
+# a half-written file.
+_stick_log_mirror_started=""
+start_stick_log_mirror() {
+    [ -n "$_stick_log_mirror_started" ] && return 0
+    _stick_log_mirror_started=1
+    (
+        sleep 60
+        while :; do
+            if [ -d "$STICK" ] && [ -r "$SETUP_LOG_NAND" ]; then
+                cp "$SETUP_LOG_NAND" "$SETUP_LOG.mirror" 2>/dev/null \
+                    && mv "$SETUP_LOG.mirror" "$SETUP_LOG" 2>/dev/null
+            fi
+            sleep 25
+        done
+    ) &
+}
+start_stick_log_mirror
 
 # ensure_sshd_running keeps the box reachable by SSH from boot until
 # next reboot, on every boot regardless of whether the stick is
@@ -469,6 +505,13 @@ SHIM_WRAPPER="$PERSIST/lib/SU-wrapper.sh"
 # look what is different vs the working taigan path.
 shim_stage_wrapper() {
     setup_log "shim stage: enter (variant=${VARIANT:-?} host=${HOSTID:-?} is_series_one=${IS_SERIES_ONE:-0})"
+    if [ "${STR_FORCE_SHIM_TAIGAN:-0}" != "1" ]; then
+        case "${VARIANT}|${HOSTID}" in
+            *taigan*)
+                setup_log "shim stage: SKIP — taigan (Portable). The LD_PRELOAD late-swap kills SoftwareUpdate, which on taigan races shepherdd's respawn and can wedge scm_finalize / the whole Bose boot (live 2026-05-31: boot bar stuck, NO setup-AP at all). External :8888 on taigan is served by the iptables PREROUTING REDIRECT path instead, which never touches SoftwareUpdate. STR_FORCE_SHIM_TAIGAN=1 overrides."
+                return 0 ;;
+        esac
+    fi
     if [ -e "$SHIM_DISABLE" ]; then
         setup_log "shim stage: BAIL — disabled via $SHIM_DISABLE marker"
         return 0
@@ -560,6 +603,13 @@ shim_stage_wrapper
 # have to guess about ordering.
 shim_late_swap() {
     setup_log "shim late-swap: enter (will wait up to 240s for /info to be stable for 30s)"
+    if [ "${STR_FORCE_SHIM_TAIGAN:-0}" != "1" ]; then
+        case "${VARIANT}|${HOSTID}" in
+            *taigan*)
+                setup_log "shim late-swap: SKIP — taigan (Portable); SoftwareUpdate left untouched so the Bose boot cannot wedge. External :8888 via the REDIRECT path. STR_FORCE_SHIM_TAIGAN=1 overrides."
+                return 0 ;;
+        esac
+    fi
     if [ -e "$SHIM_DISABLE" ]; then
         setup_log "shim late-swap: BAIL — $SHIM_DISABLE marker present"
         return 0
@@ -1044,16 +1094,18 @@ current_sta_lease() {
     # it finds. Returns 1 if none.
     #
     # The regex matches "inet 10.0.0.5/24" AND "inet 10.0.0.5 peer ..."
-    # (no slash after the IP). Brechts spotty 2026-05-30 bundle showed
+    # (no slash after the IP). spotty 2026-05-30 bundle showed
     # the second form coming out of busybox ip on this firmware, which
     # made the older slash-mandatory regex return empty and the
     # REDIRECT install loop bail with "no wlan0/wlan1/eth0 STA address
     # yet" for the lifetime of the box.
+    _csl_cache=/tmp/.streborn-last-lease
     for _iface in wlan0 wlan1 eth0; do
         [ -d "/sys/class/net/$_iface" ] || continue
         for _ip in $(ip -4 addr show "$_iface" 2>/dev/null | sed -n 's/.*inet \([0-9][0-9.]*\).*/\1/p'); do
             if is_real_sta_addr "$_ip"; then
                 printf '%s|%s' "$_iface" "$_ip"
+                echo "$_iface|$_ip" > "$_csl_cache" 2>/dev/null
                 return 0
             fi
         done
@@ -1062,34 +1114,67 @@ current_sta_lease() {
         for _ip in $(ifconfig "$_iface" 2>/dev/null | sed -n 's/.*inet addr:\([0-9][0-9.]*\).*/\1/p'); do
             if is_real_sta_addr "$_ip"; then
                 printf '%s|%s' "$_iface" "$_ip"
+                echo "$_iface|$_ip" > "$_csl_cache" 2>/dev/null
                 return 0
             fi
         done
     done
-    # Last-resort fallback: ask Bose itself what network IP it has,
-    # via /info on :8090. This is the same IP STR uses for autopair,
-    # so if BoseApp answers we know the box is on a real network even
-    # if our ip/ifconfig parsing failed.
+    # Bose-sourced fallback: ask BoseApp what network IP the box holds.
+    # CRITICAL (live-verified on a taigan Portable + spotty ST20, both
+    # BCO chassis, 2026-05-31): the IP is exposed by /networkInfo as an
+    # ATTRIBUTE, `ipAddress="X"` on the active interface. It is NOT a
+    # <ipAddress> element and is NOT present in /info at all. The older
+    # code parsed /info for a <ipAddress> element, which never matched
+    # on these boxes, so the fallback was dead. On BCO chassis the STA
+    # IP is managed by the chipset and the Linux iface parse above can
+    # come up empty even while the box is fully on the LAN, so this is
+    # the path that actually resolves the lease there. Try /networkInfo
+    # (attribute) first, then /info (<ipAddress> element) for any
+    # firmware that happens to use the element form.
     if command -v wget >/dev/null 2>&1; then
-        _info_ip=$(wget -qO- -T 2 "http://127.0.0.1:8090/info" 2>/dev/null \
+        _bose_ip=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null \
+            | sed -n 's/.*ipAddress="\([0-9][0-9.]*\)".*/\1/p' | head -1)
+        [ -z "$_bose_ip" ] && _bose_ip=$(wget -qO- -T 3 "http://127.0.0.1:8090/info" 2>/dev/null \
             | sed -n 's/.*<ipAddress>\([0-9][0-9.]*\)<.*/\1/p' | head -1)
-        if [ -n "$_info_ip" ] && is_real_sta_addr "$_info_ip"; then
-            # Prefer the iface that actually has it; fall back to the
-            # first existing wireless candidate so the LEASE token
-            # stays well-formed.
-            for _iface in wlan0 wlan1 eth0; do
+        if [ -n "$_bose_ip" ] && is_real_sta_addr "$_bose_ip"; then
+            # Prefer the iface that actually has it; otherwise emit the
+            # first existing candidate so the LEASE token stays
+            # well-formed (eth0 first: it is the WLAN iface on BCO).
+            for _iface in eth0 wlan0 wlan1; do
                 [ -d "/sys/class/net/$_iface" ] || continue
-                if ip -4 addr show "$_iface" 2>/dev/null | grep -q "$_info_ip"; then
-                    printf '%s|%s' "$_iface" "$_info_ip"
+                if ip -4 addr show "$_iface" 2>/dev/null | grep -q "$_bose_ip"; then
+                    printf '%s|%s' "$_iface" "$_bose_ip"
+                    echo "$_iface|$_bose_ip" > "$_csl_cache" 2>/dev/null
                     return 0
                 fi
             done
             for _iface in eth0 wlan0 wlan1; do
                 if [ -d "/sys/class/net/$_iface" ]; then
-                    printf '%s|%s' "$_iface" "$_info_ip"
+                    printf '%s|%s' "$_iface" "$_bose_ip"
+                    echo "$_iface|$_bose_ip" > "$_csl_cache" 2>/dev/null
                     return 0
                 fi
             done
+        fi
+    fi
+    # Final fallback: the last real lease we resolved THIS power cycle
+    # (cache lives in /tmp, so it is cleared on every reboot and can
+    # never carry a stale cross-boot IP). current_sta_lease is polled
+    # from several places (M0a at ~30s, the REDIRECT watchdog every
+    # 30s). On BCO boxes BoseApp /networkInfo stops answering under
+    # boot-time load (the same wedge that makes M0 time out), which
+    # otherwise makes a lease that WAS resolved at 30s vanish at 155s
+    # and bail the REDIRECT install for the lifetime of the box
+    # (spotty #90, 2026-05-31). A stationary speaker keeps its
+    # DHCP lease, so the last-known-good IP is the best answer while
+    # every live source is momentarily mute. Only ever cached a
+    # real (is_real_sta_addr) IP, so the setup-AP gateway is never here.
+    if [ -r "$_csl_cache" ]; then
+        _cached=$(cat "$_csl_cache" 2>/dev/null)
+        _cached_ip=${_cached##*|}
+        if [ -n "$_cached_ip" ] && is_real_sta_addr "$_cached_ip"; then
+            printf '%s' "$_cached"
+            return 0
         fi
     fi
     return 1
@@ -1285,19 +1370,49 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # Wait for BoseApp HTTP server up to 30s. M1 needs it; M2..M6
     # do not and run regardless. If BoseApp never comes up we still
     # try TAP CLI / wpa_supplicant / wpa_cli paths.
-    setup_log "M0: waiting for BoseApp on $BOSE_API (timeout 30s)"
-    i=0
+    # BoseApp cold-start time is highly variable on Series-I/BCO boxes,
+    # taigan (Portable) especially. Live bundles (2026-05-31) show it
+    # binding :8090 only around 120-130 s on a cold factory-reset boot,
+    # and even then answering /info slowly while the rest of the Bose
+    # mesh is still coming up under boot-time CPU/IO load. The previous
+    # 30 s window with a 2 s per-probe timeout declared BoseApp "not
+    # reachable" while it was merely late/slow, so M1 was skipped. On
+    # taigan M1 is the ONLY working WLAN path (M2..M6 all SKIP), so the
+    # box then sat in OOB with the boot progress bar stuck full and the
+    # speaker never joined Wi-Fi. Wait far longer, give each probe room
+    # to answer, and require a real <info body (not just a TCP accept)
+    # so we never fire M1 against a half-initialised BoseApp.
+    #
+    # Variant-aware: on taigan/BCO where M1 is the only path, wait up to
+    # 180 s. On boxes that have wpa_supplicant / TAP fallbacks (M2..M6),
+    # keep the window short so a genuinely dead BoseApp drops through to
+    # those paths quickly instead of stalling the whole pipeline.
+    BOSE_WAIT_MAX=45
+    if [ -n "$IS_TAIGAN" ] || [ "$BCO_MODE" = "1" ]; then
+        BOSE_WAIT_MAX=180
+    fi
+    _bose_start=$(uptime_s)
+    case "$_bose_start" in ''|*[!0-9]*) _bose_start=0 ;; esac
+    setup_log "M0: waiting for BoseApp on $BOSE_API (timeout ${BOSE_WAIT_MAX}s, per-probe 8s, taigan=${IS_TAIGAN:-0} bco=${BCO_MODE:-0})"
     BOSE_OK=""
-    while [ $i -lt 30 ]; do
-        if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
-            setup_log "M0: BoseApp reachable after ${i}s"
+    _bose_last_log="$_bose_start"
+    while :; do
+        _bose_now=$(uptime_s)
+        case "$_bose_now" in ''|*[!0-9]*) _bose_now=$((_bose_start + BOSE_WAIT_MAX)) ;; esac
+        _bose_elapsed=$((_bose_now - _bose_start))
+        [ "$_bose_elapsed" -ge "$BOSE_WAIT_MAX" ] && break
+        if wget -qO- -T 8 "$BOSE_API/info" 2>/dev/null | grep -q "<info "; then
+            setup_log "M0: BoseApp reachable after ${_bose_elapsed}s"
             BOSE_OK=1
             break
         fi
-        sleep 1
-        i=$((i + 1))
+        if [ $((_bose_now - _bose_last_log)) -ge 30 ]; then
+            setup_log "M0: still waiting for BoseApp /info, ${_bose_elapsed}s elapsed (taigan BoseApp can take ~130s to answer)"
+            _bose_last_log="$_bose_now"
+        fi
+        sleep 3
     done
-    [ -z "$BOSE_OK" ] && setup_log "M0: BoseApp did not respond within 30s, will skip BoseApp-dependent methods"
+    [ -z "$BOSE_OK" ] && setup_log "M0: BoseApp did not respond within ${BOSE_WAIT_MAX}s, will skip BoseApp-dependent methods"
 
     if [ "$BOSE_OK" = "1" ]; then
         NETINFO_BEFORE=$(wget -qO- -T 3 "$BOSE_API/networkInfo" 2>/dev/null | head -c 400)
@@ -1412,60 +1527,35 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             setup_log "M1: gate-1 skipped, systemstate already past SETUP_LANG_NOT_SET, preserving user locale"
         fi
 
-        # Gate 2: marge account. Placeholder fields — the real STR
-        # autopair runs downstream on the home LAN and replaces these
-        # with stub@local credentials once the speaker is reachable.
+        # Gate 2: marge account — SKIPPED by default (accountless).
         #
-        # Body capture rationale: `wget -qO-` silently discards response
-        # bodies on HTTP 5xx, which is exactly when we need them.
-        # NetManager's MargeHSM is believed to return rich diagnostic
-        # XML (e.g. <MargeHSMError code=... reason=...>) on the
-        # rejection path, but on every spotty/scm box analysed in #89
-        # the literal string "MargeHSM" never appears in any captured
-        # log because wget swallowed the body. We now also write to a
-        # tmpfile via -O and emit whatever bytes wget did manage to
-        # store. BusyBox 1.19 wget behaviour on 5xx is inconsistent,
-        # so the stderr line ("server returned error: HTTP/1.1 500")
-        # remains the primary signal; the tmpfile is best-effort
-        # extra context.
-        MARGE_BODY='<?xml version="1.0" encoding="UTF-8" ?><PairDeviceWithAccount><accountId>stick-bootstrap</accountId><userAuthToken>stick-bootstrap</userAuthToken><accountEmail>stick@local</accountEmail></PairDeviceWithAccount>'
-        # H2 (TOCTOU hypothesis): NetManager's MargeHSM is an IPC peer
-        # that may finish initialising AFTER BoseApp's HTTP server is
-        # reachable, so a single-shot POST at boot+44s lands too early
-        # on scm/spotty and gets a 500. Retry up to 3 times with 15s
-        # backoff so a slow HSM still gets the account. Body is
-        # captured via -O so the rejection reason is visible if the
-        # HSM is permanently in the wrong state vs just not ready yet.
-        # First success or non-500 breaks the loop.
-        _m1_marge_body_file=/tmp/m1-marge.body
-        _m1_marge_winner=""
-        for _m1_marge_try in 1 2 3; do
-            setup_log "M1: gate-2 POST $BOSE_API/setMargeAccount (try $_m1_marge_try/3)"
+        # Jens (direct testimony 2026-05-31) plus live SSH analysis on a
+        # taigan Portable: the current Bose iOS app onboards the speaker
+        # with NO account at all (the account prompt was dropped in a
+        # later app version). STR's setMargeAccount does not persist
+        # anyway — /info echoes the supplied UUID, then clears it within
+        # ~2s — and /addWirelessProfile returns HTTP 500 whether or not
+        # the account is set. The account is validated against
+        # streaming.bose.com, which /etc/hosts redirects to STR's own
+        # marge stub, so forcing a bogus account only drives BoseApp's
+        # MargeHSM down a validation path it then fails; at best a no-op,
+        # at worst what wedges provisioning. We provision accountless
+        # like the iOS app. STR's real autopair still runs downstream
+        # once the box is on the LAN. The legacy gate (single POST, body
+        # captured for the MargeHSM rejection reason) stays available
+        # behind STR_FORCE_MARGE_GATE=1 for A/B debugging.
+        if [ "${STR_FORCE_MARGE_GATE:-0}" = "1" ]; then
+            MARGE_BODY='<?xml version="1.0" encoding="UTF-8" ?><PairDeviceWithAccount><accountId>stick-bootstrap</accountId><userAuthToken>stick-bootstrap</userAuthToken><accountEmail>stick@local</accountEmail></PairDeviceWithAccount>'
+            _m1_marge_body_file=/tmp/m1-marge.body
             rm -f "$_m1_marge_body_file" 2>/dev/null
+            setup_log "M1: gate-2 (forced via STR_FORCE_MARGE_GATE) POST $BOSE_API/setMargeAccount"
             MARGE_RESP=$(wget -O "$_m1_marge_body_file" -T 10 --header="Content-Type: application/xml" \
                    --post-data="$MARGE_BODY" "$BOSE_API/setMargeAccount" 2>&1)
             _m1_marge_rc=$?
             _m1_marge_body=$(head -c 512 "$_m1_marge_body_file" 2>/dev/null | tr '\r\n' '  ')
-            setup_log "M1: marge try=$_m1_marge_try rc=$_m1_marge_rc stderr='$(echo "$MARGE_RESP" | head -c 200)' body='$_m1_marge_body'"
-            if [ "$_m1_marge_rc" = "0" ]; then
-                _m1_marge_winner="$_m1_marge_try"
-                break
-            fi
-            case "$MARGE_RESP" in
-                *"500 Internal Server Error"*)
-                    if [ "$_m1_marge_try" -lt 3 ]; then
-                        setup_log "M1: gate-2 sleeping 15s before next retry (HSM may be initialising)"
-                        sleep 15
-                    fi
-                    ;;
-                *)
-                    setup_log "M1: gate-2 non-500 error, not retrying"
-                    break
-                    ;;
-            esac
-        done
-        if [ -n "$_m1_marge_winner" ]; then
-            setup_log "M1: gate-2 succeeded on try $_m1_marge_winner"
+            setup_log "M1: gate-2 (forced) rc=$_m1_marge_rc stderr='$(echo "$MARGE_RESP" | head -c 200)' body='$_m1_marge_body'"
+        else
+            setup_log "M1: gate-2 SKIPPED — accountless provisioning (iOS app sets no account; marge UUID does not persist and addWirelessProfile 500s regardless). Set STR_FORCE_MARGE_GATE=1 to re-enable the legacy gate."
         fi
 
         # Gate 3: /name. Live-verified 2026-05-30 on a factory-reset
@@ -1520,6 +1610,12 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         RC=$?
         _m1_add_body=$(head -c 512 "$_m1_add_body_file" 2>/dev/null | tr '\r\n' '  ')
         setup_log "M1: rc=$RC stderr='$(echo "$RESP" | head -c 400)' body='$_m1_add_body'"
+        # Snapshot Bose state right after the call. BusyBox wget discards
+        # 5xx bodies, so the authoritative signal for the accountless
+        # experiment is what advanced: this tells a gate-rejection 500
+        # (systemstate unchanged, wifiProfileCount still 0) apart from an
+        # association failure (profile stored, count 1, but no lease).
+        setup_log "M1: post-addProfile setup='$(wget -qO- -T3 "$BOSE_API/setup" 2>/dev/null | tr -d '\r\n' | head -c 120)' netinfo='$(wget -qO- -T3 "$BOSE_API/networkInfo" 2>/dev/null | tr -d '\r\n' | head -c 200)'"
         if [ $RC -eq 0 ] && echo "$RESP" | grep -qi "AddWirelessProfileResponse"; then
             setup_log "M1: API persisted profile (NetManager DB updated)"
         fi
@@ -2299,7 +2395,13 @@ iptables_install_redirect_series_one() {
     # lease loss followed by recovery still produces a fresh entry log.
     if [ -z "$LEASE" ]; then
         if [ ! -f /tmp/.streborn-redirect-no-lease ]; then
-            setup_log "REDIRECT install: bail — current_sta_lease returned empty (no wlan0/wlan1/eth0 STA address yet)"
+            # Dump every source current_sta_lease consulted so a bundle
+            # tells us WHY it came up empty: was eth0 really addressless,
+            # did BoseApp /networkInfo answer, was the cache populated?
+            _r_ni=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | tr -d '\r\n' | head -c 220)
+            _r_eth=$(ip -4 addr show eth0 2>/dev/null | tr -d '\r' | tr '\n' ' ' | sed -n 's/.*\(inet [0-9.]*\).*/\1/p' | head -c 80)
+            _r_cache=$(cat /tmp/.streborn-last-lease 2>/dev/null | head -c 60)
+            setup_log "REDIRECT install: bail — current_sta_lease empty. eth0='${_r_eth:-none}' cache='${_r_cache:-none}' networkInfo='${_r_ni:-no-answer}'"
             touch /tmp/.streborn-redirect-no-lease 2>/dev/null
         fi
         return 0
@@ -2776,7 +2878,7 @@ else
     # decision moved to ensure_sshd_running at boot time.
     #
     # Multiple probe sources so a single failing primitive does not
-    # produce a false "agent NOT bound" entry. Brechts spotty bundle
+    # produce a false "agent NOT bound" entry. spotty bundle
     # 2026-05-30 showed netstat reporting PID 2500 streborn-armv7l
     # LISTEN on 0.0.0.0:8888 while this probe still logged "agent NOT
     # bound" — the busybox /dev/tcp + nc -z primitives apparently
