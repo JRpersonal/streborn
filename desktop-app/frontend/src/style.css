@@ -232,11 +232,21 @@ body {
   background: rgba(204, 0, 0, 0.24);
 }
 .locale-flag-emoji {
-  display: inline-block;
-  /* Emoji font on Windows lacks coloured regional indicators by
-     default; fall back to Segoe UI Emoji which does ship them. */
+  display: inline-flex;
+  align-items: center;
+  /* Used only as the emoji fallback for locales without an inline SVG
+     flag. Note: Windows ships NO country-flag emoji glyphs in any system
+     font, so the picker uses inline SVG (flagSvg) for its locales; this
+     emoji fallback renders as letters on Windows but a flag on macOS. */
   font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji",
                "Twemoji Mozilla", system-ui, sans-serif;
+}
+/* Inline SVG flag in the language picker: renders identically on Windows
+   and macOS, unlike Unicode flag emoji. */
+.loc-flag-svg {
+  display: block;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 .visually-hidden {
   position: absolute;
@@ -298,6 +308,7 @@ body {
 .btn-icon:hover { background: #3a4a5a; }
 .refresh-icon { display: inline-block; transition: transform 0.2s ease; }
 .btn-icon.spinning .refresh-icon { animation: spin 0.9s linear infinite; }
+.btn-icon-sm.spinning { display: inline-block; animation: spin 0.9s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .box-select { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; background: #222; border-radius: 6px; padding: 8px 10px; min-height: 38px; font-size: 13px; color: #aaa; }
 .box-select .empty { color: #777; padding: 4px 6px; }
@@ -962,7 +973,7 @@ body {
   font-size: 13px;
 }
 .setting-row select:focus { outline: none; border-color: var(--brand); }
-#setupRegion {
+#setupRegion, #setupLang {
   width: 100%;
   background: #1a1a1a;
   color: #eee;
@@ -971,7 +982,8 @@ body {
   padding: 8px;
   font-size: 13px;
 }
-#setupRegion:focus { outline: none; border-color: var(--brand); }
+#setupRegion:focus, #setupLang:focus { outline: none; border-color: var(--brand); }
+.setup-sublabel { display: block; margin: 10px 0 4px; font-size: 12px; color: #aaa; }
 .setting-value {
   min-width: 32px;
   text-align: right;

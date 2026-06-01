@@ -122,6 +122,10 @@ export function SelectBoxSource(arg1, arg2, arg3) {
   return window['go']['main']['App']['SelectBoxSource'](arg1, arg2, arg3);
 }
 
+export function SetAppLocale(arg1) {
+  return window['go']['main']['App']['SetAppLocale'](arg1);
+}
+
 export function SetBoxBass(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxBass'](arg1, arg2, arg3);
 }
@@ -162,6 +166,10 @@ export function Stop(arg1, arg2) {
   return window['go']['main']['App']['Stop'](arg1, arg2);
 }
 
+export function SuggestBoxLanguage(arg1, arg2) {
+  return window['go']['main']['App']['SuggestBoxLanguage'](arg1, arg2);
+}
+
 export function SyncBoxPresets(arg1, arg2) {
   return window['go']['main']['App']['SyncBoxPresets'](arg1, arg2);
 }
@@ -180,6 +188,10 @@ export function UpdateBoxAgent(arg1, arg2) {
 
 export function VoteStation(arg1, arg2, arg3) {
   return window['go']['main']['App']['VoteStation'](arg1, arg2, arg3);
+}
+
+export function WriteLangConfig(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['WriteLangConfig'](arg1, arg2, arg3, arg4);
 }
 
 export function WriteNameConfig(arg1, arg2) {

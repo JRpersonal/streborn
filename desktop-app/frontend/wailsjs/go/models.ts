@@ -302,6 +302,7 @@ export namespace sticksetup {
 	    wlanPass: string;
 	    region: string;
 	    name: string;
+	    locale: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new StickConfigs(source);
@@ -313,6 +314,7 @@ export namespace sticksetup {
 	        this.wlanPass = source["wlanPass"];
 	        this.region = source["region"];
 	        this.name = source["name"];
+	        this.locale = source["locale"];
 	    }
 	}
 

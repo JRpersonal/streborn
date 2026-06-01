@@ -27,6 +27,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/sticksetup"
 )
 
 // SetupAPPushResult is returned to the frontend after a push attempt
@@ -74,18 +76,18 @@ func (a *App) PushWLANToBox(host, ssid, password, name string) (SetupAPPushResul
 	// Portable: POSTing 0 returned 200 with the echo body but
 	// systemstate stayed SETUP_LANG_NOT_SET, and the next box
 	// reboot left the LED yellow forever. POSTing any value >= 1
-	// transitions systemstate to SETUP_LANG_SET. Memory
-	// [[bose-language-enum]] currently has 1=Danish, 2=German
-	// confirmed. We pick 2 (German) as the default because more
-	// of STR's confirmed users today are German-speaking; an
-	// English-speaking user sees a one-time German display until
-	// they change it from the in-app /language picker, which is
-	// recoverable. Picking a Bose-untested value would be worse:
-	// the v0.5.16 incident wrote sysLanguage=1 (Danish) and users
-	// reported "the radio now speaks Finnish/Swedish" before we
-	// understood the enum. Stay on a confirmed value.
+	// transitions systemstate to SETUP_LANG_SET. The value also sets
+	// the box's display language, so we derive it from the user's
+	// active UI locale (SetAppLocale) instead of forcing one language
+	// worldwide; SysLanguageForLocale falls back to English (3) for an
+	// unknown/unset locale, the neutral global default. The full enum
+	// is resolved in [[bose-language-enum]] (every value 1..25 known),
+	// so there is no longer any risk of the v0.5.16 "radio now speaks
+	// Finnish" incident from guessing.
 	res.Step = "language"
-	if msg, err := boseSetLanguage(a.ctx, host, 2); err != nil {
+	lang := sticksetup.SysLanguageForLocale(a.appLocale())
+	a.logger.Info("push wlan: language gate", "locale", a.appLocale(), "sysLanguage", lang)
+	if msg, err := boseSetLanguage(a.ctx, host, lang); err != nil {
 		res.Message = "language gate failed: " + err.Error()
 		res.LogTail = append(res.LogTail, "language FAIL: "+err.Error())
 		return res, err

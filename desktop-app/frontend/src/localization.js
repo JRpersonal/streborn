@@ -181,6 +181,28 @@ export function flagFromCC(cc) {
   return String.fromCodePoint(A + c0) + String.fromCodePoint(A + c1);
 }
 
+// flagSvg returns an inline SVG flag for the small, fixed set of UI
+// locales (the language picker), or '' for anything else. Unicode flag
+// emoji do NOT render on Windows: Microsoft's "Segoe UI Emoji" ships no
+// regional-indicator (country flag) glyphs by design, and no other
+// Windows system font does either, so flagFromCC shows two letters on
+// Windows while macOS (Apple Color Emoji) shows a real flag. Inline SVG
+// renders identically on every platform. Only the picker's handful of
+// flags use this; the long country <select> dropdowns keep emoji
+// (native <option> cannot host inline SVG anyway).
+const LOCALE_FLAG_SVG = {
+  GB: '<svg class="loc-flag-svg" viewBox="0 0 60 30" width="22" height="13" aria-hidden="true"><rect width="60" height="30" fill="#012169"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0 L60,30 M60,0 L0,30" stroke="#C8102E" stroke-width="3"/><rect x="25" width="10" height="30" fill="#fff"/><rect y="10" width="60" height="10" fill="#fff"/><rect x="27" width="6" height="30" fill="#C8102E"/><rect y="12" width="60" height="6" fill="#C8102E"/></svg>',
+  DE: '<svg class="loc-flag-svg" viewBox="0 0 5 3" width="21" height="13" aria-hidden="true"><rect width="5" height="3" fill="#000"/><rect y="1" width="5" height="1" fill="#D00"/><rect y="2" width="5" height="1" fill="#FFCE00"/></svg>',
+  FR: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#fff"/><rect width="1" height="2" fill="#0055A4"/><rect x="2" width="1" height="2" fill="#EF4135"/></svg>',
+  ES: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#AA151B"/><rect y="0.5" width="3" height="1" fill="#F1BF00"/></svg>',
+  JP: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#fff"/><circle cx="1.5" cy="1" r="0.6" fill="#BC002D"/></svg>',
+  UA: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#FFD700"/><rect width="3" height="1" fill="#0057B7"/></svg>',
+};
+export function flagSvg(cc) {
+  if (!cc) return '';
+  return LOCALE_FLAG_SVG[cc.toUpperCase()] || '';
+}
+
 // Country dropdown source. Each entry has a stable English lookup key
 // (used for tLookup) and the ISO code; the display name comes from
 // the active locale at render time so a language switch reflects

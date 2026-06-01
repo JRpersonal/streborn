@@ -36,6 +36,15 @@ type App struct {
 	// folder click. Cleared and rebuilt on ListMediaServers.
 	libraryMu      sync.Mutex
 	libraryServers map[string]dlna.Server
+
+	// userLocale is the active UI language (BCP-47, e.g. "de"/"en")
+	// reported by the frontend via SetAppLocale. Server-side
+	// provisioning paths that set the box display language (the
+	// Setup-AP push) map it to a Bose sysLanguage so we never force a
+	// hardcoded language on the user. Guarded because Wails dispatches
+	// method calls from arbitrary goroutines.
+	localeMu   sync.RWMutex
+	userLocale string
 }
 
 // NewApp erstellt eine neue App Instance.
@@ -1237,6 +1246,41 @@ func (a *App) WriteNameConfig(targetPath, name string) error {
 	return sticksetup.WriteNameConfig(targetPath, sticksetup.NameConfig{Name: name})
 }
 
+// WriteLangConfig schreibt lang.conf auf den Stick. locale + country
+// sind die Wizard-Signale, sysLanguage der vom User im Sprach-Dropdown
+// gewaehlte Bose-Wert. Die Box's run.sh liest den Integer beim ersten
+// Boot als OOB-Gate-Sprache UND Display-Sprache, statt weltweit Deutsch
+// zu erzwingen. Siehe project_bose_language_enum.
+func (a *App) WriteLangConfig(targetPath, locale, country string, sysLanguage int) error {
+	return sticksetup.WriteLangConfig(targetPath, locale, country, sysLanguage)
+}
+
+// SuggestBoxLanguage liefert die Bose-sysLanguage, die der Setup-Wizard
+// im Sprach-Dropdown vorbelegen soll: primaer aus dem gewaehlten Land
+// abgeleitet, mit der aktiven App-Sprache als bewusster Override, sonst
+// Englisch. Das Frontend ruft es beim Laden und bei jeder Laenderaenderung.
+func (a *App) SuggestBoxLanguage(locale, country string) int {
+	return sticksetup.SuggestBoxLanguage(locale, country)
+}
+
+// SetAppLocale merkt sich die im UI aktive Sprache des Users (BCP-47,
+// z.B. "de"/"en"). Das Frontend ruft das beim Start und bei jedem
+// Sprachwechsel auf. Server-seitige Provisioning-Pfade (Setup-AP Push)
+// leiten daraus die Box-Display-Sprache ab.
+func (a *App) SetAppLocale(locale string) {
+	a.localeMu.Lock()
+	a.userLocale = strings.TrimSpace(locale)
+	a.localeMu.Unlock()
+}
+
+// appLocale liefert das zuletzt gemeldete UI-Locale (leer wenn noch
+// keins gesetzt wurde).
+func (a *App) appLocale() string {
+	a.localeMu.RLock()
+	defer a.localeMu.RUnlock()
+	return a.userLocale
+}
+
 // ListWiFiProfiles liefert die gespeicherten WLAN Profile vom Host OS.
 // Frontend nutzt das als Dropdown im Setup damit der User die SSID nicht
 // abtippen muss.
@@ -1492,23 +1536,20 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	if out, err := boxSSHOutput(host, verifyCmd, 15*time.Second); err != nil || !strings.Contains(out, sentinel) {
 		return fmt.Errorf("ssh size-verify or rename failed: %v (%s)", err, strings.TrimSpace(out))
 	}
-	// Kick the agent. Fully detached so the SSH session can return cleanly
-	// even though pkill kills a sibling of the SSH-spawned shell. run.sh's
-	// boot watchdog (wait_ports_clear + start_agent loop) respawns within
-	// seconds and the new binary takes over. If the watchdog fails to
-	// respawn within 12 s — observed live on scm/spotty 2026-05-30 where
-	// pkill went through but the agent stayed dead until manual power-cycle
-	// — fall back to a clean reboot so the box self-recovers without the
-	// user needing to unplug it.
-	kickAndRebootIfStuck := "(" +
-		"sleep 1; " +
-		"pkill -TERM streborn-armv7l; " +
-		"sleep 12; " +
-		"if ! pidof streborn-armv7l >/dev/null 2>&1; then " +
-		"sync; /sbin/reboot; " +
-		"fi" +
-		") </dev/null >/dev/null 2>&1 &"
-	_ = boxSSHFireAndForget(host, kickAndRebootIfStuck, 5*time.Second)
+	// Always reboot after the binary swap. Jens 2026-06-01: an OTA that
+	// only SIGTERMs the agent and relies on run.sh's watchdog respawn
+	// leaves a dirty post-update state. The new binary came up but the
+	// app showed no presets, because the boot-time preset push and the
+	// leave-OOB full re-sync (cmd/agent reconcileOnce forceFull) only run
+	// on a real boot, not on a live process restart; and OTA replaces
+	// only the binary, so the NAND run.sh + rc.local otherwise stay at
+	// the pre-OTA vintage (project_ota_only_replaces_binary). A clean
+	// reboot fixes both: the new binary self-deploys its matching
+	// run.sh/rc.local on boot AND the preset reconcile runs from clean.
+	// Detached so the SSH session returns before the box drops off the
+	// LAN. sync first so the just-renamed binary is flushed to NAND.
+	rebootAfterOTA := "(sleep 1; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &"
+	_ = boxSSHFireAndForget(host, rebootAfterOTA, 5*time.Second)
 	return nil
 }
 

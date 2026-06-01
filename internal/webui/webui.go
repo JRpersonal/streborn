@@ -682,51 +682,47 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.Info("agent update written, self-restart in 1s", "size", len(body))
+	s.logger.Info("agent update written, rebooting box for a clean post-OTA state", "size", len(body))
 	writeJSON(w, http.StatusOK, map[string]string{
-		"status":  "ok",
-		"restart": "in 1s",
+		"status": "ok",
+		"action": "reboot",
 	})
 
-	// Self-Restart: rc.local startet uns NICHT bei Prozesstod (nur beim
-	// Boot). Wir delegieren den Restart an einen detached
-	// `sh -c sleep 70 && exec ...` Prozess. Der Sleep wartet bis die
-	// Listener Sockets vom Kernel freigegeben sind. Auf den Ports
-	// :8081 (bmx) und :9080 (marge) haelt die Bose Firmware long-lived
-	// Verbindungen offen — wenn der Agent stirbt, gehen die Sockets
-	// in TIME_WAIT fuer tcp_fin_timeout (60 s auf diesem Kernel). Die
-	// fruehere Version benutzte `sleep 3`, was viel zu kurz war: das
-	// neue Binary scheiterte am Bind mit "address already in use" und
-	// landete in einem 60 s Crash Loop, der von der Watchdog Schleife
-	// in run.sh genau im TIME_WAIT Takt am Leben gehalten wurde
-	// (gesehen am 2026-05-17 in einem Produktion Box Log). 70 s gibt
-	// 60 s TIME_WAIT plus 10 s Sicherheit.
+	// Always reboot after an OTA rather than just self-restarting the
+	// process. Jens 2026-06-01: a self-restart left the freshly-updated
+	// box with no presets visible in the app — the boot-time preset push
+	// and the leave-OOB full re-sync (cmd/agent reconcileOnce forceFull)
+	// only run on a real boot, not on a live process restart; and OTA
+	// replaces only the binary, so the NAND run.sh + rc.local otherwise
+	// stay at the pre-OTA vintage (project_ota_only_replaces_binary). A
+	// reboot makes the new binary self-deploy its matching run.sh/rc.local
+	// AND re-run the preset reconcile from clean. Delay so the 200 OK
+	// above flushes to the desktop app before the box drops off the LAN.
 	go func() {
-		time.Sleep(1 * time.Second)
-		s.logger.Info("agent self-restart: detached sh sleep 70 + exec")
-
-		// Args schoen quoten damit sh keine Wortgrenzen falsch versteht
-		quoted := make([]string, 0, len(os.Args))
-		for _, a := range os.Args {
-			quoted = append(quoted, "'"+strings.ReplaceAll(a, "'", "'\\''")+"'")
+		time.Sleep(1500 * time.Millisecond)
+		s.logger.Info("post-OTA reboot")
+		_ = dst // the new binary is in place at dst; the boot path runs it
+		if err := exec.Command("reboot").Run(); err != nil {
+			// reboot binary missing or refused — fall back to the detached
+			// process self-restart so we at least run the new binary. The
+			// sleep 70 covers the :8081/:9080 TIME_WAIT window (60 s
+			// tcp_fin_timeout on this kernel) so the new binary does not
+			// crash-loop on "address already in use" (seen 2026-05-17).
+			s.logger.Error("post-OTA reboot failed, falling back to process self-restart", "err", err)
+			quoted := make([]string, 0, len(os.Args))
+			for _, a := range os.Args {
+				quoted = append(quoted, "'"+strings.ReplaceAll(a, "'", "'\\''")+"'")
+			}
+			shCmd := "sleep 70 && exec " + strings.Join(quoted, " ") + " >> /tmp/streborn-agent.log 2>&1"
+			cmd := exec.Command("sh", "-c", shCmd)
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+			if serr := cmd.Start(); serr != nil {
+				s.logger.Error("self-restart fallback also failed", "err", serr)
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+			os.Exit(0)
 		}
-		shCmd := "sleep 70 && exec " + strings.Join(quoted, " ") + " >> /tmp/streborn-agent.log 2>&1"
-		// Erstes Args[0] auf neuen Binary Pfad zeigen lassen (wir haben
-		// gerade den Pfad ueberschrieben — neuer Binary an gleicher Stelle).
-		_ = dst
-
-		cmd := exec.Command("sh", "-c", shCmd)
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := cmd.Start(); err != nil {
-			s.logger.Error("self-restart spawn failed, triggering box reboot as fallback", "err", err)
-			_ = exec.Command("reboot").Run()
-			return
-		}
-		s.logger.Info("sh wrapper started, beende eigenen Prozess in 100ms damit Listener frei werden")
-		// Eigenen Prozess sofort beenden, damit der sh Wrapper nach 3 s
-		// auf freien Ports binden kann.
-		time.Sleep(100 * time.Millisecond)
-		os.Exit(0)
 	}()
 }
 

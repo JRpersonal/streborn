@@ -24,6 +24,9 @@ import {
   WriteWLANConfig,
   WriteRegionConfig,
   WriteNameConfig,
+  WriteLangConfig,
+  SetAppLocale,
+  SuggestBoxLanguage,
   ListWiFiProfiles,
   TryWiFiPassword,
   CurrentWiFi,
@@ -83,6 +86,7 @@ import {
   translateGenre,
   translateTags,
   flagFromCC,
+  flagSvg,
 } from './localization.js';
 
 import {
@@ -100,6 +104,10 @@ import {
 const LOCALE_FLAG_CC = {
   en: 'GB',
   de: 'DE',
+  fr: 'FR',
+  es: 'ES',
+  ja: 'JP',
+  uk: 'UA',
 };
 
 import {
@@ -133,7 +141,7 @@ document.querySelector('#app').innerHTML = `
         ${AVAILABLE_LOCALES.map(l => {
           const cc = LOCALE_FLAG_CC[l.code] || l.code.toUpperCase();
           const active = l.code === getLocale() ? ' active' : '';
-          return `<button type="button" class="locale-flag${active}" data-locale="${escapeAttr(l.code)}" title="${escapeAttr(l.label)}" aria-label="${escapeAttr(l.label)}" aria-pressed="${l.code === getLocale() ? 'true' : 'false'}"><span class="locale-flag-emoji" aria-hidden="true">${flagFromCC(cc)}</span><span class="locale-flag-code">${escapeHtml(l.code.toUpperCase())}</span></button>`;
+          return `<button type="button" class="locale-flag${active}" data-locale="${escapeAttr(l.code)}" title="${escapeAttr(l.label)}" aria-label="${escapeAttr(l.label)}" aria-pressed="${l.code === getLocale() ? 'true' : 'false'}"><span class="locale-flag-emoji" aria-hidden="true">${flagSvg(cc) || flagFromCC(cc)}</span><span class="locale-flag-code">${escapeHtml(l.code.toUpperCase())}</span></button>`;
         }).join('')}
       </div>
     </div>
@@ -218,6 +226,14 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     };
   });
 })();
+
+// Tell the Go backend which UI language is active, so server-side
+// provisioning (the Setup-AP push) sets the speaker's display language
+// to the user's language instead of a hardcoded default. This runs on
+// every load — including after a locale switch, since the picker above
+// reloads the page — so the backend always has the current locale.
+// Best-effort: a binding error must never block UI startup.
+SetAppLocale(getLocale()).catch(() => {});
 
 // Tagline and supported-models line follow the active locale, falling
 // back to English. Native-speaker translations live inline here for
@@ -1269,7 +1285,8 @@ async function checkBoxUpdate() {
     banner.innerHTML = `
       <div class="update-msg">
         <b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
-        <small>${escapeHtml(t('update.speakerAppLine', { box: boxLabel, app: appLabel }))}</small>
+        <small>${escapeHtml(t('update.speakerAppLine', { box: boxLabel, app: appLabel }))}</small><br>
+        <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
       </div>
       ${renderUpdateBtn()}
     `;
@@ -1280,7 +1297,8 @@ async function checkBoxUpdate() {
       banner.innerHTML = `
         <div class="update-msg">
           <b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
-          <small>${escapeHtml(t('update.speakerRunningOld', { boxVersion: state.currentBox.version, appVersion: state.appInfo.version }))}</small>
+          <small>${escapeHtml(t('update.speakerRunningOld', { boxVersion: state.currentBox.version, appVersion: state.appInfo.version }))}</small><br>
+          <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
         </div>
         ${renderUpdateBtn()}
       `;
@@ -1340,10 +1358,18 @@ async function doBoxUpdate() {
     showToast(t('update.uploadedToast'));
     setStatus(t('update.rebooting'));
     // Active poll: hit /api/agent/version until the box answers with
-    // a build matching the app's appBuild. Up to 3 minutes, 5 s
-    // between attempts. As long as the build is wrong or the box
-    // is unreachable, the buttons stay locked.
+    // a build matching the app's appBuild. That is the success signal:
+    // box back online AND running the new binary. The loop breaks the
+    // instant that happens, so the user never waits past the real boot
+    // — the deadline below is only a give-up ceiling, not a fixed wait.
+    // Poll every 5 s. The ceiling is 3 minutes, generous enough to cover
+    // the post-OTA double reboot (the OTA reboot, then a second one if
+    // the new binary's embedded run.sh/rc.local differ from NAND and
+    // bootstrap-sync rewrites + reboots — project_ota_only_replaces_binary).
+    // As long as the build is wrong or the box is unreachable, the
+    // buttons stay locked.
     const deadlineMs = Date.now() + 180_000;
+    const pollIntervalMs = 5_000;
     // Phase state shared between the 1 s display ticker and the 5 s
     // polling loop: "answered-with-old-build" vs "not-answering-yet".
     // The previous code updated only after each 5 s poll, so the
@@ -1361,7 +1387,7 @@ async function doBoxUpdate() {
     let confirmed = false;
     try {
       while (Date.now() < deadlineMs) {
-        await sleep(5_000);
+        await sleep(pollIntervalMs);
         try {
           const v = await BoxAgentVersion(targetBox.host, targetBox.port);
           if (v && v.build && (!appBuild || v.build === appBuild)) {
@@ -2287,28 +2313,67 @@ function renderSettingsBoxSelect() {
   if (state.settingsBox) sel.value = state.settingsBox.deviceID;
 }
 
-// langOptionsHtml: Bose sysLanguage int enum is only partially known
-// (see project_bose_language_enum memory). We render 0..29 honestly:
-// values we have confirmed labels for show them, the rest are
-// "sysLanguage=N (unknown)" so adventurous users can pick one, see
-// what the box does, and report back. Crowdsourcing the enum.
-// Bose sysLanguage enum: confirmed values only. 0 displays English
-// text on EU-shipped boxes BUT is treated as the "no user choice
-// yet" sentinel by the box's setup state machine — POSTing 0 is
-// a no-op for the gate (live-verified 2026-05-30 on a taigan
-// Portable). Values >= 1 actually advance systemstate.
-const BOSE_LANG_LABELS = {
-  0: 'Default (no gate)',
-  1: 'Danish',
-  2: 'German',
+// Bose sysLanguage enum, fully resolved 2026-06-01 (see
+// project_bose_language_enum memory): id -> { endonym, key }. The
+// endonym is the language's own name in its own script, so a speaker
+// who cannot read the app's UI language (a Cyrillic/CJK/Greek/Thai
+// reader looking at an English UI) still recognises and can pick their
+// box language. key is the lowercased English name used to localise a
+// secondary label via localizeLanguageName. 0 is the unset/factory
+// sentinel (a no-op for the OOB gate) and 14 is undefined, so neither is
+// offered as a real choice; 0 is only labelled when a box still reports
+// it as its current value.
+const BOSE_LANGS = {
+  1: { endonym: 'Dansk', key: 'danish' },
+  2: { endonym: 'Deutsch', key: 'german' },
+  3: { endonym: 'English', key: 'english' },
+  4: { endonym: 'Español', key: 'spanish' },
+  5: { endonym: 'Français', key: 'french' },
+  6: { endonym: 'Italiano', key: 'italian' },
+  7: { endonym: 'Nederlands', key: 'dutch' },
+  8: { endonym: 'Svenska', key: 'swedish' },
+  9: { endonym: '日本語', key: 'japanese' },
+  10: { endonym: '简体中文', key: 'chinese' },
+  11: { endonym: '繁體中文', key: 'chinese' },
+  12: { endonym: '한국어', key: 'korean' },
+  13: { endonym: 'ไทย', key: 'thai' },
+  15: { endonym: 'Čeština', key: 'czech' },
+  16: { endonym: 'Suomi', key: 'finnish' },
+  17: { endonym: 'Ελληνικά', key: 'greek' },
+  18: { endonym: 'Norsk', key: 'norwegian' },
+  19: { endonym: 'Polski', key: 'polish' },
+  20: { endonym: 'Português', key: 'portuguese' },
+  21: { endonym: 'Română', key: 'romanian' },
+  22: { endonym: 'Русский', key: 'russian' },
+  23: { endonym: 'Slovenščina', key: 'slovenian' },
+  24: { endonym: 'Türkçe', key: 'turkish' },
+  25: { endonym: 'Magyar', key: 'hungarian' },
 };
+const BOSE_LANG_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
+
+// boseLangLabel returns "<endonym> (<localised name>)" for a sysLanguage
+// id, e.g. "日本語 (Japanese)". The endonym lets a native speaker pick
+// regardless of the app UI language; the parenthetical helps the current
+// UI reader. The suffix is dropped when it would just repeat the endonym.
+function boseLangLabel(id) {
+  const n = Number(id);
+  const e = BOSE_LANGS[n];
+  if (!e) return n === 0 ? t('settingsView.langNoValue') : t('settingsView.langUnknown');
+  const localized = localizeLanguageName(e.key);
+  return localized && localized.toLowerCase() !== e.endonym.toLowerCase()
+    ? `${e.endonym} (${localized})`
+    : e.endonym;
+}
+
 function langOptionsHtml() {
-  const out = [];
-  for (let i = 0; i < 30; i++) {
-    const label = BOSE_LANG_LABELS[i] || t('settingsView.langUnknown');
-    out.push(`<option value="${i}">${escapeHtml(`${i}: ${label}`)}</option>`);
-  }
-  return out.join('');
+  // Sort by the localised name (a Latin string in the current UI
+  // language) so the order is predictable for the majority; the
+  // native-script endonym stands out for speakers scanning for theirs.
+  return BOSE_LANG_IDS
+    .map((id) => ({ id, label: boseLangLabel(id), sort: localizeLanguageName(BOSE_LANGS[id].key) }))
+    .sort((a, b) => a.sort.localeCompare(b.sort))
+    .map((o) => `<option value="${o.id}">${escapeHtml(o.label)}</option>`)
+    .join('');
 }
 
 async function loadBoxSettings() {
@@ -2736,7 +2801,21 @@ function renderBoxSettings(s, box) {
       ${securityWarn}
     `;
     const ub = $('stickInfoUpdateBtn');
-    if (ub) ub.onclick = doBoxUpdate;
+    if (ub) {
+      if (stickMounted) {
+        // Safeguard: while a USB stick is in the speaker, an OTA update
+        // is undone on the next reboot, because rc.local unconditionally
+        // re-copies the stick's (older) version onto NAND ("stick wins
+        // every boot"). So warn and make the user pull the stick first;
+        // "proceed anyway" stays available for the same-version case.
+        ub.onclick = async () => {
+          const ok = await confirmWarn(t('update.stickInTitle'), t('update.stickInBody'));
+          if (ok) doBoxUpdate();
+        };
+      } else {
+        ub.onclick = doBoxUpdate;
+      }
+    }
     const sb = $('securityRebootBtn');
     if (sb) sb.onclick = async () => {
       const ok = await confirmWarn(
@@ -2839,9 +2918,7 @@ function renderBoxSettings(s, box) {
     (async () => {
       try {
         const v = await GetBoxLanguage(boseHost);
-        langCurrent.textContent = v
-          ? `${v}: ${BOSE_LANG_LABELS[v] || t('settingsView.langUnknown')}`
-          : t('settingsView.langNoValue');
+        langCurrent.textContent = v ? boseLangLabel(v) : t('settingsView.langNoValue');
         if (v) langSel.value = v;
       } catch {
         langCurrent.textContent = t('settingsView.langUnreachable');
@@ -2853,8 +2930,8 @@ function renderBoxSettings(s, box) {
       const v = langSel.value;
       try {
         await SetBoxLanguage(boseHost, parseInt(v, 10) || 0);
-        showToast(t('settingsView.langSavedToast', { v }));
-        langCurrent.textContent = `${v}: ${BOSE_LANG_LABELS[v] || t('settingsView.langUnknown')}`;
+        showToast(t('settingsView.langSavedToast', { v: boseLangLabel(v) }));
+        langCurrent.textContent = boseLangLabel(v);
       } catch (e) { showError(e); }
     };
   }
@@ -3021,12 +3098,17 @@ function wireWlanSwitch(box) {
   };
   async function loadBoxWlanList() {
     const sel = $('boxWlanSelect');
+    const rb = $('boxWlanRefresh');
+    if (rb) rb.classList.add('spinning'); // visible feedback: the button spins while loading
     try {
       const profiles = await ListWiFiProfiles() || [];
       sel.innerHTML = `<option value="">${escapeHtml(t('settingsView.wlanPickPlaceholder'))}</option>` +
         profiles.map(p => `<option value="${escapeAttr(p.ssid)}">${escapeHtml(p.ssid)}</option>`).join('');
+      showToast(t('settingsView.wlanListRefreshed', { n: profiles.length }));
     } catch {
       sel.innerHTML = `<option value="">${escapeHtml(t('setup.wlanListUnavailable'))}</option>`;
+    } finally {
+      if (rb) rb.classList.remove('spinning');
     }
   }
   $('boxWlanRefresh').onclick = loadBoxWlanList;
@@ -3330,6 +3412,9 @@ $('view-setup').innerHTML = `
     <h3>${escapeHtml(t('setup.step3Heading'))}</h3>
     <p class="muted small">${escapeHtml(t('setup.step3Help'))}</p>
     <select id="setupRegion"></select>
+    <label class="setup-sublabel" for="setupLang">${escapeHtml(t('setup.langLabel'))}</label>
+    <select id="setupLang"></select>
+    <p class="muted small">${escapeHtml(t('setup.langHelp'))}</p>
   </div>
   <div class="setup-section" id="wlanSection">
     <h3>${t('setup.step4Heading')}</h3>
@@ -3372,6 +3457,31 @@ wireCombobox('setupName', 'setupNameToggle', 'setupNameList', getRoomNames());
   ).join('');
   const saved = (() => { try { return localStorage.getItem('setupRegion'); } catch { return null; }})();
   sel.value = saved || 'DE';
+})();
+
+// Language dropdown in the wizard: the 25 box languages as native
+// endonyms (so any speaker recognises theirs regardless of the app UI
+// language), pre-selected intelligently from the chosen country via
+// SuggestBoxLanguage (country primary, deliberate app language as
+// override, English floor). The user can override; once they do, a
+// later country change no longer moves the selection out from under them.
+(function fillSetupLang() {
+  const sel = $('setupLang');
+  const region = $('setupRegion');
+  if (!sel) return;
+  sel.innerHTML = langOptionsHtml();
+  let userPicked = false;
+  const preselect = async () => {
+    if (userPicked) return;
+    try {
+      const cc = region ? region.value : '';
+      const id = await SuggestBoxLanguage(getLocale(), cc);
+      if (id) sel.value = String(id);
+    } catch { /* leave the dropdown default on a binding error */ }
+  };
+  sel.addEventListener('change', () => { userPicked = true; });
+  if (region) region.addEventListener('change', preselect);
+  preselect();
 })();
 
 $('drivesRefresh').onclick = () => refreshDrives(true);
@@ -4008,6 +4118,15 @@ async function doSetup() {
     } catch (regErr) {
       html += `<div class="setup-warn">${escapeHtml(t('setup.regionFailed', { err: String(regErr) }))}</div>`;
     }
+    // Box display language: the user's explicit pick from the wizard
+    // dropdown (pre-filled from the country). locale + country travel
+    // along so the Go side can re-derive if the value is somehow
+    // invalid. Best-effort and silent.
+    try {
+      const langSel = $('setupLang');
+      const sysLang = langSel ? (parseInt(langSel.value, 10) || 0) : 0;
+      await WriteLangConfig(drive.path, getLocale(), region, sysLang);
+    } catch {}
     const boxName = $('setupName').value.trim();
     if (boxName) {
       try {

@@ -16,8 +16,19 @@
 
 import en from './bundles/en.json';
 import de from './bundles/de.json';
+import fr from './bundles/fr.json';
+import es from './bundles/es.json';
+import ja from './bundles/ja.json';
+import uk from './bundles/uk.json';
 
-const BUNDLES = { en, de };
+// Order here is the order the language picker renders. Each bundle
+// covers the full UI chrome; missing keys fall back to English. The
+// large country/genre/lang reference tables are not duplicated into
+// fr/es/ja/uk, so those entries fall back to English via tLookup (radio
+// metadata only). Note: Ukrainian is the app UI language; the Bose box
+// sysLanguage enum has no Ukrainian, so a UA box display falls back to
+// English (deliberately NOT Russian). See project_bose_language_enum.
+const BUNDLES = { en, de, fr, es, ja, uk };
 
 export const AVAILABLE_LOCALES = Object.freeze(
   Object.keys(BUNDLES).map((code) => ({

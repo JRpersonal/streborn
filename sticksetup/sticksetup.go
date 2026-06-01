@@ -162,6 +162,7 @@ type StickConfigs struct {
 	WLANPass string `json:"wlanPass"`
 	Region   string `json:"region"`
 	Name     string `json:"name"`
+	Locale   string `json:"locale"`
 }
 
 // ReadStickConfigs liest die conf Files vom Stick. Felder die nicht
@@ -185,6 +186,12 @@ func ReadStickConfigs(path string) StickConfigs {
 		var n NameConfig
 		if json.Unmarshal(b, &n) == nil {
 			out.Name = n.Name
+		}
+	}
+	if b, err := os.ReadFile(filepath.Join(path, "lang.conf")); err == nil {
+		var l LangConfig
+		if json.Unmarshal(b, &l) == nil {
+			out.Locale = l.Locale
 		}
 	}
 	return out
@@ -244,6 +251,220 @@ func WriteNameConfig(targetPath string, cfg NameConfig) error {
 		return err
 	}
 	dst := filepath.Join(targetPath, "name.conf")
+	return writeFile(dst, data)
+}
+
+// LangConfig haelt die Signale aus dem Setup-Wizard (aktives App-UI
+// Locale, z.B. "de"/"en", und das vom User gewaehlte Land als ISO
+// 3166-1 alpha-2) plus den daraus abgeleiteten Bose sysLanguage
+// Integer. Der Stick liest das beim ersten Boot und nutzt SysLanguage
+// fuer das OOB Language Gate UND als Display-Sprache der Box, statt eine
+// fest verdrahtete Sprache zu erzwingen. Siehe project_bose_language_enum:
+// Englisch=3 ist der weltweite Default.
+type LangConfig struct {
+	Locale      string `json:"locale"`
+	Country     string `json:"country"`
+	SysLanguage int    `json:"sysLanguage"`
+}
+
+// SysLanguageForLocale bildet einen BCP-47 Locale (oder nur das
+// Primaer-Subtag) auf den Bose sysLanguage Integer ab. Single source
+// of truth fuer alle Stellen die eine Sprache an die Box schicken
+// (Stick lang.conf + Setup-AP Push). Unbekannte Locales fallen auf
+// Englisch (3) zurueck, den neutralen weltweiten Default. 0 (unset)
+// und 14 (undefiniert) werden nie zurueckgegeben. Voller Enum in
+// project_bose_language_enum.
+func SysLanguageForLocale(locale string) int {
+	s := strings.ToLower(strings.TrimSpace(locale))
+	// Chinesisch braucht das Region-Subtag fuer simplified vs traditional.
+	switch {
+	case strings.HasPrefix(s, "zh-tw"), strings.HasPrefix(s, "zh-hk"),
+		strings.HasPrefix(s, "zh-mo"), strings.HasPrefix(s, "zh-hant"):
+		return 11 // Traditional Chinese
+	case strings.HasPrefix(s, "zh"):
+		return 10 // Simplified Chinese
+	}
+	// Primaer-Subtag (vor '-' oder '_').
+	primary := s
+	for i := 0; i < len(s); i++ {
+		if s[i] == '-' || s[i] == '_' {
+			primary = s[:i]
+			break
+		}
+	}
+	switch primary {
+	case "da":
+		return 1
+	case "de":
+		return 2
+	case "en":
+		return 3
+	case "es":
+		return 4
+	case "fr":
+		return 5
+	case "it":
+		return 6
+	case "nl":
+		return 7
+	case "sv":
+		return 8
+	case "ja":
+		return 9
+	case "ko":
+		return 12
+	case "th":
+		return 13
+	case "cs":
+		return 15
+	case "fi":
+		return 16
+	case "el":
+		return 17
+	case "nb", "nn", "no":
+		return 18
+	case "pl":
+		return 19
+	case "pt":
+		return 20
+	case "ro":
+		return 21
+	case "ru":
+		return 22
+	case "uk":
+		// The box firmware has no Ukrainian in its sysLanguage enum.
+		// Russian (22) is the most readable on-screen fallback for a
+		// Ukrainian user (NOT English); the app UI itself never offers
+		// Russian. The user can still override in the wizard dropdown.
+		return 22
+	case "sl":
+		return 23
+	case "tr":
+		return 24
+	case "hu":
+		return 25
+	default:
+		return 3 // English, neutral worldwide default
+	}
+}
+
+// SysLanguageForCountry maps an ISO 3166-1 alpha-2 country code to the
+// Bose sysLanguage of its dominant language. Returns 0 for unknown /
+// genuinely undecidable countries so callers fall back to another
+// signal. Multilingual countries are mapped to their largest-share
+// language (e.g. CH -> German, CA -> English); the user can always
+// override in the wizard's language dropdown. Full enum in
+// project_bose_language_enum.
+func SysLanguageForCountry(cc string) int {
+	switch strings.ToUpper(strings.TrimSpace(cc)) {
+	case "DK", "GL", "FO":
+		return 1 // Danish
+	case "DE", "AT", "CH", "LI":
+		return 2 // German
+	case "US", "GB", "IE", "AU", "NZ", "CA", "ZA", "IN", "SG", "NG", "PH", "MT":
+		return 3 // English
+	case "ES", "MX", "AR", "CO", "CL", "PE", "VE", "EC", "GT", "CU", "BO",
+		"DO", "HN", "PY", "SV", "NI", "CR", "PA", "UY":
+		return 4 // Spanish
+	case "FR", "LU", "MC", "SN", "CI":
+		return 5 // French
+	case "IT", "SM", "VA":
+		return 6 // Italian
+	case "NL", "BE", "SR":
+		return 7 // Dutch
+	case "SE":
+		return 8 // Swedish
+	case "JP":
+		return 9 // Japanese
+	case "CN":
+		return 10 // Simplified Chinese
+	case "TW", "HK", "MO":
+		return 11 // Traditional Chinese
+	case "KR", "KP":
+		return 12 // Korean
+	case "TH":
+		return 13 // Thai
+	case "CZ":
+		return 15 // Czech
+	case "FI":
+		return 16 // Finnish
+	case "GR", "CY":
+		return 17 // Greek
+	case "NO":
+		return 18 // Norwegian
+	case "PL":
+		return 19 // Polish
+	case "PT", "BR", "AO", "MZ":
+		return 20 // Portuguese
+	case "RO", "MD":
+		return 21 // Romanian
+	case "RU", "BY", "KZ", "KG":
+		return 22 // Russian
+	case "UA":
+		return 22 // Ukraine: box has no Ukrainian, Russian is the most
+		// readable on-screen fallback. App UI never offers Russian.
+	case "SI":
+		return 23 // Slovenian
+	case "TR":
+		return 24 // Turkish
+	case "HU":
+		return 25 // Hungarian
+	default:
+		return 0
+	}
+}
+
+// SuggestBoxLanguage picks the Bose display language to PRE-SELECT in
+// the setup wizard from the two signals it has: the user's active UI
+// locale and the country they picked. The box supports ~25 languages
+// but the app UI ships only a few bundles, so a user whose language has
+// no bundle reads the app in English (locale "en") even though their
+// country names their real language. Rule: a DELIBERATE non-English UI
+// locale wins (the user actively switched to it); otherwise the country
+// decides (covers most languages); English (3) is the floor. The user
+// can still override the pre-selected value in the wizard.
+func SuggestBoxLanguage(locale, country string) int {
+	if p := localePrimary(locale); p != "" && p != "en" {
+		return SysLanguageForLocale(locale)
+	}
+	if n := SysLanguageForCountry(country); n != 0 {
+		return n
+	}
+	return SysLanguageForLocale(locale) // floors to English (3)
+}
+
+// localePrimary returns the lowercased primary subtag of a BCP-47 tag
+// ("de-CH" -> "de"), or "" for an empty input.
+func localePrimary(locale string) string {
+	s := strings.ToLower(strings.TrimSpace(locale))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '-' || s[i] == '_' {
+			return s[:i]
+		}
+	}
+	return s
+}
+
+// WriteLangConfig schreibt lang.conf JSON auf den Stick. locale +
+// country sind die Wizard-Signale (fuer den Record), sysLanguage ist der
+// vom User im Sprach-Dropdown bestaetigte Wert. Ein ungueltiger Wert
+// (<=0, 14, oder >25) wird auf SuggestBoxLanguage zurueckgesetzt, damit
+// run.sh den Integer ohne eigene Mapping-Tabelle direkt lesen kann.
+func WriteLangConfig(targetPath string, locale, country string, sysLanguage int) error {
+	loc := strings.TrimSpace(locale)
+	if loc == "" {
+		loc = "en"
+	}
+	n := sysLanguage
+	if n <= 0 || n == 14 || n > 25 {
+		n = SuggestBoxLanguage(loc, country)
+	}
+	cfg := LangConfig{Locale: loc, Country: strings.ToUpper(strings.TrimSpace(country)), SysLanguage: n}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	dst := filepath.Join(targetPath, "lang.conf")
 	return writeFile(dst, data)
 }
 

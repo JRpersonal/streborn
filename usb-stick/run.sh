@@ -106,6 +106,71 @@ setup_log() {
     echo "$line" >> "$SETUP_LOG_NAND" 2>/dev/null
 }
 
+# --- Display-language resolution for the OOB language gate -----------
+# The Bose OOB language gate (POST /language) needs any non-zero
+# sysLanguage integer to advance systemstate out of SETUP_LANG_NOT_SET,
+# and that same integer becomes the box's on-screen display language.
+# STR used to hardcode 2 (German) at every gate, which gave every box
+# worldwide a German display, contradicting the worldwide audience. We
+# now resolve the USER's language instead:
+#   1. lang.conf the desktop app wrote from the user's UI locale (it
+#      carries the resolved sysLanguage int directly),
+#   2. the value persisted to NAND on a previous boot,
+#   3. derived from the region country code (region.conf / NAND),
+#   4. English (3) as the neutral worldwide default.
+# Full enum 1..25 in project_bose_language_enum (0 and 14 are invalid).
+# Defined at top level so it is in scope inside the provisioning
+# subshell AND the OOB-finalize path (see the sibling-subshell scope
+# trap that bit current_sta_lease).
+lang_int_for_cc() {
+    # Coarse country-code -> sysLanguage fallback for region-only
+    # sticks. The desktop app normally supplies the exact value from
+    # the user's UI language, so this only runs when lang.conf is absent.
+    case "$(printf '%s' "$1" | tr 'a-z' 'A-Z')" in
+        DK) echo 1 ;;
+        DE|AT|CH|LI) echo 2 ;;
+        ES|MX|AR|CL|CO|PE|VE) echo 4 ;;
+        FR|BE|LU) echo 5 ;;
+        IT) echo 6 ;;
+        NL) echo 7 ;;
+        SE) echo 8 ;;
+        JP) echo 9 ;;
+        CN) echo 10 ;;
+        TW|HK|MO) echo 11 ;;
+        KR) echo 12 ;;
+        TH) echo 13 ;;
+        CZ) echo 15 ;;
+        FI) echo 16 ;;
+        GR|CY) echo 17 ;;
+        NO) echo 18 ;;
+        PL) echo 19 ;;
+        PT|BR) echo 20 ;;
+        RO|MD) echo 21 ;;
+        RU|BY|UA) echo 22 ;;
+        SI) echo 23 ;;
+        TR) echo 24 ;;
+        HU) echo 25 ;;
+        *) echo 3 ;;
+    esac
+}
+
+resolve_setup_language() {
+    _rl=""
+    [ -f "$STICK/lang.conf" ] && _rl=$(sed -n 's/.*"sysLanguage"[ ]*:[ ]*\([0-9]\{1,2\}\).*/\1/p' "$STICK/lang.conf" | head -1)
+    [ -z "$_rl" ] && [ -f "$PERSIST/lang.txt" ] && _rl=$(sed -n 's/[^0-9]*\([0-9]\{1,2\}\).*/\1/p' "$PERSIST/lang.txt" | head -1)
+    if [ -z "$_rl" ]; then
+        _cc=""
+        [ -f "$STICK/region.conf" ] && _cc=$(sed -n 's/.*"country"[ ]*:[ ]*"\([^"]*\)".*/\1/p' "$STICK/region.conf" | head -1)
+        [ -z "$_cc" ] && [ -f "$PERSIST/region.txt" ] && _cc=$(head -1 "$PERSIST/region.txt" 2>/dev/null)
+        _rl=$(lang_int_for_cc "$_cc")
+    fi
+    case "$_rl" in
+        1|2|3|4|5|6|7|8|9|10|11|12|13|15|16|17|18|19|20|21|22|23|24|25) : ;;
+        *) _rl=3 ;;
+    esac
+    printf '%s' "$_rl"
+}
+
 # Mirror the NAND setup.log to the stick on a slow cadence so a yanked
 # or stickless box still carries a near-current trace, without the
 # per-line FAT32 IO the old dual-write setup_log incurred. The first
@@ -1423,15 +1488,16 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         done
         case "$(wget -qO- -T 5 "$_fo_api/setup" 2>/dev/null)" in
             *SETUP_LANG_NOT_SET*)
-                setup_log "OOB-finalize: systemstate SETUP_LANG_NOT_SET after WLAN join, POSTing /language=2 + /name to leave OOB"
-                wget -qO- -T 5 --header="Content-Type: text/xml" --post-data='<sysLanguage>2</sysLanguage>' "$_fo_api/language" >/dev/null 2>&1
+                _fo_lang=$(resolve_setup_language)
+                setup_log "OOB-finalize: systemstate SETUP_LANG_NOT_SET after WLAN join, POSTing /language=$_fo_lang + /name to leave OOB"
+                wget -qO- -T 5 --header="Content-Type: text/xml" --post-data="<sysLanguage>${_fo_lang}</sysLanguage>" "$_fo_api/language" >/dev/null 2>&1
                 _nm=""
                 [ -f "$STICK/name.conf" ] && _nm=$(sed -n 's/.*"name":"\([^"]*\)".*/\1/p' "$STICK/name.conf" | head -1)
                 [ -z "$_nm" ] && _nm=$(wget -qO- -T 5 "$_fo_api/name" 2>/dev/null | sed -n 's:.*<name>\([^<]*\)</name>.*:\1:p' | head -1)
                 [ -z "$_nm" ] && _nm="SoundTouch"
                 _nme=$(xml_escape "$_nm" 2>/dev/null || printf '%s' "$_nm")
                 wget -qO- -T 5 --header="Content-Type: text/xml" --post-data="<name>${_nme}</name>" "$_fo_api/name" >/dev/null 2>&1
-                setup_log "OOB-finalize: posted /language=2 + /name='$_nm' to clear the app-download OOB hint"
+                setup_log "OOB-finalize: posted /language=$_fo_lang + /name='$_nm' to clear the app-download OOB hint"
                 ;;
             *)
                 setup_log "OOB-finalize: systemstate already past SETUP_LANG_NOT_SET, nothing to do"
@@ -1731,37 +1797,24 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # rather than the HTTP body for confirmation.
     if [ "$BOSE_OK" = "1" ]; then
         # Gate 1: language. NetManager rejects /addWirelessProfile
-        # while /setup systemstate is SETUP_LANG_NOT_SET. Any valid
-        # integer clears that state. v0.5.16 hardcoded sysLanguage=1
-        # which on the firmware enum maps to a Nordic locale; that
-        # POST persists and changed users' radio voice prompts to
-        # Finnish/Swedish (reported in #60 on 2026-05-29: "the
-        # radio changed language to Finnish or Swedish"). v0.5.17:
-        # GET /language first; if a value is already set (gate open
-        # from a prior provisioning, prior factory life, or because
-        # a non-OOB box does not need this gate), skip the POST so
-        # we do not overwrite the user's preferred language. If we
-        # really do need to POST, send sysLanguage=0 which maps to
-        # English in the same enum and is the least surprising
-        # fallback for an internationally-shipped tool.
-        # Gate-1 logic correction (2026-05-30 live-verified on a
-        # factory-reset taigan Portable). The OLD check looked at
-        # /language's value: if any digit pattern was present in the
-        # response, we skipped the POST as "already set". That was
-        # wrong on factory-reset boxes: /language returns
-        # <sysLanguage>0</sysLanguage> by default AND /setup returns
-        # systemstate=SETUP_LANG_NOT_SET. So the value is "set" only
-        # in the trivial sense that there is a number — the GATE is
-        # still closed. We now key off systemstate, which is the
-        # authoritative gate signal.
+        # while /setup systemstate is SETUP_LANG_NOT_SET. Any NON-ZERO
+        # sysLanguage clears that state; sysLanguage=0 is the factory
+        # default and a NO-OP for the gate (live-verified 2026-05-30 on
+        # a factory-reset taigan: /language returns 0 AND systemstate
+        # stays NOT_SET, so a digit merely being present never meant
+        # the gate was open). We therefore key off systemstate, the
+        # authoritative gate signal, not off /language's value.
         #
-        # The OTHER trap: POSTing sysLanguage=0 from a factory state
-        # is a no-op for the gate. systemstate stays NOT_SET. Only
-        # values >= 1 advance the state. [[bose-language-enum]]:
-        # 1=Danish, 2=German confirmed. We POST 2 here because the
-        # confirmed-German user base is larger than confirmed-Danish.
-        # English-locale users see a one-time German splash; they can
-        # change it via the in-app /language picker once on home LAN.
+        # The posted value ALSO becomes the box's on-screen display
+        # language, so we resolve it from the USER's locale via
+        # resolve_setup_language (lang.conf -> NAND -> region country
+        # -> English=3 default) instead of forcing one language on every
+        # box worldwide. The full enum 1..25 is resolved now
+        # ([[bose-language-enum]]), so the v0.5.16 "radio now speaks
+        # Finnish/Swedish" incident (#60, a blind sysLanguage=1 guess)
+        # cannot recur. If the gate is already open (prior provisioning,
+        # prior factory life, or a non-OOB box) we skip the POST and
+        # preserve whatever language the user already had.
         setup_log "M1: gate-1 GET $BOSE_API/setup"
         SETUP_GET=$(wget -qO- -T 5 "$BOSE_API/setup" 2>&1)
         setup_log "M1: setup GET rc=$? response='$(echo "$SETUP_GET" | head -c 160)'"
@@ -1771,9 +1824,10 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             *"systemstate="*) LANG_NEED_POST="" ;;
         esac
         if [ -n "$LANG_NEED_POST" ]; then
-            setup_log "M1: gate-1 POST $BOSE_API/language sysLanguage=2 (German, confirmed non-zero gate opener)"
+            M1_LANG=$(resolve_setup_language)
+            setup_log "M1: gate-1 POST $BOSE_API/language sysLanguage=$M1_LANG (resolved from user locale / region, non-zero gate opener)"
             LANG_RESP=$(wget -qO- -T 5 --header="Content-Type: text/xml" \
-                   --post-data='<sysLanguage>2</sysLanguage>' \
+                   --post-data="<sysLanguage>${M1_LANG}</sysLanguage>" \
                    "$BOSE_API/language" 2>&1)
             setup_log "M1: language POST rc=$? response='$(echo "$LANG_RESP" | head -c 160)'"
         else
