@@ -33,6 +33,11 @@ import {
   SetBoxVolume,
   SetBoxBass,
   SelectBoxSource,
+  GetClockDisplay,
+  SetClockDisplay,
+  GetClockFormat24,
+  GetBoxLanguage,
+  SetBoxLanguage,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
@@ -941,12 +946,15 @@ function renderBoxSelect() {
       const box = state.boxes.find(b => b.host === host && b.port === port);
       if (!box) return;
       if (box.kind === 'stock') {
-        // Stock speaker: the desktop app cannot control it directly.
-        // Offer to jump to the USB stick setup flow.
+        // Stock speaker: not an error, this is the happy path. The user
+        // found a Bose speaker they can revive with STR. Invite them to
+        // the USB stick setup with a positive CTA (no warning triangle,
+        // no red "proceed anyway") instead of a danger prompt.
         const label = box.friendlyName || box.name || box.host;
         const ok = await confirmWarn(
           t('speaker.stockConfirmTitle'),
           t('speaker.stockConfirmBody', { label: escapeHtml(label) }),
+          { icon: null, confirmLabel: t('speaker.stockConfirmCta'), confirmClass: 'btn btn-primary' },
         );
         if (ok) switchView('setup');
         return;
@@ -2443,7 +2451,16 @@ function renderBoxSettings(s, box) {
   const bass = s.bass || {};
   const net = s.network || {};
   const sources = rollupSources(s.sources || []);
-  const wifi = (net.interfaces || []).find(i => i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED');
+  // Series-II boxes expose Wi-Fi as a WIFI_INTERFACE in
+  // NETWORK_WIFI_CONNECTED. BCO boxes (Portable/taigan, ST20-spotty)
+  // drive Wi-Fi through a coprocessor exposed as eth0, so /networkInfo
+  // reports an ETHERNET_INTERFACE in NETWORK_ETHERNET_CONNECTED with the
+  // real LAN IP but no ssid/signal. Accept either, otherwise a fully
+  // connected BCO box is mislabelled "not connected to Wi-Fi" (ssid /
+  // signal then render as "-" since the coprocessor does not expose them).
+  const wifi = (net.interfaces || []).find(i =>
+    (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') ||
+    (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
   const signalLabel = {
     'GOOD_SIGNAL': t('signal.good'),
     'MARGINAL_SIGNAL': t('signal.marginal'),
@@ -2493,7 +2510,7 @@ function renderBoxSettings(s, box) {
     </div>
 
     <div class="settings-section">
-      <h3>${escapeHtml(t('settingsView.wlanHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h3>
+      <h3>${escapeHtml(t('settingsView.wlanHeading'))}</h3>
       ${wifi ? `
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSsid'))}</span><span class="kv-val">${escapeHtml(wifi.ssid || '-')}</span></div>
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanIp'))}</span><span class="kv-val">${escapeHtml(wifi.ipAddress || '-')}</span></div>
@@ -2517,7 +2534,7 @@ function renderBoxSettings(s, box) {
     </div>
 
     <div class="settings-section">
-      <h3>${escapeHtml(t('settingsView.langHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h3>
+      <h3>${escapeHtml(t('settingsView.langHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.langCurrent'))}</span><span class="kv-val" id="boxLangCurrent">${escapeHtml(t('common.loading'))}</span></div>
       <div class="setting-row">
         <select id="boxLangSelect">${langOptionsHtml()}</select>
@@ -2527,9 +2544,13 @@ function renderBoxSettings(s, box) {
     </div>
 
     <div class="settings-section">
-      <h3>${escapeHtml(t('settingsView.clockHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h3>
+      <h3>${escapeHtml(t('settingsView.clockHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.clockCurrent'))}</span><span class="kv-val" id="boxClockCurrent">${escapeHtml(t('common.loading'))}</span></div>
       <div class="setting-row">
+        <select id="boxClockFormat">
+          <option value="24">${escapeHtml(t('settingsView.clock24h'))}</option>
+          <option value="12">${escapeHtml(t('settingsView.clock12h'))}</option>
+        </select>
         <button class="btn btn-mini" id="boxClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
         <button class="btn btn-mini" id="boxClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
@@ -2809,14 +2830,15 @@ function renderBoxSettings(s, box) {
   const langSel = $('boxLangSelect');
   const langSave = $('boxLangSave');
   const boseHost = box.host;
-  const boseUrl = (p) => `http://${boseHost}:8090${p}`;
+  // Clock + language go through the Go backend (GetBoxLanguage etc.):
+  // the box's :8090 sends no CORS headers, so a direct frontend fetch
+  // with a text/xml POST failed with "Failed to fetch" (CORS preflight
+  // the box never answers). Server-side has no CORS and reaches :8090
+  // even on Series-I/BCO boxes. See app.go boseGet/bosePostXML.
   if (langCurrent && langSel) {
     (async () => {
       try {
-        const r = await fetch(boseUrl('/language'));
-        const txt = await r.text();
-        const m = txt.match(/<sysLanguage>(\d+)<\/sysLanguage>/);
-        const v = m ? m[1] : '';
+        const v = await GetBoxLanguage(boseHost);
         langCurrent.textContent = v
           ? `${v}: ${BOSE_LANG_LABELS[v] || t('settingsView.langUnknown')}`
           : t('settingsView.langNoValue');
@@ -2830,12 +2852,7 @@ function renderBoxSettings(s, box) {
     langSave.onclick = async () => {
       const v = langSel.value;
       try {
-        const r = await fetch(boseUrl('/language'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/xml' },
-          body: `<sysLanguage>${v}</sysLanguage>`,
-        });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        await SetBoxLanguage(boseHost, parseInt(v, 10) || 0);
         showToast(t('settingsView.langSavedToast', { v }));
         langCurrent.textContent = `${v}: ${BOSE_LANG_LABELS[v] || t('settingsView.langUnknown')}`;
       } catch (e) { showError(e); }
@@ -2849,6 +2866,11 @@ function renderBoxSettings(s, box) {
   const clockCurrent = $('boxClockCurrent');
   const clockOn = $('boxClockOn');
   const clockOff = $('boxClockOff');
+  const clockFormat = $('boxClockFormat');
+  // Preselect the box's current 12/24h format in the dropdown.
+  if (clockFormat) {
+    GetClockFormat24(boseHost).then(is24 => { clockFormat.value = is24 ? '24' : '12'; }).catch(() => {});
+  }
   // refreshClock reads the current /clockDisplay state. Previously
   // any non-200 / fetch failure surfaced "not supported on this
   // model", but live-verified 2026-05-30 on a SoundTouch Portable
@@ -2858,15 +2880,13 @@ function renderBoxSettings(s, box) {
   // settings panel as "permanently unsupported" even though POST
   // toggles work fine. Don't draw conclusions from a single GET:
   // unknown means unknown, not unsupported.
+  let clockEnabled = false; // tracked so a format change re-sends with the right on/off state
   const refreshClock = async () => {
     if (!clockCurrent) return;
     try {
-      const r = await fetch(boseUrl('/clockDisplay'));
-      if (!r.ok) { clockCurrent.textContent = t('settingsView.clockUnknown'); return; }
-      const txt = await r.text();
-      const m = txt.match(/<clockDisplay[^>]*>([^<]*)<\/clockDisplay>/i)
-             || txt.match(/clockDisplay[^=]*=["']?(true|false|on|off|1|0)/i);
-      clockCurrent.textContent = m ? m[1] : t('settingsView.clockUnknown');
+      const s = await GetClockDisplay(boseHost);
+      clockEnabled = (s === 'true');
+      clockCurrent.textContent = s || t('settingsView.clockUnknown');
     } catch {
       clockCurrent.textContent = t('settingsView.clockUnknown');
     }
@@ -2874,18 +2894,21 @@ function renderBoxSettings(s, box) {
   refreshClock();
   const postClock = async (enable) => {
     try {
-      const r = await fetch(boseUrl('/clockDisplay'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/xml' },
-        body: `<clockDisplay enable="${enable}"/>`,
-      });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      // userOffsetMinute = minutes EAST of UTC. JS getTimezoneOffset()
+      // is minutes to add to LOCAL to reach UTC (so it is negative east
+      // of UTC); negate it so the speaker shows this PC's local time.
+      const offsetMin = -new Date().getTimezoneOffset();
+      const fmt24 = (clockFormat ? clockFormat.value : '24') === '24';
+      await SetClockDisplay(boseHost, enable, offsetMin, fmt24);
       showToast(t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
       await refreshClock();
     } catch (e) { showError(e); }
   };
-  if (clockOn) clockOn.onclick = () => postClock('true');
-  if (clockOff) clockOff.onclick = () => postClock('false');
+  if (clockOn) clockOn.onclick = () => postClock(true);
+  if (clockOff) clockOff.onclick = () => postClock(false);
+  // Send the 12/24h format to the box immediately on dropdown change,
+  // keeping the current on/off state (no need to click "On" again).
+  if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
 
   // App Region dropdown fuellen + aktuelle Region selektieren
   const regSel = $('appRegionSelect');
@@ -3434,10 +3457,15 @@ function renderSetupTargetPicker() {
     && sel.kind === kind
     && ((kind === 'factory-reset' && !host) || (sel.box && sel.box.host === host));
 
+  // Each target is a single-choice radio. The radio dot + role="radio"
+  // make it obvious these cards are mutually-exclusive selections (and
+  // not just info rows), which is the whole point of the picker.
   const cardHTML = (kind, host, label, sublabel, badge, badgeClass = '') => {
-    const cls = `setup-target-card${isSelected(kind, host) ? ' selected' : ''}`;
-    return `<button type="button" class="${cls}" data-kind="${kind}" data-host="${escapeAttr(host || '')}">` +
-      `<div class="stc-row1"><span class="stc-label">${escapeHtml(label)}</span>` +
+    const selected = isSelected(kind, host);
+    const cls = `setup-target-card${selected ? ' selected' : ''}`;
+    return `<button type="button" role="radio" aria-checked="${selected ? 'true' : 'false'}" class="${cls}" data-kind="${kind}" data-host="${escapeAttr(host || '')}">` +
+      `<div class="stc-row1"><span class="stc-left"><span class="stc-radio" aria-hidden="true"></span>` +
+      `<span class="stc-label">${escapeHtml(label)}</span></span>` +
       `<span class="stc-badge ${badgeClass}">${escapeHtml(badge)}</span></div>` +
       (sublabel ? `<div class="stc-sublabel">${escapeHtml(sublabel)}</div>` : '') +
       `</button>`;
@@ -3514,7 +3542,7 @@ function renderSetupTargetPicker() {
            `<b>${escapeHtml(targetLabel)}</b></div>`;
   }
 
-  body.innerHTML = `<div class="setup-target-cards">${cards}</div>${pill}`;
+  body.innerHTML = `<div class="setup-target-cards" role="radiogroup" aria-label="${escapeAttr(t('setup.targetHeading'))}">${cards}</div>${pill}`;
 
   body.querySelectorAll('.setup-target-card').forEach(el => {
     el.onclick = () => {
@@ -4361,7 +4389,7 @@ function renderLibrary() {
   if (!el) return;
   const intro = `
     <div class="library-header">
-      <h2>${escapeHtml(t('library.title'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h2>
+      <h2>${escapeHtml(t('library.title'))}</h2>
       <p class="library-sub">${escapeHtml(t('library.subtitle'))}</p>
     </div>`;
 

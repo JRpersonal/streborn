@@ -866,6 +866,151 @@ func (a *App) boxPut(host string, port int, path string, body any) error {
 	return nil
 }
 
+// --- Box-native (:8090) controls that STR does not proxy ---------------
+//
+// Clock display and language live on the box's OWN Bose HTTP API (:8090),
+// not STR's REST API. They must be driven server-side from here: the
+// box's :8090 sends no CORS headers, so the previous frontend
+// fetch(boseUrl('/clockDisplay'|'/language')) with a text/xml POST
+// triggered a CORS preflight the box never answered and failed with
+// "TypeError: Failed to fetch". :8090 is a Bose-owned port and stays
+// externally reachable even on Series-I/BCO boxes where STR's :8888 is
+// firewalled (verified live 2026-06-01), so a direct server-side call
+// works on every model. (WLAN + presets etc. already go through STR's
+// CORS-enabled :8888/:17008 API, so only these two needed moving.)
+func (a *App) boseURL(host string) string { return fmt.Sprintf("http://%s:8090", host) }
+
+func (a *App) boseGet(host, path string) (string, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.boseURL(host)+path, nil)
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("status %d", resp.StatusCode)
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return string(b), nil
+}
+
+func (a *App) bosePostXML(host, path, body string) error {
+	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.boseURL(host)+path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "text/xml")
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+// xmlTagOrAttr pulls the text content of <tag ...>VALUE</tag>, or if the
+// element is self-closing, the value of one of the given attributes
+// (enable/enabled/value). Cheap substring scan, no encoding/xml. Returns
+// "" when nothing matches (caller shows "unknown").
+func xmlTagOrAttr(xml, tag string, attrs ...string) string {
+	open := "<" + tag
+	i := strings.Index(xml, open)
+	if i < 0 {
+		return ""
+	}
+	gt := strings.IndexByte(xml[i:], '>')
+	if gt < 0 {
+		return ""
+	}
+	head := xml[i : i+gt+1]
+	// Element with text content: <tag ...>VALUE</tag>
+	if !strings.HasSuffix(strings.TrimSpace(head), "/>") {
+		rest := xml[i+gt+1:]
+		if end := strings.Index(rest, "</"+tag+">"); end >= 0 {
+			if v := strings.TrimSpace(rest[:end]); v != "" {
+				return v
+			}
+		}
+	}
+	// Self-closing / attribute form: <tag enable="VALUE"/>
+	for _, at := range attrs {
+		key := at + "=\""
+		if j := strings.Index(head, key); j >= 0 {
+			r := head[j+len(key):]
+			if k := strings.IndexByte(r, '"'); k >= 0 {
+				return r[:k]
+			}
+		}
+	}
+	return ""
+}
+
+// GetClockDisplay reads the box clock-display state (BETA, undocumented,
+// not on every model). Live-verified schema 2026-06-01 (taigan):
+// GET /clockDisplay -> <clockDisplay><clockConfig userEnable="false"
+// timeFormat="..." .../></clockDisplay>. The on/off state is the
+// userEnable attribute of the inner <clockConfig>. Returns "true"/
+// "false" or "" if absent / endpoint unsupported.
+func (a *App) GetClockDisplay(host string) (string, error) {
+	body, err := a.boseGet(host, "/clockDisplay")
+	if err != nil {
+		return "", err
+	}
+	return xmlTagOrAttr(body, "clockConfig", "userEnable"), nil
+}
+
+// SetClockDisplay toggles the box clock display and sets the local-time
+// offset + 12/24h format. The box rejects a bare <clockConfig .../>
+// (HTTP 400 CLIENT_XML_ERROR); it requires the full
+// <clockDisplay><clockConfig .../></clockDisplay> wrapper (live-verified
+// 2026-06-01). The box keeps its UTC time from NTP but shows it raw
+// (timezoneInfo stays NOT_SET); userOffsetMinute is the minutes EAST of
+// UTC to add, so passing the desktop's current offset makes the speaker
+// display local time. timeFormat picks 12h vs 24h. offsetMinutes is
+// ignored by the box when userEnable is false but we always send a
+// consistent config.
+func (a *App) SetClockDisplay(host string, enable bool, offsetMinutes int, format24 bool) error {
+	tf := "TIME_FORMAT_12HOUR_ID"
+	if format24 {
+		tf = "TIME_FORMAT_24HOUR_ID"
+	}
+	body := fmt.Sprintf(
+		`<clockDisplay><clockConfig userEnable="%t" userOffsetMinute="%d" timeFormat="%s" /></clockDisplay>`,
+		enable, offsetMinutes, tf)
+	return a.bosePostXML(host, "/clockDisplay", body)
+}
+
+// GetClockFormat24 reports whether the box clock is currently in 24h
+// mode, so the UI can preselect the right radio. "" GET -> false (12h
+// default). Separate tiny method to avoid changing GetClockDisplay's
+// return shape (its string drives the on/off label).
+func (a *App) GetClockFormat24(host string) (bool, error) {
+	body, err := a.boseGet(host, "/clockDisplay")
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(xmlTagOrAttr(body, "clockConfig", "timeFormat"), "24HOUR"), nil
+}
+
+// GetBoxLanguage reads the box sysLanguage integer (as a string), or "".
+func (a *App) GetBoxLanguage(host string) (string, error) {
+	body, err := a.boseGet(host, "/language")
+	if err != nil {
+		return "", err
+	}
+	return xmlTagOrAttr(body, "sysLanguage"), nil
+}
+
+// SetBoxLanguage sets the box sysLanguage integer (see project_bose_language_enum).
+func (a *App) SetBoxLanguage(host string, value int) error {
+	return a.bosePostXML(host, "/language", fmt.Sprintf(`<sysLanguage>%d</sysLanguage>`, value))
+}
+
 // SyncBoxPresets schickt alle Stick Presets erneut an die Box damit
 // die Hardware Preset Tasten 1-6 funktionieren. Wird vom "Hardware
 // Tasten reparieren" Button im Settings Tab benutzt.

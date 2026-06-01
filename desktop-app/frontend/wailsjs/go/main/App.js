@@ -50,6 +50,18 @@ export function FormatStick(arg1) {
   return window['go']['main']['App']['FormatStick'](arg1);
 }
 
+export function GetBoxLanguage(arg1) {
+  return window['go']['main']['App']['GetBoxLanguage'](arg1);
+}
+
+export function GetClockDisplay(arg1) {
+  return window['go']['main']['App']['GetClockDisplay'](arg1);
+}
+
+export function GetClockFormat24(arg1) {
+  return window['go']['main']['App']['GetClockFormat24'](arg1);
+}
+
 export function GetLogFilePath() {
   return window['go']['main']['App']['GetLogFilePath']();
 }
@@ -114,12 +126,20 @@ export function SetBoxBass(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxBass'](arg1, arg2, arg3);
 }
 
+export function SetBoxLanguage(arg1, arg2) {
+  return window['go']['main']['App']['SetBoxLanguage'](arg1, arg2);
+}
+
 export function SetBoxName(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxName'](arg1, arg2, arg3);
 }
 
 export function SetBoxVolume(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxVolume'](arg1, arg2, arg3);
+}
+
+export function SetClockDisplay(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SetClockDisplay'](arg1, arg2, arg3, arg4);
 }
 
 export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6) {

@@ -72,21 +72,47 @@ export function formatRemaining(ms) {
 
 let warnResolve = null;
 let warnWired = false;
+// Default label/class of the confirm button, captured from the static
+// modal HTML the first time we wire it. The modal is reused across very
+// different prompts (destructive warnings AND happy-path invitations),
+// so every confirmWarn call resets the button to these defaults unless
+// the caller overrides them, otherwise a positive prompt's styling would
+// leak into the next destructive one.
+let warnConfirmDefaults = null;
 function wireWarn() {
   if (warnWired) return;
   warnWired = true;
   const cancel = $('warnCancel');
   const confirm = $('warnConfirm');
+  if (confirm) warnConfirmDefaults = { label: confirm.textContent, cls: confirm.className };
   if (cancel)  cancel.onclick  = () => { closeWarn(); if (warnResolve) warnResolve(false); };
   if (confirm) confirm.onclick = () => { closeWarn(); if (warnResolve) warnResolve(true); };
 }
 
-export function confirmWarn(title, bodyHtml) {
+// confirmWarn(title, bodyHtml, opts?)
+//   opts.icon         HTML for the title icon; pass null for no icon (use
+//                     for happy-path prompts so there is no warning
+//                     triangle). Defaults to the warning triangle.
+//   opts.confirmLabel text for the confirm button (default: the static
+//                     localized "Proceed anyway").
+//   opts.confirmClass class for the confirm button (default: btn-danger).
+//                     Pass 'btn btn-primary' for an encouraging CTA.
+export function confirmWarn(title, bodyHtml, opts) {
+  opts = opts || {};
   wireWarn();
   const m = $('warnModal');
   if (!m) return Promise.resolve(false);
   const t = m.querySelector('.warn-title');
-  if (t) t.innerHTML = '<span class="warn-icon">&#9888;</span> ' + escapeHtml(title);
+  if (t) {
+    const icon = (opts.icon === null) ? ''
+      : '<span class="warn-icon">' + (opts.icon || '&#9888;') + '</span> ';
+    t.innerHTML = icon + escapeHtml(title);
+  }
+  const confirm = $('warnConfirm');
+  if (confirm && warnConfirmDefaults) {
+    confirm.textContent = opts.confirmLabel || warnConfirmDefaults.label;
+    confirm.className = opts.confirmClass || warnConfirmDefaults.cls;
+  }
   $('warnBody').innerHTML = bodyHtml;
   m.classList.remove('hidden');
   return new Promise(res => { warnResolve = res; });

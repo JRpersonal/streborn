@@ -28,6 +28,12 @@ export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.Lo
 
 export function FormatStick(arg1:string):Promise<void>;
 
+export function GetBoxLanguage(arg1:string):Promise<string>;
+
+export function GetClockDisplay(arg1:string):Promise<string>;
+
+export function GetClockFormat24(arg1:string):Promise<boolean>;
+
 export function GetLogFilePath():Promise<string>;
 
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
@@ -60,9 +66,13 @@ export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<voi
 
 export function SetBoxBass(arg1:string,arg2:number,arg3:number):Promise<void>;
 
+export function SetBoxLanguage(arg1:string,arg2:number):Promise<void>;
+
 export function SetBoxName(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function SetBoxVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
+
+export function SetClockDisplay(arg1:string,arg2:boolean,arg3:number,arg4:boolean):Promise<void>;
 
 export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string):Promise<void>;
 

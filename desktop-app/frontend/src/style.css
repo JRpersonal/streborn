@@ -1030,6 +1030,13 @@ body {
 .setup-target-card:hover { background: #242424; border-color: #444; }
 .setup-target-card.selected { border-color: var(--brand, #58a); background: var(--brand-bg, #1f2c3a); }
 .stc-row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.stc-left { display: flex; align-items: center; gap: 9px; min-width: 0; }
+/* Radio dot: an empty ring that fills in when its card is selected, so
+   the cards read as a single-choice selector rather than info rows. */
+.stc-radio { flex: 0 0 auto; width: 15px; height: 15px; border-radius: 50%; border: 2px solid #777; box-sizing: border-box; position: relative; }
+.setup-target-card:hover .stc-radio { border-color: #aaa; }
+.setup-target-card.selected .stc-radio { border-color: var(--brand, #58a); }
+.setup-target-card.selected .stc-radio::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--brand, #58a); }
 .stc-label { font-size: 14px; color: #eee; }
 .stc-badge { font-size: 10px; background: #444; color: #fff; padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
 .stc-badge.badge-warn { background: #d97706; }
