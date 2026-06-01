@@ -1362,13 +1362,17 @@ async function doBoxUpdate() {
     // box back online AND running the new binary. The loop breaks the
     // instant that happens, so the user never waits past the real boot
     // — the deadline below is only a give-up ceiling, not a fixed wait.
-    // Poll every 5 s. The ceiling is 3 minutes, generous enough to cover
-    // the post-OTA double reboot (the OTA reboot, then a second one if
-    // the new binary's embedded run.sh/rc.local differ from NAND and
-    // bootstrap-sync rewrites + reboots — project_ota_only_replaces_binary).
-    // As long as the build is wrong or the box is unreachable, the
-    // buttons stay locked.
-    const deadlineMs = Date.now() + 180_000;
+    // Poll every 5 s. The ceiling is 6 minutes: a BCO box (Portable,
+    // ST20-spotty) can reboot TWICE post-OTA (the OTA reboot, then a
+    // bootstrap-sync reboot when the new binary's embedded run.sh differs
+    // from NAND — project_ota_only_replaces_binary), each boot taking
+    // ~40 s to the agent plus ~85 s until the :17008 REDIRECT makes it
+    // reachable, plus the box's slow BoseApp. 3 minutes was too short
+    // (live 2026-06-01: the box came back correctly on the new build but
+    // only AFTER the window expired, so the button wrongly flipped back
+    // to "Update"). As long as the build is wrong or the box is
+    // unreachable, the buttons stay locked.
+    const deadlineMs = Date.now() + 360_000;
     const pollIntervalMs = 5_000;
     // Phase state shared between the 1 s display ticker and the 5 s
     // polling loop: "answered-with-old-build" vs "not-answering-yet".
@@ -1385,6 +1389,7 @@ async function doBoxUpdate() {
     renderStatus();
     const tickHandle = setInterval(renderStatus, 1000);
     let confirmed = false;
+    let confirmedVer = null;
     try {
       while (Date.now() < deadlineMs) {
         await sleep(pollIntervalMs);
@@ -1392,6 +1397,7 @@ async function doBoxUpdate() {
           const v = await BoxAgentVersion(targetBox.host, targetBox.port);
           if (v && v.build && (!appBuild || v.build === appBuild)) {
             confirmed = true;
+            confirmedVer = v;
             break;
           }
           lastPhase = 'oldBuild';
@@ -1411,6 +1417,22 @@ async function doBoxUpdate() {
     // Refresh app state regardless of confirmation so the user sees
     // current truth (either updated or still in OTA).
     await discoverBoxes();
+    // Force the confirmed new version onto the box record(s) so the view
+    // shows the updated version immediately instead of a stale "outdated"
+    // glitch until the next clean discovery cycle (deqw + Jens 2026-06-01:
+    // after OTA the screen kept the old version until a manual refresh).
+    // This also overrides a discovery-stickiness cache entry that might
+    // still carry the pre-OTA version for a box that just rebooted.
+    if (confirmed && confirmedVer) {
+      const patchVer = (b) => {
+        if (b && b.host === targetBox.host) {
+          if (confirmedVer.version) b.version = confirmedVer.version;
+          if (confirmedVer.build) b.build = confirmedVer.build;
+        }
+      };
+      patchVer(state.currentBox);
+      if (Array.isArray(state.boxes)) state.boxes.forEach(patchVer);
+    }
     checkBoxUpdate();
     if (state.view === 'settings') loadBoxSettings();
     reset();
