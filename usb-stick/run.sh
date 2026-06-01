@@ -1053,48 +1053,16 @@ fi
 # revision and stock firmware in ways that make a single switch
 # unreliable. The model-detection above is informational only (logs
 # what we know about the box, does not control what we try).
-( WLAN_T0=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
-
-# Snapshot box capabilities up front, ALWAYS. Without probes in the
-# ethernet-only path we cannot tell from a remote diagnostic bundle
-# why a given box was classified the way it was, or which methods
-# would have been skipped. Each command is silent on absence.
-setup_log "probe: /sys/class/net = $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
-setup_log "probe: uname -n = $(uname -n 2>/dev/null)"
-setup_log "probe: /proc/variant = $(cat /proc/variant 2>/dev/null | head -c 64 || echo missing)"
-HAS_WPA_CLI=""; HAS_WPA_SUP=""; HAS_NC=""; HAS_TIMEOUT=""
-TAP_CMD=""
-if command -v wpa_cli >/dev/null 2>&1;        then HAS_WPA_CLI=1; setup_log "probe: wpa_cli present";         else setup_log "probe: wpa_cli MISSING"; fi
-if command -v wpa_supplicant >/dev/null 2>&1; then HAS_WPA_SUP=1; setup_log "probe: wpa_supplicant present";  else setup_log "probe: wpa_supplicant MISSING"; fi
-if command -v nc >/dev/null 2>&1;             then HAS_NC=1;      setup_log "probe: nc present";              else setup_log "probe: nc MISSING"; fi
-if command -v timeout >/dev/null 2>&1;        then HAS_TIMEOUT=1;                                                                                                fi
-# Build the TAP CLI invocation once. BusyBox `nc -w SECS` is a connect/
-# final-read idle timeout, NOT a session cap — the TAP server on
-# :17000 keeps the socket open after the last command, so nc would
-# block forever. `timeout` is a hard wall-clock cap, but its argument
-# syntax differs: BusyBox uses `timeout -t SECS CMD`, GNU coreutils
-# uses `timeout SECS CMD`. Probe which.
-if [ "$HAS_NC" = "1" ]; then
-    if [ "$HAS_TIMEOUT" = "1" ]; then
-        if timeout --help 2>&1 | grep -q '\-t '; then
-            TAP_CMD="timeout -t 80 nc 127.0.0.1 17000"
-        else
-            TAP_CMD="timeout 80 nc 127.0.0.1 17000"
-        fi
-    else
-        TAP_CMD="nc -w 70 127.0.0.1 17000"
-    fi
-    TAP_VER=$(printf 'sys ver\n' | nc -w 2 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 200)
-    setup_log "probe: TAP :17000 sys ver = ${TAP_VER:-no-response}"
-    TAP_NET=$(printf 'network status\n' | nc -w 2 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 300)
-    setup_log "probe: TAP :17000 network status = ${TAP_NET:-no-response}"
-    TAP_WIFI=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 300)
-    setup_log "probe: TAP :17000 wifi profiles info = ${TAP_WIFI:-no-response}"
-else
-    setup_log "probe: TAP CLI probes skipped (nc missing)"
-fi
-
-# Helpers used by every method below.
+# --- STA-lease helpers: TOP-LEVEL on purpose --------------------------
+# These are used by BOTH the WLAN-provisioning subshell below AND the
+# separate REDIRECT-install subshell further down. A `( ) &` subshell
+# does NOT inherit functions defined in a sibling `( ) &` subshell, so
+# when these lived inside the WLAN subshell the REDIRECT subshell calling
+# current_sta_lease got "command not found" -> empty -> the REDIRECT
+# install bailed "current_sta_lease empty" for the box's lifetime, even
+# with eth0 + /networkInfo holding the lease (root-caused 2026-06-01).
+# Defining them here, before any subshell, makes every child subshell
+# inherit them so that whole class of bug cannot recur.
 is_real_sta_addr() {
     # Setup-AP gateway IPs the speaker hosts itself on. Anything else
     # is a real DHCP lease (even 192.168.1.x from a home router whose
@@ -1103,7 +1071,8 @@ is_real_sta_addr() {
     # 192.168.1.0/24 wildcard, which broke any user whose home LAN
     # used the very common 192.168.1.0/24 default.
     case "$1" in
-        ""|192.168.1.1|192.0.2.1) return 1 ;;
+        ""|0.0.0.0|192.168.1.1|192.0.2.1) return 1 ;;
+        169.254.*) return 1 ;;
         *) return 0 ;;
     esac
 }
@@ -1209,6 +1178,52 @@ wait_for_sta_lease() {
     return 1
 }
 
+( WLAN_T0=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+
+# Snapshot box capabilities up front, ALWAYS. Without probes in the
+# ethernet-only path we cannot tell from a remote diagnostic bundle
+# why a given box was classified the way it was, or which methods
+# would have been skipped. Each command is silent on absence.
+setup_log "probe: /sys/class/net = $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
+setup_log "probe: uname -n = $(uname -n 2>/dev/null)"
+setup_log "probe: /proc/variant = $(cat /proc/variant 2>/dev/null | head -c 64 || echo missing)"
+HAS_WPA_CLI=""; HAS_WPA_SUP=""; HAS_NC=""; HAS_TIMEOUT=""
+TAP_CMD=""
+if command -v wpa_cli >/dev/null 2>&1;        then HAS_WPA_CLI=1; setup_log "probe: wpa_cli present";         else setup_log "probe: wpa_cli MISSING"; fi
+if command -v wpa_supplicant >/dev/null 2>&1; then HAS_WPA_SUP=1; setup_log "probe: wpa_supplicant present";  else setup_log "probe: wpa_supplicant MISSING"; fi
+if command -v nc >/dev/null 2>&1;             then HAS_NC=1;      setup_log "probe: nc present";              else setup_log "probe: nc MISSING"; fi
+if command -v timeout >/dev/null 2>&1;        then HAS_TIMEOUT=1;                                                                                                fi
+# Build the TAP CLI invocation once. BusyBox `nc -w SECS` is a connect/
+# final-read idle timeout, NOT a session cap — the TAP server on
+# :17000 keeps the socket open after the last command, so nc would
+# block forever. `timeout` is a hard wall-clock cap, but its argument
+# syntax differs: BusyBox uses `timeout -t SECS CMD`, GNU coreutils
+# uses `timeout SECS CMD`. Probe which.
+if [ "$HAS_NC" = "1" ]; then
+    if [ "$HAS_TIMEOUT" = "1" ]; then
+        if timeout --help 2>&1 | grep -q '\-t '; then
+            TAP_CMD="timeout -t 80 nc 127.0.0.1 17000"
+        else
+            TAP_CMD="timeout 80 nc 127.0.0.1 17000"
+        fi
+    else
+        TAP_CMD="nc -w 70 127.0.0.1 17000"
+    fi
+    TAP_VER=$(printf 'sys ver\n' | nc -w 2 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 200)
+    setup_log "probe: TAP :17000 sys ver = ${TAP_VER:-no-response}"
+    TAP_NET=$(printf 'network status\n' | nc -w 2 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 300)
+    setup_log "probe: TAP :17000 network status = ${TAP_NET:-no-response}"
+    TAP_WIFI=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 300)
+    setup_log "probe: TAP :17000 wifi profiles info = ${TAP_WIFI:-no-response}"
+else
+    setup_log "probe: TAP CLI probes skipped (nc missing)"
+fi
+
+# is_real_sta_addr / current_sta_lease / wait_for_sta_lease are now
+# defined at TOP LEVEL (above this subshell) so both this WLAN subshell
+# AND the sibling REDIRECT-install subshell inherit them. See the
+# comment at their definition for why.
+
 if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) source=$WLAN_SOURCE ==="
     setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
@@ -1226,6 +1241,197 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             -e 's/>/\&gt;/g' \
             -e 's/"/\&quot;/g' \
             -e "s/'/\&apos;/g"
+    }
+
+    # ---- M_air helpers: AirplayConfiguration.xml WLAN profile ----------
+    # On BCO chassis (Portable/taigan, ST20-spotty) the Wi-Fi coprocessor
+    # is driven by BoseApp's BCONetworkServicesController, which reads the
+    # PersistentWifiProfileArray from
+    #   /mnt/nv/BoseApp-Persistence/<N>/AirplayConfiguration.xml
+    # and pushes the profile to the coprocessor over USB-CDC-Ethernet
+    # (eth0) at boot. The documented HTTP /addWirelessProfile (M1) is
+    # cloud-gated (MargeHSM NotAssociated -> HTTP 500) and dead on BCO
+    # post-shutdown, so this direct file write is the BCO provisioning
+    # path. Live-verified 2026-06-01 on a taigan Portable: a plaintext
+    # encrypted="false" PersistentWifiProfile + reboot -> box joined the
+    # target SSID (NETWORK_WIFI_CONNECTED, setup state SETUP_INACTIVE).
+    # The coprocessor honours encrypted="false"; the AES path is
+    # NetManager's separate NetworkProfiles.xml store, not this one.
+    AIR_REBOOT_STAMP="$PERSIST/.airplay-reboot-stamp"
+    AIR_WROTE=""
+    AIR_FILE=""
+
+    airplay_creds_fp() {
+        # Stable fingerprint of the current SSID+PASS so the reboot guard
+        # fires once per credential set and never loops.
+        if command -v md5sum >/dev/null 2>&1; then
+            printf '%s\n%s' "$SSID" "$PASS" | md5sum | cut -d' ' -f1
+        else
+            printf '%s:%s' "$SSID" "${#PASS}"
+        fi
+    }
+    airplay_reboot_guard_ok() {
+        # 0 (ok to reboot) only if we have NOT already rebooted for these
+        # exact creds. Stamp lives on NAND so it survives the reboot and
+        # blocks a second pass on the next boot: if the profile did not
+        # take (wrong PSK, or this firmware ignores the file) the next
+        # boot falls through to M1..M6 instead of rebooting forever.
+        _fp=$(airplay_creds_fp)
+        _seen=$(cat "$AIR_REBOOT_STAMP" 2>/dev/null)
+        [ "$_fp" = "$_seen" ] && return 1
+        printf '%s' "$_fp" > "$AIR_REBOOT_STAMP" 2>/dev/null
+        return 0
+    }
+    write_airplay_profile() {
+        # Non-destructive: only slot 0 is set, other slots are left as-is,
+        # existing profiles are never cleared. Sets AIR_WROTE=1 on success.
+        AIR_WROTE=""
+        # A double-quote in SSID/PSK would break the XML attribute and
+        # could corrupt the file the box boots from. Bail rather than risk
+        # it; the other methods still run.
+        case "$SSID$PASS" in
+            *'"'*) setup_log "M_air: SKIP — SSID/PASS contains a double-quote, cannot build XML attribute safely"; return 1 ;;
+        esac
+        _air=""
+        for _f in /mnt/nv/BoseApp-Persistence/*/AirplayConfiguration.xml; do
+            [ -f "$_f" ] && _air="$_f" && break
+        done
+        if [ -z "$_air" ]; then
+            _dir=$(ls -d /mnt/nv/BoseApp-Persistence/*/ 2>/dev/null | head -1)
+            [ -z "$_dir" ] && _dir="/mnt/nv/BoseApp-Persistence/1/"
+            mkdir -p "$_dir" 2>/dev/null
+            _air="${_dir%/}/AirplayConfiguration.xml"
+        fi
+        AIR_FILE="$_air"
+        if [ -f "$_air" ]; then
+            _cnt=$(grep -c 'PersistentWifiProfile [^>]*ssid="[^"]\{1,\}"' "$_air" 2>/dev/null)
+            setup_log "M_air: prior AirplayConfiguration present at $_air (non-empty-slots=${_cnt:-0})"
+        else
+            setup_log "M_air: no AirplayConfiguration.xml yet, will create $_air from template"
+        fi
+        # Pass SSID/PASS to awk via a 0600 temp file read with getline so
+        # they never appear on the process command line (ps).
+        _vals="/tmp/.str-air-vals"
+        { printf 'SSID=%s\n' "$SSID"; printf 'PASS=%s\n' "$PASS"; } > "$_vals" 2>/dev/null
+        chmod 600 "$_vals" 2>/dev/null
+        if [ -f "$_air" ] && grep -q '<PersistentWifiProfile ' "$_air" 2>/dev/null; then
+            # Rebuild slot 0 by printing a fresh line: ssid/pass are
+            # injected via string concatenation (NOT sub() replacement),
+            # so an ampersand or backslash in the PSK is emitted literally
+            # and never mis-interpreted. wepKey is preserved verbatim from
+            # the original line (match/substr); every other field is set
+            # to the live-verified working values (only the active profile
+            # is plaintext; encrypted="false"). Also activate the slot:
+            # MaxWifiProfileId + WifiProfileArray[0] -> WIFI_PROFILE_ID_1.
+            # Other three slots and the rest of the file pass through
+            # untouched.
+            awk -v vf="$_vals" '
+                BEGIN{
+                    while((getline l < vf)>0){
+                        if(l ~ /^SSID=/) ssid=substr(l,6)
+                        else if(l ~ /^PASS=/) pass=substr(l,6)
+                    }
+                    pdone=0; inarr=0; idone=0
+                }
+                /<MaxWifiProfileId>/{ sub(/>[^<]*</, ">WIFI_PROFILE_ID_1<") }
+                /<WifiProfileArray>/{ inarr=1 }
+                /<\/WifiProfileArray>/{ inarr=0 }
+                inarr && /<Item>/ && !idone { sub(/>[^<]*</, ">WIFI_PROFILE_ID_1<"); idone=1 }
+                /<PersistentWifiProfile / && !pdone {
+                    wk=""
+                    if (match($0, /wepKey="[^"]*"/)) wk=substr($0, RSTART, RLENGTH)
+                    print "        <PersistentWifiProfile ssid=\"" ssid "\" passphrase=\"" pass "\" wpaCipher=\"AES\" security=\"WPA2PSK\" " wk " encrypted=\"false\" dhcpStatus=\"DHCP_ACTIVE\" ipAddress=\"\" ipMask=\"\" ipGateway=\"\" proxyServerStatus=\"PROXY_SERVER_DISABLED\" proxyServer=\"\" proxyPort=\"\" dnsServer1=\"\" dnsServer2=\"\" />"
+                    pdone=1
+                    next
+                }
+                { print }
+            ' "$_air" > "$_air.str-new" 2>/dev/null
+        else
+            # Create from scratch matching the live-verified layout, slot
+            # 0 = our profile, slots 1..3 empty.
+            awk -v vf="$_vals" '
+                BEGIN{
+                    while((getline l < vf)>0){
+                        if(l ~ /^SSID=/) ssid=substr(l,6)
+                        else if(l ~ /^PASS=/) pass=substr(l,6)
+                    }
+                    e="\" passphrase=\"\" wpaCipher=\"\" security=\"\" wepKey=\"\" encrypted=\"false\" dhcpStatus=\"DHCP_ACTIVE\" ipAddress=\"\" ipMask=\"\" ipGateway=\"\" proxyServerStatus=\"PROXY_SERVER_DISABLED\" proxyServer=\"\" proxyPort=\"\" dnsServer1=\"\" dnsServer2=\"\" />"
+                    print "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>"
+                    print "<AirplayConfiguration SmscUpdating=\"false\" RestoreAttempts=\"0\" BCOResetTimerEnabled=\"false\">"
+                    print "    <MaxWifiProfileId>WIFI_PROFILE_ID_1</MaxWifiProfileId>"
+                    print "    <WifiProfileArray>"
+                    print "        <Item>WIFI_PROFILE_ID_1</Item>"
+                    print "        <Item>INVALID_WIFI_PROFILE_ID</Item>"
+                    print "        <Item>INVALID_WIFI_PROFILE_ID</Item>"
+                    print "        <Item>INVALID_WIFI_PROFILE_ID</Item>"
+                    print "    </WifiProfileArray>"
+                    print "    <JBDirectEnabled>false</JBDirectEnabled>"
+                    print "    <PersistentWifiProfileArray>"
+                    print "        <PersistentWifiProfile ssid=\"" ssid "\" passphrase=\"" pass "\" wpaCipher=\"AES\" security=\"WPA2PSK\" wepKey=\"\" encrypted=\"false\" dhcpStatus=\"DHCP_ACTIVE\" ipAddress=\"\" ipMask=\"\" ipGateway=\"\" proxyServerStatus=\"PROXY_SERVER_DISABLED\" proxyServer=\"\" proxyPort=\"\" dnsServer1=\"\" dnsServer2=\"\" />"
+                    print "        <PersistentWifiProfile ssid=\"" e
+                    print "        <PersistentWifiProfile ssid=\"" e
+                    print "        <PersistentWifiProfile ssid=\"" e
+                    print "    </PersistentWifiProfileArray>"
+                    print "    <CneSettings cneSettingsPreserved=\"false\" />"
+                    print "    <PersistenceSettings persistenceSettingsPreserved=\"false\" />"
+                    print "</AirplayConfiguration>"
+                }
+            ' > "$_air.str-new" 2>/dev/null
+        fi
+        rm -f "$_vals" 2>/dev/null
+        if [ -s "$_air.str-new" ] && grep -q "ssid=\"$SSID\"" "$_air.str-new" 2>/dev/null; then
+            [ -f "$_air" ] && cp -p "$_air" "$_air.str-bak" 2>/dev/null
+            mv "$_air.str-new" "$_air" 2>/dev/null
+            sync 2>/dev/null
+            AIR_WROTE=1
+            setup_log "M_air: wrote slot-0 PersistentWifiProfile encrypted=false ssid='$SSID' pass_len=${#PASS} -> $_air"
+            # acctMode=local so BoseApp does not block on a cloud account.
+            _scdb="${_air%/AirplayConfiguration.xml}/SystemConfigurationDB.xml"
+            if [ -f "$_scdb" ] && ! grep -q '<acctMode>local</acctMode>' "$_scdb" 2>/dev/null; then
+                sed 's#<acctMode>[^<]*</acctMode>#<acctMode>local</acctMode>#' "$_scdb" > "$_scdb.str-new" 2>/dev/null
+                [ -s "$_scdb.str-new" ] && mv "$_scdb.str-new" "$_scdb" 2>/dev/null \
+                    && setup_log "M_air: set acctMode=local in SystemConfigurationDB.xml"
+            fi
+            return 0
+        fi
+        rm -f "$_air.str-new" 2>/dev/null
+        setup_log "M_air: write FAILED (new file empty or ssid missing), AirplayConfiguration left untouched"
+        return 1
+    }
+
+    finalize_oob_setup() {
+        # After a BCO box joins Wi-Fi via M_air, its setup state machine
+        # can still sit at systemstate=SETUP_LANG_NOT_SET: the on-screen
+        # "download the SoundTouch app" hint persists and the box looks
+        # unfinished even though it is on the LAN. M_air provisions Wi-Fi
+        # by writing AirplayConfiguration.xml and rebooting BEFORE the M1
+        # /language + /name gates run, and the post-reboot boot wins via
+        # M0a-prelease which skips M1. So fire those same two gates here,
+        # once BoseApp is up. Self-gated on systemstate -> no-op once set.
+        # Live finding 2026-06-01: a taigan joined JJ3 via M_air but the
+        # display kept prompting the iOS app because language stayed unset.
+        _fo_api="http://127.0.0.1:8090"
+        _fo=0
+        while [ "$_fo" -lt 160 ]; do
+            if wget -qO- -T 5 "$_fo_api/info" 2>/dev/null | grep -q "<info "; then break; fi
+            sleep 5; _fo=$((_fo + 5))
+        done
+        case "$(wget -qO- -T 5 "$_fo_api/setup" 2>/dev/null)" in
+            *SETUP_LANG_NOT_SET*)
+                setup_log "OOB-finalize: systemstate SETUP_LANG_NOT_SET after WLAN join, POSTing /language=2 + /name to leave OOB"
+                wget -qO- -T 5 --header="Content-Type: text/xml" --post-data='<sysLanguage>2</sysLanguage>' "$_fo_api/language" >/dev/null 2>&1
+                _nm=""
+                [ -f "$STICK/name.conf" ] && _nm=$(sed -n 's/.*"name":"\([^"]*\)".*/\1/p' "$STICK/name.conf" | head -1)
+                [ -z "$_nm" ] && _nm=$(wget -qO- -T 5 "$_fo_api/name" 2>/dev/null | sed -n 's:.*<name>\([^<]*\)</name>.*:\1:p' | head -1)
+                [ -z "$_nm" ] && _nm="SoundTouch"
+                _nme=$(xml_escape "$_nm" 2>/dev/null || printf '%s' "$_nm")
+                wget -qO- -T 5 --header="Content-Type: text/xml" --post-data="<name>${_nme}</name>" "$_fo_api/name" >/dev/null 2>&1
+                setup_log "OOB-finalize: posted /language=2 + /name='$_nm' to clear the app-download OOB hint"
+                ;;
+            *)
+                setup_log "OOB-finalize: systemstate already past SETUP_LANG_NOT_SET, nothing to do"
+                ;;
+        esac
     }
 
     # ---- M0a: Pre-flight bypass — already on wifi? ----
@@ -1386,6 +1592,29 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # for both paths so the diagnostic bundle gets a uniform
     # summary line.
     if [ "$WINNER" = "none" ]; then
+    # ---- M_air: AirplayConfiguration.xml profile (BCO primary path) ----
+    # Write the WLAN profile into the file the box actually boots from,
+    # then (on BCO) reboot once so BoseApp applies it. Runs BEFORE the
+    # ~180s M0 BoseApp wait below because on BCO the HTTP path (M1) is
+    # dead anyway. We ALSO write the file on non-BCO boxes as a logged
+    # best-effort fallback, but do NOT reboot there here: rhino's
+    # wpa_supplicant path (M3) provisions without a reboot, so a reboot
+    # only fires as a last resort at the end if nothing produced a lease.
+    write_airplay_profile
+    if [ "${AIR_WROTE:-}" = "1" ] && { [ "$BCO_MODE" = "1" ] || [ -n "${IS_TAIGAN:-}" ]; }; then
+        if airplay_reboot_guard_ok; then
+            setup_log "M_air: BCO chassis — profile written, rebooting once so BoseApp/BCONetworkServicesController applies it (skipping the dead addWirelessProfile path)"
+            { printf 'SSID=%s\n' "$SSID"; printf 'PASS=%s\n' "$PASS"; } > "$WLAN_CREDS_NAND.new" 2>/dev/null \
+                && mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null \
+                && chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
+            sync 2>/dev/null; sleep 1
+            reboot
+            exit 0
+        else
+            setup_log "M_air: BCO chassis — already rebooted for these creds (stamp match); not rebooting again, falling through to M1/M2"
+        fi
+    fi
+
     # Wait for BoseApp HTTP server up to 30s. M1 needs it; M2..M6
     # do not and run regardless. If BoseApp never comes up we still
     # try TAP CLI / wpa_supplicant / wpa_cli paths.
@@ -1983,6 +2212,33 @@ WPAEOF
         none|ethernet-only) ;;
         *) persist_wlan_creds ;;
     esac
+
+    # Last-resort AirplayConfiguration reboot for NON-BCO boxes: if no
+    # method produced a lease but M_air wrote a profile, reboot once to
+    # see if this firmware's AirPlay subsystem reads the file. rhino's
+    # M3 (wpa_supplicant) normally wins WITHOUT a reboot, so this only
+    # fires when the whole pipeline came up empty. Free fallback (Jens
+    # 2026-06-01: "either it gets read or not"); the creds-stamp guard
+    # makes it run at most once per credential set, so no boot loop.
+    if [ "${AIR_WROTE:-}" = "1" ] && [ "$BCO_MODE" != "1" ] && [ -z "${IS_TAIGAN:-}" ] && [ -z "${FINAL_IP:-}" ]; then
+        if airplay_reboot_guard_ok; then
+            setup_log "last-resort: no STA lease and no method won; AirplayConfiguration profile written, rebooting once to try the AirPlay-config path"
+            sync 2>/dev/null; sleep 1
+            reboot
+            exit 0
+        else
+            setup_log "last-resort: AirplayConfiguration written but already rebooted for these creds; not looping"
+        fi
+    fi
+
+    # BCO OOB finalize: after the box joins Wi-Fi (M_air path wins via
+    # M0a-prelease, which skips M1's /language + /name gates), the setup
+    # state machine can stay at SETUP_LANG_NOT_SET and keep showing the
+    # "download the app" hint. Run the gates in the background once
+    # BoseApp is up. Self-gated on systemstate, harmless if already set.
+    if [ "$BCO_MODE" = "1" ]; then
+        ( finalize_oob_setup ) &
+    fi
     setup_log "=== WLAN provisioning end ==="
 else
     WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
@@ -2273,23 +2529,11 @@ log "agent started with PID $AGENT_PID"
 # Stick-to-NAND sync of the .so happens here so a stickless boot can
 # still re-hijack via the NAND copy. Watchdog re-asserts every 30 s
 # in case shepherdd respawns SoftwareUpdate without our env.
-sync_shim_to_nand() {
-    if [ -r "$STICK_SHIM" ]; then
-        STICK_SHIM_SIZE=$(wc -c < "$STICK_SHIM" 2>/dev/null || echo "?")
-        if cp "$STICK_SHIM" "$NAND_SHIM.new" 2>/dev/null && \
-           mv "$NAND_SHIM.new" "$NAND_SHIM" 2>/dev/null; then
-            chmod 644 "$NAND_SHIM" 2>/dev/null
-            setup_log "shim deploy: synced stick -> NAND (stick=${STICK_SHIM_SIZE}B nand=$(wc -c < "$NAND_SHIM" 2>/dev/null)B at $NAND_SHIM)"
-        else
-            setup_log "shim deploy: cp/mv stick -> NAND FAILED, keeping previous NAND copy (nand_existed=$([ -r "$NAND_SHIM" ] && echo yes || echo no))"
-            rm -f "$NAND_SHIM.new" 2>/dev/null
-        fi
-    elif [ ! -r "$NAND_SHIM" ]; then
-        setup_log "shim deploy: stick has no $STICK_SHIM and NAND has no $NAND_SHIM — hijack permanently disabled this boot"
-    else
-        setup_log "shim deploy: stick has no $STICK_SHIM, reusing NAND copy ($(wc -c < "$NAND_SHIM" 2>/dev/null)B at $NAND_SHIM)"
-    fi
-}
+# sync_shim_to_nand is defined once near the top of this script (early
+# shim-stage block); we only re-invoke it here. It used to be defined a
+# SECOND time at this spot, an exact-duplicate definition the shell
+# linter flagged (SC2218) that served no purpose, so it was removed; the
+# single top-level definition covers both call sites.
 sync_shim_to_nand
 
 # === Bind-mount wrapper: hijack /opt/Bose/SoftwareUpdate non-destructively ===
@@ -2337,6 +2581,23 @@ detect_series_one() {
 IS_SERIES_ONE=$(detect_series_one)
 setup_log "shim gate: variant='${VARIANT:-?}' host='${HOSTID:-?}' moduleType='$(wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null | sed -n 's/.*<moduleType>\([^<]*\)<\/moduleType>.*/\1/p' | head -c 16)' is_series_one='${IS_SERIES_ONE:-0}'"
 
+# Eligibility for the iptables PREROUTING REDIRECT path (external :8888
+# reachability). It must cover EVERY chassis whose chipset blocks
+# STR-owned ports, i.e. all BCO boxes, not just the ones detect_series_one
+# catalogues by codename/moduleType. detect_series_one stays narrow on
+# purpose (it ALSO gates the boot-hang-prone LD_PRELOAD shim, which must
+# NOT run on an uncatalogued BCO box); the REDIRECT is harmless on any
+# box (no-op where the chipset is permissive), so we widen it to include
+# every BCO_MODE box: taigan, spotty, scm, has-bco, AND the structural
+# eth0-only fallback for models not yet catalogued. Without this a
+# fallback-detected BCO model provisions Wi-Fi via M_air but stays
+# externally unreachable, so the desktop app never sees it as STR.
+REDIRECT_ELIGIBLE=""
+if [ "$IS_SERIES_ONE" = "1" ] || [ "$BCO_MODE" = "1" ]; then
+    REDIRECT_ELIGIBLE=1
+fi
+setup_log "redirect gate: eligible='${REDIRECT_ELIGIBLE:-0}' (is_series_one='${IS_SERIES_ONE:-0}' bco_mode='${BCO_MODE:-0}')"
+
 # ============================================================
 # Cheap experiment for #90 (Series-I :8888 unreachable from LAN)
 # ============================================================
@@ -2367,6 +2628,10 @@ setup_log "shim gate: variant='${VARIANT:-?}' host='${HOSTID:-?}' moduleType='$(
 # external reachability via the normal listener bind. Repeats
 # every 30 s same as the INPUT ACCEPT install.
 REDIRECT_PORTS="8888 9080 8081 8443"
+# Set to the comment match args only where the kernel's xt_comment
+# module exists (probed below). Empty by default so the REDIRECT install
+# never depends on a module that some Series-I kernels (taigan) lack.
+RDR_COMMENT=""
 
 # Probe whether the kernel nat table is available before attempting
 # REDIRECT installs. v0.5.19 had the install code itself but every
@@ -2401,9 +2666,37 @@ iptables_nat_probe_and_modprobe() {
     return 1
 }
 
+# redirect_lan_ip resolves the box's real LAN IP for the REDIRECT rule.
+# Self-contained ON PURPOSE: the REDIRECT install runs in its OWN
+# backgrounded subshell (below), SEPARATE from the WLAN-provisioning
+# subshell where current_sta_lease() is defined. A subshell does not
+# inherit functions defined in a sibling subshell, so the REDIRECT path
+# calling current_sta_lease got "command not found" -> empty -> the
+# install bailed "current_sta_lease empty" for the lifetime of the box,
+# even with eth0 + /networkInfo BOTH holding the lease. That is the
+# long-standing taigan/spotty auto-REDIRECT failure (the box provisions
+# Wi-Fi but the desktop app never sees STR), root-caused 2026-06-01.
+# Resolve inline from the iface table first, then BoseApp /networkInfo
+# (the BCO source). Prints "iface|ip", returns 1 if none.
+redirect_lan_ip() {
+    for _rif in eth0 wlan0 wlan1; do
+        [ -d "/sys/class/net/$_rif" ] || continue
+        _rip=$(ip -4 addr show "$_rif" 2>/dev/null | sed -n 's/.*inet \([0-9][0-9.]*\).*/\1/p' | head -1)
+        case "$_rip" in
+            ""|0.0.0.0|127.0.0.1|192.168.1.1|192.0.2.1|169.254.*) ;;
+            *) printf '%s|%s' "$_rif" "$_rip"; return 0 ;;
+        esac
+    done
+    _rip=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | sed -n 's/.*ipAddress="\([0-9][0-9.]*\)".*/\1/p' | head -1)
+    case "$_rip" in
+        ""|0.0.0.0|127.0.0.1|192.168.1.1|192.0.2.1|169.254.*) return 1 ;;
+        *) printf 'eth0|%s' "$_rip"; return 0 ;;
+    esac
+}
+
 iptables_install_redirect_series_one() {
-    [ "$IS_SERIES_ONE" = "1" ] || return 0
-    LEASE=$(current_sta_lease 2>/dev/null)
+    [ "$REDIRECT_ELIGIBLE" = "1" ] || return 0
+    LEASE=$(redirect_lan_ip 2>/dev/null)
     # Bail-reason logging. A scm/spotty ST20 bundle 2026-05-30 showed
     # "iptables nat table available (probe rc=0)" followed by ZERO output
     # from this function across a 115s window where the watchdog must have
@@ -2441,12 +2734,19 @@ iptables_install_redirect_series_one() {
     fi
     rc_redirect=0
     for port in $REDIRECT_PORTS; do
+        # $RDR_COMMENT is "-m comment --comment streborn-redirect" only
+        # where the xt_comment match module exists; empty otherwise.
+        # taigan (live 2026-06-01) lacks xt_comment: any rule with
+        # `-m comment` fails "No chain/target/match by that name", which
+        # silently broke EVERY REDIRECT install (REDIRECT target itself is
+        # fine). Unquoted so empty expands to nothing. -C idempotency
+        # still works on the tuple without the cosmetic comment.
         if iptables -t nat -C PREROUTING -p tcp ! -i lo -d "$LANIP" --dport "$port" \
-            -m comment --comment "streborn-redirect" -j REDIRECT --to-ports "$port" 2>/dev/null; then
+            $RDR_COMMENT -j REDIRECT --to-ports "$port" 2>/dev/null; then
             continue
         fi
         INS_OUT=$(iptables -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport "$port" \
-            -m comment --comment "streborn-redirect" -j REDIRECT --to-ports "$port" 2>&1)
+            $RDR_COMMENT -j REDIRECT --to-ports "$port" 2>&1)
         INS_RC=$?
         if [ "$INS_RC" = "0" ]; then
             setup_log "iptables nat PREROUTING REDIRECT tcp/$port -> loopback installed for $LANIP at uptime=$(uptime_s)s"
@@ -2458,8 +2758,49 @@ iptables_install_redirect_series_one() {
             setup_log "iptables nat PREROUTING REDIRECT tcp/$port FAILED rc=$INS_RC output='$(echo "$INS_OUT" | tr '\n' ' ' | head -c 240)'"
         fi
     done
+    # BCO chassis whitelisted-port path. The Series-I chipset drops
+    # external TCP to STR-owned :8888 (so the same-port REDIRECTs above
+    # are no-ops there), but PASSES Bose-owned ports. Map the externally
+    # reachable Bose port :17008 (SoftwareUpdate) to STR's loopback :8888
+    # so the desktop app's probeSTR (which checks :8888 AND :17008) finds
+    # STR and classifies the box correctly. Local :17008 stays
+    # SoftwareUpdate (! -i lo). This is the shim-free replacement for the
+    # boot-hang-prone LD_PRELOAD shim. Live-verified 2026-06-01 on a
+    # taigan Portable: external :17008 returned STR JSON after this rule.
+    # Gated on REDIRECT_ELIGIBLE (not BCO_MODE) so every Series-I chassis
+    # whose chipset blocks :8888 gets it: taigan, spotty, scm AND the
+    # eth0-only structural fallback. The function already returned early
+    # for permissive Series-II boxes, so this is a no-op risk only where
+    # :17008 is closed (harmless: the rule matches no traffic there).
+    if [ "$REDIRECT_ELIGIBLE" = "1" ]; then
+        if ! iptables -t nat -C PREROUTING -p tcp ! -i lo -d "$LANIP" --dport 17008 \
+            $RDR_COMMENT -j REDIRECT --to-ports 8888 2>/dev/null; then
+            BCO_OUT=$(iptables -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport 17008 \
+                $RDR_COMMENT -j REDIRECT --to-ports 8888 2>&1)
+            BCO_RC=$?
+            if [ "$BCO_RC" = "0" ]; then
+                setup_log "iptables nat PREROUTING REDIRECT tcp/17008 -> loopback:8888 (BCO whitelisted-port path) installed for $LANIP at uptime=$(uptime_s)s"
+            else
+                rc_redirect=$((rc_redirect + 1))
+                setup_log "iptables nat PREROUTING REDIRECT tcp/17008->8888 FAILED rc=$BCO_RC output='$(echo "$BCO_OUT" | tr '\n' ' ' | head -c 240)'"
+            fi
+        fi
+    fi
     return $rc_redirect
 }
+
+# Scope-guard (C): the REDIRECT subshell below runs in its OWN ( ) &
+# child and can only call functions defined at TOP LEVEL (a sibling
+# subshell's functions are NOT inherited). If a future refactor moves
+# one of these back inside another subshell, fail LOUDLY here instead
+# of silently bailing inside the backgrounded subshell where the error
+# is swallowed by 2>/dev/null — that silence is exactly what hid the
+# original current_sta_lease subshell-scope bug for months.
+for _need in setup_log redirect_lan_ip current_sta_lease iptables_install_redirect_series_one iptables_nat_probe_and_modprobe; do
+    command -v "$_need" >/dev/null 2>&1 || \
+        setup_log "FATAL scope-guard: '$_need' is not defined at top level before the REDIRECT subshell; it will be unavailable inside the backgrounded subshell. Define it at top level (see the current_sta_lease subshell-scope bug, 2026-06-01)."
+done
+
 (
     # First wait for an STA lease, then install. The LAN IP is
     # what the REDIRECT keys on, so without a lease there is no
@@ -2467,17 +2808,17 @@ iptables_install_redirect_series_one() {
     # NetManager flush AND re-discover the IP if DHCP rebinds.
     w=0
     while [ $w -lt 120 ]; do
-        if [ -n "$(current_sta_lease 2>/dev/null)" ]; then
+        if [ -n "$(redirect_lan_ip 2>/dev/null)" ]; then
             break
         fi
         sleep 2
         w=$((w + 2))
     done
-    if [ "$IS_SERIES_ONE" = "1" ]; then
+    if [ "$REDIRECT_ELIGIBLE" = "1" ]; then
         # Probe nat-table availability once at startup before the
         # watchdog loop. Logs the iptables -V output and whether
         # modprobe was needed and successful, so the next bundle
-        # from a Series-I box says exactly why REDIRECT did or did
+        # from a BCO/Series-I box says exactly why REDIRECT did or did
         # not land. If nat is permanently unavailable, the watchdog
         # still runs but the install function just logs failures
         # once per pass; the user will see "still unavailable" and
@@ -2485,6 +2826,17 @@ iptables_install_redirect_series_one() {
         IPTABLES_V=$(iptables -V 2>&1 | head -c 200)
         setup_log "iptables version: $IPTABLES_V"
         iptables_nat_probe_and_modprobe
+        # Probe xt_comment availability once. Add a throwaway nat rule
+        # with a comment; if it sticks, the module is present and we keep
+        # the cosmetic comment, else we run comment-less (taigan).
+        if iptables -t nat -A POSTROUTING -m comment --comment streborn-probe -j ACCEPT 2>/dev/null; then
+            iptables -t nat -D POSTROUTING -m comment --comment streborn-probe -j ACCEPT 2>/dev/null
+            RDR_COMMENT="-m comment --comment streborn-redirect"
+            setup_log "iptables xt_comment present, REDIRECT rules will be labelled"
+        else
+            RDR_COMMENT=""
+            setup_log "iptables xt_comment MISSING (e.g. taigan kernel), installing REDIRECT rules without -m comment"
+        fi
         iptables_install_redirect_series_one
         while true; do
             sleep 30
