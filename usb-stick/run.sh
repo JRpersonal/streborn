@@ -1347,6 +1347,19 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         printf '%s' "$_fp" > "$AIR_REBOOT_STAMP" 2>/dev/null
         return 0
     }
+    airplay_slot0_ssid() {
+        # Echo the SSID already stored in the AirplayConfiguration slot-0
+        # PersistentWifiProfile, or nothing. Used to detect an
+        # already-provisioned BCO box so M_air does not rewrite + reboot
+        # on every boot when a provisioned stick is left inserted
+        # (deqw #90: spotty white-bar from the needless reboot).
+        _asf=""
+        for _af in /mnt/nv/BoseApp-Persistence/*/AirplayConfiguration.xml; do
+            [ -f "$_af" ] && _asf="$_af" && break
+        done
+        [ -z "$_asf" ] && return 0
+        sed -n 's/.*PersistentWifiProfile[^>]*ssid="\([^"]*\)".*/\1/p' "$_asf" | head -1
+    }
     write_airplay_profile() {
         # Non-destructive: only slot 0 is set, other slots are left as-is,
         # existing profiles are never cleared. Sets AIR_WROTE=1 on success.
@@ -1671,6 +1684,26 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # best-effort fallback, but do NOT reboot there here: rhino's
     # wpa_supplicant path (M3) provisions without a reboot, so a reboot
     # only fires as a last resort at the end if nothing produced a lease.
+    # Skip M_air entirely when the box already carries a slot-0 profile
+    # for this exact SSID: the WLAN is already provisioned, so rewriting
+    # the file and rebooting achieves nothing and just adds a needless
+    # reboot (plus the box's slow ~130s BoseApp re-init) every time a
+    # provisioned stick is left inserted — deqw #90 saw this as the
+    # spotty "full white bar" on every boot. Only (re)write + reboot when
+    # the profile is missing or for a different network.
+    # Skip M_air entirely when the box is ALREADY provisioned for the
+    # current creds: the creds fingerprint matches the reboot stamp (we
+    # already wrote + rebooted for this exact SSID+PASS) AND the slot-0
+    # profile carries that SSID. Then rewriting + rebooting achieves
+    # nothing and just adds a needless reboot every time a provisioned
+    # stick is left inserted (deqw #90: spotty "full white bar"). Keyed
+    # on the SSID+PASS fingerprint, NOT the SSID alone, so a password
+    # change still re-provisions (stick stays a recovery tool).
+    AIR_FP_NOW=$(airplay_creds_fp)
+    AIR_FP_SEEN=$(cat "$AIR_REBOOT_STAMP" 2>/dev/null)
+    if [ -n "$AIR_FP_NOW" ] && [ "$AIR_FP_NOW" = "$AIR_FP_SEEN" ] && [ "$(airplay_slot0_ssid)" = "$SSID" ]; then
+        setup_log "M_air: already provisioned + rebooted for the current creds (SSID='$SSID', slot-0 matches), skipping M_air rewrite+reboot"
+    else
     write_airplay_profile
     if [ "${AIR_WROTE:-}" = "1" ] && { [ "$BCO_MODE" = "1" ] || [ -n "${IS_TAIGAN:-}" ]; }; then
         if airplay_reboot_guard_ok; then
@@ -1684,6 +1717,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         else
             setup_log "M_air: BCO chassis — already rebooted for these creds (stamp match); not rebooting again, falling through to M1/M2"
         fi
+    fi
     fi
 
     # Wait for BoseApp HTTP server up to 30s. M1 needs it; M2..M6

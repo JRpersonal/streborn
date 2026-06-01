@@ -45,7 +45,29 @@ type App struct {
 	// method calls from arbitrary goroutines.
 	localeMu   sync.RWMutex
 	userLocale string
+
+	// discCache keeps recently-discovered boxes so a single missed mDNS
+	// or TCP cycle does not make a box flicker out of the list and back.
+	// mDNS multicast drops, a box mid-reboot, or marginal Wi-Fi (all
+	// observed live on deqw's spotty ST20, #90) otherwise cause the box
+	// to vanish and radio/presets to fail with "Failed to fetch" until
+	// the next cycle re-finds it. See mergeDiscoveryCache.
+	discMu    sync.Mutex
+	discCache map[string]discEntry
 }
+
+// discEntry is one cached discovery result plus when it was last
+// genuinely seen (not counting cache re-adds).
+type discEntry struct {
+	box  BoxInfo
+	seen time.Time
+}
+
+// discoveryStickyTTL is how long a box stays in the list after its last
+// genuine sighting. Long enough to cover a box rebooting (~60-120s on a
+// slow BCO box) so it does not disappear mid-reboot, short enough that a
+// truly powered-off box drops out reasonably soon.
+const discoveryStickyTTL = 100 * time.Second
 
 // NewApp erstellt eine neue App Instance.
 func NewApp() *App {
@@ -280,11 +302,47 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// per-box budget so a slow/dead :8090 cannot stall discovery.
 	a.enrichSeenBoxes(ctx, seen)
 
+	// Discovery stickiness: re-add boxes seen within discoveryStickyTTL
+	// that this cycle missed, so the list stays stable across mDNS/TCP
+	// flaps instead of flickering (deqw #90: spotty ST20 dropped out of
+	// the list on marginal Wi-Fi / mid-reboot and radio+presets failed
+	// whenever it briefly vanished).
+	a.mergeDiscoveryCache(seen)
+
 	out := make([]BoxInfo, 0, len(seen))
 	for _, b := range seen {
 		out = append(out, b)
 	}
 	return out, nil
+}
+
+// mergeDiscoveryCache refreshes the cache for boxes genuinely seen this
+// cycle, then re-adds any cached box this cycle missed but which was
+// seen within discoveryStickyTTL (keeping its last-known record, NOT
+// refreshing its timestamp, so it still expires relative to its last
+// genuine sighting). Boxes past the TTL are evicted.
+func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
+	now := time.Now()
+	a.discMu.Lock()
+	defer a.discMu.Unlock()
+	if a.discCache == nil {
+		a.discCache = map[string]discEntry{}
+	}
+	// Boxes found this cycle are authoritative: refresh data + timestamp.
+	for key, b := range seen {
+		a.discCache[key] = discEntry{box: b, seen: now}
+	}
+	// Re-add recently-seen boxes the current cycle missed; evict stale.
+	for key, e := range a.discCache {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		if now.Sub(e.seen) <= discoveryStickyTTL {
+			seen[key] = e.box
+		} else {
+			delete(a.discCache, key)
+		}
+	}
 }
 
 // enrichSeenBoxes fans out enrichBoxWithStockInfo for every box in
