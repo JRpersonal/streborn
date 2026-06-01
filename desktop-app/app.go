@@ -974,14 +974,31 @@ func (a *App) GetClockDisplay(host string) (string, error) {
 // display local time. timeFormat picks 12h vs 24h. offsetMinutes is
 // ignored by the box when userEnable is false but we always send a
 // consistent config.
-func (a *App) SetClockDisplay(host string, enable bool, offsetMinutes int, format24 bool) error {
+func (a *App) SetClockDisplay(host string, enable bool, timezone string, offsetMinutes int, format24 bool) error {
 	tf := "TIME_FORMAT_12HOUR_ID"
 	if format24 {
 		tf = "TIME_FORMAT_24HOUR_ID"
 	}
+	// timezoneInfo is the real IANA zone (e.g. "Europe/Berlin"), the same
+	// thing the Bose iOS app sets (live-verified 2026-06-01); with it the
+	// speaker handles DST itself from its own tz database. We also send
+	// the current userOffsetMinute as a correct-now fallback. timezone ""
+	// leaves it unset.
+	tz := timezone
+	off := offsetMinutes
+	if tz == "" {
+		tz = "NOT_SET" // no zone: fall back to the raw offset shift
+	} else {
+		// With a real IANA zone the box derives the offset (incl DST)
+		// itself. Sending userOffsetMinute on TOP would DOUBLE-shift the
+		// clock: live 2026-06-01, timezoneInfo=Europe/Berlin (+2) plus
+		// userOffsetMinute=120 (+2) showed 06:00 instead of 04:00. So
+		// whenever a zone is set, the offset must be 0.
+		off = 0
+	}
 	body := fmt.Sprintf(
-		`<clockDisplay><clockConfig userEnable="%t" userOffsetMinute="%d" timeFormat="%s" /></clockDisplay>`,
-		enable, offsetMinutes, tf)
+		`<clockDisplay><clockConfig userEnable="%t" timezoneInfo="%s" userOffsetMinute="%d" timeFormat="%s" /></clockDisplay>`,
+		enable, tz, off, tf)
 	return a.bosePostXML(host, "/clockDisplay", body)
 }
 

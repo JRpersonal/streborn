@@ -138,8 +138,8 @@ export function SetBoxVolume(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetBoxVolume'](arg1, arg2, arg3);
 }
 
-export function SetClockDisplay(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['SetClockDisplay'](arg1, arg2, arg3, arg4);
+export function SetClockDisplay(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SetClockDisplay'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6) {

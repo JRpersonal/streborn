@@ -2894,12 +2894,15 @@ function renderBoxSettings(s, box) {
   refreshClock();
   const postClock = async (enable) => {
     try {
-      // userOffsetMinute = minutes EAST of UTC. JS getTimezoneOffset()
-      // is minutes to add to LOCAL to reach UTC (so it is negative east
-      // of UTC); negate it so the speaker shows this PC's local time.
+      // Real IANA time zone (e.g. "Europe/Berlin"), like the Bose iOS
+      // app sets, so the speaker handles DST itself. userOffsetMinute is
+      // sent too as a correct-now fallback: minutes EAST of UTC, i.e.
+      // the negated JS getTimezoneOffset().
+      let tz = '';
+      try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
       const offsetMin = -new Date().getTimezoneOffset();
       const fmt24 = (clockFormat ? clockFormat.value : '24') === '24';
-      await SetClockDisplay(boseHost, enable, offsetMin, fmt24);
+      await SetClockDisplay(boseHost, enable, tz, offsetMin, fmt24);
       showToast(t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
       await refreshClock();
     } catch (e) { showError(e); }
