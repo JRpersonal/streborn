@@ -54,6 +54,29 @@ jobs:
           version: latest
           args: --timeout=5m
 
+  shellcheck:
+    name: shellcheck (on-box scripts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      # The USB-stick / on-box scripts are POSIX sh for the speaker's
+      # BusyBox ash. Until now CI did not lint shell at all, so run.sh
+      # (3000+ lines) shipped unchecked. Lint at ERROR severity only:
+      # run.sh is full of intentional BusyBox idioms, so warning/info/
+      # style would be pure noise and a perpetually-red check, but
+      # error-level findings (parse errors, truly broken constructs) are
+      # real bugs worth blocking on. NOTE: shellcheck does NOT catch the
+      # subshell-function-scope class (it treats any file-level function
+      # as globally callable regardless of which `( ) &` subshell calls
+      # it) — that bug class is handled by defining shared helpers at top
+      # level + the runtime scope-guard in run.sh, not here.
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck -s sh --severity=error usb-stick/*.sh usb-stick/rc.local
+
   govulncheck:
     name: govulncheck
     runs-on: ubuntu-latest
