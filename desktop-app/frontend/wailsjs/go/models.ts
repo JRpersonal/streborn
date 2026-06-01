@@ -37,6 +37,7 @@ export namespace main {
 	    build: string;
 	    serialNumber: string;
 	    kind: string;
+	    portVerified: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new BoxInfo(source);
@@ -54,6 +55,7 @@ export namespace main {
 	        this.build = source["build"];
 	        this.serialNumber = source["serialNumber"];
 	        this.kind = source["kind"];
+	        this.portVerified = source["portVerified"];
 	    }
 	}
 	export class InstallResult {
@@ -264,6 +266,28 @@ export namespace main {
 	        this.message = source["message"];
 	        this.log = source["log"];
 	        this.wipedFiles = source["wipedFiles"];
+	    }
+	}
+	export class UninstallSTRResult {
+	    step: string;
+	    ok: boolean;
+	    stickPresent: boolean;
+	    message: string;
+	    log: string;
+	    removedFiles: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new UninstallSTRResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.step = source["step"];
+	        this.ok = source["ok"];
+	        this.stickPresent = source["stickPresent"];
+	        this.message = source["message"];
+	        this.log = source["log"];
+	        this.removedFiles = source["removedFiles"];
 	    }
 	}
 

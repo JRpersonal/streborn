@@ -94,6 +94,8 @@ export function TrueFactoryReset(arg1:string):Promise<main.TrueFactoryResetResul
 
 export function TryWiFiPassword(arg1:string):Promise<string>;
 
+export function UninstallSTR(arg1:string):Promise<main.UninstallSTRResult>;
+
 export function UpdateBoxAgent(arg1:string,arg2:number):Promise<void>;
 
 export function VoteStation(arg1:string,arg2:number,arg3:string):Promise<void>;

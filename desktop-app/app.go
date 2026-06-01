@@ -105,6 +105,14 @@ type BoxInfo struct {
 	// vanilla Bose SoundTouch speakers that the desktop app can
 	// offer to flash. Frontend renders the two kinds differently.
 	Kind string `json:"kind"`
+	// PortVerified is true when Port was confirmed reachable by an
+	// actual HTTP probe (probeSTR), false when it is only the
+	// mDNS-announced port. On BCO boxes (Portable, ST20-spotty) the
+	// agent announces :8888 via mDNS but the chipset firewall drops
+	// direct :8888; only the REDIRECTed :17008 is reachable. The merge
+	// in DiscoverBoxes prefers a verified port over an announced one so
+	// agent calls (radio, presets) do not hit the firewalled :8888.
+	PortVerified bool `json:"portVerified"`
 }
 
 // DiscoverBoxes durchsucht das LAN nach Sticks via mDNS. Wenn mDNS
@@ -148,19 +156,40 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		// box listed twice.
 		key := b.Host
 		prev, exists := seen[key]
-		if exists {
-			// STR announcement always wins over a stock entry for
-			// the same physical device. If both are STR (or both
-			// stock), the richer record wins (longer FriendlyName,
-			// non-empty Version).
-			if prev.Kind == "str" && b.Kind == "stock" {
-				return
+		if !exists {
+			seen[key] = b
+			return
+		}
+		// STR announcement always wins over a stock entry for the same
+		// physical device.
+		if prev.Kind == "str" && b.Kind == "stock" {
+			return
+		}
+		if b.Kind == "str" && prev.Kind == "stock" {
+			seen[key] = b
+			return
+		}
+		// Same kind: the richer record wins (longer FriendlyName,
+		// non-empty Version) — BUT a VERIFIED reachable port always
+		// beats an unverified (mDNS-announced) one, in either merge
+		// order. On BCO boxes the agent announces :8888 via mDNS while
+		// only the REDIRECTed :17008 is reachable; without this, the
+		// rich mDNS record would pin the box to the firewalled :8888
+		// and every agent call (radio, presets) would fail.
+		keepPrev := len(prev.FriendlyName) >= len(b.FriendlyName) && prev.Version != ""
+		if keepPrev {
+			if b.PortVerified && !prev.PortVerified && b.Port != 0 && b.Port != prev.Port {
+				prev.Port = b.Port
+				prev.PortVerified = true
+				seen[key] = prev
 			}
-			if prev.Kind == b.Kind {
-				if len(prev.FriendlyName) >= len(b.FriendlyName) && prev.Version != "" {
-					return
-				}
-			}
+			return
+		}
+		// b is the richer record: take it, but carry over a verified
+		// port from prev if b's port is only mDNS-announced.
+		if prev.PortVerified && !b.PortVerified && prev.Port != 0 {
+			b.Port = prev.Port
+			b.PortVerified = true
 		}
 		seen[key] = b
 	}
@@ -487,12 +516,13 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 	build := jsonStringField(s, "build")
 
 	box := BoxInfo{
-		Name:    "str-" + ip,
-		Host:    ip,
-		Port:    winner.port,
-		Version: version,
-		Build:   build,
-		Kind:    "str",
+		Name:         "str-" + ip,
+		Host:         ip,
+		Port:         winner.port,
+		Version:      version,
+		Build:        build,
+		Kind:         "str",
+		PortVerified: true, // winner.port answered an actual HTTP probe
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
 	// /info endpoint. Failure is OK: caller still gets a usable

@@ -182,6 +182,10 @@ export function TryWiFiPassword(arg1) {
   return window['go']['main']['App']['TryWiFiPassword'](arg1);
 }
 
+export function UninstallSTR(arg1) {
+  return window['go']['main']['App']['UninstallSTR'](arg1);
+}
+
 export function UpdateBoxAgent(arg1, arg2) {
   return window['go']['main']['App']['UpdateBoxAgent'](arg1, arg2);
 }
