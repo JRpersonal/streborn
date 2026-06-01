@@ -101,6 +101,7 @@
   "controls.volume": "音量",
 
   "toast.source": "ソース: {{src}}",
+  "toast.sourceUnavailable": "{{src}} はこのスピーカーでは利用できません",
 
   "status.playing": "再生中",
   "status.buffering": "ストリーム開始中",
@@ -217,10 +218,12 @@
   "speaker.rebootGenericBody": "スピーカーは1秒後に再起動します。再生中の音は中断されます。続行しますか?",
   "speaker.rebootConfirmDetailedBody": "USBメモリを抜きましたか?<br><br><b>メモリが挿さったまま</b> &rarr; 再起動後もSSHが開いたままになります。<br><b>メモリを抜いた</b> &rarr; 再起動後にSSHが閉じます。<br><br>再生中の音は中断されます。",
 
+  "signal.excellent": "非常に強い",
   "signal.good": "良好",
   "signal.marginal": "やや弱い",
   "signal.poor": "弱い",
   "signal.none": "信号なし",
+  "signal.notReported": "Wi-Fi 接続済み（この機種は信号強度を報告しません）",
 
   "settingsView.noSpeakerFoundTitle": "ネットワーク上にスピーカーが見つかりません。",
   "settingsView.noSpeakerFoundHelp": "スピーカーの設定を編集するには、準備済みのST Rebornメモリが必要です。先にメモリを準備してください。",

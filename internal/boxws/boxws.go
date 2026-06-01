@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -39,9 +40,38 @@ type Handler interface {
 
 // Client haelt die Verbindung zur Box.
 type Client struct {
-	logger   *slog.Logger
-	url      string
-	handler  Handler
+	logger  *slog.Logger
+	url     string
+	handler Handler
+
+	// lastSignal is the most recent Wi-Fi signal class the box reported
+	// over the gabbo stream (GOOD_SIGNAL / MARGINAL_SIGNAL / ...). On BCO
+	// speakers (Portable, scm ST20) /networkInfo exposes no signal, so
+	// the settings UI uses this instead. Guarded; read via LastWifiSignal.
+	mu         sync.Mutex
+	lastSignal string
+}
+
+// LastWifiSignal returns the most recent Wi-Fi signal class seen on the
+// gabbo stream, or "" if none observed yet.
+func (c *Client) LastWifiSignal() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastSignal
+}
+
+// attrValue pulls attr="VALUE" out of a raw XML fragment, or "".
+func attrValue(s, attr string) string {
+	key := attr + `="`
+	i := strings.Index(s, key)
+	if i < 0 {
+		return ""
+	}
+	r := s[i+len(key):]
+	if j := strings.IndexByte(r, '"'); j >= 0 {
+		return r[:j]
+	}
+	return ""
 }
 
 // New erzeugt einen Client. url Beispiel: "ws://127.0.0.1:8080/".
@@ -150,6 +180,13 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		c.logger.Warn("box ws phase: powerState event", "preview", preview(data, 200))
 	case strings.Contains(s, "connectionStateUpdated"):
 		c.logger.Warn("box ws phase: connectionState event", "preview", preview(data, 200))
+		// Capture the Wi-Fi signal class; on BCO boxes this is the only
+		// place it is reported (/networkInfo has no signal there).
+		if sig := attrValue(s, "signal"); sig != "" {
+			c.mu.Lock()
+			c.lastSignal = sig
+			c.mu.Unlock()
+		}
 	case strings.Contains(s, "nowPlayingUpdated") && !strings.Contains(s, "nowSelectionUpdated"):
 		c.logger.Info("box ws phase: nowPlaying event", "preview", preview(data, 200))
 	}

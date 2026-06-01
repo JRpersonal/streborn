@@ -289,6 +289,9 @@ func run() error {
 		fmt.Sprintf("ws://%s:8080/", *boxHost),
 		wsHandler,
 	)
+	// Let the WebUI fill the Wi-Fi signal from the gabbo stream on BCO
+	// boxes, whose /networkInfo reports no signal.
+	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()

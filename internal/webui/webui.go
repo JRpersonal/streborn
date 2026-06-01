@@ -45,7 +45,16 @@ type Server struct {
 	streamProxy *streamproxy.Server
 	langCacheMu sync.Mutex
 	langCache   map[string]langCacheEntry
+	// wifiSignalFn returns the latest Wi-Fi signal class observed on the
+	// gabbo WebSocket (set from cmd/agent's boxws client). Used to fill
+	// the signal for BCO boxes, whose /networkInfo reports none.
+	wifiSignalFn func() string
 }
+
+// SetWifiSignalFn wires a provider for the latest Wi-Fi signal class
+// (from the boxws gabbo stream). cmd/agent calls this after creating the
+// WebSocket client.
+func (s *Server) SetWifiSignalFn(fn func() string) { s.wifiSignalFn = fn }
 
 type langCacheEntry struct {
 	Langs []radiobrowser.Language
@@ -163,6 +172,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/region", s.handleRegion)
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
+	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
@@ -408,10 +418,34 @@ func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.renderer.Pause(r.Context()); err != nil {
+		// Pausing while the speaker is idle makes the box answer with a
+		// UPnP "Action request came in wrong state" fault. Pause is an
+		// idempotent intent: if there is nothing playing the desired
+		// state already holds, so treat it as a no-op instead of
+		// surfacing a raw SOAP fault to the user.
+		if isWrongTransportState(err) {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "not_playing"})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paused"})
+}
+
+// isWrongTransportState reports whether a UPnP AVTransport error was the
+// box rejecting the action because the renderer is not in a state that
+// allows it. Bose answers Pause/Stop with this when nothing is playing,
+// using errorCode 501 and the text "Action request came in wrong state"
+// (the AVTransport spec also defines 701 for the same situation).
+func isWrongTransportState(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "wrong state") ||
+		strings.Contains(msg, "<errorCode>501</errorCode>") ||
+		strings.Contains(msg, "<errorCode>701</errorCode>")
 }
 
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
@@ -424,6 +458,13 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.renderer.Stop(r.Context()); err != nil {
+		// Same idempotent treatment as Pause: stopping an already-idle
+		// box yields a "wrong state" UPnP fault that the user need not
+		// see.
+		if isWrongTransportState(err) {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "not_playing"})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -782,7 +823,93 @@ func (s *Server) handleBoxSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	// BCO speakers (Portable, scm ST20) report the connected interface as
+	// ethernet with no signal in /networkInfo, but the box does emit the
+	// Wi-Fi signal class over the gabbo WebSocket. Fill the connected
+	// interface's empty signal from there so the settings UI shows it on
+	// those models too.
+	if s.wifiSignalFn != nil {
+		if sig := s.wifiSignalFn(); sig != "" {
+			for i := range settings.Network.Interfaces {
+				ni := &settings.Network.Interfaces[i]
+				if ni.Signal == "" && (ni.State == "NETWORK_ETHERNET_CONNECTED" || ni.State == "NETWORK_WIFI_CONNECTED") {
+					ni.Signal = sig
+				}
+			}
+		}
+	}
+	// Same for the SSID: BCO /networkInfo carries none, but STR knows the
+	// network it provisioned (its wlan-creds, or the AirplayConfiguration
+	// profile). Fill it on the connected interface when empty.
+	if ssid := provisionedSSID(); ssid != "" {
+		for i := range settings.Network.Interfaces {
+			ni := &settings.Network.Interfaces[i]
+			if ni.SSID == "" && (ni.State == "NETWORK_ETHERNET_CONNECTED" || ni.State == "NETWORK_WIFI_CONNECTED") {
+				ni.SSID = ssid
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, settings)
+}
+
+// provisionedSSID returns the Wi-Fi SSID the speaker is on, from the most
+// reliable source available. Used to fill the SSID on BCO boxes (scm ST20,
+// Portable), whose /networkInfo reports only an ethernet coprocessor with
+// no ssid field.
+//
+// Sources, in order:
+//  1. STR's own wlan-creds: what STR last provisioned. Subject to the
+//     stick-mount race at cold boot, so it can be empty even on a box that
+//     is associated (issue #90).
+//  2. Bose NetManager's NetworkProfiles.xml: the box's own ground truth for
+//     the profile it associates to. Present before BoseApp's HTTP server is
+//     up, so it survives the boot race that leaves wlan-creds empty.
+//  3. The slot-0 PersistentWifiProfile in AirplayConfiguration.xml (WAC
+//     onboarding path).
+func provisionedSSID() string {
+	if b, err := os.ReadFile("/mnt/nv/streborn/wlan-creds"); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if strings.HasPrefix(line, "SSID=") {
+				if v := strings.TrimSpace(strings.TrimPrefix(line, "SSID=")); v != "" {
+					return v
+				}
+			}
+		}
+	}
+	if m, _ := filepath.Glob("/mnt/nv/BoseApp-Persistence/*/NetworkProfiles.xml"); len(m) > 0 {
+		if b, err := os.ReadFile(m[0]); err == nil {
+			if v := ssidAfter(string(b), "<profile"); v != "" {
+				return v
+			}
+		}
+	}
+	if m, _ := filepath.Glob("/mnt/nv/BoseApp-Persistence/*/AirplayConfiguration.xml"); len(m) > 0 {
+		if b, err := os.ReadFile(m[0]); err == nil {
+			if v := ssidAfter(string(b), "PersistentWifiProfile"); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+// ssidAfter extracts the first ssid="..." attribute value that appears at
+// or after the given anchor substring in s, or "" if none.
+func ssidAfter(s, anchor string) string {
+	i := strings.Index(s, anchor)
+	if i < 0 {
+		return ""
+	}
+	r := s[i:]
+	j := strings.Index(r, `ssid="`)
+	if j < 0 {
+		return ""
+	}
+	r = r[j+len(`ssid="`):]
+	if k := strings.IndexByte(r, '"'); k >= 0 {
+		return r[:k]
+	}
+	return ""
 }
 
 // handleBoxName PUT setzt den Box Namen. Body {"name":"..."}.
@@ -903,6 +1030,18 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		// A speaker that lacks the requested hardware source (e.g. the
+		// ST20 variants without Bluetooth) rejects /select with a 1005
+		// UNKNOWN_SOURCE_ERROR. Surface that as a machine-readable reason
+		// so the client can show a friendly localized message instead of
+		// the raw Bose error XML.
+		if strings.Contains(string(respBody), "UNKNOWN_SOURCE_ERROR") {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error":  "source_unavailable",
+				"source": src,
+			})
+			return
+		}
 		http.Error(w, "box error: "+string(respBody), http.StatusBadGateway)
 		return
 	}
@@ -1183,6 +1322,89 @@ func (s *Server) handleBoxReboot(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(1 * time.Second)
 		_ = exec.Command("reboot").Run()
 	}()
+}
+
+// handleBoxAirplayOpt reads or sets the "AirPlay optimization" setting,
+// which is the iOS app's advanced toggle stored as the
+// BCOResetTimerEnabled attribute on the <AirplayConfiguration> root in
+// /mnt/nv/BoseApp-Persistence/<N>/AirplayConfiguration.xml (a BCO
+// coprocessor keepalive). It exists only on BCO speakers (Portable,
+// ST20-spotty); on other models the file is absent and GET reports
+// supported=false. The value is read by BoseApp at boot, so a POST
+// rewrites the attribute and reboots, exactly like the iOS app.
+func (s *Server) handleBoxAirplayOpt(w http.ResponseWriter, r *http.Request) {
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	var path string
+	if m, _ := filepath.Glob("/mnt/nv/BoseApp-Persistence/*/AirplayConfiguration.xml"); len(m) > 0 {
+		path = m[0]
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if path == "" {
+			writeJSON(w, http.StatusOK, map[string]any{"supported": false})
+			return
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"supported": false})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"supported": true,
+			"enabled":   strings.Contains(string(raw), `BCOResetTimerEnabled="true"`),
+		})
+	case http.MethodPost:
+		if path == "" {
+			http.Error(w, "no AirplayConfiguration.xml (not a BCO speaker)", http.StatusBadRequest)
+			return
+		}
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		val := "false"
+		if body.Enabled {
+			val = "true"
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			http.Error(w, "read: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		out := string(raw)
+		switch {
+		case strings.Contains(out, `BCOResetTimerEnabled="true"`):
+			out = strings.ReplaceAll(out, `BCOResetTimerEnabled="true"`, `BCOResetTimerEnabled="`+val+`"`)
+		case strings.Contains(out, `BCOResetTimerEnabled="false"`):
+			out = strings.ReplaceAll(out, `BCOResetTimerEnabled="false"`, `BCOResetTimerEnabled="`+val+`"`)
+		default:
+			// Attribute absent (older file): add it to the root element.
+			out = strings.Replace(out, "<AirplayConfiguration ", `<AirplayConfiguration BCOResetTimerEnabled="`+val+`" `, 1)
+		}
+		tmp := path + ".str-new"
+		if err := os.WriteFile(tmp, []byte(out), 0o644); err != nil {
+			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = exec.Command("sync").Run()
+		s.logger.Info("airplay-opt set, rebooting to apply", "enabled", body.Enabled)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled, "rebooting": true})
+		// BoseApp reads BCOResetTimerEnabled at boot, so reboot to apply
+		// (the iOS app does the same). Delay so the response flushes.
+		go func() {
+			time.Sleep(1500 * time.Millisecond)
+			_ = exec.Command("reboot").Run()
+		}()
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // handleBoxWLAN setzt die WLAN Konfiguration der Box zur Laufzeit.

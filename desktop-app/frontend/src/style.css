@@ -541,6 +541,10 @@ body {
 .status-bar.status-buf { border-left: 3px solid var(--signal-yellow); padding-left: 10px; }
 .status-bar.status-err { border-left: 3px solid var(--signal-red); padding-left: 10px; color: #f99; }
 .status-bar.status-idle { border-left: 3px solid #444; padding-left: 10px; }
+/* Battery indicator in the speaker tile (SoundTouch Portable only).
+   Drawn as a real battery: a body with a terminal nub, so it reads
+   unmistakably as a charge gauge. Right-aligned just left of the gear;
+   the fill scales red -> orange -> green by charge. */
 
 /* ---------- Controls ---------- */
 .controls { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
@@ -578,10 +582,10 @@ body {
 .btn-warning:disabled { background: #6a4a30; color: #aa8; border-color: #6a4a30; cursor: not-allowed; }
 
 /* ---------- Settings actions panel ---------- */
-.actions-row { display: grid; grid-template-columns: minmax(180px, auto) 1fr; gap: 10px 14px; align-items: start; margin-top: 10px; }
-.actions-row .btn { justify-self: start; min-width: 180px; }
-.actions-row p { margin: 0; line-height: 1.4; }
-.actions-divider { margin: 14px 0 8px; border: 0; border-top: 1px solid #333; }
+.actions-grid { display: grid; grid-template-columns: max-content 1fr; gap: 12px 14px; align-items: center; margin-top: 10px; }
+.actions-grid > .btn { width: 100%; white-space: nowrap; }
+.actions-grid > p { margin: 0; line-height: 1.4; align-self: center; }
+.actions-divider { grid-column: 1 / -1; margin: 4px 0; border: 0; border-top: 1px solid #333; }
 
 /* ---------- Preset Grid ---------- */
 /* 3 Spalten passend zur Hardware (1 2 3 / 4 5 6). Auf schmalen Fenstern
@@ -1154,7 +1158,10 @@ code { background: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-size: 12p
 .update-banner b { color: var(--brand-text); }
 .update-banner small { color: var(--brand-text-mid); margin-left: 6px; }
 .update-banner .btn { flex-shrink: 0; }
-.app-update-banner { background: #2a2a1a; border: 1px solid #5a5a3a; padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+/* Pinned to the very top window edge: full width, flush, no rounding.
+   Lives at body level (index.html), above the centered #app column, so
+   it spans the whole window regardless of the 720px content width. */
+.app-update-banner { background: #2a2a1a; border: none; border-bottom: 1px solid #5a5a3a; padding: 8px 16px; margin: 0; border-radius: 0; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
 .app-update-banner b { color: #dda; }
 .format-toggle {
   display: flex;

@@ -101,6 +101,7 @@
   "controls.volume": "Volume",
 
   "toast.source": "Source: {{src}}",
+  "toast.sourceUnavailable": "{{src}} is not available on this speaker",
 
   "status.playing": "playing",
   "status.buffering": "stream starting",
@@ -110,6 +111,11 @@
   "status.auxInput": "AUX input",
   "status.bluetooth": "Bluetooth",
   "status.ready": "ready",
+
+  "battery.label": "Battery",
+  "battery.onPower": "plugged in",
+  "battery.onBattery": "on battery",
+
 
   "preset.key": "Key {{n}}",
   "preset.empty": "empty",
@@ -412,10 +418,12 @@
   "speaker.rebootGenericBody": "The speaker will restart in 1 second. Current playback will be interrupted. Continue?",
   "speaker.rebootConfirmDetailedBody": "Have you removed the USB stick?<br><br><b>Stick still in</b> &rarr; SSH stays open after the reboot.<br><b>Stick removed</b> &rarr; SSH is closed after the reboot.<br><br>Current playback will be interrupted.",
 
+  "signal.excellent": "Excellent",
   "signal.good": "Good",
   "signal.marginal": "Marginal",
   "signal.poor": "Weak",
   "signal.none": "No signal",
+  "signal.notReported": "Wi-Fi connected (signal not reported by this model)",
 
   "settingsView.noSpeakerFoundTitle": "No speaker found on the network.",
   "settingsView.noSpeakerFoundHelp": "To edit speaker settings, a prepared ST Reborn stick must be present. Prepare a stick first.",
@@ -458,6 +466,12 @@
   "settingsView.clockSavedToast": "Clock display set to {{v}}.",
   "settingsView.clockNotSupported": "not supported on this model",
   "settingsView.clockUnknown": "unknown",
+  "settingsView.airplayOptHeading": "AirPlay optimization",
+  "settingsView.airplayOptCurrent": "Currently",
+  "settingsView.airplayOptHelp": "The Bose app's advanced \"AirPlay optimization\" setting, a coprocessor keepalive that improves AirPlay reliability. Only present on speakers with AirPlay hardware (Portable, ST20). Changing it restarts the speaker to apply, the same as the Bose app does.",
+  "settingsView.airplayOptConfirmTitle": "Restart speaker to apply?",
+  "settingsView.airplayOptConfirmBody": "Changing AirPlay optimization restarts the speaker so it can apply the setting (the same as the Bose app). It will be briefly unavailable. Continue?",
+  "settingsView.airplayOptSavedToast": "Saved. The speaker is restarting to apply it.",
   "settingsView.wlanHeading": "Wi-Fi",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IP address",
@@ -501,6 +515,14 @@
   "settingsView.trueFactoryResetRunning": "Wiping...",
   "settingsView.trueFactoryResetDoneToast": "Speaker wiped ({{n}} entries) and rebooting. Open the Bose iOS app to onboard from scratch.",
   "settingsView.trueFactoryResetFailed": "True factory reset failed: {{msg}}",
+  "settingsView.removeSTRBtn": "Remove STR (back to Bose)",
+  "settingsView.removeSTRHelp": "Uninstalls STR and returns the speaker to a plain Bose factory state. Pull the USB stick out of the speaker first, otherwise it reinstalls STR on the next reboot. Different from the reset above, which keeps STR installed.",
+  "settingsView.removeSTRConfirmTitle": "Remove STR and return to Bose?",
+  "settingsView.removeSTRConfirmBody": "{{name}} will be returned to a plain Bose speaker: the STR agent, its presets and settings are removed and the Bose network/account state is reset to factory. To use STR again you would re-install it from a stick. <b>Pull the USB stick out of the speaker first</b>, or Bose reinstalls STR on the next reboot. Continue?",
+  "settingsView.removeSTRRunning": "Removing STR...",
+  "settingsView.removeSTRDoneToast": "STR removed ({{n}} items). The speaker is rebooting into plain Bose, wait about 60 seconds.",
+  "settingsView.removeSTRStickPresent": "The USB stick is still in the speaker. Pull it out first, then try again, otherwise the speaker reinstalls STR from the stick on reboot.",
+  "settingsView.removeSTRFailed": "Could not remove STR: {{msg}}",
   "settingsView.speakerInfoHeading": "Speaker info",
   "settingsView.modelLabel": "Model",
   "settingsView.firmwareLabel": "Firmware",

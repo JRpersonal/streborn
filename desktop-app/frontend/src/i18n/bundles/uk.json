@@ -101,6 +101,7 @@
   "controls.volume": "Гучність",
 
   "toast.source": "Джерело: {{src}}",
+  "toast.sourceUnavailable": "{{src}} недоступний на цій колонці",
 
   "status.playing": "відтворення",
   "status.buffering": "запуск потоку",
@@ -217,10 +218,12 @@
   "speaker.rebootGenericBody": "Колонка перезапуститься через 1 секунду. Поточне відтворення буде перервано. Продовжити?",
   "speaker.rebootConfirmDetailedBody": "Ви вийняли USB-накопичувач?<br><br><b>Накопичувач ще вставлено</b> &rarr; після перезапуску SSH залишається відкритим.<br><b>Накопичувач вийнято</b> &rarr; після перезапуску SSH закривається.<br><br>Поточне відтворення буде перервано.",
 
+  "signal.excellent": "Відмінний",
   "signal.good": "Добрий",
   "signal.marginal": "Середній",
   "signal.poor": "Слабкий",
   "signal.none": "Немає сигналу",
+  "signal.notReported": "Wi-Fi підключено (ця модель не повідомляє сигнал)",
 
   "settingsView.noSpeakerFoundTitle": "У мережі не знайдено жодної колонки.",
   "settingsView.noSpeakerFoundHelp": "Щоб змінювати налаштування колонки, потрібен підготовлений накопичувач ST Reborn. Спершу підготуйте накопичувач.",

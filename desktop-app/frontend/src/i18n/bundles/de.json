@@ -101,6 +101,7 @@
   "controls.volume": "Lautstärke",
 
   "toast.source": "Quelle: {{src}}",
+  "toast.sourceUnavailable": "{{src}} ist auf diesem Lautsprecher nicht verfügbar",
 
   "status.playing": "spielt",
   "status.buffering": "Stream wird hergestellt",
@@ -110,6 +111,11 @@
   "status.auxInput": "AUX-Eingang",
   "status.bluetooth": "Bluetooth",
   "status.ready": "bereit",
+
+  "battery.label": "Akku",
+  "battery.onPower": "am Netz",
+  "battery.onBattery": "Akkubetrieb",
+
 
   "preset.key": "Taste {{n}}",
   "preset.empty": "leer",
@@ -412,10 +418,12 @@
   "speaker.rebootGenericBody": "Der Lautsprecher wird in 1 Sekunde neu gestartet. Aktuelle Wiedergabe wird unterbrochen. Fortfahren?",
   "speaker.rebootConfirmDetailedBody": "Hast du den USB-Stick bereits gezogen?<br><br><b>Stick noch drin</b> &rarr; SSH bleibt nach dem Reboot offen.<br><b>Stick gezogen</b> &rarr; SSH ist nach dem Reboot zu.<br><br>Aktuelle Wiedergabe wird unterbrochen.",
 
+  "signal.excellent": "Ausgezeichnet",
   "signal.good": "Gut",
   "signal.marginal": "Mittelmäßig",
   "signal.poor": "Schwach",
   "signal.none": "Kein Signal",
+  "signal.notReported": "WLAN verbunden (Signal von diesem Modell nicht gemeldet)",
 
   "settingsView.noSpeakerFoundTitle": "Kein Lautsprecher im Netzwerk gefunden.",
   "settingsView.noSpeakerFoundHelp": "Damit die Einstellungen eines Lautsprechers bearbeitet werden können, muss in ihm ein vorbereiteter ST Reborn Stick stecken. Lege den Stick zuerst an.",
@@ -458,6 +466,12 @@
   "settingsView.clockSavedToast": "Uhrzeit-Anzeige auf {{v}} gesetzt.",
   "settingsView.clockNotSupported": "auf diesem Modell nicht unterstützt",
   "settingsView.clockUnknown": "unbekannt",
+  "settingsView.airplayOptHeading": "AirPlay-Optimierung",
+  "settingsView.airplayOptCurrent": "Aktuell",
+  "settingsView.airplayOptHelp": "Die erweiterte Einstellung \"AirPlay-Optimierung\" der Bose-App, ein Koprozessor-Keepalive, der die AirPlay-Zuverlässigkeit verbessert. Nur auf Lautsprechern mit AirPlay-Hardware (Portable, ST20). Eine Änderung startet den Lautsprecher neu, genau wie die Bose-App.",
+  "settingsView.airplayOptConfirmTitle": "Zum Übernehmen neu starten?",
+  "settingsView.airplayOptConfirmBody": "Das Ändern der AirPlay-Optimierung startet den Lautsprecher neu, damit er die Einstellung übernimmt (genau wie die Bose-App). Er ist kurz nicht erreichbar. Fortfahren?",
+  "settingsView.airplayOptSavedToast": "Gespeichert. Der Lautsprecher startet neu, um es zu übernehmen.",
   "settingsView.wlanHeading": "WLAN",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IP-Adresse",
@@ -501,6 +515,14 @@
   "settingsView.trueFactoryResetRunning": "Wird gelöscht ...",
   "settingsView.trueFactoryResetDoneToast": "Lautsprecher gelöscht ({{n}} Einträge) und startet neu. Öffne die Bose-iOS-App, um von vorn einzurichten.",
   "settingsView.trueFactoryResetFailed": "Echter Werks-Reset fehlgeschlagen: {{msg}}",
+  "settingsView.removeSTRBtn": "STR entfernen (zurück zu Bose)",
+  "settingsView.removeSTRHelp": "Deinstalliert STR und versetzt den Lautsprecher zurück in den reinen Bose-Werkszustand. Ziehe vorher den USB-Stick aus dem Lautsprecher, sonst installiert er STR beim nächsten Neustart erneut. Anders als der Reset darüber, der STR installiert lässt.",
+  "settingsView.removeSTRConfirmTitle": "STR entfernen und zu Bose zurück?",
+  "settingsView.removeSTRConfirmBody": "{{name}} wird zu einem reinen Bose-Lautsprecher zurückgesetzt: der STR-Agent, seine Presets und Einstellungen werden entfernt und der Bose-Netzwerk-/Konto-Zustand auf Werk zurückgesetzt. Um STR wieder zu nutzen, müsstest du es per Stick neu installieren. <b>Ziehe zuerst den USB-Stick aus dem Lautsprecher</b>, sonst installiert Bose STR beim nächsten Neustart erneut. Fortfahren?",
+  "settingsView.removeSTRRunning": "STR wird entfernt ...",
+  "settingsView.removeSTRDoneToast": "STR entfernt ({{n}} Einträge). Der Lautsprecher startet als reines Bose neu, warte etwa 60 Sekunden.",
+  "settingsView.removeSTRStickPresent": "Der USB-Stick steckt noch im Lautsprecher. Zieh ihn zuerst ab und versuch es erneut, sonst installiert der Lautsprecher STR beim Neustart wieder vom Stick.",
+  "settingsView.removeSTRFailed": "STR konnte nicht entfernt werden: {{msg}}",
   "settingsView.speakerInfoHeading": "Lautsprecher-Info",
   "settingsView.modelLabel": "Modell",
   "settingsView.firmwareLabel": "Firmware",

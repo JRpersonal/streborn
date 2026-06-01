@@ -101,6 +101,7 @@
   "controls.volume": "Volumen",
 
   "toast.source": "Fuente: {{src}}",
+  "toast.sourceUnavailable": "{{src}} no está disponible en este altavoz",
 
   "status.playing": "reproduciendo",
   "status.buffering": "iniciando flujo",
@@ -217,10 +218,12 @@
   "speaker.rebootGenericBody": "El altavoz se reiniciará en 1 segundo. La reproducción actual se interrumpirá. ¿Continuar?",
   "speaker.rebootConfirmDetailedBody": "¿Has retirado la memoria USB?<br><br><b>Memoria aún insertada</b> &rarr; SSH permanece abierto tras el reinicio.<br><b>Memoria retirada</b> &rarr; SSH se cierra tras el reinicio.<br><br>La reproducción actual se interrumpirá.",
 
+  "signal.excellent": "Excelente",
   "signal.good": "Buena",
   "signal.marginal": "Justa",
   "signal.poor": "Débil",
   "signal.none": "Sin señal",
+  "signal.notReported": "Wi-Fi conectado (este modelo no informa la señal)",
 
   "settingsView.noSpeakerFoundTitle": "No se encontró ningún altavoz en la red.",
   "settingsView.noSpeakerFoundHelp": "Para editar los ajustes de un altavoz debe haber una memoria ST Reborn preparada. Prepara primero una memoria.",

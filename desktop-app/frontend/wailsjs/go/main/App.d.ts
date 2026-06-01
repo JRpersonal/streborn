@@ -28,6 +28,8 @@ export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.Lo
 
 export function FormatStick(arg1:string):Promise<void>;
 
+export function GetAirplayOpt(arg1:string,arg2:number):Promise<Record<string, boolean>>;
+
 export function GetBoxLanguage(arg1:string):Promise<string>;
 
 export function GetClockDisplay(arg1:string):Promise<string>;
@@ -63,6 +65,8 @@ export function RebootBox(arg1:string,arg2:number):Promise<void>;
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
 
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function SetAirplayOpt(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function SetAppLocale(arg1:string):Promise<void>;
 

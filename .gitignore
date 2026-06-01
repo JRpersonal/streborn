@@ -55,6 +55,11 @@ Thumbs.db
 *.bak
 .cache/
 
+# Local on-box test scratch. Holds throwaway scripts run against the
+# maintainer's own test speaker that may contain real Wi-Fi credentials
+# or device IDs. MUST NEVER be committed.
+/agent/
+
 # Claude Code working directory. Holds sensitive, non-project material
 # (network captures, Bose firmware binaries, API docs, local settings,
 # agent memory/notes). MUST NEVER be committed.

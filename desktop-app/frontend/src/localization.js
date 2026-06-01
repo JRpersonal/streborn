@@ -8,7 +8,31 @@
 // and hands the canonical key to tLookup, so a single bundle swap in
 // i18n flips every country and genre label.
 
-import { t, tLookup } from './i18n/index.js';
+import { t, tLookup, getLocale } from './i18n/index.js';
+
+// regionName localizes a country to the active app language using the
+// platform's Intl.DisplayNames (the Wails webview is Chromium, which
+// supports it). This localizes the country dropdown for EVERY app
+// language without hand-translated tables. Falls back to the i18n
+// country table, then the raw key. Cached per locale.
+let _regionDN = null;
+let _regionDNLocale = null;
+function regionName(cc, fallbackKey) {
+  if (cc) {
+    try {
+      const loc = getLocale();
+      if (_regionDNLocale !== loc) {
+        _regionDN = new Intl.DisplayNames([loc], { type: 'region' });
+        _regionDNLocale = loc;
+      }
+      const n = _regionDN.of(cc.toUpperCase());
+      if (n && n.toUpperCase() !== cc.toUpperCase()) return n;
+    } catch (_) {
+      // Intl.DisplayNames unavailable / bad code: fall through.
+    }
+  }
+  return translateCountry(fallbackKey);
+}
 
 // SKIP_TAGS: tags that are meaningless / are languages / are countries
 // / regions / proper nouns. Filtered out before chip rendering or
@@ -172,6 +196,20 @@ export function translateTags(tagsCsv) {
 
 // ---------- Country code → flag emoji ----------
 // ISO 3166-1 alpha-2 to regional indicator symbol (Unicode flag).
+// Windows system fonts ship no country-flag emoji (regional indicators
+// render blank/letters), and a native <select> cannot host the inline
+// SVG flags used in the header. So on Windows the country dropdowns show
+// names without a flag rather than a broken glyph.
+export const IS_WINDOWS = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent || '');
+
+// optFlag returns the emoji flag plus a trailing space for use in a
+// <select> <option>, or '' on Windows (where it would render blank).
+export function optFlag(cc) {
+  if (IS_WINDOWS) return '';
+  const f = flagFromCC(cc);
+  return f ? f + ' ' : '';
+}
+
 export function flagFromCC(cc) {
   if (!cc || cc.length !== 2) return '';
   const A = 0x1F1E6;
@@ -275,7 +313,7 @@ const COUNTRIES_TOP = ['DE', 'AT', 'CH'];
 // getCountries returns the dropdown content for the active locale.
 // Recomputed on every call so a locale switch reflects immediately.
 export function getCountries() {
-  const enriched = COUNTRIES_RAW.map(c => ({ cc: c.cc, name: translateCountry(c.key) }));
+  const enriched = COUNTRIES_RAW.map(c => ({ cc: c.cc, name: regionName(c.cc, c.key) }));
   const top = COUNTRIES_TOP
     .map(cc => enriched.find(c => c.cc === cc))
     .filter(Boolean);

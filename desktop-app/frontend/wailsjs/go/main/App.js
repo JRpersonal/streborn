@@ -50,6 +50,10 @@ export function FormatStick(arg1) {
   return window['go']['main']['App']['FormatStick'](arg1);
 }
 
+export function GetAirplayOpt(arg1, arg2) {
+  return window['go']['main']['App']['GetAirplayOpt'](arg1, arg2);
+}
+
 export function GetBoxLanguage(arg1) {
   return window['go']['main']['App']['GetBoxLanguage'](arg1);
 }
@@ -120,6 +124,10 @@ export function SaveDiagnosticBundle(arg1, arg2) {
 
 export function SelectBoxSource(arg1, arg2, arg3) {
   return window['go']['main']['App']['SelectBoxSource'](arg1, arg2, arg3);
+}
+
+export function SetAirplayOpt(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetAirplayOpt'](arg1, arg2, arg3);
 }
 
 export function SetAppLocale(arg1) {

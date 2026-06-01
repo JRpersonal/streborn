@@ -11,7 +11,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -1125,6 +1127,51 @@ func (a *App) SetBoxLanguage(host string, value int) error {
 	return a.bosePostXML(host, "/language", fmt.Sprintf(`<sysLanguage>%d</sysLanguage>`, value))
 }
 
+// GetAirplayOpt reads the BCO "AirPlay optimization" toggle from the STR
+// agent on host:port. Returns {"supported":bool,"enabled":bool}. Only
+// BCO speakers (Portable, ST20-spotty) support it; others report
+// supported=false. See internal/webui handleBoxAirplayOpt.
+func (a *App) GetAirplayOpt(host string, port int) (map[string]bool, error) {
+	url := a.baseURL(host, port) + "/api/box/airplay-opt"
+	resp, err := a.httpClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out map[string]bool
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetAirplayOpt flips the AirPlay-optimization toggle. The agent
+// rewrites BCOResetTimerEnabled and reboots the speaker to apply it
+// (BoseApp reads the value at boot, like the iOS app), so the box drops
+// off the LAN for ~60-120s after this returns.
+func (a *App) SetAirplayOpt(host string, port int, enabled bool) error {
+	url := a.baseURL(host, port) + "/api/box/airplay-opt"
+	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
+	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 // SyncBoxPresets schickt alle Stick Presets erneut an die Box damit
 // die Hardware Preset Tasten 1-6 funktionieren. Wird vom "Hardware
 // Tasten reparieren" Button im Settings Tab benutzt.
@@ -1449,24 +1496,108 @@ func (a *App) AppInfo() AppInfo {
 		// locale-aware fallback from the i18n bundle. Hardcoding
 		// German here would shadow the bundle for every locale.
 		DonateSlogan:      "",
-		UpdateManifestURL: "", // populated once the manifest URL is fixed
+		// Update endpoint on the website (separate repo). CheckAppUpdate
+		// appends the running client's context (?v=&b=&os=&arch=&lang=) so
+		// the server can pick the right OS download and localized notes,
+		// then returns a small JSON manifest. See CheckAppUpdate for the
+		// request/response contract.
+		UpdateManifestURL: "https://st-reborn.de/api/update-check.php",
 	}
 }
 
-// CheckAppUpdate fetches the UpdateManifestURL and returns the
-// manifest when the remote version is greater than the running one.
-// kein Manifest URL gesetzt ist oder Version gleich, leere Map.
+// versionLess reports whether dotted numeric version a is strictly less
+// than b. Both may carry a leading "v" and a git-describe suffix
+// ("-3-gabc123-dirty"); only the leading numeric segments are compared,
+// so a dev build off tag v0.6.5 compares equal to the v0.6.5 release.
+func versionLess(a, b string) bool {
+	pa, pb := parseVersionParts(a), parseVersionParts(b)
+	for i := 0; i < len(pa) || i < len(pb); i++ {
+		var x, y int
+		if i < len(pa) {
+			x = pa[i]
+		}
+		if i < len(pb) {
+			y = pb[i]
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return false
+}
+
+func parseVersionParts(v string) []int {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	var parts []int
+	for _, seg := range strings.Split(v, ".") {
+		n, ok := 0, false
+		for _, r := range seg { // stop at the first non-numeric rune (git suffix)
+			if r < '0' || r > '9' {
+				break
+			}
+			n, ok = n*10+int(r-'0'), true
+		}
+		if !ok {
+			break
+		}
+		parts = append(parts, n)
+	}
+	return parts
+}
+
+// CheckAppUpdate fetches the UpdateManifestURL and returns the manifest
+// when the remote version is strictly newer than the running one.
+//
+// Request: GET UpdateManifestURL with the running client's context as
+// query parameters (all non-identifying, no device/network data):
+//
+//	v     running app version    e.g. v0.6.5
+//	b     build stamp            e.g. 2026-06-01-1150
+//	os    runtime GOOS           windows | darwin | linux
+//	arch  runtime GOARCH         amd64 | arm64
+//	lang  active UI locale       e.g. de | en | uk (omitted if unset)
+//
+// Response: a small JSON object with string fields. version is required;
+// downloadUrl and notes are optional. The server may either always return
+// the latest release (the client filters with versionLess below) or only
+// respond with a body when v is older. Example:
+//
+//	{"version":"v0.6.6","build":"...","downloadUrl":"https://st-reborn.de/download/windows","notes":"..."}
 func (a *App) CheckAppUpdate() (map[string]string, error) {
 	info := a.AppInfo()
-	if info.UpdateManifestURL == "" {
+	manifestURL := info.UpdateManifestURL
+	// Dev/staging override: point the update check at a different
+	// manifest (a local mock or the staging endpoint) without
+	// rebuilding the baked-in production URL. Empty/unset uses the
+	// shipped URL, so this is inert in normal operation.
+	if override := strings.TrimSpace(os.Getenv("STR_UPDATE_MANIFEST_URL")); override != "" {
+		manifestURL = override
+	}
+	if manifestURL == "" {
 		return map[string]string{}, nil
+	}
+	reqURL := manifestURL
+	if u, perr := url.Parse(reqURL); perr == nil {
+		q := u.Query()
+		q.Set("v", info.Version)
+		q.Set("b", info.Build)
+		q.Set("os", runtime.GOOS)
+		q.Set("arch", runtime.GOARCH)
+		if loc := a.appLocale(); loc != "" {
+			q.Set("lang", loc)
+		}
+		u.RawQuery = q.Encode()
+		reqURL = u.String()
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 6*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, info.UpdateManifestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
+	// Stable, identifiable agent string so the server can filter bots and
+	// keep meaningful update-check stats.
+	req.Header.Set("User-Agent", "STReborn-Desktop/"+info.Version+" ("+runtime.GOOS+"; "+runtime.GOARCH+")")
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -1476,11 +1607,18 @@ func (a *App) CheckAppUpdate() (map[string]string, error) {
 		return nil, fmt.Errorf("manifest status %d", resp.StatusCode)
 	}
 	var m map[string]string
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&m); err != nil {
+	// Read cap is generous on purpose: the server caps notes at 1500
+	// *characters*, which in heavy multi-byte text (emoji/CJK) can be
+	// several KB. 4 KB risked truncating the JSON mid-notes and failing
+	// the decode (no banner); 16 KB leaves comfortable headroom.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16384)).Decode(&m); err != nil {
 		return nil, err
 	}
 	rv := m["version"]
-	if rv == "" || rv == info.Version {
+	// Only surface the banner when the remote version is strictly newer
+	// than the running one; equal or older (e.g. a dev build ahead of the
+	// published tag) stays silent.
+	if rv == "" || !versionLess(info.Version, rv) {
 		return map[string]string{}, nil
 	}
 	return m, nil

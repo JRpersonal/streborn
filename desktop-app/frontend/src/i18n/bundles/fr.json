@@ -101,6 +101,7 @@
   "controls.volume": "Volume",
 
   "toast.source": "Source : {{src}}",
+  "toast.sourceUnavailable": "{{src}} n’est pas disponible sur cette enceinte",
 
   "status.playing": "lecture",
   "status.buffering": "démarrage du flux",
@@ -217,10 +218,12 @@
   "speaker.rebootGenericBody": "L'enceinte va redémarrer dans 1 seconde. La lecture en cours sera interrompue. Continuer ?",
   "speaker.rebootConfirmDetailedBody": "Avez-vous retiré la clé USB ?<br><br><b>Clé encore insérée</b> &rarr; SSH reste ouvert après le redémarrage.<br><b>Clé retirée</b> &rarr; SSH est fermé après le redémarrage.<br><br>La lecture en cours sera interrompue.",
 
+  "signal.excellent": "Excellent",
   "signal.good": "Bon",
   "signal.marginal": "Moyen",
   "signal.poor": "Faible",
   "signal.none": "Aucun signal",
+  "signal.notReported": "Wi-Fi connecté (signal non communiqué par ce modèle)",
 
   "settingsView.noSpeakerFoundTitle": "Aucune enceinte trouvée sur le réseau.",
   "settingsView.noSpeakerFoundHelp": "Pour modifier les réglages d'une enceinte, une clé ST Reborn préparée doit être présente. Préparez d'abord une clé.",

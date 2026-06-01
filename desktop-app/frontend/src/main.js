@@ -41,10 +41,13 @@ import {
   GetClockFormat24,
   GetBoxLanguage,
   SetBoxLanguage,
+  GetAirplayOpt,
+  SetAirplayOpt,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
   TrueFactoryReset,
+  UninstallSTR,
   ProbeSetupAP,
   PushWLANToBox,
   ListMediaServers,
@@ -87,6 +90,7 @@ import {
   translateTags,
   flagFromCC,
   flagSvg,
+  optFlag,
 } from './localization.js';
 
 import {
@@ -156,7 +160,6 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
     <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
   </div>
-  <div id="appUpdateBanner" class="app-update-banner hidden"></div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">
     <span class="global-security-text">
       <b>${escapeHtml(t('banner.recommendation'))}</b> ${escapeHtml(t('banner.sshRecommend'))}
@@ -247,6 +250,8 @@ const SUPPORTED_LINE = {
   es: 'para SoundTouch 10, 20, 30 y Portable',
   nl: 'voor SoundTouch 10, 20, 30 en Portable',
   pt: 'para SoundTouch 10, 20, 30 e Portable',
+  ja: 'SoundTouch 10、20、30、Portable に対応',
+  uk: 'для SoundTouch 10, 20, 30 і Portable',
   en: 'for SoundTouch 10, 20, 30 and Portable',
 };
 
@@ -257,6 +262,8 @@ const TAGLINES = {
   es: 'Sigue usando tus altavoces Bose SoundTouch sin la nube de Bose.',
   nl: 'Blijf je Bose SoundTouch speakers gebruiken, zonder de Bose cloud.',
   pt: 'Continua a usar os teus altifalantes Bose SoundTouch sem a cloud Bose.',
+  ja: 'Bose SoundTouch スピーカーを Bose クラウドなしで使い続けられます。',
+  uk: 'Користуйтеся колонками Bose SoundTouch і далі, без хмари Bose.',
   en: 'Keep using your Bose SoundTouch speakers, without the Bose cloud.',
 };
 
@@ -573,7 +580,7 @@ $('view-box').innerHTML = `
 
 // Filter Dropdowns befuellen
 $('searchCountry').innerHTML = COUNTRIES.map(c =>
-  `<option value="${c.cc}">${flagFromCC(c.cc)} ${escapeHtml(c.name)}</option>`
+  `<option value="${c.cc}">${optFlag(c.cc)}${escapeHtml(c.name)}</option>`
 ).join('');
 $('searchOrder').innerHTML = ORDERS.map(o =>
   `<option value="${o.v}">${escapeHtml(o.label)}</option>`
@@ -617,7 +624,16 @@ document.querySelectorAll('.btn-source').forEach(btn => {
       showToast(t('toast.source', { src }));
       setTimeout(refreshStatus, 800);
     } catch (e) {
-      showError(e);
+      // The button is normally hidden on hardware that lacks the
+      // source, but if the box reports it unavailable anyway (1005
+      // UNKNOWN_SOURCE_ERROR, relayed by the agent as source_unavailable)
+      // show a clear message instead of the raw box error.
+      if (String(e).includes('source_unavailable')) {
+        showToast(t('toast.sourceUnavailable', { src }));
+        btn.classList.add('hidden');
+      } else {
+        showError(e);
+      }
     } finally {
       btn.disabled = false;
     }
@@ -1028,17 +1044,38 @@ function selectBox(box) {
 }
 
 // updateSourceButtonVisibility hides source buttons for hardware that
-// the currently-selected box does not have. SoundTouch Portable ships
-// without Bluetooth so the BT button gets hidden there; AUX and
-// STANDBY are available on every model. Run after every selectBox()
+// the currently-selected box does not have. Run after every selectBox()
 // AND after every discovery refresh so the visibility tracks model
 // detection that lands later (Bose stock /info enrichment).
-function updateSourceButtonVisibility() {
+//
+// Two layers: a model-name heuristic gives an immediate answer (the
+// SoundTouch Portable has no Bluetooth), then the box's actual /sources
+// list refines it. The list is authoritative and model-agnostic, so it
+// also catches ST20 hardware variants that ship without Bluetooth (see
+// issue #102, where the box answered a BT /select with 1005
+// UNKNOWN_SOURCE_ERROR). AUX and STANDBY exist on every model.
+async function updateSourceButtonVisibility() {
   const btBtn = document.querySelector('.btn-source[data-source="BLUETOOTH"]');
-  if (!btBtn) return;
-  const model = (state.currentBox && state.currentBox.model) || '';
-  const noBluetooth = /portable/i.test(model);
-  btBtn.classList.toggle('hidden', noBluetooth);
+  if (!btBtn || !state.currentBox) return;
+  const model = (state.currentBox.model) || '';
+  // Immediate heuristic so the button is correct before the async
+  // source list arrives.
+  btBtn.classList.toggle('hidden', /portable/i.test(model));
+  const box = state.currentBox;
+  try {
+    const settings = await BoxSettings(box.host, box.port);
+    // Guard against a box switch while the request was in flight.
+    if (state.currentBox !== box) return;
+    const sources = (settings && settings.sources) || [];
+    // Only trust a non-empty list; an empty one means the box did not
+    // answer /sources and we keep the heuristic result.
+    if (Array.isArray(sources) && sources.length) {
+      const hasBT = sources.some(s => (s.source || '').toUpperCase() === 'BLUETOOTH');
+      btBtn.classList.toggle('hidden', !hasBT);
+    }
+  } catch {
+    // Keep the heuristic result on any error.
+  }
 }
 
 let regionLoaded = false;
@@ -1188,8 +1225,43 @@ function renderGenreChips() {
 // ("german", "english", ...). The i18n bundle holds the per-locale
 // translation under `lang.<name>`. Unknown languages fall back to a
 // capitalised version of the raw API value.
+// radio-browser hands us lowercase English language names; map the
+// common ones to ISO 639 codes so Intl.DisplayNames can localize them
+// into the active app language (works for every locale, no per-language
+// tables).
+const LANG_NAME_TO_CODE = {
+  german: 'de', english: 'en', french: 'fr', spanish: 'es', italian: 'it',
+  dutch: 'nl', portuguese: 'pt', russian: 'ru', polish: 'pl', turkish: 'tr',
+  arabic: 'ar', japanese: 'ja', chinese: 'zh', mandarin: 'zh', cantonese: 'yue',
+  swedish: 'sv', norwegian: 'nb', danish: 'da', finnish: 'fi', czech: 'cs',
+  hungarian: 'hu', romanian: 'ro', greek: 'el', ukrainian: 'uk', bulgarian: 'bg',
+  croatian: 'hr', serbian: 'sr', slovak: 'sk', slovenian: 'sl', estonian: 'et',
+  latvian: 'lv', lithuanian: 'lt', irish: 'ga', welsh: 'cy', catalan: 'ca',
+  galician: 'gl', basque: 'eu', icelandic: 'is', hindi: 'hi', thai: 'th',
+  vietnamese: 'vi', korean: 'ko', indonesian: 'id', malay: 'ms', persian: 'fa',
+  hebrew: 'he', bengali: 'bn', tamil: 'ta', urdu: 'ur', maltese: 'mt',
+};
+let _langDN = null;
+let _langDNLocale = null;
+// localizeLanguageName localizes a radio-browser language name to the
+// active app language via Intl.DisplayNames (per-locale cached), falling
+// back to the i18n lang table, then a capitalized form of the raw name.
 function localizeLanguageName(name) {
   if (!name) return '';
+  const code = LANG_NAME_TO_CODE[name.toLowerCase().trim()];
+  if (code) {
+    try {
+      const loc = getLocale();
+      if (_langDNLocale !== loc) {
+        _langDN = new Intl.DisplayNames([loc], { type: 'language' });
+        _langDNLocale = loc;
+      }
+      const n = _langDN.of(code);
+      if (n && n.toLowerCase() !== code) return n;
+    } catch (_) {
+      // fall through to the table
+    }
+  }
   const translated = tLookup('lang', name);
   if (translated) return translated;
   return name.charAt(0).toUpperCase() + name.slice(1);
@@ -2549,11 +2621,18 @@ function renderBoxSettings(s, box) {
     (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') ||
     (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
   const signalLabel = {
+    'EXCELLENT_SIGNAL': t('signal.excellent'),
     'GOOD_SIGNAL': t('signal.good'),
     'MARGINAL_SIGNAL': t('signal.marginal'),
     'POOR_SIGNAL': t('signal.poor'),
     'NO_SIGNAL': t('signal.none'),
   };
+  // BCO boxes (scm ST20, Portable) expose Wi-Fi as an ethernet coprocessor
+  // and report no signal class. Show an honest note instead of a bare "-"
+  // so it does not read like a missing/failed reading (issue #90).
+  const isCoprocessorWifi = wifi && wifi.type !== 'WIFI_INTERFACE';
+  const signalText = signalLabel[wifi && wifi.signal] || (wifi && wifi.signal) ||
+    (isCoprocessorWifi ? t('signal.notReported') : '-');
   const uid = uidSuffixFor(box);
 
   $('settingsBody').innerHTML = `
@@ -2601,8 +2680,8 @@ function renderBoxSettings(s, box) {
       ${wifi ? `
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSsid'))}</span><span class="kv-val">${escapeHtml(wifi.ssid || '-')}</span></div>
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanIp'))}</span><span class="kv-val">${escapeHtml(wifi.ipAddress || '-')}</span></div>
-        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSignal'))}</span><span class="kv-val">${escapeHtml(signalLabel[wifi.signal] || wifi.signal || '-')}</span></div>
-        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanFrequency'))}</span><span class="kv-val">${wifi.frequencyKHz ? (wifi.frequencyKHz/1000).toFixed(0) + ' MHz' : '-'}</span></div>
+        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSignal'))}</span><span class="kv-val">${escapeHtml(signalText)}</span></div>
+        ${wifi.frequencyKHz ? `<div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanFrequency'))}</span><span class="kv-val">${(wifi.frequencyKHz/1000).toFixed(0)} MHz</span></div>` : ''}
       ` : `<div class="muted small">${escapeHtml(t('settingsView.wlanNotConnected'))}</div>`}
       <button class="btn btn-mini" id="wlanSwitchToggle" style="margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchToggle'))}</button>
       <div id="wlanSwitchForm" class="hidden" style="margin-top:8px">
@@ -2644,6 +2723,16 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.clockHelp'))}</small>
     </div>
 
+    <div class="settings-section hidden" id="airplayOptSection">
+      <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.airplayOptCurrent'))}</span><span class="kv-val" id="airplayOptCurrent">${escapeHtml(t('common.loading'))}</span></div>
+      <div class="setting-row">
+        <button class="btn btn-mini" id="airplayOptOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini" id="airplayOptOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.airplayOptHelp'))}</small>
+    </div>
+
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.sourcesHeading'))}</h3>
       <div class="sources-grid">
@@ -2673,18 +2762,16 @@ function renderBoxSettings(s, box) {
     </div>
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.actionsHeading'))}</h3>
-      <div class="actions-row">
+      <div class="actions-grid">
         <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.syncHardwareKeysHelp'))}</p>
-      </div>
-      <div class="actions-row">
         <button class="btn btn-mini btn-warning" id="boxRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.rebootHelp'))}</p>
-      </div>
-      <hr class="actions-divider" />
-      <div class="actions-row">
+        <hr class="actions-divider" />
         <button class="btn btn-mini btn-danger" id="boxTrueFactoryResetBtn">${escapeHtml(t('settingsView.trueFactoryResetBtn'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.trueFactoryResetHelpShort'))}</p>
+        <button class="btn btn-mini btn-danger" id="boxRemoveSTRBtn">${escapeHtml(t('settingsView.removeSTRBtn'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.removeSTRHelp'))}</p>
       </div>
     </div>
     <div class="settings-section">
@@ -2923,6 +3010,42 @@ function renderBoxSettings(s, box) {
     };
   }
 
+  // Remove STR entirely and return the speaker to vanilla Bose. Unlike
+  // True Factory Reset (which keeps STR installed for re-onboarding),
+  // this uninstalls STR. The backend refuses while the USB stick is
+  // still inserted (Bose would reinstall STR from it on the next boot),
+  // so we warn about that up front and surface the stick-present case.
+  const rmBtn = $('boxRemoveSTRBtn');
+  if (rmBtn) {
+    rmBtn.onclick = async () => {
+      const ok = await confirmWarn(
+        t('settingsView.removeSTRConfirmTitle'),
+        t('settingsView.removeSTRConfirmBody', { name: box.friendlyName || box.name || box.host })
+      );
+      if (!ok) return;
+      rmBtn.disabled = true;
+      rmBtn.textContent = t('settingsView.removeSTRRunning');
+      try {
+        const r = await UninstallSTR(box.host);
+        if (r && r.ok) {
+          showToast(t('settingsView.removeSTRDoneToast', { n: (r.removedFiles || []).length }));
+          // Speaker reboots into vanilla Bose OOB; it will be off the LAN
+          // for a while. Re-scan in 60 s.
+          setTimeout(discoverBoxes, 60000);
+        } else if (r && r.stickPresent) {
+          showError(t('settingsView.removeSTRStickPresent'));
+        } else {
+          showError(t('settingsView.removeSTRFailed', { msg: (r && r.message) || '?' }));
+        }
+      } catch (e) {
+        showError(e);
+      } finally {
+        rmBtn.disabled = false;
+        rmBtn.textContent = t('settingsView.removeSTRBtn');
+      }
+    };
+  }
+
   // Language (BETA): GET /language on :8090 of the box, parse the
   // sysLanguage integer, show in the label and pre-select the
   // dropdown. POST on Save. Errors surface via showError; the
@@ -3012,18 +3135,53 @@ function renderBoxSettings(s, box) {
   // keeping the current on/off state (no need to click "On" again).
   if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
 
+  // AirPlay optimization (BCO speakers only). GET reports supported +
+  // current state; the section stays hidden on non-BCO models. Toggling
+  // reboots the speaker to apply it (BoseApp reads BCOResetTimerEnabled
+  // at boot, same as the Bose app), so confirm first.
+  const aoSection = $('airplayOptSection');
+  const aoCurrent = $('airplayOptCurrent');
+  if (aoSection && aoCurrent) {
+    (async () => {
+      try {
+        const r = await GetAirplayOpt(box.host, box.port);
+        if (r && r.supported) {
+          aoSection.classList.remove('hidden');
+          aoCurrent.textContent = r.enabled ? t('settingsView.clockOn') : t('settingsView.clockOff');
+        }
+      } catch { /* leave the section hidden on error */ }
+    })();
+    const setAO = async (enabled) => {
+      const ok = await confirmWarn(
+        t('settingsView.airplayOptConfirmTitle'),
+        t('settingsView.airplayOptConfirmBody'),
+      );
+      if (!ok) return;
+      try {
+        await SetAirplayOpt(box.host, box.port, enabled);
+        aoCurrent.textContent = enabled ? t('settingsView.clockOn') : t('settingsView.clockOff');
+        showToast(t('settingsView.airplayOptSavedToast'));
+        setTimeout(discoverBoxes, 60000);
+      } catch (e) { showError(e); }
+    };
+    const aoOn = $('airplayOptOn');
+    const aoOff = $('airplayOptOff');
+    if (aoOn) aoOn.onclick = () => setAO(true);
+    if (aoOff) aoOff.onclick = () => setAO(false);
+  }
+
   // App Region dropdown fuellen + aktuelle Region selektieren
   const regSel = $('appRegionSelect');
   if (regSel) {
     regSel.innerHTML = COUNTRIES.filter(c => c.cc).map(c =>
-      `<option value="${c.cc}">${flagFromCC(c.cc)} ${escapeHtml(c.name)}</option>`
+      `<option value="${c.cc}">${optFlag(c.cc)}${escapeHtml(c.name)}</option>`
     ).join('');
     const updateCurrentDisplay = (cc) => {
       const el = $('currentAppRegion');
       if (!el) return;
       const c = COUNTRIES.find(x => x.cc === cc);
       el.innerHTML = c
-        ? `${flagFromCC(cc)} ${escapeHtml(c.name)} (${escapeHtml(cc)})`
+        ? `${optFlag(cc)}${escapeHtml(c.name)} (${escapeHtml(cc)})`
         : escapeHtml(cc || t('common.unknown'));
     };
     fetch(`http://${box.host}:${box.port}/api/region`).then(r => r.ok ? r.json() : null).then(data => {
@@ -3475,7 +3633,7 @@ wireCombobox('setupName', 'setupNameToggle', 'setupNameList', getRoomNames());
   const sel = $('setupRegion');
   if (!sel) return;
   sel.innerHTML = COUNTRIES.filter(c => c.cc).map(c =>
-    `<option value="${c.cc}">${flagFromCC(c.cc)} ${escapeHtml(c.name)}</option>`
+    `<option value="${c.cc}">${optFlag(c.cc)}${escapeHtml(c.name)}</option>`
   ).join('');
   const saved = (() => { try { return localStorage.getItem('setupRegion'); } catch { return null; }})();
   sel.value = saved || 'DE';
