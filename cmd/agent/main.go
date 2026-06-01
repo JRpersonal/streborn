@@ -938,16 +938,32 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	time.Sleep(90 * time.Second)
 	tick := time.NewTicker(5 * time.Minute)
 	defer tick.Stop()
+	// fullDone tracks whether we have done a full re-sync since the box
+	// last became ready. The boot-time preset sync can run before the
+	// box's preset / hardware-button subsystem is fully up; the slots
+	// then show in /presets (so the missing-only path skips them) yet
+	// the physical buttons do not recognise them until a fresh AddPreset
+	// re-registers them once the box is ready. So the FIRST reconcile
+	// after the box leaves OOB re-pushes ALL slots, not just missing
+	// ones. Resets when the box drops back to OOB so a re-provision
+	// re-registers the buttons. Live-confirmed on a taigan Portable
+	// 2026-06-01: buttons 1/2 stayed "empty" until a full re-sync even
+	// though /presets listed them.
+	fullDone := false
 	for {
-		reconcileOnce(store, boxHost, logger)
+		ready := reconcileOnce(store, boxHost, logger, !fullDone)
+		fullDone = ready
 		<-tick.C
 	}
 }
 
-func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger) {
+// reconcileOnce returns true once the box is out of OOB and reachable.
+// When forceFull is set it re-pushes EVERY stick preset rather than only
+// the slots missing from the box's /presets list (see fullDone above).
+func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool) bool {
 	stick := store.All()
 	if len(stick) == 0 {
-		return
+		return false
 	}
 	// Do not push presets while the box is still in out-of-box setup.
 	// In OOB the Marge state machine is NotAssociated, so every
@@ -957,31 +973,36 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger) {
 	// 2026-05-31.
 	if boxInSetupOOB(boxHost) {
 		logger.Debug("preset reconcile: box still in OOB setup (MargeHSM not associated), skipping until it joins a network")
-		return
+		return false
 	}
 	boxSlots, err := fetchBoxPresetSlots(boxHost)
 	if err != nil {
 		logger.Debug("preset reconcile: box presets not readable", "err", err)
-		return
+		return false
 	}
 	var missing []boxcli.PresetSpec
 	for _, p := range stick {
-		if !boxSlots[p.Slot] {
+		if forceFull || !boxSlots[p.Slot] {
 			missing = append(missing, boxcli.PresetSpec{
 				Slot: p.Slot, Name: p.Name, StreamURL: proxyStreamURL(p.Slot),
 			})
 		}
 	}
 	if len(missing) == 0 {
-		return
+		return true
 	}
-	logger.Info("preset reconcile: fehlende Slots auf Box, sync", "fehlend", len(missing))
+	if forceFull {
+		logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
+	} else {
+		logger.Info("preset reconcile: fehlende Slots auf Box, sync", "fehlend", len(missing))
+	}
 	errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
 	for slot, err := range errs {
 		if err == nil {
 			logger.Info("preset reconcile geheilt", "slot", slot)
 		}
 	}
+	return true
 }
 
 // fetchBoxPresetSlots liest GET /presets von der Bose API und liefert
