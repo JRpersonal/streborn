@@ -1334,6 +1334,11 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                     pdone=0; inarr=0; idone=0
                 }
                 /<MaxWifiProfileId>/{ sub(/>[^<]*</, ">WIFI_PROFILE_ID_1<") }
+                # Enable the AirPlay optimization by default: this is the
+                # iOS app advanced-settings "AirPlay improvement" toggle,
+                # stored as BCOResetTimerEnabled on the root (a BCO
+                # coprocessor keepalive). Applied on the reboot M_air does.
+                /<AirplayConfiguration /{ sub(/BCOResetTimerEnabled="[^"]*"/, "BCOResetTimerEnabled=\"true\"") }
                 /<WifiProfileArray>/{ inarr=1 }
                 /<\/WifiProfileArray>/{ inarr=0 }
                 inarr && /<Item>/ && !idone { sub(/>[^<]*</, ">WIFI_PROFILE_ID_1<"); idone=1 }
@@ -1357,7 +1362,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                     }
                     e="\" passphrase=\"\" wpaCipher=\"\" security=\"\" wepKey=\"\" encrypted=\"false\" dhcpStatus=\"DHCP_ACTIVE\" ipAddress=\"\" ipMask=\"\" ipGateway=\"\" proxyServerStatus=\"PROXY_SERVER_DISABLED\" proxyServer=\"\" proxyPort=\"\" dnsServer1=\"\" dnsServer2=\"\" />"
                     print "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>"
-                    print "<AirplayConfiguration SmscUpdating=\"false\" RestoreAttempts=\"0\" BCOResetTimerEnabled=\"false\">"
+                    print "<AirplayConfiguration SmscUpdating=\"false\" RestoreAttempts=\"0\" BCOResetTimerEnabled=\"true\">"
                     print "    <MaxWifiProfileId>WIFI_PROFILE_ID_1</MaxWifiProfileId>"
                     print "    <WifiProfileArray>"
                     print "        <Item>WIFI_PROFILE_ID_1</Item>"
