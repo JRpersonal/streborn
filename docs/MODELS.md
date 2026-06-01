@@ -1,55 +1,111 @@
-# Unterstuetzte Bose SoundTouch Modelle
+# Supported Bose SoundTouch models
 
-Welches Release Asset gehoert zu welcher Box. Stand der Validierung.
+Which release asset goes with which speaker, and how far each model has
+been validated.
 
-> Per-variant hardware fingerprint (moduleType, components, firmware
-> build stamps, kernel, RAM, WLAN-interface presence) lives in
-> [`MODEL-VARIANTS.md`](MODEL-VARIANTS.md). Update that file when a
-> new diagnostic bundle reveals a previously unseen combination.
+> Per-variant hardware fingerprints (moduleType, components, firmware
+> build stamps, kernel, RAM, WLAN-interface presence) live in
+> [`MODEL-VARIANTS.md`](MODEL-VARIANTS.md). Update that file when a new
+> diagnostic bundle reveals a previously unseen combination.
 
-## Asset zu Modell Zuordnung
+## Status at a glance
 
-| Asset Name                      | Bose Modell                | Hardware Plattform | Status         |
-| ------------------------------- | -------------------------- | ------------------ | -------------- |
-| `streborn-armv7l`        | technischer Name           | TI AM33xx ARMv7l   | Referenz       |
-| `streborn-ST10`          | SoundTouch 10              | TI AM33xx, Modul SM2, variant rhino | validiert      |
-| `streborn-ST20`          | SoundTouch 20              | TI AM33xx, Modul SM2 (vermutet) | nicht getestet |
-| `streborn-ST30`          | SoundTouch 30              | TI AM33xx, Modul SM2 (vermutet) | nicht getestet |
-| `streborn-WaveSoundTouchIV` | Wave SoundTouch IV     | unbekannt, evtl. andere CPU | nicht validiert |
-| `streborn-arm64`         | Reserve (theoretisch)      | ARM64              | nicht relevant |
-| `streborn-amd64`         | Dev/Test Maschine          | x86_64             | nicht relevant |
+| Model | Platform / variant | STR status |
+| --- | --- | --- |
+| **SoundTouch 10** | TI AM335x ARMv7l, module SM2, variant `rhino` (Series-II) | **Verified** |
+| **SoundTouch Portable** | TI AM335x ARMv7l, BCO coprocessor, variant `taigan` | **Verified** |
+| **SoundTouch 20** | TI AM335x ARMv7l, module `scm` + SMSC, variant `spotty` (BCO) | **Working (contributor-confirmed; final stability confirmation in progress)** |
+| **SoundTouch 20** | TI AM335x ARMv7l, module SM2 (Series-II) | **Expected** (same path as ST10; awaiting a live report) |
+| **SoundTouch 30** | TI AM335x ARMv7l (SM2 or scm) | **Expected** (untested) |
+| Wave SoundTouch IV | unknown, possibly different CPU | **Unknown** |
+| other (Soundbar, ST300, ...) | unknown | **Unknown** |
 
-## Status Definitionen
+All ARMv7l models run the same agent binary (`streborn-armv7l`); the
+per-model release aliases are byte-identical copies for convenience.
 
-- **validiert**: live auf dem Geraet getestet, Bootstrap laeuft sauber, Agent hostet Marge/BMX/WebUI ohne Crash, mindestens ein FW Update Zyklus ueberstanden.
-- **nicht getestet, vermutet kompatibel**: gleiche Hardware Plattform wie das validierte Geraet, sollte funktionieren, aber ohne praktischen Beleg.
-- **nicht validiert**: andere Hardware oder unklare Plattform, kein Garantie dass es laeuft.
+### Status definitions
 
-## Welche Datei nehme ich?
+- **Verified** , exercised live on real hardware: clean bootstrap, the
+  speaker provisions onto Wi-Fi, the agent serves WebUI/Marge/BMX without
+  crashing, radio + presets work, and it survives a reboot/standby cycle.
+- **Working (confirmation in progress)** , provisions and plays on real
+  hardware via a trusted contributor; a final end-to-end stability pass
+  on the current release is still being confirmed.
+- **Expected** , same hardware platform as a verified model, no live
+  proof yet.
+- **Unknown** , different or unconfirmed hardware; no guarantee.
 
-- Du hast eine **SoundTouch 10**: nimm `streborn-ST10`. Oder `streborn-armv7l`, ist das identische Binary.
-- Du hast eine **SoundTouch 20 oder 30**: nimm den passenden Modell Namen. Funktion vermutlich identisch zu ST10, aber Live Test steht aus. Wenn du sie laeufst und es klappt, freue ich mich ueber Rueckmeldung.
-- Du hast eine **Wave SoundTouch IV**: vermutlich brauchst du eine andere Binary Variante. Bitte zuerst auf der Box nachschauen welche CPU drin ist (`uname -m` per SSH), dann zur Sicherheit das `armv7l` Asset probieren.
-- Du hast eine **andere ST Box** (Portable, Soundbar, 300 etc.): nicht validiert, vermutlich andere Hardware. Wenn du Lust hast, lass uns gemeinsam analysieren.
+## Two hardware families (this is the important part)
 
-## Wie kann ich pruefen ob mein Modell unterstuetzt ist?
+SoundTouch speakers on AM335x split into two families that STR has to
+provision and reach completely differently. Both run the same agent
+binary; the difference is in how Wi-Fi and external reachability work.
 
-Per SSH auf der Box (siehe `RUNBOOK-analyse.md` fuer Setup):
+### Series-II (classic): `rhino` / SM2 , ST10, and SM2 ST20/30
+
+- Real `wlan0` interface; STR provisions Wi-Fi the documented way
+  (`/addWirelessProfile` over the box's HTTP API, or `wpa_supplicant`).
+- The STR agent's port `:8888` is reachable directly from the LAN.
+- This is the original, simplest path. ST10 is the reference target.
+
+### BCO (AirPlay-capable): `taigan` (Portable) / `scm`+`spotty` (ST20)
+
+These speakers drive Wi-Fi through a separate coprocessor exposed as
+`eth0` (USB-CDC-Ethernet), and the chipset firewalls inbound TCP: the
+agent's `:8888` is dropped from the LAN even though it is listening.
+STR handles this with three mechanisms, all live-verified in mid-2026:
+
+1. **Provisioning via `AirplayConfiguration.xml` (M_air).** The
+   documented `/addWirelessProfile` returns HTTP 500 on these boxes
+   (the Marge/cloud handshake is dead post-shutdown). Instead STR writes
+   an accountless `PersistentWifiProfile` directly into
+   `/mnt/nv/BoseApp-Persistence/<N>/AirplayConfiguration.xml`; BoseApp's
+   network controller reads it at boot and joins Wi-Fi. STR skips this
+   rewrite+reboot once the box is already provisioned for the same
+   credentials, so a stick left inserted does not force a slow reboot.
+2. **External reachability via an iptables REDIRECT.** A whitelisted
+   Bose port (`:17008`) is REDIRECTed to the agent's `:8888`, so LAN
+   clients reach STR through `:17008`. The desktop app probes both ports
+   and uses whichever actually answers (a verified-reachable port always
+   wins over the mDNS-announced `:8888`).
+3. **The on-screen "white bar" on boot is the box, not a hang.** BoseApp
+   on these models takes ~130 s to come up; with a stick inserted there
+   is also a one-time provisioning reboot. The speaker does finish
+   booting; pull the stick after the initial install for a fast boot.
+
+The desktop app also keeps a recently-seen speaker in its list across a
+missed discovery cycle, so a BCO box does not flicker in and out.
+
+## Display language
+
+The box display/voice language is the Bose `sysLanguage` integer (full
+enum 0..25 resolved; English = 3, German = 2, Danish = 1, ...). STR no
+longer hard-codes one language: the setup wizard picks it from the
+chosen country, refined by the app's UI language, and the box-language
+picker lists all 25 languages by their native name. Speakers with no
+matching language fall back to English (for a Ukrainian UI the box
+display falls back to Russian, which is more readable than English,
+while the app UI itself never offers Russian).
+
+## How to check your model over SSH
 
 ```sh
-uname -m            # zeigt CPU Architektur, z.B. armv7l
-cat /proc/variant   # zeigt Bose Variant Name (z.B. rhino fuer ST10)
-cat /proc/module_type  # zeigt Modul Type (z.B. sm2)
-hostname            # zeigt Bose Hostname (z.B. shelby)
+uname -m              # CPU, e.g. armv7l
+cat /proc/variant     # Bose variant: rhino (ST10), taigan (Portable), spotty (ST20)
+hostname              # Bose hostname, often equals the variant
+# Series-II vs BCO: a real wlan0 means Series-II; Wi-Fi via eth0 + a
+# <componentCategory>SCM</componentCategory> in /info means BCO.
 ```
 
-Wenn `uname -m` armv7l ergibt und `module_type` sm2 ist, sollte unser Binary problemlos funktionieren.
+If `uname -m` is `armv7l`, the `streborn-armv7l` binary is the right one
+regardless of family; the family only changes how STR provisions and
+reaches the box, which run.sh detects automatically.
 
-## Hinzufuegen weiterer Modelle
+## Adding another model
 
-Wenn ein anderes SoundTouch Modell unterstuetzt werden soll:
-
-1. Plattform Analyse durchfuehren (siehe `RUNBOOK-analyse.md`).
-2. CPU und Modul Type pruefen. Wenn nicht ARMv7l/SM2, neuer Cross Compile Target im Makefile und CI noetig.
-3. Wenn dieselbe Plattform: nur Eintrag in dieser Tabelle plus Asset Alias in `.github/workflows/build.yml` ergaenzen.
-4. Live Test, Ergebnis in Status Spalte eintragen.
+1. Run the platform analysis (see `RUNBOOK-analyse.md`).
+2. Check CPU + module type. If not ARMv7l, a new cross-compile target in
+   the Makefile and CI is needed.
+3. Same platform: add a row here plus an asset alias in
+   `.github/workflows/build.yml`.
+4. Live-test, then record the result in the status table above.
