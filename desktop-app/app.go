@@ -1563,7 +1563,19 @@ func parseVersionParts(v string) []int {
 // respond with a body when v is older. Example:
 //
 //	{"version":"v0.6.6","build":"...","downloadUrl":"https://st-reborn.de/download/windows","notes":"..."}
-func (a *App) CheckAppUpdate() (map[string]string, error) {
+func (a *App) CheckAppUpdate() (result map[string]string, err error) {
+	// The update check is best-effort and must never take the app down.
+	// Any unforeseen panic (a malformed response that trips a code path,
+	// a nil deref, etc.) is recovered here and reported as a plain error,
+	// so an unreachable or garbage endpoint can only ever mean "no banner".
+	defer func() {
+		if r := recover(); r != nil {
+			if a.logger != nil {
+				a.logger.Warn("CheckAppUpdate recovered from panic", "panic", r)
+			}
+			result, err = nil, fmt.Errorf("update check failed")
+		}
+	}()
 	info := a.AppInfo()
 	manifestURL := info.UpdateManifestURL
 	// Dev/staging override: point the update check at a different

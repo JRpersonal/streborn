@@ -501,19 +501,29 @@ function renderDonateSidebar() {
 }
 
 async function checkAppUpdate() {
+  // Entirely best-effort: an unreachable endpoint or a garbage payload
+  // must never break the UI. Validate every field defensively and stay
+  // silent on any failure.
   try {
     const m = await CheckAppUpdate();
-    if (!m || !m.version) return;
+    if (!m || typeof m !== 'object' || typeof m.version !== 'string' || !m.version) return;
     const banner = $('appUpdateBanner');
+    if (!banner) return;
+    // Cap notes so a large release body (the endpoint may echo the full
+    // GitHub markdown) cannot flood the banner.
+    const notes = typeof m.notes === 'string' ? m.notes.slice(0, 300) : '';
+    // Only treat a real http(s) URL as a download link; anything else is
+    // ignored so we never hand junk to the system browser.
+    const dlUrl = (typeof m.downloadUrl === 'string' && /^https?:\/\//i.test(m.downloadUrl)) ? m.downloadUrl : '';
     banner.innerHTML = `
-      <div><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} <small>${escapeHtml(m.notes || '')}</small></div>
-      ${m.downloadUrl ? `<button class="btn btn-mini" id="appUpdateBtn">${escapeHtml(t('banner.download'))}</button>` : ''}
+      <div><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)}${notes ? ` <small>${escapeHtml(notes)}</small>` : ''}</div>
+      ${dlUrl ? `<button class="btn btn-mini" id="appUpdateBtn">${escapeHtml(t('banner.download'))}</button>` : ''}
     `;
     banner.classList.remove('hidden');
     const dl = $('appUpdateBtn');
-    if (dl) dl.onclick = () => BrowserOpenURL(m.downloadUrl);
-  } catch {
-    // Stille
+    if (dl && dlUrl) dl.onclick = () => BrowserOpenURL(dlUrl);
+  } catch (e) {
+    try { console.warn('checkAppUpdate failed', e); } catch {}
   }
 }
 
@@ -4814,6 +4824,13 @@ renderFooter();
 // speaker immediately. discoverBoxes refreshes the real list in the
 // background within a few seconds.
 (function bootFromCache() {
+ // Wrapped end to end: this runs synchronously at module load and only
+ // when a cached speaker exists in localStorage. A throw here would abort
+ // the rest of the bootstrap (discoverBoxes + the refreshStatus timer
+ // below never run) and leave the window blank, which presents to the
+ // user as the app flashing up and quitting. Never let prefill-render do
+ // that: on any failure, log and fall through to live discovery.
+ try {
   const cached = loadCachedBoxes();
   if (cached.length === 0) return;
   state.boxes = cached;
@@ -4836,9 +4853,12 @@ renderFooter();
   } else {
     renderBoxSelect();
   }
+ } catch (e) {
+  try { console.warn('bootFromCache failed, falling back to live discovery', e); } catch {}
+ }
 })();
 
-discoverBoxes();
+try { discoverBoxes(); } catch (e) { try { console.warn('discoverBoxes failed', e); } catch {} }
 // loadWifiProfiles() no longer fires at app start. Defers the OS
 // WiFi profile lookup to Setup-tab activation (see switchView).
 // Was the cause of the macOS keychain prompt on every launch (#88)
