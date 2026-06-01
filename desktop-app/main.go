@@ -17,6 +17,18 @@ import (
 var assets embed.FS
 
 func main() {
+	// Last-resort crash trace. A panic that escapes wails.Run (or
+	// happens during app construction) would otherwise vanish in a
+	// production build with no console. Record it to str.log, then
+	// re-panic so the OS still files its own crash report
+	// (e.g. macOS DiagnosticReports).
+	defer func() {
+		if r := recover(); r != nil {
+			logCrash("main", r)
+			panic(r)
+		}
+	}()
+
 	// Create an instance of the app structure
 	app := NewApp()
 

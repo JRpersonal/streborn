@@ -100,6 +100,17 @@ func (a *App) startup(ctx context.Context) {
 		"agentbinAvailable", agentbin.Available())
 }
 
+// LogClientError records an error the frontend caught (a global
+// window onerror or an unhandledrejection) into str.log. Frontend
+// JavaScript crashes do not otherwise reach the file logger, so
+// without this a startup "flashes up and quits" leaves no trace to
+// diagnose. Best-effort, never throws back into JS.
+func (a *App) LogClientError(msg string) {
+	if a.logger != nil {
+		a.logger.Error("frontend error", "detail", msg)
+	}
+}
+
 // BoxInfo is the speaker entry passed to the frontend for selection.
 // Kind distinguishes STR-equipped speakers from stock Bose speakers
 // that still need a USB-stick install.

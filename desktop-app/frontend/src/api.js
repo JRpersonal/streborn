@@ -59,6 +59,7 @@ export {
   PushWLANToBox,
   ListMediaServers,
   BrowseLibrary,
+  LogClientError,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL } from '../wailsjs/runtime/runtime';

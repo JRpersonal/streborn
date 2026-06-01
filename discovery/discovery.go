@@ -505,7 +505,7 @@ func pickAnnounceIfaces(logger *slog.Logger) []net.Interface {
 			continue
 		}
 		if iface.Name == "usb0" || strings.HasPrefix(iface.Name, "usb") {
-			logger.Info("mDNS skip USB Gadget Interface", slog.String("iface", iface.Name))
+			logger.Debug("mDNS skip USB Gadget Interface", slog.String("iface", iface.Name))
 			continue
 		}
 		// Extra Sicherheit: pruefen ob nur TEST-NET-3 IPs zugewiesen sind
@@ -526,7 +526,12 @@ func pickAnnounceIfaces(logger *slog.Logger) []net.Interface {
 			hasUsable = true
 		}
 		if !hasUsable {
-			logger.Info("mDNS skip Interface ohne brauchbare IP", slog.String("iface", iface.Name))
+			// Debug, not Info: macOS hosts have a long list of virtual
+			// interfaces (awdl0, llw0, p2p0, utunN) with no usable IPv4,
+			// and this fires for each of them on every discovery cycle.
+			// At Info it floods str.log (the dominant source of log
+			// growth reported by users).
+			logger.Debug("mDNS skip Interface ohne brauchbare IP", slog.String("iface", iface.Name))
 			continue
 		}
 		out = append(out, iface)

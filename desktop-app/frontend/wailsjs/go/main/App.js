@@ -94,6 +94,10 @@ export function ListWiFiProfiles() {
   return window['go']['main']['App']['ListWiFiProfiles']();
 }
 
+export function LogClientError(arg1) {
+  return window['go']['main']['App']['LogClientError'](arg1);
+}
+
 export function Pause(arg1, arg2) {
   return window['go']['main']['App']['Pause'](arg1, arg2);
 }

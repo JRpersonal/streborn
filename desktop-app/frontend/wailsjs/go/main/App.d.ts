@@ -50,6 +50,8 @@ export function ListMediaServers(arg1:number):Promise<Array<main.LibraryServer>>
 
 export function ListWiFiProfiles():Promise<Array<wifiprofiles.Profile>>;
 
+export function LogClientError(arg1:string):Promise<void>;
+
 export function Pause(arg1:string,arg2:number):Promise<void>;
 
 export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;

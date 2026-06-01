@@ -52,8 +52,31 @@ import {
   PushWLANToBox,
   ListMediaServers,
   BrowseLibrary,
+  LogClientError,
   BrowserOpenURL,
 } from './api.js';
+
+// Global frontend crash capture, registered as early as possible.
+// A JavaScript error during startup does not reach str.log on its own,
+// so a "flashes up and quits" leaves nothing to diagnose. Forward any
+// uncaught error or rejected promise to the Go logger. Best-effort:
+// the handlers never throw themselves.
+(function installClientErrorHooks() {
+  const report = (kind, detail) => {
+    try { LogClientError(`${kind}: ${detail}`); } catch {}
+    try { console.error(kind, detail); } catch {}
+  };
+  try {
+    window.addEventListener('error', (e) => {
+      const stack = e && e.error && e.error.stack ? '\n' + e.error.stack : '';
+      report('window.onerror', `${(e && e.message) || ''} @ ${(e && e.filename) || ''}:${(e && e.lineno) || ''}${stack}`);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      const r = e && e.reason;
+      report('unhandledrejection', (r && r.stack) ? r.stack : String(r));
+    });
+  } catch {}
+})();
 
 import {
   state,

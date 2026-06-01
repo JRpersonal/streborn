@@ -7,11 +7,14 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"time"
 )
 
 const (
@@ -49,6 +52,20 @@ func LogFilePath() string {
 	return filepath.Join(base, logDirName, logFileName)
 }
 
+// rotateLogOnStartup keeps the log small and bounded across sessions:
+// it moves an existing log to <name>.1 (overwriting an older .1) so the
+// live file starts fresh on each launch and never grows run after run,
+// while the immediately previous session (e.g. one that just crashed)
+// stays available for diagnosis. Best-effort; called once at startup.
+func rotateLogOnStartup() {
+	path := LogFilePath()
+	st, err := os.Stat(path)
+	if err != nil || st.Size() == 0 {
+		return
+	}
+	_ = os.Rename(path, path+".1")
+}
+
 // openLogFile prepares the log file: ensures the directory exists,
 // truncates if the current file is too large to keep the working
 // set small, opens in append mode.
@@ -77,6 +94,20 @@ func (s safeWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// logCrash appends a panic record (with stack) straight to the log
+// file, independent of the slog logger, so a crash that happens before
+// or outside the logger still leaves a trace. Best-effort: a failure to
+// open the file is swallowed because we are already on the crash path.
+func logCrash(where string, r any) {
+	f, err := openLogFile()
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "time=%s level=ERROR msg=PANIC where=%q value=%v\n%s\n",
+		time.Now().Format(time.RFC3339), where, r, debug.Stack())
+}
+
 // newFileLogger returns a slog.Logger that writes to the file at
 // LogFilePath() and (best-effort) stderr. File writes come first in
 // the multi-writer so a dead stderr in a production Wails build
@@ -86,11 +117,36 @@ func (s safeWriter) Write(p []byte) (int, error) {
 // opened, the file return is nil and the logger falls back to
 // safe-stderr only.
 func newFileLogger(level slog.Level) (*slog.Logger, *os.File) {
-	var w io.Writer = safeWriter{os.Stderr}
-	var file *os.File
-	if f, err := openLogFile(); err == nil {
-		w = io.MultiWriter(f, safeWriter{os.Stderr})
-		file = f
+	rotateLogOnStartup()
+	f, err := openLogFile()
+	if err != nil {
+		return slog.New(slog.NewTextHandler(safeWriter{os.Stderr}, &slog.HandlerOptions{Level: level})), nil
 	}
-	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})), file
+	var w io.Writer
+	if stderrIsConsole() {
+		// Dev (wails dev): stderr is a real console. Keep showing logs
+		// there in addition to the file.
+		w = io.MultiWriter(f, safeWriter{os.Stderr})
+	} else {
+		// Production build: Wails discards stderr (no console). Redirect
+		// the OS stderr fd to the log file so the Go runtime's own crash
+		// traceback, which it writes to fd 2 on an unrecovered panic in
+		// ANY goroutine or a fatal runtime error (e.g. concurrent map
+		// access), is captured instead of lost. Log only to the file
+		// afterwards so structured lines are not written twice.
+		redirectStderrTo(f)
+		w = f
+	}
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})), f
+}
+
+// stderrIsConsole reports whether stderr is attached to a terminal. A
+// character device means a real console (wails dev); anything else (a
+// pipe, a closed/!discarded handle in a production GUI build) is not.
+func stderrIsConsole() bool {
+	fi, err := os.Stderr.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
