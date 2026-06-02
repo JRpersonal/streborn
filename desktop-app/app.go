@@ -33,6 +33,19 @@ type App struct {
 	logFile    *os.File // kept so ExportDiagnosticLogs can Sync before reading
 	httpClient *http.Client
 
+	// portCache maps a box host to the agent port last seen answering it.
+	// BCO boxes (Portable/taigan, ST20-spotty) expose the agent only on
+	// the redirected :17008, classic boxes answer :8888 directly, and mDNS
+	// announces :8888 either way, so a box record can carry the wrong
+	// port. boxDo tries the cached/known port, falls back to the other on
+	// any transport failure, and caches whichever connects. This is
+	// self-healing: if the box froze and the app got pinned to a port that
+	// no longer answers (observed: a freeze made :17008 time out, discovery
+	// fell back to the announced :8888 and never retried :17008), the next
+	// call simply fails over and re-pins to the working port.
+	portMu    sync.Mutex
+	portCache map[string]int
+
 	// libraryServers caches the result of the most recent
 	// ListMediaServers call so subsequent BrowseLibrary calls can
 	// resolve a UDN to a Server without a fresh SSDP sweep on every
@@ -815,7 +828,102 @@ func (a *App) baseURL(host string, port int) string {
 	if port == 0 {
 		port = 17008
 	}
+	if cp, ok := a.cachedPort(host); ok {
+		port = cp
+	}
 	return fmt.Sprintf("http://%s:%d", host, port)
+}
+
+func (a *App) cachedPort(host string) (int, bool) {
+	a.portMu.Lock()
+	defer a.portMu.Unlock()
+	p, ok := a.portCache[host]
+	return p, ok
+}
+
+func (a *App) rememberPort(host string, port int) {
+	a.portMu.Lock()
+	defer a.portMu.Unlock()
+	if a.portCache == nil {
+		a.portCache = map[string]int{}
+	}
+	a.portCache[host] = port
+}
+
+func (a *App) forgetPort(host string) {
+	a.portMu.Lock()
+	defer a.portMu.Unlock()
+	delete(a.portCache, host)
+}
+
+// altAgentPort returns the other agent port. The two are the STR agent's
+// direct :8888 and the BCO chipset-whitelisted redirect :17008.
+func altAgentPort(p int) int {
+	if p == 8888 {
+		return 17008
+	}
+	return 8888
+}
+
+// candidatePorts is the ordered, deduped list of agent ports to try for a
+// host: the cached working port first (if any), then the caller's port,
+// then the alternate. So the common case is one direct hit; a wrong/stale
+// port costs one extra fast attempt and then self-corrects via the cache.
+func (a *App) candidatePorts(host string, port int) []int {
+	if port == 0 {
+		port = 17008
+	}
+	order := make([]int, 0, 3)
+	if cp, ok := a.cachedPort(host); ok {
+		order = append(order, cp)
+	}
+	order = append(order, port, altAgentPort(port))
+	seen := map[int]bool{}
+	out := order[:0]
+	for _, p := range order {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// boxDo performs an HTTP request against the agent with transparent port
+// fallback. It tries each candidate port in turn; the first that connects
+// is cached for the host and its response returned. A transport-level
+// failure (connection refused, timeout, reset) drops the cached port and
+// moves to the next candidate, so a box that changed which port it answers
+// on (reboot, freeze, OTA) self-heals on the very next call. A non-
+// transport error (a real HTTP response the caller must see) is returned
+// immediately without flailing across ports. Caller closes resp.Body.
+func (a *App) boxDo(host string, port int, method, path, contentType, body string) (*http.Response, error) {
+	var lastErr error
+	for _, p := range a.candidatePorts(host, port) {
+		url := fmt.Sprintf("http://%s:%d%s", host, p, path)
+		var rdr io.Reader
+		if body != "" {
+			rdr = strings.NewReader(body)
+		}
+		req, err := http.NewRequestWithContext(a.ctx, method, url, rdr)
+		if err != nil {
+			return nil, err
+		}
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		resp, err := a.httpClient.Do(req)
+		if err == nil {
+			a.rememberPort(host, p)
+			return resp, nil
+		}
+		lastErr = err
+		if !isTransportNotReady(err) {
+			return nil, err
+		}
+		a.forgetPort(host)
+	}
+	return nil, lastErr
 }
 
 // GetPresets ruft GET /api/presets des angegebenen Sticks.
@@ -874,8 +982,7 @@ func (a *App) DeletePreset(host string, port int, slot int) error {
 
 // PlaySlot triggert POST /api/play/<slot>.
 func (a *App) PlaySlot(host string, port int, slot int) error {
-	url := fmt.Sprintf("%s/api/play/%d", a.baseURL(host, port), slot)
-	resp, err := a.playPost(url, "")
+	resp, err := a.playPost(host, port, fmt.Sprintf("/api/play/%d", slot), "")
 	if err != nil {
 		return err
 	}
@@ -910,26 +1017,23 @@ func isTransportNotReady(err error) bool {
 	return false
 }
 
-// playPost POSTs to a play endpoint, retrying once after a short delay
-// when the first attempt fails at the transport layer, so a play fired
-// during the post-reboot window on a BCO box gets a second chance once
-// the redirect/agent are up. If it still cannot connect, it returns the
-// sentinel error "box_not_ready" for the frontend to show a localized
-// "speaker is still starting" message rather than a raw timeout.
-func (a *App) playPost(url, body string) (*http.Response, error) {
-	resp, err := a.httpClient.Post(url, "application/json", strings.NewReader(body))
-	if err == nil {
-		return resp, nil
+// playPost issues a play POST, but first confirms the agent is actually
+// reachable with a cheap, fast probe. This is both quicker and more
+// reliable than blindly POSTing and waiting out the play timeout:
+//
+//   - When the box is ready (the common case) the probe answers in well
+//     under a second, then the play runs with its full timeout, so a
+//     legitimately slow play (e.g. the agent waking the box from standby)
+//     is never cut short. Stability is unchanged.
+//   - When the box is still coming up after a reboot/OTA, the probe loop
+//     detects "not ready" in a few seconds instead of hanging on the
+//     full play timeout, and returns the sentinel "box_not_ready" for the
+//     UI to render a localized "speaker is still starting" hint.
+func (a *App) playPost(host string, port int, path, body string) (*http.Response, error) {
+	if !a.waitAgentReady(host, port) {
+		return nil, fmt.Errorf("box_not_ready")
 	}
-	if !isTransportNotReady(err) {
-		return nil, err
-	}
-	select {
-	case <-time.After(1500 * time.Millisecond):
-	case <-a.ctx.Done():
-		return nil, err
-	}
-	resp, err = a.httpClient.Post(url, "application/json", strings.NewReader(body))
+	resp, err := a.boxDo(host, port, http.MethodPost, path, "application/json", body)
 	if err != nil {
 		if isTransportNotReady(err) {
 			return nil, fmt.Errorf("box_not_ready")
@@ -939,18 +1043,50 @@ func (a *App) playPost(url, body string) (*http.Response, error) {
 	return resp, nil
 }
 
+// waitAgentReady probes the agent's version endpoint (the same cheap
+// endpoint discovery uses) with a short per-try timeout, briefly
+// retrying so a box whose :17008->:8888 redirect and agent are still
+// coming up gets a moment to answer. Returns true the instant it
+// responds (so a ready box adds only one sub-second round trip), false
+// if it stays unreachable within the budget.
+func (a *App) waitAgentReady(host string, port int) bool {
+	deadline := time.Now().Add(4 * time.Second)
+	for {
+		// Try each candidate port; the one that answers is cached so the
+		// subsequent play (and every later call) goes straight to it. This
+		// is where a box that switched ports (reboot/freeze) gets re-pinned.
+		for _, p := range a.candidatePorts(host, port) {
+			url := fmt.Sprintf("http://%s:%d/api/agent/version", host, p)
+			ctx, cancel := context.WithTimeout(a.ctx, 1200*time.Millisecond)
+			body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 512)
+			cancel()
+			if ok && strings.Contains(string(body), `"version"`) {
+				a.rememberPort(host, p)
+				return true
+			}
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		select {
+		case <-time.After(400 * time.Millisecond):
+		case <-a.ctx.Done():
+			return false
+		}
+	}
+}
+
 // PlayURL triggert POST /api/play mit beliebigem Stream URL. icon ist
 // die Sender Logo URL (wird auf der Box angezeigt), uuid ermoeglicht
 // dass radio-browser den Klick zaehlt.
 func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid string) error {
-	url := a.baseURL(host, port) + "/api/play"
 	body, _ := json.Marshal(map[string]string{
 		"url":   streamURL,
 		"title": title,
 		"icon":  icon,
 		"uuid":  uuid,
 	})
-	resp, err := a.playPost(url, string(body))
+	resp, err := a.playPost(host, port, "/api/play", string(body))
 	if err != nil {
 		return err
 	}
@@ -963,8 +1099,7 @@ func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid string
 
 // BoxSettings holt name/volume/bass/network/sources der Box via Stick.
 func (a *App) BoxSettings(host string, port int) (map[string]any, error) {
-	url := a.baseURL(host, port) + "/api/box/settings"
-	resp, err := a.httpClient.Get(url)
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/settings", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -1003,22 +1138,14 @@ func (a *App) SelectBoxSource(host string, port int, source string) error {
 }
 
 func (a *App) boxPut(host string, port int, path string, body any) error {
-	// Short per-call timeout. boxPut is used for the small settings
-	// PUTs (volume, bass, name, source, wlan). Sub-3s box-side
-	// responses are normal; anything slower indicates the box's
-	// HTTP server is hung (Series-I :17008 SoftwareUpdate when the
-	// shim is not active, stock Bose firmware on a not-yet-flashed
-	// speaker, etc.). The default 6 s httpClient cap then lets a
-	// rapid volume drag pile up requests and the UI throws a wall
-	// of timeout errors. Cap at 3 s so a single dead PUT does not
-	// hold the throttle queue for half the drag.
-	ctx, cancel := context.WithTimeout(a.ctx, 3*time.Second)
-	defer cancel()
-	url := a.baseURL(host, port) + path
+	// Routed through boxDo so the small settings PUTs (volume, bass,
+	// name, source, wlan) get the same transparent :8888<->:17008 port
+	// fallback as every other agent call: if the box record carries the
+	// wrong/stale port, the first attempt fails fast (connection refused)
+	// and the alternate is tried and cached, instead of the PUT erroring
+	// out on a dead port.
 	b, _ := json.Marshal(body)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, url, strings.NewReader(string(b)))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.boxDo(host, port, http.MethodPut, path, "application/json", string(b))
 	if err != nil {
 		return err
 	}
@@ -1321,8 +1448,7 @@ func (a *App) Pause(host string, port int) error { return a.doAction(host, port,
 func (a *App) Stop(host string, port int) error  { return a.doAction(host, port, "stop") }
 
 func (a *App) doAction(host string, port int, action string) error {
-	url := fmt.Sprintf("%s/api/%s", a.baseURL(host, port), action)
-	resp, err := a.httpClient.Post(url, "application/json", nil)
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/"+action, "application/json", "")
 	if err != nil {
 		return err
 	}

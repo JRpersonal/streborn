@@ -171,15 +171,20 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 
 	s := string(data)
 
-	// Phase markers for standby/resume diagnostics (#60). The gabbo
-	// stream announces power, connection and now-playing transitions;
-	// flagging them at WARN gives the bundle a clear timeline of what
-	// the box was doing without needing full DEBUG capture.
+	// Phase markers for standby/resume diagnostics (#60). powerState
+	// transitions are rare and genuinely useful, so they stay at INFO.
+	// connectionState and nowPlaying, however, fire every few seconds on
+	// some boxes (the Portable flaps GOOD_SIGNAL<->EXCELLENT_SIGNAL
+	// constantly): at WARN/INFO they wrote ~1 MB of NAND log every few
+	// hours, churning the flash and rotating real diagnostics out within
+	// one session. They are demoted to DEBUG so the on-box log stays
+	// small and useful; the Wi-Fi signal is still captured below for the
+	// settings UI regardless of log level.
 	switch {
 	case strings.Contains(s, "powerStateUpdated"):
-		c.logger.Warn("box ws phase: powerState event", "preview", preview(data, 200))
+		c.logger.Info("box ws phase: powerState event", "preview", preview(data, 200))
 	case strings.Contains(s, "connectionStateUpdated"):
-		c.logger.Warn("box ws phase: connectionState event", "preview", preview(data, 200))
+		c.logger.Debug("box ws phase: connectionState event", "preview", preview(data, 200))
 		// Capture the Wi-Fi signal class; on BCO boxes this is the only
 		// place it is reported (/networkInfo has no signal there).
 		if sig := attrValue(s, "signal"); sig != "" {
@@ -188,7 +193,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			c.mu.Unlock()
 		}
 	case strings.Contains(s, "nowPlayingUpdated") && !strings.Contains(s, "nowSelectionUpdated"):
-		c.logger.Info("box ws phase: nowPlaying event", "preview", preview(data, 200))
+		c.logger.Debug("box ws phase: nowPlaying event", "preview", preview(data, 200))
 	}
 
 	if !strings.Contains(s, "nowSelectionUpdated") && !strings.Contains(s, "presetSelectionUpdated") {

@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -334,6 +335,28 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		autoPair.RunBackground(ctx, 8*time.Second, 5*time.Minute)
+	}()
+
+	// Resource heartbeat: a one-line MemAvailable + loadavg snapshot
+	// every 5 minutes. The box has ~120 MB RAM and no swap, so a slow
+	// leak ends in an OOM freeze that otherwise leaves no trace; this
+	// makes the RAM/load trend before a freeze visible in the on-box log
+	// for post-mortem. Negligible NAND traffic (12 lines/hour), now that
+	// the per-second connectionState spam is gone.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		logResourceHealth(logger)
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				logResourceHealth(logger)
+			}
+		}
 	}()
 
 	// === Deferred heavy init (background) ===
@@ -1278,6 +1301,51 @@ const nandLogPath = "/mnt/nv/streborn/agent.log"
 // boots worth of debug output on a slow speaker.
 const nandLogMax = 1 * 1024 * 1024
 
+// logResourceHealth records a one-line snapshot of available memory and
+// system load. On this hardware (~120 MB RAM, no swap) a slow leak ends
+// in an OOM freeze; this heartbeat makes the RAM/load trend leading up to
+// such a freeze visible in the on-box log for post-mortem analysis.
+// Best-effort: missing /proc entries just log -1.
+func logResourceHealth(logger *slog.Logger) {
+	avail, total := readMemKB()
+	logger.Info("resource health",
+		"memAvailableKB", avail,
+		"memTotalKB", total,
+		"loadavg", readLoadAvg())
+}
+
+func readMemKB() (avail, total int64) {
+	avail, total = -1, -1
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		switch f[0] {
+		case "MemAvailable:":
+			avail, _ = strconv.ParseInt(f[1], 10, 64)
+		case "MemTotal:":
+			total, _ = strconv.ParseInt(f[1], 10, 64)
+		}
+	}
+	return
+}
+
+func readLoadAvg() string {
+	b, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return ""
+	}
+	if f := strings.Fields(string(b)); len(f) >= 3 {
+		return f[0] + " " + f[1] + " " + f[2]
+	}
+	return ""
+}
+
 func newLogger(level string) *slog.Logger {
 	var lvl slog.Level
 	switch level {
@@ -1352,7 +1420,7 @@ func runSelfProbe(ctx context.Context, logger *slog.Logger, targets []selfProbeT
 				continue
 			}
 			_ = conn.Close()
-			logger.Warn("self-probe: connect ok", "target", t.name, "addr", addr, "elapsed", elapsed.String())
+			logger.Debug("self-probe: connect ok", "target", t.name, "addr", addr, "elapsed", elapsed.String())
 		}
 	}
 
