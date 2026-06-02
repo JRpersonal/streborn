@@ -347,6 +347,11 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		logResourceHealth(logger)
+		// Lift BoseApp's open-files soft limit so its firmware FD leak
+		// takes far longer to deadlock :8090. Re-asserted on each tick so
+		// it also catches a BoseApp that came up after the agent. See
+		// boseapp_recovery.go for the full rationale.
+		raiseBoseAppFDLimit(logger, boseAppFDTarget)
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for {
@@ -355,8 +360,19 @@ func run() error {
 				return
 			case <-t.C:
 				logResourceHealth(logger)
+				raiseBoseAppFDLimit(logger, boseAppFDTarget)
 			}
 		}
+	}()
+
+	// BoseApp :8090 deadlock recovery: reboot only when :8090 is confirmed
+	// dead for several minutes while BoseApp is still alive (the firmware's
+	// FD-exhaustion hang the supervisor does not catch). Guarded + disablable
+	// via STR_NO_HANG_RECOVERY.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		watchBoseAppHealth(ctx, *boxHost, logger)
 	}()
 
 	// === Deferred heavy init (background) ===
