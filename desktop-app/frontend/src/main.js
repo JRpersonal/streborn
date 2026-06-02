@@ -598,6 +598,17 @@ $('view-box').innerHTML = `
         <label>${escapeHtml(t('search.orderLabel'))}:
           <select id="searchOrder"></select>
         </label>
+        <label>${escapeHtml(t('search.bitrateLabel'))}:
+          <select id="searchBitrate">
+            <option value="0">${escapeHtml(t('search.bitrateAny'))}</option>
+            <option value="64">&ge; 64 kbit/s</option>
+            <option value="96">&ge; 96 kbit/s</option>
+            <option value="128">&ge; 128 kbit/s</option>
+            <option value="192">&ge; 192 kbit/s</option>
+            <option value="256">&ge; 256 kbit/s</option>
+            <option value="320">&ge; 320 kbit/s</option>
+          </select>
+        </label>
         <label><input type="checkbox" id="searchOnlyOK" checked /> ${escapeHtml(t('search.onlyOK'))}</label>
         <label><input type="checkbox" id="searchOnlyBose" checked /> ${escapeHtml(t('search.onlyBose'))}</label>
       </div>
@@ -850,6 +861,7 @@ updateFilterIndicators();
 $('searchOrder').onchange   = () => { state.searchOrder   = $('searchOrder').value;   doRefilter(); };
 $('searchOnlyOK').onchange  = () => { state.searchOnlyOK  = $('searchOnlyOK').checked; doRefilter(); };
 $('searchOnlyBose').onchange = () => { state.searchOnlyBose = $('searchOnlyBose').checked; renderSearchResults(); };
+$('searchBitrate').onchange = () => { state.searchMinBitrate = parseInt($('searchBitrate').value, 10) || 0; renderSearchResults(); };
 $('pickCancel').onclick = closePick;
 
 // doRefilter re-runs the last action (Top or Search) with the new
@@ -1420,6 +1432,25 @@ async function doBoxUpdate() {
   // case via checkBoxUpdate(), but the redundant check here guards
   // against races where the user clicked through a stale render.
   if (state.otaInProgress) return;
+
+  // Stick gate, checked at the single OTA chokepoint so EVERY caller
+  // (the music-tab banner button and the stick-info button) is covered.
+  // A USB stick still in the speaker means rc.local re-copies the
+  // stick's (older) version on the next boot and undoes the OTA; the OTA
+  // also reboots the box. So if a stick is mounted, ask first and let
+  // Cancel abort cleanly BEFORE anything starts. Earlier this gate only
+  // sat on the stick-info button, so the banner button started the OTA
+  // (and the reboot) with no confirmation.
+  try {
+    const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/stick/status`);
+    if (r.ok) {
+      const data = await r.json();
+      if (data && data.mounted) {
+        const ok = await confirmWarn(t('update.stickInTitle'), t('update.stickInBody'));
+        if (!ok) return; // user cancelled: no OTA, no reboot
+      }
+    }
+  } catch { /* status unknown: do not block the update */ }
   // Drive both update buttons together (banner up top + stick info section)
   const buttons = () => ['boxUpdateBtn', 'stickInfoUpdateBtn'].map(id => $(id)).filter(Boolean);
   // Mutate the DOM buttons only when the user is still LOOKING at
@@ -1638,7 +1669,7 @@ async function healPresetLogos() {
         const logo = stationLogoChain(pick);
         if (!logo) return;
         p.art = logo;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, logo).catch(() => {});
+        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, logo, p.bitrate || 0).catch(() => {});
       } catch {}
     }));
   } finally {
@@ -1724,7 +1755,7 @@ function renderPresets() {
         addCands(state.nowIcon);
         // Auto-persist so the preset has its logo on the next load.
         p.art = state.nowIcon;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon).catch(() => {});
+        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon, p.bitrate || 0).catch(() => {});
       }
       const streamHost = extractHost(p.stream_url);
       const hostsToTry = [];
@@ -1746,6 +1777,7 @@ function renderPresets() {
           ${logo}
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
+            <div class="preset-bitrate">${p.bitrate ? p.bitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
           </div>
         </div>
@@ -1880,7 +1912,7 @@ async function saveCurrentToSlot(slot) {
       try {
         await SetPreset(
           state.currentBox.host, state.currentBox.port,
-          slot, src.name, src.stream_url, src.art || ''
+          slot, src.name, src.stream_url, src.art || '', src.bitrate || 0
         );
         showToast(t('preset.copiedToKey', { n: slot, name: src.name }));
         await loadPresets();
@@ -1899,7 +1931,7 @@ async function saveCurrentToSlot(slot) {
   try {
     await SetPreset(
       state.currentBox.host, state.currentBox.port,
-      slot, name, state.nowLocation, state.nowIcon || ''
+      slot, name, state.nowLocation, state.nowIcon || '', state.nowBitrate || 0
     );
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
@@ -1922,6 +1954,7 @@ async function play(slot) {
     state.nowLocation = p.stream_url || '';
     state.nowName = p.name || '';
     state.nowIcon = p.art || '';
+    state.nowBitrate = p.bitrate || 0;
     state.nowUUID = '';
     state.optimisticUntil = Date.now() + 6000;
     delete state.presetErrors[slot];
@@ -2014,13 +2047,21 @@ async function refreshStatus() {
     // fallback.
     if (!optimistic) {
       const slotFromProxy = activeSlotFromLocation(newLoc);
+      const ap = slotFromProxy !== null ? state.presets.find(p => p.slot === slotFromProxy) : null;
       if (artRaw) {
         state.nowIcon = artRaw;
-      } else if (slotFromProxy !== null) {
-        const ap = state.presets.find(p => p.slot === slotFromProxy);
-        state.nowIcon = (ap && ap.art) || '';
+      } else if (ap) {
+        state.nowIcon = ap.art || '';
       } else if (!newLoc) {
         state.nowIcon = '';
+      }
+      // Keep the now-playing bitrate in sync with the active preset
+      // (hardware key press or app restart did not go through the play
+      // path that sets it). Cleared when nothing is playing.
+      if (ap && ap.bitrate) {
+        state.nowBitrate = ap.bitrate;
+      } else if (!newLoc) {
+        state.nowBitrate = 0;
       }
     }
 
@@ -2059,9 +2100,13 @@ async function refreshStatus() {
       if (!stateLabel) stateLabel = t('status.active');
     }
 
+    // Bitrate is only meaningful for a radio stream, not AUX/BT/standby.
+    const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && src !== 'AUX' && src !== 'BLUETOOTH';
+    const brLabel = isStreamSrc ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
+
     $('statusBar').className = 'status-bar status-' + stateClass;
     if (displayName) {
-      $('statusBar').innerHTML = `<span class="now">&#9654; ${escapeHtml(displayName)}</span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}`;
+      $('statusBar').innerHTML = `<span class="now">&#9654; ${escapeHtml(displayName)}</span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
     } else if (stateLabel) {
       $('statusBar').innerHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
     } else {
@@ -2229,6 +2274,14 @@ function renderSearchResults() {
   if (state.searchOnlyBose) {
     list = list.filter(isBoseCompatible);
   }
+  // Minimum-bitrate filter. Stations with no reported bitrate (very
+  // common on radio-browser) are kept, not hidden, so a quality filter
+  // does not wipe out most results; only stations with a known bitrate
+  // below the threshold are dropped.
+  const minBr = state.searchMinBitrate || 0;
+  if (minBr) {
+    list = list.filter(s => !s.bitrate || s.bitrate >= minBr);
+  }
   // Update the counter row. radio-browser does not return a grand
   // total on a filtered search, so we show "X shown" plus a hint
   // that more can arrive via "load more".
@@ -2266,7 +2319,10 @@ function renderSearchResults() {
 
     const metaBits = [];
     if (countryDe) metaBits.push(escapeHtml(countryDe));
-    if (s.bitrate) metaBits.push(`${s.bitrate} kbit/s`);
+    // Always show a bitrate cell. Many radio-browser stations report no
+    // bitrate (e.g. "Sunshine Live - Die 90er"); show "- kbit/s" rather
+    // than hiding the field so the column stays consistent.
+    metaBits.push(s.bitrate ? `${s.bitrate} kbit/s` : '- kbit/s');
     if (s.votes)   metaBits.push(t('search.votes', { n: formatNumber(s.votes) }));
 
     const logo = `
@@ -2303,6 +2359,7 @@ function renderSearchResults() {
       state.nowLocation = url;
       state.nowName = s.name;
       state.nowIcon = chain;
+      state.nowBitrate = s.bitrate || 0;
       state.nowUUID = s.stationuuid || '';
       renderPresets();
       try {
@@ -2333,7 +2390,7 @@ function openPick(station) {
     b.onclick = async () => {
       try {
         const logo = stationLogoChain(station);
-        await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo);
+        await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0);
         closePick();
         await loadPresets();
         if (station.stationuuid) {
@@ -2945,19 +3002,10 @@ function renderBoxSettings(s, box) {
     `;
     const ub = $('stickInfoUpdateBtn');
     if (ub) {
-      if (stickMounted) {
-        // Safeguard: while a USB stick is in the speaker, an OTA update
-        // is undone on the next reboot, because rc.local unconditionally
-        // re-copies the stick's (older) version onto NAND ("stick wins
-        // every boot"). So warn and make the user pull the stick first;
-        // "proceed anyway" stays available for the same-version case.
-        ub.onclick = async () => {
-          const ok = await confirmWarn(t('update.stickInTitle'), t('update.stickInBody'));
-          if (ok) doBoxUpdate();
-        };
-      } else {
-        ub.onclick = doBoxUpdate;
-      }
+      // The stick-in confirmation now lives inside doBoxUpdate (the single
+      // OTA chokepoint), so both this button and the music-tab banner are
+      // gated identically and Cancel always aborts before anything starts.
+      ub.onclick = doBoxUpdate;
     }
     const sb = $('securityRebootBtn');
     if (sb) sb.onclick = async () => {
@@ -4709,7 +4757,7 @@ function librarySaveAsPreset(item) {
     b.onclick = async () => {
       try {
         await SetPreset(state.currentBox.host, state.currentBox.port, i,
-          item.title || '(track)', item.streamURL, item.albumArtURL || '');
+          item.title || '(track)', item.streamURL, item.albumArtURL || '', 0);
         $('pickModal').classList.add('hidden');
         await loadPresets();
         showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));

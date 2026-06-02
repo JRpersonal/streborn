@@ -818,6 +818,7 @@ type Preset struct {
 	StreamURL string `json:"stream_url"`
 	Type      string `json:"type"`
 	Art       string `json:"art,omitempty"`
+	Bitrate   int    `json:"bitrate,omitempty"`
 }
 
 func (a *App) baseURL(host string, port int) string {
@@ -947,9 +948,9 @@ func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 
 // SetPreset macht PUT /api/presets/<slot>. art ist die Sender Logo URL,
 // wird beim Play als upnp:albumArtURI an die Box geschickt.
-func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string) error {
+func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int) error {
 	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
-	body, _ := json.Marshal(Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art})
+	body, _ := json.Marshal(Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate})
 	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := a.httpClient.Do(req)

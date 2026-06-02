@@ -156,6 +156,8 @@
   "search.languageLabel": "Sprache",
   "search.allLanguages": "alle",
   "search.orderLabel": "Sortierung",
+  "search.bitrateLabel": "Bitrate",
+  "search.bitrateAny": "beliebig",
   "search.onlyOK": "nur funktionierende",
   "search.onlyBose": "nur Bose-kompatibel",
   "search.loadMore": "mehr laden",

@@ -28,6 +28,11 @@ type Preset struct {
 	StreamURL string `json:"stream_url"`
 	Type      string `json:"type"`
 	Art       string `json:"art,omitempty"`
+	// Bitrate in kbit/s as reported by radio-browser at save time, 0 when
+	// unknown. Persisted so the desktop app can show it on preset buttons
+	// and in now-playing without a live lookup. Optional/additive: older
+	// presets simply have 0.
+	Bitrate int `json:"bitrate,omitempty"`
 }
 
 // rawPreset ist der Disk Format Helper. Akzeptiert mehrere Alias Felder.
@@ -39,6 +44,7 @@ type rawPreset struct {
 	URL       string `json:"url"`
 	Type      string `json:"type"`
 	Art       string `json:"art"`
+	Bitrate   int    `json:"bitrate"`
 }
 
 // rawWrapper unterstuetzt das Object Format {"presets": [...]}.
@@ -112,6 +118,7 @@ func normalize(in []rawPreset) []Preset {
 			StreamURL: stream,
 			Type:      typ,
 			Art:       p.Art,
+			Bitrate:   p.Bitrate,
 		})
 	}
 	return out

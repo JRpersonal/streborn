@@ -151,6 +151,8 @@
   "search.languageLabel": "言語",
   "search.allLanguages": "すべて",
   "search.orderLabel": "並べ替え",
+  "search.bitrateLabel": "ビットレート",
+  "search.bitrateAny": "すべて",
   "search.onlyOK": "稼働中のみ",
   "search.onlyBose": "Bose対応のみ",
   "search.loadMore": "さらに読み込む",

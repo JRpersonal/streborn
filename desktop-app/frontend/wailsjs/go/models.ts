@@ -216,6 +216,7 @@ export namespace main {
 	    stream_url: string;
 	    type: string;
 	    art?: string;
+	    bitrate?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -228,6 +229,7 @@ export namespace main {
 	        this.stream_url = source["stream_url"];
 	        this.type = source["type"];
 	        this.art = source["art"];
+	        this.bitrate = source["bitrate"];
 	    }
 	}
 	export class SetupAPPushResult {

@@ -151,6 +151,8 @@
   "search.languageLabel": "Langue",
   "search.allLanguages": "toutes",
   "search.orderLabel": "Trier",
+  "search.bitrateLabel": "Débit",
+  "search.bitrateAny": "tous",
   "search.onlyOK": "en service uniquement",
   "search.onlyBose": "compatibles Bose uniquement",
   "search.loadMore": "charger plus",
