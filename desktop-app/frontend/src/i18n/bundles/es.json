@@ -135,6 +135,7 @@
 
   "play.errNoInternet": "¿sin internet?",
   "play.errSpeakerTimeout": "el altavoz no responde",
+  "play.errBoxStarting": "el altavoz aún se está iniciando, inténtalo de nuevo en un momento",
   "play.errSpeakerRefused": "el altavoz rechazó la conexión",
   "play.errNotPlayable": "emisora no reproducible",
   "play.errServer500": "error de la emisora",

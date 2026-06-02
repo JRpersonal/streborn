@@ -140,6 +140,7 @@
 
   "play.errNoInternet": "kein Internet?",
   "play.errSpeakerTimeout": "Lautsprecher reagiert nicht",
+  "play.errBoxStarting": "Lautsprecher startet noch, gleich nochmal versuchen",
   "play.errSpeakerRefused": "Lautsprecher lehnt ab",
   "play.errNotPlayable": "Sender nicht abspielbar",
   "play.errServer500": "Sender-Fehler",

@@ -129,24 +129,36 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("stream proxy raw start", "url", url)
+	start := time.Now()
 	headersSent := false
+	var lastErr error
 	for attempt := 0; attempt < 60; attempt++ {
 		if r.Context().Err() != nil {
+			s.logger.Info("stream proxy end: client gone", "kind", "raw", "elapsed", time.Since(start).Round(time.Second).String())
 			return
 		}
 		if attempt > 0 {
+			s.logger.Info("stream proxy reconnect", "kind", "raw", "attempt", attempt, "lastErr", errStr(lastErr))
 			select {
 			case <-time.After(500 * time.Millisecond):
 			case <-r.Context().Done():
 				return
 			}
 		}
-		boseAlive := s.streamOne(r.Context(), w, r, url, !headersSent)
+		var boseAlive bool
+		boseAlive, lastErr = s.streamOne(r.Context(), w, r, url, !headersSent)
 		if !boseAlive {
+			// Bose closed the connection (station switch, standby) — a
+			// normal end, distinct from the give-up case below.
+			s.logger.Info("stream proxy end: bose disconnected", "kind", "raw", "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
 			return
 		}
 		headersSent = true
 	}
+	// 60 reconnects exhausted: the box still wanted bytes but upstream
+	// kept failing. A network error in lastErr points at the box's
+	// outbound path (e.g. a flaky wired link) rather than the box itself.
+	s.logger.Warn("stream proxy gave up reconnecting", "kind", "raw", "attempts", 60, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
@@ -169,14 +181,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// generoesen Retry Budget aber bei Client Disconnect (context cancel)
 	// hoeren wir sofort auf — sonst rauschen wir in einer Endlosschleife
 	// gegen den CDN.
+	start := time.Now()
 	headersSent := false
+	var lastErr error
 	for attempt := 0; attempt < 60; attempt++ {
 		// Wenn Bose die Verbindung beendet hat, sofort raus.
 		if r.Context().Err() != nil {
+			s.logger.Info("stream proxy end: client gone", "slot", slot, "elapsed", time.Since(start).Round(time.Second).String())
 			return
 		}
 		if attempt > 0 {
-			s.logger.Info("stream proxy reconnect", "slot", slot, "attempt", attempt)
+			s.logger.Info("stream proxy reconnect", "slot", slot, "attempt", attempt, "lastErr", errStr(lastErr))
 			// Kurz warten damit wir CDN nicht mit Reconnects ueberlasten
 			select {
 			case <-time.After(500 * time.Millisecond):
@@ -190,32 +205,41 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		if !ok || cur.StreamURL == "" {
 			return
 		}
-		boseAlive := s.streamOne(r.Context(), w, r, cur.StreamURL, !headersSent)
+		boseAlive, err := s.streamOne(r.Context(), w, r, cur.StreamURL, !headersSent)
+		lastErr = err
 		if !boseAlive {
-			// Bose hat die Verbindung beendet (Standby, Sender Wechsel) — fertig.
+			// Bose hat die Verbindung beendet (Standby, Sender Wechsel).
+			// Normales Ende, klar getrennt vom Give-up-Fall unten, damit
+			// im Log Box-Stop vs Outbound-Problem unterscheidbar ist.
+			s.logger.Info("stream proxy end: bose disconnected", "slot", slot, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(err))
 			return
 		}
 		headersSent = true
 	}
-	s.logger.Warn("stream proxy gibt nach 60 Reconnects auf", "slot", slot)
+	// 60 Reconnects erschoepft: die Box wollte weiter Bytes, aber der
+	// Upstream scheiterte wiederholt. Ein Netzwerkfehler in lastErr deutet
+	// auf den Outbound-Pfad der Box (z.B. flakiges Kabel) statt auf die Box.
+	s.logger.Warn("stream proxy gave up reconnecting", "slot", slot, "attempts", 60, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
 }
 
 // streamOne macht einen Roundtrip zum upstream + kopiert Body zu w.
-// Returnt true wenn die Verbindung zu Bose noch offen ist (Reconnect
-// sinnvoll). Returnt false wenn Bose disconnected hat (kein Reconnect
-// noetig).
-func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.Request, url string, sendHeaders bool) bool {
+// Returnt boseAlive=true wenn die Verbindung zu Bose noch offen ist
+// (Reconnect sinnvoll), false wenn Bose disconnected hat. Der zweite
+// Rueckgabewert ist der letzte Upstream-Fehler dieses Versuchs (nil bei
+// sauberem EOF oder normalem Bose-Disconnect); der Aufrufer loggt ihn am
+// Stream-Ende, damit Box-Stop von Outbound-Problemen unterscheidbar ist.
+func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.Request, url string, sendHeaders bool) (bool, error) {
 	if err := safeHTTPURL(url); err != nil {
 		s.logger.Warn("stream proxy refusing url", "url", url, "err", err)
 		if sendHeaders {
 			http.Error(w, "invalid stream url", http.StatusBadRequest)
 		}
-		return false
+		return false, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		s.logger.Warn("stream proxy NewRequest fail", "err", err)
-		return false
+		return false, err
 	}
 	// Icecast Header durchreichen damit Box Metadaten bekommt
 	if md := r.Header.Get("Icy-MetaData"); md != "" {
@@ -227,7 +251,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 	if err != nil {
 		// Wenn Bose die Verbindung beendet hat, kein Retry sinnvoll.
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
-			return false
+			return false, nil
 		}
 		// Dedupe identical failures: Bose's UPnP player re-hits the
 		// proxy when a station is unreachable, so the same NXDOMAIN
@@ -239,14 +263,15 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		}
 		if sendHeaders {
 			http.Error(w, "upstream unreachable", http.StatusBadGateway)
-			return false
+			return false, err
 		}
 		// Headers schon gesendet — Reconnect probieren
-		return true
+		return true, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		statusErr := fmt.Errorf("upstream status %d", resp.StatusCode)
 		if s.shouldLogFail(url) {
 			s.logger.Warn("stream proxy upstream status", "status", resp.StatusCode, "url", url)
 		} else {
@@ -254,9 +279,9 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		}
 		if sendHeaders {
 			http.Error(w, "upstream status: "+resp.Status, http.StatusBadGateway)
-			return false
+			return false, statusErr
 		}
-		return true
+		return true, statusErr
 	}
 
 	// Successful reach — clear any dedup entry so a future failure
@@ -287,7 +312,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		if n > 0 {
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
 				// Bose hat Verbindung geschlossen
-				return false
+				return false, nil
 			}
 			if flusher != nil {
 				flusher.Flush()
@@ -296,15 +321,24 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		if readErr != nil {
 			// Bose hat zu — KEIN Retry, sonst Endlos Schleife
 			if errors.Is(readErr, context.Canceled) || ctx.Err() != nil {
-				return false
+				return false, nil
 			}
 			if readErr == io.EOF {
 				// CDN hat sauber EOF — wahrscheinlich Token expired
-				return true
+				return true, nil
 			}
 			// Network Fehler — wir versuchen reconnect
 			s.logger.Info("stream proxy upstream read fail, reconnect", "err", readErr)
-			return true
+			return true, readErr
 		}
 	}
+}
+
+// errStr renders an error for a structured log field, empty when nil so
+// a clean stream end does not log a misleading "lastErr=<nil>".
+func errStr(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

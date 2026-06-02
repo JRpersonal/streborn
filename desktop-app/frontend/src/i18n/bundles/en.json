@@ -140,6 +140,7 @@
 
   "play.errNoInternet": "no internet?",
   "play.errSpeakerTimeout": "speaker not responding",
+  "play.errBoxStarting": "speaker is still starting, try again in a moment",
   "play.errSpeakerRefused": "speaker refused",
   "play.errNotPlayable": "station not playable",
   "play.errServer500": "station error",

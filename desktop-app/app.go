@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -874,7 +875,7 @@ func (a *App) DeletePreset(host string, port int, slot int) error {
 // PlaySlot triggert POST /api/play/<slot>.
 func (a *App) PlaySlot(host string, port int, slot int) error {
 	url := fmt.Sprintf("%s/api/play/%d", a.baseURL(host, port), slot)
-	resp, err := a.httpClient.Post(url, "application/json", nil)
+	resp, err := a.playPost(url, "")
 	if err != nil {
 		return err
 	}
@@ -883,6 +884,59 @@ func (a *App) PlaySlot(host string, port int, slot int) error {
 		return fmt.Errorf("%s", friendlyError(resp))
 	}
 	return nil
+}
+
+// isTransportNotReady reports whether err is a connection-level failure
+// (timeout, refused, reset, no route) rather than an HTTP response from a
+// live agent. On BCO boxes the :17008->:8888 redirect and the agent take
+// a few seconds to come up after a reboot or OTA; a play issued in that
+// window fails at the transport layer and should read as "still starting"
+// instead of a raw timeout (issue: Brecht's POST :17008/api/play context
+// deadline exceeded right after the box rebooted).
+func isTransportNotReady(err error) bool {
+	if err == nil {
+		return false
+	}
+	var nerr net.Error
+	if errors.As(err, &nerr) && nerr.Timeout() {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"deadline exceeded", "connection refused", "actively refused", "connection reset", "no route to host", "timeout"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// playPost POSTs to a play endpoint, retrying once after a short delay
+// when the first attempt fails at the transport layer, so a play fired
+// during the post-reboot window on a BCO box gets a second chance once
+// the redirect/agent are up. If it still cannot connect, it returns the
+// sentinel error "box_not_ready" for the frontend to show a localized
+// "speaker is still starting" message rather than a raw timeout.
+func (a *App) playPost(url, body string) (*http.Response, error) {
+	resp, err := a.httpClient.Post(url, "application/json", strings.NewReader(body))
+	if err == nil {
+		return resp, nil
+	}
+	if !isTransportNotReady(err) {
+		return nil, err
+	}
+	select {
+	case <-time.After(1500 * time.Millisecond):
+	case <-a.ctx.Done():
+		return nil, err
+	}
+	resp, err = a.httpClient.Post(url, "application/json", strings.NewReader(body))
+	if err != nil {
+		if isTransportNotReady(err) {
+			return nil, fmt.Errorf("box_not_ready")
+		}
+		return nil, err
+	}
+	return resp, nil
 }
 
 // PlayURL triggert POST /api/play mit beliebigem Stream URL. icon ist
@@ -896,7 +950,7 @@ func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid string
 		"icon":  icon,
 		"uuid":  uuid,
 	})
-	resp, err := a.httpClient.Post(url, "application/json", strings.NewReader(string(body)))
+	resp, err := a.playPost(url, string(body))
 	if err != nil {
 		return err
 	}

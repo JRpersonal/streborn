@@ -135,6 +135,7 @@
 
   "play.errNoInternet": "インターネットなし?",
   "play.errSpeakerTimeout": "スピーカーが応答しません",
+  "play.errBoxStarting": "スピーカーはまだ起動中です。少し待って再試行してください",
   "play.errSpeakerRefused": "スピーカーが拒否しました",
   "play.errNotPlayable": "放送局を再生できません",
   "play.errServer500": "放送局のエラー",

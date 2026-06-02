@@ -135,6 +135,7 @@
 
   "play.errNoInternet": "pas d'internet ?",
   "play.errSpeakerTimeout": "l'enceinte ne répond pas",
+  "play.errBoxStarting": "l'enceinte démarre encore, réessayez dans un instant",
   "play.errSpeakerRefused": "l'enceinte a refusé",
   "play.errNotPlayable": "station non lisible",
   "play.errServer500": "erreur de la station",

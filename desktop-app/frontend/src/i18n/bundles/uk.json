@@ -135,6 +135,7 @@
 
   "play.errNoInternet": "немає інтернету?",
   "play.errSpeakerTimeout": "колонка не відповідає",
+  "play.errBoxStarting": "колонка ще запускається, спробуйте за мить",
   "play.errSpeakerRefused": "колонка відхилила запит",
   "play.errNotPlayable": "станція не відтворюється",
   "play.errServer500": "помилка станції",
