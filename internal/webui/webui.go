@@ -49,7 +49,23 @@ type Server struct {
 	// gabbo WebSocket (set from cmd/agent's boxws client). Used to fill
 	// the signal for BCO boxes, whose /networkInfo reports none.
 	wifiSignalFn func() string
+
+	// now_playing micro-cache. The Bose firmware app (:8090) on BCO
+	// speakers cannot sustain a high request rate, so /api/status caches
+	// the last good now_playing body for statusCacheTTL and serves repeat
+	// polls from it. This caps how often the box itself is hit no matter
+	// how fast or how many clients poll: defense in depth behind the
+	// desktop app's adaptive poll cadence.
+	statusMu   sync.Mutex
+	statusBody []byte
+	statusCode int
+	statusAt   time.Time
 }
+
+// statusCacheTTL bounds the staleness of a cached now_playing response and
+// thus the maximum /now_playing hit rate against the Bose app to about
+// 1/TTL per second regardless of client poll frequency.
+const statusCacheTTL = 2 * time.Second
 
 // SetWifiSignalFn wires a provider for the latest Wi-Fi signal class
 // (from the boxws gabbo stream). cmd/agent calls this after creating the
@@ -1618,21 +1634,60 @@ func SetAgentVersion(v string) { agentVersion = func() string { return v } }
 // SetAgentBuild setzt den Build Stamp (Datum/Commit) als zusaetzliche Info.
 func SetAgentBuild(b string) { agentBuild = func() string { return b } }
 
-// handleStatus proxied das now_playing XML der Box.
+// handleStatus proxied das now_playing XML der Box, mit einem kurzen
+// Micro-Cache (statusCacheTTL) davor. Mehrere oder zu schnell pollende
+// Clients teilen sich so denselben Box-Roundtrip, statt die fragile
+// BoseApp (:8090) auf jeder Abfrage neu zu treffen.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if s.boxHost == "" {
 		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
 		return
 	}
+
+	// Serve from cache if a recent good body exists.
+	s.statusMu.Lock()
+	if s.statusBody != nil && time.Since(s.statusAt) < statusCacheTTL {
+		body, code := s.statusBody, s.statusCode
+		s.statusMu.Unlock()
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.WriteHeader(code)
+		_, _ = w.Write(body)
+		return
+	}
+	s.statusMu.Unlock()
+
 	resp, err := http.Get(fmt.Sprintf("http://%s:8090/now_playing", s.boxHost))
 	if err != nil {
+		// Fall back to the last cached body on a transient box error so a
+		// brief BoseApp hiccup does not blank the now-playing display.
+		s.statusMu.Lock()
+		body, code, have := s.statusBody, s.statusCode, s.statusBody != nil
+		s.statusMu.Unlock()
+		if have {
+			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+			w.WriteHeader(code)
+			_, _ = w.Write(body)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	// Cache only successful bodies; an error status is served through but
+	// not memoised, so the next poll retries the box.
+	if resp.StatusCode == http.StatusOK {
+		s.statusMu.Lock()
+		s.statusBody = body
+		s.statusCode = resp.StatusCode
+		s.statusAt = time.Now()
+		s.statusMu.Unlock()
+	}
+
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	_, _ = w.Write(body)
 }
 
 // ---- Helpers ----

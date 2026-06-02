@@ -241,6 +241,7 @@
   "settingsView.backToSpeakerList": "Selección de altavoz",
   "settingsView.errRefused": "El altavoz rechazó la conexión. Esto ocurre brevemente tras un cambio de nombre o justo al salir del reposo.",
   "settingsView.errTimeout": "El altavoz no responde ahora mismo. Puede estar en reposo o aún no de vuelta en el Wi-Fi.",
+  "settingsView.errBoseBusy": "La app Bose del altavoz aún se está iniciando u ocupada y no envió datos. Inténtalo de nuevo en un momento.",
   "settingsView.errNoRoute": "El altavoz no está accesible en la red. Comprueba que esté encendido y en el Wi-Fi.",
   "settingsView.errGeneric": "Error de conexión. {{err}}",
   "settingsView.nameHeading": "Nombre",

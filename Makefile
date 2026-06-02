@@ -23,7 +23,7 @@ BINARY      := streborn
 PKG         := ./cmd/agent
 BIN_DIR     := bin
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-BUILD_STAMP ?= $(shell date -u '+%Y-%m-%d-%H%M')
+BUILD_STAMP ?= $(shell date '+%Y-%m-%d-%H%M')
 LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.buildStamp=$(BUILD_STAMP)
 APP_LDFLAGS := -s -w -X main.appVersion=$(VERSION) -X main.appBuild=$(BUILD_STAMP)
 GO          ?= go

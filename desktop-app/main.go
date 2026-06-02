@@ -6,6 +6,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // The embed below requires frontend/dist to exist at build time.
@@ -42,6 +43,31 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
+		// Single-instance guard. Two running app instances would each poll
+		// the speaker, doubling (or worse) the request rate the Bose
+		// firmware app already struggles with. The UniqueId is a FIXED
+		// string with no version or build stamp in it on purpose: the lock
+		// is an OS-level named mutex (Windows) / lock file (mac, Linux)
+		// keyed on this id, so it must collide even when the two instances
+		// are different builds (e.g. an old copy still open while the user
+		// launches a freshly updated one). When a second instance starts it
+		// exits immediately and hands its launch over to the first, which
+		// just raises and focuses its existing window.
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: "de.st-reborn.desktop.singleinstance",
+			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
+				if app.ctx == nil {
+					return
+				}
+				runtime.WindowUnminimise(app.ctx)
+				runtime.Show(app.ctx)
+				// Brief always-on-top pulse to force the window to the
+				// foreground across platforms, then release it so it does
+				// not stay pinned above everything else.
+				runtime.WindowSetAlwaysOnTop(app.ctx, true)
+				runtime.WindowSetAlwaysOnTop(app.ctx, false)
+			},
+		},
 		Bind: []interface{}{
 			app,
 		},

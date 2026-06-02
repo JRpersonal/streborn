@@ -355,8 +355,18 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 	if a.discCache == nil {
 		a.discCache = map[string]discEntry{}
 	}
-	// Boxes found this cycle are authoritative: refresh data + timestamp.
+	// Boxes found this cycle refresh the timestamp, but their record is
+	// MERGED with the cached one rather than blindly overwriting it: a
+	// thinner cycle (only the stock mDNS entry because probeSTR missed the
+	// agent, or no FriendlyName/Version because :8090 was slow) must not
+	// downgrade what the user already sees. Otherwise a flashed speaker
+	// flickers to "Bereit für STR" or to the generic "Bose SoundTouch
+	// <id>" name between good cycles.
 	for key, b := range seen {
+		if prev, ok := a.discCache[key]; ok {
+			b = mergeBoxInfo(prev.box, b)
+			seen[key] = b
+		}
 		a.discCache[key] = discEntry{box: b, seen: now}
 	}
 	// Re-add recently-seen boxes the current cycle missed; evict stale.
@@ -370,6 +380,60 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 			delete(a.discCache, key)
 		}
 	}
+}
+
+// mergeBoxInfo keeps the richer of two records for the same physical box
+// so a thinner discovery cycle never downgrades the display. cur is this
+// cycle, prev the cached record. This is a safety net; the real fix is to
+// query reliably enough (see probe timeouts) that cur is rarely thin.
+func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
+	out := cur
+	// An STR agent, once seen, outranks a stock-only sighting: a missed
+	// probeSTR must not relabel a flashed speaker as "needs install".
+	if prev.Kind == "str" && out.Kind != "str" {
+		out.Kind = "str"
+		if out.Version == "" {
+			out.Version = prev.Version
+		}
+		if out.Build == "" {
+			out.Build = prev.Build
+		}
+		if prev.PortVerified && !out.PortVerified && prev.Port != 0 {
+			out.Port = prev.Port
+			out.PortVerified = true
+		}
+	}
+	if isGenericBoxName(out.FriendlyName) && !isGenericBoxName(prev.FriendlyName) {
+		out.FriendlyName = prev.FriendlyName
+	}
+	if out.Version == "" {
+		out.Version = prev.Version
+	}
+	if (out.Model == "" || out.Model == "SoundTouch") && prev.Model != "" && prev.Model != "SoundTouch" {
+		out.Model = prev.Model
+	}
+	if out.DeviceID == "" {
+		out.DeviceID = prev.DeviceID
+	}
+	if out.SerialNumber == "" {
+		out.SerialNumber = prev.SerialNumber
+	}
+	if out.Build == "" {
+		out.Build = prev.Build
+	}
+	if prev.PortVerified && !out.PortVerified && prev.Port != 0 {
+		out.Port = prev.Port
+		out.PortVerified = true
+	}
+	return out
+}
+
+// isGenericBoxName reports whether name is empty or Bose's factory
+// default ("Bose SoundTouch <id>"), i.e. a name a real user-assigned one
+// should win over.
+func isGenericBoxName(name string) bool {
+	n := strings.TrimSpace(name)
+	return n == "" || strings.HasPrefix(n, "Bose SoundTouch ")
 }
 
 // enrichSeenBoxes fans out enrichBoxWithStockInfo for every box in
@@ -578,7 +642,12 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		p := port
 		go func() {
 			url := fmt.Sprintf("http://%s:%d/api/agent/version", ip, p)
-			body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 1024)
+			// 3 s, not 1.2 s: under sustained box load (BoseApp churning
+			// CPU, loadavg 3-4) the agent's reply can take >1.2 s, and a
+			// missed probe relabels a flashed speaker as "needs install".
+			// The version endpoint is tiny, so a generous timeout only
+			// costs latency on a genuinely dead host.
+			body, ok := httpGetSmall(ctx, url, 3*time.Second, 1024)
 			if !ok || !strings.Contains(string(body), `"version"`) {
 				hits <- result{}
 				return
@@ -1365,6 +1434,30 @@ func (a *App) SetAirplayOpt(host string, port int, enabled bool) error {
 	return nil
 }
 
+// StreamBitrate returns the agent's currently-detected stream bitrate in
+// kbit/s (icy-br, or a throughput sample), or 0 if none/unavailable.
+// Routed through boxDo so it self-heals across :8888 / :17008 like every
+// other box call. The frontend previously did a raw fetch pinned to
+// box.port, which silently failed on BCO speakers (Portable, ST20-spotty)
+// reachable only on :17008, so the live bitrate never showed there.
+func (a *App) StreamBitrate(host string, port int) int {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/stream/bitrate", "", "")
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	var out struct {
+		Bitrate int `json:"bitrate"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return 0
+	}
+	return out.Bitrate
+}
+
 // SyncBoxPresets schickt alle Stick Presets erneut an die Box damit
 // die Hardware Preset Tasten 1-6 funktionieren. Wird vom "Hardware
 // Tasten reparieren" Button im Settings Tab benutzt.
@@ -1768,6 +1861,13 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 			result, err = nil, fmt.Errorf("update check failed")
 		}
 	}()
+	// Kill switch to A/B test whether the startup update check is behind a
+	// report (e.g. deqw's macOS start crash). With STR_NO_UPDATE_CHECK set
+	// the check is a no-op, so a user can run with it fully off and see if
+	// the crash persists.
+	if strings.TrimSpace(os.Getenv("STR_NO_UPDATE_CHECK")) != "" {
+		return map[string]string{}, nil
+	}
 	info := a.AppInfo()
 	manifestURL := info.UpdateManifestURL
 	// Dev/staging override: point the update check at a different

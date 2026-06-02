@@ -49,6 +49,7 @@ export {
   SetBoxLanguage,
   GetAirplayOpt,
   SetAirplayOpt,
+  StreamBitrate,
   GetBattery,
   SaveDiagnosticBundle,
   GetLogFilePath,

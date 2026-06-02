@@ -571,6 +571,10 @@ body {
 .btn { background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
 .btn:hover { background: #3a3a3a; }
 .btn-mini { padding: 4px 10px; font-size: 13px; }
+/* Active state for ON/OFF toggle pairs (clock display, airplay opt): the
+   current state is shown by highlighting the active button, like the
+   source buttons, so no separate status line is needed. */
+.toggle-btn.active { background: linear-gradient(135deg, #1f2f1f 0%, #2a3a2a 100%); border-color: var(--signal-green); color: #cfc; box-shadow: 0 0 8px rgba(102, 204, 102, 0.3); }
 .btn-secondary { background: #444; }
 .btn-primary { background: linear-gradient(135deg, #58a 0%, #6bd 100%); color: white; border-color: #6bd; }
 .btn-primary:hover { background: linear-gradient(135deg, #6bd 0%, #8df 100%); }
@@ -632,6 +636,7 @@ body {
 }
 .preset .num { font-size: 11px; color: #888; }
 .preset .name { font-size: 14px; font-weight: 600; margin-top: 2px; }
+.preset-bitrate { font-size: 10px; font-weight: 400; color: #888; margin-top: 1px; line-height: 1.1; }
 .preset .url { font-size: 10px; color: #777; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preset-head { display: flex; justify-content: space-between; }
 .preset .del { color: #777; cursor: pointer; padding: 0 4px; font-size: 16px; }

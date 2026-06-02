@@ -1308,10 +1308,38 @@ const nandLogMax = 1 * 1024 * 1024
 // Best-effort: missing /proc entries just log -1.
 func logResourceHealth(logger *slog.Logger) {
 	avail, total := readMemKB()
+	rss, threads := readSelfRSS()
 	logger.Info("resource health",
 		"memAvailableKB", avail,
 		"memTotalKB", total,
-		"loadavg", readLoadAvg())
+		"loadavg", readLoadAvg(),
+		// The agent's own RSS and thread count. If memAvailable trends
+		// down while these stay flat, the leak is BoseApp's (firmware);
+		// if these climb too, it is ours. This attributes the leak that
+		// precedes the recurring BoseApp freeze without guesswork.
+		"agentRSSKB", rss,
+		"agentThreads", threads)
+}
+
+func readSelfRSS() (rssKB, threads int64) {
+	rssKB, threads = -1, -1
+	b, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		switch f[0] {
+		case "VmRSS:":
+			rssKB, _ = strconv.ParseInt(f[1], 10, 64)
+		case "Threads:":
+			threads, _ = strconv.ParseInt(f[1], 10, 64)
+		}
+	}
+	return
 }
 
 func readMemKB() (avail, total int64) {

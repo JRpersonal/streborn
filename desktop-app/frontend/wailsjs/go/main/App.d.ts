@@ -92,6 +92,8 @@ export function StickVersion(arg1:string):Promise<string>;
 
 export function Stop(arg1:string,arg2:number):Promise<void>;
 
+export function StreamBitrate(arg1:string,arg2:number):Promise<number>;
+
 export function SuggestBoxLanguage(arg1:string,arg2:string):Promise<number>;
 
 export function SyncBoxPresets(arg1:string,arg2:number):Promise<Record<string, any>>;

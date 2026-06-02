@@ -43,6 +43,7 @@ import {
   SetBoxLanguage,
   GetAirplayOpt,
   SetAirplayOpt,
+  StreamBitrate,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
@@ -467,7 +468,12 @@ async function renderFooter() {
     };
   }
   renderDonateSidebar();
-  checkAppUpdate();
+  // Defer the update check out of the critical startup path: the window
+  // and discovery come up first, and the network call (a reported suspect
+  // for a macOS start crash) only fires once the app is already running,
+  // so even if it ever misbehaved it cannot abort startup. checkAppUpdate
+  // is itself fully guarded (try/catch + Go-side recover).
+  setTimeout(() => { try { checkAppUpdate(); } catch {} }, 8000);
   // appInfo may have arrived after the first discovery completed; the
   // badge function defers until both are known.
   updateSettingsTabBadge();
@@ -1771,13 +1777,25 @@ function renderPresets() {
         `<img class="preset-logo" src="${escapeAttr(presetCandidates[0])}"
               data-fallbacks="${escapeAttr(presetCandidates.slice(1).join('|'))}"
               onerror="window.__nextLogoFallback(this)"/>`;
+      // The active tile mirrors the live now-playing bitrate even when the
+      // stored preset bitrate is still 0 (preset saved before the bitrate
+      // feature, or radio-browser had none). Persist it so the tile keeps
+      // the value after a reload and the other clients see it too.
+      let tileBitrate = p.bitrate || 0;
+      if (isActive && state.nowBitrate > 0) {
+        tileBitrate = state.nowBitrate;
+        if ((p.bitrate || 0) !== state.nowBitrate) {
+          p.bitrate = state.nowBitrate;
+          SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, p.art || '', state.nowBitrate).catch(() => {});
+        }
+      }
       div.innerHTML = `
         <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></div>
         <div class="preset-body">
           ${logo}
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
-            <div class="preset-bitrate">${p.bitrate ? p.bitrate + ' kbit/s' : '- kbit/s'}</div>
+            <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
           </div>
         </div>
@@ -1955,6 +1973,7 @@ async function play(slot) {
     state.nowName = p.name || '';
     state.nowIcon = p.art || '';
     state.nowBitrate = p.bitrate || 0;
+    scheduleLiveBitrate();
     state.nowUUID = '';
     state.optimisticUntil = Date.now() + 6000;
     delete state.presetErrors[slot];
@@ -1990,6 +2009,60 @@ function friendlyPlayError(s) {
     return t('play.errUnreachable');
   }
   return t('play.errGeneric');
+}
+
+// scheduleLiveBitrate fetches the agent's detected stream bitrate after a
+// station starts and reflects it into now-playing + the active preset tile.
+// Two delayed reads, not a timer: the first catches an icy-br value (known
+// instantly), the second catches the throughput estimate, which the agent
+// only has after it has skipped the buffer-fill and measured ~6 s of
+// steady-state playback (~10 s in). Routed through the StreamBitrate Go
+// binding so it self-heals across :8888 / :17008 like every other box call
+// (a raw fetch pinned to box.port silently failed on BCO speakers).
+let liveBitrateTimer = null;
+function scheduleLiveBitrate() {
+  if (liveBitrateTimer) { clearTimeout(liveBitrateTimer); liveBitrateTimer = null; }
+  const box = state.currentBox;
+  if (!box) return;
+  // The agent only has a throughput bitrate ~10 s after the stream itself
+  // starts, and the stream start lags the play click by a few seconds
+  // (wake + UPnP). A fixed delay therefore races the measurement and can
+  // read 0 forever. So retry every 4 s until a value appears, then stop;
+  // bounded to ~32 s so it never polls indefinitely. icy-br stations
+  // resolve on the first attempt. Routed through the StreamBitrate Go
+  // binding so it self-heals across :8888 / :17008.
+  let tries = 0;
+  const attempt = async () => {
+    liveBitrateTimer = null;
+    if (state.currentBox !== box) return;
+    tries++;
+    let br = 0;
+    try { br = (await StreamBitrate(box.host, box.port)) | 0; } catch {}
+    if (br > 0) {
+      if (br !== state.nowBitrate) {
+        state.nowBitrate = br;
+        // status bar repaints on its own 1 s tick; setting nowBitrate is enough.
+        // Correct the active preset's stored bitrate to the real value
+        // (radio-browser's catalogue number is often missing or wrong).
+        const slot = activeSlotFromLocation(state.nowLocation);
+        if (slot !== null) {
+          const p = state.presets.find(x => x.slot === slot);
+          if (p && p.bitrate !== br) {
+            p.bitrate = br;
+            SetPreset(box.host, box.port, p.slot, p.name, p.stream_url, p.art || '', br).catch(() => {});
+          }
+        }
+        renderPresets();
+      }
+      return; // got it
+    }
+    if (tries < 11) liveBitrateTimer = setTimeout(attempt, 3000);
+  };
+  // First attempt soon: a station measured earlier this session is cached
+  // agent-side and answers instantly. Fresh stations return 0 here and the
+  // retries (every 3 s, ~33 s total) pick up the value once the agent's
+  // ~10 s throughput window completes.
+  liveBitrateTimer = setTimeout(attempt, 2000);
 }
 
 async function action(kind) {
@@ -2062,6 +2135,16 @@ async function refreshStatus() {
         state.nowBitrate = ap.bitrate;
       } else if (!newLoc) {
         state.nowBitrate = 0;
+      }
+      // Still playing through the stream proxy but with no bitrate yet
+      // (app restart, hardware key press, or a preset whose stored bitrate
+      // is 0): kick the live fetch. It writes state.nowBitrate once the
+      // agent has measured and then self-stops, so this does not re-trigger
+      // on every poll once a value is in.
+      if (!state.nowBitrate &&
+          (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
+          activeSlotFromLocation(newLoc) !== null) {
+        scheduleLiveBitrate();
       }
     }
 
@@ -2360,6 +2443,7 @@ function renderSearchResults() {
       state.nowName = s.name;
       state.nowIcon = chain;
       state.nowBitrate = s.bitrate || 0;
+      scheduleLiveBitrate();
       state.nowUUID = s.stationuuid || '';
       renderPresets();
       try {
@@ -2609,6 +2693,16 @@ async function loadBoxSettings() {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const s = await BoxSettings(state.settingsBox.host, state.settingsBox.port);
+      // The agent returns HTTP 200 with an all-empty payload when the
+      // box's Bose app (:8090) did not answer within the read timeout
+      // (it is still starting or briefly hung). That is not data; treat
+      // it like a transient so the user gets a clear "speaker busy"
+      // banner instead of a panel full of blank fields.
+      if (isEmptySettings(s)) {
+        lastErr = new Error('box_settings_empty');
+        if (attempt < 2) { await sleep(1500); continue; }
+        break;
+      }
       // Erfolg: Reconnect Counter + Timer aufloesen
       if (state.settingsReconnect && state.settingsReconnect.timer) {
         clearTimeout(state.settingsReconnect.timer);
@@ -2688,10 +2782,24 @@ function isTransientBoxError(err) {
 
 function friendlySettingsError(err) {
   const s = String(err || '');
+  if (/box_settings_empty/.test(s)) return t('settingsView.errBoseBusy');
   if (/refused/i.test(s)) return t('settingsView.errRefused');
   if (/timeout|deadline/i.test(s)) return t('settingsView.errTimeout');
   if (/no such host|no route/i.test(s)) return t('settingsView.errNoRoute');
   return t('settingsView.errGeneric', { err: s });
+}
+
+// isEmptySettings reports whether the agent returned a 200 but the box's
+// Bose app (:8090) supplied nothing within the read timeout: no device
+// info, no network interfaces, no sources. That means the speaker's Bose
+// side is still starting or briefly hung, not that there is real data.
+function isEmptySettings(s) {
+  if (!s) return true;
+  const info = s.info || {};
+  const hasInfo = !!(info.deviceID || info.name || info.type);
+  const hasNet = !!(s.network && Array.isArray(s.network.interfaces) && s.network.interfaces.length);
+  const hasSources = Array.isArray(s.sources) && s.sources.length > 0;
+  return !hasInfo && !hasNet && !hasSources;
 }
 
 
@@ -2802,24 +2910,22 @@ function renderBoxSettings(s, box) {
 
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.clockHeading'))}</h3>
-      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.clockCurrent'))}</span><span class="kv-val" id="boxClockCurrent">${escapeHtml(t('common.loading'))}</span></div>
       <div class="setting-row">
         <select id="boxClockFormat">
           <option value="24">${escapeHtml(t('settingsView.clock24h'))}</option>
           <option value="12">${escapeHtml(t('settingsView.clock12h'))}</option>
         </select>
-        <button class="btn btn-mini" id="boxClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
-        <button class="btn btn-mini" id="boxClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+        <button class="btn btn-mini toggle-btn" id="boxClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="boxClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.clockHelp'))}</small>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
       <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
-      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.airplayOptCurrent'))}</span><span class="kv-val" id="airplayOptCurrent">${escapeHtml(t('common.loading'))}</span></div>
       <div class="setting-row">
-        <button class="btn btn-mini" id="airplayOptOn">${escapeHtml(t('settingsView.clockOn'))}</button>
-        <button class="btn btn-mini" id="airplayOptOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+        <button class="btn btn-mini toggle-btn" id="airplayOptOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="airplayOptOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.airplayOptHelp'))}</small>
     </div>
@@ -3167,10 +3273,15 @@ function renderBoxSettings(s, box) {
   // POST to toggle. The endpoint is undocumented in the public Bose
   // Web API PDF and may not exist on every model. On 404 / 500 we
   // surface "not supported" rather than burying the failure.
-  const clockCurrent = $('boxClockCurrent');
   const clockOn = $('boxClockOn');
   const clockOff = $('boxClockOff');
   const clockFormat = $('boxClockFormat');
+  // Reflect the current on/off state by highlighting the active button
+  // instead of a separate status line. null = unknown (neither lit).
+  const paintClock = (enabled) => {
+    if (clockOn) clockOn.classList.toggle('active', enabled === true);
+    if (clockOff) clockOff.classList.toggle('active', enabled === false);
+  };
   // Preselect the box's current 12/24h format in the dropdown.
   if (clockFormat) {
     GetClockFormat24(boseHost).then(is24 => { clockFormat.value = is24 ? '24' : '12'; }).catch(() => {});
@@ -3186,13 +3297,12 @@ function renderBoxSettings(s, box) {
   // unknown means unknown, not unsupported.
   let clockEnabled = false; // tracked so a format change re-sends with the right on/off state
   const refreshClock = async () => {
-    if (!clockCurrent) return;
     try {
       const s = await GetClockDisplay(boseHost);
       clockEnabled = (s === 'true');
-      clockCurrent.textContent = s || t('settingsView.clockUnknown');
+      paintClock(s === 'true' ? true : (s === 'false' ? false : null));
     } catch {
-      clockCurrent.textContent = t('settingsView.clockUnknown');
+      paintClock(null);
     }
   };
   refreshClock();
@@ -3211,8 +3321,8 @@ function renderBoxSettings(s, box) {
       await refreshClock();
     } catch (e) { showError(e); }
   };
-  if (clockOn) clockOn.onclick = () => postClock(true);
-  if (clockOff) clockOff.onclick = () => postClock(false);
+  if (clockOn) clockOn.onclick = () => { paintClock(true); postClock(true); };
+  if (clockOff) clockOff.onclick = () => { paintClock(false); postClock(false); };
   // Send the 12/24h format to the box immediately on dropdown change,
   // keeping the current on/off state (no need to click "On" again).
   if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
@@ -3222,14 +3332,21 @@ function renderBoxSettings(s, box) {
   // reboots the speaker to apply it (BoseApp reads BCOResetTimerEnabled
   // at boot, same as the Bose app), so confirm first.
   const aoSection = $('airplayOptSection');
-  const aoCurrent = $('airplayOptCurrent');
-  if (aoSection && aoCurrent) {
+  const aoOn = $('airplayOptOn');
+  const aoOff = $('airplayOptOff');
+  // Same active-highlight pattern as the clock toggle: the lit button
+  // is the state, no separate status line. null = unknown (neither lit).
+  const paintAirplay = (enabled) => {
+    if (aoOn) aoOn.classList.toggle('active', enabled === true);
+    if (aoOff) aoOff.classList.toggle('active', enabled === false);
+  };
+  if (aoSection && aoOn && aoOff) {
     (async () => {
       try {
         const r = await GetAirplayOpt(box.host, box.port);
         if (r && r.supported) {
           aoSection.classList.remove('hidden');
-          aoCurrent.textContent = r.enabled ? t('settingsView.clockOn') : t('settingsView.clockOff');
+          paintAirplay(r.enabled === true ? true : (r.enabled === false ? false : null));
         }
       } catch { /* leave the section hidden on error */ }
     })();
@@ -3239,17 +3356,15 @@ function renderBoxSettings(s, box) {
         t('settingsView.airplayOptConfirmBody'),
       );
       if (!ok) return;
+      paintAirplay(enabled);
       try {
         await SetAirplayOpt(box.host, box.port, enabled);
-        aoCurrent.textContent = enabled ? t('settingsView.clockOn') : t('settingsView.clockOff');
         showToast(t('settingsView.airplayOptSavedToast'));
         setTimeout(discoverBoxes, 60000);
       } catch (e) { showError(e); }
     };
-    const aoOn = $('airplayOptOn');
-    const aoOff = $('airplayOptOff');
-    if (aoOn) aoOn.onclick = () => setAO(true);
-    if (aoOff) aoOff.onclick = () => setAO(false);
+    aoOn.onclick = () => setAO(true);
+    aoOff.onclick = () => setAO(false);
   }
 
   // App Region dropdown fuellen + aktuelle Region selektieren
@@ -4936,4 +5051,25 @@ try { discoverBoxes(); } catch (e) { try { console.warn('discoverBoxes failed', 
 // Was the cause of the macOS keychain prompt on every launch (#88)
 // even after the v0.5.16 isMacOS gate, and is also redundant on
 // Windows / Linux for users who never visit the Setup tab.
-setInterval(refreshStatus, 2000);
+// Adaptive status poll. A fixed 2 s interval meant ~30 now_playing
+// requests/min at the speaker. On BCO speakers (Portable, ST20-spotty) the
+// Bose firmware app cannot sustain that: its memory and the system load
+// climb steadily until a firmware watchdog reboots the box about every
+// 25 minutes (confirmed live 2026-06-02 on a Portable: with the desktop app
+// killed the memAvailable freefall stopped cold and load fell from 5 to 1.5,
+// while gabbo + autopair kept running). So poll moderately while audio is
+// actually playing (metadata/volume move) and slowly when idle or in
+// standby (nothing changes). Every user action still fires its own
+// immediate refreshStatus, so feedback stays snappy regardless of cadence.
+function nextStatusDelayMs() {
+  if (state.view !== 'box' || !state.currentBox) return 15000;
+  const ps = state.nowPlayState;
+  if (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') return 5000;
+  return 15000;
+}
+(function statusPollLoop() {
+  setTimeout(async () => {
+    try { await refreshStatus(); } catch {}
+    statusPollLoop();
+  }, nextStatusDelayMs());
+})();
