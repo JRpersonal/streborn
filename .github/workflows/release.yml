@@ -205,8 +205,7 @@ jobs:
       # See usb-stick/shim/README.md for the chipset-whitelist story.
       - name: Setup zig (for shim cross-compile)
         if: matrix.suffix == 'armv7l'
-        # mlugg/setup-zig v2.0.5 pinned by tag.
-        uses: mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.13.0
 
