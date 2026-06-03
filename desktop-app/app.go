@@ -1771,16 +1771,16 @@ var (
 
 func (a *App) AppInfo() AppInfo {
 	return AppInfo{
-		Version:           appVersion,
-		Build:             appBuild,
-		Author:            "Jens Roggenfelder (JRpersonal)",
-		GitHubURL:         "https://github.com/JRpersonal/streborn",
-		WebsiteURL:        "https://st-reborn.de",
-		DonateURL:         "", // populated once the PayPal link on the website is live
+		Version:    appVersion,
+		Build:      appBuild,
+		Author:     "Jens Roggenfelder (JRpersonal)",
+		GitHubURL:  "https://github.com/JRpersonal/streborn",
+		WebsiteURL: "https://st-reborn.de",
+		DonateURL:  "", // populated once the PayPal link on the website is live
 		// DonateSlogan is left empty so the frontend renders the
 		// locale-aware fallback from the i18n bundle. Hardcoding
 		// German here would shadow the bundle for every locale.
-		DonateSlogan:      "",
+		DonateSlogan: "",
 		// Update endpoint on the website (separate repo). CheckAppUpdate
 		// appends the running client's context (?v=&b=&os=&arch=&lang=) so
 		// the server can pick the right OS download and localized notes,
@@ -1902,7 +1902,11 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 	// Stable, identifiable agent string so the server can filter bots and
 	// keep meaningful update-check stats.
 	req.Header.Set("User-Agent", "STReborn-Desktop/"+info.Version+" ("+runtime.GOOS+"; "+runtime.GOARCH+")")
-	resp, err := a.httpClient.Do(req)
+	// Use the pure-Go update client (embedded RootCAs + PreferGo), NOT the
+	// shared httpClient. The shared one leaves TLS verification to the
+	// platform, which on macOS runs through cgo (Security.framework) and
+	// crashed an old Mac on this very call (deqw #102). See updateHTTPClient.
+	resp, err := updateHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
