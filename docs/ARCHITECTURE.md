@@ -256,17 +256,65 @@ ARM agent must come from the same release pipeline run, or the
 version check loops. See the build-stamp-sync memory and
 `Makefile` `wails-build`, which produces both from one checkout.
 
+### 7. Desktop app auto-update check
+
+This is separate from the speaker-agent OTA above: it is the desktop
+app checking whether a newer **app** release exists.
+
+```mermaid
+sequenceDiagram
+  participant App as Desktop app
+  participant Web as st-reborn.de/api/update-check.php
+  participant GH as GitHub Releases
+  Note over App: ~8 s after startup, once (opt-out: STR_NO_UPDATE_CHECK)
+  App->>Web: GET update-check?v&b&os&arch&lang
+  Web-->>App: {version, assetUrl, sha256, ...}
+  App->>App: compare remote version to running
+  alt remote is newer
+    App->>App: show "update available" banner
+    Note over App,GH: today the banner links to the release;<br/>planned (#71): in-app download + sha256 verify + relaunch
+  end
+```
+
+The check sends only the running version, build stamp, OS, CPU
+architecture, and UI locale, so the server can return the right asset
+and keep a rough version count. No account, no device ID, no personal
+data. It is fully disablable with `STR_NO_UPDATE_CHECK=1`.
+
+The request runs through a dedicated **pure-Go** HTTP client: DNS uses
+Go's own resolver and TLS verification uses an embedded CA-root bundle
+instead of the platform trust store. On macOS the platform path goes
+through cgo (Security.framework) and crashed an old Mac on this very
+call; the pure-Go path removes the last cgo dependency from the check.
+See `desktop-app/update_tls.go`.
+
 ## External dependencies at runtime
 
 | Service | Used by | Required? |
 |---|---|---|
 | radio-browser.info | Stick agent for `/api/radio/*` | Yes for radio search. Cached locally for already-known stations. No API key, no account. |
 | Upstream radio CDNs | Speaker (proxied through the streamproxy) | Yes for actual audio. STR does not host or buffer the stream beyond the in-flight bytes. |
-| `api.github.com` releases endpoint | Desktop app for the planned auto-update (#71) | Optional; the user can ignore version notifications. |
+| `st-reborn.de` update-check | Desktop app, once ~8 s after startup | Optional. Sends only version, build, OS, arch, UI locale; opt-out with `STR_NO_UPDATE_CHECK`. See flow 7 above and the privacy section below. |
 
 Bose's own cloud endpoints (`streaming.bose.com`, `*.api.bose.io`,
 TuneIn partner URL) are **redirected to localhost** by `/etc/hosts`
 and answered by marge. No outbound traffic is needed there.
+
+## Telemetry, analytics, and privacy
+
+STR has no user accounts, no advertising, and no third-party trackers in
+the app. The complete picture of what talks to what:
+
+| Component | Talks to | What is sent |
+|---|---|---|
+| Speaker (agent + firmware) | **Never** the Bose cloud | STR redirects the Bose cloud hostnames to localhost and answers them itself (marge). The speaker only reaches the LAN, radio-browser.info (station search and metadata), and the upstream radio CDN (audio, proxied). |
+| Desktop app | `st-reborn.de` update-check, once at startup | Running version, build stamp, OS, CPU arch, UI locale. No account, no device ID, no personal data. Opt-out: `STR_NO_UPDATE_CHECK=1`. Radio and CDN traffic flow through the speaker agent, not the app. |
+| Website (`st-reborn.de`) | GoatCounter | Privacy-friendly, cookieless page analytics: no cookies, no cross-site tracking, the visitor IP is not stored. |
+
+Bose's own telemetry endpoint (`events.api.bosecm.com`) and software
+update endpoint (`worldwide.bose.com`) are likewise redirected to
+localhost and answered with a benign `200`, so the speaker emits nothing
+to Bose.
 
 ## Storage layout on the speaker
 

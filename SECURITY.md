@@ -82,14 +82,19 @@ The attestation proves:
 - Personal access tokens minimized; OIDC used for CI auth where possible.
 - Dependabot enabled for Go modules, npm packages, and GitHub Actions.
 - All third party GitHub Actions pinned to a full commit SHA (not a tag).
+- Secret Scanning with Push Protection enabled: commits containing a leaked credential are blocked before they land.
+- CodeQL static analysis runs on every push and pull request, plus weekly.
+- OpenSSF Scorecard runs weekly and on push; it scores the repo's security posture, uploads the result to the Security tab, and feeds the Scorecard badge in the README, so the practices on this page are visible and verifiable, not just claimed.
 
 ### Build
 
 - Builds run in clean GitHub hosted runners.
-- `go mod verify` runs before build.
-- `npm ci` is used (never `npm install`) to ensure lockfile is honored.
+- Every push runs `golangci-lint`, `govulncheck` (Go vulnerability scan), and the test suite; a pull request cannot merge if any of them fail.
+- `go mod verify` runs before build, and lockfile consistency (`go mod tidy`) is checked.
+- `npm ci` is used (never `npm install`) to ensure the lockfile is honored.
 - Build artifacts are attested using `actions/attest-build-provenance`.
 - SHA256 sums are generated and uploaded alongside artifacts.
+- All shipped binaries are compiled from source by the workflow, including the small speaker shim (built from `usb-stick/shim/shim.c`); the repo ships no opaque prebuilt binaries.
 
 ### Release
 
@@ -112,6 +117,16 @@ The attestation proves:
 - Run the desktop app on a network where the SoundTouch lives only.
 - Keep the app updated.
 
+## Privacy and Data Collection
+
+STR has no user accounts, no advertising, and no third-party trackers in the app.
+
+- **The speaker never contacts the Bose cloud.** STR redirects the Bose cloud hostnames to localhost and answers them itself. The speaker only reaches your LAN, radio-browser.info (station search), and the radio station's own stream.
+- **The desktop app makes one external call:** a version check to `st-reborn.de` at startup, sending only the app version, build, OS, CPU architecture, and UI language so the right download can be offered. No account, no device identifier, no personal data. Disable it entirely with `STR_NO_UPDATE_CHECK=1`.
+- **The website** uses GoatCounter, a privacy-friendly analytics tool: no cookies, no cross-site tracking, the visitor IP is not stored.
+
+The full breakdown is in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry-analytics-and-privacy).
+
 ## Known Limitations
 
 - Windows installers are currently **not code signed** with an EV certificate. Windows SmartScreen may warn on first download. Plans exist to acquire an EV code signing certificate once donations cover the annual cost.
@@ -121,3 +136,4 @@ The attestation proves:
 ## Changelog
 
 - 2026 May 15: initial security policy.
+- 2026 Jun 03: documented the privacy/telemetry posture, added OpenSSF Scorecard, and listed the per-push checks (golangci-lint, govulncheck, CodeQL, Secret Scanning + Push Protection).

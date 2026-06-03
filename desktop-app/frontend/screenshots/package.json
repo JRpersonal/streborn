@@ -1,0 +1,13 @@
+{
+  "name": "streborn-screenshots",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Dev-only Playwright harness that renders the STR frontend with mocked backend bindings and captures one screenshot per view per language. Isolated from the app's package.json so playwright (and its browser download) never touches the CI / wails build.",
+  "type": "module",
+  "scripts": {
+    "shoot": "node shoot.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}

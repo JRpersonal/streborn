@@ -2,11 +2,37 @@
 
 **Cloud free firmware project for Bose SoundTouch speakers.**
 
+<p align="center">
+  <a href="https://github.com/JRpersonal/streborn/actions/workflows/build.yml"><img src="https://github.com/JRpersonal/streborn/actions/workflows/build.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/JRpersonal/streborn/actions/workflows/codeql.yml"><img src="https://github.com/JRpersonal/streborn/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://github.com/JRpersonal/streborn/actions/workflows/release.yml"><img src="https://github.com/JRpersonal/streborn/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/JRpersonal/streborn"><img src="https://api.securityscorecards.dev/projects/github.com/JRpersonal/streborn/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://github.com/JRpersonal/streborn/releases/latest"><img src="https://img.shields.io/github/v/release/JRpersonal/streborn" alt="Latest release"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/JRpersonal/streborn" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/OS%20Hero/app-listen.jpg" alt="ST Reborn desktop app" width="820">
+</p>
+
 Bose discontinued their SoundTouch cloud service in February 2026. STR keeps the speakers usable: a USB stick installs a small Go agent onto the speaker that stands in for the discontinued cloud locally, talks to the speaker over the home network, and brings the hardware preset buttons back to life. **Once the agent is installed, the stick can be removed**: the agent persists on the speaker and survives reboots.
 
 ## How it works in one paragraph
 
 After the first boot with the stick attached, the agent copies itself into the speaker's persistent storage and from then on starts automatically every time the speaker powers on, no stick required for normal use. It hosts a stand-in for the Bose cloud on the loopback interface and redirects the relevant DNS names so the speaker treats it as the real cloud. Internet Radio playback then happens over UPnP AVTransport on the speaker, which is supported natively. The hardware preset buttons are wired through the speaker's local WebSocket so a button press triggers playback of the saved station.
+
+## Screenshots
+
+The desktop app: browse and assign presets, search internet radio, browse a DLNA library, manage speaker settings, and prepare the USB stick.
+
+| | | |
+|:--:|:--:|:--:|
+| [![Presets and playback](docs/screenshots/OS%20Hero/app-listen.jpg)](docs/screenshots/OS%20Hero/app-listen.jpg) | [![Internet radio search](docs/screenshots/OS%20Hero/app-search.jpg)](docs/screenshots/OS%20Hero/app-search.jpg) | [![Speaker settings](docs/screenshots/OS%20Hero/app-settings1.jpg)](docs/screenshots/OS%20Hero/app-settings1.jpg) |
+| Presets and playback | Internet radio search | Speaker settings |
+| [![DLNA library](docs/screenshots/OS%20Hero/app-library.jpg)](docs/screenshots/OS%20Hero/app-library.jpg) | [![USB stick setup](docs/screenshots/OS%20Hero/app-stick-step1.jpg)](docs/screenshots/OS%20Hero/app-stick-step1.jpg) | [![Stick: Wi-Fi, name, region](docs/screenshots/OS%20Hero/app-stick-step2.jpg)](docs/screenshots/OS%20Hero/app-stick-step2.jpg) |
+| DLNA music library | USB stick setup | Wi-Fi, name, region |
+
+The interface is available in seven languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run screenshots`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
 
 ## Status (May 2026)
 
@@ -106,6 +132,23 @@ gh attestation verify STR-Setup-Windows.exe --owner JRpersonal
 ```
 
 For the threat model and the vulnerability reporting process see [SECURITY.md](./SECURITY.md) and [docs/THREAT-MODEL.md](./docs/THREAT-MODEL.md).
+
+## How this repo stays clean
+
+Every change is checked automatically and the results are public, so you do not have to take my word for any of it. The badges at the top of this page are live: green means the latest run passed, click one to open the run.
+
+- **CI** runs `golangci-lint`, `govulncheck` (Go vulnerability scan), and the test suite on every push and pull request.
+- **CodeQL** runs static security analysis on every push and weekly.
+- **OpenSSF Scorecard** audits the supply-chain posture (branch protection, pinned dependencies, signed releases, token hygiene) weekly and publishes the score.
+- **Dependabot** keeps Go, npm, and GitHub Actions dependencies patched; all third-party actions are pinned to a commit SHA.
+- **Secret Scanning with Push Protection** blocks commits that contain a leaked credential.
+- **Releases** are built only by the workflow from a signed tag, with SHA256 sums and Sigstore build-provenance attestations (above). All shipped binaries, including the small speaker shim, are compiled from source by the workflow; no opaque prebuilt binaries are committed.
+
+Findings from Dependabot, CodeQL, and Scorecard surface in the repository's [Security tab](https://github.com/JRpersonal/streborn/security). The full policy is in [SECURITY.md](./SECURITY.md), and hard-won notes about the stock firmware STR runs on top of are in [docs/FIRMWARE-NOTES.md](./docs/FIRMWARE-NOTES.md).
+
+## Privacy
+
+STR has no accounts, no ads, and no third-party trackers in the app. The speaker never contacts the Bose cloud: STR answers it locally. The desktop app makes a single external call, an optional version check to st-reborn.de that sends only the app version, build, OS, architecture, and language, and is disablable with `STR_NO_UPDATE_CHECK=1`. The website uses cookieless GoatCounter analytics. Full breakdown: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry-analytics-and-privacy).
 
 ## Contributing
 
