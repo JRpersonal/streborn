@@ -138,6 +138,20 @@ const LOCALE_FLAG_CC = {
   uk: 'UA',
 };
 
+// LOCALE_TO_RADIO_LANG maps the app UI locale to radio-browser's English
+// language name, so the radio language filter can default to the chosen app
+// language (e.g. a Dutch UI defaults the filter to Dutch stations) rather
+// than to the stick region's language or a last-used value.
+const LOCALE_TO_RADIO_LANG = {
+  en: 'english',
+  de: 'german',
+  fr: 'french',
+  es: 'spanish',
+  ja: 'japanese',
+  uk: 'ukrainian',
+  nl: 'dutch',
+};
+
 import {
   extractHost,
   rootDomain,
@@ -1147,8 +1161,12 @@ async function loadStickRegion() {
         const cs = $('searchCountry');
         if (cs) cs.value = data.country;
       }
-      if (data.language && !state.searchLang) {
-        state.searchLang = data.language;
+      // Default the language filter to the APP language, not the stick
+      // region's language and not a last-used value. Only when the app
+      // locale has no obvious radio-browser language do we fall back to the
+      // region's language.
+      if (!state.searchLang) {
+        state.searchLang = LOCALE_TO_RADIO_LANG[getLocale()] || data.language || '';
       }
       updateFilterIndicators();
       regionLoaded = true;
@@ -1302,17 +1320,30 @@ let _langDNLocale = null;
 // back to the i18n lang table, then a capitalized form of the raw name.
 function localizeLanguageName(name) {
   if (!name) return '';
-  // Primary source: the i18n lang table. de/en carry the full table, so
-  // this yields the selected UI language for those and an English fallback
-  // for every other UI language (fr/es/ja/uk/nl) via tLookup's en fallback.
-  // That is exactly the desired behaviour: selected language, else English.
+  // Localize to the active app language via Intl.DisplayNames, exactly like
+  // regionName does for countries (the Wails webview is Chromium and honours
+  // the locale argument, as the localized country dropdown proves). So a
+  // French UI shows French language names, Dutch shows Dutch, and so on,
+  // for every app language without hand-translated tables. Cached per locale.
+  const code = LANG_NAME_TO_CODE[name.toLowerCase().trim()];
+  if (code) {
+    try {
+      const loc = getLocale();
+      if (_langDNLocale !== loc) {
+        _langDN = new Intl.DisplayNames([loc], { type: 'language' });
+        _langDNLocale = loc;
+      }
+      const n = _langDN.of(code);
+      if (n && n.toLowerCase() !== code) return n;
+    } catch (_) {
+      // Intl unavailable / bad code: fall through to the table.
+    }
+  }
+  // Names not in the code map (e.g. "american english"), or if Intl failed:
+  // the i18n lang table (selected language for de/en, else English), then the
+  // raw radio-browser name title-cased.
   const translated = tLookup('lang', name.toLowerCase().trim());
   if (translated) return translated;
-  // Not in the table (e.g. "american english", "brazilian portuguese"):
-  // show the raw English name from radio-browser, title-cased. We do NOT
-  // use Intl.DisplayNames here: the app's WebView2 runtime did not honour
-  // the locale argument and returned host-locale (German) names regardless
-  // of the selected UI language, which is the bug this replaces.
   return name.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
