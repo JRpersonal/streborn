@@ -26,12 +26,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/JRpersonal/streborn/discovery"
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/bmx"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxws"
-	"github.com/JRpersonal/streborn/discovery"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/netutil"
@@ -80,9 +80,10 @@ func main() {
 
 // runShepherdCmd haendlet das shepherd Subcommand.
 // Aufrufe:
-//   streborn shepherd install   -- /mnt/nv/shepherd aufsetzen
-//   streborn shepherd remove    -- /mnt/nv/shepherd entfernen
-//   streborn shepherd status    -- aktuellen Stand zeigen
+//
+//	streborn shepherd install   -- /mnt/nv/shepherd aufsetzen
+//	streborn shepherd remove    -- /mnt/nv/shepherd entfernen
+//	streborn shepherd status    -- aktuellen Stand zeigen
 func runShepherdCmd(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("verwendung: shepherd {install|remove|status}")
@@ -131,20 +132,20 @@ func runShepherdCmd(args []string) error {
 
 func run() error {
 	var (
-		presetsPath    = flag.String("presets", "/media/sda1/presets.json", "Pfad zur presets.json auf dem USB Stick")
-		webuiAddr      = flag.String("listen-webui", ":8888", "Adresse für das Config Web UI")
-		margeAddr      = flag.String("listen-marge", ":80", "Adresse für die Marge Emulation HTTP (streaming.bose.com)")
-		margeTLSAddr   = flag.String("listen-marge-tls", ":8443", "Adresse für die Marge Emulation HTTPS")
-		bmxAddr        = flag.String("listen-bmx", ":81", "Adresse für die BMX Emulation HTTP (content.api.bose.io)")
-		hostsPath      = flag.String("hosts", "/etc/hosts", "Pfad zur hosts Datei")
-		applyHosts     = flag.Bool("apply-hosts", true, "Hosts Datei beim Start manipulieren und beim Stop wiederherstellen")
-		tlsDir         = flag.String("tls-dir", tlsgen.DefaultCADir, "Verzeichnis fuer CA und Server Cert")
-		tlsEnabled     = flag.Bool("tls", true, "TLS Termination aktivieren auf listen-marge-tls")
-		logLevel       = flag.String("log-level", "info", "Log Level: debug, info, warn, error")
-		boxHost        = flag.String("box-host", "127.0.0.1", "Bose Box IP fuer UPnP Calls (Webui /api/play). 127.0.0.1 wenn Agent auf Box laeuft, sonst LAN IP.")
-		regionFile     = flag.String("region-file", "", "Pfad zur region.txt mit ISO Country Code (vom Setup Wizard). Default Radio Land und Sprache leiten wir daraus ab.")
+		presetsPath     = flag.String("presets", "/media/sda1/presets.json", "Pfad zur presets.json auf dem USB Stick")
+		webuiAddr       = flag.String("listen-webui", ":8888", "Adresse für das Config Web UI")
+		margeAddr       = flag.String("listen-marge", ":80", "Adresse für die Marge Emulation HTTP (streaming.bose.com)")
+		margeTLSAddr    = flag.String("listen-marge-tls", ":8443", "Adresse für die Marge Emulation HTTPS")
+		bmxAddr         = flag.String("listen-bmx", ":81", "Adresse für die BMX Emulation HTTP (content.api.bose.io)")
+		hostsPath       = flag.String("hosts", "/etc/hosts", "Pfad zur hosts Datei")
+		applyHosts      = flag.Bool("apply-hosts", true, "Hosts Datei beim Start manipulieren und beim Stop wiederherstellen")
+		tlsDir          = flag.String("tls-dir", tlsgen.DefaultCADir, "Verzeichnis fuer CA und Server Cert")
+		tlsEnabled      = flag.Bool("tls", true, "TLS Termination aktivieren auf listen-marge-tls")
+		logLevel        = flag.String("log-level", "info", "Log Level: debug, info, warn, error")
+		boxHost         = flag.String("box-host", "127.0.0.1", "Bose Box IP fuer UPnP Calls (Webui /api/play). 127.0.0.1 wenn Agent auf Box laeuft, sonst LAN IP.")
+		regionFile      = flag.String("region-file", "", "Pfad zur region.txt mit ISO Country Code (vom Setup Wizard). Default Radio Land und Sprache leiten wir daraus ab.")
 		pendingNameFile = flag.String("pending-name-file", "", "Pfad zur name.txt vom Setup Wizard. Inhalt wird einmalig als Box Name angewendet (plus UID Suffix) und die Datei danach geloescht.")
-		printVersion   = flag.Bool("version", false, "Version ausgeben und beenden")
+		printVersion    = flag.Bool("version", false, "Version ausgeben und beenden")
 	)
 	flag.Parse()
 
@@ -347,11 +348,6 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		logResourceHealth(logger)
-		// Lift BoseApp's open-files soft limit so its firmware FD leak
-		// takes far longer to deadlock :8090. Re-asserted on each tick so
-		// it also catches a BoseApp that came up after the agent. See
-		// boseapp_recovery.go for the full rationale.
-		raiseBoseAppFDLimit(logger, boseAppFDTarget)
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for {
@@ -360,19 +356,20 @@ func run() error {
 				return
 			case <-t.C:
 				logResourceHealth(logger)
-				raiseBoseAppFDLimit(logger, boseAppFDTarget)
 			}
 		}
 	}()
 
-	// BoseApp :8090 deadlock recovery: reboot only when :8090 is confirmed
-	// dead for several minutes while BoseApp is still alive (the firmware's
-	// FD-exhaustion hang the supervisor does not catch). Guarded + disablable
-	// via STR_NO_HANG_RECOVERY.
+	// BatteryMonitor fallback: on the Portable the Bose BatteryMonitor
+	// deadlocks at init and never serves 127.0.0.1:17002, so BoseApp's
+	// battery client connect-storms it and leaks fds until the box reboots
+	// (~27 min). We accept on :17002 ourselves when it is unserved, which
+	// stops the storm. No-op where BatteryMonitor is healthy. See
+	// boseapp_recovery.go for the full root-cause writeup.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		watchBoseAppHealth(ctx, *boxHost, logger)
+		serveBatteryMonitorFallback(ctx, logger)
 	}()
 
 	// === Deferred heavy init (background) ===
@@ -813,14 +810,14 @@ func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, lo
 // pollBoxInfo fragt regelmaessig die Box /info ab und haelt die mDNS TXT
 // Felder fuer FriendlyName und Model aktuell. Damit:
 //
-//   1. Der Desktop App kennt den Namen sobald der User die Box umbenennt
-//      (z.B. via BoseApp HTTP), ohne Box Reboot.
-//   2. Das model TXT Feld wird auf den echten Wert ("SoundTouch 10" etc)
-//      hochgezogen, sobald die Bose Firmware /info auf :8090 ausliefert.
-//      Beim ersten Announce steht dort noch der generische Fallback
-//      "SoundTouch" weil :8090 typisch 20+ Sekunden nach dem Agent-Start
-//      hochkommt — der Loop hier dichtet die Race ab ohne den Boot zu
-//      blockieren.
+//  1. Der Desktop App kennt den Namen sobald der User die Box umbenennt
+//     (z.B. via BoseApp HTTP), ohne Box Reboot.
+//  2. Das model TXT Feld wird auf den echten Wert ("SoundTouch 10" etc)
+//     hochgezogen, sobald die Bose Firmware /info auf :8090 ausliefert.
+//     Beim ersten Announce steht dort noch der generische Fallback
+//     "SoundTouch" weil :8090 typisch 20+ Sekunden nach dem Agent-Start
+//     hochkommt — der Loop hier dichtet die Race ab ohne den Boot zu
+//     blockieren.
 //
 // Erste Runde nach kurzem Delay, dann mit kurzem Ticker bis Model
 // erkannt ist (race-Recovery), danach geht der Ticker auf 30s zurueck.

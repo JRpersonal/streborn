@@ -2,226 +2,134 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"net/http"
-	"os"
-	"os/exec"
-	"strconv"
-	"strings"
+	"net"
 	"time"
-
-	"golang.org/x/sys/unix"
 )
 
-// This file mitigates a file-descriptor leak in the closed-source Bose
-// firmware app (BoseApp). Over runtime BoseApp accumulates eventfd/timerfd
-// objects (measured live: ~720 eventfd + ~233 timerfd, climbing ~350/h)
-// against a soft RLIMIT_NOFILE of 1216. When it reaches the ceiling its
-// :8090 HTTP API deadlocks (alive but unresponsive): no wake, no volume, no
-// clean playback, the desktop app's settings never load. FDs partially
-// recycle, so it briefly recovers (the "press the preset 4-5 times until it
-// plays" symptom users reported). The leak is intrinsic to BoseApp, not
-// driven by STR's polling (verified: 25 now_playing requests added zero
-// eventfd/timerfd). We cannot patch Bose's binary, so we do two things from
-// the agent (which runs as root on the box):
+// This file works around the root cause of the SoundTouch Portable's
+// ~27-minute reboot loop, pinned live with strace + /proc forensics
+// 2026-06-03. The chain:
 //
-//  1. Raise BoseApp's open-files soft limit toward its hard limit (4096),
-//     tripling the headroom before the deadlock. We deliberately do NOT
-//     touch the hard limit or system-wide fs.file-max: the box has ~120 MB
-//     RAM and fs.file-max (~9751) is the kernel's RAM-derived cap; letting a
-//     leak grow past that would starve the whole system instead of just
-//     BoseApp, which is worse. 4096 + the other processes (~1200) stays well
-//     under fs.file-max.
-//  2. Watch :8090 and, if it is confirmed dead for several minutes while
-//     BoseApp is still alive, reboot the box. The Bose supervisor reboots on
-//     BoseApp death but has a blind spot for a hang; this closes that gap.
-//     Guarded against reboot loops and disablable via STR_NO_HANG_RECOVERY.
+//   1. The Portable's /opt/Bose/BatteryMonitor process deadlocks at init
+//      (main thread parks on a futex) and never opens its service listener
+//      on 127.0.0.1:17002. It is a deterministic deadlock: a restart
+//      re-wedges immediately, so we cannot fix it by bouncing the process.
+//   2. BoseApp's battery UI client (UiBatClient) cannot reach :17002, so it
+//      hammers connect() ~137x/s. Every failed attempt spawns a fresh
+//      UiBatClient thread pair that allocates an eventfd + a timerfd and then
+//      blocks forever; nothing reaps them.
+//   3. That leaks ~30 fds/min. When BoseApp's open-fd count reaches its
+//      internal ~1024 select()/FD_SETSIZE ceiling its :8090 API deadlocks
+//      and the Bose supervisor reboots the whole box. ~27 min per cycle.
+//
+// Proven fix (live): the storm is driven purely by connect() FAILING. The
+// instant ANYTHING accepts on :17002, BoseApp's client connects, the storm
+// drops to zero, and the fd/thread count plateaus (measured: connects/4s
+// 601 -> 0, UiBat threads and fds flat). So the agent (which runs as root on
+// the box) simply listens on 127.0.0.1:17002 itself as a fallback, accepts
+// the battery client, and holds the connection. We never need to speak the
+// battery protocol; a successful connect is enough to stop the leak.
+//
+// Safety on healthy boxes: we wait a grace period first, then only bind when
+// the port is unserved. On any box whose BatteryMonitor is healthy it has
+// already bound :17002, our Listen fails, and we back off and retry without
+// ever fighting the real service. On models with no battery at all (ST10/20/
+// 30) nothing connects to our listener, so it sits idle and harmless.
+//
+// This replaces the earlier prlimit-raise + hang-reboot mitigation, which was
+// counterproductive: raising the soft RLIMIT_NOFILE past 1024 let the fd
+// numbers grow past exactly the select()/FD_SETSIZE limit that wedges BoseApp,
+// and the supervisor's reboot always beat the hang watchdog.
 
 const (
-	// boseAppFDTarget is the soft RLIMIT_NOFILE we raise BoseApp to. Capped
-	// at its existing hard limit at apply time so we never need to raise the
-	// hard cap (which would invite the fs.file-max risk above).
-	boseAppFDTarget uint64 = 4096
+	// batteryMonitorAddr is the local Bose BatteryMonitor service address.
+	batteryMonitorAddr = "127.0.0.1:17002"
 
-	hangProbeEvery   = 90 * time.Second
-	hangFailsToReact = 4               // ~4 consecutive misses (~6 min) before acting
-	hangMinUptime    = 5 * time.Minute // never act right after boot, :8090 needs ~60-70 s
-	hangRebootMarker = "/mnt/nv/streborn/last-hang-reboots"
-	hangLoopWindow   = time.Hour // if >= hangLoopMax reboots within this, stop (loop guard)
-	hangLoopMax      = 3
+	// bmFallbackGrace gives a healthy BatteryMonitor time to bind :17002
+	// before we consider stepping in. On a healthy box it binds at ~19 s of
+	// uptime; 45 s is a safe margin while still capping the pre-fix leak to a
+	// harmless ~20-25 fds.
+	bmFallbackGrace = 45 * time.Second
+
+	// bmFallbackRetry is how often we re-check the port while a healthy
+	// BatteryMonitor holds it (our Listen keeps failing). Cheap.
+	bmFallbackRetry = 60 * time.Second
 )
 
-// findBoseAppPID returns the PID of the Bose firmware app, or 0 if not
-// running. /proc/<pid>/comm is the kernel-truncated (<=15 char) name;
-// "BoseApp" fits.
-func findBoseAppPID() int {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return 0
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if _, err := strconv.Atoi(e.Name()); err != nil {
-			continue
-		}
-		comm, err := os.ReadFile("/proc/" + e.Name() + "/comm")
-		if err != nil {
-			continue
-		}
-		if strings.TrimSpace(string(comm)) == "BoseApp" {
-			pid, _ := strconv.Atoi(e.Name())
-			return pid
-		}
-	}
-	return 0
-}
-
-// raiseBoseAppFDLimit lifts BoseApp's open-files soft limit to target,
-// capped at its current hard limit. Idempotent and cheap; safe to call on a
-// timer. A no-op when BoseApp is not (yet) running or already at the target.
-func raiseBoseAppFDLimit(logger *slog.Logger, target uint64) {
-	pid := findBoseAppPID()
-	if pid == 0 {
+// serveBatteryMonitorFallback binds 127.0.0.1:17002 whenever the real Bose
+// BatteryMonitor is not serving it (the Portable deadlock case), accepts the
+// BoseApp battery client and holds the connection so BoseApp stops its
+// connect-storm fd leak. No-op on boxes where BatteryMonitor is healthy (the
+// port is taken and our Listen fails). Returns when ctx is cancelled.
+func serveBatteryMonitorFallback(ctx context.Context, logger *slog.Logger) {
+	// Let the real BatteryMonitor win the port on a healthy box.
+	select {
+	case <-ctx.Done():
 		return
-	}
-	var cur unix.Rlimit
-	if err := unix.Prlimit(pid, unix.RLIMIT_NOFILE, nil, &cur); err != nil {
-		logger.Debug("fd-limit: read failed", "pid", pid, "err", err)
-		return
-	}
-	want := target
-	if want > cur.Max {
-		// Stay within Bose's own hard cap. Raising the hard limit is
-		// possible as root but would let the leak grow toward fs.file-max
-		// and starve the system; not worth it.
-		want = cur.Max
-	}
-	if cur.Cur >= want {
-		return
-	}
-	newLim := unix.Rlimit{Cur: want, Max: cur.Max}
-	if err := unix.Prlimit(pid, unix.RLIMIT_NOFILE, &newLim, nil); err != nil {
-		logger.Warn("fd-limit: raise failed", "pid", pid, "err", err)
-		return
-	}
-	logger.Info("fd-limit: raised BoseApp open-files soft limit",
-		"pid", pid, "from", cur.Cur, "to", want, "hard", cur.Max)
-}
-
-// readUptime returns the box uptime from /proc/uptime, 0 on error.
-func readUptime() time.Duration {
-	b, err := os.ReadFile("/proc/uptime")
-	if err != nil {
-		return 0
-	}
-	fields := strings.Fields(string(b))
-	if len(fields) == 0 {
-		return 0
-	}
-	secs, err := strconv.ParseFloat(fields[0], 64)
-	if err != nil {
-		return 0
-	}
-	return time.Duration(secs * float64(time.Second))
-}
-
-// recentHangReboots returns how many hang-recovery reboots were recorded
-// within hangLoopWindow before now, used as a loop guard.
-func recentHangReboots(now time.Time) int {
-	b, err := os.ReadFile(hangRebootMarker)
-	if err != nil {
-		return 0
-	}
-	n := 0
-	for _, line := range strings.Fields(string(b)) {
-		ts, err := strconv.ParseInt(line, 10, 64)
-		if err != nil {
-			continue
-		}
-		if now.Sub(time.Unix(ts, 0)) < hangLoopWindow {
-			n++
-		}
-	}
-	return n
-}
-
-// recordHangReboot appends now to the marker file, keeping only entries
-// within hangLoopWindow so it cannot grow without bound.
-func recordHangReboot(now time.Time) {
-	var kept []string
-	if b, err := os.ReadFile(hangRebootMarker); err == nil {
-		for _, line := range strings.Fields(string(b)) {
-			if ts, err := strconv.ParseInt(line, 10, 64); err == nil {
-				if now.Sub(time.Unix(ts, 0)) < hangLoopWindow {
-					kept = append(kept, line)
-				}
-			}
-		}
-	}
-	kept = append(kept, strconv.FormatInt(now.Unix(), 10))
-	_ = os.WriteFile(hangRebootMarker, []byte(strings.Join(kept, "\n")+"\n"), 0o644)
-}
-
-// watchBoseAppHealth reboots the box when BoseApp's :8090 HTTP API is
-// confirmed dead for ~6 minutes while BoseApp itself is still alive (the
-// FD-exhaustion deadlock). Disabled by STR_NO_HANG_RECOVERY and by the
-// loop guard. A reboot is the only known reset for the deadlock; FDs reset
-// to baseline on a fresh boot.
-func watchBoseAppHealth(ctx context.Context, boxHost string, logger *slog.Logger) {
-	if boxHost == "" {
-		return
-	}
-	if strings.TrimSpace(os.Getenv("STR_NO_HANG_RECOVERY")) != "" {
-		logger.Info("boseapp health: hang-recovery disabled via STR_NO_HANG_RECOVERY")
-		return
-	}
-	if n := recentHangReboots(time.Now()); n >= hangLoopMax {
-		logger.Warn("boseapp health: hang-recovery suppressed, too many recent recovery reboots (loop guard)", "recent", n)
-		return
+	case <-time.After(bmFallbackGrace):
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	url := fmt.Sprintf("http://%s:8090/info", boxHost)
-	fails := 0
-	t := time.NewTicker(hangProbeEvery)
-	defer t.Stop()
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-		}
-		// A dead BoseApp is the supervisor's job (it reboots for that); we
-		// only handle the alive-but-hung case, so skip when it is absent.
-		if findBoseAppPID() == 0 {
-			fails = 0
-			continue
-		}
-		resp, err := client.Get(url)
-		if err == nil {
-			resp.Body.Close()
-			fails = 0
-			continue
-		}
-		if readUptime() < hangMinUptime {
-			continue // too early after boot to call it a hang
-		}
-		fails++
-		logger.Warn("boseapp health: :8090 unresponsive while BoseApp alive", "consecutive", fails, "err", err)
-		if fails >= hangFailsToReact {
-			now := time.Now()
-			recordHangReboot(now)
-			logger.Error("boseapp health: :8090 deadlocked, rebooting box to recover",
-				"consecutive", fails, "recentRecoveryReboots", recentHangReboots(now))
-			if rerr := exec.Command("reboot").Run(); rerr != nil {
-				logger.Error("boseapp health: reboot command failed", "err", rerr)
-				fails = 0 // could not reboot; keep watching
+		ln, err := net.Listen("tcp", batteryMonitorAddr)
+		if err != nil {
+			// Port already served (healthy BatteryMonitor) or a transient
+			// bind error. Re-check later; never fight the real service.
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(bmFallbackRetry):
 				continue
 			}
-			return // box going down
+		}
+		logger.Warn("battery-monitor fallback: :17002 unserved (BatteryMonitor wedged or absent), agent now accepting BoseApp battery clients to stop the connect-storm fd leak")
+		acceptBatteryClients(ctx, ln, logger)
+		// acceptBatteryClients only returns on ctx cancellation (it closes
+		// the listener on its way out).
+		return
+	}
+}
+
+// acceptBatteryClients accepts on ln until ctx is cancelled, draining each
+// connection in its own goroutine. The connection count is bounded by
+// BoseApp's battery client (it stops opening new ones once connected), so the
+// per-connection goroutines do not grow without bound.
+func acceptBatteryClients(ctx context.Context, ln net.Listener, logger *slog.Logger) {
+	go func() {
+		<-ctx.Done()
+		_ = ln.Close()
+	}()
+
+	var total int64
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			select {
+			case <-ctx.Done():
+			default:
+				logger.Warn("battery-monitor fallback: accept stopped", "err", err)
+			}
+			return
+		}
+		total++
+		if total == 1 || total%200 == 0 {
+			logger.Info("battery-monitor fallback: serving BoseApp battery clients", "totalAccepted", total)
+		}
+		go drainBatteryConn(conn)
+	}
+}
+
+// drainBatteryConn holds a battery-client connection open and discards
+// whatever BoseApp sends. We deliberately never reply: a successful connect is
+// what stops BoseApp's retry storm, and a real battery payload would require
+// reverse-engineering the BatteryMonitor wire protocol. Read blocks until
+// BoseApp closes the socket or the box reboots.
+func drainBatteryConn(c net.Conn) {
+	defer c.Close()
+	buf := make([]byte, 512)
+	for {
+		if _, err := c.Read(buf); err != nil {
+			return
 		}
 	}
 }
