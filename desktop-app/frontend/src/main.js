@@ -150,6 +150,7 @@ const LOCALE_TO_RADIO_LANG = {
   ja: 'japanese',
   uk: 'ukrainian',
   nl: 'dutch',
+  pl: 'polish',
 };
 
 import {
@@ -179,12 +180,18 @@ document.querySelector('#app').innerHTML = `
         </svg>
       </span>
       <div class="app-brand">ST <span class="app-brand-accent">Reborn</span></div>
-      <div class="app-locale" role="group" aria-label="${escapeAttr(t('settings.language'))}">
-        ${AVAILABLE_LOCALES.map(l => {
-          const cc = LOCALE_FLAG_CC[l.code] || l.code.toUpperCase();
-          const active = l.code === getLocale() ? ' active' : '';
-          return `<button type="button" class="locale-flag${active}" data-locale="${escapeAttr(l.code)}" title="${escapeAttr(l.label)}" aria-label="${escapeAttr(l.label)}" aria-pressed="${l.code === getLocale() ? 'true' : 'false'}"><span class="locale-flag-emoji" aria-hidden="true">${flagSvg(cc) || flagFromCC(cc)}</span><span class="locale-flag-code">${escapeHtml(l.code.toUpperCase())}</span></button>`;
-        }).join('')}
+      <div class="app-locale locale-dd" role="group" aria-label="${escapeAttr(t('settings.language'))}">
+        ${(() => {
+          const cur = AVAILABLE_LOCALES.find(l => l.code === getLocale()) || AVAILABLE_LOCALES[0];
+          const curCc = LOCALE_FLAG_CC[cur.code] || cur.code.toUpperCase();
+          const trigger = `<button type="button" class="locale-dd-trigger" id="localeTrigger" aria-haspopup="listbox" aria-expanded="false" title="${escapeAttr(cur.label)}"><span class="locale-flag-emoji" aria-hidden="true">${flagSvg(curCc) || flagFromCC(curCc)}</span><span class="locale-flag-code">${escapeHtml(cur.code.toUpperCase())}</span><span class="locale-dd-caret" aria-hidden="true">&#9662;</span></button>`;
+          const items = AVAILABLE_LOCALES.map(l => {
+            const cc = LOCALE_FLAG_CC[l.code] || l.code.toUpperCase();
+            const sel = l.code === getLocale();
+            return `<li role="option" class="locale-dd-item${sel ? ' active' : ''}" data-locale="${escapeAttr(l.code)}" aria-selected="${sel ? 'true' : 'false'}"><span class="locale-flag-emoji" aria-hidden="true">${flagSvg(cc) || flagFromCC(cc)}</span><span class="locale-dd-name">${escapeHtml(l.label)}</span></li>`;
+          }).join('');
+          return trigger + `<ul class="locale-dd-menu" id="localeMenu" role="listbox" hidden>${items}</ul>`;
+        })()}
       </div>
     </div>
     <div class="app-tagline" id="appTagline"></div>
@@ -258,14 +265,25 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // keeps the rendering path simple: no piecemeal rerender of 3000
 // lines of view code.
 (function wireLocalePicker() {
-  document.querySelectorAll('.locale-flag').forEach(btn => {
-    btn.onclick = () => {
-      const code = btn.dataset.locale;
+  const trigger = document.getElementById('localeTrigger');
+  const menu = document.getElementById('localeMenu');
+  if (!trigger || !menu) return;
+  const close = () => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); };
+  const open = () => { menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); };
+  trigger.onclick = (e) => { e.stopPropagation(); if (menu.hidden) open(); else close(); };
+  menu.querySelectorAll('.locale-dd-item').forEach(item => {
+    item.onclick = () => {
+      const code = item.dataset.locale;
       if (code && code !== getLocale() && setLocale(code)) {
         location.reload();
+      } else {
+        close();
       }
     };
   });
+  // Close on outside click or Escape.
+  document.addEventListener('click', (e) => { if (!e.target.closest('.locale-dd')) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 })();
 
 // Tell the Go backend which UI language is active, so server-side

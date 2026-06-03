@@ -70,7 +70,7 @@ station's audio bytes.
 |---|---|---|
 | Stick agent language | Go 1.22+ (module `github.com/JRpersonal/streborn`) | Static single binary cross-compiles to `linux/arm/v7` from any host. No runtime on the speaker beyond BusyBox. |
 | Desktop backend | Go via Wails v2 (`github.com/wailsapp/wails/v2`) | Same language as the agent, can import `discovery/` and `internal/boxapi` for free. |
-| Desktop frontend | Vite 6 + vanilla JS (no framework), i18n layer (EN, DE, FR, ES, JA, UK, NL) | Keeps the binary small and the build chain dependency-light. No React/Vue tax for the UI. |
+| Desktop frontend | Vite 6 + vanilla JS (no framework), i18n layer (EN, DE, FR, ES, JA, UK, NL, PL) | Keeps the binary small and the build chain dependency-light. No React/Vue tax for the UI. |
 | mDNS | `github.com/grandcat/zeroconf` | Pure Go, dual stack, works on all three desktop OSes and on the speaker. |
 | WebSocket | `github.com/gorilla/websocket` | Reuses the gabbo subprotocol the Bose firmware expects on `:8080`. |
 | Radio source | `radio-browser.info` HTTP API | Free, no key, community-maintained. Replaces the dead Bose TuneIn integration. |
