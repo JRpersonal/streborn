@@ -6,8 +6,12 @@
 *.tar.gz
 *.zip
 
-# Wails App Build Output
-/desktop-app/build/
+# Wails App Build Output. Ignore everything under build/ EXCEPT
+# appicon.png: that is the icon source Wails rasterises into the window /
+# exe / taskbar icon at build time, so CI needs it in the repo. (bin/,
+# windows/icon.ico, etc. stay ignored and are regenerated each build.)
+/desktop-app/build/*
+!/desktop-app/build/appicon.png
 /desktop-app/frontend/dist/
 /desktop-app/frontend/node_modules/
 /desktop-app/desktop-app/

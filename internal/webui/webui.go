@@ -60,6 +60,16 @@ type Server struct {
 	statusBody []byte
 	statusCode int
 	statusAt   time.Time
+
+	// boxCmdMu serializes state-changing commands sent to the speaker
+	// (play, volume, pause, stop, source, bass). The Bose firmware's tiny
+	// HTTP/UPnP server mishandles concurrent commands: a volume PUT landing
+	// during the wake+play of a station made the play itself fail (reported
+	// live: rapid volume slides right before a preset press killed the
+	// start). Serializing the writes makes a volume wait for the play to
+	// finish instead of colliding with it. Reads (now_playing/info) are not
+	// gated; they have their own micro-cache.
+	boxCmdMu sync.Mutex
 }
 
 // statusCacheTTL bounds the staleness of a cached now_playing response and
@@ -347,6 +357,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
 	if s.renderer == nil {
 		http.Error(w, "renderer not configured (set --box-host)", http.StatusServiceUnavailable)
 		return
@@ -389,6 +401,8 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
 	if s.renderer == nil {
 		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
 		return
@@ -965,6 +979,8 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
 	var req struct{ Value int `json:"value"` }
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)

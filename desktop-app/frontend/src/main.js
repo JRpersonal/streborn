@@ -538,14 +538,15 @@ async function checkAppUpdate() {
     if (!m || typeof m !== 'object' || typeof m.version !== 'string' || !m.version) return;
     const banner = $('appUpdateBanner');
     if (!banner) return;
-    // Cap notes so a large release body (the endpoint may echo the full
-    // GitHub markdown) cannot flood the banner.
-    const notes = typeof m.notes === 'string' ? m.notes.slice(0, 300) : '';
+    // Deliberately do NOT show the release body. The GitHub release notes are
+    // auto-generated machine text (commit hash, workflow run, a downloads
+    // table) and dumping that raw markdown into the banner looked broken.
+    // Version + a Download button is all the user needs here.
     // Only treat a real http(s) URL as a download link; anything else is
     // ignored so we never hand junk to the system browser.
     const dlUrl = (typeof m.downloadUrl === 'string' && /^https?:\/\//i.test(m.downloadUrl)) ? m.downloadUrl : '';
     banner.innerHTML = `
-      <div><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)}${notes ? ` <small>${escapeHtml(notes)}</small>` : ''}</div>
+      <div><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)}</div>
       ${dlUrl ? `<button class="btn btn-mini" id="appUpdateBtn">${escapeHtml(t('banner.download'))}</button>` : ''}
     `;
     banner.classList.remove('hidden');
@@ -713,14 +714,16 @@ if (musicVolEl) {
     const box = state.currentBox;
     if (!box) return;
     musicVolBox = box;
-    throttledSetVolume(box.host, box.port, parseInt(musicVolEl.value, 10));
+    state.desiredVolume = parseInt(musicVolEl.value, 10);
+    throttledSetVolume(box.host, box.port, state.desiredVolume);
   };
   // Keyboard arrows fire only `change`, not `input`, so we still
   // dispatch on change as a safety net for that path.
   musicVolEl.onchange = () => {
     musicVolBox = state.currentBox;
     if (!musicVolBox) return;
-    throttledSetVolume(musicVolBox.host, musicVolBox.port, parseInt(musicVolEl.value, 10));
+    state.desiredVolume = parseInt(musicVolEl.value, 10);
+    throttledSetVolume(musicVolBox.host, musicVolBox.port, state.desiredVolume);
   };
   // pointerdown/up flag is the most reliable cross-device drag
   // signal. Keyboard arrows fire only `change`, which is already
@@ -1299,23 +1302,18 @@ let _langDNLocale = null;
 // back to the i18n lang table, then a capitalized form of the raw name.
 function localizeLanguageName(name) {
   if (!name) return '';
-  const code = LANG_NAME_TO_CODE[name.toLowerCase().trim()];
-  if (code) {
-    try {
-      const loc = getLocale();
-      if (_langDNLocale !== loc) {
-        _langDN = new Intl.DisplayNames([loc], { type: 'language' });
-        _langDNLocale = loc;
-      }
-      const n = _langDN.of(code);
-      if (n && n.toLowerCase() !== code) return n;
-    } catch (_) {
-      // fall through to the table
-    }
-  }
-  const translated = tLookup('lang', name);
+  // Primary source: the i18n lang table. de/en carry the full table, so
+  // this yields the selected UI language for those and an English fallback
+  // for every other UI language (fr/es/ja/uk/nl) via tLookup's en fallback.
+  // That is exactly the desired behaviour: selected language, else English.
+  const translated = tLookup('lang', name.toLowerCase().trim());
   if (translated) return translated;
-  return name.charAt(0).toUpperCase() + name.slice(1);
+  // Not in the table (e.g. "american english", "brazilian portuguese"):
+  // show the raw English name from radio-browser, title-cased. We do NOT
+  // use Intl.DisplayNames here: the app's WebView2 runtime did not honour
+  // the locale argument and returned host-locale (German) names regardless
+  // of the selected UI language, which is the bug this replaces.
+  return name.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function renderLanguageOptions() {
@@ -1961,7 +1959,40 @@ async function saveCurrentToSlot(slot) {
   }
 }
 
+// reapplyDesiredVolume re-sends the user's chosen volume after the box
+// has woken from standby to play. Waking from standby resets the box to
+// its own stored volume (often 30), which silently discards the level the
+// user set while it was idle. We push the desired level again a couple of
+// times across the wake window, reflect it in the slider right away, and
+// hold off the slider-from-box sync for a few seconds so it cannot snap
+// back to 30 in between. No-op until the user has actually set a volume.
+function reapplyDesiredVolume() {
+  const v = state.desiredVolume;
+  const box = state.currentBox;
+  if (v == null || !box) return;
+  // Reflect the level in the slider right away and hold off the
+  // slider-from-box sync. Send the volume early, while the box is still
+  // buffering (before audio output), so the stream is not briefly audible
+  // at the box's woken default (30). This is safe now that the agent
+  // serializes box commands (boxCmdMu): a volume PUT can no longer race the
+  // play and waits for it via the mutex instead of colliding. A second PUT
+  // a bit later makes sure it sticks if the first landed before the box
+  // had fully woken.
+  state.musicVolUntil = Date.now() + 5000;
+  if (musicVolEl) {
+    musicVolEl.value = String(v);
+    if (musicVolValEl) musicVolValEl.textContent = String(v);
+  }
+  const apply = () => { if (state.currentBox === box) throttledSetVolume(box.host, box.port, v); };
+  setTimeout(apply, 250);
+  setTimeout(apply, 1500);
+}
+
 async function play(slot) {
+  // Was the box idle/standby before this play? Waking resets its volume,
+  // so we re-apply the user's chosen level afterwards only in that case
+  // (a normal preset switch while already playing keeps the live volume).
+  const wasIdle = !state.nowPlayState || state.nowSource === 'STANDBY';
   const p = state.presets.find(x => x.slot === slot);
   if (p) {
     // Optimistic UI: set BUFFERING_STATE immediately so the user
@@ -1982,6 +2013,7 @@ async function play(slot) {
   try {
     await PlaySlot(state.currentBox.host, state.currentBox.port, slot);
     delete state.presetErrors[slot];
+    if (wasIdle) reapplyDesiredVolume();
     refreshStatus();
     setTimeout(refreshStatus, 1500);
   } catch (e) {
@@ -2205,7 +2237,11 @@ async function refreshStatus() {
       b.classList.toggle('active', active);
     });
   } catch {
-    $('statusBar').textContent = '—';
+    // Transient status-fetch failure (a single poll timing out while the
+    // box is briefly busy, e.g. BoseApp's :8090 under load). Keep the last
+    // known now-playing on screen instead of blanking it to a dash, which
+    // looked like the display flickering to "---" and back even though
+    // nothing actually changed. The next successful poll refreshes it.
   }
 }
 
@@ -3090,7 +3126,12 @@ function renderBoxSettings(s, box) {
       gb.classList.toggle('hidden', !show);
     }
 
-    const securityWarn = (sshOpen && !state.otaInProgress) ? `
+    // Same guard as the global banner above: never show the "reboot now"
+    // recommendation while the stick is still mounted (initial install or
+    // an update is applying) or an OTA is in flight. Rebooting then would
+    // interrupt the install/update. Only after it completes and the stick
+    // is removed is the SSH state meaningful and the reboot safe.
+    const securityWarn = (sshOpen && !stickMounted && !state.otaInProgress) ? `
       <div class="security-warn">
         <div class="security-warn-title">${escapeHtml(t('banner.recommendationShort'))}</div>
         <div class="security-warn-text">

@@ -235,6 +235,7 @@ const LOCALE_FLAG_SVG = {
   ES: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#AA151B"/><rect y="0.5" width="3" height="1" fill="#F1BF00"/></svg>',
   JP: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#fff"/><circle cx="1.5" cy="1" r="0.6" fill="#BC002D"/></svg>',
   UA: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#FFD700"/><rect width="3" height="1" fill="#0057B7"/></svg>',
+  NL: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#21468B"/><rect width="3" height="1.333" fill="#fff"/><rect width="3" height="0.667" fill="#AE1C28"/></svg>',
 };
 export function flagSvg(cc) {
   if (!cc) return '';
