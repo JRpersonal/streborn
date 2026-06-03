@@ -31,24 +31,39 @@ them back **without any Bose cloud dependency**.
 
 ```
 Client (Browser / Desktop App)
-  -- REST API ----------> Stick Agent (8888)
+  -- REST API --> Stick Agent webui :8888
+     (ST10 reached directly; BCO Portable/taigan + spotty ST20 reached via
+      iptables PREROUTING REDIRECT :17008 -> loopback :8888)
                             |
-                            +--> /api/presets   preset store on NAND
-                            +--> /api/play      upnp.PlayURL -> Box:8091/AVTransport
-                            +--> /api/radio     radiobrowser.Search/TopVote
-                            +--> /api/status    proxy /now_playing
+                            +--> /api/presets    preset store on NAND
+                            +--> /api/play       upnp.PlayURL -> Box:8091/AVTransport
+                            +--> /api/radio      radiobrowser.Search/TopVote
+                            +--> /api/status     proxy Box:8090/now_playing
+                            +--> /stream/<slot>  streamproxy (survives CDN token expiry)
                             |
                             +--> boxws  ws://127.0.0.1:8080/gabbo
                             |     nowSelectionUpdated -> upnp.PlayURL
                             |
                             +--> autopair  POST /setMargeAccount every 5 min
                             |
-                            +--> marge stub  emulates streaming.bose.com
+                            +--> marge stub  :9080 (HTTP) / :443 (TLS)
+                            |     emulates streaming.bose.com
                             |     /streaming/account/.../device/  -> adddeviceresponse
-                            |     /bmx/registry/v1/services       -> service list
                             |     /streaming/sourceproviders      -> source list
+                            +--> bmx stub    :8081  (content.api.bose.io)
+                            |     /bmx/registry/v1/services       -> service list
+                            |
+                            +--> :17002 BatteryMonitor fallback (Portable only)
+                            |     accepts BoseApp's battery client when the stock
+                            |     BatteryMonitor is wedged -> stops the fd-leak
+                            |     reboot loop (see docs/FIRMWARE-NOTES.md)
                             |
                             +--> mDNS announce _streborn._tcp.local
+
+Bose firmware ports STR talks to / around:
+  :8080 gabbo WS    :8090 BoseApp REST    :8091 UPnP AVTransport
+  :17008 SoftwareUpdate (BCO external entry, REDIRECT -> :8888)
+  :17002 BatteryMonitor    :40020 scmmond (battery MCU bridge)
 ```
 
 Audio path: UPnP AVTransport directly to the speaker on port 8091.
