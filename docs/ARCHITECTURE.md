@@ -15,10 +15,10 @@ flowchart LR
     User["User"]
     Desktop["ST Reborn (desktop app)<br/>Wails: Go backend + Vite/vanilla JS frontend"]
 
-    subgraph Speaker["Bose SoundTouch (rhino / spotty)"]
+    subgraph Speaker["Bose SoundTouch (rhino ST10 / BCO: Portable, spotty ST20)"]
       direction TB
-      BoseFW["Bose firmware (stock)<br/>WebServer :8080, BoseApp :8090, UPnP :8091"]
-      Agent["STR stick agent (Go, ARMv7l)<br/>marge stub, BMX stub, streamproxy, webui, mDNS, gabbo hook"]
+      BoseFW["Bose firmware (stock)<br/>gabbo :8080, BoseApp :8090, UPnP :8091,<br/>SoftwareUpdate :17008, BatteryMonitor :17002, scmmond :40020"]
+      Agent["STR stick agent (Go, ARMv7l)<br/>webui+streamproxy :8888, marge :9080/:443, BMX :8081,<br/>:17002 battery fallback, mDNS, gabbo hook, iptables REDIRECTs"]
       NAND[("/mnt/nv/streborn/<br/>agent binary, CA, presets.json, region.txt")]
       Hosts[("/etc/hosts (bind mount)<br/>streaming.bose.com, *.bose.io, TuneIn partner -> 127.0.0.1")]
     end
@@ -32,15 +32,20 @@ flowchart LR
   end
 
   User -- click --> Desktop
-  Desktop <-- "REST :8888" --> Agent
+  Desktop <-- "REST :8888 (ST10 direct)<br/>or :17008 (BCO, iptables REDIRECT to :8888)" --> Agent
   Desktop -- "mDNS _streborn._tcp" --> Agent
   Agent -- "WebSocket :8080 (gabbo)" --> BoseFW
   Agent -- "AVTransport :8091 (UPnP)" --> BoseFW
   Agent -- "REST :8090 (info, sources, presets, zone)" --> BoseFW
-  BoseFW -. "redirected via Hosts" .-> Agent
+  BoseFW -- ":17002 battery client (Portable, when BatteryMonitor is wedged)" --> Agent
+  BoseFW -. "cloud calls redirected via Hosts" .-> Agent
   Agent <-- "GET stations / tags" --> RadioBrowser
   BoseFW <-- "play stream URL" --> UpstreamCDN
   Desktop <-- "release manifest, SHA256, Sigstore" --> GitHubRel
+
+  style Home fill:#cfe8ff,stroke:#1f6feb,color:#000
+  style Speaker fill:#eaf3ff,stroke:#1f6feb,color:#000
+  style External fill:#f3f4f6,stroke:#9ca3af,color:#000
 ```
 
 The blue area is everything that survives without the public
@@ -65,7 +70,7 @@ station's audio bytes.
 |---|---|---|
 | Stick agent language | Go 1.22+ (module `github.com/JRpersonal/streborn`) | Static single binary cross-compiles to `linux/arm/v7` from any host. No runtime on the speaker beyond BusyBox. |
 | Desktop backend | Go via Wails v2 (`github.com/wailsapp/wails/v2`) | Same language as the agent, can import `discovery/` and `internal/boxapi` for free. |
-| Desktop frontend | Vite 6 + vanilla JS (no framework), tiny i18n layer (EN, DE) | Keeps the binary small and the build chain dependency-light. No React/Vue tax for a five-page UI. |
+| Desktop frontend | Vite 6 + vanilla JS (no framework), i18n layer (EN, DE, FR, ES, JA, UK, NL) | Keeps the binary small and the build chain dependency-light. No React/Vue tax for the UI. |
 | mDNS | `github.com/grandcat/zeroconf` | Pure Go, dual stack, works on all three desktop OSes and on the speaker. |
 | WebSocket | `github.com/gorilla/websocket` | Reuses the gabbo subprotocol the Bose firmware expects on `:8080`. |
 | Radio source | `radio-browser.info` HTTP API | Free, no key, community-maintained. Replaces the dead Bose TuneIn integration. |
@@ -79,23 +84,36 @@ station's audio bytes.
 
 ### On the speaker (when STR is running)
 
-| Port | Listener | Role |
-|---|---|---|
-| 22 | sshd (Bose) | Open only while the stick is inserted. Closed by `run.sh` once the stick is unmounted. |
-| 80 | PtsServer (Bose) | Internal Bose endpoint, untouched. |
-| 443 | STR marge HTTPS | TLS-terminated cloud-stub for `https://streaming.bose.com` after Hosts-file redirection. |
-| 7000 | STSCertified (Bose) | TLS endpoint inside the firmware. Untouched, except for the redirected hostnames it tries to reach. |
-| 8080 | WebServer (Bose) | Hosts `/gabbo` WebSocket and the `:8090` REST is bound here on some paths. STR connects as a client. |
-| 8081 | STR BMX stub | Cloud-stub for `content.api.bose.io`. |
-| 8090 | BoseApp (Bose) | REST: `/info`, `/sources`, `/now_playing`, `/presets`, `/getZone`, `/getGroup`, `/select`, `/volume`, ... STR reads and writes here. |
-| 8091 | UPnP AVTransport (Bose) | STR sets the stream URL via SetURI here; the speaker fetches and decodes. |
-| 8443 | STR marge HTTPS (alt) | Same handler as :443; used when :443 cannot be claimed. |
-| 8888 | STR webui + streamproxy | REST for the desktop app (`/api/*`) and the `/stream/<slot>` reverse proxy that survives CDN token expiry. |
-| 9080 | STR marge HTTP | Plain-text marge target after iptables NAT redirects the Bose firmware's outbound port 80 traffic. |
+STR's own ports are bound on loopback and the LAN interface; the Bose
+firmware ports are stock. On the newer **BCO** chassis (Portable/taigan,
+spotty ST20) the network chipset accepts inbound external TCP only to
+listeners owned by a Bose binary, so STR's own ports are **not** reachable
+from the LAN directly. STR therefore installs iptables PREROUTING
+`REDIRECT` rules that map a Bose-owned external port onto the loopback STR
+listener. On Series-I ST10 (rhino) the STR ports are reachable directly.
 
-`:9080` is the production port for marge HTTP; `--listen-marge :80` in
-`cmd/agent` is the default for tests only. The Bose WebServer already
-owns `:8080`, so the redirect lands on `:9080`.
+| Port | Listener | Role | LAN reachable |
+|---|---|---|---|
+| 22 | sshd (Bose) | Open only while the stick is inserted; closed once it is unmounted. | stick only |
+| 80 | PtsServer (Bose) | Internal Bose endpoint; the firmware's outbound :80 cloud calls are NAT-redirected to STR's :9080. | internal |
+| 443 | STR marge HTTPS | TLS cloud-stub for `streaming.bose.com` after the Hosts redirect. | loopback (firmware) |
+| 7000 | STSCertified (Bose) | TLS endpoint inside the firmware. Untouched. | internal |
+| 8080 | WebServer / gabbo (Bose) | Hosts the `/gabbo` WebSocket bus. STR connects as a client. | internal |
+| 8081 | STR BMX stub | Cloud-stub for `content.api.bose.io`. | via :8081 REDIRECT (BCO) |
+| 8090 | BoseApp (Bose) | REST: `/info`, `/now_playing`, `/presets`, `/select`, `/volume`, zones, ... STR reads and writes here. | internal |
+| 8091 | UPnP AVTransport (Bose) | STR sets the stream URL via SetURI; the speaker fetches and decodes. | internal |
+| 8443 | STR marge HTTPS (alt) | Same handler as :443; used when :443 cannot be claimed. | via :8443 REDIRECT (BCO) |
+| 8888 | STR webui + streamproxy | `/api/*` for the desktop app + the `/stream/<slot>` reverse proxy that survives CDN token expiry. | direct (ST10) / via :17008 REDIRECT (BCO) |
+| 9080 | STR marge HTTP | Plain-text marge target after the firmware's outbound :80 is NAT-redirected. | via :9080 REDIRECT (BCO) |
+| 17002 | STR BatteryMonitor fallback | **Portable only.** Bound when the Bose `BatteryMonitor` service is wedged, so BoseApp's battery client connects instead of connect-storming a dead port. This is the ~27 min reboot fix (v0.6.18); see [`FIRMWARE-NOTES.md`](./FIRMWARE-NOTES.md). | loopback (firmware) |
+| 17008 | SoftwareUpdate (Bose) | On BCO this is STR's external entry point: the PREROUTING REDIRECT sends external :17008 to loopback :8888, which is how the desktop app reaches the agent. | external entry (BCO) |
+| 40020 | scmmond (Bose) | System-control / battery-MCU manager that feeds `BatteryMonitor`. STR does not bind it. | internal |
+
+**How the desktop app reaches the agent:** mDNS advertises the agent on
+`:8888`, but on BCO boxes that port is not externally reachable, so the app
+probes and uses the **verified-reachable** port (`:17008` on BCO, `:8888`
+on ST10). `:9080` is the production marge HTTP port; `--listen-marge :80`
+in `cmd/agent` is a test default only.
 
 ### On the desktop app host
 
