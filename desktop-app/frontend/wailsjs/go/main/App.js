@@ -122,6 +122,10 @@ export function RebootBox(arg1, arg2) {
   return window['go']['main']['App']['RebootBox'](arg1, arg2);
 }
 
+export function ResolveStationLogo(arg1, arg2) {
+  return window['go']['main']['App']['ResolveStationLogo'](arg1, arg2);
+}
+
 export function SaveDiagnosticBundle(arg1, arg2) {
   return window['go']['main']['App']['SaveDiagnosticBundle'](arg1, arg2);
 }

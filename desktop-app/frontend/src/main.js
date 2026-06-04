@@ -31,6 +31,7 @@ import {
   TryWiFiPassword,
   CurrentWiFi,
   CheckAppUpdate,
+  ResolveStationLogo,
   BoxSettings,
   SetBoxName,
   SetBoxVolume,
@@ -165,6 +166,44 @@ import {
   bestLogoForStation,
   stationLogoChain,
 } from './logos.js';
+
+// ---------- Station logo hydration ----------
+// logoImgTag renders a tile with the local monogram as the immediate
+// src. Here we upgrade each such tile to a real logo asynchronously:
+// the Go backend (ResolveStationLogo) validates the station's own HTTPS
+// favicon and then DuckDuckGo by HTTP status, returning a real URL or ""
+// (keep the monogram). Resolution runs in Go because DuckDuckGo serves
+// its "no icon" 404 as a grey chevron that the webview would otherwise
+// display. A MutationObserver catches every tile any view renders, so no
+// render site needs to call this explicitly. Results are cached in Go.
+function hydrateLogo(img) {
+  if (!img || img.dataset.logoResolved) return;
+  img.dataset.logoResolved = '1';
+  const hosts = (img.dataset.logoHosts || '').split('|').filter(Boolean);
+  const fav = img.dataset.logoFav || '';
+  if (!fav && hosts.length === 0) return; // nothing to resolve, monogram stays
+  ResolveStationLogo(fav, hosts).then((url) => {
+    if (typeof url === 'string' && url) {
+      const mono = img.dataset.logoMono || img.src;
+      img.onerror = () => { img.onerror = null; img.src = mono; };
+      img.src = url;
+    }
+  }).catch(() => {});
+}
+
+(function setupLogoHydration() {
+  const scan = (root) => {
+    if (root.nodeType !== 1) return;
+    if (root.matches && root.matches('img[data-logo-hosts]')) hydrateLogo(root);
+    if (root.querySelectorAll) root.querySelectorAll('img[data-logo-hosts]').forEach(hydrateLogo);
+  };
+  const obs = new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) scan(n);
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  // Catch any tiles already present before the observer attached.
+  scan(document.body);
+})();
 
 // ---------- DOM Skeleton ----------
 

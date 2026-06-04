@@ -64,6 +64,8 @@ export function PushWLANToBox(arg1:string,arg2:string,arg3:string,arg4:string):P
 
 export function RebootBox(arg1:string,arg2:number):Promise<void>;
 
+export function ResolveStationLogo(arg1:string,arg2:Array<string>):Promise<string>;
+
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
 
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;

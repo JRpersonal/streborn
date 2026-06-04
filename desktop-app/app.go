@@ -70,6 +70,12 @@ type App struct {
 	// the next cycle re-finds it. See mergeDiscoveryCache.
 	discMu    sync.Mutex
 	discCache map[string]discEntry
+
+	// logoCache memoises resolved station-logo URLs (ResolveStationLogo)
+	// so the same station is validated against DuckDuckGo at most once per
+	// app run. Value "" means "no real logo, draw a monogram".
+	logoMu    sync.Mutex
+	logoCache map[string]string
 }
 
 // discEntry is one cached discovery result plus when it was last
@@ -1930,6 +1936,79 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 		return map[string]string{}, nil
 	}
 	return m, nil
+}
+
+// ResolveStationLogo returns the best real logo URL for a station, or ""
+// when none exists (the frontend then draws a local monogram instead).
+//
+// It exists because DuckDuckGo's icon service answers HTTP 404 with a
+// grey "no icon" placeholder image (a chevron) for hosts it does not
+// know. The Wails webview renders that 404 body instead of firing the
+// <img> error handler, so a pure-frontend cascade cannot tell a real
+// icon from the placeholder and the grey chevron wins. Here, in Go, we
+// can read the HTTP status: 200 means a real icon, 404 means placeholder
+// (skip it). Results are cached per (favicon, hosts) for the app run.
+func (a *App) ResolveStationLogo(faviconURL string, hosts []string) string {
+	key := faviconURL + "\x1f" + strings.Join(hosts, ",")
+	a.logoMu.Lock()
+	if a.logoCache == nil {
+		a.logoCache = map[string]string{}
+	}
+	if v, ok := a.logoCache[key]; ok {
+		a.logoMu.Unlock()
+		return v
+	}
+	a.logoMu.Unlock()
+
+	best := ""
+	// 1. The station's own HTTPS favicon, if it really serves an image.
+	//    HTTP favicons are skipped: the secure webview blocks them as
+	//    mixed content anyway.
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(faviconURL)), "https://") {
+		if status, ctype := a.headStatusType(faviconURL); status == http.StatusOK && strings.HasPrefix(ctype, "image/") {
+			best = faviconURL
+		}
+	}
+	// 2. DuckDuckGo per host. 200 = real icon; 404 = grey placeholder, so
+	//    only a 200 counts.
+	if best == "" {
+		for _, h := range hosts {
+			h = strings.TrimSpace(h)
+			if h == "" {
+				continue
+			}
+			u := "https://icons.duckduckgo.com/ip3/" + h + ".ico"
+			if status, _ := a.headStatusType(u); status == http.StatusOK {
+				best = u
+				break
+			}
+		}
+	}
+
+	a.logoMu.Lock()
+	a.logoCache[key] = best
+	a.logoMu.Unlock()
+	return best
+}
+
+// headStatusType fetches just enough of url to learn the HTTP status and
+// Content-Type, with a short timeout so a slow host never stalls logo
+// resolution. The body is not read. A GET (not HEAD) is used because
+// some icon hosts mishandle HEAD; the response is closed immediately.
+func (a *App) headStatusType(url string) (int, string) {
+	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, ""
+	}
+	req.Header.Set("User-Agent", "STReborn-Desktop")
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return 0, ""
+	}
+	resp.Body.Close()
+	return resp.StatusCode, resp.Header.Get("Content-Type")
 }
 
 // EjectDrive wirft den Stick aus damit der User ihn entnehmen kann.

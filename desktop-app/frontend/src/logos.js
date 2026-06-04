@@ -129,37 +129,38 @@ export function stationLogoCandidates(s) {
   return out;
 }
 
-// logoImgTag renders an <img> wired up so onerror cycles through the
-// remaining fallback candidates encoded in data-fallbacks. The local
-// monogram data: URI is appended as the guaranteed last candidate, so
-// every station ends up with a tile (real logo where one exists, a
-// generated letter tile otherwise) and the hide path is effectively
-// never reached.
-export function logoImgTag(s, cssClass) {
-  const candidates = [...stationLogoCandidates(s), monogramDataUri(s.name)];
-  const first = candidates[0];
-  const rest = candidates.slice(1).join('|');
-  return `<img class="${cssClass}"
-            src="${escapeAttr(first)}"
-            data-fallbacks="${escapeAttr(rest)}"
-            onerror="window.__nextLogoFallback(this)"/>`;
+// logoHostsFor derives the candidate hostnames (homepage / stream /
+// resolved URL plus their root domains) used to look up a station logo.
+export function logoHostsFor(s) {
+  const hosts = [];
+  if (!s) return hosts;
+  for (const u of [s.homepage, s.url, s.url_resolved]) {
+    const h = extractHost(u);
+    if (h && !hosts.includes(h)) hosts.push(h);
+    const r = rootDomain(h);
+    if (r && !hosts.includes(r)) hosts.push(r);
+  }
+  return hosts;
 }
 
-// Global helper called by the inline onerror handler. Cycles through
-// data-fallbacks until one loads or the element is hidden. Lives on
-// window because the onerror handler runs in the inline-script global
-// scope and cannot import.
-window.__nextLogoFallback = function(img) {
-  const list = (img.dataset.fallbacks || '').split('|').filter(Boolean);
-  if (list.length === 0) {
-    img.onerror = null;
-    img.style.display = 'none';
-    return;
-  }
-  const next = list.shift();
-  img.dataset.fallbacks = list.join('|');
-  img.src = next;
-};
+// logoImgTag renders the station tile. The local monogram (a data: URI)
+// is the immediate src, so a tile shows instantly with no network and no
+// blank or placeholder flash. The real logo, if any, is resolved
+// asynchronously by the Go backend (ResolveStationLogo, driven by the
+// MutationObserver in main.js) and swapped in. Resolution must run in Go
+// because DuckDuckGo serves its "no icon" 404 as a grey chevron image
+// that the webview would otherwise display; only Go can read the HTTP
+// status to reject it. The data- attributes carry what Go needs.
+export function logoImgTag(s, cssClass) {
+  const mono = monogramDataUri(s && s.name);
+  const fav = (s && typeof s.favicon === 'string') ? s.favicon : '';
+  const hosts = logoHostsFor(s).join('|');
+  return `<img class="${cssClass}"
+            src="${escapeAttr(mono)}"
+            data-logo-mono="${escapeAttr(mono)}"
+            data-logo-fav="${escapeAttr(fav)}"
+            data-logo-hosts="${escapeAttr(hosts)}"/>`;
+}
 
 // bestLogoForStation returns the best available logo URL for a
 // station. Used when saving to a preset slot so the preset button

@@ -37,6 +37,7 @@ export {
   TryWiFiPassword,
   CurrentWiFi,
   CheckAppUpdate,
+  ResolveStationLogo,
   BoxSettings,
   SetBoxName,
   SetBoxVolume,
