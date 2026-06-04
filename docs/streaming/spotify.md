@@ -208,7 +208,34 @@ librespot in reserve:
 - Driving a closed Spotify C library with Bose's partner key outside
   Bose's flow is heavy reverse engineering with uncertain payoff.
 
-librespot is kept ready as the fallback because it is **open, actively
+### librespot on-box results (live, 2026-06-04)
+
+Validated end to end on the taigan Portable except the final audio
+plumbing:
+
+- Builds + runs (static musl). OAuth login works; the credential is
+  cached to `credentials.json` and is **persistent (survives reboot)** ,
+  this is the session cache that makes autonomous presets possible.
+- Authenticated as a Premium account and registered as a Spotify Connect
+  device; it even shows up account-bound ("devices on another network")
+  since local zeroconf is off on this box. **librespot refuses Free
+  accounts** (`does not support "free" accounts`); the native eSDK does
+  not, so Free users keep native live Spotify, presets are Premium-only
+  (on-demand recall needs Premium anyway).
+- **Idle RAM ~4 MB** (VmRSS 4208 kB), NAND 5.5 MB. Footprint is a
+  non-issue.
+- Control path works: pressing play in the app makes librespot decode and
+  emit audio to the pipe backend.
+- Audio routing is the one remaining build: run librespot with
+  **`-P/--passthrough`** so it emits the raw Ogg/Vorbis stream (not PCM),
+  have the agent serve that over HTTP (streamproxy), and point the box's
+  own UPnP at it, so the Bose firmware decodes the Ogg (offloading the
+  Cortex-A8). Then preset save/recall: a preset stores the Spotify URI,
+  recall tells librespot to play it and routes the audio this way.
+  (Pitfall found: without `--passthrough`, librespot writes raw PCM at
+  ~176 KB/s; never let that land on NAND.)
+
+librespot is the fallback because it is **open, actively
 maintained (v0.8.0, Nov 2025), and STR controls its update path**: if
 Spotify ever drops the frozen eSDK, we rebuild librespot from source and
 ship it over OTA. It also does the
