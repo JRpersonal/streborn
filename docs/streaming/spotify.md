@@ -2,6 +2,50 @@
 
 Status: spike / design. Tracks #78. No code shipped yet.
 
+## TL;DR (updated after live testing)
+
+**Native Bose Spotify Connect still works and is the primary path; no new
+code is needed for the common case.** Live-verified on a taigan Portable
+running STR (2026-06-04): a Spotify app on the LAN discovered the speaker
+("Living Room 9870"), it authenticated and played an on-demand track
+(now_playing `source="SPOTIFY"`, the box connected to Spotify's AP on
+port 4070, no stored account). librespot is kept as the future-proof
+fallback (built + run-verified on the box, 5.5 MB) for if/when Spotify
+ever drops the frozen eSDK. The rest of this document is the spike trail.
+
+## Why native Spotify works without the Bose cloud
+
+Spotify Connect has two login paths. Bose's app used the **account-linked**
+one: enter your account in the Bose iOS app, the Bose cloud brokered the
+Spotify OAuth and stored the account on the speaker so it appeared
+everywhere. That broker (the Bose cloud) is dead, which is why the account
+can no longer be changed from the Bose app.
+
+But the **zeroconf path** is independent and alive: the speaker's eSDK
+advertises Spotify Connect on the LAN; the user's Spotify app (logged in
+to their account) discovers it and performs the login handshake **itself**,
+handing the speaker a one-time credential derived from the app's own
+session (via the eSDK's Diffie-Hellman exchange). The speaker logs in to
+Spotify's AP (port 4070) directly and streams from the CDN. The Bose cloud
+is never in this path, so it survived the shutdown. Evidence:
+now_playing shows `sourceAccount="SpotifyConnectUserName"` with no stored
+account, and the box holds a live TCP connection to a Spotify AP on 4070.
+
+## Connecting accounts (there is no "linking" step)
+
+Any Spotify account just: open the Spotify app on the same Wi-Fi as the
+speaker, tap the device picker, choose the speaker, play. The app does the
+auth; whoever connects last controls it. No Bose app, no stored account,
+no cloud, no STR config. The only thing lost versus the old Bose flow is
+the permanent "appears everywhere under one account" presence (that needed
+the cloud-brokered stored account); the practical pick-and-play works.
+
+STR's role: the marge stub answers the Bose cloud source-provider list,
+so BoseApp enables the SPOTIFY source, loads the eSDK, and advertises
+zeroconf. STR therefore likely delivers native Spotify essentially for
+free (to confirm: whether a post-cloud box without STR leaves the source
+disabled).
+
 ## Goal
 
 A SoundTouch speaker running STR should be linkable to one or more
@@ -137,7 +181,12 @@ on his LAN):
    receives the network-wide config the desktop app rolls out to all
    agents; surface track metadata via now-playing.
 
-## Component choice: librespot, not the frozen Bose eSDK
+## Component choice: native eSDK now, librespot as the fallback
+
+(Updated: the on-box test showed the native eSDK actually works via
+zeroconf, see the TL;DR. So native is the primary path today; the
+analysis below is why librespot is kept ready as the fallback for the
+frozen-component risk, not why it is primary.)
 
 The speaker already ships Spotify's official embedded SDK
 (`/usr/lib/libspotify_embedded_shared.so`, dated Aug 2022) plus the audio
@@ -148,9 +197,9 @@ speaker, which logged in and registered with Spotify so it appeared in
 your app everywhere. Only that broker (the Bose cloud) is dead; the eSDK
 itself is intact.
 
-Reusing the eSDK was tempting (almost no new on-box code: marge could
-return a credential where the Bose cloud used to). It is rejected as the
-primary path:
+Reusing the eSDK is in fact the primary path: it works today (zeroconf,
+no cloud, verified). But it carries one structural risk that keeps
+librespot in reserve:
 
 - The eSDK is **frozen at Aug 2022 and will never be updated by Bose**.
   When Spotify next deprecates the protocol version or revokes the
@@ -159,9 +208,10 @@ primary path:
 - Driving a closed Spotify C library with Bose's partner key outside
   Bose's flow is heavy reverse engineering with uncertain payoff.
 
-librespot is chosen instead because it is **open, actively maintained
-(v0.8.0, Nov 2025), and STR controls its update path**: when Spotify
-changes, we rebuild from source and ship it over OTA. It also does the
+librespot is kept ready as the fallback because it is **open, actively
+maintained (v0.8.0, Nov 2025), and STR controls its update path**: if
+Spotify ever drops the frozen eSDK, we rebuild librespot from source and
+ship it over OTA. It also does the
 same **account-linked** model via its OAuth login (`librespot-oauth`), so
 the familiar "appears in your Spotify app under your account" UX is
 preserved, not just local zeroconf. This mirrors STR already replacing
