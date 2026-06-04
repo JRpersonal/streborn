@@ -54,41 +54,51 @@ obligation at all; go-librespot stays a fallback if its Go toolchain
 makes cross-compiling materially easier, accepting that we then ship a
 GPL binary and must provide its source/offer.
 
-## The hard part: where does the audio go?
+## Where does the audio go?
 
 A Connect receiver decodes the Spotify stream to PCM and needs an audio
-sink. On our targets that is the crux, and it splits the design:
+sink. On the box, Bose owns the audio output, which first looked like the
+hard blocker. It is not: STR already plays audio on the box by pointing
+its UPnP at an HTTP stream, so the on-box receiver can feed that same path
+on loopback (see Architecture A). The design:
 
-### Architecture A: on-box sidecar (the real goal)
+### Architecture A: on-box sidecar (the chosen path)
 
-The STR agent ships and supervises a librespot sidecar on the speaker in
-zeroconf mode, so **the box itself appears as its own Connect device**.
-Audio must reach the speaker's output, which the Bose firmware owns. Open
-questions to resolve on real hardware:
+The STR agent ships and supervises a librespot sidecar **on the speaker**
+in zeroconf mode, so the box itself appears as its own Connect device.
+No PC has to be running; the network-wide config is rolled out to every
+agent and each box self-advertises.
 
-- Can the sidecar write to an ALSA PCM the Bose pipeline exposes, or is
-  there a loopback / AUX-style path STR can drive?
-- ARMv7l build + NAND footprint (Rust librespot stripped, or go-librespot
-  with `CGO_ENABLED=0`).
-- Sustained CPU on the weakest model (ST10).
+**The audio path is the key insight, and it is already solved in STR.**
+STR does not write audio to ALSA; it plays on the speaker by pointing the
+box's own UPnP AVTransport at an HTTP stream URL (the radio path,
+Box:8091). Architecture A reuses exactly that:
 
-Best UX (box = device), highest risk. Needs a hardware session.
+1. on-box librespot runs in zeroconf mode (box = the Connect device);
+2. when a user plays, librespot decodes to a **local HTTP stream** served
+   by the agent's stream layer (pipe backend -> PCM/WAV over HTTP, or a
+   light transcode);
+3. the agent tells the box's own UPnP to play
+   `http://127.0.0.1:<port>/spotify`.
 
-### Architecture B: desktop bridge (the low-risk PoC)
+So there is no direct ALSA access and no fight with Bose's audio
+ownership: Spotify audio reaches the speaker over the same proven path as
+radio. The remaining unknowns shrink to a hardware session:
 
-go-/librespot runs inside the desktop app host in zeroconf mode,
-advertising one device per speaker (named like the speaker). It decodes
-to PCM via the **pipe** backend, STR re-encodes that to an HTTP audio
-stream, and points the speaker at it with UPnP `SetAVTransportURI`, the
-exact path STR already uses for radio. No box-audio internals touched,
-works today. Caveats: the host PC must stay on while playing, and the
-device shown is the PC-hosted proxy "`<Speaker> (STR)`", not the box's
-own Connect entry.
+- librespot ARMv7l build (Rust, MIT) and NAND footprint, stripped.
+- sustained CPU on the weakest model (ST10): decode + serve/transcode.
+- play / pause / seek latency through the Bose UPnP buffer.
+- track metadata: surface the current title via the agent's now-playing.
 
-Recommendation: **prototype B first** to validate the UX and the
-re-stream path end to end, while scheduling a hardware session to settle
-A's audio question. A is the long-term target; B ships value immediately
-and de-risks A.
+### Architecture B: desktop bridge (fallback only)
+
+librespot runs on the desktop host instead, advertising one device per
+speaker and re-streaming to the box via UPnP. This was considered and
+**rejected as the primary path**: its one distinguishing piece (re-stream
+from the PC) is thrown away in A, so it does not de-risk A's real
+question, and it forces the PC to stay on while the device shown is a
+PC-hosted proxy, not the box itself. Keep B in reserve only if librespot
+turns out not to run on the box at all (NAND / CPU limits).
 
 ## Network-wide config and rollout
 
@@ -109,17 +119,23 @@ the desktop app and applied to all speakers:
   same `enabled` config gives every account on the LAN access to every
   speaker.
 
-## Proof-of-concept plan (next step, on approval)
+## Proof-of-concept plan (Architecture A, on approval)
 
-1. Vendor a librespot sidecar binary (MIT) for the host OS; run it in
-   zeroconf mode named "STR test".
-2. Confirm it appears in the Spotify app and starts a session.
-3. pipe backend -> minimal Go re-encoder (PCM -> HTTP) -> UPnP
-   `SetAVTransportURI` to the test speaker (192.0.2.x), confirm audio.
-4. Wrap as a desktop-app feature: per-speaker device, the network-wide
-   `spotify.enabled` toggle, start/stop lifecycle.
-5. Separately, a hardware session for Architecture A: probe the box audio
-   sink options and the ARMv7l footprint.
+A hardware session on the test speaker (SSH to the maintainer's own box
+on his LAN):
+
+1. Cross-compile librespot for ARMv7l (Rust, MIT), strip it, and check
+   the NAND footprint against free space.
+2. Run it on the box in zeroconf mode; confirm the box appears in the
+   Spotify app and a session starts (no audio yet).
+3. pipe backend -> a minimal agent HTTP endpoint that serves the PCM/WAV
+   stream on loopback.
+4. Point the box's own UPnP AVTransport at `http://127.0.0.1:<port>/...`;
+   confirm audio plays on the speaker and measure play/pause/seek latency.
+5. Measure sustained CPU on the weakest reachable model.
+6. Then wrap it: agent supervises the sidecar; a new `/api/spotify/config`
+   receives the network-wide config the desktop app rolls out to all
+   agents; surface track metadata via now-playing.
 
 ## Acceptance for closing #78
 
