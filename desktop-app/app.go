@@ -1948,8 +1948,8 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 // icon from the placeholder and the grey chevron wins. Here, in Go, we
 // can read the HTTP status: 200 means a real icon, 404 means placeholder
 // (skip it). Results are cached per (favicon, hosts) for the app run.
-func (a *App) ResolveStationLogo(faviconURL string, hosts []string) string {
-	key := faviconURL + "\x1f" + strings.Join(hosts, ",")
+func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []string) string {
+	key := faviconURL + "\x1f" + brandHost + "\x1f" + strings.Join(hosts, ",")
 	a.logoMu.Lock()
 	if a.logoCache == nil {
 		a.logoCache = map[string]string{}
@@ -1982,6 +1982,18 @@ func (a *App) ResolveStationLogo(faviconURL string, hosts []string) string {
 				best = u
 				break
 			}
+		}
+	}
+	// 3. The brand site's own /favicon.ico at the standard path. DuckDuckGo
+	//    often does not know smaller brand domains (e.g. epic-classical.com)
+	//    even though they serve a favicon. Only the homepage host is tried,
+	//    never a stream CDN, so a shared provider logo cannot leak in. Last
+	//    because brand sites can be slow; this runs only for the minority
+	//    that the favicon field and DuckDuckGo both missed.
+	if best == "" && strings.TrimSpace(brandHost) != "" {
+		u := "https://" + strings.TrimSpace(brandHost) + "/favicon.ico"
+		if status, ctype := a.headStatusType(u); status == http.StatusOK && strings.HasPrefix(ctype, "image/") {
+			best = u
 		}
 	}
 

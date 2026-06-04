@@ -154,11 +154,13 @@ export function logoHostsFor(s) {
 export function logoImgTag(s, cssClass) {
   const mono = monogramDataUri(s && s.name);
   const fav = (s && typeof s.favicon === 'string') ? s.favicon : '';
+  const brand = extractHost(s && s.homepage);
   const hosts = logoHostsFor(s).join('|');
   return `<img class="${cssClass}"
             src="${escapeAttr(mono)}"
             data-logo-mono="${escapeAttr(mono)}"
             data-logo-fav="${escapeAttr(fav)}"
+            data-logo-brand="${escapeAttr(brand)}"
             data-logo-hosts="${escapeAttr(hosts)}"/>`;
 }
 

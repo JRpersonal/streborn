@@ -181,8 +181,9 @@ function hydrateLogo(img) {
   img.dataset.logoResolved = '1';
   const hosts = (img.dataset.logoHosts || '').split('|').filter(Boolean);
   const fav = img.dataset.logoFav || '';
-  if (!fav && hosts.length === 0) return; // nothing to resolve, monogram stays
-  ResolveStationLogo(fav, hosts).then((url) => {
+  const brand = img.dataset.logoBrand || '';
+  if (!fav && !brand && hosts.length === 0) return; // nothing to resolve, monogram stays
+  ResolveStationLogo(fav, brand, hosts).then((url) => {
     if (typeof url === 'string' && url) {
       const mono = img.dataset.logoMono || img.src;
       img.onerror = () => { img.onerror = null; img.src = mono; };
