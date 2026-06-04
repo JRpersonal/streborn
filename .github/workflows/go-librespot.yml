@@ -67,6 +67,27 @@ jobs:
           echo "Built from go-librespot $REF at $(git -C go-librespot rev-parse HEAD)"
           mkdir -p dist
 
+          # Drop the ALSA output backend. STR drives playback through the
+          # pipe backend only, and Alpine ships no static libasound (.a), so
+          # linking it would block the fully static armv7 build. Remove the
+          # two cgo alsa files and stub the one symbol the rest of the
+          # package references (newAlsaOutput, the backend switch in
+          # output.go). No functional loss for the pipe backend; smaller
+          # binary + less cgo surface. This is the only modification to the
+          # pinned upstream source, and it is visible here.
+          rm -f go-librespot/output/driver-alsa.go go-librespot/output/mixer-alsa.go
+          cat > go-librespot/output/driver-alsa-noalsa.go <<'GO'
+          //go:build !android && !darwin && !js && !windows && !nintendosdk
+
+          package output
+
+          import "fmt"
+
+          func newAlsaOutput(*NewOutputOptions) (Output, error) {
+          	return nil, fmt.Errorf("alsa backend not compiled in this build")
+          }
+          GO
+
       - name: Build (static musl, cgo, arm/v7)
         # Native compile inside an emulated arm/v7 Alpine container so cgo
         # targets the speaker arch directly. Static link the C decoders so
@@ -78,9 +99,12 @@ jobs:
             -w /src golang:1.25-alpine sh -euxc '
               # -dev brings the headers + .so; the fully static link needs
               # the .a archives, which Alpine splits into -static subpackages.
+              # No alsa: the ALSA backend was removed in the clone step (the
+              # pipe backend is what STR uses), and Alpine has no static
+              # libasound anyway.
               apk add --no-cache build-base git \
-                libogg-dev libvorbis-dev flac-dev alsa-lib-dev \
-                libogg-static libvorbis-static flac-static alsa-lib-static
+                libogg-dev libvorbis-dev flac-dev \
+                libogg-static libvorbis-static flac-static
               # -buildvcs=false: the mounted repo is owned by the host UID,
               # so in-container git trips "dubious ownership" and Go VCS
               # stamping fails (exit 128). We log the upstream commit above
