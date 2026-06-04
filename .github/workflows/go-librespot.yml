@@ -76,8 +76,11 @@ jobs:
           docker run --rm --platform linux/arm/v7 \
             -v "$PWD/go-librespot:/src" -v "$PWD/dist:/dist" \
             -w /src golang:1.25-alpine sh -euxc '
+              # -dev brings the headers + .so; the fully static link needs
+              # the .a archives, which Alpine splits into -static subpackages.
               apk add --no-cache build-base git \
-                libogg-dev libvorbis-dev flac-dev alsa-lib-dev
+                libogg-dev libvorbis-dev flac-dev alsa-lib-dev \
+                libogg-static libvorbis-static flac-static alsa-lib-static
               # -buildvcs=false: the mounted repo is owned by the host UID,
               # so in-container git trips "dubious ownership" and Go VCS
               # stamping fails (exit 128). We log the upstream commit above
