@@ -37,8 +37,8 @@
 package spotify
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -216,62 +216,43 @@ func (m *Manager) runOnce(ctx context.Context) error {
 // using its own cached credential. This is the autonomous-recall path:
 // the agent calls it on a Spotify preset press, with no app involved.
 //
-// It first waits (briefly) for the box to attach to the Ogg stream. The
-// recall points the box at /spotify/stream.ogg BEFORE calling Play, so by
-// the time go-librespot starts the track the box is already listening and
-// receives the Ogg from the very start (identification/comment/setup
-// headers). Without this the box attaches mid-track, gets a headerless Ogg
-// fragment it cannot decode, and drops the source (INVALID_SOURCE).
+// The recall calls Play FIRST (so go-librespot is already producing Ogg by
+// the time the box attaches: the box joins a flowing stream and does not
+// time out waiting for data), then points the box at /spotify/stream.ogg.
+// Because the box then joins mid-track (no Ogg headers), ServeOgg seeks the
+// track back to 0 on attach so a fresh identification/comment/setup header
+// sequence flows and the box (re)syncs to it as a new chained bitstream.
 func (m *Manager) Play(ctx context.Context, uri string) error {
-	m.waitForSink(ctx, 4*time.Second)
-	return m.apiPost(ctx, "/player/play", map[string]any{"uri": uri})
+	return m.apiPost(ctx, "/player/play", `{"uri":`+jsonString(uri)+`}`)
 }
 
-// waitForSink blocks until an HTTP consumer (the box) is attached to the
-// Ogg stream, or until d elapses / ctx is cancelled. Best-effort: on
-// timeout Play proceeds anyway.
-func (m *Manager) waitForSink(ctx context.Context, d time.Duration) {
-	deadline := time.Now().Add(d)
-	for {
-		m.mu.Lock()
-		attached := m.sink != nil
-		m.mu.Unlock()
-		if attached || time.Now().After(deadline) {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
+// restartCurrentTrack seeks the current track back to position 0 via
+// go-librespot's API. With the passthrough source this re-emits the Ogg
+// header pages, which a freshly-attached consumer needs to start decoding.
+// position is an integer per the API schema.
+func (m *Manager) restartCurrentTrack(ctx context.Context) error {
+	return m.apiPost(ctx, "/player/seek", `{"position":0}`)
 }
 
 // Pause and Resume mirror the obvious controls.
 func (m *Manager) Pause(ctx context.Context) error {
-	return m.apiPost(ctx, "/player/pause", nil)
+	return m.apiPost(ctx, "/player/pause", "")
 }
 
 func (m *Manager) Resume(ctx context.Context) error {
-	return m.apiPost(ctx, "/player/resume", nil)
+	return m.apiPost(ctx, "/player/resume", "")
 }
 
-func (m *Manager) apiPost(ctx context.Context, path string, body map[string]any) error {
+// jsonString quotes a string as a JSON value.
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func (m *Manager) apiPost(ctx context.Context, path string, body string) error {
 	var r io.Reader
-	if body != nil {
-		buf := &bytes.Buffer{}
-		// tiny hand-rolled JSON: only string values are used here
-		buf.WriteByte('{')
-		first := true
-		for k, v := range body {
-			if !first {
-				buf.WriteByte(',')
-			}
-			first = false
-			fmt.Fprintf(buf, "%q:%q", k, fmt.Sprint(v))
-		}
-		buf.WriteByte('}')
-		r = buf
+	if body != "" {
+		r = strings.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+m.apiAddr+path, r)
 	if err != nil {
@@ -312,6 +293,18 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	m.sink = cw
 	m.mu.Unlock()
 	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr)
+
+	// The box just joined mid-track (headerless Ogg). Seek the track back to
+	// 0 so a fresh header sequence flows and the box can sync. A short delay
+	// lets the HTTP body + drain settle first. Best-effort.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := m.restartCurrentTrack(sctx); err != nil {
+			m.logger.Debug("spotify: seek-to-0 on attach failed", "err", err)
+		}
+	}()
 
 	select {
 	case <-r.Context().Done():
