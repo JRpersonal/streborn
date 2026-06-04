@@ -2591,6 +2591,7 @@ function renderSearchResults() {
   res.innerHTML = list.map((s, i) => {
     const flag = flagFromCC(s.countrycode);
     const okClass = s.lastcheckok ? 'ok' : 'bad';
+    const webUrl = (typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) ? s.homepage : '';
     const okTitle = s.lastcheckok ? t('search.checkOk') : t('search.checkBad');
     let trend = '';
     if (s.clicktrend > 0) trend = `<span class="result-trend" title="${escapeAttr(t('search.trendUp', { n: s.clicktrend }))}">&#9650;</span>`;
@@ -2621,13 +2622,12 @@ function renderSearchResults() {
             <span class="result-name-text">${escapeHtml(s.name || t('search.unnamed'))}</span>
             ${trend}
           </div>
-          <div class="result-meta">${metaBits.join(' &middot; ')}</div>
+          <div class="result-meta">${metaBits.join(' &middot; ')}${webUrl ? ` &middot; <a href="#" class="result-site" data-i="${i}" title="${escapeAttr(t('search.openWebsite'))}">${escapeHtml(t('footer.website'))}</a>` : ''}</div>
           ${tagChips ? `<div class="result-tag-chips">${tagChips}</div>` : ''}
         </div>
         <div class="result-actions">
           <button class="btn btn-mini play-now" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9654;</button>
           <button class="btn btn-mini pick" data-i="${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>
-          ${(typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) ? `<button class="btn btn-mini open-site" data-i="${i}" title="${escapeAttr(t('search.openWebsite'))}">&#8599;</button>` : ''}
         </div>
       </div>
     `;
@@ -2659,10 +2659,11 @@ function renderSearchResults() {
   res.querySelectorAll('.pick').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); openPick(list[parseInt(btn.dataset.i, 10)]); };
   });
-  res.querySelectorAll('.open-site').forEach(btn => {
-    btn.onclick = (e) => {
+  res.querySelectorAll('.result-site').forEach(link => {
+    link.onclick = (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      const s = list[parseInt(btn.dataset.i, 10)];
+      const s = list[parseInt(link.dataset.i, 10)];
       if (s && typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) BrowserOpenURL(s.homepage);
     };
   });

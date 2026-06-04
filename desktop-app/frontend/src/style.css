@@ -768,6 +768,13 @@ body {
   color: #888;
   margin-top: 2px;
 }
+/* Discreet website link in the meta line, not a button. */
+.result-site {
+  color: #6aa9e9;
+  text-decoration: none;
+  cursor: pointer;
+}
+.result-site:hover { text-decoration: underline; }
 .result-tag-chips {
   display: flex;
   gap: 4px;
