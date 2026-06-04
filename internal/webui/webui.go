@@ -234,7 +234,10 @@ func (s *Server) Run(ctx context.Context) error {
 		s.streamProxy.Register(mux)
 	}
 	if s.spotifyStream != nil {
-		mux.HandleFunc("/spotify/stream", s.spotifyStream)
+		// .ogg suffix matters: the Bose UPnP renderer keys playability off
+		// the URL extension and rejects an extensionless Ogg stream
+		// (INVALID_SOURCE) even with audio/ogg Content-Type + protocolInfo.
+		mux.HandleFunc("/spotify/stream.ogg", s.spotifyStream)
 	}
 
 	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
@@ -464,7 +467,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream", p.Name, p.Art, "audio/ogg"); err != nil {
+		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,

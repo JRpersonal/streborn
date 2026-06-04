@@ -134,6 +134,10 @@ func (m *Manager) ensureConfig() error {
 	if err := os.MkdirAll(m.configDir, 0o755); err != nil {
 		return err
 	}
+	// No audio cache handling needed: go-librespot does not cache audio to
+	// disk (verified in its source; only the tiny config + credential files
+	// land in configDir). The NAND-filling cache seen earlier was the old
+	// librespot (Rust, --cache), not go-librespot.
 	return os.WriteFile(filepath.Join(m.configDir, "config.yml"), []byte(m.configYAML()), 0o644)
 }
 

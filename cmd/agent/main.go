@@ -707,8 +707,10 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 
 // spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches
 // for Spotify audio. The agent runs on the box, so 127.0.0.1:8888 reaches
-// it (same host:port the radio stream proxy uses).
-const spotifyStreamURL = "http://127.0.0.1:8888/spotify/stream"
+// it (same host:port the radio stream proxy uses). The .ogg suffix is
+// required: the Bose renderer keys playability off the URL extension and
+// rejects an extensionless Ogg stream (INVALID_SOURCE).
+const spotifyStreamURL = "http://127.0.0.1:8888/spotify/stream.ogg"
 
 // playSpotifyPreset recalls a Spotify preset: wake + pair the box, tell
 // go-librespot to play the saved URI (autonomous, no app), then point the
