@@ -70,9 +70,21 @@ jobs:
         # do not exist for musl-linux-armhf and we need neither (no ALSA,
         # TLS via rustls). Drop it so cross uses its clean default musl
         # image.
+        # Features (verified against librespot v0.8.0 Cargo.toml):
+        #   with-libmdns            zeroconf, so the box self-advertises
+        #   rustls-tls-webpki-roots pure-Rust TLS with bundled Mozilla
+        #                           roots, no system OpenSSL (musl-clean)
+        #   passthrough-decoder     pass Ogg/Vorbis through WITHOUT
+        #                           decoding to PCM, so the speaker's own
+        #                           firmware decodes it (Architecture A);
+        #                           keeps CPU off the weak Cortex-A8.
+        # No audio-backend feature: the pipe backend is always compiled
+        # and is what feeds the box's UPnP loopback.
         run: |
           rm -f Cross.toml
-          cross build --release --no-default-features --features with-libmdns --target "$TARGET"
+          cross build --release --no-default-features \
+            --features "with-libmdns rustls-tls-webpki-roots passthrough-decoder" \
+            --target "$TARGET"
 
       - name: Collect + checksum
         run: |
