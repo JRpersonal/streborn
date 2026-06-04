@@ -78,7 +78,11 @@ jobs:
             -w /src golang:1.25-alpine sh -euxc '
               apk add --no-cache build-base git \
                 libogg-dev libvorbis-dev flac-dev alsa-lib-dev
-              CGO_ENABLED=1 go build -trimpath \
+              # -buildvcs=false: the mounted repo is owned by the host UID,
+              # so in-container git trips "dubious ownership" and Go VCS
+              # stamping fails (exit 128). We log the upstream commit above
+              # instead, so the stamp is not needed.
+              CGO_ENABLED=1 go build -trimpath -buildvcs=false \
                 -tags "osusergo netgo" \
                 -ldflags "-s -w -linkmode external -extldflags \"-static\"" \
                 -o /dist/go-librespot-armv7l ./cmd/daemon
