@@ -313,6 +313,7 @@ See `desktop-app/update_tls.go`.
 | radio-browser.info | Stick agent for `/api/radio/*` | Yes for radio search. Cached locally for already-known stations. No API key, no account. |
 | Upstream radio CDNs | Speaker (proxied through the streamproxy) | Yes for actual audio. STR does not host or buffer the stream beyond the in-flight bytes. |
 | `st-reborn.de` update-check | Desktop app, once ~8 s after startup | Optional. Sends only version, build, OS, arch, UI locale; opt-out with `STR_NO_UPDATE_CHECK`. See flow 7 above and the privacy section below. |
+| Favicon services (`icons.duckduckgo.com`, `icon.horse`) | Desktop app webview, when rendering station tiles that lack an embedded logo | Optional, cosmetic. The browser requests `<domain>.ico` style URLs to fetch a station's logo. Only the radio station's own domain is sent, never user data. Both are privacy-respecting; Google's favicon service was deliberately not used (data mining). See the logo cascade in `desktop-app/frontend/src/logos.js`. |
 
 Bose's own cloud endpoints (`streaming.bose.com`, `*.api.bose.io`,
 TuneIn partner URL) are **redirected to localhost** by `/etc/hosts`
@@ -327,6 +328,7 @@ the app. The complete picture of what talks to what:
 |---|---|---|
 | Speaker (agent + firmware) | **Never** the Bose cloud | STR redirects the Bose cloud hostnames to localhost and answers them itself (marge). The speaker only reaches the LAN, radio-browser.info (station search and metadata), and the upstream radio CDN (audio, proxied). |
 | Desktop app | `st-reborn.de` update-check, once at startup | Running version, build stamp, OS, CPU arch, UI locale. No account, no device ID, no personal data. Opt-out: `STR_NO_UPDATE_CHECK=1`. Radio and CDN traffic flow through the speaker agent, not the app. |
+| Desktop app webview | `icons.duckduckgo.com`, `icon.horse` | Only a radio station's own domain, to fetch its logo when no embedded artwork exists. No user data, no account, no identifier. Both are privacy-respecting favicon services; Google's was deliberately not used. |
 | Website (`st-reborn.de`) | GoatCounter | Privacy-friendly, cookieless page analytics: no cookies, no cross-site tracking, the visitor IP is not stored. |
 
 Bose's own telemetry endpoint (`events.api.bosecm.com`) and software

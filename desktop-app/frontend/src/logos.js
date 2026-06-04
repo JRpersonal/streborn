@@ -1,9 +1,13 @@
 // logos.js — station logo / icon resolution.
 //
-// Many radio-browser entries ship without a favicon. When that is
-// the case we derive the domain from the homepage or stream URL and
-// fall back to the DuckDuckGo icon service. On 404 the img element
-// cascades through the remaining candidates via onerror.
+// Many radio-browser entries ship without a usable favicon. The cascade
+// (see stationLogoCandidates) tries, in order: the station's own HTTPS
+// favicon, the DuckDuckGo icon service derived from the station's
+// hostnames, an HTTP-only favicon as a late attempt, and finally
+// icon.horse as a terminal fallback that always returns an image. On
+// each load failure the img element walks to the next candidate via
+// onerror. All three external services are privacy-respecting; Google's
+// favicon service was deliberately removed (data mining).
 
 import { escapeAttr } from './utils.js';
 
@@ -36,26 +40,43 @@ export function iconServicesFor(host) {
   ];
 }
 
+// iconHorseFor yields the icon.horse URL for a host. icon.horse is an
+// independent, privacy-respecting favicon service (no ad/data company
+// behind it). It is used as a terminal fallback because it always
+// returns an image (a generated monogram when it has no real icon),
+// so it never 404s and therefore must sit last in the cascade, after
+// every source that can return the station's true logo.
+export function iconHorseFor(host) {
+  if (!host) return '';
+  return `https://icon.horse/icon/${host}`;
+}
+
 // stationLogoCandidates returns an ordered list of icon URLs to try
 // for a station. The browser's onerror cascade walks the list and
 // keeps the first one that loads.
 //
-// Ordering rule: derived DuckDuckGo icon-service URLs come BEFORE the
-// station's own `favicon` field. Empirically the favicon URLs that
-// radio-browser.info hands out are unreliable — REYFM's
-// www.reyfm.de/icon.png returns 402 (Cloudflare paywall), other
-// stations point at HTTP-only URLs the secure context blocks as
-// mixed content, others 404 outright. DDG's icon service returns a
-// clean 200 or clean 404 with no surprises and is much friendlier
-// in DevTools. We still keep the station's own favicon at the end
-// of the list so we never give up an image that only the station
-// itself can provide.
+// Ordering rationale:
+//   1. The station's own radio-browser `favicon`, but ONLY when it is
+//      HTTPS. That is the authentic, often highest-quality logo, so it
+//      goes first when it can actually load. The reason it was not
+//      first historically is that many of these URLs are unreliable:
+//      HTTP-only ones are blocked as mixed content in the secure
+//      webview, and some return 402/403 (e.g. REYFM behind a Cloudflare
+//      paywall). Gating on HTTPS removes the most common failure (mixed
+//      content) so the true logo wins whenever it is servable.
+//   2. DuckDuckGo's privacy-friendly icon service, derived from the
+//      station's hostnames. Reliable clean 200/404 and a normalised
+//      square favicon, so it is the dependable middle of the cascade.
+//   3. An HTTP-only radio-browser favicon as a late attempt (blocked
+//      today, harmless to keep for non-secure contexts).
+//   4. icon.horse as the terminal fallback. It always returns an image
+//      (a generated monogram if it has nothing better), so it can only
+//      ever be last: it guarantees a tile instead of a blank
+//      placeholder, without masking any source above it.
 export function stationLogoCandidates(s) {
   const out = [];
+  const push = (u) => { if (u && !out.includes(u)) out.push(u); };
 
-  // 1. DDG icon URLs derived from the station's known hostnames.
-  //    Multiple hosts (homepage / stream URL / resolved URL) plus
-  //    their root domains feed in — the first one DDG knows wins.
   const hosts = [];
   for (const u of [s.homepage, s.url, s.url_resolved]) {
     const h = extractHost(u);
@@ -63,17 +84,21 @@ export function stationLogoCandidates(s) {
     const r = rootDomain(h);
     if (r && !hosts.includes(r)) hosts.push(r);
   }
+
+  // 1. The station's own favicon, first, but only if HTTPS.
+  const faviconHttps = s.favicon && /^https:/i.test(s.favicon);
+  if (faviconHttps) push(s.favicon);
+
+  // 2. DuckDuckGo icon service per host.
   for (const h of hosts) {
-    for (const svc of iconServicesFor(h)) {
-      if (!out.includes(svc)) out.push(svc);
-    }
+    for (const svc of iconServicesFor(h)) push(svc);
   }
 
-  // 2. Last resort: the favicon field from radio-browser.info itself.
-  //    Likely original-quality where it works, but also the most
-  //    likely candidate to 402/403/mixed-content fail. Kept so we
-  //    do not lose stations that DDG genuinely does not know.
-  if (s.favicon && !out.includes(s.favicon)) out.push(s.favicon);
+  // 3. An HTTP-only radio-browser favicon, deferred to the end.
+  if (s.favicon && !faviconHttps) push(s.favicon);
+
+  // 4. icon.horse terminal fallback (always returns an image).
+  for (const h of hosts) push(iconHorseFor(h));
 
   return out;
 }
