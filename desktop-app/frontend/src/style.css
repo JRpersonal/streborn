@@ -1202,15 +1202,6 @@ code { background: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-size: 12p
    it spans the whole window regardless of the 720px content width. */
 .app-update-banner { background: #2a2a1a; border: none; border-bottom: 1px solid #5a5a3a; padding: 8px 16px; margin: 0; border-radius: 0; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
 .app-update-banner b { color: #dda; }
-/* The "What's new" notes wrap onto their own full-width line below the
-   version + download row. */
-.app-update-banner { flex-wrap: wrap; }
-.upd-notes { order: 99; flex-basis: 100%; font-size: 12px; color: #cca; }
-.upd-notes summary { cursor: pointer; color: #dda; user-select: none; }
-.upd-notes-h { font-weight: 600; color: #dda; margin-top: 6px; }
-.upd-notes-list { margin: 2px 0; padding-left: 18px; }
-.upd-notes-list li { margin: 1px 0; }
-.upd-notes-p { margin: 2px 0; }
 .format-toggle {
   display: flex;
   gap: 8px;

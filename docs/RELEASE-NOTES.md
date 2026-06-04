@@ -73,32 +73,36 @@ The desktop app calls, on startup:
 GET https://st-reborn.de/api/update-check.php?v=<ver>&b=<build>&os=<goos>&arch=<goarch>&lang=<locale>
 ```
 
-It expects a small JSON object. The app already reads `version`,
-`downloadUrl`, and **`notes`**. To surface the change list in the app's
-update banner, the endpoint must include `notes` (the Markdown string):
+It expects a small JSON object. The app reads `version`, `downloadUrl`,
+and optionally `notesUrl`:
 
 ```json
 {
   "version": "v0.6.22",
   "build": "2026-06-04-1200",
   "downloadUrl": "https://st-reborn.de/download/windows",
-  "notes": "## What's changed in v0.6.22\n\n### New features\n\n- …\n"
+  "notesUrl": "https://st-reborn.de/changelog#v0.6.22"
 }
 ```
 
 Implementation: fetch the latest `manifest.json` (cache it; it changes
-only on release), pick `downloadUrl` from `artifacts` by the `os`/`arch`
-query params, and pass `notes.markdown` through as `notes`.
+only on release) and pick `downloadUrl` from `artifacts` by the
+`os`/`arch` query params.
+
+The app shows a **discreet update banner**: the new version plus a single
+"What's new" link, no notes inline. `notesUrl` is where that link points.
 
 Constraints the app relies on:
-- Keep `notes` reasonably small; the app reads at most 16 KB of the whole
-  response and renders only headings and bullet lines.
-- `notes` is optional. If omitted, the app shows the version and a
-  download button with no "What's new" section. Forward-compatible: the
-  app already ships this behaviour.
-- `lang` is sent for future localized notes. For now notes are English
-  (generated from English commit messages); the endpoint can ignore
-  `lang` or echo English regardless.
+- `notesUrl` is optional. If omitted, the app links to the matching
+  GitHub release page derived from `version`
+  (`…/releases/tag/<version>`), falling back to the releases list for a
+  non-tag version. Set `notesUrl` to point at the website changelog
+  instead once that page exists.
+- `lang` is sent for future localization. For now notes are English; the
+  endpoint can ignore `lang`.
+- The full Markdown change list lives in `manifest.json` under
+  `notes.markdown` / `notes.items` for the website changelog page; the
+  app does not need it inline.
 
 ### 2. A changelog / releases page
 
@@ -116,10 +120,12 @@ The website is already notified on each release via
 ## What the desktop app already does (this repo)
 
 - `CheckAppUpdate` (desktop-app/app.go) forwards the endpoint's full JSON
-  to the frontend, including `notes`.
-- The update banner (desktop-app/frontend/src/main.js, `checkAppUpdate` +
-  `renderUpdateNotes`) shows a collapsible "What's new" with the curated
-  list, rendered through a safe minimal Markdown subset.
+  to the frontend (including `notesUrl` when present).
+- The update banner (desktop-app/frontend/src/main.js, `checkAppUpdate`)
+  is kept discreet: version plus a single "What's new" link to the
+  release notes, no notes inline.
+- The footer version number is also a link to the running version's
+  release notes (`renderFooter`).
 
 ## Future: localized notes
 
