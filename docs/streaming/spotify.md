@@ -221,6 +221,25 @@ triggering it and ensures only librespot advertises Spotify Connect.
 - **Still to measure on hardware:** runtime RAM, CPU during a session,
   and play/pause/seek latency through the box's UPnP buffer.
 
+## Before shipping (mandatory gates)
+
+Once the on-box test confirms librespot works, these must be done before
+it ships to any user:
+
+1. **Security audit of the librespot source at the pinned tag.** STR
+   bundles a binary that runs on users' speakers, so review for
+   backdoors, malware, data exfiltration, and unexpected outbound
+   endpoints; sanity-check the dependency tree (the Cargo.lock) and
+   diff the pinned tag against upstream. Pin to an audited tag and only
+   bump after re-auditing. Users must not be surprised one day.
+2. **Credits / thanks.** Add librespot (librespot-org, MIT) to the
+   project's credits, alongside the existing community acknowledgements.
+3. **Website.** Add librespot to the credits/acknowledgements on
+   st-reborn.de and describe the Spotify feature on the relevant page.
+4. **Architecture.** Add the librespot sidecar + the Ogg-passthrough ->
+   UPnP-loopback path to docs/ARCHITECTURE.md (component map + the
+   external-dependency / data-flow tables) and the CLAUDE.md diagram.
+
 ## Acceptance for closing #78
 
 This doc plus a working (even hacky) PoC of the chosen path on at least
