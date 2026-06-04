@@ -184,25 +184,40 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	m.cmd = cmd
 	m.mu.Unlock()
 
-	// Drain stdout forever: forward PCM to the current sink, discard
-	// otherwise so go-librespot never blocks on a full pipe.
+	// Drain stdout to the current sink (the box). Crucially, only read when a
+	// sink is attached: with no consumer we must NOT drain, so go-librespot
+	// blocks on its full output pipe. That (a) stops it racing through the
+	// whole playlist with no backpressure (it loaded every track in seconds
+	// when we discarded the output), and (b) keeps the current track's start
+	// (incl. the Ogg identification/comment/setup headers) buffered in the
+	// pipe, so a box that attaches a moment after Play receives the stream
+	// from the beginning and can decode it. While a box is attached it
+	// consumes at real time, which paces go-librespot via the same pipe
+	// backpressure.
 	buf := make([]byte, 16*1024)
 	for {
+		m.mu.Lock()
+		sink := m.sink
+		m.mu.Unlock()
+		if sink == nil {
+			select {
+			case <-ctx.Done():
+				return cmd.Wait()
+			case <-time.After(50 * time.Millisecond):
+			}
+			continue
+		}
+
 		n, rerr := stdout.Read(buf)
 		if n > 0 {
-			m.mu.Lock()
-			sink := m.sink
-			m.mu.Unlock()
-			if sink != nil {
-				if _, werr := sink.Write(buf[:n]); werr != nil {
-					m.mu.Lock()
-					if m.sink == sink {
-						m.sink = nil
-					}
-					m.mu.Unlock()
-				} else if f, ok := sink.(http.Flusher); ok {
-					f.Flush()
+			if _, werr := sink.Write(buf[:n]); werr != nil {
+				m.mu.Lock()
+				if m.sink == sink {
+					m.sink = nil
 				}
+				m.mu.Unlock()
+			} else if f, ok := sink.(http.Flusher); ok {
+				f.Flush()
 			}
 		}
 		if rerr != nil {
@@ -216,22 +231,13 @@ func (m *Manager) runOnce(ctx context.Context) error {
 // using its own cached credential. This is the autonomous-recall path:
 // the agent calls it on a Spotify preset press, with no app involved.
 //
-// The recall calls Play FIRST (so go-librespot is already producing Ogg by
-// the time the box attaches: the box joins a flowing stream and does not
-// time out waiting for data), then points the box at /spotify/stream.ogg.
-// Because the box then joins mid-track (no Ogg headers), ServeOgg seeks the
-// track back to 0 on attach so a fresh identification/comment/setup header
-// sequence flows and the box (re)syncs to it as a new chained bitstream.
+// The recall calls Play FIRST, then points the box at /spotify/stream.ogg.
+// With the sink-gated drain (see runOnce) go-librespot blocks on its full
+// output pipe until the box attaches, so the pipe holds the track's start
+// incl. the Ogg headers; the box therefore receives the stream from the
+// beginning and can decode it.
 func (m *Manager) Play(ctx context.Context, uri string) error {
 	return m.apiPost(ctx, "/player/play", `{"uri":`+jsonString(uri)+`}`)
-}
-
-// restartCurrentTrack seeks the current track back to position 0 via
-// go-librespot's API. With the passthrough source this re-emits the Ogg
-// header pages, which a freshly-attached consumer needs to start decoding.
-// position is an integer per the API schema.
-func (m *Manager) restartCurrentTrack(ctx context.Context) error {
-	return m.apiPost(ctx, "/player/seek", `{"position":0}`)
 }
 
 // Pause and Resume mirror the obvious controls.
@@ -293,18 +299,6 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	m.sink = cw
 	m.mu.Unlock()
 	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr)
-
-	// The box just joined mid-track (headerless Ogg). Seek the track back to
-	// 0 so a fresh header sequence flows and the box can sync. A short delay
-	// lets the HTTP body + drain settle first. Best-effort.
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := m.restartCurrentTrack(sctx); err != nil {
-			m.logger.Debug("spotify: seek-to-0 on attach failed", "err", err)
-		}
-	}()
 
 	select {
 	case <-r.Context().Done():
