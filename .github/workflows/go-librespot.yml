@@ -118,7 +118,11 @@ jobs:
 
       - name: Collect + checksum
         run: |
-          chmod +x dist/go-librespot-armv7l
+          # The binary is written by the in-container root user, so the
+          # unprivileged runner cannot chmod it; runners allow passwordless
+          # sudo. (go build already produces it executable; this just makes
+          # the bit explicit.)
+          sudo chmod +x dist/go-librespot-armv7l
           file dist/go-librespot-armv7l || true
           sha256sum dist/go-librespot-armv7l | tee dist/go-librespot-armv7l.sha256
           echo "size: $(stat -c %s dist/go-librespot-armv7l) bytes"
