@@ -1225,6 +1225,10 @@ async function loadStickRegion() {
         state.searchLang = LOCALE_TO_RADIO_LANG[getLocale()] || data.language || '';
       }
       updateFilterIndicators();
+      // Re-render the language dropdown so the locale-based default is
+      // injected and selected even when this resolves after loadTaxonomy
+      // (the two run concurrently on box selection).
+      renderLanguageOptions();
       regionLoaded = true;
     }
   } catch {}
@@ -1405,16 +1409,26 @@ function localizeLanguageName(name) {
 
 function renderLanguageOptions() {
   const sel = $('searchLang');
-  if (!sel || !state.languages.length) return;
-  const opts = [`<option value="">${escapeHtml(t('search.allLanguages'))}</option>`];
+  if (!sel) return;
+  const sorted = (state.languages || [])
+    .filter((l) => l.name)
+    .map((l) => ({ name: l.name, stationcount: l.stationcount, label: localizeLanguageName(l.name) }));
+  // Ensure the language matching the app UI locale is always selectable,
+  // even when radio-browser's top-N-by-count list omits it (smaller
+  // languages like Lithuanian or Latvian fall outside the limit).
+  // Without this the locale-based pre-selection (LOCALE_TO_RADIO_LANG)
+  // cannot apply, because the matching <option> would not exist.
+  const want = state.searchLang || LOCALE_TO_RADIO_LANG[getLocale()] || '';
+  if (want && !sorted.some((l) => l.name.toLowerCase() === want.toLowerCase())) {
+    sorted.push({ name: want, stationcount: null, label: localizeLanguageName(want) });
+  }
   // Sort alphabetically by the localized display name, consistent with
   // the country dropdown. The API returns languages by station count.
-  const sorted = state.languages
-    .filter((l) => l.name)
-    .map((l) => ({ name: l.name, stationcount: l.stationcount, label: localizeLanguageName(l.name) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  sorted.sort((a, b) => a.label.localeCompare(b.label));
+  const opts = [`<option value="">${escapeHtml(t('search.allLanguages'))}</option>`];
   for (const l of sorted) {
-    opts.push(`<option value="${escapeAttr(l.name)}">${escapeHtml(l.label)} (${l.stationcount})</option>`);
+    const count = (l.stationcount == null) ? '' : ` (${l.stationcount})`;
+    opts.push(`<option value="${escapeAttr(l.name)}">${escapeHtml(l.label)}${count}</option>`);
   }
   sel.innerHTML = opts.join('');
   sel.value = state.searchLang;
