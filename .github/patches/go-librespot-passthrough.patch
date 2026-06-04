@@ -1,0 +1,468 @@
+diff --git a/cmd/daemon/cli_config.go b/cmd/daemon/cli_config.go
+index eb8e73f..8ed378b 100644
+--- a/cmd/daemon/cli_config.go
++++ b/cmd/daemon/cli_config.go
+@@ -34,15 +34,16 @@ type cliConfig struct {
+ 	DeviceType  string `koanf:"device_type"`
+ 	ClientToken string `koanf:"client_token"`
+ 
+-	AudioBackend              string `koanf:"audio_backend"`
+-	AudioBackendRuntimeSocket string `koanf:"audio_backend_runtime_socket"`
+-	AudioDevice               string `koanf:"audio_device"`
+-	MixerDevice               string `koanf:"mixer_device"`
+-	MixerControlName          string `koanf:"mixer_control_name"`
+-	AudioBufferTime           int    `koanf:"audio_buffer_time"`
+-	AudioPeriodCount          int    `koanf:"audio_period_count"`
+-	AudioOutputPipe           string `koanf:"audio_output_pipe"`
+-	AudioOutputPipeFormat     string `koanf:"audio_output_pipe_format"`
++	AudioBackend               string `koanf:"audio_backend"`
++	AudioBackendRuntimeSocket  string `koanf:"audio_backend_runtime_socket"`
++	AudioDevice                string `koanf:"audio_device"`
++	MixerDevice                string `koanf:"mixer_device"`
++	MixerControlName           string `koanf:"mixer_control_name"`
++	AudioBufferTime            int    `koanf:"audio_buffer_time"`
++	AudioPeriodCount           int    `koanf:"audio_period_count"`
++	AudioOutputPipe            string `koanf:"audio_output_pipe"`
++	AudioOutputPipeFormat      string `koanf:"audio_output_pipe_format"`
++	AudioOutputPipePassthrough bool   `koanf:"audio_output_pipe_passthrough"`
+ 
+ 	Bitrate                       int      `koanf:"bitrate"`
+ 	VolumeSteps                   uint32   `koanf:"volume_steps"`
+@@ -93,15 +94,16 @@ func (c *cliConfig) toDaemonConfig() *daemon.Config {
+ 		DeviceType:  c.DeviceType,
+ 		ClientToken: c.ClientToken,
+ 
+-		AudioBackend:              c.AudioBackend,
+-		AudioBackendRuntimeSocket: c.AudioBackendRuntimeSocket,
+-		AudioDevice:               c.AudioDevice,
+-		MixerDevice:               c.MixerDevice,
+-		MixerControlName:          c.MixerControlName,
+-		AudioBufferTime:           c.AudioBufferTime,
+-		AudioPeriodCount:          c.AudioPeriodCount,
+-		AudioOutputPipe:           c.AudioOutputPipe,
+-		AudioOutputPipeFormat:     c.AudioOutputPipeFormat,
++		AudioBackend:               c.AudioBackend,
++		AudioBackendRuntimeSocket:  c.AudioBackendRuntimeSocket,
++		AudioDevice:                c.AudioDevice,
++		MixerDevice:                c.MixerDevice,
++		MixerControlName:           c.MixerControlName,
++		AudioBufferTime:            c.AudioBufferTime,
++		AudioPeriodCount:           c.AudioPeriodCount,
++		AudioOutputPipe:            c.AudioOutputPipe,
++		AudioOutputPipeFormat:      c.AudioOutputPipeFormat,
++		AudioOutputPipePassthrough: c.AudioOutputPipePassthrough,
+ 
+ 		Bitrate:                   c.Bitrate,
+ 		VolumeSteps:               c.VolumeSteps,
+diff --git a/daemon/app.go b/daemon/app.go
+index f1e1b53..054ea92 100644
+--- a/daemon/app.go
++++ b/daemon/app.go
+@@ -253,8 +253,9 @@ func (app *App) newAppPlayer(ctx context.Context, creds any) (_ *AppPlayer, err
+ 		ExternalVolume: app.cfg.ExternalVolume,
+ 		VolumeUpdate:   appPlayer.volumeUpdate,
+ 
+-		AudioOutputPipe:       app.cfg.AudioOutputPipe,
+-		AudioOutputPipeFormat: app.cfg.AudioOutputPipeFormat,
++		AudioOutputPipe:            app.cfg.AudioOutputPipe,
++		AudioOutputPipeFormat:      app.cfg.AudioOutputPipeFormat,
++		AudioOutputPipePassthrough: app.cfg.AudioOutputPipePassthrough,
+ 	},
+ 	); err != nil {
+ 		return nil, fmt.Errorf("failed initializing player: %w", err)
+diff --git a/daemon/config.go b/daemon/config.go
+index d64f19f..e6b868f 100644
+--- a/daemon/config.go
++++ b/daemon/config.go
+@@ -7,15 +7,16 @@ type Config struct {
+ 	DeviceType  string
+ 	ClientToken string
+ 
+-	AudioBackend              string
+-	AudioBackendRuntimeSocket string
+-	AudioDevice               string
+-	MixerDevice               string
+-	MixerControlName          string
+-	AudioBufferTime           int
+-	AudioPeriodCount          int
+-	AudioOutputPipe           string
+-	AudioOutputPipeFormat     string
++	AudioBackend               string
++	AudioBackendRuntimeSocket  string
++	AudioDevice                string
++	MixerDevice                string
++	MixerControlName           string
++	AudioBufferTime            int
++	AudioPeriodCount           int
++	AudioOutputPipe            string
++	AudioOutputPipeFormat      string
++	AudioOutputPipePassthrough bool
+ 
+ 	Bitrate                   int
+ 	VolumeSteps               uint32
+diff --git a/output.go b/output.go
+index 95dcce1..f4aa800 100644
+--- a/output.go
++++ b/output.go
+@@ -16,3 +16,16 @@ type AudioSource interface {
+ 	// Read reads 32bit little endian floats from the stream
+ 	Read([]float32) (int, error)
+ }
++
++// AudioSourcePassthrough is an AudioSource that can additionally hand out the
++// raw encoded (Ogg/Vorbis) bytes instead of decoded float32 samples. It backs
++// the pipe backend's passthrough mode: the decoder is bypassed and the
++// container is written to the pipe untouched, so a downstream consumer (e.g.
++// a hardware decoder) does the decoding. ReadBytes and Read must not be mixed
++// on the same source.
++type AudioSourcePassthrough interface {
++	AudioSource
++
++	// ReadBytes reads the raw encoded stream until EOF.
++	ReadBytes([]byte) (int, error)
++}
+diff --git a/output/driver-pipe.go b/output/driver-pipe.go
+index 16f37f9..38006b1 100644
+--- a/output/driver-pipe.go
++++ b/output/driver-pipe.go
+@@ -30,6 +30,11 @@ type pipeOutput struct {
+ 	err          chan error
+ 
+ 	transform func([]float32, []byte) int
++
++	// passthrough writes the raw encoded stream untouched (no decode, no
++	// volume); preader is the byte source used in that mode.
++	passthrough bool
++	preader     librespot.AudioSourcePassthrough
+ }
+ 
+ func newPipeOutput(opts *NewOutputOptions) (out *pipeOutput, err error) {
+@@ -39,10 +44,20 @@ func newPipeOutput(opts *NewOutputOptions) (out *pipeOutput, err error) {
+ 		err:            make(chan error, 2),
+ 		externalVolume: opts.ExternalVolume,
+ 		volumeUpdate:   opts.VolumeUpdate,
++		passthrough:    opts.Passthrough,
+ 	}
+ 
+ 	out.cond = sync.NewCond(&out.lock)
+ 
++	if opts.Passthrough {
++		pr, ok := opts.Reader.(librespot.AudioSourcePassthrough)
++		if !ok {
++			return nil, fmt.Errorf("passthrough requires an AudioSourcePassthrough reader")
++		}
++		out.preader = pr
++		goto openPipe
++	}
++
+ 	switch opts.OutputPipeFormat {
+ 	case "s16le":
+ 		out.transform = func(in []float32, out []byte) int {
+@@ -72,6 +87,7 @@ func newPipeOutput(opts *NewOutputOptions) (out *pipeOutput, err error) {
+ 		return nil, fmt.Errorf("unknown output pipe format: %s", opts.OutputPipeFormat)
+ 	}
+ 
++openPipe:
+ 	// Open the FIFO for writing as non-blocking to cause an error if there is no reader.
+ 	out.file, err = os.OpenFile(opts.OutputPipe, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+ 	if err != nil {
+@@ -83,11 +99,59 @@ func newPipeOutput(opts *NewOutputOptions) (out *pipeOutput, err error) {
+ 		return nil, fmt.Errorf("failed to set blocking mode on fifo: %w", err)
+ 	}
+ 
+-	go out.outputLoop()
++	if out.passthrough {
++		go out.passthroughLoop()
++	} else {
++		go out.outputLoop()
++	}
+ 
+ 	return out, nil
+ }
+ 
++// passthroughLoop mirrors outputLoop but writes the raw encoded stream from
++// preader straight to the pipe: no decode, no volume, no format transform.
++func (out *pipeOutput) passthroughLoop() {
++	buf := make([]byte, 16*1024)
++
++	for {
++		out.lock.Lock()
++
++		for out.paused && !out.closed {
++			out.cond.Wait()
++		}
++
++		if out.closed {
++			out.lock.Unlock()
++			break
++		}
++
++		n, err := out.preader.ReadBytes(buf)
++
++		if n > 0 {
++			if _, werr := out.file.Write(buf[:n]); werr != nil {
++				out.err <- werr
++				out.closed = true
++				out.lock.Unlock()
++				break
++			}
++		}
++
++		if errors.Is(err, io.EOF) {
++			// Reached EOF, move to a "paused" state.
++			out.paused = true
++		} else if err != nil {
++			out.err <- err
++			out.closed = true
++			out.lock.Unlock()
++			break
++		}
++
++		out.lock.Unlock()
++	}
++
++	_ = out.Close()
++}
++
+ func (out *pipeOutput) outputLoop() {
+ 	floats := make([]float32, 4*1024)
+ 	bytes := make([]byte, 4*len(floats)) // times four is the biggest we can get
+diff --git a/output/output.go b/output/output.go
+index 7661cb5..b7c91a9 100644
+--- a/output/output.go
++++ b/output/output.go
+@@ -112,9 +112,17 @@ type NewOutputOptions struct {
+ 	//
+ 	// This is only supported on the pipe backend.
+ 	OutputPipeFormat string
++
++	// Passthrough writes the raw encoded (Ogg/Vorbis) stream to the pipe
++	// instead of decoded PCM. The Reader must implement AudioSourcePassthrough.
++	// OutputPipeFormat is ignored. Only supported on the pipe backend.
++	Passthrough bool
+ }
+ 
+ func NewOutput(options *NewOutputOptions) (Output, error) {
++	if options.Passthrough && options.Backend != "pipe" {
++		return nil, fmt.Errorf("passthrough is only supported on the pipe backend, not %q", options.Backend)
++	}
+ 	switch options.Backend {
+ 	case "alsa":
+ 		out, err := newAlsaOutput(options)
+diff --git a/player/passthrough_source.go b/player/passthrough_source.go
+new file mode 100644
+index 0000000..b25b6dc
+--- /dev/null
++++ b/player/passthrough_source.go
+@@ -0,0 +1,67 @@
++package player
++
++import (
++	"io"
++	"sync"
++)
++
++// passthroughSource hands out a track's raw Ogg/Vorbis bytes for the pipe
++// backend's passthrough mode, bypassing the Vorbis decoder. The decrypted
++// Spotify stream is a complete Ogg bitstream starting at offset 0, so it is
++// written through untouched. Position is approximated from bytes consumed;
++// seeking is limited to a restart because a mid-page byte seek would corrupt
++// the Ogg stream.
++type passthroughSource struct {
++	r          *io.SectionReader
++	size       int64
++	durationMs int64
++
++	mu  sync.Mutex
++	pos int64 // bytes read so far
++}
++
++func newPassthroughSource(r io.ReaderAt, size, durationMs int64) *passthroughSource {
++	return &passthroughSource{
++		r:          io.NewSectionReader(r, 0, size),
++		size:       size,
++		durationMs: durationMs,
++	}
++}
++
++func (p *passthroughSource) ReadBytes(b []byte) (int, error) {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	n, err := p.r.Read(b)
++	p.pos += int64(n)
++	return n, err
++}
++
++// Read is never used in passthrough mode; it only satisfies AudioSource.
++func (p *passthroughSource) Read([]float32) (int, error) { return 0, io.EOF }
++
++func (p *passthroughSource) PositionMs() int64 {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	if p.size <= 0 {
++		return 0
++	}
++	pos := p.pos * p.durationMs / p.size
++	if pos > p.durationMs {
++		pos = p.durationMs
++	}
++	return pos
++}
++
++func (p *passthroughSource) SetPositionMs(posMs int64) error {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	// Only a restart is safe; a mid-stream byte seek would split an Ogg page.
++	if posMs <= 0 {
++		_, err := p.r.Seek(0, io.SeekStart)
++		p.pos = 0
++		return err
++	}
++	return nil
++}
++
++func (p *passthroughSource) Close() error { return nil }
+diff --git a/player/player.go b/player/player.go
+index 163696a..2766de6 100644
+--- a/player/player.go
++++ b/player/player.go
+@@ -41,6 +41,7 @@ type Player struct {
+ 	log librespot.Logger
+ 
+ 	flacEnabled               bool
++	passthrough               bool
+ 	normalisationEnabled      bool
+ 	normalisationUseAlbumGain bool
+ 	normalisationPregain      float32
+@@ -160,6 +161,11 @@ type Options struct {
+ 	//
+ 	// This is only supported on the pipe backend.
+ 	AudioOutputPipeFormat string
++
++	// AudioOutputPipePassthrough writes the raw encoded Ogg/Vorbis stream to
++	// the pipe instead of decoded PCM (no decode, no volume). Only supported
++	// on the pipe backend.
++	AudioOutputPipePassthrough bool
+ }
+ 
+ func NewPlayer(opts *Options) (*Player, error) {
+@@ -170,6 +176,7 @@ func NewPlayer(opts *Options) (*Player, error) {
+ 		events:                    opts.Events,
+ 		cdnQuarantine:             make(map[string]time.Time),
+ 		flacEnabled:               opts.FlacEnabled,
++		passthrough:               opts.AudioOutputPipePassthrough,
+ 		normalisationEnabled:      opts.NormalisationEnabled,
+ 		normalisationUseAlbumGain: opts.NormalisationUseAlbumGain,
+ 		normalisationPregain:      opts.NormalisationPregain,
+@@ -192,6 +199,7 @@ func NewPlayer(opts *Options) (*Player, error) {
+ 				VolumeUpdate:     opts.VolumeUpdate,
+ 				OutputPipe:       opts.AudioOutputPipe,
+ 				OutputPipeFormat: opts.AudioOutputPipeFormat,
++				Passthrough:      opts.AudioOutputPipePassthrough,
+ 			})
+ 		},
+ 
+@@ -681,23 +689,38 @@ func (p *Player) NewStream(ctx context.Context, client *http.Client, spotId libr
+ 
+ 	audioFormat := GetAudioFileFormatAudioFormat(*file.Format)
+ 	if audioFormat == AudioFormatOGGVorbis {
+-		audioStream, meta, err := vorbis.ExtractMetadataPage(p.log, decryptedStream, rawStream.Size())
+-		if err != nil {
+-			return nil, fmt.Errorf("failed reading metadata page: %w", err)
+-		}
++		if p.passthrough {
++			// Passthrough: skip the Vorbis decoder and hand the raw Ogg
++			// bitstream to the pipe. The decrypted stream starts with a
++			// Spotify-specific metadata page (0x81), not Vorbis, so we still
++			// run ExtractMetadataPage and pass on the audio stream it returns
++			// (a clean Vorbis Ogg). Consecutive tracks are concatenated into a
++			// chained Ogg by the switching source, which a downstream decoder
++			// plays continuously. Normalisation/replay gain is not applied.
++			audioStream, _, err := vorbis.ExtractMetadataPage(p.log, decryptedStream, rawStream.Size())
++			if err != nil {
++				return nil, fmt.Errorf("failed reading metadata page: %w", err)
++			}
++			stream = newPassthroughSource(audioStream, audioStream.Size(), int64(media.Duration()))
++		} else {
++			audioStream, meta, err := vorbis.ExtractMetadataPage(p.log, decryptedStream, rawStream.Size())
++			if err != nil {
++				return nil, fmt.Errorf("failed reading metadata page: %w", err)
++			}
+ 
+-		vorbisStream, err := vorbis.New(log, audioStream, meta, normalisationFactor)
+-		if err != nil {
+-			return nil, fmt.Errorf("failed initializing ogg vorbis stream: %w", err)
+-		}
++			vorbisStream, err := vorbis.New(log, audioStream, meta, normalisationFactor)
++			if err != nil {
++				return nil, fmt.Errorf("failed initializing ogg vorbis stream: %w", err)
++			}
+ 
+-		if vorbisStream.SampleRate != SampleRate {
+-			return nil, fmt.Errorf("unsupported sample rate: %d", vorbisStream.SampleRate)
+-		} else if vorbisStream.Channels != Channels {
+-			return nil, fmt.Errorf("unsupported channels: %d", vorbisStream.Channels)
+-		}
++			if vorbisStream.SampleRate != SampleRate {
++				return nil, fmt.Errorf("unsupported sample rate: %d", vorbisStream.SampleRate)
++			} else if vorbisStream.Channels != Channels {
++				return nil, fmt.Errorf("unsupported channels: %d", vorbisStream.Channels)
++			}
+ 
+-		stream = vorbisStream
++			stream = vorbisStream
++		}
+ 	} else if audioFormat == AudioFormatFLAC {
+ 		audioStream := io.NewSectionReader(decryptedStream, 0, rawStream.Size())
+ 		flacStream, err := flac.New(log, audioStream, normalisationFactor)
+diff --git a/player/source.go b/player/source.go
+index 059bdf2..ccf3c00 100644
+--- a/player/source.go
++++ b/player/source.go
+@@ -73,6 +73,46 @@ func (s *SwitchingAudioSource) Read(p []float32) (n int, err error) {
+ 	return n, nil
+ }
+ 
++// ReadBytes mirrors Read for passthrough mode: it hands out the current
++// source's raw encoded bytes and, on EOF, switches to the queued source. The
++// raw streams are simply concatenated, which for Ogg yields a chained
++// bitstream the downstream decoder plays continuously.
++func (s *SwitchingAudioSource) ReadBytes(p []byte) (n int, err error) {
++	s.cond.L.Lock()
++	defer s.cond.L.Unlock()
++
++	for s.source[s.which] == nil {
++		s.cond.Wait()
++	}
++
++	src, ok := s.source[s.which].(librespot.AudioSourcePassthrough)
++	if !ok {
++		return 0, errors.New("current source does not support passthrough")
++	}
++
++	n, err = src.ReadBytes(p)
++	if errors.Is(err, io.EOF) {
++		// notify this source is done
++		s.done <- struct{}{}
++
++		// if there's no other source just let the EOF through
++		if s.source[!s.which] == nil {
++			return n, err
++		}
++
++		// delete current source and switch to the other one
++		delete(s.source, s.which)
++		s.which = !s.which
++
++		// ignore the EOF, we have more data
++		return n, nil
++	} else if err != nil {
++		return n, err
++	}
++
++	return n, nil
++}
++
+ func (s *SwitchingAudioSource) SetPositionMs(pos int64) error {
+ 	s.cond.L.Lock()
+ 	defer s.cond.L.Unlock()

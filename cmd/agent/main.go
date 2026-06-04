@@ -284,7 +284,7 @@ func run() error {
 		webui.WithRegion(region),
 		webui.WithRegionFile(*regionFile),
 		webui.WithStreamProxy(streamProxySrv),
-		webui.WithSpotifyStream(spotifyMgr.ServeWAV),
+		webui.WithSpotifyStream(spotifyMgr.ServeOgg),
 		webui.WithSpotifyControl(spotifyMgr.Play))
 
 	// Hardware Preset Tasten: Box sendet via WebSocket auf 8080 (gabbo Protocol)
@@ -741,7 +741,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 		h.logger.Error("spotify play failed", "slot", slot, "uri", p.URI, "err", err)
 		return
 	}
-	if err := h.renderer.PlayURLMime(playCtx, spotifyStreamURL, p.Name, p.Art, "audio/wav"); err != nil {
+	if err := h.renderer.PlayURLMime(playCtx, spotifyStreamURL, p.Name, p.Art, "audio/ogg"); err != nil {
 		h.logger.Error("spotify upnp play failed", "slot", slot, "err", err)
 		return
 	}

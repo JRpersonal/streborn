@@ -52,6 +52,9 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Checkout STR (for the passthrough patch)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Set up QEMU (arm/v7 emulation)
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
         with:
@@ -66,6 +69,13 @@ jobs:
           git clone --depth 1 --branch "$REF" https://github.com/devgianlu/go-librespot go-librespot
           echo "Built from go-librespot $REF at $(git -C go-librespot rev-parse HEAD)"
           mkdir -p dist
+
+          # STR Ogg-passthrough patch: adds audio_output_pipe_passthrough so
+          # go-librespot writes the raw Ogg/Vorbis to the pipe (no decode),
+          # which the box decodes natively and roughly halves CPU on the weak
+          # A8. Pinned to the v0.7.3 base it was generated against. This is the
+          # second (and last) modification to the pinned upstream source.
+          git -C go-librespot apply --verbose "$GITHUB_WORKSPACE/.github/patches/go-librespot-passthrough.patch"
 
           # Drop the ALSA output backend. STR drives playback through the
           # pipe backend only, and Alpine ships no static libasound (.a), so

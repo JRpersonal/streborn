@@ -17,14 +17,13 @@
 //     credited separately.
 //
 // Audio shape:
-//   - go-librespot's pipe backend emits raw PCM only (no Ogg
-//     passthrough). We point audio_output_pipe at /dev/stdout so it
-//     writes interleaved s16le to its stdout (it logs to stderr), and
-//     the manager drains that. ServeWAV prepends a streaming WAV header
-//     so the box plays the live PCM over UPnP (Bose lists WAV as a
-//     supported format; this is the one on-box unknown to validate).
-//   - librespot-org's Ogg passthrough stays the documented fallback if
-//     a Bose model refuses the live WAV stream.
+//   - go-librespot runs with the STR Ogg-passthrough patch
+//     (.github/patches/go-librespot-passthrough.patch) and
+//     audio_output_pipe_passthrough. We point audio_output_pipe at
+//     /dev/stdout so it writes the raw Ogg/Vorbis to its stdout (it logs
+//     to stderr); the manager drains that and ServeOgg streams it to the
+//     box, which decodes the Ogg natively over UPnP. This roughly halves
+//     CPU on the weak A8 vs streaming decoded PCM (validated live).
 //
 // Credentials: zeroconf with persist_credentials. The user taps the
 // device once in the Spotify app (the natural "connect to a speaker"
@@ -33,14 +32,13 @@
 // with no controller attached.
 //
 // Single consumer by design: one box plays one Spotify stream at a time.
-// When no HTTP client is attached the PCM is discarded so go-librespot
+// When no HTTP client is attached the audio is discarded so go-librespot
 // never blocks on a full pipe.
 package spotify
 
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log/slog"
@@ -52,15 +50,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-)
-
-// PCM characteristics go-librespot emits with audio_output_pipe_format
-// s16le. Spotify content is 44.1 kHz stereo; the pipe carries it
-// unresampled.
-const (
-	pcmSampleRate = 44100
-	pcmChannels   = 2
-	pcmBits       = 16
 )
 
 // Manager supervises one go-librespot process and brokers its PCM output
@@ -113,10 +102,13 @@ func (m *Manager) Ready() bool {
 	return true
 }
 
-// configYAML is the go-librespot config the manager writes. /dev/stdout
-// as the pipe makes go-librespot emit PCM on its stdout; the API server
-// gives us local playback control; zeroconf + persist gives a tap-once,
-// auto-login-forever credential.
+// configYAML is the go-librespot config the manager writes. /dev/stdout as
+// the pipe + passthrough makes go-librespot emit the raw Ogg/Vorbis on its
+// stdout (no decode); the box decodes it natively, which on the weak A8
+// roughly halves CPU vs streaming decoded PCM. The API server gives us
+// local playback control; zeroconf + persist gives a tap-once,
+// auto-login-forever credential. Passthrough needs the STR patch
+// (.github/patches/go-librespot-passthrough.patch) baked into the binary.
 func (m *Manager) configYAML() string {
 	host, port := splitHostPort(m.apiAddr)
 	var b strings.Builder
@@ -126,6 +118,7 @@ func (m *Manager) configYAML() string {
 	b.WriteString("audio_backend: pipe\n")
 	b.WriteString("audio_output_pipe: /dev/stdout\n")
 	b.WriteString("audio_output_pipe_format: s16le\n")
+	b.WriteString("audio_output_pipe_passthrough: true\n")
 	b.WriteString("server:\n")
 	b.WriteString("  enabled: true\n")
 	fmt.Fprintf(&b, "  address: %s\n", host)
@@ -169,7 +162,12 @@ func (m *Manager) Run(ctx context.Context) {
 }
 
 func (m *Manager) runOnce(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, m.binPath, "-config_dir", m.configDir)
+	// go-librespot uses pflag: the long flag needs two dashes (-config_dir
+	// is misparsed as a shorthand cluster). HOME is forced into the
+	// writable config dir because the box rootfs is read-only and
+	// go-librespot otherwise tries to create ~/.config.
+	cmd := exec.CommandContext(ctx, m.binPath, "--config_dir", m.configDir)
+	cmd.Env = append(os.Environ(), "HOME="+m.configDir)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -260,23 +258,18 @@ func (m *Manager) apiPost(ctx context.Context, path string, body map[string]any)
 	return nil
 }
 
-// ServeWAV streams the live audio to the HTTP client (the box's UPnP
-// fetch) as a WAV stream until it disconnects. It registers as the
-// single consumer; a new request replaces any previous one.
-func (m *Manager) ServeWAV(w http.ResponseWriter, r *http.Request) {
+// ServeOgg streams go-librespot's live Ogg/Vorbis passthrough output to the
+// HTTP client (the box's UPnP fetch) until it disconnects. It registers as
+// the single consumer; a new request replaces any previous one. No header is
+// prepended: the box decodes the raw Ogg directly.
+func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	if !m.Ready() {
 		http.Error(w, "spotify not configured", http.StatusServiceUnavailable)
 		return
 	}
-	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Content-Type", "audio/ogg")
 	w.Header().Set("Connection", "close")
 	w.WriteHeader(http.StatusOK)
-
-	// Streaming WAV header (unknown length): the box starts decoding
-	// immediately, the PCM follows as go-librespot produces it.
-	if _, err := w.Write(streamingWavHeader()); err != nil {
-		return
-	}
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -286,7 +279,7 @@ func (m *Manager) ServeWAV(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.sink = cw
 	m.mu.Unlock()
-	m.logger.Info("spotify: box attached to WAV stream", "remote", r.RemoteAddr)
+	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr)
 
 	select {
 	case <-r.Context().Done():
@@ -297,35 +290,10 @@ func (m *Manager) ServeWAV(w http.ResponseWriter, r *http.Request) {
 		m.sink = nil
 	}
 	m.mu.Unlock()
-	m.logger.Info("spotify: box detached from WAV stream")
+	m.logger.Info("spotify: box detached from Ogg stream")
 }
 
-// streamingWavHeader builds a 44-byte PCM WAV header with maxed-out
-// chunk sizes, the conventional way to express an open-ended live PCM
-// stream over HTTP.
-func streamingWavHeader() []byte {
-	const maxLen = 0xFFFFFFFF
-	byteRate := pcmSampleRate * pcmChannels * pcmBits / 8
-	blockAlign := pcmChannels * pcmBits / 8
-
-	b := &bytes.Buffer{}
-	b.WriteString("RIFF")
-	binary.Write(b, binary.LittleEndian, uint32(maxLen)) // RIFF chunk size
-	b.WriteString("WAVE")
-	b.WriteString("fmt ")
-	binary.Write(b, binary.LittleEndian, uint32(16))            // fmt chunk size
-	binary.Write(b, binary.LittleEndian, uint16(1))             // PCM
-	binary.Write(b, binary.LittleEndian, uint16(pcmChannels))   //
-	binary.Write(b, binary.LittleEndian, uint32(pcmSampleRate)) //
-	binary.Write(b, binary.LittleEndian, uint32(byteRate))      //
-	binary.Write(b, binary.LittleEndian, uint16(blockAlign))    //
-	binary.Write(b, binary.LittleEndian, uint16(pcmBits))       //
-	b.WriteString("data")
-	binary.Write(b, binary.LittleEndian, uint32(maxLen)) // data chunk size
-	return b.Bytes()
-}
-
-// closeNotifyWriter signals done on the first failed write so ServeWAV
+// closeNotifyWriter signals done on the first failed write so ServeOgg
 // returns when the box drops the connection.
 type closeNotifyWriter struct {
 	w    io.Writer

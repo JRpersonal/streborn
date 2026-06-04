@@ -43,7 +43,7 @@ type Server struct {
 	region      string // ISO 3166-1 alpha-2 vom Setup Wizard, leer wenn unbekannt
 	regionFile  string // Pfad fuer persistente Speicherung
 	streamProxy *streamproxy.Server
-	// spotifyStream serves the live WAV from the go-librespot manager to
+	// spotifyStream serves the live Ogg from the go-librespot manager to
 	// the box over HTTP (registered at /spotify/stream). nil when Spotify
 	// is not configured. Injected as a handler so webui need not import
 	// the spotify package.
@@ -140,7 +140,7 @@ func WithStreamProxy(p *streamproxy.Server) Option {
 }
 
 // WithSpotifyStream registers the handler that serves go-librespot's
-// live WAV to the box at /spotify/stream (the Spotify-preset audio
+// live Ogg to the box at /spotify/stream (the Spotify-preset audio
 // plane).
 func WithSpotifyStream(h http.HandlerFunc) Option {
 	return func(s *Server) { s.spotifyStream = h }
@@ -464,7 +464,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream", p.Name, p.Art, "audio/wav"); err != nil {
+		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream", p.Name, p.Art, "audio/ogg"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
