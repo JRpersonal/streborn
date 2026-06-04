@@ -218,8 +218,26 @@ triggering it and ensures only librespot advertises Spotify Connect.
   (AM33XX) with NEON, glibc 2.15 (hence static musl), ~52 MB RAM
   available. CPU/RAM at runtime is the one open risk; `passthrough-decoder`
   exists specifically to keep decode off the box.
-- **Still to measure on hardware:** runtime RAM, CPU during a session,
-  and play/pause/seek latency through the box's UPnP buffer.
+- **On-box run (taigan Portable, live):** the static-musl binary
+  **executes** on the box (`librespot 0.8.0 ... exit 0`), confirming the
+  build is compatible. With the 5.5 MB binary on `/mnt/nv` there is still
+  14.6 MB free.
+- **zeroconf is blocked on this box:** the kernel (3.14) has **no IPv6**
+  (`/proc/net/if_inet6` absent, no `net.ipv6` sysctl), so libmdns's
+  discovery server fails to bind (`os error 97`, EAFNOSUPPORT) and
+  librespot, with no discovery and no credentials, exits. `avahi-daemon`
+  is installed but not running.
+- **Therefore the credential/OAuth path is the one for this hardware:**
+  librespot with a provided credential authenticates straight to
+  `ap.spotify.com` with no discovery server, side-stepping the IPv6
+  issue, and it is exactly the account-linked model (device appears in
+  the user's Spotify app). The zeroconf-is-cleaner point is moot here
+  because the box cannot run the mDNS responder. (Alternative, not
+  chosen: build `with-avahi` and run the box's avahi-daemon, more moving
+  parts and Bose-mDNS conflict risk.)
+- **Still to measure (needs a one-time OAuth login):** run librespot with
+  cached OAuth credentials so it stays up, then idle RAM/CPU, CPU during
+  a session, and play/pause/seek latency through the box's UPnP buffer.
 
 ## Before shipping (mandatory gates)
 
