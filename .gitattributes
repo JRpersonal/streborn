@@ -16,6 +16,10 @@ usb-stick/rc.local text eol=lf
 # noisier with CRLF; keep LF everywhere.
 *.go           text eol=lf
 
+# Patch files must stay LF: `git apply` in the go-librespot build fails on
+# CRLF patches against LF upstream source.
+*.patch        text eol=lf
+
 # Configuration and data files consumed by the agent or Bose firmware.
 *.json         text eol=lf
 *.yml          text eol=lf
