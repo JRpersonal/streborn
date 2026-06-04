@@ -1,6 +1,5 @@
 {
   "locale.label": "Polski",
-
   "common.allCountries": "wszystkie kraje",
   "common.cancel": "Anuluj",
   "common.save": "Zapisz",
@@ -18,14 +17,12 @@
   "common.error": "Błąd",
   "common.beta": "BETA",
   "common.alpha": "ALPHA",
-
   "nav.music": "Słuchaj muzyki",
   "nav.library": "Biblioteka",
   "nav.speakerSettings": "Ustawienia głośnika",
   "nav.setupStick": "Przygotuj pendrive USB",
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multiroom i pary stereo",
   "multiroom.intro1": "Odtwarzaj to samo źródło synchronicznie na dwóch lub więcej głośnikach albo połącz dwa głośniki w zestaw stereo.",
   "multiroom.bullet1": "Odtwarzanie grupowe na głośnikach w tej samej sieci.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Status na żywo z aplikacji desktopowej.",
   "multiroom.feedbackPrompt": "Wkrótce dostępne. Uwagi i pomysły mile widziane w zgłoszeniu śledzącym.",
   "multiroom.issueLink": "Otwórz zgłoszenie #70",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Połącz głośnik raz w aplikacji Spotify na telefonie, a potem wysyłaj na niego dowolny utwór ze Spotify.",
   "spotify.bullet1": "Użyj głośnika jako celu Spotify Connect.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Instrukcje ponownego połączenia w aplikacji STR, gdy to się ustabilizuje.",
   "spotify.feedbackPrompt": "Eksperymentalne. Jeśli Spotify już działa lub zawodzi na Twoim głośniku, podziel się szczegółami w zgłoszeniu.",
   "spotify.issueLink": "Otwórz zgłoszenie #78",
-
   "library.title": "Biblioteka",
   "library.subtitle": "Przeglądaj serwery muzyczne w sieci (FRITZ!Box, Synology, Plex, miniDLNA) i odtwarzaj utwory na SoundTouch.",
   "library.server": "Serwer muzyczny",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Odtwarzanie",
   "library.toastSaved": "Zapisano jako zaprogramowane",
   "library.errorNoURL": "Ten element nie ma odtwarzalnego adresu strumienia.",
-
   "banner.recommendation": "Zalecenie:",
   "banner.sshRecommend": "Wyjmij pendrive USB z głośnika i uruchom go raz ponownie. W przeciwnym razie głośnik jest podatny na ataki w sieci.",
   "banner.appUpdateAvail": "Dostępna nowa wersja aplikacji:",
   "banner.download": "Pobierz",
-
+  "banner.whatsNew": "Co nowego",
   "modal.warnTitle": "Ostrzeżenie",
   "modal.errorTitle": "Błąd",
   "modal.proceed": "Mimo to kontynuuj",
   "modal.copy": "Kopiuj",
-
   "topbar.title": "Twoje głośniki SoundTouch w sieci",
   "topbar.refreshTitle": "Szukaj głośników ponownie",
-
   "speaker.searching": "Szukanie głośników...",
   "speaker.choose": "Wybierz powyżej głośnik Bose, aby nim sterować.",
   "speaker.emptyTitle": "Nie znaleziono głośnika w sieci.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Przywrócić ten głośnik do życia za pomocą STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> nadal działa na oryginalnym oprogramowaniu Bose. Jednorazowy pendrive USB instaluje STR bezpośrednio na głośniku. Potem sterujesz nim w pełni z tej aplikacji: radio internetowe, zaprogramowane stacje, multiroom.<br><br>Otworzyć teraz przygotowanie pendrive'a USB?",
   "speaker.stockConfirmCta": "Otwórz przygotowanie pendrive'a USB",
-
   "controls.pause": "Pauza",
   "controls.stop": "Stop",
   "controls.auxTitle": "Wejście Aux",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Czuwanie",
   "controls.volume": "Głośność",
-
   "toast.source": "Źródło: {{src}}",
   "toast.sourceUnavailable": "{{src}} nie jest dostępne na tym głośniku",
-
   "status.playing": "odtwarza",
   "status.buffering": "uruchamianie strumienia",
   "status.paused": "wstrzymano",
@@ -111,11 +100,9 @@
   "status.auxInput": "Wejście AUX",
   "status.bluetooth": "Bluetooth",
   "status.ready": "gotowy",
-
   "battery.label": "Bateria",
   "battery.onPower": "na zasilaniu sieciowym",
   "battery.onBattery": "na baterii",
-
   "preset.key": "Przycisk {{n}}",
   "preset.empty": "pusty",
   "preset.loading": "Ładowanie przycisków zaprogramowanych...",
@@ -136,7 +123,6 @@
   "preset.copiedToKey": "Skopiowano do przycisku {{n}}: {{name}}",
   "preset.savedToKey": "Zapisano na przycisku {{n}}: {{name}}",
   "preset.saveFailed": "Zapis nie powiódł się: {{err}}",
-
   "play.errNoInternet": "brak internetu?",
   "play.errSpeakerTimeout": "głośnik nie odpowiada",
   "play.errBoxStarting": "głośnik się jeszcze uruchamia, spróbuj za chwilę",
@@ -145,7 +131,6 @@
   "play.errServer500": "błąd stacji",
   "play.errUnreachable": "stacja nieosiągalna",
   "play.errGeneric": "Błąd",
-
   "search.heading": "Wyszukaj stacje",
   "search.headingSub": "przez radio-browser.info",
   "search.placeholder": "np. BBC, NDR, Rock...",
@@ -179,7 +164,6 @@
   "search.fewerGenres": "Mniej",
   "search.moreGenres": "Więcej gatunków ({{n}})",
   "search.nStations": "{{n}} stacji",
-
   "update.speakerUpdateAvail": "Dostępna aktualizacja oprogramowania głośnika",
   "update.speakerAppLine": "Głośnik: {{box}} · Aplikacja: {{app}}",
   "update.speakerRunningOld": "Głośnik działa w wersji {{boxVersion}}, aplikacja działa w {{appVersion}}.",
@@ -196,42 +180,33 @@
   "update.otherBoxRunning": "Trwa aktualizacja na {{name}} ...",
   "update.stickInTitle": "Pendrive USB nadal jest w głośniku",
   "update.stickInBody": "Pendrive USB nadal jest w głośniku. Aktualizacja zostanie cofnięta przy następnym restarcie, bo głośnik ponownie zainstaluje (starszą) wersję z pendrive'a.<br><br>Najpierw wyjmij pendrive USB z głośnika, a potem aktualizuj.",
-
   "settingsView.title": "Ustawienia głośnika",
   "settingsView.forSpeaker": "Ustawienia dla:",
   "settingsView.refreshListTitle": "Przeszukaj listę głośników ponownie",
   "settingsView.selectFirst": "Najpierw wybierz głośnik.",
   "settingsView.noSpeakerFound": "nie znaleziono głośnika",
-
   "order.votes": "Popularność",
   "order.clickcount": "Słuchacze",
   "order.clicktrend": "Trend",
   "order.name": "Nazwa",
-
   "settings.language": "Język",
   "settings.languageHelp": "Język aplikacji. Niezależny od kraju w wyszukiwaniu radia.",
-
   "combobox.noSuggestions": "brak podpowiedzi",
-
   "footer.website": "Strona internetowa",
   "footer.saveLogs": "Zapisz logi diagnostyczne",
   "footer.saveLogsHint": "Pakuje log aplikacji + status każdego głośnika do pliku zip, który możesz dołączyć do zgłoszenia na GitHub. Adresy IP i identyfikatory urządzeń są anonimizowane.",
   "footer.saveLogsDone": "Zapisano {{size}} KB w {{path}}",
   "footer.donateSlogan": "Podoba Ci się aplikacja? Filiżanka kawy będzie mile widziana.",
-
   "banner.recommendationShort": "Zalecenie",
-
   "speaker.rebootNow": "Uruchom głośnik ponownie teraz",
   "speaker.rebootGenericBody": "Głośnik uruchomi się ponownie za 1 sekundę. Bieżące odtwarzanie zostanie przerwane. Kontynuować?",
   "speaker.rebootConfirmDetailedBody": "Czy wyjąłeś pendrive USB?<br><br><b>Pendrive nadal w środku</b> &rarr; SSH pozostaje otwarte po restarcie.<br><b>Pendrive wyjęty</b> &rarr; SSH jest zamknięte po restarcie.<br><br>Bieżące odtwarzanie zostanie przerwane.",
-
   "signal.excellent": "Doskonały",
   "signal.good": "Dobry",
   "signal.marginal": "Umiarkowany",
   "signal.poor": "Słaby",
   "signal.none": "Brak sygnału",
   "signal.notReported": "Wi-Fi połączone (sygnał nieraportowany przez ten model)",
-
   "settingsView.noSpeakerFoundTitle": "Nie znaleziono głośnika w sieci.",
   "settingsView.noSpeakerFoundHelp": "Aby edytować ustawienia głośnika, musi być obecny przygotowany pendrive ST Reborn. Najpierw przygotuj pendrive.",
   "settingsView.stockBoxTitle": "STR jeszcze nie zainstalowano",
@@ -344,7 +319,6 @@
   "settingsView.stickNotDetected": "nie wykryto",
   "settingsView.stickRemoved": "wyjęty (normalne po instalacji)",
   "settingsView.speakerNameSavedToast": "Nazwa głośnika zapisana: {{name}}",
-
   "fw.updateBtn": "Aktualizuj",
   "fw.uptodate": "Aktualne. Bose od wyłączenia chmury nie wydaje już aktualizacji. Ostatnia wersja {{version}} z września 2022.",
   "fw.outdatedTitle": "Oprogramowanie układowe nieaktualne.",
@@ -355,7 +329,6 @@
   "fw.step3": "Wybierz głośnik. Jeśli dostępna jest aktualizacja, aplikacja ją zaproponuje.",
   "fw.step4": "Bez aplikacji: pobierz narzędzie USB do aktualizacji Bose, zapisz oprogramowanie na innym pendrive i włóż go do głośnika:",
   "fw.hint": "Uwaga: serwery aktualizacji Bose mogą być w niektórych regionach jeszcze online, mimo że streaming z chmury się zakończył. Jeśli droga przez aplikację zawiedzie, narzędzie USB jest najpewniejsze.",
-
   "setup.heading": "Przygotuj pendrive USB",
   "setup.intro": "Przygotowuje pendrive USB, który raz wkładasz do głośnika Bose. STR działa potem z samego głośnika. Pendrive potrzebuje co najmniej 4 GB.",
   "setup.targetHeading": "Który głośnik?",
@@ -441,7 +414,6 @@
   "setup.awaitStep2": "Włóż go do portu USB w głośniku.",
   "setup.awaitStep3": "Odłącz głośnik od zasilania, podłącz ponownie i odczekaj 60 do 90 sekund. Nie wyciągaj pendrive'a podczas uruchamiania.",
   "setup.awaitConfirmBtn": "Głośnik gotowy, zainstaluj STR teraz",
-
   "setupAPPush.probing": "Szukanie głośnika w trybie konfiguracji ...",
   "setupAPPush.title": "Konfiguracja bez pendrive'a USB",
   "setupAPPush.instructionsBody": "Zupełnie nowy lub świeżo zresetowany głośnik Bose otwiera własną sieć Wi-Fi do pierwszej konfiguracji. ST Reborn łączy się krótko z tą siecią i wysyła dane Twojego domowego Wi-Fi bezpośrednio do głośnika.",
@@ -464,7 +436,6 @@
   "setupAPPush.successHint": "Głośnik łączy się teraz z Twoim domowym Wi-Fi. Przełącz komputer z powrotem na domowe Wi-Fi i odczekaj 1 do 5 minut, aż pojawi się na liście.",
   "setupAPPush.detailsToggle": "Szczegóły",
   "setupAPPush.unknownFailure": "Wysyłanie nie powiodło się (głośnik nie podał powodu).",
-
   "source.label.aux": "Wejście Aux",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -473,7 +444,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Biblioteka",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Analogowe wejście jack",
   "source.hint.airplay": "Apple AirPlay 2. Aktywacja zależy od oryginalnej konfiguracji Bose.",
   "source.hint.bluetooth": "Sparuj urządzenie Bluetooth",

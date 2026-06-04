@@ -1,6 +1,5 @@
 {
   "locale.label": "Latviešu",
-
   "common.allCountries": "visas valstis",
   "common.cancel": "Atcelt",
   "common.save": "Saglabāt",
@@ -18,14 +17,12 @@
   "common.error": "Kļūda",
   "common.beta": "BETA",
   "common.alpha": "ALFA",
-
   "nav.music": "Klausīties mūziku",
   "nav.library": "Bibliotēka",
   "nav.speakerSettings": "Skaļruņa iestatījumi",
   "nav.setupStick": "Sagatavot USB zibatmiņu",
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multiroom un stereo pāri",
   "multiroom.intro1": "Atskaņojiet vienu un to pašu avotu sinhroni divos vai vairākos skaļruņos vai apvienojiet divus skaļruņus stereo pārī.",
   "multiroom.bullet1": "Grupas atskaņošana skaļruņos vienā tīklā.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Tiešais statuss no darbvirsmas lietotnes.",
   "multiroom.feedbackPrompt": "Drīzumā. Komentāri un idejas ir laipni gaidītas izsekošanas pavedienā.",
   "multiroom.issueLink": "Atvērt problēmu #70",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Vienreiz savienojiet skaļruni Spotify lietotnē telefonā, pēc tam sūtiet uz to jebkuru Spotify dziesmu.",
   "spotify.bullet1": "Izmantojiet skaļruni kā Spotify Connect mērķi.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Atkārtotas savienošanas instrukcijas STR lietotnē, kad tas stabilizēsies.",
   "spotify.feedbackPrompt": "Eksperimentāli. Ja Spotify jau darbojas vai nedarbojas jūsu skaļrunī, dalieties ar detaļām problēmā.",
   "spotify.issueLink": "Atvērt problēmu #78",
-
   "library.title": "Bibliotēka",
   "library.subtitle": "Pārlūkojiet mūzikas serverus tīklā (FRITZ!Box, Synology, Plex, miniDLNA) un atskaņojiet ierakstus caur SoundTouch.",
   "library.server": "Mūzikas serveris",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Atskaņo",
   "library.toastSaved": "Saglabāts kā iestatījums",
   "library.errorNoURL": "Šim elementam nav atskaņojamas straumes adreses.",
-
   "banner.recommendation": "Ieteikums:",
   "banner.sshRecommend": "Izņemiet USB zibatmiņu no skaļruņa un vienreiz to restartējiet. Citādi skaļrunis ir ievainojams tīklā.",
   "banner.appUpdateAvail": "Pieejama jauna lietotnes versija:",
   "banner.download": "Lejupielādēt",
-
+  "banner.whatsNew": "Kas jauns",
   "modal.warnTitle": "Brīdinājums",
   "modal.errorTitle": "Kļūda",
   "modal.proceed": "Tomēr turpināt",
   "modal.copy": "Kopēt",
-
   "topbar.title": "Jūsu SoundTouch skaļruņi tīklā",
   "topbar.refreshTitle": "Meklēt skaļruņus vēlreiz",
-
   "speaker.searching": "Tiek meklēti skaļruņi...",
   "speaker.choose": "Atlasiet Bose skaļruni augšpusē, lai to vadītu.",
   "speaker.emptyTitle": "Tīklā nav atrasts skaļrunis.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Atdzīvināt šo skaļruni ar STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> joprojām darbojas ar oriģinālo Bose programmatūru. Vienreizēja USB zibatmiņa instalē STR tieši skaļrunī. Pēc tam jūs to pilnībā vadāt no šīs lietotnes: interneta radio, iestatījumi, multiroom.<br><br>Atvērt USB zibatmiņas sagatavošanu tagad?",
   "speaker.stockConfirmCta": "Atvērt USB zibatmiņas sagatavošanu",
-
   "controls.pause": "Pauze",
   "controls.stop": "Apturēt",
   "controls.auxTitle": "Aux ieeja",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Gaidstāve",
   "controls.volume": "Skaļums",
-
   "toast.source": "Avots: {{src}}",
   "toast.sourceUnavailable": "{{src}} nav pieejams šajā skaļrunī",
-
   "status.playing": "atskaņo",
   "status.buffering": "straume tiek sākta",
   "status.paused": "apturēts",
@@ -111,11 +100,9 @@
   "status.auxInput": "AUX ieeja",
   "status.bluetooth": "Bluetooth",
   "status.ready": "gatavs",
-
   "battery.label": "Akumulators",
   "battery.onPower": "barojas no tīkla",
   "battery.onBattery": "no akumulatora",
-
   "preset.key": "Poga {{n}}",
   "preset.empty": "tukšs",
   "preset.loading": "Tiek ielādētas iestatījumu pogas...",
@@ -136,7 +123,6 @@
   "preset.copiedToKey": "Nokopēts pogā {{n}}: {{name}}",
   "preset.savedToKey": "Saglabāts pogā {{n}}: {{name}}",
   "preset.saveFailed": "Saglabāt neizdevās: {{err}}",
-
   "play.errNoInternet": "nav interneta?",
   "play.errSpeakerTimeout": "skaļrunis neatbild",
   "play.errBoxStarting": "skaļrunis vēl startē, mēģiniet drīz vēlreiz",
@@ -145,7 +131,6 @@
   "play.errServer500": "stacijas kļūda",
   "play.errUnreachable": "stacija nav sasniedzama",
   "play.errGeneric": "Kļūda",
-
   "search.heading": "Meklēt stacijas",
   "search.headingSub": "caur radio-browser.info",
   "search.placeholder": "piem. BBC, NDR, Rock...",
@@ -179,7 +164,6 @@
   "search.fewerGenres": "Mazāk",
   "search.moreGenres": "Vairāk žanru ({{n}})",
   "search.nStations": "{{n}} staciju",
-
   "update.speakerUpdateAvail": "Pieejams skaļruņa programmatūras atjauninājums",
   "update.speakerAppLine": "Skaļrunis: {{box}} · Lietotne: {{app}}",
   "update.speakerRunningOld": "Skaļrunis darbojas ar versiju {{boxVersion}}, lietotne darbojas ar {{appVersion}}.",
@@ -196,42 +180,33 @@
   "update.otherBoxRunning": "Notiek atjaunināšana {{name}} ...",
   "update.stickInTitle": "USB zibatmiņa joprojām ievietota",
   "update.stickInBody": "USB zibatmiņa joprojām ir skaļrunī. Atjauninājums tiks atcelts nākamajā startēšanā, jo skaļrunis atkal instalēs (vecāku) versiju no zibatmiņas.<br><br>Vispirms izņemiet USB zibatmiņu no skaļruņa, tad atjauniniet.",
-
   "settingsView.title": "Skaļruņa iestatījumi",
   "settingsView.forSpeaker": "Iestatījumi skaļrunim:",
   "settingsView.refreshListTitle": "Skenēt skaļruņu sarakstu vēlreiz",
   "settingsView.selectFirst": "Vispirms atlasiet skaļruni.",
   "settingsView.noSpeakerFound": "skaļrunis nav atrasts",
-
   "order.votes": "Popularitāte",
   "order.clickcount": "Klausītāji",
   "order.clicktrend": "Tendence",
   "order.name": "Nosaukums",
-
   "settings.language": "Valoda",
   "settings.languageHelp": "Lietotnes valoda. Neatkarīga no valsts radio meklēšanā.",
-
   "combobox.noSuggestions": "nav ieteikumu",
-
   "footer.website": "Vietne",
   "footer.saveLogs": "Saglabāt diagnostikas žurnālus",
   "footer.saveLogsHint": "Iepako lietotnes žurnālu + katra skaļruņa statusu zip failā, ko varat pievienot GitHub problēmai. IP adreses un ierīču ID tiek anonimizēti.",
   "footer.saveLogsDone": "Saglabāts {{size}} KB uz {{path}}",
   "footer.donateSlogan": "Patīk lietotne? Tase kafijas būtu novērtēta.",
-
   "banner.recommendationShort": "Ieteikums",
-
   "speaker.rebootNow": "Restartēt skaļruni tagad",
   "speaker.rebootGenericBody": "Skaļrunis tiks restartēts pēc 1 sekundes. Pašreizējā atskaņošana tiks pārtraukta. Turpināt?",
   "speaker.rebootConfirmDetailedBody": "Vai izņēmāt USB zibatmiņu?<br><br><b>Zibatmiņa joprojām iekšā</b> &rarr; SSH paliek atvērts pēc restartēšanas.<br><b>Zibatmiņa izņemta</b> &rarr; SSH aizvērts pēc restartēšanas.<br><br>Pašreizējā atskaņošana tiks pārtraukta.",
-
   "signal.excellent": "Lielisks",
   "signal.good": "Labs",
   "signal.marginal": "Vidējs",
   "signal.poor": "Vājš",
   "signal.none": "Nav signāla",
   "signal.notReported": "Wi-Fi pievienots (šis modelis neziņo signālu)",
-
   "settingsView.noSpeakerFoundTitle": "Tīklā nav atrasts skaļrunis.",
   "settingsView.noSpeakerFoundHelp": "Lai rediģētu skaļruņa iestatījumus, jābūt ievietotai sagatavotai ST Reborn zibatmiņai. Vispirms sagatavojiet zibatmiņu.",
   "settingsView.stockBoxTitle": "STR vēl nav instalēts",
@@ -344,7 +319,6 @@
   "settingsView.stickNotDetected": "nav konstatēta",
   "settingsView.stickRemoved": "izņemta (normāli pēc instalēšanas)",
   "settingsView.speakerNameSavedToast": "Skaļruņa nosaukums saglabāts: {{name}}",
-
   "fw.updateBtn": "Atjaunināt",
   "fw.uptodate": "Jaunākā. Bose kopš mākoņa izslēgšanas vairs neizlaiž atjauninājumus. Pēdējā versija {{version}} no 2022. gada septembra.",
   "fw.outdatedTitle": "Programmatūra ir novecojusi.",
@@ -355,7 +329,6 @@
   "fw.step3": "Atlasiet skaļruni. Ja ir atjauninājums, lietotne to piedāvās.",
   "fw.step4": "Bez lietotnes: lejupielādējiet Bose USB atjaunināšanas rīku, ierakstiet programmatūru citā zibatmiņā un ievietojiet to skaļrunī:",
   "fw.hint": "Piezīme: Bose atjaunināšanas serveri dažos reģionos var vēl būt tiešsaistē, lai gan mākoņa straume ir pārtraukta. Ja ceļš caur lietotni neizdodas, USB rīks ir visuzticamākais.",
-
   "setup.heading": "Sagatavot USB zibatmiņu",
   "setup.intro": "Sagatavo USB zibatmiņu, ko vienreiz ievietojat Bose skaļrunī. STR pēc tam darbojas no paša skaļruņa. Zibatmiņai nepieciešami vismaz 4 GB.",
   "setup.targetHeading": "Kurš skaļrunis?",
@@ -441,7 +414,6 @@
   "setup.awaitStep2": "Ievietojiet to skaļruņa USB portā.",
   "setup.awaitStep3": "Atvienojiet skaļruni no strāvas, pievienojiet atkal un pagaidiet 60–90 sekundes. Nevelciet zibatmiņu startēšanas laikā.",
   "setup.awaitConfirmBtn": "Skaļrunis gatavs, instalēt STR tagad",
-
   "setupAPPush.probing": "Tiek meklēts skaļrunis iestatīšanas režīmā ...",
   "setupAPPush.title": "Iestatīšana bez USB zibatmiņas",
   "setupAPPush.instructionsBody": "Pilnīgi jauns vai tikko atiestatīts Bose skaļrunis atver savu Wi-Fi tīklu pirmajai iestatīšanai. ST Reborn uz brīdi pievienojas šim tīklam un nosūta jūsu mājas Wi-Fi datus tieši uz skaļruni.",
@@ -464,7 +436,6 @@
   "setupAPPush.successHint": "Skaļrunis tagad pievienojas jūsu mājas Wi-Fi. Atgrieziet datoru mājas Wi-Fi un pagaidiet 1–5 minūtes, līdz tas parādās sarakstā.",
   "setupAPPush.detailsToggle": "Detaļas",
   "setupAPPush.unknownFailure": "Sūtīt neizdevās (skaļrunis nenorādīja iemeslu).",
-
   "source.label.aux": "Aux ieeja",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -473,7 +444,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Bibliotēka",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Analogā jack ieeja",
   "source.hint.airplay": "Apple AirPlay 2. Aktivizēšana atkarīga no oriģinālās Bose iestatīšanas.",
   "source.hint.bluetooth": "Savienojiet Bluetooth ierīci",

@@ -1,6 +1,5 @@
 {
   "locale.label": "Español",
-
   "common.allCountries": "todos los países",
   "common.cancel": "Cancelar",
   "common.save": "Guardar",
@@ -18,14 +17,12 @@
   "common.error": "Error",
   "common.beta": "BETA",
   "common.alpha": "ALFA",
-
   "nav.music": "Escuchar música",
   "nav.library": "Biblioteca",
   "nav.speakerSettings": "Ajustes del altavoz",
   "nav.setupStick": "Preparar memoria USB",
   "nav.multiroom": "Multisala",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multisala y par estéreo",
   "multiroom.intro1": "Reproduce la misma fuente en dos o más altavoces sincronizados, o empareja dos altavoces como conjunto estéreo.",
   "multiroom.bullet1": "Reproducción en grupo en altavoces de la misma red.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Estado en directo desde la aplicación de escritorio.",
   "multiroom.feedbackPrompt": "Próximamente. Se agradecen comentarios e ideas en el ticket de seguimiento.",
   "multiroom.issueLink": "Abrir ticket #70",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Empareja el altavoz una vez en la aplicación móvil de Spotify y luego envíale cualquier canción de Spotify desde tu teléfono.",
   "spotify.bullet1": "Usa el altavoz como destino de Spotify Connect.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Instrucciones para volver a emparejar en la aplicación STR cuando sea estable.",
   "spotify.feedbackPrompt": "Experimental. Si Spotify ya funciona o falla en tu altavoz, comparte los detalles en el ticket.",
   "spotify.issueLink": "Abrir ticket #78",
-
   "library.title": "Biblioteca",
   "library.subtitle": "Explora servidores de música de tu red (FRITZ!Box, Synology, Plex, miniDLNA) y reproduce pistas en tu SoundTouch.",
   "library.server": "Servidor de música",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Reproduciendo",
   "library.toastSaved": "Guardado en el preajuste",
   "library.errorNoURL": "Este elemento no tiene una URL de flujo reproducible.",
-
   "banner.recommendation": "Recomendación:",
   "banner.sshRecommend": "Retira la memoria USB del altavoz y reinícialo una vez. De lo contrario el altavoz queda vulnerable en la red.",
   "banner.appUpdateAvail": "Nueva versión de la aplicación disponible:",
   "banner.download": "Descargar",
-
+  "banner.whatsNew": "Novedades",
   "modal.warnTitle": "Advertencia",
   "modal.errorTitle": "Error",
   "modal.proceed": "Continuar de todos modos",
   "modal.copy": "Copiar",
-
   "topbar.title": "Tus altavoces SoundTouch en la red",
   "topbar.refreshTitle": "Buscar altavoces de nuevo",
-
   "speaker.searching": "Buscando altavoces...",
   "speaker.choose": "Elige un altavoz Bose arriba para controlarlo.",
   "speaker.emptyTitle": "No se encontró ningún altavoz en la red.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "¿Devolver la vida a este altavoz con STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> aún usa el firmware original de Bose. Una memoria USB única instala STR directamente en el altavoz. Después lo controlas por completo desde esta aplicación: radio por internet, preajustes, multisala.<br><br>¿Abrir la preparación de la memoria USB ahora?",
   "speaker.stockConfirmCta": "Abrir preparación de la memoria USB",
-
   "controls.pause": "Pausa",
   "controls.stop": "Detener",
   "controls.auxTitle": "Entrada de clavija Aux",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Reposo",
   "controls.volume": "Volumen",
-
   "toast.source": "Fuente: {{src}}",
   "toast.sourceUnavailable": "{{src}} no está disponible en este altavoz",
-
   "status.playing": "reproduciendo",
   "status.buffering": "iniciando flujo",
   "status.paused": "en pausa",
@@ -111,7 +100,6 @@
   "status.auxInput": "entrada AUX",
   "status.bluetooth": "Bluetooth",
   "status.ready": "listo",
-
   "preset.key": "Tecla {{n}}",
   "preset.empty": "vacía",
   "preset.loading": "Cargando las teclas de preajuste...",
@@ -132,7 +120,6 @@
   "preset.copiedToKey": "Copiado a la tecla {{n}}: {{name}}",
   "preset.savedToKey": "Guardado en la tecla {{n}}: {{name}}",
   "preset.saveFailed": "Error al guardar: {{err}}",
-
   "play.errNoInternet": "¿sin internet?",
   "play.errSpeakerTimeout": "el altavoz no responde",
   "play.errBoxStarting": "el altavoz aún se está iniciando, inténtalo de nuevo en un momento",
@@ -141,7 +128,6 @@
   "play.errServer500": "error de la emisora",
   "play.errUnreachable": "emisora inaccesible",
   "play.errGeneric": "Error",
-
   "search.heading": "Buscar emisoras",
   "search.headingSub": "vía radio-browser.info",
   "search.placeholder": "p. ej. BBC, NDR, Rock...",
@@ -175,7 +161,6 @@
   "search.fewerGenres": "Menos",
   "search.moreGenres": "Más géneros ({{n}})",
   "search.nStations": "{{n}} emisoras",
-
   "update.speakerUpdateAvail": "Actualización de software del altavoz disponible",
   "update.speakerAppLine": "Altavoz: {{box}} · Aplicación: {{app}}",
   "update.speakerRunningOld": "El altavoz tiene la versión {{boxVersion}}, la aplicación la {{appVersion}}.",
@@ -192,42 +177,33 @@
   "update.otherBoxRunning": "Actualización en curso en {{name}} ...",
   "update.stickInTitle": "Memoria USB aún insertada",
   "update.stickInBody": "La memoria USB sigue en el altavoz. Una actualización se deshará en el próximo reinicio, porque el altavoz reinstala la versión (más antigua) desde la memoria.<br><br>Retira primero la memoria USB del altavoz y luego actualiza.",
-
   "settingsView.title": "Ajustes del altavoz",
   "settingsView.forSpeaker": "Ajustes para:",
   "settingsView.refreshListTitle": "Buscar de nuevo la lista de altavoces",
   "settingsView.selectFirst": "Elige primero un altavoz.",
   "settingsView.noSpeakerFound": "no se encontró ningún altavoz",
-
   "order.votes": "Popularidad",
   "order.clickcount": "Oyentes",
   "order.clicktrend": "Tendencia",
   "order.name": "Nombre",
-
   "settings.language": "Idioma",
   "settings.languageHelp": "Idioma de la aplicación. Independiente del país de búsqueda de radio.",
-
   "combobox.noSuggestions": "sin sugerencias",
-
   "footer.website": "Sitio web",
   "footer.saveLogs": "Guardar registros de diagnóstico",
   "footer.saveLogsHint": "Agrupa el registro de la aplicación y el estado por altavoz en un zip que puedes adjuntar a un ticket de GitHub. Las IP y los identificadores de dispositivo se anonimizan.",
   "footer.saveLogsDone": "{{size}} KB guardados en {{path}}",
   "footer.donateSlogan": "¿Te gusta la aplicación? Agradecería un café.",
-
   "banner.recommendationShort": "Recomendación",
-
   "speaker.rebootNow": "Reiniciar altavoz ahora",
   "speaker.rebootGenericBody": "El altavoz se reiniciará en 1 segundo. La reproducción actual se interrumpirá. ¿Continuar?",
   "speaker.rebootConfirmDetailedBody": "¿Has retirado la memoria USB?<br><br><b>Memoria aún insertada</b> &rarr; SSH permanece abierto tras el reinicio.<br><b>Memoria retirada</b> &rarr; SSH se cierra tras el reinicio.<br><br>La reproducción actual se interrumpirá.",
-
   "signal.excellent": "Excelente",
   "signal.good": "Buena",
   "signal.marginal": "Justa",
   "signal.poor": "Débil",
   "signal.none": "Sin señal",
   "signal.notReported": "Wi-Fi conectado (este modelo no informa la señal)",
-
   "settingsView.noSpeakerFoundTitle": "No se encontró ningún altavoz en la red.",
   "settingsView.noSpeakerFoundHelp": "Para editar los ajustes de un altavoz debe haber una memoria ST Reborn preparada. Prepara primero una memoria.",
   "settingsView.stockBoxTitle": "STR aún no instalado",
@@ -326,7 +302,6 @@
   "settingsView.stickNotDetected": "no detectada",
   "settingsView.stickRemoved": "retirada (normal tras la instalación)",
   "settingsView.speakerNameSavedToast": "Nombre del altavoz guardado: {{name}}",
-
   "fw.updateBtn": "Actualizar",
   "fw.uptodate": "Actualizado. Bose dejó de publicar actualizaciones desde el cierre de la nube. Última versión {{version}} de sep. 2022.",
   "fw.outdatedTitle": "Firmware desactualizado.",
@@ -337,7 +312,6 @@
   "fw.step3": "Elige el altavoz. Si hay una actualización disponible, la aplicación la ofrece.",
   "fw.step4": "Sin la aplicación: descarga la herramienta de actualización USB de Bose, escribe el firmware en otra memoria, conéctala al altavoz:",
   "fw.hint": "Nota: los servidores de actualización de Bose pueden seguir en línea en algunas regiones aunque la transmisión en la nube se haya cerrado. Si la vía de la aplicación falla, la herramienta USB es el método más fiable.",
-
   "setup.heading": "Preparar memoria USB",
   "setup.intro": "Prepara una memoria USB que conectas una vez a tu altavoz Bose. STR se ejecuta luego desde el propio altavoz. La memoria necesita al menos 4 GB.",
   "setup.targetHeading": "¿Qué altavoz?",
@@ -423,7 +397,6 @@
   "setup.awaitStep2": "Conéctala al puerto USB del altavoz.",
   "setup.awaitStep3": "Desconecta el altavoz, vuelve a conectarlo, espera de 60 a 90 segundos. No retires la memoria durante el arranque.",
   "setup.awaitConfirmBtn": "El altavoz está listo, instalar STR ahora",
-
   "setupAPPush.probing": "Buscando un altavoz en modo de configuración ...",
   "setupAPPush.title": "Configurar sin memoria USB",
   "setupAPPush.instructionsBody": "Un altavoz Bose nuevo o recién restablecido abre su propia red Wi-Fi para la configuración inicial. ST Reborn se une brevemente a esa red y envía las credenciales de tu Wi-Fi doméstico directamente al altavoz.",
@@ -446,7 +419,6 @@
   "setupAPPush.successHint": "El altavoz se está uniendo ahora a tu Wi-Fi doméstico. Vuelve a conectar tu PC a tu Wi-Fi doméstico y espera de 1 a 5 minutos a que aparezca en la lista.",
   "setupAPPush.detailsToggle": "Detalles",
   "setupAPPush.unknownFailure": "Error en el envío (el altavoz no devolvió ningún motivo).",
-
   "source.label.aux": "Entrada Aux",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -455,7 +427,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Biblioteca",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Entrada de clavija analógica",
   "source.hint.airplay": "Apple AirPlay 2. La activación depende del proceso de configuración Bose original.",
   "source.hint.bluetooth": "Emparejar un dispositivo Bluetooth",

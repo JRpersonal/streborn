@@ -1,6 +1,5 @@
 {
   "locale.label": "Français",
-
   "common.allCountries": "tous les pays",
   "common.cancel": "Annuler",
   "common.save": "Enregistrer",
@@ -18,14 +17,12 @@
   "common.error": "Erreur",
   "common.beta": "BÊTA",
   "common.alpha": "ALPHA",
-
   "nav.music": "Écouter de la musique",
   "nav.library": "Bibliothèque",
   "nav.speakerSettings": "Réglages de l'enceinte",
   "nav.setupStick": "Préparer la clé USB",
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multiroom et paire stéréo",
   "multiroom.intro1": "Diffusez la même source sur deux enceintes ou plus en synchronisation, ou associez deux enceintes en paire stéréo.",
   "multiroom.bullet1": "Lecture groupée sur plusieurs enceintes du même réseau.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "État en direct depuis l'application de bureau.",
   "multiroom.feedbackPrompt": "Bientôt disponible. Commentaires et idées bienvenus sur le ticket de suivi.",
   "multiroom.issueLink": "Ouvrir le ticket #70",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Associez l'enceinte une fois dans l'application mobile Spotify, puis envoyez-y n'importe quel titre Spotify depuis votre téléphone.",
   "spotify.bullet1": "Utilisez l'enceinte comme cible Spotify Connect.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Instructions de réassociation dans l'application STR une fois stable.",
   "spotify.feedbackPrompt": "Expérimental. Si Spotify fonctionne déjà ou échoue sur votre enceinte, partagez les détails sur le ticket.",
   "spotify.issueLink": "Ouvrir le ticket #78",
-
   "library.title": "Bibliothèque",
   "library.subtitle": "Parcourez les serveurs musicaux de votre réseau (FRITZ!Box, Synology, Plex, miniDLNA) et lisez des titres sur votre SoundTouch.",
   "library.server": "Serveur musical",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Lecture en cours",
   "library.toastSaved": "Enregistré dans le préréglage",
   "library.errorNoURL": "Cet élément n'a pas d'URL de flux lisible.",
-
   "banner.recommendation": "Recommandation :",
   "banner.sshRecommend": "Retirez la clé USB de l'enceinte et redémarrez-la une fois. Sinon l'enceinte est vulnérable sur le réseau.",
   "banner.appUpdateAvail": "Nouvelle version de l'application disponible :",
   "banner.download": "Télécharger",
-
+  "banner.whatsNew": "Nouveautés",
   "modal.warnTitle": "Avertissement",
   "modal.errorTitle": "Erreur",
   "modal.proceed": "Continuer quand même",
   "modal.copy": "Copier",
-
   "topbar.title": "Vos enceintes SoundTouch sur le réseau",
   "topbar.refreshTitle": "Rechercher à nouveau les enceintes",
-
   "speaker.searching": "Recherche d'enceintes...",
   "speaker.choose": "Choisissez une enceinte Bose ci-dessus pour la contrôler.",
   "speaker.emptyTitle": "Aucune enceinte trouvée sur le réseau.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Redonner vie à cette enceinte avec STR ?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> utilise encore le firmware Bose d'origine. Une clé USB unique installe STR directement sur l'enceinte. Ensuite vous la contrôlez entièrement depuis cette application : radio internet, préréglages, multiroom.<br><br>Ouvrir la préparation de la clé USB maintenant ?",
   "speaker.stockConfirmCta": "Ouvrir la préparation de la clé USB",
-
   "controls.pause": "Pause",
   "controls.stop": "Arrêt",
   "controls.auxTitle": "Entrée jack Aux",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Veille",
   "controls.volume": "Volume",
-
   "toast.source": "Source : {{src}}",
   "toast.sourceUnavailable": "{{src}} n’est pas disponible sur cette enceinte",
-
   "status.playing": "lecture",
   "status.buffering": "démarrage du flux",
   "status.paused": "en pause",
@@ -111,7 +100,6 @@
   "status.auxInput": "entrée AUX",
   "status.bluetooth": "Bluetooth",
   "status.ready": "prêt",
-
   "preset.key": "Touche {{n}}",
   "preset.empty": "vide",
   "preset.loading": "Chargement des touches de préréglage...",
@@ -132,7 +120,6 @@
   "preset.copiedToKey": "Copié sur la touche {{n}} : {{name}}",
   "preset.savedToKey": "Enregistré sur la touche {{n}} : {{name}}",
   "preset.saveFailed": "Échec de l'enregistrement : {{err}}",
-
   "play.errNoInternet": "pas d'internet ?",
   "play.errSpeakerTimeout": "l'enceinte ne répond pas",
   "play.errBoxStarting": "l'enceinte démarre encore, réessayez dans un instant",
@@ -141,7 +128,6 @@
   "play.errServer500": "erreur de la station",
   "play.errUnreachable": "station injoignable",
   "play.errGeneric": "Erreur",
-
   "search.heading": "Trouver des stations",
   "search.headingSub": "via radio-browser.info",
   "search.placeholder": "ex. BBC, NDR, Rock...",
@@ -175,7 +161,6 @@
   "search.fewerGenres": "Moins",
   "search.moreGenres": "Plus de genres ({{n}})",
   "search.nStations": "{{n}} stations",
-
   "update.speakerUpdateAvail": "Mise à jour logicielle de l'enceinte disponible",
   "update.speakerAppLine": "Enceinte : {{box}} · Application : {{app}}",
   "update.speakerRunningOld": "L'enceinte est en version {{boxVersion}}, l'application en {{appVersion}}.",
@@ -192,42 +177,33 @@
   "update.otherBoxRunning": "Mise à jour en cours sur {{name}} ...",
   "update.stickInTitle": "Clé USB toujours insérée",
   "update.stickInBody": "La clé USB est toujours dans l'enceinte. Une mise à jour sera annulée au prochain redémarrage, car l'enceinte réinstalle la version (plus ancienne) depuis la clé.<br><br>Retirez d'abord la clé USB de l'enceinte, puis mettez à jour.",
-
   "settingsView.title": "Réglages de l'enceinte",
   "settingsView.forSpeaker": "Réglages pour :",
   "settingsView.refreshListTitle": "Rechercher à nouveau la liste des enceintes",
   "settingsView.selectFirst": "Choisissez d'abord une enceinte.",
   "settingsView.noSpeakerFound": "aucune enceinte trouvée",
-
   "order.votes": "Popularité",
   "order.clickcount": "Auditeurs",
   "order.clicktrend": "Tendance",
   "order.name": "Nom",
-
   "settings.language": "Langue",
   "settings.languageHelp": "Langue de l'application. Indépendante du pays de recherche radio.",
-
   "combobox.noSuggestions": "aucune suggestion",
-
   "footer.website": "Site web",
   "footer.saveLogs": "Enregistrer les journaux de diagnostic",
   "footer.saveLogsHint": "Regroupe le journal de l'application et l'état par enceinte dans un zip à joindre à un ticket GitHub. Les IP et identifiants d'appareil sont anonymisés.",
   "footer.saveLogsDone": "{{size}} Ko enregistrés dans {{path}}",
   "footer.donateSlogan": "Vous aimez l'application ? Un café serait apprécié.",
-
   "banner.recommendationShort": "Recommandation",
-
   "speaker.rebootNow": "Redémarrer l'enceinte maintenant",
   "speaker.rebootGenericBody": "L'enceinte va redémarrer dans 1 seconde. La lecture en cours sera interrompue. Continuer ?",
   "speaker.rebootConfirmDetailedBody": "Avez-vous retiré la clé USB ?<br><br><b>Clé encore insérée</b> &rarr; SSH reste ouvert après le redémarrage.<br><b>Clé retirée</b> &rarr; SSH est fermé après le redémarrage.<br><br>La lecture en cours sera interrompue.",
-
   "signal.excellent": "Excellent",
   "signal.good": "Bon",
   "signal.marginal": "Moyen",
   "signal.poor": "Faible",
   "signal.none": "Aucun signal",
   "signal.notReported": "Wi-Fi connecté (signal non communiqué par ce modèle)",
-
   "settingsView.noSpeakerFoundTitle": "Aucune enceinte trouvée sur le réseau.",
   "settingsView.noSpeakerFoundHelp": "Pour modifier les réglages d'une enceinte, une clé ST Reborn préparée doit être présente. Préparez d'abord une clé.",
   "settingsView.stockBoxTitle": "STR pas encore installé",
@@ -326,7 +302,6 @@
   "settingsView.stickNotDetected": "non détectée",
   "settingsView.stickRemoved": "retirée (normal après l'installation)",
   "settingsView.speakerNameSavedToast": "Nom de l'enceinte enregistré : {{name}}",
-
   "fw.updateBtn": "Mettre à jour",
   "fw.uptodate": "À jour. Bose a cessé de publier des mises à jour depuis l'arrêt du cloud. Dernière version {{version}} de sept. 2022.",
   "fw.outdatedTitle": "Firmware obsolète.",
@@ -337,7 +312,6 @@
   "fw.step3": "Choisissez l'enceinte. Si une mise à jour est disponible, l'application la propose.",
   "fw.step4": "Sans l'application : téléchargez l'outil de mise à jour USB de Bose, écrivez le firmware sur une autre clé, branchez-la dans l'enceinte :",
   "fw.hint": "Remarque : les serveurs de mise à jour Bose peuvent encore être en ligne dans certaines régions même si la diffusion cloud est arrêtée. Si la voie de l'application échoue, l'outil USB est la méthode la plus fiable.",
-
   "setup.heading": "Préparer la clé USB",
   "setup.intro": "Prépare une clé USB que vous branchez une fois dans votre enceinte Bose. STR s'exécute ensuite depuis l'enceinte elle-même. La clé doit faire au moins 4 Go.",
   "setup.targetHeading": "Quelle enceinte ?",
@@ -423,7 +397,6 @@
   "setup.awaitStep2": "Branchez-la sur le port USB de l'enceinte.",
   "setup.awaitStep3": "Débranchez l'enceinte, rebranchez-la, attendez 60 à 90 secondes. Ne retirez pas la clé pendant le démarrage.",
   "setup.awaitConfirmBtn": "L'enceinte est prête, installer STR maintenant",
-
   "setupAPPush.probing": "Recherche d'une enceinte en mode configuration ...",
   "setupAPPush.title": "Configurer sans clé USB",
   "setupAPPush.instructionsBody": "Une enceinte Bose neuve ou fraîchement réinitialisée ouvre son propre réseau Wi-Fi pour la configuration initiale. ST Reborn rejoint brièvement ce réseau et envoie les identifiants de votre Wi-Fi domestique directement à l'enceinte.",
@@ -446,7 +419,6 @@
   "setupAPPush.successHint": "L'enceinte rejoint maintenant votre Wi-Fi domestique. Rebasculez votre PC sur votre Wi-Fi domestique et attendez 1 à 5 minutes qu'elle apparaisse dans la liste.",
   "setupAPPush.detailsToggle": "Détails",
   "setupAPPush.unknownFailure": "Échec de l'envoi (aucune raison renvoyée par l'enceinte).",
-
   "source.label.aux": "Entrée Aux",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -455,7 +427,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Bibliothèque",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Entrée jack analogique",
   "source.hint.airplay": "Apple AirPlay 2. L'activation dépend du processus de configuration Bose d'origine.",
   "source.hint.bluetooth": "Associer un appareil Bluetooth",

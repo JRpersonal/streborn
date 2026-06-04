@@ -1,6 +1,5 @@
 {
   "locale.label": "Lietuvių",
-
   "common.allCountries": "visos šalys",
   "common.cancel": "Atšaukti",
   "common.save": "Išsaugoti",
@@ -18,14 +17,12 @@
   "common.error": "Klaida",
   "common.beta": "BETA",
   "common.alpha": "ALFA",
-
   "nav.music": "Klausytis muzikos",
   "nav.library": "Biblioteka",
   "nav.speakerSettings": "Garsiakalbio nustatymai",
   "nav.setupStick": "Paruošti USB atmintinę",
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multiroom ir stereo poros",
   "multiroom.intro1": "Grokite tą patį šaltinį sinchroniškai dviejuose ar daugiau garsiakalbių arba sujunkite du garsiakalbius į stereo porą.",
   "multiroom.bullet1": "Grupinis grojimas garsiakalbiuose tame pačiame tinkle.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Tiesioginė būsena iš darbalaukio programos.",
   "multiroom.feedbackPrompt": "Netrukus. Pastabos ir idėjos laukiamos sekimo gijoje.",
   "multiroom.issueLink": "Atverti problemą #70",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Vieną kartą susiekite garsiakalbį telefono Spotify programoje, o paskui siųskite į jį bet kurią Spotify dainą.",
   "spotify.bullet1": "Naudokite garsiakalbį kaip Spotify Connect tikslą.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Pakartotinio susiejimo instrukcijos STR programoje, kai tai stabilizuosis.",
   "spotify.feedbackPrompt": "Eksperimentinė. Jei Spotify jau veikia ar neveikia jūsų garsiakalbyje, pasidalykite detalėmis problemoje.",
   "spotify.issueLink": "Atverti problemą #78",
-
   "library.title": "Biblioteka",
   "library.subtitle": "Naršykite muzikos serverius savo tinkle (FRITZ!Box, Synology, Plex, miniDLNA) ir grokite kūrinius per SoundTouch.",
   "library.server": "Muzikos serveris",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Grojama",
   "library.toastSaved": "Išsaugota kaip parinktis",
   "library.errorNoURL": "Šis elementas neturi grojamo srauto adreso.",
-
   "banner.recommendation": "Rekomendacija:",
   "banner.sshRecommend": "Išimkite USB atmintinę iš garsiakalbio ir vieną kartą jį paleiskite iš naujo. Kitaip garsiakalbis pažeidžiamas tinkle.",
   "banner.appUpdateAvail": "Galima nauja programos versija:",
   "banner.download": "Atsisiųsti",
-
+  "banner.whatsNew": "Kas naujo",
   "modal.warnTitle": "Įspėjimas",
   "modal.errorTitle": "Klaida",
   "modal.proceed": "Vis tiek tęsti",
   "modal.copy": "Kopijuoti",
-
   "topbar.title": "Jūsų SoundTouch garsiakalbiai tinkle",
   "topbar.refreshTitle": "Ieškoti garsiakalbių iš naujo",
-
   "speaker.searching": "Ieškoma garsiakalbių...",
   "speaker.choose": "Pasirinkite Bose garsiakalbį viršuje, kad jį valdytumėte.",
   "speaker.emptyTitle": "Tinkle nerasta garsiakalbio.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Atgaivinti šį garsiakalbį su STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> vis dar veikia su originalia Bose programine įranga. Vienkartinė USB atmintinė įdiegia STR tiesiai į garsiakalbį. Po to jį visiškai valdote iš šios programos: interneto radijas, parinktys, multiroom.<br><br>Atverti USB atmintinės paruošimą dabar?",
   "speaker.stockConfirmCta": "Atverti USB atmintinės paruošimą",
-
   "controls.pause": "Pauzė",
   "controls.stop": "Stabdyti",
   "controls.auxTitle": "Aux įvestis",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Budėjimas",
   "controls.volume": "Garsumas",
-
   "toast.source": "Šaltinis: {{src}}",
   "toast.sourceUnavailable": "{{src}} nepasiekiamas šiame garsiakalbyje",
-
   "status.playing": "grojama",
   "status.buffering": "srautas pradedamas",
   "status.paused": "pristabdyta",
@@ -111,11 +100,9 @@
   "status.auxInput": "AUX įvestis",
   "status.bluetooth": "Bluetooth",
   "status.ready": "paruošta",
-
   "battery.label": "Baterija",
   "battery.onPower": "maitinama iš tinklo",
   "battery.onBattery": "iš baterijos",
-
   "preset.key": "Mygtukas {{n}}",
   "preset.empty": "tuščia",
   "preset.loading": "Įkeliami parinkčių mygtukai...",
@@ -136,7 +123,6 @@
   "preset.copiedToKey": "Nukopijuota į mygtuką {{n}}: {{name}}",
   "preset.savedToKey": "Išsaugota mygtuke {{n}}: {{name}}",
   "preset.saveFailed": "Nepavyko išsaugoti: {{err}}",
-
   "play.errNoInternet": "nėra interneto?",
   "play.errSpeakerTimeout": "garsiakalbis neatsako",
   "play.errBoxStarting": "garsiakalbis dar paleidžiamas, pabandykite netrukus",
@@ -145,7 +131,6 @@
   "play.errServer500": "stoties klaida",
   "play.errUnreachable": "stotis nepasiekiama",
   "play.errGeneric": "Klaida",
-
   "search.heading": "Ieškoti stočių",
   "search.headingSub": "per radio-browser.info",
   "search.placeholder": "pvz. BBC, NDR, Rock...",
@@ -179,7 +164,6 @@
   "search.fewerGenres": "Mažiau",
   "search.moreGenres": "Daugiau žanrų ({{n}})",
   "search.nStations": "{{n}} stočių",
-
   "update.speakerUpdateAvail": "Galimas garsiakalbio programinės įrangos atnaujinimas",
   "update.speakerAppLine": "Garsiakalbis: {{box}} · Programa: {{app}}",
   "update.speakerRunningOld": "Garsiakalbis veikia su versija {{boxVersion}}, programa veikia su {{appVersion}}.",
@@ -196,42 +180,33 @@
   "update.otherBoxRunning": "Vykdomas atnaujinimas {{name}} ...",
   "update.stickInTitle": "USB atmintinė vis dar įkišta",
   "update.stickInBody": "USB atmintinė vis dar garsiakalbyje. Atnaujinimas bus atšauktas kito paleidimo metu, nes garsiakalbis vėl įdiegs (senesnę) versiją iš atmintinės.<br><br>Pirmiausia išimkite USB atmintinę iš garsiakalbio, tada atnaujinkite.",
-
   "settingsView.title": "Garsiakalbio nustatymai",
   "settingsView.forSpeaker": "Nustatymai garsiakalbiui:",
   "settingsView.refreshListTitle": "Iš naujo nuskaityti garsiakalbių sąrašą",
   "settingsView.selectFirst": "Pirmiausia pasirinkite garsiakalbį.",
   "settingsView.noSpeakerFound": "garsiakalbis nerastas",
-
   "order.votes": "Populiarumas",
   "order.clickcount": "Klausytojai",
   "order.clicktrend": "Tendencija",
   "order.name": "Pavadinimas",
-
   "settings.language": "Kalba",
   "settings.languageHelp": "Programos kalba. Nepriklauso nuo šalies radijo paieškoje.",
-
   "combobox.noSuggestions": "nėra pasiūlymų",
-
   "footer.website": "Svetainė",
   "footer.saveLogs": "Išsaugoti diagnostikos žurnalus",
   "footer.saveLogsHint": "Supakuoja programos žurnalą + kiekvieno garsiakalbio būseną į zip failą, kurį galite pridėti prie GitHub problemos. IP adresai ir įrenginių ID anonimizuojami.",
   "footer.saveLogsDone": "Išsaugota {{size}} KB į {{path}}",
   "footer.donateSlogan": "Patinka programa? Puodelis kavos būtų vertinamas.",
-
   "banner.recommendationShort": "Rekomendacija",
-
   "speaker.rebootNow": "Paleisti garsiakalbį iš naujo dabar",
   "speaker.rebootGenericBody": "Garsiakalbis bus paleistas iš naujo po 1 sekundės. Dabartinis grojimas bus nutrauktas. Tęsti?",
   "speaker.rebootConfirmDetailedBody": "Ar išėmėte USB atmintinę?<br><br><b>Atmintinė vis dar viduje</b> &rarr; SSH lieka atviras po paleidimo iš naujo.<br><b>Atmintinė išimta</b> &rarr; SSH uždarytas po paleidimo iš naujo.<br><br>Dabartinis grojimas bus nutrauktas.",
-
   "signal.excellent": "Puikus",
   "signal.good": "Geras",
   "signal.marginal": "Vidutinis",
   "signal.poor": "Silpnas",
   "signal.none": "Nėra signalo",
   "signal.notReported": "Wi-Fi prijungtas (šis modelis nepraneša signalo)",
-
   "settingsView.noSpeakerFoundTitle": "Tinkle nerasta garsiakalbio.",
   "settingsView.noSpeakerFoundHelp": "Norint redaguoti garsiakalbio nustatymus, turi būti įkišta paruošta ST Reborn atmintinė. Pirmiausia paruoškite atmintinę.",
   "settingsView.stockBoxTitle": "STR dar neįdiegtas",
@@ -344,7 +319,6 @@
   "settingsView.stickNotDetected": "neaptikta",
   "settingsView.stickRemoved": "išimta (normalu po įdiegimo)",
   "settingsView.speakerNameSavedToast": "Garsiakalbio pavadinimas išsaugotas: {{name}}",
-
   "fw.updateBtn": "Atnaujinti",
   "fw.uptodate": "Naujausia. Bose nuo debesies išjungimo nebeišleidžia atnaujinimų. Paskutinė versija {{version}} nuo 2022 m. rugsėjo.",
   "fw.outdatedTitle": "Programinė įranga pasenusi.",
@@ -355,7 +329,6 @@
   "fw.step3": "Pasirinkite garsiakalbį. Jei yra atnaujinimas, programa jį pasiūlys.",
   "fw.step4": "Be programos: atsisiųskite Bose USB atnaujinimo įrankį, įrašykite programinę įrangą į kitą atmintinę ir įkiškite ją į garsiakalbį:",
   "fw.hint": "Pastaba: Bose atnaujinimų serveriai kai kuriuose regionuose gali būti dar prisijungę, nors debesies srautas nutrauktas. Jei kelias per programą nepavyksta, USB įrankis yra patikimiausias.",
-
   "setup.heading": "Paruošti USB atmintinę",
   "setup.intro": "Paruošia USB atmintinę, kurią vieną kartą įkišate į Bose garsiakalbį. STR po to veikia iš paties garsiakalbio. Atmintinei reikia bent 4 GB.",
   "setup.targetHeading": "Kuris garsiakalbis?",
@@ -441,7 +414,6 @@
   "setup.awaitStep2": "Įkiškite ją į garsiakalbio USB lizdą.",
   "setup.awaitStep3": "Atjunkite garsiakalbį nuo maitinimo, vėl prijunkite ir palaukite 60–90 sekundžių. Netraukite atmintinės paleidimo metu.",
   "setup.awaitConfirmBtn": "Garsiakalbis paruoštas, diegti STR dabar",
-
   "setupAPPush.probing": "Ieškoma garsiakalbio sąrankos režime ...",
   "setupAPPush.title": "Sąranka be USB atmintinės",
   "setupAPPush.instructionsBody": "Visiškai naujas arba ką tik atstatytas Bose garsiakalbis atveria savo Wi-Fi tinklą pirmai sąrankai. ST Reborn trumpam prisijungia prie to tinklo ir siunčia jūsų namų Wi-Fi duomenis tiesiai į garsiakalbį.",
@@ -464,7 +436,6 @@
   "setupAPPush.successHint": "Garsiakalbis dabar jungiasi prie jūsų namų Wi-Fi. Grąžinkite kompiuterį į namų Wi-Fi ir palaukite 1–5 minutes, kol jis pasirodys sąraše.",
   "setupAPPush.detailsToggle": "Detalės",
   "setupAPPush.unknownFailure": "Siųsti nepavyko (garsiakalbis nenurodė priežasties).",
-
   "source.label.aux": "Aux įvestis",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -473,7 +444,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Biblioteka",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Analoginė jack įvestis",
   "source.hint.airplay": "Apple AirPlay 2. Aktyvavimas priklauso nuo originalios Bose sąrankos.",
   "source.hint.bluetooth": "Susiekite Bluetooth įrenginį",

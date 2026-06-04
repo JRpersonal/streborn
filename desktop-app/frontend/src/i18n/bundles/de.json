@@ -1,6 +1,5 @@
 {
   "locale.label": "Deutsch",
-
   "common.allCountries": "alle Länder",
   "common.cancel": "Abbrechen",
   "common.save": "Speichern",
@@ -18,14 +17,12 @@
   "common.error": "Fehler",
   "common.beta": "BETA",
   "common.alpha": "ALPHA",
-
   "nav.music": "Musik hören",
   "nav.library": "Mediathek",
   "nav.speakerSettings": "Lautsprecher-Einstellungen",
   "nav.setupStick": "USB-Stick einrichten",
   "nav.multiroom": "Multi-Room",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multi-Room und Stereo-Paar",
   "multiroom.intro1": "Die gleiche Quelle synchron auf zwei oder mehr Lautsprechern, oder zwei Lautsprecher als Stereo-Paar.",
   "multiroom.bullet1": "Gruppenwiedergabe im LAN.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Live-Status aus der Desktop-App.",
   "multiroom.feedbackPrompt": "Kommt bald. Anregungen ins Tracking-Issue.",
   "multiroom.issueLink": "Issue #70 öffnen",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Lautsprecher einmal in der Spotify-App koppeln, danach beliebige Spotify-Tracks vom Handy aus dorthin senden.",
   "spotify.bullet1": "Lautsprecher als Spotify-Connect-Ziel nutzen.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Anleitung in der STR-App sobald stabil.",
   "spotify.feedbackPrompt": "Experimentell. Wenn Spotify schon funktioniert oder scheitert, bitte ins Issue.",
   "spotify.issueLink": "Issue #78 öffnen",
-
   "library.title": "Mediathek",
   "library.subtitle": "Musikserver im Netzwerk (FRITZ!Box, Synology, Plex, miniDLNA) durchsuchen und Titel auf der SoundTouch abspielen.",
   "library.server": "Musikserver",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Spiele",
   "library.toastSaved": "Gespeichert auf Preset",
   "library.errorNoURL": "Für diesen Eintrag ist keine Stream-URL hinterlegt.",
-
   "banner.recommendation": "Empfehlung:",
   "banner.sshRecommend": "USB-Stick aus dem Lautsprecher ziehen und Lautsprecher einmal neu starten. Sonst ist der Lautsprecher im Netzwerk angreifbar.",
   "banner.appUpdateAvail": "Neue App-Version verfügbar:",
   "banner.download": "Download",
-
+  "banner.whatsNew": "Was ist neu",
   "modal.warnTitle": "Achtung",
   "modal.errorTitle": "Fehler",
   "modal.proceed": "Trotzdem fortfahren",
   "modal.copy": "Kopieren",
-
   "topbar.title": "Deine gefundenen SoundTouch-Lautsprecher im Netzwerk",
   "topbar.refreshTitle": "Lautsprecher neu suchen",
-
   "speaker.searching": "Suche nach Lautsprechern ...",
   "speaker.choose": "Wähle oben einen Bose-Lautsprecher aus, um ihn zu steuern.",
   "speaker.emptyTitle": "Kein Lautsprecher im Netzwerk gefunden.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Diesen Lautsprecher mit STR wiederbeleben?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> läuft noch mit der Original-Bose-Firmware. Mit einem einmaligen USB-Stick installierst du STR direkt auf dem Lautsprecher. Danach steuerst du ihn komplett aus dieser App: Internetradio, Presets, Multi-Room.<br><br>Jetzt die USB-Stick-Einrichtung öffnen?",
   "speaker.stockConfirmCta": "USB-Stick-Einrichtung öffnen",
-
   "controls.pause": "Pause",
   "controls.stop": "Stop",
   "controls.auxTitle": "AUX-Klinkeneingang",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Standby",
   "controls.volume": "Lautstärke",
-
   "toast.source": "Quelle: {{src}}",
   "toast.sourceUnavailable": "{{src}} ist auf diesem Lautsprecher nicht verfügbar",
-
   "status.playing": "spielt",
   "status.buffering": "Stream wird hergestellt",
   "status.paused": "pausiert",
@@ -111,12 +100,9 @@
   "status.auxInput": "AUX-Eingang",
   "status.bluetooth": "Bluetooth",
   "status.ready": "bereit",
-
   "battery.label": "Akku",
   "battery.onPower": "am Netz",
   "battery.onBattery": "Akkubetrieb",
-
-
   "preset.key": "Taste {{n}}",
   "preset.empty": "leer",
   "preset.loading": "Speichertasten werden geladen ...",
@@ -137,7 +123,6 @@
   "preset.copiedToKey": "Auf Taste {{n}} kopiert: {{name}}",
   "preset.savedToKey": "Auf Taste {{n}} gespeichert: {{name}}",
   "preset.saveFailed": "Speichern fehlgeschlagen: {{err}}",
-
   "play.errNoInternet": "kein Internet?",
   "play.errSpeakerTimeout": "Lautsprecher reagiert nicht",
   "play.errBoxStarting": "Lautsprecher startet noch, gleich nochmal versuchen",
@@ -146,7 +131,6 @@
   "play.errServer500": "Sender-Fehler",
   "play.errUnreachable": "Sender nicht erreichbar",
   "play.errGeneric": "Fehler",
-
   "search.heading": "Sender suchen",
   "search.headingSub": "via radio-browser.info",
   "search.placeholder": "z.B. NDR, SWR, Rock ...",
@@ -180,7 +164,6 @@
   "search.fewerGenres": "Weniger",
   "search.moreGenres": "Mehr Genres ({{n}})",
   "search.nStations": "{{n}} Sender",
-
   "update.speakerUpdateAvail": "Lautsprecher-Software-Update verfügbar",
   "update.speakerAppLine": "Lautsprecher: {{box}} · App: {{app}}",
   "update.speakerRunningOld": "Der Lautsprecher läuft mit Version {{boxVersion}}, die App hat Version {{appVersion}}.",
@@ -197,18 +180,15 @@
   "update.otherBoxRunning": "Update läuft auf {{name}} ...",
   "update.stickInTitle": "USB-Stick noch eingesteckt",
   "update.stickInBody": "Im Lautsprecher steckt noch der USB-Stick. Ein Update wird beim nächsten Neustart wieder rückgängig gemacht, weil der Lautsprecher die (ältere) Version vom Stick erneut installiert.<br><br>Zieh erst den USB-Stick aus dem Lautsprecher, dann aktualisiere.",
-
   "settingsView.title": "Lautsprecher-Einstellungen",
   "settingsView.forSpeaker": "Einstellungen für:",
   "settingsView.refreshListTitle": "Lautsprecher-Liste neu suchen",
   "settingsView.selectFirst": "Wähle erst einen Lautsprecher aus.",
   "settingsView.noSpeakerFound": "kein Lautsprecher gefunden",
-
   "order.votes": "Beliebtheit",
   "order.clickcount": "Hörerzahlen",
   "order.clicktrend": "Trend",
   "order.name": "Name",
-
   "country.germany": "Deutschland",
   "country.austria": "Österreich",
   "country.switzerland": "Schweiz",
@@ -269,7 +249,6 @@
   "country.egypt": "Ägypten",
   "country.morocco": "Marokko",
   "country.south africa": "Südafrika",
-
   "genre.rock": "Rock",
   "genre.pop": "Pop",
   "genre.jazz": "Jazz",
@@ -403,31 +382,24 @@
   "genre.polski": "Polnisch",
   "genre.russian": "Russisch",
   "genre.retro": "Retro",
-
   "settings.language": "Sprache",
   "settings.languageHelp": "Anzeigesprache der App. Unabhängig vom Suchland für Radios.",
-
   "combobox.noSuggestions": "keine Vorschläge",
-
   "footer.website": "Webseite",
   "footer.saveLogs": "Diagnose-Log speichern",
   "footer.saveLogsHint": "Sammelt App-Log + Status pro Lautsprecher in einem Zip, das du an ein GitHub-Issue hängen kannst. IPs und Geräte-IDs werden anonymisiert.",
   "footer.saveLogsDone": "{{size}} KB gespeichert nach {{path}}",
   "footer.donateSlogan": "Dir gefällt die App? Ich freue mich über einen Kaffee.",
-
   "banner.recommendationShort": "Empfehlung",
-
   "speaker.rebootNow": "Lautsprecher jetzt neu starten",
   "speaker.rebootGenericBody": "Der Lautsprecher wird in 1 Sekunde neu gestartet. Aktuelle Wiedergabe wird unterbrochen. Fortfahren?",
   "speaker.rebootConfirmDetailedBody": "Hast du den USB-Stick bereits gezogen?<br><br><b>Stick noch drin</b> &rarr; SSH bleibt nach dem Reboot offen.<br><b>Stick gezogen</b> &rarr; SSH ist nach dem Reboot zu.<br><br>Aktuelle Wiedergabe wird unterbrochen.",
-
   "signal.excellent": "Ausgezeichnet",
   "signal.good": "Gut",
   "signal.marginal": "Mittelmäßig",
   "signal.poor": "Schwach",
   "signal.none": "Kein Signal",
   "signal.notReported": "WLAN verbunden (Signal von diesem Modell nicht gemeldet)",
-
   "settingsView.noSpeakerFoundTitle": "Kein Lautsprecher im Netzwerk gefunden.",
   "settingsView.noSpeakerFoundHelp": "Damit die Einstellungen eines Lautsprechers bearbeitet werden können, muss in ihm ein vorbereiteter ST Reborn Stick stecken. Lege den Stick zuerst an.",
   "settingsView.stockBoxTitle": "STR ist auf diesem Lautsprecher noch nicht installiert",
@@ -540,7 +512,6 @@
   "settingsView.stickNotDetected": "nicht erkannt",
   "settingsView.stickRemoved": "entfernt (nach der Installation normal)",
   "settingsView.speakerNameSavedToast": "Lautsprecher-Name gespeichert: {{name}}",
-
   "fw.updateBtn": "Update",
   "fw.uptodate": "Aktuell. Bose stellt seit der Cloud-Abschaltung keine neuen Updates mehr bereit. Letzte Version {{version}} von Sep 2022.",
   "fw.outdatedTitle": "Firmware veraltet.",
@@ -551,7 +522,6 @@
   "fw.step3": "Lautsprecher dort auswählen. Falls ein Update verfügbar ist, wird es angeboten.",
   "fw.step4": "Alternative ohne App: USB-Update-Tool von Bose laden, Firmware auf einen anderen Stick schreiben und in den Lautsprecher stecken:",
   "fw.hint": "Hinweis: Bose-Update-Server könnten je nach Region noch online sein, auch wenn das Cloud-Streaming abgeschaltet ist. Falls der App-Weg nicht klappt, ist das USB-Tool der zuverlässigste Weg.",
-
   "setup.heading": "USB-Stick vorbereiten",
   "setup.intro": "Bereitet einen USB-Stick vor, den du einmalig in deinen Bose-Lautsprecher steckst. STR läuft dann vom Lautsprecher selbst. Stick braucht mindestens 4 GB.",
   "setup.targetHeading": "Für welchen Lautsprecher?",
@@ -637,7 +607,6 @@
   "setup.awaitStep2": "Stick in den USB-Port des Lautsprechers stecken.",
   "setup.awaitStep3": "Lautsprecher vom Strom trennen, wieder einstecken, 60 bis 90 Sekunden warten. Während des Bootens den Stick nicht abziehen.",
   "setup.awaitConfirmBtn": "Lautsprecher ist bereit, STR jetzt installieren",
-
   "setupAPPush.probing": "Suche nach einem Lautsprecher im Setup-Modus ...",
   "setupAPPush.title": "Direkte Einrichtung ohne USB-Stick",
   "setupAPPush.instructionsBody": "Ein frisch ausgepackter oder zurückgesetzter Bose-Lautsprecher öffnet ein eigenes WLAN für die Erst-Einrichtung. ST Reborn verbindet sich kurz mit diesem WLAN und überträgt deine Heim-WLAN-Zugangsdaten direkt an den Lautsprecher.",
@@ -660,7 +629,6 @@
   "setupAPPush.successHint": "Der Lautsprecher verbindet sich jetzt mit deinem Heim-WLAN. Wechsle den PC zurück auf dein Heim-WLAN und warte 1 bis 5 Minuten, bis er hier in der Liste auftaucht.",
   "setupAPPush.detailsToggle": "Details",
   "setupAPPush.unknownFailure": "Push fehlgeschlagen (kein Grund vom Lautsprecher).",
-
   "lang.german": "Deutsch",
   "lang.english": "Englisch",
   "lang.french": "Französisch",
@@ -711,7 +679,6 @@
   "lang.tamil": "Tamilisch",
   "lang.urdu": "Urdu",
   "lang.maltese": "Maltesisch",
-
   "source.label.aux": "AUX-Eingang",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -720,7 +687,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Mediathek",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Analog-Klinkeneingang",
   "source.hint.airplay": "Apple AirPlay 2. Aktivierung hängt am Bose-Setup-Flow.",
   "source.hint.bluetooth": "Bluetooth-Gerät koppeln",

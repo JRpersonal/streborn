@@ -1,6 +1,5 @@
 {
   "locale.label": "Nederlands",
-
   "common.allCountries": "alle landen",
   "common.cancel": "Annuleren",
   "common.save": "Opslaan",
@@ -18,14 +17,12 @@
   "common.error": "Fout",
   "common.beta": "BÈTA",
   "common.alpha": "ALPHA",
-
   "nav.music": "Muziek luisteren",
   "nav.library": "Bibliotheek",
   "nav.speakerSettings": "Speakerinstellingen",
   "nav.setupStick": "USB-stick voorbereiden",
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multiroom en stereoparen",
   "multiroom.intro1": "Speel dezelfde bron synchroon af op twee of meer speakers, of koppel twee speakers als stereoset.",
   "multiroom.bullet1": "Groepsweergave over speakers op hetzelfde netwerk.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Live status vanuit de desktop-app.",
   "multiroom.feedbackPrompt": "Binnenkort beschikbaar. Opmerkingen en ideeën welkom in het tracking-issue.",
   "multiroom.issueLink": "Issue #70 openen",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Koppel de speaker eenmalig in de Spotify-app op je telefoon en stuur er daarna elk Spotify-nummer naartoe.",
   "spotify.bullet1": "Gebruik de speaker als Spotify Connect-doel.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Herkoppel-instructies in de STR-app zodra dit stabiel is.",
   "spotify.feedbackPrompt": "Experimenteel. Als Spotify al werkt of faalt op je speaker, deel dan details in het issue.",
   "spotify.issueLink": "Issue #78 openen",
-
   "library.title": "Bibliotheek",
   "library.subtitle": "Blader door muziekservers op je netwerk (FRITZ!Box, Synology, Plex, miniDLNA) en speel nummers af op je SoundTouch.",
   "library.server": "Muziekserver",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Speelt af",
   "library.toastSaved": "Opgeslagen als voorkeuze",
   "library.errorNoURL": "Dit item heeft geen afspeelbare stream-URL.",
-
   "banner.recommendation": "Aanbeveling:",
   "banner.sshRecommend": "Verwijder de USB-stick uit de speaker en herstart hem een keer. Anders is de speaker aanvalbaar op het netwerk.",
   "banner.appUpdateAvail": "Nieuwe app-versie beschikbaar:",
   "banner.download": "Downloaden",
-
+  "banner.whatsNew": "Wat is nieuw",
   "modal.warnTitle": "Waarschuwing",
   "modal.errorTitle": "Fout",
   "modal.proceed": "Toch doorgaan",
   "modal.copy": "Kopiëren",
-
   "topbar.title": "Je SoundTouch-speakers op het netwerk",
   "topbar.refreshTitle": "Opnieuw naar speakers zoeken",
-
   "speaker.searching": "Zoeken naar speakers...",
   "speaker.choose": "Kies hierboven een Bose-speaker om te bedienen.",
   "speaker.emptyTitle": "Geen speaker gevonden op het netwerk.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Deze speaker met STR weer tot leven wekken?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> draait nog de originele Bose-firmware. Een eenmalige USB-stick installeert STR rechtstreeks op de speaker. Daarna bedien je hem volledig vanuit deze app: internetradio, voorkeuzes, multiroom.<br><br>De USB-stick-voorbereiding nu openen?",
   "speaker.stockConfirmCta": "USB-stick-voorbereiding openen",
-
   "controls.pause": "Pauze",
   "controls.stop": "Stop",
   "controls.auxTitle": "Aux-ingang",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Stand-by",
   "controls.volume": "Volume",
-
   "toast.source": "Bron: {{src}}",
   "toast.sourceUnavailable": "{{src}} is niet beschikbaar op deze speaker",
-
   "status.playing": "speelt af",
   "status.buffering": "stream start",
   "status.paused": "gepauzeerd",
@@ -111,11 +100,9 @@
   "status.auxInput": "AUX-ingang",
   "status.bluetooth": "Bluetooth",
   "status.ready": "klaar",
-
   "battery.label": "Batterij",
   "battery.onPower": "op netstroom",
   "battery.onBattery": "op batterij",
-
   "preset.key": "Toets {{n}}",
   "preset.empty": "leeg",
   "preset.loading": "Voorkeuzetoetsen worden geladen...",
@@ -136,7 +123,6 @@
   "preset.copiedToKey": "Gekopieerd naar toets {{n}}: {{name}}",
   "preset.savedToKey": "Opgeslagen op toets {{n}}: {{name}}",
   "preset.saveFailed": "Opslaan mislukt: {{err}}",
-
   "play.errNoInternet": "geen internet?",
   "play.errSpeakerTimeout": "speaker reageert niet",
   "play.errBoxStarting": "speaker start nog op, probeer het zo opnieuw",
@@ -145,7 +131,6 @@
   "play.errServer500": "zenderfout",
   "play.errUnreachable": "zender onbereikbaar",
   "play.errGeneric": "Fout",
-
   "search.heading": "Zenders zoeken",
   "search.headingSub": "via radio-browser.info",
   "search.placeholder": "bijv. BBC, NDR, Rock...",
@@ -179,7 +164,6 @@
   "search.fewerGenres": "Minder",
   "search.moreGenres": "Meer genres ({{n}})",
   "search.nStations": "{{n}} zenders",
-
   "update.speakerUpdateAvail": "Software-update voor speaker beschikbaar",
   "update.speakerAppLine": "Speaker: {{box}} · App: {{app}}",
   "update.speakerRunningOld": "De speaker draait versie {{boxVersion}}, de app draait {{appVersion}}.",
@@ -196,42 +180,33 @@
   "update.otherBoxRunning": "Update bezig op {{name}} ...",
   "update.stickInTitle": "USB-stick zit er nog in",
   "update.stickInBody": "De USB-stick zit nog in de speaker. Een update wordt bij de volgende herstart ongedaan gemaakt, omdat de speaker de (oudere) versie van de stick opnieuw installeert.<br><br>Haal eerst de USB-stick uit de speaker en werk daarna bij.",
-
   "settingsView.title": "Speakerinstellingen",
   "settingsView.forSpeaker": "Instellingen voor:",
   "settingsView.refreshListTitle": "Speakerlijst opnieuw doorzoeken",
   "settingsView.selectFirst": "Kies eerst een speaker.",
   "settingsView.noSpeakerFound": "geen speaker gevonden",
-
   "order.votes": "Populariteit",
   "order.clickcount": "Luisteraars",
   "order.clicktrend": "Trend",
   "order.name": "Naam",
-
   "settings.language": "Taal",
   "settings.languageHelp": "App-taal. Onafhankelijk van het land voor het radiozoeken.",
-
   "combobox.noSuggestions": "geen suggesties",
-
   "footer.website": "Website",
   "footer.saveLogs": "Diagnostische logs opslaan",
   "footer.saveLogsHint": "Bundelt het app-log + de status per speaker in een zip die je aan een GitHub-issue kunt toevoegen. IP's en apparaat-ID's worden geanonimiseerd.",
   "footer.saveLogsDone": "{{size}} KB opgeslagen in {{path}}",
   "footer.donateSlogan": "Vind je de app goed? Een kopje koffie wordt gewaardeerd.",
-
   "banner.recommendationShort": "Aanbeveling",
-
   "speaker.rebootNow": "Speaker nu herstarten",
   "speaker.rebootGenericBody": "De speaker herstart over 1 seconde. De huidige weergave wordt onderbroken. Doorgaan?",
   "speaker.rebootConfirmDetailedBody": "Heb je de USB-stick verwijderd?<br><br><b>Stick zit er nog in</b> &rarr; SSH blijft open na de herstart.<br><b>Stick verwijderd</b> &rarr; SSH is gesloten na de herstart.<br><br>De huidige weergave wordt onderbroken.",
-
   "signal.excellent": "Uitstekend",
   "signal.good": "Goed",
   "signal.marginal": "Matig",
   "signal.poor": "Zwak",
   "signal.none": "Geen signaal",
   "signal.notReported": "Wifi verbonden (signaal niet gerapporteerd door dit model)",
-
   "settingsView.noSpeakerFoundTitle": "Geen speaker gevonden op het netwerk.",
   "settingsView.noSpeakerFoundHelp": "Om speakerinstellingen te bewerken moet een voorbereide ST Reborn-stick aanwezig zijn. Bereid eerst een stick voor.",
   "settingsView.stockBoxTitle": "STR nog niet geïnstalleerd",
@@ -344,7 +319,6 @@
   "settingsView.stickNotDetected": "niet gedetecteerd",
   "settingsView.stickRemoved": "verwijderd (normaal na installatie)",
   "settingsView.speakerNameSavedToast": "Speakernaam opgeslagen: {{name}}",
-
   "fw.updateBtn": "Bijwerken",
   "fw.uptodate": "Up-to-date. Bose brengt sinds de cloud-uitschakeling geen updates meer uit. Laatste versie {{version}} van sep 2022.",
   "fw.outdatedTitle": "Firmware verouderd.",
@@ -355,7 +329,6 @@
   "fw.step3": "Kies de speaker. Als er een update beschikbaar is, biedt de app die aan.",
   "fw.step4": "Zonder de app: download de USB-updatetool van Bose, schrijf de firmware naar een andere stick en plaats die in de speaker:",
   "fw.hint": "Let op: Bose-updateservers zijn in sommige regio's mogelijk nog online, ook al is de cloud-streaming gestopt. Als de app-route faalt, is de USB-tool de betrouwbaarste weg.",
-
   "setup.heading": "USB-stick voorbereiden",
   "setup.intro": "Bereidt een USB-stick voor die je één keer in je Bose-speaker steekt. STR draait daarna vanaf de speaker zelf. De stick heeft minstens 4 GB nodig.",
   "setup.targetHeading": "Welke speaker?",
@@ -441,7 +414,6 @@
   "setup.awaitStep2": "Steek hem in de USB-poort op de speaker.",
   "setup.awaitStep3": "Haal de stekker van de speaker eruit, steek hem weer in en wacht 60 tot 90 seconden. Trek de stick er niet uit tijdens het opstarten.",
   "setup.awaitConfirmBtn": "Speaker is klaar, installeer STR nu",
-
   "setupAPPush.probing": "Zoeken naar een speaker in de setup-modus ...",
   "setupAPPush.title": "Instellen zonder USB-stick",
   "setupAPPush.instructionsBody": "Een gloednieuwe of net gereset Bose-speaker opent zijn eigen wifi-netwerk voor de eerste installatie. ST Reborn sluit kort aan op dat netwerk en stuurt je thuiswifi-gegevens rechtstreeks naar de speaker.",
@@ -464,7 +436,6 @@
   "setupAPPush.successHint": "De speaker sluit nu aan op je thuiswifi. Zet je pc terug naar je thuiswifi en wacht 1 tot 5 minuten tot hij in de lijst verschijnt.",
   "setupAPPush.detailsToggle": "Details",
   "setupAPPush.unknownFailure": "Versturen mislukt (geen reden teruggekregen van de speaker).",
-
   "source.label.aux": "Aux-ingang",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -473,7 +444,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Bibliotheek",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Analoge jack-ingang",
   "source.hint.airplay": "Apple AirPlay 2. Activering hangt af van de oorspronkelijke Bose-setup.",
   "source.hint.bluetooth": "Koppel een Bluetooth-apparaat",

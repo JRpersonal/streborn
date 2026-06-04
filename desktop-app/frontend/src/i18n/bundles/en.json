@@ -1,6 +1,5 @@
 {
   "locale.label": "English",
-
   "common.allCountries": "all countries",
   "common.cancel": "Cancel",
   "common.save": "Save",
@@ -18,14 +17,12 @@
   "common.error": "Error",
   "common.beta": "BETA",
   "common.alpha": "ALPHA",
-
   "nav.music": "Listen to music",
   "nav.library": "Library",
   "nav.speakerSettings": "Speaker settings",
   "nav.setupStick": "Set up USB stick",
   "nav.multiroom": "Multi-room",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multi-room and stereo pair",
   "multiroom.intro1": "Play the same source on two or more speakers in sync, or pair two speakers as a stereo set.",
   "multiroom.bullet1": "Group play across speakers on the same network.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Live status from the desktop app.",
   "multiroom.feedbackPrompt": "Coming soon. Comments and ideas welcome on the tracking issue.",
   "multiroom.issueLink": "Open issue #70",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Pair the speaker once in the Spotify mobile app, then send any Spotify track to it from your phone.",
   "spotify.bullet1": "Use the speaker as a Spotify Connect target.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Re-pairing instructions in the STR app once stable.",
   "spotify.feedbackPrompt": "Experimental. If Spotify already works or fails on your speaker, please share details on the issue.",
   "spotify.issueLink": "Open issue #78",
-
   "library.title": "Library",
   "library.subtitle": "Browse music servers on your network (FRITZ!Box, Synology, Plex, miniDLNA) and play tracks on your SoundTouch.",
   "library.server": "Music server",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Playing",
   "library.toastSaved": "Saved to preset",
   "library.errorNoURL": "This item has no playable stream URL.",
-
   "banner.recommendation": "Recommendation:",
   "banner.sshRecommend": "Remove the USB stick from the speaker and restart it once. Otherwise the speaker is attackable on the network.",
   "banner.appUpdateAvail": "New app version available:",
   "banner.download": "Download",
-
+  "banner.whatsNew": "What's new",
   "modal.warnTitle": "Warning",
   "modal.errorTitle": "Error",
   "modal.proceed": "Proceed anyway",
   "modal.copy": "Copy",
-
   "topbar.title": "Your SoundTouch speakers on the network",
   "topbar.refreshTitle": "Search speakers again",
-
   "speaker.searching": "Searching for speakers...",
   "speaker.choose": "Pick a Bose speaker above to control it.",
   "speaker.emptyTitle": "No speaker found on the network.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Bring this speaker back to life with STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> still runs the stock Bose firmware. A one-time USB stick installs STR directly on the speaker. After that you control it entirely from this app: internet radio, presets, multi-room.<br><br>Open the USB stick setup now?",
   "speaker.stockConfirmCta": "Open USB stick setup",
-
   "controls.pause": "Pause",
   "controls.stop": "Stop",
   "controls.auxTitle": "Aux jack input",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Standby",
   "controls.volume": "Volume",
-
   "toast.source": "Source: {{src}}",
   "toast.sourceUnavailable": "{{src}} is not available on this speaker",
-
   "status.playing": "playing",
   "status.buffering": "stream starting",
   "status.paused": "paused",
@@ -111,12 +100,9 @@
   "status.auxInput": "AUX input",
   "status.bluetooth": "Bluetooth",
   "status.ready": "ready",
-
   "battery.label": "Battery",
   "battery.onPower": "plugged in",
   "battery.onBattery": "on battery",
-
-
   "preset.key": "Key {{n}}",
   "preset.empty": "empty",
   "preset.loading": "Preset keys are loading...",
@@ -137,7 +123,6 @@
   "preset.copiedToKey": "Copied to key {{n}}: {{name}}",
   "preset.savedToKey": "Saved to key {{n}}: {{name}}",
   "preset.saveFailed": "Save failed: {{err}}",
-
   "play.errNoInternet": "no internet?",
   "play.errSpeakerTimeout": "speaker not responding",
   "play.errBoxStarting": "speaker is still starting, try again in a moment",
@@ -146,7 +131,6 @@
   "play.errServer500": "station error",
   "play.errUnreachable": "station unreachable",
   "play.errGeneric": "Error",
-
   "search.heading": "Find stations",
   "search.headingSub": "via radio-browser.info",
   "search.placeholder": "e.g. BBC, NDR, Rock...",
@@ -180,7 +164,6 @@
   "search.fewerGenres": "Fewer",
   "search.moreGenres": "More genres ({{n}})",
   "search.nStations": "{{n}} stations",
-
   "update.speakerUpdateAvail": "Speaker software update available",
   "update.speakerAppLine": "Speaker: {{box}} · App: {{app}}",
   "update.speakerRunningOld": "The speaker runs version {{boxVersion}}, the app is on {{appVersion}}.",
@@ -197,18 +180,15 @@
   "update.otherBoxRunning": "Update running on {{name}} ...",
   "update.stickInTitle": "USB stick still inserted",
   "update.stickInBody": "The USB stick is still in the speaker. An update will be undone on the next reboot, because the speaker re-installs the (older) version from the stick.<br><br>Pull the USB stick out of the speaker first, then update.",
-
   "settingsView.title": "Speaker settings",
   "settingsView.forSpeaker": "Settings for:",
   "settingsView.refreshListTitle": "Search speaker list again",
   "settingsView.selectFirst": "Pick a speaker first.",
   "settingsView.noSpeakerFound": "no speaker found",
-
   "order.votes": "Popularity",
   "order.clickcount": "Listeners",
   "order.clicktrend": "Trend",
   "order.name": "Name",
-
   "country.germany": "Germany",
   "country.austria": "Austria",
   "country.switzerland": "Switzerland",
@@ -269,7 +249,6 @@
   "country.egypt": "Egypt",
   "country.morocco": "Morocco",
   "country.south africa": "South Africa",
-
   "genre.rock": "Rock",
   "genre.pop": "Pop",
   "genre.jazz": "Jazz",
@@ -403,31 +382,24 @@
   "genre.polski": "Polish",
   "genre.russian": "Russian",
   "genre.retro": "Retro",
-
   "settings.language": "Language",
   "settings.languageHelp": "App language. Independent from the radio search country.",
-
   "combobox.noSuggestions": "no suggestions",
-
   "footer.website": "Website",
   "footer.saveLogs": "Save diagnostic logs",
   "footer.saveLogsHint": "Bundle the app log + per-speaker state into a zip you can attach to a GitHub issue. IPs and device IDs are anonymized.",
   "footer.saveLogsDone": "Saved {{size}} KB to {{path}}",
   "footer.donateSlogan": "Do you like the app? I'd appreciate a coffee.",
-
   "banner.recommendationShort": "Recommendation",
-
   "speaker.rebootNow": "Restart speaker now",
   "speaker.rebootGenericBody": "The speaker will restart in 1 second. Current playback will be interrupted. Continue?",
   "speaker.rebootConfirmDetailedBody": "Have you removed the USB stick?<br><br><b>Stick still in</b> &rarr; SSH stays open after the reboot.<br><b>Stick removed</b> &rarr; SSH is closed after the reboot.<br><br>Current playback will be interrupted.",
-
   "signal.excellent": "Excellent",
   "signal.good": "Good",
   "signal.marginal": "Marginal",
   "signal.poor": "Weak",
   "signal.none": "No signal",
   "signal.notReported": "Wi-Fi connected (signal not reported by this model)",
-
   "settingsView.noSpeakerFoundTitle": "No speaker found on the network.",
   "settingsView.noSpeakerFoundHelp": "To edit speaker settings, a prepared ST Reborn stick must be present. Prepare a stick first.",
   "settingsView.stockBoxTitle": "STR not installed yet",
@@ -540,7 +512,6 @@
   "settingsView.stickNotDetected": "not detected",
   "settingsView.stickRemoved": "removed (normal after install)",
   "settingsView.speakerNameSavedToast": "Speaker name saved: {{name}}",
-
   "fw.updateBtn": "Update",
   "fw.uptodate": "Up to date. Bose has stopped releasing updates since the cloud shutdown. Last version {{version}} from Sep 2022.",
   "fw.outdatedTitle": "Firmware outdated.",
@@ -551,7 +522,6 @@
   "fw.step3": "Pick the speaker. If an update is available, the app offers it.",
   "fw.step4": "Without the app: download the USB update tool from Bose, write the firmware to another stick, plug it into the speaker:",
   "fw.hint": "Note: Bose update servers may still be online in some regions even though the cloud streaming has shut down. If the app route fails, the USB tool is the most reliable path.",
-
   "setup.heading": "Prepare USB stick",
   "setup.intro": "Prepares a USB stick that you plug into your Bose speaker once. STR then runs from the speaker itself. Stick needs at least 4 GB.",
   "setup.targetHeading": "Which speaker?",
@@ -637,7 +607,6 @@
   "setup.awaitStep2": "Plug it into the USB port on the speaker.",
   "setup.awaitStep3": "Unplug the speaker, plug it back in, wait 60 to 90 seconds. Do not pull the stick during boot.",
   "setup.awaitConfirmBtn": "Speaker is ready, install STR now",
-
   "setupAPPush.probing": "Looking for a speaker in setup mode ...",
   "setupAPPush.title": "Set up without a USB stick",
   "setupAPPush.instructionsBody": "A brand-new or freshly reset Bose speaker opens its own Wi-Fi network for initial setup. ST Reborn briefly joins that network and sends your home Wi-Fi credentials straight to the speaker.",
@@ -660,7 +629,6 @@
   "setupAPPush.successHint": "The speaker is now joining your home Wi-Fi. Switch your PC back to your home Wi-Fi and wait 1 to 5 minutes for it to appear in the list.",
   "setupAPPush.detailsToggle": "Details",
   "setupAPPush.unknownFailure": "Push failed (no reason returned from speaker).",
-
   "lang.german": "German",
   "lang.english": "English",
   "lang.french": "French",
@@ -711,7 +679,6 @@
   "lang.tamil": "Tamil",
   "lang.urdu": "Urdu",
   "lang.maltese": "Maltese",
-
   "source.label.aux": "Aux input",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -720,7 +687,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Library",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Analog jack input",
   "source.hint.airplay": "Apple AirPlay 2. Activation depends on the original Bose setup flow.",
   "source.hint.bluetooth": "Pair a Bluetooth device",

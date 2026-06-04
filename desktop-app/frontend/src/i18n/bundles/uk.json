@@ -1,6 +1,5 @@
 {
   "locale.label": "Українська",
-
   "common.allCountries": "усі країни",
   "common.cancel": "Скасувати",
   "common.save": "Зберегти",
@@ -18,14 +17,12 @@
   "common.error": "Помилка",
   "common.beta": "БЕТА",
   "common.alpha": "АЛЬФА",
-
   "nav.music": "Слухати музику",
   "nav.library": "Бібліотека",
   "nav.speakerSettings": "Налаштування колонки",
   "nav.setupStick": "Підготувати USB-накопичувач",
   "nav.multiroom": "Мультирум",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Мультирум і стереопара",
   "multiroom.intro1": "Відтворюйте одне джерело на двох і більше колонках синхронно або об'єднайте дві колонки в стереопару.",
   "multiroom.bullet1": "Групове відтворення на колонках в одній мережі.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Стан у реальному часі з настільного застосунку.",
   "multiroom.feedbackPrompt": "Незабаром. Коментарі та ідеї вітаються в завданні відстеження.",
   "multiroom.issueLink": "Відкрити завдання #70",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Один раз зв'яжіть колонку в мобільному застосунку Spotify, а потім надсилайте на неї будь-який трек Spotify з телефона.",
   "spotify.bullet1": "Використовуйте колонку як приймач Spotify Connect.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Інструкції з повторного зв'язування з'являться в застосунку STR після стабілізації.",
   "spotify.feedbackPrompt": "Експериментально. Якщо Spotify уже працює або не працює на вашій колонці, поділіться подробицями в завданні.",
   "spotify.issueLink": "Відкрити завдання #78",
-
   "library.title": "Бібліотека",
   "library.subtitle": "Переглядайте музичні сервери у вашій мережі (FRITZ!Box, Synology, Plex, miniDLNA) і відтворюйте треки на SoundTouch.",
   "library.server": "Музичний сервер",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Відтворення",
   "library.toastSaved": "Збережено в пресет",
   "library.errorNoURL": "У цього елемента немає відтворюваної URL-адреси потоку.",
-
   "banner.recommendation": "Рекомендація:",
   "banner.sshRecommend": "Вийміть USB-накопичувач із колонки та перезапустіть її один раз. Інакше колонка вразлива в мережі.",
   "banner.appUpdateAvail": "Доступна нова версія застосунку:",
   "banner.download": "Завантажити",
-
+  "banner.whatsNew": "Що нового",
   "modal.warnTitle": "Попередження",
   "modal.errorTitle": "Помилка",
   "modal.proceed": "Усе одно продовжити",
   "modal.copy": "Копіювати",
-
   "topbar.title": "Ваші колонки SoundTouch у мережі",
   "topbar.refreshTitle": "Шукати колонки знову",
-
   "speaker.searching": "Пошук колонок...",
   "speaker.choose": "Виберіть колонку Bose вище, щоб керувати нею.",
   "speaker.emptyTitle": "У мережі не знайдено жодної колонки.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Повернути цю колонку до життя за допомогою STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> усе ще працює на заводській прошивці Bose. Одноразова підготовка USB-накопичувача встановить STR прямо на колонку. Після цього ви керуєте нею повністю з цього застосунку: інтернет-радіо, пресети, мультирум.<br><br>Відкрити підготовку USB-накопичувача зараз?",
   "speaker.stockConfirmCta": "Відкрити підготовку USB-накопичувача",
-
   "controls.pause": "Пауза",
   "controls.stop": "Стоп",
   "controls.auxTitle": "Вхід Aux (роз'єм)",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Очікування",
   "controls.volume": "Гучність",
-
   "toast.source": "Джерело: {{src}}",
   "toast.sourceUnavailable": "{{src}} недоступний на цій колонці",
-
   "status.playing": "відтворення",
   "status.buffering": "запуск потоку",
   "status.paused": "пауза",
@@ -111,7 +100,6 @@
   "status.auxInput": "вхід AUX",
   "status.bluetooth": "Bluetooth",
   "status.ready": "готово",
-
   "preset.key": "Кнопка {{n}}",
   "preset.empty": "порожньо",
   "preset.loading": "Завантаження кнопок пресетів...",
@@ -132,7 +120,6 @@
   "preset.copiedToKey": "Скопійовано на кнопку {{n}}: {{name}}",
   "preset.savedToKey": "Збережено на кнопку {{n}}: {{name}}",
   "preset.saveFailed": "Не вдалося зберегти: {{err}}",
-
   "play.errNoInternet": "немає інтернету?",
   "play.errSpeakerTimeout": "колонка не відповідає",
   "play.errBoxStarting": "колонка ще запускається, спробуйте за мить",
@@ -141,7 +128,6 @@
   "play.errServer500": "помилка станції",
   "play.errUnreachable": "станція недоступна",
   "play.errGeneric": "Помилка",
-
   "search.heading": "Знайти станції",
   "search.headingSub": "через radio-browser.info",
   "search.placeholder": "напр. BBC, NDR, Rock...",
@@ -175,7 +161,6 @@
   "search.fewerGenres": "Менше",
   "search.moreGenres": "Більше жанрів ({{n}})",
   "search.nStations": "{{n}} станцій",
-
   "update.speakerUpdateAvail": "Доступне оновлення ПЗ колонки",
   "update.speakerAppLine": "Колонка: {{box}} · Застосунок: {{app}}",
   "update.speakerRunningOld": "На колонці версія {{boxVersion}}, у застосунку {{appVersion}}.",
@@ -192,42 +177,33 @@
   "update.otherBoxRunning": "Оновлення виконується на {{name}} ...",
   "update.stickInTitle": "USB-накопичувач усе ще вставлено",
   "update.stickInBody": "USB-накопичувач усе ще в колонці. Оновлення буде скасовано під час наступного перезапуску, бо колонка перевстановить (старішу) версію з накопичувача.<br><br>Спершу вийміть USB-накопичувач із колонки, потім оновлюйте.",
-
   "settingsView.title": "Налаштування колонки",
   "settingsView.forSpeaker": "Налаштування для:",
   "settingsView.refreshListTitle": "Шукати список колонок знову",
   "settingsView.selectFirst": "Спершу виберіть колонку.",
   "settingsView.noSpeakerFound": "колонку не знайдено",
-
   "order.votes": "Популярність",
   "order.clickcount": "Слухачі",
   "order.clicktrend": "Тренд",
   "order.name": "Назва",
-
   "settings.language": "Мова",
   "settings.languageHelp": "Мова застосунку. Не залежить від країни пошуку радіо.",
-
   "combobox.noSuggestions": "немає пропозицій",
-
   "footer.website": "Вебсайт",
   "footer.saveLogs": "Зберегти діагностичні журнали",
   "footer.saveLogsHint": "Збирає журнал застосунку та стан кожної колонки в zip, який можна додати до завдання на GitHub. IP-адреси та ідентифікатори пристроїв знеособлюються.",
   "footer.saveLogsDone": "{{size}} КБ збережено в {{path}}",
   "footer.donateSlogan": "Подобається застосунок? Буду радий чашці кави.",
-
   "banner.recommendationShort": "Рекомендація",
-
   "speaker.rebootNow": "Перезапустити колонку зараз",
   "speaker.rebootGenericBody": "Колонка перезапуститься через 1 секунду. Поточне відтворення буде перервано. Продовжити?",
   "speaker.rebootConfirmDetailedBody": "Ви вийняли USB-накопичувач?<br><br><b>Накопичувач ще вставлено</b> &rarr; після перезапуску SSH залишається відкритим.<br><b>Накопичувач вийнято</b> &rarr; після перезапуску SSH закривається.<br><br>Поточне відтворення буде перервано.",
-
   "signal.excellent": "Відмінний",
   "signal.good": "Добрий",
   "signal.marginal": "Середній",
   "signal.poor": "Слабкий",
   "signal.none": "Немає сигналу",
   "signal.notReported": "Wi-Fi підключено (ця модель не повідомляє сигнал)",
-
   "settingsView.noSpeakerFoundTitle": "У мережі не знайдено жодної колонки.",
   "settingsView.noSpeakerFoundHelp": "Щоб змінювати налаштування колонки, потрібен підготовлений накопичувач ST Reborn. Спершу підготуйте накопичувач.",
   "settingsView.stockBoxTitle": "STR ще не встановлено",
@@ -326,7 +302,6 @@
   "settingsView.stickNotDetected": "не виявлено",
   "settingsView.stickRemoved": "вийнято (нормально після встановлення)",
   "settingsView.speakerNameSavedToast": "Ім'я колонки збережено: {{name}}",
-
   "fw.updateBtn": "Оновити",
   "fw.uptodate": "Актуально. Після вимкнення хмари Bose припинив випуск оновлень. Остання версія {{version}} від вересня 2022.",
   "fw.outdatedTitle": "Прошивка застаріла.",
@@ -337,7 +312,6 @@
   "fw.step3": "Виберіть колонку. Якщо оновлення доступне, застосунок його запропонує.",
   "fw.step4": "Без застосунку: завантажте USB-інструмент оновлення Bose, запишіть прошивку на інший накопичувач, вставте його в колонку:",
   "fw.hint": "Примітка: сервери оновлень Bose у деяких регіонах можуть ще працювати, хоча хмарний стрімінг вимкнено. Якщо шлях через застосунок не спрацював, USB-інструмент — найнадійніший спосіб.",
-
   "setup.heading": "Підготувати USB-накопичувач",
   "setup.intro": "Готує USB-накопичувач, який ви один раз вставляєте в колонку Bose. Потім STR працює із самої колонки. Накопичувач не менше 4 ГБ.",
   "setup.targetHeading": "Яка колонка?",
@@ -423,7 +397,6 @@
   "setup.awaitStep2": "Вставте його в USB-порт колонки.",
   "setup.awaitStep3": "Відключіть колонку від живлення, знову увімкніть, зачекайте 60–90 секунд. Не виймайте накопичувач під час завантаження.",
   "setup.awaitConfirmBtn": "Колонка готова, встановити STR зараз",
-
   "setupAPPush.probing": "Пошук колонки в режимі налаштування ...",
   "setupAPPush.title": "Налаштування без USB-накопичувача",
   "setupAPPush.instructionsBody": "Нова або щойно скинута колонка Bose відкриває власну мережу Wi-Fi для початкового налаштування. ST Reborn ненадовго підключається до цієї мережі та надсилає дані вашого домашнього Wi-Fi прямо на колонку.",
@@ -446,7 +419,6 @@
   "setupAPPush.successHint": "Колонка підключається до вашого домашнього Wi-Fi. Поверніть ПК на домашній Wi-Fi і зачекайте 1–5 хвилин, поки вона з'явиться у списку.",
   "setupAPPush.detailsToggle": "Подробиці",
   "setupAPPush.unknownFailure": "Надсилання не вдалося (колонка не повернула причину).",
-
   "source.label.aux": "Вхід Aux",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -455,7 +427,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Бібліотека",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Аналоговий вхід (роз'єм)",
   "source.hint.airplay": "Apple AirPlay 2. Активація залежить від заводського процесу налаштування Bose.",
   "source.hint.bluetooth": "Зв'язати пристрій Bluetooth",

@@ -1,6 +1,5 @@
 {
   "locale.label": "Türkçe",
-
   "common.allCountries": "tüm ülkeler",
   "common.cancel": "İptal",
   "common.save": "Kaydet",
@@ -18,14 +17,12 @@
   "common.error": "Hata",
   "common.beta": "BETA",
   "common.alpha": "ALFA",
-
   "nav.music": "Müzik dinle",
   "nav.library": "Kitaplık",
   "nav.speakerSettings": "Hoparlör ayarları",
   "nav.setupStick": "USB belleği hazırla",
   "nav.multiroom": "Multiroom",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "Multiroom ve stereo çiftler",
   "multiroom.intro1": "Aynı kaynağı iki veya daha fazla hoparlörde eşzamanlı çalın ya da iki hoparlörü bir stereo çift olarak birleştirin.",
   "multiroom.bullet1": "Aynı ağdaki hoparlörlerde grup çalma.",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "Masaüstü uygulamasından canlı durum.",
   "multiroom.feedbackPrompt": "Yakında. Yorumlar ve fikirler takip başlığında memnuniyetle karşılanır.",
   "multiroom.issueLink": "Sorun #70'i aç",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Hoparlörü telefondaki Spotify uygulamasında bir kez bağlayın, sonra ona herhangi bir Spotify şarkısı gönderin.",
   "spotify.bullet1": "Hoparlörü Spotify Connect hedefi olarak kullanın.",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "Bu kararlı hale geldiğinde STR uygulamasında yeniden bağlama talimatları.",
   "spotify.feedbackPrompt": "Deneysel. Spotify hoparlörünüzde zaten çalışıyor ya da çalışmıyorsa, ayrıntıları sorunda paylaşın.",
   "spotify.issueLink": "Sorun #78'i aç",
-
   "library.title": "Kitaplık",
   "library.subtitle": "Ağınızdaki müzik sunucularına (FRITZ!Box, Synology, Plex, miniDLNA) göz atın ve parçaları SoundTouch üzerinden çalın.",
   "library.server": "Müzik sunucusu",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "Çalıyor",
   "library.toastSaved": "Ön ayar olarak kaydedildi",
   "library.errorNoURL": "Bu öğenin çalınabilir bir akış adresi yok.",
-
   "banner.recommendation": "Öneri:",
   "banner.sshRecommend": "USB belleği hoparlörden çıkarın ve onu bir kez yeniden başlatın. Aksi halde hoparlör ağda savunmasızdır.",
   "banner.appUpdateAvail": "Yeni uygulama sürümü mevcut:",
   "banner.download": "İndir",
-
+  "banner.whatsNew": "Yenilikler",
   "modal.warnTitle": "Uyarı",
   "modal.errorTitle": "Hata",
   "modal.proceed": "Yine de devam et",
   "modal.copy": "Kopyala",
-
   "topbar.title": "Ağdaki SoundTouch hoparlörleriniz",
   "topbar.refreshTitle": "Hoparlörleri yeniden ara",
-
   "speaker.searching": "Hoparlörler aranıyor...",
   "speaker.choose": "Kontrol etmek için yukarıdan bir Bose hoparlörü seçin.",
   "speaker.emptyTitle": "Ağda hoparlör bulunamadı.",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "Bu hoparlörü STR ile canlandır?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> hâlâ orijinal Bose yazılımıyla çalışıyor. Tek seferlik bir USB bellek STR'yi doğrudan hoparlöre kurar. Sonrasında onu tamamen bu uygulamadan kontrol edersiniz: internet radyosu, ön ayarlar, multiroom.<br><br>USB bellek hazırlamayı şimdi açayım mı?",
   "speaker.stockConfirmCta": "USB bellek hazırlamayı aç",
-
   "controls.pause": "Duraklat",
   "controls.stop": "Durdur",
   "controls.auxTitle": "Aux girişi",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "Bekleme",
   "controls.volume": "Ses",
-
   "toast.source": "Kaynak: {{src}}",
   "toast.sourceUnavailable": "{{src}} bu hoparlörde kullanılamıyor",
-
   "status.playing": "çalıyor",
   "status.buffering": "akış başlatılıyor",
   "status.paused": "duraklatıldı",
@@ -111,11 +100,9 @@
   "status.auxInput": "AUX girişi",
   "status.bluetooth": "Bluetooth",
   "status.ready": "hazır",
-
   "battery.label": "Pil",
   "battery.onPower": "şebekeden besleniyor",
   "battery.onBattery": "pilden",
-
   "preset.key": "Tuş {{n}}",
   "preset.empty": "boş",
   "preset.loading": "Ön ayar tuşları yükleniyor...",
@@ -136,7 +123,6 @@
   "preset.copiedToKey": "{{n}} tuşuna kopyalandı: {{name}}",
   "preset.savedToKey": "{{n}} tuşuna kaydedildi: {{name}}",
   "preset.saveFailed": "Kaydedilemedi: {{err}}",
-
   "play.errNoInternet": "internet yok mu?",
   "play.errSpeakerTimeout": "hoparlör yanıt vermiyor",
   "play.errBoxStarting": "hoparlör hâlâ başlıyor, yakında tekrar deneyin",
@@ -145,7 +131,6 @@
   "play.errServer500": "istasyon hatası",
   "play.errUnreachable": "istasyon erişilemez",
   "play.errGeneric": "Hata",
-
   "search.heading": "İstasyon ara",
   "search.headingSub": "radio-browser.info üzerinden",
   "search.placeholder": "örn. BBC, NDR, Rock...",
@@ -179,7 +164,6 @@
   "search.fewerGenres": "Daha az",
   "search.moreGenres": "Daha fazla tür ({{n}})",
   "search.nStations": "{{n}} istasyon",
-
   "update.speakerUpdateAvail": "Hoparlör yazılımı güncellemesi mevcut",
   "update.speakerAppLine": "Hoparlör: {{box}} · Uygulama: {{app}}",
   "update.speakerRunningOld": "Hoparlör {{boxVersion}} sürümüyle, uygulama {{appVersion}} ile çalışıyor.",
@@ -196,42 +180,33 @@
   "update.otherBoxRunning": "{{name}} güncelleniyor ...",
   "update.stickInTitle": "USB bellek hâlâ takılı",
   "update.stickInBody": "USB bellek hâlâ hoparlörde. Güncelleme bir sonraki başlatmada geri alınır, çünkü hoparlör bellekten (daha eski) sürümü yeniden kurar.<br><br>Önce USB belleği hoparlörden çıkarın, sonra güncelleyin.",
-
   "settingsView.title": "Hoparlör ayarları",
   "settingsView.forSpeaker": "Hoparlör için ayarlar:",
   "settingsView.refreshListTitle": "Hoparlör listesini yeniden tara",
   "settingsView.selectFirst": "Önce bir hoparlör seçin.",
   "settingsView.noSpeakerFound": "hoparlör bulunamadı",
-
   "order.votes": "Popülerlik",
   "order.clickcount": "Dinleyiciler",
   "order.clicktrend": "Eğilim",
   "order.name": "Ad",
-
   "settings.language": "Dil",
   "settings.languageHelp": "Uygulama dili. Radyo aramasındaki ülkeden bağımsızdır.",
-
   "combobox.noSuggestions": "öneri yok",
-
   "footer.website": "Web sitesi",
   "footer.saveLogs": "Tanılama günlüklerini kaydet",
   "footer.saveLogsHint": "Uygulama günlüğünü + her hoparlörün durumunu, GitHub sorununa ekleyebileceğiniz bir zip dosyasında paketler. IP adresleri ve cihaz kimlikleri anonimleştirilir.",
   "footer.saveLogsDone": "{{path}} konumuna {{size}} KB kaydedildi",
   "footer.donateSlogan": "Uygulamayı beğendiniz mi? Bir fincan kahve memnuniyetle karşılanır.",
-
   "banner.recommendationShort": "Öneri",
-
   "speaker.rebootNow": "Hoparlörü şimdi yeniden başlat",
   "speaker.rebootGenericBody": "Hoparlör 1 saniye içinde yeniden başlatılacak. Mevcut çalma kesilecek. Devam edilsin mi?",
   "speaker.rebootConfirmDetailedBody": "USB belleği çıkardınız mı?<br><br><b>Bellek hâlâ içeride</b> &rarr; yeniden başlatmadan sonra SSH açık kalır.<br><b>Bellek çıkarıldı</b> &rarr; yeniden başlatmadan sonra SSH kapanır.<br><br>Mevcut çalma kesilecek.",
-
   "signal.excellent": "Mükemmel",
   "signal.good": "İyi",
   "signal.marginal": "Orta",
   "signal.poor": "Zayıf",
   "signal.none": "Sinyal yok",
   "signal.notReported": "Wi-Fi bağlı (bu model sinyal bildirmiyor)",
-
   "settingsView.noSpeakerFoundTitle": "Ağda hoparlör bulunamadı.",
   "settingsView.noSpeakerFoundHelp": "Hoparlör ayarlarını düzenlemek için hazırlanmış bir ST Reborn belleği takılı olmalıdır. Önce bir bellek hazırlayın.",
   "settingsView.stockBoxTitle": "STR henüz kurulu değil",
@@ -344,7 +319,6 @@
   "settingsView.stickNotDetected": "algılanmadı",
   "settingsView.stickRemoved": "çıkarıldı (kurulumdan sonra normal)",
   "settingsView.speakerNameSavedToast": "Hoparlör adı kaydedildi: {{name}}",
-
   "fw.updateBtn": "Güncelle",
   "fw.uptodate": "En güncel. Bose, bulut kapatmasından bu yana artık güncelleme yayınlamıyor. Son sürüm {{version}}, Eylül 2022'den.",
   "fw.outdatedTitle": "Yazılım güncel değil.",
@@ -355,7 +329,6 @@
   "fw.step3": "Hoparlörü seçin. Bir güncelleme varsa, uygulama onu önerir.",
   "fw.step4": "Uygulama olmadan: Bose USB güncelleme aracını indirin, yazılımı başka bir belleğe yazın ve onu hoparlöre takın:",
   "fw.hint": "Not: Bose güncelleme sunucuları bazı bölgelerde, bulut akışı durmuş olsa da hâlâ çevrimiçi olabilir. Uygulama üzerinden yol başarısız olursa, USB aracı en güvenilir olanıdır.",
-
   "setup.heading": "USB belleği hazırla",
   "setup.intro": "Bose hoparlöre bir kez taktığınız bir USB belleği hazırlar. STR sonrasında hoparlörün kendisinden çalışır. Bellek en az 4 GB gerektirir.",
   "setup.targetHeading": "Hangi hoparlör?",
@@ -441,7 +414,6 @@
   "setup.awaitStep2": "Onu hoparlörün USB bağlantı noktasına takın.",
   "setup.awaitStep3": "Hoparlörü güçten ayırın, tekrar takın ve 60–90 saniye bekleyin. Başlatma sırasında belleği çekmeyin.",
   "setup.awaitConfirmBtn": "Hoparlör hazır, STR'yi şimdi kur",
-
   "setupAPPush.probing": "Kurulum modunda hoparlör aranıyor ...",
   "setupAPPush.title": "USB belleksiz kurulum",
   "setupAPPush.instructionsBody": "Yepyeni veya yeni sıfırlanmış bir Bose hoparlör, ilk kurulum için kendi Wi-Fi ağını açar. ST Reborn kısa süre bu ağa bağlanır ve ev Wi-Fi verilerinizi doğrudan hoparlöre gönderir.",
@@ -464,7 +436,6 @@
   "setupAPPush.successHint": "Hoparlör şimdi ev Wi-Fi'nize bağlanıyor. Bilgisayarı ev Wi-Fi'sine geri döndürün ve listede görünene kadar 1–5 dakika bekleyin.",
   "setupAPPush.detailsToggle": "Ayrıntılar",
   "setupAPPush.unknownFailure": "Gönderilemedi (hoparlör bir neden belirtmedi).",
-
   "source.label.aux": "Aux girişi",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -473,7 +444,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "Kitaplık",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "Analog jak girişi",
   "source.hint.airplay": "Apple AirPlay 2. Etkinleştirme orijinal Bose kurulumuna bağlıdır.",
   "source.hint.bluetooth": "Bir Bluetooth cihazı eşleştirin",

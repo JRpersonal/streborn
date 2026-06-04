@@ -1,6 +1,5 @@
 {
   "locale.label": "日本語",
-
   "common.allCountries": "すべての国",
   "common.cancel": "キャンセル",
   "common.save": "保存",
@@ -18,14 +17,12 @@
   "common.error": "エラー",
   "common.beta": "ベータ",
   "common.alpha": "アルファ",
-
   "nav.music": "音楽を聴く",
   "nav.library": "ライブラリ",
   "nav.speakerSettings": "スピーカー設定",
   "nav.setupStick": "USBメモリを準備",
   "nav.multiroom": "マルチルーム",
   "nav.spotify": "Spotify",
-
   "multiroom.heading": "マルチルームとステレオペア",
   "multiroom.intro1": "同じ音源を2台以上のスピーカーで同期再生したり、2台をステレオセットとしてペアにできます。",
   "multiroom.bullet1": "同じネットワーク上のスピーカーでのグループ再生。",
@@ -33,7 +30,6 @@
   "multiroom.bullet3": "デスクトップアプリからのリアルタイム状態表示。",
   "multiroom.feedbackPrompt": "近日公開。トラッキングのチケットでのご意見・ご提案を歓迎します。",
   "multiroom.issueLink": "チケット #70 を開く",
-
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Spotifyモバイルアプリで一度スピーカーをペアリングすると、スマホからSpotifyの曲を送れます。",
   "spotify.bullet1": "スピーカーをSpotify Connectの送信先として使用。",
@@ -41,7 +37,6 @@
   "spotify.bullet3": "安定後にSTRアプリで再ペアリングの手順を案内します。",
   "spotify.feedbackPrompt": "実験的機能です。Spotifyがすでに動作する、または失敗する場合は、チケットで詳細を共有してください。",
   "spotify.issueLink": "チケット #78 を開く",
-
   "library.title": "ライブラリ",
   "library.subtitle": "ネットワーク上の音楽サーバー (FRITZ!Box、Synology、Plex、miniDLNA) を参照し、SoundTouchで曲を再生します。",
   "library.server": "音楽サーバー",
@@ -58,20 +53,17 @@
   "library.toastPlaying": "再生中",
   "library.toastSaved": "プリセットに保存しました",
   "library.errorNoURL": "この項目には再生可能なストリームURLがありません。",
-
   "banner.recommendation": "推奨:",
   "banner.sshRecommend": "USBメモリをスピーカーから抜き、一度再起動してください。そうしないとスピーカーがネットワーク上で攻撃を受ける恐れがあります。",
   "banner.appUpdateAvail": "アプリの新しいバージョンがあります:",
   "banner.download": "ダウンロード",
-
+  "banner.whatsNew": "新着情報",
   "modal.warnTitle": "警告",
   "modal.errorTitle": "エラー",
   "modal.proceed": "それでも続行",
   "modal.copy": "コピー",
-
   "topbar.title": "ネットワーク上のSoundTouchスピーカー",
   "topbar.refreshTitle": "スピーカーを再検索",
-
   "speaker.searching": "スピーカーを検索中...",
   "speaker.choose": "上からBoseスピーカーを選んで操作します。",
   "speaker.emptyTitle": "ネットワーク上にスピーカーが見つかりません。",
@@ -92,17 +84,14 @@
   "speaker.stockConfirmTitle": "このスピーカーをSTRで復活させますか?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> はまだBose純正ファームウェアです。一度USBメモリを使うとSTRがスピーカーに直接インストールされます。その後はこのアプリだけで操作できます: インターネットラジオ、プリセット、マルチルーム。<br><br>今すぐUSBメモリの準備を開きますか?",
   "speaker.stockConfirmCta": "USBメモリの準備を開く",
-
   "controls.pause": "一時停止",
   "controls.stop": "停止",
   "controls.auxTitle": "Auxジャック入力",
   "controls.bluetoothTitle": "Bluetooth",
   "controls.standbyTitle": "スタンバイ",
   "controls.volume": "音量",
-
   "toast.source": "ソース: {{src}}",
   "toast.sourceUnavailable": "{{src}} はこのスピーカーでは利用できません",
-
   "status.playing": "再生中",
   "status.buffering": "ストリーム開始中",
   "status.paused": "一時停止中",
@@ -111,7 +100,6 @@
   "status.auxInput": "AUX入力",
   "status.bluetooth": "Bluetooth",
   "status.ready": "準備完了",
-
   "preset.key": "キー {{n}}",
   "preset.empty": "空",
   "preset.loading": "プリセットキーを読み込み中...",
@@ -132,7 +120,6 @@
   "preset.copiedToKey": "キー {{n}} にコピーしました: {{name}}",
   "preset.savedToKey": "キー {{n}} に保存しました: {{name}}",
   "preset.saveFailed": "保存に失敗しました: {{err}}",
-
   "play.errNoInternet": "インターネットなし?",
   "play.errSpeakerTimeout": "スピーカーが応答しません",
   "play.errBoxStarting": "スピーカーはまだ起動中です。少し待って再試行してください",
@@ -141,7 +128,6 @@
   "play.errServer500": "放送局のエラー",
   "play.errUnreachable": "放送局に接続できません",
   "play.errGeneric": "エラー",
-
   "search.heading": "放送局を探す",
   "search.headingSub": "radio-browser.info 経由",
   "search.placeholder": "例: BBC、NDR、Rock...",
@@ -175,7 +161,6 @@
   "search.fewerGenres": "少なく",
   "search.moreGenres": "ジャンルを増やす ({{n}})",
   "search.nStations": "{{n}} 放送局",
-
   "update.speakerUpdateAvail": "スピーカーのソフトウェア更新があります",
   "update.speakerAppLine": "スピーカー: {{box}} · アプリ: {{app}}",
   "update.speakerRunningOld": "スピーカーはバージョン {{boxVersion}}、アプリは {{appVersion}} です。",
@@ -192,42 +177,33 @@
   "update.otherBoxRunning": "{{name}} で更新を実行中 ...",
   "update.stickInTitle": "USBメモリがまだ挿さっています",
   "update.stickInBody": "USBメモリがまだスピーカーに挿さっています。次回の再起動時にスピーカーがメモリから (古い) バージョンを再インストールするため、更新が取り消されます。<br><br>先にUSBメモリをスピーカーから抜いてから更新してください。",
-
   "settingsView.title": "スピーカー設定",
   "settingsView.forSpeaker": "設定対象:",
   "settingsView.refreshListTitle": "スピーカー一覧を再検索",
   "settingsView.selectFirst": "先にスピーカーを選んでください。",
   "settingsView.noSpeakerFound": "スピーカーが見つかりません",
-
   "order.votes": "人気",
   "order.clickcount": "リスナー数",
   "order.clicktrend": "傾向",
   "order.name": "名前",
-
   "settings.language": "言語",
   "settings.languageHelp": "アプリの言語。ラジオ検索の国とは独立しています。",
-
   "combobox.noSuggestions": "候補なし",
-
   "footer.website": "ウェブサイト",
   "footer.saveLogs": "診断ログを保存",
   "footer.saveLogsHint": "アプリのログとスピーカーごとの状態をzipにまとめ、GitHubのチケットに添付できます。IPとデバイスIDは匿名化されます。",
   "footer.saveLogsDone": "{{size}} KB を {{path}} に保存しました",
   "footer.donateSlogan": "アプリが気に入りましたか? コーヒー1杯いただけると嬉しいです。",
-
   "banner.recommendationShort": "推奨",
-
   "speaker.rebootNow": "今すぐスピーカーを再起動",
   "speaker.rebootGenericBody": "スピーカーは1秒後に再起動します。再生中の音は中断されます。続行しますか?",
   "speaker.rebootConfirmDetailedBody": "USBメモリを抜きましたか?<br><br><b>メモリが挿さったまま</b> &rarr; 再起動後もSSHが開いたままになります。<br><b>メモリを抜いた</b> &rarr; 再起動後にSSHが閉じます。<br><br>再生中の音は中断されます。",
-
   "signal.excellent": "非常に強い",
   "signal.good": "良好",
   "signal.marginal": "やや弱い",
   "signal.poor": "弱い",
   "signal.none": "信号なし",
   "signal.notReported": "Wi-Fi 接続済み（この機種は信号強度を報告しません）",
-
   "settingsView.noSpeakerFoundTitle": "ネットワーク上にスピーカーが見つかりません。",
   "settingsView.noSpeakerFoundHelp": "スピーカーの設定を編集するには、準備済みのST Rebornメモリが必要です。先にメモリを準備してください。",
   "settingsView.stockBoxTitle": "STR未インストール",
@@ -326,7 +302,6 @@
   "settingsView.stickNotDetected": "未検出",
   "settingsView.stickRemoved": "取り外し済み (インストール後は正常)",
   "settingsView.speakerNameSavedToast": "スピーカー名を保存しました: {{name}}",
-
   "fw.updateBtn": "更新",
   "fw.uptodate": "最新です。クラウド終了以降、Boseは更新の公開を停止しています。最終バージョンは {{version}} (2022年9月) です。",
   "fw.outdatedTitle": "ファームウェアが古いです。",
@@ -337,7 +312,6 @@
   "fw.step3": "スピーカーを選びます。更新があればアプリが案内します。",
   "fw.step4": "アプリがない場合: BoseのUSB更新ツールをダウンロードし、別のメモリにファームウェアを書き込み、スピーカーに挿します:",
   "fw.hint": "注意: クラウドのストリーミングが終了しても、一部の地域ではBoseの更新サーバーがまだ稼働している場合があります。アプリ経由が失敗する場合は、USBツールが最も確実な方法です。",
-
   "setup.heading": "USBメモリを準備",
   "setup.intro": "Boseスピーカーに一度挿すUSBメモリを準備します。その後STRはスピーカー自身で動作します。メモリは4GB以上必要です。",
   "setup.targetHeading": "どのスピーカー?",
@@ -423,7 +397,6 @@
   "setup.awaitStep2": "スピーカーのUSBポートに挿します。",
   "setup.awaitStep3": "スピーカーの電源を抜いて入れ直し、60〜90秒待ちます。起動中はメモリを抜かないでください。",
   "setup.awaitConfirmBtn": "スピーカーの準備ができました。今すぐSTRをインストール",
-
   "setupAPPush.probing": "セットアップモードのスピーカーを検索中 ...",
   "setupAPPush.title": "USBメモリなしでセットアップ",
   "setupAPPush.instructionsBody": "新品または初期化したてのBoseスピーカーは、初回設定用に独自のWi-Fiネットワークを開きます。ST Rebornが一時的にそのネットワークに接続し、ご家庭のWi-Fi資格情報をスピーカーに直接送ります。",
@@ -446,7 +419,6 @@
   "setupAPPush.successHint": "スピーカーはご家庭のWi-Fiに接続中です。PCをご家庭のWi-Fiに戻し、一覧に表示されるまで1〜5分待ってください。",
   "setupAPPush.detailsToggle": "詳細",
   "setupAPPush.unknownFailure": "送信に失敗しました (スピーカーから理由が返されませんでした)。",
-
   "source.label.aux": "Aux入力",
   "source.label.airplay": "AirPlay 2",
   "source.label.bluetooth": "Bluetooth",
@@ -455,7 +427,6 @@
   "source.label.upnp": "UPnP",
   "source.label.stored_music_media_renderer": "ライブラリ",
   "source.label.alexa": "Alexa",
-
   "source.hint.aux": "アナログジャック入力",
   "source.hint.airplay": "Apple AirPlay 2。有効化はBose純正のセットアップ手順に依存します。",
   "source.hint.bluetooth": "Bluetoothデバイスをペアリング",
