@@ -79,9 +79,31 @@ the desktop app falls back to a configured external path.
   via `log/slog`.
 - **Frontend.** Whatever Wails generated. Small project, no extra
   framework opinions.
-- **Commits.** Imperative mood, present tense. One logical change
-  per commit. Reference the Issue or Discussion if there is one:
-  `Fix preset reconcile loop on standby (#42)`.
+- **Commits.** Conventional Commits, imperative mood, present tense,
+  one logical change per commit. Reference the Issue or Discussion if
+  there is one: `fix(agent): preset reconcile loop on standby (#42)`.
+
+  Format: `type(scope): summary`. Common types: `feat`, `fix`, `perf`,
+  `refactor`, `docs`, `test`, `build`, `ci`, `chore`. Scope is the area
+  touched (`agent`, `desktop`, `frontend`, `i18n`, `boxws`, ...). A
+  breaking change adds `!` before the colon: `feat(api)!: ...`.
+
+  **Commit subjects become the release notes.** The release pipeline
+  (`cmd/relnotes`) turns the `feat` / `fix` / `perf` / breaking commits
+  since the last tag into the user-facing "What's changed" list, and the
+  summary after the colon is shown to end users almost verbatim. So:
+
+  - Write the summary as a clear, user-facing statement of the change or
+    benefit, not internal jargon. Good: `fix(frontend): blank station
+    logos now show a generated tile`. Bad: `fix: tweak fallback chain`.
+  - Do not put the version in the subject (`v0.6.17 ...`); the tag
+    already carries it.
+  - Use a non-user-facing type (`chore`, `ci`, `build`, `test`,
+    `refactor`, `docs`, `style`) for work that should NOT appear in the
+    notes; those are dropped from the changelog automatically.
+
+  See [`docs/RELEASE-NOTES.md`](docs/RELEASE-NOTES.md) for the full
+  pipeline.
 - **No emoji** in code, commits, or PR descriptions unless the
   change is specifically about UI emoji.
 

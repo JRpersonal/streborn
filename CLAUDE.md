@@ -93,6 +93,15 @@ first-class; other languages welcome via PR.
 - Tests in `_test.go` files alongside the code they cover.
 - No emoji in code, commits, or PR descriptions unless explicitly
   requested.
+- **Commits drive release notes.** Use Conventional Commits
+  (`type(scope): summary`). The release pipeline (`cmd/relnotes`) turns
+  the `feat` / `fix` / `perf` / breaking commits since the last tag into
+  the user-facing "What's changed" list, and the summary after the colon
+  is shown to end users almost verbatim. So write the summary as a clear
+  end-user statement (not internal jargon), with no version prefix in the
+  subject, and use a non-user-facing type (`chore`, `ci`, `build`,
+  `docs`, `test`, `refactor`, `style`) for work that must stay out of the
+  notes. See `docs/RELEASE-NOTES.md` and `CONTRIBUTING.md`.
 
 ### Disclaimers (legal, do not remove)
 
