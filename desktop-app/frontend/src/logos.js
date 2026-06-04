@@ -1,13 +1,14 @@
 // logos.js — station logo / icon resolution.
 //
 // Many radio-browser entries ship without a usable favicon. The cascade
-// (see stationLogoCandidates) tries, in order: the station's own HTTPS
-// favicon, the DuckDuckGo icon service derived from the station's
-// hostnames, an HTTP-only favicon as a late attempt, and finally
-// icon.horse as a terminal fallback that always returns an image. On
+// (see stationLogoCandidates + logoImgTag) tries, in order: the
+// station's own HTTPS favicon, the DuckDuckGo icon service derived from
+// the station's hostnames, an HTTP-only favicon as a late attempt, and
+// finally a locally generated monogram (a data: URI, no network). On
 // each load failure the img element walks to the next candidate via
-// onerror. All three external services are privacy-respecting; Google's
-// favicon service was deliberately removed (data mining).
+// onerror. DuckDuckGo is the only external favicon service and is hit
+// only when the station has no usable logo of its own; Google's was
+// deliberately excluded (data mining).
 
 import { escapeAttr } from './utils.js';
 
@@ -40,15 +41,29 @@ export function iconServicesFor(host) {
   ];
 }
 
-// iconHorseFor yields the icon.horse URL for a host. icon.horse is an
-// independent, privacy-respecting favicon service (no ad/data company
-// behind it). It is used as a terminal fallback because it always
-// returns an image (a generated monogram when it has no real icon),
-// so it never 404s and therefore must sit last in the cascade, after
-// every source that can return the station's true logo.
-export function iconHorseFor(host) {
-  if (!host) return '';
-  return `https://icon.horse/icon/${host}`;
+// monogramDataUri builds a self-contained SVG tile from a station's
+// name: its first character on a colour derived from the name. It is a
+// data: URI, so it renders instantly with NO network request and leaks
+// nothing to anyone. This is the terminal fallback, replacing the old
+// idea of a third-party "always returns an image" service (icon.horse),
+// which in practice returned HTTP 504 for obscure stations after a
+// ~15 s hang, the very stations that have no logo to begin with.
+function monogramColor(seed) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360} 40% 38%)`;
+}
+export function monogramDataUri(name) {
+  const raw = (name || '?').trim();
+  const ch = (raw.charAt(0) || '?').toUpperCase()
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const bg = monogramColor(raw || '?');
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">` +
+    `<rect width="160" height="160" rx="14" fill="${bg}"/>` +
+    `<text x="80" y="108" font-family="Segoe UI,Arial,sans-serif" font-size="84" ` +
+    `font-weight="700" fill="#ffffff" text-anchor="middle">${ch}</text></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
 // stationLogoCandidates returns an ordered list of icon URLs to try
@@ -69,10 +84,21 @@ export function iconHorseFor(host) {
 //      square favicon, so it is the dependable middle of the cascade.
 //   3. An HTTP-only radio-browser favicon as a late attempt (blocked
 //      today, harmless to keep for non-secure contexts).
-//   4. icon.horse as the terminal fallback. It always returns an image
-//      (a generated monogram if it has nothing better), so it can only
-//      ever be last: it guarantees a tile instead of a blank
-//      placeholder, without masking any source above it.
+//   (The terminal fallback, a locally generated monogram, is appended
+//    in logoImgTag, not here, see monogramDataUri.)
+//
+// Privacy is the tie-breaker for this order. The onerror cascade fires
+// sequentially: only the candidates up to the first success are ever
+// requested. Putting the station's own favicon first means a station
+// with a working logo costs ZERO third-party requests: DuckDuckGo never
+// learns the user is looking at it. DuckDuckGo (the only external
+// favicon service) is reached solely when the station provides no usable
+// logo of its own, and each request leaks nothing but that station's
+// public domain. When even that misses, the fallback is a local
+// monogram, no network at all. Google's favicon service is deliberately
+// excluded (data mining), and icon.horse was dropped after it returned
+// HTTP 504 (a ~15 s hang) for exactly the obscure stations it was meant
+// to cover.
 export function stationLogoCandidates(s) {
   const out = [];
   const push = (u) => { if (u && !out.includes(u)) out.push(u); };
@@ -97,19 +123,20 @@ export function stationLogoCandidates(s) {
   // 3. An HTTP-only radio-browser favicon, deferred to the end.
   if (s.favicon && !faviconHttps) push(s.favicon);
 
-  // 4. icon.horse terminal fallback (always returns an image).
-  for (const h of hosts) push(iconHorseFor(h));
-
+  // Note: the local monogram terminal fallback is appended only in the
+  // live <img> cascade (logoImgTag), not here, so persisted preset art
+  // and UPnP albumArtURI stay real http(s) URLs the speaker can fetch.
   return out;
 }
 
 // logoImgTag renders an <img> wired up so onerror cycles through the
-// remaining fallback candidates encoded in data-fallbacks. Once the
-// list is empty, the helper at window.__nextLogoFallback hides the
-// element so CSS can render its placeholder.
+// remaining fallback candidates encoded in data-fallbacks. The local
+// monogram data: URI is appended as the guaranteed last candidate, so
+// every station ends up with a tile (real logo where one exists, a
+// generated letter tile otherwise) and the hide path is effectively
+// never reached.
 export function logoImgTag(s, cssClass) {
-  const candidates = stationLogoCandidates(s);
-  if (candidates.length === 0) return '<div class="fav-empty"></div>';
+  const candidates = [...stationLogoCandidates(s), monogramDataUri(s.name)];
   const first = candidates[0];
   const rest = candidates.slice(1).join('|');
   return `<img class="${cssClass}"
