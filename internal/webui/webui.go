@@ -451,8 +451,11 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
-	// Spotify presets have no playable HTTP StreamURL: tell go-librespot
-	// to play the saved URI, then point the box at our live /spotify/stream.
+	// Spotify presets have no playable HTTP StreamURL. Point the box at the
+	// live Ogg stream FIRST so it attaches before playback, then tell
+	// go-librespot to play (Play waits for that attach), so the box receives
+	// the Ogg from the start incl. headers. The reverse order makes the box
+	// attach mid-track and reject the source (INVALID_SOURCE).
 	if p.Type == "spotify" && p.URI != "" {
 		if s.spotifyPlay == nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
@@ -460,16 +463,16 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := s.spotifyPlay(r.Context(), p.URI); err != nil {
+		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "Spotify could not be played", "detail": err.Error(),
+				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
 			})
 			return
 		}
-		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg"); err != nil {
+		if err := s.spotifyPlay(r.Context(), p.URI); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
+				"error": "Spotify could not be played", "detail": err.Error(),
 				"slot": slot, "name": p.Name,
 			})
 			return

@@ -215,8 +215,36 @@ func (m *Manager) runOnce(ctx context.Context) error {
 // Play asks go-librespot to start playing a Spotify URI on this device,
 // using its own cached credential. This is the autonomous-recall path:
 // the agent calls it on a Spotify preset press, with no app involved.
+//
+// It first waits (briefly) for the box to attach to the Ogg stream. The
+// recall points the box at /spotify/stream.ogg BEFORE calling Play, so by
+// the time go-librespot starts the track the box is already listening and
+// receives the Ogg from the very start (identification/comment/setup
+// headers). Without this the box attaches mid-track, gets a headerless Ogg
+// fragment it cannot decode, and drops the source (INVALID_SOURCE).
 func (m *Manager) Play(ctx context.Context, uri string) error {
+	m.waitForSink(ctx, 4*time.Second)
 	return m.apiPost(ctx, "/player/play", map[string]any{"uri": uri})
+}
+
+// waitForSink blocks until an HTTP consumer (the box) is attached to the
+// Ogg stream, or until d elapses / ctx is cancelled. Best-effort: on
+// timeout Play proceeds anyway.
+func (m *Manager) waitForSink(ctx context.Context, d time.Duration) {
+	deadline := time.Now().Add(d)
+	for {
+		m.mu.Lock()
+		attached := m.sink != nil
+		m.mu.Unlock()
+		if attached || time.Now().After(deadline) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 }
 
 // Pause and Resume mirror the obvious controls.

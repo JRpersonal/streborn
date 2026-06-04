@@ -735,16 +735,18 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 		cancel()
 	}
 
-	// Start playback in go-librespot first so PCM is flowing by the time
-	// the box opens the WAV stream.
-	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// Point the box at the Ogg stream FIRST so it attaches before playback
+	// starts; then Play (which waits for that attach) begins the track, so
+	// the box receives the Ogg from the start incl. its headers. The reverse
+	// order makes the box attach mid-track and reject the source.
+	playCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
-	if err := h.spotify.Play(playCtx, p.URI); err != nil {
-		h.logger.Error("spotify play failed", "slot", slot, "uri", p.URI, "err", err)
-		return
-	}
 	if err := h.renderer.PlayURLMime(playCtx, spotifyStreamURL, p.Name, p.Art, "audio/ogg"); err != nil {
 		h.logger.Error("spotify upnp play failed", "slot", slot, "err", err)
+		return
+	}
+	if err := h.spotify.Play(playCtx, p.URI); err != nil {
+		h.logger.Error("spotify play failed", "slot", slot, "uri", p.URI, "err", err)
 		return
 	}
 	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", p.Account)
