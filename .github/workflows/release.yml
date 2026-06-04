@@ -586,12 +586,16 @@ jobs:
       - build-desktop-windows
       - build-desktop-linux
       - build-desktop-macos
-    # Publish either on tag push or on a manual workflow_dispatch
-    # that supplies a version input. Plain workflow_dispatch with no
-    # input remains a build-only dry-run.
+    # The release job runs on every trigger (tag push, workflow_dispatch,
+    # schedule) so a dry-run also exercises change-note generation, the
+    # manifest, and attestation. Only the final Publish and Notify steps
+    # are gated on a real release (a tag, or a dispatch with a version),
+    # so a no-version dispatch / scheduled run builds everything but
+    # publishes nothing.
     if: |
       startsWith(github.ref, 'refs/tags/') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -788,6 +792,12 @@ jobs:
           cat release-notes.md
 
       - name: Publish GitHub Release
+        # Only on a real release: a tag push, or a dispatch with a
+        # version input. A no-version dispatch / scheduled run reaches
+        # here but skips publishing (build + manifest + notes only).
+        if: |
+          startsWith(github.ref, 'refs/tags/') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
         # tag_name is explicit so the workflow_dispatch path works:
         # the action creates the tag at github.sha when it does not
         # already exist. The tag-push path uses the same value (the
@@ -820,6 +830,9 @@ jobs:
       # a fine-grained PAT instead; the website repo's deploy listens
       # for repository_dispatch / app-release-published.
       - name: Notify streborn-website
+        if: |
+          startsWith(github.ref, 'refs/tags/') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ secrets.WEBSITE_DISPATCH_PAT }}
