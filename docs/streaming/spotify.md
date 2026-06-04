@@ -168,6 +168,38 @@ preserved, not just local zeroconf. This mirrors STR already replacing
 the dead TuneIn integration with radio-browser. The eSDK reuse stays
 documented only as a rejected alternative.
 
+## How login works (no special Spotify partnership) and the data flow
+
+librespot has no partner status with Spotify; it is reverse-engineered.
+The robust, least-grey login is **zeroconf**, where Spotify's own app
+does the authentication:
+
+1. librespot advertises `_spotify-connect._tcp` on the LAN.
+2. The user's official Spotify app (same LAN) discovers the device and,
+   being legitimately logged in, performs the auth and hands librespot a
+   reusable session credential. librespot itself does no OAuth here.
+3. librespot logs in to `ap.spotify.com` with that credential and
+   registers the device with Spotify's backend. From then on it shows up
+   in the user's Spotify app, including remotely, exactly the
+   account-linked UX Bose had. One-time LAN login, then account-bound.
+
+Data flow during playback: control ("play on device X") goes through
+Spotify's servers to librespot; librespot pulls the encrypted Ogg from
+Spotify's CDN, decrypts it, and with `passthrough-decoder` hands the Ogg
+through undecoded to the box, whose Bose firmware decodes and plays it
+(Architecture A). Audio never streams phone-to-speaker directly.
+
+A standalone OAuth path also exists (`librespot-oauth`, using a public
+Spotify client id) but it is the more fragile, greyer route and is not
+needed when zeroconf is used. The residual risk that Spotify breaks
+unofficial clients is the reason for choosing a maintained OSS component
+we can rebuild and ship over OTA.
+
+The frozen Bose eSDK keeps no idle footprint to stop: `ps` shows no
+Spotify process; the eSDK is loaded on demand only when Bose's (now
+account-less, dead) Spotify source is selected. Integration just avoids
+triggering it and ensures only librespot advertises Spotify Connect.
+
 ## Spike results so far
 
 - **Build (transparent, from source):** `.github/workflows/librespot.yml`
