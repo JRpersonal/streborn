@@ -22,21 +22,27 @@ import ja from './bundles/ja.json';
 import uk from './bundles/uk.json';
 import nl from './bundles/nl.json';
 import pl from './bundles/pl.json';
+import lt from './bundles/lt.json';
+import lv from './bundles/lv.json';
+import tr from './bundles/tr.json';
 
-// Order here is the order the language picker renders. Each bundle
-// covers the full UI chrome; missing keys fall back to English. The
-// large country/genre/lang reference tables are not duplicated into
-// fr/es/ja/uk, so those entries fall back to English via tLookup (radio
-// metadata only). Note: Ukrainian is the app UI language; the Bose box
-// sysLanguage enum has no Ukrainian, so a UA box display falls back to
-// English (deliberately NOT Russian). See project_bose_language_enum.
-const BUNDLES = { en, de, fr, es, ja, uk, nl, pl };
+// Each bundle covers the full UI chrome; missing keys fall back to
+// English. The large country/genre/lang reference tables are not
+// duplicated into fr/es/ja/uk, so those entries fall back to English
+// via tLookup (radio metadata only). Note: Ukrainian is the app UI
+// language; the Bose box sysLanguage enum has no Ukrainian, so a UA box
+// display falls back to English (deliberately NOT Russian). See
+// project_bose_language_enum.
+const BUNDLES = { en, de, fr, es, ja, uk, nl, pl, lt, lv, tr };
 
+// The language picker renders in this order: alphabetical by each
+// language's own endonym (Deutsch, English, ..., Latviešu, Lietuvių,
+// ..., Türkçe, Українська, 日本語). localeCompare's default Unicode
+// collation puts Latin first, then Cyrillic, then CJK, which matches.
 export const AVAILABLE_LOCALES = Object.freeze(
-  Object.keys(BUNDLES).map((code) => ({
-    code,
-    label: BUNDLES[code]['locale.label'] || code,
-  })),
+  Object.keys(BUNDLES)
+    .map((code) => ({ code, label: BUNDLES[code]['locale.label'] || code }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
 );
 
 const LS_KEY = 'locale';

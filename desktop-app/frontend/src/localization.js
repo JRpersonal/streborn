@@ -237,6 +237,9 @@ const LOCALE_FLAG_SVG = {
   UA: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#FFD700"/><rect width="3" height="1" fill="#0057B7"/></svg>',
   NL: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#21468B"/><rect width="3" height="1.333" fill="#fff"/><rect width="3" height="0.667" fill="#AE1C28"/></svg>',
   PL: '<svg class="loc-flag-svg" viewBox="0 0 8 5" width="20" height="13" aria-hidden="true"><rect width="8" height="5" fill="#fff"/><rect y="2.5" width="8" height="2.5" fill="#DC143C"/></svg>',
+  LT: '<svg class="loc-flag-svg" viewBox="0 0 3 3" width="20" height="13" aria-hidden="true"><rect width="3" height="3" fill="#FDB913"/><rect y="1" width="3" height="1" fill="#006A44"/><rect y="2" width="3" height="1" fill="#C1272D"/></svg>',
+  LV: '<svg class="loc-flag-svg" viewBox="0 0 3 2" width="20" height="13" aria-hidden="true"><rect width="3" height="2" fill="#9E3039"/><rect y="0.8" width="3" height="0.4" fill="#fff"/></svg>',
+  TR: '<svg class="loc-flag-svg" viewBox="0 0 30 20" width="20" height="13" aria-hidden="true"><rect width="30" height="20" fill="#E30A17"/><circle cx="11" cy="10" r="5" fill="#fff"/><circle cx="12.5" cy="10" r="4" fill="#E30A17"/><polygon points="19.5,7.4 20.3,9.6 22.6,9.6 20.8,11.0 21.5,13.2 19.5,11.9 17.5,13.2 18.2,11.0 16.4,9.6 18.7,9.6" fill="#fff"/></svg>',
 };
 export function flagSvg(cc) {
   if (!cc) return '';
@@ -265,6 +268,8 @@ const COUNTRIES_RAW = [
   { cc: 'NO', key: 'norway' },
   { cc: 'FI', key: 'finland' },
   { cc: 'IS', key: 'iceland' },
+  { cc: 'LV', key: 'latvia' },
+  { cc: 'LT', key: 'lithuania' },
   { cc: 'PL', key: 'poland' },
   { cc: 'CZ', key: 'czech republic' },
   { cc: 'SK', key: 'slovakia' },

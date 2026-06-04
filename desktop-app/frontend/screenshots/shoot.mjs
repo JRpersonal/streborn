@@ -22,7 +22,7 @@ const OUT = path.resolve(FRONTEND, '../../docs/screenshots');         // repo/do
 const PORT = 4178;
 const BASE = `http://127.0.0.1:${PORT}/`;
 
-const LANGS = ['en', 'de', 'fr', 'es', 'ja', 'uk', 'nl', 'pl'];
+const LANGS = ['en', 'de', 'fr', 'es', 'ja', 'uk', 'nl', 'pl', 'lt', 'lv', 'tr'];
 const VIEWS = ['app-library', 'app-listen', 'app-search', 'app-settings1', 'app-settings2', 'app-settings3', 'app-stick-step1', 'app-stick-step2'];
 
 // ---- demo data -------------------------------------------------------------

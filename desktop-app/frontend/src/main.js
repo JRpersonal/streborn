@@ -151,6 +151,9 @@ const LOCALE_TO_RADIO_LANG = {
   uk: 'ukrainian',
   nl: 'dutch',
   pl: 'polish',
+  lt: 'lithuanian',
+  lv: 'latvian',
+  tr: 'turkish',
 };
 
 import {
@@ -814,7 +817,7 @@ async function checkSshBanner() {
   // until doBoxUpdate clears the flag (finally{} guaranteed).
   if (state.otaInProgress) { gb.classList.add('hidden'); return; }
   try {
-    const r = await fetch(`http://${box.host}:${box.port}/api/stick/status`);
+    const r = await boxFetch(box, '/api/stick/status');
     if (!r.ok) return;
     const data = await r.json();
     // Only warn once the stick is no longer mounted on the box. While
@@ -872,10 +875,10 @@ async function loadLanguagesForCountry() {
   if (!state.currentBox) return;
   try {
     const cc = state.searchCountry || '';
-    const url = cc
-      ? `http://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?country=${encodeURIComponent(cc)}&limit=60`
-      : `http://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?limit=40`;
-    const r = await fetch(url);
+    const path = cc
+      ? `/api/radio/languages?country=${encodeURIComponent(cc)}&limit=60`
+      : `/api/radio/languages?limit=40`;
+    const r = await boxFetch(state.currentBox, path);
     if (r.ok) {
       state.languages = await r.json() || [];
       renderLanguageOptions();
@@ -1164,11 +1167,38 @@ async function updateSourceButtonVisibility() {
   }
 }
 
+// boxFetch is a self-healing fetch for the agent's plain-HTTP endpoints
+// (region, radio search/tags/languages, stick status). Unlike the Go
+// bindings it cannot reuse boxDo, so it replicates the same resilience in
+// JS: a hard timeout, so a flaky port can never hang the UI forever (the
+// "region keeps loading" bug on BCO boxes), plus a :8888 <-> :17008
+// failover for BCO speakers where only one of the two answers. The first
+// reachable port is remembered on the box so later calls go straight to it.
+async function boxFetch(box, path, opts = {}, timeoutMs = 8000) {
+  if (!box) throw new Error('no box');
+  const ports = [...new Set([box.port, 17008, 8888].filter(Boolean))];
+  let lastErr;
+  for (const p of ports) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(`http://${box.host}:${p}${path}`, { ...opts, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (p !== box.port) box.port = p; // remember the reachable port
+      return r;
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('box unreachable');
+}
+
 let regionLoaded = false;
 async function loadStickRegion() {
   if (regionLoaded || !state.currentBox) return;
   try {
-    const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/region`);
+    const r = await boxFetch(state.currentBox, '/api/region');
     if (!r.ok) return;
     const data = await r.json();
     if (data && data.country) {
@@ -1199,7 +1229,7 @@ async function loadTaxonomy() {
   if (!state.currentBox) return;
   if (state.tags.length === 0) {
     try {
-      const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/radio/tags?limit=24`);
+      const r = await boxFetch(state.currentBox, '/api/radio/tags?limit=24');
       if (r.ok) {
         state.tags = await r.json() || [];
         renderGenreChips();
@@ -1208,7 +1238,7 @@ async function loadTaxonomy() {
   }
   if (state.languages.length === 0) {
     try {
-      const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/radio/languages?limit=40`);
+      const r = await boxFetch(state.currentBox, '/api/radio/languages?limit=40');
       if (r.ok) {
         state.languages = await r.json() || [];
         renderLanguageOptions();
@@ -1495,7 +1525,7 @@ async function doBoxUpdate() {
   // sat on the stick-info button, so the banner button started the OTA
   // (and the reboot) with no confirmation.
   try {
-    const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/stick/status`);
+    const r = await boxFetch(state.currentBox, '/api/stick/status');
     if (r.ok) {
       const data = await r.json();
       if (data && data.mounted) {
@@ -1695,7 +1725,7 @@ async function healPresetLogos() {
         // high enough to find an exact name match among several
         // stations sharing the same name.
         const params = new URLSearchParams({ q: p.name, limit: '12', order: 'votes' });
-        const r = await fetch(`http://${state.currentBox.host}:${state.currentBox.port}/api/radio/search?${params}`);
+        const r = await boxFetch(state.currentBox, `/api/radio/search?${params}`);
         if (!r.ok) return;
         const list = await r.json() || [];
         const wanted = p.name.toLowerCase().trim();
@@ -2345,9 +2375,9 @@ function buildSearchURL() {
   if (state.searchOnlyOK)  params.set('onlyok', '1');
   if (isSearch) {
     params.set('q', state.searchLastQuery);
-    return `http://${state.currentBox.host}:${state.currentBox.port}/api/radio/search?${params.toString()}`;
+    return `/api/radio/search?${params.toString()}`;
   }
-  return `http://${state.currentBox.host}:${state.currentBox.port}/api/radio/top?${params.toString()}`;
+  return `/api/radio/top?${params.toString()}`;
 }
 
 async function fetchSearchPage(append) {
@@ -2357,7 +2387,7 @@ async function fetchSearchPage(append) {
     $('loadMoreRow').classList.add('hidden');
   }
   try {
-    const r = await fetch(url);
+    const r = await boxFetch(state.currentBox, url);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const page = await r.json() || [];
     if (append) {
@@ -3132,7 +3162,7 @@ function renderBoxSettings(s, box) {
     let stickMounted = false;
     let sshOpen = false;
     try {
-      const r = await fetch(`http://${box.host}:${box.port}/api/stick/status`);
+      const r = await boxFetch(box, '/api/stick/status');
       const ct = r.headers.get('content-type') || '';
       if (r.ok && ct.includes('json')) {
         const data = await r.json();
@@ -3148,7 +3178,7 @@ function renderBoxSettings(s, box) {
         sshOpen = !!data.sshOpen;
       } else {
         // Fallback: debug/state listing for older agents.
-        const rd = await fetch(`http://${box.host}:${box.port}/api/debug/state`);
+        const rd = await boxFetch(box, '/api/debug/state');
         if (rd.ok && (rd.headers.get('content-type') || '').includes('json')) {
           const d = await rd.json();
           const listing = d.stick_listing;
@@ -3471,16 +3501,18 @@ function renderBoxSettings(s, box) {
         ? `${optFlag(cc)}${escapeHtml(c.name)} (${escapeHtml(cc)})`
         : escapeHtml(cc || t('common.unknown'));
     };
-    fetch(`http://${box.host}:${box.port}/api/region`).then(r => r.ok ? r.json() : null).then(data => {
+    boxFetch(box, '/api/region').then(r => r.ok ? r.json() : null).then(data => {
       if (data && data.country) {
         regSel.value = data.country;
         updateCurrentDisplay(data.country);
+      } else {
+        const el = $('currentAppRegion'); if (el) el.textContent = t('settingsView.langUnreachable');
       }
-    }).catch(() => {});
+    }).catch(() => { const el = $('currentAppRegion'); if (el) el.textContent = t('settingsView.langUnreachable'); });
     $('appRegionSave').onclick = async () => {
       const cc = regSel.value;
       try {
-        const r = await fetch(`http://${box.host}:${box.port}/api/region`, {
+        const r = await boxFetch(box, '/api/region', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ country: cc }),
@@ -3605,7 +3637,7 @@ function wireWlanSwitch(box) {
     );
     if (!ok) return;
     try {
-      const r = await fetch(`http://${box.host}:${box.port}/api/box/wlan`, {
+      const r = await boxFetch(box, '/api/box/wlan', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ssid, password: pass }),

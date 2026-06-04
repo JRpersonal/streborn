@@ -32,7 +32,7 @@ The desktop app: browse and assign presets, search internet radio, browse a DLNA
 | [![DLNA library](docs/screenshots/OS%20Hero/app-library.jpg)](docs/screenshots/OS%20Hero/app-library.jpg) | [![USB stick setup](docs/screenshots/OS%20Hero/app-stick-step1.jpg)](docs/screenshots/OS%20Hero/app-stick-step1.jpg) | [![Stick: Wi-Fi, name, region](docs/screenshots/OS%20Hero/app-stick-step2.jpg)](docs/screenshots/OS%20Hero/app-stick-step2.jpg) |
 | DLNA music library | USB stick setup | Wi-Fi, name, region |
 
-The interface is available in eight languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run screenshots`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
+The interface is available in eleven languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run screenshots`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
 
 ## Status (May 2026)
 
