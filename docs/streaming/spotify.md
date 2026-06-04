@@ -137,6 +137,27 @@ on his LAN):
    receives the network-wide config the desktop app rolls out to all
    agents; surface track metadata via now-playing.
 
+## Spike results so far
+
+- **Build (transparent, from source):** `.github/workflows/librespot.yml`
+  builds librespot v0.8.0 from source as a static-musl armv7 binary,
+  size-optimised, Sigstore-attested, no opaque blob. Features:
+  `with-libmdns` (zeroconf), `rustls-tls-webpki-roots` (pure-Rust TLS, no
+  OpenSSL), `passthrough-decoder` (pass Ogg/Vorbis through so the Bose
+  firmware decodes it, not the Cortex-A8). No ALSA.
+- **Footprint:** the binary is **5.5 MB** (5,542,460 bytes). The box has
+  ~20.4 MB free on `/mnt/nv`; the STR agent is 11.3 MB, so agent +
+  librespot is ~17 MB, under budget. NAND is **not** a blocker, and a
+  hand-rolled client would not save meaningful disk (a Go binary would be
+  similar or larger). The library-vs-custom question therefore comes down
+  to runtime RAM/CPU, not size.
+- **Box profile (taigan Portable):** armv7l, single-core Cortex-A8
+  (AM33XX) with NEON, glibc 2.15 (hence static musl), ~52 MB RAM
+  available. CPU/RAM at runtime is the one open risk; `passthrough-decoder`
+  exists specifically to keep decode off the box.
+- **Still to measure on hardware:** runtime RAM, CPU during a session,
+  and play/pause/seek latency through the box's UPnP buffer.
+
 ## Acceptance for closing #78
 
 This doc plus a working (even hacky) PoC of the chosen path on at least
