@@ -13,6 +13,57 @@ port 4070, no stored account). librespot is kept as the future-proof
 fallback (built + run-verified on the box, 5.5 MB) for if/when Spotify
 ever drops the frozen eSDK. The rest of this document is the spike trail.
 
+## Decision update (2026-06-04): go-librespot is the open backend, not librespot-org
+
+The earlier spike picked librespot-org (MIT) as the sidecar. Building the
+**Spotify-preset** feature surfaced a requirement that flips the choice:
+**hardware preset buttons 1..6 must recall a saved Spotify playlist
+autonomously**, with no phone app present. That means the box itself must
+issue "play URI X".
+
+- **librespot-org has no local control API.** Its only autonomous path is
+  the Spotify **Web API** with a refreshable OAuth token **stored on the
+  box**, a real security surface and a token-refresh subsystem on every
+  user's device.
+- **go-librespot ships a local HTTP control API**
+  (`POST /player/play {uri}`) that plays a URI from its own cached
+  credential, no Web API, no token plane.
+
+So the **primary open backend is go-librespot**; librespot-org stays the
+**fallback** (cleaner pure-Rust static build, and its Ogg passthrough is
+the audio fallback if a Bose model refuses the live WAV stream).
+
+Costs accepted with go-librespot:
+- **Audio is PCM, not Ogg.** Its pipe backend emits s16le only. We wrap it
+  as a streaming **WAV** and serve it at `/spotify/stream`; the box plays
+  it over UPnP. Bose lists WAV as a supported format, but the live-WAV
+  path is the **one on-box unknown to validate** (de-risk: stream any WAV
+  to the box's UPnP before trusting the full chain). If it fails, fall
+  back to librespot-org + Ogg and revisit control.
+- **cgo build.** go-librespot decodes Vorbis/FLAC through C (libogg,
+  libvorbis, flac), so unlike librespot's pure-Rust static musl it needs a
+  cgo cross build. Handled once in CI (`.github/workflows/go-librespot.yml`,
+  static-linked armv7 in an emulated Alpine container so it runs on the
+  box's glibc 2.15). One-time CI cost vs. an ongoing on-box token plane.
+
+Implementation landed (commit pivoting the manager): `internal/spotify`
+supervises go-librespot (config: pipe -> /dev/stdout PCM, local API on,
+zeroconf + persist credentials), `ServeWAV` streams the audio, `Play`
+drives recall; `cmd/agent` + `internal/webui` route both hardware and
+software Spotify preset presses to `Play(uri)` + `/spotify/stream`.
+
+### Before shipping go-librespot (standing gate)
+
+1. **Security audit of the go-librespot source** at the pinned tag:
+   malware / backdoors / data exfiltration / unexpected network calls.
+   The bundled binary must be trustworthy for end users.
+2. **Validate the live-WAV-over-UPnP path** on real hardware (the one
+   unknown above).
+3. **Credits**: add go-librespot (and librespot-org) to the project
+   credits and the website.
+4. **Architecture diagram / docs** updated to show the sidecar + the
+   audio (`/spotify/stream`) and control (local API) planes.
+
 ## Why native Spotify works without the Bose cloud
 
 Spotify Connect has two login paths. Bose's app used the **account-linked**
@@ -92,11 +143,13 @@ STR is MIT. **go-librespot is GPL-3.0, so its Go packages must never be
 imported/linked into STR's Go code** (that would force STR to GPL).
 Either implementation may only be used as a **separate sidecar binary**
 invoked over a process boundary (exec + its HTTP API / pipe), which is
-mere aggregation, not a derivative work. Given that, `librespot` (MIT) is
-the preferred sidecar because shipping it carries no GPL distribution
-obligation at all; go-librespot stays a fallback if its Go toolchain
-makes cross-compiling materially easier, accepting that we then ship a
-GPL binary and must provide its source/offer.
+mere aggregation, not a derivative work. STR uses go-librespot exactly
+this way: it execs the binary and talks to it over localhost HTTP, never
+importing its packages, so STR stays MIT. Shipping a GPL-3.0 binary
+obliges us to offer its source; it is public and the build is pinned +
+Sigstore-attested (`go-librespot.yml`). See the Decision update at the
+top: go-librespot is chosen for its local control API; librespot-org
+(MIT, no GPL obligation) remains the fallback.
 
 ## Where does the audio go?
 
