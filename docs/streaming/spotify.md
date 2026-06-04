@@ -316,6 +316,36 @@ triggering it and ensures only librespot advertises Spotify Connect.
   cached OAuth credentials so it stays up, then idle RAM/CPU, CPU during
   a session, and play/pause/seek latency through the box's UPnP buffer.
 
+## Spotify presets via librespot (multi-account design)
+
+Native eSDK gives live Spotify but cannot recall a preset autonomously
+(no persistent session). librespot with a cached credential can: a preset
+holds a Spotify URI, recall tells librespot to play it, audio routes to
+the box. The vision (which the Bose original never did): several household
+members each log in their own Spotify account and save their own
+playlists; a preset tile shows it is Spotify and whose account it is.
+
+Data model (done, `internal/presets`): a preset carries `Type="spotify"`,
+`URI` (the resource), and `Account` (whose it is) instead of a StreamURL.
+
+Build phases:
+- **P0 foundation (done):** preset model carries URI + Account, tested.
+- **P1 single account:** agent supervises one librespot (cached cred,
+  `--passthrough`), serves its Ogg over HTTP (streamproxy), recall =
+  librespot play URI -> box UPnP plays the Ogg. Frontend: save the
+  current Spotify now-playing as a preset (capture the URI) and play it.
+- **P2 multi-account:** per-account cached credentials; a preset's
+  `Account` selects which credential/session plays it (one librespot per
+  account, or switch). OAuth done once per account.
+- **P3 UI:** preset tiles show a Spotify badge + the account, so each
+  member recognises their own.
+
+Prerequisites that are their own work: the OAuth credential must reach
+the box (desktop app does the OAuth in a webview, pushes the credential),
+and librespot must be deployed (built in CI, see librespot.yml; shipped
+on the stick / via OTA, MIT so bundling is fine after the security
+audit).
+
 ## Before shipping (mandatory gates)
 
 Once the on-box test confirms librespot works, these must be done before
