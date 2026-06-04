@@ -2627,6 +2627,7 @@ function renderSearchResults() {
         <div class="result-actions">
           <button class="btn btn-mini play-now" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9654;</button>
           <button class="btn btn-mini pick" data-i="${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>
+          ${(typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) ? `<button class="btn btn-mini open-site" data-i="${i}" title="${escapeAttr(t('search.openWebsite'))}">&#8599;</button>` : ''}
         </div>
       </div>
     `;
@@ -2657,6 +2658,13 @@ function renderSearchResults() {
   });
   res.querySelectorAll('.pick').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); openPick(list[parseInt(btn.dataset.i, 10)]); };
+  });
+  res.querySelectorAll('.open-site').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const s = list[parseInt(btn.dataset.i, 10)];
+      if (s && typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) BrowserOpenURL(s.homepage);
+    };
   });
 }
 

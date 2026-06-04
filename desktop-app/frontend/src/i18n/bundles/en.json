@@ -159,6 +159,7 @@
   "search.votes": "{{n}} votes",
   "search.playNow": "Play now",
   "search.assignToKey": "Assign to a key",
+  "search.openWebsite": "Open website",
   "search.errSelectSpeaker": "Please pick a speaker first",
   "search.allGenres": "All",
   "search.fewerGenres": "Fewer",
