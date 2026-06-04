@@ -64,7 +64,15 @@ jobs:
         # musl); with-libmdns keeps zeroconf so the speaker self-advertises
         # as a Spotify Connect device. The always-available pipe backend
         # gives us PCM to feed the box's UPnP loopback (Architecture A).
-        run: cross build --release --no-default-features --features with-libmdns --target "$TARGET"
+        #
+        # librespot ships a Cross.toml that apt-installs libssl-dev +
+        # libasound2-dev for the target arch in a pre-build; those packages
+        # do not exist for musl-linux-armhf and we need neither (no ALSA,
+        # TLS via rustls). Drop it so cross uses its clean default musl
+        # image.
+        run: |
+          rm -f Cross.toml
+          cross build --release --no-default-features --features with-libmdns --target "$TARGET"
 
       - name: Collect + checksum
         run: |
