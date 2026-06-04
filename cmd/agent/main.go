@@ -741,7 +741,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 		h.logger.Error("spotify play failed", "slot", slot, "uri", p.URI, "err", err)
 		return
 	}
-	if err := h.renderer.PlayURL(playCtx, spotifyStreamURL, p.Name, p.Art); err != nil {
+	if err := h.renderer.PlayURLMime(playCtx, spotifyStreamURL, p.Name, p.Art, "audio/wav"); err != nil {
 		h.logger.Error("spotify upnp play failed", "slot", slot, "err", err)
 		return
 	}

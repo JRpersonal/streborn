@@ -111,14 +111,39 @@ func (r *Renderer) PlayURL(ctx context.Context, streamURL, title, iconURL string
 	return nil
 }
 
+// SetURIMime is SetURI with an explicit DIDL res protocolInfo mime.
+func (r *Renderer) SetURIMime(ctx context.Context, streamURL, metaTitle, iconURL, mime string) error {
+	if idx := strings.Index(iconURL, "|"); idx >= 0 {
+		iconURL = iconURL[:idx]
+	}
+	meta := buildDIDLMime(streamURL, metaTitle, iconURL, mime)
+	body := fmt.Sprintf(`<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData>%s</CurrentURIMetaData></u:SetAVTransportURI></s:Body></s:Envelope>`,
+		xmlEscape(streamURL), xmlEscape(meta))
+	return r.soapCall(ctx, "SetAVTransportURI", body)
+}
+
+// PlayURLMime is PlayURL for a stream whose codec mime is known (e.g. the
+// Spotify loopback WAV). It advertises the given protocolInfo mime and
+// skips ResolveStreamURL, which is for radio playlist/HTTPS quirks and
+// would only add a needless reachability probe to a known loopback URL.
+func (r *Renderer) PlayURLMime(ctx context.Context, streamURL, title, iconURL, mime string) error {
+	if err := r.SetURIMime(ctx, streamURL, title, iconURL, mime); err != nil {
+		return fmt.Errorf("SetURI: %w", err)
+	}
+	if err := r.Play(ctx); err != nil {
+		return fmt.Errorf("Play: %w", err)
+	}
+	return nil
+}
+
 // ResolveStreamURL bereitet eine Sender URL fuer die Box vor:
 //
-//   1. Bei Playlist Endungen (.pls / .m3u) wird die enthaltene Stream
-//      URL extrahiert (Box kann Playlist Dateien nicht abspielen).
-//   2. Bei HTTPS URLs wird versucht die HTTP Variante zu nutzen wenn
-//      sie antwortet. Bose UPnP Renderer hat oft Probleme mit HTTPS
-//      Streams (Cert Chain, TLS Version) und liefert dann SOAP 402.
-//   3. Sonst die Original URL.
+//  1. Bei Playlist Endungen (.pls / .m3u) wird die enthaltene Stream
+//     URL extrahiert (Box kann Playlist Dateien nicht abspielen).
+//  2. Bei HTTPS URLs wird versucht die HTTP Variante zu nutzen wenn
+//     sie antwortet. Bose UPnP Renderer hat oft Probleme mit HTTPS
+//     Streams (Cert Chain, TLS Version) und liefert dann SOAP 402.
+//  3. Sonst die Original URL.
 func ResolveStreamURL(ctx context.Context, u string) (string, error) {
 	if u == "" {
 		return "", nil
@@ -231,14 +256,25 @@ func (r *Renderer) soapCall(ctx context.Context, action, body string) error {
 // den Stream Codec zu erkennen. Wenn iconURL gesetzt ist wird es als
 // upnp:albumArtURI eingebettet damit die Box ein Sender Logo zeigt.
 func buildDIDL(streamURL, title, iconURL string) string {
+	return buildDIDLMime(streamURL, title, iconURL, "audio/mpeg")
+}
+
+// buildDIDLMime is buildDIDL with an explicit res protocolInfo mime. Radio
+// streams use audio/mpeg; the Spotify loopback stream is a live WAV, so it
+// passes audio/wav (the box was verified to play that, see the spotify
+// spike).
+func buildDIDLMime(streamURL, title, iconURL, mime string) string {
 	if title == "" {
 		title = "Stream"
+	}
+	if mime == "" {
+		mime = "audio/mpeg"
 	}
 	art := ""
 	if iconURL != "" {
 		art = `<upnp:albumArtURI dlna:profileID="JPEG_TN" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">` + xmlEscapeAttr(iconURL) + `</upnp:albumArtURI>`
 	}
-	return `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>` + xmlEscapeAttr(title) + `</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class>` + art + `<res protocolInfo="http-get:*:audio/mpeg:*">` + xmlEscapeAttr(streamURL) + `</res></item></DIDL-Lite>`
+	return `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>` + xmlEscapeAttr(title) + `</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class>` + art + `<res protocolInfo="http-get:*:` + mime + `:*">` + xmlEscapeAttr(streamURL) + `</res></item></DIDL-Lite>`
 }
 
 // xmlEscape escaped Sonderzeichen fuer XML Element Content.

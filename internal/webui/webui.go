@@ -464,7 +464,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := s.renderer.PlayURL(r.Context(), "http://127.0.0.1:8888/spotify/stream", p.Name, p.Art); err != nil {
+		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream", p.Name, p.Art, "audio/wav"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
