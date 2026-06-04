@@ -7,11 +7,11 @@
 //
 // Feld Namen sind robust gegen die verschiedenen Wizard Versionen:
 //
-//   "slot" oder "id"               -> Slot
-//   "name"                          -> Name
-//   "stream_url" oder "url"        -> StreamURL
-//   "type"                          -> Type ("radio", "spotify", ...)
-//   "art"                           -> Art (Coverbild URL, optional)
+//	"slot" oder "id"               -> Slot
+//	"name"                          -> Name
+//	"stream_url" oder "url"        -> StreamURL
+//	"type"                          -> Type ("radio", "spotify", ...)
+//	"art"                           -> Art (Coverbild URL, optional)
 package presets
 
 import (
@@ -33,6 +33,14 @@ type Preset struct {
 	// and in now-playing without a live lookup. Optional/additive: older
 	// presets simply have 0.
 	Bitrate int `json:"bitrate,omitempty"`
+	// Spotify presets (Type=="spotify") carry these instead of a playable
+	// StreamURL: URI is the Spotify resource to play (e.g.
+	// "spotify:playlist:..."), recalled via librespot, not UPnP. Account
+	// is which Spotify account the preset belongs to, so several household
+	// members can each save their own playlists and a tile can show whose
+	// it is (a thing the Bose original never did). Both optional/additive.
+	URI     string `json:"uri,omitempty"`
+	Account string `json:"account,omitempty"`
 }
 
 // rawPreset ist der Disk Format Helper. Akzeptiert mehrere Alias Felder.
@@ -45,6 +53,8 @@ type rawPreset struct {
 	Type      string `json:"type"`
 	Art       string `json:"art"`
 	Bitrate   int    `json:"bitrate"`
+	URI       string `json:"uri"`
+	Account   string `json:"account"`
 }
 
 // rawWrapper unterstuetzt das Object Format {"presets": [...]}.
@@ -119,6 +129,8 @@ func normalize(in []rawPreset) []Preset {
 			Type:      typ,
 			Art:       p.Art,
 			Bitrate:   p.Bitrate,
+			URI:       p.URI,
+			Account:   p.Account,
 		})
 	}
 	return out
