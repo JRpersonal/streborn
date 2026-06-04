@@ -1,0 +1,88 @@
+name: librespot
+
+# Builds the Spotify Connect receiver (librespot, MIT) from source for the
+# speaker target, from a pinned upstream version, and attests it with
+# Sigstore exactly like the STR agent. This keeps the bundled binary
+# transparent and reproducible: no opaque third-party blob ever ships to a
+# user's speaker. Spike for #78 (docs/streaming/spotify.md).
+#
+# Target is armv7 STATIC MUSL: the speaker runs glibc 2.15 (2012), far too
+# old for a modern Rust glibc build, so a statically linked musl binary is
+# used instead and runs regardless of the system libc. Built with size
+# optimisation because the speaker NAND has only ~20 MB free.
+#
+# Run it from the Actions tab (workflow_dispatch). The artifact is the
+# attested librespot-armv7l plus its SHA256, for the on-box spike test.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'librespot git tag to build (pinned, MIT)'
+        required: true
+        default: 'v0.8.0'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      TARGET: armv7-unknown-linux-musleabihf
+      # Size first: the speaker NAND is tiny. These Cargo profile env
+      # overrides apply without editing librespot's Cargo.toml.
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: "z"
+      CARGO_PROFILE_RELEASE_LTO: "true"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+      CARGO_PROFILE_RELEASE_STRIP: "true"
+    steps:
+      - name: Rust target
+        # rustup is preinstalled on ubuntu-latest; no third-party action.
+        run: rustup target add "$TARGET"
+
+      - name: Install cross
+        # cross builds the musl-arm target inside a container, so no
+        # host cross-toolchain juggling. Pinned + --locked for repeatable
+        # dependency resolution.
+        run: cargo install cross --version 0.2.5 --locked
+
+      - name: Clone librespot (pinned)
+        env:
+          REF: ${{ github.event.inputs.ref }}
+        run: |
+          git clone --depth 1 --branch "$REF" https://github.com/librespot-org/librespot librespot
+          echo "Built from librespot $REF at $(git -C librespot rev-parse HEAD)"
+
+      - name: Build (static musl, zeroconf, no ALSA)
+        working-directory: librespot
+        # --no-default-features drops the ALSA backend (no C audio lib on
+        # musl); with-libmdns keeps zeroconf so the speaker self-advertises
+        # as a Spotify Connect device. The always-available pipe backend
+        # gives us PCM to feed the box's UPnP loopback (Architecture A).
+        run: cross build --release --no-default-features --features with-libmdns --target "$TARGET"
+
+      - name: Collect + checksum
+        run: |
+          mkdir -p dist
+          cp "librespot/target/${TARGET}/release/librespot" dist/librespot-armv7l
+          chmod +x dist/librespot-armv7l
+          sha256sum dist/librespot-armv7l | tee dist/librespot-armv7l.sha256
+          ls -la dist/librespot-armv7l
+          echo "size: $(stat -c %s dist/librespot-armv7l) bytes"
+
+      - name: Attest
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: dist/librespot-armv7l
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: librespot-armv7l
+          path: dist/*
+          if-no-files-found: error
