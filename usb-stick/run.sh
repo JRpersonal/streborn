@@ -46,6 +46,10 @@ fi
 STICK_BIN="$STICK/streborn-armv7l"
 [ -e "$STICK_BIN" ] || STICK_BIN="$STICK/streborn"
 CACHED_BIN="$PERSIST/bin/streborn-armv7l"
+# go-librespot: the Spotify Connect sidecar (#78). Cached stick -> NAND the
+# same way as the agent so it survives stick removal + reboot.
+STICK_GLR="$STICK/go-librespot"
+CACHED_GLR="$PERSIST/bin/go-librespot"
 STICK_VER_FILE="$STICK/version.txt"
 NAND_VER_FILE="$PERSIST/version.txt"
 
@@ -450,6 +454,24 @@ ensure_sshd_running
 # Removing SYNC_FLAG removes the only state that could go out of
 # sync with reality across boots.
 sync_stick_to_nand_always() {
+    # go-librespot (Spotify sidecar): cache stick -> NAND independently of
+    # the agent so it survives stick removal + reboot. Same atomic
+    # .new + mv pattern. Best-effort: absence just means no Spotify.
+    if [ -r "$STICK_GLR" ]; then
+        if cp "$STICK_GLR" "$CACHED_GLR.new" 2>/dev/null; then
+            chmod +x "$CACHED_GLR.new"
+            if mv "$CACHED_GLR.new" "$CACHED_GLR" 2>/dev/null; then
+                log "stick go-librespot deployed to NAND cache ($(wc -c < "$CACHED_GLR") bytes)"
+            else
+                log "stick -> NAND go-librespot mv failed, keeping previous"
+                rm -f "$CACHED_GLR.new"
+            fi
+        else
+            log "stick -> NAND go-librespot cp failed, keeping previous"
+            rm -f "$CACHED_GLR.new"
+        fi
+    fi
+
     if [ ! -r "$STICK_BIN" ]; then
         return 0
     fi
