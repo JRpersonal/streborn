@@ -37,7 +37,9 @@
 package spotify
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,11 +69,14 @@ type Manager struct {
 	mu   sync.Mutex
 	sink io.Writer // current HTTP consumer, nil when none
 	cmd  *exec.Cmd
-	// resyncPending: set by Play. The drain then discards whatever stale
-	// audio is buffered and forwards to the box only from the next Ogg
-	// beginning-of-stream page, so the box receives the freshly recalled
-	// track from its start (incl. the Vorbis headers) and can decode it.
-	resyncPending bool
+	// headerPages holds the current track's Ogg header pages (the BOS page
+	// with the Vorbis identification header plus the comment/setup pages).
+	// The drain captures them as they stream past; ServeOgg replays them to
+	// a freshly-attached box before the live data, so a box that joins
+	// mid-track still gets the headers it needs to start decoding (the next
+	// real BOS is a whole track away). This is the Icecast late-joiner
+	// pattern.
+	headerPages []byte
 }
 
 // New returns a Manager. binPath is the go-librespot binary, configDir
@@ -189,62 +194,67 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	m.cmd = cmd
 	m.mu.Unlock()
 
-	// Drain stdout to the current sink (the box). Crucially, only read when a
-	// sink is attached: with no consumer we must NOT drain, so go-librespot
-	// blocks on its full output pipe. That (a) stops it racing through the
-	// whole playlist with no backpressure (it loaded every track in seconds
-	// when we discarded the output), and (b) keeps the current track's start
-	// (incl. the Ogg identification/comment/setup headers) buffered in the
-	// pipe, so a box that attaches a moment after Play receives the stream
-	// from the beginning and can decode it. While a box is attached it
-	// consumes at real time, which paces go-librespot via the same pipe
-	// backpressure.
-	buf := make([]byte, 16*1024)
-	var carry []byte // tail kept across reads while hunting for the BOS page
+	// Drain go-librespot's Ogg output page by page and forward whole pages to
+	// the box. While no box is attached, capture the current track's header
+	// pages and pause go-librespot so it does not race to the end of the
+	// playlist unheard; ServeOgg resumes it and replays the headers when a
+	// box joins, so a mid-track joiner can still decode.
+	r := bufio.NewReaderSize(stdout, 256*1024)
+	var hdr []byte
+	capturing := false
+	paused := false
 	for {
-		m.mu.Lock()
-		sink := m.sink
-		resync := m.resyncPending
-		m.mu.Unlock()
-		if sink == nil {
-			carry = nil
-			select {
-			case <-ctx.Done():
-				return cmd.Wait()
-			case <-time.After(50 * time.Millisecond):
-			}
-			continue
+		page, err := readOggPage(r)
+		if err != nil {
+			break
 		}
 
-		n, rerr := stdout.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			if resync {
-				// Discard stale audio until the next track start (Ogg BOS
-				// page); forward to the box only from there.
-				data := append(carry, chunk...)
-				if idx := findOggBOS(data); idx >= 0 {
-					m.mu.Lock()
-					m.resyncPending = false
-					m.mu.Unlock()
-					carry = nil
-					m.forward(sink, data[idx:])
-				} else {
-					carry = tailBytes(data, 6)
-				}
-			} else {
-				m.forward(sink, chunk)
-			}
+		// Maintain the current track's header pages: a BOS page starts a
+		// track (Vorbis identification header), the following granule<=0
+		// pages carry comment/setup, the first audio page (granule>0) ends
+		// the header sequence.
+		htype := page[5]
+		gran := int64(binary.LittleEndian.Uint64(page[6:14]))
+		switch {
+		case htype&0x02 != 0: // BOS
+			hdr = append([]byte(nil), page...)
+			capturing = true
+		case capturing && gran > 0: // first audio page
+			m.mu.Lock()
+			m.headerPages = hdr
+			m.mu.Unlock()
+			capturing = false
+		case capturing:
+			hdr = append(hdr, page...)
 		}
-		if rerr != nil {
+
+		m.mu.Lock()
+		sink := m.sink
+		haveHdr := len(m.headerPages) > 0
+		m.mu.Unlock()
+
+		if sink != nil {
+			paused = false
+			m.forward(sink, page)
+			continue
+		}
+		// No consumer: once a track's headers are captured, pause go-librespot
+		// so it stops producing (no racing) until a box attaches and ServeOgg
+		// resumes it.
+		if !paused && haveHdr {
+			pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			_ = m.Pause(pctx)
+			cancel()
+			paused = true
+		}
+		if ctx.Err() != nil {
 			break
 		}
 	}
 	return cmd.Wait()
 }
 
-// forward writes p to the box sink; on write error it drops the sink so the
-// drain goes back to gating (and go-librespot re-blocks).
+// forward writes p to the box sink; on write error it drops the sink.
 func (m *Manager) forward(sink io.Writer, p []byte) {
 	if _, err := sink.Write(p); err != nil {
 		m.mu.Lock()
@@ -259,31 +269,54 @@ func (m *Manager) forward(sink io.Writer, p []byte) {
 	}
 }
 
-// findOggBOS returns the index of the first Ogg page that begins a logical
-// bitstream: capture pattern "OggS", version 0, header_type with the BOS
-// flag (0x02). That page carries the Vorbis identification header, i.e. a
-// track's start. Returns -1 if none is present.
-func findOggBOS(b []byte) int {
-	for i := 0; i+5 < len(b); i++ {
-		if b[i] == 'O' && b[i+1] == 'g' && b[i+2] == 'g' && b[i+3] == 'S' &&
-			b[i+4] == 0 && b[i+5]&0x02 != 0 {
-			return i
+// readOggPage reads one complete Ogg page from r, syncing to the "OggS"
+// capture pattern. The returned slice is a whole page (27-byte header +
+// segment table + body).
+func readOggPage(r *bufio.Reader) ([]byte, error) {
+	for { // sync to "OggS"
+		b, err := r.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		if b != 'O' {
+			continue
+		}
+		p, err := r.Peek(3)
+		if err != nil {
+			return nil, err
+		}
+		if p[0] == 'g' && p[1] == 'g' && p[2] == 'S' {
+			if _, err := r.Discard(3); err != nil {
+				return nil, err
+			}
+			break
 		}
 	}
-	return -1
-}
-
-// tailBytes returns the last n bytes of b (or all of b if shorter), so a
-// capture pattern split across reads is not missed.
-func tailBytes(b []byte, n int) []byte {
-	if len(b) <= n {
-		out := make([]byte, len(b))
-		copy(out, b)
-		return out
+	// 23 bytes after "OggS": version, header_type, granule(8), serial(4),
+	// page_seq(4), crc(4), page_segments(1).
+	rest := make([]byte, 23)
+	if _, err := io.ReadFull(r, rest); err != nil {
+		return nil, err
 	}
-	out := make([]byte, n)
-	copy(out, b[len(b)-n:])
-	return out
+	numSegs := int(rest[22])
+	segs := make([]byte, numSegs)
+	if _, err := io.ReadFull(r, segs); err != nil {
+		return nil, err
+	}
+	bodyLen := 0
+	for _, s := range segs {
+		bodyLen += int(s)
+	}
+	body := make([]byte, bodyLen)
+	if _, err := io.ReadFull(r, body); err != nil {
+		return nil, err
+	}
+	page := make([]byte, 0, 4+23+numSegs+bodyLen)
+	page = append(page, 'O', 'g', 'g', 'S')
+	page = append(page, rest...)
+	page = append(page, segs...)
+	page = append(page, body...)
+	return page, nil
 }
 
 // Play asks go-librespot to start playing a Spotify URI on this device,
@@ -296,9 +329,6 @@ func tailBytes(b []byte, n int) []byte {
 // incl. the Ogg headers; the box therefore receives the stream from the
 // beginning and can decode it.
 func (m *Manager) Play(ctx context.Context, uri string) error {
-	m.mu.Lock()
-	m.resyncPending = true
-	m.mu.Unlock()
 	return m.apiPost(ctx, "/player/play", `{"uri":`+jsonString(uri)+`}`)
 }
 
@@ -351,6 +381,19 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "audio/ogg")
 	w.Header().Set("Connection", "close")
 	w.WriteHeader(http.StatusOK)
+
+	// Replay the current track's cached Ogg header pages first so a box that
+	// joins mid-track has the identification/comment/setup headers it needs
+	// to initialise the decoder; the live pages (forwarded by the drain)
+	// then follow and are decodable even though they start mid-track.
+	m.mu.Lock()
+	hdr := append([]byte(nil), m.headerPages...)
+	m.mu.Unlock()
+	if len(hdr) > 0 {
+		if _, err := w.Write(hdr); err != nil {
+			return
+		}
+	}
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -360,7 +403,13 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	m.sink = cw
 	m.mu.Unlock()
-	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr)
+	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr))
+
+	// The drain pauses go-librespot while no box is attached; resume it so
+	// the live stream flows to this box.
+	rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	_ = m.Resume(rctx)
+	cancel()
 
 	select {
 	case <-r.Context().Done():

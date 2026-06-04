@@ -1,66 +1,90 @@
 package spotify
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/binary"
 	"testing"
 )
 
-// oggBOS is a minimal Ogg page header that begins a logical bitstream:
-// "OggS", version 0, header_type 0x02 (BOS).
-var oggBOS = []byte{'O', 'g', 'g', 'S', 0x00, 0x02, 0, 0, 0, 0, 0, 0, 0, 0}
+// makeOggPage builds a minimal valid Ogg page (single segment, body < 255).
+func makeOggPage(headerType byte, granule int64, body []byte) []byte {
+	p := make([]byte, 0, 27+1+len(body))
+	p = append(p, 'O', 'g', 'g', 'S')
+	p = append(p, 0) // version
+	p = append(p, headerType)
+	var g [8]byte
+	binary.LittleEndian.PutUint64(g[:], uint64(granule))
+	p = append(p, g[:]...)
+	p = append(p, 1, 2, 3, 4)             // serial
+	p = append(p, 0, 0, 0, 0)             // page seq
+	p = append(p, 0xDE, 0xAD, 0xBE, 0xEF) // crc (unchecked here)
+	p = append(p, 1)                      // page_segments = 1
+	p = append(p, byte(len(body)))
+	p = append(p, body...)
+	return p
+}
 
-func TestFindOggBOS(t *testing.T) {
-	cases := []struct {
-		name string
-		in   []byte
-		want int
-	}{
-		{"at start", oggBOS, 0},
-		{"after garbage", append([]byte{0x01, 0x02, 0x03, 0xff, 0x00}, oggBOS...), 5},
-		{"none", []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}, -1},
-		{"OggS but not BOS (0x00 header_type)", []byte{'O', 'g', 'g', 'S', 0x00, 0x00, 0, 0}, -1},
-		{"OggS but EOS only (0x04)", []byte{'O', 'g', 'g', 'S', 0x00, 0x04, 0, 0}, -1},
-		{"too short", []byte{'O', 'g', 'g', 'S', 0x00}, -1},
+func TestReadOggPageRoundtrip(t *testing.T) {
+	pages := [][]byte{
+		makeOggPage(0x02, 0, []byte("idheader")),
+		makeOggPage(0x00, 0, []byte("setup")),
+		makeOggPage(0x00, 1234, []byte("audio1")),
 	}
-	for _, c := range cases {
-		if got := findOggBOS(c.in); got != c.want {
-			t.Errorf("%s: findOggBOS = %d, want %d", c.name, got, c.want)
+	var stream []byte
+	// prepend junk to exercise the OggS sync
+	stream = append(stream, 0x11, 0x22, 0x33)
+	for _, p := range pages {
+		stream = append(stream, p...)
+	}
+	r := bufio.NewReader(bytes.NewReader(stream))
+	for i, want := range pages {
+		got, err := readOggPage(r)
+		if err != nil {
+			t.Fatalf("page %d: %v", i, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("page %d mismatch: got %d bytes want %d", i, len(got), len(want))
 		}
 	}
 }
 
-// TestResyncAcrossChunks simulates the drain's resync: stale bytes then a
-// BOS, fed in arbitrary chunk splits, must yield exactly the bytes from the
-// BOS onward (the box must receive a stream starting at a track header).
-func TestResyncAcrossChunks(t *testing.T) {
-	stale := bytes.Repeat([]byte{0xAB}, 5000)
-	track := append(append([]byte{}, oggBOS...), bytes.Repeat([]byte{0xCD}, 3000)...)
-	full := append(append([]byte{}, stale...), track...)
+// TestHeaderCapture replicates the drain's header-capture switch and checks
+// it keeps exactly the BOS + granule<=0 pages and stops at the first audio
+// page (granule>0).
+func TestHeaderCapture(t *testing.T) {
+	bos := makeOggPage(0x02, 0, []byte("id"))
+	setup := makeOggPage(0x00, 0, []byte("comment+setup"))
+	audio1 := makeOggPage(0x00, 100, []byte("audioA"))
+	audio2 := makeOggPage(0x00, 200, []byte("audioB"))
+	bos2 := makeOggPage(0x02, 0, []byte("id2")) // next track resets capture
 
-	for _, chunkSize := range []int{1, 3, 7, 13, 4096, 16384} {
-		var carry, out []byte
-		resync := true
-		for off := 0; off < len(full); off += chunkSize {
-			end := off + chunkSize
-			if end > len(full) {
-				end = len(full)
-			}
-			chunk := full[off:end]
-			if resync {
-				data := append(carry, chunk...)
-				if idx := findOggBOS(data); idx >= 0 {
-					resync = false
-					carry = nil
-					out = append(out, data[idx:]...)
-				} else {
-					carry = tailBytes(data, 6)
-				}
-			} else {
-				out = append(out, chunk...)
-			}
+	stream := bytes.Join([][]byte{bos, setup, audio1, audio2, bos2}, nil)
+	r := bufio.NewReader(bytes.NewReader(stream))
+
+	var hdr []byte
+	capturing := false
+	var committed []byte
+	for {
+		page, err := readOggPage(r)
+		if err != nil {
+			break
 		}
-		if !bytes.Equal(out, track) {
-			t.Errorf("chunkSize=%d: resync output len=%d want=%d (must start at BOS)", chunkSize, len(out), len(track))
+		htype := page[5]
+		gran := int64(binary.LittleEndian.Uint64(page[6:14]))
+		switch {
+		case htype&0x02 != 0:
+			hdr = append([]byte(nil), page...)
+			capturing = true
+		case capturing && gran > 0:
+			committed = hdr
+			capturing = false
+		case capturing:
+			hdr = append(hdr, page...)
 		}
+	}
+	want := append(append([]byte(nil), bos...), setup...)
+	if !bytes.Equal(committed, want) {
+		t.Errorf("captured headers = %d bytes, want %d (BOS+setup only)", len(committed), len(want))
 	}
 }
