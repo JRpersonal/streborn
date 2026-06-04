@@ -246,7 +246,7 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="settings">${escapeHtml(t('nav.speakerSettings'))}</button>
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
     <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
-    <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
+    <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}</button>
   </div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">
     <span class="global-security-text">
@@ -467,14 +467,14 @@ function renderSpotifyAlpha() {
   root.dataset.rendered = '1';
   root.innerHTML = `
     <div class="alpha-stage">
-      <h2>${escapeHtml(t('spotify.heading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></h2>
-      <p>${escapeHtml(t('spotify.intro1'))}</p>
-      <ul class="alpha-checklist">
-        <li>${escapeHtml(t('spotify.bullet1'))}</li>
-        <li>${escapeHtml(t('spotify.bullet2'))}</li>
-        <li>${escapeHtml(t('spotify.bullet3'))}</li>
-      </ul>
-      <p>${t('spotify.feedbackPrompt')}</p>
+      <h2>${escapeHtml(t('spotify.heading'))}</h2>
+      <p>${escapeHtml(t('spotify.nativeIntro'))}</p>
+      <ol class="alpha-checklist">
+        <li>${escapeHtml(t('spotify.nativeStep1'))}</li>
+        <li>${escapeHtml(t('spotify.nativeStep2'))}</li>
+        <li>${escapeHtml(t('spotify.nativeStep3'))}</li>
+      </ol>
+      <p class="muted small">${escapeHtml(t('spotify.nativeNote'))}</p>
       <p><a href="#" id="spotifyIssueLink">${escapeHtml(t('spotify.issueLink'))}</a></p>
     </div>
   `;

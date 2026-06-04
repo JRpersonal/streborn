@@ -697,5 +697,10 @@
   "source.hint.stored_music_media_renderer": "Local media library on the LAN",
   "source.hint.alexa": "Amazon Alexa integration",
   "setupAPPush.stickStillNeeded": "Wi-Fi onboarding only. Installing STR afterwards still requires the USB stick, so for most setups the stick alone is the simpler, more reliable choice.",
-  "setup.stockKeepsWifi": "Recommended: prepare the USB stick and plug it in. It adds STR and keeps your speaker's existing Wi-Fi, no reset and no going through the initial setup again."
+  "setup.stockKeepsWifi": "Recommended: prepare the USB stick and plug it in. It adds STR and keeps your speaker's existing Wi-Fi, no reset and no going through the initial setup again.",
+  "spotify.nativeIntro": "Spotify Connect works natively on your speaker. There is nothing to set up in this app: it uses your speaker's built-in Spotify.",
+  "spotify.nativeStep1": "Open the Spotify app on a phone or computer on the same Wi-Fi as the speaker.",
+  "spotify.nativeStep2": "Tap the “Connect to a device” (speaker) icon and pick this speaker.",
+  "spotify.nativeStep3": "Play. Any Spotify account works; whoever connects last controls it. No login needed in this app.",
+  "spotify.nativeNote": "Note: a Spotify Premium account is required (Spotify's own rule for Connect). The old “link an account in the Bose app” step is gone and not needed."
 }

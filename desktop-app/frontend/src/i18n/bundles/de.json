@@ -697,5 +697,10 @@
   "source.hint.stored_music_media_renderer": "Lokale Mediathek im LAN",
   "source.hint.alexa": "Amazon Alexa Integration",
   "setupAPPush.stickStillNeeded": "Nur WLAN-Anmeldung. Die STR-Installation braucht danach weiterhin den USB-Stick, für die meisten ist der Stick allein der einfachere, zuverlässigere Weg.",
-  "setup.stockKeepsWifi": "Empfohlen: USB-Stick vorbereiten und einstecken. Er fügt STR hinzu und lässt das vorhandene WLAN der Box unangetastet, kein Reset und kein erneutes Erst-Setup."
+  "setup.stockKeepsWifi": "Empfohlen: USB-Stick vorbereiten und einstecken. Er fügt STR hinzu und lässt das vorhandene WLAN der Box unangetastet, kein Reset und kein erneutes Erst-Setup.",
+  "spotify.nativeIntro": "Spotify Connect funktioniert nativ auf deinem Lautsprecher. In dieser App musst du nichts einrichten: es nutzt das eingebaute Spotify des Lautsprechers.",
+  "spotify.nativeStep1": "Öffne die Spotify-App auf Handy oder PC im selben WLAN wie der Lautsprecher.",
+  "spotify.nativeStep2": "Tippe auf das „Mit einem Gerät verbinden\"-Symbol (Lautsprecher) und wähle diesen Lautsprecher.",
+  "spotify.nativeStep3": "Abspielen. Jeder Spotify-Account funktioniert; wer zuletzt verbindet, steuert. Kein Login in dieser App nötig.",
+  "spotify.nativeNote": "Hinweis: ein Spotify-Premium-Account ist nötig (Spotifys eigene Connect-Regel). Das frühere „Account in der Bose-App verknüpfen\" entfällt und wird nicht gebraucht."
 }
