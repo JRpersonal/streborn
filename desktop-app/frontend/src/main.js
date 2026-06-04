@@ -311,6 +311,10 @@ const SUPPORTED_LINE = {
   pt: 'para SoundTouch 10, 20, 30 e Portable',
   ja: 'SoundTouch 10、20、30、Portable に対応',
   uk: 'для SoundTouch 10, 20, 30 і Portable',
+  pl: 'dla SoundTouch 10, 20, 30 i Portable',
+  lt: 'skirta SoundTouch 10, 20, 30 ir Portable',
+  lv: 'SoundTouch 10, 20, 30 un Portable modeļiem',
+  tr: 'SoundTouch 10, 20, 30 ve Portable için',
   en: 'for SoundTouch 10, 20, 30 and Portable',
 };
 
@@ -323,6 +327,10 @@ const TAGLINES = {
   pt: 'Continua a usar os teus altifalantes Bose SoundTouch sem a cloud Bose.',
   ja: 'Bose SoundTouch スピーカーを Bose クラウドなしで使い続けられます。',
   uk: 'Користуйтеся колонками Bose SoundTouch і далі, без хмари Bose.',
+  pl: 'Korzystaj dalej z głośników Bose SoundTouch, bez chmury Bose.',
+  lt: 'Toliau naudokitės savo Bose SoundTouch garsiakalbiais be Bose debesies.',
+  lv: 'Turpiniet lietot savus Bose SoundTouch skaļruņus bez Bose mākoņa.',
+  tr: 'Bose SoundTouch hoparlörlerinizi Bose bulutu olmadan kullanmaya devam edin.',
   en: 'Keep using your Bose SoundTouch speakers, without the Bose cloud.',
 };
 
@@ -1399,10 +1407,14 @@ function renderLanguageOptions() {
   const sel = $('searchLang');
   if (!sel || !state.languages.length) return;
   const opts = [`<option value="">${escapeHtml(t('search.allLanguages'))}</option>`];
-  for (const l of state.languages) {
-    if (!l.name) continue;
-    const label = localizeLanguageName(l.name);
-    opts.push(`<option value="${escapeAttr(l.name)}">${escapeHtml(label)} (${l.stationcount})</option>`);
+  // Sort alphabetically by the localized display name, consistent with
+  // the country dropdown. The API returns languages by station count.
+  const sorted = state.languages
+    .filter((l) => l.name)
+    .map((l) => ({ name: l.name, stationcount: l.stationcount, label: localizeLanguageName(l.name) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  for (const l of sorted) {
+    opts.push(`<option value="${escapeAttr(l.name)}">${escapeHtml(l.label)} (${l.stationcount})</option>`);
   }
   sel.innerHTML = opts.join('');
   sel.value = state.searchLang;
@@ -2617,6 +2629,69 @@ const ROOM_NAMES_BY_LOCALE = {
     'Gästezimmer', 'Flur', 'Diele', 'Eingang',
     'Garten', 'Terrasse', 'Balkon', 'Werkstatt',
     'Hobbyraum', 'Keller', 'Dachboden', 'Garage',
+  ],
+  fr: [
+    'Salon', 'Chambre', 'Cuisine', 'Salle à manger',
+    'Salle de bain', 'Bureau', 'Espace de travail', 'Chambre d\'enfant',
+    'Chambre d\'amis', 'Couloir', 'Entrée',
+    'Jardin', 'Terrasse', 'Balcon', 'Atelier',
+    'Salle de loisirs', 'Sous-sol', 'Grenier', 'Garage',
+  ],
+  es: [
+    'Salón', 'Dormitorio', 'Cocina', 'Comedor',
+    'Baño', 'Estudio', 'Oficina', 'Habitación infantil',
+    'Habitación de invitados', 'Pasillo', 'Entrada',
+    'Jardín', 'Patio', 'Balcón', 'Taller',
+    'Sala de ocio', 'Sótano', 'Ático', 'Garaje',
+  ],
+  ja: [
+    'リビング', '寝室', 'キッチン', 'ダイニング',
+    'バスルーム', '書斎', 'オフィス', '子供部屋',
+    'ゲストルーム', '廊下', '玄関',
+    '庭', 'テラス', 'バルコニー', '作業部屋',
+    '趣味の部屋', '地下室', '屋根裏', 'ガレージ',
+  ],
+  uk: [
+    'Вітальня', 'Спальня', 'Кухня', 'Їдальня',
+    'Ванна', 'Кабінет', 'Офіс', 'Дитяча',
+    'Кімната для гостей', 'Коридор', 'Передпокій',
+    'Сад', 'Тераса', 'Балкон', 'Майстерня',
+    'Кімната для хобі', 'Підвал', 'Горище', 'Гараж',
+  ],
+  nl: [
+    'Woonkamer', 'Slaapkamer', 'Keuken', 'Eetkamer',
+    'Badkamer', 'Studeerkamer', 'Kantoor', 'Kinderkamer',
+    'Logeerkamer', 'Gang', 'Hal',
+    'Tuin', 'Terras', 'Balkon', 'Werkplaats',
+    'Hobbykamer', 'Kelder', 'Zolder', 'Garage',
+  ],
+  pl: [
+    'Salon', 'Sypialnia', 'Kuchnia', 'Jadalnia',
+    'Łazienka', 'Gabinet', 'Biuro', 'Pokój dziecięcy',
+    'Pokój gościnny', 'Korytarz', 'Przedpokój',
+    'Ogród', 'Taras', 'Balkon', 'Warsztat',
+    'Pokój hobby', 'Piwnica', 'Strych', 'Garaż',
+  ],
+  lt: [
+    'Svetainė', 'Miegamasis', 'Virtuvė', 'Valgomasis',
+    'Vonia', 'Darbo kambarys', 'Biuras', 'Vaikų kambarys',
+    'Svečių kambarys', 'Koridorius', 'Prieškambaris',
+    'Sodas', 'Terasa', 'Balkonas', 'Dirbtuvė',
+    'Pomėgių kambarys', 'Rūsys', 'Palėpė', 'Garažas',
+  ],
+  lv: [
+    'Viesistaba', 'Guļamistaba', 'Virtuve', 'Ēdamistaba',
+    'Vannasistaba', 'Kabinets', 'Birojs', 'Bērnu istaba',
+    'Viesu istaba', 'Gaitenis', 'Priekštelpa',
+    'Dārzs', 'Terase', 'Balkons', 'Darbnīca',
+    'Hobiju istaba', 'Pagrabs', 'Bēniņi', 'Garāža',
+  ],
+  tr: [
+    'Oturma Odası', 'Yatak Odası', 'Mutfak', 'Yemek Odası',
+    'Banyo', 'Çalışma Odası', 'Ofis', 'Çocuk Odası',
+    'Misafir Odası', 'Koridor', 'Giriş',
+    'Bahçe', 'Teras', 'Balkon', 'Atölye',
+    'Hobi Odası', 'Bodrum', 'Çatı Katı', 'Garaj',
   ],
   en: [
     'Living Room', 'Bedroom', 'Kitchen', 'Dining Room',
