@@ -4263,6 +4263,12 @@ function renderSetupTargetPicker() {
     cards += cardHTML('stock', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindStock')),
       t('setup.targetCardBadgeStock'), 'badge-warn');
+    // A box already on Wi-Fi (the common case) just needs STR added via
+    // the stick: no reset, the existing Wi-Fi stays. Reassure here so
+    // users do not reach for a factory reset they do not need.
+    if (isSelected('stock', b.host)) {
+      cards += `<div class="setup-target-factory-help muted small">${escapeHtml(t('setup.stockKeepsWifi'))}</div>`;
+    }
   }
   for (const b of strBoxes) {
     const label = b.friendlyName || b.name || b.host;
@@ -4365,6 +4371,7 @@ async function renderSetupAPPushPanel() {
     panel.innerHTML = `
       <div class="setup-ap-push-not-found">
         <h4>${escapeHtml(t('setupAPPush.title'))}</h4>
+        <div class="setup-ap-push-warn">${escapeHtml(t('setupAPPush.stickStillNeeded'))}</div>
         <p class="muted small">${escapeHtml(t('setupAPPush.instructionsBody'))}</p>
         <ol class="setup-ap-push-steps">
           <li>${escapeHtml(t('setupAPPush.step1'))}</li>
@@ -4392,6 +4399,7 @@ async function renderSetupAPPushPanel() {
   panel.innerHTML = `
     <div class="setup-ap-push-found">
       <h4>${escapeHtml(t('setupAPPush.foundTitle', { model: box.model || 'Bose SoundTouch' }))}</h4>
+      <div class="setup-ap-push-warn">${escapeHtml(t('setupAPPush.stickStillNeeded'))}</div>
       <p class="muted small">${escapeHtml(t('setupAPPush.foundBody'))}</p>
       <div class="setup-ap-push-form">
         <label class="setup-ap-push-row">

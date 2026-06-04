@@ -695,5 +695,7 @@
   "source.hint.qplay": "QPlay (Chinese market)",
   "source.hint.upnp": "UPnP streaming. STR uses this actively.",
   "source.hint.stored_music_media_renderer": "Local media library on the LAN",
-  "source.hint.alexa": "Amazon Alexa integration"
+  "source.hint.alexa": "Amazon Alexa integration",
+  "setupAPPush.stickStillNeeded": "Wi-Fi onboarding only. Installing STR afterwards still requires the USB stick, so for most setups the stick alone is the simpler, more reliable choice.",
+  "setup.stockKeepsWifi": "Recommended: prepare the USB stick and plug it in. It adds STR and keeps your speaker's existing Wi-Fi, no reset and no going through the initial setup again."
 }

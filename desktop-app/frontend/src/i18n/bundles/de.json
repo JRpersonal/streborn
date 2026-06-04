@@ -695,5 +695,7 @@
   "source.hint.qplay": "QPlay (chinesischer Markt)",
   "source.hint.upnp": "UPnP-Streaming. Wird von STR aktiv genutzt.",
   "source.hint.stored_music_media_renderer": "Lokale Mediathek im LAN",
-  "source.hint.alexa": "Amazon Alexa Integration"
+  "source.hint.alexa": "Amazon Alexa Integration",
+  "setupAPPush.stickStillNeeded": "Nur WLAN-Anmeldung. Die STR-Installation braucht danach weiterhin den USB-Stick, für die meisten ist der Stick allein der einfachere, zuverlässigere Weg.",
+  "setup.stockKeepsWifi": "Empfohlen: USB-Stick vorbereiten und einstecken. Er fügt STR hinzu und lässt das vorhandene WLAN der Box unangetastet, kein Reset und kein erneutes Erst-Setup."
 }
