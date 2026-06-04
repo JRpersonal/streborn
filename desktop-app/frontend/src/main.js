@@ -480,9 +480,17 @@ async function renderFooter() {
   if (i.websiteUrl) links.push(`<a href="#" data-url="${escapeAttr(i.websiteUrl)}" class="footer-link">${escapeHtml(t('footer.website'))}</a>`);
   links.push(`<a href="#" id="footerSaveLogs" class="footer-link" title="${escapeAttr(t('footer.saveLogsHint'))}">${escapeHtml(t('footer.saveLogs'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
+  // Clicking the version opens the release notes. For a clean tagged
+  // build that is the matching GitHub release page (which carries the
+  // generated "What's changed" notes); for a dev build (version like
+  // v0.6.21-3-gabc-dirty) there is no tag page, so fall back to the
+  // releases list.
+  const repo = (i.githubUrl || 'https://github.com/JRpersonal/streborn').replace(/\/+$/, '');
+  const isTag = /^v\d+\.\d+\.\d+$/.test(i.version || '');
+  const releaseNotesUrl = isTag ? `${repo}/releases/tag/${i.version}` : `${repo}/releases`;
   $('appFooter').innerHTML = `
     <div class="footer-left">
-      ST Reborn &middot; Version <b>${escapeHtml(i.version)}</b>${buildStr}${i.author ? ' &middot; ' + escapeHtml(i.author) : ''}
+      ST Reborn &middot; Version <a href="#" id="appVersionLink" class="footer-link" title="${escapeAttr(t('banner.whatsNew'))}"><b>${escapeHtml(i.version)}</b></a>${buildStr}${i.author ? ' &middot; ' + escapeHtml(i.author) : ''}
       <div class="footer-fine">Independent open source project, donation funded, MIT license.</div>
     </div>
     <div class="footer-right">${links.join(' &middot; ')}</div>
@@ -490,6 +498,8 @@ async function renderFooter() {
   $('appFooter').querySelectorAll('.footer-link[data-url]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(withAppReferrer(a.dataset.url, 'footer')); };
   });
+  const verLink = $('appVersionLink');
+  if (verLink) verLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(releaseNotesUrl); };
   const saveLogsBtn = $('footerSaveLogs');
   if (saveLogsBtn) {
     saveLogsBtn.onclick = async (e) => {
