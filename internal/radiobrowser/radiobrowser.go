@@ -34,12 +34,12 @@ import (
 // no longer resolve. The hardcoded list mirrors that reality:
 //   - `de1.api...`     — the named primary
 //   - `all.api...`     — DNS round-robin fallback that resolves to
-//                        whichever server is currently alive (one
-//                        request away from being self-healing if
-//                        radio-browser adds new servers).
+//     whichever server is currently alive (one
+//     request away from being self-healing if
+//     radio-browser adds new servers).
 //   - `91.98.4.78`     — de1's current IPv4 hard-coded as last-
-//                        resort if DNS itself is down on the
-//                        speaker's network.
+//     resort if DNS itself is down on the
+//     speaker's network.
 var Mirrors = []string{
 	"https://de1.api.radio-browser.info/json",
 	"https://all.api.radio-browser.info/json",
@@ -73,8 +73,8 @@ type Station struct {
 
 // Tag ist ein Genre Tag mit Anzahl der Stations.
 type Tag struct {
-	Name           string `json:"name"`
-	StationCount   int    `json:"stationcount"`
+	Name         string `json:"name"`
+	StationCount int    `json:"stationcount"`
 }
 
 // Language listet eine Sprache plus Sender Anzahl.
@@ -97,8 +97,12 @@ func New() *Client {
 	mirrors := make([]string, len(Mirrors))
 	copy(mirrors, Mirrors)
 	return &Client{
-		HTTP:    &http.Client{Timeout: 8 * time.Second},
-		UA:      "SoundTouchReborn/1.0",
+		HTTP: &http.Client{Timeout: 8 * time.Second},
+		// radio-browser asks clients to identify themselves via a
+		// descriptive User-Agent (it has no referral mechanism). Naming
+		// the project URL lets the radio-browser maintainers see where
+		// the traffic and the station clicks come from.
+		UA:      "ST-Reborn/1.0 (+https://st-reborn.de)",
 		mirrors: mirrors,
 	}
 }
