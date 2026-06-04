@@ -137,6 +137,37 @@ on his LAN):
    receives the network-wide config the desktop app rolls out to all
    agents; surface track metadata via now-playing.
 
+## Component choice: librespot, not the frozen Bose eSDK
+
+The speaker already ships Spotify's official embedded SDK
+(`/usr/lib/libspotify_embedded_shared.so`, dated Aug 2022) plus the audio
+socket `/var/volatile/tmp/spotifyaudio.uds`. Bose used the account-linked
+Connect model: you entered your Spotify account in the Bose iOS app, the
+Bose cloud brokered the Spotify OAuth and pushed the credential to the
+speaker, which logged in and registered with Spotify so it appeared in
+your app everywhere. Only that broker (the Bose cloud) is dead; the eSDK
+itself is intact.
+
+Reusing the eSDK was tempting (almost no new on-box code: marge could
+return a credential where the Bose cloud used to). It is rejected as the
+primary path:
+
+- The eSDK is **frozen at Aug 2022 and will never be updated by Bose**.
+  When Spotify next deprecates the protocol version or revokes the
+  embedded partner key, native Spotify dies with no recourse, the exact
+  vendor-abandonment failure STR exists to undo.
+- Driving a closed Spotify C library with Bose's partner key outside
+  Bose's flow is heavy reverse engineering with uncertain payoff.
+
+librespot is chosen instead because it is **open, actively maintained
+(v0.8.0, Nov 2025), and STR controls its update path**: when Spotify
+changes, we rebuild from source and ship it over OTA. It also does the
+same **account-linked** model via its OAuth login (`librespot-oauth`), so
+the familiar "appears in your Spotify app under your account" UX is
+preserved, not just local zeroconf. This mirrors STR already replacing
+the dead TuneIn integration with radio-browser. The eSDK reuse stays
+documented only as a rejected alternative.
+
 ## Spike results so far
 
 - **Build (transparent, from source):** `.github/workflows/librespot.yml`
