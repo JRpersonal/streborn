@@ -67,6 +67,11 @@ type Manager struct {
 	mu   sync.Mutex
 	sink io.Writer // current HTTP consumer, nil when none
 	cmd  *exec.Cmd
+	// resyncPending: set by Play. The drain then discards whatever stale
+	// audio is buffered and forwards to the box only from the next Ogg
+	// beginning-of-stream page, so the box receives the freshly recalled
+	// track from its start (incl. the Vorbis headers) and can decode it.
+	resyncPending bool
 }
 
 // New returns a Manager. binPath is the go-librespot binary, configDir
@@ -195,11 +200,14 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// consumes at real time, which paces go-librespot via the same pipe
 	// backpressure.
 	buf := make([]byte, 16*1024)
+	var carry []byte // tail kept across reads while hunting for the BOS page
 	for {
 		m.mu.Lock()
 		sink := m.sink
+		resync := m.resyncPending
 		m.mu.Unlock()
 		if sink == nil {
+			carry = nil
 			select {
 			case <-ctx.Done():
 				return cmd.Wait()
@@ -210,14 +218,22 @@ func (m *Manager) runOnce(ctx context.Context) error {
 
 		n, rerr := stdout.Read(buf)
 		if n > 0 {
-			if _, werr := sink.Write(buf[:n]); werr != nil {
-				m.mu.Lock()
-				if m.sink == sink {
-					m.sink = nil
+			chunk := buf[:n]
+			if resync {
+				// Discard stale audio until the next track start (Ogg BOS
+				// page); forward to the box only from there.
+				data := append(carry, chunk...)
+				if idx := findOggBOS(data); idx >= 0 {
+					m.mu.Lock()
+					m.resyncPending = false
+					m.mu.Unlock()
+					carry = nil
+					m.forward(sink, data[idx:])
+				} else {
+					carry = tailBytes(data, 6)
 				}
-				m.mu.Unlock()
-			} else if f, ok := sink.(http.Flusher); ok {
-				f.Flush()
+			} else {
+				m.forward(sink, chunk)
 			}
 		}
 		if rerr != nil {
@@ -225,6 +241,49 @@ func (m *Manager) runOnce(ctx context.Context) error {
 		}
 	}
 	return cmd.Wait()
+}
+
+// forward writes p to the box sink; on write error it drops the sink so the
+// drain goes back to gating (and go-librespot re-blocks).
+func (m *Manager) forward(sink io.Writer, p []byte) {
+	if _, err := sink.Write(p); err != nil {
+		m.mu.Lock()
+		if m.sink == sink {
+			m.sink = nil
+		}
+		m.mu.Unlock()
+		return
+	}
+	if f, ok := sink.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// findOggBOS returns the index of the first Ogg page that begins a logical
+// bitstream: capture pattern "OggS", version 0, header_type with the BOS
+// flag (0x02). That page carries the Vorbis identification header, i.e. a
+// track's start. Returns -1 if none is present.
+func findOggBOS(b []byte) int {
+	for i := 0; i+5 < len(b); i++ {
+		if b[i] == 'O' && b[i+1] == 'g' && b[i+2] == 'g' && b[i+3] == 'S' &&
+			b[i+4] == 0 && b[i+5]&0x02 != 0 {
+			return i
+		}
+	}
+	return -1
+}
+
+// tailBytes returns the last n bytes of b (or all of b if shorter), so a
+// capture pattern split across reads is not missed.
+func tailBytes(b []byte, n int) []byte {
+	if len(b) <= n {
+		out := make([]byte, len(b))
+		copy(out, b)
+		return out
+	}
+	out := make([]byte, n)
+	copy(out, b[len(b)-n:])
+	return out
 }
 
 // Play asks go-librespot to start playing a Spotify URI on this device,
@@ -237,6 +296,9 @@ func (m *Manager) runOnce(ctx context.Context) error {
 // incl. the Ogg headers; the box therefore receives the stream from the
 // beginning and can decode it.
 func (m *Manager) Play(ctx context.Context, uri string) error {
+	m.mu.Lock()
+	m.resyncPending = true
+	m.mu.Unlock()
 	return m.apiPost(ctx, "/player/play", `{"uri":`+jsonString(uri)+`}`)
 }
 
