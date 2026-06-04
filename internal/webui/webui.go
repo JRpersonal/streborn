@@ -43,6 +43,15 @@ type Server struct {
 	region      string // ISO 3166-1 alpha-2 vom Setup Wizard, leer wenn unbekannt
 	regionFile  string // Pfad fuer persistente Speicherung
 	streamProxy *streamproxy.Server
+	// spotifyStream serves the live WAV from the go-librespot manager to
+	// the box over HTTP (registered at /spotify/stream). nil when Spotify
+	// is not configured. Injected as a handler so webui need not import
+	// the spotify package.
+	spotifyStream http.HandlerFunc
+	// spotifyPlay tells go-librespot to play a Spotify URI (the control
+	// side of a Spotify preset recall). nil when Spotify is not
+	// configured. Injected as a func for the same decoupling reason.
+	spotifyPlay func(context.Context, string) error
 	langCacheMu sync.Mutex
 	langCache   map[string]langCacheEntry
 	// wifiSignalFn returns the latest Wi-Fi signal class observed on the
@@ -130,6 +139,19 @@ func WithStreamProxy(p *streamproxy.Server) Option {
 	return func(s *Server) { s.streamProxy = p }
 }
 
+// WithSpotifyStream registers the handler that serves go-librespot's
+// live WAV to the box at /spotify/stream (the Spotify-preset audio
+// plane).
+func WithSpotifyStream(h http.HandlerFunc) Option {
+	return func(s *Server) { s.spotifyStream = h }
+}
+
+// WithSpotifyControl registers the function that starts playback of a
+// Spotify URI in go-librespot (the Spotify-preset control plane).
+func WithSpotifyControl(play func(context.Context, string) error) Option {
+	return func(s *Server) { s.spotifyPlay = play }
+}
+
 // ensureBoxReady weckt die Box aus dem Standby (mit retry+poll bis
 // wirklich wach) und stellt sicher dass der Marge Account aktiv ist.
 // Wird vor jedem Play Call aufgerufen.
@@ -210,6 +232,9 @@ func (s *Server) Run(ctx context.Context) error {
 	// Siehe internal/streamproxy fuer Details.
 	if s.streamProxy != nil {
 		s.streamProxy.Register(mux)
+	}
+	if s.spotifyStream != nil {
+		mux.HandleFunc("/spotify/stream", s.spotifyStream)
 	}
 
 	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
@@ -423,6 +448,32 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// Spotify presets have no playable HTTP StreamURL: tell go-librespot
+	// to play the saved URI, then point the box at our live /spotify/stream.
+	if p.Type == "spotify" && p.URI != "" {
+		if s.spotifyPlay == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": "Spotify not configured", "slot": slot, "name": p.Name,
+			})
+			return
+		}
+		if err := s.spotifyPlay(r.Context(), p.URI); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "Spotify could not be played", "detail": err.Error(),
+				"slot": slot, "name": p.Name,
+			})
+			return
+		}
+		if err := s.renderer.PlayURL(r.Context(), "http://127.0.0.1:8888/spotify/stream", p.Name, p.Art); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
+				"slot": slot, "name": p.Name,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
+		return
+	}
 	// Stream Proxy URL nutzen damit auch nach Token Expiry weitergespielt
 	// wird (Bose sieht die stabile loopback URL).
 	playURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
@@ -948,7 +999,9 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct{ Name string `json:"name"` }
+	var req struct {
+		Name string `json:"name"`
+	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
@@ -981,7 +1034,9 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
-	var req struct{ Value int `json:"value"` }
+	var req struct {
+		Value int `json:"value"`
+	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
@@ -1086,7 +1141,9 @@ func (s *Server) handleBoxBass(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct{ Value int `json:"value"` }
+	var req struct {
+		Value int `json:"value"`
+	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
@@ -1201,17 +1258,17 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := map[string]any{
-		"agent_log_tail":  readTail("/tmp/streborn-agent.log"),
-		"previous_log":    readTail("/mnt/nv/streborn/previous.log"),
-		"setup_log":       readTail("/mnt/nv/streborn/setup.log"),
-		"boot_log":        readTail("/mnt/nv/streborn/boot.log"),
-		"wpa_supplicant":  readTail("/mnt/nv/wpa_supplicant.conf"),
-		"region_txt":      readTail("/mnt/nv/streborn/region.txt"),
-		"name_txt":        readTail("/mnt/nv/streborn/name.txt"),
-		"stick_listing":   listDir("/media/sda1"),
-		"media_listing":   listDir("/media"),
-		"nv_listing":      listDir("/mnt/nv/streborn"),
-		"proc_mounts":     readTail("/proc/mounts"),
+		"agent_log_tail": readTail("/tmp/streborn-agent.log"),
+		"previous_log":   readTail("/mnt/nv/streborn/previous.log"),
+		"setup_log":      readTail("/mnt/nv/streborn/setup.log"),
+		"boot_log":       readTail("/mnt/nv/streborn/boot.log"),
+		"wpa_supplicant": readTail("/mnt/nv/wpa_supplicant.conf"),
+		"region_txt":     readTail("/mnt/nv/streborn/region.txt"),
+		"name_txt":       readTail("/mnt/nv/streborn/name.txt"),
+		"stick_listing":  listDir("/media/sda1"),
+		"media_listing":  listDir("/media"),
+		"nv_listing":     listDir("/mnt/nv/streborn"),
+		"proc_mounts":    readTail("/proc/mounts"),
 	}
 	writeJSON(w, http.StatusOK, state)
 }
@@ -1225,9 +1282,10 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 // timeout, body capped to keep the JSON small.
 //
 // Query parameters:
-//   url     full URL to probe (required)
-//   method  HTTP method (default GET)
-//   body    request body, sent verbatim
+//
+//	url     full URL to probe (required)
+//	method  HTTP method (default GET)
+//	body    request body, sent verbatim
 func (s *Server) handleDebugProbe(w http.ResponseWriter, r *http.Request) {
 	if !isLocalLAN(r.RemoteAddr) {
 		http.Error(w, "debug only from LAN", http.StatusForbidden)
@@ -1328,9 +1386,9 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"synced":  len(specs) - len(failed),
-		"failed":  failed,
+		"status": "ok",
+		"synced": len(specs) - len(failed),
+		"failed": failed,
 	})
 }
 

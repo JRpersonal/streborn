@@ -37,6 +37,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/shepherd"
+	"github.com/JRpersonal/streborn/internal/spotify"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/sysinfo"
 	"github.com/JRpersonal/streborn/internal/tlsgen"
@@ -267,13 +268,24 @@ func run() error {
 	// und der Stick Agent reconnectet intern bei Drops.
 	streamProxySrv := streamproxy.New(store, logger.With("comp", "streamproxy"))
 
+	// Spotify preset audio plane (#78, P1): the agent supervises
+	// go-librespot and serves its live audio (PCM wrapped as a WAV
+	// stream) at /spotify/stream so the box plays it over UPnP. A Spotify
+	// preset press calls go-librespot's local play API (no token plane)
+	// and points the box at /spotify/stream. Idles until the binary is
+	// present and the device is tap-authenticated once in the Spotify
+	// app. Started below once ctx exists.
+	spotifyMgr := spotify.New("/mnt/nv/streborn/bin/go-librespot", "/mnt/nv/streborn/sp-cache", "ST Reborn", logger.With("comp", "spotify"))
+
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
 		webui.WithBoxHost(*boxHost),
 		webui.WithAutoPair(autoPair),
 		webui.WithRegion(region),
 		webui.WithRegionFile(*regionFile),
-		webui.WithStreamProxy(streamProxySrv))
+		webui.WithStreamProxy(streamProxySrv),
+		webui.WithSpotifyStream(spotifyMgr.ServeWAV),
+		webui.WithSpotifyControl(spotifyMgr.Play))
 
 	// Hardware Preset Tasten: Box sendet via WebSocket auf 8080 (gabbo Protocol)
 	// einen presetSelectionUpdated event wenn der User physisch eine Taste
@@ -285,6 +297,7 @@ func run() error {
 		renderer: renderer,
 		autoPair: autoPair,
 		boxHost:  *boxHost,
+		spotify:  spotifyMgr,
 	}
 	wsClient := boxws.New(
 		logger.With("comp", "boxws"),
@@ -327,6 +340,11 @@ func run() error {
 		defer wg.Done()
 		wsClient.Run(ctx)
 	}()
+
+	// Spotify preset audio plane (#78, P1): supervise librespot. Idles
+	// (returns immediately) until a credential is cached, so it is safe to
+	// start unconditionally.
+	go spotifyMgr.Run(ctx)
 
 	// Auto Pair Background: pairt die Box automatisch beim Start. Re-pairt
 	// alle 5 Minuten falls die Box mal verloren geht. Plus: WS Handler
@@ -623,6 +641,7 @@ type presetWsHandler struct {
 	renderer *upnp.Renderer
 	autoPair *autopair.Manager
 	boxHost  string
+	spotify  *spotify.Manager
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
@@ -636,6 +655,13 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	name := title
 	icon := ""
 	if p, ok := h.store.Get(slot); ok {
+		// Spotify presets do not have a playable HTTP StreamURL. They are
+		// recalled by telling go-librespot to play the saved URI and then
+		// pointing the box's UPnP renderer at our live /spotify/stream.
+		if p.Type == "spotify" && p.URI != "" {
+			h.playSpotifyPreset(ctx, slot, p)
+			return
+		}
 		if p.Name != "" {
 			name = p.Name
 		}
@@ -677,6 +703,49 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		return
 	}
 	h.logger.Info("hardware preset zu upnp gemapped", "slot", slot, "name", name)
+}
+
+// spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches
+// for Spotify audio. The agent runs on the box, so 127.0.0.1:8888 reaches
+// it (same host:port the radio stream proxy uses).
+const spotifyStreamURL = "http://127.0.0.1:8888/spotify/stream"
+
+// playSpotifyPreset recalls a Spotify preset: wake + pair the box, tell
+// go-librespot to play the saved URI (autonomous, no app), then point the
+// box at the live /spotify/stream so it plays the audio over UPnP.
+func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p presets.Preset) {
+	if h.spotify == nil || !h.spotify.Ready() {
+		h.logger.Warn("spotify preset pressed but manager not ready", "slot", slot)
+		return
+	}
+
+	// Wake from standby + ensure pairing, same as the radio path.
+	if h.boxHost != "" {
+		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
+			h.logger.Warn("Box konnte nicht aus STANDBY geholt werden", "err", err)
+		}
+		cancel()
+	}
+	if h.autoPair != nil {
+		pairCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+		h.autoPair.TriggerNow(pairCtx)
+		cancel()
+	}
+
+	// Start playback in go-librespot first so PCM is flowing by the time
+	// the box opens the WAV stream.
+	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := h.spotify.Play(playCtx, p.URI); err != nil {
+		h.logger.Error("spotify play failed", "slot", slot, "uri", p.URI, "err", err)
+		return
+	}
+	if err := h.renderer.PlayURL(playCtx, spotifyStreamURL, p.Name, p.Art); err != nil {
+		h.logger.Error("spotify upnp play failed", "slot", slot, "err", err)
+		return
+	}
+	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", p.Account)
 }
 
 // loadRegion liest den Country Code aus der region.txt vom Stick. Leer

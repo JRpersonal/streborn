@@ -1,0 +1,94 @@
+name: go-librespot
+
+# Builds the Spotify Connect receiver go-librespot (devgianlu, GPL-3.0)
+# from a pinned upstream tag for the speaker target and attests it with
+# Sigstore, exactly like the STR agent. This keeps the bundled binary
+# transparent and reproducible: no opaque third-party blob ever ships to
+# a user's speaker. Primary Spotify backend for #78
+# (docs/streaming/spotify.md); librespot.yml stays as a documented
+# fallback.
+#
+# Why go-librespot over librespot-org: it ships a local HTTP control API
+# (POST /player/play {uri}) so hardware preset buttons can recall a saved
+# Spotify playlist autonomously, with no phone app and no Spotify Web API
+# token stored on the box. The cost is the build: go-librespot decodes
+# Vorbis/FLAC through cgo (libogg, libvorbis, flac), so unlike librespot's
+# pure-Rust static musl it needs a cgo cross build.
+#
+# Target is armv7 STATIC: the speaker runs glibc 2.15 (2012), far too old
+# for a modern dynamic build. We build inside an emulated arm/v7 Alpine
+# (musl) container and statically link everything, so the binary runs on
+# the box regardless of its ancient libc. GPL-3.0 obliges us to offer the
+# source; it is public and the build is pinned + reproducible.
+#
+# Run it from the Actions tab (workflow_dispatch). The artifact is the
+# attested go-librespot-armv7l plus its SHA256, for the on-box test.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'go-librespot git tag to build (pinned, GPL-3.0)'
+        required: true
+        default: 'v0.7.3'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Set up QEMU (arm/v7 emulation)
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        with:
+          platforms: arm
+
+      - name: Clone go-librespot (pinned)
+        env:
+          REF: ${{ github.event.inputs.ref }}
+        run: |
+          git clone --depth 1 --branch "$REF" https://github.com/devgianlu/go-librespot go-librespot
+          echo "Built from go-librespot $REF at $(git -C go-librespot rev-parse HEAD)"
+          mkdir -p dist
+
+      - name: Build (static musl, cgo, arm/v7)
+        # Native compile inside an emulated arm/v7 Alpine container so cgo
+        # targets the speaker arch directly. Static link the C decoders so
+        # the result runs on the box's glibc 2.15. Module + build caches
+        # live under the mounted workspace so nothing leaks host state.
+        run: |
+          docker run --rm --platform linux/arm/v7 \
+            -v "$PWD/go-librespot:/src" -v "$PWD/dist:/dist" \
+            -w /src golang:1.25-alpine sh -euxc '
+              apk add --no-cache build-base git \
+                libogg-dev libvorbis-dev flac-dev alsa-lib-dev
+              CGO_ENABLED=1 go build -trimpath \
+                -tags "osusergo netgo" \
+                -ldflags "-s -w -linkmode external -extldflags \"-static\"" \
+                -o /dist/go-librespot-armv7l ./cmd/daemon
+              /dist/go-librespot-armv7l --help >/dev/null 2>&1 || true
+            '
+
+      - name: Collect + checksum
+        run: |
+          chmod +x dist/go-librespot-armv7l
+          file dist/go-librespot-armv7l || true
+          sha256sum dist/go-librespot-armv7l | tee dist/go-librespot-armv7l.sha256
+          echo "size: $(stat -c %s dist/go-librespot-armv7l) bytes"
+
+      - name: Attest
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: dist/go-librespot-armv7l
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: go-librespot-armv7l
+          path: dist/*
+          if-no-files-found: error
