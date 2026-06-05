@@ -31,15 +31,6 @@ on:
         description: 'go-librespot git tag to build (pinned, GPL-3.0)'
         required: true
         default: 'v0.7.3'
-  # TEMPORARY (remove before merging this branch): workflow_dispatch only
-  # works once the file is on the default branch, but this file lives on a
-  # feature branch during the #78 spike. A path-scoped push trigger lets a
-  # push to the spike branch build the binary without touching main.
-  push:
-    branches:
-      - feat/spotify-go-librespot
-    paths:
-      - .github/workflows/go-librespot.yml
 
 permissions:
   contents: read
