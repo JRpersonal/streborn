@@ -46,6 +46,7 @@ import {
   SetAirplayOpt,
   StreamBitrate,
   SpotifyBitrate,
+  SpotifyNowPlaying,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
@@ -2342,6 +2343,24 @@ async function refreshStatus() {
     state.nowPlayState = ps;
     state.nowLocation = newLoc;
     state.nowName = newName;
+    // Live Spotify track metadata for the now-playing line: poll the agent's
+    // /spotify/info (throttled) while a Spotify stream is active so the desktop
+    // shows the current song + artist, not just the playlist/preset name.
+    const isSpotifyNow = /\/spotify\/stream/.test(newLoc);
+    if (isSpotifyNow) {
+      const npBox = state.currentBox;
+      if (npBox && Date.now() - (state.lastSpotifyNowFetch || 0) > 3000) {
+        state.lastSpotifyNowFetch = Date.now();
+        SpotifyNowPlaying(npBox.host, npBox.port).then(np => {
+          if (!np) return;
+          state.nowSpotifyTrack = np.track || '';
+          state.nowSpotifyArtist = np.artist || '';
+        }).catch(() => {});
+      }
+    } else {
+      state.nowSpotifyTrack = '';
+      state.nowSpotifyArtist = '';
+    }
     // Update state.nowIcon. Prefer the art tag from now_playing.
     // If that is empty AND we are playing through the stream proxy,
     // adopt the logo of the source preset. Bose UPnP items emitted
@@ -2403,6 +2422,12 @@ async function refreshStatus() {
     let stateLabel;
     let stateClass;
     let displayName = name;
+    // Spotify: show the live current song (and artist) next to the playlist
+    // name, instead of only the preset/playlist name.
+    if (/\/spotify\/stream/.test(state.nowLocation) && state.nowSpotifyTrack) {
+      displayName = name ? `${name} , ${state.nowSpotifyTrack}` : state.nowSpotifyTrack;
+      if (state.nowSpotifyArtist) displayName += ` , ${state.nowSpotifyArtist}`;
+    }
     if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
     else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
     else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }

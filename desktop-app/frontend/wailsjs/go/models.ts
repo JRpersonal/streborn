@@ -250,6 +250,24 @@ export namespace main {
 	        this.logTail = source["logTail"];
 	    }
 	}
+	export class SpotifyNow {
+	    bitrate: number;
+	    track: string;
+	    artist: string;
+	    cover: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpotifyNow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bitrate = source["bitrate"];
+	        this.track = source["track"];
+	        this.artist = source["artist"];
+	        this.cover = source["cover"];
+	    }
+	}
 	export class TrueFactoryResetResult {
 	    step: string;
 	    ok: boolean;

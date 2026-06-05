@@ -88,6 +88,8 @@ export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:s
 
 export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
 
+export function SpotifyNowPlaying(arg1:string,arg2:number):Promise<main.SpotifyNow>;
+
 export function Status(arg1:string,arg2:number):Promise<string>;
 
 export function StickConfigs(arg1:string):Promise<sticksetup.StickConfigs>;

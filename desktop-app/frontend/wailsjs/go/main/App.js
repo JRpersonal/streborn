@@ -170,6 +170,10 @@ export function SpotifyBitrate(arg1, arg2) {
   return window['go']['main']['App']['SpotifyBitrate'](arg1, arg2);
 }
 
+export function SpotifyNowPlaying(arg1, arg2) {
+  return window['go']['main']['App']['SpotifyNowPlaying'](arg1, arg2);
+}
+
 export function Status(arg1, arg2) {
   return window['go']['main']['App']['Status'](arg1, arg2);
 }

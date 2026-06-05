@@ -1487,6 +1487,31 @@ func (a *App) SpotifyBitrate(host string, port int) int {
 	return out.Bitrate
 }
 
+// SpotifyNowPlaying returns the live Spotify state for the UI: measured
+// bitrate plus the current track title, artist and cover URL (from
+// go-librespot's events). Empty fields when nothing is playing. Routed
+// through boxDo so it self-heals across :8888 / :17008.
+type SpotifyNow struct {
+	Bitrate int    `json:"bitrate"`
+	Track   string `json:"track"`
+	Artist  string `json:"artist"`
+	Cover   string `json:"cover"`
+}
+
+func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {
+	var out SpotifyNow
+	resp, err := a.boxDo(host, port, http.MethodGet, "/spotify/info", "", "")
+	if err != nil {
+		return out
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return out
+}
+
 // SyncBoxPresets schickt alle Stick Presets erneut an die Box damit
 // die Hardware Preset Tasten 1-6 funktionieren. Wird vom "Hardware
 // Tasten reparieren" Button im Settings Tab benutzt.

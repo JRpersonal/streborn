@@ -110,6 +110,10 @@ type Manager struct {
 	// actualKbps is the bitrate measured from the live Ogg stream (body bytes
 	// per granule second). 0 until enough of a track has streamed.
 	actualKbps int
+	// curName/curArtist/curCover hold the currently-playing track's metadata,
+	// captured from go-librespot's /events so the desktop app (and later the
+	// box display) can show the live artist/title/cover during Spotify playback.
+	curName, curArtist, curCover string
 	// headerPages holds the current track's Ogg header pages (the BOS page
 	// with the Vorbis identification header plus the comment/setup pages).
 	// The drain captures them as they stream past; ServeOgg replays them to
@@ -594,14 +598,23 @@ func (m *Manager) DeviceName() string {
 // Spotify is available, the measured bitrate, and the advertised device name.
 func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	m.mu.Lock()
+	track, artist, cover := m.curName, m.curArtist, m.curCover
+	m.mu.Unlock()
 	resp := struct {
 		Ready   bool   `json:"ready"`
 		Bitrate int    `json:"bitrate"`
 		Name    string `json:"name"`
+		Track   string `json:"track"`
+		Artist  string `json:"artist"`
+		Cover   string `json:"cover"`
 	}{
 		Ready:   m.Ready(),
 		Bitrate: m.Bitrate(),
 		Name:    m.DeviceName(),
+		Track:   track,
+		Artist:  artist,
+		Cover:   cover,
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -612,9 +625,6 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 // surfaces here as a "volume" event {value, max} which we scale to a percent
 // and push to the box over the Bose REST API. Reconnects with a short backoff.
 func (m *Manager) watchVolume(ctx context.Context) {
-	if m.box == nil {
-		return
-	}
 	url := "ws://" + m.apiAddr + "/events"
 	for ctx.Err() == nil {
 		if err := m.volumeStream(ctx, url); err != nil && ctx.Err() == nil {
@@ -648,25 +658,50 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			return err
 		}
 		var ev struct {
-			Type string `json:"type"`
-			Data struct {
-				Value int `json:"value"`
-				Max   int `json:"max"`
-			} `json:"data"`
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
 		}
-		if err := json.Unmarshal(data, &ev); err != nil || ev.Type != "volume" {
+		if err := json.Unmarshal(data, &ev); err != nil {
 			continue
 		}
-		pct := 100
-		if ev.Data.Max > 0 {
-			pct = ev.Data.Value * 100 / ev.Data.Max
+		switch ev.Type {
+		case "metadata":
+			// Current track info for the desktop (and later box) display.
+			var md struct {
+				Name          string   `json:"name"`
+				ArtistNames   []string `json:"artist_names"`
+				AlbumCoverURL string   `json:"album_cover_url"`
+			}
+			if err := json.Unmarshal(ev.Data, &md); err != nil {
+				continue
+			}
+			m.mu.Lock()
+			m.curName = md.Name
+			m.curArtist = strings.Join(md.ArtistNames, ", ")
+			m.curCover = md.AlbumCoverURL
+			m.mu.Unlock()
+		case "volume":
+			if m.box == nil {
+				continue // no box client: metadata only, no volume mirror
+			}
+			var vd struct {
+				Value int `json:"value"`
+				Max   int `json:"max"`
+			}
+			if err := json.Unmarshal(ev.Data, &vd); err != nil {
+				continue
+			}
+			pct := 100
+			if vd.Max > 0 {
+				pct = vd.Value * 100 / vd.Max
+			}
+			sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			if err := m.box.SetVolume(sctx, pct); err != nil {
+				m.logger.Debug("spotify: box SetVolume from Spotify event failed", "err", err, "pct", pct)
+			}
+			cancel()
+			m.logger.Info("spotify: volume mirrored to box", "pct", pct)
 		}
-		sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-		if err := m.box.SetVolume(sctx, pct); err != nil {
-			m.logger.Debug("spotify: box SetVolume from Spotify event failed", "err", err, "pct", pct)
-		}
-		cancel()
-		m.logger.Info("spotify: volume mirrored to box", "pct", pct)
 	}
 }
 
