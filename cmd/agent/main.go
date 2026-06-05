@@ -292,6 +292,11 @@ func run() error {
 		webui.WithSpotifyControl(spotifyMgr.Play),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo))
 
+	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
+	// own (reported: radio stops after ~11 min with no upstream error), the
+	// webui resumes it conservatively (only if the box stays on and idle).
+	streamProxySrv.SetOnDisconnect(webuiSrv.HandleStreamDisconnect)
+
 	// Hardware Preset Tasten: Box sendet via WebSocket auf 8080 (gabbo Protocol)
 	// einen presetSelectionUpdated event wenn der User physisch eine Taste
 	// drueckt. Wir hooken den Event und triggern unseren UPnP Player.
@@ -1422,8 +1427,14 @@ func logResourceHealth(logger *slog.Logger) {
 // never causes an OOM mid-playback. When idle the leak does not grow, so the
 // low reading is stable and there is no race with the 5-minute cycle.
 const (
-	memGuardThresholdKB  = 12 * 1024 // reboot below this (box OOMs in single-digit MB)
-	memGuardMinUptimeSec = 900       // never reboot in the first 15 min (boot-loop guard)
+	// Live observation (2026-06-05, 35 min continuous Spotify with the 16 KB
+	// flush fix): memAvail declined to a self-limiting floor of ~9 MB (brief
+	// dips to ~4.4 MB) and the box did NOT OOM/reboot. So this is a true-OOM
+	// backstop only: 6 MB sits below the normal ~9 MB idle floor (no reboot
+	// after a normal session) yet above the danger zone. When idle the leak
+	// does not grow, so a low reading is stable and the 5-min cycle is fine.
+	memGuardThresholdKB  = 6 * 1024
+	memGuardMinUptimeSec = 900 // never reboot in the first 15 min (boot-loop guard)
 )
 
 // memoryGuardCheck reboots the box when free memory is critically low and the

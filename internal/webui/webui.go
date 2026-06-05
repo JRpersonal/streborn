@@ -83,6 +83,22 @@ type Server struct {
 	// finish instead of colliding with it. Reads (now_playing/info) are not
 	// gated; they have their own micro-cache.
 	boxCmdMu sync.Mutex
+
+	// lastPlay remembers the stream STR last told the box to play, so the
+	// auto-re-push (#4) can resume it when the Bose renderer drops a long
+	// stream on its own (reported: radio stops after ~11 min, no STR error).
+	lastPlayMu sync.Mutex
+	lastPlay   *lastPlayInfo
+}
+
+// lastPlayInfo is the box-facing URL + metadata of the current stream plus the
+// re-push loop counter (windowed, so a genuinely failing stream is not retried
+// forever).
+type lastPlayInfo struct {
+	boxURL, title, art, mime string
+	ts                       time.Time
+	rePushes                 int
+	windowStart              time.Time
 }
 
 // statusCacheTTL bounds the staleness of a cached now_playing response and
@@ -426,6 +442,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	s.setLastPlay(playURL, req.Title, req.Icon, "")
 	// Click Tracking: best effort, im Hintergrund.
 	if req.UUID != "" {
 		go func(uuid string) {
@@ -490,6 +507,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		s.setLastPlay("http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg")
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
 		return
 	}
@@ -505,7 +523,104 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	s.setLastPlay(playURL, p.Name, p.Art, "")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
+}
+
+// setLastPlay records the box-facing stream + metadata for the auto-re-push.
+func (s *Server) setLastPlay(boxURL, title, art, mime string) {
+	now := time.Now()
+	s.lastPlayMu.Lock()
+	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now, windowStart: now}
+	s.lastPlayMu.Unlock()
+}
+
+// HandleStreamDisconnect is called by the stream proxy when the Bose renderer
+// closes a stream. When the upstream was healthy (so the box dropped it, not
+// the source) it conservatively tries to resume, which fixes the renderer
+// dropping a long stream on its own (radio stops after ~11 min, no STR error).
+func (s *Server) HandleStreamDisconnect(upstreamErr error) {
+	if upstreamErr != nil {
+		return // upstream failed; not a box-side drop, leave it alone
+	}
+	s.lastPlayMu.Lock()
+	have := s.lastPlay != nil && time.Since(s.lastPlay.ts) < 6*time.Hour
+	s.lastPlayMu.Unlock()
+	if !have {
+		return
+	}
+	go s.maybeRePush()
+}
+
+// maybeRePush resumes the last stream, but only when it is safe: it waits a
+// moment (a user power-off reaches STANDBY within ~1-2 s, so this tells "user
+// turned it off" from "renderer dropped the stream while the box stays on"),
+// then re-pushes only if the box is on and idle (not standby, not playing, not
+// paused). A windowed counter caps retries so a genuinely failing stream is not
+// looped forever.
+func (s *Server) maybeRePush() {
+	time.Sleep(2 * time.Second)
+	standby, busy := s.boxPlayState()
+	if standby {
+		s.logger.Info("re-push: box went to standby, not resuming (treated as user power-off)")
+		return
+	}
+	if busy {
+		return // already playing/paused again (recovered, or user switched)
+	}
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	if lp == nil {
+		s.lastPlayMu.Unlock()
+		return
+	}
+	if time.Since(lp.windowStart) > 5*time.Minute {
+		lp.windowStart = time.Now()
+		lp.rePushes = 0
+	}
+	if lp.rePushes >= 3 {
+		s.lastPlayMu.Unlock()
+		s.logger.Warn("re-push: giving up after repeated drops", "url", lp.boxURL)
+		return
+	}
+	lp.rePushes++
+	boxURL, title, art, mime, n := lp.boxURL, lp.title, lp.art, lp.mime, lp.rePushes
+	s.lastPlayMu.Unlock()
+
+	s.logger.Info("re-push: box dropped the stream while idle, resuming", "url", boxURL, "attempt", n)
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var err error
+	if mime != "" {
+		err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
+	} else {
+		err = s.renderer.PlayURL(ctx, boxURL, title, art)
+	}
+	if err != nil {
+		s.logger.Warn("re-push failed", "err", err, "url", boxURL)
+	}
+}
+
+// boxPlayState reads now_playing once and reports whether the box is in standby
+// and whether it is busy (playing, buffering or paused). Best-effort: on error
+// it reports neither, so the caller does not re-push blindly.
+func (s *Server) boxPlayState() (standby, busy bool) {
+	if s.boxHost == "" {
+		return false, false
+	}
+	cl := &http.Client{Timeout: 5 * time.Second}
+	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	if err != nil {
+		return false, false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	body := string(b)
+	standby = strings.Contains(body, "STANDBY")
+	busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
+	return standby, busy
 }
 
 func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
