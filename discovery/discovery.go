@@ -231,6 +231,21 @@ func (a *Announcer) UpdateModel(model string) error {
 	return a.register()
 }
 
+// Snapshot returns the friendlyName and model currently held in the TXT
+// record. The agent serves these through its version endpoint so the desktop
+// app can read the box display name straight from the running agent. That
+// path is independent of the cross-LAN /info probe, which is often slow for a
+// few seconds right after an OTA agent restart — exactly the window in which
+// a flashed speaker otherwise shows as "str-<ip>" with no name (#108).
+func (a *Announcer) Snapshot() (friendlyName, model string) {
+	if a == nil {
+		return "", ""
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.cfg.FriendlyName, a.cfg.Model
+}
+
 // Close stops the mDNS announce on both service types.
 func (a *Announcer) Close() {
 	if a == nil {

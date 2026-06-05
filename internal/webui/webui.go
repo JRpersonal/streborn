@@ -78,6 +78,14 @@ type Server struct {
 	// the signal for BCO boxes, whose /networkInfo reports none.
 	wifiSignalFn func() string
 
+	// boxNameFn returns the box display name and model the agent currently
+	// knows (from its mDNS announcer cache). Exposed through the version
+	// endpoint so the desktop app can read a flashed speaker's name straight
+	// from the running agent, instead of falling back to "str-<ip>" whenever
+	// the cross-LAN /info probe is slow right after an OTA restart (#108).
+	// nil until wired by cmd/agent.
+	boxNameFn func() (name, model string)
+
 	// now_playing micro-cache. The Bose firmware app (:8090) on BCO
 	// speakers cannot sustain a high request rate, so /api/status caches
 	// the last good now_playing body for statusCacheTTL and serves repeat
@@ -125,6 +133,11 @@ const statusCacheTTL = 2 * time.Second
 // (from the boxws gabbo stream). cmd/agent calls this after creating the
 // WebSocket client.
 func (s *Server) SetWifiSignalFn(fn func() string) { s.wifiSignalFn = fn }
+
+// SetBoxNameFn wires a provider for the box display name and model the agent
+// currently knows (typically the mDNS announcer snapshot). cmd/agent calls
+// this after the announcer is up.
+func (s *Server) SetBoxNameFn(fn func() (name, model string)) { s.boxNameFn = fn }
 
 type langCacheEntry struct {
 	Langs []radiobrowser.Language
@@ -1016,10 +1029,22 @@ func (s *Server) handleRadioClick(w http.ResponseWriter, r *http.Request) {
 // handleAgentVersion liefert die laufende Stick Agent Version. Wird von
 // der Desktop App genutzt um zu erkennen ob ein Update faellig ist.
 func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
+	out := map[string]string{
 		"version": agentVersion(),
 		"build":   agentBuild(),
-	})
+	}
+	// Carry the box display name/model the agent knows so the desktop app
+	// can label a flashed speaker even when its own cross-LAN /info probe
+	// is momentarily slow (e.g. the busy window right after an OTA restart).
+	if s.boxNameFn != nil {
+		if name, model := s.boxNameFn(); name != "" {
+			out["friendlyName"] = name
+			if model != "" {
+				out["model"] = model
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleAgentUpdate nimmt ein neues Stick Agent Binary entgegen, schreibt

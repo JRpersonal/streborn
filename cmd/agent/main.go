@@ -439,6 +439,15 @@ func run() error {
 		mdnsMu        sync.Mutex
 		mdnsAnnouncer *discovery.Announcer
 	)
+	// Let the version endpoint report the box name/model the announcer holds,
+	// so the desktop app never has to fall back to "str-<ip>" when its own
+	// /info probe is slow right after this agent restarts (#108).
+	webuiSrv.SetBoxNameFn(func() (string, string) {
+		mdnsMu.Lock()
+		ann := mdnsAnnouncer
+		mdnsMu.Unlock()
+		return ann.Snapshot()
+	})
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

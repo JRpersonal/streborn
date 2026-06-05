@@ -224,29 +224,18 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 			seen[key] = b
 			return
 		}
-		// Same kind: the richer record wins (longer FriendlyName,
-		// non-empty Version) — BUT a VERIFIED reachable port always
-		// beats an unverified (mDNS-announced) one, in either merge
-		// order. On BCO boxes the agent announces :8888 via mDNS while
-		// only the REDIRECTed :17008 is reachable; without this, the
-		// rich mDNS record would pin the box to the firewalled :8888
-		// and every agent call (radio, presets) would fail.
-		keepPrev := len(prev.FriendlyName) >= len(b.FriendlyName) && prev.Version != ""
-		if keepPrev {
-			if b.PortVerified && !prev.PortVerified && b.Port != 0 && b.Port != prev.Port {
-				prev.Port = b.Port
-				prev.PortVerified = true
-				seen[key] = prev
-			}
-			return
-		}
-		// b is the richer record: take it, but carry over a verified
-		// port from prev if b's port is only mDNS-announced.
-		if prev.PortVerified && !b.PortVerified && prev.Port != 0 {
-			b.Port = prev.Port
-			b.PortVerified = true
-		}
-		seen[key] = b
+		// Same kind: combine the two records field by field instead of
+		// picking one whole winner. The two sources disagree in opposite
+		// directions right after an OTA: the mDNS TXT carries the real
+		// FriendlyName but a stale version (the re-announce lags the
+		// restart), while the live :8888 probe carries the fresh version
+		// and a verified port. Picking one whole record lost either the
+		// name (box shows "str-<ip>") or the new version (update not
+		// flagged) — the two halves of #108. mergeSameKind keeps the
+		// best of each, including the verified-port rule the BCO boxes
+		// need (agent announces :8888 via mDNS but only the REDIRECTed
+		// :17008 is reachable).
+		seen[key] = mergeSameKind(prev, b)
 	}
 
 	for inst := range results {
@@ -440,6 +429,92 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 func isGenericBoxName(name string) bool {
 	n := strings.TrimSpace(name)
 	return n == "" || strings.HasPrefix(n, "Bose SoundTouch ")
+}
+
+// mergeSameKind combines two discovery records for the same physical box
+// (same Host, same Kind) field by field. The mDNS and live-probe sources are
+// each authoritative for different fields, so picking one whole record drops
+// good data from the other (#108):
+//
+//   - Version/Build: a PortVerified record is a live HTTP probe of the running
+//     agent, so its version is current; an mDNS-announced version can lag a
+//     re-announce after an OTA restart. The verified value wins.
+//   - FriendlyName / Model: a real (non-generic, non-empty) label beats a
+//     generic or empty one, then the longer string wins.
+//   - Port: a verified port beats an mDNS-announced one (BCO boxes announce
+//     :8888 but only the REDIRECTed :17008 actually answers).
+//
+// Rules are applied per field, so it does not matter which argument is the
+// mDNS record and which is the probe.
+func mergeSameKind(a, b BoxInfo) BoxInfo {
+	out := a
+	out.FriendlyName = pickBoxName(a.FriendlyName, b.FriendlyName)
+	out.Model = pickModelName(a.Model, b.Model)
+
+	// Version/Build: the live-probed record is the source of truth.
+	switch {
+	case b.PortVerified && !a.PortVerified:
+		if b.Version != "" {
+			out.Version = b.Version
+		}
+		if b.Build != "" {
+			out.Build = b.Build
+		}
+	case a.PortVerified && !b.PortVerified:
+		// keep a's version/build
+	default:
+		if out.Version == "" {
+			out.Version = b.Version
+		}
+		if out.Build == "" {
+			out.Build = b.Build
+		}
+	}
+
+	// Port: prefer a verified one.
+	if b.PortVerified && !a.PortVerified && b.Port != 0 {
+		out.Port = b.Port
+		out.PortVerified = true
+	}
+
+	// Identity fields: fill any blanks from b.
+	if out.DeviceID == "" {
+		out.DeviceID = b.DeviceID
+	}
+	if out.SerialNumber == "" {
+		out.SerialNumber = b.SerialNumber
+	}
+	if out.Name == "" {
+		out.Name = b.Name
+	}
+	return out
+}
+
+// pickBoxName returns the better of two friendly names: a real one beats a
+// generic or empty one, and between two real names the longer (richer) wins.
+func pickBoxName(a, b string) string {
+	ag, bg := isGenericBoxName(a), isGenericBoxName(b)
+	if ag && !bg {
+		return b
+	}
+	if bg && !ag {
+		return a
+	}
+	if len(b) > len(a) {
+		return b
+	}
+	return a
+}
+
+// pickModelName prefers a specific model string over the generic "SoundTouch"
+// fallback (or empty) the agent announces before /info resolves the real type.
+func pickModelName(a, b string) string {
+	ag := a == "" || a == "SoundTouch"
+	bg := b == "" || b == "SoundTouch"
+	if ag && !bg {
+		return b
+	}
+	return a
 }
 
 // enrichSeenBoxes fans out enrichBoxWithStockInfo for every box in
@@ -683,13 +758,26 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		Build:        build,
 		Kind:         "str",
 		PortVerified: true, // winner.port answered an actual HTTP probe
+		// The agent now carries the box display name/model in its version
+		// envelope (#108). Seeding them here means a flashed speaker is
+		// labelled straight from this one verified probe, even when the
+		// :8090 /info enrichment below fails because the box is busy right
+		// after an OTA restart. Without this the box showed as "str-<ip>".
+		FriendlyName: jsonStringField(s, "friendlyName"),
+		Model:        jsonStringField(s, "model"),
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
 	// /info endpoint. Failure is OK: caller still gets a usable
-	// box, just less labelled.
+	// box, just less labelled. Only overwrite the agent-reported
+	// fields when /info actually returns a value, so a slow/dead
+	// :8090 cannot blank out the name we already have.
 	if info, ok := probeStock(ctx, ip); ok {
-		box.FriendlyName = info.FriendlyName
-		box.Model = info.Model
+		if info.FriendlyName != "" {
+			box.FriendlyName = info.FriendlyName
+		}
+		if info.Model != "" {
+			box.Model = info.Model
+		}
 		box.DeviceID = info.DeviceID
 		box.SerialNumber = info.SerialNumber
 	}
