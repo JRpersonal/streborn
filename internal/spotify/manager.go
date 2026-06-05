@@ -49,6 +49,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,14 +63,26 @@ import (
 // measured bitrate.
 const vorbisRate = 44100
 
-// flushThreshold batches Ogg pages before writing+flushing to the box. The
-// Bose firmware leaks memory (~3.4 MB/min, live-measured) when it receives the
-// stream as many tiny HTTP chunks, which is what flushing after every ~4 KB Ogg
-// page produced. Accumulating ~16 KB before each flush makes the box see large
-// chunks instead and the leak disappears. 16 KB matches the streamproxy copy
-// buffer, whose coalescing is why routing the same stream through it did not
-// leak. Header replay in ServeOgg is exempt (one-time, at attach).
-const flushThreshold = 16 * 1024
+// flushThreshold batches Ogg pages before each write+flush to the box. The
+// Bose firmware leaks memory in proportion to how many tiny HTTP chunks it
+// receives, so bigger batches mean less leak. Live sweep (2026-06-05, per-value
+// leak rate over a fresh boot):
+//
+//	  4 KB (per-page)  3.4 MB/min   stable
+//	 16 KB            1.4 MB/min   stable
+//	128 KB            0.6 MB/min   borderline
+//	256 KB            0.38 MB/min  occasional underrun restart (~1 in 3 tracks)
+//	512 KB            0.48 MB/min  frequent underrun restarts (no leak gain)
+//
+// The leak floors at ~0.4 MB/min (the irreducible live-streaming component);
+// past ~256 KB there is no gain, only more underruns. Underruns happen because
+// the single-goroutine drain blocks while writing a big batch and stops reading
+// go-librespot, leaving a gap the box re-fetches over. 256 KB is the chosen
+// operating point: lowest leak at the floor, with rare restarts Jens accepted
+// in exchange. A lead/jitter buffer (decouple read from write) would remove the
+// underruns and let it run here cleanly; tracked as a follow-up. Runtime
+// override: /mnt/nv/streborn/spotify-flush-kb. Header replay is exempt.
+const flushThreshold = 256 * 1024
 
 // Manager supervises one go-librespot process and brokers its PCM output
 // (as a live WAV stream) to at most one HTTP consumer (the speaker),
@@ -312,6 +325,18 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	m.runCancel = runCancel
 	m.mu.Unlock()
 
+	// flushBytes is how much is batched before each write+flush to the box
+	// (see flushThreshold). Tunable at runtime via a NAND file so the leak can
+	// be swept without rebuilding: write the KB value there and restart
+	// go-librespot. Falls back to the compiled default.
+	flushBytes := flushThreshold
+	if b, err := os.ReadFile("/mnt/nv/streborn/spotify-flush-kb"); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && n >= 1 && n <= 1024 {
+			flushBytes = n * 1024
+			m.logger.Info("spotify: flush batch overridden", "kb", n)
+		}
+	}
+
 	// Drain go-librespot's Ogg output page by page and forward whole pages to
 	// the box. While no box is attached, capture the current track's header
 	// pages and pause go-librespot so it does not race to the end of the
@@ -325,9 +350,14 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// vorbisRate) seen since the current track's BOS. kbps = bytes*8 over the
 	// elapsed seconds. This is the real stream rate, not the configured nominal.
 	var trackBody, maxGran int64
-	// pending batches pages so the box receives ~16 KB chunks instead of one
+	// pending batches pages so the box receives large chunks instead of one
 	// tiny chunk per page (see flushThreshold: small chunks leak box memory).
 	var pending []byte
+	// trackNum + forwarded count instrument the playback so the occasional
+	// "track restarts at its start" can be diagnosed: track boundaries (new
+	// BOS) and box (re)attaches are logged with byte/granule context.
+	trackNum := 0
+	var forwarded int64
 	for {
 		page, err := readOggPage(r)
 		if err != nil {
@@ -344,6 +374,13 @@ func (m *Manager) runOnce(ctx context.Context) error {
 		bodyLen := int64(len(page) - 27 - numSegs)
 		switch {
 		case htype&0x02 != 0: // BOS
+			// New logical stream = track boundary. Log it with the previous
+			// track's size so a premature/duplicate BOS (the suspected cause of
+			// a track restarting at its start) is visible in the log.
+			m.logger.Info("spotify: track boundary (BOS)",
+				"track", trackNum+1, "prevTrackKB", trackBody/1024,
+				"prevMaxGran", maxGran, "forwardedKB", forwarded/1024)
+			trackNum++
 			hdr = append([]byte(nil), page...)
 			capturing = true
 			trackBody, maxGran = 0, 0
@@ -373,10 +410,11 @@ func (m *Manager) runOnce(ctx context.Context) error {
 
 		if sink != nil {
 			paused = false
-			// Batch pages into ~16 KB writes (see flushThreshold) so the box
+			// Batch pages into large writes (see flushThreshold) so the box
 			// gets large chunks, not a tiny chunk per page.
 			pending = append(pending, page...)
-			if len(pending) >= flushThreshold {
+			forwarded += int64(len(page))
+			if len(pending) >= flushBytes {
 				m.forward(sink, pending)
 				pending = pending[:0]
 			}
@@ -672,9 +710,13 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	cw := &closeNotifyWriter{w: w, done: done}
 	m.mu.Lock()
+	reattach := m.sink != nil // a consumer was already attached = box re-fetched
 	m.sink = cw
 	m.mu.Unlock()
-	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr))
+	// reattach=true means the box dropped and re-fetched the stream (the prime
+	// suspect for a track appearing to restart): it then gets the cached
+	// granule-0 headers again. Logged so the restart can be correlated.
+	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr), "reattach", reattach)
 
 	// The drain pauses go-librespot while no box is attached; resume it so
 	// the live stream flows to this box.
