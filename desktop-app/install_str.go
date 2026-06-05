@@ -171,20 +171,39 @@ func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
 	}
 	a.logger.Info("install_str: starting", "host", host)
 
-	// Step 0: SSH itself reachable + authenticated? We do this as a
+	// Step 0a: preflight TCP reachability on the SSH port. SSH failing with a
+	// bare "exit status 255" and no stderr is the opaque error users hit when
+	// the box is simply not reachable (wrong/disconnected network, mid-reboot,
+	// not yet onboarded to Wi-Fi). Reported by glehner and Max T (#, ST10).
+	// Checking :22 first lets us return a human instruction instead of the
+	// raw SSH exit code.
+	res.Step = "preflight"
+	if !tcpReachable(host, 22, 4*time.Second) {
+		res.Message = "The speaker is not reachable on the network (no answer on SSH port 22 at " + host + "). " +
+			"First bring it onto your Wi-Fi with the Bose SoundTouch app and make sure this PC and the speaker are on the same network. " +
+			"Then reboot the speaker with the STR stick plugged in and try again."
+		a.logger.Warn("install_str: preflight failed, box not reachable on :22", "host", host)
+		return res, nil
+	}
+
+	// Step 0b: SSH itself reachable + authenticated? We do this as a
 	// separate trivial command so a connect/auth/algorithm failure
 	// surfaces with a specific message instead of looking like a
 	// missing stick. The probe also doubles as a warmup so the next
 	// SSH call reuses the negotiated host key.
+	//
+	// On failure we return (res, nil), NOT a wrapped error: Wails delivers
+	// only the error to the frontend when the error is non-nil and drops the
+	// res value, so the carefully classified res.Message would be lost and the
+	// user would see the raw "ssh handshake: exit status 255" again. The
+	// frontend renders res.Message + res.Log on res.OK == false.
 	res.Step = "ssh-handshake"
 	hello, helloErr := boxSSHOutput(host, "echo STR_SSH_OK", 12*time.Second)
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
 		hint := classifySSHError(hello, helloErr)
 		res.Message = "SSH handshake to speaker failed: " + hint
-		if helloErr != nil {
-			return res, fmt.Errorf("ssh handshake: %w", helloErr)
-		}
+		a.logger.Warn("install_str: ssh handshake failed", "host", host, "err", helloErr, "hint", hint)
 		return res, nil
 	}
 	a.logger.Info("install_str: ssh ok", "host", host)
@@ -220,7 +239,9 @@ func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
 			if probeErr != nil {
 				hint := classifySSHError(probe, probeErr)
 				res.Message = "ssh probe failed after retries: " + hint
-				return res, fmt.Errorf("ssh probe failed after retries: %w", probeErr)
+				a.logger.Warn("install_str: ssh probe failed after retries", "host", host, "err", probeErr, "hint", hint)
+				// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
+				return res, nil
 			}
 			res.Message = "install.sh did not appear under /media, /mnt or /run/media within 60 s. " +
 				"Is the STR stick physically plugged into the speaker (USB-A on ST20/30, " +
@@ -238,7 +259,9 @@ func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
 	if err != nil {
 		hint := classifySSHError(out, err)
 		res.Message = "install.sh execution failed: " + hint
-		return res, fmt.Errorf("install.sh failed: %w", err)
+		a.logger.Warn("install_str: install.sh execution failed", "host", host, "err", err, "hint", hint)
+		// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
+		return res, nil
 	}
 	if strings.Contains(out, "FEHLER") || strings.Contains(out, "ERROR") {
 		res.Message = "install.sh reported an error. See log."
@@ -512,6 +535,18 @@ func cacheFlagSetIndex(i int) {
 	if sshFlagsActive < 0 {
 		sshFlagsActive = i
 	}
+}
+
+// tcpReachable reports whether a single TCP connection to host:port succeeds
+// within timeout. Used as an install preflight so an unreachable speaker
+// produces a clear instruction instead of SSH's opaque "exit status 255".
+func tcpReachable(host string, port int, timeout time.Duration) bool {
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
 }
 
 // waitForTCPPort polls host:port until either it accepts a TCP
