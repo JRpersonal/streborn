@@ -112,6 +112,16 @@ type Server struct {
 	// stream on its own (reported: radio stops after ~11 min, no STR error).
 	lastPlayMu sync.Mutex
 	lastPlay   *lastPlayInfo
+
+	// lastUserStop is when the user last DELIBERATELY stopped playback, so the
+	// auto-re-push does not fight a wanted stop (Brecht, v0.7.0: a single Stop
+	// did not hold because the proxy disconnect that a stop causes looks
+	// identical to a box-side drop). Set from the STR Stop/Pause endpoints
+	// (definite intent) and from a gabbo STOP_STATE frame (the physical
+	// remote / box button). maybeRePush suppresses a resume within
+	// userStopWindow of this.
+	lastUserStopMu sync.Mutex
+	lastUserStop   time.Time
 }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the
@@ -685,6 +695,30 @@ func (s *Server) setLastPlay(boxURL, title, art, mime string) {
 	s.lastPlayMu.Unlock()
 }
 
+// userStopWindow is how long after a deliberate user stop the auto-re-push
+// stays suppressed. A stop causes a proxy disconnect, and maybeRePush waits 2s
+// before deciding; this window comfortably covers that gap plus the lag of a
+// gabbo STOP_STATE frame, while being short enough that a genuine box-side drop
+// later in the session is still resumed.
+const userStopWindow = 6 * time.Second
+
+// NoteUserStop records that the user deliberately stopped (or paused) playback.
+// The auto-re-push checks this so a wanted stop is not immediately undone.
+// Called from the STR Stop/Pause endpoints and from the gabbo STOP_STATE hook.
+func (s *Server) NoteUserStop() {
+	s.lastUserStopMu.Lock()
+	s.lastUserStop = time.Now()
+	s.lastUserStopMu.Unlock()
+}
+
+// userStoppedRecently reports whether a deliberate stop happened within
+// userStopWindow.
+func (s *Server) userStoppedRecently() bool {
+	s.lastUserStopMu.Lock()
+	defer s.lastUserStopMu.Unlock()
+	return !s.lastUserStop.IsZero() && time.Since(s.lastUserStop) < userStopWindow
+}
+
 // HandleStreamDisconnect is called by the stream proxy when the Bose renderer
 // closes a stream. When the upstream was healthy (so the box dropped it, not
 // the source) it conservatively tries to resume, which fixes the renderer
@@ -710,6 +744,14 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 // looped forever.
 func (s *Server) maybeRePush() {
 	time.Sleep(2 * time.Second)
+	// A deliberate user stop (STR Stop/Pause, or the box/remote stop button seen
+	// over gabbo) must hold. The stop and the disconnect it causes land within a
+	// second or two of each other, which this 2s wait plus userStopWindow
+	// covers. Genuine box-side drops carry no such stop and still resume.
+	if s.userStoppedRecently() {
+		s.logger.Info("re-push: user stopped deliberately, not resuming")
+		return
+	}
 	standby, busy := s.boxPlayState()
 	if standby {
 		s.logger.Info("re-push: box went to standby, not resuming (treated as user power-off)")
@@ -782,6 +824,9 @@ func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
 		return
 	}
+	// A pause is also a deliberate "stop pulling" intent: the box stops reading
+	// from the proxy, which fires the same disconnect path. Suppress the resume.
+	s.NoteUserStop()
 	if err := s.renderer.Pause(r.Context()); err != nil {
 		// Pausing while the speaker is idle makes the box answer with a
 		// UPnP "Action request came in wrong state" fault. Pause is an
@@ -822,6 +867,9 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
 		return
 	}
+	// Mark this as a deliberate stop BEFORE issuing it, so the disconnect the
+	// stop triggers does not race the auto-re-push into restarting the stream.
+	s.NoteUserStop()
 	if err := s.renderer.Stop(r.Context()); err != nil {
 		// Same idempotent treatment as Pause: stopping an already-idle
 		// box yields a "wrong state" UPnP fault that the user need not

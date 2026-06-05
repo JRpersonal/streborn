@@ -311,6 +311,9 @@ func run() error {
 		autoPair: autoPair,
 		boxHost:  *boxHost,
 		spotify:  spotifyMgr,
+		// A box/remote stop seen over gabbo tells the webui to hold the
+		// auto-re-push, so a deliberate stop is not immediately undone.
+		onUserStop: webuiSrv.NoteUserStop,
 	}
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
@@ -680,6 +683,10 @@ type presetWsHandler struct {
 	autoPair *autopair.Manager
 	boxHost  string
 	spotify  *spotify.Manager
+	// onUserStop is invoked when the box reports a deliberate playback stop
+	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
+	// does not fight a wanted stop. nil-safe.
+	onUserStop func()
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
@@ -767,6 +774,15 @@ func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
 		return
 	}
 	h.logger.Info("spotify remote skip", "forward", forward)
+}
+
+// OnUserStop is fired when the box reports a deliberate playback stop over
+// gabbo. It tells the webui's auto-re-push to stand down so a wanted stop holds
+// (Brecht, v0.7.0: a single stop did not stick because the resume restarted it).
+func (h *presetWsHandler) OnUserStop(_ context.Context) {
+	if h.onUserStop != nil {
+		h.onUserStop()
+	}
 }
 
 // spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches

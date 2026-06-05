@@ -41,6 +41,13 @@ type Handler interface {
 	// Titel drueckt (die Box kann eine UPnP Quelle nicht selbst skippen und
 	// meldet QPLAY_SKIP_*_FAILED). forward=true -> next, false -> prev.
 	OnRemoteSkip(ctx context.Context, forward bool)
+
+	// OnUserStop wird gefeuert wenn die Box meldet dass die Wiedergabe
+	// gestoppt wurde (playStatus STOP_STATE in einem nowPlayingUpdated Event),
+	// also der Nutzer ueber Fernbedienung/Box bewusst gestoppt hat. Der Agent
+	// nutzt das um die Auto-Wiederaufnahme nicht gegen einen gewollten Stop
+	// laufen zu lassen.
+	OnUserStop(ctx context.Context)
 }
 
 // Client haelt die Verbindung zur Box.
@@ -216,6 +223,15 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		}
 	case strings.Contains(s, "nowPlayingUpdated") && !strings.Contains(s, "nowSelectionUpdated"):
 		c.logger.Debug("box ws phase: nowPlaying event", "preview", preview(data, 200))
+		// A STOP_STATE in a nowPlaying update is the box reporting that
+		// playback was stopped (the user pressed stop on the remote/box).
+		// Surface it so the agent can suppress the auto-re-push for a wanted
+		// stop. INFO, not DEBUG: stops are rare and this is the signal the
+		// re-push decision hinges on, so it must be visible in a bundle.
+		if strings.Contains(s, "STOP_STATE") && c.handler != nil {
+			c.logger.Info("box ws: playback stopped (STOP_STATE), treating as user stop")
+			c.handler.OnUserStop(ctx)
+		}
 	}
 
 	if !strings.Contains(s, "nowSelectionUpdated") && !strings.Contains(s, "presetSelectionUpdated") {
