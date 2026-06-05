@@ -37,6 +37,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/shepherd"
+	"github.com/JRpersonal/streborn/internal/spotify"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/sysinfo"
 	"github.com/JRpersonal/streborn/internal/tlsgen"
@@ -267,13 +268,37 @@ func run() error {
 	// und der Stick Agent reconnectet intern bei Drops.
 	streamProxySrv := streamproxy.New(store, logger.With("comp", "streamproxy"))
 
+	// Spotify preset audio plane (#78, P1): the agent supervises
+	// go-librespot and serves its live audio (PCM wrapped as a WAV
+	// stream) at /spotify/stream so the box plays it over UPnP. A Spotify
+	// preset press calls go-librespot's local play API (no token plane)
+	// and points the box at /spotify/stream. Idles until the binary is
+	// present and the device is tap-authenticated once in the Spotify
+	// app. Started below once ctx exists.
+	// go-librespot reads the speaker's friendly name and volume through this
+	// Bose REST client: the Spotify device + its mDNS advert then carry the
+	// speaker's own name, and Spotify-app volume changes are mirrored onto it.
+	spotifyBox := boxapi.New(*boxHost)
+	spotifyMgr := spotify.New("/mnt/nv/streborn/bin/go-librespot", "/mnt/nv/streborn/sp-cache", "ST Reborn", spotifyBox, logger.With("comp", "spotify"))
+
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
 		webui.WithBoxHost(*boxHost),
 		webui.WithAutoPair(autoPair),
 		webui.WithRegion(region),
 		webui.WithRegionFile(*regionFile),
-		webui.WithStreamProxy(streamProxySrv))
+		webui.WithStreamProxy(streamProxySrv),
+		webui.WithSpotifyStream(spotifyMgr.ServeOgg),
+		webui.WithSpotifyControl(spotifyMgr.PlayAccount),
+		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
+		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
+		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
+		webui.WithSpotifyInfo(spotifyMgr.ServeInfo))
+
+	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
+	// own (reported: radio stops after ~11 min with no upstream error), the
+	// webui resumes it conservatively (only if the box stays on and idle).
+	streamProxySrv.SetOnDisconnect(webuiSrv.HandleStreamDisconnect)
 
 	// Hardware Preset Tasten: Box sendet via WebSocket auf 8080 (gabbo Protocol)
 	// einen presetSelectionUpdated event wenn der User physisch eine Taste
@@ -285,7 +310,23 @@ func run() error {
 		renderer: renderer,
 		autoPair: autoPair,
 		boxHost:  *boxHost,
+		spotify:  spotifyMgr,
 	}
+	// When the user starts playback from the Spotify app (selecting this device)
+	// while the box is on another source, point the box at the Spotify stream so
+	// it actually plays instead of staying on the current source (#14).
+	spotifyMgr.SetOnActivate(func(cbCtx context.Context) {
+		if *boxHost != "" {
+			wctx, cancel := context.WithTimeout(cbCtx, 8*time.Second)
+			_ = boxcli.WakeAndWait(wctx, *boxHost, 6*time.Second, logger)
+			cancel()
+		}
+		pctx, cancel := context.WithTimeout(cbCtx, 15*time.Second)
+		if err := renderer.PlayURLMime(pctx, spotifyStreamURL, "Spotify", "", "audio/ogg"); err != nil {
+			logger.Warn("spotify: auto-switch box to Spotify stream failed", "err", err)
+		}
+		cancel()
+	})
 	wsClient := boxws.New(
 		logger.With("comp", "boxws"),
 		fmt.Sprintf("ws://%s:8080/", *boxHost),
@@ -328,6 +369,11 @@ func run() error {
 		wsClient.Run(ctx)
 	}()
 
+	// Spotify preset audio plane (#78, P1): supervise librespot. Idles
+	// (returns immediately) until a credential is cached, so it is safe to
+	// start unconditionally.
+	go spotifyMgr.Run(ctx)
+
 	// Auto Pair Background: pairt die Box automatisch beim Start. Re-pairt
 	// alle 5 Minuten falls die Box mal verloren geht. Plus: WS Handler
 	// triggert TriggerNow bei Preset Press damit Pair sofort kommt nach
@@ -356,6 +402,7 @@ func run() error {
 				return
 			case <-t.C:
 				logResourceHealth(logger)
+				memoryGuardCheck(logger, spotifyMgr, *boxHost)
 			}
 		}
 	}()
@@ -623,6 +670,7 @@ type presetWsHandler struct {
 	renderer *upnp.Renderer
 	autoPair *autopair.Manager
 	boxHost  string
+	spotify  *spotify.Manager
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
@@ -636,6 +684,13 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	name := title
 	icon := ""
 	if p, ok := h.store.Get(slot); ok {
+		// Spotify presets do not have a playable HTTP StreamURL. They are
+		// recalled by telling go-librespot to play the saved URI and then
+		// pointing the box's UPnP renderer at our live /spotify/stream.
+		if p.Type == "spotify" && p.URI != "" {
+			h.playSpotifyPreset(ctx, slot, p)
+			return
+		}
 		if p.Name != "" {
 			name = p.Name
 		}
@@ -673,10 +728,147 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := h.renderer.PlayURL(playCtx, url, name, icon); err != nil {
-		h.logger.Error("upnp play failed", "slot", slot, "err", err)
+		h.logger.Warn("upnp play (initial) failed, will verify+retry", "slot", slot, "err", err)
+	}
+	// Verify+retry in the background: the first hardware press after a cold
+	// boot can race the box/agent bringup so nothing plays until a second
+	// press. This re-issues until the box actually plays. Affects radio too.
+	go h.verifyPlayURL(slot, url, name, icon)
+	h.logger.Info("hardware preset zu upnp gemapped", "slot", slot, "name", name)
+}
+
+// OnRemoteSkip handles the SoundTouch remote's next/prev track keys during
+// Spotify playback: the box cannot skip a UPnP source itself (it emits
+// QPLAY_SKIP_*_FAILED), so we skip in go-librespot instead. The new track
+// reaches the box after its buffer drains. No-op unless Spotify is streaming.
+func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
+	if h.spotify == nil || !h.spotify.Streaming() {
 		return
 	}
-	h.logger.Info("hardware preset zu upnp gemapped", "slot", slot, "name", name)
+	sctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	var err error
+	if forward {
+		err = h.spotify.Next(sctx)
+	} else {
+		err = h.spotify.Prev(sctx)
+	}
+	if err != nil {
+		h.logger.Warn("spotify remote skip failed", "forward", forward, "err", err)
+		return
+	}
+	h.logger.Info("spotify remote skip", "forward", forward)
+}
+
+// spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches
+// for Spotify audio. The agent runs on the box, so 127.0.0.1:8888 reaches
+// it (same host:port the radio stream proxy uses). The .ogg suffix is
+// required: the Bose renderer keys playability off the URL extension and
+// rejects an extensionless Ogg stream (INVALID_SOURCE).
+const spotifyStreamURL = "http://127.0.0.1:8888/spotify/stream.ogg"
+
+// playSpotifyPreset recalls a Spotify preset: wake + pair the box, tell
+// go-librespot to play the saved URI (autonomous, no app), then point the
+// box at the live /spotify/stream so it plays the audio over UPnP.
+func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p presets.Preset) {
+	if h.spotify == nil || !h.spotify.Ready() {
+		h.logger.Warn("spotify preset pressed but manager not ready", "slot", slot)
+		return
+	}
+
+	// Mark a recall BEFORE the box attaches (PlayURLMime below / the box's own
+	// self-activation) so ServeOgg does not resume the old mid-position track;
+	// Play drives the new shuffled track from its start.
+	h.spotify.SetRecalling()
+	playCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	// Show the preset on the box display IMMEDIATELY: point the box at this
+	// slot's stream first so now_playing shows the name and a buffering state
+	// right away. Without this the box flashes its own "service unavailable /
+	// select a preset" while we load, and the user, seeing no feedback, presses
+	// another preset and causes chaos. The box buffers until go-librespot
+	// produces audio just below. Uses the per-slot URL the box already
+	// self-activated, so this re-confirms it rather than switching URLs.
+	slotURL := fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+	if err := h.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
+		h.logger.Warn("spotify upnp play (display) failed, will verify+retry", "slot", slot, "err", err)
+	}
+	// Wake from standby + ensure pairing (the box is awake on a hardware press,
+	// so these return fast); kept AFTER the display push so the buffering state
+	// shows without waiting on them.
+	if h.boxHost != "" {
+		wakeCtx, c := context.WithTimeout(ctx, 8*time.Second)
+		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
+			h.logger.Warn("Box konnte nicht aus STANDBY geholt werden", "err", err)
+		}
+		c()
+	}
+	if h.autoPair != nil {
+		pairCtx, c := context.WithTimeout(ctx, 6*time.Second)
+		h.autoPair.TriggerNow(pairCtx)
+		c()
+	}
+	// Load the playlist (audio): paused -> shuffle -> skip-to-random -> resume.
+	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account); err != nil {
+		h.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
+	}
+	// Verify+retry in the background: the first press after a cold boot races
+	// go-librespot's auth, so the box gets no audio and the user had to press
+	// twice. This retries until the box actually plays, with no latency on the
+	// happy path (the initial attempt above already played).
+	go h.verifySpotifyPlaying(slot, p)
+	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", p.Account)
+}
+
+// verifyPlayURL confirms the box started playing a UPnP (radio) recall and
+// re-issues it a few times if not, fixing the "first hardware press after
+// reboot does nothing" race for radio presets too.
+func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
+	for attempt := 1; attempt <= 3; attempt++ {
+		time.Sleep(5 * time.Second)
+		if boxIsPlaying(h.boxHost) {
+			return
+		}
+		h.logger.Warn("hardware recall not playing yet, retrying", "slot", slot, "attempt", attempt)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		_ = h.renderer.PlayURL(ctx, url, name, icon)
+		cancel()
+	}
+	h.logger.Warn("hardware recall still not playing after retries", "slot", slot)
+}
+
+// verifySpotifyPlaying confirms the box reached a playing state after a Spotify
+// recall and re-issues the recall a few times if not, fixing the "first press
+// after reboot does nothing" race without needing a second press.
+func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
+	for attempt := 1; attempt <= 3; attempt++ {
+		time.Sleep(5 * time.Second)
+		// For Spotify the definitive "it is working" signal is the box pulling
+		// the Ogg stream; the box now_playing playStatus lags and flaps while it
+		// attaches. If the box is consuming the stream, do NOT re-issue: a re-Play
+		// reshuffles and restarts the track, which is the audible abort + UI
+		// play/stop/play flicker users saw. Only re-issue when the box is
+		// genuinely not consuming the stream.
+		if h.spotify.Streaming() || boxIsPlaying(h.boxHost) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		// Re-point the box at the stream WITHOUT re-Play: ServeOgg resumes
+		// go-librespot on attach, so this re-attaches the box without
+		// reshuffling/restarting the track. A re-Play here was the cause of the
+		// "same song restarts a few seconds in" the user saw. Only the final
+		// attempt does a full re-Play, to recover a genuine cold-boot auth race
+		// where the playlist never loaded at all.
+		if attempt == 3 {
+			h.logger.Warn("spotify recall not playing, full re-Play (last resort)", "slot", slot)
+			_ = h.spotify.PlayAccount(ctx, p.URI, p.Account)
+		} else {
+			h.logger.Warn("spotify recall not playing yet, re-pointing box", "slot", slot, "attempt", attempt)
+		}
+		_ = h.renderer.PlayURLMime(ctx, spotifyStreamURL, p.Name, p.Art, "audio/ogg")
+		cancel()
+	}
+	h.logger.Warn("spotify recall still not playing after retries", "slot", slot)
 }
 
 // loadRegion liest den Country Code aus der region.txt vom Stick. Leer
@@ -913,6 +1105,24 @@ func proxyStreamURL(slot int) string {
 	return fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
 }
 
+// boxPresetURL is the location stored in the box's OWN preset slot. On a
+// hardware press the box first tries to activate this stored ContentItem itself
+// (before STR's recall takes over). Radio uses the per-slot stream proxy.
+// Spotify must use the single live Ogg stream STR actually serves, not
+// /stream/<slot> (which has no Spotify source): otherwise the box's own
+// activation fails with INVALID_SOURCE and the display flashes "service
+// unavailable" / "select a preset" before the recall (#22). Pointing it at
+// /spotify/stream.ogg makes the box's own activation attach cleanly (it shows
+// the preset name + buffers) until STR loads the right playlist.
+func boxPresetURL(p presets.Preset) string {
+	if p.Type == "spotify" {
+		// Per-slot alias of the single Spotify stream: a UNIQUE .ogg URL per
+		// slot so two Spotify presets do not collide on one box location (#22).
+		return fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", p.Slot)
+	}
+	return proxyStreamURL(p.Slot)
+}
+
 // initialBoxPresetSync wartet auf den Box Boot und synct alle Stick
 // Presets an den Box internen Preset Store. Mit Retry Loop: bei
 // fehlgeschlagenen Slots wird nach 10s erneut versucht, bis zu 12 mal.
@@ -929,7 +1139,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	specs := make([]boxcli.PresetSpec, 0, 6)
 	for _, p := range store.All() {
 		specs = append(specs, boxcli.PresetSpec{
-			Slot: p.Slot, Name: p.Name, StreamURL: proxyStreamURL(p.Slot),
+			Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 		})
 	}
 	if len(specs) == 0 {
@@ -1023,7 +1233,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	for _, p := range stick {
 		if forceFull || !boxSlots[p.Slot] {
 			missing = append(missing, boxcli.PresetSpec{
-				Slot: p.Slot, Name: p.Name, StreamURL: proxyStreamURL(p.Slot),
+				Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 			})
 		}
 	}
@@ -1309,10 +1519,12 @@ func ensureSshdRunning(logger *slog.Logger) {
 const nandLogPath = "/mnt/nv/streborn/agent.log"
 
 // nandLogMax caps the persistent log so a long-running agent does not
-// fill the small NAND volume. On overflow the file is rotated to
-// agent.log.1 and a fresh agent.log starts. 1 MiB covers ~10 fresh
-// boots worth of debug output on a slow speaker.
-const nandLogMax = 1 * 1024 * 1024
+// fill the small NAND volume (~31 MB, shared with the Bose firmware). On
+// overflow the file is rotated to agent.log.1 and a fresh agent.log starts,
+// so the pair holds at most 2x this. 256 KiB still covers several fresh boots
+// of debug output while keeping the log footprint well under 512 KiB;
+// run.sh's cleanup_nand trims it further on each boot.
+const nandLogMax = 256 * 1024
 
 // logResourceHealth records a one-line snapshot of available memory and
 // system load. On this hardware (~120 MB RAM, no swap) a slow leak ends
@@ -1332,6 +1544,87 @@ func logResourceHealth(logger *slog.Logger) {
 		// precedes the recurring BoseApp freeze without guesswork.
 		"agentRSSKB", rss,
 		"agentThreads", threads)
+}
+
+// memory-guard tunables. The Spotify Ogg path leaves a residual box-side
+// firmware leak (~1.3 MB/min while playing) that only a reboot frees (pause,
+// standby and re-push do not). The guard reboots the box ONLY when memory is
+// critically low AND nothing is playing, so the leak is reset during idle and
+// never causes an OOM mid-playback. When idle the leak does not grow, so the
+// low reading is stable and there is no race with the 5-minute cycle.
+const (
+	// Live observation (2026-06-05, 35 min continuous Spotify with the 16 KB
+	// flush fix): memAvail declined to a self-limiting floor of ~9 MB (brief
+	// dips to ~4.4 MB) and the box did NOT OOM/reboot. So this is a true-OOM
+	// backstop only: 6 MB sits below the normal ~9 MB idle floor (no reboot
+	// after a normal session) yet above the danger zone. When idle the leak
+	// does not grow, so a low reading is stable and the 5-min cycle is fine.
+	memGuardThresholdKB  = 6 * 1024
+	memGuardMinUptimeSec = 900 // never reboot in the first 15 min (boot-loop guard)
+)
+
+// memoryGuardCheck reboots the box when free memory is critically low and the
+// box is idle, to clear the accumulated firmware leak from Spotify playback.
+// Conservative and heavily logged: it skips while Spotify streams, while the
+// box is playing anything (do not interrupt radio either), and early after
+// boot. The reboot itself clears the condition, so no loop stamp is needed.
+func memoryGuardCheck(logger *slog.Logger, sp *spotify.Manager, boxHost string) {
+	avail, _ := readMemKB()
+	if avail < 0 || avail > memGuardThresholdKB {
+		return // healthy
+	}
+	if up := readUptimeSec(); up >= 0 && up < memGuardMinUptimeSec {
+		logger.Warn("memory guard: low memAvail but uptime too short, holding off", "memAvailKB", avail, "uptimeSec", up)
+		return
+	}
+	if sp != nil && sp.Streaming() {
+		logger.Warn("memory guard: low memAvail but Spotify is streaming, not rebooting", "memAvailKB", avail)
+		return
+	}
+	if boxIsPlaying(boxHost) {
+		logger.Warn("memory guard: low memAvail but box is playing, not rebooting", "memAvailKB", avail)
+		return
+	}
+	logger.Warn("memory guard: memAvail critically low while idle, rebooting box to clear firmware leak", "memAvailKB", avail)
+	_ = exec.Command("sync").Run()
+	if err := exec.Command("reboot").Run(); err != nil {
+		logger.Error("memory guard: reboot failed", "err", err)
+	}
+}
+
+// readUptimeSec returns system uptime in seconds, or -1 on error.
+func readUptimeSec() int64 {
+	b, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return -1
+	}
+	f := strings.Fields(string(b))
+	if len(f) == 0 {
+		return -1
+	}
+	sec, err := strconv.ParseFloat(f[0], 64)
+	if err != nil {
+		return -1
+	}
+	return int64(sec)
+}
+
+// boxIsPlaying reports whether the Bose box is actively rendering audio (any
+// source), so the memory guard never reboots mid-playback. Best-effort: any
+// error or a non-play state counts as not playing.
+func boxIsPlaying(boxHost string) bool {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s := string(b)
+	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
 }
 
 func readSelfRSS() (rssKB, threads int64) {

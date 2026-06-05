@@ -70,7 +70,7 @@ type Server struct {
 	logger *slog.Logger
 	client *http.Client
 
-	failMu  sync.Mutex
+	failMu   sync.Mutex
 	lastFail map[string]time.Time
 
 	// brMu guards the detected bitrate of the stream currently being
@@ -85,7 +85,16 @@ type Server struct {
 	curBitrate int
 	curURL     string
 	measuredBr map[string]int
+
+	// onDisconnect, if set, is called when the Bose renderer closes a stream.
+	// The argument is the last upstream error (nil = upstream was healthy, so
+	// the box dropped the stream itself). Used by the auto-re-push.
+	onDisconnect func(upstreamErr error)
 }
+
+// SetOnDisconnect registers a callback invoked whenever the box closes a
+// proxied stream (raw or slot). Set once at wiring time.
+func (s *Server) SetOnDisconnect(fn func(upstreamErr error)) { s.onDisconnect = fn }
 
 func New(store *presets.Store, logger *slog.Logger) *Server {
 	return &Server{
@@ -272,6 +281,9 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			// Bose closed the connection (station switch, standby) — a
 			// normal end, distinct from the give-up case below.
 			s.logger.Info("stream proxy end: bose disconnected", "kind", "raw", "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
+			if s.onDisconnect != nil {
+				s.onDisconnect(lastErr)
+			}
 			return
 		}
 		headersSent = true
@@ -333,6 +345,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			// Normales Ende, klar getrennt vom Give-up-Fall unten, damit
 			// im Log Box-Stop vs Outbound-Problem unterscheidbar ist.
 			s.logger.Info("stream proxy end: bose disconnected", "slot", slot, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(err))
+			if s.onDisconnect != nil {
+				s.onDisconnect(err)
+			}
 			return
 		}
 		headersSent = true

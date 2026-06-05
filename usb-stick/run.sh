@@ -46,6 +46,10 @@ fi
 STICK_BIN="$STICK/streborn-armv7l"
 [ -e "$STICK_BIN" ] || STICK_BIN="$STICK/streborn"
 CACHED_BIN="$PERSIST/bin/streborn-armv7l"
+# go-librespot: the Spotify Connect sidecar (#78). Cached stick -> NAND the
+# same way as the agent so it survives stick removal + reboot.
+STICK_GLR="$STICK/go-librespot"
+CACHED_GLR="$PERSIST/bin/go-librespot"
 STICK_VER_FILE="$STICK/version.txt"
 NAND_VER_FILE="$PERSIST/version.txt"
 
@@ -449,7 +453,59 @@ ensure_sshd_running
 # pattern keeps the binary swap safe under power loss mid-copy.
 # Removing SYNC_FLAG removes the only state that could go out of
 # sync with reality across boots.
+# cleanup_nand frees space on the small persistent_volume (~31 MB, shared
+# with the Bose firmware). It removes known leftovers from earlier
+# experiments/debug and caps the agent log so a long-running box does not
+# slowly fill NAND. Runs on every boot BEFORE the stick -> NAND binary cache,
+# so the cache always has room. All best-effort: a read-only or absent path is
+# simply skipped.
+cleanup_nand() {
+    # 1) Junk that is never needed at runtime.
+    #    sp-oauth.out: multi-MB stdout dump from the abandoned librespot-org
+    #    (Rust) Spotify spike. cap*.ogg: Ogg captures from passthrough debug.
+    #    bin/*.new: interrupted atomic-replace temp files from a failed OTA.
+    rm -f /mnt/nv/sp-oauth.out 2>/dev/null
+    rm -f /mnt/nv/streborn/cap*.ogg "$STICK"/cap*.ogg 2>/dev/null
+    rm -f /mnt/nv/streborn/bin/*.new 2>/dev/null
+
+    # 2) Log caps. The agent rotates agent.log -> agent.log.1 at 1 MiB, so the
+    #    pair can hold ~2 MiB; drop the rotated backup and trim any oversized
+    #    log to its tail. setup.log is appended every boot and never rotated.
+    rm -f /mnt/nv/streborn/agent.log.1 2>/dev/null
+    for f in /mnt/nv/streborn/setup.log /mnt/nv/streborn/agent.log; do
+        [ -f "$f" ] || continue
+        sz=$(wc -c < "$f" 2>/dev/null || echo 0)
+        if [ "$sz" -gt 262144 ]; then
+            tail -c 131072 "$f" > "$f.trim" 2>/dev/null && mv "$f.trim" "$f" 2>/dev/null
+        fi
+    done
+
+    # 3) Free-space guard: surface the headroom so a tightening NAND shows up in
+    #    diagnostics before it bites. Removing Bose stock files is a manual last
+    #    resort, never automatic.
+    free_kb=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}')
+    log "NAND cleanup done, ${free_kb:-?} KB free on /mnt/nv"
+}
+
 sync_stick_to_nand_always() {
+    # go-librespot (Spotify sidecar): cache stick -> NAND independently of
+    # the agent so it survives stick removal + reboot. Same atomic
+    # .new + mv pattern. Best-effort: absence just means no Spotify.
+    if [ -r "$STICK_GLR" ]; then
+        if cp "$STICK_GLR" "$CACHED_GLR.new" 2>/dev/null; then
+            chmod +x "$CACHED_GLR.new"
+            if mv "$CACHED_GLR.new" "$CACHED_GLR" 2>/dev/null; then
+                log "stick go-librespot deployed to NAND cache ($(wc -c < "$CACHED_GLR") bytes)"
+            else
+                log "stick -> NAND go-librespot mv failed, keeping previous"
+                rm -f "$CACHED_GLR.new"
+            fi
+        else
+            log "stick -> NAND go-librespot cp failed, keeping previous"
+            rm -f "$CACHED_GLR.new"
+        fi
+    fi
+
     if [ ! -r "$STICK_BIN" ]; then
         return 0
     fi
@@ -518,6 +574,7 @@ if [ -f "$STICK/run.sh" ]; then
     log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)"
 fi
 
+cleanup_nand
 sync_stick_to_nand_always
 
 # === Shim deploy + LATE swap (after Bose mesh stabilizes) ===

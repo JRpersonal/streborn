@@ -1,10 +1,17 @@
 name: librespot
 
-# Builds the Spotify Connect receiver (librespot, MIT) from source for the
-# speaker target, from a pinned upstream version, and attests it with
-# Sigstore exactly like the STR agent. This keeps the bundled binary
-# transparent and reproducible: no opaque third-party blob ever ships to a
-# user's speaker. Spike for #78 (docs/streaming/spotify.md).
+# Builds the Spotify Connect receiver librespot (librespot-org, MIT) from
+# source for the speaker target, from a pinned upstream version, and
+# attests it with Sigstore exactly like the STR agent. This keeps the
+# bundled binary transparent and reproducible: no opaque third-party blob
+# ever ships to a user's speaker. Spike for #78 (docs/streaming/spotify.md).
+#
+# FALLBACK backend. go-librespot.yml is the primary one: it adds a local
+# play-URI control API so hardware preset buttons recall Spotify
+# autonomously without a Web API token on the box. librespot stays here
+# because its pure-Rust static musl build needs no cgo (cleaner, smaller)
+# and its Ogg passthrough is the audio fallback if a Bose model refuses
+# go-librespot's live WAV stream.
 #
 # Target is armv7 STATIC MUSL: the speaker runs glibc 2.15 (2012), far too
 # old for a modern Rust glibc build, so a statically linked musl binary is

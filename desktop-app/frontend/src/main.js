@@ -45,6 +45,9 @@ import {
   GetAirplayOpt,
   SetAirplayOpt,
   StreamBitrate,
+  SpotifyBitrate,
+  SpotifyNowPlaying,
+  SaveSpotifyPreset,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
@@ -246,7 +249,7 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="settings">${escapeHtml(t('nav.speakerSettings'))}</button>
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
     <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
-    <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}</button>
+    <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
   </div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">
     <span class="global-security-text">
@@ -467,17 +470,33 @@ function renderSpotifyAlpha() {
   root.dataset.rendered = '1';
   root.innerHTML = `
     <div class="alpha-stage">
-      <h2>${escapeHtml(t('spotify.heading'))}</h2>
+      <h2>${escapeHtml(t('spotify.heading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></h2>
       <p>${escapeHtml(t('spotify.nativeIntro'))}</p>
       <ol class="alpha-checklist">
         <li>${escapeHtml(t('spotify.nativeStep1'))}</li>
         <li>${escapeHtml(t('spotify.nativeStep2'))}</li>
         <li>${escapeHtml(t('spotify.nativeStep3'))}</li>
       </ol>
+      <p class="muted small">${escapeHtml(t('spotify.versionNote'))} <a href="#" id="spotifyUpdateLink">${escapeHtml(t('spotify.updateLink'))}</a></p>
+      <h3>${escapeHtml(t('spotify.worksTitle'))}</h3>
+      <ul class="spotify-status">
+        <li>${escapeHtml(t('spotify.works1'))}</li>
+        <li>${escapeHtml(t('spotify.works2'))}</li>
+        <li>${escapeHtml(t('spotify.works3'))}</li>
+        <li>${escapeHtml(t('spotify.works4'))}</li>
+      </ul>
+      <h3>${escapeHtml(t('spotify.limitsTitle'))}</h3>
+      <ul class="spotify-status">
+        <li>${escapeHtml(t('spotify.limit1'))}</li>
+        <li>${escapeHtml(t('spotify.limit2'))}</li>
+        <li>${escapeHtml(t('spotify.limit3'))}</li>
+      </ul>
       <p class="muted small">${escapeHtml(t('spotify.nativeNote'))}</p>
-      <p><a href="#" id="spotifyIssueLink">${escapeHtml(t('spotify.issueLink'))}</a></p>
+      <p>${escapeHtml(t('spotify.feedbackNote'))} <a href="#" id="spotifyIssueLink">${escapeHtml(t('spotify.issueLink'))}</a></p>
     </div>
   `;
+  const upd = $('spotifyUpdateLink');
+  if (upd) upd.onclick = (e) => { e.preventDefault(); switchView('settings'); };
   const link = $('spotifyIssueLink');
   if (link) link.onclick = (e) => {
     e.preventDefault();
@@ -1835,6 +1854,9 @@ async function healPresetLogos() {
         if (!pick) return;
         const logo = stationLogoChain(pick);
         if (!logo) return;
+        // Radio-only: SetPreset sends type=radio with no uri, so never persist
+        // onto a Spotify preset or its URI is lost.
+        if (p.type === 'spotify') return;
         p.art = logo;
         SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, logo, p.bitrate || 0).catch(() => {});
       } catch {}
@@ -1859,6 +1881,11 @@ function activeSlotFromLocation(loc) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// Spotify glyph (green circle + three arcs) shown as the logo on Spotify
+// preset tiles so they are instantly recognisable as a Spotify playlist.
+// Inline SVG data URI: no bundled asset, no network fetch.
+const SPOTIFY_LOGO = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20168%20168'%3E%3Ccircle%20cx='84'%20cy='84'%20r='84'%20fill='%231ED760'/%3E%3Cpath%20fill='none'%20stroke='%23000'%20stroke-width='13'%20stroke-linecap='round'%20d='M37%2099c30-9%2065-7%2092%209M35%2075c34-10%2076-7%20105%2011M33%2050c38-11%2086-7%20118%2012'/%3E%3C/svg%3E";
+
 function renderPresets() {
   const grid = $('presets');
   grid.innerHTML = '';
@@ -1877,7 +1904,12 @@ function renderPresets() {
     const isActive = p && state.nowLocation && (
       p.stream_url === state.nowLocation ||
       (activeSlot !== null && p.slot === activeSlot) ||
-      (activeStreamURL && p.stream_url === activeStreamURL)
+      (activeStreamURL && p.stream_url === activeStreamURL) ||
+      // Spotify presets stream through /spotify/stream.ogg, which carries no
+      // slot number, so the slot match above never fires. The preset name is
+      // pushed as the now-playing title, so match on that to light up the
+      // right Spotify tile.
+      (p.type === 'spotify' && /\/spotify\/stream/.test(state.nowLocation) && p.name === state.nowName)
     );
     const hasErr = !!state.presetErrors[i];
     const div = document.createElement('div');
@@ -1916,7 +1948,12 @@ function renderPresets() {
           if (t && !presetCandidates.includes(t)) presetCandidates.push(t);
         }
       };
-      if (p.art) {
+      if (p.type === 'spotify') {
+        // Show the Spotify logo so the tile is instantly recognisable as a
+        // Spotify playlist; the account name is shown small under the title.
+        // (Chosen over the album/playlist cover, which changes or lags.)
+        addCands(SPOTIFY_LOGO);
+      } else if (p.art) {
         addCands(p.art);
       } else if (isActive && state.nowIcon) {
         addCands(state.nowIcon);
@@ -1945,7 +1982,9 @@ function renderPresets() {
       let tileBitrate = p.bitrate || 0;
       if (isActive && state.nowBitrate > 0) {
         tileBitrate = state.nowBitrate;
-        if ((p.bitrate || 0) !== state.nowBitrate) {
+        // Persist the corrected bitrate, but NEVER for Spotify presets:
+        // SetPreset is radio-only and would overwrite the Spotify URI.
+        if ((p.bitrate || 0) !== state.nowBitrate && p.type !== 'spotify') {
           p.bitrate = state.nowBitrate;
           SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, p.art || '', state.nowBitrate).catch(() => {});
         }
@@ -1956,6 +1995,7 @@ function renderPresets() {
           ${logo}
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
+            ${p.type === 'spotify' && p.account ? `<div class="preset-account">${escapeHtml(p.account)}</div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
           </div>
@@ -2077,6 +2117,27 @@ async function saveCurrentToSlot(slot) {
     return;
   }
 
+  // Case Spotify: the speaker is playing a Spotify playlist. Save a REAL
+  // Spotify preset (type=spotify with the playlist URI), not a radio link to
+  // the raw stream. The latter showed the album cover instead of the Spotify
+  // logo and could not recall/shuffle the playlist. Needs the current context
+  // (playlist URI) from /spotify/info.
+  if (/\/spotify\/stream/.test(state.nowLocation) && state.nowSpotifyContext) {
+    const sname = state.nowName || 'Spotify';
+    try {
+      await SaveSpotifyPreset(
+        state.currentBox.host, state.currentBox.port,
+        slot, sname, state.nowSpotifyContext, state.nowSpotifyAccount || ''
+      );
+      showToast(t('preset.savedToKey', { n: slot, name: sname }));
+      await loadPresets();
+      return;
+    } catch (err) {
+      showError(t('preset.saveFailed', { err: String(err) }));
+      return;
+    }
+  }
+
   // Case A: speaker is playing a proxy item
   // (location = /stream/<sourceSlot>). That happens when the
   // station was triggered via a hardware key or by selecting
@@ -2163,7 +2224,14 @@ async function play(slot) {
     // must not flip the preset back to grey when the speaker still
     // reports the old stream or an empty one.
     state.nowPlayState = 'BUFFERING_STATE';
-    state.nowLocation = p.stream_url || '';
+    // Spotify presets carry no stream_url (they recall by URI), so without
+    // this the optimistic location is empty: the tile would not light up and
+    // the click feels ignored until the box confirms several seconds later.
+    // Point it at the Spotify stream the box will report, so the highlight and
+    // the "starting" label appear instantly on click.
+    state.nowLocation = p.type === 'spotify'
+      ? 'http://127.0.0.1:8888/spotify/stream.ogg'
+      : (p.stream_url || '');
     state.nowName = p.name || '';
     state.nowIcon = p.art || '';
     state.nowBitrate = p.bitrate || 0;
@@ -2231,19 +2299,31 @@ function scheduleLiveBitrate() {
     liveBitrateTimer = null;
     if (state.currentBox !== box) return;
     tries++;
+    // Spotify streams report their measured rate through a separate agent
+    // endpoint and carry no slot in the location, so resolve the preset by
+    // name (the now-playing title is the preset name).
+    const isSpotify = /\/spotify\/stream/.test(state.nowLocation || '');
     let br = 0;
-    try { br = (await StreamBitrate(box.host, box.port)) | 0; } catch {}
+    try {
+      br = ((isSpotify ? await SpotifyBitrate(box.host, box.port)
+                       : await StreamBitrate(box.host, box.port)) | 0);
+    } catch {}
     if (br > 0) {
       if (br !== state.nowBitrate) {
         state.nowBitrate = br;
         // status bar repaints on its own 1 s tick; setting nowBitrate is enough.
         // Correct the active preset's stored bitrate to the real value
-        // (radio-browser's catalogue number is often missing or wrong).
-        const slot = activeSlotFromLocation(state.nowLocation);
-        if (slot !== null) {
-          const p = state.presets.find(x => x.slot === slot);
-          if (p && p.bitrate !== br) {
-            p.bitrate = br;
+        // (radio-browser's catalogue number is often missing or wrong; a
+        // Spotify preset never had one).
+        const p = isSpotify
+          ? state.presets.find(x => x.type === 'spotify' && x.name === state.nowName)
+          : (() => { const s = activeSlotFromLocation(state.nowLocation); return s !== null ? state.presets.find(x => x.slot === s) : null; })();
+        if (p && p.bitrate !== br) {
+          p.bitrate = br;
+          // Persist for radio only. SetPreset is radio-only (type=radio, no
+          // uri), so persisting a Spotify preset would wipe its URI. The
+          // Spotify rate stays live via state.nowBitrate + /spotify/info.
+          if (!isSpotify) {
             SetPreset(box.host, box.port, p.slot, p.name, p.stream_url, p.art || '', br).catch(() => {});
           }
         }
@@ -2308,6 +2388,34 @@ async function refreshStatus() {
     state.nowPlayState = ps;
     state.nowLocation = newLoc;
     state.nowName = newName;
+    // Live Spotify track metadata for the now-playing line: poll the agent's
+    // /spotify/info (throttled) while a Spotify stream is active so the desktop
+    // shows the current song + artist, not just the playlist/preset name.
+    const isSpotifyNow = /\/spotify\/stream/.test(newLoc);
+    if (isSpotifyNow) {
+      const npBox = state.currentBox;
+      if (npBox && Date.now() - (state.lastSpotifyNowFetch || 0) > 3000) {
+        state.lastSpotifyNowFetch = Date.now();
+        SpotifyNowPlaying(npBox.host, npBox.port).then(np => {
+          if (!np) return;
+          const coverChanged = state.nowSpotifyCover !== (np.cover || '');
+          state.nowSpotifyTrack = np.track || '';
+          state.nowSpotifyArtist = np.artist || '';
+          state.nowSpotifyCover = np.cover || '';
+          state.nowSpotifyContext = np.context || '';
+          state.nowSpotifyAccount = np.account || '';
+          // The now-playing line redraws every status poll, but the tile cover
+          // only redraws on renderPresets. Re-render when the cover changes so
+          // the preset logo tracks the song in step with the title instead of
+          // lagging a track behind.
+          if (coverChanged) renderPresets();
+        }).catch(() => {});
+      }
+    } else {
+      state.nowSpotifyTrack = '';
+      state.nowSpotifyArtist = '';
+      state.nowSpotifyCover = '';
+    }
     // Update state.nowIcon. Prefer the art tag from now_playing.
     // If that is empty AND we are playing through the stream proxy,
     // adopt the logo of the source preset. Bose UPnP items emitted
@@ -2326,7 +2434,13 @@ async function refreshStatus() {
       // Keep the now-playing bitrate in sync with the active preset
       // (hardware key press or app restart did not go through the play
       // path that sets it). Cleared when nothing is playing.
-      if (ap && ap.bitrate) {
+      if (/\/spotify\/stream/.test(newLoc)) {
+        // Spotify stream: never inherit the previous radio station's bitrate.
+        // Use the matching Spotify preset's stored (measured) rate, or 0 so the
+        // live fetch below recomputes it from the actual stream.
+        const sp = state.presets.find(p => p.type === 'spotify' && p.name === newName);
+        state.nowBitrate = (sp && sp.bitrate) ? sp.bitrate : 0;
+      } else if (ap && ap.bitrate) {
         state.nowBitrate = ap.bitrate;
       } else if (!newLoc) {
         state.nowBitrate = 0;
@@ -2338,7 +2452,7 @@ async function refreshStatus() {
       // on every poll once a value is in.
       if (!state.nowBitrate &&
           (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
-          activeSlotFromLocation(newLoc) !== null) {
+          (activeSlotFromLocation(newLoc) !== null || /\/spotify\/stream/.test(newLoc))) {
         scheduleLiveBitrate();
       }
     }
@@ -2354,6 +2468,15 @@ async function refreshStatus() {
       if (ap && state.presetErrors[ap.slot]) {
         delete state.presetErrors[ap.slot];
       }
+      // Spotify presets carry no stream_url and the location (/spotify/stream)
+      // has no slot, so the match above never fires. When a Spotify stream is
+      // confirmed playing, clear ALL Spotify preset errors so a stale
+      // "speaker still starting" no longer sticks on the tile.
+      if (/\/spotify\/stream/.test(loc)) {
+        for (const p of state.presets) {
+          if (p.type === 'spotify') delete state.presetErrors[p.slot];
+        }
+      }
     }
 
     if (stateChanged && state.presets.length > 0) {
@@ -2363,6 +2486,14 @@ async function refreshStatus() {
     let stateLabel;
     let stateClass;
     let displayName = name;
+    // Spotify: show the live current song next to the playlist name, e.g.
+    //   Playlist: "Jens Chill" · Father John Misty - Real Love Baby
+    if (/\/spotify\/stream/.test(state.nowLocation) && state.nowSpotifyTrack) {
+      const song = state.nowSpotifyArtist
+        ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
+        : state.nowSpotifyTrack;
+      displayName = name ? `Playlist: "${name}" · ${song}` : song;
+    }
     if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
     else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
     else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }

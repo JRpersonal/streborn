@@ -36,6 +36,11 @@ type Handler interface {
 	// API Trigger). location und title kommen aus dem Box ContentItem
 	// und koennen ueber UPnP an die Box geschickt werden.
 	OnPresetSelected(ctx context.Context, slot int, location string, title string)
+
+	// OnRemoteSkip wird gefeuert wenn die Fernbedienung Naechster/Vorheriger
+	// Titel drueckt (die Box kann eine UPnP Quelle nicht selbst skippen und
+	// meldet QPLAY_SKIP_*_FAILED). forward=true -> next, false -> prev.
+	OnRemoteSkip(ctx context.Context, forward bool)
 }
 
 // Client haelt die Verbindung zur Box.
@@ -171,6 +176,23 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 
 	s := string(data)
 
+	// Remote next/prev keys: the box cannot skip a UPnP source itself, so it
+	// emits a QPLAY_SKIP_*_FAILED error. Catch that and skip in go-librespot
+	// instead, so the remote's track-skip keys work during Spotify playback.
+	switch {
+	case strings.Contains(s, "QPLAY_SKIP_NEXT_FAILED"):
+		if c.handler != nil {
+			c.handler.OnRemoteSkip(ctx, true)
+		}
+		return
+	case strings.Contains(s, "QPLAY_SKIP_PREV_FAILED"):
+		if c.handler != nil {
+			c.handler.OnRemoteSkip(ctx, false)
+		}
+		return
+	}
+
+
 	// Phase markers for standby/resume diagnostics (#60). powerState
 	// transitions are rare and genuinely useful, so they stay at INFO.
 	// connectionState and nowPlaying, however, fire every few seconds on
@@ -232,7 +254,15 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	_, _ = fmt.Sscanf(pe.ID, "%d", &slot)
 	if slot < 1 || slot > 6 {
 		// id="0" + INVALID_SOURCE folgt auf den echten Press wenn Box
-		// den Source nicht selbst spielen kann. Ignorieren.
+		// den Source nicht selbst spielen kann. Ignorieren fuer die
+		// Wiedergabe, aber bei INVALID_SOURCE einmal loggen: das ist die
+		// Box-eigene fehlgeschlagene Self-Aktivierung, die das Display
+		// "Dienst nicht verfuegbar" zeigt (#22), bevor STR uebernimmt.
+		if strings.Contains(s, "INVALID_SOURCE") || strings.Contains(s, "DISABLED") {
+			c.logger.Info("box self-activation rejected preset (shows 'service unavailable')",
+				"id", pe.ID, "source", pe.ContentItem.Source,
+				"location", pe.ContentItem.Location, "preview", preview(data, 240))
+		}
 		return
 	}
 	c.logger.Info("hardware preset gedrueckt",

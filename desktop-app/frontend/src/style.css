@@ -632,6 +632,10 @@ body {
 @media (max-width: 560px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* Equal-height preset tiles: a 2-line station name otherwise grows only its
+   own row. grid-auto-rows: 1fr makes every row match the tallest, so all
+   buttons stay the same size. */
+#presets { grid-auto-rows: 1fr; }
 .preset {
   background: #2a2a2a;
   border: 1px solid #444;
@@ -671,6 +675,7 @@ body {
 .preset .num { font-size: 11px; color: #888; }
 .preset .name { font-size: 14px; font-weight: 600; margin-top: 2px; }
 .preset-bitrate { font-size: 10px; font-weight: 400; color: #888; margin-top: 1px; line-height: 1.1; }
+.preset-account { font-size: 10px; font-weight: 400; color: #1ED760; margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; }
 .preset .url { font-size: 10px; color: #777; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preset-head { display: flex; justify-content: space-between; }
 .preset .del { color: #777; cursor: pointer; padding: 0 4px; font-size: 16px; }

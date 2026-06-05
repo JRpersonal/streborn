@@ -43,6 +43,34 @@ type Server struct {
 	region      string // ISO 3166-1 alpha-2 vom Setup Wizard, leer wenn unbekannt
 	regionFile  string // Pfad fuer persistente Speicherung
 	streamProxy *streamproxy.Server
+	// spotifyStream serves the live Ogg from the go-librespot manager to
+	// the box over HTTP (registered at /spotify/stream). nil when Spotify
+	// is not configured. Injected as a handler so webui need not import
+	// the spotify package.
+	spotifyStream http.HandlerFunc
+	// spotifyPlay tells go-librespot to play a Spotify URI on the given
+	// account (the control side of a Spotify preset recall). The account is
+	// the username the preset was saved under; an empty account plays with
+	// go-librespot's current login (see manager PlayAccount / SwitchAccount).
+	// nil when Spotify is not configured. Injected as a func for decoupling.
+	spotifyPlay func(ctx context.Context, uri, account string) error
+	// spotifyUser returns go-librespot's currently logged-in account, used to
+	// stamp the account onto a newly saved Spotify preset. nil when Spotify
+	// is not configured.
+	spotifyUser func(ctx context.Context) string
+	// spotifyMeta resolves a stable cover image URL and the human title for a
+	// Spotify context URI (the playlist image + name), stamped onto a newly
+	// saved Spotify preset so its tile has a steady logo and a real name (not a
+	// bare "Spotify"). nil when Spotify is not configured.
+	spotifyMeta func(ctx context.Context, uri string) (cover, title string)
+	// spotifyStreaming reports whether the box is currently pulling the Ogg
+	// stream, the definitive "Spotify is playing" signal for verifyRecall.
+	// nil when Spotify is not configured.
+	spotifyStreaming func() bool
+	// spotifyInfo answers GET /spotify/info with the live Spotify state
+	// (ready, measured bitrate, device name) the UI reads to show the real
+	// stream bitrate on a Spotify preset tile. nil when not configured.
+	spotifyInfo http.HandlerFunc
 	langCacheMu sync.Mutex
 	langCache   map[string]langCacheEntry
 	// wifiSignalFn returns the latest Wi-Fi signal class observed on the
@@ -70,6 +98,22 @@ type Server struct {
 	// finish instead of colliding with it. Reads (now_playing/info) are not
 	// gated; they have their own micro-cache.
 	boxCmdMu sync.Mutex
+
+	// lastPlay remembers the stream STR last told the box to play, so the
+	// auto-re-push (#4) can resume it when the Bose renderer drops a long
+	// stream on its own (reported: radio stops after ~11 min, no STR error).
+	lastPlayMu sync.Mutex
+	lastPlay   *lastPlayInfo
+}
+
+// lastPlayInfo is the box-facing URL + metadata of the current stream plus the
+// re-push loop counter (windowed, so a genuinely failing stream is not retried
+// forever).
+type lastPlayInfo struct {
+	boxURL, title, art, mime string
+	ts                       time.Time
+	rePushes                 int
+	windowStart              time.Time
 }
 
 // statusCacheTTL bounds the staleness of a cached now_playing response and
@@ -128,6 +172,45 @@ func WithRegionFile(path string) Option {
 // CDN URL — Streams ueberleben Token Expiry.
 func WithStreamProxy(p *streamproxy.Server) Option {
 	return func(s *Server) { s.streamProxy = p }
+}
+
+// WithSpotifyStream registers the handler that serves go-librespot's
+// live Ogg to the box at /spotify/stream (the Spotify-preset audio
+// plane).
+func WithSpotifyStream(h http.HandlerFunc) Option {
+	return func(s *Server) { s.spotifyStream = h }
+}
+
+// WithSpotifyInfo registers the handler that reports live Spotify state
+// (ready, measured bitrate, device name) at /spotify/info.
+func WithSpotifyInfo(h http.HandlerFunc) Option {
+	return func(s *Server) { s.spotifyInfo = h }
+}
+
+// WithSpotifyControl registers the function that starts playback of a
+// Spotify URI on a given account in go-librespot (the Spotify-preset
+// control plane). An empty account plays with the current login.
+func WithSpotifyControl(play func(ctx context.Context, uri, account string) error) Option {
+	return func(s *Server) { s.spotifyPlay = play }
+}
+
+// WithSpotifyUser registers the resolver for go-librespot's current account,
+// used to stamp the account onto a newly saved Spotify preset.
+func WithSpotifyUser(user func(ctx context.Context) string) Option {
+	return func(s *Server) { s.spotifyUser = user }
+}
+
+// WithSpotifyMeta registers the resolver for a Spotify context's stable cover
+// image and human title, stamped onto a newly saved Spotify preset.
+func WithSpotifyMeta(meta func(ctx context.Context, uri string) (cover, title string)) Option {
+	return func(s *Server) { s.spotifyMeta = meta }
+}
+
+// WithSpotifyStreaming registers the predicate that reports whether the box is
+// currently pulling the Ogg stream, used by verifyRecall to avoid a disruptive
+// re-issue while Spotify is already playing.
+func WithSpotifyStreaming(streaming func() bool) Option {
+	return func(s *Server) { s.spotifyStreaming = streaming }
 }
 
 // ensureBoxReady weckt die Box aus dem Standby (mit retry+poll bis
@@ -210,6 +293,22 @@ func (s *Server) Run(ctx context.Context) error {
 	// Siehe internal/streamproxy fuer Details.
 	if s.streamProxy != nil {
 		s.streamProxy.Register(mux)
+	}
+	if s.spotifyStream != nil {
+		// .ogg suffix matters: the Bose UPnP renderer keys playability off
+		// the URL extension and rejects an extensionless Ogg stream
+		// (INVALID_SOURCE) even with audio/ogg Content-Type + protocolInfo.
+		mux.HandleFunc("/spotify/stream.ogg", s.spotifyStream)
+		// Per-slot aliases (same single stream, distinct URLs) so the box can
+		// store a UNIQUE location per Spotify preset. Without this, two Spotify
+		// presets share the identical location and the box drops one of them
+		// (observed: slot 1 vanished when 1 and 6 both used /spotify/stream.ogg).
+		for slot := 1; slot <= 6; slot++ {
+			mux.HandleFunc(fmt.Sprintf("/spotify/stream-%d.ogg", slot), s.spotifyStream)
+		}
+	}
+	if s.spotifyInfo != nil {
+		mux.HandleFunc("/spotify/info", s.spotifyInfo)
 	}
 
 	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
@@ -311,6 +410,56 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		if p.Type == "" {
 			p.Type = "radio"
 		}
+		// Stamp the account a Spotify preset belongs to (go-librespot's current
+		// login) so a later recall can switch back to it on a multi-account box
+		// (#27). The client may already supply it; only fill when empty.
+		// Account + cover are best-effort enrichment: use a fresh background
+		// context, not r.Context(), so a client that disconnects right after the
+		// PUT (e.g. a raw one-shot request) does not cancel them mid-fetch.
+		if p.Type == "spotify" && p.Account == "" && s.spotifyUser != nil {
+			uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			if u := s.spotifyUser(uctx); u != "" {
+				p.Account = u
+			}
+			cancel()
+		}
+		// Give a Spotify preset a stable tile logo (the playlist image, #24) and a
+		// real name (the playlist title), so the box display and the tile show
+		// e.g. "Jens Chill" instead of a bare "Spotify". Only fills empties / a
+		// placeholder name.
+		if p.Type == "spotify" && p.URI != "" && s.spotifyMeta != nil &&
+			(p.Art == "" || p.Name == "" || p.Name == "Spotify") {
+			cctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			cover, title := s.spotifyMeta(cctx, p.URI)
+			if p.Art == "" && cover != "" {
+				p.Art = cover
+			}
+			if (p.Name == "" || p.Name == "Spotify") && title != "" {
+				p.Name = title
+			}
+			cancel()
+		}
+		// Dedup: a given playlist/station lives on at most ONE preset. Saving it
+		// here removes it from any other slot first (matched by Spotify URI, or
+		// by stream URL for radio), so the same content cannot occupy two
+		// buttons (user request; also avoids two Spotify presets colliding).
+		for _, other := range s.presets.All() {
+			if other.Slot == slot {
+				continue
+			}
+			dup := (p.Type == "spotify" && p.URI != "" && other.URI == p.URI) ||
+				(p.Type != "spotify" && p.StreamURL != "" && other.StreamURL == p.StreamURL)
+			if !dup {
+				continue
+			}
+			_ = s.presets.RemoveSlot(other.Slot)
+			s.logger.Info("preset dedup: removed duplicate from other slot", "kept", slot, "removed", other.Slot)
+			if s.boxHost != "" {
+				rmCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = boxcli.RemovePreset(rmCtx, s.boxHost, other.Slot)
+				cancel()
+			}
+		}
 		if err := s.presets.SetSlot(p); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -320,7 +469,14 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// So ueberlebt der Stream Token Expiry.
 		if s.boxHost != "" {
 			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			// Spotify presets store the live Ogg stream as the box-side location
+			// so the box's own activation on a hardware press attaches cleanly
+			// instead of failing on /stream/<slot> (no Spotify source) and
+			// flashing "service unavailable" (#22).
 			proxyURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
+			if p.Type == "spotify" {
+				proxyURL = fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+			}
 			if err := boxcli.AddPreset(boxCtx, s.boxHost, slot, p.Name, proxyURL); err != nil {
 				s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
 			}
@@ -385,6 +541,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	s.setLastPlay(playURL, req.Title, req.Icon, "")
 	// Click Tracking: best effort, im Hintergrund.
 	if req.UUID != "" {
 		go func(uuid string) {
@@ -423,6 +580,44 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// Spotify presets have no playable HTTP StreamURL. Start go-librespot
+	// FIRST so the Ogg is already flowing when the box attaches (no
+	// data-starve timeout on join), then point the box at the stream;
+	// ServeOgg seeks the track to 0 on attach so the box gets a fresh header
+	// sequence to sync to.
+	if p.Type == "spotify" && p.URI != "" {
+		if s.spotifyPlay == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": "Spotify not configured", "slot": slot, "name": p.Name,
+			})
+			return
+		}
+		if err := s.spotifyPlay(r.Context(), p.URI, p.Account); err != nil {
+			// Tolerate, do not fail the button: a cross-account switch can time
+			// out (the other account's app is still connected) and the play then
+			// times out during the go-librespot restart, but pointing the box at
+			// the stream + the verify-retry below still bring playback up (with
+			// the current account; public playlists still play). The hardware
+			// path is tolerant too; the soft button must match.
+			s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
+		}
+		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg"); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
+				"slot": slot, "name": p.Name,
+			})
+			return
+		}
+		s.setLastPlay("http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg")
+		uri, name, art, account := p.URI, p.Name, p.Art, p.Account
+		go s.verifyRecall(func(ctx context.Context) {
+			if s.spotifyPlay(ctx, uri, account) == nil {
+				_ = s.renderer.PlayURLMime(ctx, "http://127.0.0.1:8888/spotify/stream.ogg", name, art, "audio/ogg")
+			}
+		}, s.spotifyStreaming)
+		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
+		return
+	}
 	// Stream Proxy URL nutzen damit auch nach Token Expiry weitergespielt
 	// wird (Bose sieht die stabile loopback URL).
 	playURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
@@ -435,7 +630,134 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	s.setLastPlay(playURL, p.Name, p.Art, "")
+	name, art := p.Name, p.Art
+	go s.verifyRecall(func(ctx context.Context) {
+		_ = s.renderer.PlayURL(ctx, playURL, name, art)
+	}, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
+}
+
+// verifyRecall confirms the box reached a playing state shortly after a recall
+// and re-issues the play a few times if not. Fixes the "first press after a
+// reboot does nothing, second press works" race (box/go-librespot not ready
+// yet) without any latency on the happy path (the initial play already ran).
+func (s *Server) verifyRecall(retry func(context.Context), working func() bool) {
+	for attempt := 1; attempt <= 3; attempt++ {
+		time.Sleep(5 * time.Second)
+		// working() is a source-specific "it is already fine" signal checked
+		// before the box now_playing state. For Spotify it reports whether the
+		// box is pulling the Ogg stream: now_playing flaps while the box
+		// attaches, and a re-issue would reshuffle + restart the track (the
+		// audible abort + UI play/stop/play flicker). Don't retry when working.
+		if working != nil && working() {
+			return
+		}
+		if _, busy := s.boxPlayState(); busy {
+			return
+		}
+		s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		retry(ctx)
+		cancel()
+	}
+	s.logger.Warn("recall still not playing after retries")
+}
+
+// setLastPlay records the box-facing stream + metadata for the auto-re-push.
+func (s *Server) setLastPlay(boxURL, title, art, mime string) {
+	now := time.Now()
+	s.lastPlayMu.Lock()
+	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now, windowStart: now}
+	s.lastPlayMu.Unlock()
+}
+
+// HandleStreamDisconnect is called by the stream proxy when the Bose renderer
+// closes a stream. When the upstream was healthy (so the box dropped it, not
+// the source) it conservatively tries to resume, which fixes the renderer
+// dropping a long stream on its own (radio stops after ~11 min, no STR error).
+func (s *Server) HandleStreamDisconnect(upstreamErr error) {
+	if upstreamErr != nil {
+		return // upstream failed; not a box-side drop, leave it alone
+	}
+	s.lastPlayMu.Lock()
+	have := s.lastPlay != nil && time.Since(s.lastPlay.ts) < 6*time.Hour
+	s.lastPlayMu.Unlock()
+	if !have {
+		return
+	}
+	go s.maybeRePush()
+}
+
+// maybeRePush resumes the last stream, but only when it is safe: it waits a
+// moment (a user power-off reaches STANDBY within ~1-2 s, so this tells "user
+// turned it off" from "renderer dropped the stream while the box stays on"),
+// then re-pushes only if the box is on and idle (not standby, not playing, not
+// paused). A windowed counter caps retries so a genuinely failing stream is not
+// looped forever.
+func (s *Server) maybeRePush() {
+	time.Sleep(2 * time.Second)
+	standby, busy := s.boxPlayState()
+	if standby {
+		s.logger.Info("re-push: box went to standby, not resuming (treated as user power-off)")
+		return
+	}
+	if busy {
+		return // already playing/paused again (recovered, or user switched)
+	}
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	if lp == nil {
+		s.lastPlayMu.Unlock()
+		return
+	}
+	if time.Since(lp.windowStart) > 5*time.Minute {
+		lp.windowStart = time.Now()
+		lp.rePushes = 0
+	}
+	if lp.rePushes >= 3 {
+		s.lastPlayMu.Unlock()
+		s.logger.Warn("re-push: giving up after repeated drops", "url", lp.boxURL)
+		return
+	}
+	lp.rePushes++
+	boxURL, title, art, mime, n := lp.boxURL, lp.title, lp.art, lp.mime, lp.rePushes
+	s.lastPlayMu.Unlock()
+
+	s.logger.Info("re-push: box dropped the stream while idle, resuming", "url", boxURL, "attempt", n)
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var err error
+	if mime != "" {
+		err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
+	} else {
+		err = s.renderer.PlayURL(ctx, boxURL, title, art)
+	}
+	if err != nil {
+		s.logger.Warn("re-push failed", "err", err, "url", boxURL)
+	}
+}
+
+// boxPlayState reads now_playing once and reports whether the box is in standby
+// and whether it is busy (playing, buffering or paused). Best-effort: on error
+// it reports neither, so the caller does not re-push blindly.
+func (s *Server) boxPlayState() (standby, busy bool) {
+	if s.boxHost == "" {
+		return false, false
+	}
+	cl := &http.Client{Timeout: 5 * time.Second}
+	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	if err != nil {
+		return false, false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	body := string(b)
+	standby = strings.Contains(body, "STANDBY")
+	busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
+	return standby, busy
 }
 
 func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
@@ -948,7 +1270,9 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct{ Name string `json:"name"` }
+	var req struct {
+		Name string `json:"name"`
+	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
@@ -981,7 +1305,9 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
-	var req struct{ Value int `json:"value"` }
+	var req struct {
+		Value int `json:"value"`
+	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
@@ -1086,7 +1412,9 @@ func (s *Server) handleBoxBass(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct{ Value int `json:"value"` }
+	var req struct {
+		Value int `json:"value"`
+	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
@@ -1201,17 +1529,17 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := map[string]any{
-		"agent_log_tail":  readTail("/tmp/streborn-agent.log"),
-		"previous_log":    readTail("/mnt/nv/streborn/previous.log"),
-		"setup_log":       readTail("/mnt/nv/streborn/setup.log"),
-		"boot_log":        readTail("/mnt/nv/streborn/boot.log"),
-		"wpa_supplicant":  readTail("/mnt/nv/wpa_supplicant.conf"),
-		"region_txt":      readTail("/mnt/nv/streborn/region.txt"),
-		"name_txt":        readTail("/mnt/nv/streborn/name.txt"),
-		"stick_listing":   listDir("/media/sda1"),
-		"media_listing":   listDir("/media"),
-		"nv_listing":      listDir("/mnt/nv/streborn"),
-		"proc_mounts":     readTail("/proc/mounts"),
+		"agent_log_tail": readTail("/tmp/streborn-agent.log"),
+		"previous_log":   readTail("/mnt/nv/streborn/previous.log"),
+		"setup_log":      readTail("/mnt/nv/streborn/setup.log"),
+		"boot_log":       readTail("/mnt/nv/streborn/boot.log"),
+		"wpa_supplicant": readTail("/mnt/nv/wpa_supplicant.conf"),
+		"region_txt":     readTail("/mnt/nv/streborn/region.txt"),
+		"name_txt":       readTail("/mnt/nv/streborn/name.txt"),
+		"stick_listing":  listDir("/media/sda1"),
+		"media_listing":  listDir("/media"),
+		"nv_listing":     listDir("/mnt/nv/streborn"),
+		"proc_mounts":    readTail("/proc/mounts"),
 	}
 	writeJSON(w, http.StatusOK, state)
 }
@@ -1225,9 +1553,10 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 // timeout, body capped to keep the JSON small.
 //
 // Query parameters:
-//   url     full URL to probe (required)
-//   method  HTTP method (default GET)
-//   body    request body, sent verbatim
+//
+//	url     full URL to probe (required)
+//	method  HTTP method (default GET)
+//	body    request body, sent verbatim
 func (s *Server) handleDebugProbe(w http.ResponseWriter, r *http.Request) {
 	if !isLocalLAN(r.RemoteAddr) {
 		http.Error(w, "debug only from LAN", http.StatusForbidden)
@@ -1328,9 +1657,9 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"synced":  len(specs) - len(failed),
-		"failed":  failed,
+		"status": "ok",
+		"synced": len(specs) - len(failed),
+		"failed": failed,
 	})
 }
 

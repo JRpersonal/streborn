@@ -894,6 +894,8 @@ type Preset struct {
 	Type      string `json:"type"`
 	Art       string `json:"art,omitempty"`
 	Bitrate   int    `json:"bitrate,omitempty"`
+	URI       string `json:"uri,omitempty"`     // Spotify presets: playlist/album URI
+	Account   string `json:"account,omitempty"` // Spotify presets: owning account
 }
 
 func (a *App) baseURL(host string, port int) string {
@@ -1026,6 +1028,29 @@ func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int) error {
 	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
 	body, _ := json.Marshal(Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate})
+	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+// SaveSpotifyPreset stores a real Spotify preset (type=spotify with the
+// playlist/album URI) on a slot. A long-press while a Spotify playlist plays
+// uses this so the saved preset is recallable, shuffled and account-aware,
+// instead of a radio link to the raw stream (which showed the album cover, not
+// the Spotify logo, and did not recall the playlist). The agent fills the
+// account and a stable playlist cover when they are empty.
+func (a *App) SaveSpotifyPreset(host string, port int, slot int, name, uri, account string) error {
+	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
+	body, _ := json.Marshal(Preset{Slot: slot, Name: name, Type: "spotify", URI: uri, Account: account})
 	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := a.httpClient.Do(req)
@@ -1462,6 +1487,56 @@ func (a *App) StreamBitrate(host string, port int) int {
 		return 0
 	}
 	return out.Bitrate
+}
+
+// SpotifyBitrate returns the bitrate the agent measured from the live
+// go-librespot Ogg stream in kbit/s, or 0 if Spotify is idle/unavailable.
+// Spotify presets carry no radio-browser bitrate, so the tile reads the
+// real measured stream rate here instead of a hardcoded nominal. Routed
+// through boxDo so it self-heals across :8888 / :17008 like StreamBitrate.
+func (a *App) SpotifyBitrate(host string, port int) int {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/spotify/info", "", "")
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	var out struct {
+		Bitrate int `json:"bitrate"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return 0
+	}
+	return out.Bitrate
+}
+
+// SpotifyNowPlaying returns the live Spotify state for the UI: measured
+// bitrate plus the current track title, artist and cover URL (from
+// go-librespot's events). Empty fields when nothing is playing. Routed
+// through boxDo so it self-heals across :8888 / :17008.
+type SpotifyNow struct {
+	Bitrate int    `json:"bitrate"`
+	Track   string `json:"track"`
+	Artist  string `json:"artist"`
+	Cover   string `json:"cover"`
+	Context string `json:"context"` // current playlist/album URI (for a long-press save)
+	Account string `json:"account"` // current go-librespot login
+}
+
+func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {
+	var out SpotifyNow
+	resp, err := a.boxDo(host, port, http.MethodGet, "/spotify/info", "", "")
+	if err != nil {
+		return out
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return out
 }
 
 // SyncBoxPresets schickt alle Stick Presets erneut an die Box damit
