@@ -2422,11 +2422,13 @@ async function refreshStatus() {
     let stateLabel;
     let stateClass;
     let displayName = name;
-    // Spotify: show the live current song (and artist) next to the playlist
-    // name, instead of only the preset/playlist name.
+    // Spotify: show the live current song next to the playlist name, e.g.
+    //   Playlist: "Jens Chill" · Father John Misty - Real Love Baby
     if (/\/spotify\/stream/.test(state.nowLocation) && state.nowSpotifyTrack) {
-      displayName = name ? `${name} , ${state.nowSpotifyTrack}` : state.nowSpotifyTrack;
-      if (state.nowSpotifyArtist) displayName += ` , ${state.nowSpotifyArtist}`;
+      const song = state.nowSpotifyArtist
+        ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
+        : state.nowSpotifyTrack;
+      displayName = name ? `Playlist: "${name}" · ${song}` : song;
     }
     if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
     else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }

@@ -632,6 +632,10 @@ body {
 @media (max-width: 560px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* Equal-height preset tiles: a 2-line station name otherwise grows only its
+   own row. grid-auto-rows: 1fr makes every row match the tallest, so all
+   buttons stay the same size. */
+#presets { grid-auto-rows: 1fr; }
 .preset {
   background: #2a2a2a;
   border: 1px solid #444;
