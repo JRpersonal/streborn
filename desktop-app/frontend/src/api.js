@@ -51,6 +51,7 @@ export {
   GetAirplayOpt,
   SetAirplayOpt,
   StreamBitrate,
+  SpotifyBitrate,
   GetBattery,
   SaveDiagnosticBundle,
   GetLogFilePath,

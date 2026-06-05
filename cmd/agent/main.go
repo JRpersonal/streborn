@@ -275,7 +275,11 @@ func run() error {
 	// and points the box at /spotify/stream. Idles until the binary is
 	// present and the device is tap-authenticated once in the Spotify
 	// app. Started below once ctx exists.
-	spotifyMgr := spotify.New("/mnt/nv/streborn/bin/go-librespot", "/mnt/nv/streborn/sp-cache", "ST Reborn", logger.With("comp", "spotify"))
+	// go-librespot reads the speaker's friendly name and volume through this
+	// Bose REST client: the Spotify device + its mDNS advert then carry the
+	// speaker's own name, and Spotify-app volume changes are mirrored onto it.
+	spotifyBox := boxapi.New(*boxHost)
+	spotifyMgr := spotify.New("/mnt/nv/streborn/bin/go-librespot", "/mnt/nv/streborn/sp-cache", "ST Reborn", spotifyBox, logger.With("comp", "spotify"))
 
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
@@ -285,7 +289,8 @@ func run() error {
 		webui.WithRegionFile(*regionFile),
 		webui.WithStreamProxy(streamProxySrv),
 		webui.WithSpotifyStream(spotifyMgr.ServeOgg),
-		webui.WithSpotifyControl(spotifyMgr.Play))
+		webui.WithSpotifyControl(spotifyMgr.Play),
+		webui.WithSpotifyInfo(spotifyMgr.ServeInfo))
 
 	// Hardware Preset Tasten: Box sendet via WebSocket auf 8080 (gabbo Protocol)
 	// einen presetSelectionUpdated event wenn der User physisch eine Taste
@@ -374,6 +379,7 @@ func run() error {
 				return
 			case <-t.C:
 				logResourceHealth(logger)
+				memoryGuardCheck(logger, spotifyMgr, *boxHost)
 			}
 		}
 	}()
@@ -1382,10 +1388,12 @@ func ensureSshdRunning(logger *slog.Logger) {
 const nandLogPath = "/mnt/nv/streborn/agent.log"
 
 // nandLogMax caps the persistent log so a long-running agent does not
-// fill the small NAND volume. On overflow the file is rotated to
-// agent.log.1 and a fresh agent.log starts. 1 MiB covers ~10 fresh
-// boots worth of debug output on a slow speaker.
-const nandLogMax = 1 * 1024 * 1024
+// fill the small NAND volume (~31 MB, shared with the Bose firmware). On
+// overflow the file is rotated to agent.log.1 and a fresh agent.log starts,
+// so the pair holds at most 2x this. 256 KiB still covers several fresh boots
+// of debug output while keeping the log footprint well under 512 KiB;
+// run.sh's cleanup_nand trims it further on each boot.
+const nandLogMax = 256 * 1024
 
 // logResourceHealth records a one-line snapshot of available memory and
 // system load. On this hardware (~120 MB RAM, no swap) a slow leak ends
@@ -1405,6 +1413,81 @@ func logResourceHealth(logger *slog.Logger) {
 		// precedes the recurring BoseApp freeze without guesswork.
 		"agentRSSKB", rss,
 		"agentThreads", threads)
+}
+
+// memory-guard tunables. The Spotify Ogg path leaves a residual box-side
+// firmware leak (~1.3 MB/min while playing) that only a reboot frees (pause,
+// standby and re-push do not). The guard reboots the box ONLY when memory is
+// critically low AND nothing is playing, so the leak is reset during idle and
+// never causes an OOM mid-playback. When idle the leak does not grow, so the
+// low reading is stable and there is no race with the 5-minute cycle.
+const (
+	memGuardThresholdKB  = 12 * 1024 // reboot below this (box OOMs in single-digit MB)
+	memGuardMinUptimeSec = 900       // never reboot in the first 15 min (boot-loop guard)
+)
+
+// memoryGuardCheck reboots the box when free memory is critically low and the
+// box is idle, to clear the accumulated firmware leak from Spotify playback.
+// Conservative and heavily logged: it skips while Spotify streams, while the
+// box is playing anything (do not interrupt radio either), and early after
+// boot. The reboot itself clears the condition, so no loop stamp is needed.
+func memoryGuardCheck(logger *slog.Logger, sp *spotify.Manager, boxHost string) {
+	avail, _ := readMemKB()
+	if avail < 0 || avail > memGuardThresholdKB {
+		return // healthy
+	}
+	if up := readUptimeSec(); up >= 0 && up < memGuardMinUptimeSec {
+		logger.Warn("memory guard: low memAvail but uptime too short, holding off", "memAvailKB", avail, "uptimeSec", up)
+		return
+	}
+	if sp != nil && sp.Streaming() {
+		logger.Warn("memory guard: low memAvail but Spotify is streaming, not rebooting", "memAvailKB", avail)
+		return
+	}
+	if boxIsPlaying(boxHost) {
+		logger.Warn("memory guard: low memAvail but box is playing, not rebooting", "memAvailKB", avail)
+		return
+	}
+	logger.Warn("memory guard: memAvail critically low while idle, rebooting box to clear firmware leak", "memAvailKB", avail)
+	_ = exec.Command("sync").Run()
+	if err := exec.Command("reboot").Run(); err != nil {
+		logger.Error("memory guard: reboot failed", "err", err)
+	}
+}
+
+// readUptimeSec returns system uptime in seconds, or -1 on error.
+func readUptimeSec() int64 {
+	b, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return -1
+	}
+	f := strings.Fields(string(b))
+	if len(f) == 0 {
+		return -1
+	}
+	sec, err := strconv.ParseFloat(f[0], 64)
+	if err != nil {
+		return -1
+	}
+	return int64(sec)
+}
+
+// boxIsPlaying reports whether the Bose box is actively rendering audio (any
+// source), so the memory guard never reboots mid-playback. Best-effort: any
+// error or a non-play state counts as not playing.
+func boxIsPlaying(boxHost string) bool {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s := string(b)
+	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
 }
 
 func readSelfRSS() (rssKB, threads int64) {

@@ -52,23 +52,51 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/gorilla/websocket"
 )
+
+// vorbisRate is Spotify's Ogg/Vorbis sample rate; the Ogg granule position
+// counts samples at this rate, which is how the drain turns bytes into a
+// measured bitrate.
+const vorbisRate = 44100
+
+// flushThreshold batches Ogg pages before writing+flushing to the box. The
+// Bose firmware leaks memory (~3.4 MB/min, live-measured) when it receives the
+// stream as many tiny HTTP chunks, which is what flushing after every ~4 KB Ogg
+// page produced. Accumulating ~16 KB before each flush makes the box see large
+// chunks instead and the leak disappears. 16 KB matches the streamproxy copy
+// buffer, whose coalescing is why routing the same stream through it did not
+// leak. Header replay in ServeOgg is exempt (one-time, at attach).
+const flushThreshold = 16 * 1024
 
 // Manager supervises one go-librespot process and brokers its PCM output
 // (as a live WAV stream) to at most one HTTP consumer (the speaker),
 // plus drives playback through go-librespot's local HTTP API.
 type Manager struct {
-	binPath   string
-	configDir string
-	name      string
-	apiAddr   string // host:port of go-librespot's HTTP API
-	logger    *slog.Logger
-	bitr      int // 96/160/320
-	client    *http.Client
+	binPath    string
+	configDir  string
+	fallback   string // device name used until the box's friendly name is known
+	apiAddr    string // host:port of go-librespot's HTTP API
+	logger     *slog.Logger
+	bitr       int            // 96/160/320
+	client     *http.Client   // short ops: pause/resume/volume/info
+	playClient *http.Client   // /player/play: a cold playlist load can take >5s
+	box        *boxapi.Client // box REST: friendly name (device_name) + volume bridge
 
 	mu   sync.Mutex
+	name string    // device name currently written to config.yml
 	sink io.Writer // current HTTP consumer, nil when none
 	cmd  *exec.Cmd
+	// runCancel restarts the current go-librespot process when called: it
+	// cancels the per-process context so the supervise loop relaunches it.
+	// Used to re-apply a changed device_name (go-librespot reads its name only
+	// at start). nil while no process runs.
+	runCancel context.CancelFunc
+	// actualKbps is the bitrate measured from the live Ogg stream (body bytes
+	// per granule second). 0 until enough of a track has streamed.
+	actualKbps int
 	// headerPages holds the current track's Ogg header pages (the BOS page
 	// with the Vorbis identification header plus the comment/setup pages).
 	// The drain captures them as they stream past; ServeOgg replays them to
@@ -82,19 +110,26 @@ type Manager struct {
 // New returns a Manager. binPath is the go-librespot binary, configDir
 // the config + credential directory (config.yml is written there on
 // Run; the persisted zeroconf credential lives there after the first
-// Spotify-app tap).
-func New(binPath, configDir, deviceName string, logger *slog.Logger) *Manager {
-	if deviceName == "" {
-		deviceName = "ST Reborn"
+// Spotify-app tap). box is the Bose REST client: the manager reads the
+// speaker's friendly name from it (so the Spotify Connect device and its
+// local mDNS advert carry the speaker's own name, not a hardcoded one) and
+// bridges Spotify volume changes onto the box. fallbackName is used only
+// until the box answers /info.
+func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *slog.Logger) *Manager {
+	if fallbackName == "" {
+		fallbackName = "ST Reborn"
 	}
 	return &Manager{
-		binPath:   binPath,
-		configDir: configDir,
-		name:      deviceName,
-		apiAddr:   "127.0.0.1:3678",
-		logger:    logger,
-		bitr:      160,
-		client:    &http.Client{Timeout: 5 * time.Second},
+		binPath:    binPath,
+		configDir:  configDir,
+		fallback:   fallbackName,
+		name:       fallbackName,
+		box:        box,
+		apiAddr:    "127.0.0.1:3678",
+		logger:     logger,
+		bitr:       160,
+		client:     &http.Client{Timeout: 5 * time.Second},
+		playClient: &http.Client{Timeout: 25 * time.Second},
 	}
 }
 
@@ -119,16 +154,21 @@ func (m *Manager) Ready() bool {
 // local playback control; zeroconf + persist gives a tap-once,
 // auto-login-forever credential. Passthrough needs the STR patch
 // (.github/patches/go-librespot-passthrough.patch) baked into the binary.
-func (m *Manager) configYAML() string {
+func (m *Manager) configYAML(name string, initialVol int) string {
 	host, port := splitHostPort(m.apiAddr)
 	var b strings.Builder
-	fmt.Fprintf(&b, "device_name: %q\n", m.name)
+	fmt.Fprintf(&b, "device_name: %q\n", name)
 	b.WriteString("device_type: speaker\n")
 	fmt.Fprintf(&b, "bitrate: %d\n", m.bitr)
 	b.WriteString("audio_backend: pipe\n")
 	b.WriteString("audio_output_pipe: /dev/stdout\n")
 	b.WriteString("audio_output_pipe_format: s16le\n")
 	b.WriteString("audio_output_pipe_passthrough: true\n")
+	// NOTE: the volume keys (external_volume/volume_steps/initial_volume) were
+	// removed together with the disabled volume bridge (see Run). This is the
+	// known-stable v32 config shape plus the box-derived device_name. initialVol
+	// is currently unused; kept in the signature for the future bridge.
+	_ = initialVol
 	b.WriteString("server:\n")
 	b.WriteString("  enabled: true\n")
 	fmt.Fprintf(&b, "  address: %s\n", host)
@@ -140,15 +180,40 @@ func (m *Manager) configYAML() string {
 	return b.String()
 }
 
-func (m *Manager) ensureConfig() error {
+// boxNameAndVolume reads the speaker's friendly name and current volume from
+// the Bose REST API. It returns the fallback name and volume 100 when the box
+// is not reachable yet (cold boot), so config writing never blocks on it.
+func (m *Manager) boxNameAndVolume(ctx context.Context) (name string, vol int) {
+	name, vol = m.fallback, 100
+	if m.box == nil {
+		return name, vol
+	}
+	st, err := m.box.LoadSettings(ctx)
+	if err != nil {
+		return name, vol
+	}
+	if n := strings.TrimSpace(st.Info.Name); n != "" {
+		name = n
+	}
+	if st.Volume.Actual >= 0 && st.Volume.Actual <= 100 {
+		vol = st.Volume.Actual
+	}
+	return name, vol
+}
+
+func (m *Manager) ensureConfig(ctx context.Context) error {
 	if err := os.MkdirAll(m.configDir, 0o755); err != nil {
 		return err
 	}
+	name, vol := m.boxNameAndVolume(ctx)
+	m.mu.Lock()
+	m.name = name
+	m.mu.Unlock()
 	// No audio cache handling needed: go-librespot does not cache audio to
 	// disk (verified in its source; only the tiny config + credential files
 	// land in configDir). The NAND-filling cache seen earlier was the old
 	// librespot (Rust, --cache), not go-librespot.
-	return os.WriteFile(filepath.Join(m.configDir, "config.yml"), []byte(m.configYAML()), 0o644)
+	return os.WriteFile(filepath.Join(m.configDir, "config.yml"), []byte(m.configYAML(name, vol)), 0o644)
 }
 
 // Run supervises go-librespot until ctx is cancelled, restarting it with
@@ -159,10 +224,20 @@ func (m *Manager) Run(ctx context.Context) {
 		m.logger.Info("spotify manager idle: no go-librespot binary")
 		return
 	}
-	if err := m.ensureConfig(); err != nil {
+	if err := m.ensureConfig(ctx); err != nil {
 		m.logger.Warn("spotify: cannot write config, manager idle", "err", err)
 		return
 	}
+	// NOTE: watchDeviceName and watchVolume are intentionally DISABLED.
+	// device_name is still resolved once in ensureConfig above (the Spotify
+	// device + mDNS carry the speaker's name), which is the important part.
+	// The two background loops were pulled after they destabilised the box:
+	// on the fragile Bose firmware, go-librespot crash/restart cycles made
+	// watchVolume reconnect repeatedly to /events, and its volume mirroring
+	// fought the user's volume buttons (a "volume war"); volumeStream also
+	// leaked a goroutine per reconnect, feeding an OOM that rebooted the box
+	// every ~15-20 min. Re-enable only with reconnect dedupe + a debounced,
+	// change-only volume mirror and the goroutine-leak fix below.
 	for ctx.Err() == nil {
 		if err := m.runOnce(ctx); err != nil && ctx.Err() == nil {
 			m.logger.Warn("go-librespot exited, restarting", "err", err)
@@ -175,12 +250,54 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 }
 
+// watchDeviceName re-resolves the speaker's friendly name periodically. When
+// it changes (cold boot finally answering /info, or a user rename), it
+// rewrites config.yml and restarts go-librespot, but only while no box is
+// streaming so playback is never interrupted. This is what makes the Spotify
+// Connect device and its local mDNS advert carry the speaker's own name.
+func (m *Manager) watchDeviceName(ctx context.Context) {
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		name, vol := m.boxNameAndVolume(ctx)
+		m.mu.Lock()
+		changed := name != m.name
+		streaming := m.sink != nil
+		restart := m.runCancel
+		m.mu.Unlock()
+		if !changed || streaming {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
+			[]byte(m.configYAML(name, vol)), 0o644); err != nil {
+			m.logger.Warn("spotify: rewrite config for name change failed", "err", err)
+			continue
+		}
+		m.mu.Lock()
+		m.name = name
+		m.mu.Unlock()
+		m.logger.Info("spotify: device name changed, restarting go-librespot", "name", name)
+		if restart != nil {
+			restart()
+		}
+	}
+}
+
 func (m *Manager) runOnce(ctx context.Context) error {
 	// go-librespot uses pflag: the long flag needs two dashes (-config_dir
 	// is misparsed as a shorthand cluster). HOME is forced into the
 	// writable config dir because the box rootfs is read-only and
 	// go-librespot otherwise tries to create ~/.config.
-	cmd := exec.CommandContext(ctx, m.binPath, "--config_dir", m.configDir)
+	// Per-process context so watchDeviceName can restart just this run (to
+	// re-apply a changed device_name) without tearing down the manager.
+	runCtx, runCancel := context.WithCancel(ctx)
+	defer runCancel()
+	cmd := exec.CommandContext(runCtx, m.binPath, "--config_dir", m.configDir)
 	cmd.Env = append(os.Environ(), "HOME="+m.configDir)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -192,6 +309,7 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	m.cmd = cmd
+	m.runCancel = runCancel
 	m.mu.Unlock()
 
 	// Drain go-librespot's Ogg output page by page and forward whole pages to
@@ -203,6 +321,13 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	var hdr []byte
 	capturing := false
 	paused := false
+	// Bitrate measurement: body bytes and the highest granule (sample count at
+	// vorbisRate) seen since the current track's BOS. kbps = bytes*8 over the
+	// elapsed seconds. This is the real stream rate, not the configured nominal.
+	var trackBody, maxGran int64
+	// pending batches pages so the box receives ~16 KB chunks instead of one
+	// tiny chunk per page (see flushThreshold: small chunks leak box memory).
+	var pending []byte
 	for {
 		page, err := readOggPage(r)
 		if err != nil {
@@ -215,10 +340,13 @@ func (m *Manager) runOnce(ctx context.Context) error {
 		// the header sequence.
 		htype := page[5]
 		gran := int64(binary.LittleEndian.Uint64(page[6:14]))
+		numSegs := int(page[26])
+		bodyLen := int64(len(page) - 27 - numSegs)
 		switch {
 		case htype&0x02 != 0: // BOS
 			hdr = append([]byte(nil), page...)
 			capturing = true
+			trackBody, maxGran = 0, 0
 		case capturing && gran > 0: // first audio page
 			m.mu.Lock()
 			m.headerPages = hdr
@@ -226,6 +354,16 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			capturing = false
 		case capturing:
 			hdr = append(hdr, page...)
+		}
+		trackBody += bodyLen
+		if gran > maxGran {
+			maxGran = gran
+		}
+		if maxGran > vorbisRate { // at least one second streamed
+			kbps := int(trackBody * 8 * vorbisRate / (maxGran * 1000))
+			m.mu.Lock()
+			m.actualKbps = kbps
+			m.mu.Unlock()
 		}
 
 		m.mu.Lock()
@@ -235,12 +373,20 @@ func (m *Manager) runOnce(ctx context.Context) error {
 
 		if sink != nil {
 			paused = false
-			m.forward(sink, page)
+			// Batch pages into ~16 KB writes (see flushThreshold) so the box
+			// gets large chunks, not a tiny chunk per page.
+			pending = append(pending, page...)
+			if len(pending) >= flushThreshold {
+				m.forward(sink, pending)
+				pending = pending[:0]
+			}
 			continue
 		}
-		// No consumer: once a track's headers are captured, pause go-librespot
-		// so it stops producing (no racing) until a box attaches and ServeOgg
-		// resumes it.
+		// No consumer: drop any half-filled batch so a freshly attaching box
+		// starts clean, then once a track's headers are captured pause
+		// go-librespot so it stops producing (no racing) until a box attaches
+		// and ServeOgg resumes it.
+		pending = pending[:0]
 		if !paused && haveHdr {
 			pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			_ = m.Pause(pctx)
@@ -329,7 +475,7 @@ func readOggPage(r *bufio.Reader) ([]byte, error) {
 // incl. the Ogg headers; the box therefore receives the stream from the
 // beginning and can decode it.
 func (m *Manager) Play(ctx context.Context, uri string) error {
-	return m.apiPost(ctx, "/player/play", `{"uri":`+jsonString(uri)+`}`)
+	return m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`}`)
 }
 
 // Pause and Resume mirror the obvious controls.
@@ -341,6 +487,127 @@ func (m *Manager) Resume(ctx context.Context) error {
 	return m.apiPost(ctx, "/player/resume", "")
 }
 
+// SetVolume tells go-librespot the current volume as a percent (0..100) so the
+// Spotify app's slider reflects the speaker's real level. With volume_steps
+// 100 the API value is the percent directly. This is the box -> Spotify
+// direction; the box -> go-librespot caller is the gabbo volumeUpdated hook.
+func (m *Manager) SetVolume(ctx context.Context, pct int) error {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	return m.apiPost(ctx, "/player/volume", fmt.Sprintf(`{"volume":%d}`, pct))
+}
+
+// Bitrate returns the bitrate measured from the live stream (kbit/s), or the
+// configured nominal when nothing has streamed yet.
+func (m *Manager) Bitrate() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.actualKbps > 0 {
+		return m.actualKbps
+	}
+	return m.bitr
+}
+
+// Streaming reports whether a box is currently attached to the Ogg stream
+// (i.e. Spotify is actively playing to the speaker). The memory guard uses
+// this to avoid rebooting the box mid-playback.
+func (m *Manager) Streaming() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sink != nil
+}
+
+// DeviceName returns the name currently advertised to Spotify.
+func (m *Manager) DeviceName() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.name
+}
+
+// ServeInfo answers GET /spotify/info with the live state the UI needs: whether
+// Spotify is available, the measured bitrate, and the advertised device name.
+func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	resp := struct {
+		Ready   bool   `json:"ready"`
+		Bitrate int    `json:"bitrate"`
+		Name    string `json:"name"`
+	}{
+		Ready:   m.Ready(),
+		Bitrate: m.Bitrate(),
+		Name:    m.DeviceName(),
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// watchVolume subscribes to go-librespot's /events WebSocket and mirrors every
+// Spotify-app volume change onto the box. go-librespot runs with
+// external_volume, so a Connect volume command does not touch its audio; it
+// surfaces here as a "volume" event {value, max} which we scale to a percent
+// and push to the box over the Bose REST API. Reconnects with a short backoff.
+func (m *Manager) watchVolume(ctx context.Context) {
+	if m.box == nil {
+		return
+	}
+	url := "ws://" + m.apiAddr + "/events"
+	for ctx.Err() == nil {
+		if err := m.volumeStream(ctx, url); err != nil && ctx.Err() == nil {
+			m.logger.Debug("spotify: events stream ended", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+func (m *Manager) volumeStream(ctx context.Context, url string) error {
+	d := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, _, err := d.DialContext(ctx, url, nil)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	// Closer goroutine is bound to a per-call context cancelled on return, so
+	// it never outlives this stream. The earlier version waited on the
+	// long-lived parent ctx and leaked one goroutine (holding conn) per
+	// reconnect; with frequent go-librespot restarts that fed an OOM.
+	sctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() { <-sctx.Done(); conn.Close() }()
+	for {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		var ev struct {
+			Type string `json:"type"`
+			Data struct {
+				Value int `json:"value"`
+				Max   int `json:"max"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(data, &ev); err != nil || ev.Type != "volume" {
+			continue
+		}
+		pct := 100
+		if ev.Data.Max > 0 {
+			pct = ev.Data.Value * 100 / ev.Data.Max
+		}
+		sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		if err := m.box.SetVolume(sctx, pct); err != nil {
+			m.logger.Debug("spotify: box SetVolume from Spotify event failed", "err", err, "pct", pct)
+		}
+		cancel()
+		m.logger.Info("spotify: volume mirrored to box", "pct", pct)
+	}
+}
+
 // jsonString quotes a string as a JSON value.
 func jsonString(s string) string {
 	b, _ := json.Marshal(s)
@@ -348,6 +615,10 @@ func jsonString(s string) string {
 }
 
 func (m *Manager) apiPost(ctx context.Context, path string, body string) error {
+	return m.apiPostC(ctx, m.client, path, body)
+}
+
+func (m *Manager) apiPostC(ctx context.Context, client *http.Client, path string, body string) error {
 	var r io.Reader
 	if body != "" {
 		r = strings.NewReader(body)
@@ -357,7 +628,7 @@ func (m *Manager) apiPost(ctx context.Context, path string, body string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := m.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("go-librespot %s: %w", path, err)
 	}

@@ -166,6 +166,10 @@ export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
   return window['go']['main']['App']['SetPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
+export function SpotifyBitrate(arg1, arg2) {
+  return window['go']['main']['App']['SpotifyBitrate'](arg1, arg2);
+}
+
 export function Status(arg1, arg2) {
   return window['go']['main']['App']['Status'](arg1, arg2);
 }

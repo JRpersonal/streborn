@@ -52,6 +52,10 @@ type Server struct {
 	// side of a Spotify preset recall). nil when Spotify is not
 	// configured. Injected as a func for the same decoupling reason.
 	spotifyPlay func(context.Context, string) error
+	// spotifyInfo answers GET /spotify/info with the live Spotify state
+	// (ready, measured bitrate, device name) the UI reads to show the real
+	// stream bitrate on a Spotify preset tile. nil when not configured.
+	spotifyInfo http.HandlerFunc
 	langCacheMu sync.Mutex
 	langCache   map[string]langCacheEntry
 	// wifiSignalFn returns the latest Wi-Fi signal class observed on the
@@ -146,6 +150,12 @@ func WithSpotifyStream(h http.HandlerFunc) Option {
 	return func(s *Server) { s.spotifyStream = h }
 }
 
+// WithSpotifyInfo registers the handler that reports live Spotify state
+// (ready, measured bitrate, device name) at /spotify/info.
+func WithSpotifyInfo(h http.HandlerFunc) Option {
+	return func(s *Server) { s.spotifyInfo = h }
+}
+
 // WithSpotifyControl registers the function that starts playback of a
 // Spotify URI in go-librespot (the Spotify-preset control plane).
 func WithSpotifyControl(play func(context.Context, string) error) Option {
@@ -238,6 +248,9 @@ func (s *Server) Run(ctx context.Context) error {
 		// the URL extension and rejects an extensionless Ogg stream
 		// (INVALID_SOURCE) even with audio/ogg Content-Type + protocolInfo.
 		mux.HandleFunc("/spotify/stream.ogg", s.spotifyStream)
+	}
+	if s.spotifyInfo != nil {
+		mux.HandleFunc("/spotify/info", s.spotifyInfo)
 	}
 
 	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}

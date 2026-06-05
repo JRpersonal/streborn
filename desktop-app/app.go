@@ -1464,6 +1464,29 @@ func (a *App) StreamBitrate(host string, port int) int {
 	return out.Bitrate
 }
 
+// SpotifyBitrate returns the bitrate the agent measured from the live
+// go-librespot Ogg stream in kbit/s, or 0 if Spotify is idle/unavailable.
+// Spotify presets carry no radio-browser bitrate, so the tile reads the
+// real measured stream rate here instead of a hardcoded nominal. Routed
+// through boxDo so it self-heals across :8888 / :17008 like StreamBitrate.
+func (a *App) SpotifyBitrate(host string, port int) int {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/spotify/info", "", "")
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	var out struct {
+		Bitrate int `json:"bitrate"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return 0
+	}
+	return out.Bitrate
+}
+
 // SyncBoxPresets schickt alle Stick Presets erneut an die Box damit
 // die Hardware Preset Tasten 1-6 funktionieren. Wird vom "Hardware
 // Tasten reparieren" Button im Settings Tab benutzt.

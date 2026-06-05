@@ -86,6 +86,8 @@ export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number
 
 export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number):Promise<void>;
 
+export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
+
 export function Status(arg1:string,arg2:number):Promise<string>;
 
 export function StickConfigs(arg1:string):Promise<sticksetup.StickConfigs>;
