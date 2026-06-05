@@ -593,11 +593,13 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.spotifyPlay(r.Context(), p.URI, p.Account); err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": "Spotify could not be played", "detail": err.Error(),
-				"slot": slot, "name": p.Name,
-			})
-			return
+			// Tolerate, do not fail the button: a cross-account switch can time
+			// out (the other account's app is still connected) and the play then
+			// times out during the go-librespot restart, but pointing the box at
+			// the stream + the verify-retry below still bring playback up (with
+			// the current account; public playlists still play). The hardware
+			// path is tolerant too; the soft button must match.
+			s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 		}
 		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{

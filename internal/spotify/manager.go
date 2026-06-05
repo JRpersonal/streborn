@@ -748,16 +748,25 @@ func (m *Manager) SwitchAccount(ctx context.Context, username string) (bool, err
 	if restart != nil {
 		restart() // supervise loop relaunches go-librespot, which reads the swapped credential
 	}
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return true, ctx.Err()
 		case <-time.After(500 * time.Millisecond):
 		}
-		if m.currentUsername(ctx) == username {
+		cur := m.currentUsername(ctx)
+		if cur == username {
 			m.logger.Info("spotify: switched account", "user", username, "tookMs", time.Since(start).Milliseconds())
 			return true, nil
+		}
+		// If go-librespot re-authed as a DIFFERENT account after the restart,
+		// that account's app is still connected and overrides the credential
+		// swap. Give up fast; the recall then plays with the active account
+		// (public playlists still play). Spotify allows only one live session.
+		if cur != "" && cur != username && time.Since(start) > 4*time.Second {
+			m.logger.Warn("spotify: account switch overridden by a connected app", "want", username, "got", cur)
+			return true, fmt.Errorf("account switch to %q overridden by connected app %q", username, cur)
 		}
 	}
 	m.logger.Warn("spotify: account switch timed out", "want", username)
