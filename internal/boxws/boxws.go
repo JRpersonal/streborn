@@ -36,6 +36,11 @@ type Handler interface {
 	// API Trigger). location und title kommen aus dem Box ContentItem
 	// und koennen ueber UPnP an die Box geschickt werden.
 	OnPresetSelected(ctx context.Context, slot int, location string, title string)
+
+	// OnRemoteSkip wird gefeuert wenn die Fernbedienung Naechster/Vorheriger
+	// Titel drueckt (die Box kann eine UPnP Quelle nicht selbst skippen und
+	// meldet QPLAY_SKIP_*_FAILED). forward=true -> next, false -> prev.
+	OnRemoteSkip(ctx context.Context, forward bool)
 }
 
 // Client haelt die Verbindung zur Box.
@@ -170,6 +175,23 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	c.logger.Debug("box ws frame", "bytes", len(data), "preview", preview(data, 400))
 
 	s := string(data)
+
+	// Remote next/prev keys: the box cannot skip a UPnP source itself, so it
+	// emits a QPLAY_SKIP_*_FAILED error. Catch that and skip in go-librespot
+	// instead, so the remote's track-skip keys work during Spotify playback.
+	switch {
+	case strings.Contains(s, "QPLAY_SKIP_NEXT_FAILED"):
+		if c.handler != nil {
+			c.handler.OnRemoteSkip(ctx, true)
+		}
+		return
+	case strings.Contains(s, "QPLAY_SKIP_PREV_FAILED"):
+		if c.handler != nil {
+			c.handler.OnRemoteSkip(ctx, false)
+		}
+		return
+	}
+
 
 	// Phase markers for standby/resume diagnostics (#60). powerState
 	// transitions are rare and genuinely useful, so they stay at INFO.

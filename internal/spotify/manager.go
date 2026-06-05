@@ -582,6 +582,13 @@ func (m *Manager) Play(ctx context.Context, uri string) error {
 	return nil
 }
 
+// Next and Prev skip tracks. Wired to the SoundTouch remote's next/prev keys:
+// the box cannot skip a UPnP source itself (it emits QPLAY_SKIP_*_FAILED), so
+// STR catches that and skips here instead. The new track reaches the box after
+// its buffer drains.
+func (m *Manager) Next(ctx context.Context) error { return m.apiPost(ctx, "/player/next", "") }
+func (m *Manager) Prev(ctx context.Context) error { return m.apiPost(ctx, "/player/prev", "") }
+
 // Pause and Resume mirror the obvious controls.
 func (m *Manager) Pause(ctx context.Context) error {
 	return m.apiPost(ctx, "/player/pause", "")
@@ -769,37 +776,38 @@ func (m *Manager) PlayAccount(ctx context.Context, uri, account string) error {
 	return m.Play(ctx, uri)
 }
 
-// PlaylistCover returns a stable cover image URL for a Spotify context URI
-// (playlist, album, ...) via Spotify's public oEmbed endpoint, which needs no
-// token. A saved preset uses this as its tile logo: unlike the per-track album
-// cover it does not change as songs advance, so the button shows a steady image
-// (#24). Returns "" on any failure; the tile then falls back to the live track
-// cover. Best-effort, called off the play path (on preset save).
-func (m *Manager) PlaylistCover(ctx context.Context, uri string) string {
+// PlaylistMeta returns a stable cover image URL and the human title for a
+// Spotify context URI (playlist, album, ...) via Spotify's public oEmbed
+// endpoint, which needs no token. A saved preset uses the cover as its tile logo
+// (#24) and the title as its name, so the box display and the tile show e.g.
+// "Jens Chill" instead of a bare "Spotify". Returns "","" on any failure.
+// Best-effort, called off the play path (on preset save).
+func (m *Manager) PlaylistMeta(ctx context.Context, uri string) (cover, title string) {
 	page := spotifyURItoURL(uri)
 	if page == "" {
-		return ""
+		return "", ""
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"https://open.spotify.com/oembed?url="+url.QueryEscape(page), nil)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return "", ""
 	}
 	var od struct {
 		ThumbnailURL string `json:"thumbnail_url"`
+		Title        string `json:"title"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&od); err != nil {
-		return ""
+		return "", ""
 	}
-	return od.ThumbnailURL
+	return od.ThumbnailURL, od.Title
 }
 
 // spotifyURItoURL converts spotify:playlist:ID (or album/track/artist) to its
@@ -848,16 +856,29 @@ func (m *Manager) syncVolumeFromBox(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	if st.Volume.Actual < 0 || st.Volume.Actual > 100 {
+	vol := st.Volume.Actual
+	if vol < 0 || vol > 100 {
 		return
 	}
-	vctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	if err := m.SetVolume(vctx, st.Volume.Actual); err != nil {
-		m.logger.Debug("spotify: seed volume from box failed", "err", err)
-		return
+	set := func(v int) {
+		vctx, c := context.WithTimeout(ctx, 4*time.Second)
+		_ = m.SetVolume(vctx, v)
+		c()
 	}
-	m.logger.Info("spotify: seeded app volume slider from box", "vol", st.Volume.Actual)
+	set(vol)
+	// The Spotify app caches go-librespot's default (100) and only updates the
+	// slider when it sees a volume CHANGE. Nudge to an adjacent value and back
+	// so the app picks up the real level instead of showing 100 until the user
+	// first touches the slider (Jens' idea).
+	time.Sleep(1500 * time.Millisecond)
+	nudge := vol - 1
+	if nudge < 0 {
+		nudge = vol + 1
+	}
+	set(nudge)
+	time.Sleep(250 * time.Millisecond)
+	set(vol)
+	m.logger.Info("spotify: seeded + nudged app volume slider from box", "vol", vol)
 }
 
 // SetRecalling marks a preset recall as in progress for the next few seconds, so
@@ -1138,12 +1159,25 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	// granule-0 headers again. Logged so the restart can be correlated.
 	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr), "reattach", reattach)
 
+	// On a FRESH attach (not a re-fetch), the box's own preset self-activation
+	// can reach ServeOgg a beat BEFORE the gabbo press event flags the recall
+	// (race, seen when switching from radio to a Spotify preset). Wait briefly
+	// for the flag so we don't resume the old (mid) track before Play loads the
+	// new shuffled one.
+	if !reattach {
+		for i := 0; i < 10 && !m.recalling(); i++ {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
 	// The drain pauses go-librespot while no box is attached; resume it so the
-	// live stream flows to this box. EXCEPT during a recall: resuming here would
-	// replay the old track at its mid position before Play loads the new
-	// shuffled track (the "first song starts mid-song" bug). During a recall,
-	// Play drives playback from the new track's start, so skip the resume.
-	if !m.recalling() {
+	// live stream flows to this box. Skip the resume ONLY on a FRESH recall
+	// attach (reattach == false): there, resuming would replay the old track at
+	// its mid position before Play loads the new shuffled track, and Play drives
+	// playback instead. On a RE-attach (reattach == true) always resume: a recall
+	// that restarted go-librespot (a cross-account switch) leaves it paused in
+	// the restart gap, and without this resume the box would stay buffering on a
+	// paused stream (observed: preset stuck after playing another account).
+	if reattach || !m.recalling() {
 		rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		_ = m.Resume(rctx)
 		cancel()

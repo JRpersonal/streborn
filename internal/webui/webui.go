@@ -58,10 +58,11 @@ type Server struct {
 	// stamp the account onto a newly saved Spotify preset. nil when Spotify
 	// is not configured.
 	spotifyUser func(ctx context.Context) string
-	// spotifyCover resolves a stable cover image URL for a Spotify context URI
-	// (the playlist image), stamped onto a newly saved Spotify preset so its
-	// tile has a steady logo. nil when Spotify is not configured.
-	spotifyCover func(ctx context.Context, uri string) string
+	// spotifyMeta resolves a stable cover image URL and the human title for a
+	// Spotify context URI (the playlist image + name), stamped onto a newly
+	// saved Spotify preset so its tile has a steady logo and a real name (not a
+	// bare "Spotify"). nil when Spotify is not configured.
+	spotifyMeta func(ctx context.Context, uri string) (cover, title string)
 	// spotifyStreaming reports whether the box is currently pulling the Ogg
 	// stream, the definitive "Spotify is playing" signal for verifyRecall.
 	// nil when Spotify is not configured.
@@ -199,10 +200,10 @@ func WithSpotifyUser(user func(ctx context.Context) string) Option {
 	return func(s *Server) { s.spotifyUser = user }
 }
 
-// WithSpotifyCover registers the resolver for a Spotify context's stable cover
-// image (the playlist image), stamped onto a newly saved Spotify preset.
-func WithSpotifyCover(cover func(ctx context.Context, uri string) string) Option {
-	return func(s *Server) { s.spotifyCover = cover }
+// WithSpotifyMeta registers the resolver for a Spotify context's stable cover
+// image and human title, stamped onto a newly saved Spotify preset.
+func WithSpotifyMeta(meta func(ctx context.Context, uri string) (cover, title string)) Option {
+	return func(s *Server) { s.spotifyMeta = meta }
 }
 
 // WithSpotifyStreaming registers the predicate that reports whether the box is
@@ -422,12 +423,19 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			}
 			cancel()
 		}
-		// Give a Spotify preset a stable tile logo: the playlist image (#24).
-		// Unlike the per-track album cover it does not change as songs play.
-		if p.Type == "spotify" && p.Art == "" && p.URI != "" && s.spotifyCover != nil {
+		// Give a Spotify preset a stable tile logo (the playlist image, #24) and a
+		// real name (the playlist title), so the box display and the tile show
+		// e.g. "Jens Chill" instead of a bare "Spotify". Only fills empties / a
+		// placeholder name.
+		if p.Type == "spotify" && p.URI != "" && s.spotifyMeta != nil &&
+			(p.Art == "" || p.Name == "" || p.Name == "Spotify") {
 			cctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-			if art := s.spotifyCover(cctx, p.URI); art != "" {
-				p.Art = art
+			cover, title := s.spotifyMeta(cctx, p.URI)
+			if p.Art == "" && cover != "" {
+				p.Art = cover
+			}
+			if (p.Name == "" || p.Name == "Spotify") && title != "" {
+				p.Name = title
 			}
 			cancel()
 		}

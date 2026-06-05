@@ -291,7 +291,7 @@ func run() error {
 		webui.WithSpotifyStream(spotifyMgr.ServeOgg),
 		webui.WithSpotifyControl(spotifyMgr.PlayAccount),
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
-		webui.WithSpotifyCover(spotifyMgr.PlaylistCover),
+		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo))
 
@@ -735,6 +735,29 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// press. This re-issues until the box actually plays. Affects radio too.
 	go h.verifyPlayURL(slot, url, name, icon)
 	h.logger.Info("hardware preset zu upnp gemapped", "slot", slot, "name", name)
+}
+
+// OnRemoteSkip handles the SoundTouch remote's next/prev track keys during
+// Spotify playback: the box cannot skip a UPnP source itself (it emits
+// QPLAY_SKIP_*_FAILED), so we skip in go-librespot instead. The new track
+// reaches the box after its buffer drains. No-op unless Spotify is streaming.
+func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
+	if h.spotify == nil || !h.spotify.Streaming() {
+		return
+	}
+	sctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	var err error
+	if forward {
+		err = h.spotify.Next(sctx)
+	} else {
+		err = h.spotify.Prev(sctx)
+	}
+	if err != nil {
+		h.logger.Warn("spotify remote skip failed", "forward", forward, "err", err)
+		return
+	}
+	h.logger.Info("spotify remote skip", "forward", forward)
 }
 
 // spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches
