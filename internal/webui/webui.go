@@ -48,10 +48,24 @@ type Server struct {
 	// is not configured. Injected as a handler so webui need not import
 	// the spotify package.
 	spotifyStream http.HandlerFunc
-	// spotifyPlay tells go-librespot to play a Spotify URI (the control
-	// side of a Spotify preset recall). nil when Spotify is not
-	// configured. Injected as a func for the same decoupling reason.
-	spotifyPlay func(context.Context, string) error
+	// spotifyPlay tells go-librespot to play a Spotify URI on the given
+	// account (the control side of a Spotify preset recall). The account is
+	// the username the preset was saved under; an empty account plays with
+	// go-librespot's current login (see manager PlayAccount / SwitchAccount).
+	// nil when Spotify is not configured. Injected as a func for decoupling.
+	spotifyPlay func(ctx context.Context, uri, account string) error
+	// spotifyUser returns go-librespot's currently logged-in account, used to
+	// stamp the account onto a newly saved Spotify preset. nil when Spotify
+	// is not configured.
+	spotifyUser func(ctx context.Context) string
+	// spotifyCover resolves a stable cover image URL for a Spotify context URI
+	// (the playlist image), stamped onto a newly saved Spotify preset so its
+	// tile has a steady logo. nil when Spotify is not configured.
+	spotifyCover func(ctx context.Context, uri string) string
+	// spotifyStreaming reports whether the box is currently pulling the Ogg
+	// stream, the definitive "Spotify is playing" signal for verifyRecall.
+	// nil when Spotify is not configured.
+	spotifyStreaming func() bool
 	// spotifyInfo answers GET /spotify/info with the live Spotify state
 	// (ready, measured bitrate, device name) the UI reads to show the real
 	// stream bitrate on a Spotify preset tile. nil when not configured.
@@ -173,9 +187,29 @@ func WithSpotifyInfo(h http.HandlerFunc) Option {
 }
 
 // WithSpotifyControl registers the function that starts playback of a
-// Spotify URI in go-librespot (the Spotify-preset control plane).
-func WithSpotifyControl(play func(context.Context, string) error) Option {
+// Spotify URI on a given account in go-librespot (the Spotify-preset
+// control plane). An empty account plays with the current login.
+func WithSpotifyControl(play func(ctx context.Context, uri, account string) error) Option {
 	return func(s *Server) { s.spotifyPlay = play }
+}
+
+// WithSpotifyUser registers the resolver for go-librespot's current account,
+// used to stamp the account onto a newly saved Spotify preset.
+func WithSpotifyUser(user func(ctx context.Context) string) Option {
+	return func(s *Server) { s.spotifyUser = user }
+}
+
+// WithSpotifyCover registers the resolver for a Spotify context's stable cover
+// image (the playlist image), stamped onto a newly saved Spotify preset.
+func WithSpotifyCover(cover func(ctx context.Context, uri string) string) Option {
+	return func(s *Server) { s.spotifyCover = cover }
+}
+
+// WithSpotifyStreaming registers the predicate that reports whether the box is
+// currently pulling the Ogg stream, used by verifyRecall to avoid a disruptive
+// re-issue while Spotify is already playing.
+func WithSpotifyStreaming(streaming func() bool) Option {
+	return func(s *Server) { s.spotifyStreaming = streaming }
 }
 
 // ensureBoxReady weckt die Box aus dem Standby (mit retry+poll bis
@@ -264,6 +298,13 @@ func (s *Server) Run(ctx context.Context) error {
 		// the URL extension and rejects an extensionless Ogg stream
 		// (INVALID_SOURCE) even with audio/ogg Content-Type + protocolInfo.
 		mux.HandleFunc("/spotify/stream.ogg", s.spotifyStream)
+		// Per-slot aliases (same single stream, distinct URLs) so the box can
+		// store a UNIQUE location per Spotify preset. Without this, two Spotify
+		// presets share the identical location and the box drops one of them
+		// (observed: slot 1 vanished when 1 and 6 both used /spotify/stream.ogg).
+		for slot := 1; slot <= 6; slot++ {
+			mux.HandleFunc(fmt.Sprintf("/spotify/stream-%d.ogg", slot), s.spotifyStream)
+		}
 	}
 	if s.spotifyInfo != nil {
 		mux.HandleFunc("/spotify/info", s.spotifyInfo)
@@ -368,6 +409,49 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		if p.Type == "" {
 			p.Type = "radio"
 		}
+		// Stamp the account a Spotify preset belongs to (go-librespot's current
+		// login) so a later recall can switch back to it on a multi-account box
+		// (#27). The client may already supply it; only fill when empty.
+		// Account + cover are best-effort enrichment: use a fresh background
+		// context, not r.Context(), so a client that disconnects right after the
+		// PUT (e.g. a raw one-shot request) does not cancel them mid-fetch.
+		if p.Type == "spotify" && p.Account == "" && s.spotifyUser != nil {
+			uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			if u := s.spotifyUser(uctx); u != "" {
+				p.Account = u
+			}
+			cancel()
+		}
+		// Give a Spotify preset a stable tile logo: the playlist image (#24).
+		// Unlike the per-track album cover it does not change as songs play.
+		if p.Type == "spotify" && p.Art == "" && p.URI != "" && s.spotifyCover != nil {
+			cctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			if art := s.spotifyCover(cctx, p.URI); art != "" {
+				p.Art = art
+			}
+			cancel()
+		}
+		// Dedup: a given playlist/station lives on at most ONE preset. Saving it
+		// here removes it from any other slot first (matched by Spotify URI, or
+		// by stream URL for radio), so the same content cannot occupy two
+		// buttons (user request; also avoids two Spotify presets colliding).
+		for _, other := range s.presets.All() {
+			if other.Slot == slot {
+				continue
+			}
+			dup := (p.Type == "spotify" && p.URI != "" && other.URI == p.URI) ||
+				(p.Type != "spotify" && p.StreamURL != "" && other.StreamURL == p.StreamURL)
+			if !dup {
+				continue
+			}
+			_ = s.presets.RemoveSlot(other.Slot)
+			s.logger.Info("preset dedup: removed duplicate from other slot", "kept", slot, "removed", other.Slot)
+			if s.boxHost != "" {
+				rmCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = boxcli.RemovePreset(rmCtx, s.boxHost, other.Slot)
+				cancel()
+			}
+		}
 		if err := s.presets.SetSlot(p); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -377,7 +461,14 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// So ueberlebt der Stream Token Expiry.
 		if s.boxHost != "" {
 			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			// Spotify presets store the live Ogg stream as the box-side location
+			// so the box's own activation on a hardware press attaches cleanly
+			// instead of failing on /stream/<slot> (no Spotify source) and
+			// flashing "service unavailable" (#22).
 			proxyURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
+			if p.Type == "spotify" {
+				proxyURL = fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+			}
 			if err := boxcli.AddPreset(boxCtx, s.boxHost, slot, p.Name, proxyURL); err != nil {
 				s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
 			}
@@ -493,7 +584,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := s.spotifyPlay(r.Context(), p.URI); err != nil {
+		if err := s.spotifyPlay(r.Context(), p.URI, p.Account); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify could not be played", "detail": err.Error(),
 				"slot": slot, "name": p.Name,
@@ -508,12 +599,12 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.setLastPlay("http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg")
-		uri, name, art := p.URI, p.Name, p.Art
+		uri, name, art, account := p.URI, p.Name, p.Art, p.Account
 		go s.verifyRecall(func(ctx context.Context) {
-			if s.spotifyPlay(ctx, uri) == nil {
+			if s.spotifyPlay(ctx, uri, account) == nil {
 				_ = s.renderer.PlayURLMime(ctx, "http://127.0.0.1:8888/spotify/stream.ogg", name, art, "audio/ogg")
 			}
-		})
+		}, s.spotifyStreaming)
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
 		return
 	}
@@ -533,7 +624,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	name, art := p.Name, p.Art
 	go s.verifyRecall(func(ctx context.Context) {
 		_ = s.renderer.PlayURL(ctx, playURL, name, art)
-	})
+	}, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
 }
 
@@ -541,9 +632,17 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 // and re-issues the play a few times if not. Fixes the "first press after a
 // reboot does nothing, second press works" race (box/go-librespot not ready
 // yet) without any latency on the happy path (the initial play already ran).
-func (s *Server) verifyRecall(retry func(context.Context)) {
+func (s *Server) verifyRecall(retry func(context.Context), working func() bool) {
 	for attempt := 1; attempt <= 3; attempt++ {
 		time.Sleep(5 * time.Second)
+		// working() is a source-specific "it is already fine" signal checked
+		// before the box now_playing state. For Spotify it reports whether the
+		// box is pulling the Ogg stream: now_playing flaps while the box
+		// attaches, and a re-issue would reshuffle + restart the track (the
+		// audible abort + UI play/stop/play flicker). Don't retry when working.
+		if working != nil && working() {
+			return
+		}
 		if _, busy := s.boxPlayState(); busy {
 			return
 		}

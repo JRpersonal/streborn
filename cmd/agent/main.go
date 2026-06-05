@@ -289,7 +289,10 @@ func run() error {
 		webui.WithRegionFile(*regionFile),
 		webui.WithStreamProxy(streamProxySrv),
 		webui.WithSpotifyStream(spotifyMgr.ServeOgg),
-		webui.WithSpotifyControl(spotifyMgr.Play),
+		webui.WithSpotifyControl(spotifyMgr.PlayAccount),
+		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
+		webui.WithSpotifyCover(spotifyMgr.PlaylistCover),
+		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo))
 
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
@@ -309,6 +312,21 @@ func run() error {
 		boxHost:  *boxHost,
 		spotify:  spotifyMgr,
 	}
+	// When the user starts playback from the Spotify app (selecting this device)
+	// while the box is on another source, point the box at the Spotify stream so
+	// it actually plays instead of staying on the current source (#14).
+	spotifyMgr.SetOnActivate(func(cbCtx context.Context) {
+		if *boxHost != "" {
+			wctx, cancel := context.WithTimeout(cbCtx, 8*time.Second)
+			_ = boxcli.WakeAndWait(wctx, *boxHost, 6*time.Second, logger)
+			cancel()
+		}
+		pctx, cancel := context.WithTimeout(cbCtx, 15*time.Second)
+		if err := renderer.PlayURLMime(pctx, spotifyStreamURL, "Spotify", "", "audio/ogg"); err != nil {
+			logger.Warn("spotify: auto-switch box to Spotify stream failed", "err", err)
+		}
+		cancel()
+	})
 	wsClient := boxws.New(
 		logger.With("comp", "boxws"),
 		fmt.Sprintf("ws://%s:8080/", *boxHost),
@@ -735,30 +753,41 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 		return
 	}
 
-	// Wake from standby + ensure pairing, same as the radio path.
+	// Mark a recall BEFORE the box attaches (PlayURLMime below / the box's own
+	// self-activation) so ServeOgg does not resume the old mid-position track;
+	// Play drives the new shuffled track from its start.
+	h.spotify.SetRecalling()
+	playCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	// Show the preset on the box display IMMEDIATELY: point the box at this
+	// slot's stream first so now_playing shows the name and a buffering state
+	// right away. Without this the box flashes its own "service unavailable /
+	// select a preset" while we load, and the user, seeing no feedback, presses
+	// another preset and causes chaos. The box buffers until go-librespot
+	// produces audio just below. Uses the per-slot URL the box already
+	// self-activated, so this re-confirms it rather than switching URLs.
+	slotURL := fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+	if err := h.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
+		h.logger.Warn("spotify upnp play (display) failed, will verify+retry", "slot", slot, "err", err)
+	}
+	// Wake from standby + ensure pairing (the box is awake on a hardware press,
+	// so these return fast); kept AFTER the display push so the buffering state
+	// shows without waiting on them.
 	if h.boxHost != "" {
-		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		wakeCtx, c := context.WithTimeout(ctx, 8*time.Second)
 		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
 			h.logger.Warn("Box konnte nicht aus STANDBY geholt werden", "err", err)
 		}
-		cancel()
+		c()
 	}
 	if h.autoPair != nil {
-		pairCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+		pairCtx, c := context.WithTimeout(ctx, 6*time.Second)
 		h.autoPair.TriggerNow(pairCtx)
-		cancel()
+		c()
 	}
-
-	// Start go-librespot FIRST so the Ogg is already flowing when the box
-	// attaches (no data-starve timeout on join); then point the box at the
-	// stream. ServeOgg seeks the track to 0 on attach so the box still gets
-	// a fresh header sequence to sync to.
-	playCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
-	if err := h.spotify.Play(playCtx, p.URI); err != nil {
+	// Load the playlist (audio): paused -> shuffle -> skip-to-random -> resume.
+	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account); err != nil {
 		h.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
-	} else if err := h.renderer.PlayURLMime(playCtx, spotifyStreamURL, p.Name, p.Art, "audio/ogg"); err != nil {
-		h.logger.Warn("spotify upnp play (initial) failed, will verify+retry", "slot", slot, "err", err)
 	}
 	// Verify+retry in the background: the first press after a cold boot races
 	// go-librespot's auth, so the box gets no audio and the user had to press
@@ -791,14 +820,29 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
 func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 	for attempt := 1; attempt <= 3; attempt++ {
 		time.Sleep(5 * time.Second)
-		if boxIsPlaying(h.boxHost) {
+		// For Spotify the definitive "it is working" signal is the box pulling
+		// the Ogg stream; the box now_playing playStatus lags and flaps while it
+		// attaches. If the box is consuming the stream, do NOT re-issue: a re-Play
+		// reshuffles and restarts the track, which is the audible abort + UI
+		// play/stop/play flicker users saw. Only re-issue when the box is
+		// genuinely not consuming the stream.
+		if h.spotify.Streaming() || boxIsPlaying(h.boxHost) {
 			return
 		}
-		h.logger.Warn("spotify recall not playing yet, retrying", "slot", slot, "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-		if err := h.spotify.Play(ctx, p.URI); err == nil {
-			_ = h.renderer.PlayURLMime(ctx, spotifyStreamURL, p.Name, p.Art, "audio/ogg")
+		// Re-point the box at the stream WITHOUT re-Play: ServeOgg resumes
+		// go-librespot on attach, so this re-attaches the box without
+		// reshuffling/restarting the track. A re-Play here was the cause of the
+		// "same song restarts a few seconds in" the user saw. Only the final
+		// attempt does a full re-Play, to recover a genuine cold-boot auth race
+		// where the playlist never loaded at all.
+		if attempt == 3 {
+			h.logger.Warn("spotify recall not playing, full re-Play (last resort)", "slot", slot)
+			_ = h.spotify.PlayAccount(ctx, p.URI, p.Account)
+		} else {
+			h.logger.Warn("spotify recall not playing yet, re-pointing box", "slot", slot, "attempt", attempt)
 		}
+		_ = h.renderer.PlayURLMime(ctx, spotifyStreamURL, p.Name, p.Art, "audio/ogg")
 		cancel()
 	}
 	h.logger.Warn("spotify recall still not playing after retries", "slot", slot)
@@ -1038,6 +1082,24 @@ func proxyStreamURL(slot int) string {
 	return fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
 }
 
+// boxPresetURL is the location stored in the box's OWN preset slot. On a
+// hardware press the box first tries to activate this stored ContentItem itself
+// (before STR's recall takes over). Radio uses the per-slot stream proxy.
+// Spotify must use the single live Ogg stream STR actually serves, not
+// /stream/<slot> (which has no Spotify source): otherwise the box's own
+// activation fails with INVALID_SOURCE and the display flashes "service
+// unavailable" / "select a preset" before the recall (#22). Pointing it at
+// /spotify/stream.ogg makes the box's own activation attach cleanly (it shows
+// the preset name + buffers) until STR loads the right playlist.
+func boxPresetURL(p presets.Preset) string {
+	if p.Type == "spotify" {
+		// Per-slot alias of the single Spotify stream: a UNIQUE .ogg URL per
+		// slot so two Spotify presets do not collide on one box location (#22).
+		return fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", p.Slot)
+	}
+	return proxyStreamURL(p.Slot)
+}
+
 // initialBoxPresetSync wartet auf den Box Boot und synct alle Stick
 // Presets an den Box internen Preset Store. Mit Retry Loop: bei
 // fehlgeschlagenen Slots wird nach 10s erneut versucht, bis zu 12 mal.
@@ -1054,7 +1116,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	specs := make([]boxcli.PresetSpec, 0, 6)
 	for _, p := range store.All() {
 		specs = append(specs, boxcli.PresetSpec{
-			Slot: p.Slot, Name: p.Name, StreamURL: proxyStreamURL(p.Slot),
+			Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 		})
 	}
 	if len(specs) == 0 {
@@ -1148,7 +1210,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	for _, p := range stick {
 		if forceFull || !boxSlots[p.Slot] {
 			missing = append(missing, boxcli.PresetSpec{
-				Slot: p.Slot, Name: p.Name, StreamURL: proxyStreamURL(p.Slot),
+				Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 			})
 		}
 	}

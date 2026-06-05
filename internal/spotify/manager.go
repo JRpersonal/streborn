@@ -46,6 +46,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -97,6 +98,7 @@ type Manager struct {
 	client     *http.Client   // short ops: pause/resume/volume/info
 	playClient *http.Client   // /player/play: a cold playlist load can take >5s
 	box        *boxapi.Client // box REST: friendly name (device_name) + volume bridge
+	credStore  string         // per-account credential copies for multi-account swap
 
 	mu   sync.Mutex
 	name string    // device name currently written to config.yml
@@ -114,6 +116,24 @@ type Manager struct {
 	// captured from go-librespot's /events so the desktop app (and later the
 	// box display) can show the live artist/title/cover during Spotify playback.
 	curName, curArtist, curCover string
+	// onActivate is invoked when go-librespot starts playing while no box is
+	// attached to the Ogg stream, i.e. the user pressed play in the Spotify app
+	// (selecting this device) but the box is still on another source. The
+	// callback points the box's UPnP renderer at the Spotify stream so it
+	// actually plays (#14). nil until wired. lastActivate debounces it.
+	onActivate   func(context.Context)
+	lastActivate time.Time
+	// recallUntil marks a recall in progress: until this time, ServeOgg must NOT
+	// resume go-librespot on a box attach. Otherwise the box's own preset
+	// self-activation resumes the OLD track at its paused (mid) position before
+	// our Play loads the new shuffled track, so the first song started mid-song.
+	// During a recall, Play drives playback (track from its start) instead.
+	recallUntil time.Time
+	// lastContext is the Spotify context (playlist/album) URI go-librespot last
+	// announced via will_play. When it changes (the app switched to another
+	// playlist) the box is re-pointed at the stream so it drops its buffer and
+	// plays the new playlist promptly instead of finishing the old buffer.
+	lastContext string
 	// headerPages holds the current track's Ogg header pages (the BOS page
 	// with the Vorbis identification header plus the comment/setup pages).
 	// The drain captures them as they stream past; ServeOgg replays them to
@@ -142,6 +162,7 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 		fallback:   fallbackName,
 		name:       fallbackName,
 		box:        box,
+		credStore:  filepath.Join(filepath.Dir(configDir), "sp-accounts"),
 		apiAddr:    "127.0.0.1:3678",
 		logger:     logger,
 		bitr:       160,
@@ -256,6 +277,10 @@ func (m *Manager) Run(ctx context.Context) {
 	// so the Connect remote controls the speaker volume. The box -> Spotify
 	// feedback direction is added separately with echo dedup to avoid a loop.
 	go m.watchVolume(ctx)
+	// captureLoop snapshots each account's credential as it taps the device,
+	// building the per-account library that SwitchAccount swaps between for
+	// multi-account preset recall.
+	go m.captureLoop(ctx)
 	for ctx.Err() == nil {
 		if err := m.runOnce(ctx); err != nil && ctx.Err() == nil {
 			m.logger.Warn("go-librespot exited, restarting", "err", err)
@@ -528,19 +553,32 @@ func readOggPage(r *bufio.Reader) ([]byte, error) {
 // incl. the Ogg headers; the box therefore receives the stream from the
 // beginning and can decode it.
 func (m *Manager) Play(ctx context.Context, uri string) error {
-	// Enable shuffle BEFORE loading the context so go-librespot builds a
-	// shuffled queue and starts on a random track. Setting it after play only
-	// flips the flag without reshuffling the already-built queue (live-observed:
-	// tracks still played in playlist order). Best-effort.
+	// Start the playlist on a RANDOM track, shuffled, every recall.
+	// go-librespot's /player/play has no shuffle option, and shuffle_context
+	// only randomises the UPCOMING queue: the current track stays the context's
+	// first one, so play+shuffle alone replays the same first song each time
+	// (live-observed). So: load + play, enable shuffle, then skip once to land
+	// on a shuffled (random) track. It starts at the track's beginning; the
+	// flush-on-BOS in the drain keeps the boundary clean (no mid-track restart).
+	// Mark a recall in progress so ServeOgg does not resume the OLD (mid) track
+	// when the box attaches; this path drives the new track from its start.
+	m.SetRecalling()
+	// Enable shuffle BEFORE loading the context: go-librespot then starts the
+	// playlist on a RANDOM track at its beginning (verified live: 3 recalls = 3
+	// different first songs). Alternatives were worse: shuffle AFTER play, or a
+	// paused load + next, replayed the same first song (next while paused is a
+	// no-op); a non-paused next leaked the previous track briefly.
 	if err := m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`); err != nil {
-		m.logger.Debug("spotify: enable shuffle (pre-play) failed", "err", err)
+		m.logger.Debug("spotify: shuffle_context (pre-play) failed", "err", err)
 	}
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`}`); err != nil {
 		return err
 	}
-	// No post-play /player/next: with shuffle enabled before play, go-librespot
-	// already starts on a random track at position 0. A skip here only made the
-	// track begin mid-song (live-observed).
+	// Debounce the will_play context change this recall triggers (this path
+	// already drives the box separately, so no extra re-point needed).
+	m.mu.Lock()
+	m.lastActivate = time.Now()
+	m.mu.Unlock()
 	return nil
 }
 
@@ -567,6 +605,217 @@ func (m *Manager) SetVolume(ctx context.Context, pct int) error {
 	return m.apiPost(ctx, "/player/volume", fmt.Sprintf(`{"volume":%d}`, pct))
 }
 
+// ---- Multi-account credential swap (#27) ----
+//
+// go-librespot is a single-user receiver: it persists ONE zeroconf credential
+// (credentials.json in configDir) and logs in as the last account that tapped
+// the device. To recall a preset saved by a different household account, the
+// manager keeps a per-account copy of each credential as it taps (captureLoop),
+// then on a cross-account recall swaps the right copy into credentials.json and
+// restarts go-librespot, which re-reads it at startup (it has no runtime login
+// API). The restart takes ~3s, shorter than the box's playback buffer, so the
+// switch is audibly seamless. Same-account recall does not switch or restart.
+
+// apiGet fetches a go-librespot API path (e.g. /status) and returns the body.
+func (m *Manager) apiGet(ctx context.Context, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+m.apiAddr+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}
+
+// currentUsername returns the Spotify account go-librespot is currently logged
+// in as, or "" if it is not reachable / not authed yet.
+func (m *Manager) currentUsername(ctx context.Context) string {
+	data, err := m.apiGet(ctx, "/status")
+	if err != nil {
+		return ""
+	}
+	var st struct {
+		Username string `json:"username"`
+	}
+	if json.Unmarshal(data, &st) != nil {
+		return ""
+	}
+	return st.Username
+}
+
+// CurrentUsername is the exported form; the preset-save path stamps it onto a
+// new Spotify preset so a later recall can switch back to that account.
+func (m *Manager) CurrentUsername(ctx context.Context) string {
+	return m.currentUsername(ctx)
+}
+
+// sanitizeUser maps a Spotify username to a filesystem-safe credential filename.
+func sanitizeUser(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('_')
+		}
+	}
+	return b.String()
+}
+
+// captureCredential copies go-librespot's current credentials.json into the
+// per-account store keyed by username.
+func (m *Manager) captureCredential(user string) error {
+	if user == "" {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(m.configDir, "credentials.json"))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(m.credStore, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(m.credStore, sanitizeUser(user)+".json"), data, 0o600)
+}
+
+// captureLoop watches the active account and snapshots its credential whenever a
+// new account taps the device (go-librespot rewrites credentials.json on each
+// tap). Low NAND wear: it only writes on an account change or a missing copy.
+func (m *Manager) captureLoop(ctx context.Context) {
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	last := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		user := m.currentUsername(ctx)
+		if user == "" {
+			continue
+		}
+		if user == last {
+			if _, err := os.Stat(filepath.Join(m.credStore, sanitizeUser(user)+".json")); err == nil {
+				continue // already captured
+			}
+		}
+		if err := m.captureCredential(user); err != nil {
+			m.logger.Debug("spotify: capture credential failed", "user", user, "err", err)
+			continue
+		}
+		last = user
+		m.logger.Info("spotify: captured account credential", "user", user)
+	}
+}
+
+// SwitchAccount makes go-librespot log in as username if it is not already. It
+// returns (false, nil) with no restart when username is empty, already active,
+// or has no stored credential (the recall then plays with the current account;
+// public playlists still work). Otherwise it swaps the credential and restarts
+// go-librespot, waiting until it re-auths as the target.
+func (m *Manager) SwitchAccount(ctx context.Context, username string) (bool, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false, nil
+	}
+	if cur := m.currentUsername(ctx); cur == username {
+		return false, nil // already this account: no switch, no restart
+	}
+	data, err := os.ReadFile(filepath.Join(m.credStore, sanitizeUser(username)+".json"))
+	if err != nil {
+		m.logger.Info("spotify: no stored credential for account, playing with current", "want", username)
+		return false, nil
+	}
+	if err := os.WriteFile(filepath.Join(m.configDir, "credentials.json"), data, 0o600); err != nil {
+		return false, err
+	}
+	start := time.Now()
+	m.mu.Lock()
+	restart := m.runCancel
+	m.mu.Unlock()
+	if restart != nil {
+		restart() // supervise loop relaunches go-librespot, which reads the swapped credential
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return true, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+		if m.currentUsername(ctx) == username {
+			m.logger.Info("spotify: switched account", "user", username, "tookMs", time.Since(start).Milliseconds())
+			return true, nil
+		}
+	}
+	m.logger.Warn("spotify: account switch timed out", "want", username)
+	return true, fmt.Errorf("account switch to %q timed out", username)
+}
+
+// PlayAccount switches to the preset's account (if needed) then plays the URI.
+// This is the recall entry point used by both the hardware-button and the
+// desktop/API paths.
+func (m *Manager) PlayAccount(ctx context.Context, uri, account string) error {
+	if account != "" {
+		if _, err := m.SwitchAccount(ctx, account); err != nil {
+			m.logger.Warn("spotify: account switch failed, playing with current account", "account", account, "err", err)
+		}
+	}
+	return m.Play(ctx, uri)
+}
+
+// PlaylistCover returns a stable cover image URL for a Spotify context URI
+// (playlist, album, ...) via Spotify's public oEmbed endpoint, which needs no
+// token. A saved preset uses this as its tile logo: unlike the per-track album
+// cover it does not change as songs advance, so the button shows a steady image
+// (#24). Returns "" on any failure; the tile then falls back to the live track
+// cover. Best-effort, called off the play path (on preset save).
+func (m *Manager) PlaylistCover(ctx context.Context, uri string) string {
+	page := spotifyURItoURL(uri)
+	if page == "" {
+		return ""
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://open.spotify.com/oembed?url="+url.QueryEscape(page), nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var od struct {
+		ThumbnailURL string `json:"thumbnail_url"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&od); err != nil {
+		return ""
+	}
+	return od.ThumbnailURL
+}
+
+// spotifyURItoURL converts spotify:playlist:ID (or album/track/artist) to its
+// open.spotify.com page URL, or "" for an unrecognised URI.
+func spotifyURItoURL(uri string) string {
+	parts := strings.Split(uri, ":")
+	if len(parts) != 3 || parts[0] != "spotify" {
+		return ""
+	}
+	switch parts[1] {
+	case "playlist", "album", "track", "artist":
+		return "https://open.spotify.com/" + parts[1] + "/" + parts[2]
+	}
+	return ""
+}
+
 // Bitrate returns the bitrate measured from the live stream (kbit/s), or the
 // configured nominal when nothing has streamed yet.
 func (m *Manager) Bitrate() int {
@@ -587,6 +836,89 @@ func (m *Manager) Streaming() bool {
 	return m.sink != nil
 }
 
+// syncVolumeFromBox seeds go-librespot's volume with the box's real level so the
+// Spotify app slider starts at the correct value. Without it go-librespot
+// defaults to 100% (external_volume ignores initial_volume), so the first slider
+// touch jumped the speaker to 100 and then back down to the chosen value.
+func (m *Manager) syncVolumeFromBox(ctx context.Context) {
+	if m.box == nil {
+		return
+	}
+	st, err := m.box.LoadSettings(ctx)
+	if err != nil {
+		return
+	}
+	if st.Volume.Actual < 0 || st.Volume.Actual > 100 {
+		return
+	}
+	vctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	if err := m.SetVolume(vctx, st.Volume.Actual); err != nil {
+		m.logger.Debug("spotify: seed volume from box failed", "err", err)
+		return
+	}
+	m.logger.Info("spotify: seeded app volume slider from box", "vol", st.Volume.Actual)
+}
+
+// SetRecalling marks a preset recall as in progress for the next few seconds, so
+// ServeOgg does not resume the old (mid-position) track when the box attaches;
+// Play drives the new track from its start instead. Called at the very start of
+// a recall, before the box attaches.
+func (m *Manager) SetRecalling() {
+	m.mu.Lock()
+	m.recallUntil = time.Now().Add(8 * time.Second)
+	m.mu.Unlock()
+}
+
+// recalling reports whether a recall is currently in progress.
+func (m *Manager) recalling() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return time.Now().Before(m.recallUntil)
+}
+
+// SetOnActivate wires the callback that points the box at the Spotify stream
+// when the user starts playback from the Spotify app while the box is on
+// another source (#14).
+func (m *Manager) SetOnActivate(f func(context.Context)) {
+	m.mu.Lock()
+	m.onActivate = f
+	m.mu.Unlock()
+}
+
+// maybeActivate fires onActivate when go-librespot has become active/playing but
+// no box is attached to the Ogg stream (the box is on another source). Debounced
+// so a burst of events triggers at most one box switch. No-op when a box is
+// already attached (e.g. a normal preset recall already pointed it here).
+func (m *Manager) maybeActivate() {
+	m.mu.Lock()
+	cb := m.onActivate
+	if cb == nil || m.sink != nil || time.Since(m.lastActivate) < 5*time.Second {
+		m.mu.Unlock()
+		return
+	}
+	m.lastActivate = time.Now()
+	m.mu.Unlock()
+	m.logger.Info("spotify: app playback detected with box on another source, switching box to Spotify stream")
+	go cb(context.Background())
+}
+
+// repointBox re-points the box at the Spotify stream even if it is already
+// attached, so a playlist switch from the app flushes the box buffer and plays
+// the new stream promptly. Debounced and shares lastActivate with maybeActivate.
+func (m *Manager) repointBox() {
+	m.mu.Lock()
+	cb := m.onActivate
+	if cb == nil || time.Since(m.lastActivate) < 5*time.Second {
+		m.mu.Unlock()
+		return
+	}
+	m.lastActivate = time.Now()
+	m.mu.Unlock()
+	m.logger.Info("spotify: playlist context changed, re-pointing box to play the new stream")
+	go cb(context.Background())
+}
+
 // DeviceName returns the name currently advertised to Spotify.
 func (m *Manager) DeviceName() string {
 	m.mu.Lock()
@@ -599,7 +931,7 @@ func (m *Manager) DeviceName() string {
 func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	m.mu.Lock()
-	track, artist, cover := m.curName, m.curArtist, m.curCover
+	track, artist, cover, context := m.curName, m.curArtist, m.curCover, m.lastContext
 	m.mu.Unlock()
 	resp := struct {
 		Ready   bool   `json:"ready"`
@@ -608,6 +940,8 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Track   string `json:"track"`
 		Artist  string `json:"artist"`
 		Cover   string `json:"cover"`
+		Context string `json:"context"` // current playlist/album URI (for saving a Spotify preset)
+		Account string `json:"account"` // current go-librespot login (for the preset)
 	}{
 		Ready:   m.Ready(),
 		Bitrate: m.Bitrate(),
@@ -615,6 +949,8 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Track:   track,
 		Artist:  artist,
 		Cover:   cover,
+		Context: context,
+		Account: m.currentUsername(r.Context()),
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -665,6 +1001,31 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			continue
 		}
 		switch ev.Type {
+		case "active":
+			// The Spotify app selected this device. Switch the box to the Spotify
+			// stream if it is on another source (#14), and seed the app's volume
+			// slider with the box's real level so the first slider touch does not
+			// jump the speaker to 100% first.
+			m.maybeActivate()
+			go m.syncVolumeFromBox(context.Background())
+		case "playing":
+			m.maybeActivate()
+		case "will_play":
+			// A track is about to play; if its context (playlist/album) differs
+			// from the last one, the app switched playlists. Re-point the box so
+			// it drops the old buffer and plays the new stream promptly.
+			var wp struct {
+				ContextURI string `json:"context_uri"`
+			}
+			if json.Unmarshal(ev.Data, &wp) == nil && wp.ContextURI != "" {
+				m.mu.Lock()
+				changed := m.lastContext != "" && wp.ContextURI != m.lastContext
+				m.lastContext = wp.ContextURI
+				m.mu.Unlock()
+				if changed {
+					m.repointBox()
+				}
+			}
 		case "metadata":
 			// Current track info for the desktop (and later box) display.
 			var md struct {
@@ -777,11 +1138,16 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	// granule-0 headers again. Logged so the restart can be correlated.
 	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr), "reattach", reattach)
 
-	// The drain pauses go-librespot while no box is attached; resume it so
-	// the live stream flows to this box.
-	rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-	_ = m.Resume(rctx)
-	cancel()
+	// The drain pauses go-librespot while no box is attached; resume it so the
+	// live stream flows to this box. EXCEPT during a recall: resuming here would
+	// replay the old track at its mid position before Play loads the new
+	// shuffled track (the "first song starts mid-song" bug). During a recall,
+	// Play drives playback from the new track's start, so skip the resume.
+	if !m.recalling() {
+		rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		_ = m.Resume(rctx)
+		cancel()
+	}
 
 	select {
 	case <-r.Context().Done():

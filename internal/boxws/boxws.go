@@ -232,7 +232,15 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	_, _ = fmt.Sscanf(pe.ID, "%d", &slot)
 	if slot < 1 || slot > 6 {
 		// id="0" + INVALID_SOURCE folgt auf den echten Press wenn Box
-		// den Source nicht selbst spielen kann. Ignorieren.
+		// den Source nicht selbst spielen kann. Ignorieren fuer die
+		// Wiedergabe, aber bei INVALID_SOURCE einmal loggen: das ist die
+		// Box-eigene fehlgeschlagene Self-Aktivierung, die das Display
+		// "Dienst nicht verfuegbar" zeigt (#22), bevor STR uebernimmt.
+		if strings.Contains(s, "INVALID_SOURCE") || strings.Contains(s, "DISABLED") {
+			c.logger.Info("box self-activation rejected preset (shows 'service unavailable')",
+				"id", pe.ID, "source", pe.ContentItem.Source,
+				"location", pe.ContentItem.Location, "preview", preview(data, 240))
+		}
 		return
 	}
 	c.logger.Info("hardware preset gedrueckt",
