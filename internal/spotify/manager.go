@@ -100,9 +100,10 @@ type Manager struct {
 	box        *boxapi.Client // box REST: friendly name (device_name) + volume bridge
 	credStore  string         // per-account credential copies for multi-account swap
 
-	mu   sync.Mutex
-	name string    // device name currently written to config.yml
-	sink io.Writer // current HTTP consumer, nil when none
+	mu        sync.Mutex
+	name      string    // device name currently written to config.yml
+	configVol int       // initial_volume currently written to config.yml
+	sink      io.Writer // current HTTP consumer, nil when none
 	cmd  *exec.Cmd
 	// runCancel restarts the current go-librespot process when called: it
 	// cancels the per-process context so the supervise loop relaunches it.
@@ -211,6 +212,11 @@ func (m *Manager) configYAML(name string, initialVol int) string {
 	b.WriteString("external_volume: true\n")
 	b.WriteString("volume_steps: 100\n")
 	fmt.Fprintf(&b, "initial_volume: %d\n", initialVol)
+	// Always honour initial_volume on start instead of the last saved volume:
+	// go-librespot persists the volume and restores it next start, which made
+	// the Spotify app slider start at the stale/100 value instead of the box's
+	// real level. With this, initial_volume (seeded from the box) wins.
+	b.WriteString("ignore_last_volume: true\n")
 	b.WriteString("server:\n")
 	b.WriteString("  enabled: true\n")
 	fmt.Fprintf(&b, "  address: %s\n", host)
@@ -250,6 +256,7 @@ func (m *Manager) ensureConfig(ctx context.Context) error {
 	name, vol := m.boxNameAndVolume(ctx)
 	m.mu.Lock()
 	m.name = name
+	m.configVol = vol
 	m.mu.Unlock()
 	// No audio cache handling needed: go-librespot does not cache audio to
 	// disk (verified in its source; only the tiny config + credential files
@@ -281,6 +288,10 @@ func (m *Manager) Run(ctx context.Context) {
 	// building the per-account library that SwitchAccount swaps between for
 	// multi-account preset recall.
 	go m.captureLoop(ctx)
+	// One-shot: rewrite config with the box's real name + volume once the box
+	// REST API answers (it is usually not up when config is first written), then
+	// restart go-librespot so the Spotify app sees the right volume, not 100%.
+	go m.refreshVolumeConfigOnce(ctx)
 	for ctx.Err() == nil {
 		if err := m.runOnce(ctx); err != nil && ctx.Err() == nil {
 			m.logger.Warn("go-librespot exited, restarting", "err", err)
@@ -290,6 +301,68 @@ func (m *Manager) Run(ctx context.Context) {
 			return
 		case <-time.After(3 * time.Second):
 		}
+	}
+}
+
+// refreshVolumeConfigOnce rewrites config.yml with the box's real name and
+// volume once the box REST API first answers, then restarts go-librespot a
+// single time. config.yml is first written at agent start, usually before the
+// box is up, so device_name and initial_volume fall back (volume 100), which
+// made the Spotify app slider start at 100% and jump on first touch. With
+// ignore_last_volume true and a correct initial_volume, go-librespot then
+// reports the box's real level. One shot only (no polling), so it cannot flap
+// like the old name watcher; skips the rewrite when already correct and the
+// restart when a box is streaming.
+func (m *Manager) refreshVolumeConfigOnce(ctx context.Context) {
+	if m.box == nil {
+		return
+	}
+	t := time.NewTicker(8 * time.Second)
+	defer t.Stop()
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		st, err := m.box.LoadSettings(ctx)
+		if err != nil {
+			continue // box REST not up yet
+		}
+		name := strings.TrimSpace(st.Info.Name)
+		if name == "" {
+			name = m.fallback
+		}
+		vol := st.Volume.Actual
+		if vol < 0 || vol > 100 {
+			vol = 100
+		}
+		m.mu.Lock()
+		unchanged := name == m.name && vol == m.configVol
+		streaming := m.sink != nil
+		restart := m.runCancel
+		m.mu.Unlock()
+		if unchanged {
+			return // initial config was already correct
+		}
+		if err := os.WriteFile(filepath.Join(m.configDir, "config.yml"),
+			[]byte(m.configYAML(name, vol)), 0o644); err != nil {
+			m.logger.Warn("spotify: refresh config failed", "err", err)
+			return
+		}
+		m.mu.Lock()
+		m.name = name
+		m.configVol = vol
+		m.mu.Unlock()
+		m.logger.Info("spotify: refreshed config from box", "name", name, "vol", vol, "restart", !streaming)
+		if !streaming && restart != nil {
+			restart()
+		}
+		return // one shot
 	}
 }
 
