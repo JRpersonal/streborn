@@ -2452,6 +2452,15 @@ async function refreshStatus() {
       if (ap && state.presetErrors[ap.slot]) {
         delete state.presetErrors[ap.slot];
       }
+      // Spotify presets carry no stream_url and the location (/spotify/stream)
+      // has no slot, so the match above never fires. When a Spotify stream is
+      // confirmed playing, clear ALL Spotify preset errors so a stale
+      // "speaker still starting" no longer sticks on the tile.
+      if (/\/spotify\/stream/.test(loc)) {
+        for (const p of state.presets) {
+          if (p.type === 'spotify') delete state.presetErrors[p.slot];
+        }
+      }
     }
 
     if (stateChanged && state.presets.length > 0) {
