@@ -217,6 +217,8 @@ export namespace main {
 	    type: string;
 	    art?: string;
 	    bitrate?: number;
+	    uri?: string;
+	    account?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -230,6 +232,8 @@ export namespace main {
 	        this.type = source["type"];
 	        this.art = source["art"];
 	        this.bitrate = source["bitrate"];
+	        this.uri = source["uri"];
+	        this.account = source["account"];
 	    }
 	}
 	export class SetupAPPushResult {
@@ -255,6 +259,8 @@ export namespace main {
 	    track: string;
 	    artist: string;
 	    cover: string;
+	    context: string;
+	    account: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SpotifyNow(source);
@@ -266,6 +272,8 @@ export namespace main {
 	        this.track = source["track"];
 	        this.artist = source["artist"];
 	        this.cover = source["cover"];
+	        this.context = source["context"];
+	        this.account = source["account"];
 	    }
 	}
 	export class TrueFactoryResetResult {

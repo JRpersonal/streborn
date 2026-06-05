@@ -68,6 +68,8 @@ export function ResolveStationLogo(arg1:string,arg2:string,arg3:Array<string>):P
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
 
+export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string):Promise<void>;
+
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function SetAirplayOpt(arg1:string,arg2:number,arg3:boolean):Promise<void>;

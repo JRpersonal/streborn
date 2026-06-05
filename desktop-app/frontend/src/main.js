@@ -47,6 +47,7 @@ import {
   StreamBitrate,
   SpotifyBitrate,
   SpotifyNowPlaying,
+  SaveSpotifyPreset,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
@@ -1864,6 +1865,11 @@ function activeSlotFromLocation(loc) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// Spotify glyph (green circle + three arcs) shown as the logo on Spotify
+// preset tiles so they are instantly recognisable as a Spotify playlist.
+// Inline SVG data URI: no bundled asset, no network fetch.
+const SPOTIFY_LOGO = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20168%20168'%3E%3Ccircle%20cx='84'%20cy='84'%20r='84'%20fill='%231ED760'/%3E%3Cpath%20fill='none'%20stroke='%23000'%20stroke-width='13'%20stroke-linecap='round'%20d='M37%2099c30-9%2065-7%2092%209M35%2075c34-10%2076-7%20105%2011M33%2050c38-11%2086-7%20118%2012'/%3E%3C/svg%3E";
+
 function renderPresets() {
   const grid = $('presets');
   grid.innerHTML = '';
@@ -1926,17 +1932,18 @@ function renderPresets() {
           if (t && !presetCandidates.includes(t)) presetCandidates.push(t);
         }
       };
-      if (p.art) {
+      if (p.type === 'spotify') {
+        // Show the Spotify logo so the tile is instantly recognisable as a
+        // Spotify playlist; the account name is shown small under the title.
+        // (Chosen over the album/playlist cover, which changes or lags.)
+        addCands(SPOTIFY_LOGO);
+      } else if (p.art) {
         addCands(p.art);
       } else if (isActive && state.nowIcon) {
         addCands(state.nowIcon);
-        // Auto-persist so the preset has its logo on the next load. NEVER for
-        // Spotify presets: SetPreset is radio-only (sends type=radio, no uri),
-        // so persisting here would wipe the Spotify URI and break recall.
-        if (p.type !== 'spotify') {
-          p.art = state.nowIcon;
-          SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon, p.bitrate || 0).catch(() => {});
-        }
+        // Auto-persist so the preset has its logo on the next load.
+        p.art = state.nowIcon;
+        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon, p.bitrate || 0).catch(() => {});
       }
       const streamHost = extractHost(p.stream_url);
       const hostsToTry = [];
@@ -1972,6 +1979,7 @@ function renderPresets() {
           ${logo}
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
+            ${p.type === 'spotify' && p.account ? `<div class="preset-account">${escapeHtml(p.account)}</div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
           </div>
@@ -2091,6 +2099,27 @@ async function saveCurrentToSlot(slot) {
   if (!state.nowLocation) {
     showToast(t('preset.noCurrentStation'));
     return;
+  }
+
+  // Case Spotify: the speaker is playing a Spotify playlist. Save a REAL
+  // Spotify preset (type=spotify with the playlist URI), not a radio link to
+  // the raw stream. The latter showed the album cover instead of the Spotify
+  // logo and could not recall/shuffle the playlist. Needs the current context
+  // (playlist URI) from /spotify/info.
+  if (/\/spotify\/stream/.test(state.nowLocation) && state.nowSpotifyContext) {
+    const sname = state.nowName || 'Spotify';
+    try {
+      await SaveSpotifyPreset(
+        state.currentBox.host, state.currentBox.port,
+        slot, sname, state.nowSpotifyContext, state.nowSpotifyAccount || ''
+      );
+      showToast(t('preset.savedToKey', { n: slot, name: sname }));
+      await loadPresets();
+      return;
+    } catch (err) {
+      showError(t('preset.saveFailed', { err: String(err) }));
+      return;
+    }
   }
 
   // Case A: speaker is playing a proxy item
@@ -2353,13 +2382,23 @@ async function refreshStatus() {
         state.lastSpotifyNowFetch = Date.now();
         SpotifyNowPlaying(npBox.host, npBox.port).then(np => {
           if (!np) return;
+          const coverChanged = state.nowSpotifyCover !== (np.cover || '');
           state.nowSpotifyTrack = np.track || '';
           state.nowSpotifyArtist = np.artist || '';
+          state.nowSpotifyCover = np.cover || '';
+          state.nowSpotifyContext = np.context || '';
+          state.nowSpotifyAccount = np.account || '';
+          // The now-playing line redraws every status poll, but the tile cover
+          // only redraws on renderPresets. Re-render when the cover changes so
+          // the preset logo tracks the song in step with the title instead of
+          // lagging a track behind.
+          if (coverChanged) renderPresets();
         }).catch(() => {});
       }
     } else {
       state.nowSpotifyTrack = '';
       state.nowSpotifyArtist = '';
+      state.nowSpotifyCover = '';
     }
     // Update state.nowIcon. Prefer the art tag from now_playing.
     // If that is empty AND we are playing through the stream proxy,
