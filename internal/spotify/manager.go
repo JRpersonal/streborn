@@ -177,11 +177,15 @@ func (m *Manager) configYAML(name string, initialVol int) string {
 	b.WriteString("audio_output_pipe: /dev/stdout\n")
 	b.WriteString("audio_output_pipe_format: s16le\n")
 	b.WriteString("audio_output_pipe_passthrough: true\n")
-	// NOTE: the volume keys (external_volume/volume_steps/initial_volume) were
-	// removed together with the disabled volume bridge (see Run). This is the
-	// known-stable v32 config shape plus the box-derived device_name. initialVol
-	// is currently unused; kept in the signature for the future bridge.
-	_ = initialVol
+	// Volume bridge: the box owns the actual volume (passthrough Ogg can't be
+	// scaled by go-librespot), so external_volume makes go-librespot forward
+	// Connect volume changes as /events instead of applying them; the manager
+	// mirrors those onto the box and back (with echo dedup, see watchVolume /
+	// SetVolume). volume_steps 100 makes the value a percent; initial_volume
+	// seeds it with the box's real level so the Spotify app shows it correctly.
+	b.WriteString("external_volume: true\n")
+	b.WriteString("volume_steps: 100\n")
+	fmt.Fprintf(&b, "initial_volume: %d\n", initialVol)
 	b.WriteString("server:\n")
 	b.WriteString("  enabled: true\n")
 	fmt.Fprintf(&b, "  address: %s\n", host)
@@ -241,16 +245,13 @@ func (m *Manager) Run(ctx context.Context) {
 		m.logger.Warn("spotify: cannot write config, manager idle", "err", err)
 		return
 	}
-	// NOTE: watchDeviceName and watchVolume are intentionally DISABLED.
-	// device_name is still resolved once in ensureConfig above (the Spotify
-	// device + mDNS carry the speaker's name), which is the important part.
-	// The two background loops were pulled after they destabilised the box:
-	// on the fragile Bose firmware, go-librespot crash/restart cycles made
-	// watchVolume reconnect repeatedly to /events, and its volume mirroring
-	// fought the user's volume buttons (a "volume war"); volumeStream also
-	// leaked a goroutine per reconnect, feeding an OOM that rebooted the box
-	// every ~15-20 min. Re-enable only with reconnect dedupe + a debounced,
-	// change-only volume mirror and the goroutine-leak fix below.
+	// watchDeviceName stays DISABLED: it flapped the device name on transient
+	// /info failures and restarted go-librespot, churning the box.
+	// watchVolume is re-enabled now that its goroutine leak is fixed (per-call
+	// ctx in volumeStream): it mirrors Spotify-app volume changes onto the box
+	// so the Connect remote controls the speaker volume. The box -> Spotify
+	// feedback direction is added separately with echo dedup to avoid a loop.
+	go m.watchVolume(ctx)
 	for ctx.Err() == nil {
 		if err := m.runOnce(ctx); err != nil && ctx.Err() == nil {
 			m.logger.Warn("go-librespot exited, restarting", "err", err)
@@ -410,6 +411,16 @@ func (m *Manager) runOnce(ctx context.Context) error {
 
 		if sink != nil {
 			paused = false
+			// Track-boundary flush: a new BOS is a new logical Vorbis stream
+			// (the box must reload codebooks). If the BOS is buried mid-batch
+			// behind the previous track's tail, the box re-inits on a partial
+			// chunk and the new track audibly restarts (live-observed, ~1 in 3
+			// tracks). Flushing the tail first makes the BOS begin on a clean
+			// chunk boundary so the decoder re-inits cleanly.
+			if htype&0x02 != 0 && len(pending) > 0 {
+				m.forward(sink, pending)
+				pending = pending[:0]
+			}
 			// Batch pages into large writes (see flushThreshold) so the box
 			// gets large chunks, not a tiny chunk per page.
 			pending = append(pending, page...)
@@ -513,7 +524,20 @@ func readOggPage(r *bufio.Reader) ([]byte, error) {
 // incl. the Ogg headers; the box therefore receives the stream from the
 // beginning and can decode it.
 func (m *Manager) Play(ctx context.Context, uri string) error {
-	return m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`}`)
+	// Enable shuffle BEFORE loading the context so go-librespot builds a
+	// shuffled queue and starts on a random track. Setting it after play only
+	// flips the flag without reshuffling the already-built queue (live-observed:
+	// tracks still played in playlist order). Best-effort.
+	if err := m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`); err != nil {
+		m.logger.Debug("spotify: enable shuffle (pre-play) failed", "err", err)
+	}
+	if err := m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`}`); err != nil {
+		return err
+	}
+	// No post-play /player/next: with shuffle enabled before play, go-librespot
+	// already starts on a random track at position 0. A skip here only made the
+	// track begin mid-song (live-observed).
+	return nil
 }
 
 // Pause and Resume mirror the obvious controls.
