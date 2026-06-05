@@ -38,7 +38,7 @@ flowchart LR
   Agent -- "AVTransport :8091 (UPnP)" --> BoseFW
   Agent -- "REST :8090 (info, sources, presets, zone)" --> BoseFW
   BoseFW -- ":17002 battery client (Portable, when BatteryMonitor is wedged)" --> Agent
-  BoseFW -. "cloud calls redirected via Hosts" .-> Agent
+  BoseFW -. "outbound cloud calls (:80 -> :9080, :443) redirected via Hosts + iptables" .-> Agent
   Agent <-- "GET stations / tags" --> RadioBrowser
   BoseFW <-- "play stream URL" --> UpstreamCDN
   Desktop <-- "release manifest, SHA256, Sigstore" --> GitHubRel
@@ -95,7 +95,7 @@ listener. On Series-I ST10 (rhino) the STR ports are reachable directly.
 | Port | Listener | Role | LAN reachable |
 |---|---|---|---|
 | 22 | sshd (Bose) | Open only while the stick is inserted; closed once it is unmounted. | stick only |
-| 80 | PtsServer (Bose) | Internal Bose endpoint; the firmware's outbound :80 cloud calls are NAT-redirected to STR's :9080. | internal |
+| 80 | _(nobody , firmware OUTBOUND)_ | **Not a listener.** This is the firmware's **outbound** HTTP cloud call (to `streaming.bose.com`). iptables NAT-redirects it to STR's :9080; **STR never binds :80** and the firmware does not listen on it. Listed only because STR claims this outbound traffic. | outbound (firmware) -> redirected to :9080 |
 | 443 | STR marge HTTPS | TLS cloud-stub for `streaming.bose.com` after the Hosts redirect. | loopback (firmware) |
 | 7000 | STSCertified (Bose) | TLS endpoint inside the firmware. Untouched. | internal |
 | 8080 | WebServer / gabbo (Bose) | Hosts the `/gabbo` WebSocket bus. STR connects as a client. | internal |
@@ -108,6 +108,11 @@ listener. On Series-I ST10 (rhino) the STR ports are reachable directly.
 | 17002 | STR BatteryMonitor fallback | **Portable only.** Bound when the Bose `BatteryMonitor` service is wedged, so BoseApp's battery client connects instead of connect-storming a dead port. This is the ~27 min reboot fix (v0.6.18); see [`FIRMWARE-NOTES.md`](./FIRMWARE-NOTES.md). | loopback (firmware) |
 | 17008 | SoftwareUpdate (Bose) | On BCO this is STR's external entry point: the PREROUTING REDIRECT sends external :17008 to loopback :8888, which is how the desktop app reaches the agent. | external entry (BCO) |
 | 40020 | scmmond (Bose) | System-control / battery-MCU manager that feeds `BatteryMonitor`. STR does not bind it. | internal |
+
+> **Reading the table:** every row is a port some process *listens on*, with the
+> one exception of **:80**. That row is the firmware's *outbound* cloud
+> destination that STR intercepts via iptables, not an inbound listener. Nothing
+> listens on :80 for STR's sake.
 
 **How the desktop app reaches the agent:** mDNS advertises the agent on
 `:8888`, but on BCO boxes that port is not externally reachable, so the app
