@@ -1208,10 +1208,6 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 // User Aktion wenn z.B. die Bose Firmware nach einem Standby Cycle
 // einzelne Eintraege verloren hat.
 func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger) {
-	// 90s nach Boot anfangen, danach im 5 min Takt
-	time.Sleep(90 * time.Second)
-	tick := time.NewTicker(5 * time.Minute)
-	defer tick.Stop()
 	// fullDone tracks whether we have done a full re-sync since the box
 	// last became ready. The boot-time preset sync can run before the
 	// box's preset / hardware-button subsystem is fully up; the slots
@@ -1223,11 +1219,26 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// re-registers the buttons. Live-confirmed on a taigan Portable
 	// 2026-06-01: buttons 1/2 stayed "empty" until a full re-sync even
 	// though /presets listed them.
+	//
+	// Converge FAST after a cold boot, then idle. A blind 90s pre-wait
+	// meant the hardware buttons stayed unregistered for ~90s+ after every
+	// reboot, so an early press hit "Taste nicht belegt" (Thilo, #4). The box
+	// /info / preset subsystem comes up ~20-45s in, so polling every 10s from
+	// 15s wins that first full re-sync as soon as the box is ready, then the
+	// loop drops to a 5 min maintenance cadence. reconcileOnce is gated on the
+	// box being out of OOB and reachable, so the early polls are cheap no-ops
+	// until it is ready. The fast interval re-tightens automatically if the
+	// box later drops back to OOB (ready=false -> fullDone=false).
+	time.Sleep(15 * time.Second)
 	fullDone := false
 	for {
 		ready := reconcileOnce(store, boxHost, logger, !fullDone)
 		fullDone = ready
-		<-tick.C
+		if fullDone {
+			time.Sleep(5 * time.Minute)
+		} else {
+			time.Sleep(10 * time.Second)
+		}
 	}
 }
 
