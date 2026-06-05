@@ -508,6 +508,12 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.setLastPlay("http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg")
+		uri, name, art := p.URI, p.Name, p.Art
+		go s.verifyRecall(func(ctx context.Context) {
+			if s.spotifyPlay(ctx, uri) == nil {
+				_ = s.renderer.PlayURLMime(ctx, "http://127.0.0.1:8888/spotify/stream.ogg", name, art, "audio/ogg")
+			}
+		})
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
 		return
 	}
@@ -524,7 +530,29 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setLastPlay(playURL, p.Name, p.Art, "")
+	name, art := p.Name, p.Art
+	go s.verifyRecall(func(ctx context.Context) {
+		_ = s.renderer.PlayURL(ctx, playURL, name, art)
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
+}
+
+// verifyRecall confirms the box reached a playing state shortly after a recall
+// and re-issues the play a few times if not. Fixes the "first press after a
+// reboot does nothing, second press works" race (box/go-librespot not ready
+// yet) without any latency on the happy path (the initial play already ran).
+func (s *Server) verifyRecall(retry func(context.Context)) {
+	for attempt := 1; attempt <= 3; attempt++ {
+		time.Sleep(5 * time.Second)
+		if _, busy := s.boxPlayState(); busy {
+			return
+		}
+		s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		retry(ctx)
+		cancel()
+	}
+	s.logger.Warn("recall still not playing after retries")
 }
 
 // setLastPlay records the box-facing stream + metadata for the auto-re-push.

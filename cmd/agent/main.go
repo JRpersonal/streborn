@@ -710,9 +710,12 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := h.renderer.PlayURL(playCtx, url, name, icon); err != nil {
-		h.logger.Error("upnp play failed", "slot", slot, "err", err)
-		return
+		h.logger.Warn("upnp play (initial) failed, will verify+retry", "slot", slot, "err", err)
 	}
+	// Verify+retry in the background: the first hardware press after a cold
+	// boot can race the box/agent bringup so nothing plays until a second
+	// press. This re-issues until the box actually plays. Affects radio too.
+	go h.verifyPlayURL(slot, url, name, icon)
 	h.logger.Info("hardware preset zu upnp gemapped", "slot", slot, "name", name)
 }
 
@@ -750,17 +753,55 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 	// attaches (no data-starve timeout on join); then point the box at the
 	// stream. ServeOgg seeks the track to 0 on attach so the box still gets
 	// a fresh header sequence to sync to.
-	playCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	playCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	if err := h.spotify.Play(playCtx, p.URI); err != nil {
-		h.logger.Error("spotify play failed", "slot", slot, "uri", p.URI, "err", err)
-		return
+		h.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
+	} else if err := h.renderer.PlayURLMime(playCtx, spotifyStreamURL, p.Name, p.Art, "audio/ogg"); err != nil {
+		h.logger.Warn("spotify upnp play (initial) failed, will verify+retry", "slot", slot, "err", err)
 	}
-	if err := h.renderer.PlayURLMime(playCtx, spotifyStreamURL, p.Name, p.Art, "audio/ogg"); err != nil {
-		h.logger.Error("spotify upnp play failed", "slot", slot, "err", err)
-		return
-	}
+	// Verify+retry in the background: the first press after a cold boot races
+	// go-librespot's auth, so the box gets no audio and the user had to press
+	// twice. This retries until the box actually plays, with no latency on the
+	// happy path (the initial attempt above already played).
+	go h.verifySpotifyPlaying(slot, p)
 	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", p.Account)
+}
+
+// verifyPlayURL confirms the box started playing a UPnP (radio) recall and
+// re-issues it a few times if not, fixing the "first hardware press after
+// reboot does nothing" race for radio presets too.
+func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
+	for attempt := 1; attempt <= 3; attempt++ {
+		time.Sleep(5 * time.Second)
+		if boxIsPlaying(h.boxHost) {
+			return
+		}
+		h.logger.Warn("hardware recall not playing yet, retrying", "slot", slot, "attempt", attempt)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		_ = h.renderer.PlayURL(ctx, url, name, icon)
+		cancel()
+	}
+	h.logger.Warn("hardware recall still not playing after retries", "slot", slot)
+}
+
+// verifySpotifyPlaying confirms the box reached a playing state after a Spotify
+// recall and re-issues the recall a few times if not, fixing the "first press
+// after reboot does nothing" race without needing a second press.
+func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
+	for attempt := 1; attempt <= 3; attempt++ {
+		time.Sleep(5 * time.Second)
+		if boxIsPlaying(h.boxHost) {
+			return
+		}
+		h.logger.Warn("spotify recall not playing yet, retrying", "slot", slot, "attempt", attempt)
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		if err := h.spotify.Play(ctx, p.URI); err == nil {
+			_ = h.renderer.PlayURLMime(ctx, spotifyStreamURL, p.Name, p.Art, "audio/ogg")
+		}
+		cancel()
+	}
+	h.logger.Warn("spotify recall still not playing after retries", "slot", slot)
 }
 
 // loadRegion liest den Country Code aus der region.txt vom Stick. Leer
