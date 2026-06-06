@@ -300,6 +300,12 @@ func run() error {
 	// webui resumes it conservatively (only if the box stays on and idle).
 	streamProxySrv.SetOnDisconnect(webuiSrv.HandleStreamDisconnect)
 
+	// ICY radio text (Brecht): the proxy parses the live StreamTitle out of the
+	// stream; push it to the box display by re-issuing the current stream URI
+	// with the new title. Gated behind STR_ICY_DISPLAY inside the handler until
+	// the mid-stream re-set is verified not to glitch audio on real hardware.
+	streamProxySrv.SetOnTitle(webuiSrv.HandleStreamTitle)
+
 	// Hardware Preset Tasten: Box sendet via WebSocket auf 8080 (gabbo Protocol)
 	// einen presetSelectionUpdated event wenn der User physisch eine Taste
 	// drueckt. Wir hooken den Event und triggern unseren UPnP Player.

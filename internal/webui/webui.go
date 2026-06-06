@@ -795,6 +795,58 @@ func (s *Server) maybeRePush() {
 	}
 }
 
+// icyDisplayPushEnabled reports whether STR should push live ICY StreamTitle
+// updates to the box's now-playing/display by re-issuing SetAVTransportURI
+// mid-stream. Off by default: re-setting the URI can make some renderers
+// re-buffer (an audible gap on every track change), so this stays behind an
+// env flag until verified on the target hardware. Set STR_ICY_DISPLAY=1.
+func icyDisplayPushEnabled() bool {
+	return os.Getenv("STR_ICY_DISPLAY") == "1"
+}
+
+// HandleStreamTitle pushes a freshly parsed radio StreamTitle to the box so it
+// appears in now-playing / on the display, by re-issuing the stream STR last
+// told the box to play with the new title as DIDL metadata. The URL stays the
+// stable proxy URL, only the title changes.
+//
+// Gated behind STR_ICY_DISPLAY: a URI re-set may cost an audio gap on some
+// renderers (see icyDisplayPushEnabled), so we keep the safe default of
+// surfacing the title only in the app (via /api/stream/title) until the
+// mid-stream re-set is verified on real hardware. Wired from the stream proxy.
+func (s *Server) HandleStreamTitle(title string) {
+	if !icyDisplayPushEnabled() || s.renderer == nil || title == "" {
+		return
+	}
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	if lp == nil {
+		s.lastPlayMu.Unlock()
+		return
+	}
+	boxURL, art, mime := lp.boxURL, lp.art, lp.mime
+	s.lastPlayMu.Unlock()
+	if boxURL == "" {
+		return
+	}
+	// Serialise against other box commands (re-push, play) so a title update
+	// cannot interleave with a stream switch mid-SOAP.
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var err error
+	if mime != "" {
+		err = s.renderer.SetURIMime(ctx, boxURL, title, art, mime)
+	} else {
+		err = s.renderer.SetURI(ctx, boxURL, title, art)
+	}
+	if err != nil {
+		s.logger.Warn("icy display push failed", "err", err, "title", title)
+		return
+	}
+	s.logger.Info("icy display push", "title", title)
+}
+
 // boxPlayState reads now_playing once and reports whether the box is in standby
 // and whether it is busy (playing, buffering or paused). Best-effort: on error
 // it reports neither, so the caller does not re-push blindly.

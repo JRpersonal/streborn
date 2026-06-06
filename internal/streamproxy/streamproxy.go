@@ -90,6 +90,65 @@ type Server struct {
 	// The argument is the last upstream error (nil = upstream was healthy, so
 	// the box dropped the stream itself). Used by the auto-re-push.
 	onDisconnect func(upstreamErr error)
+
+	// titleMu guards the live ICY StreamTitle of the stream being proxied.
+	// We always request ICY metadata from the upstream, de-interleave it out
+	// of the byte stream the box receives (so the box gets clean audio), and
+	// surface the parsed StreamTitle here. curTitleURL pins the title to its
+	// stream so a station switch clears a stale title instead of showing the
+	// previous station's track.
+	titleMu     sync.Mutex
+	curTitle    string
+	curTitleURL string
+	// onTitle, if set, is called whenever the live StreamTitle changes to a
+	// non-empty value. Used to push the radio track text to the box display.
+	onTitle func(title string)
+}
+
+// SetOnTitle registers a callback invoked when the live ICY StreamTitle of
+// the proxied stream changes to a non-empty value. Set once at wiring time.
+func (s *Server) SetOnTitle(fn func(title string)) { s.onTitle = fn }
+
+// CurrentTitle returns the live ICY StreamTitle of the stream being proxied
+// right now, or "" if the station sends no metadata or none has arrived yet.
+func (s *Server) CurrentTitle() string {
+	s.titleMu.Lock()
+	defer s.titleMu.Unlock()
+	return s.curTitle
+}
+
+// setTitle records a freshly parsed StreamTitle for url and fires onTitle when
+// it changed to a new non-empty value. Empty titles (StreamTitle='') clear the
+// current title but never fire the push, so a station that briefly sends an
+// empty title does not blank the box display with a spurious update.
+func (s *Server) setTitle(url, title string) {
+	title = strings.TrimRight(title, "\x00")
+	title = strings.TrimSpace(title)
+	s.titleMu.Lock()
+	changed := title != s.curTitle || url != s.curTitleURL
+	s.curTitle = title
+	s.curTitleURL = url
+	fire := changed && title != "" && s.onTitle != nil
+	cb := s.onTitle
+	s.titleMu.Unlock()
+	if changed {
+		s.logger.Info("stream proxy ICY title", "title", title)
+	}
+	if fire {
+		cb(title)
+	}
+}
+
+// clearTitleForNewURL drops a stale title when the proxied stream changes, so
+// the brief window before the new station's first metadata block does not show
+// the old station's track. A reconnect to the same url keeps the title.
+func (s *Server) clearTitleForNewURL(url string) {
+	s.titleMu.Lock()
+	if url != s.curTitleURL {
+		s.curTitle = ""
+		s.curTitleURL = url
+	}
+	s.titleMu.Unlock()
 }
 
 // SetOnDisconnect registers a callback invoked whenever the box closes a
@@ -177,6 +236,86 @@ func icyBitrate(h http.Header) int {
 	return 0
 }
 
+// icyMetaint returns the byte spacing between interleaved ICY metadata blocks
+// from the upstream icy-metaint response header, or 0 if the station sends no
+// metadata. With a non-zero value the stream is: metaint audio bytes, then one
+// length byte L, then L*16 bytes of metadata, repeating.
+func icyMetaint(h http.Header) int {
+	v := h.Get("icy-metaint")
+	if v == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+		return n
+	}
+	return 0
+}
+
+// parseStreamTitle pulls the track text out of an ICY metadata block, which
+// looks like `StreamTitle='Artist - Song';StreamUrl='...';` padded to a 16-byte
+// boundary with NULs. Returns ok=false when there is no StreamTitle field.
+func parseStreamTitle(meta string) (string, bool) {
+	const key = "StreamTitle='"
+	i := strings.Index(meta, key)
+	if i < 0 {
+		return "", false
+	}
+	rest := meta[i+len(key):]
+	// Closing delimiter is `';`; fall back to a lone quote if the station omits
+	// the semicolon, and to the whole remainder (NUL-trimmed) as a last resort.
+	if j := strings.Index(rest, "';"); j >= 0 {
+		return rest[:j], true
+	}
+	if j := strings.IndexByte(rest, '\''); j >= 0 {
+		return rest[:j], true
+	}
+	return strings.TrimRight(rest, "\x00"), true
+}
+
+// icyReader wraps an upstream stream that carries interleaved ICY metadata and
+// presents only the audio bytes to the caller. Each metadata block is handed
+// to onMeta as it is read, so the proxy can extract StreamTitle without ever
+// forwarding the metadata (or the icy-metaint contract) to the box.
+type icyReader struct {
+	src     io.Reader
+	metaint int
+	remain  int // audio bytes left before the next metadata block
+	onMeta  func(meta string)
+}
+
+func newICYReader(src io.Reader, metaint int, onMeta func(meta string)) *icyReader {
+	return &icyReader{src: src, metaint: metaint, remain: metaint, onMeta: onMeta}
+}
+
+func (r *icyReader) Read(p []byte) (int, error) {
+	// At a metadata boundary: read the length byte and, if non-zero, the block.
+	if r.remain == 0 {
+		var lb [1]byte
+		if _, err := io.ReadFull(r.src, lb[:]); err != nil {
+			return 0, err
+		}
+		if mlen := int(lb[0]) * 16; mlen > 0 {
+			meta := make([]byte, mlen)
+			if _, err := io.ReadFull(r.src, meta); err != nil {
+				return 0, err
+			}
+			if r.onMeta != nil {
+				r.onMeta(string(meta))
+			}
+		}
+		r.remain = r.metaint
+	}
+	// Read at most up to the next metadata boundary so the length byte is never
+	// mistaken for audio.
+	n := len(p)
+	if n > r.remain {
+		n = r.remain
+	}
+	read, err := r.src.Read(p[:n])
+	r.remain -= read
+	return read, err
+}
+
 // standardBitrates are the common MP3/AAC stream rates a throughput
 // measurement is snapped to, so the displayed value is stable and
 // realistic instead of a jittery raw number.
@@ -227,6 +366,23 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/stream/raw", s.handleRaw)
 	mux.HandleFunc("/stream/", s.handle)
 	mux.HandleFunc("/api/stream/bitrate", s.handleBitrate)
+	mux.HandleFunc("/api/stream/title", s.handleTitle)
+}
+
+// handleTitle returns the live ICY StreamTitle of the stream currently
+// proxied, or "" when the station sends no metadata. Cheap: a single guarded
+// string read. The desktop app polls this on a slow cadence to show the live
+// radio track next to the station name, the same way it shows the bitrate.
+func (s *Server) handleTitle(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	writeJSONString(w, "title", s.CurrentTitle())
+}
+
+// writeJSONString emits {"<key>":"<value>"} with value JSON-escaped, so a
+// StreamTitle containing quotes or backslashes cannot break the response.
+func writeJSONString(w io.Writer, key, value string) {
+	esc := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
+	fmt.Fprintf(w, `{%q:"%s"}`, key, esc.Replace(value))
 }
 
 // handleBitrate returns the real bitrate (kbps) of the stream currently
@@ -377,10 +533,11 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		s.logger.Warn("stream proxy NewRequest fail", "err", err)
 		return false, err
 	}
-	// Icecast Header durchreichen damit Box Metadaten bekommt
-	if md := r.Header.Get("Icy-MetaData"); md != "" {
-		req.Header.Set("Icy-MetaData", md)
-	}
+	// Always request ICY metadata from the upstream, regardless of what the
+	// box asked for. STR owns the metadata: it de-interleaves it out of the
+	// stream (so the box gets clean audio) and reads StreamTitle to drive the
+	// now-playing text. The box never sees the icy-metaint contract.
+	req.Header.Set("Icy-MetaData", "1")
 	req.Header.Set("User-Agent", "STR-Proxy/1.0")
 
 	resp, err := s.client.Do(req)
@@ -434,12 +591,36 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 	icyBr := icyBitrate(resp.Header)
 	knownBitrate := s.beginStream(url, icyBr)
 
+	// ICY metadata spacing. When set, the upstream interleaves StreamTitle
+	// blocks every metaint bytes.
+	metaint := icyMetaint(resp.Header)
+	s.clearTitleForNewURL(url)
+
+	// Did the box itself ask for ICY metadata? If so it can de-interleave and
+	// display StreamTitle natively, with no stream re-fetch (the gap-free path,
+	// unlike re-issuing SetAVTransportURI which makes the box drop+reconnect).
+	// In that case pass the interleaved bytes AND the icy-metaint header
+	// through unchanged, and tee a parse so STR's /api/stream/title still
+	// updates too. If the box did NOT ask, strip the metadata so it gets clean
+	// audio (it would otherwise mistake metadata bytes for audio).
+	boxICY := r.Header.Get("Icy-MetaData")
+	boxWantsICY := boxICY != "" && boxICY != "0"
+	s.logger.Info("stream proxy ICY negotiation", "boxWantsICY", boxWantsICY, "boxIcyMetaData", boxICY, "upstreamMetaint", metaint)
+
 	if sendHeaders {
 		for k, vv := range resp.Header {
 			// Hop by hop Headers nicht weitergeben
 			switch strings.ToLower(k) {
 			case "connection", "transfer-encoding":
 				continue
+			// icy-metaint only reaches the box when the box asked for ICY and
+			// will de-interleave it. When we strip (box did not ask), the
+			// header must not leak or the box would treat metadata bytes as
+			// audio and get corrupted sound.
+			case "icy-metaint":
+				if !boxWantsICY {
+					continue
+				}
 			}
 			for _, v := range vv {
 				w.Header().Add(k, v)
@@ -466,9 +647,22 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 	var winBytes int64
 	var winStart time.Time
 	measured := knownBitrate
+	// De-interleave ICY metadata ONLY when the box did not ask for it: src
+	// then yields clean audio and each StreamTitle block updates STR's live
+	// title. When the box DID ask (boxWantsICY), pass the interleaved stream
+	// through untouched so the box de-interleaves and displays the track
+	// itself, gap-free. Without metaint the body passes through unchanged.
+	var src io.Reader = resp.Body
+	if metaint > 0 && !boxWantsICY {
+		src = newICYReader(resp.Body, metaint, func(meta string) {
+			if title, ok := parseStreamTitle(meta); ok {
+				s.setTitle(url, title)
+			}
+		})
+	}
 	buf := make([]byte, 16*1024)
 	for {
-		n, readErr := resp.Body.Read(buf)
+		n, readErr := src.Read(buf)
 		if n > 0 {
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
 				// Bose hat Verbindung geschlossen
