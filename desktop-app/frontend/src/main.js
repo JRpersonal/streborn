@@ -168,7 +168,29 @@ import {
   logoImgTag,
   bestLogoForStation,
   stationLogoChain,
+  monogramDataUri,
 } from './logos.js';
+
+// __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
+// pipe-separated set of candidate URLs) on each load error, swapping in the
+// next candidate. The list always ends in a locally generated monogram data
+// URI, which always loads, so a station whose favicon is missing or fails to
+// load shows a clean letter tile instead of a broken-image icon (Brecht: VRT
+// stations showed broken icons because this handler was referenced in onerror
+// but never defined, so the cascade threw and the broken image stuck).
+window.__nextLogoFallback = function (img) {
+  try {
+    const fb = (img.getAttribute('data-fallbacks') || '').split('|').filter(Boolean);
+    if (fb.length) {
+      const next = fb.shift();
+      img.setAttribute('data-fallbacks', fb.join('|'));
+      img.src = next;
+      return;
+    }
+  } catch {}
+  // Chain exhausted (or attribute unreadable): stop so onerror cannot loop.
+  img.onerror = null;
+};
 
 // ---------- Station logo hydration ----------
 // logoImgTag renders a tile with the local monogram as the immediate
@@ -1987,7 +2009,13 @@ function renderPresets() {
           if (!presetCandidates.includes(svc)) presetCandidates.push(svc);
         }
       }
-      const logo = presetCandidates.length === 0 ? '' :
+      // Terminal fallback: a locally generated monogram (data URI, always
+      // loads), appended last so a station with a missing or broken logo ends
+      // on a clean letter tile instead of a broken-image icon. Spotify keeps
+      // its own logo as the first candidate; the monogram only shows if even
+      // that fails.
+      presetCandidates.push(monogramDataUri(p.name));
+      const logo =
         `<img class="preset-logo" src="${escapeAttr(presetCandidates[0])}"
               data-fallbacks="${escapeAttr(presetCandidates.slice(1).join('|'))}"
               onerror="window.__nextLogoFallback(this)"/>`;
