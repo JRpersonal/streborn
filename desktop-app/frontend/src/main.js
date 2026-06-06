@@ -1676,6 +1676,25 @@ async function doBoxUpdate() {
       }
     }
   } catch { /* status unknown: do not block the update */ }
+
+  // Wi-Fi pre-flight: a weak link can drop the OTA upload mid-transfer and
+  // leave the speaker half-updated, then rebooting. If the box reports a
+  // marginal/poor Wi-Fi signal, warn first so the user can move the speaker or
+  // router closer before committing. Ethernet/coprocessor boxes report no
+  // signal class and are never blocked; an unknown reading never blocks.
+  try {
+    const s = await BoxSettings(state.currentBox.host, state.currentBox.port);
+    const ifs = (s && s.network && s.network.interfaces) || [];
+    const conn = ifs.find(i =>
+      (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') ||
+      (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
+    const sig = conn && conn.signal;
+    if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') {
+      const ok = await confirmWarn(t('update.weakWifiTitle'), t('update.weakWifiBody'));
+      if (!ok) return; // user chose to improve the signal first
+    }
+  } catch { /* signal unknown: do not block the update */ }
+
   // Drive both update buttons together (banner up top + stick info section)
   const buttons = () => ['boxUpdateBtn', 'stickInfoUpdateBtn'].map(id => $(id)).filter(Boolean);
   // Mutate the DOM buttons only when the user is still LOOKING at
@@ -2084,15 +2103,15 @@ function renderPresets() {
   // "Artist - Title" is readable without hovering. Deferred to the next frame
   // so the layout (scrollWidth/clientWidth) is settled after the innerHTML
   // rebuild above.
-  requestAnimationFrame(applyTrackScroll);
+  requestAnimationFrame(() => applyTrackScroll('.preset-track'));
 }
 
 // applyTrackScroll turns an overflowing .preset-track into a gentle marquee:
 // it pauses at the start, scrolls left until the end is visible, pauses, then
 // jumps back to the start and repeats. Lines that fit are left static. Only
 // the active tile carries a track line, so this measures one element.
-function applyTrackScroll() {
-  document.querySelectorAll('.preset-track').forEach(box => {
+function applyTrackScroll(selector = '.preset-track, .status-bar .now') {
+  document.querySelectorAll(selector).forEach(box => {
     const inner = box.querySelector('.track-inner');
     if (!inner) return;
     inner.classList.remove('scrolling');
@@ -2445,13 +2464,19 @@ function scheduleLiveTitle() {
       if (title !== state.nowTitle) {
         state.nowTitle = title;
         renderPresets();
+        renderNowPlayingBar(); // keep the status line in sync with the tile
       }
     }
-    setTimeout(tick, 12000);
+    // Poll fast (every 2 s) while there is no title yet, so a just-started
+    // station or a fresh preset switch shows its track within a couple of
+    // seconds instead of waiting a full cycle; relax to 12 s once a title is
+    // showing. An empty title (station between songs / no metadata) keeps the
+    // fast cadence so it re-acquires quickly.
+    setTimeout(tick, state.nowTitle ? 12000 : 2000);
   };
-  // First read a few seconds in: the station needs a moment to emit its first
-  // metadata block after the stream starts.
-  setTimeout(tick, 4000);
+  // First read soon: the station emits its first metadata block a moment after
+  // the stream starts.
+  setTimeout(tick, 1200);
 }
 
 async function action(kind) {
@@ -2459,6 +2484,57 @@ async function action(kind) {
   const fn = kind === 'pause' ? Pause : Stop;
   try { await fn(state.currentBox.host, state.currentBox.port); } catch (e) { showError(e); }
   setTimeout(refreshStatus, 1000);
+}
+
+// renderNowPlayingBar paints the now-playing status line purely from cached
+// state (no network), so it can be called both from the status poll and from
+// the live-title poller the moment a track arrives, keeping the status line in
+// sync with the preset tile. Guarded on the rendered HTML so it does not
+// restart the marquee animation when nothing changed.
+function renderNowPlayingBar() {
+  const bar = $('statusBar');
+  if (!bar) return;
+  const ps = state.nowPlayState || '';
+  const src = state.nowSource || '';
+  const loc = state.nowLocation || '';
+  const name = state.nowName || '';
+  let displayName = name;
+  if (/\/spotify\/stream/.test(loc) && state.nowSpotifyTrack) {
+    const song = state.nowSpotifyArtist
+      ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
+      : state.nowSpotifyTrack;
+    displayName = name ? `${t('status.playlistLabel')}: "${name}" · ${song}` : song;
+  } else if (/\/stream\//.test(loc) && !/\/spotify\/stream/.test(loc) && state.nowTitle) {
+    displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
+  }
+  let stateLabel, stateClass;
+  if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
+  else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
+  else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }
+  else if (src === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
+  else { stateLabel = ''; stateClass = 'idle'; }
+  if (src === 'AUX') { displayName = t('status.auxInput'); if (!stateLabel) stateLabel = t('status.active'); }
+  else if (src === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) stateLabel = t('status.active'); }
+  const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && src !== 'AUX' && src !== 'BLUETOOTH';
+  const brLabel = isStreamSrc ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
+  bar.className = 'status-bar status-' + stateClass;
+  let statusHTML;
+  if (displayName) {
+    // displayName sits in a .track-inner so a too-long "Station: ... · track"
+    // marquees inside .now, exactly like the preset tiles.
+    statusHTML = `<span class="now"><span class="track-inner">&#9654; ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
+  } else if (stateLabel) {
+    statusHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
+  } else {
+    statusHTML = `<span class="muted">${escapeHtml(t('status.ready'))}</span>`;
+  }
+  // Only rewrite the DOM when the line changes, so the marquee animation is not
+  // restarted on every poll (it would never get to scroll).
+  if (statusHTML !== state.lastStatusHTML) {
+    state.lastStatusHTML = statusHTML;
+    bar.innerHTML = statusHTML;
+    requestAnimationFrame(() => applyTrackScroll('.status-bar .now'));
+  }
 }
 
 async function refreshStatus() {
@@ -2604,44 +2680,10 @@ async function refreshStatus() {
       renderPresets();
     }
 
-    let stateLabel;
-    let stateClass;
-    let displayName = name;
-    // Spotify: show the live current song next to the playlist name, e.g.
-    //   Playlist: "Jens Chill" · Father John Misty - Real Love Baby
-    if (/\/spotify\/stream/.test(state.nowLocation) && state.nowSpotifyTrack) {
-      const song = state.nowSpotifyArtist
-        ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
-        : state.nowSpotifyTrack;
-      displayName = name ? `Playlist: "${name}" · ${song}` : song;
-    }
-    if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
-    else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
-    else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }
-    else if (src === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
-    else { stateLabel = ''; stateClass = 'idle'; }
-    // Source-specific labels: when AUX or BT is the active source,
-    // show "AUX input" or "Bluetooth" instead of an empty name.
-    if (src === 'AUX') {
-      displayName = t('status.auxInput');
-      if (!stateLabel) stateLabel = t('status.active');
-    } else if (src === 'BLUETOOTH') {
-      displayName = t('status.bluetooth');
-      if (!stateLabel) stateLabel = t('status.active');
-    }
-
-    // Bitrate is only meaningful for a radio stream, not AUX/BT/standby.
-    const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && src !== 'AUX' && src !== 'BLUETOOTH';
-    const brLabel = isStreamSrc ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
-
-    $('statusBar').className = 'status-bar status-' + stateClass;
-    if (displayName) {
-      $('statusBar').innerHTML = `<span class="now">&#9654; ${escapeHtml(displayName)}</span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
-    } else if (stateLabel) {
-      $('statusBar').innerHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
-    } else {
-      $('statusBar').innerHTML = `<span class="muted">${escapeHtml(t('status.ready'))}</span>`;
-    }
+    // Now-playing status line. Rendered from cached state so the live-title
+    // poller can refresh it the instant a track arrives (in sync with the
+    // preset tile), not only on the next status poll.
+    renderNowPlayingBar();
 
     // Source buttons: highlight the active source in green.
     document.querySelectorAll('.btn-source').forEach(b => {
