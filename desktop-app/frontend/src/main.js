@@ -2100,9 +2100,9 @@ function applyTrackScroll() {
     inner.style.removeProperty('--track-dur');
     const overflow = inner.scrollWidth - box.clientWidth;
     if (overflow > 4) {
-      // Constant ~30 px/s scroll speed plus the built-in pauses, floored so a
+      // Brisk ~100 px/s scroll plus the built-in pauses, floored so a
       // slightly-too-long line still scrolls slowly enough to read.
-      const dur = Math.max(6, Math.round(overflow / 30 + 3));
+      const dur = Math.max(3, Math.round(overflow / 75 + 1.5));
       inner.style.setProperty('--track-scroll', overflow + 'px');
       inner.style.setProperty('--track-dur', dur + 's');
       inner.classList.add('scrolling');
