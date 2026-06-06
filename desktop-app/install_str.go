@@ -179,10 +179,33 @@ func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
 	// raw SSH exit code.
 	res.Step = "preflight"
 	if !tcpReachable(host, 22, 4*time.Second) {
-		res.Message = "The speaker is not reachable on the network (no answer on SSH port 22 at " + host + "). " +
+		// :22 closed does NOT necessarily mean the box is off the network.
+		// Bose only opens sshd while the box boots with the stick inserted
+		// (the remote_services marker), so a fully-onboarded box that is
+		// reachable on its Bose REST port (:8090) but has :22 closed is the
+		// "install window closed" case, not a network problem. Gerald's
+		// ST10 diagnostic (#, 06.06.) showed exactly this: 8090 reachable,
+		// SSH not. Probe the Bose port so we can tell the two apart and give
+		// an instruction the user can actually act on, instead of wrongly
+		// blaming the network.
+		if tcpReachable(host, 8888, 3*time.Second) {
+			res.Message = "The speaker at " + host + " already answers on the STR agent port (8888), " +
+				"so it looks like STR is installed already. Refresh the speaker list. " +
+				"If you meant to reinstall, reboot the speaker with the STR stick plugged in first."
+			a.logger.Warn("install_str: preflight, :22 closed but :8888 up (already installed?)", "host", host)
+			return res, nil
+		}
+		if tcpReachable(host, 8090, 3*time.Second) {
+			res.Message = "The speaker at " + host + " is on the network, but the install access (SSH) is closed. " +
+				"Bose only opens it while the speaker boots with the STR stick plugged in. " +
+				"Power the speaker off, insert the STR stick, power it back on, then install."
+			a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut)", "host", host)
+			return res, nil
+		}
+		res.Message = "The speaker is not reachable on the network (no answer on SSH port 22 or the Bose port 8090 at " + host + "). " +
 			"First bring it onto your Wi-Fi with the Bose SoundTouch app and make sure this PC and the speaker are on the same network. " +
 			"Then reboot the speaker with the STR stick plugged in and try again."
-		a.logger.Warn("install_str: preflight failed, box not reachable on :22", "host", host)
+		a.logger.Warn("install_str: preflight failed, box not reachable on :22 or :8090", "host", host)
 		return res, nil
 	}
 
