@@ -143,6 +143,14 @@ type Manager struct {
 	// real BOS is a whole track away). This is the Icecast late-joiner
 	// pattern.
 	headerPages []byte
+	// hdrPath persists one valid header set to NAND; on a cold boot (empty
+	// headerPages) it is loaded so ServeOgg can hand a freshly-attaching box
+	// valid Ogg immediately and let it buffer, instead of the box getting zero
+	// bytes and flashing "service unavailable" before go-librespot's first track
+	// loads (the real track BOS resyncs right after). hdrPersisted guards the
+	// write to exactly once, so there is no per-track flash wear.
+	hdrPath      string
+	hdrPersisted bool
 }
 
 // New returns a Manager. binPath is the go-librespot binary, configDir
@@ -157,7 +165,7 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 	if fallbackName == "" {
 		fallbackName = "ST Reborn"
 	}
-	return &Manager{
+	m := &Manager{
 		binPath:    binPath,
 		configDir:  configDir,
 		fallback:   fallbackName,
@@ -169,7 +177,16 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 		bitr:       160,
 		client:     &http.Client{Timeout: 5 * time.Second},
 		playClient: &http.Client{Timeout: 25 * time.Second},
+		hdrPath:    filepath.Join(configDir, "stream-headers.ogg"),
 	}
+	// Warm the Ogg header cache from the last session so the very first box
+	// attach after a cold boot gets valid Ogg (buffers) instead of nothing
+	// (the "service unavailable" flash). Best-effort; absent on a fresh install.
+	if b, err := os.ReadFile(m.hdrPath); err == nil && len(b) > 0 {
+		m.headerPages = b
+		m.hdrPersisted = true
+	}
+	return m
 }
 
 // Ready reports whether go-librespot can run: the binary exists. The
@@ -490,8 +507,19 @@ func (m *Manager) runOnce(ctx context.Context) error {
 		case capturing && gran > 0: // first audio page
 			m.mu.Lock()
 			m.headerPages = hdr
+			persist := !m.hdrPersisted && m.hdrPath != ""
+			if persist {
+				m.hdrPersisted = true
+			}
 			m.mu.Unlock()
 			capturing = false
+			if persist {
+				// Persist one valid header set to NAND for the next cold boot.
+				// Once only (guarded above), so no per-track flash wear.
+				if err := os.WriteFile(m.hdrPath, hdr, 0o644); err != nil {
+					m.logger.Debug("spotify: persist stream headers failed", "err", err)
+				}
+			}
 		case capturing:
 			hdr = append(hdr, page...)
 		}
