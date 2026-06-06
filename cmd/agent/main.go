@@ -874,16 +874,13 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
 func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 	for attempt := 1; attempt <= 3; attempt++ {
 		time.Sleep(5 * time.Second)
-		// For Spotify the ONLY valid "it is working" signal is the box pulling
-		// the Ogg stream. boxIsPlaying must NOT count: right after a hardware
-		// press the box can bounce off STR's preset (INVALID_SOURCE) back to the
-		// PREVIOUS preset (e.g. a radio station that is still playing), and that
-		// would read as boxIsPlaying=true and make us skip the recovery, so the
-		// Spotify recall silently fails and the user has to press a second time
-		// (the first-press double-tap bug). Gate on Streaming() alone, then
-		// re-point (re-attach, no reshuffle) until the box actually consumes the
-		// Ogg stream.
-		if h.spotify.Streaming() {
+		// Success = the box is actually on the Spotify stream. Use the
+		// location-aware check, not a bare play-state: a bounce-to-radio reads
+		// as playing (would skip recovery -> double-tap) and a bare Streaming()
+		// flaps to false even while Spotify plays (re-pointing on that flap
+		// re-attaches and restarts the track). boxPlayingSpotify keys off the
+		// now_playing location, so it is true only when Spotify really plays.
+		if h.spotify.Streaming() || boxPlayingSpotify(h.boxHost) {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
@@ -1669,6 +1666,33 @@ func boxIsPlaying(boxHost string) bool {
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	s := string(b)
+	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+}
+
+// boxPlayingSpotify reports whether the box's now_playing is STR's Spotify
+// stream in a play/buffering state. It is the reliable success signal for the
+// Spotify recall verify, where a bare play-state check (boxIsPlaying) and a
+// bare Streaming() check each fail one way: right after a press the box can
+// bounce off STR's preset to the PREVIOUS (radio) preset, which boxIsPlaying
+// reads as "playing" and would wrongly skip recovery (the first-press
+// double-tap); while Streaming() flaps to false even when the box is happily
+// playing Spotify, and re-pointing on that flap re-attaches the box and
+// restarts the track. The now_playing location tells the two apart.
+func boxPlayingSpotify(boxHost string) bool {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s := string(b)
+	if !strings.Contains(s, "spotify/stream") {
+		return false
+	}
 	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
 }
 
