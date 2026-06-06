@@ -647,6 +647,18 @@ func (m *Manager) Play(ctx context.Context, uri string) error {
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`}`); err != nil {
 		return err
 	}
+	// shuffle_context only randomises the UPCOMING queue; go-librespot still
+	// starts the context on its FIRST track, so every recall began on the same
+	// song (live: "Real Love Baby" each time, only later tracks differed). Skip
+	// once to land on the first SHUFFLED (random) track. This is safe here: a
+	// recall happens before the box attaches, so the skipped-past first track
+	// never reaches the speaker, and ServeOgg drives the box from the new
+	// track's start. The short wait lets the first track finish loading so the
+	// skip is not a no-op against a not-yet-ready player.
+	time.Sleep(800 * time.Millisecond)
+	if err := m.apiPost(ctx, "/player/next", ""); err != nil {
+		m.logger.Debug("spotify: skip-to-random after play failed", "err", err)
+	}
 	// Debounce the will_play context change this recall triggers (this path
 	// already drives the box separately, so no extra re-point needed).
 	m.mu.Lock()
