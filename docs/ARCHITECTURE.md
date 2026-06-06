@@ -232,21 +232,33 @@ endpoints get real responses next; everything else gets a generic
 ```mermaid
 sequenceDiagram
   participant User
-  participant Wizard as Setup wizard (PowerShell)
+  participant App as Desktop app
   participant Stick as USB stick (FAT32)
   participant Box as Speaker (cold boot)
   participant NAND as /mnt/nv/streborn/
-  User->>Wizard: Run STReborn-Setup.exe<br/>pick speaker, Wi-Fi, name
-  Wizard->>Stick: winformat.exe (FAT32)<br/>write run.sh, install.sh,<br/>streborn-armv7l, wlan.conf,<br/>name.txt, region.txt, remote_services
+  User->>App: Prepare stick<br/>pick speaker, Wi-Fi, name
+  App->>Stick: winformat.exe (FAT32)<br/>write run.sh, install.sh, rc.local,<br/>streborn-armv7l, wlan.conf,<br/>name.conf, region.conf, remote_services
   User->>Box: Insert stick, power on
-  Box->>Stick: Bose rc.local sees remote_services<br/>opens sshd, mounts /media/sda1
-  Box->>Box: /media/sda1/rc.local runs run.sh
-  Box->>NAND: copy run-override.sh + agent binary
-  Box->>Box: WLAN provisioning (Approach B:<br/>POST /addWirelessProfile on :8090)
-  Box->>Box: Start agent
+  Box->>Box: Bose init sees remote_services<br/>opens sshd, mounts /media/sda1
+  App->>Box: SSH (passwordless root):<br/>sh /media/sda1/install.sh install
+  Box->>NAND: install.sh copies rc.local +<br/>run-override.sh + presets to NAND
+  App->>Box: SSH: reboot
+  Box->>NAND: Bose init runs /mnt/nv/rc.local<br/>-> run-override.sh
+  Box->>NAND: sync agent binary stick -> NAND
+  Box->>Box: WLAN provisioning, region, name
+  Box->>Box: Start agent, announce mDNS :8888
+  App->>Box: discover on :8888, poll until up
   User->>Box: Remove stick after first boot
-  Note over Box: From now on, NAND override starts<br/>the agent on every boot. No stick needed.
+  Note over Box: From now on /mnt/nv/rc.local -> run-override.sh<br/>starts the agent on every boot. No stick needed.
 ```
+
+The first install needs the SSH channel that Bose opens only while the
+box boots with a `remote_services` stick inserted: that is the only way
+to run the first command (`install.sh`) on a factory box and seed
+`/mnt/nv/rc.local`. From the second boot on, Bose's own init runs the
+NAND `rc.local` and no SSH is involved. Moving the first install off SSH
+is evaluated in
+[`docs/STICK-INSTALL-WITHOUT-SSH.md`](./STICK-INSTALL-WITHOUT-SSH.md).
 
 The stick is **recovery media**, not a runtime requirement. See
 [`docs/THREAT-MODEL.md`](./THREAT-MODEL.md) for the SSH-while-stick-
