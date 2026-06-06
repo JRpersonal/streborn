@@ -170,6 +170,17 @@ STR exists solely to restore functionality of these speakers after the official 
 
 The software is provided AS IS, without warranty. Use at your own risk.
 
+## Acknowledgements and third-party software
+
+STR stands on other people's open source. Thank you.
+
+- **[go-librespot](https://github.com/devgianlu/go-librespot)** by devgianlu, **GPL-3.0** , the Spotify Connect client that powers STR's Spotify support. It ships as a **separate binary** that STR runs as a child process and talks to over a local API/pipe; it is not linked into STR, so STR's own MIT code and the GPL-3.0 binary are merely aggregated, each under its own license. STR builds it from a small fork, [JRpersonal/go-librespot](https://github.com/JRpersonal/go-librespot) (also GPL-3.0), that adds a raw-Ogg passthrough mode; that change is offered back upstream. The full source of the bundled build is public there.
+- **[radio-browser.info](https://www.radio-browser.info/)** , the community-run radio station directory STR searches, with no key and no account.
+- **[Octicons](https://github.com/primer/octicons)** by GitHub (MIT) , a couple of UI icons.
+- The community that documented the SoundTouch TAP CLI and firmware behaviour after the cloud shutdown, whose findings STR builds on.
+
+Bundled components keep their own licenses; STR's own code is MIT.
+
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](./LICENSE). The bundled go-librespot binary is GPL-3.0; see the Acknowledgements above.
