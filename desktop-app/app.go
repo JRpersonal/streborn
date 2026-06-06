@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -335,7 +336,33 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	for _, b := range seen {
 		out = append(out, b)
 	}
+	// Stable order so speakers keep their place in the app across refreshes
+	// instead of jumping around (seen is a map, whose iteration order is
+	// random). Sort by display name, then host as a tiebreaker for two boxes
+	// with the same (or empty) name. deqw #108: the list reordering on every
+	// discovery cycle was disorienting with several speakers.
+	sort.Slice(out, func(i, j int) bool {
+		ni, nj := boxSortName(out[i]), boxSortName(out[j])
+		if ni != nj {
+			return ni < nj
+		}
+		return out[i].Host < out[j].Host
+	})
 	return out, nil
+}
+
+// boxSortName is the case-insensitive key a box is ordered by in the speaker
+// list: its display name, falling back to the mDNS name then the host so a
+// box with no friendly name still sorts deterministically.
+func boxSortName(b BoxInfo) string {
+	n := b.FriendlyName
+	if n == "" {
+		n = b.Name
+	}
+	if n == "" {
+		n = b.Host
+	}
+	return strings.ToLower(n)
 }
 
 // mergeDiscoveryCache refreshes the cache for boxes genuinely seen this
@@ -580,9 +607,25 @@ func (a *App) probeLANForStock(ctx context.Context) []BoxInfo {
 	probeOne := func(ip string) {
 		defer wg.Done()
 		defer func() { <-sem }()
-		if b, ok := probeStock(ctx, ip); ok {
-			hits <- b
+		b, ok := probeStock(ctx, ip)
+		if !ok {
+			return
 		}
+		// A host answering :8090 may well be an STR-flashed speaker, not a
+		// stock box: STR leaves the Bose REST port alive. Classifying it
+		// "stock" here is what tells the user to do a full USB-stick install,
+		// so confirm STR is genuinely absent on this exact host before
+		// emitting stock. When STR answers, emit the STR record (kind=str,
+		// version) so the app offers an OTA update instead (#108). The whole
+		// LAN STR sweep in probeLANForSTR can be cut short by the discovery
+		// budget on a busy network; this per-host confirmation is the
+		// reliable path because it runs only for the handful of hosts that
+		// actually answer :8090.
+		if str, isSTR := probeSTRWithRetry(ctx, ip, 2); isSTR {
+			hits <- str
+			return
+		}
+		hits <- b
 	}
 
 	for _, subnet := range subnets {
@@ -782,6 +825,27 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		box.SerialNumber = info.SerialNumber
 	}
 	return box, true
+}
+
+// probeSTRWithRetry probes a single host for the STR agent up to attempts
+// times and returns the first success. Used to CONFIRM STR on a host that
+// already answered the stock :8090 /info, where a single missed STR probe
+// would wrongly classify an already-flashed speaker as stock and prompt a
+// full USB-stick reinstall instead of an OTA update (#108: deqw's ST10 .183,
+// running v0.7.1, was sent to a complete stick install whenever the parallel
+// STR sweep happened to miss it). STR speakers keep the Bose :8090 port alive,
+// so a :8090 hit alone must never win over a present STR agent; a couple of
+// targeted attempts make that check reliable even when the box is briefly busy.
+func probeSTRWithRetry(ctx context.Context, ip string, attempts int) (BoxInfo, bool) {
+	for i := 0; i < attempts; i++ {
+		if b, ok := probeSTR(ctx, ip); ok {
+			return b, true
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return BoxInfo{}, false
 }
 
 // jsonStringField pulls the value of a top-level string field from
