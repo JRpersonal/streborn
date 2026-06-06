@@ -2041,7 +2041,7 @@ function renderPresets() {
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
             ${p.type === 'spotify' && p.account ? `<div class="preset-account">${escapeHtml(p.account)}</div>` : ''}
-            ${isActive && state.nowTitle && p.type !== 'spotify' ? `<div class="preset-track" title="${escapeAttr(state.nowTitle)}">${escapeHtml(state.nowTitle)}</div>` : ''}
+            ${isActive && state.nowTitle && p.type !== 'spotify' ? `<div class="preset-track" title="${escapeAttr(state.nowTitle)}"><span class="track-inner">${escapeHtml(state.nowTitle)}</span></div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
           </div>
@@ -2079,6 +2079,34 @@ function renderPresets() {
         loadPresets();
       } catch (err) { showError(err); }
     };
+  });
+  // Marquee any now-playing track line that overflows its tile, so the full
+  // "Artist - Title" is readable without hovering. Deferred to the next frame
+  // so the layout (scrollWidth/clientWidth) is settled after the innerHTML
+  // rebuild above.
+  requestAnimationFrame(applyTrackScroll);
+}
+
+// applyTrackScroll turns an overflowing .preset-track into a gentle marquee:
+// it pauses at the start, scrolls left until the end is visible, pauses, then
+// jumps back to the start and repeats. Lines that fit are left static. Only
+// the active tile carries a track line, so this measures one element.
+function applyTrackScroll() {
+  document.querySelectorAll('.preset-track').forEach(box => {
+    const inner = box.querySelector('.track-inner');
+    if (!inner) return;
+    inner.classList.remove('scrolling');
+    inner.style.removeProperty('--track-scroll');
+    inner.style.removeProperty('--track-dur');
+    const overflow = inner.scrollWidth - box.clientWidth;
+    if (overflow > 4) {
+      // Constant ~30 px/s scroll speed plus the built-in pauses, floored so a
+      // slightly-too-long line still scrolls slowly enough to read.
+      const dur = Math.max(6, Math.round(overflow / 30 + 3));
+      inner.style.setProperty('--track-scroll', overflow + 'px');
+      inner.style.setProperty('--track-dur', dur + 's');
+      inner.classList.add('scrolling');
+    }
   });
 }
 

@@ -696,7 +696,19 @@ body {
 /* Live ICY track of the radio station currently playing, shown on the active
    preset tile (the now-playing line, like Spotify's track). One clamped line so
    a long "Artist - Title" never blows up the tile. */
-.preset-track { font-size: 11px; font-weight: 500; color: var(--brand-text, #cfe8f3); margin-top: 1px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-track { font-size: 11px; font-weight: 500; color: var(--brand-text, #cfe8f3); margin-top: 1px; line-height: 1.15; overflow: hidden; white-space: nowrap; }
+.preset-track .track-inner { display: inline-block; will-change: transform; }
+/* Marquee a track line too long for the tile: pause at the start, scroll left
+   until the end shows, pause, then jump back to the start (the loop wrap). The
+   scroll distance and duration are set per line by applyTrackScroll. Lines
+   that fit never get the .scrolling class and stay still. */
+.preset-track .track-inner.scrolling {
+  animation: track-marquee var(--track-dur, 8s) linear infinite;
+}
+@keyframes track-marquee {
+  0%, 12%   { transform: translateX(0); }
+  88%, 100% { transform: translateX(calc(-1 * var(--track-scroll, 0px))); }
+}
 .preset .url { font-size: 10px; color: #777; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preset-head { display: flex; justify-content: space-between; }
 .preset .del { color: #777; cursor: pointer; padding: 0 4px; font-size: 16px; }
