@@ -587,8 +587,11 @@ async function renderFooter() {
   // is itself fully guarded (try/catch + Go-side recover).
   setTimeout(() => { try { checkAppUpdate(); } catch {} }, 8000);
   // appInfo may have arrived after the first discovery completed; the
-  // badge function defers until both are known.
+  // badge function defers until both are known. Re-render the box list
+  // too so the per-speaker update dot (boxNeedsUpdate) appears once the
+  // app version is finally known.
   updateSettingsTabBadge();
+  if (state.boxes.length) renderBoxSelect();
 }
 
 // Donate sidebar — three branded buttons that open in the system
@@ -1140,7 +1143,15 @@ function renderBoxSelect() {
       return `<span class="box-btn${stockCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(t('speaker.stockTooltip'))}">${escapeHtml(label)}${model} <small>${b.host}</small><span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span></span>`;
     }
     const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
-    return `<span class="box-btn${active}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${escapeHtml(label)}${model} <small>${b.host}</small>${ver}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
+    // Red dot when this speaker's agent is older than the app's embedded
+    // one: a glanceable "update available" cue right on the speaker button
+    // itself, in addition to the settings-tab badge and the music-tab
+    // banner (#108).
+    const updCls = boxNeedsUpdate(b) ? ' needs-update' : '';
+    const updDot = boxNeedsUpdate(b)
+      ? `<span class="box-update-dot" title="${escapeAttr(t('speaker.updateBadgeTitle'))}" aria-label="${escapeAttr(t('speaker.updateBadgeTitle'))}"></span>`
+      : '';
+    return `<span class="box-btn${active}${updCls}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
   }).join('');
   sel.querySelectorAll('.box-btn').forEach(btn => {
     btn.onclick = async (e) => {
@@ -1526,28 +1537,33 @@ function renderLanguageOptions() {
 // Version + build data comes from the mDNS TXT record so no extra
 // HTTP call is needed. The badge updates as the speaker list
 // refreshes.
+// boxNeedsUpdate decides whether a single discovered speaker is running
+// an agent older than the desktop app's embedded one. A box is flagged
+// when its version OR build stamp differs from the app's. Two local dev
+// builds often share the same `git describe` version but carry distinct
+// build stamps, so both halves matter (see updateSettingsTabBadge).
+//
+// Returns false for stock boxes (no agent yet — that is a "needs install"
+// case, handled separately) and when the app version is not yet known.
+function boxNeedsUpdate(b) {
+  if (!b || b.kind === 'stock' || !b.version) return false;
+  const appVer   = state.appInfo && state.appInfo.version;
+  const appBuild = state.appInfo && state.appInfo.build;
+  if (!appVer) return false;
+  const verDiffers   = b.version !== appVer;
+  // Three build-related cases to flag as drift:
+  //   - both sides populated and different
+  //   - we have a build, box has none (older agent that does not
+  //     yet broadcast `build=` in mDNS — guaranteed pre-update)
+  const buildDiffers = appBuild && b.build && b.build !== appBuild;
+  const buildMissing = appBuild && !b.build;
+  return verDiffers || buildDiffers || buildMissing;
+}
+
 function updateSettingsTabBadge() {
   const btn = document.querySelector('.tab-btn[data-view="settings"]');
   if (!btn) return;
-  const appVer   = state.appInfo && state.appInfo.version;
-  const appBuild = state.appInfo && state.appInfo.build;
-  let needsUpdate = false;
-  if (appVer) {
-    for (const b of state.boxes) {
-      if (!b || !b.version) continue;
-      const verDiffers   = b.version !== appVer;
-      // Three build-related cases to flag as drift:
-      //   - both sides populated and different
-      //   - we have a build, box has none (older agent that does not
-      //     yet broadcast `build=` in mDNS — guaranteed pre-update)
-      const buildDiffers = appBuild && b.build && b.build !== appBuild;
-      const buildMissing = appBuild && !b.build;
-      if (verDiffers || buildDiffers || buildMissing) {
-        needsUpdate = true;
-        break;
-      }
-    }
-  }
+  const needsUpdate = state.boxes.some(boxNeedsUpdate);
   btn.classList.toggle('has-update', needsUpdate);
 }
 

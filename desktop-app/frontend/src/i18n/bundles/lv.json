@@ -73,6 +73,7 @@
   "speaker.goSetup": "Uz zibatmiņas sagatavošanu",
   "speaker.modelTitle": "Skaļruņa modelis",
   "speaker.stickVersionTitle": "Zibatmiņas versija",
+  "speaker.updateBadgeTitle": "Pieejams šī skaļruņa atjauninājums",
   "speaker.editTitle": "Šī skaļruņa iestatījumi",
   "speaker.noneSelected": "Nav atlasīts skaļrunis.",
   "speaker.reboot": "Restartēt skaļruni",

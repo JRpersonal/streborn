@@ -73,6 +73,7 @@
   "speaker.goSetup": "メモリの準備へ移動",
   "speaker.modelTitle": "スピーカーのモデル",
   "speaker.stickVersionTitle": "メモリのバージョン",
+  "speaker.updateBadgeTitle": "このスピーカーのアップデートがあります",
   "speaker.editTitle": "このスピーカーの設定",
   "speaker.noneSelected": "スピーカーが選択されていません。",
   "speaker.reboot": "スピーカーを再起動",

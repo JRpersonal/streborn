@@ -73,6 +73,7 @@
   "speaker.goSetup": "Aller à la préparation de la clé",
   "speaker.modelTitle": "Modèle d'enceinte",
   "speaker.stickVersionTitle": "Version de la clé",
+  "speaker.updateBadgeTitle": "Mise à jour disponible pour cette enceinte",
   "speaker.editTitle": "Réglages de cette enceinte",
   "speaker.noneSelected": "Aucune enceinte sélectionnée.",
   "speaker.reboot": "Redémarrer l'enceinte",

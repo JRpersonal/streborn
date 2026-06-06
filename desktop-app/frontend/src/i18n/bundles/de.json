@@ -86,6 +86,7 @@
   "speaker.goSetup": "Zur Stick-Einrichtung",
   "speaker.modelTitle": "Lautsprecher-Modell",
   "speaker.stickVersionTitle": "Stick-Version",
+  "speaker.updateBadgeTitle": "Update für diesen Lautsprecher verfügbar",
   "speaker.editTitle": "Einstellungen dieses Lautsprechers",
   "speaker.noneSelected": "Kein Lautsprecher ausgewählt.",
   "speaker.reboot": "Lautsprecher neu starten",

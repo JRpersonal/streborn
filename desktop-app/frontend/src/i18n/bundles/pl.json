@@ -73,6 +73,7 @@
   "speaker.goSetup": "Do przygotowania pendrive'a",
   "speaker.modelTitle": "Model głośnika",
   "speaker.stickVersionTitle": "Wersja na pendrive",
+  "speaker.updateBadgeTitle": "Dostępna aktualizacja dla tego głośnika",
   "speaker.editTitle": "Ustawienia tego głośnika",
   "speaker.noneSelected": "Nie wybrano głośnika.",
   "speaker.reboot": "Uruchom głośnik ponownie",

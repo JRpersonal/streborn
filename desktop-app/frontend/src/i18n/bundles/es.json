@@ -73,6 +73,7 @@
   "speaker.goSetup": "Ir a la preparación de la memoria",
   "speaker.modelTitle": "Modelo de altavoz",
   "speaker.stickVersionTitle": "Versión de la memoria",
+  "speaker.updateBadgeTitle": "Actualización disponible para este altavoz",
   "speaker.editTitle": "Ajustes de este altavoz",
   "speaker.noneSelected": "Ningún altavoz seleccionado.",
   "speaker.reboot": "Reiniciar altavoz",

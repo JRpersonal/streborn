@@ -425,6 +425,23 @@ body {
 .box-edit:hover { color: var(--brand); background: rgba(102, 187, 221, 0.12); }
 .box-ver { background: #333; color: #aaa; font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
 .box-model { color: #888; font-size: 11px; font-weight: 500; margin-left: 8px; }
+/* Notification dot on a speaker button whose agent is out of date
+   (#108). Same blue as the settings-tab badge (.tab-btn.has-update) on
+   purpose: both mean "update available", so one colour, one meaning. Red
+   would read as an error, which an available update is not. Sits in the
+   top-right corner; the ring matches the surrounding panel so it reads as
+   a badge, not part of the text. */
+.box-update-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #2f80ed;
+  box-shadow: 0 0 0 2px #222;
+}
+.box-btn.needs-update.active .box-update-dot { box-shadow: 0 0 0 2px var(--brand-bg); }
 .box-btn.stock {
   background: #1f1f1f;
   border-style: dashed;

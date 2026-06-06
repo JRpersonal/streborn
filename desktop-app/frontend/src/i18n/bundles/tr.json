@@ -73,6 +73,7 @@
   "speaker.goSetup": "Bellek hazırlamaya git",
   "speaker.modelTitle": "Hoparlör modeli",
   "speaker.stickVersionTitle": "Bellek sürümü",
+  "speaker.updateBadgeTitle": "Bu hoparlör için güncelleme mevcut",
   "speaker.editTitle": "Bu hoparlörün ayarları",
   "speaker.noneSelected": "Hoparlör seçilmedi.",
   "speaker.reboot": "Hoparlörü yeniden başlat",
