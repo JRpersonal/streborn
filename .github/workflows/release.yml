@@ -2,13 +2,17 @@ name: release
 
 # Triggered by signed tags vX.Y.Z. Produces:
 #   - streborn-armv7l                  (stick agent for the Bose speaker hardware)
-#   - STR-Windows.exe                  (desktop app, Windows x64)
-#   - STR-macOS.dmg                    (desktop app, universal Mac binary inside a DMG)
+#   - STR-Windows-vX.Y.Z.exe           (desktop app, Windows x64)
+#   - STR-macOS-vX.Y.Z.dmg             (desktop app, universal Mac binary inside a DMG)
+#   - STR-Linux-x64-vX.Y.Z.tar.gz      (desktop app, Linux x64)
 #   - SHA256SUMS                       (combined checksums)
 #   - manifest.json                    (machine-readable index for the website)
 # Every artifact is attested via Sigstore (actions/attest-build-provenance).
-# Asset names are stable so the website can use
-# https://github.com/JRpersonal/streborn/releases/latest/download/<name>.
+# Desktop app filenames carry the version so users can tell builds apart; the
+# website + in-app update resolve them through manifest.json's per-version
+# `url`. The stick agent binaries keep stable names, so
+# https://github.com/JRpersonal/streborn/releases/latest/download/<name>
+# still works for them.
 on:
   push:
     tags:
@@ -621,6 +625,23 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Version the desktop download filenames
+        working-directory: dist
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+        run: |
+          # Put the version in the desktop app filenames so users can tell
+          # builds apart in their Downloads folder. Done here, after the build
+          # jobs attested the files: attestation binds to the file's digest,
+          # not its name, so the rename does not affect `gh attestation verify`.
+          # The agent binaries keep fixed names. The desktop apps therefore no
+          # longer have stable /releases/latest/download/<name> URLs; the
+          # website + the in-app update read manifest.json's per-version `url`.
+          mv "STR-Windows.exe"      "STR-Windows-${VERSION}.exe"
+          mv "STR-macOS.dmg"        "STR-macOS-${VERSION}.dmg"
+          mv "STR-Linux-x64.tar.gz" "STR-Linux-x64-${VERSION}.tar.gz"
+          ls -la
+
       - name: Combined SHA256SUMS
         working-directory: dist
         run: |
@@ -672,28 +693,25 @@ jobs:
             "supported_models": ["SoundTouch 10", "SoundTouch 20", "SoundTouch 30", "Wave SoundTouch IV"],
             "artifacts": {
               "desktop_windows": {
-                "url": "${BASE}/STR-Windows.exe",
-                "latest_url": "${LATEST_BASE}/STR-Windows.exe",
-                "sha256": "$(sha STR-Windows.exe)",
+                "url": "${BASE}/STR-Windows-${VERSION}.exe",
+                "sha256": "$(sha STR-Windows-${VERSION}.exe)",
                 "platform": "windows",
                 "arch": "amd64",
-                "filename": "STR-Windows.exe"
+                "filename": "STR-Windows-${VERSION}.exe"
               },
               "desktop_macos": {
-                "url": "${BASE}/STR-macOS.dmg",
-                "latest_url": "${LATEST_BASE}/STR-macOS.dmg",
-                "sha256": "$(sha STR-macOS.dmg)",
+                "url": "${BASE}/STR-macOS-${VERSION}.dmg",
+                "sha256": "$(sha STR-macOS-${VERSION}.dmg)",
                 "platform": "macos",
                 "arch": "universal",
-                "filename": "STR-macOS.dmg"
+                "filename": "STR-macOS-${VERSION}.dmg"
               },
               "desktop_linux": {
-                "url": "${BASE}/STR-Linux-x64.tar.gz",
-                "latest_url": "${LATEST_BASE}/STR-Linux-x64.tar.gz",
-                "sha256": "$(sha STR-Linux-x64.tar.gz)",
+                "url": "${BASE}/STR-Linux-x64-${VERSION}.tar.gz",
+                "sha256": "$(sha STR-Linux-x64-${VERSION}.tar.gz)",
                 "platform": "linux",
                 "arch": "amd64",
-                "filename": "STR-Linux-x64.tar.gz",
+                "filename": "STR-Linux-x64-${VERSION}.tar.gz",
                 "runtime_libs": ["libgtk-3-0", "libwebkit2gtk-4.1-0", "libsoup-3.0"]
               },
               "agent_armv7l": {
@@ -761,16 +779,16 @@ jobs:
 
           | Platform | File |
           |---|---|
-          | Windows desktop app | [STR-Windows.exe](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Windows.exe) |
-          | macOS desktop app | [STR-macOS.dmg](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-macOS.dmg) |
-          | Linux desktop app (x86_64) | [STR-Linux-x64.tar.gz](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-x64.tar.gz) |
+          | Windows desktop app | [STR-Windows-${VERSION}.exe](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Windows-${VERSION}.exe) |
+          | macOS desktop app | [STR-macOS-${VERSION}.dmg](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-macOS-${VERSION}.dmg) |
+          | Linux desktop app (x86_64) | [STR-Linux-x64-${VERSION}.tar.gz](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/STR-Linux-x64-${VERSION}.tar.gz) |
           | Stick agent (ARMv7l, real target) | [streborn-armv7l](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-armv7l) |
           | Stick agent (ARM64, reserve) | [streborn-arm64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-arm64) |
           | Stick agent (amd64, test rig) | [streborn-amd64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-amd64) |
           | Checksums | [SHA256SUMS](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/SHA256SUMS) |
           | Machine-readable | [manifest.json](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/manifest.json) |
 
-          The website at st-reborn.de fetches \`manifest.json\` to render the current download links. Stable \`/releases/latest/download/<file>\` URLs are also available for direct linking.
+          The website at st-reborn.de fetches \`manifest.json\` to render the current download links. The desktop app filenames carry the version; the stick agent binaries keep stable \`/releases/latest/download/<file>\` URLs for direct linking.
 
           ### Verify your download
 
@@ -781,7 +799,7 @@ jobs:
           sha256sum -c SHA256SUMS
 
           # Sigstore attestation (requires GitHub CLI)
-          gh attestation verify STR-Windows.exe --owner ${GITHUB_REPOSITORY_OWNER}
+          gh attestation verify STR-Windows-${VERSION}.exe --owner ${GITHUB_REPOSITORY_OWNER}
           \`\`\`
 
           ### Not yet code-signed
@@ -808,9 +826,9 @@ jobs:
           target_commitish: ${{ github.sha }}
           body_path: dist/release-notes.md
           files: |
-            dist/STR-Windows.exe
-            dist/STR-macOS.dmg
-            dist/STR-Linux-x64.tar.gz
+            dist/STR-Windows-*.exe
+            dist/STR-macOS-*.dmg
+            dist/STR-Linux-x64-*.tar.gz
             dist/streborn-armv7l
             dist/streborn-arm64
             dist/streborn-amd64
