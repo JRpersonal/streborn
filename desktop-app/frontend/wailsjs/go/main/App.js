@@ -198,6 +198,10 @@ export function StreamBitrate(arg1, arg2) {
   return window['go']['main']['App']['StreamBitrate'](arg1, arg2);
 }
 
+export function StreamTitle(arg1, arg2) {
+  return window['go']['main']['App']['StreamTitle'](arg1, arg2);
+}
+
 export function SuggestBoxLanguage(arg1, arg2) {
   return window['go']['main']['App']['SuggestBoxLanguage'](arg1, arg2);
 }

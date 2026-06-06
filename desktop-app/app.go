@@ -1664,6 +1664,28 @@ func (a *App) SpotifyBitrate(host string, port int) int {
 	return out.Bitrate
 }
 
+// StreamTitle returns the live ICY StreamTitle the agent parsed from the radio
+// stream currently proxied, or "" when the station sends no metadata. The app
+// shows it next to the station name as the now-playing track. Routed through
+// boxDo so it self-heals across :8888 / :17008 like StreamBitrate.
+func (a *App) StreamTitle(host string, port int) string {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/stream/title", "", "")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var out struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return ""
+	}
+	return out.Title
+}
+
 // SpotifyNowPlaying returns the live Spotify state for the UI: measured
 // bitrate plus the current track title, artist and cover URL (from
 // go-librespot's events). Empty fields when nothing is playing. Routed

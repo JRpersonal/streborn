@@ -51,6 +51,7 @@ export {
   GetAirplayOpt,
   SetAirplayOpt,
   StreamBitrate,
+  StreamTitle,
   SpotifyBitrate,
   SpotifyNowPlaying,
   SaveSpotifyPreset,

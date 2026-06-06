@@ -45,6 +45,7 @@ import {
   GetAirplayOpt,
   SetAirplayOpt,
   StreamBitrate,
+  StreamTitle,
   SpotifyBitrate,
   SpotifyNowPlaying,
   SaveSpotifyPreset,
@@ -2040,6 +2041,7 @@ function renderPresets() {
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
             ${p.type === 'spotify' && p.account ? `<div class="preset-account">${escapeHtml(p.account)}</div>` : ''}
+            ${isActive && state.nowTitle && p.type !== 'spotify' ? `<div class="preset-track" title="${escapeAttr(state.nowTitle)}">${escapeHtml(state.nowTitle)}</div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
           </div>
@@ -2279,7 +2281,9 @@ async function play(slot) {
     state.nowName = p.name || '';
     state.nowIcon = p.art || '';
     state.nowBitrate = p.bitrate || 0;
+    state.nowTitle = ''; // clear so the new station does not briefly show the old track
     scheduleLiveBitrate();
+    scheduleLiveTitle();
     state.nowUUID = '';
     state.optimisticUntil = Date.now() + 6000;
     delete state.presetErrors[slot];
@@ -2382,6 +2386,44 @@ function scheduleLiveBitrate() {
   // retries (every 3 s, ~33 s total) pick up the value once the agent's
   // ~10 s throughput window completes.
   liveBitrateTimer = setTimeout(attempt, 2000);
+}
+
+// scheduleLiveTitle polls the agent's live ICY StreamTitle for the radio
+// station currently playing and reflects it into the active preset tile as the
+// now-playing track. Unlike the bitrate (stable, read once) the title changes
+// per song, so this re-polls every 12 s while a proxied radio stream is the
+// active source. It stops when the speaker changes or playback stops; Spotify
+// is skipped (it shows its own track via /spotify/info).
+// liveTitleActive guards a single running poll loop: scheduleLiveTitle may be
+// called from the play handler AND from every refreshStatus tick, so without
+// this each call would reset the timer and it would never fire. The loop
+// clears the flag when it stops (speaker change or playback stop), so the next
+// play restarts it.
+let liveTitleActive = false;
+function scheduleLiveTitle() {
+  if (liveTitleActive) return;
+  const box = state.currentBox;
+  if (!box) return;
+  liveTitleActive = true;
+  const tick = async () => {
+    if (state.currentBox !== box) { liveTitleActive = false; return; }   // speaker changed
+    const loc = state.nowLocation || '';
+    if (loc === '') { liveTitleActive = false; return; }                 // playback stopped
+    const isRadio = /\/stream\//.test(loc) && !/\/spotify\/stream/.test(loc);
+    if (isRadio) {
+      let title = '';
+      try { title = (await StreamTitle(box.host, box.port)) || ''; } catch {}
+      if (state.currentBox !== box) { liveTitleActive = false; return; }
+      if (title !== state.nowTitle) {
+        state.nowTitle = title;
+        renderPresets();
+      }
+    }
+    setTimeout(tick, 12000);
+  };
+  // First read a few seconds in: the station needs a moment to emit its first
+  // metadata block after the stream starts.
+  setTimeout(tick, 4000);
 }
 
 async function action(kind) {
@@ -2498,6 +2540,13 @@ async function refreshStatus() {
           (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
           (activeSlotFromLocation(newLoc) !== null || /\/spotify\/stream/.test(newLoc))) {
         scheduleLiveBitrate();
+      }
+      // Keep the live radio track flowing into the active tile for playback
+      // STR did not itself start (hardware key, app restart). Self-guarded, so
+      // calling it on every poll is safe; it no-ops while already polling.
+      if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
+          activeSlotFromLocation(newLoc) !== null) {
+        scheduleLiveTitle();
       }
     }
 
