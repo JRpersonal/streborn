@@ -874,13 +874,16 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
 func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 	for attempt := 1; attempt <= 3; attempt++ {
 		time.Sleep(5 * time.Second)
-		// For Spotify the definitive "it is working" signal is the box pulling
-		// the Ogg stream; the box now_playing playStatus lags and flaps while it
-		// attaches. If the box is consuming the stream, do NOT re-issue: a re-Play
-		// reshuffles and restarts the track, which is the audible abort + UI
-		// play/stop/play flicker users saw. Only re-issue when the box is
-		// genuinely not consuming the stream.
-		if h.spotify.Streaming() || boxIsPlaying(h.boxHost) {
+		// For Spotify the ONLY valid "it is working" signal is the box pulling
+		// the Ogg stream. boxIsPlaying must NOT count: right after a hardware
+		// press the box can bounce off STR's preset (INVALID_SOURCE) back to the
+		// PREVIOUS preset (e.g. a radio station that is still playing), and that
+		// would read as boxIsPlaying=true and make us skip the recovery, so the
+		// Spotify recall silently fails and the user has to press a second time
+		// (the first-press double-tap bug). Gate on Streaming() alone, then
+		// re-point (re-attach, no reshuffle) until the box actually consumes the
+		// Ogg stream.
+		if h.spotify.Streaming() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
