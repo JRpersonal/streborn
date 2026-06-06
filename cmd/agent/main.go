@@ -802,9 +802,23 @@ const spotifyStreamURL = "http://127.0.0.1:8888/spotify/stream.ogg"
 // go-librespot to play the saved URI (autonomous, no app), then point the
 // box at the live /spotify/stream so it plays the audio over UPnP.
 func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p presets.Preset) {
-	if h.spotify == nil || !h.spotify.Ready() {
-		h.logger.Warn("spotify preset pressed but manager not ready", "slot", slot)
+	if h.spotify == nil {
 		return
+	}
+	if !h.spotify.Ready() {
+		// Cold start: pressed right after boot, before go-librespot finished
+		// authenticating. Wait briefly instead of doing nothing (which left the
+		// box on the idle "select a preset" screen and forced a second press
+		// once go-librespot was ready). Bounded so a genuinely unconfigured
+		// manager does not hang the handler forever.
+		h.logger.Info("spotify preset pressed before manager ready, waiting", "slot", slot)
+		for i := 0; i < 24 && !h.spotify.Ready(); i++ {
+			time.Sleep(500 * time.Millisecond)
+		}
+		if !h.spotify.Ready() {
+			h.logger.Warn("spotify preset pressed but manager not ready after wait", "slot", slot)
+			return
+		}
 	}
 
 	// Mark a recall BEFORE the box attaches (PlayURLMime below / the box's own

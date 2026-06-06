@@ -636,28 +636,28 @@ func (m *Manager) Play(ctx context.Context, uri string) error {
 	// Mark a recall in progress so ServeOgg does not resume the OLD (mid) track
 	// when the box attaches; this path drives the new track from its start.
 	m.SetRecalling()
-	// Enable shuffle BEFORE loading the context: go-librespot then starts the
-	// playlist on a RANDOM track at its beginning (verified live: 3 recalls = 3
-	// different first songs). Alternatives were worse: shuffle AFTER play, or a
-	// paused load + next, replayed the same first song (next while paused is a
-	// no-op); a non-paused next leaked the previous track briefly.
-	if err := m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`); err != nil {
-		m.logger.Debug("spotify: shuffle_context (pre-play) failed", "err", err)
-	}
+	// Load + play the context first. go-librespot starts a context on its FIRST
+	// track regardless of shuffle, so we then shuffle the LOADED context and skip
+	// once to land on a random track.
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`}`); err != nil {
 		return err
 	}
-	// shuffle_context only randomises the UPCOMING queue; go-librespot still
-	// starts the context on its FIRST track, so every recall began on the same
-	// song (live: "Real Love Baby" each time, only later tracks differed). Skip
-	// once to land on the first SHUFFLED (random) track. This is safe here: a
-	// recall happens before the box attaches, so the skipped-past first track
-	// never reaches the speaker, and ServeOgg drives the box from the new
-	// track's start. The short wait lets the first track finish loading so the
-	// skip is not a no-op against a not-yet-ready player.
+	// Wait for the context to actually load, THEN shuffle, THEN skip:
+	//   - shuffle_context must run against a loaded context. Doing it BEFORE
+	//     play was a no-op on a cold start (no context yet), so the skip below
+	//     landed on the deterministic 2nd track instead of a random one (live:
+	//     cold preset 6 always skipped to playlist track 2).
+	//   - shuffle_context only randomises the UPCOMING queue (the current track
+	//     stays the context's first), so a single skip after shuffling lands on
+	//     a random track. Safe during a recall: the box has not attached yet, so
+	//     the skipped-past first track never reaches the speaker and ServeOgg
+	//     drives the box from the new track's start.
 	time.Sleep(800 * time.Millisecond)
+	if err := m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`); err != nil {
+		m.logger.Debug("spotify: shuffle_context (post-load) failed", "err", err)
+	}
 	if err := m.apiPost(ctx, "/player/next", ""); err != nil {
-		m.logger.Debug("spotify: skip-to-random after play failed", "err", err)
+		m.logger.Debug("spotify: skip-to-random after shuffle failed", "err", err)
 	}
 	// Debounce the will_play context change this recall triggers (this path
 	// already drives the box separately, so no extra re-point needed).
