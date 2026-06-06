@@ -920,6 +920,13 @@ body {
 .modal-content { background: #2a2a2a; border-radius: 8px; padding: 20px; width: 90%; max-width: 480px; }
 .modal-content h3 { margin: 0 0 4px 0; color: var(--brand); }
 .modal-sub { margin: 0 0 16px 0; color: #aaa; font-size: 13px; }
+.credits-list { max-height: 50vh; overflow-y: auto; margin-bottom: 14px; }
+.credit-row { padding: 7px 0; border-bottom: 1px solid #3a3a3a; font-size: 13px; }
+.credit-row:last-child { border-bottom: none; }
+.credit-name { font-weight: 600; }
+.credit-by { color: #888; }
+.credit-license { color: #888; font-size: 11px; margin-left: 6px; }
+.credit-role { color: #aaa; font-size: 12px; margin-top: 1px; }
 .pick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
 .pick-slot { background: #1a1a1a; border: 1px solid #444; border-radius: 6px; padding: 12px; cursor: pointer; color: #eee; min-height: 70px; }
 .pick-slot:hover { background: #333; border-color: var(--brand); }

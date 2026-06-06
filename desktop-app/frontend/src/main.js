@@ -318,6 +318,15 @@ document.querySelector('#app').innerHTML = `
     </div>
   </div>
 
+  <div class="modal hidden" id="creditsModal">
+    <div class="modal-content">
+      <h3 id="creditsTitle">${escapeHtml(t('credits.title'))}</h3>
+      <p class="modal-sub" id="creditsIntro">${escapeHtml(t('credits.intro'))}</p>
+      <div id="creditsBody" class="credits-list"></div>
+      <button class="btn" id="creditsClose">${escapeHtml(t('common.close'))}</button>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>
 
   <footer class="app-footer" id="appFooter"></footer>
@@ -550,6 +559,45 @@ function withAppReferrer(url, campaign) {
   }
 }
 
+// OSS STR bundles, links, or builds on. Listed in full regardless of license
+// (it does not hurt to be generous), with the bundled GPL-3.0 go-librespot
+// first since that one is a licensing obligation, not just a courtesy.
+const OSS_CREDITS = [
+  { name: 'go-librespot', by: 'devgianlu', license: 'GPL-3.0', url: 'https://github.com/devgianlu/go-librespot', role: 'Spotify Connect client (bundled as a separate binary)' },
+  { name: 'Wails', license: 'MIT', url: 'https://wails.io', role: 'desktop app framework' },
+  { name: 'gorilla/websocket', license: 'BSD-2-Clause', url: 'https://github.com/gorilla/websocket', role: 'Bose gabbo WebSocket client' },
+  { name: 'grandcat/zeroconf', license: 'MIT', url: 'https://github.com/grandcat/zeroconf', role: 'mDNS discovery' },
+  { name: 'golang.org/x/sys', license: 'BSD-3-Clause', url: 'https://pkg.go.dev/golang.org/x/sys', role: 'low-level system calls' },
+  { name: 'Go', license: 'BSD-3-Clause', url: 'https://go.dev', role: 'language and toolchain' },
+  { name: 'Vite', license: 'MIT', url: 'https://vitejs.dev', role: 'frontend build tool' },
+  { name: 'Octicons', by: 'GitHub', license: 'MIT', url: 'https://github.com/primer/octicons', role: 'interface icons' },
+  { name: 'radio-browser.info', license: 'community service', url: 'https://www.radio-browser.info', role: 'radio station directory' },
+  { name: 'DuckDuckGo icons', license: 'service', url: 'https://duckduckgo.com', role: 'station logos' },
+];
+
+// showCredits opens the open-source credits dialog from the footer link.
+function showCredits() {
+  const modal = $('creditsModal');
+  const body = $('creditsBody');
+  if (!modal || !body) return;
+  $('creditsTitle').textContent = t('credits.title');
+  $('creditsIntro').textContent = t('credits.intro');
+  body.innerHTML = OSS_CREDITS.map(c => {
+    const by = c.by ? ` <span class="credit-by">${escapeHtml(t('credits.by'))} ${escapeHtml(c.by)}</span>` : '';
+    return `<div class="credit-row">`
+      + `<div><a href="#" class="footer-link credit-name" data-url="${escapeAttr(c.url)}">${escapeHtml(c.name)}</a>${by}`
+      + ` <span class="credit-license">${escapeHtml(c.license)}</span></div>`
+      + `<div class="credit-role">${escapeHtml(c.role)}</div></div>`;
+  }).join('');
+  body.querySelectorAll('.credit-name[data-url]').forEach(a => {
+    a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(a.dataset.url); };
+  });
+  const close = () => modal.classList.add('hidden');
+  $('creditsClose').onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  modal.classList.remove('hidden');
+}
+
 async function renderFooter() {
   try {
     state.appInfo = await AppInfo();
@@ -561,6 +609,7 @@ async function renderFooter() {
   if (i.githubUrl)  links.push(`<a href="#" data-url="${escapeAttr(i.githubUrl)}" class="footer-link">GitHub</a>`);
   if (i.websiteUrl) links.push(`<a href="#" data-url="${escapeAttr(i.websiteUrl)}" class="footer-link">${escapeHtml(t('footer.website'))}</a>`);
   links.push(`<a href="#" id="footerSaveLogs" class="footer-link" title="${escapeAttr(t('footer.saveLogsHint'))}">${escapeHtml(t('footer.saveLogs'))}</a>`);
+  links.push(`<a href="#" id="footerCredits" class="footer-link">${escapeHtml(t('footer.credits'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
   // Clicking the version opens the release notes. For a clean tagged
   // build that is the matching GitHub release page (which carries the
@@ -582,6 +631,8 @@ async function renderFooter() {
   });
   const verLink = $('appVersionLink');
   if (verLink) verLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(releaseNotesUrl); };
+  const creditsLink = $('footerCredits');
+  if (creditsLink) creditsLink.onclick = (e) => { e.preventDefault(); showCredits(); };
   const saveLogsBtn = $('footerSaveLogs');
   if (saveLogsBtn) {
     saveLogsBtn.onclick = async (e) => {
