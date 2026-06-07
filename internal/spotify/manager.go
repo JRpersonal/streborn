@@ -124,6 +124,12 @@ type Manager struct {
 	// actually plays (#14). nil until wired. lastActivate debounces it.
 	onActivate   func(context.Context)
 	lastActivate time.Time
+	// suppressActivateUntil silences maybeActivate/repointBox for a short window
+	// after the user deliberately switched the box to a non-Spotify source. Without
+	// it, go-librespot keeps the playlist advancing in the background and the #14
+	// auto-attach yanked the box back to Spotify a second after a radio recall
+	// (reported: hardware preset Spotify->radio played radio ~1s then jumped back).
+	suppressActivateUntil time.Time
 	// recallUntil marks a recall in progress: until this time, ServeOgg must NOT
 	// resume go-librespot on a box attach. Otherwise the box's own preset
 	// self-activation resumes the OLD track at its paused (mid) position before
@@ -711,6 +717,28 @@ func (m *Manager) Resume(ctx context.Context) error {
 	return m.apiPost(ctx, "/player/resume", "")
 }
 
+// SwitchedAway is called when the user deliberately points the box at a
+// non-Spotify source (a radio preset, an ad-hoc station). It suppresses the #14
+// auto-attach for a window so the still-connected go-librespot session does not
+// yank the box back to Spotify, and pauses go-librespot so the playlist does not
+// keep advancing silently in the background. Starting Spotify again from the app
+// or recalling a Spotify preset un-pauses it. No-op when Spotify is not running.
+func (m *Manager) SwitchedAway(ctx context.Context) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.suppressActivateUntil = time.Now().Add(10 * time.Second)
+	running := m.sink != nil || m.cmd != nil
+	m.mu.Unlock()
+	if !running {
+		return
+	}
+	if err := m.Pause(ctx); err != nil {
+		m.logger.Debug("spotify: pause on source-switch failed", "err", err)
+	}
+}
+
 // SetVolume tells go-librespot the current volume as a percent (0..100) so the
 // Spotify app's slider reflects the speaker's real level. With volume_steps
 // 100 the API value is the percent directly. This is the box -> Spotify
@@ -1036,7 +1064,8 @@ func (m *Manager) SetOnActivate(f func(context.Context)) {
 func (m *Manager) maybeActivate() {
 	m.mu.Lock()
 	cb := m.onActivate
-	if cb == nil || m.sink != nil || time.Since(m.lastActivate) < 5*time.Second {
+	if cb == nil || m.sink != nil || time.Since(m.lastActivate) < 5*time.Second ||
+		time.Now().Before(m.suppressActivateUntil) {
 		m.mu.Unlock()
 		return
 	}
@@ -1052,7 +1081,8 @@ func (m *Manager) maybeActivate() {
 func (m *Manager) repointBox() {
 	m.mu.Lock()
 	cb := m.onActivate
-	if cb == nil || time.Since(m.lastActivate) < 5*time.Second {
+	if cb == nil || time.Since(m.lastActivate) < 5*time.Second ||
+		time.Now().Before(m.suppressActivateUntil) {
 		m.mu.Unlock()
 		return
 	}
