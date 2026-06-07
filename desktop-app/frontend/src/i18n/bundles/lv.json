@@ -123,6 +123,7 @@
   "preset.noCurrentStation": "Pašlaik neatskaņo neviena stacija, tāpēc turēšanai nav efekta.",
   "preset.copiedToKey": "Nokopēts pogā {{n}}: {{name}}",
   "preset.savedToKey": "Saglabāts pogā {{n}}: {{name}}",
+  "preset.sourceBadge": "no {{source}}",
   "preset.saveFailed": "Saglabāt neizdevās: {{err}}",
   "play.errNoInternet": "nav interneta?",
   "play.errSpeakerTimeout": "skaļrunis neatbild",

@@ -138,6 +138,7 @@
   "preset.noCurrentStation": "Kein Sender läuft gerade, daher hat Long Press keinen Effekt.",
   "preset.copiedToKey": "Auf Taste {{n}} kopiert: {{name}}",
   "preset.savedToKey": "Auf Taste {{n}} gespeichert: {{name}}",
+  "preset.sourceBadge": "von {{source}}",
   "preset.saveFailed": "Speichern fehlgeschlagen: {{err}}",
   "play.errNoInternet": "kein Internet?",
   "play.errSpeakerTimeout": "Lautsprecher reagiert nicht",

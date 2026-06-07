@@ -61,6 +61,7 @@ export {
   SpotifyBitrate,
   SpotifyNowPlaying,
   SaveSpotifyPreset,
+  SaveLibraryPreset,
   GetBattery,
   SaveDiagnosticBundle,
   GetLogFilePath,

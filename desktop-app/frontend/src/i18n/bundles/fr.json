@@ -120,6 +120,7 @@
   "preset.noCurrentStation": "Aucune station ne joue actuellement, l'appui long n'a donc aucun effet.",
   "preset.copiedToKey": "Copié sur la touche {{n}} : {{name}}",
   "preset.savedToKey": "Enregistré sur la touche {{n}} : {{name}}",
+  "preset.sourceBadge": "de {{source}}",
   "preset.saveFailed": "Échec de l'enregistrement : {{err}}",
   "play.errNoInternet": "pas d'internet ?",
   "play.errSpeakerTimeout": "l'enceinte ne répond pas",

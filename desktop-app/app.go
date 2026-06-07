@@ -1050,6 +1050,7 @@ type Preset struct {
 	Bitrate   int    `json:"bitrate,omitempty"`
 	URI       string `json:"uri,omitempty"`     // Spotify presets: playlist/album URI
 	Account   string `json:"account,omitempty"` // Spotify presets: owning account
+	Source    string `json:"source,omitempty"`  // DLNA presets: media server name (cosmetic badge)
 }
 
 func (a *App) baseURL(host string, port int) string {
@@ -1293,6 +1294,27 @@ func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int) error {
 	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
 	body, _ := json.Marshal(Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate})
+	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+// SaveLibraryPreset stores a preset saved from a DLNA media server (the Library
+// tab). It plays like a radio preset (a stream URL the box pulls) but carries
+// the media server name as Source, so the desktop app can show a small "from"
+// badge on the preset. Source is cosmetic and round-trips through the agent.
+func (a *App) SaveLibraryPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, source string) error {
+	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
+	body, _ := json.Marshal(Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Source: source})
 	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := a.httpClient.Do(req)

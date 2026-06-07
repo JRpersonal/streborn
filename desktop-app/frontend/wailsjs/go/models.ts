@@ -247,6 +247,7 @@ export namespace main {
 	    bitrate?: number;
 	    uri?: string;
 	    account?: string;
+	    source?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -262,6 +263,7 @@ export namespace main {
 	        this.bitrate = source["bitrate"];
 	        this.uri = source["uri"];
 	        this.account = source["account"];
+	        this.source = source["source"];
 	    }
 	}
 	export class SetupAPPushResult {

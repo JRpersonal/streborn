@@ -41,6 +41,12 @@ type Preset struct {
 	// it is (a thing the Bose original never did). Both optional/additive.
 	URI     string `json:"uri,omitempty"`
 	Account string `json:"account,omitempty"`
+	// Source labels where a preset came from when it is not a radio-browser
+	// station, e.g. the DLNA/UPnP media server name for a preset saved from the
+	// Library tab. Purely cosmetic: the desktop app shows it as a small "from"
+	// badge on the preset. Optional/additive: radio and Spotify presets leave it
+	// empty.
+	Source string `json:"source,omitempty"`
 }
 
 // rawPreset ist der Disk Format Helper. Akzeptiert mehrere Alias Felder.
@@ -55,6 +61,7 @@ type rawPreset struct {
 	Bitrate   int    `json:"bitrate"`
 	URI       string `json:"uri"`
 	Account   string `json:"account"`
+	Source    string `json:"source"`
 }
 
 // rawWrapper unterstuetzt das Object Format {"presets": [...]}.
@@ -131,6 +138,7 @@ func normalize(in []rawPreset) []Preset {
 			Bitrate:   p.Bitrate,
 			URI:       p.URI,
 			Account:   p.Account,
+			Source:    p.Source,
 		})
 	}
 	return out

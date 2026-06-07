@@ -120,6 +120,7 @@
   "preset.noCurrentStation": "現在再生中の放送局がないため、長押しは無効です。",
   "preset.copiedToKey": "キー {{n}} にコピーしました: {{name}}",
   "preset.savedToKey": "キー {{n}} に保存しました: {{name}}",
+  "preset.sourceBadge": "提供元: {{source}}",
   "preset.saveFailed": "保存に失敗しました: {{err}}",
   "play.errNoInternet": "インターネットなし?",
   "play.errSpeakerTimeout": "スピーカーが応答しません",

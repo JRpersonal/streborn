@@ -123,6 +123,7 @@
   "preset.noCurrentStation": "Šiuo metu negroja jokia stotis, todėl palaikymas neturi poveikio.",
   "preset.copiedToKey": "Nukopijuota į mygtuką {{n}}: {{name}}",
   "preset.savedToKey": "Išsaugota mygtuke {{n}}: {{name}}",
+  "preset.sourceBadge": "iš {{source}}",
   "preset.saveFailed": "Nepavyko išsaugoti: {{err}}",
   "play.errNoInternet": "nėra interneto?",
   "play.errSpeakerTimeout": "garsiakalbis neatsako",

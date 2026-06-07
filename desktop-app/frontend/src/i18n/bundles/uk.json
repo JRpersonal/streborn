@@ -120,6 +120,7 @@
   "preset.noCurrentStation": "Зараз жодна станція не грає, тому утримання не діє.",
   "preset.copiedToKey": "Скопійовано на кнопку {{n}}: {{name}}",
   "preset.savedToKey": "Збережено на кнопку {{n}}: {{name}}",
+  "preset.sourceBadge": "з {{source}}",
   "preset.saveFailed": "Не вдалося зберегти: {{err}}",
   "play.errNoInternet": "немає інтернету?",
   "play.errSpeakerTimeout": "колонка не відповідає",

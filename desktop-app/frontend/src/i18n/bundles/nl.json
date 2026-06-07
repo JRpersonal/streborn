@@ -123,6 +123,7 @@
   "preset.noCurrentStation": "Er speelt nu geen zender, dus ingedrukt houden heeft geen effect.",
   "preset.copiedToKey": "Gekopieerd naar toets {{n}}: {{name}}",
   "preset.savedToKey": "Opgeslagen op toets {{n}}: {{name}}",
+  "preset.sourceBadge": "van {{source}}",
   "preset.saveFailed": "Opslaan mislukt: {{err}}",
   "play.errNoInternet": "geen internet?",
   "play.errSpeakerTimeout": "speaker reageert niet",

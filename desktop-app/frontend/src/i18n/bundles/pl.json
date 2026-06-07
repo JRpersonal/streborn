@@ -123,6 +123,7 @@
   "preset.noCurrentStation": "Żadna stacja teraz nie gra, więc przytrzymanie nie ma efektu.",
   "preset.copiedToKey": "Skopiowano do przycisku {{n}}: {{name}}",
   "preset.savedToKey": "Zapisano na przycisku {{n}}: {{name}}",
+  "preset.sourceBadge": "z {{source}}",
   "preset.saveFailed": "Zapis nie powiódł się: {{err}}",
   "play.errNoInternet": "brak internetu?",
   "play.errSpeakerTimeout": "głośnik nie odpowiada",

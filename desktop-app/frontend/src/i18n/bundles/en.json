@@ -138,6 +138,7 @@
   "preset.noCurrentStation": "No station is playing right now, so long press has no effect.",
   "preset.copiedToKey": "Copied to key {{n}}: {{name}}",
   "preset.savedToKey": "Saved to key {{n}}: {{name}}",
+  "preset.sourceBadge": "from {{source}}",
   "preset.saveFailed": "Save failed: {{err}}",
   "play.errNoInternet": "no internet?",
   "play.errSpeakerTimeout": "speaker not responding",

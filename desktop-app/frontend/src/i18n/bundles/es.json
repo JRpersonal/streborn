@@ -120,6 +120,7 @@
   "preset.noCurrentStation": "No hay ninguna emisora sonando ahora, así que mantener pulsado no tiene efecto.",
   "preset.copiedToKey": "Copiado a la tecla {{n}}: {{name}}",
   "preset.savedToKey": "Guardado en la tecla {{n}}: {{name}}",
+  "preset.sourceBadge": "de {{source}}",
   "preset.saveFailed": "Error al guardar: {{err}}",
   "play.errNoInternet": "¿sin internet?",
   "play.errSpeakerTimeout": "el altavoz no responde",

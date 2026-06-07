@@ -55,6 +55,7 @@ import {
   SpotifyBitrate,
   SpotifyNowPlaying,
   SaveSpotifyPreset,
+  SaveLibraryPreset,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
@@ -2124,6 +2125,7 @@ function renderPresets() {
           <div class="preset-text">
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
             ${p.type === 'spotify' && p.account ? `<div class="preset-account">${escapeHtml(p.account)}</div>` : ''}
+            ${p.source ? `<div class="preset-source" title="${escapeAttr(p.source)}">${escapeHtml(t('preset.sourceBadge', { source: p.source }))}</div>` : ''}
             ${isActive && state.nowTitle && p.type !== 'spotify' ? `<div class="preset-track" title="${escapeAttr(state.nowTitle)}"><span class="track-inner">${escapeHtml(state.nowTitle)}</span></div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
@@ -5934,6 +5936,10 @@ function librarySaveAsPreset(item) {
   // and keeps the existing radio-preset flow untouched.
   $('pickTitle').textContent = t('library.assignTitle');
   $('pickSub').textContent = [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '';
+  // The media server this track came from, stored on the preset so the tile can
+  // show a small "from <server>" badge.
+  const srv = libState.servers.find(s => s.udn === libState.currentUDN);
+  const source = (srv && (srv.friendlyName || srv.address)) || '';
   const grid = $('pickGrid');
   grid.innerHTML = '';
   for (let i = 1; i <= 6; i++) {
@@ -5943,8 +5949,8 @@ function librarySaveAsPreset(item) {
     b.innerHTML = '<div class="ps-num">' + escapeHtml(t('preset.key', { n: i })) + '</div><div class="ps-name">' + (p ? escapeHtml(p.name) : escapeHtml(t('preset.pickEmpty'))) + '</div>';
     b.onclick = async () => {
       try {
-        await SetPreset(state.currentBox.host, state.currentBox.port, i,
-          item.title || '(track)', item.streamURL, item.albumArtURL || '', 0);
+        await SaveLibraryPreset(state.currentBox.host, state.currentBox.port, i,
+          item.title || '(track)', item.streamURL, item.albumArtURL || '', 0, source);
         $('pickModal').classList.add('hidden');
         await loadPresets();
         showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));

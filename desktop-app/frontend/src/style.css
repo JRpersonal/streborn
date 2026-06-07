@@ -693,6 +693,8 @@ body {
 .preset .name { font-size: 14px; font-weight: 600; margin-top: 2px; }
 .preset-bitrate { font-size: 10px; font-weight: 400; color: #888; margin-top: 1px; line-height: 1.1; }
 .preset-account { font-size: 10px; font-weight: 400; color: #1ED760; margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.85; }
+/* DLNA preset: small muted "from <server>" badge, same shape as the Spotify account line. */
+.preset-source { font-size: 10px; font-weight: 400; margin-top: 1px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.6; }
 /* Live ICY track of the radio station currently playing, shown on the active
    preset tile (the now-playing line, like Spotify's track). One clamped line so
    a long "Artist - Title" never blows up the tile. */
