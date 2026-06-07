@@ -293,6 +293,7 @@
   "search.addFav": "Pridėti prie mėgstamiausių",
   "search.removeFav": "Pašalinti iš mėgstamiausių",
   "search.favEmpty": "Mėgstamiausių dar nėra. Bakstelėk žvaigždutę ties stotimi, kad ją čia pridėtum.",
+  "search.addStationHint": "Trūksta stoties? Gali ją pridėti radio-browser.info; po kurio laiko ji atsiras čia ir ją bus galima išsaugoti kaip išankstinį nustatymą.",
   "settingsView.copyPresetsHeading": "Kopijuoti išankstinius nustatymus į kitą garsiakalbį",
   "settingsView.copyPresetsHelp": "Nukopijuok 1–6 išankstinių nustatymų priskyrimą iš šio garsiakalbio į kitą tavo tinkle esantį garsiakalbį, kad nereikėtų rankiniu būdu nustatyti kiekvieno garsiakalbio.",
   "settingsView.copyPresetsBtn": "Kopijuoti 1–6",

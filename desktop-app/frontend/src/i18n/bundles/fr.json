@@ -284,6 +284,7 @@
   "search.addFav": "Ajouter aux favoris",
   "search.removeFav": "Retirer des favoris",
   "search.favEmpty": "Aucun favori pour le moment. Touche l'étoile d'une station pour l'ajouter ici.",
+  "search.addStationHint": "Une station manque ? Tu peux l'ajouter sur radio-browser.info ; elle apparaît ici après un moment et peut être enregistrée comme préréglage.",
   "settingsView.copyPresetsHeading": "Copier les préréglages vers une autre enceinte",
   "settingsView.copyPresetsHelp": "Copie l'affectation des préréglages 1 à 6 de cette enceinte vers une autre sur ton réseau, pour ne pas avoir à configurer chaque enceinte à la main.",
   "settingsView.copyPresetsBtn": "Copier 1-6",

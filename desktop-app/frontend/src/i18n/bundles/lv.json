@@ -293,6 +293,7 @@
   "search.addFav": "Pievienot iecienītajām",
   "search.removeFav": "Noņemt no iecienītajām",
   "search.favEmpty": "Vēl nav iecienīto. Pieskaries zvaigznītei pie stacijas, lai to pievienotu šeit.",
+  "search.addStationHint": "Trūkst stacijas? Vari to pievienot vietnē radio-browser.info; pēc neilga laika tā parādīsies šeit, un to var saglabāt kā priekšiestatījumu.",
   "settingsView.copyPresetsHeading": "Kopēt iestatījumus uz citu skaļruni",
   "settingsView.copyPresetsHelp": "Kopē priekšiestatījumu no 1 līdz 6 piešķiri no šī skaļruņa uz citu tavā tīklā, lai tev nebūtu jāiestata katrs skaļrunis manuāli.",
   "settingsView.copyPresetsBtn": "Kopēt 1-6",

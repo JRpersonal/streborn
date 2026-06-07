@@ -293,6 +293,7 @@
   "search.addFav": "Favorilere ekle",
   "search.removeFav": "Favorilerden çıkar",
   "search.favEmpty": "Henüz favori yok. Buraya eklemek için bir istasyondaki yıldıza dokun.",
+  "search.addStationHint": "İstasyon mu eksik? radio-browser.info adresinden ekleyebilirsin; bir süre sonra burada görünür ve ön ayar olarak kaydedilebilir.",
   "settingsView.copyPresetsHeading": "Ön ayarları başka bir hoparlöre kopyala",
   "settingsView.copyPresetsHelp": "Her hoparlörü tek tek elle ayarlamak zorunda kalmaman için, 1'den 6'ya kadar olan ön ayar atamalarını bu hoparlörden ağındaki başka bir hoparlöre kopyala.",
   "settingsView.copyPresetsBtn": "1-6 kopyala",

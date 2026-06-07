@@ -180,6 +180,7 @@
   "search.addFav": "Zu Favoriten hinzufügen",
   "search.removeFav": "Aus Favoriten entfernen",
   "search.favEmpty": "Noch keine Favoriten. Tippe den Stern an einem Sender, um ihn hier hinzuzufügen.",
+  "search.addStationHint": "Sender fehlt? Du kannst ihn auf radio-browser.info eintragen; er erscheint hier nach kurzer Zeit und kann als Preset gespeichert werden.",
   "search.openWebsite": "Webseite öffnen",
   "search.errSelectSpeaker": "Erst Lautsprecher auswählen",
   "search.allGenres": "Alle",

@@ -293,6 +293,7 @@
   "search.addFav": "Toevoegen aan favorieten",
   "search.removeFav": "Verwijderen uit favorieten",
   "search.favEmpty": "Nog geen favorieten. Tik op de ster bij een zender om hem hier toe te voegen.",
+  "search.addStationHint": "Mis je een zender? Je kunt hem toevoegen op radio-browser.info; hij verschijnt hier na een tijdje en kan als preset worden opgeslagen.",
   "settingsView.copyPresetsHeading": "Presets naar een andere speaker kopiëren",
   "settingsView.copyPresetsHelp": "Kopieer de toewijzing van presets 1 tot 6 van deze speaker naar een andere speaker in je netwerk, zodat je niet elke speaker met de hand hoeft in te stellen.",
   "settingsView.copyPresetsBtn": "Kopieer 1-6",

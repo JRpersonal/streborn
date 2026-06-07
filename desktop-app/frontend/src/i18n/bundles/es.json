@@ -284,6 +284,7 @@
   "search.addFav": "Añadir a favoritas",
   "search.removeFav": "Quitar de favoritas",
   "search.favEmpty": "Aún no tienes favoritas. Toca la estrella de una emisora para añadirla aquí.",
+  "search.addStationHint": "¿Falta una emisora? Puedes añadirla en radio-browser.info; aparece aquí al cabo de un rato y se puede guardar como preset.",
   "settingsView.copyPresetsHeading": "Copiar presintonías a otro altavoz",
   "settingsView.copyPresetsHelp": "Copia la asignación de presintonías 1 a 6 de este altavoz a otro de tu red, así no tienes que configurar cada altavoz a mano.",
   "settingsView.copyPresetsBtn": "Copiar 1-6",

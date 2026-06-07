@@ -284,6 +284,7 @@
   "search.addFav": "お気に入りに追加",
   "search.removeFav": "お気に入りから削除",
   "search.favEmpty": "お気に入りはまだありません。放送局の星マークをタップすると、ここに追加できます。",
+  "search.addStationHint": "放送局が見つかりませんか？ radio-browser.info で追加できます。しばらくするとここに表示され、プリセットに保存できます。",
   "settingsView.copyPresetsHeading": "プリセットを別のスピーカーにコピー",
   "settingsView.copyPresetsHelp": "このスピーカーのプリセット1〜6の設定を、同じネットワーク上の別のスピーカーにコピーします。すべてのスピーカーを手動で設定する必要がなくなります。",
   "settingsView.copyPresetsBtn": "1〜6をコピー",

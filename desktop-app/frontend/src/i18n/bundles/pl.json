@@ -293,6 +293,7 @@
   "search.addFav": "Dodaj do ulubionych",
   "search.removeFav": "Usuń z ulubionych",
   "search.favEmpty": "Nie masz jeszcze ulubionych. Kliknij gwiazdkę przy stacji, aby ją tu dodać.",
+  "search.addStationHint": "Brakuje stacji? Możesz ją dodać na radio-browser.info; po chwili pojawi się tutaj i można ją zapisać jako zaprogramowaną stację.",
   "settingsView.copyPresetsHeading": "Skopiuj zaprogramowane stacje do innego głośnika",
   "settingsView.copyPresetsHelp": "Skopiuj przypisanie stacji do przycisków 1-6 z tego głośnika do innego w Twojej sieci, dzięki czemu nie musisz konfigurować każdego głośnika ręcznie.",
   "settingsView.copyPresetsBtn": "Kopiuj 1-6",

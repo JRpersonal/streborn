@@ -829,6 +829,7 @@ $('view-box').innerHTML = `
       <div class="load-more-row hidden" id="loadMoreRow">
         <button class="btn btn-mini" id="loadMoreBtn">${escapeHtml(t('search.loadMore'))}</button>
       </div>
+      <a href="#" class="search-addhint muted small" id="addStationHint">${escapeHtml(t('search.addStationHint'))}</a>
     </div>
   </div>
 `;
@@ -1015,6 +1016,9 @@ $('searchBtn').onclick = () => doSearch();
 $('topBtn').onclick = () => doTop();
 $('favModeBtn').onclick = () => loadFavorites();
 updateFavModeBtn();
+// Discreet pointer for the few users who want a station that radio-browser.info
+// does not list yet: they can add it there and it shows up here after a while.
+{ const ah = $('addStationHint'); if (ah) ah.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} }; }
 $('loadMoreBtn').onclick = () => loadMore();
 $('searchQ').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
 $('searchQ').oninput = () => {

@@ -857,6 +857,9 @@ body {
 #favModeBtn.hidden { display: none; }
 /* A speaker not on the latest Bose firmware: amber, attention without alarm. */
 .fw-outdated { color: #e0a000; }
+/* Discreet "add a missing station" pointer at the very end of the results. */
+.search-addhint { display: inline-block; margin: 12px 0 4px; opacity: 0.7; text-decoration: none; }
+.search-addhint:hover { opacity: 1; text-decoration: underline; }
 
 /* Genre Chips */
 .genre-chips {
