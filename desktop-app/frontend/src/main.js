@@ -3105,9 +3105,12 @@ function renderSearchResults() {
   });
 }
 
-function openPick(station) {
-  $('pickTitle').textContent = t('preset.assignStationTitle');
-  $('pickSub').textContent = station.name + (station.bitrate ? ' (' + station.bitrate + ' kbit/s)' : '');
+// showSlotPicker renders the shared 1-6 preset slot-picker modal. Callers pass
+// the title, subtitle and an onPick(slot) that does the actual save; closing the
+// modal, reloading the presets and surfacing errors are common to every use.
+function showSlotPicker({ title, subtitle, onPick }) {
+  $('pickTitle').textContent = title;
+  $('pickSub').textContent = subtitle || '';
   const grid = $('pickGrid');
   grid.innerHTML = '';
   for (let i = 1; i <= 6; i++) {
@@ -3117,19 +3120,29 @@ function openPick(station) {
     b.innerHTML = '<div class="ps-num">' + escapeHtml(t('preset.key', { n: i })) + '</div><div class="ps-name">' + (p ? escapeHtml(p.name) : escapeHtml(t('preset.pickEmpty'))) + '</div>';
     b.onclick = async () => {
       try {
-        const logo = stationLogoChain(station);
-        await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0);
+        await onPick(i);
         closePick();
         await loadPresets();
-        if (station.stationuuid) {
-          VoteStation(state.currentBox.host, state.currentBox.port, station.stationuuid).catch(() => {});
-        }
-        showToast(t('preset.savedToKey', { n: i, name: station.name }));
       } catch (err) { showError(err); }
     };
     grid.appendChild(b);
   }
   $('pickModal').classList.remove('hidden');
+}
+
+function openPick(station) {
+  showSlotPicker({
+    title: t('preset.assignStationTitle'),
+    subtitle: station.name + (station.bitrate ? ' (' + station.bitrate + ' kbit/s)' : ''),
+    onPick: async (i) => {
+      const logo = stationLogoChain(station);
+      await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0);
+      if (station.stationuuid) {
+        VoteStation(state.currentBox.host, state.currentBox.port, station.stationuuid).catch(() => {});
+      }
+      showToast(t('preset.savedToKey', { n: i, name: station.name }));
+    },
+  });
 }
 function closePick() { $('pickModal').classList.add('hidden'); }
 
@@ -5931,34 +5944,19 @@ function librarySaveAsPreset(item) {
     showError(t('library.errorNoURL'));
     return;
   }
-  // Inline slot picker, mirroring openPick() further up. Refactoring
-  // both into one helper is post-MVP; the duplication here is small
-  // and keeps the existing radio-preset flow untouched.
-  $('pickTitle').textContent = t('library.assignTitle');
-  $('pickSub').textContent = [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '';
   // The media server this track came from, stored on the preset so the tile can
   // show a small "from <server>" badge.
   const srv = libState.servers.find(s => s.udn === libState.currentUDN);
   const source = (srv && (srv.friendlyName || srv.address)) || '';
-  const grid = $('pickGrid');
-  grid.innerHTML = '';
-  for (let i = 1; i <= 6; i++) {
-    const p = state.presets.find(x => x.slot === i);
-    const b = document.createElement('button');
-    b.className = 'pick-slot' + (p ? ' has' : '');
-    b.innerHTML = '<div class="ps-num">' + escapeHtml(t('preset.key', { n: i })) + '</div><div class="ps-name">' + (p ? escapeHtml(p.name) : escapeHtml(t('preset.pickEmpty'))) + '</div>';
-    b.onclick = async () => {
-      try {
-        await SaveLibraryPreset(state.currentBox.host, state.currentBox.port, i,
-          item.title || '(track)', item.streamURL, item.albumArtURL || '', 0, source);
-        $('pickModal').classList.add('hidden');
-        await loadPresets();
-        showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));
-      } catch (err) { showError(err); }
-    };
-    grid.appendChild(b);
-  }
-  $('pickModal').classList.remove('hidden');
+  showSlotPicker({
+    title: t('library.assignTitle'),
+    subtitle: [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '',
+    onPick: async (i) => {
+      await SaveLibraryPreset(state.currentBox.host, state.currentBox.port, i,
+        item.title || '(track)', item.streamURL, item.albumArtURL || '', 0, source);
+      showToast(t('preset.savedToKey', { n: i, name: item.title || '(track)' }));
+    },
+  });
 }
 
 function renderLibrary() {
