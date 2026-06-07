@@ -125,14 +125,26 @@ type Server struct {
 }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the
-// re-push loop counter (windowed, so a genuinely failing stream is not retried
-// forever).
+// re-push state. rePushes counts consecutive resume attempts on THIS stream and
+// drives an exponential backoff; once it hits maxRePushes the stream is marked
+// failed and never re-pushed again until a fresh play (setLastPlay) replaces it.
+// rePushInFlight coalesces drops: a dead stream fires a disconnect on every
+// failed resume, and without this each one spawned a new goroutine (Brecht
+// v0.7.5: a dead slot-3 URL produced dozens of resume attempts per second that
+// starved the control port :8888).
 type lastPlayInfo struct {
 	boxURL, title, art, mime string
 	ts                       time.Time
 	rePushes                 int
-	windowStart              time.Time
+	failed                   bool
+	rePushInFlight           bool
 }
+
+// maxRePushes is the hard cap on consecutive resume attempts for one stream.
+// After this many the stream is declared dead and left alone (no re-arm) until
+// the user plays something new. With the exponential backoff the attempts span
+// ~30s rather than the dozens-per-second runaway it replaces.
+const maxRePushes = 5
 
 // statusCacheTTL bounds the staleness of a cached now_playing response and
 // thus the maximum /now_playing hit rate against the Bose app to about
@@ -728,11 +740,18 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 		return // upstream failed; not a box-side drop, leave it alone
 	}
 	s.lastPlayMu.Lock()
-	have := s.lastPlay != nil && time.Since(s.lastPlay.ts) < 6*time.Hour
-	s.lastPlayMu.Unlock()
-	if !have {
+	lp := s.lastPlay
+	// Coalesce. Skip when there is no recent stream, the stream was already
+	// declared dead, or a resume is already in flight. A dead/moved URL fires a
+	// disconnect on EVERY failed resume; without this latch each one spawned a
+	// fresh maybeRePush goroutine, producing the dozens-per-second runaway that
+	// starved :8888 (Brecht v0.7.5).
+	if lp == nil || time.Since(lp.ts) >= 6*time.Hour || lp.failed || lp.rePushInFlight {
+		s.lastPlayMu.Unlock()
 		return
 	}
+	lp.rePushInFlight = true
+	s.lastPlayMu.Unlock()
 	go s.maybeRePush()
 }
 
@@ -743,11 +762,41 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 // paused). A windowed counter caps retries so a genuinely failing stream is not
 // looped forever.
 func (s *Server) maybeRePush() {
-	time.Sleep(2 * time.Second)
+	// Release the in-flight latch on exit so a later genuine drop can re-arm
+	// (HandleStreamDisconnect refuses to spawn a second goroutine until then).
+	defer func() {
+		s.lastPlayMu.Lock()
+		if s.lastPlay != nil {
+			s.lastPlay.rePushInFlight = false
+		}
+		s.lastPlayMu.Unlock()
+	}()
+
+	// Exponential backoff keyed on how many attempts this stream already took:
+	// 2s, 2s, 4s, 8s, 16s (capped at 30s). A dead/moved URL drops the moment it
+	// is re-pushed, so without this the resume loop spun dozens of times per
+	// second; the backoff spaces the (few) attempts out instead. The first wait
+	// also serves the original purpose of telling a user power-off (box reaches
+	// STANDBY in ~1-2s) from a renderer drop while the box stays on.
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	if lp == nil {
+		s.lastPlayMu.Unlock()
+		return
+	}
+	attempt := lp.rePushes
+	s.lastPlayMu.Unlock()
+	backoff := 2 * time.Second
+	if attempt > 1 {
+		backoff = time.Duration(1<<uint(attempt)) * time.Second
+	}
+	if backoff > 30*time.Second {
+		backoff = 30 * time.Second
+	}
+	time.Sleep(backoff)
+
 	// A deliberate user stop (STR Stop/Pause, or the box/remote stop button seen
-	// over gabbo) must hold. The stop and the disconnect it causes land within a
-	// second or two of each other, which this 2s wait plus userStopWindow
-	// covers. Genuine box-side drops carry no such stop and still resume.
+	// over gabbo) must hold. Genuine box-side drops carry no such stop and resume.
 	if s.userStoppedRecently() {
 		s.logger.Info("re-push: user stopped deliberately, not resuming")
 		return
@@ -758,31 +807,42 @@ func (s *Server) maybeRePush() {
 		return
 	}
 	if busy {
-		return // already playing/paused again (recovered, or user switched)
+		// Recovered (playing/paused again, or the user switched). Reset the
+		// attempt counter so a later genuine drop starts a fresh backoff window.
+		s.lastPlayMu.Lock()
+		if s.lastPlay != nil {
+			s.lastPlay.rePushes = 0
+		}
+		s.lastPlayMu.Unlock()
+		return
 	}
+
 	s.lastPlayMu.Lock()
-	lp := s.lastPlay
+	lp = s.lastPlay
 	if lp == nil {
 		s.lastPlayMu.Unlock()
 		return
 	}
-	if time.Since(lp.windowStart) > 5*time.Minute {
-		lp.windowStart = time.Now()
-		lp.rePushes = 0
-	}
-	if lp.rePushes >= 3 {
+	if lp.rePushes >= maxRePushes {
+		// Hard stop. The stream keeps dropping (a dead/moved radio-browser URL,
+		// 503, etc.). Mark it dead so no further disconnect re-arms it; only a
+		// fresh play (setLastPlay) clears this. This is the fix for the runaway
+		// that re-armed forever and starved the control port.
+		lp.failed = true
+		url := lp.boxURL
 		s.lastPlayMu.Unlock()
-		s.logger.Warn("re-push: giving up after repeated drops", "url", lp.boxURL)
+		s.logger.Warn("re-push: stream keeps dropping, giving up for good (likely a dead/moved URL); not retrying until a new play",
+			"url", url, "attempts", maxRePushes)
 		return
 	}
 	lp.rePushes++
 	boxURL, title, art, mime, n := lp.boxURL, lp.title, lp.art, lp.mime, lp.rePushes
 	s.lastPlayMu.Unlock()
 
-	s.logger.Info("re-push: box dropped the stream while idle, resuming", "url", boxURL, "attempt", n)
+	s.logger.Info("re-push: box dropped the stream while idle, resuming", "url", boxURL, "attempt", n, "max", maxRePushes)
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	var err error
 	if mime != "" {
