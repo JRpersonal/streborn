@@ -2009,6 +2009,23 @@ function activeSlotFromLocation(loc) {
 // Inline SVG data URI: no bundled asset, no network fetch.
 const SPOTIFY_LOGO = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20168%20168'%3E%3Ccircle%20cx='84'%20cy='84'%20r='84'%20fill='%231ED760'/%3E%3Cpath%20fill='none'%20stroke='%23000'%20stroke-width='13'%20stroke-linecap='round'%20d='M37%2099c30-9%2065-7%2092%209M35%2075c34-10%2076-7%20105%2011M33%2050c38-11%2086-7%20118%2012'/%3E%3C/svg%3E";
 
+// presetStateLabel returns the small state line shown on a preset tile: an
+// error, or the now-playing state when this preset is the active one. Keeps the
+// play-state -> CSS-class + i18n-key mapping in one place.
+function presetStateLabel(slot, isActive, hasErr) {
+  if (hasErr) {
+    return `<div class="preset-state state-err">&#9888; ${escapeHtml(state.presetErrors[slot])}</div>`;
+  }
+  if (!isActive) return '';
+  const map = {
+    PLAY_STATE: ['state-play', 'preset.statePlay'],
+    BUFFERING_STATE: ['state-buf', 'preset.stateBuf'],
+    PAUSE_STATE: ['state-pause', 'preset.statePause'],
+  };
+  const m = map[state.nowPlayState];
+  return m ? `<div class="preset-state ${m[0]}">${escapeHtml(t(m[1]))}</div>` : '';
+}
+
 function renderPresets() {
   const grid = $('presets');
   grid.innerHTML = '';
@@ -2039,19 +2056,7 @@ function renderPresets() {
     div.className = 'preset' + (p ? '' : ' empty') + (isActive ? ' playing' : '') + (hasErr ? ' error' : '');
     div.dataset.slot = i;
     if (p) {
-      let stateLabel = '';
-      if (hasErr) {
-        stateLabel = `<div class="preset-state state-err">&#9888; ${escapeHtml(state.presetErrors[i])}</div>`;
-      } else if (isActive) {
-        const ps = state.nowPlayState;
-        if (ps === 'PLAY_STATE') {
-          stateLabel = `<div class="preset-state state-play">${escapeHtml(t('preset.statePlay'))}</div>`;
-        } else if (ps === 'BUFFERING_STATE') {
-          stateLabel = `<div class="preset-state state-buf">${escapeHtml(t('preset.stateBuf'))}</div>`;
-        } else if (ps === 'PAUSE_STATE') {
-          stateLabel = `<div class="preset-state state-pause">${escapeHtml(t('preset.statePause'))}</div>`;
-        }
-      }
+      const stateLabel = presetStateLabel(i, isActive, hasErr);
       const hint = state.nowLocation && !isActive
         ? `<div class="preset-hint">${escapeHtml(t('preset.longPressHint'))}</div>`
         : '';
