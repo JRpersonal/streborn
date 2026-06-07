@@ -75,6 +75,15 @@ type Server struct {
 	// stream, the definitive "Spotify is playing" signal for verifyRecall.
 	// nil when Spotify is not configured.
 	spotifyStreaming func() bool
+	// spotifyReady reports whether go-librespot has finished authenticating, so
+	// a soft Spotify recall can wait out a cold start instead of pointing the box
+	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify
+	// is not configured.
+	spotifyReady func() bool
+	// spotifySetRecalling marks an in-flight recall so ServeOgg drives the new
+	// track from its start instead of resuming mid-position. nil when Spotify is
+	// not configured.
+	spotifySetRecalling func()
 	// spotifyInfo answers GET /spotify/info with the live Spotify state
 	// (ready, measured bitrate, device name) the UI reads to show the real
 	// stream bitrate on a Spotify preset tile. nil when not configured.
@@ -266,6 +275,18 @@ func WithSpotifyMeta(meta func(ctx context.Context, uri string) (cover, title st
 // re-issue while Spotify is already playing.
 func WithSpotifyStreaming(streaming func() bool) Option {
 	return func(s *Server) { s.spotifyStreaming = streaming }
+}
+
+// WithSpotifyReady registers the predicate that reports whether go-librespot has
+// finished authenticating, so a soft Spotify recall can wait out a cold start.
+func WithSpotifyReady(ready func() bool) Option {
+	return func(s *Server) { s.spotifyReady = ready }
+}
+
+// WithSpotifySetRecalling registers the hook that marks an in-flight recall so
+// ServeOgg drives the new track from its start.
+func WithSpotifySetRecalling(setRecalling func()) Option {
+	return func(s *Server) { s.spotifySetRecalling = setRecalling }
 }
 
 // ensureBoxReady weckt die Box aus dem Standby (mit retry+poll bis
@@ -719,11 +740,15 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
-	// Spotify presets have no playable HTTP StreamURL. Start go-librespot
-	// FIRST so the Ogg is already flowing when the box attaches (no
-	// data-starve timeout on join), then point the box at the stream;
-	// ServeOgg seeks the track to 0 on attach so the box gets a fresh header
-	// sequence to sync to.
+	// Spotify presets have no playable HTTP StreamURL. Mirror the hardware-press
+	// recall (cmd/agent playSpotifyPreset) so a soft recall behaves identically:
+	//  1. wait out a cold go-librespot (auth not finished) instead of pointing
+	//     the box at a not-yet-flowing stream, which starves and detaches after
+	//     ~30s and forced the user to press the preset a second time,
+	//  2. mark the recall so ServeOgg drives the new track from its start,
+	//  3. point the box at THIS slot's stream first (now_playing shows the name
+	//     and buffers) and load the playlist audio after, so the box buffers
+	//     until audio flows.
 	if p.Type == "spotify" && p.URI != "" {
 		if s.spotifyPlay == nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
@@ -731,29 +756,43 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if err := s.spotifyPlay(r.Context(), p.URI, p.Account); err != nil {
-			// Tolerate, do not fail the button: a cross-account switch can time
-			// out (the other account's app is still connected) and the play then
-			// times out during the go-librespot restart, but pointing the box at
-			// the stream + the verify-retry below still bring playback up (with
-			// the current account; public playlists still play). The hardware
-			// path is tolerant too; the soft button must match.
-			s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
+		// Mark the recall and point the box at THIS slot's stream FIRST (the box
+		// shows the name and buffers), then answer the request right away. The
+		// slow part (waiting out a cold go-librespot + loading the playlist audio
+		// + verify) runs in the background, so the box buffers until audio flows
+		// instead of starving and detaching, AND the desktop POST does not block
+		// on a 12s cold-start wait (which playPost would mis-report as the box not
+		// being ready, i.e. "speaker is still starting").
+		if s.spotifySetRecalling != nil {
+			s.spotifySetRecalling()
 		}
-		if err := s.renderer.PlayURLMime(r.Context(), "http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg"); err != nil {
+		slotURL := fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+		if err := s.renderer.PlayURLMime(r.Context(), slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
 			})
 			return
 		}
-		s.setLastPlay("http://127.0.0.1:8888/spotify/stream.ogg", p.Name, p.Art, "audio/ogg")
+		s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 		uri, name, art, account := p.URI, p.Name, p.Art, p.Account
-		go s.verifyRecall(func(ctx context.Context) {
-			if s.spotifyPlay(ctx, uri, account) == nil {
-				_ = s.renderer.PlayURLMime(ctx, "http://127.0.0.1:8888/spotify/stream.ogg", name, art, "audio/ogg")
+		go func() {
+			bg := context.Background()
+			if s.spotifyReady != nil && !s.spotifyReady() {
+				s.logger.Info("spotify soft recall: waiting for go-librespot ready", "slot", slot)
+				for i := 0; i < 24 && !s.spotifyReady(); i++ {
+					time.Sleep(500 * time.Millisecond)
+				}
 			}
-		}, s.spotifyStreaming)
+			if err := s.spotifyPlay(bg, uri, account); err != nil {
+				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
+			}
+			s.verifyRecall(func(ctx context.Context) {
+				if s.spotifyPlay(ctx, uri, account) == nil {
+					_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
+				}
+			}, s.spotifyStreaming)
+		}()
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
 		return
 	}

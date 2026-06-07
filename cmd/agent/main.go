@@ -302,6 +302,8 @@ func run() error {
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
+		webui.WithSpotifyReady(spotifyMgr.Ready),
+		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
 		webui.WithWebhooks(webhooksStore))
