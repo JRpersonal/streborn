@@ -1283,8 +1283,7 @@ func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+		return nil, readHTTPError(resp)
 	}
 	var out []Preset
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -1368,8 +1367,7 @@ func (a *App) DeletePreset(host string, port int, slot int) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+		return readHTTPError(resp)
 	}
 	return nil
 }
@@ -1499,8 +1497,7 @@ func (a *App) BoxSettings(host string, port int) (map[string]any, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+		return nil, readHTTPError(resp)
 	}
 	var out map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -1531,6 +1528,14 @@ func (a *App) SelectBoxSource(host string, port int, source string) error {
 	return a.boxPut(host, port, "/api/box/source", map[string]string{"source": source})
 }
 
+// readHTTPError turns a failed box response into an error carrying the status
+// code and a bounded slice of the body. One canonical place for the read limit
+// and message format, used at every status>=400 / non-200 site.
+func readHTTPError(resp *http.Response) error {
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+}
+
 func (a *App) boxPut(host string, port int, path string, body any) error {
 	// Routed through boxDo so the small settings PUTs (volume, bass,
 	// name, source, wlan) get the same transparent :8888<->:17008 port
@@ -1545,8 +1550,7 @@ func (a *App) boxPut(host string, port int, path string, body any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		bb, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(bb))
+		return readHTTPError(resp)
 	}
 	return nil
 }
@@ -1566,8 +1570,7 @@ func (a *App) GetWebhooks(host string, port int) (map[string]any, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+		return nil, readHTTPError(resp)
 	}
 	var out map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -1607,8 +1610,7 @@ func (a *App) TestWebhook(host string, port int, method, url, body, contentType 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		bb, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(bb))
+		return nil, readHTTPError(resp)
 	}
 	var out map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -1658,8 +1660,7 @@ func (a *App) bosePostXML(host, path, body string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+		return readHTTPError(resp)
 	}
 	return nil
 }
@@ -1931,8 +1932,7 @@ func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+		return nil, readHTTPError(resp)
 	}
 	// Wenn der Stick Agent zu alt ist und den Endpoint nicht kennt,
 	// fallback auf den Default Handler liefert HTML statt JSON. Pruefen
@@ -1959,8 +1959,7 @@ func (a *App) RebootBox(host string, port int) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+		return readHTTPError(resp)
 	}
 	return nil
 }
@@ -2010,8 +2009,7 @@ func (a *App) doAction(host string, port int, action string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+		return readHTTPError(resp)
 	}
 	return nil
 }
