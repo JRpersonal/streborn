@@ -9,6 +9,7 @@ import {
   VoteStation,
   RebootBox,
   SyncBoxPresets,
+  CopyPresetsAcrossBoxes,
   Pause,
   Stop,
   Status,
@@ -3650,6 +3651,28 @@ function renderBoxSettings(s, box) {
       </div>
     </details>
 
+    ${(() => {
+      // Box-to-box preset copy (Expert): source is THIS speaker (the one whose
+      // settings are open), the user picks a target to push keys 1-6 onto. Only
+      // rendered when at least one other STR speaker exists, so a single-speaker
+      // user never sees it.
+      const src = state.settingsBox;
+      const targets = (state.boxes || []).filter(b => b.kind !== 'stock' && src && b.host !== src.host);
+      if (!targets.length) return '';
+      const opts = targets.map(b => {
+        const lbl = (b.friendlyName || b.name || b.host) + (b.model && b.model !== 'SoundTouch' ? ' (' + b.model + ')' : '');
+        return `<option value="${escapeAttr(b.host)}|${b.port || 0}">${escapeHtml(lbl)}</option>`;
+      }).join('');
+      return `<details class="settings-section settings-expert">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <small class="muted small expert-intro">${escapeHtml(t('settingsView.copyPresetsHelp'))}</small>
+      <div class="setting-row">
+        <select id="copyPresetTarget" style="flex:1;">${opts}</select>
+        <button class="btn btn-mini btn-warning" id="copyPresetBtn">${escapeHtml(t('settingsView.copyPresetsBtn'))}</button>
+      </div>
+    </details>`;
+    })()}
+
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.sourcesHeading'))}</h3>
       <div class="sources-grid">
@@ -4201,6 +4224,33 @@ function renderBoxSettings(s, box) {
       } finally {
         whTest.disabled = false;
       }
+    };
+  }
+
+  // Box-to-box preset copy (Expert): copy keys 1-6 from this speaker (the
+  // settings source) onto a chosen target speaker, behind a warning confirm
+  // because it overwrites the target's presets.
+  const copyBtn = $('copyPresetBtn');
+  if (copyBtn) {
+    copyBtn.onclick = async () => {
+      const sel = $('copyPresetTarget');
+      if (!sel || !sel.value) return;
+      const [thost, tportRaw] = sel.value.split('|');
+      const tport = parseInt(tportRaw, 10) || 0;
+      const target = (state.boxes || []).find(b => b.host === thost);
+      const targetName = target ? (target.friendlyName || target.name || target.host) : thost;
+      const ok = await confirmWarn(
+        t('settingsView.copyPresetsConfirmTitle'),
+        t('settingsView.copyPresetsConfirmBody', { target: targetName })
+      );
+      if (!ok) return;
+      copyBtn.disabled = true;
+      try {
+        const n = await CopyPresetsAcrossBoxes(box.host, box.port, thost, tport);
+        showToast(t('settingsView.copyPresetsDone', { n, target: targetName }));
+        if (state.currentBox && state.currentBox.host === thost) await loadPresets();
+      } catch (e) { showError(e); }
+      copyBtn.disabled = false;
     };
   }
 

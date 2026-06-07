@@ -26,6 +26,10 @@ export function CheckAppUpdate() {
   return window['go']['main']['App']['CheckAppUpdate']();
 }
 
+export function CopyPresetsAcrossBoxes(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['CopyPresetsAcrossBoxes'](arg1, arg2, arg3, arg4);
+}
+
 export function CurrentWiFi() {
   return window['go']['main']['App']['CurrentWiFi']();
 }

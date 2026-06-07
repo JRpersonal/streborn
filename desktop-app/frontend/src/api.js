@@ -15,6 +15,7 @@ export {
   VoteStation,
   RebootBox,
   SyncBoxPresets,
+  CopyPresetsAcrossBoxes,
   Pause,
   Stop,
   Status,

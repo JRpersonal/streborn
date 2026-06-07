@@ -1217,6 +1217,51 @@ func (a *App) SaveSpotifyPreset(host string, port int, slot int, name, uri, acco
 	return nil
 }
 
+// CopyPresetsAcrossBoxes copies every preset (slots 1-6) from a source speaker
+// to a target speaker, preserving radio vs Spotify type and all fields, then
+// re-syncs the target's hardware keys so buttons 1-6 reflect the copy. Used by
+// the box-to-box preset copy in Speaker Settings so the user does not have to
+// re-enter stations on every speaker. Returns the number of presets copied.
+func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string, dstPort int) (int, error) {
+	if srcHost == "" || dstHost == "" {
+		return 0, fmt.Errorf("source and target host are required")
+	}
+	if srcHost == dstHost {
+		return 0, fmt.Errorf("source and target are the same speaker")
+	}
+	presets, err := a.GetPresets(srcHost, srcPort)
+	if err != nil {
+		return 0, fmt.Errorf("read source presets: %w", err)
+	}
+	copied := 0
+	for _, p := range presets {
+		if p.Slot < 1 || p.Slot > 6 || p.Name == "" {
+			continue
+		}
+		// PUT the source preset verbatim so radio and Spotify presets keep all
+		// their fields (type, uri, account, art, bitrate) with no field mapping.
+		url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(dstHost, dstPort), p.Slot)
+		body, _ := json.Marshal(p)
+		req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := a.httpClient.Do(req)
+		if err != nil {
+			return copied, fmt.Errorf("write preset %d: %w", p.Slot, err)
+		}
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 2048))
+		resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			return copied, fmt.Errorf("write preset %d: status %d", p.Slot, resp.StatusCode)
+		}
+		copied++
+	}
+	// Re-push the target's hardware keys so 1-6 on the speaker match the copy.
+	if _, err := a.SyncBoxPresets(dstHost, dstPort); err != nil {
+		a.logger.Warn("copy presets: target hardware sync failed", "dst", dstHost, "err", err)
+	}
+	return copied, nil
+}
+
 // DeletePreset macht DELETE /api/presets/<slot>.
 func (a *App) DeletePreset(host string, port int, slot int) error {
 	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
