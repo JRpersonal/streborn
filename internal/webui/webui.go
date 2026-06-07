@@ -410,6 +410,29 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// requireMethod responds 405 and returns false unless the request method is one
+// of the allowed ones, so a handler can guard the method in a single line.
+func requireMethod(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
+	for _, m := range allowed {
+		if r.Method == m {
+			return true
+		}
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	return false
+}
+
+// decodeJSONRequest decodes a JSON request body (bounded by maxBytes) into v,
+// responding 400 with the parse error on failure. Returns false when the caller
+// should stop handling the request.
+func decodeJSONRequest[T any](w http.ResponseWriter, r *http.Request, maxBytes int64, v *T) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes)).Decode(v); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 // ---- Presets CRUD ----
 
 func (s *Server) handlePresets(w http.ResponseWriter, r *http.Request) {
@@ -459,8 +482,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, p)
 	case http.MethodPut:
 		var p presets.Preset
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&p); err != nil {
-			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		if !decodeJSONRequest(w, r, 1<<16, &p) {
 			return
 		}
 		p.Slot = slot
@@ -578,8 +600,7 @@ func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.webhooks.Get())
 	case http.MethodPut:
 		var c webhooks.Config
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&c); err != nil {
-			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		if !decodeJSONRequest(w, r, 1<<16, &c) {
 			return
 		}
 		if err := s.webhooks.Set(c); err != nil {
@@ -600,8 +621,7 @@ func (s *Server) handleWebhooksTest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "webhooks not configured", http.StatusServiceUnavailable)
 		return
 	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	var a webhooks.Action
@@ -626,8 +646,7 @@ func (s *Server) handleWebhooksTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	s.boxCmdMu.Lock()
@@ -637,8 +656,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req playRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
-		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+	if !decodeJSONRequest(w, r, 1<<16, &req) {
 		return
 	}
 	if req.URL == "" {
@@ -676,8 +694,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	s.boxCmdMu.Lock()
@@ -1093,8 +1110,7 @@ func (s *Server) boxPlayState() (standby, busy bool) {
 }
 
 func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	if s.renderer == nil {
@@ -1136,8 +1152,7 @@ func isWrongTransportState(err error) bool {
 }
 
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	if s.renderer == nil {
@@ -1379,8 +1394,7 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 // Nach Erfolg gibt der Stick noch 200 OK zurueck und beendet sich. Der
 // rc.local Bootstrap startet den neuen Agent.
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !isLocalLAN(r.RemoteAddr) {
@@ -1616,15 +1630,13 @@ func ssidAfter(s, anchor string) string {
 
 // handleBoxName PUT setzt den Box Namen. Body {"name":"..."}.
 func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPut) {
 		return
 	}
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if !decodeJSONRequest(w, r, 1024, &req) {
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
@@ -1649,8 +1661,7 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 
 // handleBoxVolume PUT setzt Lautstaerke. Body {"value":N}.
 func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPut) {
 		return
 	}
 	s.boxCmdMu.Lock()
@@ -1658,8 +1669,7 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Value int `json:"value"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if !decodeJSONRequest(w, r, 256, &req) {
 		return
 	}
 	c := boxapi.New(s.boxHost)
@@ -1678,15 +1688,13 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 // Bose /select erwartet ein ContentItem XML. Wir bauen das je nach
 // Source. STANDBY hat ein eigenes ContentItem ohne sourceAccount.
 func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPut) {
 		return
 	}
 	var req struct {
 		Source string `json:"source"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if !decodeJSONRequest(w, r, 256, &req) {
 		return
 	}
 	src := strings.ToUpper(strings.TrimSpace(req.Source))
@@ -1758,15 +1766,13 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 
 // handleBoxBass PUT setzt Bass Wert. Body {"value":N}.
 func (s *Server) handleBoxBass(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPut) {
 		return
 	}
 	var req struct {
 		Value int `json:"value"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if !decodeJSONRequest(w, r, 256, &req) {
 		return
 	}
 	c := boxapi.New(s.boxHost)
@@ -1783,8 +1789,7 @@ func (s *Server) handleBoxBass(w http.ResponseWriter, r *http.Request) {
 // Read-only. Antwort ist {"master":"...","senderIP":"...","members":[...]}.
 // Bei einer Box ohne Zone ist master leer und members leer.
 func (s *Server) handleBoxZone(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	c := boxapi.New(s.boxHost)
@@ -1802,8 +1807,7 @@ func (s *Server) handleBoxZone(w http.ResponseWriter, r *http.Request) {
 // Read-only. Antwort ist {"id":"...","name":"...","members":[...]}.
 // Bei einer Box ohne Pair ist id leer und members leer.
 func (s *Server) handleBoxGroup(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 	c := boxapi.New(s.boxHost)
@@ -1980,8 +1984,7 @@ func (s *Server) handleDebugProbe(w http.ResponseWriter, r *http.Request) {
 // irgendwelchen Gruenden nicht durchgelaufen ist (z.B. Box war noch
 // nicht erreichbar).
 func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	if s.presets == nil || s.boxHost == "" {
@@ -2018,8 +2021,7 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 // Pfad applied werden — wir vermeiden so ein dauerhaft laufendes USB
 // Watcher Polling.
 func (s *Server) handleBoxReboot(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	if !isLocalLAN(r.RemoteAddr) {
@@ -2130,8 +2132,7 @@ func (s *Server) handleBoxAirplayOpt(w http.ResponseWriter, r *http.Request) {
 // Nur fuer LAN Clients erlaubt damit nicht zufaellig Internet Calls
 // das WLAN umstellen.
 func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPut) {
 		return
 	}
 	if !isLocalLAN(r.RemoteAddr) {
@@ -2142,8 +2143,7 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		SSID     string `json:"ssid"`
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048)).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if !decodeJSONRequest(w, r, 2048, &req) {
 		return
 	}
 	req.SSID = strings.TrimSpace(req.SSID)
@@ -2290,8 +2290,7 @@ func (s *Server) handleRegion(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Country string `json:"country"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256)).Decode(&req); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
+		if !decodeJSONRequest(w, r, 256, &req) {
 			return
 		}
 		cc := strings.ToUpper(strings.TrimSpace(req.Country))
