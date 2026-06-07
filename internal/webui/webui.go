@@ -29,6 +29,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/radiobrowser"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
+	"github.com/JRpersonal/streborn/internal/webhooks"
 )
 
 // Server kapselt den Webui HTTP Server.
@@ -43,6 +44,13 @@ type Server struct {
 	region      string // ISO 3166-1 alpha-2 vom Setup Wizard, leer wenn unbekannt
 	regionFile  string // Pfad fuer persistente Speicherung
 	streamProxy *streamproxy.Server
+	// webhooks holds the user-configured HTTP requests (thumbs trigger). nil
+	// when not wired; endpoints then report unavailable.
+	webhooks *webhooks.Store
+	// spotifySwitchedAway tells the Spotify manager the box was pointed at a
+	// non-Spotify source, so its #14 auto-attach does not yank the box back.
+	// nil when Spotify is not configured.
+	spotifySwitchedAway func(ctx context.Context)
 	// spotifyStream serves the live Ogg from the go-librespot manager to
 	// the box over HTTP (registered at /spotify/stream). nil when Spotify
 	// is not configured. Injected as a handler so webui need not import
@@ -209,6 +217,18 @@ func WithStreamProxy(p *streamproxy.Server) Option {
 	return func(s *Server) { s.streamProxy = p }
 }
 
+// WithWebhooks wires the user-configured webhook store (thumbs trigger).
+func WithWebhooks(w *webhooks.Store) Option {
+	return func(s *Server) { s.webhooks = w }
+}
+
+// WithSpotifySwitchedAway wires the Spotify manager's source-switch hook, called
+// when the box is pointed at a non-Spotify source so the #14 auto-attach stands
+// down (otherwise a radio recall jumps back to Spotify a second later).
+func WithSpotifySwitchedAway(f func(ctx context.Context)) Option {
+	return func(s *Server) { s.spotifySwitchedAway = f }
+}
+
 // WithSpotifyStream registers the handler that serves go-librespot's
 // live Ogg to the box at /spotify/stream (the Spotify-preset audio
 // plane).
@@ -320,6 +340,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
+	mux.HandleFunc("/api/webhooks", s.handleWebhooks)
+	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
@@ -543,6 +565,66 @@ type playRequest struct {
 	UUID  string `json:"uuid"` // optional, fuer Click Tracking
 }
 
+// handleWebhooks gets (GET) or replaces (PUT) the webhook config. The config
+// holds the user's HTTP request(s) fired on a box trigger (today: the remote
+// thumbs keys, see boxws OnThumbActivity).
+func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request) {
+	if s.webhooks == nil {
+		http.Error(w, "webhooks not configured", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.webhooks.Get())
+	case http.MethodPut:
+		var c webhooks.Config
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&c); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := s.webhooks.Set(c); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.webhooks.Get())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleWebhooksTest fires an action immediately so the user can verify their
+// URL from the app without pressing a key on the box. Body is an optional
+// webhooks.Action; when absent or empty, the configured thumb action is fired.
+func (s *Server) handleWebhooksTest(w http.ResponseWriter, r *http.Request) {
+	if s.webhooks == nil {
+		http.Error(w, "webhooks not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var a webhooks.Action
+	if r.Body != nil {
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&a)
+	}
+	if a.URL == "" {
+		a = s.webhooks.Get().Thumb
+	}
+	if a.URL == "" {
+		http.Error(w, "no URL to test", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	code, err := s.webhooks.Fire(ctx, a)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": code >= 200 && code < 400, "status": code})
+}
+
 func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -564,6 +646,11 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// Ad-hoc radio: the box leaves any Spotify source; suppress the #14
+	// auto-attach so it does not jump back to Spotify.
+	if s.spotifySwitchedAway != nil {
+		s.spotifySwitchedAway(r.Context())
+	}
 	// Stream durch unseren Proxy schicken — damit klappen auch
 	// HTTPS Quellen (Bose UPnP kann kein TLS) und Token Expiry wird
 	// transparent abgefangen. Bose sieht eine stabile loopback URL.
@@ -653,6 +740,11 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
 		return
 	}
+	// Radio recall: tell Spotify the box switched away so its #14 auto-attach
+	// does not yank the box back to a still-advancing go-librespot.
+	if s.spotifySwitchedAway != nil {
+		s.spotifySwitchedAway(r.Context())
+	}
 	// Stream Proxy URL nutzen damit auch nach Token Expiry weitergespielt
 	// wird (Bose sieht die stabile loopback URL).
 	playURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
@@ -699,12 +791,85 @@ func (s *Server) verifyRecall(retry func(context.Context), working func() bool) 
 	s.logger.Warn("recall still not playing after retries")
 }
 
-// setLastPlay records the box-facing stream + metadata for the auto-re-push.
+// setLastPlay records the box-facing stream + metadata for the auto-re-push. A
+// fresh play resets the re-push state (rePushes=0, failed=false), so a stream
+// that was previously declared dead gets a clean slate when the user plays it
+// again.
 func (s *Server) setLastPlay(boxURL, title, art, mime string) {
 	now := time.Now()
 	s.lastPlayMu.Lock()
-	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now, windowStart: now}
+	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now}
 	s.lastPlayMu.Unlock()
+}
+
+// NoteLastPlay records a stream the agent pushed to the box OUTSIDE the webui
+// (the hardware preset recall in cmd/agent goes straight to the renderer). It
+// lets the auto-re-push (#4) and the power-button wake-resume work for hardware
+// presses too, which otherwise left lastPlay unset and the box un-resumable.
+func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
+	s.setLastPlay(boxURL, title, art, mime)
+}
+
+// ResumeLastPlay re-pushes the last stream STR played. It is the power-button
+// wake-from-standby resume: the box gives no powerStateUpdated, it just tries
+// (and declines, DO_NOT_RESUME) to restore its last UPNP selection, which boxws
+// surfaces as OnWakeResume. Power-on is an explicit "play it again", so this
+// overrides the user-stop the power-off STOP_STATE set and clears the
+// failed/attempt state so even a previously dead stream gets one fresh try.
+func (s *Server) ResumeLastPlay() {
+	if s.renderer == nil {
+		return
+	}
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	if lp == nil || time.Since(lp.ts) >= 12*time.Hour {
+		s.lastPlayMu.Unlock()
+		s.logger.Info("wake resume: nothing recent to resume")
+		return
+	}
+	lp.failed = false
+	lp.rePushes = 0
+	boxURL, title, art, mime := lp.boxURL, lp.title, lp.art, lp.mime
+	s.lastPlayMu.Unlock()
+
+	// Power-on is an explicit resume: drop the recent user-stop (the power-off
+	// emitted STOP_STATE) so maybeRePush/this resume is not suppressed.
+	s.lastUserStopMu.Lock()
+	s.lastUserStop = time.Time{}
+	s.lastUserStopMu.Unlock()
+
+	go func() {
+		// Let the box finish waking before we push the stream.
+		time.Sleep(2 * time.Second)
+		if s.boxHost != "" {
+			wctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			_ = boxcli.WakeAndWait(wctx, s.boxHost, 6*time.Second, s.logger)
+			cancel()
+		}
+		// Box already playing? Then this DO_NOT_RESUME came from STR waking the
+		// box for a preset press (not a bare power-on), and that press already
+		// started playback. Skip so we do not re-push the same stream and cause a
+		// double-start hiccup.
+		if _, busy := s.boxPlayState(); busy {
+			s.logger.Info("wake resume: box already playing, no resume needed")
+			return
+		}
+		s.boxCmdMu.Lock()
+		defer s.boxCmdMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		var err error
+		if mime != "" {
+			err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
+		} else {
+			err = s.renderer.PlayURL(ctx, boxURL, title, art)
+		}
+		if err != nil {
+			s.logger.Warn("wake resume: play failed", "err", err, "url", boxURL)
+			return
+		}
+		s.logger.Info("wake resume: resumed last stream after power-on", "url", boxURL, "title", title)
+	}()
 }
 
 // userStopWindow is how long after a deliberate user stop the auto-re-push

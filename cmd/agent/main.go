@@ -42,6 +42,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/sysinfo"
 	"github.com/JRpersonal/streborn/internal/tlsgen"
 	"github.com/JRpersonal/streborn/internal/upnp"
+	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/webui"
 	usbstick "github.com/JRpersonal/streborn/usb-stick"
 )
@@ -230,6 +231,14 @@ func run() error {
 			"count", len(store.All()), "file", *presetsPath)
 	}
 
+	// Webhook config (user-defined HTTP requests fired on a box trigger, e.g. the
+	// remote thumbs keys -> a smart-home toggle). Persisted on NAND so it survives
+	// a stick removal. Missing file is fine (empty config).
+	webhooksStore, whErr := webhooks.Load("/mnt/nv/streborn/webhooks.json", logger.With("comp", "webhooks"))
+	if whErr != nil {
+		logger.Warn("webhooks config load failed, continuing with empty config", "err", whErr)
+	}
+
 	// Hosts Datei manipulieren
 	var hostsMgr *hosts.Manager
 	if *applyHosts {
@@ -293,7 +302,9 @@ func run() error {
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
-		webui.WithSpotifyInfo(spotifyMgr.ServeInfo))
+		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
+		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
+		webui.WithWebhooks(webhooksStore))
 
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
 	// own (reported: radio stops after ~11 min with no upstream error), the
@@ -320,6 +331,13 @@ func run() error {
 		// A box/remote stop seen over gabbo tells the webui to hold the
 		// auto-re-push, so a deliberate stop is not immediately undone.
 		onUserStop: webuiSrv.NoteUserStop,
+		webhooks:   webhooksStore,
+		// Power-button wake from standby: resume the last stream the box itself
+		// declined to resume (DO_NOT_RESUME).
+		onWakeResume: webuiSrv.ResumeLastPlay,
+		// Record hardware-preset recalls so the wake-resume + auto-re-push know
+		// what to bring back.
+		noteLastPlay: webuiSrv.NoteLastPlay,
 	}
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
@@ -693,6 +711,18 @@ type presetWsHandler struct {
 	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
 	// does not fight a wanted stop. nil-safe.
 	onUserStop func()
+	// webhooks fires the user-configured HTTP request on a "thumb" trigger (a
+	// lone userActivityUpdate, see OnThumbActivity). nil-safe.
+	webhooks *webhooks.Store
+	// onWakeResume is invoked when the box is woken from standby by the power
+	// button (boxws OnWakeResume). Wired to webui.ResumeLastPlay so STR resumes
+	// the last stream the box itself declined to resume. nil-safe.
+	onWakeResume func()
+	// noteLastPlay records a hardware-preset recall as the webui's lastPlay so
+	// the auto-re-push and the wake-resume know what to resume (the hardware path
+	// plays straight through the renderer, bypassing the webui's own lastPlay).
+	// Wired to webui.NoteLastPlay. nil-safe.
+	noteLastPlay func(boxURL, title, art, mime string)
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
@@ -733,6 +763,14 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		return
 	}
 
+	// This is a radio (non-Spotify) recall. Tell the Spotify manager the user
+	// switched away so its #14 auto-attach does not yank the box back to a
+	// still-advancing go-librespot a second later (reported: Spotify->radio
+	// played radio ~1s then jumped back to the Spotify preset).
+	if h.spotify != nil {
+		h.spotify.SwitchedAway(ctx)
+	}
+
 	// Box aufwecken aus Standby + Pair sicherstellen.
 	if h.boxHost != "" {
 		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
@@ -751,6 +789,12 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	defer cancel()
 	if err := h.renderer.PlayURL(playCtx, url, name, icon); err != nil {
 		h.logger.Warn("upnp play (initial) failed, will verify+retry", "slot", slot, "err", err)
+	}
+	// Record this hardware recall as the last play so the auto-re-push and the
+	// power-button wake-resume know what to bring back (the webui only tracks its
+	// own soft plays otherwise).
+	if h.noteLastPlay != nil {
+		h.noteLastPlay(url, name, icon, "")
 	}
 	// Verify+retry in the background: the first hardware press after a cold
 	// boot can race the box/agent bringup so nothing plays until a second
@@ -788,6 +832,26 @@ func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
 func (h *presetWsHandler) OnUserStop(_ context.Context) {
 	if h.onUserStop != nil {
 		h.onUserStop()
+	}
+}
+
+// OnThumbActivity fires the user-configured webhook when the box reports a lone
+// userActivityUpdate (the best available signal for a remote thumbs key on this
+// firmware; up and down are indistinguishable, so it is a single toggle-style
+// trigger). The detection + debounce live in boxws; here we just fire.
+func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
+	if h.webhooks == nil {
+		return
+	}
+	h.webhooks.FireThumb(ctx)
+}
+
+// OnWakeResume is fired when the box is woken from standby by the power button.
+// The box declines to resume its last UPNP source itself (DO_NOT_RESUME), so STR
+// resumes the last stream it played via the webui.
+func (h *presetWsHandler) OnWakeResume(_ context.Context) {
+	if h.onWakeResume != nil {
+		h.onWakeResume()
 	}
 }
 
@@ -837,6 +901,11 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 	slotURL := fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
 	if err := h.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
 		h.logger.Warn("spotify upnp play (display) failed, will verify+retry", "slot", slot, "err", err)
+	}
+	// Record this hardware recall as the last play so the power-button
+	// wake-resume can bring the Spotify stream back.
+	if h.noteLastPlay != nil {
+		h.noteLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 	}
 	// Wake from standby + ensure pairing (the box is awake on a hardware press,
 	// so these return fast); kept AFTER the display push so the buffering state
