@@ -855,6 +855,8 @@ body {
 /* The "Favorites" mode entry sits next to Top/Search and is hidden until the
    first station is starred (toggled via the .hidden class in JS). */
 #favModeBtn.hidden { display: none; }
+/* A speaker not on the latest Bose firmware: amber, attention without alarm. */
+.fw-outdated { color: #e0a000; }
 
 /* Genre Chips */
 .genre-chips {

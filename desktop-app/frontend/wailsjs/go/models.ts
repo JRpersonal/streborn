@@ -58,11 +58,38 @@ export namespace main {
 	        this.portVerified = source["portVerified"];
 	    }
 	}
+	export class FirmwareInfo {
+	    reachable: boolean;
+	    model: string;
+	    firmware: string;
+	    short: string;
+	    moduleType: string;
+	    variant: string;
+	    latest: string;
+	    outdated: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new FirmwareInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reachable = source["reachable"];
+	        this.model = source["model"];
+	        this.firmware = source["firmware"];
+	        this.short = source["short"];
+	        this.moduleType = source["moduleType"];
+	        this.variant = source["variant"];
+	        this.latest = source["latest"];
+	        this.outdated = source["outdated"];
+	    }
+	}
 	export class InstallResult {
 	    step: string;
 	    ok: boolean;
 	    message: string;
 	    log: string;
+	    firmware: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new InstallResult(source);
@@ -74,6 +101,7 @@ export namespace main {
 	        this.ok = source["ok"];
 	        this.message = source["message"];
 	        this.log = source["log"];
+	        this.firmware = source["firmware"];
 	    }
 	}
 	export class LibraryContainer {

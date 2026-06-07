@@ -37,10 +37,11 @@ var nullDevice = func() string {
 // attempt. The frontend uses Step to drive live progress and OK +
 // Message for the final state.
 type InstallResult struct {
-	Step    string `json:"step"`
-	OK      bool   `json:"ok"`
-	Message string `json:"message"`
-	Log     string `json:"log"`
+	Step     string `json:"step"`
+	OK       bool   `json:"ok"`
+	Message  string `json:"message"`
+	Log      string `json:"log"`
+	Firmware string `json:"firmware"` // Bose firmware read from :8090/info, for diagnostics
 }
 
 // sshFlagSets is a fallback chain of OpenSSH option lists, tried
@@ -173,6 +174,21 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		return res, fmt.Errorf("host is required")
 	}
 	a.logger.Info("install_str: starting", "host", host, "model", model)
+
+	// Read the box firmware (Bose :8090/info, reachable on stock and STR boxes)
+	// up front so it lands in the result and the logs. An old firmware is a
+	// candidate cause when a box never brings up the agent, so capturing it here
+	// lets us confirm or rule it out, and warn the user to update (#114).
+	fwNote := ""
+	if fw, ferr := a.GetBoxFirmware(host); ferr == nil && fw.Reachable {
+		res.Firmware = fw.Short
+		a.logger.Info("install_str: box firmware", "host", host, "model", fw.Model,
+			"firmware", fw.Firmware, "moduleType", fw.ModuleType, "variant", fw.Variant, "outdated", fw.Outdated)
+		if fw.Outdated && fw.Short != "" {
+			fwNote = " The speaker firmware is " + fw.Short + ", older than the latest Bose firmware " + latestBoseFirmware +
+				". Update the speaker in the Bose SoundTouch app first, then run the install again."
+		}
+	}
 
 	// Step 0a: preflight TCP reachability on the SSH port. SSH failing with a
 	// bare "exit status 255" and no stderr is the opaque error users hit when
@@ -334,6 +350,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			res.Message = "The speaker did not bring up the STR agent on port 8888 in time. " +
 				"It may still be rebooting; refresh the speaker list in a minute. " + logHint
 		}
+		res.Message += fwNote
 		return res, nil
 	}
 	res.Step = "done"
@@ -596,6 +613,17 @@ func tcpReachable(host string, port int, timeout time.Duration) bool {
 	}
 	_ = c.Close()
 	return true
+}
+
+// BoxInstallReachable reports whether the speaker accepts a TCP connection on
+// SSH (:22), the precondition for the in-app installer. The setup wizard polls
+// this so the install button only unlocks once the speaker is actually
+// reachable, instead of letting the user trigger an install that then times out.
+func (a *App) BoxInstallReachable(host string) bool {
+	if host == "" {
+		return false
+	}
+	return tcpReachable(host, 22, 3*time.Second)
 }
 
 // waitForTCPPort polls host:port until either it accepts a TCP

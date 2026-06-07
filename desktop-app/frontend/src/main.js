@@ -10,6 +10,8 @@ import {
   RebootBox,
   SyncBoxPresets,
   CopyPresetsAcrossBoxes,
+  GetBoxFirmware,
+  BoxInstallReachable,
   Pause,
   Stop,
   Status,
@@ -3598,6 +3600,10 @@ function renderBoxSettings(s, box) {
     </div>
 
     <div class="settings-section">
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.firmwareLabel'))}</span><span class="kv-val" id="boxFirmwareInfo">${escapeHtml(t('common.loading'))}</span></div>
+    </div>
+
+    <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.langHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.langCurrent'))}</span><span class="kv-val" id="boxLangCurrent">${escapeHtml(t('common.loading'))}</span></div>
       <div class="setting-row">
@@ -4252,6 +4258,27 @@ function renderBoxSettings(s, box) {
       } catch (e) { showError(e); }
       copyBtn.disabled = false;
     };
+  }
+
+  // Firmware info: read :8090/info (works on stock and STR boxes) and show the
+  // Bose firmware, flagging a box that is not on the latest (27.0.6).
+  const fwEl = $('boxFirmwareInfo');
+  if (fwEl && box) {
+    (async () => {
+      try {
+        const fw = await GetBoxFirmware(box.host);
+        if (fw && fw.reachable && fw.short) {
+          fwEl.textContent = fw.outdated
+            ? t('settingsView.firmwareOutdated', { v: fw.short, latest: fw.latest })
+            : t('settingsView.firmwareLatest', { v: fw.short });
+          fwEl.classList.toggle('fw-outdated', !!fw.outdated);
+        } else {
+          fwEl.textContent = t('settingsView.firmwareUnknown');
+        }
+      } catch {
+        fwEl.textContent = t('settingsView.firmwareUnknown');
+      }
+    })();
   }
 
   // App Region dropdown fuellen + aktuelle Region selektieren
@@ -5455,11 +5482,12 @@ async function doSetup() {
   $('setupGo').disabled = false;
 }
 
-// showAwaitBoxReadyPanel renders the "do this on the speaker now"
-// instruction set with a confirmation button. The discovery /
-// auto-install loop only starts after the user clicks the button,
-// because nothing else can prove the stick has actually been moved
-// into the speaker and the box has booted with it mounted.
+// showAwaitBoxReadyPanel renders the "do this on the speaker now" instructions
+// plus a confirm button that stays DISABLED while a background watcher works out
+// what state the speaker is in. The button only unlocks once the speaker is
+// found AND reachable for install; until then the watcher reports clearly what
+// it sees, including the common "speaker booted without the stick" case, so
+// users stop dropping out at this fragile step.
 function showAwaitBoxReadyPanel({ ssid, pass, html }) {
   const setupResult = $('setupResult');
   if (!setupResult) return;
@@ -5471,15 +5499,158 @@ function showAwaitBoxReadyPanel({ ssid, pass, html }) {
     `<li>${escapeHtml(t('setup.awaitStep2'))}</li>` +
     `<li>${escapeHtml(t('setup.awaitStep3'))}</li>` +
     `</ol>` +
-    `<button class="btn btn-primary" id="setupSpeakerReady">${escapeHtml(t('setup.awaitConfirmBtn'))}</button>` +
+    `<div class="muted small">${escapeHtml(t('setup.awaitPrecondition'))}</div>` +
+    `<div class="setup-await-status" id="setupAwaitStatus"></div>` +
+    `<button class="btn btn-primary" id="setupSpeakerReady" disabled>${escapeHtml(t('setup.awaitConfirmWaiting'))}</button>` +
     `</div>`;
+  watchForSpeakerReady({ ssid, pass, html });
+}
+
+// watchForSpeakerReady is the idiot-proof background watcher for the final setup
+// step. It polls every ~3s and classifies the speaker into one of several plain
+// states so a non-technical user always knows what to do and the install button
+// only unlocks when the speaker is genuinely ready. Key cases it tells apart:
+//   - still searching / stalled (speaker not on the network yet),
+//   - found but just booting (grace window, do not blame the stick yet),
+//   - booted WITHOUT the stick (on the network, SSH off, firmware current): the
+//     most common drop-out; reseat + power-cycle and it auto-recovers,
+//   - firmware too old (on the network, SSH off, firmware outdated/unparsable):
+//     update via the Bose app first; a "try anyway" escape never hard-blocks,
+//   - ready (SSH open) / already STR / a factory-fresh setup network,
+//   - wrong/multiple speakers (a pinned target that is not the one online).
+// A separate 1s ticker keeps the countdown live between polls.
+async function watchForSpeakerReady({ ssid, pass, html }) {
+  const statusEl = $('setupAwaitStatus');
   const btn = $('setupSpeakerReady');
-  if (btn) {
-    btn.onclick = () => {
-      btn.disabled = true;
-      waitForBoxAfterSetup({ ssid, pass, html });
-    };
+  if (!statusEl || !btn) return;
+
+  const wantedHost = (state.setupTarget && state.setupTarget.box) ? state.setupTarget.box.host : '';
+  const watcherStart = Date.now();
+  const deadline = watcherStart + 6 * 60 * 1000;
+  const GRACE_MS = 90 * 1000;
+  const fwCache = {}; // host -> { at, info }; firmware does not change mid-watch
+  let firstSeenOnNetwork = 0;
+  let lastSeenState = '';
+  let ready = false;
+  let aborted = false; // a link (try-anyway / choose-different) took over
+
+  const setStatus = (cls, txt, extraHtml) => {
+    statusEl.innerHTML = `<span class="${cls}">${escapeHtml(txt)}</span>` + (extraHtml || '');
+  };
+
+  // The 1s ticker only refreshes the countdown while we are in a searching
+  // state (liveSearchKey set); other states show a steady message and issue no
+  // probes from the ticker.
+  let liveSearchKey = null;
+  let ticker = setInterval(() => {
+    if (!liveSearchKey) return;
+    setStatus('muted small', t(liveSearchKey, { remaining: formatRemaining(deadline - Date.now()) }));
+  }, 1000);
+  const stopTicker = () => { if (ticker) { clearInterval(ticker); ticker = null; } };
+
+  const getFw = async (host) => {
+    const c = fwCache[host];
+    if (c && (Date.now() - c.at) < 15000) return c.info;
+    try { const f = await GetBoxFirmware(host); if (f && f.reachable) { fwCache[host] = { at: Date.now(), info: f }; return f; } } catch {}
+    return null;
+  };
+  const arm = (label, onclick) => { liveSearchKey = null; btn.textContent = label; btn.disabled = false; btn.onclick = onclick; };
+  const handoff = () => { btn.disabled = true; aborted = true; stopTicker(); waitForBoxAfterSetup({ ssid, pass, html }); };
+
+  while (Date.now() < deadline && !ready && !aborted) {
+    let list = [];
+    try { list = (await DiscoverBoxes(4)) || []; } catch {}
+    // No target pinned: match only an STR-FREE (stock) speaker, the one we are
+    // here to install. An already-STR speaker on the network is NOT the target
+    // of a fresh stick setup, so it is ignored and we keep waiting for the new
+    // speaker, instead of misleadingly reporting "already installed" against it.
+    // (The already-STR state still fires when the user explicitly picked an STR
+    // speaker as the target, i.e. wantedHost matches it.)
+    const cand = wantedHost
+      ? list.find(b => b && b.host === wantedHost)
+      : list.find(b => b && b.host && b.kind === 'stock');
+
+    // Wrong/multiple speakers: a target was pinned but is not online while other
+    // speakers are. Never lock onto a different unit.
+    if (wantedHost && !cand && list.some(b => b && b.host && b.host !== wantedHost && (b.kind === 'stock' || b.kind === 'str'))) {
+      liveSearchKey = null; lastSeenState = 'wrong';
+      setStatus('setup-warn', t('setup.awaitWrongSpeaker'),
+        `<div><a href="#" id="setupChooseDifferent">${escapeHtml(t('setup.awaitChooseDifferent'))}</a></div>`);
+      const cd = $('setupChooseDifferent');
+      if (cd) cd.onclick = (e) => { e.preventDefault(); aborted = true; stopTicker(); state.setupTarget = null; showAwaitBoxReadyPanel({ ssid, pass, html }); };
+      await sleep(3000); continue;
+    }
+
+    // Already runs STR.
+    if (cand && cand.kind === 'str') {
+      lastSeenState = 'str';
+      setStatus('setup-ok', t('setup.awaitAlreadyStr'));
+      arm(t('setup.awaitContinueBtn'), handoff);
+      ready = true; break;
+    }
+
+    // On the home network (stock).
+    if (cand && cand.host) {
+      const f = await getFw(cand.host);
+      const model = (f && f.model) || cand.model || 'SoundTouch';
+      const fw = (f && f.short) || '';
+      if (f) { if (!firstSeenOnNetwork) firstSeenOnNetwork = Date.now(); }
+      else { firstSeenOnNetwork = 0; } // discovery listed it but :8090 blipped mid-reboot
+      let sshOk = false;
+      try { sshOk = await BoxInstallReachable(cand.host); } catch {}
+      if (sshOk) {
+        lastSeenState = 'ready';
+        setStatus('setup-ok', t('setup.awaitFoundReady', { model }));
+        arm(t('setup.awaitConfirmBtn'), handoff);
+        ready = true; break;
+      }
+      if (!firstSeenOnNetwork || (Date.now() - firstSeenOnNetwork) < GRACE_MS) {
+        liveSearchKey = null; lastSeenState = 'booting';
+        setStatus('muted small', t('setup.awaitStillBooting'));
+        await sleep(3000); continue;
+      }
+      // Grace elapsed, SSH still off: firmware too old vs booted without the stick.
+      liveSearchKey = null;
+      if (f && (f.outdated || !f.short)) {
+        lastSeenState = 'firmware';
+        setStatus('setup-warn', t('setup.awaitFirmwareTooOld', { model, fw: fw || '?' }),
+          `<div><a href="#" id="setupTryAnyway">${escapeHtml(t('setup.awaitFirmwareTryAnyway'))}</a></div>`);
+        const ta = $('setupTryAnyway');
+        if (ta) ta.onclick = (e) => { e.preventDefault(); handoff(); };
+      } else {
+        lastSeenState = 'no-stick';
+        setStatus('setup-warn', t('setup.awaitBootedWithoutStick', { model }));
+      }
+      await sleep(3000); continue;
+    }
+
+    // Factory-fresh wireless-only speaker on its own setup network.
+    if (!wantedHost) {
+      let ap = null;
+      try { ap = await ProbeSetupAP(); } catch {}
+      if (ap && ap.host) {
+        lastSeenState = 'setup-ap';
+        setStatus('setup-ok', t('setup.awaitSetupNetwork'));
+        arm(t('setup.awaitSetupNetworkBtn'), handoff);
+        ready = true; break;
+      }
+    }
+
+    // Nothing on the network yet.
+    liveSearchKey = (Date.now() - watcherStart) < 25000 ? 'setup.awaitSearching' : 'setup.awaitSearchingStalled';
+    setStatus('muted small', t(liveSearchKey, { remaining: formatRemaining(deadline - Date.now()) }));
+    await sleep(3000);
   }
+
+  if (ready || aborted) { stopTicker(); return; }
+
+  // Timeout: context-aware recovery based on whether we ever saw it on the network.
+  stopTicker();
+  const wasOnNetwork = lastSeenState === 'no-stick' || lastSeenState === 'firmware' || lastSeenState === 'booting';
+  setStatus('setup-warn', t(wasOnNetwork ? 'setup.awaitTimeoutWasOnNetwork' : 'setup.awaitTimeoutNeverSeen'));
+  btn.textContent = t('setup.awaitSearchAgain');
+  btn.disabled = false;
+  btn.onclick = () => { showAwaitBoxReadyPanel({ ssid, pass, html }); };
 }
 
 // waitForBoxAfterSetup runs after the user has confirmed the stick

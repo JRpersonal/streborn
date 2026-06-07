@@ -10,6 +10,8 @@ export function AppVersion():Promise<string>;
 
 export function BoxAgentVersion(arg1:string,arg2:number):Promise<Record<string, string>>;
 
+export function BoxInstallReachable(arg1:string):Promise<boolean>;
+
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.LibraryPage>;
@@ -31,6 +33,8 @@ export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.Lo
 export function FormatStick(arg1:string):Promise<void>;
 
 export function GetAirplayOpt(arg1:string,arg2:number):Promise<Record<string, boolean>>;
+
+export function GetBoxFirmware(arg1:string):Promise<main.FirmwareInfo>;
 
 export function GetBoxLanguage(arg1:string):Promise<string>;
 

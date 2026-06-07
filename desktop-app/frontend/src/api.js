@@ -16,6 +16,8 @@ export {
   RebootBox,
   SyncBoxPresets,
   CopyPresetsAcrossBoxes,
+  GetBoxFirmware,
+  BoxInstallReachable,
   Pause,
   Stop,
   Status,

@@ -14,6 +14,10 @@ export function BoxAgentVersion(arg1, arg2) {
   return window['go']['main']['App']['BoxAgentVersion'](arg1, arg2);
 }
 
+export function BoxInstallReachable(arg1) {
+  return window['go']['main']['App']['BoxInstallReachable'](arg1);
+}
+
 export function BoxSettings(arg1, arg2) {
   return window['go']['main']['App']['BoxSettings'](arg1, arg2);
 }
@@ -56,6 +60,10 @@ export function FormatStick(arg1) {
 
 export function GetAirplayOpt(arg1, arg2) {
   return window['go']['main']['App']['GetAirplayOpt'](arg1, arg2);
+}
+
+export function GetBoxFirmware(arg1) {
+  return window['go']['main']['App']['GetBoxFirmware'](arg1);
 }
 
 export function GetBoxLanguage(arg1) {
