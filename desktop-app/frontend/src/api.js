@@ -62,7 +62,6 @@ export {
   SpotifyNowPlaying,
   SaveSpotifyPreset,
   SaveLibraryPreset,
-  GetBattery,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
