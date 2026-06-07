@@ -1,14 +1,25 @@
 #!/bin/sh
-# run.sh v2: NAND Cache ist Source of Truth.
+# run.sh v2: the NAND cache is the source of truth for the agent binary.
 #
-# Geaendert gegenueber v1 (15.05.2026):
-#   - Stick Binary auf SD card wird NICHT automatisch auf NAND kopiert.
-#     Damit verschwinden manuell deployte NAND Updates nicht beim Reboot.
-#   - Stick Binary wird nur noch als FALLBACK genutzt, wenn NAND leer ist.
-#   - Manuelles Stick->NAND Sync: touch /mnt/nv/streborn/sync-from-stick
-#     Dann wird beim naechsten Boot vom Stick gesynct.
+# DEPLOY PROCEDURE -- read this before pushing a new agent build:
+#   - ALWAYS copy the new binary to BOTH locations, never just one:
+#       stick: /media/sda1/streborn-armv7l
+#       NAND : /mnt/nv/streborn/bin/streborn-armv7l
+#     NAND is what boots; the stick is the recovery/fallback copy and must
+#     not be left stale. Deploying to NAND only silently rots the stick.
+#   - After deploying, REBOOT the box. Do NOT kill+respawn the running agent
+#     by hand: the live process keeps the old binary mapped, and a manual
+#     restart has proven unreliable. A clean reboot loads the new binary.
+#   - Verify the running version from the log with `tail` (not head).
 #
-# Auf der Box installieren: scp setup/run.sh stbox:/media/sda1/run.sh
+# Boot-time behaviour (the logic below):
+#   - The stick binary is NOT auto-copied to NAND on every boot, so a manual
+#     NAND deploy survives a reboot.
+#   - The stick binary is used only as a FALLBACK when the NAND cache is empty.
+#   - To force a one-off stick->NAND sync: touch /mnt/nv/streborn/sync-from-stick
+#     (applied on the next boot).
+#
+# Install on the box: scp setup/run.sh stbox:/media/sda1/run.sh
 
 set -u
 
