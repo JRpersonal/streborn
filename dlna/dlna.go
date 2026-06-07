@@ -29,11 +29,15 @@ import (
 )
 
 const (
-	ssdpAddr        = "239.255.255.250:1900"
-	mediaServerST   = "urn:schemas-upnp-org:device:MediaServer:1"
-	cdsServiceType  = "urn:schemas-upnp-org:service:ContentDirectory:1"
-	defaultMXSecs   = 2
-	defaultDiscover = 3 * time.Second
+	ssdpAddr       = "239.255.255.250:1900"
+	mediaServerST  = "urn:schemas-upnp-org:device:MediaServer:1"
+	cdsServiceType = "urn:schemas-upnp-org:service:ContentDirectory:1"
+	// MX (seconds the device may wait before answering) and the listen window
+	// are deliberately generous: a NAS (Asustor/MiniDLNA/Plex) is slower to
+	// compose and return its SSDP response than a router, and ListMediaServers
+	// is user-initiated, so a couple of extra seconds is acceptable (#110).
+	defaultMXSecs   = 3
+	defaultDiscover = 5 * time.Second
 )
 
 // Server is a single discovered DLNA MediaServer on the LAN.
@@ -155,18 +159,23 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 					goto done
 				default:
 				}
-				n, _, err := conn.ReadFromUDP(buf)
+				n, raddr, err := conn.ReadFromUDP(buf)
 				if err != nil {
 					break
 				}
 				loc := headerValue(buf[:n], "LOCATION")
-				st := headerValue(buf[:n], "ST")
 				if loc == "" {
 					continue
 				}
-				if st != "" && !strings.Contains(st, "MediaServer") && !strings.Contains(st, "rootdevice") {
-					continue
-				}
+				st := headerValue(buf[:n], "ST")
+				// Log every response that carries a LOCATION so a "no media
+				// servers found" report is debuggable (did the NAS even answer,
+				// from which interface). No ST filter: many MediaServers
+				// (Asustor/MiniDLNA/Plex) answer ssdp:all with an ST of
+				// ContentDirectory or a vendor URN and were silently dropped
+				// here despite serving a valid MediaServer device.xml. The real
+				// gate is the post-fetch CDSControlURL check below (#110).
+				Logger.Info("dlna: SSDP response", "src", raddr.String(), "st", st, "location", loc)
 				locationsMu.Lock()
 				if _, dup := locations[loc]; !dup {
 					locations[loc] = struct{}{}
@@ -190,7 +199,7 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 	// expired by the time we get here; using it for the HTTP
 	// fetches would have every fetch fail with deadline exceeded.
 	// Parent ctx is still alive (caller's overall budget).
-	fctx, fcancel := context.WithTimeout(ctx, 5*time.Second)
+	fctx, fcancel := context.WithTimeout(ctx, 8*time.Second)
 	defer fcancel()
 
 	type result struct {
@@ -311,18 +320,23 @@ func fetchDeviceDescription(ctx context.Context, location string) (Server, error
 	if err != nil {
 		return Server{}, err
 	}
-	client := &http.Client{Timeout: 4 * time.Second}
+	// 6s (was 4s): a NAS can serve its device.xml slowly. Without logging,
+	// a fetch failure made a NAS that DID answer SSDP vanish with no trace (#110).
+	client := &http.Client{Timeout: 6 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
+		Logger.Warn("dlna: device description fetch failed", "location", location, "err", err.Error())
 		return Server{}, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
+		Logger.Warn("dlna: device description read failed", "location", location, "err", err.Error())
 		return Server{}, err
 	}
 	var root rootDevice
 	if err := xml.Unmarshal(body, &root); err != nil {
+		Logger.Warn("dlna: device description xml parse failed", "location", location, "err", err.Error())
 		return Server{}, fmt.Errorf("device xml: %w", err)
 	}
 
