@@ -74,6 +74,10 @@ export function GetPresets(arg1, arg2) {
   return window['go']['main']['App']['GetPresets'](arg1, arg2);
 }
 
+export function GetWebhooks(arg1, arg2) {
+  return window['go']['main']['App']['GetWebhooks'](arg1, arg2);
+}
+
 export function InstallSTROnBox(arg1) {
   return window['go']['main']['App']['InstallSTROnBox'](arg1);
 }
@@ -170,6 +174,10 @@ export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
   return window['go']['main']['App']['SetPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
+export function SetWebhooks(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['SetWebhooks'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
 export function SpotifyBitrate(arg1, arg2) {
   return window['go']['main']['App']['SpotifyBitrate'](arg1, arg2);
 }
@@ -208,6 +216,10 @@ export function SuggestBoxLanguage(arg1, arg2) {
 
 export function SyncBoxPresets(arg1, arg2) {
   return window['go']['main']['App']['SyncBoxPresets'](arg1, arg2);
+}
+
+export function TestWebhook(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['TestWebhook'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function TrueFactoryReset(arg1) {

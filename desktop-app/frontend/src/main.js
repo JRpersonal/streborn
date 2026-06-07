@@ -44,6 +44,9 @@ import {
   SetBoxLanguage,
   GetAirplayOpt,
   SetAirplayOpt,
+  GetWebhooks,
+  SetWebhooks,
+  TestWebhook,
   StreamBitrate,
   StreamTitle,
   SpotifyBitrate,
@@ -3546,6 +3549,28 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.airplayOptHelp'))}</small>
     </div>
 
+    <details class="settings-section settings-expert">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <small class="muted small expert-intro">${escapeHtml(t('settingsView.webhookHelp'))}</small>
+      <div class="setting-row">
+        <input type="text" id="webhookUrl" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookUrlPlaceholder'))}" />
+        <select id="webhookMethod" style="flex:0 0 90px;">
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+        </select>
+      </div>
+      <div class="setting-row" id="webhookBodyRow">
+        <input type="text" id="webhookBody" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookBodyPlaceholder'))}" />
+      </div>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="webhookOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="webhookOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+        <span style="flex:1;"></span>
+        <button class="btn btn-mini" id="webhookTestBtn">${escapeHtml(t('settingsView.webhookTestBtn'))}</button>
+        <button class="btn btn-mini btn-primary" id="webhookSaveBtn">${escapeHtml(t('common.save'))}</button>
+      </div>
+    </details>
+
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.sourcesHeading'))}</h3>
       <div class="sources-grid">
@@ -3986,6 +4011,65 @@ function renderBoxSettings(s, box) {
     };
     aoOn.onclick = () => setAO(true);
     aoOff.onclick = () => setAO(false);
+  }
+
+  // Smart-home / webhook: the remote thumbs keys (up and down are
+  // indistinguishable on this firmware, so one shared toggle trigger) fire a
+  // user-defined HTTP request the agent persists on the box.
+  const whUrl = $('webhookUrl');
+  const whMethod = $('webhookMethod');
+  const whBody = $('webhookBody');
+  const whBodyRow = $('webhookBodyRow');
+  const whOn = $('webhookOn');
+  const whOff = $('webhookOff');
+  const whTest = $('webhookTestBtn');
+  const whSave = $('webhookSaveBtn');
+  if (whUrl && whOn && whOff && whSave) {
+    let whEnabled = false;
+    const paintWh = (en) => {
+      whEnabled = en === true;
+      whOn.classList.toggle('active', whEnabled === true);
+      whOff.classList.toggle('active', whEnabled === false);
+    };
+    const syncBodyRow = () => {
+      // A request body is only sent for non-GET methods.
+      if (whBodyRow) whBodyRow.style.display = (whMethod.value === 'GET') ? 'none' : '';
+    };
+    (async () => {
+      try {
+        const w = await GetWebhooks(box.host, box.port);
+        const th = (w && w.thumb) || {};
+        if (th.url) whUrl.value = th.url;
+        if (th.method) whMethod.value = th.method;
+        if (th.body) whBody.value = th.body;
+        paintWh(th.enabled === true);
+      } catch { paintWh(false); }
+      syncBodyRow();
+    })();
+    whOn.onclick = () => paintWh(true);
+    whOff.onclick = () => paintWh(false);
+    whMethod.onchange = syncBodyRow;
+    whSave.onclick = async () => {
+      const url = whUrl.value.trim();
+      if (whEnabled && !url) { showError(t('settingsView.webhookUrlRequired')); return; }
+      try {
+        await SetWebhooks(box.host, box.port, whEnabled, whMethod.value, url, whBody.value.trim(), '');
+        showToast(t('settingsView.webhookSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    whTest.onclick = async () => {
+      const url = whUrl.value.trim();
+      if (!url) { showError(t('settingsView.webhookUrlRequired')); return; }
+      whTest.disabled = true;
+      try {
+        const r = await TestWebhook(box.host, box.port, whMethod.value, url, whBody.value.trim(), '');
+        showToast(t('settingsView.webhookTestOk', { status: (r && r.status) || '' }));
+      } catch (e) {
+        showError(t('settingsView.webhookTestFailed', { err: String(e) }));
+      } finally {
+        whTest.disabled = false;
+      }
+    };
   }
 
   // App Region dropdown fuellen + aktuelle Region selektieren

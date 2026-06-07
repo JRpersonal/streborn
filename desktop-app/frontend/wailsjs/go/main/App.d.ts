@@ -40,6 +40,8 @@ export function GetLogFilePath():Promise<string>;
 
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
 
+export function GetWebhooks(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function InstallSTROnBox(arg1:string):Promise<main.InstallResult>;
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
@@ -88,6 +90,8 @@ export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number
 
 export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number):Promise<void>;
 
+export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
+
 export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
 
 export function SpotifyNowPlaying(arg1:string,arg2:number):Promise<main.SpotifyNow>;
@@ -107,6 +111,8 @@ export function StreamTitle(arg1:string,arg2:number):Promise<string>;
 export function SuggestBoxLanguage(arg1:string,arg2:string):Promise<number>;
 
 export function SyncBoxPresets(arg1:string,arg2:number):Promise<Record<string, any>>;
+
+export function TestWebhook(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string):Promise<Record<string, any>>;
 
 export function TrueFactoryReset(arg1:string):Promise<main.TrueFactoryResetResult>;
 

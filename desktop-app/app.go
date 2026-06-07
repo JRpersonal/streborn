@@ -1410,6 +1410,72 @@ func (a *App) boxPut(host string, port int, path string, body any) error {
 	return nil
 }
 
+// --- Webhook config (remote thumbs key -> a user-defined HTTP request) ----
+//
+// The remote's thumbs-up and thumbs-down keys surface on the box only as a
+// generic activity ping with no up/down identity, so they share ONE trigger
+// (suited to a smart-home on/off toggle). These call STR's /api/webhooks
+// endpoints on the agent.
+
+// GetWebhooks reads the agent's webhook config (shape: {"thumb":{...}}).
+func (a *App) GetWebhooks(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/webhooks", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetWebhooks stores the thumbs-trigger HTTP request on the agent.
+func (a *App) SetWebhooks(host string, port int, enabled bool, method, url, body, contentType string) error {
+	cfg := map[string]any{
+		"thumb": map[string]any{
+			"enabled":      enabled,
+			"method":       method,
+			"url":          url,
+			"body":         body,
+			"content_type": contentType,
+		},
+	}
+	return a.boxPut(host, port, "/api/webhooks", cfg)
+}
+
+// TestWebhook fires the given request immediately so the user can verify their
+// URL from the app without pressing a key on the box. Returns {ok, status}.
+func (a *App) TestWebhook(host string, port int, method, url, body, contentType string) (map[string]any, error) {
+	action := map[string]any{
+		"enabled":      true,
+		"method":       method,
+		"url":          url,
+		"body":         body,
+		"content_type": contentType,
+	}
+	b, _ := json.Marshal(action)
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/webhooks/test", "application/json", string(b))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		bb, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(bb))
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // --- Box-native (:8090) controls that STR does not proxy ---------------
 //
 // Clock display and language live on the box's OWN Bose HTTP API (:8090),

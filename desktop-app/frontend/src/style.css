@@ -1046,6 +1046,37 @@ body {
   color: #ccc;
   font-weight: 500;
 }
+/* Expert / advanced settings: collapsed by default, visually toned down so
+   normal users are not distracted by them. */
+.settings-expert {
+  border: 1px dashed #3a3a3a;
+  background: #1e1e1e;
+}
+.settings-expert > summary.settings-expert-summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #aaa;
+  list-style: revert;
+  user-select: none;
+}
+.settings-expert > summary.settings-expert-summary:hover { color: #ccc; }
+.settings-expert[open] > summary.settings-expert-summary { margin-bottom: 8px; }
+.expert-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #d8a24a;
+  border: 1px solid #6b5326;
+  background: #2a2316;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.expert-intro { display: block; margin: 0 0 8px 0; }
 .setting-row {
   display: flex;
   align-items: center;
