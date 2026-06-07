@@ -794,6 +794,7 @@ $('view-box').innerHTML = `
         <input type="text" id="searchQ" placeholder="${escapeAttr(t('search.placeholder'))}" />
         <button class="btn" id="searchBtn">${escapeHtml(t('search.btn'))}</button>
         <button class="btn btn-mini" id="topBtn">${escapeHtml(t('search.topBtn'))}</button>
+        <button class="btn btn-mini hidden" id="favModeBtn" title="${escapeAttr(t('search.favBtnTitle'))}">${escapeHtml(t('search.favBtn'))}</button>
       </div>
       <div class="search-filters">
         <label>${escapeHtml(t('search.countryLabel'))}:
@@ -1009,6 +1010,8 @@ async function loadMusicTabVolume() {
 }
 $('searchBtn').onclick = () => doSearch();
 $('topBtn').onclick = () => doTop();
+$('favModeBtn').onclick = () => loadFavorites();
+updateFavModeBtn();
 $('loadMoreBtn').onclick = () => loadMore();
 $('searchQ').onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
 $('searchQ').oninput = () => {
@@ -2760,6 +2763,63 @@ async function refreshStatus() {
 
 const PAGE_SIZE = 30;
 
+// Radio favorites: a per-machine list of starred stations kept in
+// localStorage (no agent change, no preset-schema change). It stores only
+// the minimal Station fields renderSearchResults needs, so a favorite renders
+// through the exact same row path as a search result and inherits play, the
+// pick -> assign-to-key modal, and the long-press-to-tile fast path for free.
+const FAV_KEY = 'str.favStations';
+
+function loadFavStore() {
+  try { return JSON.parse(localStorage.getItem(FAV_KEY)) || []; } catch { return []; }
+}
+function saveFavStore(arr) {
+  try { localStorage.setItem(FAV_KEY, JSON.stringify(arr)); } catch {}
+}
+function favMinimal(s) {
+  return {
+    stationuuid: s.stationuuid, name: s.name, url: s.url, url_resolved: s.url_resolved,
+    bitrate: s.bitrate || 0, country: s.country, countrycode: s.countrycode,
+    codec: s.codec, tags: s.tags, votes: s.votes || 0, homepage: s.homepage,
+    favicon: s.favicon, lastcheckok: s.lastcheckok,
+  };
+}
+function favId(s) { return s && (s.stationuuid || (s.name + '|' + (s.url || ''))); }
+function isFav(s) {
+  const id = favId(s);
+  return !!id && loadFavStore().some(x => favId(x) === id);
+}
+function toggleFav(s) {
+  const id = favId(s);
+  if (!id) return false;
+  const arr = loadFavStore();
+  const idx = arr.findIndex(x => favId(x) === id);
+  let nowFav;
+  if (idx >= 0) { arr.splice(idx, 1); nowFav = false; }
+  else { arr.push(favMinimal(s)); nowFav = true; }
+  saveFavStore(arr);
+  updateFavModeBtn();
+  return nowFav;
+}
+// updateFavModeBtn shows the "Favorites" mode entry next to Top/Search only
+// once at least one station is starred, so a user who never uses favorites
+// sees the unchanged toggle (the "appears only after the first star" design).
+function updateFavModeBtn() {
+  const b = $('favModeBtn');
+  if (!b) return;
+  b.classList.toggle('hidden', loadFavStore().length === 0);
+}
+// loadFavorites renders the saved stations through the normal search-result
+// path. No server fetch and no load-more: the list is exactly the store.
+function loadFavorites() {
+  if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
+  state.searchLastMode = 'favorites';
+  state.searchResults = loadFavStore();
+  const lm = $('loadMoreRow');
+  if (lm) lm.classList.add('hidden');
+  renderSearchResults();
+}
+
 async function doSearch() {
   if (!state.currentBox) { showError(t('search.errSelectSpeaker')); return; }
   const q = $('searchQ').value.trim();
@@ -2930,9 +2990,11 @@ function renderSearchResults() {
   }
   if (list.length === 0) {
     res.innerHTML = '<div class="muted">' + escapeHtml(
-      state.searchOnlyBose && (state.searchResults || []).length > 0
-        ? t('search.noBoseStations')
-        : t('search.noStationsFound')
+      state.searchLastMode === 'favorites'
+        ? t('search.favEmpty')
+        : state.searchOnlyBose && (state.searchResults || []).length > 0
+          ? t('search.noBoseStations')
+          : t('search.noStationsFound')
     ) + '</div>';
     return;
   }
@@ -2976,6 +3038,7 @@ function renderSearchResults() {
         <div class="result-actions">
           <button class="btn btn-mini play-now" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9654;</button>
           <button class="btn btn-mini pick" data-i="${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>
+          <button class="btn btn-mini fav-toggle${isFav(s) ? ' is-fav' : ''}" data-i="${i}" title="${escapeAttr(isFav(s) ? t('search.removeFav') : t('search.addFav'))}">${isFav(s) ? '&#9733;' : '&#9734;'}</button>
         </div>
       </div>
     `;
@@ -3006,6 +3069,22 @@ function renderSearchResults() {
   });
   res.querySelectorAll('.pick').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); openPick(list[parseInt(btn.dataset.i, 10)]); };
+  });
+  res.querySelectorAll('.fav-toggle').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const s = list[parseInt(btn.dataset.i, 10)];
+      const nowFav = toggleFav(s);
+      if (state.searchLastMode === 'favorites' && !nowFav) {
+        // Unstarred while viewing the favorites list: drop it from the view.
+        state.searchResults = loadFavStore();
+        renderSearchResults();
+        return;
+      }
+      btn.classList.toggle('is-fav', nowFav);
+      btn.innerHTML = nowFav ? '&#9733;' : '&#9734;';
+      btn.title = nowFav ? t('search.removeFav') : t('search.addFav');
+    };
   });
   res.querySelectorAll('.result-site').forEach(link => {
     link.onclick = (e) => {

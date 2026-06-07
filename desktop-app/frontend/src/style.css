@@ -850,6 +850,11 @@ body {
   flex-shrink: 0;
 }
 .result-actions .btn { padding: 4px 8px; }
+/* Favorite toggle: a filled gold star when saved, a quiet outline otherwise. */
+.fav-toggle.is-fav { color: #f5c518; }
+/* The "Favorites" mode entry sits next to Top/Search and is hidden until the
+   first station is starred (toggled via the .hidden class in JS). */
+#favModeBtn.hidden { display: none; }
 
 /* Genre Chips */
 .genre-chips {
