@@ -3619,10 +3619,6 @@ function renderBoxSettings(s, box) {
     </div>
 
     <div class="settings-section">
-      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.firmwareLabel'))}</span><span class="kv-val" id="boxFirmwareInfo">${escapeHtml(t('common.loading'))}</span></div>
-    </div>
-
-    <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.langHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.langCurrent'))}</span><span class="kv-val" id="boxLangCurrent">${escapeHtml(t('common.loading'))}</span></div>
       <div class="setting-row">
@@ -4277,27 +4273,6 @@ function renderBoxSettings(s, box) {
       } catch (e) { showError(e); }
       copyBtn.disabled = false;
     };
-  }
-
-  // Firmware info: read :8090/info (works on stock and STR boxes) and show the
-  // Bose firmware, flagging a box that is not on the latest (27.0.6).
-  const fwEl = $('boxFirmwareInfo');
-  if (fwEl && box) {
-    (async () => {
-      try {
-        const fw = await GetBoxFirmware(box.host);
-        if (fw && fw.reachable && fw.short) {
-          fwEl.textContent = fw.outdated
-            ? t('settingsView.firmwareOutdated', { v: fw.short, latest: fw.latest })
-            : t('settingsView.firmwareLatest', { v: fw.short });
-          fwEl.classList.toggle('fw-outdated', !!fw.outdated);
-        } else {
-          fwEl.textContent = t('settingsView.firmwareUnknown');
-        }
-      } catch {
-        fwEl.textContent = t('settingsView.firmwareUnknown');
-      }
-    })();
   }
 
   // App Region dropdown fuellen + aktuelle Region selektieren
