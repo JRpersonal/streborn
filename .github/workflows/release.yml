@@ -361,11 +361,20 @@ jobs:
           cd release-out
           sha256sum "STR-Windows.exe" > "STR-Windows.exe.sha256"
           cat "STR-Windows.exe.sha256"
+          # ZIP fallback: SmartScreen / some browsers block a bare .exe
+          # download but not a .zip. The website surfaces this as a discreet
+          # fallback link under the SmartScreen note (only when the asset
+          # exists in the release, so no 404). Same .exe, just wrapped.
+          powershell -NoProfile -Command "Compress-Archive -Path 'STR-Windows.exe' -DestinationPath 'STR-Windows.zip' -Force"
+          sha256sum "STR-Windows.zip" > "STR-Windows.zip.sha256"
+          cat "STR-Windows.zip.sha256"
 
       - name: Sigstore attestation
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
-          subject-path: release-out/STR-Windows.exe
+          subject-path: |
+            release-out/STR-Windows.exe
+            release-out/STR-Windows.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -374,6 +383,8 @@ jobs:
           path: |
             release-out/STR-Windows.exe
             release-out/STR-Windows.exe.sha256
+            release-out/STR-Windows.zip
+            release-out/STR-Windows.zip.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -638,6 +649,7 @@ jobs:
           # longer have stable /releases/latest/download/<name> URLs; the
           # website + the in-app update read manifest.json's per-version `url`.
           mv "STR-Windows.exe"      "STR-Windows-${VERSION}.exe"
+          mv "STR-Windows.zip"      "STR-Windows-${VERSION}.zip"
           mv "STR-macOS.dmg"        "STR-macOS-${VERSION}.dmg"
           mv "STR-Linux-x64.tar.gz" "STR-Linux-x64-${VERSION}.tar.gz"
           ls -la
@@ -827,6 +839,7 @@ jobs:
           body_path: dist/release-notes.md
           files: |
             dist/STR-Windows-*.exe
+            dist/STR-Windows-*.zip
             dist/STR-macOS-*.dmg
             dist/STR-Linux-x64-*.tar.gz
             dist/streborn-armv7l
