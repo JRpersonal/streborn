@@ -1271,8 +1271,12 @@ func firmwareOlder(a, b string) bool {
 	return false
 }
 
+// presetAPIPath is the agent's preset REST route; the slot is appended for
+// per-slot writes and deletes.
+const presetAPIPath = "/api/presets"
+
 func (a *App) GetPresets(host string, port int) ([]Preset, error) {
-	url := a.baseURL(host, port) + "/api/presets"
+	url := a.baseURL(host, port) + presetAPIPath
 	resp, err := a.httpClient.Get(url)
 	if err != nil {
 		return nil, err
@@ -1290,22 +1294,12 @@ func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 }
 
 // SetPreset macht PUT /api/presets/<slot>. art ist die Sender Logo URL,
-// wird beim Play als upnp:albumArtURI an die Box geschickt.
+// wird beim Play als upnp:albumArtURI an die Box geschickt. Routed through
+// boxPut so a preset save gets the same :8888<->:17008 port fallback as the
+// other box commands.
 func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int) error {
-	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
-	body, _ := json.Marshal(Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate})
-	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
-	}
-	return nil
+	return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
+		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate})
 }
 
 // SaveLibraryPreset stores a preset saved from a DLNA media server (the Library
@@ -1313,20 +1307,8 @@ func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art st
 // the media server name as Source, so the desktop app can show a small "from"
 // badge on the preset. Source is cosmetic and round-trips through the agent.
 func (a *App) SaveLibraryPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, source string) error {
-	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
-	body, _ := json.Marshal(Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Source: source})
-	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
-	}
-	return nil
+	return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
+		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Source: source})
 }
 
 // SaveSpotifyPreset stores a real Spotify preset (type=spotify with the
@@ -1336,20 +1318,8 @@ func (a *App) SaveLibraryPreset(host string, port int, slot int, name, streamURL
 // the Spotify logo, and did not recall the playlist). The agent fills the
 // account and a stable playlist cover when they are empty.
 func (a *App) SaveSpotifyPreset(host string, port int, slot int, name, uri, account string) error {
-	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
-	body, _ := json.Marshal(Preset{Slot: slot, Name: name, Type: "spotify", URI: uri, Account: account})
-	req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
-	}
-	return nil
+	return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
+		Preset{Slot: slot, Name: name, Type: "spotify", URI: uri, Account: account})
 }
 
 // CopyPresetsAcrossBoxes copies every preset (slots 1-6) from a source speaker
@@ -1373,20 +1343,11 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 		if p.Slot < 1 || p.Slot > 6 || p.Name == "" {
 			continue
 		}
-		// PUT the source preset verbatim so radio and Spotify presets keep all
-		// their fields (type, uri, account, art, bitrate) with no field mapping.
-		url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(dstHost, dstPort), p.Slot)
-		body, _ := json.Marshal(p)
-		req, _ := http.NewRequestWithContext(a.ctx, http.MethodPut, url, strings.NewReader(string(body)))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := a.httpClient.Do(req)
-		if err != nil {
+		// PUT the source preset verbatim (via boxPut, so the target's port
+		// fallback applies too) so radio and Spotify presets keep all their
+		// fields (type, uri, account, art, bitrate) with no field mapping.
+		if err := a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p); err != nil {
 			return copied, fmt.Errorf("write preset %d: %w", p.Slot, err)
-		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 2048))
-		resp.Body.Close()
-		if resp.StatusCode >= 400 {
-			return copied, fmt.Errorf("write preset %d: status %d", p.Slot, resp.StatusCode)
 		}
 		copied++
 	}
