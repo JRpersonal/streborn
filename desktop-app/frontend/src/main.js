@@ -2000,6 +2000,12 @@ async function healPresetLogos() {
 // rotates its tokens.
 function activeSlotFromLocation(loc) {
   if (!loc) return null;
+  // Spotify presets point the box at the per-slot /spotify/stream-<slot>.ogg
+  // (both the hardware and the soft recall), so the slot is in the URL: prefer
+  // it so the right Spotify tile lights up even when several presets share the
+  // generic "Spotify" now-playing name.
+  const sp = loc.match(/\/spotify\/stream-(\d+)\.ogg/);
+  if (sp) return parseInt(sp[1], 10);
   const m = loc.match(/\/stream\/(\d+)(?:[/?#]|$)/);
   return m ? parseInt(m[1], 10) : null;
 }
