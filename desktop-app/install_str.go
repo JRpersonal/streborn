@@ -458,29 +458,33 @@ func extractBadOption(out string) string {
 // timeout applies to each set individually so a transient stall
 // on set 1 does not eat the whole budget. Total worst-case is
 // len(sshFlagSets) * timeout.
-func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
-	start, _ := getCachedFlagSetIndex()
+// trySSHFlagSets runs an SSH operation against the OpenSSH flag-set fallback
+// chain: start from the cached working set and, on a local "bad configuration
+// option" rejection, move to the next set. The first set the local ssh accepts
+// (a success OR a real network/auth/algo failure, as opposed to a flag
+// rejection) is cached, so the rest of the session skips the trial-and-error.
+// run performs the actual ssh subprocess for one flag set; the three callers
+// differ only in that closure.
+func trySSHFlagSets(run func(flags []string) (string, error)) (string, error) {
+	start := getCachedFlagSetIndex()
 	var lastOut string
 	var lastErr error
 	for i := start; i < len(sshFlagSets); i++ {
-		out, err := runSSHWithFlags(sshFlagSets[i], host, cmd, timeout)
+		out, err := run(sshFlagSets[i])
 		if isBadOptionError(out) {
-			// Local ssh refuses this set's flags. Move on without
-			// caching — the next call may still want to try this
-			// index again with a different command (and the cache
-			// also gets updated below when a non-bad-option result
-			// arrives).
 			lastOut, lastErr = out, err
 			continue
 		}
-		// Anything else (success OR real network/auth/algo failure)
-		// counts as "this set's flags were at least accepted by the
-		// local ssh". Cache so the rest of the session skips the
-		// trial-and-error.
 		cacheFlagSetIndex(i)
 		return out, err
 	}
 	return lastOut, lastErr
+}
+
+func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
+	return trySSHFlagSets(func(flags []string) (string, error) {
+		return runSSHWithFlags(flags, host, cmd, timeout)
+	})
 }
 
 // boxSSHUploadStdin is boxSSHOutput plus an stdin stream. Same flag-set
@@ -490,19 +494,9 @@ func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
 // reachable from the LAN is Bose's own SoftwareUpdate HTTP service, which
 // has a 1.5 KB POST buffer — see [[bose-http-buffer]] / #90).
 func boxSSHUploadStdin(host, cmd string, in io.Reader, timeout time.Duration) (string, error) {
-	start, _ := getCachedFlagSetIndex()
-	var lastOut string
-	var lastErr error
-	for i := start; i < len(sshFlagSets); i++ {
-		out, err := runSSHWithFlagsStdin(sshFlagSets[i], host, cmd, in, timeout)
-		if isBadOptionError(out) {
-			lastOut, lastErr = out, err
-			continue
-		}
-		cacheFlagSetIndex(i)
-		return out, err
-	}
-	return lastOut, lastErr
+	return trySSHFlagSets(func(flags []string) (string, error) {
+		return runSSHWithFlagsStdin(flags, host, cmd, in, timeout)
+	})
 }
 
 func runSSHWithFlagsStdin(flags []string, host, cmd string, in io.Reader, timeout time.Duration) (string, error) {
@@ -534,15 +528,11 @@ func runSSHWithFlagsStdin(flags []string, host, cmd string, in io.Reader, timeou
 // cleanly. Used for "reboot" where the connection dropping is
 // expected. Same fallback-chain semantics as boxSSHOutput.
 func boxSSHFireAndForget(host, cmd string, timeout time.Duration) error {
-	start, _ := getCachedFlagSetIndex()
-	for i := start; i < len(sshFlagSets); i++ {
-		out, _ := runSSHWithFlags(sshFlagSets[i], host, cmd, timeout)
-		if isBadOptionError(out) {
-			continue
-		}
-		cacheFlagSetIndex(i)
-		return nil
-	}
+	// Fire-and-forget: the connection dropping (e.g. on reboot) is expected, so
+	// the flag-set result is ignored; we only care that a set was accepted.
+	_, _ = trySSHFlagSets(func(flags []string) (string, error) {
+		return runSSHWithFlags(flags, host, cmd, timeout)
+	})
 	return nil
 }
 
@@ -583,16 +573,14 @@ func isBadOptionError(out string) bool {
 }
 
 // getCachedFlagSetIndex returns the cached active-set index, or 0
-// (try from the start) if not yet chosen. The bool is the
-// "was-set" flag — currently unused by callers but handy for
-// log breadcrumbs later.
-func getCachedFlagSetIndex() (int, bool) {
+// (try from the start) if not yet chosen.
+func getCachedFlagSetIndex() int {
 	sshFlagsMu.Lock()
 	defer sshFlagsMu.Unlock()
 	if sshFlagsActive < 0 {
-		return 0, false
+		return 0
 	}
-	return sshFlagsActive, true
+	return sshFlagsActive
 }
 
 func cacheFlagSetIndex(i int) {
