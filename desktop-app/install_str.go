@@ -155,21 +155,24 @@ var stickProbePaths = []string{
 // InstallSTROnBox runs the full install on a box that has a freshly
 // provisioned STR stick mounted somewhere under /media or /mnt.
 // Steps:
-//   1. probe SSH and locate install.sh on the stick
-//   2. run "sh <stick>/install.sh install"
-//   3. reboot the box
-//   4. poll port 8888 for up to 150 s
+//  1. probe SSH and locate install.sh on the stick
+//  2. run "sh <stick>/install.sh install"
+//  3. reboot the box
+//  4. poll port 8888 for the STR agent, model-aware: 240 s for Series-I /
+//     BCO (Portable) and unknown models, 180 s for Series-II (ST10/20/30
+//     classic). On timeout, if SSH is still open, reboot once and retry;
+//     otherwise return model-specific recovery guidance.
 //
-// Caller passes the box's home-LAN IP. Returns a step-tagged result
-// even on failure so the UI can show the user where it stopped, and
-// captures SSH stderr into res.Log so the user can see the actual
-// failure reason instead of an opaque exit code.
-func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
+// Caller passes the box's home-LAN IP and its model (from discovery, may be
+// empty). Returns a step-tagged result even on failure so the UI can show the
+// user where it stopped, and captures SSH stderr into res.Log so the user can
+// see the actual failure reason instead of an opaque exit code.
+func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	res := InstallResult{Step: "start"}
 	if host == "" {
 		return res, fmt.Errorf("host is required")
 	}
-	a.logger.Info("install_str: starting", "host", host)
+	a.logger.Info("install_str: starting", "host", host, "model", model)
 
 	// Step 0a: preflight TCP reachability on the SSH port. SSH failing with a
 	// bare "exit status 255" and no stderr is the opaque error users hit when
@@ -299,15 +302,38 @@ func (a *App) InstallSTROnBox(host string) (InstallResult, error) {
 	_ = boxSSHFireAndForget(host, "(sleep 1; reboot) &", 4*time.Second)
 	a.logger.Info("install_str: reboot signal sent", "host", host)
 
-	// Step 4: poll port 8888 (the STR agent webui) for up to 180 s.
-	// Extended from 150 s because slower ST20 variants need a few
-	// extra seconds for the boot-race watchdog (run-override.sh
-	// re-fire loop) to win against Bose's service manager.
+	// Step 4: poll port 8888 (the STR agent webui), model-aware (240 s for
+	// Series-I/BCO/unknown, 180 s for Series-II). Series-I/BCO boxes boot
+	// slowly and the boot-race watchdog (run-override.sh re-fire loop) needs
+	// time to win against Bose's service manager; cutting that off early was
+	// the main first-install failure (#114).
 	res.Step = "wait-agent"
-	if err := waitForTCPPort(host, 8888, 180*time.Second); err != nil {
-		res.Message = "Speaker did not bring up the STR agent on port 8888 within 180 s. " +
-			"It may still be rebooting. Try refreshing the speaker list in a minute. " +
-			"If it stays down, pull a diagnostic bundle (Settings → Save logs) and attach it to the GitHub issue."
+	if err := waitForAgent(host, 8888, model); err != nil {
+		// If SSH is still reachable the install window is open, so reboot once
+		// and retry before giving up. This self-heals the common "shim lost the
+		// boot race" case with no user action. Guarded on SSH still being up so
+		// we never double-reboot a box that already left the install window.
+		if tcpReachable(host, 22, 4*time.Second) {
+			a.logger.Info("install_str: agent not up, SSH still open, rebooting once and retrying", "host", host)
+			res.Step = "reboot-and-retry"
+			_ = boxSSHFireAndForget(host, "(sleep 1; reboot) &", 4*time.Second)
+			if waitForAgent(host, 8888, model) == nil {
+				res.Step = "done"
+				res.OK = true
+				res.Message = "STR agent is up on port 8888 (after an automatic retry)."
+				return res, nil
+			}
+		}
+		res.Step = "wait-agent"
+		logHint := "To get help, save the diagnostic logs (the Save logs button in Speaker Settings, or the link at the bottom of the app window) and attach them to the GitHub issue or email them to str@sichtbar-app.de."
+		if slowBootModel(model) {
+			res.Message = "The speaker is still starting. On Portable / BCO models this can take 2 to 3 minutes. " +
+				"Keep the STR stick plugged in, power-cycle the speaker (unplug for 10 seconds, plug back in with the stick in place), " +
+				"wait 2 to 3 minutes, then refresh the speaker list. " + logHint
+		} else {
+			res.Message = "The speaker did not bring up the STR agent on port 8888 in time. " +
+				"It may still be rebooting; refresh the speaker list in a minute. " + logHint
+		}
 		return res, nil
 	}
 	res.Step = "done"
@@ -586,4 +612,44 @@ func waitForTCPPort(host string, port int, timeout time.Duration) error {
 		time.Sleep(2 * time.Second)
 	}
 	return fmt.Errorf("port %d on %s not reachable within %s", port, host, timeout)
+}
+
+// slowBootModel reports whether a box model boots slowly enough to need the
+// longer agent-up budget. Series-I / BCO (Portable) is slow, and an empty model
+// (discovery had no /info yet, i.e. a freshly bootstrapped box) is treated as
+// slow too so a real BCO box is never cut off early (#114, fallback-first).
+func slowBootModel(model string) bool {
+	m := strings.ToLower(model)
+	return m == "" || strings.Contains(m, "portable")
+}
+
+// agentWaitBudget is how long to wait for the STR agent to come up on :8888
+// after the install reboot, by model. Slow models get 240 s, the rest 180 s.
+func agentWaitBudget(model string) time.Duration {
+	if slowBootModel(model) {
+		return 240 * time.Second
+	}
+	return 180 * time.Second
+}
+
+// waitForAgent polls host:port until the STR agent answers or the model-aware
+// budget elapses. Slow models also get a longer per-dial timeout and sleep so a
+// still-booting box is not declared dead on a single slow scan.
+func waitForAgent(host string, port int, model string) error {
+	budget := agentWaitBudget(model)
+	dialTO, sleep := 1500*time.Millisecond, 2*time.Second
+	if slowBootModel(model) {
+		dialTO, sleep = 2500*time.Millisecond, 3*time.Second
+	}
+	deadline := time.Now().Add(budget)
+	addr := fmt.Sprintf("%s:%d", host, port)
+	for time.Now().Before(deadline) {
+		c, err := net.DialTimeout("tcp", addr, dialTO)
+		if err == nil {
+			_ = c.Close()
+			return nil
+		}
+		time.Sleep(sleep)
+	}
+	return fmt.Errorf("port %d on %s not reachable within %s", port, host, budget)
 }

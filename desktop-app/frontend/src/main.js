@@ -3603,6 +3603,10 @@ function renderBoxSettings(s, box) {
       <div class="actions-grid">
         <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.syncHardwareKeysHelp'))}</p>
+        <button class="btn btn-mini" id="boxSaveLogsBtn">${escapeHtml(t('settingsView.saveLogs'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.saveLogsHelp'))}</p>
+        <button class="btn btn-mini" id="boxEmailSupportBtn">${escapeHtml(t('settingsView.emailSupport'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.emailSupportHelp'))}</p>
         <button class="btn btn-mini btn-warning" id="boxRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.rebootHelp'))}</p>
         <hr class="actions-divider" />
@@ -3787,6 +3791,55 @@ function renderBoxSettings(s, box) {
       } catch (e) { showError(e); }
       syncBtn.disabled = false;
       syncBtn.textContent = t('settingsView.syncHardwareKeys');
+    };
+  }
+
+  // Save diagnostic logs, the same bundle the footer link saves. Surfaced in
+  // Speaker Settings too because the install-timeout message points users here,
+  // and the footer link is easy to miss at the very bottom of the window (#114).
+  const saveLogsSettingsBtn = $('boxSaveLogsBtn');
+  if (saveLogsSettingsBtn) {
+    saveLogsSettingsBtn.onclick = async () => {
+      saveLogsSettingsBtn.disabled = true;
+      try {
+        const hosts = (state.boxes || []).map(b => b && b.host).filter(Boolean);
+        const res = await SaveDiagnosticBundle(hosts, true);
+        if (res && res.savePath) {
+          showToast(t('footer.saveLogsDone', { path: res.savePath, size: Math.round((res.bytes || 0) / 1024) }));
+        }
+      } catch (e) { showError(e); }
+      saveLogsSettingsBtn.disabled = false;
+    };
+  }
+
+  // Email support: save the diagnostic bundle, then open a pre-filled email to
+  // STR support with the saved file path so the user only has to attach it.
+  // mailto cannot attach a file itself (browser/OS limitation), so the body and
+  // the toast both point at the saved zip. Body kept in English (it is a support
+  // ticket); the button, help and toast are localized.
+  const emailSupportBtn = $('boxEmailSupportBtn');
+  if (emailSupportBtn) {
+    emailSupportBtn.onclick = async () => {
+      emailSupportBtn.disabled = true;
+      try {
+        const hosts = (state.boxes || []).map(b => b && b.host).filter(Boolean);
+        const res = await SaveDiagnosticBundle(hosts, true);
+        if (res && res.savePath) {
+          const subject = 'ST Reborn support request';
+          const body =
+            'Hi,\n\nI need help with ST Reborn.\n\n' +
+            '(Please describe the problem here.)\n\n' +
+            '--------------------------------\n' +
+            'Diagnostic logs were saved to:\n' + res.savePath + '\n\n' +
+            'IMPORTANT: please attach that file to this email before sending.\n';
+          try {
+            BrowserOpenURL('mailto:str@sichtbar-app.de?subject=' +
+              encodeURIComponent(subject) + '&body=' + encodeURIComponent(body));
+          } catch {}
+          showToast(t('settingsView.emailSupportToast', { path: res.savePath }));
+        }
+      } catch (e) { showError(e); }
+      emailSupportBtn.disabled = false;
     };
   }
 
@@ -5446,7 +5499,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
          `<div class="muted small">${escapeHtml(t('setup.installRunning'))}</div>`);
   let result;
   try {
-    result = await InstallSTROnBox(foundBox.host);
+    result = await InstallSTROnBox(foundBox.host, foundBox.model || foundBox.type || '');
   } catch (err) {
     render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`);
     return;

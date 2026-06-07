@@ -42,7 +42,7 @@ export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
 
 export function GetWebhooks(arg1:string,arg2:number):Promise<Record<string, any>>;
 
-export function InstallSTROnBox(arg1:string):Promise<main.InstallResult>;
+export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallResult>;
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
 

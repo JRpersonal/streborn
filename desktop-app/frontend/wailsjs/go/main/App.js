@@ -78,8 +78,8 @@ export function GetWebhooks(arg1, arg2) {
   return window['go']['main']['App']['GetWebhooks'](arg1, arg2);
 }
 
-export function InstallSTROnBox(arg1) {
-  return window['go']['main']['App']['InstallSTROnBox'](arg1);
+export function InstallSTROnBox(arg1, arg2) {
+  return window['go']['main']['App']['InstallSTROnBox'](arg1, arg2);
 }
 
 export function IsBoseStick(arg1) {
