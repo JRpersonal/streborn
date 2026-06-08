@@ -17,9 +17,12 @@ import (
 	"net"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // nullDevice points at the platform's null device — used to keep
@@ -37,7 +40,13 @@ var nullDevice = func() string {
 // attempt. The frontend uses Step to drive live progress and OK +
 // Message for the final state.
 type InstallResult struct {
-	Step     string `json:"step"`
+	Step string `json:"step"`
+	// Code is a stable machine-readable failure class the frontend maps to a
+	// localized, step-by-step help checklist (see setup.help.* in the i18n
+	// bundles). Empty on success. Distinct from Step (which tracks progress)
+	// and Message (the human sentence): Code never changes wording, so the UI
+	// can key help text off it across all 11 languages.
+	Code     string `json:"code"`
 	OK       bool   `json:"ok"`
 	Message  string `json:"message"`
 	Log      string `json:"log"`
@@ -208,6 +217,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// an instruction the user can actually act on, instead of wrongly
 		// blaming the network.
 		if tcpReachable(host, 8888, 3*time.Second) {
+			res.Code = "already-installed"
 			res.Message = "The speaker at " + host + " already answers on the STR agent port (8888), " +
 				"so it looks like STR is installed already. Refresh the speaker list. " +
 				"If you meant to reinstall, reboot the speaker with the STR stick plugged in first."
@@ -215,12 +225,14 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			return res, nil
 		}
 		if tcpReachable(host, 8090, 3*time.Second) {
+			res.Code = "install-window-closed"
 			res.Message = "The speaker at " + host + " is on the network, but the install access (SSH) is closed. " +
 				"Bose only opens it while the speaker boots with the STR stick plugged in. " +
 				"Power the speaker off, insert the STR stick, power it back on, then install."
 			a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut)", "host", host)
 			return res, nil
 		}
+		res.Code = "not-reachable"
 		res.Message = "The speaker is not reachable on the network (no answer on SSH port 22 or the Bose port 8090 at " + host + "). " +
 			"First bring it onto your Wi-Fi with the Bose SoundTouch app and make sure this PC and the speaker are on the same network. " +
 			"Then reboot the speaker with the STR stick plugged in and try again."
@@ -243,6 +255,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	hello, helloErr := boxSSHOutput(host, "echo STR_SSH_OK", 12*time.Second)
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
+		res.Code = "ssh-handshake"
 		hint := classifySSHError(hello, helloErr)
 		res.Message = "SSH handshake to speaker failed: " + hint
 		a.logger.Warn("install_str: ssh handshake failed", "host", host, "err", helloErr, "hint", hint)
@@ -279,12 +292,14 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		if attempt == 19 {
 			res.Log = probe
 			if probeErr != nil {
+				res.Code = "ssh-probe"
 				hint := classifySSHError(probe, probeErr)
 				res.Message = "ssh probe failed after retries: " + hint
 				a.logger.Warn("install_str: ssh probe failed after retries", "host", host, "err", probeErr, "hint", hint)
 				// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
 				return res, nil
 			}
+			res.Code = "stick-missing"
 			res.Message = "install.sh did not appear under /media, /mnt or /run/media within 60 s. " +
 				"Is the STR stick physically plugged into the speaker (USB-A on ST20/30, " +
 				"micro-USB adapter on ST10), and did you reboot the speaker so it mounted the stick?"
@@ -294,11 +309,28 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	}
 	a.logger.Info("install_str: stick found", "host", host, "path", stickPath)
 
-	// Step 2: run install.sh install.
+	// Step 1c: wait for the box's boot-time CPU storm to subside before
+	// launching install.sh. Driven by the actual load average, not a blind
+	// timer (see waitForBoxLoad); capped so a permanently busy box still gets
+	// its install attempt. Emits live progress so the UI can show "reachable
+	// but still finishing boot" instead of a frozen screen.
+	res.Step = "settle"
+	a.waitForBoxLoad(host, model)
+
+	// Step 2: run install.sh install. The timeout is model-aware: install.sh
+	// does heavy on-box work (copy the agent to NAND, rewrite wpa_supplicant,
+	// regenerate TLS) and on the bigger/slower models, or over a weak Wi-Fi
+	// link, that routinely takes well over a minute. The original flat 60 s
+	// cut ST30 first installs off mid-script ("install.sh ssh timeout after
+	// 1m0s", #119) even though the SSH session was healthy.
 	res.Step = "run-install"
-	out, err := boxSSHOutput(host, "sh "+stickPath+"/install.sh install 2>&1", 60*time.Second)
+	out, err := boxSSHOutput(host, "sh "+stickPath+"/install.sh install 2>&1", installRunBudget(model))
 	res.Log = out
 	if err != nil {
+		res.Code = "install-error"
+		if strings.Contains(err.Error(), "timeout") {
+			res.Code = "install-timeout"
+		}
 		hint := classifySSHError(out, err)
 		res.Message = "install.sh execution failed: " + hint
 		a.logger.Warn("install_str: install.sh execution failed", "host", host, "err", err, "hint", hint)
@@ -306,6 +338,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		return res, nil
 	}
 	if strings.Contains(out, "FEHLER") || strings.Contains(out, "ERROR") {
+		res.Code = "install-script-error"
 		res.Message = "install.sh reported an error. See log."
 		return res, nil
 	}
@@ -341,6 +374,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			}
 		}
 		res.Step = "wait-agent"
+		res.Code = "agent-not-up"
 		logHint := "To get help, save the diagnostic logs (the Save logs button in Speaker Settings, or the link at the bottom of the app window) and attach them to the GitHub issue or email them to str@sichtbar-app.de."
 		if slowBootModel(model) {
 			res.Message = "The speaker is still starting. On Portable / BCO models this can take 2 to 3 minutes. " +
@@ -646,6 +680,141 @@ func agentWaitBudget(model string) time.Duration {
 		return 240 * time.Second
 	}
 	return 180 * time.Second
+}
+
+// installRunBudget is how long install.sh may run over SSH before we give up.
+// install.sh does heavy on-box work (copy the agent to NAND, rewrite
+// wpa_supplicant, regenerate TLS); on the bigger/slower models, or over a weak
+// Wi-Fi link, that routinely takes longer than a minute. The original flat
+// 60 s was the main first-install timeout on ST30 (#119), so even the
+// "fast" Series-II models now get a generous 180 s here and slow-boot models
+// (Series-I / BCO / unknown) get 240 s. This is independent of slowBootModel's
+// boot-time messaging: ST30 is not flagged slow-boot but still needs the
+// headroom on install.sh itself.
+func installRunBudget(model string) time.Duration {
+	if slowBootModel(model) {
+		return 240 * time.Second
+	}
+	return 180 * time.Second
+}
+
+// InstallProgress is a live, mid-install status pushed to the UI over the
+// Wails "install:progress" event. It currently carries the load-settle phase
+// so the user sees "speaker reachable but still finishing its boot routine"
+// instead of a frozen "installing" line while STR waits for the box's CPU to
+// calm down.
+type InstallProgress struct {
+	Phase       string  `json:"phase"`       // "settle"
+	Load        float64 `json:"load"`        // box 1-min load average
+	Threshold   float64 `json:"threshold"`   // calm threshold (per-core scaled)
+	Busy        bool    `json:"busy"`        // true while still waiting to settle
+	RemainingMs int     `json:"remainingMs"` // until the safety cap fires
+}
+
+func (a *App) emitInstallProgress(p InstallProgress) {
+	if a.ctx != nil {
+		wailsrt.EventsEmit(a.ctx, "install:progress", p)
+	}
+}
+
+// waitForBoxLoad holds off launching the heavy install.sh until the box's CPU
+// has actually calmed down, rather than waiting a blind fixed time. A box that
+// just powered on with the stick is pegged (NetManager, scmmond and the Bose
+// services all start at once), and kicking install.sh into that contention is
+// what made the run overshoot the timeout on ST30 (#119).
+//
+// The real signal is the 1-min load average: we proceed only once it has
+// stayed under a per-core threshold for several consecutive samples (a
+// sustained-calm streak, ~ calmStreak*sample seconds), so a single transient
+// dip does not fool us. The time cap is a pure safety fallback (fallback-first):
+// a box that never settles still gets its install attempt rather than hanging,
+// and the generous install.sh timeout then backstops it. If the load cannot be
+// read at all, we do not block.
+func (a *App) waitForBoxLoad(host, model string) {
+	const (
+		sample     = 2 * time.Second
+		calmStreak = 3 // ~6 s of sustained calm before we commit
+	)
+	threshold := 1.5 * float64(boxCoreCount(host))
+	// Safety cap: if the load never drops (e.g. a box pegged permanently by
+	// faulty custom firmware), proceed with the install anyway after a long
+	// enough wait rather than hanging here. Generous so a genuinely slow boot
+	// is never cut off early.
+	cap := 120 * time.Second
+	if slowBootModel(model) {
+		cap = 180 * time.Second
+	}
+	deadline := time.Now().Add(cap)
+	calm := 0
+	for {
+		load, ok := boxLoad1(host)
+		if !ok {
+			// Can't read load (unusual SSH/proc state). Don't block; the
+			// install.sh timeout still backstops a genuinely wedged box.
+			a.emitInstallProgress(InstallProgress{Phase: "settle", Busy: false})
+			return
+		}
+		if load <= threshold {
+			calm++
+		} else {
+			calm = 0
+		}
+		settled := calm >= calmStreak
+		capped := time.Now().After(deadline)
+		remaining := int(time.Until(deadline) / time.Millisecond)
+		if remaining < 0 {
+			remaining = 0
+		}
+		// On the iteration we decide to proceed, report busy=false so the UI
+		// flips back to the "installing" line.
+		a.emitInstallProgress(InstallProgress{
+			Phase:       "settle",
+			Load:        load,
+			Threshold:   threshold,
+			Busy:        !(settled || capped),
+			RemainingMs: remaining,
+		})
+		if settled {
+			a.logger.Info("install_str: box load settled, proceeding", "host", host, "load", load, "threshold", threshold)
+			return
+		}
+		if capped {
+			a.logger.Info("install_str: box load did not settle before cap, proceeding anyway", "host", host, "load", load, "threshold", threshold)
+			return
+		}
+		time.Sleep(sample)
+	}
+}
+
+// boxCoreCount reads the CPU count from /proc/cpuinfo so the load threshold can
+// be scaled per core. Defaults to 1 on any read error (the SoundTouch SoCs are
+// single- or dual-core, so 1 is the safe conservative floor).
+func boxCoreCount(host string) int {
+	out, err := boxSSHOutput(host, "grep -c ^processor /proc/cpuinfo", 8*time.Second)
+	if err == nil {
+		if n, e := strconv.Atoi(strings.TrimSpace(out)); e == nil && n > 0 {
+			return n
+		}
+	}
+	return 1
+}
+
+// boxLoad1 returns the box's 1-min load average from /proc/loadavg, and false
+// if it could not be read or parsed.
+func boxLoad1(host string) (float64, bool) {
+	out, err := boxSSHOutput(host, "cat /proc/loadavg", 8*time.Second)
+	if err != nil {
+		return 0, false
+	}
+	fields := strings.Fields(out)
+	if len(fields) < 1 {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }
 
 // waitForAgent polls host:port until the STR agent answers or the model-aware
