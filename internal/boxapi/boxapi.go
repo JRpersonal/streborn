@@ -329,6 +329,58 @@ func (c *Client) GetGroup(ctx context.Context) (Group, error) {
 	return g, nil
 }
 
+// ---------- Multiroom (write) ----------
+
+// zoneXML builds the <zone> request body shared by SetZone / AddZoneSlave /
+// RemoveZoneSlave. master is the device that leads (and streams to) the zone:
+// the call must be POSTed to that box. Each slave contributes one
+// <member ipaddress="..">deviceID</member> line. senderIPAddress is the
+// master's LAN IP, which the firmware uses as the stream source address;
+// omitted when empty (the firmware fills it in for add/remove).
+func zoneXML(master ZoneMember, slaves []ZoneMember) string {
+	var b strings.Builder
+	b.WriteString(`<zone master="`)
+	b.WriteString(xmlEscape(master.DeviceID))
+	b.WriteString(`"`)
+	if master.IP != "" {
+		b.WriteString(` senderIPAddress="`)
+		b.WriteString(xmlEscape(master.IP))
+		b.WriteString(`"`)
+	}
+	b.WriteString(`>`)
+	for _, s := range slaves {
+		b.WriteString(`<member ipaddress="`)
+		b.WriteString(xmlEscape(s.IP))
+		b.WriteString(`">`)
+		b.WriteString(xmlEscape(s.DeviceID))
+		b.WriteString(`</member>`)
+	}
+	b.WriteString(`</zone>`)
+	return b.String()
+}
+
+// SetZone creates (or replaces) the multiroom zone led by master with the
+// given slaves. POST it to the master box; any existing zone on the master is
+// replaced. The master must be actively playing a source for the slaves to
+// produce sound (see #70 design notes), so callers should start playback on
+// the master first.
+func (c *Client) SetZone(ctx context.Context, master ZoneMember, slaves []ZoneMember) error {
+	return c.postXML(ctx, "/setZone", zoneXML(master, slaves))
+}
+
+// AddZoneSlave adds slaves to the zone already led by master. The master must
+// already lead a zone (call SetZone first); the firmware rejects an add to a
+// box that is not yet a master.
+func (c *Client) AddZoneSlave(ctx context.Context, master ZoneMember, slaves []ZoneMember) error {
+	return c.postXML(ctx, "/addZoneSlave", zoneXML(master, slaves))
+}
+
+// RemoveZoneSlave drops slaves from the zone led by master. Removing the last
+// remaining slave dissolves the zone; re-form it with SetZone.
+func (c *Client) RemoveZoneSlave(ctx context.Context, master ZoneMember, slaves []ZoneMember) error {
+	return c.postXML(ctx, "/removeZoneSlave", zoneXML(master, slaves))
+}
+
 // SetName aendert den Anzeigenamen der Box. Achtung: Bose setzt
 // dabei in der Box State auch die margeURL zurueck auf den Default
 // Update Server. Unser autoPair haengt das im naechsten Tick wieder ein.

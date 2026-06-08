@@ -2,6 +2,7 @@ package boxapi
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -115,6 +116,55 @@ func TestGetZoneWithMembers(t *testing.T) {
 	}
 	if z.Members[0].DeviceID != "BBBBBBBBBBBB" || z.Members[0].IP != "192.0.2.11" {
 		t.Errorf("first member wrong: %+v", z.Members[0])
+	}
+}
+
+func TestZoneXML(t *testing.T) {
+	got := zoneXML(
+		ZoneMember{DeviceID: "AAAA", IP: "192.0.2.10"},
+		[]ZoneMember{{DeviceID: "BBBB", IP: "192.0.2.11"}, {DeviceID: "CCCC", IP: "192.0.2.12"}},
+	)
+	want := `<zone master="AAAA" senderIPAddress="192.0.2.10">` +
+		`<member ipaddress="192.0.2.11">BBBB</member>` +
+		`<member ipaddress="192.0.2.12">CCCC</member>` +
+		`</zone>`
+	if got != want {
+		t.Errorf("zoneXML:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestZoneXMLNoSenderIP(t *testing.T) {
+	got := zoneXML(ZoneMember{DeviceID: "AAAA"}, []ZoneMember{{DeviceID: "BBBB", IP: "192.0.2.11"}})
+	if strings.Contains(got, "senderIPAddress") {
+		t.Errorf("expected no senderIPAddress when master IP empty: %q", got)
+	}
+}
+
+// TestSetZonePostsCorrectly confirms SetZone POSTs the zone body to /setZone.
+func TestSetZonePostsCorrectly(t *testing.T) {
+	var gotPath, gotBody, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotMethod = r.URL.Path, r.Method
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	c := &Client{Host: "ignored", HTTP: &http.Client{Timeout: 2 * time.Second, Transport: &rewriteTransport{to: u}}}
+
+	err := c.SetZone(context.Background(),
+		ZoneMember{DeviceID: "AAAA", IP: "192.0.2.10"},
+		[]ZoneMember{{DeviceID: "BBBB", IP: "192.0.2.11"}})
+	if err != nil {
+		t.Fatalf("SetZone error: %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/setZone" {
+		t.Errorf("expected POST /setZone, got %s %s", gotMethod, gotPath)
+	}
+	if !strings.Contains(gotBody, `master="AAAA"`) ||
+		!strings.Contains(gotBody, `<member ipaddress="192.0.2.11">BBBB</member>`) {
+		t.Errorf("setZone body wrong: %q", gotBody)
 	}
 }
 
