@@ -25,6 +25,7 @@ export {
   WriteStickFiles,
   FormatStick,
   StickVersion,
+  CheckStick,
   StickConfigs,
   AppInfo,
   EjectDrive,
@@ -74,7 +75,7 @@ export {
   LogClientError,
 } from '../wailsjs/go/main/App';
 
-export { BrowserOpenURL } from '../wailsjs/runtime/runtime';
+export { BrowserOpenURL, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
 // boxURL builds an absolute URL for an agent endpoint on a given box.
 // Centralised so the host/port pattern is in one place and switching

@@ -19,6 +19,7 @@ import {
   WriteStickFiles,
   FormatStick,
   StickVersion,
+  CheckStick,
   StickConfigs,
   AppInfo,
   EjectDrive,
@@ -67,6 +68,7 @@ import {
   BrowseLibrary,
   LogClientError,
   BrowserOpenURL,
+  EventsOn,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -5323,6 +5325,29 @@ async function updateDrivePanels() {
   prefillWizardFromStick(drive.path);
   const isFat32 = (drive.filesystem || '').toUpperCase() === 'FAT32';
 
+  // Technical readiness check first: a stick that is too small or write-
+  // protected cannot be fixed by formatting, so block here with a clear
+  // message and a disabled button instead of letting the user run into a
+  // cryptic failure during write or install. FAT32 itself is handled below
+  // (it is fixable by the offered format step). The size floor only applies
+  // to fresh sticks: a stick that already carries STR clearly works, so don't
+  // block updating a smaller, already-provisioned one.
+  let chk = null;
+  try { chk = await CheckStick(drive.path); } catch {}
+  const tooSmall = chk && chk.reason === 'too-small' && !drive.hasStick;
+  const notWritable = chk && chk.reason === 'not-writable';
+  if (tooSmall || notWritable) {
+    const gb = (chk.totalBytes / 1e9).toFixed(1);
+    upd.innerHTML = `<b>${escapeHtml(
+      tooSmall ? t('setup.stickTooSmall', { gb }) : t('setup.stickNotWritable')
+    )}</b>`;
+    upd.classList.remove('hidden');
+    warn.classList.add('hidden');
+    btn.disabled = true;
+    btn.textContent = t('setup.goBtn');
+    return;
+  }
+
   // If the stick is not FAT32, auto-enable the format checkbox and
   // show the visual warning. hasStick is only meaningful for FAT32
   // anyway because the speaker reads nothing else.
@@ -5369,6 +5394,21 @@ async function updateDrivePanels() {
 async function doSetup() {
   const drive = state.drives[state.selectedDrive];
   if (!drive) return;
+  // Hard technical gate: a too-small or write-protected stick cannot be
+  // rescued by formatting, so refuse before doing anything (even if the
+  // format checkbox is ticked). This is the same verdict the panel shows;
+  // re-checked here so a stick swapped after selection cannot slip through.
+  try {
+    const chk = await CheckStick(drive.path);
+    if (chk && chk.reason === 'too-small' && !drive.hasStick) {
+      $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('setup.stickTooSmall', { gb: (chk.totalBytes / 1e9).toFixed(1) }))}</div>`;
+      return;
+    }
+    if (chk && chk.reason === 'not-writable') {
+      $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('setup.stickNotWritable'))}</div>`;
+      return;
+    }
+  } catch {}
   const isFat32 = (drive.filesystem || '').toUpperCase() === 'FAT32';
   const wantFormat = $('setupFormat') && $('setupFormat').checked;
   // The speaker only reads FAT32. If the stick is NTFS/exFAT and
@@ -5669,6 +5709,31 @@ async function watchForSpeakerReady({ ssid, pass, html }) {
 //   3. Once a stock box is reachable, run the in-app STR installer
 //      via SSH so the user does not need the PowerShell wizard.
 //
+// INSTALL_HELP_STEPS maps a backend InstallResult.code (set in
+// install_str.go) to the ordered list of concrete help steps to show under a
+// failed install, so the user gets an actionable checklist instead of just the
+// raw technical error. Each id resolves to a setup.help.<id> i18n key, so the
+// guidance is localized in all bundles. The default covers the generic case
+// and any future/unknown code.
+const INSTALL_HELP_STEPS = {
+  'install-timeout': ['freshBoot', 'wifi', 'stick', 'logs'],
+  'install-error': ['freshBoot', 'wifi', 'logs'],
+  'install-script-error': ['logs', 'freshBoot'],
+  'ssh-handshake': ['freshBoot', 'wifi'],
+  'ssh-probe': ['freshBoot', 'wifi', 'stick'],
+  'stick-missing': ['stickInserted', 'freshBoot', 'stick'],
+  'agent-not-up': ['powerCycle', 'wifi', 'logs'],
+  'not-reachable': ['wifi', 'freshBoot'],
+  'install-window-closed': ['freshBoot'],
+};
+
+// installHelpHtml renders the localized help checklist for a failure code.
+function installHelpHtml(code) {
+  const steps = INSTALL_HELP_STEPS[code] || ['freshBoot', 'wifi', 'stick', 'logs'];
+  const items = steps.map(s => `<li>${escapeHtml(t('setup.help.' + s))}</li>`).join('');
+  return `<div class="setup-help"><b>${escapeHtml(t('setup.helpTitle'))}</b><ul>${items}</ul></div>`;
+}
+
 // Credentials are kept only in this closure and never persisted.
 async function waitForBoxAfterSetup({ ssid, pass, html }) {
   const baseHtml = html;
@@ -5800,21 +5865,39 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   }
 
   // Stock box (LAN-found or cold-bootstrapped): run installer.
-  render(`<div class="setup-ok">${escapeHtml(t('setup.boxFoundOnLAN', { ip: foundBox.host }))}</div>` +
-         `<div class="muted small">${escapeHtml(t('setup.installRunning'))}</div>`);
+  const installBase = `<div class="setup-ok">${escapeHtml(t('setup.boxFoundOnLAN', { ip: foundBox.host }))}</div>`;
+  const runningLine = `<div class="muted small">${escapeHtml(t('setup.installRunning'))}</div>`;
+  render(installBase + runningLine);
+  // Live load-settle feedback: while the backend waits for the box's boot-time
+  // CPU storm to subside before launching install.sh, it pushes install:progress
+  // events. Show "reachable but still finishing boot" with a settle countdown,
+  // so the wait reads as deliberate rather than a hung install. Flip back to the
+  // running line once the box reports calm (busy=false).
+  const offProgress = EventsOn('install:progress', (p) => {
+    if (p && p.phase === 'settle' && p.busy) {
+      const load = (typeof p.load === 'number') ? p.load.toFixed(2) : '?';
+      const secs = Math.max(0, Math.round((p.remainingMs || 0) / 1000));
+      render(installBase + `<div class="muted small">${escapeHtml(t('setup.installBoxBusy', { load, secs }))}</div>`);
+    } else {
+      render(installBase + runningLine);
+    }
+  });
   let result;
   try {
     result = await InstallSTROnBox(foundBox.host, foundBox.model || foundBox.type || '');
   } catch (err) {
+    if (offProgress) offProgress();
     render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`);
     return;
   }
+  if (offProgress) offProgress();
   if (!result || !result.ok) {
     const msg = (result && result.message) || 'unknown';
+    const help = installHelpHtml(result && result.code);
     const log = (result && result.log)
       ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>`
       : '';
-    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + log);
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + log);
     return;
   }
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
