@@ -86,6 +86,7 @@ export namespace main {
 	}
 	export class InstallResult {
 	    step: string;
+	    code: string;
 	    ok: boolean;
 	    message: string;
 	    log: string;
@@ -98,6 +99,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.step = source["step"];
+	        this.code = source["code"];
 	        this.ok = source["ok"];
 	        this.message = source["message"];
 	        this.log = source["log"];
@@ -377,6 +379,32 @@ export namespace sticksetup {
 	        this.removable = source["removable"];
 	        this.hasStick = source["hasStick"];
 	        this.description = source["description"];
+	    }
+	}
+	export class StickCheck {
+	    ok: boolean;
+	    path: string;
+	    filesystem: string;
+	    totalBytes: number;
+	    isFat32: boolean;
+	    bigEnough: boolean;
+	    writable: boolean;
+	    reason: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StickCheck(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ok = source["ok"];
+	        this.path = source["path"];
+	        this.filesystem = source["filesystem"];
+	        this.totalBytes = source["totalBytes"];
+	        this.isFat32 = source["isFat32"];
+	        this.bigEnough = source["bigEnough"];
+	        this.writable = source["writable"];
+	        this.reason = source["reason"];
 	    }
 	}
 	export class StickConfigs {

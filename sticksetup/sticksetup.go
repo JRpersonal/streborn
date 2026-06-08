@@ -43,6 +43,87 @@ func ListDrives() ([]Drive, error) {
 	}
 }
 
+// MinStickBytes is the lower bound the desktop app enforces on an install
+// stick. The agent plus templates are tiny (a few MB), but the install/setup
+// experience assumes a normal "8 GB" USB stick, so a clearly undersized stick
+// is rejected up front instead of failing cryptically later.
+//
+// The floor is 7.0 GB (decimal), not 8 GiB: a stick marketed as 8 GB measures
+// roughly 7.4 to 7.7 GiB of usable capacity, so an 8 GiB threshold would wrongly
+// reject genuine 8 GB sticks, while 7.0 GB still clears every 4 GB and smaller
+// stick.
+const MinStickBytes int64 = 7_000_000_000
+
+// StickCheck is the technical verdict on whether a volume can be used as an STR
+// install stick. The setup wizard calls CheckStick before letting the user
+// proceed so a wrong-format, too-small or write-protected stick is caught with
+// a clear message and (for the format case) an offered fix, instead of running
+// the user into a later cryptic failure.
+type StickCheck struct {
+	OK         bool   `json:"ok"`         // true only when the stick is ready as-is
+	Path       string `json:"path"`       // the volume that was checked
+	Filesystem string `json:"filesystem"` // FAT32 / exFAT / NTFS / ""
+	TotalBytes int64  `json:"totalBytes"` // capacity in bytes
+	IsFAT32    bool   `json:"isFat32"`    // the speaker only reads FAT32
+	BigEnough  bool   `json:"bigEnough"`  // TotalBytes >= MinStickBytes
+	Writable   bool   `json:"writable"`   // a probe write succeeded
+	// Reason is a stable machine-readable code the frontend maps to a localized
+	// message: "" (ok), "gone", "too-small", "not-writable", "not-fat32".
+	// Order of precedence is intentional: an unfixable problem (gone, too-small,
+	// not-writable) wins over the fixable "not-fat32" (which the app offers to
+	// format away).
+	Reason string `json:"reason"`
+}
+
+// CheckStick evaluates the volume at path against the install requirements:
+// present, large enough, writable and FAT32. It re-reads the drive list so the
+// verdict reflects the current state (e.g. right after a format), and probes
+// writability by creating and deleting a temp file.
+func CheckStick(path string) StickCheck {
+	c := StickCheck{Path: path}
+	drives, _ := ListDrives()
+	var found *Drive
+	for i := range drives {
+		if drives[i].Path == path {
+			found = &drives[i]
+			break
+		}
+	}
+	if found == nil {
+		c.Reason = "gone"
+		return c
+	}
+	c.Filesystem = found.Filesystem
+	c.TotalBytes = found.TotalBytes
+	c.IsFAT32 = strings.EqualFold(found.Filesystem, "FAT32")
+	c.BigEnough = found.TotalBytes >= MinStickBytes
+	c.Writable = stickWritable(path)
+	switch {
+	case !c.BigEnough:
+		c.Reason = "too-small"
+	case !c.Writable:
+		c.Reason = "not-writable"
+	case !c.IsFAT32:
+		c.Reason = "not-fat32"
+	default:
+		c.OK = true
+	}
+	return c
+}
+
+// stickWritable reports whether a small file can be created and removed under
+// path. Catches a physically write-protected stick (lock switch) or a flaky
+// reader before the agent write begins. Best-effort: any error means "not
+// writable".
+func stickWritable(path string) bool {
+	probe := filepath.Join(path, ".str-write-test.tmp")
+	if err := os.WriteFile(probe, []byte("str"), 0o644); err != nil {
+		return false
+	}
+	_ = os.Remove(probe)
+	return true
+}
+
 // WLANConfig beschreibt eine WLAN Konfiguration die auf den Stick
 // geschrieben wird. Box's run.sh erkennt die Datei und provisioniert
 // wpa_supplicant beim ersten Boot.

@@ -2193,6 +2193,15 @@ func (a *App) StickVersion(path string) string {
 	return sticksetup.StickVersion(path)
 }
 
+// CheckStick prueft technisch ob das Volume als Install-Stick taugt
+// (vorhanden, FAT32, gross genug, beschreibbar). Der Setup-Wizard ruft das
+// bevor er den User weitergehen laesst, damit ein NTFS/exFAT-, zu kleiner oder
+// schreibgeschuetzter Stick frueh mit klarer Meldung abgefangen wird statt in
+// einen spaeteren kryptischen Fehler zu laufen.
+func (a *App) CheckStick(path string) sticksetup.StickCheck {
+	return sticksetup.CheckStick(path)
+}
+
 // StickConfigs liefert noch nicht applizierte Setup Konfigs vom Stick
 // (wlan, region, name). Wird zum Vorbefuellen des Wizards genutzt.
 func (a *App) StickConfigs(path string) sticksetup.StickConfigs {
