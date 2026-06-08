@@ -50,12 +50,20 @@ export function DiscoverBoxes(arg1) {
   return window['go']['main']['App']['DiscoverBoxes'](arg1);
 }
 
+export function DissolveZone(arg1, arg2) {
+  return window['go']['main']['App']['DissolveZone'](arg1, arg2);
+}
+
 export function EjectDrive(arg1) {
   return window['go']['main']['App']['EjectDrive'](arg1);
 }
 
 export function ExportDiagnosticLogs(arg1) {
   return window['go']['main']['App']['ExportDiagnosticLogs'](arg1);
+}
+
+export function FormZone(arg1, arg2, arg3) {
+  return window['go']['main']['App']['FormZone'](arg1, arg2, arg3);
 }
 
 export function FormatStick(arg1) {
@@ -92,6 +100,10 @@ export function GetPresets(arg1, arg2) {
 
 export function GetWebhooks(arg1, arg2) {
   return window['go']['main']['App']['GetWebhooks'](arg1, arg2);
+}
+
+export function GetZoneState(arg1, arg2) {
+  return window['go']['main']['App']['GetZoneState'](arg1, arg2);
 }
 
 export function InstallSTROnBox(arg1, arg2) {

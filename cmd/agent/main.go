@@ -44,6 +44,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/webui"
+	"github.com/JRpersonal/streborn/internal/zones"
 	usbstick "github.com/JRpersonal/streborn/usb-stick"
 )
 
@@ -239,6 +240,14 @@ func run() error {
 		logger.Warn("webhooks config load failed, continuing with empty config", "err", whErr)
 	}
 
+	// Multiroom zone membership (#70 beta), persisted on NAND so a formed zone
+	// auto-reforms after reboot/standby without the user re-grouping. Missing
+	// file means standalone. Only the master box ever persists a zone.
+	zonesStore, zErr := zones.Load("/mnt/nv/streborn/zones.json")
+	if zErr != nil {
+		logger.Warn("zones config load failed, continuing standalone", "err", zErr)
+	}
+
 	// Hosts Datei manipulieren
 	var hostsMgr *hosts.Manager
 	if *applyHosts {
@@ -268,6 +277,10 @@ func run() error {
 	// Button im Normalfall nie zu druecken.
 	go initialBoxPresetSync(store, *boxHost, logger)
 	go periodicPresetReconcile(store, *boxHost, logger)
+
+	// Re-assert a persisted multiroom zone so it survives reboot/standby/Wi-Fi
+	// outage (#70 beta). No-op when standalone (empty store).
+	go periodicZoneReconcile(zonesStore, *boxHost, logger)
 
 	// Region beim Start aus Datei lesen (vom Setup Wizard provisioniert).
 	region := loadRegion(*regionFile, logger)
@@ -306,7 +319,8 @@ func run() error {
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
-		webui.WithWebhooks(webhooksStore))
+		webui.WithWebhooks(webhooksStore),
+		webui.WithZones(zonesStore))
 
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
 	// own (reported: radio stops after ~11 min with no upstream error), the
@@ -1379,6 +1393,53 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		}
 	}
 	return true
+}
+
+// periodicZoneReconcile re-asserts a persisted multiroom zone so it auto-reforms
+// after a reboot/standby/Wi-Fi outage without the user re-grouping (#70 beta).
+// Only the master box persists a zone, so a non-empty store means "this box
+// leads a zone"; we re-POST /setZone on a slow cadence. No-op when standalone.
+// Best-effort and heavily logged for the beta diagnostic bundle: a slave whose
+// IP changed will fail to rejoin (logged); discovery-based IP re-resolution is
+// a planned follow-up once the beta logs show how often that bites.
+func periodicZoneReconcile(store *zones.Store, boxHost string, logger *slog.Logger) {
+	if store == nil || boxHost == "" {
+		return
+	}
+	// Let the box finish booting before the first re-assert.
+	time.Sleep(45 * time.Second)
+	zoneReconcileOnce(store, boxHost, logger)
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for range t.C {
+		zoneReconcileOnce(store, boxHost, logger)
+	}
+}
+
+// zoneReconcileOnce re-forms the persisted zone if the box is not already in it.
+func zoneReconcileOnce(store *zones.Store, boxHost string, logger *slog.Logger) {
+	z, ok := store.Get()
+	if !ok {
+		return // standalone
+	}
+	c := boxapi.New(boxHost)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if live, err := c.GetZone(ctx); err == nil && live.Master == z.Master && len(live.Members) == len(z.Slaves) {
+		return // already up exactly as persisted, nothing to do
+	}
+	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+	slaves := make([]boxapi.ZoneMember, 0, len(z.Slaves))
+	for _, m := range z.Slaves {
+		slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+	}
+	logger.Info("zone reconcile: re-asserting persisted zone (beta)",
+		"master", z.Master, "masterIP", z.MasterIP, "slaves", len(slaves), "stereo", z.Stereo)
+	if err := c.SetZone(ctx, master, slaves); err != nil {
+		logger.Warn("zone reconcile: setZone failed", "err", err, "master", z.Master)
+		return
+	}
+	logger.Info("zone reconcile: re-asserted ok", "master", z.Master)
 }
 
 // fetchBoxPresetSlots liest GET /presets von der Bose API und liefert

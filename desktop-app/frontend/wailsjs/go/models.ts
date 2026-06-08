@@ -350,6 +350,56 @@ export namespace main {
 	        this.removedFiles = source["removedFiles"];
 	    }
 	}
+	export class ZoneMember {
+	    deviceID: string;
+	    ip: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ZoneMember(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.deviceID = source["deviceID"];
+	        this.ip = source["ip"];
+	    }
+	}
+	export class ZoneSpec {
+	    master: ZoneMember;
+	    slaves: ZoneMember[];
+	    name: string;
+	    stereo: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ZoneSpec(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.master = this.convertValues(source["master"], ZoneMember);
+	        this.slaves = this.convertValues(source["slaves"], ZoneMember);
+	        this.name = source["name"];
+	        this.stereo = source["stereo"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 

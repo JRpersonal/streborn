@@ -69,6 +69,9 @@ import {
   LogClientError,
   BrowserOpenURL,
   EventsOn,
+  GetZoneState,
+  FormZone,
+  DissolveZone,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -472,36 +475,121 @@ function switchView(view) {
   }
   if (view === 'settings') loadBoxSettings();
   if (view === 'library') openLibrary();
-  if (view === 'multiroom') renderMultiroomAlpha();
+  if (view === 'multiroom') renderMultiroom();
   if (view === 'spotify') renderSpotifyAlpha();
 }
 
-// Alpha-stage placeholder for the multi-room / SoundTouch zone feature
-// (#70). No backend wiring; a static visible-progress page so users
-// know it is on the roadmap and can leave input on the issue.
-function renderMultiroomAlpha() {
+// Multi-room / SoundTouch zone (#70, BETA). Blind beta: drives the native Bose
+// /setZone via each speaker's agent, persists the group so it auto-reforms, and
+// asks multi-speaker testers to send logs. The master speaker plays the source
+// and the firmware streams it to the others. Re-rendered on every view switch
+// and after each action so the live group reflects reality.
+function renderMultiroom() {
   const root = $('view-multiroom');
-  if (!root || root.dataset.rendered === '1') return;
-  root.dataset.rendered = '1';
-  root.innerHTML = `
-    <div class="alpha-stage">
-      <h2>${escapeHtml(t('multiroom.heading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></h2>
-      <p>${escapeHtml(t('multiroom.intro1'))}</p>
-      <ul class="alpha-checklist">
-        <li>${escapeHtml(t('multiroom.bullet1'))}</li>
-        <li>${escapeHtml(t('multiroom.bullet2'))}</li>
-        <li>${escapeHtml(t('multiroom.bullet3'))}</li>
-      </ul>
-      <p>${t('multiroom.feedbackPrompt')}</p>
-      <p><a href="#" id="multiroomIssueLink">${escapeHtml(t('multiroom.issueLink'))}</a></p>
-    </div>
-  `;
-  const link = $('multiroomIssueLink');
-  if (link) link.onclick = (e) => {
-    e.preventDefault();
-    try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/70'); } catch {}
-  };
+  if (!root) return;
+  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host);
+  const beta =
+    `<div class="setup-help" style="margin-bottom:14px">` +
+    `<b>${escapeHtml(t('multiroom.heading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.beta'))}</span></b>` +
+    `<div class="muted small" style="margin-top:6px">${escapeHtml(t('multiroom.betaNote'))}</div></div>`;
+
+  if (strBoxes.length < 2) {
+    root.innerHTML = beta + `<div class="muted">${escapeHtml(t('multiroom.needTwo'))}</div>`;
+    return;
+  }
+
+  if (!state.zoneMaster || !strBoxes.some(b => b.deviceID === state.zoneMaster)) {
+    state.zoneMaster = strBoxes[0].deviceID;
+  }
+  const master = state.zoneMaster;
+  const label = (b) => b.name || b.friendlyName || b.host;
+  const masterOpts = strBoxes
+    .map(b => `<option value="${escapeAttr(b.deviceID)}" ${b.deviceID === master ? 'selected' : ''}>${escapeHtml(label(b))}</option>`)
+    .join('');
+  const slaveRows = strBoxes
+    .filter(b => b.deviceID !== master)
+    .map(b => `<label class="zone-slave"><input type="checkbox" class="zoneSlave" value="${escapeAttr(b.deviceID)}"> ${escapeHtml(label(b))} <span class="muted small">${escapeHtml(b.model || '')}</span></label>`)
+    .join('');
+
+  root.innerHTML = beta +
+    `<div class="zone-form">
+      <label class="zone-field"><span>${escapeHtml(t('multiroom.masterLabel'))}</span>
+        <select id="zoneMaster">${masterOpts}</select></label>
+      <div class="zone-field"><span>${escapeHtml(t('multiroom.slavesLabel'))}</span>
+        <div id="zoneSlaves">${slaveRows}</div></div>
+      <input id="zoneName" type="text" placeholder="${escapeAttr(t('multiroom.groupNamePh'))}" />
+      <div class="zone-actions">
+        <button id="zoneCreate" class="btn">${escapeHtml(t('multiroom.createBtn'))}</button>
+        <button id="zoneUngroup" class="btn btn-mini">${escapeHtml(t('multiroom.ungroupBtn'))}</button>
+      </div>
+      <div id="zoneResult"></div>
+      <div id="zoneCurrent" class="muted small" style="margin-top:10px"></div>
+    </div>`;
+
+  $('zoneMaster').onchange = (e) => { state.zoneMaster = e.target.value; renderMultiroom(); };
+  $('zoneCreate').onclick = () => doFormZone(strBoxes);
+  $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
+  refreshZoneCurrent(strBoxes);
 }
+
+async function doFormZone(strBoxes) {
+  const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
+  if (!master) return;
+  const slaveIds = Array.from(document.querySelectorAll('.zoneSlave:checked')).map(el => el.value);
+  if (!slaveIds.length) {
+    $('zoneResult').innerHTML = `<div class="setup-warn">${escapeHtml(t('multiroom.needTwo'))}</div>`;
+    return;
+  }
+  const slaves = slaveIds.map(id => {
+    const b = strBoxes.find(x => x.deviceID === id);
+    return { deviceID: id, ip: b ? b.host : '' };
+  });
+  const name = ($('zoneName').value || '').trim();
+  $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
+  try {
+    await FormZone(master.host, master.port, {
+      master: { deviceID: master.deviceID, ip: master.host },
+      slaves, name, stereo: false,
+    });
+    $('zoneResult').innerHTML = `<div class="setup-ok">${escapeHtml(t('multiroom.formed'))}</div>`;
+    refreshZoneCurrent(strBoxes);
+  } catch (e) {
+    $('zoneResult').innerHTML = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
+}
+
+async function doDissolveZone(strBoxes) {
+  const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
+  if (!master) return;
+  try {
+    await DissolveZone(master.host, master.port);
+    $('zoneResult').innerHTML = `<div class="setup-ok">${escapeHtml(t('multiroom.noZone'))}</div>`;
+    refreshZoneCurrent(strBoxes);
+  } catch (e) {
+    $('zoneResult').innerHTML = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
+}
+
+async function refreshZoneCurrent(strBoxes) {
+  const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
+  const el = $('zoneCurrent');
+  if (!master || !el) return;
+  try {
+    const z = await GetZoneState(master.host, master.port);
+    if (z && z.master) {
+      const names = (z.members || []).map(m => {
+        const b = strBoxes.find(x => (x.deviceID || '').toUpperCase() === (m.deviceID || '').toUpperCase());
+        return b ? label0(b) : (m.ip || m.deviceID);
+      });
+      el.innerHTML = `<b>${escapeHtml(t('multiroom.currentZone'))}:</b> ` +
+        escapeHtml(label0(master) + (names.length ? ' + ' + names.join(', ') : ''));
+    } else {
+      el.textContent = t('multiroom.noZone');
+    }
+  } catch { el.textContent = ''; }
+}
+
+function label0(b) { return b.name || b.friendlyName || b.host; }
 
 // Alpha-stage placeholder for Spotify Connect / streaming integration
 // (#78). Same pattern as renderMultiroomAlpha.

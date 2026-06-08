@@ -1159,6 +1159,78 @@ func (a *App) boxDo(host string, port int, method, path, contentType, body strin
 	return nil, lastErr
 }
 
+// ---- Multiroom zone (#70, BETA) ----
+
+// ZoneMember is a speaker in a multiroom zone: its stable deviceID and LAN IP.
+type ZoneMember struct {
+	DeviceID string `json:"deviceID"`
+	IP       string `json:"ip"`
+}
+
+// ZoneSpec is the form-a-zone request the desktop sends to the master's agent.
+type ZoneSpec struct {
+	Master ZoneMember   `json:"master"`
+	Slaves []ZoneMember `json:"slaves"`
+	Name   string       `json:"name"`
+	Stereo bool         `json:"stereo"`
+}
+
+// GetZoneState reads the live multiroom zone the speaker reports
+// (GET /api/box/zone) -> {master, senderIP, members[]}. Self-heals across
+// :8888/:17008 like the other box calls.
+func (a *App) GetZoneState(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/zone", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// FormZone forms (or replaces) a multiroom zone with masterHost as the master and
+// the given slaves (#70 beta). POSTed to the master's agent, which drives the
+// native Bose /setZone and persists it so the zone auto-reforms after a reboot.
+func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (map[string]any, error) {
+	if spec.Master.DeviceID == "" || len(spec.Slaves) == 0 {
+		return nil, fmt.Errorf("a master and at least one slave are required")
+	}
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := a.boxDo(masterHost, masterPort, http.MethodPost, "/api/box/zone", "application/json", string(b))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return out, nil
+}
+
+// DissolveZone tears down the multiroom zone led by masterHost (#70 beta).
+func (a *App) DissolveZone(masterHost string, masterPort int) error {
+	resp, err := a.boxDo(masterHost, masterPort, http.MethodDelete, "/api/box/zone", "", "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
 // GetPresets ruft GET /api/presets des angegebenen Sticks.
 // latestBoseFirmware is the final firmware Bose shipped for every SoundTouch
 // model (27.0.6, 2022-08-04). There is nothing newer; an older box can be

@@ -73,6 +73,9 @@ export {
   ListMediaServers,
   BrowseLibrary,
   LogClientError,
+  GetZoneState,
+  FormZone,
+  DissolveZone,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';

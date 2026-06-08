@@ -28,9 +28,13 @@ export function DeletePreset(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function DiscoverBoxes(arg1:number):Promise<Array<main.BoxInfo>>;
 
+export function DissolveZone(arg1:string,arg2:number):Promise<void>;
+
 export function EjectDrive(arg1:string):Promise<void>;
 
 export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.LogExportResult>;
+
+export function FormZone(arg1:string,arg2:number,arg3:main.ZoneSpec):Promise<Record<string, any>>;
 
 export function FormatStick(arg1:string):Promise<void>;
 
@@ -49,6 +53,8 @@ export function GetLogFilePath():Promise<string>;
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
 
 export function GetWebhooks(arg1:string,arg2:number):Promise<Record<string, any>>;
+
+export function GetZoneState(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallResult>;
 

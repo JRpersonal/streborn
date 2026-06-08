@@ -1245,6 +1245,11 @@ code { background: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-size: 12p
 .setup-help { margin-top: 12px; max-width: 40rem; font-size: 0.92em; }
 .setup-help ul { margin: 6px 0 0; padding-left: 1.2rem; }
 .setup-help li { margin: 4px 0; line-height: 1.4; }
+.zone-form { max-width: 40rem; display: flex; flex-direction: column; gap: 12px; }
+.zone-field { display: flex; flex-direction: column; gap: 6px; }
+.zone-field > span { font-weight: 600; }
+.zone-slave { display: block; padding: 3px 0; }
+.zone-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
 .fw-stale {
   display: inline-block;
   background: #3a2a1a;

@@ -30,6 +30,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
+	"github.com/JRpersonal/streborn/internal/zones"
 )
 
 // Server kapselt den Webui HTTP Server.
@@ -38,6 +39,10 @@ type Server struct {
 	boxHost     string
 	logger      *slog.Logger
 	presets     *presets.Store
+	// zones persists this box's multiroom membership so a zone auto-reforms
+	// after reboot/standby (#70). nil when not wired; zone write endpoints
+	// then still drive the box but do not persist.
+	zones *zones.Store
 	renderer    *upnp.Renderer
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
@@ -189,6 +194,12 @@ type Option func(*Server)
 // WithPresets verbindet den Store fuer Preset CRUD.
 func WithPresets(p *presets.Store) Option {
 	return func(s *Server) { s.presets = p }
+}
+
+// WithZones wires the multiroom zone persistence store so formed zones survive
+// a reboot/standby and auto-reform (#70).
+func WithZones(z *zones.Store) Option {
+	return func(s *Server) { s.zones = z }
 }
 
 // WithBoxHost setzt die Bose Box IP/Hostname fuer UPnP Calls.
@@ -1824,13 +1835,32 @@ func (s *Server) handleBoxBass(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"value": req.Value})
 }
 
-// handleBoxZone liest die aktuelle SoundTouch Multiroom Zone der Box.
-// Read-only. Antwort ist {"master":"...","senderIP":"...","members":[...]}.
-// Bei einer Box ohne Zone ist master leer und members leer.
+// handleBoxZone serves the SoundTouch multiroom zone (#70, BETA):
+//
+//	GET    -> the live zone the box reports {"master","senderIP","members"[]}
+//	POST   -> form/replace a zone with THIS box as master (body: master + slaves)
+//	DELETE -> dissolve the zone this box leads
+//
+// POST/DELETE also persist to the zones store so the zone auto-reforms after a
+// reboot/standby/Wi-Fi outage without the user re-grouping. This is the blind
+// beta path: it drives the native Bose /setZone family directly and logs every
+// step (master, slaves, the firmware's read-back) into agent.log so multi-speaker
+// testers' diagnostic bundles show exactly what the firmware did.
 func (s *Server) handleBoxZone(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
+	switch r.Method {
+	case http.MethodGet:
+		s.handleZoneGet(w, r)
+	case http.MethodPost:
+		s.handleZoneForm(w, r)
+	case http.MethodDelete:
+		s.handleZoneDissolve(w, r)
+	default:
+		w.Header().Set("Allow", "GET, POST, DELETE")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	c := boxapi.New(s.boxHost)
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
@@ -1840,6 +1870,111 @@ func (s *Server) handleBoxZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, z)
+}
+
+type zoneMemberReq struct {
+	DeviceID string `json:"deviceID"`
+	IP       string `json:"ip"`
+}
+
+type zoneFormReq struct {
+	Master zoneMemberReq   `json:"master"`
+	Slaves []zoneMemberReq `json:"slaves"`
+	Name   string          `json:"name"`
+	Stereo bool            `json:"stereo"`
+}
+
+// handleZoneForm creates (or replaces) a zone with this box as master. The
+// caller (desktop app) supplies the master's and slaves' deviceID+IP from
+// discovery, so the agent need not self-identify. Native /setZone, then persist.
+func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
+	var req zoneFormReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Master.DeviceID == "" || len(req.Slaves) == 0 {
+		http.Error(w, "master deviceID and at least one slave are required", http.StatusBadRequest)
+		return
+	}
+	master := boxapi.ZoneMember{DeviceID: req.Master.DeviceID, IP: req.Master.IP}
+	slaves := make([]boxapi.ZoneMember, 0, len(req.Slaves))
+	for _, m := range req.Slaves {
+		slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+	}
+	s.logger.Info("zone: forming (beta)", "master", master.DeviceID, "masterIP", master.IP,
+		"slaves", len(slaves), "stereo", req.Stereo, "name", req.Name)
+	c := boxapi.New(s.boxHost)
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	if err := c.SetZone(ctx, master, slaves); err != nil {
+		s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
+		http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	// Persist so the agent re-forms the zone after a reboot/standby (the
+	// permanent-groups goal). Only the master persists.
+	if s.zones != nil {
+		zm := make([]zones.Member, 0, len(slaves))
+		for _, m := range slaves {
+			zm = append(zm, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
+		}
+		if err := s.zones.Set(zones.Zone{
+			Master: master.DeviceID, MasterIP: master.IP,
+			Slaves: zm, Stereo: req.Stereo, Name: req.Name,
+		}); err != nil {
+			s.logger.Warn("zone: persist failed", "err", err)
+		}
+	}
+	// Read back what the firmware actually formed, for the log and the UI.
+	z, err := c.GetZone(ctx)
+	if err != nil {
+		s.logger.Warn("zone: formed but getZone read-back failed", "err", err)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
+	s.logger.Info("zone: formed", "liveMaster", z.Master, "liveMembers", len(z.Members))
+	writeJSON(w, http.StatusOK, z)
+}
+
+// handleZoneDissolve tears down the zone this box leads and stops re-forming it.
+func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
+	c := boxapi.New(s.boxHost)
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	var master boxapi.ZoneMember
+	var slaves []boxapi.ZoneMember
+	// Prefer the persisted membership; fall back to the live zone so a dissolve
+	// still works after an agent restart.
+	if s.zones != nil {
+		if z, ok := s.zones.Get(); ok {
+			master = boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+			for _, m := range z.Slaves {
+				slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+			}
+		}
+	}
+	if master.DeviceID == "" {
+		if z, err := c.GetZone(ctx); err == nil && z.Master != "" {
+			master = boxapi.ZoneMember{DeviceID: z.Master, IP: z.SenderIP}
+			for _, m := range z.Members {
+				slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+			}
+		}
+	}
+	s.logger.Info("zone: dissolving (beta)", "master", master.DeviceID, "slaves", len(slaves))
+	if master.DeviceID != "" && len(slaves) > 0 {
+		if err := c.RemoveZoneSlave(ctx, master, slaves); err != nil {
+			// Log but still clear the store so we stop re-forming a broken zone.
+			s.logger.Warn("zone: removeZoneSlave failed", "err", err)
+		}
+	}
+	if s.zones != nil {
+		if err := s.zones.Clear(); err != nil {
+			s.logger.Warn("zone: clear store failed", "err", err)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handleBoxGroup liest die aktuelle Stereo-Pair-Group der Box.
