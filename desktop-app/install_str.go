@@ -328,8 +328,13 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	res.Log = out
 	if err != nil {
 		res.Code = "install-error"
-		if strings.Contains(err.Error(), "timeout") {
+		lowOut := strings.ToLower(out)
+		switch {
+		case strings.Contains(err.Error(), "timeout"):
 			res.Code = "install-timeout"
+		case strings.Contains(lowOut, "input/output error"), strings.Contains(lowOut, "i/o error"):
+			// Media-level read failure of install.sh, see classifySSHError.
+			res.Code = "stick-io-error"
 		}
 		hint := classifySSHError(out, err)
 		res.Message = "install.sh execution failed: " + hint
@@ -443,6 +448,13 @@ func classifySSHError(out string, err error) string {
 		strings.Contains(low, "no kex alg"), strings.Contains(low, "no hostkey alg"),
 		strings.Contains(low, "no cipher"), strings.Contains(low, "no mac"):
 		return "SSH algorithm negotiation failed. The speaker's old OpenSSH only offers legacy ciphers; please file a bug with the exact line from this log."
+	case strings.Contains(low, "input/output error"), strings.Contains(low, "i/o error"):
+		// The speaker found install.sh but the read failed at the media layer.
+		// Almost always the USB stick: a large stick force-formatted to FAT32
+		// with a 64 KB cluster size the speaker's old kernel cannot read (the
+		// classic 64 GB case), an unclean write, or failing flash. Re-preparing
+		// with our formatter (32 KB clusters, capped) or a smaller stick fixes it.
+		return "the speaker could not read the stick (I/O error). The USB stick is likely faulty, or a large stick was formatted with a block size the speaker cannot read. Re-prepare it with the Format option, or use a smaller stick (8 to 32 GB)."
 	case strings.Contains(low, "permission denied"):
 		return "speaker refused passwordless root login. Bose's stock firmware allows it when /media/sda1 has the remote_services marker. Reboot the speaker with the STR stick plugged in, then retry."
 	case strings.Contains(low, "connection refused"):

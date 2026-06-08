@@ -5348,6 +5348,24 @@ async function updateDrivePanels() {
     return;
   }
 
+  // Large stick already formatted FAT32: Windows cannot format >32 GB as
+  // FAT32, so it was done with a third-party tool, which for big sticks
+  // usually picks a 64 KB cluster size the speaker's old kernel cannot read
+  // (the I/O error reading install.sh, #119). Our own formatter caps clusters
+  // at a size the speaker reads, so steer the user to reformat in-app. Fresh
+  // sticks only; an existing STR stick is left alone.
+  const LARGE_FAT32_BYTES = 34e9; // larger than any real 32 GB stick
+  if (isFat32 && !drive.hasStick && (drive.totalBytes || 0) > LARGE_FAT32_BYTES) {
+    const cb = $('setupFormat');
+    if (cb && !cb.checked) cb.checked = true;
+    upd.innerHTML = `<b>${escapeHtml(t('setup.stickLargeFat32'))}</b>`;
+    upd.classList.remove('hidden');
+    warn.classList.add('hidden');
+    btn.disabled = false;
+    btn.textContent = t('setup.goBtnFormatPrepare');
+    return;
+  }
+
   // If the stick is not FAT32, auto-enable the format checkbox and
   // show the visual warning. hasStick is only meaningful for FAT32
   // anyway because the speaker reads nothing else.
@@ -5725,6 +5743,10 @@ const INSTALL_HELP_STEPS = {
   'agent-not-up': ['powerCycle', 'wifi', 'logs'],
   'not-reachable': ['wifi', 'freshBoot'],
   'install-window-closed': ['freshBoot'],
+  // Media read error: the speaker found install.sh but could not read it.
+  // Usually a large stick force-formatted to FAT32 with a block size the
+  // speaker can't read (the 64 GB case), or a faulty stick.
+  'stick-io-error': ['reformatApp', 'smallerStick', 'differentStick', 'logs'],
 };
 
 // installHelpHtml renders the localized help checklist for a failure code.
