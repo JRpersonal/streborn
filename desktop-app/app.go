@@ -68,7 +68,7 @@ type App struct {
 	// discCache keeps recently-discovered boxes so a single missed mDNS
 	// or TCP cycle does not make a box flicker out of the list and back.
 	// mDNS multicast drops, a box mid-reboot, or marginal Wi-Fi (all
-	// observed live on deqw's spotty ST20, #90) otherwise cause the box
+	// observed live on a spotty ST20, #90) otherwise cause the box
 	// to vanish and radio/presets to fail with "Failed to fetch" until
 	// the next cycle re-finds it. See mergeDiscoveryCache.
 	discMu    sync.Mutex
@@ -93,6 +93,14 @@ type discEntry struct {
 // slow BCO box) so it does not disappear mid-reboot, short enough that a
 // truly powered-off box drops out reasonably soon.
 const discoveryStickyTTL = 100 * time.Second
+
+// discoverySTRStickyTTL is the longer eviction grace for a box already known to
+// run STR. A post-OTA reboot can take longer than discoveryStickyTTL while the
+// agent restarts; without this the STR cache entry is evicted mid-reboot and a
+// transient stock sighting relabels the box as "needs install" until a manual
+// Refresh (#108). A removed STR box lingers at most this long, an acceptable
+// trade for not flickering to a wrong reinstall offer.
+const discoverySTRStickyTTL = 6 * time.Minute
 
 // NewApp erstellt eine neue App Instance.
 func NewApp() *App {
@@ -329,7 +337,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 
 	// Discovery stickiness: re-add boxes seen within discoveryStickyTTL
 	// that this cycle missed, so the list stays stable across mDNS/TCP
-	// flaps instead of flickering (deqw #90: spotty ST20 dropped out of
+	// flaps instead of flickering (#90: spotty ST20 dropped out of
 	// the list on marginal Wi-Fi / mid-reboot and radio+presets failed
 	// whenever it briefly vanished).
 	a.mergeDiscoveryCache(seen)
@@ -341,7 +349,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// Stable order so speakers keep their place in the app across refreshes
 	// instead of jumping around (seen is a map, whose iteration order is
 	// random). Sort by display name, then host as a tiebreaker for two boxes
-	// with the same (or empty) name. deqw #108: the list reordering on every
+	// with the same (or empty) name. #108: the list reordering on every
 	// discovery cycle was disorienting with several speakers.
 	sort.Slice(out, func(i, j int) bool {
 		ni, nj := boxSortName(out[i]), boxSortName(out[j])
@@ -398,7 +406,14 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 		if _, ok := seen[key]; ok {
 			continue
 		}
-		if now.Sub(e.seen) <= discoveryStickyTTL {
+		ttl := discoveryStickyTTL
+		if e.box.Kind == "str" {
+			// A known STR box gets a longer grace so a post-OTA reboot does not
+			// evict it and let a transient stock sighting relabel it as "needs
+			// install" (#108).
+			ttl = discoverySTRStickyTTL
+		}
+		if now.Sub(e.seen) <= ttl {
 			seen[key] = e.box
 		} else {
 			delete(a.discCache, key)
@@ -833,7 +848,7 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 // times and returns the first success. Used to CONFIRM STR on a host that
 // already answered the stock :8090 /info, where a single missed STR probe
 // would wrongly classify an already-flashed speaker as stock and prompt a
-// full USB-stick reinstall instead of an OTA update (#108: deqw's ST10 .183,
+// full USB-stick reinstall instead of an OTA update (#108: an ST10 .183,
 // running v0.7.1, was sent to a complete stick install whenever the parallel
 // STR sweep happened to miss it). STR speakers keep the Bose :8090 port alive,
 // so a :8090 hit alone must never win over a present STR agent; a couple of
@@ -1465,7 +1480,7 @@ func (a *App) PlaySlot(host string, port int, slot int) error {
 // live agent. On BCO boxes the :17008->:8888 redirect and the agent take
 // a few seconds to come up after a reboot or OTA; a play issued in that
 // window fails at the transport layer and should read as "still starting"
-// instead of a raw timeout (issue: Brecht's POST :17008/api/play context
+// instead of a raw timeout (a POST :17008/api/play context
 // deadline exceeded right after the box rebooted).
 func isTransportNotReady(err error) bool {
 	if err == nil {
@@ -1665,6 +1680,14 @@ func (a *App) SetWebhooks(host string, port int, enabled bool, method, url, body
 			"content_type": contentType,
 		},
 	}
+	return a.boxPut(host, port, "/api/webhooks", cfg)
+}
+
+// SaveWebhookConfig replaces the agent's FULL webhook config (thumb + the
+// per-remote-key buttons preset1..preset6, aux, power). The PUT replaces the
+// whole config on the agent, so the frontend sends the complete object it built
+// from GetWebhooks; saving only one field would wipe the others.
+func (a *App) SaveWebhookConfig(host string, port int, cfg map[string]any) error {
 	return a.boxPut(host, port, "/api/webhooks", cfg)
 }
 
@@ -2406,7 +2429,7 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 		}
 	}()
 	// Kill switch to A/B test whether the startup update check is behind a
-	// report (e.g. deqw's macOS start crash). With STR_NO_UPDATE_CHECK set
+	// report (e.g. a macOS start crash). With STR_NO_UPDATE_CHECK set
 	// the check is a no-op, so a user can run with it fully off and see if
 	// the crash persists.
 	if strings.TrimSpace(os.Getenv("STR_NO_UPDATE_CHECK")) != "" {
@@ -2449,7 +2472,7 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 	// Use the pure-Go update client (embedded RootCAs + PreferGo), NOT the
 	// shared httpClient. The shared one leaves TLS verification to the
 	// platform, which on macOS runs through cgo (Security.framework) and
-	// crashed an old Mac on this very call (deqw #102). See updateHTTPClient.
+	// crashed an old Mac on this very call (#102). See updateHTTPClient.
 	resp, err := updateHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
