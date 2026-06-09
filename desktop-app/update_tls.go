@@ -35,7 +35,7 @@ var (
 //     crypto/x509 verifies the server certificate against the system trust
 //     store through cgo (Security.framework), which SIGSEGV'd on an old Mac
 //     during the startup update check and took the whole app down before it
-//     could draw a window (deqw, issue #102 — kill-switch A/B confirmed the
+//     could draw a window (issue #102 — kill-switch A/B confirmed the
 //     crash is in this call). A non-nil RootCAs switches verification to Go's
 //     own chain builder, removing the last cgo path.
 //

@@ -17,7 +17,7 @@ When any one of these fails, the install aborts with `ssh handshake:
 exit status 255` (or similar), and the user has no way to tell which
 condition was missing.
 
-Real case (Gerald, ST10, host `.11`, diagnostic 2026-06-06):
+Real case (ST10, host `.11`, diagnostic 2026-06-06):
 `reachable8090 = true` (box is on the network), `reachableSSH = false`,
 `agentVersion = none`. So this is purely a port 22 / timing problem, not
 a Wi-Fi or network problem. The install error wrongly blamed the network.

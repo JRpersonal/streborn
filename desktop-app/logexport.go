@@ -356,7 +356,7 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	// negotiation fails, the field stays nil and the bundle still
 	// contains everything else.
 	// SSH-fallback gate. We previously only triggered when :17008 was
-	// TCP-closed, but Brecht's 2026-05-30 v0.5.23 bundle exposed the
+	// TCP-closed, but a 2026-05-30 v0.5.23 bundle exposed the
 	// hole: on a scm/spotty ST20 with STR installed, :17008 stays
 	// TCP-open because Bose's own SoftwareUpdate listens there. If
 	// the LD_PRELOAD shim has not (yet) hijacked the process, the

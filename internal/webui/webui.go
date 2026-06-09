@@ -136,7 +136,7 @@ type Server struct {
 	lastPlay   *lastPlayInfo
 
 	// lastUserStop is when the user last DELIBERATELY stopped playback, so the
-	// auto-re-push does not fight a wanted stop (Brecht, v0.7.0: a single Stop
+	// auto-re-push does not fight a wanted stop (v0.7.0: a single Stop
 	// did not hold because the proxy disconnect that a stop causes looks
 	// identical to a box-side drop). Set from the STR Stop/Pause endpoints
 	// (definite intent) and from a gabbo STOP_STATE frame (the physical
@@ -151,7 +151,7 @@ type Server struct {
 // drives an exponential backoff; once it hits maxRePushes the stream is marked
 // failed and never re-pushed again until a fresh play (setLastPlay) replaces it.
 // rePushInFlight coalesces drops: a dead stream fires a disconnect on every
-// failed resume, and without this each one spawned a new goroutine (Brecht
+// failed resume, and without this each one spawned a new goroutine (reported
 // v0.7.5: a dead slot-3 URL produced dozens of resume attempts per second that
 // starved the control port :8888).
 type lastPlayInfo struct {
@@ -977,7 +977,7 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 	// declared dead, or a resume is already in flight. A dead/moved URL fires a
 	// disconnect on EVERY failed resume; without this latch each one spawned a
 	// fresh maybeRePush goroutine, producing the dozens-per-second runaway that
-	// starved :8888 (Brecht v0.7.5).
+	// starved :8888 (v0.7.5).
 	if lp == nil || time.Since(lp.ts) >= 6*time.Hour || lp.failed || lp.rePushInFlight {
 		s.lastPlayMu.Unlock()
 		return

@@ -1409,7 +1409,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         # PersistentWifiProfile, or nothing. Used to detect an
         # already-provisioned BCO box so M_air does not rewrite + reboot
         # on every boot when a provisioned stick is left inserted
-        # (deqw #90: spotty white-bar from the needless reboot).
+        # (#90: spotty white-bar from the needless reboot).
         _asf=""
         for _af in /mnt/nv/BoseApp-Persistence/*/AirplayConfiguration.xml; do
             [ -f "$_af" ] && _asf="$_af" && break
@@ -1745,7 +1745,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # for this exact SSID: the WLAN is already provisioned, so rewriting
     # the file and rebooting achieves nothing and just adds a needless
     # reboot (plus the box's slow ~130s BoseApp re-init) every time a
-    # provisioned stick is left inserted — deqw #90 saw this as the
+    # provisioned stick is left inserted, #90 saw this as the
     # spotty "full white bar" on every boot. Only (re)write + reboot when
     # the profile is missing or for a different network.
     # Skip M_air entirely when the box is ALREADY provisioned for the
@@ -1753,7 +1753,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     # already wrote + rebooted for this exact SSID+PASS) AND the slot-0
     # profile carries that SSID. Then rewriting + rebooting achieves
     # nothing and just adds a needless reboot every time a provisioned
-    # stick is left inserted (deqw #90: spotty "full white bar"). Keyed
+    # stick is left inserted (#90: spotty "full white bar"). Keyed
     # on the SSID+PASS fingerprint, NOT the SSID alone, so a password
     # change still re-provisions (stick stays a recovery tool).
     AIR_FP_NOW=$(airplay_creds_fp)

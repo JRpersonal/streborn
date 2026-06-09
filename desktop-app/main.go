@@ -34,7 +34,7 @@ func main() {
 	// Force Go's pure-Go DNS resolver instead of the cgo one. On macOS the
 	// default cgo resolver (getaddrinfo) crashed the app a few seconds after
 	// launch when the startup update check resolved st-reborn.de, the app's
-	// only external host (reported by deqw: crash gone with the update check
+	// only external host (reported: crash gone with the update check
 	// disabled, and it leaves no Go panic trace because a cgo SIGSEGV is not
 	// recoverable). The pure-Go resolver avoids that native code path. It
 	// resolves public names like st-reborn.de fine on all three platforms.

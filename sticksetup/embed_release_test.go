@@ -18,7 +18,7 @@ func TestWinformatEmbedIsNonEmptyInReleaseBuild(t *testing.T) {
 			"The 'Build winformat helper' step in .github/workflows/release.yml " +
 			"must run BEFORE 'Build Windows desktop app'. Without that, the " +
 			"released STR-Windows.exe ships with the empty stub and in-app " +
-			"stick formatting fails with the German error message Pierre hit " +
+			"stick formatting fails with the German error message a user hit " +
 			"in #44.")
 	}
 }

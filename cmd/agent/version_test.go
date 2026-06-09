@@ -28,7 +28,7 @@ import "testing"
 // See .github/workflows/release.yml line 167 (build-agent step)
 // and the Makefile's LDFLAGS for the canonical invocations.
 // Local raw `go build` without these flags reproduces the
-// regression that confused Pierre/Jens during the v0.5.4 dev cycle.
+// regression that confused us during the v0.5.4 dev cycle.
 func TestVersionDefaultsAreObviouslyUnstamped(t *testing.T) {
 	if version != "1.0.0" {
 		t.Errorf("version default changed to %q; release flag contract requires %q "+
