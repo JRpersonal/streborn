@@ -202,7 +202,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// Step 0a: preflight TCP reachability on the SSH port. SSH failing with a
 	// bare "exit status 255" and no stderr is the opaque error users hit when
 	// the box is simply not reachable (wrong/disconnected network, mid-reboot,
-	// not yet onboarded to Wi-Fi). Reported by glehner and Max T (#, ST10).
+	// not yet onboarded to Wi-Fi). Reported on ST10.
 	// Checking :22 first lets us return a human instruction instead of the
 	// raw SSH exit code.
 	res.Step = "preflight"
@@ -211,8 +211,8 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// Bose only opens sshd while the box boots with the stick inserted
 		// (the remote_services marker), so a fully-onboarded box that is
 		// reachable on its Bose REST port (:8090) but has :22 closed is the
-		// "install window closed" case, not a network problem. Gerald's
-		// ST10 diagnostic (#, 06.06.) showed exactly this: 8090 reachable,
+		// "install window closed" case, not a network problem. An's
+		// ST10 diagnostic (06.06.) showed exactly this: 8090 reachable,
 		// SSH not. Probe the Bose port so we can tell the two apart and give
 		// an instruction the user can actually act on, instead of wrongly
 		// blaming the network.
@@ -301,8 +301,10 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			}
 			res.Code = "stick-missing"
 			res.Message = "install.sh did not appear under /media, /mnt or /run/media within 60 s. " +
-				"Is the STR stick physically plugged into the speaker (USB-A on ST20/30, " +
-				"micro-USB adapter on ST10), and did you reboot the speaker so it mounted the stick?"
+				"On a SoundTouch 30, if no stick mounts at all: try a small plain USB 2.0 stick (8 to 32 GB), avoid SD-card adapters and USB 3 / large drives, and try BOTH USB ports:" +
+				"the rear USB-A port and the micro-USB port via a micro-USB OTG adapter. Reboot the speaker after inserting it." +
+				"If several sticks in both ports still do not mount, the speaker's USB port may be faulty."
+				res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
 			return res, nil
 		}
 		time.Sleep(3 * time.Second)
@@ -339,6 +341,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		hint := classifySSHError(out, err)
 		res.Message = "install.sh execution failed: " + hint
 		a.logger.Warn("install_str: install.sh execution failed", "host", host, "err", err, "hint", hint)
+		res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
 		// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
 		return res, nil
 	}
@@ -796,6 +799,35 @@ func (a *App) waitForBoxLoad(host, model string) {
 		}
 		time.Sleep(sample)
 	}
+}
+
+// boxInstallDiag gathers as much box state as possible over the SSH session that
+// is already open when an install fails: kernel, firmware, partitions, block
+// devices, mounts, free space, stick contents, the remote_services marker, ssh
+// procs, and the USB/storage dmesg tail. It runs on ANY install failure where SSH
+// is up, so a remote user's saved log carries the evidence (firmware/kernel vs
+// port vs media) in one shot, without more web research or another round trip.
+func boxInstallDiag(host string) string {
+	cmd := strings.Join([]string{
+		"echo '# uname'; uname -a 2>&1",
+		"echo '# /proc/version'; cat /proc/version 2>&1",
+		"echo '# version files'; cat /etc/os-release /etc/version /mnt/nv/*ersion* 2>/dev/null | head -20",
+		"echo '# uptime/loadavg'; uptime 2>&1; cat /proc/loadavg 2>&1",
+		"echo '# meminfo'; head -3 /proc/meminfo 2>&1",
+		"echo '# partitions'; cat /proc/partitions 2>&1",
+		"echo '# block devices'; ls -la /dev/sd* /dev/mmcblk* 2>&1",
+		"echo '# mounts'; mount 2>&1",
+		"echo '# df'; df -h 2>&1",
+		"echo '# stick contents'; ls -la /media/sda1 /mnt/usb /run/media/* 2>&1 | head -40",
+		"echo '# remote_services marker'; ls -la /media/sda1/remote_services /mnt/nv/remote_services 2>&1",
+		"echo '# ssh procs'; ps 2>&1 | grep -i ssh | grep -v grep",
+		"echo '# dmesg usb/storage'; dmesg 2>/dev/null | grep -iE 'usb|sd[a-z]|vfat|fat|mmc|scsi|i/o error|reset|error' | tail -60",
+	}, "; ")
+	out, err := boxSSHOutput(host, cmd, 20*time.Second)
+	if err != nil {
+		return "diagnostics unavailable: " + err.Error()
+	}
+	return out
 }
 
 // boxCoreCount reads the CPU count from /proc/cpuinfo so the load threshold can
