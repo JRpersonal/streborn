@@ -1273,6 +1273,14 @@ code { background: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-size: 12p
 .zone-live.in { color: #4caf50; }
 .zone-update-badge { display: inline-block; margin-left: 6px; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #5a3a1a; color: #f8c66c; }
 .zone-card.outdated { border-style: dashed; }
+/* Linux/GTK fix (reported on Zorin 18.1): native <select> and especially the
+   <option> popup do not inherit the app's dark theme on Linux/WebKitGTK, so
+   they render white text on a white background. Force readable colors on every
+   select and its options regardless of the system GTK theme. Section-specific
+   select rules above are more specific and keep their own look; this is the
+   safety net that also covers the <option> popup nothing else styles. */
+select { background-color: #1a1a1a; color: #eee; }
+select option { background-color: #1a1a1a; color: #eee; }
 .fw-stale {
   display: inline-block;
   background: #3a2a1a;
