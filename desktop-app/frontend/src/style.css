@@ -1245,11 +1245,29 @@ code { background: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-size: 12p
 .setup-help { margin-top: 12px; max-width: 40rem; font-size: 0.92em; }
 .setup-help ul { margin: 6px 0 0; padding-left: 1.2rem; }
 .setup-help li { margin: 4px 0; line-height: 1.4; }
-.zone-form { max-width: 40rem; display: flex; flex-direction: column; gap: 12px; }
+.zone-controls { max-width: 40rem; display: flex; flex-direction: column; gap: 12px; }
 .zone-field { display: flex; flex-direction: column; gap: 6px; }
 .zone-field > span { font-weight: 600; }
-.zone-slave { display: block; padding: 3px 0; }
 .zone-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.zone-pick-hint { margin: 0 0 10px; padding: 0; }
+.zone-cards { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+.zone-card { position: relative; min-width: 150px; max-width: 230px; padding: 12px 14px; border: 1px solid #444; border-radius: 8px; background: #2a2a2a; color: #eee; cursor: pointer; transition: border-color .12s, background .12s, box-shadow .12s; }
+.zone-card:hover { background: #3a3a3a; }
+.zone-card.master { background: var(--brand-bg); border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
+.zone-card.selected { border-color: #4caf50; box-shadow: 0 0 0 1px #4caf50 inset; }
+.zone-card-name { font-weight: 600; font-size: 13px; }
+.zone-card-host { display: block; opacity: 0.6; font-size: 10px; margin-top: 2px; }
+.zone-card-tick { position: absolute; top: 8px; right: 10px; font-size: 14px; line-height: 1; }
+.zone-card.master .zone-card-tick { color: var(--brand); }
+.zone-card.selected .zone-card-tick { color: #4caf50; }
+.zone-card-foot { margin-top: 10px; }
+.zone-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: var(--brand); color: #06121c; font-weight: 600; }
+.zone-makemain { font-size: 10px; padding: 2px 8px; border-radius: 999px; border: 1px solid #555; background: transparent; color: #aaa; cursor: pointer; }
+.zone-makemain:hover { border-color: var(--brand); color: #eee; }
+.seg { display: inline-flex; border: 1px solid #444; border-radius: 6px; overflow: hidden; width: fit-content; }
+.seg-btn { padding: 6px 12px; background: transparent; border: none; color: #ddd; cursor: pointer; font-size: 12px; }
+.seg-btn + .seg-btn { border-left: 1px solid #444; }
+.seg-btn.active { background: var(--brand-bg); color: var(--brand-text); }
 .fw-stale {
   display: inline-block;
   background: #3a2a1a;

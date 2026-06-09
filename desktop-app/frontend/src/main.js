@@ -505,22 +505,37 @@ function renderMultiroom() {
   const previewNote = enough ? '' :
     `<div class="setup-warn small" style="margin-bottom:10px">${escapeHtml(t('multiroom.previewNote'))}</div>`;
 
-  // Master defaults to the first STR box.
+  if (!state.zoneSlaves) state.zoneSlaves = {};
+  if (!state.zoneMode) state.zoneMode = 'native';
   if (!state.zoneMaster || !strBoxes.some(b => b.deviceID === state.zoneMaster)) {
     state.zoneMaster = strBoxes.length ? strBoxes[0].deviceID : '';
   }
-  const master = state.zoneMaster;
-  const masterOpts = strBoxes
-    .map(b => `<option value="${escapeAttr(b.deviceID)}" ${b.deviceID === master ? 'selected' : ''}>${escapeHtml(label(b))}</option>`)
-    .join('') || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`;
-  const others = strBoxes.filter(b => b.deviceID !== master);
-  const slaveRows = others.length
-    ? others.map(b => `<label class="zone-slave"><input type="checkbox" class="zoneSlave" value="${escapeAttr(b.deviceID)}"> ${escapeHtml(label(b))} <span class="muted small">${escapeHtml(b.model || '')}</span></label>`).join('')
-    : `<div class="muted small">${escapeHtml(t('multiroom.noOtherSpeaker'))}</div>`;
-  const dis = enough ? '' : ' disabled';
 
-  // Stereo pair (prepared for two of the same model, e.g. two SoundTouch 10;
-  // the Portable cannot pair). Shown as a scaffold even with fewer than two.
+  // Speaker cards, styled like the music-tab box picker. The master is the
+  // highlighted card marked with a star; tapping another card toggles it into
+  // the group. A small "set as main" promotes any card to master.
+  const cards = strBoxes.length
+    ? strBoxes.map(b => {
+        const isMaster = b.deviceID === state.zoneMaster;
+        const selected = !isMaster && !!state.zoneSlaves[b.deviceID];
+        const model = (b.model && b.model !== 'SoundTouch')
+          ? `<span class="box-model">${escapeHtml(b.model)}</span>` : '';
+        const foot = isMaster
+          ? `<span class="zone-badge">${escapeHtml(t('multiroom.mainBadge'))}</span>`
+          : `<button class="zone-makemain" data-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.makeMain'))}</button>`;
+        return `<div class="zone-card${isMaster ? ' master' : ''}${selected ? ' selected' : ''}" data-id="${escapeAttr(b.deviceID)}" role="button" tabindex="0">
+            <span class="zone-card-tick">${selected ? '&#10003;' : (isMaster ? '&#9733;' : '')}</span>
+            <div class="zone-card-name">${escapeHtml(label(b))} ${model}</div>
+            <small class="zone-card-host">${escapeHtml(b.host)}</small>
+            <div class="zone-card-foot">${foot}</div>
+          </div>`;
+      }).join('')
+    : `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`;
+  const dis = enough ? '' : ' disabled';
+  const modeBtn = (m, lbl) => `<button class="seg-btn${state.zoneMode === m ? ' active' : ''}" data-mode="${m}">${escapeHtml(lbl)}</button>`;
+
+  // Stereo pair (scaffold for two of the same model, e.g. two SoundTouch 10;
+  // the Portable cannot pair). Shown even with fewer than two.
   const pairCands = strBoxes.filter(b => !/portable/i.test(b.model || ''));
   const canPair = pairCands.length >= 2;
   const pairOpts = (sel) => pairCands
@@ -529,50 +544,65 @@ function renderMultiroom() {
   const pairDis = canPair ? '' : ' disabled';
 
   root.innerHTML = beta + previewNote +
-    `<div class="zone-form">
-      <label class="zone-field"><span>${escapeHtml(t('multiroom.masterLabel'))}</span>
-        <select id="zoneMaster"${dis}>${masterOpts}</select></label>
-      <div class="zone-field"><span>${escapeHtml(t('multiroom.slavesLabel'))}</span>
-        <div id="zoneSlaves">${slaveRows}</div></div>
-      <input id="zoneName" type="text" placeholder="${escapeAttr(t('multiroom.groupNamePh'))}"${dis} />
-      <label class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
-        <select id="zoneMode"${dis}>
-          <option value="native"${(state.zoneMode || 'native') === 'native' ? ' selected' : ''}>${escapeHtml(t('multiroom.modeNative'))}</option>
-          <option value="mirror"${state.zoneMode === 'mirror' ? ' selected' : ''}>${escapeHtml(t('multiroom.modeMirror'))}</option>
-        </select>
-        <span class="muted small">${escapeHtml(t('multiroom.modeHelp'))}</span></label>
-      <div class="zone-actions">
-        <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t('multiroom.createBtn'))}</button>
-        <button id="zoneUngroup" class="btn btn-mini"${dis}>${escapeHtml(t('multiroom.ungroupBtn'))}</button>
-      </div>
-      <div id="zoneResult"></div>
-      <div id="zoneCurrent" class="muted small" style="margin-top:10px"></div>
-    </div>
+    `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
+     <div class="zone-cards">${cards}</div>
+     <div class="zone-controls">
+       <div class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
+         <div class="seg">${modeBtn('native', t('multiroom.modeNative'))}${modeBtn('mirror', t('multiroom.modeMirror'))}</div>
+         <span class="muted small">${escapeHtml(t('multiroom.modeHelp'))}</span></div>
+       <input id="zoneName" type="text" placeholder="${escapeAttr(t('multiroom.groupNamePh'))}"${dis} />
+       <div class="zone-actions">
+         <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t('multiroom.createBtn'))}</button>
+         <button id="zoneUngroup" class="btn btn-mini"${dis}>${escapeHtml(t('multiroom.ungroupBtn'))}</button>
+       </div>
+       <div id="zoneResult"></div>
+       <div id="zoneCurrent" class="muted small" style="margin-top:10px"></div>
+     </div>
 
-    <div class="zone-form" style="margin-top:22px;border-top:1px solid var(--border,#333);padding-top:16px">
-      <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.beta'))}</span></b>
-      <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
-      ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
-      <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>
-        <select id="stereoLeft"${pairDis}>${pairOpts(0)}</select></label>
-      <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoRight'))}</span>
-        <select id="stereoRight"${pairDis}>${pairOpts(1)}</select></label>
-      <div class="zone-actions">
-        <button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button>
-      </div>
-      <div id="stereoResult"></div>
-    </div>`;
+     <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--border,#333);padding-top:16px">
+       <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.beta'))}</span></b>
+       <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
+       ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
+       <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>
+         <select id="stereoLeft"${pairDis}>${pairOpts(0)}</select></label>
+       <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoRight'))}</span>
+         <select id="stereoRight"${pairDis}>${pairOpts(1)}</select></label>
+       <div class="zone-actions"><button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button></div>
+       <div id="stereoResult"></div>
+     </div>`;
 
   const issueLink = $('multiroomIssueLink');
   if (issueLink) issueLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/70'); } catch {} };
   const email = $('multiroomEmail');
   if (email) email.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('mailto:str@sichtbar-app.de'); } catch {} };
+
+  // Card interactions: the "set as main" button promotes to master; a tap on
+  // the rest of a non-master card toggles it in/out of the group.
+  root.querySelectorAll('.zone-card').forEach(card => {
+    card.onclick = (e) => {
+      const mk = e.target.closest('.zone-makemain');
+      if (mk) {
+        state.zoneMaster = mk.dataset.id;
+        delete state.zoneSlaves[state.zoneMaster];
+        renderMultiroom();
+        return;
+      }
+      const id = card.dataset.id;
+      if (!enough || id === state.zoneMaster) return;
+      state.zoneSlaves[id] = !state.zoneSlaves[id];
+      renderMultiroom();
+    };
+  });
+  root.querySelectorAll('.seg-btn').forEach(btn => {
+    btn.onclick = () => { state.zoneMode = btn.dataset.mode; renderMultiroom(); };
+  });
   if (enough) {
-    $('zoneMaster').onchange = (e) => { state.zoneMaster = e.target.value; renderMultiroom(); };
-    $('zoneMode').onchange = (e) => { state.zoneMode = e.target.value; };
     $('zoneCreate').onclick = () => doFormZone(strBoxes);
     $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
-    refreshZoneCurrent(strBoxes);
+    // Defer the live zone read so the tab paints instantly. The first call to a
+    // BCO box pays the :8888 -> :17008 port fallback once; we must not block the
+    // tab switch on it (the cause of the first-click lag).
+    setTimeout(() => refreshZoneCurrent(strBoxes), 0);
   }
   if (canPair) {
     $('stereoCreate').onclick = () => doFormStereo(pairCands);
@@ -609,17 +639,16 @@ async function doFormStereo(pairCands) {
 async function doFormZone(strBoxes) {
   const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
   if (!master) return;
-  const slaveIds = Array.from(document.querySelectorAll('.zoneSlave:checked')).map(el => el.value);
-  if (!slaveIds.length) {
-    $('zoneResult').innerHTML = `<div class="setup-warn">${escapeHtml(t('multiroom.needTwo'))}</div>`;
+  const sel = state.zoneSlaves || {};
+  const slaves = strBoxes
+    .filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID])
+    .map(b => ({ deviceID: b.deviceID, ip: b.host }));
+  if (!slaves.length) {
+    $('zoneResult').innerHTML = `<div class="setup-warn">${escapeHtml(t('multiroom.pickAtLeastOne'))}</div>`;
     return;
   }
-  const slaves = slaveIds.map(id => {
-    const b = strBoxes.find(x => x.deviceID === id);
-    return { deviceID: id, ip: b ? b.host : '' };
-  });
   const name = ($('zoneName').value || '').trim();
-  const mode = ($('zoneMode') && $('zoneMode').value) || 'native';
+  const mode = state.zoneMode || 'native';
   $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
     await FormZone(master.host, master.port, {
