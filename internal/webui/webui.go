@@ -1882,11 +1882,18 @@ type zoneFormReq struct {
 	Slaves []zoneMemberReq `json:"slaves"`
 	Name   string          `json:"name"`
 	Stereo bool            `json:"stereo"`
+	// Mode is "native" (firmware /setZone) or "mirror" (each slave's box pulls
+	// the master's stream via UPnP). Empty defaults to native.
+	Mode string `json:"mode"`
 }
 
-// handleZoneForm creates (or replaces) a zone with this box as master. The
-// caller (desktop app) supplies the master's and slaves' deviceID+IP from
-// discovery, so the agent need not self-identify. Native /setZone, then persist.
+// handleZoneForm creates (or replaces) a group with this box as master (#70 beta).
+// Two user-switchable modes: "native" drives the Bose /setZone family so the
+// firmware syncs the slaves (tightest, when the firmware accepts STR's source);
+// "mirror" points each slave's box at the master's current stream over UPnP
+// (looser sync, works more widely). Either way the group is persisted so it
+// auto-reforms after a reboot/standby. The caller supplies the master's and
+// slaves' deviceID+IP from discovery, so the agent need not self-identify.
 func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	var req zoneFormReq
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
@@ -1897,44 +1904,131 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "master deviceID and at least one slave are required", http.StatusBadRequest)
 		return
 	}
+	mode := req.Mode
+	if mode != "mirror" {
+		mode = "native"
+	}
 	master := boxapi.ZoneMember{DeviceID: req.Master.DeviceID, IP: req.Master.IP}
 	slaves := make([]boxapi.ZoneMember, 0, len(req.Slaves))
 	for _, m := range req.Slaves {
 		slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
 	}
-	s.logger.Info("zone: forming (beta)", "master", master.DeviceID, "masterIP", master.IP,
+	s.logger.Info("zone: forming (beta)", "mode", mode, "master", master.DeviceID, "masterIP", master.IP,
 		"slaves", len(slaves), "stereo", req.Stereo, "name", req.Name)
-	c := boxapi.New(s.boxHost)
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+
+	// Persist first so a transient drive error still leaves the group on record
+	// for the reconcile loop to retry. Only the master persists.
+	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Stereo: req.Stereo, Mode: mode, Name: req.Name}
+	for _, m := range slaves {
+		z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
+	}
+	if s.zones != nil {
+		if err := s.zones.Set(z); err != nil {
+			s.logger.Warn("zone: persist failed", "err", err)
+		}
+	}
+
+	if mode == "mirror" {
+		s.mirrorToSlaves(ctx, z)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "mirror"})
+		return
+	}
+
+	// Native: drive the firmware zone and read back what it actually formed.
+	c := boxapi.New(s.boxHost)
 	if err := c.SetZone(ctx, master, slaves); err != nil {
 		s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
 		http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	// Persist so the agent re-forms the zone after a reboot/standby (the
-	// permanent-groups goal). Only the master persists.
-	if s.zones != nil {
-		zm := make([]zones.Member, 0, len(slaves))
-		for _, m := range slaves {
-			zm = append(zm, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
-		}
-		if err := s.zones.Set(zones.Zone{
-			Master: master.DeviceID, MasterIP: master.IP,
-			Slaves: zm, Stereo: req.Stereo, Name: req.Name,
-		}); err != nil {
-			s.logger.Warn("zone: persist failed", "err", err)
-		}
-	}
-	// Read back what the firmware actually formed, for the log and the UI.
-	z, err := c.GetZone(ctx)
+	z2, err := c.GetZone(ctx)
 	if err != nil {
 		s.logger.Warn("zone: formed but getZone read-back failed", "err", err)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native"})
 		return
 	}
-	s.logger.Info("zone: formed", "liveMaster", z.Master, "liveMembers", len(z.Members))
-	writeJSON(w, http.StatusOK, z)
+	s.logger.Info("zone: formed", "mode", "native", "liveMaster", z2.Master, "liveMembers", len(z2.Members))
+	writeJSON(w, http.StatusOK, z2)
+}
+
+// mirrorToSlaves points each slave's box at the master's current stream URL over
+// UPnP (the mirror path). The master's stream is whatever STR last told the
+// master box to play (s.lastPlay), which the slaves can pull from the master
+// agent's stream proxy. Looser than firmware sync, but works when the firmware
+// refuses to distribute STR's source. Best-effort + heavily logged.
+func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	s.lastPlayMu.Unlock()
+	if lp == nil || lp.boxURL == "" {
+		s.logger.Info("zone mirror: master is not playing yet; slaves will mirror once you start playback and the reconcile fires (beta)")
+		return
+	}
+	for _, m := range z.Slaves {
+		if m.IP == "" {
+			continue
+		}
+		rr := upnp.NewBoseRenderer(m.IP)
+		var err error
+		if lp.mime != "" {
+			err = rr.PlayURLMime(ctx, lp.boxURL, lp.title, lp.art, lp.mime)
+		} else {
+			err = rr.PlayURL(ctx, lp.boxURL, lp.title, lp.art)
+		}
+		if err != nil {
+			s.logger.Warn("zone mirror: slave play failed", "slave", m.IP, "err", err)
+		} else {
+			s.logger.Info("zone mirror: slave mirroring master stream (beta)", "slave", m.IP, "url", lp.boxURL)
+		}
+	}
+}
+
+// PeriodicZoneReconcile re-asserts a persisted group so it survives
+// reboot/standby/Wi-Fi outage (#70 beta). No-op when standalone. Started by
+// cmd/agent after the server is built. Lives on the Server so the mirror path
+// can reach s.lastPlay + the UPnP renderer.
+func (s *Server) PeriodicZoneReconcile() {
+	if s.zones == nil || s.boxHost == "" {
+		return
+	}
+	time.Sleep(45 * time.Second) // let the box finish booting
+	s.reconcileZoneOnce()
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for range t.C {
+		s.reconcileZoneOnce()
+	}
+}
+
+func (s *Server) reconcileZoneOnce() {
+	z, ok := s.zones.Get()
+	if !ok {
+		return // standalone
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if z.Mirror() {
+		// Re-push the master's current stream to the slaves (best-effort).
+		s.mirrorToSlaves(ctx, z)
+		return
+	}
+	// Native: only re-assert when the live zone does not already match.
+	c := boxapi.New(s.boxHost)
+	if live, err := c.GetZone(ctx); err == nil && live.Master == z.Master && len(live.Members) == len(z.Slaves) {
+		return
+	}
+	master := boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+	slaves := make([]boxapi.ZoneMember, 0, len(z.Slaves))
+	for _, m := range z.Slaves {
+		slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+	}
+	s.logger.Info("zone reconcile: re-asserting native zone (beta)", "master", z.Master, "slaves", len(slaves))
+	if err := c.SetZone(ctx, master, slaves); err != nil {
+		s.logger.Warn("zone reconcile: setZone failed", "err", err, "master", z.Master)
+	}
 }
 
 // handleZoneDissolve tears down the zone this box leads and stops re-forming it.

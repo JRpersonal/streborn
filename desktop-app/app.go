@@ -1173,6 +1173,9 @@ type ZoneSpec struct {
 	Slaves []ZoneMember `json:"slaves"`
 	Name   string       `json:"name"`
 	Stereo bool         `json:"stereo"`
+	// Mode is "native" (firmware sync) or "mirror" (each speaker pulls the same
+	// stream). Empty defaults to native on the agent.
+	Mode string `json:"mode"`
 }
 
 // GetZoneState reads the live multiroom zone the speaker reports

@@ -37,9 +37,18 @@ type Zone struct {
 	Slaves   []Member `json:"slaves,omitempty"`
 	// Stereo marks a left/right stereo pair rather than a multiroom zone.
 	Stereo bool `json:"stereo,omitempty"`
+	// Mode is how the group plays in sync: "native" (the firmware distributes
+	// the master's source to slaves, tightest sync) or "mirror" (each slave's
+	// box independently pulls the master's stream URL via UPnP, works more
+	// widely but looser sync). Empty is treated as "native". User-switchable so
+	// the beta can compare both on real hardware.
+	Mode string `json:"mode,omitempty"`
 	// Name is an optional user label for the group.
 	Name string `json:"name,omitempty"`
 }
+
+// Mirror reports whether this zone uses the per-agent mirror path.
+func (z Zone) Mirror() bool { return z.Mode == "mirror" }
 
 // IsMaster reports whether this box (selfDeviceID) leads the zone.
 func (z Zone) IsMaster(selfDeviceID string) bool {

@@ -488,48 +488,122 @@ function renderMultiroom() {
   const root = $('view-multiroom');
   if (!root) return;
   const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host);
+  const label = (b) => b.name || b.friendlyName || b.host;
+  const enough = strBoxes.length >= 2;
+
   const beta =
     `<div class="setup-help" style="margin-bottom:14px">` +
     `<b>${escapeHtml(t('multiroom.heading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.beta'))}</span></b>` +
-    `<div class="muted small" style="margin-top:6px">${escapeHtml(t('multiroom.betaNote'))}</div></div>`;
+    `<div class="muted small" style="margin-top:6px">${escapeHtml(t('multiroom.betaNote'))}</div>` +
+    `<div class="muted small" style="margin-top:6px">${escapeHtml(t('multiroom.feedbackPre'))} ` +
+    `<a href="#" id="multiroomIssueLink">${escapeHtml(t('multiroom.issueLink'))}</a> &middot; ` +
+    `<a href="#" id="multiroomEmail">str@sichtbar-app.de</a></div></div>`;
 
-  if (strBoxes.length < 2) {
-    root.innerHTML = beta + `<div class="muted">${escapeHtml(t('multiroom.needTwo'))}</div>`;
-    return;
-  }
+  // The whole layout always renders, even with a single speaker, so the user
+  // sees where this is going. Controls are just disabled until a second STR
+  // speaker shows up, with a clear note that two are needed.
+  const previewNote = enough ? '' :
+    `<div class="setup-warn small" style="margin-bottom:10px">${escapeHtml(t('multiroom.previewNote'))}</div>`;
 
+  // Master defaults to the first STR box.
   if (!state.zoneMaster || !strBoxes.some(b => b.deviceID === state.zoneMaster)) {
-    state.zoneMaster = strBoxes[0].deviceID;
+    state.zoneMaster = strBoxes.length ? strBoxes[0].deviceID : '';
   }
   const master = state.zoneMaster;
-  const label = (b) => b.name || b.friendlyName || b.host;
   const masterOpts = strBoxes
     .map(b => `<option value="${escapeAttr(b.deviceID)}" ${b.deviceID === master ? 'selected' : ''}>${escapeHtml(label(b))}</option>`)
-    .join('');
-  const slaveRows = strBoxes
-    .filter(b => b.deviceID !== master)
-    .map(b => `<label class="zone-slave"><input type="checkbox" class="zoneSlave" value="${escapeAttr(b.deviceID)}"> ${escapeHtml(label(b))} <span class="muted small">${escapeHtml(b.model || '')}</span></label>`)
-    .join('');
+    .join('') || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`;
+  const others = strBoxes.filter(b => b.deviceID !== master);
+  const slaveRows = others.length
+    ? others.map(b => `<label class="zone-slave"><input type="checkbox" class="zoneSlave" value="${escapeAttr(b.deviceID)}"> ${escapeHtml(label(b))} <span class="muted small">${escapeHtml(b.model || '')}</span></label>`).join('')
+    : `<div class="muted small">${escapeHtml(t('multiroom.noOtherSpeaker'))}</div>`;
+  const dis = enough ? '' : ' disabled';
 
-  root.innerHTML = beta +
+  // Stereo pair (prepared for two of the same model, e.g. two SoundTouch 10;
+  // the Portable cannot pair). Shown as a scaffold even with fewer than two.
+  const pairCands = strBoxes.filter(b => !/portable/i.test(b.model || ''));
+  const canPair = pairCands.length >= 2;
+  const pairOpts = (sel) => pairCands
+    .map((b, i) => `<option value="${escapeAttr(b.deviceID)}" ${i === sel ? 'selected' : ''}>${escapeHtml(label(b))}</option>`)
+    .join('') || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`;
+  const pairDis = canPair ? '' : ' disabled';
+
+  root.innerHTML = beta + previewNote +
     `<div class="zone-form">
       <label class="zone-field"><span>${escapeHtml(t('multiroom.masterLabel'))}</span>
-        <select id="zoneMaster">${masterOpts}</select></label>
+        <select id="zoneMaster"${dis}>${masterOpts}</select></label>
       <div class="zone-field"><span>${escapeHtml(t('multiroom.slavesLabel'))}</span>
         <div id="zoneSlaves">${slaveRows}</div></div>
-      <input id="zoneName" type="text" placeholder="${escapeAttr(t('multiroom.groupNamePh'))}" />
+      <input id="zoneName" type="text" placeholder="${escapeAttr(t('multiroom.groupNamePh'))}"${dis} />
+      <label class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
+        <select id="zoneMode"${dis}>
+          <option value="native"${(state.zoneMode || 'native') === 'native' ? ' selected' : ''}>${escapeHtml(t('multiroom.modeNative'))}</option>
+          <option value="mirror"${state.zoneMode === 'mirror' ? ' selected' : ''}>${escapeHtml(t('multiroom.modeMirror'))}</option>
+        </select>
+        <span class="muted small">${escapeHtml(t('multiroom.modeHelp'))}</span></label>
       <div class="zone-actions">
-        <button id="zoneCreate" class="btn">${escapeHtml(t('multiroom.createBtn'))}</button>
-        <button id="zoneUngroup" class="btn btn-mini">${escapeHtml(t('multiroom.ungroupBtn'))}</button>
+        <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t('multiroom.createBtn'))}</button>
+        <button id="zoneUngroup" class="btn btn-mini"${dis}>${escapeHtml(t('multiroom.ungroupBtn'))}</button>
       </div>
       <div id="zoneResult"></div>
       <div id="zoneCurrent" class="muted small" style="margin-top:10px"></div>
+    </div>
+
+    <div class="zone-form" style="margin-top:22px;border-top:1px solid var(--border,#333);padding-top:16px">
+      <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.beta'))}</span></b>
+      <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
+      ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
+      <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>
+        <select id="stereoLeft"${pairDis}>${pairOpts(0)}</select></label>
+      <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoRight'))}</span>
+        <select id="stereoRight"${pairDis}>${pairOpts(1)}</select></label>
+      <div class="zone-actions">
+        <button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button>
+      </div>
+      <div id="stereoResult"></div>
     </div>`;
 
-  $('zoneMaster').onchange = (e) => { state.zoneMaster = e.target.value; renderMultiroom(); };
-  $('zoneCreate').onclick = () => doFormZone(strBoxes);
-  $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
-  refreshZoneCurrent(strBoxes);
+  const issueLink = $('multiroomIssueLink');
+  if (issueLink) issueLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/70'); } catch {} };
+  const email = $('multiroomEmail');
+  if (email) email.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('mailto:str@sichtbar-app.de'); } catch {} };
+  if (enough) {
+    $('zoneMaster').onchange = (e) => { state.zoneMaster = e.target.value; renderMultiroom(); };
+    $('zoneMode').onchange = (e) => { state.zoneMode = e.target.value; };
+    $('zoneCreate').onclick = () => doFormZone(strBoxes);
+    $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
+    refreshZoneCurrent(strBoxes);
+  }
+  if (canPair) {
+    $('stereoCreate').onclick = () => doFormStereo(pairCands);
+  }
+}
+
+// doFormStereo attempts a left/right stereo pair (experimental, #70). No proven
+// firmware create-call exists yet, so this drives the same native /setZone with
+// the stereo flag set as a blind, logged attempt; the result (real pair vs plain
+// group) shows in the speaker's /getGroup and in the logs.
+async function doFormStereo(pairCands) {
+  const leftId = $('stereoLeft').value;
+  const rightId = $('stereoRight').value;
+  if (leftId === rightId) {
+    $('stereoResult').innerHTML = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoSamePicked'))}</div>`;
+    return;
+  }
+  const left = pairCands.find(b => b.deviceID === leftId);
+  const right = pairCands.find(b => b.deviceID === rightId);
+  if (!left || !right) return;
+  $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
+  try {
+    await FormZone(left.host, left.port, {
+      master: { deviceID: left.deviceID, ip: left.host },
+      slaves: [{ deviceID: right.deviceID, ip: right.host }],
+      name: '', stereo: true,
+    });
+    $('stereoResult').innerHTML = `<div class="setup-ok">${escapeHtml(t('multiroom.formed'))}</div>`;
+  } catch (e) {
+    $('stereoResult').innerHTML = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
 }
 
 async function doFormZone(strBoxes) {
@@ -545,11 +619,12 @@ async function doFormZone(strBoxes) {
     return { deviceID: id, ip: b ? b.host : '' };
   });
   const name = ($('zoneName').value || '').trim();
+  const mode = ($('zoneMode') && $('zoneMode').value) || 'native';
   $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
     await FormZone(master.host, master.port, {
       master: { deviceID: master.deviceID, ip: master.host },
-      slaves, name, stereo: false,
+      slaves, name, stereo: false, mode,
     });
     $('zoneResult').innerHTML = `<div class="setup-ok">${escapeHtml(t('multiroom.formed'))}</div>`;
     refreshZoneCurrent(strBoxes);

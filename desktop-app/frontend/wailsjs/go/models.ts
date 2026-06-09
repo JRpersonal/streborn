@@ -369,6 +369,7 @@ export namespace main {
 	    slaves: ZoneMember[];
 	    name: string;
 	    stereo: boolean;
+	    mode: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ZoneSpec(source);
@@ -380,6 +381,7 @@ export namespace main {
 	        this.slaves = this.convertValues(source["slaves"], ZoneMember);
 	        this.name = source["name"];
 	        this.stereo = source["stereo"];
+	        this.mode = source["mode"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
