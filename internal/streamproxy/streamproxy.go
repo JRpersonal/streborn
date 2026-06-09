@@ -65,6 +65,36 @@ func safeHTTPURL(raw string) error {
 	}
 }
 
+// isHLSorDASHURL reports whether a URL points at an HLS (.m3u8) or DASH (.mpd)
+// playlist rather than a continuous raw stream. These are segment playlists,
+// not endless byte streams, and Bose's player cannot consume them; the proxy
+// would otherwise fetch the short playlist, hit EOF, and reconnect-loop forever
+// (BBC Radio 4 and the other BBC HLS-only stations). Until the
+// agent grows a real HLS/DASH remuxer, we detect these and report the stream as
+// not playable instead of looping. The query string is ignored so a tokenised
+// ".m3u8?..." still matches.
+func isHLSorDASHURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	p := strings.ToLower(u.Path)
+	return strings.HasSuffix(p, ".m3u8") || strings.HasSuffix(p, ".mpd")
+}
+
+// isHLSorDASHContentType catches HLS/DASH responses whose URL does not carry a
+// telltale suffix, by their MIME type (application/vnd.apple.mpegurl,
+// application/x-mpegURL, audio/mpegurl, application/dash+xml).
+func isHLSorDASHContentType(ct string) bool {
+	ct = strings.ToLower(ct)
+	return strings.Contains(ct, "mpegurl") || strings.Contains(ct, "dash+xml")
+}
+
+// hlsNotPlayableMsg is the user-facing reason returned to the box for an HLS/
+// DASH stream. Kept short; the box shows a not-playable state rather than a
+// silent reconnect storm.
+const hlsNotPlayableMsg = "HLS/DASH streams are not supported yet"
+
 type Server struct {
 	store  *presets.Store
 	logger *slog.Logger
@@ -414,6 +444,11 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid url scheme", http.StatusBadRequest)
 		return
 	}
+	if isHLSorDASHURL(url) {
+		s.logger.Warn("stream proxy: HLS/DASH not supported yet, refusing instead of reconnect-looping", "url", url)
+		http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		return
+	}
 	s.logger.Info("stream proxy raw start", "url", url)
 	start := time.Now()
 	headersSent := false
@@ -463,6 +498,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
+
+	if isHLSorDASHURL(p.StreamURL) {
+		s.logger.Warn("stream proxy: HLS/DASH preset not supported yet, refusing", "slot", slot, "url", p.StreamURL)
+		http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		return
+	}
 
 	// Wir machen genau einen GET zum CDN, kopieren bytes auf Bose.
 	// Wenn CDN EOF liefert (Token expiry), reconnecten wir intern und
@@ -575,6 +616,19 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 			return false, statusErr
 		}
 		return true, statusErr
+	}
+
+	// HLS/DASH detected by MIME type (a URL without the telltale suffix). These
+	// are segment playlists, not raw streams, so reading the body as audio yields
+	// instant EOF and a reconnect storm. Report not-playable and stop instead.
+	if ct := resp.Header.Get("Content-Type"); isHLSorDASHContentType(ct) {
+		if s.shouldLogFail(url) {
+			s.logger.Warn("stream proxy: HLS/DASH content-type not supported yet", "url", url, "contentType", ct)
+		}
+		if sendHeaders {
+			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		}
+		return false, fmt.Errorf("hls/dash not supported (content-type %q)", ct)
 	}
 
 	// Successful reach — clear any dedup entry so a future failure
