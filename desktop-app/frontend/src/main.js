@@ -566,8 +566,10 @@ function renderMultiroom(fetchLive) {
     currentHtml = escapeHtml(t('multiroom.noZone'));
   }
 
-  // Stereo pair (scaffold for two of the same model; the Portable cannot pair).
-  const pairCands = strBoxes.filter(b => !/portable/i.test(b.model || ''));
+  // Stereo pair (scaffold). Bose stereo pairing is a SoundTouch 10 feature, so
+  // only ST10s are offered as candidates (matches the "needs two SoundTouch 10"
+  // copy). \b10\b matches "SoundTouch 10" but not 20/30/300/Portable.
+  const pairCands = strBoxes.filter(b => /\b10\b/.test(b.model || ''));
   const canPair = pairCands.length >= 2;
   const pairOpts = (sel) => pairCands
     .map((b, i) => `<option value="${escapeAttr(b.deviceID)}" ${i === sel ? 'selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`)
@@ -5633,8 +5635,12 @@ async function updateDrivePanels() {
       upd.innerHTML = (same
         ? `<b>${escapeHtml(t('setup.stickCurrent'))}</b> <small>${escapeHtml(t('setup.versionLabel', { version: fromShort }))}</small>`
         : `<b>${escapeHtml(t('setup.stickUpdateAvail'))}</b> <small>${escapeHtml(fromShort)} &rarr; ${escapeHtml(toFull)}</small>`)
-        + ` <div class="muted small" style="margin-top:6px">${escapeHtml(t('setup.alreadyConfigured'))}</div>`;
+        + ` <div class="muted small" style="margin-top:6px">${escapeHtml(t('setup.alreadyConfigured'))}</div>`
+        + `<div style="margin-top:10px"><button class="btn btn-mini" id="setupContinue">${escapeHtml(t('setup.continueBtn'))}</button>`
+        + ` <span class="muted small">${escapeHtml(t('setup.continueHint'))}</span></div>`;
       upd.classList.remove('hidden');
+      const contBtn = $('setupContinue');
+      if (contBtn) contBtn.onclick = doContinueWithStick;
     } catch {
       upd.classList.add('hidden');
     }
@@ -5789,6 +5795,34 @@ async function doSetup() {
 // found AND reachable for install; until then the watcher reports clearly what
 // it sees, including the common "speaker booted without the stick" case, so
 // users stop dropping out at this fragile step.
+// doContinueWithStick reuses an already-prepared STR stick: it skips the full
+// rewrite/format and jumps straight to the "insert in the speaker and install"
+// step. A user with an ST30 had to re-write the whole stick every time the box
+// was not found mid-setup, just to get back to this step. This mirrors doSetup's
+// tail (eject + show the await/install panel) without touching the stick.
+async function doContinueWithStick() {
+  const drive = state.drives[state.selectedDrive];
+  if (!drive) return;
+  const ssid = $('wlanSsid').value.trim();
+  const pass = $('wlanPass').value;
+  let html = `<div class="setup-ok">${escapeHtml(t('setup.continueUsingStick'))}</div>`;
+  try {
+    $('setupResult').innerHTML = html + `<div class="muted small">${escapeHtml(t('setup.ejecting'))}</div>`;
+    await EjectDrive(drive.path);
+    html += `<p>${t('setup.ejectedBody')}</p>`;
+    state.justEjectedPath = drive.path;
+  } catch (ejErr) {
+    html += `<p class="setup-warn">${t('setup.ejectFailed', { err: escapeHtml(String(ejErr)) })}</p>`;
+  }
+  $('setupResult').innerHTML = html;
+  state.selectedDrive = null;
+  state.currentBox = null;
+  state.presets = [];
+  refreshDrives();
+  discoverBoxes();
+  showAwaitBoxReadyPanel({ ssid, pass, html });
+}
+
 function showAwaitBoxReadyPanel({ ssid, pass, html }) {
   const setupResult = $('setupResult');
   if (!setupResult) return;
