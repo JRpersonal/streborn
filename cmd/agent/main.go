@@ -329,7 +329,7 @@ func run() error {
 	// webui resumes it conservatively (only if the box stays on and idle).
 	streamProxySrv.SetOnDisconnect(webuiSrv.HandleStreamDisconnect)
 
-	// ICY radio text (Brecht): the proxy parses the live StreamTitle out of the
+	// ICY radio text: the proxy parses the live StreamTitle out of the
 	// stream; push it to the box display by re-issuing the current stream URI
 	// with the new title. Gated behind STR_ICY_DISPLAY inside the handler until
 	// the mid-stream re-set is verified not to glitch audio on real hardware.
@@ -744,6 +744,22 @@ type presetWsHandler struct {
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
+	// Per-key webhook (beta): fire the configured "preset<slot>" webhook on a
+	// hardware preset press (front panel or remote; app recalls take a different
+	// path and never reach here). In replace mode, withhold the preset playback
+	// so only the webhook runs (the user has cleared the STR preset for this
+	// slot); in additional mode, the preset plays AND the webhook fires.
+	if h.webhooks != nil && slot >= 1 && slot <= 6 {
+		id := fmt.Sprintf("preset%d", slot)
+		replace := h.webhooks.ButtonReplaceEnabled(id)
+		if h.webhooks.FireButton(ctx, id) {
+			h.logger.Info("preset webhook fired", "slot", slot, "replace", replace)
+		}
+		if replace {
+			h.logger.Info("preset webhook replace mode: withholding preset playback", "slot", slot)
+			return
+		}
+	}
 	// URL bleibt die Proxy URL (location = http://127.0.0.1:8888/stream/N)
 	// damit der Stream Proxy den Reconnect bei Token Expiry uebernimmt.
 	// Name + Icon kommen aus dem Stick Preset Store — die Bose ContentItem
@@ -846,7 +862,7 @@ func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
 
 // OnUserStop is fired when the box reports a deliberate playback stop over
 // gabbo. It tells the webui's auto-re-push to stand down so a wanted stop holds
-// (Brecht, v0.7.0: a single stop did not stick because the resume restarted it).
+// (v0.7.0: a single stop did not stick because the resume restarted it).
 func (h *presetWsHandler) OnUserStop(_ context.Context) {
 	if h.onUserStop != nil {
 		h.onUserStop()
@@ -870,6 +886,28 @@ func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
 func (h *presetWsHandler) OnWakeResume(_ context.Context) {
 	if h.onWakeResume != nil {
 		h.onWakeResume()
+	}
+}
+
+// OnPowerKey fires the configured "power" webhook on a power-off (standby)
+// event. Additional-only: STR cannot suppress the firmware power toggle. boxws
+// only calls this on the standby transition, which STR never causes itself, so
+// the webhook does not false-fire on STR's own wake-for-recall.
+func (h *presetWsHandler) OnPowerKey(ctx context.Context) {
+	if h.webhooks != nil {
+		if h.webhooks.FireButton(ctx, "power") {
+			h.logger.Info("power webhook fired")
+		}
+	}
+}
+
+// OnSourceAux fires the configured "aux" webhook when the box switches to the
+// AUX input. Additional-only.
+func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
+	if h.webhooks != nil {
+		if h.webhooks.FireButton(ctx, "aux") {
+			h.logger.Info("aux webhook fired")
+		}
 	}
 }
 
@@ -1329,7 +1367,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	//
 	// Converge FAST after a cold boot, then idle. A blind 90s pre-wait
 	// meant the hardware buttons stayed unregistered for ~90s+ after every
-	// reboot, so an early press hit "Taste nicht belegt" (Thilo, #4). The box
+	// reboot, so an early press hit "Taste nicht belegt" (#4). The box
 	// /info / preset subsystem comes up ~20-45s in, so polling every 10s from
 	// 15s wins that first full re-sync as soon as the box is ready, then the
 	// loop drops to a 5 min maintenance cadence. reconcileOnce is gated on the

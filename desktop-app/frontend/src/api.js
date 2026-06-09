@@ -56,6 +56,7 @@ export {
   SetAirplayOpt,
   GetWebhooks,
   SetWebhooks,
+  SaveWebhookConfig,
   TestWebhook,
   StreamBitrate,
   StreamTitle,

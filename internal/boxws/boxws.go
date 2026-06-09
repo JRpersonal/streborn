@@ -68,6 +68,16 @@ type Handler interface {
 	// Genau das nutzen wir als "Power an"-Signal: der Agent spielt den zuletzt
 	// gespielten Stream (das letzte Preset) wieder an.
 	OnWakeResume(ctx context.Context)
+
+	// OnPowerKey wird bei einem powerStateUpdated (Power-Taste / Standby-Wechsel)
+	// gefeuert. Fuer den optionalen "power"-Webhook (nur zusaetzlich: STR kann das
+	// firmware-seitige Ein/Ausschalten nicht unterdruecken). Beta.
+	OnPowerKey(ctx context.Context)
+
+	// OnSourceAux wird gefeuert wenn die aktive Quelle auf AUX wechselt. Fuer den
+	// optionalen "aux"-Webhook (nur zusaetzlich; die Firmware schaltet den Eingang
+	// ohnehin um). Heuristisch ueber den source-Wechsel erkannt, daher Beta.
+	OnSourceAux(ctx context.Context)
 }
 
 // Client haelt die Verbindung zur Box.
@@ -82,6 +92,10 @@ type Client struct {
 	// the settings UI uses this instead. Guarded; read via LastWifiSignal.
 	mu         sync.Mutex
 	lastSignal string
+	// lastSource tracks the most recent active source seen on a now-selection /
+	// now-playing frame, so the aux webhook fires once on the transition to AUX
+	// rather than repeatedly while AUX stays the active source.
+	lastSource string
 
 	// Thumb-trigger heuristic state. The remote thumbs keys surface only as a
 	// generic <userActivityUpdate/>; we treat a "lone" one (no volume / now
@@ -305,11 +319,36 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	// one session. They are demoted to DEBUG so the on-box log stays
 	// small and useful; the Wi-Fi signal is still captured below for the
 	// settings UI regardless of log level.
+	// AUX webhook (beta): fire once when the active source transitions to AUX.
+	// STR never selects AUX itself, so this is always a user press (front panel
+	// or remote; app recalls use a different path). Tracking lastSource means it
+	// fires on the change, not on every AUX frame.
+	if c.handler != nil {
+		if src := attrValue(s, "source"); src != "" {
+			c.mu.Lock()
+			changed := src != c.lastSource
+			c.lastSource = src
+			c.mu.Unlock()
+			if changed && src == "AUX" {
+				c.logger.Info("box ws: source -> AUX, firing aux webhook (beta)")
+				c.handler.OnSourceAux(ctx)
+			}
+		}
+	}
+
 	switch {
 	case strings.Contains(s, "powerStateUpdated"):
 		known = true
 		c.noteExplainedActivity()
 		c.logger.Info("box ws phase: powerState event", "preview", preview(data, 200))
+		// power webhook (beta): fire only on the transition to standby (power
+		// off). STR never powers the box off itself (it only wakes it for a
+		// recall), so a standby event is always a user press; this avoids the
+		// webhook false-firing on STR's own wake. Additional-only: STR cannot
+		// suppress the firmware power toggle. Rate-limited per id downstream.
+		if c.handler != nil && (strings.Contains(s, "STANDBY") || strings.Contains(s, "NETWORK_STANDBY")) {
+			c.handler.OnPowerKey(ctx)
+		}
 	case strings.Contains(s, "connectionStateUpdated"):
 		known = true
 		c.logger.Debug("box ws phase: connectionState event", "preview", preview(data, 200))
