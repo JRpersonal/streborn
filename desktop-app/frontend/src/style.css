@@ -1268,6 +1268,11 @@ code { background: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-size: 12p
 .seg-btn { padding: 6px 12px; background: transparent; border: none; color: #ddd; cursor: pointer; font-size: 12px; }
 .seg-btn + .seg-btn { border-left: 1px solid #444; }
 .seg-btn.active { background: var(--brand-bg); color: var(--brand-text); }
+.zone-topbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.zone-live { font-size: 11px; margin-top: 6px; color: #888; }
+.zone-live.in { color: #4caf50; }
+.zone-update-badge { display: inline-block; margin-left: 6px; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #5a3a1a; color: #f8c66c; }
+.zone-card.outdated { border-style: dashed; }
 .fw-stale {
   display: inline-block;
   background: #3a2a1a;

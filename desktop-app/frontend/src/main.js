@@ -475,21 +475,32 @@ function switchView(view) {
   }
   if (view === 'settings') loadBoxSettings();
   if (view === 'library') openLibrary();
-  if (view === 'multiroom') renderMultiroom();
+  if (view === 'multiroom') renderMultiroom(true);
   if (view === 'spotify') renderSpotifyAlpha();
 }
 
 // Multi-room / SoundTouch zone (#70, BETA). Blind beta: drives the native Bose
-// /setZone via each speaker's agent, persists the group so it auto-reforms, and
-// asks multi-speaker testers to send logs. The master speaker plays the source
-// and the firmware streams it to the others. Re-rendered on every view switch
-// and after each action so the live group reflects reality.
-function renderMultiroom() {
+// /setZone (or the per-agent mirror) via each speaker's agent, persists the
+// group so it auto-reforms, and asks multi-speaker testers to send logs. Live
+// per-speaker status is fetched in parallel and non-blocking; result messages
+// and the live map are kept in state so a repaint never wipes them.
+//
+// fetchLive: when true, kick the parallel live-status fetch after paint. Card /
+// mode toggles call renderMultiroom() (no fetch) so they only repaint.
+function zoneLabel(b) { return b.name || b.friendlyName || b.host; }
+
+function renderMultiroom(fetchLive) {
   const root = $('view-multiroom');
   if (!root) return;
   const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host);
-  const label = (b) => b.name || b.friendlyName || b.host;
   const enough = strBoxes.length >= 2;
+  if (!state.zoneLive) state.zoneLive = {};
+  if (!state.zoneSlaves) state.zoneSlaves = {};
+  if (!state.zoneMode) state.zoneMode = 'native';
+  if (!state.zoneMaster || !strBoxes.some(b => b.deviceID === state.zoneMaster)) {
+    state.zoneMaster = strBoxes.length ? strBoxes[0].deviceID : '';
+  }
+  const anyOutdated = strBoxes.some(b => boxNeedsUpdate(b));
 
   const beta =
     `<div class="setup-help" style="margin-bottom:14px">` +
@@ -499,51 +510,71 @@ function renderMultiroom() {
     `<a href="#" id="multiroomIssueLink">${escapeHtml(t('multiroom.issueLink'))}</a> &middot; ` +
     `<a href="#" id="multiroomEmail">str@sichtbar-app.de</a></div></div>`;
 
-  // The whole layout always renders, even with a single speaker, so the user
-  // sees where this is going. Controls are just disabled until a second STR
-  // speaker shows up, with a clear note that two are needed.
+  const topbar = `<div class="zone-topbar"><button id="zoneRefresh" class="btn btn-mini">${escapeHtml(t('common.refresh'))}</button></div>`;
   const previewNote = enough ? '' :
     `<div class="setup-warn small" style="margin-bottom:10px">${escapeHtml(t('multiroom.previewNote'))}</div>`;
+  const updateWarn = anyOutdated ?
+    `<div class="setup-warn small" style="margin-bottom:10px">${escapeHtml(t('multiroom.updateWarn'))}</div>` : '';
 
-  if (!state.zoneSlaves) state.zoneSlaves = {};
-  if (!state.zoneMode) state.zoneMode = 'native';
-  if (!state.zoneMaster || !strBoxes.some(b => b.deviceID === state.zoneMaster)) {
-    state.zoneMaster = strBoxes.length ? strBoxes[0].deviceID : '';
-  }
+  // Per-card live status from the last parallel fetch (undefined = not fetched).
+  const liveLine = (b) => {
+    const zl = state.zoneLive[b.deviceID];
+    if (zl === undefined) return '';
+    if (zl && zl.master) {
+      const isLead = (zl.master || '').toUpperCase() === (b.deviceID || '').toUpperCase();
+      const txt = isLead ? t('multiroom.liveLeading', { n: (zl.members || []).length }) : t('multiroom.liveInGroup');
+      return `<div class="zone-live in">&#9679; ${escapeHtml(txt)}</div>`;
+    }
+    return `<div class="zone-live">&#9675; ${escapeHtml(t('multiroom.liveStandalone'))}</div>`;
+  };
 
-  // Speaker cards, styled like the music-tab box picker. The master is the
-  // highlighted card marked with a star; tapping another card toggles it into
-  // the group. A small "set as main" promotes any card to master.
   const cards = strBoxes.length
     ? strBoxes.map(b => {
         const isMaster = b.deviceID === state.zoneMaster;
         const selected = !isMaster && !!state.zoneSlaves[b.deviceID];
+        const outdated = boxNeedsUpdate(b);
         const model = (b.model && b.model !== 'SoundTouch')
           ? `<span class="box-model">${escapeHtml(b.model)}</span>` : '';
         const foot = isMaster
           ? `<span class="zone-badge">${escapeHtml(t('multiroom.mainBadge'))}</span>`
           : `<button class="zone-makemain" data-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.makeMain'))}</button>`;
-        return `<div class="zone-card${isMaster ? ' master' : ''}${selected ? ' selected' : ''}" data-id="${escapeAttr(b.deviceID)}" role="button" tabindex="0">
+        const upd = outdated ? `<span class="zone-update-badge">${escapeHtml(t('multiroom.updateFirst'))}</span>` : '';
+        return `<div class="zone-card${isMaster ? ' master' : ''}${selected ? ' selected' : ''}${outdated ? ' outdated' : ''}" data-id="${escapeAttr(b.deviceID)}" role="button" tabindex="0">
             <span class="zone-card-tick">${selected ? '&#10003;' : (isMaster ? '&#9733;' : '')}</span>
-            <div class="zone-card-name">${escapeHtml(label(b))} ${model}</div>
+            <div class="zone-card-name">${escapeHtml(zoneLabel(b))} ${model}</div>
             <small class="zone-card-host">${escapeHtml(b.host)}</small>
-            <div class="zone-card-foot">${foot}</div>
+            ${liveLine(b)}
+            <div class="zone-card-foot">${foot}${upd}</div>
           </div>`;
       }).join('')
     : `<div class="muted">${escapeHtml(t('multiroom.noSpeaker'))}</div>`;
   const dis = enough ? '' : ' disabled';
   const modeBtn = (m, lbl) => `<button class="seg-btn${state.zoneMode === m ? ' active' : ''}" data-mode="${m}">${escapeHtml(lbl)}</button>`;
 
-  // Stereo pair (scaffold for two of the same model, e.g. two SoundTouch 10;
-  // the Portable cannot pair). Shown even with fewer than two.
+  // Summary line for the chosen master, computed from the cached live map.
+  const masterBox = strBoxes.find(b => b.deviceID === state.zoneMaster);
+  const ml = masterBox ? state.zoneLive[masterBox.deviceID] : undefined;
+  let currentHtml = '';
+  if (ml && ml.master) {
+    const names = (ml.members || []).map(m => {
+      const b = strBoxes.find(x => (x.deviceID || '').toUpperCase() === (m.deviceID || '').toUpperCase());
+      return b ? zoneLabel(b) : (m.ip || m.deviceID);
+    });
+    currentHtml = `<b>${escapeHtml(t('multiroom.currentZone'))}:</b> ` +
+      escapeHtml(zoneLabel(masterBox) + (names.length ? ' + ' + names.join(', ') : ''));
+  } else if (ml !== undefined) {
+    currentHtml = escapeHtml(t('multiroom.noZone'));
+  }
+
+  // Stereo pair (scaffold for two of the same model; the Portable cannot pair).
   const pairCands = strBoxes.filter(b => !/portable/i.test(b.model || ''));
   const canPair = pairCands.length >= 2;
   const pairOpts = (sel) => pairCands
-    .map((b, i) => `<option value="${escapeAttr(b.deviceID)}" ${i === sel ? 'selected' : ''}>${escapeHtml(label(b))}</option>`)
+    .map((b, i) => `<option value="${escapeAttr(b.deviceID)}" ${i === sel ? 'selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`)
     .join('') || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`;
   const pairDis = canPair ? '' : ' disabled';
 
-  root.innerHTML = beta + previewNote +
+  root.innerHTML = beta + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
      <div class="zone-cards">${cards}</div>
      <div class="zone-controls">
@@ -555,8 +586,8 @@ function renderMultiroom() {
          <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t('multiroom.createBtn'))}</button>
          <button id="zoneUngroup" class="btn btn-mini"${dis}>${escapeHtml(t('multiroom.ungroupBtn'))}</button>
        </div>
-       <div id="zoneResult"></div>
-       <div id="zoneCurrent" class="muted small" style="margin-top:10px"></div>
+       <div id="zoneResult">${state.zoneMsg || ''}</div>
+       <div id="zoneCurrent" class="muted small" style="margin-top:10px">${currentHtml}</div>
      </div>
 
      <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--border,#333);padding-top:16px">
@@ -568,16 +599,23 @@ function renderMultiroom() {
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoRight'))}</span>
          <select id="stereoRight"${pairDis}>${pairOpts(1)}</select></label>
        <div class="zone-actions"><button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button></div>
-       <div id="stereoResult"></div>
+       <div id="stereoResult">${state.stereoMsg || ''}</div>
      </div>`;
 
   const issueLink = $('multiroomIssueLink');
   if (issueLink) issueLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/70'); } catch {} };
   const email = $('multiroomEmail');
   if (email) email.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('mailto:str@sichtbar-app.de'); } catch {} };
+  const refreshBtn = $('zoneRefresh');
+  if (refreshBtn) refreshBtn.onclick = async () => {
+    refreshBtn.disabled = true;
+    try { await discoverBoxes(); } catch {}
+    renderMultiroom(true);
+  };
 
   // Card interactions: the "set as main" button promotes to master; a tap on
-  // the rest of a non-master card toggles it in/out of the group.
+  // the rest of a non-master card toggles it in/out of the group. These repaint
+  // only (no fetch) so toggling is instant.
   root.querySelectorAll('.zone-card').forEach(card => {
     card.onclick = (e) => {
       const mk = e.target.closest('.zone-makemain');
@@ -599,25 +637,43 @@ function renderMultiroom() {
   if (enough) {
     $('zoneCreate').onclick = () => doFormZone(strBoxes);
     $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
-    // Defer the live zone read so the tab paints instantly. The first call to a
-    // BCO box pays the :8888 -> :17008 port fallback once; we must not block the
-    // tab switch on it (the cause of the first-click lag).
-    setTimeout(() => refreshZoneCurrent(strBoxes), 0);
   }
   if (canPair) {
     $('stereoCreate').onclick = () => doFormStereo(pairCands);
   }
+
+  // Live status: parallel, non-blocking, after paint. Never blocks the tab.
+  if (fetchLive && strBoxes.length) setTimeout(() => refreshZoneLive(strBoxes), 0);
+}
+
+// refreshZoneLive queries every speaker's live zone in parallel (non-blocking),
+// caches the result, and repaints the badges without re-fetching.
+async function refreshZoneLive(strBoxes) {
+  if (state.zoneLiveBusy) return;
+  state.zoneLiveBusy = true;
+  try {
+    const results = await Promise.allSettled(strBoxes.map(b => GetZoneState(b.host, b.port)));
+    const map = {};
+    results.forEach((r, i) => {
+      map[strBoxes[i].deviceID] = (r.status === 'fulfilled' && r.value) ? r.value : null;
+    });
+    state.zoneLive = map;
+  } catch {} finally {
+    state.zoneLiveBusy = false;
+  }
+  renderMultiroom(false);
 }
 
 // doFormStereo attempts a left/right stereo pair (experimental, #70). No proven
 // firmware create-call exists yet, so this drives the same native /setZone with
-// the stereo flag set as a blind, logged attempt; the result (real pair vs plain
-// group) shows in the speaker's /getGroup and in the logs.
+// the stereo flag set as a blind, logged attempt; the result shows in /getGroup
+// and the logs.
 async function doFormStereo(pairCands) {
   const leftId = $('stereoLeft').value;
   const rightId = $('stereoRight').value;
   if (leftId === rightId) {
-    $('stereoResult').innerHTML = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoSamePicked'))}</div>`;
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoSamePicked'))}</div>`;
+    renderMultiroom(false);
     return;
   }
   const left = pairCands.find(b => b.deviceID === leftId);
@@ -630,10 +686,11 @@ async function doFormStereo(pairCands) {
       slaves: [{ deviceID: right.deviceID, ip: right.host }],
       name: '', stereo: true,
     });
-    $('stereoResult').innerHTML = `<div class="setup-ok">${escapeHtml(t('multiroom.formed'))}</div>`;
+    state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedMirror', { n: 1 }))}</div>`;
   } catch (e) {
-    $('stereoResult').innerHTML = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+    state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
+  renderMultiroom(true);
 }
 
 async function doFormZone(strBoxes) {
@@ -644,22 +701,32 @@ async function doFormZone(strBoxes) {
     .filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID])
     .map(b => ({ deviceID: b.deviceID, ip: b.host }));
   if (!slaves.length) {
-    $('zoneResult').innerHTML = `<div class="setup-warn">${escapeHtml(t('multiroom.pickAtLeastOne'))}</div>`;
+    state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.pickAtLeastOne'))}</div>`;
+    renderMultiroom(false);
     return;
   }
   const name = ($('zoneName').value || '').trim();
   const mode = state.zoneMode || 'native';
   $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
-    await FormZone(master.host, master.port, {
+    const res = await FormZone(master.host, master.port, {
       master: { deviceID: master.deviceID, ip: master.host },
       slaves, name, stereo: false, mode,
     });
-    $('zoneResult').innerHTML = `<div class="setup-ok">${escapeHtml(t('multiroom.formed'))}</div>`;
-    refreshZoneCurrent(strBoxes);
+    // Real feedback: mirror reports back {ok,mode}; native returns the live
+    // zone, so verify the firmware actually took the members.
+    if (mode === 'mirror') {
+      state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedMirror', { n: slaves.length }))}</div>`;
+    } else {
+      const members = (res && Array.isArray(res.members)) ? res.members.length : 0;
+      state.zoneMsg = members > 0
+        ? `<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: members }))}</div>`
+        : `<div class="setup-warn">${escapeHtml(t('multiroom.formedNone'))}</div>`;
+    }
   } catch (e) {
-    $('zoneResult').innerHTML = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+    state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
+  renderMultiroom(true);
 }
 
 async function doDissolveZone(strBoxes) {
@@ -667,33 +734,12 @@ async function doDissolveZone(strBoxes) {
   if (!master) return;
   try {
     await DissolveZone(master.host, master.port);
-    $('zoneResult').innerHTML = `<div class="setup-ok">${escapeHtml(t('multiroom.noZone'))}</div>`;
-    refreshZoneCurrent(strBoxes);
+    state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.noZone'))}</div>`;
   } catch (e) {
-    $('zoneResult').innerHTML = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+    state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
+  renderMultiroom(true);
 }
-
-async function refreshZoneCurrent(strBoxes) {
-  const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
-  const el = $('zoneCurrent');
-  if (!master || !el) return;
-  try {
-    const z = await GetZoneState(master.host, master.port);
-    if (z && z.master) {
-      const names = (z.members || []).map(m => {
-        const b = strBoxes.find(x => (x.deviceID || '').toUpperCase() === (m.deviceID || '').toUpperCase());
-        return b ? label0(b) : (m.ip || m.deviceID);
-      });
-      el.innerHTML = `<b>${escapeHtml(t('multiroom.currentZone'))}:</b> ` +
-        escapeHtml(label0(master) + (names.length ? ' + ' + names.join(', ') : ''));
-    } else {
-      el.textContent = t('multiroom.noZone');
-    }
-  } catch { el.textContent = ''; }
-}
-
-function label0(b) { return b.name || b.friendlyName || b.host; }
 
 // Alpha-stage placeholder for Spotify Connect / streaming integration
 // (#78). Same pattern as renderMultiroomAlpha.
