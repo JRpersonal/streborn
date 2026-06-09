@@ -50,6 +50,7 @@ import {
   SetAirplayOpt,
   GetWebhooks,
   SetWebhooks,
+  SaveWebhookConfig,
   TestWebhook,
   StreamBitrate,
   StreamTitle,
@@ -188,7 +189,7 @@ import {
 // pipe-separated set of candidate URLs) on each load error, swapping in the
 // next candidate. The list always ends in a locally generated monogram data
 // URI, which always loads, so a station whose favicon is missing or fails to
-// load shows a clean letter tile instead of a broken-image icon (Brecht: VRT
+// load shows a clean letter tile instead of a broken-image icon (VRT
 // stations showed broken icons because this handler was referenced in onerror
 // but never defined, so the cascade threw and the broken image stuck).
 window.__nextLogoFallback = function (img) {
@@ -2106,7 +2107,7 @@ async function doBoxUpdate() {
     await discoverBoxes();
     // Force the confirmed new version onto the box record(s) so the view
     // shows the updated version immediately instead of a stale "outdated"
-    // glitch until the next clean discovery cycle (deqw + Jens 2026-06-01:
+    // glitch until the next clean discovery cycle (Jens 2026-06-01:
     // after OTA the screen kept the old version until a manual refresh).
     // This also overrides a discovery-stickiness cache entry that might
     // still carry the pre-OTA version for a box that just rebooted.
@@ -2834,7 +2835,8 @@ function renderNowPlayingBar() {
   else { stateLabel = ''; stateClass = 'idle'; }
   if (src === 'AUX') { displayName = t('status.auxInput'); if (!stateLabel) stateLabel = t('status.active'); }
   else if (src === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) stateLabel = t('status.active'); }
-  const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && src !== 'AUX' && src !== 'BLUETOOTH';
+  else if (src === 'AIRPLAY') { displayName = t('status.airplay'); if (!stateLabel) stateLabel = t('status.active'); }
+  const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && src !== 'AUX' && src !== 'BLUETOOTH' && src !== 'AIRPLAY';
   const brLabel = isStreamSrc ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
   bar.className = 'status-bar status-' + stateClass;
   let statusHTML;
@@ -3907,6 +3909,24 @@ function renderBoxSettings(s, box) {
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       <small class="muted small expert-intro">${escapeHtml(t('settingsView.webhookHelp'))}</small>
       <div class="setting-row">
+        <select id="webhookTarget" style="flex:1;">
+          <option value="thumb">${escapeHtml(t('settingsView.webhookKeyThumb'))}</option>
+          <option value="preset1">${escapeHtml(t('preset.key', { n: 1 }))}</option>
+          <option value="preset2">${escapeHtml(t('preset.key', { n: 2 }))}</option>
+          <option value="preset3">${escapeHtml(t('preset.key', { n: 3 }))}</option>
+          <option value="preset4">${escapeHtml(t('preset.key', { n: 4 }))}</option>
+          <option value="preset5">${escapeHtml(t('preset.key', { n: 5 }))}</option>
+          <option value="preset6">${escapeHtml(t('preset.key', { n: 6 }))}</option>
+          <option value="aux">AUX</option>
+          <option value="power">Power</option>
+        </select>
+        <select id="webhookMode" style="flex:0 0 170px;">
+          <option value="additional">${escapeHtml(t('settingsView.webhookModeAdditional'))}</option>
+          <option value="replace">${escapeHtml(t('settingsView.webhookModeReplace'))}</option>
+        </select>
+      </div>
+      <small class="muted small" id="webhookModeNote"></small>
+      <div class="setting-row">
         <input type="text" id="webhookUrl" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookUrlPlaceholder'))}" />
         <select id="webhookMethod" style="flex:0 0 90px;">
           <option value="GET">GET</option>
@@ -4453,8 +4473,19 @@ function renderBoxSettings(s, box) {
   const whOff = $('webhookOff');
   const whTest = $('webhookTestBtn');
   const whSave = $('webhookSaveBtn');
-  if (whUrl && whOn && whOff && whSave) {
+  const whTarget = $('webhookTarget');
+  const whMode = $('webhookMode');
+  const whModeNote = $('webhookModeNote');
+  if (whUrl && whOn && whOff && whSave && whTarget) {
     let whEnabled = false;
+    // Full config held locally; each target's edits are captured into it before
+    // switching target or saving, then the WHOLE config is PUT (a partial PUT
+    // would wipe the other keys). buttons keys: preset1..preset6, aux, power.
+    let cfg = { thumb: {}, buttons: {} };
+    let prevTarget = whTarget.value || 'thumb';
+    const presetIds = new Set(['preset1', 'preset2', 'preset3', 'preset4', 'preset5', 'preset6']);
+    const isModeTarget = (tg) => presetIds.has(tg); // only presets support replace
+    const actionOf = (tg) => tg === 'thumb' ? (cfg.thumb || {}) : ((cfg.buttons && cfg.buttons[tg]) || {});
     const paintWh = (en) => {
       whEnabled = en === true;
       whOn.classList.toggle('active', whEnabled === true);
@@ -4464,25 +4495,46 @@ function renderBoxSettings(s, box) {
       // A request body is only sent for non-GET methods.
       if (whBodyRow) whBodyRow.style.display = (whMethod.value === 'GET') ? 'none' : '';
     };
+    const loadInto = (tg) => {
+      const a = actionOf(tg);
+      whUrl.value = a.url || '';
+      whMethod.value = a.method || 'GET';
+      whBody.value = a.body || '';
+      paintWh(a.enabled === true);
+      whMode.value = a.mode === 'replace' ? 'replace' : 'additional';
+      whMode.style.display = isModeTarget(tg) ? '' : 'none';
+      whModeNote.textContent = isModeTarget(tg)
+        ? t('settingsView.webhookModePresetNote')
+        : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote'));
+      syncBodyRow();
+    };
+    const captureInto = (tg) => {
+      const a = { enabled: whEnabled === true, method: whMethod.value, url: whUrl.value.trim(), body: whBody.value.trim(), content_type: '' };
+      if (tg === 'thumb') {
+        cfg.thumb = a;
+      } else {
+        if (!cfg.buttons) cfg.buttons = {};
+        if (isModeTarget(tg)) a.mode = whMode.value;
+        cfg.buttons[tg] = a;
+      }
+    };
     (async () => {
       try {
         const w = await GetWebhooks(box.host, box.port);
-        const th = (w && w.thumb) || {};
-        if (th.url) whUrl.value = th.url;
-        if (th.method) whMethod.value = th.method;
-        if (th.body) whBody.value = th.body;
-        paintWh(th.enabled === true);
-      } catch { paintWh(false); }
-      syncBodyRow();
+        cfg = { thumb: (w && w.thumb) || {}, buttons: (w && w.buttons) || {} };
+      } catch { cfg = { thumb: {}, buttons: {} }; }
+      loadInto(prevTarget);
     })();
+    whTarget.onchange = () => { captureInto(prevTarget); prevTarget = whTarget.value; loadInto(whTarget.value); };
     whOn.onclick = () => paintWh(true);
     whOff.onclick = () => paintWh(false);
     whMethod.onchange = syncBodyRow;
     whSave.onclick = async () => {
-      const url = whUrl.value.trim();
-      if (whEnabled && !url) { showError(t('settingsView.webhookUrlRequired')); return; }
+      const tg = whTarget.value;
+      if (whEnabled && !whUrl.value.trim()) { showError(t('settingsView.webhookUrlRequired')); return; }
+      captureInto(tg);
       try {
-        await SetWebhooks(box.host, box.port, whEnabled, whMethod.value, url, whBody.value.trim(), '');
+        await SaveWebhookConfig(box.host, box.port, cfg);
         showToast(t('settingsView.webhookSavedToast'));
       } catch (e) { showError(e); }
     };
@@ -5032,7 +5084,7 @@ $('wlanShowPass').onclick = togglePasswordVisibility;
 
 // ---------- Setup target picker ----------
 //
-// Pierre's failure mode (#44): when more than one stock Bose speaker
+// The failure mode in #44: when more than one stock Bose speaker
 // is on the LAN, the install-after-prep step picked an arbitrary
 // one — the user had no way to see *which* speaker the wizard
 // would target until install.sh ran against the wrong box. Picker
@@ -5374,7 +5426,7 @@ async function renderSetupAPPushPanel() {
 // with the chosen target. Used so users see "Prepare USB stick for
 // Living Room ST20" rather than the generic label, which makes the
 // connection between Step 0 and Step 5 explicit and was the
-// concrete thing Pierre (#44) asked for.
+// concrete thing #44 asked for.
 function updateSetupGoButtonLabel() {
   const btn = $('setupGo');
   if (!btn) return;
@@ -5509,14 +5561,30 @@ async function refreshDrives(clearResult) {
 }
 
 async function renderDrives() {
+  // Persistent session re-entry: after the first successful stick prep this
+  // session, let the user jump straight to installing on a speaker (over the
+  // network) without writing the stick again, e.g. provisioning several boxes
+  // or retrying. Shown even when no stick is currently in the PC (it is now in
+  // the box).
+  const prepBanner = state.sessionPrep
+    ? `<div class="setup-help" style="margin-bottom:8px"><span class="muted small">${escapeHtml(t('setup.sessionPrepHint'))}</span> <button class="btn btn-mini" id="setupSkipPrep">${escapeHtml(t('setup.sessionPrepBtn'))}</button></div>`
+    : '';
+  const bindSkip = () => {
+    const sk = $('setupSkipPrep');
+    if (sk) sk.onclick = () => {
+      const p = state.sessionPrep || {};
+      showAwaitBoxReadyPanel({ ssid: p.ssid || '', pass: p.pass || '', html: `<div class="setup-ok">${escapeHtml(t('setup.sessionPrepGo'))}</div>` });
+    };
+  };
   if (!state.drives.length) {
-    $('drivesList').innerHTML = `<div class="muted">${escapeHtml(t('setup.noSticksFound'))}</div>`;
+    $('drivesList').innerHTML = prepBanner + `<div class="muted">${escapeHtml(t('setup.noSticksFound'))}</div>`;
     $('setupGo').disabled = true;
     $('updateInfo').classList.add('hidden');
     $('formatWarn').classList.add('hidden');
+    bindSkip();
     return;
   }
-  $('drivesList').innerHTML = state.drives.map((d, i) => {
+  $('drivesList').innerHTML = prepBanner + state.drives.map((d, i) => {
     const gb = (d.totalBytes / (1024*1024*1024)).toFixed(1);
     const fs = (d.filesystem || '').toUpperCase();
     const isFat32 = fs === 'FAT32';
@@ -5530,6 +5598,7 @@ async function renderDrives() {
       </div>
     </div>`;
   }).join('');
+  bindSkip();
   document.querySelectorAll('.drive-row').forEach(el => {
     el.onclick = async () => {
       state.selectedDrive = parseInt(el.dataset.i, 10);
@@ -5782,6 +5851,10 @@ async function doSetup() {
     // Starting the loop now would race the user and almost always
     // probe a stale stock state (box up from a previous session,
     // stick not yet inserted) which fails install.sh.
+    // Remember this prep for the rest of the session so the user can re-enter
+    // the install flow for another speaker (or a retry) without writing the
+    // stick again. Surfaced as a persistent button in renderDrives.
+    state.sessionPrep = { ssid, pass };
     showAwaitBoxReadyPanel({ ssid, pass, html });
   } catch (e) {
     $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('common.error'))}: ${escapeHtml(String(e))}</div>`;
@@ -6011,21 +6084,23 @@ const INSTALL_HELP_STEPS = {
   'install-script-error': ['logs', 'freshBoot'],
   'ssh-handshake': ['freshBoot', 'wifi'],
   'ssh-probe': ['freshBoot', 'wifi', 'stick'],
-  'stick-missing': ['stickInserted', 'freshBoot', 'stick'],
+  'stick-missing': ['st30Port', 'usbPicky', 'stickInserted', 'freshBoot', 'stick'],
   'agent-not-up': ['powerCycle', 'wifi', 'logs'],
   'not-reachable': ['wifi', 'freshBoot'],
   'install-window-closed': ['freshBoot'],
   // Media read error: the speaker found install.sh but could not read it.
   // Usually a large stick force-formatted to FAT32 with a block size the
   // speaker can't read (the 64 GB case), or a faulty stick.
-  'stick-io-error': ['reformatApp', 'smallerStick', 'differentStick', 'logs'],
+  'stick-io-error': ['reformatApp', 'usbPicky', 'smallerStick', 'differentStick', 'logs'],
 };
 
 // installHelpHtml renders the localized help checklist for a failure code.
 function installHelpHtml(code) {
   const steps = INSTALL_HELP_STEPS[code] || ['freshBoot', 'wifi', 'stick', 'logs'];
   const items = steps.map(s => `<li>${escapeHtml(t('setup.help.' + s))}</li>`).join('');
-  return `<div class="setup-help"><b>${escapeHtml(t('setup.helpTitle'))}</b><ul>${items}</ul></div>`;
+  return `<div class="setup-help"><b>${escapeHtml(t('setup.helpTitle'))}</b><ul>${items}</ul>`
+    + `<p class="small">${escapeHtml(t('setup.helpLogsInstruction'))}</p>`
+    + `<button class="btn btn-mini" id="installSaveLogs">${escapeHtml(t('footer.saveLogs'))}</button></div>`;
 }
 
 // Credentials are kept only in this closure and never persisted.
@@ -6062,7 +6137,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
 
   // Honour the target the user picked in Step 0 if any. Without
   // this the loop would lock onto an arbitrary speaker on a LAN
-  // with multiple Bose units — exactly Pierre's failure mode in
+  // with multiple Bose units — exactly the failure mode in
   // #44 where the install ran against the wrong speaker.
   //
   // Three cases:
@@ -6192,6 +6267,23 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
       ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>`
       : '';
     render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + log);
+    const dlBtn = $('installSaveLogs');
+    if (dlBtn) {
+      dlBtn.onclick = async () => {
+        dlBtn.classList.add('working');
+        try {
+          // Pass the box we just tried to install on first, plus any others, so
+          // the bundle pulls its box-side setup.log / boot.log / agent.log /
+          // dmesg over SSH (SSH is still open right after a failed install).
+          // README + app.log are always written, so a file is produced even
+          // with no stick in the PC and no reachable box.
+          const hosts = [foundBox && foundBox.host, ...((state.boxes || []).map(b => b && b.host))].filter(Boolean);
+          const r = await SaveDiagnosticBundle([...new Set(hosts)], true);
+          if (r && r.savePath) showToast(t('footer.saveLogsDone', { path: r.savePath, size: Math.round((r.bytes || 0) / 1024) }));
+        } catch (e) { showError(String(e)); }
+        finally { dlBtn.classList.remove('working'); }
+      };
+    }
     return;
   }
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
