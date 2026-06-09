@@ -457,18 +457,27 @@ jobs:
       - name: Package as tar.gz
         run: |
           mkdir -p release-out
-          # Bundle the binary and a tiny README so the runtime
-          # webkit dependency is visible without forcing users to
-          # check a separate doc.
+          # Bundle the binary, the app icon, a desktop-integration installer,
+          # and a tiny README so the runtime webkit dependency is visible
+          # without forcing users to check a separate doc.
           cp "desktop-app/build/bin/ST Reborn" "release-out/STR-Linux-x64"
           chmod +x "release-out/STR-Linux-x64"
+          cp desktop-app/build/appicon.png release-out/STR.png
           cat > release-out/README-linux.txt <<'TXT'
           STR for Linux x86_64
           --------------------
 
-          Run:
+          Quick start:
               chmod +x STR-Linux-x64
               ./STR-Linux-x64
+
+          Add to your app menu (with icon):
+              ./install.sh
+          This installs a launcher to ~/.local/bin, the icon to
+          ~/.local/share/icons, and a menu entry to
+          ~/.local/share/applications, so ST Reborn appears in your
+          application menu with its icon (no root needed). Re-run after
+          updating to a new version.
 
           Required runtime libraries (any current desktop distro):
               libgtk-3-0
@@ -481,9 +490,41 @@ jobs:
               Fedora:         dnf install gtk3 webkit2gtk4.1 libsoup3
               Arch:           pacman -S gtk3 webkit2gtk-4.1 libsoup3
           TXT
+          # Per-user desktop integration installer (no root). Generates the
+          # .desktop entry on the user's machine so Exec/Icon point at the
+          # real installed paths. Fixes the "no menu entry, no icon" report
+          # on Zorin/GNOME. The outer 'INSTALL' heredoc is quoted so
+          # nothing expands at package time; the inner DESKTOP heredoc is
+          # unquoted so $HOME etc. expand when the user runs install.sh.
+          cat > release-out/install.sh <<'INSTALL'
+          #!/bin/sh
+          set -e
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          BINDIR="$HOME/.local/bin"
+          APPDIR="$HOME/.local/share/applications"
+          ICONDIR="$HOME/.local/share/icons"
+          mkdir -p "$BINDIR" "$APPDIR" "$ICONDIR"
+          install -m 755 "$DIR/STR-Linux-x64" "$BINDIR/st-reborn"
+          install -m 644 "$DIR/STR.png" "$ICONDIR/st-reborn.png"
+          cat > "$APPDIR/st-reborn.desktop" <<DESKTOP
+          [Desktop Entry]
+          Type=Application
+          Name=ST Reborn
+          GenericName=SoundTouch controller
+          Comment=Revive Bose SoundTouch speakers without the Bose cloud
+          Exec=$BINDIR/st-reborn
+          Icon=$ICONDIR/st-reborn.png
+          Terminal=false
+          Categories=AudioVideo;Audio;
+          StartupWMClass=ST Reborn
+          DESKTOP
+          update-desktop-database "$APPDIR" 2>/dev/null || true
+          echo "ST Reborn installed. Open it from your app menu, or run: $BINDIR/st-reborn"
+          INSTALL
+          chmod +x release-out/install.sh
           cd release-out
-          tar -czf STR-Linux-x64.tar.gz STR-Linux-x64 README-linux.txt
-          rm STR-Linux-x64 README-linux.txt
+          tar -czf STR-Linux-x64.tar.gz STR-Linux-x64 STR.png install.sh README-linux.txt
+          rm STR-Linux-x64 STR.png install.sh README-linux.txt
           sha256sum "STR-Linux-x64.tar.gz" > "STR-Linux-x64.tar.gz.sha256"
           cat "STR-Linux-x64.tar.gz.sha256"
 
