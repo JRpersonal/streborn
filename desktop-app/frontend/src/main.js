@@ -1,6 +1,7 @@
 import './style.css';
 import {
   DiscoverBoxes,
+  RefreshKnownBoxes,
   GetPresets,
   SetPreset,
   DeletePreset,
@@ -1396,45 +1397,20 @@ async function discoverBoxes() {
     if (rb) rb.classList.add('spinning');
   }
   try {
-    const list = await DiscoverBoxes(4);
-    state.boxes = applyPendingNames(list || []);
-    saveCachedBoxes(state.boxes);
-    if (state.currentBox && state.currentBox.deviceID) {
-      const fresh = state.boxes.find(b => b.deviceID === state.currentBox.deviceID);
-      if (fresh) {
-        const changed = fresh.host !== state.currentBox.host
-                     || fresh.port !== state.currentBox.port
-                     || fresh.version !== state.currentBox.version
-                     || fresh.friendlyName !== state.currentBox.friendlyName;
-        state.currentBox = fresh;
-        if (changed) {
-          state.presets = [];
-          state.searchResults = [];
-          state.nowLocation = '';
-          state.nowPlayState = '';
-          state.presetErrors = {};
-          $('presets').innerHTML = '';
-          $('searchResults').innerHTML = '';
-          loadPresets();
-          refreshStatus();
-          checkBoxUpdate();
-        }
-        updateSourceButtonVisibility();
-      } else {
-        state.currentBox = null;
-        state.presets = [];
-        $('presets').innerHTML = '';
-      }
+    // Known-first refresh: re-probe the speakers we already have directly
+    // (no mDNS), so their live values update within ~1 s, THEN run the full
+    // discovery to catch new or moved speakers. Most refreshes just want the
+    // current values of a known box, so this makes the button feel instant.
+    if (hadBoxes) {
+      try {
+        const quick = await RefreshKnownBoxes();
+        if (quick && quick.length) applyBoxList(quick);
+      } catch {}
     }
-    renderBoxSelect();
-    updateSettingsTabBadge();
-    // Setup-tab target picker reuses the same state.boxes feed.
-    // Re-render so newly arrived speakers appear as choices without
-    // making the user leave and re-enter the Setup tab.
-    renderSetupTargetPicker();
-    // Auto retry: if a recently set up speaker has not yet
-    // re-announced its new name via mDNS, search again every 4 s for
-    // up to 90 s. Driven by pendingNames.
+    const list = await DiscoverBoxes(4);
+    applyBoxList(list || []);
+    // Auto retry: if a recently set up speaker has not yet re-announced its
+    // new name via mDNS, search again every 4 s (driven by pendingNames).
     scheduleNextAutoRefresh();
   } catch (e) {
     if (!hadBoxes) $('boxSelect').textContent = t('common.error') + ': ' + e;
@@ -1442,6 +1418,45 @@ async function discoverBoxes() {
     const rb = $('refreshBtn');
     if (rb) rb.classList.remove('spinning');
   }
+}
+
+// applyBoxList folds a freshly probed box list into state + the UI. Shared by
+// the known-first quick refresh and the full discovery so both render
+// identically (current-box re-bind, speaker select, badges, setup picker).
+function applyBoxList(list) {
+  state.boxes = applyPendingNames(list || []);
+  saveCachedBoxes(state.boxes);
+  if (state.currentBox && state.currentBox.deviceID) {
+    const fresh = state.boxes.find(b => b.deviceID === state.currentBox.deviceID);
+    if (fresh) {
+      const changed = fresh.host !== state.currentBox.host
+                   || fresh.port !== state.currentBox.port
+                   || fresh.version !== state.currentBox.version
+                   || fresh.friendlyName !== state.currentBox.friendlyName;
+      state.currentBox = fresh;
+      if (changed) {
+        state.presets = [];
+        state.searchResults = [];
+        state.nowLocation = '';
+        state.nowPlayState = '';
+        state.presetErrors = {};
+        $('presets').innerHTML = '';
+        $('searchResults').innerHTML = '';
+        loadPresets();
+        refreshStatus();
+        checkBoxUpdate();
+      }
+      updateSourceButtonVisibility();
+    } else {
+      state.currentBox = null;
+      state.presets = [];
+      $('presets').innerHTML = '';
+    }
+  }
+  renderBoxSelect();
+  updateSettingsTabBadge();
+  // Setup-tab target picker reuses the same state.boxes feed.
+  renderSetupTargetPicker();
 }
 
 let _autoRefreshTimer = null;

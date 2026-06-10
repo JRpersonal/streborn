@@ -174,6 +174,10 @@ export function RebootBox(arg1, arg2) {
   return window['go']['main']['App']['RebootBox'](arg1, arg2);
 }
 
+export function RefreshKnownBoxes() {
+  return window['go']['main']['App']['RefreshKnownBoxes']();
+}
+
 export function RepairInstallViaSSH(arg1, arg2) {
   return window['go']['main']['App']['RepairInstallViaSSH'](arg1, arg2);
 }

@@ -91,6 +91,8 @@ export function RadioVote(arg1:string):Promise<void>;
 
 export function RebootBox(arg1:string,arg2:number):Promise<void>;
 
+export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
+
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
 
 export function ResolveStationLogo(arg1:string,arg2:string,arg3:Array<string>):Promise<string>;
