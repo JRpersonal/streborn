@@ -439,14 +439,19 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		logResourceHealth(logger)
-		t := time.NewTicker(5 * time.Minute)
-		defer t.Stop()
+		health := time.NewTicker(5 * time.Minute)
+		defer health.Stop()
+		// The guard polls far more often than the heartbeat log: a runaway can
+		// fall from a safe level toward OOM well within a 5-minute window.
+		guard := time.NewTicker(60 * time.Second)
+		defer guard.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-t.C:
+			case <-health.C:
 				logResourceHealth(logger)
+			case <-guard.C:
 				memoryGuardCheck(logger, spotifyMgr, *boxHost)
 			}
 		}
@@ -1750,7 +1755,14 @@ const (
 	// backstop only: 6 MB sits below the normal ~9 MB idle floor (no reboot
 	// after a normal session) yet above the danger zone. When idle the leak
 	// does not grow, so a low reading is stable and the 5-min cycle is fine.
-	memGuardThresholdKB  = 6 * 1024
+	memGuardThresholdKB = 6 * 1024
+	// While Spotify is actively streaming the firmware leak is GROWING, so the
+	// old "never interrupt playback" hold-off let it run to an uncontrolled OOM
+	// (garbled audio then crash/reboot, live 2026-06-10). Below this critical
+	// floor we reboot even during playback: a clean reboot + auto-resume beats
+	// the firmware OOM. Set below the ~4.4 MB normal-session dip so it only fires
+	// on a genuine runaway, not a healthy self-limiting session.
+	memGuardCriticalKB   = 4 * 1024
 	memGuardMinUptimeSec = 900 // never reboot in the first 15 min (boot-loop guard)
 )
 
@@ -1768,15 +1780,17 @@ func memoryGuardCheck(logger *slog.Logger, sp *spotify.Manager, boxHost string) 
 		logger.Warn("memory guard: low memAvail but uptime too short, holding off", "memAvailKB", avail, "uptimeSec", up)
 		return
 	}
-	if sp != nil && sp.Streaming() {
-		logger.Warn("memory guard: low memAvail but Spotify is streaming, not rebooting", "memAvailKB", avail)
+	playing := (sp != nil && sp.Streaming()) || boxIsPlaying(boxHost)
+	if playing && avail > memGuardCriticalKB {
+		// Tolerate low memory during playback to avoid interrupting, but only down
+		// to the critical floor. The Spotify manager's single-connection invariant
+		// should keep steady playback stable; this is a last-resort net for any
+		// runaway, where a controlled reboot + auto-resume beats the uncontrolled
+		// firmware OOM (garbled audio then crash).
+		logger.Warn("memory guard: low memAvail but playing and above critical, holding off", "memAvailKB", avail, "criticalKB", memGuardCriticalKB)
 		return
 	}
-	if boxIsPlaying(boxHost) {
-		logger.Warn("memory guard: low memAvail but box is playing, not rebooting", "memAvailKB", avail)
-		return
-	}
-	logger.Warn("memory guard: memAvail critically low while idle, rebooting box to clear firmware leak", "memAvailKB", avail)
+	logger.Warn("memory guard: memAvail critically low, rebooting box to clear firmware leak", "memAvailKB", avail, "playing", playing)
 	_ = exec.Command("sync").Run()
 	if err := exec.Command("reboot").Run(); err != nil {
 		logger.Error("memory guard: reboot failed", "err", err)

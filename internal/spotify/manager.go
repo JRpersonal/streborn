@@ -103,8 +103,9 @@ type Manager struct {
 	mu        sync.Mutex
 	name      string    // device name currently written to config.yml
 	configVol int       // initial_volume currently written to config.yml
-	sink      io.Writer // current HTTP consumer, nil when none
-	cmd  *exec.Cmd
+	sink         io.Writer // current HTTP consumer, nil when none
+	lastAttachAt time.Time // when the box last attached to the Ogg stream (re-attach storm detection)
+	cmd          *exec.Cmd
 	// runCancel restarts the current go-librespot process when called: it
 	// cancels the per-process context so the supervise loop relaunches it.
 	// Used to re-apply a changed device_name (go-librespot reads its name only
@@ -1303,9 +1304,31 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	cw := &closeNotifyWriter{w: w, done: done}
 	m.mu.Lock()
-	reattach := m.sink != nil // a consumer was already attached = box re-fetched
+	oldSink, _ := m.sink.(*closeNotifyWriter) // previous consumer, if any
+	reattach := m.sink != nil                 // a consumer was already attached = box re-fetched
 	m.sink = cw
+	sinceLast := time.Duration(0)
+	if !m.lastAttachAt.IsZero() {
+		sinceLast = time.Since(m.lastAttachAt)
+	}
+	m.lastAttachAt = time.Now()
 	m.mu.Unlock()
+	// Single-connection invariant: tear down the previous box connection now.
+	// A box stuck in INVALID_SOURCE re-fetches the stream repeatedly; if the old
+	// connections are left open they pile up and the box leaks decode/socket
+	// buffers per connection until it OOMs (garbled audio then reboot, live
+	// 2026-06-10). Closing the old sink makes its ServeOgg return and drop the
+	// stale connection, so the box only ever holds one Ogg stream at a time.
+	if oldSink != nil && oldSink != cw {
+		oldSink.closeConn()
+	}
+	// Surface a re-attach storm (the box re-fetching every few seconds, the
+	// crash signature) so it is visible in the log. The single-connection
+	// invariant above already prevents the per-connection buffer pile-up that
+	// used to OOM the box; this just records that it happened.
+	if reattach && sinceLast > 0 && sinceLast < 20*time.Second {
+		m.logger.Warn("spotify: rapid Ogg re-attach (possible INVALID_SOURCE re-point storm; old connection closed)", "sinceLastMs", sinceLast.Milliseconds())
+	}
 	// reattach=true means the box dropped and re-fetched the stream (the prime
 	// suspect for a track appearing to restart): it then gets the cached
 	// granule-0 headers again. Logged so the restart can be correlated.
@@ -1361,6 +1384,12 @@ func (c *closeNotifyWriter) Write(p []byte) (int, error) {
 		c.once.Do(func() { close(c.done) })
 	}
 	return n, err
+}
+
+// closeConn tears the connection down from the manager side, used to enforce
+// the single-connection invariant when a new box attaches. Idempotent.
+func (c *closeNotifyWriter) closeConn() {
+	c.once.Do(func() { close(c.done) })
 }
 
 func (c *closeNotifyWriter) Flush() {
