@@ -23,11 +23,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -59,10 +61,41 @@ func safeHTTPURL(raw string) error {
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "http", "https":
+		// Host-level SSRF protection runs at dial time (dialGuardSSRF) on
+		// the resolved IP, which also defeats a hostname that resolves to a
+		// blocked address. Here we only gate the scheme.
 		return nil
 	default:
 		return fmt.Errorf("disallowed url scheme %q (only http/https accepted)", u.Scheme)
 	}
+}
+
+// dialGuardSSRF runs as the net.Dialer Control hook, i.e. AFTER DNS
+// resolution and BEFORE the TCP connect, on the concrete resolved address.
+// It refuses connections to addresses that are never a legitimate public
+// radio stream but that an attacker-controlled radio-browser stream URL
+// could abuse to make the agent fetch its own privileged loopback services
+// (the Bose firmware / STR webui on the box) or a cloud metadata endpoint
+// (169.254.169.254). Because it inspects the resolved IP, a hostname that
+// resolves to a blocked address (DNS-rebinding) is caught too.
+//
+// Private LAN ranges (192.168/10/172.16) are deliberately NOT blocked so a
+// user's own local Icecast/DLNA stream on their network keeps working; the
+// dangerous self-targeting case is loopback, which is blocked.
+func dialGuardSSRF(network, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil // not an IP literal (should not happen post-resolution)
+	}
+	if ip.IsLoopback() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return fmt.Errorf("stream target %s blocked (loopback/link-local/metadata)", ip)
+	}
+	return nil
 }
 
 // isHLSorDASHURL reports whether a URL points at an HLS (.m3u8) or DASH (.mpd)
@@ -192,7 +225,21 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		// Eigener Client damit wir Redirect Verhalten kontrollieren.
 		// Default ist Follow bis 10 — passt fuer Streamonkey & Co.
 		// Kein Timeout: Streams sind endlos, wir lesen bis EOF.
-		client:     &http.Client{},
+		// Der DialContext-Guard blockt SSRF-Ziele (loopback/link-local/
+		// metadata) nach der DNS-Aufloesung — eine boesartige
+		// radio-browser-URL kann die Box so nicht auf ihre eigenen
+		// Loopback-Dienste oder Cloud-Metadata zeigen lassen.
+		client: &http.Client{
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Control: dialGuardSSRF}).DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		},
 		lastFail:   make(map[string]time.Time),
 		measuredBr: make(map[string]int),
 	}

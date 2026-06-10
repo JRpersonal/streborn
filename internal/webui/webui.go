@@ -26,7 +26,6 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
-	"github.com/JRpersonal/streborn/internal/radiobrowser"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
@@ -93,8 +92,6 @@ type Server struct {
 	// (ready, measured bitrate, device name) the UI reads to show the real
 	// stream bitrate on a Spotify preset tile. nil when not configured.
 	spotifyInfo http.HandlerFunc
-	langCacheMu sync.Mutex
-	langCache   map[string]langCacheEntry
 	// wifiSignalFn returns the latest Wi-Fi signal class observed on the
 	// gabbo WebSocket (set from cmd/agent's boxws client). Used to fill
 	// the signal for BCO boxes, whose /networkInfo reports none.
@@ -182,11 +179,6 @@ func (s *Server) SetWifiSignalFn(fn func() string) { s.wifiSignalFn = fn }
 // currently knows (typically the mDNS announcer snapshot). cmd/agent calls
 // this after the announcer is up.
 func (s *Server) SetBoxNameFn(fn func() (name, model string)) { s.boxNameFn = fn }
-
-type langCacheEntry struct {
-	Langs []radiobrowser.Language
-	At    time.Time
-}
 
 // Option ist ein functional option fuer New.
 type Option func(*Server)
@@ -352,12 +344,9 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/pause", s.handlePause)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/status", s.handleStatus)
-	mux.HandleFunc("/api/radio/search", s.handleRadioSearch)
-	mux.HandleFunc("/api/radio/top", s.handleRadioTop)
-	mux.HandleFunc("/api/radio/tags", s.handleRadioTags)
-	mux.HandleFunc("/api/radio/languages", s.handleRadioLanguages)
-	mux.HandleFunc("/api/radio/vote/", s.handleRadioVote)
-	mux.HandleFunc("/api/radio/click/", s.handleRadioClick)
+	// Radio search/browse moved app-side (the app queries radio-browser
+	// directly; see the app-first direction). The box no longer serves
+	// /api/radio/* and no longer compiles in the radiobrowser package.
 	mux.HandleFunc("/api/agent/version", s.handleAgentVersion)
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
@@ -714,14 +703,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setLastPlay(playURL, req.Title, req.Icon, "")
-	// Click Tracking: best effort, im Hintergrund.
-	if req.UUID != "" {
-		go func(uuid string) {
-			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-			defer cancel()
-			_ = radiobrowser.New().Click(ctx, uuid)
-		}(req.UUID)
-	}
+	// radio-browser click-tracking moved app-side (the app fires RadioClick
+	// when it starts playback) so the box no longer needs the radiobrowser pkg.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "playing", "url": req.URL})
 }
 
@@ -760,8 +743,15 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	//  3. point the box at THIS slot's stream first (now_playing shows the name
 	//     and buffers) and load the playlist audio after, so the box buffers
 	//     until audio flows.
+	// Log every app-side slot recall so a remote "recall does nothing" report
+	// (ST20 #45) shows the preset shape that was attempted.
+	s.logger.Info("preset slot recall (app)", "slot", slot, "type", p.Type, "hasURI", p.URI != "", "account", p.Account)
+	if p.Type == "spotify" && p.URI == "" {
+		s.logger.Warn("spotify preset recall (app): type=spotify but empty URI, falling through to radio path", "slot", slot, "name", p.Name)
+	}
 	if p.Type == "spotify" && p.URI != "" {
 		if s.spotifyPlay == nil {
+			s.logger.Warn("spotify preset recall (app): Spotify not configured on this box", "slot", slot)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error": "Spotify not configured", "slot": slot, "name": p.Name,
 			})
@@ -1224,196 +1214,6 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
-}
-
-// handleRadioSearch proxied einen Radio-Browser.info Search Query.
-// Query Parameter:
-//
-//	q       Name Suchbegriff
-//	tag     Genre Tag
-//	cc      Country Code (ISO 2)
-//	order   "votes" | "clickcount" | "clicktrend" | "name" (default votes)
-//	limit   max Ergebnisse (default 30)
-//	onlyok  "1" um nur funktionierende Sender zu liefern
-func (s *Server) handleRadioSearch(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
-	defer cancel()
-	limit := 30
-	if v := q.Get("limit"); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
-	}
-	offset := 0
-	if v := q.Get("offset"); v != "" {
-		fmt.Sscanf(v, "%d", &offset)
-	}
-	stations, err := rb.SearchSmart(ctx, radiobrowser.SearchOpts{
-		Name:     q.Get("q"),
-		Tag:      q.Get("tag"),
-		Country:  q.Get("cc"),
-		Language: q.Get("lang"),
-		Order:    q.Get("order"),
-		Limit:    limit,
-		Offset:   offset,
-		OnlyOK:   q.Get("onlyok") == "1",
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, http.StatusOK, stations)
-}
-
-// handleRadioTop liefert die meistgevoteten Sender. Country Filter
-// kommt strikt vom Client. Frueher defaultete der Server still auf
-// "DE" wenn cc fehlte — das hat den Frontend-Filter "alle Laender"
-// (der cc=leer schickt) sabotiert: User bekam trotzdem nur DE Sender.
-// Jetzt: cc leer = keine Country Filter, Top global. Wenn der User
-// DE will, schickt das Frontend cc=DE explizit, was es per Default
-// auch tut (state.searchCountry: 'DE' bis der User aktiv umschaltet).
-// Respektiert ALLE Filter (tag, lang, order, onlyok, offset). Default
-// sort ist votes desc; mit q.Get("order") explizit ueberschreibbar.
-func (s *Server) handleRadioTop(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	cc := q.Get("cc")
-	limit := 30
-	if v := q.Get("limit"); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
-	}
-	offset := 0
-	if v := q.Get("offset"); v != "" {
-		fmt.Sscanf(v, "%d", &offset)
-	}
-	order := q.Get("order")
-	if order == "" {
-		order = "votes"
-	}
-	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
-	defer cancel()
-	stations, err := rb.Search(ctx, radiobrowser.SearchOpts{
-		Country:  cc,
-		Tag:      q.Get("tag"),
-		Language: q.Get("lang"),
-		Order:    order,
-		Limit:    limit,
-		Offset:   offset,
-		OnlyOK:   q.Get("onlyok") == "1",
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, http.StatusOK, stations)
-}
-
-// handleRadioTags liefert eine Liste der populaerstn Genre Tags fuer die
-// Chip Filter UI. Default 60.
-func (s *Server) handleRadioTags(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	limit := 60
-	if v := q.Get("limit"); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
-	}
-	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
-	defer cancel()
-	tags, err := rb.TopTags(ctx, limit)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, http.StatusOK, tags)
-}
-
-// handleRadioLanguages liefert die Sprach Liste — global, oder mit
-// ?country=XX gefiltert auf alle Stationen die in diesem Land sind
-// (radio-browser hat dafuer keinen direkten Endpoint, wir aggregieren
-// ueber Stations Search). Mit Cache 10 min pro Country damit nicht
-// jeder Filter Click eine fette Search Query macht.
-func (s *Server) handleRadioLanguages(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	limit := 40
-	if v := q.Get("limit"); v != "" {
-		fmt.Sscanf(v, "%d", &limit)
-	}
-	country := strings.ToUpper(strings.TrimSpace(q.Get("country")))
-
-	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
-	defer cancel()
-
-	if country != "" {
-		// Cache lookup
-		s.langCacheMu.Lock()
-		entry, ok := s.langCache[country]
-		s.langCacheMu.Unlock()
-		if ok && time.Since(entry.At) < 10*time.Minute {
-			writeJSON(w, http.StatusOK, entry.Langs)
-			return
-		}
-		langs, err := rb.LanguagesByCountry(ctx, country)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		// Limit anwenden falls grosse Liste
-		if limit > 0 && len(langs) > limit {
-			langs = langs[:limit]
-		}
-		s.langCacheMu.Lock()
-		if s.langCache == nil {
-			s.langCache = make(map[string]langCacheEntry)
-		}
-		s.langCache[country] = langCacheEntry{Langs: langs, At: time.Now()}
-		s.langCacheMu.Unlock()
-		writeJSON(w, http.StatusOK, langs)
-		return
-	}
-
-	langs, err := rb.Languages(ctx, limit)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, http.StatusOK, langs)
-}
-
-// handleRadioVote leitet einen Vote (Daumen hoch) an radio-browser durch.
-// Path Format: /api/radio/vote/<uuid>
-func (s *Server) handleRadioVote(w http.ResponseWriter, r *http.Request) {
-	uuid := strings.TrimPrefix(r.URL.Path, "/api/radio/vote/")
-	if uuid == "" {
-		http.Error(w, "uuid fehlt", http.StatusBadRequest)
-		return
-	}
-	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-	defer cancel()
-	if err := rb.Vote(ctx, uuid); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "voted", "uuid": uuid})
-}
-
-// handleRadioClick erhoeht den Click Counter fuer einen Sender.
-// Path Format: /api/radio/click/<uuid>
-func (s *Server) handleRadioClick(w http.ResponseWriter, r *http.Request) {
-	uuid := strings.TrimPrefix(r.URL.Path, "/api/radio/click/")
-	if uuid == "" {
-		http.Error(w, "uuid fehlt", http.StatusBadRequest)
-		return
-	}
-	rb := radiobrowser.New()
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-	defer cancel()
-	if err := rb.Click(ctx, uuid); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "clicked", "uuid": uuid})
 }
 
 // handleAgentVersion liefert die laufende Stick Agent Version. Wird von

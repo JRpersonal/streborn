@@ -922,7 +922,17 @@ const spotifyStreamURL = "http://127.0.0.1:8888/spotify/stream.ogg"
 // go-librespot to play the saved URI (autonomous, no app), then point the
 // box at the live /spotify/stream so it plays the audio over UPnP.
 func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p presets.Preset) {
+	// Log the inputs up front so a remote "recall does nothing" report (e.g.
+	// ST20 #45) shows immediately which precondition failed: no Spotify
+	// manager, no stored account/URI on the preset, or go-librespot not ready.
+	h.logger.Info("spotify preset recall start", "slot", slot,
+		"hasURI", p.URI != "", "account", p.Account, "type", p.Type, "spotifyMgr", h.spotify != nil)
 	if h.spotify == nil {
+		h.logger.Warn("spotify preset recall: no Spotify manager on this box", "slot", slot)
+		return
+	}
+	if p.URI == "" {
+		h.logger.Warn("spotify preset recall: preset has no Spotify URI, cannot autoplay", "slot", slot, "name", p.Name)
 		return
 	}
 	if !h.spotify.Ready() {

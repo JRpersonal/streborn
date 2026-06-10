@@ -61,6 +61,11 @@ import {
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
+  RepairInstallViaSSH,
+  RadioSearch,
+  RadioTags,
+  RadioLanguages,
+  RadioClick,
   TrueFactoryReset,
   UninstallSTR,
   ProbeSetupAP,
@@ -81,9 +86,43 @@ import {
 // uncaught error or rejected promise to the Go logger. Best-effort:
 // the handlers never throw themselves.
 (function installClientErrorHooks() {
+  const seen = new Set();
+  // Show the error ON SCREEN, persistently, so a user can screenshot it.
+  // str.log is reset per launch, so an error that crashes/blanks the view is
+  // otherwise lost on restart (the cause of #121 being un-diagnosable: the
+  // saved diagnostic only ever held the startup lines). The banner makes the
+  // real message + stack visible immediately, regardless of which view broke.
+  const showBanner = (text) => {
+    const add = () => {
+      try {
+        if (!document.body) return;
+        let el = document.getElementById('__strErrBanner');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = '__strErrBanner';
+          el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;max-height:42vh;overflow:auto;background:#3a0d0d;color:#ffd7d7;font:12px/1.45 monospace;padding:10px 38px 12px 12px;border-top:2px solid #c0392b;white-space:pre-wrap';
+          const close = document.createElement('button');
+          close.textContent = '×';
+          close.style.cssText = 'position:absolute;top:4px;right:10px;background:transparent;color:#ffd7d7;border:0;font-size:20px;cursor:pointer';
+          close.onclick = () => el.remove();
+          el.appendChild(close);
+          const body = document.createElement('div');
+          body.id = '__strErrBannerBody';
+          el.appendChild(body);
+          document.body.appendChild(el);
+        }
+        const body = document.getElementById('__strErrBannerBody');
+        body.textContent = (body.textContent ? body.textContent + '\n\n' : '') + text;
+      } catch {}
+    };
+    if (typeof document !== 'undefined' && document.body) add();
+    else if (typeof window !== 'undefined') window.addEventListener('DOMContentLoaded', add);
+  };
   const report = (kind, detail) => {
     try { LogClientError(`${kind}: ${detail}`); } catch {}
     try { console.error(kind, detail); } catch {}
+    const key = kind + ':' + String(detail).slice(0, 200);
+    if (!seen.has(key)) { seen.add(key); showBanner(`STR ${kind}:\n${detail}`); }
   };
   try {
     window.addEventListener('error', (e) => {
@@ -205,6 +244,19 @@ window.__nextLogoFallback = function (img) {
   // Chain exhausted (or attribute unreadable): stop so onerror cannot loop.
   img.onerror = null;
 };
+
+// Delegated logo-fallback: drive the data-fallbacks cascade from a single
+// capture-phase 'error' listener instead of an inline onerror="" attribute on
+// every <img>. Inline handlers require a CSP 'unsafe-inline' script-src, which
+// we deliberately do NOT allow (see index.html CSP). 'error' does not bubble,
+// so we listen in the capture phase, where it still reaches us. Only acts while
+// data-fallbacks still has candidates, so it stops once the monogram loads.
+window.addEventListener('error', (e) => {
+  const img = e && e.target;
+  if (img && img.tagName === 'IMG' && img.getAttribute && img.getAttribute('data-fallbacks')) {
+    window.__nextLogoFallback(img);
+  }
+}, true);
 
 // ---------- Station logo hydration ----------
 // logoImgTag renders a tile with the local monogram as the immediate
@@ -1018,7 +1070,6 @@ $('view-box').innerHTML = `
     <p>${escapeHtml(t('speaker.choose'))}</p>
   </div>
   <div id="boxControls" class="hidden">
-    <div id="boxUpdateBanner" class="update-banner hidden"></div>
     <div class="status-bar" id="statusBar"></div>
     <div class="controls">
       <button class="btn" id="pauseBtn">&#9208; ${escapeHtml(t('controls.pause'))}</button>
@@ -1291,17 +1342,11 @@ $('searchCountry').onchange = () => {
 };
 
 async function loadLanguagesForCountry() {
-  if (!state.currentBox) return;
   try {
     const cc = state.searchCountry || '';
-    const path = cc
-      ? `/api/radio/languages?country=${encodeURIComponent(cc)}&limit=60`
-      : `/api/radio/languages?limit=40`;
-    const r = await boxFetch(state.currentBox, path);
-    if (r.ok) {
-      state.languages = await r.json() || [];
-      renderLanguageOptions();
-    }
+    // App-side: no box needed; query radio-browser directly.
+    state.languages = await RadioLanguages(cc, cc ? 60 : 40) || [];
+    renderLanguageOptions();
   } catch {}
 }
 $('searchLang').onchange    = () => {
@@ -1657,23 +1702,17 @@ async function loadStickRegion() {
 // the stick once, then renders the genre chips and the language
 // dropdown.
 async function loadTaxonomy() {
-  if (!state.currentBox) return;
+  // App-side: query radio-browser directly, no box needed.
   if (state.tags.length === 0) {
     try {
-      const r = await boxFetch(state.currentBox, '/api/radio/tags?limit=24');
-      if (r.ok) {
-        state.tags = await r.json() || [];
-        renderGenreChips();
-      }
+      state.tags = await RadioTags(24) || [];
+      renderGenreChips();
     } catch {}
   }
   if (state.languages.length === 0) {
     try {
-      const r = await boxFetch(state.currentBox, '/api/radio/languages?limit=40');
-      if (r.ok) {
-        state.languages = await r.json() || [];
-        renderLanguageOptions();
-      }
+      state.languages = await RadioLanguages('', 40) || [];
+      renderLanguageOptions();
     } catch {}
   }
 }
@@ -1901,6 +1940,11 @@ function updateSettingsTabBadge() {
 async function checkBoxUpdate() {
   if (!state.currentBox || !state.appInfo) return;
   const banner = $('boxUpdateBanner');
+  // The speaker-update banner moved out of the music view into Speaker
+  // Settings (rendered prominently at the top by loadBoxSettings for the
+  // settings-selected box). When that element is not present (music view),
+  // this is a no-op so the old music-view callers never throw.
+  if (!banner) return;
   banner.classList.add('hidden');
   // If an OTA is in flight on a DIFFERENT box, the update button on
   // the currently-viewed box must be locked. We still need the
@@ -2193,10 +2237,7 @@ async function healPresetLogos() {
         // flagged broken usually still has a logo). The limit is
         // high enough to find an exact name match among several
         // stations sharing the same name.
-        const params = new URLSearchParams({ q: p.name, limit: '12', order: 'votes' });
-        const r = await boxFetch(state.currentBox, `/api/radio/search?${params}`);
-        if (!r.ok) return;
-        const list = await r.json() || [];
+        const list = await RadioSearch({ q: p.name, limit: 12, order: 'votes', top: false }) || [];
         const wanted = p.name.toLowerCase().trim();
         // 1) Exact name match.
         let pick = list.find(s => (s.name || '').toLowerCase().trim() === wanted);
@@ -2356,8 +2397,7 @@ function renderPresets() {
       presetCandidates.push(monogramDataUri(p.name));
       const logo =
         `<img class="preset-logo" src="${escapeAttr(presetCandidates[0])}"
-              data-fallbacks="${escapeAttr(presetCandidates.slice(1).join('|'))}"
-              onerror="window.__nextLogoFallback(this)"/>`;
+              data-fallbacks="${escapeAttr(presetCandidates.slice(1).join('|'))}"/>`;
       // The active tile mirrors the live now-playing bitrate even when the
       // stored preset bitrate is still 0 (preset saved before the bitrate
       // feature, or radio-browser had none). Persist it so the tile keeps
@@ -3106,46 +3146,41 @@ async function loadMore() {
   await fetchSearchPage(true);
 }
 
-function buildSearchURL() {
+function buildSearchOpts() {
   const isSearch = state.searchLastMode === 'search' && state.searchLastQuery;
-  // Server-side sort: when the user wants name order, the server
-  // must deliver in that order, otherwise "A" lands on page 50.
-  // For order=name we still fetch 4x the page size so the
-  // "Bose-compatible only" filter still has enough left after the
-  // strip of HTTPS-only stations like laut.fm.
+  // For order=name we still fetch 4x the page size so the "Bose-compatible
+  // only" filter still has enough left after the strip of HTTPS-only stations
+  // like laut.fm. Sorting itself is done client-side in fetchSearchPage.
   const ord = state.searchOrder || 'votes';
   const limit = ord === 'name' ? PAGE_SIZE * 4 : PAGE_SIZE;
-  const params = new URLSearchParams({
-    limit: String(limit),
-    offset: String(state.searchOffset),
+  // cc empty = all countries. top:true selects the vote-ordered top list (no
+  // free-text query).
+  return {
+    q: isSearch ? state.searchLastQuery : '',
+    cc: state.searchCountry || '',
+    lang: state.searchLang || '',
+    tag: state.searchTag || '',
     order: ord,
-  });
-  // Country: an empty string means "all countries". We send the
-  // filter as an explicit empty value (cc=) rather than omitting it
-  // entirely, so the server can distinguish "filter not set" from
-  // "user wants no filter". Otherwise the older server variant
-  // silently defaults to DE.
-  params.set('cc', state.searchCountry || '');
-  if (state.searchLang)    params.set('lang', state.searchLang);
-  if (state.searchTag)     params.set('tag', state.searchTag);
-  if (state.searchOnlyOK)  params.set('onlyok', '1');
-  if (isSearch) {
-    params.set('q', state.searchLastQuery);
-    return `/api/radio/search?${params.toString()}`;
-  }
-  return `/api/radio/top?${params.toString()}`;
+    limit: limit,
+    offset: state.searchOffset,
+    onlyok: !!state.searchOnlyOK,
+    top: !isSearch,
+  };
 }
 
 async function fetchSearchPage(append) {
-  const url = buildSearchURL();
   if (!append) {
     $('searchResults').innerHTML = `<div class="muted">${escapeHtml(t('search.loadingStations'))}</div>`;
     $('loadMoreRow').classList.add('hidden');
   }
   try {
-    const r = await boxFetch(state.currentBox, url);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const page = await r.json() || [];
+    // Query radio-browser DIRECTLY from the app (reliable internet, real CPU)
+    // instead of routing through the box agent — the box only ever needs the
+    // final stream URL. This is the app-first direction and it removes the box
+    // as a point of failure for search (the HTTP 502s in #121). The
+    // radiobrowser client does its own multi-mirror failover, so no per-call
+    // retry is needed here.
+    const page = await RadioSearch(buildSearchOpts()) || [];
     if (append) {
       state.searchResults = state.searchResults.concat(page);
     } else {
@@ -3323,6 +3358,8 @@ function renderSearchResults() {
       renderPresets();
       try {
         await PlayURL(state.currentBox.host, state.currentBox.port, url, s.name, chain, s.stationuuid || '');
+        // radio-browser click stat now fired app-side (the box no longer does it).
+        if (s.stationuuid) { try { RadioClick(s.stationuuid); } catch {} }
         setTimeout(refreshStatus, 1200);
       } catch (err) {
         state.nowPlayState = '';
@@ -3511,11 +3548,17 @@ $('settingsBoxSelect').onchange = () => {
   }
 };
 $('settingsRefreshBtn').onclick = async () => {
-  $('settingsRefreshBtn').disabled = true;
-  await discoverBoxes();
-  renderSettingsBoxSelect();
-  loadBoxSettings();
-  $('settingsRefreshBtn').disabled = false;
+  const rb = $('settingsRefreshBtn');
+  rb.disabled = true;
+  rb.classList.add('spinning'); // visible feedback while refreshing, like the topbar refresh
+  try {
+    await discoverBoxes();
+    renderSettingsBoxSelect();
+    loadBoxSettings();
+  } finally {
+    rb.classList.remove('spinning');
+    rb.disabled = false;
+  }
 };
 
 // uidSuffixFor returns the last 4 characters of the device ID as a
@@ -4145,9 +4188,20 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini" id="securityRebootBtn">${escapeHtml(t('speaker.rebootNow'))}</button>
       </div>` : '';
 
-    body.innerHTML = `
+    // Prominent update banner at the very TOP of Speaker Settings whenever an
+    // update is available (softwareBtn is only set then). Moved here from the
+    // music view so normal users see it where they manage the speaker and do
+    // not mis-click it while just listening. The update button lives in the
+    // banner now; the software kv-row below keeps the version status text.
+    const updateBanner = softwareBtn ? `
+      <div class="update-banner" style="margin-bottom:14px">
+        <div class="update-msg"><b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
+          <small class="muted">${escapeHtml(t('update.rebootNote'))}</small></div>
+        ${softwareBtn}
+      </div>` : '';
+    body.innerHTML = updateBanner + `
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.softwareLabel'))}</span>
-        <span class="kv-val">${softwareLine} ${softwareBtn}</span></div>
+        <span class="kv-val">${softwareLine}</span></div>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.usbStickLabel'))}</span>
         <span class="kv-val">${stickLine}</span></div>
       ${securityWarn}
@@ -5033,6 +5087,10 @@ $('view-setup').innerHTML = `
     <button class="btn btn-primary" id="setupGo" disabled>${escapeHtml(t('setup.goBtn'))}</button>
     <div id="setupResult" class="setup-result"></div>
   </div>
+  <div class="setup-section setup-skip-section" id="setupSkipSection">
+    <button class="btn" id="setupSkipToInstall">${escapeHtml(t('setup.skipToInstallBtn'))}</button>
+    <p class="muted small">${escapeHtml(t('setup.skipToInstallHint'))}</p>
+  </div>
 `;
 
 // Wire the setup-tab name combobox with the same helper used in
@@ -5077,8 +5135,20 @@ wireCombobox('setupName', 'setupNameToggle', 'setupNameList', getRoomNames());
 })();
 
 $('drivesRefresh').onclick = () => refreshDrives(true);
+// Skip-to-install: the user already prepared a stick and plugged it into the
+// speaker, so jump straight to "wait for the speaker, then install STR over
+// the network", bypassing the PC stick-prepare steps entirely. ssid/pass are
+// blank here (the stick already carries the WLAN config); the await panel just
+// waits for the box to appear and runs the install.
+$('setupSkipToInstall').onclick = () => {
+  showAwaitBoxReadyPanel({ ssid: '', pass: '', html: `<div class="setup-ok">${escapeHtml(t('setup.skipToInstallBtn'))}</div>` });
+};
 $('setupGo').onclick = doSetup;
-$('wlanRefresh').onclick = loadWifiProfiles;
+$('wlanRefresh').onclick = async () => {
+  const rb = $('wlanRefresh');
+  rb.classList.add('spinning'); // consistent spin feedback like the other refresh buttons
+  try { await loadWifiProfiles(); } finally { rb.classList.remove('spinning'); }
+};
 $('wlanSelect').onchange = onWifiSelect;
 $('wlanShowPass').onclick = togglePasswordVisibility;
 
@@ -5701,12 +5771,18 @@ async function updateDrivePanels() {
       // as an update.
       const same = fromFull === toFull;
       const fromShort = fromFull || t('common.unknown');
-      upd.innerHTML = (same
+      // Lead with the "already configured, just continue" message and the
+      // continue button. The version / update-available line goes last and
+      // muted: shown too prominently at the top it pulls normal users into
+      // clicking "update" mid-setup instead of continuing to the speaker.
+      const verLine = same
         ? `<b>${escapeHtml(t('setup.stickCurrent'))}</b> <small>${escapeHtml(t('setup.versionLabel', { version: fromShort }))}</small>`
-        : `<b>${escapeHtml(t('setup.stickUpdateAvail'))}</b> <small>${escapeHtml(fromShort)} &rarr; ${escapeHtml(toFull)}</small>`)
-        + ` <div class="muted small" style="margin-top:6px">${escapeHtml(t('setup.alreadyConfigured'))}</div>`
+        : `<b>${escapeHtml(t('setup.stickUpdateAvail'))}</b> <small>${escapeHtml(fromShort)} &rarr; ${escapeHtml(toFull)}</small>`;
+      upd.innerHTML =
+        `<div>${escapeHtml(t('setup.alreadyConfigured'))}</div>`
         + `<div style="margin-top:10px"><button class="btn btn-mini" id="setupContinue">${escapeHtml(t('setup.continueBtn'))}</button>`
-        + ` <span class="muted small">${escapeHtml(t('setup.continueHint'))}</span></div>`;
+        + ` <span class="muted small">${escapeHtml(t('setup.continueHint'))}</span></div>`
+        + `<div class="muted small" style="margin-top:12px">${verLine}</div>`;
       upd.classList.remove('hidden');
       const contBtn = $('setupContinue');
       if (contBtn) contBtn.onclick = doContinueWithStick;
@@ -6266,7 +6342,41 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
     const log = (result && result.log)
       ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>`
       : '';
-    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + log);
+    // SSH repair fallback (F): offer it when the install failed in a way the
+    // SSH-copy-to-NAND path can rescue (an unreadable/faulty stick, an install
+    // script error, or a timeout) and SSH was reachable enough to even start.
+    // It bypasses the stick by staging the embedded files on NAND over SSH.
+    const repairCodes = ['stick-io-error', 'install-error', 'install-timeout', 'install-script-error'];
+    const canRepair = result && repairCodes.indexOf(result.code) >= 0;
+    const repairBtn = canRepair
+      ? `<div class="setup-repair" style="margin-top:12px">`
+        + `<button class="btn btn-primary btn-mini" id="installRepairSSH">${escapeHtml(t('setup.repairSSHBtn'))}</button>`
+        + ` <span class="muted small">${escapeHtml(t('setup.repairSSHHint'))}</span></div>`
+      : '';
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + repairBtn + log);
+    const repEl = $('installRepairSSH');
+    if (repEl) {
+      repEl.onclick = async () => {
+        repEl.disabled = true;
+        render(`<div class="muted">${escapeHtml(t('setup.repairSSHRunning'))}</div>`);
+        try {
+          const rr = await RepairInstallViaSSH(foundBox.host, foundBox.model || foundBox.type || '');
+          if (rr && rr.ok) {
+            render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>`
+              + `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`);
+            discoverBoxes();
+          } else {
+            const m2 = (rr && rr.message) || 'unknown';
+            const log2 = (rr && rr.log)
+              ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(rr.log)}</pre></details>`
+              : '';
+            render(`<div class="setup-err">${escapeHtml(t('setup.repairSSHFailed', { msg: m2 }))}</div>` + log2);
+          }
+        } catch (e) {
+          render(`<div class="setup-err">${escapeHtml(t('setup.repairSSHFailed', { msg: String(e) }))}</div>`);
+        }
+      };
+    }
     const dlBtn = $('installSaveLogs');
     if (dlBtn) {
       dlBtn.onclick = async () => {

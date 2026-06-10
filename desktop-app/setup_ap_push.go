@@ -25,6 +25,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -70,6 +71,35 @@ func (a *App) PushWLANToBox(host, ssid, password, name string) (SetupAPPushResul
 		return res, fmt.Errorf("ssid required")
 	}
 	a.logger.Info("push wlan: starting", "host", host, "ssid", ssid, "hasPassword", password != "", "name", name)
+
+	// Primary path: the SMSC wifi chipset's GoAhead goform handler on port 80.
+	// On BCO/taigan the :8090 addWirelessProfile is accepted but never applied
+	// (cloud-dead MargeHSM); the chipset goform actually performs the join,
+	// bypassing :8090 entirely (live taigan 2026-06-10). Try it first; on any
+	// failure (e.g. a model without the GoAhead :80 stack -> 404) fall through
+	// to the :8090 gate sequence below, which is the right path for
+	// rhino/Series-II. Either way the box drops the setup-AP and the caller
+	// polls the home LAN for the new IP.
+	res.Step = "goform"
+	if msg, err := boseGoformWLAN(a.ctx, host, ssid, password); err != nil {
+		if isExpectedRSTOnSetupAP(err) {
+			res.LogTail = append(res.LogTail, "goform OK (RST as expected at setup-AP teardown): "+err.Error())
+			res.OK = true
+			res.Step = "done"
+			res.Message = "credentials sent (chipset path) — speaker is joining your Wi-Fi"
+			a.logger.Info("push wlan: goform path took (RST)", "host", host)
+			return res, nil
+		}
+		res.LogTail = append(res.LogTail, "goform unavailable, falling back to :8090 gates: "+err.Error())
+		a.logger.Info("push wlan: goform unavailable, using :8090 fallback", "host", host, "err", err)
+	} else {
+		res.LogTail = append(res.LogTail, "goform OK: "+msg)
+		res.OK = true
+		res.Step = "done"
+		res.Message = "credentials sent (chipset path) — speaker is joining your Wi-Fi"
+		a.logger.Info("push wlan: goform path took", "host", host)
+		return res, nil
+	}
 
 	// Step 1: language gate. CRITICAL: sysLanguage=0 is a no-op for
 	// the gate. Live-verified 2026-05-30 on a factory-reset taigan
@@ -175,6 +205,59 @@ func (a *App) PushWLANToBox(host, ssid, password, name string) (SetupAPPushResul
 	res.Step = "done"
 	res.Message = "credentials sent — speaker is joining your Wi-Fi"
 	return res, nil
+}
+
+// boseGoformWLAN provisions Wi-Fi via the SMSC chipset's GoAhead web server on
+// port 80 (/goform/aformHandlerConfigureProfileSettings), the path the Bose
+// setup webpage (ap.js) itself emits. This is a different stack from the :8090
+// SoundTouch API and, on BCO/taigan, the one that actually APPLIES the profile
+// (the :8090 addWirelessProfile is accepted but never associates there). Form
+// fields and the Security/Cipher mapping are from ap.js, see
+// [[project_smsc_goform_provisioning]]. Returns the response body on success.
+// An RST/EOF/deadline is the expected setup-AP teardown as the chipset switches
+// to STA; the caller treats it as success via isExpectedRSTOnSetupAP.
+func boseGoformWLAN(ctx context.Context, host, ssid, password string) (string, error) {
+	// Default to WPA2-AES (Security=WPA2PSK, Cipher=CCMP) when a passphrase is
+	// given — it covers the overwhelming majority of home networks and is the
+	// exact pair ap.js sends for a WPA2 network (live-verified taigan). An open
+	// network sends no security/passphrase. WPA/WEP-only networks fall through
+	// to the :8090 gate path if the chipset rejects this.
+	security, cipher, passphrase := "", "", ""
+	if password != "" {
+		security, cipher, passphrase = "WPA2PSK", "CCMP", password
+	}
+	form := url.Values{}
+	form.Set("ConfigManual", "1")
+	form.Set("SSID", ssid)
+	form.Set("Passphrase", passphrase)
+	form.Set("Key0", "")
+	form.Set("Security", security)
+	form.Set("Cipher", cipher)
+	form.Set("DHCPClient", "1")
+	for _, k := range []string{"IP", "Mask", "DefGW", "DNSSrv1", "DNSSrv2", "ProxyServer", "ProxyServerPort"} {
+		form.Set(k, "")
+	}
+	endpoint := "http://" + host + "/goform/aformHandlerConfigureProfileSettings"
+	cctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err // RST/EOF/deadline -> caller's isExpectedRSTOnSetupAP
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("goform not present on this model (404)")
+	}
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("goform HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return fmt.Sprintf("HTTP %d %s", resp.StatusCode, strings.TrimSpace(string(b))), nil
 }
 
 // boseSetLanguage POSTs the language gate. Body is the raw

@@ -268,6 +268,34 @@ export namespace main {
 	        this.source = source["source"];
 	    }
 	}
+	export class RadioSearchOpts {
+	    q: string;
+	    cc: string;
+	    lang: string;
+	    tag: string;
+	    order: string;
+	    limit: number;
+	    offset: number;
+	    onlyok: boolean;
+	    top: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new RadioSearchOpts(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.q = source["q"];
+	        this.cc = source["cc"];
+	        this.lang = source["lang"];
+	        this.tag = source["tag"];
+	        this.order = source["order"];
+	        this.limit = source["limit"];
+	        this.offset = source["offset"];
+	        this.onlyok = source["onlyok"];
+	        this.top = source["top"];
+	    }
+	}
 	export class SetupAPPushResult {
 	    step: string;
 	    message: string;
@@ -401,6 +429,85 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace radiobrowser {
+	
+	export class Language {
+	    name: string;
+	    iso_639: string;
+	    stationcount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Language(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.iso_639 = source["iso_639"];
+	        this.stationcount = source["stationcount"];
+	    }
+	}
+	export class Station {
+	    stationuuid: string;
+	    name: string;
+	    url: string;
+	    url_resolved: string;
+	    favicon: string;
+	    homepage: string;
+	    tags: string;
+	    country: string;
+	    countrycode: string;
+	    language: string;
+	    state: string;
+	    codec: string;
+	    bitrate: number;
+	    votes: number;
+	    clickcount: number;
+	    clicktrend: number;
+	    lastcheckok: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Station(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.stationuuid = source["stationuuid"];
+	        this.name = source["name"];
+	        this.url = source["url"];
+	        this.url_resolved = source["url_resolved"];
+	        this.favicon = source["favicon"];
+	        this.homepage = source["homepage"];
+	        this.tags = source["tags"];
+	        this.country = source["country"];
+	        this.countrycode = source["countrycode"];
+	        this.language = source["language"];
+	        this.state = source["state"];
+	        this.codec = source["codec"];
+	        this.bitrate = source["bitrate"];
+	        this.votes = source["votes"];
+	        this.clickcount = source["clickcount"];
+	        this.clicktrend = source["clicktrend"];
+	        this.lastcheckok = source["lastcheckok"];
+	    }
+	}
+	export class Tag {
+	    name: string;
+	    stationcount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Tag(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.stationcount = source["stationcount"];
+	    }
 	}
 
 }

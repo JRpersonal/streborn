@@ -19,7 +19,11 @@
 
 set -u
 
-STICK="/media/sda1"
+# STICK defaults to the USB mount, but can be overridden via STR_STICK so the
+# desktop app's SSH repair fallback can stage install.sh + run.sh + rc.local +
+# the agent binary in a NAND directory and install from there when the USB
+# stick itself is unreadable (large-cluster/faulty stick, exit 126; ST30 #119).
+STICK="${STR_STICK:-/media/sda1}"
 RC_SRC="$STICK/rc.local"
 RC_DST="/mnt/nv/rc.local"
 RUN_SRC="$STICK/run.sh"

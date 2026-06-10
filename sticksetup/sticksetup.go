@@ -214,6 +214,44 @@ func WriteStickFiles(targetPath string, binaryBytes []byte, stickVersion string)
 	return written, nil
 }
 
+// StickFileSet returns exactly the files WriteStickFiles would write to a USB
+// stick, but in memory keyed by their stick-relative path. The desktop app's
+// SSH repair fallback (RepairInstallViaSSH) uses it to stage install.sh +
+// run.sh + rc.local + the agent binary on NAND and install from there when the
+// USB stick itself is unreadable (large-cluster/faulty stick, exit 126). Kept
+// in lock-step with WriteStickFiles so the SSH path installs the identical set.
+func StickFileSet(binaryBytes []byte, stickVersion string) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	stickFS := usbstick.Files()
+	err := fs.WalkDir(stickFS, ".", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		data, err := fs.ReadFile(stickFS, path)
+		if err != nil {
+			return err
+		}
+		files[path] = data
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(binaryBytes) > 0 {
+		files["streborn-armv7l"] = binaryBytes
+	}
+	files["remote_services"] = []byte("")
+	v := strings.TrimSpace(stickVersion)
+	if v == "" {
+		v = "1.0.0"
+	}
+	files["version.txt"] = []byte(v)
+	return files, nil
+}
+
 // IsBoseStick prueft ob auf dem Stick schon STR Files liegen
 // (also der Stick bereits bestueckt wurde).
 func IsBoseStick(path string) bool {

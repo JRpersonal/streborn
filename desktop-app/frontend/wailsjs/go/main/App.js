@@ -150,8 +150,32 @@ export function PushWLANToBox(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['PushWLANToBox'](arg1, arg2, arg3, arg4);
 }
 
+export function RadioClick(arg1) {
+  return window['go']['main']['App']['RadioClick'](arg1);
+}
+
+export function RadioLanguages(arg1, arg2) {
+  return window['go']['main']['App']['RadioLanguages'](arg1, arg2);
+}
+
+export function RadioSearch(arg1) {
+  return window['go']['main']['App']['RadioSearch'](arg1);
+}
+
+export function RadioTags(arg1) {
+  return window['go']['main']['App']['RadioTags'](arg1);
+}
+
+export function RadioVote(arg1) {
+  return window['go']['main']['App']['RadioVote'](arg1);
+}
+
 export function RebootBox(arg1, arg2) {
   return window['go']['main']['App']['RebootBox'](arg1, arg2);
+}
+
+export function RepairInstallViaSSH(arg1, arg2) {
+  return window['go']['main']['App']['RepairInstallViaSSH'](arg1, arg2);
 }
 
 export function ResolveStationLogo(arg1, arg2, arg3) {
