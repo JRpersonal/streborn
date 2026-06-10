@@ -425,6 +425,58 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 	}
 }
 
+// RefreshKnownBoxes re-probes only the speakers already in the discovery cache,
+// directly by their last-known IP, with NO mDNS browse and NO full /24 sweep.
+// The desktop refresh calls this FIRST so the boxes you already have update
+// their live values (reachable, version, name) within a second, then kicks off
+// the full DiscoverBoxes in the background to pick up new or moved speakers.
+// This is the common case ("I just want the current values of my known box")
+// and avoids making the user wait out the ~3 s mDNS + ~12 s LAN sweep for it.
+func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
+	a.discMu.Lock()
+	known := make([]BoxInfo, 0, len(a.discCache))
+	for _, e := range a.discCache {
+		known = append(known, e.box)
+	}
+	a.discMu.Unlock()
+	if len(known) == 0 {
+		return []BoxInfo{}, nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 6*time.Second)
+	defer cancel()
+	seen := map[string]BoxInfo{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, kb := range known {
+		kb := kb
+		if kb.Host == "" {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Fall back to the cached record if the direct probe misses; the
+			// sticky cache merge below keeps it from being downgraded/evicted.
+			b := kb
+			if probed, ok := probeSTR(ctx, kb.Host); ok {
+				b = probed
+			}
+			b = a.enrichBoxWithStockInfo(ctx, b)
+			mu.Lock()
+			seen[b.Host] = b
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	a.mergeDiscoveryCache(seen)
+	out := make([]BoxInfo, 0, len(seen))
+	for _, b := range seen {
+		out = append(out, b)
+	}
+	a.logger.Info("refresh known boxes done", "count", len(out))
+	return out, nil
+}
+
 // mergeBoxInfo keeps the richer of two records for the same physical box
 // so a thinner discovery cycle never downgrades the display. cur is this
 // cycle, prev the cached record. This is a safety net; the real fix is to
@@ -2641,7 +2693,16 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 		return nil
 	}
 	if err := a.updateAgentViaHTTP(host, port, bin); err != nil {
-		return err
+		// The small preflight GET can pass while the 10 MB POST still fails: on
+		// BCO the :17008 REDIRECT path closes the connection mid-upload (live
+		// 2026-06-11, "connection forcibly closed"). Fall back to SSH-OTA instead
+		// of surfacing the error. SSH writes .new and size-verifies before the
+		// atomic rename, so a mid-upload failure never corrupts the live binary.
+		a.logger.Warn("update agent: HTTP OTA failed, falling back to SSH-OTA", "host", host, "err", err)
+		if sshErr := a.updateAgentViaSSH(host, bin); sshErr != nil {
+			return fmt.Errorf("HTTP OTA failed (%v) and the SSH fallback also failed: %w", err, sshErr)
+		}
+		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
 	}
 	a.refreshStickAfterOTA(host)
 	return nil

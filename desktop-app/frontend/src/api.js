@@ -7,6 +7,7 @@
 
 export {
   DiscoverBoxes,
+  RefreshKnownBoxes,
   GetPresets,
   SetPreset,
   DeletePreset,
