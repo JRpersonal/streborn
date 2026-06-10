@@ -3,6 +3,14 @@
 <head>
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <!-- Defense-in-depth against injected content from the untrusted radio-browser
+         catalogue (station name/tags/favicon). script-src has NO 'unsafe-inline':
+         even if an escaping bug slipped a <script> or on*= handler through, it
+         could not run and reach the Wails Go bindings. style-src keeps
+         'unsafe-inline' (the UI sets inline style="" widely; style injection is
+         not code execution). img-src allows remote station favicons + data: tiles;
+         connect-src allows the app to reach speakers on the LAN over http(s). -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; connect-src 'self' http: https: ws: wss:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"/>
     <title>ST Reborn</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
 </head>

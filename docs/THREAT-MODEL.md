@@ -36,6 +36,11 @@ DNS server for any other device, and does not phone home.
   speaker's own trust store.
 - **GitHub repository** and its CI build artifacts.
 - **Website** that hosts download links.
+- **Third-party radio catalogue (radio-browser.info).** Station
+  entries (name, tags, homepage, favicon URL, stream URL) are
+  community-submitted and fully untrusted. They flow into the desktop
+  app's webview and into the speaker (playback + presets), so they are
+  treated as an attacker-controlled input boundary.
 
 Each boundary is covered in detail in
 [`SECURITY.md`](../SECURITY.md).
@@ -51,6 +56,18 @@ Each boundary is covered in detail in
   hostnames the speaker resolves to `127.0.0.1`.
 - All audio traffic uses the speaker's existing UPnP AVTransport
   endpoint. STR never proxies audio through an external service.
+- Untrusted radio-catalogue fields are escaped before they reach the
+  desktop app's DOM (HTML/attribute escaping), the favicon URL is only
+  ever placed in escaped data-attributes and the live `<img src>` is set
+  to a Go-validated URL, and a strict Content-Security-Policy (no
+  `unsafe-inline` script) means an injected handler could not reach the
+  Wails Go bindings even if escaping were bypassed.
+- The stream proxy refuses to fetch loopback/link-local/unspecified
+  addresses (incl. the 169.254.169.254 cloud-metadata IP) at dial time,
+  so a malicious station stream URL cannot turn the agent into an SSRF
+  vector against the speaker's own privileged services. Private LAN
+  ranges stay reachable so a user's local Icecast/DLNA stream still
+  plays.
 
 ## Inherited speaker firmware caveats
 
