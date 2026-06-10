@@ -743,8 +743,15 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	//  3. point the box at THIS slot's stream first (now_playing shows the name
 	//     and buffers) and load the playlist audio after, so the box buffers
 	//     until audio flows.
+	// Log every app-side slot recall so a remote "recall does nothing" report
+	// (ST20 #45) shows the preset shape that was attempted.
+	s.logger.Info("preset slot recall (app)", "slot", slot, "type", p.Type, "hasURI", p.URI != "", "account", p.Account)
+	if p.Type == "spotify" && p.URI == "" {
+		s.logger.Warn("spotify preset recall (app): type=spotify but empty URI, falling through to radio path", "slot", slot, "name", p.Name)
+	}
 	if p.Type == "spotify" && p.URI != "" {
 		if s.spotifyPlay == nil {
+			s.logger.Warn("spotify preset recall (app): Spotify not configured on this box", "slot", slot)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error": "Spotify not configured", "slot": slot, "name": p.Name,
 			})
