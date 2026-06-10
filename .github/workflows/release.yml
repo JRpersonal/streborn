@@ -843,6 +843,15 @@ jobs:
 
           The website at st-reborn.de fetches \`manifest.json\` to render the current download links. The desktop app filenames carry the version; the stick agent binaries keep stable \`/releases/latest/download/<file>\` URLs for direct linking.
 
+          ### System requirements
+
+          | | |
+          |---|---|
+          | Windows | Windows 10 or 11, 64-bit. The app uses Microsoft Edge WebView2; Windows 7 and 8 are not supported. |
+          | macOS | macOS 12 Monterey or newer. |
+          | Linux | 64-bit (x86_64) with WebKitGTK (webkit2gtk 4.x) on a current glibc-based distribution. |
+          | Speaker | Bose SoundTouch 10, 20, 30 or Portable on the final Bose firmware (27.0.6). |
+
           ### Verify your download
 
           Every binary in this release is attested by GitHub's build provenance system.

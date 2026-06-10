@@ -3853,6 +3853,10 @@ function renderBoxSettings(s, box) {
   const uid = uidSuffixFor(box);
 
   $('settingsBody').innerHTML = `
+    <div class="settings-section" id="stickInfoSection">
+      <h3>${escapeHtml(t('settingsView.statusHeading'))}</h3>
+      <div id="stickInfoBody"><span class="muted small">${escapeHtml(t('common.loading'))}</span></div>
+    </div>
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.nameHeading'))}</h3>
       <div class="setting-row">
@@ -4032,10 +4036,6 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini" id="appRegionSave">${escapeHtml(t('common.save'))}</button>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.regionHelp'))}</small>
-    </div>
-    <div class="settings-section" id="stickInfoSection">
-      <h3>${escapeHtml(t('settingsView.statusHeading'))}</h3>
-      <div id="stickInfoBody"><span class="muted small">${escapeHtml(t('common.loading'))}</span></div>
     </div>
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.actionsHeading'))}</h3>
