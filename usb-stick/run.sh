@@ -227,15 +227,30 @@ ensure_sshd_running() {
         setup_log "sshd already running, leaving it alone"
         return 0
     fi
+    # Bose's /etc/init.d/sshd only starts sshd when the stick's
+    # remote_services marker is present, but it still `exit 0`s when it
+    # skips ("Not starting sshd"). So on a no-stick steady-state boot the
+    # init script is a silent no-op yet reports success. Never trust its
+    # exit code: try it, then VERIFY a real sshd process, and fall through
+    # to starting the daemon directly. Host keys ship in /etc/ssh, so the
+    # direct start works without the stick. Without this, :22 stays closed
+    # on stick-out boots and the SSH-based uninstall / diagnostics cannot
+    # reach the box (live taigan 2026-06-10).
     if [ -x /etc/init.d/sshd ]; then
-        /etc/init.d/sshd start >/dev/null 2>&1 \
-            && setup_log "sshd started via /etc/init.d/sshd" \
-            && return 0
+        /etc/init.d/sshd start >/dev/null 2>&1
+        if pidof sshd >/dev/null 2>&1; then
+            setup_log "sshd started via /etc/init.d/sshd"
+            return 0
+        fi
     fi
     if [ -x /usr/sbin/sshd ]; then
-        /usr/sbin/sshd >/dev/null 2>&1 \
-            && setup_log "sshd started via /usr/sbin/sshd direct" \
-            && return 0
+        /usr/sbin/sshd >/dev/null 2>&1
+        if pidof sshd >/dev/null 2>&1; then
+            setup_log "sshd started via /usr/sbin/sshd direct"
+            return 0
+        fi
+        setup_log "sshd start: /usr/sbin/sshd ran but no sshd process appeared"
+        return 1
     fi
     setup_log "sshd start: no init script and no /usr/sbin/sshd found"
     return 1
