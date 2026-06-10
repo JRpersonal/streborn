@@ -716,8 +716,11 @@ body {
   animation: track-marquee var(--track-dur, 6s) linear infinite;
 }
 @keyframes track-marquee {
-  0%, 10%   { left: 0; }
-  75%, 100% { left: calc(-1 * var(--track-scroll, 0px)); }
+  /* Longer pause at the start (0-22%) so after the loop jumps back to the
+     beginning the user can read the start of the title/artist before it
+     scrolls again; hold at the end (78-100%) before the wrap. */
+  0%, 22%   { left: 0; }
+  78%, 100% { left: calc(-1 * var(--track-scroll, 0px)); }
 }
 .preset .url { font-size: 10px; color: #777; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preset-head { display: flex; justify-content: space-between; }

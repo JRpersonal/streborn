@@ -3,6 +3,7 @@
 import {main} from '../models';
 import {sticksetup} from '../models';
 import {wifiprofiles} from '../models';
+import {radiobrowser} from '../models';
 
 export function AppInfo():Promise<main.AppInfo>;
 
@@ -78,7 +79,19 @@ export function ProbeSetupAP():Promise<main.BoxInfo|boolean>;
 
 export function PushWLANToBox(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.SetupAPPushResult>;
 
+export function RadioClick(arg1:string):Promise<void>;
+
+export function RadioLanguages(arg1:string,arg2:number):Promise<Array<radiobrowser.Language>>;
+
+export function RadioSearch(arg1:main.RadioSearchOpts):Promise<Array<radiobrowser.Station>>;
+
+export function RadioTags(arg1:number):Promise<Array<radiobrowser.Tag>>;
+
+export function RadioVote(arg1:string):Promise<void>;
+
 export function RebootBox(arg1:string,arg2:number):Promise<void>;
+
+export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
 
 export function ResolveStationLogo(arg1:string,arg2:string,arg3:Array<string>):Promise<string>;
 
