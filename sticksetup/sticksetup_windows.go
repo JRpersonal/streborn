@@ -44,6 +44,11 @@ func listDrivesWindows() ([]Drive, error) {
 			continue
 		}
 
+		// Time the per-drive volume queries: on a just-inserted stick
+		// these GetDiskFreeSpaceEx / GetVolumeInformation calls can block
+		// for seconds while Windows finishes mounting, which is the
+		// user-reported "search hangs 10-20s then the stick appears".
+		dstart := time.Now()
 		var freeBytesAvail, totalBytes, totalFreeBytes uint64
 		_, _, _ = getDiskFreeSpaceEx.Call(
 			uintptr(unsafe.Pointer(rootPtr)),
@@ -88,6 +93,8 @@ func listDrivesWindows() ([]Drive, error) {
 			HasStick:    hasStick,
 			Description: descForDrive(root, label, fs, int64(totalBytes)),
 		})
+		Logger.Info("drive probed", "drive", root, "fs", fs,
+			"ms", time.Since(dstart).Milliseconds(), "hasStick", hasStick)
 	}
 	return out, nil
 }

@@ -679,6 +679,7 @@
   "setup.stickFsLine": "Stick ist {{fs}} formatiert.",
   "setup.stickFsHelp": "Der Bose-Lautsprecher liest nur FAT32. Der Stick wird beim Vorbereiten neu formatiert (Windows fragt einmal nach Administrator-Rechten). Alle Daten auf dem Stick gehen verloren.",
   "setup.stickCurrent": "Stick ist aktuell.",
+  "setup.stickRefreshHint": "Du kannst die STR-Dateien mit dem Aktualisieren-Button unten trotzdem neu auf den Stick schreiben (z.B. um run.sh nach einem STR-Update zu erneuern).",
   "setup.versionLabel": "Version {{version}}",
   "setup.stickUpdateAvail": "Aktualisierung verfügbar.",
   "setup.alreadyConfigured": "Bereits konfigurierter Stick. Wenn du ihn erneut benutzen willst (z.B. anderer Lautsprecher, neue WLAN-Daten oder neuer Name), wird die Konfiguration unten beim Speichern neu auf den Stick geschrieben.",

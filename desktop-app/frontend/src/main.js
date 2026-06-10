@@ -5775,9 +5775,14 @@ async function updateDrivePanels() {
       // continue button. The version / update-available line goes last and
       // muted: shown too prominently at the top it pulls normal users into
       // clicking "update" mid-setup instead of continuing to the speaker.
-      const verLine = same
+      // The "Update USB stick" button (setupGo, label goBtnUpdate) re-writes the
+      // stick unconditionally, even when the version matches. Spell that out so a
+      // user who wants to refresh run.sh/agent on an already-current stick (e.g.
+      // after an STR update) sees that it is offered, not just "already done".
+      const verLine = (same
         ? `<b>${escapeHtml(t('setup.stickCurrent'))}</b> <small>${escapeHtml(t('setup.versionLabel', { version: fromShort }))}</small>`
-        : `<b>${escapeHtml(t('setup.stickUpdateAvail'))}</b> <small>${escapeHtml(fromShort)} &rarr; ${escapeHtml(toFull)}</small>`;
+        : `<b>${escapeHtml(t('setup.stickUpdateAvail'))}</b> <small>${escapeHtml(fromShort)} &rarr; ${escapeHtml(toFull)}</small>`)
+        + `<br><span class="muted small">${escapeHtml(t('setup.stickRefreshHint'))}</span>`;
       upd.innerHTML =
         `<div>${escapeHtml(t('setup.alreadyConfigured'))}</div>`
         + `<div style="margin-top:10px"><button class="btn btn-mini" id="setupContinue">${escapeHtml(t('setup.continueBtn'))}</button>`

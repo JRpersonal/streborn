@@ -19,9 +19,9 @@ The final firmware Bose shipped before the cloud shutdown on 2026-02. Anything o
 
 | Model | Latest Bose `softwareVersion` (SCM) | Build date |
 | --- | --- | --- |
-| SoundTouch 10 | (to be confirmed from a diagnostic) | (to be confirmed) |
+| SoundTouch 10 | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | **2022-08-04** |
 | SoundTouch 20 | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | **2022-08-04** |
-| SoundTouch 30 | (to be confirmed from a diagnostic) | (to be confirmed) |
+| SoundTouch 30 | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | **2022-08-04** |
 | SoundTouch Portable | (to be confirmed from a diagnostic) | (to be confirmed) |
 
 ## SoundTouch 20
@@ -70,11 +70,22 @@ The final firmware Bose shipped before the cloud shutdown on 2026-02. Anything o
 
 ## SoundTouch 10
 
-Reference target. Detailed fingerprint not yet captured from a diagnostic bundle in this format; expected to be `moduleType=sm2`, `variant=rhino` based on prior bench observation.
+Reference target. Confirmed from a diagnostic bundle (2026-06-10, #123 box-1):
+
+| `moduleType` | SCM `softwareVersion` | Build year | Latest official? | `variant` | `variantMode` | Components present | WLAN interfaces | `countryCode` / `regionCode` samples |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `rhino` | `normal` | SCM, PackagedProduct | `wlan0`, `wlan1` | `GB` / `GB` |
 
 ## SoundTouch 30
 
-Not yet observed in a diagnostic bundle.
+Confirmed from a diagnostic bundle (2026-06-10, #123 box-0):
+
+| `moduleType` | SCM `softwareVersion` | Build year | Latest official? | `variant` | `variantMode` | Components present | WLAN interfaces | `countryCode` / `regionCode` samples |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `mojo` | `normal` | SCM, PackagedProduct | `wlan0`, `wlan1` | `GB` / `GB` |
+
+- Kernel: `Linux mojo 3.14.43+ #137 Wed Oct 25 21:06:53 EDT 2017 armv7l` (same kernel as ST10/ST20).
+- `is_series_one=0`: like the ST10 (`rhino`), the ST30 (`mojo`) is **not** chipset-whitelisted. STR's `:8888` is reached directly once the iptables INPUT ACCEPT rule opens it; the LD_PRELOAD SoftwareUpdate shim is unnecessary and is skipped for `sm2` chassis (the `.so` cannot even load on `mojo`). See `usb-stick/run.sh` `shim_stage_wrapper`.
 
 ## SoundTouch Portable
 

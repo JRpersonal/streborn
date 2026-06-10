@@ -663,6 +663,7 @@
   "setup.stickFsLine": "Stick is formatted as {{fs}}.",
   "setup.stickFsHelp": "The Bose speaker only reads FAT32. The stick will be reformatted during preparation (Windows prompts once for administrator rights). All data on the stick is lost.",
   "setup.stickCurrent": "Stick is up to date.",
+  "setup.stickRefreshHint": "You can still re-write the STR files to the stick with the update button below (e.g. to refresh run.sh after an STR update).",
   "setup.versionLabel": "Version {{version}}",
   "setup.stickUpdateAvail": "Update available.",
   "setup.alreadyConfigured": "Already configured stick. If you want to reuse it (different speaker, new Wi-Fi or new name), the configuration below is rewritten to the stick on save.",

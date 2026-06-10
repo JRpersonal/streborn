@@ -9,13 +9,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	usbstick "github.com/JRpersonal/streborn/usb-stick"
 )
+
+// Logger is the package logger. The desktop app points it at its file
+// logger (see NewApp) so drive-discovery timing lands in str.log; until
+// then it falls back to the default logger. Mirrors dlna.Logger.
+var Logger = slog.Default()
 
 // Drive beschreibt ein potenzielles Ziellaufwerk fuer den Stick Setup.
 type Drive struct {
@@ -33,14 +40,28 @@ type Drive struct {
 // Auf Windows: alle Drive Letters die nicht Fixed sind. Auf Mac/Linux:
 // alle Mounts unter /Volumes bzw /media die fat32 sind.
 func ListDrives() ([]Drive, error) {
+	start := time.Now()
+	var drives []Drive
+	var err error
 	switch runtime.GOOS {
 	case "windows":
-		return listDrivesWindows()
+		drives, err = listDrivesWindows()
 	case "darwin":
-		return listDrivesMac()
+		drives, err = listDrivesMac()
 	default:
-		return listDrivesLinux()
+		drives, err = listDrivesLinux()
 	}
+	// Timing matters: a freshly inserted stick can leave Windows still
+	// mounting it, so the per-drive volume queries block for seconds
+	// (user-reported 10-20s with nothing showing). Logged so a slow
+	// search is measurable instead of an invisible hang.
+	ms := time.Since(start).Milliseconds()
+	if err != nil {
+		Logger.Warn("ListDrives failed", "ms", ms, "err", err)
+	} else {
+		Logger.Info("ListDrives done", "ms", ms, "count", len(drives))
+	}
+	return drives, err
 }
 
 // MinStickBytes is the lower bound the desktop app enforces on an install
