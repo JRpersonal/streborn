@@ -121,6 +121,10 @@ func (a *App) startup(ctx context.Context) {
 	// that returns zero results is indistinguishable from "no servers
 	// on the LAN" in the diagnostic bundle.
 	dlna.Logger = a.logger.With("comp", "dlna")
+	// Same for sticksetup, so USB-stick discovery timing (a slow search
+	// while Windows finishes mounting a freshly inserted stick) is visible
+	// in the diagnostic bundle instead of an unexplained UI hang.
+	sticksetup.Logger = a.logger.With("comp", "sticksetup")
 	// Verbose startup line so users always see SOMETHING in the
 	// log when they hit "Save diagnostic logs", even on a session
 	// where they did not poke any features that emit further logs.
