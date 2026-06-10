@@ -12,6 +12,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -22,7 +23,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/sticksetup"
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
+	"streborn-app/agentbin"
 )
 
 // nullDevice points at the platform's null device — used to keep
@@ -340,8 +343,14 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		}
 		hint := classifySSHError(out, err)
 		res.Message = "install.sh execution failed: " + hint
-		a.logger.Warn("install_str: install.sh execution failed", "host", host, "err", err, "hint", hint)
-		res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
+		diag := boxInstallDiag(host)
+		// The rich diagnostics must also reach str.log, not only res.Log:
+		// a remote user's str.log is often all we get, and without this it
+		// showed just the one-line hint (no kernel/stick/dmesg evidence).
+		a.logger.Warn("install_str: install.sh execution failed",
+			"host", host, "model", model, "err", err, "code", res.Code,
+			"hint", hint, "installOutput", truncForLog(out, 4000), "boxDiag", truncForLog(diag, 8000))
+		res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diag
 		// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
 		return res, nil
 	}
@@ -427,6 +436,91 @@ func buildStickProbeCmd(paths []string) string {
 			`echo "STICKPATH=$cand"; exit 0; ` +
 			`fi; done; fi; done; echo MISSING`)
 	return b.String()
+}
+
+// RepairInstallViaSSH is the install fallback for when the USB stick itself is
+// unreadable: install.sh dies with exit 126 / an I/O error because a large or
+// faulty stick was force-formatted FAT32 with a block size the speaker's old
+// kernel cannot read (ST30 #119). Instead of reading from the stick it stages
+// STR's embedded files (install.sh, run.sh, rc.local, the agent binary, ...)
+// into a NAND directory over SSH and runs install.sh from there with STR_STICK
+// pointing at that directory, bypassing the stick entirely. /mnt/nv is a
+// writable ubifs even when the USB mount is dead. Requires SSH up (Bose stock
+// root SSH) and a real embedded agent (release build, not a dev stub).
+func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
+	res := InstallResult{Step: "repair-ssh"}
+	const stage = "/mnt/nv/streborn-install"
+
+	if len(agentbin.Bytes()) == 0 {
+		res.Code = "no-embedded-agent"
+		res.Message = "this build has no embedded agent binary; SSH repair needs a release build"
+		return res, nil
+	}
+
+	hello, helloErr := boxSSHOutput(host, "echo STR_SSH_OK", 15*time.Second)
+	if !strings.Contains(hello, "STR_SSH_OK") {
+		res.Code = "ssh-failed"
+		res.Message = "SSH to speaker failed: " + classifySSHError(hello, helloErr)
+		a.logger.Warn("repair_ssh: ssh handshake failed", "host", host, "err", helloErr)
+		return res, nil
+	}
+
+	v := appVersion
+	if appBuild != "" && appBuild != "dev" {
+		v = appVersion + "+" + appBuild
+	}
+	files, err := sticksetup.StickFileSet(agentbin.Bytes(), v)
+	if err != nil {
+		res.Message = "could not assemble install files: " + err.Error()
+		return res, err
+	}
+
+	res.Step = "repair-stage"
+	if out, err := boxSSHOutput(host, "rm -rf "+stage+" && mkdir -p "+stage+"/bin", 20*time.Second); err != nil {
+		res.Code = "repair-stage-failed"
+		res.Message = "could not create NAND staging dir: " + classifySSHError(out, err)
+		a.logger.Warn("repair_ssh: mkdir failed", "host", host, "err", err, "out", truncForLog(out, 1000))
+		return res, nil
+	}
+
+	// Push each file via SSH stdin (same upload path the OTA uses). The agent
+	// binary (~10 MB) is the large one; everything else is a few KB.
+	for name, data := range files {
+		if i := strings.LastIndex(name, "/"); i >= 0 {
+			_, _ = boxSSHOutput(host, "mkdir -p "+stage+"/"+name[:i], 10*time.Second)
+		}
+		if out, err := boxSSHUploadStdin(host, "cat > "+stage+"/"+name, bytes.NewReader(data), 120*time.Second); err != nil {
+			res.Code = "repair-upload-failed"
+			res.Message = "could not upload " + name + " to NAND: " + classifySSHError(out, err)
+			a.logger.Warn("repair_ssh: upload failed", "host", host, "file", name, "err", err)
+			return res, nil
+		}
+	}
+	_, _ = boxSSHOutput(host, "chmod +x "+stage+"/install.sh "+stage+"/run.sh "+stage+"/streborn-armv7l 2>/dev/null", 15*time.Second)
+
+	res.Step = "repair-run"
+	out, err := boxSSHOutput(host, "STR_STICK="+stage+" sh "+stage+"/install.sh install 2>&1", installRunBudget(model))
+	res.Log = out
+	if err != nil {
+		res.Code = "repair-install-error"
+		hint := classifySSHError(out, err)
+		res.Message = "SSH repair install failed: " + hint
+		a.logger.Warn("repair_ssh: install failed", "host", host, "model", model, "err", err,
+			"hint", hint, "installOutput", truncForLog(out, 4000), "boxDiag", truncForLog(boxInstallDiag(host), 8000))
+		return res, nil
+	}
+	if strings.Contains(out, "FEHLER") || strings.Contains(out, "ERROR") {
+		res.Code = "repair-install-script-error"
+		res.Message = "install.sh reported an error during SSH repair. See log."
+		return res, nil
+	}
+
+	res.OK = true
+	res.Step = "reboot"
+	res.Message = "STR installed over SSH (USB stick bypassed). The speaker will reboot and join your Wi-Fi."
+	a.logger.Info("repair_ssh: install ran", "host", host, "outBytes", len(out))
+	_ = boxSSHFireAndForget(host, "(sleep 1; reboot) &", 4*time.Second)
+	return res, nil
 }
 
 // classifySSHError turns an opaque "exit status 255" + combined
@@ -802,6 +896,17 @@ func (a *App) waitForBoxLoad(host, model string) {
 }
 
 // boxInstallDiag gathers as much box state as possible over the SSH session that
+// truncForLog caps a possibly large multi-line blob so it stays usable as a
+// single slog attribute and keeps str.log from ballooning. The install-failure
+// path routes the box diagnostics through here into str.log, because str.log IS
+// part of the app's diagnostic export while InstallResult.Log is NOT.
+func truncForLog(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + fmt.Sprintf("\n...[truncated %d bytes]", len(s)-max)
+}
+
 // is already open when an install fails: kernel, firmware, partitions, block
 // devices, mounts, free space, stick contents, the remote_services marker, ssh
 // procs, and the USB/storage dmesg tail. It runs on ANY install failure where SSH
@@ -819,6 +924,12 @@ func boxInstallDiag(host string) string {
 		"echo '# mounts'; mount 2>&1",
 		"echo '# df'; df -h 2>&1",
 		"echo '# stick contents'; ls -la /media/sda1 /mnt/usb /run/media/* 2>&1 | head -40",
+		// install.sh head + line-ending/exec evidence: exit 126 is usually a
+		// CRLF script the box's BusyBox refuses, a non-executable/no-exec mount,
+		// or a media read failure mid-script. `od` on the first line reveals
+		// trailing 0d (CR); `file`/`head` show whether the script is readable.
+		"echo '# install.sh head'; head -5 /media/sda1/install.sh 2>&1",
+		"echo '# install.sh line endings (look for 0d)'; head -1 /media/sda1/install.sh 2>&1 | od -c 2>&1 | head -4",
 		"echo '# remote_services marker'; ls -la /media/sda1/remote_services /mnt/nv/remote_services 2>&1",
 		"echo '# ssh procs'; ps 2>&1 | grep -i ssh | grep -v grep",
 		"echo '# dmesg usb/storage'; dmesg 2>/dev/null | grep -iE 'usb|sd[a-z]|vfat|fat|mmc|scsi|i/o error|reset|error' | tail -60",
