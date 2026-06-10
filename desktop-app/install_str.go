@@ -304,7 +304,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			}
 			res.Code = "stick-missing"
 			res.Message = "install.sh did not appear under /media, /mnt or /run/media within 60 s. " +
-				"On a SoundTouch 30, if no stick mounts at all: try a small plain USB 2.0 stick (8 to 32 GB), avoid SD-card adapters and USB 3 / large drives, and try BOTH USB ports:" +
+				"On a SoundTouch 30, if no stick mounts at all: try a small plain USB 2.0 stick (4 to 32 GB), avoid SD-card adapters and USB 3 / large drives, and try BOTH USB ports:" +
 				"the rear USB-A port and the micro-USB port via a micro-USB OTG adapter. Reboot the speaker after inserting it." +
 				"If several sticks in both ports still do not mount, the speaker's USB port may be faulty."
 				res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
@@ -551,7 +551,7 @@ func classifySSHError(out string, err error) string {
 		// with a 64 KB cluster size the speaker's old kernel cannot read (the
 		// classic 64 GB case), an unclean write, or failing flash. Re-preparing
 		// with our formatter (32 KB clusters, capped) or a smaller stick fixes it.
-		return "the speaker could not read the stick (I/O error). The USB stick is likely faulty, or a large stick was formatted with a block size the speaker cannot read. Re-prepare it with the Format option, or use a smaller stick (8 to 32 GB)."
+		return "the speaker could not read the stick (I/O error). The USB stick is likely faulty, or a large stick was formatted with a block size the speaker cannot read. Re-prepare it with the Format option, or use a smaller stick (4 to 32 GB)."
 	case strings.Contains(low, "permission denied"):
 		return "speaker refused passwordless root login. Bose's stock firmware allows it when /media/sda1 has the remote_services marker. Reboot the speaker with the STR stick plugged in, then retry."
 	case strings.Contains(low, "connection refused"):
