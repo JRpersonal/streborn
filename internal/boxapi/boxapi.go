@@ -34,12 +34,23 @@ func New(host string) *Client {
 
 // Info enthaelt die statische Beschreibung der Box.
 type Info struct {
-	DeviceID    string `json:"deviceID"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Version     string `json:"version"`
-	Variant     string `json:"variant"`
-	CountryCode string `json:"countryCode"`
+	DeviceID         string `json:"deviceID"`
+	Name             string `json:"name"`
+	Type             string `json:"type"`
+	Version          string `json:"version"`
+	Variant          string `json:"variant"`
+	ModuleType       string `json:"moduleType"`
+	MargeAccountUUID string `json:"margeAccountUUID"`
+	IP               string `json:"ipAddress"`
+	CountryCode      string `json:"countryCode"`
+}
+
+// SetupStatus ist die Antwort von /setup. State ist z.B. "SETUP_AP_OOB"
+// (Box spannt den Bose Setup-AP auf) oder "SETUP_INACTIVE" (Setup beendet);
+// SystemState z.B. "SETUP_LANG_NOT_SET" / "SETUP_LANG_SET".
+type SetupStatus struct {
+	State       string `json:"state"`
+	SystemState string `json:"systemState"`
 }
 
 // Volume ist aktueller Lautstaerke Zustand.
@@ -109,34 +120,8 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 	}
 
 	// Info
-	{
-		var raw struct {
-			DeviceID    string `xml:"deviceID,attr"`
-			Name        string `xml:"name"`
-			Type        string `xml:"type"`
-			Components  []struct {
-				Category string `xml:"componentCategory"`
-				SwVer    string `xml:"softwareVersion"`
-			} `xml:"components>component"`
-			Variant     string `xml:"variant"`
-			CountryCode string `xml:"countryCode"`
-		}
-		if err := get("/info", &raw); err == nil {
-			s.Info = Info{
-				DeviceID:    raw.DeviceID,
-				Name:        raw.Name,
-				Type:        raw.Type,
-				Variant:     raw.Variant,
-				CountryCode: raw.CountryCode,
-			}
-			for _, c := range raw.Components {
-				if c.Category == "SCM" || s.Info.Version == "" {
-					// Software Version hat oft Trailing Buildinfo —
-					// nur die ersten Zahlen Punkte Zahlen behalten.
-					s.Info.Version = stripBuildSuffix(c.SwVer)
-				}
-			}
-		}
+	if info, err := c.GetInfo(ctx); err == nil {
+		s.Info = info
 	}
 
 	// Volume
@@ -180,31 +165,8 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 	}
 
 	// Network
-	{
-		var raw struct {
-			Count      int `xml:"wifiProfileCount,attr"`
-			Interfaces []struct {
-				Type      string `xml:"type,attr"`
-				Name      string `xml:"name,attr"`
-				MAC       string `xml:"macAddress,attr"`
-				IP        string `xml:"ipAddress,attr"`
-				SSID      string `xml:"ssid,attr"`
-				Frequency int    `xml:"frequencyKHz,attr"`
-				State     string `xml:"state,attr"`
-				Signal    string `xml:"signal,attr"`
-				Mode      string `xml:"mode,attr"`
-			} `xml:"interfaces>interface"`
-		}
-		if err := get("/networkInfo", &raw); err == nil {
-			s.Network.WifiProfileCount = raw.Count
-			for _, i := range raw.Interfaces {
-				s.Network.Interfaces = append(s.Network.Interfaces, NetworkInterface{
-					Type: i.Type, Name: i.Name, MAC: i.MAC, IP: i.IP,
-					SSID: i.SSID, Frequency: i.Frequency,
-					State: i.State, Signal: i.Signal, Mode: i.Mode,
-				})
-			}
-		}
+	if net, err := c.GetNetwork(ctx); err == nil {
+		s.Network = net
 	}
 
 	// Sources
@@ -234,6 +196,120 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 	}
 
 	return s, nil
+}
+
+// GetInfo liest /info und liefert die statische Box-Beschreibung inkl.
+// margeAccountUUID (leer = nicht gepaart / nach Factory-Reset),
+// moduleType/variant (taigan/scm/...) und der LAN-IP aus dem
+// networkInfo-Block (bevorzugt eine echte Adresse vor "0.0.0.0").
+func (c *Client) GetInfo(ctx context.Context) (Info, error) {
+	var raw struct {
+		DeviceID         string `xml:"deviceID,attr"`
+		Name             string `xml:"name"`
+		Type             string `xml:"type"`
+		MargeAccountUUID string `xml:"margeAccountUUID"`
+		ModuleType       string `xml:"moduleType"`
+		Variant          string `xml:"variant"`
+		CountryCode      string `xml:"countryCode"`
+		Components       []struct {
+			Category string `xml:"componentCategory"`
+			SwVer    string `xml:"softwareVersion"`
+		} `xml:"components>component"`
+		NetworkInfo []struct {
+			Type string `xml:"type,attr"`
+			IP   string `xml:"ipAddress"`
+		} `xml:"networkInfo"`
+	}
+	if err := c.getXML(ctx, "/info", &raw); err != nil {
+		return Info{}, err
+	}
+	info := Info{
+		DeviceID:         strings.TrimSpace(raw.DeviceID),
+		Name:             strings.TrimSpace(raw.Name),
+		Type:             strings.TrimSpace(raw.Type),
+		MargeAccountUUID: strings.TrimSpace(raw.MargeAccountUUID),
+		ModuleType:       strings.TrimSpace(raw.ModuleType),
+		Variant:          strings.TrimSpace(raw.Variant),
+		CountryCode:      strings.TrimSpace(raw.CountryCode),
+	}
+	for _, comp := range raw.Components {
+		if comp.Category == "SCM" || info.Version == "" {
+			// Software Version hat oft Trailing Buildinfo —
+			// nur die ersten Zahlen Punkte Zahlen behalten.
+			info.Version = stripBuildSuffix(comp.SwVer)
+		}
+	}
+	for _, n := range raw.NetworkInfo {
+		ip := strings.TrimSpace(n.IP)
+		if ip != "" && ip != "0.0.0.0" {
+			info.IP = ip
+			if n.Type == "SCM" {
+				break // SCM ist die maßgebliche Adresse
+			}
+		}
+	}
+	return info, nil
+}
+
+// GetNetwork liest /networkInfo (Interface-Zustand, IP, Profilanzahl).
+func (c *Client) GetNetwork(ctx context.Context) (Network, error) {
+	var raw struct {
+		Count      int `xml:"wifiProfileCount,attr"`
+		Interfaces []struct {
+			Type      string `xml:"type,attr"`
+			Name      string `xml:"name,attr"`
+			MAC       string `xml:"macAddress,attr"`
+			IP        string `xml:"ipAddress,attr"`
+			SSID      string `xml:"ssid,attr"`
+			Frequency int    `xml:"frequencyKHz,attr"`
+			State     string `xml:"state,attr"`
+			Signal    string `xml:"signal,attr"`
+			Mode      string `xml:"mode,attr"`
+		} `xml:"interfaces>interface"`
+	}
+	if err := c.getXML(ctx, "/networkInfo", &raw); err != nil {
+		return Network{}, err
+	}
+	net := Network{WifiProfileCount: raw.Count}
+	for _, i := range raw.Interfaces {
+		net.Interfaces = append(net.Interfaces, NetworkInterface{
+			Type: i.Type, Name: i.Name, MAC: i.MAC, IP: i.IP,
+			SSID: i.SSID, Frequency: i.Frequency,
+			State: i.State, Signal: i.Signal, Mode: i.Mode,
+		})
+	}
+	return net, nil
+}
+
+// GetSetupStatus liest /setup. Auf einer Box im Auslieferungszustand
+// liefert das z.B. state="SETUP_AP_OOB" systemstate="SETUP_LANG_NOT_SET".
+func (c *Client) GetSetupStatus(ctx context.Context) (SetupStatus, error) {
+	var raw struct {
+		State       string `xml:"state,attr"`
+		SystemState string `xml:"systemstate,attr"`
+	}
+	if err := c.getXML(ctx, "/setup", &raw); err != nil {
+		return SetupStatus{}, err
+	}
+	return SetupStatus{
+		State:       strings.TrimSpace(raw.State),
+		SystemState: strings.TrimSpace(raw.SystemState),
+	}, nil
+}
+
+// GetActiveWirelessProfile liest /getActiveWirelessProfile und liefert
+// die SSID des gespeicherten WLAN-Profils ("" wenn keins gesetzt ist).
+// Achtung: ein gesetztes Profil heißt NICHT, dass die Box auch
+// assoziiert ist (auf BCO/taigan kann ein Profil persistiert sein,
+// ohne dass der AP->STA-Wechsel je vollzogen wird).
+func (c *Client) GetActiveWirelessProfile(ctx context.Context) (string, error) {
+	var raw struct {
+		SSID string `xml:"ssid"`
+	}
+	if err := c.getXML(ctx, "/getActiveWirelessProfile", &raw); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(raw.SSID), nil
 }
 
 // ---------- Write ----------
