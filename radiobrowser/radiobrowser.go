@@ -11,9 +11,11 @@ package radiobrowser
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -84,9 +86,19 @@ type Language struct {
 	StationCount int    `json:"stationcount"`
 }
 
+// ipMirrorServerName is the hostname the hard-coded IP fallback mirror really
+// serves a TLS certificate for. Connecting to the bare IP with the default
+// client fails verification (the cert is for de1.api..., not the IP), so that
+// last-resort mirror used to ALWAYS error — leaving effectively two working
+// mirrors and a 502 to the user (radio search HTTP 502, #121) whenever the
+// primary was momentarily slow. Pinning ServerName lets the real cert validate
+// while still dialling the IP, so the fallback actually works.
+const ipMirrorServerName = "de1.api.radio-browser.info"
+
 // Client kapselt http.Client plus Mirror Rotation.
 type Client struct {
-	HTTP    *http.Client
+	HTTP    *http.Client // standard client for hostname mirrors
+	ipHTTP  *http.Client // client for IP-literal mirrors (TLS ServerName pinned)
 	UA      string
 	mu      sync.Mutex
 	mirrors []string
@@ -98,6 +110,12 @@ func New() *Client {
 	copy(mirrors, Mirrors)
 	return &Client{
 		HTTP: &http.Client{Timeout: 8 * time.Second},
+		ipHTTP: &http.Client{
+			Timeout: 8 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{ServerName: ipMirrorServerName},
+			},
+		},
 		// radio-browser asks clients to identify themselves via a
 		// descriptive User-Agent (it has no referral mechanism). Naming
 		// the project URL lets the radio-browser maintainers see where
@@ -380,7 +398,7 @@ func (c *Client) Click(ctx context.Context, uuid string) error {
 // be tried within the user-perceived wait — without this the first
 // slow mirror used to consume the entire 8 s handler budget and
 // failover was effectively dead.
-const perMirrorTimeout = 3 * time.Second
+const perMirrorTimeout = 6 * time.Second
 
 // fetchJSON probiert alle Mirrors der Reihe nach. Erster erfolgreicher
 // gewinnt. Bei Erfolg merken wir uns den Mirror als "primary" damit der
@@ -439,7 +457,13 @@ func (c *Client) tryMirror(parent context.Context, base, path string, out any) e
 	if c.UA != "" {
 		req.Header.Set("User-Agent", c.UA)
 	}
-	resp, err := c.HTTP.Do(req)
+	// IP-literal mirrors need the ServerName-pinned client so TLS validates
+	// against the real hostname's cert instead of failing on the bare IP.
+	client := c.HTTP
+	if u, perr := url.Parse(base); perr == nil && net.ParseIP(u.Hostname()) != nil {
+		client = c.ipHTTP
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

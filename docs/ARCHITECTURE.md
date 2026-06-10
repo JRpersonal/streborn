@@ -41,7 +41,7 @@ flowchart LR
   Agent -- "REST :8090 (info, sources, presets, zone)" --> BoseFW
   BoseFW -- ":17002 battery client (Portable, when BatteryMonitor is wedged)" --> Agent
   BoseFW -. "outbound cloud calls (:80 -> :9080, :443) redirected via Hosts + iptables" .-> Agent
-  Agent <-- "GET stations / tags" --> RadioBrowser
+  Desktop <-- "GET stations / tags / langs (radio search, app-side)" --> RadioBrowser
   BoseFW <-- "play stream URL" --> UpstreamCDN
   Agent -- "supervises, drives :3678" --> GLR
   GLR <-- "Spotify Connect (audio + control)" --> SpotifyAP
@@ -164,10 +164,8 @@ sequenceDiagram
   participant SP as STR streamproxy
   participant Box as Bose firmware
   User->>App: Type query "1live"
-  App->>Agent: GET /api/radio/search?q=1live
-  Agent->>RB: HTTPS GET /stations/search
-  RB-->>Agent: JSON, ranked by votes
-  Agent-->>App: stations[]
+  App->>RB: HTTPS GET /stations/search (app-side, direct)
+  RB-->>App: JSON, ranked by votes
   User->>App: Click play
   App->>Agent: POST /api/play {url, name, icon}
   Agent->>Box: SetURI on :8091 with<br/>http://127.0.0.1:8888/stream/raw?u=<b64>
@@ -381,7 +379,7 @@ See `desktop-app/update_tls.go`.
 
 | Service | Used by | Required? |
 |---|---|---|
-| radio-browser.info | Stick agent for `/api/radio/*` | Yes for radio search. Cached locally for already-known stations. No API key, no account. |
+| radio-browser.info | Desktop app (radio search/browse runs app-side, directly) | Yes for radio search/browse. No API key, no account. The speaker agent no longer calls it (the box only receives the final stream URL to play). |
 | Upstream radio CDNs | Speaker (proxied through the streamproxy) | Yes for actual audio. STR does not host or buffer the stream beyond the in-flight bytes. |
 | Spotify access points | go-librespot on the speaker (beta) | Only for Spotify Connect playback. Needs a Spotify account that has tapped the device once (Premium, per Spotify Connect). No STR account or token plane; credentials stay on the speaker. |
 | `st-reborn.de` update-check | Desktop app, once ~8 s after startup | Optional. Sends only version, build, OS, arch, UI locale; opt-out with `STR_NO_UPDATE_CHECK`. See flow 7 above and the privacy section below. |
@@ -398,8 +396,8 @@ the app. The complete picture of what talks to what:
 
 | Component | Talks to | What is sent |
 |---|---|---|
-| Speaker (agent + firmware) | **Never** the Bose cloud | STR redirects the Bose cloud hostnames to localhost and answers them itself (marge). The speaker only reaches the LAN, radio-browser.info (station search and metadata), and the upstream radio CDN (audio, proxied). |
-| Desktop app | `st-reborn.de` update-check, once at startup | Running version, build stamp, OS, CPU arch, UI locale. No account, no device ID, no personal data. Opt-out: `STR_NO_UPDATE_CHECK=1`. Radio and CDN traffic flow through the speaker agent, not the app. |
+| Speaker (agent + firmware) | **Never** the Bose cloud | STR redirects the Bose cloud hostnames to localhost and answers them itself (marge). The speaker only reaches the LAN and the upstream radio CDN (audio, proxied). Radio search/metadata is no longer fetched by the speaker; the desktop app queries radio-browser.info directly (app-first). |
+| Desktop app | `st-reborn.de` update-check, once at startup | Running version, build stamp, OS, CPU arch, UI locale. No account, no device ID, no personal data. Opt-out: `STR_NO_UPDATE_CHECK=1`. Radio search runs in the app (direct to radio-browser.info); only the audio CDN stream flows through the speaker agent. |
 | Desktop app webview | `icons.duckduckgo.com` | Only a radio station's own domain, to fetch its logo when the station ships no usable artwork. No user data, no account, no identifier. When DuckDuckGo also has nothing, a local letter monogram is drawn with no network call. Google's favicon service was deliberately not used. |
 | Website (`st-reborn.de`) | GoatCounter | Privacy-friendly, cookieless page analytics: no cookies, no cross-site tracking, the visitor IP is not stored. |
 
