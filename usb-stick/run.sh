@@ -651,6 +651,9 @@ shim_stage_wrapper() {
             *taigan*|*spotty*)
                 setup_log "shim stage: SKIP — BCO chassis (${VARIANT:-?}/${HOSTID:-?}). The LD_PRELOAD late-swap kills SoftwareUpdate, which on BCO boxes never actually forwards :8888 (spotty :17008 self-probe NOT STR) and races shepherdd's respawn, wedging scm_finalize / the Bose mesh init (live 2026-05-31: taigan boot bar stuck with NO setup-AP; spotty BoseApp never answers within 180s, M0 times out). External :8888 on BCO is served by the iptables PREROUTING REDIRECT path instead, which never touches SoftwareUpdate. STR_FORCE_SHIM_TAIGAN=1 overrides."
                 return 0 ;;
+            *rhino*|*mojo*)
+                setup_log "shim stage: SKIP — sm2 chassis (${VARIANT:-?}/${HOSTID:-?}). sm2 boxes (ST10 rhino, ST30 mojo) are not chipset-whitelisted; STR's :8888 is opened directly by the iptables INPUT ACCEPT path (iptables_install_streborn_fw), so the LD_PRELOAD shim is unnecessary here. Running it only kills/relaunches Bose SoftwareUpdate (racing shepherdd) for no gain, and on mojo the .so cannot even load (live ST30 2026-06-10, #123: box healthy, agent up, shim self-probe NOT STR). STR_FORCE_SHIM_TAIGAN=1 overrides."
+                return 0 ;;
         esac
     fi
     if [ -e "$SHIM_DISABLE" ]; then
@@ -748,6 +751,9 @@ shim_late_swap() {
         case "${VARIANT}|${HOSTID}" in
             *taigan*|*spotty*)
                 setup_log "shim late-swap: SKIP — BCO chassis (${VARIANT:-?}/${HOSTID:-?}); SoftwareUpdate left untouched so the Bose mesh init cannot wedge. External :8888 via the REDIRECT path. STR_FORCE_SHIM_TAIGAN=1 overrides."
+                return 0 ;;
+            *rhino*|*mojo*)
+                setup_log "shim late-swap: SKIP — sm2 chassis (${VARIANT:-?}/${HOSTID:-?}); :8888 is opened by the iptables INPUT ACCEPT path, so SoftwareUpdate is left untouched (no shepherdd race, no needless kill/relaunch). STR_FORCE_SHIM_TAIGAN=1 overrides."
                 return 0 ;;
         esac
     fi
