@@ -2637,9 +2637,54 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %v)", port, sshErr, perr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
+		a.refreshStickAfterOTA(host)
 		return nil
 	}
-	return a.updateAgentViaHTTP(host, port, bin)
+	if err := a.updateAgentViaHTTP(host, port, bin); err != nil {
+		return err
+	}
+	a.refreshStickAfterOTA(host)
+	return nil
+}
+
+// refreshStickAfterOTA is a best-effort step run after a successful agent OTA:
+// if the STR USB stick is still inserted in the speaker, rewrite its program
+// files (agent binary, run.sh, rc.local, shim, version.txt, ...) so the next
+// boot's stick->NAND sync does not revert the freshly OTA'd binary back to the
+// stick's older one (project_deploy_stick_overwrites_nand). The write is
+// durable-flushed so it survives a reboot (project_durable_stick_write: a plain
+// write to /media/sda1 sits in the USB controller cache and is lost otherwise).
+// Never fatal: the OTA itself already succeeded, so any failure here is logged
+// and the user is simply told to re-prepare the stick if they keep it inserted.
+func (a *App) refreshStickAfterOTA(host string) {
+	out, err := boxSSHOutput(host, "test -f /media/sda1/install.sh && echo STR_STICK_PRESENT", 8*time.Second)
+	if err != nil || !strings.Contains(out, "STR_STICK_PRESENT") {
+		a.logger.Info("OTA stick refresh: no STR stick mounted on the box, nothing to refresh",
+			"host", host, "detail", strings.TrimSpace(out))
+		return
+	}
+	v := appVersion
+	if appBuild != "" && appBuild != "dev" {
+		v = appVersion + "+" + appBuild
+	}
+	files, err := sticksetup.StickFileSet(agentbin.Bytes(), v)
+	if err != nil {
+		a.logger.Warn("OTA stick refresh: could not assemble stick file set", "err", err)
+		return
+	}
+	for name, data := range files {
+		// File names in the stick set are flat and safe (alphanumeric, '.', '-').
+		if out, werr := boxSSHUploadStdin(host, "cat > /media/sda1/"+name, bytes.NewReader(data), 120*time.Second); werr != nil {
+			a.logger.Warn("OTA stick refresh: write failed, stick left as-is (OTA still applied to NAND)",
+				"file", name, "err", werr, "out", strings.TrimSpace(out))
+			return
+		}
+	}
+	// Durable flush: SYNCHRONIZE CACHE + STOP UNIT commits the writes to flash.
+	// This also detaches the stick from the running kernel; it re-mounts on the
+	// next boot (updated), which is exactly when the stick->NAND sync runs.
+	_ = boxSSHFireAndForget(host, "sync; echo 1 > /sys/block/sda/device/delete", 8*time.Second)
+	a.logger.Info("OTA stick refresh: stick rewritten and flushed to flash", "host", host, "files", len(files), "version", v)
 }
 
 // updateAgentPreflight checks that /api/agent/version on host:port really
