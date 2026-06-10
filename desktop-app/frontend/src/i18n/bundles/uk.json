@@ -226,7 +226,7 @@
   "settingsView.nameHeading": "Ім'я",
   "settingsView.namePlaceholder": "Введіть кімнату або виберіть зі списку",
   "settingsView.nameShowList": "Показати список",
-  "settingsView.nameHelp": "Відображається в застосунках Bose, під час виявлення mDNS і UPnP. Під час збереження додається ідентифікатор колонки ({{uid}}), щоб у мережі не було конфліктів імен.",
+  "settingsView.nameHelp": "Відображається в застосунках Bose, під час виявлення mDNS і UPnP. Короткий ідентифікатор колонки ({{uid}}) додається лише тоді, коли інша колонка інакше мала б таку саму назву.",
   "settingsView.muted": "Зараз без звуку",
   "settingsView.bassHeading": "Бас",
   "settingsView.bassResetTitle": "Скинути до заводського значення",

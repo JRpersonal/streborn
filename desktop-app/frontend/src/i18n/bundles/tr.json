@@ -229,7 +229,7 @@
   "settingsView.nameHeading": "Ad",
   "settingsView.namePlaceholder": "Bir oda girin veya listeden seçin",
   "settingsView.nameShowList": "Listeyi göster",
-  "settingsView.nameHelp": "Bose uygulamalarında, mDNS ve UPnP keşfinde gösterilir. Kaydederken, ağda ad çakışması olmaması için hoparlör kimliği ({{uid}}) eklenir.",
+  "settingsView.nameHelp": "Bose uygulamalarında, mDNS ve UPnP keşfinde gösterilir. Kısa bir hoparlör kimliği ({{uid}}) yalnızca başka bir hoparlör aynı ada sahip olacaksa eklenir.",
   "settingsView.muted": "Şu anda sessiz",
   "settingsView.bassHeading": "Bas",
   "settingsView.bassResetTitle": "Fabrika ayarını geri yükle",

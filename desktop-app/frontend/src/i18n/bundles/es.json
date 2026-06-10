@@ -226,7 +226,7 @@
   "settingsView.nameHeading": "Nombre",
   "settingsView.namePlaceholder": "Escribe una sala o elige de la lista",
   "settingsView.nameShowList": "Mostrar lista",
-  "settingsView.nameHelp": "Aparece en las aplicaciones Bose y en la detección mDNS y UPnP. Al guardar se añade un identificador de altavoz ({{uid}}) para que no haya conflictos de nombres en la red.",
+  "settingsView.nameHelp": "Aparece en las aplicaciones Bose y en la detección mDNS y UPnP. Un identificador corto de altavoz ({{uid}}) se añade solo si otro altavoz tendría el mismo nombre.",
   "settingsView.muted": "Actualmente silenciado",
   "settingsView.bassHeading": "Graves",
   "settingsView.bassResetTitle": "Restablecer al valor de fábrica",

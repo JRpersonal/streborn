@@ -229,7 +229,7 @@
   "settingsView.nameHeading": "Nazwa",
   "settingsView.namePlaceholder": "Wpisz pomieszczenie lub wybierz z listy",
   "settingsView.nameShowList": "Pokaż listę",
-  "settingsView.nameHelp": "Pojawia się w aplikacjach Bose, mDNS i wykrywaniu UPnP. Przy zapisie dodawany jest identyfikator głośnika ({{uid}}), aby nie było konfliktów nazw w sieci.",
+  "settingsView.nameHelp": "Pojawia się w aplikacjach Bose, mDNS i wykrywaniu UPnP. Krótki identyfikator głośnika ({{uid}}) jest dodawany tylko wtedy, gdy inny głośnik miałby taką samą nazwę.",
   "settingsView.muted": "Obecnie wyciszony",
   "settingsView.bassHeading": "Basy",
   "settingsView.bassResetTitle": "Przywróć ustawienie fabryczne",

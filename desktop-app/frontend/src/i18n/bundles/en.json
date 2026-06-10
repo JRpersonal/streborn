@@ -487,7 +487,7 @@
   "settingsView.nameHeading": "Name",
   "settingsView.namePlaceholder": "Type a room or pick from the list",
   "settingsView.nameShowList": "Show list",
-  "settingsView.nameHelp": "Appears in Bose apps, mDNS and UPnP discovery. A speaker ID ({{uid}}) gets appended on save so there are no name collisions on the network.",
+  "settingsView.nameHelp": "Appears in Bose apps, mDNS and UPnP discovery. A short speaker ID ({{uid}}) is added only if another speaker would otherwise have the same name.",
   "settingsView.muted": "Currently muted",
   "settingsView.bassHeading": "Bass",
   "settingsView.bassResetTitle": "Reset to factory default",

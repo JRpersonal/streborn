@@ -3592,7 +3592,21 @@ function ensureWithUID(desired, ownBox) {
   const suffix = uidSuffixFor(ownBox);
   if (!suffix) return trimmed;
   if (trimmed.toUpperCase().endsWith(suffix)) return trimmed;
-  return `${trimmed} ${suffix}`;
+  // #133: the ID suffix exists only to disambiguate multiple speakers that
+  // would otherwise share a name. The name is display-only (discovery matches
+  // on IP/DeviceID), so append the suffix ONLY when another known speaker would
+  // collide with this exact name. A single speaker, or a unique name, keeps the
+  // clean name the user chose.
+  const ownId = (ownBox && ownBox.deviceID) || '';
+  const want = trimmed.toUpperCase();
+  const collides = (state.boxes || []).some(b => {
+    if (!b || b.deviceID === ownId) return false;
+    const other = (b.friendlyName || b.name || '').trim();
+    if (!other) return false;
+    const otherBase = other.replace(/\s+[0-9A-Fa-f]{4}$/, '').trim().toUpperCase();
+    return otherBase === want || other.toUpperCase() === want;
+  });
+  return collides ? `${trimmed} ${suffix}` : trimmed;
 }
 
 function renderSettingsBoxSelect() {

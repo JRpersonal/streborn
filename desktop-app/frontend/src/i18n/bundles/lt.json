@@ -229,7 +229,7 @@
   "settingsView.nameHeading": "Pavadinimas",
   "settingsView.namePlaceholder": "Įveskite kambarį arba pasirinkite iš sąrašo",
   "settingsView.nameShowList": "Rodyti sąrašą",
-  "settingsView.nameHelp": "Rodomas Bose programose, mDNS ir UPnP aptikime. Išsaugant pridedamas garsiakalbio ID ({{uid}}), kad tinkle nebūtų pavadinimų konfliktų.",
+  "settingsView.nameHelp": "Rodomas Bose programose, mDNS ir UPnP aptikime. Trumpas garsiakalbio ID ({{uid}}) pridedamas tik tada, jei kitas garsiakalbis turėtų tą patį pavadinimą.",
   "settingsView.muted": "Šiuo metu nutildyta",
   "settingsView.bassHeading": "Žemieji dažniai",
   "settingsView.bassResetTitle": "Atkurti gamyklinį nustatymą",
