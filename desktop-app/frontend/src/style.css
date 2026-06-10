@@ -8,6 +8,12 @@
  * Grundregel: --signal-* niemals als Layout / Brand verwenden.
  */
 :root {
+  /* Tell the engine the UI is dark so NATIVE form controls (<select>, the
+     option list, scrollbars) render in dark mode. Without this, Linux/WebKitGTK
+     paints native selects with the GTK theme: on a light Zorin/GTK theme the
+     closed select showed pale text on a light fill, i.e. unreadable (Brice,
+     v0.7.15). This is theme-independent and keeps the native dropdown arrow. */
+  color-scheme: dark;
   --brand: #6bd;
   --brand-hover: #8df;
   --brand-bg: #1f2a35;
@@ -19,6 +25,13 @@
   --signal-yellow: #cc6;
   --signal-red: #c66;
 }
+
+/* Fallback to color-scheme:dark above: force high-contrast colors on every
+   <select> (the closed control AND the dropdown option list) so the current
+   value and items stay readable regardless of the GTK/OS theme. Fixes the
+   white-on-white / pale-text selects on Linux (Brice, Zorin). */
+select { color: #eee; background-color: #1a1a1a; }
+select option { color: #eee; background-color: #1a1a1a; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
