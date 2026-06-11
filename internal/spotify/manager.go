@@ -125,6 +125,13 @@ type Manager struct {
 	// actually plays (#14). nil until wired. lastActivate debounces it.
 	onActivate   func(context.Context)
 	lastActivate time.Time
+	// activateBackoff grows each time the box re-attaches to the Ogg stream in a
+	// rapid storm (the INVALID_SOURCE re-point loop: the box keeps dropping and
+	// re-fetching, heard as the song restarting every minute). While it is set,
+	// suppressActivateUntil holds maybeActivate/repointBox off so STR stops
+	// re-pointing the box into the same failing state. A sustained, healthy
+	// attach resets it to 0 (#136, #113).
+	activateBackoff time.Duration
 	// suppressActivateUntil silences maybeActivate/repointBox for a short window
 	// after the user deliberately switched the box to a non-Spotify source. Without
 	// it, go-librespot keeps the playlist advancing in the background and the #14
@@ -1100,6 +1107,38 @@ func (m *Manager) DeviceName() string {
 	return m.name
 }
 
+// liveNowPlaying pulls the current track straight from go-librespot's /status,
+// the authoritative source, and refreshes the cache with it. The cached values
+// come from pushed "metadata" events, which lag (and can be missed entirely):
+// a live capture showed /spotify/info still reporting an earlier track while
+// go-librespot had advanced several (#136). Pulling /status on demand keeps the
+// desktop now-playing line in step with what is actually playing. Best-effort:
+// returns false and leaves the cache untouched if /status is unreachable or
+// carries no track, so the caller falls back to the cached values.
+func (m *Manager) liveNowPlaying(ctx context.Context) (track, artist, cover string, ok bool) {
+	data, err := m.apiGet(ctx, "/status")
+	if err != nil {
+		return "", "", "", false
+	}
+	var st struct {
+		Track *struct {
+			Name          string   `json:"name"`
+			ArtistNames   []string `json:"artist_names"`
+			AlbumCoverURL string   `json:"album_cover_url"`
+		} `json:"track"`
+	}
+	if json.Unmarshal(data, &st) != nil || st.Track == nil || st.Track.Name == "" {
+		return "", "", "", false
+	}
+	track = st.Track.Name
+	artist = strings.Join(st.Track.ArtistNames, ", ")
+	cover = st.Track.AlbumCoverURL
+	m.mu.Lock()
+	m.curName, m.curArtist, m.curCover = track, artist, cover
+	m.mu.Unlock()
+	return track, artist, cover, true
+}
+
 // ServeInfo answers GET /spotify/info with the live state the UI needs: whether
 // Spotify is available, the measured bitrate, and the advertised device name.
 func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
@@ -1107,6 +1146,10 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	m.mu.Lock()
 	track, artist, cover, context := m.curName, m.curArtist, m.curCover, m.lastContext
 	m.mu.Unlock()
+	// Prefer the live track from /status over the laggy cached metadata events.
+	if lt, la, lc, ok := m.liveNowPlaying(r.Context()); ok {
+		track, artist, cover = lt, la, lc
+	}
 	resp := struct {
 		Ready   bool   `json:"ready"`
 		Bitrate int    `json:"bitrate"`
@@ -1276,6 +1319,16 @@ func (m *Manager) apiPostC(ctx context.Context, client *http.Client, path string
 // HTTP client (the box's UPnP fetch) until it disconnects. It registers as
 // the single consumer; a new request replaces any previous one. No header is
 // prepended: the box decodes the raw Ogg directly.
+// Re-attach storm damping (#136, #113). A re-attach closer together than the
+// window counts toward a storm and grows the box-re-point backoff from the base
+// up to the cap; anything more spaced out is treated as a normal switch and
+// clears the backoff.
+const (
+	spotifyStormWindow         = 20 * time.Second
+	spotifyActivateBackoffBase = 5 * time.Second
+	spotifyActivateBackoffMax  = 60 * time.Second
+)
+
 func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	if !m.Ready() {
 		http.Error(w, "spotify not configured", http.StatusServiceUnavailable)
@@ -1322,17 +1375,50 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	if oldSink != nil && oldSink != cw {
 		oldSink.closeConn()
 	}
-	// Surface a re-attach storm (the box re-fetching every few seconds, the
-	// crash signature) so it is visible in the log. The single-connection
-	// invariant above already prevents the per-connection buffer pile-up that
-	// used to OOM the box; this just records that it happened.
-	if reattach && sinceLast > 0 && sinceLast < 20*time.Second {
-		m.logger.Warn("spotify: rapid Ogg re-attach (possible INVALID_SOURCE re-point storm; old connection closed)", "sinceLastMs", sinceLast.Milliseconds())
+	// Surface and damp a re-attach storm (the box re-fetching every few seconds,
+	// the INVALID_SOURCE re-point loop heard as the song restarting). The
+	// single-connection invariant above already prevents the per-connection
+	// buffer pile-up that used to OOM the box; here we also back off STR's own
+	// re-pointing so it stops shoving the box back into the same failing state.
+	// A rapid re-attach grows the backoff (capped); a healthy, spaced-out attach
+	// resets it so normal playlist switches stay responsive.
+	if reattach && sinceLast > 0 && sinceLast < spotifyStormWindow {
+		m.mu.Lock()
+		if m.activateBackoff < spotifyActivateBackoffBase {
+			m.activateBackoff = spotifyActivateBackoffBase
+		} else {
+			m.activateBackoff *= 2
+			if m.activateBackoff > spotifyActivateBackoffMax {
+				m.activateBackoff = spotifyActivateBackoffMax
+			}
+		}
+		backoff := m.activateBackoff
+		if t := time.Now().Add(backoff); t.After(m.suppressActivateUntil) {
+			m.suppressActivateUntil = t
+		}
+		m.mu.Unlock()
+		m.logger.Warn("spotify: rapid Ogg re-attach (INVALID_SOURCE re-point storm); backing off box re-point",
+			"sinceLastMs", sinceLast.Milliseconds(), "backoff", backoff.String())
+	} else if reattach && sinceLast >= spotifyStormWindow {
+		// A spaced-out re-attach is normal (a deliberate playlist switch): the
+		// storm has cleared, so drop the accumulated backoff.
+		m.mu.Lock()
+		m.activateBackoff = 0
+		m.mu.Unlock()
 	}
 	// reattach=true means the box dropped and re-fetched the stream (the prime
 	// suspect for a track appearing to restart): it then gets the cached
 	// granule-0 headers again. Logged so the restart can be correlated.
 	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr), "reattach", reattach)
+
+	// A fresh (non-reattach) attach is a clean recall start, not a storm: clear
+	// any accumulated re-point backoff so the next genuine playlist switch is
+	// handled promptly.
+	if !reattach {
+		m.mu.Lock()
+		m.activateBackoff = 0
+		m.mu.Unlock()
+	}
 
 	// On a FRESH attach (not a re-fetch), the box's own preset self-activation
 	// can reach ServeOgg a beat BEFORE the gabbo press event flags the recall
