@@ -889,15 +889,32 @@ func (s *Server) ResumeLastPlay() {
 	boxURL, title, art, mime := lp.boxURL, lp.title, lp.art, lp.mime
 	s.lastPlayMu.Unlock()
 
-	// Power-on is an explicit resume: drop the recent user-stop (the power-off
-	// emitted STOP_STATE) so maybeRePush/this resume is not suppressed.
-	s.lastUserStopMu.Lock()
-	s.lastUserStop = time.Time{}
-	s.lastUserStopMu.Unlock()
-
 	go func() {
-		// Let the box finish waking before we push the stream.
+		// Let the power transition settle so the box's reported state is
+		// unambiguous before we decide. The DO_NOT_RESUME that triggers this
+		// fires on BOTH a power-on wake and a deliberate power-off (the box
+		// tears down its UPNP selection either way), so the event alone cannot
+		// tell them apart: the box state can.
 		time.Sleep(2 * time.Second)
+
+		// Discriminate a power-OFF from a power-ON wake (#105): after the user
+		// presses power OFF the box settles in standby; after a wake it has
+		// already left standby (the DO_NOT_RESUME we are reacting to is the box
+		// restoring its selection while awake). Never wake a box the user just
+		// turned off, and leave the user-stop suppression intact so the parallel
+		// auto-re-push does not pull it back up either.
+		if standby, busy := s.boxPlayState(); standby && !busy {
+			s.logger.Info("wake resume: box is in standby (deliberate power-off), not resuming")
+			return
+		}
+
+		// Genuine power-on: an explicit "play it again", so drop the recent
+		// user-stop (the power-off emitted STOP_STATE) that would otherwise
+		// suppress this resume and the auto-re-push.
+		s.lastUserStopMu.Lock()
+		s.lastUserStop = time.Time{}
+		s.lastUserStopMu.Unlock()
+
 		if s.boxHost != "" {
 			wctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 			_ = boxcli.WakeAndWait(wctx, s.boxHost, 6*time.Second, s.logger)
