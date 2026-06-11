@@ -1286,12 +1286,15 @@ async function checkSshBanner() {
     const r = await boxFetch(box, '/api/stick/status');
     if (!r.ok) return;
     const data = await r.json();
-    // Only warn once the stick is no longer mounted on the box. While
-    // mounted, the agent is mid-setup or mid-update — SSH is expected
-    // to be open, the user cannot act on the warning yet, and the
-    // banner is just noise. After the stick is removed (or the next
-    // setup phase has unmounted it), the SSH state is meaningful.
-    const show = !!(data && data.sshOpen && !data.mounted);
+    // The banner is a "remove the stick now that setup is done" reminder, and it
+    // clears the moment the stick is removed. The old logic showed it only AFTER
+    // removal while SSH was still open, but the agent keeps sshd up on every boot
+    // for diagnostics (run.sh ensure_sshd_running, pre-1.0), so "SSH open" never
+    // clears and the banner was stuck forever even with the stick already out
+    // (Brice, #11). Tying it to the stick still being mounted makes it actionable
+    // and self-clearing. (Setup view and the OTA window are already excluded
+    // above.) Full SSH hardening is the separate v1.0 item.
+    const show = !!(data && data.mounted);
     gb.classList.toggle('hidden', !show);
   } catch {}
 }
@@ -4220,7 +4223,11 @@ function renderBoxSettings(s, box) {
     // now" button would interrupt the update.
     const gb = $('globalSecurityBanner');
     if (gb) {
-      const show = sshOpen && !stickMounted && !state.otaInProgress;
+      // Consistent with checkSshBanner: the reminder is shown while the stick is
+      // still in the box and clears once it is removed. The agent keeps sshd up
+      // for diagnostics regardless, so an "SSH still open" gate never cleared
+      // (#11). OTA window still excluded.
+      const show = stickMounted && !state.otaInProgress;
       gb.classList.toggle('hidden', !show);
     }
 

@@ -298,7 +298,12 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	var probeErr error
 	stickPath := ""
 	for attempt := 0; attempt < 20; attempt++ {
-		probe, probeErr = boxSSHOutput(host, probeCmd, 8*time.Second)
+		// 14 s per attempt (was 8 s): on slower boxes the SSH session can stall
+		// mid-probe right after boot, and an 8 s cap turned that into
+		// "ssh probe failed after retries err=ssh timeout after 8s" even though
+		// the box was up (#114). 20 attempts x (14 s + 3 s) still backstops a
+		// genuinely dead box.
+		probe, probeErr = boxSSHOutput(host, probeCmd, 14*time.Second)
 		if probeErr == nil && strings.Contains(probe, "STICKPATH=") {
 			for _, line := range strings.Split(probe, "\n") {
 				line = strings.TrimSpace(line)
