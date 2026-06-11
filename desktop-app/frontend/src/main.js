@@ -2309,6 +2309,27 @@ function activeSlotFromLocation(loc) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// decodeProxyUrl unwraps a stream-proxy URL
+// (http://<host>:8888/stream/raw?u=<base64url real URL>) back to the real
+// upstream URL it wraps; returns the input unchanged otherwise. A preset MUST
+// store the real station URL, never the proxy wrapper: since v0.7.16 ad-hoc radio
+// plays through the proxy, so the box's now-playing location is the wrapper.
+// Saving that made the box, on recall, ask the proxy to fetch its own loopback
+// URL, which the agent's SSRF guard blocks, so nothing played (the ST20 "plays
+// nothing" regression).
+function decodeProxyUrl(loc) {
+  if (!loc) return loc;
+  try {
+    const u = new URL(loc);
+    if (u.pathname !== '/stream/raw') return loc;
+    const enc = u.searchParams.get('u');
+    if (!enc) return loc;
+    const real = atob(enc.replace(/-/g, '+').replace(/_/g, '/'));
+    if (/^https?:\/\//i.test(real)) return real;
+  } catch { /* not a parseable proxy URL: fall through */ }
+  return loc;
+}
+
 // Spotify glyph (green circle + three arcs) shown as the logo on Spotify
 // preset tiles so they are instantly recognisable as a Spotify playlist.
 // Inline SVG data URI: no bundled asset, no network fetch.
@@ -2639,7 +2660,7 @@ async function saveCurrentToSlot(slot) {
   try {
     await SetPreset(
       state.currentBox.host, state.currentBox.port,
-      slot, name, state.nowLocation, state.nowIcon || '', state.nowBitrate || 0
+      slot, name, decodeProxyUrl(state.nowLocation), state.nowIcon || '', state.nowBitrate || 0
     );
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
