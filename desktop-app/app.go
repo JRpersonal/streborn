@@ -74,6 +74,15 @@ type App struct {
 	discMu    sync.Mutex
 	discCache map[string]discEntry
 
+	// otaPinned maps a speaker IP to the time STR last initiated an agent OTA
+	// on it. During the post-OTA reboot the agent is down while the box's stock
+	// Bose port still answers, so discovery would briefly reclassify the box as
+	// stock and offer a USB reinstall (#108). Because STR itself triggered the
+	// update, it KNOWS that IP runs STR: while the pin is fresh, discovery forces
+	// the box to stay classified as STR regardless of what the half-booted box
+	// reports. Guarded by discMu (same lock as discCache, always held together).
+	otaPinned map[string]time.Time
+
 	// logoCache memoises resolved station-logo URLs (ResolveStationLogo)
 	// so the same station is validated against DuckDuckGo at most once per
 	// app run. Value "" means "no real logo, draw a monogram".
@@ -101,6 +110,13 @@ const discoveryStickyTTL = 100 * time.Second
 // Refresh (#108). A removed STR box lingers at most this long, an acceptable
 // trade for not flickering to a wrong reinstall offer.
 const discoverySTRStickyTTL = 6 * time.Minute
+
+// otaRebootGrace is how long after STR triggers an agent OTA the target IP is
+// force-classified as STR. It must comfortably cover the box rebooting and the
+// agent coming back up (so the stock Bose port answering first cannot relabel
+// the box), while being short enough that a genuinely re-flashed-to-stock box
+// would correct itself soon after. See otaPinned and mergeDiscoveryCache (#108).
+const otaRebootGrace = 4 * time.Minute
 
 // NewApp erstellt eine neue App Instance.
 func NewApp() *App {
@@ -379,6 +395,22 @@ func boxSortName(b BoxInfo) string {
 	return strings.ToLower(n)
 }
 
+// notePostOTA records that STR just triggered an agent OTA on host, so the
+// post-OTA reboot window does not let the box's still-answering stock Bose port
+// reclassify it as stock / "needs install" (#108).
+func (a *App) notePostOTA(host string) {
+	if host == "" {
+		return
+	}
+	a.discMu.Lock()
+	if a.otaPinned == nil {
+		a.otaPinned = map[string]time.Time{}
+	}
+	a.otaPinned[host] = time.Now()
+	a.discMu.Unlock()
+	a.logger.Info("post-OTA: pinning box as STR through its reboot", "host", host, "grace", otaRebootGrace.String())
+}
+
 // mergeDiscoveryCache refreshes the cache for boxes genuinely seen this
 // cycle, then re-adds any cached box this cycle missed but which was
 // seen within discoveryStickyTTL (keeping its last-known record, NOT
@@ -422,6 +454,35 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 		} else {
 			delete(a.discCache, key)
 		}
+	}
+	// Post-OTA pin: any IP STR is mid-update on stays classified as STR through
+	// its reboot, regardless of what the half-booted box reports (its stock Bose
+	// port answers before the agent does, #108). STR triggered the update, so it
+	// knows that IP runs STR. Expired pins are dropped.
+	for host, t := range a.otaPinned {
+		if now.Sub(t) > otaRebootGrace {
+			delete(a.otaPinned, host)
+			continue
+		}
+		b, ok := seen[host]
+		if !ok {
+			// Not visible this cycle (mid-reboot): keep the last-known record, or
+			// synthesise a minimal STR one so the box neither vanishes nor gets
+			// offered for reinstall.
+			if e, cached := a.discCache[host]; cached {
+				b = e.box
+			} else {
+				b = BoxInfo{Host: host, Port: 8888}
+			}
+		}
+		b.Kind = "str"
+		// The box is coming up on the app's embedded agent, so report that
+		// version to stop a spurious "update available" flag from looping while
+		// the agent is still restarting and cannot answer its real version.
+		b.Version = appVersion
+		b.Build = appBuild
+		seen[host] = b
+		a.discCache[host] = discEntry{box: b, seen: now}
 	}
 }
 
@@ -2689,6 +2750,7 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %v)", port, sshErr, perr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
+		a.notePostOTA(host)
 		a.refreshStickAfterOTA(host)
 		return nil
 	}
@@ -2704,6 +2766,7 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
 	}
+	a.notePostOTA(host)
 	a.refreshStickAfterOTA(host)
 	return nil
 }
