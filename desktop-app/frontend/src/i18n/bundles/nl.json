@@ -229,7 +229,7 @@
   "settingsView.nameHeading": "Naam",
   "settingsView.namePlaceholder": "Typ een ruimte of kies uit de lijst",
   "settingsView.nameShowList": "Lijst tonen",
-  "settingsView.nameHelp": "Verschijnt in Bose-apps, mDNS en UPnP-detectie. Bij het opslaan wordt een speaker-ID ({{uid}}) toegevoegd zodat er geen naamconflicten op het netwerk zijn.",
+  "settingsView.nameHelp": "Verschijnt in Bose-apps, mDNS en UPnP-detectie. Een korte speaker-ID ({{uid}}) wordt alleen toegevoegd als een andere speaker anders dezelfde naam zou hebben.",
   "settingsView.muted": "Momenteel gedempt",
   "settingsView.bassHeading": "Bas",
   "settingsView.bassResetTitle": "Terugzetten naar fabrieksinstelling",

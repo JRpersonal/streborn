@@ -226,7 +226,7 @@
   "settingsView.nameHeading": "名前",
   "settingsView.namePlaceholder": "部屋名を入力するか一覧から選択",
   "settingsView.nameShowList": "一覧を表示",
-  "settingsView.nameHelp": "Boseアプリ、mDNS、UPnP検出に表示されます。ネットワーク上で名前が重複しないよう、保存時にスピーカーID ({{uid}}) が付加されます。",
+  "settingsView.nameHelp": "Boseアプリ、mDNS、UPnP検出に表示されます。短いスピーカーID ({{uid}}) は、他のスピーカーと名前が重複する場合にのみ付加されます。",
   "settingsView.muted": "現在ミュート中",
   "settingsView.bassHeading": "低音",
   "settingsView.bassResetTitle": "工場出荷時の値に戻す",

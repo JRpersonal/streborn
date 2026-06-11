@@ -487,7 +487,7 @@
   "settingsView.nameHeading": "Name",
   "settingsView.namePlaceholder": "Raum eintippen oder aus Liste wählen",
   "settingsView.nameShowList": "Liste anzeigen",
-  "settingsView.nameHelp": "Erscheint in Bose-Apps, mDNS und UPnP-Discovery. Eine Lautsprecher-ID ({{uid}}) wird beim Speichern automatisch angehängt, damit es keine Namensdopplungen im Netz gibt.",
+  "settingsView.nameHelp": "Erscheint in Bose-Apps, mDNS und UPnP-Discovery. Eine kurze Lautsprecher-ID ({{uid}}) wird nur angehängt, wenn ein anderer Lautsprecher sonst denselben Namen hätte.",
   "settingsView.muted": "Aktuell stummgeschaltet",
   "settingsView.bassHeading": "Bass",
   "settingsView.bassResetTitle": "Auf Werkseinstellung zurücksetzen",

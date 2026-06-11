@@ -226,7 +226,7 @@
   "settingsView.nameHeading": "Nom",
   "settingsView.namePlaceholder": "Saisissez une pièce ou choisissez dans la liste",
   "settingsView.nameShowList": "Afficher la liste",
-  "settingsView.nameHelp": "Apparaît dans les applications Bose, la découverte mDNS et UPnP. Un identifiant d'enceinte ({{uid}}) est ajouté à l'enregistrement pour éviter les conflits de noms sur le réseau.",
+  "settingsView.nameHelp": "Apparaît dans les applications Bose, la découverte mDNS et UPnP. Un court identifiant d'enceinte ({{uid}}) n'est ajouté que si une autre enceinte aurait sinon le même nom.",
   "settingsView.muted": "Actuellement coupé",
   "settingsView.bassHeading": "Basses",
   "settingsView.bassResetTitle": "Réinitialiser au réglage d'usine",

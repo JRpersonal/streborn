@@ -229,7 +229,7 @@
   "settingsView.nameHeading": "Nosaukums",
   "settingsView.namePlaceholder": "Ievadiet istabu vai atlasiet no saraksta",
   "settingsView.nameShowList": "Rādīt sarakstu",
-  "settingsView.nameHelp": "Tiek rādīts Bose lietotnēs, mDNS un UPnP atklāšanā. Saglabājot tiek pievienots skaļruņa ID ({{uid}}), lai tīklā nebūtu nosaukumu konfliktu.",
+  "settingsView.nameHelp": "Tiek rādīts Bose lietotnēs, mDNS un UPnP atklāšanā. Īss skaļruņa ID ({{uid}}) tiek pievienots tikai tad, ja citam skaļrunim citādi būtu tāds pats nosaukums.",
   "settingsView.muted": "Pašlaik izslēgts skaņa",
   "settingsView.bassHeading": "Basi",
   "settingsView.bassResetTitle": "Atjaunot rūpnīcas iestatījumu",
