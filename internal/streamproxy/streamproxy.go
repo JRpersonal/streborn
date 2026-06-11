@@ -131,6 +131,43 @@ func isDASHURL(raw string) bool {
 	return strings.HasSuffix(strings.ToLower(u.Path), ".mpd")
 }
 
+// unwrapSelfProxy unwinds a stored stream URL that points back at the agent's own
+// stream proxy, e.g. "http://127.0.0.1:8888/stream/raw?u=<base64 real URL>". This
+// happens when a preset is saved from the box's now-playing location while a
+// radio station is playing THROUGH the proxy: the saved URL is the proxy wrapper,
+// not the real upstream (regression since v0.7.16, where ad-hoc radio routes via
+// /stream/raw). Recalling such a preset makes the proxy fetch its own loopback
+// URL, which the SSRF dial guard blocks, so the box gets nothing (INVALID_SOURCE /
+// AUDIO_ERROR_BAD_URL). Decoding the inner u recovers the real URL and heals the
+// preset in place, with no re-save needed. Loops in case of multiple wraps;
+// returns raw unchanged when it is not a self-proxy URL.
+func unwrapSelfProxy(raw string) string {
+	for i := 0; i < 5; i++ {
+		u, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(u.Path, "/stream/raw") {
+			return raw
+		}
+		enc := u.Query().Get("u")
+		if enc == "" {
+			return raw
+		}
+		dec, err := base64.RawURLEncoding.DecodeString(enc)
+		if err != nil {
+			if d2, e2 := base64.StdEncoding.DecodeString(enc); e2 == nil {
+				dec = d2
+			} else {
+				return raw
+			}
+		}
+		inner := string(dec)
+		if !strings.HasPrefix(inner, "http://") && !strings.HasPrefix(inner, "https://") {
+			return raw
+		}
+		raw = inner
+	}
+	return raw
+}
+
 // isHLSorDASHContentType catches HLS/DASH responses whose URL does not carry a
 // telltale suffix, by their MIME type (application/vnd.apple.mpegurl,
 // application/x-mpegURL, audio/mpegurl, application/dash+xml).
@@ -643,7 +680,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		// Fallback: vielleicht plain URL-encoded
 		decoded = []byte(enc)
 	}
-	url := string(decoded)
+	url := unwrapSelfProxy(string(decoded))
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		http.Error(w, "invalid url scheme", http.StatusBadRequest)
 		return
@@ -721,6 +758,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no preset", http.StatusNotFound)
 		return
 	}
+	p.StreamURL = unwrapSelfProxy(p.StreamURL)
 	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
 
 	if isDASHURL(p.StreamURL) {
@@ -769,7 +807,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		if !ok || cur.StreamURL == "" {
 			return
 		}
-		boseAlive, err := s.streamOne(r.Context(), w, r, cur.StreamURL, !headersSent)
+		boseAlive, err := s.streamOne(r.Context(), w, r, unwrapSelfProxy(cur.StreamURL), !headersSent)
 		lastErr = err
 		if !boseAlive {
 			// Bose hat die Verbindung beendet (Standby, Sender Wechsel).

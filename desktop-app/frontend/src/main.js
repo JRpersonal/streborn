@@ -1286,12 +1286,15 @@ async function checkSshBanner() {
     const r = await boxFetch(box, '/api/stick/status');
     if (!r.ok) return;
     const data = await r.json();
-    // Only warn once the stick is no longer mounted on the box. While
-    // mounted, the agent is mid-setup or mid-update — SSH is expected
-    // to be open, the user cannot act on the warning yet, and the
-    // banner is just noise. After the stick is removed (or the next
-    // setup phase has unmounted it), the SSH state is meaningful.
-    const show = !!(data && data.sshOpen && !data.mounted);
+    // The banner is a "remove the stick now that setup is done" reminder, and it
+    // clears the moment the stick is removed. The old logic showed it only AFTER
+    // removal while SSH was still open, but the agent keeps sshd up on every boot
+    // for diagnostics (run.sh ensure_sshd_running, pre-1.0), so "SSH open" never
+    // clears and the banner was stuck forever even with the stick already out
+    // (Brice, #11). Tying it to the stick still being mounted makes it actionable
+    // and self-clearing. (Setup view and the OTA window are already excluded
+    // above.) Full SSH hardening is the separate v1.0 item.
+    const show = !!(data && data.mounted);
     gb.classList.toggle('hidden', !show);
   } catch {}
 }
@@ -2307,6 +2310,27 @@ function activeSlotFromLocation(loc) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// decodeProxyUrl unwraps a stream-proxy URL
+// (http://<host>:8888/stream/raw?u=<base64url real URL>) back to the real
+// upstream URL it wraps; returns the input unchanged otherwise. A preset MUST
+// store the real station URL, never the proxy wrapper: since v0.7.16 ad-hoc radio
+// plays through the proxy, so the box's now-playing location is the wrapper.
+// Saving that made the box, on recall, ask the proxy to fetch its own loopback
+// URL, which the agent's SSRF guard blocks, so nothing played (the ST20 "plays
+// nothing" regression).
+function decodeProxyUrl(loc) {
+  if (!loc) return loc;
+  try {
+    const u = new URL(loc);
+    if (u.pathname !== '/stream/raw') return loc;
+    const enc = u.searchParams.get('u');
+    if (!enc) return loc;
+    const real = atob(enc.replace(/-/g, '+').replace(/_/g, '/'));
+    if (/^https?:\/\//i.test(real)) return real;
+  } catch { /* not a parseable proxy URL: fall through */ }
+  return loc;
+}
+
 // Spotify glyph (green circle + three arcs) shown as the logo on Spotify
 // preset tiles so they are instantly recognisable as a Spotify playlist.
 // Inline SVG data URI: no bundled asset, no network fetch.
@@ -2637,7 +2661,7 @@ async function saveCurrentToSlot(slot) {
   try {
     await SetPreset(
       state.currentBox.host, state.currentBox.port,
-      slot, name, state.nowLocation, state.nowIcon || '', state.nowBitrate || 0
+      slot, name, decodeProxyUrl(state.nowLocation), state.nowIcon || '', state.nowBitrate || 0
     );
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
@@ -4314,7 +4338,11 @@ function renderBoxSettings(s, box) {
     // now" button would interrupt the update.
     const gb = $('globalSecurityBanner');
     if (gb) {
-      const show = sshOpen && !stickMounted && !state.otaInProgress;
+      // Consistent with checkSshBanner: the reminder is shown while the stick is
+      // still in the box and clears once it is removed. The agent keeps sshd up
+      // for diagnostics regardless, so an "SSH still open" gate never cleared
+      // (#11). OTA window still excluded.
+      const show = stickMounted && !state.otaInProgress;
       gb.classList.toggle('hidden', !show);
     }
 

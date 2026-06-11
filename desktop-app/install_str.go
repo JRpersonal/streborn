@@ -13,6 +13,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -255,13 +256,31 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// user would see the raw "ssh handshake: exit status 255" again. The
 	// frontend renders res.Message + res.Log on res.OK == false.
 	res.Step = "ssh-handshake"
-	hello, helloErr := boxSSHOutput(host, "echo STR_SSH_OK", 12*time.Second)
+	// Retry the handshake with a longer per-attempt timeout and a short backoff.
+	// On slower boxes (ST10 especially) sshd accepts the TCP connection but the
+	// crypto handshake is not ready within a few seconds right after boot, so a
+	// single 12 s attempt failed and the user had to retry the whole install 2-3
+	// times (logs: "ssh timeout after 12s" while :8090 was already reachable).
+	// The box answering :8090 means it is up, so a couple of spaced retries cover
+	// the sshd warmup window. #114.
+	var hello string
+	var helloErr error
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 2 * time.Second) // 2s, 4s, 6s
+			a.logger.Info("install_str: retrying ssh handshake", "host", host, "attempt", attempt)
+		}
+		hello, helloErr = boxSSHOutput(host, "echo STR_SSH_OK", 18*time.Second)
+		if helloErr == nil && strings.Contains(hello, "STR_SSH_OK") {
+			break
+		}
+	}
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
 		res.Code = "ssh-handshake"
 		hint := classifySSHError(hello, helloErr)
 		res.Message = "SSH handshake to speaker failed: " + hint
-		a.logger.Warn("install_str: ssh handshake failed", "host", host, "err", helloErr, "hint", hint)
+		a.logger.Warn("install_str: ssh handshake failed after retries", "host", host, "err", helloErr, "hint", hint)
 		return res, nil
 	}
 	a.logger.Info("install_str: ssh ok", "host", host)
@@ -279,7 +298,12 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	var probeErr error
 	stickPath := ""
 	for attempt := 0; attempt < 20; attempt++ {
-		probe, probeErr = boxSSHOutput(host, probeCmd, 8*time.Second)
+		// 14 s per attempt (was 8 s): on slower boxes the SSH session can stall
+		// mid-probe right after boot, and an 8 s cap turned that into
+		// "ssh probe failed after retries err=ssh timeout after 8s" even though
+		// the box was up (#114). 20 attempts x (14 s + 3 s) still backstops a
+		// genuinely dead box.
+		probe, probeErr = boxSSHOutput(host, probeCmd, 14*time.Second)
 		if probeErr == nil && strings.Contains(probe, "STICKPATH=") {
 			for _, line := range strings.Split(probe, "\n") {
 				line = strings.TrimSpace(line)
@@ -374,7 +398,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// time to win against Bose's service manager; cutting that off early was
 	// the main first-install failure (#114).
 	res.Step = "wait-agent"
-	if err := waitForAgent(host, 8888, model); err != nil {
+	if err := a.waitForAgent(host, model); err != nil {
 		// If SSH is still reachable the install window is open, so reboot once
 		// and retry before giving up. This self-heals the common "shim lost the
 		// boot race" case with no user action. Guarded on SSH still being up so
@@ -383,7 +407,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			a.logger.Info("install_str: agent not up, SSH still open, rebooting once and retrying", "host", host)
 			res.Step = "reboot-and-retry"
 			_ = boxSSHFireAndForget(host, "(sleep 1; reboot) &", 4*time.Second)
-			if waitForAgent(host, 8888, model) == nil {
+			if a.waitForAgent(host, model) == nil {
 				res.Step = "done"
 				res.OK = true
 				res.Message = "STR agent is up on port 8888 (after an automatic retry)."
@@ -972,24 +996,30 @@ func boxLoad1(host string) (float64, bool) {
 	return v, true
 }
 
-// waitForAgent polls host:port until the STR agent answers or the model-aware
-// budget elapses. Slow models also get a longer per-dial timeout and sleep so a
-// still-booting box is not declared dead on a single slow scan.
-func waitForAgent(host string, port int, model string) error {
+// waitForAgent polls until the STR agent actually answers as STR, or the
+// model-aware budget elapses. It uses probeSTR, which verifies the agent on
+// :8888 AND on the :17008 REDIRECT, so a BCO box (ST20 scm/spotty, Portable)
+// whose :8888 is loopback-only and is reachable only via :17008 is recognised
+// as up. The old version polled bare TCP on :8888 only, so it declared a
+// genuinely running agent "not up" and the install reported failure even though
+// the box had come up fine (#114, Baehr ST20). It also verifies the STR agent
+// rather than just an open port, so the Bose SoftwareUpdate service that also
+// listens on :17008 is not mistaken for the agent.
+func (a *App) waitForAgent(host, model string) error {
 	budget := agentWaitBudget(model)
-	dialTO, sleep := 1500*time.Millisecond, 2*time.Second
+	sleep := 2 * time.Second
 	if slowBootModel(model) {
-		dialTO, sleep = 2500*time.Millisecond, 3*time.Second
+		sleep = 3 * time.Second
 	}
 	deadline := time.Now().Add(budget)
-	addr := fmt.Sprintf("%s:%d", host, port)
 	for time.Now().Before(deadline) {
-		c, err := net.DialTimeout("tcp", addr, dialTO)
-		if err == nil {
-			_ = c.Close()
+		ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+		_, ok := probeSTR(ctx, host)
+		cancel()
+		if ok {
 			return nil
 		}
 		time.Sleep(sleep)
 	}
-	return fmt.Errorf("port %d on %s not reachable within %s", port, host, budget)
+	return fmt.Errorf("STR agent on %s not reachable within %s", host, budget)
 }
