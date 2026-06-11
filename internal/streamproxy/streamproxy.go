@@ -19,6 +19,7 @@ package streamproxy
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -107,12 +108,64 @@ func dialGuardSSRF(network, address string, _ syscall.RawConn) error {
 // not playable instead of looping. The query string is ignored so a tokenised
 // ".m3u8?..." still matches.
 func isHLSorDASHURL(raw string) bool {
+	return isHLSURL(raw) || isDASHURL(raw)
+}
+
+// isHLSURL reports whether a URL points at an HLS (.m3u8) playlist. STR follows
+// these and demuxes their segments (see serveHLS), so they are now playable.
+func isHLSURL(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return false
 	}
-	p := strings.ToLower(u.Path)
-	return strings.HasSuffix(p, ".m3u8") || strings.HasSuffix(p, ".mpd")
+	return strings.HasSuffix(strings.ToLower(u.Path), ".m3u8")
+}
+
+// isDASHURL reports whether a URL points at a DASH (.mpd) manifest. DASH is not
+// supported yet and is still refused.
+func isDASHURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(u.Path), ".mpd")
+}
+
+// unwrapSelfProxy unwinds a stored stream URL that points back at the agent's own
+// stream proxy, e.g. "http://127.0.0.1:8888/stream/raw?u=<base64 real URL>". This
+// happens when a preset is saved from the box's now-playing location while a
+// radio station is playing THROUGH the proxy: the saved URL is the proxy wrapper,
+// not the real upstream (regression since v0.7.16, where ad-hoc radio routes via
+// /stream/raw). Recalling such a preset makes the proxy fetch its own loopback
+// URL, which the SSRF dial guard blocks, so the box gets nothing (INVALID_SOURCE /
+// AUDIO_ERROR_BAD_URL). Decoding the inner u recovers the real URL and heals the
+// preset in place, with no re-save needed. Loops in case of multiple wraps;
+// returns raw unchanged when it is not a self-proxy URL.
+func unwrapSelfProxy(raw string) string {
+	for i := 0; i < 5; i++ {
+		u, err := url.Parse(raw)
+		if err != nil || !strings.EqualFold(u.Path, "/stream/raw") {
+			return raw
+		}
+		enc := u.Query().Get("u")
+		if enc == "" {
+			return raw
+		}
+		dec, err := base64.RawURLEncoding.DecodeString(enc)
+		if err != nil {
+			if d2, e2 := base64.StdEncoding.DecodeString(enc); e2 == nil {
+				dec = d2
+			} else {
+				return raw
+			}
+		}
+		inner := string(dec)
+		if !strings.HasPrefix(inner, "http://") && !strings.HasPrefix(inner, "https://") {
+			return raw
+		}
+		raw = inner
+	}
+	return raw
 }
 
 // isHLSorDASHContentType catches HLS/DASH responses whose URL does not carry a
@@ -135,6 +188,17 @@ type Server struct {
 
 	failMu   sync.Mutex
 	lastFail map[string]time.Time
+
+	// errMu guards lastErr, the most recent terminal upstream failure for the
+	// stream the box is (or just was) pulling. The desktop app polls
+	// /api/stream-status right after starting a station so it can show a clear
+	// reason ("this stream is blocked / unavailable") and automatically try
+	// another radio-browser entry of the same station. Radio failures are
+	// asynchronous: the box accepts the UPnP URL instantly, then the 403/503
+	// only surfaces here when it pulls the bytes, so a pollable record is the
+	// only way the app learns why nothing plays.
+	errMu   sync.Mutex
+	lastErr streamFailure
 
 	// brMu guards the detected bitrate of the stream currently being
 	// proxied. We learn it from the upstream Icecast/Shoutcast "icy-br"
@@ -437,6 +501,92 @@ func (s *Server) shouldLogFail(url string) bool {
 	return true
 }
 
+// upstreamStatusError carries the upstream HTTP status of a non-200 response so
+// the reconnect loops can tell a permanent client-side rejection (403 geo-block,
+// 404/410 gone) from a transient one (5xx) via errors.As, instead of parsing a
+// formatted string.
+type upstreamStatusError struct {
+	Code   int
+	Status string
+}
+
+func (e *upstreamStatusError) Error() string {
+	if e.Status != "" {
+		return "upstream status " + e.Status
+	}
+	return fmt.Sprintf("upstream status %d", e.Code)
+}
+
+// isPermanentUpstream reports whether err is an upstream failure that retrying
+// the SAME URL cannot fix: a client-side HTTP rejection (forbidden, not found,
+// gone, unavailable-for-legal-reasons) or an HLS/DASH playlist we cannot play.
+// For these the reconnect loop gives up immediately so the desktop app can fall
+// back to another radio-browser entry of the station within a second instead of
+// after a 30s retry storm against a URL that will never serve audio.
+func isPermanentUpstream(err error) bool {
+	var se *upstreamStatusError
+	if errors.As(err, &se) {
+		switch se.Code {
+		case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+			http.StatusNotFound, http.StatusGone, http.StatusUnavailableForLegalReasons:
+			return true
+		}
+	}
+	return false
+}
+
+// streamFailure is the most recent terminal upstream error, surfaced via
+// /api/stream-status. url is the upstream stream URL (not the proxy wrapper) so
+// the app can confirm the error belongs to the station it just started.
+type streamFailure struct {
+	when   time.Time
+	code   int    // upstream HTTP status, 0 for a network-level failure
+	reason string // coarse class the UI maps to a message: blocked|gone|unavailable|unreachable|hls
+	url    string
+}
+
+// classifyFailure maps an upstream error to a coarse reason the desktop app
+// turns into a localized, human message. Network errors (DNS, refused, reset)
+// land in "unreachable"; HTTP statuses split into blocked/gone/unavailable.
+func classifyFailure(err error) (code int, reason string) {
+	var se *upstreamStatusError
+	if errors.As(err, &se) {
+		switch se.Code {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusUnavailableForLegalReasons:
+			return se.Code, "blocked"
+		case http.StatusNotFound, http.StatusGone:
+			return se.Code, "gone"
+		default:
+			// Everything else (5xx, and any other non-200) is a transient
+			// "currently unavailable" from the station's side.
+			return se.Code, "unavailable"
+		}
+	}
+	if strings.Contains(strings.ToLower(errStr(err)), "hls") || strings.Contains(strings.ToLower(errStr(err)), "dash") {
+		return 0, "hls"
+	}
+	return 0, "unreachable"
+}
+
+// recordFailure stores the latest terminal upstream failure for url so the
+// desktop app can poll it and react (message + alternative-source fallback).
+func (s *Server) recordFailure(url string, err error) {
+	code, reason := classifyFailure(err)
+	s.errMu.Lock()
+	s.lastErr = streamFailure{when: time.Now(), code: code, reason: reason, url: url}
+	s.errMu.Unlock()
+}
+
+// clearFailure drops any recorded failure for url once it streams successfully,
+// so a recovered station does not keep reporting a stale error to the app.
+func (s *Server) clearFailure(url string) {
+	s.errMu.Lock()
+	if s.lastErr.url == url {
+		s.lastErr = streamFailure{}
+	}
+	s.errMu.Unlock()
+}
+
 // Handler registriert /stream/<slot> sowie /stream/raw fuer ad-hoc URLs
 // (z.B. aus der Radio Suche) auf den uebergebenen Mux.
 func (s *Server) Register(mux *http.ServeMux) {
@@ -444,7 +594,51 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/stream/", s.handle)
 	mux.HandleFunc("/api/stream/bitrate", s.handleBitrate)
 	mux.HandleFunc("/api/stream/title", s.handleTitle)
+	mux.HandleFunc("/api/stream-status", s.handleStreamStatus)
 }
+
+// handleStreamStatus reports the most recent terminal upstream failure as JSON:
+//
+//	{"error":true,"status":403,"reason":"blocked","url":"http://...","ageMs":1200}
+//
+// or {"error":false} when the last start streamed fine or is too old to matter.
+// The desktop app polls this for a few seconds after starting a station: a fresh
+// error tells it which message to show and that it should try another
+// radio-browser entry of the same station. Only failures younger than
+// streamStatusTTL are reported so a long-past error never blocks a fresh play.
+func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	s.errMu.Lock()
+	f := s.lastErr
+	s.errMu.Unlock()
+	if f.when.IsZero() || time.Since(f.when) > streamStatusTTL {
+		fmt.Fprint(w, `{"error":false}`)
+		return
+	}
+	body, err := json.Marshal(struct {
+		Error  bool   `json:"error"`
+		Status int    `json:"status"`
+		Reason string `json:"reason"`
+		URL    string `json:"url"`
+		AgeMs  int64  `json:"ageMs"`
+	}{
+		Error:  true,
+		Status: f.code,
+		Reason: f.reason,
+		URL:    f.url,
+		AgeMs:  time.Since(f.when).Milliseconds(),
+	})
+	if err != nil {
+		fmt.Fprint(w, `{"error":false}`)
+		return
+	}
+	w.Write(body)
+}
+
+// streamStatusTTL bounds how long a recorded upstream failure is reported. Long
+// enough for the app's post-play poll window, short enough that a stale error
+// from minutes ago never suppresses a fresh, healthy station.
+const streamStatusTTL = 20 * time.Second
 
 // handleTitle returns the live ICY StreamTitle of the stream currently
 // proxied, or "" when the station sends no metadata. Cheap: a single guarded
@@ -486,14 +680,26 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		// Fallback: vielleicht plain URL-encoded
 		decoded = []byte(enc)
 	}
-	url := string(decoded)
+	url := unwrapSelfProxy(string(decoded))
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		http.Error(w, "invalid url scheme", http.StatusBadRequest)
 		return
 	}
-	if isHLSorDASHURL(url) {
-		s.logger.Warn("stream proxy: HLS/DASH not supported yet, refusing instead of reconnect-looping", "url", url)
+	if isDASHURL(url) {
+		s.logger.Warn("stream proxy: DASH not supported yet, refusing instead of reconnect-looping", "url", url)
+		s.recordFailure(url, fmt.Errorf("dash not supported"))
 		http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		return
+	}
+	if isHLSURL(url) {
+		// HLS: follow the playlist and demux its segments into a continuous stream
+		// for the box (#124). serveHLS only returns an error before it has written
+		// any audio, so http.Error here is always valid (never mid-stream).
+		if err := s.serveHLS(r.Context(), w, r, url); err != nil {
+			s.logger.Warn("stream proxy: HLS playback failed", "url", url, "err", err)
+			s.recordFailure(url, err)
+			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		}
 		return
 	}
 	s.logger.Info("stream proxy raw start", "url", url)
@@ -524,6 +730,14 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		if isPermanentUpstream(lastErr) {
+			// A client-side rejection (403 geo-block, 404/410 gone) will not
+			// change on retry. Stop now so the desktop app can fall back to
+			// another radio-browser entry of the station instead of waiting out
+			// a 30s retry storm against a URL that will never serve audio.
+			s.logger.Info("stream proxy end: permanent upstream rejection, not retrying", "kind", "raw", "lastErr", errStr(lastErr))
+			return
+		}
 		headersSent = true
 	}
 	// 60 reconnects exhausted: the box still wanted bytes but upstream
@@ -544,11 +758,22 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no preset", http.StatusNotFound)
 		return
 	}
+	p.StreamURL = unwrapSelfProxy(p.StreamURL)
 	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
 
-	if isHLSorDASHURL(p.StreamURL) {
-		s.logger.Warn("stream proxy: HLS/DASH preset not supported yet, refusing", "slot", slot, "url", p.StreamURL)
+	if isDASHURL(p.StreamURL) {
+		s.logger.Warn("stream proxy: DASH preset not supported yet, refusing", "slot", slot, "url", p.StreamURL)
+		s.recordFailure(p.StreamURL, fmt.Errorf("dash not supported"))
 		http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		return
+	}
+	if isHLSURL(p.StreamURL) {
+		// HLS preset: follow the playlist and demux to the box (#124).
+		if err := s.serveHLS(r.Context(), w, r, p.StreamURL); err != nil {
+			s.logger.Warn("stream proxy: HLS preset playback failed", "slot", slot, "url", p.StreamURL, "err", err)
+			s.recordFailure(p.StreamURL, err)
+			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		}
 		return
 	}
 
@@ -582,7 +807,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		if !ok || cur.StreamURL == "" {
 			return
 		}
-		boseAlive, err := s.streamOne(r.Context(), w, r, cur.StreamURL, !headersSent)
+		boseAlive, err := s.streamOne(r.Context(), w, r, unwrapSelfProxy(cur.StreamURL), !headersSent)
 		lastErr = err
 		if !boseAlive {
 			// Bose hat die Verbindung beendet (Standby, Sender Wechsel).
@@ -592,6 +817,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			if s.onDisconnect != nil {
 				s.onDisconnect(err)
 			}
+			return
+		}
+		if isPermanentUpstream(lastErr) {
+			s.logger.Info("stream proxy end: permanent upstream rejection, not retrying", "slot", slot, "lastErr", errStr(lastErr))
 			return
 		}
 		headersSent = true
@@ -642,6 +871,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		} else {
 			s.logger.Debug("stream proxy upstream fail (dedup)", "url", url, "err", err)
 		}
+		s.recordFailure(url, err)
 		if sendHeaders {
 			http.Error(w, "upstream unreachable", http.StatusBadGateway)
 			return false, err
@@ -652,12 +882,13 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		statusErr := fmt.Errorf("upstream status %d", resp.StatusCode)
+		statusErr := &upstreamStatusError{Code: resp.StatusCode, Status: resp.Status}
 		if s.shouldLogFail(url) {
 			s.logger.Warn("stream proxy upstream status", "status", resp.StatusCode, "url", url)
 		} else {
 			s.logger.Debug("stream proxy upstream status (dedup)", "status", resp.StatusCode, "url", url)
 		}
+		s.recordFailure(url, statusErr)
 		if sendHeaders {
 			http.Error(w, "upstream status: "+resp.Status, http.StatusBadGateway)
 			return false, statusErr
@@ -672,17 +903,21 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		if s.shouldLogFail(url) {
 			s.logger.Warn("stream proxy: HLS/DASH content-type not supported yet", "url", url, "contentType", ct)
 		}
+		hlsErr := fmt.Errorf("hls/dash not supported (content-type %q)", ct)
+		s.recordFailure(url, hlsErr)
 		if sendHeaders {
 			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
 		}
-		return false, fmt.Errorf("hls/dash not supported (content-type %q)", ct)
+		return false, hlsErr
 	}
 
 	// Successful reach — clear any dedup entry so a future failure
-	// for this URL produces a fresh WARN immediately.
+	// for this URL produces a fresh WARN immediately, and drop any recorded
+	// stream-status failure so the app stops reporting a now-recovered station.
 	s.failMu.Lock()
 	delete(s.lastFail, url)
 	s.failMu.Unlock()
+	s.clearFailure(url)
 
 	// Capture the real stream bitrate from the icy-br header, if the
 	// station sends one (most Icecast/Shoutcast do). A single header read

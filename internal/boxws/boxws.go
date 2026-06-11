@@ -327,11 +327,21 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		if src := attrValue(s, "source"); src != "" {
 			c.mu.Lock()
 			changed := src != c.lastSource
+			prev := c.lastSource
 			c.lastSource = src
 			c.mu.Unlock()
-			if changed && src == "AUX" {
-				c.logger.Info("box ws: source -> AUX, firing aux webhook (beta)")
-				c.handler.OnSourceAux(ctx)
+			if changed {
+				// Log every source transition at INFO (rare by construction: only
+				// on change). This is how we learn the exact label the firmware
+				// uses for external inputs like AirPlay on each model (#122), so a
+				// diagnostic bundle pins down what the box actually reports when
+				// the app cannot tell it is playing.
+				c.logger.Info("box ws: source changed", "from", prev, "to", src)
+				if src == "AUX" {
+					// AUX webhook (beta): STR never selects AUX itself, so this is
+					// always a user press.
+					c.handler.OnSourceAux(ctx)
+				}
 			}
 		}
 	}

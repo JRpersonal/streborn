@@ -74,6 +74,15 @@ type App struct {
 	discMu    sync.Mutex
 	discCache map[string]discEntry
 
+	// otaPinned maps a speaker IP to the time STR last initiated an agent OTA
+	// on it. During the post-OTA reboot the agent is down while the box's stock
+	// Bose port still answers, so discovery would briefly reclassify the box as
+	// stock and offer a USB reinstall (#108). Because STR itself triggered the
+	// update, it KNOWS that IP runs STR: while the pin is fresh, discovery forces
+	// the box to stay classified as STR regardless of what the half-booted box
+	// reports. Guarded by discMu (same lock as discCache, always held together).
+	otaPinned map[string]time.Time
+
 	// logoCache memoises resolved station-logo URLs (ResolveStationLogo)
 	// so the same station is validated against DuckDuckGo at most once per
 	// app run. Value "" means "no real logo, draw a monogram".
@@ -101,6 +110,13 @@ const discoveryStickyTTL = 100 * time.Second
 // Refresh (#108). A removed STR box lingers at most this long, an acceptable
 // trade for not flickering to a wrong reinstall offer.
 const discoverySTRStickyTTL = 6 * time.Minute
+
+// otaRebootGrace is how long after STR triggers an agent OTA the target IP is
+// force-classified as STR. It must comfortably cover the box rebooting and the
+// agent coming back up (so the stock Bose port answering first cannot relabel
+// the box), while being short enough that a genuinely re-flashed-to-stock box
+// would correct itself soon after. See otaPinned and mergeDiscoveryCache (#108).
+const otaRebootGrace = 4 * time.Minute
 
 // NewApp erstellt eine neue App Instance.
 func NewApp() *App {
@@ -379,6 +395,22 @@ func boxSortName(b BoxInfo) string {
 	return strings.ToLower(n)
 }
 
+// notePostOTA records that STR just triggered an agent OTA on host, so the
+// post-OTA reboot window does not let the box's still-answering stock Bose port
+// reclassify it as stock / "needs install" (#108).
+func (a *App) notePostOTA(host string) {
+	if host == "" {
+		return
+	}
+	a.discMu.Lock()
+	if a.otaPinned == nil {
+		a.otaPinned = map[string]time.Time{}
+	}
+	a.otaPinned[host] = time.Now()
+	a.discMu.Unlock()
+	a.logger.Info("post-OTA: pinning box as STR through its reboot", "host", host, "grace", otaRebootGrace.String())
+}
+
 // mergeDiscoveryCache refreshes the cache for boxes genuinely seen this
 // cycle, then re-adds any cached box this cycle missed but which was
 // seen within discoveryStickyTTL (keeping its last-known record, NOT
@@ -422,6 +454,35 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 		} else {
 			delete(a.discCache, key)
 		}
+	}
+	// Post-OTA pin: any IP STR is mid-update on stays classified as STR through
+	// its reboot, regardless of what the half-booted box reports (its stock Bose
+	// port answers before the agent does, #108). STR triggered the update, so it
+	// knows that IP runs STR. Expired pins are dropped.
+	for host, t := range a.otaPinned {
+		if now.Sub(t) > otaRebootGrace {
+			delete(a.otaPinned, host)
+			continue
+		}
+		b, ok := seen[host]
+		if !ok {
+			// Not visible this cycle (mid-reboot): keep the last-known record, or
+			// synthesise a minimal STR one so the box neither vanishes nor gets
+			// offered for reinstall.
+			if e, cached := a.discCache[host]; cached {
+				b = e.box
+			} else {
+				b = BoxInfo{Host: host, Port: 8888}
+			}
+		}
+		b.Kind = "str"
+		// The box is coming up on the app's embedded agent, so report that
+		// version to stop a spurious "update available" flag from looping while
+		// the agent is still restarting and cannot answer its real version.
+		b.Version = appVersion
+		b.Build = appBuild
+		seen[host] = b
+		a.discCache[host] = discEntry{box: b, seen: now}
 	}
 }
 
@@ -2682,6 +2743,18 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 	if len(bin) == 0 {
 		return fmt.Errorf("no embedded stick binary available")
 	}
+	// Refresh the USB stick BEFORE the OTA push, while the box is still fully up.
+	// The push reboots the box ~1s after the binary swap (updateAgentViaSSH), and
+	// doing the stick write afterwards raced that reboot: the going-down
+	// filesystem failed the write mid-set with an "Input/output error" (live
+	// 2026-06-11), so the stick kept its old files and the next boot's
+	// stick->NAND sync reverted the freshly OTA'd binary. Done first, the stick
+	// carries the new file set before the reboot, so the boot-sync keeps NAND on
+	// the new version. Best-effort: a stick failure does not block the OTA. The
+	// post-OTA discovery pin is set here too so it covers the whole window.
+	a.notePostOTA(host)
+	a.refreshStick(host)
+
 	if perr := a.updateAgentPreflight(host, port); perr != nil {
 		a.logger.Warn("update agent: HTTP preflight rejected, switching to SSH-OTA",
 			"host", host, "port", port, "reason", perr)
@@ -2689,7 +2762,6 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %v)", port, sshErr, perr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
-		a.refreshStickAfterOTA(host)
 		return nil
 	}
 	if err := a.updateAgentViaHTTP(host, port, bin); err != nil {
@@ -2704,24 +2776,30 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
 	}
-	a.refreshStickAfterOTA(host)
 	return nil
 }
 
-// refreshStickAfterOTA is a best-effort step run after a successful agent OTA:
-// if the STR USB stick is still inserted in the speaker, rewrite its program
-// files (agent binary, run.sh, rc.local, shim, version.txt, ...) so the next
-// boot's stick->NAND sync does not revert the freshly OTA'd binary back to the
-// stick's older one (project_deploy_stick_overwrites_nand). The write is
-// durable-flushed so it survives a reboot (project_durable_stick_write: a plain
-// write to /media/sda1 sits in the USB controller cache and is lost otherwise).
-// Never fatal: the OTA itself already succeeded, so any failure here is logged
-// and the user is simply told to re-prepare the stick if they keep it inserted.
-func (a *App) refreshStickAfterOTA(host string) {
-	out, err := boxSSHOutput(host, "test -f /media/sda1/install.sh && echo STR_STICK_PRESENT", 8*time.Second)
-	if err != nil || !strings.Contains(out, "STR_STICK_PRESENT") {
-		a.logger.Info("OTA stick refresh: no STR stick mounted on the box, nothing to refresh",
-			"host", host, "detail", strings.TrimSpace(out))
+// refreshStick is a best-effort step run as part of an agent OTA, BEFORE the
+// binary swap reboots the box (see UpdateBoxAgent): if the STR USB stick is
+// still inserted in the speaker, rewrite its program files (agent binary,
+// run.sh, rc.local, shim, version.txt, ...) so the next boot's stick->NAND sync
+// does not revert the freshly OTA'd binary back to the stick's older one
+// (project_deploy_stick_overwrites_nand). The write is durable-flushed so it
+// survives the reboot (project_durable_stick_write). Never fatal: a failure here
+// is logged and the OTA still proceeds.
+func (a *App) refreshStick(host string) {
+	// Locate the stick and make sure it is mounted before writing. Some
+	// speakers (the Portable, live 2026-06-11) do NOT auto-mount the USB stick
+	// at /media/sda1 after boot: /dev/sda1 was present and carried the full STR
+	// file set, but nothing was mounted there, so the old probe
+	// "test -f /media/sda1/install.sh" wrongly concluded "no stick" and skipped
+	// the refresh. The stick then kept its OLD program files and the next boot's
+	// stick->NAND sync reverted the freshly OTA'd binary, leaving the box on the
+	// old version (so the update appeared not to "stick" and the app's
+	// version-poll never confirmed). Mount it ourselves so the refresh runs.
+	mp, dev, ok := a.mountStick(host)
+	if !ok {
+		a.logger.Info("OTA stick refresh: no STR stick found on the box, nothing to refresh", "host", host)
 		return
 	}
 	v := appVersion
@@ -2731,21 +2809,117 @@ func (a *App) refreshStickAfterOTA(host string) {
 	files, err := sticksetup.StickFileSet(agentbin.Bytes(), v)
 	if err != nil {
 		a.logger.Warn("OTA stick refresh: could not assemble stick file set", "err", err)
+		a.unmountStick(host, mp, dev)
 		return
 	}
 	for name, data := range files {
 		// File names in the stick set are flat and safe (alphanumeric, '.', '-').
-		if out, werr := boxSSHUploadStdin(host, "cat > /media/sda1/"+name, bytes.NewReader(data), 120*time.Second); werr != nil {
+		if out, werr := boxSSHUploadStdin(host, "cat > "+mp+"/"+name, bytes.NewReader(data), 120*time.Second); werr != nil {
 			a.logger.Warn("OTA stick refresh: write failed, stick left as-is (OTA still applied to NAND)",
 				"file", name, "err", werr, "out", strings.TrimSpace(out))
+			a.unmountStick(host, mp, dev)
 			return
 		}
 	}
-	// Durable flush: SYNCHRONIZE CACHE + STOP UNIT commits the writes to flash.
-	// This also detaches the stick from the running kernel; it re-mounts on the
-	// next boot (updated), which is exactly when the stick->NAND sync runs.
-	_ = boxSSHFireAndForget(host, "sync; echo 1 > /sys/block/sda/device/delete", 8*time.Second)
-	a.logger.Info("OTA stick refresh: stick rewritten and flushed to flash", "host", host, "files", len(files), "version", v)
+	a.logger.Info("OTA stick refresh: stick rewritten", "host", host, "mount", mp, "files", len(files), "version", v)
+	// Durable flush + detach so the writes survive the imminent reboot.
+	a.unmountStick(host, mp, dev)
+}
+
+// mountStick locates the STR USB stick on the box and ensures it is mounted,
+// returning the mount point and backing block device (e.g. /dev/sda1). It
+// reuses an existing vfat mount that already carries install.sh; otherwise it
+// mounts the first candidate vfat partition that does at /tmp/str-stick. ok is
+// false when no STR stick is present. The mount persists across the SSH session
+// so the subsequent per-file writes reach it.
+func (a *App) mountStick(host string) (mountPoint, device string, ok bool) {
+	// POSIX-sh (busybox) script: no awk/bashisms. For each candidate stick
+	// device, unmount any existing mount, fsck it, then mount fresh at
+	// /tmp/str-stick and keep the one that carries install.sh.
+	//
+	// The fsck is essential (live 2026-06-11, Portable): the speaker does NOT
+	// cleanly unmount the stick, so its FAT is left dirty ("Volume was not
+	// properly unmounted"). A fresh RW mount is fine for a small write, but the
+	// 11 MB agent binary trips a FAT inconsistency partway and the default
+	// errors=remount-ro flips the filesystem read-only, so the next file write
+	// fails with "Input/output error" and the stick is left half-updated. The
+	// box then boot-syncs its OLD files back onto NAND, reverting the OTA. A
+	// fsck.vfat -a clears the dirty FAT first so the whole set writes cleanly
+	// (verified live: an 11 MB write that failed before succeeded after fsck).
+	const script = `PATH=/usr/sbin:/sbin:/usr/bin:/bin:$PATH
+MP=""; DEV=""
+mkdir -p /tmp/str-stick
+for dev in /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sda /dev/sdb; do
+  [ -b "$dev" ] || continue
+  cur=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
+  if [ -n "$cur" ]; then
+    umount "$cur" 2>/dev/null
+    # Still mounted (umount busy)? Use that mount as-is; do NOT fsck a mounted FS
+    # or mount the same device twice (a double vfat mount corrupts writes).
+    cur2=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
+    if [ -n "$cur2" ]; then
+      if [ -f "$cur2/install.sh" ]; then MP="$cur2"; DEV="$dev"; break; fi
+      continue
+    fi
+  fi
+  # Device is unmounted now: fsck the (possibly dirty) FAT, then mount fresh.
+  umount /tmp/str-stick 2>/dev/null
+  fsck.vfat -a "$dev" >/dev/null 2>&1 || dosfsck -a -w "$dev" >/dev/null 2>&1
+  if mount -t vfat "$dev" /tmp/str-stick 2>/dev/null; then
+    if [ -f /tmp/str-stick/install.sh ]; then MP=/tmp/str-stick; DEV="$dev"; break; fi
+    umount /tmp/str-stick 2>/dev/null
+  fi
+done
+if [ -n "$MP" ]; then echo "STR_STICK_MP=$MP"; echo "STR_STICK_DEV=$DEV"; else echo STR_STICK_NONE; fi`
+	out, err := boxSSHOutput(host, script, 30*time.Second)
+	if err != nil {
+		a.logger.Info("OTA stick refresh: stick probe/mount failed", "host", host, "err", err, "out", strings.TrimSpace(out))
+		return "", "", false
+	}
+	mp := lineValue(out, "STR_STICK_MP=")
+	dev := lineValue(out, "STR_STICK_DEV=")
+	if mp == "" {
+		return "", "", false
+	}
+	a.logger.Info("OTA stick refresh: stick mounted", "host", host, "mount", mp, "device", dev)
+	return mp, dev, true
+}
+
+// unmountStick flushes the stick writes to flash and detaches it so they survive
+// the imminent post-OTA reboot: a plain write to a vfat stick sits in the USB
+// controller cache and is otherwise lost (project_durable_stick_write). The
+// SYNCHRONIZE CACHE + STOP UNIT via the block device's "delete" node commits it;
+// the stick re-mounts (updated) on the next boot, when the stick->NAND sync runs.
+func (a *App) unmountStick(host, mountPoint, device string) {
+	cmd := "sync; umount " + mountPoint + " 2>/dev/null"
+	if base := blockDeviceBase(device); base != "" {
+		cmd += "; echo 1 > /sys/block/" + base + "/device/delete 2>/dev/null"
+	}
+	_ = boxSSHFireAndForget(host, cmd, 8*time.Second)
+}
+
+// lineValue returns the text after prefix on the first line that starts with it,
+// trimmed, or "".
+func lineValue(out, prefix string) string {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		}
+	}
+	return ""
+}
+
+// blockDeviceBase maps a partition device path to its whole-disk basename for the
+// /sys/block/<name>/device/delete flush: "/dev/sda1" -> "sda". Returns "" for an
+// empty or unrecognised device.
+func blockDeviceBase(device string) string {
+	d := strings.TrimPrefix(device, "/dev/")
+	if d == "" || strings.ContainsAny(d, "/ ") {
+		return ""
+	}
+	// Strip a trailing partition number (sda1 -> sda). USB sticks are sd*.
+	return strings.TrimRight(d, "0123456789")
 }
 
 // updateAgentPreflight checks that /api/agent/version on host:port really

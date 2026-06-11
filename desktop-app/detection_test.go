@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // These tests lock in the speaker-detection invariants that have repeatedly
 // regressed (#108): a flashed speaker must never be downgraded to "stock"
@@ -79,5 +82,83 @@ func TestMergeSameKindKeepsNameAndFreshVersion(t *testing.T) {
 	}
 	if !out.PortVerified || out.Port != 17008 {
 		t.Errorf("port = %d verified=%v, want 17008 verified", out.Port, out.PortVerified)
+	}
+}
+
+// After STR triggers an OTA, a stock sighting during the box's reboot (its Bose
+// :8090 answers before the agent) must NOT reclassify the box as stock: the
+// post-OTA pin forces it to stay STR for the reboot grace (#108).
+func TestPostOTAPinForcesStr(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{},
+		otaPinned: map[string]time.Time{"192.168.0.7": time.Now()},
+	}
+	// This cycle only saw the box as a stock /info hit (agent still rebooting).
+	seen := map[string]BoxInfo{"192.168.0.7": {Kind: "stock", Host: "192.168.0.7"}}
+	a.mergeDiscoveryCache(seen)
+	if got := seen["192.168.0.7"].Kind; got != "str" {
+		t.Errorf("Kind = %q, want str (post-OTA pin must keep it STR through reboot)", got)
+	}
+}
+
+// A box mid-reboot that is not seen at all this cycle (neither agent nor stock
+// answered) must still be re-added as STR while the OTA pin is fresh, so it does
+// not vanish from the list during the reboot.
+func TestPostOTAPinReaddsMissingBox(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{},
+		otaPinned: map[string]time.Time{"192.168.0.8": time.Now()},
+	}
+	seen := map[string]BoxInfo{} // nothing visible this cycle
+	a.mergeDiscoveryCache(seen)
+	b, ok := seen["192.168.0.8"]
+	if !ok || b.Kind != "str" {
+		t.Errorf("box missing or not STR: ok=%v kind=%q, want present and STR", ok, b.Kind)
+	}
+}
+
+// An expired OTA pin must stop forcing STR so a box genuinely reverted to stock
+// can correct itself.
+func TestPostOTAPinExpires(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{},
+		otaPinned: map[string]time.Time{"192.168.0.9": time.Now().Add(-otaRebootGrace - time.Minute)},
+	}
+	seen := map[string]BoxInfo{"192.168.0.9": {Kind: "stock", Host: "192.168.0.9"}}
+	a.mergeDiscoveryCache(seen)
+	if got := seen["192.168.0.9"].Kind; got != "stock" {
+		t.Errorf("Kind = %q, want stock (an expired pin must not force STR)", got)
+	}
+	if _, still := a.otaPinned["192.168.0.9"]; still {
+		t.Errorf("expired pin should have been evicted")
+	}
+}
+
+func TestBlockDeviceBase(t *testing.T) {
+	cases := map[string]string{
+		"/dev/sda1": "sda",
+		"/dev/sdb":  "sdb",
+		"/dev/sdc1": "sdc",
+		"":          "",
+		"/dev/":     "",
+		"bad path":  "",
+	}
+	for in, want := range cases {
+		if got := blockDeviceBase(in); got != want {
+			t.Errorf("blockDeviceBase(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLineValue(t *testing.T) {
+	out := "noise\nSTR_STICK_MP=/tmp/str-stick\nSTR_STICK_DEV=/dev/sda1\nDONE"
+	if got := lineValue(out, "STR_STICK_MP="); got != "/tmp/str-stick" {
+		t.Errorf("lineValue MP = %q, want /tmp/str-stick", got)
+	}
+	if got := lineValue(out, "STR_STICK_DEV="); got != "/dev/sda1" {
+		t.Errorf("lineValue DEV = %q, want /dev/sda1", got)
+	}
+	if got := lineValue(out, "MISSING="); got != "" {
+		t.Errorf("lineValue MISSING = %q, want empty", got)
 	}
 }

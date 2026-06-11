@@ -1286,12 +1286,15 @@ async function checkSshBanner() {
     const r = await boxFetch(box, '/api/stick/status');
     if (!r.ok) return;
     const data = await r.json();
-    // Only warn once the stick is no longer mounted on the box. While
-    // mounted, the agent is mid-setup or mid-update — SSH is expected
-    // to be open, the user cannot act on the warning yet, and the
-    // banner is just noise. After the stick is removed (or the next
-    // setup phase has unmounted it), the SSH state is meaningful.
-    const show = !!(data && data.sshOpen && !data.mounted);
+    // The banner is a "remove the stick now that setup is done" reminder, and it
+    // clears the moment the stick is removed. The old logic showed it only AFTER
+    // removal while SSH was still open, but the agent keeps sshd up on every boot
+    // for diagnostics (run.sh ensure_sshd_running, pre-1.0), so "SSH open" never
+    // clears and the banner was stuck forever even with the stick already out
+    // (Brice, #11). Tying it to the stick still being mounted makes it actionable
+    // and self-clearing. (Setup view and the OTA window are already excluded
+    // above.) Full SSH hardening is the separate v1.0 item.
+    const show = !!(data && data.mounted);
     gb.classList.toggle('hidden', !show);
   } catch {}
 }
@@ -1328,7 +1331,6 @@ $('searchCountry').onchange = () => {
   const ls = $('searchLang');
   if (ls) ls.value = '';
   updateFilterIndicators();
-  try { localStorage.setItem('userTouchedRegion', '1'); } catch {}
   saveSearchCountry(state.searchCountry);
   // Reload the language list scoped to the selected country so the
   // counts reflect stations in THIS country, not the global pool.
@@ -1353,7 +1355,6 @@ async function loadLanguagesForCountry() {
 $('searchLang').onchange    = () => {
   state.searchLang = $('searchLang').value;
   updateFilterIndicators();
-  try { localStorage.setItem('userTouchedRegion', '1'); } catch {}
   doRefilter();
 };
 
@@ -1689,13 +1690,13 @@ async function loadStickRegion() {
     if (!r.ok) return;
     const data = await r.json();
     if (data && data.country) {
-      // Only set defaults if the user has not touched the region.
-      const userTouched = (() => { try { return !!localStorage.getItem('userTouchedRegion'); } catch { return false; }})();
-      if (!userTouched) {
-        state.searchCountry = data.country;
-        const cs = $('searchCountry');
-        if (cs) cs.value = data.country;
-      }
+      // Deliberately do NOT seed the radio-search country filter from the
+      // stick region. STR is a worldwide app; the radio search defaults to
+      // all countries so a German-provisioned box does not silently hide
+      // every non-German station. The country filter stays at the user's
+      // own choice (persisted, issue #86) or "all countries" until they
+      // pick one. The region still drives only the language default below.
+      //
       // Default the language filter to the APP language, not the stick
       // region's language and not a last-used value. Only when the app
       // locale has no obvious radio-browser language do we fall back to the
@@ -2309,6 +2310,27 @@ function activeSlotFromLocation(loc) {
   return m ? parseInt(m[1], 10) : null;
 }
 
+// decodeProxyUrl unwraps a stream-proxy URL
+// (http://<host>:8888/stream/raw?u=<base64url real URL>) back to the real
+// upstream URL it wraps; returns the input unchanged otherwise. A preset MUST
+// store the real station URL, never the proxy wrapper: since v0.7.16 ad-hoc radio
+// plays through the proxy, so the box's now-playing location is the wrapper.
+// Saving that made the box, on recall, ask the proxy to fetch its own loopback
+// URL, which the agent's SSRF guard blocks, so nothing played (the ST20 "plays
+// nothing" regression).
+function decodeProxyUrl(loc) {
+  if (!loc) return loc;
+  try {
+    const u = new URL(loc);
+    if (u.pathname !== '/stream/raw') return loc;
+    const enc = u.searchParams.get('u');
+    if (!enc) return loc;
+    const real = atob(enc.replace(/-/g, '+').replace(/_/g, '/'));
+    if (/^https?:\/\//i.test(real)) return real;
+  } catch { /* not a parseable proxy URL: fall through */ }
+  return loc;
+}
+
 // Spotify glyph (green circle + three arcs) shown as the logo on Spotify
 // preset tiles so they are instantly recognisable as a Spotify playlist.
 // Inline SVG data URI: no bundled asset, no network fetch.
@@ -2639,7 +2661,7 @@ async function saveCurrentToSlot(slot) {
   try {
     await SetPreset(
       state.currentBox.host, state.currentBox.port,
-      slot, name, state.nowLocation, state.nowIcon || '', state.nowBitrate || 0
+      slot, name, decodeProxyUrl(state.nowLocation), state.nowIcon || '', state.nowBitrate || 0
     );
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
@@ -2882,16 +2904,30 @@ function renderNowPlayingBar() {
   } else if (/\/stream\//.test(loc) && !/\/spotify\/stream/.test(loc) && state.nowTitle) {
     displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
   }
+  // Match the source case-insensitively: the firmware is not consistent about
+  // casing across models, and AirPlay in particular can read as AIRPLAY,
+  // AirPlay2, etc. depending on the speaker (#122).
+  const srcU = src.toUpperCase();
+  const isAirplay = srcU.includes('AIRPLAY');
   let stateLabel, stateClass;
   if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
   else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
   else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }
-  else if (src === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
+  else if (srcU === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
   else { stateLabel = ''; stateClass = 'idle'; }
-  if (src === 'AUX') { displayName = t('status.auxInput'); if (!stateLabel) stateLabel = t('status.active'); }
-  else if (src === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) stateLabel = t('status.active'); }
-  else if (src === 'AIRPLAY') { displayName = t('status.airplay'); if (!stateLabel) stateLabel = t('status.active'); }
-  const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && src !== 'AUX' && src !== 'BLUETOOTH' && src !== 'AIRPLAY';
+  if (srcU === 'AUX') { displayName = t('status.auxInput'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  else if (srcU === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  else if (isAirplay) { displayName = t('status.airplay'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  else if (srcU && srcU !== 'STANDBY' && srcU !== 'INVALID_SOURCE' && ps !== 'STOP_STATE' && !stateLabel && !displayName) {
+    // The box has an active source STR does not specifically label (some models
+    // report AirPlay/Spotify Connect/other inputs under a different name and
+    // without a playStatus). Reflect it as active rather than letting it fall
+    // through to a misleading "ready" while audio is actually playing. An
+    // explicit STOP_STATE is excluded so a stopped box still reads as idle.
+    stateLabel = t('status.active');
+    stateClass = 'play';
+  }
+  const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && srcU !== 'AUX' && srcU !== 'BLUETOOTH' && !isAirplay;
   const brLabel = isStreamSrc ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
   bar.className = 'status-bar status-' + stateClass;
   let statusHTML;
@@ -3268,6 +3304,124 @@ function isBoseCompatible(s) {
   return codec === 'MP3' || codec === 'AAC' || codec === 'AACP' || codec === 'MPEG';
 }
 
+// streamErrorMessage maps a stream-status reason to a clear, human, localized
+// message. The raw HTTP code (403/503) means nothing to a user; the reason
+// class does. Falls back to a generic "unreachable" line for unknown reasons.
+function streamErrorMessage(reason) {
+  switch (reason) {
+    case 'blocked':     return t('search.streamBlocked');
+    case 'gone':        return t('search.streamGone');
+    case 'unavailable': return t('search.streamUnavailable');
+    case 'hls':         return t('search.streamHls');
+    default:            return t('search.streamUnreachable');
+  }
+}
+
+// pollStreamFailure asks the agent whether the stream the box just started has
+// failed upstream. Radio failures are asynchronous: the box accepts the UPnP
+// URL instantly, then the 403/503 only surfaces when it pulls the bytes. We poll
+// /api/stream-status for a few seconds; the moment a fresh failure for OUR url
+// appears we return it, otherwise we assume the station is playing and return
+// null. Best-effort: any fetch error just ends the poll (assume playing).
+async function pollStreamFailure(box, url, windowMs = 6000) {
+  const deadline = Date.now() + windowMs;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 800));
+    if (state.nowLocation !== url) return null; // user moved on; stop watching
+    let data;
+    try {
+      const r = await boxFetch(box, '/api/stream-status', {}, 4000);
+      if (!r.ok) continue;
+      data = await r.json();
+    } catch { return null; }
+    if (data && data.error && data.url === url) return data;
+  }
+  return null;
+}
+
+// findAlternativeStation looks for ANOTHER radio-browser entry of the same
+// station than the ones already tried. Stations are frequently listed several
+// times (different mirrors/CDNs); when one URL is geo-blocked or down, a sibling
+// entry usually plays. We match by name (exact, then loose) and skip any URL on
+// a host we already failed on, preferring entries radio-browser last checked OK.
+async function findAlternativeStation(orig, triedHosts) {
+  const wanted = (orig.name || '').toLowerCase().trim();
+  if (!wanted) return null;
+  let list;
+  try {
+    list = await RadioSearch({ q: orig.name, limit: 20, order: 'votes', top: false }) || [];
+  } catch { return null; }
+  const candidates = list.filter(s => {
+    const u = s.url_resolved || s.url;
+    if (!u) return false;
+    const h = extractHost(u);
+    if (!h || triedHosts.has(h)) return false;
+    const n = (s.name || '').toLowerCase().trim();
+    return n === wanted || n.includes(wanted) || wanted.includes(n);
+  });
+  if (candidates.length === 0) return null;
+  // Prefer a station radio-browser last checked OK, then by votes (the search
+  // already ordered by votes, so a stable partition keeps that secondary order).
+  candidates.sort((a, b) => (b.lastcheckok ? 1 : 0) - (a.lastcheckok ? 1 : 0));
+  return candidates[0];
+}
+
+// playStation plays a radio station and, when its stream fails upstream
+// (403 geo-block, 503 down, dead URL), shows a clear reason and automatically
+// retries with another radio-browser entry of the SAME station before giving
+// up. This turns the most common "every station errors" frustration into a
+// usually-silent recovery. Used by every radio play-now button.
+async function playStation(s) {
+  const box = state.currentBox;
+  if (!box) return;
+  const tried = new Set();
+  let cur = s;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const url = cur.url_resolved || cur.url;
+    const host = extractHost(url);
+    if (host) tried.add(host);
+    const chain = stationLogoChain(cur);
+    state.nowPlayState = 'BUFFERING_STATE';
+    state.nowLocation = url;
+    state.nowName = s.name; // keep the user's chosen station name across retries
+    state.nowIcon = chain;
+    state.nowBitrate = cur.bitrate || 0;
+    scheduleLiveBitrate();
+    state.nowUUID = cur.stationuuid || '';
+    renderPresets();
+
+    let fail = null;
+    try {
+      await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '');
+      if (cur.stationuuid) { try { RadioClick(cur.stationuuid); } catch {} }
+      // Refresh the now-playing bar promptly on the happy path; the upstream
+      // verdict (success vs 403/503) arrives asynchronously, so poll for it.
+      setTimeout(refreshStatus, 1200);
+      fail = await pollStreamFailure(box, url);
+    } catch (err) {
+      // A synchronous failure (box refused the URI) reads as unreachable.
+      fail = { reason: 'unreachable', status: 0 };
+    }
+    if (!fail) return; // playing fine
+
+    const alt = await findAlternativeStation(s, tried);
+    if (!alt) {
+      state.nowPlayState = '';
+      state.nowLocation = '';
+      renderPresets();
+      showToast(streamErrorMessage(fail.reason) + ' ' + t('search.allSourcesFailed'));
+      return;
+    }
+    showToast(t('search.tryingAlternative', { name: s.name || '' }));
+    cur = alt;
+  }
+  // Exhausted the retry budget without a working source.
+  state.nowPlayState = '';
+  state.nowLocation = '';
+  renderPresets();
+  showToast(t('search.allSourcesFailed'));
+}
+
 function renderSearchResults() {
   const res = $('searchResults');
   // Optional client-side Bose compatibility filter: drop HTTPS
@@ -3361,26 +3515,11 @@ function renderSearchResults() {
     btn.onclick = async (e) => {
       e.stopPropagation();
       const s = list[parseInt(btn.dataset.i, 10)];
-      const url = s.url_resolved || s.url;
-      const chain = stationLogoChain(s);
-      state.nowPlayState = 'BUFFERING_STATE';
-      state.nowLocation = url;
-      state.nowName = s.name;
-      state.nowIcon = chain;
-      state.nowBitrate = s.bitrate || 0;
-      scheduleLiveBitrate();
-      state.nowUUID = s.stationuuid || '';
-      renderPresets();
-      try {
-        await PlayURL(state.currentBox.host, state.currentBox.port, url, s.name, chain, s.stationuuid || '');
-        // radio-browser click stat now fired app-side (the box no longer does it).
-        if (s.stationuuid) { try { RadioClick(s.stationuuid); } catch {} }
-        setTimeout(refreshStatus, 1200);
-      } catch (err) {
-        state.nowPlayState = '';
-        state.nowLocation = '';
-        showError(err);
-      }
+      // playStation handles the upstream-failure case (403/503/dead URL): it
+      // shows a clear reason and auto-retries another radio-browser entry of the
+      // same station before giving up, so a single blocked mirror no longer
+      // looks like "every station errors".
+      await playStation(s);
     };
   });
   res.querySelectorAll('.pick').forEach(btn => {
@@ -4199,7 +4338,11 @@ function renderBoxSettings(s, box) {
     // now" button would interrupt the update.
     const gb = $('globalSecurityBanner');
     if (gb) {
-      const show = sshOpen && !stickMounted && !state.otaInProgress;
+      // Consistent with checkSshBanner: the reminder is shown while the stick is
+      // still in the box and clears once it is removed. The agent keeps sshd up
+      // for diagnostics regardless, so an "SSH still open" gate never cleared
+      // (#11). OTA window still excluded.
+      const show = stickMounted && !state.otaInProgress;
       gb.classList.toggle('hidden', !show);
     }
 
@@ -4695,7 +4838,6 @@ function renderBoxSettings(s, box) {
         });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const data = await r.json();
-        try { localStorage.removeItem('userTouchedRegion'); } catch {}
         state.searchCountry = data.country;
         state.searchLang = data.language;
         saveSearchCountry(state.searchCountry);
