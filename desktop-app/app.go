@@ -2718,10 +2718,18 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 // Never fatal: the OTA itself already succeeded, so any failure here is logged
 // and the user is simply told to re-prepare the stick if they keep it inserted.
 func (a *App) refreshStickAfterOTA(host string) {
-	out, err := boxSSHOutput(host, "test -f /media/sda1/install.sh && echo STR_STICK_PRESENT", 8*time.Second)
-	if err != nil || !strings.Contains(out, "STR_STICK_PRESENT") {
-		a.logger.Info("OTA stick refresh: no STR stick mounted on the box, nothing to refresh",
-			"host", host, "detail", strings.TrimSpace(out))
+	// Locate the stick and make sure it is mounted before writing. Some
+	// speakers (the Portable, live 2026-06-11) do NOT auto-mount the USB stick
+	// at /media/sda1 after boot: /dev/sda1 was present and carried the full STR
+	// file set, but nothing was mounted there, so the old probe
+	// "test -f /media/sda1/install.sh" wrongly concluded "no stick" and skipped
+	// the refresh. The stick then kept its OLD program files and the next boot's
+	// stick->NAND sync reverted the freshly OTA'd binary, leaving the box on the
+	// old version (so the update appeared not to "stick" and the app's
+	// version-poll never confirmed). Mount it ourselves so the refresh runs.
+	mp, dev, ok := a.mountStick(host)
+	if !ok {
+		a.logger.Info("OTA stick refresh: no STR stick found on the box, nothing to refresh", "host", host)
 		return
 	}
 	v := appVersion
@@ -2731,21 +2739,98 @@ func (a *App) refreshStickAfterOTA(host string) {
 	files, err := sticksetup.StickFileSet(agentbin.Bytes(), v)
 	if err != nil {
 		a.logger.Warn("OTA stick refresh: could not assemble stick file set", "err", err)
+		a.unmountStick(host, mp, dev)
 		return
 	}
 	for name, data := range files {
 		// File names in the stick set are flat and safe (alphanumeric, '.', '-').
-		if out, werr := boxSSHUploadStdin(host, "cat > /media/sda1/"+name, bytes.NewReader(data), 120*time.Second); werr != nil {
+		if out, werr := boxSSHUploadStdin(host, "cat > "+mp+"/"+name, bytes.NewReader(data), 120*time.Second); werr != nil {
 			a.logger.Warn("OTA stick refresh: write failed, stick left as-is (OTA still applied to NAND)",
 				"file", name, "err", werr, "out", strings.TrimSpace(out))
+			a.unmountStick(host, mp, dev)
 			return
 		}
 	}
-	// Durable flush: SYNCHRONIZE CACHE + STOP UNIT commits the writes to flash.
-	// This also detaches the stick from the running kernel; it re-mounts on the
-	// next boot (updated), which is exactly when the stick->NAND sync runs.
-	_ = boxSSHFireAndForget(host, "sync; echo 1 > /sys/block/sda/device/delete", 8*time.Second)
-	a.logger.Info("OTA stick refresh: stick rewritten and flushed to flash", "host", host, "files", len(files), "version", v)
+	a.logger.Info("OTA stick refresh: stick rewritten", "host", host, "mount", mp, "files", len(files), "version", v)
+	// Durable flush + detach so the writes survive the imminent reboot.
+	a.unmountStick(host, mp, dev)
+}
+
+// mountStick locates the STR USB stick on the box and ensures it is mounted,
+// returning the mount point and backing block device (e.g. /dev/sda1). It
+// reuses an existing vfat mount that already carries install.sh; otherwise it
+// mounts the first candidate vfat partition that does at /tmp/str-stick. ok is
+// false when no STR stick is present. The mount persists across the SSH session
+// so the subsequent per-file writes reach it.
+func (a *App) mountStick(host string) (mountPoint, device string, ok bool) {
+	// POSIX-sh (busybox) script: no awk/bashisms. First reuse an existing vfat
+	// mount carrying install.sh, else try the common stick devices and mount the
+	// one that has it.
+	const script = `MP=""; DEV=""
+while read d m fstype rest; do
+  if [ "$fstype" = "vfat" ] && [ -f "$m/install.sh" ]; then MP="$m"; DEV="$d"; break; fi
+done < /proc/mounts
+if [ -z "$MP" ]; then
+  mkdir -p /tmp/str-stick
+  for dev in /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sda /dev/sdb; do
+    [ -b "$dev" ] || continue
+    umount /tmp/str-stick 2>/dev/null
+    if mount -t vfat "$dev" /tmp/str-stick 2>/dev/null; then
+      if [ -f /tmp/str-stick/install.sh ]; then MP=/tmp/str-stick; DEV="$dev"; break; fi
+      umount /tmp/str-stick 2>/dev/null
+    fi
+  done
+fi
+if [ -n "$MP" ]; then echo "STR_STICK_MP=$MP"; echo "STR_STICK_DEV=$DEV"; else echo STR_STICK_NONE; fi`
+	out, err := boxSSHOutput(host, script, 20*time.Second)
+	if err != nil {
+		a.logger.Info("OTA stick refresh: stick probe/mount failed", "host", host, "err", err, "out", strings.TrimSpace(out))
+		return "", "", false
+	}
+	mp := lineValue(out, "STR_STICK_MP=")
+	dev := lineValue(out, "STR_STICK_DEV=")
+	if mp == "" {
+		return "", "", false
+	}
+	a.logger.Info("OTA stick refresh: stick mounted", "host", host, "mount", mp, "device", dev)
+	return mp, dev, true
+}
+
+// unmountStick flushes the stick writes to flash and detaches it so they survive
+// the imminent post-OTA reboot: a plain write to a vfat stick sits in the USB
+// controller cache and is otherwise lost (project_durable_stick_write). The
+// SYNCHRONIZE CACHE + STOP UNIT via the block device's "delete" node commits it;
+// the stick re-mounts (updated) on the next boot, when the stick->NAND sync runs.
+func (a *App) unmountStick(host, mountPoint, device string) {
+	cmd := "sync; umount " + mountPoint + " 2>/dev/null"
+	if base := blockDeviceBase(device); base != "" {
+		cmd += "; echo 1 > /sys/block/" + base + "/device/delete 2>/dev/null"
+	}
+	_ = boxSSHFireAndForget(host, cmd, 8*time.Second)
+}
+
+// lineValue returns the text after prefix on the first line that starts with it,
+// trimmed, or "".
+func lineValue(out, prefix string) string {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		}
+	}
+	return ""
+}
+
+// blockDeviceBase maps a partition device path to its whole-disk basename for the
+// /sys/block/<name>/device/delete flush: "/dev/sda1" -> "sda". Returns "" for an
+// empty or unrecognised device.
+func blockDeviceBase(device string) string {
+	d := strings.TrimPrefix(device, "/dev/")
+	if d == "" || strings.ContainsAny(d, "/ ") {
+		return ""
+	}
+	// Strip a trailing partition number (sda1 -> sda). USB sticks are sd*.
+	return strings.TrimRight(d, "0123456789")
 }
 
 // updateAgentPreflight checks that /api/agent/version on host:port really

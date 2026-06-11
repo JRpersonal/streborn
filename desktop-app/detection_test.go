@@ -81,3 +81,32 @@ func TestMergeSameKindKeepsNameAndFreshVersion(t *testing.T) {
 		t.Errorf("port = %d verified=%v, want 17008 verified", out.Port, out.PortVerified)
 	}
 }
+
+func TestBlockDeviceBase(t *testing.T) {
+	cases := map[string]string{
+		"/dev/sda1": "sda",
+		"/dev/sdb":  "sdb",
+		"/dev/sdc1": "sdc",
+		"":          "",
+		"/dev/":     "",
+		"bad path":  "",
+	}
+	for in, want := range cases {
+		if got := blockDeviceBase(in); got != want {
+			t.Errorf("blockDeviceBase(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLineValue(t *testing.T) {
+	out := "noise\nSTR_STICK_MP=/tmp/str-stick\nSTR_STICK_DEV=/dev/sda1\nDONE"
+	if got := lineValue(out, "STR_STICK_MP="); got != "/tmp/str-stick" {
+		t.Errorf("lineValue MP = %q, want /tmp/str-stick", got)
+	}
+	if got := lineValue(out, "STR_STICK_DEV="); got != "/dev/sda1" {
+		t.Errorf("lineValue DEV = %q, want /dev/sda1", got)
+	}
+	if got := lineValue(out, "MISSING="); got != "" {
+		t.Errorf("lineValue MISSING = %q, want empty", got)
+	}
+}
