@@ -19,6 +19,7 @@ package streamproxy
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -135,6 +136,17 @@ type Server struct {
 
 	failMu   sync.Mutex
 	lastFail map[string]time.Time
+
+	// errMu guards lastErr, the most recent terminal upstream failure for the
+	// stream the box is (or just was) pulling. The desktop app polls
+	// /api/stream-status right after starting a station so it can show a clear
+	// reason ("this stream is blocked / unavailable") and automatically try
+	// another radio-browser entry of the same station. Radio failures are
+	// asynchronous: the box accepts the UPnP URL instantly, then the 403/503
+	// only surfaces here when it pulls the bytes, so a pollable record is the
+	// only way the app learns why nothing plays.
+	errMu   sync.Mutex
+	lastErr streamFailure
 
 	// brMu guards the detected bitrate of the stream currently being
 	// proxied. We learn it from the upstream Icecast/Shoutcast "icy-br"
@@ -437,6 +449,92 @@ func (s *Server) shouldLogFail(url string) bool {
 	return true
 }
 
+// upstreamStatusError carries the upstream HTTP status of a non-200 response so
+// the reconnect loops can tell a permanent client-side rejection (403 geo-block,
+// 404/410 gone) from a transient one (5xx) via errors.As, instead of parsing a
+// formatted string.
+type upstreamStatusError struct {
+	Code   int
+	Status string
+}
+
+func (e *upstreamStatusError) Error() string {
+	if e.Status != "" {
+		return "upstream status " + e.Status
+	}
+	return fmt.Sprintf("upstream status %d", e.Code)
+}
+
+// isPermanentUpstream reports whether err is an upstream failure that retrying
+// the SAME URL cannot fix: a client-side HTTP rejection (forbidden, not found,
+// gone, unavailable-for-legal-reasons) or an HLS/DASH playlist we cannot play.
+// For these the reconnect loop gives up immediately so the desktop app can fall
+// back to another radio-browser entry of the station within a second instead of
+// after a 30s retry storm against a URL that will never serve audio.
+func isPermanentUpstream(err error) bool {
+	var se *upstreamStatusError
+	if errors.As(err, &se) {
+		switch se.Code {
+		case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+			http.StatusNotFound, http.StatusGone, http.StatusUnavailableForLegalReasons:
+			return true
+		}
+	}
+	return false
+}
+
+// streamFailure is the most recent terminal upstream error, surfaced via
+// /api/stream-status. url is the upstream stream URL (not the proxy wrapper) so
+// the app can confirm the error belongs to the station it just started.
+type streamFailure struct {
+	when   time.Time
+	code   int    // upstream HTTP status, 0 for a network-level failure
+	reason string // coarse class the UI maps to a message: blocked|gone|unavailable|unreachable|hls
+	url    string
+}
+
+// classifyFailure maps an upstream error to a coarse reason the desktop app
+// turns into a localized, human message. Network errors (DNS, refused, reset)
+// land in "unreachable"; HTTP statuses split into blocked/gone/unavailable.
+func classifyFailure(err error) (code int, reason string) {
+	var se *upstreamStatusError
+	if errors.As(err, &se) {
+		switch se.Code {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusUnavailableForLegalReasons:
+			return se.Code, "blocked"
+		case http.StatusNotFound, http.StatusGone:
+			return se.Code, "gone"
+		default:
+			// Everything else (5xx, and any other non-200) is a transient
+			// "currently unavailable" from the station's side.
+			return se.Code, "unavailable"
+		}
+	}
+	if strings.Contains(strings.ToLower(errStr(err)), "hls") || strings.Contains(strings.ToLower(errStr(err)), "dash") {
+		return 0, "hls"
+	}
+	return 0, "unreachable"
+}
+
+// recordFailure stores the latest terminal upstream failure for url so the
+// desktop app can poll it and react (message + alternative-source fallback).
+func (s *Server) recordFailure(url string, err error) {
+	code, reason := classifyFailure(err)
+	s.errMu.Lock()
+	s.lastErr = streamFailure{when: time.Now(), code: code, reason: reason, url: url}
+	s.errMu.Unlock()
+}
+
+// clearFailure drops any recorded failure for url once it streams successfully,
+// so a recovered station does not keep reporting a stale error to the app.
+func (s *Server) clearFailure(url string) {
+	s.errMu.Lock()
+	if s.lastErr.url == url {
+		s.lastErr = streamFailure{}
+	}
+	s.errMu.Unlock()
+}
+
 // Handler registriert /stream/<slot> sowie /stream/raw fuer ad-hoc URLs
 // (z.B. aus der Radio Suche) auf den uebergebenen Mux.
 func (s *Server) Register(mux *http.ServeMux) {
@@ -444,7 +542,51 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/stream/", s.handle)
 	mux.HandleFunc("/api/stream/bitrate", s.handleBitrate)
 	mux.HandleFunc("/api/stream/title", s.handleTitle)
+	mux.HandleFunc("/api/stream-status", s.handleStreamStatus)
 }
+
+// handleStreamStatus reports the most recent terminal upstream failure as JSON:
+//
+//	{"error":true,"status":403,"reason":"blocked","url":"http://...","ageMs":1200}
+//
+// or {"error":false} when the last start streamed fine or is too old to matter.
+// The desktop app polls this for a few seconds after starting a station: a fresh
+// error tells it which message to show and that it should try another
+// radio-browser entry of the same station. Only failures younger than
+// streamStatusTTL are reported so a long-past error never blocks a fresh play.
+func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	s.errMu.Lock()
+	f := s.lastErr
+	s.errMu.Unlock()
+	if f.when.IsZero() || time.Since(f.when) > streamStatusTTL {
+		fmt.Fprint(w, `{"error":false}`)
+		return
+	}
+	body, err := json.Marshal(struct {
+		Error  bool   `json:"error"`
+		Status int    `json:"status"`
+		Reason string `json:"reason"`
+		URL    string `json:"url"`
+		AgeMs  int64  `json:"ageMs"`
+	}{
+		Error:  true,
+		Status: f.code,
+		Reason: f.reason,
+		URL:    f.url,
+		AgeMs:  time.Since(f.when).Milliseconds(),
+	})
+	if err != nil {
+		fmt.Fprint(w, `{"error":false}`)
+		return
+	}
+	w.Write(body)
+}
+
+// streamStatusTTL bounds how long a recorded upstream failure is reported. Long
+// enough for the app's post-play poll window, short enough that a stale error
+// from minutes ago never suppresses a fresh, healthy station.
+const streamStatusTTL = 20 * time.Second
 
 // handleTitle returns the live ICY StreamTitle of the stream currently
 // proxied, or "" when the station sends no metadata. Cheap: a single guarded
@@ -524,6 +666,14 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		if isPermanentUpstream(lastErr) {
+			// A client-side rejection (403 geo-block, 404/410 gone) will not
+			// change on retry. Stop now so the desktop app can fall back to
+			// another radio-browser entry of the station instead of waiting out
+			// a 30s retry storm against a URL that will never serve audio.
+			s.logger.Info("stream proxy end: permanent upstream rejection, not retrying", "kind", "raw", "lastErr", errStr(lastErr))
+			return
+		}
 		headersSent = true
 	}
 	// 60 reconnects exhausted: the box still wanted bytes but upstream
@@ -594,6 +744,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		if isPermanentUpstream(lastErr) {
+			s.logger.Info("stream proxy end: permanent upstream rejection, not retrying", "slot", slot, "lastErr", errStr(lastErr))
+			return
+		}
 		headersSent = true
 	}
 	// 60 Reconnects erschoepft: die Box wollte weiter Bytes, aber der
@@ -642,6 +796,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		} else {
 			s.logger.Debug("stream proxy upstream fail (dedup)", "url", url, "err", err)
 		}
+		s.recordFailure(url, err)
 		if sendHeaders {
 			http.Error(w, "upstream unreachable", http.StatusBadGateway)
 			return false, err
@@ -652,12 +807,13 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		statusErr := fmt.Errorf("upstream status %d", resp.StatusCode)
+		statusErr := &upstreamStatusError{Code: resp.StatusCode, Status: resp.Status}
 		if s.shouldLogFail(url) {
 			s.logger.Warn("stream proxy upstream status", "status", resp.StatusCode, "url", url)
 		} else {
 			s.logger.Debug("stream proxy upstream status (dedup)", "status", resp.StatusCode, "url", url)
 		}
+		s.recordFailure(url, statusErr)
 		if sendHeaders {
 			http.Error(w, "upstream status: "+resp.Status, http.StatusBadGateway)
 			return false, statusErr
@@ -672,17 +828,21 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		if s.shouldLogFail(url) {
 			s.logger.Warn("stream proxy: HLS/DASH content-type not supported yet", "url", url, "contentType", ct)
 		}
+		hlsErr := fmt.Errorf("hls/dash not supported (content-type %q)", ct)
+		s.recordFailure(url, hlsErr)
 		if sendHeaders {
 			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
 		}
-		return false, fmt.Errorf("hls/dash not supported (content-type %q)", ct)
+		return false, hlsErr
 	}
 
 	// Successful reach — clear any dedup entry so a future failure
-	// for this URL produces a fresh WARN immediately.
+	// for this URL produces a fresh WARN immediately, and drop any recorded
+	// stream-status failure so the app stops reporting a now-recovered station.
 	s.failMu.Lock()
 	delete(s.lastFail, url)
 	s.failMu.Unlock()
+	s.clearFailure(url)
 
 	// Capture the real stream bitrate from the icy-br header, if the
 	// station sends one (most Icecast/Shoutcast do). A single header read
