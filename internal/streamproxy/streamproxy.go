@@ -108,12 +108,27 @@ func dialGuardSSRF(network, address string, _ syscall.RawConn) error {
 // not playable instead of looping. The query string is ignored so a tokenised
 // ".m3u8?..." still matches.
 func isHLSorDASHURL(raw string) bool {
+	return isHLSURL(raw) || isDASHURL(raw)
+}
+
+// isHLSURL reports whether a URL points at an HLS (.m3u8) playlist. STR follows
+// these and demuxes their segments (see serveHLS), so they are now playable.
+func isHLSURL(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return false
 	}
-	p := strings.ToLower(u.Path)
-	return strings.HasSuffix(p, ".m3u8") || strings.HasSuffix(p, ".mpd")
+	return strings.HasSuffix(strings.ToLower(u.Path), ".m3u8")
+}
+
+// isDASHURL reports whether a URL points at a DASH (.mpd) manifest. DASH is not
+// supported yet and is still refused.
+func isDASHURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(u.Path), ".mpd")
 }
 
 // isHLSorDASHContentType catches HLS/DASH responses whose URL does not carry a
@@ -633,9 +648,21 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid url scheme", http.StatusBadRequest)
 		return
 	}
-	if isHLSorDASHURL(url) {
-		s.logger.Warn("stream proxy: HLS/DASH not supported yet, refusing instead of reconnect-looping", "url", url)
+	if isDASHURL(url) {
+		s.logger.Warn("stream proxy: DASH not supported yet, refusing instead of reconnect-looping", "url", url)
+		s.recordFailure(url, fmt.Errorf("dash not supported"))
 		http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		return
+	}
+	if isHLSURL(url) {
+		// HLS: follow the playlist and demux its segments into a continuous stream
+		// for the box (#124). serveHLS only returns an error before it has written
+		// any audio, so http.Error here is always valid (never mid-stream).
+		if err := s.serveHLS(r.Context(), w, r, url); err != nil {
+			s.logger.Warn("stream proxy: HLS playback failed", "url", url, "err", err)
+			s.recordFailure(url, err)
+			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		}
 		return
 	}
 	s.logger.Info("stream proxy raw start", "url", url)
@@ -696,9 +723,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
 
-	if isHLSorDASHURL(p.StreamURL) {
-		s.logger.Warn("stream proxy: HLS/DASH preset not supported yet, refusing", "slot", slot, "url", p.StreamURL)
+	if isDASHURL(p.StreamURL) {
+		s.logger.Warn("stream proxy: DASH preset not supported yet, refusing", "slot", slot, "url", p.StreamURL)
+		s.recordFailure(p.StreamURL, fmt.Errorf("dash not supported"))
 		http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		return
+	}
+	if isHLSURL(p.StreamURL) {
+		// HLS preset: follow the playlist and demux to the box (#124).
+		if err := s.serveHLS(r.Context(), w, r, p.StreamURL); err != nil {
+			s.logger.Warn("stream proxy: HLS preset playback failed", "slot", slot, "url", p.StreamURL, "err", err)
+			s.recordFailure(p.StreamURL, err)
+			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+		}
 		return
 	}
 
