@@ -2882,16 +2882,30 @@ function renderNowPlayingBar() {
   } else if (/\/stream\//.test(loc) && !/\/spotify\/stream/.test(loc) && state.nowTitle) {
     displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
   }
+  // Match the source case-insensitively: the firmware is not consistent about
+  // casing across models, and AirPlay in particular can read as AIRPLAY,
+  // AirPlay2, etc. depending on the speaker (#122).
+  const srcU = src.toUpperCase();
+  const isAirplay = srcU.includes('AIRPLAY');
   let stateLabel, stateClass;
   if (ps === 'PLAY_STATE') { stateLabel = t('status.playing'); stateClass = 'play'; }
   else if (ps === 'BUFFERING_STATE') { stateLabel = t('status.buffering'); stateClass = 'buf'; }
   else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }
-  else if (src === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
+  else if (srcU === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
   else { stateLabel = ''; stateClass = 'idle'; }
-  if (src === 'AUX') { displayName = t('status.auxInput'); if (!stateLabel) stateLabel = t('status.active'); }
-  else if (src === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) stateLabel = t('status.active'); }
-  else if (src === 'AIRPLAY') { displayName = t('status.airplay'); if (!stateLabel) stateLabel = t('status.active'); }
-  const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && src !== 'AUX' && src !== 'BLUETOOTH' && src !== 'AIRPLAY';
+  if (srcU === 'AUX') { displayName = t('status.auxInput'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  else if (srcU === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  else if (isAirplay) { displayName = t('status.airplay'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  else if (srcU && srcU !== 'STANDBY' && srcU !== 'INVALID_SOURCE' && ps !== 'STOP_STATE' && !stateLabel && !displayName) {
+    // The box has an active source STR does not specifically label (some models
+    // report AirPlay/Spotify Connect/other inputs under a different name and
+    // without a playStatus). Reflect it as active rather than letting it fall
+    // through to a misleading "ready" while audio is actually playing. An
+    // explicit STOP_STATE is excluded so a stopped box still reads as idle.
+    stateLabel = t('status.active');
+    stateClass = 'play';
+  }
+  const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && srcU !== 'AUX' && srcU !== 'BLUETOOTH' && !isAirplay;
   const brLabel = isStreamSrc ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
   bar.className = 'status-bar status-' + stateClass;
   let statusHTML;
