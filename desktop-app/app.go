@@ -2743,6 +2743,18 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 	if len(bin) == 0 {
 		return fmt.Errorf("no embedded stick binary available")
 	}
+	// Refresh the USB stick BEFORE the OTA push, while the box is still fully up.
+	// The push reboots the box ~1s after the binary swap (updateAgentViaSSH), and
+	// doing the stick write afterwards raced that reboot: the going-down
+	// filesystem failed the write mid-set with an "Input/output error" (live
+	// 2026-06-11), so the stick kept its old files and the next boot's
+	// stick->NAND sync reverted the freshly OTA'd binary. Done first, the stick
+	// carries the new file set before the reboot, so the boot-sync keeps NAND on
+	// the new version. Best-effort: a stick failure does not block the OTA. The
+	// post-OTA discovery pin is set here too so it covers the whole window.
+	a.notePostOTA(host)
+	a.refreshStick(host)
+
 	if perr := a.updateAgentPreflight(host, port); perr != nil {
 		a.logger.Warn("update agent: HTTP preflight rejected, switching to SSH-OTA",
 			"host", host, "port", port, "reason", perr)
@@ -2750,8 +2762,6 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %v)", port, sshErr, perr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
-		a.notePostOTA(host)
-		a.refreshStickAfterOTA(host)
 		return nil
 	}
 	if err := a.updateAgentViaHTTP(host, port, bin); err != nil {
@@ -2766,21 +2776,18 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
 	}
-	a.notePostOTA(host)
-	a.refreshStickAfterOTA(host)
 	return nil
 }
 
-// refreshStickAfterOTA is a best-effort step run after a successful agent OTA:
-// if the STR USB stick is still inserted in the speaker, rewrite its program
-// files (agent binary, run.sh, rc.local, shim, version.txt, ...) so the next
-// boot's stick->NAND sync does not revert the freshly OTA'd binary back to the
-// stick's older one (project_deploy_stick_overwrites_nand). The write is
-// durable-flushed so it survives a reboot (project_durable_stick_write: a plain
-// write to /media/sda1 sits in the USB controller cache and is lost otherwise).
-// Never fatal: the OTA itself already succeeded, so any failure here is logged
-// and the user is simply told to re-prepare the stick if they keep it inserted.
-func (a *App) refreshStickAfterOTA(host string) {
+// refreshStick is a best-effort step run as part of an agent OTA, BEFORE the
+// binary swap reboots the box (see UpdateBoxAgent): if the STR USB stick is
+// still inserted in the speaker, rewrite its program files (agent binary,
+// run.sh, rc.local, shim, version.txt, ...) so the next boot's stick->NAND sync
+// does not revert the freshly OTA'd binary back to the stick's older one
+// (project_deploy_stick_overwrites_nand). The write is durable-flushed so it
+// survives the reboot (project_durable_stick_write). Never fatal: a failure here
+// is logged and the OTA still proceeds.
+func (a *App) refreshStick(host string) {
 	// Locate the stick and make sure it is mounted before writing. Some
 	// speakers (the Portable, live 2026-06-11) do NOT auto-mount the USB stick
 	// at /media/sda1 after boot: /dev/sda1 was present and carried the full STR
@@ -2826,26 +2833,45 @@ func (a *App) refreshStickAfterOTA(host string) {
 // false when no STR stick is present. The mount persists across the SSH session
 // so the subsequent per-file writes reach it.
 func (a *App) mountStick(host string) (mountPoint, device string, ok bool) {
-	// POSIX-sh (busybox) script: no awk/bashisms. First reuse an existing vfat
-	// mount carrying install.sh, else try the common stick devices and mount the
-	// one that has it.
-	const script = `MP=""; DEV=""
-while read d m fstype rest; do
-  if [ "$fstype" = "vfat" ] && [ -f "$m/install.sh" ]; then MP="$m"; DEV="$d"; break; fi
-done < /proc/mounts
-if [ -z "$MP" ]; then
-  mkdir -p /tmp/str-stick
-  for dev in /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sda /dev/sdb; do
-    [ -b "$dev" ] || continue
-    umount /tmp/str-stick 2>/dev/null
-    if mount -t vfat "$dev" /tmp/str-stick 2>/dev/null; then
-      if [ -f /tmp/str-stick/install.sh ]; then MP=/tmp/str-stick; DEV="$dev"; break; fi
-      umount /tmp/str-stick 2>/dev/null
+	// POSIX-sh (busybox) script: no awk/bashisms. For each candidate stick
+	// device, unmount any existing mount, fsck it, then mount fresh at
+	// /tmp/str-stick and keep the one that carries install.sh.
+	//
+	// The fsck is essential (live 2026-06-11, Portable): the speaker does NOT
+	// cleanly unmount the stick, so its FAT is left dirty ("Volume was not
+	// properly unmounted"). A fresh RW mount is fine for a small write, but the
+	// 11 MB agent binary trips a FAT inconsistency partway and the default
+	// errors=remount-ro flips the filesystem read-only, so the next file write
+	// fails with "Input/output error" and the stick is left half-updated. The
+	// box then boot-syncs its OLD files back onto NAND, reverting the OTA. A
+	// fsck.vfat -a clears the dirty FAT first so the whole set writes cleanly
+	// (verified live: an 11 MB write that failed before succeeded after fsck).
+	const script = `PATH=/usr/sbin:/sbin:/usr/bin:/bin:$PATH
+MP=""; DEV=""
+mkdir -p /tmp/str-stick
+for dev in /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sda /dev/sdb; do
+  [ -b "$dev" ] || continue
+  cur=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
+  if [ -n "$cur" ]; then
+    umount "$cur" 2>/dev/null
+    # Still mounted (umount busy)? Use that mount as-is; do NOT fsck a mounted FS
+    # or mount the same device twice (a double vfat mount corrupts writes).
+    cur2=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
+    if [ -n "$cur2" ]; then
+      if [ -f "$cur2/install.sh" ]; then MP="$cur2"; DEV="$dev"; break; fi
+      continue
     fi
-  done
-fi
+  fi
+  # Device is unmounted now: fsck the (possibly dirty) FAT, then mount fresh.
+  umount /tmp/str-stick 2>/dev/null
+  fsck.vfat -a "$dev" >/dev/null 2>&1 || dosfsck -a -w "$dev" >/dev/null 2>&1
+  if mount -t vfat "$dev" /tmp/str-stick 2>/dev/null; then
+    if [ -f /tmp/str-stick/install.sh ]; then MP=/tmp/str-stick; DEV="$dev"; break; fi
+    umount /tmp/str-stick 2>/dev/null
+  fi
+done
 if [ -n "$MP" ]; then echo "STR_STICK_MP=$MP"; echo "STR_STICK_DEV=$DEV"; else echo STR_STICK_NONE; fi`
-	out, err := boxSSHOutput(host, script, 20*time.Second)
+	out, err := boxSSHOutput(host, script, 30*time.Second)
 	if err != nil {
 		a.logger.Info("OTA stick refresh: stick probe/mount failed", "host", host, "err", err, "out", strings.TrimSpace(out))
 		return "", "", false
