@@ -150,3 +150,21 @@ level 3 (full STR uninstall) is still open.
   plausible paths (librespot on-box, librespot in the Wails backend,
   Spotify Web API). Post-1.0 spike, all paths blocked by the loss of
   the Bose-Spotify OEM partner credentials.
+- Additional streaming providers, tracked in
+  [#103](https://github.com/JRpersonal/streborn/issues/103). STR plays
+  radio and Spotify today; SoundCloud, Amazon Music and **Deezer** are
+  candidates. **Deezer is wanted** by users whose existing Deezer
+  station-key presets still work after the Bose shutdown (the cloud
+  source survived where radio did not). Two distinct pieces:
+  - **Preserve, then import.** As of v0.7.21 an STR install no longer
+    overwrites existing speaker presets, so Deezer keys survive an
+    install untouched. The next step is reading the existing Deezer
+    `ContentItem` location out of the box's preset XML (visible over the
+    box API / in `presetsUpdated` frames) so STR can show and keep them
+    even when the user has not set them in STR. This is the same
+    box-side preset-state parsing that would also help preset recall and
+    box/app sync, so it is worth doing once, generally.
+  - **Create new Deezer presets** from STR. This needs a Deezer
+    integration (auth + the playable URL shape) and is the larger,
+    later piece. First action is collecting an anonymised example of a
+    working Deezer preset URL from a user's box XML to learn the format.
