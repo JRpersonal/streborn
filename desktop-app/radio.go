@@ -1,9 +1,9 @@
 // App-side internet-radio search. Per the app-first direction, radio-browser
 // queries run in the desktop app (reliable internet, real CPU) instead of on
 // the constrained box. The box only ever receives the final stream URL to play.
-// The agent keeps its own /api/radio for the browser-direct-to-box case, but
-// the desktop app no longer routes search through the box (that made the box's
-// flaky internet/DNS gate search, the HTTP 502s in #121).
+// The agent no longer serves /api/radio at all and no longer compiles the
+// radiobrowser package (see internal/webui Run): routing search through the
+// box made its flaky internet/DNS gate search, the HTTP 502s in #121.
 package main
 
 import (
