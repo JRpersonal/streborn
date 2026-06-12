@@ -749,6 +749,16 @@ func (a *App) probeLANForStock(ctx context.Context) []BoxInfo {
 	sem := make(chan struct{}, 32)
 	var wg sync.WaitGroup
 
+	var out []BoxInfo
+	var collectWG sync.WaitGroup
+	collectWG.Add(1)
+	go func() {
+		defer collectWG.Done()
+		for h := range hits {
+			out = append(out, h)
+		}
+	}()
+
 	probeOne := func(ip string) {
 		defer wg.Done()
 		defer func() { <-sem }()
@@ -786,12 +796,14 @@ func (a *App) probeLANForStock(ctx context.Context) []BoxInfo {
 		}
 	}
 done:
-	go func() { wg.Wait(); close(hits) }()
-
-	var out []BoxInfo
-	for h := range hits {
-		out = append(out, h)
-	}
+	// Drain concurrently with spawning. The producers send to a buffered
+	// channel while still holding a sem slot; if more than the buffer's worth of
+	// hosts answer before any draining starts, they block on the send and wedge
+	// the spawn loop (no free sem slot) until ctx fires. Collecting in a separate
+	// goroutine that started before the loop removes that stall.
+	wg.Wait()
+	close(hits)
+	collectWG.Wait()
 	return out
 }
 
@@ -848,6 +860,16 @@ func (a *App) probeLANForSTR(ctx context.Context) []BoxInfo {
 	sem := make(chan struct{}, 32)
 	var wg sync.WaitGroup
 
+	var out []BoxInfo
+	var collectWG sync.WaitGroup
+	collectWG.Add(1)
+	go func() {
+		defer collectWG.Done()
+		for h := range hits {
+			out = append(out, h)
+		}
+	}()
+
 	probeOne := func(ip string) {
 		defer wg.Done()
 		defer func() { <-sem }()
@@ -869,12 +891,14 @@ func (a *App) probeLANForSTR(ctx context.Context) []BoxInfo {
 		}
 	}
 done:
-	go func() { wg.Wait(); close(hits) }()
-
-	var out []BoxInfo
-	for h := range hits {
-		out = append(out, h)
-	}
+	// Drain concurrently with spawning. The producers send to a buffered
+	// channel while still holding a sem slot; if more than the buffer's worth of
+	// hosts answer before any draining starts, they block on the send and wedge
+	// the spawn loop (no free sem slot) until ctx fires. Collecting in a separate
+	// goroutine that started before the loop removes that stall.
+	wg.Wait()
+	close(hits)
+	collectWG.Wait()
 	return out
 }
 
