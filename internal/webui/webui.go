@@ -785,10 +785,18 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			if err := s.spotifyPlay(bg, uri, account); err != nil {
 				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 			}
-			s.verifyRecall(func(ctx context.Context) {
-				if s.spotifyPlay(ctx, uri, account) == nil {
-					_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
+			s.verifyRecall(func(ctx context.Context, lastAttempt bool) {
+				// Re-point the box at the stream WITHOUT re-Play on the early
+				// tries: ServeOgg resumes go-librespot on attach, so this
+				// re-attaches without reshuffling/restarting the track (a re-Play
+				// every retry was the "same song restarts a few seconds in" bug,
+				// fixed for hardware in v0.7.4 but previously still present here).
+				// Only the last attempt does a full re-Play, to recover a genuine
+				// cold-boot auth race where the playlist never loaded at all.
+				if lastAttempt {
+					_ = s.spotifyPlay(ctx, uri, account)
 				}
+				_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
 			}, s.spotifyStreaming)
 		}()
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
@@ -813,7 +821,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setLastPlay(playURL, p.Name, p.Art, "")
 	name, art := p.Name, p.Art
-	go s.verifyRecall(func(ctx context.Context) {
+	go s.verifyRecall(func(ctx context.Context, _ bool) {
 		_ = s.renderer.PlayURL(ctx, playURL, name, art)
 	}, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
@@ -823,8 +831,16 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 // and re-issues the play a few times if not. Fixes the "first press after a
 // reboot does nothing, second press works" race (box/go-librespot not ready
 // yet) without any latency on the happy path (the initial play already ran).
-func (s *Server) verifyRecall(retry func(context.Context), working func() bool) {
-	for attempt := 1; attempt <= 3; attempt++ {
+//
+// retry receives lastAttempt=true only on the final try. Spotify uses it to
+// re-point the box without a full re-Play on the early tries (a re-Play
+// reshuffles and restarts the track), reserving the disruptive re-Play for the
+// last-resort recovery. This is the same policy the hardware recall settled on
+// in v0.7.4 (cmd/agent verifySpotifyPlaying); routing both through one contract
+// keeps the soft and hardware paths from drifting again.
+func (s *Server) verifyRecall(retry func(ctx context.Context, lastAttempt bool), working func() bool) {
+	const attempts = 3
+	for attempt := 1; attempt <= attempts; attempt++ {
 		time.Sleep(5 * time.Second)
 		// working() is a source-specific "it is already fine" signal checked
 		// before the box now_playing state. For Spotify it reports whether the
@@ -839,7 +855,7 @@ func (s *Server) verifyRecall(retry func(context.Context), working func() bool) 
 		}
 		s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-		retry(ctx)
+		retry(ctx, attempt == attempts)
 		cancel()
 	}
 	s.logger.Warn("recall still not playing after retries")
