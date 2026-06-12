@@ -278,24 +278,84 @@ func (c *Client) runOnce(ctx context.Context) error {
 // Box folgt mit `<nowSelectionUpdated><preset id="0">` und INVALID_SOURCE
 // wenn sie den Source nicht aktivieren kann. Wir interessieren uns nur fuer
 // den ersten Event mit id >= 1.
+// wsContentItem is the <ContentItem> Bose nests inside a preset or nowPlaying.
+type wsContentItem struct {
+	Source        string `xml:"source,attr"`
+	Type          string `xml:"type,attr"`
+	Location      string `xml:"location,attr"`
+	SourceAccount string `xml:"sourceAccount,attr"`
+	IsPresetable  string `xml:"isPresetable,attr"`
+	ItemName      string `xml:"itemName"`
+}
+
+// wsPreset is a <preset> element (nowSelectionUpdated / presetSelectionUpdated /
+// presetsUpdated). Inner keeps the raw element body so a status marker like
+// INVALID_SOURCE / DO_NOT_RESUME can be matched within this element only, never
+// against an unrelated frame's track title.
+type wsPreset struct {
+	ID          string        `xml:"id,attr"`
+	ContentItem wsContentItem `xml:"ContentItem"`
+	Inner       string        `xml:",innerxml"`
+}
+
+// wsNowPlaying is the <nowPlaying> body. Bose has shipped playStatus both as a
+// child element and as an attribute across firmware builds, so capture both and
+// resolve with playStatus(); reading it typed is what stops a track title that
+// merely contains "STOP_STATE" from firing the user-stop suppressor.
+type wsNowPlaying struct {
+	Source         string        `xml:"source,attr"`
+	PlayStatusEl   string        `xml:"playStatus"`
+	PlayStatusAttr string        `xml:"playStatus,attr"`
+	ContentItem    wsContentItem `xml:"ContentItem"`
+}
+
+func (n wsNowPlaying) playStatus() string {
+	if n.PlayStatusEl != "" {
+		return n.PlayStatusEl
+	}
+	return n.PlayStatusAttr
+}
+
+// gabboFrame is the typed view of one <updates> notification. Bose sends one
+// update child per frame; the rest stay nil. Dispatching on which child is
+// present (and reading status markers from typed sub-fields) replaces the old
+// whole-frame strings.Contains sniffing, which mis-fired whenever a station
+// name or track title happened to contain a marker word such as STOP_STATE,
+// INVALID_SOURCE, or even an update element name.
+type gabboFrame struct {
+	XMLName        xml.Name      `xml:"updates"`
+	NowSelection   *wsPreset     `xml:"nowSelectionUpdated>preset"`
+	PresetSelected *wsPreset     `xml:"presetSelectionUpdated>preset"`
+	NowPlaying     *wsNowPlaying `xml:"nowPlayingUpdated>nowPlaying"`
+
+	// Presence-plus-body markers. The *struct with an Inner field is non-nil
+	// exactly when the child element is in the frame; Inner bounds any substring
+	// match (e.g. STANDBY) to that element's own body.
+	ConnectionState *struct {
+		Inner string `xml:",innerxml"`
+	} `xml:"connectionStateUpdated"`
+	PowerState *struct {
+		Inner string `xml:",innerxml"`
+	} `xml:"powerStateUpdated"`
+	VolumeUpdated *struct{} `xml:"volumeUpdated"`
+	UserActivity  *struct{} `xml:"userActivityUpdate"`
+
+	// PresetsUpdated carries the box's full preset list when it changes; the
+	// landing spot for preset sync from the box (#14).
+	PresetsUpdated *struct {
+		Presets []wsPreset `xml:"presets>preset"`
+	} `xml:"presetsUpdated"`
+}
+
 func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	c.logger.Debug("box ws frame", "bytes", len(data), "preview", preview(data, 400))
 
 	s := string(data)
 
-	// known tracks whether this frame matched any gabbo type STR understands.
-	// Frames that match nothing are logged in full at INFO at the end so the
-	// genuinely new, user-initiated events we are still mapping out (the
-	// preset long-press "store" gesture, which the box detects itself and
-	// confirms on the display, and the remote's thumbs-up/thumbs-down keys)
-	// can be identified from a real box. These events are rare, so logging
-	// them fully does not churn the NAND log the way the periodic
-	// connectionState/nowPlaying frames would.
-	known := false
-
 	// Remote next/prev keys: the box cannot skip a UPnP source itself, so it
-	// emits a QPLAY_SKIP_*_FAILED error. Catch that and skip in go-librespot
-	// instead, so the remote's track-skip keys work during Spotify playback.
+	// emits a QPLAY_SKIP_*_FAILED error. These are firmware error codes that
+	// never appear in user-supplied text, so a whole-frame match is safe and
+	// they short-circuit before the typed parse.
 	switch {
 	case strings.Contains(s, "QPLAY_SKIP_NEXT_FAILED"):
 		if c.handler != nil {
@@ -309,20 +369,21 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		return
 	}
 
+	var f gabboFrame
+	if err := xml.Unmarshal(data, &f); err != nil {
+		// Not parseable as an <updates> envelope. Still try the source/AUX
+		// attribute scan below (it is attribute-only and cannot be fooled by
+		// text), then log it as unrecognized.
+		c.logger.Debug("box ws xml parse error", "err", err)
+	}
 
-	// Phase markers for standby/resume diagnostics (#60). powerState
-	// transitions are rare and genuinely useful, so they stay at INFO.
-	// connectionState and nowPlaying, however, fire every few seconds on
-	// some boxes (the Portable flaps GOOD_SIGNAL<->EXCELLENT_SIGNAL
-	// constantly): at WARN/INFO they wrote ~1 MB of NAND log every few
-	// hours, churning the flash and rotating real diagnostics out within
-	// one session. They are demoted to DEBUG so the on-box log stays
-	// small and useful; the Wi-Fi signal is still captured below for the
-	// settings UI regardless of log level.
 	// AUX webhook (beta): fire once when the active source transitions to AUX.
 	// STR never selects AUX itself, so this is always a user press (front panel
-	// or remote; app recalls use a different path). Tracking lastSource means it
-	// fires on the change, not on every AUX frame.
+	// or remote; app recalls use a different path). source is read as a raw
+	// attribute (source="..."), which only ever appears in markup, never in
+	// escaped text content, so this scan is not subject to the title
+	// false-positive that the typed parse fixes elsewhere. Tracking lastSource
+	// means it fires on the change, not on every AUX frame.
 	if c.handler != nil {
 		if src := attrValue(s, "source"); src != "" {
 			c.mu.Lock()
@@ -338,69 +399,91 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// the app cannot tell it is playing.
 				c.logger.Info("box ws: source changed", "from", prev, "to", src)
 				if src == "AUX" {
-					// AUX webhook (beta): STR never selects AUX itself, so this is
-					// always a user press.
 					c.handler.OnSourceAux(ctx)
 				}
 			}
 		}
 	}
 
+	// known tracks whether this frame matched any gabbo type STR understands.
+	// Frames that match nothing are logged in full at INFO at the end so the
+	// genuinely new, user-initiated events we are still mapping out (the preset
+	// long-press "store" gesture and the remote's thumbs keys) can be identified
+	// from a real box. These are rare, so logging them fully does not churn the
+	// NAND log the way the periodic connectionState/nowPlaying frames would.
+	// connectionState and nowPlaying fire every few seconds on some boxes (the
+	// Portable flaps GOOD_SIGNAL<->EXCELLENT_SIGNAL constantly), so they stay at
+	// DEBUG; powerState transitions are rare and useful and stay at INFO.
+	known := false
 	switch {
-	case strings.Contains(s, "powerStateUpdated"):
+	case f.PowerState != nil:
 		known = true
 		c.noteExplainedActivity()
 		c.logger.Info("box ws phase: powerState event", "preview", preview(data, 200))
 		// power webhook (beta): fire only on the transition to standby (power
 		// off). STR never powers the box off itself (it only wakes it for a
 		// recall), so a standby event is always a user press; this avoids the
-		// webhook false-firing on STR's own wake. Additional-only: STR cannot
-		// suppress the firmware power toggle. Rate-limited per id downstream.
-		if c.handler != nil && (strings.Contains(s, "STANDBY") || strings.Contains(s, "NETWORK_STANDBY")) {
+		// webhook false-firing on STR's own wake. The STANDBY match is bounded to
+		// the powerState element body. Rate-limited per id downstream.
+		if c.handler != nil && strings.Contains(f.PowerState.Inner, "STANDBY") {
 			c.handler.OnPowerKey(ctx)
 		}
-	case strings.Contains(s, "connectionStateUpdated"):
+	case f.ConnectionState != nil:
 		known = true
 		c.logger.Debug("box ws phase: connectionState event", "preview", preview(data, 200))
-		// Capture the Wi-Fi signal class; on BCO boxes this is the only
-		// place it is reported (/networkInfo has no signal there).
+		// Capture the Wi-Fi signal class; on BCO boxes this is the only place it
+		// is reported (/networkInfo has no signal there). Attribute-only scan.
 		if sig := attrValue(s, "signal"); sig != "" {
 			c.mu.Lock()
 			c.lastSignal = sig
 			c.mu.Unlock()
 		}
-	case strings.Contains(s, "volumeUpdated"):
+	case f.VolumeUpdated != nil:
 		// A volume change is identifiable activity: the box emits a
 		// userActivityUpdate alongside it, so mark this as "explained" and the
 		// thumb heuristic will not treat that ping as a thumb press.
 		known = true
 		c.noteExplainedActivity()
-	case strings.Contains(s, "userActivityUpdate"):
+	case f.UserActivity != nil:
 		// The remote thumbs keys surface ONLY as this generic ping (no up/down
 		// identity). Treat a lone one as a thumb press; noteUserActivity
 		// debounces it and suppresses it when an explained event bracketed it.
 		known = true
 		c.noteUserActivity(ctx)
-	case strings.Contains(s, "nowPlayingUpdated") && !strings.Contains(s, "nowSelectionUpdated"):
+	case f.NowPlaying != nil && f.NowSelection == nil:
 		known = true
 		c.noteExplainedActivity()
 		c.logger.Debug("box ws phase: nowPlaying event", "preview", preview(data, 200))
-		// A STOP_STATE in a nowPlaying update is the box reporting that
-		// playback was stopped (the user pressed stop on the remote/box).
-		// Surface it so the agent can suppress the auto-re-push for a wanted
-		// stop. INFO, not DEBUG: stops are rare and this is the signal the
-		// re-push decision hinges on, so it must be visible in a bundle.
-		if strings.Contains(s, "STOP_STATE") && c.handler != nil {
+		// STOP_STATE in a nowPlaying update is the box reporting that playback
+		// was stopped (the user pressed stop on the remote/box). Read from the
+		// typed playStatus, so a track title containing "STOP_STATE" can no
+		// longer trip it. INFO, not DEBUG: stops are rare and this is the signal
+		// the re-push decision hinges on, so it must be visible in a bundle.
+		if f.NowPlaying.playStatus() == "STOP_STATE" && c.handler != nil {
 			c.logger.Info("box ws: playback stopped (STOP_STATE), treating as user stop")
 			c.handler.OnUserStop(ctx)
 		}
+	case f.PresetsUpdated != nil:
+		// The box reported a change to its own preset list (#14). Logged as the
+		// foundation for box->stick preset sync; no action wired yet.
+		known = true
+		slots := make([]string, 0, len(f.PresetsUpdated.Presets))
+		for _, p := range f.PresetsUpdated.Presets {
+			slots = append(slots, p.ID)
+		}
+		c.logger.Info("box ws: presetsUpdated", "count", len(slots), "slots", strings.Join(slots, ","))
 	}
 
-	if !strings.Contains(s, "nowSelectionUpdated") && !strings.Contains(s, "presetSelectionUpdated") {
-		// Unknown frame: surface it in full so we can map the events STR does
-		// not yet handle (preset long-press store gesture, remote thumbs keys).
-		// INFO and rare by construction, so it stays in the diagnostic bundle
-		// without spamming the NAND log.
+	pe := f.NowSelection
+	if pe == nil {
+		pe = f.PresetSelected
+	}
+	if pe == nil {
+		// Not a preset / now-selection frame. Surface anything we did not
+		// recognize so we can map the events STR does not yet handle (preset
+		// long-press store gesture, remote thumbs keys). INFO and rare by
+		// construction, so it stays in the diagnostic bundle without spamming
+		// the NAND log.
 		if !known {
 			c.logger.Info("box ws unrecognized frame", "bytes", len(data), "body", preview(data, 1800))
 		}
@@ -412,43 +495,16 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	// thumb heuristic must not fire on a preset press.
 	c.noteExplainedActivity()
 
-	type contentItem struct {
-		Source        string `xml:"source,attr"`
-		Location      string `xml:"location,attr"`
-		SourceAccount string `xml:"sourceAccount,attr"`
-		ItemName      string `xml:"itemName"`
-	}
-	type presetEl struct {
-		ID          string      `xml:"id,attr"`
-		ContentItem contentItem `xml:"ContentItem"`
-	}
-	type updates struct {
-		XMLName                xml.Name  `xml:"updates"`
-		NowSelectionUpdated    *presetEl `xml:"nowSelectionUpdated>preset"`
-		PresetSelectionUpdated *presetEl `xml:"presetSelectionUpdated>preset"`
-	}
-
-	var u updates
-	if err := xml.Unmarshal(data, &u); err != nil {
-		c.logger.Debug("xml parse error", "err", err)
-		return
-	}
-	pe := u.NowSelectionUpdated
-	if pe == nil {
-		pe = u.PresetSelectionUpdated
-	}
-	if pe == nil {
-		return
-	}
 	var slot int
 	_, _ = fmt.Sscanf(pe.ID, "%d", &slot)
 	if slot < 1 || slot > 6 {
-		// id="0" + INVALID_SOURCE folgt auf den echten Press wenn Box
-		// den Source nicht selbst spielen kann. Ignorieren fuer die
-		// Wiedergabe, aber bei INVALID_SOURCE einmal loggen: das ist die
-		// Box-eigene fehlgeschlagene Self-Aktivierung, die das Display
-		// "Dienst nicht verfuegbar" zeigt (#22), bevor STR uebernimmt.
-		if strings.Contains(s, "INVALID_SOURCE") || strings.Contains(s, "DISABLED") {
+		// id="0" + INVALID_SOURCE folgt auf den echten Press wenn Box den Source
+		// nicht selbst spielen kann. Ignorieren fuer die Wiedergabe, aber bei
+		// INVALID_SOURCE einmal loggen: das ist die Box-eigene fehlgeschlagene
+		// Self-Aktivierung, die das Display "Dienst nicht verfuegbar" zeigt
+		// (#22), bevor STR uebernimmt. Markers are matched within this preset
+		// element only (pe.Inner), so an unrelated frame's title cannot trip it.
+		if strings.Contains(pe.Inner, "INVALID_SOURCE") || strings.Contains(pe.Inner, "DISABLED") {
 			// Power-button wake from standby: the box tries to restore its last
 			// now-selection and, because it cannot natively play STR's UPNP
 			// source, marks it INVALID_SOURCE + type=DO_NOT_RESUME. That
@@ -456,7 +512,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// harmless self-activation that follows a normal preset recall
 			// (isPresetable=true, no DO_NOT_RESUME). Treat it as "user pressed
 			// power on" and let the agent resume the last stream STR knows.
-			if strings.Contains(s, "DO_NOT_RESUME") && c.handler != nil {
+			if strings.Contains(pe.Inner, "DO_NOT_RESUME") && c.handler != nil {
 				c.logger.Info("box ws: wake from standby (box declined to resume, DO_NOT_RESUME) -> resuming last stream")
 				c.handler.OnWakeResume(ctx)
 				return
