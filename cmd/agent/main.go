@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,8 +31,8 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/bmx"
 	"github.com/JRpersonal/streborn/internal/boxapi"
-	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
@@ -134,6 +135,36 @@ func runShepherdCmd(args []string) error {
 	}
 }
 
+// nandPresetsPath is the canonical on-NAND preset store. NAND (ubifs) survives
+// reboots and the stick being removed; a stick mountpoint does not.
+const nandPresetsPath = "/mnt/nv/streborn/presets.json"
+
+// canonicalPresetsPath keeps the preset store on NAND. If the configured path
+// is on removable media (a USB stick under /media or /run/media, the pre-NAND
+// boot-script default), it redirects to nandPresetsPath so saves persist across
+// a reboot, migrating a still-readable stick copy once if NAND has none yet
+// (#120). Any other path (including an explicit /mnt/nv override) is left as-is.
+func canonicalPresetsPath(p string, logger *slog.Logger) string {
+	clean := filepath.Clean(p)
+	if !strings.HasPrefix(clean, "/media/") && !strings.HasPrefix(clean, "/run/media/") {
+		return p
+	}
+	if _, err := os.Stat(nandPresetsPath); os.IsNotExist(err) {
+		if data, rerr := os.ReadFile(p); rerr == nil && len(data) > 0 {
+			if mkErr := os.MkdirAll(filepath.Dir(nandPresetsPath), 0o755); mkErr == nil {
+				if werr := os.WriteFile(nandPresetsPath, data, 0o644); werr == nil {
+					logger.Warn("presets: migrated stick preset store to NAND", "from", p, "to", nandPresetsPath)
+				} else {
+					logger.Warn("presets: NAND migration write failed", "err", werr)
+				}
+			}
+		}
+	}
+	logger.Warn("presets: redirecting removable-media preset path to NAND so it survives reboot",
+		"flag", p, "using", nandPresetsPath)
+	return nandPresetsPath
+}
+
 func run() error {
 	var (
 		presetsPath     = flag.String("presets", "/media/sda1/presets.json", "Pfad zur presets.json auf dem USB Stick")
@@ -215,6 +246,16 @@ func run() error {
 	// Without this, an "empty presets" report (#60) is indistinguishable
 	// from a fresh install, a corrupt file, or an agent restart racing
 	// the store load.
+	// Presets MUST live on NAND so they survive a reboot. A box whose on-NAND
+	// boot script predates the NAND-presets change launches the agent with
+	// --presets pointing at the USB stick (the old default), and the stick is
+	// removed after install: every save then lands on an absent mountpoint and
+	// the presets vanish on the next reboot (#120). The bootstrap self-heal
+	// above rewrites that boot script, but only takes effect a reboot later, so
+	// also harden it here: if the flag points at removable media, redirect to
+	// the canonical NAND path and migrate a still-readable stick copy once.
+	*presetsPath = canonicalPresetsPath(*presetsPath, logger)
+
 	if st, statErr := os.Stat(*presetsPath); statErr == nil {
 		logger.Warn("preset store phase: file present",
 			"file", *presetsPath, "bytes", st.Size(), "mtime", st.ModTime().UTC().Format(time.RFC3339))
