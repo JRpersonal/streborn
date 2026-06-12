@@ -6579,8 +6579,24 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
     }
     return;
   }
+  // After a successful install, spell out HOW to play. Users repeatedly went
+  // back to the Bose app, saw "playback not possible" (dead Bose cloud) and
+  // assumed STR was broken (HP Baehr, 2026-06-12). The recurring expectation
+  // gap is that playback moved from the Bose app to the STR presets + the
+  // speaker's own buttons 1-6, so say it plainly and offer a jump to the tab.
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
-         `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`);
+         `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>` +
+         `<div class="setup-playhow">` +
+           `<h3>${escapeHtml(t('setup.playHowTitle'))}</h3>` +
+           `<ol>` +
+             `<li>${escapeHtml(t('setup.playHowStep1'))}</li>` +
+             `<li>${escapeHtml(t('setup.playHowStep2'))}</li>` +
+           `</ol>` +
+           `<p class="muted small">${escapeHtml(t('setup.playHowBoseApp'))}</p>` +
+           `<button class="btn btn-primary" id="installGoMusic">${escapeHtml(t('setup.playHowGoBtn'))}</button>` +
+         `</div>`);
+  const goMusic = $('installGoMusic');
+  if (goMusic) goMusic.onclick = () => switchView('box');
   discoverBoxes();
 }
 
