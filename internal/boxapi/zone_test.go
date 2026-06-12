@@ -196,6 +196,112 @@ func TestGetGroupEmpty(t *testing.T) {
 	}
 }
 
+// TestGetGroupEmptyBody covers the live taigan behavior: an unpaired box
+// answers /getGroup with an empty 200 body (NOT <group/>). The getXML
+// empty-body guard must turn that into a zero Group, not an xml.EOF error.
+func TestGetGroupEmptyBody(t *testing.T) {
+	c, stop := newFakeBox(t, map[string]string{"/getGroup": ""})
+	defer stop()
+	g, err := c.GetGroup(context.Background())
+	if err != nil {
+		t.Fatalf("GetGroup error on empty body: %v", err)
+	}
+	if g.ID != "" || len(g.Members) != 0 {
+		t.Errorf("expected empty group from empty body, got %+v", g)
+	}
+}
+
+// TestGetGroupRoles parses the documented stereo-pair schema
+// (roles>groupRole with deviceId/role/ipAddress child elements + masterDeviceId).
+func TestGetGroupRoles(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="UTF-8" ?>` +
+		`<group id="1"><name>Living room</name><masterDeviceId>AAAAAAAAAAAA</masterDeviceId>` +
+		`<roles>` +
+		`<groupRole><deviceId>AAAAAAAAAAAA</deviceId><role>LEFT</role><ipAddress>192.0.2.11</ipAddress></groupRole>` +
+		`<groupRole><deviceId>BBBBBBBBBBBB</deviceId><role>RIGHT</role><ipAddress>192.0.2.12</ipAddress></groupRole>` +
+		`</roles></group>`
+	c, stop := newFakeBox(t, map[string]string{"/getGroup": xml})
+	defer stop()
+	g, err := c.GetGroup(context.Background())
+	if err != nil {
+		t.Fatalf("GetGroup error: %v", err)
+	}
+	if g.ID != "1" || g.Name != "Living room" || g.MasterDeviceID != "AAAAAAAAAAAA" {
+		t.Errorf("group header wrong: %+v", g)
+	}
+	if len(g.Members) != 2 {
+		t.Fatalf("members: got %d", len(g.Members))
+	}
+	if g.Members[0].DeviceID != "AAAAAAAAAAAA" || g.Members[0].Role != "LEFT" || g.Members[0].IP != "192.0.2.11" {
+		t.Errorf("LEFT member wrong: %+v", g.Members[0])
+	}
+	if g.Members[1].Role != "RIGHT" {
+		t.Errorf("RIGHT member wrong: %+v", g.Members[1])
+	}
+}
+
+func TestGroupXML(t *testing.T) {
+	got := groupXML("Stereo pair", "AAAA", []ZoneMember{
+		{DeviceID: "AAAA", IP: "192.0.2.11", Role: "LEFT"},
+		{DeviceID: "BBBB", IP: "192.0.2.12", Role: "RIGHT"},
+	})
+	want := `<group><name>Stereo pair</name><masterDeviceId>AAAA</masterDeviceId><roles>` +
+		`<groupRole><deviceId>AAAA</deviceId><role>LEFT</role><ipAddress>192.0.2.11</ipAddress></groupRole>` +
+		`<groupRole><deviceId>BBBB</deviceId><role>RIGHT</role><ipAddress>192.0.2.12</ipAddress></groupRole>` +
+		`</roles></group>`
+	if got != want {
+		t.Errorf("groupXML:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestAddGroupPostsCorrectly confirms AddGroup POSTs the group body to /addGroup.
+func TestAddGroupPostsCorrectly(t *testing.T) {
+	var gotPath, gotBody, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotMethod = r.URL.Path, r.Method
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	c := &Client{Host: "ignored", HTTP: &http.Client{Timeout: 2 * time.Second, Transport: &rewriteTransport{to: u}}}
+
+	err := c.AddGroup(context.Background(), "Stereo pair", "AAAA", []ZoneMember{
+		{DeviceID: "AAAA", IP: "192.0.2.11", Role: "LEFT"},
+		{DeviceID: "BBBB", IP: "192.0.2.12", Role: "RIGHT"},
+	})
+	if err != nil {
+		t.Fatalf("AddGroup error: %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/addGroup" {
+		t.Errorf("expected POST /addGroup, got %s %s", gotMethod, gotPath)
+	}
+	if !strings.Contains(gotBody, `<masterDeviceId>AAAA</masterDeviceId>`) ||
+		!strings.Contains(gotBody, `<role>RIGHT</role>`) {
+		t.Errorf("addGroup body wrong: %q", gotBody)
+	}
+}
+
+// TestRemoveGroupIsGet confirms RemoveGroup uses GET /removeGroup (no body).
+func TestRemoveGroupIsGet(t *testing.T) {
+	var gotPath, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotMethod = r.URL.Path, r.Method
+		w.WriteHeader(http.StatusOK) // empty body, like the real firmware
+	}))
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	c := &Client{Host: "ignored", HTTP: &http.Client{Timeout: 2 * time.Second, Transport: &rewriteTransport{to: u}}}
+
+	if err := c.RemoveGroup(context.Background()); err != nil {
+		t.Fatalf("RemoveGroup error: %v", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/removeGroup" {
+		t.Errorf("expected GET /removeGroup, got %s %s", gotMethod, gotPath)
+	}
+}
+
 func TestGetZoneTrimsWhitespace(t *testing.T) {
 	xml := `<?xml version="1.0" encoding="UTF-8" ?>` +
 		`<zone master="  AAAA  " senderIPAddress="  192.0.2.10  ">` +

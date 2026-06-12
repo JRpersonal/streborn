@@ -720,10 +720,11 @@ async function refreshZoneLive(strBoxes) {
   renderMultiroom(false);
 }
 
-// doFormStereo attempts a left/right stereo pair (experimental, #70). No proven
-// firmware create-call exists yet, so this drives the same native /setZone with
-// the stereo flag set as a blind, logged attempt; the result shows in /getGroup
-// and the logs.
+// doFormStereo creates a real left/right stereo pair on two SoundTouch 10s
+// (#70). The agent drives the firmware-native POST /addGroup (LEFT = the picked
+// left speaker as master, RIGHT = the partner); only the ST10 actually pairs, so
+// the agent surfaces the firmware's error verbatim if a box refuses. The result
+// also shows in /getGroup and the logs.
 async function doFormStereo(pairCands) {
   const leftId = $('stereoLeft').value;
   const rightId = $('stereoRight').value;
@@ -737,12 +738,14 @@ async function doFormStereo(pairCands) {
   if (!left || !right) return;
   $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
+    // The picked left speaker is the master (LEFT channel); the agent assigns
+    // the partner the RIGHT channel.
     await FormZone(left.host, left.port, {
       master: { deviceID: left.deviceID, ip: left.host },
       slaves: [{ deviceID: right.deviceID, ip: right.host }],
       name: '', stereo: true,
     });
-    state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedMirror', { n: 1 }))}</div>`;
+    state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoFormed'))}</div>`;
   } catch (e) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
