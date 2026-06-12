@@ -995,7 +995,7 @@ func (a *App) waitForAgent(host, model string) error {
 	}
 	deadline := time.Now().Add(budget)
 	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+		ctx, cancel := context.WithTimeout(a.appCtx(), 5*time.Second)
 		_, ok := probeSTR(ctx, host)
 		cancel()
 		if ok {

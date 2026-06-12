@@ -129,6 +129,17 @@ func NewApp() *App {
 	}
 }
 
+// appCtx returns the Wails runtime context, or context.Background() before
+// startup has set it. A bound App method can run before startup (Wails dispatches
+// from arbitrary goroutines), and context.WithTimeout panics on a nil parent, so
+// every timeout/request that parents on a.ctx must go through here.
+func (a *App) appCtx() context.Context {
+	if a.ctx == nil {
+		return context.Background()
+	}
+	return a.ctx
+}
+
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	// Route the dlna package's logs through our file logger so the
@@ -212,7 +223,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 6
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, time.Duration(timeoutSec)*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
 
 	// mDNS gets the bulk of the budget. The fallback probe only fires
@@ -316,7 +327,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// downstream collapses any double-counts. Cost: ~12 s of parallel
 	// HTTP probes per refresh; acceptable given the auto-refresh
 	// cadence is throttled to a few times per minute.
-	fallbackCtx, fallbackCancel := context.WithTimeout(a.ctx, 12*time.Second)
+	fallbackCtx, fallbackCancel := context.WithTimeout(a.appCtx(), 12*time.Second)
 	var fbWG sync.WaitGroup
 	var fbMu sync.Mutex
 	var stockHits, strHits int
@@ -503,7 +514,7 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	if len(known) == 0 {
 		return []BoxInfo{}, nil
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 6*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), 6*time.Second)
 	defer cancel()
 	seen := map[string]BoxInfo{}
 	var mu sync.Mutex
@@ -1270,7 +1281,7 @@ func (a *App) boxDo(host string, port int, method, path, contentType, body strin
 		if body != "" {
 			rdr = strings.NewReader(body)
 		}
-		req, err := http.NewRequestWithContext(a.ctx, method, url, rdr)
+		req, err := http.NewRequestWithContext(a.appCtx(), method, url, rdr)
 		if err != nil {
 			return nil, err
 		}
@@ -1396,7 +1407,7 @@ func (a *App) GetBoxFirmware(host string) (FirmwareInfo, error) {
 	if host == "" {
 		return fi, fmt.Errorf("host is required")
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), 4*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s:8090/info", host), nil)
 	resp, err := a.httpClient.Do(req)
@@ -1567,7 +1578,7 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 // DeletePreset macht DELETE /api/presets/<slot>.
 func (a *App) DeletePreset(host string, port int, slot int) error {
 	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
-	req, _ := http.NewRequestWithContext(a.ctx, http.MethodDelete, url, nil)
+	req, _ := http.NewRequestWithContext(a.appCtx(), http.MethodDelete, url, nil)
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -1656,7 +1667,7 @@ func (a *App) waitAgentReady(host string, port int) bool {
 		// is where a box that switched ports (reboot/freeze) gets re-pinned.
 		for _, p := range a.candidatePorts(host, port) {
 			url := fmt.Sprintf("http://%s:%d/api/agent/version", host, p)
-			ctx, cancel := context.WithTimeout(a.ctx, 1200*time.Millisecond)
+			ctx, cancel := context.WithTimeout(a.appCtx(), 1200*time.Millisecond)
 			body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 512)
 			cancel()
 			if ok && strings.Contains(string(body), `"version"`) {
@@ -1849,7 +1860,7 @@ func (a *App) TestWebhook(host string, port int, method, url, body, contentType 
 func (a *App) boseURL(host string) string { return fmt.Sprintf("http://%s:8090", host) }
 
 func (a *App) boseGet(host, path string) (string, error) {
-	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), 4*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.boseURL(host)+path, nil)
 	resp, err := a.httpClient.Do(req)
@@ -1865,7 +1876,7 @@ func (a *App) boseGet(host, path string) (string, error) {
 }
 
 func (a *App) bosePostXML(host, path, body string) error {
-	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), 4*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.boseURL(host)+path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "text/xml")
@@ -2023,7 +2034,7 @@ func (a *App) GetAirplayOpt(host string, port int) (map[string]bool, error) {
 func (a *App) SetAirplayOpt(host string, port int, enabled bool) error {
 	url := a.baseURL(host, port) + "/api/box/airplay-opt"
 	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
-	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(a.appCtx(), http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -2577,7 +2588,7 @@ func (a *App) CheckAppUpdate() (result map[string]string, err error) {
 		u.RawQuery = q.Encode()
 		reqURL = u.String()
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 6*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), 6*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
@@ -2686,7 +2697,7 @@ func (a *App) ResolveStationLogo(faviconURL string, brandHost string, hosts []st
 // resolution. The body is not read. A GET (not HEAD) is used because
 // some icon hosts mishandle HEAD; the response is closed immediately.
 func (a *App) headStatusType(url string) (int, string) {
-	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), 4*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -2931,7 +2942,7 @@ func blockDeviceBase(device string) string {
 // POST buffer guarantees failure.
 func (a *App) updateAgentPreflight(host string, port int) error {
 	url := a.baseURL(host, port) + "/api/agent/version"
-	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), 5*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	resp, err := a.httpClient.Do(req)
@@ -2957,7 +2968,7 @@ func (a *App) updateAgentPreflight(host string, port int) error {
 
 func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 	url := a.baseURL(host, port) + "/api/agent/update"
-	req, err := http.NewRequestWithContext(a.ctx, http.MethodPost, url, strings.NewReader(string(bin)))
+	req, err := http.NewRequestWithContext(a.appCtx(), http.MethodPost, url, strings.NewReader(string(bin)))
 	if err != nil {
 		return err
 	}
@@ -3127,7 +3138,7 @@ func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage
 	if !ok {
 		return LibraryPage{}, fmt.Errorf("unknown media server %q, call ListMediaServers first", udn)
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 12*time.Second)
+	ctx, cancel := context.WithTimeout(a.appCtx(), 12*time.Second)
 	defer cancel()
 	res, err := dlna.Browse(ctx, srv, objectID, start, count)
 	if err != nil {
