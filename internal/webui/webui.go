@@ -2237,14 +2237,26 @@ func (s *Server) handleBoxAirplayOpt(w http.ResponseWriter, r *http.Request) {
 // handleBoxWLAN setzt die WLAN Konfiguration der Box zur Laufzeit.
 // Body: {"ssid":"...", "password":"..."}
 //
-// Vorgehen: wir schreiben /mnt/nv/wpa_supplicant.conf neu und schicken
-// SIGHUP an wpa_supplicant. Das ist exakt der Weg den run.sh beim
-// initialen WLAN Provisioning ueber USB nutzt — funktioniert also
-// auch zur Laufzeit. Bei falschem Passwort verliert die Box die
-// Netzverbindung; User muss dann manuell Werks Reset oder neuen Stick.
+// Robust across the two Wi-Fi stacks SoundTouch ships (see run.sh's WLAN
+// section):
+//   - wpa_supplicant boxes (wlan0): the new network is applied LIVE via wpa_cli
+//     reconfigure, verified, and rolled back to the previous network if it does
+//     not associate, so a wrong password leaves the box on its old Wi-Fi rather
+//     than stranded.
+//   - BCO boxes (eth0, e.g. Portable): no usable runtime channel exists
+//     (wpa_supplicant is absent), so the credentials are persisted and the box
+//     reboots to apply them through the proven boot-time provisioning path.
 //
-// Nur fuer LAN Clients erlaubt damit nicht zufaellig Internet Calls
-// das WLAN umstellen.
+// In ALL cases the SSID/PASS are written to the canonical NAND wlan-creds that
+// the boot path replays, so the change survives a reboot. The previous version
+// only wrote a runtime wpa file at the wrong path and never updated wlan-creds,
+// so a reboot reverted it AND on BCO boxes it poked a non-existent
+// wpa_supplicant and silently did nothing while reporting success.
+//
+// The switch runs in the background and the response returns immediately: the
+// box leaves the current network as it switches, so the client must rediscover
+// it on the new IP rather than wait on this request. LAN-only so a stray
+// internet call can never move the speaker's Wi-Fi.
 func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPut) {
 		return
@@ -2262,39 +2274,161 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	}
 	req.SSID = strings.TrimSpace(req.SSID)
 	if req.SSID == "" {
-		http.Error(w, "ssid darf nicht leer sein", http.StatusBadRequest)
+		http.Error(w, "ssid must not be empty", http.StatusBadRequest)
 		return
 	}
-	// PSK darf laut WPA Standard mindestens 8 Zeichen sein. Wenn der User
-	// ein offenes WLAN konfiguriert, lassen wir das Passwort weg.
+	// WPA requires a PSK of at least 8 characters; an empty password means an
+	// open network (key_mgmt=NONE in buildWPAConfig).
 	if req.Password != "" && len(req.Password) < 8 {
-		http.Error(w, "passwort zu kurz (mindestens 8 Zeichen)", http.StatusBadRequest)
+		http.Error(w, "password too short (at least 8 characters)", http.StatusBadRequest)
 		return
 	}
 
-	conf := buildWPAConfig(req.SSID, req.Password)
-	const wpaPath = "/mnt/nv/wpa_supplicant.conf"
-	tmp := wpaPath + ".new"
-	if err := os.WriteFile(tmp, []byte(conf), 0o600); err != nil {
-		http.Error(w, "write conf: "+err.Error(), http.StatusInternalServerError)
-		return
+	iface, mech := detectWlanMechanism()
+	// Respond before switching: the box drops off the current network mid-switch,
+	// so the client rediscovers it on its new IP instead of waiting on this socket.
+	status := "switching"
+	if mech == "bco" {
+		status = "rebooting"
 	}
-	if err := os.Rename(tmp, wpaPath); err != nil {
-		http.Error(w, "rename conf: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// SIGHUP an wpa_supplicant: laedt die conf neu und switcht
-	// asynchron auf das neue Netz. Wenn der Daemon nicht laeuft,
-	// loggen wir nur — beim naechsten Box Boot wird die Conf eh
-	// gelesen.
-	if err := sighupWPA(); err != nil {
-		s.logger.Warn("SIGHUP to wpa_supplicant failed", "err", err)
-	}
-	s.logger.Info("WLAN umgeschaltet", "ssid", req.SSID)
 	writeJSON(w, http.StatusOK, map[string]string{
-		"status": "ok",
-		"ssid":   req.SSID,
+		"status":    status,
+		"ssid":      req.SSID,
+		"mechanism": mech,
 	})
+	s.logger.Info("WLAN switch requested", "ssid", req.SSID, "mechanism", mech, "iface", iface)
+	go s.applyWLANChange(iface, mech, req.SSID, req.Password)
+}
+
+const (
+	wlanCredsPath = "/mnt/nv/streborn/wlan-creds"
+	wpaConfPath   = "/etc/wpa_supplicant.conf"
+)
+
+// detectWlanMechanism mirrors run.sh's interface detection: a wlan* iface means
+// a wpa_supplicant stack (live switch possible); eth0-only is the BCO pattern
+// (Wi-Fi via the chip exposed as eth0, no wpa_supplicant -> reboot to apply).
+func detectWlanMechanism() (iface, mech string) {
+	for _, w := range []string{"wlan0", "wlan1"} {
+		if _, err := os.Stat("/sys/class/net/" + w); err == nil {
+			return w, "wpa"
+		}
+	}
+	return "eth0", "bco"
+}
+
+// applyWLANChange persists the new credentials to NAND (so the change survives a
+// reboot via the boot replay) and applies them by the box's mechanism.
+func (s *Server) applyWLANChange(iface, mech, ssid, password string) {
+	if err := backupAndWriteWlanCreds(ssid, password); err != nil {
+		s.logger.Warn("WLAN: could not persist wlan-creds", "err", err)
+	}
+	switch mech {
+	case "wpa":
+		if s.applyWlanWPALive(iface, ssid, password) {
+			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface)
+			_ = os.Remove(wlanCredsPath + ".bak")
+			_ = os.Remove(wpaConfPath + ".bak")
+			return
+		}
+		// Did not associate: roll all the way back so a wrong password leaves the
+		// box on its previous network instead of unreachable. The agent runs ON
+		// the box, so it can do this even while the box is briefly off the LAN.
+		s.logger.Warn("WLAN: new network did not associate, rolling back to previous", "ssid", ssid)
+		restoreWlanCreds()
+		s.restoreWPAConfAndReload(iface)
+	default:
+		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid)
+		rebootBox()
+	}
+}
+
+// backupAndWriteWlanCreds writes the canonical NAND wlan-creds (the SSID=/PASS=
+// format the boot path replays), keeping the previous set as .bak for rollback.
+func backupAndWriteWlanCreds(ssid, password string) error {
+	_ = os.Rename(wlanCredsPath, wlanCredsPath+".bak") // best-effort backup
+	body := fmt.Sprintf("SSID=%s\nPASS=%s\n", ssid, password)
+	tmp := wlanCredsPath + ".new"
+	if err := os.WriteFile(tmp, []byte(body), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, wlanCredsPath)
+}
+
+func restoreWlanCreds() {
+	if _, err := os.Stat(wlanCredsPath + ".bak"); err == nil {
+		_ = os.Rename(wlanCredsPath+".bak", wlanCredsPath)
+	}
+}
+
+// applyWlanWPALive writes the new wpa_supplicant.conf, reloads wpa_supplicant,
+// and reports whether the box associated to the new SSID within the timeout.
+// Backs up the running conf so applyWLANChange can roll back on failure.
+func (s *Server) applyWlanWPALive(iface, ssid, password string) bool {
+	if cur, err := os.ReadFile(wpaConfPath); err == nil {
+		_ = os.WriteFile(wpaConfPath+".bak", cur, 0o600)
+	}
+	if err := os.WriteFile(wpaConfPath, []byte(buildWPAConfig(ssid, password)), 0o600); err != nil {
+		s.logger.Warn("WLAN: write wpa conf failed", "err", err, "path", wpaConfPath)
+		return false
+	}
+	reloadWPA(iface)
+	deadline := time.Now().Add(25 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+		if wpaAssociatedTo(iface, ssid) {
+			return true
+		}
+	}
+	return false
+}
+
+// reloadWPA reloads the new conf in place via wpa_cli (preferred, keeps the
+// daemon up), or restarts wpa_supplicant if wpa_cli is absent. Same commands
+// run.sh uses in its M3/M6 approaches.
+func reloadWPA(iface string) {
+	if _, err := exec.LookPath("wpa_cli"); err == nil {
+		_ = exec.Command("wpa_cli", "-i", iface, "reconfigure").Run()
+		_ = exec.Command("wpa_cli", "-i", iface, "reassociate").Run()
+		return
+	}
+	_ = exec.Command("killall", "wpa_supplicant").Run()
+	time.Sleep(time.Second)
+	_ = exec.Command("wpa_supplicant", "-B", "-i", iface, "-s", "-c", wpaConfPath, "-D", "nl80211").Start()
+}
+
+// wpaAssociatedTo reports whether wpa_supplicant is COMPLETED on the given SSID.
+func wpaAssociatedTo(iface, ssid string) bool {
+	out, err := exec.Command("wpa_cli", "-i", iface, "status").Output()
+	if err != nil {
+		return false
+	}
+	st := string(out)
+	if !strings.Contains(st, "wpa_state=COMPLETED") {
+		return false
+	}
+	for _, line := range strings.Split(st, "\n") {
+		if strings.TrimSpace(line) == "ssid="+ssid {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) restoreWPAConfAndReload(iface string) {
+	if b, err := os.ReadFile(wpaConfPath + ".bak"); err == nil {
+		if werr := os.WriteFile(wpaConfPath, b, 0o600); werr != nil {
+			s.logger.Warn("WLAN: rollback write failed", "err", werr)
+		}
+		_ = os.Remove(wpaConfPath + ".bak")
+	}
+	reloadWPA(iface)
+}
+
+// rebootBox triggers a detached reboot so BCO boxes apply the persisted creds
+// through the boot-time provisioning path. sync flushes the NAND creds first.
+func rebootBox() {
+	_ = exec.Command("sh", "-c", "(sleep 1; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &").Start()
 }
 
 // buildWPAConfig erzeugt eine minimale wpa_supplicant.conf. Bei leerem
@@ -2319,38 +2453,6 @@ func escapeWPAValue(s string) string {
 	// Backslash und Doublequote escapen
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 	return r.Replace(s)
-}
-
-// sighupWPA findet die wpa_supplicant PID und schickt SIGHUP. Ueber
-// killall waere kuerzer, aber auf der busybox Box ist killall ohne
-// Signal Argument ein Plain Term. Wir gehen den expliziten Weg.
-func sighupWPA() error {
-	b, err := os.ReadFile("/var/run/wpa_supplicant.pid")
-	if err == nil {
-		pidStr := strings.TrimSpace(string(b))
-		if pid, perr := strconv.Atoi(pidStr); perr == nil && pid > 0 {
-			return syscall.Kill(pid, syscall.SIGHUP)
-		}
-	}
-	// Fallback: alle wpa_supplicant Prozesse
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		pid, perr := strconv.Atoi(e.Name())
-		if perr != nil {
-			continue
-		}
-		comm, _ := os.ReadFile("/proc/" + e.Name() + "/comm")
-		if strings.TrimSpace(string(comm)) == "wpa_supplicant" {
-			_ = syscall.Kill(pid, syscall.SIGHUP)
-		}
-	}
-	return nil
 }
 
 // countryToLanguage liefert den Default Sprach Code fuer das radio-browser
