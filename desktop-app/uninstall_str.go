@@ -128,9 +128,7 @@ echo "STR_UNINSTALL_REMOVED:$REMOVED"
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(line, "STR_UNINSTALL_REMOVED:") {
-			for _, p := range strings.Fields(strings.TrimPrefix(line, "STR_UNINSTALL_REMOVED:")) {
-				res.RemovedFiles = append(res.RemovedFiles, p)
-			}
+			res.RemovedFiles = append(res.RemovedFiles, strings.Fields(strings.TrimPrefix(line, "STR_UNINSTALL_REMOVED:"))...)
 		}
 	}
 	if len(res.RemovedFiles) == 0 {

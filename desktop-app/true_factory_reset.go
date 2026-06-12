@@ -125,9 +125,7 @@ echo "TFR_WIPED:$WIPED"
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(line, "TFR_WIPED:") {
-			for _, p := range strings.Fields(strings.TrimPrefix(line, "TFR_WIPED:")) {
-				res.WipedFiles = append(res.WipedFiles, p)
-			}
+			res.WipedFiles = append(res.WipedFiles, strings.Fields(strings.TrimPrefix(line, "TFR_WIPED:"))...)
 		}
 	}
 	if len(res.WipedFiles) == 0 {

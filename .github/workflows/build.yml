@@ -84,12 +84,7 @@ jobs:
         working-directory: desktop-app
         run: go build ./...
 
-      # Report-only for now: the desktop module was never linted, so it has an
-      # unknown backlog of staticcheck/unused findings. Surface them in the log
-      # without blocking PRs; flip continue-on-error off once the backlog is
-      # triaged. vet/test/build above are the hard gates.
       - uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
-        continue-on-error: true
         with:
           version: latest
           args: --timeout=5m

@@ -43,7 +43,7 @@ func fat32QuickFormat(h uintptr, totalBytes uint64, clusterSize uint32, label st
 		return fmt.Errorf("clusterSize %d nicht Vielfaches von 512", clusterSize)
 	}
 	if totalBytes < 64*1024*1024 {
-		return fmt.Errorf("Volume zu klein (%d Bytes) — Mindestgroesse 64 MB", totalBytes)
+		return fmt.Errorf("volume too small (%d bytes), minimum size is 64 MB", totalBytes)
 	}
 	sectorsPerCluster := uint8(clusterSize / sectorSize)
 	totalSectors := uint32(totalBytes / uint64(sectorSize))
@@ -222,7 +222,7 @@ func makeFAT32BootSector(totalSectors uint32, secPerCluster uint8, fatSectors ui
 	copy(bs[3:11], []byte("MSWIN4.1"))
 
 	// BPB
-	binary.LittleEndian.PutUint16(bs[11:13], 512)            // Bytes per Sector
+	binary.LittleEndian.PutUint16(bs[11:13], 512)             // Bytes per Sector
 	bs[13] = secPerCluster                                    // Sectors per Cluster
 	binary.LittleEndian.PutUint16(bs[14:16], reservedSectors) // Reserved Sectors
 	bs[16] = numFATs                                          // Number of FATs
@@ -262,7 +262,7 @@ func makeFAT32BootSector(totalSectors uint32, secPerCluster uint8, fatSectors ui
 // makeFAT32FSInfo erzeugt den FSInfo Sektor (512 Bytes).
 func makeFAT32FSInfo() []byte {
 	fsi := make([]byte, 512)
-	binary.LittleEndian.PutUint32(fsi[0:4], 0x41615252)     // Lead Signature "RRaA"
+	binary.LittleEndian.PutUint32(fsi[0:4], 0x41615252) // Lead Signature "RRaA"
 	// fsi[4..484] = 480 Reserved Bytes (bleiben 0)
 	binary.LittleEndian.PutUint32(fsi[484:488], 0x61417272) // Struct Signature "rrAa"
 	binary.LittleEndian.PutUint32(fsi[488:492], 0xFFFFFFFF) // Free Cluster Count (unbekannt)

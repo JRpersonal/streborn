@@ -366,7 +366,7 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	// scenario we most need to debug. We now also pull SSH-side when
 	// the box failed to surface STR JSON at /api/agent/version,
 	// which is the authoritative "STR alive externally" signal.
-	strAlive := s.STRAgentVer != nil && len(s.STRAgentVer) > 0
+	strAlive := len(s.STRAgentVer) > 0
 	if s.ReachableSSH && (!s.Reachable8888 || !strAlive) {
 		s.SSHFallback = pullSSHFallback(host)
 	}

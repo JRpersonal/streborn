@@ -829,9 +829,10 @@ func localIPv4Subnets() []string {
 		}
 		// Only sweep RFC1918 ranges. Skips the carrier-grade NAT and
 		// public IPs that should never host a SoundTouch.
-		if !(ip4[0] == 10 ||
+		isPrivate := ip4[0] == 10 ||
 			(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) ||
-			(ip4[0] == 192 && ip4[1] == 168)) {
+			(ip4[0] == 192 && ip4[1] == 168)
+		if !isPrivate {
 			continue
 		}
 		base := fmt.Sprintf("%d.%d.%d.", ip4[0], ip4[1], ip4[2])
@@ -2189,7 +2190,7 @@ func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 	// und freundlich melden.
 	ct := resp.Header.Get("Content-Type")
 	if !strings.Contains(ct, "json") {
-		return nil, fmt.Errorf("stick agent is too old for this operation. Please update the stick first (update banner at the top).")
+		return nil, fmt.Errorf("stick agent is too old for this operation; please update the stick first (update banner at the top)")
 	}
 	var out map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

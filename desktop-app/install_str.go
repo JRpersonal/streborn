@@ -527,7 +527,7 @@ func (a *App) waitForBoxLoad(host, model string) {
 			Phase:       "settle",
 			Load:        load,
 			Threshold:   threshold,
-			Busy:        !(settled || capped),
+			Busy:        !settled && !capped,
 			RemainingMs: remaining,
 		})
 		if settled {
