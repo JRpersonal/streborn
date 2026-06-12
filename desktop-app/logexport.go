@@ -209,11 +209,11 @@ Privacy:
 				driveLabel = ""
 			}
 			meta := map[string]any{
-				"drivePath":   d.Path,
-				"driveLabel":  driveLabel,
-				"filesystem":  d.Filesystem,
-				"totalBytes":  d.TotalBytes,
-				"freeBytes":   d.FreeBytes,
+				"drivePath":  d.Path,
+				"driveLabel": driveLabel,
+				"filesystem": d.Filesystem,
+				"totalBytes": d.TotalBytes,
+				"freeBytes":  d.FreeBytes,
 			}
 			mbBytes, _ := json.MarshalIndent(meta, "", "  ")
 			if err := writeZipEntry(zw, fmt.Sprintf("stick-%d/_meta.json", stickIndex), mbBytes); err != nil {
@@ -288,33 +288,33 @@ type boxSnapshot struct {
 // best-effort tail; an "ERR: ..." string surfaces if the file was
 // not present or unreadable.
 type sshFallback struct {
-	BootLog        string   `json:"bootLog"`
-	SetupLog       string   `json:"setupLog"`
-	PreviousLog    string   `json:"previousLog"`
-	AgentLogTail   string   `json:"agentLogTail"`
+	BootLog      string `json:"bootLog"`
+	SetupLog     string `json:"setupLog"`
+	PreviousLog  string `json:"previousLog"`
+	AgentLogTail string `json:"agentLogTail"`
 	// AgentLogNAND is the NAND-persisted /mnt/nv/streborn/agent.log
 	// which gets the entire slog output, mirrored from stderr. Unlike
 	// AgentLogTail (8 KB tail of /tmp/streborn-agent.log on tmpfs)
 	// this survives reboot and we pull a much larger tail so the
 	// listener-bring-up phase logs are always in the bundle.
-	AgentLogNAND   string   `json:"agentLogNand"`
-	StickListing   string   `json:"stickListing"`
-	MediaListing   string   `json:"mediaListing"`
-	NVListing      string   `json:"nvListing"`
-	ProcMounts     string   `json:"procMounts"`
-	UptimeSeconds  string   `json:"uptimeSeconds"`
-	RunningProcs   string   `json:"runningProcs"`
-	StickInstallSh string   `json:"stickInstallShPresent"`
+	AgentLogNAND   string `json:"agentLogNand"`
+	StickListing   string `json:"stickListing"`
+	MediaListing   string `json:"mediaListing"`
+	NVListing      string `json:"nvListing"`
+	ProcMounts     string `json:"procMounts"`
+	UptimeSeconds  string `json:"uptimeSeconds"`
+	RunningProcs   string `json:"runningProcs"`
+	StickInstallSh string `json:"stickInstallShPresent"`
 	// Network interface state pulled because "no wlan, only eth0"
 	// turned out to be the actual cause of #60's failing ST20 and
 	// only became visible after we asked the user to SSH manually.
 	// Including this in the bundle by default means future reports
 	// of the same shape arrive already diagnosed.
-	IPLinkShow string `json:"ipLinkShow"`
-	SysClassNet string `json:"sysClassNet"`
-	ProcNetDev  string `json:"procNetDev"`
-	DmesgWlan   string `json:"dmesgWlan"`
-	WlanMode    string `json:"wlanMode"`
+	IPLinkShow  string   `json:"ipLinkShow"`
+	SysClassNet string   `json:"sysClassNet"`
+	ProcNetDev  string   `json:"procNetDev"`
+	DmesgWlan   string   `json:"dmesgWlan"`
+	WlanMode    string   `json:"wlanMode"`
 	Probed      []string `json:"probedMountPaths"`
 }
 

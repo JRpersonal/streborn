@@ -44,20 +44,20 @@ const SetupAPHost = "192.168.1.1"
 // setup AP) and must not look like an error.
 //
 // Probe order:
-//   1. HTTP GET :8090/info with a 2s budget. If the body contains
-//      Bose XML we have found a setup-AP, regardless of whether sshd
-//      is up. SSH used to be the gate here, but live-verified
-//      2026-05-30 on a factory-reset taigan: sshd is NOT running on
-//      the box's first boot until the stick's remote_services file
-//      has been read by shelby_local, which only happens on REBOOT
-//      with a successfully-mounted stick. On a Portable with a
-//      defective USB-C adapter the mount never happens, sshd never
-//      starts, and the SSH-only gate hid the box entirely from the
-//      Setup tab. The Setup-AP WLAN push flow does not need sshd —
-//      it just needs /info to answer — so :8090 is the right gate.
-//   2. SSH probe is now a secondary signal that the caller uses to
-//      decide whether the post-push "install STR" step is possible
-//      from here, but it is not required for surfacing the box.
+//  1. HTTP GET :8090/info with a 2s budget. If the body contains
+//     Bose XML we have found a setup-AP, regardless of whether sshd
+//     is up. SSH used to be the gate here, but live-verified
+//     2026-05-30 on a factory-reset taigan: sshd is NOT running on
+//     the box's first boot until the stick's remote_services file
+//     has been read by shelby_local, which only happens on REBOOT
+//     with a successfully-mounted stick. On a Portable with a
+//     defective USB-C adapter the mount never happens, sshd never
+//     starts, and the SSH-only gate hid the box entirely from the
+//     Setup tab. The Setup-AP WLAN push flow does not need sshd —
+//     it just needs /info to answer — so :8090 is the right gate.
+//  2. SSH probe is now a secondary signal that the caller uses to
+//     decide whether the post-push "install STR" step is possible
+//     from here, but it is not required for surfacing the box.
 func (a *App) ProbeSetupAP() (BoxInfo, bool) {
 	return probeSetupAPAt(SetupAPHost, 1200*time.Millisecond, 2*time.Second)
 }
@@ -110,9 +110,9 @@ func probeSetupAPAtPorts(host string, sshPort, infoPort int, sshTimeout, infoTim
 }
 
 var (
-	boseInfoNameRe   = regexp.MustCompile(`<name>([^<]+)</name>`)
-	boseInfoTypeRe   = regexp.MustCompile(`<type>([^<]+)</type>`)
-	boseInfoDevIDRe  = regexp.MustCompile(`deviceID="([0-9A-Fa-f]+)"`)
+	boseInfoNameRe  = regexp.MustCompile(`<name>([^<]+)</name>`)
+	boseInfoTypeRe  = regexp.MustCompile(`<type>([^<]+)</type>`)
+	boseInfoDevIDRe = regexp.MustCompile(`deviceID="([0-9A-Fa-f]+)"`)
 )
 
 func fetchBoseInfo(ctx context.Context, host string) (name, model, deviceID string, ok bool) {

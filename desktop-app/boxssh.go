@@ -18,6 +18,7 @@ import (
 	"net"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -371,7 +372,7 @@ func cacheFlagSetIndex(i int) {
 // within timeout. Used as an install preflight so an unreachable speaker
 // produces a clear instruction instead of SSH's opaque "exit status 255".
 func tcpReachable(host string, port int, timeout time.Duration) bool {
-	c, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
+	c, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), timeout)
 	if err != nil {
 		return false
 	}

@@ -204,7 +204,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 				"On a SoundTouch 30, if no stick mounts at all: try a small plain USB 2.0 stick (4 to 32 GB), avoid SD-card adapters and USB 3 / large drives, and try BOTH USB ports:" +
 				"the rear USB-A port and the micro-USB port via a micro-USB OTG adapter. Reboot the speaker after inserting it." +
 				"If several sticks in both ports still do not mount, the speaker's USB port may be faulty."
-				res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
+			res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
 			return res, nil
 		}
 		time.Sleep(3 * time.Second)
