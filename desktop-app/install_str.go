@@ -667,28 +667,17 @@ func boxSSHUploadStdin(host, cmd string, in io.Reader, timeout time.Duration) (s
 }
 
 func runSSHWithFlagsStdin(flags []string, host, cmd string, in io.Reader, timeout time.Duration) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	args := append(append([]string{}, flags...), "root@"+host, cmd)
-	c := exec.Command("ssh", args...)
+	c := exec.CommandContext(ctx, "ssh", args...)
 	hideCmdWindow(c)
 	c.Stdin = in
-	done := make(chan struct {
-		out []byte
-		err error
-	}, 1)
-	go func() {
-		out, err := c.CombinedOutput()
-		done <- struct {
-			out []byte
-			err error
-		}{out, err}
-	}()
-	select {
-	case r := <-done:
-		return string(r.out), r.err
-	case <-time.After(timeout):
-		_ = c.Process.Kill()
-		return "", fmt.Errorf("ssh upload timeout after %s", timeout)
+	out, err := c.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return string(out), fmt.Errorf("ssh upload timeout after %s", timeout)
 	}
+	return string(out), err
 }
 
 // boxSSHFireAndForget runs cmd but does not require it to exit
@@ -708,27 +697,20 @@ func boxSSHFireAndForget(host, cmd string, timeout time.Duration) error {
 // stderr so the fallback-chain caller can scan for "Bad
 // configuration option" markers.
 func runSSHWithFlags(flags []string, host, cmd string, timeout time.Duration) (string, error) {
+	// exec.CommandContext owns the timeout: it kills the process safely after
+	// Start, so there is no race on c.Process and no nil-deref when the timeout
+	// fires before Start completes (the old goroutine+select+Process.Kill form
+	// could panic under load with the 4-8 s timeouts in use).
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	args := append(append([]string{}, flags...), "root@"+host, cmd)
-	c := exec.Command("ssh", args...)
+	c := exec.CommandContext(ctx, "ssh", args...)
 	hideCmdWindow(c)
-	done := make(chan struct {
-		out []byte
-		err error
-	}, 1)
-	go func() {
-		out, err := c.CombinedOutput()
-		done <- struct {
-			out []byte
-			err error
-		}{out, err}
-	}()
-	select {
-	case r := <-done:
-		return string(r.out), r.err
-	case <-time.After(timeout):
-		_ = c.Process.Kill()
-		return "", fmt.Errorf("ssh timeout after %s", timeout)
+	out, err := c.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return string(out), fmt.Errorf("ssh timeout after %s", timeout)
 	}
+	return string(out), err
 }
 
 // isBadOptionError reports whether the combined ssh output starts
