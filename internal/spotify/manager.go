@@ -687,7 +687,8 @@ func (m *Manager) Play(ctx context.Context, uri string) error {
 	// track -> resume, so audio starts cleanly on the shuffled track from its
 	// start. The box buffers on the Ogg headers during the short paused window,
 	// the same way it already buffers during a cold load.
-	if err := m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`,"paused":true}`); err != nil {
+	playBody, _ := json.Marshal(map[string]any{"uri": uri, "paused": true})
+	if err := m.apiPostC(ctx, m.playClient, "/player/play", string(playBody)); err != nil {
 		return err
 	}
 	// Belt-and-braces: stay paused even if this go-librespot build ignores the
