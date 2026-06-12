@@ -1714,12 +1714,13 @@ func (a *App) waitAgentReady(host string, port int) bool {
 // PlayURL triggert POST /api/play mit beliebigem Stream URL. icon ist
 // die Sender Logo URL (wird auf der Box angezeigt), uuid ermoeglicht
 // dass radio-browser den Klick zaehlt.
-func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid string) error {
+func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime string) error {
 	body, _ := json.Marshal(map[string]string{
 		"url":   streamURL,
 		"title": title,
 		"icon":  icon,
 		"uuid":  uuid,
+		"mime":  mime,
 	})
 	resp, err := a.playPost(host, port, "/api/play", string(body))
 	if err != nil {
