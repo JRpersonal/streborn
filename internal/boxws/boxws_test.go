@@ -12,10 +12,10 @@ import (
 type recHandler struct {
 	presets    []int
 	userStops  int
-	wakeResume int
 	powerKeys  int
 	sourceAux  int
 	skips      []bool
+	zones      []ZoneState
 }
 
 func (h *recHandler) OnPresetSelected(_ context.Context, slot int, _ string, _ string) {
@@ -24,9 +24,9 @@ func (h *recHandler) OnPresetSelected(_ context.Context, slot int, _ string, _ s
 func (h *recHandler) OnRemoteSkip(_ context.Context, forward bool) { h.skips = append(h.skips, forward) }
 func (h *recHandler) OnUserStop(context.Context)                   { h.userStops++ }
 func (h *recHandler) OnThumbActivity(context.Context)              {}
-func (h *recHandler) OnWakeResume(context.Context)                 { h.wakeResume++ }
 func (h *recHandler) OnPowerKey(context.Context)                   { h.powerKeys++ }
 func (h *recHandler) OnSourceAux(context.Context)                  { h.sourceAux++ }
+func (h *recHandler) OnZoneChanged(_ context.Context, z ZoneState) { h.zones = append(h.zones, z) }
 
 func newTestClient(h Handler) *Client {
 	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), "ws://127.0.0.1:8080/", h)
@@ -81,9 +81,6 @@ func TestHandleMessage_DoNotResumeIsRespected(t *testing.T) {
 		`<ContentItem source="INVALID_SOURCE" type="DO_NOT_RESUME" location="http://x">` +
 		`<itemName>x</itemName></ContentItem></preset></nowSelectionUpdated></updates>`
 	c.handleMessage(context.Background(), []byte(frame))
-	if h.wakeResume != 0 {
-		t.Fatalf("DO_NOT_RESUME must not trigger a resume, got %d", h.wakeResume)
-	}
 	if len(h.presets) != 0 {
 		t.Fatalf("DO_NOT_RESUME must not play a preset, got %v", h.presets)
 	}
@@ -101,6 +98,35 @@ func TestHandleMessage_FrameTypeWordInTitleNotMisclassified(t *testing.T) {
 	c.handleMessage(context.Background(), []byte(frame))
 	if h.userStops != 0 || len(h.presets) != 0 {
 		t.Fatalf("unexpected dispatch: stops=%d presets=%v", h.userStops, h.presets)
+	}
+}
+
+func TestHandleMessage_ZoneUpdatedParsed(t *testing.T) {
+	h := &recHandler{}
+	c := newTestClient(h)
+	// A box-formed stereo pair / zone (Klaus #70): previously this fell through
+	// as an "unrecognized frame"; it must now parse into a typed ZoneState.
+	frame := `<updates><zoneUpdated><zone master="B0D5CCC4D6CB" senderIPAddress="192.0.2.38" senderIsMaster="true">` +
+		`<member ipaddress="192.0.2.39" role="right">B0D5CCC4D7AA</member></zone></zoneUpdated></updates>`
+	c.handleMessage(context.Background(), []byte(frame))
+	if len(h.zones) != 1 {
+		t.Fatalf("expected one zone event, got %d", len(h.zones))
+	}
+	z := h.zones[0]
+	if z.Master != "B0D5CCC4D6CB" || !z.SenderIsMaster || len(z.Members) != 1 {
+		t.Fatalf("zone parsed wrong: %+v", z)
+	}
+	if z.Members[0].DeviceID != "B0D5CCC4D7AA" || z.Members[0].IP != "192.0.2.39" || z.Members[0].Role != "right" {
+		t.Fatalf("member parsed wrong: %+v", z.Members[0])
+	}
+}
+
+func TestHandleMessage_ZoneDissolvedParsed(t *testing.T) {
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.handleMessage(context.Background(), []byte(`<updates><zoneUpdated><zone /></zoneUpdated></updates>`))
+	if len(h.zones) != 1 || h.zones[0].Master != "" {
+		t.Fatalf("empty zone must fire one ZoneState with empty Master, got %+v", h.zones)
 	}
 }
 

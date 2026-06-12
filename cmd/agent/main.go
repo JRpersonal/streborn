@@ -394,7 +394,6 @@ func run() error {
 		webhooks:   webhooksStore,
 		// Power-button wake from standby: resume the last stream the box itself
 		// declined to resume (DO_NOT_RESUME).
-		onWakeResume: webuiSrv.ResumeLastPlay,
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back.
 		noteLastPlay: webuiSrv.NoteLastPlay,
@@ -779,10 +778,6 @@ type presetWsHandler struct {
 	// webhooks fires the user-configured HTTP request on a "thumb" trigger (a
 	// lone userActivityUpdate, see OnThumbActivity). nil-safe.
 	webhooks *webhooks.Store
-	// onWakeResume is invoked when the box is woken from standby by the power
-	// button (boxws OnWakeResume). Wired to webui.ResumeLastPlay so STR resumes
-	// the last stream the box itself declined to resume. nil-safe.
-	onWakeResume func()
 	// noteLastPlay records a hardware-preset recall as the webui's lastPlay so
 	// the auto-re-push and the wake-resume know what to resume (the hardware path
 	// plays straight through the renderer, bypassing the webui's own lastPlay).
@@ -927,15 +922,6 @@ func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
 	h.webhooks.FireThumb(ctx)
 }
 
-// OnWakeResume is fired when the box is woken from standby by the power button.
-// The box declines to resume its last UPNP source itself (DO_NOT_RESUME), so STR
-// resumes the last stream it played via the webui.
-func (h *presetWsHandler) OnWakeResume(_ context.Context) {
-	if h.onWakeResume != nil {
-		h.onWakeResume()
-	}
-}
-
 // OnPowerKey fires the configured "power" webhook on a power-off (standby)
 // event. Additional-only: STR cannot suppress the firmware power toggle. boxws
 // only calls this on the standby transition, which STR never causes itself, so
@@ -956,6 +942,21 @@ func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
 			h.logger.Info("aux webhook fired")
 		}
 	}
+}
+
+// OnZoneChanged records the box's live multiroom/stereo-pair membership. Log
+// only on purpose: the box may have formed this zone itself (AfterTouch / Bose
+// app), and STR must NOT feed a box-native group into the reconcile store, or
+// PeriodicZoneReconcile would try to re-form it via /setZone and fight the
+// firmware's own pairing. The desktop multiroom tab already reads the live zone
+// via /getZone polling and can dissolve it; this typed log makes box-formed
+// groups visible in a diagnostic bundle instead of an "unrecognized frame".
+func (h *presetWsHandler) OnZoneChanged(_ context.Context, z boxws.ZoneState) {
+	if z.Master == "" {
+		h.logger.Info("zone changed: dissolved")
+		return
+	}
+	h.logger.Info("zone changed", "master", z.Master, "senderIsMaster", z.SenderIsMaster, "members", len(z.Members))
 }
 
 // spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches for
@@ -1089,7 +1090,10 @@ func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 		} else {
 			h.logger.Warn("spotify recall not playing yet, re-pointing box", "slot", slot, "attempt", attempt)
 		}
-		_ = h.renderer.PlayURLMime(ctx, spotifyStreamURL, p.Name, p.Art, "audio/ogg")
+		// Re-point at the PER-SLOT Ogg URL (not the default), matching the initial
+		// recall and the soft path: each Spotify preset gets a unique box-side
+		// location so two Spotify presets do not collide on one URL (#22).
+		_ = h.renderer.PlayURLMime(ctx, boxurl.SpotifySlot(slot), p.Name, p.Art, "audio/ogg")
 		cancel()
 	}
 	h.logger.Warn("spotify recall still not playing after retries", "slot", slot)

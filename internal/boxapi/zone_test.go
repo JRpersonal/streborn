@@ -140,6 +140,20 @@ func TestZoneXMLNoSenderIP(t *testing.T) {
 	}
 }
 
+func TestZoneXMLWithRole(t *testing.T) {
+	got := zoneXML(
+		ZoneMember{DeviceID: "AAAA", IP: "192.0.2.10"},
+		[]ZoneMember{{DeviceID: "BBBB", IP: "192.0.2.11", Role: "LEFT"}, {DeviceID: "CCCC", IP: "192.0.2.12"}},
+	)
+	if !strings.Contains(got, `<member ipaddress="192.0.2.11" role="LEFT">BBBB</member>`) {
+		t.Errorf("expected role attr for the LEFT member: %q", got)
+	}
+	// A member with no role must not gain an empty role attr.
+	if strings.Contains(got, `role=""`) {
+		t.Errorf("must not emit empty role attr: %q", got)
+	}
+}
+
 // TestSetZonePostsCorrectly confirms SetZone POSTs the zone body to /setZone.
 func TestSetZonePostsCorrectly(t *testing.T) {
 	var gotPath, gotBody, gotMethod string

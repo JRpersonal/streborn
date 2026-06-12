@@ -60,15 +60,6 @@ type Handler interface {
 	// heuristisch, daher live tunebar.
 	OnThumbActivity(ctx context.Context)
 
-	// OnWakeResume wird gefeuert wenn der Nutzer die Box per Power-Taste aus
-	// dem Standby aufweckt. Die Box gibt dafuer kein powerStateUpdated; sie
-	// versucht stattdessen ihre letzte Auswahl wiederherzustellen und meldet,
-	// weil sie den STR-UPNP-Stream nicht selbst spielen kann, ein
-	// nowSelectionUpdated id=0 mit source=INVALID_SOURCE und type=DO_NOT_RESUME.
-	// Genau das nutzen wir als "Power an"-Signal: der Agent spielt den zuletzt
-	// gespielten Stream (das letzte Preset) wieder an.
-	OnWakeResume(ctx context.Context)
-
 	// OnPowerKey wird bei einem powerStateUpdated (Power-Taste / Standby-Wechsel)
 	// gefeuert. Fuer den optionalen "power"-Webhook (nur zusaetzlich: STR kann das
 	// firmware-seitige Ein/Ausschalten nicht unterdruecken). Beta.
@@ -78,6 +69,13 @@ type Handler interface {
 	// optionalen "aux"-Webhook (nur zusaetzlich; die Firmware schaltet den Eingang
 	// ohnehin um). Heuristisch ueber den source-Wechsel erkannt, daher Beta.
 	OnSourceAux(ctx context.Context)
+
+	// OnZoneChanged wird gefeuert wenn die Box ihre Multiroom-Zone bzw. ihr
+	// Stereo-Paar aendert (zoneUpdated). Damit kennt STR auch Gruppen, die NICHT
+	// in STR gebildet wurden (z.B. ein in AfterTouch/Bose definiertes Stereopaar),
+	// statt den Frame als "unrecognized" zu verwerfen. z.Master == "" heisst die
+	// Zone wurde aufgeloest.
+	OnZoneChanged(ctx context.Context, z ZoneState)
 }
 
 // Client haelt die Verbindung zur Box.
@@ -345,6 +343,60 @@ type gabboFrame struct {
 	PresetsUpdated *struct {
 		Presets []wsPreset `xml:"presets>preset"`
 	} `xml:"presetsUpdated"`
+
+	// ZoneUpdated carries the box's multiroom zone / stereo-pair membership when
+	// it changes. Non-nil whenever a <zoneUpdated><zone> is present; an empty
+	// <zone/> (Master == "") means the zone dissolved (#70, Klaus 2026-06-12).
+	ZoneUpdated *wsZone `xml:"zoneUpdated>zone"`
+}
+
+// wsZone is the <zone> body of a zoneUpdated frame. Bose puts the master's
+// deviceID in the master attr, its LAN IP in senderIPAddress, whether THIS box
+// leads in senderIsMaster, and one <member ipaddress="..">deviceID</member> per
+// follower.
+type wsZone struct {
+	Master         string         `xml:"master,attr"`
+	SenderIP       string         `xml:"senderIPAddress,attr"`
+	SenderIsMaster string         `xml:"senderIsMaster,attr"`
+	Members        []wsZoneMember `xml:"member"`
+}
+
+type wsZoneMember struct {
+	DeviceID string `xml:",chardata"`
+	IP       string `xml:"ipaddress,attr"`
+	Role     string `xml:"role,attr"`
+}
+
+func (z *wsZone) toState() ZoneState {
+	st := ZoneState{
+		Master:         strings.TrimSpace(z.Master),
+		SenderIP:       strings.TrimSpace(z.SenderIP),
+		SenderIsMaster: strings.EqualFold(strings.TrimSpace(z.SenderIsMaster), "true"),
+	}
+	for _, m := range z.Members {
+		st.Members = append(st.Members, ZoneMemberState{
+			DeviceID: strings.TrimSpace(m.DeviceID),
+			IP:       strings.TrimSpace(m.IP),
+			Role:     strings.TrimSpace(m.Role),
+		})
+	}
+	return st
+}
+
+// ZoneState is the typed multiroom/stereo-pair membership delivered to the
+// handler on a zoneUpdated frame. Master == "" means the zone dissolved.
+type ZoneState struct {
+	Master         string
+	SenderIP       string
+	SenderIsMaster bool
+	Members        []ZoneMemberState
+}
+
+// ZoneMemberState is one follower in a ZoneState.
+type ZoneMemberState struct {
+	DeviceID string
+	IP       string
+	Role     string
 }
 
 func (c *Client) handleMessage(ctx context.Context, data []byte) {
@@ -472,6 +524,23 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			slots = append(slots, p.ID)
 		}
 		c.logger.Info("box ws: presetsUpdated", "count", len(slots), "slots", strings.Join(slots, ","))
+	case f.ZoneUpdated != nil:
+		// The box's multiroom zone / stereo pair changed. Previously this frame
+		// fell through as an "unrecognized frame" (Klaus 2026-06-12), so STR was
+		// blind to box-formed groups: it could not show or dissolve them, and a
+		// stereo pair sourced from STR played mono. Surface it typed so the agent
+		// can track and reconcile it.
+		known = true
+		z := f.ZoneUpdated.toState()
+		if z.Master == "" {
+			c.logger.Info("box ws: zoneUpdated -> zone dissolved")
+		} else {
+			c.logger.Info("box ws: zoneUpdated", "master", z.Master, "senderIsMaster", z.SenderIsMaster,
+				"members", len(z.Members))
+		}
+		if c.handler != nil {
+			c.handler.OnZoneChanged(ctx, z)
+		}
 	}
 
 	pe := f.NowSelection
