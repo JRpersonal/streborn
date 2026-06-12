@@ -573,10 +573,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			// so the box's own activation on a hardware press attaches cleanly
 			// instead of failing on /stream/<slot> (no Spotify source) and
 			// flashing "service unavailable" (#22).
-			proxyURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
-			if p.Type == "spotify" {
-				proxyURL = fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
-			}
+			proxyURL := boxPresetURL(slot, p.Type == "spotify")
 			if err := boxcli.AddPreset(boxCtx, s.boxHost, slot, p.Name, proxyURL); err != nil {
 				s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
 			}
@@ -2063,6 +2060,20 @@ func (s *Server) handleDebugProbe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// boxPresetURL returns the stable agent-loopback URL the box should store for a
+// preset slot, so a hardware press streams through STR's proxy (which survives
+// CDN token expiry) rather than the raw CDN URL. Spotify presets point at the
+// per-slot Ogg endpoint because /stream/<slot> has no Spotify source and the
+// box's own activation would otherwise flash "service unavailable" (#22). This
+// is the one place the box-side preset location is built; both the per-slot
+// SetSlot sync and the bulk handleBoxSyncPresets go through it.
+func boxPresetURL(slot int, isSpotify bool) string {
+	if isSpotify {
+		return fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+	}
+	return fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
+}
+
 // handleBoxSyncPresets ueberschreibt die Box eigene Preset Liste mit
 // allen aktuellen Stick Presets via Bose CLI. Damit funktionieren die
 // Hardware Tasten 1-6 wieder wenn der initial Sync beim Boot aus
@@ -2078,10 +2089,15 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 	}
 	var specs []boxcli.PresetSpec
 	for _, p := range s.presets.All() {
+		// Push the agent-loopback proxy URL, NOT p.StreamURL. The raw value is
+		// the CDN URL (or, post-v0.7.16, the self-proxy wrapper); storing it on
+		// the box defeats the whole point of the proxy slot (token-expiry
+		// survival) and a Spotify preset would have no playable box-side source
+		// at all. This path must match the per-slot SetSlot sync above.
 		specs = append(specs, boxcli.PresetSpec{
 			Slot:      p.Slot,
 			Name:      p.Name,
-			StreamURL: p.StreamURL,
+			StreamURL: boxPresetURL(p.Slot, p.Type == "spotify"),
 		})
 	}
 	syncCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
