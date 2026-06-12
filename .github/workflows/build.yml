@@ -102,7 +102,10 @@ jobs:
           echo "wails $WAILS_VER"
           go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VER}
           "$(go env GOPATH)/bin/wails" generate module
-          if ! git diff --exit-code frontend/wailsjs; then
+          # core.fileMode=false: `wails generate` writes the bindings with the
+          # executable bit set on Linux, which is a spurious mode-only diff
+          # against the committed 0644 files. We only care about content drift.
+          if ! git -c core.fileMode=false diff --exit-code frontend/wailsjs; then
             echo "::error::frontend/wailsjs is stale. Run 'wails generate module' in desktop-app and commit the result."
             exit 1
           fi
