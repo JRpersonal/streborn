@@ -2292,6 +2292,13 @@ async function healPresetLogos() {
 
 // ---------- Preset Render mit Long Press Support ----------
 
+// BOX_LOOPBACK is the agent's own host:port as seen from the box (the agent runs
+// on the box). It is the single source for the loopback URLs the frontend builds
+// to optimistically reflect what the box is about to play; the Go side mirrors
+// these in internal/boxurl. Keep the two in sync.
+const BOX_LOOPBACK = 'http://127.0.0.1:8888';
+const boxSpotifyDefaultUrl = () => `${BOX_LOOPBACK}/spotify/stream.ogg`;
+
 // activeSlotFromLocation extracts the slot number from a stream proxy
 // URL like http://127.0.0.1:8888/stream/3. Since build 2335 the
 // speaker's content items always run through the proxy, so the older
@@ -2720,7 +2727,7 @@ async function play(slot) {
     // Point it at the Spotify stream the box will report, so the highlight and
     // the "starting" label appear instantly on click.
     state.nowLocation = p.type === 'spotify'
-      ? 'http://127.0.0.1:8888/spotify/stream.ogg'
+      ? boxSpotifyDefaultUrl()
       : (p.stream_url || '');
     state.nowName = p.name || '';
     state.nowIcon = p.art || '';
@@ -6572,8 +6579,24 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
     }
     return;
   }
+  // After a successful install, spell out HOW to play. Users repeatedly went
+  // back to the Bose app, saw "playback not possible" (dead Bose cloud) and
+  // assumed STR was broken (HP Baehr, 2026-06-12). The recurring expectation
+  // gap is that playback moved from the Bose app to the STR presets + the
+  // speaker's own buttons 1-6, so say it plainly and offer a jump to the tab.
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
-         `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`);
+         `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>` +
+         `<div class="setup-playhow">` +
+           `<h3>${escapeHtml(t('setup.playHowTitle'))}</h3>` +
+           `<ol>` +
+             `<li>${escapeHtml(t('setup.playHowStep1'))}</li>` +
+             `<li>${escapeHtml(t('setup.playHowStep2'))}</li>` +
+           `</ol>` +
+           `<p class="muted small">${escapeHtml(t('setup.playHowBoseApp'))}</p>` +
+           `<button class="btn btn-primary" id="installGoMusic">${escapeHtml(t('setup.playHowGoBtn'))}</button>` +
+         `</div>`);
+  const goMusic = $('installGoMusic');
+  if (goMusic) goMusic.onclick = () => switchView('box');
   discoverBoxes();
 }
 
@@ -6671,9 +6694,41 @@ async function libraryPlay(item) {
     await PlayURL(state.currentBox.host, state.currentBox.port,
       item.streamURL, item.title || '', item.albumArtURL || '', '');
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
+    // Confirm it actually starts (see verifyLibraryPlayback, #139).
+    verifyLibraryPlayback(item);
   } catch (e) {
     showError(`PlayURL: ${e}`);
   }
+}
+
+// verifyLibraryPlayback confirms a library track actually reaches a playing
+// state on the speaker after PlayURL. The SoundTouch's UPnP layer accepts the
+// URI but its decoder only handles some formats: a high-resolution FLAC (24-bit
+// or above 48 kHz) never decodes, so the track sits at "stream starting"
+// forever with no feedback, and users read it as a network or app fault (#139).
+// Poll the box play state for a short window; if it never starts (or the box
+// reports the source invalid), surface a soft, format-agnostic hint. Run
+// fire-and-forget so the click stays responsive.
+async function verifyLibraryPlayback(item) {
+  const box = state.currentBox;
+  if (!box) return;
+  const deadline = Date.now() + 12000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 2000));
+    // Bail if the user moved to another box or started something else.
+    if (!state.currentBox || state.currentBox.host !== box.host) return;
+    let xml = '';
+    try {
+      xml = await Status(box.host, box.port);
+    } catch {
+      continue;
+    }
+    const ps = (xml.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
+    const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
+    if (ps === 'PLAY_STATE') return; // decoded and playing: all good
+    if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) break; // box rejected it
+  }
+  showToast(t('library.formatMaybeUnsupported', { title: item.title || '' }), 8000);
 }
 
 function librarySaveAsPreset(item) {

@@ -5,7 +5,6 @@ package webui
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +23,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -573,10 +573,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			// so the box's own activation on a hardware press attaches cleanly
 			// instead of failing on /stream/<slot> (no Spotify source) and
 			// flashing "service unavailable" (#22).
-			proxyURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
-			if p.Type == "spotify" {
-				proxyURL = fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
-			}
+			proxyURL := boxPresetURL(slot, p.Type == "spotify")
 			if err := boxcli.AddPreset(boxCtx, s.boxHost, slot, p.Name, proxyURL); err != nil {
 				s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
 			}
@@ -693,7 +690,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// Stream durch unseren Proxy schicken — damit klappen auch
 	// HTTPS Quellen (Bose UPnP kann kein TLS) und Token Expiry wird
 	// transparent abgefangen. Bose sieht eine stabile loopback URL.
-	playURL := "http://127.0.0.1:8888/stream/raw?u=" + base64.RawURLEncoding.EncodeToString([]byte(req.URL))
+	playURL := boxurl.RawStream(req.URL)
 	if err := s.renderer.PlayURL(r.Context(), playURL, req.Title, req.Icon); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{
 			"error":  "Station could not be played",
@@ -767,7 +764,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		if s.spotifySetRecalling != nil {
 			s.spotifySetRecalling()
 		}
-		slotURL := fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+		slotURL := boxurl.SpotifySlot(slot)
 		if err := s.renderer.PlayURLMime(r.Context(), slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
@@ -788,10 +785,18 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			if err := s.spotifyPlay(bg, uri, account); err != nil {
 				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 			}
-			s.verifyRecall(func(ctx context.Context) {
-				if s.spotifyPlay(ctx, uri, account) == nil {
-					_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
+			s.verifyRecall(func(ctx context.Context, lastAttempt bool) {
+				// Re-point the box at the stream WITHOUT re-Play on the early
+				// tries: ServeOgg resumes go-librespot on attach, so this
+				// re-attaches without reshuffling/restarting the track (a re-Play
+				// every retry was the "same song restarts a few seconds in" bug,
+				// fixed for hardware in v0.7.4 but previously still present here).
+				// Only the last attempt does a full re-Play, to recover a genuine
+				// cold-boot auth race where the playlist never loaded at all.
+				if lastAttempt {
+					_ = s.spotifyPlay(ctx, uri, account)
 				}
+				_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
 			}, s.spotifyStreaming)
 		}()
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "spotify"})
@@ -804,7 +809,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	}
 	// Stream Proxy URL nutzen damit auch nach Token Expiry weitergespielt
 	// wird (Bose sieht die stabile loopback URL).
-	playURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
+	playURL := boxurl.StreamSlot(slot)
 	if err := s.renderer.PlayURL(r.Context(), playURL, p.Name, p.Art); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error":  "Station could not be played",
@@ -816,7 +821,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setLastPlay(playURL, p.Name, p.Art, "")
 	name, art := p.Name, p.Art
-	go s.verifyRecall(func(ctx context.Context) {
+	go s.verifyRecall(func(ctx context.Context, _ bool) {
 		_ = s.renderer.PlayURL(ctx, playURL, name, art)
 	}, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
@@ -826,8 +831,16 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 // and re-issues the play a few times if not. Fixes the "first press after a
 // reboot does nothing, second press works" race (box/go-librespot not ready
 // yet) without any latency on the happy path (the initial play already ran).
-func (s *Server) verifyRecall(retry func(context.Context), working func() bool) {
-	for attempt := 1; attempt <= 3; attempt++ {
+//
+// retry receives lastAttempt=true only on the final try. Spotify uses it to
+// re-point the box without a full re-Play on the early tries (a re-Play
+// reshuffles and restarts the track), reserving the disruptive re-Play for the
+// last-resort recovery. This is the same policy the hardware recall settled on
+// in v0.7.4 (cmd/agent verifySpotifyPlaying); routing both through one contract
+// keeps the soft and hardware paths from drifting again.
+func (s *Server) verifyRecall(retry func(ctx context.Context, lastAttempt bool), working func() bool) {
+	const attempts = 3
+	for attempt := 1; attempt <= attempts; attempt++ {
 		time.Sleep(5 * time.Second)
 		// working() is a source-specific "it is already fine" signal checked
 		// before the box now_playing state. For Spotify it reports whether the
@@ -842,7 +855,7 @@ func (s *Server) verifyRecall(retry func(context.Context), working func() bool) 
 		}
 		s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-		retry(ctx)
+		retry(ctx, attempt == attempts)
 		cancel()
 	}
 	s.logger.Warn("recall still not playing after retries")
@@ -2063,6 +2076,17 @@ func (s *Server) handleDebugProbe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// boxPresetURL returns the stable agent-loopback URL the box should store for a
+// preset slot, so a hardware press streams through STR's proxy (which survives
+// CDN token expiry) rather than the raw CDN URL. Spotify presets point at the
+// per-slot Ogg endpoint because /stream/<slot> has no Spotify source and the
+// box's own activation would otherwise flash "service unavailable" (#22). This
+// is the one place the box-side preset location is built; both the per-slot
+// SetSlot sync and the bulk handleBoxSyncPresets go through it.
+func boxPresetURL(slot int, isSpotify bool) string {
+	return boxurl.Preset(slot, isSpotify)
+}
+
 // handleBoxSyncPresets ueberschreibt die Box eigene Preset Liste mit
 // allen aktuellen Stick Presets via Bose CLI. Damit funktionieren die
 // Hardware Tasten 1-6 wieder wenn der initial Sync beim Boot aus
@@ -2078,10 +2102,15 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 	}
 	var specs []boxcli.PresetSpec
 	for _, p := range s.presets.All() {
+		// Push the agent-loopback proxy URL, NOT p.StreamURL. The raw value is
+		// the CDN URL (or, post-v0.7.16, the self-proxy wrapper); storing it on
+		// the box defeats the whole point of the proxy slot (token-expiry
+		// survival) and a Spotify preset would have no playable box-side source
+		// at all. This path must match the per-slot SetSlot sync above.
 		specs = append(specs, boxcli.PresetSpec{
 			Slot:      p.Slot,
 			Name:      p.Name,
-			StreamURL: p.StreamURL,
+			StreamURL: boxPresetURL(p.Slot, p.Type == "spotify"),
 		})
 	}
 	syncCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)

@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/bmx"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
@@ -133,6 +135,36 @@ func runShepherdCmd(args []string) error {
 	}
 }
 
+// nandPresetsPath is the canonical on-NAND preset store. NAND (ubifs) survives
+// reboots and the stick being removed; a stick mountpoint does not.
+const nandPresetsPath = "/mnt/nv/streborn/presets.json"
+
+// canonicalPresetsPath keeps the preset store on NAND. If the configured path
+// is on removable media (a USB stick under /media or /run/media, the pre-NAND
+// boot-script default), it redirects to nandPresetsPath so saves persist across
+// a reboot, migrating a still-readable stick copy once if NAND has none yet
+// (#120). Any other path (including an explicit /mnt/nv override) is left as-is.
+func canonicalPresetsPath(p string, logger *slog.Logger) string {
+	clean := filepath.Clean(p)
+	if !strings.HasPrefix(clean, "/media/") && !strings.HasPrefix(clean, "/run/media/") {
+		return p
+	}
+	if _, err := os.Stat(nandPresetsPath); os.IsNotExist(err) {
+		if data, rerr := os.ReadFile(p); rerr == nil && len(data) > 0 {
+			if mkErr := os.MkdirAll(filepath.Dir(nandPresetsPath), 0o755); mkErr == nil {
+				if werr := os.WriteFile(nandPresetsPath, data, 0o644); werr == nil {
+					logger.Warn("presets: migrated stick preset store to NAND", "from", p, "to", nandPresetsPath)
+				} else {
+					logger.Warn("presets: NAND migration write failed", "err", werr)
+				}
+			}
+		}
+	}
+	logger.Warn("presets: redirecting removable-media preset path to NAND so it survives reboot",
+		"flag", p, "using", nandPresetsPath)
+	return nandPresetsPath
+}
+
 func run() error {
 	var (
 		presetsPath     = flag.String("presets", "/media/sda1/presets.json", "Pfad zur presets.json auf dem USB Stick")
@@ -214,6 +246,16 @@ func run() error {
 	// Without this, an "empty presets" report (#60) is indistinguishable
 	// from a fresh install, a corrupt file, or an agent restart racing
 	// the store load.
+	// Presets MUST live on NAND so they survive a reboot. A box whose on-NAND
+	// boot script predates the NAND-presets change launches the agent with
+	// --presets pointing at the USB stick (the old default), and the stick is
+	// removed after install: every save then lands on an absent mountpoint and
+	// the presets vanish on the next reboot (#120). The bootstrap self-heal
+	// above rewrites that boot script, but only takes effect a reboot later, so
+	// also harden it here: if the flag points at removable media, redirect to
+	// the canonical NAND path and migrate a still-readable stick copy once.
+	*presetsPath = canonicalPresetsPath(*presetsPath, logger)
+
 	if st, statErr := os.Stat(*presetsPath); statErr == nil {
 		logger.Warn("preset store phase: file present",
 			"file", *presetsPath, "bytes", st.Size(), "mtime", st.ModTime().UTC().Format(time.RFC3339))
@@ -916,12 +958,9 @@ func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
 	}
 }
 
-// spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches
-// for Spotify audio. The agent runs on the box, so 127.0.0.1:8888 reaches
-// it (same host:port the radio stream proxy uses). The .ogg suffix is
-// required: the Bose renderer keys playability off the URL extension and
-// rejects an extensionless Ogg stream (INVALID_SOURCE).
-const spotifyStreamURL = "http://127.0.0.1:8888/spotify/stream.ogg"
+// spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches for
+// ad-hoc Spotify audio (see boxurl.SpotifyDefault for the .ogg-suffix rationale).
+var spotifyStreamURL = boxurl.SpotifyDefault()
 
 // playSpotifyPreset recalls a Spotify preset: wake + pair the box, tell
 // go-librespot to play the saved URI (autonomous, no app), then point the
@@ -969,7 +1008,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 	// another preset and causes chaos. The box buffers until go-librespot
 	// produces audio just below. Uses the per-slot URL the box already
 	// self-activated, so this re-confirms it rather than switching URLs.
-	slotURL := fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+	slotURL := boxurl.SpotifySlot(slot)
 	if err := h.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
 		h.logger.Warn("spotify upnp play (display) failed, will verify+retry", "slot", slot, "err", err)
 	}
@@ -1287,7 +1326,7 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Ann
 // dahinter den echten Sender Redirect auf und reconnectet bei Token
 // Expiry, ohne dass Bose etwas merkt.
 func proxyStreamURL(slot int) string {
-	return fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
+	return boxurl.StreamSlot(slot)
 }
 
 // boxPresetURL is the location stored in the box's OWN preset slot. On a
@@ -1300,12 +1339,7 @@ func proxyStreamURL(slot int) string {
 // /spotify/stream.ogg makes the box's own activation attach cleanly (it shows
 // the preset name + buffers) until STR loads the right playlist.
 func boxPresetURL(p presets.Preset) string {
-	if p.Type == "spotify" {
-		// Per-slot alias of the single Spotify stream: a UNIQUE .ogg URL per
-		// slot so two Spotify presets do not collide on one box location (#22).
-		return fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", p.Slot)
-	}
-	return proxyStreamURL(p.Slot)
+	return boxurl.Preset(p.Slot, p.Type == "spotify")
 }
 
 // initialBoxPresetSync wartet auf den Box Boot und synct alle Stick

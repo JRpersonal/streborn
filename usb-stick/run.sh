@@ -9,6 +9,33 @@
 #     Dann wird beim naechsten Boot vom Stick gesynct.
 #
 # Auf der Box installieren: scp setup/run.sh stbox:/media/sda1/run.sh
+#
+# ===========================================================================
+# TABLE OF CONTENTS (~3460 lines, single file on purpose: Bose runs this from
+# the NAND rc.local copy chain, which cannot source sibling files)
+# ---------------------------------------------------------------------------
+#   Paths + logging .......... STICK/PERSIST/LOG vars, log, setup_log,
+#                              uptime_s, start_stick_log_mirror
+#   Language/region .......... lang_int_for_cc (parity-tested against
+#                              sticksetup.SysLanguageForCountry), resolve_setup_language
+#   Boot bring-up ............ ensure_sshd_running, initial_snapshot,
+#                              wait_for_ready, background_phase_probe
+#   NAND <-> stick sync ...... cleanup_nand, sync_stick_to_nand_always,
+#                              sync_shim_to_nand
+#   LD_PRELOAD shim .......... shim_stage_wrapper, shim_late_swap,
+#                              shim_already_active, hijack_softwareupdate
+#   Wi-Fi provisioning ....... persist_wlan_creds, is_real_sta_addr,
+#                              current_sta_lease, wait_for_sta_lease
+#   Firewall/NAT (BCO) ....... detect_series_one, iptables_nat_probe_and_modprobe,
+#                              redirect_lan_ip, iptables_install_redirect_series_one,
+#                              iptables_install_streborn_fw
+#   Agent start .............. ports_busy, wait_ports_clear, try_http_date_sync,
+#                              start_agent, agent_port_bound
+#   Main flow ................ at the very bottom
+#
+# Every on-box script is syntax-gated in CI by `busybox sh -n` (build.yml),
+# since shellcheck's parser is not the ash the speaker actually execs.
+# ===========================================================================
 
 set -u
 
@@ -127,30 +154,34 @@ setup_log() {
 # subshell AND the OOB-finalize path (see the sibling-subshell scope
 # trap that bit current_sta_lease).
 lang_int_for_cc() {
-    # Coarse country-code -> sysLanguage fallback for region-only
-    # sticks. The desktop app normally supplies the exact value from
-    # the user's UI language, so this only runs when lang.conf is absent.
+    # Country-code -> sysLanguage fallback for region-only sticks. The desktop
+    # app normally supplies the exact value from the user's UI language, so this
+    # only runs when lang.conf is absent. This table MUST stay in lockstep with
+    # sticksetup.SysLanguageForCountry (Go); sticksetup/langparity_test.go parses
+    # both and fails the build on any drift. Unknown codes floor to English (3),
+    # which is the Go side's 0-default after the caller's English floor.
     case "$(printf '%s' "$1" | tr 'a-z' 'A-Z')" in
-        DK) echo 1 ;;
+        DK|GL|FO) echo 1 ;;
         DE|AT|CH|LI) echo 2 ;;
-        ES|MX|AR|CL|CO|PE|VE) echo 4 ;;
-        FR|BE|LU) echo 5 ;;
-        IT) echo 6 ;;
-        NL) echo 7 ;;
+        US|GB|IE|AU|NZ|CA|ZA|IN|SG|NG|PH|MT) echo 3 ;;
+        ES|MX|AR|CO|CL|PE|VE|EC|GT|CU|BO|DO|HN|PY|SV|NI|CR|PA|UY) echo 4 ;;
+        FR|LU|MC|SN|CI) echo 5 ;;
+        IT|SM|VA) echo 6 ;;
+        NL|BE|SR) echo 7 ;;
         SE) echo 8 ;;
         JP) echo 9 ;;
         CN) echo 10 ;;
         TW|HK|MO) echo 11 ;;
-        KR) echo 12 ;;
+        KR|KP) echo 12 ;;
         TH) echo 13 ;;
         CZ) echo 15 ;;
         FI) echo 16 ;;
         GR|CY) echo 17 ;;
         NO) echo 18 ;;
         PL) echo 19 ;;
-        PT|BR) echo 20 ;;
+        PT|BR|AO|MZ) echo 20 ;;
         RO|MD) echo 21 ;;
-        RU|BY|UA) echo 22 ;;
+        RU|BY|KZ|KG|UA) echo 22 ;;
         SI) echo 23 ;;
         TR) echo 24 ;;
         HU) echo 25 ;;

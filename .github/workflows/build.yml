@@ -54,6 +54,62 @@ jobs:
           version: latest
           args: --timeout=5m
 
+  # The desktop app is a SECOND Go module (streborn-app); the root `go vet`
+  # / `go test ./...` above never descends into it, so it shipped unchecked
+  # until now (a live `go vet` IPv6 finding had sat there). It compiles on a
+  # clean checkout because frontend/dist/.gitkeep keeps the //go:embed target
+  # present, so no frontend build is needed just to vet/test/build it.
+  desktop-go:
+    name: Desktop app (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: "stable"
+          cache: true
+          cache-dependency-path: desktop-app/go.sum
+
+      - name: go vet
+        working-directory: desktop-app
+        run: go vet ./...
+
+      - name: go test
+        working-directory: desktop-app
+        run: go test ./... -count=1
+
+      - name: go build
+        working-directory: desktop-app
+        run: go build ./...
+
+      - uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with:
+          version: latest
+          args: --timeout=5m
+          working-directory: desktop-app
+
+      # Frontend bindings drift: adding a bound App method without running
+      # `wails generate module` leaves frontend/wailsjs/ stale, which only
+      # the Vite build (a separate job) ever notices, so it festers. Pin the
+      # wails CLI to the exact version in go.mod and fail if regenerating the
+      # bindings would change anything that is not committed.
+      - name: Check wailsjs bindings are current
+        working-directory: desktop-app
+        run: |
+          WAILS_VER=$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
+          echo "wails $WAILS_VER"
+          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VER}
+          "$(go env GOPATH)/bin/wails" generate module
+          # core.fileMode=false: `wails generate` writes the bindings with the
+          # executable bit set on Linux, which is a spurious mode-only diff
+          # against the committed 0644 files. We only care about content drift.
+          if ! git -c core.fileMode=false diff --exit-code frontend/wailsjs; then
+            echo "::error::frontend/wailsjs is stale. Run 'wails generate module' in desktop-app and commit the result."
+            exit 1
+          fi
+
   shellcheck:
     name: shellcheck (on-box scripts)
     runs-on: ubuntu-latest
@@ -76,6 +132,17 @@ jobs:
         run: |
           shellcheck --version
           shellcheck -s sh --severity=error usb-stick/*.sh usb-stick/rc.local
+
+      # BusyBox parse gate: shellcheck uses its own parser, which is not the
+      # ash the speaker actually runs. A construct ash rejects (and refuses to
+      # exec, leaving the box dead on boot) can pass shellcheck. Run the real
+      # busybox `sh -n` over every on-box script as a hard syntax gate.
+      - name: busybox ash parse gate
+        run: |
+          sudo apt-get update && sudo apt-get install -y busybox-static
+          for f in usb-stick/*.sh usb-stick/rc.local; do
+            busybox sh -n "$f" && echo "ok: $f"
+          done
 
   govulncheck:
     name: govulncheck
@@ -123,6 +190,14 @@ jobs:
       - name: Build frontend
         working-directory: desktop-app/frontend
         run: npm run build
+
+      # i18n coverage report. en is the reference (global-audience default);
+      # the script prints per-locale missing/extra keys. Report-only (exit 0)
+      # so an in-progress translation never blocks a PR, but the drift is
+      # visible in the log instead of being discovered by a user.
+      - name: i18n coverage report
+        working-directory: desktop-app/frontend
+        run: node scripts/i18n-coverage.mjs
 
   build:
     name: Cross Compile
