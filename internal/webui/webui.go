@@ -608,6 +608,10 @@ type playRequest struct {
 	Title string `json:"title"`
 	Icon  string `json:"icon"` // albumArtURI fuer Box Display
 	UUID  string `json:"uuid"` // optional, fuer Click Tracking
+	// Mime is the source codec MIME (audio/flac, audio/mp4, ...) for a network
+	// library track, so the box decodes it correctly. Empty for radio -> the
+	// renderer defaults to audio/mpeg.
+	Mime string `json:"mime"`
 }
 
 // handleWebhooks gets (GET) or replaces (PUT) the webhook config. The config
@@ -696,15 +700,26 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// HTTPS Quellen (Bose UPnP kann kein TLS) und Token Expiry wird
 	// transparent abgefangen. Bose sieht eine stabile loopback URL.
 	playURL := boxurl.RawStream(req.URL)
-	if err := s.renderer.PlayURL(r.Context(), playURL, req.Title, req.Icon); err != nil {
+	// Advertise the real codec to the box when the caller knows it (a network
+	// library track carries its DLNA-reported MIME, e.g. audio/flac, audio/mp4).
+	// Radio leaves it empty and defaults to audio/mpeg. The box keys its decoder
+	// off this protocolInfo MIME, so a FLAC/ALAC/M4A file mislabelled as
+	// audio/mpeg is rejected (AUDIO_ERROR_BAD_URL) while an MP3 plays (#139).
+	var playErr error
+	if req.Mime != "" {
+		playErr = s.renderer.PlayURLMime(r.Context(), playURL, req.Title, req.Icon, req.Mime)
+	} else {
+		playErr = s.renderer.PlayURL(r.Context(), playURL, req.Title, req.Icon)
+	}
+	if playErr != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{
 			"error":  "Station could not be played",
-			"detail": guessErrorReason(err),
+			"detail": guessErrorReason(playErr),
 			"url":    req.URL,
 		})
 		return
 	}
-	s.setLastPlay(playURL, req.Title, req.Icon, "")
+	s.setLastPlay(playURL, req.Title, req.Icon, req.Mime)
 	// radio-browser click-tracking moved app-side (the app fires RadioClick
 	// when it starts playback) so the box no longer needs the radiobrowser pkg.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "playing", "url": req.URL})

@@ -523,7 +523,11 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		for _, p := range f.PresetsUpdated.Presets {
 			slots = append(slots, p.ID)
 		}
-		c.logger.Info("box ws: presetsUpdated", "count", len(slots), "slots", strings.Join(slots, ","))
+		// DEBUG, not INFO: the box re-emits presetsUpdated in bursts (~20x around
+		// boot / a preset sync), and the MultiWriter logger appends every line to
+		// the NAND log, so an INFO burst is a stack of rapid NAND writes for no
+		// diagnostic gain. The slots are still captured at DEBUG when needed.
+		c.logger.Debug("box ws: presetsUpdated", "count", len(slots), "slots", strings.Join(slots, ","))
 	case f.ZoneUpdated != nil:
 		// The box's multiroom zone / stereo pair changed. Previously this frame
 		// fell through as an "unrecognized frame" (Klaus 2026-06-12), so STR was
@@ -598,7 +602,11 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			if strings.Contains(pe.Inner, "DO_NOT_RESUME") {
 				c.logger.Info("box ws: standby wake / source teardown signalled DO_NOT_RESUME, not resuming")
 			} else {
-				c.logger.Info("box self-activation rejected preset (shows 'service unavailable')",
+				// DEBUG: the box emits this id=0 INVALID_SOURCE self-activation after
+				// EVERY hardware preset press (the actual press is logged at INFO
+				// just below), so at INFO it doubled the NAND writes per press for no
+				// extra signal.
+				c.logger.Debug("box self-activation rejected preset (shows 'service unavailable')",
 					"id", pe.ID, "source", pe.ContentItem.Source,
 					"location", pe.ContentItem.Location, "preview", preview(data, 240))
 			}
