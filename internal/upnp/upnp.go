@@ -9,35 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
-)
 
-// safeHTTPURL accepts a URL only if its scheme is http or https.
-// This is the project's belt-and-braces filter at every outbound
-// HTTP call site that takes a URL from a not-strictly-trusted
-// source (preset store written by the local user, radio-browser
-// search results, playlist auto-discovery). Defense-in-depth: in
-// practice we never see other schemes, but a single rogue preset
-// with file://, ftp:// or jar:// would otherwise reach Go's stdlib
-// HTTP client and become an SSRF vector. CodeQL flagged exactly
-// these call sites; the helper makes the policy explicit.
-func safeHTTPURL(raw string) error {
-	if raw == "" {
-		return errors.New("url is empty")
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("parse url: %w", err)
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "http", "https":
-		return nil
-	default:
-		return fmt.Errorf("disallowed url scheme %q (only http/https accepted)", u.Scheme)
-	}
-}
+	"github.com/JRpersonal/streborn/internal/netutil"
+)
 
 // Renderer haelt die Adresse eines AVTransport Endpoints.
 type Renderer struct {
@@ -169,22 +145,25 @@ func ResolveStreamURL(ctx context.Context, u string) (string, error) {
 // extractStreamFromPlaylist laedt eine .pls / .m3u Datei und gibt die
 // erste Stream URL zurueck. Leer wenn nichts gefunden / Fehler.
 func extractStreamFromPlaylist(ctx context.Context, u string) string {
-	if err := safeHTTPURL(u); err != nil {
+	if err := netutil.SafeHTTPURL(u); err != nil {
 		return ""
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return ""
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := netutil.GuardedClient(5 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return ""
 	}
 	defer resp.Body.Close()
-	body := make([]byte, 4096)
-	n, _ := resp.Body.Read(body)
-	for _, line := range strings.Split(string(body[:n]), "\n") {
+	// Read up to 8 KB with io.ReadAll over a LimitReader, not a single Read: a
+	// bare resp.Body.Read can return a short chunk before the line carrying the
+	// File1=/stream URL has arrived, which made playlist resolution flaky on
+	// servers that flush the header and body in separate TCP segments.
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(strings.ToLower(line), "file") {
 			if i := strings.Index(line, "="); i >= 0 {
@@ -204,7 +183,7 @@ func extractStreamFromPlaylist(ctx context.Context, u string) string {
 // isStreamReachable prueft mit GET Range 0-0 ob der Server antwortet.
 // HEAD wird von vielen Streaming Servern nicht unterstuetzt.
 func isStreamReachable(ctx context.Context, u string) bool {
-	if err := safeHTTPURL(u); err != nil {
+	if err := netutil.SafeHTTPURL(u); err != nil {
 		return false
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
@@ -215,7 +194,7 @@ func isStreamReachable(ctx context.Context, u string) bool {
 	}
 	req.Header.Set("Range", "bytes=0-0")
 	req.Header.Set("User-Agent", "SoundTouchReborn/1.0")
-	client := &http.Client{Timeout: 4 * time.Second}
+	client := netutil.GuardedClient(4 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return false
