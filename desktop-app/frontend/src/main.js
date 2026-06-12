@@ -2292,6 +2292,13 @@ async function healPresetLogos() {
 
 // ---------- Preset Render mit Long Press Support ----------
 
+// BOX_LOOPBACK is the agent's own host:port as seen from the box (the agent runs
+// on the box). It is the single source for the loopback URLs the frontend builds
+// to optimistically reflect what the box is about to play; the Go side mirrors
+// these in internal/boxurl. Keep the two in sync.
+const BOX_LOOPBACK = 'http://127.0.0.1:8888';
+const boxSpotifyDefaultUrl = () => `${BOX_LOOPBACK}/spotify/stream.ogg`;
+
 // activeSlotFromLocation extracts the slot number from a stream proxy
 // URL like http://127.0.0.1:8888/stream/3. Since build 2335 the
 // speaker's content items always run through the proxy, so the older
@@ -2720,7 +2727,7 @@ async function play(slot) {
     // Point it at the Spotify stream the box will report, so the highlight and
     // the "starting" label appear instantly on click.
     state.nowLocation = p.type === 'spotify'
-      ? 'http://127.0.0.1:8888/spotify/stream.ogg'
+      ? boxSpotifyDefaultUrl()
       : (p.stream_url || '');
     state.nowName = p.name || '';
     state.nowIcon = p.art || '';

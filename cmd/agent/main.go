@@ -30,6 +30,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/bmx"
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/hosts"
@@ -916,12 +917,9 @@ func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
 	}
 }
 
-// spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches
-// for Spotify audio. The agent runs on the box, so 127.0.0.1:8888 reaches
-// it (same host:port the radio stream proxy uses). The .ogg suffix is
-// required: the Bose renderer keys playability off the URL extension and
-// rejects an extensionless Ogg stream (INVALID_SOURCE).
-const spotifyStreamURL = "http://127.0.0.1:8888/spotify/stream.ogg"
+// spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches for
+// ad-hoc Spotify audio (see boxurl.SpotifyDefault for the .ogg-suffix rationale).
+var spotifyStreamURL = boxurl.SpotifyDefault()
 
 // playSpotifyPreset recalls a Spotify preset: wake + pair the box, tell
 // go-librespot to play the saved URI (autonomous, no app), then point the
@@ -969,7 +967,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 	// another preset and causes chaos. The box buffers until go-librespot
 	// produces audio just below. Uses the per-slot URL the box already
 	// self-activated, so this re-confirms it rather than switching URLs.
-	slotURL := fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+	slotURL := boxurl.SpotifySlot(slot)
 	if err := h.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
 		h.logger.Warn("spotify upnp play (display) failed, will verify+retry", "slot", slot, "err", err)
 	}
@@ -1287,7 +1285,7 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Ann
 // dahinter den echten Sender Redirect auf und reconnectet bei Token
 // Expiry, ohne dass Bose etwas merkt.
 func proxyStreamURL(slot int) string {
-	return fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
+	return boxurl.StreamSlot(slot)
 }
 
 // boxPresetURL is the location stored in the box's OWN preset slot. On a
@@ -1300,12 +1298,7 @@ func proxyStreamURL(slot int) string {
 // /spotify/stream.ogg makes the box's own activation attach cleanly (it shows
 // the preset name + buffers) until STR loads the right playlist.
 func boxPresetURL(p presets.Preset) string {
-	if p.Type == "spotify" {
-		// Per-slot alias of the single Spotify stream: a UNIQUE .ogg URL per
-		// slot so two Spotify presets do not collide on one box location (#22).
-		return fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", p.Slot)
-	}
-	return proxyStreamURL(p.Slot)
+	return boxurl.Preset(p.Slot, p.Type == "spotify")
 }
 
 // initialBoxPresetSync wartet auf den Box Boot und synct alle Stick

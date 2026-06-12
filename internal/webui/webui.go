@@ -5,7 +5,6 @@ package webui
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +23,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -690,7 +690,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// Stream durch unseren Proxy schicken — damit klappen auch
 	// HTTPS Quellen (Bose UPnP kann kein TLS) und Token Expiry wird
 	// transparent abgefangen. Bose sieht eine stabile loopback URL.
-	playURL := "http://127.0.0.1:8888/stream/raw?u=" + base64.RawURLEncoding.EncodeToString([]byte(req.URL))
+	playURL := boxurl.RawStream(req.URL)
 	if err := s.renderer.PlayURL(r.Context(), playURL, req.Title, req.Icon); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{
 			"error":  "Station could not be played",
@@ -764,7 +764,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		if s.spotifySetRecalling != nil {
 			s.spotifySetRecalling()
 		}
-		slotURL := fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
+		slotURL := boxurl.SpotifySlot(slot)
 		if err := s.renderer.PlayURLMime(r.Context(), slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
@@ -801,7 +801,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	}
 	// Stream Proxy URL nutzen damit auch nach Token Expiry weitergespielt
 	// wird (Bose sieht die stabile loopback URL).
-	playURL := fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
+	playURL := boxurl.StreamSlot(slot)
 	if err := s.renderer.PlayURL(r.Context(), playURL, p.Name, p.Art); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error":  "Station could not be played",
@@ -2068,10 +2068,7 @@ func (s *Server) handleDebugProbe(w http.ResponseWriter, r *http.Request) {
 // is the one place the box-side preset location is built; both the per-slot
 // SetSlot sync and the bulk handleBoxSyncPresets go through it.
 func boxPresetURL(slot int, isSpotify bool) string {
-	if isSpotify {
-		return fmt.Sprintf("http://127.0.0.1:8888/spotify/stream-%d.ogg", slot)
-	}
-	return fmt.Sprintf("http://127.0.0.1:8888/stream/%d", slot)
+	return boxurl.Preset(slot, isSpotify)
 }
 
 // handleBoxSyncPresets ueberschreibt die Box eigene Preset Liste mit
