@@ -60,7 +60,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 
 	// Step 1: SSH handshake.
 	res.Step = "ssh-handshake"
-	hello, helloErr := boxSSHOutput(host, "echo STR_SSH_OK", 12*time.Second)
+	hello, helloErr := sshHandshake(host, 4)
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
 		res.Message = "SSH handshake to speaker failed: " + classifySSHError(hello, helloErr)
@@ -142,7 +142,7 @@ echo "STR_UNINSTALL_REMOVED:$REMOVED"
 	// Step 3: reboot into vanilla Bose. Connection drops mid-command;
 	// fire-and-forget so the drop is not treated as a failure.
 	res.Step = "reboot"
-	_ = boxSSHFireAndForget(host, "(sleep 1; reboot) >/dev/null 2>&1 &", 6*time.Second)
+	_ = boxReboot(host)
 
 	res.Step = "done"
 	res.OK = true

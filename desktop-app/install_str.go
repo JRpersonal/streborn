@@ -256,25 +256,8 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// user would see the raw "ssh handshake: exit status 255" again. The
 	// frontend renders res.Message + res.Log on res.OK == false.
 	res.Step = "ssh-handshake"
-	// Retry the handshake with a longer per-attempt timeout and a short backoff.
-	// On slower boxes (ST10 especially) sshd accepts the TCP connection but the
-	// crypto handshake is not ready within a few seconds right after boot, so a
-	// single 12 s attempt failed and the user had to retry the whole install 2-3
-	// times (logs: "ssh timeout after 12s" while :8090 was already reachable).
-	// The box answering :8090 means it is up, so a couple of spaced retries cover
-	// the sshd warmup window. #114.
-	var hello string
-	var helloErr error
-	for attempt := 0; attempt < 4; attempt++ {
-		if attempt > 0 {
-			time.Sleep(time.Duration(attempt) * 2 * time.Second) // 2s, 4s, 6s
-			a.logger.Info("install_str: retrying ssh handshake", "host", host, "attempt", attempt)
-		}
-		hello, helloErr = boxSSHOutput(host, "echo STR_SSH_OK", 18*time.Second)
-		if helloErr == nil && strings.Contains(hello, "STR_SSH_OK") {
-			break
-		}
-	}
+	// 4 spaced attempts; see sshHandshake for the #114 sshd-warmup rationale.
+	hello, helloErr := sshHandshake(host, 4)
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
 		res.Code = "ssh-handshake"
@@ -389,7 +372,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// connection, which manifests as a non-zero exit — that is the
 	// expected success path here, not an error.
 	res.Step = "reboot"
-	_ = boxSSHFireAndForget(host, "(sleep 1; reboot) &", 4*time.Second)
+	_ = boxReboot(host)
 	a.logger.Info("install_str: reboot signal sent", "host", host)
 
 	// Step 4: poll port 8888 (the STR agent webui), model-aware (240 s for
@@ -406,7 +389,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		if tcpReachable(host, 22, 4*time.Second) {
 			a.logger.Info("install_str: agent not up, SSH still open, rebooting once and retrying", "host", host)
 			res.Step = "reboot-and-retry"
-			_ = boxSSHFireAndForget(host, "(sleep 1; reboot) &", 4*time.Second)
+			_ = boxReboot(host)
 			if a.waitForAgent(host, model) == nil {
 				res.Step = "done"
 				res.OK = true
@@ -481,7 +464,7 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 		return res, nil
 	}
 
-	hello, helloErr := boxSSHOutput(host, "echo STR_SSH_OK", 15*time.Second)
+	hello, helloErr := sshHandshake(host, 4)
 	if !strings.Contains(hello, "STR_SSH_OK") {
 		res.Code = "ssh-failed"
 		res.Message = "SSH to speaker failed: " + classifySSHError(hello, helloErr)
@@ -543,7 +526,7 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	res.Step = "reboot"
 	res.Message = "STR installed over SSH (USB stick bypassed). The speaker will reboot and join your Wi-Fi."
 	a.logger.Info("repair_ssh: install ran", "host", host, "outBytes", len(out))
-	_ = boxSSHFireAndForget(host, "(sleep 1; reboot) &", 4*time.Second)
+	_ = boxReboot(host)
 	return res, nil
 }
 
@@ -690,6 +673,52 @@ func boxSSHFireAndForget(host, cmd string, timeout time.Duration) error {
 		return runSSHWithFlags(flags, host, cmd, timeout)
 	})
 	return nil
+}
+
+// rebootCmd is the one hardened detached reboot used after every install, OTA,
+// uninstall and factory reset. `sync` flushes the just-written NAND files
+// before the box goes down, `/sbin/reboot` is the absolute path (some call
+// paths run with a thin PATH), and stdio is fully detached so the SSH session
+// returns instead of blocking on the closing socket as the box drops off the
+// LAN. Earlier paths hand-rolled weaker forms ("(sleep 1; reboot) &") that
+// skipped both the sync and the detach; the OTA path's comment explains why
+// both matter, and that lesson now applies everywhere.
+const rebootCmd = "(sleep 1; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &"
+
+// boxReboot triggers the hardened detached reboot on the box. The dropped
+// connection is the expected outcome, so the fire-and-forget result is ignored.
+func boxReboot(host string) error {
+	return boxSSHFireAndForget(host, rebootCmd, 6*time.Second)
+}
+
+// sshHandshake verifies the SSH channel is usable by running a trivial echo,
+// retrying with a short backoff. On slower boxes (ST10 especially) sshd accepts
+// the TCP connection but the crypto handshake is not ready within a few seconds
+// right after boot, so a single short attempt failed and the user had to retry
+// the whole operation 2-3 times ("ssh timeout" while :8090 was already
+// reachable, #114). The box answering at all means it is up, so a few spaced
+// retries cover the sshd warmup window. Every SSH-gated feature (install,
+// repair, uninstall, factory reset, OTA) goes through this so they all inherit
+// the proven policy instead of each picking its own one-shot timeout; the OTA
+// path runs exactly when boxes are busiest, so it needs the retries most.
+// Returns the last combined output and error; the caller still confirms the
+// STR_SSH_OK marker so a stray success line cannot be mistaken for a handshake.
+func sshHandshake(host string, attempts int) (string, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	var out string
+	var err error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 2 * time.Second) // 2s, 4s, 6s, ...
+		}
+		out, err = boxSSHOutput(host, "echo STR_SSH_OK", 18*time.Second)
+		if err == nil && strings.Contains(out, "STR_SSH_OK") {
+			return out, nil
+		}
+	}
+	return out, err
 }
 
 // runSSHWithFlags is the single subprocess invocation used by both

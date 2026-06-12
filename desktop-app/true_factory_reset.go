@@ -71,7 +71,7 @@ func (a *App) TrueFactoryReset(host string) TrueFactoryResetResult {
 	// idiom as install_str.go so the error classification is
 	// consistent with the install flow.
 	res.Step = "ssh-handshake"
-	hello, helloErr := boxSSHOutput(host, "echo STR_SSH_OK", 12*time.Second)
+	hello, helloErr := sshHandshake(host, 4)
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
 		res.Message = "SSH handshake to speaker failed: " + classifySSHError(hello, helloErr)
@@ -141,7 +141,7 @@ echo "TFR_WIPED:$WIPED"
 	// the expected non-zero exit — use fire-and-forget so we don't
 	// treat the drop as failure.
 	res.Step = "reboot"
-	_ = boxSSHFireAndForget(host, "(sleep 1; reboot) >/dev/null 2>&1 &", 6*time.Second)
+	_ = boxReboot(host)
 
 	res.Step = "done"
 	res.OK = true

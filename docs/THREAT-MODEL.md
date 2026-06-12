@@ -16,17 +16,21 @@ STR runs in a residential LAN and consists of:
 
 1. A small Go agent installed onto a Bose SoundTouch speaker via a
    USB stick. After the install the agent runs from the speaker's
-   own persistent storage; the stick is only needed for setup and
-   later for OTA agent updates.
+   own persistent storage; the stick is only needed for the initial
+   setup. Agent updates are delivered over the LAN by the desktop
+   app (a stick that is still inserted gets refreshed so it cannot
+   revert the update on the next boot).
 2. A cross-platform desktop application that discovers sticks via
    mDNS and offers a web UI.
 3. A static website that hosts downloads and documentation.
 
-The agent emulates a handful of cloud endpoints on the loopback
-interface of the speaker, so the speaker accepts a locally generated
-TLS certificate and resolves a small set of hostnames to
-`127.0.0.1`. STR does not modify the broader LAN, does not act as a
-DNS server for any other device, and does not phone home.
+The agent emulates a handful of cloud endpoints which the speaker
+reaches via `127.0.0.1`: a small set of Bose hostnames is pinned to
+loopback in the speaker's `/etc/hosts`, and the speaker accepts a
+locally generated TLS certificate for them. The stand-in listeners
+themselves bind all interfaces and are LAN-reachable like the rest of
+the agent surface. STR does not modify the broader LAN, does not act
+as a DNS server for any other device, and does not phone home.
 
 ## Trust boundaries
 
@@ -41,6 +45,13 @@ DNS server for any other device, and does not phone home.
   community-submitted and fully untrusted. They flow into the desktop
   app's webview and into the speaker (playback + presets), so they are
   treated as an attacker-controlled input boundary.
+- **Bundled go-librespot sidecar and its credentials.** The Spotify
+  Connect beta runs a third-party GPL binary on the speaker, built by
+  this repo's CI from a pinned fork and Sigstore-attested, and
+  persists Spotify credentials on the speaker's NAND for preset
+  recall. Anyone with the (pre-1.0 open) root SSH access can read
+  those credentials, which strengthens the case for the SSH hardening
+  below.
 
 Each boundary is covered in detail in
 [`SECURITY.md`](../SECURITY.md).
@@ -48,9 +59,9 @@ Each boundary is covered in detail in
 ## What STR mitigates
 
 - The discontinued Bose cloud cannot phone home, exfiltrate, or be
-  impersonated by a third party against the speaker: the agent
-  serves the stand-in endpoints only on the loopback interface of
-  the speaker.
+  impersonated by a third party against the speaker: the speaker
+  resolves the Bose hostnames to `127.0.0.1` via pinned `/etc/hosts`
+  entries and only ever reaches STR's local stand-in.
 - The locally issued TLS certificate is generated on first boot,
   stored in NAND, never transmitted, and is only valid for the
   hostnames the speaker resolves to `127.0.0.1`.
@@ -68,6 +79,15 @@ Each boundary is covered in detail in
   vector against the speaker's own privileged services. Private LAN
   ranges stay reachable so a user's local Icecast/DLNA stream still
   plays.
+- Every URL the agent hands to the speaker's UPnP renderer or fetches
+  through the stream proxy (including HLS playlist segments) is
+  restricted to `http`/`https` schemes (`safeHTTPURL`), so `file://`
+  and friends never reach the Bose renderer.
+- State-changing and diagnostic webui endpoints (agent OTA update,
+  reboot, WLAN reconfigure, AirPlay toggle, debug state/probe) only
+  accept requests from private LAN source addresses (`isLocalLAN`);
+  there is still no client authentication (see below), but these
+  endpoints are at least source-gated.
 
 ## Inherited speaker firmware caveats
 
@@ -80,10 +100,20 @@ STR:
   the LAN (HTTP control on `:8090`, WebSocket on `:8080`, UPnP on
   `:8091`) with no client authentication. Any device on the LAN can
   control playback. This is unchanged by STR.
-- Some firmware revisions ship with administrative remote-access
-  facilities enabled by default. These exist independently of STR
-  and are out of scope of this project to enable, document in
-  detail, or distribute credentials for.
+- The speakers ship with a passwordless `root` account, and Bose's
+  init starts an SSH service when a `remote_services` marker is
+  present on a mounted USB stick. **Pre-1.0, STR itself keeps that
+  SSH service running on every boot** (`ensure_sshd_running` in
+  `usb-stick/run.sh`), stick or no stick: when an install or update
+  leaves the agent down, SSH is the only channel that still lets the
+  desktop app pull diagnostics and repair the box, and the project
+  currently weights that recovery path over closing the port. This is
+  an STR-maintained LAN exposure, mitigated only by network
+  isolation; it flips to opt-in (stick marker) as part of the v1.0
+  hardening roadmap below. The desktop app's yellow banner is a
+  stick-removal reminder keyed on the stick's mount state; it is NOT
+  an SSH-state indicator, and SSH remains open after the stick is
+  removed.
 
 If your speaker is on a network with untrusted devices (guest Wi-Fi,
 shared student housing, public-facing IoT segment), put it on a

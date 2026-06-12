@@ -3017,7 +3017,9 @@ func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 // context so the desktop's error toast tells the user what to look at
 // instead of "ssh: exit 1".
 func (a *App) updateAgentViaSSH(host string, bin []byte) error {
-	if hello, err := boxSSHOutput(host, "echo STR_SSH_OK", 8*time.Second); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
+	// 4 spaced attempts (sshHandshake): the OTA path runs when the box is
+	// busiest, exactly where the one-shot 8 s attempt used to flake (#114).
+	if hello, err := sshHandshake(host, 4); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		return fmt.Errorf("ssh handshake failed: %v (%s)", err, strings.TrimSpace(hello))
 	}
 	// mkdir + cat in one ssh-with-stdin session so a missing parent dir on
@@ -3053,8 +3055,9 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// run.sh/rc.local on boot AND the preset reconcile runs from clean.
 	// Detached so the SSH session returns before the box drops off the
 	// LAN. sync first so the just-renamed binary is flushed to NAND.
-	rebootAfterOTA := "(sleep 1; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &"
-	_ = boxSSHFireAndForget(host, rebootAfterOTA, 5*time.Second)
+	// boxReboot is the shared hardened form (this OTA path is where that
+	// form originated).
+	_ = boxReboot(host)
 	return nil
 }
 
