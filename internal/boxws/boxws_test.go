@@ -4,26 +4,34 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
+	"time"
 )
 
 // recHandler records which gabbo events the parser dispatched so tests can
 // assert that marker words in user-supplied text no longer mis-fire.
 type recHandler struct {
-	presets    []int
-	userStops  int
-	powerKeys  int
-	sourceAux  int
-	skips      []bool
-	zones      []ZoneState
+	presets   []int
+	userStops int
+	powerKeys int
+	sourceAux int
+	skips     []bool
+	zones     []ZoneState
+	mu        sync.Mutex
+	thumbs    int // guarded by mu (fired from the debounce timer goroutine)
 }
+
+func (h *recHandler) thumbCount() int { h.mu.Lock(); defer h.mu.Unlock(); return h.thumbs }
 
 func (h *recHandler) OnPresetSelected(_ context.Context, slot int, _ string, _ string) {
 	h.presets = append(h.presets, slot)
 }
-func (h *recHandler) OnRemoteSkip(_ context.Context, forward bool) { h.skips = append(h.skips, forward) }
+func (h *recHandler) OnRemoteSkip(_ context.Context, forward bool) {
+	h.skips = append(h.skips, forward)
+}
 func (h *recHandler) OnUserStop(context.Context)                   { h.userStops++ }
-func (h *recHandler) OnThumbActivity(context.Context)              {}
+func (h *recHandler) OnThumbActivity(context.Context)              { h.mu.Lock(); h.thumbs++; h.mu.Unlock() }
 func (h *recHandler) OnPowerKey(context.Context)                   { h.powerKeys++ }
 func (h *recHandler) OnSourceAux(context.Context)                  { h.sourceAux++ }
 func (h *recHandler) OnZoneChanged(_ context.Context, z ZoneState) { h.zones = append(h.zones, z) }
@@ -127,6 +135,37 @@ func TestHandleMessage_ZoneDissolvedParsed(t *testing.T) {
 	c.handleMessage(context.Background(), []byte(`<updates><zoneUpdated><zone /></zoneUpdated></updates>`))
 	if len(h.zones) != 1 || h.zones[0].Master != "" {
 		t.Fatalf("empty zone must fire one ZoneState with empty Master, got %+v", h.zones)
+	}
+}
+
+func TestRootLocalName(t *testing.T) {
+	cases := map[string]string{
+		`<userActivityUpdate deviceID="x" />`:              "userActivityUpdate",
+		`<updates><volumeUpdated/></updates>`:              "updates",
+		`<?xml version="1.0"?><errorUpdate></errorUpdate>`: "errorUpdate",
+		``:        "",
+		`not xml`: "",
+	}
+	for in, want := range cases {
+		if got := rootLocalName(in); got != want {
+			t.Errorf("rootLocalName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestHandleMessage_BareUserActivityFiresThumb(t *testing.T) {
+	h := &recHandler{}
+	c := newTestClient(h)
+	// A bare-root <userActivityUpdate/> (not wrapped in <updates>) must still be
+	// recognised as a lone thumb ping, not dropped as an unrecognized frame.
+	c.handleMessage(context.Background(), []byte(`<userActivityUpdate deviceID="x" />`))
+	// noteUserActivity fires OnThumbActivity after a short settle window.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && h.thumbCount() == 0 {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if h.thumbCount() != 1 {
+		t.Fatalf("bare userActivityUpdate must fire one thumb, got %d", h.thumbCount())
 	}
 }
 
