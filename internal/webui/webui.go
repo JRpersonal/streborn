@@ -126,6 +126,11 @@ type Server struct {
 	// gated; they have their own micro-cache.
 	boxCmdMu sync.Mutex
 
+	// wlanMu serializes the background Wi-Fi change so two PUT /api/box/wlan
+	// requests cannot run applyWLANChange concurrently and interleave their
+	// writes to wlan-creds / wpa_supplicant.conf.
+	wlanMu sync.Mutex
+
 	// lastPlay remembers the stream STR last told the box to play, so the
 	// auto-re-push (#4) can resume it when the Bose renderer drops a long
 	// stream on its own (reported: radio stops after ~11 min, no STR error).
@@ -1845,6 +1850,13 @@ func (s *Server) reconcileZoneOnce() {
 		s.mirrorToSlaves(ctx, z)
 		return
 	}
+	if z.Stereo {
+		// A left/right stereo pair is a firmware-native group, not a multiroom
+		// zone. Re-asserting it with the zone API (/setZone) would use the wrong
+		// endpoint and could fight the firmware's own pairing, so leave a native
+		// stereo pair alone; the firmware persists it across reboot/standby itself.
+		return
+	}
 	// Native: only re-assert when the live zone does not already match.
 	c := boxapi.New(s.boxHost)
 	if live, err := c.GetZone(ctx); err == nil && live.Master == z.Master && len(live.Members) == len(z.Slaves) {
@@ -1868,15 +1880,25 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	var master boxapi.ZoneMember
 	var slaves []boxapi.ZoneMember
+	stereo := false
 	// Prefer the persisted membership; fall back to the live zone so a dissolve
 	// still works after an agent restart.
 	if s.zones != nil {
 		if z, ok := s.zones.Get(); ok {
 			master = boxapi.ZoneMember{DeviceID: z.Master, IP: z.MasterIP}
+			stereo = z.Stereo
 			for _, m := range z.Slaves {
 				slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
 			}
 		}
+	}
+	if stereo {
+		// A stereo pair is a firmware-native group; /removeZoneSlave is the
+		// multiroom-zone teardown and may not dissolve a true L/R pair. We still
+		// attempt it (best-effort) and always clear our store, but if the pair
+		// survives, the user has to undo it in the Bose app. Logged so a bundle
+		// shows the case clearly.
+		s.logger.Info("zone: dissolving a STEREO pair (best-effort; native group teardown may need the Bose app)")
 	}
 	if master.DeviceID == "" {
 		if z, err := c.GetZone(ctx); err == nil && z.Master != "" {
@@ -2017,6 +2039,15 @@ func (s *Server) handleDebugProbe(w http.ResponseWriter, r *http.Request) {
 	target := r.URL.Query().Get("url")
 	if target == "" {
 		http.Error(w, "missing url query parameter", http.StatusBadRequest)
+		return
+	}
+	// Scheme gate: this is a deliberate diagnostic that DOES probe the box's own
+	// loopback services (Bose :8090, STR :8888), so we do NOT use the SSRF dial
+	// guard here, but we still reject non-http(s) schemes (file://, gopher://,
+	// ...) so the LAN-gated debug endpoint cannot be turned into a local-file or
+	// arbitrary-protocol reader.
+	if err := netutil.SafeHTTPURL(target); err != nil {
+		http.Error(w, "invalid url: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	method := r.URL.Query().Get("method")
@@ -2285,6 +2316,15 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	}
 
 	iface, mech := detectWlanMechanism()
+	// Persist to NAND (with .bak backup) BEFORE responding: the response triggers
+	// the client to rediscover the box on its new network, and the actual switch
+	// runs in a background goroutine, so committing the canonical creds first
+	// means a crash after the response can never leave the client believing the
+	// switch happened while NAND still holds the old creds.
+	if err := backupAndWriteWlanCreds(req.SSID, req.Password); err != nil {
+		http.Error(w, "persist wlan creds: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	// Respond before switching: the box drops off the current network mid-switch,
 	// so the client rediscovers it on its new IP instead of waiting on this socket.
 	status := "switching"
@@ -2317,12 +2357,14 @@ func detectWlanMechanism() (iface, mech string) {
 	return "eth0", "bco"
 }
 
-// applyWLANChange persists the new credentials to NAND (so the change survives a
-// reboot via the boot replay) and applies them by the box's mechanism.
+// applyWLANChange applies the (already persisted) credentials by the box's
+// mechanism. Serialized by wlanMu so two switches cannot interleave their writes
+// to wlan-creds / wpa_supplicant.conf and leave the box on an unpredictable
+// network. The creds were committed synchronously by the handler before this
+// runs, so this only drives the live switch / reboot.
 func (s *Server) applyWLANChange(iface, mech, ssid, password string) {
-	if err := backupAndWriteWlanCreds(ssid, password); err != nil {
-		s.logger.Warn("WLAN: could not persist wlan-creds", "err", err)
-	}
+	s.wlanMu.Lock()
+	defer s.wlanMu.Unlock()
 	switch mech {
 	case "wpa":
 		if s.applyWlanWPALive(iface, ssid, password) {
@@ -2366,7 +2408,13 @@ func restoreWlanCreds() {
 // Backs up the running conf so applyWLANChange can roll back on failure.
 func (s *Server) applyWlanWPALive(iface, ssid, password string) bool {
 	if cur, err := os.ReadFile(wpaConfPath); err == nil {
-		_ = os.WriteFile(wpaConfPath+".bak", cur, 0o600)
+		// Abort if we have a config to roll back to but cannot save the backup
+		// (e.g. a read-only /etc): proceeding would make a failed switch
+		// unrecoverable because restoreWPAConfAndReload would find no .bak.
+		if werr := os.WriteFile(wpaConfPath+".bak", cur, 0o600); werr != nil {
+			s.logger.Warn("WLAN: could not back up wpa conf, aborting switch", "err", werr)
+			return false
+		}
 	}
 	if err := os.WriteFile(wpaConfPath, []byte(buildWPAConfig(ssid, password)), 0o600); err != nil {
 		s.logger.Warn("WLAN: write wpa conf failed", "err", err, "path", wpaConfPath)
@@ -2450,8 +2498,16 @@ func buildWPAConfig(ssid, psk string) string {
 }
 
 func escapeWPAValue(s string) string {
-	// Backslash und Doublequote escapen
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	// Escape backslash and double-quote, plus the control characters that would
+	// otherwise break the single-line key="value" form and corrupt the conf (a
+	// JSON body can carry a literal newline/tab in an SSID).
+	r := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"\t", `\t`,
+	)
 	return r.Replace(s)
 }
 

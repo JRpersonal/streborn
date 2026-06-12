@@ -427,7 +427,15 @@ func zoneXML(master ZoneMember, slaves []ZoneMember) string {
 	for _, s := range slaves {
 		b.WriteString(`<member ipaddress="`)
 		b.WriteString(xmlEscape(s.IP))
-		b.WriteString(`">`)
+		b.WriteString(`"`)
+		// Preserve the L/R role for a stereo pair so the firmware re-forms it with
+		// the correct channels; GetZone/GetGroup parse role, so round-trip it.
+		if s.Role != "" {
+			b.WriteString(` role="`)
+			b.WriteString(xmlEscape(s.Role))
+			b.WriteString(`"`)
+		}
+		b.WriteString(`>`)
 		b.WriteString(xmlEscape(s.DeviceID))
 		b.WriteString(`</member>`)
 	}

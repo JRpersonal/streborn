@@ -2550,12 +2550,12 @@ iptables_install_streborn_fw() {
 }
 (
     # Wait up to 60 s for Bose's Firewall init to load the filter
-    # table. Probe via `iptables -nL INPUT` which is the cheapest
+    # table. Probe via `iptables -w -nL INPUT` which is the cheapest
     # query that fails when the kernel module is absent or the table
     # is not yet attached.
     w=0
     while [ $w -lt 60 ]; do
-        if iptables -nL INPUT >/dev/null 2>&1; then
+        if iptables -w -nL INPUT >/dev/null 2>&1; then
             setup_log "iptables filter table ready at uptime=$(uptime_s)s (wait=${w}s)"
             break
         fi
@@ -3156,7 +3156,7 @@ fi
     # bound. Without this dump in the bundle the case looks identical
     # to a broken bind (see issue #60, 2026-05-28).
     setup_log "iptables filter INPUT:"
-    iptables -L INPUT -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    iptables -w -L INPUT -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
     setup_log "iptables nat PREROUTING:"
     iptables -w -t nat -L PREROUTING -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
     # Try a localhost loopback connect to :8888 vs the LAN-IP connect.
