@@ -152,11 +152,11 @@ export function showError(msg) {
 }
 
 let toastTimer = null;
-export function showToast(msg) {
+export function showToast(msg, ms = 2200) {
   const t = $('toast');
   if (!t) return;
   t.textContent = msg;
   t.classList.add('show');
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
 }

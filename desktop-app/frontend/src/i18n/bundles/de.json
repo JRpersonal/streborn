@@ -103,6 +103,7 @@
   "library.toastPlaying": "Spiele",
   "library.toastSaved": "Gespeichert auf Preset",
   "library.errorNoURL": "Für diesen Eintrag ist keine Stream-URL hinterlegt.",
+  "library.formatMaybeUnsupported": "„{title}\" hat am Lautsprecher nicht gestartet. Eventuell ein Dateiformat, das der Lautsprecher nicht abspielen kann (z.B. hochauflösendes FLAC, 24-bit oder über 48 kHz). Eine Standard-Qualität funktioniert meist.",
   "banner.recommendation": "Empfehlung:",
   "banner.sshRecommend": "USB-Stick aus dem Lautsprecher ziehen und Lautsprecher einmal neu starten. Sonst ist der Lautsprecher im Netzwerk angreifbar.",
   "banner.appUpdateAvail": "Neue App-Version verfügbar:",

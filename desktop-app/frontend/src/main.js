@@ -6694,9 +6694,41 @@ async function libraryPlay(item) {
     await PlayURL(state.currentBox.host, state.currentBox.port,
       item.streamURL, item.title || '', item.albumArtURL || '', '');
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
+    // Confirm it actually starts (see verifyLibraryPlayback, #139).
+    verifyLibraryPlayback(item);
   } catch (e) {
     showError(`PlayURL: ${e}`);
   }
+}
+
+// verifyLibraryPlayback confirms a library track actually reaches a playing
+// state on the speaker after PlayURL. The SoundTouch's UPnP layer accepts the
+// URI but its decoder only handles some formats: a high-resolution FLAC (24-bit
+// or above 48 kHz) never decodes, so the track sits at "stream starting"
+// forever with no feedback, and users read it as a network or app fault (#139).
+// Poll the box play state for a short window; if it never starts (or the box
+// reports the source invalid), surface a soft, format-agnostic hint. Run
+// fire-and-forget so the click stays responsive.
+async function verifyLibraryPlayback(item) {
+  const box = state.currentBox;
+  if (!box) return;
+  const deadline = Date.now() + 12000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 2000));
+    // Bail if the user moved to another box or started something else.
+    if (!state.currentBox || state.currentBox.host !== box.host) return;
+    let xml = '';
+    try {
+      xml = await Status(box.host, box.port);
+    } catch {
+      continue;
+    }
+    const ps = (xml.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
+    const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
+    if (ps === 'PLAY_STATE') return; // decoded and playing: all good
+    if (src === 'INVALID_SOURCE' || /ERROR/.test(ps)) break; // box rejected it
+  }
+  showToast(t('library.formatMaybeUnsupported', { title: item.title || '' }), 8000);
 }
 
 function librarySaveAsPreset(item) {

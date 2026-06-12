@@ -103,6 +103,7 @@
   "library.toastPlaying": "Playing",
   "library.toastSaved": "Saved to preset",
   "library.errorNoURL": "This item has no playable stream URL.",
+  "library.formatMaybeUnsupported": "\"{title}\" did not start on the speaker. It may be a file format the speaker cannot play (for example high-resolution FLAC, 24-bit or above 48 kHz). A standard-quality version usually works.",
   "banner.recommendation": "Recommendation:",
   "banner.sshRecommend": "Remove the USB stick from the speaker and restart it once. Otherwise the speaker is attackable on the network.",
   "banner.appUpdateAvail": "New app version available:",
