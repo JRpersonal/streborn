@@ -4972,12 +4972,23 @@ function wireWlanSwitch(box) {
         const body = await r.text();
         throw new Error('HTTP ' + r.status + ': ' + body);
       }
+      // The agent applies the switch in the background and the box leaves the
+      // current network, so we rediscover it rather than wait. BCO speakers
+      // (Portable) reboot to apply, which takes a few minutes; wpa speakers
+      // switch live and fall back to their old network if the new one fails.
+      let info = {};
+      try { info = await r.json(); } catch {}
       $('boxWlanPass').value = '';
       form.classList.add('hidden');
-      showToast(t('settingsView.wlanSwitchedToast'));
-      // The speaker likely gets a new IP via DHCP. Retrigger
-      // discovery in 10 s.
-      setTimeout(discoverBoxes, 10000);
+      showToast(
+        info.mechanism === 'bco'
+          ? t('settingsView.wlanRebootingToast')
+          : t('settingsView.wlanSwitchedToast'),
+        7000,
+      );
+      // The speaker gets a new IP (or reboots). Retrigger discovery; a longer
+      // delay for the BCO reboot so the rediscover lands after it is back up.
+      setTimeout(discoverBoxes, info.mechanism === 'bco' ? 90000 : 12000);
     } catch (e) { showError(e); }
   };
 }

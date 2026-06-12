@@ -505,21 +505,22 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		// (#22), bevor STR uebernimmt. Markers are matched within this preset
 		// element only (pe.Inner), so an unrelated frame's title cannot trip it.
 		if strings.Contains(pe.Inner, "INVALID_SOURCE") || strings.Contains(pe.Inner, "DISABLED") {
-			// Power-button wake from standby: the box tries to restore its last
+			// A standby wake or a source teardown makes the box restore its last
 			// now-selection and, because it cannot natively play STR's UPNP
-			// source, marks it INVALID_SOURCE + type=DO_NOT_RESUME. That
-			// DO_NOT_RESUME is what tells a wake-resume attempt apart from the
-			// harmless self-activation that follows a normal preset recall
-			// (isPresetable=true, no DO_NOT_RESUME). Treat it as "user pressed
-			// power on" and let the agent resume the last stream STR knows.
-			if strings.Contains(pe.Inner, "DO_NOT_RESUME") && c.handler != nil {
-				c.logger.Info("box ws: wake from standby (box declined to resume, DO_NOT_RESUME) -> resuming last stream")
-				c.handler.OnWakeResume(ctx)
-				return
+			// source, mark it INVALID_SOURCE + type=DO_NOT_RESUME. STR used to
+			// INVERT that signal and resume the last stream, which made boxes
+			// start playing on their own after any standby wake and kept AirPlay
+			// from staying stopped (Klaus + Brecht diagnostics, 2026-06-12):
+			// wake -> play -> 500 -> retry, on a loop. DO_NOT_RESUME means exactly
+			// what it says. STR now stands down; playback only follows an explicit
+			// user action: a real preset press (slot 1-6 below) or an app recall.
+			if strings.Contains(pe.Inner, "DO_NOT_RESUME") {
+				c.logger.Info("box ws: standby wake / source teardown signalled DO_NOT_RESUME, not resuming")
+			} else {
+				c.logger.Info("box self-activation rejected preset (shows 'service unavailable')",
+					"id", pe.ID, "source", pe.ContentItem.Source,
+					"location", pe.ContentItem.Location, "preview", preview(data, 240))
 			}
-			c.logger.Info("box self-activation rejected preset (shows 'service unavailable')",
-				"id", pe.ID, "source", pe.ContentItem.Source,
-				"location", pe.ContentItem.Location, "preview", preview(data, 240))
 		}
 		return
 	}

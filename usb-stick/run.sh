@@ -2535,11 +2535,11 @@ INPUT_ACCEPT_PORTS="8888 9080 8081 8443"
 iptables_install_streborn_fw() {
     rc_total=0
     for port in $INPUT_ACCEPT_PORTS; do
-        if iptables -C INPUT -p tcp --dport "$port" \
+        if iptables -w -C INPUT -p tcp --dport "$port" \
             -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
             continue  # rule already present, no-op
         fi
-        if iptables -I INPUT 1 -p tcp --dport "$port" \
+        if iptables -w -I INPUT 1 -p tcp --dport "$port" \
             -m comment --comment "streborn-fw" -j ACCEPT 2>/dev/null; then
             setup_log "iptables INPUT ACCEPT tcp/$port installed at uptime=$(uptime_s)s"
         else
@@ -2844,7 +2844,7 @@ RDR_COMMENT=""
 # and try a one-shot modprobe before giving up. Returns 0 if nat
 # is usable, 1 otherwise.
 iptables_nat_probe_and_modprobe() {
-    NAT_OUT=$(iptables -t nat -L PREROUTING -n 2>&1)
+    NAT_OUT=$(iptables -w -t nat -L PREROUTING -n 2>&1)
     NAT_RC=$?
     if [ "$NAT_RC" = "0" ]; then
         setup_log "iptables nat table available (probe rc=0)"
@@ -2858,7 +2858,7 @@ iptables_nat_probe_and_modprobe() {
     else
         setup_log "modprobe binary not found, cannot load iptable_nat"
     fi
-    NAT_OUT2=$(iptables -t nat -L PREROUTING -n 2>&1)
+    NAT_OUT2=$(iptables -w -t nat -L PREROUTING -n 2>&1)
     NAT_RC2=$?
     if [ "$NAT_RC2" = "0" ]; then
         setup_log "iptables nat table available after modprobe (probe rc=0)"
@@ -2943,11 +2943,11 @@ iptables_install_redirect_series_one() {
         # silently broke EVERY REDIRECT install (REDIRECT target itself is
         # fine). Unquoted so empty expands to nothing. -C idempotency
         # still works on the tuple without the cosmetic comment.
-        if iptables -t nat -C PREROUTING -p tcp ! -i lo -d "$LANIP" --dport "$port" \
+        if iptables -w -t nat -C PREROUTING -p tcp ! -i lo -d "$LANIP" --dport "$port" \
             $RDR_COMMENT -j REDIRECT --to-ports "$port" 2>/dev/null; then
             continue
         fi
-        INS_OUT=$(iptables -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport "$port" \
+        INS_OUT=$(iptables -w -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport "$port" \
             $RDR_COMMENT -j REDIRECT --to-ports "$port" 2>&1)
         INS_RC=$?
         if [ "$INS_RC" = "0" ]; then
@@ -2975,9 +2975,9 @@ iptables_install_redirect_series_one() {
     # for permissive Series-II boxes, so this is a no-op risk only where
     # :17008 is closed (harmless: the rule matches no traffic there).
     if [ "$REDIRECT_ELIGIBLE" = "1" ]; then
-        if ! iptables -t nat -C PREROUTING -p tcp ! -i lo -d "$LANIP" --dport 17008 \
+        if ! iptables -w -t nat -C PREROUTING -p tcp ! -i lo -d "$LANIP" --dport 17008 \
             $RDR_COMMENT -j REDIRECT --to-ports 8888 2>/dev/null; then
-            BCO_OUT=$(iptables -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport 17008 \
+            BCO_OUT=$(iptables -w -t nat -I PREROUTING 1 -p tcp ! -i lo -d "$LANIP" --dport 17008 \
                 $RDR_COMMENT -j REDIRECT --to-ports 8888 2>&1)
             BCO_RC=$?
             if [ "$BCO_RC" = "0" ]; then
@@ -3031,8 +3031,8 @@ done
         # Probe xt_comment availability once. Add a throwaway nat rule
         # with a comment; if it sticks, the module is present and we keep
         # the cosmetic comment, else we run comment-less (taigan).
-        if iptables -t nat -A POSTROUTING -m comment --comment streborn-probe -j ACCEPT 2>/dev/null; then
-            iptables -t nat -D POSTROUTING -m comment --comment streborn-probe -j ACCEPT 2>/dev/null
+        if iptables -w -t nat -A POSTROUTING -m comment --comment streborn-probe -j ACCEPT 2>/dev/null; then
+            iptables -w -t nat -D POSTROUTING -m comment --comment streborn-probe -j ACCEPT 2>/dev/null
             RDR_COMMENT="-m comment --comment streborn-redirect"
             setup_log "iptables xt_comment present, REDIRECT rules will be labelled"
         else
@@ -3158,7 +3158,7 @@ fi
     setup_log "iptables filter INPUT:"
     iptables -L INPUT -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
     setup_log "iptables nat PREROUTING:"
-    iptables -t nat -L PREROUTING -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+    iptables -w -t nat -L PREROUTING -n -v --line-numbers 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
     # Try a localhost loopback connect to :8888 vs the LAN-IP connect.
     # When the two disagree (local ok, lan refused) the firewall is
     # the reason — the canonical #60 / Series-I scm/spotty pattern.
