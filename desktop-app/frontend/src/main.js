@@ -4126,6 +4126,7 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="airplayOptOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.airplayOptHelp'))}</small>
+      <small class="muted small" style="display:block;margin-top:6px">${escapeHtml(t('settingsView.airplayOptRecommend'))}</small>
     </div>
 
     <details class="settings-section settings-expert">
