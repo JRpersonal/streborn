@@ -72,15 +72,20 @@ func TestHandleMessage_PresetRecall(t *testing.T) {
 	}
 }
 
-func TestHandleMessage_WakeResumeOnInvalidSourceDoNotResume(t *testing.T) {
+func TestHandleMessage_DoNotResumeIsRespected(t *testing.T) {
 	h := &recHandler{}
 	c := newTestClient(h)
+	// A standby wake / source teardown the box marks DO_NOT_RESUME must NOT make
+	// STR resume playback (boxes playing on their own; AirPlay not stopping).
 	frame := `<updates><nowSelectionUpdated><preset id="0">` +
 		`<ContentItem source="INVALID_SOURCE" type="DO_NOT_RESUME" location="http://x">` +
 		`<itemName>x</itemName></ContentItem></preset></nowSelectionUpdated></updates>`
 	c.handleMessage(context.Background(), []byte(frame))
-	if h.wakeResume != 1 {
-		t.Fatalf("expected one wake-resume, got %d", h.wakeResume)
+	if h.wakeResume != 0 {
+		t.Fatalf("DO_NOT_RESUME must not trigger a resume, got %d", h.wakeResume)
+	}
+	if len(h.presets) != 0 {
+		t.Fatalf("DO_NOT_RESUME must not play a preset, got %v", h.presets)
 	}
 }
 
