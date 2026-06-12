@@ -1768,10 +1768,21 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+	c := boxapi.New(s.boxHost)
+
+	// A stereo pair is a firmware-native L/R group (POST /addGroup), not a
+	// multiroom zone. It needs exactly one partner; the master is the LEFT
+	// channel and the partner the RIGHT by Bose convention. Only the ST10
+	// actually pairs, but every model lists /addGroup, so we let the firmware
+	// be the authority and surface its real response to the app.
+	if req.Stereo {
+		s.formStereoPair(w, ctx, c, master, slaves, req.Name)
+		return
+	}
 
 	// Persist first so a transient drive error still leaves the group on record
 	// for the reconcile loop to retry. Only the master persists.
-	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Stereo: req.Stereo, Mode: mode, Name: req.Name}
+	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name}
 	for _, m := range slaves {
 		z.Slaves = append(z.Slaves, zones.Member{DeviceID: m.DeviceID, IP: m.IP})
 	}
@@ -1788,7 +1799,6 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Native: drive the firmware zone and read back what it actually formed.
-	c := boxapi.New(s.boxHost)
 	if err := c.SetZone(ctx, master, slaves); err != nil {
 		s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
 		http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
@@ -1802,6 +1812,53 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("zone: formed", "mode", "native", "liveMaster", z2.Master, "liveMembers", len(z2.Members))
 	writeJSON(w, http.StatusOK, z2)
+}
+
+// formStereoPair drives POST /addGroup to make a real left/right stereo pair
+// and persists it so it is honored on dissolve. master becomes LEFT, the single
+// partner becomes RIGHT. The firmware decides whether the box can pair (ST10
+// only); its error is returned verbatim to the app so testers see the truth.
+func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember, slaves []boxapi.ZoneMember, name string) {
+	if len(slaves) != 1 {
+		http.Error(w, "a stereo pair needs exactly one partner speaker", http.StatusBadRequest)
+		return
+	}
+	master.Role = "LEFT"
+	partner := slaves[0]
+	partner.Role = "RIGHT"
+	if name == "" {
+		name = "Stereo pair"
+	}
+
+	// Persist before driving the firmware so the dissolve path knows it is a
+	// stereo pair even after an agent restart. Stereo pairs are firmware-native,
+	// so the reconcile loop leaves them alone (the box re-forms across reboots).
+	if s.zones != nil {
+		z := zones.Zone{
+			Master: master.DeviceID, MasterIP: master.IP, Stereo: true, Name: name,
+			Slaves: []zones.Member{{DeviceID: partner.DeviceID, IP: partner.IP, Role: partner.Role}},
+		}
+		if err := s.zones.Set(z); err != nil {
+			s.logger.Warn("stereo: persist failed", "err", err)
+		}
+	}
+
+	s.logger.Info("stereo: pairing via /addGroup (beta)", "name", name,
+		"left", master.DeviceID, "leftIP", master.IP, "right", partner.DeviceID, "rightIP", partner.IP)
+	members := []boxapi.ZoneMember{master, partner}
+	if err := c.AddGroup(ctx, name, master.DeviceID, members); err != nil {
+		s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
+		http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	g, err := c.GetGroup(ctx)
+	if err != nil {
+		s.logger.Warn("stereo: paired but getGroup read-back failed", "err", err)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stereo": true})
+		return
+	}
+	s.logger.Info("stereo: paired", "id", g.ID, "members", len(g.Members))
+	writeJSON(w, http.StatusOK, g)
 }
 
 // mirrorToSlaves points each slave's box at the master's current stream URL over
@@ -1908,12 +1965,20 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if stereo {
-		// A stereo pair is a firmware-native group; /removeZoneSlave is the
-		// multiroom-zone teardown and may not dissolve a true L/R pair. We still
-		// attempt it (best-effort) and always clear our store, but if the pair
-		// survives, the user has to undo it in the Bose app. Logged so a bundle
-		// shows the case clearly.
-		s.logger.Info("zone: dissolving a STEREO pair (best-effort; native group teardown may need the Bose app)")
+		// A stereo pair is a firmware-native L/R group, so tear it down with the
+		// matching endpoint (GET /removeGroup), not the multiroom /removeZoneSlave.
+		// Always clear our store afterwards so we stop honoring the pair.
+		s.logger.Info("stereo: dissolving pair via /removeGroup (beta)", "master", master.DeviceID)
+		if err := c.RemoveGroup(ctx); err != nil {
+			s.logger.Warn("stereo: removeGroup failed (the user may need to undo the pair in the Bose app)", "err", err)
+		}
+		if s.zones != nil {
+			if err := s.zones.Clear(); err != nil {
+				s.logger.Warn("stereo: clear store failed", "err", err)
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stereo": true})
+		return
 	}
 	if master.DeviceID == "" {
 		if z, err := c.GetZone(ctx); err == nil && z.Master != "" {

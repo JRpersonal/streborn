@@ -7,6 +7,7 @@
 package boxapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -336,13 +337,19 @@ type Zone struct {
 	Members  []ZoneMember `json:"members"`
 }
 
-// Group ist der Zustand des neueren Stereo-Pair-Group-Konzepts
-// (zwei ST10 als L/R Paar). Auch hier liefert die Firmware bei einer
-// einzelnen Box ein leeres `<group />`.
+// Group ist der Zustand des Stereo-Pair-Group-Konzepts (zwei ST10 als L/R
+// Paar). Bei einer einzelnen, ungepairten Box liefert die Firmware einen
+// leeren Body (live verifiziert: NICHT `<group />`); getXML faengt das ab
+// und liefert dann eine leere Group ohne Fehler.
+//
+// Nur die SoundTouch 10 unterstuetzt echte Stereo-Paare. Alle Modelle listen
+// /addGroup in /supportedURLs (live an taigan verifiziert), das taugt also
+// NICHT als Gate; die Firmware der Box ist die letzte Instanz.
 type Group struct {
-	ID      string       `json:"id,omitempty"`
-	Name    string       `json:"name,omitempty"`
-	Members []ZoneMember `json:"members"`
+	ID             string       `json:"id,omitempty"`
+	Name           string       `json:"name,omitempty"`
+	MasterDeviceID string       `json:"masterDeviceID,omitempty"`
+	Members        []ZoneMember `json:"members"`
 }
 
 // GetZone liest /getZone und liefert die aktuelle Multiroom Zone.
@@ -375,27 +382,33 @@ func (c *Client) GetZone(ctx context.Context) (Zone, error) {
 	return z, nil
 }
 
-// GetGroup liest /getGroup (Stereo Pair). Bei einer ST10 die nicht im
-// Pair laeuft ist die Antwort leer.
+// GetGroup liest /getGroup (Stereo Pair). Bei einer ungepairten Box ist die
+// Antwort leer und es kommt eine leere Group zurueck (kein Fehler).
+//
+// Schema (live aus der Firmware-Doku abgeleitet, NICHT das frueher geratene
+// <groupMember>): die Member stehen als <roles><groupRole> mit deviceId/role/
+// ipAddress als Kind-Elementen, plus <masterDeviceId> auf Group-Ebene.
 func (c *Client) GetGroup(ctx context.Context) (Group, error) {
 	var raw struct {
-		ID      string `xml:"id,attr"`
-		Name    string `xml:"name"`
-		Members []struct {
-			DeviceID string `xml:",chardata"`
-			IP       string `xml:"ipaddress,attr"`
-			Role     string `xml:"role,attr"`
-		} `xml:"groupMember"`
+		ID             string `xml:"id,attr"`
+		Name           string `xml:"name"`
+		MasterDeviceID string `xml:"masterDeviceId"`
+		Roles          []struct {
+			DeviceID string `xml:"deviceId"`
+			Role     string `xml:"role"`
+			IP       string `xml:"ipAddress"`
+		} `xml:"roles>groupRole"`
 	}
 	if err := c.getXML(ctx, "/getGroup", &raw); err != nil {
 		return Group{}, err
 	}
 	g := Group{
-		ID:      strings.TrimSpace(raw.ID),
-		Name:    strings.TrimSpace(raw.Name),
-		Members: make([]ZoneMember, 0, len(raw.Members)),
+		ID:             strings.TrimSpace(raw.ID),
+		Name:           strings.TrimSpace(raw.Name),
+		MasterDeviceID: strings.TrimSpace(raw.MasterDeviceID),
+		Members:        make([]ZoneMember, 0, len(raw.Roles)),
 	}
-	for _, m := range raw.Members {
+	for _, m := range raw.Roles {
 		g.Members = append(g.Members, ZoneMember{
 			DeviceID: strings.TrimSpace(m.DeviceID),
 			IP:       strings.TrimSpace(m.IP),
@@ -403,6 +416,52 @@ func (c *Client) GetGroup(ctx context.Context) (Group, error) {
 		})
 	}
 	return g, nil
+}
+
+// groupXML baut den <group>-Request-Body fuer AddGroup. masterDeviceID ist die
+// deviceID des Master-Speakers (per Bose-Konvention typisch der LINKE); members
+// listet beide Speaker mit je deviceId/role(LEFT|RIGHT)/ipAddress. Schema live
+// aus der Firmware-Doku:
+//
+//	<group><name>..</name><masterDeviceId>..</masterDeviceId>
+//	  <roles>
+//	    <groupRole><deviceId>..</deviceId><role>LEFT</role><ipAddress>..</ipAddress></groupRole>
+//	    <groupRole><deviceId>..</deviceId><role>RIGHT</role><ipAddress>..</ipAddress></groupRole>
+//	  </roles></group>
+func groupXML(name, masterDeviceID string, members []ZoneMember) string {
+	var b strings.Builder
+	b.WriteString(`<group><name>`)
+	b.WriteString(xmlEscape(name))
+	b.WriteString(`</name><masterDeviceId>`)
+	b.WriteString(xmlEscape(masterDeviceID))
+	b.WriteString(`</masterDeviceId><roles>`)
+	for _, m := range members {
+		b.WriteString(`<groupRole><deviceId>`)
+		b.WriteString(xmlEscape(m.DeviceID))
+		b.WriteString(`</deviceId><role>`)
+		b.WriteString(xmlEscape(m.Role))
+		b.WriteString(`</role><ipAddress>`)
+		b.WriteString(xmlEscape(m.IP))
+		b.WriteString(`</ipAddress></groupRole>`)
+	}
+	b.WriteString(`</roles></group>`)
+	return b.String()
+}
+
+// AddGroup erzeugt ein echtes L/R-Stereo-Paar (POST /addGroup an den Master).
+// name ist ein Anzeigelabel; masterDeviceID die deviceID des Masters; members
+// MUSS genau zwei Speaker enthalten, jeder mit Role "LEFT" bzw. "RIGHT",
+// deviceID und LAN-IP. Nur die ST10 paart wirklich; bei anderen Modellen
+// antwortet die Firmware mit Fehler, den der Aufrufer an die App durchreicht.
+func (c *Client) AddGroup(ctx context.Context, name, masterDeviceID string, members []ZoneMember) error {
+	return c.postXML(ctx, "/addGroup", groupXML(name, masterDeviceID, members))
+}
+
+// RemoveGroup loest das Stereo-Paar dieser Box auf. Die Firmware dokumentiert
+// das als GET (Antwort ist die nun leere Group); an den Master gerichtet.
+func (c *Client) RemoveGroup(ctx context.Context) error {
+	var ignore struct{}
+	return c.getXML(ctx, "/removeGroup", &ignore)
 }
 
 // ---------- Multiroom (write) ----------
@@ -510,6 +569,13 @@ func (c *Client) getXML(ctx context.Context, path string, dst any) error {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if err != nil {
 		return err
+	}
+	// An empty (or whitespace-only) 200 body means "no state" on several
+	// firmware reads: a standalone box returns an empty body from /getGroup
+	// (live verified on taigan, NOT `<group/>`). xml.Unmarshal would fail that
+	// with io.EOF, so leave dst zero-valued and report success instead.
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil
 	}
 	return xml.Unmarshal(body, dst)
 }
