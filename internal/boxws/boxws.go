@@ -548,12 +548,24 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		pe = f.PresetSelected
 	}
 	if pe == nil {
-		// Not a preset / now-selection frame. Surface anything we did not
-		// recognize so we can map the events STR does not yet handle (preset
-		// long-press store gesture, remote thumbs keys). INFO and rare by
-		// construction, so it stays in the diagnostic bundle without spamming
-		// the NAND log.
 		if !known {
+			// Some events arrive as a BARE root element, not wrapped in <updates>
+			// (the box sends <userActivityUpdate/> and <errorUpdate> this way), so
+			// the typed <updates> parse above leaves them nil. Recover the ones we
+			// act on by the ROOT element name. This is structural (the element
+			// name), NOT a content substring, so it keeps the title false-positive
+			// protection the typed parse added.
+			switch rootLocalName(s) {
+			case "userActivityUpdate":
+				// Lone thumb ping (see noteUserActivity). Regressed for bare frames
+				// when the parser went typed; this restores it (live box log
+				// 2026-06-12 showed bare <userActivityUpdate/> as unrecognized).
+				c.noteUserActivity(ctx)
+				return
+			}
+			// Surface anything still unrecognized so we can map the events STR does
+			// not yet handle (the preset long-press store gesture). INFO and rare,
+			// so it stays in a diagnostic bundle without spamming the NAND log.
 			c.logger.Info("box ws unrecognized frame", "bytes", len(data), "body", preview(data, 1800))
 		}
 		return
@@ -602,6 +614,22 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	if c.handler != nil {
 		c.handler.OnPresetSelected(ctx, slot,
 			pe.ContentItem.Location, pe.ContentItem.ItemName)
+	}
+}
+
+// rootLocalName returns the local name of the first XML start element (the
+// frame's root), or "" if the data is not parseable. Used to recognise
+// bare-root frames the <updates>-typed parse does not capture.
+func rootLocalName(s string) string {
+	dec := xml.NewDecoder(strings.NewReader(s))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			return se.Name.Local
+		}
 	}
 }
 
