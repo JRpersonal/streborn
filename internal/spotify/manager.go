@@ -678,28 +678,36 @@ func (m *Manager) Play(ctx context.Context, uri string) error {
 	// Mark a recall in progress so ServeOgg does not resume the OLD (mid) track
 	// when the box attaches; this path drives the new track from its start.
 	m.SetRecalling()
-	// Load + play the context first. go-librespot starts a context on its FIRST
-	// track regardless of shuffle, so we then shuffle the LOADED context and skip
-	// once to land on a random track.
-	if err := m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`}`); err != nil {
+	// Load the context PAUSED so the speaker never hears the playlist's first
+	// (non-shuffled) track. The old flow played first, THEN shuffled + skipped,
+	// and because go-librespot takes a few seconds to load the context the skip
+	// landed late: the box audibly played the first track ("Real Love Baby") for
+	// ~6-24 s before jumping to a random one (live box log 2026-06-12). Now we:
+	// load paused -> wait for the context to load -> shuffle -> skip to a random
+	// track -> resume, so audio starts cleanly on the shuffled track from its
+	// start. The box buffers on the Ogg headers during the short paused window,
+	// the same way it already buffers during a cold load.
+	if err := m.apiPostC(ctx, m.playClient, "/player/play", `{"uri":`+jsonString(uri)+`,"paused":true}`); err != nil {
 		return err
 	}
-	// Wait for the context to actually load, THEN shuffle, THEN skip:
-	//   - shuffle_context must run against a loaded context. Doing it BEFORE
-	//     play was a no-op on a cold start (no context yet), so the skip below
-	//     landed on the deterministic 2nd track instead of a random one (live:
-	//     cold preset 6 always skipped to playlist track 2).
-	//   - shuffle_context only randomises the UPCOMING queue (the current track
-	//     stays the context's first), so a single skip after shuffling lands on
-	//     a random track. Safe during a recall: the box has not attached yet, so
-	//     the skipped-past first track never reaches the speaker and ServeOgg
-	//     drives the box from the new track's start.
-	time.Sleep(800 * time.Millisecond)
+	// Belt-and-braces: stay paused even if this go-librespot build ignores the
+	// paused flag in /player/play.
+	_ = m.apiPost(ctx, "/player/pause", "")
+	// shuffle_context is a no-op against an unloaded context (live: cold preset 6
+	// then skipped to the deterministic 2nd track), so wait for the track to load.
+	m.waitContextLoaded(ctx, 5*time.Second)
 	if err := m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`); err != nil {
 		m.logger.Debug("spotify: shuffle_context (post-load) failed", "err", err)
 	}
+	// shuffle_context only randomises the UPCOMING queue (the current track stays
+	// the context's first), so one skip lands on a random track. Still paused, so
+	// nothing reaches the speaker yet.
 	if err := m.apiPost(ctx, "/player/next", ""); err != nil {
 		m.logger.Debug("spotify: skip-to-random after shuffle failed", "err", err)
+	}
+	// Resume: audio now flows, starting on the shuffled track from its beginning.
+	if err := m.apiPost(ctx, "/player/resume", ""); err != nil {
+		m.logger.Debug("spotify: resume after shuffle failed", "err", err)
 	}
 	// Debounce the will_play context change this recall triggers (this path
 	// already drives the box separately, so no extra re-point needed).
@@ -707,6 +715,30 @@ func (m *Manager) Play(ctx context.Context, uri string) error {
 	m.lastActivate = time.Now()
 	m.mu.Unlock()
 	return nil
+}
+
+// waitContextLoaded polls go-librespot's /status until a track is loaded (the
+// context is ready) or max elapses. Used by Play before shuffle_context, which
+// is a no-op against an unloaded context.
+func (m *Manager) waitContextLoaded(ctx context.Context, max time.Duration) {
+	deadline := time.Now().Add(max)
+	for time.Now().Before(deadline) {
+		if data, err := m.apiGet(ctx, "/status"); err == nil {
+			var st struct {
+				Track *struct {
+					Name string `json:"name"`
+				} `json:"track"`
+			}
+			if json.Unmarshal(data, &st) == nil && st.Track != nil && st.Track.Name != "" {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 // Next and Prev skip tracks. Wired to the SoundTouch remote's next/prev keys:
