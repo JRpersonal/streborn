@@ -84,6 +84,18 @@ var nullDevice = func() string {
 // re-flashed box; (b) the connection is over the user's home LAN
 // to a device whose IP they just selected from a discovery list —
 // there is no realistic MITM vector to defend against.
+//
+// LogLevel=ERROR is the necessary companion to those two and is also
+// in every set. With UserKnownHostsFile=/dev/null the host is never
+// remembered, so OpenSSH prints "Warning: Permanently added '<host>'
+// (<key>) to the list of known hosts." on stderr on EVERY connect.
+// CombinedOutput folds that INFO-level banner in ahead of the remote
+// command's stdout, and the SSH NAND-install fallback's byte-count
+// verify read the banner as part of the count and failed a
+// byte-perfect transfer as "truncated" (ST30 stick-power, 13.06). ERROR
+// drops that INFO banner while still surfacing every
+// negotiation/auth/host-key error classifySSHError keys on (those are
+// ERROR/FATAL level); QUIET would hide those too, so ERROR not QUIET.
 var sshFlagSets = [][]string{
 	// Set 1: full-legacy
 	{
@@ -94,6 +106,7 @@ var sshFlagSets = [][]string{
 		"-oStrictHostKeyChecking=no",
 		"-oUserKnownHostsFile=" + nullDevice,
 		"-oGlobalKnownHostsFile=" + nullDevice,
+		"-oLogLevel=ERROR",
 		"-oBatchMode=yes",
 		"-oConnectTimeout=8",
 		"-oServerAliveInterval=5",
@@ -105,6 +118,7 @@ var sshFlagSets = [][]string{
 		"-oStrictHostKeyChecking=no",
 		"-oUserKnownHostsFile=" + nullDevice,
 		"-oGlobalKnownHostsFile=" + nullDevice,
+		"-oLogLevel=ERROR",
 		"-oBatchMode=yes",
 		"-oConnectTimeout=8",
 	},
@@ -112,6 +126,7 @@ var sshFlagSets = [][]string{
 	{
 		"-oStrictHostKeyChecking=no",
 		"-oUserKnownHostsFile=" + nullDevice,
+		"-oLogLevel=ERROR",
 		"-oBatchMode=yes",
 		"-oConnectTimeout=8",
 	},

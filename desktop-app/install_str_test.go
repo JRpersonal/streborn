@@ -106,6 +106,119 @@ func TestSSHFlagSetsAllSetBatchModeAndStrictHostKeyOff(t *testing.T) {
 	}
 }
 
+// TestSSHFlagSetsSuppressKnownHostsBanner locks -oLogLevel=ERROR onto every set
+// in the chain. Without it, UserKnownHostsFile=/dev/null makes OpenSSH print
+// "Warning: Permanently added '<host>' (<key>) to the list of known hosts." on
+// stderr every connect (the host is never remembered), and CombinedOutput folds
+// that INFO banner into the byte count the SSH NAND-install verify parses,
+// flipping a byte-perfect transfer to a false "truncated" and making the ST30
+// stick-power fallback useless (13.06). ERROR, not QUIET: it drops the
+// INFO banner while still surfacing the negotiation/auth/host-key errors
+// classifySSHError keys on (those are ERROR/FATAL level).
+func TestSSHFlagSetsSuppressKnownHostsBanner(t *testing.T) {
+	for i, set := range sshFlagSets {
+		joined := strings.ToLower(strings.Join(set, "\n"))
+		if !strings.Contains(joined, "-ologlevel=error") {
+			t.Errorf("sshFlagSets[%d] missing -oLogLevel=ERROR; the known_hosts banner "+
+				"will leak into parsed SSH output and falsely fail the NAND-install verify as 'truncated'", i)
+		}
+		if strings.Contains(joined, "-ologlevel=quiet") {
+			t.Errorf("sshFlagSets[%d] uses LogLevel=QUIET which also hides the real "+
+				"negotiation/auth/host-key errors classifySSHError needs; use ERROR", i)
+		}
+	}
+}
+
+// TestLastIntFieldIgnoresKnownHostsBanner guards the banner-tolerant integer
+// parse shared by the SSH NAND-install byte-count verify and the CPU core-count
+// read against the known_hosts banner leak (ST30 stick-power, 13.06): the box
+// reports a single integer (`wc -c` byte count, `grep -c` core count), but
+// OpenSSH's "Warning: Permanently added '192.0.2.47' (RSA) to the list of known
+// hosts." banner is folded in ahead of it by CombinedOutput. The parse must read
+// the actual integer, not string-match the whole blob, or the verify falsely
+// reports "truncated" (and the whole stick-power fallback is useless) and the
+// core count silently floors to 1. The "leading numeric noise" case pins the
+// load-bearing LAST-token contract: a first-token refactor must fail here.
+func TestLastIntFieldIgnoresKnownHostsBanner(t *testing.T) {
+	cases := []struct {
+		name   string
+		out    string
+		want   int64
+		wantOK bool
+	}{
+		{name: "clean number", out: "11600034\n", want: 11600034, wantOK: true},
+		{
+			name: "known_hosts banner then number (the bug)",
+			out:  "Warning: Permanently added '192.0.2.47' (RSA) to the list of known hosts.\r\n11600034\n",
+			want: 11600034, wantOK: true,
+		},
+		{
+			name: "small file with banner (version.txt, 23 bytes)",
+			out:  "Warning: Permanently added '192.0.2.47' (RSA) to the list of known hosts.\r\n23\n",
+			want: 23, wantOK: true,
+		},
+		{name: "leading whitespace from busybox wc", out: "      2931\n", want: 2931, wantOK: true},
+		// Pins LAST-token semantics: a stray integer line ahead of the count (a
+		// future verbose/DEBUG ssh notice, or an extra field in a changed verify
+		// command) must not be mistaken for the count. A first-token parser fails
+		// this case; the last-token parser the docstring promises passes it.
+		{name: "leading numeric noise before the count", out: "3\n11600034\n", want: 11600034, wantOK: true},
+		// grep -c core count: single small integer, same parse.
+		{name: "core count with banner", out: "Warning: Permanently added '192.0.2.47' (RSA) to the list of known hosts.\r\n2\n", want: 2, wantOK: true},
+		{
+			name: "banner only, remote file missing so wc produced nothing",
+			out:  "Warning: Permanently added '192.0.2.47' (RSA) to the list of known hosts.\r\n",
+			want: 0, wantOK: false,
+		},
+		{name: "empty output", out: "", want: 0, wantOK: false},
+		{name: "zero-byte file / grep -c no match", out: "0\n", want: 0, wantOK: true},
+	}
+	for _, c := range cases {
+		got, ok := lastIntField(c.out)
+		if got != c.want || ok != c.wantOK {
+			t.Errorf("%s: lastIntField(%q) = (%d, %v), want (%d, %v)",
+				c.name, c.out, got, ok, c.want, c.wantOK)
+		}
+	}
+}
+
+// TestParseLoadAvgIgnoresKnownHostsBanner guards the load-settle gate's
+// /proc/loadavg parse against the same banner leak. boxLoad1 read fields[0] of
+// the first line, so the folded-in "Warning: Permanently added ..." banner made
+// it return "can't read load" on every box, silently disabling the load-settle
+// gate (the #119 ST30 install-timeout mitigation). parseLoadAvg reads the first
+// field of the LAST non-empty line instead, so the gate keeps working even if
+// the banner ever reappears past LogLevel=ERROR.
+func TestParseLoadAvgIgnoresKnownHostsBanner(t *testing.T) {
+	cases := []struct {
+		name   string
+		out    string
+		want   float64
+		wantOK bool
+	}{
+		{name: "clean loadavg", out: "0.42 0.31 0.20 1/80 1234\n", want: 0.42, wantOK: true},
+		{
+			name: "banner then loadavg (the latent bug)",
+			out:  "Warning: Permanently added '192.0.2.47' (RSA) to the list of known hosts.\r\n0.42 0.31 0.20 1/80 1234\n",
+			want: 0.42, wantOK: true,
+		},
+		{name: "zero load", out: "0.00 0.01 0.05 1/60 900\n", want: 0.0, wantOK: true},
+		{
+			name: "banner only, loadavg unreadable",
+			out:  "Warning: Permanently added '192.0.2.47' (RSA) to the list of known hosts.\r\n",
+			want: 0, wantOK: false,
+		},
+		{name: "empty output", out: "", want: 0, wantOK: false},
+	}
+	for _, c := range cases {
+		got, ok := parseLoadAvg(c.out)
+		if ok != c.wantOK || got != c.want {
+			t.Errorf("%s: parseLoadAvg(%q) = (%v, %v), want (%v, %v)",
+				c.name, c.out, got, ok, c.want, c.wantOK)
+		}
+	}
+}
+
 // TestClassifySSHErrorRecognizesBadOption guards the user-facing
 // error path that was the single most useful diagnostic in #60:
 // when the local ssh refuses one of our flags with "Bad
@@ -148,7 +261,7 @@ func TestExtractBadOptionParsesOpenSSHFormat(t *testing.T) {
 
 // TestDetectStickCopyFailureMatchesRunShMarkers guards the install-time
 // diagnosis of the "agent never started because the binary could not be copied
-// off a flaky stick" failure (CHI Wong ST30, 13.06). install.sh succeeds, the
+// off a flaky stick" failure (ST30 stick-copy, 13.06). install.sh succeeds, the
 // box reboots, run.sh's stick->NAND copy hits an I/O error, and with no prior
 // NAND cache run.sh exits. Without this the desktop showed a generic "agent not
 // up". The strings here MUST stay byte-identical to what usb-stick/run.sh logs;
