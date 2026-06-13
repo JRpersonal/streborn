@@ -405,6 +405,7 @@
   "setup.help.reformatApp": "Vuelve a preparar la memoria aquí con la opción Formatear marcada. La app la formatea para que el altavoz pueda leerla, algo que un formateo manual en una memoria grande a menudo no logra.",
   "setup.help.smallerStick": "Si la memoria es grande (32 GB o más), prueba una más pequeña (8 a 32 GB). Las memorias FAT32 muy grandes suelen formatearse de un modo que el altavoz no puede leer.",
   "setup.help.differentStick": "Si sigue fallando, la memoria puede estar defectuosa. Prueba con otra memoria USB, preferiblemente de una marca conocida.",
+  "setup.help.stickCopyFailed": "El altavoz no pudo copiar el programa STR desde la memoria USB a su propia memoria (un error de lectura de la memoria), por lo que no terminó de arrancar. Vuelve a crear la memoria aquí, preferiblemente en otra memoria USB 2.0, y luego insértala firmemente en el puerto USB del altavoz antes de encenderlo.",
   "setup.stickLargeFat32": "Esta memoria es grande (más de 32 GB). Las memorias grandes suelen formatearse de un modo que el altavoz no puede leer. Se reformateará a un FAT32 compatible durante la preparación; se perderán todos los datos de la memoria.",
   "setup.needsFormat": "necesita formateo",
   "setup.stickFsLine": "La memoria está formateada como {{fs}}.",

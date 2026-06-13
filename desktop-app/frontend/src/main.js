@@ -6367,6 +6367,11 @@ const INSTALL_HELP_STEPS = {
   // Usually a large stick force-formatted to FAT32 with a block size the
   // speaker can't read (the 64 GB case), or a faulty stick.
   'stick-io-error': ['reformatApp', 'usbPicky', 'smallerStick', 'differentStick', 'logs'],
+  // The speaker started but could not copy the agent binary off the stick into
+  // its memory (run.sh stick->NAND copy hit an I/O error and there was no prior
+  // NAND cache), so the agent never came up. A flaky/loose stick; the remedy is
+  // a fresh stick firmly inserted, or the SSH repair that bypasses the stick.
+  'stick-copy-failed': ['stickCopyFailed', 'stickInserted', 'differentStick', 'usbPicky', 'logs'],
 };
 
 // installHelpHtml renders the localized help checklist for a failure code.
@@ -6545,7 +6550,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
     // SSH-copy-to-NAND path can rescue (an unreadable/faulty stick, an install
     // script error, or a timeout) and SSH was reachable enough to even start.
     // It bypasses the stick by staging the embedded files on NAND over SSH.
-    const repairCodes = ['stick-io-error', 'install-error', 'install-timeout', 'install-script-error'];
+    const repairCodes = ['stick-io-error', 'install-error', 'install-timeout', 'install-script-error', 'stick-copy-failed'];
     const canRepair = result && repairCodes.indexOf(result.code) >= 0;
     const repairBtn = canRepair
       ? `<div class="setup-repair" style="margin-top:12px">`

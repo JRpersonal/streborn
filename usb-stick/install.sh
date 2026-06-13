@@ -32,6 +32,10 @@ PRESETS_SRC="$STICK/presets.json"
 PRESETS_DST="/mnt/nv/streborn/presets.json"
 BIN="$STICK/streborn-armv7l"
 [ -x "$BIN" ] || BIN="$STICK/streborn"
+# NAND binary cache run.sh actually boots from (CACHED_BIN in run.sh).
+# phase1_install seeds it directly from the stick over the live SSH session, so
+# a later stick read failure at boot cannot leave the box with no agent to run.
+CACHED_BIN="/mnt/nv/streborn/bin/streborn-armv7l"
 
 # Sicherstellen dass NAND Persist Verzeichnis existiert.
 mkdir -p /mnt/nv/streborn/bin 2>/dev/null
@@ -57,6 +61,35 @@ phase1_install() {
         echo "Kopiere $RUN_SRC nach $RUN_OVERRIDE"
         cp "$RUN_SRC" "$RUN_OVERRIDE"
         chmod +x "$RUN_OVERRIDE"
+    fi
+
+    # Seed the NAND binary cache (CACHED_BIN) that run.sh boots from, NOW, over
+    # the live SSH session, instead of leaving it to run.sh's boot-time
+    # stick->NAND sync. On a flaky/failing stick (readable enough to exec this
+    # small script but not to stream the ~10 MB binary) that boot-time copy hits
+    # an I/O error, and on a first install there is no prior cache to fall back
+    # to, so run.sh exits with "neither NAND cache nor stick binary available"
+    # and the agent never starts. Copying here means the binary is on NAND
+    # before the reboot, so a later stick read failure no longer blocks the
+    # agent. A read failure at THIS point fails install.sh loudly with an I/O
+    # marker the desktop app classifies as a stick problem (and offers the SSH
+    # NAND-copy repair), instead of an opaque post-reboot "agent not up".
+    if [ -s "$BIN" ]; then
+        echo "Kopiere Agent Binary nach $CACHED_BIN"
+        if cp "$BIN" "$CACHED_BIN.new" 2>&1; then
+            chmod +x "$CACHED_BIN.new"
+            if mv "$CACHED_BIN.new" "$CACHED_BIN" 2>&1; then
+                echo "Agent Binary auf NAND gecached ($(wc -c < "$CACHED_BIN") Bytes)"
+            else
+                rm -f "$CACHED_BIN.new"
+                echo "FEHLER: Agent Binary mv nach NAND fehlgeschlagen" >&2
+                exit 1
+            fi
+        else
+            rm -f "$CACHED_BIN.new"
+            echo "FEHLER: Agent Binary konnte nicht vom Stick nach NAND kopiert werden (stick I/O error?)" >&2
+            exit 1
+        fi
     fi
 
     # presets.json von SD nach NAND migrieren beim ersten Install.

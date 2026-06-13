@@ -146,6 +146,41 @@ func TestExtractBadOptionParsesOpenSSHFormat(t *testing.T) {
 	}
 }
 
+// TestDetectStickCopyFailureMatchesRunShMarkers guards the install-time
+// diagnosis of the "agent never started because the binary could not be copied
+// off a flaky stick" failure (CHI Wong ST30, 13.06). install.sh succeeds, the
+// box reboots, run.sh's stick->NAND copy hits an I/O error, and with no prior
+// NAND cache run.sh exits. Without this the desktop showed a generic "agent not
+// up". The strings here MUST stay byte-identical to what usb-stick/run.sh logs;
+// if run.sh's wording changes, this test fails before a release ships a silent
+// regression of the specific message + the auto NAND-copy repair trigger.
+func TestDetectStickCopyFailureMatchesRunShMarkers(t *testing.T) {
+	positives := []string{
+		// sync_stick_to_nand_always, exact run.sh wording.
+		"Fri Jun 12 16:37:26: stick -> NAND cp failed (stick I/O error?), keeping previous NAND binary",
+		// run.sh BIN resolution, exact wording.
+		"Fri Jun 12 16:37:26: ERROR: neither NAND cache nor stick binary available",
+		// Realistic multi-line tail with both markers interleaved with noise.
+		"redeployed run-override.sh\nstick -> NAND cp failed (stick I/O error?), keeping previous NAND binary\nERROR: neither NAND cache nor stick binary available\n",
+	}
+	for _, p := range positives {
+		if !detectStickCopyFailure(p) {
+			t.Errorf("detectStickCopyFailure should match run.sh stick-copy-failure log:\n%q", p)
+		}
+	}
+	negatives := []string{
+		"",
+		"stick binary deployed to NAND cache (10485760 bytes)",
+		"STR webui :8888 listening at uptime=42s",
+		"phase summary: wpa=12s boseHTTP=20s strAPI=42s",
+	}
+	for _, n := range negatives {
+		if detectStickCopyFailure(n) {
+			t.Errorf("detectStickCopyFailure should NOT match a healthy log:\n%q", n)
+		}
+	}
+}
+
 // TestBuildStickProbeCmdScansFallbackDirectories guards the broader
 // stick mount probe: scanning /media, /mnt and /run/media for any
 // install.sh fallback. Without the wide scan, a firmware variant

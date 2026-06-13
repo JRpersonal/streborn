@@ -405,6 +405,7 @@
   "setup.help.reformatApp": "Re-prépare la clé ici en cochant l'option Formater. L'application la formate pour que l'enceinte puisse la lire, ce qu'un formatage manuel sur une grande clé ne fait souvent pas.",
   "setup.help.smallerStick": "Si la clé est grande (32 Go ou plus), essaie une plus petite (8 à 32 Go). Les très grandes clés FAT32 sont souvent formatées d'une manière que l'enceinte ne peut pas lire.",
   "setup.help.differentStick": "Si l'échec persiste, la clé est peut-être défectueuse. Essaie une autre clé USB, de préférence d'une marque connue.",
+  "setup.help.stickCopyFailed": "L'enceinte n'a pas pu copier le programme STR depuis la clé USB dans sa propre mémoire (une erreur de lecture de la clé), le démarrage ne s'est donc jamais terminé. Recrée la clé ici, de préférence sur une autre clé USB 2.0, puis enfonce-la fermement dans le port USB de l'enceinte avant de l'allumer.",
   "setup.stickLargeFat32": "C'est une grande clé (plus de 32 Go). Les grandes clés sont souvent formatées d'une manière que l'enceinte ne peut pas lire. Elle sera reformatée en FAT32 compatible pendant la préparation ; toutes les données de la clé sont perdues.",
   "setup.needsFormat": "à formater",
   "setup.stickFsLine": "La clé est formatée en {{fs}}.",
