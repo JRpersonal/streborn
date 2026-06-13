@@ -57,6 +57,8 @@ export {
   SetAirplayOpt,
   GetResumeOnPowerOn,
   SetResumeOnPowerOn,
+  GetAppFlag,
+  SetAppFlag,
   GetWebhooks,
   SetWebhooks,
   SaveWebhookConfig,

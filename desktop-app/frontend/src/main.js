@@ -51,6 +51,8 @@ import {
   SetAirplayOpt,
   GetResumeOnPowerOn,
   SetResumeOnPowerOn,
+  GetAppFlag,
+  SetAppFlag,
   GetWebhooks,
   SetWebhooks,
   SaveWebhookConfig,
@@ -3082,6 +3084,13 @@ async function refreshStatus() {
     // error. The speaker's ContentItems run through the stream
     // proxy, so accept the slot match from /stream/<slot> too.
     if (ps === 'PLAY_STATE') {
+      // First successful radio playback is the strongest moment to invite the
+      // user to the community world map (their box is alive again). Radio only
+      // (proxy /stream/, not Spotify/AUX/Bluetooth), fired once ever inside
+      // maybeInviteWorldMap.
+      if (/\/stream\//.test(loc) && !/\/spotify\//.test(loc)) {
+        maybeInviteWorldMap();
+      }
       const slotFromProxy = activeSlotFromLocation(loc);
       const ap = state.presets.find(p =>
         p.stream_url === loc || (slotFromProxy !== null && p.slot === slotFromProxy)
@@ -3124,6 +3133,71 @@ async function refreshStatus() {
     // looked like the display flickering to "---" and back even though
     // nothing actually changed. The next successful poll refreshes it.
   }
+}
+
+// ---------- Community world map invite ----------
+//
+// After the first successful radio playback, invite the user once to drop a pin
+// on the st-reborn.de community world map ("your box is alive again"), the moment
+// success feels real. Non-blocking: a dismissible banner with a button that opens
+// the localized map URL in the EXTERNAL browser (not a webview, so the site's
+// coarse-location + anti-spam work in a normal session). Fires once ever
+// (localStorage flag). The app sends NO data and NO location: the website handles
+// the pin (the user taps a coarse region) and its own anti-spam token.
+const WORLD_MAP_FLAG = 'str.worldMapInvited';
+// Session re-entry guard: the status poll fires every few seconds, so the async
+// flag check below must not let a second poll open a second invite before the
+// first has persisted the flag. Set synchronously on the first call.
+let worldMapInviteHandled = false;
+
+// worldMapURL builds the localized community-map deep link. English is the site
+// root; the other locales live under /<locale>/. ?share opens the "set pin" form
+// and scrolls to the map; src=app lets the site optionally attribute app pins
+// (harmless if unused). Unknown params are ignored by the site.
+function worldMapURL() {
+  let loc = 'en';
+  try { loc = getLocale() || 'en'; } catch { /* default en */ }
+  const prefix = loc === 'en' ? '' : '/' + loc;
+  return 'https://st-reborn.de' + prefix + '/?share&src=app#community';
+}
+
+async function maybeInviteWorldMap() {
+  if (worldMapInviteHandled) return; // synchronous guard against status-poll re-entry
+  worldMapInviteHandled = true;
+  // Durable guard first: a persistent Go-side flag in the OS config dir survives
+  // app version updates and reinstalls, unlike webview localStorage, so this
+  // one-time invite never reappears later (which would be annoying). localStorage
+  // is a fast secondary check. Either being set suppresses the invite.
+  let already = false;
+  try { already = await GetAppFlag(WORLD_MAP_FLAG); } catch { /* fall back to localStorage */ }
+  if (!already) {
+    try { already = localStorage.getItem(WORLD_MAP_FLAG) === '1'; } catch {}
+  }
+  if (already) return;
+  // Persist to BOTH stores before showing, so a crash right after still suppresses it.
+  try { localStorage.setItem(WORLD_MAP_FLAG, '1'); } catch {}
+  try { await SetAppFlag(WORLD_MAP_FLAG); } catch {}
+  showWorldMapInvite();
+}
+
+function showWorldMapInvite() {
+  if (document.getElementById('worldMapInvite')) return;
+  const el = document.createElement('div');
+  el.id = 'worldMapInvite';
+  el.className = 'worldmap-invite';
+  el.innerHTML =
+    `<span class="wmi-text">${escapeHtml(t('worldMap.inviteText'))}</span>` +
+    `<button class="btn btn-mini btn-primary" id="wmiShare">${escapeHtml(t('worldMap.inviteBtn'))}</button>` +
+    `<button class="wmi-close" id="wmiClose" aria-label="close">&times;</button>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
+  const shareBtn = el.querySelector('#wmiShare');
+  if (shareBtn) shareBtn.onclick = () => { try { BrowserOpenURL(worldMapURL()); } catch {} close(); };
+  const closeBtn = el.querySelector('#wmiClose');
+  if (closeBtn) closeBtn.onclick = close;
+  // Auto-dismiss so it never lingers; the once-ever flag means it will not return.
+  setTimeout(close, 15000);
 }
 
 // ---------- Search ----------

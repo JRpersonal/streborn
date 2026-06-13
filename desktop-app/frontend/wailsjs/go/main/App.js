@@ -74,6 +74,10 @@ export function GetAirplayOpt(arg1, arg2) {
   return window['go']['main']['App']['GetAirplayOpt'](arg1, arg2);
 }
 
+export function GetAppFlag(arg1) {
+  return window['go']['main']['App']['GetAppFlag'](arg1);
+}
+
 export function GetBoxFirmware(arg1) {
   return window['go']['main']['App']['GetBoxFirmware'](arg1);
 }
@@ -212,6 +216,10 @@ export function SelectBoxSource(arg1, arg2, arg3) {
 
 export function SetAirplayOpt(arg1, arg2, arg3) {
   return window['go']['main']['App']['SetAirplayOpt'](arg1, arg2, arg3);
+}
+
+export function SetAppFlag(arg1) {
+  return window['go']['main']['App']['SetAppFlag'](arg1);
 }
 
 export function SetAppLocale(arg1) {

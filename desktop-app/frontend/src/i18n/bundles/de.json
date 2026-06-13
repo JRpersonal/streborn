@@ -694,6 +694,8 @@
   "setup.help.lowPowerStick": "Nimm einen kleinen, stromsparenden USB-2.0-Stick (4 bis 16 GB). Größere oder schnellere Sticks brauchen mehr Strom, als der USB-Anschluss des Lautsprechers liefern kann.",
   "setup.help.usbHub": "Oder schließe den Stick über einen aktiven USB-Hub (mit eigenem Netzteil) an, damit er unabhängig vom Anschluss des Lautsprechers stabil mit Strom versorgt wird.",
   "setup.st30StickPowerWarn": "SoundTouch 30 erkannt: Der USB-Anschluss kann manche Sticks nicht stabil mit Strom versorgen, das führt beim Installieren zu einem Stromfehler. Nimm einen kleinen, stromsparenden USB-2.0-Stick (4 bis 16 GB) oder schließe ihn über einen aktiven USB-Hub an.",
+  "worldMap.inviteText": "Deine SoundTouch lebt wieder 🎉",
+  "worldMap.inviteBtn": "Auf der Weltkarte teilen",
   "setup.stickLargeFat32": "Das ist ein großer Stick (über 32 GB). Große Sticks sind oft so formatiert, dass der Lautsprecher sie nicht lesen kann. Er wird bei der Vorbereitung in ein kompatibles FAT32 umformatiert; alle Daten auf dem Stick gehen verloren.",
   "setup.needsFormat": "muss formatiert werden",
   "setup.stickFsLine": "Stick ist {{fs}} formatiert.",

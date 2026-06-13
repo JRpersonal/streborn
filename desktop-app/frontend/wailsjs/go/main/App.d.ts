@@ -41,6 +41,8 @@ export function FormatStick(arg1:string):Promise<void>;
 
 export function GetAirplayOpt(arg1:string,arg2:number):Promise<Record<string, boolean>>;
 
+export function GetAppFlag(arg1:string):Promise<boolean>;
+
 export function GetBoxFirmware(arg1:string):Promise<main.FirmwareInfo>;
 
 export function GetBoxLanguage(arg1:string):Promise<string>;
@@ -110,6 +112,8 @@ export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, an
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function SetAirplayOpt(arg1:string,arg2:number,arg3:boolean):Promise<void>;
+
+export function SetAppFlag(arg1:string):Promise<void>;
 
 export function SetAppLocale(arg1:string):Promise<void>;
 

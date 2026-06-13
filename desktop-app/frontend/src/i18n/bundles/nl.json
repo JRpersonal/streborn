@@ -430,6 +430,8 @@
   "setup.help.lowPowerStick": "Gebruik een kleine, zuinige USB 2.0-stick (4 tot 16 GB). Grotere of snellere sticks vragen meer stroom dan de USB-poort van de speaker kan leveren.",
   "setup.help.usbHub": "Of sluit de stick aan via een USB-hub met eigen voeding, zodat hij stabiel stroom krijgt los van de poort van de speaker.",
   "setup.st30StickPowerWarn": "SoundTouch 30 gedetecteerd: de USB-poort kan sommige sticks niet goed van stroom voorzien, wat tijdens de installatie een stroomfout geeft. Gebruik een kleine, zuinige USB 2.0-stick (4 tot 16 GB), of sluit hem aan via een USB-hub met eigen voeding.",
+  "worldMap.inviteText": "Je SoundTouch leeft weer 🎉",
+  "worldMap.inviteBtn": "Deel het op de wereldkaart",
   "setup.stickLargeFat32": "Dit is een grote stick (meer dan 32 GB). Grote sticks zijn vaak geformatteerd op een manier die de speaker niet kan lezen. Hij wordt tijdens de voorbereiding opnieuw geformatteerd naar een compatibel FAT32; alle gegevens op de stick gaan verloren.",
   "setup.needsFormat": "moet geformatteerd worden",
   "setup.stickFsLine": "Stick is geformatteerd als {{fs}}.",

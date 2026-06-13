@@ -430,6 +430,8 @@
   "setup.help.lowPowerStick": "Izmantojiet mazu, enerģiju taupošu USB 2.0 zibatmiņu (4 līdz 16 GB). Lielākas vai ātrākas zibatmiņas patērē vairāk strāvas, nekā skaļruņa USB pieslēgvieta var nodrošināt.",
   "setup.help.usbHub": "Vai pievienojiet zibatmiņu caur USB centrmezglu ar atsevišķu barošanu, lai tā saņemtu stabilu strāvu neatkarīgi no skaļruņa pieslēgvietas.",
   "setup.st30StickPowerWarn": "Atklāts SoundTouch 30: tā USB pieslēgvieta var nespēt pietiekami nodrošināt dažas zibatmiņas ar strāvu, kas instalēšanas laikā rada barošanas kļūdu. Izmantojiet mazu, enerģiju taupošu USB 2.0 zibatmiņu (4 līdz 16 GB) vai pievienojiet to caur USB centrmezglu ar atsevišķu barošanu.",
+  "worldMap.inviteText": "Tavs SoundTouch atkal darbojas 🎉",
+  "worldMap.inviteBtn": "Dalies pasaules kartē",
   "setup.stickLargeFat32": "Šī ir liela zibatmiņa (vairāk nekā 32 GB). Lielas zibatmiņas bieži ir formatētas tā, ka skaļrunis tās nevar nolasīt. Sagatavošanas laikā tā tiks pārformatēta uz saderīgu FAT32; visi dati zibatmiņā tiks zaudēti.",
   "setup.needsFormat": "nepieciešama formatēšana",
   "setup.stickFsLine": "Zibatmiņa formatēta kā {{fs}}.",
