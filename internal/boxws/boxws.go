@@ -77,19 +77,15 @@ type Handler interface {
 	// Zone wurde aufgeloest.
 	OnZoneChanged(ctx context.Context, z ZoneState)
 
-	// OnPowerWake wird gefeuert wenn die Box aus dem Standby kommt durch ein
-	// echtes Power-Ereignis (powerStateUpdated, NICHT STANDBY): der Nutzer hat den
-	// Lautsprecher eingeschaltet. Treiber fuer den optionalen "letzten Sender beim
-	// Einschalten fortsetzen"-Default. Ein Self-Wake (Stereopaar/Zone) kommt NICHT
-	// hier an, sondern als DO_NOT_RESUME-Restore ueber OnSelfWake.
+	// OnPowerWake wird gefeuert wenn die Box aus dem Standby kommt: entweder ueber
+	// ein powerStateUpdated (NICHT STANDBY) auf Firmware die das schickt, ODER, auf
+	// SoundTouch-Firmware die KEIN powerStateUpdated sendet (Portable/taigan, live
+	// 2026-06-13 bestaetigt), ueber den DO_NOT_RESUME-Restore der letzten Auswahl
+	// beim Aufwachen. Treiber fuer den optionalen "letzten Sender beim Einschalten
+	// fortsetzen"-Default. Ein Self-Wake (Stereopaar/Zone) sieht identisch aus und
+	// wird downstream ueber die Zonen-Mitgliedschaft abgefangen (webui.boxInZone),
+	// nicht hier.
 	OnPowerWake(ctx context.Context)
-
-	// OnSelfWake wird gefeuert wenn die Box ihre letzte Auswahl beim Aufwachen
-	// oder Source-Teardown mit DO_NOT_RESUME wiederherstellt (Self-Wake ueber
-	// Zone/Stereopaar oder ein bewusstes Power-Off). Der Agent merkt sich das, um
-	// eine Power-on-Wiederaufnahme genau in diesem Fenster zu unterdruecken, damit
-	// die Box nicht von selbst losspielt (Klaus 2026-06-12).
-	OnSelfWake(ctx context.Context)
 }
 
 // Client haelt die Verbindung zur Box.
@@ -629,11 +625,17 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// what it says. STR now stands down; playback only follows an explicit
 			// user action: a real preset press (slot 1-6 below) or an app recall.
 			if strings.Contains(pe.Inner, "DO_NOT_RESUME") {
-				c.logger.Info("box ws: standby wake / source teardown signalled DO_NOT_RESUME, not resuming")
-				// Record the self-wake so a power-on resume firing around the same
-				// moment stands down (this is the Klaus self-wake marker).
+				// The box left standby and, unable to play its UPNP selection
+				// itself, restored it as INVALID_SOURCE + DO_NOT_RESUME. On this
+				// firmware that is the ONLY power-on signal: no powerStateUpdated is
+				// ever sent (verified live on a Portable/taigan 2026-06-13). So this
+				// is what drives the optional power-on resume. The box will NOT play
+				// it natively; STR's resume decides, gated by a per-box opt-out and a
+				// zone-membership self-wake guard (see webui.ResumeLastPlay), so a
+				// stereo-pair self-wake never auto-resumes.
+				c.logger.Info("box ws: power-on wake (DO_NOT_RESUME restore), box will not resume natively")
 				if c.handler != nil {
-					c.handler.OnSelfWake(ctx)
+					c.handler.OnPowerWake(ctx)
 				}
 			} else {
 				// DEBUG: the box emits this id=0 INVALID_SOURCE self-activation after

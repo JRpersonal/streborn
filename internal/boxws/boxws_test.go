@@ -16,7 +16,6 @@ type recHandler struct {
 	userStops  int
 	powerKeys  int
 	powerWakes int
-	selfWakes  int
 	sourceAux  int
 	skips      []bool
 	zones      []ZoneState
@@ -38,7 +37,6 @@ func (h *recHandler) OnPowerKey(context.Context)                   { h.powerKeys
 func (h *recHandler) OnSourceAux(context.Context)                  { h.sourceAux++ }
 func (h *recHandler) OnZoneChanged(_ context.Context, z ZoneState) { h.zones = append(h.zones, z) }
 func (h *recHandler) OnPowerWake(context.Context)                  { h.powerWakes++ }
-func (h *recHandler) OnSelfWake(context.Context)                   { h.selfWakes++ }
 
 func newTestClient(h Handler) *Client {
 	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), "ws://127.0.0.1:8080/", h)
@@ -142,19 +140,21 @@ func TestHandleMessage_ZoneDissolvedParsed(t *testing.T) {
 	}
 }
 
-// TestHandleMessage_PowerWakeVsSelfWake guards the discriminator the power-on
-// resume binds to: a real power-ON fires OnPowerWake, a power-OFF fires the
-// existing OnPowerKey webhook, and a DO_NOT_RESUME selection restore (the Klaus
-// self-wake) fires OnSelfWake only, never OnPowerWake and never a preset. If
-// these cross, STR either resumes on a self-wake (Klaus' spontaneous playback
-// regresses) or never resumes on a real power press (feature dead).
-func TestHandleMessage_PowerWakeVsSelfWake(t *testing.T) {
-	// Real power-ON (powerStateUpdated, not STANDBY) -> OnPowerWake.
+// TestHandleMessage_PowerWake guards the power-on signal the resume binds to.
+// Verified live on a Portable/taigan (2026-06-13): the box sends NO
+// powerStateUpdated; a real power press surfaces as a DO_NOT_RESUME selection
+// restore. So BOTH a powerStateUpdated (firmware that sends it) AND the
+// DO_NOT_RESUME restore must fire OnPowerWake, while a power-OFF (STANDBY) fires
+// the OnPowerKey webhook and never OnPowerWake. The self-wake vs user-press
+// distinction is made downstream by zone membership, not here, because the two
+// are identical on the wire.
+func TestHandleMessage_PowerWake(t *testing.T) {
+	// powerStateUpdated not STANDBY -> OnPowerWake (for firmware that sends it).
 	h := &recHandler{}
 	c := newTestClient(h)
 	c.handleMessage(context.Background(), []byte(`<updates><powerStateUpdated>POWER_ON</powerStateUpdated></updates>`))
 	if h.powerWakes != 1 || h.powerKeys != 0 {
-		t.Fatalf("power-on must fire OnPowerWake once, not OnPowerKey: wakes=%d keys=%d", h.powerWakes, h.powerKeys)
+		t.Fatalf("powerState ON must fire OnPowerWake once, not OnPowerKey: wakes=%d keys=%d", h.powerWakes, h.powerKeys)
 	}
 
 	// Power-OFF (STANDBY) -> OnPowerKey, never OnPowerWake.
@@ -165,17 +165,16 @@ func TestHandleMessage_PowerWakeVsSelfWake(t *testing.T) {
 		t.Fatalf("standby must fire OnPowerKey once, not OnPowerWake: keys=%d wakes=%d", h.powerKeys, h.powerWakes)
 	}
 
-	// Self-wake / source teardown restores the last selection with DO_NOT_RESUME
-	// -> OnSelfWake only (the suppressor), no OnPowerWake, no preset recall.
+	// The DO_NOT_RESUME selection restore (the only power-on signal on SoundTouch
+	// firmware) must fire OnPowerWake, and must NOT be mistaken for a preset.
 	h = &recHandler{}
 	c = newTestClient(h)
 	c.handleMessage(context.Background(), []byte(
 		`<updates><nowSelectionUpdated><preset id="0">`+
 			`<ContentItem source="INVALID_SOURCE" type="DO_NOT_RESUME"/>`+
 			`</preset></nowSelectionUpdated></updates>`))
-	if h.selfWakes != 1 || h.powerWakes != 0 || len(h.presets) != 0 {
-		t.Fatalf("DO_NOT_RESUME restore must fire OnSelfWake only: self=%d wakes=%d presets=%v",
-			h.selfWakes, h.powerWakes, h.presets)
+	if h.powerWakes != 1 || len(h.presets) != 0 {
+		t.Fatalf("DO_NOT_RESUME restore must fire OnPowerWake only: wakes=%d presets=%v", h.powerWakes, h.presets)
 	}
 }
 

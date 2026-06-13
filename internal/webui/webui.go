@@ -147,14 +147,6 @@ type Server struct {
 	lastUserStopMu sync.Mutex
 	lastUserStop   time.Time
 
-	// lastDoNotResume is when the box last sent a DO_NOT_RESUME now-selection
-	// restore: a self-wake via a zone / stereo pair, or a source teardown. The
-	// power-on resume checks this so it never resumes in the window around a
-	// self-wake, which would bring back the box spontaneously starting to play
-	// (Klaus 2026-06-12). Set from the gabbo DO_NOT_RESUME hook via NoteDoNotResume.
-	doNotResumeMu   sync.Mutex
-	lastDoNotResume time.Time
-
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
 	// Empty falls back to defaultResumeOnPowerOnPath.
@@ -921,12 +913,22 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
 	s.setLastPlay(boxURL, title, art, mime)
 }
 
-// ResumeLastPlay re-pushes the last stream STR played. It is the power-button
-// wake-from-standby resume: the box gives no powerStateUpdated, it just tries
-// (and declines, DO_NOT_RESUME) to restore its last UPNP selection, which boxws
-// surfaces as OnWakeResume. Power-on is an explicit "play it again", so this
-// overrides the user-stop the power-off STOP_STATE set and clears the
-// failed/attempt state so even a previously dead stream gets one fresh try.
+// ResumeLastPlay re-pushes the last stream STR played: the power-on resume. On
+// the SoundTouch firmware a power press emits NO powerStateUpdated frame; the box
+// only reports a source change out of STANDBY and, because it can no longer play
+// its UPNP selection itself, restores it as INVALID_SOURCE + DO_NOT_RESUME. boxws
+// surfaces that as OnPowerWake (verified live on a Portable/taigan 2026-06-13:
+// powerStateUpdated never appears, a real power press = STANDBY -> INVALID_SOURCE
+// + DO_NOT_RESUME). Power-on is an explicit "play it again", so this overrides
+// the user-stop the power-off STOP_STATE set and clears the failed/attempt state
+// so even a previously dead stream gets one fresh try.
+//
+// The same DO_NOT_RESUME wake is also what a SELF-wake produces (a box pulled out
+// of standby by its stereo pair / zone, which made Klaus' box start playing on
+// its own, 2026-06-12). The two are indistinguishable on the wire, so the guard
+// is zone membership: a standalone box can only leave standby by a user press, so
+// it resumes; a box that is part of a zone does NOT (see boxInZone). Plus the
+// per-box opt-out below.
 func (s *Server) ResumeLastPlay() {
 	if s.renderer == nil {
 		return
@@ -951,21 +953,20 @@ func (s *Server) ResumeLastPlay() {
 
 	go func() {
 		// Let the power transition settle so the box's reported state is
-		// unambiguous before we decide. The DO_NOT_RESUME that triggers this
-		// fires on BOTH a power-on wake and a deliberate power-off (the box
-		// tears down its UPNP selection either way), so the event alone cannot
-		// tell them apart: the box state can.
+		// unambiguous before we decide. The DO_NOT_RESUME wake that triggers this
+		// fires on a power-on, but the box can also reach standby again right
+		// after, so settle then read the real state.
 		time.Sleep(2 * time.Second)
 
-		// A self-wake (zone / stereo pair) restores the selection with
-		// DO_NOT_RESUME. If we saw that just now, this "power-on" is really a
-		// self-wake and resuming it would make the box start playing on its own
-		// (Klaus 2026-06-12). Stand down. Checked AFTER the settle so a
-		// DO_NOT_RESUME that arrives shortly after the powerState is still caught.
-		// This suppressor is what lets the power-on resume default to ON without
-		// reintroducing the spontaneous playback.
-		if s.doNotResumeRecently() {
-			s.logger.Info("wake resume: DO_NOT_RESUME self-wake seen in window, not resuming")
+		// Klaus guard: a box pulled out of standby by its stereo pair / zone emits
+		// the SAME DO_NOT_RESUME wake as a user power press, so the frame cannot
+		// tell them apart. But a STANDALONE box can only leave standby by a user
+		// pressing power, so it is safe to resume; a box that is part of a zone is
+		// not (the pair may have woken it), so stand down. This is what lets the
+		// resume default to ON without bringing back Klaus' spontaneous playback.
+		// Checked live (authoritative) rather than from cached zone events.
+		if s.boxInZone() {
+			s.logger.Info("wake resume: box is in a zone / stereo pair, not auto-resuming (self-wake guard)")
 			return
 		}
 
@@ -1022,28 +1023,26 @@ func (s *Server) ResumeLastPlay() {
 // resume opt-out. Absent or "1" means on (the default), "0" means off.
 const defaultResumeOnPowerOnPath = "/mnt/nv/streborn/resume-on-power-on"
 
-// doNotResumeWindow is how long a DO_NOT_RESUME self-wake suppresses a power-on
-// resume. It must span the gap between the powerState that triggers the resume
-// and a DO_NOT_RESUME restore arriving shortly before or after it (the resume
-// waits 2s to let the box settle), while staying short enough not to swallow a
-// genuine power-on a few seconds later.
-const doNotResumeWindow = 8 * time.Second
-
-// NoteDoNotResume records that the box just sent a DO_NOT_RESUME now-selection
-// restore (a self-wake or source teardown). boxws calls this via the agent's
-// OnSelfWake so the power-on resume can stand down in that window.
-func (s *Server) NoteDoNotResume() {
-	s.doNotResumeMu.Lock()
-	s.lastDoNotResume = time.Now()
-	s.doNotResumeMu.Unlock()
-}
-
-// doNotResumeRecently reports whether a DO_NOT_RESUME self-wake happened within
-// doNotResumeWindow.
-func (s *Server) doNotResumeRecently() bool {
-	s.doNotResumeMu.Lock()
-	defer s.doNotResumeMu.Unlock()
-	return !s.lastDoNotResume.IsZero() && time.Since(s.lastDoNotResume) < doNotResumeWindow
+// boxInZone reports whether the speaker is currently part of a multiroom zone or
+// stereo pair, read live from the box (/getZone). It is the power-on resume's
+// self-wake guard: a standalone box can only leave standby by a user power press
+// (safe to resume), but a zone member may have been woken by its pair (Klaus'
+// spontaneous playback), so it must not auto-resume. On a read error it returns
+// false (treat as standalone): a missing zone read should not silently disable
+// the feature for the standalone majority, and the per-box opt-out is the
+// backstop for the rare paired box that also fails the read.
+func (s *Server) boxInZone() bool {
+	if s.boxHost == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	z, err := boxapi.New(s.boxHost).GetZone(ctx)
+	if err != nil {
+		s.logger.Info("wake resume: zone read failed, treating box as standalone", "err", err)
+		return false
+	}
+	return z.Master != ""
 }
 
 // resumeOnPowerOnEnabled reports whether "resume the last station on power-on"

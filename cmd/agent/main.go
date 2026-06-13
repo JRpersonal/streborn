@@ -395,13 +395,10 @@ func run() error {
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back.
 		noteLastPlay: webuiSrv.NoteLastPlay,
-		// Power-on resume (Bose-style power-on preset, default on): a real power
-		// press resumes the last station; ResumeLastPlay is gated by the per-box
-		// opt-out and suppressed around a DO_NOT_RESUME self-wake.
+		// Power-on resume (Bose-style power-on preset, default on): a power press
+		// resumes the last station; ResumeLastPlay is gated by the per-box opt-out
+		// and a zone-membership guard so a stereo-pair self-wake never auto-resumes.
 		onPowerWake: webuiSrv.ResumeLastPlay,
-		// Self-wake marker: lets the power-on resume stand down so the box does not
-		// start playing on its own (Klaus 2026-06-12).
-		onSelfWake: webuiSrv.NoteDoNotResume,
 	}
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
@@ -788,16 +785,13 @@ type presetWsHandler struct {
 	// plays straight through the renderer, bypassing the webui's own lastPlay).
 	// Wired to webui.NoteLastPlay. nil-safe.
 	noteLastPlay func(boxURL, title, art, mime string)
-	// onPowerWake is invoked on a real power-on (powerStateUpdated leaving
-	// standby): resume the last station, the Bose-style power-on preset. Wired to
-	// webui.ResumeLastPlay, which is gated by the per-box opt-out and stands down
-	// if a DO_NOT_RESUME self-wake was seen in the same window. nil-safe.
+	// onPowerWake is invoked when the box leaves standby on a power press: a
+	// powerStateUpdated on firmware that sends it, or the DO_NOT_RESUME selection
+	// restore on firmware that does not (Portable/taigan). Resumes the last
+	// station, the Bose-style power-on preset. Wired to webui.ResumeLastPlay, which
+	// is gated by the per-box opt-out and a zone-membership self-wake guard.
+	// nil-safe.
 	onPowerWake func()
-	// onSelfWake is invoked when the box restores its selection with
-	// DO_NOT_RESUME (a self-wake via zone/stereo pair). Wired to
-	// webui.NoteDoNotResume so the power-on resume suppresses itself in that
-	// window and Klaus' box does not start playing on its own. nil-safe.
-	onSelfWake func()
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
@@ -949,26 +943,17 @@ func (h *presetWsHandler) OnPowerKey(ctx context.Context) {
 	}
 }
 
-// OnPowerWake resumes the last station when the user switches the speaker on,
-// the Bose-style power-on preset (default on, opt-out per box). boxws calls this
-// only on a real power-on (powerStateUpdated leaving standby), never on a
-// self-wake. The actual resume (webui.ResumeLastPlay) is still gated by the
-// per-box setting and suppressed if a DO_NOT_RESUME self-wake was seen in the
-// same window, so this can never make the box start playing on its own.
+// OnPowerWake resumes the last station when the speaker is switched on, the
+// Bose-style power-on preset (default on, opt-out per box). boxws fires this on a
+// power-on wake: a powerStateUpdated on firmware that sends one, or the
+// DO_NOT_RESUME selection restore on firmware that does not. The actual resume
+// (webui.ResumeLastPlay) is gated by the per-box setting and a zone-membership
+// guard, so a stereo-pair self-wake (which looks identical on the wire) never
+// makes the box start playing on its own.
 func (h *presetWsHandler) OnPowerWake(_ context.Context) {
 	if h.onPowerWake != nil {
 		h.logger.Info("power-on detected, attempting last-station resume")
 		h.onPowerWake()
-	}
-}
-
-// OnSelfWake records that the box restored its selection with DO_NOT_RESUME (a
-// self-wake via a zone / stereo pair, or a source teardown), so the power-on
-// resume stands down in that window and the box does not start playing on its
-// own (Klaus 2026-06-12).
-func (h *presetWsHandler) OnSelfWake(_ context.Context) {
-	if h.onSelfWake != nil {
-		h.onSelfWake()
 	}
 }
 
