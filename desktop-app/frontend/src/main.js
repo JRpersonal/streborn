@@ -3221,7 +3221,7 @@ function favMinimal(s) {
   return {
     stationuuid: s.stationuuid, name: s.name, url: s.url, url_resolved: s.url_resolved,
     bitrate: s.bitrate || 0, country: s.country, countrycode: s.countrycode,
-    codec: s.codec, tags: s.tags, votes: s.votes || 0, homepage: s.homepage,
+    codec: s.codec, hls: s.hls || 0, tags: s.tags, votes: s.votes || 0, homepage: s.homepage,
     favicon: s.favicon, lastcheckok: s.lastcheckok,
   };
 }
@@ -3376,18 +3376,27 @@ function cleanForSort(name) {
   return (stripped || raw).toLowerCase().trim();
 }
 
-// isBoseCompatible estimates whether the speaker can reliably play
-// the stream. Since stick-agent build 0132 every stream goes through
-// /stream/raw, which removes the TLS concerns. We only check the
-// codec now:
-//   - MP3 / AAC / AACP / MPEG work
-//   - Ogg / Opus / FLAC the Bose player cannot decode
-// Conservative: when the codec is unknown we let the station
-// through.
+// isBoseCompatible estimates whether the speaker can reliably play the stream.
+// Since stick-agent build 0132 every stream goes through /stream/raw (TLS is no
+// longer a concern), and since v0.7.21 STR converts HLS playlists on the fly, so
+// HLS stations play too. So:
+//   - HLS streams (radio-browser hls=1, or an .m3u8 URL) play via STR's HLS
+//     conversion, regardless of the segment codec
+//   - MP3 / AAC / AAC+ / AACP / MPEG the box decodes directly
+//   - Ogg / Opus / FLAC neither the box nor the proxy can decode
+//   - an unknown codec ("UNKNOWN" or empty) is let through, the box tries it
+// radio-browser reports the BBC HLS stations (Radio 2/4, which play since
+// v0.7.21) as codec "UNKNOWN" with hls=1, and the old check dropped both: it
+// only let an EMPTY codec through and knew nothing of HLS, so it treated the
+// literal "UNKNOWN" string as incompatible and hid every now-playable HLS
+// station when the filter was on (#124).
 function isBoseCompatible(s) {
+  const url = String(s.url_resolved || s.url || '');
+  if (s.hls === 1 || s.hls === '1' || /\.m3u8(\?|#|$)/i.test(url)) return true;
   const codec = String(s.codec || '').toUpperCase();
-  if (!codec) return true; // unknown - let the speaker try
-  return codec === 'MP3' || codec === 'AAC' || codec === 'AACP' || codec === 'MPEG';
+  if (!codec || codec === 'UNKNOWN') return true; // let the speaker try
+  return codec === 'MP3' || codec === 'AAC' || codec === 'AAC+' ||
+    codec === 'AACP' || codec === 'MPEG';
 }
 
 // streamErrorMessage maps a stream-status reason to a clear, human, localized
