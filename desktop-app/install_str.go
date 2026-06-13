@@ -272,11 +272,67 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// the main first-install failure (#114).
 	res.Step = "wait-agent"
 	if err := a.waitForAgent(host, model); err != nil {
-		// If SSH is still reachable the install window is open, so reboot once
-		// and retry before giving up. This self-heals the common "shim lost the
-		// boot race" case with no user action. Guarded on SSH still being up so
-		// we never double-reboot a box that already left the install window.
+		// Specific message + finalize for the "stick read failed, so the agent
+		// binary never reached NAND" case. Defined once; used from both the
+		// pre-retry detection and the post-retry re-check below.
+		const stickCopyMsg = "The speaker started but could not copy the STR program from the USB stick into its memory (stick read error), so it never finished starting up. The stick is most likely faulty or was not plugged in firmly. Re-create the stick, ideally on a different USB 2.0 stick (4 to 32 GB), plug it in firmly, then install again."
+		finishStickCopyFailed := func() (InstallResult, error) {
+			res.Step = "wait-agent"
+			res.Code = "stick-copy-failed"
+			res.Message = stickCopyMsg + fwNote
+			res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
+			return res, nil
+		}
+
+		// Shared "how to get help" line, used by every failure branch below.
+		logHint := "To get help, save the diagnostic logs (the Save logs button in Speaker Settings, or the link at the bottom of the app window) and attach them to the GitHub issue or email them to str@sichtbar-app.de."
+
+		// If SSH is still reachable the install window is open. Before the blind
+		// reboot-retry, check the box's own run.sh log for a deterministic cause a
+		// reboot cannot fix: the agent binary never reached the NAND cache because
+		// the USB stick read failed mid-copy (flaky/failing stick) and there was
+		// no prior cache. A plain reboot just hits the same unreadable stick. The
+		// fix is to bypass the stick entirely: stage STR's embedded agent onto
+		// NAND over SSH and boot from there. Guarded on SSH still being up so we
+		// never double-reboot a box that already left the install window.
 		if tcpReachable(host, 22, 4*time.Second) {
+			if a.agentLogShowsStickCopyFailure(host) {
+				a.logger.Warn("install_str: agent not up, stick->NAND copy failed (unreadable stick)", "host", host)
+				if len(agentbin.Bytes()) > 0 {
+					a.logger.Info("install_str: auto NAND-copy repair over SSH, bypassing the unreadable stick", "host", host)
+					res.Step = "stick-copy-repair"
+					rr, _ := a.RepairInstallViaSSH(host, model)
+					if rr.OK {
+						if a.waitForAgent(host, model) == nil {
+							res.Step = "done"
+							res.OK = true
+							res.Message = "The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888."
+							return res, nil
+						}
+						// The over-the-network install succeeded (the stick was
+						// bypassed), the agent just has not bound :8888 yet. Do NOT
+						// tell the user to recreate the stick: this is now a plain
+						// slow/failed boot, so return the agent-not-up guidance.
+						a.logger.Warn("install_str: NAND-copy repair installed over network but agent still not up", "host", host)
+						res.Step = "wait-agent"
+						res.Code = "agent-not-up"
+						res.Message = "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute. " + logHint + fwNote
+						res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
+						return res, nil
+					}
+					// Repair could not even complete (SSH copy/install failed):
+					// keep the stick-copy diagnosis + manual repair offer below.
+					res.Log = res.Log + "\n\n--- SSH NAND-copy repair ---\n" + rr.Message + "\n" + rr.Log
+					a.logger.Warn("install_str: NAND-copy repair did not complete", "host", host, "repairMsg", rr.Message)
+				}
+				// No embedded binary (dev build) or the auto-repair could not
+				// complete: report the specific stick-copy cause. The manual
+				// Repair-over-SSH button is also offered for this code.
+				return finishStickCopyFailed()
+			}
+
+			// Generic boot-race self-heal: reboot once and retry. This covers the
+			// common "shim lost the boot race" case with no user action.
 			a.logger.Info("install_str: agent not up, SSH still open, rebooting once and retrying", "host", host)
 			res.Step = "reboot-and-retry"
 			_ = boxReboot(host)
@@ -286,10 +342,15 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 				res.Message = "STR agent is up on port 8888 (after an automatic retry)."
 				return res, nil
 			}
+			// The first wait may have timed out before run.sh logged the copy
+			// failure; re-check after the retry so a stick-copy failure that only
+			// surfaced now still gets the specific cause, not the generic message.
+			if tcpReachable(host, 22, 4*time.Second) && a.agentLogShowsStickCopyFailure(host) {
+				return finishStickCopyFailed()
+			}
 		}
 		res.Step = "wait-agent"
 		res.Code = "agent-not-up"
-		logHint := "To get help, save the diagnostic logs (the Save logs button in Speaker Settings, or the link at the bottom of the app window) and attach them to the GitHub issue or email them to str@sichtbar-app.de."
 		if slowBootModel(model) {
 			res.Message = "The speaker is still starting. On Portable / BCO models this can take 2 to 3 minutes. " +
 				"Keep the STR stick plugged in, power-cycle the speaker (unplug for 10 seconds, plug back in with the stick in place), " +
@@ -346,7 +407,6 @@ func buildStickProbeCmd(paths []string) string {
 // root SSH) and a real embedded agent (release build, not a dev stub).
 func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	res := InstallResult{Step: "repair-ssh"}
-	const stage = "/mnt/nv/streborn-install"
 
 	if len(agentbin.Bytes()) == 0 {
 		res.Code = "no-embedded-agent"
@@ -372,28 +432,28 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 		return res, err
 	}
 
+	// Stage the files in the box's RAM (tmpfs) first, not straight onto NAND.
+	// Two field-driven reasons: (1) the ~10 MB agent binary travels over SSH on
+	// what is often weak Wi-Fi, and a stall or truncation mid-stream then only
+	// dirties a throwaway RAM copy we byte-verify before trusting it, instead of
+	// leaving a half-written file on flash; (2) install.sh's NAND-cache commit
+	// (the Layer-1 seed) is then a fast LOCAL cp from RAM, not a flash write held
+	// open at network pace. install.sh runs immediately after, so the staged
+	// files never need to survive a reboot, which is why tmpfs is safe. Fall back
+	// to a NAND staging dir if RAM staging fails (e.g. /tmp too small on a tight
+	// box).
 	res.Step = "repair-stage"
-	if out, err := boxSSHOutput(host, "rm -rf "+stage+" && mkdir -p "+stage+"/bin", 20*time.Second); err != nil {
-		res.Code = "repair-stage-failed"
-		res.Message = "could not create NAND staging dir: " + classifySSHError(out, err)
-		a.logger.Warn("repair_ssh: mkdir failed", "host", host, "err", err, "out", truncForLog(out, 1000))
-		return res, nil
-	}
-
-	// Push each file via SSH stdin (same upload path the OTA uses). The agent
-	// binary (~10 MB) is the large one; everything else is a few KB.
-	for name, data := range files {
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			_, _ = boxSSHOutput(host, "mkdir -p "+stage+"/"+name[:i], 10*time.Second)
-		}
-		if out, err := boxSSHUploadStdin(host, "cat > "+stage+"/"+name, bytes.NewReader(data), 120*time.Second); err != nil {
+	stage := "/tmp/streborn-install"
+	if serr := a.stageRepairFiles(host, stage, files); serr != nil {
+		a.logger.Warn("repair_ssh: RAM staging failed, falling back to NAND stage", "host", host, "err", serr)
+		stage = "/mnt/nv/streborn-install"
+		if serr2 := a.stageRepairFiles(host, stage, files); serr2 != nil {
 			res.Code = "repair-upload-failed"
-			res.Message = "could not upload " + name + " to NAND: " + classifySSHError(out, err)
-			a.logger.Warn("repair_ssh: upload failed", "host", host, "file", name, "err", err)
+			res.Message = "could not copy STR to the speaker: " + serr2.Error()
+			a.logger.Warn("repair_ssh: NAND staging also failed", "host", host, "err", serr2)
 			return res, nil
 		}
 	}
-	_, _ = boxSSHOutput(host, "chmod +x "+stage+"/install.sh "+stage+"/run.sh "+stage+"/streborn-armv7l 2>/dev/null", 15*time.Second)
 
 	res.Step = "repair-run"
 	out, err := boxSSHOutput(host, "STR_STICK="+stage+" sh "+stage+"/install.sh install 2>&1", installRunBudget(model))
@@ -418,6 +478,49 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	a.logger.Info("repair_ssh: install ran", "host", host, "outBytes", len(out))
 	_ = boxReboot(host)
 	return res, nil
+}
+
+// stageRepairFiles uploads the embedded install file set into stageDir on the
+// box over SSH and verifies every file arrived byte-exact, so a truncated
+// weak-Wi-Fi transfer is caught before install.sh trusts it. The agent binary
+// is the only large file and gets one upload retry, since a transient stall
+// mid-stream is exactly what staging-then-verify is meant to absorb. Returns a
+// human-readable error naming the file and where it failed; nil on success.
+func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) error {
+	if out, err := boxSSHOutput(host, "rm -rf "+stageDir+" && mkdir -p "+stageDir+"/bin", 20*time.Second); err != nil {
+		return fmt.Errorf("could not create staging dir %s: %s", stageDir, classifySSHError(out, err))
+	}
+	for name, data := range files {
+		if i := strings.LastIndex(name, "/"); i >= 0 {
+			_, _ = boxSSHOutput(host, "mkdir -p "+stageDir+"/"+name[:i], 10*time.Second)
+		}
+		dst := stageDir + "/" + name
+		attempts := 1
+		if len(data) > 1<<20 { // only the agent binary; everything else is a few KB
+			attempts = 2
+		}
+		var lastErr error
+		for try := 0; try < attempts; try++ {
+			if out, err := boxSSHUploadStdin(host, "cat > "+dst, bytes.NewReader(data), 120*time.Second); err != nil {
+				lastErr = fmt.Errorf("upload %s failed: %s", name, classifySSHError(out, err))
+				continue
+			}
+			// Byte-count check catches a truncated transfer, the common
+			// weak-Wi-Fi failure mode, without a full checksum the BusyBox on
+			// the box may not carry.
+			got, _ := boxSSHOutput(host, "wc -c < "+dst+" 2>/dev/null", 10*time.Second)
+			if strings.TrimSpace(got) == strconv.Itoa(len(data)) {
+				lastErr = nil
+				break
+			}
+			lastErr = fmt.Errorf("upload %s truncated: speaker received %s of %d bytes", name, strings.TrimSpace(got), len(data))
+		}
+		if lastErr != nil {
+			return lastErr
+		}
+	}
+	_, _ = boxSSHOutput(host, "chmod +x "+stageDir+"/install.sh "+stageDir+"/run.sh "+stageDir+"/streborn-armv7l 2>/dev/null", 15*time.Second)
+	return nil
 }
 
 // slowBootModel reports whether a box model boots slowly enough to need the
@@ -617,6 +720,41 @@ func boxLoad1(host string) (float64, bool) {
 		return 0, false
 	}
 	return v, true
+}
+
+// stickCopyFailureMarkers are the exact run.sh log lines that prove the agent
+// never started because the agent binary could not be copied from the USB stick
+// into the NAND cache: the stick read failed mid-copy and, on a first install,
+// there was no prior NAND cache to fall back to. Either line means a plain
+// reboot will not help (it hits the same unreadable stick), but staging STR's
+// embedded binary onto NAND over SSH will. Kept in lock-step with the strings
+// usb-stick/run.sh logs (sync_stick_to_nand_always and the BIN resolution).
+var stickCopyFailureMarkers = []string{
+	"stick -> NAND cp failed",
+	"neither NAND cache nor stick binary available",
+}
+
+// detectStickCopyFailure reports whether a box log tail shows the stick->NAND
+// binary copy failed, leaving the agent with nothing to run. Pure string match
+// so it is unit-testable without a box.
+func detectStickCopyFailure(logText string) bool {
+	for _, m := range stickCopyFailureMarkers {
+		if strings.Contains(logText, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// agentLogShowsStickCopyFailure pulls the box-side run.sh logs over SSH and
+// reports whether they carry the stick->NAND copy-failure markers. It reads the
+// current boot's tmpfs log AND the previous boot's NAND-persisted copy, because
+// the install reboot may have rotated the failing boot's log into previous.log.
+// Best-effort: an unreadable log returns false so we fall back to the generic
+// path rather than blocking.
+func (a *App) agentLogShowsStickCopyFailure(host string) bool {
+	out, _ := boxSSHOutput(host, "cat /tmp/streborn-agent.log /mnt/nv/streborn/previous.log 2>/dev/null", 12*time.Second)
+	return detectStickCopyFailure(out)
 }
 
 // waitForAgent polls until the STR agent actually answers as STR, or the

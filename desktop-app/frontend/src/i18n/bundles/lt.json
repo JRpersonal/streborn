@@ -422,6 +422,7 @@
   "setup.help.reformatApp": "Iš naujo paruoškite atmintinę čia, pažymėję parinktį Formatuoti. Programa suformatuos ją taip, kad kolonėlė galėtų nuskaityti, ko rankinis didelės atmintinės formatavimas dažnai nepadaro.",
   "setup.help.smallerStick": "Jei atmintinė didelė (32 GB ar daugiau), išbandykite mažesnę (nuo 8 iki 32 GB). Labai didelės FAT32 atmintinės dažnai suformatuotos taip, kad kolonėlė negali jų nuskaityti.",
   "setup.help.differentStick": "Jei vis tiek nepavyksta, atmintinė gali būti sugedusi. Išbandykite kitą USB atmintinę, geriausia žinomo prekės ženklo.",
+  "setup.help.stickCopyFailed": "Garsiakalbis negalėjo nukopijuoti STR programos iš USB atmintinės į savo atmintį (atmintinės skaitymo klaida), todėl paleidimas niekada nebuvo baigtas. Sukurkite atmintinę čia iš naujo, geriausia kitoje USB 2.0 atmintinėje, tada tvirtai įkiškite ją į garsiakalbio USB lizdą prieš įjungdami.",
   "setup.stickLargeFat32": "Tai didelė atmintinė (daugiau nei 32 GB). Didelės atmintinės dažnai suformatuotos taip, kad kolonėlė negali jų nuskaityti. Paruošimo metu ji bus performatuota į suderinamą FAT32; visi atmintinės duomenys bus prarasti.",
   "setup.needsFormat": "reikia formatuoti",
   "setup.stickFsLine": "Atmintinė suformatuota kaip {{fs}}.",

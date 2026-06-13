@@ -422,6 +422,7 @@
   "setup.help.reformatApp": "Belleği burada yeniden hazırla ve Biçimlendir seçeneğini işaretle. Uygulama, hoparlörün okuyabileceği şekilde biçimlendirir; büyük belleklerde elle biçimlendirme bunu çoğu zaman yapmaz.",
   "setup.help.smallerStick": "Bellek büyükse (32 GB veya daha fazla), daha küçük birini dene (8 ila 32 GB). Çok büyük FAT32 bellekler genellikle hoparlörün okuyamayacağı şekilde biçimlendirilir.",
   "setup.help.differentStick": "Hâlâ başarısız olursa bellek arızalı olabilir. Başka bir USB bellek dene, tercihen tanınmış bir marka.",
+  "setup.help.stickCopyFailed": "Hoparlör, STR programını USB bellekten kendi belleğine kopyalayamadı (bir bellek okuma hatası), bu yüzden başlatma hiçbir zaman tamamlanmadı. Belleği burada yeniden oluştur, tercihen başka bir USB 2.0 bellekte, ardından açmadan önce hoparlörün USB bağlantı noktasına sıkıca tak.",
   "setup.stickLargeFat32": "Bu büyük bir bellek (32 GB üzeri). Büyük bellekler genellikle hoparlörün okuyamayacağı şekilde biçimlendirilir. Hazırlık sırasında uyumlu bir FAT32'ye yeniden biçimlendirilecek; bellekteki tüm veriler kaybolur.",
   "setup.needsFormat": "biçimlendirme gerekiyor",
   "setup.stickFsLine": "Bellek {{fs}} olarak biçimlendirilmiş.",

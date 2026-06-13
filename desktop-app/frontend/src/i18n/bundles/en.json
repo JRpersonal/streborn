@@ -735,6 +735,7 @@
   "setup.help.reformatApp": "Re-prepare the stick here with the Format option ticked. The app formats it so the speaker can read it, which a manual format on a large stick often does not.",
   "setup.help.smallerStick": "If the stick is large (32 GB or more), try a smaller one (4 to 32 GB). Very large FAT32 sticks are often formatted in a way the speaker cannot read.",
   "setup.help.differentStick": "If it still fails, the stick may be faulty. Try a different USB stick, ideally a known brand.",
+  "setup.help.stickCopyFailed": "The speaker could not copy the STR program from the USB stick into its own memory (a stick read error), so it never finished starting. Re-create the stick here, ideally on a different USB 2.0 stick, then push it firmly into the speaker's USB port before switching it on.",
   "setup.stickLargeFat32": "This is a large stick (over 32 GB). Large sticks are often formatted in a way the speaker cannot read. It will be reformatted to a compatible FAT32 during preparation; all data on the stick is lost.",
   "setup.installDone": "STR is installed and running on the speaker.",
   "setup.installDoneHint": "Switch to the Listen to music tab to use it. You can now safely remove the stick from the speaker.",
