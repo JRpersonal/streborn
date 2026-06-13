@@ -181,6 +181,77 @@ func TestDetectStickCopyFailureMatchesRunShMarkers(t *testing.T) {
 	}
 }
 
+// TestDetectUSBPowerFailureMatchesVBUSSignature guards the discriminator that
+// keeps STR from blaming the stick for an ST30 USB power dropout. Multiple
+// independent users (13.06.2026) hit install.sh "Input/output error" on the
+// ST30 only, with the SAME stick installing fine on their ST10/ST20: the cause
+// was the speaker's USB port failing to keep VBUS up under read load, visible
+// only in the kernel dmesg. If the matched signatures drift from what musb-hdrc
+// actually logs, the user gets the misleading "stick likely faulty" text again,
+// so this test pins them.
+func TestDetectUSBPowerFailureMatchesVBUSSignature(t *testing.T) {
+	positives := []string{
+		// Exact musb-hdrc VBUS line from the field dmesg.
+		"musb-hdrc musb-hdrc.0.auto: VBUS_ERROR in a_wait_vrise (81, <SessEnd), retry #3",
+		// Enumeration timeouts (-110 = ETIMEDOUT) when VBUS sagged.
+		"usb 1-1: device descriptor read/64, error -110",
+		"usb 1-1: device not accepting address 2, error -110",
+		// Realistic multi-line dmesg tail with the I/O error interleaved.
+		"sda: sda1\nmusb-hdrc musb-hdrc.0.auto: VBUS_ERROR in a_wait_vrise (81, <SessEnd), retry #3\nend_request: I/O error, dev sda, sector 31728\nusb 1-1: USB disconnect, device number 2\n",
+	}
+	for _, p := range positives {
+		if !detectUSBPowerFailure(p) {
+			t.Errorf("detectUSBPowerFailure should match a USB VBUS/enumeration dropout dmesg:\n%q", p)
+		}
+	}
+	negatives := []string{
+		"",
+		// A plain media read error with no power/enumeration signature: this is
+		// the genuine unreadable/oversized-stick case that must stay stick-io-error.
+		"FAT-fs (sda1): unable to read boot sector\nend_request: I/O error, dev sda, sector 0\n",
+		"sd 0:0:0:0: [sda] Attached SCSI removable disk",
+		"# dmesg usb/storage\nusb 1-1: new high-speed USB device number 2 using musb-hdrc",
+	}
+	for _, n := range negatives {
+		if detectUSBPowerFailure(n) {
+			t.Errorf("detectUSBPowerFailure should NOT match a non-power dmesg:\n%q", n)
+		}
+	}
+}
+
+// TestParseDfAvailBytes guards the free-space pre-check that decides whether the
+// SSH repair stages into RAM (tmpfs) or NAND (ubifs). BusyBox df wraps a long
+// device name onto a second line, shifting the column count, so the Available
+// value must be read relative to the END of the last line (3rd from end), not by
+// a fixed index. A regression here would silently make the chooser pick a
+// too-small filesystem (or reject a fine one) before the byte-verify catches it.
+func TestParseDfAvailBytes(t *testing.T) {
+	cases := []struct {
+		name string
+		out  string
+		want int64
+	}{
+		{
+			name: "normal single-line row",
+			out:  "Filesystem           1K-blocks      Used Available Use% Mounted on\ntmpfs                    20480      4096     16384  20% /tmp\n",
+			want: 16384 * 1024,
+		},
+		{
+			name: "wrapped long device name",
+			out:  "Filesystem           1K-blocks      Used Available Use% Mounted on\nubi0:rootfs_data\n                         61440     51200     10240  83% /mnt/nv\n",
+			want: 10240 * 1024,
+		},
+		{name: "empty", out: "", want: 0},
+		{name: "header only", out: "Filesystem 1K-blocks Used Available Use% Mounted on\n", want: 0},
+		{name: "df error", out: "df: /nope: can't find mount point\n", want: 0},
+	}
+	for _, c := range cases {
+		if got := parseDfAvailBytes(c.out); got != c.want {
+			t.Errorf("%s: parseDfAvailBytes = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 // TestBuildStickProbeCmdScansFallbackDirectories guards the broader
 // stick mount probe: scanning /media, /mnt and /run/media for any
 // install.sh fallback. Without the wide scan, a firmware variant

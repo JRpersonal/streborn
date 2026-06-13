@@ -1217,6 +1217,7 @@ body {
 .setup-target-empty { padding: 8px 4px; }
 .setup-target-factory-help { background: #1a1a1a; border: 1px dashed #444; border-radius: 4px; padding: 8px 10px; margin-top: 6px; }
 .setup-target-factory-mac { background: #2f1f0f; border-left: 3px solid #d97706; border-radius: 4px; padding: 8px 10px; margin-top: 6px; color: #e5d4b8; font-size: 12px; }
+.setup-target-st30-warn { background: #2f1f0f; border-left: 3px solid #d97706; border-radius: 4px; padding: 8px 10px; margin-top: 6px; color: #e5d4b8; font-size: 12px; }
 .setup-target-pill { margin-top: 10px; padding: 8px 12px; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; font-size: 13px; }
 .setup-target-pill b { color: #fff; }
 .small { font-size: 12px; }

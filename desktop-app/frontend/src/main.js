@@ -5367,6 +5367,19 @@ $('wlanShowPass').onclick = togglePasswordVisibility;
 // target is preserved unless the chosen speaker actually drops off
 // the LAN (brief mDNS gaps would otherwise yank the choice).
 
+// targetIsST30 reports whether a discovered box is a SoundTouch 30. The ST30's
+// USB port cannot reliably keep a higher-draw stick powered: under read load
+// VBUS collapses and the stick disconnects mid-install (a power error, not a
+// faulty stick, the same stick works on ST10/ST20). We warn in the picker so
+// the user reaches for a low-power stick before preparing one. Matches the
+// human label discovery emits ("SoundTouch 30") and the raw mDNS codes as a
+// fallback.
+function targetIsST30(box) {
+  if (!box) return false;
+  const m = String(box.model || '').toLowerCase().replace(/[\s_]+/g, '');
+  return m === 'soundtouch30' || m === 'st30' || m === '30';
+}
+
 function renderSetupTargetPicker() {
   const body = $('setupTargetBody');
   if (!body) return;
@@ -5464,6 +5477,11 @@ function renderSetupTargetPicker() {
     cards += cardHTML('stock', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindStock')),
       t('setup.targetCardBadgeStock'), 'badge-warn');
+    // ST30 USB power warning, shown as soon as an ST30 is detected (not gated on
+    // selection) so the user picks a low-power stick before preparing one.
+    if (targetIsST30(b)) {
+      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
+    }
     // A box already on Wi-Fi (the common case) just needs STR added via
     // the stick: no reset, the existing Wi-Fi stays. Reassure here so
     // users do not reach for a factory reset they do not need.
@@ -5476,6 +5494,11 @@ function renderSetupTargetPicker() {
     cards += cardHTML('str', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindSTR')),
       t('setup.targetCardBadgeSTR'), 'badge-ok');
+    // The same ST30 USB power caveat applies to an update stick (the box reads
+    // it on boot), so warn here too.
+    if (targetIsST30(b)) {
+      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
+    }
   }
   // Factory-reset card is always shown. Append the macOS hint
   // inline only if we're on macOS, otherwise just the standard help.
@@ -6367,6 +6390,11 @@ const INSTALL_HELP_STEPS = {
   // Usually a large stick force-formatted to FAT32 with a block size the
   // speaker can't read (the 64 GB case), or a faulty stick.
   'stick-io-error': ['reformatApp', 'usbPicky', 'smallerStick', 'differentStick', 'logs'],
+  // USB power dropout, not a faulty stick: the speaker's port could not keep the
+  // stick powered under read load (dmesg VBUS_ERROR / error -110), so it
+  // disconnected mid-install. The same stick installs fine on ST10/ST20, so the
+  // remedy is a low-power stick or a powered hub, NOT "the stick is faulty".
+  'stick-usb-power': ['usbPower', 'lowPowerStick', 'usbHub', 'logs'],
   // The speaker started but could not copy the agent binary off the stick into
   // its memory (run.sh stick->NAND copy hit an I/O error and there was no prior
   // NAND cache), so the agent never came up. A flaky/loose stick; the remedy is
@@ -6550,7 +6578,10 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
     // SSH-copy-to-NAND path can rescue (an unreadable/faulty stick, an install
     // script error, or a timeout) and SSH was reachable enough to even start.
     // It bypasses the stick by staging the embedded files on NAND over SSH.
-    const repairCodes = ['stick-io-error', 'install-error', 'install-timeout', 'install-script-error', 'stick-copy-failed'];
+    // stick-usb-power is included: the SSH repair stages the embedded files onto
+    // NAND over Wi-Fi and never reads the stick, so it sidesteps the dead USB
+    // port entirely, the strongest one-click recovery for the power case.
+    const repairCodes = ['stick-io-error', 'stick-usb-power', 'install-error', 'install-timeout', 'install-script-error', 'stick-copy-failed'];
     const canRepair = result && repairCodes.indexOf(result.code) >= 0;
     const repairBtn = canRepair
       ? `<div class="setup-repair" style="margin-top:12px">`

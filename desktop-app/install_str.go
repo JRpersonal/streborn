@@ -231,22 +231,79 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	if err != nil {
 		res.Code = "install-error"
 		lowOut := strings.ToLower(out)
+		// Gather the box diagnostics now, before classifying: the kernel dmesg in
+		// here is what lets us tell a genuinely unreadable/oversized stick apart
+		// from a USB power dropout (see detectUSBPowerFailure).
+		diag := boxInstallDiag(host)
 		switch {
 		case strings.Contains(err.Error(), "timeout"):
 			res.Code = "install-timeout"
 		case strings.Contains(lowOut, "input/output error"), strings.Contains(lowOut, "i/o error"):
-			// Media-level read failure of install.sh, see classifySSHError.
-			res.Code = "stick-io-error"
+			// Media-level read failure of install.sh. Distinguish the two causes:
+			// a USB power/enumeration dropout (the ST30's port cannot keep VBUS up
+			// for a slightly higher-draw stick, so it disconnects mid-read) vs a
+			// genuinely unreadable or faulty stick. In the power case the SAME stick
+			// installs fine on ST10/ST20, so blaming the stick is misleading; the
+			// dmesg VBUS_ERROR / error -110 signature is the discriminator
+			// (multiple independent ST30 users, 13.06.2026).
+			if detectUSBPowerFailure(diag) {
+				res.Code = "stick-usb-power"
+			} else {
+				res.Code = "stick-io-error"
+			}
 		}
 		hint := classifySSHError(out, err)
+		if res.Code == "stick-usb-power" {
+			hint = usbPowerHint
+		}
 		res.Message = "install.sh execution failed: " + hint
-		diag := boxInstallDiag(host)
 		// The rich diagnostics must also reach str.log, not only res.Log:
 		// a remote user's str.log is often all we get, and without this it
 		// showed just the one-line hint (no kernel/stick/dmesg evidence).
 		a.logger.Warn("install_str: install.sh execution failed",
 			"host", host, "model", model, "err", err, "code", res.Code,
 			"hint", hint, "installOutput", truncForLog(out, 4000), "boxDiag", truncForLog(diag, 8000))
+
+		// The stick could not be read for install.sh, but our SSH session runs
+		// over Wi-Fi, independent of the stick's USB power: we already have
+		// "ssh ok" by this point. So instead of sending the user off to find a
+		// different stick or a powered hub, bypass the stick automatically, the
+		// exact reason RepairInstallViaSSH exists: it stages STR's embedded files
+		// onto NAND over SSH and installs from there, never touching the stick.
+		// Applied up front for any media read failure, whether a USB power dropout
+		// (ST30 VBUS) or a genuinely unreadable stick. The classified
+		// power/faulty-stick message stays as the fallback for when even the
+		// bypass cannot complete (SSH dropped, or a dev build with no embedded
+		// binary). Mirrors the post-reboot auto-repair in the wait-agent step.
+		if (res.Code == "stick-usb-power" || res.Code == "stick-io-error") &&
+			len(agentbin.Bytes()) > 0 && tcpReachable(host, 22, 4*time.Second) {
+			a.logger.Info("install_str: media read failed but SSH up, auto NAND-install over SSH (bypassing the stick)",
+				"host", host, "code", res.Code)
+			res.Step = "stick-copy-repair"
+			rr, _ := a.RepairInstallViaSSH(host, model)
+			if rr.OK {
+				if a.waitForAgent(host, model) == nil {
+					res.Step = "done"
+					res.OK = true
+					res.Message = "The USB stick could not be read during install, so STR was installed directly over the network instead. The agent is up on port 8888."
+					return res, nil
+				}
+				// Installed over the network (stick bypassed); the agent just has
+				// not bound :8888 yet. Do NOT tell the user to swap sticks, this is
+				// now a plain slow boot.
+				a.logger.Warn("install_str: NAND-install over network ran but agent not up yet", "host", host)
+				res.Step = "wait-agent"
+				res.Code = "agent-not-up"
+				res.Message = "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute." + fwNote
+				res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diag
+				return res, nil
+			}
+			// Bypass itself could not complete: keep the classified cause and the
+			// manual Repair-over-SSH offer, and attach the repair output.
+			res.Log = res.Log + "\n\n--- SSH NAND-install repair ---\n" + rr.Message + "\n" + rr.Log
+			a.logger.Warn("install_str: auto NAND-install over SSH did not complete", "host", host, "repairMsg", rr.Message)
+		}
+
 		res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + diag
 		// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
 		return res, nil
@@ -433,26 +490,32 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	}
 
 	// Stage the files in the box's RAM (tmpfs) first, not straight onto NAND.
-	// Two field-driven reasons: (1) the ~10 MB agent binary travels over SSH on
+	// Two field-driven reasons: (1) the ~11 MB agent binary travels over SSH on
 	// what is often weak Wi-Fi, and a stall or truncation mid-stream then only
 	// dirties a throwaway RAM copy we byte-verify before trusting it, instead of
 	// leaving a half-written file on flash; (2) install.sh's NAND-cache commit
 	// (the Layer-1 seed) is then a fast LOCAL cp from RAM, not a flash write held
 	// open at network pace. install.sh runs immediately after, so the staged
-	// files never need to survive a reboot, which is why tmpfs is safe. Fall back
-	// to a NAND staging dir if RAM staging fails (e.g. /tmp too small on a tight
-	// box).
+	// files never need to survive a reboot, which is why tmpfs is safe.
+	//
+	// Both targets are tight on these boxes (a small tmpfs vs a nearly-full NAND),
+	// so before committing the upload we df each candidate and prefer one that
+	// actually has room, instead of filling a too-small filesystem and only
+	// learning that from the post-write byte-verify. NAND is ubifs, which
+	// transparently compresses, so its requirement is discounted (see
+	// stageRepairFilesBestEffort). A candidate df says is too small is still tried
+	// last rather than skipped (fallback-first).
 	res.Step = "repair-stage"
-	stage := "/tmp/streborn-install"
-	if serr := a.stageRepairFiles(host, stage, files); serr != nil {
-		a.logger.Warn("repair_ssh: RAM staging failed, falling back to NAND stage", "host", host, "err", serr)
-		stage = "/mnt/nv/streborn-install"
-		if serr2 := a.stageRepairFiles(host, stage, files); serr2 != nil {
-			res.Code = "repair-upload-failed"
-			res.Message = "could not copy STR to the speaker: " + serr2.Error()
-			a.logger.Warn("repair_ssh: NAND staging also failed", "host", host, "err", serr2)
-			return res, nil
-		}
+	var rawNeed int64
+	for _, data := range files {
+		rawNeed += int64(len(data))
+	}
+	stage, serr := a.stageRepairFilesBestEffort(host, rawNeed, files)
+	if serr != nil {
+		res.Code = "repair-upload-failed"
+		res.Message = "could not copy STR to the speaker: " + serr.Error()
+		a.logger.Warn("repair_ssh: staging failed on all targets", "host", host, "err", serr)
+		return res, nil
 	}
 
 	res.Step = "repair-run"
@@ -521,6 +584,95 @@ func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) e
 	}
 	_, _ = boxSSHOutput(host, "chmod +x "+stageDir+"/install.sh "+stageDir+"/run.sh "+stageDir+"/streborn-armv7l 2>/dev/null", 15*time.Second)
 	return nil
+}
+
+// repairStageCandidates are the on-box staging targets for the SSH repair, in
+// preference order: RAM (tmpfs) first, NAND (ubifs) as the fallback. compress is
+// the fraction of the raw upload size we expect to actually need on that
+// filesystem. tmpfs is 1.0 (RAM stores data verbatim). /mnt/nv is discounted
+// because it is ubifs, which transparently compresses on write, and on top of
+// that ubifs df deliberately UNDER-reports free space (its budgeting assumes
+// worst-case incompressible data). A stripped ARM ELF plus a few text scripts
+// compress comfortably, so 0.6 is a safe discount that stops us needlessly
+// rejecting NAND when it really has room. The post-write byte-verify in
+// stageRepairFiles is the backstop if the estimate is too optimistic.
+var repairStageCandidates = []struct {
+	base     string
+	compress float64
+}{
+	{"/tmp", 1.0},
+	{"/mnt/nv", 0.6},
+}
+
+// stageRepairFilesBestEffort stages files into the first usable on-box directory,
+// preferring RAM over NAND. For each candidate it checks free space with df
+// (rawNeed scaled by the candidate's compression factor, plus a small headroom):
+// candidates with enough room are tried first, the rest last (fallback-first, so
+// an unreadable df never blocks an attempt). The first directory that stages and
+// byte-verifies wins and is returned. Errors only if every candidate failed.
+func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[string][]byte) (string, error) {
+	var fits, tooSmall []string
+	for _, c := range repairStageCandidates {
+		need := int64(float64(rawNeed)*c.compress) + (2 << 20) // ~2 MB headroom for the dir + fs overhead
+		free := freeBytesAtPath(host, c.base)
+		a.logger.Info("repair_ssh: staging candidate space",
+			"host", host, "dir", c.base, "freeBytes", free, "needBytes", need, "rawNeed", rawNeed)
+		if free >= need {
+			fits = append(fits, c.base)
+		} else {
+			tooSmall = append(tooSmall, c.base)
+		}
+	}
+	var lastErr error
+	for _, base := range append(fits, tooSmall...) {
+		stage := base + "/streborn-install"
+		if err := a.stageRepairFiles(host, stage, files); err != nil {
+			lastErr = err
+			a.logger.Warn("repair_ssh: staging attempt failed", "host", host, "dir", stage, "err", err)
+			continue
+		}
+		a.logger.Info("repair_ssh: staged install files", "host", host, "dir", stage)
+		return stage, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no staging directory available on the speaker")
+	}
+	return "", lastErr
+}
+
+// freeBytesAtPath returns the free space in bytes on the filesystem backing path
+// on the box via BusyBox `df -k`, or 0 if it cannot be read or parsed (treated as
+// "unknown, do not assume room"). Parsing lives in parseDfAvailBytes so it is
+// unit-testable without a box.
+func freeBytesAtPath(host, path string) int64 {
+	out, err := boxSSHOutput(host, "df -k "+path+" 2>/dev/null", 8*time.Second)
+	if err != nil {
+		return 0
+	}
+	return parseDfAvailBytes(out)
+}
+
+// parseDfAvailBytes pulls the Available column (returned in bytes) out of
+// `df -k` output. It reads Available as the 3rd field from the end of the last
+// line, which is correct both for the normal one-line row
+// ("fs blocks used avail use% mount") and for BusyBox's wrapped form, where a
+// long device name pushes the numbers onto the next line
+// ("blocks used avail use% mount"): in both, Available is followed by exactly
+// Use% and the mountpoint. Returns 0 on any parse failure.
+func parseDfAvailBytes(out string) int64 {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) < 2 {
+		return 0 // header only, or nothing
+	}
+	fields := strings.Fields(lines[len(lines)-1])
+	if len(fields) < 5 {
+		return 0
+	}
+	availKB, err := strconv.ParseInt(fields[len(fields)-3], 10, 64)
+	if err != nil || availKB < 0 {
+		return 0
+	}
+	return availKB * 1024
 }
 
 // slowBootModel reports whether a box model boots slowly enough to need the
@@ -732,6 +884,41 @@ func boxLoad1(host string) (float64, bool) {
 var stickCopyFailureMarkers = []string{
 	"stick -> NAND cp failed",
 	"neither NAND cache nor stick binary available",
+}
+
+// usbPowerHint is the human sentence for the stick-usb-power code: the install
+// I/O error was a USB power dropout, not a faulty stick. Kept here (not in
+// classifySSHError) because that classifier only sees the install.sh output,
+// while the VBUS verdict comes from the kernel dmesg in the box diagnostics. No
+// dashes per the user-facing text convention.
+const usbPowerHint = "the speaker's USB port could not keep the stick powered (a power error, not a faulty stick: the same stick installs fine on other models). Use a small, low-power USB 2.0 stick (4 to 16 GB), or connect the stick through a powered (self-powered) USB hub, then try again."
+
+// usbPowerFailureMarkers are the kernel dmesg signatures that prove an install
+// I/O error was a USB power / enumeration dropout rather than an unreadable or
+// faulty stick: the speaker's USB port could not hold VBUS up under read load,
+// so the stick re-enumerates and disconnects mid-install (error -110 = USB
+// ETIMEDOUT). Seen on the ST30 with mid-draw sticks that install fine on the
+// ST10/ST20 with the SAME stick, so the generic "stick likely faulty" message
+// is wrong for this case. Matched lower-cased.
+var usbPowerFailureMarkers = []string{
+	"vbus_error",
+	"error -110",
+	"device not accepting address",
+	"device descriptor read",
+}
+
+// detectUSBPowerFailure reports whether the box diagnostics (its dmesg tail)
+// carry the USB power / enumeration dropout signature. Only consulted once an
+// I/O error is already established, so a match means "power, not media". Pure
+// lower-cased substring match so it is unit-testable without a box.
+func detectUSBPowerFailure(diag string) bool {
+	low := strings.ToLower(diag)
+	for _, m := range usbPowerFailureMarkers {
+		if strings.Contains(low, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // detectStickCopyFailure reports whether a box log tail shows the stick->NAND
