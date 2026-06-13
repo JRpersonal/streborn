@@ -570,13 +570,27 @@ func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) e
 			}
 			// Byte-count check catches a truncated transfer, the common
 			// weak-Wi-Fi failure mode, without a full checksum the BusyBox on
-			// the box may not carry.
+			// the box may not carry. Parse the number out of the SSH output
+			// instead of string-matching the whole blob: OpenSSH folds its
+			// "Warning: Permanently added ... to the list of known hosts."
+			// banner (local stderr, forced every connect by
+			// UserKnownHostsFile=/dev/null) in ahead of wc's number via
+			// CombinedOutput, and an exact-match compare then read a
+			// byte-perfect upload as "truncated" and falsely failed the whole
+			// SSH NAND-install fallback for ST30 stick-power users (13.06).
+			// LogLevel=ERROR now suppresses that banner at the source,
+			// but parsing the count keeps the check correct against any
+			// residual stderr noise regardless.
 			got, _ := boxSSHOutput(host, "wc -c < "+dst+" 2>/dev/null", 10*time.Second)
-			if strings.TrimSpace(got) == strconv.Itoa(len(data)) {
+			if n, ok := lastIntField(got); ok && n == int64(len(data)) {
 				lastErr = nil
 				break
 			}
-			lastErr = fmt.Errorf("upload %s truncated: speaker received %s of %d bytes", name, strings.TrimSpace(got), len(data))
+			recv := "no byte count"
+			if n, ok := lastIntField(got); ok {
+				recv = strconv.FormatInt(n, 10)
+			}
+			lastErr = fmt.Errorf("upload %s truncated: speaker received %s of %d bytes", name, recv, len(data))
 		}
 		if lastErr != nil {
 			return lastErr
@@ -584,6 +598,32 @@ func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) e
 	}
 	_, _ = boxSSHOutput(host, "chmod +x "+stageDir+"/install.sh "+stageDir+"/run.sh "+stageDir+"/streborn-armv7l 2>/dev/null", 15*time.Second)
 	return nil
+}
+
+// lastIntField returns the LAST whitespace-separated token in out that parses as
+// a non-negative integer. The box prints exactly one integer for the commands
+// that use this (`wc -c` for the upload byte-count verify, `grep -c` for the CPU
+// core count), so the last such token is that number even when local SSH noise
+// is folded in ahead of it by CombinedOutput: with UserKnownHostsFile=/dev/null
+// OpenSSH prints "Warning: Permanently added '<host>' (<key>) to the list of
+// known hosts." on stderr at connect time, which lands before the remote stdout.
+// Scanning for the last integer (rather than string-matching the whole blob or
+// trusting a fixed field index) keeps these checks correct against that banner
+// and any other pre-stdout noise; the banner's own tokens never parse as
+// integers (the host is quoted and dotted), so they are ignored regardless of
+// ordering. Returns (0, false) when no integer token is present, e.g. the remote
+// command produced nothing (a missing file, so the redirect failed), which
+// callers treat as "unreadable" / a failed transfer.
+func lastIntField(out string) (int64, bool) {
+	var n int64
+	var ok bool
+	for _, f := range strings.Fields(out) {
+		if v, err := strconv.ParseInt(f, 10, 64); err == nil && v >= 0 {
+			n = v
+			ok = true
+		}
+	}
+	return n, ok
 }
 
 // repairStageCandidates are the on-box staging targets for the SSH repair, in
@@ -845,12 +885,17 @@ func boxInstallDiag(host string) string {
 
 // boxCoreCount reads the CPU count from /proc/cpuinfo so the load threshold can
 // be scaled per core. Defaults to 1 on any read error (the SoundTouch SoCs are
-// single- or dual-core, so 1 is the safe conservative floor).
+// single- or dual-core, so 1 is the safe conservative floor). grep -c prints a
+// single integer, parsed with the banner-tolerant lastIntField rather than
+// Atoi(TrimSpace(out)): the latter chokes on the multi-line blob when the
+// known_hosts warning is folded in by CombinedOutput, which silently dropped
+// every box to the 1-core floor (an over-strict settle threshold) before
+// LogLevel=ERROR suppressed the banner.
 func boxCoreCount(host string) int {
 	out, err := boxSSHOutput(host, "grep -c ^processor /proc/cpuinfo", 8*time.Second)
 	if err == nil {
-		if n, e := strconv.Atoi(strings.TrimSpace(out)); e == nil && n > 0 {
-			return n
+		if n, ok := lastIntField(out); ok && n > 0 {
+			return int(n)
 		}
 	}
 	return 1
@@ -863,15 +908,36 @@ func boxLoad1(host string) (float64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	fields := strings.Fields(out)
-	if len(fields) < 1 {
-		return 0, false
+	return parseLoadAvg(out)
+}
+
+// parseLoadAvg extracts the 1-minute load average from `cat /proc/loadavg`
+// output. /proc/loadavg is a single stdout line whose first field is the 1-min
+// average ("0.42 0.31 0.20 1/80 1234"), so this reads the first field of the
+// LAST non-empty line: any local SSH noise CombinedOutput folds in (the
+// "Warning: Permanently added ... to the list of known hosts." banner forced by
+// UserKnownHostsFile=/dev/null) lands on an earlier line and is skipped.
+// Returns (0, false) when the last non-empty line's first field is not a
+// non-negative float, e.g. /proc/loadavg was unreadable so only the banner
+// remains. The banner-tolerance matters: a (0, false) here makes waitForBoxLoad
+// skip the load-settle gate entirely (the #119 ST30 install-timeout mitigation),
+// so before LogLevel=ERROR the banner silently disabled that gate on every box.
+// LogLevel=ERROR suppresses the banner at the source now; parsing defensively
+// keeps the gate working if it ever reappears, matching lastIntField.
+func parseLoadAvg(out string) (float64, bool) {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		v, err := strconv.ParseFloat(strings.Fields(line)[0], 64)
+		if err != nil || v < 0 {
+			return 0, false
+		}
+		return v, true
 	}
-	v, err := strconv.ParseFloat(fields[0], 64)
-	if err != nil {
-		return 0, false
-	}
-	return v, true
+	return 0, false
 }
 
 // stickCopyFailureMarkers are the exact run.sh log lines that prove the agent
