@@ -67,10 +67,15 @@ type Station struct {
 	State       string `json:"state"`
 	Codec       string `json:"codec"`
 	Bitrate     int    `json:"bitrate"`
-	Votes       int    `json:"votes"`
-	ClickCount  int    `json:"clickcount"`
-	ClickTrend  int    `json:"clicktrend"`
-	LastCheckOK int    `json:"lastcheckok"`
+	// Hls is radio-browser's flag for HLS (.m3u8) stations (1 = HLS). STR
+	// converts HLS playlists on the fly (v0.7.21), so the desktop's
+	// Bose-compatible filter treats these as playable; without the field the
+	// frontend could not tell HLS stations apart and hid them (#124).
+	Hls         int `json:"hls"`
+	Votes       int `json:"votes"`
+	ClickCount  int `json:"clickcount"`
+	ClickTrend  int `json:"clicktrend"`
+	LastCheckOK int `json:"lastcheckok"`
 }
 
 // Tag ist ein Genre Tag mit Anzahl der Stations.

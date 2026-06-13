@@ -465,6 +465,7 @@ export namespace radiobrowser {
 	    state: string;
 	    codec: string;
 	    bitrate: number;
+	    hls: number;
 	    votes: number;
 	    clickcount: number;
 	    clicktrend: number;
@@ -489,6 +490,7 @@ export namespace radiobrowser {
 	        this.state = source["state"];
 	        this.codec = source["codec"];
 	        this.bitrate = source["bitrate"];
+	        this.hls = source["hls"];
 	        this.votes = source["votes"];
 	        this.clickcount = source["clickcount"];
 	        this.clicktrend = source["clicktrend"];
