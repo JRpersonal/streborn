@@ -49,6 +49,10 @@ import {
   SetBoxLanguage,
   GetAirplayOpt,
   SetAirplayOpt,
+  GetResumeOnPowerOn,
+  SetResumeOnPowerOn,
+  GetAppFlag,
+  SetAppFlag,
   GetWebhooks,
   SetWebhooks,
   SaveWebhookConfig,
@@ -3080,6 +3084,13 @@ async function refreshStatus() {
     // error. The speaker's ContentItems run through the stream
     // proxy, so accept the slot match from /stream/<slot> too.
     if (ps === 'PLAY_STATE') {
+      // First successful radio playback is the strongest moment to invite the
+      // user to the community world map (their box is alive again). Radio only
+      // (proxy /stream/, not Spotify/AUX/Bluetooth), fired once ever inside
+      // maybeInviteWorldMap.
+      if (/\/stream\//.test(loc) && !/\/spotify\//.test(loc)) {
+        maybeInviteWorldMap();
+      }
       const slotFromProxy = activeSlotFromLocation(loc);
       const ap = state.presets.find(p =>
         p.stream_url === loc || (slotFromProxy !== null && p.slot === slotFromProxy)
@@ -3122,6 +3133,71 @@ async function refreshStatus() {
     // looked like the display flickering to "---" and back even though
     // nothing actually changed. The next successful poll refreshes it.
   }
+}
+
+// ---------- Community world map invite ----------
+//
+// After the first successful radio playback, invite the user once to drop a pin
+// on the st-reborn.de community world map ("your box is alive again"), the moment
+// success feels real. Non-blocking: a dismissible banner with a button that opens
+// the localized map URL in the EXTERNAL browser (not a webview, so the site's
+// coarse-location + anti-spam work in a normal session). Fires once ever
+// (localStorage flag). The app sends NO data and NO location: the website handles
+// the pin (the user taps a coarse region) and its own anti-spam token.
+const WORLD_MAP_FLAG = 'str.worldMapInvited';
+// Session re-entry guard: the status poll fires every few seconds, so the async
+// flag check below must not let a second poll open a second invite before the
+// first has persisted the flag. Set synchronously on the first call.
+let worldMapInviteHandled = false;
+
+// worldMapURL builds the localized community-map deep link. English is the site
+// root; the other locales live under /<locale>/. ?share opens the "set pin" form
+// and scrolls to the map; src=app lets the site optionally attribute app pins
+// (harmless if unused). Unknown params are ignored by the site.
+function worldMapURL() {
+  let loc = 'en';
+  try { loc = getLocale() || 'en'; } catch { /* default en */ }
+  const prefix = loc === 'en' ? '' : '/' + loc;
+  return 'https://st-reborn.de' + prefix + '/?share&src=app#community';
+}
+
+async function maybeInviteWorldMap() {
+  if (worldMapInviteHandled) return; // synchronous guard against status-poll re-entry
+  worldMapInviteHandled = true;
+  // Durable guard first: a persistent Go-side flag in the OS config dir survives
+  // app version updates and reinstalls, unlike webview localStorage, so this
+  // one-time invite never reappears later (which would be annoying). localStorage
+  // is a fast secondary check. Either being set suppresses the invite.
+  let already = false;
+  try { already = await GetAppFlag(WORLD_MAP_FLAG); } catch { /* fall back to localStorage */ }
+  if (!already) {
+    try { already = localStorage.getItem(WORLD_MAP_FLAG) === '1'; } catch {}
+  }
+  if (already) return;
+  // Persist to BOTH stores before showing, so a crash right after still suppresses it.
+  try { localStorage.setItem(WORLD_MAP_FLAG, '1'); } catch {}
+  try { await SetAppFlag(WORLD_MAP_FLAG); } catch {}
+  showWorldMapInvite();
+}
+
+function showWorldMapInvite() {
+  if (document.getElementById('worldMapInvite')) return;
+  const el = document.createElement('div');
+  el.id = 'worldMapInvite';
+  el.className = 'worldmap-invite';
+  el.innerHTML =
+    `<span class="wmi-text">${escapeHtml(t('worldMap.inviteText'))}</span>` +
+    `<button class="btn btn-mini btn-primary" id="wmiShare">${escapeHtml(t('worldMap.inviteBtn'))}</button>` +
+    `<button class="wmi-close" id="wmiClose" aria-label="close">&times;</button>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
+  const shareBtn = el.querySelector('#wmiShare');
+  if (shareBtn) shareBtn.onclick = () => { try { BrowserOpenURL(worldMapURL()); } catch {} close(); };
+  const closeBtn = el.querySelector('#wmiClose');
+  if (closeBtn) closeBtn.onclick = close;
+  // Auto-dismiss so it never lingers; the once-ever flag means it will not return.
+  setTimeout(close, 15000);
 }
 
 // ---------- Search ----------
@@ -4122,6 +4198,15 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.clockHelp'))}</small>
     </div>
 
+    <div class="settings-section" id="resumeOnPowerSection">
+      <h3>${escapeHtml(t('settingsView.resumeOnPowerHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="resumeOnPowerOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="resumeOnPowerOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.resumeOnPowerHelp'))}</small>
+    </div>
+
     <div class="settings-section hidden" id="airplayOptSection">
       <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
       <div class="setting-row">
@@ -4659,6 +4744,35 @@ function renderBoxSettings(s, box) {
   // Send the 12/24h format to the box immediately on dropdown change,
   // keeping the current on/off state (no need to click "On" again).
   if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
+
+  // Resume last station on power-on (all models, default on). GET reports the
+  // current state; toggling applies live on the box (no reboot). The next real
+  // power press either brings the last station back, like Bose did, or stays
+  // silent. A self-wake (zone/stereo pair) never resumes regardless.
+  const ropOn = $('resumeOnPowerOn');
+  const ropOff = $('resumeOnPowerOff');
+  const paintResumeOnPower = (enabled) => {
+    if (ropOn) ropOn.classList.toggle('active', enabled === true);
+    if (ropOff) ropOff.classList.toggle('active', enabled === false);
+  };
+  if (ropOn && ropOff) {
+    (async () => {
+      try {
+        const r = await GetResumeOnPowerOn(box.host, box.port);
+        // Default on: treat anything other than an explicit false as enabled.
+        paintResumeOnPower(r && r.enabled === false ? false : true);
+      } catch { paintResumeOnPower(true); }
+    })();
+    const setROP = async (enabled) => {
+      paintResumeOnPower(enabled);
+      try {
+        await SetResumeOnPowerOn(box.host, box.port, enabled);
+        showToast(t('settingsView.resumeOnPowerSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    ropOn.onclick = () => setROP(true);
+    ropOff.onclick = () => setROP(false);
+  }
 
   // AirPlay optimization (BCO speakers only). GET reports supported +
   // current state; the section stays hidden on non-BCO models. Toggling
@@ -5367,6 +5481,19 @@ $('wlanShowPass').onclick = togglePasswordVisibility;
 // target is preserved unless the chosen speaker actually drops off
 // the LAN (brief mDNS gaps would otherwise yank the choice).
 
+// targetIsST30 reports whether a discovered box is a SoundTouch 30. The ST30's
+// USB port cannot reliably keep a higher-draw stick powered: under read load
+// VBUS collapses and the stick disconnects mid-install (a power error, not a
+// faulty stick, the same stick works on ST10/ST20). We warn in the picker so
+// the user reaches for a low-power stick before preparing one. Matches the
+// human label discovery emits ("SoundTouch 30") and the raw mDNS codes as a
+// fallback.
+function targetIsST30(box) {
+  if (!box) return false;
+  const m = String(box.model || '').toLowerCase().replace(/[\s_]+/g, '');
+  return m === 'soundtouch30' || m === 'st30' || m === '30';
+}
+
 function renderSetupTargetPicker() {
   const body = $('setupTargetBody');
   if (!body) return;
@@ -5464,6 +5591,11 @@ function renderSetupTargetPicker() {
     cards += cardHTML('stock', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindStock')),
       t('setup.targetCardBadgeStock'), 'badge-warn');
+    // ST30 USB power warning, shown as soon as an ST30 is detected (not gated on
+    // selection) so the user picks a low-power stick before preparing one.
+    if (targetIsST30(b)) {
+      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
+    }
     // A box already on Wi-Fi (the common case) just needs STR added via
     // the stick: no reset, the existing Wi-Fi stays. Reassure here so
     // users do not reach for a factory reset they do not need.
@@ -5476,6 +5608,11 @@ function renderSetupTargetPicker() {
     cards += cardHTML('str', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindSTR')),
       t('setup.targetCardBadgeSTR'), 'badge-ok');
+    // The same ST30 USB power caveat applies to an update stick (the box reads
+    // it on boot), so warn here too.
+    if (targetIsST30(b)) {
+      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
+    }
   }
   // Factory-reset card is always shown. Append the macOS hint
   // inline only if we're on macOS, otherwise just the standard help.
@@ -6367,6 +6504,11 @@ const INSTALL_HELP_STEPS = {
   // Usually a large stick force-formatted to FAT32 with a block size the
   // speaker can't read (the 64 GB case), or a faulty stick.
   'stick-io-error': ['reformatApp', 'usbPicky', 'smallerStick', 'differentStick', 'logs'],
+  // USB power dropout, not a faulty stick: the speaker's port could not keep the
+  // stick powered under read load (dmesg VBUS_ERROR / error -110), so it
+  // disconnected mid-install. The same stick installs fine on ST10/ST20, so the
+  // remedy is a low-power stick or a powered hub, NOT "the stick is faulty".
+  'stick-usb-power': ['usbPower', 'lowPowerStick', 'usbHub', 'logs'],
   // The speaker started but could not copy the agent binary off the stick into
   // its memory (run.sh stick->NAND copy hit an I/O error and there was no prior
   // NAND cache), so the agent never came up. A flaky/loose stick; the remedy is
@@ -6550,7 +6692,10 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
     // SSH-copy-to-NAND path can rescue (an unreadable/faulty stick, an install
     // script error, or a timeout) and SSH was reachable enough to even start.
     // It bypasses the stick by staging the embedded files on NAND over SSH.
-    const repairCodes = ['stick-io-error', 'install-error', 'install-timeout', 'install-script-error', 'stick-copy-failed'];
+    // stick-usb-power is included: the SSH repair stages the embedded files onto
+    // NAND over Wi-Fi and never reads the stick, so it sidesteps the dead USB
+    // port entirely, the strongest one-click recovery for the power case.
+    const repairCodes = ['stick-io-error', 'stick-usb-power', 'install-error', 'install-timeout', 'install-script-error', 'stick-copy-failed'];
     const canRepair = result && repairCodes.indexOf(result.code) >= 0;
     const repairBtn = canRepair
       ? `<div class="setup-repair" style="margin-top:12px">`

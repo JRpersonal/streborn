@@ -550,9 +550,10 @@ func parseBrowseResponse(raw []byte) (BrowseResult, error) {
 		mime := ""
 		duration := 0
 		if len(it.Res) > 0 {
-			stream = it.Res[0].Value
-			mime = mimeFromProtocolInfo(it.Res[0].ProtocolInfo)
-			duration = parseHMS(it.Res[0].Duration)
+			r := pickPlayableRes(it.Res)
+			stream = r.Value
+			mime = mimeFromProtocolInfo(r.ProtocolInfo)
+			duration = parseHMS(r.Duration)
 		}
 		out.Items = append(out.Items, Item{
 			ID: it.ID, ParentID: it.ParentID, Title: it.Title,
@@ -562,6 +563,51 @@ func parseBrowseResponse(raw []byte) (BrowseResult, error) {
 		})
 	}
 	return out, nil
+}
+
+// pickPlayableRes chooses the best <res> for a track. DLNA servers, Synology in
+// particular, often expose several res entries per item: the original file AND
+// one or more on-the-fly transcodes, in a server-decided order. STR used to take
+// Res[0] blindly, which on some tracks is a transcoded or non-HTTP entry the
+// Bose renderer cannot consume: it then sat at "stream starting" forever, while
+// the same track played in the Bose app (which picks the original) and other
+// tracks on the same server worked because their original happened to be first
+// (#139). We score each res and prefer a directly-playable HTTP audio res that
+// is the original rather than a transcode (DLNA.ORG_CI=0 or no CI flag),
+// preserving server order among equals, and fall back to Res[0] so a server that
+// lists only an unusual single res is never made worse.
+func pickPlayableRes(rs []didlR) didlR {
+	if len(rs) == 0 {
+		return didlR{}
+	}
+	best, bestScore := -1, -1
+	for i, r := range rs {
+		if strings.TrimSpace(r.Value) == "" {
+			continue
+		}
+		pi := strings.ToLower(r.ProtocolInfo)
+		score := 0
+		// Must be fetchable over HTTP by the speaker.
+		if strings.HasPrefix(pi, "http-get:") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Value)), "http") {
+			score += 4
+		}
+		// An actual audio stream (skips thumbnail/subtitle res some servers list).
+		if strings.Contains(pi, ":audio/") {
+			score += 2
+		}
+		// Prefer the original file over an on-the-fly transcode (DLNA.ORG_CI=1),
+		// matching what the Bose app picks.
+		if !strings.Contains(pi, "dlna.org_ci=1") {
+			score++
+		}
+		if score > bestScore { // first max wins -> stable server order among equals
+			best, bestScore = i, score
+		}
+	}
+	if best < 0 {
+		return rs[0]
+	}
+	return rs[best]
 }
 
 func mimeFromProtocolInfo(pi string) string {

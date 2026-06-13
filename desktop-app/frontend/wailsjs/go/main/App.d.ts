@@ -41,6 +41,8 @@ export function FormatStick(arg1:string):Promise<void>;
 
 export function GetAirplayOpt(arg1:string,arg2:number):Promise<Record<string, boolean>>;
 
+export function GetAppFlag(arg1:string):Promise<boolean>;
+
 export function GetBoxFirmware(arg1:string):Promise<main.FirmwareInfo>;
 
 export function GetBoxLanguage(arg1:string):Promise<string>;
@@ -52,6 +54,8 @@ export function GetClockFormat24(arg1:string):Promise<boolean>;
 export function GetLogFilePath():Promise<string>;
 
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
+
+export function GetResumeOnPowerOn(arg1:string,arg2:number):Promise<Record<string, boolean>>;
 
 export function GetWebhooks(arg1:string,arg2:number):Promise<Record<string, any>>;
 
@@ -109,6 +113,8 @@ export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<voi
 
 export function SetAirplayOpt(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
+export function SetAppFlag(arg1:string):Promise<void>;
+
 export function SetAppLocale(arg1:string):Promise<void>;
 
 export function SetBoxBass(arg1:string,arg2:number,arg3:number):Promise<void>;
@@ -122,6 +128,8 @@ export function SetBoxVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
 export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number,arg5:boolean):Promise<void>;
 
 export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number):Promise<void>;
+
+export function SetResumeOnPowerOn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg5:string,arg6:string,arg7:string):Promise<void>;
 

@@ -12,14 +12,15 @@ import (
 // recHandler records which gabbo events the parser dispatched so tests can
 // assert that marker words in user-supplied text no longer mis-fire.
 type recHandler struct {
-	presets   []int
-	userStops int
-	powerKeys int
-	sourceAux int
-	skips     []bool
-	zones     []ZoneState
-	mu        sync.Mutex
-	thumbs    int // guarded by mu (fired from the debounce timer goroutine)
+	presets    []int
+	userStops  int
+	powerKeys  int
+	powerWakes int
+	sourceAux  int
+	skips      []bool
+	zones      []ZoneState
+	mu         sync.Mutex
+	thumbs     int // guarded by mu (fired from the debounce timer goroutine)
 }
 
 func (h *recHandler) thumbCount() int { h.mu.Lock(); defer h.mu.Unlock(); return h.thumbs }
@@ -35,6 +36,7 @@ func (h *recHandler) OnThumbActivity(context.Context)              { h.mu.Lock()
 func (h *recHandler) OnPowerKey(context.Context)                   { h.powerKeys++ }
 func (h *recHandler) OnSourceAux(context.Context)                  { h.sourceAux++ }
 func (h *recHandler) OnZoneChanged(_ context.Context, z ZoneState) { h.zones = append(h.zones, z) }
+func (h *recHandler) OnPowerWake(context.Context)                  { h.powerWakes++ }
 
 func newTestClient(h Handler) *Client {
 	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), "ws://127.0.0.1:8080/", h)
@@ -135,6 +137,44 @@ func TestHandleMessage_ZoneDissolvedParsed(t *testing.T) {
 	c.handleMessage(context.Background(), []byte(`<updates><zoneUpdated><zone /></zoneUpdated></updates>`))
 	if len(h.zones) != 1 || h.zones[0].Master != "" {
 		t.Fatalf("empty zone must fire one ZoneState with empty Master, got %+v", h.zones)
+	}
+}
+
+// TestHandleMessage_PowerWake guards the power-on signal the resume binds to.
+// Verified live on a Portable/taigan (2026-06-13): the box sends NO
+// powerStateUpdated; a real power press surfaces as a DO_NOT_RESUME selection
+// restore. So BOTH a powerStateUpdated (firmware that sends it) AND the
+// DO_NOT_RESUME restore must fire OnPowerWake, while a power-OFF (STANDBY) fires
+// the OnPowerKey webhook and never OnPowerWake. The self-wake vs user-press
+// distinction is made downstream by zone membership, not here, because the two
+// are identical on the wire.
+func TestHandleMessage_PowerWake(t *testing.T) {
+	// powerStateUpdated not STANDBY -> OnPowerWake (for firmware that sends it).
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.handleMessage(context.Background(), []byte(`<updates><powerStateUpdated>POWER_ON</powerStateUpdated></updates>`))
+	if h.powerWakes != 1 || h.powerKeys != 0 {
+		t.Fatalf("powerState ON must fire OnPowerWake once, not OnPowerKey: wakes=%d keys=%d", h.powerWakes, h.powerKeys)
+	}
+
+	// Power-OFF (STANDBY) -> OnPowerKey, never OnPowerWake.
+	h = &recHandler{}
+	c = newTestClient(h)
+	c.handleMessage(context.Background(), []byte(`<updates><powerStateUpdated>STANDBY</powerStateUpdated></updates>`))
+	if h.powerKeys != 1 || h.powerWakes != 0 {
+		t.Fatalf("standby must fire OnPowerKey once, not OnPowerWake: keys=%d wakes=%d", h.powerKeys, h.powerWakes)
+	}
+
+	// The DO_NOT_RESUME selection restore (the only power-on signal on SoundTouch
+	// firmware) must fire OnPowerWake, and must NOT be mistaken for a preset.
+	h = &recHandler{}
+	c = newTestClient(h)
+	c.handleMessage(context.Background(), []byte(
+		`<updates><nowSelectionUpdated><preset id="0">`+
+			`<ContentItem source="INVALID_SOURCE" type="DO_NOT_RESUME"/>`+
+			`</preset></nowSelectionUpdated></updates>`))
+	if h.powerWakes != 1 || len(h.presets) != 0 {
+		t.Fatalf("DO_NOT_RESUME restore must fire OnPowerWake only: wakes=%d presets=%v", h.powerWakes, h.presets)
 	}
 }
 

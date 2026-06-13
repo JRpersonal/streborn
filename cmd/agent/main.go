@@ -392,11 +392,13 @@ func run() error {
 		// auto-re-push, so a deliberate stop is not immediately undone.
 		onUserStop: webuiSrv.NoteUserStop,
 		webhooks:   webhooksStore,
-		// Power-button wake from standby: resume the last stream the box itself
-		// declined to resume (DO_NOT_RESUME).
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back.
 		noteLastPlay: webuiSrv.NoteLastPlay,
+		// Power-on resume (Bose-style power-on preset, default on): a power press
+		// resumes the last station; ResumeLastPlay is gated by the per-box opt-out
+		// and a zone-membership guard so a stereo-pair self-wake never auto-resumes.
+		onPowerWake: webuiSrv.ResumeLastPlay,
 	}
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
@@ -783,6 +785,13 @@ type presetWsHandler struct {
 	// plays straight through the renderer, bypassing the webui's own lastPlay).
 	// Wired to webui.NoteLastPlay. nil-safe.
 	noteLastPlay func(boxURL, title, art, mime string)
+	// onPowerWake is invoked when the box leaves standby on a power press: a
+	// powerStateUpdated on firmware that sends it, or the DO_NOT_RESUME selection
+	// restore on firmware that does not (Portable/taigan). Resumes the last
+	// station, the Bose-style power-on preset. Wired to webui.ResumeLastPlay, which
+	// is gated by the per-box opt-out and a zone-membership self-wake guard.
+	// nil-safe.
+	onPowerWake func()
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
@@ -931,6 +940,20 @@ func (h *presetWsHandler) OnPowerKey(ctx context.Context) {
 		if h.webhooks.FireButton(ctx, "power") {
 			h.logger.Info("power webhook fired")
 		}
+	}
+}
+
+// OnPowerWake resumes the last station when the speaker is switched on, the
+// Bose-style power-on preset (default on, opt-out per box). boxws fires this on a
+// power-on wake: a powerStateUpdated on firmware that sends one, or the
+// DO_NOT_RESUME selection restore on firmware that does not. The actual resume
+// (webui.ResumeLastPlay) is gated by the per-box setting and a zone-membership
+// guard, so a stereo-pair self-wake (which looks identical on the wire) never
+// makes the box start playing on its own.
+func (h *presetWsHandler) OnPowerWake(_ context.Context) {
+	if h.onPowerWake != nil {
+		h.logger.Info("power-on detected, attempting last-station resume")
+		h.onPowerWake()
 	}
 }
 

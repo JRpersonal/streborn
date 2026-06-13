@@ -76,6 +76,16 @@ type Handler interface {
 	// statt den Frame als "unrecognized" zu verwerfen. z.Master == "" heisst die
 	// Zone wurde aufgeloest.
 	OnZoneChanged(ctx context.Context, z ZoneState)
+
+	// OnPowerWake wird gefeuert wenn die Box aus dem Standby kommt: entweder ueber
+	// ein powerStateUpdated (NICHT STANDBY) auf Firmware die das schickt, ODER, auf
+	// SoundTouch-Firmware die KEIN powerStateUpdated sendet (Portable/taigan, live
+	// 2026-06-13 bestaetigt), ueber den DO_NOT_RESUME-Restore der letzten Auswahl
+	// beim Aufwachen. Treiber fuer den optionalen "letzten Sender beim Einschalten
+	// fortsetzen"-Default. Ein Self-Wake (Stereopaar/Zone) sieht identisch aus und
+	// wird downstream ueber die Zonen-Mitgliedschaft abgefangen (webui.boxInZone),
+	// nicht hier.
+	OnPowerWake(ctx context.Context)
 }
 
 // Client haelt die Verbindung zur Box.
@@ -471,14 +481,29 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	case f.PowerState != nil:
 		known = true
 		c.noteExplainedActivity()
-		c.logger.Info("box ws phase: powerState event", "preview", preview(data, 200))
-		// power webhook (beta): fire only on the transition to standby (power
-		// off). STR never powers the box off itself (it only wakes it for a
-		// recall), so a standby event is always a user press; this avoids the
-		// webhook false-firing on STR's own wake. The STANDBY match is bounded to
-		// the powerState element body. Rate-limited per id downstream.
-		if c.handler != nil && strings.Contains(f.PowerState.Inner, "STANDBY") {
-			c.handler.OnPowerKey(ctx)
+		standby := strings.Contains(f.PowerState.Inner, "STANDBY")
+		// INFO with the resolved direction: a real power press surfaces here, while
+		// a self-wake (zone / stereo pair) surfaces instead as the DO_NOT_RESUME
+		// now-selection restore below. This split is the discriminator the power-on
+		// resume relies on, so keep it visible in bundles for the hardware check.
+		c.logger.Info("box ws phase: powerState event", "standby", standby, "preview", preview(data, 200))
+		if c.handler != nil {
+			if standby {
+				// power webhook (beta): fire only on the transition to standby (power
+				// off). STR never powers the box off itself (it only wakes it for a
+				// recall), so a standby event is always a user press; this avoids the
+				// webhook false-firing on STR's own wake. The STANDBY match is bounded
+				// to the powerState element body. Rate-limited per id downstream.
+				c.handler.OnPowerKey(ctx)
+			} else {
+				// A real power-ON: the box left standby. A self-wake does NOT arrive as
+				// a powerState (it comes as the DO_NOT_RESUME restore -> OnSelfWake), so
+				// this is the verified user-wake the optional power-on resume binds to.
+				// The resume is gated by a per-box setting AND suppressed if a
+				// DO_NOT_RESUME was seen in the same window, so it can never resume a
+				// self-wake.
+				c.handler.OnPowerWake(ctx)
+			}
 		}
 	case f.ConnectionState != nil:
 		known = true
@@ -600,7 +625,18 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// what it says. STR now stands down; playback only follows an explicit
 			// user action: a real preset press (slot 1-6 below) or an app recall.
 			if strings.Contains(pe.Inner, "DO_NOT_RESUME") {
-				c.logger.Info("box ws: standby wake / source teardown signalled DO_NOT_RESUME, not resuming")
+				// The box left standby and, unable to play its UPNP selection
+				// itself, restored it as INVALID_SOURCE + DO_NOT_RESUME. On this
+				// firmware that is the ONLY power-on signal: no powerStateUpdated is
+				// ever sent (verified live on a Portable/taigan 2026-06-13). So this
+				// is what drives the optional power-on resume. The box will NOT play
+				// it natively; STR's resume decides, gated by a per-box opt-out and a
+				// zone-membership self-wake guard (see webui.ResumeLastPlay), so a
+				// stereo-pair self-wake never auto-resumes.
+				c.logger.Info("box ws: power-on wake (DO_NOT_RESUME restore), box will not resume natively")
+				if c.handler != nil {
+					c.handler.OnPowerWake(ctx)
+				}
 			} else {
 				// DEBUG: the box emits this id=0 INVALID_SOURCE self-activation after
 				// EVERY hardware preset press (the actual press is logged at INFO

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -2075,6 +2076,112 @@ func (a *App) SetAirplayOpt(host string, port int, enabled bool) error {
 		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 	}
 	return nil
+}
+
+// GetResumeOnPowerOn reads the per-box "resume the last station on power-on"
+// toggle from the STR agent. Returns {"supported":bool,"enabled":bool}; default
+// is enabled. Routed through boxDo so it self-heals across :8888 / :17008 like
+// the other box calls (a BCO speaker reachable only on :17008 still answers).
+// See internal/webui handleResumeOnPowerOn.
+func (a *App) GetResumeOnPowerOn(host string, port int) (map[string]bool, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/resume-on-power-on", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out map[string]bool
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetResumeOnPowerOn flips the power-on resume toggle on the box. The agent
+// persists it to NAND and applies it live (no reboot needed): the next real
+// power-on either resumes the last station or stays silent.
+func (a *App) SetResumeOnPowerOn(host string, port int, enabled bool) error {
+	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/resume-on-power-on", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
+// --- Persistent app flags ---
+//
+// A few one-way app-level flags (e.g. "the user has already been invited to the
+// community world map") must survive app version updates and even a reinstall, so
+// a one-time prompt never reappears and becomes annoying. The frontend's
+// localStorage is NOT reliable for this: a WebView2/WKWebView profile can reset
+// on an update or be cleared. These flags live in a tiny JSON file in the OS
+// user-config dir (Roaming AppData / ~/Library/Application Support / ~/.config),
+// a stable path independent of the app version and the executable location.
+var appFlagsMu sync.Mutex
+
+func appStatePath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "ST Reborn", "app-state.json"), nil
+}
+
+func readAppFlags() map[string]bool {
+	m := map[string]bool{}
+	path, err := appStatePath()
+	if err != nil {
+		return m
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return m
+	}
+	_ = json.Unmarshal(b, &m)
+	return m
+}
+
+// GetAppFlag reports whether a persistent one-way app flag has been set. Used by
+// the frontend to gate once-ever prompts so they survive app updates, unlike
+// localStorage. Unknown/unset flags return false.
+func (a *App) GetAppFlag(name string) bool {
+	appFlagsMu.Lock()
+	defer appFlagsMu.Unlock()
+	return readAppFlags()[name]
+}
+
+// SetAppFlag persists a one-way app flag (sets it true, never unset). Best-effort
+// and atomic (temp file + rename); a write failure is returned but the caller
+// treats it as non-fatal and still falls back to the frontend localStorage guard.
+func (a *App) SetAppFlag(name string) error {
+	appFlagsMu.Lock()
+	defer appFlagsMu.Unlock()
+	m := readAppFlags()
+	if m[name] {
+		return nil
+	}
+	m[name] = true
+	path, err := appStatePath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(m, "", "  ")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // StreamBitrate returns the agent's currently-detected stream bitrate in

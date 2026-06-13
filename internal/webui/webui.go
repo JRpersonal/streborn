@@ -146,6 +146,11 @@ type Server struct {
 	// userStopWindow of this.
 	lastUserStopMu sync.Mutex
 	lastUserStop   time.Time
+
+	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
+	// station when the speaker is switched on" (default on; file absent or "1").
+	// Empty falls back to defaultResumeOnPowerOnPath.
+	resumeOnPowerOnPath string
 }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the
@@ -224,6 +229,13 @@ func WithRegion(cc string) Option {
 // /api/region (PUT). Ohne diesen Pfad sind Aenderungen nur in memory.
 func WithRegionFile(path string) Option {
 	return func(s *Server) { s.regionFile = path }
+}
+
+// WithResumeOnPowerOnFile sets the persistent path for the per-box "resume the
+// last station on power-on" opt-out (default on). Without it the default NAND
+// path (defaultResumeOnPowerOnPath) is used.
+func WithResumeOnPowerOnFile(path string) Option {
+	return func(s *Server) { s.resumeOnPowerOnPath = path }
 }
 
 // WithStreamProxy haengt den Stream Proxy ein. Wenn gesetzt wird der
@@ -363,6 +375,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
+	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
@@ -900,14 +913,30 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
 	s.setLastPlay(boxURL, title, art, mime)
 }
 
-// ResumeLastPlay re-pushes the last stream STR played. It is the power-button
-// wake-from-standby resume: the box gives no powerStateUpdated, it just tries
-// (and declines, DO_NOT_RESUME) to restore its last UPNP selection, which boxws
-// surfaces as OnWakeResume. Power-on is an explicit "play it again", so this
-// overrides the user-stop the power-off STOP_STATE set and clears the
-// failed/attempt state so even a previously dead stream gets one fresh try.
+// ResumeLastPlay re-pushes the last stream STR played: the power-on resume. On
+// the SoundTouch firmware a power press emits NO powerStateUpdated frame; the box
+// only reports a source change out of STANDBY and, because it can no longer play
+// its UPNP selection itself, restores it as INVALID_SOURCE + DO_NOT_RESUME. boxws
+// surfaces that as OnPowerWake (verified live on a Portable/taigan 2026-06-13:
+// powerStateUpdated never appears, a real power press = STANDBY -> INVALID_SOURCE
+// + DO_NOT_RESUME). Power-on is an explicit "play it again", so this overrides
+// the user-stop the power-off STOP_STATE set and clears the failed/attempt state
+// so even a previously dead stream gets one fresh try.
+//
+// The same DO_NOT_RESUME wake is also what a SELF-wake produces (a box pulled out
+// of standby by its stereo pair / zone, which made Klaus' box start playing on
+// its own, 2026-06-12). The two are indistinguishable on the wire, so the guard
+// is zone membership: a standalone box can only leave standby by a user press, so
+// it resumes; a box that is part of a zone does NOT (see boxInZone). Plus the
+// per-box opt-out below.
 func (s *Server) ResumeLastPlay() {
 	if s.renderer == nil {
+		return
+	}
+	// Per-box opt-out (default on). The few users who want silence on power-on
+	// turn this off; everyone else gets the last station back, like Bose did.
+	if !s.resumeOnPowerOnEnabled() {
+		s.logger.Info("wake resume: power-on resume disabled for this box, not resuming")
 		return
 	}
 	s.lastPlayMu.Lock()
@@ -924,11 +953,22 @@ func (s *Server) ResumeLastPlay() {
 
 	go func() {
 		// Let the power transition settle so the box's reported state is
-		// unambiguous before we decide. The DO_NOT_RESUME that triggers this
-		// fires on BOTH a power-on wake and a deliberate power-off (the box
-		// tears down its UPNP selection either way), so the event alone cannot
-		// tell them apart: the box state can.
+		// unambiguous before we decide. The DO_NOT_RESUME wake that triggers this
+		// fires on a power-on, but the box can also reach standby again right
+		// after, so settle then read the real state.
 		time.Sleep(2 * time.Second)
+
+		// Klaus guard: a box pulled out of standby by its stereo pair / zone emits
+		// the SAME DO_NOT_RESUME wake as a user power press, so the frame cannot
+		// tell them apart. But a STANDALONE box can only leave standby by a user
+		// pressing power, so it is safe to resume; a box that is part of a zone is
+		// not (the pair may have woken it), so stand down. This is what lets the
+		// resume default to ON without bringing back Klaus' spontaneous playback.
+		// Checked live (authoritative) rather than from cached zone events.
+		if s.boxInZone() {
+			s.logger.Info("wake resume: box is in a zone / stereo pair, not auto-resuming (self-wake guard)")
+			return
+		}
 
 		// Discriminate a power-OFF from a power-ON wake (#105): after the user
 		// presses power OFF the box settles in standby; after a wake it has
@@ -977,6 +1017,53 @@ func (s *Server) ResumeLastPlay() {
 		}
 		s.logger.Info("wake resume: resumed last stream after power-on", "url", boxURL, "title", title)
 	}()
+}
+
+// defaultResumeOnPowerOnPath is the NAND flag file for the per-box power-on
+// resume opt-out. Absent or "1" means on (the default), "0" means off.
+const defaultResumeOnPowerOnPath = "/mnt/nv/streborn/resume-on-power-on"
+
+// boxInZone reports whether the speaker is currently part of a multiroom zone or
+// stereo pair, read live from the box (/getZone). It is the power-on resume's
+// self-wake guard: a standalone box can only leave standby by a user power press
+// (safe to resume), but a zone member may have been woken by its pair (Klaus'
+// spontaneous playback), so it must not auto-resume. On a read error it returns
+// false (treat as standalone): a missing zone read should not silently disable
+// the feature for the standalone majority, and the per-box opt-out is the
+// backstop for the rare paired box that also fails the read.
+func (s *Server) boxInZone() bool {
+	if s.boxHost == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	z, err := boxapi.New(s.boxHost).GetZone(ctx)
+	if err != nil {
+		s.logger.Info("wake resume: zone read failed, treating box as standalone", "err", err)
+		return false
+	}
+	return z.Master != ""
+}
+
+// resumeOnPowerOnEnabled reports whether "resume the last station on power-on"
+// is enabled for this box. Default ON: the flag file is absent on a fresh
+// install, and only an explicit opt-out ("0" / "false" / "off" / "no") disables
+// it. An unreadable file also defaults to on (fallback-first).
+func (s *Server) resumeOnPowerOnEnabled() bool {
+	path := s.resumeOnPowerOnPath
+	if path == "" {
+		path = defaultResumeOnPowerOnPath
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(string(b))) {
+	case "0", "false", "off", "no":
+		return false
+	default:
+		return true
+	}
 }
 
 // userStopWindow is how long after a deliberate user stop the auto-re-push
@@ -2340,6 +2427,54 @@ func (s *Server) handleBoxAirplayOpt(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(1500 * time.Millisecond)
 			_ = exec.Command("reboot").Run()
 		}()
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleResumeOnPowerOn reads or sets the per-box "resume the last station when
+// the speaker is switched on" preference (default ON). Stored as a plain flag
+// file on NAND ("1" / "0"), like region.txt, so it survives reboots. GET returns
+// {supported, enabled}; POST {enabled} persists it. This is the opt-out for the
+// power-on resume: a real power press brings back the last stream unless the user
+// turns it off here.
+func (s *Server) handleResumeOnPowerOn(w http.ResponseWriter, r *http.Request) {
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"supported": true, "enabled": s.resumeOnPowerOnEnabled()})
+	case http.MethodPost:
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		path := s.resumeOnPowerOnPath
+		if path == "" {
+			path = defaultResumeOnPowerOnPath
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		val := "1"
+		if !body.Enabled {
+			val = "0"
+		}
+		tmp := path + ".str-new"
+		if err := os.WriteFile(tmp, []byte(val+"\n"), 0o644); err != nil {
+			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = exec.Command("sync").Run()
+		s.logger.Info("resume-on-power-on set", "enabled", body.Enabled)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
