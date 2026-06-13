@@ -77,12 +77,15 @@ phase1_install() {
     if [ -s "$BIN" ]; then
         echo "Kopiere Agent Binary nach $CACHED_BIN"
         if cp "$BIN" "$CACHED_BIN.new" 2>&1; then
-            chmod +x "$CACHED_BIN.new"
-            if mv "$CACHED_BIN.new" "$CACHED_BIN" 2>&1; then
+            # chmod is part of the condition: a non-executable cache makes
+            # run.sh's [ -x "$CACHED_BIN" ] test fail at boot, which would
+            # surface as the misleading "neither NAND cache nor stick binary
+            # available" even though the file is there. Fail loudly instead.
+            if chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>&1; then
                 echo "Agent Binary auf NAND gecached ($(wc -c < "$CACHED_BIN") Bytes)"
             else
                 rm -f "$CACHED_BIN.new"
-                echo "FEHLER: Agent Binary mv nach NAND fehlgeschlagen" >&2
+                echo "FEHLER: Agent Binary chmod/mv nach NAND fehlgeschlagen" >&2
                 exit 1
             fi
         else

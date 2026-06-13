@@ -284,6 +284,9 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			return res, nil
 		}
 
+		// Shared "how to get help" line, used by every failure branch below.
+		logHint := "To get help, save the diagnostic logs (the Save logs button in Speaker Settings, or the link at the bottom of the app window) and attach them to the GitHub issue or email them to str@sichtbar-app.de."
+
 		// If SSH is still reachable the install window is open. Before the blind
 		// reboot-retry, check the box's own run.sh log for a deterministic cause a
 		// reboot cannot fix: the agent binary never reached the NAND cache because
@@ -298,22 +301,33 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 				if len(agentbin.Bytes()) > 0 {
 					a.logger.Info("install_str: auto NAND-copy repair over SSH, bypassing the unreadable stick", "host", host)
 					res.Step = "stick-copy-repair"
-					if rr, _ := a.RepairInstallViaSSH(host, model); rr.OK {
+					rr, _ := a.RepairInstallViaSSH(host, model)
+					if rr.OK {
 						if a.waitForAgent(host, model) == nil {
 							res.Step = "done"
 							res.OK = true
 							res.Message = "The USB stick could not be read, so STR was installed directly over the network instead. The agent is up on port 8888."
 							return res, nil
 						}
-						a.logger.Warn("install_str: NAND-copy repair ran but agent still not up", "host", host)
-					} else {
-						res.Log = res.Log + "\n\n--- SSH NAND-copy repair ---\n" + rr.Message + "\n" + rr.Log
-						a.logger.Warn("install_str: NAND-copy repair did not complete", "host", host, "repairMsg", rr.Message)
+						// The over-the-network install succeeded (the stick was
+						// bypassed), the agent just has not bound :8888 yet. Do NOT
+						// tell the user to recreate the stick: this is now a plain
+						// slow/failed boot, so return the agent-not-up guidance.
+						a.logger.Warn("install_str: NAND-copy repair installed over network but agent still not up", "host", host)
+						res.Step = "wait-agent"
+						res.Code = "agent-not-up"
+						res.Message = "STR was installed directly over the network because the USB stick could not be read, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute. " + logHint + fwNote
+						res.Log = res.Log + "\n\n--- box install diagnostics (SSH up) ---\n" + boxInstallDiag(host)
+						return res, nil
 					}
+					// Repair could not even complete (SSH copy/install failed):
+					// keep the stick-copy diagnosis + manual repair offer below.
+					res.Log = res.Log + "\n\n--- SSH NAND-copy repair ---\n" + rr.Message + "\n" + rr.Log
+					a.logger.Warn("install_str: NAND-copy repair did not complete", "host", host, "repairMsg", rr.Message)
 				}
-				// No embedded binary (dev build) or the auto-repair did not bring the
-				// agent up: report the specific cause. The manual Repair-over-SSH
-				// button is also offered for this code so the user can retry.
+				// No embedded binary (dev build) or the auto-repair could not
+				// complete: report the specific stick-copy cause. The manual
+				// Repair-over-SSH button is also offered for this code.
 				return finishStickCopyFailed()
 			}
 
@@ -337,7 +351,6 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		}
 		res.Step = "wait-agent"
 		res.Code = "agent-not-up"
-		logHint := "To get help, save the diagnostic logs (the Save logs button in Speaker Settings, or the link at the bottom of the app window) and attach them to the GitHub issue or email them to str@sichtbar-app.de."
 		if slowBootModel(model) {
 			res.Message = "The speaker is still starting. On Portable / BCO models this can take 2 to 3 minutes. " +
 				"Keep the STR stick plugged in, power-cycle the speaker (unplug for 10 seconds, plug back in with the stick in place), " +

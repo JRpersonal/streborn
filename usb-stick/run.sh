@@ -556,8 +556,11 @@ sync_stick_to_nand_always() {
         return 0
     fi
     if cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null; then
-        chmod +x "$CACHED_BIN.new"
-        if mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
+        # chmod is part of the condition: a non-executable cache fails run.sh's
+        # [ -x "$CACHED_BIN" ] test at boot and would degrade to the stick
+        # fallback (or the "neither NAND cache" exit) with no clue why, so a
+        # silent chmod failure must keep the previous good cache instead.
+        if chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
             log "stick binary deployed to NAND cache ($(wc -c < "$CACHED_BIN") bytes)"
             if [ -r "$STICK_VER_FILE" ]; then
                 cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
@@ -565,7 +568,7 @@ sync_stick_to_nand_always() {
             fi
             return 0
         fi
-        log "stick -> NAND mv failed, keeping previous NAND binary"
+        log "stick -> NAND chmod/mv failed, keeping previous NAND binary"
         rm -f "$CACHED_BIN.new"
         return 1
     fi
