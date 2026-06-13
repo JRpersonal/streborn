@@ -55,6 +55,8 @@ export {
   SetBoxLanguage,
   GetAirplayOpt,
   SetAirplayOpt,
+  GetResumeOnPowerOn,
+  SetResumeOnPowerOn,
   GetWebhooks,
   SetWebhooks,
   SaveWebhookConfig,

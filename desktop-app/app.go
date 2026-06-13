@@ -2077,6 +2077,44 @@ func (a *App) SetAirplayOpt(host string, port int, enabled bool) error {
 	return nil
 }
 
+// GetResumeOnPowerOn reads the per-box "resume the last station on power-on"
+// toggle from the STR agent. Returns {"supported":bool,"enabled":bool}; default
+// is enabled. Routed through boxDo so it self-heals across :8888 / :17008 like
+// the other box calls (a BCO speaker reachable only on :17008 still answers).
+// See internal/webui handleResumeOnPowerOn.
+func (a *App) GetResumeOnPowerOn(host string, port int) (map[string]bool, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/resume-on-power-on", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out map[string]bool
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetResumeOnPowerOn flips the power-on resume toggle on the box. The agent
+// persists it to NAND and applies it live (no reboot needed): the next real
+// power-on either resumes the last station or stays silent.
+func (a *App) SetResumeOnPowerOn(host string, port int, enabled bool) error {
+	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/resume-on-power-on", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 // StreamBitrate returns the agent's currently-detected stream bitrate in
 // kbit/s (icy-br, or a throughput sample), or 0 if none/unavailable.
 // Routed through boxDo so it self-heals across :8888 / :17008 like every

@@ -76,6 +76,20 @@ type Handler interface {
 	// statt den Frame als "unrecognized" zu verwerfen. z.Master == "" heisst die
 	// Zone wurde aufgeloest.
 	OnZoneChanged(ctx context.Context, z ZoneState)
+
+	// OnPowerWake wird gefeuert wenn die Box aus dem Standby kommt durch ein
+	// echtes Power-Ereignis (powerStateUpdated, NICHT STANDBY): der Nutzer hat den
+	// Lautsprecher eingeschaltet. Treiber fuer den optionalen "letzten Sender beim
+	// Einschalten fortsetzen"-Default. Ein Self-Wake (Stereopaar/Zone) kommt NICHT
+	// hier an, sondern als DO_NOT_RESUME-Restore ueber OnSelfWake.
+	OnPowerWake(ctx context.Context)
+
+	// OnSelfWake wird gefeuert wenn die Box ihre letzte Auswahl beim Aufwachen
+	// oder Source-Teardown mit DO_NOT_RESUME wiederherstellt (Self-Wake ueber
+	// Zone/Stereopaar oder ein bewusstes Power-Off). Der Agent merkt sich das, um
+	// eine Power-on-Wiederaufnahme genau in diesem Fenster zu unterdruecken, damit
+	// die Box nicht von selbst losspielt (Klaus 2026-06-12).
+	OnSelfWake(ctx context.Context)
 }
 
 // Client haelt die Verbindung zur Box.
@@ -471,14 +485,29 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	case f.PowerState != nil:
 		known = true
 		c.noteExplainedActivity()
-		c.logger.Info("box ws phase: powerState event", "preview", preview(data, 200))
-		// power webhook (beta): fire only on the transition to standby (power
-		// off). STR never powers the box off itself (it only wakes it for a
-		// recall), so a standby event is always a user press; this avoids the
-		// webhook false-firing on STR's own wake. The STANDBY match is bounded to
-		// the powerState element body. Rate-limited per id downstream.
-		if c.handler != nil && strings.Contains(f.PowerState.Inner, "STANDBY") {
-			c.handler.OnPowerKey(ctx)
+		standby := strings.Contains(f.PowerState.Inner, "STANDBY")
+		// INFO with the resolved direction: a real power press surfaces here, while
+		// a self-wake (zone / stereo pair) surfaces instead as the DO_NOT_RESUME
+		// now-selection restore below. This split is the discriminator the power-on
+		// resume relies on, so keep it visible in bundles for the hardware check.
+		c.logger.Info("box ws phase: powerState event", "standby", standby, "preview", preview(data, 200))
+		if c.handler != nil {
+			if standby {
+				// power webhook (beta): fire only on the transition to standby (power
+				// off). STR never powers the box off itself (it only wakes it for a
+				// recall), so a standby event is always a user press; this avoids the
+				// webhook false-firing on STR's own wake. The STANDBY match is bounded
+				// to the powerState element body. Rate-limited per id downstream.
+				c.handler.OnPowerKey(ctx)
+			} else {
+				// A real power-ON: the box left standby. A self-wake does NOT arrive as
+				// a powerState (it comes as the DO_NOT_RESUME restore -> OnSelfWake), so
+				// this is the verified user-wake the optional power-on resume binds to.
+				// The resume is gated by a per-box setting AND suppressed if a
+				// DO_NOT_RESUME was seen in the same window, so it can never resume a
+				// self-wake.
+				c.handler.OnPowerWake(ctx)
+			}
 		}
 	case f.ConnectionState != nil:
 		known = true
@@ -601,6 +630,11 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// user action: a real preset press (slot 1-6 below) or an app recall.
 			if strings.Contains(pe.Inner, "DO_NOT_RESUME") {
 				c.logger.Info("box ws: standby wake / source teardown signalled DO_NOT_RESUME, not resuming")
+				// Record the self-wake so a power-on resume firing around the same
+				// moment stands down (this is the Klaus self-wake marker).
+				if c.handler != nil {
+					c.handler.OnSelfWake(ctx)
+				}
 			} else {
 				// DEBUG: the box emits this id=0 INVALID_SOURCE self-activation after
 				// EVERY hardware preset press (the actual press is logged at INFO

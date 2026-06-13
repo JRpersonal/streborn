@@ -49,6 +49,8 @@ import {
   SetBoxLanguage,
   GetAirplayOpt,
   SetAirplayOpt,
+  GetResumeOnPowerOn,
+  SetResumeOnPowerOn,
   GetWebhooks,
   SetWebhooks,
   SaveWebhookConfig,
@@ -4122,6 +4124,15 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.clockHelp'))}</small>
     </div>
 
+    <div class="settings-section" id="resumeOnPowerSection">
+      <h3>${escapeHtml(t('settingsView.resumeOnPowerHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="resumeOnPowerOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="resumeOnPowerOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.resumeOnPowerHelp'))}</small>
+    </div>
+
     <div class="settings-section hidden" id="airplayOptSection">
       <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
       <div class="setting-row">
@@ -4659,6 +4670,35 @@ function renderBoxSettings(s, box) {
   // Send the 12/24h format to the box immediately on dropdown change,
   // keeping the current on/off state (no need to click "On" again).
   if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
+
+  // Resume last station on power-on (all models, default on). GET reports the
+  // current state; toggling applies live on the box (no reboot). The next real
+  // power press either brings the last station back, like Bose did, or stays
+  // silent. A self-wake (zone/stereo pair) never resumes regardless.
+  const ropOn = $('resumeOnPowerOn');
+  const ropOff = $('resumeOnPowerOff');
+  const paintResumeOnPower = (enabled) => {
+    if (ropOn) ropOn.classList.toggle('active', enabled === true);
+    if (ropOff) ropOff.classList.toggle('active', enabled === false);
+  };
+  if (ropOn && ropOff) {
+    (async () => {
+      try {
+        const r = await GetResumeOnPowerOn(box.host, box.port);
+        // Default on: treat anything other than an explicit false as enabled.
+        paintResumeOnPower(r && r.enabled === false ? false : true);
+      } catch { paintResumeOnPower(true); }
+    })();
+    const setROP = async (enabled) => {
+      paintResumeOnPower(enabled);
+      try {
+        await SetResumeOnPowerOn(box.host, box.port, enabled);
+        showToast(t('settingsView.resumeOnPowerSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    ropOn.onclick = () => setROP(true);
+    ropOff.onclick = () => setROP(false);
+  }
 
   // AirPlay optimization (BCO speakers only). GET reports supported +
   // current state; the section stays hidden on non-BCO models. Toggling

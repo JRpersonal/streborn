@@ -98,6 +98,10 @@ export function GetPresets(arg1, arg2) {
   return window['go']['main']['App']['GetPresets'](arg1, arg2);
 }
 
+export function GetResumeOnPowerOn(arg1, arg2) {
+  return window['go']['main']['App']['GetResumeOnPowerOn'](arg1, arg2);
+}
+
 export function GetWebhooks(arg1, arg2) {
   return window['go']['main']['App']['GetWebhooks'](arg1, arg2);
 }
@@ -236,6 +240,10 @@ export function SetClockDisplay(arg1, arg2, arg3, arg4, arg5) {
 
 export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
   return window['go']['main']['App']['SetPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
+export function SetResumeOnPowerOn(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SetResumeOnPowerOn'](arg1, arg2, arg3);
 }
 
 export function SetWebhooks(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
