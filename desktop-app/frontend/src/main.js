@@ -3207,7 +3207,15 @@ async function playStation(s) {
     let fail = null;
     try {
       await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '', '', s.homepage || '');
-      if (cur.stationuuid) { try { RadioClick(cur.stationuuid); } catch {} }
+      // Register the play with radio-browser, but ONLY for a real station UUID.
+      // Recently-played cards reuse the stream URL as their identity (no UUID), so
+      // a plain `if (stationuuid)` fired RadioClick with a URL, which 404s. Guard
+      // on the UUID shape, and use .catch() (not try/catch) since the rejection is
+      // async: an unhandled 404 promise surfaced as an error toast when playing a
+      // recent radio card even though playback itself was fine.
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cur.stationuuid || '')) {
+        RadioClick(cur.stationuuid).catch(() => {});
+      }
       // Refresh the now-playing bar promptly on the happy path; the upstream
       // verdict (success vs 403/503) arrives asynchronously, so poll for it.
       setTimeout(refreshStatus, 1200);
