@@ -5,6 +5,7 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -553,6 +554,31 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		if p.Type == "" {
 			p.Type = "radio"
 		}
+		// Reject (or heal) the saves that produced the dead presets that fail to
+		// recall with "Service not available" (#45/#105). A type=spotify preset
+		// MUST carry a replayable context URI; a non-spotify preset MUST carry a
+		// real http(s) stream URL. A non-spotify preset whose stream URL actually
+		// encodes a Spotify container (an older mis-save) is healed into a proper
+		// Spotify preset instead of being stored as a dead radio link.
+		if p.Type == "spotify" {
+			if !playableSpotifyURI(p.URI) {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error": "This Spotify selection can't be saved to a preset: it has no replayable playlist, album or track. Open a playlist or album and try again.",
+					"code":  "spotify-uri-unplayable",
+				})
+				return
+			}
+		} else if p.StreamURL != "" && !isHTTPURL(p.StreamURL) {
+			if uri := legacySpotifyURI(p.StreamURL); uri != "" {
+				p.Type, p.URI, p.StreamURL = "spotify", uri, ""
+			} else {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error": "This selection can't be saved as a preset (no playable stream). Pick a radio station or a Spotify playlist and try again.",
+					"code":  "stream-url-invalid",
+				})
+				return
+			}
+		}
 		// Stamp the account a Spotify preset belongs to (go-librespot's current
 		// login) so a later recall can switch back to it on a multi-account box
 		// (#27). The client may already supply it; only fill when empty.
@@ -637,6 +663,65 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// playableSpotifyURI reports whether uri is a Spotify context that go-librespot
+// can replay on a preset recall. This is a SAVE gate, deliberately permissive:
+// /player/play accepts any well-formed spotify: context (playlist, album, track,
+// artist, show/podcast, episode, collection/Liked Songs, and user-scoped
+// playlists like spotify:user:<id>:playlist:<id>), so we accept any non-empty
+// spotify: URI with a real id and reject only what genuinely cannot recall: an
+// empty URI or a /spotify/stream / container URL stored as a "URI" (the
+// dead-preset cause, #45/#105). go-librespot is the authority on real
+// playability; over-narrowing here wrongly blocked podcast/Liked-Songs saves.
+func playableSpotifyURI(uri string) bool {
+	uri = strings.TrimSpace(uri)
+	if !strings.HasPrefix(uri, "spotify:") || looksLikeSpotifyStreamURL(uri) {
+		return false
+	}
+	parts := strings.Split(uri, ":")
+	// Require a kind and a non-empty trailing id: rejects "spotify:" and
+	// "spotify:playlist:", accepts spotify:playlist:ID, spotify:show:ID,
+	// spotify:episode:ID, spotify:collection, spotify:user:<id>:playlist:<id>.
+	return len(parts) >= 2 && parts[1] != "" && parts[len(parts)-1] != ""
+}
+
+// isHTTPURL reports whether s is a real http(s) URL the stream proxy can fetch.
+func isHTTPURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// looksLikeSpotifyStreamURL reports whether a stored stream URL points at a
+// Spotify source, so a non-spotify preset carrying it is really a mis-saved
+// Spotify preset (#45/#105).
+func looksLikeSpotifyStreamURL(s string) bool {
+	return strings.Contains(s, "/spotify/stream") || strings.Contains(s, "/playback/container/")
+}
+
+// legacySpotifyURI recovers the spotify: context URI from a preset that an older
+// version mis-saved as a non-spotify preset whose stream URL encoded a Spotify
+// container, e.g. "/playback/container/<base64 spotify:playlist:...>". Returns
+// "" when the URL is a normal radio/HTTP stream or carries no recoverable URI.
+func legacySpotifyURI(streamURL string) string {
+	const marker = "/playback/container/"
+	i := strings.Index(streamURL, marker)
+	if i < 0 {
+		return ""
+	}
+	enc := streamURL[i+len(marker):]
+	if j := strings.IndexAny(enc, "/?#"); j >= 0 {
+		enc = enc[:j]
+	}
+	// The container is encoded with RawURLEncoding (boxurl), a URL-safe alphabet
+	// with no '/'; URLEncoding (padded) is accepted too. The Std alphabets are
+	// intentionally omitted: they can emit '/', which the cut above would have
+	// truncated, so they could never round-trip here anyway.
+	for _, d := range []*base64.Encoding{base64.RawURLEncoding, base64.URLEncoding} {
+		if b, err := d.DecodeString(enc); err == nil && strings.HasPrefix(string(b), "spotify:") {
+			return string(b)
+		}
+	}
+	return ""
 }
 
 // ---- Play / Pause / Stop ----
@@ -799,6 +884,28 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// Heal a legacy mis-saved Spotify preset before recall: older versions could
+	// store a Spotify selection as a non-spotify preset whose stream URL encoded
+	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The
+	// radio path would then stream-proxy a scheme-less URL and the box would get
+	// nothing, which is the "Service not available" recall failure (#45/#105).
+	// Recover the URI and route to the Spotify path; if it is a Spotify stream
+	// with no recoverable URI, tell the user to re-save instead of pushing a
+	// doomed /stream/<slot>.
+	if p.Type != "spotify" && p.StreamURL != "" && !isHTTPURL(p.StreamURL) {
+		if uri := legacySpotifyURI(p.StreamURL); uri != "" {
+			p.Type, p.URI = "spotify", uri
+			s.logger.Info("preset recall: healed legacy spotify preset", "slot", slot, "uri", uri)
+		} else if looksLikeSpotifyStreamURL(p.StreamURL) {
+			s.logger.Warn("preset recall: spotify preset has no replayable URI", "slot", slot, "url", p.StreamURL)
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error": "This Spotify preset was saved in an older version and can't be replayed. Please open the playlist and save it to the preset again.",
+				"code":  "spotify-preset-unreplayable",
+				"slot":  slot, "name": p.Name,
+			})
+			return
+		}
+	}
 	// Spotify presets have no playable HTTP StreamURL. Mirror the hardware-press
 	// recall (cmd/agent playSpotifyPreset) so a soft recall behaves identically:
 	//  1. wait out a cold go-librespot (auth not finished) instead of pointing
@@ -2270,17 +2377,45 @@ func (s *Server) handleBoxGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, g)
 }
 
-// handleStickStatus liefert ob der USB Stick aktuell in der Box steckt
-// (= /media/sda1 ist gemountet). Optional die Stick Version aus
-// version.txt wenn lesbar. Sehr leichtgewichtig — eine os.Stat.
-func (s *Server) handleStickStatus(w http.ResponseWriter, _ *http.Request) {
-	info, err := os.Stat("/media/sda1")
-	mounted := err == nil && info != nil && info.IsDir()
-	out := map[string]any{"mounted": mounted}
-	if mounted {
-		if b, rerr := os.ReadFile("/media/sda1/version.txt"); rerr == nil {
-			out["version"] = strings.TrimSpace(string(b))
+// stickReallyMounted reports whether a real STR stick is mounted at /media/sda1
+// (not just a leftover empty mountpoint dir), and returns its version.txt when
+// present. Evidence, in order: a known stick file is readable (every stick prep
+// writes version.txt, and run.sh lives on it), or /media/sda1 is an actual mount
+// point in /proc/self/mountinfo. A leftover empty dir or a dangling symlink has
+// neither, so it correctly reports not-mounted.
+func stickReallyMounted() (bool, string) {
+	if b, err := os.ReadFile("/media/sda1/version.txt"); err == nil {
+		return true, strings.TrimSpace(string(b))
+	}
+	for _, marker := range []string{"/media/sda1/run.sh", "/media/sda1/streborn-armv7l"} {
+		if _, err := os.Stat(marker); err == nil {
+			return true, ""
 		}
+	}
+	if b, err := os.ReadFile("/proc/self/mountinfo"); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			// The mount point is the 5th space-separated field.
+			f := strings.Fields(line)
+			if len(f) >= 5 && f[4] == "/media/sda1" {
+				return true, ""
+			}
+		}
+	}
+	return false, ""
+}
+
+// handleStickStatus reports whether the USB stick is actually in the box right
+// now, plus the stick version when readable. It must NOT use a bare
+// os.Stat("/media/sda1")+IsDir: the box leaves the empty mountpoint directory
+// behind after `umount` (run.sh cleanup), so IsDir kept reporting mounted:true
+// forever after the stick was pulled, which made the "remove the USB stick and
+// restart" banner stick around permanently even with the stick already out
+// (#105). stickReallyMounted requires real evidence instead.
+func (s *Server) handleStickStatus(w http.ResponseWriter, _ *http.Request) {
+	mounted, version := stickReallyMounted()
+	out := map[string]any{"mounted": mounted}
+	if mounted && version != "" {
+		out["version"] = version
 	}
 	// SSH Status — schauen ob Port 22 aktuell listened. Wenn ja
 	// kann jemand im LAN auf die Box zugreifen, App zeigt Warn Banner.
