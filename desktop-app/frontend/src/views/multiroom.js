@@ -19,8 +19,12 @@ export function initMultiroomView(d) {
   deps = { ...deps, ...d };
 }
 
-// zoneLabel is the speaker's display name. Multiroom-only, so it lives here.
-function zoneLabel(b) { return b.name || b.friendlyName || b.host; }
+// zoneLabel is the speaker's display name, used in the group list and the stereo
+// pair dropdown. friendlyName first: the backend always fills name with a
+// "str-<ip>"/"STR-<hex>" fallback, so name-first never reached the real speaker
+// name (Michal's group menu showing str-192.168.x.y). Fall back to name/host only
+// when no friendly name resolved. Matches the box switcher and the recent view.
+function zoneLabel(b) { return b.friendlyName || b.name || b.host; }
 
 // renderMultiroom paints the Multi-Room view. fetchLive triggers a non-blocking
 // parallel poll of every speaker's live zone after paint (skipped on repaints).
