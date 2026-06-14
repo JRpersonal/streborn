@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -118,20 +119,33 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			a.logger.Warn("install_str: preflight, :22 closed but :8888 up (already installed?)", "host", host)
 			return res, nil
 		}
-		if tcpReachable(host, 8090, 3*time.Second) {
-			res.Code = "install-window-closed"
-			res.Message = "The speaker at " + host + " is on the network, but the install access (SSH) is closed. " +
-				"Bose only opens it while the speaker boots with the STR stick plugged in. " +
-				"Power the speaker off, insert the STR stick, power it back on, then install."
-			a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut)", "host", host)
+		// :22 closed but on the LAN (Bose :8090 up): the install window is shut
+		// because the box did not boot with the stick. That is the SoundTouch 300
+		// (which does not read the stick at boot) and some stubborn ST30 units.
+		// ALPHA spike (#ST300): try the legacy :17000 diagnostic console to open
+		// SSH WITHOUT a stick boot, then continue the normal install. Bose removed
+		// the remote_services command on firmware 27.x, so this likely only works
+		// on older firmware; it also serves as the live probe to confirm on a real
+		// SoundTouch 300. If it opens :22 we fall through to the normal install.
+		onLAN := tcpReachable(host, 8090, 3*time.Second)
+		if !onLAN || !a.tryEnableSSHViaDiagPort(host) {
+			if onLAN {
+				res.Code = "install-window-closed"
+				res.Message = "The speaker at " + host + " is on the network, but the install access (SSH) is closed. " +
+					"Bose only opens it while the speaker boots with the STR stick plugged in. " +
+					"Power the speaker off, insert the STR stick, power it back on, then install."
+				a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut; diag-port :17000 did not open SSH)", "host", host)
+			} else {
+				res.Code = "not-reachable"
+				res.Message = "The speaker is not reachable on the network (no answer on SSH port 22 or the Bose port 8090 at " + host + "). " +
+					"First bring it onto your Wi-Fi with the Bose SoundTouch app and make sure this PC and the speaker are on the same network. " +
+					"Then reboot the speaker with the STR stick plugged in and try again."
+				a.logger.Warn("install_str: preflight failed, box not reachable on :22 or :8090", "host", host)
+			}
 			return res, nil
 		}
-		res.Code = "not-reachable"
-		res.Message = "The speaker is not reachable on the network (no answer on SSH port 22 or the Bose port 8090 at " + host + "). " +
-			"First bring it onto your Wi-Fi with the Bose SoundTouch app and make sure this PC and the speaker are on the same network. " +
-			"Then reboot the speaker with the STR stick plugged in and try again."
-		a.logger.Warn("install_str: preflight failed, box not reachable on :22 or :8090", "host", host)
-		return res, nil
+		a.logger.Info("install_str: SSH opened via :17000 diagnostic port (alpha); continuing install without a stick boot", "host", host)
+		// :22 is now open; fall through to the normal install below.
 	}
 
 	// Step 0b: SSH itself reachable + authenticated? We do this as a
@@ -462,6 +476,43 @@ func buildStickProbeCmd(paths []string) string {
 // pointing at that directory, bypassing the stick entirely. /mnt/nv is a
 // writable ubifs even when the USB mount is dead. Requires SSH up (Bose stock
 // root SSH) and a real embedded agent (release build, not a dev stub).
+// tryEnableSSHViaDiagPort attempts to open SSH on a box whose install window is
+// shut (it did not read the USB stick at boot, so the remote_services marker was
+// never seen and :22 is closed) via the legacy Bose telnet diagnostic console on
+// TCP 17000. ALPHA / experimental: Bose removed the "remote_services on" command
+// on firmware 27.x, so this only helps on older firmware, and it doubles as the
+// live probe for the SoundTouch 300 (which does not auto-read the stick at boot).
+// Best-effort; returns true only if :22 actually opens afterwards.
+func (a *App) tryEnableSSHViaDiagPort(host string) bool {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, "17000"), 5*time.Second)
+	if err != nil {
+		a.logger.Info("diag-port: :17000 not reachable, cannot try the no-stick SSH enable", "host", host, "err", err)
+		return false
+	}
+	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+	buf := make([]byte, 512)
+	_, _ = conn.Read(buf) // drain banner / "-> " prompt, best-effort
+	// Both spellings are tried; the exact one varies by firmware vintage.
+	for _, cmd := range []string{"remote_services on\r\n", "local_services on\r\n"} {
+		if _, werr := conn.Write([]byte(cmd)); werr != nil {
+			break
+		}
+		_, _ = conn.Read(buf)
+		time.Sleep(300 * time.Millisecond)
+	}
+	_ = conn.Close()
+	a.logger.Info("diag-port: sent remote_services/local_services on :17000, waiting for SSH to open", "host", host)
+	for i := 0; i < 12; i++ {
+		if tcpReachable(host, 22, 2*time.Second) {
+			a.logger.Info("diag-port: SSH opened after :17000 enable (alpha path worked)", "host", host)
+			return true
+		}
+		time.Sleep(1 * time.Second)
+	}
+	a.logger.Info("diag-port: SSH did not open after :17000 enable (expected on firmware 27.x; Bose removed the command)", "host", host)
+	return false
+}
+
 func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	res := InstallResult{Step: "repair-ssh"}
 
