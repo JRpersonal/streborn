@@ -49,14 +49,6 @@ The final firmware Bose shipped before the cloud shutdown on 2026-02. Anything o
 - `networkInfo` emits two entries (SCM + SMSC) with separate MACs but the same Layer-3 IP. The speaker bridges internally; STR sees one address per box.
 - Root `/etc` is read-only (ubifs `ro,relatime`); `/mnt/nv` is read-write (ubifs `rw,relatime`); `/tmp` is tmpfs.
 
-### Common to both ST20 variants
-
-- Bose `/etc/version`: `201507061523`
-- Kernel: `Linux spotty 3.14.43+ #137 Wed Oct 25 21:06:53 EDT 2017 armv7l`
-- `MemTotal`: ~122 MB (`122 484 kB`)
-- Last Bose firmware build epoch: 2022-08-04 (the final SoundTouch firmware before Bose cloud shutdown on 2026-02)
-- `networkInfo` emits two entries (SCM + SMSC) with separate MACs but the same Layer-3 IP. The speaker bridges internally; STR sees one address per box.
-- Root `/etc` is read-only (ubifs `ro,relatime`); `/mnt/nv` is read-write (ubifs `rw,relatime`); `/tmp` is tmpfs.
 
 ### Variant-specific notes
 
