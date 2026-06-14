@@ -17,7 +17,7 @@ import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { RecentPlayed, SaveSpotifyPreset } from '../api.js';
-import { stationLogoCandidates, monogramDataUri, SPOTIFY_LOGO } from '../logos.js';
+import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
 // modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
@@ -42,12 +42,17 @@ function recentStrBoxes() {
 // helpers (playStation/openPick/toggleFav/isFav, stationLogoCandidates) expect,
 // so a radio card reuses them verbatim. CardKey is the stable favourite identity.
 function cardStation(c) {
+  // c.art from a real play is the pipe-separated stationLogoChain (the station's
+  // own favicon first, then DuckDuckGo derivations). logoImgTag wants a SINGLE
+  // favicon, so take the first candidate; passing the whole chain made it fall
+  // through to the wrong stream-host favicon. The rest is rederived from hosts.
+  const art = (c.art || '').split('|').map((x) => x.trim()).filter(Boolean);
   return {
     stationuuid: c.cardKey,
     name: c.name || '',
     url: c.url || '',
     url_resolved: c.url || '',
-    favicon: c.art || '',
+    favicon: art[0] || '',
     bitrate: 0,
     homepage: '',
     tags: '',
@@ -64,14 +69,25 @@ function groupRecentCards(entries) {
   for (const e of entries) {
     const last = cards[cards.length - 1];
     if (last && last.boxKey === e._boxKey && last.cardKey === e.cardKey) {
-      if (e.track) last.tracks.push({ track: e.track, ts: e.ts });
+      // Dedup repeated titles within a session. Many stations flip the ICY title
+      // between the song and talk/promo/contact lines (SWR3: "TALK mit ...",
+      // "Kontakt zu SWR3: ..."), which otherwise fills the card with the same few
+      // strings. Keep the newest occurrence of each distinct title only (entries
+      // arrive newest-first), so each line shows once.
+      if (e.track && !last._seen.has(e.track)) {
+        last._seen.add(e.track);
+        last.tracks.push({ track: e.track, ts: e.ts });
+      }
       continue;
     }
+    const seen = new Set();
+    if (e.track) seen.add(e.track);
     cards.push({
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
       source: e.source, cardKey: e.cardKey, name: e.cardName,
       art: e.cardArt, url: e.cardURL, account: e.account, ts: e.ts,
       tracks: e.track ? [{ track: e.track, ts: e.ts }] : [],
+      _seen: seen,
     });
   }
   return cards;
@@ -109,22 +125,33 @@ function recentClock(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// formatTrack splits an ICY title into its two parts ("Title / Artist" or
+// "Artist - Title") and formats them as an emphasised primary + a muted
+// secondary. Which side is title vs artist varies by station, so we do not
+// mislabel them, just emphasise the first part. No separator: shown as-is.
+function formatTrack(raw) {
+  const m = (raw || '').match(/^(.*?)\s+[/–—-]\s+(.*)$/);
+  if (m && m[1].trim() && m[2].trim()) {
+    return `<span class="rc-tr-title">${escapeHtml(m[1].trim())}</span>`
+      + `<span class="rc-tr-artist">${escapeHtml(m[2].trim())}</span>`;
+  }
+  return `<span class="rc-tr-title">${escapeHtml((raw || '').trim())}</span>`;
+}
+
 // logoImg builds the card logo as an <img> with the same data-fallbacks cascade
 // the preset/search tiles use (a global error-listener walks the chain). Spotify
 // shows its glyph; radio/NAS derive favicons from the URL, ending on a monogram
 // so a logo-less station still gets a clean letter tile instead of a blank box.
 function logoImg(c) {
-  let candidates;
   if (c.source === 'spotify') {
-    candidates = [SPOTIFY_LOGO];
-    if (c.art) candidates.push(c.art);
-    candidates.push(monogramDataUri(c.name));
-  } else {
-    candidates = stationLogoCandidates(cardStation(c));
-    if (!candidates.length) candidates = [monogramDataUri(c.name)];
+    return `<img class="rc-logo" src="${escapeAttr(SPOTIFY_LOGO)}" alt="">`;
   }
-  return `<img class="rc-logo" src="${escapeAttr(candidates[0])}" alt=""`
-    + ` data-fallbacks="${escapeAttr(candidates.slice(1).join('|'))}">`;
+  // Radio/NAS reuse the exact search/preset tile path (logoImgTag), so they go
+  // through the SAME global, async, non-blocking Go-resolved hydration that
+  // validates the favicon and rejects DuckDuckGo's grey "no icon" chevron. The
+  // previous raw data-fallbacks cascade could not reject that chevron and showed
+  // the wrong favicon derived from the stream CDN host (the SWR3 case).
+  return logoImgTag(cardStation(c), 'rc-logo');
 }
 
 function recentCardHTML(c, i, showBox) {
@@ -134,7 +161,7 @@ function recentCardHTML(c, i, showBox) {
     + (showBox && c.boxName ? ` &middot; <span class="rc-box">${escapeHtml(c.boxName)}</span>` : '');
   const tracks = c.tracks.length
     ? `<div class="rc-tracks">` + c.tracks.map((tr) =>
-        `<div class="rc-track"><span class="rc-tr-name">${escapeHtml(tr.track)}</span>`
+        `<div class="rc-track"><span class="rc-tr-main">${formatTrack(tr.track)}</span>`
         + `<span class="rc-tr-time">${escapeHtml(recentClock(tr.ts))}</span></div>`).join('') + `</div>`
     : '';
   // Buttons identical to the radio search rows: play, save-to-preset, favourite.
@@ -149,7 +176,8 @@ function recentCardHTML(c, i, showBox) {
   } else {
     actions = `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
-  return `<div class="recent-card rc-${escapeAttr(c.source)}">`
+  const nowPlaying = c.source === 'radio' && state.nowName && c.name && state.nowName === c.name;
+  return `<div class="recent-card rc-${escapeAttr(c.source)}${nowPlaying ? ' rc-now' : ''}">`
     + `<div class="rc-head">${logoImg(c)}`
     + `<div class="rc-meta"><div class="rc-name">${escapeHtml(c.name || recentSourceLabel(c.source))}</div>`
     + `<div class="rc-sub">${sub}</div></div>`
