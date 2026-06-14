@@ -351,6 +351,7 @@ export namespace main {
 	    cover: string;
 	    context: string;
 	    account: string;
+	    premiumRequired: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SpotifyNow(source);
@@ -364,6 +365,7 @@ export namespace main {
 	        this.cover = source["cover"];
 	        this.context = source["context"];
 	        this.account = source["account"];
+	        this.premiumRequired = source["premiumRequired"];
 	    }
 	}
 	export class TrueFactoryResetResult {

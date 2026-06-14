@@ -888,5 +888,20 @@
   "spotify.nativeStep1": "Otwórz aplikację Spotify na telefonie lub komputerze w tej samej sieci Wi-Fi co głośnik.",
   "spotify.nativeStep2": "Dotknij ikony „Połącz z urządzeniem” (głośnik) i wybierz ten głośnik.",
   "spotify.nativeStep3": "Odtwarzaj. Działa dowolne konto Spotify; steruje nim ten, kto połączył się jako ostatni. W tej aplikacji nie trzeba się logować.",
-  "spotify.nativeNote": "Uwaga: wymagane jest konto Spotify Premium (to własna zasada Spotify dla Connect). Dawny krok „powiązania konta w aplikacji Bose” zniknął i nie jest potrzebny."
+  "spotify.nativeNote": "Uwaga: wymagane jest konto Spotify Premium (to własna zasada Spotify dla Connect). Dawny krok „powiązania konta w aplikacji Bose” zniknął i nie jest potrzebny.",
+  "preset.spotifyNotSaveable": "Tej stacji lub radia Spotify nie można zapisać jako preset, bo nie ma playlisty, którą da się odtworzyć ponownie. Otwórz playlistę lub album i spróbuj jeszcze raz.",
+  "play.errSpotifyPremium": "Przywoływanie Spotify wymaga konta Premium",
+  "update.speakerUpdateAvailFor": "Dostępna aktualizacja dla „{{name}}”",
+  "update.versionLine": "zainstalowana: {{installed}} → nowa: {{next}}",
+  "update.appBehindTitle": "Ta aplikacja jest starsza niż „{{name}}”",
+  "update.appBehindLine": "Głośnik działa na wersji {{boxVersion}}, nowszej niż ta aplikacja ({{appVersion}}). Najpierw zaktualizuj aplikację.",
+  "update.appBehindShort": "Głośnik nowszy niż aplikacja, zaktualizuj aplikację (aplikacja: {{appVersion}})",
+  "settingsView.urlPresetHeading": "Odtwarzaj własny adres URL z presetu",
+  "settingsView.urlPresetHelp": "Przypisz do przycisku presetu adres URL audio (na przykład plik MP3). Naciśnięcie przycisku, na głośniku albo w aplikacji, odtworzy go. Adres URL musi być dostępny w Twojej sieci i zaczynać się od http (głośnik nie obsługuje https). Naciśnięcie zastępuje to, co aktualnie gra.",
+  "settingsView.urlPresetNamePlaceholder": "Nazwa (na przykład Dzwonek)",
+  "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
+  "settingsView.urlPresetDefaultName": "Własny adres URL",
+  "settingsView.urlPresetInvalid": "Podaj preset oraz prawidłowy adres URL audio http:// lub https://.",
+  "settingsView.urlPresetSaved": "Zapisano w presecie {{n}}.",
+  "worldMap.countLine": "🌍 Dotychczas uratowano {{n}} głośników SoundTouch na całym świecie. Dodaj swój!"
 }

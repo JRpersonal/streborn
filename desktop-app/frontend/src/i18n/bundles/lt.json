@@ -888,5 +888,20 @@
   "spotify.nativeStep1": "Atverkite Spotify programą telefone ar kompiuteryje, prijungtame prie to paties Wi-Fi kaip garsiakalbis.",
   "spotify.nativeStep2": "Bakstelėkite “Prisijungti prie įrenginio” (garsiakalbio) piktogramą ir pasirinkite šį garsiakalbį.",
   "spotify.nativeStep3": "Grokite. Tinka bet kuri Spotify paskyra; valdo tas, kuris prisijungia paskutinis. Šioje programoje prisijungti nereikia.",
-  "spotify.nativeNote": "Pastaba: reikia Spotify Premium paskyros (pačios Spotify taisyklė dėl Connect). Senas “susieti paskyrą Bose programoje” veiksmas dingo ir nebereikalingas."
+  "spotify.nativeNote": "Pastaba: reikia Spotify Premium paskyros (pačios Spotify taisyklė dėl Connect). Senas “susieti paskyrą Bose programoje” veiksmas dingo ir nebereikalingas.",
+  "preset.spotifyNotSaveable": "Šios Spotify radijo stoties negalima išsaugoti kaip nustatymo, nes ji neturi atkartojamo grojaraščio. Atidaryk grojaraštį arba albumą ir bandyk dar kartą.",
+  "play.errSpotifyPremium": "Spotify atkūrimui reikia Premium",
+  "update.speakerUpdateAvailFor": "Yra atnaujinimas garsiakalbiui „{{name}}“",
+  "update.versionLine": "įdiegta: {{installed}} → nauja: {{next}}",
+  "update.appBehindTitle": "Ši programa senesnė nei „{{name}}“",
+  "update.appBehindLine": "Garsiakalbyje veikia {{boxVersion}}, naujesnė nei šioje programoje ({{appVersion}}). Pirmiausia atnaujink programą.",
+  "update.appBehindShort": "Garsiakalbis naujesnis nei programa, atnaujink programą (programa: {{appVersion}})",
+  "settingsView.urlPresetHeading": "Groti pasirinktinį URL iš nustatymo",
+  "settingsView.urlPresetHelp": "Priskirk garso URL (pavyzdžiui, MP3) nustatymo klavišui. Paspaudus klavišą, garsiakalbyje ar programoje, jis bus paleistas. URL turi būti pasiekiamas tavo tinkle ir prasidėti http (garsiakalbis nepalaiko https). Paspaudus jį, bus pakeista tai, kas šiuo metu grojama.",
+  "settingsView.urlPresetNamePlaceholder": "Pavadinimas (pavyzdžiui, Durų skambutis)",
+  "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
+  "settingsView.urlPresetDefaultName": "Pasirinktinis URL",
+  "settingsView.urlPresetInvalid": "Įvesk nustatymą ir tinkamą http:// arba https:// garso URL.",
+  "settingsView.urlPresetSaved": "Išsaugota į nustatymą {{n}}.",
+  "worldMap.countLine": "🌍 Iki šiol pasaulyje išgelbėta {{n}} SoundTouch garsiakalbių. Pridėk savąjį!"
 }

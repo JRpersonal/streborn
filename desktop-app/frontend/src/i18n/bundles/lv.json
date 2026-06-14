@@ -888,5 +888,20 @@
   "spotify.nativeStep1": "Atveriet Spotify lietotni telefonā vai datorā, kas ir tajā pašā Wi-Fi kā skaļrunis.",
   "spotify.nativeStep2": "Pieskarieties ikonai “Pievienoties ierīcei” (skaļrunis) un atlasiet šo skaļruni.",
   "spotify.nativeStep3": "Atskaņojiet. Darbojas jebkurš Spotify konts; vada tas, kurš pievienojas pēdējais. Šajā lietotnē pieteikšanās nav vajadzīga.",
-  "spotify.nativeNote": "Piezīme: nepieciešams Spotify Premium konts (paša Spotify noteikums priekš Connect). Vecais solis “saistīt kontu Bose lietotnē” ir pazudis un nav vajadzīgs."
+  "spotify.nativeNote": "Piezīme: nepieciešams Spotify Premium konts (paša Spotify noteikums priekš Connect). Vecais solis “saistīt kontu Bose lietotnē” ir pazudis un nav vajadzīgs.",
+  "preset.spotifyNotSaveable": "Šo Spotify radio vai staciju nevar saglabāt kā iestatījumu, jo tai nav atskaņojama atskaņošanas saraksta. Atver atskaņošanas sarakstu vai albumu un mēģini vēlreiz.",
+  "play.errSpotifyPremium": "Spotify atsaukšanai nepieciešams Premium",
+  "update.speakerUpdateAvailFor": "Pieejams atjauninājums skaļrunim '{{name}}'",
+  "update.versionLine": "uzstādīta: {{installed}} → jauna: {{next}}",
+  "update.appBehindTitle": "Šī lietotne ir vecāka nekā '{{name}}'",
+  "update.appBehindLine": "Skaļrunī darbojas {{boxVersion}}, kas ir jaunāka par šo lietotni ({{appVersion}}). Lūdzu, vispirms atjaunini lietotni.",
+  "update.appBehindShort": "Skaļrunis ir jaunāks par lietotni, lūdzu, atjaunini lietotni (lietotne: {{appVersion}})",
+  "settingsView.urlPresetHeading": "Atskaņo pielāgotu URL no iestatījuma",
+  "settingsView.urlPresetHelp": "Piešķir audio URL (piemēram, MP3) iestatījumu taustiņam. Nospiežot taustiņu uz skaļruņa vai lietotnē, tas tiek atskaņots. URL ir jābūt pieejamam tavā tīklā un jāsākas ar http (skaļrunis neatbalsta https). Tā nospiešana aizstāj to, kas pašlaik tiek atskaņots.",
+  "settingsView.urlPresetNamePlaceholder": "Nosaukums (piemēram, Durvju zvans)",
+  "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
+  "settingsView.urlPresetDefaultName": "Pielāgots URL",
+  "settingsView.urlPresetInvalid": "Lūdzu, ievadi iestatījumu un derīgu http:// vai https:// audio URL.",
+  "settingsView.urlPresetSaved": "Saglabāts iestatījumā {{n}}.",
+  "worldMap.countLine": "🌍 Līdz šim pasaulē izglābti {{n}} SoundTouch skaļruņi. Pievieno arī savu!"
 }

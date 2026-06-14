@@ -888,5 +888,20 @@
   "spotify.nativeStep1": "Ouvrez l'application Spotify sur un téléphone ou un ordinateur connecté au même Wi-Fi que l'enceinte.",
   "spotify.nativeStep2": "Touchez l'icône « Connexion à un appareil » (enceinte) et choisissez cette enceinte.",
   "spotify.nativeStep3": "Lancez la lecture. N'importe quel compte Spotify fonctionne ; la dernière personne connectée garde le contrôle. Aucune connexion requise dans cette application.",
-  "spotify.nativeNote": "Remarque : un compte Spotify Premium est nécessaire (règle propre à Spotify pour Connect). L'ancienne étape « associer un compte dans l'application Bose » a disparu et n'est plus nécessaire."
+  "spotify.nativeNote": "Remarque : un compte Spotify Premium est nécessaire (règle propre à Spotify pour Connect). L'ancienne étape « associer un compte dans l'application Bose » a disparu et n'est plus nécessaire.",
+  "preset.spotifyNotSaveable": "Cette radio ou station Spotify ne peut pas être enregistrée dans un préréglage, car elle n'a pas de playlist réécoutable. Ouvre une playlist ou un album et réessaie.",
+  "play.errSpotifyPremium": "Le rappel Spotify nécessite Premium",
+  "update.speakerUpdateAvailFor": "Mise à jour disponible pour '{{name}}'",
+  "update.versionLine": "installée : {{installed}} → nouvelle : {{next}}",
+  "update.appBehindTitle": "Cette application est plus ancienne que '{{name}}'",
+  "update.appBehindLine": "L'enceinte utilise la version {{boxVersion}}, plus récente que cette application ({{appVersion}}). Mets d'abord l'application à jour.",
+  "update.appBehindShort": "Enceinte plus récente que l'application, mets l'application à jour (application : {{appVersion}})",
+  "settingsView.urlPresetHeading": "Lire une URL personnalisée depuis un préréglage",
+  "settingsView.urlPresetHelp": "Associe une URL audio (par exemple un MP3) à une touche de préréglage. Une pression sur la touche, sur l'enceinte ou dans l'application, la lit. L'URL doit être accessible sur ton réseau et commencer par http (l'enceinte ne prend pas en charge https). Une pression remplace ce qui est en cours de lecture.",
+  "settingsView.urlPresetNamePlaceholder": "Nom (par exemple Sonnette)",
+  "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
+  "settingsView.urlPresetDefaultName": "URL personnalisée",
+  "settingsView.urlPresetInvalid": "Saisis un préréglage et une URL audio http:// ou https:// valide.",
+  "settingsView.urlPresetSaved": "Enregistré dans le préréglage {{n}}.",
+  "worldMap.countLine": "🌍 {{n}} enceintes SoundTouch sauvées dans le monde jusqu'ici. Ajoute la tienne !"
 }

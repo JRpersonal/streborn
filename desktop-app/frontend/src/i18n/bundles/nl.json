@@ -888,5 +888,20 @@
   "spotify.nativeStep1": "Open de Spotify-app op een telefoon of computer op dezelfde wifi als de speaker.",
   "spotify.nativeStep2": "Tik op het pictogram “Verbinden met een apparaat” (speaker) en kies deze speaker.",
   "spotify.nativeStep3": "Speel af. Elk Spotify-account werkt; wie als laatste verbindt, heeft de bediening. Geen login nodig in deze app.",
-  "spotify.nativeNote": "Let op: een Spotify Premium-account is vereist (de eigen regel van Spotify voor Connect). De oude stap “een account koppelen in de Bose-app” is verdwenen en niet meer nodig."
+  "spotify.nativeNote": "Let op: een Spotify Premium-account is vereist (de eigen regel van Spotify voor Connect). De oude stap “een account koppelen in de Bose-app” is verdwenen en niet meer nodig.",
+  "preset.spotifyNotSaveable": "Deze Spotify-radio of -zender kan niet als preset worden opgeslagen omdat er geen afspeelbare afspeellijst is. Open een afspeellijst of album en probeer het opnieuw.",
+  "play.errSpotifyPremium": "Spotify terughalen vereist Premium",
+  "update.speakerUpdateAvailFor": "Update beschikbaar voor '{{name}}'",
+  "update.versionLine": "geïnstalleerd: {{installed}} → nieuw: {{next}}",
+  "update.appBehindTitle": "Deze app is ouder dan '{{name}}'",
+  "update.appBehindLine": "De speaker draait {{boxVersion}}, nieuwer dan deze app ({{appVersion}}). Werk eerst de app bij.",
+  "update.appBehindShort": "Speaker nieuwer dan de app, werk de app bij (app: {{appVersion}})",
+  "settingsView.urlPresetHeading": "Een eigen URL afspelen vanaf een preset",
+  "settingsView.urlPresetHelp": "Koppel een audio-URL (bijvoorbeeld een MP3) aan een presetknop. Als je op de knop drukt, op de speaker of in de app, wordt deze afgespeeld. De URL moet bereikbaar zijn op je netwerk en met http beginnen (de speaker ondersteunt geen https). Door erop te drukken vervang je wat er nu speelt.",
+  "settingsView.urlPresetNamePlaceholder": "Naam (bijvoorbeeld Deurbel)",
+  "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
+  "settingsView.urlPresetDefaultName": "Eigen URL",
+  "settingsView.urlPresetInvalid": "Voer een preset en een geldige http:// of https:// audio-URL in.",
+  "settingsView.urlPresetSaved": "Opgeslagen op preset {{n}}.",
+  "worldMap.countLine": "🌍 {{n}} SoundTouch-speakers wereldwijd gered tot nu toe. Voeg die van jou toe!"
 }

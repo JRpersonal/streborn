@@ -888,5 +888,20 @@
   "spotify.nativeStep1": "Abre la aplicación de Spotify en un teléfono u ordenador que esté en el mismo Wi-Fi que el altavoz.",
   "spotify.nativeStep2": "Toca el icono de “Conectar a un dispositivo” (altavoz) y elige este altavoz.",
   "spotify.nativeStep3": "Reproduce. Funciona con cualquier cuenta de Spotify; quien se conecte el último la controla. No hace falta iniciar sesión en esta aplicación.",
-  "spotify.nativeNote": "Nota: se necesita una cuenta de Spotify Premium (es la propia norma de Spotify para Connect). El antiguo paso de “vincular una cuenta en la app Bose” ya no existe y no es necesario."
+  "spotify.nativeNote": "Nota: se necesita una cuenta de Spotify Premium (es la propia norma de Spotify para Connect). El antiguo paso de “vincular una cuenta en la app Bose” ya no existe y no es necesario.",
+  "preset.spotifyNotSaveable": "Esta radio o emisora de Spotify no se puede guardar en un acceso directo porque no tiene una lista reproducible. Abre una lista de reproducción o un álbum e inténtalo de nuevo.",
+  "play.errSpotifyPremium": "Para retomar Spotify necesitas Premium",
+  "update.speakerUpdateAvailFor": "Actualización disponible para '{{name}}'",
+  "update.versionLine": "instalada: {{installed}} → nueva: {{next}}",
+  "update.appBehindTitle": "Esta app es más antigua que '{{name}}'",
+  "update.appBehindLine": "El altavoz usa {{boxVersion}}, más reciente que esta app ({{appVersion}}). Actualiza primero la app.",
+  "update.appBehindShort": "El altavoz es más reciente que la app, actualiza la app (app: {{appVersion}})",
+  "settingsView.urlPresetHeading": "Reproducir una URL personalizada desde un acceso directo",
+  "settingsView.urlPresetHelp": "Asigna una URL de audio (por ejemplo un MP3) a una tecla de acceso directo. Al pulsar la tecla, en el altavoz o en la app, se reproduce. La URL debe estar accesible en tu red y empezar por http (el altavoz no admite https). Al pulsarla se reemplaza lo que se esté reproduciendo.",
+  "settingsView.urlPresetNamePlaceholder": "Nombre (por ejemplo Timbre)",
+  "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
+  "settingsView.urlPresetDefaultName": "URL personalizada",
+  "settingsView.urlPresetInvalid": "Introduce un acceso directo y una URL de audio http:// o https:// válida.",
+  "settingsView.urlPresetSaved": "Guardado en el acceso directo {{n}}.",
+  "worldMap.countLine": "🌍 {{n}} altavoces SoundTouch rescatados en todo el mundo hasta ahora. ¡Añade el tuyo!"
 }

@@ -888,5 +888,20 @@
   "spotify.nativeStep1": "Hoparlörle aynı Wi-Fi'deki bir telefon veya bilgisayarda Spotify uygulamasını açın.",
   "spotify.nativeStep2": "“Bir cihaza bağlan” (hoparlör) simgesine dokunun ve bu hoparlörü seçin.",
   "spotify.nativeStep3": "Çalın. Herhangi bir Spotify hesabı çalışır; en son bağlanan onu kontrol eder. Bu uygulamada giriş gerekmez.",
-  "spotify.nativeNote": "Not: Spotify Premium hesabı gerekir (Connect için Spotify'ın kendi kuralı). Eski “Bose uygulamasında hesap bağla” adımı kaldırıldı ve gerekli değil."
+  "spotify.nativeNote": "Not: Spotify Premium hesabı gerekir (Connect için Spotify'ın kendi kuralı). Eski “Bose uygulamasında hesap bağla” adımı kaldırıldı ve gerekli değil.",
+  "preset.spotifyNotSaveable": "Bu Spotify radyosu veya istasyonu, yeniden çalınabilir bir çalma listesi olmadığı için bir ön ayara kaydedilemez. Bir çalma listesi veya albüm açıp tekrar dene.",
+  "play.errSpotifyPremium": "Spotify geri çağırma için Premium gerekir",
+  "update.speakerUpdateAvailFor": "'{{name}}' için güncelleme mevcut",
+  "update.versionLine": "yüklü: {{installed}} → yeni: {{next}}",
+  "update.appBehindTitle": "Bu uygulama '{{name}}' cihazından daha eski",
+  "update.appBehindLine": "Hoparlör {{boxVersion}} sürümünü çalıştırıyor, bu uygulamadan ({{appVersion}}) daha yeni. Lütfen önce uygulamayı güncelle.",
+  "update.appBehindShort": "Hoparlör uygulamadan daha yeni, lütfen uygulamayı güncelle (uygulama: {{appVersion}})",
+  "settingsView.urlPresetHeading": "Bir ön ayardan özel URL çal",
+  "settingsView.urlPresetHelp": "Bir ön ayar tuşuna bir ses URL'si (örneğin bir MP3) ata. Tuşa, hoparlörde ya da uygulamada bastığında çalar. URL ağında erişilebilir olmalı ve http ile başlamalı (hoparlör https desteklemiyor). Tuşa basmak o anda çalanın yerini alır.",
+  "settingsView.urlPresetNamePlaceholder": "Ad (örneğin Kapı zili)",
+  "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
+  "settingsView.urlPresetDefaultName": "Özel URL",
+  "settingsView.urlPresetInvalid": "Lütfen bir ön ayar ve geçerli bir http:// veya https:// ses URL'si gir.",
+  "settingsView.urlPresetSaved": "{{n}} numaralı ön ayara kaydedildi.",
+  "worldMap.countLine": "🌍 Şimdiye kadar dünya genelinde {{n}} SoundTouch hoparlörü kurtarıldı. Seninkini de ekle!"
 }
