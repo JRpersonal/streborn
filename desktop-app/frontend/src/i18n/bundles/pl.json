@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "Własny adres URL",
   "settingsView.urlPresetInvalid": "Podaj preset oraz prawidłowy adres URL audio http:// lub https://.",
   "settingsView.urlPresetSaved": "Zapisano w presecie {{n}}.",
-  "worldMap.countLine": "🌍 Dotychczas uratowano {{n}} głośników SoundTouch na całym świecie. Dodaj swój!"
+  "worldMap.countLine": "🌍 Dotychczas uratowano {{n}} głośników SoundTouch na całym świecie. Dodaj swój!",
+  "worldMap.inviteTextAll": "Wszystkie Twoje SoundTouch znów działają 🎉"
 }

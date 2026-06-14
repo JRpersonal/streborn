@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "URL personalizada",
   "settingsView.urlPresetInvalid": "Introduce un acceso directo y una URL de audio http:// o https:// válida.",
   "settingsView.urlPresetSaved": "Guardado en el acceso directo {{n}}.",
-  "worldMap.countLine": "🌍 {{n}} altavoces SoundTouch rescatados en todo el mundo hasta ahora. ¡Añade el tuyo!"
+  "worldMap.countLine": "🌍 {{n}} altavoces SoundTouch rescatados en todo el mundo hasta ahora. ¡Añade el tuyo!",
+  "worldMap.inviteTextAll": "Todos tus SoundTouch vuelven a la vida 🎉"
 }

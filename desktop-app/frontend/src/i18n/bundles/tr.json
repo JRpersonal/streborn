@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "Özel URL",
   "settingsView.urlPresetInvalid": "Lütfen bir ön ayar ve geçerli bir http:// veya https:// ses URL'si gir.",
   "settingsView.urlPresetSaved": "{{n}} numaralı ön ayara kaydedildi.",
-  "worldMap.countLine": "🌍 Şimdiye kadar dünya genelinde {{n}} SoundTouch hoparlörü kurtarıldı. Seninkini de ekle!"
+  "worldMap.countLine": "🌍 Şimdiye kadar dünya genelinde {{n}} SoundTouch hoparlörü kurtarıldı. Seninkini de ekle!",
+  "worldMap.inviteTextAll": "Tüm SoundTouch hoparlörlerin yeniden hayatta 🎉"
 }

@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "Eigen URL",
   "settingsView.urlPresetInvalid": "Voer een preset en een geldige http:// of https:// audio-URL in.",
   "settingsView.urlPresetSaved": "Opgeslagen op preset {{n}}.",
-  "worldMap.countLine": "🌍 {{n}} SoundTouch-speakers wereldwijd gered tot nu toe. Voeg die van jou toe!"
+  "worldMap.countLine": "🌍 {{n}} SoundTouch-speakers wereldwijd gered tot nu toe. Voeg die van jou toe!",
+  "worldMap.inviteTextAll": "Al je SoundTouch-speakers leven weer 🎉"
 }

@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "Pielāgots URL",
   "settingsView.urlPresetInvalid": "Lūdzu, ievadi iestatījumu un derīgu http:// vai https:// audio URL.",
   "settingsView.urlPresetSaved": "Saglabāts iestatījumā {{n}}.",
-  "worldMap.countLine": "🌍 Līdz šim pasaulē izglābti {{n}} SoundTouch skaļruņi. Pievieno arī savu!"
+  "worldMap.countLine": "🌍 Līdz šim pasaulē izglābti {{n}} SoundTouch skaļruņi. Pievieno arī savu!",
+  "worldMap.inviteTextAll": "Visi tavi SoundTouch atkal darbojas 🎉"
 }

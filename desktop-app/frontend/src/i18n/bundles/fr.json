@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "URL personnalisée",
   "settingsView.urlPresetInvalid": "Saisis un préréglage et une URL audio http:// ou https:// valide.",
   "settingsView.urlPresetSaved": "Enregistré dans le préréglage {{n}}.",
-  "worldMap.countLine": "🌍 {{n}} enceintes SoundTouch sauvées dans le monde jusqu'ici. Ajoute la tienne !"
+  "worldMap.countLine": "🌍 {{n}} enceintes SoundTouch sauvées dans le monde jusqu'ici. Ajoute la tienne !",
+  "worldMap.inviteTextAll": "Toutes tes enceintes SoundTouch revivent 🎉"
 }

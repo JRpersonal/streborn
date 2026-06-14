@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "Pasirinktinis URL",
   "settingsView.urlPresetInvalid": "Įvesk nustatymą ir tinkamą http:// arba https:// garso URL.",
   "settingsView.urlPresetSaved": "Išsaugota į nustatymą {{n}}.",
-  "worldMap.countLine": "🌍 Iki šiol pasaulyje išgelbėta {{n}} SoundTouch garsiakalbių. Pridėk savąjį!"
+  "worldMap.countLine": "🌍 Iki šiol pasaulyje išgelbėta {{n}} SoundTouch garsiakalbių. Pridėk savąjį!",
+  "worldMap.inviteTextAll": "Visi jūsų SoundTouch vėl veikia 🎉"
 }

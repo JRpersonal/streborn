@@ -1220,6 +1220,9 @@ function applyBoxList(list) {
   updateSettingsTabBadge();
   // Setup-tab target picker reuses the same state.boxes feed.
   renderSetupTargetPicker();
+  // Second world-map invite: once the user's whole supported SoundTouch set is
+  // running STR (no stock box left to convert), celebrate the milestone again.
+  maybeInviteWorldMapAllDone();
 }
 
 let _autoRefreshTimer = null;
@@ -2928,11 +2931,13 @@ async function refreshStatus() {
 // coarse-location + anti-spam work in a normal session). Fires once ever
 // (localStorage flag). The app sends NO data and NO location: the website handles
 // the pin (the user taps a coarse region) and its own anti-spam token.
-const WORLD_MAP_FLAG = 'str.worldMapInvited';
+const WORLD_MAP_FLAG = 'str.worldMapInvited';        // after the first radio play
+const WORLD_MAP_ALL_FLAG = 'str.worldMapInvitedAll'; // when the whole set runs STR
 // Session re-entry guard: the status poll fires every few seconds, so the async
 // flag check below must not let a second poll open a second invite before the
 // first has persisted the flag. Set synchronously on the first call.
 let worldMapInviteHandled = false;
+let worldMapAllHandled = false;
 
 // worldMapURL builds the localized community-map deep link. English is the site
 // root; the other locales live under /<locale>/. ?share opens the "set pin" form
@@ -2945,27 +2950,48 @@ function worldMapURL() {
   return 'https://st-reborn.de' + prefix + '/?share&src=app#community';
 }
 
-async function maybeInviteWorldMap() {
-  if (worldMapInviteHandled) return; // synchronous guard against status-poll re-entry
-  worldMapInviteHandled = true;
-  // Durable guard first: a persistent Go-side flag in the OS config dir survives
-  // app version updates and reinstalls, unlike webview localStorage, so this
-  // one-time invite never reappears later (which would be annoying). localStorage
-  // is a fast secondary check. Either being set suppresses the invite.
+// inviteWorldMapOnce shows the world-map invite at most once ever for the given
+// flag. The durable Go-side flag survives app updates and reinstalls (unlike
+// webview localStorage), so a one-time invite never reappears; localStorage is a
+// fast secondary check. variant 'all' uses the "whole setup rescued" wording.
+async function inviteWorldMapOnce(flag, variant) {
   let already = false;
-  try { already = await GetAppFlag(WORLD_MAP_FLAG); } catch { /* fall back to localStorage */ }
+  try { already = await GetAppFlag(flag); } catch { /* fall back to localStorage */ }
   if (!already) {
-    try { already = localStorage.getItem(WORLD_MAP_FLAG) === '1'; } catch {}
+    try { already = localStorage.getItem(flag) === '1'; } catch {}
   }
   if (already) return;
   // Persist to BOTH stores before showing, so a crash right after still suppresses it.
-  try { localStorage.setItem(WORLD_MAP_FLAG, '1'); } catch {}
-  try { await SetAppFlag(WORLD_MAP_FLAG); } catch {}
-  showWorldMapInvite();
+  try { localStorage.setItem(flag, '1'); } catch {}
+  try { await SetAppFlag(flag); } catch {}
+  showWorldMapInvite(variant);
 }
 
-function showWorldMapInvite() {
+async function maybeInviteWorldMap() {
+  if (worldMapInviteHandled) return; // synchronous guard against status-poll re-entry
+  worldMapInviteHandled = true;
+  await inviteWorldMapOnce(WORLD_MAP_FLAG, 'first');
+}
+
+// maybeInviteWorldMapAllDone fires the SECOND invite once every supported
+// SoundTouch the app has discovered is running STR (no stock box left to
+// convert) and there are at least two of them, i.e. the user has rescued their
+// whole multi-speaker setup. Once ever. Single-box users already got the
+// first-radio-play invite, so the >=2 guard keeps this as the distinct
+// whole-setup milestone instead of a duplicate.
+async function maybeInviteWorldMapAllDone() {
+  if (worldMapAllHandled) return;
+  const boxes = state.boxes || [];
+  const strBoxes = boxes.filter(b => b && b.kind !== 'stock');
+  const stockBoxes = boxes.filter(b => b && b.kind === 'stock');
+  if (strBoxes.length < 2 || stockBoxes.length > 0) return;
+  worldMapAllHandled = true; // latch only once the milestone is actually reached
+  await inviteWorldMapOnce(WORLD_MAP_ALL_FLAG, 'all');
+}
+
+function showWorldMapInvite(variant) {
   if (document.getElementById('worldMapInvite')) return;
+  const headline = variant === 'all' ? t('worldMap.inviteTextAll') : t('worldMap.inviteText');
   const el = document.createElement('div');
   el.id = 'worldMapInvite';
   el.className = 'worldmap-invite';
@@ -2973,7 +2999,7 @@ function showWorldMapInvite() {
     `<button class="wmi-close" id="wmiClose" aria-label="close">&times;</button>` +
     `<div class="wmi-burst" aria-hidden="true">🎉</div>` +
     `<div class="wmi-body">` +
-      `<div class="wmi-text">${escapeHtml(t('worldMap.inviteText'))}</div>` +
+      `<div class="wmi-text">${escapeHtml(headline)}</div>` +
       `<div class="wmi-count hidden" id="wmiCount"></div>` +
       `<button class="btn btn-mini btn-primary wmi-share" id="wmiShare">${escapeHtml(t('worldMap.inviteBtn'))}</button>` +
     `</div>`;
@@ -3022,13 +3048,14 @@ function spawnConfetti(anchor) {
 }
 
 // Preview hook: force-show the world-map invite (bypassing the once-ever flag) so
-// the celebration can be checked without re-triggering a first radio play. Press
-// Ctrl+Shift+M. Harmless if a user finds it; it only previews the invite.
+// the celebration can be checked without re-triggering it. Ctrl+Shift+M = the
+// first-radio-play invite; Ctrl+Shift+Alt+M = the "whole setup rescued" variant.
+// Harmless if a user finds it; it only previews the invite.
 try {
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && (e.key === 'M' || e.key === 'm')) {
       e.preventDefault();
-      showWorldMapInvite();
+      showWorldMapInvite(e.altKey ? 'all' : 'first');
     }
   });
 } catch { /* no preview hook */ }

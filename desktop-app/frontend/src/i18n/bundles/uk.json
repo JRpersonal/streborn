@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "Власний URL",
   "settingsView.urlPresetInvalid": "Введи пресет і дійсний аудіо URL http:// або https://.",
   "settingsView.urlPresetSaved": "Збережено в пресет {{n}}.",
-  "worldMap.countLine": "🌍 Уже {{n}} колонок SoundTouch врятовано по всьому світу. Додай свою!"
+  "worldMap.countLine": "🌍 Уже {{n}} колонок SoundTouch врятовано по всьому світу. Додай свою!",
+  "worldMap.inviteTextAll": "Усі ваші SoundTouch знову працюють 🎉"
 }

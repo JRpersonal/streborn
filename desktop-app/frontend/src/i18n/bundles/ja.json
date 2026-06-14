@@ -903,5 +903,6 @@
   "settingsView.urlPresetDefaultName": "カスタム URL",
   "settingsView.urlPresetInvalid": "プリセットと、有効な http:// または https:// の音声 URL を入力してください。",
   "settingsView.urlPresetSaved": "プリセット {{n}} に保存しました。",
-  "worldMap.countLine": "🌍 これまでに世界中で {{n}} 台の SoundTouch スピーカーが復活しました。あなたのも追加しましょう！"
+  "worldMap.countLine": "🌍 これまでに世界中で {{n}} 台の SoundTouch スピーカーが復活しました。あなたのも追加しましょう！",
+  "worldMap.inviteTextAll": "あなたの SoundTouch がすべてまた動き出しました 🎉"
 }
