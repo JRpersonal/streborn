@@ -167,8 +167,9 @@ type Server struct {
 
 // recentCardCtx is the current source card for a source, retained so the live
 // track callbacks (radio ICY title, Spotify track change) can hang their tracks
-// under it (#135).
-type recentCardCtx struct{ key, name, art, url, account string }
+// under it (#135). homepage is the station website, carried so each ICY-title
+// track entry keeps the "website" link target.
+type recentCardCtx struct{ key, name, art, url, account, homepage string }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the
 // re-push state. rePushes counts consecutive resume attempts on THIS stream and
@@ -649,6 +650,9 @@ type playRequest struct {
 	// library track, so the box decodes it correctly. Empty for radio -> the
 	// renderer defaults to audio/mpeg.
 	Mime string `json:"mime"`
+	// Homepage is the station website (radio only), recorded into Recently-played
+	// so a card can offer a "website" link like the radio search rows do (#135).
+	Homepage string `json:"homepage"`
 }
 
 // handleWebhooks gets (GET) or replaces (PUT) the webhook config. The config
@@ -760,9 +764,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// Recently-played (#135): a network-library file carries a MIME; radio does
 	// not. Record the original URL as the replayable card target, not the proxy.
 	if req.Mime != "" {
-		s.recentNoteCard("upnp", req.URL, req.Title, req.Icon, req.URL, "")
+		s.recentNoteCard("upnp", req.URL, req.Title, req.Icon, req.URL, "", "")
 	} else {
-		s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "")
+		s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage)
 	}
 	// radio-browser click-tracking moved app-side (the app fires RadioClick
 	// when it starts playback) so the box no longer needs the radiobrowser pkg.
@@ -837,7 +841,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
-		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account) // #135
+		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "") // #135
 		uri, name, art, account := p.URI, p.Name, p.Art, p.Account
 		go func() {
 			bg := context.Background()
@@ -885,7 +889,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setLastPlay(playURL, p.Name, p.Art, "")
-	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "") // #135
+	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "") // #135
 	name, art := p.Name, p.Art
 	go s.verifyRecall(func(ctx context.Context, _ bool) {
 		_ = s.renderer.PlayURL(ctx, playURL, name, art)
@@ -957,15 +961,15 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
 // recentNoteCard records a user-chosen source (radio station, Spotify playlist,
 // NAS file) as the start of a Recently-played card. For radio and Spotify it also
 // remembers the card so the live track callbacks can hang tracks under it.
-func (s *Server) recentNoteCard(source, key, name, art, url, account string) {
+func (s *Server) recentNoteCard(source, key, name, art, url, account, homepage string) {
 	if s.recent == nil || key == "" {
 		return
 	}
-	s.recent.Add(recent.Entry{Source: source, CardKey: key, CardName: name, CardArt: art, CardURL: url, Account: account})
+	s.recent.Add(recent.Entry{Source: source, CardKey: key, CardName: name, CardArt: art, CardURL: url, Account: account, Homepage: homepage})
 	s.recentMu.Lock()
 	switch source {
 	case "radio":
-		s.recentRadioCard = recentCardCtx{key: key, name: name, art: art, url: url}
+		s.recentRadioCard = recentCardCtx{key: key, name: name, art: art, url: url, homepage: homepage}
 	case "spotify":
 		// A fresh card resets the de-dup so the playlist's first song is recorded
 		// even if its name happens to match the previous card's last track.
@@ -986,7 +990,7 @@ func (s *Server) recentNoteRadioTrack(track string) {
 	if c.key == "" {
 		return
 	}
-	s.recent.Add(recent.Entry{Source: "radio", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track})
+	s.recent.Add(recent.Entry{Source: "radio", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track, Homepage: c.homepage})
 }
 
 // NoteRecentSpotifyTrack hangs a live Spotify song under the current Spotify card.
@@ -1017,10 +1021,10 @@ func (s *Server) NoteRecentSpotifyTrack(track, artist string) {
 // the renderer, bypassing the webui play handlers.
 func (s *Server) NoteRecentPreset(p presets.Preset) {
 	if p.Type == "spotify" {
-		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account)
+		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "")
 		return
 	}
-	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "")
+	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "")
 }
 
 // handleRecent serves this box's recently-played ring (#135), oldest-first. The

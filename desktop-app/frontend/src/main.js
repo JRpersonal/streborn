@@ -3500,7 +3500,7 @@ async function playStation(s) {
 
     let fail = null;
     try {
-      await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '', '');
+      await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '', '', s.homepage || '');
       if (cur.stationuuid) { try { RadioClick(cur.stationuuid); } catch {} }
       // Refresh the now-playing bar promptly on the happy path; the upstream
       // verdict (success vs 403/503) arrives asynchronously, so poll for it.
@@ -6930,7 +6930,7 @@ async function libraryPlay(item) {
     // Pass the track's real codec MIME so the box decodes FLAC/ALAC/M4A
     // correctly instead of being told audio/mpeg and rejecting it (#139).
     await PlayURL(state.currentBox.host, state.currentBox.port,
-      item.streamURL, item.title || '', item.albumArtURL || '', '', item.mimeType || '');
+      item.streamURL, item.title || '', item.albumArtURL || '', '', item.mimeType || '', '');
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
     // Confirm it actually starts (see verifyLibraryPlayback, #139).
     verifyLibraryPlayback(item);

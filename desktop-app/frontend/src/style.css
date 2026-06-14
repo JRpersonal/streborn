@@ -1245,6 +1245,8 @@ body {
 .rc-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rc-sub { font-size: 12px; color: var(--brand-text-mid); margin-top: 2px; }
 .rc-box { color: var(--brand-text); }
+.rc-site { color: #6aa9e9; text-decoration: none; cursor: pointer; }
+.rc-site:hover { text-decoration: underline; }
 .rc-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 .rc-actions .rc-fav.is-fav { color: #f5c518; border-color: #f5c518; }
 .rc-tracks { border-top: 1px solid #262626; padding: 4px 12px 8px 64px; }

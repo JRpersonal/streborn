@@ -146,8 +146,8 @@ export function PlaySlot(arg1, arg2, arg3) {
   return window['go']['main']['App']['PlaySlot'](arg1, arg2, arg3);
 }
 
-export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
-  return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
+  return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 }
 
 export function ProbeSetupAP() {

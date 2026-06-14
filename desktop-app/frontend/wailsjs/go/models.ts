@@ -305,6 +305,7 @@ export namespace main {
 	    cardURL: string;
 	    track: string;
 	    account: string;
+	    homepage: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new RecentItem(source);
@@ -320,6 +321,7 @@ export namespace main {
 	        this.cardURL = source["cardURL"];
 	        this.track = source["track"];
 	        this.account = source["account"];
+	        this.homepage = source["homepage"];
 	    }
 	}
 	export class SetupAPPushResult {

@@ -19,6 +19,7 @@ type RecentItem struct {
 	CardURL  string `json:"cardURL"`  // replay target: stream URL / spotify URI / NAS location
 	Track    string `json:"track"`    // song / track title (radio ICY, Spotify); may be empty
 	Account  string `json:"account"`  // sourceAccount (which Spotify account)
+	Homepage string `json:"homepage"` // station website, for the card's "website" link (radio)
 }
 
 // RecentPlayed reads one box's recently-played ring (GET /api/recent),

@@ -51,6 +51,7 @@ type Entry struct {
 	CardURL  string `json:"cardURL,omitempty"` // replay target: stream URL / spotify URI / NAS location
 	Track    string `json:"track,omitempty"`   // song / track title; empty for stations without ICY
 	Account  string `json:"account,omitempty"` // sourceAccount (e.g. which Spotify account)
+	Homepage string `json:"homepage,omitempty"` // station website, for the "website" link (radio)
 }
 
 // Store is the in-RAM ring plus its debounced NAND backing file.

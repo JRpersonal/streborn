@@ -16,7 +16,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { RecentPlayed, SaveSpotifyPreset } from '../api.js';
+import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, BrowserOpenURL } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
@@ -69,6 +69,7 @@ function groupRecentCards(entries) {
   for (const e of entries) {
     const last = cards[cards.length - 1];
     if (last && last.boxKey === e._boxKey && last.cardKey === e.cardKey) {
+      if (!last.homepage && e.homepage) last.homepage = e.homepage;
       // Dedup repeated titles within a session. Many stations flip the ICY title
       // between the song and talk/promo/contact lines (SWR3: "TALK mit ...",
       // "Kontakt zu SWR3: ..."), which otherwise fills the card with the same few
@@ -82,10 +83,15 @@ function groupRecentCards(entries) {
     }
     const seen = new Set();
     if (e.track) seen.add(e.track);
+    // Spotify playable when its playlist URI matches a preset slot on its box.
+    const playSlot = e.source === 'spotify' && e._spotifySlots
+      ? e._spotifySlots[e.cardKey]
+      : undefined;
     cards.push({
       boxKey: e._boxKey, box: e._box, boxName: e._boxName,
       source: e.source, cardKey: e.cardKey, name: e.cardName,
       art: e.cardArt, url: e.cardURL, account: e.account, ts: e.ts,
+      homepage: e.homepage || '', playSlot,
       tracks: e.track ? [{ track: e.track, ts: e.ts }] : [],
       _seen: seen,
     });
@@ -94,20 +100,29 @@ function groupRecentCards(entries) {
 }
 
 // loadRecentCards fetches /api/recent from the selected scope (this box vs all),
-// tags each entry with its box, merges newest-first and groups into cards.
+// tags each entry with its box, merges newest-first and groups into cards. It
+// also fetches each box's presets so a Spotify card whose playlist is saved as a
+// preset (= the box holds that account's token) can offer a play button that
+// recalls the slot. One presets fetch per box on view-open: app-side, no box poll.
 async function loadRecentCards() {
   const boxes = state.recentAllBoxes
     ? recentStrBoxes()
     : (state.currentBox ? [state.currentBox] : []);
   const results = await Promise.all(boxes.map(async (b) => {
+    const boxKey = b.deviceID || (b.host + ':' + b.port);
+    const boxName = b.name || b.friendlyName || b.host;
+    let list = [];
+    try { list = await RecentPlayed(b.host, b.port) || []; } catch { list = []; }
+    // Map Spotify playlist URI -> preset slot on this box. A match means the box
+    // can recall (and holds the token), so the card gets a play button.
+    const spotifySlots = {};
     try {
-      const list = await RecentPlayed(b.host, b.port);
-      const boxKey = b.deviceID || (b.host + ':' + b.port);
-      const boxName = b.name || b.friendlyName || b.host;
-      return (list || []).map((e) => ({ ...e, _box: b, _boxKey: boxKey, _boxName: boxName }));
-    } catch {
-      return [];
-    }
+      const presets = await GetPresets(b.host, b.port) || [];
+      for (const p of presets) {
+        if (p && p.type === 'spotify' && p.uri) spotifySlots[p.uri] = p.slot;
+      }
+    } catch { /* presets unreachable: no play buttons, save still works */ }
+    return list.map((e) => ({ ...e, _box: b, _boxKey: boxKey, _boxName: boxName, _spotifySlots: spotifySlots }));
   }));
   const merged = results.flat().sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
   return groupRecentCards(merged);
@@ -160,19 +175,36 @@ function logoImg(c) {
   return logoImgTag(cardStation(c), 'rc-logo');
 }
 
-function recentCardHTML(c, i, showBox) {
+// cardWebURL returns the card's website, shown as a "website" link like the radio
+// search rows. Radio: the station homepage captured at play time. Spotify: the
+// open.spotify.com page derived from the playlist/album URI. Empty -> no link.
+function cardWebURL(c) {
+  if (c.source === 'spotify') {
+    const m = (c.cardKey || '').match(/^spotify:([a-z]+):([A-Za-z0-9]+)/);
+    return m ? `https://open.spotify.com/${m[1]}/${m[2]}` : '';
+  }
+  const hp = c.homepage || '';
+  return /^https?:\/\//i.test(hp) ? hp : '';
+}
+
+function recentCardHTML(c, i) {
   const isRadio = c.source !== 'spotify';
+  const webUrl = cardWebURL(c);
+  // Always show which box played it (Jens) plus the source, Spotify account and,
+  // like the radio search rows, a "website" link.
   const sub = `<span class="rc-src">${escapeHtml(recentSourceLabel(c.source))}</span>`
     + (c.account ? ` &middot; ${escapeHtml(c.account)}` : '')
-    + (showBox && c.boxName ? ` &middot; <span class="rc-box">${escapeHtml(c.boxName)}</span>` : '');
+    + (c.boxName ? ` &middot; <span class="rc-box">${escapeHtml(c.boxName)}</span>` : '')
+    + (webUrl ? ` &middot; <a href="#" class="rc-site" id="recSite${i}" title="${escapeAttr(t('search.openWebsite'))}">${escapeHtml(t('footer.website'))}</a>` : '');
   const tracks = c.tracks.length
     ? `<div class="rc-tracks">` + c.tracks.map((tr) =>
         `<div class="rc-track"><span class="rc-tr-main">${formatTrack(tr.track)}</span>`
         + `<span class="rc-tr-time">${escapeHtml(recentClock(tr.ts))}</span></div>`).join('') + `</div>`
     : '';
   // Buttons identical to the radio search rows: play, save-to-preset, favourite.
-  // Spotify is preset-only and not radio-favouritable, so it gets just the save
-  // button (saved as a real Spotify preset).
+  // Spotify is not radio-favouritable, so it gets save plus, when the box holds
+  // the token for this playlist (a Spotify preset with the same URI exists), a
+  // play button that recalls that slot.
   let actions;
   if (isRadio) {
     const fav = deps.isFav ? deps.isFav(cardStation(c)) : false;
@@ -180,7 +212,11 @@ function recentCardHTML(c, i, showBox) {
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`
       + `<button class="btn btn-mini rc-fav${fav ? ' is-fav' : ''}" id="recFav${i}" title="${escapeAttr(fav ? t('search.removeFav') : t('search.addFav'))}">${fav ? '&#9733;' : '&#9734;'}</button>`;
   } else {
-    actions = `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
+    const canPlay = c.playSlot != null;
+    actions = (canPlay
+      ? `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9654;</button>`
+      : '')
+      + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
   const nowPlaying = c.source === 'radio' && state.nowName && c.name && state.nowName === c.name;
   return `<div class="recent-card rc-${escapeAttr(c.source)}${nowPlaying ? ' rc-now' : ''}">`
@@ -194,9 +230,25 @@ function wireCard(c, i) {
   const playBtn = document.getElementById('recPlay' + i);
   const pickBtn = document.getElementById('recPick' + i);
   const favBtn = document.getElementById('recFav' + i);
+  const siteBtn = document.getElementById('recSite' + i);
+  if (siteBtn) {
+    siteBtn.onclick = (e) => {
+      e.preventDefault();
+      const url = cardWebURL(c);
+      if (url) { try { BrowserOpenURL(url); } catch {} }
+    };
+  }
   if (playBtn) {
     playBtn.onclick = async () => {
-      try { await deps.playStation(cardStation(c)); } catch (err) { showError(err); }
+      try {
+        if (c.source === 'spotify') {
+          // Token present (matched a preset slot): recall it, same as a preset.
+          await PlaySlot(c.box.host, c.box.port, c.playSlot);
+          showToast(t('recent.playing', { name: c.name || '' }));
+        } else {
+          await deps.playStation(cardStation(c));
+        }
+      } catch (err) { showError(err); }
     };
   }
   if (pickBtn) {
@@ -257,6 +309,6 @@ export async function renderRecent() {
     listEl.innerHTML = `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
     return;
   }
-  listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i, showAll)).join('');
+  listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i)).join('');
   cards.forEach((c, i) => wireCard(c, i));
 }
