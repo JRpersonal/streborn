@@ -76,39 +76,50 @@ export function initSettingsView(d) {
   deps = { ...deps, ...d };
 }
 
-$('view-settings').innerHTML = `
-  <h2>${escapeHtml(t('settingsView.title'))}</h2>
-  <div class="settings-box-switcher">
-    <span class="muted small">${escapeHtml(t('settingsView.forSpeaker'))}</span>
-    <select id="settingsBoxSelect"></select>
-    <button class="btn-icon" id="settingsRefreshBtn" title="${escapeAttr(t('settingsView.refreshListTitle'))}"><span class="refresh-icon">&#x21bb;</span></button>
-  </div>
-  <div id="settingsBody">
-    <div class="muted">${escapeHtml(t('settingsView.selectFirst'))}</div>
-  </div>
-`;
-
-$('settingsBoxSelect').onchange = () => {
-  const id = $('settingsBoxSelect').value;
-  const box = state.boxes.find(b => b.deviceID === id);
-  if (box) {
-    state.settingsBox = box;
-    loadBoxSettings();
-  }
-};
-$('settingsRefreshBtn').onclick = async () => {
-  const rb = $('settingsRefreshBtn');
-  rb.disabled = true;
-  rb.classList.add('spinning'); // visible feedback while refreshing, like the topbar refresh
-  try {
-    await deps.discoverBoxes();
-    renderSettingsBoxSelect();
-    loadBoxSettings();
-  } finally {
-    rb.classList.remove('spinning');
-    rb.disabled = false;
-  }
-};
+// mountSettingsShell builds the settings view's static shell (box switcher + body
+// container) and wires the box-switcher controls. Run LAZILY on first open, NOT
+// at module import: this module is imported at the top of main.js, before the
+// #view-settings container is created further down, so touching the DOM at import
+// time threw and blanked the whole app. loadBoxSettings calls this once first.
+let settingsShellMounted = false;
+function mountSettingsShell() {
+  if (settingsShellMounted) return;
+  const root = $('view-settings');
+  if (!root) return;
+  settingsShellMounted = true;
+  root.innerHTML = `
+    <h2>${escapeHtml(t('settingsView.title'))}</h2>
+    <div class="settings-box-switcher">
+      <span class="muted small">${escapeHtml(t('settingsView.forSpeaker'))}</span>
+      <select id="settingsBoxSelect"></select>
+      <button class="btn-icon" id="settingsRefreshBtn" title="${escapeAttr(t('settingsView.refreshListTitle'))}"><span class="refresh-icon">&#x21bb;</span></button>
+    </div>
+    <div id="settingsBody">
+      <div class="muted">${escapeHtml(t('settingsView.selectFirst'))}</div>
+    </div>
+  `;
+  $('settingsBoxSelect').onchange = () => {
+    const id = $('settingsBoxSelect').value;
+    const box = state.boxes.find(b => b.deviceID === id);
+    if (box) {
+      state.settingsBox = box;
+      loadBoxSettings();
+    }
+  };
+  $('settingsRefreshBtn').onclick = async () => {
+    const rb = $('settingsRefreshBtn');
+    rb.disabled = true;
+    rb.classList.add('spinning'); // visible feedback while refreshing, like the topbar refresh
+    try {
+      await deps.discoverBoxes();
+      renderSettingsBoxSelect();
+      loadBoxSettings();
+    } finally {
+      rb.classList.remove('spinning');
+      rb.disabled = false;
+    }
+  };
+}
 
 // uidSuffixFor returns the last 4 characters of the device ID as a
 // suffix used to disambiguate friendly names (for example "FFD8").
@@ -227,6 +238,7 @@ export function langOptionsHtml() {
 }
 
 export async function loadBoxSettings() {
+  mountSettingsShell(); // build the shell on first open (see note above)
   renderSettingsBoxSelect();
   const body = $('settingsBody');
   if (!state.settingsBox) {
