@@ -189,6 +189,24 @@ function cardWebURL(c) {
   return /^https?:\/\//i.test(hp) ? hp : '';
 }
 
+// cardIsPlaying reports whether this card is the speaker's current source, so it
+// gets the green "playing" highlight. Radio/NAS match the now-playing name or the
+// exact stream URL. Spotify matches the live slot from the per-slot stream URL
+// (or the remembered slot, so a next/prev that drops the slot still counts)
+// against the card's preset slot, since nowName for Spotify is the song, not the
+// playlist. Best-effort: a card with no matching preset slot cannot be matched.
+function cardIsPlaying(c) {
+  const loc = state.nowLocation || '';
+  if (c.source === 'spotify') {
+    if (!/\/spotify\/stream/.test(loc)) return false;
+    const m = loc.match(/\/spotify\/stream-(\d+)\.ogg/);
+    const liveSlot = m ? parseInt(m[1], 10) : state.nowSpotifySlot;
+    return c.playSlot != null && liveSlot != null && c.playSlot === liveSlot;
+  }
+  if (state.nowName && c.name && state.nowName === c.name) return true;
+  return !!(c.url && loc && loc === c.url);
+}
+
 function recentCardHTML(c, i) {
   const isRadio = c.source !== 'spotify';
   const webUrl = cardWebURL(c);
@@ -220,7 +238,7 @@ function recentCardHTML(c, i) {
       : '')
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
-  const nowPlaying = c.source === 'radio' && state.nowName && c.name && state.nowName === c.name;
+  const nowPlaying = cardIsPlaying(c);
   return `<div class="recent-card rc-${escapeAttr(c.source)}${nowPlaying ? ' rc-now' : ''}">`
     + `<div class="rc-head">${logoImg(c)}`
     + `<div class="rc-meta"><div class="rc-name">${escapeHtml(c.name || recentSourceLabel(c.source))}</div>`

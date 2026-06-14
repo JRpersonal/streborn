@@ -1255,7 +1255,7 @@ body {
 .rc-tr-lead { color: #e8e8e8; }
 .rc-tr-sub { color: #8a8a8a; margin-left: 8px; }
 .rc-tr-time { color: #888; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
-.recent-card.rc-now { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.recent-card.rc-now { border-color: var(--signal-green); box-shadow: 0 0 12px rgba(102, 204, 102, 0.25); }
 .setup-target-pill { margin-top: 10px; padding: 8px 12px; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; font-size: 13px; }
 .setup-target-pill b { color: #fff; }
 .small { font-size: 12px; }
