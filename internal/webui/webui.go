@@ -2112,9 +2112,35 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 	}
 }
 
+// defaultZoneReconcilePath is the NAND flag file that opts a box INTO the
+// periodic zone reconcile (#70 beta). Absent (the default) means OFF: the box
+// never re-asserts a persisted zone, so a speaker the user plays on its own is
+// never dragged back into a group. Only an explicit "1"/"true"/"on"/"yes" turns
+// it on. The default is OFF after a multi-ST10 user reported standalone speakers
+// being pulled into the master's zone every few minutes (the master kept
+// re-asserting its persisted zone whenever a member left to play its own source).
+const defaultZoneReconcilePath = "/mnt/nv/streborn/zone-reconcile"
+
+// zoneReconcileEnabled reports whether the periodic zone reconcile is opted in
+// for this box. Default OFF: absent or unreadable flag file means off, and only
+// an explicit affirmative value enables it.
+func (s *Server) zoneReconcileEnabled() bool {
+	b, err := os.ReadFile(defaultZoneReconcilePath)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(string(b))) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
 // PeriodicZoneReconcile re-asserts a persisted group so it survives
-// reboot/standby/Wi-Fi outage (#70 beta). No-op when standalone. Started by
-// cmd/agent after the server is built. Lives on the Server so the mirror path
+// reboot/standby/Wi-Fi outage (#70 beta). No-op when standalone OR when the box
+// has not opted into reconcile (the default, see zoneReconcileEnabled). Started
+// by cmd/agent after the server is built. Lives on the Server so the mirror path
 // can reach s.lastPlay + the UPnP renderer.
 func (s *Server) PeriodicZoneReconcile() {
 	if s.zones == nil || s.boxHost == "" {
@@ -2130,6 +2156,10 @@ func (s *Server) PeriodicZoneReconcile() {
 }
 
 func (s *Server) reconcileZoneOnce() {
+	if !s.zoneReconcileEnabled() {
+		return // opt-in, default off: never auto-re-assert a zone, so a speaker
+		// the user plays on its own is never dragged back into the master's group.
+	}
 	z, ok := s.zones.Get()
 	if !ok {
 		return // standalone
