@@ -296,6 +296,32 @@ export namespace main {
 	        this.top = source["top"];
 	    }
 	}
+	export class RecentItem {
+	    ts: string;
+	    source: string;
+	    cardKey: string;
+	    cardName: string;
+	    cardArt: string;
+	    cardURL: string;
+	    track: string;
+	    account: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new RecentItem(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ts = source["ts"];
+	        this.source = source["source"];
+	        this.cardKey = source["cardKey"];
+	        this.cardName = source["cardName"];
+	        this.cardArt = source["cardArt"];
+	        this.cardURL = source["cardURL"];
+	        this.track = source["track"];
+	        this.account = source["account"];
+	    }
+	}
 	export class SetupAPPushResult {
 	    step: string;
 	    message: string;

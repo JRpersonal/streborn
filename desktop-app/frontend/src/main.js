@@ -63,6 +63,7 @@ import {
   SpotifyNowPlaying,
   SaveSpotifyPreset,
   SaveLibraryPreset,
+  RecentPlayed,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,
@@ -229,6 +230,13 @@ import {
   monogramDataUri,
 } from './logos.js';
 
+// First view extracted out of this monolith into its own module (#135). The view
+// pulls state/utils/i18n/api from the shared modules; only the slot-picker modal
+// is main.js-local, injected below. New views should follow this pattern so this
+// file stops growing.
+import { renderRecent, setRecentSlotPicker } from './views/recent.js';
+setRecentSlotPicker(showSlotPicker);
+
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
 // pipe-separated set of candidate URLs) on each load error, swapping in the
 // next candidate. The list always ends in a locally generated monogram data
@@ -339,6 +347,7 @@ document.querySelector('#app').innerHTML = `
   <div class="tabs">
     <button class="tab-btn active" data-view="box">${escapeHtml(t('nav.music'))}</button>
     <button class="tab-btn" data-view="library">${escapeHtml(t('nav.library'))}</button>
+    <button class="tab-btn" data-view="recent">${escapeHtml(t('nav.recent'))}</button>
     <button class="tab-btn" data-view="settings">${escapeHtml(t('nav.speakerSettings'))}</button>
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
     <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
@@ -352,6 +361,7 @@ document.querySelector('#app').innerHTML = `
   </div>
   <div id="view-box" class="view"></div>
   <div id="view-library" class="view hidden"></div>
+  <div id="view-recent" class="view hidden"></div>
   <div id="view-settings" class="view hidden"></div>
   <div id="view-setup" class="view hidden"></div>
   <div id="view-multiroom" class="view hidden"></div>
@@ -494,6 +504,7 @@ function switchView(view) {
   });
   $('view-box').classList.toggle('hidden', view !== 'box');
   $('view-library').classList.toggle('hidden', view !== 'library');
+  $('view-recent').classList.toggle('hidden', view !== 'recent');
   $('view-settings').classList.toggle('hidden', view !== 'settings');
   $('view-setup').classList.toggle('hidden', view !== 'setup');
   $('view-multiroom').classList.toggle('hidden', view !== 'multiroom');
@@ -533,6 +544,7 @@ function switchView(view) {
   }
   if (view === 'settings') loadBoxSettings();
   if (view === 'library') openLibrary();
+  if (view === 'recent') renderRecent();
   if (view === 'multiroom') renderMultiroom(true);
   if (view === 'spotify') renderSpotifyAlpha();
 }

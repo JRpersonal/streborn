@@ -182,6 +182,10 @@ export function RebootBox(arg1, arg2) {
   return window['go']['main']['App']['RebootBox'](arg1, arg2);
 }
 
+export function RecentPlayed(arg1, arg2) {
+  return window['go']['main']['App']['RecentPlayed'](arg1, arg2);
+}
+
 export function RefreshKnownBoxes() {
   return window['go']['main']['App']['RefreshKnownBoxes']();
 }

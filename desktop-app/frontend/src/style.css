@@ -1223,6 +1223,29 @@ body {
 .worldmap-invite .wmi-text { color: #eee; font-size: 13px; }
 .worldmap-invite .wmi-close { background: none; border: none; color: #888; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
 .worldmap-invite .wmi-close:hover { color: #ccc; }
+
+/* Recently played (#135): cross-source source cards with their tracks below. */
+.recent-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.recent-title { margin: 0; font-size: 20px; }
+.recent-sub { font-size: 13px; margin-bottom: 14px; }
+.recent-scope { display: flex; gap: 6px; }
+.recent-scope .chip { background: var(--brand-bg); color: var(--brand-text-mid); border: 1px solid var(--brand-border); border-radius: 14px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.recent-scope .chip.active { background: var(--brand); color: #04222e; border-color: var(--brand); font-weight: 600; }
+.recent-list { display: flex; flex-direction: column; gap: 12px; }
+.recent-empty, .recent-loading { color: var(--brand-text-mid); padding: 24px 4px; text-align: center; }
+.recent-card { background: #1b1b1b; border: 1px solid var(--brand-border); border-radius: 10px; overflow: hidden; }
+.recent-card .rc-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.rc-logo { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; flex: 0 0 auto; background: #0d0d0d; }
+.rc-logo-ph { background: linear-gradient(135deg, #2a3a4a, #1f2a35); }
+.rc-meta { flex: 1 1 auto; min-width: 0; }
+.rc-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-sub { font-size: 12px; color: var(--brand-text-mid); margin-top: 2px; }
+.rc-box { color: var(--brand-text); }
+.rc-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.rc-tracks { border-top: 1px solid #262626; padding: 4px 12px 8px 64px; }
+.rc-track { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 3px 0; color: #ddd; }
+.rc-tr-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-tr-time { color: #888; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .setup-target-pill { margin-top: 10px; padding: 8px 12px; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; font-size: 13px; }
 .setup-target-pill b { color: #fff; }
 .small { font-size: 12px; }
