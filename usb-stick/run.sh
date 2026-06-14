@@ -348,7 +348,71 @@ initial_snapshot() {
     setup_log "interfaces: $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
     setup_log "wpa_supplicant pid: $(pidof wpa_supplicant 2>/dev/null || echo none)"
     setup_log "processes (head): $(ps 2>/dev/null | head -20 | tr '\n' '|' | head -c 800)"
+    nand_inventory
     setup_log "=== /initial snapshot ==="
+}
+
+# nand_inventory logs the contents of the writable NAND (/mnt/nv) at
+# boot. Two reasons. (1) Tell a FRESH box apart from one that other
+# post-cloud-shutdown community tools have already been installed on:
+# their leftovers can hold our :8888 / :9080 / :8081, or eat the little
+# NAND and RAM the box has, which looks exactly like an agent that gets
+# a PID then dies in seconds (the reported ST10 crash-loop). (2) Capture
+# NAND free space: a full filesystem is a frequent cause of a binary
+# that half-writes then crashes. Read-only (df / du / ls / ps / ss), no
+# writes beyond the setup.log lines, run once at boot.
+nand_inventory() {
+    setup_log "=== nand inventory (/mnt/nv) ==="
+    setup_log "nand df: $(df /mnt/nv 2>/dev/null | awk 'NR==2{print "total="$2"KB used="$3"KB free="$4"KB ("$5")"}')"
+    setup_log "mem: $(grep -E 'MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree' /proc/meminfo 2>/dev/null | awk '{printf "%s=%s ",$1,$2}')"
+    # Top-level entries with size and mtime so a human can see at a
+    # glance what is on the box and how old each piece is.
+    if [ -d /mnt/nv ]; then
+        for e in /mnt/nv/* /mnt/nv/.[!.]*; do
+            [ -e "$e" ] || continue
+            _sz=$(du -sk "$e" 2>/dev/null | awk '{print $1}')
+            _mt=$(ls -ld "$e" 2>/dev/null | awk '{print $6" "$7" "$8}')
+            setup_log "  nand entry: ${_sz:-?}KB  ${_mt:-?}  $e"
+        done
+    fi
+    # Freshness verdict: the only top-level dir STR owns is 'streborn'.
+    # Anything else that is not a Bose-created dir is a candidate for a
+    # previously-installed third-party tool. We never delete or touch
+    # it, we only make it visible in the diagnostic bundle.
+    _foreign=""
+    for e in /mnt/nv/*; do
+        [ -d "$e" ] || continue
+        _n=$(basename "$e")
+        case "$_n" in
+            streborn) ;;
+            BoseApp-Persistence|product-persistence|nv|*Bose*|*bose*|lost+found) ;;
+            *) _foreign="$_foreign $_n" ;;
+        esac
+    done
+    if [ -n "$_foreign" ]; then
+        setup_log "nand freshness: NOT fresh, non-STR/non-Bose top-level dirs present:$_foreign"
+    else
+        setup_log "nand freshness: STR/Bose-only (no obvious foreign tooling dirs)"
+    fi
+    # Common third-party audio / SoundTouch tools that owners install
+    # after the cloud shutdown and that bind audio ports or respawn
+    # daemons. Match the process list only OUTSIDE our own tree (STR runs
+    # its own go-librespot for Spotify, which is expected, not foreign).
+    _markers=$(ps 2>/dev/null | grep -viE 'streborn|/mnt/nv/streborn' \
+        | grep -iE 'librespot|shairport|raop|snapcast|snapclient|owntone|forked-daapd|soundtouchctl|mopidy' \
+        | head -5 | tr '\n' '|')
+    [ -n "$_markers" ] && setup_log "nand inventory: possible foreign audio tooling running: $_markers"
+    # Pre-start listening sockets: a foreign daemon already on one of
+    # STR's ports is the direct explanation for 'wait_ports_clear: gave
+    # up' and an agent that can never bind.
+    _ls=""
+    if command -v ss >/dev/null 2>&1; then
+        _ls=$(ss -ltn 2>/dev/null | grep -E ':8888 |:9080 |:8081 |:443 ' | tr '\n' '|')
+    elif command -v netstat >/dev/null 2>&1; then
+        _ls=$(netstat -ltn 2>/dev/null | grep -E ':8888 |:9080 |:8081 |:443 ' | tr '\n' '|')
+    fi
+    [ -n "$_ls" ] && setup_log "nand inventory: STR ports already bound BEFORE start_agent (foreign holder?): $_ls"
+    setup_log "=== /nand inventory ==="
 }
 
 # wait_for_ready blocks until the prerequisites for talking to Bose
@@ -574,6 +638,17 @@ sync_stick_to_nand_always() {
         # silent chmod failure must keep the previous good cache instead.
         if chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
             log "stick binary deployed to NAND cache ($(wc -c < "$CACHED_BIN") bytes)"
+            # Hash both copies so a corrupt / half-written NAND binary (a
+            # suspect for the ST10 crash-loop where the agent SIGSEGVs at
+            # once) is visible: a mismatch means the copy did not land
+            # intact and the agent will crash regardless of environment.
+            _sm5=$(md5sum "$STICK_BIN" 2>/dev/null | awk '{print $1}')
+            _nm5=$(md5sum "$CACHED_BIN" 2>/dev/null | awk '{print $1}')
+            if [ -n "$_sm5" ] && [ "$_sm5" = "$_nm5" ]; then
+                setup_log "binary deploy: md5 OK $_nm5 ($(wc -c < "$CACHED_BIN") bytes)"
+            else
+                setup_log "binary deploy: md5 MISMATCH stick=$_sm5 nand=$_nm5 — NAND copy is corrupt, agent will crash"
+            fi
             if [ -r "$STICK_VER_FILE" ]; then
                 cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
                 log "NAND version.txt updated: $(cat "$NAND_VER_FILE" 2>/dev/null)"
@@ -2692,35 +2767,86 @@ try_http_date_sync() {
     return 1
 }
 
+# Crash-visibility paths on NAND (survive the reboot that wipes /tmp,
+# where $LOG lives). agent-crash.log gets the agent's own tail copied in
+# only WHEN the agent exits, so a healthy long-running agent never writes
+# here (no flash wear). agent-unstable.txt is the loud "the agent will
+# not stay up" marker the watchdog raises after it gives up.
+AGENT_CRASH_LOG="$PERSIST/logs/agent-crash.log"
+AGENT_UNSTABLE_MARK="$PERSIST/logs/agent-unstable.txt"
+
+# agent_resource_line: a compact RAM + NAND-free snapshot for the start
+# and exit log lines, so an OOM kill (RAM gone) or a full NAND (write
+# failures) is obvious in the bundle without a separate probe.
+agent_resource_line() {
+    _mf=$(awk '/^MemAvailable/{print $2"kB"}' /proc/meminfo 2>/dev/null)
+    [ -z "$_mf" ] && _mf=$(awk '/^MemFree/{print $2"kB(MemFree)"}' /proc/meminfo 2>/dev/null)
+    _nf=$(df /mnt/nv 2>/dev/null | awk 'NR==2{print $4"kB("$5")"}')
+    echo "memAvail=${_mf:-?} nandFree=${_nf:-?}"
+}
+
 start_agent() {
-    # log-level info, not warn. Earlier builds passed `warn` and the
-    # consequence was that the listener bring-up logs (`Webui Server
-    # startet`, `HTTP Server startet`, ...) were suppressed entirely.
-    # When :8888 silently failed to bind on a user's box we had no
-    # signal in the diagnostic bundle at all. info is loud enough to
-    # tell us which step reached its bind call without producing
-    # tick-rate spam (autopair/zeroconf are bounded).
-    nohup "$BIN" \
-        --presets "$PRESETS_NAND" \
-        --region-file "$PERSIST/region.txt" \
-        --pending-name-file "$PERSIST/name.txt" \
-        --listen-webui :8888 \
-        --listen-marge :9080 \
-        --listen-marge-tls :443 \
-        --listen-bmx :8081 \
-        --box-host 127.0.0.1 \
-        --hosts /etc/hosts \
-        --apply-hosts=true \
-        --tls=true \
-        --log-level info \
-        >> "$LOG" 2>&1 &
-    AGENT_PID=$!
-    echo "$AGENT_PID" > "$PIDFILE"
+    START_COUNT=$((${START_COUNT:-0}+1))
+    # Fingerprint the binary on every launch: a corrupt / short NAND copy
+    # ties a later SIGSEGV to a bad binary rather than the environment,
+    # and the resource line catches an OOM/full-NAND start condition.
+    setup_log "start_agent #$START_COUNT: bin=$BIN bytes=$(wc -c < "$BIN" 2>/dev/null) md5=$(md5sum "$BIN" 2>/dev/null | awk '{print $1}') $(agent_resource_line)"
+    # The agent runs inside a supervisor subshell ONLY so the shell can
+    # wait() for it and record the real exit code / signal. Without this
+    # the watchdog just sees the PID vanish and has no idea WHY: a Markus-
+    # style "agent gets a PID then dies in seconds" loop left an empty
+    # /tmp log and no exit status at all. The subshell writes the REAL
+    # binary PID to $PIDFILE (what the watchdogs kill -0), logs the exit
+    # code/signal, RAM/NAND, the agent's own tail, and any kernel OOM
+    # evidence to NAND, then exits so the watchdog respawns.
+    #
+    # log-level info, not warn: earlier builds passed warn and the
+    # listener bring-up logs were suppressed, so a silent :8888 bind
+    # failure left no signal in the bundle. info is loud enough without
+    # tick-rate spam (autopair / zeroconf are bounded).
+    (
+        nohup "$BIN" \
+            --presets "$PRESETS_NAND" \
+            --region-file "$PERSIST/region.txt" \
+            --pending-name-file "$PERSIST/name.txt" \
+            --listen-webui :8888 \
+            --listen-marge :9080 \
+            --listen-marge-tls :443 \
+            --listen-bmx :8081 \
+            --box-host 127.0.0.1 \
+            --hosts /etc/hosts \
+            --apply-hosts=true \
+            --tls=true \
+            --log-level info \
+            >> "$LOG" 2>&1 &
+        _bpid=$!
+        echo "$_bpid" > "$PIDFILE"
+        wait "$_bpid"
+        _ec=$?
+        case "$_ec" in
+            12[89]|1[3-9][0-9]) _sig=$((_ec-128)); _why="killed by signal $_sig (137=SIGKILL/OOM 134=SIGABRT/Go-fatal 139=SIGSEGV 143=SIGTERM)" ;;
+            0) _why="clean exit (unexpected for a daemon)" ;;
+            *) _why="exit status $_ec" ;;
+        esac
+        setup_log "agent EXITED (launch #$START_COUNT pid=$_bpid): code=$_ec, $_why; $(agent_resource_line)"
+        # Persist the agent's own tail to NAND so the panic/fatal that the
+        # /tmp $LOG loses on the next reboot is captured. Only on death.
+        {
+            echo "==== agent exit #$START_COUNT pid=$_bpid code=$_ec ($_why) $(date) ===="
+            tail -n 40 "$LOG" 2>/dev/null
+            echo ""
+        } >> "$AGENT_CRASH_LOG" 2>/dev/null
+        # An OOM / SIGKILL leaves nothing in the agent log; the kernel
+        # ring buffer is the only witness. Grep it for the agent reap.
+        _oom=$(dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process|lowmemorykiller' | tail -3 | tr '\n' '|')
+        [ -n "$_oom" ] && setup_log "agent EXIT kernel-oom evidence: $_oom"
+    ) &
+    AGENT_PID=$!   # supervisor PID; the real binary PID is in $PIDFILE
 }
 
 try_http_date_sync
 start_agent
-log "agent started with PID $AGENT_PID"
+log "agent supervisor started (PID $AGENT_PID); binary PID written to $PIDFILE"
 
 # === Chipset-whitelist hijack via LD_PRELOAD on SoftwareUpdate ===
 #
@@ -3312,7 +3438,17 @@ agent_port_bound() {
         # agent up, something fundamental is wrong (binary corrupt,
         # NAND full, ...) and respawning faster will not help.
         if [ "$BOOT_RESTARTS" -ge 6 ]; then
-            setup_log "boot-watchdog: 6 restarts in 120s exhausted, falling back to slow loop"
+            # The agent will not stay up. Raise a loud, machine-readable
+            # marker the diagnostic bundle (and a future app-side check)
+            # can surface as a clear "agent unstable" error instead of a
+            # silent install-failed. agent-crash.log already holds the
+            # per-exit codes/signals that say WHY.
+            {
+                echo "agent unstable: $BOOT_RESTARTS fast respawns in 120s at $(date)"
+                echo "last: pid=$CUR_PID alive=$ALIVE bound=$BOUND $(agent_resource_line)"
+                echo "see agent-crash.log for the per-exit code/signal and the agent tail"
+            } > "$AGENT_UNSTABLE_MARK" 2>/dev/null
+            setup_log "boot-watchdog: $BOOT_RESTARTS restarts in 120s exhausted, agent UNSTABLE (marker written, $(agent_resource_line)), falling back to slow loop"
             break
         fi
         BOOT_RESTARTS=$((BOOT_RESTARTS+1))
@@ -3324,7 +3460,7 @@ agent_port_bound() {
         # respawn cadence stays tight.
         wait_ports_clear 10
         start_agent
-        setup_log "boot-watchdog: agent respawned PID $AGENT_PID"
+        setup_log "boot-watchdog: agent supervisor respawned (PID $AGENT_PID; binary PID in $PIDFILE)"
     done
 ) &
 
@@ -3360,7 +3496,7 @@ agent_port_bound() {
         # holds the fd before we respawn. Caps at 30 s.
         wait_ports_clear 30
         start_agent
-        log "watchdog: agent restarted with PID $AGENT_PID"
+        log "watchdog: agent supervisor restarted (PID $AGENT_PID; binary PID in $PIDFILE)"
     done
 ) &
 
