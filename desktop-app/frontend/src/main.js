@@ -161,6 +161,7 @@ import {
   closeWarn,
   showError,
   showToast,
+  compareVerBuild,
 } from './utils.js';
 
 import {
@@ -1047,7 +1048,17 @@ async function checkSshBanner() {
     // (Brice, #11). Tying it to the stick still being mounted makes it actionable
     // and self-clearing. (Setup view and the OTA window are already excluded
     // above.) Full SSH hardening is the separate v1.0 item.
-    const show = !!(data && data.mounted);
+    //
+    // Require a readable stick version too, not just mounted: an older agent
+    // reports mounted:true from a bare os.Stat on the leftover empty mountpoint
+    // dir that survives `umount`, so the banner stuck around forever with the
+    // stick already out (#105). A real stick always carries version.txt, so
+    // `mounted && version` is the reliable "stick really in" signal and lets a
+    // box still on the old agent self-heal. A real STR stick always carries
+    // version.txt (written on every prep), so this only ever hides a non-STR
+    // stick or a leftover mountpoint, which is exactly what we want for the
+    // "remove the STR stick" reminder.
+    const show = !!(data && data.mounted && data.version);
     gb.classList.toggle('hidden', !show);
   } catch {}
 }
@@ -1689,14 +1700,14 @@ function boxNeedsUpdate(b) {
   const appVer   = state.appInfo && state.appInfo.version;
   const appBuild = state.appInfo && state.appInfo.build;
   if (!appVer) return false;
-  const verDiffers   = b.version !== appVer;
-  // Three build-related cases to flag as drift:
-  //   - both sides populated and different
-  //   - we have a build, box has none (older agent that does not
-  //     yet broadcast `build=` in mDNS — guaranteed pre-update)
-  const buildDiffers = appBuild && b.build && b.build !== appBuild;
-  const buildMissing = appBuild && !b.build;
-  return verDiffers || buildDiffers || buildMissing;
+  // Light the badge only when THIS app can actually upgrade the box, i.e. the
+  // app (and its embedded agent) is NEWER than the box. When the box is newer
+  // than the app, an OTA would push the app's older embedded agent and
+  // DOWNGRADE the box, so that is an "update the app" situation, not a
+  // speaker-update one (the #105 update-banner confusion). compareVerBuild
+  // treats a missing box build (older agent that does not broadcast build=) as
+  // older, so that case still flags.
+  return compareVerBuild(appVer, appBuild, b.version, b.build) > 0;
 }
 
 function updateSettingsTabBadge() {
@@ -1728,39 +1739,51 @@ async function checkBoxUpdate() {
     }
     return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
   };
+  const boxName = state.currentBox.friendlyName || state.currentBox.name || state.currentBox.host;
   try {
     const v = await BoxAgentVersion(state.currentBox.host, state.currentBox.port);
     const boxVer = v.version || t('common.unknown');
     const boxBuild = v.build || '';
     const appVer = state.appInfo.version;
     const appBuild = state.appInfo.build || '';
-    // Show the banner on any version OR build difference. Stamp-only
-    // drift used to be ignored as "not alarming enough", but in
-    // practice it is exactly the case the speaker-settings status
-    // line already flags as an update — keeping the music-tab banner
-    // silent in that situation produced confusing inconsistency
-    // across the two tabs.
-    const sameVer   = boxVer === appVer;
-    const sameBuild = boxBuild === appBuild;
-    if (sameVer && sameBuild) return;
-    const boxLabel = boxBuild ? `${boxVer} (Build ${boxBuild})` : boxVer;
-    const appLabel = appBuild ? `${appVer} (Build ${appBuild})` : appVer;
-    banner.innerHTML = `
-      <div class="update-msg">
-        <b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
-        <small>${escapeHtml(t('update.speakerAppLine', { box: boxLabel, app: appLabel }))}</small><br>
-        <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
-      </div>
-      ${renderUpdateBtn()}
-    `;
-    banner.classList.remove('hidden');
-    if (!otaElsewhere) $('boxUpdateBtn').onclick = doBoxUpdate;
-  } catch {
-    if (state.currentBox.version && state.currentBox.version !== state.appInfo.version) {
+    // Direction matters. The speaker update pushes THIS app's embedded agent, so
+    // it only makes sense when the app is newer than the box. The old code fired
+    // on any difference and so offered "Aktualisieren" even when the box was
+    // newer than the app, which would have downgraded the box and confused the
+    // user (#105: an old app v0.6.22 next to a box on v0.7.32).
+    const cmp = compareVerBuild(appVer, appBuild, boxVer, boxBuild);
+    if (cmp === 0) return;
+    if (cmp > 0) {
       banner.innerHTML = `
         <div class="update-msg">
-          <b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
-          <small>${escapeHtml(t('update.speakerRunningOld', { boxVersion: state.currentBox.version, appVersion: state.appInfo.version }))}</small><br>
+          <b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: boxName }))}</b><br>
+          <small>${escapeHtml(t('update.versionLine', { installed: boxVer, next: appVer }))}</small><br>
+          <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
+        </div>
+        ${renderUpdateBtn()}
+      `;
+      banner.classList.remove('hidden');
+      if (!otaElsewhere) $('boxUpdateBtn').onclick = doBoxUpdate;
+    } else {
+      // Box newer than the app: an OTA would downgrade it. Point the user at the
+      // app update instead and do NOT show the "Aktualisieren" button.
+      banner.innerHTML = `
+        <div class="update-msg">
+          <b>${escapeHtml(t('update.appBehindTitle', { name: boxName }))}</b><br>
+          <small>${escapeHtml(t('update.appBehindLine', { boxVersion: boxVer, appVersion: appVer }))}</small>
+        </div>
+      `;
+      banner.classList.remove('hidden');
+    }
+  } catch {
+    // Live version fetch failed; fall back to the cached mDNS version, same
+    // direction guard so a newer box never gets a downgrade offer.
+    const cv = state.currentBox.version;
+    if (cv && compareVerBuild(state.appInfo.version, '', cv, '') > 0) {
+      banner.innerHTML = `
+        <div class="update-msg">
+          <b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: boxName }))}</b><br>
+          <small>${escapeHtml(t('update.versionLine', { installed: cv, next: state.appInfo.version }))}</small><br>
           <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
         </div>
         ${renderUpdateBtn()}
@@ -2378,7 +2401,17 @@ async function saveCurrentToSlot(slot) {
   // the raw stream. The latter showed the album cover instead of the Spotify
   // logo and could not recall/shuffle the playlist. Needs the current context
   // (playlist URI) from /spotify/info.
-  if (/\/spotify\/stream/.test(state.nowLocation) && state.nowSpotifyContext) {
+  if (/\/spotify\/stream|\/playback\/container/.test(state.nowLocation)) {
+    // We can only save a real, recallable Spotify preset when we know the
+    // playlist/album URI (nowSpotifyContext). A Spotify radio/station has no
+    // replayable context, so saving it would create a dead preset that fails to
+    // recall with "Service not available" (#45/#105). Refuse with a clear
+    // message instead of falling through to Case B and storing a dead radio link
+    // to the bare Ogg stream.
+    if (!state.nowSpotifyContext) {
+      showError(t('preset.spotifyNotSaveable'));
+      return;
+    }
     const sname = state.nowName || 'Spotify';
     try {
       await SaveSpotifyPreset(
@@ -2759,7 +2792,7 @@ async function refreshStatus() {
     // Live Spotify track metadata for the now-playing line: poll the agent's
     // /spotify/info (throttled) while a Spotify stream is active so the desktop
     // shows the current song + artist, not just the playlist/preset name.
-    const isSpotifyNow = /\/spotify\/stream/.test(newLoc);
+    const isSpotifyNow = /\/spotify\/stream|\/playback\/container/.test(newLoc);
     if (isSpotifyNow) {
       const npBox = state.currentBox;
       if (npBox && Date.now() - (state.lastSpotifyNowFetch || 0) > 3000) {

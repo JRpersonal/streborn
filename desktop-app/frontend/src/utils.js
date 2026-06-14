@@ -16,6 +16,26 @@ export function escapeHtml(s) {
 
 export function escapeAttr(s) { return escapeHtml(s); }
 
+// compareVerBuild compares two (version, build) pairs and returns -1 if A<B,
+// 1 if A>B, 0 if equal. version is "vMAJOR.MINOR.PATCH" (a leading "v" and any
+// "-N-gHASH" dev suffix are ignored); build is a sortable "YYYY-MM-DD-HHMM"
+// stamp used as the tie-breaker. This tells whether the desktop app can upgrade
+// a speaker agent (app newer -> offer the OTA) or whether the app itself is
+// behind the speaker (app older -> an OTA would DOWNGRADE the box, so offer an
+// app update instead). The old logic only checked "differs" and so offered a
+// downgrade when the speaker was newer than the app (#105 update-banner UX).
+export function compareVerBuild(aVer, aBuild, bVer, bBuild) {
+  const parse = (v) => String(v || '').replace(/^v/, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0);
+  const pa = parse(aVer), pb = parse(bVer);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const da = pa[i] || 0, db = pb[i] || 0;
+    if (da !== db) return da < db ? -1 : 1;
+  }
+  const sa = String(aBuild || ''), sb = String(bBuild || '');
+  if (sa === sb) return 0;
+  return sa < sb ? -1 : 1;
+}
+
 // decodeXmlEntities decodes the five named XML entity sequences plus
 // numeric character references that the Bose /now_playing XML
 // occasionally emits. Without this, "Bryan Adams &amp; Tina Turner"

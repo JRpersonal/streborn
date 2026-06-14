@@ -22,6 +22,7 @@ import {
   confirmWarn,
   showError,
   showToast,
+  compareVerBuild,
 } from '../utils.js';
 import { t, tLookup } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -704,25 +705,21 @@ function renderBoxSettings(s, box) {
       const boxBuild = v.build || '';
       const appVer = app.version || '?';
       const appBuild = app.build || '';
-      const sameVer = boxVer === appVer;
-      const sameBuild = boxBuild === appBuild;
-      if (sameVer && sameBuild) {
+      // Direction-aware (see compareVerBuild): only offer the OTA when the app
+      // is newer than the box. When the box is newer than the app, an OTA would
+      // downgrade it, so show "update the app" with no button (#105).
+      const cmp = compareVerBuild(appVer, appBuild, boxVer, boxBuild);
+      const otaBtn = () => (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host)
+        ? `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`
+        : `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+      if (cmp === 0) {
         const buildSuffix = boxBuild ? ` (Build ${escapeHtml(boxBuild)})` : '';
         softwareLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.swCurrent'))}</span> <span class="muted small">${escapeHtml(boxVer)}${buildSuffix}</span>`;
-      } else if (sameVer && !sameBuild) {
-        softwareLine = `<span class="fw-pending">${escapeHtml(t('settingsView.swUpdateAvail'))}</span> <span class="muted small">${escapeHtml(boxBuild)} &rarr; ${escapeHtml(appBuild)}</span>`;
-        if (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host) {
-          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
-        } else {
-          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
-        }
+      } else if (cmp > 0) {
+        softwareLine = `<span class="fw-pending">${escapeHtml(t('settingsView.swUpdateAvail'))}</span> <span class="muted small">${escapeHtml(t('update.versionLine', { installed: boxVer, next: appVer }))}</span>`;
+        softwareBtn = otaBtn();
       } else {
-        softwareLine = `<span class="fw-old">${escapeHtml(t('settingsView.swOutdated'))}</span> <span class="muted small">${escapeHtml(boxVer)} &rarr; ${escapeHtml(appVer)}</span>`;
-        if (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host) {
-          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
-        } else {
-          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
-        }
+        softwareLine = `<span class="fw-pending">${escapeHtml(t('update.appBehindShort', { appVersion: appVer }))}</span> <span class="muted small">${escapeHtml(boxVer)}</span>`;
       }
     } catch {}
 
@@ -737,9 +734,13 @@ function renderBoxSettings(s, box) {
       const ct = r.headers.get('content-type') || '';
       if (r.ok && ct.includes('json')) {
         const data = await r.json();
-        if (data.mounted) {
+        // Require a readable version too, not just mounted: an older agent
+        // reports mounted:true from a bare os.Stat on the empty mountpoint dir
+        // that survives `umount`, so the "remove the stick" banner stuck around
+        // forever (#105). A real stick always carries version.txt.
+        if (data.mounted && data.version) {
           stickMounted = true;
-          stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>` + (data.version ? ` <span class="muted small">${escapeHtml(data.version)}</span>` : '');
+          stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span> <span class="muted small">${escapeHtml(data.version)}</span>`;
         } else {
           // After a clean install the stick is pulled, so "not mounted" is
           // the expected steady state. Show it informationally, not as an
@@ -801,7 +802,7 @@ function renderBoxSettings(s, box) {
     // banner now; the software kv-row below keeps the version status text.
     const updateBanner = softwareBtn ? `
       <div class="update-banner" style="margin-bottom:14px">
-        <div class="update-msg"><b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
+        <div class="update-msg"><b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: box.friendlyName || box.name || box.host }))}</b><br>
           <small class="muted">${escapeHtml(t('update.rebootNote'))}</small></div>
         ${softwareBtn}
       </div>` : '';
