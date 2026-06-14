@@ -29,6 +29,7 @@ import {
   BoxSettings,
   BoxAgentVersion,
   RebootBox,
+  SetPreset,
   SyncBoxPresets,
   SaveDiagnosticBundle,
   BrowserOpenURL,
@@ -599,6 +600,21 @@ function renderBoxSettings(s, box) {
       </div>
     </details>`;
     })()}
+
+    <details class="settings-section settings-expert">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.urlPresetHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <small class="muted small expert-intro">${escapeHtml(t('settingsView.urlPresetHelp'))}</small>
+      <div class="setting-row">
+        <select id="urlPresetSlot" style="flex:0 0 130px;">
+          ${[1, 2, 3, 4, 5, 6].map(n => `<option value="${n}">${escapeHtml(t('preset.key', { n }))}</option>`).join('')}
+        </select>
+        <input type="text" id="urlPresetName" autocomplete="off" placeholder="${escapeAttr(t('settingsView.urlPresetNamePlaceholder'))}" style="flex:1;" />
+      </div>
+      <div class="setting-row">
+        <input type="text" id="urlPresetUrl" autocomplete="off" placeholder="${escapeAttr(t('settingsView.urlPresetUrlPlaceholder'))}" />
+        <button class="btn btn-mini btn-primary" id="urlPresetSaveBtn">${escapeHtml(t('common.save'))}</button>
+      </div>
+    </details>
 
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.sourcesHeading'))}</h3>
@@ -1250,6 +1266,27 @@ function renderBoxSettings(s, box) {
         if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
       } catch (e) { showError(e); }
       copyBtn.disabled = false;
+    };
+  }
+
+  // Expert: put a custom audio URL on a preset. Stored as a normal radio preset,
+  // so the box plays the URL over UPnP when the key (hardware or app) is pressed,
+  // using STR's robust play path (DIDL metadata, HTTP handling) rather than a raw
+  // UPnP push. Replaces the current source on press (no auto-resume).
+  const urlPresetBtn = $('urlPresetSaveBtn');
+  if (urlPresetBtn) {
+    urlPresetBtn.onclick = async () => {
+      const slot = parseInt(($('urlPresetSlot') || {}).value, 10);
+      const url = (($('urlPresetUrl') || {}).value || '').trim();
+      const name = (($('urlPresetName') || {}).value || '').trim() || t('settingsView.urlPresetDefaultName');
+      if (!slot || !/^https?:\/\/\S+/i.test(url)) { showError(t('settingsView.urlPresetInvalid')); return; }
+      urlPresetBtn.disabled = true;
+      try {
+        await SetPreset(box.host, box.port, slot, name, url, '', 0, '');
+        showToast(t('settingsView.urlPresetSaved', { n: slot }));
+        if (state.currentBox && state.currentBox.host === box.host) await deps.loadPresets();
+      } catch (e) { showError(e); }
+      urlPresetBtn.disabled = false;
     };
   }
 
