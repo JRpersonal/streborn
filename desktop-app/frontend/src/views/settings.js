@@ -734,13 +734,14 @@ function renderBoxSettings(s, box) {
       const ct = r.headers.get('content-type') || '';
       if (r.ok && ct.includes('json')) {
         const data = await r.json();
-        // Require a readable version too, not just mounted: an older agent
-        // reports mounted:true from a bare os.Stat on the empty mountpoint dir
-        // that survives `umount`, so the "remove the stick" banner stuck around
-        // forever (#105). A real stick always carries version.txt.
-        if (data.mounted && data.version) {
+        // Trust the agent's mounted flag (v0.7.33+ stickReallyMounted reports it
+        // only for a real stick, not the leftover empty mountpoint, #105). Do NOT
+        // also require data.version: the agent can report mounted without a
+        // version, and requiring it wrongly showed an inserted stick as removed
+        // (#105 follow-up).
+        if (data.mounted) {
           stickMounted = true;
-          stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span> <span class="muted small">${escapeHtml(data.version)}</span>`;
+          stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>` + (data.version ? ` <span class="muted small">${escapeHtml(data.version)}</span>` : '');
         } else {
           // After a clean install the stick is pulled, so "not mounted" is
           // the expected steady state. Show it informationally, not as an

@@ -1049,16 +1049,13 @@ async function checkSshBanner() {
     // and self-clearing. (Setup view and the OTA window are already excluded
     // above.) Full SSH hardening is the separate v1.0 item.
     //
-    // Require a readable stick version too, not just mounted: an older agent
-    // reports mounted:true from a bare os.Stat on the leftover empty mountpoint
-    // dir that survives `umount`, so the banner stuck around forever with the
-    // stick already out (#105). A real stick always carries version.txt, so
-    // `mounted && version` is the reliable "stick really in" signal and lets a
-    // box still on the old agent self-heal. A real STR stick always carries
-    // version.txt (written on every prep), so this only ever hides a non-STR
-    // stick or a leftover mountpoint, which is exactly what we want for the
-    // "remove the STR stick" reminder.
-    const show = !!(data && data.mounted && data.version);
+    // Trust the agent's mounted flag. The v0.7.33+ agent's stickReallyMounted
+    // reports mounted only for a real stick, not the leftover empty mountpoint
+    // that survives umount (#105), so this clears on its own. Do NOT also require
+    // data.version: the agent can legitimately report mounted without a version
+    // (run.sh marker / mountinfo path), and requiring version wrongly hid a stick
+    // that is actually inserted (#105 follow-up: "stick removed" while still in).
+    const show = !!(data && data.mounted);
     gb.classList.toggle('hidden', !show);
   } catch {}
 }
