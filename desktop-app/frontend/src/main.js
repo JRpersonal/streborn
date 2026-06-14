@@ -6800,7 +6800,20 @@ const libState = {
   stack: [{ id: '0', title: '' }],
   page: null,
   loading: false,
+  loadingMore: false, // true while paging the rest of a large folder in the background
+  capped: false,      // true when a folder exceeds LIB_MAX and was truncated
+  filter: '',         // folder search text (client-side filter over the loaded items)
+  browseToken: 0,     // bumped on each browse so a stale background page-loop abandons
 };
+
+// Media-library paging (#119). DLNA servers (and the Bose box's own UPnP) cap
+// NumberReturned per Browse, so a 1500-track folder only returned its first
+// page. We now page through the whole folder, but carefully: LIB_PAGE per SOAP
+// request, each an await that yields to the event loop (the UI never freezes),
+// and a LIB_MAX ceiling so a pathological 50k-track folder cannot exhaust memory
+// or choke the DOM. Past the cap the folder search narrows what is shown.
+const LIB_PAGE = 200;
+const LIB_MAX = 2500;
 
 async function openLibrary() {
   renderLibrary();
@@ -6844,16 +6857,51 @@ async function libraryPickServer(udn) {
 async function libraryBrowseCurrent() {
   if (!libState.currentUDN) return;
   const top = libState.stack[libState.stack.length - 1];
+  const token = ++libState.browseToken; // any older background loop sees a mismatch and abandons
   libState.loading = true;
+  libState.loadingMore = false;
+  libState.capped = false;
+  libState.filter = '';
+  libState.page = null;
   renderLibrary();
+
+  const acc = { containers: [], items: [], totalMatches: 0, returned: 0 };
   try {
-    libState.page = await BrowseLibrary(libState.currentUDN, top.id, 0, 100);
+    let start = 0;
+    let first = true;
+    for (;;) {
+      const page = await BrowseLibrary(libState.currentUDN, top.id, start, LIB_PAGE);
+      if (token !== libState.browseToken) return; // navigated away mid-fetch: drop it
+      acc.containers = acc.containers.concat(page.containers || []);
+      acc.items = acc.items.concat(page.items || []);
+      acc.totalMatches = page.totalMatches || acc.totalMatches;
+      acc.returned = acc.containers.length + acc.items.length;
+      const got = (page.containers || []).length + (page.items || []).length;
+      start += LIB_PAGE;
+      const done = got < LIB_PAGE || (acc.totalMatches && start >= acc.totalMatches);
+      const capped = acc.returned >= LIB_MAX;
+      if (first) {
+        // Show the first page immediately, keep paging the rest in the background.
+        libState.page = acc;
+        libState.loading = false;
+        libState.loadingMore = !done && !capped;
+        renderLibrary();
+        first = false;
+      }
+      if (done || capped) {
+        libState.capped = capped && !done;
+        break;
+      }
+    }
   } catch (e) {
     showError(`BrowseLibrary: ${e}`);
-    libState.page = null;
   } finally {
-    libState.loading = false;
-    renderLibrary();
+    if (token === libState.browseToken) {
+      libState.loading = false;
+      libState.loadingMore = false;
+      libState.page = acc.returned ? acc : (libState.page || null);
+      renderLibrary();
+    }
   }
 }
 
@@ -6945,6 +6993,92 @@ function librarySaveAsPreset(item) {
   });
 }
 
+// libraryFilteredItems applies the folder search (client-side, over what has been
+// paged in so far) to the loaded items. Matches title, artist or album.
+function libraryFilteredItems() {
+  const all = (libState.page && libState.page.items) || [];
+  const f = (libState.filter || '').trim().toLowerCase();
+  if (!f) return all;
+  return all.filter((it) =>
+    (it.title || '').toLowerCase().includes(f)
+    || (it.artist || '').toLowerCase().includes(f)
+    || (it.album || '').toLowerCase().includes(f));
+}
+
+// libraryListInnerHTML builds the folder/track <li> rows (containers always,
+// tracks filtered by the search). Shared by the full render and the search
+// refilter so the two never drift.
+function libraryListInnerHTML() {
+  const containers = ((libState.page && libState.page.containers) || []).map((c) => `
+      <li class="library-row library-row-folder" data-cid="${escapeAttr(c.id)}">
+        <span class="library-icon">&#128194;</span>
+        <span class="library-title">${escapeHtml(c.title)}</span>
+        ${c.childCount > 0 ? `<span class="library-meta">${c.childCount}</span>` : ''}
+      </li>`).join('');
+  const items = libraryFilteredItems().map((it) => {
+    const meta = [it.artist, it.album].filter(Boolean).join(' — ');
+    const dur = it.durationSec > 0 ? ` <span class="library-duration">${formatDuration(it.durationSec)}</span>` : '';
+    return `
+        <li class="library-row library-row-track" data-iid="${escapeAttr(it.id)}">
+          <span class="library-icon">&#9835;</span>
+          <span class="library-title">
+            <span class="library-track-title">${escapeHtml(it.title)}</span>
+            ${meta ? `<span class="library-track-meta">${escapeHtml(meta)}</span>` : ''}
+          </span>
+          ${dur}
+          <span class="library-actions">
+            <button class="btn btn-mini lib-play-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.play'))}">${escapeHtml(t('library.play'))}</button>
+            <button class="btn btn-mini btn-secondary lib-preset-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.saveAsPreset'))}">${escapeHtml(t('library.saveAsPreset'))}</button>
+          </span>
+        </li>`;
+  }).join('');
+  return containers + items;
+}
+
+// libraryCountText: "shown / total" for tracks, with a "+" while more are still
+// loading or the folder was capped, so the user knows the list is partial.
+function libraryCountText() {
+  const total = ((libState.page && libState.page.items) || []).length;
+  const shown = libraryFilteredItems().length;
+  const more = libState.loadingMore || libState.capped ? '+' : '';
+  return (libState.filter ? `${shown} / ${total}${more}` : `${total}${more}`);
+}
+
+// wireLibraryRows attaches folder-enter, play and save-as-preset handlers to the
+// rows inside a scope element. Re-run after the list is (re)built.
+function wireLibraryRows(scope) {
+  scope.querySelectorAll('.library-row-folder').forEach((row) => {
+    row.onclick = () => {
+      const c = ((libState.page && libState.page.containers) || []).find((x) => x.id === row.dataset.cid);
+      if (c) libraryEnter(c);
+    };
+  });
+  scope.querySelectorAll('.lib-play-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const it = ((libState.page && libState.page.items) || []).find((x) => x.id === btn.dataset.iid);
+      if (it) libraryPlay(it);
+    };
+  });
+  scope.querySelectorAll('.lib-preset-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const it = ((libState.page && libState.page.items) || []).find((x) => x.id === btn.dataset.iid);
+      if (it) librarySaveAsPreset(it);
+    };
+  });
+}
+
+// libRefilter updates ONLY the list + count on a search keystroke, so the search
+// input keeps focus (re-rendering the whole view would steal it) and large
+// folders do not rebuild the entire view per character.
+function libRefilter() {
+  const list = document.querySelector('#view-library .library-list');
+  if (list) { list.innerHTML = libraryListInnerHTML(); wireLibraryRows(list); }
+  const cnt = $('libCount');
+  if (cnt) cnt.textContent = libraryCountText();
+}
+
 function renderLibrary() {
   const el = $('view-library');
   if (!el) return;
@@ -6992,36 +7126,24 @@ function renderLibrary() {
         : `<a href="#" class="library-crumb" data-depth="${i}">${escapeHtml(lbl)}</a>`;
     }).join(' <span class="library-crumb-sep">&rsaquo;</span> ');
 
-    const containers = (libState.page.containers || []).map(c => `
-      <li class="library-row library-row-folder" data-cid="${escapeAttr(c.id)}">
-        <span class="library-icon">&#128194;</span>
-        <span class="library-title">${escapeHtml(c.title)}</span>
-        ${c.childCount > 0 ? `<span class="library-meta">${c.childCount}</span>` : ''}
-      </li>`).join('');
-
-    const items = (libState.page.items || []).map(it => {
-      const meta = [it.artist, it.album].filter(Boolean).join(' — ');
-      const dur = it.durationSec > 0 ? ` <span class="library-duration">${formatDuration(it.durationSec)}</span>` : '';
-      return `
-        <li class="library-row library-row-track" data-iid="${escapeAttr(it.id)}">
-          <span class="library-icon">&#9835;</span>
-          <span class="library-title">
-            <span class="library-track-title">${escapeHtml(it.title)}</span>
-            ${meta ? `<span class="library-track-meta">${escapeHtml(meta)}</span>` : ''}
-          </span>
-          ${dur}
-          <span class="library-actions">
-            <button class="btn btn-mini lib-play-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.play'))}">${escapeHtml(t('library.play'))}</button>
-            <button class="btn btn-mini btn-secondary lib-preset-btn" data-iid="${escapeAttr(it.id)}" title="${escapeAttr(t('library.saveAsPreset'))}">${escapeHtml(t('library.saveAsPreset'))}</button>
-          </span>
-        </li>`;
-    }).join('');
-
-    const empty = (!containers && !items) ? `<p class="library-empty-folder">${escapeHtml(t('library.emptyFolder'))}</p>` : '';
+    const nContainers = (libState.page.containers || []).length;
+    const nItems = (libState.page.items || []).length;
+    const searchRow = nItems > 0 ? `
+      <div class="library-search-row">
+        <input type="search" class="library-search" id="libSearch" placeholder="${escapeAttr(t('library.searchPlaceholder'))}" value="${escapeAttr(libState.filter || '')}">
+        <span class="library-count" id="libCount">${escapeHtml(libraryCountText())}</span>
+      </div>` : '';
+    const moreNote = libState.loadingMore
+      ? `<p class="library-loading-more">${escapeHtml(t('library.loadingMore'))}</p>`
+      : (libState.capped ? `<p class="library-loading-more">${escapeHtml(t('library.capped', { n: LIB_MAX }))}</p>` : '');
+    const empty = (nContainers === 0 && nItems === 0)
+      ? `<p class="library-empty-folder">${escapeHtml(t('library.emptyFolder'))}</p>` : '';
 
     body = `
       <div class="library-crumbs">${crumbs}</div>
-      <ul class="library-list">${containers}${items}</ul>
+      ${searchRow}
+      <ul class="library-list">${libraryListInnerHTML()}</ul>
+      ${moreNote}
       ${empty}`;
   } else if (libState.servers.length > 0 && !libState.currentUDN) {
     body = `<p class="library-pick-server">${escapeHtml(t('library.pickServer'))}</p>`;
@@ -7038,27 +7160,14 @@ function renderLibrary() {
   el.querySelectorAll('.library-crumb').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); libraryGoTo(parseInt(a.dataset.depth, 10)); };
   });
-  el.querySelectorAll('.library-row-folder').forEach(row => {
-    row.onclick = () => {
-      const id = row.dataset.cid;
-      const c = (libState.page.containers || []).find(x => x.id === id);
-      if (c) libraryEnter(c);
-    };
-  });
-  el.querySelectorAll('.lib-play-btn').forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const it = (libState.page.items || []).find(x => x.id === btn.dataset.iid);
-      if (it) libraryPlay(it);
-    };
-  });
-  el.querySelectorAll('.lib-preset-btn').forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const it = (libState.page.items || []).find(x => x.id === btn.dataset.iid);
-      if (it) librarySaveAsPreset(it);
-    };
-  });
+  wireLibraryRows(el);
+  const libSearch = $('libSearch');
+  if (libSearch) {
+    // Filter the loaded list as the user types. Updates only the list + count
+    // (libRefilter), so the input keeps focus and a big folder is not fully
+    // re-rendered per keystroke.
+    libSearch.oninput = () => { libState.filter = libSearch.value; libRefilter(); };
+  }
 }
 
 function formatDuration(sec) {
