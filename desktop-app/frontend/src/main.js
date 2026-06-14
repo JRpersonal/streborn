@@ -53,6 +53,7 @@ import {
   SetResumeOnPowerOn,
   GetAppFlag,
   SetAppFlag,
+  RescuedSpeakerCount,
   GetWebhooks,
   SetWebhooks,
   SaveWebhookConfig,
@@ -2968,19 +2969,68 @@ function showWorldMapInvite() {
   el.id = 'worldMapInvite';
   el.className = 'worldmap-invite';
   el.innerHTML =
-    `<span class="wmi-text">${escapeHtml(t('worldMap.inviteText'))}</span>` +
-    `<button class="btn btn-mini btn-primary" id="wmiShare">${escapeHtml(t('worldMap.inviteBtn'))}</button>` +
-    `<button class="wmi-close" id="wmiClose" aria-label="close">&times;</button>`;
+    `<button class="wmi-close" id="wmiClose" aria-label="close">&times;</button>` +
+    `<div class="wmi-burst" aria-hidden="true">🎉</div>` +
+    `<div class="wmi-body">` +
+      `<div class="wmi-text">${escapeHtml(t('worldMap.inviteText'))}</div>` +
+      `<div class="wmi-count hidden" id="wmiCount"></div>` +
+      `<button class="btn btn-mini btn-primary wmi-share" id="wmiShare">${escapeHtml(t('worldMap.inviteBtn'))}</button>` +
+    `</div>`;
   document.body.appendChild(el);
   requestAnimationFrame(() => el.classList.add('show'));
+  // A short confetti burst for the celebration moment, removed after it plays.
+  spawnConfetti(el);
+  // Live "rescued worldwide" count, fetched server-side from the website's pin
+  // API (graceful: the line stays hidden on 0 or any error). Motivates the user
+  // to add their pin and push the counter higher.
+  (async () => {
+    try {
+      const n = await RescuedSpeakerCount();
+      if (n && n > 0) {
+        const c = el.querySelector('#wmiCount');
+        if (c) { c.textContent = t('worldMap.countLine', { n }); c.classList.remove('hidden'); }
+      }
+    } catch { /* no count, just the celebration */ }
+  })();
   const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
   const shareBtn = el.querySelector('#wmiShare');
   if (shareBtn) shareBtn.onclick = () => { try { BrowserOpenURL(worldMapURL()); } catch {} close(); };
   const closeBtn = el.querySelector('#wmiClose');
   if (closeBtn) closeBtn.onclick = close;
   // Auto-dismiss so it never lingers; the once-ever flag means it will not return.
-  setTimeout(close, 15000);
+  setTimeout(close, 20000);
 }
+
+// spawnConfetti drops a brief, CSS-animated emoji confetti burst above the invite
+// for the celebration moment, then cleans itself up. Pure decoration, best-effort.
+function spawnConfetti(anchor) {
+  try {
+    const burst = document.createElement('div');
+    burst.className = 'wmi-confetti';
+    const bits = ['🎉', '🎊', '✨', '🌍', '🔊', '🥳'];
+    for (let i = 0; i < 14; i++) {
+      const s = document.createElement('span');
+      s.textContent = bits[i % bits.length];
+      s.style.left = Math.round((i / 13) * 100) + '%';
+      s.style.animationDelay = (i % 5) * 90 + 'ms';
+      burst.appendChild(s);
+    }
+    anchor.appendChild(burst);
+    setTimeout(() => burst.remove(), 2600);
+  } catch { /* decoration only */ }
+}
+
+// Preview hook: force-show the world-map invite (bypassing the once-ever flag) so
+// the celebration can be checked without re-triggering a first radio play. Press
+// Ctrl+Shift+M. Harmless if a user finds it; it only previews the invite.
+try {
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'M' || e.key === 'm')) {
+      e.preventDefault();
+      showWorldMapInvite();
+    }
+  });
+} catch { /* no preview hook */ }
 
 // ---------- Search ----------
 

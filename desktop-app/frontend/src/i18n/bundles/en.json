@@ -776,6 +776,7 @@
   "setup.st30StickPowerWarn": "SoundTouch 30 detected: its USB port can struggle to power some sticks, which causes a power error during install. Use a small, low-power USB 2.0 stick (4 to 16 GB), or connect it through a powered USB hub.",
   "worldMap.inviteText": "Your SoundTouch is alive again 🎉",
   "worldMap.inviteBtn": "Share it on the world map",
+  "worldMap.countLine": "🌍 {{n}} SoundTouch speakers rescued worldwide so far. Add yours!",
   "setup.stickLargeFat32": "This is a large stick (over 32 GB). Large sticks are often formatted in a way the speaker cannot read. It will be reformatted to a compatible FAT32 during preparation; all data on the stick is lost.",
   "setup.installDone": "STR is installed and running on the speaker.",
   "setup.installDoneHint": "Switch to the Listen to music tab to use it. You can now safely remove the stick from the speaker.",

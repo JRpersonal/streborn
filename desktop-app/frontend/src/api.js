@@ -59,6 +59,7 @@ export {
   SetResumeOnPowerOn,
   GetAppFlag,
   SetAppFlag,
+  RescuedSpeakerCount,
   GetWebhooks,
   SetWebhooks,
   SaveWebhookConfig,

@@ -2186,6 +2186,46 @@ func (a *App) SetAppFlag(name string) error {
 	return os.Rename(tmp, path)
 }
 
+// RescuedSpeakerCount returns how many speakers are shown on the community world
+// map, i.e. the sum of the per-pin reaction counts at st-reborn.de/api/pins.php,
+// which is exactly what the website's "rescued" counter displays. The world-map
+// invite shows it to motivate the user to add their pin. Best-effort: returns 0
+// on any error so the invite simply omits the count. Fetched server-side here to
+// avoid a cross-origin fetch from the webview.
+func (a *App) RescuedSpeakerCount() int {
+	ctx, cancel := context.WithTimeout(a.appCtx(), 6*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://st-reborn.de/api/pins.php", nil)
+	if err != nil {
+		return 0
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	var out struct {
+		Pins []struct {
+			Count int `json:"count"`
+		} `json:"pins"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return 0
+	}
+	total := 0
+	for _, p := range out.Pins {
+		if p.Count > 0 {
+			total += p.Count
+		} else {
+			total++ // a pin with no explicit count still represents one rescued box
+		}
+	}
+	return total
+}
+
 // StreamBitrate returns the agent's currently-detected stream bitrate in
 // kbit/s (icy-br, or a throughput sample), or 0 if none/unavailable.
 // Routed through boxDo so it self-heals across :8888 / :17008 like every

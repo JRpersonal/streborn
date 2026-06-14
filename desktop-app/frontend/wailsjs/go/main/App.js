@@ -194,6 +194,10 @@ export function RepairInstallViaSSH(arg1, arg2) {
   return window['go']['main']['App']['RepairInstallViaSSH'](arg1, arg2);
 }
 
+export function RescuedSpeakerCount() {
+  return window['go']['main']['App']['RescuedSpeakerCount']();
+}
+
 export function ResolveStationLogo(arg1, arg2, arg3) {
   return window['go']['main']['App']['ResolveStationLogo'](arg1, arg2, arg3);
 }

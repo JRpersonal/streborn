@@ -101,6 +101,8 @@ export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
 
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
 
+export function RescuedSpeakerCount():Promise<number>;
+
 export function ResolveStationLogo(arg1:string,arg2:string,arg3:Array<string>):Promise<string>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
