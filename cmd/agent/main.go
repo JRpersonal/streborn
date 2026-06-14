@@ -362,6 +362,7 @@ func run() error {
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
 		webui.WithSpotifyReady(spotifyMgr.Ready),
+		webui.WithSpotifyPremiumRequired(spotifyMgr.PremiumRequired),
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
@@ -1047,6 +1048,14 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 			h.logger.Warn("spotify preset pressed but manager not ready after wait", "slot", slot)
 			return
 		}
+	}
+	// A free/open Spotify account cannot autonomously play a saved context, so a
+	// hardware-button recall would silently produce no audio. Skip it and log the
+	// reason rather than thrashing the box (#45). The desktop app surfaces the
+	// "needs Premium" note; the hardware press has no UI to show it.
+	if h.spotify.PremiumRequired() {
+		h.logger.Warn("spotify preset recall: account is free/open, recall needs Premium; skipping", "slot", slot, "name", p.Name)
+		return
 	}
 
 	// Mark a recall BEFORE the box attaches (PlayURLMime below / the box's own

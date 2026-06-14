@@ -2551,6 +2551,7 @@ async function play(slot) {
 function friendlyPlayError(s) {
   const l = String(s).toLowerCase();
   if (l.includes('box_not_ready')) return t('play.errBoxStarting');
+  if (l.includes('premium')) return t('play.errSpotifyPremium');
   if (l.includes('no such host') || l.includes('lookup')) return t('play.errNoInternet');
   if (l.includes('timeout') || l.includes('deadline')) return t('play.errSpeakerTimeout');
   if (l.includes('refused')) return t('play.errSpeakerRefused');

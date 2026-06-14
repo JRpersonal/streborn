@@ -204,6 +204,7 @@
   "play.errBoxStarting": "speaker is still starting, try again in a moment",
   "play.errSpeakerRefused": "speaker refused",
   "play.errNotPlayable": "station not playable",
+  "play.errSpotifyPremium": "Spotify recall needs Premium",
   "play.errServer500": "station error",
   "play.errUnreachable": "station unreachable",
   "play.errGeneric": "Error",

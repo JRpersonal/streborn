@@ -86,6 +86,10 @@ type Server struct {
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify
 	// is not configured.
 	spotifyReady func() bool
+	// spotifyPremiumRequired reports whether the logged-in Spotify account is
+	// free/open and so cannot do the autonomous recall playback (#45). nil until
+	// wired; the recall handler uses it to return a clear "needs Premium" error.
+	spotifyPremiumRequired func() bool
 	// spotifySetRecalling marks an in-flight recall so ServeOgg drives the new
 	// track from its start instead of resuming mid-position. nil when Spotify is
 	// not configured.
@@ -320,6 +324,14 @@ func WithSpotifyStreaming(streaming func() bool) Option {
 // finished authenticating, so a soft Spotify recall can wait out a cold start.
 func WithSpotifyReady(ready func() bool) Option {
 	return func(s *Server) { s.spotifyReady = ready }
+}
+
+// WithSpotifyPremiumRequired registers the predicate that reports whether the
+// logged-in Spotify account is free/open and so cannot do the autonomous recall
+// playback a preset needs (#45). The recall handler uses it to answer with a
+// clear "needs Premium" message instead of failing silently.
+func WithSpotifyPremiumRequired(f func() bool) Option {
+	return func(s *Server) { s.spotifyPremiumRequired = f }
 }
 
 // WithSpotifySetRecalling registers the hook that marks an in-flight recall so
@@ -926,6 +938,18 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warn("spotify preset recall (app): Spotify not configured on this box", "slot", slot)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error": "Spotify not configured", "slot": slot, "name": p.Name,
+			})
+			return
+		}
+		// A free/open Spotify account cannot do the autonomous on-demand playback a
+		// recall needs (it can only play when the phone app drives it), so the
+		// recall would silently fail. Tell the user it needs Premium instead (#45).
+		if s.spotifyPremiumRequired != nil && s.spotifyPremiumRequired() {
+			s.logger.Info("spotify preset recall (app): account is free/open, recall needs Premium", "slot", slot)
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error": "This speaker's Spotify account is free. Spotify preset recall needs Spotify Premium.",
+				"code":  "spotify-premium-required",
+				"slot":  slot, "name": p.Name,
 			})
 			return
 		}

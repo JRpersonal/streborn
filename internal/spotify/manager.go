@@ -123,6 +123,15 @@ type Manager struct {
 	// until wired; lastNotifiedTrack dedups repeated metadata/status updates.
 	onTrack           func(track, artist string)
 	lastNotifiedTrack string
+	// Spotify account product type, used to warn that preset recall needs Premium
+	// (#45). productType is cached from go-librespot's /web-api/v1/me ("premium"/
+	// "free"/"open"); sawFreeAccountLog is set when go-librespot logs that it does
+	// not support a free account. Either non-premium signal makes PremiumRequired
+	// true. Reset on each go-librespot (re)launch so an account switch re-detects.
+	productType       string
+	productCheckedAt  time.Time
+	productTriedAt    time.Time
+	sawFreeAccountLog bool
 	// onActivate is invoked when go-librespot starts playing while no box is
 	// attached to the Ogg stream, i.e. the user pressed play in the Spotify app
 	// (selecting this device) but the box is still on another source. The
@@ -449,13 +458,18 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// re-apply a changed device_name) without tearing down the manager.
 	runCtx, runCancel := context.WithCancel(ctx)
 	defer runCancel()
+	// Fresh process = re-detect the account product (an account switch relaunches
+	// go-librespot), so the #45 Premium warning reflects the current login.
+	m.mu.Lock()
+	m.productType, m.sawFreeAccountLog, m.productTriedAt = "", false, time.Time{}
+	m.mu.Unlock()
 	cmd := exec.CommandContext(runCtx, m.binPath, "--config_dir", m.configDir)
 	cmd.Env = append(os.Environ(), "HOME="+m.configDir)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	cmd.Stderr = newLogWriter(m.logger)
+	cmd.Stderr = newLogWriter(m.logger, m.noteLibrespotLine)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -822,6 +836,81 @@ func (m *Manager) apiGet(ctx context.Context, path string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}
+
+// noteLibrespotLine inspects a go-librespot stderr line for the non-Premium
+// account signal. librespot refuses free accounts and logs that it does not
+// support them; seeing that latches sawFreeAccountLog so PremiumRequired can warn
+// that preset recall needs Premium (#45).
+func (m *Manager) noteLibrespotLine(line string) {
+	lc := strings.ToLower(line)
+	if strings.Contains(lc, "free") && (strings.Contains(lc, "not support") || strings.Contains(lc, "premium")) {
+		m.mu.Lock()
+		already := m.sawFreeAccountLog
+		m.sawFreeAccountLog = true
+		m.mu.Unlock()
+		if !already {
+			m.logger.Warn("spotify: go-librespot reports a non-Premium account; preset recall needs Premium (#45)", "line", line)
+		}
+	}
+}
+
+// accountProduct returns the Spotify account product type ("premium"/"free"/
+// "open") via go-librespot's authenticated Web API proxy (GET /web-api/v1/me),
+// cached for a few minutes. Returns "" when unknown (the zeroconf token may lack
+// the user-read-private scope, in which case /v1/me omits product), so callers
+// fall back to the log signal. Best-effort.
+func (m *Manager) accountProduct(ctx context.Context) string {
+	m.mu.Lock()
+	if m.productType != "" && time.Since(m.productCheckedAt) < 5*time.Minute {
+		p := m.productType
+		m.mu.Unlock()
+		return p
+	}
+	m.mu.Unlock()
+	data, err := m.apiGet(ctx, "/web-api/v1/me")
+	if err != nil {
+		return ""
+	}
+	var me struct {
+		Product string `json:"product"`
+	}
+	if json.Unmarshal(data, &me) != nil || me.Product == "" {
+		return ""
+	}
+	m.mu.Lock()
+	m.productType, m.productCheckedAt = me.Product, time.Now()
+	m.mu.Unlock()
+	return me.Product
+}
+
+// PremiumRequired reports whether the current Spotify account cannot do the
+// autonomous on-demand playback a preset recall needs, i.e. it is a free/open
+// account rather than Premium (#45). Non-blocking: it uses the cached product
+// type and the go-librespot free-account log signal, kicking a background product
+// refresh when the type is not yet known. Conservative: returns true only on a
+// POSITIVE non-Premium signal, never on "unknown", so a Premium user is never
+// wrongly blocked.
+func (m *Manager) PremiumRequired() bool {
+	m.mu.Lock()
+	free := m.sawFreeAccountLog
+	p := m.productType
+	tried := m.productTriedAt
+	m.mu.Unlock()
+	if free {
+		return true
+	}
+	if p == "" && time.Since(tried) > 30*time.Second {
+		m.mu.Lock()
+		m.productTriedAt = time.Now()
+		m.mu.Unlock()
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			defer cancel()
+			m.accountProduct(ctx)
+		}()
+	}
+	return p == "free" || p == "open"
 }
 
 // currentUsername returns the Spotify account go-librespot is currently logged
@@ -1221,15 +1310,20 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Cover   string `json:"cover"`
 		Context string `json:"context"` // current playlist/album URI (for saving a Spotify preset)
 		Account string `json:"account"` // current go-librespot login (for the preset)
+		// PremiumRequired is true when the logged-in Spotify account is free/open,
+		// which cannot do the autonomous on-demand playback a preset recall needs
+		// (#45). The UI shows a "recall needs Premium" note when set.
+		PremiumRequired bool `json:"premiumRequired"`
 	}{
-		Ready:   m.Ready(),
-		Bitrate: m.Bitrate(),
-		Name:    m.DeviceName(),
-		Track:   track,
-		Artist:  artist,
-		Cover:   cover,
-		Context: context,
-		Account: m.currentUsername(r.Context()),
+		Ready:           m.Ready(),
+		Bitrate:         m.Bitrate(),
+		Name:            m.DeviceName(),
+		Track:           track,
+		Artist:          artist,
+		Cover:           cover,
+		Context:         context,
+		Account:         m.currentUsername(r.Context()),
+		PremiumRequired: m.PremiumRequired(),
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -1556,12 +1650,21 @@ func splitHostPort(addr string) (host, port string) {
 }
 
 // logWriter forwards go-librespot stderr lines to the agent logger.
-type logWriter struct{ logger *slog.Logger }
+type logWriter struct {
+	logger *slog.Logger
+	onLine func(string) // optional per-line hook (e.g. free-account detection)
+}
 
-func newLogWriter(l *slog.Logger) *logWriter { return &logWriter{logger: l} }
+func newLogWriter(l *slog.Logger, onLine func(string)) *logWriter {
+	return &logWriter{logger: l, onLine: onLine}
+}
 
 func (w *logWriter) Write(p []byte) (int, error) {
-	w.logger.Info("go-librespot", "line", trimEOL(string(p)))
+	line := trimEOL(string(p))
+	w.logger.Info("go-librespot", "line", line)
+	if w.onLine != nil {
+		w.onLine(line)
+	}
 	return len(p), nil
 }
 

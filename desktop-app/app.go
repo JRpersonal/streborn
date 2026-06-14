@@ -2306,6 +2306,10 @@ type SpotifyNow struct {
 	Cover   string `json:"cover"`
 	Context string `json:"context"` // current playlist/album URI (for a long-press save)
 	Account string `json:"account"` // current go-librespot login
+	// PremiumRequired is true when the box's Spotify account is free/open, which
+	// cannot do the autonomous on-demand playback a preset recall needs (#45). The
+	// Spotify view shows a "recall needs Premium" note when set.
+	PremiumRequired bool `json:"premiumRequired"`
 }
 
 func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {

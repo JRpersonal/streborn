@@ -204,6 +204,7 @@
   "play.errBoxStarting": "Lautsprecher startet noch, gleich nochmal versuchen",
   "play.errSpeakerRefused": "Lautsprecher lehnt ab",
   "play.errNotPlayable": "Sender nicht abspielbar",
+  "play.errSpotifyPremium": "Spotify-Recall braucht Premium",
   "play.errServer500": "Sender-Fehler",
   "play.errUnreachable": "Sender nicht erreichbar",
   "play.errGeneric": "Fehler",
