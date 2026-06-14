@@ -102,6 +102,25 @@ SSHing**. If Bose runs any stick script on its own, find the exact
 filename it expects and ship the bootstrap there. If it does not, Track 1
 is the ceiling and SSH stays.
 
+### Track 2 alpha (v0.7.36): no-USB-boot via the :17000 diagnostic console
+
+For a box that is on the LAN (Bose :8090 answers) but never opened SSH
+because it did not read the stick at boot, the installer now tries the
+legacy Bose telnet diagnostic console on **TCP 17000** to enable
+`remote_services` without a stick boot, then continues the normal SSH
+install. This targets the **SoundTouch 300** (it does not auto-read the
+stick at boot) and stubborn **ST30** units. It is experimental and
+best-effort: if :17000 does not open SSH the installer falls back to the
+existing "boot with the stick" guidance, so nothing regresses.
+
+Caveat: Bose **removed the `remote_services` command on firmware 27.x**
+(community RE writeups and `deborahgu/soundcork` #309), so on current
+firmware this likely does nothing; it is mainly a live probe. The install
+logs the :17000 banner and the console's reply to `help` /
+`remote_services on` / `local_services on` into the desktop app log, so a
+real SoundTouch 300 test (Save logs) tells us exactly what that firmware's
+console still exposes, without the user needing a terminal.
+
 ## Sub-questions from the original proposal, answered
 
 - **Status without an SSH channel:** already solved. `run.sh` mirrors
