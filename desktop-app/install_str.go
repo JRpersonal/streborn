@@ -489,15 +489,22 @@ func (a *App) tryEnableSSHViaDiagPort(host string) bool {
 		a.logger.Info("diag-port: :17000 not reachable, cannot try the no-stick SSH enable", "host", host, "err", err)
 		return false
 	}
-	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
-	buf := make([]byte, 512)
-	_, _ = conn.Read(buf) // drain banner / "-> " prompt, best-effort
-	// Both spellings are tried; the exact one varies by firmware vintage.
-	for _, cmd := range []string{"remote_services on\r\n", "local_services on\r\n"} {
+	_ = conn.SetDeadline(time.Now().Add(12 * time.Second))
+	buf := make([]byte, 1024)
+	n, _ := conn.Read(buf) // banner / "-> " prompt, best-effort
+	a.logger.Info("diag-port: :17000 connected", "host", host, "banner", strings.TrimSpace(string(buf[:n])))
+	// "help" first so the diagnostic captures which commands this firmware still
+	// exposes (Bose removed remote_services on FW 27.x); then both enable
+	// spellings, since the exact one varies by firmware vintage. Logging each
+	// reply is what lets a real ST300 test (Michal) tell us what its console
+	// supports without the user needing a terminal.
+	for _, cmd := range []string{"help\r\n", "remote_services on\r\n", "local_services on\r\n"} {
 		if _, werr := conn.Write([]byte(cmd)); werr != nil {
 			break
 		}
-		_, _ = conn.Read(buf)
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		rn, _ := conn.Read(buf)
+		a.logger.Info("diag-port: :17000 reply", "host", host, "cmd", strings.TrimSpace(cmd), "reply", strings.TrimSpace(string(buf[:rn])))
 		time.Sleep(300 * time.Millisecond)
 	}
 	_ = conn.Close()
