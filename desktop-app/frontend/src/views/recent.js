@@ -2,8 +2,9 @@
 //
 // First view extracted out of the monolithic main.js: a self-contained module
 // that pulls everything it needs from the shared modules (state, utils, i18n,
-// api). The only main.js-local dependency is the slot-picker modal, injected via
-// setRecentSlotPicker so this file does not have to import back into main.js
+// api, logos). The main.js-local helpers it reuses so its RADIO cards behave
+// EXACTLY like the radio search rows (play / save preset / favourite) are
+// injected via initRecentView, so this file does not import back into main.js
 // (which would create a cycle). New views should follow this pattern so main.js
 // stops growing.
 //
@@ -15,24 +16,44 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, showError, showToast } from '../utils.js';
 import { t } from '../i18n/index.js';
-import {
-  RecentPlayed,
-  PlayURL,
-  SetPreset,
-  SaveSpotifyPreset,
-  SaveLibraryPreset,
-} from '../api.js';
+import { RecentPlayed, SaveSpotifyPreset } from '../api.js';
+import { stationLogoCandidates, monogramDataUri, SPOTIFY_LOGO } from '../logos.js';
 
-// showSlotPicker lives in main.js (the shared modal). Injected once at startup
-// so the Save-as-preset action can reuse the same picker as the rest of the app.
-let showSlotPicker = null;
-export function setRecentSlotPicker(fn) {
-  showSlotPicker = fn;
+// Injected main.js helpers (see initRecentView). showSlotPicker is the shared
+// modal; playStation/openPick/toggleFav/isFav are the exact radio-search-row
+// actions, reused so the radio cards are pixel- and behaviour-identical.
+let deps = {
+  showSlotPicker: null,
+  playStation: null,
+  openPick: null,
+  toggleFav: null,
+  isFav: null,
+};
+export function initRecentView(d) {
+  deps = { ...deps, ...d };
 }
 
 // recentStrBoxes returns the discovered STR speakers (skip unflashed stock ones).
 function recentStrBoxes() {
   return (state.boxes || []).filter((b) => b && b.kind !== 'stock' && b.host);
+}
+
+// cardStation projects a recent card into the radio-station shape the search-row
+// helpers (playStation/openPick/toggleFav/isFav, stationLogoCandidates) expect,
+// so a radio card reuses them verbatim. CardKey is the stable favourite identity.
+function cardStation(c) {
+  return {
+    stationuuid: c.cardKey,
+    name: c.name || '',
+    url: c.url || '',
+    url_resolved: c.url || '',
+    favicon: c.art || '',
+    bitrate: 0,
+    homepage: '',
+    tags: '',
+    country: '',
+    countrycode: '',
+  };
 }
 
 // groupRecentCards turns a newest-first, box-tagged entry list into source cards:
@@ -88,11 +109,26 @@ function recentClock(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// logoImg builds the card logo as an <img> with the same data-fallbacks cascade
+// the preset/search tiles use (a global error-listener walks the chain). Spotify
+// shows its glyph; radio/NAS derive favicons from the URL, ending on a monogram
+// so a logo-less station still gets a clean letter tile instead of a blank box.
+function logoImg(c) {
+  let candidates;
+  if (c.source === 'spotify') {
+    candidates = [SPOTIFY_LOGO];
+    if (c.art) candidates.push(c.art);
+    candidates.push(monogramDataUri(c.name));
+  } else {
+    candidates = stationLogoCandidates(cardStation(c));
+    if (!candidates.length) candidates = [monogramDataUri(c.name)];
+  }
+  return `<img class="rc-logo" src="${escapeAttr(candidates[0])}" alt=""`
+    + ` data-fallbacks="${escapeAttr(candidates.slice(1).join('|'))}">`;
+}
+
 function recentCardHTML(c, i, showBox) {
-  const logo = c.art
-    ? `<img class="rc-logo" src="${escapeAttr(c.art)}" alt="" onerror="this.style.visibility='hidden'">`
-    : `<div class="rc-logo rc-logo-ph"></div>`;
-  const canPlay = c.source !== 'spotify'; // no ad-hoc Spotify play yet (preset-only)
+  const isRadio = c.source !== 'spotify';
   const sub = `<span class="rc-src">${escapeHtml(recentSourceLabel(c.source))}</span>`
     + (c.account ? ` &middot; ${escapeHtml(c.account)}` : '')
     + (showBox && c.boxName ? ` &middot; <span class="rc-box">${escapeHtml(c.boxName)}</span>` : '');
@@ -101,40 +137,59 @@ function recentCardHTML(c, i, showBox) {
         `<div class="rc-track"><span class="rc-tr-name">${escapeHtml(tr.track)}</span>`
         + `<span class="rc-tr-time">${escapeHtml(recentClock(tr.ts))}</span></div>`).join('') + `</div>`
     : '';
+  // Buttons identical to the radio search rows: play, save-to-preset, favourite.
+  // Spotify is preset-only and not radio-favouritable, so it gets just the save
+  // button (saved as a real Spotify preset).
+  let actions;
+  if (isRadio) {
+    const fav = deps.isFav ? deps.isFav(cardStation(c)) : false;
+    actions = `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9654;</button>`
+      + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`
+      + `<button class="btn btn-mini rc-fav${fav ? ' is-fav' : ''}" id="recFav${i}" title="${escapeAttr(fav ? t('search.removeFav') : t('search.addFav'))}">${fav ? '&#9733;' : '&#9734;'}</button>`;
+  } else {
+    actions = `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
+  }
   return `<div class="recent-card rc-${escapeAttr(c.source)}">`
-    + `<div class="rc-head">${logo}`
+    + `<div class="rc-head">${logoImg(c)}`
     + `<div class="rc-meta"><div class="rc-name">${escapeHtml(c.name || recentSourceLabel(c.source))}</div>`
     + `<div class="rc-sub">${sub}</div></div>`
-    + `<div class="rc-actions">`
-    + (canPlay ? `<button class="btn btn-mini btn-primary" id="recPlay${i}" title="${escapeAttr(t('recent.play'))}">&#9654;</button>` : '')
-    + `<button class="btn btn-mini" id="recSave${i}" title="${escapeAttr(t('recent.save'))}">&#9733;</button>`
-    + `</div></div>${tracks}</div>`;
+    + `<div class="rc-actions">${actions}</div></div>${tracks}</div>`;
 }
 
-async function recentPlayCard(c) {
-  if (!c.box || c.source === 'spotify') return;
-  try {
-    await PlayURL(c.box.host, c.box.port, c.url, c.name || '', c.art || '', '', '');
-    showToast(t('recent.playing', { name: c.name || '' }));
-  } catch (err) {
-    showError(err);
+function wireCard(c, i) {
+  const playBtn = document.getElementById('recPlay' + i);
+  const pickBtn = document.getElementById('recPick' + i);
+  const favBtn = document.getElementById('recFav' + i);
+  if (playBtn) {
+    playBtn.onclick = async () => {
+      try { await deps.playStation(cardStation(c)); } catch (err) { showError(err); }
+    };
+  }
+  if (pickBtn) {
+    pickBtn.onclick = () => {
+      if (c.source === 'spotify') return saveSpotifyCard(c);
+      deps.openPick(cardStation(c)); // radio: identical to the search "+" action
+    };
+  }
+  if (favBtn) {
+    favBtn.onclick = () => {
+      const nowFav = deps.toggleFav(cardStation(c));
+      favBtn.classList.toggle('is-fav', nowFav);
+      favBtn.innerHTML = nowFav ? '&#9733;' : '&#9734;';
+      favBtn.title = nowFav ? t('search.removeFav') : t('search.addFav');
+    };
   }
 }
 
-function recentSaveCard(c) {
+function saveSpotifyCard(c) {
   const box = c.box || state.currentBox;
-  if (!box || !showSlotPicker) return;
-  showSlotPicker({
+  if (!box || !deps.showSlotPicker) return;
+  deps.showSlotPicker({
     title: t('recent.saveTitle'),
     subtitle: c.name || '',
     onPick: async (i) => {
-      if (c.source === 'spotify') {
-        await SaveSpotifyPreset(box.host, box.port, i, c.name || '', c.url, c.account || '');
-      } else if (c.source === 'upnp') {
-        await SaveLibraryPreset(box.host, box.port, i, c.name || '', c.url, c.art || '', 0, recentSourceLabel('upnp'));
-      } else {
-        await SetPreset(box.host, box.port, i, c.name || '', c.url, c.art || '', 0);
-      }
+      await SaveSpotifyPreset(box.host, box.port, i, c.name || '', c.url, c.account || '');
+      showToast(t('recent.saved', { name: c.name || '' }));
     },
   });
 }
@@ -169,10 +224,5 @@ export async function renderRecent() {
     return;
   }
   listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i, showAll)).join('');
-  cards.forEach((c, i) => {
-    const playBtn = document.getElementById('recPlay' + i);
-    const saveBtn = document.getElementById('recSave' + i);
-    if (playBtn) playBtn.onclick = () => recentPlayCard(c);
-    if (saveBtn) saveBtn.onclick = () => recentSaveCard(c);
-  });
+  cards.forEach((c, i) => wireCard(c, i));
 }

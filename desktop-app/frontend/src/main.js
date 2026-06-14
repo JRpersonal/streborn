@@ -228,14 +228,18 @@ import {
   bestLogoForStation,
   stationLogoChain,
   monogramDataUri,
+  SPOTIFY_LOGO,
 } from './logos.js';
 
 // First view extracted out of this monolith into its own module (#135). The view
 // pulls state/utils/i18n/api from the shared modules; only the slot-picker modal
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
-import { renderRecent, setRecentSlotPicker } from './views/recent.js';
-setRecentSlotPicker(showSlotPicker);
+import { renderRecent, initRecentView } from './views/recent.js';
+// Inject the main.js-local helpers the view reuses so its radio cards behave
+// EXACTLY like the radio search rows (play / save preset / favourite) without
+// reimplementing them. All hoisted function declarations, safe to pass here.
+initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav });
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
 // pipe-separated set of candidate URLs) on each load error, swapping in the
@@ -2357,10 +2361,7 @@ function decodeProxyUrl(loc) {
   return loc;
 }
 
-// Spotify glyph (green circle + three arcs) shown as the logo on Spotify
-// preset tiles so they are instantly recognisable as a Spotify playlist.
-// Inline SVG data URI: no bundled asset, no network fetch.
-const SPOTIFY_LOGO = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20168%20168'%3E%3Ccircle%20cx='84'%20cy='84'%20r='84'%20fill='%231ED760'/%3E%3Cpath%20fill='none'%20stroke='%23000'%20stroke-width='13'%20stroke-linecap='round'%20d='M37%2099c30-9%2065-7%2092%209M35%2075c34-10%2076-7%20105%2011M33%2050c38-11%2086-7%20118%2012'/%3E%3C/svg%3E";
+// SPOTIFY_LOGO moved to logos.js (shared with the Recently-played view).
 
 // presetStateLabel returns the small state line shown on a preset tile: an
 // error, or the now-playing state when this preset is the active one. Keeps the

@@ -30,6 +30,7 @@
   "recent.play": "Abspielen",
   "recent.save": "Als Preset speichern",
   "recent.saveTitle": "Als Preset speichern",
+  "recent.saved": "{{name}} gespeichert",
   "recent.playing": "Spielt {{name}}",
   "recent.empty": "Noch nichts gespielt. Starte einen Sender, eine Playlist oder einen Titel, dann erscheint er hier.",
   "recent.loading": "Wird geladen...",

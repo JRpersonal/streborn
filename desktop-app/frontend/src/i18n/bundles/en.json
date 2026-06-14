@@ -30,6 +30,7 @@
   "recent.play": "Play",
   "recent.save": "Save as preset",
   "recent.saveTitle": "Save as preset",
+  "recent.saved": "Saved {{name}}",
   "recent.playing": "Playing {{name}}",
   "recent.empty": "Nothing played yet. Start a station, playlist or track and it will show up here.",
   "recent.loading": "Loading...",
