@@ -125,17 +125,20 @@ function recentClock(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// formatTrack splits an ICY title into its two parts ("Title / Artist" or
-// "Artist - Title") and formats them as an emphasised primary + a muted
-// secondary. Which side is title vs artist varies by station, so we do not
-// mislabel them, just emphasise the first part. No separator: shown as-is.
+// formatTrack splits an ICY title into its two parts and shows them cleanly
+// separated. Crucially it does NOT imply which part is the artist vs the title:
+// the ICY StreamTitle does not label them and stations disagree on the order
+// (SWR3 sends "Title / Artist", 1LIVE/Rock.FM send "Artist / Title"), so any
+// fixed emphasis would be wrong for half of them. Both parts get equal weight,
+// the station's own order is preserved. No separator: shown as-is.
 function formatTrack(raw) {
   const m = (raw || '').match(/^(.*?)\s+[/–—-]\s+(.*)$/);
   if (m && m[1].trim() && m[2].trim()) {
-    return `<span class="rc-tr-title">${escapeHtml(m[1].trim())}</span>`
-      + `<span class="rc-tr-artist">${escapeHtml(m[2].trim())}</span>`;
+    return `<span class="rc-tr-p">${escapeHtml(m[1].trim())}</span>`
+      + `<span class="rc-tr-dot"> · </span>`
+      + `<span class="rc-tr-p">${escapeHtml(m[2].trim())}</span>`;
   }
-  return `<span class="rc-tr-title">${escapeHtml((raw || '').trim())}</span>`;
+  return `<span class="rc-tr-p">${escapeHtml((raw || '').trim())}</span>`;
 }
 
 // logoImg builds the card logo as an <img> with the same data-fallbacks cascade
