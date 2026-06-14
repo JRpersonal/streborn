@@ -1399,6 +1399,7 @@ select option { background-color: #1a1a1a; color: #eee; }
    it spans the whole window regardless of the 720px content width. */
 .app-update-banner { background: #2a2a1a; border: none; border-bottom: 1px solid #5a5a3a; padding: 8px 16px; margin: 0; border-radius: 0; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
 .app-update-banner b { color: #dda; }
+.app-update-btn { flex: 0 0 auto; white-space: nowrap; font-weight: 600; }
 .format-toggle {
   display: flex;
   gap: 8px;

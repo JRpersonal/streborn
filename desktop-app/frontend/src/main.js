@@ -1066,9 +1066,13 @@ async function checkAppUpdate() {
     const notesUrl = (typeof m.notesUrl === 'string' && /^https?:\/\//i.test(m.notesUrl))
       ? m.notesUrl
       : (/^v\d+\.\d+\.\d+$/.test(m.version) ? `${repo}/releases/tag/${m.version}` : `${repo}/releases`);
+    // The banner itself only shows for a genuinely newer version (CheckAppUpdate
+    // returns nothing otherwise), and the download button only when the manifest
+    // carries a real download URL. The button is a primary button so it stands
+    // out in the notice instead of reading as a faint secondary control.
     banner.innerHTML = `
       <div><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></div>
-      ${dlUrl ? `<button class="btn btn-mini" id="appUpdateBtn">${escapeHtml(t('banner.download'))}</button>` : ''}
+      ${dlUrl ? `<button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(t('banner.download'))}</button>` : ''}
     `;
     banner.classList.remove('hidden');
     const notesLink = $('appUpdateNotes');
