@@ -137,6 +137,18 @@ setup_log() {
     echo "$line" >> "$SETUP_LOG_NAND" 2>/dev/null
 }
 
+# Earliest breadcrumb: prove run.sh actually started and stamp the box
+# fingerprint (kernel + Bose variant/firmware) up front, BEFORE the ~170 lines
+# of provisioning logic that could abort. A genuinely failed ST10 boot left a
+# 0-byte setup.log and we were blind to both how far the script got and what
+# hardware/firmware it ran on (Markus' second ST10). Now even an immediate abort
+# leaves a non-empty setup.log with the fingerprint. NAND-only, best-effort.
+mkdir -p "$PERSIST" 2>/dev/null
+setup_log "=== run.sh start ==="
+setup_log "kernel: $(uname -a 2>/dev/null | head -c 200)"
+setup_log "bose /etc/Variant: $(head -c 80 /etc/Variant 2>/dev/null | tr '\n' ' ')"
+setup_log "bose /etc/version: $(head -c 120 /etc/version 2>/dev/null | tr '\n' ' ')"
+
 # --- Display-language resolution for the OOB language gate -----------
 # The Bose OOB language gate (POST /language) needs any non-zero
 # sysLanguage integer to advance systemstate out of SETUP_LANG_NOT_SET,

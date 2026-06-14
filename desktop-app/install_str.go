@@ -1026,6 +1026,7 @@ func (a *App) waitForAgent(host, model string) error {
 		sleep = 3 * time.Second
 	}
 	deadline := time.Now().Add(budget)
+	i := 0
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(a.appCtx(), 5*time.Second)
 		_, ok := probeSTR(ctx, host)
@@ -1033,7 +1034,43 @@ func (a *App) waitForAgent(host, model string) error {
 		if ok {
 			return nil
 		}
+		// The HTTP probe failed. On SoundTouch 10 (rhino) the desktop cannot
+		// reach the agent's HTTP API at all, even when it is running fine: the
+		// Bose firewall blocks the agent ports (the WORKING ST10 shows the same
+		// reachable8888=False). A pure HTTP probe therefore reports a healthy box
+		// as "agent not up" and the install wrongly fails. So every few polls,
+		// confirm over SSH whether the agent PROCESS is actually up; that is the
+		// authoritative success signal where the API is unreachable from the LAN.
+		if i%4 == 3 && a.agentRunningViaSSH(host) {
+			a.logger.Info("install_str: agent process is running on the box; treating as up despite the HTTP API being unreachable from the desktop (e.g. ST10 firewall)", "host", host)
+			return nil
+		}
+		i++
 		time.Sleep(sleep)
 	}
+	// Final SSH check before declaring failure, so a running agent on a box whose
+	// HTTP API never became desktop-reachable is still recognised as installed.
+	if a.agentRunningViaSSH(host) {
+		a.logger.Info("install_str: agent process running on the box at the deadline; HTTP API unreachable from the desktop, treating as up", "host", host)
+		return nil
+	}
 	return fmt.Errorf("STR agent on %s not reachable within %s", host, budget)
+}
+
+// agentRunningViaSSH reports whether the STR agent process is alive on the box,
+// checked over SSH. This is the ground-truth "is the agent up" signal for boxes
+// whose HTTP API is not reachable from the desktop (ST10 rhino: the Bose
+// firewall blocks the agent ports even when the agent runs). Best-effort: SSH
+// down or any error reads as "not running" so it never fakes success.
+func (a *App) agentRunningViaSSH(host string) bool {
+	if !tcpReachable(host, 22, 3*time.Second) {
+		return false
+	}
+	// [s] keeps the grep from matching its own process line. -c counts matches.
+	out, err := boxSSHOutput(host, "ps 2>/dev/null | grep -c '[s]treborn-armv7l'", 8*time.Second)
+	if err != nil {
+		return false
+	}
+	n := strings.TrimSpace(out)
+	return n != "" && n != "0"
 }
