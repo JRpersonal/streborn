@@ -2384,24 +2384,30 @@ func (s *Server) handleBoxGroup(w http.ResponseWriter, r *http.Request) {
 // point in /proc/self/mountinfo. A leftover empty dir or a dangling symlink has
 // neither, so it correctly reports not-mounted.
 func stickReallyMounted() (bool, string) {
+	// Key presence on the BLOCK DEVICE, not the /media/sda1 mountpoint. That
+	// directory is unreliable both ways: it lingers as an empty dir after
+	// `umount`, which kept the "remove the USB stick" banner up forever after the
+	// stick was pulled (#105); AND on the Portable the stick enumerates but is
+	// not auto-mounted there (dirty FAT / no automount), so a mountpoint check
+	// reported "removed" while the stick was still inserted (verified live:
+	// /dev/sda1 present, nothing mounted at /media/sda1). The block device
+	// appears when a stick is plugged in and disappears when it is pulled, so it
+	// is the reliable presence signal (run.sh gates on the same).
+	present := false
+	for _, p := range []string{"/sys/block/sda", "/dev/sda1", "/sys/block/sdb", "/dev/sdb1"} {
+		if _, err := os.Stat(p); err == nil {
+			present = true
+			break
+		}
+	}
+	if !present {
+		return false, ""
+	}
+	// Present. Return version.txt when the stick happens to be mounted+readable.
 	if b, err := os.ReadFile("/media/sda1/version.txt"); err == nil {
 		return true, strings.TrimSpace(string(b))
 	}
-	for _, marker := range []string{"/media/sda1/run.sh", "/media/sda1/streborn-armv7l"} {
-		if _, err := os.Stat(marker); err == nil {
-			return true, ""
-		}
-	}
-	if b, err := os.ReadFile("/proc/self/mountinfo"); err == nil {
-		for _, line := range strings.Split(string(b), "\n") {
-			// The mount point is the 5th space-separated field.
-			f := strings.Fields(line)
-			if len(f) >= 5 && f[4] == "/media/sda1" {
-				return true, ""
-			}
-		}
-	}
-	return false, ""
+	return true, ""
 }
 
 // handleStickStatus reports whether the USB stick is actually in the box right
