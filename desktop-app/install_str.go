@@ -721,7 +721,16 @@ func parseDfAvailBytes(out string) int64 {
 // slow too so a real BCO box is never cut off early (#114, fallback-first).
 func slowBootModel(model string) bool {
 	m := strings.ToLower(model)
-	return m == "" || strings.Contains(m, "portable")
+	// "" = discovery had no /info yet (a freshly bootstrapped box). "portable"
+	// and "20" are the Series-I/BCO models whose externally reachable :17008
+	// REDIRECT comes up late and flaky after the install reboot. An ST20 (the
+	// spotty/scm variant is BCO) therefore needs the longer budget and the
+	// "still starting, can take a few minutes" messaging too: on #155 an agent
+	// that was actually up but not yet reachable was reported as a failed install
+	// and the user re-ran the installer. Being generous only costs wait time on a
+	// genuine failure; a successful probe returns immediately.
+	return m == "" || strings.Contains(m, "portable") ||
+		m == "20" || strings.Contains(m, " 20") || strings.Contains(m, "st20") || strings.Contains(m, "_20")
 }
 
 // agentWaitBudget is how long to wait for the STR agent to come up on :8888
