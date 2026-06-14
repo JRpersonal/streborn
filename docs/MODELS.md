@@ -15,8 +15,8 @@ been validated.
 | **SoundTouch 10** | TI AM335x ARMv7l, module SM2, variant `rhino` (Series-II) | **Verified** |
 | **SoundTouch Portable** | TI AM335x ARMv7l, BCO coprocessor, variant `taigan` | **Verified** |
 | **SoundTouch 20** | TI AM335x ARMv7l, module `scm` + SMSC, variant `spotty` (BCO) | **Working (contributor-confirmed; final stability confirmation in progress)** |
-| **SoundTouch 20** | TI AM335x ARMv7l, module SM2 (Series-II) | **Expected** (same path as ST10; awaiting a live report) |
-| **SoundTouch 30** | TI AM335x ARMv7l (SM2 or scm) | **Expected** (untested) |
+| **SoundTouch 20** | TI AM335x ARMv7l, module SM2 (codename still `spotty`) | **Expected**: provisions Wi-Fi the Series-II way (real `wlan0`), but `run.sh` still applies the whitelisted-chassis reachability path (REDIRECT `:17008`->`:8888`) because the codename is `spotty`. Awaiting a live SM2-ST20 report. |
+| **SoundTouch 30** | TI AM335x ARMv7l, module SM2, variant `mojo` | **Working** (live-confirmed via the #123 diagnostic, 2026-06-10: box healthy, agent up; full end-to-end pass pending) |
 | Wave SoundTouch IV | unknown, possibly different CPU | **Unknown** |
 | other (Soundbar, ST300, ...) | unknown | **Unknown** |
 
@@ -41,12 +41,17 @@ SoundTouch speakers on AM335x split into two families that STR has to
 provision and reach completely differently. Both run the same agent
 binary; the difference is in how Wi-Fi and external reachability work.
 
-### Series-II (classic): `rhino` / SM2 , ST10, and SM2 ST20/30
+### Series-II (classic): `rhino` (ST10) and `mojo` (ST30), module SM2
 
 - Real `wlan0` interface; STR provisions Wi-Fi the documented way
   (`/addWirelessProfile` over the box's HTTP API, or `wpa_supplicant`).
-- The STR agent's port `:8888` is reachable directly from the LAN.
+- The STR agent's port `:8888` is reachable directly from the LAN
+  (once `run.sh` punches the `INPUT ACCEPT` rule past the Bose firewall).
 - This is the original, simplest path. ST10 is the reference target.
+- Caveat for the SM2 ST20: its codename is `spotty`, and `run.sh` keys
+  the reachability treatment off the codename, so an SM2 ST20 still gets
+  the `:17008` REDIRECT (a harmless no-op if its chipset does not need
+  it). Wi-Fi provisioning still follows the `wlan0` path.
 
 ### BCO (AirPlay-capable): `taigan` (Portable) / `scm`+`spotty` (ST20)
 
@@ -91,7 +96,7 @@ while the app UI itself never offers Russian).
 
 ```sh
 uname -m              # CPU, e.g. armv7l
-cat /proc/variant     # Bose variant: rhino (ST10), taigan (Portable), spotty (ST20)
+cat /proc/variant     # Bose variant: rhino (ST10), mojo (ST30), taigan (Portable), spotty (ST20)
 hostname              # Bose hostname, often equals the variant
 # Series-II vs BCO: a real wlan0 means Series-II; Wi-Fi via eth0 + a
 # <componentCategory>SCM</componentCategory> in /info means BCO.

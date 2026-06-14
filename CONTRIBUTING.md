@@ -36,7 +36,7 @@ every model we get tested by a real user makes it more useful.
 
 ## Local development
 
-Requirements: Go 1.22+, Node 20+, [Wails CLI v2][wails], `make`.
+Requirements: Go 1.25+, Node 20+, [Wails CLI v2][wails], `make`.
 Linux is the smoothest target; macOS and Windows work but have
 extra Wails toolchain dependencies.
 
@@ -46,22 +46,24 @@ extra Wails toolchain dependencies.
 git clone https://github.com/JRpersonal/streborn.git
 cd streborn
 
-# Sanity check
+# Sanity check (Linux). On Windows/macOS hosts the agent's Linux-only
+# syscalls make `go build ./...` fail in internal/webui; cross-compile
+# instead (GOOS=linux GOARCH=arm GOARM=7 go build ./... or make build-arm)
+# and run go test on the packages that build on your host.
 go build ./...
 go test ./...
 
 # Stick agent for the speaker hardware
 make build-arm
 
-# Desktop app, dev mode with hot reload
-cd desktop-app
-wails dev
-
-# Website
-cd ../website
-npm ci
-npm run dev
+# Desktop app, dev mode with hot reload AND the embedded helpers built
+# (raw `wails dev` runs with empty embed stubs: no stick formatting, no OTA)
+make wails-dev
 ```
+
+The website is a separate repository,
+[`JRpersonal/streborn-website`](https://github.com/JRpersonal/streborn-website);
+clone and run it there (`npm ci && npm run dev`).
 
 The `desktop-app/agentbin/streborn-armv7l` and
 `sticksetup/embedded/winformat.exe` files are empty stubs in the
@@ -78,7 +80,9 @@ the desktop app falls back to a configured external path.
   clean. Tests in `_test.go` next to the code they cover. Logging
   via `log/slog`.
 - **Frontend.** Whatever Wails generated. Small project, no extra
-  framework opinions.
+  framework opinions. If you add or change a Wails-bound Go method,
+  run `wails generate module` in `desktop-app/` and commit the
+  `wailsjs/` changes, otherwise the frontend CI build breaks.
 - **Commits.** Conventional Commits, imperative mood, present tense,
   one logical change per commit. Reference the Issue or Discussion if
   there is one: `fix(agent): preset reconcile loop on standby (#42)`.
@@ -111,7 +115,9 @@ the desktop app falls back to a configured external path.
 
 Tick these in your PR description:
 
-- [ ] `go vet ./...` and `go test ./...` pass locally.
+- [ ] `go vet ./...` and `go test ./...` pass locally (on
+      Windows/macOS: for the packages that build on your host, plus
+      the ARM cross-compile).
 - [ ] If the change touches the stick agent, I have either tested
       on real hardware or noted in the PR that I have not.
 - [ ] No personal data, real LAN IPs, MAC addresses, or device

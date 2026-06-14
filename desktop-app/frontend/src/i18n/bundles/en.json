@@ -495,7 +495,7 @@
   "banner.recommendationShort": "Recommendation",
   "speaker.rebootNow": "Restart speaker now",
   "speaker.rebootGenericBody": "The speaker will restart in 1 second. Current playback will be interrupted. Continue?",
-  "speaker.rebootConfirmDetailedBody": "Have you removed the USB stick?<br><br><b>Stick still in</b> &rarr; SSH stays open after the reboot.<br><b>Stick removed</b> &rarr; SSH is closed after the reboot.<br><br>Current playback will be interrupted.",
+  "speaker.rebootConfirmDetailedBody": "Have you removed the USB stick? Removing it after setup is recommended so the stick is not left in the speaker. (Note: STR keeps SSH available for diagnostics on every boot until the v1.0 hardening; removing the stick does not close it.)<br><br>Current playback will be interrupted.",
   "signal.excellent": "Excellent",
   "signal.good": "Good",
   "signal.marginal": "Marginal",

@@ -83,12 +83,20 @@ reachable from the LAN as-is. STR works around this two ways:
   Bose-owned port to the agent (the path STR uses on BCO today).
 - An `LD_PRELOAD` shim (`usb-stick/shim/shim.c`, built from source on
   every release) can hook `accept()` inside a Bose process to forward
-  connections. The shim is deliberately **skipped** on the Portable
-  chassis, where it raced the firmware's service-init and wedged it; the
-  iptables path is used instead.
+  connections. It is **skipped on every catalogued chassis today**: on
+  whitelisted chassis (Portable `taigan` AND ST20 `spotty`) it races the
+  firmware's service-init and wedges boot, and on the SM2 chassis
+  (`rhino`, `mojo`) it is unnecessary and cannot even load on `mojo`
+  (live ST30, #123). The iptables REDIRECT is the production path
+  everywhere it matters; the shim remains only as a fallback for
+  uncatalogued variants (`STR_FORCE_SHIM_TAIGAN=1` to force it).
 
-Older "Series-I" ST10 (rhino) does not need this; its agent is reachable
-directly.
+The SM2 chassis (ST10 `rhino`, ST30 `mojo` — labelled "Series-II" in
+`MODELS.md`, `is_series_one=0` in `run.sh`) does not need the REDIRECT;
+its agent is reachable directly once `run.sh` opens `:8888` with an
+`INPUT ACCEPT` rule. Note the label inversion: `run.sh`'s
+`detect_series_one` returns 1 for the *whitelisted* chassis
+(`taigan`/`spotty`/`scm`), not for `rhino`.
 
 ## Bose internal HTTP buffer cap
 

@@ -495,7 +495,7 @@
   "banner.recommendationShort": "Empfehlung",
   "speaker.rebootNow": "Lautsprecher jetzt neu starten",
   "speaker.rebootGenericBody": "Der Lautsprecher wird in 1 Sekunde neu gestartet. Aktuelle Wiedergabe wird unterbrochen. Fortfahren?",
-  "speaker.rebootConfirmDetailedBody": "Hast du den USB-Stick bereits gezogen?<br><br><b>Stick noch drin</b> &rarr; SSH bleibt nach dem Reboot offen.<br><b>Stick gezogen</b> &rarr; SSH ist nach dem Reboot zu.<br><br>Aktuelle Wiedergabe wird unterbrochen.",
+  "speaker.rebootConfirmDetailedBody": "Hast du den USB-Stick entfernt? Es wird empfohlen, ihn nach der Einrichtung zu entfernen, damit er nicht im Lautsprecher stecken bleibt. (Hinweis: STR haelt SSH bis zum v1.0-Hardening bei jedem Start fuer Diagnose offen; das Entfernen des Sticks schliesst es nicht.)<br><br>Die aktuelle Wiedergabe wird unterbrochen.",
   "signal.excellent": "Ausgezeichnet",
   "signal.good": "Gut",
   "signal.marginal": "Mittelmäßig",

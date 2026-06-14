@@ -62,7 +62,7 @@ Users can verify a download with either:
 sha256sum -c SHA256SUMS
 
 # Method 2: GitHub CLI attestation verification
-gh attestation verify STR-Setup-Windows.exe \
+gh attestation verify STR-Windows-vX.Y.Z.exe \
     --owner JRpersonal
 ```
 
@@ -104,7 +104,7 @@ The attestation proves:
 
 ### Website
 
-- Static HTML, no server side code on the website.
+- Static site plus one small server-side endpoint (`api/update-check.php`) that serves version metadata for the app update check.
 - Download links point exclusively to GitHub Releases, never to the webspace.
 - SHA256 hashes are shown on the download page for verification.
 - CSP header restricts script sources to self plus GoatCounter analytics.
@@ -121,14 +121,15 @@ The attestation proves:
 
 STR has no user accounts, no advertising, and no third-party trackers in the app.
 
-- **The speaker never contacts the Bose cloud.** STR redirects the Bose cloud hostnames to localhost and answers them itself. The speaker only reaches your LAN, radio-browser.info (station search), and the radio station's own stream.
-- **The desktop app makes one external call:** a version check to `st-reborn.de` at startup, sending only the app version, build, OS, CPU architecture, and UI language so the right download can be offered. No account, no device identifier, no personal data. Disable it entirely with `STR_NO_UPDATE_CHECK=1`.
+- **The speaker never contacts the Bose cloud.** STR redirects the Bose cloud hostnames to localhost and answers them itself. The speaker reaches your LAN, the radio station's own stream, and, only if you enable Spotify Connect, Spotify's servers (the bundled go-librespot client). Station search moved to the desktop app; the speaker no longer contacts radio-browser.info.
+- **The desktop app talks to:** `st-reborn.de` (optional version check at startup, sending only the app version, build, OS, CPU architecture, and UI language; disable with `STR_NO_UPDATE_CHECK=1`), radio-browser.info (station search), and public favicon endpoints (station logos). No account, no device identifier, no personal data.
 - **The website** uses GoatCounter, a privacy-friendly analytics tool: no cookies, no cross-site tracking, the visitor IP is not stored.
 
 The full breakdown is in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry-analytics-and-privacy).
 
 ## Known Limitations
 
+- **Pre-1.0 SSH posture (hardening pending):** the agent keeps the speaker's SSH service running on every boot so diagnostics and repair work even when the agent is down; the firmware root account uses a well-known default with no password. Any LAN device can reach a root shell on the speaker while it is powered. Planned v1.0 hardening makes SSH opt-in via a stick marker. Until then, run the speaker on a trusted network or its own VLAN.
 - Windows installers are currently **not code signed** with an EV certificate. Windows SmartScreen may warn on first download. Plans exist to acquire an EV code signing certificate once donations cover the annual cost.
 - macOS builds are **not notarized** yet. Same reason.
 - The desktop app does not implement application sandboxing. Future versions may use OS provided sandboxing.
@@ -137,3 +138,4 @@ The full breakdown is in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry
 
 - 2026 May 15: initial security policy.
 - 2026 Jun 03: documented the privacy/telemetry posture, added OpenSSF Scorecard, and listed the per-push checks (golangci-lint, govulncheck, CodeQL, Secret Scanning + Push Protection).
+- 2026 Jun 12: corrected the privacy section (app-side radio search, Spotify sidecar), documented the pre-1.0 SSH posture, noted the update-check endpoint, fixed the attestation example to the versioned asset name.

@@ -1,6 +1,6 @@
 # Proposal: first install over the stick boot path instead of app SSH
 
-Status: evaluation, not yet decided. Tracked in a GitHub issue.
+Status: Track 1 (gated in-app auto-install) shipped; Track 2 (true no-SSH first-boot bootstrap) still open, hardware experiment pending. Tracked in a GitHub issue.
 
 ## Problem
 
@@ -35,7 +35,7 @@ region, name and presets, announces over mDNS on :8888, and mirrors a
 `setup.log` back to the stick every 25 s.
 
 The **SSH `install.sh` does almost nothing on top of that.** It copies
-four things to NAND: `rc.local`, `run-override.sh`, and (first install
+three things to NAND: `rc.local`, `run-override.sh`, and (first install
 only) `presets.json`. Everything else is the boot path's job.
 
 But the one thing it does is the decisive one: it **seeds the first-boot
@@ -107,9 +107,12 @@ is the ceiling and SSH stays.
 - **Status without an SSH channel:** already solved. `run.sh` mirrors
   `setup.log` to the stick every 25 s, and the agent answers on :8888
   once up. The app can read both without SSH.
-- **Security:** an automatic/boot-path install does not widen the SSH
-  window; `run.sh` already stops sshd after unmount. Track 1 keeps the
-  same window; Track 2 would shrink it further.
+- **Security:** an automatic/boot-path install changes nothing about the
+  current SSH exposure. Pre-1.0, `run.sh` (`ensure_sshd_running`) keeps
+  sshd running on every boot as a deliberate debug-visibility choice (so
+  diagnostics and repair work when the agent is down); the planned v1.0
+  hardening flips this to opt-in via a stick marker. Track 1 and Track 2
+  are both neutral to that window.
 - **Fallback:** keep the manual SSH install as an expert path in case the
   automatic path does not engage.
 

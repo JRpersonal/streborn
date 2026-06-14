@@ -32,26 +32,42 @@ them back **without any Bose cloud dependency**.
 ```
 Client (Browser / Desktop App)
   -- REST API --> Stick Agent webui :8888
-     (ST10 reached directly; BCO Portable/taigan + spotty ST20 reached via
-      iptables PREROUTING REDIRECT :17008 -> loopback :8888)
+     (sm2 boxes (ST10 rhino, ST30 mojo) reached directly; BCO/whitelisted
+      chassis (Portable/taigan, ST20 spotty/scm) reached via iptables
+      PREROUTING REDIRECT :17008 -> loopback :8888)
                             |
-                            +--> /api/presets    preset store on NAND
-                            +--> /api/play       upnp.PlayURL -> Box:8091/AVTransport
-                            +--> /api/radio      radiobrowser.Search/TopVote
-                            +--> /api/status     proxy Box:8090/now_playing
-                            +--> /stream/<slot>  streamproxy (survives CDN token expiry)
+                            +--> /api/presets        preset store on NAND
+                            +--> /api/play, /api/play/<slot>, /api/pause, /api/stop
+                            |     upnp.PlayURL -> Box:8091/AVTransport
+                            +--> /api/status         proxy Box:8090/now_playing (cached)
+                            +--> /api/box/*          speaker settings (name/volume/bass/
+                            |     source/wlan/reboot/airplay-opt/sync-presets/zone/group)
+                            +--> /api/region, /api/stick/status, /api/debug/*
+                            +--> /api/agent/version, /api/agent/update
+                            |     OTA (HTTP; the app falls back to SSH-OTA and
+                            |     refreshes a still-inserted stick before the reboot)
+                            +--> /api/webhooks, /api/webhooks/test
+                            |     user-configured HTTP triggers on box events (NAND)
+                            +--> /stream/<slot>, /stream/raw
+                            |     streamproxy (survives CDN token expiry; converts
+                            |     HLS playlists to one continuous ADTS/MP3 stream)
+                            +--> /api/stream/bitrate, /api/stream/title, /api/stream-status
+                            +--> /spotify/stream.ogg, /spotify/stream-1..6.ogg, /spotify/info
+                            |     Spotify Connect (beta): supervised go-librespot
+                            |     sidecar, raw Ogg passthrough (internal/spotify)
                             |
-                            +--> boxws  ws://127.0.0.1:8080/gabbo
+                            +--> boxws  ws://127.0.0.1:8080/ (gabbo protocol)
                             |     nowSelectionUpdated -> upnp.PlayURL
                             |
                             +--> autopair  POST /setMargeAccount every 5 min
                             |
                             +--> marge stub  :9080 (HTTP) / :443 (TLS)
-                            |     emulates streaming.bose.com
+                            |     emulates streaming.bose.com + content.api.bose.io
                             |     /streaming/account/.../device/  -> adddeviceresponse
                             |     /streaming/sourceproviders      -> source list
-                            +--> bmx stub    :8081  (content.api.bose.io)
                             |     /bmx/registry/v1/services       -> service list
+                            +--> bmx stub    :8081  (healthz-only placeholder; the
+                            |     registry route above is answered by marge)
                             |
                             +--> :17002 BatteryMonitor fallback (Portable only)
                             |     accepts BoseApp's battery client when the stock
@@ -62,18 +78,28 @@ Client (Browser / Desktop App)
 
 Bose firmware ports STR talks to / around:
   :8080 gabbo WS    :8090 BoseApp REST    :8091 UPnP AVTransport
-  :17008 SoftwareUpdate (BCO external entry, REDIRECT -> :8888)
-  :17002 BatteryMonitor    :40020 scmmond (battery MCU bridge)
+  :17000 TAP CLI (standby wake, provisioning probes)
+  :17008 SoftwareUpdate (external entry on whitelisted chassis, REDIRECT -> :8888)
+  :17002 BatteryMonitor
 ```
 
 Audio path: UPnP AVTransport directly to the speaker on port 8091.
 We never proxy audio through the dead Bose cloud.
 
-Radio source: `radio-browser.info` (free, no API key) replaces the
-discontinued Bose TuneIn integration.
+Radio search runs **app-side**: the desktop app queries
+`radio-browser.info` (free, no API key) directly via the top-level
+`radiobrowser/` package (`desktop-app/radio.go`); the agent no longer
+serves `/api/radio` and only receives the final stream URL to play.
+This replaces the discontinued Bose TuneIn integration.
 
 Hardware preset buttons 1 through 6 are re-enabled by hooking the
-Bose WebSocket bus (`/gabbo`).
+Bose WebSocket bus (gabbo protocol on `:8080`).
+
+Beyond radio, the desktop app ships a DLNA media library (top-level
+`dlna/` package), Spotify Connect (beta), multiroom zones (alpha),
+diagnostics export, and box maintenance (true factory reset,
+uninstall STR, setup-AP Wi-Fi push). The UI ships in 11 locales;
+English and German are first-class.
 
 ## Conventions in this repo
 
@@ -87,7 +113,7 @@ first-class; other languages welcome via PR.
 
 ### Style
 
-- Go 1.22+, `gofmt`, `golangci-lint` clean.
+- Go 1.25+, `gofmt`, `golangci-lint` clean.
 - Logging via `log/slog`.
 - Module path: `github.com/JRpersonal/streborn`.
 - Tests in `_test.go` files alongside the code they cover.
@@ -148,10 +174,11 @@ process are in [`SECURITY.md`](SECURITY.md).
 STR is pre-1.0. The bar to ship 1.0 is intentionally low and
 measurable, not aspirational:
 
-1. **At least two speaker models verified end to end.** ST10 is the
-   reference target today. One additional model (ST20 or ST30)
-   confirmed by a maintainer or a trusted contributor on real
-   hardware.
+1. **At least two speaker models verified end to end.** Met: ST10
+   (rhino) and Portable (taigan) are Verified, ST20 (spotty) is
+   contributor-confirmed with final stability confirmation in
+   progress, and a live ST30 (mojo) has run the agent successfully.
+   Current per-model state lives in [`docs/MODELS.md`](docs/MODELS.md).
 2. **Hardware presets 1 to 6 work after a cold boot, a standby cycle,
    and a Wi-Fi outage**: no manual reset required.
 3. **First-install experience is honest.** SmartScreen / Gatekeeper
@@ -213,8 +240,10 @@ the shared version stamp.
   remain ignored.
 - **`sticksetup/embedded/winformat.exe`** is also a `go:embed`
   target. Same pattern: empty stub tracked, CI overwrites. Local
-  developers can build the real one with:
-  `go build -ldflags "-s -w" -o sticksetup/embedded/winformat.exe ./cmd/winformat`
+  developers build the real embeds with `make winformat-embed` and
+  `make agent-embed`; both run automatically as dependencies of
+  `make wails-build` / `make wails-dev`. (Raw `go build` misses the
+  `GOOS`/`GOARCH` pins and the version stamp.)
 - Empty stubs mean `agentbin.Available()` correctly returns `false`
   on dev builds, so the desktop app falls back to a configured
   external path instead of writing zero bytes onto the stick.
@@ -242,13 +271,19 @@ the shared version stamp.
 ```
 cmd/
   agent/         Stick agent main
+  mdns-probe/    mDNS debug CLI
+  relnotes/      Release-notes generator (conventional commits -> notes)
   winformat/     FAT32 format helper for the Windows installer
-desktop-app/     Wails project (Vite frontend, Go backend)
+desktop-app/     Wails project (Vite frontend, Go backend; own Go module)
 discovery/       mDNS discovery (top-level so Wails can import it)
+dlna/            DLNA MediaServer client for the Library tab (top-level)
 docs/            Sanitised technical docs only
 internal/        Stick-agent-only packages (boxapi, marge, autopair, ...)
-setup/           Setup wizard helpers
+radiobrowser/    radio-browser.info client (app-side radio search)
+setup/           Legacy PowerShell setup wizard (superseded by the
+                 desktop app's in-app stick setup)
 sticksetup/      Embedded setup workflow
+tools/           Support diagnostics scripts
 usb-stick/       Stick filesystem layout and run.sh
 wifiprofiles/    Cross-platform Wi-Fi profile reader for the wizard
 .github/         Workflows, dependabot, CODEOWNERS, security policies
@@ -258,20 +293,26 @@ The website (st-reborn.de) lives in a separate repository
 (`JRpersonal/streborn-website`). A release here triggers a build
 there via `repository_dispatch`.
 
-`discovery/` lives at the top level on purpose. The desktop app
-imports it, and Go forbids importing from another module's
-`internal/`.
+`discovery/`, `dlna/`, `radiobrowser/`, `sticksetup/`, and
+`wifiprofiles/` live at the top level on purpose. The desktop app is
+its own Go module and imports them; Go forbids importing from another
+module's `internal/`.
 
 Hardware support state per model is tracked in
 [`docs/MODELS.md`](docs/MODELS.md).
 
 ## Workflows
 
-Workflows live in `.github/workflows/`. They cover source
-verification (lockfile consistency, vulnerability scan, tests),
-cross-platform builds, and release publication on signed tags.
-Dependabot, Secret Scanning, CodeQL, and Push Protection are enabled
-at the repository settings level.
+Workflows live in `.github/workflows/`: `build.yml` (source
+verification: lockfile consistency, vulnerability scan, tests,
+cross-compiles, shellcheck), `release.yml` (release publication on
+signed tags), `codeql.yml`, `scorecard.yml` (OSSF Scorecard),
+`dependabot-automerge.yml`, and two `workflow_dispatch` builds of the
+Spotify sidecar binaries (`go-librespot.yml` primary, with the STR
+Ogg-passthrough patch from `.github/patches/`; `librespot.yml`
+fallback), both Sigstore-attested. Dependabot, Secret Scanning, and
+Push Protection are additionally enabled at the repository settings
+level.
 
 ## How a new Claude session should start
 
@@ -286,10 +327,13 @@ at the repository settings level.
    per-variant fingerprint table (moduleType, firmware, kernel,
    components) that incoming diagnostics get matched against, and
    [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) for security
-   context.
-5. Run `go build ./...` and `cd desktop-app && wails dev` once to
-   confirm the local environment is healthy. The stick agent
-   contains Linux-only syscalls; on Windows or macOS hosts use
+   context. Before touching `internal/spotify/` or the go-librespot
+   workflows, also read
+   [`docs/streaming/spotify.md`](docs/streaming/spotify.md); for box
+   firmware quirks, [`docs/FIRMWARE-NOTES.md`](docs/FIRMWARE-NOTES.md).
+5. Run `go build ./...` and `make wails-dev` once to confirm the
+   local environment is healthy. The stick agent contains Linux-only
+   syscalls; on Windows or macOS hosts use
    `GOOS=linux GOARCH=arm GOARM=7 go build ./...` to cross-compile
    it for the actual target.
 
