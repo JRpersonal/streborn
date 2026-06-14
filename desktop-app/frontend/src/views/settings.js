@@ -1,0 +1,1644 @@
+// views/settings.js — the "Speaker settings" view.
+//
+// Extracted from the main.js monolith, same pattern as views/recent.js and
+// views/multiroom.js: the module pulls shared things (state, utils, i18n, api,
+// localization) from their own modules and receives the few main.js-local
+// helpers it needs (switchView, discoverBoxes, boxFetch, ...) via
+// initSettingsView, so it never imports back into main.js (which would create a
+// cycle). New views should follow this pattern so main.js stops growing.
+//
+// Entry point: loadBoxSettings() is called from main.js's switchView when the
+// settings tab is opened. The top-level setup below (the #view-settings shell
+// and the box-switcher wiring) runs once when this module is first imported,
+// exactly as it did when it lived at module scope in main.js.
+
+import { state, saveSearchCountry } from '../state.js';
+import {
+  $,
+  escapeHtml,
+  escapeAttr,
+  sleep,
+  debounce,
+  confirmWarn,
+  showError,
+  showToast,
+} from '../utils.js';
+import { t, tLookup } from '../i18n/index.js';
+import { COUNTRIES, optFlag } from '../localization.js';
+import {
+  BoxSettings,
+  BoxAgentVersion,
+  RebootBox,
+  SyncBoxPresets,
+  SaveDiagnosticBundle,
+  BrowserOpenURL,
+  TrueFactoryReset,
+  UninstallSTR,
+  GetBoxLanguage,
+  SetBoxLanguage,
+  GetClockFormat24,
+  GetClockDisplay,
+  SetClockDisplay,
+  GetResumeOnPowerOn,
+  SetResumeOnPowerOn,
+  GetAirplayOpt,
+  SetAirplayOpt,
+  GetWebhooks,
+  SaveWebhookConfig,
+  TestWebhook,
+  CopyPresetsAcrossBoxes,
+  SetBoxName,
+  SetBoxVolume,
+  SetBoxBass,
+  ListWiFiProfiles,
+  TryWiFiPassword,
+} from '../api.js';
+
+// isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
+// switch UI can skip the System-keychain admin prompt on macOS (#88) without
+// expanding the injected-helper surface.
+const isMacOS = /Mac OS X|Macintosh/.test(navigator.userAgent);
+
+// Injected main.js helpers (see initSettingsView). These stay in main.js because
+// they are shared across views; the settings code calls them as deps.<name>.
+let deps = {
+  switchView: () => {},
+  updateFilterIndicators: () => {},
+  discoverBoxes: async () => {},
+  renderBoxSelect: () => {},
+  boxFetch: async () => ({ ok: false }),
+  localizeLanguageName: (n) => n,
+  doBoxUpdate: async () => {},
+  loadPresets: async () => {},
+  getRoomNames: () => [],
+};
+export function initSettingsView(d) {
+  deps = { ...deps, ...d };
+}
+
+$('view-settings').innerHTML = `
+  <h2>${escapeHtml(t('settingsView.title'))}</h2>
+  <div class="settings-box-switcher">
+    <span class="muted small">${escapeHtml(t('settingsView.forSpeaker'))}</span>
+    <select id="settingsBoxSelect"></select>
+    <button class="btn-icon" id="settingsRefreshBtn" title="${escapeAttr(t('settingsView.refreshListTitle'))}"><span class="refresh-icon">&#x21bb;</span></button>
+  </div>
+  <div id="settingsBody">
+    <div class="muted">${escapeHtml(t('settingsView.selectFirst'))}</div>
+  </div>
+`;
+
+$('settingsBoxSelect').onchange = () => {
+  const id = $('settingsBoxSelect').value;
+  const box = state.boxes.find(b => b.deviceID === id);
+  if (box) {
+    state.settingsBox = box;
+    loadBoxSettings();
+  }
+};
+$('settingsRefreshBtn').onclick = async () => {
+  const rb = $('settingsRefreshBtn');
+  rb.disabled = true;
+  rb.classList.add('spinning'); // visible feedback while refreshing, like the topbar refresh
+  try {
+    await deps.discoverBoxes();
+    renderSettingsBoxSelect();
+    loadBoxSettings();
+  } finally {
+    rb.classList.remove('spinning');
+    rb.disabled = false;
+  }
+};
+
+// uidSuffixFor returns the last 4 characters of the device ID as a
+// suffix used to disambiguate friendly names (for example "FFD8").
+function uidSuffixFor(box) {
+  const id = (box && box.deviceID) || '';
+  return id.slice(-4).toUpperCase();
+}
+
+// ensureWithUID always appends the speaker's UID suffix so the user
+// can see at a glance that an identifier is attached. Prevents name
+// collisions on the network and is useful for support too.
+function ensureWithUID(desired, ownBox) {
+  const trimmed = (desired || '').trim();
+  if (!trimmed) return trimmed;
+  const suffix = uidSuffixFor(ownBox);
+  if (!suffix) return trimmed;
+  if (trimmed.toUpperCase().endsWith(suffix)) return trimmed;
+  // #133: the ID suffix exists only to disambiguate multiple speakers that
+  // would otherwise share a name. The name is display-only (discovery matches
+  // on IP/DeviceID), so append the suffix ONLY when another known speaker would
+  // collide with this exact name. A single speaker, or a unique name, keeps the
+  // clean name the user chose.
+  const ownId = (ownBox && ownBox.deviceID) || '';
+  const want = trimmed.toUpperCase();
+  const collides = (state.boxes || []).some(b => {
+    if (!b || b.deviceID === ownId) return false;
+    const other = (b.friendlyName || b.name || '').trim();
+    if (!other) return false;
+    const otherBase = other.replace(/\s+[0-9A-Fa-f]{4}$/, '').trim().toUpperCase();
+    return otherBase === want || other.toUpperCase() === want;
+  });
+  return collides ? `${trimmed} ${suffix}` : trimmed;
+}
+
+function renderSettingsBoxSelect() {
+  const sel = $('settingsBoxSelect');
+  if (!state.boxes.length) {
+    sel.innerHTML = `<option value="">${escapeHtml(t('settingsView.noSpeakerFound'))}</option>`;
+    return;
+  }
+  const target = state.settingsBox || state.currentBox || state.boxes[0];
+  if (target) state.settingsBox = target;
+  sel.innerHTML = state.boxes.map(b => {
+    const label = b.friendlyName || b.name || b.host;
+    // Append the box model so the dropdown can distinguish two
+    // boxes that happen to carry the same Bose-default friendly
+    // name. Older agents that only broadcast generic "SoundTouch"
+    // get no extra annotation — would just be noise.
+    const modelSuffix = b.model && b.model !== 'SoundTouch' ? ` · ${b.model}` : '';
+    return `<option value="${escapeAttr(b.deviceID)}">${escapeHtml(label + modelSuffix)} (${escapeHtml(b.host)})</option>`;
+  }).join('');
+  if (state.settingsBox) sel.value = state.settingsBox.deviceID;
+}
+
+// Bose sysLanguage enum, fully resolved 2026-06-01 (see
+// project_bose_language_enum memory): id -> { endonym, key }. The
+// endonym is the language's own name in its own script, so a speaker
+// who cannot read the app's UI language (a Cyrillic/CJK/Greek/Thai
+// reader looking at an English UI) still recognises and can pick their
+// box language. key is the lowercased English name used to localise a
+// secondary label via localizeLanguageName. 0 is the unset/factory
+// sentinel (a no-op for the OOB gate) and 14 is undefined, so neither is
+// offered as a real choice; 0 is only labelled when a box still reports
+// it as its current value.
+const BOSE_LANGS = {
+  1: { endonym: 'Dansk', key: 'danish' },
+  2: { endonym: 'Deutsch', key: 'german' },
+  3: { endonym: 'English', key: 'english' },
+  4: { endonym: 'Español', key: 'spanish' },
+  5: { endonym: 'Français', key: 'french' },
+  6: { endonym: 'Italiano', key: 'italian' },
+  7: { endonym: 'Nederlands', key: 'dutch' },
+  8: { endonym: 'Svenska', key: 'swedish' },
+  9: { endonym: '日本語', key: 'japanese' },
+  10: { endonym: '简体中文', key: 'chinese' },
+  11: { endonym: '繁體中文', key: 'chinese' },
+  12: { endonym: '한국어', key: 'korean' },
+  13: { endonym: 'ไทย', key: 'thai' },
+  15: { endonym: 'Čeština', key: 'czech' },
+  16: { endonym: 'Suomi', key: 'finnish' },
+  17: { endonym: 'Ελληνικά', key: 'greek' },
+  18: { endonym: 'Norsk', key: 'norwegian' },
+  19: { endonym: 'Polski', key: 'polish' },
+  20: { endonym: 'Português', key: 'portuguese' },
+  21: { endonym: 'Română', key: 'romanian' },
+  22: { endonym: 'Русский', key: 'russian' },
+  23: { endonym: 'Slovenščina', key: 'slovenian' },
+  24: { endonym: 'Türkçe', key: 'turkish' },
+  25: { endonym: 'Magyar', key: 'hungarian' },
+};
+const BOSE_LANG_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25];
+
+// boseLangLabel returns "<endonym> (<localised name>)" for a sysLanguage
+// id, e.g. "日本語 (Japanese)". The endonym lets a native speaker pick
+// regardless of the app UI language; the parenthetical helps the current
+// UI reader. The suffix is dropped when it would just repeat the endonym.
+function boseLangLabel(id) {
+  const n = Number(id);
+  const e = BOSE_LANGS[n];
+  if (!e) return n === 0 ? t('settingsView.langNoValue') : t('settingsView.langUnknown');
+  const localized = deps.localizeLanguageName(e.key);
+  return localized && localized.toLowerCase() !== e.endonym.toLowerCase()
+    ? `${e.endonym} (${localized})`
+    : e.endonym;
+}
+
+export function langOptionsHtml() {
+  // Sort by the localised name (a Latin string in the current UI
+  // language) so the order is predictable for the majority; the
+  // native-script endonym stands out for speakers scanning for theirs.
+  return BOSE_LANG_IDS
+    .map((id) => ({ id, label: boseLangLabel(id), sort: deps.localizeLanguageName(BOSE_LANGS[id].key) }))
+    .sort((a, b) => a.sort.localeCompare(b.sort))
+    .map((o) => `<option value="${o.id}">${escapeHtml(o.label)}</option>`)
+    .join('');
+}
+
+export async function loadBoxSettings() {
+  renderSettingsBoxSelect();
+  const body = $('settingsBody');
+  if (!state.settingsBox) {
+    body.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-title">${escapeHtml(t('settingsView.noSpeakerFoundTitle'))}</div>
+        <div class="empty-state-text">
+          ${escapeHtml(t('settingsView.noSpeakerFoundHelp'))}
+        </div>
+        <button class="btn btn-primary btn-mini" id="settingsGoSetup">${escapeHtml(t('speaker.goSetup'))}</button>
+      </div>`;
+    const go = document.getElementById('settingsGoSetup');
+    if (go) go.onclick = () => deps.switchView('setup');
+    return;
+  }
+  // Stock Bose speakers do not run the STR agent, so /api/box/settings
+  // (an STR endpoint on port 8888) would hit Bose's RomPager web
+  // server and return a 404 with a confusing HTML error. Render a
+  // clear "install STR first" panel instead.
+  if (state.settingsBox && state.settingsBox.kind === 'stock') {
+    body.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-title">${escapeHtml(t('settingsView.stockBoxTitle'))}</div>
+        <div class="empty-state-text">
+          ${escapeHtml(t('settingsView.stockBoxHelp', { name: state.settingsBox.friendlyName || state.settingsBox.name || state.settingsBox.host }))}
+        </div>
+        <button class="btn btn-primary btn-mini" id="settingsGoSetup">${escapeHtml(t('speaker.goSetup'))}</button>
+      </div>`;
+    const go = document.getElementById('settingsGoSetup');
+    if (go) go.onclick = () => deps.switchView('setup');
+    return;
+  }
+  // If content is already rendered, do not overwrite it. The user
+  // should keep seeing the previous values while we fetch fresh data.
+  // Otherwise show a hint.
+  const hasContent = body.querySelector('.settings-section');
+  if (!hasContent) {
+    body.innerHTML = `<div class="muted">${escapeHtml(t('settingsView.loadingData'))}</div>`;
+  }
+
+  let lastErr = null;
+  // Retry loop: on "connection refused" / "timeout" retry up to two
+  // times. A rename briefly restarts the speaker's webserver, which
+  // is an expected transient.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const s = await BoxSettings(state.settingsBox.host, state.settingsBox.port);
+      // The agent returns HTTP 200 with an all-empty payload when the
+      // box's Bose app (:8090) did not answer within the read timeout
+      // (it is still starting or briefly hung). That is not data; treat
+      // it like a transient so the user gets a clear "speaker busy"
+      // banner instead of a panel full of blank fields.
+      if (isEmptySettings(s)) {
+        lastErr = new Error('box_settings_empty');
+        if (attempt < 2) { await sleep(1500); continue; }
+        break;
+      }
+      // Erfolg: Reconnect Counter + Timer aufloesen
+      if (state.settingsReconnect && state.settingsReconnect.timer) {
+        clearTimeout(state.settingsReconnect.timer);
+      }
+      state.settingsReconnect = null;
+      renderBoxSettings(s, state.settingsBox);
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 2 && isTransientBoxError(e)) {
+        await sleep(1500);
+        continue;
+      }
+      break;
+    }
+  }
+
+  // Persistent reconnect banner instead of recurring toasts. Counts
+  // down the remaining attempts, gives up after 10 and then shows a
+  // clear instruction (power cycle after a failed OTA update).
+  const friendly = friendlySettingsError(lastErr);
+  state.settingsReconnect = state.settingsReconnect || { attempts: 0, max: 10 };
+  state.settingsReconnect.attempts++;
+  const remaining = state.settingsReconnect.max - state.settingsReconnect.attempts;
+
+  if (remaining > 0) {
+    const bannerHtml = `
+      <div class="reconnect-banner">
+        <div>
+          <b>${escapeHtml(t('settingsView.speakerUnreachable'))}</b>
+          <small>${escapeHtml(friendly)}</small>
+          <small>${escapeHtml(t('settingsView.retryIn', { remaining }))}</small>
+        </div>
+      </div>`;
+    if (hasContent) {
+      // Keep the existing rendering, insert the banner at the top.
+      let existing = body.querySelector('.reconnect-banner');
+      if (!existing) {
+        body.insertAdjacentHTML('afterbegin', bannerHtml);
+      } else {
+        existing.outerHTML = bannerHtml;
+      }
+    } else {
+      body.innerHTML = bannerHtml;
+    }
+    if (state.settingsReconnect.timer) clearTimeout(state.settingsReconnect.timer);
+    state.settingsReconnect.timer = setTimeout(loadBoxSettings, 4000);
+  } else {
+    // After 10 failed attempts: give up and show clear instructions.
+    state.settingsReconnect = null;
+    body.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-title">${escapeHtml(t('settingsView.speakerDeadTitle'))}</div>
+        <div class="empty-state-text">
+          ${escapeHtml(t('settingsView.speakerDeadHelp1'))}
+          <br><br>
+          ${t('settingsView.speakerDeadHelp2')}
+        </div>
+        <div class="empty-state-buttons">
+          <button class="btn btn-mini" id="settingsRetry">${escapeHtml(t('common.retry'))}</button>
+          <button class="btn btn-primary btn-mini" id="settingsBackToBoxes">${escapeHtml(t('settingsView.backToSpeakerList'))}</button>
+        </div>
+      </div>`;
+    const r = document.getElementById('settingsRetry');
+    if (r) r.onclick = () => { state.settingsReconnect = null; loadBoxSettings(); };
+    const b2 = document.getElementById('settingsBackToBoxes');
+    if (b2) b2.onclick = () => { state.settingsReconnect = null; deps.switchView('box'); };
+  }
+}
+
+function isTransientBoxError(err) {
+  const s = String(err || '').toLowerCase();
+  return s.includes('refused') || s.includes('timeout') ||
+         s.includes('deadline') || s.includes('reset') ||
+         s.includes('eof') || s.includes('no route');
+}
+
+function friendlySettingsError(err) {
+  const s = String(err || '');
+  if (/box_settings_empty/.test(s)) return t('settingsView.errBoseBusy');
+  if (/refused/i.test(s)) return t('settingsView.errRefused');
+  if (/timeout|deadline/i.test(s)) return t('settingsView.errTimeout');
+  if (/no such host|no route/i.test(s)) return t('settingsView.errNoRoute');
+  return t('settingsView.errGeneric', { err: s });
+}
+
+// isEmptySettings reports whether the agent returned a 200 but the box's
+// Bose app (:8090) supplied nothing within the read timeout: no device
+// info, no network interfaces, no sources. That means the speaker's Bose
+// side is still starting or briefly hung, not that there is real data.
+function isEmptySettings(s) {
+  if (!s) return true;
+  const info = s.info || {};
+  const hasInfo = !!(info.deviceID || info.name || info.type);
+  const hasNet = !!(s.network && Array.isArray(s.network.interfaces) && s.network.interfaces.length);
+  const hasSources = Array.isArray(s.sources) && s.sources.length > 0;
+  return !hasInfo && !hasNet && !hasSources;
+}
+
+
+function renderBoxSettings(s, box) {
+  const info = s.info || {};
+  const vol = s.volume || {};
+  const bass = s.bass || {};
+  const net = s.network || {};
+  const sources = rollupSources(s.sources || []);
+  // Series-II boxes expose Wi-Fi as a WIFI_INTERFACE in
+  // NETWORK_WIFI_CONNECTED. BCO boxes (Portable/taigan, ST20-spotty)
+  // drive Wi-Fi through a coprocessor exposed as eth0, so /networkInfo
+  // reports an ETHERNET_INTERFACE in NETWORK_ETHERNET_CONNECTED with the
+  // real LAN IP but no ssid/signal. Accept either, otherwise a fully
+  // connected BCO box is mislabelled "not connected to Wi-Fi" (ssid /
+  // signal then render as "-" since the coprocessor does not expose them).
+  const wifi = (net.interfaces || []).find(i =>
+    (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') ||
+    (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
+  const signalLabel = {
+    'EXCELLENT_SIGNAL': t('signal.excellent'),
+    'GOOD_SIGNAL': t('signal.good'),
+    'MARGINAL_SIGNAL': t('signal.marginal'),
+    'POOR_SIGNAL': t('signal.poor'),
+    'NO_SIGNAL': t('signal.none'),
+  };
+  // BCO boxes (scm ST20, Portable) expose Wi-Fi as an ethernet coprocessor
+  // and report no signal class. Show an honest note instead of a bare "-"
+  // so it does not read like a missing/failed reading (issue #90).
+  const isCoprocessorWifi = wifi && wifi.type !== 'WIFI_INTERFACE';
+  const signalText = signalLabel[wifi && wifi.signal] || (wifi && wifi.signal) ||
+    (isCoprocessorWifi ? t('signal.notReported') : '-');
+  const uid = uidSuffixFor(box);
+
+  $('settingsBody').innerHTML = `
+    <div class="settings-section" id="stickInfoSection">
+      <h3>${escapeHtml(t('settingsView.statusHeading'))}</h3>
+      <div id="stickInfoBody"><span class="muted small">${escapeHtml(t('common.loading'))}</span></div>
+    </div>
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.nameHeading'))}</h3>
+      <div class="setting-row">
+        <div class="combobox" id="boxNameCombo">
+          <input type="text" id="boxNameInput" autocomplete="off"
+                 value="${escapeAttr(info.name || '')}"
+                 placeholder="${escapeAttr(t('settingsView.namePlaceholder'))}" />
+          <button type="button" class="combo-toggle" id="boxNameToggle" title="${escapeAttr(t('settingsView.nameShowList'))}">&#9662;</button>
+          <ul class="combo-list hidden" id="boxNameList"></ul>
+        </div>
+        <button class="btn btn-mini" id="boxNameSave">${escapeHtml(t('common.save'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.nameHelp', { uid: uid || '----' }))}</small>
+    </div>
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('controls.volume'))}</h3>
+      <div class="setting-row">
+        <input type="range" id="boxVolume" min="0" max="100" value="${vol.actual || 0}" />
+        <span class="setting-value" id="boxVolumeVal">${vol.actual || 0}</span>
+      </div>
+      ${vol.muted ? `<small class="muted small">${escapeHtml(t('settingsView.muted'))}</small>` : ''}
+    </div>
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.bassHeading'))}</h3>
+      <div class="setting-row">
+        <input type="range" id="boxBass"
+               min="${(bass.min || 0) - (bass.default || 0)}"
+               max="${(bass.max || 0) - (bass.default || 0)}"
+               step="1"
+               value="${(bass.actual || 0) - (bass.default || 0)}"
+               ${bass.available ? '' : 'disabled'} />
+        <span class="setting-value" id="boxBassVal">${formatRel((bass.actual || 0) - (bass.default || 0))}</span>
+        <button class="btn btn-mini" id="boxBassReset" title="${escapeAttr(t('settingsView.bassResetTitle'))}">${escapeHtml(t('settingsView.bassResetBtn'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.bassHelp'))}</small>
+    </div>
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.wlanHeading'))}</h3>
+      ${wifi ? `
+        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSsid'))}</span><span class="kv-val">${escapeHtml(wifi.ssid || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanIp'))}</span><span class="kv-val">${escapeHtml(wifi.ipAddress || '-')}</span></div>
+        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSignal'))}</span><span class="kv-val">${escapeHtml(signalText)}</span></div>
+        ${wifi.frequencyKHz ? `<div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanFrequency'))}</span><span class="kv-val">${(wifi.frequencyKHz/1000).toFixed(0)} MHz</span></div>` : ''}
+      ` : `<div class="muted small">${escapeHtml(t('settingsView.wlanNotConnected'))}</div>`}
+      <small class="muted small" style="display:block;margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchHint'))}</small>
+      <button class="btn" id="wlanSwitchToggle" style="margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchToggle'))}</button>
+      <div id="wlanSwitchForm" class="hidden" style="margin-top:8px">
+        <div class="wlan-row">
+          <select id="boxWlanSelect"><option value="">${escapeHtml(t('settingsView.wlanPickPlaceholder'))}</option></select>
+          <button class="btn btn-icon-sm" id="boxWlanRefresh" title="${escapeAttr(t('settingsView.wlanRefreshTitle'))}">&#x21bb;</button>
+        </div>
+        <input type="text" id="boxWlanSSID" placeholder="${escapeAttr(t('settingsView.wlanSsidPlaceholder'))}" />
+        <div class="wlan-row">
+          <input type="password" id="boxWlanPass" placeholder="${escapeAttr(t('settingsView.wlanPassPlaceholder'))}" />
+          <button class="btn btn-icon-sm" id="boxWlanShowPass" title="${escapeAttr(t('settingsView.wlanShowPass'))}">&#128065;</button>
+        </div>
+        <button class="btn btn-danger btn-mini" id="boxWlanSave">${escapeHtml(t('settingsView.wlanSaveBtn'))}</button>
+        <small class="muted small">${escapeHtml(t('settingsView.wlanWarn'))}</small>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.langHeading'))}</h3>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.langCurrent'))}</span><span class="kv-val" id="boxLangCurrent">${escapeHtml(t('common.loading'))}</span></div>
+      <div class="setting-row">
+        <select id="boxLangSelect">${langOptionsHtml()}</select>
+        <button class="btn btn-mini" id="boxLangSave">${escapeHtml(t('common.save'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.langHelp'))}</small>
+    </div>
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.clockHeading'))}</h3>
+      <div class="setting-row">
+        <select id="boxClockFormat">
+          <option value="24">${escapeHtml(t('settingsView.clock24h'))}</option>
+          <option value="12">${escapeHtml(t('settingsView.clock12h'))}</option>
+        </select>
+        <button class="btn btn-mini toggle-btn" id="boxClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="boxClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.clockHelp'))}</small>
+    </div>
+
+    <div class="settings-section" id="resumeOnPowerSection">
+      <h3>${escapeHtml(t('settingsView.resumeOnPowerHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="resumeOnPowerOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="resumeOnPowerOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.resumeOnPowerHelp'))}</small>
+    </div>
+
+    <div class="settings-section hidden" id="airplayOptSection">
+      <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="airplayOptOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="airplayOptOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.airplayOptHelp'))}</small>
+      <small class="muted small" style="display:block;margin-top:6px">${escapeHtml(t('settingsView.airplayOptRecommend'))}</small>
+    </div>
+
+    <details class="settings-section settings-expert">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <small class="muted small expert-intro">${escapeHtml(t('settingsView.webhookHelp'))}</small>
+      <div class="setting-row">
+        <select id="webhookTarget" style="flex:1;">
+          <option value="thumb">${escapeHtml(t('settingsView.webhookKeyThumb'))}</option>
+          <option value="preset1">${escapeHtml(t('preset.key', { n: 1 }))}</option>
+          <option value="preset2">${escapeHtml(t('preset.key', { n: 2 }))}</option>
+          <option value="preset3">${escapeHtml(t('preset.key', { n: 3 }))}</option>
+          <option value="preset4">${escapeHtml(t('preset.key', { n: 4 }))}</option>
+          <option value="preset5">${escapeHtml(t('preset.key', { n: 5 }))}</option>
+          <option value="preset6">${escapeHtml(t('preset.key', { n: 6 }))}</option>
+          <option value="aux">AUX</option>
+          <option value="power">Power</option>
+        </select>
+        <select id="webhookMode" style="flex:0 0 170px;">
+          <option value="additional">${escapeHtml(t('settingsView.webhookModeAdditional'))}</option>
+          <option value="replace">${escapeHtml(t('settingsView.webhookModeReplace'))}</option>
+        </select>
+      </div>
+      <small class="muted small" id="webhookModeNote"></small>
+      <div class="setting-row">
+        <input type="text" id="webhookUrl" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookUrlPlaceholder'))}" />
+        <select id="webhookMethod" style="flex:0 0 90px;">
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+        </select>
+      </div>
+      <div class="setting-row" id="webhookBodyRow">
+        <input type="text" id="webhookBody" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookBodyPlaceholder'))}" />
+      </div>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="webhookOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="webhookOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+        <span style="flex:1;"></span>
+        <button class="btn btn-mini" id="webhookTestBtn">${escapeHtml(t('settingsView.webhookTestBtn'))}</button>
+        <button class="btn btn-mini btn-primary" id="webhookSaveBtn">${escapeHtml(t('common.save'))}</button>
+      </div>
+    </details>
+
+    ${(() => {
+      // Box-to-box preset copy (Expert): source is THIS speaker (the one whose
+      // settings are open), the user picks a target to push keys 1-6 onto. Only
+      // rendered when at least one other STR speaker exists, so a single-speaker
+      // user never sees it.
+      const src = state.settingsBox;
+      const targets = (state.boxes || []).filter(b => b.kind !== 'stock' && src && b.host !== src.host);
+      if (!targets.length) return '';
+      const opts = targets.map(b => {
+        const lbl = (b.friendlyName || b.name || b.host) + (b.model && b.model !== 'SoundTouch' ? ' (' + b.model + ')' : '');
+        return `<option value="${escapeAttr(b.host)}|${b.port || 0}">${escapeHtml(lbl)}</option>`;
+      }).join('');
+      return `<details class="settings-section settings-expert">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <small class="muted small expert-intro">${escapeHtml(t('settingsView.copyPresetsHelp'))}</small>
+      <div class="setting-row">
+        <select id="copyPresetTarget" style="flex:1;">${opts}</select>
+        <button class="btn btn-mini btn-warning" id="copyPresetBtn">${escapeHtml(t('settingsView.copyPresetsBtn'))}</button>
+      </div>
+    </details>`;
+    })()}
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.sourcesHeading'))}</h3>
+      <div class="sources-grid">
+        ${sources.map(src => {
+          const cls = src.status === 'READY' ? 'src-ok' : 'src-unav';
+          const label = sourceLabel(src.source);
+          const statusLabel = src.status === 'READY' ? t('settingsView.sourceActive') : t('settingsView.sourceInactive');
+          return `<div class="source-pill ${cls}" title="${escapeAttr(sourceHint(src.source) || src.sourceAccount || '')}">${escapeHtml(label)} <small>${escapeHtml(statusLabel)}</small></div>`;
+        }).join('')}
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.spotifyHint'))}</small>
+      ${sources.some(x => x.source === 'AIRPLAY' && x.status !== 'READY') ? `<small class="muted small">${escapeHtml(t('settingsView.airplayHint'))}</small>` : ''}
+    </div>
+
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.regionHeading'))}</h3>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.regionCurrent'))}</span><span class="kv-val" id="currentAppRegion">${escapeHtml(t('common.loading'))}</span></div>
+      <div class="setting-row">
+        <select id="appRegionSelect"></select>
+        <button class="btn btn-mini" id="appRegionSave">${escapeHtml(t('common.save'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.regionHelp'))}</small>
+    </div>
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.actionsHeading'))}</h3>
+      <div class="actions-grid">
+        <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.syncHardwareKeysHelp'))}</p>
+        <button class="btn btn-mini" id="boxSaveLogsBtn">${escapeHtml(t('settingsView.saveLogs'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.saveLogsHelp'))}</p>
+        <button class="btn btn-mini" id="boxEmailSupportBtn">${escapeHtml(t('settingsView.emailSupport'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.emailSupportHelp'))}</p>
+        <button class="btn btn-mini btn-warning" id="boxRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.rebootHelp'))}</p>
+        <hr class="actions-divider" />
+        <button class="btn btn-mini btn-danger" id="boxTrueFactoryResetBtn">${escapeHtml(t('settingsView.trueFactoryResetBtn'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.trueFactoryResetHelpShort'))}</p>
+        <button class="btn btn-mini btn-danger" id="boxRemoveSTRBtn">${escapeHtml(t('settingsView.removeSTRBtn'))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.removeSTRHelp'))}</p>
+      </div>
+    </div>
+    <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.speakerInfoHeading'))}</h3>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.modelLabel'))}</span><span class="kv-val">${escapeHtml(info.type || '-')}</span></div>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.firmwareLabel'))}</span>
+        <span class="kv-val">${fwStatusInline(info)}</span>
+      </div>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.deviceIdLabel'))}</span><span class="kv-val small muted">${escapeHtml(info.deviceID || '-')}</span></div>
+      ${fwUpdateHint(info)}
+    </div>
+  `;
+
+  // Name combobox: input + dropdown list, free-typeable + filterable.
+  wireCombobox('boxNameInput', 'boxNameToggle', 'boxNameList', deps.getRoomNames());
+
+  // Wire the WLAN switch UI: collapsible form, PC-known SSIDs in
+  // a dropdown with auto-password prefill, Save sends
+  // PUT /api/box/wlan.
+  wireWlanSwitch(box);
+
+  // The "Update" button next to the firmware version scrolls down
+  // to the update banner.
+  const fwBtn = $('fwUpdateBtn');
+  if (fwBtn) {
+    fwBtn.onclick = () => {
+      const banner = $('fwUpdateBanner');
+      if (banner) banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+  }
+
+  // Status block: software version + USB stick mount.
+  (async () => {
+    const body = $('stickInfoBody');
+    if (!body) return;
+    const app = state.appInfo || {};
+
+    // Software version, three tiers:
+    //   - Version + build match -> up to date (green)
+    //   - Version matches, build differs -> update available (yellow)
+    //   - Version differs -> outdated (red)
+    let softwareLine = `<span class="muted small">${escapeHtml(t('common.unknown'))}</span>`;
+    let softwareBtn = '';
+    try {
+      const v = await BoxAgentVersion(box.host, box.port);
+      const boxVer = v.version || '?';
+      const boxBuild = v.build || '';
+      const appVer = app.version || '?';
+      const appBuild = app.build || '';
+      const sameVer = boxVer === appVer;
+      const sameBuild = boxBuild === appBuild;
+      if (sameVer && sameBuild) {
+        const buildSuffix = boxBuild ? ` (Build ${escapeHtml(boxBuild)})` : '';
+        softwareLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.swCurrent'))}</span> <span class="muted small">${escapeHtml(boxVer)}${buildSuffix}</span>`;
+      } else if (sameVer && !sameBuild) {
+        softwareLine = `<span class="fw-pending">${escapeHtml(t('settingsView.swUpdateAvail'))}</span> <span class="muted small">${escapeHtml(boxBuild)} &rarr; ${escapeHtml(appBuild)}</span>`;
+        if (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host) {
+          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
+        } else {
+          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+        }
+      } else {
+        softwareLine = `<span class="fw-old">${escapeHtml(t('settingsView.swOutdated'))}</span> <span class="muted small">${escapeHtml(boxVer)} &rarr; ${escapeHtml(appVer)}</span>`;
+        if (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host) {
+          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
+        } else {
+          softwareBtn = `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+        }
+      }
+    } catch {}
+
+    // USB stick mount status. Try /api/stick/status first (newer
+    // agent); fall back to /api/debug/state.stick_listing for older
+    // agent versions.
+    let stickLine = `<span class="muted small">${escapeHtml(t('common.unknown'))}</span>`;
+    let stickMounted = false;
+    let sshOpen = false;
+    try {
+      const r = await deps.boxFetch(box, '/api/stick/status');
+      const ct = r.headers.get('content-type') || '';
+      if (r.ok && ct.includes('json')) {
+        const data = await r.json();
+        if (data.mounted) {
+          stickMounted = true;
+          stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>` + (data.version ? ` <span class="muted small">${escapeHtml(data.version)}</span>` : '');
+        } else {
+          // After a clean install the stick is pulled, so "not mounted" is
+          // the expected steady state. Show it informationally, not as an
+          // error in signal-red.
+          stickLine = `<span class="muted small">${escapeHtml(t('settingsView.stickRemoved'))}</span>`;
+        }
+        sshOpen = !!data.sshOpen;
+      } else {
+        // Fallback: debug/state listing for older agents.
+        const rd = await deps.boxFetch(box, '/api/debug/state');
+        if (rd.ok && (rd.headers.get('content-type') || '').includes('json')) {
+          const d = await rd.json();
+          const listing = d.stick_listing;
+          if (Array.isArray(listing) && listing.length > 0 && !String(listing[0]).startsWith('ERR')) {
+            stickMounted = true;
+            stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>`;
+          } else {
+            stickLine = `<span class="muted small">${escapeHtml(t('settingsView.stickRemoved'))}</span>`;
+          }
+        }
+      }
+    } catch {}
+
+    // Show the warning banner only once the stick is no longer
+    // mounted — while a stick is in the box, the agent is either
+    // doing initial install or applying an update, SSH is expected
+    // to be open in that window, and the banner is just noise.
+    // Also suppress while an OTA update is in flight: the agent is
+    // mid-restart and SSH state is transient; the banner's "Reboot
+    // now" button would interrupt the update.
+    const gb = $('globalSecurityBanner');
+    if (gb) {
+      // Consistent with checkSshBanner: the reminder is shown while the stick is
+      // still in the box and clears once it is removed. The agent keeps sshd up
+      // for diagnostics regardless, so an "SSH still open" gate never cleared
+      // (#11). OTA window still excluded.
+      const show = stickMounted && !state.otaInProgress;
+      gb.classList.toggle('hidden', !show);
+    }
+
+    // Same guard as the global banner above: never show the "reboot now"
+    // recommendation while the stick is still mounted (initial install or
+    // an update is applying) or an OTA is in flight. Rebooting then would
+    // interrupt the install/update. Only after it completes and the stick
+    // is removed is the SSH state meaningful and the reboot safe.
+    const securityWarn = (sshOpen && !stickMounted && !state.otaInProgress) ? `
+      <div class="security-warn">
+        <div class="security-warn-title">${escapeHtml(t('banner.recommendationShort'))}</div>
+        <div class="security-warn-text">
+          ${escapeHtml(t('banner.sshRecommend'))}
+        </div>
+        <button class="btn btn-mini" id="securityRebootBtn">${escapeHtml(t('speaker.rebootNow'))}</button>
+      </div>` : '';
+
+    // Prominent update banner at the very TOP of Speaker Settings whenever an
+    // update is available (softwareBtn is only set then). Moved here from the
+    // music view so normal users see it where they manage the speaker and do
+    // not mis-click it while just listening. The update button lives in the
+    // banner now; the software kv-row below keeps the version status text.
+    const updateBanner = softwareBtn ? `
+      <div class="update-banner" style="margin-bottom:14px">
+        <div class="update-msg"><b>${escapeHtml(t('update.speakerUpdateAvail'))}</b><br>
+          <small class="muted">${escapeHtml(t('update.rebootNote'))}</small></div>
+        ${softwareBtn}
+      </div>` : '';
+    body.innerHTML = updateBanner + `
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.softwareLabel'))}</span>
+        <span class="kv-val">${softwareLine}</span></div>
+      <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.usbStickLabel'))}</span>
+        <span class="kv-val">${stickLine}</span></div>
+      ${securityWarn}
+    `;
+    const ub = $('stickInfoUpdateBtn');
+    if (ub) {
+      // The stick-in confirmation now lives inside doBoxUpdate (the single
+      // OTA chokepoint), so both this button and the music-tab banner are
+      // gated identically and Cancel always aborts before anything starts.
+      ub.onclick = deps.doBoxUpdate;
+    }
+    const sb = $('securityRebootBtn');
+    if (sb) sb.onclick = async () => {
+      const ok = await confirmWarn(
+        t('speaker.rebootConfirmTitle'),
+        t('speaker.rebootConfirmDetailedBody')
+      );
+      if (!ok) return;
+      try {
+        await RebootBox(box.host, box.port);
+        showToast(t('speaker.rebootingToast'));
+        setTimeout(deps.discoverBoxes, 35000);
+      } catch (e) { showError(e); }
+    };
+  })();
+
+  // Hardware key sync handler.
+  const syncBtn = $('boxSyncPresetsBtn');
+  if (syncBtn) {
+    syncBtn.onclick = async () => {
+      syncBtn.disabled = true;
+      syncBtn.textContent = t('settingsView.syncing');
+      try {
+        const r = await SyncBoxPresets(box.host, box.port);
+        const synced = r && r.synced != null ? r.synced : 0;
+        showToast(t('settingsView.syncDoneToast', { n: synced }));
+      } catch (e) { showError(e); }
+      syncBtn.disabled = false;
+      syncBtn.textContent = t('settingsView.syncHardwareKeys');
+    };
+  }
+
+  // Save diagnostic logs, the same bundle the footer link saves. Surfaced in
+  // Speaker Settings too because the install-timeout message points users here,
+  // and the footer link is easy to miss at the very bottom of the window (#114).
+  const saveLogsSettingsBtn = $('boxSaveLogsBtn');
+  if (saveLogsSettingsBtn) {
+    saveLogsSettingsBtn.onclick = async () => {
+      saveLogsSettingsBtn.disabled = true;
+      try {
+        const hosts = (state.boxes || []).map(b => b && b.host).filter(Boolean);
+        const res = await SaveDiagnosticBundle(hosts, true);
+        if (res && res.savePath) {
+          showToast(t('footer.saveLogsDone', { path: res.savePath, size: Math.round((res.bytes || 0) / 1024) }));
+        }
+      } catch (e) { showError(e); }
+      saveLogsSettingsBtn.disabled = false;
+    };
+  }
+
+  // Email support: save the diagnostic bundle, then open a pre-filled email to
+  // STR support with the saved file path so the user only has to attach it.
+  // mailto cannot attach a file itself (browser/OS limitation), so the body and
+  // the toast both point at the saved zip. Body kept in English (it is a support
+  // ticket); the button, help and toast are localized.
+  const emailSupportBtn = $('boxEmailSupportBtn');
+  if (emailSupportBtn) {
+    emailSupportBtn.onclick = async () => {
+      emailSupportBtn.disabled = true;
+      try {
+        const hosts = (state.boxes || []).map(b => b && b.host).filter(Boolean);
+        const res = await SaveDiagnosticBundle(hosts, true);
+        if (res && res.savePath) {
+          const subject = 'ST Reborn support request';
+          const body =
+            'Hi,\n\nI need help with ST Reborn.\n\n' +
+            '(Please describe the problem here.)\n\n' +
+            '--------------------------------\n' +
+            'Diagnostic logs were saved to:\n' + res.savePath + '\n\n' +
+            'IMPORTANT: please attach that file to this email before sending.\n';
+          try {
+            BrowserOpenURL('mailto:str@sichtbar-app.de?subject=' +
+              encodeURIComponent(subject) + '&body=' + encodeURIComponent(body));
+          } catch {}
+          showToast(t('settingsView.emailSupportToast', { path: res.savePath }));
+        }
+      } catch (e) { showError(e); }
+      emailSupportBtn.disabled = false;
+    };
+  }
+
+  // Speaker reboot button.
+  const rebootBtn = $('boxRebootBtn');
+  if (rebootBtn) {
+    rebootBtn.onclick = async () => {
+      const ok = await confirmWarn(
+        t('speaker.reboot'),
+        t('speaker.rebootGenericBody')
+      );
+      if (!ok) return;
+      try {
+        await RebootBox(box.host, box.port);
+        showToast(t('speaker.rebootingToast'));
+        // The speaker is gone for ~30 s, then trigger discovery again.
+        setTimeout(deps.discoverBoxes, 35000);
+      } catch (e) { showError(e); }
+    };
+  }
+
+  // True factory reset: wipes Bose's persistence files via SSH so
+  // the speaker truly returns to OOB. Required for the Bose iOS app
+  // to be able to re-onboard the speaker — Bose's hardware reset
+  // (Preset 1 + Vol-) leaves NetworkProfiles.xml intact, the
+  // speaker auto-rejoins its last WiFi, and the iOS app's WAC
+  // discovery sees an "already configured" speaker and gives up.
+  const tfrBtn = $('boxTrueFactoryResetBtn');
+  if (tfrBtn) {
+    tfrBtn.onclick = async () => {
+      const ok = await confirmWarn(
+        t('settingsView.trueFactoryResetConfirmTitle'),
+        t('settingsView.trueFactoryResetConfirmBody', { name: box.friendlyName || box.name || box.host })
+      );
+      if (!ok) return;
+      tfrBtn.disabled = true;
+      tfrBtn.textContent = t('settingsView.trueFactoryResetRunning');
+      try {
+        const r = await TrueFactoryReset(box.host);
+        if (r && r.ok) {
+          showToast(t('settingsView.trueFactoryResetDoneToast', { n: (r.wipedFiles || []).length }));
+          // Speaker reboots into OOB, will not be on the LAN for a
+          // while. Trigger discovery in 60 s so the UI catches it
+          // when the iOS app brings it back onto JJ3.
+          setTimeout(deps.discoverBoxes, 60000);
+        } else {
+          showError(t('settingsView.trueFactoryResetFailed', { msg: (r && r.message) || '?' }));
+        }
+      } catch (e) {
+        showError(e);
+      } finally {
+        tfrBtn.disabled = false;
+        tfrBtn.textContent = t('settingsView.trueFactoryResetBtn');
+      }
+    };
+  }
+
+  // Remove STR entirely and return the speaker to vanilla Bose. Unlike
+  // True Factory Reset (which keeps STR installed for re-onboarding),
+  // this uninstalls STR. The backend refuses while the USB stick is
+  // still inserted (Bose would reinstall STR from it on the next boot),
+  // so we warn about that up front and surface the stick-present case.
+  const rmBtn = $('boxRemoveSTRBtn');
+  if (rmBtn) {
+    rmBtn.onclick = async () => {
+      const ok = await confirmWarn(
+        t('settingsView.removeSTRConfirmTitle'),
+        t('settingsView.removeSTRConfirmBody', { name: box.friendlyName || box.name || box.host })
+      );
+      if (!ok) return;
+      rmBtn.disabled = true;
+      rmBtn.textContent = t('settingsView.removeSTRRunning');
+      try {
+        const r = await UninstallSTR(box.host);
+        if (r && r.ok) {
+          showToast(t('settingsView.removeSTRDoneToast', { n: (r.removedFiles || []).length }));
+          // Speaker reboots into vanilla Bose OOB; it will be off the LAN
+          // for a while. Re-scan in 60 s.
+          setTimeout(deps.discoverBoxes, 60000);
+        } else if (r && r.stickPresent) {
+          showError(t('settingsView.removeSTRStickPresent'));
+        } else {
+          showError(t('settingsView.removeSTRFailed', { msg: (r && r.message) || '?' }));
+        }
+      } catch (e) {
+        showError(e);
+      } finally {
+        rmBtn.disabled = false;
+        rmBtn.textContent = t('settingsView.removeSTRBtn');
+      }
+    };
+  }
+
+  // Language (BETA): GET /language on :8090 of the box, parse the
+  // sysLanguage integer, show in the label and pre-select the
+  // dropdown. POST on Save. Errors surface via showError; the
+  // dropdown stays editable so users can keep trying.
+  const langCurrent = $('boxLangCurrent');
+  const langSel = $('boxLangSelect');
+  const langSave = $('boxLangSave');
+  const boseHost = box.host;
+  // Clock + language go through the Go backend (GetBoxLanguage etc.):
+  // the box's :8090 sends no CORS headers, so a direct frontend fetch
+  // with a text/xml POST failed with "Failed to fetch" (CORS preflight
+  // the box never answers). Server-side has no CORS and reaches :8090
+  // even on Series-I/BCO boxes. See app.go boseGet/bosePostXML.
+  if (langCurrent && langSel) {
+    (async () => {
+      try {
+        const v = await GetBoxLanguage(boseHost);
+        langCurrent.textContent = v ? boseLangLabel(v) : t('settingsView.langNoValue');
+        if (v) langSel.value = v;
+      } catch {
+        langCurrent.textContent = t('settingsView.langUnreachable');
+      }
+    })();
+  }
+  if (langSave) {
+    langSave.onclick = async () => {
+      const v = langSel.value;
+      try {
+        await SetBoxLanguage(boseHost, parseInt(v, 10) || 0);
+        showToast(t('settingsView.langSavedToast', { v: boseLangLabel(v) }));
+        langCurrent.textContent = boseLangLabel(v);
+      } catch (e) { showError(e); }
+    };
+  }
+
+  // Clock display (BETA): GET /clockDisplay to see current state,
+  // POST to toggle. The endpoint is undocumented in the public Bose
+  // Web API PDF and may not exist on every model. On 404 / 500 we
+  // surface "not supported" rather than burying the failure.
+  const clockOn = $('boxClockOn');
+  const clockOff = $('boxClockOff');
+  const clockFormat = $('boxClockFormat');
+  // Reflect the current on/off state by highlighting the active button
+  // instead of a separate status line. null = unknown (neither lit).
+  const paintClock = (enabled) => {
+    if (clockOn) clockOn.classList.toggle('active', enabled === true);
+    if (clockOff) clockOff.classList.toggle('active', enabled === false);
+  };
+  // Preselect the box's current 12/24h format in the dropdown.
+  if (clockFormat) {
+    GetClockFormat24(boseHost).then(is24 => { clockFormat.value = is24 ? '24' : '12'; }).catch(() => {});
+  }
+  // refreshClock reads the current /clockDisplay state. Previously
+  // any non-200 / fetch failure surfaced "not supported on this
+  // model", but live-verified 2026-05-30 on a SoundTouch Portable
+  // (taigan): the GET path returns 200 most of the time but the
+  // box sometimes responds slowly or briefly drops the request
+  // during BoseApp restart, and that one missed GET painted the
+  // settings panel as "permanently unsupported" even though POST
+  // toggles work fine. Don't draw conclusions from a single GET:
+  // unknown means unknown, not unsupported.
+  let clockEnabled = false; // tracked so a format change re-sends with the right on/off state
+  const refreshClock = async () => {
+    try {
+      const s = await GetClockDisplay(boseHost);
+      clockEnabled = (s === 'true');
+      paintClock(s === 'true' ? true : (s === 'false' ? false : null));
+    } catch {
+      paintClock(null);
+    }
+  };
+  refreshClock();
+  const postClock = async (enable) => {
+    try {
+      // Real IANA time zone (e.g. "Europe/Berlin"), like the Bose iOS
+      // app sets, so the speaker handles DST itself. userOffsetMinute is
+      // sent too as a correct-now fallback: minutes EAST of UTC, i.e.
+      // the negated JS getTimezoneOffset().
+      let tz = '';
+      try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
+      const offsetMin = -new Date().getTimezoneOffset();
+      const fmt24 = (clockFormat ? clockFormat.value : '24') === '24';
+      await SetClockDisplay(boseHost, enable, tz, offsetMin, fmt24);
+      showToast(t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
+      await refreshClock();
+    } catch (e) { showError(e); }
+  };
+  if (clockOn) clockOn.onclick = () => { paintClock(true); postClock(true); };
+  if (clockOff) clockOff.onclick = () => { paintClock(false); postClock(false); };
+  // Send the 12/24h format to the box immediately on dropdown change,
+  // keeping the current on/off state (no need to click "On" again).
+  if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
+
+  // Resume last station on power-on (all models, default on). GET reports the
+  // current state; toggling applies live on the box (no reboot). The next real
+  // power press either brings the last station back, like Bose did, or stays
+  // silent. A self-wake (zone/stereo pair) never resumes regardless.
+  const ropOn = $('resumeOnPowerOn');
+  const ropOff = $('resumeOnPowerOff');
+  const paintResumeOnPower = (enabled) => {
+    if (ropOn) ropOn.classList.toggle('active', enabled === true);
+    if (ropOff) ropOff.classList.toggle('active', enabled === false);
+  };
+  if (ropOn && ropOff) {
+    (async () => {
+      try {
+        const r = await GetResumeOnPowerOn(box.host, box.port);
+        // Default on: treat anything other than an explicit false as enabled.
+        paintResumeOnPower(r && r.enabled === false ? false : true);
+      } catch { paintResumeOnPower(true); }
+    })();
+    const setROP = async (enabled) => {
+      paintResumeOnPower(enabled);
+      try {
+        await SetResumeOnPowerOn(box.host, box.port, enabled);
+        showToast(t('settingsView.resumeOnPowerSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    ropOn.onclick = () => setROP(true);
+    ropOff.onclick = () => setROP(false);
+  }
+
+  // AirPlay optimization (BCO speakers only). GET reports supported +
+  // current state; the section stays hidden on non-BCO models. Toggling
+  // reboots the speaker to apply it (BoseApp reads BCOResetTimerEnabled
+  // at boot, same as the Bose app), so confirm first.
+  const aoSection = $('airplayOptSection');
+  const aoOn = $('airplayOptOn');
+  const aoOff = $('airplayOptOff');
+  // Same active-highlight pattern as the clock toggle: the lit button
+  // is the state, no separate status line. null = unknown (neither lit).
+  const paintAirplay = (enabled) => {
+    if (aoOn) aoOn.classList.toggle('active', enabled === true);
+    if (aoOff) aoOff.classList.toggle('active', enabled === false);
+  };
+  if (aoSection && aoOn && aoOff) {
+    (async () => {
+      try {
+        const r = await GetAirplayOpt(box.host, box.port);
+        if (r && r.supported) {
+          aoSection.classList.remove('hidden');
+          paintAirplay(r.enabled === true ? true : (r.enabled === false ? false : null));
+        }
+      } catch { /* leave the section hidden on error */ }
+    })();
+    const setAO = async (enabled) => {
+      const ok = await confirmWarn(
+        t('settingsView.airplayOptConfirmTitle'),
+        t('settingsView.airplayOptConfirmBody'),
+      );
+      if (!ok) return;
+      paintAirplay(enabled);
+      try {
+        await SetAirplayOpt(box.host, box.port, enabled);
+        showToast(t('settingsView.airplayOptSavedToast'));
+        setTimeout(deps.discoverBoxes, 60000);
+      } catch (e) { showError(e); }
+    };
+    aoOn.onclick = () => setAO(true);
+    aoOff.onclick = () => setAO(false);
+  }
+
+  // Smart-home / webhook: the remote thumbs keys (up and down are
+  // indistinguishable on this firmware, so one shared toggle trigger) fire a
+  // user-defined HTTP request the agent persists on the box.
+  const whUrl = $('webhookUrl');
+  const whMethod = $('webhookMethod');
+  const whBody = $('webhookBody');
+  const whBodyRow = $('webhookBodyRow');
+  const whOn = $('webhookOn');
+  const whOff = $('webhookOff');
+  const whTest = $('webhookTestBtn');
+  const whSave = $('webhookSaveBtn');
+  const whTarget = $('webhookTarget');
+  const whMode = $('webhookMode');
+  const whModeNote = $('webhookModeNote');
+  if (whUrl && whOn && whOff && whSave && whTarget) {
+    let whEnabled = false;
+    // Full config held locally; each target's edits are captured into it before
+    // switching target or saving, then the WHOLE config is PUT (a partial PUT
+    // would wipe the other keys). buttons keys: preset1..preset6, aux, power.
+    let cfg = { thumb: {}, buttons: {} };
+    let prevTarget = whTarget.value || 'thumb';
+    const presetIds = new Set(['preset1', 'preset2', 'preset3', 'preset4', 'preset5', 'preset6']);
+    const isModeTarget = (tg) => presetIds.has(tg); // only presets support replace
+    const actionOf = (tg) => tg === 'thumb' ? (cfg.thumb || {}) : ((cfg.buttons && cfg.buttons[tg]) || {});
+    const paintWh = (en) => {
+      whEnabled = en === true;
+      whOn.classList.toggle('active', whEnabled === true);
+      whOff.classList.toggle('active', whEnabled === false);
+    };
+    const syncBodyRow = () => {
+      // A request body is only sent for non-GET methods.
+      if (whBodyRow) whBodyRow.style.display = (whMethod.value === 'GET') ? 'none' : '';
+    };
+    const loadInto = (tg) => {
+      const a = actionOf(tg);
+      whUrl.value = a.url || '';
+      whMethod.value = a.method || 'GET';
+      whBody.value = a.body || '';
+      paintWh(a.enabled === true);
+      whMode.value = a.mode === 'replace' ? 'replace' : 'additional';
+      whMode.style.display = isModeTarget(tg) ? '' : 'none';
+      whModeNote.textContent = isModeTarget(tg)
+        ? t('settingsView.webhookModePresetNote')
+        : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote'));
+      syncBodyRow();
+    };
+    const captureInto = (tg) => {
+      const a = { enabled: whEnabled === true, method: whMethod.value, url: whUrl.value.trim(), body: whBody.value.trim(), content_type: '' };
+      if (tg === 'thumb') {
+        cfg.thumb = a;
+      } else {
+        if (!cfg.buttons) cfg.buttons = {};
+        if (isModeTarget(tg)) a.mode = whMode.value;
+        cfg.buttons[tg] = a;
+      }
+    };
+    (async () => {
+      try {
+        const w = await GetWebhooks(box.host, box.port);
+        cfg = { thumb: (w && w.thumb) || {}, buttons: (w && w.buttons) || {} };
+      } catch { cfg = { thumb: {}, buttons: {} }; }
+      loadInto(prevTarget);
+    })();
+    whTarget.onchange = () => { captureInto(prevTarget); prevTarget = whTarget.value; loadInto(whTarget.value); };
+    whOn.onclick = () => paintWh(true);
+    whOff.onclick = () => paintWh(false);
+    whMethod.onchange = syncBodyRow;
+    whSave.onclick = async () => {
+      const tg = whTarget.value;
+      if (whEnabled && !whUrl.value.trim()) { showError(t('settingsView.webhookUrlRequired')); return; }
+      captureInto(tg);
+      try {
+        await SaveWebhookConfig(box.host, box.port, cfg);
+        showToast(t('settingsView.webhookSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    whTest.onclick = async () => {
+      const url = whUrl.value.trim();
+      if (!url) { showError(t('settingsView.webhookUrlRequired')); return; }
+      whTest.disabled = true;
+      try {
+        const r = await TestWebhook(box.host, box.port, whMethod.value, url, whBody.value.trim(), '');
+        showToast(t('settingsView.webhookTestOk', { status: (r && r.status) || '' }));
+      } catch (e) {
+        showError(t('settingsView.webhookTestFailed', { err: String(e) }));
+      } finally {
+        whTest.disabled = false;
+      }
+    };
+  }
+
+  // Box-to-box preset copy (Expert): copy keys 1-6 from this speaker (the
+  // settings source) onto a chosen target speaker, behind a warning confirm
+  // because it overwrites the target's presets.
+  const copyBtn = $('copyPresetBtn');
+  if (copyBtn) {
+    copyBtn.onclick = async () => {
+      const sel = $('copyPresetTarget');
+      if (!sel || !sel.value) return;
+      const [thost, tportRaw] = sel.value.split('|');
+      const tport = parseInt(tportRaw, 10) || 0;
+      const target = (state.boxes || []).find(b => b.host === thost);
+      const targetName = target ? (target.friendlyName || target.name || target.host) : thost;
+      const ok = await confirmWarn(
+        t('settingsView.copyPresetsConfirmTitle'),
+        t('settingsView.copyPresetsConfirmBody', { target: targetName })
+      );
+      if (!ok) return;
+      copyBtn.disabled = true;
+      try {
+        const n = await CopyPresetsAcrossBoxes(box.host, box.port, thost, tport);
+        showToast(t('settingsView.copyPresetsDone', { n, target: targetName }));
+        if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
+      } catch (e) { showError(e); }
+      copyBtn.disabled = false;
+    };
+  }
+
+  // App Region dropdown fuellen + aktuelle Region selektieren
+  const regSel = $('appRegionSelect');
+  if (regSel) {
+    regSel.innerHTML = COUNTRIES.filter(c => c.cc).map(c =>
+      `<option value="${c.cc}">${optFlag(c.cc)}${escapeHtml(c.name)}</option>`
+    ).join('');
+    const updateCurrentDisplay = (cc) => {
+      const el = $('currentAppRegion');
+      if (!el) return;
+      const c = COUNTRIES.find(x => x.cc === cc);
+      el.innerHTML = c
+        ? `${optFlag(cc)}${escapeHtml(c.name)} (${escapeHtml(cc)})`
+        : escapeHtml(cc || t('common.unknown'));
+    };
+    deps.boxFetch(box, '/api/region').then(r => r.ok ? r.json() : null).then(data => {
+      if (data && data.country) {
+        regSel.value = data.country;
+        updateCurrentDisplay(data.country);
+      } else {
+        const el = $('currentAppRegion'); if (el) el.textContent = t('settingsView.langUnreachable');
+      }
+    }).catch(() => { const el = $('currentAppRegion'); if (el) el.textContent = t('settingsView.langUnreachable'); });
+    $('appRegionSave').onclick = async () => {
+      const cc = regSel.value;
+      try {
+        const r = await deps.boxFetch(box, '/api/region', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ country: cc }),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        state.searchCountry = data.country;
+        state.searchLang = data.language;
+        saveSearchCountry(state.searchCountry);
+        const cs = $('searchCountry');
+        if (cs) cs.value = data.country;
+        deps.updateFilterIndicators();
+        updateCurrentDisplay(data.country);
+        showToast(t('settingsView.regionSavedToast', { name: (COUNTRIES.find(c => c.cc === cc) || {}).name || cc }));
+      } catch (e) { showError(e); }
+    };
+  }
+
+  // Wire handlers. All operations explicitly target settingsBox
+  // (not currentBox).
+  $('boxNameSave').onclick = async () => {
+    const desired = $('boxNameInput').value.trim();
+    if (!desired) return;
+    const finalName = ensureWithUID(desired, box);
+    try {
+      await SetBoxName(box.host, box.port, finalName);
+      showToast(t('settingsView.speakerNameSavedToast', { name: finalName }));
+      $('boxNameInput').value = finalName;
+      // Update locally: both the selected speaker and the matching
+      // entry in the global speakers list so every dropdown is
+      // consistent immediately. NO discoverBoxes or loadBoxSettings
+      // afterwards because that would flicker and could overwrite a
+      // slider input the user just made.
+      box.friendlyName = finalName;
+      const idx = state.boxes.findIndex(b => b.deviceID === box.deviceID);
+      if (idx >= 0) state.boxes[idx] = { ...state.boxes[idx], friendlyName: finalName };
+      // 90 s pending name: survives an mDNS refresh during which
+      // the stick still announces the old name.
+      state.pendingNames[box.deviceID] = { name: finalName, until: Date.now() + 90000 };
+      renderSettingsBoxSelect();
+      deps.renderBoxSelect();
+    } catch (e) { showError(e); }
+  };
+  $('boxVolume').oninput = () => {
+    $('boxVolumeVal').textContent = $('boxVolume').value;
+    throttledSetVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
+  };
+  $('boxVolume').onchange = () => {
+    throttledSetVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
+  };
+  $('boxBass').oninput = () => {
+    $('boxBassVal').textContent = formatRel($('boxBass').value);
+    const rel = parseInt($('boxBass').value, 10);
+    throttledSetBass(box.host, box.port, rel + (bass.default || 0));
+  };
+  $('boxBass').onchange = () => {
+    const rel = parseInt($('boxBass').value, 10);
+    throttledSetBass(box.host, box.port, rel + (bass.default || 0));
+  };
+  $('boxBassReset').onclick = async () => {
+    $('boxBass').value = 0;
+    $('boxBassVal').textContent = formatRel(0);
+    try {
+      await SetBoxBass(box.host, box.port, bass.default || 0);
+    } catch (e) { showError(e); }
+  };
+}
+
+// wireWlanSwitch wires the WLAN switch UI in the Settings tab.
+// Lists PC-known WLANs in a dropdown (no manual typing), prefills
+// the password, and on Save sends PUT /api/box/wlan.
+function wireWlanSwitch(box) {
+  const toggle = $('wlanSwitchToggle');
+  const form = $('wlanSwitchForm');
+  if (!toggle || !form) return;
+  toggle.onclick = () => {
+    form.classList.toggle('hidden');
+    if (!form.classList.contains('hidden')) {
+      loadBoxWlanList();
+    }
+  };
+  async function loadBoxWlanList() {
+    const sel = $('boxWlanSelect');
+    const rb = $('boxWlanRefresh');
+    if (rb) rb.classList.add('spinning'); // visible feedback: the button spins while loading
+    try {
+      const profiles = await ListWiFiProfiles() || [];
+      sel.innerHTML = `<option value="">${escapeHtml(t('settingsView.wlanPickPlaceholder'))}</option>` +
+        profiles.map(p => `<option value="${escapeAttr(p.ssid)}">${escapeHtml(p.ssid)}</option>`).join('');
+      showToast(t('settingsView.wlanListRefreshed', { n: profiles.length }));
+    } catch {
+      sel.innerHTML = `<option value="">${escapeHtml(t('setup.wlanListUnavailable'))}</option>`;
+    } finally {
+      if (rb) rb.classList.remove('spinning');
+    }
+  }
+  $('boxWlanRefresh').onclick = loadBoxWlanList;
+  $('boxWlanSelect').onchange = async () => {
+    const v = $('boxWlanSelect').value;
+    if (!v) return;
+    $('boxWlanSSID').value = v;
+    if (isMacOS) return; // #88: don't trigger System-keychain admin prompt
+    try {
+      const pw = await TryWiFiPassword(v);
+      if (pw) $('boxWlanPass').value = pw;
+    } catch {}
+  };
+  $('boxWlanShowPass').onclick = () => {
+    const i = $('boxWlanPass');
+    const b = $('boxWlanShowPass');
+    if (i.type === 'password') { i.type = 'text'; b.innerHTML = '&#128064;'; }
+    else { i.type = 'password'; b.innerHTML = '&#128065;'; }
+  };
+  $('boxWlanSave').onclick = async () => {
+    const ssid = $('boxWlanSSID').value.trim();
+    const pass = $('boxWlanPass').value;
+    if (!ssid) { showError(t('settingsView.wlanSsidEmpty')); return; }
+    const ok = await confirmWarn(
+      t('settingsView.wlanSwitchConfirmTitle'),
+      t('settingsView.wlanConfirmBody', { ssid: escapeHtml(ssid) })
+    );
+    if (!ok) return;
+    try {
+      const r = await deps.boxFetch(box, '/api/box/wlan', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ssid, password: pass }),
+      });
+      if (!r.ok) {
+        const body = await r.text();
+        throw new Error('HTTP ' + r.status + ': ' + body);
+      }
+      // The agent applies the switch in the background and the box leaves the
+      // current network, so we rediscover it rather than wait. BCO speakers
+      // (Portable) reboot to apply, which takes a few minutes; wpa speakers
+      // switch live and fall back to their old network if the new one fails.
+      let info = {};
+      try { info = await r.json(); } catch {}
+      $('boxWlanPass').value = '';
+      form.classList.add('hidden');
+      showToast(
+        info.mechanism === 'bco'
+          ? t('settingsView.wlanRebootingToast')
+          : t('settingsView.wlanSwitchedToast'),
+        7000,
+      );
+      // The speaker gets a new IP (or reboots). Retrigger discovery; a longer
+      // delay for the BCO reboot so the rediscover lands after it is back up.
+      setTimeout(deps.discoverBoxes, info.mechanism === 'bco' ? 90000 : 12000);
+    } catch (e) { showError(e); }
+  };
+}
+
+// wireCombobox binds to an <input> + <button toggle> + <ul list>
+// trio. Filters while typing, opens on toggle click, selects on
+// item click.
+export function wireCombobox(inputId, toggleId, listId, options) {
+  const input = document.getElementById(inputId);
+  const toggle = document.getElementById(toggleId);
+  const list = document.getElementById(listId);
+  if (!input || !toggle || !list) return;
+
+  function render(filter) {
+    const q = (filter || '').toLowerCase().trim();
+    const matches = options.filter(o => !q || o.toLowerCase().includes(q));
+    if (matches.length === 0) {
+      list.innerHTML = `<li class="combo-empty">${escapeHtml(t('combobox.noSuggestions'))}</li>`;
+      return;
+    }
+    list.innerHTML = matches.map(o => `<li data-value="${escapeAttr(o)}">${escapeHtml(o)}</li>`).join('');
+    list.querySelectorAll('li[data-value]').forEach(li => {
+      li.onmousedown = (e) => {
+        // Use mousedown rather than click so the handler fires
+        // before the input loses focus.
+        e.preventDefault();
+        input.value = li.dataset.value;
+        list.classList.add('hidden');
+      };
+    });
+  }
+
+  // When opening the dropdown show ALL options rather than
+  // filtering by the current input. Otherwise the suggestions are
+  // gone whenever the current name does not match a room (e.g.
+  // "Bose SoundTouch 02FFD8"). Filtering only kicks in on typing.
+  let userIsTyping = false;
+  const showAll = () => { render(''); list.classList.remove('hidden'); };
+  const showFiltered = () => { render(input.value); list.classList.remove('hidden'); };
+  const hide = () => list.classList.add('hidden');
+
+  input.addEventListener('focus', () => {
+    if (userIsTyping) showFiltered(); else showAll();
+  });
+  input.addEventListener('input', () => {
+    userIsTyping = true;
+    showFiltered();
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(hide, 150);
+    userIsTyping = false;
+  });
+  toggle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    if (list.classList.contains('hidden')) {
+      input.focus();
+      showAll();
+    } else {
+      hide();
+    }
+  });
+}
+
+// formatRel renders a signed relative value: 0, +3, -2.
+function formatRel(v) {
+  const n = parseInt(v, 10);
+  if (isNaN(n) || n === 0) return '0';
+  return n > 0 ? '+' + n : String(n);
+}
+
+// Last known firmware major.minor.patch per SoundTouch model. Bose
+// shipped the final wave in 2022; nothing more arrived after the
+// cloud shutdown. Source: support.bose.com.
+const LATEST_FW = {
+  'SoundTouch 10': '27.0.6',
+  'SoundTouch 20': '27.0.6',
+  'SoundTouch 30': '27.0.6',
+  'SoundTouch Portable': '27.0.6',
+};
+
+// fwVersionTuple extracts the first 3 numbers from
+// "27.0.6.46330.5043500" for comparison. Returns null on an unknown
+// format.
+function fwVersionTuple(v) {
+  if (!v) return null;
+  const m = v.match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  return [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
+}
+
+function isFwOutdated(info) {
+  const want = LATEST_FW[info.type || ''];
+  const have = fwVersionTuple(info.version || '');
+  const wantT = fwVersionTuple(want || '');
+  if (!have || !wantT) return false;
+  for (let i = 0; i < 3; i++) {
+    if (have[i] < wantT[i]) return true;
+    if (have[i] > wantT[i]) return false;
+  }
+  return false;
+}
+
+// fwStatusInline renders the firmware row.
+//   Up to date: green text + checkmark
+//   Outdated:  red text + an Update button next to it
+function fwStatusInline(info) {
+  const v = escapeHtml(info.version || '-');
+  if (!info.version) return v;
+  if (isFwOutdated(info)) {
+    return `<span class="fw-old">${v}</span> <button class="btn btn-mini btn-danger" id="fwUpdateBtn">${escapeHtml(t('fw.updateBtn'))}</button>`;
+  }
+  return `<span class="fw-ok">&#10003; ${v}</span>`;
+}
+
+function fwUpdateHint(info) {
+  const want = LATEST_FW[info.type || ''];
+  if (!isFwOutdated(info)) {
+    return `<small class="muted small">${escapeHtml(t('fw.uptodate', { version: want || '27.0.6' }))}</small>`;
+  }
+  return `
+    <div class="fw-update-banner" id="fwUpdateBanner">
+      <b>${escapeHtml(t('fw.outdatedTitle'))}</b>
+      <div>${t('fw.outdatedIntro', { version: `<b>${escapeHtml(want || '27.0.6')}</b>` })}</div>
+      <div class="fw-update-howto">
+        <b>${escapeHtml(t('fw.howToHeader'))}</b>
+        <ol>
+          <li>${escapeHtml(t('fw.step1'))}</li>
+          <li>${escapeHtml(t('fw.step2'))}</li>
+          <li>${escapeHtml(t('fw.step3'))}</li>
+          <li>${t('fw.step4')} <span class="kv-val">downloads.bose.com/ced/soundtouch/soundtouch_usb/</span></li>
+        </ol>
+        <small class="muted small">${escapeHtml(t('fw.hint'))}</small>
+      </div>
+    </div>`;
+}
+
+// Source labels and hints are resolved via the i18n bundle. Keys are
+// `source.label.<UPPER>` and `source.hint.<UPPER>`. Falls back to the
+// raw API enum value when no translation is registered.
+function sourceLabel(key) {
+  return tLookup('source.label', key) || key;
+}
+function sourceHint(key) {
+  return tLookup('source.hint', key) || '';
+}
+
+// rollupSources removes NOTIFICATION (internal), collapses multiple
+// entries of the same source type into a single pill and prefers
+// READY over UNAVAILABLE. The result is then sorted with READY
+// first.
+function rollupSources(raw) {
+  const grouped = {};
+  for (const src of raw) {
+    if (!src || !src.source) continue;
+    if (src.source === 'NOTIFICATION') continue;
+    const existing = grouped[src.source];
+    if (!existing || (src.status === 'READY' && existing.status !== 'READY')) {
+      grouped[src.source] = src;
+    }
+  }
+  return Object.values(grouped).sort((a, b) => {
+    if (a.status === 'READY' && b.status !== 'READY') return -1;
+    if (a.status !== 'READY' && b.status === 'READY') return 1;
+    return sourceLabel(a.source).localeCompare(sourceLabel(b.source));
+  });
+}
+
+// Volume update plumbing. The slider has to behave like the
+// hardware: the level changes WHILE the user drags, not only on
+// release. A naive "fire on every input event" floods the box with
+// PUTs (60+ events per drag-second), each of which holds a request
+// slot on the Bose firmware's tiny HTTP server and blocks the next.
+// Symptom on a stock-Bose-on-:17008 box: every PUT times out at the
+// 6 s httpClient cap and the user sees a wall of red error toasts.
+//
+// makeOneInFlightThrottle gives us "fire the first immediately,
+// drop intermediate calls, replay the most recent args after the
+// current call finishes". Net effect during a 1 s drag: 3 to 5
+// actual PUTs with the very last value being whatever the user
+// released on, regardless of how fast they wiped.
+function makeOneInFlightThrottle(fn) {
+  let inFlight = false;
+  let pending = null;
+  const fire = async (args) => {
+    inFlight = true;
+    try {
+      await fn(...args);
+    } catch (e) {
+      // Quiet during drag: showError would stack-up toasts. The
+      // periodic status poll recovers the visible value anyway.
+      console.warn('throttled box update failed', e);
+    } finally {
+      inFlight = false;
+      if (pending) {
+        const next = pending;
+        pending = null;
+        fire(next);
+      }
+    }
+  };
+  return (...args) => {
+    if (inFlight) { pending = args; return; }
+    fire(args);
+  };
+}
+// throttledSetVolume/throttledSetBass are the app-wide volume plumbing: the
+// settings sliders use them here, and the music view imports them from this
+// module (the volume controls there share the exact same throttle). Exported so
+// main.js's music view can reuse the single shared instance.
+export const throttledSetVolume = makeOneInFlightThrottle(SetBoxVolume);
+export const throttledSetBass = makeOneInFlightThrottle(SetBoxBass);
+
+const debouncedSetVolume = debounce(async (box) => {
+  try {
+    await SetBoxVolume(box.host, box.port, parseInt($('boxVolume').value, 10));
+  } catch (e) { showError(e); }
+}, 200);
+const debouncedSetBass = debounce(async (box, defaultBass) => {
+  try {
+    // The slider holds a relative value (0 = factory default). The
+    // speaker expects the absolute value, so add the default offset
+    // back in.
+    const rel = parseInt($('boxBass').value, 10);
+    await SetBoxBass(box.host, box.port, rel + (defaultBass || 0));
+  } catch (e) { showError(e); }
+}, 200);
