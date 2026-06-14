@@ -199,6 +199,7 @@
   "preset.sourceBadge": "from {{source}}",
   "preset.saveFailed": "Save failed: {{err}}",
   "preset.spotifyNotSaveable": "This Spotify radio or station can't be saved to a preset because it has no replayable playlist. Open a playlist or album and try again.",
+  "preset.spotifyContextUnknown": "Couldn't read a Spotify playlist from the speaker. Make sure the speaker is up to date, open a playlist or album, then try again.",
   "play.errNoInternet": "no internet?",
   "play.errSpeakerTimeout": "speaker not responding",
   "play.errBoxStarting": "speaker is still starting, try again in a moment",

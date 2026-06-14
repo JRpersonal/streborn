@@ -890,6 +890,7 @@
   "spotify.nativeStep3": "Reproduce. Funciona con cualquier cuenta de Spotify; quien se conecte el último la controla. No hace falta iniciar sesión en esta aplicación.",
   "spotify.nativeNote": "Nota: se necesita una cuenta de Spotify Premium (es la propia norma de Spotify para Connect). El antiguo paso de “vincular una cuenta en la app Bose” ya no existe y no es necesario.",
   "preset.spotifyNotSaveable": "Esta radio o emisora de Spotify no se puede guardar en un acceso directo porque no tiene una lista reproducible. Abre una lista de reproducción o un álbum e inténtalo de nuevo.",
+  "preset.spotifyContextUnknown": "No se pudo leer una lista de Spotify desde el altavoz. Asegúrate de que el altavoz esté actualizado, abre una lista de reproducción o un álbum e inténtalo de nuevo.",
   "play.errSpotifyPremium": "Para retomar Spotify necesitas Premium",
   "update.speakerUpdateAvailFor": "Actualización disponible para '{{name}}'",
   "update.versionLine": "instalada: {{installed}} → nueva: {{next}}",

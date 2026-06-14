@@ -890,6 +890,7 @@
   "spotify.nativeStep3": "Odtwarzaj. Działa dowolne konto Spotify; steruje nim ten, kto połączył się jako ostatni. W tej aplikacji nie trzeba się logować.",
   "spotify.nativeNote": "Uwaga: wymagane jest konto Spotify Premium (to własna zasada Spotify dla Connect). Dawny krok „powiązania konta w aplikacji Bose” zniknął i nie jest potrzebny.",
   "preset.spotifyNotSaveable": "Tej stacji lub radia Spotify nie można zapisać jako preset, bo nie ma playlisty, którą da się odtworzyć ponownie. Otwórz playlistę lub album i spróbuj jeszcze raz.",
+  "preset.spotifyContextUnknown": "Nie udało się odczytać playlisty Spotify z głośnika. Upewnij się, że głośnik jest aktualny, otwórz playlistę lub album i spróbuj jeszcze raz.",
   "play.errSpotifyPremium": "Przywoływanie Spotify wymaga konta Premium",
   "update.speakerUpdateAvailFor": "Dostępna aktualizacja dla „{{name}}”",
   "update.versionLine": "zainstalowana: {{installed}} → nowa: {{next}}",

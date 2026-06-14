@@ -890,6 +890,7 @@
   "spotify.nativeStep3": "Grokite. Tinka bet kuri Spotify paskyra; valdo tas, kuris prisijungia paskutinis. Šioje programoje prisijungti nereikia.",
   "spotify.nativeNote": "Pastaba: reikia Spotify Premium paskyros (pačios Spotify taisyklė dėl Connect). Senas “susieti paskyrą Bose programoje” veiksmas dingo ir nebereikalingas.",
   "preset.spotifyNotSaveable": "Šios Spotify radijo stoties negalima išsaugoti kaip nustatymo, nes ji neturi atkartojamo grojaraščio. Atidaryk grojaraštį arba albumą ir bandyk dar kartą.",
+  "preset.spotifyContextUnknown": "Nepavyko nuskaityti Spotify grojaraščio iš garsiakalbio. Įsitikink, kad garsiakalbis atnaujintas, atidaryk grojaraštį arba albumą ir bandyk dar kartą.",
   "play.errSpotifyPremium": "Spotify atkūrimui reikia Premium",
   "update.speakerUpdateAvailFor": "Yra atnaujinimas garsiakalbiui „{{name}}“",
   "update.versionLine": "įdiegta: {{installed}} → nauja: {{next}}",

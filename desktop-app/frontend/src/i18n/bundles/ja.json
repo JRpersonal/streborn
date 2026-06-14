@@ -890,6 +890,7 @@
   "spotify.nativeStep3": "再生します。どのSpotifyアカウントでも使えます。最後に接続した人が操作します。このアプリでのログインは不要です。",
   "spotify.nativeNote": "注意: Spotify Premiumアカウントが必要です (Connectに関するSpotify独自の規定です)。以前の「Boseアプリでアカウントを連携する」手順はなくなり、不要になりました。",
   "preset.spotifyNotSaveable": "この Spotify ラジオやステーションは、再生できるプレイリストがないためプリセットに保存できません。プレイリストかアルバムを開いてもう一度お試しください。",
+  "preset.spotifyContextUnknown": "スピーカーから Spotify のプレイリストを読み取れませんでした。スピーカーが最新であることを確認し、プレイリストかアルバムを開いてからもう一度お試しください。",
   "play.errSpotifyPremium": "Spotify の呼び出しには Premium が必要です",
   "update.speakerUpdateAvailFor": "'{{name}}' のアップデートがあります",
   "update.versionLine": "現在: {{installed}} → 新しいバージョン: {{next}}",

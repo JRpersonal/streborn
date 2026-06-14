@@ -890,6 +890,7 @@
   "spotify.nativeStep3": "Lancez la lecture. N'importe quel compte Spotify fonctionne ; la dernière personne connectée garde le contrôle. Aucune connexion requise dans cette application.",
   "spotify.nativeNote": "Remarque : un compte Spotify Premium est nécessaire (règle propre à Spotify pour Connect). L'ancienne étape « associer un compte dans l'application Bose » a disparu et n'est plus nécessaire.",
   "preset.spotifyNotSaveable": "Cette radio ou station Spotify ne peut pas être enregistrée dans un préréglage, car elle n'a pas de playlist réécoutable. Ouvre une playlist ou un album et réessaie.",
+  "preset.spotifyContextUnknown": "Impossible de lire une playlist Spotify depuis l'enceinte. Vérifie que l'enceinte est à jour, ouvre une playlist ou un album, puis réessaie.",
   "play.errSpotifyPremium": "Le rappel Spotify nécessite Premium",
   "update.speakerUpdateAvailFor": "Mise à jour disponible pour '{{name}}'",
   "update.versionLine": "installée : {{installed}} → nouvelle : {{next}}",

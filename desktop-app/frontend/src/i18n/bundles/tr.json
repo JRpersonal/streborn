@@ -890,6 +890,7 @@
   "spotify.nativeStep3": "Çalın. Herhangi bir Spotify hesabı çalışır; en son bağlanan onu kontrol eder. Bu uygulamada giriş gerekmez.",
   "spotify.nativeNote": "Not: Spotify Premium hesabı gerekir (Connect için Spotify'ın kendi kuralı). Eski “Bose uygulamasında hesap bağla” adımı kaldırıldı ve gerekli değil.",
   "preset.spotifyNotSaveable": "Bu Spotify radyosu veya istasyonu, yeniden çalınabilir bir çalma listesi olmadığı için bir ön ayara kaydedilemez. Bir çalma listesi veya albüm açıp tekrar dene.",
+  "preset.spotifyContextUnknown": "Hoparlörden bir Spotify çalma listesi okunamadı. Hoparlörün güncel olduğundan emin ol, bir çalma listesi veya albüm açıp tekrar dene.",
   "play.errSpotifyPremium": "Spotify geri çağırma için Premium gerekir",
   "update.speakerUpdateAvailFor": "'{{name}}' için güncelleme mevcut",
   "update.versionLine": "yüklü: {{installed}} → yeni: {{next}}",

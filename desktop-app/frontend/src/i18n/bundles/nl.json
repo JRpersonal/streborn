@@ -890,6 +890,7 @@
   "spotify.nativeStep3": "Speel af. Elk Spotify-account werkt; wie als laatste verbindt, heeft de bediening. Geen login nodig in deze app.",
   "spotify.nativeNote": "Let op: een Spotify Premium-account is vereist (de eigen regel van Spotify voor Connect). De oude stap “een account koppelen in de Bose-app” is verdwenen en niet meer nodig.",
   "preset.spotifyNotSaveable": "Deze Spotify-radio of -zender kan niet als preset worden opgeslagen omdat er geen afspeelbare afspeellijst is. Open een afspeellijst of album en probeer het opnieuw.",
+  "preset.spotifyContextUnknown": "Kon geen Spotify-afspeellijst van de speaker lezen. Zorg dat de speaker up-to-date is, open een afspeellijst of album en probeer het opnieuw.",
   "play.errSpotifyPremium": "Spotify terughalen vereist Premium",
   "update.speakerUpdateAvailFor": "Update beschikbaar voor '{{name}}'",
   "update.versionLine": "geïnstalleerd: {{installed}} → nieuw: {{next}}",

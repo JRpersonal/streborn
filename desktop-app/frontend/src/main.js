@@ -2421,26 +2421,53 @@ async function saveCurrentToSlot(slot) {
   // (playlist URI) from /spotify/info.
   if (/\/spotify\/stream|\/playback\/container/.test(state.nowLocation)) {
     // We can only save a real, recallable Spotify preset when we know the
-    // playlist/album URI (nowSpotifyContext). A Spotify radio/station has no
-    // replayable context, so saving it would create a dead preset that fails to
-    // recall with "Service not available" (#45/#105). Refuse with a clear
-    // message instead of falling through to Case B and storing a dead radio link
-    // to the bare Ogg stream.
-    if (!state.nowSpotifyContext) {
-      showError(t('preset.spotifyNotSaveable'));
+    // playlist/album/track context URI. state.nowSpotifyContext is only
+    // refreshed by a throttled (>3s) background poll, so at save time it can
+    // lag or be momentarily empty even while a real playlist is playing. That
+    // made a legitimate save fail with a false "no replayable playlist" (Pierre,
+    // #45, was on Premium playing a playlist). Re-read the live context from the
+    // speaker now instead of trusting the cache.
+    let ctxUri = state.nowSpotifyContext;
+    let acct = state.nowSpotifyAccount || '';
+    try {
+      const np = await SpotifyNowPlaying(state.currentBox.host, state.currentBox.port);
+      if (np) {
+        if (np.context) ctxUri = np.context;
+        if (np.account) acct = np.account;
+      }
+    } catch {}
+    if (!ctxUri) {
+      // Spotify is playing but the speaker reported no playlist/album/track
+      // context. This is NOT the same as a non-replayable station: a real
+      // station carries a (non-replayable) context that the agent rejects on
+      // save below. An empty context almost always means an out-of-date speaker
+      // agent that cannot capture the context yet (the app updates separately
+      // from the on-box agent) or a will_play event the agent missed. Guide the
+      // user to update the speaker and replay the playlist rather than falsely
+      // claiming there is no playlist.
+      showError(t('preset.spotifyContextUnknown'));
       return;
     }
     const sname = state.nowName || 'Spotify';
     try {
       await SaveSpotifyPreset(
         state.currentBox.host, state.currentBox.port,
-        slot, sname, state.nowSpotifyContext, state.nowSpotifyAccount || ''
+        slot, sname, ctxUri, acct
       );
       showToast(t('preset.savedToKey', { n: slot, name: sname }));
       await loadPresets();
       return;
     } catch (err) {
-      showError(t('preset.saveFailed', { err: String(err) }));
+      // The agent validates the context and returns 422 spotify-uri-unplayable
+      // for a genuinely non-replayable selection (a Spotify radio/station). Show
+      // the precise "no replayable playlist" message for that; a generic failure
+      // otherwise.
+      const msg = String(err);
+      if (/spotify-uri-unplayable|replayable playlist/i.test(msg)) {
+        showError(t('preset.spotifyNotSaveable'));
+      } else {
+        showError(t('preset.saveFailed', { err: msg }));
+      }
       return;
     }
   }

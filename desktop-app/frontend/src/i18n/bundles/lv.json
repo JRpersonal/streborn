@@ -890,6 +890,7 @@
   "spotify.nativeStep3": "Atskaņojiet. Darbojas jebkurš Spotify konts; vada tas, kurš pievienojas pēdējais. Šajā lietotnē pieteikšanās nav vajadzīga.",
   "spotify.nativeNote": "Piezīme: nepieciešams Spotify Premium konts (paša Spotify noteikums priekš Connect). Vecais solis “saistīt kontu Bose lietotnē” ir pazudis un nav vajadzīgs.",
   "preset.spotifyNotSaveable": "Šo Spotify radio vai staciju nevar saglabāt kā iestatījumu, jo tai nav atskaņojama atskaņošanas saraksta. Atver atskaņošanas sarakstu vai albumu un mēģini vēlreiz.",
+  "preset.spotifyContextUnknown": "Neizdevās nolasīt Spotify atskaņošanas sarakstu no skaļruņa. Pārliecinies, ka skaļrunis ir atjaunināts, atver atskaņošanas sarakstu vai albumu un mēģini vēlreiz.",
   "play.errSpotifyPremium": "Spotify atsaukšanai nepieciešams Premium",
   "update.speakerUpdateAvailFor": "Pieejams atjauninājums skaļrunim '{{name}}'",
   "update.versionLine": "uzstādīta: {{installed}} → jauna: {{next}}",
