@@ -26,6 +26,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
@@ -34,14 +35,14 @@ import (
 
 // Server kapselt den Webui HTTP Server.
 type Server struct {
-	addr        string
-	boxHost     string
-	logger      *slog.Logger
-	presets     *presets.Store
+	addr    string
+	boxHost string
+	logger  *slog.Logger
+	presets *presets.Store
 	// zones persists this box's multiroom membership so a zone auto-reforms
 	// after reboot/standby (#70). nil when not wired; zone write endpoints
 	// then still drive the box but do not persist.
-	zones *zones.Store
+	zones       *zones.Store
 	renderer    *upnp.Renderer
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
@@ -151,7 +152,20 @@ type Server struct {
 	// station when the speaker is switched on" (default on; file absent or "1").
 	// Empty falls back to defaultResumeOnPowerOnPath.
 	resumeOnPowerOnPath string
+
+	// recent is the capped, debounced recently-played ring (#135). nil when not
+	// wired (dev builds / Spotify-less boxes still work): the /api/recent
+	// endpoint then serves an empty list and the play handlers skip recording.
+	// recentRadioCard remembers the active radio source card so HandleStreamTitle
+	// can attribute live ICY titles to it without re-deriving it.
+	recent          *recent.Store
+	recentMu        sync.Mutex
+	recentRadioCard recentCardCtx
 }
+
+// recentCardCtx is the current radio source card, retained so the ICY title
+// callback can hang live track titles under it (#135).
+type recentCardCtx struct{ key, name, art, url string }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the
 // re-push state. rePushes counts consecutive resume attempts on THIS stream and
@@ -309,6 +323,12 @@ func WithSpotifySetRecalling(setRecalling func()) Option {
 	return func(s *Server) { s.spotifySetRecalling = setRecalling }
 }
 
+// WithRecent wires the recently-played ring (#135) so the play handlers record
+// the user's listening history and GET /api/recent serves it.
+func WithRecent(r *recent.Store) Option {
+	return func(s *Server) { s.recent = r }
+}
+
 // ensureBoxReady weckt die Box aus dem Standby (mit retry+poll bis
 // wirklich wach) und stellt sicher dass der Marge Account aktiv ist.
 // Wird vor jedem Play Call aufgerufen.
@@ -361,6 +381,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/pause", s.handlePause)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
 	// directly; see the app-first direction). The box no longer serves
 	// /api/radio/* and no longer compiles in the radiobrowser package.
@@ -733,6 +754,13 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setLastPlay(playURL, req.Title, req.Icon, req.Mime)
+	// Recently-played (#135): a network-library file carries a MIME; radio does
+	// not. Record the original URL as the replayable card target, not the proxy.
+	if req.Mime != "" {
+		s.recentNoteCard("upnp", req.URL, req.Title, req.Icon, req.URL, "")
+	} else {
+		s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "")
+	}
 	// radio-browser click-tracking moved app-side (the app fires RadioClick
 	// when it starts playback) so the box no longer needs the radiobrowser pkg.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "playing", "url": req.URL})
@@ -806,6 +834,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
+		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account) // #135
 		uri, name, art, account := p.URI, p.Name, p.Art, p.Account
 		go func() {
 			bg := context.Background()
@@ -853,6 +882,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setLastPlay(playURL, p.Name, p.Art, "")
+	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "") // #135
 	name, art := p.Name, p.Art
 	go s.verifyRecall(func(ctx context.Context, _ bool) {
 		_ = s.renderer.PlayURL(ctx, playURL, name, art)
@@ -911,6 +941,69 @@ func (s *Server) setLastPlay(boxURL, title, art, mime string) {
 // presses too, which otherwise left lastPlay unset and the box un-resumable.
 func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
 	s.setLastPlay(boxURL, title, art, mime)
+}
+
+// --- Recently played (#135) ---
+//
+// These record the user's listening history into the capped, debounced ring.
+// They are deliberately the only box-side work the feature adds: each call is a
+// cheap in-RAM append (Add does no I/O), reusing events the agent already
+// processes (play handlers, the ICY title callback, the hardware-preset gabbo
+// event). All are no-ops when the recent store is not wired.
+
+// recentNoteCard records a user-chosen source (radio station, Spotify playlist,
+// NAS file) as the start of a Recently-played card. For radio it also remembers
+// the card so the ICY title callback can hang live tracks under it.
+func (s *Server) recentNoteCard(source, key, name, art, url, account string) {
+	if s.recent == nil || key == "" {
+		return
+	}
+	s.recent.Add(recent.Entry{Source: source, CardKey: key, CardName: name, CardArt: art, CardURL: url, Account: account})
+	if source == "radio" {
+		s.recentMu.Lock()
+		s.recentRadioCard = recentCardCtx{key: key, name: name, art: art, url: url}
+		s.recentMu.Unlock()
+	}
+}
+
+// recentNoteRadioTrack hangs a live radio track (the ICY StreamTitle) under the
+// current radio card. No-op until a radio card has been recorded.
+func (s *Server) recentNoteRadioTrack(track string) {
+	if s.recent == nil || track == "" {
+		return
+	}
+	s.recentMu.Lock()
+	c := s.recentRadioCard
+	s.recentMu.Unlock()
+	if c.key == "" {
+		return
+	}
+	s.recent.Add(recent.Entry{Source: "radio", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track})
+}
+
+// NoteRecentPreset records a hardware-preset press into Recently-played. The
+// agent's gabbo handler calls it because the hardware recall goes straight to
+// the renderer, bypassing the webui play handlers.
+func (s *Server) NoteRecentPreset(p presets.Preset) {
+	if p.Type == "spotify" {
+		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account)
+		return
+	}
+	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "")
+}
+
+// handleRecent serves this box's recently-played ring (#135), oldest-first. The
+// desktop app reads every box's ring and does the merge + source-card grouping;
+// the box just returns its capped list.
+func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.recent == nil {
+		writeJSON(w, http.StatusOK, []recent.Entry{})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.recent.All())
 }
 
 // ResumeLastPlay re-pushes the last stream STR played: the power-on resume. On
@@ -1233,6 +1326,10 @@ func icyDisplayPushEnabled() bool {
 // surfacing the title only in the app (via /api/stream/title) until the
 // mid-stream re-set is verified on real hardware. Wired from the stream proxy.
 func (s *Server) HandleStreamTitle(title string) {
+	// Recently-played (#135): record the live radio track under the current
+	// source card, regardless of whether the on-box ICY display push is enabled
+	// (this callback fires on every ICY title change either way).
+	s.recentNoteRadioTrack(title)
 	if !icyDisplayPushEnabled() || s.renderer == nil || title == "" {
 		return
 	}

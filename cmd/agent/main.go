@@ -38,6 +38,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/shepherd"
 	"github.com/JRpersonal/streborn/internal/spotify"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -290,6 +291,13 @@ func run() error {
 		logger.Warn("zones config load failed, continuing standalone", "err", zErr)
 	}
 
+	// Recently-played ring (#135), persisted on NAND (debounced; see the recent
+	// package). A load error is non-fatal: start with an empty history.
+	recentStore, rErr := recent.Load("/mnt/nv/streborn/recent.json")
+	if rErr != nil {
+		logger.Warn("recent history load failed, starting empty", "err", rErr)
+	}
+
 	// Hosts Datei manipulieren
 	var hostsMgr *hosts.Manager
 	if *applyHosts {
@@ -358,7 +366,8 @@ func run() error {
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
 		webui.WithWebhooks(webhooksStore),
-		webui.WithZones(zonesStore))
+		webui.WithZones(zonesStore),
+		webui.WithRecent(recentStore))
 
 	// Re-assert a persisted multiroom group (native or mirror) so it survives
 	// reboot/standby/Wi-Fi outage without the user re-grouping (#70 beta).
@@ -395,6 +404,9 @@ func run() error {
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back.
 		noteLastPlay: webuiSrv.NoteLastPlay,
+		// Record hardware-preset presses into Recently-played (#135); the hardware
+		// recall bypasses the webui play handlers that capture app-driven plays.
+		noteRecentPreset: webuiSrv.NoteRecentPreset,
 		// Power-on resume (Bose-style power-on preset, default on): a power press
 		// resumes the last station; ResumeLastPlay is gated by the per-box opt-out
 		// and a zone-membership guard so a stereo-pair self-wake never auto-resumes.
@@ -664,6 +676,12 @@ func run() error {
 
 	wg.Wait()
 
+	// Persist the recently-played tail on a clean shutdown so it survives the
+	// reboot (the in-flight debounce timer may not have fired yet). #135.
+	if err := recentStore.Flush(); err != nil {
+		logger.Warn("recent history flush on shutdown failed", "err", err)
+	}
+
 	mdnsMu.Lock()
 	mdnsAnn := mdnsAnnouncer
 	mdnsMu.Unlock()
@@ -785,6 +803,9 @@ type presetWsHandler struct {
 	// plays straight through the renderer, bypassing the webui's own lastPlay).
 	// Wired to webui.NoteLastPlay. nil-safe.
 	noteLastPlay func(boxURL, title, art, mime string)
+	// noteRecentPreset records a hardware-preset press into the recently-played
+	// ring (#135). Wired to webui.NoteRecentPreset. nil-safe.
+	noteRecentPreset func(presets.Preset)
 	// onPowerWake is invoked when the box leaves standby on a power press: a
 	// powerStateUpdated on firmware that sends it, or the DO_NOT_RESUME selection
 	// restore on firmware that does not (Portable/taigan). Resumes the last
@@ -821,6 +842,11 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	name := title
 	icon := ""
 	if p, ok := h.store.Get(slot); ok {
+		// Recently-played (#135): record the pressed preset (radio or Spotify)
+		// from the authoritative store entry, before the source-specific recall.
+		if h.noteRecentPreset != nil {
+			h.noteRecentPreset(p)
+		}
 		// Spotify presets do not have a playable HTTP StreamURL. They are
 		// recalled by telling go-librespot to play the saved URI and then
 		// pointing the box's UPnP renderer at our live /spotify/stream.
