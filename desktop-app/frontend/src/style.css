@@ -1250,8 +1250,8 @@ body {
 .rc-tracks { border-top: 1px solid #262626; padding: 4px 12px 8px 64px; }
 .rc-track { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; padding: 3px 0; }
 .rc-tr-main { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.rc-tr-title { color: #e8e8e8; }
-.rc-tr-artist { color: #8a8a8a; margin-left: 8px; }
+.rc-tr-lead { color: #e8e8e8; }
+.rc-tr-sub { color: #8a8a8a; margin-left: 8px; }
 .rc-tr-time { color: #888; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .recent-card.rc-now { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 .setup-target-pill { margin-top: 10px; padding: 8px 12px; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; font-size: 13px; }

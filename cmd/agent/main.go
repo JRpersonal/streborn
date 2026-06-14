@@ -427,6 +427,10 @@ func run() error {
 		}
 		cancel()
 	})
+	// Record each Spotify song into the recently-played ring under the active
+	// Spotify card (#135), so its card shows the songs that played, not just the
+	// playlist frame. No-op until a Spotify card has been recorded via a recall.
+	spotifyMgr.SetOnTrack(webuiSrv.NoteRecentSpotifyTrack)
 	wsClient := boxws.New(
 		logger.With("comp", "boxws"),
 		fmt.Sprintf("ws://%s:8080/", *boxHost),

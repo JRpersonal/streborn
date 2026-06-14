@@ -125,17 +125,23 @@ function recentClock(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// formatTrack splits an ICY title into its two parts and shows the first
-// emphasised, the second in dark grey. The StreamTitle does not label which is
-// the artist vs the title and stations disagree on the order, so the parts keep
-// the station's own order (no reliable way to reorder). No separator: shown as-is.
+// formatTrack splits an ICY title into artist + track, shows the artist
+// emphasised (lead) and the track in dark grey (sub). The StreamTitle never
+// labels which part is which, but the separator is a reliable tell across
+// stations: " - " is the Shoutcast de-facto standard "Artist - Title", while
+// " / " is "Title / Artist" (e.g. SWR3, verified live: "Don't let me go /
+// Kelvin Jones"). We normalise both to artist-first so the lead line is always
+// the artist. No separator: shown as-is on the lead line.
 function formatTrack(raw) {
-  const m = (raw || '').match(/^(.*?)\s+[/–—-]\s+(.*)$/);
-  if (m && m[1].trim() && m[2].trim()) {
-    return `<span class="rc-tr-title">${escapeHtml(m[1].trim())}</span>`
-      + `<span class="rc-tr-artist">${escapeHtml(m[2].trim())}</span>`;
+  const m = (raw || '').match(/^(.*?)\s+([/–—-])\s+(.*)$/);
+  if (m && m[1].trim() && m[3].trim()) {
+    const left = m[1].trim(), sep = m[2], right = m[3].trim();
+    const artist = sep === '/' ? right : left;
+    const track = sep === '/' ? left : right;
+    return `<span class="rc-tr-lead">${escapeHtml(artist)}</span>`
+      + `<span class="rc-tr-sub">${escapeHtml(track)}</span>`;
   }
-  return `<span class="rc-tr-title">${escapeHtml((raw || '').trim())}</span>`;
+  return `<span class="rc-tr-lead">${escapeHtml((raw || '').trim())}</span>`;
 }
 
 // logoImg builds the card logo as an <img> with the same data-fallbacks cascade

@@ -118,6 +118,11 @@ type Manager struct {
 	// captured from go-librespot's /events so the desktop app (and later the
 	// box display) can show the live artist/title/cover during Spotify playback.
 	curName, curArtist, curCover string
+	// onTrack fires when the playing Spotify track changes, so the recently-
+	// played ring records each song under the active Spotify card (#135). nil
+	// until wired; lastNotifiedTrack dedups repeated metadata/status updates.
+	onTrack           func(track, artist string)
+	lastNotifiedTrack string
 	// onActivate is invoked when go-librespot starts playing while no box is
 	// attached to the Ogg stream, i.e. the user pressed play in the Spotify app
 	// (selecting this device) but the box is still on another source. The
@@ -1169,7 +1174,31 @@ func (m *Manager) liveNowPlaying(ctx context.Context) (track, artist, cover stri
 	m.mu.Lock()
 	m.curName, m.curArtist, m.curCover = track, artist, cover
 	m.mu.Unlock()
+	m.notifyTrack()
 	return track, artist, cover, true
+}
+
+// SetOnTrack registers the recently-played hook (webui.NoteRecentSpotifyTrack).
+func (m *Manager) SetOnTrack(fn func(track, artist string)) {
+	m.mu.Lock()
+	m.onTrack = fn
+	m.mu.Unlock()
+}
+
+// notifyTrack fires onTrack when the current Spotify track changed since the
+// last notification, so each song is recorded once. Called after every
+// metadata/status update; the dedup on the track name keeps a repeated /status
+// poll from re-recording. The callback runs outside the lock. Cheap (#135).
+func (m *Manager) notifyTrack() {
+	m.mu.Lock()
+	cb, track, artist := m.onTrack, m.curName, m.curArtist
+	if cb == nil || track == "" || track == m.lastNotifiedTrack {
+		m.mu.Unlock()
+		return
+	}
+	m.lastNotifiedTrack = track
+	m.mu.Unlock()
+	cb(track, artist)
 }
 
 // ServeInfo answers GET /spotify/info with the live state the UI needs: whether
@@ -1291,6 +1320,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			m.curArtist = strings.Join(md.ArtistNames, ", ")
 			m.curCover = md.AlbumCoverURL
 			m.mu.Unlock()
+			m.notifyTrack()
 		case "volume":
 			if m.box == nil {
 				continue // no box client: metadata only, no volume mirror

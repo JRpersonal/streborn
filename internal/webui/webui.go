@@ -156,16 +156,19 @@ type Server struct {
 	// recent is the capped, debounced recently-played ring (#135). nil when not
 	// wired (dev builds / Spotify-less boxes still work): the /api/recent
 	// endpoint then serves an empty list and the play handlers skip recording.
-	// recentRadioCard remembers the active radio source card so HandleStreamTitle
-	// can attribute live ICY titles to it without re-deriving it.
-	recent          *recent.Store
-	recentMu        sync.Mutex
-	recentRadioCard recentCardCtx
+	// recentRadioCard / recentSpotifyCard remember the active source card so the
+	// live track callbacks (HandleStreamTitle for radio ICY, NoteRecentSpotifyTrack
+	// for Spotify) can attribute tracks to them without re-deriving the card.
+	recent            *recent.Store
+	recentMu          sync.Mutex
+	recentRadioCard   recentCardCtx
+	recentSpotifyCard recentCardCtx
 }
 
-// recentCardCtx is the current radio source card, retained so the ICY title
-// callback can hang live track titles under it (#135).
-type recentCardCtx struct{ key, name, art, url string }
+// recentCardCtx is the current source card for a source, retained so the live
+// track callbacks (radio ICY title, Spotify track change) can hang their tracks
+// under it (#135).
+type recentCardCtx struct{ key, name, art, url, account string }
 
 // lastPlayInfo is the box-facing URL + metadata of the current stream plus the
 // re-push state. rePushes counts consecutive resume attempts on THIS stream and
@@ -952,18 +955,23 @@ func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
 // event). All are no-ops when the recent store is not wired.
 
 // recentNoteCard records a user-chosen source (radio station, Spotify playlist,
-// NAS file) as the start of a Recently-played card. For radio it also remembers
-// the card so the ICY title callback can hang live tracks under it.
+// NAS file) as the start of a Recently-played card. For radio and Spotify it also
+// remembers the card so the live track callbacks can hang tracks under it.
 func (s *Server) recentNoteCard(source, key, name, art, url, account string) {
 	if s.recent == nil || key == "" {
 		return
 	}
 	s.recent.Add(recent.Entry{Source: source, CardKey: key, CardName: name, CardArt: art, CardURL: url, Account: account})
-	if source == "radio" {
-		s.recentMu.Lock()
+	s.recentMu.Lock()
+	switch source {
+	case "radio":
 		s.recentRadioCard = recentCardCtx{key: key, name: name, art: art, url: url}
-		s.recentMu.Unlock()
+	case "spotify":
+		// A fresh card resets the de-dup so the playlist's first song is recorded
+		// even if its name happens to match the previous card's last track.
+		s.recentSpotifyCard = recentCardCtx{key: key, name: name, art: art, url: url, account: account}
 	}
+	s.recentMu.Unlock()
 }
 
 // recentNoteRadioTrack hangs a live radio track (the ICY StreamTitle) under the
@@ -979,6 +987,29 @@ func (s *Server) recentNoteRadioTrack(track string) {
 		return
 	}
 	s.recent.Add(recent.Entry{Source: "radio", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track})
+}
+
+// NoteRecentSpotifyTrack hangs a live Spotify song under the current Spotify card.
+// Wired to the Spotify manager's onTrack hook. No-op until a Spotify card has been
+// recorded (a track that starts outside an STR recall has no card to attach to).
+func (s *Server) NoteRecentSpotifyTrack(track, artist string) {
+	if s.recent == nil || track == "" {
+		return
+	}
+	s.recentMu.Lock()
+	c := s.recentSpotifyCard
+	s.recentMu.Unlock()
+	if c.key == "" {
+		return
+	}
+	// Store artist-first ("Artist - Title"). The view's formatTrack reads " - " as
+	// the Shoutcast "Artist - Title" order, so this renders the artist on the lead
+	// line exactly like radio, instead of mislabelling the song title as artist.
+	full := track
+	if artist != "" {
+		full = artist + " - " + track
+	}
+	s.recent.Add(recent.Entry{Source: "spotify", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: full, Account: c.account})
 }
 
 // NoteRecentPreset records a hardware-preset press into Recently-played. The
