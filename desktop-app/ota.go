@@ -90,6 +90,22 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 		// atomic rename, so a mid-upload failure never corrupts the live binary.
 		a.logger.Warn("update agent: HTTP OTA failed, falling back to SSH-OTA", "host", host, "err", err)
 		if sshErr := a.updateAgentViaSSH(host, bin); sshErr != nil {
+			// A transport-level HTTP drop (connection forcibly closed / reset /
+			// EOF) is what a SUCCESSFUL self-replacing OTA looks like: the agent
+			// received the binary and restarted, closing the socket before it
+			// could answer 200, and that restart reboots the box, which is why the
+			// SSH fallback then raced the reboot and also failed. The box is on
+			// its way to the new version (the caller polls /api/agent/version to
+			// confirm, and refreshStick wrote the new files to the stick as a
+			// stick->NAND safety net). Reporting a hard failure here produced the
+			// false "Update failed, unplug the speaker" that appeared right before
+			// the reboot that updated the box fine. Only a CLEAN HTTP rejection
+			// (status >= 400, binary refused so it definitely did not apply) plus
+			// an SSH failure is a real, report-worthy failure.
+			if isConnDropErr(err) {
+				a.logger.Info("update agent: HTTP connection dropped (agent restarting) and SSH raced the reboot; deferring to the post-OTA version poll", "host", host, "httpErr", err, "sshErr", sshErr)
+				return nil
+			}
 			return fmt.Errorf("HTTP OTA failed (%v) and the SSH fallback also failed: %w", err, sshErr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
@@ -238,6 +254,21 @@ func blockDeviceBase(device string) string {
 	}
 	// Strip a trailing partition number (sda1 -> sda). USB sticks are sd*.
 	return strings.TrimRight(d, "0123456789")
+}
+
+// isConnDropErr reports whether an HTTP OTA error is a transport-level
+// connection drop (the agent restarting after it accepted the binary, or a BCO
+// :17008 redirect closing mid-stream) rather than a clean HTTP rejection.
+// updateAgentViaHTTP returns a "status N: ..." error only for a real >= 400
+// response (binary received and refused, so it definitely did not apply);
+// anything else came from client.Do and is a drop. On a drop the OTA may well
+// have landed, so the outcome is decided by the post-OTA version poll, not by
+// surfacing a hard failure.
+func isConnDropErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return !strings.Contains(err.Error(), "status ")
 }
 
 // updateAgentPreflight checks that /api/agent/version on host:port really
