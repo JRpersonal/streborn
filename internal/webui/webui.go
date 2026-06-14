@@ -889,7 +889,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setLastPlay(playURL, p.Name, p.Art, "")
-	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "") // #135
+	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage) // #135
 	name, art := p.Name, p.Art
 	go s.verifyRecall(func(ctx context.Context, _ bool) {
 		_ = s.renderer.PlayURL(ctx, playURL, name, art)
@@ -1024,7 +1024,7 @@ func (s *Server) NoteRecentPreset(p presets.Preset) {
 		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "")
 		return
 	}
-	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "")
+	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage)
 }
 
 // handleRecent serves this box's recently-played ring (#135), oldest-first. The

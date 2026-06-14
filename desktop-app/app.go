@@ -1220,6 +1220,7 @@ type Preset struct {
 	URI       string `json:"uri,omitempty"`     // Spotify presets: playlist/album URI
 	Account   string `json:"account,omitempty"` // Spotify presets: owning account
 	Source    string `json:"source,omitempty"`  // DLNA presets: media server name (cosmetic badge)
+	Homepage  string `json:"homepage,omitempty"` // radio presets: station website (recent "website" link)
 }
 
 func (a *App) baseURL(host string, port int) string {
@@ -1540,9 +1541,9 @@ func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 // wird beim Play als upnp:albumArtURI an die Box geschickt. Routed through
 // boxPut so a preset save gets the same :8888<->:17008 port fallback as the
 // other box commands.
-func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int) error {
+func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, homepage string) error {
 	return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
-		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate})
+		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Homepage: homepage})
 }
 
 // SaveLibraryPreset stores a preset saved from a DLNA media server (the Library

@@ -47,6 +47,10 @@ type Preset struct {
 	// badge on the preset. Optional/additive: radio and Spotify presets leave it
 	// empty.
 	Source string `json:"source,omitempty"`
+	// Homepage is the radio station website, kept so a preset recall can offer
+	// the same "website" link as the radio search rows in Recently-played (#135).
+	// Optional/additive: presets saved before this, or non-radio, leave it empty.
+	Homepage string `json:"homepage,omitempty"`
 }
 
 // rawPreset ist der Disk Format Helper. Akzeptiert mehrere Alias Felder.
@@ -62,6 +66,7 @@ type rawPreset struct {
 	URI       string `json:"uri"`
 	Account   string `json:"account"`
 	Source    string `json:"source"`
+	Homepage  string `json:"homepage"`
 }
 
 // rawWrapper unterstuetzt das Object Format {"presets": [...]}.
@@ -139,6 +144,7 @@ func normalize(in []rawPreset) []Preset {
 			URI:       p.URI,
 			Account:   p.Account,
 			Source:    p.Source,
+			Homepage:  p.Homepage,
 		})
 	}
 	return out

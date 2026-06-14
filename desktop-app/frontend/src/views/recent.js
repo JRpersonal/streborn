@@ -54,7 +54,7 @@ function cardStation(c) {
     url_resolved: c.url || '',
     favicon: art[0] || '',
     bitrate: 0,
-    homepage: '',
+    homepage: c.homepage || '',
     tags: '',
     country: '',
     countrycode: '',
@@ -110,7 +110,9 @@ async function loadRecentCards() {
     : (state.currentBox ? [state.currentBox] : []);
   const results = await Promise.all(boxes.map(async (b) => {
     const boxKey = b.deviceID || (b.host + ':' + b.port);
-    const boxName = b.name || b.friendlyName || b.host;
+    // friendlyName first: the backend always fills Name with a "str-<IP>" fallback,
+    // so b.name is never empty. This matches the box switcher and the rest of the app.
+    const boxName = b.friendlyName || b.name || b.host;
     let list = [];
     try { list = await RecentPlayed(b.host, b.port) || []; } catch { list = []; }
     // Map Spotify playlist URI -> preset slot on this box. A match means the box

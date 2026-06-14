@@ -250,6 +250,7 @@ export namespace main {
 	    uri?: string;
 	    account?: string;
 	    source?: string;
+	    homepage?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -266,6 +267,7 @@ export namespace main {
 	        this.uri = source["uri"];
 	        this.account = source["account"];
 	        this.source = source["source"];
+	        this.homepage = source["homepage"];
 	    }
 	}
 	export class RadioSearchOpts {

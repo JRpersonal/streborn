@@ -2304,7 +2304,7 @@ async function healPresetLogos() {
         // onto a Spotify preset or its URI is lost.
         if (p.type === 'spotify') return;
         p.art = logo;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, logo, p.bitrate || 0).catch(() => {});
+        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, logo, p.bitrate || 0, p.homepage || '').catch(() => {});
       } catch {}
     }));
   } finally {
@@ -2441,7 +2441,7 @@ function renderPresets() {
         addCands(state.nowIcon);
         // Auto-persist so the preset has its logo on the next load.
         p.art = state.nowIcon;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon, p.bitrate || 0).catch(() => {});
+        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon, p.bitrate || 0, p.homepage || '').catch(() => {});
       }
       const streamHost = extractHost(p.stream_url);
       const hostsToTry = [];
@@ -2473,7 +2473,7 @@ function renderPresets() {
         // SetPreset is radio-only and would overwrite the Spotify URI.
         if ((p.bitrate || 0) !== state.nowBitrate && p.type !== 'spotify') {
           p.bitrate = state.nowBitrate;
-          SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, p.art || '', state.nowBitrate).catch(() => {});
+          SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, p.art || '', state.nowBitrate, p.homepage || '').catch(() => {});
         }
       }
       div.innerHTML = `
@@ -2669,7 +2669,7 @@ async function saveCurrentToSlot(slot) {
       try {
         await SetPreset(
           state.currentBox.host, state.currentBox.port,
-          slot, src.name, src.stream_url, src.art || '', src.bitrate || 0
+          slot, src.name, src.stream_url, src.art || '', src.bitrate || 0, src.homepage || ''
         );
         showToast(t('preset.copiedToKey', { n: slot, name: src.name }));
         await loadPresets();
@@ -2688,7 +2688,7 @@ async function saveCurrentToSlot(slot) {
   try {
     await SetPreset(
       state.currentBox.host, state.currentBox.port,
-      slot, name, decodeProxyUrl(state.nowLocation), state.nowIcon || '', state.nowBitrate || 0
+      slot, name, decodeProxyUrl(state.nowLocation), state.nowIcon || '', state.nowBitrate || 0, ''
     );
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
@@ -2843,7 +2843,7 @@ function scheduleLiveBitrate() {
           // uri), so persisting a Spotify preset would wipe its URI. The
           // Spotify rate stays live via state.nowBitrate + /spotify/info.
           if (!isSpotify) {
-            SetPreset(box.host, box.port, p.slot, p.name, p.stream_url, p.art || '', br).catch(() => {});
+            SetPreset(box.host, box.port, p.slot, p.name, p.stream_url, p.art || '', br, p.homepage || '').catch(() => {});
           }
         }
         renderPresets();
@@ -3690,7 +3690,7 @@ function openPick(station) {
     subtitle: station.name + (station.bitrate ? ' (' + station.bitrate + ' kbit/s)' : ''),
     onPick: async (i) => {
       const logo = stationLogoChain(station);
-      await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0);
+      await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0, station.homepage || '');
       if (station.stationuuid) {
         VoteStation(state.currentBox.host, state.currentBox.port, station.stationuuid).catch(() => {});
       }

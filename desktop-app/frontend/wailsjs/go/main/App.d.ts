@@ -129,7 +129,7 @@ export function SetBoxVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number,arg5:boolean):Promise<void>;
 
-export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number):Promise<void>;
+export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string):Promise<void>;
 
 export function SetResumeOnPowerOn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
