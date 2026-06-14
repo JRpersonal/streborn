@@ -1198,12 +1198,15 @@ function applyBoxList(list) {
                    || fresh.friendlyName !== state.currentBox.friendlyName;
       state.currentBox = fresh;
       if (changed) {
-        state.presets = [];
+        // Same speaker (matched by deviceID), just a changed field: IP/port after
+        // a reconnect, version after an OTA, or a rename. Its presets are
+        // identical, so do NOT blank state.presets / the grid here, which flashed
+        // the grid empty on a routine re-discovery. loadPresets refreshes them in
+        // place (and now keeps them on a transient empty read).
         state.searchResults = [];
         state.nowLocation = '';
         state.nowPlayState = '';
         state.presetErrors = {};
-        $('presets').innerHTML = '';
         $('searchResults').innerHTML = '';
         loadPresets();
         refreshStatus();
@@ -1995,7 +1998,21 @@ async function loadPresets(retry = 0) {
     $('presets').innerHTML = `<div class="muted small grid-loading">${escapeHtml(t('preset.loading'))}</div>`;
   }
   try {
-    state.presets = await GetPresets(state.currentBox.host, state.currentBox.port) || [];
+    const fresh = await GetPresets(state.currentBox.host, state.currentBox.port) || [];
+    // Guard against a transient empty result. The box can briefly return zero
+    // presets while it is busy (switching source for a play) or its store is
+    // reloading, even though presets.json is intact. Overwriting with [] made all
+    // presets "vanish" from the grid after playing a radio, then reappear on the
+    // next save (a display-only loss; the box never lost them). If we suddenly
+    // read empty but currently have presets, retry once before trusting it and
+    // keep the current presets meanwhile, so the grid never flashes empty. A
+    // genuinely empty box (or an empty result that persists past the retry) is
+    // still taken at face value.
+    if (fresh.length === 0 && state.presets.length > 0 && retry < 1) {
+      setTimeout(() => loadPresets(retry + 1), 1500);
+      return;
+    }
+    state.presets = fresh;
     renderPresets();
     healPresetLogos();
   } catch {
