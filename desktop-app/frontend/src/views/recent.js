@@ -239,9 +239,14 @@ function recentCardHTML(c, i) {
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
   const nowPlaying = cardIsPlaying(c);
+  // "Now playing" badge, reusing the preset tile's own state label so the wording
+  // matches the preset card exactly (and is already translated in every bundle).
+  const nowBadge = nowPlaying
+    ? ` <span class="rc-now-badge">&#9654; ${escapeHtml(t('preset.statePlay'))}</span>`
+    : '';
   return `<div class="recent-card rc-${escapeAttr(c.source)}${nowPlaying ? ' rc-now' : ''}">`
     + `<div class="rc-head">${logoImg(c)}`
-    + `<div class="rc-meta"><div class="rc-name">${escapeHtml(c.name || recentSourceLabel(c.source))}</div>`
+    + `<div class="rc-meta"><div class="rc-name">${escapeHtml(c.name || recentSourceLabel(c.source))}${nowBadge}</div>`
     + `<div class="rc-sub">${sub}</div></div>`
     + `<div class="rc-actions">${actions}</div></div>${tracks}</div>`;
 }
@@ -300,11 +305,37 @@ function saveSpotifyCard(c) {
   });
 }
 
+// recentTimer drives the auto-refresh while the Recently-played tab is open, so
+// a freshly played station/song shows up (and the green "now playing" mark
+// follows the speaker) without the user re-opening the tab. Cleared on
+// navigate-away and on re-entry so timers never stack.
+let recentTimer = null;
+function stopRecentAutoRefresh() {
+  if (recentTimer) { clearInterval(recentTimer); recentTimer = null; }
+}
+
+// refreshRecentList re-fetches and repaints only the card list (not the header /
+// scope chips), so the auto-refresh does not disturb the controls. /api/recent
+// is a cheap in-RAM read on the box; this only runs while the tab is visible.
+async function refreshRecentList() {
+  if (state.view !== 'recent') { stopRecentAutoRefresh(); return; }
+  const cards = await loadRecentCards();
+  const listEl = $('recentList');
+  if (!listEl || state.view !== 'recent') { stopRecentAutoRefresh(); return; } // navigated away mid-fetch
+  if (!cards.length) {
+    listEl.innerHTML = `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
+    return;
+  }
+  listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i)).join('');
+  cards.forEach((c, i) => wireCard(c, i));
+}
+
 // renderRecent paints the view into #view-recent. Called from main.js's
 // switchView when the Recently-played tab is opened.
 export async function renderRecent() {
   const root = $('view-recent');
   if (!root) return;
+  stopRecentAutoRefresh(); // re-entry / scope toggle: never stack timers
   const multi = recentStrBoxes().length > 1;
   const showAll = multi && !!state.recentAllBoxes;
   let html = `<div class="recent-head"><h2 class="recent-title">${escapeHtml(t('recent.title'))}</h2>`;
@@ -322,13 +353,11 @@ export async function renderRecent() {
   if (tb) tb.onclick = () => { state.recentAllBoxes = false; renderRecent(); };
   if (ab) ab.onclick = () => { state.recentAllBoxes = true; renderRecent(); };
 
-  const cards = await loadRecentCards();
-  const listEl = $('recentList');
-  if (!listEl || state.view !== 'recent') return; // navigated away mid-fetch
-  if (!cards.length) {
-    listEl.innerHTML = `<div class="recent-empty">${escapeHtml(t('recent.empty'))}</div>`;
-    return;
-  }
-  listEl.innerHTML = cards.map((c, i) => recentCardHTML(c, i)).join('');
-  cards.forEach((c, i) => wireCard(c, i));
+  await refreshRecentList();
+  // Auto-refresh every 30s while the tab stays open. The interval self-cancels
+  // once the user leaves the Recently-played view.
+  recentTimer = setInterval(() => {
+    if (state.view !== 'recent') { stopRecentAutoRefresh(); return; }
+    refreshRecentList();
+  }, 30000);
 }
