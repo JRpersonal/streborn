@@ -10,7 +10,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,10 +22,13 @@ import (
 )
 
 // BoxAgentVersion fragt die Stick Agent Version der Box ab.
-// Returns {version, build}.
+// Returns {version, build}. Uses boxDo so it tries BOTH agent ports (:8888 and
+// the :17008 redirect) with the self-healing cache, instead of forcing one port.
+// This matters on rhino ST10s where the Bose firewall blocks :8888: the version
+// probe (and the box-update banner) would otherwise read the box as unreachable
+// even when its agent answers on the alternate port.
 func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) {
-	url := a.baseURL(host, port) + "/api/agent/version"
-	resp, err := a.httpClient.Get(url)
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/agent/version", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -246,13 +248,13 @@ func blockDeviceBase(device string) string {
 // service on a Series-I box without an active shim, where the 1.5 KB
 // POST buffer guarantees failure.
 func (a *App) updateAgentPreflight(host string, port int) error {
-	url := a.baseURL(host, port) + "/api/agent/version"
-	ctx, cancel := context.WithTimeout(a.appCtx(), 5*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	resp, err := a.httpClient.Do(req)
+	// boxDo tries both agent ports (:8888 and the :17008 redirect) and caches the
+	// one that answers, so the subsequent updateAgentViaHTTP POST (which builds its
+	// URL via baseURL -> cachedPort) targets that same working port. Forcing :8888
+	// here would wrongly reject a box that only answers on the alternate port.
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/agent/version", "", "")
 	if err != nil {
-		return fmt.Errorf("GET %s: %w", url, err)
+		return fmt.Errorf("GET /api/agent/version on %s: %w", host, err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -261,12 +263,12 @@ func (a *App) updateAgentPreflight(host string, port int) error {
 		snip = snip[:200] + "..."
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status %d at %s — body=%q", resp.StatusCode, url, snip)
+		return fmt.Errorf("status %d on %s — body=%q", resp.StatusCode, host, snip)
 	}
 	var probe map[string]any
 	if jerr := json.Unmarshal(body, &probe); jerr != nil || probe["version"] == nil {
-		return fmt.Errorf("listener at :%d is not STR (ct=%q body=%q) — likely Bose SoftwareUpdate, agent OTA via HTTP would hit the 1.5 KB POST buffer",
-			port, resp.Header.Get("Content-Type"), snip)
+		return fmt.Errorf("listener on %s is not STR (ct=%q body=%q) — likely Bose SoftwareUpdate, agent OTA via HTTP would hit the 1.5 KB POST buffer",
+			host, resp.Header.Get("Content-Type"), snip)
 	}
 	return nil
 }
