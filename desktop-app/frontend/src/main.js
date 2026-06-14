@@ -2081,6 +2081,16 @@ function renderPresets() {
   const grid = $('presets');
   grid.innerHTML = '';
   const activeSlot = activeSlotFromLocation(state.nowLocation);
+  // Remember the active Spotify slot from the per-slot /spotify/stream-<slot>.ogg
+  // URL. A hardware next/prev advances go-librespot but can drop the slot from
+  // the box's now-playing location, leaving only the generic "Spotify" name. We
+  // keep the last known slot so the right tile stays lit. We must NOT fall back
+  // to matching the preset NAME: a preset literally named "Spotify" (the generic
+  // source name) would otherwise falsely light up, e.g. preset 1 lit up instead
+  // of the playing preset 6 after pressing next on the remote.
+  const spotifyPlaying = !!state.nowLocation && /\/spotify\/stream/.test(state.nowLocation);
+  if (!spotifyPlaying) state.nowSpotifySlot = null;
+  else if (activeSlot !== null) state.nowSpotifySlot = activeSlot;
   // If the speaker is playing through the stream proxy, resolve the
   // real stream URL of the source slot. That lets us mark sibling
   // slots with the same station as active too. Otherwise only the
@@ -2096,11 +2106,10 @@ function renderPresets() {
       p.stream_url === state.nowLocation ||
       (activeSlot !== null && p.slot === activeSlot) ||
       (activeStreamURL && p.stream_url === activeStreamURL) ||
-      // Spotify presets stream through /spotify/stream.ogg, which carries no
-      // slot number, so the slot match above never fires. The preset name is
-      // pushed as the now-playing title, so match on that to light up the
-      // right Spotify tile.
-      (p.type === 'spotify' && /\/spotify\/stream/.test(state.nowLocation) && p.name === state.nowName)
+      // Spotify: light the slot we recalled (remembered from the per-slot URL),
+      // which survives a next/prev that drops the slot from the now-playing
+      // location. Never match on the preset name (see nowSpotifySlot note above).
+      (p.type === 'spotify' && spotifyPlaying && state.nowSpotifySlot != null && p.slot === state.nowSpotifySlot)
     );
     const hasErr = !!state.presetErrors[i];
     const div = document.createElement('div');
