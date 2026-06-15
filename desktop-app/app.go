@@ -2118,6 +2118,40 @@ func (a *App) SetResumeOnPowerOn(host string, port int, enabled bool) error {
 	return nil
 }
 
+// GetDisplayTrack reads the per-box "show the live radio track on the speaker
+// display" opt-in (default off). Returns {supported, enabled}.
+func (a *App) GetDisplayTrack(host string, port int) (map[string]bool, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/display-track", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out map[string]bool
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SetDisplayTrack toggles the per-box "show the live radio track on the speaker
+// display" opt-in. Enabling it makes the box re-buffer on each track change.
+func (a *App) SetDisplayTrack(host string, port int, enabled bool) error {
+	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/display-track", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 // --- Persistent app flags ---
 //
 // A few one-way app-level flags (e.g. "the user has already been invited to the

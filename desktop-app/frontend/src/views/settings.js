@@ -43,6 +43,8 @@ import {
   SetClockDisplay,
   GetResumeOnPowerOn,
   SetResumeOnPowerOn,
+  GetDisplayTrack,
+  SetDisplayTrack,
   GetAirplayOpt,
   SetAirplayOpt,
   GetWebhooks,
@@ -528,6 +530,15 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="resumeOnPowerOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.resumeOnPowerHelp'))}</small>
+    </div>
+
+    <div class="settings-section" id="displayTrackSection">
+      <h3>${escapeHtml(t('settingsView.displayTrackHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="displayTrackOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="displayTrackOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
@@ -1119,6 +1130,33 @@ function renderBoxSettings(s, box) {
     };
     ropOn.onclick = () => setROP(true);
     ropOff.onclick = () => setROP(false);
+  }
+
+  // Show the live radio track on the speaker display (opt-in, default off).
+  // Enabling it makes the box re-buffer briefly on each track change, so the
+  // help text says so and the default stays off.
+  const dtOn = $('displayTrackOn');
+  const dtOff = $('displayTrackOff');
+  const paintDisplayTrack = (enabled) => {
+    if (dtOn) dtOn.classList.toggle('active', enabled === true);
+    if (dtOff) dtOff.classList.toggle('active', enabled === false);
+  };
+  if (dtOn && dtOff) {
+    (async () => {
+      try {
+        const r = await GetDisplayTrack(box.host, box.port);
+        paintDisplayTrack(r && r.enabled === true);
+      } catch { paintDisplayTrack(false); }
+    })();
+    const setDT = async (enabled) => {
+      paintDisplayTrack(enabled);
+      try {
+        await SetDisplayTrack(box.host, box.port, enabled);
+        showToast(t('settingsView.displayTrackSavedToast'));
+      } catch (e) { showError(e); }
+    };
+    dtOn.onclick = () => setDT(true);
+    dtOff.onclick = () => setDT(false);
   }
 
   // AirPlay optimization (BCO speakers only). GET reports supported +

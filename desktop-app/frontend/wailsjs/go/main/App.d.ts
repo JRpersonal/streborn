@@ -55,6 +55,8 @@ export function GetClockDisplay(arg1:string):Promise<string>;
 
 export function GetClockFormat24(arg1:string):Promise<boolean>;
 
+export function GetDisplayTrack(arg1:string,arg2:number):Promise<Record<string, boolean>>;
+
 export function GetLogFilePath():Promise<string>;
 
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
@@ -134,6 +136,8 @@ export function SetBoxName(arg1:string,arg2:number,arg3:string):Promise<void>;
 export function SetBoxVolume(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number,arg5:boolean):Promise<void>;
+
+export function SetDisplayTrack(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string):Promise<void>;
 

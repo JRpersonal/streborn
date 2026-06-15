@@ -158,6 +158,18 @@ type Server struct {
 	// Empty falls back to defaultResumeOnPowerOnPath.
 	resumeOnPowerOnPath string
 
+	// displayTrackPath persists the per-box opt-IN for "show the live radio track
+	// on the speaker's display" (default OFF; file absent or "0"). Pushing the ICY
+	// title to the box re-issues SetAVTransportURI, which makes the box re-buffer
+	// (a brief audio gap on each track change, verified on a Portable), so it is
+	// off unless the user turns it on. Empty falls back to defaultDisplayTrackPath.
+	displayTrackPath string
+
+	// lastDisplayPush debounces the ICY display push so a station that flips its
+	// StreamTitle between the song and promo/talk lines does not cause a re-buffer
+	// gap every few seconds. Guarded by lastPlayMu.
+	lastDisplayPush time.Time
+
 	// recent is the capped, debounced recently-played ring (#135). nil when not
 	// wired (dev builds / Spotify-less boxes still work): the /api/recent
 	// endpoint then serves an empty list and the play handlers skip recording.
@@ -259,6 +271,13 @@ func WithRegionFile(path string) Option {
 // path (defaultResumeOnPowerOnPath) is used.
 func WithResumeOnPowerOnFile(path string) Option {
 	return func(s *Server) { s.resumeOnPowerOnPath = path }
+}
+
+// WithDisplayTrackFile sets the persistent path for the per-box "show the live
+// radio track on the speaker display" opt-in. Empty uses the default path
+// (defaultDisplayTrackPath).
+func WithDisplayTrackFile(path string) Option {
+	return func(s *Server) { s.displayTrackPath = path }
 }
 
 // WithStreamProxy haengt den Stream Proxy ein. Wenn gesetzt wird der
@@ -414,6 +433,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
+	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
@@ -1382,6 +1402,41 @@ func (s *Server) ResumeLastPlay() {
 // resume opt-out. Absent or "1" means on (the default), "0" means off.
 const defaultResumeOnPowerOnPath = "/mnt/nv/streborn/resume-on-power-on"
 
+// defaultDisplayTrackPath is the NAND flag file for the per-box "show the live
+// radio track on the speaker display" opt-in. Absent or "0" means off (the
+// default); "1" means on.
+const defaultDisplayTrackPath = "/mnt/nv/streborn/display-track-on-box"
+
+// minDisplayPushInterval is the shortest gap between two ICY display pushes. Each
+// push re-buffers the box (a brief audio gap), and some stations flip the
+// StreamTitle between the song and promo/talk lines every few seconds, so the
+// push is rate-limited to keep those gaps occasional rather than constant.
+const minDisplayPushInterval = 12 * time.Second
+
+// displayTrackEnabled reports whether "show the live radio track on the speaker
+// display" is enabled for this box. Default OFF: the flag file is absent on a
+// fresh install and only an explicit "1"/"true"/"on"/"yes" turns it on. The env
+// override STR_ICY_DISPLAY=1 still forces it on for dev/testing.
+func (s *Server) displayTrackEnabled() bool {
+	if icyDisplayPushEnabled() {
+		return true
+	}
+	path := s.displayTrackPath
+	if path == "" {
+		path = defaultDisplayTrackPath
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(string(b))) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
 // boxInZone reports whether the speaker is currently part of a multiroom zone or
 // stereo pair, read live from the box (/getZone). It is the power-on resume's
 // self-wake guard: a standalone box can only leave standby by a user power press
@@ -1596,7 +1651,7 @@ func (s *Server) HandleStreamTitle(title string) {
 	// source card, regardless of whether the on-box ICY display push is enabled
 	// (this callback fires on every ICY title change either way).
 	s.recentNoteRadioTrack(title)
-	if !icyDisplayPushEnabled() || s.renderer == nil || title == "" {
+	if !s.displayTrackEnabled() || s.renderer == nil || title == "" {
 		return
 	}
 	s.lastPlayMu.Lock()
@@ -1605,7 +1660,14 @@ func (s *Server) HandleStreamTitle(title string) {
 		s.lastPlayMu.Unlock()
 		return
 	}
+	// Rate-limit: re-buffering the box on every StreamTitle flip (song <-> promo)
+	// would gap the audio constantly. Skip if we pushed within the last window.
+	if !s.lastDisplayPush.IsZero() && time.Since(s.lastDisplayPush) < minDisplayPushInterval {
+		s.lastPlayMu.Unlock()
+		return
+	}
 	boxURL, art, mime := lp.boxURL, lp.art, lp.mime
+	s.lastDisplayPush = time.Now()
 	s.lastPlayMu.Unlock()
 	if boxURL == "" {
 		return
@@ -2901,6 +2963,53 @@ func (s *Server) handleResumeOnPowerOn(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = exec.Command("sync").Run()
 		s.logger.Info("resume-on-power-on set", "enabled", body.Enabled)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleDisplayTrack reads or sets the per-box "show the live radio track on the
+// speaker's display" opt-in (default OFF). Stored as a plain NAND flag file
+// ("1"/"0"). GET returns {supported, enabled}; POST {enabled} persists it.
+// Enabling it makes STR re-push the now-playing metadata on each ICY title
+// change, which briefly re-buffers the box, so it is the user's explicit choice.
+func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]any{"supported": true, "enabled": s.displayTrackEnabled()})
+	case http.MethodPost:
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		path := s.displayTrackPath
+		if path == "" {
+			path = defaultDisplayTrackPath
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		val := "0"
+		if body.Enabled {
+			val = "1"
+		}
+		tmp := path + ".str-new"
+		if err := os.WriteFile(tmp, []byte(val+"\n"), 0o644); err != nil {
+			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = exec.Command("sync").Run()
+		s.logger.Info("display-track set", "enabled", body.Enabled)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
