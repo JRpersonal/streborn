@@ -819,7 +819,10 @@ function renderBoxSettings(s, box) {
       // The stick-in confirmation now lives inside doBoxUpdate (the single
       // OTA chokepoint), so both this button and the music-tab banner are
       // gated identically and Cancel always aborts before anything starts.
-      ub.onclick = deps.doBoxUpdate;
+      // Pass the settings-selected box explicitly: every other handler here
+      // targets settingsBox, and doBoxUpdate defaulting to currentBox was
+      // OTA-ing the music-tab box instead of the one shown here (#105).
+      ub.onclick = () => deps.doBoxUpdate(box);
     }
     const sb = $('securityRebootBtn');
     if (sb) sb.onclick = async () => {

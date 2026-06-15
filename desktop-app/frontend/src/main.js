@@ -1188,6 +1188,16 @@ async function discoverBoxes() {
 // identically (current-box re-bind, speaker select, badges, setup picker).
 function applyBoxList(list) {
   state.boxes = applyPendingNames(list || []);
+  // Stable display order. mDNS returns boxes in a nondeterministic order that
+  // varies between discovery cycles, so the speaker list visibly reshuffled
+  // whenever discovery re-ran, most noticeably mid-OTA when the updating box
+  // drops off and reappears (#105). Sort by name (then host, then deviceID) so
+  // the order stays put across refreshes.
+  state.boxes.sort((a, b) =>
+    (a.friendlyName || a.name || a.host || '').toLowerCase()
+      .localeCompare((b.friendlyName || b.name || b.host || '').toLowerCase())
+    || (a.host || '').localeCompare(b.host || '')
+    || (a.deviceID || '').localeCompare(b.deviceID || ''));
   saveCachedBoxes(state.boxes);
   if (state.currentBox && state.currentBox.deviceID) {
     const fresh = state.boxes.find(b => b.deviceID === state.currentBox.deviceID);
@@ -1798,8 +1808,14 @@ async function checkBoxUpdate() {
   }
 }
 
-async function doBoxUpdate() {
-  if (!state.currentBox) return;
+async function doBoxUpdate(targetBox) {
+  // The box to update is passed explicitly by the caller (Speaker Settings
+  // passes state.settingsBox). Fall back to the music-tab box only when a
+  // caller omits it. Earlier this always used state.currentBox, so updating a
+  // speaker picked in Speaker Settings actually OTA'd whatever box the music tab
+  // was on, re-flashing the wrong (already-updated) speaker every time (#105).
+  targetBox = targetBox || state.currentBox;
+  if (!targetBox) return;
   // Hard-lock: while an OTA is in flight on ANY box, refuse to start
   // a second one. The UI also renders the button disabled in that
   // case via checkBoxUpdate(), but the redundant check here guards
@@ -1815,7 +1831,7 @@ async function doBoxUpdate() {
   // sat on the stick-info button, so the banner button started the OTA
   // (and the reboot) with no confirmation.
   try {
-    const r = await boxFetch(state.currentBox, '/api/stick/status');
+    const r = await boxFetch(targetBox, '/api/stick/status');
     if (r.ok) {
       const data = await r.json();
       if (data && data.mounted) {
@@ -1831,7 +1847,7 @@ async function doBoxUpdate() {
   // router closer before committing. Ethernet/coprocessor boxes report no
   // signal class and are never blocked; an unknown reading never blocks.
   try {
-    const s = await BoxSettings(state.currentBox.host, state.currentBox.port);
+    const s = await BoxSettings(targetBox.host, targetBox.port);
     const ifs = (s && s.network && s.network.interfaces) || [];
     const conn = ifs.find(i =>
       (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') ||
@@ -1864,8 +1880,8 @@ async function doBoxUpdate() {
   // flag BEFORE first setStatus() so checkBoxUpdate() and the
   // setStatus guard both see a consistent (target, in-flight)
   // pair at every point in this flow. Reset together in finally{}.
-  state.otaTargetHost = state.currentBox.host;
-  state.otaTargetName = state.currentBox.friendlyName || state.currentBox.name || state.currentBox.host;
+  state.otaTargetHost = targetBox.host;
+  state.otaTargetName = targetBox.friendlyName || targetBox.name || targetBox.host;
   // Suppress the SSH "remove stick and reboot" banner for the whole
   // OTA window. The agent restarts mid-OTA and SSH is briefly open
   // during that restart; the banner's "Reboot now" button would
@@ -1873,7 +1889,6 @@ async function doBoxUpdate() {
   state.otaInProgress = true;
   setStatus(t('update.uploading'));
   checkSshBanner();
-  const targetBox = state.currentBox;
   const appBuild  = state.appInfo && state.appInfo.build;
   try {
     await UpdateBoxAgent(targetBox.host, targetBox.port);
