@@ -319,18 +319,48 @@ func (a *App) applyLinux(tgz string) error {
 	return nil
 }
 
-// relaunchAndQuit starts the (replaced) binary detached and quits this instance
-// after a short delay so the new process is up before the old one exits.
+// relaunchAndQuit launches the replaced binary AFTER this process has fully
+// exited, then quits. The app holds a SingleInstanceLock (see main.go), so a new
+// instance started while this one is still alive detects the old one and exits
+// immediately, then the old one quits and nothing is left running (the "it closed
+// but did not reopen" bug). The fix: spawn a small detached helper that waits for
+// THIS pid to disappear (the lock is released on exit), then starts the new
+// binary. The helper is orphaned by our quit but keeps running (Windows does not
+// cascade-kill children; on Linux it reparents to init).
 func (a *App) relaunchAndQuit(exe string) {
-	cmd := exec.Command(exe)
+	pid := os.Getpid()
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		// PowerShell ships on every supported Windows; Wait-Process blocks until
+		// our pid is gone (lock freed), then Start-Process launches detached.
+		ps := fmt.Sprintf("try { Wait-Process -Id %d -Timeout 30 } catch {}; Start-Sleep -Milliseconds 500; Start-Process -FilePath '%s'",
+			pid, strings.ReplaceAll(exe, "'", "''"))
+		cmd = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps)
+	default:
+		// Poll until our pid is gone, then exec the new binary (replaces the sh).
+		sh := fmt.Sprintf("while kill -0 %d 2>/dev/null; do sleep 0.2; done; sleep 0.4; exec %s",
+			pid, shSingleQuote(exe))
+		cmd = exec.Command("sh", "-c", sh)
+	}
 	cmd.Dir = filepath.Dir(exe)
 	if err := cmd.Start(); err != nil {
-		a.logger.Warn("relaunch after update failed; please start the app manually", "err", err)
+		a.logger.Warn("relaunch helper failed to start; please start the app manually", "err", err)
+		return
 	}
+	a.logger.Info("update applied; relaunch helper armed, quitting so it can start the new version", "pid", pid)
+	// Small grace so the helper is definitely running, then quit to release the
+	// single-instance lock; the helper does the rest once we are gone.
 	go func() {
-		time.Sleep(800 * time.Millisecond)
+		time.Sleep(400 * time.Millisecond)
 		wailsrt.Quit(a.appCtx())
 	}()
+}
+
+// shSingleQuote wraps s in POSIX single quotes for safe interpolation into the
+// sh -c relaunch command, escaping any embedded single quote.
+func shSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // RevealUpdateFile opens the OS file manager / mounts the .dmg at the downloaded
