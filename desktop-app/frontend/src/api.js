@@ -71,6 +71,8 @@ export {
   SaveSpotifyPreset,
   SaveLibraryPreset,
   RecentPlayed,
+  ClearRecent,
+  DeleteRecentCard,
   SaveDiagnosticBundle,
   GetLogFilePath,
   InstallSTROnBox,

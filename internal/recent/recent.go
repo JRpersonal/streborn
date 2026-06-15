@@ -181,6 +181,45 @@ func (s *Store) markDirtyLocked() {
 	})
 }
 
+// Clear empties the ring. The desktop app's "clear recently played" action calls
+// this; it marks dirty so the empty state is persisted (the caller Flush()es so a
+// user-initiated clear survives an immediate reboot rather than waiting out the
+// debounce). No-op on an already-empty ring.
+func (s *Store) Clear() {
+	s.mu.Lock()
+	if len(s.data) > 0 {
+		s.data = nil
+		s.markDirtyLocked()
+	}
+	s.mu.Unlock()
+}
+
+// DeleteCard removes every entry whose CardKey matches key, i.e. one card /
+// listening session in the app's grouped view, and returns how many rows were
+// removed. Marks dirty when something changed (caller Flush()es). No-op for an
+// empty key or no match.
+func (s *Store) DeleteCard(key string) int {
+	if key == "" {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := make([]Entry, 0, len(s.data))
+	removed := 0
+	for _, e := range s.data {
+		if e.CardKey == key {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if removed > 0 {
+		s.data = kept
+		s.markDirtyLocked()
+	}
+	return removed
+}
+
 // All returns a copy of the ring, oldest-first. The /api/recent handler serves
 // this; the app reverses/groups it.
 func (s *Store) All() []Entry {

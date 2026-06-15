@@ -21,11 +21,15 @@ export function CheckAppUpdate():Promise<Record<string, string>>;
 
 export function CheckStick(arg1:string):Promise<sticksetup.StickCheck>;
 
+export function ClearRecent(arg1:string,arg2:number):Promise<void>;
+
 export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:number):Promise<number>;
 
 export function CurrentWiFi():Promise<string>;
 
 export function DeletePreset(arg1:string,arg2:number,arg3:number):Promise<void>;
+
+export function DeleteRecentCard(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function DiscoverBoxes(arg1:number):Promise<Array<main.BoxInfo>>;
 

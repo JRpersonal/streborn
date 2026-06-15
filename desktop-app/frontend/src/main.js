@@ -163,6 +163,7 @@ import {
   showError,
   showToast,
   compareVerBuild,
+  boxModelSupport,
 } from './utils.js';
 
 import {
@@ -581,6 +582,12 @@ function switchView(view) {
     discoverBoxes();
     refreshStatus();
     loadMusicTabVolume();
+    // Re-evaluate the Favorites entry every time the music view is shown so a
+    // stored favorites list always brings the button back (#Dieter: the button
+    // was set once at init, before the WebView had restored localStorage, then
+    // never re-checked, so it stayed hidden after a restart even though the
+    // favorites were still saved).
+    updateFavModeBtn();
   }
   if (view === 'settings') loadBoxSettings();
   if (view === 'library') openLibrary();
@@ -1231,6 +1238,11 @@ function applyBoxList(list) {
   }
   renderBoxSelect();
   updateSettingsTabBadge();
+  // Re-evaluate the Favorites entry on every box-list refresh. This is the first
+  // point after boot where localStorage is reliably restored in the WebView, so
+  // a favorites list saved in a previous session reliably brings the button back
+  // even if the one-shot init call ran before storage was ready (#Dieter).
+  updateFavModeBtn();
   // Setup-tab target picker reuses the same state.boxes feed.
   renderSetupTargetPicker();
   // Second world-map invite: once the user's whole supported SoundTouch set is
@@ -1310,7 +1322,16 @@ function renderBoxSelect() {
       ? `<span class="box-model" title="${escapeAttr(t('speaker.modelTitle'))}">${escapeHtml(b.model)}</span>`
       : '';
     if (isStock) {
-      return `<span class="box-btn${stockCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(t('speaker.stockTooltip'))}">${escapeHtml(label)}${model} <small>${b.host}</small><span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span></span>`;
+      // A SoundTouch-speaking device that STR cannot run on (Lifestyle / CineMate
+      // system, SoundTouch 300 soundbar, Wireless Link Adapter) still appears in
+      // discovery. Flag it as not supported instead of inviting an install that
+      // dead-ends in ssh255 (#unsupported-devices).
+      const unsupported = boxModelSupport(b.model) === 'unsupported';
+      const badge = unsupported
+        ? `<span class="box-stock-badge box-unsupported-badge">${escapeHtml(t('speaker.unsupportedBadge'))}</span>`
+        : `<span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span>`;
+      const tip = unsupported ? t('speaker.unsupportedBadgeTitle') : t('speaker.stockTooltip');
+      return `<span class="box-btn${stockCls}${unsupported ? ' unsupported' : ''}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(tip)}">${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
     const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
     // Red dot when this speaker's agent is older than the app's embedded
@@ -1333,6 +1354,18 @@ function renderBoxSelect() {
       const box = state.boxes.find(b => b.host === host && b.port === port);
       if (!box) return;
       if (box.kind === 'stock') {
+        // Not a standalone SoundTouch speaker (Lifestyle / CineMate system,
+        // SoundTouch 300 soundbar, Wireless Link Adapter): STR cannot run on it
+        // and the install would dead-end in ssh255. Tell the user plainly instead
+        // of sending them into the stick setup (#unsupported-devices).
+        if (boxModelSupport(box.model) === 'unsupported') {
+          await confirmWarn(
+            t('speaker.unsupportedTitle'),
+            t('speaker.unsupportedBody', { model: escapeHtml(box.model || 'SoundTouch') }),
+            { icon: null, confirmLabel: t('common.close'), confirmClass: 'btn btn-primary' },
+          );
+          return;
+        }
         // Stock speaker: not an error, this is the happy path. The user
         // found a Bose speaker they can revive with STR. Invite them to
         // the USB stick setup with a positive CTA (no warning triangle,

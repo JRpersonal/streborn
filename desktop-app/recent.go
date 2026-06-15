@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 )
 
 // RecentItem is one entry of a box's recently-played ring (#135), mirroring the
@@ -40,4 +42,35 @@ func (a *App) RecentPlayed(host string, port int) ([]RecentItem, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// ClearRecent empties one box's recently-played ring (DELETE /api/recent). Routed
+// through boxDo for the :8888<->:17008 self-heal.
+func (a *App) ClearRecent(host string, port int) error {
+	resp, err := a.boxDo(host, port, http.MethodDelete, "/api/recent", "", "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
+// DeleteRecentCard removes one card (every row sharing cardKey) from a box's
+// recently-played ring (DELETE /api/recent?cardKey=...).
+func (a *App) DeleteRecentCard(host string, port int, cardKey string) error {
+	if cardKey == "" {
+		return fmt.Errorf("cardKey required")
+	}
+	resp, err := a.boxDo(host, port, http.MethodDelete, "/api/recent?cardKey="+url.QueryEscape(cardKey), "", "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return readHTTPError(resp)
+	}
+	return nil
 }

@@ -36,6 +36,38 @@ export function compareVerBuild(aVer, aBuild, bVer, bBuild) {
   return sa < sb ? -1 : 1;
 }
 
+// boxModelSupport classifies a Bose /info <type> model string for STR support.
+// STR only runs on the standalone SoundTouch speakers that have physical preset
+// buttons: SoundTouch 10, 20, 30, Portable, and the Wave SoundTouch system.
+// Other SoundTouch-speaking devices show up in discovery but cannot run STR, and
+// the install then dead-ends in an ssh255 error the user cannot interpret
+// (reported for Lifestyle / CineMate home-cinema systems, the SoundTouch 300
+// soundbar, and the SoundTouch Wireless Link Adapter). Returns:
+//   'supported'   - a standalone SoundTouch speaker STR targets
+//   'unsupported' - a known device STR cannot run on: show a clear note, no install
+//   'unknown'     - type absent or unrecognised: do NOT block. STR is
+//                   compatibility-first, so an odd type string on a real speaker
+//                   must still be installable; callers treat 'unknown' like
+//                   'supported' for gating and only special-case 'unsupported'.
+export function boxModelSupport(model) {
+  const m = String(model || '').toLowerCase().trim();
+  if (!m || m === 'soundtouch') return 'unknown';
+  // Known-unsupported families first: a soundbar / home-cinema system / adapter
+  // can itself contain the word "soundtouch", so these take precedence over the
+  // speaker whitelist below.
+  if (/\blifestyle\b/.test(m) || /\bcinemate\b/.test(m) || /\bacoustimass\b/.test(m)
+      || /soundtouch\s*300\b/.test(m) || /\bsoundbar\b/.test(m)
+      || /wireless\s*link\s*adapter/.test(m) || /\badapter\b/.test(m)) {
+    return 'unsupported';
+  }
+  // Supported standalone speakers. Match the model number as a whole token so
+  // "SoundTouch 30" does not also catch the "SoundTouch 300" soundbar.
+  if (/soundtouch\s*(10|20|30)\b/.test(m) || /\bportable\b/.test(m) || /\bwave\b/.test(m)) {
+    return 'supported';
+  }
+  return 'unknown';
+}
+
 // decodeXmlEntities decodes the five named XML entity sequences plus
 // numeric character references that the Bose /now_playing XML
 // occasionally emits. Without this, "Bryan Adams &amp; Tina Turner"
