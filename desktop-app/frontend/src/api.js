@@ -57,6 +57,8 @@ export {
   SetAirplayOpt,
   GetResumeOnPowerOn,
   SetResumeOnPowerOn,
+  GetDisplayTrack,
+  SetDisplayTrack,
   GetAppFlag,
   SetAppFlag,
   RescuedSpeakerCount,
