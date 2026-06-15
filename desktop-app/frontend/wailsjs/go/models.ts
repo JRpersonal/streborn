@@ -410,6 +410,26 @@ export namespace main {
 	        this.removedFiles = source["removedFiles"];
 	    }
 	}
+	export class UpdateAsset {
+	    version: string;
+	    sha256: string;
+	    url: string;
+	    filename: string;
+	    autoInstall: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateAsset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.sha256 = source["sha256"];
+	        this.url = source["url"];
+	        this.filename = source["filename"];
+	        this.autoInstall = source["autoInstall"];
+	    }
+	}
 	export class ZoneMember {
 	    deviceID: string;
 	    ip: string;

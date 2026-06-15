@@ -143,6 +143,8 @@ func (a *App) appCtx() context.Context {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Clear any leftover "<exe>.old" from a previous self-update (#71).
+	a.cleanupOldBinary()
 	// Route the dlna package's logs through our file logger so the
 	// per-interface SSDP M-SEARCH summary lines land in str.log next
 	// to the STR discovery cycles. Without this, a media server scan
