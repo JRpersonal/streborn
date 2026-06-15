@@ -29,6 +29,7 @@ import {
   showError,
   showToast,
   formatRemaining,
+  boxModelSupport,
 } from '../utils.js';
 import { t, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -271,16 +272,24 @@ export function renderSetupTargetPicker() {
   const seen = new Set();
   const stockBoxes = [];
   const strBoxes = [];
+  const unsupportedBoxes = [];
   for (const b of (state.boxes || [])) {
     if (!b || !b.host) continue;
     if (seen.has(b.host)) continue;
     seen.add(b.host);
-    if (b.kind === 'stock') stockBoxes.push(b);
-    else if (b.kind === 'str') strBoxes.push(b);
+    if (b.kind === 'stock') {
+      // A SoundTouch-speaking device STR cannot run on (Lifestyle / CineMate
+      // system, SoundTouch 300 soundbar, Wireless Link Adapter) is shown as a
+      // non-selectable "not supported" row, never offered as an install target
+      // (the install would dead-end in ssh255).
+      if (boxModelSupport(b.model) === 'unsupported') unsupportedBoxes.push(b);
+      else stockBoxes.push(b);
+    } else if (b.kind === 'str') strBoxes.push(b);
   }
   const byName = (a, b) => (a.friendlyName || a.name || '').localeCompare(b.friendlyName || b.name || '');
   stockBoxes.sort(byName);
   strBoxes.sort(byName);
+  unsupportedBoxes.sort(byName);
 
   // If the previously chosen STR/stock box has vanished from the
   // LAN, drop the cached target so the picker UI does not show a
@@ -334,7 +343,7 @@ export function renderSetupTargetPicker() {
   };
 
   let cards = '';
-  if (stockBoxes.length === 0 && strBoxes.length === 0) {
+  if (stockBoxes.length === 0 && strBoxes.length === 0 && unsupportedBoxes.length === 0) {
     cards += `<div class="muted small setup-target-empty">${escapeHtml(t('setup.targetEmpty'))}</div>`;
   }
   // boxIdentLine builds the sublabel pieces (model, serial, host)
@@ -379,6 +388,19 @@ export function renderSetupTargetPicker() {
     if (targetIsST30(b)) {
       cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
     }
+  }
+  // Unsupported devices: shown as non-selectable info rows (a distinct class so
+  // the card click handler below, which targets .setup-target-card, never picks
+  // them up). STR has no install path for these, so there is no radio dot and no
+  // "prepare stick" target (#unsupported-devices).
+  for (const b of unsupportedBoxes) {
+    const label = b.friendlyName || b.name || b.host;
+    cards += `<div class="setup-target-unsupported" aria-disabled="true">` +
+      `<div class="stc-row1"><span class="stc-left"><span class="stc-label">${escapeHtml(label)}</span></span>` +
+      `<span class="stc-badge badge-warn">${escapeHtml(t('speaker.unsupportedBadge'))}</span></div>` +
+      `<div class="stc-sublabel">${escapeHtml(boxIdentLine(b, t('setup.targetCardKindStock')))}</div>` +
+      `<div class="setup-target-factory-help muted small">${escapeHtml(t('speaker.unsupportedBadgeTitle'))}</div>` +
+      `</div>`;
   }
   // Factory-reset card is always shown. Append the macOS hint
   // inline only if we're on macOS, otherwise just the standard help.
