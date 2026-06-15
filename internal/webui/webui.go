@@ -1241,14 +1241,35 @@ func (s *Server) NoteRecentPreset(p presets.Preset) {
 // desktop app reads every box's ring and does the merge + source-card grouping;
 // the box just returns its capped list.
 func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
 	if s.recent == nil {
+		if r.Method == http.MethodDelete {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "removed": 0})
+			return
+		}
 		writeJSON(w, http.StatusOK, []recent.Entry{})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.recent.All())
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.recent.All())
+	case http.MethodDelete:
+		// DELETE /api/recent           -> clear the whole ring
+		// DELETE /api/recent?cardKey=X -> remove one card (all rows with that key)
+		// The user explicitly asked to forget this history, so Flush() now instead
+		// of waiting out the debounce, otherwise a quick reboot would resurrect it.
+		removed := 0
+		if key := r.URL.Query().Get("cardKey"); key != "" {
+			removed = s.recent.DeleteCard(key)
+		} else {
+			s.recent.Clear()
+		}
+		if err := s.recent.Flush(); err != nil {
+			s.logger.Warn("recent: flush after delete failed", "err", err)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "removed": removed})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // ResumeLastPlay re-pushes the last stream STR played: the power-on resume. On

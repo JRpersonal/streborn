@@ -14,9 +14,9 @@
 // rendering happen here in the app (App-First, keep the box light).
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, BrowserOpenURL } from '../api.js';
+import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, BrowserOpenURL, ClearRecent, DeleteRecentCard } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
 
 // Injected main.js helpers (see initRecentView). showSlotPicker is the shared
@@ -238,6 +238,8 @@ function recentCardHTML(c, i) {
       : '')
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
+  // Remove-this-card button (Brice): drops the card from the box's history.
+  actions += `<button class="btn btn-mini rc-del" id="recDel${i}" title="${escapeAttr(t('recent.removeCard'))}">&times;</button>`;
   const nowPlaying = cardIsPlaying(c);
   // "Now playing" badge, reusing the preset tile's own state label so the wording
   // matches the preset card exactly (and is already translated in every bundle).
@@ -288,6 +290,18 @@ function wireCard(c, i) {
       favBtn.classList.toggle('is-fav', nowFav);
       favBtn.innerHTML = nowFav ? '&#9733;' : '&#9734;';
       favBtn.title = nowFav ? t('search.removeFav') : t('search.addFav');
+    };
+  }
+  const delBtn = document.getElementById('recDel' + i);
+  if (delBtn) {
+    delBtn.onclick = async () => {
+      const box = c.box || state.currentBox;
+      if (!box) return;
+      delBtn.disabled = true;
+      try {
+        await DeleteRecentCard(box.host, box.port, c.cardKey);
+        await refreshRecentList();
+      } catch (err) { showError(err); delBtn.disabled = false; }
     };
   }
 }
@@ -345,6 +359,8 @@ export async function renderRecent() {
       + `<button class="chip${showAll ? ' active' : ''}" id="recentAllBoxes">${escapeHtml(t('recent.allBoxes'))}</button>`
       + `</div>`;
   }
+  // Clear the whole list (Brice). Clears every box in the current scope.
+  html += `<button class="btn btn-mini recent-clear" id="recentClear" title="${escapeAttr(t('recent.clearAll'))}">${escapeHtml(t('recent.clearAll'))}</button>`;
   html += `</div><div class="recent-sub muted">${escapeHtml(t('recent.subtitle'))}</div>`
     + `<div class="recent-list" id="recentList"><div class="muted recent-loading">${escapeHtml(t('recent.loading'))}</div></div>`;
   root.innerHTML = html;
@@ -352,6 +368,17 @@ export async function renderRecent() {
   const tb = $('recentThisBox'), ab = $('recentAllBoxes');
   if (tb) tb.onclick = () => { state.recentAllBoxes = false; renderRecent(); };
   if (ab) ab.onclick = () => { state.recentAllBoxes = true; renderRecent(); };
+
+  const clr = $('recentClear');
+  if (clr) clr.onclick = async () => {
+    const ok = await confirmWarn(t('recent.clearConfirmTitle'), t('recent.clearConfirmBody'));
+    if (!ok) return;
+    const boxes = state.recentAllBoxes ? recentStrBoxes() : (state.currentBox ? [state.currentBox] : []);
+    clr.disabled = true;
+    for (const b of boxes) { try { await ClearRecent(b.host, b.port); } catch { /* skip unreachable box */ } }
+    await refreshRecentList();
+    clr.disabled = false;
+  };
 
   await refreshRecentList();
   // Auto-refresh every 30s while the tab stays open. The interval self-cancels

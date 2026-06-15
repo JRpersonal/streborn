@@ -41,6 +41,37 @@ func TestAddCoalescesSameCardSameTrack(t *testing.T) {
 	eq(t, rows(s), []string{"swr3/Epic"})
 }
 
+// TestClearEmptiesRing: the user "clear list" action drops everything.
+func TestClearEmptiesRing(t *testing.T) {
+	s := New()
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Epic"})
+	s.Add(Entry{Source: "spotify", CardKey: "spotify:playlist:x", Track: "Song"})
+	s.Clear()
+	eq(t, rows(s), []string{})
+	// Clear on an already-empty ring is a no-op (no panic).
+	s.Clear()
+	eq(t, rows(s), []string{})
+}
+
+// TestDeleteCardRemovesOnlyThatCard: deleting one card drops all of its rows and
+// leaves the rest, and returns the number removed.
+func TestDeleteCardRemovesOnlyThatCard(t *testing.T) {
+	s := New()
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Epic"})
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Yellow"})
+	s.Add(Entry{Source: "radio", CardKey: "1live", Track: "Other"})
+	if n := s.DeleteCard("swr3"); n != 2 {
+		t.Fatalf("DeleteCard removed %d, want 2", n)
+	}
+	eq(t, rows(s), []string{"1live/Other"})
+	if n := s.DeleteCard("nope"); n != 0 {
+		t.Fatalf("DeleteCard(unknown) removed %d, want 0", n)
+	}
+	if n := s.DeleteCard(""); n != 0 {
+		t.Fatalf("DeleteCard(empty) removed %d, want 0", n)
+	}
+}
+
 // TestAddAppendsNewTrackSameCard: a genuinely new song under the same station
 // is its own row, newest last.
 func TestAddAppendsNewTrackSameCard(t *testing.T) {
