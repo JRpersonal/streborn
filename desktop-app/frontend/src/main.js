@@ -2132,6 +2132,26 @@ function decodeProxyUrl(loc) {
   return loc;
 }
 
+// spotifyURIFromContainer recovers the spotify: context URI from a box
+// now-playing location of the form "/playback/container/<base64 spotify:...>"
+// (STR writes this when it plays a Spotify selection; the agent encodes it
+// URL-safe, see internal/webui legacySpotifyURI). Used as a save-time fallback
+// when go-librespot's /spotify/info reports no context even though a real
+// playlist is playing (#45). Returns "" when the location is not a container or
+// does not decode to a spotify: URI.
+function spotifyURIFromContainer(loc) {
+  const marker = '/playback/container/';
+  const i = (loc || '').indexOf(marker);
+  if (i < 0) return '';
+  let enc = loc.slice(i + marker.length);
+  const j = enc.search(/[/?#]/);
+  if (j >= 0) enc = enc.slice(0, j);
+  try {
+    const uri = atob(enc.replace(/-/g, '+').replace(/_/g, '/'));
+    return uri.startsWith('spotify:') ? uri : '';
+  } catch { return ''; }
+}
+
 // SPOTIFY_LOGO moved to logos.js (shared with the Recently-played view).
 
 // presetStateLabel returns the small state line shown on a preset tile: an
@@ -2436,6 +2456,14 @@ async function saveCurrentToSlot(slot) {
         if (np.account) acct = np.account;
       }
     } catch {}
+    // Fallback: go-librespot's /spotify/info can report an empty context even
+    // while a real playlist is playing (it depends on how playback was started).
+    // The box's own now-playing still carries the URI STR wrote into its
+    // /playback/container/<base64 spotify:...> location, so decode that before
+    // giving up (Pierre, #45: Premium, a playlist was playing, the box location
+    // held spotify:playlist:..., but np.context came back empty so the save
+    // wrongly failed).
+    if (!ctxUri) ctxUri = spotifyURIFromContainer(state.nowLocation);
     if (!ctxUri) {
       // Spotify is playing but the speaker reported no playlist/album/track
       // context. This is NOT the same as a non-replayable station: a real
