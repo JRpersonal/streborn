@@ -703,6 +703,40 @@ func isHTTPURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
+// isPlainHTTPURL reports whether s is a plaintext http:// URL (not https). A LAN
+// media server reachable this way can be played by the box directly, skipping
+// the stream proxy: the proxy exists to give Bose UPnP HTTPS and radio token
+// resilience, neither of which a plain-HTTP LAN file needs (#139).
+func isPlainHTTPURL(s string) bool {
+	return strings.HasPrefix(strings.ToLower(s), "http://")
+}
+
+// mimeFromURL guesses an audio MIME from a stream URL's file extension. Used to
+// recall a library preset that did not record its codec MIME. Returns "" for an
+// unknown or missing extension, in which case the caller leaves the box on its
+// audio/mpeg default.
+func mimeFromURL(raw string) string {
+	u := strings.ToLower(raw)
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	switch {
+	case strings.HasSuffix(u, ".flac"):
+		return "audio/flac"
+	case strings.HasSuffix(u, ".wav"):
+		return "audio/wav"
+	case strings.HasSuffix(u, ".m4a"), strings.HasSuffix(u, ".mp4"), strings.HasSuffix(u, ".aac"):
+		return "audio/mp4"
+	case strings.HasSuffix(u, ".ogg"), strings.HasSuffix(u, ".oga"):
+		return "audio/ogg"
+	case strings.HasSuffix(u, ".aif"), strings.HasSuffix(u, ".aiff"):
+		return "audio/aiff"
+	case strings.HasSuffix(u, ".mp3"):
+		return "audio/mpeg"
+	}
+	return ""
+}
+
 // looksLikeSpotifyStreamURL reports whether a stored stream URL points at a
 // Spotify source, so a non-spotify preset carrying it is really a mis-saved
 // Spotify preset (#45/#105).
@@ -834,10 +868,28 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if s.spotifySwitchedAway != nil {
 		s.spotifySwitchedAway(r.Context())
 	}
-	// Stream durch unseren Proxy schicken — damit klappen auch
-	// HTTPS Quellen (Bose UPnP kann kein TLS) und Token Expiry wird
-	// transparent abgefangen. Bose sieht eine stabile loopback URL.
+	// Decide how the box reaches the audio.
+	//
+	// Radio and any HTTPS source go through our loopback stream proxy: it hands
+	// the box a stable URL, lets Bose UPnP play HTTPS (which it cannot do
+	// itself), and reconnects transparently on CDN token expiry.
+	//
+	// A network library track is different. It carries its codec MIME (set by
+	// the caller) and is a finite file on a LAN media server that supports HTTP
+	// range requests, exactly the case the Bose app played directly. Routing it
+	// through the radio proxy breaks it two ways: the proxy ignores the box's
+	// Range requests, so the box cannot read a FLAC's stream header and sits at
+	// "stream starting", and, built for endless radio, it treats the upstream
+	// EOF that ends a file as a dropout and reconnects, replaying or garbling
+	// the track (the mid-track noise). So a plain-HTTP library file is handed to
+	// the box directly, like the Bose app did; only radio or an HTTPS library
+	// source still needs the proxy (#139).
+	playDirect := req.Mime != "" && isPlainHTTPURL(req.URL)
 	playURL := boxurl.RawStream(req.URL)
+	if playDirect {
+		playURL = req.URL
+	}
+	s.logger.Info("play request", "direct", playDirect, "mime", req.Mime, "url", req.URL)
 	// Advertise the real codec to the box when the caller knows it (a network
 	// library track carries its DLNA-reported MIME, e.g. audio/flac, audio/mp4).
 	// Radio leaves it empty and defaults to audio/mpeg. The box keys its decoder
@@ -1006,6 +1058,33 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// does not yank the box back to a still-advancing go-librespot.
 	if s.spotifySwitchedAway != nil {
 		s.spotifySwitchedAway(r.Context())
+	}
+	// A library preset (saved from the Library tab, so Source is set) points at a
+	// finite file on a LAN media server. Recall it like the Library play path:
+	// hand the box the file directly with its codec MIME, bypassing the radio
+	// stream proxy that stalls a FLAC on Range and garbles it on EOF (#139). The
+	// MIME is re-derived from the URL because the preset store does not keep it;
+	// an unknown extension falls through to the proxy path unchanged.
+	if p.Source != "" && isPlainHTTPURL(p.StreamURL) {
+		if mime := mimeFromURL(p.StreamURL); mime != "" {
+			directURL := p.StreamURL
+			s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime)
+			if err := s.renderer.PlayURLMime(r.Context(), directURL, p.Name, p.Art, mime); err != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]any{
+					"error": "Track could not be played", "detail": guessErrorReason(err),
+					"slot": slot, "name": p.Name,
+				})
+				return
+			}
+			s.setLastPlay(directURL, p.Name, p.Art, mime)
+			s.recentNoteCard("upnp", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "") // #135
+			name, art := p.Name, p.Art
+			go s.verifyRecall(func(ctx context.Context, _ bool) {
+				_ = s.renderer.PlayURLMime(ctx, directURL, name, art, mime)
+			}, nil)
+			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
+			return
+		}
 	}
 	// Stream Proxy URL nutzen damit auch nach Token Expiry weitergespielt
 	// wird (Bose sieht die stabile loopback URL).
