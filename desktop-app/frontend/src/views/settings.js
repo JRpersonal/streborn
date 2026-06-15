@@ -592,11 +592,16 @@ function renderBoxSettings(s, box) {
         const lbl = (b.friendlyName || b.name || b.host) + (b.model && b.model !== 'SoundTouch' ? ' (' + b.model + ')' : '');
         return `<option value="${escapeAttr(b.host)}|${b.port || 0}">${escapeHtml(lbl)}</option>`;
       }).join('');
+      // With more than one other speaker, offer "apply to all" so a multi-box
+      // user gets the same 1-6 on every speaker in one go (Gerald, 4 boxes).
+      const allOpt = targets.length > 1
+        ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
+        : '';
       return `<details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       <small class="muted small expert-intro">${escapeHtml(t('settingsView.copyPresetsHelp'))}</small>
       <div class="setting-row">
-        <select id="copyPresetTarget" style="flex:1;">${opts}</select>
+        <select id="copyPresetTarget" style="flex:1;">${allOpt}${opts}</select>
         <button class="btn btn-mini btn-warning" id="copyPresetBtn">${escapeHtml(t('settingsView.copyPresetsBtn'))}</button>
       </div>
     </details>`;
@@ -1255,6 +1260,29 @@ function renderBoxSettings(s, box) {
     copyBtn.onclick = async () => {
       const sel = $('copyPresetTarget');
       if (!sel || !sel.value) return;
+      // "Apply to all": copy this box's 1-6 onto every other STR speaker.
+      if (sel.value === '__ALL__') {
+        const all = (state.boxes || []).filter(b => b.kind !== 'stock' && b.host !== box.host);
+        const ok = await confirmWarn(
+          t('settingsView.copyPresetsConfirmTitle'),
+          t('settingsView.copyPresetsConfirmBody', { target: t('settingsView.copyPresetsAllTargets') })
+        );
+        if (!ok) return;
+        copyBtn.disabled = true;
+        let done = 0;
+        const failed = [];
+        for (const tb of all) {
+          try {
+            await CopyPresetsAcrossBoxes(box.host, box.port, tb.host, tb.port || 0);
+            done++;
+            if (state.currentBox && state.currentBox.host === tb.host) await deps.loadPresets();
+          } catch { failed.push(tb.friendlyName || tb.name || tb.host); }
+        }
+        copyBtn.disabled = false;
+        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: all.length, failed: failed.join(', ') }));
+        else showToast(t('settingsView.copyPresetsAllDone', { n: all.length }));
+        return;
+      }
       const [thost, tportRaw] = sel.value.split('|');
       const tport = parseInt(tportRaw, 10) || 0;
       const target = (state.boxes || []).find(b => b.host === thost);
