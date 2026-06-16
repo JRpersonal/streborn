@@ -161,9 +161,10 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "could not play announcement", "detail": err.Error()})
 		return
 	}
-	s.logger.Info("announce: playing", "bytes", len(audio), "title", title, "wasStandby", wasStandby)
+	estDur := mp3DurationSec(audio)
+	s.logger.Info("announce: playing", "bytes", len(audio), "estSec", fmt.Sprintf("%.1f", estDur), "title", title, "wasStandby", wasStandby)
 
-	s.waitAnnounceDone(ctx)
+	s.waitAnnounceDone(ctx, estDur)
 	s.restoreAfterAnnounce(ctx, prev, prevVol, wasStandby, changedVol)
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "bytes": len(audio)})
@@ -209,33 +210,71 @@ func (s *Server) readVolume(ctx context.Context) int {
 	return -1
 }
 
-// waitAnnounceDone blocks until the box has played the announcement to its end:
-// it first waits for the box to actually start playing the announcement URL, then
-// waits for it to leave PLAY/BUFFERING. Bounded so a stuck box cannot wedge the
-// request forever.
-func (s *Server) waitAnnounceDone(ctx context.Context) {
-	started := false
-	for i := 0; i < 16 && ctx.Err() == nil; i++ {
+// waitAnnounceDone blocks until the box has played the announcement to its end.
+// The Portable does NOT reliably report STOP for a finite UPnP track (it sits in
+// PLAY_STATE on the finished clip), so the clip's own duration drives the timing:
+// wait the duration plus a small tail for the box's buffer. A real STOP, or the
+// box moving off the announcement URL (firmware that does report it), ends the
+// wait early. estDur<=0 (unparsable audio) falls back to a safe fixed cap.
+func (s *Server) waitAnnounceDone(ctx context.Context, estDur float64) {
+	// Wait for it to actually start playing (max 6s).
+	for i := 0; i < 12 && ctx.Err() == nil; i++ {
 		np := s.snapshotNowPlaying(ctx)
 		if strings.Contains(np.Location, "/announce/audio") && np.PlayStatus == "PLAY_STATE" {
-			started = true
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	if !started {
-		return
+	wait := 20 * time.Second // unknown duration: safe upper bound
+	if estDur > 0 {
+		wait = time.Duration((estDur + 2.0) * float64(time.Second))
 	}
-	for i := 0; i < 240 && ctx.Err() == nil; i++ {
+	deadline := time.Now().Add(wait)
+	for ctx.Err() == nil && time.Now().Before(deadline) {
 		np := s.snapshotNowPlaying(ctx)
 		if !strings.Contains(np.Location, "/announce/audio") {
 			return
 		}
-		if np.PlayStatus != "PLAY_STATE" && np.PlayStatus != "BUFFERING_STATE" {
+		if np.PlayStatus == "STOP_STATE" {
 			return
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// mp3DurationSec estimates the playback length of a CBR MP3 (Google Translate TTS
+// is constant-bitrate) from its first frame header: duration = bytes / (bitrate/8).
+// Returns 0 if no valid frame header is found, so the caller uses a fixed cap.
+func mp3DurationSec(b []byte) float64 {
+	mpeg1L3 := []int{0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0}
+	mpeg2L3 := []int{0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0}
+	limit := len(b) - 4
+	if limit > 1<<16 {
+		limit = 1 << 16 // the first frame is near the start; don't scan the whole clip
+	}
+	for i := 0; i < limit; i++ {
+		if b[i] != 0xFF || b[i+1]&0xE0 != 0xE0 {
+			continue
+		}
+		ver := (b[i+1] >> 3) & 0x03  // 3=MPEG1, 2=MPEG2, 0=MPEG2.5
+		layer := (b[i+1] >> 1) & 0x03 // 1=Layer III
+		if layer != 0x01 {
+			continue
+		}
+		brIdx := (b[i+2] >> 4) & 0x0F
+		if brIdx == 0 || brIdx == 0x0F {
+			continue
+		}
+		kbps := mpeg2L3[brIdx]
+		if ver == 0x03 {
+			kbps = mpeg1L3[brIdx]
+		}
+		if kbps == 0 {
+			continue
+		}
+		return float64(len(b)) * 8 / float64(kbps*1000)
+	}
+	return 0
 }
 
 // restoreAfterAnnounce puts the box back the way it was: volume first, then the
