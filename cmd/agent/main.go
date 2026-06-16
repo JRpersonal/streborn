@@ -362,6 +362,7 @@ func run() error {
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
 		webui.WithSpotifyReady(spotifyMgr.Ready),
+		webui.WithSpotifyLoggedIn(spotifyMgr.LoggedIn),
 		webui.WithSpotifyPremiumRequired(spotifyMgr.PremiumRequired),
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
@@ -1032,6 +1033,13 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 	}
 	if p.URI == "" {
 		h.logger.Warn("spotify preset recall: preset has no Spotify URI, cannot autoplay", "slot", slot, "name", p.Name)
+		return
+	}
+	// No persisted Spotify login means go-librespot has no credential and cannot
+	// start playback on its own, so a hardware press would do nothing but thrash
+	// the box. Skip with a clear log instead of the silent retry loop (#45 Pierre).
+	if !h.spotify.LoggedIn() {
+		h.logger.Warn("spotify preset recall: speaker not logged into Spotify (no credential); log it into Spotify once first", "slot", slot, "name", p.Name)
 		return
 	}
 	if !h.spotify.Ready() {
