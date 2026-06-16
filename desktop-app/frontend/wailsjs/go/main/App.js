@@ -58,8 +58,8 @@ export function DeletePreset(arg1, arg2, arg3) {
   return window['go']['main']['App']['DeletePreset'](arg1, arg2, arg3);
 }
 
-export function DeleteRecentCard(arg1, arg2, arg3) {
-  return window['go']['main']['App']['DeleteRecentCard'](arg1, arg2, arg3);
+export function DeleteRecentCard(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['DeleteRecentCard'](arg1, arg2, arg3, arg4);
 }
 
 export function DiscoverBoxes(arg1) {

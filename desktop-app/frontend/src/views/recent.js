@@ -299,7 +299,7 @@ function wireCard(c, i) {
       if (!box) return;
       delBtn.disabled = true;
       try {
-        await DeleteRecentCard(box.host, box.port, c.cardKey);
+        await DeleteRecentCard(box.host, box.port, c.cardKey, c.ts);
         await refreshRecentList();
       } catch (err) { showError(err); delBtn.disabled = false; }
     };

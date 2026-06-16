@@ -1297,15 +1297,21 @@ func (s *Server) handleRecent(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.recent.All())
 	case http.MethodDelete:
-		// DELETE /api/recent           -> clear the whole ring
-		// DELETE /api/recent?cardKey=X -> remove one card (all rows with that key)
-		// The user explicitly asked to forget this history, so Flush() now instead
-		// of waiting out the debounce, otherwise a quick reboot would resurrect it.
+		// DELETE /api/recent?all=1            -> clear the whole ring (explicit)
+		// DELETE /api/recent?cardKey=X&ts=Y   -> remove the ONE card at that ts
+		// "all=1" is REQUIRED to clear: a delete-card request with a missing/stale
+		// cardKey must never fall through to wiping everything (that was the bug
+		// where deleting one entry removed all older ones). Flush() now so the
+		// change survives an immediate reboot instead of waiting out the debounce.
 		removed := 0
-		if key := r.URL.Query().Get("cardKey"); key != "" {
-			removed = s.recent.DeleteCard(key)
-		} else {
+		switch {
+		case r.URL.Query().Get("all") == "1":
 			s.recent.Clear()
+		case r.URL.Query().Get("cardKey") != "":
+			removed = s.recent.DeleteCardAt(r.URL.Query().Get("cardKey"), r.URL.Query().Get("ts"))
+		default:
+			http.Error(w, "specify all=1 to clear, or cardKey+ts to remove one card", http.StatusBadRequest)
+			return
 		}
 		if err := s.recent.Flush(); err != nil {
 			s.logger.Warn("recent: flush after delete failed", "err", err)
