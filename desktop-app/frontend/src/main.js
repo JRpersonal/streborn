@@ -3246,6 +3246,39 @@ async function maybeInviteWorldMapAllDone() {
   await inviteWorldMapOnce(WORLD_MAP_ALL_FLAG, 'all');
 }
 
+// worldMapPreviewSVG returns a small, stylized world-map thumbnail for the invite
+// so the user instantly sees this is "the community pin map" before clicking
+// through to the website. It is a self-contained inline SVG: NO network tile
+// request and NO real pin data (which keeps the invite's "the app sends nothing"
+// guarantee intact). Continents are simplified silhouettes; the pins are
+// decorative, with one pulsing to suggest "add yours here".
+function worldMapPreviewSVG() {
+  const pin = (x, y) => `<circle cx="${x}" cy="${y}" r="2.4"/><circle cx="${x}" cy="${y}" r="0.9" fill="#fff"/>`;
+  return `<svg viewBox="0 0 220 110" class="wmi-map-svg" role="img" aria-hidden="true" preserveAspectRatio="xMidYMid slice">`
+    + `<defs><clipPath id="wmiClip"><rect x="0" y="0" width="220" height="110" rx="8"/></clipPath></defs>`
+    + `<g clip-path="url(#wmiClip)">`
+    + `<rect x="0" y="0" width="220" height="110" fill="#11202b"/>`
+    + `<g stroke="#1f3a49" stroke-width="0.6">`
+    + `<line x1="0" y1="27.5" x2="220" y2="27.5"/><line x1="0" y1="55" x2="220" y2="55"/><line x1="0" y1="82.5" x2="220" y2="82.5"/>`
+    + `<line x1="55" y1="0" x2="55" y2="110"/><line x1="110" y1="0" x2="110" y2="110"/><line x1="165" y1="0" x2="165" y2="110"/></g>`
+    + `<g fill="#2f6b4f">`
+    + `<path d="M28,22 70,18 78,38 58,52 42,46 30,34 Z"/>`     // North America
+    + `<path d="M62,58 78,60 82,78 70,98 60,84 Z"/>`           // South America
+    + `<circle cx="88" cy="13" r="6"/>`                        // Greenland
+    + `<path d="M104,27 126,25 124,41 108,43 Z"/>`             // Europe
+    + `<path d="M110,46 134,46 136,72 122,92 112,68 Z"/>`      // Africa
+    + `<path d="M128,22 192,20 196,44 158,52 132,44 Z"/>`      // Asia
+    + `<path d="M150,52 162,52 156,66 Z"/>`                    // India
+    + `<path d="M172,82 198,80 200,96 178,98 Z"/></g>`         // Australia
+    + `<g fill="var(--brand,#e0531f)">`
+    + pin(52, 34) + pin(72, 72) + pin(170, 36) + pin(186, 88) + pin(196, 30)
+    + `<circle cx="112" cy="34" r="3" opacity="0.5">`          // "your pin", pulsing
+    + `<animate attributeName="r" values="3;10;3" dur="2.2s" repeatCount="indefinite"/>`
+    + `<animate attributeName="opacity" values="0.55;0;0.55" dur="2.2s" repeatCount="indefinite"/></circle>`
+    + pin(112, 34)
+    + `</g></g></svg>`;
+}
+
 function showWorldMapInvite(variant) {
   if (document.getElementById('worldMapInvite')) return;
   const headline = variant === 'all' ? t('worldMap.inviteTextAll') : t('worldMap.inviteText');
@@ -3254,7 +3287,10 @@ function showWorldMapInvite(variant) {
   el.className = 'worldmap-invite';
   el.innerHTML =
     `<button class="wmi-close" id="wmiClose" aria-label="close">&times;</button>` +
-    `<div class="wmi-burst" aria-hidden="true">🎉</div>` +
+    `<button class="wmi-map" id="wmiMap" title="${escapeAttr(t('worldMap.inviteBtn'))}" aria-label="${escapeAttr(t('worldMap.inviteBtn'))}">` +
+      worldMapPreviewSVG() +
+      `<span class="wmi-map-badge" aria-hidden="true">🎉</span>` +
+    `</button>` +
     `<div class="wmi-body">` +
       `<div class="wmi-text">${escapeHtml(headline)}</div>` +
       `<div class="wmi-count hidden" id="wmiCount"></div>` +
@@ -3277,8 +3313,13 @@ function showWorldMapInvite(variant) {
     } catch { /* no count, just the celebration */ }
   })();
   const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); };
+  const openMap = () => { try { BrowserOpenURL(worldMapURL()); } catch {} close(); };
   const shareBtn = el.querySelector('#wmiShare');
-  if (shareBtn) shareBtn.onclick = () => { try { BrowserOpenURL(worldMapURL()); } catch {} close(); };
+  if (shareBtn) shareBtn.onclick = openMap;
+  // The thumbnail is the second, more obvious way in: clicking the map preview
+  // opens the same community map on the website.
+  const mapBtn = el.querySelector('#wmiMap');
+  if (mapBtn) mapBtn.onclick = openMap;
   const closeBtn = el.querySelector('#wmiClose');
   if (closeBtn) closeBtn.onclick = close;
   // Auto-dismiss so it never lingers; the once-ever flag means it will not return.

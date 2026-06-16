@@ -1250,7 +1250,11 @@ body {
 .worldmap-invite .wmi-count { color: var(--brand); font-size: 12px; }
 .worldmap-invite .wmi-count.hidden { display: none; }
 .worldmap-invite .wmi-share { align-self: flex-start; }
-.worldmap-invite .wmi-burst { font-size: 30px; line-height: 1; animation: wmiBounce 1.1s ease infinite; }
+.worldmap-invite .wmi-map { position: relative; flex: 0 0 auto; width: 132px; height: 66px; padding: 0; border: 1px solid #2a4a5a; border-radius: 8px; background: #11202b; cursor: pointer; overflow: hidden; transition: transform .15s ease, box-shadow .15s ease; }
+.worldmap-invite .wmi-map:hover { transform: scale(1.03); box-shadow: 0 0 0 2px var(--brand); }
+.worldmap-invite .wmi-map:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--brand); }
+.worldmap-invite .wmi-map-svg { display: block; width: 100%; height: 100%; }
+.worldmap-invite .wmi-map-badge { position: absolute; top: -7px; left: -5px; font-size: 17px; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); animation: wmiBounce 1.1s ease infinite; }
 .worldmap-invite .wmi-close { position: absolute; top: 4px; right: 6px; background: none; border: none; color: #888; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
 .worldmap-invite .wmi-close:hover { color: #ccc; }
 @keyframes wmiBounce { 0%,100% { transform: translateY(0) rotate(-7deg); } 50% { transform: translateY(-6px) rotate(7deg); } }
