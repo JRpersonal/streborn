@@ -1456,6 +1456,77 @@ func (s *Server) displayTrackEnabled() bool {
 	}
 }
 
+// defaultDisplayTrackModePath is the NAND file for WHAT the display push shows:
+// "both" (Artist - Title, the default), "title", or "artist".
+const defaultDisplayTrackModePath = "/mnt/nv/streborn/display-track-mode"
+
+// displayTrackMode returns the configured display content: "both" | "title" |
+// "artist". Default "both" (absent/unrecognized file).
+func (s *Server) displayTrackMode() string {
+	path := s.displayTrackPath
+	if path == "" {
+		path = defaultDisplayTrackPath
+	}
+	b, err := os.ReadFile(modePathFor(path))
+	if err != nil {
+		return "both"
+	}
+	switch m := strings.ToLower(strings.TrimSpace(string(b))); m {
+	case "title", "artist", "both":
+		return m
+	default:
+		return "both"
+	}
+}
+
+// modePathFor derives the mode file path next to the enabled-flag file, so a test
+// override of displayTrackPath keeps both files together.
+func modePathFor(enabledPath string) string {
+	if enabledPath == "" || enabledPath == defaultDisplayTrackPath {
+		return defaultDisplayTrackModePath
+	}
+	return enabledPath + ".mode"
+}
+
+// splitStreamTitle splits an ICY StreamTitle into (artist, title). The separator
+// is the de-facto tell across stations, matching the app's Recently-played view:
+// " - " is "Artist - Title", " / " is "Title / Artist" (flipped). No separator:
+// the whole string is the title, artist empty.
+func splitStreamTitle(s string) (artist, title string) {
+	s = strings.TrimSpace(s)
+	for _, sep := range []string{" / ", " - ", " – ", " — "} {
+		if i := strings.Index(s, sep); i > 0 && i+len(sep) < len(s) {
+			left, right := strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+len(sep):])
+			if left == "" || right == "" {
+				continue
+			}
+			if sep == " / " {
+				return right, left // "Title / Artist"
+			}
+			return left, right // "Artist - Title"
+		}
+	}
+	return "", s
+}
+
+// displayTrackText applies the configured display mode to a raw ICY StreamTitle,
+// returning what should appear on the speaker display. "both" keeps the full
+// string; "title"/"artist" use the split, falling back to the full string when
+// the split has no artist (no separator), so the display is never blank.
+func (s *Server) displayTrackText(streamTitle string) string {
+	switch s.displayTrackMode() {
+	case "title":
+		if _, title := splitStreamTitle(streamTitle); title != "" {
+			return title
+		}
+	case "artist":
+		if artist, _ := splitStreamTitle(streamTitle); artist != "" {
+			return artist
+		}
+	}
+	return strings.TrimSpace(streamTitle)
+}
+
 // boxInZone reports whether the speaker is currently part of a multiroom zone or
 // stereo pair, read live from the box (/getZone). It is the power-on resume's
 // self-wake guard: a standalone box can only leave standby by a user power press
@@ -1691,6 +1762,11 @@ func (s *Server) HandleStreamTitle(title string) {
 	if boxURL == "" {
 		return
 	}
+	// Apply the user's display mode (artist / title / both) to the raw ICY title.
+	shown := s.displayTrackText(title)
+	if shown == "" {
+		return
+	}
 	// Serialise against other box commands (re-push, play) so a title update
 	// cannot interleave with a stream switch mid-SOAP.
 	s.boxCmdMu.Lock()
@@ -1699,15 +1775,15 @@ func (s *Server) HandleStreamTitle(title string) {
 	defer cancel()
 	var err error
 	if mime != "" {
-		err = s.renderer.SetURIMime(ctx, boxURL, title, art, mime)
+		err = s.renderer.SetURIMime(ctx, boxURL, shown, art, mime)
 	} else {
-		err = s.renderer.SetURI(ctx, boxURL, title, art)
+		err = s.renderer.SetURI(ctx, boxURL, shown, art)
 	}
 	if err != nil {
-		s.logger.Warn("icy display push failed", "err", err, "title", title)
+		s.logger.Warn("icy display push failed", "err", err, "shown", shown)
 		return
 	}
-	s.logger.Info("icy display push", "title", title)
+	s.logger.Info("icy display push", "shown", shown, "mode", s.displayTrackMode())
 }
 
 // boxPlayState reads now_playing once and reports whether the box is in standby
@@ -3000,10 +3076,11 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]any{"supported": true, "enabled": s.displayTrackEnabled()})
+		writeJSON(w, http.StatusOK, map[string]any{"supported": true, "enabled": s.displayTrackEnabled(), "mode": s.displayTrackMode()})
 	case http.MethodPost:
 		var body struct {
-			Enabled bool `json:"enabled"`
+			Enabled bool   `json:"enabled"`
+			Mode    string `json:"mode"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		path := s.displayTrackPath
@@ -3018,21 +3095,33 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 		if body.Enabled {
 			val = "1"
 		}
-		tmp := path + ".str-new"
-		if err := os.WriteFile(tmp, []byte(val+"\n"), 0o644); err != nil {
+		if err := writeFlagFile(path, val); err != nil {
 			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := os.Rename(tmp, path); err != nil {
-			http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
-			return
+		// Persist the display mode too, when a valid one is supplied.
+		mode := strings.ToLower(strings.TrimSpace(body.Mode))
+		if mode == "title" || mode == "artist" || mode == "both" {
+			if err := writeFlagFile(modePathFor(path), mode); err != nil {
+				http.Error(w, "write mode: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		_ = exec.Command("sync").Run()
-		s.logger.Info("display-track set", "enabled", body.Enabled)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled})
+		s.logger.Info("display-track set", "enabled", body.Enabled, "mode", s.displayTrackMode())
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled, "mode": s.displayTrackMode()})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// writeFlagFile atomically writes a one-line value to a NAND flag file.
+func writeFlagFile(path, val string) error {
+	tmp := path + ".str-new"
+	if err := os.WriteFile(tmp, []byte(val+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // NoteBoxPresets records the box's own preset list (from the gabbo

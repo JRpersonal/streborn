@@ -282,8 +282,8 @@ export function SetClockDisplay(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['SetClockDisplay'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function SetDisplayTrack(arg1, arg2, arg3) {
-  return window['go']['main']['App']['SetDisplayTrack'](arg1, arg2, arg3);
+export function SetDisplayTrack(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SetDisplayTrack'](arg1, arg2, arg3, arg4);
 }
 
 export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {

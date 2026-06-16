@@ -538,7 +538,13 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="displayTrackOn">${escapeHtml(t('settingsView.clockOn'))}</button>
         <button class="btn btn-mini toggle-btn" id="displayTrackOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
-      <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
+      <div class="setting-row hidden" id="displayTrackModeRow">
+        <span class="muted small" style="margin-right:6px">${escapeHtml(t('settingsView.displayTrackModeLabel'))}</span>
+        <button class="btn btn-mini toggle-btn" id="displayTrackModeArtist">${escapeHtml(t('settingsView.displayTrackModeArtist'))}</button>
+        <button class="btn btn-mini toggle-btn" id="displayTrackModeTitle">${escapeHtml(t('settingsView.displayTrackModeTitle'))}</button>
+        <button class="btn btn-mini toggle-btn" id="displayTrackModeBoth">${escapeHtml(t('settingsView.displayTrackModeBoth'))}</button>
+      </div>
+      <small class="muted small"><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b> ${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
@@ -1133,30 +1139,49 @@ function renderBoxSettings(s, box) {
   }
 
   // Show the live radio track on the speaker display (opt-in, default off).
-  // Enabling it makes the box re-buffer briefly on each track change, so the
-  // help text says so and the default stays off.
+  // Enabling it makes the box re-buffer (a brief audio dropout) on each text
+  // change, so turning it ON asks for confirmation first, and a sub-row lets the
+  // user pick what to show: artist, title, or both.
   const dtOn = $('displayTrackOn');
   const dtOff = $('displayTrackOff');
+  const dtModeRow = $('displayTrackModeRow');
+  const dtModeBtns = { artist: $('displayTrackModeArtist'), title: $('displayTrackModeTitle'), both: $('displayTrackModeBoth') };
+  let dtMode = 'both';
   const paintDisplayTrack = (enabled) => {
     if (dtOn) dtOn.classList.toggle('active', enabled === true);
     if (dtOff) dtOff.classList.toggle('active', enabled === false);
+    if (dtModeRow) dtModeRow.classList.toggle('hidden', enabled !== true);
+  };
+  const paintDtMode = () => {
+    for (const [m, b] of Object.entries(dtModeBtns)) { if (b) b.classList.toggle('active', m === dtMode); }
   };
   if (dtOn && dtOff) {
     (async () => {
       try {
         const r = await GetDisplayTrack(box.host, box.port);
+        if (r && (r.mode === 'artist' || r.mode === 'title' || r.mode === 'both')) dtMode = r.mode;
         paintDisplayTrack(r && r.enabled === true);
+        paintDtMode();
       } catch { paintDisplayTrack(false); }
     })();
-    const setDT = async (enabled) => {
-      paintDisplayTrack(enabled);
+    const save = async (enabled) => {
       try {
-        await SetDisplayTrack(box.host, box.port, enabled);
+        await SetDisplayTrack(box.host, box.port, enabled, dtMode);
         showToast(t('settingsView.displayTrackSavedToast'));
       } catch (e) { showError(e); }
     };
-    dtOn.onclick = () => setDT(true);
-    dtOff.onclick = () => setDT(false);
+    dtOn.onclick = async () => {
+      // Confirm before enabling: it interrupts the audio on every text change.
+      const ok = await confirmWarn(t('settingsView.displayTrackConfirmTitle'), t('settingsView.displayTrackConfirmBody'));
+      if (!ok) return;
+      paintDisplayTrack(true);
+      paintDtMode();
+      save(true);
+    };
+    dtOff.onclick = () => { paintDisplayTrack(false); save(false); };
+    for (const [m, b] of Object.entries(dtModeBtns)) {
+      if (b) b.onclick = () => { dtMode = m; paintDtMode(); save(true); };
+    }
   }
 
   // AirPlay optimization (BCO speakers only). GET reports supported +

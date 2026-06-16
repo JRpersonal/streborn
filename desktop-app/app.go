@@ -2121,8 +2121,9 @@ func (a *App) SetResumeOnPowerOn(host string, port int, enabled bool) error {
 }
 
 // GetDisplayTrack reads the per-box "show the live radio track on the speaker
-// display" opt-in (default off). Returns {supported, enabled}.
-func (a *App) GetDisplayTrack(host string, port int) (map[string]bool, error) {
+// display" opt-in (default off). Returns {supported, enabled, mode} where mode is
+// "both" | "title" | "artist".
+func (a *App) GetDisplayTrack(host string, port int) (map[string]any, error) {
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/display-track", "", "")
 	if err != nil {
 		return nil, err
@@ -2131,7 +2132,7 @@ func (a *App) GetDisplayTrack(host string, port int) (map[string]bool, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
-	var out map[string]bool
+	var out map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
@@ -2139,9 +2140,10 @@ func (a *App) GetDisplayTrack(host string, port int) (map[string]bool, error) {
 }
 
 // SetDisplayTrack toggles the per-box "show the live radio track on the speaker
-// display" opt-in. Enabling it makes the box re-buffer on each track change.
-func (a *App) SetDisplayTrack(host string, port int, enabled bool) error {
-	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
+// display" opt-in and sets what it shows (mode: "both" | "title" | "artist").
+// Enabling it makes the box re-buffer (a brief audio dropout) on each text change.
+func (a *App) SetDisplayTrack(host string, port int, enabled bool, mode string) error {
+	body, _ := json.Marshal(map[string]any{"enabled": enabled, "mode": mode})
 	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/display-track", "application/json", string(body))
 	if err != nil {
 		return err
