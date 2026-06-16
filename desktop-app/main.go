@@ -65,8 +65,16 @@ func main() {
 		// just raises and focuses its existing window.
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "de.st-reborn.desktop.singleinstance",
-			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
+			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
 				if app.ctx == nil {
+					return
+				}
+				// If the user double-clicked a freshly downloaded NEWER build while
+				// this older one is running, hand off to it (quit + start the new
+				// one) instead of just raising this old window, which would leave
+				// them stuck on the old version (#71 follow-up). Only triggers for a
+				// different file whose filename version is strictly newer.
+				if app.tryHandOffTo(resolveSecondInstanceExe(data.Args, data.WorkingDirectory)) {
 					return
 				}
 				runtime.WindowUnminimise(app.ctx)

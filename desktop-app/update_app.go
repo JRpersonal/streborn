@@ -32,12 +32,81 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
 
 	wailsrt "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// versionFromFilenameRE pulls a vX.Y.Z out of a release asset filename, e.g.
+// "STR-Windows-v0.7.42.exe" -> "v0.7.42".
+var versionFromFilenameRE = regexp.MustCompile(`v\d+\.\d+\.\d+`)
+
+// resolveSecondInstanceExe turns the SingleInstanceLock second-instance args +
+// working dir into the absolute path of the binary the user just launched.
+func resolveSecondInstanceExe(args []string, wd string) string {
+	if len(args) == 0 || args[0] == "" {
+		return ""
+	}
+	p := args[0]
+	if !filepath.IsAbs(p) && wd != "" {
+		p = filepath.Join(wd, p)
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		p = r
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+	return p
+}
+
+// pathsEqual compares two file paths, case-insensitively on Windows.
+func pathsEqual(a, b string) bool {
+	ca, _ := filepath.Abs(filepath.Clean(a))
+	cb, _ := filepath.Abs(filepath.Clean(b))
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(ca, cb)
+	}
+	return ca == cb
+}
+
+// tryHandOffTo handles the case where the user double-clicks a freshly downloaded
+// NEWER build while this (older) one is running: the SingleInstanceLock would
+// otherwise just raise this old window and the new binary would exit, leaving the
+// user stuck on the old version. If the second instance is a different file whose
+// filename version is strictly newer than ours, quit this one and start that one
+// (via the same wait-for-our-pid helper), so the new version actually comes up.
+// Returns true when it took over (caller then skips the raise-to-front).
+//
+// Guard rails: the same binary path just raises the window (no-op handoff); an
+// unparseable or not-newer filename is NOT handed off, so a re-launch of the same
+// or an older copy never downgrades silently.
+func (a *App) tryHandOffTo(other string) bool {
+	if other == "" {
+		return false
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	if r, e := filepath.EvalSymlinks(self); e == nil {
+		self = r
+	}
+	if pathsEqual(self, other) {
+		return false
+	}
+	ov := versionFromFilenameRE.FindString(filepath.Base(other))
+	if ov == "" || !versionLess(appVersion, ov) {
+		return false
+	}
+	a.logger.Info("second instance is a newer build; handing off instead of just focusing",
+		"self", appVersion, "newVersion", ov, "path", other)
+	a.relaunchAndQuit(other)
+	return true
+}
 
 // newGETRequest builds a GET with STR's identifiable update user-agent, used for
 // the manifest and asset downloads through updateHTTPClient (the pure-Go TLS
