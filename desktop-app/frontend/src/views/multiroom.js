@@ -6,7 +6,7 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr } from '../utils.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { GetZoneState, FormZone, DissolveZone, BrowserOpenURL } from '../api.js';
 
@@ -24,7 +24,7 @@ export function initMultiroomView(d) {
 // "str-<ip>"/"STR-<hex>" fallback, so name-first never reached the real speaker
 // name (Michal's group menu showing str-192.168.x.y). Fall back to name/host only
 // when no friendly name resolved. Matches the box switcher and the recent view.
-function zoneLabel(b) { return b.friendlyName || b.name || b.host; }
+function zoneLabel(b) { return getBoxLabel(b); }
 
 // renderMultiroom paints the Multi-Room view. fetchLive triggers a non-blocking
 // parallel poll of every speaker's live zone after paint (skipped on repaints).

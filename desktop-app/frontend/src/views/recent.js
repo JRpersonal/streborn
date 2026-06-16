@@ -14,7 +14,7 @@
 // rendering happen here in the app (App-First, keep the box light).
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, confirmWarn, getBoxLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { RecentPlayed, SaveSpotifyPreset, GetPresets, PlaySlot, BrowserOpenURL, ClearRecent, DeleteRecentCard } from '../api.js';
 import { logoImgTag, SPOTIFY_LOGO } from '../logos.js';
@@ -112,7 +112,7 @@ async function loadRecentCards() {
     const boxKey = b.deviceID || (b.host + ':' + b.port);
     // friendlyName first: the backend always fills Name with a "str-<IP>" fallback,
     // so b.name is never empty. This matches the box switcher and the rest of the app.
-    const boxName = b.friendlyName || b.name || b.host;
+    const boxName = getBoxLabel(b);
     let list = [];
     try { list = await RecentPlayed(b.host, b.port) || []; } catch { list = []; }
     // Map Spotify playlist URI -> preset slot on this box. A match means the box

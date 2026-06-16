@@ -170,6 +170,7 @@ import {
   showToast,
   compareVerBuild,
   boxModelSupport,
+  getBoxLabel,
 } from './utils.js';
 
 import {
@@ -1406,7 +1407,7 @@ function renderBoxSelect() {
       : '';
     const active = state.currentBox && state.currentBox.host === b.host && !isStock ? ' active' : '';
     const stockCls = isStock ? ' stock' : '';
-    const label = b.friendlyName || b.name || b.host;
+    const label = getBoxLabel(b);
     // Model (e.g. "SoundTouch 10") right next to the name so users
     // with several speakers can tell ST10 from ST20 at a glance.
     // Fall back gracefully when an older agent only advertises the
@@ -1479,7 +1480,7 @@ function renderBoxSelect() {
         // found a Bose speaker they can revive with STR. Invite them to
         // the USB stick setup with a positive CTA (no warning triangle,
         // no red "proceed anyway") instead of a danger prompt.
-        const label = box.friendlyName || box.name || box.host;
+        const label = getBoxLabel(box);
         const ok = await confirmWarn(
           t('speaker.stockConfirmTitle'),
           t('speaker.stockConfirmBody', { label: escapeHtml(label) }),
@@ -1895,7 +1896,7 @@ async function checkBoxUpdate() {
     }
     return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
   };
-  const boxName = state.currentBox.friendlyName || state.currentBox.name || state.currentBox.host;
+  const boxName = getBoxLabel(state.currentBox);
   try {
     const v = await BoxAgentVersion(state.currentBox.host, state.currentBox.port);
     const boxVer = v.version || t('common.unknown');
@@ -2023,7 +2024,7 @@ async function doBoxUpdate(targetBox) {
   // setStatus guard both see a consistent (target, in-flight)
   // pair at every point in this flow. Reset together in finally{}.
   state.otaTargetHost = targetBox.host;
-  state.otaTargetName = targetBox.friendlyName || targetBox.name || targetBox.host;
+  state.otaTargetName = getBoxLabel(targetBox);
   // Suppress the SSH "remove stick and reboot" banner for the whole
   // OTA window. The agent restarts mid-OTA and SSH is briefly open
   // during that restart; the banner's "Reboot now" button would

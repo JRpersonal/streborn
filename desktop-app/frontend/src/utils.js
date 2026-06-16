@@ -16,6 +16,11 @@ export function escapeHtml(s) {
 
 export function escapeAttr(s) { return escapeHtml(s); }
 
+// getBoxLabel returns a speaker's display name: its friendly name, else the agent
+// name (the backend always fills this with a "str-<ip>" fallback), else the host.
+// One place for the label that several views repeated inline.
+export function getBoxLabel(b) { return (b && (b.friendlyName || b.name || b.host)) || ''; }
+
 // compareVerBuild compares two (version, build) pairs and returns -1 if A<B,
 // 1 if A>B, 0 if equal. version is "vMAJOR.MINOR.PATCH" (a leading "v" and any
 // "-N-gHASH" dev suffix are ignored); build is a sortable "YYYY-MM-DD-HHMM"
