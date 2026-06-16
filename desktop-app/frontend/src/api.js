@@ -61,6 +61,8 @@ export {
   SetResumeOnPowerOn,
   GetDisplayTrack,
   SetDisplayTrack,
+  AnnounceExample,
+  SendAnnounce,
   ResolveUpdateAsset,
   DownloadUpdate,
   ApplyUpdate,

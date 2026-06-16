@@ -480,6 +480,22 @@ body {
   letter-spacing: 0.3px;
 }
 
+/* Announcement expert command: a wrappable, selectable monospace block. */
+.announce-curl {
+  flex: 1;
+  display: block;
+  padding: 8px 10px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #cfcfcf;
+  word-break: break-all;
+  white-space: pre-wrap;
+  user-select: all;
+}
+
 /* ---------- Beta pill (used on the Library tab and elsewhere) ---------- */
 .beta-pill {
   display: inline-block;
