@@ -373,8 +373,17 @@ func (c *Client) GetZone(ctx context.Context) (Zone, error) {
 		Members:  make([]ZoneMember, 0, len(raw.Members)),
 	}
 	for _, m := range raw.Members {
+		dev := strings.TrimSpace(m.DeviceID)
+		// The firmware /getZone body lists the master as a member too (and STR now
+		// sends it that way in /setZone). Members here means the SLAVES, so drop the
+		// master entry: keeps len(Members)==len(slaves) for every consumer (the
+		// reconcile guard, the "main of {n}" label, the box-selector group count),
+		// regardless of whether a given model echoes the master back.
+		if z.Master != "" && strings.EqualFold(dev, z.Master) {
+			continue
+		}
 		z.Members = append(z.Members, ZoneMember{
-			DeviceID: strings.TrimSpace(m.DeviceID),
+			DeviceID: dev,
 			IP:       strings.TrimSpace(m.IP),
 			Role:     strings.TrimSpace(m.Role),
 		})
@@ -508,7 +517,14 @@ func zoneXML(master ZoneMember, slaves []ZoneMember) string {
 // produce sound (see #70 design notes), so callers should start playback on
 // the master first.
 func (c *Client) SetZone(ctx context.Context, master ZoneMember, slaves []ZoneMember) error {
-	return c.postXML(ctx, "/setZone", zoneXML(master, slaves))
+	// /setZone's member list must include the MASTER itself as the first <member>,
+	// then each slave. Confirmed across the Bose Web API doc, thlucas1's
+	// bosesoundtouchapi, the Home Assistant integration and gesellix/AfterTouch.
+	// STR previously sent only the slaves, diverging from every documented body,
+	// the likely cause of flaky native grouping (#70). addZoneSlave/removeZoneSlave
+	// stay deltas that list only the affected members (no master member).
+	members := append([]ZoneMember{master}, slaves...)
+	return c.postXML(ctx, "/setZone", zoneXML(master, members))
 }
 
 // AddZoneSlave adds slaves to the zone already led by master. The master must

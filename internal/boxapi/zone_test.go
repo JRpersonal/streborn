@@ -119,6 +119,32 @@ func TestGetZoneWithMembers(t *testing.T) {
 	}
 }
 
+// TestGetZoneDropsMasterMember: the firmware /getZone body lists the master as a
+// member too, but Zone.Members must mean the slaves only, so the master entry is
+// filtered out (keeps len(Members)==len(slaves) for every consumer).
+func TestGetZoneDropsMasterMember(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="UTF-8" ?>` +
+		`<zone master="AAAAAAAAAAAA" senderIPAddress="192.0.2.10">` +
+		`<member ipaddress="192.0.2.10">AAAAAAAAAAAA</member>` +
+		`<member ipaddress="192.0.2.11">BBBBBBBBBBBB</member>` +
+		`</zone>`
+	c, stop := newFakeBox(t, map[string]string{"/getZone": xml})
+	defer stop()
+	z, err := c.GetZone(context.Background())
+	if err != nil {
+		t.Fatalf("GetZone error: %v", err)
+	}
+	if z.Master != "AAAAAAAAAAAA" {
+		t.Errorf("master: got %q", z.Master)
+	}
+	if len(z.Members) != 1 {
+		t.Fatalf("master must be filtered from members, got %d: %+v", len(z.Members), z.Members)
+	}
+	if z.Members[0].DeviceID != "BBBBBBBBBBBB" {
+		t.Errorf("remaining member wrong: %+v", z.Members[0])
+	}
+}
+
 func TestZoneXML(t *testing.T) {
 	got := zoneXML(
 		ZoneMember{DeviceID: "AAAA", IP: "192.0.2.10"},
@@ -179,6 +205,18 @@ func TestSetZonePostsCorrectly(t *testing.T) {
 	if !strings.Contains(gotBody, `master="AAAA"`) ||
 		!strings.Contains(gotBody, `<member ipaddress="192.0.2.11">BBBB</member>`) {
 		t.Errorf("setZone body wrong: %q", gotBody)
+	}
+	// The /setZone member list MUST include the master itself as the FIRST
+	// member (Bose API + thlucas1 + HA + gesellix all agree), then the slaves.
+	if !strings.Contains(gotBody, `<member ipaddress="192.0.2.10">AAAA</member>`) {
+		t.Errorf("setZone body must include the master as a member: %q", gotBody)
+	}
+	wantBody := `<zone master="AAAA" senderIPAddress="192.0.2.10">` +
+		`<member ipaddress="192.0.2.10">AAAA</member>` +
+		`<member ipaddress="192.0.2.11">BBBB</member>` +
+		`</zone>`
+	if gotBody != wantBody {
+		t.Errorf("setZone body:\n got %q\nwant %q", gotBody, wantBody)
 	}
 }
 
