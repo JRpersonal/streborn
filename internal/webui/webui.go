@@ -2773,37 +2773,57 @@ func (s *Server) handleBoxGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, g)
 }
 
-// stickReallyMounted reports whether a real STR stick is mounted at /media/sda1
-// (not just a leftover empty mountpoint dir), and returns its version.txt when
-// present. Evidence, in order: a known stick file is readable (every stick prep
-// writes version.txt, and run.sh lives on it), or /media/sda1 is an actual mount
-// point in /proc/self/mountinfo. A leftover empty dir or a dangling symlink has
-// neither, so it correctly reports not-mounted.
+// sysBlockRoot and mediaRoot are the sysfs block-device root and the mount root.
+// They are vars (not consts) so the stick-detection test can point them at a temp
+// tree; in production they are the real paths.
+var (
+	sysBlockRoot = "/sys/block"
+	mediaRoot    = "/media"
+)
+
+// diskIsRemovableUSB reports whether the named block disk (e.g. "sda") is a
+// REMOVABLE USB device, i.e. a USB stick, rather than the speaker's built-in
+// storage. A disk qualifies when /sys/block/<disk>/removable reads "1", or when
+// its sysfs device path sits on the USB bus. This is the fix for #105: several
+// speakers (deqw's ST10 + both ST20s, no stick inserted) enumerate an INTERNAL
+// disk as sda, so the old "any sd* block device exists" check raised the
+// "remove the USB stick" banner permanently with nothing to remove.
+func diskIsRemovableUSB(disk string) bool {
+	base := filepath.Join(sysBlockRoot, disk)
+	if _, err := os.Stat(base); err != nil {
+		return false // no such disk
+	}
+	if b, err := os.ReadFile(filepath.Join(base, "removable")); err == nil &&
+		strings.TrimSpace(string(b)) == "1" {
+		return true
+	}
+	// Fallback: a USB stick's /sys/block/<disk> resolves through the USB bus, while
+	// internal eMMC/SD/SATA does not. Some sticks report removable=0, so also
+	// accept a USB device path.
+	if real, err := filepath.EvalSymlinks(base); err == nil && strings.Contains(real, "/usb") {
+		return true
+	}
+	return false
+}
+
+// stickReallyMounted reports whether a real STR USB stick is in the speaker right
+// now, and returns its version.txt when readable. It keys on a REMOVABLE USB
+// block device (sda/sdb), NOT the bare presence of an sd* device: the latter
+// lingers as the box's built-in storage on some models, which kept the "remove
+// the USB stick" banner up forever with no stick inserted (#105). The version is
+// read from the matching mount (/media/<disk>1/version.txt) when the stick
+// happens to be mounted (the Portable does not auto-mount it).
 func stickReallyMounted() (bool, string) {
-	// Key presence on the BLOCK DEVICE, not the /media/sda1 mountpoint. That
-	// directory is unreliable both ways: it lingers as an empty dir after
-	// `umount`, which kept the "remove the USB stick" banner up forever after the
-	// stick was pulled (#105); AND on the Portable the stick enumerates but is
-	// not auto-mounted there (dirty FAT / no automount), so a mountpoint check
-	// reported "removed" while the stick was still inserted (verified live:
-	// /dev/sda1 present, nothing mounted at /media/sda1). The block device
-	// appears when a stick is plugged in and disappears when it is pulled, so it
-	// is the reliable presence signal (run.sh gates on the same).
-	present := false
-	for _, p := range []string{"/sys/block/sda", "/dev/sda1", "/sys/block/sdb", "/dev/sdb1"} {
-		if _, err := os.Stat(p); err == nil {
-			present = true
-			break
+	for _, disk := range []string{"sda", "sdb"} {
+		if !diskIsRemovableUSB(disk) {
+			continue
 		}
+		if b, err := os.ReadFile(filepath.Join(mediaRoot, disk+"1", "version.txt")); err == nil {
+			return true, strings.TrimSpace(string(b))
+		}
+		return true, ""
 	}
-	if !present {
-		return false, ""
-	}
-	// Present. Return version.txt when the stick happens to be mounted+readable.
-	if b, err := os.ReadFile("/media/sda1/version.txt"); err == nil {
-		return true, strings.TrimSpace(string(b))
-	}
-	return true, ""
+	return false, ""
 }
 
 // handleStickStatus reports whether the USB stick is actually in the box right
