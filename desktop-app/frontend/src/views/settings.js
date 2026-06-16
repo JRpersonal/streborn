@@ -45,6 +45,8 @@ import {
   SetResumeOnPowerOn,
   GetDisplayTrack,
   SetDisplayTrack,
+  AnnounceExample,
+  SendAnnounce,
   GetAirplayOpt,
   SetAirplayOpt,
   GetWebhooks,
@@ -539,6 +541,23 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="displayTrackOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
+    </div>
+
+    <div class="settings-section" id="announceSection">
+      <h3>${escapeHtml(t('settingsView.announceHeading'))}<span class="beta-pill">beta</span></h3>
+      <small class="muted small">${escapeHtml(t('settingsView.announceHelp'))}</small>
+      <div class="setting-row" style="margin-top:8px">
+        <input type="text" id="announceText" class="text-input" placeholder="${escapeAttr(t('settingsView.announcePlaceholder'))}" style="flex:1" />
+        <button class="btn btn-mini" id="announceSend">${escapeHtml(t('settingsView.announceSend'))}</button>
+      </div>
+      <details style="margin-top:10px">
+        <summary class="muted small" style="cursor:pointer">${escapeHtml(t('settingsView.announceExpert'))}</summary>
+        <small class="muted small" style="display:block;margin:6px 0">${escapeHtml(t('settingsView.announceExpertHelp'))}</small>
+        <div class="setting-row">
+          <code id="announceCurl" class="announce-curl"></code>
+          <button class="btn btn-mini" id="announceCopy">${escapeHtml(t('settingsView.announceCopy'))}</button>
+        </div>
+      </details>
     </div>
 
     <div class="settings-section hidden" id="airplayOptSection">
@@ -1157,6 +1176,42 @@ function renderBoxSettings(s, box) {
     };
     dtOn.onclick = () => setDT(true);
     dtOff.onclick = () => setDT(false);
+  }
+
+  // Announcements (#125, beta): a quick test field plus a copy-paste curl command
+  // for power users (Home Assistant / scripts). The command is built on the Go
+  // side so it carries the agent port that actually answers this box.
+  const annText = $('announceText');
+  const annSend = $('announceSend');
+  const annCurl = $('announceCurl');
+  const annCopy = $('announceCopy');
+  if (annCurl) {
+    (async () => {
+      try { annCurl.textContent = await AnnounceExample(box.host, box.port); } catch { /* leave blank */ }
+    })();
+  }
+  if (annSend) {
+    annSend.onclick = async () => {
+      const text = ((annText && annText.value) || '').trim();
+      if (!text) return;
+      annSend.disabled = true;
+      try {
+        await SendAnnounce(box.host, box.port, text, 0);
+        showToast(t('settingsView.announceSentToast'));
+      } catch (e) { showError(e); }
+      annSend.disabled = false;
+    };
+  }
+  if (annText) {
+    annText.onkeydown = (e) => { if (e.key === 'Enter' && annSend) annSend.click(); };
+  }
+  if (annCopy && annCurl) {
+    annCopy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(annCurl.textContent || '');
+        showToast(t('settingsView.announceCopiedToast'));
+      } catch { /* clipboard blocked */ }
+    };
   }
 
   // AirPlay optimization (BCO speakers only). GET reports supported +

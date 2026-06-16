@@ -170,6 +170,16 @@ type Server struct {
 	// gap every few seconds. Guarded by lastPlayMu.
 	lastDisplayPush time.Time
 
+	// announceAudio holds the most recently fetched announcement audio (#125), the
+	// cloud-free replacement for the firmware's /speaker TTS endpoint. It is served
+	// once to the box at /announce/audio WITH a Content-Length so the player stops
+	// at the end, instead of the radio stream proxy's reconnect-on-EOF behaviour
+	// (which looped a finite TTS clip ~60x, verified on a Portable). Guarded by
+	// announceMu.
+	announceMu    sync.Mutex
+	announceAudio []byte
+	announceMime  string
+
 	// recent is the capped, debounced recently-played ring (#135). nil when not
 	// wired (dev builds / Spotify-less boxes still work): the /api/recent
 	// endpoint then serves an empty list and the play handlers skip recording.
@@ -434,6 +444,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
+	mux.HandleFunc("/api/announce", s.handleAnnounce)
+	mux.HandleFunc("/announce/audio", s.handleAnnounceAudio)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
