@@ -15,6 +15,8 @@ export function BoxAgentVersion(arg1:string,arg2:number):Promise<Record<string, 
 
 export function BoxInstallReachable(arg1:string):Promise<boolean>;
 
+export function BoxPresets(arg1:string,arg2:number):Promise<Array<main.BoxPresetInfo>>;
+
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.LibraryPage>;
@@ -104,6 +106,8 @@ export function RadioTags(arg1:number):Promise<Array<radiobrowser.Tag>>;
 export function RadioVote(arg1:string):Promise<void>;
 
 export function RebootBox(arg1:string,arg2:number):Promise<void>;
+
+export function RecallBoxPreset(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function RecentPlayed(arg1:string,arg2:number):Promise<Array<main.RecentItem>>;
 

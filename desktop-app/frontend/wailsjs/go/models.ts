@@ -58,6 +58,28 @@ export namespace main {
 	        this.portVerified = source["portVerified"];
 	    }
 	}
+	export class BoxPresetInfo {
+	    slot: number;
+	    source: string;
+	    type: string;
+	    location: string;
+	    sourceAccount: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BoxPresetInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.slot = source["slot"];
+	        this.source = source["source"];
+	        this.type = source["type"];
+	        this.location = source["location"];
+	        this.sourceAccount = source["sourceAccount"];
+	        this.name = source["name"];
+	    }
+	}
 	export class FirmwareInfo {
 	    reachable: boolean;
 	    model: string;

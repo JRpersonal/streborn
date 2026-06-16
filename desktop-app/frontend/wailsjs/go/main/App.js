@@ -22,6 +22,10 @@ export function BoxInstallReachable(arg1) {
   return window['go']['main']['App']['BoxInstallReachable'](arg1);
 }
 
+export function BoxPresets(arg1, arg2) {
+  return window['go']['main']['App']['BoxPresets'](arg1, arg2);
+}
+
 export function BoxSettings(arg1, arg2) {
   return window['go']['main']['App']['BoxSettings'](arg1, arg2);
 }
@@ -200,6 +204,10 @@ export function RadioVote(arg1) {
 
 export function RebootBox(arg1, arg2) {
   return window['go']['main']['App']['RebootBox'](arg1, arg2);
+}
+
+export function RecallBoxPreset(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RecallBoxPreset'](arg1, arg2, arg3);
 }
 
 export function RecentPlayed(arg1, arg2) {

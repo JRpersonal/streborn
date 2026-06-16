@@ -169,6 +169,10 @@ type Server struct {
 	// StreamTitle between the song and promo/talk lines does not cause a re-buffer
 	// gap every few seconds. Guarded by lastPlayMu.
 	lastDisplayPush time.Time
+	// lastICYTitle is the most recent radio StreamTitle seen, kept so enabling the
+	// display push or changing its mode can show the CURRENT track immediately
+	// instead of waiting for the next title change. Guarded by lastPlayMu.
+	lastICYTitle string
 
 	// recent is the capped, debounced recently-played ring (#135). nil when not
 	// wired (dev builds / Spotify-less boxes still work): the /api/recent
@@ -453,6 +457,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
 	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
+	mux.HandleFunc("/api/box/presets/recall", s.handleBoxPresetRecall)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
@@ -1741,18 +1746,39 @@ func (s *Server) HandleStreamTitle(title string) {
 	// source card, regardless of whether the on-box ICY display push is enabled
 	// (this callback fires on every ICY title change either way).
 	s.recentNoteRadioTrack(title)
+	// Remember the live title so enabling the push / changing its mode can show
+	// the CURRENT track immediately (see pushDisplayNow), not only the next one.
+	if title != "" {
+		s.lastPlayMu.Lock()
+		s.lastICYTitle = title
+		s.lastPlayMu.Unlock()
+	}
 	if !s.displayTrackEnabled() || s.renderer == nil || title == "" {
+		return
+	}
+	// Rate-limit: re-buffering the box on every StreamTitle flip (song <-> promo)
+	// would gap the audio constantly. Skip if we pushed within the last window.
+	s.lastPlayMu.Lock()
+	throttled := !s.lastDisplayPush.IsZero() && time.Since(s.lastDisplayPush) < minDisplayPushInterval
+	s.lastPlayMu.Unlock()
+	if throttled {
+		return
+	}
+	s.pushDisplayTitle(title)
+}
+
+// pushDisplayTitle re-issues the now-playing metadata so the configured display
+// text (artist / title / both, applied to rawTitle) appears on the speaker. This
+// re-buffers the box (a brief audio gap), so callers gate it: HandleStreamTitle
+// debounces, the enable / mode-change path pushes once immediately. Updates the
+// debounce stamp.
+func (s *Server) pushDisplayTitle(rawTitle string) {
+	if s.renderer == nil || rawTitle == "" {
 		return
 	}
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay
 	if lp == nil {
-		s.lastPlayMu.Unlock()
-		return
-	}
-	// Rate-limit: re-buffering the box on every StreamTitle flip (song <-> promo)
-	// would gap the audio constantly. Skip if we pushed within the last window.
-	if !s.lastDisplayPush.IsZero() && time.Since(s.lastDisplayPush) < minDisplayPushInterval {
 		s.lastPlayMu.Unlock()
 		return
 	}
@@ -1762,8 +1788,7 @@ func (s *Server) HandleStreamTitle(title string) {
 	if boxURL == "" {
 		return
 	}
-	// Apply the user's display mode (artist / title / both) to the raw ICY title.
-	shown := s.displayTrackText(title)
+	shown := s.displayTrackText(rawTitle)
 	if shown == "" {
 		return
 	}
@@ -1784,6 +1809,22 @@ func (s *Server) HandleStreamTitle(title string) {
 		return
 	}
 	s.logger.Info("icy display push", "shown", shown, "mode", s.displayTrackMode())
+}
+
+// pushDisplayNow immediately shows the current track on the speaker display,
+// bypassing the debounce. Used right after the user enables the feature or
+// switches the artist/title/both mode, so the display updates at once instead of
+// waiting for the next song change. No-op when disabled or nothing is playing.
+func (s *Server) pushDisplayNow() {
+	if !s.displayTrackEnabled() {
+		return
+	}
+	s.lastPlayMu.Lock()
+	cur := s.lastICYTitle
+	s.lastPlayMu.Unlock()
+	if cur != "" {
+		s.pushDisplayTitle(cur)
+	}
 }
 
 // boxPlayState reads now_playing once and reports whether the box is in standby
@@ -3109,6 +3150,11 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = exec.Command("sync").Run()
 		s.logger.Info("display-track set", "enabled", body.Enabled, "mode", s.displayTrackMode())
+		// Update the speaker display right away (enable or mode change) instead of
+		// waiting for the next song. Async so the POST returns before the box I/O.
+		if body.Enabled {
+			go s.pushDisplayNow()
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled, "mode": s.displayTrackMode()})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -3147,6 +3193,40 @@ func (s *Server) handleBoxPresets(w http.ResponseWriter, r *http.Request) {
 	copy(out, s.boxPresets)
 	s.boxPresetsMu.Unlock()
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleBoxPresetRecall plays one of the box's OWN presets by pressing its
+// hardware preset key over the TAP CLI (POST {slot}). The box then plays that
+// slot through its own source, which is how a foreign preset (Deezer, played via
+// the box's cached account) is recalled from the app without STR having to be a
+// Deezer player (Option C). For STR-managed presets the app uses /api/play/<slot>
+// instead; this is specifically the path for box-native ones.
+func (s *Server) handleBoxPresetRecall(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if s.boxHost == "" {
+		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Slot int `json:"slot"`
+	}
+	if !decodeJSONRequest(w, r, 1<<10, &body) {
+		return
+	}
+	if body.Slot < 1 || body.Slot > 6 {
+		http.Error(w, "slot must be 1..6", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	if err := boxcli.PresetKey(ctx, s.boxHost, body.Slot, "p"); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "could not recall preset", "detail": err.Error(), "slot": body.Slot})
+		return
+	}
+	s.logger.Info("box preset recalled via hardware key", "slot", body.Slot)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "slot": body.Slot})
 }
 
 // handleBoxWLAN setzt die WLAN Konfiguration der Box zur Laufzeit.

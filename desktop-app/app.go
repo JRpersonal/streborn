@@ -2156,6 +2156,51 @@ func (a *App) SetDisplayTrack(host string, port int, enabled bool, mode string) 
 	return nil
 }
 
+// BoxPresetInfo is one of the box's OWN presets (incl. foreign sources like
+// Deezer that STR did not set), from GET /api/box/presets.
+type BoxPresetInfo struct {
+	Slot          int    `json:"slot"`
+	Source        string `json:"source"`
+	Type          string `json:"type"`
+	Location      string `json:"location"`
+	SourceAccount string `json:"sourceAccount"`
+	Name          string `json:"name"`
+}
+
+// BoxPresets reads the box's own preset list (incl. foreign sources). Empty until
+// the box has reported a presetsUpdated frame at least once since the agent start.
+func (a *App) BoxPresets(host string, port int) ([]BoxPresetInfo, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/presets", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out []BoxPresetInfo
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RecallBoxPreset plays one of the box's own presets by pressing its hardware
+// preset key, so a foreign preset (Deezer) plays via the box's cached account.
+func (a *App) RecallBoxPreset(host string, port int, slot int) error {
+	body, _ := json.Marshal(map[string]int{"slot": slot})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/presets/recall", "application/json", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 // --- Persistent app flags ---
 //
 // A few one-way app-level flags (e.g. "the user has already been invited to the

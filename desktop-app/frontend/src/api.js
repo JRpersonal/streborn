@@ -16,6 +16,8 @@ export {
   VoteStation,
   RebootBox,
   SyncBoxPresets,
+  BoxPresets,
+  RecallBoxPreset,
   CopyPresetsAcrossBoxes,
   GetBoxFirmware,
   BoxInstallReachable,
