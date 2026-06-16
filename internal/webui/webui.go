@@ -1767,13 +1767,13 @@ func (s *Server) HandleStreamTitle(title string) {
 	s.pushDisplayTitle(title)
 }
 
-// pushDisplayTitle re-issues the now-playing metadata so the configured display
-// text (artist / title / both, applied to rawTitle) appears on the speaker. This
-// re-buffers the box (a brief audio gap), so callers gate it: HandleStreamTitle
-// debounces, the enable / mode-change path pushes once immediately. Updates the
-// debounce stamp.
-func (s *Server) pushDisplayTitle(rawTitle string) {
-	if s.renderer == nil || rawTitle == "" {
+// setDisplayText re-issues the current stream's now-playing metadata with shown
+// as the on-display title, keeping the stream URL / art / mime. It is the shared
+// box write behind both the ICY title push and the revert-to-default path. This
+// re-buffers the box (a brief audio gap), so callers gate it. Updates the
+// debounce stamp. No-op if nothing is playing.
+func (s *Server) setDisplayText(shown string) {
+	if s.renderer == nil || shown == "" {
 		return
 	}
 	s.lastPlayMu.Lock()
@@ -1786,10 +1786,6 @@ func (s *Server) pushDisplayTitle(rawTitle string) {
 	s.lastDisplayPush = time.Now()
 	s.lastPlayMu.Unlock()
 	if boxURL == "" {
-		return
-	}
-	shown := s.displayTrackText(rawTitle)
-	if shown == "" {
 		return
 	}
 	// Serialise against other box commands (re-push, play) so a title update
@@ -1805,10 +1801,22 @@ func (s *Server) pushDisplayTitle(rawTitle string) {
 		err = s.renderer.SetURI(ctx, boxURL, shown, art)
 	}
 	if err != nil {
-		s.logger.Warn("icy display push failed", "err", err, "shown", shown)
+		s.logger.Warn("display push failed", "err", err, "shown", shown)
 		return
 	}
-	s.logger.Info("icy display push", "shown", shown, "mode", s.displayTrackMode())
+	s.logger.Info("display push", "shown", shown)
+}
+
+// pushDisplayTitle re-issues the now-playing metadata so the configured display
+// text (artist / title / both, applied to rawTitle) appears on the speaker.
+// Callers gate it: HandleStreamTitle debounces, the enable / mode-change path
+// pushes once immediately.
+func (s *Server) pushDisplayTitle(rawTitle string) {
+	shown := s.displayTrackText(rawTitle)
+	if shown == "" {
+		return
+	}
+	s.setDisplayText(shown)
 }
 
 // pushDisplayNow immediately shows the current track on the speaker display,
@@ -1824,6 +1832,26 @@ func (s *Server) pushDisplayNow() {
 	s.lastPlayMu.Unlock()
 	if cur != "" {
 		s.pushDisplayTitle(cur)
+	}
+}
+
+// pushDisplayDefault reverts the speaker display to its normal text (the station
+// name STR set when it started playing) right after the user turns the artist/
+// title push OFF, instead of leaving the last custom text on screen until the
+// next song change. Gated on the box actually playing so a SetURI never wakes an
+// idle speaker; the display only carries our custom text during radio playback.
+func (s *Server) pushDisplayDefault() {
+	if standby, busy := s.boxPlayState(); standby || !busy {
+		return
+	}
+	s.lastPlayMu.Lock()
+	title := ""
+	if s.lastPlay != nil {
+		title = s.lastPlay.title
+	}
+	s.lastPlayMu.Unlock()
+	if title != "" {
+		s.setDisplayText(title)
 	}
 }
 
@@ -3150,10 +3178,13 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = exec.Command("sync").Run()
 		s.logger.Info("display-track set", "enabled", body.Enabled, "mode", s.displayTrackMode())
-		// Update the speaker display right away (enable or mode change) instead of
-		// waiting for the next song. Async so the POST returns before the box I/O.
+		// Update the speaker display right away instead of waiting for the next
+		// song: enable / mode change pushes the current title; disable reverts to
+		// the box's default text. Async so the POST returns before the box I/O.
 		if body.Enabled {
 			go s.pushDisplayNow()
+		} else {
+			go s.pushDisplayDefault()
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "enabled": body.Enabled, "mode": s.displayTrackMode()})
 	default:
