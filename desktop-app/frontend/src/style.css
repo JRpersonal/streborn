@@ -438,6 +438,17 @@ body {
 .box-edit:hover { color: var(--brand); background: rgba(102, 187, 221, 0.12); }
 .box-ver { background: #333; color: #aaa; font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
 .box-model { color: #888; font-size: 11px; font-weight: 500; margin-left: 8px; }
+/* Multiroom group frame (#70): speakers sharing a live zone are clustered and
+   wrapped in a colored border so the group reads as one block on the music tab.
+   Display only; grouping is done in the Multi-Room tab. Four fixed, globally
+   neutral colors; a 5th group would reuse color 1. */
+.box-group { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 7px; border: 2px solid var(--bg-color, #555); border-radius: 8px; }
+.box-group-c1 { --bg-color: #d64545; }
+.box-group-c2 { --bg-color: #3d7fd6; }
+.box-group-c3 { --bg-color: #3fae5a; }
+.box-group-c4 { --bg-color: #d6a23d; }
+/* Star on the group's master speaker pill. */
+.box-group-master { color: var(--brand); margin-right: 4px; font-size: 12px; }
 /* Notification dot on a speaker button whose agent is out of date
    (#108). Same blue as the settings-tab badge (.tab-btn.has-update) on
    purpose: both mean "update available", so one colour, one meaning. Red

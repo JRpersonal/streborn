@@ -79,6 +79,7 @@
   "multiroom.pickAtLeastOne": "Tippe mindestens einen weiteren Lautsprecher an, um ihn zur Gruppe hinzuzufügen.",
   "multiroom.mainBadge": "Haupt",
   "multiroom.makeMain": "Als Haupt",
+  "multiroom.groupMasterTitle": "Gruppen-Haupt (der Lautsprecher, von dem die Gruppe spielt)",
   "multiroom.liveInGroup": "in einer Gruppe",
   "multiroom.liveLeading": "Haupt von {{n}}",
   "multiroom.liveStandalone": "nicht gruppiert",

@@ -86,6 +86,7 @@ import {
   BrowseLibrary,
   LogClientError,
   BrowserOpenURL,
+  GetZoneState,
   EventsOn,
 } from './api.js';
 
@@ -1282,6 +1283,9 @@ function applyBoxList(list) {
     }
   }
   renderBoxSelect();
+  // Refresh the live multiroom zones so the music-tab group frames are current.
+  // Debounced (not a tight loop) and best-effort; repaints the selector on result.
+  refreshMusicZones();
   updateSettingsTabBadge();
   // Re-evaluate the Favorites entry on every box-list refresh. This is the first
   // point after boot where localStorage is reliably restored in the WebView, so
@@ -1331,6 +1335,29 @@ function applyPendingNames(list) {
   });
 }
 
+// refreshMusicZones fetches every STR speaker's live multiroom zone so the
+// music-tab group frames are accurate, then repaints the selector. Debounced to
+// at most once per 8s (NOT a tight loop) and shares state.zoneLive with the
+// Multi-Room tab. Best-effort: on error the frames simply stay as they were.
+let _musicZoneFetchAt = 0;
+async function refreshMusicZones() {
+  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.deviceID && b.host);
+  if (strBoxes.length < 2) { return; } // a zone needs at least two speakers
+  const now = Date.now();
+  if (state.zoneLiveBusy || now - _musicZoneFetchAt < 8000) return;
+  _musicZoneFetchAt = now;
+  state.zoneLiveBusy = true;
+  try {
+    const results = await Promise.allSettled(strBoxes.map(b => GetZoneState(b.host, b.port)));
+    const map = {};
+    results.forEach((r, i) => { map[strBoxes[i].deviceID] = (r.status === 'fulfilled' && r.value) ? r.value : null; });
+    state.zoneLive = map;
+  } catch { /* keep previous frames */ } finally {
+    state.zoneLiveBusy = false;
+  }
+  renderBoxSelect();
+}
+
 function renderBoxSelect() {
   const sel = $('boxSelect');
   if (state.boxes.length === 0) {
@@ -1354,8 +1381,29 @@ function renderBoxSelect() {
     updateBoxUiVisibility();
     return;
   }
-  sel.innerHTML = state.boxes.map(b => {
+  // Cluster speakers that share a live multiroom zone into a colored frame
+  // (display only; grouping is done in the Multi-Room tab). Defensive: with no
+  // live group of >=2 discovered speakers the selector renders exactly as before.
+  const zlMap = state.zoneLive || {};
+  const masterOf = (b) => {
+    if (b.kind === 'stock') return '';
+    const zl = zlMap[b.deviceID];
+    return (zl && zl.master) ? zl.master.toUpperCase() : '';
+  };
+  const memberCount = {};
+  state.boxes.forEach(b => { const m = masterOf(b); if (m) memberCount[m] = (memberCount[m] || 0) + 1; });
+  // A box is a framed master only when its group actually renders a frame, i.e.
+  // >=2 of its members are discovered here. This keeps the master star and the
+  // frame in lock-step (never a lone star on an unframed pill).
+  const isFramedMaster = (b) => {
+    const m = masterOf(b);
+    return !!m && m === (b.deviceID || '').toUpperCase() && memberCount[m] >= 2;
+  };
+  const pill = (b) => {
     const isStock = b.kind === 'stock';
+    const groupMark = isFramedMaster(b)
+      ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733;</span>`
+      : '';
     const active = state.currentBox && state.currentBox.host === b.host && !isStock ? ' active' : '';
     const stockCls = isStock ? ' stock' : '';
     const label = b.friendlyName || b.name || b.host;
@@ -1387,8 +1435,24 @@ function renderBoxSelect() {
     const updDot = boxNeedsUpdate(b)
       ? `<span class="box-update-dot" title="${escapeAttr(t('speaker.updateBadgeTitle'))}" aria-label="${escapeAttr(t('speaker.updateBadgeTitle'))}"></span>`
       : '';
-    return `<span class="box-btn${active}${updCls}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
-  }).join('');
+    return `<span class="box-btn${active}${updCls}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${groupMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
+  };
+  const groups = Object.keys(memberCount).filter(m => memberCount[m] >= 2).sort();
+  if (groups.length === 0) {
+    sel.innerHTML = state.boxes.map(pill).join('');
+  } else {
+    const colorOf = {};
+    groups.forEach((m, i) => { colorOf[m] = (i % 4) + 1; });
+    let html = '';
+    for (const m of groups) {
+      const members = state.boxes.filter(b => masterOf(b) === m);
+      // master first inside the frame
+      members.sort((a, b) => (((b.deviceID || '').toUpperCase() === m ? 1 : 0) - ((a.deviceID || '').toUpperCase() === m ? 1 : 0)));
+      html += `<div class="box-group box-group-c${colorOf[m]}">${members.map(pill).join('')}</div>`;
+    }
+    html += state.boxes.filter(b => { const mm = masterOf(b); return !(mm && memberCount[mm] >= 2); }).map(pill).join('');
+    sel.innerHTML = html;
+  }
   sel.querySelectorAll('.box-btn').forEach(btn => {
     btn.onclick = async (e) => {
       // A click on the gear icon opens the settings view rather than

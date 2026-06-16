@@ -31,7 +31,10 @@ function zoneLabel(b) { return b.friendlyName || b.name || b.host; }
 export function renderMultiroom(fetchLive) {
   const root = $('view-multiroom');
   if (!root) return;
-  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host);
+  // Require deviceID too: the live-zone map is keyed by deviceID, so a box
+  // without one (very early discovery) would key an entry under undefined and
+  // collide with the music-tab group frames that share state.zoneLive.
+  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.deviceID);
   const enough = strBoxes.length >= 2;
   if (!state.zoneLive) state.zoneLive = {};
   if (!state.zoneSlaves) state.zoneSlaves = {};

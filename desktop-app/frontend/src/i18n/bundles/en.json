@@ -79,6 +79,7 @@
   "multiroom.pickAtLeastOne": "Tap at least one other speaker to add it to the group.",
   "multiroom.mainBadge": "Main",
   "multiroom.makeMain": "Set as main",
+  "multiroom.groupMasterTitle": "Group main (the speaker the group plays from)",
   "multiroom.liveInGroup": "in a group",
   "multiroom.liveLeading": "main of {{n}}",
   "multiroom.liveStandalone": "not grouped",
