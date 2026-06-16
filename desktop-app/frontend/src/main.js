@@ -2524,15 +2524,15 @@ function applyTrackScroll(selector = '.preset-track, .status-bar .now') {
 
 // attachPresetHandlers wires click (short = play) and long press
 // (hold = save the current station to this slot). LONG_PRESS_MS =
-// 800 ms. VISUAL_HOLD_DELAY = 180 ms: only after this hold time do
-// we show the scale(0.96) visual. A short click avoids the mini
-// jiggle that a transition scale-down + scale-up would otherwise
-// produce on the logo.
+// 1100 ms: a clearly deliberate hold, so a normal tap never saves by accident.
+// VISUAL_HOLD_DELAY = 180 ms: only after this hold time do we show the
+// scale(0.96) visual. A short click avoids the mini jiggle that a transition
+// scale-down + scale-up would otherwise produce on the logo.
 //
 // opts.onPlay overrides the short-click action (box-native presets recall the
 // box's hardware key instead of STR's play). opts.allowSave=false disables the
 // long-press save so a box-native preset can't be overwritten by a hold.
-const LONG_PRESS_MS = 800;
+const LONG_PRESS_MS = 1100;
 const VISUAL_HOLD_DELAY = 180;
 function attachPresetHandlers(el, slot, preset, opts = {}) {
   const onPlay = opts.onPlay || (() => play(slot));
