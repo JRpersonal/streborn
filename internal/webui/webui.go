@@ -3142,12 +3142,10 @@ func (s *Server) handleBoxPresets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.boxPresetsMu.Lock()
+	// make() never returns nil, so an empty list still marshals to [] not null.
 	out := make([]BoxPreset, len(s.boxPresets))
 	copy(out, s.boxPresets)
 	s.boxPresetsMu.Unlock()
-	if out == nil {
-		out = []BoxPreset{}
-	}
 	writeJSON(w, http.StatusOK, out)
 }
 
