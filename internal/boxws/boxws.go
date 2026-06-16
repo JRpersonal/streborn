@@ -88,24 +88,23 @@ type Handler interface {
 	// nicht hier.
 	OnPowerWake(ctx context.Context)
 
-	// OnPresetsChanged wird gefeuert wenn die Box ihre eigene Preset-Liste meldet
-	// (presetsUpdated). Liefert ALLE Box-Presets inkl. fremder Quellen (DEEZER,
-	// LOCAL_INTERNET_RADIO, ...), die NICHT von STR stammen. So kann STR die
-	// vorhandenen Presets der Box anzeigen/erhalten und recallen (die Box spielt
-	// z.B. ein Deezer-Preset ueber ihr eigenes gecachtes Konto), statt nur die
-	// Slot-IDs zu loggen.
+	// OnPresetsChanged fires when the box reports its own preset list
+	// (presetsUpdated). It delivers ALL of the box's presets, including foreign
+	// sources (DEEZER, LOCAL_INTERNET_RADIO, ...) that STR did not set. This lets
+	// STR show and recall the box's existing presets (the box plays e.g. a Deezer
+	// preset through its own cached account) instead of just logging the slot IDs.
 	OnPresetsChanged(ctx context.Context, presets []BoxPreset)
 }
 
-// BoxPreset ist ein vom Box-eigenen presetsUpdated gemeldetes Preset, inkl. der
-// Quelle. STR nutzt das um fremde (nicht von STR gesetzte) Presets wie Deezer
-// zu erkennen, anzuzeigen und zu erhalten.
+// BoxPreset is one preset reported by the box's own presetsUpdated frame,
+// including its source. STR uses it to detect, show and keep foreign presets
+// (ones STR did not set), such as Deezer.
 type BoxPreset struct {
 	Slot          int    `json:"slot"`          // 1..6
 	Source        string `json:"source"`        // DEEZER / LOCAL_INTERNET_RADIO / SPOTIFY / UPNP / ...
 	Type          string `json:"type"`          // playlist / stationurl / tracklistRadio / ...
 	Location      string `json:"location"`      // stream URL, Deezer playlist ID, ...
-	SourceAccount string `json:"sourceAccount"` // verknuepftes Konto (z.B. Deezer-Account)
+	SourceAccount string `json:"sourceAccount"` // linked account (e.g. Deezer account)
 	Name          string `json:"name"`          // itemName
 }
 

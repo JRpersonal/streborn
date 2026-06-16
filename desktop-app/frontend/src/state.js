@@ -10,6 +10,7 @@ export const state = {
   currentBox: null,
   settingsBox: null,   // The box whose settings are currently being edited
   presets: [],
+  boxPresets: [],      // the box's OWN presets (incl. foreign sources like Deezer)
   searchResults: [],
   drives: [],
   selectedDrive: null,

@@ -10,6 +10,8 @@ import {
   VoteStation,
   RebootBox,
   SyncBoxPresets,
+  BoxPresets,
+  RecallBoxPreset,
   CopyPresetsAcrossBoxes,
   GetBoxFirmware,
   BoxInstallReachable,
@@ -2083,8 +2085,14 @@ function updateBoxUiVisibility() {
   $('boxHint').classList.toggle('hidden', !hasSTR || hasBox);
 }
 
+let loadedPresetsBoxKey = null;
 async function loadPresets(retry = 0) {
   if (!state.currentBox) return;
+  // Drop another box's box-native presets the moment we switch, so a Deezer tile
+  // from the previous speaker never flashes on this one's empty slot. Kept across
+  // same-box refreshes so the tiles don't flicker on every reload.
+  const boxKey = state.currentBox.host + ':' + state.currentBox.port;
+  if (boxKey !== loadedPresetsBoxKey) { state.boxPresets = []; loadedPresetsBoxKey = boxKey; }
   if (state.presets.length === 0) {
     $('presets').innerHTML = `<div class="muted small grid-loading">${escapeHtml(t('preset.loading'))}</div>`;
   }
@@ -2106,6 +2114,7 @@ async function loadPresets(retry = 0) {
     state.presets = fresh;
     renderPresets();
     healPresetLogos();
+    loadBoxPresets();
   } catch {
     if (retry < 1) {
       setTimeout(() => loadPresets(retry + 1), 1500);
@@ -2116,6 +2125,46 @@ async function loadPresets(retry = 0) {
     } else {
       $('presets').innerHTML = `<div class="muted small">${escapeHtml(t('preset.speakerUnreachable'))}</div>`;
     }
+  }
+}
+
+// loadBoxPresets reads the box's OWN presets (including foreign sources like
+// Deezer that STR did not set) so a slot STR does not manage can still be shown
+// and recalled. Best-effort: on error or empty, the grid just shows no
+// box-native tiles. The box reports these over gabbo; the agent serves the
+// cached list, so this is one cheap app-side read, no box poll.
+async function loadBoxPresets() {
+  if (!state.currentBox) { state.boxPresets = []; return; }
+  try {
+    state.boxPresets = await BoxPresets(state.currentBox.host, state.currentBox.port) || [];
+  } catch { state.boxPresets = []; return; }
+  renderPresets();
+}
+
+// boxSourceLabel turns the box's raw source enum (DEEZER, LOCAL_INTERNET_RADIO,
+// ...) into a friendly name for the tile badge.
+function boxSourceLabel(source) {
+  const s = String(source || '').toUpperCase();
+  const map = {
+    DEEZER: 'Deezer', SPOTIFY: 'Spotify', AMAZON: 'Amazon Music',
+    TUNEIN: 'TuneIn', LOCAL_INTERNET_RADIO: 'Internet radio',
+    INTERNET_RADIO: 'Internet radio', LOCAL_MUSIC: 'Library', STORED_MUSIC: 'Library',
+    BLUETOOTH: 'Bluetooth', AIRPLAY: 'AirPlay',
+  };
+  if (map[s]) return map[s];
+  // Unknown: title-case the first token (DEEZER_HIFI -> Deezer).
+  const first = s.split('_')[0] || s;
+  return first ? first.charAt(0) + first.slice(1).toLowerCase() : '';
+}
+
+// recallBoxPreset plays one of the box's own presets by pressing its hardware
+// preset key (the box plays it through its own cached account, e.g. Deezer).
+async function recallBoxPreset(slot) {
+  if (!state.currentBox) return;
+  try {
+    await RecallBoxPreset(state.currentBox.host, state.currentBox.port, slot);
+  } catch (err) {
+    showError(t('preset.boxRecallFailed', { err: String((err && err.message) || err) }));
   }
 }
 
@@ -2287,6 +2336,10 @@ function renderPresets() {
   }
   for (let i = 1; i <= 6; i++) {
     const p = state.presets.find(x => x.slot === i);
+    // A slot STR does not manage may still hold one of the box's own presets
+    // (e.g. a Deezer playlist set on the speaker). Show it so the user sees and
+    // can recall it, instead of a misleading "empty" tile.
+    const bp = !p ? (state.boxPresets || []).find(x => x.slot === i) : null;
     const isActive = p && state.nowLocation && (
       p.stream_url === state.nowLocation ||
       (activeSlot !== null && p.slot === activeSlot) ||
@@ -2298,7 +2351,7 @@ function renderPresets() {
     );
     const hasErr = !!state.presetErrors[i];
     const div = document.createElement('div');
-    div.className = 'preset' + (p ? '' : ' empty') + (isActive ? ' playing' : '') + (hasErr ? ' error' : '');
+    div.className = 'preset' + (p || bp ? '' : ' empty') + (isActive ? ' playing' : '') + (hasErr ? ' error' : '') + (bp ? ' box-native' : '');
     div.dataset.slot = i;
     if (p) {
       const stateLabel = presetStateLabel(i, isActive, hasErr);
@@ -2383,6 +2436,25 @@ function renderPresets() {
         ${hint}
         <div class="long-press-bar" id="lp-bar-${i}"></div>
       `;
+    } else if (bp) {
+      // The box's own preset (a source STR does not manage, e.g. Deezer). Tap to
+      // recall it via the hardware key; the box plays it through its own account.
+      const bpActive = !!state.nowLocation && !!bp.location && state.nowLocation === bp.location;
+      if (bpActive) div.classList.add('playing');
+      const srcLabel = boxSourceLabel(bp.source);
+      const logo =
+        `<img class="preset-logo" src="${escapeAttr(monogramDataUri(bp.name || srcLabel || '?'))}"/>`;
+      div.innerHTML = `
+        <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span></div>
+        <div class="preset-body">
+          ${logo}
+          <div class="preset-text">
+            <div class="name">${escapeHtml(bp.name || srcLabel || t('preset.onSpeaker'))}</div>
+            ${srcLabel ? `<div class="preset-source" title="${escapeAttr(srcLabel)}">${escapeHtml(t('preset.sourceBadge', { source: srcLabel }))}</div>` : ''}
+            <div class="preset-box-hint">${escapeHtml(t('preset.boxNativeHint'))}</div>
+          </div>
+        </div>
+      `;
     } else {
       const hint = state.nowLocation
         ? `<div class="preset-hint">${escapeHtml(t('preset.longPressHint'))}</div>`
@@ -2394,7 +2466,13 @@ function renderPresets() {
         <div class="long-press-bar" id="lp-bar-${i}"></div>
       `;
     }
-    attachPresetHandlers(div, i, p);
+    if (bp) {
+      // Box-native preset: click recalls it; no long-press save so the user's
+      // own (e.g. Deezer) preset can't be clobbered by STR's current station.
+      attachPresetHandlers(div, i, bp, { onPlay: () => recallBoxPreset(i), allowSave: false });
+    } else {
+      attachPresetHandlers(div, i, p);
+    }
     grid.appendChild(div);
   }
   grid.querySelectorAll('.del').forEach(el => {
@@ -2450,9 +2528,15 @@ function applyTrackScroll(selector = '.preset-track, .status-bar .now') {
 // we show the scale(0.96) visual. A short click avoids the mini
 // jiggle that a transition scale-down + scale-up would otherwise
 // produce on the logo.
+//
+// opts.onPlay overrides the short-click action (box-native presets recall the
+// box's hardware key instead of STR's play). opts.allowSave=false disables the
+// long-press save so a box-native preset can't be overwritten by a hold.
 const LONG_PRESS_MS = 800;
 const VISUAL_HOLD_DELAY = 180;
-function attachPresetHandlers(el, slot, preset) {
+function attachPresetHandlers(el, slot, preset, opts = {}) {
+  const onPlay = opts.onPlay || (() => play(slot));
+  const allowSave = opts.allowSave !== false;
   let timer = null;
   let visualTimer = null;
   let armed = false;
@@ -2477,14 +2561,16 @@ function attachPresetHandlers(el, slot, preset) {
     visualTimer = setTimeout(() => {
       if (armed) el.classList.add('long-press');
     }, VISUAL_HOLD_DELAY);
-    timer = setTimeout(async () => {
-      if (!armed) return;
-      firedLong = true;
-      await saveCurrentToSlot(slot);
-      armed = false;
-      el.classList.remove('long-press');
-      if (bar) bar.style.width = '0%';
-    }, LONG_PRESS_MS);
+    if (allowSave) {
+      timer = setTimeout(async () => {
+        if (!armed) return;
+        firedLong = true;
+        await saveCurrentToSlot(slot);
+        armed = false;
+        el.classList.remove('long-press');
+        if (bar) bar.style.width = '0%';
+      }, LONG_PRESS_MS);
+    }
   };
   const cancel = () => {
     if (!armed) return;
@@ -2500,7 +2586,7 @@ function attachPresetHandlers(el, slot, preset) {
     cancel();
     if (!wasArmed) return;
     if (firedLong) return;
-    if (preset) play(slot);
+    if (preset) onPlay();
   };
   el.addEventListener('mousedown', start);
   el.addEventListener('mouseup', finish);
