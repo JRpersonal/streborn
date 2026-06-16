@@ -2546,7 +2546,12 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
   const animateBar = () => {
     if (!armed) return;
     const elapsed = Date.now() - startedAt;
-    const pct = Math.min(100, (elapsed / LONG_PRESS_MS) * 100);
+    // The bar only represents the deliberate-hold window: it fills 0 -> 100%
+    // between VISUAL_HOLD_DELAY and LONG_PRESS_MS, so it never shows for the
+    // first 180 ms (a normal click). Starting it at elapsed/LONG_PRESS_MS made
+    // a quick click flash the "save station" bar before mouseup.
+    const pct = Math.min(100, Math.max(0,
+      ((elapsed - VISUAL_HOLD_DELAY) / (LONG_PRESS_MS - VISUAL_HOLD_DELAY)) * 100));
     if (bar) bar.style.width = pct + '%';
     if (armed) requestAnimationFrame(animateBar);
   };
@@ -2557,9 +2562,12 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
     armed = true; // we start the hold
     firedLong = false; // true once long press fires
     startedAt = Date.now();
-    requestAnimationFrame(animateBar);
     visualTimer = setTimeout(() => {
-      if (armed) el.classList.add('long-press');
+      if (!armed) return;
+      el.classList.add('long-press');
+      // Only start filling the save-progress bar once the hold is deliberate, so
+      // a normal short click never flashes it.
+      requestAnimationFrame(animateBar);
     }, VISUAL_HOLD_DELAY);
     if (allowSave) {
       timer = setTimeout(async () => {
