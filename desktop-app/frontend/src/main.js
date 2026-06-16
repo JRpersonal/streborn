@@ -36,6 +36,9 @@ import {
   TryWiFiPassword,
   CurrentWiFi,
   CheckAppUpdate,
+  DownloadUpdate,
+  ApplyUpdate,
+  RevealUpdateFile,
   ResolveStationLogo,
   BoxSettings,
   SetBoxName,
@@ -805,17 +808,57 @@ async function checkAppUpdate() {
     // returns nothing otherwise), and the download button only when the manifest
     // carries a real download URL. The button is a primary button so it stands
     // out in the notice instead of reading as a faint secondary control.
+    // In-app update (#71): download the matching asset, verify its SHA256, then
+    // install. Linux/Windows self-replace and relaunch; macOS downloads+verifies
+    // and opens the .dmg (Gatekeeper blocks an unsigned auto-replace). The button
+    // always shows now: the asset URL + hash are resolved from the release
+    // manifest in the backend, so it no longer depends on the manifest carrying a
+    // downloadUrl. notesUrl / releases page stays as the manual fallback.
+    const isMacOS = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '');
+    const installLabel = isMacOS ? t('banner.downloadUpdate') : t('banner.installNow');
     banner.innerHTML = `
       <div><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></div>
-      ${dlUrl ? `<button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(t('banner.download'))}</button>` : ''}
+      <button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(installLabel)}</button>
     `;
     banner.classList.remove('hidden');
     const notesLink = $('appUpdateNotes');
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
     const dl = $('appUpdateBtn');
-    if (dl && dlUrl) dl.onclick = () => BrowserOpenURL(dlUrl);
+    if (dl) dl.onclick = () => runAppUpdate(m.version, dl, installLabel, isMacOS, dlUrl || notesUrl);
   } catch (e) {
     try { console.warn('checkAppUpdate failed', e); } catch {}
+  }
+}
+
+// runAppUpdate downloads + verifies the new version and installs it (#71). On
+// Linux/Windows the backend replaces the running binary and relaunches, so the
+// app quits mid-call and the code after ApplyUpdate only runs on macOS (assisted:
+// the verified .dmg is opened for the user to drag into Applications). On any
+// failure the button becomes a "download from the website" fallback so the user
+// is never stuck.
+async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
+  btn.disabled = true;
+  const off = EventsOn('app:update:progress', (pct) => {
+    btn.textContent = t('banner.downloadingPct', { pct });
+  });
+  try {
+    btn.textContent = t('banner.downloadingPct', { pct: 0 });
+    const path = await DownloadUpdate(version);
+    btn.textContent = t('banner.installing');
+    await ApplyUpdate(path);
+    // Reached only on macOS (Linux/Windows relaunch+quit inside ApplyUpdate).
+    if (isMacOS) {
+      btn.disabled = false;
+      btn.textContent = installLabel;
+      showToast(t('banner.macDownloaded'));
+    }
+  } catch (e) {
+    showError(t('banner.updateFailed', { err: String(e) }));
+    btn.disabled = false;
+    btn.textContent = t('banner.openWebsite');
+    if (fallbackUrl) btn.onclick = () => BrowserOpenURL(fallbackUrl);
+  } finally {
+    if (typeof off === 'function') off();
   }
 }
 

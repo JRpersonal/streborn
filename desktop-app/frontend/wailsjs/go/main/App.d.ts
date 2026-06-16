@@ -9,6 +9,8 @@ export function AppInfo():Promise<main.AppInfo>;
 
 export function AppVersion():Promise<string>;
 
+export function ApplyUpdate(arg1:string):Promise<void>;
+
 export function BoxAgentVersion(arg1:string,arg2:number):Promise<Record<string, string>>;
 
 export function BoxInstallReachable(arg1:string):Promise<boolean>;
@@ -34,6 +36,8 @@ export function DeleteRecentCard(arg1:string,arg2:number,arg3:string):Promise<vo
 export function DiscoverBoxes(arg1:number):Promise<Array<main.BoxInfo>>;
 
 export function DissolveZone(arg1:string,arg2:number):Promise<void>;
+
+export function DownloadUpdate(arg1:string):Promise<string>;
 
 export function EjectDrive(arg1:string):Promise<void>;
 
@@ -110,6 +114,10 @@ export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.Instal
 export function RescuedSpeakerCount():Promise<number>;
 
 export function ResolveStationLogo(arg1:string,arg2:string,arg3:Array<string>):Promise<string>;
+
+export function ResolveUpdateAsset(arg1:string):Promise<main.UpdateAsset>;
+
+export function RevealUpdateFile(arg1:string):Promise<void>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
 

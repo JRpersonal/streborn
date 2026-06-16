@@ -10,6 +10,10 @@ export function AppVersion() {
   return window['go']['main']['App']['AppVersion']();
 }
 
+export function ApplyUpdate(arg1) {
+  return window['go']['main']['App']['ApplyUpdate'](arg1);
+}
+
 export function BoxAgentVersion(arg1, arg2) {
   return window['go']['main']['App']['BoxAgentVersion'](arg1, arg2);
 }
@@ -60,6 +64,10 @@ export function DiscoverBoxes(arg1) {
 
 export function DissolveZone(arg1, arg2) {
   return window['go']['main']['App']['DissolveZone'](arg1, arg2);
+}
+
+export function DownloadUpdate(arg1) {
+  return window['go']['main']['App']['DownloadUpdate'](arg1);
 }
 
 export function EjectDrive(arg1) {
@@ -212,6 +220,14 @@ export function RescuedSpeakerCount() {
 
 export function ResolveStationLogo(arg1, arg2, arg3) {
   return window['go']['main']['App']['ResolveStationLogo'](arg1, arg2, arg3);
+}
+
+export function ResolveUpdateAsset(arg1) {
+  return window['go']['main']['App']['ResolveUpdateAsset'](arg1);
+}
+
+export function RevealUpdateFile(arg1) {
+  return window['go']['main']['App']['RevealUpdateFile'](arg1);
 }
 
 export function SaveDiagnosticBundle(arg1, arg2) {
