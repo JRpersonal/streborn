@@ -1691,6 +1691,11 @@ function rollupSources(raw) {
   for (const src of raw) {
     if (!src || !src.source) continue;
     if (src.source === 'NOTIFICATION') continue;
+    // Alexa on the SoundTouch ran entirely through the Bose/Amazon cloud, which
+    // is gone, so the box still advertises ALEXA as READY but it cannot work.
+    // Showing it as "active" only confuses users (Discussion #170), so hide the
+    // dead source like NOTIFICATION rather than imply it is usable.
+    if (src.source === 'ALEXA') continue;
     const existing = grouped[src.source];
     if (!existing || (src.status === 'READY' && existing.status !== 'READY')) {
       grouped[src.source] = src;
