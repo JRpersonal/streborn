@@ -935,6 +935,30 @@ func (m *Manager) CurrentUsername(ctx context.Context) string {
 	return m.currentUsername(ctx)
 }
 
+// LoggedIn reports whether this speaker has ever completed a Spotify Connect
+// login, i.e. a reusable credential is persisted on disk. Recall needs this:
+// without a credential go-librespot cannot start playback on its own, so the
+// preset does nothing (#45 Pierre: the saved preset had account="" and
+// go-librespot was not running). It is a filesystem check (not a :3678 query), so
+// it stays true while go-librespot is mid-restart, distinguishing "never logged
+// in" (actionable: log the speaker into Spotify first) from "logged in but
+// momentarily down" (recovers on its own).
+func (m *Manager) LoggedIn() bool {
+	if _, err := os.Stat(filepath.Join(m.configDir, "credentials.json")); err == nil {
+		return true
+	}
+	// A per-account credential copy (multi-account swap store) also counts: the
+	// active credentials.json can be briefly absent during a SwitchAccount swap.
+	if entries, err := os.ReadDir(m.credStore); err == nil {
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".json") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // sanitizeUser maps a Spotify username to a filesystem-safe credential filename.
 func sanitizeUser(s string) string {
 	var b strings.Builder

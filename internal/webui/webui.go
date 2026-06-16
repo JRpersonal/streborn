@@ -86,6 +86,13 @@ type Server struct {
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify
 	// is not configured.
 	spotifyReady func() bool
+	// spotifyLoggedIn reports whether the speaker has ever completed a Spotify
+	// Connect login (a credential is persisted). Without it go-librespot cannot
+	// start playback on its own, so a recall does nothing; the handler returns a
+	// clear "log this speaker into Spotify first" error instead of optimistically
+	// reporting "playing" and failing silently in the background (#45 Pierre). nil
+	// until wired.
+	spotifyLoggedIn func() bool
 	// spotifyPremiumRequired reports whether the logged-in Spotify account is
 	// free/open and so cannot do the autonomous recall playback (#45). nil until
 	// wired; the recall handler uses it to return a clear "needs Premium" error.
@@ -373,6 +380,13 @@ func WithSpotifyReady(ready func() bool) Option {
 // clear "needs Premium" message instead of failing silently.
 func WithSpotifyPremiumRequired(f func() bool) Option {
 	return func(s *Server) { s.spotifyPremiumRequired = f }
+}
+
+// WithSpotifyLoggedIn registers the predicate that reports whether the speaker
+// has a persisted Spotify login, so a recall on a never-logged-in speaker fails
+// with a clear, actionable message instead of silently (#45).
+func WithSpotifyLoggedIn(f func() bool) Option {
+	return func(s *Server) { s.spotifyLoggedIn = f }
 }
 
 // WithSpotifySetRecalling registers the hook that marks an in-flight recall so
@@ -1034,6 +1048,20 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			s.logger.Warn("spotify preset recall (app): Spotify not configured on this box", "slot", slot)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error": "Spotify not configured", "slot": slot, "name": p.Name,
+			})
+			return
+		}
+		// A speaker that has never been logged into Spotify has no credential for
+		// go-librespot, so it cannot start playback on its own and the recall would
+		// silently do nothing (#45 Pierre: saved preset account="" and go-librespot
+		// not running). Tell the user how to fix it instead of optimistically
+		// reporting "playing" and failing in the background.
+		if s.spotifyLoggedIn != nil && !s.spotifyLoggedIn() {
+			s.logger.Info("spotify preset recall (app): speaker not logged into Spotify", "slot", slot)
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error": "This speaker isn't logged into Spotify yet. Open Spotify, pick this speaker as the playback device and play something once, then this preset will work.",
+				"code":  "spotify-not-logged-in",
+				"slot":  slot, "name": p.Name,
 			})
 			return
 		}

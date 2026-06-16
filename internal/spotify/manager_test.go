@@ -4,6 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -86,5 +90,44 @@ func TestHeaderCapture(t *testing.T) {
 	want := append(append([]byte(nil), bos...), setup...)
 	if !bytes.Equal(committed, want) {
 		t.Errorf("captured headers = %d bytes, want %d (BOS+setup only)", len(committed), len(want))
+	}
+}
+
+// TestLoggedIn verifies the #45 recall guard: a speaker with no persisted Spotify
+// credential reports not-logged-in (so the recall returns a clear error), and
+// either the active credentials.json or a per-account stored copy counts as
+// logged in.
+func TestLoggedIn(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "cfg")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := New("", cfg, "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if m.LoggedIn() {
+		t.Fatal("LoggedIn should be false with no credential")
+	}
+	credFile := filepath.Join(cfg, "credentials.json")
+	if err := os.WriteFile(credFile, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !m.LoggedIn() {
+		t.Fatal("LoggedIn should be true once credentials.json exists")
+	}
+	if err := os.Remove(credFile); err != nil {
+		t.Fatal(err)
+	}
+	if m.LoggedIn() {
+		t.Fatal("LoggedIn should be false again after the credential is gone")
+	}
+	if err := os.MkdirAll(m.credStore, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m.credStore, "user.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !m.LoggedIn() {
+		t.Fatal("LoggedIn should be true with a per-account stored credential")
 	}
 }
