@@ -72,6 +72,47 @@ func TestDeleteCardRemovesOnlyThatCard(t *testing.T) {
 	}
 }
 
+// TestDeleteCardAtRemovesOnlyThatSession is the regression for the data-loss bug:
+// the same station listened to twice (with another station in between) is two
+// separate cards/sessions. Deleting one must remove ONLY that session's
+// consecutive run, not every row sharing the CardKey (which DeleteCard did, so
+// deleting the newer SWR3 card also wiped the older one).
+func TestDeleteCardAtRemovesOnlyThatSession(t *testing.T) {
+	s := New()
+	// Session A of swr3 (two tracks, one consecutive run), then 1live, then a
+	// second swr3 session B. Explicit TS so the runs are unambiguous.
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Epic", TS: "t1"})
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Yellow", TS: "t2"})
+	s.Add(Entry{Source: "radio", CardKey: "1live", Track: "Other", TS: "t3"})
+	s.Add(Entry{Source: "radio", CardKey: "swr3", Track: "Reborn", TS: "t4"})
+
+	// Delete session B by any of its timestamps: only the t4 run goes.
+	if n := s.DeleteCardAt("swr3", "t4"); n != 1 {
+		t.Fatalf("DeleteCardAt(swr3,t4) removed %d, want 1", n)
+	}
+	eq(t, rows(s), []string{"swr3/Epic", "swr3/Yellow", "1live/Other"})
+
+	// Delete session A by its head ts: the whole consecutive run (both tracks)
+	// goes, leaving 1live untouched.
+	if n := s.DeleteCardAt("swr3", "t1"); n != 2 {
+		t.Fatalf("DeleteCardAt(swr3,t1) removed %d, want 2", n)
+	}
+	eq(t, rows(s), []string{"1live/Other"})
+
+	// A non-matching (key, ts) and any empty id are no-ops; they must never fall
+	// through to clearing the ring.
+	if n := s.DeleteCardAt("swr3", "t1"); n != 0 {
+		t.Fatalf("DeleteCardAt on already-removed removed %d, want 0", n)
+	}
+	if n := s.DeleteCardAt("1live", "wrongts"); n != 0 {
+		t.Fatalf("DeleteCardAt with wrong ts removed %d, want 0", n)
+	}
+	if n := s.DeleteCardAt("", ""); n != 0 {
+		t.Fatalf("DeleteCardAt empty removed %d, want 0", n)
+	}
+	eq(t, rows(s), []string{"1live/Other"})
+}
+
 // TestAddAppendsNewTrackSameCard: a genuinely new song under the same station
 // is its own row, newest last.
 func TestAddAppendsNewTrackSameCard(t *testing.T) {

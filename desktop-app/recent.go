@@ -44,10 +44,12 @@ func (a *App) RecentPlayed(host string, port int) ([]RecentItem, error) {
 	return out, nil
 }
 
-// ClearRecent empties one box's recently-played ring (DELETE /api/recent). Routed
-// through boxDo for the :8888<->:17008 self-heal.
+// ClearRecent empties one box's recently-played ring (DELETE /api/recent?all=1).
+// The explicit all=1 is required by the agent so a per-card delete can never fall
+// through to clearing everything. Routed through boxDo for the :8888<->:17008
+// self-heal.
 func (a *App) ClearRecent(host string, port int) error {
-	resp, err := a.boxDo(host, port, http.MethodDelete, "/api/recent", "", "")
+	resp, err := a.boxDo(host, port, http.MethodDelete, "/api/recent?all=1", "", "")
 	if err != nil {
 		return err
 	}
@@ -58,13 +60,16 @@ func (a *App) ClearRecent(host string, port int) error {
 	return nil
 }
 
-// DeleteRecentCard removes one card (every row sharing cardKey) from a box's
-// recently-played ring (DELETE /api/recent?cardKey=...).
-func (a *App) DeleteRecentCard(host string, port int, cardKey string) error {
-	if cardKey == "" {
-		return fmt.Errorf("cardKey required")
+// DeleteRecentCard removes the ONE card the user clicked from a box's
+// recently-played ring (DELETE /api/recent?cardKey=...&ts=...). Both cardKey and
+// ts identify the exact card so only that one listening session is removed, not
+// every other session of the same station.
+func (a *App) DeleteRecentCard(host string, port int, cardKey, ts string) error {
+	if cardKey == "" || ts == "" {
+		return fmt.Errorf("cardKey and ts required")
 	}
-	resp, err := a.boxDo(host, port, http.MethodDelete, "/api/recent?cardKey="+url.QueryEscape(cardKey), "", "")
+	path := "/api/recent?cardKey=" + url.QueryEscape(cardKey) + "&ts=" + url.QueryEscape(ts)
+	resp, err := a.boxDo(host, port, http.MethodDelete, path, "", "")
 	if err != nil {
 		return err
 	}

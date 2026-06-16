@@ -220,6 +220,42 @@ func (s *Store) DeleteCard(key string) int {
 	return removed
 }
 
+// DeleteCardAt removes the ONE card the user clicked: the maximal run of
+// consecutive entries with CardKey == key that contains the entry timestamped ts
+// (cards in the app's view are exactly such consecutive runs). It deletes only
+// that single listening session, NOT every other session of the same station
+// elsewhere in the ring, which is what DeleteCard(key) did and why deleting one
+// entry wiped older same-station entries too. A non-matching (key, ts) is a no-op,
+// so a stale/empty id can never fall through to clearing the whole ring. Returns
+// the number of rows removed.
+func (s *Store) DeleteCardAt(key, ts string) int {
+	if key == "" || ts == "" {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := -1
+	for i, e := range s.data {
+		if e.CardKey == key && e.TS == ts {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return 0
+	}
+	lo, hi := idx, idx
+	for lo > 0 && s.data[lo-1].CardKey == key {
+		lo--
+	}
+	for hi < len(s.data)-1 && s.data[hi+1].CardKey == key {
+		hi++
+	}
+	s.data = append(s.data[:lo:lo], s.data[hi+1:]...)
+	s.markDirtyLocked()
+	return hi - lo + 1
+}
+
 // All returns a copy of the ring, oldest-first. The /api/recent handler serves
 // this; the app reverses/groups it.
 func (s *Store) All() []Entry {
