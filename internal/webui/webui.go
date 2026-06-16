@@ -180,6 +180,24 @@ type Server struct {
 	recentMu          sync.Mutex
 	recentRadioCard   recentCardCtx
 	recentSpotifyCard recentCardCtx
+
+	// boxPresets is the box's OWN preset list as last reported over the gabbo
+	// presetsUpdated frame, including foreign sources (DEEZER etc.) STR did not
+	// set. Lets the app show/preserve/recall them (Option C). Guarded by boxPresetsMu.
+	boxPresetsMu sync.Mutex
+	boxPresets   []BoxPreset
+}
+
+// BoxPreset is one of the box's own presets (incl. foreign sources like DEEZER),
+// served by GET /api/box/presets so the app can show and preserve them. Mirrors
+// boxws.BoxPreset; the agent maps the gabbo frame into this via NoteBoxPresets.
+type BoxPreset struct {
+	Slot          int    `json:"slot"`
+	Source        string `json:"source"`
+	Type          string `json:"type"`
+	Location      string `json:"location"`
+	SourceAccount string `json:"sourceAccount"`
+	Name          string `json:"name"`
 }
 
 // recentCardCtx is the current source card for a source, retained so the live
@@ -434,6 +452,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
+	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
@@ -3014,6 +3033,33 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// NoteBoxPresets records the box's own preset list (from the gabbo
+// presetsUpdated frame, via the agent). Replaces the previous snapshot wholesale;
+// the box always reports the full list.
+func (s *Server) NoteBoxPresets(ps []BoxPreset) {
+	s.boxPresetsMu.Lock()
+	s.boxPresets = ps
+	s.boxPresetsMu.Unlock()
+}
+
+// handleBoxPresets serves the box's OWN presets (incl. foreign sources like
+// DEEZER that STR did not set), so the app can show and preserve them and recall
+// a foreign one via the hardware preset key (Option C). Oldest source of truth is
+// the box's gabbo presetsUpdated frame; empty until the box has reported once.
+func (s *Server) handleBoxPresets(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	s.boxPresetsMu.Lock()
+	out := make([]BoxPreset, len(s.boxPresets))
+	copy(out, s.boxPresets)
+	s.boxPresetsMu.Unlock()
+	if out == nil {
+		out = []BoxPreset{}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleBoxWLAN setzt die WLAN Konfiguration der Box zur Laufzeit.

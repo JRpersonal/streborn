@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -86,6 +87,26 @@ type Handler interface {
 	// wird downstream ueber die Zonen-Mitgliedschaft abgefangen (webui.boxInZone),
 	// nicht hier.
 	OnPowerWake(ctx context.Context)
+
+	// OnPresetsChanged wird gefeuert wenn die Box ihre eigene Preset-Liste meldet
+	// (presetsUpdated). Liefert ALLE Box-Presets inkl. fremder Quellen (DEEZER,
+	// LOCAL_INTERNET_RADIO, ...), die NICHT von STR stammen. So kann STR die
+	// vorhandenen Presets der Box anzeigen/erhalten und recallen (die Box spielt
+	// z.B. ein Deezer-Preset ueber ihr eigenes gecachtes Konto), statt nur die
+	// Slot-IDs zu loggen.
+	OnPresetsChanged(ctx context.Context, presets []BoxPreset)
+}
+
+// BoxPreset ist ein vom Box-eigenen presetsUpdated gemeldetes Preset, inkl. der
+// Quelle. STR nutzt das um fremde (nicht von STR gesetzte) Presets wie Deezer
+// zu erkennen, anzuzeigen und zu erhalten.
+type BoxPreset struct {
+	Slot          int    `json:"slot"`          // 1..6
+	Source        string `json:"source"`        // DEEZER / LOCAL_INTERNET_RADIO / SPOTIFY / UPNP / ...
+	Type          string `json:"type"`          // playlist / stationurl / tracklistRadio / ...
+	Location      string `json:"location"`      // stream URL, Deezer playlist ID, ...
+	SourceAccount string `json:"sourceAccount"` // verknuepftes Konto (z.B. Deezer-Account)
+	Name          string `json:"name"`          // itemName
 }
 
 // Client haelt die Verbindung zur Box.
@@ -541,18 +562,32 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			c.handler.OnUserStop(ctx)
 		}
 	case f.PresetsUpdated != nil:
-		// The box reported a change to its own preset list (#14). Logged as the
-		// foundation for box->stick preset sync; no action wired yet.
+		// The box reported its own preset list (#14). Surface the full set incl.
+		// foreign sources (DEEZER etc.) so STR can show/preserve/recall them
+		// (Option C: the box plays a Deezer preset via its own cached account).
 		known = true
+		bps := make([]BoxPreset, 0, len(f.PresetsUpdated.Presets))
 		slots := make([]string, 0, len(f.PresetsUpdated.Presets))
 		for _, p := range f.PresetsUpdated.Presets {
 			slots = append(slots, p.ID)
+			slot, err := strconv.Atoi(strings.TrimSpace(p.ID))
+			if err != nil || slot < 1 || slot > 6 {
+				continue
+			}
+			ci := p.ContentItem
+			bps = append(bps, BoxPreset{
+				Slot: slot, Source: ci.Source, Type: ci.Type, Location: ci.Location,
+				SourceAccount: ci.SourceAccount, Name: ci.ItemName,
+			})
 		}
 		// DEBUG, not INFO: the box re-emits presetsUpdated in bursts (~20x around
 		// boot / a preset sync), and the MultiWriter logger appends every line to
 		// the NAND log, so an INFO burst is a stack of rapid NAND writes for no
 		// diagnostic gain. The slots are still captured at DEBUG when needed.
 		c.logger.Debug("box ws: presetsUpdated", "count", len(slots), "slots", strings.Join(slots, ","))
+		if c.handler != nil && len(bps) > 0 {
+			c.handler.OnPresetsChanged(ctx, bps)
+		}
 	case f.ZoneUpdated != nil:
 		// The box's multiroom zone / stereo pair changed. Previously this frame
 		// fell through as an "unrecognized frame" (Klaus 2026-06-12), so STR was

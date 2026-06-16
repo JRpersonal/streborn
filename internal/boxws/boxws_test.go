@@ -19,6 +19,7 @@ type recHandler struct {
 	sourceAux  int
 	skips      []bool
 	zones      []ZoneState
+	boxPresets [][]BoxPreset
 	mu         sync.Mutex
 	thumbs     int // guarded by mu (fired from the debounce timer goroutine)
 }
@@ -37,6 +38,9 @@ func (h *recHandler) OnPowerKey(context.Context)                   { h.powerKeys
 func (h *recHandler) OnSourceAux(context.Context)                  { h.sourceAux++ }
 func (h *recHandler) OnZoneChanged(_ context.Context, z ZoneState) { h.zones = append(h.zones, z) }
 func (h *recHandler) OnPowerWake(context.Context)                  { h.powerWakes++ }
+func (h *recHandler) OnPresetsChanged(_ context.Context, p []BoxPreset) {
+	h.boxPresets = append(h.boxPresets, p)
+}
 
 func newTestClient(h Handler) *Client {
 	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), "ws://127.0.0.1:8080/", h)
@@ -79,6 +83,35 @@ func TestHandleMessage_PresetRecall(t *testing.T) {
 	c.handleMessage(context.Background(), []byte(frame))
 	if len(h.presets) != 1 || h.presets[0] != 3 {
 		t.Fatalf("expected preset slot 3, got %v", h.presets)
+	}
+}
+
+func TestHandleMessage_PresetsUpdatedCapturesForeignSource(t *testing.T) {
+	h := &recHandler{}
+	c := newTestClient(h)
+	// The box reports its own preset list; STR must capture foreign sources
+	// (Deezer) with their full ContentItem so it can show/preserve/recall them
+	// (Option C). One Deezer playlist preset plus one radio preset.
+	frame := `<updates><presetsUpdated><presets>` +
+		`<preset id="3"><ContentItem source="DEEZER" type="playlist" location="123456789" sourceAccount="1456373802"><itemName>My Flow</itemName></ContentItem></preset>` +
+		`<preset id="1"><ContentItem source="LOCAL_INTERNET_RADIO" type="stationurl" location="http://wdr2.mp3" sourceAccount=""><itemName>WDR 2</itemName></ContentItem></preset>` +
+		`</presets></presetsUpdated></updates>`
+	c.handleMessage(context.Background(), []byte(frame))
+	if len(h.boxPresets) != 1 || len(h.boxPresets[0]) != 2 {
+		t.Fatalf("expected one OnPresetsChanged with 2 presets, got %v", h.boxPresets)
+	}
+	var deezer *BoxPreset
+	for i := range h.boxPresets[0] {
+		if h.boxPresets[0][i].Slot == 3 {
+			deezer = &h.boxPresets[0][i]
+		}
+	}
+	if deezer == nil {
+		t.Fatalf("slot 3 (Deezer) not captured: %+v", h.boxPresets[0])
+	}
+	if deezer.Source != "DEEZER" || deezer.Type != "playlist" || deezer.Location != "123456789" ||
+		deezer.SourceAccount != "1456373802" || deezer.Name != "My Flow" {
+		t.Fatalf("Deezer preset fields wrong: %+v", *deezer)
 	}
 }
 

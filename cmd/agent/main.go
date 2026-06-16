@@ -412,6 +412,19 @@ func run() error {
 		// resumes the last station; ResumeLastPlay is gated by the per-box opt-out
 		// and a zone-membership guard so a stereo-pair self-wake never auto-resumes.
 		onPowerWake: webuiSrv.ResumeLastPlay,
+		// Surface the box's own presets (incl. foreign sources like Deezer) to the
+		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
+		// the composition root to keep the two packages decoupled.
+		noteBoxPresets: func(bps []boxws.BoxPreset) {
+			out := make([]webui.BoxPreset, 0, len(bps))
+			for _, p := range bps {
+				out = append(out, webui.BoxPreset{
+					Slot: p.Slot, Source: p.Source, Type: p.Type, Location: p.Location,
+					SourceAccount: p.SourceAccount, Name: p.Name,
+				})
+			}
+			webuiSrv.NoteBoxPresets(out)
+		},
 	}
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
@@ -818,6 +831,18 @@ type presetWsHandler struct {
 	// is gated by the per-box opt-out and a zone-membership self-wake guard.
 	// nil-safe.
 	onPowerWake func()
+	// noteBoxPresets records the box's OWN preset list (gabbo presetsUpdated),
+	// including foreign sources like Deezer that STR did not set, into the webui
+	// so the app can show and preserve them (Option C). Wired to
+	// webui.NoteBoxPresets. nil-safe.
+	noteBoxPresets func([]boxws.BoxPreset)
+}
+
+// OnPresetsChanged forwards the box's own preset list to the webui (Option C).
+func (h *presetWsHandler) OnPresetsChanged(_ context.Context, presets []boxws.BoxPreset) {
+	if h.noteBoxPresets != nil {
+		h.noteBoxPresets(presets)
+	}
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
