@@ -2021,24 +2021,41 @@ func (s *Server) pushDisplayDefault() {
 	}
 }
 
-// boxPlayState reads now_playing once and reports whether the box is in standby
-// and whether it is busy (playing, buffering or paused). Best-effort: on error
-// it reports neither, so the caller does not re-push blindly.
+// boxPlayState reads now_playing and reports whether the box is in standby and
+// whether it is busy (playing, buffering or paused). It FAILS CLOSED: when the
+// box host is unknown or the query keeps erroring it reports standby=true, so a
+// caller that would otherwise wake or re-push the box stands down when it cannot
+// confirm the box is awake. A SoundTouch 10 sends no power event on a standby
+// press, so the only guard against STR resuming over a deliberate standby is
+// this state check; a transient /now_playing error must not be read as "awake
+// and idle" and trigger a resume. One quick retry first so a single hiccup does
+// not abort a legitimate stream recovery (where the box really is awake+idle).
 func (s *Server) boxPlayState() (standby, busy bool) {
 	if s.boxHost == "" {
-		return false, false
+		return true, false
 	}
 	cl := &http.Client{Timeout: 5 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
-	if err != nil {
-		return false, false
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			time.Sleep(400 * time.Millisecond)
+		}
+		resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		resp.Body.Close()
+		body := string(b)
+		standby = strings.Contains(body, "STANDBY")
+		busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
+		return standby, busy
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	body := string(b)
-	standby = strings.Contains(body, "STANDBY")
-	busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
-	return standby, busy
+	// Could not read the box state: assume standby so we never resume/wake on an
+	// uncertain state (silence beats spontaneous playback).
+	s.logger.Warn("box play-state query failed, assuming standby (will not resume/re-push)", "err", lastErr)
+	return true, false
 }
 
 func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
