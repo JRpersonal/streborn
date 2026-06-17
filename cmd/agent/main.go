@@ -413,6 +413,10 @@ func run() error {
 		// resumes the last station; ResumeLastPlay is gated by the per-box opt-out
 		// and a zone-membership guard so a stereo-pair self-wake never auto-resumes.
 		onPowerWake: webuiSrv.ResumeLastPlay,
+		// Recover a lost first press after a deep-standby wake (#183): when the box
+		// reappears awake-but-idle on a gabbo reconnect, re-push the last stream.
+		// Reuses the power-on resume guards (opt-out, zone, user-stop).
+		onBoxReconnect: webuiSrv.RecoverAfterReconnect,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -832,6 +836,12 @@ type presetWsHandler struct {
 	// is gated by the per-box opt-out and a zone-membership self-wake guard.
 	// nil-safe.
 	onPowerWake func()
+	// onBoxReconnect fires after the gabbo WS (re)connects. After a deep/overnight
+	// standby the box wakes and emits its first preset/now-selection frame before
+	// STR has reconnected, so the press is lost and nothing plays until a second
+	// press (#183). This recovers that stuck wake. Wired to
+	// webui.RecoverAfterReconnect, which reuses the power-on resume guards. nil-safe.
+	onBoxReconnect func()
 	// noteBoxPresets records the box's OWN preset list (gabbo presetsUpdated),
 	// including foreign sources like Deezer that STR did not set, into the webui
 	// so the app can show and preserve them (Option C). Wired to
@@ -1014,6 +1024,20 @@ func (h *presetWsHandler) OnPowerWake(_ context.Context) {
 	}
 }
 
+// OnConnected fires after the gabbo WebSocket (re)connects (boxws optional
+// hook). It recovers the lost-first-press case (#183): when the box wakes from a
+// deep/overnight standby it emits the preset/now-selection frame before STR has
+// reconnected, so OnPresetSelected never runs and the display shows "service
+// unavailable" until a second press. On reconnect STR checks the box and, if it
+// is awake but its restored STR selection is not playing, re-pushes the last
+// stream through the guarded resume (opt-out, zone, user-stop). A routine idle
+// reconnect (box in standby) or a box already playing is a no-op.
+func (h *presetWsHandler) OnConnected(_ context.Context) {
+	if h.onBoxReconnect != nil {
+		h.onBoxReconnect()
+	}
+}
+
 // OnSourceAux fires the configured "aux" webhook when the box switches to the
 // AUX input. Additional-only.
 func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
@@ -1144,7 +1168,10 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 // re-issues it a few times if not, fixing the "first hardware press after
 // reboot does nothing" race for radio presets too.
 func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
-	for attempt := 1; attempt <= 3; attempt++ {
+	// Up to 5 attempts (~25s): a box waking from a deep/overnight standby can
+	// take longer than the old 3-attempt (~15s) window to finish bringing its
+	// network and playback subsystem back up before it accepts the stream (#183).
+	for attempt := 1; attempt <= 5; attempt++ {
 		time.Sleep(5 * time.Second)
 		if boxIsPlaying(h.boxHost) {
 			return

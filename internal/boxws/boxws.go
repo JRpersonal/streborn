@@ -249,7 +249,12 @@ func (c *Client) Run(ctx context.Context) {
 			return
 		case <-time.After(backoff):
 		}
-		if backoff < 30*time.Second {
+		// Cap kept low (8s, not 30s) so STR reattaches quickly after the box
+		// wakes from a deep/overnight standby. The lost first press after such a
+		// standby (#183) is recovered by the OnConnected hook below, but a short
+		// reconnect window shrinks how long the box shows "service unavailable"
+		// before STR takes over.
+		if backoff < 8*time.Second {
 			backoff *= 2
 		}
 	}
@@ -269,6 +274,17 @@ func (c *Client) runOnce(ctx context.Context) error {
 	// Phase marker at WARN so a reconnect after standby/resume is
 	// visible in the diagnostic bundle without raising log level.
 	c.logger.Warn("box websocket phase: connected", "url", c.url)
+
+	// After a deep/overnight standby the box wakes and emits its first
+	// preset/now-selection frame BEFORE this reconnect lands (the backoff had
+	// grown while the box was unreachable), so that first hardware press is lost
+	// and nothing plays until a second press (#183). Give the handler a chance to
+	// recover a stuck wake on every (re)connect. Optional interface so handlers
+	// that do not need it (tests) are unaffected; run in a goroutine so the probe
+	// never blocks the reader loop.
+	if oc, ok := c.handler.(interface{ OnConnected(context.Context) }); ok {
+		go oc.OnConnected(ctx)
+	}
 
 	// Reader Loop
 	for {
