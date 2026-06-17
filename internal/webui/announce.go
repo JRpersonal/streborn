@@ -114,37 +114,6 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "could not fetch announcement audio", "detail": err.Error()})
 		return
 	}
-	s.announceMu.Lock()
-	s.announceAudio = audio
-	s.announceMime = mime
-	s.announceMu.Unlock()
-
-	// Serialise against other box commands (play, volume) for the whole
-	// interrupt/resume cycle so nothing interleaves mid-sequence.
-	s.boxCmdMu.Lock()
-	defer s.boxCmdMu.Unlock()
-
-	// Remember what to restore.
-	prev := s.snapshotNowPlaying(r.Context())
-	wasStandby := prev.Source == "STANDBY" || prev.Source == ""
-	changedVol := body.Volume > 0
-	prevVol := -1
-	if changedVol {
-		prevVol = s.readVolume(r.Context())
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
-	defer cancel()
-
-	if wasStandby {
-		if err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger); err != nil {
-			s.logger.Warn("announce: wake failed, playing anyway", "err", err)
-		}
-	}
-	if changedVol {
-		_ = boxapi.New(s.boxHost).SetVolume(ctx, clampVolume(body.Volume))
-	}
-
 	title := body.Text
 	if title == "" {
 		title = "Announcement"
@@ -152,22 +121,65 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 	if len(title) > 64 {
 		title = strings.TrimSpace(title[:64])
 	}
-	if err := s.renderer.PlayURLMime(ctx, announceAudioURL, title, "", mime); err != nil {
-		s.logger.Warn("announce: play failed", "err", err)
-		// Best-effort restore of volume before reporting.
-		if changedVol && prevVol >= 0 {
-			_ = boxapi.New(s.boxHost).SetVolume(ctx, prevVol)
+	volume := body.Volume
+
+	// Respond now and run the interrupt/play/resume cycle in the background. The
+	// cycle takes ~5 s (play + resume), and holding the HTTP response open that
+	// long made the desktop app's POST connection drop on BCO boxes: it arrives
+	// via the :17008 PREROUTING REDIRECT, the long-held connection was reset
+	// before the response, boxDo then fell through to :8888 (chipset-refused) and
+	// surfaced "connection refused" even though the announcement had played fine
+	// (Jens, 2026-06-17, taigan Portable). The audio fetch above stays
+	// synchronous so a bad URL / TTS failure is still reported to the caller.
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "queued": true, "bytes": len(audio)})
+
+	go func() {
+		// Serialise against other box commands (play, volume) for the whole
+		// interrupt/resume cycle so nothing interleaves mid-sequence. Publish the
+		// audio for the box to fetch under the same lock, so a second announcement
+		// cannot swap it out mid-play.
+		s.boxCmdMu.Lock()
+		defer s.boxCmdMu.Unlock()
+		s.announceMu.Lock()
+		s.announceAudio = audio
+		s.announceMime = mime
+		s.announceMu.Unlock()
+
+		// Detached from the request: r.Context() is cancelled once the handler
+		// returned above, so use a fresh background context for the whole cycle.
+		ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+		defer cancel()
+
+		prev := s.snapshotNowPlaying(ctx)
+		wasStandby := prev.Source == "STANDBY" || prev.Source == ""
+		changedVol := volume > 0
+		prevVol := -1
+		if changedVol {
+			prevVol = s.readVolume(ctx)
 		}
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "could not play announcement", "detail": err.Error()})
-		return
-	}
-	estDur := mp3DurationSec(audio)
-	s.logger.Info("announce: playing", "bytes", len(audio), "estSec", fmt.Sprintf("%.1f", estDur), "title", title, "wasStandby", wasStandby)
 
-	s.waitAnnounceDone(ctx, estDur)
-	s.restoreAfterAnnounce(ctx, prev, prevVol, wasStandby, changedVol)
+		if wasStandby {
+			if err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger); err != nil {
+				s.logger.Warn("announce: wake failed, playing anyway", "err", err)
+			}
+		}
+		if changedVol {
+			_ = boxapi.New(s.boxHost).SetVolume(ctx, clampVolume(volume))
+		}
 
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "bytes": len(audio)})
+		if err := s.renderer.PlayURLMime(ctx, announceAudioURL, title, "", mime); err != nil {
+			s.logger.Warn("announce: play failed", "err", err)
+			if changedVol && prevVol >= 0 {
+				_ = boxapi.New(s.boxHost).SetVolume(ctx, prevVol)
+			}
+			return
+		}
+		estDur := mp3DurationSec(audio)
+		s.logger.Info("announce: playing", "bytes", len(audio), "estSec", fmt.Sprintf("%.1f", estDur), "title", title, "wasStandby", wasStandby)
+
+		s.waitAnnounceDone(ctx, estDur)
+		s.restoreAfterAnnounce(ctx, prev, prevVol, wasStandby, changedVol)
+	}()
 }
 
 // snapshotNowPlaying reads the box's current now_playing so STR can restore it
