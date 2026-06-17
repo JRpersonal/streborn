@@ -29,6 +29,13 @@ export function renderSpotifyAlpha() {
         <li>${escapeHtml(t('spotify.nativeStep3'))}</li>
       </ol>
       <p class="muted small">${escapeHtml(t('spotify.versionNote'))} <a href="#" id="spotifyUpdateLink">${escapeHtml(t('spotify.updateLink'))}</a></p>
+      <h3>${escapeHtml(t('spotify.presetsTitle'))}</h3>
+      <p>${escapeHtml(t('spotify.presetsIntro'))}</p>
+      <ol class="alpha-checklist">
+        <li>${escapeHtml(t('spotify.presetsStep1'))}</li>
+        <li>${escapeHtml(t('spotify.presetsStep2'))}</li>
+        <li>${escapeHtml(t('spotify.presetsStep3'))}</li>
+      </ol>
       <h3>${escapeHtml(t('spotify.worksTitle'))}</h3>
       <ul class="spotify-status">
         <li>${escapeHtml(t('spotify.works1'))}</li>
