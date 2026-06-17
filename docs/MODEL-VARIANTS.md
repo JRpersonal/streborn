@@ -62,11 +62,26 @@ The final firmware Bose shipped before the cloud shutdown on 2026-02. Anything o
 
 ## SoundTouch 10
 
-Reference target. Confirmed from a diagnostic bundle (2026-06-10, #123 box-1):
+| `moduleType` | SCM `softwareVersion` | Build year | Latest official? | `variant` | `variantMode` | Components present | `networkInfo` entries | WLAN interfaces | `countryCode` / `regionCode` samples |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `rhino` | `normal` | SCM, PackagedProduct | 1 (SCM only) | `wlan0`, `wlan1` | `GB` / `GB` |
+| `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `rhino` | `normal` | SCM, PackagedProduct | **2 (SCM + SMSC)** | `wlan0`, `wlan1` | `GB` / `GB` |
 
-| `moduleType` | SCM `softwareVersion` | Build year | Latest official? | `variant` | `variantMode` | Components present | WLAN interfaces | `countryCode` / `regionCode` samples |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `rhino` | `normal` | SCM, PackagedProduct | `wlan0`, `wlan1` | `GB` / `GB` |
+- Kernel: `Linux rhino 3.14.43+ #137 Wed Oct 25 21:06:53 EDT 2017 armv7l` (same kernel as ST20/ST30).
+- Row 1: reference target, confirmed from #123 box-1 (2026-06-10). Permissive chipset: STR's `:8888` is reached directly once the iptables INPUT ACCEPT rule opens it; `is_series_one=0`, no REDIRECT needed.
+
+### Critical difference: the SMSC-bridge `rhino` (2026-06-17 mail bundle)
+
+Row 2 is a SoundTouch 10 that is **byte-for-byte identical** to the reference `rhino` in `moduleType` (`sm2`), `variant` (`rhino`), components (`SCM, PackagedProduct`) **and** WLAN interfaces (`wlan0` + `wlan1`). The **only** distinguishing fingerprint is a **second `networkInfo` entry with `type="SMSC"`** (the Microchip SMSC2014 USB-Ethernet bridge, same IC as the older `scm` ST20).
+
+That bridge whitelists external TCP to Bose-binary-bound listeners only, so the symptom is:
+
+- the agent binds `:8888` fine (`webui: ListenTCP succeeded`),
+- but the box's **own self-probe to its LAN IP fails** (`self-probe: connect failed target=webui addr=<lanip>:8888`), and the desktop app cannot reach `:8888` either, so the box never classifies as STR (`strHits` short by one).
+
+Because `moduleType=sm2` (not `scm`) and a `wlan0` interface exists, **neither** `detect_series_one` **nor** `BCO_MODE` fired, so pre-v0.8.1 the `:17008` PREROUTING REDIRECT was skipped and the box was unreachable. **Fixed v0.8.1:** `run.sh` now also sets `REDIRECT_ELIGIBLE` when `/info` contains the `SMSC` marker, installing the harmless, additive `:17008 -> :8888` REDIRECT so the desktop app finds the box on `:17008`. The narrow `IS_SERIES_ONE` gate (which also controls the boot-hang-prone LD_PRELOAD shim) is deliberately **not** widened.
+
+> Lesson for the matrix: `moduleType` + `variant` + `components` + WLAN topology can all be identical between a permissive box and a chipset-whitelisted one. The presence of the **`SMSC` networkInfo entry** is the reliable discriminator for "chipset blocks STR's own ports, needs the REDIRECT". Likely also explains a `sm2` box that drops out of a multi-room group because its `:8888` is unreachable.
 
 ## SoundTouch 30
 
