@@ -284,6 +284,65 @@ func (c *Client) SearchSmart(ctx context.Context, opts SearchOpts) ([]Station, e
 	return merged, nil
 }
 
+// EnrichSiblingLogos fills an entry's empty Favicon/Homepage from a SIBLING
+// result for the same station. radio-browser routinely returns several entries
+// for one station, and the vote-leading one (the row STR renders) often has an
+// empty favicon while a lower-voted sibling carries a working logo, e.g.
+// Couleur 3: the top entry has favicon="" and homepage couleur3.ch (which no icon
+// service knows), while a sibling has favicon https://www.rts.ch/favicon.ico and
+// homepage www.rts.ch (which resolves). The logo lookup is scoped to a single
+// entry, so without this the strong sibling is never consulted and the tile falls
+// back to a monogram.
+//
+// Conservative to avoid cross-contaminating different stations: siblings are
+// grouped by their EXACT stream URL (url_resolved, else url). The same stream URL
+// is the same audio, i.e. the same station, so this cannot pull a logo across two
+// genuinely different stations the way a fuzzy name match could. Only EMPTY fields
+// are filled, never overwritten; an https favicon is preferred as the donor since
+// the resolver only trusts https favicons.
+func EnrichSiblingLogos(stations []Station) []Station {
+	keyOf := func(s Station) string {
+		u := s.URLResolved
+		if u == "" {
+			u = s.URL
+		}
+		return strings.ToLower(strings.TrimSpace(u))
+	}
+	type donor struct{ favicon, homepage string }
+	best := make(map[string]*donor, len(stations))
+	isHTTPS := func(s string) bool { return strings.HasPrefix(strings.ToLower(s), "https://") }
+	for _, s := range stations {
+		k := keyOf(s)
+		if k == "" {
+			continue
+		}
+		d := best[k]
+		if d == nil {
+			d = &donor{}
+			best[k] = d
+		}
+		if s.Favicon != "" && (d.favicon == "" || (isHTTPS(s.Favicon) && !isHTTPS(d.favicon))) {
+			d.favicon = s.Favicon
+		}
+		if s.Homepage != "" && d.homepage == "" {
+			d.homepage = s.Homepage
+		}
+	}
+	for i := range stations {
+		d := best[keyOf(stations[i])]
+		if d == nil {
+			continue
+		}
+		if stations[i].Favicon == "" && d.favicon != "" {
+			stations[i].Favicon = d.favicon
+		}
+		if stations[i].Homepage == "" && d.homepage != "" {
+			stations[i].Homepage = d.homepage
+		}
+	}
+	return stations
+}
+
 // tokenize splits a free-text query into trimmed, non-empty,
 // lowercase substrings on whitespace. Used by SearchSmart.
 func tokenize(s string) []string {
