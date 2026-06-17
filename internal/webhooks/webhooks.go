@@ -219,7 +219,7 @@ func (s *Store) Button(id string) (Trigger, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	t, ok := s.cfg.Buttons[id]
-	if !ok || !t.Enabled || !t.Action.Configured() {
+	if !ok || !t.Enabled || !t.Configured() {
 		return Trigger{}, false
 	}
 	return t, true

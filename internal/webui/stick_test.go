@@ -18,10 +18,12 @@ func mkDisk(t *testing.T, root, disk, removable string) {
 	}
 }
 
-// TestStickReallyMounted is the #105 regression: a non-removable internal disk
-// (the box's own storage) must NOT count as a USB stick, while a removable one
-// does. Built-in disks reporting removable=0 raised the "remove the USB stick"
-// banner forever on speakers with no stick inserted.
+// TestStickReallyMounted covers #105 and #179: a stick counts only on POSITIVE
+// proof, a readable STR marker on a mounted /media/<disk>1. A non-removable
+// internal disk never counts (#105), and, crucially, a removable/USB disk with
+// NOTHING mounted does not count either (#179): deqw's speakers exposed an
+// internal disk as a removable/USB sda that is never mounted, which kept the
+// "remove the USB stick" banner up forever with no stick to remove.
 func TestStickReallyMounted(t *testing.T) {
 	sysRoot := t.TempDir()
 	medRoot := t.TempDir()
@@ -34,21 +36,22 @@ func TestStickReallyMounted(t *testing.T) {
 		t.Fatal("no disks must report not-mounted")
 	}
 
-	// An internal, non-removable disk -> still not a stick (#105: deqw's speakers).
+	// An internal, non-removable disk -> not a stick (#105: deqw's speakers).
 	mkDisk(t, sysRoot, "sda", "0")
 	if ok, _ := stickReallyMounted(); ok {
 		t.Fatal("a non-removable internal disk must not count as a USB stick")
 	}
 
-	// A removable disk -> a stick, no version when nothing is mounted.
+	// A removable disk with NOTHING mounted -> still NOT a stick (#179): without a
+	// readable marker there is no proof a real STR stick is in the speaker.
 	if err := os.WriteFile(filepath.Join(sysRoot, "sda", "removable"), []byte("1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if ok, ver := stickReallyMounted(); !ok || ver != "" {
-		t.Fatalf("removable sda must be a stick with empty version, got ok=%v ver=%q", ok, ver)
+	if ok, _ := stickReallyMounted(); ok {
+		t.Fatal("a removable disk with no mounted STR marker must not count as a stick (#179)")
 	}
 
-	// Mounted + readable version.txt -> returned.
+	// Mounted + readable version.txt -> a real stick, version returned.
 	if err := os.MkdirAll(filepath.Join(medRoot, "sda1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -59,11 +62,21 @@ func TestStickReallyMounted(t *testing.T) {
 		t.Fatalf("expected version from /media/sda1, got ok=%v ver=%q", ok, ver)
 	}
 
-	// Only a removable sdb (no sda) is also detected.
+	// A stick predating version.txt: a layout marker (run.sh) on the mount counts,
+	// with an empty version. Use a fresh removable sdb to prove sdb is scanned too.
 	sysRoot2, medRoot2 := t.TempDir(), t.TempDir()
 	sysBlockRoot, mediaRoot = sysRoot2, medRoot2
 	mkDisk(t, sysRoot2, "sdb", "1")
-	if ok, _ := stickReallyMounted(); !ok {
-		t.Fatal("a removable sdb must be detected when sda is absent")
+	if ok, _ := stickReallyMounted(); ok {
+		t.Fatal("a removable sdb with no mounted marker must not count as a stick (#179)")
+	}
+	if err := os.MkdirAll(filepath.Join(medRoot2, "sdb1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(medRoot2, "sdb1", "run.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if ok, ver := stickReallyMounted(); !ok || ver != "" {
+		t.Fatalf("a removable sdb with an STR marker must be detected, got ok=%v ver=%q", ok, ver)
 	}
 }
