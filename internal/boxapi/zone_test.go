@@ -206,13 +206,14 @@ func TestSetZonePostsCorrectly(t *testing.T) {
 		!strings.Contains(gotBody, `<member ipaddress="192.0.2.11">BBBB</member>`) {
 		t.Errorf("setZone body wrong: %q", gotBody)
 	}
-	// The /setZone member list MUST include the master itself as the FIRST
-	// member (Bose API + thlucas1 + HA + gesellix all agree), then the slaves.
-	if !strings.Contains(gotBody, `<member ipaddress="192.0.2.10">AAAA</member>`) {
-		t.Errorf("setZone body must include the master as a member: %q", gotBody)
+	// The /setZone member list must carry ONLY the slaves on ST10 (rhino) / ST20
+	// (spotty); listing the master as a member made the firmware silently reject
+	// the zone (regression df7764a, fixed by reverting to the v0.7.29 slaves-only
+	// body that the live fleet needs).
+	if strings.Contains(gotBody, `<member ipaddress="192.0.2.10">AAAA</member>`) {
+		t.Errorf("setZone body must NOT include the master as a member: %q", gotBody)
 	}
 	wantBody := `<zone master="AAAA" senderIPAddress="192.0.2.10">` +
-		`<member ipaddress="192.0.2.10">AAAA</member>` +
 		`<member ipaddress="192.0.2.11">BBBB</member>` +
 		`</zone>`
 	if gotBody != wantBody {
