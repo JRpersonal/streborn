@@ -260,12 +260,95 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  # 2a-bis. Build the go-librespot Spotify Connect sidecar (GPL-3.0) from STR's
+  # own fork JRpersonal/go-librespot (master carries the Ogg-passthrough), the
+  # same static-musl arm/v7 way as go-librespot.yml: an emulated Alpine container
+  # so it runs on the speaker's ancient glibc. Built on EVERY release (not only
+  # on manual dispatch) so the sidecar actually ships: the desktop jobs embed it
+  # and the agent stick/OTA delivers it. This is the fix for Spotify never working
+  # on a normally-installed box (#45/#105): the binary was previously never
+  # delivered by the installer or OTA at all.
+  build-go-librespot:
+    needs: verify-source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Set up QEMU (arm/v7 emulation)
+        uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
+        with:
+          platforms: arm
+
+      - name: Clone go-librespot (our fork) + strip ALSA
+        run: |
+          git clone --depth 1 --branch master https://github.com/JRpersonal/go-librespot go-librespot
+          echo "Built from JRpersonal/go-librespot master at $(git -C go-librespot rev-parse HEAD)"
+          mkdir -p dist
+          # ALSA backend removed: STR drives the pipe backend only, and Alpine
+          # ships no static libasound, which would block the fully static link.
+          # Identical to go-librespot.yml; the Ogg-passthrough is already in the
+          # fork source, so no patch is applied.
+          rm -f go-librespot/output/driver-alsa.go go-librespot/output/mixer-alsa.go
+          cat > go-librespot/output/driver-alsa-noalsa.go <<'GO'
+          //go:build !android && !darwin && !js && !windows && !nintendosdk
+
+          package output
+
+          import "fmt"
+
+          func newAlsaOutput(*NewOutputOptions) (Output, error) {
+          	return nil, fmt.Errorf("alsa backend not compiled in this build")
+          }
+          GO
+
+      - name: Build (static musl, cgo, arm/v7)
+        run: |
+          docker run --rm --platform linux/arm/v7 \
+            -v "$PWD/go-librespot:/src" -v "$PWD/dist:/dist" \
+            -w /src golang:1.25-alpine sh -euxc '
+              apk add --no-cache build-base git \
+                libogg-dev libvorbis-dev flac-dev \
+                libogg-static libvorbis-static flac-static
+              CGO_ENABLED=1 go build -trimpath -buildvcs=false \
+                -tags "osusergo netgo" \
+                -ldflags "-s -w -linkmode external -extldflags \"-static\"" \
+                -o /dist/go-librespot-armv7l ./cmd/daemon
+              /dist/go-librespot-armv7l --help >/dev/null 2>&1 || true
+            '
+
+      - name: Collect + checksum
+        run: |
+          sudo chmod +x dist/go-librespot-armv7l
+          if [ "$(head -c 4 dist/go-librespot-armv7l | xxd -p)" != "7f454c46" ]; then
+            echo "::error::go-librespot build produced something that is not ELF"
+            exit 1
+          fi
+          sha256sum dist/go-librespot-armv7l > dist/go-librespot-armv7l.sha256
+          echo "size: $(stat -c %s dist/go-librespot-armv7l) bytes"
+
+      - name: Sigstore attestation
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: dist/go-librespot-armv7l
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: go-librespot-armv7l
+          path: |
+            dist/go-librespot-armv7l
+            dist/go-librespot-armv7l.sha256
+          if-no-files-found: error
+          retention-days: 90
+
   # 2b. Build the Wails desktop app for Windows. The ARM agent
   # binary built in build-agent is downloaded and dropped into
   # desktop-app/agentbin so go:embed picks it up — the desktop app
   # must ship with the matching agent for OTA updates.
   build-desktop-windows:
-    needs: build-agent
+    needs: [build-agent, build-go-librespot]
     runs-on: windows-latest
     permissions:
       contents: read
@@ -305,11 +388,18 @@ jobs:
           name: shim-armv7l
           path: shim-download
 
-      - name: Embed ARM agent + shim
+      - name: Download go-librespot
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: go-librespot-armv7l
+          path: glr-download
+
+      - name: Embed ARM agent + shim + go-librespot
         shell: bash
         run: |
           cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
           cp shim-download/str-shim.so usb-stick/str-shim.so
+          cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
           ls -la desktop-app/agentbin/ usb-stick/str-shim.so
 
       # Build the winformat helper the desktop app embeds via
@@ -394,7 +484,7 @@ jobs:
   # / current Arch. Building on ubuntu-24.04 would link against a
   # newer libwebkit that's missing on common LTS distros.
   build-desktop-linux:
-    needs: build-agent
+    needs: [build-agent, build-go-librespot]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -436,9 +526,16 @@ jobs:
           name: agent-armv7l
           path: agent-download
 
-      - name: Embed ARM agent
+      - name: Download go-librespot
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: go-librespot-armv7l
+          path: glr-download
+
+      - name: Embed ARM agent + go-librespot
         run: |
           cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
+          cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
           ls -la desktop-app/agentbin/
 
       - name: Build Linux desktop app
@@ -547,7 +644,7 @@ jobs:
   # covers both Intel and Apple Silicon. Wrap in a DMG so end
   # users can drag-drop. Not signed or notarized (post-1.0).
   build-desktop-macos:
-    needs: build-agent
+    needs: [build-agent, build-go-librespot]
     runs-on: macos-latest
     permissions:
       contents: read
@@ -581,9 +678,16 @@ jobs:
           name: agent-armv7l
           path: agent-download
 
-      - name: Embed ARM agent
+      - name: Download go-librespot
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: go-librespot-armv7l
+          path: glr-download
+
+      - name: Embed ARM agent + go-librespot
         run: |
           cp agent-download/streborn-armv7l desktop-app/agentbin/streborn-armv7l
+          cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
           ls -la desktop-app/agentbin/
 
       - name: Build macOS desktop app (universal)
@@ -639,6 +743,7 @@ jobs:
   release:
     needs:
       - build-agent
+      - build-go-librespot
       - build-desktop-windows
       - build-desktop-linux
       - build-desktop-macos
@@ -702,7 +807,7 @@ jobs:
           # final binaries — replace with one SHA256SUMS in the
           # standard format used by the verification instructions.
           rm -f ./*.sha256
-          sha256sum streborn-* STR-* str-shim.so > SHA256SUMS
+          sha256sum streborn-* STR-* str-shim.so go-librespot-armv7l > SHA256SUMS
           cat SHA256SUMS
 
       - name: Generate change notes
@@ -793,6 +898,15 @@ jobs:
                 "arch": "amd64",
                 "filename": "streborn-amd64",
                 "purpose": "developer / test rig"
+              },
+              "spotify_sidecar_armv7l": {
+                "url": "${BASE}/go-librespot-armv7l",
+                "latest_url": "${LATEST_BASE}/go-librespot-armv7l",
+                "sha256": "$(sha go-librespot-armv7l)",
+                "platform": "linux",
+                "arch": "armv7l",
+                "filename": "go-librespot-armv7l",
+                "purpose": "Spotify Connect sidecar (go-librespot, GPL-3.0), runs on the speaker"
               }
             },
             "checksums_file": {
@@ -838,6 +952,7 @@ jobs:
           | Stick agent (ARMv7l, real target) | [streborn-armv7l](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-armv7l) |
           | Stick agent (ARM64, reserve) | [streborn-arm64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-arm64) |
           | Stick agent (amd64, test rig) | [streborn-amd64](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/streborn-amd64) |
+          | Spotify sidecar (go-librespot, ARMv7l) | [go-librespot-armv7l](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/go-librespot-armv7l) |
           | Checksums | [SHA256SUMS](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/SHA256SUMS) |
           | Machine-readable | [manifest.json](https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/manifest.json) |
 
@@ -895,6 +1010,7 @@ jobs:
             dist/streborn-armv7l
             dist/streborn-arm64
             dist/streborn-amd64
+            dist/go-librespot-armv7l
             dist/str-shim.so
             dist/SHA256SUMS
             dist/manifest.json

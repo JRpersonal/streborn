@@ -42,6 +42,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/shepherd"
 	"github.com/JRpersonal/streborn/internal/spotify"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
+	"github.com/JRpersonal/streborn/internal/syscheck"
 	"github.com/JRpersonal/streborn/internal/sysinfo"
 	"github.com/JRpersonal/streborn/internal/tlsgen"
 	"github.com/JRpersonal/streborn/internal/upnp"
@@ -347,7 +348,16 @@ func run() error {
 	// Bose REST client: the Spotify device + its mDNS advert then carry the
 	// speaker's own name, and Spotify-app volume changes are mirrored onto it.
 	spotifyBox := boxapi.New(*boxHost)
-	spotifyMgr := spotify.New("/mnt/nv/streborn/bin/go-librespot", "/mnt/nv/streborn/sp-cache", "ST Reborn", spotifyBox, logger.With("comp", "spotify"))
+	const goLibrespotPath = "/mnt/nv/streborn/bin/go-librespot"
+	// One-shot system check: record kernel/CPU/NEON/RAM/NAND and whether the
+	// go-librespot sidecar is actually deployed, so every diagnostic shows the
+	// prerequisites for a clean run. In particular it surfaces go_librespot=MISSING
+	// (the binary ships only via the stick->NAND boot sync, not the agent OTA), the
+	// real reason Spotify stays unavailable on a box never re-synced from a stick
+	// (#45/#105) rather than a CPU/arch problem (the ST20 runs the same armv7l 3.14
+	// kernel + NEON as the Portable where Spotify works).
+	syscheck.Run(logger, goLibrespotPath)
+	spotifyMgr := spotify.New(goLibrespotPath, "/mnt/nv/streborn/sp-cache", "ST Reborn", spotifyBox, logger.With("comp", "spotify"))
 
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
