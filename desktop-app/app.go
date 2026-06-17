@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -1523,8 +1522,7 @@ func firmwareOlder(a, b string) bool {
 const presetAPIPath = "/api/presets"
 
 func (a *App) GetPresets(host string, port int) ([]Preset, error) {
-	url := a.baseURL(host, port) + presetAPIPath
-	resp, err := a.httpClient.Get(url)
+	resp, err := a.boxDo(host, port, http.MethodGet, presetAPIPath, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -1606,9 +1604,7 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 
 // DeletePreset macht DELETE /api/presets/<slot>.
 func (a *App) DeletePreset(host string, port int, slot int) error {
-	url := fmt.Sprintf("%s/api/presets/%d", a.baseURL(host, port), slot)
-	req, _ := http.NewRequestWithContext(a.appCtx(), http.MethodDelete, url, nil)
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.boxDo(host, port, http.MethodDelete, fmt.Sprintf("/api/presets/%d", slot), "", "")
 	if err != nil {
 		return err
 	}
@@ -1876,6 +1872,26 @@ func (a *App) TestWebhook(host string, port int, method, url, body, contentType 
 	return out, nil
 }
 
+// TestWebhookAction fires an arbitrary configured action (http/udp/wol) once for
+// the test button, without pressing a key on the box. actionJSON is the full
+// webhook Action the frontend built (type + its fields), so the UDP/WoL test
+// works the same as the HTTP one (#187). Returns {ok, status}.
+func (a *App) TestWebhookAction(host string, port int, actionJSON string) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/webhooks/test", "application/json", actionJSON)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // --- Box-native (:8090) controls that STR does not proxy ---------------
 //
 // Clock display and language live on the box's OWN Bose HTTP API (:8090),
@@ -2042,8 +2058,7 @@ func (a *App) SetBoxLanguage(host string, value int) error {
 // BCO speakers (Portable, ST20-spotty) support it; others report
 // supported=false. See internal/webui handleBoxAirplayOpt.
 func (a *App) GetAirplayOpt(host string, port int) (map[string]bool, error) {
-	url := a.baseURL(host, port) + "/api/box/airplay-opt"
-	resp, err := a.httpClient.Get(url)
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/airplay-opt", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -2063,14 +2078,8 @@ func (a *App) GetAirplayOpt(host string, port int) (map[string]bool, error) {
 // (BoseApp reads the value at boot, like the iOS app), so the box drops
 // off the LAN for ~60-120s after this returns.
 func (a *App) SetAirplayOpt(host string, port int, enabled bool) error {
-	url := a.baseURL(host, port) + "/api/box/airplay-opt"
 	body, _ := json.Marshal(map[string]bool{"enabled": enabled})
-	req, err := http.NewRequestWithContext(a.appCtx(), http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/airplay-opt", "application/json", string(body))
 	if err != nil {
 		return err
 	}
@@ -2413,8 +2422,9 @@ func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {
 // die Hardware Preset Tasten 1-6 funktionieren. Wird vom "Hardware
 // Tasten reparieren" Button im Settings Tab benutzt.
 func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
-	url := a.baseURL(host, port) + "/api/box/sync-presets"
-	resp, err := a.httpClient.Post(url, "application/json", nil)
+	// boxDo so the :8888<->:17008 self-heal applies (BCO/Portable boxes only
+	// answer on the REDIRECTed :17008; a baseURL+raw POST pinned to :8888 failed).
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/sync-presets", "application/json", "")
 	if err != nil {
 		return nil, err
 	}
@@ -2440,8 +2450,7 @@ func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 // shell `reboot`). Damit greifen frische Setup Wizard Configs auf dem
 // USB Stick sofort, ohne dauerhaftes Polling im Agent.
 func (a *App) RebootBox(host string, port int) error {
-	url := a.baseURL(host, port) + "/api/box/reboot"
-	resp, err := a.httpClient.Post(url, "application/json", nil)
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/reboot", "application/json", "")
 	if err != nil {
 		return err
 	}
@@ -2458,8 +2467,7 @@ func (a *App) VoteStation(host string, port int, uuid string) error {
 	if uuid == "" {
 		return nil
 	}
-	url := fmt.Sprintf("%s/api/radio/vote/%s", a.baseURL(host, port), uuid)
-	resp, err := a.httpClient.Post(url, "application/json", nil)
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/radio/vote/"+uuid, "application/json", "")
 	if err != nil {
 		return err
 	}
@@ -2476,11 +2484,25 @@ func friendlyError(resp *http.Response) string {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err == nil {
+		msg := ""
 		if d, ok := m["detail"].(string); ok && d != "" {
-			return d
+			msg = d
+		} else if e, ok := m["error"].(string); ok && e != "" {
+			msg = e
 		}
-		if e, ok := m["error"].(string); ok && e != "" {
-			return e
+		// Surface the stable machine `code` (e.g. spotify-not-logged-in,
+		// spotify-premium-required) ahead of the human message as "code: message"
+		// so the frontend can branch on the code rather than on fragile English
+		// wording, and the wording stays free to change (#45). Callers that only
+		// show the string still read fine.
+		if c, ok := m["code"].(string); ok && c != "" {
+			if msg != "" {
+				return c + ": " + msg
+			}
+			return c
+		}
+		if msg != "" {
+			return msg
 		}
 	}
 	return string(b)
@@ -2589,7 +2611,7 @@ func (a *App) WriteStickFiles(targetPath string) ([]string, error) {
 	if appBuild != "" && appBuild != "dev" {
 		v = appVersion + "+" + appBuild
 	}
-	return sticksetup.WriteStickFiles(targetPath, agentbin.Bytes(), v)
+	return sticksetup.WriteStickFiles(targetPath, agentbin.Bytes(), agentbin.GoLibrespotBytes(), v)
 }
 
 // WriteWLANConfig schreibt eine WLAN Konfig auf den Stick. Optional vor
@@ -2982,8 +3004,7 @@ func (a *App) EjectDrive(path string) error {
 // Status liefert das now_playing XML als String. Frontend kann selber
 // regex-parsen.
 func (a *App) Status(host string, port int) (string, error) {
-	url := a.baseURL(host, port) + "/api/status"
-	resp, err := a.httpClient.Get(url)
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/status", "", "")
 	if err != nil {
 		return "", err
 	}

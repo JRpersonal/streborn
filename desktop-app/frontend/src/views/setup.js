@@ -802,6 +802,13 @@ async function updateDrivePanels() {
   const btn = $('setupGo');
   const upd = $('updateInfo');
   const warn = $('formatWarn');
+  // Default the "the stick is already in the speaker" shortcut to VISIBLE on every
+  // panel update; only the prepared-stick-in-the-PC branch below hides it (there
+  // "Continue" is the one install path). This guarantees the shortcut stays
+  // available for the common "I prepared a stick in an earlier session and put it
+  // straight into the box" flow, and is never left stale-hidden after a stick is
+  // removed from the PC drive (#i).
+  { const skip = $('setupSkipSection'); if (skip) skip.classList.remove('hidden'); }
   if (!drive) {
     btn.disabled = true;
     btn.textContent = t('setup.goBtn');
@@ -908,10 +915,18 @@ async function updateDrivePanels() {
     }
     warn.classList.add('hidden');
     btn.textContent = t('setup.goBtnUpdate');
+    // A prepared stick is in the PC, so "Continue" (eject + install over the
+    // network) is the one install path. Hide the bottom "stick is already in the
+    // speaker" shortcut here: showing both made it look like two buttons that do
+    // the same OTA deploy (#i). The shortcut stays for the no-stick-in-PC case.
+    const skip = $('setupSkipSection');
+    if (skip) skip.classList.add('hidden');
   } else {
     upd.classList.add('hidden');
     warn.classList.remove('hidden');
     btn.textContent = t('setup.goBtn');
+    const skip = $('setupSkipSection');
+    if (skip) skip.classList.remove('hidden');
   }
 }
 

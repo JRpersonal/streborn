@@ -897,11 +897,14 @@ func (s *Server) handleWebhooksTest(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&a)
 	}
-	if a.URL == "" {
+	// Fall back to the saved thumb action only when nothing testable was posted.
+	// Configured() (not a bare URL check) so a udp/wol action, which has no URL,
+	// is testable too (#187).
+	if !a.Configured() {
 		a = s.webhooks.Get().Thumb
 	}
-	if a.URL == "" {
-		http.Error(w, "no URL to test", http.StatusBadRequest)
+	if !a.Configured() {
+		http.Error(w, "nothing to test (configure the action first)", http.StatusBadRequest)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -1070,8 +1073,13 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		// reporting "playing" and failing in the background.
 		if s.spotifyLoggedIn != nil && !s.spotifyLoggedIn() {
 			s.logger.Info("spotify preset recall (app): speaker not logged into Spotify", "slot", slot)
+			// STR plays Spotify through this speaker as a Spotify Connect receiver
+			// (the go-librespot sidecar), not via any Bose account link. The
+			// speaker has to be picked in Spotify once so it stores a credential.
+			// The desktop app branches on the code, so this wording is free to be
+			// the accurate, non-Bose-linking instruction.
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
-				"error": "This speaker isn't logged into Spotify yet. Open Spotify, pick this speaker as the playback device and play something once, then this preset will work.",
+				"error": "This speaker has not been picked in Spotify yet. In the Spotify app on a device on the same Wi-Fi, tap the Connect/devices icon, choose this speaker and play any track once. After that this preset will recall on its own.",
 				"code":  "spotify-not-logged-in",
 				"slot":  slot, "name": p.Name,
 			})
@@ -2628,8 +2636,45 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native"})
 		return
 	}
-	s.logger.Info("zone: formed", "mode", "native", "liveMaster", z2.Master, "liveMembers", len(z2.Members))
-	writeJSON(w, http.StatusOK, z2)
+	// Which requested slaves did the master's zone NOT list? Return the delta so
+	// the app can flag a member that did not join instead of reporting a blanket
+	// success (#70: a 3-box group silently drops one member).
+	live := make(map[string]bool, len(z2.Members))
+	for _, m := range z2.Members {
+		live[strings.ToLower(m.DeviceID)] = true
+	}
+	missing := make([]string, 0)
+	for _, sl := range slaves {
+		if !live[strings.ToLower(sl.DeviceID)] {
+			missing = append(missing, sl.DeviceID)
+		}
+	}
+	s.logger.Info("zone: formed", "mode", "native", "liveMaster", z2.Master,
+		"requestedSlaves", len(slaves), "liveMembers", len(z2.Members), "missing", strings.Join(missing, ","))
+	// Form-time instrumentation (#70): the master's zone may show all members
+	// while a member still drops from the app's frame because that FOLLOWER
+	// self-reports a different/empty zone. Log each follower's own /getZone so a
+	// diagnostic tells a real enrolment drop (master shows N-1) from a
+	// display/read-back drop (master shows N, a follower disagrees), BEFORE any
+	// change to enrolment semantics. Best-effort, bounded per follower.
+	for _, sl := range slaves {
+		if sl.IP == "" {
+			continue
+		}
+		fctx, fcancel := context.WithTimeout(ctx, 4*time.Second)
+		fz, ferr := boxapi.New(sl.IP).GetZone(fctx)
+		fcancel()
+		if ferr != nil {
+			s.logger.Info("zone: follower self-report failed", "follower", sl.DeviceID, "ip", sl.IP, "err", ferr.Error())
+			continue
+		}
+		s.logger.Info("zone: follower self-report", "follower", sl.DeviceID, "ip", sl.IP,
+			"selfMaster", fz.Master, "selfMembers", len(fz.Members))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
+		"members": z2.Members, "requested": len(slaves), "missing": missing,
+	})
 }
 
 // formStereoPair drives POST /addGroup to make a real left/right stereo pair
@@ -2838,9 +2883,23 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("zone: dissolving (beta)", "master", master.DeviceID, "slaves", len(slaves))
 	if master.DeviceID != "" && len(slaves) > 0 {
-		if err := c.RemoveZoneSlave(ctx, master, slaves); err != nil {
-			// Log but still clear the store so we stop re-forming a broken zone.
-			s.logger.Warn("zone: removeZoneSlave failed", "err", err)
+		// Loop until the firmware reports an empty zone (or the ctx deadline): a
+		// single RemoveZoneSlave can leave a straggler, which forced a SECOND
+		// ungroup press to clear the speaker's display (#70). Bounded by the 8s
+		// ctx and a small attempt cap so a box that never lets go cannot hang.
+		cur := slaves
+		for attempt := 0; attempt < 4 && len(cur) > 0; attempt++ {
+			if err := c.RemoveZoneSlave(ctx, master, cur); err != nil {
+				// Log but keep going; the store is cleared below regardless so we
+				// stop re-forming a broken zone.
+				s.logger.Warn("zone: removeZoneSlave failed", "err", err, "attempt", attempt)
+			}
+			z, err := c.GetZone(ctx)
+			if err != nil || z.Master == "" || len(z.Members) == 0 {
+				break // zone gone (or unreadable): done
+			}
+			cur = z.Members
+			s.logger.Info("zone: members still present after removeZoneSlave, retrying", "remaining", len(cur), "attempt", attempt)
 		}
 	}
 	if s.zones != nil {
@@ -2903,21 +2962,34 @@ func diskIsRemovableUSB(disk string) bool {
 }
 
 // stickReallyMounted reports whether a real STR USB stick is in the speaker right
-// now, and returns its version.txt when readable. It keys on a REMOVABLE USB
-// block device (sda/sdb), NOT the bare presence of an sd* device: the latter
-// lingers as the box's built-in storage on some models, which kept the "remove
-// the USB stick" banner up forever with no stick inserted (#105). The version is
-// read from the matching mount (/media/<disk>1/version.txt) when the stick
-// happens to be mounted (the Portable does not auto-mount it).
+// now, and returns its version.txt when readable. It requires POSITIVE proof: a
+// readable STR marker on a mounted /media/<disk>1 filesystem. A bare removable /
+// USB block device is NOT enough.
+//
+// #179: deqw's ST10 + both ST20s (no stick inserted) expose an internal disk as
+// a removable/USB sda that is never mounted (the diagnostic showed no /media/sda1
+// and no sd* mount at all), so diskIsRemovableUSB("sda") returned true and the
+// old "removable USB present" check kept the "remove the USB stick" banner up
+// forever with nothing to remove. Reading an STR marker off the mount instead
+// keys on the one thing only a real, inserted STR stick produces.
 func stickReallyMounted() (bool, string) {
 	for _, disk := range []string{"sda", "sdb"} {
 		if !diskIsRemovableUSB(disk) {
 			continue
 		}
-		if b, err := os.ReadFile(filepath.Join(mediaRoot, disk+"1", "version.txt")); err == nil {
+		mnt := filepath.Join(mediaRoot, disk+"1")
+		// version.txt is the authoritative marker and carries the stick version.
+		if b, err := os.ReadFile(filepath.Join(mnt, "version.txt")); err == nil {
 			return true, strings.TrimSpace(string(b))
 		}
-		return true, ""
+		// Sticks that predate version.txt: accept the STR stick layout itself.
+		// Still requires the stick to be mounted (these paths only exist on a
+		// real, inserted stick), so the #179 phantom sda with no mount stays false.
+		for _, marker := range []string{"install.sh", "run.sh", "streborn-armv7l"} {
+			if _, err := os.Stat(filepath.Join(mnt, marker)); err == nil {
+				return true, ""
+			}
+		}
 	}
 	return false, ""
 }

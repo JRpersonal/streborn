@@ -26,11 +26,15 @@ func (a *App) AnnounceExample(host string, port int) string {
 	return fmt.Sprintf(`curl -X POST "http://%s:%d/api/announce" -H "Content-Type: application/json" -d "{\"text\":\"Es klingelt an der Tuer\",\"volume\":20}"`, host, p)
 }
 
-// SendAnnounce fires an announcement at the box (POST /api/announce). A zero
+// SendAnnounce fires an announcement at the box (POST /api/announce). lang is the
+// TTS language code (e.g. "de", "en"); empty lets the agent default to en. A zero
 // volume leaves the current volume untouched. Routed through boxDo for the
 // :8888<->:17008 self-heal.
-func (a *App) SendAnnounce(host string, port int, text string, volume int) error {
+func (a *App) SendAnnounce(host string, port int, text, lang string, volume int) error {
 	payload := map[string]any{"text": text}
+	if lang != "" {
+		payload["lang"] = lang
+	}
 	if volume > 0 {
 		payload["volume"] = volume
 	}

@@ -2854,6 +2854,12 @@ async function play(slot) {
     state.optimisticUntil = Date.now() + 6000;
     delete state.presetErrors[slot];
     renderPresets();
+    // Also repaint the now-playing status line from the optimistic state, not
+    // just the preset tile: it reads purely from cached state, so without this
+    // the "Stream is starting" label only appeared after PlaySlot returned and
+    // the next refreshStatus ran, which on a cold soft recall lagged several
+    // seconds behind the click. Now the status line tracks the tile instantly.
+    renderNowPlayingBar();
   }
   try {
     await PlaySlot(state.currentBox.host, state.currentBox.port, slot);
@@ -2862,11 +2868,18 @@ async function play(slot) {
     refreshStatus();
     setTimeout(refreshStatus, 1500);
   } catch (e) {
+    const errStr = String(e);
     state.nowPlayState = '';
     state.nowLocation = '';
     state.optimisticUntil = 0;
-    state.presetErrors[slot] = friendlyPlayError(String(e));
+    state.presetErrors[slot] = friendlyPlayError(errStr);
     renderPresets();
+    // The tile label is too small for the multi-step Spotify Connect how-to, so
+    // also show it as a (localized) toast. Use the i18n help text, not the raw
+    // English backend message, so non-English users get it in their language.
+    if (errStr.toLowerCase().includes('spotify-not-logged-in')) {
+      showToast(t('play.errSpotifyLoginHelp'));
+    }
     setTimeout(() => refreshStatus(), 2000);
   }
 }
@@ -2876,6 +2889,10 @@ async function play(slot) {
 function friendlyPlayError(s) {
   const l = String(s).toLowerCase();
   if (l.includes('box_not_ready')) return t('play.errBoxStarting');
+  // Spotify recall refused because the speaker was never picked as the Spotify
+  // Connect device (no go-librespot credential). Key off the stable backend code,
+  // not the English message, so rewording the backend never breaks this (#45).
+  if (l.includes('spotify-not-logged-in')) return t('play.errSpotifyLogin');
   if (l.includes('premium')) return t('play.errSpotifyPremium');
   if (l.includes('no such host') || l.includes('lookup')) return t('play.errNoInternet');
   if (l.includes('timeout') || l.includes('deadline')) return t('play.errSpeakerTimeout');
