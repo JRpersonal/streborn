@@ -1468,6 +1468,102 @@ func (s *Server) ResumeLastPlay() {
 	}()
 }
 
+// RecoverAfterReconnect re-pushes the last stream when the gabbo WebSocket
+// reconnects and finds the box awake but stuck on an STR selection it is not
+// playing. This recovers the lost first press after a deep/overnight standby
+// (#183): the box wakes and emits the preset/now-selection frame before STR has
+// reconnected (the reconnect backoff had grown while the box was unreachable),
+// so OnPresetSelected never runs and the display shows "service unavailable"
+// until a second press.
+//
+// It reuses the power-on resume's safeguards so it can only ever resume, never
+// surprise: it honours the per-box opt-out, stands down inside a zone (a
+// stereo-pair self-wake looks identical on the wire), suppresses a deliberate
+// user stop, and acts only when the box is awake-and-idle on an STR source
+// (boxSelectionStuck). A routine idle reconnect (box in standby), a box already
+// playing, or a box on a native source (AUX/Bluetooth) is a no-op. Unlike
+// ResumeLastPlay it does NOT clear the user-stop: a reconnect is not the explicit
+// "play it again" a real power press is.
+func (s *Server) RecoverAfterReconnect() {
+	if s.renderer == nil {
+		return
+	}
+	if !s.resumeOnPowerOnEnabled() {
+		return
+	}
+	if s.userStoppedRecently() {
+		return
+	}
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	if lp == nil || time.Since(lp.ts) >= 12*time.Hour {
+		s.lastPlayMu.Unlock()
+		return
+	}
+	boxURL, title, art, mime := lp.boxURL, lp.title, lp.art, lp.mime
+	s.lastPlayMu.Unlock()
+
+	go func() {
+		// Let the wake settle so the box's reported state is unambiguous before
+		// we decide (the box can flip through transient states right after a
+		// reconnect/wake).
+		time.Sleep(2 * time.Second)
+		if s.boxInZone() {
+			s.logger.Info("reconnect recovery: box in a zone / stereo pair, standing down (self-wake guard)")
+			return
+		}
+		if !s.boxSelectionStuck() {
+			return // asleep, already playing, or on a native source: nothing to recover
+		}
+		s.boxCmdMu.Lock()
+		defer s.boxCmdMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		var err error
+		if mime != "" {
+			err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
+		} else {
+			err = s.renderer.PlayURL(ctx, boxURL, title, art)
+		}
+		if err != nil {
+			s.logger.Warn("reconnect recovery: play failed", "err", err, "url", boxURL)
+			return
+		}
+		s.logger.Info("reconnect recovery: resumed last stream after WS reconnect", "url", boxURL, "title", title)
+	}()
+}
+
+// boxSelectionStuck reports whether the box is awake with an STR selection it is
+// not playing: the state a lost preset-press / power-on wake leaves behind (the
+// box restored STR's UPNP source as INVALID_SOURCE and shows "service
+// unavailable"). It is the trigger for RecoverAfterReconnect (#183) and is
+// deliberately narrow: a box in standby, a box already playing/paused, or a box
+// on a native source (AUX, Bluetooth) all return false so the recovery never
+// fights them.
+func (s *Server) boxSelectionStuck() bool {
+	if s.boxHost == "" {
+		return false
+	}
+	cl := &http.Client{Timeout: 5 * time.Second}
+	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	body := string(b)
+	if strings.Contains(body, "STANDBY") {
+		return false // box asleep: a routine idle reconnect, nothing to recover
+	}
+	if strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE") {
+		return false // already playing/paused
+	}
+	// Only recover an STR-owned selection (UPNP) or the box's failed
+	// self-activation of it (INVALID_SOURCE). A native source the user picked
+	// (AUX, BLUETOOTH, ...) is left alone.
+	return strings.Contains(body, `source="UPNP"`) || strings.Contains(body, "INVALID_SOURCE")
+}
+
 // defaultResumeOnPowerOnPath is the NAND flag file for the per-box power-on
 // resume opt-out. Absent or "1" means on (the default), "0" means off.
 const defaultResumeOnPowerOnPath = "/mnt/nv/streborn/resume-on-power-on"
