@@ -966,5 +966,7 @@
   "spotify.nativeNote": "Hinweis: ein Spotify-Premium-Account ist nötig (Spotifys eigene Connect-Regel). Das frühere „Account in der Bose-App verknüpfen\" entfällt und wird nicht gebraucht.",
   "worldMap.inviteTextAll": "Alle deine SoundTouch leben wieder 🎉",
   "update.inProgressTitle": "'{{name}}' wird aktualisiert ...",
-  "settingsView.stickStillInserted": "Stick noch eingesteckt (SSH offen). Zum Absichern den Stick ziehen und neu starten."
+  "settingsView.stickStillInserted": "Stick noch eingesteckt (SSH offen). Zum Absichern den Stick ziehen und neu starten.",
+  "settingsView.announceDefault": "Vielen Dank, dass du STR nutzt!",
+  "settingsView.announceVolumeLabel": "Durchsage-Lautstärke"
 }

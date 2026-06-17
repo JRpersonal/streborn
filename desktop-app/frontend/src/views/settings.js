@@ -568,7 +568,7 @@ function renderBoxSettings(s, box) {
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       <small class="muted small expert-intro">${escapeHtml(t('settingsView.announceHelp'))}</small>
       <div class="setting-row" style="margin-top:8px">
-        <input type="text" id="announceText" class="text-input" maxlength="200" placeholder="${escapeAttr(t('settingsView.announcePlaceholder'))}" style="flex:1" />
+        <input type="text" id="announceText" class="text-input" maxlength="200" value="${escapeAttr(t('settingsView.announceDefault'))}" placeholder="${escapeAttr(t('settingsView.announcePlaceholder'))}" style="flex:1" />
         <select id="announceLang" style="flex:0 0 130px;" title="${escapeAttr(t('settingsView.announceLangLabel'))}">
           <option value="de">Deutsch</option>
           <option value="en">English</option>
@@ -583,6 +583,11 @@ function renderBoxSettings(s, box) {
           <option value="ja">日本語</option>
         </select>
         <button class="btn btn-mini" id="announceSend">${escapeHtml(t('settingsView.announceSend'))}</button>
+      </div>
+      <div class="setting-row" style="align-items:center;gap:10px;margin-top:8px">
+        <label class="muted small" for="announceVolume" style="flex:0 0 auto">${escapeHtml(t('settingsView.announceVolumeLabel'))}</label>
+        <input type="range" id="announceVolume" min="1" max="100" value="25" style="flex:1" />
+        <span class="muted small" id="announceVolumeVal" style="flex:0 0 2.5em;text-align:right">25</span>
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.announceCharHint'))}</small>
       <small class="muted small" style="display:block;margin-top:6px">&#9432; ${escapeHtml(t('settingsView.announcePrivacy'))}</small>
@@ -1273,6 +1278,12 @@ function renderBoxSettings(s, box) {
   const annLang = $('announceLang');
   const annCurl = $('announceCurl');
   const annCopy = $('announceCopy');
+  const annVol = $('announceVolume');
+  const annVolVal = $('announceVolumeVal');
+  if (annVol && annVolVal) {
+    annVolVal.textContent = annVol.value;
+    annVol.oninput = () => { annVolVal.textContent = annVol.value; };
+  }
   // Default the TTS voice to the app's UI language when it is one of the offered
   // voices, so e.g. a German user gets a German voice without having to pick.
   if (annLang) {
@@ -1290,7 +1301,8 @@ function renderBoxSettings(s, box) {
       if (!text) return;
       annSend.disabled = true;
       try {
-        await SendAnnounce(box.host, box.port, text, (annLang && annLang.value) || '', 0);
+        const vol = annVol ? (parseInt(annVol.value, 10) || 0) : 0;
+        await SendAnnounce(box.host, box.port, text, (annLang && annLang.value) || '', vol);
         showToast(t('settingsView.announceSentToast'));
       } catch (e) { showError(e); }
       annSend.disabled = false;

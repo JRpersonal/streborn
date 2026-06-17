@@ -922,5 +922,7 @@
   "worldMap.countLine": "🌍 {{n}} enceintes SoundTouch sauvées dans le monde jusqu'ici. Ajoute la tienne !",
   "worldMap.inviteTextAll": "Toutes tes enceintes SoundTouch revivent 🎉",
   "update.inProgressTitle": "Updating '{{name}}'...",
-  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
+  "settingsView.announceDefault": "Merci d'utiliser STR !",
+  "settingsView.announceVolumeLabel": "Volume de l'annonce"
 }

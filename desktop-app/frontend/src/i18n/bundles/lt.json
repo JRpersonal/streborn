@@ -922,5 +922,7 @@
   "worldMap.countLine": "🌍 Iki šiol pasaulyje išgelbėta {{n}} SoundTouch garsiakalbių. Pridėk savąjį!",
   "worldMap.inviteTextAll": "Visi jūsų SoundTouch vėl veikia 🎉",
   "update.inProgressTitle": "Updating '{{name}}'...",
-  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
+  "settingsView.announceDefault": "Ačiū, kad naudojate STR!",
+  "settingsView.announceVolumeLabel": "Pranešimo garsumas"
 }

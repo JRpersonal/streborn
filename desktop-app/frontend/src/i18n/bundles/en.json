@@ -966,5 +966,7 @@
   "spotify.nativeNote": "Note: a Spotify Premium account is required (Spotify's own rule for Connect). The old “link an account in the Bose app” step is gone and not needed.",
   "worldMap.inviteTextAll": "All your SoundTouch speakers are alive again 🎉",
   "update.inProgressTitle": "Updating '{{name}}'...",
-  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
+  "settingsView.announceDefault": "Thank you for using STR!",
+  "settingsView.announceVolumeLabel": "Announcement volume"
 }
