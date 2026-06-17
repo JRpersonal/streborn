@@ -1694,6 +1694,17 @@ func (s *Server) boxInZone() bool {
 	if s.boxHost == "" {
 		return false
 	}
+	// Persisted membership first: a box we recorded as part of a zone or stereo
+	// pair must stand down from power-on resume even if the live /getZone races a
+	// zone that is still forming (it legitimately reads empty mid-handshake) or
+	// the read errors. This closes the self-wake gap where a member woken by its
+	// pair resumed because the live read came back empty. Fail-safe direction:
+	// silence beats spontaneous playback.
+	if s.zones != nil {
+		if _, ok := s.zones.Get(); ok {
+			return true
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	z, err := boxapi.New(s.boxHost).GetZone(ctx)
@@ -2765,26 +2776,29 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 // re-asserting its persisted zone whenever a member left to play its own source).
 const defaultZoneReconcilePath = "/mnt/nv/streborn/zone-reconcile"
 
-// zoneReconcileEnabled reports whether the periodic zone reconcile is opted in
-// for this box. Default OFF: absent or unreadable flag file means off, and only
-// an explicit affirmative value enables it.
+// zoneReconcileEnabled reports whether the periodic zone reconcile runs on this
+// box. Default ON so a formed zone survives reboot/standby/Wi-Fi outage (v1.0
+// gate #2), which is the v0.7.29 behavior the fleet relied on. The flag file is
+// an explicit OPT-OUT (write "off"/"0") for a box whose members are often played
+// solo, where re-asserting the master's group would drag a member back in. The
+// match-before-assert guard in reconcileZoneOnce already skips a no-op re-assert.
 func (s *Server) zoneReconcileEnabled() bool {
 	b, err := os.ReadFile(defaultZoneReconcilePath)
 	if err != nil {
-		return false
+		return true // default ON
 	}
 	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "1", "true", "on", "yes":
-		return true
+	case "0", "false", "off", "no":
+		return false // explicit opt-out
 	default:
-		return false
+		return true
 	}
 }
 
 // PeriodicZoneReconcile re-asserts a persisted group so it survives
 // reboot/standby/Wi-Fi outage (#70 beta). No-op when standalone OR when the box
-// has not opted into reconcile (the default, see zoneReconcileEnabled). Started
-// by cmd/agent after the server is built. Lives on the Server so the mirror path
+// is explicitly opted out (see zoneReconcileEnabled, default on). Started by
+// cmd/agent after the server is built. Lives on the Server so the mirror path
 // can reach s.lastPlay + the UPnP renderer.
 func (s *Server) PeriodicZoneReconcile() {
 	if s.zones == nil || s.boxHost == "" {
@@ -2801,8 +2815,8 @@ func (s *Server) PeriodicZoneReconcile() {
 
 func (s *Server) reconcileZoneOnce() {
 	if !s.zoneReconcileEnabled() {
-		return // opt-in, default off: never auto-re-assert a zone, so a speaker
-		// the user plays on its own is never dragged back into the master's group.
+		return // explicit opt-out only (default is on): a box flagged "off" never
+		// auto-re-asserts, so a speaker the user plays solo is not dragged back.
 	}
 	z, ok := s.zones.Get()
 	if !ok {
