@@ -245,9 +245,14 @@ type lastPlayInfo struct {
 
 // maxRePushes is the hard cap on consecutive resume attempts for one stream.
 // After this many the stream is declared dead and left alone (no re-arm) until
-// the user plays something new. With the exponential backoff the attempts span
-// ~30s rather than the dozens-per-second runaway it replaces.
-const maxRePushes = 5
+// the user plays something new. The exponential backoff (capped at 30s) spaces
+// the attempts out, so this many spans several minutes, not seconds: a
+// SoundTouch 10 was seen to have its long radio stream dropped by the renderer
+// after ~11 min and then recover slowly, so a cap of 5 (~30s of attempts) gave
+// up far too early and the radio stayed silent. 10 keeps retrying for a few
+// minutes while the backoff + the rePushInFlight latch still prevent the
+// dozens-per-second runaway the cap originally fixed (v0.7.5).
+const maxRePushes = 10
 
 // statusCacheTTL bounds the staleness of a cached now_playing response and
 // thus the maximum /now_playing hit rate against the Bose app to about
