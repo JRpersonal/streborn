@@ -98,6 +98,11 @@
   "common.beta": "Beta",
   "spotify.versionNote": "Requires the latest STR version on the speaker.",
   "spotify.updateLink": "Open speaker settings to update",
+  "spotify.presetsTitle": "Save a playlist to a preset button",
+  "spotify.presetsIntro": "You can store a Spotify playlist on one of the six preset buttons and start it later straight from the speaker, no phone needed.",
+  "spotify.presetsStep1": "Play a Spotify playlist to this speaker (the steps above).",
+  "spotify.presetsStep2": "On the Music tab, press and hold a preset button (1-6) until it fills, to save the playlist that is playing.",
+  "spotify.presetsStep3": "From then on, that preset starts the playlist again, from the hardware button 1-6 on the speaker or from the app.",
   "spotify.worksTitle": "What works",
   "spotify.works1": "Send any Spotify track or playlist from the app to the speaker (Spotify Premium).",
   "spotify.works2": "Save playlists to the soft and hardware preset keys; a preset recalls shuffled, from the start, under its own account.",
@@ -291,7 +296,7 @@
   "update.uploadedToast": "Update uploaded. The speaker reboots and takes up to a few minutes to answer again.",
   "update.rebooting": "Speaker is rebooting and reconnecting (this can take a few minutes)...",
   "update.oldBuildWait": "Speaker still answers the old build, {{remaining}} left...",
-  "update.waitingForSpeaker": "Waiting for speaker, {{remaining}} left...",
+  "update.waitingForSpeaker": "Speaker is restarting and reconnecting, {{remaining}} left...",
   "update.doneToast": "Update done.",
   "update.tookLongerToast": "Speaker takes longer than expected. Check power / network.",
   "update.failed": "Update failed: {{err}}\n\nIf the speaker no longer answers, briefly unplug power and plug it back in.",
@@ -959,5 +964,6 @@
   "spotify.nativeStep2": "Tap the “Connect to a device” (speaker) icon and pick this speaker.",
   "spotify.nativeStep3": "Play. Any Spotify account works; whoever connects last controls it. No login needed in this app.",
   "spotify.nativeNote": "Note: a Spotify Premium account is required (Spotify's own rule for Connect). The old “link an account in the Bose app” step is gone and not needed.",
-  "worldMap.inviteTextAll": "All your SoundTouch speakers are alive again 🎉"
+  "worldMap.inviteTextAll": "All your SoundTouch speakers are alive again 🎉",
+  "update.inProgressTitle": "Updating '{{name}}'..."
 }

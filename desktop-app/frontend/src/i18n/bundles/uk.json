@@ -93,6 +93,11 @@
   "common.beta": "БЕТА",
   "spotify.versionNote": "Потрібна найновіша версія STR на колонці.",
   "spotify.updateLink": "Відкрити налаштування колонки для оновлення",
+  "spotify.presetsTitle": "Save a playlist to a preset button",
+  "spotify.presetsIntro": "You can store a Spotify playlist on one of the six preset buttons and start it later straight from the speaker, no phone needed.",
+  "spotify.presetsStep1": "Play a Spotify playlist to this speaker (the steps above).",
+  "spotify.presetsStep2": "On the Music tab, press and hold a preset button (1-6) until it fills, to save the playlist that is playing.",
+  "spotify.presetsStep3": "From then on, that preset starts the playlist again, from the hardware button 1-6 on the speaker or from the app.",
   "spotify.worksTitle": "Що працює",
   "spotify.works1": "Надсилайте будь-який трек або плейлист Spotify із застосунку на колонку (Spotify Premium).",
   "spotify.works2": "Зберігайте плейлисти на програмні та апаратні кнопки пресетів; пресет відновлюється в перемішаному порядку, з початку, під власним обліковим записом.",
@@ -915,5 +920,6 @@
   "settingsView.urlPresetInvalid": "Введи пресет і дійсний аудіо URL http:// або https://.",
   "settingsView.urlPresetSaved": "Збережено в пресет {{n}}.",
   "worldMap.countLine": "🌍 Уже {{n}} колонок SoundTouch врятовано по всьому світу. Додай свою!",
-  "worldMap.inviteTextAll": "Усі ваші SoundTouch знову працюють 🎉"
+  "worldMap.inviteTextAll": "Усі ваші SoundTouch знову працюють 🎉",
+  "update.inProgressTitle": "Updating '{{name}}'..."
 }

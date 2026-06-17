@@ -93,6 +93,11 @@
   "common.beta": "ベータ",
   "spotify.versionNote": "スピーカーに最新のSTRバージョンが必要です。",
   "spotify.updateLink": "スピーカー設定を開いて更新",
+  "spotify.presetsTitle": "Save a playlist to a preset button",
+  "spotify.presetsIntro": "You can store a Spotify playlist on one of the six preset buttons and start it later straight from the speaker, no phone needed.",
+  "spotify.presetsStep1": "Play a Spotify playlist to this speaker (the steps above).",
+  "spotify.presetsStep2": "On the Music tab, press and hold a preset button (1-6) until it fills, to save the playlist that is playing.",
+  "spotify.presetsStep3": "From then on, that preset starts the playlist again, from the hardware button 1-6 on the speaker or from the app.",
   "spotify.worksTitle": "できること",
   "spotify.works1": "アプリからSpotifyの曲やプレイリストをスピーカーに送信できます (Spotify Premium)。",
   "spotify.works2": "プレイリストをソフトおよびハードウェアのプリセットキーに保存できます。プリセットは、それぞれのアカウントで最初からシャッフル再生されます。",
@@ -915,5 +920,6 @@
   "settingsView.urlPresetInvalid": "プリセットと、有効な http:// または https:// の音声 URL を入力してください。",
   "settingsView.urlPresetSaved": "プリセット {{n}} に保存しました。",
   "worldMap.countLine": "🌍 これまでに世界中で {{n}} 台の SoundTouch スピーカーが復活しました。あなたのも追加しましょう！",
-  "worldMap.inviteTextAll": "あなたの SoundTouch がすべてまた動き出しました 🎉"
+  "worldMap.inviteTextAll": "あなたの SoundTouch がすべてまた動き出しました 🎉",
+  "update.inProgressTitle": "Updating '{{name}}'..."
 }

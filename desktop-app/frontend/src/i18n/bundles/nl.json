@@ -93,6 +93,11 @@
   "common.beta": "BÈTA",
   "spotify.versionNote": "Vereist de nieuwste STR-versie op de speaker.",
   "spotify.updateLink": "Open speakerinstellingen om bij te werken",
+  "spotify.presetsTitle": "Save a playlist to a preset button",
+  "spotify.presetsIntro": "You can store a Spotify playlist on one of the six preset buttons and start it later straight from the speaker, no phone needed.",
+  "spotify.presetsStep1": "Play a Spotify playlist to this speaker (the steps above).",
+  "spotify.presetsStep2": "On the Music tab, press and hold a preset button (1-6) until it fills, to save the playlist that is playing.",
+  "spotify.presetsStep3": "From then on, that preset starts the playlist again, from the hardware button 1-6 on the speaker or from the app.",
   "spotify.worksTitle": "Wat werkt",
   "spotify.works1": "Stuur elk Spotify-nummer of elke afspeellijst vanuit de app naar de speaker (Spotify Premium).",
   "spotify.works2": "Sla afspeellijsten op de software- en hardware-voorkeuzetoetsen op; een voorkeuze speelt geshuffeld af, vanaf het begin, onder zijn eigen account.",
@@ -915,5 +920,6 @@
   "settingsView.urlPresetInvalid": "Voer een preset en een geldige http:// of https:// audio-URL in.",
   "settingsView.urlPresetSaved": "Opgeslagen op preset {{n}}.",
   "worldMap.countLine": "🌍 {{n}} SoundTouch-speakers wereldwijd gered tot nu toe. Voeg die van jou toe!",
-  "worldMap.inviteTextAll": "Al je SoundTouch-speakers leven weer 🎉"
+  "worldMap.inviteTextAll": "Al je SoundTouch-speakers leven weer 🎉",
+  "update.inProgressTitle": "Updating '{{name}}'..."
 }

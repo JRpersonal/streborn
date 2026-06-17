@@ -93,6 +93,11 @@
   "common.beta": "BÊTA",
   "spotify.versionNote": "Nécessite la dernière version de STR sur l'enceinte.",
   "spotify.updateLink": "Ouvrir les réglages de l'enceinte pour mettre à jour",
+  "spotify.presetsTitle": "Enregistrer une playlist sur une touche de préréglage",
+  "spotify.presetsIntro": "Tu peux enregistrer une playlist Spotify sur l'une des six touches de préréglage et la relancer ensuite directement depuis l'enceinte, sans téléphone.",
+  "spotify.presetsStep1": "Lis une playlist Spotify sur cette enceinte (les étapes ci-dessus).",
+  "spotify.presetsStep2": "Dans l'onglet Musique, maintiens une touche de préréglage (1-6) jusqu'à ce qu'elle se remplisse, pour enregistrer la playlist en cours.",
+  "spotify.presetsStep3": "Ensuite, cette touche relance la playlist, depuis le bouton matériel 1-6 sur l'enceinte ou depuis l'app.",
   "spotify.worksTitle": "Ce qui fonctionne",
   "spotify.works1": "Envoyer n'importe quel titre ou playlist Spotify de l'application vers l'enceinte (Spotify Premium).",
   "spotify.works2": "Enregistrer des playlists sur les touches de préréglage logicielles et matérielles ; un préréglage relance en mode aléatoire, depuis le début, sous son propre compte.",
@@ -915,5 +920,6 @@
   "settingsView.urlPresetInvalid": "Saisis un préréglage et une URL audio http:// ou https:// valide.",
   "settingsView.urlPresetSaved": "Enregistré dans le préréglage {{n}}.",
   "worldMap.countLine": "🌍 {{n}} enceintes SoundTouch sauvées dans le monde jusqu'ici. Ajoute la tienne !",
-  "worldMap.inviteTextAll": "Toutes tes enceintes SoundTouch revivent 🎉"
+  "worldMap.inviteTextAll": "Toutes tes enceintes SoundTouch revivent 🎉",
+  "update.inProgressTitle": "Updating '{{name}}'..."
 }

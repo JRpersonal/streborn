@@ -1897,6 +1897,23 @@ async function checkBoxUpdate() {
     return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
   };
   const boxName = getBoxLabel(state.currentBox);
+  // OTA running on THIS box: show an honest "updating" banner instead of the
+  // stale "update available" one (Jens, 2026-06-17: the heading kept saying
+  // "available" while the speaker was already restarting). The button stays
+  // disabled; doBoxUpdate's 1 s ticker keeps the countdown text current. This
+  // early return also stops a mid-OTA discovery refresh from re-rendering an
+  // enabled "Update" button over the progress text.
+  if (state.otaInProgress && state.otaTargetHost === state.currentBox.host) {
+    banner.innerHTML = `
+      <div class="update-msg">
+        <b>${escapeHtml(t('update.inProgressTitle', { name: boxName }))}</b><br>
+        <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
+      </div>
+      <button class="btn btn-primary btn-mini" id="boxUpdateBtn" disabled>${escapeHtml(t('update.uploading'))}</button>
+    `;
+    banner.classList.remove('hidden');
+    return;
+  }
   try {
     const v = await BoxAgentVersion(state.currentBox.host, state.currentBox.port);
     const boxVer = v.version || t('common.unknown');
@@ -2032,7 +2049,23 @@ async function doBoxUpdate(targetBox) {
   state.otaInProgress = true;
   setStatus(t('update.uploading'));
   checkSshBanner();
+  // Swap the banner heading to "updating" right away (the otaHere branch in
+  // checkBoxUpdate), so it no longer reads "update available" while the OTA runs.
+  checkBoxUpdate();
   const appBuild  = state.appInfo && state.appInfo.build;
+  // Record what the box runs RIGHT NOW, before the push. The post-OTA success
+  // signal is "the box is reachable AND no longer reports this pre-OTA build".
+  // That is far more robust than the old exact-match-on-appBuild test: when the
+  // app and the embedded agent carry slightly different build stamps the exact
+  // match never fired, so the box came back fully updated but the poll ran to
+  // its 6-minute ceiling and the button stayed greyed the whole time (Jens,
+  // live 2026-06-17: "the box is long since rebooted and even shows the clock
+  // again, but the app still says 'still answering old build, 3:35 left'").
+  let preBuild = '', preVersion = '';
+  try {
+    const pv = await BoxAgentVersion(targetBox.host, targetBox.port);
+    if (pv) { preBuild = pv.build || ''; preVersion = pv.version || ''; }
+  } catch { /* box version unknown pre-OTA: fall back to the appBuild match */ }
   try {
     await UpdateBoxAgent(targetBox.host, targetBox.port);
     // Agent has accepted the binary. It will detach, sleep ~70 s
@@ -2043,53 +2076,52 @@ async function doBoxUpdate(targetBox) {
     // the agent was still mid-restart.
     showToast(t('update.uploadedToast'));
     setStatus(t('update.rebooting'));
-    // Active poll: hit /api/agent/version until the box answers with
-    // a build matching the app's appBuild. That is the success signal:
-    // box back online AND running the new binary. The loop breaks the
-    // instant that happens, so the user never waits past the real boot
-    // — the deadline below is only a give-up ceiling, not a fixed wait.
-    // Poll every 5 s. The ceiling is 6 minutes: a BCO box (Portable,
-    // ST20-spotty) can reboot TWICE post-OTA (the OTA reboot, then a
-    // bootstrap-sync reboot when the new binary's embedded run.sh differs
-    // from NAND — project_ota_only_replaces_binary), each boot taking
-    // ~40 s to the agent plus ~85 s until the :17008 REDIRECT makes it
-    // reachable, plus the box's slow BoseApp. 3 minutes was too short
-    // (live 2026-06-01: the box came back correctly on the new build but
-    // only AFTER the window expired, so the button wrongly flipped back
-    // to "Update"). As long as the build is wrong or the box is
-    // unreachable, the buttons stay locked.
+    // Active poll: hit /api/agent/version until the box answers as updated. The
+    // success signal is "box reachable AND its reported build/version is no
+    // longer the pre-OTA one" (or, when we have it, an exact match to the app's
+    // own build). The loop breaks the instant that happens, so the user never
+    // waits past the real reconnect: the deadline below is only a give-up
+    // ceiling, not a fixed wait. Poll every 2 s so the button frees within a
+    // couple of seconds of the new agent answering, not up to 5 s later. The
+    // ceiling is 6 minutes: a BCO box (Portable, ST20-spotty) can reboot TWICE
+    // post-OTA (the OTA reboot, then a bootstrap-sync reboot when the new
+    // binary's embedded run.sh differs from NAND — project_ota_only_replaces_binary),
+    // each boot taking ~40 s to the agent plus ~85 s until the :17008 REDIRECT
+    // makes it reachable, plus the box's slow BoseApp. As long as the box is
+    // unreachable or still reports the pre-OTA build, the buttons stay locked.
     const deadlineMs = Date.now() + 360_000;
-    const pollIntervalMs = 5_000;
-    // Phase state shared between the 1 s display ticker and the 5 s
-    // polling loop: "answered-with-old-build" vs "not-answering-yet".
-    // The previous code updated only after each 5 s poll, so the
-    // visible counter jumped 5+ seconds at a time and looked frozen
-    // mid-poll. Now the ticker re-renders every second, with the
-    // current phase text picked from this variable.
-    let lastPhase = 'waitingForSpeaker';
+    const pollIntervalMs = 2_000;
     const renderStatus = () => {
       const remaining = formatRemaining(deadlineMs - Date.now());
-      const key = lastPhase === 'oldBuild' ? 'update.oldBuildWait' : 'update.waitingForSpeaker';
-      setStatus(t(key, { remaining }));
+      setStatus(t('update.waitingForSpeaker', { remaining }));
     };
     renderStatus();
     const tickHandle = setInterval(renderStatus, 1000);
     let confirmed = false;
     let confirmedVer = null;
+    // updated() decides whether a version reading means the OTA landed. Prefer
+    // an exact match to the app's build; otherwise any change away from the
+    // pre-OTA build/version. The pre-OTA values must be non-empty for the
+    // "changed" branch, else an unknown pre-OTA value would falsely confirm on
+    // the OLD agent that is still answering during the brief pre-reboot window.
+    const updated = (v) => {
+      if (!v) return false;
+      if (appBuild && v.build === appBuild) return true;
+      if (preBuild && v.build && v.build !== preBuild) return true;
+      if (preVersion && v.version && v.version !== preVersion) return true;
+      return false;
+    };
     try {
       while (Date.now() < deadlineMs) {
         await sleep(pollIntervalMs);
         try {
           const v = await BoxAgentVersion(targetBox.host, targetBox.port);
-          if (v && v.build && (!appBuild || v.build === appBuild)) {
+          if (updated(v)) {
             confirmed = true;
             confirmedVer = v;
             break;
           }
-          lastPhase = 'oldBuild';
-        } catch {
-          lastPhase = 'waitingForSpeaker';
-        }
+        } catch { /* box still unreachable mid-reboot; keep waiting */ }
         renderStatus();
       }
     } finally {
