@@ -924,5 +924,7 @@
   "update.inProgressTitle": "Updating '{{name}}'...",
   "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
   "settingsView.announceDefault": "¡Gracias por usar S T Reborn!",
-  "settingsView.announceVolumeLabel": "Volumen del aviso"
+  "settingsView.announceVolumeLabel": "Volumen del aviso",
+  "settingsView.announceTranslate": "Traducir",
+  "settingsView.announceTranslateTitle": "Traducir el texto al idioma de voz seleccionado"
 }

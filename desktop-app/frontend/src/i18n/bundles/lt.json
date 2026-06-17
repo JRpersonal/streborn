@@ -924,5 +924,7 @@
   "update.inProgressTitle": "Updating '{{name}}'...",
   "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
   "settingsView.announceDefault": "Ačiū, kad naudojate S T Reborn!",
-  "settingsView.announceVolumeLabel": "Pranešimo garsumas"
+  "settingsView.announceVolumeLabel": "Pranešimo garsumas",
+  "settingsView.announceTranslate": "Versti",
+  "settingsView.announceTranslateTitle": "Išversti tekstą į pasirinktą balso kalbą"
 }

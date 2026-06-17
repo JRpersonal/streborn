@@ -185,6 +185,8 @@ export function TestWebhook(arg1:string,arg2:number,arg3:string,arg4:string,arg5
 
 export function TestWebhookAction(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
+export function Translate(arg1:string,arg2:string):Promise<string>;
+
 export function TrueFactoryReset(arg1:string):Promise<main.TrueFactoryResetResult>;
 
 export function TryWiFiPassword(arg1:string):Promise<string>;
