@@ -967,6 +967,6 @@
   "worldMap.inviteTextAll": "All your SoundTouch speakers are alive again 🎉",
   "update.inProgressTitle": "Updating '{{name}}'...",
   "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
-  "settingsView.announceDefault": "Thank you for using STR!",
+  "settingsView.announceDefault": "Thank you for using ST-Reborn!",
   "settingsView.announceVolumeLabel": "Announcement volume"
 }

@@ -923,6 +923,6 @@
   "worldMap.inviteTextAll": "Wszystkie Twoje SoundTouch znów działają 🎉",
   "update.inProgressTitle": "Updating '{{name}}'...",
   "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
-  "settingsView.announceDefault": "Dziękujemy, że korzystasz z STR!",
+  "settingsView.announceDefault": "Dziękujemy, że korzystasz z ST-Reborn!",
   "settingsView.announceVolumeLabel": "Głośność komunikatu"
 }

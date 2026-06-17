@@ -967,6 +967,6 @@
   "worldMap.inviteTextAll": "Alle deine SoundTouch leben wieder 🎉",
   "update.inProgressTitle": "'{{name}}' wird aktualisiert ...",
   "settingsView.stickStillInserted": "Stick noch eingesteckt (SSH offen). Zum Absichern den Stick ziehen und neu starten.",
-  "settingsView.announceDefault": "Vielen Dank, dass du STR nutzt!",
+  "settingsView.announceDefault": "Vielen Dank, dass du ST-Reborn nutzt!",
   "settingsView.announceVolumeLabel": "Durchsage-Lautstärke"
 }
