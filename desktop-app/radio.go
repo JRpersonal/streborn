@@ -59,10 +59,14 @@ func (a *App) RadioSearch(o RadioSearchOpts) ([]radiobrowser.Station, error) {
 	}
 	if !o.Top && o.Q != "" {
 		st, err := radioClient.SearchSmart(ctx, opts)
-		return nonNilStations(st), err
+		// Borrow a logo from a sibling result for the same station so a
+		// vote-leading entry with an empty favicon (e.g. Couleur 3) still shows
+		// one. Runs before the frontend renders AND saves from the list, so a
+		// preset saved from search also keeps the borrowed logo.
+		return radiobrowser.EnrichSiblingLogos(nonNilStations(st)), err
 	}
 	st, err := radioClient.Search(ctx, opts)
-	return nonNilStations(st), err
+	return radiobrowser.EnrichSiblingLogos(nonNilStations(st)), err
 }
 
 // RadioTags returns the most popular genre tags for the chips.

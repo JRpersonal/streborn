@@ -134,11 +134,21 @@ export function stationLogoCandidates(s) {
 export function logoHostsFor(s) {
   const hosts = [];
   if (!s) return hosts;
+  const push = (h) => { if (h && !hosts.includes(h)) hosts.push(h); };
   for (const u of [s.homepage, s.url, s.url_resolved]) {
     const h = extractHost(u);
-    if (h && !hosts.includes(h)) hosts.push(h);
+    if (!h) continue;
+    push(h);
+    push(rootDomain(h));
+    // Try the www. and apex variants too: DuckDuckGo's icon service knows some
+    // domains only under www. (e.g. www.rts.ch returns an icon while rts.ch
+    // 404s) and others only at the apex, so emitting both widens the hit rate
+    // for stations whose homepage is the bare apex. Extra misses are cheap
+    // 404 HEADs the resolver discards.
+    if (h.startsWith('www.')) push(h.slice(4));
+    else if (h.split('.').length === 2) push('www.' + h);
     const r = rootDomain(h);
-    if (r && !hosts.includes(r)) hosts.push(r);
+    if (r && r.split('.').length === 2) push('www.' + r);
   }
   return hosts;
 }
