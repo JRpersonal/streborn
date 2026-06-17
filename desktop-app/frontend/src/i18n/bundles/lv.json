@@ -924,5 +924,7 @@
   "update.inProgressTitle": "Updating '{{name}}'...",
   "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
   "settingsView.announceDefault": "Paldies, ka izmantojat S T Reborn!",
-  "settingsView.announceVolumeLabel": "Paziņojuma skaļums"
+  "settingsView.announceVolumeLabel": "Paziņojuma skaļums",
+  "settingsView.announceTranslate": "Tulkot",
+  "settingsView.announceTranslateTitle": "Tulkot tekstu izvēlētajā balss valodā"
 }

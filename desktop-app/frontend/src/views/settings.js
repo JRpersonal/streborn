@@ -47,6 +47,7 @@ import {
   SetDisplayTrack,
   AnnounceExample,
   SendAnnounce,
+  Translate,
   GetAirplayOpt,
   SetAirplayOpt,
   GetWebhooks,
@@ -582,6 +583,7 @@ function renderBoxSettings(s, box) {
           <option value="uk">Українська</option>
           <option value="ja">日本語</option>
         </select>
+        <button class="btn btn-mini" id="announceTranslate" title="${escapeAttr(t('settingsView.announceTranslateTitle'))}">${escapeHtml(t('settingsView.announceTranslate'))}</button>
         <button class="btn btn-mini" id="announceSend">${escapeHtml(t('settingsView.announceSend'))}</button>
       </div>
       <div class="setting-row" style="align-items:center;gap:10px;margin-top:8px">
@@ -1280,6 +1282,7 @@ function renderBoxSettings(s, box) {
   const annCopy = $('announceCopy');
   const annVol = $('announceVolume');
   const annVolVal = $('announceVolumeVal');
+  const annTranslate = $('announceTranslate');
   if (annVol && annVolVal) {
     annVolVal.textContent = annVol.value;
     annVol.oninput = () => { annVolVal.textContent = annVol.value; };
@@ -1306,6 +1309,21 @@ function renderBoxSettings(s, box) {
         showToast(t('settingsView.announceSentToast'));
       } catch (e) { showError(e); }
       annSend.disabled = false;
+    };
+  }
+  if (annTranslate) {
+    // Translate the field text into the selected voice language (keyless Google
+    // Translate, app-side), then drop it back in the field so the user can
+    // review before sending. Same language picker doubles as the TTS voice.
+    annTranslate.onclick = async () => {
+      const text = ((annText && annText.value) || '').trim();
+      if (!text) return;
+      annTranslate.disabled = true;
+      try {
+        const translated = await Translate(text, (annLang && annLang.value) || 'en');
+        if (translated && annText) annText.value = translated;
+      } catch (e) { showError(e); }
+      annTranslate.disabled = false;
     };
   }
   if (annText) {

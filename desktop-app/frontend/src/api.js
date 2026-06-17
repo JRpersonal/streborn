@@ -63,6 +63,7 @@ export {
   SetDisplayTrack,
   AnnounceExample,
   SendAnnounce,
+  Translate,
   ResolveUpdateAsset,
   DownloadUpdate,
   ApplyUpdate,

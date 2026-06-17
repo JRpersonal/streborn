@@ -968,5 +968,7 @@
   "update.inProgressTitle": "'{{name}}' wird aktualisiert ...",
   "settingsView.stickStillInserted": "Stick noch eingesteckt (SSH offen). Zum Absichern den Stick ziehen und neu starten.",
   "settingsView.announceDefault": "Vielen Dank, dass du S T Reborn nutzt!",
-  "settingsView.announceVolumeLabel": "Durchsage-Lautstärke"
+  "settingsView.announceVolumeLabel": "Durchsage-Lautstärke",
+  "settingsView.announceTranslate": "Übersetzen",
+  "settingsView.announceTranslateTitle": "Text in die gewählte Stimmen-Sprache übersetzen"
 }

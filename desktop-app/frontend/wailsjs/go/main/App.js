@@ -362,6 +362,10 @@ export function TestWebhookAction(arg1, arg2, arg3) {
   return window['go']['main']['App']['TestWebhookAction'](arg1, arg2, arg3);
 }
 
+export function Translate(arg1, arg2) {
+  return window['go']['main']['App']['Translate'](arg1, arg2);
+}
+
 export function TrueFactoryReset(arg1) {
   return window['go']['main']['App']['TrueFactoryReset'](arg1);
 }

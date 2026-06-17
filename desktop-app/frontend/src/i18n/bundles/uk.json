@@ -924,5 +924,7 @@
   "update.inProgressTitle": "Updating '{{name}}'...",
   "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker.",
   "settingsView.announceDefault": "Дякуємо, що користуєтесь S T Reborn!",
-  "settingsView.announceVolumeLabel": "Гучність оголошення"
+  "settingsView.announceVolumeLabel": "Гучність оголошення",
+  "settingsView.announceTranslate": "Перекласти",
+  "settingsView.announceTranslateTitle": "Перекласти текст вибраною мовою голосу"
 }
