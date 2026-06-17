@@ -2194,6 +2194,51 @@ func (a *App) BoxPresets(host string, port int) ([]BoxPresetInfo, error) {
 	return out, nil
 }
 
+// BoxSnapshot returns the agent's pre-takeover snapshot of the box's presets +
+// sources. Used to warn the user about account-linked cloud sources (Deezer,
+// ...) that STR cannot carry over yet, and to show what was there. The shape is
+// {captured:bool, lostServices:[], lostPresets:[], presets:[], sources:[]};
+// returns {captured:false} when nothing was captured.
+func (a *App) BoxSnapshot(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/snapshot", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// RestoreBoxSnapshot (EXPERIMENTAL) asks the agent to write account-linked cloud
+// presets (e.g. Deezer) back onto their original slots and re-advertise their
+// sources, so the box plays them again via its cached account token. presetsXML
+// is an optional box /presets dump the user saved; empty uses the agent's
+// snapshot. Returns the agent's result (restored slots, services, failed,
+// rebootRecommended).
+func (a *App) RestoreBoxSnapshot(host string, port int, presetsXML string) (map[string]any, error) {
+	body, _ := json.Marshal(map[string]string{"presetsXML": presetsXML})
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/snapshot/restore", "application/json", string(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RecallBoxPreset plays one of the box's own presets by pressing its hardware
 // preset key, so a foreign preset (Deezer) plays via the box's cached account.
 func (a *App) RecallBoxPreset(host string, port int, slot int) error {

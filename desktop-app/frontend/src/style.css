@@ -744,6 +744,33 @@ body {
 .preset.box-native { border-style: dashed; border-color: #3a3a3a; }
 .preset.box-native.playing { border-style: solid; }
 .preset-box-hint { font-size: 10px; font-weight: 400; color: #888; margin-top: 2px; line-height: 1.1; opacity: 0.75; }
+/* Banner above the preset grid warning that the box dropped account-linked
+   presets STR cannot carry over yet (e.g. Deezer). Amber accent, dismissible. */
+.loss-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #6a5320;
+  border-left: 3px solid #d9a33a;
+  border-radius: 8px;
+  background: rgba(217, 163, 58, 0.08);
+}
+.loss-notice-body { flex: 1 1 auto; min-width: 0; }
+.loss-notice-body strong { font-size: 13px; color: #e8c878; }
+.loss-notice-body .small { font-size: 12px; color: #bbb; margin-top: 3px; line-height: 1.35; }
+.loss-notice-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: #999;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.loss-notice-dismiss:hover { color: #ddd; }
 /* Live ICY track of the radio station currently playing, shown on the active
    preset tile (the now-playing line, like Spotify's track). One clamped line so
    a long "Artist - Title" never blows up the tile. */

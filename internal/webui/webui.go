@@ -4,6 +4,7 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -24,6 +25,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -40,6 +42,14 @@ type Server struct {
 	boxHost string
 	logger  *slog.Logger
 	presets *presets.Store
+	// snapshotPath is the NAND file where the agent persisted the box's
+	// pre-takeover presets + sources (internal/boxsnapshot). Served verbatim
+	// by GET /api/box/snapshot so the app can warn about account-linked cloud
+	// sources (Deezer, ...) STR cannot carry over. Empty = feature off.
+	snapshotPath string
+	// reflectPath is the reflect-sources file the experimental restore endpoint
+	// appends to so the marge stub keeps advertising restored cloud sources.
+	reflectPath string
 	// zones persists this box's multiroom membership so a zone auto-reforms
 	// after reboot/standby (#70). nil when not wired; zone write endpoints
 	// then still drive the box but do not persist.
@@ -291,6 +301,18 @@ func WithBoxHost(host string) Option {
 	}
 }
 
+// WithBoxSnapshotPath wires the NAND path of the pre-takeover box snapshot
+// (internal/boxsnapshot) so GET /api/box/snapshot can serve it.
+func WithBoxSnapshotPath(path string) Option {
+	return func(s *Server) { s.snapshotPath = path }
+}
+
+// WithReflectSourcesPath wires the reflect-sources file so the experimental
+// restore endpoint can re-advertise account-linked cloud sources (Deezer).
+func WithReflectSourcesPath(path string) Option {
+	return func(s *Server) { s.reflectPath = path }
+}
+
 // WithAutoPair gibt dem Server Zugriff auf den AutoPair Manager damit
 // Play Calls auch nach Standby Aufwecken die Box wieder pairen koennen.
 func WithAutoPair(m *autopair.Manager) Option {
@@ -487,6 +509,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
 	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
 	mux.HandleFunc("/api/box/presets/recall", s.handleBoxPresetRecall)
+	mux.HandleFunc("/api/box/snapshot", s.handleBoxSnapshot)
+	mux.HandleFunc("/api/box/snapshot/restore", s.handleBoxSnapshotRestore)
 	mux.HandleFunc("/api/announce", s.handleAnnounce)
 	mux.HandleFunc("/announce/audio", s.handleAnnounceAudio)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
@@ -3494,6 +3518,117 @@ func (s *Server) handleBoxPresets(w http.ResponseWriter, r *http.Request) {
 	copy(out, s.boxPresets)
 	s.boxPresetsMu.Unlock()
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleBoxSnapshot serves the pre-takeover snapshot of the box's presets +
+// sources (internal/boxsnapshot) so the app can warn about account-linked cloud
+// sources (Deezer, ...) STR cannot carry over and show what was there. Returns
+// {"captured":false} when no snapshot exists (feature off, or the box answered
+// nothing capturable), so the app can tell "checked, none" from "not yet".
+func (s *Server) handleBoxSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.snapshotPath == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"captured": false})
+		return
+	}
+	data, err := os.ReadFile(s.snapshotPath)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"captured": false})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// handleBoxSnapshotRestore (EXPERIMENTAL) writes account-linked cloud presets
+// (e.g. Deezer) back onto their original slots and re-advertises their sources
+// via the reflect-sources file, so the box plays them again through its own
+// cached account token. Source of the presets: a posted box /presets XML the
+// user saved (presetsXML), or the agent's snapshot when no XML is given. The box
+// usually needs a reboot afterwards to re-sync the restored source, so the
+// response sets rebootRecommended. LAN-only (it writes to the box).
+func (s *Server) handleBoxSnapshotRestore(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "restore only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	if s.boxHost == "" {
+		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
+		return
+	}
+	// Body is optional: read raw so an empty body falls back to the snapshot.
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, 512*1024))
+	var body struct {
+		PresetsXML string `json:"presetsXML"`
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, &body); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+	}
+
+	var presets []boxsnapshot.Preset
+	switch {
+	case strings.TrimSpace(body.PresetsXML) != "":
+		p, err := boxsnapshot.ParsePresetsXML([]byte(body.PresetsXML))
+		if err != nil {
+			http.Error(w, "could not parse presets XML: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		presets = p
+	case s.snapshotPath != "":
+		if snap, err := boxsnapshot.Load(s.snapshotPath); err == nil {
+			presets = snap.Presets
+		}
+	}
+
+	cloud := boxsnapshot.CloudPresets(presets)
+	if len(cloud) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"restored": []int{}, "message": "no account-linked cloud presets found to restore",
+		})
+		return
+	}
+
+	// Re-advertise the sources first so a reboot re-registers them (Path A).
+	if s.reflectPath != "" {
+		if err := boxsnapshot.MergeReflect(s.reflectPath, boxsnapshot.ReflectFromPresets(cloud)); err != nil {
+			s.logger.Warn("restore: reflect-sources merge failed", "err", err)
+		}
+	}
+
+	restored := []int{}
+	failed := map[string]string{}
+	services := map[string]bool{}
+	for _, p := range cloud {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		err := boxcli.AddPresetRaw(ctx, s.boxHost, p.Slot, p.Source, p.Type, p.Location, p.Name, p.SourceAccount)
+		cancel()
+		if err != nil {
+			failed[fmt.Sprintf("%d", p.Slot)] = err.Error()
+			continue
+		}
+		restored = append(restored, p.Slot)
+		services[strings.ToUpper(p.Source)] = true
+	}
+	svcList := make([]string, 0, len(services))
+	for k := range services {
+		svcList = append(svcList, k)
+	}
+	s.logger.Info("box snapshot restore (experimental)", "restored", restored, "failed", len(failed), "services", svcList)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"restored":          restored,
+		"failed":            failed,
+		"services":          svcList,
+		"rebootRecommended": true,
+	})
 }
 
 // handleBoxPresetRecall plays one of the box's OWN presets by pressing its
