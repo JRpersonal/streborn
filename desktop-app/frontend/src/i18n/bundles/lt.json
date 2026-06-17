@@ -552,7 +552,7 @@
   "settingsView.airplayOptConfirmTitle": "Paleisti garsiakalbį iš naujo, kad būtų pritaikyta?",
   "settingsView.airplayOptConfirmBody": "AirPlay optimizavimo keitimas paleidžia garsiakalbį iš naujo, kad pritaikytų nustatymą (kaip ir Bose programa). Jis trumpam bus nepasiekiamas. Tęsti?",
   "settingsView.airplayOptSavedToast": "Išsaugota. Garsiakalbis paleidžiamas iš naujo, kad pritaikytų.",
-  "settingsView.expertBadge": "Ekspertas",
+  "settingsView.expertBadge": "Eksperimentai",
   "settingsView.webhookHeading": "Nuotolinio valdymo nykščiai → tinklo nuoroda (webhook)",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "Užklausos turinys (POST atveju), nebūtina",

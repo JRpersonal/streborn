@@ -552,7 +552,7 @@
   "settingsView.airplayOptConfirmTitle": "¿Reiniciar el altavoz para aplicarlo?",
   "settingsView.airplayOptConfirmBody": "Cambiar la optimización de AirPlay reinicia el altavoz para que pueda aplicar el ajuste (igual que la app Bose). Estará brevemente no disponible. ¿Continuar?",
   "settingsView.airplayOptSavedToast": "Guardado. El altavoz se está reiniciando para aplicarlo.",
-  "settingsView.expertBadge": "Experto",
+  "settingsView.expertBadge": "Zona de juego",
   "settingsView.webhookHeading": "Pulgares del mando → webhook",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "Cuerpo de la petición (para POST), opcional",

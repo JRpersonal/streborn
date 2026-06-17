@@ -552,7 +552,7 @@
   "settingsView.airplayOptConfirmTitle": "適用のためスピーカーを再起動しますか?",
   "settingsView.airplayOptConfirmBody": "AirPlay最適化を変更すると、設定を適用するためスピーカーが再起動します (Boseアプリと同じです)。短時間利用できなくなります。続行しますか?",
   "settingsView.airplayOptSavedToast": "保存しました。適用のためスピーカーを再起動しています。",
-  "settingsView.expertBadge": "エキスパート",
+  "settingsView.expertBadge": "遊び場",
   "settingsView.webhookHeading": "リモコンの評価ボタン → Webhook",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "リクエストボディ（POST 用）、任意",

@@ -554,6 +554,16 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
     </div>
 
+    <div class="settings-section hidden" id="airplayOptSection">
+      <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
+      <div class="setting-row">
+        <button class="btn btn-mini toggle-btn" id="airplayOptOn">${escapeHtml(t('settingsView.clockOn'))}</button>
+        <button class="btn btn-mini toggle-btn" id="airplayOptOff">${escapeHtml(t('settingsView.clockOff'))}</button>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.airplayOptHelp'))}</small>
+      <small class="muted small" style="display:block;margin-top:6px">${escapeHtml(t('settingsView.airplayOptRecommend'))}</small>
+    </div>
+
     <details class="settings-section settings-expert" id="announceSection">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       <small class="muted small expert-intro">${escapeHtml(t('settingsView.announceHelp'))}</small>
@@ -585,16 +595,6 @@ function renderBoxSettings(s, box) {
         </div>
       </details>
     </details>
-
-    <div class="settings-section hidden" id="airplayOptSection">
-      <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
-      <div class="setting-row">
-        <button class="btn btn-mini toggle-btn" id="airplayOptOn">${escapeHtml(t('settingsView.clockOn'))}</button>
-        <button class="btn btn-mini toggle-btn" id="airplayOptOff">${escapeHtml(t('settingsView.clockOff'))}</button>
-      </div>
-      <small class="muted small">${escapeHtml(t('settingsView.airplayOptHelp'))}</small>
-      <small class="muted small" style="display:block;margin-top:6px">${escapeHtml(t('settingsView.airplayOptRecommend'))}</small>
-    </div>
 
     <details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
