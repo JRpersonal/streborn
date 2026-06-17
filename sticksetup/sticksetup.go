@@ -162,7 +162,7 @@ type WLANConfig struct {
 // ignoriert, ist aber sauber).
 //
 // Returns Liste der geschriebenen Files.
-func WriteStickFiles(targetPath string, binaryBytes []byte, stickVersion string) ([]string, error) {
+func WriteStickFiles(targetPath string, binaryBytes, goLibrespotBytes []byte, stickVersion string) ([]string, error) {
 	if targetPath == "" {
 		return nil, fmt.Errorf("targetPath is empty")
 	}
@@ -214,6 +214,20 @@ func WriteStickFiles(targetPath string, binaryBytes []byte, stickVersion string)
 		written = append(written, dstName)
 	}
 
+	// go-librespot Spotify sidecar (#45/#78): write it to the stick so the
+	// boot-time stick->NAND sync (usb-stick/run.sh) installs it to
+	// /mnt/nv/streborn/bin/go-librespot, where the agent runs it as the Spotify
+	// Connect receiver. Without this the binary never reaches a normally-installed
+	// box and Spotify presets fail. Empty on a dev app build (the go:embed stub was
+	// not replaced by CI); skip rather than write 0 bytes over a good one.
+	if len(goLibrespotBytes) > 0 {
+		const glrName = "go-librespot"
+		if err := writeFile(filepath.Join(targetPath, glrName), goLibrespotBytes); err != nil {
+			return written, fmt.Errorf("write go-librespot: %w", err)
+		}
+		written = append(written, glrName)
+	}
+
 	// remote_services Marker fuer Dauer-SSH — IMMER neu schreiben damit
 	// auch alte Sticks einen aktuellen Zeitstempel bekommen und der
 	// User sofort sieht dass das Setup wirklich gelaufen ist.
@@ -241,7 +255,7 @@ func WriteStickFiles(targetPath string, binaryBytes []byte, stickVersion string)
 // run.sh + rc.local + the agent binary on NAND and install from there when the
 // USB stick itself is unreadable (large-cluster/faulty stick, exit 126). Kept
 // in lock-step with WriteStickFiles so the SSH path installs the identical set.
-func StickFileSet(binaryBytes []byte, stickVersion string) (map[string][]byte, error) {
+func StickFileSet(binaryBytes, goLibrespotBytes []byte, stickVersion string) (map[string][]byte, error) {
 	files := map[string][]byte{}
 	stickFS := usbstick.Files()
 	err := fs.WalkDir(stickFS, ".", func(path string, d fs.DirEntry, walkErr error) error {
@@ -263,6 +277,9 @@ func StickFileSet(binaryBytes []byte, stickVersion string) (map[string][]byte, e
 	}
 	if len(binaryBytes) > 0 {
 		files["streborn-armv7l"] = binaryBytes
+	}
+	if len(goLibrespotBytes) > 0 {
+		files["go-librespot"] = goLibrespotBytes
 	}
 	files["remote_services"] = []byte("")
 	v := strings.TrimSpace(stickVersion)

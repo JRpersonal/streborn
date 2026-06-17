@@ -1,10 +1,11 @@
 name: go-librespot
 
 # Builds the Spotify Connect receiver go-librespot (devgianlu, GPL-3.0)
-# from a pinned upstream tag for the speaker target and attests it with
-# Sigstore, exactly like the STR agent. This keeps the bundled binary
-# transparent and reproducible: no opaque third-party blob ever ships to
-# a user's speaker. Primary Spotify backend for #78
+# from STR's own fork JRpersonal/go-librespot (master, which carries the
+# Ogg-passthrough) for the speaker target and attests it with Sigstore,
+# exactly like the STR agent. This keeps the bundled binary transparent and
+# reproducible: no opaque third-party blob ever ships to a user's speaker, and
+# the fork's source is public. Primary Spotify backend for #78
 # (docs/streaming/spotify.md); librespot.yml stays as a documented
 # fallback.
 #
@@ -28,9 +29,9 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'go-librespot git tag to build (pinned, GPL-3.0)'
+        description: 'JRpersonal/go-librespot ref to build (branch/tag/sha; master carries the Ogg-passthrough)'
         required: true
-        default: 'v0.7.3'
+        default: 'master'
 
 permissions:
   contents: read
@@ -51,22 +52,18 @@ jobs:
         with:
           platforms: arm
 
-      - name: Clone go-librespot (pinned)
+      - name: Clone go-librespot (our fork)
         env:
-          # workflow_dispatch supplies inputs.ref; the push trigger does
-          # not, so fall back to the pinned default tag.
-          REF: ${{ github.event.inputs.ref || 'v0.7.3' }}
+          # Build from STR's own fork JRpersonal/go-librespot. Its master has the
+          # Ogg-passthrough (audio_output_pipe_passthrough) MERGED, so no external
+          # patch is applied any more: the source we ship is exactly what the fork
+          # contains, fully public and reviewable. workflow_dispatch supplies
+          # inputs.ref; the release pipeline calls this build with master too.
+          REF: ${{ github.event.inputs.ref || 'master' }}
         run: |
-          git clone --depth 1 --branch "$REF" https://github.com/devgianlu/go-librespot go-librespot
-          echo "Built from go-librespot $REF at $(git -C go-librespot rev-parse HEAD)"
+          git clone --depth 1 --branch "$REF" https://github.com/JRpersonal/go-librespot go-librespot
+          echo "Built from JRpersonal/go-librespot $REF at $(git -C go-librespot rev-parse HEAD)"
           mkdir -p dist
-
-          # STR Ogg-passthrough patch: adds audio_output_pipe_passthrough so
-          # go-librespot writes the raw Ogg/Vorbis to the pipe (no decode),
-          # which the box decodes natively and roughly halves CPU on the weak
-          # A8. Pinned to the v0.7.3 base it was generated against. This is the
-          # second (and last) modification to the pinned upstream source.
-          git -C go-librespot apply --verbose "$GITHUB_WORKSPACE/.github/patches/go-librespot-passthrough.patch"
 
           # Drop the ALSA output backend. STR drives playback through the
           # pipe backend only, and Alpine ships no static libasound (.a), so
@@ -74,8 +71,9 @@ jobs:
           # two cgo alsa files and stub the one symbol the rest of the
           # package references (newAlsaOutput, the backend switch in
           # output.go). No functional loss for the pipe backend; smaller
-          # binary + less cgo surface. This is the only modification to the
-          # pinned upstream source, and it is visible here.
+          # binary + less cgo surface. This is a build-time strip on top of the
+          # fork source (the Ogg-passthrough already lives in the fork), and it
+          # is visible here.
           rm -f go-librespot/output/driver-alsa.go go-librespot/output/mixer-alsa.go
           cat > go-librespot/output/driver-alsa-noalsa.go <<'GO'
           //go:build !android && !darwin && !js && !windows && !nintendosdk

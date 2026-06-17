@@ -541,7 +541,7 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	if appBuild != "" && appBuild != "dev" {
 		v = appVersion + "+" + appBuild
 	}
-	files, err := sticksetup.StickFileSet(agentbin.Bytes(), v)
+	files, err := sticksetup.StickFileSet(agentbin.Bytes(), agentbin.GoLibrespotBytes(), v)
 	if err != nil {
 		res.Message = "could not assemble install files: " + err.Error()
 		return res, err

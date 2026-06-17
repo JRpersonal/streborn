@@ -473,6 +473,11 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	// Phase marker at INFO so a diagnostic distinguishes "go-librespot launched
+	// and is running" from "idle: no binary" (#45/#105: on a box the binary was
+	// never delivered to, the only line is the idle one above; this confirms a
+	// live sidecar). Pairs with the syscheck go_librespot=present/MISSING report.
+	m.logger.Info("go-librespot started", "pid", cmd.Process.Pid, "bin", m.binPath)
 	m.mu.Lock()
 	m.cmd = cmd
 	m.runCancel = runCancel

@@ -140,7 +140,7 @@ func (a *App) refreshStick(host string) {
 	if appBuild != "" && appBuild != "dev" {
 		v = appVersion + "+" + appBuild
 	}
-	files, err := sticksetup.StickFileSet(agentbin.Bytes(), v)
+	files, err := sticksetup.StickFileSet(agentbin.Bytes(), agentbin.GoLibrespotBytes(), v)
 	if err != nil {
 		a.logger.Warn("OTA stick refresh: could not assemble stick file set", "err", err)
 		a.unmountStick(host, mp, dev)
