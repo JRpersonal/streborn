@@ -133,7 +133,8 @@ func (a *App) refreshStick(host string) {
 	// version-poll never confirmed). Mount it ourselves so the refresh runs.
 	mp, dev, ok := a.mountStick(host)
 	if !ok {
-		a.logger.Info("OTA stick refresh: no STR stick found on the box, nothing to refresh", "host", host)
+		// mountStick already logged the specific reason (probe/mount failure, or
+		// no stick found with the block devices it did see).
 		return
 	}
 	v := appVersion
@@ -180,32 +181,55 @@ func (a *App) mountStick(host string) (mountPoint, device string, ok bool) {
 	// box then boot-syncs its OLD files back onto NAND, reverting the OTA. A
 	// fsck.vfat -a clears the dirty FAT first so the whole set writes cleanly
 	// (verified live: an 11 MB write that failed before succeeded after fsck).
+	// A stick that has sat in the box since a previous session is sometimes not
+	// re-enumerated as a block node after a reboot/standby, so the device probe
+	// found nothing and we wrongly logged "no stick" (Jens, live 2026-06-17:
+	// "USB stick detection is still unreliable; the inserted stick may need
+	// re-mounting before the OTA"). So before probing we nudge the SCSI layer to
+	// rescan, then run the device loop up to 3 times with a 1 s settle so a stick
+	// that appears a beat late is still caught. The marker check matches the
+	// agent's stickReallyMounted (#179): any STR program file, not just
+	// install.sh, so a stick written by any sticksetup vintage is recognised. The
+	// devices actually seen are echoed for diagnostics when the probe still finds
+	// nothing.
 	const script = `PATH=/usr/sbin:/sbin:/usr/bin:/bin:$PATH
-MP=""; DEV=""
+MP=""; DEV=""; SEEN=""
 mkdir -p /tmp/str-stick
-for dev in /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sda /dev/sdb; do
-  [ -b "$dev" ] || continue
-  cur=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
-  if [ -n "$cur" ]; then
-    umount "$cur" 2>/dev/null
-    # Still mounted (umount busy)? Use that mount as-is; do NOT fsck a mounted FS
-    # or mount the same device twice (a double vfat mount corrupts writes).
-    cur2=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
-    if [ -n "$cur2" ]; then
-      if [ -f "$cur2/install.sh" ]; then MP="$cur2"; DEV="$dev"; break; fi
-      continue
+# Best-effort USB/SCSI re-enumeration for a stick inserted but not yet showing
+# a block node. Ignored where the scan node is absent.
+for h in /sys/class/scsi_host/host*/scan; do [ -e "$h" ] && echo "- - -" > "$h" 2>/dev/null; done
+has_marker() { [ -f "$1/install.sh" ] || [ -f "$1/version.txt" ] || [ -f "$1/run.sh" ] || [ -f "$1/streborn-armv7l" ]; }
+attempt=1
+while [ "$attempt" -le 3 ]; do
+  for dev in /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sda /dev/sdb; do
+    [ -b "$dev" ] || continue
+    case " $SEEN " in *" $dev "*) ;; *) SEEN="$SEEN $dev" ;; esac
+    cur=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
+    if [ -n "$cur" ]; then
+      umount "$cur" 2>/dev/null
+      # Still mounted (umount busy)? Use that mount as-is; do NOT fsck a mounted FS
+      # or mount the same device twice (a double vfat mount corrupts writes).
+      cur2=$(grep "^$dev " /proc/mounts | cut -d' ' -f2 | head -1)
+      if [ -n "$cur2" ]; then
+        if has_marker "$cur2"; then MP="$cur2"; DEV="$dev"; break; fi
+        continue
+      fi
     fi
-  fi
-  # Device is unmounted now: fsck the (possibly dirty) FAT, then mount fresh.
-  umount /tmp/str-stick 2>/dev/null
-  fsck.vfat -a "$dev" >/dev/null 2>&1 || dosfsck -a -w "$dev" >/dev/null 2>&1
-  if mount -t vfat "$dev" /tmp/str-stick 2>/dev/null; then
-    if [ -f /tmp/str-stick/install.sh ]; then MP=/tmp/str-stick; DEV="$dev"; break; fi
+    # Device is unmounted now: fsck the (possibly dirty) FAT, then mount fresh.
     umount /tmp/str-stick 2>/dev/null
-  fi
+    fsck.vfat -a "$dev" >/dev/null 2>&1 || dosfsck -a -w "$dev" >/dev/null 2>&1
+    if mount -t vfat "$dev" /tmp/str-stick 2>/dev/null; then
+      if has_marker /tmp/str-stick; then MP=/tmp/str-stick; DEV="$dev"; break; fi
+      umount /tmp/str-stick 2>/dev/null
+    fi
+  done
+  [ -n "$MP" ] && break
+  attempt=$((attempt+1))
+  sleep 1
 done
+echo "STR_STICK_SEEN=$SEEN"
 if [ -n "$MP" ]; then echo "STR_STICK_MP=$MP"; echo "STR_STICK_DEV=$DEV"; else echo STR_STICK_NONE; fi`
-	out, err := boxSSHOutput(host, script, 30*time.Second)
+	out, err := boxSSHOutput(host, script, 45*time.Second)
 	if err != nil {
 		a.logger.Info("OTA stick refresh: stick probe/mount failed", "host", host, "err", err, "out", strings.TrimSpace(out))
 		return "", "", false
@@ -213,6 +237,10 @@ if [ -n "$MP" ]; then echo "STR_STICK_MP=$MP"; echo "STR_STICK_DEV=$DEV"; else e
 	mp := lineValue(out, "STR_STICK_MP=")
 	dev := lineValue(out, "STR_STICK_DEV=")
 	if mp == "" {
+		// Surface which block devices were present so a bundle shows whether the
+		// stick simply was not inserted vs. inserted-but-unreadable.
+		a.logger.Info("OTA stick refresh: no STR stick found on the box, nothing to refresh",
+			"host", host, "devicesSeen", strings.TrimSpace(lineValue(out, "STR_STICK_SEEN=")))
 		return "", "", false
 	}
 	a.logger.Info("OTA stick refresh: stick mounted", "host", host, "mount", mp, "device", dev)

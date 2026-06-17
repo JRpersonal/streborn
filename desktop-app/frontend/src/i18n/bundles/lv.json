@@ -93,6 +93,11 @@
   "common.beta": "BETA",
   "spotify.versionNote": "Nepieciešama jaunākā STR versija skaļrunī.",
   "spotify.updateLink": "Atvērt skaļruņa iestatījumus, lai atjauninātu",
+  "spotify.presetsTitle": "Save a playlist to a preset button",
+  "spotify.presetsIntro": "You can store a Spotify playlist on one of the six preset buttons and start it later straight from the speaker, no phone needed.",
+  "spotify.presetsStep1": "Play a Spotify playlist to this speaker (the steps above).",
+  "spotify.presetsStep2": "On the Music tab, press and hold a preset button (1-6) until it fills, to save the playlist that is playing.",
+  "spotify.presetsStep3": "From then on, that preset starts the playlist again, from the hardware button 1-6 on the speaker or from the app.",
   "spotify.worksTitle": "Kas darbojas",
   "spotify.works1": "Sūtiet jebkuru Spotify dziesmu vai atskaņošanas sarakstu no lietotnes uz skaļruni (Spotify Premium).",
   "spotify.works2": "Saglabājiet atskaņošanas sarakstus programmatūras un aparatūras iestatījumu pogās; iestatījums atsākas sajaukts, no sākuma, ar savu kontu.",
@@ -915,5 +920,7 @@
   "settingsView.urlPresetInvalid": "Lūdzu, ievadi iestatījumu un derīgu http:// vai https:// audio URL.",
   "settingsView.urlPresetSaved": "Saglabāts iestatījumā {{n}}.",
   "worldMap.countLine": "🌍 Līdz šim pasaulē izglābti {{n}} SoundTouch skaļruņi. Pievieno arī savu!",
-  "worldMap.inviteTextAll": "Visi tavi SoundTouch atkal darbojas 🎉"
+  "worldMap.inviteTextAll": "Visi tavi SoundTouch atkal darbojas 🎉",
+  "update.inProgressTitle": "Updating '{{name}}'...",
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
 }

@@ -98,6 +98,11 @@
   "common.beta": "Beta",
   "spotify.versionNote": "Benötigt die neueste STR-Version auf dem Lautsprecher.",
   "spotify.updateLink": "Lautsprecher-Einstellungen zum Aktualisieren öffnen",
+  "spotify.presetsTitle": "Playlist auf eine Preset-Taste legen",
+  "spotify.presetsIntro": "Du kannst eine Spotify-Playlist auf eine der sechs Preset-Tasten legen und sie später direkt am Lautsprecher starten, ganz ohne Handy.",
+  "spotify.presetsStep1": "Spiele eine Spotify-Playlist auf diesem Lautsprecher ab (die Schritte oben).",
+  "spotify.presetsStep2": "Im Tab \"Musik hören\" eine Preset-Taste (1-6) gedrückt halten, bis sie sich füllt, um die laufende Playlist zu speichern.",
+  "spotify.presetsStep3": "Ab dann startet diese Preset die Playlist wieder, über die Hardware-Taste 1-6 am Lautsprecher oder in der App.",
   "spotify.worksTitle": "Was funktioniert",
   "spotify.works1": "Beliebige Spotify-Tracks oder Playlists aus der App an den Lautsprecher senden (Spotify Premium).",
   "spotify.works2": "Playlists auf Soft- und Hardware-Preset-Tasten speichern; ein Preset startet gemischt, von Anfang, mit eigenem Account.",
@@ -291,7 +296,7 @@
   "update.uploadedToast": "Update hochgeladen. Der Lautsprecher startet neu und braucht jetzt bis zu einige Minuten, bis er wieder antwortet.",
   "update.rebooting": "Lautsprecher startet neu und verbindet sich (kann einige Minuten dauern) ...",
   "update.oldBuildWait": "Lautsprecher antwortet noch alter Build, noch {{remaining}} ...",
-  "update.waitingForSpeaker": "Warte auf Lautsprecher, noch {{remaining}} ...",
+  "update.waitingForSpeaker": "Lautsprecher startet neu und verbindet sich wieder, noch {{remaining}} ...",
   "update.doneToast": "Update fertig.",
   "update.tookLongerToast": "Lautsprecher braucht länger als erwartet. Prüfe Strom / Netzwerk.",
   "update.failed": "Update fehlgeschlagen: {{err}}\n\nFalls der Lautsprecher danach nicht mehr antwortet, trenne kurz den Strom und stecke ihn wieder an.",
@@ -517,7 +522,7 @@
   "banner.recommendationShort": "Empfehlung",
   "speaker.rebootNow": "Lautsprecher jetzt neu starten",
   "speaker.rebootGenericBody": "Der Lautsprecher wird in 1 Sekunde neu gestartet. Aktuelle Wiedergabe wird unterbrochen. Fortfahren?",
-  "speaker.rebootConfirmDetailedBody": "Hast du den USB-Stick entfernt? Es wird empfohlen, ihn nach der Einrichtung zu entfernen, damit er nicht im Lautsprecher stecken bleibt. (Hinweis: STR haelt SSH bis zum v1.0-Hardening bei jedem Start fuer Diagnose offen; das Entfernen des Sticks schliesst es nicht.)<br><br>Die aktuelle Wiedergabe wird unterbrochen.",
+  "speaker.rebootConfirmDetailedBody": "Hast du den USB-Stick entfernt? Ohne Stick schliesst dieser Neustart auch den Diagnose-SSH-Zugang, der Lautsprecher ist dann nicht mehr im Netzwerk erreichbar. Bleibt der Stick stecken, bleibt SSH offen.<br><br>Die aktuelle Wiedergabe wird unterbrochen.",
   "signal.excellent": "Ausgezeichnet",
   "signal.good": "Gut",
   "signal.marginal": "Mittelmäßig",
@@ -959,5 +964,7 @@
   "spotify.nativeStep2": "Tippe auf das „Mit einem Gerät verbinden\"-Symbol (Lautsprecher) und wähle diesen Lautsprecher.",
   "spotify.nativeStep3": "Abspielen. Jeder Spotify-Account funktioniert; wer zuletzt verbindet, steuert. Kein Login in dieser App nötig.",
   "spotify.nativeNote": "Hinweis: ein Spotify-Premium-Account ist nötig (Spotifys eigene Connect-Regel). Das frühere „Account in der Bose-App verknüpfen\" entfällt und wird nicht gebraucht.",
-  "worldMap.inviteTextAll": "Alle deine SoundTouch leben wieder 🎉"
+  "worldMap.inviteTextAll": "Alle deine SoundTouch leben wieder 🎉",
+  "update.inProgressTitle": "'{{name}}' wird aktualisiert ...",
+  "settingsView.stickStillInserted": "Stick noch eingesteckt (SSH offen). Zum Absichern den Stick ziehen und neu starten."
 }

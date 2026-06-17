@@ -93,6 +93,11 @@
   "common.beta": "BETA",
   "spotify.versionNote": "Reikia naujausios STR versijos garsiakalbyje.",
   "spotify.updateLink": "Atverti garsiakalbio nustatymus atnaujinimui",
+  "spotify.presetsTitle": "Save a playlist to a preset button",
+  "spotify.presetsIntro": "You can store a Spotify playlist on one of the six preset buttons and start it later straight from the speaker, no phone needed.",
+  "spotify.presetsStep1": "Play a Spotify playlist to this speaker (the steps above).",
+  "spotify.presetsStep2": "On the Music tab, press and hold a preset button (1-6) until it fills, to save the playlist that is playing.",
+  "spotify.presetsStep3": "From then on, that preset starts the playlist again, from the hardware button 1-6 on the speaker or from the app.",
   "spotify.worksTitle": "Kas veikia",
   "spotify.works1": "Siųskite bet kurią Spotify dainą ar grojaraštį iš programos į garsiakalbį (Spotify Premium).",
   "spotify.works2": "Išsaugokite grojaraščius programiniuose ir aparatiniuose parinkčių mygtukuose; parinktis paleidžiama maišyta, nuo pradžios, su savo paskyra.",
@@ -915,5 +920,7 @@
   "settingsView.urlPresetInvalid": "Įvesk nustatymą ir tinkamą http:// arba https:// garso URL.",
   "settingsView.urlPresetSaved": "Išsaugota į nustatymą {{n}}.",
   "worldMap.countLine": "🌍 Iki šiol pasaulyje išgelbėta {{n}} SoundTouch garsiakalbių. Pridėk savąjį!",
-  "worldMap.inviteTextAll": "Visi jūsų SoundTouch vėl veikia 🎉"
+  "worldMap.inviteTextAll": "Visi jūsų SoundTouch vėl veikia 🎉",
+  "update.inProgressTitle": "Updating '{{name}}'...",
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
 }

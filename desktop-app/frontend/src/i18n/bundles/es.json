@@ -93,6 +93,11 @@
   "common.beta": "BETA",
   "spotify.versionNote": "Requiere la última versión de STR en el altavoz.",
   "spotify.updateLink": "Abrir los ajustes del altavoz para actualizar",
+  "spotify.presetsTitle": "Save a playlist to a preset button",
+  "spotify.presetsIntro": "You can store a Spotify playlist on one of the six preset buttons and start it later straight from the speaker, no phone needed.",
+  "spotify.presetsStep1": "Play a Spotify playlist to this speaker (the steps above).",
+  "spotify.presetsStep2": "On the Music tab, press and hold a preset button (1-6) until it fills, to save the playlist that is playing.",
+  "spotify.presetsStep3": "From then on, that preset starts the playlist again, from the hardware button 1-6 on the speaker or from the app.",
   "spotify.worksTitle": "Qué funciona",
   "spotify.works1": "Envía cualquier canción o lista de Spotify desde la aplicación al altavoz (Spotify Premium).",
   "spotify.works2": "Guarda listas de reproducción en las teclas de preajuste por software y por hardware; un preajuste se recupera en modo aleatorio, desde el principio y con su propia cuenta.",
@@ -915,5 +920,7 @@
   "settingsView.urlPresetInvalid": "Introduce un acceso directo y una URL de audio http:// o https:// válida.",
   "settingsView.urlPresetSaved": "Guardado en el acceso directo {{n}}.",
   "worldMap.countLine": "🌍 {{n}} altavoces SoundTouch rescatados en todo el mundo hasta ahora. ¡Añade el tuyo!",
-  "worldMap.inviteTextAll": "Todos tus SoundTouch vuelven a la vida 🎉"
+  "worldMap.inviteTextAll": "Todos tus SoundTouch vuelven a la vida 🎉",
+  "update.inProgressTitle": "Updating '{{name}}'...",
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
 }

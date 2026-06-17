@@ -244,27 +244,20 @@ start_stick_log_mirror() {
 }
 start_stick_log_mirror
 
-# ensure_sshd_running keeps the box reachable by SSH from boot until
-# next reboot, on every boot regardless of whether the stick is
-# inserted. Pre-1.0 we explicitly prefer debug visibility over
-# security: when an install or OTA leaves the agent stuck, SSH is
-# the only channel that still lets the desktop app's diagnostic
-# bundle pull /tmp/streborn-agent.log, /mnt/nv/streborn/setup.log
-# etc. Without it every "no luck yet" report ended in a stick-yank
-# cycle.
+# ensure_sshd_running force-starts sshd irrespective of the stick. As of the
+# pre-1.0 hardening it is OPT-IN: the caller only invokes it when the
+# /mnt/nv/streborn/enable-ssh marker is present. By default SSH instead follows
+# Bose's own gate (the stick's /media/sda1/remote_services marker, started by
+# /etc/init.d/shelby_local / udev mount.sh): open while the STR stick is in,
+# closed on a stickless steady-state boot.
 #
-# Box default state: Bose's /etc/init.d/shelby_local starts sshd
-# only when /media/sda1/remote_services exists. On a steady-state
-# boot (no stick, NAND override only) that file is absent, so sshd
-# never comes up. This function plugs that gap by starting sshd
-# unconditionally from run.sh. If sshd is already running (e.g. the
-# stick is in and Bose already started it), the start call is a
-# cheap no-op.
-#
-# Security note: the speaker's root password is the well-known Bose
-# default. As soon as the v1.0 hardening lands ([[project-box-
-# security-hardening]]), this function becomes opt-in via a stick
-# marker file, not opt-out. Tracked separately.
+# Security: the speaker's root password is the well-known Bose default, so a
+# permanently-open :22 leaves every shipped box reachable on the LAN. Defaulting
+# this OFF (SSH only while the stick is plugged in for install / recovery /
+# diagnostics) is the right end-user posture pre-1.0 ([[project-box-security-
+# hardening]]). The cost is that SSH-based diagnostics / SSH-OTA fallback on a
+# stickless box now need the stick plugged back in, consistent with the stick
+# being STR's recovery medium.
 ensure_sshd_running() {
     if pidof sshd >/dev/null 2>&1; then
         setup_log "sshd already running, leaving it alone"
@@ -546,9 +539,19 @@ background_phase_probe() {
 initial_snapshot
 background_phase_probe
 
-# Keep SSH up across stick + stickless boots. Has to happen early so
-# the channel is available even if the agent never binds.
-ensure_sshd_running
+# SSH bring-up is OPT-IN as of the pre-1.0 hardening: STR no longer forces
+# sshd open on every boot. Leaving root SSH on the well-known Bose default
+# password permanently reachable on the LAN is the wrong default for the end
+# users this ships to. SSH now follows the stick's remote_services marker via
+# Bose's udev mount.sh: open while the STR stick is plugged in (install /
+# recovery / diagnostics), closed again after the stick is pulled and the box
+# reboots. A maintainer who needs persistent debug SSH on a stickless box can
+# opt back in by creating /mnt/nv/streborn/enable-ssh.
+if [ -e /mnt/nv/streborn/enable-ssh ]; then
+    ensure_sshd_running
+else
+    setup_log "sshd: not forced open (no enable-ssh marker); SSH follows the stick remote_services gate"
+fi
 
 # Unconditional Stick -> NAND sync. Every boot with a stick present
 # copies the stick binary AND the stick version.txt to NAND, no
@@ -2935,11 +2938,31 @@ setup_log "shim gate: variant='${VARIANT:-?}' host='${HOSTID:-?}' moduleType='$(
 # eth0-only fallback for models not yet catalogued. Without this a
 # fallback-detected BCO model provisions Wi-Fi via M_air but stays
 # externally unreachable, so the desktop app never sees it as STR.
+# Chipset-whitelist detection beyond detect_series_one's narrow codename/
+# moduleType match. Some chassis report moduleType=sm2 yet carry the older
+# SMSC2014 USB-Ethernet bridge (a SECOND networkInfo entry, type="SMSC") whose
+# chipset whitelists only Bose-binary-bound listeners, so STR's :8888 is NOT
+# externally reachable even though moduleType=sm2 and a wlan0 interface exists
+# (so neither IS_SERIES_ONE nor BCO_MODE fired). Live 2026-06-17: a SoundTouch 10
+# with moduleType=sm2 / variant=rhino but an SMSC networkInfo entry; the agent
+# bound :8888 fine, yet the box's own self-probe to its LAN IP failed and the
+# desktop app could not reach it. The "SMSC" marker (absent on a plain permissive
+# sm2 box) is the discriminator; the universal SCM *component* is not. Widen
+# REDIRECT_ELIGIBLE so the harmless, additive :17008 -> :8888 REDIRECT is
+# installed (same-port REDIRECTs are no-ops on a permissive chipset, and the
+# :17008 rule matches no traffic where :17008 is closed). This deliberately does
+# NOT widen IS_SERIES_ONE: the LD_PRELOAD shim is boot-hang-prone on uncatalogued
+# boxes and must stay gated on the narrow codename/moduleType match.
+HAS_SMSC_CHIPSET=""
+case "$(wget -qO- -T 3 http://127.0.0.1:8090/info 2>/dev/null)" in
+    *SMSC*) HAS_SMSC_CHIPSET=1 ;;
+esac
+
 REDIRECT_ELIGIBLE=""
-if [ "$IS_SERIES_ONE" = "1" ] || [ "$BCO_MODE" = "1" ]; then
+if [ "$IS_SERIES_ONE" = "1" ] || [ "$BCO_MODE" = "1" ] || [ "$HAS_SMSC_CHIPSET" = "1" ]; then
     REDIRECT_ELIGIBLE=1
 fi
-setup_log "redirect gate: eligible='${REDIRECT_ELIGIBLE:-0}' (is_series_one='${IS_SERIES_ONE:-0}' bco_mode='${BCO_MODE:-0}')"
+setup_log "redirect gate: eligible='${REDIRECT_ELIGIBLE:-0}' (is_series_one='${IS_SERIES_ONE:-0}' bco_mode='${BCO_MODE:-0}' smsc_chipset='${HAS_SMSC_CHIPSET:-0}')"
 
 # ============================================================
 # Cheap experiment for #90 (Series-I :8888 unreachable from LAN)
