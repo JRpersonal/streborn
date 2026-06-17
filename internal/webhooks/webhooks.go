@@ -13,28 +13,67 @@ package webhooks
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
 
-// Action is one configured HTTP request.
+// Action is one configured trigger action. Type selects the transport: an HTTP
+// request (the original and default), a generic UDP packet, or a Wake-on-LAN
+// magic packet. Keeping UDP generic (host/port/payload) lets users wire up their
+// own UDP integrations (OSC, custom devices, home automation) without STR having
+// to add each one; WoL is just the turnkey convenience layered on top (#187).
 type Action struct {
-	// Enabled gates firing without losing the configured URL.
+	// Enabled gates firing without losing the configuration.
 	Enabled bool `json:"enabled"`
+	// Type is "http" (default when empty), "udp", or "wol".
+	Type string `json:"type,omitempty"`
+
+	// --- http ---
 	// Method defaults to GET when empty.
-	Method string `json:"method"`
-	// URL is the full request target (http/https). Required when enabled.
-	URL string `json:"url"`
+	Method string `json:"method,omitempty"`
+	// URL is the full request target (http/https). Required for an http action.
+	URL string `json:"url,omitempty"`
 	// Body is an optional request body (sent for non-GET methods).
 	Body string `json:"body,omitempty"`
 	// ContentType sets the Content-Type header when a body is sent.
 	ContentType string `json:"content_type,omitempty"`
+
+	// --- udp (generic) ---
+	// Host/Port are the UDP target. Payload is the data, decoded per PayloadEnc
+	// ("text" default, "hex", or "base64") before sending.
+	Host       string `json:"host,omitempty"`
+	Port       int    `json:"port,omitempty"`
+	Payload    string `json:"payload,omitempty"`
+	PayloadEnc string `json:"payload_enc,omitempty"`
+
+	// --- wol ---
+	// MAC is the target machine's hardware address (any common separator). The
+	// magic packet is broadcast to Host:Port, defaulting to 255.255.255.255:9.
+	MAC string `json:"mac,omitempty"`
+}
+
+// Configured reports whether the action has the fields its Type needs to fire.
+// Replaces the old URL-only check so a udp/wol action (no URL) is not treated as
+// unconfigured.
+func (a Action) Configured() bool {
+	switch a.Type {
+	case "udp":
+		return a.Host != "" && a.Port > 0
+	case "wol":
+		return a.MAC != ""
+	default: // "" / "http"
+		return a.URL != ""
+	}
 }
 
 // Webhook interaction modes for the per-remote-key buttons.
@@ -164,7 +203,7 @@ func (s *Store) FireThumb(ctx context.Context) {
 	s.mu.RLock()
 	a := s.cfg.Thumb
 	s.mu.RUnlock()
-	if !a.Enabled || a.URL == "" {
+	if !a.Enabled || !a.Configured() {
 		return
 	}
 	if s.rateLimited("thumb") {
@@ -180,7 +219,7 @@ func (s *Store) Button(id string) (Trigger, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	t, ok := s.cfg.Buttons[id]
-	if !ok || !t.Enabled || t.URL == "" {
+	if !ok || !t.Enabled || !t.Action.Configured() {
 		return Trigger{}, false
 	}
 	return t, true
@@ -215,16 +254,41 @@ func (s *Store) Fire(ctx context.Context, a Action) (int, error) {
 	return s.fireOnce(ctx, a)
 }
 
+// target returns a short human label for the action's destination, for logging.
+func (a Action) target() string {
+	switch a.Type {
+	case "udp":
+		return fmt.Sprintf("udp %s:%d", a.Host, a.Port)
+	case "wol":
+		return "wol " + a.MAC
+	default:
+		return a.URL
+	}
+}
+
 func (s *Store) fire(ctx context.Context, a Action) {
 	code, err := s.fireOnce(ctx, a)
 	if err != nil {
-		s.logger.Warn("webhook fire failed", "url", a.URL, "err", err)
+		s.logger.Warn("webhook fire failed", "target", a.target(), "err", err)
 		return
 	}
-	s.logger.Info("webhook fired", "url", a.URL, "status", code)
+	s.logger.Info("webhook fired", "target", a.target(), "status", code)
 }
 
+// fireOnce dispatches on the action transport and returns a result code (the
+// HTTP status for http; the bytes sent for udp/wol) plus an error.
 func (s *Store) fireOnce(ctx context.Context, a Action) (int, error) {
+	switch a.Type {
+	case "udp":
+		return fireUDP(a)
+	case "wol":
+		return fireWOL(a)
+	default: // "" / "http"
+		return s.fireHTTP(ctx, a)
+	}
+}
+
+func (s *Store) fireHTTP(ctx context.Context, a Action) (int, error) {
 	method := a.Method
 	if method == "" {
 		method = http.MethodGet
@@ -251,4 +315,58 @@ func (s *Store) fireOnce(ctx context.Context, a Action) (int, error) {
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	return resp.StatusCode, nil
+}
+
+// fireUDP sends a single generic UDP packet to Host:Port. Payload is decoded per
+// PayloadEnc so users can send text, hex, or base64. Returns bytes sent.
+func fireUDP(a Action) (int, error) {
+	if a.Host == "" || a.Port <= 0 {
+		return 0, fmt.Errorf("udp: host and port required")
+	}
+	payload, err := decodePayload(a.Payload, a.PayloadEnc)
+	if err != nil {
+		return 0, err
+	}
+	return sendUDPPacket(a.Host, a.Port, payload)
+}
+
+// fireWOL sends a Wake-on-LAN magic packet (6x 0xFF then the MAC repeated 16
+// times) to the target, broadcast to 255.255.255.255:9 by default. Returns bytes
+// sent. The speaker is on the LAN, so it is the right place to emit it (#187).
+func fireWOL(a Action) (int, error) {
+	mac, err := net.ParseMAC(strings.TrimSpace(a.MAC))
+	if err != nil || len(mac) != 6 {
+		return 0, fmt.Errorf("wol: invalid MAC %q", a.MAC)
+	}
+	packet := make([]byte, 0, 102)
+	for i := 0; i < 6; i++ {
+		packet = append(packet, 0xFF)
+	}
+	for i := 0; i < 16; i++ {
+		packet = append(packet, mac...)
+	}
+	host := a.Host
+	if host == "" {
+		host = "255.255.255.255"
+	}
+	port := a.Port
+	if port <= 0 {
+		port = 9
+	}
+	return sendUDPPacket(host, port, packet)
+}
+
+// decodePayload turns the configured payload string into bytes per enc:
+// "" / "text" = literal UTF-8, "hex" = hex digits (whitespace/colons ignored),
+// "base64" = standard base64.
+func decodePayload(payload, enc string) ([]byte, error) {
+	switch strings.ToLower(strings.TrimSpace(enc)) {
+	case "hex":
+		clean := strings.NewReplacer(" ", "", "\t", "", "\n", "", ":", "", "-", "").Replace(payload)
+		return hex.DecodeString(clean)
+	case "base64":
+		return base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
+	default:
+		return []byte(payload), nil
+	}
 }
