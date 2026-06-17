@@ -603,7 +603,7 @@
   "settingsView.airplayOptConfirmTitle": "Restart speaker to apply?",
   "settingsView.airplayOptConfirmBody": "Changing AirPlay optimization restarts the speaker so it can apply the setting (the same as the Bose app). It will be briefly unavailable. Continue?",
   "settingsView.airplayOptSavedToast": "Saved. The speaker is restarting to apply it.",
-  "settingsView.expertBadge": "Expert",
+  "settingsView.expertBadge": "Playground",
   "settingsView.urlPresetHeading": "Play a custom URL from a preset",
   "settingsView.urlPresetHelp": "Assign an audio URL (for example an MP3) to a preset key. Pressing the key, on the speaker or in the app, plays it. The URL must be reachable on your network and start with http (the speaker does not support https). Pressing it replaces what is currently playing.",
   "settingsView.urlPresetNamePlaceholder": "Name (for example Doorbell)",

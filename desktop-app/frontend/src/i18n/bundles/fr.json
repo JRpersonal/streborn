@@ -552,7 +552,7 @@
   "settingsView.airplayOptConfirmTitle": "Redémarrer l'enceinte pour appliquer ?",
   "settingsView.airplayOptConfirmBody": "Modifier l'optimisation AirPlay redémarre l'enceinte pour appliquer le réglage (comme l'application Bose). Elle sera brièvement indisponible. Continuer ?",
   "settingsView.airplayOptSavedToast": "Enregistré. L'enceinte redémarre pour l'appliquer.",
-  "settingsView.expertBadge": "Expert",
+  "settingsView.expertBadge": "Bac à sable",
   "settingsView.webhookHeading": "Pouces à distance → webhook",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "Corps de la requête (pour POST), facultatif",

@@ -552,7 +552,7 @@
   "settingsView.airplayOptConfirmTitle": "Перезапустити колонку, щоб застосувати?",
   "settingsView.airplayOptConfirmBody": "Зміна оптимізації AirPlay перезапускає колонку, щоб застосувати налаштування (так само, як застосунок Bose). Вона ненадовго стане недоступною. Продовжити?",
   "settingsView.airplayOptSavedToast": "Збережено. Колонка перезапускається, щоб застосувати це.",
-  "settingsView.expertBadge": "Експертне",
+  "settingsView.expertBadge": "Пісочниця",
   "settingsView.webhookHeading": "Кнопки лайків на пульті → вебхук",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "Тіло запиту (для POST), необов'язково",

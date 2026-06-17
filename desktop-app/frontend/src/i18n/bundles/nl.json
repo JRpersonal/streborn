@@ -552,7 +552,7 @@
   "settingsView.airplayOptConfirmTitle": "Speaker herstarten om toe te passen?",
   "settingsView.airplayOptConfirmBody": "Het wijzigen van de AirPlay-optimalisatie herstart de speaker zodat de instelling kan worden toegepast (net als de Bose-app). Hij is kort niet beschikbaar. Doorgaan?",
   "settingsView.airplayOptSavedToast": "Opgeslagen. De speaker herstart om het toe te passen.",
-  "settingsView.expertBadge": "Geavanceerd",
+  "settingsView.expertBadge": "Speeltuin",
   "settingsView.webhookHeading": "Duim op afstandsbediening → webhook",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "Aanvraaginhoud (voor POST), optioneel",

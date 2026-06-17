@@ -603,7 +603,7 @@
   "settingsView.airplayOptConfirmTitle": "Zum Übernehmen neu starten?",
   "settingsView.airplayOptConfirmBody": "Das Ändern der AirPlay-Optimierung startet den Lautsprecher neu, damit er die Einstellung übernimmt (genau wie die Bose-App). Er ist kurz nicht erreichbar. Fortfahren?",
   "settingsView.airplayOptSavedToast": "Gespeichert. Der Lautsprecher startet neu, um es zu übernehmen.",
-  "settingsView.expertBadge": "Erweitert",
+  "settingsView.expertBadge": "Spielwiese",
   "settingsView.urlPresetHeading": "Eigene URL über ein Preset abspielen",
   "settingsView.urlPresetHelp": "Lege eine Audio-URL (zum Beispiel eine MP3) auf eine Preset-Taste. Beim Drücken, am Lautsprecher oder in der App, wird sie abgespielt. Die URL muss im Netzwerk erreichbar sein und mit http beginnen (https unterstützt der Lautsprecher nicht). Beim Drücken wird die aktuelle Wiedergabe ersetzt.",
   "settingsView.urlPresetNamePlaceholder": "Name (zum Beispiel Türklingel)",

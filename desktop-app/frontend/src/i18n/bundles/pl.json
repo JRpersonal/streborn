@@ -552,7 +552,7 @@
   "settingsView.airplayOptConfirmTitle": "Uruchomić głośnik ponownie, aby zastosować?",
   "settingsView.airplayOptConfirmBody": "Zmiana optymalizacji AirPlay uruchamia głośnik ponownie, aby zastosować ustawienie (tak jak aplikacja Bose). Będzie chwilowo niedostępny. Kontynuować?",
   "settingsView.airplayOptSavedToast": "Zapisano. Głośnik się restartuje, aby to zastosować.",
-  "settingsView.expertBadge": "Ekspert",
+  "settingsView.expertBadge": "Piaskownica",
   "settingsView.webhookHeading": "Zdalne kciuki → webhook",
   "settingsView.webhookUrlPlaceholder": "https://home.example/api/toggle",
   "settingsView.webhookBodyPlaceholder": "Treść żądania (dla POST), opcjonalnie",
