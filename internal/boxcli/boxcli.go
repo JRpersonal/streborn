@@ -169,6 +169,34 @@ func AddPreset(ctx context.Context, host string, slot int, name, streamURL strin
 	return err
 }
 
+// AddPresetRaw writes a preset for an arbitrary source/type/location/account,
+// not just STR's UPnP streams. Used to restore an account-linked preset the box
+// dropped (e.g. a Deezer playlist) back onto its original slot, so the box plays
+// it again via its own cached account token. Inputs are sanitised for the TAP
+// CLI (no quotes/newlines that would break tokenisation).
+func AddPresetRaw(ctx context.Context, host string, slot int, source, typ, location, name, account string) error {
+	clean := func(s string) string {
+		return strings.NewReplacer("\"", "", "\n", " ", "\r", " ").Replace(strings.TrimSpace(s))
+	}
+	source = clean(source)
+	typ = clean(typ)
+	location = clean(location)
+	account = clean(account)
+	name = clean(name)
+	if source == "" || location == "" || slot < 1 || slot > 6 {
+		return fmt.Errorf("AddPresetRaw: source, location and slot 1..6 required")
+	}
+	if typ == "" {
+		typ = "audio"
+	}
+	if account == "" {
+		account = source + "UserName"
+	}
+	cmd := fmt.Sprintf(`ws AddPreset %s %s %s "%s" %s %d`, source, typ, location, name, account, slot)
+	_, err := Send(ctx, host, cmd)
+	return err
+}
+
 // RemovePreset loescht den Box Preset Slot.
 func RemovePreset(ctx context.Context, host string, slot int) error {
 	_, err := Send(ctx, host, fmt.Sprintf("ws RemovePreset %d", slot))

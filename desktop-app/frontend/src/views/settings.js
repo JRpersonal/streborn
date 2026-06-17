@@ -32,6 +32,7 @@ import {
   RebootBox,
   SetPreset,
   SyncBoxPresets,
+  RestoreBoxSnapshot,
   SaveDiagnosticBundle,
   BrowserOpenURL,
   TrueFactoryReset,
@@ -757,6 +758,16 @@ function renderBoxSettings(s, box) {
       </div>
     </div>
     <div class="settings-section">
+      <h3>${escapeHtml(t('settingsView.restoreHeading'))} <span class="exp-badge">${escapeHtml(t('settingsView.experimentalBadge'))}</span></h3>
+      <p class="muted small">${escapeHtml(t('settingsView.restoreHelp'))}</p>
+      <label class="muted small" for="boxRestoreXml">${escapeHtml(t('settingsView.restoreXmlLabel'))}</label>
+      <textarea id="boxRestoreXml" rows="5" placeholder="${escapeAttr(t('settingsView.restoreImportPlaceholder'))}" style="width:100%;margin-top:4px"></textarea>
+      <div class="setting-row" style="margin-top:6px">
+        <button class="btn btn-mini" id="boxRestoreBtn">${escapeHtml(t('settingsView.restoreBtn'))}</button>
+      </div>
+      <div id="boxRestoreResult" class="muted small" style="margin-top:8px"></div>
+    </div>
+    <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.speakerInfoHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.modelLabel'))}</span><span class="kv-val">${escapeHtml(info.type || '-')}</span></div>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.firmwareLabel'))}</span>
@@ -964,6 +975,43 @@ function renderBoxSettings(s, box) {
       syncBtn.textContent = t('settingsView.syncHardwareKeys');
     };
   }
+
+  // Experimental: restore account-linked cloud presets (e.g. Deezer) the box
+  // dropped, from STR's snapshot or a saved presets XML the user pastes. Writes
+  // them back onto their slots and re-advertises the source; the box usually
+  // needs a reboot to re-sync, so we offer one when the agent recommends it.
+  async function doCloudRestore(xml) {
+    const out = $('boxRestoreResult');
+    if (out) out.textContent = t('settingsView.restoreRunning');
+    try {
+      const r = await RestoreBoxSnapshot(box.host, box.port, xml || '');
+      const restored = (r && r.restored) || [];
+      const services = (r && r.services) || [];
+      if (!restored.length && !services.length) {
+        if (out) out.textContent = t('settingsView.restoreNone');
+        return;
+      }
+      if (out) out.textContent = t('settingsView.restoreDone', { slots: restored.join(', '), services: services.join(', ') });
+      if (r && r.rebootRecommended) {
+        const ok = await confirmWarn(t('speaker.rebootConfirmTitle'), t('settingsView.restoreRebootBody'));
+        if (ok) {
+          try {
+            await RebootBox(box.host, box.port);
+            showToast(t('speaker.rebootingToast'));
+            setTimeout(deps.discoverBoxes, 35000);
+          } catch (e) { showError(e); }
+        }
+      }
+    } catch (e) {
+      if (out) out.textContent = '';
+      showError(e);
+    }
+  }
+  const restoreBtn = $('boxRestoreBtn');
+  if (restoreBtn) restoreBtn.onclick = () => {
+    const ta = $('boxRestoreXml');
+    doCloudRestore(ta ? ta.value : '');
+  };
 
   // Save diagnostic logs, the same bundle the footer link saves. Surfaced in
   // Speaker Settings too because the install-timeout message points users here,

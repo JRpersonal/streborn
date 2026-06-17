@@ -34,6 +34,10 @@ export function BoxSettings(arg1, arg2) {
   return window['go']['main']['App']['BoxSettings'](arg1, arg2);
 }
 
+export function BoxSnapshot(arg1, arg2) {
+  return window['go']['main']['App']['BoxSnapshot'](arg1, arg2);
+}
+
 export function BrowseLibrary(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['BrowseLibrary'](arg1, arg2, arg3, arg4);
 }
@@ -236,6 +240,10 @@ export function ResolveStationLogo(arg1, arg2, arg3) {
 
 export function ResolveUpdateAsset(arg1) {
   return window['go']['main']['App']['ResolveUpdateAsset'](arg1);
+}
+
+export function RestoreBoxSnapshot(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RestoreBoxSnapshot'](arg1, arg2, arg3);
 }
 
 export function RevealUpdateFile(arg1) {

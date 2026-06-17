@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -93,6 +94,47 @@ func TestServiceAvailabilityHandler(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("provider %s fehlt: %s", want, body)
 		}
+	}
+}
+
+func TestReflectDeezerSource(t *testing.T) {
+	// Path A: a reflect-sources file with a Deezer entry must make the marge stub
+	// re-advertise Deezer both as a source provider and as an account-linked
+	// source, so the box keeps it and plays via its cached ARL.
+	dir := t.TempDir()
+	rp := dir + "/reflect-sources.json"
+	if err := os.WriteFile(rp, []byte(`[{"source":"DEEZER","account":"1456373802","name":"Deezer"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithDeviceID("DEVICEID_PLACEHOLDER"), WithReflectSourcesPath(rp))
+
+	get := func(path string) string {
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status=%d", path, rec.Code)
+		}
+		body := rec.Body.String()
+		xmlWellFormed(t, body)
+		return body
+	}
+
+	sp := get("/streaming/sourceproviders")
+	if !strings.Contains(sp, `id="DEEZER"`) {
+		t.Fatalf("sourceproviders missing DEEZER: %s", sp)
+	}
+	full := get("/streaming/account/1456373802/full")
+	if !strings.Contains(full, `type="DEEZER"`) || !strings.Contains(full, "1456373802") {
+		t.Fatalf("account/full missing reflected Deezer source: %s", full)
+	}
+
+	// Without a reflect file: no Deezer is advertised (safe default).
+	s2 := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("DEVICEID_PLACEHOLDER"))
+	rec := httptest.NewRecorder()
+	s2.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/streaming/sourceproviders", nil))
+	if strings.Contains(rec.Body.String(), `id="DEEZER"`) {
+		t.Fatalf("sourceproviders should not list DEEZER without a reflect file: %s", rec.Body.String())
 	}
 }
 

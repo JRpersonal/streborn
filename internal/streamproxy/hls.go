@@ -55,6 +55,8 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 	seen := map[string]bool{}
 	var order []string // FIFO of seen keys to bound the map
 	firstPass := true
+	loggedPlaylist := false
+	var lastWrite time.Time // when we last sent audio bytes to the box
 
 	for {
 		if r.Context().Err() != nil {
@@ -74,6 +76,17 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 			continue
 		}
 		pl := parseMediaPlaylist(body, mediaURL)
+		// Diagnostic: a high TARGETDURATION (long segments) means the live
+		// playlist advances slowly; with our <=8s refresh that yields several
+		// empty rounds in a row and a long no-bytes gap to the box. Some boxes
+		// (SoundTouch 20 spotty/SCM observed) close the idle TCP connection at
+		// ~20s and STR then reconnect-loops every ~20s. Logging targetDur here
+		// makes that visible in a diagnostic bundle without a live box (#... spotty).
+		if !loggedPlaylist {
+			loggedPlaylist = true
+			s.logger.Info("hls: media playlist", "targetDur", pl.targetDur,
+				"segments", len(pl.segments), "live", !pl.endList)
+		}
 		if pl.isFMP4 {
 			// Stage 3 (fMP4 -> ADTS) not implemented yet. Report not-playable so
 			// the box shows a clear state instead of silence.
@@ -145,6 +158,7 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 			if flusher != nil {
 				flusher.Flush()
 			}
+			lastWrite = time.Now()
 			played++
 		}
 
@@ -161,6 +175,18 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 		}
 		if wait > hlsRefreshCeil {
 			wait = hlsRefreshCeil
+		}
+		// When a round delivers no new audio (playlist has not advanced yet), the
+		// box gets no bytes for the whole wait. Several such rounds in a row push
+		// the no-bytes gap past a box's TCP idle timeout (~20s on spotty/SCM),
+		// which then closes the stream and reconnect-loops. Surface that gap so a
+		// bundle shows it; the real fix depends on whether the box idle-closes
+		// despite a full buffer (needs a live spotty capture to confirm).
+		if played == 0 && !lastWrite.IsZero() {
+			if idle := time.Since(lastWrite); idle > 12*time.Second {
+				s.logger.Warn("hls: no new segment, box socket idle (box may drop the stream)",
+					"idleSec", int(idle.Seconds()), "targetDur", pl.targetDur)
+			}
 		}
 		if !sleepCtx(r.Context(), wait) {
 			return nil

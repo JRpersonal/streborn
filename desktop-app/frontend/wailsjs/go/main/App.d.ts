@@ -21,6 +21,8 @@ export function BoxPresets(arg1:string,arg2:number):Promise<Array<main.BoxPreset
 
 export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function BoxSnapshot(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.LibraryPage>;
 
 export function CheckAppUpdate():Promise<Record<string, string>>;
@@ -122,6 +124,8 @@ export function RescuedSpeakerCount():Promise<number>;
 export function ResolveStationLogo(arg1:string,arg2:string,arg3:Array<string>):Promise<string>;
 
 export function ResolveUpdateAsset(arg1:string):Promise<main.UpdateAsset>;
+
+export function RestoreBoxSnapshot(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
 export function RevealUpdateFile(arg1:string):Promise<void>;
 

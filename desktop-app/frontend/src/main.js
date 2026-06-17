@@ -11,6 +11,7 @@ import {
   RebootBox,
   SyncBoxPresets,
   BoxPresets,
+  BoxSnapshot,
   RecallBoxPreset,
   CopyPresetsAcrossBoxes,
   GetBoxFirmware,
@@ -2190,7 +2191,7 @@ async function loadPresets(retry = 0) {
   // from the previous speaker never flashes on this one's empty slot. Kept across
   // same-box refreshes so the tiles don't flicker on every reload.
   const boxKey = state.currentBox.host + ':' + state.currentBox.port;
-  if (boxKey !== loadedPresetsBoxKey) { state.boxPresets = []; loadedPresetsBoxKey = boxKey; }
+  if (boxKey !== loadedPresetsBoxKey) { state.boxPresets = []; state.boxSnapshot = null; loadedPresetsBoxKey = boxKey; }
   if (state.presets.length === 0) {
     $('presets').innerHTML = `<div class="muted small grid-loading">${escapeHtml(t('preset.loading'))}</div>`;
   }
@@ -2213,6 +2214,7 @@ async function loadPresets(retry = 0) {
     renderPresets();
     healPresetLogos();
     loadBoxPresets();
+    loadBoxSnapshot();
   } catch {
     if (retry < 1) {
       setTimeout(() => loadPresets(retry + 1), 1500);
@@ -2237,6 +2239,86 @@ async function loadBoxPresets() {
     state.boxPresets = await BoxPresets(state.currentBox.host, state.currentBox.port) || [];
   } catch { state.boxPresets = []; return; }
   renderPresets();
+  renderPresetLossNotice();
+}
+
+let loadedSnapshotBoxKey = null;
+
+// loadBoxSnapshot reads the agent's pre-takeover snapshot of the box (presets +
+// sources captured before STR took over the box's cloud endpoints). It is the
+// only record of account-linked cloud sources (e.g. Deezer) that STR cannot
+// carry over yet: once STR is on the box, the box's next account sync drops
+// those sources and the presets bound to them. One cheap app-side read per box
+// (the agent serves a cached NAND file); on error the notice simply never shows.
+async function loadBoxSnapshot() {
+  if (!state.currentBox) { state.boxSnapshot = null; renderPresetLossNotice(); return; }
+  const boxKey = state.currentBox.host + ':' + state.currentBox.port;
+  if (boxKey === loadedSnapshotBoxKey && state.boxSnapshot) { renderPresetLossNotice(); return; }
+  loadedSnapshotBoxKey = boxKey;
+  let snap = null;
+  try { snap = await BoxSnapshot(state.currentBox.host, state.currentBox.port); } catch { snap = null; }
+  if (snap && snap.captured === false) snap = null;
+  if (snap) {
+    const dev = snap.deviceID || boxKey;
+    try { snap._dismissed = await GetAppFlag('box-loss-notice:' + dev); } catch { snap._dismissed = false; }
+  }
+  state.boxSnapshot = snap;
+  renderPresetLossNotice();
+}
+
+// lostPresetsNow returns the snapshot's account-linked presets that are no
+// longer present on the box (the slot is empty in both STR's presets and the
+// box's own presets), i.e. the ones STR's takeover dropped. A Deezer preset that
+// still shows as a box-native tile is intentionally NOT reported.
+function lostPresetsNow() {
+  const snap = state.boxSnapshot;
+  if (!snap || !Array.isArray(snap.lostPresets)) return [];
+  return snap.lostPresets.filter((lp) => {
+    const live = state.presets.find((x) => x.slot === lp.slot) ||
+      (state.boxPresets || []).find((x) => x.slot === lp.slot);
+    return !live;
+  });
+}
+
+// renderPresetLossNotice shows a dismissible banner above the preset grid when
+// the box dropped account-linked presets STR cannot carry over (e.g. Deezer),
+// listing the affected slots so the user knows what was there. Idempotent:
+// re-creates or removes a single #preset-loss-notice element each call.
+function renderPresetLossNotice() {
+  const grid = $('presets');
+  if (!grid || !grid.parentNode) return;
+  let el = document.getElementById('preset-loss-notice');
+  const snap = state.boxSnapshot;
+  const lost = lostPresetsNow();
+  const services = (snap && Array.isArray(snap.lostServices)) ? snap.lostServices : [];
+  if (!snap || snap._dismissed || lost.length === 0 || services.length === 0) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'preset-loss-notice';
+    el.className = 'loss-notice';
+    grid.parentNode.insertBefore(el, grid);
+  }
+  const svc = services.map((s) => boxSourceLabel(s)).join(', ');
+  const slots = lost.map((lp) => `${lp.slot} (${lp.name || boxSourceLabel(lp.source)})`).join(', ');
+  el.innerHTML =
+    `<div class="loss-notice-body">` +
+      `<strong>${escapeHtml(t('preset.lossTitle', { service: svc }))}</strong>` +
+      `<div class="small">${escapeHtml(t('preset.lossBody', { service: svc, slots }))}</div>` +
+    `</div>` +
+    `<button type="button" class="loss-notice-dismiss" aria-label="${escapeAttr(t('preset.lossDismiss'))}">&times;</button>`;
+  const btn = el.querySelector('.loss-notice-dismiss');
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      if (state.boxSnapshot) state.boxSnapshot._dismissed = true;
+      const dev = (snap && snap.deviceID) ||
+        (state.currentBox && (state.currentBox.host + ':' + state.currentBox.port));
+      try { await SetAppFlag('box-loss-notice:' + dev); } catch { /* best-effort */ }
+      el.remove();
+    });
+  }
 }
 
 // boxSourceLabel turns the box's raw source enum (DEEZER, LOCAL_INTERNET_RADIO,

@@ -17,6 +17,8 @@ export {
   RebootBox,
   SyncBoxPresets,
   BoxPresets,
+  BoxSnapshot,
+  RestoreBoxSnapshot,
   RecallBoxPreset,
   CopyPresetsAcrossBoxes,
   GetBoxFirmware,

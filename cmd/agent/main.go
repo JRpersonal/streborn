@@ -32,6 +32,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/bmx"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/hosts"
@@ -311,7 +312,8 @@ func run() error {
 
 	// Subsysteme initialisieren
 	margeSrv := marge.New(logger.With("comp", "marge"),
-		marge.WithDeviceID(deviceID))
+		marge.WithDeviceID(deviceID),
+		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()))
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
 	// AutoPair Manager wird oben angelegt damit er auch im WS und Webui
 	// Handler genutzt werden kann.
@@ -362,6 +364,8 @@ func run() error {
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
 		webui.WithBoxHost(*boxHost),
+		webui.WithBoxSnapshotPath(boxsnapshot.DefaultPath()),
+		webui.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
 		webui.WithAutoPair(autoPair),
 		webui.WithRegion(region),
 		webui.WithRegionFile(*regionFile),
@@ -506,6 +510,13 @@ func run() error {
 	// (returns immediately) until a credential is cached, so it is safe to
 	// start unconditionally.
 	go spotifyMgr.Run(ctx)
+
+	// Capture the box's presets + sources ONCE, as early as possible, before
+	// STR's marge takeover makes the box drop account-linked cloud sources it
+	// had (Deezer, Amazon, ...) and the presets bound to them. Persisted to
+	// NAND write-once; served to the app via /api/box/snapshot so it can warn
+	// the user and show what was there. See internal/boxsnapshot.
+	go boxsnapshot.Capture(ctx, *boxHost, boxsnapshot.DefaultPath(), logger.With("comp", "boxsnapshot"))
 
 	// Auto Pair Background: pairt die Box automatisch beim Start. Re-pairt
 	// alle 5 Minuten falls die Box mal verloren geht. Plus: WS Handler

@@ -517,14 +517,16 @@ func zoneXML(master ZoneMember, slaves []ZoneMember) string {
 // produce sound (see #70 design notes), so callers should start playback on
 // the master first.
 func (c *Client) SetZone(ctx context.Context, master ZoneMember, slaves []ZoneMember) error {
-	// /setZone's member list must include the MASTER itself as the first <member>,
-	// then each slave. Confirmed across the Bose Web API doc, thlucas1's
-	// bosesoundtouchapi, the Home Assistant integration and gesellix/AfterTouch.
-	// STR previously sent only the slaves, diverging from every documented body,
-	// the likely cause of flaky native grouping (#70). addZoneSlave/removeZoneSlave
-	// stay deltas that list only the affected members (no master member).
-	members := append([]ZoneMember{master}, slaves...)
-	return c.postXML(ctx, "/setZone", zoneXML(master, members))
+	// /setZone on SoundTouch 10 (rhino) and 20 (spotty) takes the master ONLY in
+	// the master="" attribute; the <member> list carries just the SLAVES. Listing
+	// the master as its own <member> (the "documented" body from the Bose API doc /
+	// thlucas1 / Home Assistant / gesellix) made the firmware SILENTLY reject the
+	// zone: every native formation across a live 2x ST10 + 2x ST20 fleet read back
+	// liveMaster="" liveMembers=0 (multiroom regression v0.8.0..v0.8.2, commit
+	// df7764a). The slaves-only body of v0.7.29 is what actually works on the
+	// hardware, so we send that. addZoneSlave/removeZoneSlave already list only the
+	// affected slaves. (#70)
+	return c.postXML(ctx, "/setZone", zoneXML(master, slaves))
 }
 
 // AddZoneSlave adds slaves to the zone already led by master. The master must

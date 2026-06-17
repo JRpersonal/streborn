@@ -26,6 +26,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
@@ -37,6 +38,13 @@ type Server struct {
 	presets  []Preset
 	sources  []SourceItem
 	deviceID string
+
+	// reflectPath points at the reflect-sources file (internal/boxsnapshot).
+	// Account-linked cloud sources listed there (e.g. Deezer) are re-advertised
+	// to the box in the source-provider + account responses so the box keeps
+	// the source and plays it via its own cached token ("Path A"). Empty or
+	// missing file = no reflection (the safe default).
+	reflectPath string
 
 	// requestLog speichert die letzten N Requests für Debug Zwecke
 	// (zugaenglich ueber /__spy/log auf demselben Listener).
@@ -74,6 +82,28 @@ func WithPresets(p []Preset) Option {
 // WithSources initialisiert die Source Liste.
 func WithSources(items []SourceItem) Option {
 	return func(s *Server) { s.sources = items }
+}
+
+// WithReflectSourcesPath wires the reflect-sources file so the box keeps its
+// pre-existing account-linked cloud sources (Deezer "Path A").
+func WithReflectSourcesPath(path string) Option {
+	return func(s *Server) { s.reflectPath = path }
+}
+
+// reflected returns the cloud sources to re-advertise to the box, read fresh
+// from the reflect-sources file each call (cheap; lets the app's restore action
+// add entries without restarting the agent).
+func (s *Server) reflected() []boxsnapshot.ReflectSource {
+	if s.reflectPath == "" {
+		return nil
+	}
+	return boxsnapshot.LoadReflect(s.reflectPath)
+}
+
+// xmlEscapeText escapes text/attribute content for the hand-built XML responses.
+func xmlEscapeText(in string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
+	return r.Replace(in)
 }
 
 // New erstellt einen neuen Marge Server.
@@ -344,10 +374,21 @@ func (s *Server) respondSourceProviders(w http.ResponseWriter, _ *http.Request) 
 	// <response status="OK"><sourceProviders>...</sourceProviders></response>
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusOK)
+	// Reflect the box's pre-existing account-linked cloud sources (Deezer
+	// "Path A") so the box does not drop them. No-op when the reflect file is
+	// empty/absent (the default on a fresh install or a box that never had one).
+	var extra strings.Builder
+	for _, r := range s.reflected() {
+		id := xmlEscapeText(r.Source)
+		if id == "" {
+			continue
+		}
+		extra.WriteString(`<sourceprovider id="` + id + `"><name>` + xmlEscapeText(r.Name) + `</name></sourceprovider>`)
+	}
 	// ohne response wrapper, da AddDevice wrap201 nur fuer den initialen
 	// Pair Call relevant ist.
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="STORED_MUSIC"><name>Stored Music</name></sourceprovider></sourceProviders>`))
+<sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="STORED_MUSIC"><name>Stored Music</name></sourceprovider>` + extra.String() + `</sourceProviders>`))
 }
 
 // respondAddDevice ist die Antwort auf den AddDevice Sync den die Box nach
@@ -458,6 +499,29 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 </fullAccount>`))
 }
 
+// reflectedSourcesXML renders the reflected account-linked cloud sources (Deezer
+// "Path A") as <source> elements for the account response, or "" when none are
+// reflected. Shared so the live account handler and tests agree on the shape.
+func (s *Server) reflectedSourcesXML() string {
+	var b strings.Builder
+	for _, r := range s.reflected() {
+		typ := xmlEscapeText(strings.ToUpper(strings.TrimSpace(r.Source)))
+		if typ == "" {
+			continue
+		}
+		acct := xmlEscapeText(r.Account)
+		name := xmlEscapeText(r.Name)
+		if name == "" {
+			name = typ
+		}
+		b.WriteString("\n    <source id=\"" + acct + "\" type=\"" + typ + "\">" +
+			"<credential type=\"\" text=\"\"/><name>" + name + "</name>" +
+			"<username>" + acct + "</username><sourceproviderid>" + typ + "</sourceproviderid>" +
+			"<sourcename>" + name + "</sourcename></source>")
+	}
+	return b.String()
+}
+
 // respondGroup antwortet auf /streaming/account/<id>/device/<deviceid>/group/.
 // Box prueft ob das Geraet schon in einer Multiroom Gruppe ist. Wir sagen
 // "nein, kein Group".
@@ -482,12 +546,21 @@ func (s *Server) respondProviderSettings(w http.ResponseWriter, _ *http.Request)
 func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+	// Reflect the box's pre-existing account-linked cloud sources (Deezer
+	// "Path A") inside the account so the box re-registers them and plays them
+	// via its own cached token. Best-effort + experimental: the exact schema the
+	// box consumes here is unverified; this is a no-op when nothing is reflected
+	// (the safe default on a fresh install or a box that never had a cloud src).
+	srcBlock := ""
+	if sx := s.reflectedSourcesXML(); sx != "" {
+		srcBlock = "\n  <sources>" + sx + "\n  </sources>"
+	}
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <account status="ACTIVE">
   <uuid>streborn-local-account</uuid>
   <email>local@streborn</email>
   <token>local-token-v1</token>
-  <created>2026-01-01T00:00:00Z</created>
+  <created>2026-01-01T00:00:00Z</created>` + srcBlock + `
 </account>`))
 }
 

@@ -11,6 +11,7 @@ export const state = {
   settingsBox: null,   // The box whose settings are currently being edited
   presets: [],
   boxPresets: [],      // the box's OWN presets (incl. foreign sources like Deezer)
+  boxSnapshot: null,   // agent's pre-takeover snapshot (warns about lost cloud sources like Deezer)
   searchResults: [],
   drives: [],
   selectedDrive: null,

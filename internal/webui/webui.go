@@ -4,6 +4,7 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -24,6 +25,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -40,6 +42,14 @@ type Server struct {
 	boxHost string
 	logger  *slog.Logger
 	presets *presets.Store
+	// snapshotPath is the NAND file where the agent persisted the box's
+	// pre-takeover presets + sources (internal/boxsnapshot). Served verbatim
+	// by GET /api/box/snapshot so the app can warn about account-linked cloud
+	// sources (Deezer, ...) STR cannot carry over. Empty = feature off.
+	snapshotPath string
+	// reflectPath is the reflect-sources file the experimental restore endpoint
+	// appends to so the marge stub keeps advertising restored cloud sources.
+	reflectPath string
 	// zones persists this box's multiroom membership so a zone auto-reforms
 	// after reboot/standby (#70). nil when not wired; zone write endpoints
 	// then still drive the box but do not persist.
@@ -245,9 +255,14 @@ type lastPlayInfo struct {
 
 // maxRePushes is the hard cap on consecutive resume attempts for one stream.
 // After this many the stream is declared dead and left alone (no re-arm) until
-// the user plays something new. With the exponential backoff the attempts span
-// ~30s rather than the dozens-per-second runaway it replaces.
-const maxRePushes = 5
+// the user plays something new. The exponential backoff (capped at 30s) spaces
+// the attempts out, so this many spans several minutes, not seconds: a
+// SoundTouch 10 was seen to have its long radio stream dropped by the renderer
+// after ~11 min and then recover slowly, so a cap of 5 (~30s of attempts) gave
+// up far too early and the radio stayed silent. 10 keeps retrying for a few
+// minutes while the backoff + the rePushInFlight latch still prevent the
+// dozens-per-second runaway the cap originally fixed (v0.7.5).
+const maxRePushes = 10
 
 // statusCacheTTL bounds the staleness of a cached now_playing response and
 // thus the maximum /now_playing hit rate against the Bose app to about
@@ -284,6 +299,18 @@ func WithBoxHost(host string) Option {
 		s.boxHost = host
 		s.renderer = upnp.NewBoseRenderer(host)
 	}
+}
+
+// WithBoxSnapshotPath wires the NAND path of the pre-takeover box snapshot
+// (internal/boxsnapshot) so GET /api/box/snapshot can serve it.
+func WithBoxSnapshotPath(path string) Option {
+	return func(s *Server) { s.snapshotPath = path }
+}
+
+// WithReflectSourcesPath wires the reflect-sources file so the experimental
+// restore endpoint can re-advertise account-linked cloud sources (Deezer).
+func WithReflectSourcesPath(path string) Option {
+	return func(s *Server) { s.reflectPath = path }
 }
 
 // WithAutoPair gibt dem Server Zugriff auf den AutoPair Manager damit
@@ -482,6 +509,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
 	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
 	mux.HandleFunc("/api/box/presets/recall", s.handleBoxPresetRecall)
+	mux.HandleFunc("/api/box/snapshot", s.handleBoxSnapshot)
+	mux.HandleFunc("/api/box/snapshot/restore", s.handleBoxSnapshotRestore)
 	mux.HandleFunc("/api/announce", s.handleAnnounce)
 	mux.HandleFunc("/announce/audio", s.handleAnnounceAudio)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
@@ -1694,6 +1723,17 @@ func (s *Server) boxInZone() bool {
 	if s.boxHost == "" {
 		return false
 	}
+	// Persisted membership first: a box we recorded as part of a zone or stereo
+	// pair must stand down from power-on resume even if the live /getZone races a
+	// zone that is still forming (it legitimately reads empty mid-handshake) or
+	// the read errors. This closes the self-wake gap where a member woken by its
+	// pair resumed because the live read came back empty. Fail-safe direction:
+	// silence beats spontaneous playback.
+	if s.zones != nil {
+		if _, ok := s.zones.Get(); ok {
+			return true
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	z, err := boxapi.New(s.boxHost).GetZone(ctx)
@@ -2005,24 +2045,41 @@ func (s *Server) pushDisplayDefault() {
 	}
 }
 
-// boxPlayState reads now_playing once and reports whether the box is in standby
-// and whether it is busy (playing, buffering or paused). Best-effort: on error
-// it reports neither, so the caller does not re-push blindly.
+// boxPlayState reads now_playing and reports whether the box is in standby and
+// whether it is busy (playing, buffering or paused). It FAILS CLOSED: when the
+// box host is unknown or the query keeps erroring it reports standby=true, so a
+// caller that would otherwise wake or re-push the box stands down when it cannot
+// confirm the box is awake. A SoundTouch 10 sends no power event on a standby
+// press, so the only guard against STR resuming over a deliberate standby is
+// this state check; a transient /now_playing error must not be read as "awake
+// and idle" and trigger a resume. One quick retry first so a single hiccup does
+// not abort a legitimate stream recovery (where the box really is awake+idle).
 func (s *Server) boxPlayState() (standby, busy bool) {
 	if s.boxHost == "" {
-		return false, false
+		return true, false
 	}
 	cl := &http.Client{Timeout: 5 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
-	if err != nil {
-		return false, false
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			time.Sleep(400 * time.Millisecond)
+		}
+		resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		resp.Body.Close()
+		body := string(b)
+		standby = strings.Contains(body, "STANDBY")
+		busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
+		return standby, busy
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	body := string(b)
-	standby = strings.Contains(body, "STANDBY")
-	busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
-	return standby, busy
+	// Could not read the box state: assume standby so we never resume/wake on an
+	// uncertain state (silence beats spontaneous playback).
+	s.logger.Warn("box play-state query failed, assuming standby (will not resume/re-push)", "err", lastErr)
+	return true, false
 }
 
 func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
@@ -2765,26 +2822,29 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 // re-asserting its persisted zone whenever a member left to play its own source).
 const defaultZoneReconcilePath = "/mnt/nv/streborn/zone-reconcile"
 
-// zoneReconcileEnabled reports whether the periodic zone reconcile is opted in
-// for this box. Default OFF: absent or unreadable flag file means off, and only
-// an explicit affirmative value enables it.
+// zoneReconcileEnabled reports whether the periodic zone reconcile runs on this
+// box. Default ON so a formed zone survives reboot/standby/Wi-Fi outage (v1.0
+// gate #2), which is the v0.7.29 behavior the fleet relied on. The flag file is
+// an explicit OPT-OUT (write "off"/"0") for a box whose members are often played
+// solo, where re-asserting the master's group would drag a member back in. The
+// match-before-assert guard in reconcileZoneOnce already skips a no-op re-assert.
 func (s *Server) zoneReconcileEnabled() bool {
 	b, err := os.ReadFile(defaultZoneReconcilePath)
 	if err != nil {
-		return false
+		return true // default ON
 	}
 	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "1", "true", "on", "yes":
-		return true
+	case "0", "false", "off", "no":
+		return false // explicit opt-out
 	default:
-		return false
+		return true
 	}
 }
 
 // PeriodicZoneReconcile re-asserts a persisted group so it survives
 // reboot/standby/Wi-Fi outage (#70 beta). No-op when standalone OR when the box
-// has not opted into reconcile (the default, see zoneReconcileEnabled). Started
-// by cmd/agent after the server is built. Lives on the Server so the mirror path
+// is explicitly opted out (see zoneReconcileEnabled, default on). Started by
+// cmd/agent after the server is built. Lives on the Server so the mirror path
 // can reach s.lastPlay + the UPnP renderer.
 func (s *Server) PeriodicZoneReconcile() {
 	if s.zones == nil || s.boxHost == "" {
@@ -2801,8 +2861,8 @@ func (s *Server) PeriodicZoneReconcile() {
 
 func (s *Server) reconcileZoneOnce() {
 	if !s.zoneReconcileEnabled() {
-		return // opt-in, default off: never auto-re-assert a zone, so a speaker
-		// the user plays on its own is never dragged back into the master's group.
+		return // explicit opt-out only (default is on): a box flagged "off" never
+		// auto-re-asserts, so a speaker the user plays solo is not dragged back.
 	}
 	z, ok := s.zones.Get()
 	if !ok {
@@ -3458,6 +3518,117 @@ func (s *Server) handleBoxPresets(w http.ResponseWriter, r *http.Request) {
 	copy(out, s.boxPresets)
 	s.boxPresetsMu.Unlock()
 	writeJSON(w, http.StatusOK, out)
+}
+
+// handleBoxSnapshot serves the pre-takeover snapshot of the box's presets +
+// sources (internal/boxsnapshot) so the app can warn about account-linked cloud
+// sources (Deezer, ...) STR cannot carry over and show what was there. Returns
+// {"captured":false} when no snapshot exists (feature off, or the box answered
+// nothing capturable), so the app can tell "checked, none" from "not yet".
+func (s *Server) handleBoxSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.snapshotPath == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"captured": false})
+		return
+	}
+	data, err := os.ReadFile(s.snapshotPath)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"captured": false})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// handleBoxSnapshotRestore (EXPERIMENTAL) writes account-linked cloud presets
+// (e.g. Deezer) back onto their original slots and re-advertises their sources
+// via the reflect-sources file, so the box plays them again through its own
+// cached account token. Source of the presets: a posted box /presets XML the
+// user saved (presetsXML), or the agent's snapshot when no XML is given. The box
+// usually needs a reboot afterwards to re-sync the restored source, so the
+// response sets rebootRecommended. LAN-only (it writes to the box).
+func (s *Server) handleBoxSnapshotRestore(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "restore only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	if s.boxHost == "" {
+		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
+		return
+	}
+	// Body is optional: read raw so an empty body falls back to the snapshot.
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, 512*1024))
+	var body struct {
+		PresetsXML string `json:"presetsXML"`
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, &body); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+	}
+
+	var presets []boxsnapshot.Preset
+	switch {
+	case strings.TrimSpace(body.PresetsXML) != "":
+		p, err := boxsnapshot.ParsePresetsXML([]byte(body.PresetsXML))
+		if err != nil {
+			http.Error(w, "could not parse presets XML: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		presets = p
+	case s.snapshotPath != "":
+		if snap, err := boxsnapshot.Load(s.snapshotPath); err == nil {
+			presets = snap.Presets
+		}
+	}
+
+	cloud := boxsnapshot.CloudPresets(presets)
+	if len(cloud) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"restored": []int{}, "message": "no account-linked cloud presets found to restore",
+		})
+		return
+	}
+
+	// Re-advertise the sources first so a reboot re-registers them (Path A).
+	if s.reflectPath != "" {
+		if err := boxsnapshot.MergeReflect(s.reflectPath, boxsnapshot.ReflectFromPresets(cloud)); err != nil {
+			s.logger.Warn("restore: reflect-sources merge failed", "err", err)
+		}
+	}
+
+	restored := []int{}
+	failed := map[string]string{}
+	services := map[string]bool{}
+	for _, p := range cloud {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		err := boxcli.AddPresetRaw(ctx, s.boxHost, p.Slot, p.Source, p.Type, p.Location, p.Name, p.SourceAccount)
+		cancel()
+		if err != nil {
+			failed[fmt.Sprintf("%d", p.Slot)] = err.Error()
+			continue
+		}
+		restored = append(restored, p.Slot)
+		services[strings.ToUpper(p.Source)] = true
+	}
+	svcList := make([]string, 0, len(services))
+	for k := range services {
+		svcList = append(svcList, k)
+	}
+	s.logger.Info("box snapshot restore (experimental)", "restored", restored, "failed", len(failed), "services", svcList)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"restored":          restored,
+		"failed":            failed,
+		"services":          svcList,
+		"rebootRecommended": true,
+	})
 }
 
 // handleBoxPresetRecall plays one of the box's OWN presets by pressing its
