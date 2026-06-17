@@ -522,7 +522,7 @@
   "banner.recommendationShort": "Empfehlung",
   "speaker.rebootNow": "Lautsprecher jetzt neu starten",
   "speaker.rebootGenericBody": "Der Lautsprecher wird in 1 Sekunde neu gestartet. Aktuelle Wiedergabe wird unterbrochen. Fortfahren?",
-  "speaker.rebootConfirmDetailedBody": "Hast du den USB-Stick entfernt? Es wird empfohlen, ihn nach der Einrichtung zu entfernen, damit er nicht im Lautsprecher stecken bleibt. (Hinweis: STR haelt SSH bis zum v1.0-Hardening bei jedem Start fuer Diagnose offen; das Entfernen des Sticks schliesst es nicht.)<br><br>Die aktuelle Wiedergabe wird unterbrochen.",
+  "speaker.rebootConfirmDetailedBody": "Hast du den USB-Stick entfernt? Ohne Stick schliesst dieser Neustart auch den Diagnose-SSH-Zugang, der Lautsprecher ist dann nicht mehr im Netzwerk erreichbar. Bleibt der Stick stecken, bleibt SSH offen.<br><br>Die aktuelle Wiedergabe wird unterbrochen.",
   "signal.excellent": "Ausgezeichnet",
   "signal.good": "Gut",
   "signal.marginal": "Mittelmäßig",
@@ -965,5 +965,6 @@
   "spotify.nativeStep3": "Abspielen. Jeder Spotify-Account funktioniert; wer zuletzt verbindet, steuert. Kein Login in dieser App nötig.",
   "spotify.nativeNote": "Hinweis: ein Spotify-Premium-Account ist nötig (Spotifys eigene Connect-Regel). Das frühere „Account in der Bose-App verknüpfen\" entfällt und wird nicht gebraucht.",
   "worldMap.inviteTextAll": "Alle deine SoundTouch leben wieder 🎉",
-  "update.inProgressTitle": "'{{name}}' wird aktualisiert ..."
+  "update.inProgressTitle": "'{{name}}' wird aktualisiert ...",
+  "settingsView.stickStillInserted": "Stick noch eingesteckt (SSH offen). Zum Absichern den Stick ziehen und neu starten."
 }

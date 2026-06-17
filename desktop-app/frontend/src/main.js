@@ -1095,22 +1095,16 @@ async function checkSshBanner() {
     const r = await boxFetch(box, '/api/stick/status');
     if (!r.ok) return;
     const data = await r.json();
-    // The banner is a "remove the stick now that setup is done" reminder, and it
-    // clears the moment the stick is removed. The old logic showed it only AFTER
-    // removal while SSH was still open, but the agent keeps sshd up on every boot
-    // for diagnostics (run.sh ensure_sshd_running, pre-1.0), so "SSH open" never
-    // clears and the banner was stuck forever even with the stick already out
-    // (Brice, #11). Tying it to the stick still being mounted makes it actionable
-    // and self-clearing. (Setup view and the OTA window are already excluded
-    // above.) Full SSH hardening is the separate v1.0 item.
-    //
-    // Trust the agent's mounted flag. The v0.7.33+ agent's stickReallyMounted
-    // reports mounted only for a real stick, not the leftover empty mountpoint
-    // that survives umount (#105), so this clears on its own. Do NOT also require
-    // data.version: the agent can legitimately report mounted without a version
-    // (run.sh marker / mountinfo path), and requiring version wrongly hid a stick
-    // that is actually inserted (#105 follow-up: "stick removed" while still in).
-    const show = !!(data && data.mounted);
+    // The banner is a "remove the stick now that setup is done, otherwise SSH
+    // stays open" reminder. As of the pre-1.0 hardening run.sh no longer
+    // force-opens sshd on every boot; SSH is open only because a stick is in (the
+    // stick opens sshd via its remote_services marker), and a stickless reboot
+    // closes it. So sshOpen is now an accurate, self-clearing signal again, and
+    // keying on it (not data.mounted) also covers the Portable, where the stick
+    // is in but never auto-mounts so mounted=false (Jens, 2026-06-17). The old
+    // mounted-based gate was a workaround from when sshd was always up (#11).
+    // (Setup view and the OTA window are already excluded above.)
+    const show = !!(data && data.sshOpen);
     gb.classList.toggle('hidden', !show);
   } catch {}
 }
@@ -1927,11 +1921,18 @@ async function checkBoxUpdate() {
     // user (#105: an old app v0.6.22 next to a box on v0.7.32).
     const cmp = compareVerBuild(appVer, appBuild, boxVer, boxBuild);
     if (cmp === 0) return;
+    // When only the build stamp differs (same version string), show the build on
+    // both sides so the line is not the confusing "v0.8.1 -> v0.8.1" (Jens,
+    // 2026-06-17). A real release bumps the version, so production never hits the
+    // same-version case; this is mainly dev builds.
+    const sameVer = boxVer === appVer;
+    const instDisp = sameVer && boxBuild ? `${boxVer} (Build ${boxBuild})` : boxVer;
+    const nextDisp = sameVer && appBuild ? `${appVer} (Build ${appBuild})` : appVer;
     if (cmp > 0) {
       banner.innerHTML = `
         <div class="update-msg">
           <b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: boxName }))}</b><br>
-          <small>${escapeHtml(t('update.versionLine', { installed: boxVer, next: appVer }))}</small><br>
+          <small>${escapeHtml(t('update.versionLine', { installed: instDisp, next: nextDisp }))}</small><br>
           <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
         </div>
         ${renderUpdateBtn()}

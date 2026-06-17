@@ -921,5 +921,6 @@
   "settingsView.urlPresetSaved": "Saglabāts iestatījumā {{n}}.",
   "worldMap.countLine": "🌍 Līdz šim pasaulē izglābti {{n}} SoundTouch skaļruņi. Pievieno arī savu!",
   "worldMap.inviteTextAll": "Visi tavi SoundTouch atkal darbojas 🎉",
-  "update.inProgressTitle": "Updating '{{name}}'..."
+  "update.inProgressTitle": "Updating '{{name}}'...",
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
 }

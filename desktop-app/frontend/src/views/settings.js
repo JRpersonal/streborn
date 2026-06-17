@@ -555,7 +555,7 @@ function renderBoxSettings(s, box) {
     </div>
 
     <details class="settings-section settings-expert" id="announceSection">
-      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="beta-pill">beta</span></summary>
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
       <small class="muted small expert-intro">${escapeHtml(t('settingsView.announceHelp'))}</small>
       <div class="setting-row" style="margin-top:8px">
         <input type="text" id="announceText" class="text-input" maxlength="200" placeholder="${escapeAttr(t('settingsView.announcePlaceholder'))}" style="flex:1" />
@@ -807,7 +807,14 @@ function renderBoxSettings(s, box) {
         const buildSuffix = boxBuild ? ` (Build ${escapeHtml(boxBuild)})` : '';
         softwareLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.swCurrent'))}</span> <span class="muted small">${escapeHtml(boxVer)}${buildSuffix}</span>`;
       } else if (cmp > 0) {
-        softwareLine = `<span class="fw-pending">${escapeHtml(t('settingsView.swUpdateAvail'))}</span> <span class="muted small">${escapeHtml(t('update.versionLine', { installed: boxVer, next: appVer }))}</span>`;
+        // When only the build stamp differs (same version string), show the
+        // build on both sides so the line is not the confusing "v0.8.1 -> v0.8.1"
+        // (Jens, 2026-06-17). A real release bumps the version, so production
+        // never hits the same-version case; this is mainly dev builds.
+        const sameVer = boxVer === appVer;
+        const instDisp = sameVer && boxBuild ? `${boxVer} (Build ${boxBuild})` : boxVer;
+        const nextDisp = sameVer && appBuild ? `${appVer} (Build ${appBuild})` : appVer;
+        softwareLine = `<span class="fw-pending">${escapeHtml(t('settingsView.swUpdateAvail'))}</span> <span class="muted small">${escapeHtml(t('update.versionLine', { installed: instDisp, next: nextDisp }))}</span>`;
         softwareBtn = otaBtn();
       } else {
         softwareLine = `<span class="fw-pending">${escapeHtml(t('update.appBehindShort', { appVersion: appVer }))}</span> <span class="muted small">${escapeHtml(boxVer)}</span>`;
@@ -818,28 +825,33 @@ function renderBoxSettings(s, box) {
     // agent); fall back to /api/debug/state.stick_listing for older
     // agent versions.
     let stickLine = `<span class="muted small">${escapeHtml(t('common.unknown'))}</span>`;
-    let stickMounted = false;
     let sshOpen = false;
     try {
       const r = await deps.boxFetch(box, '/api/stick/status');
       const ct = r.headers.get('content-type') || '';
       if (r.ok && ct.includes('json')) {
         const data = await r.json();
+        sshOpen = !!data.sshOpen;
         // Trust the agent's mounted flag (v0.7.33+ stickReallyMounted reports it
         // only for a real stick, not the leftover empty mountpoint, #105). Do NOT
         // also require data.version: the agent can report mounted without a
         // version, and requiring it wrongly showed an inserted stick as removed
         // (#105 follow-up).
         if (data.mounted) {
-          stickMounted = true;
           stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>` + (data.version ? ` <span class="muted small">${escapeHtml(data.version)}</span>` : '');
+        } else if (sshOpen) {
+          // Stick not mounted but SSH is open. On STR that only happens because a
+          // stick was in at boot (it opens sshd via the remote_services marker;
+          // pulling it out does not close sshd until the next reboot). Some boxes
+          // (the Portable) never auto-mount the stick, so mounted=false even with
+          // the stick physically in. Report it honestly as "still inserted"
+          // instead of flatly "removed", which contradicted the remove-the-stick
+          // recommendation right below it (Jens, 2026-06-17).
+          stickLine = `<span class="fw-warn">${escapeHtml(t('settingsView.stickStillInserted'))}</span>`;
         } else {
-          // After a clean install the stick is pulled, so "not mounted" is
-          // the expected steady state. Show it informationally, not as an
-          // error in signal-red.
+          // No stick and SSH closed: the secure steady state after a clean install.
           stickLine = `<span class="muted small">${escapeHtml(t('settingsView.stickRemoved'))}</span>`;
         }
-        sshOpen = !!data.sshOpen;
       } else {
         // Fallback: debug/state listing for older agents.
         const rd = await deps.boxFetch(box, '/api/debug/state');
@@ -847,7 +859,6 @@ function renderBoxSettings(s, box) {
           const d = await rd.json();
           const listing = d.stick_listing;
           if (Array.isArray(listing) && listing.length > 0 && !String(listing[0]).startsWith('ERR')) {
-            stickMounted = true;
             stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>`;
           } else {
             stickLine = `<span class="muted small">${escapeHtml(t('settingsView.stickRemoved'))}</span>`;
@@ -863,22 +874,23 @@ function renderBoxSettings(s, box) {
     // Also suppress while an OTA update is in flight: the agent is
     // mid-restart and SSH state is transient; the banner's "Reboot
     // now" button would interrupt the update.
+    // In Speaker Settings the detailed recommendation below (securityWarn) is the
+    // richer version of the same warning, so hide the global top banner here to
+    // avoid showing it twice. checkSshBanner drives the top banner in the other
+    // views.
     const gb = $('globalSecurityBanner');
-    if (gb) {
-      // Consistent with checkSshBanner: the reminder is shown while the stick is
-      // still in the box and clears once it is removed. The agent keeps sshd up
-      // for diagnostics regardless, so an "SSH still open" gate never cleared
-      // (#11). OTA window still excluded.
-      const show = stickMounted && !state.otaInProgress;
-      gb.classList.toggle('hidden', !show);
-    }
+    if (gb) gb.classList.add('hidden');
 
-    // Same guard as the global banner above: never show the "reboot now"
-    // recommendation while the stick is still mounted (initial install or
-    // an update is applying) or an OTA is in flight. Rebooting then would
-    // interrupt the install/update. Only after it completes and the stick
-    // is removed is the SSH state meaningful and the reboot safe.
-    const securityWarn = (sshOpen && !stickMounted && !state.otaInProgress) ? `
+    // Show the remove-the-stick + restart recommendation whenever SSH is open.
+    // As of the pre-1.0 hardening (run.sh no longer force-opens sshd every boot),
+    // SSH being open means a stick was in at boot (the stick is what opens sshd
+    // via its remote_services marker) and a stickless reboot closes it again, so
+    // sshOpen is now a self-clearing, accurate signal. This also fixes the case
+    // where the stick is in but not mounted (the Portable): the old
+    // `sshOpen && !stickMounted` happened to work there, but `mounted` boxes
+    // showed nothing. Suppressed during the OTA window (the agent restarts and
+    // the reboot button would interrupt it).
+    const securityWarn = (sshOpen && !state.otaInProgress) ? `
       <div class="security-warn">
         <div class="security-warn-title">${escapeHtml(t('banner.recommendationShort'))}</div>
         <div class="security-warn-text">

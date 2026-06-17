@@ -921,5 +921,6 @@
   "settingsView.urlPresetSaved": "{{n}} numaralı ön ayara kaydedildi.",
   "worldMap.countLine": "🌍 Şimdiye kadar dünya genelinde {{n}} SoundTouch hoparlörü kurtarıldı. Seninkini de ekle!",
   "worldMap.inviteTextAll": "Tüm SoundTouch hoparlörlerin yeniden hayatta 🎉",
-  "update.inProgressTitle": "Updating '{{name}}'..."
+  "update.inProgressTitle": "Updating '{{name}}'...",
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
 }

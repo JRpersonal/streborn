@@ -921,5 +921,6 @@
   "settingsView.urlPresetSaved": "プリセット {{n}} に保存しました。",
   "worldMap.countLine": "🌍 これまでに世界中で {{n}} 台の SoundTouch スピーカーが復活しました。あなたのも追加しましょう！",
   "worldMap.inviteTextAll": "あなたの SoundTouch がすべてまた動き出しました 🎉",
-  "update.inProgressTitle": "Updating '{{name}}'..."
+  "update.inProgressTitle": "Updating '{{name}}'...",
+  "settingsView.stickStillInserted": "Stick still inserted (SSH is open). Pull it out and restart to secure the speaker."
 }
