@@ -135,7 +135,7 @@ export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, an
 
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;
 
-export function SendAnnounce(arg1:string,arg2:number,arg3:string,arg4:number):Promise<void>;
+export function SendAnnounce(arg1:string,arg2:number,arg3:string,arg4:string,arg5:number):Promise<void>;
 
 export function SetAirplayOpt(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
@@ -182,6 +182,8 @@ export function SuggestBoxLanguage(arg1:string,arg2:string):Promise<number>;
 export function SyncBoxPresets(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function TestWebhook(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string):Promise<Record<string, any>>;
+
+export function TestWebhookAction(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
 export function TrueFactoryReset(arg1:string):Promise<main.TrueFactoryResetResult>;
 

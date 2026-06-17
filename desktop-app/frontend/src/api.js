@@ -74,6 +74,7 @@ export {
   SetWebhooks,
   SaveWebhookConfig,
   TestWebhook,
+  TestWebhookAction,
   StreamBitrate,
   StreamTitle,
   SpotifyBitrate,

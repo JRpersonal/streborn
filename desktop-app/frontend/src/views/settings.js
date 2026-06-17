@@ -52,6 +52,7 @@ import {
   GetWebhooks,
   SaveWebhookConfig,
   TestWebhook,
+  TestWebhookAction,
   CopyPresetsAcrossBoxes,
   SetBoxName,
   SetBoxVolume,
@@ -546,16 +547,35 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="displayTrackModeTitle">${escapeHtml(t('settingsView.displayTrackModeTitle'))}</button>
         <button class="btn btn-mini toggle-btn" id="displayTrackModeBoth">${escapeHtml(t('settingsView.displayTrackModeBoth'))}</button>
       </div>
-      <small class="muted small"><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b> ${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
+      <div class="format-warn">
+        <div class="warn-icon-inline">&#9888;</div>
+        <div><b>${escapeHtml(t('settingsView.displayTrackWarn'))}</b></div>
+      </div>
+      <small class="muted small">${escapeHtml(t('settingsView.displayTrackHelp'))}</small>
     </div>
 
-    <div class="settings-section" id="announceSection">
-      <h3>${escapeHtml(t('settingsView.announceHeading'))}<span class="beta-pill">beta</span></h3>
-      <small class="muted small">${escapeHtml(t('settingsView.announceHelp'))}</small>
+    <details class="settings-section settings-expert" id="announceSection">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="beta-pill">beta</span></summary>
+      <small class="muted small expert-intro">${escapeHtml(t('settingsView.announceHelp'))}</small>
       <div class="setting-row" style="margin-top:8px">
-        <input type="text" id="announceText" class="text-input" placeholder="${escapeAttr(t('settingsView.announcePlaceholder'))}" style="flex:1" />
+        <input type="text" id="announceText" class="text-input" maxlength="200" placeholder="${escapeAttr(t('settingsView.announcePlaceholder'))}" style="flex:1" />
+        <select id="announceLang" style="flex:0 0 130px;" title="${escapeAttr(t('settingsView.announceLangLabel'))}">
+          <option value="de">Deutsch</option>
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+          <option value="es">Español</option>
+          <option value="it">Italiano</option>
+          <option value="nl">Nederlands</option>
+          <option value="pl">Polski</option>
+          <option value="pt">Português</option>
+          <option value="tr">Türkçe</option>
+          <option value="uk">Українська</option>
+          <option value="ja">日本語</option>
+        </select>
         <button class="btn btn-mini" id="announceSend">${escapeHtml(t('settingsView.announceSend'))}</button>
       </div>
+      <small class="muted small">${escapeHtml(t('settingsView.announceCharHint'))}</small>
+      <small class="muted small" style="display:block;margin-top:6px">&#9432; ${escapeHtml(t('settingsView.announcePrivacy'))}</small>
       <details style="margin-top:10px">
         <summary class="muted small" style="cursor:pointer">${escapeHtml(t('settingsView.announceExpert'))}</summary>
         <small class="muted small" style="display:block;margin:6px 0">${escapeHtml(t('settingsView.announceExpertHelp'))}</small>
@@ -564,7 +584,7 @@ function renderBoxSettings(s, box) {
           <button class="btn btn-mini" id="announceCopy">${escapeHtml(t('settingsView.announceCopy'))}</button>
         </div>
       </details>
-    </div>
+    </details>
 
     <div class="settings-section hidden" id="airplayOptSection">
       <h3>${escapeHtml(t('settingsView.airplayOptHeading'))}</h3>
@@ -598,6 +618,13 @@ function renderBoxSettings(s, box) {
       </div>
       <small class="muted small" id="webhookModeNote"></small>
       <div class="setting-row">
+        <select id="webhookType" style="flex:0 0 200px;">
+          <option value="http">${escapeHtml(t('settingsView.webhookTypeHttp'))}</option>
+          <option value="wol">${escapeHtml(t('settingsView.webhookTypeWol'))}</option>
+          <option value="udp">${escapeHtml(t('settingsView.webhookTypeUdp'))}</option>
+        </select>
+      </div>
+      <div class="setting-row" id="webhookHttpRow">
         <input type="text" id="webhookUrl" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookUrlPlaceholder'))}" />
         <select id="webhookMethod" style="flex:0 0 90px;">
           <option value="GET">GET</option>
@@ -606,6 +633,21 @@ function renderBoxSettings(s, box) {
       </div>
       <div class="setting-row" id="webhookBodyRow">
         <input type="text" id="webhookBody" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookBodyPlaceholder'))}" />
+      </div>
+      <div class="setting-row hidden" id="webhookWolRow">
+        <input type="text" id="webhookMac" autocomplete="off" placeholder="AA:BB:CC:DD:EE:FF" />
+      </div>
+      <div class="setting-row hidden" id="webhookUdpRow">
+        <input type="text" id="webhookUdpHost" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookUdpHostPlaceholder'))}" />
+        <input type="text" id="webhookUdpPort" autocomplete="off" placeholder="Port" style="flex:0 0 80px;" />
+        <select id="webhookUdpEnc" style="flex:0 0 110px;">
+          <option value="text">text</option>
+          <option value="hex">hex</option>
+          <option value="base64">base64</option>
+        </select>
+      </div>
+      <div class="setting-row hidden" id="webhookUdpPayloadRow">
+        <input type="text" id="webhookUdpPayload" autocomplete="off" placeholder="${escapeAttr(t('settingsView.webhookUdpPayloadPlaceholder'))}" />
       </div>
       <div class="setting-row">
         <button class="btn btn-mini toggle-btn" id="webhookOn">${escapeHtml(t('settingsView.clockOn'))}</button>
@@ -662,9 +704,17 @@ function renderBoxSettings(s, box) {
       <h3>${escapeHtml(t('settingsView.sourcesHeading'))}</h3>
       <div class="sources-grid">
         ${sources.map(src => {
-          const cls = src.status === 'READY' ? 'src-ok' : 'src-unav';
+          const su = (src.source || '').toUpperCase();
+          const ready = src.status === 'READY';
+          // Sources STR revives even though the box reports them UNAVAILABLE (the
+          // Bose cloud is gone): the box plays STR's stream over UPnP, Spotify runs
+          // through STR's go-librespot, and the Library plays from a DLNA server
+          // via the app. Showing those as "inactive" was misleading; mark them
+          // "via STR". QPlay and the like stay inactive (STR does not revive them).
+          const viaSTR = !ready && (su === 'UPNP' || su === 'SPOTIFY' || su.startsWith('STORED_MUSIC') || su === 'LOCAL_MUSIC');
+          const cls = ready ? 'src-ok' : (viaSTR ? 'src-ok src-via-str' : 'src-unav');
           const label = sourceLabel(src.source);
-          const statusLabel = src.status === 'READY' ? t('settingsView.sourceActive') : t('settingsView.sourceInactive');
+          const statusLabel = ready ? t('settingsView.sourceActive') : (viaSTR ? t('settingsView.sourceViaSTR') : t('settingsView.sourceInactive'));
           return `<div class="source-pill ${cls}" title="${escapeAttr(sourceHint(src.source) || src.sourceAccount || '')}">${escapeHtml(label)} <small>${escapeHtml(statusLabel)}</small></div>`;
         }).join('')}
       </div>
@@ -686,7 +736,7 @@ function renderBoxSettings(s, box) {
       <div class="actions-grid">
         <button class="btn btn-mini" id="boxSyncPresetsBtn">${escapeHtml(t('settingsView.syncHardwareKeys'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.syncHardwareKeysHelp'))}</p>
-        <button class="btn btn-mini" id="boxSaveLogsBtn">${escapeHtml(t('settingsView.saveLogs'))}</button>
+        <button class="btn btn-mini" id="boxSaveLogsBtn">${escapeHtml(t('footer.saveLogs'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.saveLogsHelp'))}</p>
         <button class="btn btn-mini" id="boxEmailSupportBtn">${escapeHtml(t('settingsView.emailSupport'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.emailSupportHelp'))}</p>
@@ -1208,8 +1258,15 @@ function renderBoxSettings(s, box) {
   // side so it carries the agent port that actually answers this box.
   const annText = $('announceText');
   const annSend = $('announceSend');
+  const annLang = $('announceLang');
   const annCurl = $('announceCurl');
   const annCopy = $('announceCopy');
+  // Default the TTS voice to the app's UI language when it is one of the offered
+  // voices, so e.g. a German user gets a German voice without having to pick.
+  if (annLang) {
+    const ui = (document.documentElement.lang || '').slice(0, 2);
+    if (ui && [...annLang.options].some(o => o.value === ui)) annLang.value = ui;
+  }
   if (annCurl) {
     (async () => {
       try { annCurl.textContent = await AnnounceExample(box.host, box.port); } catch { /* leave blank */ }
@@ -1221,7 +1278,7 @@ function renderBoxSettings(s, box) {
       if (!text) return;
       annSend.disabled = true;
       try {
-        await SendAnnounce(box.host, box.port, text, 0);
+        await SendAnnounce(box.host, box.port, text, (annLang && annLang.value) || '', 0);
         showToast(t('settingsView.announceSentToast'));
       } catch (e) { showError(e); }
       annSend.disabled = false;
@@ -1293,6 +1350,16 @@ function renderBoxSettings(s, box) {
   const whTarget = $('webhookTarget');
   const whMode = $('webhookMode');
   const whModeNote = $('webhookModeNote');
+  const whType = $('webhookType');
+  const whHttpRow = $('webhookHttpRow');
+  const whWolRow = $('webhookWolRow');
+  const whUdpRow = $('webhookUdpRow');
+  const whUdpPayloadRow = $('webhookUdpPayloadRow');
+  const whMac = $('webhookMac');
+  const whUdpHost = $('webhookUdpHost');
+  const whUdpPort = $('webhookUdpPort');
+  const whUdpEnc = $('webhookUdpEnc');
+  const whUdpPayload = $('webhookUdpPayload');
   if (whUrl && whOn && whOff && whSave && whTarget) {
     let whEnabled = false;
     // Full config held locally; each target's edits are captured into it before
@@ -1312,21 +1379,52 @@ function renderBoxSettings(s, box) {
       // A request body is only sent for non-GET methods.
       if (whBodyRow) whBodyRow.style.display = (whMethod.value === 'GET') ? 'none' : '';
     };
+    // Show only the fields the selected transport needs (http | wol | udp). The
+    // Test button works for all three (it fires the actual packet/request).
+    const syncType = () => {
+      const ty = (whType && whType.value) || 'http';
+      if (whHttpRow) whHttpRow.classList.toggle('hidden', ty !== 'http');
+      if (whBodyRow) whBodyRow.classList.toggle('hidden', ty !== 'http');
+      if (whWolRow) whWolRow.classList.toggle('hidden', ty !== 'wol');
+      if (whUdpRow) whUdpRow.classList.toggle('hidden', ty !== 'udp');
+      if (whUdpPayloadRow) whUdpPayloadRow.classList.toggle('hidden', ty !== 'udp');
+      if (ty === 'http') syncBodyRow();
+    };
     const loadInto = (tg) => {
       const a = actionOf(tg);
+      if (whType) whType.value = a.type || 'http';
       whUrl.value = a.url || '';
       whMethod.value = a.method || 'GET';
       whBody.value = a.body || '';
+      if (whMac) whMac.value = a.mac || '';
+      if (whUdpHost) whUdpHost.value = a.host || '';
+      if (whUdpPort) whUdpPort.value = a.port ? String(a.port) : '';
+      if (whUdpEnc) whUdpEnc.value = a.payload_enc || 'text';
+      if (whUdpPayload) whUdpPayload.value = a.payload || '';
       paintWh(a.enabled === true);
       whMode.value = a.mode === 'replace' ? 'replace' : 'additional';
       whMode.style.display = isModeTarget(tg) ? '' : 'none';
       whModeNote.textContent = isModeTarget(tg)
         ? t('settingsView.webhookModePresetNote')
         : (tg === 'thumb' ? '' : t('settingsView.webhookModeAuxPowerNote'));
-      syncBodyRow();
+      syncType();
     };
     const captureInto = (tg) => {
-      const a = { enabled: whEnabled === true, method: whMethod.value, url: whUrl.value.trim(), body: whBody.value.trim(), content_type: '' };
+      const ty = (whType && whType.value) || 'http';
+      const a = { enabled: whEnabled === true, type: ty };
+      if (ty === 'wol') {
+        a.mac = (whMac && whMac.value.trim()) || '';
+      } else if (ty === 'udp') {
+        a.host = (whUdpHost && whUdpHost.value.trim()) || '';
+        a.port = parseInt((whUdpPort && whUdpPort.value.trim()) || '0', 10) || 0;
+        a.payload = (whUdpPayload && whUdpPayload.value) || '';
+        a.payload_enc = (whUdpEnc && whUdpEnc.value) || 'text';
+      } else {
+        a.method = whMethod.value;
+        a.url = whUrl.value.trim();
+        a.body = whBody.value.trim();
+        a.content_type = '';
+      }
       if (tg === 'thumb') {
         cfg.thumb = a;
       } else {
@@ -1346,9 +1444,15 @@ function renderBoxSettings(s, box) {
     whOn.onclick = () => paintWh(true);
     whOff.onclick = () => paintWh(false);
     whMethod.onchange = syncBodyRow;
+    if (whType) whType.onchange = syncType;
     whSave.onclick = async () => {
       const tg = whTarget.value;
-      if (whEnabled && !whUrl.value.trim()) { showError(t('settingsView.webhookUrlRequired')); return; }
+      const ty = (whType && whType.value) || 'http';
+      if (whEnabled) {
+        if (ty === 'http' && !whUrl.value.trim()) { showError(t('settingsView.webhookUrlRequired')); return; }
+        if (ty === 'wol' && !(whMac && whMac.value.trim())) { showError(t('settingsView.webhookMacRequired')); return; }
+        if (ty === 'udp' && (!(whUdpHost && whUdpHost.value.trim()) || !(whUdpPort && parseInt(whUdpPort.value, 10) > 0))) { showError(t('settingsView.webhookUdpRequired')); return; }
+      }
       captureInto(tg);
       try {
         await SaveWebhookConfig(box.host, box.port, cfg);
@@ -1356,11 +1460,28 @@ function renderBoxSettings(s, box) {
       } catch (e) { showError(e); }
     };
     whTest.onclick = async () => {
-      const url = whUrl.value.trim();
-      if (!url) { showError(t('settingsView.webhookUrlRequired')); return; }
+      // Build the action by type and fire it once, the same for http/udp/wol.
+      const ty = (whType && whType.value) || 'http';
+      const a = { enabled: true, type: ty };
+      if (ty === 'wol') {
+        if (!(whMac && whMac.value.trim())) { showError(t('settingsView.webhookMacRequired')); return; }
+        a.mac = whMac.value.trim();
+      } else if (ty === 'udp') {
+        if (!(whUdpHost && whUdpHost.value.trim()) || !(whUdpPort && parseInt(whUdpPort.value, 10) > 0)) { showError(t('settingsView.webhookUdpRequired')); return; }
+        a.host = whUdpHost.value.trim();
+        a.port = parseInt(whUdpPort.value, 10);
+        a.payload = (whUdpPayload && whUdpPayload.value) || '';
+        a.payload_enc = (whUdpEnc && whUdpEnc.value) || 'text';
+      } else {
+        if (!whUrl.value.trim()) { showError(t('settingsView.webhookUrlRequired')); return; }
+        a.method = whMethod.value;
+        a.url = whUrl.value.trim();
+        a.body = whBody.value.trim();
+        a.content_type = '';
+      }
       whTest.disabled = true;
       try {
-        const r = await TestWebhook(box.host, box.port, whMethod.value, url, whBody.value.trim(), '');
+        const r = await TestWebhookAction(box.host, box.port, JSON.stringify(a));
         showToast(t('settingsView.webhookTestOk', { status: (r && r.status) || '' }));
       } catch (e) {
         showError(t('settingsView.webhookTestFailed', { err: String(e) }));

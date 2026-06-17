@@ -266,9 +266,16 @@ async function doFormZone(strBoxes) {
       state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedMirror', { n: slaves.length }))}</div>`;
     } else {
       const members = (res && Array.isArray(res.members)) ? res.members.length : 0;
-      state.zoneMsg = members > 0
-        ? `<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: members }))}</div>`
-        : `<div class="setup-warn">${escapeHtml(t('multiroom.formedNone'))}</div>`;
+      if (members <= 0) {
+        state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.formedNone'))}</div>`;
+      } else if (members < slaves.length) {
+        // Partial: the firmware took some but not all requested speakers (#70).
+        // Flag it with the warn style and the live count so the user sees that
+        // not everyone joined, rather than a blanket success.
+        state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.formedN', { n: members }))}</div>`;
+      } else {
+        state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: members }))}</div>`;
+      }
     }
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;

@@ -262,8 +262,8 @@ export function SelectBoxSource(arg1, arg2, arg3) {
   return window['go']['main']['App']['SelectBoxSource'](arg1, arg2, arg3);
 }
 
-export function SendAnnounce(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['SendAnnounce'](arg1, arg2, arg3, arg4);
+export function SendAnnounce(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SendAnnounce'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SetAirplayOpt(arg1, arg2, arg3) {
@@ -356,6 +356,10 @@ export function SyncBoxPresets(arg1, arg2) {
 
 export function TestWebhook(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['TestWebhook'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+export function TestWebhookAction(arg1, arg2, arg3) {
+  return window['go']['main']['App']['TestWebhookAction'](arg1, arg2, arg3);
 }
 
 export function TrueFactoryReset(arg1) {
