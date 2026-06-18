@@ -57,6 +57,9 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 	firstPass := true
 	loggedPlaylist := false
 	var lastWrite time.Time // when we last sent audio bytes to the box
+	var bytesToBox int64    // total audio bytes handed to the box this stream
+	consecFetchFail := 0    // consecutive segment-fetch failures (dropout signal)
+	hlsStart := time.Now()  // for time-to-first-audio and total-played timing
 
 	for {
 		if r.Context().Err() != nil {
@@ -132,9 +135,19 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 
 			data, err := s.fetchBytes(ctx, seg)
 			if err != nil {
-				s.logger.Debug("hls: segment fetch failed, skipping", "url", seg, "err", err)
+				consecFetchFail++
+				// A single skipped segment is normal (CDN hiccup); several in a
+				// row starve the box and are a dropout cause (#185), so surface
+				// that once at WARN instead of only Debug.
+				if consecFetchFail == 1 || consecFetchFail%5 == 0 {
+					s.logger.Warn("hls: segment fetch failing, box may stall",
+						"url", seg, "err", err, "consecFails", consecFetchFail)
+				} else {
+					s.logger.Debug("hls: segment fetch failed, skipping", "url", seg, "err", err)
+				}
 				continue
 			}
+			consecFetchFail = 0
 			audio, ok := demuxSegment(data)
 			if !ok {
 				if !headersSent {
@@ -149,15 +162,18 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 				w.WriteHeader(http.StatusOK)
 				headersSent = true
 				s.clearFailure(playlistURL)
-				s.logger.Info("hls: streaming to box", "media", mediaURL)
+				s.logger.Info("hls: streaming to box", "media", mediaURL,
+					"firstAudioMs", time.Since(hlsStart).Milliseconds())
 			}
 			if _, err := w.Write(audio); err != nil {
-				s.logger.Info("hls: box write failed, ending", "err", err)
+				s.logger.Info("hls: box write failed, ending", "err", err,
+					"bytesToBox", bytesToBox, "playedSec", int(time.Since(hlsStart).Seconds()))
 				return nil
 			}
 			if flusher != nil {
 				flusher.Flush()
 			}
+			bytesToBox += int64(len(audio))
 			lastWrite = time.Now()
 			played++
 		}
