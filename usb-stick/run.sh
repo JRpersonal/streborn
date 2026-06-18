@@ -113,10 +113,21 @@ SETUP_LOG="$STICK/setup.log"
 # NAND mirror so a stick-less normal-boot (no /media/sda1 mount or
 # stick yanked) still records the WLAN provisioning trace. Without
 # this every reboot without the stick was a black box — we could
-# not see whether Approach C/D even ran. NAND survives reboot,
-# survives a Bose factory reset (we have observed this), and rotates
-# only via the previous.log copy at the top of run.sh.
+# not see whether Approach C/D even ran. NAND survives reboot and
+# survives a Bose factory reset (we have observed this).
 SETUP_LOG_NAND="$PERSIST/setup.log"
+# Per-boot rotation: keep at most the current boot plus the previous
+# boot. The NAND setup.log used to be append-only across every reboot
+# (cleanup_nand only trimmed it once it passed 256KB), so a box that
+# rebooted often grew it to hundreds of KB / thousands of lines (one
+# diagnostic spanned 11 days / 2629 lines), wearing NAND and bloating
+# the bundle. Rotate it here, at the very top, before this boot writes
+# its first line. Best-effort: a missing or read-only NAND just falls
+# through and this boot appends as before.
+SETUP_LOG_NAND_PREV="$PERSIST/setup.log.prev"
+if [ -f "$SETUP_LOG_NAND" ] && [ -s "$SETUP_LOG_NAND" ]; then
+    mv "$SETUP_LOG_NAND" "$SETUP_LOG_NAND_PREV" 2>/dev/null
+fi
 uptime_s() {
     awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "?"
 }
@@ -595,13 +606,17 @@ cleanup_nand() {
 
     # 2) Log caps. The agent rotates agent.log -> agent.log.1 at 1 MiB, so the
     #    pair can hold ~2 MiB; drop the rotated backup and trim any oversized
-    #    log to its tail. setup.log is appended every boot and never rotated.
+    #    log to its tail. setup.log is now per-boot-rotated at the top of run.sh,
+    #    but this size cap stays as a backstop for a single pathological boot
+    #    (e.g. a tight respawn loop) that bloats the current file, and also caps
+    #    the rotated setup.log.prev. Trigger lowered to 128KB / tail 64KB so a
+    #    single boot cannot keep a quarter-MB on NAND.
     rm -f /mnt/nv/streborn/agent.log.1 2>/dev/null
-    for f in /mnt/nv/streborn/setup.log /mnt/nv/streborn/agent.log; do
+    for f in /mnt/nv/streborn/setup.log /mnt/nv/streborn/setup.log.prev /mnt/nv/streborn/agent.log; do
         [ -f "$f" ] || continue
         sz=$(wc -c < "$f" 2>/dev/null || echo 0)
-        if [ "$sz" -gt 262144 ]; then
-            tail -c 131072 "$f" > "$f.trim" 2>/dev/null && mv "$f.trim" "$f" 2>/dev/null
+        if [ "$sz" -gt 131072 ]; then
+            tail -c 65536 "$f" > "$f.trim" 2>/dev/null && mv "$f.trim" "$f" 2>/dev/null
         fi
     done
 
@@ -3290,20 +3305,28 @@ fi
 (
     sleep 90
     setup_log "=== one-shot post-start snapshot (uptime=$(uptime_s)s) ==="
+    # Only the ports STR cares about, not the whole table. The full netstat/ss
+    # dump appended tens of lines per boot to the NAND setup.log and the
+    # diagnostic bundle for no diagnostic gain: the question is always "is :8888
+    # bound and who else holds an STR/Bose port", which these filters answer.
+    # STR: 8888/9080/8081/443. Bose: 8080/8090/8091/17008/17002/17000.
+    _sock_ports=':8888 |:9080 |:8081 |:443 |:8080 |:8090 |:8091 |:17008 |:17002 |:17000 '
     if command -v ss >/dev/null 2>&1; then
-        setup_log "listening sockets (ss -ltnp):"
-        ss -ltnp 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+        setup_log "listening sockets (ss -ltnp, STR/Bose ports only):"
+        ss -ltnp 2>&1 | grep -E "$_sock_ports" | while IFS= read -r line; do setup_log "  $line"; done
     elif command -v netstat >/dev/null 2>&1; then
-        setup_log "listening sockets (netstat -ltnp):"
-        netstat -ltnp 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+        setup_log "listening sockets (netstat -ltnp, STR/Bose ports only):"
+        netstat -ltnp 2>&1 | grep -E "$_sock_ports" | while IFS= read -r line; do setup_log "  $line"; done
     else
         setup_log "listening sockets: ss and netstat both unavailable"
     fi
-    setup_log "process tree (ps -ef or busybox ps):"
+    # Process tree, STR + Bose-relevant lines only (was a full ps -ef every
+    # boot). grep -v grep drops the matcher itself; head caps a runaway.
+    setup_log "process tree (STR/Bose-relevant, ps -ef or busybox ps):"
     if ps -ef >/dev/null 2>&1; then
-        ps -ef 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+        ps -ef 2>&1 | grep -iE 'streborn|go-librespot|SoftwareUpdate|BoseApp|shepherdd|wpa_supplicant|sshd' | grep -v grep | head -40 | while IFS= read -r line; do setup_log "  $line"; done
     else
-        ps 2>&1 | while IFS= read -r line; do setup_log "  $line"; done
+        ps 2>&1 | grep -iE 'streborn|go-librespot|SoftwareUpdate|BoseApp|shepherdd|wpa_supplicant|sshd' | grep -v grep | head -40 | while IFS= read -r line; do setup_log "  $line"; done
     fi
     if [ -f "$PIDFILE" ]; then
         CUR_PID=$(cat "$PIDFILE" 2>/dev/null)
