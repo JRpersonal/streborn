@@ -32,6 +32,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -256,6 +257,27 @@ func readTail(path string, size, cap int64) ([]byte, error) {
 	return io.ReadAll(f)
 }
 
+// sshFallbackLogCap bounds each SSH-pulled box log to its last
+// sshFallbackLogCap bytes. The on-box `tail -c` already trims most files, but
+// this client-side cap is the durable guard: it keeps the bundle sane even if a
+// field is added without a `tail -c` limit or a BusyBox `tail` ignores -c. We
+// keep the TAIL because the most recent lines (listener bring-up, the failure
+// itself) matter most. 64 KB is 8x the HTTP /api/debug/state per-file cap
+// (internal/webui handleDebugState, maxRead = 8*1024): the SSH path exists for
+// the "agent never bound 8888" case where a little more early-boot history
+// helps, but 64 KB is two orders of magnitude under the previous 5 MB that
+// ballooned one bundle to 609 KB.
+const sshFallbackLogCap = 64 * 1024
+
+// tailString returns the last cap bytes of s, prefixed with a truncation
+// marker, matching the HTTP path's readTail closure.
+func tailString(s string, cap int) string {
+	if len(s) <= cap {
+		return s
+	}
+	return "...(truncated to last " + strconv.Itoa(cap) + " bytes)\n" + s[len(s)-cap:]
+}
+
 type boxIndexEntry struct {
 	Index int    `json:"index"`
 	Host  string `json:"host"`
@@ -393,23 +415,23 @@ func pullSSHFallback(host string) *sshFallback {
 		"/media/sdd1", "/mnt/sda1", "/mnt/usb",
 		"/run/media/sda1"}
 	fields := []field{
-		// 5 MB tails across the board so a multi-week box's full
-		// setup.log + agent.log + boot.log + previous.log fit. The
-		// previous 8 KB / 16 KB / 64 KB caps cost real diagnostic
-		// time chasing early-boot shim and OOB markers that fell off
-		// the end of the tail window. ZIP compression keeps the
-		// final bundle reasonable; the wire copy is a one-time SSH
-		// transfer per box per export. Files smaller than the cap
-		// transfer in whole.
-		{"bootLog", "tail -c 5242880 /mnt/nv/streborn/boot.log 2>/dev/null", 15000, &out.BootLog},
-		{"setupLog", "tail -c 5242880 /mnt/nv/streborn/setup.log 2>/dev/null", 30000, &out.SetupLog},
-		{"previousLog", "tail -c 5242880 /mnt/nv/streborn/previous.log 2>/dev/null", 15000, &out.PreviousLog},
-		{"agentLogTail", "tail -c 5242880 /tmp/streborn-agent.log 2>/dev/null", 15000, &out.AgentLogTail},
-		// 64 KB from the NAND-persisted agent log: covers ~10 boots of
-		// slog output on a slow speaker without bloating the bundle.
-		// /mnt/nv/streborn/agent.log is the io.MultiWriter target the
-		// Go agent opens in newLogger.
-		{"agentLogNand", "tail -c 5242880 /mnt/nv/streborn/agent.log 2>/dev/null", 30000, &out.AgentLogNAND},
+		// Each log field is tailed to sshFallbackLogCap (64 KB): enough
+		// to cover the listener bring-up / OOB-marker phase that the SSH
+		// fallback exists to diagnose, without the multi-hundred-KB
+		// bundles the old 5 MB tail produced (one ST20 bundle hit
+		// setupLog=277 KB + agentLogNand=264 KB = 609 KB total). The
+		// matching client-side tailString cap below is the durable guard
+		// if a BusyBox tail ignores -c. Files smaller than the cap
+		// transfer in whole. This mirrors the HTTP /api/debug/state 8 KB
+		// per-file cap (handleDebugState), scaled up 8x for the
+		// failed-install case.
+		{"bootLog", "tail -c 65536 /mnt/nv/streborn/boot.log 2>/dev/null", 15000, &out.BootLog},
+		{"setupLog", "tail -c 65536 /mnt/nv/streborn/setup.log 2>/dev/null", 30000, &out.SetupLog},
+		{"previousLog", "tail -c 65536 /mnt/nv/streborn/previous.log 2>/dev/null", 15000, &out.PreviousLog},
+		{"agentLogTail", "tail -c 65536 /tmp/streborn-agent.log 2>/dev/null", 15000, &out.AgentLogTail},
+		// NAND-persisted agent log (/mnt/nv/streborn/agent.log, the
+		// io.MultiWriter target newLogger opens): same 64 KB tail.
+		{"agentLogNand", "tail -c 65536 /mnt/nv/streborn/agent.log 2>/dev/null", 30000, &out.AgentLogNAND},
 		{"stickListing", "ls -la /media/sda1 2>&1 | head -50", 5000, &out.StickListing},
 		{"mediaListing", "ls -la /media /mnt /run/media 2>&1 | head -80", 5000, &out.MediaListing},
 		{"nvListing", "ls -la /mnt/nv/streborn 2>&1 | head -40", 5000, &out.NVListing},
@@ -433,9 +455,20 @@ func pullSSHFallback(host string) *sshFallback {
 		{"dmesgWlan", "dmesg 2>/dev/null | grep -iE 'wlan|wifi|smsc|wireless|brcm|mt76|cfg80211|mac80211' | tail -30", 5000, &out.DmesgWlan},
 		{"wlanMode", "cat /mnt/nv/streborn/wlan-mode 2>/dev/null", 3000, &out.WlanMode},
 	}
+	// Fields whose body is a log tail get a hard client-side cap; the rest
+	// (directory/process/network listings) are already bounded by `| head -N`
+	// on the box.
+	logFields := map[string]bool{
+		"bootLog": true, "setupLog": true, "previousLog": true,
+		"agentLogTail": true, "agentLogNand": true,
+	}
 	for _, f := range fields {
 		txt, _ := boxSSHOutput(host, f.cmd, time.Duration(f.ms)*time.Millisecond)
-		*f.dest = strings.TrimSpace(txt)
+		txt = strings.TrimSpace(txt)
+		if logFields[f.name] {
+			txt = tailString(txt, sshFallbackLogCap)
+		}
+		*f.dest = txt
 	}
 	return out
 }
