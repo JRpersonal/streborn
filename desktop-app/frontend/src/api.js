@@ -106,6 +106,7 @@ export {
   GetZoneState,
   FormZone,
   DissolveZone,
+  SyncSpotifyLogin,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';

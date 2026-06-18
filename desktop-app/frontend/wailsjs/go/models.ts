@@ -390,6 +390,22 @@ export namespace main {
 	        this.premiumRequired = source["premiumRequired"];
 	    }
 	}
+	export class SpotifySyncTarget {
+	    host: string;
+	    port: number;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SpotifySyncTarget(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.host = source["host"];
+	        this.port = source["port"];
+	        this.name = source["name"];
+	    }
+	}
 	export class TrueFactoryResetResult {
 	    step: string;
 	    ok: boolean;

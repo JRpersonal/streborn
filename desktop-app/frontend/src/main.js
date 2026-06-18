@@ -281,7 +281,13 @@ import {
 // to pass here.
 initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav });
 initMultiroomView({ boxNeedsUpdate, discoverBoxes });
-initSpotifyView({ switchView });
+initSpotifyView({
+  switchView,
+  // Live STR speaker list for the "sync Spotify login to all speakers" action.
+  strBoxes: () => (state.boxes || [])
+    .filter(b => b && b.kind !== 'stock' && b.deviceID && b.host)
+    .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
+});
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames });
 initLibraryView({ showSlotPicker, formatDuration });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames });

@@ -1368,12 +1368,92 @@ func (a *App) GetZoneState(host string, port int) (map[string]any, error) {
 	return out, nil
 }
 
+// memberReadiness is the result of the pre-form readiness gate: which members
+// answered their STR agent (reachable + /api/agent/version) within the budget,
+// and which were still mid-restart and not safe to enroll. NotReady carries the
+// LAN IPs so the UI can name the speaker that is still starting (#70: a member
+// that had only been up ~57s after an OTA was enrolled into a zone it then never
+// joined, leaving a silently-incomplete group).
+type memberReadiness struct {
+	Ready    []string
+	NotReady []string
+}
+
+// strInSlice reports whether v is in s.
+func strInSlice(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureZoneMembersReady probes the master and every slave IP for a live STR
+// agent before a zone is formed. It reuses probeSTRWithRetry, the same probe
+// discovery uses, so a box that is briefly busy right after an OTA reboot gets a
+// few attempts to answer (a member that has only been up ~57s, its agent still
+// starting). A member that answers is "ready"; one that never does is reported
+// rather than enrolled, so the caller can form the group with only the ready
+// members and tell the user which speaker is still starting. Empty IPs are
+// skipped (cannot be probed) and left for the caller to pass through.
+func (a *App) ensureZoneMembersReady(ips []string) memberReadiness {
+	var res memberReadiness
+	for _, ip := range ips {
+		if ip == "" {
+			continue
+		}
+		// ~8 s budget per member; a ready box answers on the first attempt in
+		// well under a second, so the common case adds almost no latency.
+		ctx, cancel := context.WithTimeout(a.appCtx(), 8*time.Second)
+		_, ok := probeSTRWithRetry(ctx, ip, 3)
+		cancel()
+		if ok {
+			res.Ready = append(res.Ready, ip)
+		} else {
+			a.logger.Warn("zone: member not STR-ready, will not enroll it (mid-restart?)", "ip", ip)
+			res.NotReady = append(res.NotReady, ip)
+		}
+	}
+	return res
+}
+
 // FormZone forms (or replaces) a multiroom zone with masterHost as the master and
 // the given slaves (#70 beta). POSTed to the master's agent, which drives the
 // native Bose /setZone and persists it so the zone auto-reforms after a reboot.
 func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (map[string]any, error) {
 	if spec.Master.DeviceID == "" || len(spec.Slaves) == 0 {
 		return nil, fmt.Errorf("a master and at least one slave are required")
+	}
+	// Readiness gate (#70): never form a zone against a member whose STR agent is
+	// still starting. The master must be ready to drive /setZone at all; a slave
+	// that is mid-restart would be silently dropped by the firmware, leaving an
+	// incomplete group the user thinks succeeded.
+	ips := make([]string, 0, len(spec.Slaves)+1)
+	ips = append(ips, spec.Master.IP)
+	for _, sl := range spec.Slaves {
+		ips = append(ips, sl.IP)
+	}
+	readiness := a.ensureZoneMembersReady(ips)
+	if spec.Master.IP != "" && !strInSlice(readiness.Ready, spec.Master.IP) {
+		return nil, fmt.Errorf("box_not_ready: master")
+	}
+	// Drop slaves that are not ready from this attempt but report them, so the UI
+	// can name the speaker that is still starting. The agent-side zone reconcile
+	// and the next discovery cycle pick them up once they answer. A slave with no
+	// known IP cannot be probed and is passed through unchanged.
+	notReady := make([]string, 0)
+	readySlaves := make([]ZoneMember, 0, len(spec.Slaves))
+	for _, sl := range spec.Slaves {
+		if sl.IP == "" || strInSlice(readiness.Ready, sl.IP) {
+			readySlaves = append(readySlaves, sl)
+		} else {
+			notReady = append(notReady, sl.IP)
+		}
+	}
+	spec.Slaves = readySlaves
+	if len(spec.Slaves) == 0 {
+		return map[string]any{"ok": false, "notReady": notReady}, nil
 	}
 	b, err := json.Marshal(spec)
 	if err != nil {
@@ -1389,6 +1469,12 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (map[st
 	}
 	var out map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out == nil {
+		out = map[string]any{}
+	}
+	if len(notReady) > 0 {
+		out["notReady"] = notReady
+	}
 	return out, nil
 }
 
@@ -1403,6 +1489,74 @@ func (a *App) DissolveZone(masterHost string, masterPort int) error {
 		return readHTTPError(resp)
 	}
 	return nil
+}
+
+// SpotifySyncTarget is one speaker to copy the Spotify login TO.
+type SpotifySyncTarget struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	Name string `json:"name"`
+}
+
+// SyncSpotifyLogin copies the go-librespot Spotify credential from whichever
+// speaker is already logged into Spotify to all the others, so the user logs in
+// ONCE and recall then works on every speaker (#45 root cause: a saved Spotify
+// preset with account="" because the box was never logged in). It auto-detects
+// the source (the first speaker that returns a stored credential) so the user
+// only taps one button. The credential moves only between the user's own
+// discovered speakers, over the LAN, never off-device.
+func (a *App) SyncSpotifyLogin(boxes []SpotifySyncTarget) (map[string]any, error) {
+	var cred []byte
+	var sourceHost, sourceName string
+	for _, b := range boxes {
+		if b.Host == "" {
+			continue
+		}
+		resp, err := a.boxDo(b.Host, b.Port, http.MethodGet, "/spotify/credential", "", "")
+		if err != nil {
+			continue
+		}
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+		ok := resp.StatusCode == http.StatusOK
+		resp.Body.Close()
+		if ok && len(data) > 0 {
+			cred = data
+			sourceHost = b.Host
+			sourceName = b.Name
+			if sourceName == "" {
+				sourceName = b.Host
+			}
+			break
+		}
+	}
+	if len(cred) == 0 {
+		return nil, fmt.Errorf("no speaker is logged into Spotify yet. Log one speaker into Spotify first (pick it in the Spotify app and play a track), then sync")
+	}
+	synced := make([]string, 0, len(boxes))
+	failed := map[string]string{}
+	for _, b := range boxes {
+		if b.Host == "" || b.Host == sourceHost {
+			continue
+		}
+		label := b.Name
+		if label == "" {
+			label = b.Host
+		}
+		r2, err := a.boxDo(b.Host, b.Port, http.MethodPost, "/spotify/credential", "application/octet-stream", string(cred))
+		if err != nil {
+			failed[label] = err.Error()
+			continue
+		}
+		ok := r2.StatusCode == http.StatusOK
+		r2.Body.Close()
+		if ok {
+			synced = append(synced, label)
+		} else {
+			failed[label] = r2.Status
+		}
+	}
+	a.logger.Info("spotify: synced login to speakers", "source", sourceName, "synced", len(synced), "failed", len(failed))
+	return map[string]any{"source": sourceName, "synced": synced, "failed": failed}, nil
 }
 
 // GetPresets ruft GET /api/presets des angegebenen Sticks.

@@ -107,6 +107,11 @@ type Server struct {
 	// free/open and so cannot do the autonomous recall playback (#45). nil until
 	// wired; the recall handler uses it to return a clear "needs Premium" error.
 	spotifyPremiumRequired func() bool
+	// spotifyExportCred / spotifyImportCred move the go-librespot login between
+	// speakers so a user logs into Spotify ONCE and STR copies the credential to
+	// the other boxes (#45 root cause: account=""). nil until wired.
+	spotifyExportCred func() ([]byte, error)
+	spotifyImportCred func(ctx context.Context, data []byte) error
 	// spotifySetRecalling marks an in-flight recall so ServeOgg drives the new
 	// track from its start instead of resuming mid-position. nil when Spotify is
 	// not configured.
@@ -426,6 +431,18 @@ func WithSpotifyLoggedIn(f func() bool) Option {
 	return func(s *Server) { s.spotifyLoggedIn = f }
 }
 
+// WithSpotifyExportCred registers the function that returns this box's active
+// go-librespot credential so it can be copied to other speakers (#45 sync).
+func WithSpotifyExportCred(f func() ([]byte, error)) Option {
+	return func(s *Server) { s.spotifyExportCred = f }
+}
+
+// WithSpotifyImportCred registers the function that installs a credential copied
+// from another speaker and restarts go-librespot to log in with it (#45 sync).
+func WithSpotifyImportCred(f func(ctx context.Context, data []byte) error) Option {
+	return func(s *Server) { s.spotifyImportCred = f }
+}
+
 // WithSpotifySetRecalling registers the hook that marks an in-flight recall so
 // ServeOgg drives the new track from its start.
 func WithSpotifySetRecalling(setRecalling func()) Option {
@@ -542,6 +559,9 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	if s.spotifyInfo != nil {
 		mux.HandleFunc("/spotify/info", s.spotifyInfo)
+	}
+	if s.spotifyExportCred != nil || s.spotifyImportCred != nil {
+		mux.HandleFunc("/spotify/credential", s.handleSpotifyCredential)
 	}
 
 	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
@@ -2693,45 +2713,159 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native"})
 		return
 	}
-	// Which requested slaves did the master's zone NOT list? Return the delta so
-	// the app can flag a member that did not join instead of reporting a blanket
-	// success (#70: a 3-box group silently drops one member).
-	live := make(map[string]bool, len(z2.Members))
+	// The master's optimistic member list is not proof a slave joined (#70): the
+	// firmware lists a member it announced to before the slave's own zone reflects
+	// enrolment, so a 3-box group reported success while one box silently never
+	// joined. The authoritative "missing" set therefore comes from each FOLLOWER's
+	// own /getZone (verifyFollowersJoined), polled with a short retry because a
+	// slave's self-report lags forming by ~100ms to several seconds. The master's
+	// read-back is kept only as supplementary diagnostics (masterMissing).
+	masterLive := make(map[string]bool, len(z2.Members))
 	for _, m := range z2.Members {
-		live[strings.ToLower(m.DeviceID)] = true
+		masterLive[strings.ToLower(m.DeviceID)] = true
 	}
-	missing := make([]string, 0)
+	masterMissing := make([]string, 0)
 	for _, sl := range slaves {
-		if !live[strings.ToLower(sl.DeviceID)] {
-			missing = append(missing, sl.DeviceID)
+		if !masterLive[strings.ToLower(sl.DeviceID)] {
+			masterMissing = append(masterMissing, sl.DeviceID)
 		}
 	}
-	s.logger.Info("zone: formed", "mode", "native", "liveMaster", z2.Master,
-		"requestedSlaves", len(slaves), "liveMembers", len(z2.Members), "missing", strings.Join(missing, ","))
-	// Form-time instrumentation (#70): the master's zone may show all members
-	// while a member still drops from the app's frame because that FOLLOWER
-	// self-reports a different/empty zone. Log each follower's own /getZone so a
-	// diagnostic tells a real enrolment drop (master shows N-1) from a
-	// display/read-back drop (master shows N, a follower disagrees), BEFORE any
-	// change to enrolment semantics. Best-effort, bounded per follower.
+	missing, unverifiable := verifyFollowersJoined(ctx, s.logger, z2.Master, slaves, func(fctx context.Context, ip string) (boxapi.Zone, error) {
+		return boxapi.New(ip).GetZone(fctx)
+	})
+	verified := len(slaves) - len(missing)
+	// Regression guard (#70 / Albrecht 0.8.x): if the master's own read-back shows
+	// no members and no master after SetZone, the firmware never actually formed a
+	// zone (it worked in 0.7.29, broke in 0.8.0x). Report that honestly as ok=false
+	// so the app stops claiming success when nothing joined, instead of leaning on
+	// the optimistic "ok=true" the old code always returned.
+	masterFormed := len(z2.Members) > 0 && z2.Master != ""
+	ok := verified > 0
+	if !masterFormed {
+		s.logger.Warn("zone: master read-back empty after setZone (slaves did not join — possible 0.8.x regression)",
+			"liveMaster", z2.Master, "liveMembers", len(z2.Members), "requestedSlaves", len(slaves))
+	}
+	s.logger.Info("zone: formed", "mode", "native", "ok", ok, "liveMaster", z2.Master,
+		"requestedSlaves", len(slaves), "liveMembers", len(z2.Members),
+		"masterMissing", strings.Join(masterMissing, ","),
+		"verified", verified, "missing", strings.Join(missing, ","),
+		"unverifiable", strings.Join(unverifiable, ","))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
+		"members": z2.Members, "requested": len(slaves),
+		"verified": verified, "missing": missing, "unverifiable": unverifiable,
+		"masterMissing": masterMissing,
+	})
+}
+
+// handleSpotifyCredential moves the go-librespot Spotify login between speakers
+// (#45): GET returns this box's active credential blob, POST installs a blob
+// exported from another box and restarts go-librespot to log in with it. LAN-only,
+// same trust model as the rest of the agent API; the blob is a reusable Spotify
+// Connect credential, so the desktop app should only move it between the user's
+// own speakers.
+func (s *Server) handleSpotifyCredential(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if s.spotifyExportCred == nil {
+			http.Error(w, "spotify not configured", http.StatusServiceUnavailable)
+			return
+		}
+		data, err := s.spotifyExportCred()
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": "no spotify login stored on this speaker", "detail": err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(data)
+	case http.MethodPost:
+		if s.spotifyImportCred == nil {
+			http.Error(w, "spotify not configured", http.StatusServiceUnavailable)
+			return
+		}
+		data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 256*1024))
+		if err != nil || len(data) == 0 {
+			http.Error(w, "empty or oversized credential", http.StatusBadRequest)
+			return
+		}
+		if err := s.spotifyImportCred(r.Context(), data); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": "import failed", "detail": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// followerZoneFetch returns one follower's own zone self-report. Split out so a
+// test can inject a fake without standing up a :8090 server (boxapi.New hardcodes
+// the :8090 port via Client.url).
+type followerZoneFetch func(ctx context.Context, ip string) (boxapi.Zone, error)
+
+// verifyFollowersJoined polls each requested slave's OWN /getZone until it
+// reports masterID as its zone master, or a per-follower deadline elapses (#70).
+// Trusting only the master's optimistic member list reports a complete group
+// while a follower is actually still standalone: the master lists a member the
+// firmware announced before the slave actually enrolled, and the slave's own
+// zone lags ~100ms to several seconds behind. A follower that never names
+// masterID as its master within the budget is returned in "missing" so the app
+// can flag it instead of claiming success. Followers with no known IP cannot be
+// verified and are returned in "unverifiable" (left to the master's view).
+func verifyFollowersJoined(ctx context.Context, logger *slog.Logger, masterID string, slaves []boxapi.ZoneMember, fetch followerZoneFetch) (missing, unverifiable []string) {
+	const (
+		perFollowerBudget = 4 * time.Second
+		pollInterval      = 700 * time.Millisecond
+		perCallTimeout    = 2 * time.Second
+	)
 	for _, sl := range slaves {
 		if sl.IP == "" {
+			unverifiable = append(unverifiable, sl.DeviceID)
 			continue
 		}
-		fctx, fcancel := context.WithTimeout(ctx, 4*time.Second)
-		fz, ferr := boxapi.New(sl.IP).GetZone(fctx)
-		fcancel()
-		if ferr != nil {
-			s.logger.Info("zone: follower self-report failed", "follower", sl.DeviceID, "ip", sl.IP, "err", ferr.Error())
+		deadline := time.Now().Add(perFollowerBudget)
+		joined := false
+		var lastSelfMaster string
+		var lastMembers int
+		var lastErr error
+		for {
+			cctx, cancel := context.WithTimeout(ctx, perCallTimeout)
+			fz, ferr := fetch(cctx, sl.IP)
+			cancel()
+			if ferr != nil {
+				lastErr = ferr
+			} else {
+				lastErr = nil
+				lastSelfMaster = fz.Master
+				lastMembers = len(fz.Members)
+				if fz.Master != "" && strings.EqualFold(fz.Master, masterID) {
+					joined = true
+					break
+				}
+			}
+			if time.Now().After(deadline) || ctx.Err() != nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(pollInterval):
+			}
+			if ctx.Err() != nil {
+				break
+			}
+		}
+		if joined {
+			logger.Info("zone: follower confirmed", "follower", sl.DeviceID, "ip", sl.IP, "selfMaster", lastSelfMaster)
 			continue
 		}
-		s.logger.Info("zone: follower self-report", "follower", sl.DeviceID, "ip", sl.IP,
-			"selfMaster", fz.Master, "selfMembers", len(fz.Members))
+		if lastErr != nil {
+			logger.Info("zone: follower never confirmed (self-report unreachable)", "follower", sl.DeviceID, "ip", sl.IP, "err", lastErr.Error())
+		} else {
+			logger.Info("zone: follower never confirmed", "follower", sl.DeviceID, "ip", sl.IP, "selfMaster", lastSelfMaster, "selfMembers", lastMembers)
+		}
+		missing = append(missing, sl.DeviceID)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
-		"members": z2.Members, "requested": len(slaves), "missing": missing,
-	})
+	return missing, unverifiable
 }
 
 // formStereoPair drives POST /addGroup to make a real left/right stereo pair

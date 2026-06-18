@@ -362,6 +362,10 @@ export function SyncBoxPresets(arg1, arg2) {
   return window['go']['main']['App']['SyncBoxPresets'](arg1, arg2);
 }
 
+export function SyncSpotifyLogin(arg1) {
+  return window['go']['main']['App']['SyncSpotifyLogin'](arg1);
+}
+
 export function TestWebhook(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['TestWebhook'](arg1, arg2, arg3, arg4, arg5, arg6);
 }

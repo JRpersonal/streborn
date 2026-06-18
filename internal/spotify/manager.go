@@ -1090,6 +1090,50 @@ func (m *Manager) PlayAccount(ctx context.Context, uri, account string) error {
 	return m.Play(ctx, uri)
 }
 
+// ExportCredential returns the active go-librespot credential (credentials.json)
+// so it can be copied to another speaker. The blob is a reusable Spotify Connect
+// credential for whatever account last logged in here; copying it to another box
+// lets that box log into the SAME Spotify account without the user picking it in
+// Spotify again. Returns an error when no credential is stored yet (the box was
+// never logged in). LAN-only, same trust model as the rest of the agent API.
+func (m *Manager) ExportCredential() ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(m.configDir, "credentials.json"))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("no spotify credential stored")
+	}
+	return data, nil
+}
+
+// ImportCredential writes a credential blob exported from another speaker into
+// this box's go-librespot config and restarts go-librespot so it logs in as that
+// account. This is the receiving half of "log in once, sync to all speakers":
+// the user logs into Spotify on one box, and STR copies that credential to the
+// others so recall works everywhere without tapping each box in Spotify.
+func (m *Manager) ImportCredential(ctx context.Context, data []byte) error {
+	if len(data) == 0 {
+		return fmt.Errorf("empty credential")
+	}
+	if err := os.MkdirAll(m.configDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(m.configDir, "credentials.json"), data, 0o600); err != nil {
+		return err
+	}
+	// Also stamp it into the per-account store so a later SwitchAccount can find
+	// it; best-effort, keyed once go-librespot reports the username after restart.
+	m.logger.Info("spotify: imported credential from another speaker, restarting go-librespot")
+	m.mu.Lock()
+	restart := m.runCancel
+	m.mu.Unlock()
+	if restart != nil {
+		restart() // supervise loop relaunches go-librespot, which reads the imported credential
+	}
+	return nil
+}
+
 // PlaylistMeta returns a stable cover image URL and the human title for a
 // Spotify context URI (playlist, album, ...) via Spotify's public oEmbed
 // endpoint, which needs no token. A saved preset uses the cover as its tile logo
