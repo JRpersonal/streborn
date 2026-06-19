@@ -3928,13 +3928,29 @@ function renderSearchResults() {
     }
   }
   if (list.length === 0) {
-    res.innerHTML = '<div class="muted">' + escapeHtml(
-      state.searchLastMode === 'favorites'
-        ? t('search.favEmpty')
-        : state.searchOnlyBose && (state.searchResults || []).length > 0
-          ? t('search.noBoseStations')
-          : t('search.noStationsFound')
-    ) + '</div>';
+    const msg = state.searchLastMode === 'favorites'
+      ? t('search.favEmpty')
+      : state.searchOnlyBose && (state.searchResults || []).length > 0
+        ? t('search.noBoseStations')
+        : t('search.noStationsFound');
+    let html = '<div class="muted">' + escapeHtml(msg) + '</div>';
+    // A name search that genuinely returned nothing (not the favorites view and
+    // not the Bose-filter-hid-everything case) means the station is not in the
+    // radio-browser directory. Surface the "add it yourself" guide right here so
+    // the user does not have to spot the small permanent hint in the filter row.
+    const genuinelyEmpty = state.searchLastMode === 'search'
+      && state.searchLastQuery
+      && (state.searchResults || []).length === 0;
+    if (genuinelyEmpty) {
+      html += '<div class="search-empty-addhint" style="margin-top:.6rem">'
+        + '<a href="#" class="search-addhint" id="emptyAddStationHint">'
+        + escapeHtml(t('search.addStationHint')) + '</a></div>';
+    }
+    res.innerHTML = html;
+    const addLink = $('emptyAddStationHint');
+    if (addLink) {
+      addLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} };
+    }
     return;
   }
   res.innerHTML = list.map((s, i) => {
