@@ -265,16 +265,29 @@ async function doFormZone(strBoxes) {
     if (mode === 'mirror') {
       state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedMirror', { n: slaves.length }))}</div>`;
     } else {
-      const members = (res && Array.isArray(res.members)) ? res.members.length : 0;
-      if (members <= 0) {
+      // Trust the followers' own zone self-report, not the master's optimistic
+      // member list (#70). notReady = speakers that were still starting and were
+      // not enrolled (app-side readiness gate); missing = speakers enrolled but
+      // that never self-confirmed they joined (agent-side verify); verified =
+      // speakers that confirmed. Name any not-ready speakers so the user retries.
+      const notReady = (res && Array.isArray(res.notReady)) ? res.notReady : [];
+      const missing = (res && Array.isArray(res.missing)) ? res.missing : [];
+      const verified = (res && typeof res.verified === 'number')
+        ? res.verified
+        : Math.max(0, slaves.length - missing.length - notReady.length);
+      const notReadyNames = notReady
+        .map(ip => { const b = strBoxes.find(x => x.host === ip); return b ? zoneLabel(b) : ip; })
+        .join(', ');
+      if (verified <= 0 && notReady.length) {
+        state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.notReady', { names: notReadyNames }))}</div>`;
+      } else if (verified <= 0) {
         state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.formedNone'))}</div>`;
-      } else if (members < slaves.length) {
-        // Partial: the firmware took some but not all requested speakers (#70).
-        // Flag it with the warn style and the live count so the user sees that
-        // not everyone joined, rather than a blanket success.
-        state.zoneMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.formedN', { n: members }))}</div>`;
+      } else if (missing.length || notReady.length) {
+        let msg = t('multiroom.formedPartial', { joined: verified, total: slaves.length });
+        if (notReady.length) msg += ' ' + t('multiroom.notReady', { names: notReadyNames });
+        state.zoneMsg = `<div class="setup-warn">${escapeHtml(msg)}</div>`;
       } else {
-        state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: members }))}</div>`;
+        state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: verified }))}</div>`;
       }
     }
   } catch (e) {

@@ -6,6 +6,8 @@
 // object on purpose, so utils can be imported anywhere without
 // circular-import risk.
 
+import { t } from './i18n/index.js';
+
 export const $ = (id) => document.getElementById(id);
 
 export function escapeHtml(s) {
@@ -191,8 +193,8 @@ function wireError() {
     const txt = $('errorText').value;
     try {
       await navigator.clipboard.writeText(txt);
-      copy.textContent = 'Kopiert!';
-      setTimeout(() => { copy.textContent = 'Kopieren'; }, 1500);
+      copy.textContent = t('modal.copied');
+      setTimeout(() => { copy.textContent = t('modal.copy'); }, 1500);
     } catch {
       $('errorText').select();
       document.execCommand('copy');
@@ -204,7 +206,7 @@ export function showError(msg) {
   wireError();
   const m = $('errorModal');
   if (!m) return;
-  $('errorText').value = String(msg || 'Unbekannter Fehler');
+  $('errorText').value = String(msg || t('modal.unknownError'));
   m.classList.remove('hidden');
 }
 

@@ -378,6 +378,8 @@ func run() error {
 		webui.WithSpotifyReady(spotifyMgr.Ready),
 		webui.WithSpotifyLoggedIn(spotifyMgr.LoggedIn),
 		webui.WithSpotifyPremiumRequired(spotifyMgr.PremiumRequired),
+		webui.WithSpotifyExportCred(spotifyMgr.ExportCredential),
+		webui.WithSpotifyImportCred(spotifyMgr.ImportCredential),
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),

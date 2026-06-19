@@ -185,6 +185,8 @@ export function SuggestBoxLanguage(arg1:string,arg2:string):Promise<number>;
 
 export function SyncBoxPresets(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function SyncSpotifyLogin(arg1:Array<main.SpotifySyncTarget>):Promise<Record<string, any>>;
+
 export function TestWebhook(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string):Promise<Record<string, any>>;
 
 export function TestWebhookAction(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;

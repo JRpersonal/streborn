@@ -145,6 +145,21 @@ const (
 	thumbDebounce      = 2 * time.Second
 )
 
+// wsKeepaliveInterval is how often STR sends a WebSocket ping control frame to
+// hold the gabbo connection open. The Bose WS server reaps an idle connection
+// after ~10 min; without traffic STR reconnected on a stuck ~10.5 min cadence
+// and missed the box's preset/now-selection frames in every gap (#183, observed
+// 205x over 2.5 days in a diagnostic bundle). A ping every ~4 min keeps the
+// socket alive well under that window. STR stays read-only at the gabbo
+// application layer: a protocol ping needs no gabbo request semantics and the
+// server answers it with a pong.
+const wsKeepaliveInterval = 4 * time.Minute
+
+// wsWriteTimeout bounds a single ping write so a half-dead socket cannot wedge
+// the keepalive goroutine; a failed/blocked write closes the conn and the read
+// loop returns, triggering a clean reconnect.
+const wsWriteTimeout = 10 * time.Second
+
 // noteExplainedActivity records that a concrete, identifiable action just
 // happened (volume change, preset/now-selection, now-playing change, power).
 // It cancels any pending thumb fire, because that activity explains the
@@ -222,9 +237,11 @@ func New(logger *slog.Logger, url string, handler Handler) *Client {
 // Run blockiert und reconnected automatisch wenn die Verbindung abbricht.
 // Stop via ctx Cancel.
 //
-// Box sendet keine eigenen Keepalive Frames. Wenn lange nichts passiert
-// (kein Tastendruck, kein Volume Change), ist das normal - keine WARN
-// Spam dafuer.
+// Box sendet keine eigenen Keepalive Frames; STR pingt den Socket selbst
+// (wsKeepaliveInterval), damit eine lange Leerlaufphase die Verbindung nicht
+// mehr abreissen laesst. Ein Reconnect synct den Box-State ueber den
+// OnConnected-Hook wieder. Wenn lange nichts passiert, ist das normal - keine
+// WARN-Spam dafuer.
 func (c *Client) Run(ctx context.Context) {
 	backoff := time.Second
 	for {
@@ -286,14 +303,48 @@ func (c *Client) runOnce(ctx context.Context) error {
 		go oc.OnConnected(ctx)
 	}
 
+	// Application-level keepalive: the box never sends keepalive frames and its
+	// WS server drops an idle connection after ~10 min, which forced a stuck
+	// ~10.5 min reconnect cadence that lost preset frames in every gap (#183).
+	// Ping it every wsKeepaliveInterval so the socket stays alive. WriteControl
+	// is the only writer and is safe to call concurrently with the reader. The
+	// goroutine exits when this runOnce returns (conn.Close unblocks the read
+	// and closeKeepalive is closed) or when ctx is cancelled.
+	closeKeepalive := make(chan struct{})
+	defer close(closeKeepalive)
+	go func() {
+		t := time.NewTicker(wsKeepaliveInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-closeKeepalive:
+				return
+			case <-t.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(wsWriteTimeout)); err != nil {
+					// A failed ping means the socket is gone; close it so the
+					// reader returns and Run reconnects. Debug, not Warn: an idle
+					// reconnect is routine and must not spam the NAND log.
+					c.logger.Debug("box websocket keepalive ping failed, reconnecting", "err", err)
+					_ = conn.Close()
+					return
+				}
+				c.logger.Debug("box websocket keepalive ping sent")
+			}
+		}
+	}()
+
 	// Reader Loop
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// Longer read deadline weil Box keine Keepalive Frames sendet.
-		// Reconnect ist trotzdem sauber - kein Datenverlust.
-		_ = conn.SetReadDeadline(time.Now().Add(10 * time.Minute))
+		// Read deadline sits above two keepalive intervals (wsKeepaliveInterval):
+		// a healthy idle socket is held open by our ping, so the only thing this
+		// deadline should now fire on is a genuinely dead peer (no pong, no data).
+		// Reconnect stays clean: OnConnected resyncs box state on every reconnect.
+		_ = conn.SetReadDeadline(time.Now().Add(2*wsKeepaliveInterval + 3*time.Minute))
 		mt, data, err := conn.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("read: %w", err)

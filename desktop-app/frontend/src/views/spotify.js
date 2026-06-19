@@ -5,11 +5,11 @@
 // does not) with two links; switchView is injected so the "update" link can
 // jump to the speaker settings tab without importing back into main.js.
 
-import { $, escapeHtml } from '../utils.js';
+import { $, escapeHtml, showToast, showError } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { BrowserOpenURL } from '../api.js';
+import { BrowserOpenURL, SyncSpotifyLogin } from '../api.js';
 
-let deps = { switchView: () => {} };
+let deps = { switchView: () => {}, strBoxes: () => [] };
 export function initSpotifyView(d) {
   deps = { ...deps, ...d };
 }
@@ -49,10 +49,34 @@ export function renderSpotifyAlpha() {
         <li>${escapeHtml(t('spotify.limit2'))}</li>
         <li>${escapeHtml(t('spotify.limit3'))}</li>
       </ul>
+      <h3>${escapeHtml(t('spotify.syncTitle'))}</h3>
+      <p>${escapeHtml(t('spotify.syncDesc'))}</p>
+      <button class="btn btn-primary" id="spotifySyncBtn">${escapeHtml(t('spotify.syncBtn'))}</button>
       <p class="muted small">${escapeHtml(t('spotify.nativeNote'))}</p>
       <p>${escapeHtml(t('spotify.feedbackNote'))} <a href="#" id="spotifyIssueLink">${escapeHtml(t('spotify.issueLink'))}</a></p>
     </div>
   `;
+  const sync = $('spotifySyncBtn');
+  if (sync) sync.onclick = async () => {
+    const boxes = (deps.strBoxes ? deps.strBoxes() : []) || [];
+    if (boxes.length < 2) { showToast(t('spotify.syncNeedTwo')); return; }
+    sync.disabled = true;
+    const orig = sync.textContent;
+    sync.textContent = t('spotify.syncRunning');
+    try {
+      const res = await SyncSpotifyLogin(boxes);
+      const n = (res && Array.isArray(res.synced)) ? res.synced.length : 0;
+      const failed = (res && res.failed) ? Object.keys(res.failed).length : 0;
+      if (n > 0 && failed === 0) showToast(t('spotify.syncDone', { n }));
+      else if (n > 0) showToast(t('spotify.syncPartial', { n, failed }));
+      else showToast(t('spotify.syncNone'));
+    } catch (e) {
+      showError(String(e));
+    } finally {
+      sync.disabled = false;
+      sync.textContent = orig;
+    }
+  };
   const upd = $('spotifyUpdateLink');
   if (upd) upd.onclick = (e) => { e.preventDefault(); deps.switchView('settings'); };
   const link = $('spotifyIssueLink');

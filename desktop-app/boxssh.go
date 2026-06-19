@@ -22,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // nullDevice points at the platform's null device — used to keep
@@ -246,6 +248,14 @@ func trySSHFlagSets(run func(flags []string) (string, error)) (string, error) {
 }
 
 func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
+	// Native Go SSH first (no dependency on a system ssh binary, so it works
+	// even when the Windows OpenSSH client is absent from PATH, the #ssh-not-found
+	// install failure). Only fall back to the system-ssh flag-set chain when the
+	// native transport itself could not connect/handshake; once the command
+	// actually ran on the box, return its result regardless of exit status.
+	if out, ran, err := nativeSSHRun(host, cmd, nil, timeout); ran {
+		return out, err
+	}
 	return trySSHFlagSets(func(flags []string) (string, error) {
 		return runSSHWithFlags(flags, host, cmd, timeout)
 	})
@@ -258,6 +268,12 @@ func boxSSHOutput(host, cmd string, timeout time.Duration) (string, error) {
 // reachable from the LAN is Bose's own SoftwareUpdate HTTP service, which
 // has a 1.5 KB POST buffer — see [[bose-http-buffer]] / #90).
 func boxSSHUploadStdin(host, cmd string, in io.Reader, timeout time.Duration) (string, error) {
+	// Native first. Stdin is only consumed once the transport is up and the
+	// command runs (ran=true, we return); a transport failure (ran=false) leaves
+	// the reader untouched, so the system-ssh fallback re-reads it from the start.
+	if out, ran, err := nativeSSHRun(host, cmd, in, timeout); ran {
+		return out, err
+	}
 	return trySSHFlagSets(func(flags []string) (string, error) {
 		return runSSHWithFlagsStdin(flags, host, cmd, in, timeout)
 	})
@@ -282,7 +298,12 @@ func runSSHWithFlagsStdin(flags []string, host, cmd string, in io.Reader, timeou
 // expected. Same fallback-chain semantics as boxSSHOutput.
 func boxSSHFireAndForget(host, cmd string, timeout time.Duration) error {
 	// Fire-and-forget: the connection dropping (e.g. on reboot) is expected, so
-	// the flag-set result is ignored; we only care that a set was accepted.
+	// the result is ignored; we only care that a transport was established.
+	// Native first; only if it could not connect do we try the system-ssh chain
+	// so a box reachable only via the user's ssh still gets the command.
+	if _, ran, _ := nativeSSHRun(host, cmd, nil, timeout); ran {
+		return nil
+	}
 	_, _ = trySSHFlagSets(func(flags []string) (string, error) {
 		return runSSHWithFlags(flags, host, cmd, timeout)
 	})
@@ -354,6 +375,87 @@ func runSSHWithFlags(flags []string, host, cmd string, timeout time.Duration) (s
 		return string(out), fmt.Errorf("ssh timeout after %s", timeout)
 	}
 	return string(out), err
+}
+
+// nativeSSHConfig is the x/crypto/ssh client config for the stock Bose box:
+// root with an empty password, host key ignored (the box's key rotates on the
+// factory reset we trigger, and this is the user's own LAN), and the full set
+// of legacy algorithms the 2014-era Bose sshd offers (ssh-rsa host key, SHA1
+// KEX, CBC ciphers, hmac-sha1) explicitly enabled because x/crypto/ssh gates
+// them off by default. This mirrors the "full-legacy" system-ssh flag set so
+// the bundled client reaches every box the system ssh did, with no PATH dep.
+func nativeSSHConfig(timeout time.Duration) *ssh.ClientConfig {
+	cfg := &ssh.ClientConfig{
+		User:            "root",
+		Auth:            []ssh.AuthMethod{ssh.Password("")},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyAlgorithms: []string{
+			ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSA,
+			ssh.KeyAlgoED25519, ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521,
+		},
+		Timeout: timeout,
+	}
+	// Embedded ssh.Config: opt the legacy KEX/ciphers/MACs back in. The Bose
+	// 2014 sshd only offers these; modern x/crypto/ssh defaults exclude them.
+	cfg.KeyExchanges = []string{
+		"curve25519-sha256", "curve25519-sha256@libssh.org",
+		"ecdh-sha2-nistp256", "ecdh-sha2-nistp384", "ecdh-sha2-nistp521",
+		"diffie-hellman-group14-sha256", "diffie-hellman-group14-sha1",
+		"diffie-hellman-group1-sha1", "diffie-hellman-group-exchange-sha256",
+	}
+	cfg.Ciphers = []string{
+		"aes128-gcm@openssh.com", "aes256-gcm@openssh.com",
+		"aes128-ctr", "aes192-ctr", "aes256-ctr",
+		"aes128-cbc", "aes192-cbc", "aes256-cbc", "3des-cbc",
+	}
+	cfg.MACs = []string{"hmac-sha2-256", "hmac-sha2-512", "hmac-sha1", "hmac-sha1-96"}
+	return cfg
+}
+
+// nativeSSHRun runs cmd on the box with the bundled Go SSH client. It returns
+// the combined output, whether the command actually RAN on the box (transport
+// established), and any error. ran=false means the native transport could not
+// connect/handshake/authenticate, so the caller should fall back to system ssh;
+// ran=true means the command executed (err, if any, is the remote command error
+// or a drop, e.g. on reboot) and no fallback is needed.
+func nativeSSHRun(host, cmd string, stdin io.Reader, timeout time.Duration) (string, bool, error) {
+	addr := net.JoinHostPort(host, "22")
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return "", false, err
+	}
+	// Bound the handshake by the timeout, then clear the deadline so a long
+	// upload (the 10 MB OTA binary) is not cut off mid-stream.
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+	cc, chans, reqs, err := ssh.NewClientConn(conn, addr, nativeSSHConfig(timeout))
+	if err != nil {
+		_ = conn.Close()
+		return "", false, err
+	}
+	_ = conn.SetDeadline(time.Time{})
+	client := ssh.NewClient(cc, chans, reqs)
+	defer client.Close()
+	sess, err := client.NewSession()
+	if err != nil {
+		return "", false, err
+	}
+	defer sess.Close()
+	if stdin != nil {
+		sess.Stdin = stdin
+	}
+	type res struct {
+		out []byte
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() { out, e := sess.CombinedOutput(cmd); ch <- res{out, e} }()
+	select {
+	case r := <-ch:
+		return string(r.out), true, r.err
+	case <-time.After(timeout):
+		_ = sess.Signal(ssh.SIGKILL)
+		return "", true, fmt.Errorf("ssh native timeout after %s", timeout)
+	}
 }
 
 // isBadOptionError reports whether the combined ssh output starts

@@ -180,6 +180,13 @@ type Server struct {
 	// onTitle, if set, is called whenever the live StreamTitle changes to a
 	// non-empty value. Used to push the radio track text to the box display.
 	onTitle func(title string)
+
+	// gapMu guards lastByteToBox, the wall-clock time the proxy last handed
+	// audio bytes to the box on the current stream. The reconnect loops read it
+	// at the top of each retry to log how long the box went without audio: a gap
+	// over ~1s is the audible dropout users report (#185).
+	gapMu         sync.Mutex
+	lastByteToBox time.Time
 }
 
 // SetOnTitle registers a callback invoked when the live ICY StreamTitle of
@@ -451,6 +458,35 @@ func (s *Server) shouldLogFail(url string) bool {
 	return true
 }
 
+// markByteDelivery stamps the moment audio last reached the box. Called from the
+// streamOne copy loop on every successful write; cheap (one guarded time.Now),
+// never logged per call.
+func (s *Server) markByteDelivery() {
+	s.gapMu.Lock()
+	s.lastByteToBox = time.Now()
+	s.gapMu.Unlock()
+}
+
+// resetAudioGap clears the last-byte stamp at the start of a fresh stream so a
+// stale gap from a previous station is not reported on the first reconnect.
+func (s *Server) resetAudioGap() {
+	s.gapMu.Lock()
+	s.lastByteToBox = time.Time{}
+	s.gapMu.Unlock()
+}
+
+// audioGap returns how long it has been since audio last reached the box, or 0
+// if no byte has been delivered yet (so the very first connect attempt is not
+// reported as a gap).
+func (s *Server) audioGap() time.Duration {
+	s.gapMu.Lock()
+	defer s.gapMu.Unlock()
+	if s.lastByteToBox.IsZero() {
+		return 0
+	}
+	return time.Since(s.lastByteToBox)
+}
+
 // upstreamStatusError carries the upstream HTTP status of a non-200 response so
 // the reconnect loops can tell a permanent client-side rejection (403 geo-block,
 // 404/410 gone) from a transient one (5xx) via errors.As, instead of parsing a
@@ -654,6 +690,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("stream proxy raw start", "url", url)
 	start := time.Now()
+	s.resetAudioGap()
 	headersSent := false
 	var lastErr error
 	for attempt := 0; attempt < 60; attempt++ {
@@ -662,6 +699,10 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if attempt > 0 {
+			if gap := s.audioGap(); gap > 1*time.Second {
+				s.logger.Warn("stream proxy audio gap before reconnect", "kind", "raw",
+					"attempt", attempt, "gapMs", gap.Milliseconds(), "lastErr", errStr(lastErr))
+			}
 			s.logger.Info("stream proxy reconnect", "kind", "raw", "attempt", attempt, "lastErr", errStr(lastErr))
 			select {
 			case <-time.After(500 * time.Millisecond):
@@ -734,6 +775,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// hoeren wir sofort auf — sonst rauschen wir in einer Endlosschleife
 	// gegen den CDN.
 	start := time.Now()
+	s.resetAudioGap()
 	headersSent := false
 	var lastErr error
 	for attempt := 0; attempt < 60; attempt++ {
@@ -743,6 +785,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if attempt > 0 {
+			if gap := s.audioGap(); gap > 1*time.Second {
+				s.logger.Warn("stream proxy audio gap before reconnect", "slot", slot,
+					"attempt", attempt, "gapMs", gap.Milliseconds(), "lastErr", errStr(lastErr))
+			}
 			s.logger.Info("stream proxy reconnect", "slot", slot, "attempt", attempt, "lastErr", errStr(lastErr))
 			// Kurz warten damit wir CDN nicht mit Reconnects ueberlasten
 			select {
@@ -947,6 +993,12 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		})
 	}
 	buf := make([]byte, 16*1024)
+	// Connection-scoped telemetry so a diagnostic bundle can explain a dropout
+	// without a live capture: how long this upstream connection lasted and how
+	// many bytes it delivered to the box before it ended (#185).
+	connStart := time.Now()
+	var connBytes int64
+	gotData := false
 	for {
 		n, readErr := src.Read(buf)
 		if n > 0 {
@@ -957,6 +1009,9 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 			if flusher != nil {
 				flusher.Flush()
 			}
+			connBytes += int64(n)
+			gotData = true
+			s.markByteDelivery() // records "last byte to box" wall clock across reconnects
 			if !measured && time.Since(streamStart) >= brSettle {
 				if winStart.IsZero() {
 					// First read past the settle point: start the window
@@ -982,11 +1037,18 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 				return false, nil
 			}
 			if readErr == io.EOF {
-				// CDN hat sauber EOF — wahrscheinlich Token expired
+				// Clean EOF (typically CDN token expiry). Expected; the reconnect
+				// is gap-free if it lands fast. INFO, with timing so a bundle shows
+				// how often a station forces a reconnect.
+				s.logger.Info("stream proxy upstream EOF, will reconnect", "url", url,
+					"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
 				return true, nil
 			}
-			// Network Fehler — wir versuchen reconnect
-			s.logger.Info("stream proxy upstream read fail, reconnect", "err", readErr)
+			// Network-level read error mid-stream: this is the dropout cause for
+			// the #185 class. WARN, with how long the connection survived and how
+			// much it delivered, so the bundle pins the drop without a capture.
+			s.logger.Warn("stream proxy upstream read fail, will reconnect", "url", url, "err", readErr,
+				"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes, "delivered", gotData)
 			return true, readErr
 		}
 	}
