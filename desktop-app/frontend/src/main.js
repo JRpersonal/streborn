@@ -3652,11 +3652,18 @@ function buildSearchOpts() {
   const ord = state.searchOrder || 'votes';
   const limit = ord === 'name' ? PAGE_SIZE * 4 : PAGE_SIZE;
   // cc empty = all countries. top:true selects the vote-ordered top list (no
-  // free-text query).
+  // free-text query). On a free-text NAME search the language filter is dropped:
+  // it defaults to the app language, and many stations (small/US ones especially)
+  // have no language tag in radio-browser, so a default language filter silently
+  // hid a station the user searched for by name (e.g. "Real Talk 93.3", whose
+  // radio-browser entry has an empty language field). Language still scopes the
+  // browse/top list, where it aids discovery; a name lookup should find the
+  // station regardless of how radio-browser tagged its language. Country is
+  // already opt-in (never auto-defaulted), so it stays applied.
   return {
     q: isSearch ? state.searchLastQuery : '',
     cc: state.searchCountry || '',
-    lang: state.searchLang || '',
+    lang: isSearch ? '' : (state.searchLang || ''),
     tag: state.searchTag || '',
     order: ord,
     limit: limit,
