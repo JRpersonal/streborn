@@ -222,7 +222,20 @@ type Server struct {
 	// set. Lets the app show/preserve/recall them (Option C). Guarded by boxPresetsMu.
 	boxPresetsMu sync.Mutex
 	boxPresets   []BoxPreset
+	// deletedBoxSlots tombstones slots the user just deleted, so a presetsUpdated
+	// burst the box emits right after the removal does not resurrect the slot in
+	// the app's merged view before the box-side RemovePreset has settled (a user
+	// reported a deleted preset reappearing as a UPNP entry after an app restart).
+	// Keyed slot -> deletion time; entries older than boxPresetTombstoneTTL are
+	// ignored/pruned. Guarded by boxPresetsMu.
+	deletedBoxSlots map[int]time.Time
 }
+
+// boxPresetTombstoneTTL is how long a just-deleted slot is filtered out of the
+// box's reported preset list. It covers the box's post-change presetsUpdated
+// burst and the RemovePreset round-trip; after it expires a slot the box still
+// reports is shown again (it genuinely still exists on the box).
+const boxPresetTombstoneTTL = 90 * time.Second
 
 // BoxPreset is one of the box's own presets (incl. foreign sources like DEEZER),
 // served by GET /api/box/presets so the app can show and preserve them. Mirrors
@@ -785,9 +798,17 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Drop it from the box-preset snapshot right away and tombstone the slot so
+		// a trailing gabbo presetsUpdated does not resurface it as a foreign (UPNP)
+		// entry the user then "cannot delete" (reported after an app restart).
+		s.forgetBoxPreset(slot)
 		if s.boxHost != "" {
 			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-			_ = boxcli.RemovePreset(boxCtx, s.boxHost, slot)
+			// Log the box-side removal outcome instead of dropping it: a silent
+			// failure here is exactly how the preset comes back on the next boot.
+			if err := boxcli.RemovePreset(boxCtx, s.boxHost, slot); err != nil {
+				s.logger.Warn("preset delete: box-side RemovePreset failed", "slot", slot, "err", err)
+			}
 			cancel()
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -3631,11 +3652,53 @@ func writeFlagFile(path, val string) error {
 
 // NoteBoxPresets records the box's own preset list (from the gabbo
 // presetsUpdated frame, via the agent). Replaces the previous snapshot wholesale;
-// the box always reports the full list.
+// the box always reports the full list. A slot the user just deleted is dropped
+// while its tombstone is fresh, so a trailing presetsUpdated does not resurrect
+// it before the box-side removal settles.
 func (s *Server) NoteBoxPresets(ps []BoxPreset) {
 	s.boxPresetsMu.Lock()
-	s.boxPresets = ps
-	s.boxPresetsMu.Unlock()
+	defer s.boxPresetsMu.Unlock()
+	now := time.Now()
+	for slot, when := range s.deletedBoxSlots {
+		if now.Sub(when) > boxPresetTombstoneTTL {
+			delete(s.deletedBoxSlots, slot)
+		}
+	}
+	if len(s.deletedBoxSlots) == 0 {
+		s.boxPresets = ps
+		return
+	}
+	filtered := make([]BoxPreset, 0, len(ps))
+	for _, p := range ps {
+		if _, tombstoned := s.deletedBoxSlots[p.Slot]; tombstoned {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	s.boxPresets = filtered
+}
+
+// forgetBoxPreset removes a slot from the box-preset snapshot immediately and
+// tombstones it, so a just-deleted preset disappears from the app's merged view
+// at once and a trailing box presetsUpdated cannot bring it straight back.
+func (s *Server) forgetBoxPreset(slot int) {
+	s.boxPresetsMu.Lock()
+	defer s.boxPresetsMu.Unlock()
+	if s.deletedBoxSlots == nil {
+		s.deletedBoxSlots = make(map[int]time.Time)
+	}
+	s.deletedBoxSlots[slot] = time.Now()
+	if len(s.boxPresets) == 0 {
+		return
+	}
+	kept := make([]BoxPreset, 0, len(s.boxPresets))
+	for _, p := range s.boxPresets {
+		if p.Slot == slot {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	s.boxPresets = kept
 }
 
 // handleBoxPresets serves the box's OWN presets (incl. foreign sources like
