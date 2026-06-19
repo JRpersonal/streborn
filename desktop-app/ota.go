@@ -340,7 +340,13 @@ func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = int64(len(bin))
-	client := &http.Client{Timeout: 60 * time.Second}
+	// This single Timeout has to cover the whole operation: streaming the ~10 MB
+	// agent to the box, the box writing it to NAND on a modest ARM CPU, and the
+	// response. 60 s was too tight over slow Wi-Fi and surfaced to users as
+	// "context deadline exceeded (Client.Timeout ... while reading body)" with the
+	// update never completing. The SSH OTA path already budgets 120 s for the same
+	// upload alone, so match that with headroom for the NAND write and reply.
+	client := &http.Client{Timeout: 180 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
