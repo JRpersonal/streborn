@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -745,6 +746,40 @@ func run() error {
 	return firstErr
 }
 
+// httpErrorLogWriter bridges the stdlib http.Server ErrorLog into slog. The
+// Bose firmware opens a TCP connection to the redirected streaming.bose.com TLS
+// port (our marge-tls listener) about once a minute and closes it without ever
+// sending a ClientHello, so net/http logged `http: TLS handshake error from
+// <box>: EOF` to the process default logger every 60s. On the speaker that
+// default logger is teed to the NAND log, so the benign probe churned ~1440
+// NAND writes a day for no diagnostic value (seen across every box in #185 /
+// #187 bundles). Route that handshake noise to DEBUG (dropped at the default
+// info level) while keeping any genuine server error (e.g. a recovered handler
+// panic, which also reaches ErrorLog) at WARN so it still lands in a bundle.
+type httpErrorLogWriter struct {
+	logger *slog.Logger
+	name   string
+}
+
+func (w httpErrorLogWriter) Write(p []byte) (int, error) {
+	msg := strings.TrimRight(string(p), "\n")
+	if msg == "" {
+		return len(p), nil
+	}
+	if strings.Contains(msg, "TLS handshake error") {
+		w.logger.Debug("http server error", "comp", w.name, "msg", msg)
+	} else {
+		w.logger.Warn("http server error", "comp", w.name, "msg", msg)
+	}
+	return len(p), nil
+}
+
+// newHTTPErrorLog returns the *log.Logger to wire into http.Server.ErrorLog so
+// per-connection noise does not bypass slog and hit the NAND log directly.
+func newHTTPErrorLog(logger *slog.Logger, name string) *log.Logger {
+	return log.New(httpErrorLogWriter{logger: logger, name: name}, "", 0)
+}
+
 // startHTTP startet einen HTTP Server in einer Goroutine und meldet Fehler an errs.
 //
 // The listener is opened via netutil.ListenTCP, which sets SO_REUSEADDR on
@@ -762,6 +797,7 @@ func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name,
 			Addr:              addr,
 			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
+			ErrorLog:          newHTTPErrorLog(logger, name),
 		}
 		logger.Warn("listener phase: calling ListenTCP", "comp", name, "addr", addr)
 		ln, err := netutil.ListenTCP(ctx, addr)
@@ -800,6 +836,7 @@ func startHTTPS(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name
 			Handler:           handler,
 			TLSConfig:         tlsConfig,
 			ReadHeaderTimeout: 10 * time.Second,
+			ErrorLog:          newHTTPErrorLog(logger, name),
 		}
 		logger.Warn("listener phase: calling ListenTCP TLS", "comp", name, "addr", addr)
 		ln, err := netutil.ListenTCP(ctx, addr)
