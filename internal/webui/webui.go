@@ -2970,37 +2970,42 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 
 // defaultZoneReconcilePath is the NAND flag file that opts a box INTO the
 // periodic zone reconcile (#70 beta). Absent (the default) means OFF: the box
-// never re-asserts a persisted zone, so a speaker the user plays on its own is
-// never dragged back into a group. Only an explicit "1"/"true"/"on"/"yes" turns
-// it on. The default is OFF after a multi-ST10 user reported standalone speakers
-// being pulled into the master's zone every few minutes (the master kept
-// re-asserting its persisted zone whenever a member left to play its own source).
+// never re-asserts a persisted native zone, so a speaker the user plays on its
+// own is never dragged back into a group. Only an explicit "1"/"true"/"on"/"yes"
+// turns it on. The default is OFF after multi-speaker users (Albrecht 5-box,
+// Michal multi-ST10, 2026-06-19) reported standalone speakers being pulled into
+// the master's zone every few minutes: when a member leaves to play its own
+// source the master's match-before-assert guard sees a missing member and
+// re-asserts setZone, dragging it back. On 0.8.x the native setZone does not even
+// distribute (slaves never join, "master read-back empty"), so the periodic
+// re-assert is pure churn with a real downside and no upside. Re-enable per box
+// once the native path is verified on hardware (#70).
 const defaultZoneReconcilePath = "/mnt/nv/streborn/zone-reconcile"
 
-// zoneReconcileEnabled reports whether the periodic zone reconcile runs on this
-// box. Default ON so a formed zone survives reboot/standby/Wi-Fi outage (v1.0
-// gate #2), which is the v0.7.29 behavior the fleet relied on. The flag file is
-// an explicit OPT-OUT (write "off"/"0") for a box whose members are often played
-// solo, where re-asserting the master's group would drag a member back in. The
-// match-before-assert guard in reconcileZoneOnce already skips a no-op re-assert.
+// zoneReconcileEnabled reports whether the periodic NATIVE zone re-assert runs on
+// this box. Default OFF (opt-in): the flag file must explicitly say
+// "1"/"true"/"on"/"yes" to turn it on. See defaultZoneReconcilePath for why the
+// default flipped to OFF. A mirror zone is unaffected: reconcileZoneOnce always
+// re-pushes a mirror group (that path works and does not drag a solo speaker), so
+// this gate only governs the broken/harmful native re-assert.
 func (s *Server) zoneReconcileEnabled() bool {
 	b, err := os.ReadFile(defaultZoneReconcilePath)
 	if err != nil {
-		return true // default ON
+		return false // default OFF (opt-in)
 	}
 	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "0", "false", "off", "no":
-		return false // explicit opt-out
+	case "1", "true", "on", "yes":
+		return true // explicit opt-in
 	default:
-		return true
+		return false
 	}
 }
 
-// PeriodicZoneReconcile re-asserts a persisted group so it survives
-// reboot/standby/Wi-Fi outage (#70 beta). No-op when standalone OR when the box
-// is explicitly opted out (see zoneReconcileEnabled, default on). Started by
-// cmd/agent after the server is built. Lives on the Server so the mirror path
-// can reach s.lastPlay + the UPnP renderer.
+// PeriodicZoneReconcile re-pushes a persisted mirror group so it survives
+// reboot/standby/Wi-Fi outage (#70 beta), and re-asserts a native zone only when
+// the box is opted in (see zoneReconcileEnabled, default OFF). No-op when
+// standalone. Started by cmd/agent after the server is built. Lives on the Server
+// so the mirror path can reach s.lastPlay + the UPnP renderer.
 func (s *Server) PeriodicZoneReconcile() {
 	if s.zones == nil || s.boxHost == "" {
 		return
@@ -3015,10 +3020,6 @@ func (s *Server) PeriodicZoneReconcile() {
 }
 
 func (s *Server) reconcileZoneOnce() {
-	if !s.zoneReconcileEnabled() {
-		return // explicit opt-out only (default is on): a box flagged "off" never
-		// auto-re-asserts, so a speaker the user plays solo is not dragged back.
-	}
 	z, ok := s.zones.Get()
 	if !ok {
 		return // standalone
@@ -3026,7 +3027,10 @@ func (s *Server) reconcileZoneOnce() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if z.Mirror() {
-		// Re-push the master's current stream to the slaves (best-effort).
+		// Re-push the master's current stream to the slaves (best-effort). This
+		// path is always allowed: it just re-streams to slaves that the user
+		// grouped and does not drag a solo speaker into anything, so it is not
+		// gated by the native opt-in below.
 		s.mirrorToSlaves(ctx, z)
 		return
 	}
@@ -3035,6 +3039,12 @@ func (s *Server) reconcileZoneOnce() {
 		// zone. Re-asserting it with the zone API (/setZone) would use the wrong
 		// endpoint and could fight the firmware's own pairing, so leave a native
 		// stereo pair alone; the firmware persists it across reboot/standby itself.
+		return
+	}
+	if !s.zoneReconcileEnabled() {
+		// Native re-assert is opt-in (default OFF): re-asserting setZone whenever a
+		// member is missing dragged solo speakers back into the group, and on 0.8.x
+		// native zones do not distribute anyway. See zoneReconcileEnabled.
 		return
 	}
 	// Native: only re-assert when the live zone does not already match.
