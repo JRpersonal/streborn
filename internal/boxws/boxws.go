@@ -196,6 +196,19 @@ func (c *Client) noteUserActivity(ctx context.Context) {
 		debounced := !c.thumbLastFire.IsZero() && time.Since(c.thumbLastFire) < thumbDebounce
 		if explained || debounced {
 			c.thumbMu.Unlock()
+			// A lone user-activity reached the settle timer but was then
+			// suppressed. Both outcomes are otherwise invisible, which makes a
+			// "the thumb key does nothing" report (#187) impossible to diagnose
+			// from a bundle: we cannot tell a missing frame from a suppressed
+			// one. Log it at INFO. This path only runs for activity that was NOT
+			// already explained at arrival (volume ramps return earlier), so it
+			// stays rare and does not churn the NAND log.
+			switch {
+			case explained:
+				c.logger.Info("box ws: user-activity settled as explained, not firing thumb")
+			default:
+				c.logger.Info("box ws: user-activity debounced, thumb already fired recently")
+			}
 			return
 		}
 		c.thumbLastFire = time.Now()
