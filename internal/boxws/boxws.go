@@ -129,8 +129,8 @@ type Client struct {
 	// generic <userActivityUpdate/>; we treat a "lone" one (no volume / now
 	// playing / preset event around it) as a thumb press and fire
 	// OnThumbActivity once, debounced. See noteExplainedActivity / noteUserActivity.
-	thumbMu       sync.Mutex
-	thumbPending  *time.Timer
+	thumbMu        sync.Mutex
+	thumbPending   *time.Timer
 	thumbExplained time.Time
 	thumbLastFire  time.Time
 }

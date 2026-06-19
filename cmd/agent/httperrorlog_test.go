@@ -26,7 +26,7 @@ func (c *levelCapture) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 func (c *levelCapture) WithAttrs([]slog.Attr) slog.Handler { return c }
-func (c *levelCapture) WithGroup(string) slog.Handler       { return c }
+func (c *levelCapture) WithGroup(string) slog.Handler      { return c }
 
 func TestHTTPErrorLogRoutesHandshakeNoiseToDebug(t *testing.T) {
 	cases := []struct {
