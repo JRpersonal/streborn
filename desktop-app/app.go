@@ -651,8 +651,22 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		out.PortVerified = true
 	}
 
-	// Identity fields: fill any blanks from b.
-	if out.DeviceID == "" {
+	// DeviceID: prefer the value from the live :8090 /info probe (the
+	// PortVerified record). That is the Bose SoundTouch deviceID (the SCM MAC),
+	// which the firmware's zone protocol (/setZone, /addGroup) keys on. The mDNS
+	// TXT instead carries the agent's wlan0 MAC, which on a two-chip chassis
+	// (ST20 spotty/BCO, Portable) is the SMSC MAC, NOT the SoundTouch ID, so a
+	// zone formed with it never forms (the master never recognizes itself, a
+	// slave is never matched). Fall back to whichever side actually has a value.
+	// Test against the ORIGINAL verified flags: the port-merge above may have
+	// already flipped out.PortVerified to b's, which would otherwise make the
+	// stale mDNS deviceID look verified.
+	switch {
+	case a.PortVerified && a.DeviceID != "":
+		out.DeviceID = a.DeviceID
+	case b.PortVerified && b.DeviceID != "":
+		out.DeviceID = b.DeviceID
+	case out.DeviceID == "":
 		out.DeviceID = b.DeviceID
 	}
 	if out.SerialNumber == "" {
@@ -1218,9 +1232,9 @@ type Preset struct {
 	Type      string `json:"type"`
 	Art       string `json:"art,omitempty"`
 	Bitrate   int    `json:"bitrate,omitempty"`
-	URI       string `json:"uri,omitempty"`     // Spotify presets: playlist/album URI
-	Account   string `json:"account,omitempty"` // Spotify presets: owning account
-	Source    string `json:"source,omitempty"`  // DLNA presets: media server name (cosmetic badge)
+	URI       string `json:"uri,omitempty"`      // Spotify presets: playlist/album URI
+	Account   string `json:"account,omitempty"`  // Spotify presets: owning account
+	Source    string `json:"source,omitempty"`   // DLNA presets: media server name (cosmetic badge)
 	Homepage  string `json:"homepage,omitempty"` // radio presets: station website (recent "website" link)
 }
 

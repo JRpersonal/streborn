@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -2694,6 +2695,16 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	c := boxapi.New(s.boxHost)
 
+	// The master is always THIS box, so resolve its deviceID from the local
+	// firmware /info rather than trusting the app-supplied value (#70). The
+	// desktop derives a member's deviceID from discovery, where a two-chip
+	// chassis (ST20 spotty/BCO, Portable) announces its wlan0 (SMSC) MAC over
+	// mDNS, which is NOT the SoundTouch deviceID the firmware keys /setZone and
+	// /addGroup on (that is the SCM MAC in /info). For the master that mismatch
+	// is fatal: the firmware never recognizes itself as master, so the zone reads
+	// back empty (the "0.8.x regression" deqw and Albrecht hit was really this).
+	master.DeviceID = s.localDeviceID(ctx, c, master.DeviceID)
+
 	// A stereo pair is a firmware-native L/R group (POST /addGroup), not a
 	// multiroom zone. It needs exactly one partner; the master is the LEFT
 	// channel and the partner the RIGHT by Bose convention. Only the ST10
@@ -2889,6 +2900,29 @@ func verifyFollowersJoined(ctx context.Context, logger *slog.Logger, masterID st
 	return missing, unverifiable
 }
 
+// localDeviceID returns this box's authoritative Bose SoundTouch deviceID, read
+// from the local firmware /info, falling back to supplied when /info is
+// unreachable or carries no deviceID. The zone protocol (/setZone, /addGroup)
+// keys on this exact ID. The desktop derives a member's deviceID from discovery,
+// which on a two-chip chassis can be the wlan0 (SMSC) MAC instead of the
+// SoundTouch (SCM) deviceID; since the master is always the box this agent runs
+// on, the agent is the authority for its own ID and corrects the mismatch (#70).
+func (s *Server) localDeviceID(ctx context.Context, c *boxapi.Client, supplied string) string {
+	info, err := c.GetInfo(ctx)
+	if err != nil {
+		return supplied
+	}
+	real := strings.TrimSpace(info.DeviceID)
+	if real == "" {
+		return supplied
+	}
+	if supplied != "" && !strings.EqualFold(real, supplied) {
+		s.logger.Info("zone: corrected master deviceID from firmware /info (app sent the chassis wlan0/SMSC MAC, not the SoundTouch ID)",
+			"supplied", supplied, "firmware", real)
+	}
+	return real
+}
+
 // formStereoPair drives POST /addGroup to make a real left/right stereo pair
 // and persists it so it is honored on dissolve. master becomes LEFT, the single
 // partner becomes RIGHT. The firmware decides whether the box can pair (ST10
@@ -2949,6 +2983,12 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 		s.logger.Info("zone mirror: master is not playing yet; slaves will mirror once you start playback and the reconcile fires (beta)")
 		return
 	}
+	// lp.boxURL points the MASTER's own box at its loopback stream proxy
+	// (http://127.0.0.1:8888/...). A slave cannot fetch that; it must reach the
+	// master across the LAN. Rewrite the host to the master's LAN IP so each
+	// slave pulls the master's stream (#70: the slave's display updated but its
+	// audio kept its old stream because it was handed the master's loopback URL).
+	slaveURL := s.mirrorURLForSlaves(ctx, lp.boxURL, z.MasterIP)
 	for _, m := range z.Slaves {
 		if m.IP == "" {
 			continue
@@ -2956,16 +2996,48 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 		rr := upnp.NewBoseRenderer(m.IP)
 		var err error
 		if lp.mime != "" {
-			err = rr.PlayURLMime(ctx, lp.boxURL, lp.title, lp.art, lp.mime)
+			err = rr.PlayURLMime(ctx, slaveURL, lp.title, lp.art, lp.mime)
 		} else {
-			err = rr.PlayURL(ctx, lp.boxURL, lp.title, lp.art)
+			err = rr.PlayURL(ctx, slaveURL, lp.title, lp.art)
 		}
 		if err != nil {
 			s.logger.Warn("zone mirror: slave play failed", "slave", m.IP, "err", err)
 		} else {
-			s.logger.Info("zone mirror: slave mirroring master stream (beta)", "slave", m.IP, "url", lp.boxURL)
+			s.logger.Info("zone mirror: slave mirroring master stream (beta)", "slave", m.IP, "url", slaveURL)
 		}
 	}
+}
+
+// mirrorStreamPort is the port a SLAVE box uses to reach the master agent's
+// stream proxy. The proxy listens on :8888, but a remote box cannot use that
+// directly: on a BCO/whitelisted chassis (ST20 spotty/scm, Portable) the SMSC
+// chipset drops an external :8888 connection, routing external TCP only to
+// Bose-binary-owned listeners. Every chassis instead REDIRECTs :17008
+// (SoftwareUpdate, whitelisted) to the agent's loopback :8888, which is exactly
+// how the desktop app already reaches every box, so the mirror uses it too.
+const mirrorStreamPort = "17008"
+
+// mirrorURLForSlaves rewrites the master's own loopback stream URL
+// (http://127.0.0.1:8888/...) into one a SLAVE box can fetch over the LAN: the
+// master's LAN IP on the externally reachable :17008 redirect (mirrorStreamPort).
+// masterIP comes from the persisted zone; when it is empty we fall back to the
+// firmware /info IP. If no LAN IP can be resolved we return the URL unchanged
+// (a no-op push beats pointing a slave at the wrong host).
+func (s *Server) mirrorURLForSlaves(ctx context.Context, boxURL, masterIP string) string {
+	u, err := url.Parse(boxURL)
+	if err != nil {
+		return boxURL
+	}
+	if strings.TrimSpace(masterIP) == "" {
+		if info, ierr := boxapi.New(s.boxHost).GetInfo(ctx); ierr == nil {
+			masterIP = strings.TrimSpace(info.IP)
+		}
+	}
+	if masterIP == "" {
+		return boxURL
+	}
+	u.Host = net.JoinHostPort(masterIP, mirrorStreamPort)
+	return u.String()
 }
 
 // defaultZoneReconcilePath is the NAND flag file that opts a box INTO the
