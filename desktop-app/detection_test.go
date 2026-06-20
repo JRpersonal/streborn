@@ -117,6 +117,20 @@ func TestMergeSameKindKeepsMDNSDeviceIDWhenProbeBlank(t *testing.T) {
 	}
 }
 
+// A box name the firmware reports as a lone Latin-1 byte ("ü" = 0xFC) must be
+// repaired to valid UTF-8 so it does not render as garbled "K�che" (#70).
+func TestToValidUTF8(t *testing.T) {
+	if got := toValidUTF8("K\xfcche"); got != "Küche" {
+		t.Errorf("toValidUTF8(latin1) = %q, want Küche", got)
+	}
+	if got := toValidUTF8("Küche"); got != "Küche" {
+		t.Errorf("toValidUTF8(utf8) = %q, want Küche (unchanged)", got)
+	}
+	if got := toValidUTF8("Kitchen"); got != "Kitchen" {
+		t.Errorf("toValidUTF8(ascii) = %q, want Kitchen", got)
+	}
+}
+
 // After STR triggers an OTA, a stock sighting during the box's reboot (its Bose
 // :8090 answers before the agent) must NOT reclassify the box as stock: the
 // post-OTA pin forces it to stay STR for the reboot grace (#108).

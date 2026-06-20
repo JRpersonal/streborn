@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/JRpersonal/streborn/discovery"
 	"github.com/JRpersonal/streborn/dlna"
@@ -296,7 +297,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 			Host:         host,
 			Port:         inst.Port,
 			DeviceID:     inst.DeviceID,
-			FriendlyName: inst.FriendlyName,
+			FriendlyName: toValidUTF8(inst.FriendlyName),
 			Model:        inst.Model,
 			Version:      inst.Version,
 			Build:        inst.Build,
@@ -1081,7 +1082,10 @@ func probeStock(ctx context.Context, ip string) (BoxInfo, bool) {
 		return BoxInfo{}, false
 	}
 	deviceID := strings.ToUpper(extractAttr(s, "deviceID"))
-	name := extractTag(s, "name")
+	// The Bose /info XML labels itself UTF-8 but reports an umlaut box name as a
+	// lone Latin-1 byte ("ü" = 0xFC). Left raw it JSON-marshals to U+FFFD and
+	// shows as garbled "K�che" in the speaker list / multiroom UI (#70, Albrecht).
+	name := toValidUTF8(extractTag(s, "name"))
 	model := extractTag(s, "type")
 	serial := extractPackagedProductSerial(s)
 	return BoxInfo{
@@ -1201,6 +1205,24 @@ func extractAttr(xml, key string) string {
 		return ""
 	}
 	return xml[i+len(needle) : i+len(needle)+j]
+}
+
+// toValidUTF8 returns s unchanged when it is already valid UTF-8, otherwise it
+// reinterprets the bytes as Latin-1 (ISO-8859-1) and re-encodes them as UTF-8.
+// The Bose /info XML labels itself UTF-8 but reports an umlaut box name as a
+// lone Latin-1 byte ("ü" = 0xFC); left raw that JSON-marshals to U+FFFD and
+// shows as garbled "K�che" (#70, Albrecht). Latin-1 maps 1:1 to the first 256
+// code points, so ASCII is untouched and only the high bytes are widened.
+func toValidUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for i := 0; i < len(s); i++ {
+		b.WriteRune(rune(s[i]))
+	}
+	return b.String()
 }
 
 func extractTag(xml, tag string) string {
