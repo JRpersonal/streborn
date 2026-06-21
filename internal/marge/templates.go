@@ -1,24 +1,24 @@
 package marge
 
-// XML Templates und Konstanten für Marge Antworten.
+// XML templates and constants for Marge responses.
 //
-// Quelle: docs/probe-api-ST10.txt, gezogen aus der echten BoseApp HTTP API
-// auf 8090. Diese Antworten zeigen welchen State die Box aus Marge Daten
-// ableitet. Wir bauen unsere Antworten so dass die Box am Ende dieselbe
-// (oder eine reichere) Konfiguration ableiten kann.
+// Source: docs/probe-api-ST10.txt, pulled from the real BoseApp HTTP API
+// on 8090. These responses show which state the box derives from Marge data.
+// We build our responses so that the box can derive the same
+// (or a richer) configuration in the end.
 //
-// Achtung: Alle hier definierten Templates sind read only und enthalten
-// Platzhalter wie {{.DeviceID}}, die zur Laufzeit gefüllt werden.
+// Caution: all templates defined here are read only and contain
+// placeholders like {{.DeviceID}}, which are filled at runtime.
 
-// AccountConfigured beschreibt das Skelett einer Antwort die der Box
-// signalisiert "Du bist mit einem Bose Konto verbunden".
+// AccountConfigured describes the skeleton of a response that signals to the box
+// "You are connected to a Bose account".
 //
-// Wir wissen noch nicht welcher konkrete Endpunkt der Box diese Information
-// liefert. Vermutung anhand der BoseApp API:
-//   - /info zeigt margeAccountUUID
-//   - /soundTouchConfigurationStatus wechselt zu SOUNDTOUCH_CONFIGURED
+// We do not yet know which concrete endpoint of the box returns this
+// information. Guess based on the BoseApp API:
+//   - /info shows margeAccountUUID
+//   - /soundTouchConfigurationStatus switches to SOUNDTOUCH_CONFIGURED
 //
-// Sobald der Spy Mode die echten Anfragen offenlegt, wird das hier konkret.
+// Once spy mode reveals the real requests, this will become concrete here.
 const AccountConfiguredXMLTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <MargeAccount>
   <accountUUID>{{.AccountUUID}}</accountUUID>
@@ -28,14 +28,14 @@ const AccountConfiguredXMLTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <created>{{.CreatedAt}}</created>
 </MargeAccount>`
 
-// EmptyPresetsXML ist die Antwort wenn der Account noch keine Presets hat.
-// Match mit /presets Antwort der Box im Werkszustand.
+// EmptyPresetsXML is the response when the account has no presets yet.
+// Matches the /presets response of the box in factory state.
 const EmptyPresetsXML = `<?xml version="1.0" encoding="UTF-8"?>
 <presets/>`
 
-// PresetsXMLTemplate ist die Antwort wenn der Account Presets hat.
-// Jeder Preset enthält ein ContentItem das wiederum source, sourceAccount
-// und mit Source spezifischen Feldern versehen ist.
+// PresetsXMLTemplate is the response when the account has presets.
+// Each preset contains a ContentItem which in turn carries source, sourceAccount
+// and source-specific fields.
 const PresetsXMLTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <presets>{{range .Presets}}
   <preset id="{{.ID}}" createdOn="{{.CreatedOn}}" updatedOn="{{.UpdatedOn}}">
@@ -46,13 +46,13 @@ const PresetsXMLTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   </preset>{{end}}
 </presets>`
 
-// EmptyRecentsXML wenn keine Recents vorhanden.
+// EmptyRecentsXML when no recents are present.
 const EmptyRecentsXML = `<?xml version="1.0" encoding="UTF-8"?>
 <recents/>`
 
-// ServiceAvailabilityXMLTemplate listet welche Streaming Provider verfuegbar
-// sind. Beobachtung aus der Box: PANDORA hat geo restriction reason,
-// AMAZON/DEEZER/SPOTIFY/AIRPLAY/LOCAL_MUSIC sind verfuegbar.
+// ServiceAvailabilityXMLTemplate lists which streaming providers are available.
+// Observation from the box: PANDORA has a geo restriction reason,
+// AMAZON/DEEZER/SPOTIFY/AIRPLAY/LOCAL_MUSIC are available.
 const ServiceAvailabilityXMLTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <serviceAvailability>
   <services>{{range .Services}}
@@ -60,23 +60,23 @@ const ServiceAvailabilityXMLTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   </services>
 </serviceAvailability>`
 
-// SourcesXMLTemplate ist das Format das die Box ueber /sources ausspielt.
-// Wir liefern die gleiche Struktur wenn Marge die Source Liste pushed.
+// SourcesXMLTemplate is the format the box emits via /sources.
+// We return the same structure when Marge pushes the source list.
 const SourcesXMLTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <sources deviceID="{{.DeviceID}}">{{range .Items}}
   <sourceItem source="{{.Source}}"{{if .Account}} sourceAccount="{{.Account}}"{{end}} status="{{.Status}}" isLocal="{{.IsLocal}}" multiroomallowed="{{.MultiroomAllowed}}">{{.DisplayName}}</sourceItem>{{end}}
 </sources>`
 
-// SoundTouchConfiguredXML signalisiert eine erfolgreich konfigurierte Box.
+// SoundTouchConfiguredXML signals a successfully configured box.
 const SoundTouchConfiguredXML = `<?xml version="1.0" encoding="UTF-8"?>
 <SoundTouchConfigurationStatus status="SOUNDTOUCH_CONFIGURED"/>`
 
-// SoundTouchNotConfiguredXML ist der Default Zustand.
+// SoundTouchNotConfiguredXML is the default state.
 const SoundTouchNotConfiguredXML = `<?xml version="1.0" encoding="UTF-8"?>
 <SoundTouchConfigurationStatus status="SOUNDTOUCH_NOT_CONFIGURED"/>`
 
-// DefaultServices ist die Liste der Streaming Provider die wir als verfuegbar
-// melden. Geo Restriction Reasons sind aus der echten ST10 Probe uebernommen.
+// DefaultServices is the list of streaming providers we report as available.
+// Geo restriction reasons are taken from the real ST10 probe.
 var DefaultServices = []ServiceAvailability{
 	{Type: "PANDORA", Available: false, Reason: "PANDORA_GEO_RESTRICTION_ERROR"},
 	{Type: "AIRPLAY", Available: true},
@@ -92,14 +92,14 @@ var DefaultServices = []ServiceAvailability{
 	{Type: "UPNP", Available: false},
 }
 
-// ServiceAvailability ist ein einzelner Streaming Provider Eintrag.
+// ServiceAvailability is a single streaming provider entry.
 type ServiceAvailability struct {
 	Type      string
 	Available bool
 	Reason    string
 }
 
-// Preset bildet einen einzelnen Preset Eintrag ab.
+// Preset represents a single preset entry.
 type Preset struct {
 	ID            int
 	CreatedOn     int64
@@ -112,7 +112,7 @@ type Preset struct {
 	ContainerArt  string
 }
 
-// SourceItem bildet eine Streaming Source ab.
+// SourceItem represents a streaming source.
 type SourceItem struct {
 	Source           string
 	Account          string
@@ -122,7 +122,7 @@ type SourceItem struct {
 	DisplayName      string
 }
 
-// AccountInfo enthält die Daten des Marge Accounts.
+// AccountInfo contains the data of the Marge account.
 type AccountInfo struct {
 	AccountUUID  string
 	AccountEmail string

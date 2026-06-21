@@ -1,31 +1,31 @@
 #!/bin/sh
-# iptables-setup.sh: setzt PREROUTING Regeln damit Bose Box Traffic auf
-# 80 und 443 zu unseren lokalen Agent Ports geht.
+# iptables-setup.sh: sets PREROUTING rules so Bose box traffic on
+# 80 and 443 goes to our local agent ports.
 #
-# Wird vom run.sh nach Agent Start aufgerufen, beim Stop wieder entfernt.
+# Called by run.sh after the agent starts, removed again on stop.
 #
-# Aufruf:
-#   sh iptables-setup.sh install   # Regeln setzen
-#   sh iptables-setup.sh remove    # Regeln entfernen
-#   sh iptables-setup.sh status    # Aktive Regeln zeigen
+# Usage:
+#   sh iptables-setup.sh install   # set the rules
+#   sh iptables-setup.sh remove    # remove the rules
+#   sh iptables-setup.sh status    # show active rules
 #
-# Die Regeln tragen einen unique Marker im Kommentar, damit sie sicher
-# wieder entfernt werden koennen ohne andere Regeln zu treffen.
+# The rules carry a unique marker in the comment so they can be
+# removed safely without affecting other rules.
 
 set -u
 
 MARKER="streborn-redirect"
 
-# Zielports im Agent. Muessen mit run.sh und der Agent Konfig matchen.
-# 9080 statt 8080 weil 8080 von Bose's eigenem WebServer belegt ist.
+# Target ports in the agent. Must match run.sh and the agent config.
+# 9080 instead of 8080 because 8080 is taken by Bose's own web server.
 MARGE_HTTP_PORT=9080
 MARGE_HTTPS_PORT=8443
 BMX_PORT=8081
 WEBUI_PORT=8888
 
-# Quellports die wir umleiten wollen.
-# 80 ist normalerweise PtsServer, wir leiten es zu Marge HTTP um.
-# 443 ist HTTPS fuer die Bose Cloud Domains, geht zu Marge HTTPS.
+# Source ports we want to redirect.
+# 80 is normally PtsServer, we redirect it to Marge HTTP.
+# 443 is HTTPS for the Bose cloud domains, goes to Marge HTTPS.
 HTTP_PORT=80
 HTTPS_PORT=443
 
@@ -44,50 +44,50 @@ HTTPS_PORT=443
 INPUT_ACCEPT_PORTS="$WEBUI_PORT $MARGE_HTTP_PORT $BMX_PORT $MARGE_HTTPS_PORT"
 
 install_rules() {
-    # Erst aufraeumen falls alte Regeln noch da
+    # Clean up first in case old rules are still there
     remove_rules quiet
 
-    echo "Installiere iptables PREROUTING Regeln"
+    echo "Installing iptables PREROUTING rules"
 
-    # Module versuchen zu laden falls noetig (REDIRECT, DNAT, conntrack)
+    # Try to load modules if needed (REDIRECT, DNAT, conntrack)
     for mod in xt_REDIRECT iptable_nat nf_nat_redirect xt_DNAT iptable_nat nf_nat; do
         modprobe "$mod" 2>/dev/null
     done
 
-    # Bose Box hat kein REDIRECT Target. Wir nutzen DNAT auf 127.0.0.1 stattdessen.
-    # Damit DNAT auf localhost klappt muss erst /proc/sys/net/ipv4/conf/all/route_localnet=1
+    # The Bose box has no REDIRECT target. We use DNAT to 127.0.0.1 instead.
+    # For DNAT to localhost to work, /proc/sys/net/ipv4/conf/all/route_localnet=1 must be set first
     echo 1 > /proc/sys/net/ipv4/conf/all/route_localnet 2>/dev/null
     echo 1 > /proc/sys/net/ipv4/conf/lo/route_localnet 2>/dev/null
 
-    # 443 (HTTPS) auf Marge HTTPS umleiten via DNAT
+    # Redirect 443 (HTTPS) to Marge HTTPS via DNAT
     iptables -t nat -A PREROUTING -p tcp --dport "$HTTPS_PORT" \
         -m comment --comment "$MARKER" \
         -j DNAT --to-destination "127.0.0.1:$MARGE_HTTPS_PORT" \
-        || echo "WARN: konnte 443 PREROUTING nicht setzen"
+        || echo "WARN: could not set 443 PREROUTING"
 
-    # 80 (HTTP) auf Marge HTTP umleiten via DNAT
+    # Redirect 80 (HTTP) to Marge HTTP via DNAT
     iptables -t nat -A PREROUTING -p tcp --dport "$HTTP_PORT" \
         -m comment --comment "$MARKER" \
         -j DNAT --to-destination "127.0.0.1:$MARGE_HTTP_PORT" \
-        || echo "WARN: konnte 80 PREROUTING nicht setzen"
+        || echo "WARN: could not set 80 PREROUTING"
 
-    # OUTPUT chain damit auch lokal generierter Traffic (z.B. wenn die Box
-    # gegen localhost den Cloud Hostnamen aufloest) umgeleitet wird.
+    # OUTPUT chain so that locally generated traffic (e.g. when the box
+    # resolves the cloud hostname against localhost) is also redirected.
     iptables -t nat -A OUTPUT -p tcp --dport "$HTTPS_PORT" \
         -d 127.0.0.1 -m comment --comment "$MARKER" \
         -j DNAT --to-destination "127.0.0.1:$MARGE_HTTPS_PORT" \
-        || echo "WARN: konnte OUTPUT 443 nicht setzen"
+        || echo "WARN: could not set OUTPUT 443"
 
     iptables -t nat -A OUTPUT -p tcp --dport "$HTTP_PORT" \
         -d 127.0.0.1 -m comment --comment "$MARKER" \
         -j DNAT --to-destination "127.0.0.1:$MARGE_HTTP_PORT" \
-        || echo "WARN: konnte OUTPUT 80 nicht setzen"
+        || echo "WARN: could not set OUTPUT 80"
 
-    # MASQUERADE auf OUTPUT damit Antwort Pakete von 127.0.0.1:8080 zurueck
-    # an den richtigen Absender geroutet werden
+    # MASQUERADE on OUTPUT so reply packets from 127.0.0.1:8080 are routed
+    # back to the correct sender
     iptables -t nat -A POSTROUTING -o lo -m comment --comment "$MARKER" \
         -j MASQUERADE \
-        || echo "WARN: konnte MASQUERADE nicht setzen"
+        || echo "WARN: could not set MASQUERADE"
 
     # INPUT chain: punch holes for our agent ports so Series-I boxes
     # (SMSC/SCM, no wlan0) do not REJECT the inbound SYNs at the
@@ -101,24 +101,24 @@ install_rules() {
             -m comment --comment "$MARKER" \
             -j ACCEPT 2>/dev/null \
             && echo "INPUT ACCEPT for tcp/$port installed" \
-            || echo "WARN: konnte INPUT ACCEPT fuer tcp/$port nicht setzen"
+            || echo "WARN: could not set INPUT ACCEPT for tcp/$port"
     done
 
-    echo "Fertig. Status:"
+    echo "Done. Status:"
     show_status
 }
 
 remove_rules() {
     quiet="${1:-}"
-    # NAT Tabelle nach unserem Marker durchsuchen und loeschen
+    # Search the NAT table for our marker and delete it
     while iptables -t nat -S 2>/dev/null | grep -q "$MARKER"; do
         rule="$(iptables -t nat -S 2>/dev/null | grep "$MARKER" | head -1)"
-        # rule beginnt mit "-A CHAIN ...", wir machen daraus "-D CHAIN ..."
+        # rule starts with "-A CHAIN ...", we turn it into "-D CHAIN ..."
         del_rule="$(echo "$rule" | sed 's/^-A /-D /')"
         # shellcheck disable=SC2086
         iptables -t nat $del_rule 2>/dev/null || break
     done
-    # Filter Tabelle (INPUT) ebenfalls aufraeumen, gleiche Marker-Logik.
+    # Clean up the filter table (INPUT) as well, same marker logic.
     while iptables -S 2>/dev/null | grep -q "$MARKER"; do
         rule="$(iptables -S 2>/dev/null | grep "$MARKER" | head -1)"
         del_rule="$(echo "$rule" | sed 's/^-A /-D /')"
@@ -126,20 +126,20 @@ remove_rules() {
         iptables $del_rule 2>/dev/null || break
     done
     if [ "$quiet" != "quiet" ]; then
-        echo "iptables Regeln mit Marker '$MARKER' entfernt"
+        echo "iptables rules with marker '$MARKER' removed"
     fi
 }
 
 show_status() {
     echo "----- NAT PREROUTING -----"
     iptables -t nat -L PREROUTING -n -v --line-numbers 2>/dev/null \
-        | grep -E "(Chain|$MARKER|num   pkts)" || echo "keine Regeln"
+        | grep -E "(Chain|$MARKER|num   pkts)" || echo "no rules"
     echo "----- NAT OUTPUT -----"
     iptables -t nat -L OUTPUT -n -v --line-numbers 2>/dev/null \
-        | grep -E "(Chain|$MARKER|num   pkts)" || echo "keine Regeln"
+        | grep -E "(Chain|$MARKER|num   pkts)" || echo "no rules"
     echo "----- FILTER INPUT (full) -----"
     iptables -L INPUT -n -v --line-numbers 2>/dev/null \
-        || echo "kein filter table verfuegbar"
+        || echo "no filter table available"
 }
 
 case "${1:-install}" in
@@ -147,7 +147,7 @@ case "${1:-install}" in
     remove|uninstall)  remove_rules ;;
     status)   show_status ;;
     *)
-        echo "Verwendung: $0 {install|remove|status}" >&2
+        echo "Usage: $0 {install|remove|status}" >&2
         exit 1
         ;;
 esac

@@ -39,25 +39,25 @@ log() {
     echo "$(date): $*" >> "$LOG"
 }
 
-# NUR wenn Sync Flag gesetzt ist: Stick -> NAND kopieren.
-# Standard: NAND ist Source of Truth.
+# ONLY if the sync flag is set: copy stick -> NAND.
+# Default: NAND is the source of truth.
 sync_from_stick_if_requested() {
     if [ ! -f "$SYNC_FLAG" ]; then
         return 0
     fi
     if [ ! -r "$STICK_BIN" ]; then
-        log "Sync angefordert aber Stick Binary nicht lesbar, ignoriere"
+        log "Sync requested but stick binary not readable, ignoring"
         rm -f "$SYNC_FLAG"
         return 1
     fi
     if cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null; then
         chmod +x "$CACHED_BIN.new"
         mv "$CACHED_BIN.new" "$CACHED_BIN"
-        log "Stick Binary in NAND Cache gesynct"
+        log "Synced stick binary into the NAND cache"
         rm -f "$SYNC_FLAG"
         return 0
     fi
-    log "Sync gescheitert (Stick I/O Error?), behalte NAND Cache"
+    log "Sync failed (stick I/O error?), keeping the NAND cache"
     rm -f "$CACHED_BIN.new"
     rm -f "$SYNC_FLAG"
     return 1
@@ -65,22 +65,22 @@ sync_from_stick_if_requested() {
 
 sync_from_stick_if_requested
 
-# Binary Auswahl: NAND Cache zuerst, Stick als Fallback.
+# Binary selection: NAND cache first, stick as fallback.
 if [ -x "$CACHED_BIN" ]; then
     BIN="$CACHED_BIN"
 elif [ -x "$STICK_BIN" ]; then
     BIN="$STICK_BIN"
-    log "Kein NAND Cache, nutze Stick Binary direkt"
+    log "No NAND cache, using the stick binary directly"
 else
-    log "FEHLER: weder NAND Cache noch Stick Binary verfuegbar"
+    log "ERROR: neither NAND cache nor stick binary available"
     exit 1
 fi
 
-# === Schon laufender Agent? Dann Stop. ===
+# === Agent already running? Then stop it. ===
 if [ -f "$PIDFILE" ]; then
     OLDPID=$(cat "$PIDFILE" 2>/dev/null || echo 0)
     if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
-        log "Alter Agent laeuft noch (PID $OLDPID), stoppe ihn"
+        log "Old agent still running (PID $OLDPID), stopping it"
         kill -TERM "$OLDPID" 2>/dev/null
         sleep 2
         kill -KILL "$OLDPID" 2>/dev/null
@@ -88,13 +88,13 @@ if [ -f "$PIDFILE" ]; then
     rm -f "$PIDFILE"
 fi
 
-# === Optional Update anwenden ===
+# === Apply optional update ===
 if [ -x "$STICK/update.sh" ]; then
-    log "Pruefe Update via $STICK/update.sh"
+    log "Checking for an update via $STICK/update.sh"
     "$STICK/update.sh" 2>&1 | tee -a "$LOG" || true
 fi
 
-# === Hosts Block via bind mount schreibbar machen (rootfs ro) ===
+# === Make the hosts block writable via a bind mount (rootfs ro) ===
 mount | grep -q '/etc/hosts' || {
     cp /etc/hosts /tmp/hosts.original 2>/dev/null
     cp /etc/hosts /tmp/hosts.live 2>/dev/null
@@ -103,15 +103,15 @@ mount | grep -q '/etc/hosts' || {
 
 # === iptables NAT optional ===
 if command -v iptables >/dev/null 2>&1; then
-    log "iptables NAT verfuegbar"
+    log "iptables NAT available"
 else
-    log "iptables NAT nicht verfuegbar, Marge laeuft direkt auf 443"
+    log "iptables NAT not available, Marge runs directly on 443"
 fi
 
-log "bind mount auf /etc/hosts aktiv"
-log "Starte Agent Version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
+log "bind mount on /etc/hosts active"
+log "Starting agent version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
 
-# === Agent starten ===
+# === Start the agent ===
 nohup "$BIN" \
     --presets "$STICK/presets.json" \
     --listen-webui :8888 \
@@ -126,9 +126,9 @@ nohup "$BIN" \
 
 NEW_PID=$!
 echo "$NEW_PID" > "$PIDFILE"
-log "Agent gestartet mit PID $NEW_PID"
+log "Agent started with PID $NEW_PID"
 
-# === Root CA in System Trust Store mounten ===
+# === Mount the Root CA into the system trust store ===
 ROOT_CA="$PERSIST/ca/root.crt"
 WAIT=0
 while [ ! -r "$ROOT_CA" ] && [ "$WAIT" -lt 20 ]; do
@@ -137,7 +137,7 @@ while [ ! -r "$ROOT_CA" ] && [ "$WAIT" -lt 20 ]; do
 done
 
 if [ -r "$ROOT_CA" ]; then
-    log "Root CA vorhanden nach ${WAIT}s, setze bind mount"
+    log "Root CA present after ${WAIT}s, setting up the bind mount"
 
     for target in /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt; do
         if [ ! -f "$target" ]; then continue; fi
@@ -148,8 +148,8 @@ if [ -r "$ROOT_CA" ]; then
         if mount | grep -q "$target"; then
             umount "$target" 2>/dev/null
         fi
-        mount --bind "$bundle" "$target" 2>/dev/null && echo "bind mount aktiv: $bundle -> $target"
+        mount --bind "$bundle" "$target" 2>/dev/null && echo "bind mount active: $bundle -> $target"
     done
 fi
 
-log "Bootstrap abgeschlossen"
+log "Bootstrap complete"

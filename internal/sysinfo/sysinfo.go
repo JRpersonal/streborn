@@ -1,6 +1,6 @@
-// Package sysinfo liest System Informationen aus dem laufenden Linux Kernel,
-// insbesondere die Netzwerk Interfaces. Auf der ST10 brauchen wir die MAC
-// der wlan0 Interface als deviceID die wir in den Marge Antworten ausgeben.
+// Package sysinfo reads system information from the running Linux kernel,
+// in particular the network interfaces. On the ST10 we need the MAC of the
+// wlan0 interface as the deviceID we report in the Marge responses.
 package sysinfo
 
 import (
@@ -10,17 +10,17 @@ import (
 	"strings"
 )
 
-// DefaultInterfaces sind die Interfaces in Reihenfolge die wir fuer die
-// DeviceID priorisieren. wlan0 ist auf der ST10 die primary WLAN
-// Schnittstelle, eth0 ein Fallback wenn jemand die Box per Ethernet
-// angesprochen hat (es gibt ST Soundbars mit eth0).
+// DefaultInterfaces are the interfaces, in order, that we prioritize for
+// the DeviceID. wlan0 is the primary Wi-Fi interface on the ST10, eth0 a
+// fallback if someone reached the box over Ethernet (there are ST
+// soundbars with eth0).
 var DefaultInterfaces = []string{"wlan0", "eth0", "wlan1"}
 
-// DeviceID liefert die MAC der ersten Interface aus prefer als 12 Hex
-// String ohne Doppelpunkte. Wenn keine der Interfaces eine MAC liefert,
-// gibt es einen Fehler.
+// DeviceID returns the MAC of the first interface from prefer as a 12-char
+// hex string without colons. If none of the interfaces yield a MAC, it
+// returns an error.
 //
-// Beispiel: aus "a0:f6:fd:02:ff:d8" wird "DEVICEID_PLACEHOLDER".
+// Example: "a0:f6:fd:02:ff:d8" becomes "DEVICEID_PLACEHOLDER".
 func DeviceID(prefer []string) (string, error) {
 	if prefer == nil {
 		prefer = DefaultInterfaces
@@ -35,7 +35,7 @@ func DeviceID(prefer []string) (string, error) {
 		}
 		return strings.ToUpper(strings.ReplaceAll(mac, ":", "")), nil
 	}
-	// Fallback: alle Interfaces durchgehen und die erste non zero MAC nehmen
+	// Fallback: walk all interfaces and take the first non-zero MAC
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "", fmt.Errorf("read interfaces: %w", err)
@@ -44,7 +44,7 @@ func DeviceID(prefer []string) (string, error) {
 		if len(iface.HardwareAddr) == 0 {
 			continue
 		}
-		// Loopback ueberspringen
+		// Skip loopback
 		if iface.Flags&net.FlagLoopback != 0 {
 			continue
 		}
@@ -54,11 +54,11 @@ func DeviceID(prefer []string) (string, error) {
 		}
 		return strings.ToUpper(strings.ReplaceAll(mac, ":", "")), nil
 	}
-	return "", errors.New("keine MAC Adresse gefunden")
+	return "", errors.New("no MAC address found")
 }
 
-// MACOf liefert die MAC der genannten Interface als Lowercase mit Doppelpunkten.
-// Leerer String wenn die Interface zwar existiert aber keine MAC hat (selten).
+// MACOf returns the MAC of the named interface as lowercase with colons.
+// Empty string if the interface exists but has no MAC (rare).
 func MACOf(name string) (string, error) {
 	iface, err := net.InterfaceByName(name)
 	if err != nil {
@@ -70,7 +70,7 @@ func MACOf(name string) (string, error) {
 	return iface.HardwareAddr.String(), nil
 }
 
-// IPOf liefert die erste globale IPv4 der Interface oder leeren String.
+// IPOf returns the first global IPv4 of the interface, or an empty string.
 func IPOf(name string) (string, error) {
 	iface, err := net.InterfaceByName(name)
 	if err != nil {

@@ -5,14 +5,15 @@
 // app can offer to flash them.
 //
 // Service types:
-//   _streborn._tcp.local         current STR service
-//   _soundtouchstick._tcp.local  legacy STR pre-rename, still in use
-//                                on speakers that have not been
-//                                OTA-updated yet
-//   _soundtouch._tcp.local       stock Bose speakers, primary name
-//                                observed in the wild (ST10/20/30)
-//   _bose-soundtouch._tcp.local  alternate stock spelling seen on
-//                                some firmware variants
+//
+//	_streborn._tcp.local         current STR service
+//	_soundtouchstick._tcp.local  legacy STR pre-rename, still in use
+//	                             on speakers that have not been
+//	                             OTA-updated yet
+//	_soundtouch._tcp.local       stock Bose speakers, primary name
+//	                             observed in the wild (ST10/20/30)
+//	_bose-soundtouch._tcp.local  alternate stock spelling seen on
+//	                             some firmware variants
 //
 // Multiple speakers on the same network are supported. The desktop
 // app lists every announced stick via DNS-SD browse plus every
@@ -82,20 +83,20 @@ type Announcer struct {
 	cfg          Config
 }
 
-// Config beschreibt was im mDNS Record steht.
+// Config describes what goes into the mDNS record.
 type Config struct {
-	// InstanceName ist der menschen-lesbare Name. Default:
+	// InstanceName is the human-readable name. Default:
 	// "STR <deviceID>".
 	InstanceName string
-	// Port ist der TCP Port des Webui/REST API (default 8888).
+	// Port is the TCP port of the webui/REST API (default 8888).
 	Port int
-	// DeviceID ist die Bose Box MAC im uppercase ohne Trenner.
+	// DeviceID is the Bose box MAC in uppercase without separators.
 	DeviceID string
-	// FriendlyName ist der Bose Box Display Name, z.B. "Wohnzimmer Bose".
+	// FriendlyName is the Bose box display name, e.g. "Living Room Bose".
 	FriendlyName string
-	// Model ist der Bose Modellname, z.B. "SoundTouch 10".
+	// Model is the Bose model name, e.g. "SoundTouch 10".
 	Model string
-	// Version ist die Stick Agent Version.
+	// Version is the stick agent version.
 	Version string
 	// Build is the agent build stamp (YYYY-MM-DD-HHMM). Announced
 	// alongside Version so the desktop app's "update available"
@@ -104,7 +105,7 @@ type Config struct {
 	Build string
 }
 
-// Announce startet einen mDNS Server der den Stick announciert. Stop mit
+// Announce starts an mDNS server that announces the stick. Stop with
 // Close().
 func Announce(logger *slog.Logger, cfg Config) (*Announcer, error) {
 	if cfg.Port == 0 {
@@ -269,8 +270,8 @@ func (a *Announcer) Close() {
 	}
 }
 
-// Run blockiert bis ctx abgebrochen wird und schliesst dann den Announcer.
-// Convenience fuer Use in goroutines.
+// Run blocks until ctx is cancelled and then closes the Announcer.
+// Convenience for use in goroutines.
 func (a *Announcer) Run(ctx context.Context) {
 	<-ctx.Done()
 	a.Close()
@@ -503,9 +504,9 @@ func stockModelLabel(code string) string {
 	}
 }
 
-// pickAnnounceIfaces filtert net.Interfaces auf die Interfaces auf denen
-// wir announcen wollen. Excludiert Loopback, Down, usb0 (Bose USB Gadget
-// mit TEST-NET-3 IP).
+// pickAnnounceIfaces filters net.Interfaces down to the interfaces we
+// want to announce on. Excludes loopback, down, usb0 (Bose USB gadget
+// with TEST-NET-3 IP).
 func pickAnnounceIfaces(logger *slog.Logger) []net.Interface {
 	all, err := net.Interfaces()
 	if err != nil {
@@ -520,10 +521,10 @@ func pickAnnounceIfaces(logger *slog.Logger) []net.Interface {
 			continue
 		}
 		if iface.Name == "usb0" || strings.HasPrefix(iface.Name, "usb") {
-			logger.Debug("mDNS skip USB Gadget Interface", slog.String("iface", iface.Name))
+			logger.Debug("mDNS skip USB gadget interface", slog.String("iface", iface.Name))
 			continue
 		}
-		// Extra Sicherheit: pruefen ob nur TEST-NET-3 IPs zugewiesen sind
+		// Extra safety: check whether only TEST-NET-3 IPs are assigned
 		addrs, _ := iface.Addrs()
 		hasUsable := false
 		for _, a := range addrs {
@@ -546,13 +547,13 @@ func pickAnnounceIfaces(logger *slog.Logger) []net.Interface {
 			// and this fires for each of them on every discovery cycle.
 			// At Info it floods str.log (the dominant source of log
 			// growth reported by users).
-			logger.Debug("mDNS skip Interface ohne brauchbare IP", slog.String("iface", iface.Name))
+			logger.Debug("mDNS skip interface without usable IP", slog.String("iface", iface.Name))
 			continue
 		}
 		out = append(out, iface)
 	}
 	if len(out) == 0 {
-		// Fallback: zeroconf default mit allen Interfaces
+		// Fallback: zeroconf default with all interfaces
 		return nil
 	}
 	return out

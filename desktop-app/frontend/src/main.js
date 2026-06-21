@@ -17,6 +17,7 @@ import {
   GetBoxFirmware,
   BoxInstallReachable,
   Pause,
+  Resume,
   Stop,
   Status,
   ListDrives,
@@ -976,7 +977,7 @@ if (gsb) gsb.onclick = async () => {
     setTimeout(discoverBoxes, 35000);
   } catch (e) { showError(e); }
 };
-$('pauseBtn').onclick = () => action('pause');
+$('pauseBtn').onclick = () => action(state.nowPlayState === 'PAUSE_STATE' ? 'resume' : 'pause');
 $('stopBtn').onclick = () => action('stop');
 
 // Source Buttons (AUX / Bluetooth / Standby) im Musik-Hoeren Tab —
@@ -3139,7 +3140,7 @@ function scheduleLiveTitle() {
 
 async function action(kind) {
   if (!state.currentBox) return;
-  const fn = kind === 'pause' ? Pause : Stop;
+  const fn = kind === 'pause' ? Pause : kind === 'resume' ? Resume : Stop;
   try { await fn(state.currentBox.host, state.currentBox.port); } catch (e) { showError(e); }
   setTimeout(refreshStatus, 1000);
 }
@@ -3156,6 +3157,15 @@ function renderNowPlayingBar() {
   const src = state.nowSource || '';
   const loc = state.nowLocation || '';
   const name = state.nowName || '';
+  // Transport button doubles as Play/Pause: when the box is paused it offers
+  // Play (resume from the paused position, like the Bose remote), otherwise
+  // Pause (#202).
+  const ppBtn = $('pauseBtn');
+  if (ppBtn) {
+    ppBtn.innerHTML = ps === 'PAUSE_STATE'
+      ? '&#9654; ' + escapeHtml(t('controls.play'))
+      : '&#9208; ' + escapeHtml(t('controls.pause'));
+  }
   let displayName = name;
   if (/\/spotify\/stream/.test(loc) && state.nowSpotifyTrack) {
     const song = state.nowSpotifyArtist

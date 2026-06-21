@@ -1,5 +1,5 @@
-// Command streborn ist der Agent, der direkt auf der Bose SoundTouch
-// Box läuft und die Bose Cloud Endpunkte lokal emuliert.
+// Command streborn is the agent that runs directly on the Bose SoundTouch
+// box and emulates the Bose cloud endpoints locally.
 package main
 
 import (
@@ -53,9 +53,9 @@ import (
 	usbstick "github.com/JRpersonal/streborn/usb-stick"
 )
 
-// version ist die Semver Version. Build Datum wird separat ueber -ldflags
-// gesetzt damit man "1.0.0" anzeigen kann und das Build Datum trotzdem
-// verfuegbar ist.
+// version is the semver version. The build date is set separately via
+// -ldflags so that "1.0.0" can be shown while the build date is still
+// available.
 var (
 	version    = "1.0.0"
 	buildStamp = "dev"
@@ -67,8 +67,8 @@ func init() {
 }
 
 func main() {
-	// Subcommands vor flag.Parse() abhandeln, damit ihre eigenen Flags
-	// nicht vom globalen flag Set verschluckt werden.
+	// Handle subcommands before flag.Parse() so their own flags are not
+	// swallowed by the global flag set.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "shepherd":
@@ -86,22 +86,22 @@ func main() {
 	}
 }
 
-// runShepherdCmd haendlet das shepherd Subcommand.
-// Aufrufe:
+// runShepherdCmd handles the shepherd subcommand.
+// Invocations:
 //
-//	streborn shepherd install   -- /mnt/nv/shepherd aufsetzen
-//	streborn shepherd remove    -- /mnt/nv/shepherd entfernen
-//	streborn shepherd status    -- aktuellen Stand zeigen
+//	streborn shepherd install   -- set up /mnt/nv/shepherd
+//	streborn shepherd remove    -- remove /mnt/nv/shepherd
+//	streborn shepherd status    -- show the current state
 func runShepherdCmd(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("verwendung: shepherd {install|remove|status}")
+		return fmt.Errorf("usage: shepherd {install|remove|status}")
 	}
 
 	fs := flag.NewFlagSet("shepherd", flag.ContinueOnError)
-	shepherdDir := fs.String("dir", shepherd.DefaultShepherdDir, "Shepherd Override Verzeichnis")
-	boseDir := fs.String("bose-config", shepherd.DefaultBoseConfigDir, "Bose Config Verzeichnis")
-	bin := fs.String("binary", shepherd.DefaultStickBin, "Pfad zum Agent Binary")
-	presetsPath := fs.String("presets", shepherd.DefaultPresetsPath, "Pfad zur presets.json")
+	shepherdDir := fs.String("dir", shepherd.DefaultShepherdDir, "Shepherd override directory")
+	boseDir := fs.String("bose-config", shepherd.DefaultBoseConfigDir, "Bose config directory")
+	bin := fs.String("binary", shepherd.DefaultStickBin, "Path to the agent binary")
+	presetsPath := fs.String("presets", shepherd.DefaultPresetsPath, "Path to presets.json")
 
 	cmd := args[0]
 	if err := fs.Parse(args[1:]); err != nil {
@@ -134,7 +134,7 @@ func runShepherdCmd(args []string) error {
 		fmt.Printf("Healthy       : %v\n", st.IsHealthy())
 		return nil
 	default:
-		return fmt.Errorf("unbekanntes Subcommand: %s", cmd)
+		return fmt.Errorf("unknown subcommand: %s", cmd)
 	}
 }
 
@@ -170,20 +170,20 @@ func canonicalPresetsPath(p string, logger *slog.Logger) string {
 
 func run() error {
 	var (
-		presetsPath     = flag.String("presets", "/media/sda1/presets.json", "Pfad zur presets.json auf dem USB Stick")
-		webuiAddr       = flag.String("listen-webui", ":8888", "Adresse für das Config Web UI")
-		margeAddr       = flag.String("listen-marge", ":80", "Adresse für die Marge Emulation HTTP (streaming.bose.com)")
-		margeTLSAddr    = flag.String("listen-marge-tls", ":8443", "Adresse für die Marge Emulation HTTPS")
-		bmxAddr         = flag.String("listen-bmx", ":81", "Adresse für die BMX Emulation HTTP (content.api.bose.io)")
-		hostsPath       = flag.String("hosts", "/etc/hosts", "Pfad zur hosts Datei")
-		applyHosts      = flag.Bool("apply-hosts", true, "Hosts Datei beim Start manipulieren und beim Stop wiederherstellen")
-		tlsDir          = flag.String("tls-dir", tlsgen.DefaultCADir, "Verzeichnis fuer CA und Server Cert")
-		tlsEnabled      = flag.Bool("tls", true, "TLS Termination aktivieren auf listen-marge-tls")
-		logLevel        = flag.String("log-level", "info", "Log Level: debug, info, warn, error")
-		boxHost         = flag.String("box-host", "127.0.0.1", "Bose Box IP fuer UPnP Calls (Webui /api/play). 127.0.0.1 wenn Agent auf Box laeuft, sonst LAN IP.")
-		regionFile      = flag.String("region-file", "", "Pfad zur region.txt mit ISO Country Code (vom Setup Wizard). Default Radio Land und Sprache leiten wir daraus ab.")
-		pendingNameFile = flag.String("pending-name-file", "", "Pfad zur name.txt vom Setup Wizard. Inhalt wird einmalig als Box Name angewendet (plus UID Suffix) und die Datei danach geloescht.")
-		printVersion    = flag.Bool("version", false, "Version ausgeben und beenden")
+		presetsPath     = flag.String("presets", "/media/sda1/presets.json", "Path to presets.json on the USB stick")
+		webuiAddr       = flag.String("listen-webui", ":8888", "Address for the config web UI")
+		margeAddr       = flag.String("listen-marge", ":80", "Address for the marge emulation HTTP (streaming.bose.com)")
+		margeTLSAddr    = flag.String("listen-marge-tls", ":8443", "Address for the marge emulation HTTPS")
+		bmxAddr         = flag.String("listen-bmx", ":81", "Address for the BMX emulation HTTP (content.api.bose.io)")
+		hostsPath       = flag.String("hosts", "/etc/hosts", "Path to the hosts file")
+		applyHosts      = flag.Bool("apply-hosts", true, "Modify the hosts file on start and restore it on stop")
+		tlsDir          = flag.String("tls-dir", tlsgen.DefaultCADir, "Directory for the CA and server certificate")
+		tlsEnabled      = flag.Bool("tls", true, "Enable TLS termination on listen-marge-tls")
+		logLevel        = flag.String("log-level", "info", "Log level: debug, info, warn, error")
+		boxHost         = flag.String("box-host", "127.0.0.1", "Bose box IP for UPnP calls (webui /api/play). 127.0.0.1 when the agent runs on the box, otherwise the LAN IP.")
+		regionFile      = flag.String("region-file", "", "Path to region.txt with the ISO country code (from the setup wizard). The default radio country and language are derived from it.")
+		pendingNameFile = flag.String("pending-name-file", "", "Path to name.txt from the setup wizard. Its contents are applied once as the box name (plus a UID suffix) and the file is deleted afterwards.")
+		printVersion    = flag.Bool("version", false, "Print the version and exit")
 	)
 	flag.Parse()
 
@@ -230,8 +230,8 @@ func run() error {
 
 	ensureSshdRunning(logger)
 
-	// DeviceID aus MAC ermitteln, damit Marge Antworten die echte Box ID
-	// zurueckgeben. Wenn keine MAC gefunden wird, weiter mit leerer ID.
+	// Determine the DeviceID from the MAC so marge responses return the
+	// real box ID. If no MAC is found, continue with an empty ID.
 	deviceID, err := sysinfo.DeviceID(nil)
 	if err != nil {
 		logger.Warn("could not determine DeviceID", "err", err)
@@ -240,8 +240,8 @@ func run() error {
 		logger.Info("DeviceID detected", "deviceID", deviceID)
 	}
 
-	// Presets laden. Bei Fehler nicht crashen sondern mit leerer Liste weitermachen,
-	// damit der Agent zumindest auf seinen Listenern lebt und korrigierbar bleibt.
+	// Load presets. On error do not crash but continue with an empty list, so
+	// the agent at least stays alive on its listeners and remains correctable.
 	//
 	// Phase-marker logs at WARN level so a remote diagnostic bundle shows
 	// exactly which path was taken — was the file there? was it empty?
@@ -300,7 +300,7 @@ func run() error {
 		logger.Warn("recent history load failed, starting empty", "err", rErr)
 	}
 
-	// Hosts Datei manipulieren
+	// Modify the hosts file
 	var hostsMgr *hosts.Manager
 	if *applyHosts {
 		hostsMgr = hosts.New(*hostsPath, logger)
@@ -310,33 +310,32 @@ func run() error {
 		}
 	}
 
-	// Subsysteme initialisieren
+	// Initialize subsystems
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
 		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()))
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
-	// AutoPair Manager wird oben angelegt damit er auch im WS und Webui
-	// Handler genutzt werden kann.
+	// The AutoPair manager is created up here so it can also be used in the
+	// WS and webui handlers.
 	autoPair := autopair.New(logger.With("comp", "autopair"), autopair.Config{
 		BoxHost: *boxHost,
 	})
 
-	// Initial Preset Sync zur Box im Hintergrund. Box muss alle Presets
-	// als UPNP ContentItems kennen damit Hardware Tasten den
-	// nowSelectionUpdated WebSocket Event mit Location ausloesen koennen.
-	// Plus periodischer Reconciler (alle 5 min) damit Inkonsistenzen
-	// die durch Box Reboot oder Bose State Resets entstehen, automatisch
-	// geheilt werden — der User braucht den "Hardware Tasten reparieren"
-	// Button im Normalfall nie zu druecken.
+	// Initial preset sync to the box in the background. The box must know all
+	// presets as UPnP ContentItems so the hardware buttons can trigger the
+	// nowSelectionUpdated WebSocket event with a location. Plus a periodic
+	// reconciler (every 5 min) so inconsistencies caused by a box reboot or
+	// Bose state resets are healed automatically — the user normally never
+	// needs to press the "repair hardware buttons" button.
 	go initialBoxPresetSync(store, *boxHost, logger)
 	go periodicPresetReconcile(store, *boxHost, logger)
 
-	// Region beim Start aus Datei lesen (vom Setup Wizard provisioniert).
+	// Read the region from a file on start (provisioned by the setup wizard).
 	region := loadRegion(*regionFile, logger)
 
-	// Stream Proxy macht Bose ContentItems gegen Token Expiry resistent:
-	// statt der echten CDN URL bekommt Bose http://127.0.0.1:8888/stream/<slot>
-	// und der Stick Agent reconnectet intern bei Drops.
+	// The stream proxy makes Bose ContentItems resistant to token expiry:
+	// instead of the real CDN URL, Bose gets http://127.0.0.1:8888/stream/<slot>
+	// and the stick agent reconnects internally on drops.
 	streamProxySrv := streamproxy.New(store, logger.With("comp", "streamproxy"))
 
 	// Spotify preset audio plane (#78, P1): the agent supervises
@@ -404,9 +403,9 @@ func run() error {
 	// the mid-stream re-set is verified not to glitch audio on real hardware.
 	streamProxySrv.SetOnTitle(webuiSrv.HandleStreamTitle)
 
-	// Hardware Preset Tasten: Box sendet via WebSocket auf 8080 (gabbo Protocol)
-	// einen presetSelectionUpdated event wenn der User physisch eine Taste
-	// drueckt. Wir hooken den Event und triggern unseren UPnP Player.
+	// Hardware preset buttons: the box sends a presetSelectionUpdated event via
+	// WebSocket on 8080 (gabbo protocol) when the user physically presses a
+	// button. We hook the event and trigger our UPnP player.
 	renderer := upnp.NewBoseRenderer(*boxHost)
 	wsHandler := &presetWsHandler{
 		logger:   logger.With("comp", "boxws"),
@@ -501,7 +500,7 @@ func run() error {
 		}
 	}()
 
-	// Box WebSocket Listener fuer Hardware Preset Tasten
+	// Box WebSocket listener for hardware preset buttons
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -520,10 +519,10 @@ func run() error {
 	// the user and show what was there. See internal/boxsnapshot.
 	go boxsnapshot.Capture(ctx, *boxHost, boxsnapshot.DefaultPath(), logger.With("comp", "boxsnapshot"))
 
-	// Auto Pair Background: pairt die Box automatisch beim Start. Re-pairt
-	// alle 5 Minuten falls die Box mal verloren geht. Plus: WS Handler
-	// triggert TriggerNow bei Preset Press damit Pair sofort kommt nach
-	// Standby Aufwachen.
+	// Auto-pair background: pairs the box automatically on start. Re-pairs
+	// every 5 minutes in case the box is ever lost. Plus: the WS handler
+	// triggers TriggerNow on a preset press so pairing happens immediately
+	// after waking from standby.
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -643,15 +642,14 @@ func run() error {
 		go applyPendingBoxName(context.Background(), *boxHost, *pendingNameFile, deviceID, logger)
 	}
 
-	// Wenn der USB Stick ein neueres run.sh hat als das NAND
-	// run-override.sh: kopieren. Das ist der Selbst-Update-Pfad fuer
-	// den Bootstrap. Ohne das laeuft die alte run-override.sh aus dem
-	// allerersten Setup auf ewig und neue Setup Wizard Configs werden
-	// ignoriert.
+	// If the USB stick has a newer run.sh than the NAND run-override.sh:
+	// copy it. This is the self-update path for the bootstrap. Without it
+	// the old run-override.sh from the very first setup runs forever and new
+	// setup wizard configs are ignored.
 	go syncRunOverrideFromStick(logger)
 
-	// TLS Termination fuer Marge auf 8443. iptables redirected die echte
-	// Box Anfrage von 443 dorthin. Wenn TLS deaktiviert wird, ueberspringen.
+	// TLS termination for marge on 8443. iptables redirects the real box
+	// request from 443 to it. Skip when TLS is disabled.
 	// EnsureBundle generates a per-box CA on the very first boot, which
 	// touches NAND and can take several seconds — keep this off the
 	// listener-boot path.
@@ -745,7 +743,7 @@ func run() error {
 	return firstErr
 }
 
-// startHTTP startet einen HTTP Server in einer Goroutine und meldet Fehler an errs.
+// startHTTP starts an HTTP server in a goroutine and reports errors to errs.
 //
 // The listener is opened via netutil.ListenTCP, which sets SO_REUSEADDR on
 // the socket. Without that, a watchdog-driven respawn while the previous
@@ -788,8 +786,8 @@ func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name,
 	}()
 }
 
-// startHTTPS startet einen HTTPS Server analog zu startHTTP, mit der
-// uebergebenen TLS Konfiguration.
+// startHTTPS starts an HTTPS server analogous to startHTTP, with the
+// supplied TLS configuration.
 func startHTTPS(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name, addr string, handler http.Handler, tlsConfig *tls.Config, logger *slog.Logger) {
 	logger.Warn("listener phase: spawn TLS", "comp", name, "addr", addr)
 	wg.Add(1)
@@ -828,8 +826,8 @@ func startHTTPS(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name
 	}()
 }
 
-// presetWsHandler implementiert boxws.Handler und ruft bei Hardware Preset
-// Tasten den UPnP Renderer mit der Stream URL aus dem Preset Store auf.
+// presetWsHandler implements boxws.Handler and, on a hardware preset
+// button press, calls the UPnP renderer with the stream URL from the preset store.
 type presetWsHandler struct {
 	logger   *slog.Logger
 	store    *presets.Store
@@ -896,12 +894,12 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			return
 		}
 	}
-	// URL bleibt die Proxy URL (location = http://127.0.0.1:8888/stream/N)
-	// damit der Stream Proxy den Reconnect bei Token Expiry uebernimmt.
-	// Name + Icon kommen aus dem Stick Preset Store — die Bose ContentItem
-	// Metadata hat keinen Art Eintrag, daher muessen wir die Album Art
-	// URL aktiv ueber unser PlayURL Aufruf ins DIDL Lite Metadata
-	// reinpacken, sonst zeigt das Display (ST20/30) kein Logo.
+	// The URL stays the proxy URL (location = http://127.0.0.1:8888/stream/N)
+	// so the stream proxy handles the reconnect on token expiry. Name + icon
+	// come from the stick preset store — the Bose ContentItem metadata has no
+	// art entry, so we must actively pack the album art URL into the DIDL-Lite
+	// metadata via our PlayURL call, otherwise the display (ST20/30) shows no
+	// logo.
 	url := location
 	name := title
 	icon := ""
@@ -934,7 +932,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		}
 	}
 	if url == "" {
-		h.logger.Info("hardware preset gedrueckt, kein Mapping", "slot", slot)
+		h.logger.Info("hardware preset pressed, no mapping", "slot", slot)
 		return
 	}
 
@@ -946,11 +944,11 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		h.spotify.SwitchedAway(ctx)
 	}
 
-	// Box aufwecken aus Standby + Pair sicherstellen.
+	// Wake the box from standby + ensure pairing.
 	if h.boxHost != "" {
 		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
-			h.logger.Warn("Box konnte nicht aus STANDBY geholt werden", "err", err)
+			h.logger.Warn("could not bring box out of STANDBY", "err", err)
 		}
 		cancel()
 	}
@@ -975,7 +973,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// boot can race the box/agent bringup so nothing plays until a second
 	// press. This re-issues until the box actually plays. Affects radio too.
 	go h.verifyPlayURL(slot, url, name, icon)
-	h.logger.Info("hardware preset zu upnp gemapped", "slot", slot, "name", name)
+	h.logger.Info("hardware preset mapped to upnp", "slot", slot, "name", name)
 }
 
 // OnRemoteSkip handles the SoundTouch remote's next/prev track keys during
@@ -1166,7 +1164,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 	if h.boxHost != "" {
 		wakeCtx, c := context.WithTimeout(ctx, 8*time.Second)
 		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
-			h.logger.Warn("Box konnte nicht aus STANDBY geholt werden", "err", err)
+			h.logger.Warn("could not bring box out of STANDBY", "err", err)
 		}
 		c()
 	}
@@ -1244,9 +1242,9 @@ func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 	h.logger.Warn("spotify recall still not playing after retries", "slot", slot)
 }
 
-// loadRegion liest den Country Code aus der region.txt vom Stick. Leer
-// wenn die Datei nicht existiert oder leer ist; in dem Fall faellt die
-// App spaeter auf Browser/User Default zurueck.
+// loadRegion reads the country code from region.txt on the stick. Empty
+// if the file does not exist or is empty; in that case the app later falls
+// back to the browser/user default.
 func loadRegion(path string, logger *slog.Logger) string {
 	if path == "" {
 		return ""
@@ -1274,21 +1272,21 @@ func loadRegion(path string, logger *slog.Logger) string {
 		}
 		out += string(r)
 	}
-	logger.Info("Region geladen", "country", out)
+	logger.Info("region loaded", "country", out)
 	return out
 }
 
-// syncRunOverrideFromStick haelt das NAND run-override.sh aktuell mit
-// dem run.sh auf dem Stick. Wichtig: rc.local priorisiert NAND vor
-// Stick, daher wuerde ein veraltetes NAND Script die neuen Setup
-// Wizard Features (name.conf, region.conf etc) ignorieren.
+// syncRunOverrideFromStick keeps the NAND run-override.sh in sync with
+// the run.sh on the stick. Important: rc.local prioritises NAND over the
+// stick, so a stale NAND script would ignore the new setup wizard features
+// (name.conf, region.conf, etc.).
 //
-// Wenn die Files identisch sind: no-op (keine Flash Writes).
+// If the files are identical: no-op (no flash writes).
 func syncRunOverrideFromStick(logger *slog.Logger) {
 	const stickPath = "/media/sda1/run.sh"
 	const nandPath = "/mnt/nv/streborn/run-override.sh"
 
-	time.Sleep(5 * time.Second) // dem Stick Zeit zum mounten geben
+	time.Sleep(5 * time.Second) // give the stick time to mount
 
 	stickData, err := os.ReadFile(stickPath)
 	if err != nil {
@@ -1297,7 +1295,7 @@ func syncRunOverrideFromStick(logger *slog.Logger) {
 	}
 	nandData, _ := os.ReadFile(nandPath)
 	if len(nandData) > 0 && bytesEqual(stickData, nandData) {
-		return // schon identisch
+		return // already identical
 	}
 	tmp := nandPath + ".new"
 	if err := os.WriteFile(tmp, stickData, 0o755); err != nil {
@@ -1324,17 +1322,17 @@ func bytesEqual(a, b []byte) bool {
 	return true
 }
 
-// applyPendingBoxName wendet einen vom Setup Wizard hinterlegten Box
-// Namen einmalig auf die Bose Box an und haengt die letzten 4 Hex der
-// DeviceID als UID Suffix an damit Dopplungen in mehreren Boxen im LAN
-// ausgeschlossen sind. Bei Erfolg wird die Datei geloescht.
+// applyPendingBoxName applies a box name left by the setup wizard once to
+// the Bose box and appends the last 4 hex digits of the DeviceID as a UID
+// suffix so duplicates across multiple boxes on the LAN are ruled out. On
+// success the file is deleted.
 func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, logger *slog.Logger) {
 	if boxHost == "" || path == "" {
 		return
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		// keine Datei, nichts anzuwenden
+		// no file, nothing to apply
 		return
 	}
 	raw := strings.TrimSpace(string(b))
@@ -1350,7 +1348,7 @@ func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, lo
 	if suffix != "" && !strings.HasSuffix(strings.ToUpper(wanted), suffix) {
 		wanted = raw + " " + suffix
 	}
-	// Box muss erreichbar sein. Warten bis BoseApp Webserver hochgefahren.
+	// The box must be reachable. Wait until the BoseApp web server is up.
 	time.Sleep(10 * time.Second)
 	c := boxapi.New(boxHost)
 	for attempt := 0; attempt < 12; attempt++ {
@@ -1358,7 +1356,7 @@ func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, lo
 		err := c.SetName(callCtx, wanted)
 		cancel()
 		if err == nil {
-			logger.Info("Setup Wizard Box Name angewendet", "name", wanted)
+			logger.Info("setup wizard box name applied", "name", wanted)
 			_ = os.Remove(path)
 			return
 		}
@@ -1369,23 +1367,22 @@ func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, lo
 		case <-time.After(5 * time.Second):
 		}
 	}
-	logger.Warn("Box Name aus Setup konnte nicht gesetzt werden, gebe auf", "path", path)
+	logger.Warn("could not set box name from setup, giving up", "path", path)
 }
 
-// pollBoxInfo fragt regelmaessig die Box /info ab und haelt die mDNS TXT
-// Felder fuer FriendlyName und Model aktuell. Damit:
+// pollBoxInfo polls the box /info regularly and keeps the mDNS TXT fields
+// for FriendlyName and Model up to date. This way:
 //
-//  1. Der Desktop App kennt den Namen sobald der User die Box umbenennt
-//     (z.B. via BoseApp HTTP), ohne Box Reboot.
-//  2. Das model TXT Feld wird auf den echten Wert ("SoundTouch 10" etc)
-//     hochgezogen, sobald die Bose Firmware /info auf :8090 ausliefert.
-//     Beim ersten Announce steht dort noch der generische Fallback
-//     "SoundTouch" weil :8090 typisch 20+ Sekunden nach dem Agent-Start
-//     hochkommt — der Loop hier dichtet die Race ab ohne den Boot zu
-//     blockieren.
+//  1. The desktop app knows the name as soon as the user renames the box
+//     (e.g. via BoseApp HTTP), without a box reboot.
+//  2. The model TXT field is promoted to the real value ("SoundTouch 10",
+//     etc.) as soon as the Bose firmware serves /info on :8090. On the first
+//     announce it still holds the generic fallback "SoundTouch" because :8090
+//     typically comes up 20+ seconds after the agent start — the loop here
+//     seals that race without blocking the boot.
 //
-// Erste Runde nach kurzem Delay, dann mit kurzem Ticker bis Model
-// erkannt ist (race-Recovery), danach geht der Ticker auf 30s zurueck.
+// First round after a short delay, then with a short ticker until the model
+// is detected (race recovery), after which the ticker drops back to 30s.
 func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Announcer, logger *slog.Logger) {
 	if boxHost == "" || ann == nil {
 		return
@@ -1408,7 +1405,7 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Ann
 		}
 		if model := strings.TrimSpace(s.Info.Type); model != "" {
 			if !modelEverFound {
-				logger.Info("Box Modell erkannt", "type", model)
+				logger.Info("box model detected", "type", model)
 				modelEverFound = true
 			}
 			if model != lastModel {
@@ -1470,10 +1467,10 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Ann
 	}
 }
 
-// proxyStreamURL gibt die stabile loopback URL fuer ein Preset zurueck.
-// Bose UPnP Player oeffnet die — der Stream Proxy im Stick Agent loest
-// dahinter den echten Sender Redirect auf und reconnectet bei Token
-// Expiry, ohne dass Bose etwas merkt.
+// proxyStreamURL returns the stable loopback URL for a preset. The Bose
+// UPnP player opens it — the stream proxy in the stick agent resolves the
+// real station redirect behind it and reconnects on token expiry without
+// Bose noticing.
 func proxyStreamURL(slot int) string {
 	return boxurl.StreamSlot(slot)
 }
@@ -1491,17 +1488,16 @@ func boxPresetURL(p presets.Preset) string {
 	return boxurl.Preset(p.Slot, p.Type == "spotify")
 }
 
-// initialBoxPresetSync wartet auf den Box Boot und synct alle Stick
-// Presets an den Box internen Preset Store. Mit Retry Loop: bei
-// fehlgeschlagenen Slots wird nach 10s erneut versucht, bis zu 12 mal.
-// Hintergrund: die Bose Firmware ist beim Boot manchmal noch nicht
-// bereit fuer AddPreset Calls (autopair noch nicht durch, marge state
-// noch nicht initialisiert). Ohne Retry blieben Slots dauerhaft ohne
-// Box Eintrag — Hardware Tasten 1-6 wuerden dann nichts ausloesen.
-// Initial 30 s Warten (war 12 s): in der Praxis gemessen, dass die
-// Bose Firmware nach einem Cold Boot ~60 s braucht bis /info auf 8090
-// antwortet und marge State steht. 12 s war optimistisch.
-// 12 Retry Slots mit je 10 s Pause = ~2 Minuten gesamter Runway.
+// initialBoxPresetSync waits for the box to boot and syncs all stick
+// presets to the box's internal preset store. With a retry loop: failed
+// slots are retried after 10s, up to 12 times. Background: the Bose
+// firmware is sometimes not yet ready for AddPreset calls at boot (autopair
+// not done, marge state not initialised). Without retries, slots would stay
+// permanently without a box entry — hardware buttons 1-6 would then trigger
+// nothing. Initial 30 s wait (was 12 s): measured in practice that the Bose
+// firmware needs ~60 s after a cold boot before /info on 8090 responds and
+// the marge state is ready. 12 s was optimistic.
+// 12 retry slots with a 10 s pause each = ~2 minutes of total runway.
 func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Logger) {
 	time.Sleep(30 * time.Second)
 	specs := make([]boxcli.PresetSpec, 0, 6)
@@ -1513,7 +1509,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	if len(specs) == 0 {
 		return
 	}
-	logger.Info("starte initial box preset sync", "anzahl", len(specs))
+	logger.Info("starting initial box preset sync", "count", len(specs))
 
 	pending := make(map[int]boxcli.PresetSpec, len(specs))
 	for _, p := range specs {
@@ -1545,11 +1541,11 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	}
 }
 
-// periodicPresetReconcile prueft alle 5 Minuten ob die Box noch alle
-// Stick Presets in ihrer eigenen Liste hat. Fehlende Slots werden via
-// boxcli.AddPreset nachgepflegt. Damit greift der Fix automatisch ohne
-// User Aktion wenn z.B. die Bose Firmware nach einem Standby Cycle
-// einzelne Eintraege verloren hat.
+// periodicPresetReconcile checks every 5 minutes whether the box still has
+// all stick presets in its own list. Missing slots are restored via
+// boxcli.AddPreset. This way the fix applies automatically without user
+// action when, e.g., the Bose firmware has lost individual entries after a
+// standby cycle.
 func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger) {
 	// fullDone tracks whether we have done a full re-sync since the box
 	// last became ready. The boot-time preset sync can run before the
@@ -1565,7 +1561,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	//
 	// Converge FAST after a cold boot, then idle. A blind 90s pre-wait
 	// meant the hardware buttons stayed unregistered for ~90s+ after every
-	// reboot, so an early press hit "Taste nicht belegt" (#4). The box
+	// reboot, so an early press hit "button not assigned" (#4). The box
 	// /info / preset subsystem comes up ~20-45s in, so polling every 10s from
 	// 15s wins that first full re-sync as soon as the box is ready, then the
 	// loop drops to a 5 min maintenance cadence. reconcileOnce is gated on the
@@ -1622,19 +1618,19 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	if forceFull {
 		logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
 	} else {
-		logger.Info("preset reconcile: fehlende Slots auf Box, sync", "fehlend", len(missing))
+		logger.Info("preset reconcile: missing slots on box, syncing", "missing", len(missing))
 	}
 	errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
 	for slot, err := range errs {
 		if err == nil {
-			logger.Info("preset reconcile geheilt", "slot", slot)
+			logger.Info("preset reconcile healed", "slot", slot)
 		}
 	}
 	return true
 }
 
-// fetchBoxPresetSlots liest GET /presets von der Bose API und liefert
-// eine Map welcher Slot in der Box Liste gesetzt ist.
+// fetchBoxPresetSlots reads GET /presets from the Bose API and returns a
+// map of which slot is set in the box's list.
 func fetchBoxPresetSlots(boxHost string) (map[int]bool, error) {
 	client := http.Client{Timeout: 4 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://%s:8090/presets", boxHost))
@@ -1644,7 +1640,7 @@ func fetchBoxPresetSlots(boxHost string) (map[int]bool, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	out := map[int]bool{}
-	// Bose Format: <presets><preset id="1" ...> ... </preset></presets>
+	// Bose format: <presets><preset id="1" ...> ... </preset></presets>
 	for _, m := range presetIDRegex.FindAllStringSubmatch(string(body), -1) {
 		slot := 0
 		fmt.Sscanf(m[1], "%d", &slot)
@@ -1674,7 +1670,7 @@ func boxInSetupOOB(boxHost string) bool {
 	return strings.Contains(string(body), "SETUP_AP_OOB")
 }
 
-// lastN gibt die letzten n Zeichen von s zurueck.
+// lastN returns the last n characters of s.
 func lastN(s string, n int) string {
 	if len(s) <= n {
 		return s

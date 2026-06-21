@@ -246,6 +246,10 @@ export function RestoreBoxSnapshot(arg1, arg2, arg3) {
   return window['go']['main']['App']['RestoreBoxSnapshot'](arg1, arg2, arg3);
 }
 
+export function Resume(arg1, arg2) {
+  return window['go']['main']['App']['Resume'](arg1, arg2);
+}
+
 export function RevealUpdateFile(arg1) {
   return window['go']['main']['App']['RevealUpdateFile'](arg1);
 }

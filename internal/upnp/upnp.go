@@ -1,6 +1,6 @@
-// Package upnp ist ein minimaler UPnP AVTransport Control Point.
-// Er reicht um einen Stream URL an einen DLNA Media Renderer (z.B. die
-// Bose SoundTouch) zu schicken und Play/Pause/Stop zu steuern.
+// Package upnp is a minimal UPnP AVTransport control point.
+// It is enough to send a stream URL to a DLNA media renderer (e.g. the
+// Bose SoundTouch) and to control play/pause/stop.
 package upnp
 
 import (
@@ -15,18 +15,18 @@ import (
 	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
-// Renderer haelt die Adresse eines AVTransport Endpoints.
+// Renderer holds the address of an AVTransport endpoint.
 type Renderer struct {
-	// ControlURL ist die volle URL des AVTransport Control Endpoints,
-	// z.B. http://192.0.2.66:8091/AVTransport/Control
+	// ControlURL is the full URL of the AVTransport control endpoint,
+	// e.g. http://192.0.2.66:8091/AVTransport/Control
 	ControlURL string
 
-	// Client wird fuer alle SOAP Requests verwendet. Wenn nil, http.DefaultClient.
+	// Client is used for all SOAP requests. If nil, http.DefaultClient.
 	Client *http.Client
 }
 
-// NewBoseRenderer liefert einen Renderer fuer die typische Bose SoundTouch
-// UPnP Konfiguration auf Port 8091.
+// NewBoseRenderer returns a Renderer for the typical Bose SoundTouch
+// UPnP configuration on port 8091.
 func NewBoseRenderer(host string) *Renderer {
 	return &Renderer{
 		ControlURL: fmt.Sprintf("http://%s:8091/AVTransport/Control", host),
@@ -34,14 +34,14 @@ func NewBoseRenderer(host string) *Renderer {
 	}
 }
 
-// SetURI laedt eine neue Stream URL in den Renderer.
-// metaTitle wird im DIDL-Lite Metadata als Track Name eingebettet, iconURL
-// wird als upnp:albumArtURI mitgegeben damit die SoundTouch Box das
-// Sender Logo in ihrer Now Playing Anzeige zeigt.
+// SetURI loads a new stream URL into the renderer.
+// metaTitle is embedded in the DIDL-Lite metadata as the track name, iconURL
+// is passed as upnp:albumArtURI so the SoundTouch box shows the station logo
+// in its now-playing display.
 //
-// iconURL kann eine pipe-separierte Kette von Fallback URLs sein (so
-// persistieren wir das im preset.art). Die Box bekommt nur den ersten
-// Eintrag — der Rest ist Frontend Fallback Material.
+// iconURL can be a pipe-separated chain of fallback URLs (that is how we
+// persist it in preset.art). The box only gets the first entry — the rest is
+// frontend fallback material.
 func (r *Renderer) SetURI(ctx context.Context, streamURL, metaTitle, iconURL string) error {
 	if idx := strings.Index(iconURL, "|"); idx >= 0 {
 		iconURL = iconURL[:idx]
@@ -52,27 +52,27 @@ func (r *Renderer) SetURI(ctx context.Context, streamURL, metaTitle, iconURL str
 	return r.soapCall(ctx, "SetAVTransportURI", body)
 }
 
-// Play startet die Wiedergabe.
+// Play starts playback.
 func (r *Renderer) Play(ctx context.Context) error {
 	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>`
 	return r.soapCall(ctx, "Play", body)
 }
 
-// Pause haelt die Wiedergabe an.
+// Pause halts playback.
 func (r *Renderer) Pause(ctx context.Context) error {
 	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Pause xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID></u:Pause></s:Body></s:Envelope>`
 	return r.soapCall(ctx, "Pause", body)
 }
 
-// Stop beendet die Wiedergabe.
+// Stop ends playback.
 func (r *Renderer) Stop(ctx context.Context) error {
 	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Stop xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID></u:Stop></s:Body></s:Envelope>`
 	return r.soapCall(ctx, "Stop", body)
 }
 
-// PlayURL ist eine Convenience Methode: setzt URI und drueckt Play.
-// iconURL ist optional; wenn gesetzt wird es als albumArtURI an die Box
-// gegeben damit sie das Sender Logo anzeigt.
+// PlayURL is a convenience method: sets the URI and presses Play.
+// iconURL is optional; when set it is passed to the box as albumArtURI so
+// it shows the station logo.
 func (r *Renderer) PlayURL(ctx context.Context, streamURL, title, iconURL string) error {
 	resolved, _ := ResolveStreamURL(ctx, streamURL)
 	if resolved != "" && resolved != streamURL {
@@ -112,27 +112,27 @@ func (r *Renderer) PlayURLMime(ctx context.Context, streamURL, title, iconURL, m
 	return nil
 }
 
-// ResolveStreamURL bereitet eine Sender URL fuer die Box vor:
+// ResolveStreamURL prepares a station URL for the box:
 //
-//  1. Bei Playlist Endungen (.pls / .m3u) wird die enthaltene Stream
-//     URL extrahiert (Box kann Playlist Dateien nicht abspielen).
-//  2. Bei HTTPS URLs wird versucht die HTTP Variante zu nutzen wenn
-//     sie antwortet. Bose UPnP Renderer hat oft Probleme mit HTTPS
-//     Streams (Cert Chain, TLS Version) und liefert dann SOAP 402.
-//  3. Sonst die Original URL.
+//  1. For playlist extensions (.pls / .m3u) the contained stream URL is
+//     extracted (the box cannot play playlist files).
+//  2. For HTTPS URLs it tries to use the HTTP variant if it answers. The
+//     Bose UPnP renderer often has trouble with HTTPS streams (cert
+//     chain, TLS version) and then returns SOAP 402.
+//  3. Otherwise the original URL.
 func ResolveStreamURL(ctx context.Context, u string) (string, error) {
 	if u == "" {
 		return "", nil
 	}
 	lower := strings.ToLower(u)
-	// 1) Playlist Endungen aufloesen
+	// 1) Resolve playlist extensions
 	if strings.Contains(lower, ".pls") || strings.Contains(lower, ".m3u") {
 		if resolved := extractStreamFromPlaylist(ctx, u); resolved != "" {
 			u = resolved
 			lower = strings.ToLower(u)
 		}
 	}
-	// 2) HTTPS → HTTP Fallback wenn der Host auch ueber HTTP antwortet
+	// 2) HTTPS -> HTTP fallback if the host also answers over HTTP
 	if strings.HasPrefix(lower, "https://") {
 		httpVar := "http://" + u[len("https://"):]
 		if isStreamReachable(ctx, httpVar) {
@@ -142,8 +142,8 @@ func ResolveStreamURL(ctx context.Context, u string) (string, error) {
 	return u, nil
 }
 
-// extractStreamFromPlaylist laedt eine .pls / .m3u Datei und gibt die
-// erste Stream URL zurueck. Leer wenn nichts gefunden / Fehler.
+// extractStreamFromPlaylist loads a .pls / .m3u file and returns the
+// first stream URL. Empty if nothing is found / on error.
 func extractStreamFromPlaylist(ctx context.Context, u string) string {
 	if err := netutil.SafeHTTPURL(u); err != nil {
 		return ""
@@ -180,8 +180,8 @@ func extractStreamFromPlaylist(ctx context.Context, u string) string {
 	return ""
 }
 
-// isStreamReachable prueft mit GET Range 0-0 ob der Server antwortet.
-// HEAD wird von vielen Streaming Servern nicht unterstuetzt.
+// isStreamReachable checks with GET Range 0-0 whether the server answers.
+// HEAD is not supported by many streaming servers.
 func isStreamReachable(ctx context.Context, u string) bool {
 	if err := netutil.SafeHTTPURL(u); err != nil {
 		return false
@@ -205,7 +205,7 @@ func isStreamReachable(ctx context.Context, u string) bool {
 
 func (r *Renderer) soapCall(ctx context.Context, action, body string) error {
 	if r.ControlURL == "" {
-		return errors.New("ControlURL nicht gesetzt")
+		return errors.New("ControlURL not set")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.ControlURL, strings.NewReader(body))
 	if err != nil {
@@ -230,10 +230,10 @@ func (r *Renderer) soapCall(ctx context.Context, action, body string) error {
 	return nil
 }
 
-// buildDIDL erzeugt das CurrentURIMetaData XML fuer einen Audio Stream.
-// DLNA Renderer wollen oft DIDL-Lite mit upnp:class und res protocolInfo um
-// den Stream Codec zu erkennen. Wenn iconURL gesetzt ist wird es als
-// upnp:albumArtURI eingebettet damit die Box ein Sender Logo zeigt.
+// buildDIDL builds the CurrentURIMetaData XML for an audio stream.
+// DLNA renderers often want DIDL-Lite with upnp:class and res protocolInfo
+// to detect the stream codec. If iconURL is set it is embedded as
+// upnp:albumArtURI so the box shows a station logo.
 func buildDIDL(streamURL, title, iconURL string) string {
 	return buildDIDLMime(streamURL, title, iconURL, "audio/mpeg")
 }
@@ -256,13 +256,13 @@ func buildDIDLMime(streamURL, title, iconURL, mime string) string {
 	return `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>` + xmlEscapeAttr(title) + `</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class>` + art + `<res protocolInfo="http-get:*:` + mime + `:*">` + xmlEscapeAttr(streamURL) + `</res></item></DIDL-Lite>`
 }
 
-// xmlEscape escaped Sonderzeichen fuer XML Element Content.
+// xmlEscape escapes special characters for XML element content.
 func xmlEscape(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 	return r.Replace(s)
 }
 
-// xmlEscapeAttr ist identisch zu xmlEscape plus Quotes.
+// xmlEscapeAttr is identical to xmlEscape plus quotes.
 func xmlEscapeAttr(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", `'`, "&apos;")
 	return r.Replace(s)

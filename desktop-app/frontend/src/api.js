@@ -24,6 +24,7 @@ export {
   GetBoxFirmware,
   BoxInstallReachable,
   Pause,
+  Resume,
   Stop,
   Status,
   ListDrives,

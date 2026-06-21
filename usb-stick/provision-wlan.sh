@@ -13,7 +13,7 @@
 # the BoseApp HTTP API. The Desktop App does NOT produce that
 # format. If you need to run this manually, write wlan.conf as:
 #   ssid=MyHomeWifi
-#   security=wpa2     (oder wpa, wpa_or_wpa2, wep, open)
+#   security=wpa2     (or wpa, wpa_or_wpa2, wep, open)
 #   passphrase=secret-password
 # Then: sh /media/sda1/provision-wlan.sh
 # Logs: /mnt/nv/streborn/wlan-provision.log
@@ -29,16 +29,16 @@ log() {
 }
 
 if [ ! -r "$CONF" ]; then
-    log "wlan.conf nicht lesbar, beende"
+    log "wlan.conf not readable, exiting"
     exit 0
 fi
 
-# Konfiguration einlesen (key=value Format, Kommentare mit # erlaubt)
+# Read the configuration (key=value format, comments with # allowed)
 ssid=""
 security=""
 passphrase=""
 while IFS='=' read -r key value; do
-    # Kommentare und leere Zeilen ignorieren
+    # Ignore comments and empty lines
     case "$key" in
         "" | \#* | " "*) continue ;;
     esac
@@ -50,23 +50,23 @@ while IFS='=' read -r key value; do
 done < "$CONF"
 
 if [ -z "$ssid" ] || [ -z "$passphrase" ]; then
-    log "FEHLER ssid oder passphrase fehlt in wlan.conf"
+    log "ERROR ssid or passphrase missing in wlan.conf"
     exit 1
 fi
 if [ -z "$security" ]; then
     security="wpa_or_wpa2"
 fi
 
-log "Provisioning Profile fuer SSID '$ssid' security $security"
+log "Provisioning profile for SSID '$ssid' security $security"
 
-# Pruefen ob die Box schon im WLAN ist. Wenn ja, machen wir nichts.
+# Check whether the box is already on Wi-Fi. If so, do nothing.
 i=0
 while [ $i -lt 30 ]; do
     if wget -qO- -T 2 "$BOSE_API/networkInfo" 2>/dev/null | grep -q "NETWORK_WIFI_CONNECTED"; then
-        log "Box ist schon im WLAN, kein Provisioning noetig"
+        log "Box is already on Wi-Fi, no provisioning needed"
         exit 0
     fi
-    # BoseApp noch nicht erreichbar?
+    # BoseApp not reachable yet?
     if ! wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
         sleep 2
         i=$((i+1))
@@ -76,13 +76,13 @@ while [ $i -lt 30 ]; do
 done
 
 if [ $i -ge 30 ]; then
-    log "BoseApp nicht erreichbar nach 60s, gebe auf"
+    log "BoseApp not reachable after 60s, giving up"
     exit 1
 fi
 
-log "BoseApp reagiert, sende addWirelessProfile"
+log "BoseApp responds, sending addWirelessProfile"
 
-# Mehrere Body Formate ausprobieren. Wir loggen welcher klappt.
+# Try several body formats. We log which one works.
 BODIES="
 <addWirelessProfile><ssid>${ssid}</ssid><security>${security}</security><passphrase>${passphrase}</passphrase></addWirelessProfile>
 <profile ssid=\"${ssid}\" security=\"${security}\" passphrase=\"${passphrase}\"/>
@@ -95,16 +95,16 @@ IFS='
 '
 for body in $BODIES; do
     [ -z "$body" ] && continue
-    log "Versuche Body: $body"
+    log "Trying body: $body"
     resp=$(echo "$body" | wget -qO- -T 5 --header="Content-Type: application/xml" \
         --post-data="$body" "$BOSE_API/addWirelessProfile" 2>&1)
     log "Response: $resp"
     case "$resp" in
         *Error* | *error* | *FAIL*)
-            log "Format fail, naechstes probieren"
+            log "Format fail, trying the next one"
             ;;
         *)
-            log "Format akzeptiert"
+            log "Format accepted"
             success=true
             break
             ;;
@@ -113,20 +113,20 @@ done
 IFS="$IFS_OLD"
 
 if ! $success; then
-    log "Kein Body Format hat geklappt"
+    log "No body format worked"
     exit 1
 fi
 
-log "Warte bis Box im WLAN ist"
+log "Waiting until the box is on Wi-Fi"
 i=0
 while [ $i -lt 30 ]; do
     if wget -qO- -T 2 "$BOSE_API/networkInfo" 2>/dev/null | grep -q "NETWORK_WIFI_CONNECTED"; then
-        log "Erfolg, Box ist im WLAN"
+        log "Success, box is on Wi-Fi"
         exit 0
     fi
     sleep 2
     i=$((i+1))
 done
 
-log "WLAN nicht aktiv nach 60s, eventuell falsche Credentials oder anderes Problem"
+log "Wi-Fi not active after 60s, possibly wrong credentials or another problem"
 exit 1

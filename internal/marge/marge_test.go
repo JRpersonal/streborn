@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// xmlWellFormed prueft ob der String als XML parsebar ist.
+// xmlWellFormed checks whether the string is parseable as XML.
 func xmlWellFormed(t *testing.T, in string) {
 	t.Helper()
 	dec := xml.NewDecoder(strings.NewReader(in))
@@ -21,7 +21,7 @@ func xmlWellFormed(t *testing.T, in string) {
 			return
 		}
 		if err != nil {
-			t.Fatalf("xml nicht wohlgeformt: %v\n--\n%s\n--", err, in)
+			t.Fatalf("xml not well-formed: %v\n--\n%s\n--", err, in)
 		}
 	}
 }
@@ -33,20 +33,20 @@ func newTestServer() *Server {
 	)
 }
 
-func TestEmptyPresetsXMLWohlgeformt(t *testing.T) {
+func TestEmptyPresetsXMLWellFormed(t *testing.T) {
 	xmlWellFormed(t, EmptyPresetsXML)
 }
 
-func TestEmptyRecentsXMLWohlgeformt(t *testing.T) {
+func TestEmptyRecentsXMLWellFormed(t *testing.T) {
 	xmlWellFormed(t, EmptyRecentsXML)
 }
 
-func TestSoundTouchStatusXMLWohlgeformt(t *testing.T) {
+func TestSoundTouchStatusXMLWellFormed(t *testing.T) {
 	xmlWellFormed(t, SoundTouchConfiguredXML)
 	xmlWellFormed(t, SoundTouchNotConfiguredXML)
 }
 
-func TestPresetsHandlerLeer(t *testing.T) {
+func TestPresetsHandlerEmpty(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/preset/list", nil)
@@ -57,7 +57,7 @@ func TestPresetsHandlerLeer(t *testing.T) {
 	body := rec.Body.String()
 	xmlWellFormed(t, body)
 	if !strings.Contains(body, "<presets") {
-		t.Fatalf("erwartete <presets im Body, bekam: %s", body)
+		t.Fatalf("expected <presets in body, got: %s", body)
 	}
 }
 
@@ -65,7 +65,7 @@ func TestPresetsHandlerMitInhalt(t *testing.T) {
 	s := newTestServer()
 	s.SetPresets([]Preset{
 		{ID: 1, Source: "SPOTIFY", Type: "uri", Location: "spotify:playlist:xyz",
-			SourceAccount: "user@example.com", ItemName: "Morgens",
+			SourceAccount: "user@example.com", ItemName: "Morning",
 			ContainerArt: "https://example.com/art.png",
 			CreatedOn:    1700000000, UpdatedOn: 1700000000},
 	})
@@ -74,11 +74,11 @@ func TestPresetsHandlerMitInhalt(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	body := rec.Body.String()
 	xmlWellFormed(t, body)
-	if !strings.Contains(body, "Morgens") {
-		t.Fatalf("Preset Name nicht gefunden: %s", body)
+	if !strings.Contains(body, "Morning") {
+		t.Fatalf("preset name not found: %s", body)
 	}
 	if !strings.Contains(body, "spotify:playlist:xyz") {
-		t.Fatalf("Preset Location nicht gefunden: %s", body)
+		t.Fatalf("preset location not found: %s", body)
 	}
 }
 
@@ -89,10 +89,10 @@ func TestServiceAvailabilityHandler(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	body := rec.Body.String()
 	xmlWellFormed(t, body)
-	// Sicher gehen dass die wichtigsten Provider drin sind.
+	// Make sure the most important providers are present.
 	for _, want := range []string{"SPOTIFY", "DEEZER", "AMAZON", "AIRPLAY"} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("provider %s fehlt: %s", want, body)
+			t.Fatalf("provider %s missing: %s", want, body)
 		}
 	}
 }
@@ -138,7 +138,7 @@ func TestReflectDeezerSource(t *testing.T) {
 	}
 }
 
-func TestSourcesHandlerOhneItems(t *testing.T) {
+func TestSourcesHandlerWithoutItems(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/sources", nil)
@@ -146,7 +146,7 @@ func TestSourcesHandlerOhneItems(t *testing.T) {
 	body := rec.Body.String()
 	xmlWellFormed(t, body)
 	if !strings.Contains(body, "DEVICEID_PLACEHOLDER") {
-		t.Fatalf("deviceID nicht im Body: %s", body)
+		t.Fatalf("deviceID not in body: %s", body)
 	}
 }
 
@@ -158,11 +158,11 @@ func TestAccountHandlerUnkonfiguriert(t *testing.T) {
 	body := rec.Body.String()
 	xmlWellFormed(t, body)
 	if !strings.Contains(body, "UNCONFIGURED") {
-		t.Fatalf("erwartete UNCONFIGURED Status: %s", body)
+		t.Fatalf("expected UNCONFIGURED status: %s", body)
 	}
 }
 
-func TestAccountHandlerKonfiguriert(t *testing.T) {
+func TestAccountHandlerConfigured(t *testing.T) {
 	s := newTestServer()
 	s.SetAccount(&AccountInfo{
 		AccountUUID:  "uuid-123",
@@ -176,59 +176,59 @@ func TestAccountHandlerKonfiguriert(t *testing.T) {
 	body := rec.Body.String()
 	xmlWellFormed(t, body)
 	if !strings.Contains(body, "uuid-123") {
-		t.Fatalf("AccountUUID fehlt: %s", body)
+		t.Fatalf("AccountUUID missing: %s", body)
 	}
 }
 
 func TestSpyLogfaengtRequestsAuf(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/some/unbekannter/pfad",
+	req := httptest.NewRequest(http.MethodPost, "/some/unknown/path",
 		strings.NewReader("<?xml version=\"1.0\"?><test/>"))
 	req.Header.Set("Content-Type", "application/xml")
 	s.Handler().ServeHTTP(rec, req)
 
 	entries := s.RecentRequests()
 	if len(entries) != 1 {
-		t.Fatalf("erwartete 1 Spy Eintrag, bekam %d", len(entries))
+		t.Fatalf("expected 1 spy entry, got %d", len(entries))
 	}
 	if entries[0].Method != "POST" {
-		t.Fatalf("methode falsch: %s", entries[0].Method)
+		t.Fatalf("method wrong: %s", entries[0].Method)
 	}
-	if entries[0].Path != "/some/unbekannter/pfad" {
-		t.Fatalf("pfad falsch: %s", entries[0].Path)
+	if entries[0].Path != "/some/unknown/path" {
+		t.Fatalf("path wrong: %s", entries[0].Path)
 	}
 	if !strings.Contains(entries[0].Body, "<test") {
-		t.Fatalf("body fehlt: %s", entries[0].Body)
+		t.Fatalf("body missing: %s", entries[0].Body)
 	}
 }
 
-func TestSpyLogEndpunkt(t *testing.T) {
+func TestSpyLogEndpoint(t *testing.T) {
 	s := newTestServer()
-	// Erst einen Request um was zu loggen
+	// First a request to log something
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/preset/foo", nil)
 	s.Handler().ServeHTTP(rec, req)
 
-	// Dann den Spy Log abrufen
+	// Then fetch the spy log
 	rec2 := httptest.NewRecorder()
 	req2 := httptest.NewRequest(http.MethodGet, "/__spy/log", nil)
 	s.Handler().ServeHTTP(rec2, req2)
 	body := rec2.Body.String()
 	if !strings.Contains(body, "GET /preset/foo") {
-		t.Fatalf("spy log enthaelt den Request nicht: %s", body)
+		t.Fatalf("spy log does not contain the request: %s", body)
 	}
 }
 
 func TestCatchallGenericAck(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/voellig/unbekannt", nil)
+	req := httptest.NewRequest(http.MethodGet, "/completely/unknown", nil)
 	s.Handler().ServeHTTP(rec, req)
 	body := rec.Body.String()
 	xmlWellFormed(t, body)
 	if !strings.Contains(body, "<ack") {
-		t.Fatalf("generic ack fehlt: %s", body)
+		t.Fatalf("generic ack missing: %s", body)
 	}
 }
 

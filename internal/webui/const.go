@@ -4,9 +4,9 @@ import "time"
 
 const shutdownTimeout = 5 * time.Second
 
-// indexHTML ist die minimale HTML Seite die der Stick auf "/" ausgibt.
-// Sie ist fuer Direkt Browser Zugriff (Handy ohne Desktop App). Die echte
-// UI kommt spaeter via Wails Desktop App ueber die gleiche REST API.
+// indexHTML is the minimal HTML page the stick serves on "/".
+// It is for direct browser access (a phone without the desktop app). The
+// real UI comes later via the Wails desktop app over the same REST API.
 const indexHTML = `<!doctype html>
 <html lang="de">
 <head>
@@ -34,7 +34,7 @@ h1 { font-size: 22px; margin: 0 0 16px 0; color: #e88; }
 </head>
 <body>
 <h1>STR</h1>
-<div class="status" id="status">Status laedt...</div>
+<div class="status" id="status">Status loading...</div>
 <div class="controls">
 <button onclick="api('/api/pause', 'POST')">Pause</button>
 <button onclick="api('/api/stop', 'POST')">Stop</button>
@@ -66,7 +66,7 @@ async function loadPresets() {
     if (p) {
       div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(p.name || 'Preset ' + i) + '</div><div class="url">' + escapeHtml(p.stream_url || '') + '</div>';
     } else {
-      div.innerHTML = '<div class="num">#' + i + '</div><div class="name">— leer —</div>';
+      div.innerHTML = '<div class="num">#' + i + '</div><div class="name">— empty —</div>';
     }
     grid.appendChild(div);
   }

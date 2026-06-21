@@ -1,6 +1,6 @@
-// Package boxcli sendet Kommandos an Bose's lokalen CLI Server auf Port
-// 17000. Wir nutzen das um die Box aus dem Standby zu wecken bevor wir
-// UPnP Play schicken.
+// Package boxcli sends commands to Bose's local CLI server on port
+// 17000. We use it to wake the box from standby before we send a UPnP
+// play.
 package boxcli
 
 import (
@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-// Send schickt einen einzelnen Command an Port 17000 und sammelt bis zu
-// 200 ms Output. Box antwortet typischerweise sofort.
+// Send sends a single command to port 17000 and collects up to 200 ms
+// of output. The box typically answers immediately.
 func Send(ctx context.Context, host, cmd string) (string, error) {
 	if host == "" {
 		host = "127.0.0.1"
@@ -45,17 +45,17 @@ func Send(ctx context.Context, host, cmd string) (string, error) {
 	return sb.String(), nil
 }
 
-// PowerOn weckt die Box aus dem Standby. Idempotent: wenn Box schon an
-// ist, gibt sie OK zurueck und macht nichts.
+// PowerOn wakes the box from standby. Idempotent: if the box is already
+// on, it returns OK and does nothing.
 func PowerOn(ctx context.Context, host string) error {
 	_, err := Send(ctx, host, "sys power")
 	return err
 }
 
-// WakeAndWait stellt sicher dass die Box aus dem Standby ist. Sendet
-// `sys power` und pollt `/now_playing` bis source != STANDBY oder Timeout.
-// Box reagiert manchmal verzoegert oder ignoriert sys power komplett wenn
-// sie in Deep Standby ist; in dem Fall wird mehrmals gesendet.
+// WakeAndWait makes sure the box is out of standby. Sends `sys power`
+// and polls `/now_playing` until source != STANDBY or timeout. The box
+// sometimes reacts with a delay or ignores sys power entirely when it is
+// in deep standby; in that case it is sent multiple times.
 //
 // logger may be nil; when present, per-iteration phase markers are emitted
 // so a diagnostic bundle shows the standby-exit timeline (#60).
@@ -81,7 +81,7 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger
 	logPhase("wake phase: start", "host", host, "max_wait", maxWait.String())
 
 	for i := 0; ; i++ {
-		// Erst pruefen: ist Box vielleicht schon wach?
+		// Check first: is the box maybe already awake?
 		state, err := readSource(ctx, client, infoURL)
 		if err == nil && state != "STANDBY" {
 			logPhase("wake phase: already awake", "attempt", i, "source", state)
@@ -92,18 +92,18 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger
 		} else {
 			logPhase("wake phase: STANDBY, sending sys power", "attempt", i, "source", state)
 		}
-		// Standby oder unklarer State -> power on senden.
+		// Standby or unclear state -> send power on.
 		if pwrErr := PowerOn(ctx, host); pwrErr != nil {
 			logPhase("wake phase: sys power write failed", "attempt", i, "err", pwrErr.Error())
 		}
-		// Kurze Pause damit Box den Befehl verarbeiten kann.
+		// Short pause so the box can process the command.
 		select {
 		case <-ctx.Done():
 			logPhase("wake phase: ctx cancelled", "attempt", i, "err", ctx.Err().Error())
 			return ctx.Err()
 		case <-time.After(800 * time.Millisecond):
 		}
-		// Nochmal checken
+		// Check again
 		state, err = readSource(ctx, client, infoURL)
 		if err == nil && state != "STANDBY" {
 			logPhase("wake phase: woke", "attempt", i, "source", state)
@@ -111,7 +111,7 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger
 		}
 		if time.Now().After(deadline) {
 			logPhase("wake phase: timeout", "attempts", i+1, "last_source", state)
-			return fmt.Errorf("box bleibt im STANDBY nach %d Versuchen", i+1)
+			return fmt.Errorf("box stays in STANDBY after %d attempts", i+1)
 		}
 	}
 }
@@ -130,7 +130,7 @@ func readSource(ctx context.Context, c *http.Client, url string) (string, error)
 	body := make([]byte, 1024)
 	n, _ := resp.Body.Read(body)
 	s := string(body[:n])
-	// Erstes source="X" Attribut
+	// First source="X" attribute
 	if i := strings.Index(s, `source="`); i >= 0 {
 		rest := s[i+8:]
 		if j := strings.IndexByte(rest, '"'); j >= 0 {
@@ -140,7 +140,7 @@ func readSource(ctx context.Context, c *http.Client, url string) (string, error)
 	return "", fmt.Errorf("source attribute not found")
 }
 
-// PresetKey simuliert einen physischen Preset Tastendruck.
+// PresetKey simulates a physical preset key press.
 //
 //	slot 1..6
 //	mode "p" = press&release, "ph" = press&hold
@@ -152,17 +152,17 @@ func PresetKey(ctx context.Context, host string, slot int, mode string) error {
 	return err
 }
 
-// AddPreset speichert ein Preset auf der Box damit die Hardware Tasten
-// einen `nowSelectionUpdated` Event mit dem ContentItem ausloesen koennen.
-// Wir setzen alle Presets als UPNP Source weil das die Box am ehesten
-// akzeptiert ohne ein laufender STS Worker.
+// AddPreset stores a preset on the box so the hardware keys can trigger
+// a `nowSelectionUpdated` event with the ContentItem. We set all presets
+// as a UPNP source because that is what the box is most likely to accept
+// without a running STS worker.
 //
-// CLI Syntax (aus BoseApp Strings):
+// CLI syntax (from BoseApp strings):
 //
 //	ws AddPreset <SOURCE> <TYPE> <LOCATION> <LABEL> <SOURCEACCOUNT> <PRESETID>
 func AddPreset(ctx context.Context, host string, slot int, name, streamURL string) error {
-	// LABEL muss in Quotes, sonst splittet die Box ihn beim Leerzeichen.
-	// LOCATION sollte keine Quotes haben.
+	// LABEL must be in quotes, otherwise the box splits it at the space.
+	// LOCATION should have no quotes.
 	cmd := fmt.Sprintf(`ws AddPreset UPNP audio %s "%s" UPnPUserName %d`,
 		streamURL, name, slot)
 	_, err := Send(ctx, host, cmd)
@@ -197,26 +197,25 @@ func AddPresetRaw(ctx context.Context, host string, slot int, source, typ, locat
 	return err
 }
 
-// RemovePreset loescht den Box Preset Slot.
+// RemovePreset deletes the box preset slot.
 func RemovePreset(ctx context.Context, host string, slot int) error {
 	_, err := Send(ctx, host, fmt.Sprintf("ws RemovePreset %d", slot))
 	return err
 }
 
-// PresetSpec ist eine Box Preset Spezifikation fuer SyncAllPresets.
+// PresetSpec is a box preset specification for SyncAllPresets.
 type PresetSpec struct {
 	Slot      int    // 1..6
-	Name      string // angezeigter Name (mit Quotes versehen wenn Leerzeichen)
-	StreamURL string // direkte Stream URL fuer UPnP
+	Name      string // displayed name (quoted if it contains a space)
+	StreamURL string // direct stream URL for UPnP
 }
 
-// SyncAllPresets schickt alle Presets als UPNP Source ContentItems an die
-// Box. Sollte nach Box Boot ausgefuehrt werden (Box braucht ~10s bis CLI
-// Server hochgefahren ist) und immer wenn der Stick Preset Store geupdated
-// wird.
+// SyncAllPresets sends all presets as UPNP source ContentItems to the
+// box. Should run after a box boot (the box needs ~10s until the CLI
+// server has come up) and whenever the stick preset store is updated.
 //
-// errs ist ein Map von Slot -> Fehler fuer einzelne Slots; fortgesetzt
-// nach Errors.
+// errs is a map of slot -> error for individual slots; continued after
+// errors.
 func SyncAllPresets(ctx context.Context, host string, presets []PresetSpec) map[int]error {
 	errs := map[int]error{}
 	for _, p := range presets {

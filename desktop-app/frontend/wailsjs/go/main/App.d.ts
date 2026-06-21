@@ -127,6 +127,8 @@ export function ResolveUpdateAsset(arg1:string):Promise<main.UpdateAsset>;
 
 export function RestoreBoxSnapshot(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
+export function Resume(arg1:string,arg2:number):Promise<void>;
+
 export function RevealUpdateFile(arg1:string):Promise<void>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;

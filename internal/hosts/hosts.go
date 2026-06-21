@@ -1,6 +1,6 @@
-// Package hosts manipuliert /etc/hosts beim Start und räumt beim Stop wieder auf.
-// Die Bose Software wird so umgelenkt, dass sie mit dem lokalen Binary
-// statt mit den echten Bose Servern kommuniziert.
+// Package hosts manipulates /etc/hosts at start and cleans it up again at stop.
+// The Bose software is redirected so it communicates with the local binary
+// instead of the real Bose servers.
 package hosts
 
 import (
@@ -17,18 +17,18 @@ const (
 	endMarker   = "# <<< streborn end <<<"
 )
 
-// Entry beschreibt eine Zeile, die in /etc/hosts eingefügt wird.
+// Entry describes a line that is inserted into /etc/hosts.
 type Entry struct {
 	IP   string
 	Host string
 }
 
-// DefaultEntries liefert die Standard Umleitungen.
+// DefaultEntries returns the default redirects.
 //
-// Der TuneIn Hostname mit dem Bose Partner Hash ist seit 15.05.2026 von Bose
-// abgeschaltet (NXDOMAIN). Wir leiten ihn auf 127.0.0.1 um damit unser
-// Marge Stub die TuneIn API emulieren kann und STSCertified BMXTuneInClient
-// glaubt die Bose TuneIn Cloud waere erreichbar.
+// The TuneIn hostname with the Bose partner hash has been shut down by Bose
+// since 2026-05-15 (NXDOMAIN). We redirect it to 127.0.0.1 so our marge stub
+// can emulate the TuneIn API and STSCertified BMXTuneInClient believes the
+// Bose TuneIn cloud is reachable.
 func DefaultEntries() []Entry {
 	return []Entry{
 		{IP: "127.0.0.1", Host: "streaming.bose.com"},
@@ -39,13 +39,13 @@ func DefaultEntries() []Entry {
 	}
 }
 
-// Manager verwaltet einen markierten Block in /etc/hosts.
+// Manager manages a marked block in /etc/hosts.
 type Manager struct {
 	path   string
 	logger *slog.Logger
 }
 
-// New erstellt einen Manager. Wenn path leer ist, wird /etc/hosts verwendet.
+// New creates a Manager. If path is empty, /etc/hosts is used.
 func New(path string, logger *slog.Logger) *Manager {
 	if path == "" {
 		path = defaultPath
@@ -53,12 +53,12 @@ func New(path string, logger *slog.Logger) *Manager {
 	return &Manager{path: path, logger: logger}
 }
 
-// Apply fügt den markierten Block mit den Entries in /etc/hosts ein
-// und ersetzt einen eventuell vorhandenen alten Block.
+// Apply inserts the marked block with the entries into /etc/hosts
+// and replaces any existing old block.
 func (m *Manager) Apply(entries []Entry) error {
 	current, err := os.ReadFile(m.path)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("hosts lesen: %w", err)
+		return fmt.Errorf("read hosts: %w", err)
 	}
 
 	stripped := removeBlock(current)
@@ -76,21 +76,21 @@ func (m *Manager) Apply(entries []Entry) error {
 	return nil
 }
 
-// Restore entfernt den markierten Block wieder aus /etc/hosts.
+// Restore removes the marked block from /etc/hosts again.
 func (m *Manager) Restore() error {
 	current, err := os.ReadFile(m.path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("hosts lesen: %w", err)
+		return fmt.Errorf("read hosts: %w", err)
 	}
 	stripped := removeBlock(current)
 	if err := writeAtomic(m.path, stripped); err != nil {
-		return fmt.Errorf("hosts schreiben: %w", err)
+		return fmt.Errorf("write hosts: %w", err)
 	}
 	if m.logger != nil {
-		m.logger.Info("hosts Block entfernt", "path", m.path)
+		m.logger.Info("hosts block removed", "path", m.path)
 	}
 	return nil
 }
@@ -128,12 +128,12 @@ func removeBlock(in []byte) []byte {
 	return []byte(strings.Join(out, "\n"))
 }
 
-// writeAtomic schreibt content nach path. Versucht erst die klassische
-// "write to .tmp + rename" Strategie. Wenn das fehlschlaegt weil das
-// Verzeichnis read only ist (z.B. /etc auf einem ubifs Rootfs der nur eine
-// tmpfs Datei drueber gemountet hat), faellt es auf in-place Truncate write
-// zurueck. Damit klappt es auf der Bose Box wo /etc ro ist aber /etc/hosts
-// ein eigener tmpfs Mount ist.
+// writeAtomic writes content to path. It first tries the classic
+// "write to .tmp + rename" strategy. If that fails because the directory
+// is read only (e.g. /etc on a ubifs rootfs that only has a tmpfs file
+// mounted over it), it falls back to an in-place truncate write. That
+// way it works on the Bose box where /etc is ro but /etc/hosts is its
+// own tmpfs mount.
 func writeAtomic(path string, content []byte) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, content, 0o644); err == nil {
@@ -141,7 +141,7 @@ func writeAtomic(path string, content []byte) error {
 			return nil
 		} else {
 			_ = os.Remove(tmp)
-			// Rename gescheitert, faellt durch zu in-place
+			// Rename failed, falls through to in-place
 		}
 	}
 	// In-place Truncate write. Close error is checked explicitly:

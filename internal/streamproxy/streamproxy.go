@@ -1,19 +1,19 @@
-// Package streamproxy verpackt fremde Radio Streams in eine stabile
-// URL die Bose's UPnP Player nicht mehr loslassen kann.
+// Package streamproxy wraps third-party radio streams in a stable URL that
+// Bose's UPnP player can no longer let go of.
 //
-// Hintergrund: viele moderne Radiosender (1LIVE, SWR3, Rock Antenne via
-// streamonkey) antworten mit HTTP 302 Redirect auf eine CDN URL mit
-// signed Token. Bose's UPnP Player folgt dem Redirect zwar, behaelt aber
-// die per-Token-URL. Wenn der Token nach einigen Stunden ablaeuft, killt
-// die CDN die Verbindung — Bose merkt das als "Stream tot" und geht in
-// INVALID_SOURCE. User Eindruck: "Sender hoert nach einer Weile auf zu
-// spielen".
+// Background: many modern radio stations (1LIVE, SWR3, Rock Antenne via
+// streamonkey) answer with an HTTP 302 redirect to a CDN URL carrying a
+// signed token. Bose's UPnP player does follow the redirect, but holds on
+// to the per-token URL. When the token expires after a few hours, the CDN
+// kills the connection — Bose registers that as "stream dead" and goes into
+// INVALID_SOURCE. The user's impression: "the station stops playing after a
+// while".
 //
-// Mit diesem Proxy sieht Bose immer dieselbe URL
-// `http://127.0.0.1:8888/stream/<slot>`. Der Stick Agent loest intern
-// den Redirect zur CDN auf und streamt die Bytes durch. Wenn die CDN
-// die Verbindung killt (Token expiry), connectet der Proxy SOFORT
-// neu — Bose's TCP Verbindung bleibt offen, Bose merkt keinen Drop.
+// With this proxy Bose always sees the same URL
+// `http://127.0.0.1:8888/stream/<slot>`. The stick agent internally resolves
+// the redirect to the CDN and streams the bytes through. When the CDN kills
+// the connection (token expiry), the proxy reconnects IMMEDIATELY — Bose's
+// TCP connection stays open, so Bose never notices a drop.
 package streamproxy
 
 import (
@@ -202,7 +202,7 @@ func (s *Server) CurrentTitle() string {
 }
 
 // setTitle records a freshly parsed StreamTitle for url and fires onTitle when
-// it changed to a new non-empty value. Empty titles (StreamTitle='') clear the
+// it changed to a new non-empty value. Empty titles (StreamTitle=”) clear the
 // current title but never fire the push, so a station that briefly sends an
 // empty title does not blank the box display with a spurious update.
 func (s *Server) setTitle(url, title string) {
@@ -243,13 +243,12 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 	return &Server{
 		store:  store,
 		logger: logger,
-		// Eigener Client damit wir Redirect Verhalten kontrollieren.
-		// Default ist Follow bis 10 — passt fuer Streamonkey & Co.
-		// Kein Timeout: Streams sind endlos, wir lesen bis EOF.
-		// Der DialContext-Guard blockt SSRF-Ziele (loopback/link-local/
-		// metadata) nach der DNS-Aufloesung — eine boesartige
-		// radio-browser-URL kann die Box so nicht auf ihre eigenen
-		// Loopback-Dienste oder Cloud-Metadata zeigen lassen.
+		// Our own client so we control redirect behaviour. The default is
+		// follow up to 10 — fine for Streamonkey & co. No timeout: streams
+		// are endless, we read until EOF. The DialContext guard blocks SSRF
+		// targets (loopback/link-local/metadata) after DNS resolution — a
+		// malicious radio-browser URL therefore cannot point the box at its
+		// own loopback services or cloud metadata.
 		client: &http.Client{
 			Transport: &http.Transport{
 				Proxy:                 http.ProxyFromEnvironment,
@@ -573,8 +572,8 @@ func (s *Server) clearFailure(url string) {
 	s.errMu.Unlock()
 }
 
-// Handler registriert /stream/<slot> sowie /stream/raw fuer ad-hoc URLs
-// (z.B. aus der Radio Suche) auf den uebergebenen Mux.
+// Register registers /stream/<slot> as well as /stream/raw for ad-hoc URLs
+// (e.g. from the radio search) on the supplied mux.
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/stream/raw", s.handleRaw)
 	mux.HandleFunc("/stream/", s.handle)
@@ -652,9 +651,9 @@ func (s *Server) handleBitrate(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"bitrate":%d}`, s.CurrentBitrate())
 }
 
-// handleRaw streamt eine beliebige URL durch — vom Radio Suche
-// Play Pfad genutzt damit Bose's UPnP auch HTTPS Streams via uns
-// bekommen kann. URL kommt als ?u=<base64url> Parameter.
+// handleRaw streams an arbitrary URL through — used by the radio search
+// play path so Bose's UPnP can receive HTTPS streams via us as well. The
+// URL arrives as a ?u=<base64url> parameter.
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	enc := r.URL.Query().Get("u")
 	if enc == "" {
@@ -663,7 +662,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(enc)
 	if err != nil {
-		// Fallback: vielleicht plain URL-encoded
+		// Fallback: maybe plain URL-encoded
 		decoded = []byte(enc)
 	}
 	url := unwrapSelfProxy(string(decoded))
@@ -768,18 +767,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Wir machen genau einen GET zum CDN, kopieren bytes auf Bose.
-	// Wenn CDN EOF liefert (Token expiry), reconnecten wir intern und
-	// streamen weiter — Bose's Verbindung bleibt offen. Wir haben einen
-	// generoesen Retry Budget aber bei Client Disconnect (context cancel)
-	// hoeren wir sofort auf — sonst rauschen wir in einer Endlosschleife
-	// gegen den CDN.
+	// We do exactly one GET to the CDN and copy bytes to Bose. When the CDN
+	// returns EOF (token expiry), we reconnect internally and keep streaming —
+	// Bose's connection stays open. We have a generous retry budget, but on a
+	// client disconnect (context cancel) we stop immediately — otherwise we
+	// would charge into an endless loop against the CDN.
 	start := time.Now()
 	s.resetAudioGap()
 	headersSent := false
 	var lastErr error
 	for attempt := 0; attempt < 60; attempt++ {
-		// Wenn Bose die Verbindung beendet hat, sofort raus.
+		// If Bose has closed the connection, bail out immediately.
 		if r.Context().Err() != nil {
 			s.logger.Info("stream proxy end: client gone", "slot", slot, "elapsed", time.Since(start).Round(time.Second).String())
 			return
@@ -790,15 +788,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 					"attempt", attempt, "gapMs", gap.Milliseconds(), "lastErr", errStr(lastErr))
 			}
 			s.logger.Info("stream proxy reconnect", "slot", slot, "attempt", attempt, "lastErr", errStr(lastErr))
-			// Kurz warten damit wir CDN nicht mit Reconnects ueberlasten
+			// Wait briefly so we do not overload the CDN with reconnects
 			select {
 			case <-time.After(500 * time.Millisecond):
 			case <-r.Context().Done():
 				return
 			}
 		}
-		// Aktuelle URL holen — User koennte das Preset zwischenzeitlich
-		// geaendert haben.
+		// Fetch the current URL — the user might have changed the preset in
+		// the meantime.
 		cur, ok := s.store.Get(slot)
 		if !ok || cur.StreamURL == "" {
 			return
@@ -806,9 +804,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		boseAlive, err := s.streamOne(r.Context(), w, r, unwrapSelfProxy(cur.StreamURL), !headersSent)
 		lastErr = err
 		if !boseAlive {
-			// Bose hat die Verbindung beendet (Standby, Sender Wechsel).
-			// Normales Ende, klar getrennt vom Give-up-Fall unten, damit
-			// im Log Box-Stop vs Outbound-Problem unterscheidbar ist.
+			// Bose closed the connection (standby, station switch). A normal
+			// end, kept clearly distinct from the give-up case below, so the
+			// log can tell a box stop from an outbound problem.
 			s.logger.Info("stream proxy end: bose disconnected", "slot", slot, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(err))
 			if s.onDisconnect != nil {
 				s.onDisconnect(err)
@@ -821,18 +819,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		headersSent = true
 	}
-	// 60 Reconnects erschoepft: die Box wollte weiter Bytes, aber der
-	// Upstream scheiterte wiederholt. Ein Netzwerkfehler in lastErr deutet
-	// auf den Outbound-Pfad der Box (z.B. flakiges Kabel) statt auf die Box.
+	// 60 reconnects exhausted: the box still wanted bytes, but upstream
+	// kept failing. A network error in lastErr points at the box's outbound
+	// path (e.g. a flaky cable) rather than the box itself.
 	s.logger.Warn("stream proxy gave up reconnecting", "slot", slot, "attempts", 60, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
 }
 
-// streamOne macht einen Roundtrip zum upstream + kopiert Body zu w.
-// Returnt boseAlive=true wenn die Verbindung zu Bose noch offen ist
-// (Reconnect sinnvoll), false wenn Bose disconnected hat. Der zweite
-// Rueckgabewert ist der letzte Upstream-Fehler dieses Versuchs (nil bei
-// sauberem EOF oder normalem Bose-Disconnect); der Aufrufer loggt ihn am
-// Stream-Ende, damit Box-Stop von Outbound-Problemen unterscheidbar ist.
+// streamOne does one round trip to the upstream and copies the body to w.
+// It returns boseAlive=true when the connection to Bose is still open (a
+// reconnect makes sense), false when Bose has disconnected. The second
+// return value is the last upstream error of this attempt (nil on a clean
+// EOF or a normal Bose disconnect); the caller logs it at stream end so a
+// box stop can be told apart from outbound problems.
 func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.Request, url string, sendHeaders bool) (bool, error) {
 	if err := safeHTTPURL(url); err != nil {
 		s.logger.Warn("stream proxy refusing url", "url", url, "err", err)
@@ -855,7 +853,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		// Wenn Bose die Verbindung beendet hat, kein Retry sinnvoll.
+		// If Bose has closed the connection, a retry makes no sense.
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			return false, nil
 		}
@@ -872,7 +870,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 			http.Error(w, "upstream unreachable", http.StatusBadGateway)
 			return false, err
 		}
-		// Headers schon gesendet — Reconnect probieren
+		// Headers already sent — try a reconnect
 		return true, err
 	}
 	defer resp.Body.Close()
@@ -941,7 +939,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 
 	if sendHeaders {
 		for k, vv := range resp.Header {
-			// Hop by hop Headers nicht weitergeben
+			// Do not pass hop-by-hop headers through
 			switch strings.ToLower(k) {
 			case "connection", "transfer-encoding":
 				continue
@@ -961,7 +959,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		w.WriteHeader(resp.StatusCode)
 	}
 
-	// Flush kontinuierlich damit Bose's Player nicht auf Buffer wartet
+	// Flush continuously so Bose's player does not wait on a buffer
 	flusher, _ := w.(http.Flusher)
 	// Throughput fallback for stations that send no icy-br and have not
 	// been measured before. The box fills its decode buffer fast at the
@@ -1003,7 +1001,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		n, readErr := src.Read(buf)
 		if n > 0 {
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				// Bose hat Verbindung geschlossen
+				// Bose closed the connection
 				return false, nil
 			}
 			if flusher != nil {
@@ -1032,7 +1030,7 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 			}
 		}
 		if readErr != nil {
-			// Bose hat zu — KEIN Retry, sonst Endlos Schleife
+			// Bose has closed — NO retry, otherwise an endless loop
 			if errors.Is(readErr, context.Canceled) || ctx.Err() != nil {
 				return false, nil
 			}

@@ -7,43 +7,41 @@ import (
 	"os"
 )
 
-// DefaultTrustStorePaths sind die System Trust Store Files die wir auf
-// der Box ueber bind mount mit unserer Root CA erweitern. Beide werden
-// von unterschiedlichen Bose Komponenten gelesen (libcurl vs. openssl),
-// daher beide patchen.
+// DefaultTrustStorePaths are the system trust store files that we
+// extend on the box with our root CA via bind mount. Both are read
+// by different Bose components (libcurl vs. openssl), so we patch both.
 var DefaultTrustStorePaths = []string{
 	"/etc/pki/tls/certs/ca-bundle.crt",
 	"/etc/ssl/certs/ca-certificates.crt",
 }
 
-// trustStoreMarkerBegin / End umklammern unseren Append Block, damit
-// RefreshTrustStore beim Re-Apply den vorherigen Block erkennen und
-// ueberspringen kann (Idempotenz). Marker bewusst auffaellig formuliert
-// damit Operator beim Debuggen mit `cat` direkt sieht was passiert ist.
+// trustStoreMarkerBegin / End bracket our append block so that
+// RefreshTrustStore can detect and skip the previous block on re-apply
+// (idempotency). The markers are deliberately conspicuous so an
+// operator debugging with `cat` immediately sees what happened.
 const (
 	trustStoreMarkerBegin = "# >>> STR Root CA (refresh) >>>"
 	trustStoreMarkerEnd   = "# <<< STR Root CA (refresh) <<<"
 )
 
-// RefreshTrustStore haengt die uebergebene Root CA an die bind-gemounteten
-// Trust Store Overlays an. Wird aufgerufen wenn EnsureBundle eine alte
-// CA durch eine frisch generierte ersetzt hat — sonst zeigt der Trust
-// Store noch die alte CA und Bose verwirft unsere Server Cert mit
+// RefreshTrustStore appends the given root CA to the bind-mounted
+// trust store overlays. It is called when EnsureBundle has replaced an
+// old CA with a freshly generated one — otherwise the trust store
+// still shows the old CA and Bose rejects our server cert with
 // `tls: unknown certificate authority` (#60 .180 and #80 .144).
 //
-// Wir schreiben mit O_APPEND damit der Inode erhalten bleibt und der
-// bestehende bind mount den neuen Inhalt sofort sieht — kein umount,
-// kein remount, keine Race mit Bose Prozessen die das File bereits
-// geoeffnet haben.
+// We write with O_APPEND so the inode is preserved and the existing
+// bind mount sees the new content immediately — no umount, no remount,
+// no race with Bose processes that already have the file open.
 //
-// Idempotent: enthaelt das Overlay bereits den exakten PEM Block den
-// wir anhaengen wuerden, ueberspringen wir das Ziel. Damit kostet ein
-// erneuter Aufruf (z.B. nach noch einem Cold Boot) nichts.
+// Idempotent: if the overlay already contains the exact PEM block we
+// would append, we skip the target. So a repeated call (e.g. after yet
+// another cold boot) costs nothing.
 //
-// Best-effort: ein Ziel das nicht existiert oder nicht beschreibbar
-// ist wird als WARN geloggt aber blockiert die anderen Ziele nicht.
-// Im Dev / Test Build (kein /etc auf der Host Platte beschreibbar)
-// loggt das Funktionsergebnis sauber ohne den Agent zu killen.
+// Best-effort: a target that does not exist or is not writable is
+// logged as WARN but does not block the other targets. In the
+// dev / test build (no /etc writable on the host disk) the function
+// result is logged cleanly without killing the agent.
 func RefreshTrustStore(rootCAPEM []byte, logger *slog.Logger) error {
 	return refreshTrustStorePaths(rootCAPEM, DefaultTrustStorePaths, logger)
 }
@@ -73,8 +71,8 @@ func refreshTrustStorePaths(rootCAPEM []byte, paths []string, logger *slog.Logge
 	return nil
 }
 
-// appendRootIfNew haengt rootCAPEM mit Marker Block an target an, es sei
-// denn target enthaelt bereits exakt dieses PEM zwischen den Markern.
+// appendRootIfNew appends rootCAPEM with a marker block to target,
+// unless target already contains exactly this PEM between the markers.
 func appendRootIfNew(target string, rootCAPEM []byte) error {
 	current, err := os.ReadFile(target)
 	if err != nil {
@@ -95,24 +93,24 @@ func appendRootIfNew(target string, rootCAPEM []byte) error {
 	return nil
 }
 
-// containsRootBlock prueft ob current bereits einen Marker Block mit
-// exakt dem uebergebenen PEM enthaelt. Vergleich ueber bytes.Contains
-// statt PEM-Parsing, weil ein Marker Match plus exakter PEM Substring
-// fuer Idempotenz reicht (wir schreiben den Block immer in der gleichen
-// kanonischen Form).
+// containsRootBlock checks whether current already contains a marker
+// block with exactly the given PEM. Comparison via bytes.Contains
+// instead of PEM parsing, because a marker match plus an exact PEM
+// substring is enough for idempotency (we always write the block in
+// the same canonical form).
 func containsRootBlock(current, rootCAPEM []byte) bool {
 	needle := buildAppendBlock(rootCAPEM)
 	return bytes.Contains(current, needle)
 }
 
-// buildAppendBlock formatiert den Append Block kanonisch:
+// buildAppendBlock formats the append block canonically:
 //
 //	\n# >>> STR Root CA (refresh) >>>\n
 //	<PEM>
 //	# <<< STR Root CA (refresh) <<<\n
 //
-// Das fuehrende \n verhindert dass der Marker an die letzte Zeile des
-// bestehenden Bundles geklebt wird (manche Bundles enden ohne Newline).
+// The leading \n prevents the marker from being glued to the last line
+// of the existing bundle (some bundles end without a newline).
 func buildAppendBlock(rootCAPEM []byte) []byte {
 	var b bytes.Buffer
 	b.WriteByte('\n')

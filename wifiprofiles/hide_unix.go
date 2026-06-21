@@ -4,5 +4,5 @@ package wifiprofiles
 
 import "os/exec"
 
-// hideWindow ist auf Mac/Linux kein-op, da dort keine Console aufpoppt.
+// hideWindow is a no-op on Mac/Linux, since no console pops up there.
 func hideWindow(cmd *exec.Cmd) {}
