@@ -1,9 +1,9 @@
-// Package boxapi ist ein duenner Client fuer die Bose BoseApp REST API
-// auf Port 8090. Die Box selbst hostet die — wir proxien sie via Stick
-// damit die Desktop App eine simple JSON Schnittstelle hat.
+// Package boxapi is a thin client for the Bose BoseApp REST API
+// on port 8090. The box itself hosts it — we proxy it via the stick
+// so the desktop app has a simple JSON interface.
 //
-// Die meisten Endpoints sind XML (Format: <feld>wert</feld>); wir
-// parsen das in Go Structs und liefern JSON nach aussen.
+// Most endpoints are XML (format: <field>value</field>); we
+// parse that into Go structs and return JSON to the outside.
 package boxapi
 
 import (
@@ -18,13 +18,13 @@ import (
 	"unicode/utf8"
 )
 
-// Client kapselt http.Client + Box Host.
+// Client wraps http.Client + box host.
 type Client struct {
-	Host string // z.B. "127.0.0.1" oder die Box IP
+	Host string // e.g. "127.0.0.1" or the box IP
 	HTTP *http.Client
 }
 
-// New erzeugt einen Client mit defaults.
+// New creates a client with defaults.
 func New(host string) *Client {
 	return &Client{
 		Host: host,
@@ -32,9 +32,9 @@ func New(host string) *Client {
 	}
 }
 
-// ---------- Datenmodell ----------
+// ---------- Data model ----------
 
-// Info enthaelt die statische Beschreibung der Box.
+// Info contains the static description of the box.
 type Info struct {
 	DeviceID         string `json:"deviceID"`
 	Name             string `json:"name"`
@@ -47,22 +47,22 @@ type Info struct {
 	CountryCode      string `json:"countryCode"`
 }
 
-// SetupStatus ist die Antwort von /setup. State ist z.B. "SETUP_AP_OOB"
-// (Box spannt den Bose Setup-AP auf) oder "SETUP_INACTIVE" (Setup beendet);
-// SystemState z.B. "SETUP_LANG_NOT_SET" / "SETUP_LANG_SET".
+// SetupStatus is the response from /setup. State is e.g. "SETUP_AP_OOB"
+// (box opens the Bose setup AP) or "SETUP_INACTIVE" (setup finished);
+// SystemState e.g. "SETUP_LANG_NOT_SET" / "SETUP_LANG_SET".
 type SetupStatus struct {
 	State       string `json:"state"`
 	SystemState string `json:"systemState"`
 }
 
-// Volume ist aktueller Lautstaerke Zustand.
+// Volume is the current volume state.
 type Volume struct {
 	Target int  `json:"target"`
 	Actual int  `json:"actual"`
 	Muted  bool `json:"muted"`
 }
 
-// Bass + Capabilities zusammengefasst.
+// Bass + capabilities combined.
 type Bass struct {
 	Target  int  `json:"target"`
 	Actual  int  `json:"actual"`
@@ -72,13 +72,13 @@ type Bass struct {
 	Avail   bool `json:"available"`
 }
 
-// Network ist der aktive WLAN Zustand.
+// Network is the active Wi-Fi state.
 type Network struct {
 	WifiProfileCount int                `json:"wifiProfileCount"`
 	Interfaces       []NetworkInterface `json:"interfaces"`
 }
 
-// NetworkInterface ein WLAN Adapter.
+// NetworkInterface is a Wi-Fi adapter.
 type NetworkInterface struct {
 	Type      string `json:"type"`
 	Name      string `json:"name"`
@@ -91,7 +91,7 @@ type NetworkInterface struct {
 	Mode      string `json:"mode"`
 }
 
-// Source ist ein Eintrag aus /sources (Spotify, AirPlay etc).
+// Source is an entry from /sources (Spotify, AirPlay etc).
 type Source struct {
 	Source        string `json:"source"`
 	SourceAccount string `json:"sourceAccount"`
@@ -101,7 +101,7 @@ type Source struct {
 	DisplayName   string `json:"displayName"`
 }
 
-// Settings ist die kombinierte Antwort fuer den Box Einstellungen Tab.
+// Settings is the combined response for the box settings tab.
 type Settings struct {
 	Info    Info     `json:"info"`
 	Volume  Volume   `json:"volume"`
@@ -112,8 +112,8 @@ type Settings struct {
 
 // ---------- Read ----------
 
-// LoadSettings holt alle relevanten Zustaende mit einem Aufruf parallel.
-// Bei Fehlern einzelner Endpoints werden die Felder leer gelassen.
+// LoadSettings fetches all relevant states in parallel with one call.
+// On errors from individual endpoints the fields are left empty.
 func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 	var s Settings
 	type result struct{ err error }
@@ -200,10 +200,10 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 	return s, nil
 }
 
-// GetInfo liest /info und liefert die statische Box-Beschreibung inkl.
-// margeAccountUUID (leer = nicht gepaart / nach Factory-Reset),
-// moduleType/variant (taigan/scm/...) und der LAN-IP aus dem
-// networkInfo-Block (bevorzugt eine echte Adresse vor "0.0.0.0").
+// GetInfo reads /info and returns the static box description incl.
+// margeAccountUUID (empty = not paired / after factory reset),
+// moduleType/variant (taigan/scm/...) and the LAN IP from the
+// networkInfo block (prefers a real address over "0.0.0.0").
 func (c *Client) GetInfo(ctx context.Context) (Info, error) {
 	var raw struct {
 		DeviceID         string `xml:"deviceID,attr"`
@@ -236,8 +236,8 @@ func (c *Client) GetInfo(ctx context.Context) (Info, error) {
 	}
 	for _, comp := range raw.Components {
 		if comp.Category == "SCM" || info.Version == "" {
-			// Software Version hat oft Trailing Buildinfo —
-			// nur die ersten Zahlen Punkte Zahlen behalten.
+			// Software version often has trailing build info —
+			// keep only the leading numbers.dots.numbers.
 			info.Version = stripBuildSuffix(comp.SwVer)
 		}
 	}
@@ -246,14 +246,14 @@ func (c *Client) GetInfo(ctx context.Context) (Info, error) {
 		if ip != "" && ip != "0.0.0.0" {
 			info.IP = ip
 			if n.Type == "SCM" {
-				break // SCM ist die maßgebliche Adresse
+				break // SCM is the authoritative address
 			}
 		}
 	}
 	return info, nil
 }
 
-// GetNetwork liest /networkInfo (Interface-Zustand, IP, Profilanzahl).
+// GetNetwork reads /networkInfo (interface state, IP, profile count).
 func (c *Client) GetNetwork(ctx context.Context) (Network, error) {
 	var raw struct {
 		Count      int `xml:"wifiProfileCount,attr"`
@@ -283,8 +283,8 @@ func (c *Client) GetNetwork(ctx context.Context) (Network, error) {
 	return net, nil
 }
 
-// GetSetupStatus liest /setup. Auf einer Box im Auslieferungszustand
-// liefert das z.B. state="SETUP_AP_OOB" systemstate="SETUP_LANG_NOT_SET".
+// GetSetupStatus reads /setup. On a box in factory state this
+// returns e.g. state="SETUP_AP_OOB" systemstate="SETUP_LANG_NOT_SET".
 func (c *Client) GetSetupStatus(ctx context.Context) (SetupStatus, error) {
 	var raw struct {
 		State       string `xml:"state,attr"`
@@ -299,11 +299,11 @@ func (c *Client) GetSetupStatus(ctx context.Context) (SetupStatus, error) {
 	}, nil
 }
 
-// GetActiveWirelessProfile liest /getActiveWirelessProfile und liefert
-// die SSID des gespeicherten WLAN-Profils ("" wenn keins gesetzt ist).
-// Achtung: ein gesetztes Profil heißt NICHT, dass die Box auch
-// assoziiert ist (auf BCO/taigan kann ein Profil persistiert sein,
-// ohne dass der AP->STA-Wechsel je vollzogen wird).
+// GetActiveWirelessProfile reads /getActiveWirelessProfile and returns
+// the SSID of the stored Wi-Fi profile ("" if none is set).
+// Caution: a set profile does NOT mean the box is also
+// associated (on BCO/taigan a profile can be persisted
+// without the AP->STA switch ever being completed).
 func (c *Client) GetActiveWirelessProfile(ctx context.Context) (string, error) {
 	var raw struct {
 		SSID string `xml:"ssid"`
@@ -318,34 +318,34 @@ func (c *Client) GetActiveWirelessProfile(ctx context.Context) (string, error) {
 
 // ---------- Multiroom (read-only) ----------
 
-// ZoneMember beschreibt einen Slave in einer SoundTouch Zone.
-// Die Bose Firmware liefert je Member die deviceID als Element-Text
-// und die LAN-IP als Attribut.
+// ZoneMember describes a slave in a SoundTouch zone.
+// The Bose firmware returns per member the deviceID as element text
+// and the LAN IP as an attribute.
 type ZoneMember struct {
 	DeviceID string `json:"deviceID"`
 	IP       string `json:"ip"`
 	Role     string `json:"role,omitempty"`
 }
 
-// Zone ist der Zustand der klassischen SoundTouch Multiroom Gruppe.
-// Master ist die deviceID des Boxes die den Stream broadcasts; Members
-// sind alle Boxen die dem Stream folgen. SenderIP ist die LAN-IP des
-// Masters. Bei einer alleine stehenden Box liefert die Firmware ein
-// leeres `<zone />` Element — dann sind Master und Members leer.
+// Zone is the state of the classic SoundTouch multiroom group.
+// Master is the deviceID of the box that broadcasts the stream; Members
+// are all boxes that follow the stream. SenderIP is the LAN IP of the
+// master. For a standalone box the firmware returns an
+// empty `<zone />` element — then Master and Members are empty.
 type Zone struct {
 	Master   string       `json:"master,omitempty"`
 	SenderIP string       `json:"senderIP,omitempty"`
 	Members  []ZoneMember `json:"members"`
 }
 
-// Group ist der Zustand des Stereo-Pair-Group-Konzepts (zwei ST10 als L/R
-// Paar). Bei einer einzelnen, ungepairten Box liefert die Firmware einen
-// leeren Body (live verifiziert: NICHT `<group />`); getXML faengt das ab
-// und liefert dann eine leere Group ohne Fehler.
+// Group is the state of the stereo-pair group concept (two ST10 as an L/R
+// pair). For a single, unpaired box the firmware returns an
+// empty body (live verified: NOT `<group />`); getXML catches that
+// and then returns an empty Group without error.
 //
-// Nur die SoundTouch 10 unterstuetzt echte Stereo-Paare. Alle Modelle listen
-// /addGroup in /supportedURLs (live an taigan verifiziert), das taugt also
-// NICHT als Gate; die Firmware der Box ist die letzte Instanz.
+// Only the SoundTouch 10 supports real stereo pairs. All models list
+// /addGroup in /supportedURLs (live verified on taigan), so that does
+// NOT work as a gate; the box firmware is the final authority.
 type Group struct {
 	ID             string       `json:"id,omitempty"`
 	Name           string       `json:"name,omitempty"`
@@ -353,8 +353,8 @@ type Group struct {
 	Members        []ZoneMember `json:"members"`
 }
 
-// GetZone liest /getZone und liefert die aktuelle Multiroom Zone.
-// Bei einer alleinstehenden Box ist Zone leer (Master == "").
+// GetZone reads /getZone and returns the current multiroom zone.
+// For a standalone box the zone is empty (Master == "").
 func (c *Client) GetZone(ctx context.Context) (Zone, error) {
 	var raw struct {
 		Master   string `xml:"master,attr"`
@@ -392,12 +392,12 @@ func (c *Client) GetZone(ctx context.Context) (Zone, error) {
 	return z, nil
 }
 
-// GetGroup liest /getGroup (Stereo Pair). Bei einer ungepairten Box ist die
-// Antwort leer und es kommt eine leere Group zurueck (kein Fehler).
+// GetGroup reads /getGroup (stereo pair). For an unpaired box the
+// response is empty and an empty Group is returned (no error).
 //
-// Schema (live aus der Firmware-Doku abgeleitet, NICHT das frueher geratene
-// <groupMember>): die Member stehen als <roles><groupRole> mit deviceId/role/
-// ipAddress als Kind-Elementen, plus <masterDeviceId> auf Group-Ebene.
+// Schema (derived live from the firmware docs, NOT the earlier guessed
+// <groupMember>): the members are <roles><groupRole> with deviceId/role/
+// ipAddress as child elements, plus <masterDeviceId> at the group level.
 func (c *Client) GetGroup(ctx context.Context) (Group, error) {
 	var raw struct {
 		ID             string `xml:"id,attr"`
@@ -428,10 +428,10 @@ func (c *Client) GetGroup(ctx context.Context) (Group, error) {
 	return g, nil
 }
 
-// groupXML baut den <group>-Request-Body fuer AddGroup. masterDeviceID ist die
-// deviceID des Master-Speakers (per Bose-Konvention typisch der LINKE); members
-// listet beide Speaker mit je deviceId/role(LEFT|RIGHT)/ipAddress. Schema live
-// aus der Firmware-Doku:
+// groupXML builds the <group> request body for AddGroup. masterDeviceID is the
+// deviceID of the master speaker (by Bose convention typically the LEFT one); members
+// lists both speakers with deviceId/role(LEFT|RIGHT)/ipAddress each. Schema live
+// from the firmware docs:
 //
 //	<group><name>..</name><masterDeviceId>..</masterDeviceId>
 //	  <roles>
@@ -458,17 +458,17 @@ func groupXML(name, masterDeviceID string, members []ZoneMember) string {
 	return b.String()
 }
 
-// AddGroup erzeugt ein echtes L/R-Stereo-Paar (POST /addGroup an den Master).
-// name ist ein Anzeigelabel; masterDeviceID die deviceID des Masters; members
-// MUSS genau zwei Speaker enthalten, jeder mit Role "LEFT" bzw. "RIGHT",
-// deviceID und LAN-IP. Nur die ST10 paart wirklich; bei anderen Modellen
-// antwortet die Firmware mit Fehler, den der Aufrufer an die App durchreicht.
+// AddGroup creates a real L/R stereo pair (POST /addGroup to the master).
+// name is a display label; masterDeviceID the deviceID of the master; members
+// MUST contain exactly two speakers, each with role "LEFT" or "RIGHT",
+// deviceID and LAN IP. Only the ST10 actually pairs; on other models
+// the firmware responds with an error, which the caller passes through to the app.
 func (c *Client) AddGroup(ctx context.Context, name, masterDeviceID string, members []ZoneMember) error {
 	return c.postXML(ctx, "/addGroup", groupXML(name, masterDeviceID, members))
 }
 
-// RemoveGroup loest das Stereo-Paar dieser Box auf. Die Firmware dokumentiert
-// das als GET (Antwort ist die nun leere Group); an den Master gerichtet.
+// RemoveGroup dissolves the stereo pair of this box. The firmware documents
+// this as a GET (response is the now-empty Group); directed at the master.
 func (c *Client) RemoveGroup(ctx context.Context) error {
 	var ignore struct{}
 	return c.getXML(ctx, "/removeGroup", &ignore)
@@ -543,15 +543,15 @@ func (c *Client) RemoveZoneSlave(ctx context.Context, master ZoneMember, slaves 
 	return c.postXML(ctx, "/removeZoneSlave", zoneXML(master, slaves))
 }
 
-// SetName aendert den Anzeigenamen der Box. Achtung: Bose setzt
-// dabei in der Box State auch die margeURL zurueck auf den Default
-// Update Server. Unser autoPair haengt das im naechsten Tick wieder ein.
+// SetName changes the display name of the box. Caution: Bose also resets
+// the margeURL in the box state to the default update server in the
+// process. Our autoPair re-attaches it on the next tick.
 func (c *Client) SetName(ctx context.Context, name string) error {
 	body := fmt.Sprintf(`<name>%s</name>`, xmlEscape(name))
 	return c.postXML(ctx, "/name", body)
 }
 
-// SetVolume setzt den Ziel Volume (0-100).
+// SetVolume sets the target volume (0-100).
 func (c *Client) SetVolume(ctx context.Context, v int) error {
 	if v < 0 {
 		v = 0
@@ -563,8 +563,8 @@ func (c *Client) SetVolume(ctx context.Context, v int) error {
 	return c.postXML(ctx, "/volume", body)
 }
 
-// SetBass setzt den Bass Wert (Range aus bassCapabilities — typischer
-// ST10 Bereich -9..0).
+// SetBass sets the bass value (range from bassCapabilities — typical
+// ST10 range -9..0).
 func (c *Client) SetBass(ctx context.Context, b int) error {
 	body := fmt.Sprintf(`<bass>%d</bass>`, b)
 	return c.postXML(ctx, "/bass", body)
@@ -646,7 +646,7 @@ func xmlEscape(s string) string {
 	return r.Replace(s)
 }
 
-// stripBuildSuffix kuerzt "27.0.6.46330.5043500 epdbuild.trunk..." auf
+// stripBuildSuffix shortens "27.0.6.46330.5043500 epdbuild.trunk..." to
 // "27.0.6.46330.5043500".
 func stripBuildSuffix(s string) string {
 	if i := strings.Index(s, " "); i >= 0 {

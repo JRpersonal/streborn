@@ -1,8 +1,8 @@
-// Package sticksetup enthaelt die Windows/Mac Logik fuer das Bestuecken
-// eines frischen SD Sticks: Drive Discovery, File Copy, optional Eject.
-// Wird von der Desktop App genutzt; ist nicht Teil des Stick Agent.
+// Package sticksetup contains the Windows/Mac logic for provisioning a
+// fresh SD stick: drive discovery, file copy, optional eject. Used by
+// the desktop app; not part of the stick agent.
 //
-// Top-level Package (nicht internal/) damit Wails App importieren kann.
+// Top-level package (not internal/) so the Wails app can import it.
 package sticksetup
 
 import (
@@ -24,21 +24,21 @@ import (
 // then it falls back to the default logger. Mirrors dlna.Logger.
 var Logger = slog.Default()
 
-// Drive beschreibt ein potenzielles Ziellaufwerk fuer den Stick Setup.
+// Drive describes a potential target drive for the stick setup.
 type Drive struct {
-	Path        string `json:"path"`        // z.B. "D:\" oder "/Volumes/UNTITLED"
-	Label       string `json:"label"`       // Volume Label oder ""
-	TotalBytes  int64  `json:"totalBytes"`  // Groesse in Bytes
-	FreeBytes   int64  `json:"freeBytes"`   // verfuegbar in Bytes
+	Path        string `json:"path"`        // e.g. "D:\" or "/Volumes/UNTITLED"
+	Label       string `json:"label"`       // volume label or ""
+	TotalBytes  int64  `json:"totalBytes"`  // size in bytes
+	FreeBytes   int64  `json:"freeBytes"`   // available in bytes
 	Filesystem  string `json:"filesystem"`  // FAT32 / exFAT / NTFS
-	Removable   bool   `json:"removable"`   // Wechseldatentraeger
-	HasStick    bool   `json:"hasStick"`    // wurde schon mal als STR bestueckt?
-	Description string `json:"description"` // Anzeige Hint fuer den User
+	Removable   bool   `json:"removable"`   // removable medium
+	HasStick    bool   `json:"hasStick"`    // already provisioned as STR before?
+	Description string `json:"description"` // display hint for the user
 }
 
-// ListDrives findet alle entfernbaren Volumes die als Stick Ziel taugen.
-// Auf Windows: alle Drive Letters die nicht Fixed sind. Auf Mac/Linux:
-// alle Mounts unter /Volumes bzw /media die fat32 sind.
+// ListDrives finds all removable volumes that qualify as a stick target.
+// On Windows: all drive letters that are not fixed. On Mac/Linux: all
+// mounts under /Volumes or /media that are fat32.
 func ListDrives() ([]Drive, error) {
 	start := time.Now()
 	var drives []Drive
@@ -145,23 +145,23 @@ func stickWritable(path string) bool {
 	return true
 }
 
-// WLANConfig beschreibt eine WLAN Konfiguration die auf den Stick
-// geschrieben wird. Box's run.sh erkennt die Datei und provisioniert
-// wpa_supplicant beim ersten Boot.
+// WLANConfig describes a WLAN configuration written to the stick. The
+// box's run.sh detects the file and provisions wpa_supplicant on the
+// first boot.
 type WLANConfig struct {
 	SSID     string `json:"ssid"`
 	Password string `json:"password"`
 }
 
-// WriteStickFiles bestueckt das angegebene Ziel mit den eingebetteten
-// usb-stick Templates plus optional dem Stick Agent Binary.
+// WriteStickFiles provisions the given target with the embedded usb-stick
+// templates plus, optionally, the stick agent binary.
 //
-// binaryBytes ist das Stick Agent Binary (ARM build). Wenn nil, wird
-// nichts geschrieben — sinnvoll fuer "nur Templates aktualisieren" Flow.
-// Setzt die Files mit dem korrekten Mode fuer FAT32 (Mode wird auf FAT32
-// ignoriert, ist aber sauber).
+// binaryBytes is the stick agent binary (ARM build). If nil, nothing is
+// written — useful for the "update templates only" flow. Sets the files
+// with the correct mode for FAT32 (mode is ignored on FAT32, but it is
+// clean).
 //
-// Returns Liste der geschriebenen Files.
+// Returns the list of written files.
 func WriteStickFiles(targetPath string, binaryBytes, goLibrespotBytes []byte, stickVersion string) ([]string, error) {
 	if targetPath == "" {
 		return nil, fmt.Errorf("targetPath is empty")
@@ -176,7 +176,7 @@ func WriteStickFiles(targetPath string, binaryBytes, goLibrespotBytes []byte, st
 
 	written := []string{}
 
-	// Embed Files
+	// Embed files
 	stickFS := usbstick.Files()
 	err = fs.WalkDir(stickFS, ".", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -185,7 +185,7 @@ func WriteStickFiles(targetPath string, binaryBytes, goLibrespotBytes []byte, st
 		if d.IsDir() {
 			return nil
 		}
-		// files.go ist Go Code, nicht fuer den Stick gedacht.
+		// files.go is Go code, not meant for the stick.
 		if strings.HasSuffix(path, ".go") {
 			return nil
 		}
@@ -204,7 +204,7 @@ func WriteStickFiles(targetPath string, binaryBytes, goLibrespotBytes []byte, st
 		return written, err
 	}
 
-	// Binary schreiben falls vorhanden
+	// Write the binary if present
 	if len(binaryBytes) > 0 {
 		dstName := "streborn-armv7l"
 		dstPath := filepath.Join(targetPath, dstName)
@@ -228,16 +228,16 @@ func WriteStickFiles(targetPath string, binaryBytes, goLibrespotBytes []byte, st
 		written = append(written, glrName)
 	}
 
-	// remote_services Marker fuer Dauer-SSH — IMMER neu schreiben damit
-	// auch alte Sticks einen aktuellen Zeitstempel bekommen und der
-	// User sofort sieht dass das Setup wirklich gelaufen ist.
+	// remote_services marker for persistent SSH — ALWAYS rewrite so that
+	// even old sticks get a current timestamp and the user immediately
+	// sees that the setup really ran.
 	markerPath := filepath.Join(targetPath, "remote_services")
 	_ = writeFile(markerPath, []byte(""))
 	written = append(written, "remote_services")
 
-	// version.txt mit echter App Version (z.B. "1.0.0"). Wird IMMER neu
-	// geschrieben damit nach einem Update Stick der Vergleich app == stick
-	// passt und kein falsches "Update verfuegbar" Banner mehr erscheint.
+	// version.txt with the real app version (e.g. "1.0.0"). ALWAYS
+	// rewritten so that after an update stick the comparison app == stick
+	// holds and no false "update available" banner appears anymore.
 	versionPath := filepath.Join(targetPath, "version.txt")
 	v := strings.TrimSpace(stickVersion)
 	if v == "" {
@@ -290,8 +290,8 @@ func StickFileSet(binaryBytes, goLibrespotBytes []byte, stickVersion string) (ma
 	return files, nil
 }
 
-// IsBoseStick prueft ob auf dem Stick schon STR Files liegen
-// (also der Stick bereits bestueckt wurde).
+// IsBoseStick checks whether STR files are already on the stick (i.e.
+// the stick has already been provisioned).
 func IsBoseStick(path string) bool {
 	marker := filepath.Join(path, "run.sh")
 	if _, err := os.Stat(marker); err == nil {
@@ -300,8 +300,8 @@ func IsBoseStick(path string) bool {
 	return false
 }
 
-// StickVersion liest die version.txt vom Stick. Leer wenn die Datei
-// nicht da oder leer ist.
+// StickVersion reads version.txt from the stick. Empty if the file is
+// not there or empty.
 func StickVersion(path string) string {
 	b, err := os.ReadFile(filepath.Join(path, "version.txt"))
 	if err != nil {
@@ -310,10 +310,10 @@ func StickVersion(path string) string {
 	return strings.TrimSpace(string(b))
 }
 
-// StickConfigs liefert die noch nicht angewendeten Setup Konfigs vom
-// Stick. Wenn der User den Stick noch nicht in die Box gesteckt hat,
-// liegen wlan.conf / region.conf / name.conf darauf — die App nutzt
-// die Werte zum Vorbefuellen der Wizard Felder.
+// StickConfigs returns the not-yet-applied setup configs from the stick.
+// If the user has not yet inserted the stick into the box, wlan.conf /
+// region.conf / name.conf are on it — the app uses the values to prefill
+// the wizard fields.
 type StickConfigs struct {
 	WLANSSID string `json:"wlanSSID"`
 	WLANPass string `json:"wlanPass"`
@@ -322,8 +322,8 @@ type StickConfigs struct {
 	Locale   string `json:"locale"`
 }
 
-// ReadStickConfigs liest die conf Files vom Stick. Felder die nicht
-// existieren oder leer sind bleiben leer im Ergebnis.
+// ReadStickConfigs reads the conf files from the stick. Fields that do
+// not exist or are empty stay empty in the result.
 func ReadStickConfigs(path string) StickConfigs {
 	out := StickConfigs{}
 	if b, err := os.ReadFile(filepath.Join(path, "wlan.conf")); err == nil {
@@ -354,9 +354,9 @@ func ReadStickConfigs(path string) StickConfigs {
 	return out
 }
 
-// WriteWLANConfig schreibt eine wlan.conf JSON Datei auf den Stick.
-// Box's run.sh erkennt das beim ersten Boot und provisioniert
-// wpa_supplicant entsprechend.
+// WriteWLANConfig writes a wlan.conf JSON file to the stick. The box's
+// run.sh detects it on the first boot and provisions wpa_supplicant
+// accordingly.
 func WriteWLANConfig(targetPath string, cfg WLANConfig) error {
 	if cfg.SSID == "" {
 		return fmt.Errorf("SSID must not be empty")
@@ -369,16 +369,17 @@ func WriteWLANConfig(targetPath string, cfg WLANConfig) error {
 	return writeFile(dst, data)
 }
 
-// RegionConfig haelt den vom User beim Setup gewaehlten Country Code
-// (ISO 3166-1 alpha-2). Wird vom Stick beim Start gelesen und u.a. als
-// Default fuer die Radio Suche Land und die Sprach Auswahl benutzt.
+// RegionConfig holds the country code (ISO 3166-1 alpha-2) the user
+// chose during setup. Read by the stick at startup and used, among other
+// things, as the default for the radio search country and the language
+// selection.
 type RegionConfig struct {
 	Country string `json:"country"`
 }
 
-// WriteRegionConfig schreibt region.conf JSON auf den Stick. Stick's
-// run.sh persistiert es beim Bootstrap nach NAND und loescht die Datei
-// vom Stick.
+// WriteRegionConfig writes region.conf JSON to the stick. The stick's
+// run.sh persists it to NAND during bootstrap and deletes the file from
+// the stick.
 func WriteRegionConfig(targetPath string, cfg RegionConfig) error {
 	if cfg.Country == "" {
 		return fmt.Errorf("country must not be empty")
@@ -391,14 +392,14 @@ func WriteRegionConfig(targetPath string, cfg RegionConfig) error {
 	return writeFile(dst, data)
 }
 
-// NameConfig haelt den vom User beim Setup gewaehlten Box Namen (z.B.
-// "Wohnzimmer"). Wird beim ersten Boot vom Stick auf die Box via Bose
-// REST API angewendet. Stick haengt die UID der Box noch automatisch an.
+// NameConfig holds the box name the user chose during setup (e.g.
+// "Living Room"). Applied to the box from the stick on the first boot via
+// the Bose REST API. The stick automatically appends the box's UID.
 type NameConfig struct {
 	Name string `json:"name"`
 }
 
-// WriteNameConfig schreibt eine name.conf JSON Datei auf den Stick.
+// WriteNameConfig writes a name.conf JSON file to the stick.
 func WriteNameConfig(targetPath string, cfg NameConfig) error {
 	if cfg.Name == "" {
 		return fmt.Errorf("name must not be empty")
@@ -411,29 +412,28 @@ func WriteNameConfig(targetPath string, cfg NameConfig) error {
 	return writeFile(dst, data)
 }
 
-// LangConfig haelt die Signale aus dem Setup-Wizard (aktives App-UI
-// Locale, z.B. "de"/"en", und das vom User gewaehlte Land als ISO
-// 3166-1 alpha-2) plus den daraus abgeleiteten Bose sysLanguage
-// Integer. Der Stick liest das beim ersten Boot und nutzt SysLanguage
-// fuer das OOB Language Gate UND als Display-Sprache der Box, statt eine
-// fest verdrahtete Sprache zu erzwingen. Siehe project_bose_language_enum:
-// Englisch=3 ist der weltweite Default.
+// LangConfig holds the signals from the setup wizard (active app UI
+// locale, e.g. "de"/"en", and the country the user chose as ISO
+// 3166-1 alpha-2) plus the Bose sysLanguage integer derived from them.
+// The stick reads this on the first boot and uses SysLanguage for the
+// OOB language gate AND as the box's display language, instead of
+// forcing a hard-wired language. See project_bose_language_enum:
+// English=3 is the worldwide default.
 type LangConfig struct {
 	Locale      string `json:"locale"`
 	Country     string `json:"country"`
 	SysLanguage int    `json:"sysLanguage"`
 }
 
-// SysLanguageForLocale bildet einen BCP-47 Locale (oder nur das
-// Primaer-Subtag) auf den Bose sysLanguage Integer ab. Single source
-// of truth fuer alle Stellen die eine Sprache an die Box schicken
-// (Stick lang.conf + Setup-AP Push). Unbekannte Locales fallen auf
-// Englisch (3) zurueck, den neutralen weltweiten Default. 0 (unset)
-// und 14 (undefiniert) werden nie zurueckgegeben. Voller Enum in
+// SysLanguageForLocale maps a BCP-47 locale (or just the primary subtag)
+// to the Bose sysLanguage integer. Single source of truth for everywhere
+// that sends a language to the box (stick lang.conf + setup-AP push).
+// Unknown locales fall back to English (3), the neutral worldwide
+// default. 0 (unset) and 14 (undefined) are never returned. Full enum in
 // project_bose_language_enum.
 func SysLanguageForLocale(locale string) int {
 	s := strings.ToLower(strings.TrimSpace(locale))
-	// Chinesisch braucht das Region-Subtag fuer simplified vs traditional.
+	// Chinese needs the region subtag for simplified vs traditional.
 	switch {
 	case strings.HasPrefix(s, "zh-tw"), strings.HasPrefix(s, "zh-hk"),
 		strings.HasPrefix(s, "zh-mo"), strings.HasPrefix(s, "zh-hant"):
@@ -441,7 +441,7 @@ func SysLanguageForLocale(locale string) int {
 	case strings.HasPrefix(s, "zh"):
 		return 10 // Simplified Chinese
 	}
-	// Primaer-Subtag (vor '-' oder '_').
+	// Primary subtag (before '-' or '_').
 	primary := s
 	for i := 0; i < len(s); i++ {
 		if s[i] == '-' || s[i] == '_' {
@@ -602,11 +602,11 @@ func localePrimary(locale string) string {
 	return s
 }
 
-// WriteLangConfig schreibt lang.conf JSON auf den Stick. locale +
-// country sind die Wizard-Signale (fuer den Record), sysLanguage ist der
-// vom User im Sprach-Dropdown bestaetigte Wert. Ein ungueltiger Wert
-// (<=0, 14, oder >25) wird auf SuggestBoxLanguage zurueckgesetzt, damit
-// run.sh den Integer ohne eigene Mapping-Tabelle direkt lesen kann.
+// WriteLangConfig writes lang.conf JSON to the stick. locale + country
+// are the wizard signals (for the record), sysLanguage is the value the
+// user confirmed in the language dropdown. An invalid value (<=0, 14, or
+// >25) is reset to SuggestBoxLanguage so run.sh can read the integer
+// directly without its own mapping table.
 func WriteLangConfig(targetPath string, locale, country string, sysLanguage int) error {
 	loc := strings.TrimSpace(locale)
 	if loc == "" {
@@ -625,24 +625,24 @@ func WriteLangConfig(targetPath string, locale, country string, sysLanguage int)
 	return writeFile(dst, data)
 }
 
-// Eject wirft das Volume aus. Plattformspezifisch implementiert.
+// Eject ejects the volume. Implemented per platform.
 func Eject(path string) error {
 	return ejectImpl(path)
 }
 
-// FormatFAT32 formatiert den Stick neu als FAT32. ACHTUNG: alle Daten
-// gehen verloren. Wird vom Setup Wizard vor dem Beschreiben angeboten
-// damit der User nicht ausserhalb der App formatieren muss (Windows
-// Dialog zeigt FAT32 fuer Sticks ab 32 GB nicht an).
+// FormatFAT32 reformats the stick as FAT32. WARNING: all data is lost.
+// Offered by the setup wizard before writing so the user does not have to
+// format outside the app (the Windows dialog does not show FAT32 for
+// sticks of 32 GB and up).
 func FormatFAT32(path, label string) error {
 	return formatFAT32Impl(path, label)
 }
 
-// writeFile schreibt eine Datei atomar mit fsync. Wichtig: f.Sync()
-// erzwingt FlushFileBuffers vor Close, sonst koennte Windows die Daten
-// im Lazy Write Cache halten und beim Stick Ziehen ohne sauberen Eject
-// gehen sie verloren — genau das hat dazu gefuehrt dass conf Files vom
-// Setup nicht auf der Box ankamen.
+// writeFile writes a file atomically with fsync. Important: f.Sync()
+// forces FlushFileBuffers before Close, otherwise Windows could keep the
+// data in the lazy write cache and it would be lost when the stick is
+// pulled without a clean eject — exactly what caused conf files from the
+// setup not to reach the box.
 //
 // Close errors on the error path are intentionally discarded with
 // `_ = f.Close()`: we are about to os.Remove the tmp file anyway,

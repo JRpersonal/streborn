@@ -1,5 +1,5 @@
-// STR Desktop App: findet alle Sticks im LAN via mDNS, listet sie
-// und steuert sie via REST API. Wails App, Backend ist Go, Frontend HTML/JS.
+// STR Desktop App: finds all sticks on the LAN via mDNS, lists them
+// and controls them via REST API. Wails app, backend is Go, frontend HTML/JS.
 package main
 
 import (
@@ -30,7 +30,7 @@ import (
 	"streborn-app/agentbin"
 )
 
-// App ist die zentrale State Struktur.
+// App is the central state struct.
 type App struct {
 	ctx        context.Context
 	logger     *slog.Logger
@@ -119,7 +119,7 @@ const discoverySTRStickyTTL = 6 * time.Minute
 // would correct itself soon after. See otaPinned and mergeDiscoveryCache (#108).
 const otaRebootGrace = 4 * time.Minute
 
-// NewApp erstellt eine neue App Instance.
+// NewApp creates a new App instance.
 func NewApp() *App {
 	logger, logFile := newFileLogger(slog.LevelInfo)
 	return &App{
@@ -158,7 +158,7 @@ func (a *App) startup(ctx context.Context) {
 	// Verbose startup line so users always see SOMETHING in the
 	// log when they hit "Save diagnostic logs", even on a session
 	// where they did not poke any features that emit further logs.
-	a.logger.Info("Desktop App startet",
+	a.logger.Info("Desktop App started",
 		"version", appVersion,
 		"build", appBuild,
 		"logFile", LogFilePath(),
@@ -215,13 +215,13 @@ type BoxInfo struct {
 	PortVerified bool `json:"portVerified"`
 }
 
-// DiscoverBoxes durchsucht das LAN nach Sticks via mDNS. Wenn mDNS
-// nichts findet (z.B. Windows Firewall blockt 5353, oder die Stock
-// Firmware announct unter einem Service Namen den wir noch nicht
-// kennen), startet ein einmaliger leichter HTTP Probe Sweep auf Port
-// 8090 als Fallback. Der Fallback laeuft NICHT bei jeder Discovery
-// und nur auf einem Port, damit ein erfolgreicher mDNS Lauf kein
-// Portscan auf dem lokalen Netz triggert.
+// DiscoverBoxes scans the LAN for sticks via mDNS. When mDNS
+// finds nothing (e.g. Windows Firewall blocks 5353, or the stock
+// firmware announces under a service name we do not know yet),
+// a one-time lightweight HTTP probe sweep on port 8090 runs as a
+// fallback. The fallback does NOT run on every discovery and only
+// on a single port, so that a successful mDNS run does not trigger
+// a port scan on the local network.
 func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	if timeoutSec <= 0 {
 		timeoutSec = 6
@@ -1595,7 +1595,7 @@ func (a *App) SyncSpotifyLogin(boxes []SpotifySyncTarget) (map[string]any, error
 	return map[string]any{"source": sourceName, "synced": synced, "failed": failed}, nil
 }
 
-// GetPresets ruft GET /api/presets des angegebenen Sticks.
+// GetPresets calls GET /api/presets of the given stick.
 // latestBoseFirmware is the final firmware Bose shipped for every SoundTouch
 // model (27.0.6, 2022-08-04). There is nothing newer; an older box can be
 // brought up to it with the Bose app.
@@ -1727,8 +1727,8 @@ func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 	return out, nil
 }
 
-// SetPreset macht PUT /api/presets/<slot>. art ist die Sender Logo URL,
-// wird beim Play als upnp:albumArtURI an die Box geschickt. Routed through
+// SetPreset does PUT /api/presets/<slot>. art is the station logo URL,
+// sent to the box as upnp:albumArtURI on play. Routed through
 // boxPut so a preset save gets the same :8888<->:17008 port fallback as the
 // other box commands.
 func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, homepage string) error {
@@ -1743,6 +1743,25 @@ func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art st
 func (a *App) SaveLibraryPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, source string) error {
 	return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
 		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Source: source})
+}
+
+// SaveFolderPreset stores a queue preset (a whole DLNA folder, type=queue) on a
+// slot. payloadJSON is the already-built preset object from the Library tab
+// ({name, type:"queue", shuffle, items:[{url,title,art,mime,duration_sec}...]});
+// it is PUT verbatim to /api/presets/<slot> so the frontend owns the shape and
+// the agent reloads it into the play-queue on recall. Routed through boxDo for
+// the same :8888<->:17008 port fallback as the other preset saves.
+func (a *App) SaveFolderPreset(host string, port int, slot int, payloadJSON string) error {
+	resp, err := a.boxDo(host, port, http.MethodPut,
+		fmt.Sprintf("%s/%d", presetAPIPath, slot), "application/json", payloadJSON)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
 }
 
 // SaveSpotifyPreset stores a real Spotify preset (type=spotify with the
@@ -1792,7 +1811,7 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 	return copied, nil
 }
 
-// DeletePreset macht DELETE /api/presets/<slot>.
+// DeletePreset does DELETE /api/presets/<slot>.
 func (a *App) DeletePreset(host string, port int, slot int) error {
 	resp, err := a.boxDo(host, port, http.MethodDelete, fmt.Sprintf("/api/presets/%d", slot), "", "")
 	if err != nil {
@@ -1901,9 +1920,9 @@ func (a *App) waitAgentReady(host string, port int) bool {
 	}
 }
 
-// PlayURL triggert POST /api/play mit beliebigem Stream URL. icon ist
-// die Sender Logo URL (wird auf der Box angezeigt), uuid ermoeglicht
-// dass radio-browser den Klick zaehlt.
+// PlayURL triggers POST /api/play with an arbitrary stream URL. icon is
+// the station logo URL (shown on the box), uuid lets
+// radio-browser count the click.
 func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime, homepage string) error {
 	body, _ := json.Marshal(map[string]string{
 		"url":      streamURL,
@@ -1924,7 +1943,74 @@ func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime,
 	return nil
 }
 
-// BoxSettings holt name/volume/bass/network/sources der Box via Stick.
+// StartQueue starts an agent-side library play queue. payloadJSON is the full
+// request body the agent expects:
+// {"items":[{"url","title","art","mime","duration_sec"}],"start","shuffle","repeat"}.
+// The queue auto-advances on the box; a single PlayURL later clears it.
+func (a *App) StartQueue(host string, port int, payloadJSON string) error {
+	resp, err := a.playPost(host, port, "/api/queue", payloadJSON)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s", friendlyError(resp))
+	}
+	return nil
+}
+
+// QueueNext / QueuePrev skip within the active queue.
+func (a *App) QueueNext(host string, port int) error {
+	return a.queuePost(host, port, "/api/queue/next", "")
+}
+
+func (a *App) QueuePrev(host string, port int) error {
+	return a.queuePost(host, port, "/api/queue/prev", "")
+}
+
+// QueueShuffle turns shuffle on or off for the active queue.
+func (a *App) QueueShuffle(host string, port int, on bool) error {
+	b, _ := json.Marshal(map[string]bool{"on": on})
+	return a.queuePost(host, port, "/api/queue/shuffle", string(b))
+}
+
+// QueueRepeat sets the repeat mode ("off", "all", "one") for the active queue.
+func (a *App) QueueRepeat(host string, port int, mode string) error {
+	b, _ := json.Marshal(map[string]string{"mode": mode})
+	return a.queuePost(host, port, "/api/queue/repeat", string(b))
+}
+
+func (a *App) queuePost(host string, port int, path, body string) error {
+	resp, err := a.boxDo(host, port, http.MethodPost, path, "application/json", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
+// GetQueue returns the current queue snapshot (active, pos, shuffle, repeat,
+// items) or an empty object when no queue is active.
+func (a *App) GetQueue(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/queue", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// BoxSettings fetches name/volume/bass/network/sources of the box via the stick.
 func (a *App) BoxSettings(host string, port int) (map[string]any, error) {
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/settings", "", "")
 	if err != nil {
@@ -1941,24 +2027,24 @@ func (a *App) BoxSettings(host string, port int) (map[string]any, error) {
 	return out, nil
 }
 
-// SetBoxName aendert den Anzeigenamen der Bose Box.
+// SetBoxName changes the display name of the Bose box.
 func (a *App) SetBoxName(host string, port int, name string) error {
 	return a.boxPut(host, port, "/api/box/name", map[string]string{"name": name})
 }
 
-// SetBoxVolume setzt die Lautstaerke (0-100).
+// SetBoxVolume sets the volume (0-100).
 func (a *App) SetBoxVolume(host string, port int, value int) error {
 	return a.boxPut(host, port, "/api/box/volume", map[string]int{"value": value})
 }
 
-// SetBoxBass setzt den Bass Wert (Range pro Box, ST10 z.B. -9..0).
+// SetBoxBass sets the bass value (range per box, ST10 e.g. -9..0).
 func (a *App) SetBoxBass(host string, port int, value int) error {
 	return a.boxPut(host, port, "/api/box/bass", map[string]int{"value": value})
 }
 
-// SelectBoxSource schaltet die Box auf eine andere Quelle: "AUX",
-// "BLUETOOTH", "STANDBY". Stick Agent uebersetzt das in den passenden
-// /select bzw /key Aufruf an die Bose REST API.
+// SelectBoxSource switches the box to a different source: "AUX",
+// "BLUETOOTH", "STANDBY". The Stick Agent translates that into the matching
+// /select or /key call to the Bose REST API.
 func (a *App) SelectBoxSource(host string, port int, source string) error {
 	return a.boxPut(host, port, "/api/box/source", map[string]string{"source": source})
 }
@@ -2653,9 +2739,9 @@ func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {
 	return out
 }
 
-// SyncBoxPresets schickt alle Stick Presets erneut an die Box damit
-// die Hardware Preset Tasten 1-6 funktionieren. Wird vom "Hardware
-// Tasten reparieren" Button im Settings Tab benutzt.
+// SyncBoxPresets re-sends all stick presets to the box so that
+// the hardware preset buttons 1-6 work. Used by the "Repair hardware
+// buttons" button in the Settings tab.
 func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 	// boxDo so the :8888<->:17008 self-heal applies (BCO/Portable boxes only
 	// answer on the REDIRECTed :17008; a baseURL+raw POST pinned to :8888 failed).
@@ -2667,9 +2753,9 @@ func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 	if resp.StatusCode >= 400 {
 		return nil, readHTTPError(resp)
 	}
-	// Wenn der Stick Agent zu alt ist und den Endpoint nicht kennt,
-	// fallback auf den Default Handler liefert HTML statt JSON. Pruefen
-	// und freundlich melden.
+	// If the Stick Agent is too old and does not know the endpoint,
+	// the fallback to the default handler returns HTML instead of JSON. Check
+	// and report it nicely.
 	ct := resp.Header.Get("Content-Type")
 	if !strings.Contains(ct, "json") {
 		return nil, fmt.Errorf("stick agent is too old for this operation; please update the stick first (update banner at the top)")
@@ -2681,9 +2767,9 @@ func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 	return out, nil
 }
 
-// RebootBox loest einen Neustart der Bose Box aus (via Stick Agent
-// shell `reboot`). Damit greifen frische Setup Wizard Configs auf dem
-// USB Stick sofort, ohne dauerhaftes Polling im Agent.
+// RebootBox triggers a restart of the Bose box (via the Stick Agent
+// shell `reboot`). This makes fresh setup-wizard configs on the
+// USB stick take effect immediately, without continuous polling in the agent.
 func (a *App) RebootBox(host string, port int) error {
 	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/reboot", "application/json", "")
 	if err != nil {
@@ -2696,8 +2782,8 @@ func (a *App) RebootBox(host string, port int) error {
 	return nil
 }
 
-// VoteStation gibt einem Sender bei radio-browser einen Daumen hoch.
-// Best Effort; Fehler wird zurueckgegeben aber muss nicht angezeigt werden.
+// VoteStation gives a station a thumbs-up on radio-browser.
+// Best effort; the error is returned but does not have to be shown.
 func (a *App) VoteStation(host string, port int, uuid string) error {
 	if uuid == "" {
 		return nil
@@ -2713,8 +2799,8 @@ func (a *App) VoteStation(host string, port int, uuid string) error {
 	return nil
 }
 
-// friendlyError extrahiert das `detail` Feld aus der Stick API Fehler
-// Antwort, falls vorhanden. Fallback: der Rohbody.
+// friendlyError extracts the `detail` field from the Stick API error
+// response, if present. Fallback: the raw body.
 func friendlyError(resp *http.Response) string {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	var m map[string]any
@@ -2744,8 +2830,9 @@ func friendlyError(resp *http.Response) string {
 }
 
 // Pause / Stop pro Box.
-func (a *App) Pause(host string, port int) error { return a.doAction(host, port, "pause") }
-func (a *App) Stop(host string, port int) error  { return a.doAction(host, port, "stop") }
+func (a *App) Pause(host string, port int) error  { return a.doAction(host, port, "pause") }
+func (a *App) Resume(host string, port int) error { return a.doAction(host, port, "resume") }
+func (a *App) Stop(host string, port int) error   { return a.doAction(host, port, "stop") }
 
 func (a *App) doAction(host string, port int, action string) error {
 	resp, err := a.boxDo(host, port, http.MethodPost, "/api/"+action, "application/json", "")
@@ -2759,19 +2846,19 @@ func (a *App) doAction(host string, port int, action string) error {
 	return nil
 }
 
-// pickReachableIP waehlt aus den IPs die der Stick via mDNS announct die
-// vom aktuellen LAN aus erreichbare. Box's USB Gadget Interface
-// (203.0.113.x) ist nicht aus dem WLAN routbar; dieselbe Box announct
-// auch ihre echte WLAN IP, die nehmen wir.
+// pickReachableIP selects, from the IPs the stick announces via mDNS, the one
+// reachable from the current LAN. The box's USB gadget interface
+// (203.0.113.x) is not routable from the Wi-Fi; the same box also announces
+// its real Wi-Fi IP, which is the one we take.
 //
-// Priorisierung:
+// Prioritization:
 //
-//  1. Private LAN Ranges (RFC 1918): 192.168/16, 10/8, 172.16/12
-//  2. Link Local: 169.254/16
-//  3. Public IPs (unwahrscheinlich)
+//  1. Private LAN ranges (RFC 1918): 192.168/16, 10/8, 172.16/12
+//  2. Link local: 169.254/16
+//  3. Public IPs (unlikely)
 //
-// Skip: 203.0.113/24 (Documentation TEST-NET-3, Box USB Gadget),
-// 127/8 Loopback.
+// Skip: 203.0.113/24 (Documentation TEST-NET-3, box USB gadget),
+// 127/8 loopback.
 func pickReachableIP(ips []string) string {
 	if len(ips) == 0 {
 		return ""
@@ -2782,7 +2869,7 @@ func pickReachableIP(ips []string) string {
 		if ip == nil || ip.IsLoopback() {
 			continue
 		}
-		// USB Gadget TEST-NET-3 ist nicht routbar
+		// USB gadget TEST-NET-3 is not routable
 		if strings.HasPrefix(ipStr, "203.0.113.") {
 			continue
 		}
@@ -2822,149 +2909,166 @@ func pickReachableIP(ips []string) string {
 
 // ---- Stick Setup ----
 
-// ListDrives liefert alle entfernbaren Volumes die als Stick Ziel taugen.
-// Frontend nutzt das im Setup Wizard.
+// ListDrives returns all removable volumes that are suitable as a stick target.
+// The frontend uses this in the setup wizard.
 func (a *App) ListDrives() ([]sticksetup.Drive, error) {
 	return sticksetup.ListDrives()
 }
 
-// FormatStick formatiert den Stick neu als FAT32. ACHTUNG: alle Daten
-// gehen verloren. Wird vor WriteStickFiles aufgerufen wenn der User die
-// "Stick zuerst formatieren" Checkbox aktiviert hat.
+// FormatStick reformats the stick as FAT32. WARNING: all data
+// is lost. Called before WriteStickFiles when the user has enabled the
+// "Format stick first" checkbox.
 func (a *App) FormatStick(targetPath string) error {
-	return sticksetup.FormatFAT32(targetPath, "REBORN")
+	// Log the prepare step so a stick-boot install (the ST10 path, which
+	// never touches the SSH installer that does log) leaves a trail in the
+	// diagnostic bundle. Without this a failed self-install shows only
+	// discovery noise and the cause is invisible (see #195).
+	a.logger.Info("FormatStick", "comp", "sticksetup", "target", targetPath)
+	err := sticksetup.FormatFAT32(targetPath, "REBORN")
+	if err != nil {
+		a.logger.Warn("FormatStick failed", "comp", "sticksetup", "target", targetPath, "err", err)
+	}
+	return err
 }
 
-// WriteStickFiles bestueckt das angegebene Volume mit allen noetigen
-// Files (Templates plus eingebettetes Stick Agent Binary). Das Binary
-// ist beim App Build embedded und braucht keinen Pfad vom User.
-// Die App Version PLUS Build Stamp wird in version.txt geschrieben
-// (Format "1.0.0+2026-05-15-2202") damit der Update Detector auch
-// bei gleicher Versionsnummer Build Unterschiede erkennt.
+// WriteStickFiles populates the given volume with all the necessary
+// files (templates plus the embedded Stick Agent binary). The binary
+// is embedded at app build time and needs no path from the user.
+// The app version PLUS build stamp is written to version.txt
+// (format "1.0.0+2026-05-15-2202") so that the update detector also
+// recognizes build differences when the version number is the same.
 func (a *App) WriteStickFiles(targetPath string) ([]string, error) {
 	v := appVersion
 	if appBuild != "" && appBuild != "dev" {
 		v = appVersion + "+" + appBuild
 	}
-	return sticksetup.WriteStickFiles(targetPath, agentbin.Bytes(), agentbin.GoLibrespotBytes(), v)
+	files, err := sticksetup.WriteStickFiles(targetPath, agentbin.Bytes(), agentbin.GoLibrespotBytes(), v)
+	// Record what was staged onto the stick. agentBytes confirms the embedded
+	// agent is present (0 on a dev build, which is itself the cause of a
+	// non-starting agent), and the file count/version pins the attempt in the
+	// bundle so a later stick-boot failure is traceable (see #195).
+	a.logger.Info("WriteStickFiles",
+		"comp", "sticksetup", "target", targetPath, "version", v,
+		"agentBytes", len(agentbin.Bytes()), "fileCount", len(files), "err", err)
+	return files, err
 }
 
-// WriteWLANConfig schreibt eine WLAN Konfig auf den Stick. Optional vor
-// dem Eject; Box's run.sh erkennt das beim ersten Boot.
+// WriteWLANConfig writes a Wi-Fi config onto the stick. Optional before
+// the eject; the box's run.sh detects it on first boot.
 func (a *App) WriteWLANConfig(targetPath, ssid, password string) error {
 	return sticksetup.WriteWLANConfig(targetPath, sticksetup.WLANConfig{
 		SSID: ssid, Password: password,
 	})
 }
 
-// WriteRegionConfig schreibt eine region.conf JSON Datei (ISO 3166-1
-// alpha-2 Country Code) auf den Stick. Stick persistiert das beim Boot
-// nach NAND und nutzt es als Default fuer Radio Suche und Sprache.
+// WriteRegionConfig writes a region.conf JSON file (ISO 3166-1
+// alpha-2 country code) onto the stick. The stick persists it on boot
+// to NAND and uses it as the default for radio search and language.
 func (a *App) WriteRegionConfig(targetPath, country string) error {
 	return sticksetup.WriteRegionConfig(targetPath, sticksetup.RegionConfig{Country: country})
 }
 
-// WriteNameConfig schreibt eine name.conf JSON Datei mit dem vom User
-// gewuenschten Box Namen auf den Stick. Stick wendet den beim ersten
-// Boot via Bose REST API auf die Box an und haengt die UID Box ID an.
+// WriteNameConfig writes a name.conf JSON file with the box name
+// requested by the user onto the stick. The stick applies it on first
+// boot to the box via the Bose REST API and appends the UID box ID.
 func (a *App) WriteNameConfig(targetPath, name string) error {
 	return sticksetup.WriteNameConfig(targetPath, sticksetup.NameConfig{Name: name})
 }
 
-// WriteLangConfig schreibt lang.conf auf den Stick. locale + country
-// sind die Wizard-Signale, sysLanguage der vom User im Sprach-Dropdown
-// gewaehlte Bose-Wert. Die Box's run.sh liest den Integer beim ersten
-// Boot als OOB-Gate-Sprache UND Display-Sprache, statt weltweit Deutsch
-// zu erzwingen. Siehe project_bose_language_enum.
+// WriteLangConfig writes lang.conf onto the stick. locale + country
+// are the wizard signals, sysLanguage the Bose value chosen by the user
+// in the language dropdown. The box's run.sh reads the integer on first
+// boot as the OOB-gate language AND display language, instead of forcing
+// German worldwide. See project_bose_language_enum.
 func (a *App) WriteLangConfig(targetPath, locale, country string, sysLanguage int) error {
 	return sticksetup.WriteLangConfig(targetPath, locale, country, sysLanguage)
 }
 
-// SuggestBoxLanguage liefert die Bose-sysLanguage, die der Setup-Wizard
-// im Sprach-Dropdown vorbelegen soll: primaer aus dem gewaehlten Land
-// abgeleitet, mit der aktiven App-Sprache als bewusster Override, sonst
-// Englisch. Das Frontend ruft es beim Laden und bei jeder Laenderaenderung.
+// SuggestBoxLanguage returns the Bose sysLanguage that the setup wizard
+// should preselect in the language dropdown: derived primarily from the
+// chosen country, with the active app language as a deliberate override,
+// otherwise English. The frontend calls it on load and on every country change.
 func (a *App) SuggestBoxLanguage(locale, country string) int {
 	return sticksetup.SuggestBoxLanguage(locale, country)
 }
 
-// SetAppLocale merkt sich die im UI aktive Sprache des Users (BCP-47,
-// z.B. "de"/"en"). Das Frontend ruft das beim Start und bei jedem
-// Sprachwechsel auf. Server-seitige Provisioning-Pfade (Setup-AP Push)
-// leiten daraus die Box-Display-Sprache ab.
+// SetAppLocale remembers the user's UI-active language (BCP-47,
+// e.g. "de"/"en"). The frontend calls it at startup and on every
+// language change. Server-side provisioning paths (setup-AP push)
+// derive the box display language from it.
 func (a *App) SetAppLocale(locale string) {
 	a.localeMu.Lock()
 	a.userLocale = strings.TrimSpace(locale)
 	a.localeMu.Unlock()
 }
 
-// appLocale liefert das zuletzt gemeldete UI-Locale (leer wenn noch
-// keins gesetzt wurde).
+// appLocale returns the most recently reported UI locale (empty if none
+// has been set yet).
 func (a *App) appLocale() string {
 	a.localeMu.RLock()
 	defer a.localeMu.RUnlock()
 	return a.userLocale
 }
 
-// ListWiFiProfiles liefert die gespeicherten WLAN Profile vom Host OS.
-// Frontend nutzt das als Dropdown im Setup damit der User die SSID nicht
-// abtippen muss.
+// ListWiFiProfiles returns the saved Wi-Fi profiles from the host OS.
+// The frontend uses this as a dropdown in setup so the user does not have
+// to type the SSID.
 func (a *App) ListWiFiProfiles() ([]wifiprofiles.Profile, error) {
 	return wifiprofiles.List()
 }
 
-// TryWiFiPassword versucht das gespeicherte Passwort fuer eine SSID
-// auszulesen. Auf Windows funktioniert das fuer Profile die der User
-// selbst gespeichert hat ohne Admin Rechte. Auf Mac/Linux braucht es ggf.
-// User Consent. Returns leer wenn nichts gefunden.
+// TryWiFiPassword tries to read the saved password for an SSID.
+// On Windows this works for profiles the user saved themselves
+// without admin rights. On Mac/Linux it may need user consent.
+// Returns empty when nothing is found.
 func (a *App) TryWiFiPassword(ssid string) string {
 	pw, _ := wifiprofiles.TryPassword(ssid)
 	return pw
 }
 
-// CurrentWiFi liefert die SSID des aktuell verbundenen WLAN. Wird im UI
-// als Default in der Dropdown ausgewaehlt.
+// CurrentWiFi returns the SSID of the currently connected Wi-Fi. Used in the UI
+// as the default selection in the dropdown.
 func (a *App) CurrentWiFi() string {
 	return wifiprofiles.CurrentSSID()
 }
 
-// IsBoseStick true wenn auf dem Volume schon ein STR liegt.
+// IsBoseStick true when the volume already holds an STR install.
 func (a *App) IsBoseStick(path string) bool {
 	return sticksetup.IsBoseStick(path)
 }
 
-// StickVersion liest die version.txt vom Stick.
+// StickVersion reads version.txt from the stick.
 func (a *App) StickVersion(path string) string {
 	return sticksetup.StickVersion(path)
 }
 
-// CheckStick prueft technisch ob das Volume als Install-Stick taugt
-// (vorhanden, FAT32, gross genug, beschreibbar). Der Setup-Wizard ruft das
-// bevor er den User weitergehen laesst, damit ein NTFS/exFAT-, zu kleiner oder
-// schreibgeschuetzter Stick frueh mit klarer Meldung abgefangen wird statt in
-// einen spaeteren kryptischen Fehler zu laufen.
+// CheckStick technically checks whether the volume is suitable as an install stick
+// (present, FAT32, large enough, writable). The setup wizard calls this
+// before letting the user proceed, so that an NTFS/exFAT, too-small or
+// write-protected stick is caught early with a clear message instead of
+// running into a later cryptic error.
 func (a *App) CheckStick(path string) sticksetup.StickCheck {
 	return sticksetup.CheckStick(path)
 }
 
-// StickConfigs liefert noch nicht applizierte Setup Konfigs vom Stick
-// (wlan, region, name). Wird zum Vorbefuellen des Wizards genutzt.
+// StickConfigs returns not-yet-applied setup configs from the stick
+// (wlan, region, name). Used to pre-fill the wizard.
 func (a *App) StickConfigs(path string) sticksetup.StickConfigs {
 	return sticksetup.ReadStickConfigs(path)
 }
 
-// AppVersion liefert die Semver Version der laufenden App.
+// AppVersion returns the semver version of the running app.
 func (a *App) AppVersion() string { return appVersion }
 
-// AppInfo liefert App Metadaten (Version, Build, Autor, URLs) fuer
-// About Dialog, Footer und Auto Update Check.
+// AppInfo returns app metadata (version, build, author, URLs) for
+// the About dialog, footer and auto-update check.
 //
-// UpdateManifestURL zeigt auf eine kleine JSON Datei der Form
+// UpdateManifestURL points to a small JSON file of the form
 //
 //	{"version":"1.1.0","build":"2026-06-01-0900","downloadUrl":"https://.../app-windows-amd64.exe","notes":"..."}
 //
-// Die App prueft beim Start ob die remote Version groesser ist als ihre
-// eigene und zeigt dann ein Update Banner. Leer = Auto Update aus.
+// On startup the app checks whether the remote version is greater than its
+// own and then shows an update banner. Empty = auto-update off.
 type AppInfo struct {
 	Version           string `json:"version"`
 	Build             string `json:"build"`
@@ -2976,8 +3080,8 @@ type AppInfo struct {
 	UpdateManifestURL string `json:"updateManifestUrl"`
 }
 
-// Versionen werden ueber -ldflags X im Build gesetzt; defaults nur zum
-// Entwickeln.
+// Versions are set via -ldflags X in the build; defaults are for
+// development only.
 var (
 	appVersion = "1.0.0"
 	appBuild   = "dev"
@@ -3231,13 +3335,13 @@ func (a *App) headStatusType(url string) (int, string) {
 	return resp.StatusCode, resp.Header.Get("Content-Type")
 }
 
-// EjectDrive wirft den Stick aus damit der User ihn entnehmen kann.
+// EjectDrive ejects the stick so the user can remove it.
 func (a *App) EjectDrive(path string) error {
 	return sticksetup.Eject(path)
 }
 
-// Status liefert das now_playing XML als String. Frontend kann selber
-// regex-parsen.
+// Status returns the now_playing XML as a string. The frontend can
+// regex-parse it itself.
 func (a *App) Status(host string, port int) (string, error) {
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/status", "", "")
 	if err != nil {

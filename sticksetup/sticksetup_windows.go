@@ -26,7 +26,7 @@ func listDrivesWindows() ([]Drive, error) {
 
 	mask, _, _ := getLogicalDrives.Call()
 	if mask == 0 {
-		return nil, fmt.Errorf("GetLogicalDrives lieferte 0")
+		return nil, fmt.Errorf("GetLogicalDrives returned 0")
 	}
 
 	var out []Drive
@@ -74,10 +74,10 @@ func listDrivesWindows() ([]Drive, error) {
 		label := syscall.UTF16ToString(volumeName)
 		fs := syscall.UTF16ToString(fsName)
 
-		// Box liest nur FAT32. Auf NTFS / exFAT / sonstigem Filesystem
-		// gilt der Stick NICHT als Bose Stick auch wenn run.sh & Co
-		// drauf liegen — sonst zeigt die App faelschlich "Stick
-		// erkannt, Version 1.0.0" und schreibt sinnlose Files.
+		// The box only reads FAT32. On NTFS / exFAT / any other filesystem
+		// the stick does NOT count as a Bose stick even if run.sh & co are
+		// on it — otherwise the app would wrongly show "stick detected,
+		// version 1.0.0" and write pointless files.
 		hasStick := false
 		if strings.EqualFold(fs, "FAT32") {
 			hasStick = IsBoseStick(root)
@@ -107,22 +107,22 @@ func descForDrive(path, label, fs string, total int64) string {
 	return fmt.Sprintf("%s %s (%.1f GB, %s)", path, label, gb, fs)
 }
 
-// listDrivesMac und listDrivesLinux sind auf Windows nicht implementiert
-// aber wir brauchen die Symbole damit das gemeinsame sticksetup.go Switch
-// statement kompiliert.
-func listDrivesMac() ([]Drive, error)   { return nil, fmt.Errorf("nicht auf Mac") }
-func listDrivesLinux() ([]Drive, error) { return nil, fmt.Errorf("nicht auf Linux") }
+// listDrivesMac and listDrivesLinux are not implemented on Windows, but
+// we need the symbols so the shared sticksetup.go switch statement
+// compiles.
+func listDrivesMac() ([]Drive, error)   { return nil, fmt.Errorf("not on Mac") }
+func listDrivesLinux() ([]Drive, error) { return nil, fmt.Errorf("not on Linux") }
 
-// formatFAT32Impl formatiert das Volume neu als FAT32 via embeddedem
-// winformat.exe Helper, der FmIfs.dll FormatEx direkt aufruft. Das hat
-// kein 32 GB Limit (anders als Format-Volume Cmdlet) und liefert einen
-// sauberen Exit Code zurueck.
+// formatFAT32Impl reformats the volume as FAT32 via the embedded
+// winformat.exe helper, which calls FmIfs.dll FormatEx directly. That has
+// no 32 GB limit (unlike the Format-Volume cmdlet) and returns a clean
+// exit code.
 //
-// Ablauf:
-//  1. winformat.exe aus dem Embed in TEMP extrahieren
-//  2. Mit Start-Process -Verb RunAs starten — User sieht EINEN UAC Prompt
-//  3. Helper laeuft elevated, ruft FmIfs.FormatEx, schreibt Exit Code
-//  4. Wir lesen stderr fuer eine sinnvolle Fehlermeldung
+// Flow:
+//  1. Extract winformat.exe from the embed into TEMP
+//  2. Launch it with Start-Process -Verb RunAs — the user sees ONE UAC prompt
+//  3. The helper runs elevated, calls FmIfs.FormatEx, writes the exit code
+//  4. We read stderr for a meaningful error message
 func formatFAT32Impl(path, label string) error {
 	letter := strings.TrimSuffix(path, ":\\")
 	letter = strings.TrimSuffix(letter, ":/")
@@ -139,8 +139,8 @@ func formatFAT32Impl(path, label string) error {
 			"please re-download the installer from the GitHub release page)")
 	}
 
-	// Helper in TEMP extrahieren. Eindeutiger Name pro Aufruf damit
-	// alte Instanzen das File nicht sperren.
+	// Extract the helper into TEMP. Unique name per call so old
+	// instances do not lock the file.
 	tmpDir := os.TempDir()
 	stamp := time.Now().UnixNano()
 	helperPath := filepath.Join(tmpDir, fmt.Sprintf("st-winformat-%d.exe", stamp))
@@ -151,11 +151,11 @@ func formatFAT32Impl(path, label string) error {
 	defer os.Remove(helperPath)
 	defer os.Remove(statusPath)
 
-	// Start-Process -Verb RunAs zeigt den UAC Prompt und wartet auf
-	// Exit. WICHTIG: -RedirectStandardError ist mit -Verb NICHT
-	// erlaubt (PowerShell wirft ParameterBindingException), daher
-	// schreibt der Helper das Ergebnis selbst in die Status Datei.
-	// $LASTEXITCODE liefern wir an die App zurueck.
+	// Start-Process -Verb RunAs shows the UAC prompt and waits for exit.
+	// IMPORTANT: -RedirectStandardError is NOT allowed with -Verb
+	// (PowerShell throws ParameterBindingException), so the helper writes
+	// the result into the status file itself. We return $LASTEXITCODE to
+	// the app.
 	ps := fmt.Sprintf(
 		`$ErrorActionPreference='Stop'; try { $p = Start-Process -FilePath '%s' -ArgumentList '%s','%s','%s' -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode } catch { Write-Error $_.Exception.Message; exit 99 }`,
 		strings.ReplaceAll(helperPath, `'`, `''`),
@@ -167,7 +167,7 @@ func formatFAT32Impl(path, label string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 	out, runErr := cmd.CombinedOutput()
 
-	// Status Datei lesen — das ist die Quelle der Wahrheit.
+	// Read the status file — this is the source of truth.
 	statusData, _ := os.ReadFile(statusPath)
 	status := strings.TrimSpace(string(statusData))
 
@@ -175,7 +175,7 @@ func formatFAT32Impl(path, label string) error {
 		return nil
 	}
 
-	// Kein OK Status → entweder UAC abgelehnt oder Helper hat Fehler gemeldet.
+	// No OK status → either UAC was declined or the helper reported an error.
 	if runErr != nil {
 		msg := strings.TrimSpace(string(out))
 		// Exit Code 1223 = ERROR_CANCELLED (UAC declined by user).
@@ -200,25 +200,26 @@ func formatFAT32Impl(path, label string) error {
 	return fmt.Errorf("format failed: helper never executed (UAC declined or antivirus blocked it?)")
 }
 
-// ejectImpl wirft das Volume sauber aus via Win32 API direkt.
-// Vorgehen ist der Microsoft Standard fuer "Safely Remove Hardware":
-//   1. CreateFile(\\.\X:) — Handle aufs Volume
-//   2. FSCTL_LOCK_VOLUME — exklusiver Lock damit niemand mehr schreibt
-//   3. FSCTL_DISMOUNT_VOLUME — Filesystem-Mount entfernen
-//   4. IOCTL_STORAGE_MEDIA_REMOVAL — Hardware Removal-Schutz aus
-//   5. IOCTL_STORAGE_EJECT_MEDIA — den USB Driver anweisen das Geraet
-//      freizugeben (kein Disconnect Sound beim Ziehen mehr)
+// ejectImpl ejects the volume cleanly via the Win32 API directly.
+// The procedure is the Microsoft standard for "Safely Remove Hardware":
+//  1. CreateFile(\\.\X:) — handle to the volume
+//  2. FSCTL_LOCK_VOLUME — exclusive lock so nobody writes anymore
+//  3. FSCTL_DISMOUNT_VOLUME — remove the filesystem mount
+//  4. IOCTL_STORAGE_MEDIA_REMOVAL — turn off the hardware removal guard
+//  5. IOCTL_STORAGE_EJECT_MEDIA — tell the USB driver to release the
+//     device (no more disconnect sound when pulling it)
 //
-// Das ist deutlich robuster als Shell.Application Eject Verb, das oft
-// nur den Drive Letter entfernt aber USB Driver aktiv laesst.
+// This is considerably more robust than the Shell.Application Eject verb,
+// which often only removes the drive letter but leaves the USB driver
+// active.
 func ejectImpl(path string) error {
 	letter := strings.TrimSuffix(path, ":\\")
 	letter = strings.TrimSuffix(letter, ":/")
 	if len(letter) == 0 {
-		return fmt.Errorf("kein Drive Letter in %q", path)
+		return fmt.Errorf("no drive letter in %q", path)
 	}
 
-	// Schreibe Caches flushen lassen
+	// Let write caches flush
 	time.Sleep(1 * time.Second)
 
 	drivePath := `\\.\` + letter + ":"
@@ -259,7 +260,7 @@ func ejectImpl(path string) error {
 	defer closeHandle.Call(h)
 
 	var bytesReturned uint32
-	// Lock — retry weil andere Prozesse (Indexer) ggf. noch zugreifen
+	// Lock — retry because other processes (the indexer) may still be accessing it
 	var lockErr error
 	for i := 0; i < 10; i++ {
 		r, _, e := deviceIoControl.Call(h, fsctlLockVolume, 0, 0, 0, 0, uintptr(unsafe.Pointer(&bytesReturned)), 0)
@@ -274,16 +275,16 @@ func ejectImpl(path string) error {
 		return fmt.Errorf("lock volume: %v", lockErr)
 	}
 
-	// Dismount Filesystem
+	// Dismount the filesystem
 	if r, _, e := deviceIoControl.Call(h, fsctlDismountVolume, 0, 0, 0, 0, uintptr(unsafe.Pointer(&bytesReturned)), 0); r == 0 {
 		return fmt.Errorf("dismount: %v", e)
 	}
 
-	// Media Removal aktivieren (PREVENT_MEDIA_REMOVAL = 0 = false)
+	// Enable media removal (PREVENT_MEDIA_REMOVAL = 0 = false)
 	var preventRemoval byte = 0
 	deviceIoControl.Call(h, ioctlStorageMediaRemov, uintptr(unsafe.Pointer(&preventRemoval)), 1, 0, 0, uintptr(unsafe.Pointer(&bytesReturned)), 0)
 
-	// Eject — der eigentliche "Safe to Remove" Hardware Trigger
+	// Eject — the actual "Safe to Remove" hardware trigger
 	if r, _, e := deviceIoControl.Call(h, ioctlStorageEjectMedia, 0, 0, 0, 0, uintptr(unsafe.Pointer(&bytesReturned)), 0); r == 0 {
 		return fmt.Errorf("eject media: %v", e)
 	}

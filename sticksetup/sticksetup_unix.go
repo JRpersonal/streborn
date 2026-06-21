@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-func listDrivesWindows() ([]Drive, error) { return nil, fmt.Errorf("nicht auf Windows") }
+func listDrivesWindows() ([]Drive, error) { return nil, fmt.Errorf("not on Windows") }
 
 func listDrivesMac() ([]Drive, error) {
 	root := "/Volumes"
@@ -20,7 +20,7 @@ func listDrivesMac() ([]Drive, error) {
 }
 
 func listDrivesLinux() ([]Drive, error) {
-	// Versuche typische Mount Punkte
+	// Try typical mount points
 	candidates := []string{"/media", "/mnt", "/run/media"}
 	var all []Drive
 	for _, c := range candidates {
@@ -41,7 +41,7 @@ func scanMounts(root string) ([]Drive, error) {
 			continue
 		}
 		path := filepath.Join(root, e.Name())
-		// Sub Verzeichnis bei /media/<user>/<volume>
+		// Subdirectory at /media/<user>/<volume>
 		if runtime.GOOS == "linux" {
 			subs, err := os.ReadDir(path)
 			if err == nil {
@@ -79,18 +79,20 @@ func makeDrive(path string) Drive {
 	}
 }
 
-// detectFs ist Best Effort — Stat liefert filesystem type nur auf Linux.
+// detectFs is best-effort — Stat returns the filesystem type only on Linux.
 func detectFs(path string) string {
-	return "FAT32" // Assumption fuer Stick targets
+	return "FAT32" // assumption for stick targets
 }
 
-// formatFAT32Impl stub fuer Mac/Linux — aktuell nicht implementiert.
-// User auf diesen Plattformen formatiert vorerst selbst.
+// formatFAT32Impl stub for Mac/Linux — not implemented yet.
+// Users on these platforms format the stick themselves for now.
 //
 // macOS note (issue #58): `diskutil eraseDisk` requires a whole-disk
 // node (`/dev/diskN`), not a mounted volume path (`/Volumes/BOSE`).
 // Passing the volume produced
-//   "A volume was specified instead of a whole disk: /Volumes/BOSE"
+//
+//	"A volume was specified instead of a whole disk: /Volumes/BOSE"
+//
 // We therefore resolve the volume to its ParentWholeDisk via
 // `diskutil info -plist <path>` before calling eraseDisk.
 func formatFAT32Impl(path, label string) error {
@@ -152,7 +154,7 @@ func macParentWholeDisk(volumePath string) (string, error) {
 	return disk, nil
 }
 
-// ejectImpl auf Mac/Linux via OS Commands.
+// ejectImpl on Mac/Linux via OS commands.
 func ejectImpl(path string) error {
 	switch runtime.GOOS {
 	case "darwin":
@@ -162,7 +164,7 @@ func ejectImpl(path string) error {
 		}
 		return nil
 	default:
-		// Linux: einfach umount, das ist meistens was der User will
+		// Linux: just umount, that is mostly what the user wants
 		cmd := exec.Command("umount", path)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("umount: %v: %s", err, string(out))

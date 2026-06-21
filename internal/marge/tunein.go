@@ -1,25 +1,25 @@
-// TuneIn API Stub. Vorgehalten als Infrastruktur fuer einen moeglichen
-// kuenftigen Pfad ueber Bose's TuneIn Worker, derzeit NICHT aktiv im Code
-// Pfad da STSCertified den TuneIn Worker in der finalen FW Version nicht
-// startet (siehe docs/findings-pair-flow.md "Service Discovery Update").
+// TuneIn API stub. Kept as infrastructure for a possible
+// future path via Bose's TuneIn worker, currently NOT active in the code
+// path since STSCertified does not start the TuneIn worker in the final FW version
+// (see docs/findings-pair-flow.md "Service Discovery Update").
 //
-// Wenn Bose den Service jemals reaktiviert oder eine aeltere FW Version
-// auf der Box flasht, koennten wir hier einen TuneIn-kompatiblen OPML/JSON
-// Endpoint anbieten, mit Backend Radio-Browser.info. Der Hostname
-// 7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com wird bereits via
-// /etc/hosts auf 127.0.0.1 umgeleitet (internal/hosts.DefaultEntries).
+// If Bose ever reactivates the service or flashes an older FW version
+// onto the box, we could offer a TuneIn-compatible OPML/JSON
+// endpoint here, backed by Radio-Browser.info. The hostname
+// 7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com is already redirected via
+// /etc/hosts to 127.0.0.1 (internal/hosts.DefaultEntries).
 //
-// Bekannte Pfade die der BMXTuneInClient ruft (aus STSCertified Binary
-// Strings):
+// Known paths that the BMXTuneInClient calls (from STSCertified binary
+// strings):
 //
 //	/profiles/<id>/nowPlaying?partnerId=Bose&serial=<deviceSerial>
 //	/now-playing/...
-//	/Browse.ashx?id=s<station>      (Standard TuneIn OPML)
+//	/Browse.ashx?id=s<station>      (standard TuneIn OPML)
 //	/Tune.ashx?id=s<station>
 //	/Describe.ashx?id=s<station>
 //
-// Wenn das jemals reaktiviert wird, hier einen Handler bauen der
-// Radio-Browser API Stationen in das TuneIn OPML Format konvertiert.
+// If this is ever reactivated, build a handler here that
+// converts Radio-Browser API stations into the TuneIn OPML format.
 package marge
 
 import (
@@ -27,9 +27,9 @@ import (
 	"strings"
 )
 
-// isTuneInRequest detected ob der Request an den Bose TuneIn Partner
-// Subdomain geht. Wird derzeit im catchall nicht mehr aufgerufen weil
-// die Box den Endpoint nicht anspricht.
+// isTuneInRequest detects whether the request goes to the Bose TuneIn partner
+// subdomain. Currently no longer called in the catchall because
+// the box does not contact the endpoint.
 func isTuneInRequest(r *http.Request) bool {
 	host := r.Host
 	if h, _, ok := strings.Cut(host, ":"); ok {

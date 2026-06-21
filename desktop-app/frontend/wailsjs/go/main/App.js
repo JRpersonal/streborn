@@ -134,6 +134,10 @@ export function GetPresets(arg1, arg2) {
   return window['go']['main']['App']['GetPresets'](arg1, arg2);
 }
 
+export function GetQueue(arg1, arg2) {
+  return window['go']['main']['App']['GetQueue'](arg1, arg2);
+}
+
 export function GetResumeOnPowerOn(arg1, arg2) {
   return window['go']['main']['App']['GetResumeOnPowerOn'](arg1, arg2);
 }
@@ -188,6 +192,22 @@ export function ProbeSetupAP() {
 
 export function PushWLANToBox(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['PushWLANToBox'](arg1, arg2, arg3, arg4);
+}
+
+export function QueueNext(arg1, arg2) {
+  return window['go']['main']['App']['QueueNext'](arg1, arg2);
+}
+
+export function QueuePrev(arg1, arg2) {
+  return window['go']['main']['App']['QueuePrev'](arg1, arg2);
+}
+
+export function QueueRepeat(arg1, arg2, arg3) {
+  return window['go']['main']['App']['QueueRepeat'](arg1, arg2, arg3);
+}
+
+export function QueueShuffle(arg1, arg2, arg3) {
+  return window['go']['main']['App']['QueueShuffle'](arg1, arg2, arg3);
 }
 
 export function RadioClick(arg1) {
@@ -246,12 +266,20 @@ export function RestoreBoxSnapshot(arg1, arg2, arg3) {
   return window['go']['main']['App']['RestoreBoxSnapshot'](arg1, arg2, arg3);
 }
 
+export function Resume(arg1, arg2) {
+  return window['go']['main']['App']['Resume'](arg1, arg2);
+}
+
 export function RevealUpdateFile(arg1) {
   return window['go']['main']['App']['RevealUpdateFile'](arg1);
 }
 
 export function SaveDiagnosticBundle(arg1, arg2) {
   return window['go']['main']['App']['SaveDiagnosticBundle'](arg1, arg2);
+}
+
+export function SaveFolderPreset(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveFolderPreset'](arg1, arg2, arg3, arg4);
 }
 
 export function SaveLibraryPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
@@ -328,6 +356,10 @@ export function SpotifyBitrate(arg1, arg2) {
 
 export function SpotifyNowPlaying(arg1, arg2) {
   return window['go']['main']['App']['SpotifyNowPlaying'](arg1, arg2);
+}
+
+export function StartQueue(arg1, arg2, arg3) {
+  return window['go']['main']['App']['StartQueue'](arg1, arg2, arg3);
 }
 
 export function Status(arg1, arg2) {

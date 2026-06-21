@@ -1,17 +1,17 @@
-// Package presets liest und schreibt die Preset Konfiguration auf dem USB Stick.
+// Package presets reads and writes the preset configuration on the USB stick.
 //
-// Das Persistenz Format akzeptiert zwei Varianten:
+// The persistence format accepts two variants:
 //
-//  1. Array direkt:           [{...}, {...}]
-//  2. Object mit "presets":   {"presets": [{...}, ...]}
+//  1. Array directly:         [{...}, {...}]
+//  2. Object with "presets":  {"presets": [{...}, ...]}
 //
-// Feld Namen sind robust gegen die verschiedenen Wizard Versionen:
+// Field names are robust against the different wizard versions:
 //
-//	"slot" oder "id"               -> Slot
+//	"slot" or "id"                 -> Slot
 //	"name"                          -> Name
-//	"stream_url" oder "url"        -> StreamURL
+//	"stream_url" or "url"          -> StreamURL
 //	"type"                          -> Type ("radio", "spotify", ...)
-//	"art"                           -> Art (Coverbild URL, optional)
+//	"art"                           -> Art (cover image URL, optional)
 package presets
 
 import (
@@ -21,7 +21,7 @@ import (
 	"sync"
 )
 
-// Preset beschreibt einen einzelnen Preset Slot.
+// Preset describes a single preset slot.
 type Preset struct {
 	Slot      int    `json:"slot"`
 	Name      string `json:"name"`
@@ -51,43 +51,64 @@ type Preset struct {
 	// the same "website" link as the radio search rows in Recently-played (#135).
 	// Optional/additive: presets saved before this, or non-radio, leave it empty.
 	Homepage string `json:"homepage,omitempty"`
+	// Queue presets (Type=="queue") save a whole DLNA folder as a preset. They
+	// carry no single StreamURL/URI; instead Items holds the ordered tracks and
+	// Shuffle records whether the folder was saved with shuffle on, so a recall
+	// (soft or hardware) restarts the same library play-queue. Both
+	// optional/additive: every other preset type leaves them empty.
+	Shuffle bool         `json:"shuffle,omitempty"`
+	Items   []PresetItem `json:"items,omitempty"`
 }
 
-// rawPreset ist der Disk Format Helper. Akzeptiert mehrere Alias Felder.
+// PresetItem is one track in a queue preset (Type=="queue"). It mirrors the
+// agent-side queueItem fields the play path needs, so a saved folder can be
+// reloaded straight into the play queue. DurationSec is the track length in
+// seconds (0 when the DLNA server reported none).
+type PresetItem struct {
+	URL         string `json:"url"`
+	Title       string `json:"title,omitempty"`
+	Art         string `json:"art,omitempty"`
+	Mime        string `json:"mime,omitempty"`
+	DurationSec int    `json:"duration_sec,omitempty"`
+}
+
+// rawPreset is the disk format helper. Accepts multiple alias fields.
 type rawPreset struct {
-	Slot      int    `json:"slot"`
-	ID        int    `json:"id"`
-	Name      string `json:"name"`
-	StreamURL string `json:"stream_url"`
-	URL       string `json:"url"`
-	Type      string `json:"type"`
-	Art       string `json:"art"`
-	Bitrate   int    `json:"bitrate"`
-	URI       string `json:"uri"`
-	Account   string `json:"account"`
-	Source    string `json:"source"`
-	Homepage  string `json:"homepage"`
+	Slot      int          `json:"slot"`
+	ID        int          `json:"id"`
+	Name      string       `json:"name"`
+	StreamURL string       `json:"stream_url"`
+	URL       string       `json:"url"`
+	Type      string       `json:"type"`
+	Art       string       `json:"art"`
+	Bitrate   int          `json:"bitrate"`
+	URI       string       `json:"uri"`
+	Account   string       `json:"account"`
+	Source    string       `json:"source"`
+	Homepage  string       `json:"homepage"`
+	Shuffle   bool         `json:"shuffle"`
+	Items     []PresetItem `json:"items"`
 }
 
-// rawWrapper unterstuetzt das Object Format {"presets": [...]}.
+// rawWrapper supports the object format {"presets": [...]}.
 type rawWrapper struct {
 	Presets []rawPreset `json:"presets"`
 }
 
-// Store hält alle Presets im Speicher und synchronisiert sie mit der Datei.
+// Store holds all presets in memory and synchronizes them with the file.
 type Store struct {
 	path string
 	mu   sync.RWMutex
 	data []Preset
 }
 
-// New erzeugt einen leeren Store ohne Persistenz Pfad.
+// New creates an empty Store without a persistence path.
 func New() *Store { return &Store{} }
 
-// Load liest die presets.json vom angegebenen Pfad.
-// Existiert die Datei nicht oder ist leer, wird ein leerer Store zurueck.
-// Bei Parse Fehler wird ebenfalls ein leerer Store geliefert plus der Fehler
-// damit der Aufrufer entscheidet ob er crasht oder weitermacht.
+// Load reads the presets.json from the given path.
+// If the file does not exist or is empty, an empty Store is returned.
+// On parse error an empty Store is also returned plus the error so the
+// caller decides whether it crashes or continues.
 func Load(path string) (*Store, error) {
 	s := &Store{path: path}
 	b, err := os.ReadFile(path)
@@ -95,30 +116,30 @@ func Load(path string) (*Store, error) {
 		if os.IsNotExist(err) {
 			return s, nil
 		}
-		return s, fmt.Errorf("presets lesen: %w", err)
+		return s, fmt.Errorf("read presets: %w", err)
 	}
 	if len(b) == 0 {
 		return s, nil
 	}
 
-	// Erst versuche das Array Format
+	// First try the array format
 	var arr []rawPreset
 	if err := json.Unmarshal(b, &arr); err == nil {
 		s.data = normalize(arr)
 		return s, nil
 	}
 
-	// Dann das Object Format mit "presets" Wrapper
+	// Then the object format with "presets" wrapper
 	var wrap rawWrapper
 	if err := json.Unmarshal(b, &wrap); err == nil && wrap.Presets != nil {
 		s.data = normalize(wrap.Presets)
 		return s, nil
 	}
 
-	return s, fmt.Errorf("presets parsen: unbekanntes Format in %s", path)
+	return s, fmt.Errorf("parse presets: unknown format in %s", path)
 }
 
-// normalize wandelt rawPreset in Preset um, mit Alias Aufloesung.
+// normalize converts rawPreset into Preset, with alias resolution.
 func normalize(in []rawPreset) []Preset {
 	out := make([]Preset, 0, len(in))
 	for _, p := range in {
@@ -145,12 +166,14 @@ func normalize(in []rawPreset) []Preset {
 			Account:   p.Account,
 			Source:    p.Source,
 			Homepage:  p.Homepage,
+			Shuffle:   p.Shuffle,
+			Items:     p.Items,
 		})
 	}
 	return out
 }
 
-// All liefert eine Kopie aller Presets.
+// All returns a copy of all presets.
 func (s *Store) All() []Preset {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -159,7 +182,7 @@ func (s *Store) All() []Preset {
 	return out
 }
 
-// Get liefert den Preset für den angegebenen Slot.
+// Get returns the preset for the given slot.
 func (s *Store) Get(slot int) (Preset, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -171,8 +194,8 @@ func (s *Store) Get(slot int) (Preset, bool) {
 	return Preset{}, false
 }
 
-// SetSlot fuegt ein Preset hinzu oder ersetzt das vorhandene fuer den
-// gleichen Slot. Persistiert sofort.
+// SetSlot adds a preset or replaces the existing one for the same slot.
+// Persists immediately.
 func (s *Store) SetSlot(p Preset) error {
 	s.mu.Lock()
 	replaced := false
@@ -190,7 +213,7 @@ func (s *Store) SetSlot(p Preset) error {
 	return s.Save()
 }
 
-// RemoveSlot entfernt das Preset fuer den angegebenen Slot.
+// RemoveSlot removes the preset for the given slot.
 func (s *Store) RemoveSlot(slot int) error {
 	s.mu.Lock()
 	out := make([]Preset, 0, len(s.data))
@@ -204,24 +227,24 @@ func (s *Store) RemoveSlot(slot int) error {
 	return s.Save()
 }
 
-// Save schreibt die Presets im Object Format ({"presets":[...]}) zurueck.
-// Das ist auch das Format das der Wizard schreibt, damit beides kompatibel ist.
+// Save writes the presets back in the object format ({"presets":[...]}).
+// That is also the format the wizard writes, so both are compatible.
 func (s *Store) Save() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.path == "" {
-		return fmt.Errorf("Store hat keinen Pfad")
+		return fmt.Errorf("Store has no path")
 	}
 	wrapper := struct {
 		Presets []Preset `json:"presets"`
 	}{Presets: s.data}
 	b, err := json.MarshalIndent(wrapper, "", "  ")
 	if err != nil {
-		return fmt.Errorf("presets serialisieren: %w", err)
+		return fmt.Errorf("serialize presets: %w", err)
 	}
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return fmt.Errorf("presets schreiben: %w", err)
+		return fmt.Errorf("write presets: %w", err)
 	}
 	return os.Rename(tmp, s.path)
 }

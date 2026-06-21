@@ -24,7 +24,7 @@ func newTestManager(t *testing.T) *Manager {
 	return New(dir, []string{"streaming.bose.com", "content.api.bose.io"}, logger)
 }
 
-func TestEnsureBundleGeneriertNeu(t *testing.T) {
+func TestEnsureBundleGeneratesNew(t *testing.T) {
 	m := newTestManager(t)
 	bundle, _, err := m.EnsureBundle()
 	if err != nil {
@@ -32,22 +32,22 @@ func TestEnsureBundleGeneriertNeu(t *testing.T) {
 	}
 	if len(bundle.RootCAPEM) == 0 || len(bundle.RootKeyPEM) == 0 ||
 		len(bundle.ServerCertPEM) == 0 || len(bundle.ServerKeyPEM) == 0 {
-		t.Fatal("Bundle hat leere Felder")
+		t.Fatal("bundle has empty fields")
 	}
 	for _, name := range []string{rootCAFile, rootKeyFile, serverCertFile, serverKeyFile} {
 		path := filepath.Join(m.dir, name)
 		fi, err := os.Stat(path)
 		if err != nil {
-			t.Errorf("Datei nicht gefunden: %s, err=%v", path, err)
+			t.Errorf("file not found: %s, err=%v", path, err)
 			continue
 		}
-		// Key Files muessen restriktiv sein (0600).
-		// Auf Windows werden die Permissions nicht so umgesetzt, daher
-		// dort den Check ueberspringen.
+		// Key files must be restrictive (0600).
+		// On Windows the permissions are not applied this way, so
+		// skip the check there.
 		if name == rootKeyFile || name == serverKeyFile {
 			mode := fi.Mode().Perm()
 			if mode != 0o600 && mode != 0o666 {
-				t.Logf("WARN %s Permissions %v (Windows toleriert)", name, mode)
+				t.Logf("WARN %s permissions %v (tolerated on Windows)", name, mode)
 			}
 		}
 	}
@@ -70,10 +70,10 @@ func TestEnsureBundleIdempotent(t *testing.T) {
 		t.Error("second EnsureBundle on fresh bundle should not report regenerated")
 	}
 	if string(first.RootCAPEM) != string(second.RootCAPEM) {
-		t.Error("RootCA wurde neu generiert beim zweiten Aufruf")
+		t.Error("RootCA was regenerated on the second call")
 	}
 	if string(first.ServerCertPEM) != string(second.ServerCertPEM) {
-		t.Error("Server Cert wurde neu generiert beim zweiten Aufruf")
+		t.Error("server cert was regenerated on the second call")
 	}
 }
 
@@ -88,10 +88,10 @@ func TestBundleTLSCert(t *testing.T) {
 		t.Fatalf("TLSCert: %v", err)
 	}
 	if cert.Certificate == nil {
-		t.Error("kein Certificate in tls.Certificate")
+		t.Error("no Certificate in tls.Certificate")
 	}
 	if cert.PrivateKey == nil {
-		t.Error("kein PrivateKey in tls.Certificate")
+		t.Error("no PrivateKey in tls.Certificate")
 	}
 }
 
@@ -104,7 +104,7 @@ func TestServerCertVertrauenswuerdigKette(t *testing.T) {
 
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(bundle.RootCAPEM) {
-		t.Fatal("RootCA nicht parsebar")
+		t.Fatal("RootCA not parsable")
 	}
 	serverCert, err := parseFirstCert(bundle.ServerCertPEM)
 	if err != nil {
@@ -114,12 +114,12 @@ func TestServerCertVertrauenswuerdigKette(t *testing.T) {
 	for _, dns := range []string{"streaming.bose.com", "content.api.bose.io"} {
 		opts := x509.VerifyOptions{Roots: pool, DNSName: dns}
 		if _, err := serverCert.Verify(opts); err != nil {
-			t.Errorf("Verify fuer %s fehlgeschlagen: %v", dns, err)
+			t.Errorf("Verify for %s failed: %v", dns, err)
 		}
 	}
 }
 
-func TestServerCertGueltigkeit(t *testing.T) {
+func TestServerCertValidity(t *testing.T) {
 	m := newTestManager(t)
 	bundle, _, err := m.EnsureBundle()
 	if err != nil {
@@ -130,11 +130,11 @@ func TestServerCertGueltigkeit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cert.NotBefore.After(time.Now()) {
-		t.Errorf("NotBefore in der Zukunft: %v", cert.NotBefore)
+		t.Errorf("NotBefore in the future: %v", cert.NotBefore)
 	}
-	// Mindestens 8 Jahre gueltig
+	// Valid for at least 8 years
 	if cert.NotAfter.Before(time.Now().Add(8 * 365 * 24 * time.Hour)) {
-		t.Errorf("NotAfter zu kurz: %v", cert.NotAfter)
+		t.Errorf("NotAfter too short: %v", cert.NotAfter)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestRootCAIstCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !root.IsCA {
-		t.Error("Root Cert hat IsCA=false")
+		t.Error("root cert has IsCA=false")
 	}
 	if root.KeyUsage&x509.KeyUsageCertSign == 0 {
 		t.Error("root cert cannot sign")
@@ -171,7 +171,7 @@ func TestServerCertHatSANs(t *testing.T) {
 		have[n] = true
 	}
 	if !have["streaming.bose.com"] || !have["content.api.bose.io"] {
-		t.Errorf("SAN fehlt: %v", cert.DNSNames)
+		t.Errorf("SAN missing: %v", cert.DNSNames)
 	}
 }
 
@@ -365,13 +365,13 @@ func TestRefreshTrustStoreSkipsMissingTargets(t *testing.T) {
 	}
 }
 
-// parseFirstCert dekodiert das erste CERTIFICATE Block aus pemData.
+// parseFirstCert decodes the first CERTIFICATE block from pemData.
 func parseFirstCert(pemData []byte) (*x509.Certificate, error) {
 	rest := pemData
 	for {
 		block, r := pem.Decode(rest)
 		if block == nil {
-			return nil, errors.New("kein CERTIFICATE Block im PEM")
+			return nil, errors.New("no CERTIFICATE block in PEM")
 		}
 		if block.Type == "CERTIFICATE" {
 			return x509.ParseCertificate(block.Bytes)

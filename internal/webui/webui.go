@@ -1,6 +1,6 @@
-// Package webui stellt das Config Web Interface auf Port 8888 bereit.
-// Enthaelt die HTML UI plus eine REST API die spaeter auch von der Wails
-// Desktop App genutzt wird.
+// Package webui provides the config web interface on port 8888.
+// Contains the HTML UI plus a REST API that is later also used by the
+// Wails desktop app.
 package webui
 
 import (
@@ -58,8 +58,8 @@ type Server struct {
 	renderer    *upnp.Renderer
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
-	region      string // ISO 3166-1 alpha-2 vom Setup Wizard, leer wenn unbekannt
-	regionFile  string // Pfad fuer persistente Speicherung
+	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
+	regionFile  string // path for persistent storage
 	streamProxy *streamproxy.Server
 	// webhooks holds the user-configured HTTP requests (thumbs trigger). nil
 	// when not wired; endpoints then report unavailable.
@@ -230,6 +230,22 @@ type Server struct {
 	// Keyed slot -> deletion time; entries older than boxPresetTombstoneTTL are
 	// ignored/pruned. Guarded by boxPresetsMu.
 	deletedBoxSlots map[int]time.Time
+
+	// queue is the agent-side DLNA library play queue (#202 follow-up). It
+	// auto-advances on track end so a NAS/FRITZ!Box folder plays through like the
+	// original SoundTouch box-side queue, even with the desktop app closed. A
+	// watcher goroutine polls now_playing while a queue is active; queueGen
+	// invalidates the per-track timing when a new track is pushed. queueMu guards
+	// the watcher lifecycle and timing fields; the playQueue has its own lock.
+	queue           *playQueue
+	queueMu         sync.Mutex
+	queueCancel     context.CancelFunc
+	queueGen        int
+	queueTrackStart time.Time
+	queueTrackDur   time.Duration
+	// baseCtx is the server-lifetime context (set in Run), the parent for the
+	// long-lived queue watcher so it outlives the request that started the queue.
+	baseCtx context.Context
 }
 
 // boxPresetTombstoneTTL is how long a just-deleted slot is filtered out of the
@@ -298,10 +314,10 @@ func (s *Server) SetWifiSignalFn(fn func() string) { s.wifiSignalFn = fn }
 // this after the announcer is up.
 func (s *Server) SetBoxNameFn(fn func() (name, model string)) { s.boxNameFn = fn }
 
-// Option ist ein functional option fuer New.
+// Option is a functional option for New.
 type Option func(*Server)
 
-// WithPresets verbindet den Store fuer Preset CRUD.
+// WithPresets wires the store for preset CRUD.
 func WithPresets(p *presets.Store) Option {
 	return func(s *Server) { s.presets = p }
 }
@@ -312,7 +328,7 @@ func WithZones(z *zones.Store) Option {
 	return func(s *Server) { s.zones = z }
 }
 
-// WithBoxHost setzt die Bose Box IP/Hostname fuer UPnP Calls.
+// WithBoxHost sets the Bose box IP/hostname for UPnP calls.
 func WithBoxHost(host string) Option {
 	return func(s *Server) {
 		s.boxHost = host
@@ -332,21 +348,21 @@ func WithReflectSourcesPath(path string) Option {
 	return func(s *Server) { s.reflectPath = path }
 }
 
-// WithAutoPair gibt dem Server Zugriff auf den AutoPair Manager damit
-// Play Calls auch nach Standby Aufwecken die Box wieder pairen koennen.
+// WithAutoPair gives the server access to the AutoPair manager so that
+// play calls can re-pair the box again after waking it from standby.
 func WithAutoPair(m *autopair.Manager) Option {
 	return func(s *Server) { s.autoPair = m }
 }
 
-// WithRegion uebergibt den vom Setup Wizard gewaehlten Country Code.
-// Wird ueber /api/region exposed damit die Desktop App ihre Defaults
-// fuer Radio Suche und Sprache daraus ableiten kann.
+// WithRegion passes the country code chosen by the setup wizard.
+// Exposed via /api/region so the desktop app can derive its defaults
+// for radio search and language from it.
 func WithRegion(cc string) Option {
 	return func(s *Server) { s.region = strings.ToUpper(cc) }
 }
 
-// WithRegionFile setzt den persistenten Pfad fuer Aenderungen von
-// /api/region (PUT). Ohne diesen Pfad sind Aenderungen nur in memory.
+// WithRegionFile sets the persistent path for changes from
+// /api/region (PUT). Without this path changes are only in memory.
 func WithRegionFile(path string) Option {
 	return func(s *Server) { s.regionFile = path }
 }
@@ -365,10 +381,10 @@ func WithDisplayTrackFile(path string) Option {
 	return func(s *Server) { s.displayTrackPath = path }
 }
 
-// WithStreamProxy haengt den Stream Proxy ein. Wenn gesetzt wird der
-// /stream/ Endpoint registriert. Bose ContentItems werden dann mit
-// http://127.0.0.1:8888/stream/<slot> verlinkt statt mit der echten
-// CDN URL — Streams ueberleben Token Expiry.
+// WithStreamProxy wires in the stream proxy. When set, the /stream/
+// endpoint is registered. Bose ContentItems are then linked with
+// http://127.0.0.1:8888/stream/<slot> instead of the real CDN URL —
+// streams survive token expiry.
 func WithStreamProxy(p *streamproxy.Server) Option {
 	return func(s *Server) { s.streamProxy = p }
 }
@@ -469,14 +485,14 @@ func WithRecent(r *recent.Store) Option {
 	return func(s *Server) { s.recent = r }
 }
 
-// ensureBoxReady weckt die Box aus dem Standby (mit retry+poll bis
-// wirklich wach) und stellt sicher dass der Marge Account aktiv ist.
-// Wird vor jedem Play Call aufgerufen.
+// ensureBoxReady wakes the box from standby (with retry+poll until
+// really awake) and ensures the marge account is active.
+// Called before every play call.
 func (s *Server) ensureBoxReady(ctx context.Context) {
 	if s.boxHost != "" {
 		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		if err := boxcli.WakeAndWait(wakeCtx, s.boxHost, 6*time.Second, s.logger); err != nil {
-			s.logger.Warn("Box konnte nicht aus STANDBY geholt werden", "err", err)
+			s.logger.Warn("Box could not be woken from STANDBY", "err", err)
 		}
 		cancel()
 	}
@@ -487,16 +503,16 @@ func (s *Server) ensureBoxReady(ctx context.Context) {
 	}
 }
 
-// New erstellt einen neuen Webui Server.
+// New creates a new webui server.
 func New(addr string, logger *slog.Logger, opts ...Option) *Server {
-	s := &Server{addr: addr, logger: logger}
+	s := &Server{addr: addr, logger: logger, queue: newPlayQueue()}
 	for _, o := range opts {
 		o(s)
 	}
 	return s
 }
 
-// Run startet den Server und blockiert bis ctx abgebrochen wird.
+// Run starts the server and blocks until ctx is cancelled.
 //
 // Every step that can fail or block emits a phase-marker log at WARN
 // level so that even on a `--log-level warn` deployment (or with the
@@ -506,6 +522,7 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 // in the bundle to one that crashed mid-init.
 func (s *Server) Run(ctx context.Context) error {
 	s.logger.Warn("webui phase: Run entered", "addr", s.addr)
+	s.baseCtx = ctx
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -519,7 +536,13 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/play", s.handlePlay)
 	mux.HandleFunc("/api/play/", s.handlePlaySlot)
 	mux.HandleFunc("/api/pause", s.handlePause)
+	mux.HandleFunc("/api/resume", s.handleResume)
 	mux.HandleFunc("/api/stop", s.handleStop)
+	mux.HandleFunc("/api/queue", s.handleQueue)
+	mux.HandleFunc("/api/queue/next", s.handleQueueNext)
+	mux.HandleFunc("/api/queue/prev", s.handleQueuePrev)
+	mux.HandleFunc("/api/queue/shuffle", s.handleQueueShuffle)
+	mux.HandleFunc("/api/queue/repeat", s.handleQueueRepeat)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
@@ -553,8 +576,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
 
-	// Stream Proxy: stabile URLs fuer Radio Streams mit Token Expiry.
-	// Siehe internal/streamproxy fuer Details.
+	// Stream proxy: stable URLs for radio streams with token expiry.
+	// See internal/streamproxy for details.
 	if s.streamProxy != nil {
 		s.streamProxy.Register(mux)
 	}
@@ -606,7 +629,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-// corsMiddleware erlaubt Cross-Origin Calls von der Desktop App.
+// corsMiddleware allows cross-origin calls from the desktop app.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -699,6 +722,45 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		if p.Type == "" {
 			p.Type = "radio"
 		}
+		// A queue preset (a saved DLNA folder, #queue-preset) has no single
+		// StreamURL/URI: it carries an ordered Items list and a Shuffle flag and
+		// recalls into the agent play-queue. It skips the radio/spotify URL gates
+		// below; require at least one item with a URL instead, mirroring their
+		// 422 shape. The dedup loop below is keyed on URI/StreamURL, both empty
+		// here, so it is harmless for queue presets and leaves other slots alone.
+		if p.Type == "queue" {
+			hasItem := false
+			for _, it := range p.Items {
+				if it.URL != "" {
+					hasItem = true
+					break
+				}
+			}
+			if !hasItem {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error": "This folder can't be saved as a preset: it has no playable tracks. Open a folder with audio files and try again.",
+					"code":  "queue-empty",
+				})
+				return
+			}
+			if err := s.presets.SetSlot(p); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			// Register the slot on the box so the hardware button is mapped. The
+			// physical press is intercepted by RecallSlot (which starts the queue),
+			// but the box still needs an entry for the key to fire at all, so point
+			// it at this slot's stream proxy URL like every other preset.
+			if s.boxHost != "" {
+				boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+				if err := boxcli.AddPreset(boxCtx, s.boxHost, slot, p.Name, boxPresetURL(slot, false)); err != nil {
+					s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
+				}
+				cancel()
+			}
+			writeJSON(w, http.StatusOK, p)
+			return
+		}
 		// Reject (or heal) the saves that produced the dead presets that fail to
 		// recall with "Service not available" (#45/#105). A type=spotify preset
 		// MUST carry a replayable context URI; a non-spotify preset MUST carry a
@@ -778,9 +840,9 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// Sync zur Box damit Hardware Tasten den richtigen Slot kennen.
-		// Bose bekommt die Stream Proxy URL, nicht den echten CDN.
-		// So ueberlebt der Stream Token Expiry.
+		// Sync to the box so hardware buttons know the correct slot.
+		// Bose gets the stream proxy URL, not the real CDN.
+		// This way the stream survives token expiry.
 		if s.boxHost != "" {
 			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 			// Spotify presets store the live Ogg stream as the box-side location
@@ -916,8 +978,8 @@ func legacySpotifyURI(streamURL string) string {
 type playRequest struct {
 	URL   string `json:"url"`
 	Title string `json:"title"`
-	Icon  string `json:"icon"` // albumArtURI fuer Box Display
-	UUID  string `json:"uuid"` // optional, fuer Click Tracking
+	Icon  string `json:"icon"` // albumArtURI for box display
+	UUID  string `json:"uuid"` // optional, for click tracking
 	// Mime is the source codec MIME (audio/flac, audio/mp4, ...) for a network
 	// library track, so the box decodes it correctly. Empty for radio -> the
 	// renderer defaults to audio/mpeg.
@@ -1007,6 +1069,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// A single play replaces any active library queue, so stop auto-advancing.
+	s.stopQueue()
 	// Ad-hoc radio: the box leaves any Spotify source; suppress the #14
 	// auto-attach so it does not jump back to Spotify.
 	if s.spotifySwitchedAway != nil {
@@ -1092,6 +1156,27 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// A queue preset (a saved DLNA folder) recalls into the agent play-queue
+	// instead of the single-URL play below: reload its ordered tracks with the
+	// saved shuffle flag and start from the first. We already hold boxCmdMu, so
+	// use the *Locked variant (startQueue would re-lock and deadlock).
+	if p.Type == "queue" {
+		items := presetItemsToQueue(p.Items)
+		if len(items) == 0 {
+			http.Error(w, "preset has no playable tracks", http.StatusUnprocessableEntity)
+			return
+		}
+		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
+		if err := s.startQueueLocked(r.Context(), items, 0, p.Shuffle, repeatOff); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "Folder could not be played", "detail": guessErrorReason(err),
+				"slot": slot, "name": p.Name,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "queue"})
+		return
+	}
 	// Heal a legacy mis-saved Spotify preset before recall: older versions could
 	// store a Spotify selection as a non-spotify preset whose stream URL encoded
 	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The
@@ -1249,8 +1334,8 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Stream Proxy URL nutzen damit auch nach Token Expiry weitergespielt
-	// wird (Bose sieht die stabile loopback URL).
+	// Use the stream proxy URL so playback continues even after token
+	// expiry (Bose sees the stable loopback URL).
 	playURL := boxurl.StreamSlot(slot)
 	if err := s.renderer.PlayURL(r.Context(), playURL, p.Name, p.Art); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
@@ -1823,6 +1908,15 @@ func (s *Server) NoteUserStop() {
 	s.lastUserStopMu.Unlock()
 }
 
+// ClearUserStop cancels a recorded user-stop so a manual resume re-enables the
+// guarded auto-re-push immediately instead of staying suppressed for the
+// userStopWindow.
+func (s *Server) ClearUserStop() {
+	s.lastUserStopMu.Lock()
+	s.lastUserStop = time.Time{}
+	s.lastUserStopMu.Unlock()
+}
+
 // userStoppedRecently reports whether a deliberate stop happened within
 // userStopWindow.
 func (s *Server) userStoppedRecently() bool {
@@ -2151,6 +2245,49 @@ func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paused"})
 }
 
+// handleResume resumes playback from a UPnP PAUSED state with a plain
+// AVTransport Play (what the Bose remote's own play/pause does), so a paused
+// network-library track continues from its position instead of restarting.
+// /api/play always re-pushes SetAVTransportURI, which restarts a finite track,
+// and Pause/Stop were the only transport controls STR exposed, so a paused NAS
+// track could not be resumed from the app (#202). If the box is no longer
+// paused (it left PAUSED after a standby/timeout, surfacing as a "wrong state"
+// fault), fall back to re-pushing the last stream.
+func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	if s.renderer == nil {
+		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
+		return
+	}
+	// A user-initiated resume cancels the deliberate-stop intent so the guarded
+	// auto-re-push is allowed again for the rest of the session.
+	s.ClearUserStop()
+	if err := s.renderer.Play(r.Context()); err != nil {
+		if isWrongTransportState(err) {
+			// The box is no longer in PAUSED. Re-push the last stream so the user
+			// still gets audio (from the start for a finite track).
+			s.lastPlayMu.Lock()
+			lp := s.lastPlay
+			s.lastPlayMu.Unlock()
+			if lp != nil {
+				if perr := s.renderer.PlayURLMime(r.Context(), lp.boxURL, lp.title, lp.art, lp.mime); perr == nil {
+					writeJSON(w, http.StatusOK, map[string]string{"status": "playing"})
+					return
+				}
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"status": "not_playing"})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "playing"})
+}
+
 // isWrongTransportState reports whether a UPnP AVTransport error was the
 // box rejecting the action because the renderer is not in a state that
 // allows it. Bose answers Pause/Stop with this when nothing is playing,
@@ -2177,6 +2314,8 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	// Mark this as a deliberate stop BEFORE issuing it, so the disconnect the
 	// stop triggers does not race the auto-re-push into restarting the stream.
 	s.NoteUserStop()
+	// A stop ends any active library queue (no auto-advance after the user stops).
+	s.stopQueue()
 	if err := s.renderer.Stop(r.Context()); err != nil {
 		// Same idempotent treatment as Pause: stopping an already-idle
 		// box yields a "wrong state" UPnP fault that the user need not
@@ -2191,8 +2330,8 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
-// handleAgentVersion liefert die laufende Stick Agent Version. Wird von
-// der Desktop App genutzt um zu erkennen ob ein Update faellig ist.
+// handleAgentVersion returns the running stick agent version. Used by
+// the desktop app to detect whether an update is due.
 func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]string{
 		"version": agentVersion(),
@@ -2212,12 +2351,12 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleAgentUpdate nimmt ein neues Stick Agent Binary entgegen, schreibt
-// es atomar nach /mnt/nv/streborn/bin/streborn-armv7l und
-// startet den Agent neu. Body muss das rohe ARM Binary sein.
+// handleAgentUpdate receives a new stick agent binary, writes it
+// atomically to /mnt/nv/streborn/bin/streborn-armv7l and restarts the
+// agent. Body must be the raw ARM binary.
 //
-// Nach Erfolg gibt der Stick noch 200 OK zurueck und beendet sich. Der
-// rc.local Bootstrap startet den neuen Agent.
+// On success the stick still returns 200 OK and then exits. The
+// rc.local bootstrap starts the new agent.
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -2308,8 +2447,8 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// isLocalLAN true wenn der Request von einer privaten LAN IP kommt
-// (RFC1918) oder localhost. Update aus dem Internet wird blockiert.
+// isLocalLAN true if the request comes from a private LAN IP
+// (RFC1918) or localhost. Updates from the internet are blocked.
 func isLocalLAN(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
@@ -2325,9 +2464,9 @@ func isLocalLAN(remoteAddr string) bool {
 	return ip.IsPrivate() || ip.IsLoopback()
 }
 
-// guessErrorReason konvertiert den technischen UPnP / Netzwerk Fehler
-// in einen menschen-lesbaren Hinweis. Die SOAP Antworten der Box sind
-// stark in XML eingewickelt und nicht direkt verstaendlich.
+// guessErrorReason converts the technical UPnP / network error into a
+// human-readable hint. The box's SOAP responses are heavily wrapped in
+// XML and not directly understandable.
 func guessErrorReason(err error) string {
 	if err == nil {
 		return ""
@@ -2349,8 +2488,8 @@ func guessErrorReason(err error) string {
 
 // ---- Box Settings (Bose API Proxy) ----
 
-// handleBoxSettings liefert info + volume + bass + network + sources
-// kombiniert als JSON.
+// handleBoxSettings returns info + volume + bass + network + sources
+// combined as JSON.
 func (s *Server) handleBoxSettings(w http.ResponseWriter, r *http.Request) {
 	if s.boxHost == "" {
 		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
@@ -2453,7 +2592,7 @@ func ssidAfter(s, anchor string) string {
 	return ""
 }
 
-// handleBoxName PUT setzt den Box Namen. Body {"name":"..."}.
+// handleBoxName PUT sets the box name. Body {"name":"..."}.
 func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPut) {
 		return
@@ -2465,7 +2604,7 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		http.Error(w, "name leer", http.StatusBadRequest)
+		http.Error(w, "name empty", http.StatusBadRequest)
 		return
 	}
 	c := boxapi.New(s.boxHost)
@@ -2475,16 +2614,15 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	// Bose setzt bei /name POST nebenher die margeURL auf default zurueck —
-	// AutoPair triggern damit der Pair State unmittelbar wieder hergestellt
-	// wird.
+	// On /name POST Bose also resets the margeURL back to default —
+	// trigger AutoPair so the pair state is immediately re-established.
 	if s.autoPair != nil {
 		go s.autoPair.TriggerNow(context.Background())
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "name": req.Name})
 }
 
-// handleBoxVolume PUT setzt Lautstaerke. Body {"value":N}.
+// handleBoxVolume PUT sets the volume. Body {"value":N}.
 func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPut) {
 		return
@@ -2507,11 +2645,11 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"value": req.Value})
 }
 
-// handleBoxSource PUT schaltet die Box auf eine andere Quelle: AUX,
-// BLUETOOTH oder STANDBY. Body {"source":"AUX"}.
+// handleBoxSource PUT switches the box to another source: AUX,
+// BLUETOOTH or STANDBY. Body {"source":"AUX"}.
 //
-// Bose /select erwartet ein ContentItem XML. Wir bauen das je nach
-// Source. STANDBY hat ein eigenes ContentItem ohne sourceAccount.
+// Bose /select expects a ContentItem XML. We build it depending on the
+// source. STANDBY has its own ContentItem without sourceAccount.
 func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPut) {
 		return
@@ -2529,9 +2667,9 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 	}
 	client := &http.Client{Timeout: 6 * time.Second}
 
-	// Sonderfall STANDBY: kein ContentItem Source bei Bose. /key POWER
-	// triggert nur LED Animation, /standby ist der echte Endpoint —
-	// und Bose erwartet **GET**, kein POST (POST liefert 400).
+	// Special case STANDBY: no ContentItem source at Bose. /key POWER
+	// only triggers the LED animation, /standby is the real endpoint —
+	// and Bose expects **GET**, not POST (POST returns 400).
 	if src == "STANDBY" {
 		u := fmt.Sprintf("http://%s:8090/standby", s.boxHost)
 		resp, err := client.Get(u)
@@ -2589,7 +2727,7 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"source": src})
 }
 
-// handleBoxBass PUT setzt Bass Wert. Body {"value":N}.
+// handleBoxBass PUT sets the bass value. Body {"value":N}.
 func (s *Server) handleBoxBass(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPut) {
 		return
@@ -3207,9 +3345,9 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleBoxGroup liest die aktuelle Stereo-Pair-Group der Box.
-// Read-only. Antwort ist {"id":"...","name":"...","members":[...]}.
-// Bei einer Box ohne Pair ist id leer und members leer.
+// handleBoxGroup reads the box's current stereo pair group.
+// Read-only. Response is {"id":"...","name":"...","members":[...]}.
+// For a box without a pair, id is empty and members is empty.
 func (s *Server) handleBoxGroup(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodGet) {
 		return
@@ -3304,9 +3442,9 @@ func (s *Server) handleStickStatus(w http.ResponseWriter, _ *http.Request) {
 	if mounted && version != "" {
 		out["version"] = version
 	}
-	// SSH Status — schauen ob Port 22 aktuell listened. Wenn ja
-	// kann jemand im LAN auf die Box zugreifen, App zeigt Warn Banner.
-	// Wir probieren einen TCP Connect auf localhost mit 200 ms timeout.
+	// SSH status — check whether port 22 is currently listening. If so
+	// someone on the LAN can access the box, the app shows a warning banner.
+	// We try a TCP connect to localhost with a 200 ms timeout.
 	if conn, dialErr := net.DialTimeout("tcp", "127.0.0.1:22", 200*time.Millisecond); dialErr == nil {
 		_ = conn.Close()
 		out["sshOpen"] = true
@@ -3314,12 +3452,11 @@ func (s *Server) handleStickStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// handleDebugState liefert wichtige Box State Dateien als JSON damit
-// wir ohne SSH von aussen debuggen koennen wenn der Stick eingebaut ist.
+// handleDebugState returns important box state files as JSON so we can
+// debug from outside without SSH when the stick is installed.
 //
-// Wird nur fuer interaktive Diagnose genutzt — die App selbst ruft das
-// nicht regelmaessig. Limit pro Datei: 8 KB damit die Antwort kompakt
-// bleibt.
+// Used only for interactive diagnosis — the app itself does not call
+// this regularly. Limit per file: 8 KB so the response stays compact.
 func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 	if !isLocalLAN(r.RemoteAddr) {
 		http.Error(w, "debug only from LAN", http.StatusForbidden)
@@ -3469,17 +3606,16 @@ func boxPresetURL(slot int, isSpotify bool) string {
 	return boxurl.Preset(slot, isSpotify)
 }
 
-// handleBoxSyncPresets ueberschreibt die Box eigene Preset Liste mit
-// allen aktuellen Stick Presets via Bose CLI. Damit funktionieren die
-// Hardware Tasten 1-6 wieder wenn der initial Sync beim Boot aus
-// irgendwelchen Gruenden nicht durchgelaufen ist (z.B. Box war noch
-// nicht erreichbar).
+// handleBoxSyncPresets overwrites the box's own preset list with all
+// current stick presets via the Bose CLI. This makes hardware buttons
+// 1-6 work again when the initial sync at boot did not run for some
+// reason (e.g. the box was not yet reachable).
 func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	if s.presets == nil || s.boxHost == "" {
-		http.Error(w, "presets store oder box host nicht konfiguriert", http.StatusServiceUnavailable)
+		http.Error(w, "presets store or box host not configured", http.StatusServiceUnavailable)
 		return
 	}
 	var specs []boxcli.PresetSpec
@@ -3512,10 +3648,10 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleBoxReboot startet die Box neu via shell `reboot`. Wird genutzt
-// damit conf Files vom Stick (wlan / region / name) beim run.sh Boot
-// Pfad applied werden — wir vermeiden so ein dauerhaft laufendes USB
-// Watcher Polling.
+// handleBoxReboot restarts the box via shell `reboot`. Used so that
+// conf files from the stick (wlan / region / name) are applied on the
+// run.sh boot path — this avoids a permanently running USB watcher
+// polling loop.
 func (s *Server) handleBoxReboot(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -3524,9 +3660,9 @@ func (s *Server) handleBoxReboot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "reboot only allowed from LAN", http.StatusForbidden)
 		return
 	}
-	s.logger.Info("Box Reboot vom User angefordert")
+	s.logger.Info("Box reboot requested by user")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "rebooting"})
-	// 1s spaeter ausfuehren damit unsere HTTP Response noch raus geht.
+	// Execute 1s later so our HTTP response still gets out.
 	go func() {
 		time.Sleep(1 * time.Second)
 		_ = exec.Command("reboot").Run()
@@ -3944,7 +4080,7 @@ func (s *Server) handleBoxPresetRecall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "slot": body.Slot})
 }
 
-// handleBoxWLAN setzt die WLAN Konfiguration der Box zur Laufzeit.
+// handleBoxWLAN sets the box's WLAN configuration at runtime.
 // Body: {"ssid":"...", "password":"..."}
 //
 // Robust across the two Wi-Fi stacks SoundTouch ships (see run.sh's WLAN
@@ -4158,8 +4294,8 @@ func rebootBox() {
 	_ = exec.Command("sh", "-c", "(sleep 1; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &").Start()
 }
 
-// buildWPAConfig erzeugt eine minimale wpa_supplicant.conf. Bei leerem
-// Passwort wird key_mgmt=NONE gesetzt (offenes WLAN).
+// buildWPAConfig generates a minimal wpa_supplicant.conf. With an empty
+// password key_mgmt=NONE is set (open WLAN).
 func buildWPAConfig(ssid, psk string) string {
 	var b strings.Builder
 	b.WriteString("ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root\n")
@@ -4190,9 +4326,9 @@ func escapeWPAValue(s string) string {
 	return r.Replace(s)
 }
 
-// countryToLanguage liefert den Default Sprach Code fuer das radio-browser
-// "language" Filter Feld aus einem ISO 3166-1 Country Code. Fallback ist
-// "english" wenn unbekannt — die Welt versteht das.
+// countryToLanguage returns the default language code for the radio-browser
+// "language" filter field from an ISO 3166-1 country code. Fallback is
+// "english" if unknown — the world understands that.
 var countryToLanguage = map[string]string{
 	"DE": "german", "AT": "german", "CH": "german", "LI": "german",
 	"GB": "english", "US": "english", "IE": "english", "AU": "english",
@@ -4225,8 +4361,8 @@ func languageForCountry(cc string) string {
 	return "english"
 }
 
-// handleRegion liefert die vom Setup Wizard gespeicherte Region samt
-// abgeleiteter Default Sprache, oder setzt sie neu via PUT.
+// handleRegion returns the region saved by the setup wizard together
+// with the derived default language, or sets it anew via PUT.
 func (s *Server) handleRegion(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -4246,7 +4382,7 @@ func (s *Server) handleRegion(w http.ResponseWriter, r *http.Request) {
 		}
 		cc := strings.ToUpper(strings.TrimSpace(req.Country))
 		if len(cc) != 2 {
-			http.Error(w, "country muss ISO 3166-1 alpha-2 sein", http.StatusBadRequest)
+			http.Error(w, "country must be ISO 3166-1 alpha-2", http.StatusBadRequest)
 			return
 		}
 		s.regionMu.Lock()
@@ -4267,22 +4403,22 @@ func (s *Server) handleRegion(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// agentVersion und agentBuild werden via Setter aus main.go versorgt.
+// agentVersion and agentBuild are supplied via setters from main.go.
 var (
 	agentVersion = func() string { return "1.0.0" }
 	agentBuild   = func() string { return "dev" }
 )
 
-// SetAgentVersion erlaubt main.go beim Start die Semver Version zu setzen.
+// SetAgentVersion allows main.go to set the semver version at startup.
 func SetAgentVersion(v string) { agentVersion = func() string { return v } }
 
-// SetAgentBuild setzt den Build Stamp (Datum/Commit) als zusaetzliche Info.
+// SetAgentBuild sets the build stamp (date/commit) as additional info.
 func SetAgentBuild(b string) { agentBuild = func() string { return b } }
 
-// handleStatus proxied das now_playing XML der Box, mit einem kurzen
-// Micro-Cache (statusCacheTTL) davor. Mehrere oder zu schnell pollende
-// Clients teilen sich so denselben Box-Roundtrip, statt die fragile
-// BoseApp (:8090) auf jeder Abfrage neu zu treffen.
+// handleStatus proxies the box's now_playing XML, with a short
+// micro-cache (statusCacheTTL) in front. Multiple or too-rapidly polling
+// clients thus share the same box roundtrip instead of hitting the
+// fragile BoseApp (:8090) anew on every request.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if s.boxHost == "" {
 		http.Error(w, "box host not configured", http.StatusServiceUnavailable)

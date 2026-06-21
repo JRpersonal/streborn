@@ -1,18 +1,18 @@
-// winformat ist ein kleines Helper Programm das Windows Volumes
-// nativ als FAT32 quick formatiert — ohne FmIfs.dll, ohne 32 GB Limit,
-// ohne dass Microsoft uns reinredet.
+// winformat is a small helper program that quick-formats Windows volumes
+// natively as FAT32 — without FmIfs.dll, without the 32 GB limit, without
+// Microsoft getting in our way.
 //
-// Vorgehen:
-//   1. Volume \\.\X: oeffnen, locken, dismounten (NTFS Treiber aus)
-//   2. FAT32 Boot Sector + FSInfo + FAT Tabellen + Root Dir direkt
-//      auf das gelockte Handle schreiben (siehe fat32.go)
-//   3. Handle schliessen — Windows mountet automatisch als FAT32
+// Procedure:
+//   1. Open, lock, dismount the volume \\.\X: (NTFS driver off)
+//   2. Write the FAT32 boot sector + FSInfo + FAT tables + root dir directly
+//      to the locked handle (see fat32.go)
+//   3. Close the handle — Windows mounts it automatically as FAT32
 //
-// Wird vom Desktop App Setup Wizard via Start-Process -Verb RunAs
-// elevated gestartet (einmaliger UAC Prompt). Exit Codes:
-//   0  Erfolg
-//   1  Argumente fehlerhaft
-//   2  Format fehlgeschlagen (Details im Status File)
+// Started elevated by the desktop app setup wizard via Start-Process -Verb
+// RunAs (single UAC prompt). Exit codes:
+//   0  success
+//   1  bad arguments
+//   2  format failed (details in the status file)
 //
 //go:build windows
 
@@ -26,10 +26,10 @@ import (
 	"unsafe"
 )
 
-// writeStatus schreibt Status in eine Datei. So koennen wir die echte
-// Erfolgs/Fehlermeldung ueber die UAC Elevation Boundary hinweg
-// zurueckliefern (Start-Process -Verb RunAs erlaubt KEIN
-// -RedirectStandardError, die App liest stattdessen diese Datei).
+// writeStatus writes the status to a file. This lets us return the real
+// success/error message across the UAC elevation boundary (Start-Process
+// -Verb RunAs does NOT allow -RedirectStandardError, so the app reads this
+// file instead).
 func writeStatus(path, status string) {
 	if path == "" {
 		return
@@ -37,9 +37,9 @@ func writeStatus(path, status string) {
 	_ = os.WriteFile(path, []byte(status), 0o644)
 }
 
-// volumeTotalBytes liefert die Volume Groesse in Bytes via
-// GetDiskFreeSpaceEx. 0 bei Fehler (passiert wenn Volume kein
-// erkanntes Filesystem hat — dann nutze volumeLengthFromHandle).
+// volumeTotalBytes returns the volume size in bytes via GetDiskFreeSpaceEx.
+// 0 on error (happens when the volume has no recognised filesystem — then
+// use volumeLengthFromHandle).
 func volumeTotalBytes(rootPtr *uint16) uint64 {
 	kernel := syscall.NewLazyDLL("kernel32.dll")
 	proc := kernel.NewProc("GetDiskFreeSpaceExW")
@@ -56,9 +56,8 @@ func volumeTotalBytes(rootPtr *uint16) uint64 {
 	return total
 }
 
-// volumeLengthFromHandle liefert die Groesse via
-// IOCTL_DISK_GET_LENGTH_INFO. Funktioniert auch auf raw / dismounted
-// Volume Handles, anders als GetDiskFreeSpaceEx.
+// volumeLengthFromHandle returns the size via IOCTL_DISK_GET_LENGTH_INFO.
+// Works on raw / dismounted volume handles too, unlike GetDiskFreeSpaceEx.
 func volumeLengthFromHandle(h uintptr) (uint64, error) {
 	const ioctlDiskGetLengthInfo = 0x0007405C
 	k32 := syscall.NewLazyDLL("kernel32.dll")
@@ -78,15 +77,14 @@ func volumeLengthFromHandle(h uintptr) (uint64, error) {
 		return 0, fmt.Errorf("IOCTL_DISK_GET_LENGTH_INFO: %v", e)
 	}
 	if length <= 0 {
-		return 0, fmt.Errorf("IOCTL_DISK_GET_LENGTH_INFO lieferte %d", length)
+		return 0, fmt.Errorf("IOCTL_DISK_GET_LENGTH_INFO returned %d", length)
 	}
 	return uint64(length), nil
 }
 
-// openLockDismount oeffnet \\.\X: exklusiv, sperrt das Volume,
-// dismountet den FS Treiber. Returnt das offene Handle damit der
-// Caller direkt weiter darauf schreiben kann (FAT32 Strukturen).
-// Caller muss CloseHandle aufrufen.
+// openLockDismount opens \\.\X: exclusively, locks the volume, dismounts
+// the FS driver. Returns the open handle so the caller can write to it
+// directly (FAT32 structures). The caller must call CloseHandle.
 func openLockDismount(letter string) (uintptr, error) {
 	drivePath := `\\.\` + letter + ":"
 	const (
@@ -140,10 +138,9 @@ func openLockDismount(letter string) (uintptr, error) {
 	return h, nil
 }
 
-// chooseClusterSize gibt die Windows Standard FAT32 Cluster Size fuer
-// die gegebene Volume Groesse zurueck. 0 = Standard von FmIfs (klappt
-// fuer kleine Volumes, aber bei > 32 GB resultiert das in zu vielen
-// Clustern).
+// chooseClusterSize returns the Windows default FAT32 cluster size for the
+// given volume size. 0 = FmIfs default (works for small volumes, but for
+// > 32 GB results in too many clusters).
 func chooseClusterSize(totalBytes uint64) uint32 {
 	const GB = uint64(1) << 30
 	switch {
@@ -154,12 +151,12 @@ func chooseClusterSize(totalBytes uint64) uint32 {
 	case totalBytes > 8*GB:
 		return 8 * 1024
 	default:
-		return 0 // FmIfs Default
+		return 0 // FmIfs default
 	}
 }
 
 func main() {
-	// Argumente: <drive_letter> <label> <status_file>
+	// Arguments: <drive_letter> <label> <status_file>
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: winformat <drive_letter> [label] [status_file]")
 		os.Exit(1)
@@ -183,12 +180,12 @@ func main() {
 
 	driveRoot := letter + ":\\"
 	rootPtr, _ := syscall.UTF16PtrFromString(driveRoot)
-	// Erste Schaetzung via Drive Letter — funktioniert nur wenn FS
-	// erkannt ist. Bei "raw" Volume liefert das 0, dann holen wir die
-	// echte Groesse vom Handle.
+	// First estimate via the drive letter — only works when the FS is
+	// recognised. For a "raw" volume this returns 0, then we get the real
+	// size from the handle.
 	totalBytes := volumeTotalBytes(rootPtr)
 
-	// Volume oeffnen, sperren, dismounten — Handle bleibt offen.
+	// Open, lock, dismount the volume — the handle stays open.
 	h, err := openLockDismount(letter)
 	if err != nil {
 		writeStatus(statusFile, fmt.Sprintf("ERR openLockDismount: %v [totalBytes=%d]",
@@ -200,12 +197,12 @@ func main() {
 	closeHandle := k32.NewProc("CloseHandle")
 	defer closeHandle.Call(h)
 
-	// Fallback: Groesse vom Handle holen (funktioniert auch auf raw).
+	// Fallback: get the size from the handle (works on raw too).
 	if totalBytes == 0 {
 		if sz, lerr := volumeLengthFromHandle(h); lerr == nil {
 			totalBytes = sz
 		} else {
-			writeStatus(statusFile, fmt.Sprintf("ERR Volume Groesse: %v", lerr))
+			writeStatus(statusFile, fmt.Sprintf("ERR volume size: %v", lerr))
 			fmt.Fprintln(os.Stderr, lerr)
 			os.Exit(2)
 		}

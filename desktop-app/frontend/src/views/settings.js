@@ -720,9 +720,15 @@ function renderBoxSettings(s, box) {
           // via the app. Showing those as "inactive" was misleading; mark them
           // "via STR". QPlay and the like stay inactive (STR does not revive them).
           const viaSTR = !ready && (su === 'UPNP' || su === 'SPOTIFY' || su.startsWith('STORED_MUSIC') || su === 'LOCAL_MUSIC');
-          const cls = ready ? 'src-ok' : (viaSTR ? 'src-ok src-via-str' : 'src-unav');
+          // AirPlay and Bluetooth are local firmware features that work without
+          // the Bose cloud. The box's /sources READY flag is unreliable for them
+          // post-cloud (it tracked the original Bose-account setup), so a working
+          // AirPlay can report not-READY and was shown as "inactive" (#200). Label
+          // these "available" instead, with the hint below for the nuance.
+          const localFw = !ready && (su === 'AIRPLAY' || su === 'BLUETOOTH');
+          const cls = ready ? 'src-ok' : (viaSTR ? 'src-ok src-via-str' : (localFw ? 'src-ok' : 'src-unav'));
           const label = sourceLabel(src.source);
-          const statusLabel = ready ? t('settingsView.sourceActive') : (viaSTR ? t('settingsView.sourceViaSTR') : t('settingsView.sourceInactive'));
+          const statusLabel = ready ? t('settingsView.sourceActive') : (viaSTR ? t('settingsView.sourceViaSTR') : (localFw ? t('settingsView.sourceAvailable') : t('settingsView.sourceInactive')));
           return `<div class="source-pill ${cls}" title="${escapeAttr(sourceHint(src.source) || src.sourceAccount || '')}">${escapeHtml(label)} <small>${escapeHtml(statusLabel)}</small></div>`;
         }).join('')}
       </div>

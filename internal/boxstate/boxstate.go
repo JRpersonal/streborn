@@ -1,13 +1,13 @@
-// Package boxstate klassifiziert den Betriebszustand einer Bose-Box aus
-// ihren REST-Endpunkten (:8090). Es ersetzt die verstreuten Ad-hoc-Checks
-// (boxInSetupOOB, IsPaired, Setup-AP-Gates) durch einen einzigen,
-// testbaren Zustandsautomaten, den Agent, Desktop-App und Diagnose nutzen.
+// Package boxstate classifies the operating state of a Bose box from
+// its REST endpoints (:8090). It replaces the scattered ad-hoc checks
+// (boxInSetupOOB, IsPaired, setup-AP gates) with a single, testable
+// state machine that the agent, desktop app, and diagnostics use.
 //
-// Hintergrund (live taigan 2026-06-10): eine BCO-Box kann auf Chipset-Ebene
-// ins WLAN gejoint sein (echte LAN-IP) und trotzdem auf :8090 noch
-// SETUP_AP_OOB melden, bis der SoundTouch-Setup über das LAN abgeschlossen
-// wird. Der Zustand ergibt sich daher aus mehreren Fakten zusammen, nicht
-// aus einem einzelnen Endpunkt.
+// Background (live taigan 2026-06-10): a BCO box can be joined to the
+// Wi-Fi at the chipset level (real LAN IP) and still report SETUP_AP_OOB
+// on :8090, until the SoundTouch setup is completed over the LAN. The
+// state therefore follows from several facts together, not from a single
+// endpoint.
 package boxstate
 
 import (
@@ -17,22 +17,22 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
-// State ist der grob klassifizierte Box-Zustand.
+// State is the coarsely classified box state.
 type State int
 
 const (
-	// StateUnreachable: :8090 antwortet nicht.
+	// StateUnreachable: :8090 does not answer.
 	StateUnreachable State = iota
-	// StateOOBSetupAP: Box spannt ihren Bose-Setup-AP auf (eigene IP
-	// 192.168.1.1, /setup=SETUP_AP_OOB). Noch nicht im LAN. LED gelb.
+	// StateOOBSetupAP: box is spinning up its Bose setup AP (own IP
+	// 192.168.1.1, /setup=SETUP_AP_OOB). Not yet on the LAN. LED yellow.
 	StateOOBSetupAP
-	// StateOnlineNotConfigured: Box hat eine echte LAN-IP (assoziiert),
-	// aber die SoundTouch-Schicht ist noch nicht fertig konfiguriert
-	// (Setup noch OOB / Sprache nicht gesetzt / kein Account). Typisch
-	// direkt nach einem Chipset-Join. LED meist noch gelb.
+	// StateOnlineNotConfigured: box has a real LAN IP (associated),
+	// but the SoundTouch layer is not yet fully configured (setup
+	// still OOB / language not set / no account). Typical right after
+	// a chipset join. LED usually still yellow.
 	StateOnlineNotConfigured
-	// StateOnlineConfigured: im LAN und fertig konfiguriert
-	// (Setup verlassen, Account gesetzt). LED weiß.
+	// StateOnlineConfigured: on the LAN and fully configured
+	// (setup left, account set). LED white.
 	StateOnlineConfigured
 )
 
@@ -49,58 +49,58 @@ func (s State) String() string {
 	}
 }
 
-// IsOnline meldet, ob die Box im normalen LAN erreichbar ist (nicht im
-// eigenen Setup-AP).
+// IsOnline reports whether the box is reachable on the normal LAN (not in
+// its own setup AP).
 func (s State) IsOnline() bool {
 	return s == StateOnlineNotConfigured || s == StateOnlineConfigured
 }
 
-// IsConfigured meldet, ob der SoundTouch-Setup abgeschlossen ist.
+// IsConfigured reports whether the SoundTouch setup is complete.
 func (s State) IsConfigured() bool { return s == StateOnlineConfigured }
 
-// setupAPAddr ist die feste Gateway-IP, unter der eine Box im eigenen
-// Setup-AP erreichbar ist. Eine Box, die diese IP als eigene Adresse
-// meldet, IST der AP (im STA-Modus bekäme sie eine DHCP-Adresse, die im
-// üblichen Heimnetz nie exakt .1.1 ist, da das der Router ist).
+// setupAPAddr is the fixed gateway IP under which a box is reachable in
+// its own setup AP. A box that reports this IP as its own address IS the
+// AP (in STA mode it would get a DHCP address, which in a typical home
+// network is never exactly .1.1, since that is the router).
 const setupAPAddr = "192.168.1.1"
 
-// Facts bündelt die Rohfakten, aus denen der Zustand abgeleitet wird.
+// Facts bundles the raw facts the state is derived from.
 type Facts struct {
 	Reachable        bool
-	SetupState       string // z.B. SETUP_AP_OOB, SETUP_INACTIVE
-	SystemState      string // z.B. SETUP_LANG_SET, SETUP_LANG_NOT_SET
-	MargeAccountUUID string // leer = nicht gepaart
-	IP               string // gemeldete eigene IP (info/networkInfo)
-	SSID             string // gespeichertes WLAN-Profil (kann ohne Assoziation gesetzt sein)
+	SetupState       string // e.g. SETUP_AP_OOB, SETUP_INACTIVE
+	SystemState      string // e.g. SETUP_LANG_SET, SETUP_LANG_NOT_SET
+	MargeAccountUUID string // empty = not paired
+	IP               string // reported own IP (info/networkInfo)
+	SSID             string // stored Wi-Fi profile (can be set without association)
 	ModuleType       string // scm, sm2, ...
 	Variant          string // taigan, rhino, spotty, ...
 	Firmware         string
 	WifiProfileCount int
-	InterfaceState   string // Zustand des ersten Interfaces
+	InterfaceState   string // state of the first interface
 }
 
-// Classify leitet aus den Rohfakten den Zustand ab. Reine Funktion, ohne
-// Netzwerk, damit sie gegen Fixtures unit-getestet werden kann.
+// Classify derives the state from the raw facts. Pure function, no
+// network, so it can be unit-tested against fixtures.
 func Classify(f Facts) State {
 	if !f.Reachable {
 		return StateUnreachable
 	}
-	// Eigene IP == Setup-AP-Gateway -> die Box IST ihr eigener AP.
+	// Own IP == setup-AP gateway -> the box IS its own AP.
 	if f.IP == setupAPAddr {
 		return StateOOBSetupAP
 	}
 	onLAN := f.IP != "" && f.IP != "0.0.0.0"
 	if !onLAN {
-		// Erreichbar, aber keine brauchbare IP gemeldet: nur dann sicher
-		// OOB, wenn der Setup-State das bestätigt; sonst unbekannt ->
-		// als "im AP" behandeln (konservativ, blockt Preset-Push etc.).
+		// Reachable, but no usable IP reported: only definitely OOB when
+		// the setup state confirms it; otherwise unknown -> treat as "in
+		// the AP" (conservative, blocks preset push etc.).
 		if strings.EqualFold(f.SetupState, "SETUP_AP_OOB") {
 			return StateOOBSetupAP
 		}
 		return StateOOBSetupAP
 	}
-	// Echte LAN-IP vorhanden. Fertig konfiguriert nur, wenn der Setup
-	// verlassen wurde UND ein Account gesetzt ist.
+	// Real LAN IP present. Fully configured only when the setup was left
+	// AND an account is set.
 	leftSetup := !strings.EqualFold(f.SetupState, "SETUP_AP_OOB")
 	hasAccount := f.MargeAccountUUID != ""
 	if leftSetup && hasAccount {
@@ -109,20 +109,20 @@ func Classify(f Facts) State {
 	return StateOnlineNotConfigured
 }
 
-// Detector probt eine Box und klassifiziert ihren Zustand.
+// Detector probes a box and classifies its state.
 type Detector struct {
 	client *boxapi.Client
 }
 
-// New erzeugt einen Detector für den Box-Host (typisch eine LAN-IP oder
-// 192.168.1.1 im Setup-AP).
+// New creates a Detector for the box host (typically a LAN IP or
+// 192.168.1.1 in the setup AP).
 func New(host string) *Detector {
 	return &Detector{client: boxapi.New(host)}
 }
 
-// Detect probt /info, /networkInfo, /setup und /getActiveWirelessProfile
-// und liefert Zustand + Rohfakten. Wenn /info nicht erreichbar ist, gilt
-// die Box als unerreichbar; die übrigen Endpunkte sind best effort.
+// Detect probes /info, /networkInfo, /setup and /getActiveWirelessProfile
+// and returns state + raw facts. If /info is not reachable, the box is
+// considered unreachable; the remaining endpoints are best effort.
 func (d *Detector) Detect(ctx context.Context) (State, Facts, error) {
 	var f Facts
 	info, err := d.client.GetInfo(ctx)

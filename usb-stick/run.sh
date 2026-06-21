@@ -1,14 +1,14 @@
 #!/bin/sh
-# run.sh v2: NAND Cache ist Source of Truth.
+# run.sh v2: the NAND cache is the source of truth.
 #
-# Geaendert gegenueber v1 (15.05.2026):
-#   - Stick Binary auf SD card wird NICHT automatisch auf NAND kopiert.
-#     Damit verschwinden manuell deployte NAND Updates nicht beim Reboot.
-#   - Stick Binary wird nur noch als FALLBACK genutzt, wenn NAND leer ist.
-#   - Manuelles Stick->NAND Sync: touch /mnt/nv/streborn/sync-from-stick
-#     Dann wird beim naechsten Boot vom Stick gesynct.
+# Changed compared to v1 (2026-05-15):
+#   - The stick binary on the SD card is NOT automatically copied to NAND.
+#     This keeps manually deployed NAND updates from disappearing on reboot.
+#   - The stick binary is only used as a FALLBACK when NAND is empty.
+#   - Manual stick->NAND sync: touch /mnt/nv/streborn/sync-from-stick
+#     Then it syncs from the stick on the next boot.
 #
-# Auf der Box installieren: scp setup/run.sh stbox:/media/sda1/run.sh
+# Install on the box: scp setup/run.sh stbox:/media/sda1/run.sh
 #
 # ===========================================================================
 # TABLE OF CONTENTS (~3460 lines, single file on purpose: Bose runs this from
@@ -55,16 +55,15 @@ if [ ! -e "$STICK/run.sh" ] && [ ! -e "$STICK/streborn-armv7l" ]; then
     done
 fi
 PERSIST="/mnt/nv/streborn"
-# Aktiver Log liegt in tmpfs (/tmp) damit der NAND Flash im Dauerbetrieb
-# nicht abgenutzt wird. Bei jedem Start retten wir den vorherigen Log
-# nach NAND als previous.log (ueberlebt einen Box Reboot).
+# The active log lives in tmpfs (/tmp) so the NAND flash is not worn out
+# in continuous operation. On every start we save the previous log to
+# NAND as previous.log (survives a box reboot).
 LOG="/tmp/streborn-agent.log"
 PREV_LOG="$PERSIST/previous.log"
 PIDFILE="$PERSIST/agent.pid"
 
-# Vorherige Session in NAND retten bevor wir den tmpfs Log
-# ueberschreiben — damit haben wir nach jedem Crash / Reboot noch den
-# letzten Log zur Hand.
+# Save the previous session to NAND before we overwrite the tmpfs log,
+# so after every crash / reboot we still have the last log at hand.
 if [ -f "$LOG" ] && [ -s "$LOG" ]; then
     cp "$LOG" "$PREV_LOG" 2>/dev/null
 fi
@@ -1140,18 +1139,18 @@ shim_late_swap() {
 }
 (shim_late_swap) &
 
-# Binary Auswahl: NAND Cache zuerst, Stick als Fallback.
+# Binary selection: NAND cache first, stick as fallback.
 if [ -x "$CACHED_BIN" ]; then
     BIN="$CACHED_BIN"
 elif [ -x "$STICK_BIN" ]; then
     BIN="$STICK_BIN"
-    log "Kein NAND Cache, nutze Stick Binary direkt"
+    log "no NAND cache, using the stick binary directly"
 else
     log "ERROR: neither NAND cache nor stick binary available"
     exit 1
 fi
 
-# === Schon laufender Agent? Dann Stop. ===
+# === Agent already running? Then stop it. ===
 if [ -f "$PIDFILE" ]; then
     OLDPID=$(cat "$PIDFILE" 2>/dev/null || echo 0)
     if [ -n "$OLDPID" ] && kill -0 "$OLDPID" 2>/dev/null; then
@@ -1163,29 +1162,29 @@ if [ -f "$PIDFILE" ]; then
     rm -f "$PIDFILE"
 fi
 
-# === Optional Update anwenden ===
+# === Apply optional update ===
 if [ -x "$STICK/update.sh" ]; then
     log "checking for update via $STICK/update.sh"
     "$STICK/update.sh" 2>&1 | tee -a "$LOG" || true
 fi
 
-# === WLAN Provisioning aus wlan.conf vom Stick (multi-approach) ===
+# === Wi-Fi provisioning from wlan.conf on the stick (multi-approach) ===
 #
-# Eine factory-reset Bose schreibt /etc/wpa_supplicant.conf beim
-# Boot aus ihrer eigenen NetManager DB. Wenn dort kein Profil hinter
-# legt ist, schmeisst sie unsere Direct-Write Variante beim naechsten
-# Boot wieder raus. Deshalb fahren wir BEIDE Wege parallel:
+# A factory-reset Bose writes /etc/wpa_supplicant.conf on boot from
+# its own NetManager DB. If no profile is stored there, it throws out
+# our direct-write variant again on the next boot. So we run BOTH
+# paths in parallel:
 #
-#   A) Direct write nach /etc/wpa_supplicant.conf + wpa_supplicant
-#      Restart. Greift sofort, Box ist binnen Sekunden im WLAN.
-#   B) addWirelessProfile API call gegen 127.0.0.1:8090. Persistiert
-#      das Profil in NetManagers eigener DB, ueberlebt damit den
-#      naechsten Reboot ohne dass wir wlan.conf wieder lesen muessen.
+#   A) Direct write to /etc/wpa_supplicant.conf + wpa_supplicant
+#      restart. Takes effect immediately, the box is on Wi-Fi within seconds.
+#   B) addWirelessProfile API call against 127.0.0.1:8090. Persists
+#      the profile in NetManager's own DB, so it survives the next
+#      reboot without us having to read wlan.conf again.
 #
-# Was zuerst erfolgreich ist gewinnt. Jeder Schritt wird in
-# /media/sda1/setup.log mit Timestamp geschrieben damit ein User
-# das Stick einfach abziehen und Diagnose-Log via App hochladen kann
-# (Bose's Factory Reset wischt NAND, der Stick bleibt unberuehrt).
+# Whichever succeeds first wins. Every step is written to
+# /media/sda1/setup.log with a timestamp so a user can simply pull
+# the stick and upload the diagnostic log via the app (Bose's factory
+# reset wipes NAND, the stick stays untouched).
 # NAND-persisted credentials cache: once one of the WLAN provisioning
 # approaches actually succeeded on a previous boot, we wrote the
 # SSID+pass into $PERSIST/wlan-creds so subsequent boots can replay
@@ -2697,10 +2696,10 @@ log "starting agent version $(${BIN} --version 2>/dev/null || echo v0.0.0)"
 # early sync logs). Re-running the sync here would just double the
 # work.
 
-# === Agent starten ===
-# Presets liegen auf NAND (read/write). SD card ist FAT32 und wirft oft
-# I/O Error bei Schreibversuchen, deshalb wird die Liste auf NAND gehalten.
-# Erste Migration vom Stick falls NAND noch leer.
+# === Start the agent ===
+# Presets live on NAND (read/write). The SD card is FAT32 and often throws
+# an I/O error on writes, so the list is kept on NAND.
+# First migration from the stick if NAND is still empty.
 PRESETS_NAND="$PERSIST/presets.json"
 if [ ! -f "$PRESETS_NAND" ] && [ -r "$STICK/presets.json" ]; then
     cp "$STICK/presets.json" "$PRESETS_NAND" 2>/dev/null
@@ -3226,9 +3225,9 @@ done
     fi
 ) &
 
-# SoftwareUpdate-Hijack-Logik: returnt 0 wenn der lokale Listener-PID
-# auf :17008 wirklich von einem SoftwareUpdate-Prozess kommt UND
-# dieser Prozess unsere LD_PRELOAD-Env-Var bereits gesetzt hat. The
+# SoftwareUpdate hijack logic: returns 0 when the local listener PID
+# on :17008 really comes from a SoftwareUpdate process AND that
+# process has already set our LD_PRELOAD env var. The
 # log line emitted on every call lets a remote bundle answer "did
 # the shim ever fully take hold" without staring at process-tree
 # dumps for matching string fragments — particularly useful on
@@ -3371,23 +3370,21 @@ fi
 
 # === Aggressive Boot-Race Watchdog (Phase A: t=0..120s) ===
 #
-# Hintergrund: Auf langsameren ST20-Varianten haben Reporter
-# beobachtet, dass die Box nach dem Stick-Boot zwar rebootet, aber
-# Port 8888 nie öffnet. Ursache ist nicht reproduzierbar — Verdacht
-# fällt auf Bose's Service-Manager (shepherdd / SCM), der waehrend
-# der ersten ~90s nach dem Boot eigene Aufraeumarbeiten faehrt und
-# unter Last unseren nohup-Prozess mit verreisst, oder auf OOM-
-# Kills (RAM-Druck im Boot). Der bestehende 90s-Watchdog unten
-# fängt das ein, aber erst NACH dem ersten Zyklus — dadurch ist
-# der Agent auf einer langsamen Box fuer bis zu 90s tot, der User
-# sieht "Install failed" und gibt auf.
+# Background: on slower ST20 variants reporters have observed that
+# the box does reboot after the stick boot, but port 8888 never
+# opens. The cause is not reproducible — suspicion falls on Bose's
+# service manager (shepherdd / SCM), which during the first ~90s
+# after boot runs its own cleanup work and under load drags our
+# nohup process down with it, or on OOM kills (RAM pressure at
+# boot). The existing 90s watchdog below catches that, but only
+# AFTER the first cycle — so on a slow box the agent is dead for up
+# to 90s, the user sees "Install failed" and gives up.
 #
-# Diese Phase-A-Schleife prueft ALLE 5s die ersten 120s ob (a) der
-# Agent-PID noch lebt UND (b) :8888 tatsaechlich gebunden ist.
-# Wenn entweder ausfaellt, sofort neustarten. Kosten pro Check:
-# 1 kill -0, 1 nc/ss-Lookup. Bei stabilem Agent feuert kein cp,
-# kein Flash-Write. Nach 120s übergibt es an den langsamen
-# 90s-Watchdog (Phase B).
+# This phase-A loop checks EVERY 5s for the first 120s whether (a)
+# the agent PID is still alive AND (b) :8888 is actually bound.
+# If either fails, restart immediately. Cost per check: 1 kill -0,
+# 1 nc/ss lookup. With a stable agent no cp fires, no flash write.
+# After 120s it hands over to the slow 90s watchdog (phase B).
 agent_port_bound() {
     # ss is the cheapest probe but BusyBox often ships without it.
     if command -v ss >/dev/null 2>&1; then
@@ -3530,11 +3527,11 @@ agent_port_bound() {
     while true; do
         sleep 90
         if [ ! -f "$PIDFILE" ]; then
-            break  # PID File weg, run.sh wird neu durchlaufen
+            break  # PID file gone, run.sh runs again
         fi
         CUR_PID=$(cat "$PIDFILE" 2>/dev/null || echo 0)
         if [ -n "$CUR_PID" ] && [ "$CUR_PID" -gt 0 ] && kill -0 "$CUR_PID" 2>/dev/null; then
-            continue  # Agent laeuft noch
+            continue  # agent still running
         fi
         log "watchdog: agent (PID $CUR_PID) died, restarting"
         # Belt-and-suspenders: even though the agent has SO_REUSEADDR,
@@ -3566,25 +3563,25 @@ if [ -r "$ROOT_CA" ]; then
         if mount | grep -q "$target"; then
             umount "$target" 2>/dev/null
         fi
-        mount --bind "$bundle" "$target" 2>/dev/null && echo "bind mount aktiv: $bundle -> $target"
+        mount --bind "$bundle" "$target" 2>/dev/null && echo "bind mount active: $bundle -> $target"
     done
 fi
 
 log "bootstrap complete"
 
-# === USB Stick aushaengen ===
-# Bootstrap ist durch — alle Configs (wlan/region/name/presets/binary)
-# sind nach NAND uebernommen. Den Stick brauchen wir zur Laufzeit
-# nicht mehr. Wir haengen ihn aktiv aus damit der User den Stick im
-# Betrieb ziehen kann ohne dirty FS (Windows muss dann keine FAT
-# Reparatur mehr machen).
+# === Unmount the USB stick ===
+# Bootstrap is done — all configs (wlan/region/name/presets/binary)
+# have been copied to NAND. We no longer need the stick at runtime.
+# We actively unmount it so the user can pull the stick during
+# operation without a dirty FS (then Windows does not need to repair
+# the FAT).
 #
-# SSH wird absichtlich NICHT gestoppt — pre-1.0 lassen wir den Kanal
-# offen damit die Desktop App ihren Diagnostic Bundle Pull auch bei
-# kaputtem Agent durchziehen kann (siehe ensure_sshd_running am
-# Anfang von run.sh). Die fruehere Logik hat sshd hier explizit
-# beendet sobald der Agent auf :8888 erreichbar war, was bei jedem
-# spaeteren Crash den Pfad zu den Logs verschloss.
+# SSH is deliberately NOT stopped — pre-1.0 we leave the channel
+# open so the desktop app can pull its diagnostic bundle even with
+# a broken agent (see ensure_sshd_running at the start of run.sh).
+# The earlier logic explicitly stopped sshd here as soon as the
+# agent was reachable on :8888, which closed the path to the logs
+# on every later crash.
 #
 # Debug opt-out: if /media/sda1/keep-open exists, skip the entire
 # cleanup so the stick stays mounted. Used during interactive
@@ -3596,12 +3593,12 @@ if [ -e "$STICK/keep-open" ]; then
     setup_log "keep-open marker on stick — skipping umount for live debug"
 else
 #
-# Detached Hintergrund Block damit run.sh sofort returnen kann
-# (shelby_local will dass rc.local schnell durchlaeuft). Lange
-# Wartezeit + aktive Pruefung dass kein Prozess mehr den Stick
-# offen hat, bevor wir tatsaechlich umount machen — sonst riskieren
-# wir den Agent zu verwirren weil seine Goroutines (syncRunOverride,
-# initialBoxPresetSync) noch lesen.
+# Detached background block so run.sh can return immediately
+# (shelby_local wants rc.local to finish quickly). Long wait +
+# active check that no process still has the stick open before we
+# actually unmount — otherwise we risk confusing the agent because
+# its goroutines (syncRunOverride, initialBoxPresetSync) are still
+# reading.
 (
     # Pre-cleanup wait. Pre-1.0 we run it long, on purpose: the box
     # is on the user's LAN and the SSH cost is real, but right now
@@ -3622,14 +3619,14 @@ else
     sleep 300
 
     if ! mountpoint -q "$STICK" 2>/dev/null && ! mount | grep -q " $STICK "; then
-        exit 0  # schon ausgehaengt, nichts zu tun
+        exit 0  # already unmounted, nothing to do
     fi
 
-    # Aktive Pruefung: wer haelt noch ein File auf dem Stick offen?
-    # Wir scannen /proc/*/fd/* nach Links die auf $STICK zeigen. Wenn
-    # noch jemand drauf zugreift, warten wir nochmal — bis zu 90 s
-    # zusaetzlich. Danach erzwingen wir den umount nicht, sondern
-    # fallen auf Read Only Remount zurueck (Flash Wear Schutz).
+    # Active check: who still holds a file open on the stick? We scan
+    # /proc/*/fd/* for links pointing at $STICK. If someone is still
+    # accessing it, we wait again — up to 90 s more. After that we do
+    # not force the umount, but fall back to a read-only remount (flash
+    # wear protection).
     STICK_DEV=$(mount | grep " $STICK " | awk '{print \$1}')
     WAIT_BUSY=0
     while [ "$WAIT_BUSY" -lt 90 ]; do
@@ -3674,15 +3671,15 @@ else
         # pull box-side logs after a failed install without the user
         # typing anything.
         mount -o remount,ro "$STICK" 2>/dev/null \
-            && log "USB Stick read-only remounted"
+            && log "USB stick read-only remounted"
         exit 0
     fi
     if umount "$STICK" 2>/dev/null; then
-        log "USB Stick ausgehaengt — kann sicher gezogen werden"
+        log "USB stick unmounted — safe to remove"
     else
-        log "umount fehlgeschlagen (Prozess haelt Stick), versuche read only remount"
+        log "umount failed (a process holds the stick), trying read-only remount"
         if mount -o remount,ro "$STICK" 2>/dev/null; then
-            log "USB Stick read only remounted"
+            log "USB stick read-only remounted"
         fi
     fi
 ) &

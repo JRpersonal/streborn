@@ -71,6 +71,8 @@ export function GetLogFilePath():Promise<string>;
 
 export function GetPresets(arg1:string,arg2:number):Promise<Array<main.Preset>>;
 
+export function GetQueue(arg1:string,arg2:number):Promise<Record<string, any>>;
+
 export function GetResumeOnPowerOn(arg1:string,arg2:number):Promise<Record<string, boolean>>;
 
 export function GetWebhooks(arg1:string,arg2:number):Promise<Record<string, any>>;
@@ -98,6 +100,14 @@ export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:str
 export function ProbeSetupAP():Promise<main.BoxInfo|boolean>;
 
 export function PushWLANToBox(arg1:string,arg2:string,arg3:string,arg4:string):Promise<main.SetupAPPushResult>;
+
+export function QueueNext(arg1:string,arg2:number):Promise<void>;
+
+export function QueuePrev(arg1:string,arg2:number):Promise<void>;
+
+export function QueueRepeat(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function QueueShuffle(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 
 export function RadioClick(arg1:string):Promise<void>;
 
@@ -127,9 +137,13 @@ export function ResolveUpdateAsset(arg1:string):Promise<main.UpdateAsset>;
 
 export function RestoreBoxSnapshot(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
 
+export function Resume(arg1:string,arg2:number):Promise<void>;
+
 export function RevealUpdateFile(arg1:string):Promise<void>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
+
+export function SaveFolderPreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
 
 export function SaveLibraryPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string):Promise<void>;
 
@@ -168,6 +182,8 @@ export function SetWebhooks(arg1:string,arg2:number,arg3:boolean,arg4:string,arg
 export function SpotifyBitrate(arg1:string,arg2:number):Promise<number>;
 
 export function SpotifyNowPlaying(arg1:string,arg2:number):Promise<main.SpotifyNow>;
+
+export function StartQueue(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function Status(arg1:string,arg2:number):Promise<string>;
 

@@ -1,6 +1,6 @@
-// Package usbstick embedded die SD Stick Template Dateien via go:embed.
-// Die Desktop App nutzt das um einen frischen Stick zu bestuecken ohne
-// dass der User das Repo separat haben muss.
+// Package usbstick embeds the SD stick template files via go:embed.
+// The desktop app uses it to populate a fresh stick without the user
+// needing the repo separately.
 package usbstick
 
 import (
@@ -11,11 +11,11 @@ import (
 //go:embed *.sh *.local *.json *.txt *.so
 var raw embed.FS
 
-// Files liefert alle eingebetteten Stick Template Files als io/fs.FS.
-// Iteration via fs.WalkDir.
+// Files returns all embedded stick template files as an io/fs.FS.
+// Iterate via fs.WalkDir.
 func Files() fs.FS { return raw }
 
-// List liefert die Namen aller eingebetteten Files (ohne Pfad).
+// List returns the names of all embedded files (without path).
 func List() ([]string, error) {
 	entries, err := raw.ReadDir(".")
 	if err != nil {
@@ -30,10 +30,10 @@ func List() ([]string, error) {
 	return out, nil
 }
 
-// Read liefert die rohen Bytes einer eingebetteten Datei.
+// Read returns the raw bytes of an embedded file.
 func Read(name string) ([]byte, error) {
 	return raw.ReadFile(name)
 }
 
-// Compile-time check dass Files das fs.FS Interface erfuellt.
+// Compile-time check that Files satisfies the fs.FS interface.
 var _ fs.FS = Files()

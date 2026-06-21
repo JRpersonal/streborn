@@ -1,19 +1,19 @@
-// Package tlsgen erstellt und verwaltet die selbst signierten Zertifikate
-// fuer die TLS Termination der Bose Cloud Domains.
+// Package tlsgen creates and manages the self-signed certificates
+// for the TLS termination of the Bose cloud domains.
 //
-// Konzept:
+// Concept:
 //
-//  1. Beim ersten Start wird eine Root CA generiert und in /mnt/nv/...
-//     persistiert (siehe DefaultCADir).
-//  2. Mit dieser Root CA wird ein Server Cert signiert das die Bose Cloud
-//     Domains als SubjectAltNames enthaelt (streaming.bose.com,
+//  1. On the first start a root CA is generated and persisted in
+//     /mnt/nv/... (see DefaultCADir).
+//  2. With this root CA a server cert is signed that contains the Bose
+//     cloud domains as SubjectAltNames (streaming.bose.com,
 //     content.api.bose.io, events.api.bosecm.com, worldwide.bose.com).
-//  3. Bei weiteren Starts werden die Files geladen statt neu generiert.
+//  3. On subsequent starts the files are loaded instead of regenerated.
 //
-// Damit die Bose Box unsere Certs akzeptiert, muss die Root CA als
-// vertrauenswuerdig im System Trust Store eingetragen sein. Das macht
-// das setup-tls.sh Skript via bind mount auf /etc/ssl/certs/ca-certificates.crt
-// und /etc/pki/tls/certs/ca-bundle.crt.
+// For the Bose box to accept our certs, the root CA must be entered as
+// trusted in the system trust store. The setup-tls.sh script does that
+// via a bind mount onto /etc/ssl/certs/ca-certificates.crt
+// and /etc/pki/tls/certs/ca-bundle.crt.
 package tlsgen
 
 import (
@@ -33,11 +33,11 @@ import (
 	"time"
 )
 
-// DefaultCADir ist der Persistenz Pfad auf der Box.
+// DefaultCADir is the persistence path on the box.
 const DefaultCADir = "/mnt/nv/streborn/ca"
 
-// DefaultDomains sind die SANs die das Server Cert abdeckt. Identisch zu
-// internal/hosts.DefaultEntries damit alles passt.
+// DefaultDomains are the SANs the server cert covers. Identical to
+// internal/hosts.DefaultEntries so everything matches.
 var DefaultDomains = []string{
 	"streaming.bose.com",
 	"content.api.bose.io",
@@ -73,7 +73,7 @@ var (
 	notAfterFixed  = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
 )
 
-// Bundle haelt die geladenen Zertifikate und Keys zusammen.
+// Bundle holds the loaded certificates and keys together.
 type Bundle struct {
 	RootCAPEM     []byte
 	RootKeyPEM    []byte
@@ -81,21 +81,21 @@ type Bundle struct {
 	ServerKeyPEM  []byte
 }
 
-// TLSCert wandelt das Server Cert plus Key in ein tls.Certificate fuer
-// die direkte Verwendung im http.Server.
+// TLSCert converts the server cert plus key into a tls.Certificate for
+// direct use in the http.Server.
 func (b *Bundle) TLSCert() (tls.Certificate, error) {
 	return tls.X509KeyPair(b.ServerCertPEM, b.ServerKeyPEM)
 }
 
-// Manager kapselt das Laden und ggf. Generieren der Cert Files.
+// Manager encapsulates loading and, if needed, generating the cert files.
 type Manager struct {
 	dir     string
 	domains []string
 	logger  *slog.Logger
 }
 
-// New erstellt einen Manager. Wenn dir leer ist wird DefaultCADir genommen.
-// Wenn domains leer ist DefaultDomains.
+// New creates a Manager. If dir is empty, DefaultCADir is used.
+// If domains is empty, DefaultDomains is used.
 func New(dir string, domains []string, logger *slog.Logger) *Manager {
 	if dir == "" {
 		dir = DefaultCADir
@@ -109,8 +109,8 @@ func New(dir string, domains []string, logger *slog.Logger) *Manager {
 	return &Manager{dir: dir, domains: domains, logger: logger}
 }
 
-// EnsureBundle laedt die Bundle aus dem Verzeichnis oder generiert ein neues
-// wenn nichts da ist. Idempotent.
+// EnsureBundle loads the bundle from the directory or generates a new one
+// if nothing is there. Idempotent.
 //
 // Also re-generates an existing bundle if its server cert was signed
 // with the old "now + 9y" scheme and now has NotAfter in the past or
@@ -182,8 +182,8 @@ func (m *Manager) bundleNeedsRegen(b *Bundle) bool {
 	return cert.NotAfter.Before(threshold)
 }
 
-// load liest alle vier Files aus dem Verzeichnis. ErrNotExist wenn auch nur
-// eine Datei fehlt.
+// load reads all four files from the directory. ErrNotExist if even a
+// single file is missing.
 func (m *Manager) load() (*Bundle, error) {
 	bundle := &Bundle{}
 	files := []struct {
@@ -205,7 +205,7 @@ func (m *Manager) load() (*Bundle, error) {
 	return bundle, nil
 }
 
-// save schreibt das Bundle auf die Platte mit restriktiven Permissions.
+// save writes the bundle to disk with restrictive permissions.
 func (m *Manager) save(b *Bundle) error {
 	if err := os.MkdirAll(m.dir, 0o700); err != nil {
 		return err
@@ -233,9 +233,9 @@ func (m *Manager) save(b *Bundle) error {
 	return nil
 }
 
-// generate erzeugt ein komplett neues Bundle.
+// generate produces a completely new bundle.
 func (m *Manager) generate() (*Bundle, error) {
-	// Root CA Schluessel
+	// Root CA key
 	rootKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("root key: %w", err)
@@ -263,7 +263,7 @@ func (m *Manager) generate() (*Bundle, error) {
 		return nil, fmt.Errorf("sign root CA: %w", err)
 	}
 
-	// Server Schluessel
+	// Server key
 	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("server key: %w", err)
@@ -284,7 +284,7 @@ func (m *Manager) generate() (*Bundle, error) {
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:    m.domains,
 	}
-	// Mit Root CA signieren
+	// Sign with the root CA
 	rootCert, err := x509.ParseCertificate(rootDER)
 	if err != nil {
 		return nil, fmt.Errorf("parse root cert: %w", err)
@@ -294,7 +294,7 @@ func (m *Manager) generate() (*Bundle, error) {
 		return nil, fmt.Errorf("sign server cert: %w", err)
 	}
 
-	// PEM kodieren
+	// PEM encode
 	bundle := &Bundle{
 		RootCAPEM:     pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER}),
 		ServerCertPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER}),

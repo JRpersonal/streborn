@@ -1,21 +1,20 @@
 #!/bin/sh
-# install.sh: Einmal manuell auf der Box ausfuehren, um den Autostart
-# zu aktivieren.
+# install.sh: run once manually on the box to enable the autostart.
 #
-# Phase 1 (rc.local direkt):
-#   sh /media/sda1/install.sh             # Phase 1 aktivieren
-#   sh /media/sda1/install.sh remove      # Phase 1 deaktivieren
-#   sh /media/sda1/install.sh status      # Status anzeigen
+# Phase 1 (rc.local directly):
+#   sh /media/sda1/install.sh             # enable phase 1
+#   sh /media/sda1/install.sh remove      # disable phase 1
+#   sh /media/sda1/install.sh status      # show status
 #
-# Phase 2 (Integration in shepherdd):
-#   sh /media/sda1/install.sh shepherd install   # Phase 2 aktivieren
-#   sh /media/sda1/install.sh shepherd remove    # Phase 2 deaktivieren
-#   sh /media/sda1/install.sh shepherd status    # Shepherd Status
+# Phase 2 (integration into shepherdd):
+#   sh /media/sda1/install.sh shepherd install   # enable phase 2
+#   sh /media/sda1/install.sh shepherd remove    # disable phase 2
+#   sh /media/sda1/install.sh shepherd status    # shepherd status
 #
-# Phase 1 und Phase 2 sind exklusiv. Aktivieren von Phase 2 deaktiviert
-# automatisch Phase 1, und umgekehrt.
+# Phase 1 and phase 2 are mutually exclusive. Enabling phase 2 disables
+# phase 1 automatically, and vice versa.
 #
-# Achtung: Erfordert root. Auf der ST10 sind wir das ohnehin.
+# Note: requires root. On the ST10 we are root anyway.
 
 set -u
 
@@ -37,28 +36,28 @@ BIN="$STICK/streborn-armv7l"
 # a later stick read failure at boot cannot leave the box with no agent to run.
 CACHED_BIN="/mnt/nv/streborn/bin/streborn-armv7l"
 
-# Sicherstellen dass NAND Persist Verzeichnis existiert.
+# Make sure the NAND persist directory exists.
 mkdir -p /mnt/nv/streborn/bin 2>/dev/null
 
 phase1_install() {
     if [ ! -f "$RC_SRC" ]; then
-        echo "FEHLER: $RC_SRC nicht gefunden" >&2
+        echo "ERROR: $RC_SRC not found" >&2
         exit 1
     fi
-    # Phase 2 vorher entfernen wenn aktiv
+    # Remove phase 2 first if active
     if [ -d /mnt/nv/shepherd ]; then
-        echo "Phase 2 ist aktiv, entferne sie zuerst"
+        echo "Phase 2 is active, removing it first"
         phase2_remove
     fi
-    echo "Kopiere $RC_SRC nach $RC_DST"
-    cp "$RC_SRC" "$RC_DST" || { echo "FEHLER beim Kopieren" >&2; exit 1; }
+    echo "Copying $RC_SRC to $RC_DST"
+    cp "$RC_SRC" "$RC_DST" || { echo "ERROR while copying" >&2; exit 1; }
     chmod +x "$RC_DST"
 
-    # run.sh in NAND als run-override.sh deployen. Damit ist NAND die
-    # Source of Truth fuer den Boot - SD card I/O Probleme oder veraltete
-    # run.sh auf der SD machen kein Problem mehr.
+    # Deploy run.sh into NAND as run-override.sh. This makes NAND the
+    # source of truth for the boot - SD card I/O problems or a stale
+    # run.sh on the SD card are no longer a problem.
     if [ -f "$RUN_SRC" ]; then
-        echo "Kopiere $RUN_SRC nach $RUN_OVERRIDE"
+        echo "Copying $RUN_SRC to $RUN_OVERRIDE"
         cp "$RUN_SRC" "$RUN_OVERRIDE"
         chmod +x "$RUN_OVERRIDE"
     fi
@@ -75,86 +74,86 @@ phase1_install() {
     # marker the desktop app classifies as a stick problem (and offers the SSH
     # NAND-copy repair), instead of an opaque post-reboot "agent not up".
     if [ -s "$BIN" ]; then
-        echo "Kopiere Agent Binary nach $CACHED_BIN"
+        echo "Copying agent binary to $CACHED_BIN"
         if cp "$BIN" "$CACHED_BIN.new" 2>&1; then
             # chmod is part of the condition: a non-executable cache makes
             # run.sh's [ -x "$CACHED_BIN" ] test fail at boot, which would
             # surface as the misleading "neither NAND cache nor stick binary
             # available" even though the file is there. Fail loudly instead.
             if chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>&1; then
-                echo "Agent Binary auf NAND gecached ($(wc -c < "$CACHED_BIN") Bytes)"
+                echo "Agent binary cached on NAND ($(wc -c < "$CACHED_BIN") bytes)"
             else
                 rm -f "$CACHED_BIN.new"
-                echo "FEHLER: Agent Binary chmod/mv nach NAND fehlgeschlagen" >&2
+                echo "ERROR: agent binary chmod/mv to NAND failed" >&2
                 exit 1
             fi
         else
             rm -f "$CACHED_BIN.new"
-            echo "FEHLER: Agent Binary konnte nicht vom Stick nach NAND kopiert werden (stick I/O error?)" >&2
+            echo "ERROR: agent binary could not be copied from the stick to NAND (stick I/O error?)" >&2
             exit 1
         fi
     fi
 
-    # presets.json von SD nach NAND migrieren beim ersten Install.
-    # SD card wirft oft I/O Error beim Schreiben (FAT32), deshalb haelt
-    # der Agent die presets.json auf NAND.
+    # Migrate presets.json from SD to NAND on the first install.
+    # The SD card often throws an I/O error on write (FAT32), so the
+    # agent keeps presets.json on NAND.
     if [ -f "$PRESETS_SRC" ] && [ ! -f "$PRESETS_DST" ]; then
-        echo "Migriere presets.json nach NAND"
+        echo "Migrating presets.json to NAND"
         cp "$PRESETS_SRC" "$PRESETS_DST"
     fi
 
     ls -la "$RC_DST" "$RUN_OVERRIDE" 2>/dev/null
-    echo "Phase 1 aktiv. Beim naechsten Boot wird $RC_DST ausgefuehrt."
-    echo "NAND Override aktiv: Agent laeuft via $RUN_OVERRIDE"
+    echo "Phase 1 active. On the next boot $RC_DST will run."
+    echo "NAND override active: agent runs via $RUN_OVERRIDE"
 }
 
 phase1_remove() {
     if [ -e "$RC_DST" ]; then
         rm -f "$RC_DST"
-        echo "Phase 1 entfernt: $RC_DST"
+        echo "Phase 1 removed: $RC_DST"
     else
-        echo "Phase 1 war nicht aktiv"
+        echo "Phase 1 was not active"
     fi
     if [ -e "$RUN_OVERRIDE" ]; then
         rm -f "$RUN_OVERRIDE"
-        echo "NAND Override entfernt: $RUN_OVERRIDE"
+        echo "NAND override removed: $RUN_OVERRIDE"
     fi
 }
 
 phase1_status() {
     if [ -x "$RC_DST" ]; then
-        echo "Phase 1 (rc.local direct): aktiv"
+        echo "Phase 1 (rc.local direct): active"
         ls -la "$RC_DST"
     else
-        echo "Phase 1 (rc.local direct): inaktiv"
+        echo "Phase 1 (rc.local direct): inactive"
     fi
     if [ -x "$RUN_OVERRIDE" ]; then
-        echo "NAND Override: aktiv"
+        echo "NAND override: active"
         ls -la "$RUN_OVERRIDE"
     else
-        echo "NAND Override: nicht installiert"
+        echo "NAND override: not installed"
     fi
     if [ -f "$PRESETS_DST" ]; then
         cnt=$(grep -c '"slot"' "$PRESETS_DST" 2>/dev/null || echo 0)
-        echo "Presets auf NAND: $cnt Eintraege"
+        echo "Presets on NAND: $cnt entries"
     fi
 }
 
 phase2_install() {
     if [ ! -x "$BIN" ]; then
-        echo "FEHLER: Agent Binary nicht ausfuehrbar: $BIN" >&2
+        echo "ERROR: agent binary not executable: $BIN" >&2
         exit 1
     fi
-    # Phase 1 vorher entfernen wenn aktiv
+    # Remove phase 1 first if active
     if [ -x "$RC_DST" ]; then
-        echo "Phase 1 ist aktiv, entferne sie zuerst"
+        echo "Phase 1 is active, removing it first"
         phase1_remove
     fi
-    echo "Aktiviere Phase 2: shepherd install ueber $BIN"
-    "$BIN" shepherd install || { echo "FEHLER" >&2; exit 1; }
+    echo "Enabling phase 2: shepherd install via $BIN"
+    "$BIN" shepherd install || { echo "ERROR" >&2; exit 1; }
     echo
-    echo "Phase 2 aktiv. Beim naechsten Boot startet shepherdd unseren Agent."
-    echo "Empfehlung: jetzt 'reboot' oder 'kill -HUP \$(pgrep shepherdd)' damit es sofort wirkt."
+    echo "Phase 2 active. On the next boot shepherdd starts our agent."
+    echo "Recommendation: run 'reboot' now or 'kill -HUP \$(pgrep shepherdd)' so it takes effect immediately."
 }
 
 phase2_remove() {
@@ -162,7 +161,7 @@ phase2_remove() {
         "$BIN" shepherd remove || true
     else
         rm -rf /mnt/nv/shepherd
-        echo "Phase 2 entfernt (per rm, Binary war nicht da)"
+        echo "Phase 2 removed (via rm, binary was not present)"
     fi
 }
 
@@ -171,10 +170,10 @@ phase2_status() {
         "$BIN" shepherd status
     else
         if [ -d /mnt/nv/shepherd ]; then
-            echo "Phase 2: Verzeichnis vorhanden, Binary aber nicht ausfuehrbar"
+            echo "Phase 2: directory present, but binary not executable"
             ls -la /mnt/nv/shepherd
         else
-            echo "Phase 2 (shepherd integration): inaktiv"
+            echo "Phase 2 (shepherd integration): inactive"
         fi
     fi
 }
@@ -189,13 +188,13 @@ case "${1:-install}" in
       remove|uninstall) phase2_remove ;;
       status)         phase2_status ;;
       *)
-        echo "Verwendung: $0 shepherd {install|remove|status}" >&2
+        echo "Usage: $0 shepherd {install|remove|status}" >&2
         exit 1
         ;;
     esac
     ;;
   *)
-    echo "Verwendung: $0 [install|remove|status|shepherd <install|remove|status>]" >&2
+    echo "Usage: $0 [install|remove|status|shepherd <install|remove|status>]" >&2
     exit 1
     ;;
 esac

@@ -27,6 +27,7 @@ export const state = {
   nowPlayState: '',    // current PlayState
   nowIcon: '',         // last known station logo (favicon)
   nowUUID: '',         // last radio-browser UUID
+  queue: null,         // current box play queue: {active, pos, shuffle, repeat, items[]} or null
   optimisticUntil: 0,  // timestamp until which refreshStatus trusts our optimistic state over the box
   presetErrors: {},    // slot → last error message (rendered red)
   searchOrder: 'votes',
