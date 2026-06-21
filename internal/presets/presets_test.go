@@ -2,6 +2,7 @@ package presets
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -47,5 +48,41 @@ func TestSaveLoadSpotifyRoundtrip(t *testing.T) {
 	}
 	if got.Type != "spotify" || got.URI != want.URI || got.Account != want.Account || got.Name != want.Name {
 		t.Errorf("round trip lost fields: %+v", got)
+	}
+}
+
+// A queue preset (a saved DLNA folder) must survive Save -> Load with its
+// Shuffle flag and the full ordered Items list intact, so a recall restarts the
+// same folder.
+func TestSaveLoadQueueRoundtrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(new): %v", err)
+	}
+	want := Preset{
+		Slot: 3, Name: "Jazz Folder", Type: "queue", Shuffle: true,
+		Source: "Living Room NAS",
+		Items: []PresetItem{
+			{URL: "http://nas/1.flac", Title: "One", Art: "http://nas/1.jpg", Mime: "audio/flac", DurationSec: 210},
+			{URL: "http://nas/2.mp3", Title: "Two", Mime: "audio/mpeg", DurationSec: 0},
+		},
+	}
+	if err := s.SetSlot(want); err != nil {
+		t.Fatalf("SetSlot: %v", err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(reload): %v", err)
+	}
+	got, ok := reloaded.Get(3)
+	if !ok {
+		t.Fatal("slot 3 missing after reload")
+	}
+	if got.Type != "queue" || !got.Shuffle || got.Name != want.Name || got.Source != want.Source {
+		t.Errorf("round trip lost scalar fields: %+v", got)
+	}
+	if !reflect.DeepEqual(got.Items, want.Items) {
+		t.Errorf("round trip lost items:\n got  %+v\n want %+v", got.Items, want.Items)
 	}
 }

@@ -20,6 +20,11 @@ import {
   Resume,
   Stop,
   Status,
+  QueueNext,
+  QueuePrev,
+  QueueShuffle,
+  QueueRepeat,
+  GetQueue,
   ListDrives,
   WriteStickFiles,
   FormatStick,
@@ -892,6 +897,13 @@ $('view-box').innerHTML = `
     <div class="controls">
       <button class="btn" id="pauseBtn">&#9208; ${escapeHtml(t('controls.pause'))}</button>
       <button class="btn" id="stopBtn">&#9209; ${escapeHtml(t('controls.stop'))}</button>
+      <div class="queue-controls hidden" id="queueControls">
+        <button class="btn btn-mini" id="queuePrevBtn" title="${escapeAttr(t('controls.prev'))}">&#9198;</button>
+        <button class="btn btn-mini" id="queueNextBtn" title="${escapeAttr(t('controls.next'))}">&#9197;</button>
+        <button class="btn btn-mini toggle-btn" id="queueShuffleBtn" title="${escapeAttr(t('controls.shuffle'))}">&#128256;</button>
+        <button class="btn btn-mini toggle-btn" id="queueRepeatBtn" title="${escapeAttr(t('controls.repeat'))}">&#128257;</button>
+        <span class="queue-pos" id="queuePos"></span>
+      </div>
       <div class="source-buttons">
         <button class="btn btn-source" data-source="AUX" title="${escapeAttr(t('controls.auxTitle'))}">AUX</button>
         <button class="btn btn-source btn-source-icon" data-source="BLUETOOTH" title="${escapeAttr(t('controls.bluetoothTitle'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline></svg></button>
@@ -979,6 +991,21 @@ if (gsb) gsb.onclick = async () => {
 };
 $('pauseBtn').onclick = () => action(state.nowPlayState === 'PAUSE_STATE' ? 'resume' : 'pause');
 $('stopBtn').onclick = () => action('stop');
+
+// Queue transport controls (DLNA folder play queue). Each fires its action and
+// then a quick GetQueue refresh so the indicator and toggle states catch up
+// before the next status poll.
+$('queuePrevBtn').onclick = () => queueAction(QueuePrev);
+$('queueNextBtn').onclick = () => queueAction(QueueNext);
+$('queueShuffleBtn').onclick = () => {
+  const on = !(state.queue && state.queue.shuffle);
+  queueAction((h, p) => QueueShuffle(h, p, on));
+};
+$('queueRepeatBtn').onclick = () => {
+  const cur = (state.queue && state.queue.repeat) || 'off';
+  const nextMode = cur === 'off' ? 'all' : cur === 'all' ? 'one' : 'off';
+  queueAction((h, p) => QueueRepeat(h, p, nextMode));
+};
 
 // Source Buttons (AUX / Bluetooth / Standby) im Musik-Hoeren Tab —
 // rufen das neue /api/box/source Endpoint via SelectBoxSource Binding.
@@ -3145,6 +3172,60 @@ async function action(kind) {
   setTimeout(refreshStatus, 1000);
 }
 
+// queueAction runs a queue binding for the current box, then refreshes the
+// status (which pulls a fresh GetQueue) so the transport controls reflect the
+// new position / toggle state promptly.
+async function queueAction(fn) {
+  if (!state.currentBox) return;
+  try { await fn(state.currentBox.host, state.currentBox.port); } catch (e) { showError(e); }
+  setTimeout(refreshStatus, 600);
+}
+
+// refreshQueue pulls the box's current queue state and folds it into state.queue,
+// then repaints the transport controls. Called from the status poll so it shares
+// the existing cadence. Best-effort: a failed read just leaves the controls as is.
+async function refreshQueue() {
+  const box = state.currentBox;
+  if (!box) { state.queue = null; renderQueueControls(); return; }
+  try {
+    const q = await GetQueue(box.host, box.port);
+    if (state.currentBox !== box) return; // box switched mid-fetch
+    state.queue = q || null;
+  } catch {
+    // leave the last known queue state on screen
+  }
+  renderQueueControls();
+}
+
+// renderQueueControls shows/hides the queue transport controls and reflects the
+// shuffle/repeat/position state. Purely DOM-driven from state.queue.
+function renderQueueControls() {
+  const wrap = $('queueControls');
+  if (!wrap) return;
+  const q = state.queue;
+  const active = !!(q && q.active);
+  wrap.classList.toggle('hidden', !active);
+  if (!active) return;
+  const shuffleBtn = $('queueShuffleBtn');
+  if (shuffleBtn) shuffleBtn.classList.toggle('active', !!q.shuffle);
+  const repeatBtn = $('queueRepeatBtn');
+  if (repeatBtn) {
+    const mode = q.repeat || 'off';
+    repeatBtn.classList.toggle('active', mode !== 'off');
+    // "Repeat one" gets a small superscript 1 so the two repeat modes are
+    // distinguishable at a glance.
+    repeatBtn.innerHTML = mode === 'one' ? '&#128257;¹' : '&#128257;';
+  }
+  const pos = $('queuePos');
+  if (pos) {
+    const items = q.items || [];
+    const n = (typeof q.pos === 'number' && q.pos >= 0) ? q.pos + 1 : 0;
+    pos.textContent = (n > 0 && items.length > 0)
+      ? t('queue.trackOf', { n, total: items.length })
+      : '';
+  }
+}
+
 // renderNowPlayingBar paints the now-playing status line purely from cached
 // state (no network), so it can be called both from the status poll and from
 // the live-title poller the moment a track arrives, keeping the status line in
@@ -3226,6 +3307,9 @@ async function refreshStatus() {
   // Fired in parallel with the Status fetch so a slow Status call
   // does not delay the volume update. Cheap, drag-aware.
   syncMusicTabVolumeFromBox();
+  // Keep the queue transport controls in step with the box. Fired alongside the
+  // Status fetch (not awaited) so it shares the poll cadence without delaying it.
+  refreshQueue();
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
     const name = decodeXmlEntities((xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');

@@ -222,6 +222,22 @@ type Server struct {
 	// set. Lets the app show/preserve/recall them (Option C). Guarded by boxPresetsMu.
 	boxPresetsMu sync.Mutex
 	boxPresets   []BoxPreset
+
+	// queue is the agent-side DLNA library play queue (#202 follow-up). It
+	// auto-advances on track end so a NAS/FRITZ!Box folder plays through like the
+	// original SoundTouch box-side queue, even with the desktop app closed. A
+	// watcher goroutine polls now_playing while a queue is active; queueGen
+	// invalidates the per-track timing when a new track is pushed. queueMu guards
+	// the watcher lifecycle and timing fields; the playQueue has its own lock.
+	queue           *playQueue
+	queueMu         sync.Mutex
+	queueCancel     context.CancelFunc
+	queueGen        int
+	queueTrackStart time.Time
+	queueTrackDur   time.Duration
+	// baseCtx is the server-lifetime context (set in Run), the parent for the
+	// long-lived queue watcher so it outlives the request that started the queue.
+	baseCtx context.Context
 }
 
 // BoxPreset is one of the box's own presets (incl. foreign sources like DEEZER),
@@ -475,7 +491,7 @@ func (s *Server) ensureBoxReady(ctx context.Context) {
 
 // New creates a new webui server.
 func New(addr string, logger *slog.Logger, opts ...Option) *Server {
-	s := &Server{addr: addr, logger: logger}
+	s := &Server{addr: addr, logger: logger, queue: newPlayQueue()}
 	for _, o := range opts {
 		o(s)
 	}
@@ -492,6 +508,7 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 // in the bundle to one that crashed mid-init.
 func (s *Server) Run(ctx context.Context) error {
 	s.logger.Warn("webui phase: Run entered", "addr", s.addr)
+	s.baseCtx = ctx
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -507,6 +524,11 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/pause", s.handlePause)
 	mux.HandleFunc("/api/resume", s.handleResume)
 	mux.HandleFunc("/api/stop", s.handleStop)
+	mux.HandleFunc("/api/queue", s.handleQueue)
+	mux.HandleFunc("/api/queue/next", s.handleQueueNext)
+	mux.HandleFunc("/api/queue/prev", s.handleQueuePrev)
+	mux.HandleFunc("/api/queue/shuffle", s.handleQueueShuffle)
+	mux.HandleFunc("/api/queue/repeat", s.handleQueueRepeat)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
@@ -685,6 +707,45 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		p.Slot = slot
 		if p.Type == "" {
 			p.Type = "radio"
+		}
+		// A queue preset (a saved DLNA folder, #queue-preset) has no single
+		// StreamURL/URI: it carries an ordered Items list and a Shuffle flag and
+		// recalls into the agent play-queue. It skips the radio/spotify URL gates
+		// below; require at least one item with a URL instead, mirroring their
+		// 422 shape. The dedup loop below is keyed on URI/StreamURL, both empty
+		// here, so it is harmless for queue presets and leaves other slots alone.
+		if p.Type == "queue" {
+			hasItem := false
+			for _, it := range p.Items {
+				if it.URL != "" {
+					hasItem = true
+					break
+				}
+			}
+			if !hasItem {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error": "This folder can't be saved as a preset: it has no playable tracks. Open a folder with audio files and try again.",
+					"code":  "queue-empty",
+				})
+				return
+			}
+			if err := s.presets.SetSlot(p); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			// Register the slot on the box so the hardware button is mapped. The
+			// physical press is intercepted by RecallSlot (which starts the queue),
+			// but the box still needs an entry for the key to fire at all, so point
+			// it at this slot's stream proxy URL like every other preset.
+			if s.boxHost != "" {
+				boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+				if err := boxcli.AddPreset(boxCtx, s.boxHost, slot, p.Name, boxPresetURL(slot, false)); err != nil {
+					s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
+				}
+				cancel()
+			}
+			writeJSON(w, http.StatusOK, p)
+			return
 		}
 		// Reject (or heal) the saves that produced the dead presets that fail to
 		// recall with "Service not available" (#45/#105). A type=spotify preset
@@ -986,6 +1047,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// A single play replaces any active library queue, so stop auto-advancing.
+	s.stopQueue()
 	// Ad-hoc radio: the box leaves any Spotify source; suppress the #14
 	// auto-attach so it does not jump back to Spotify.
 	if s.spotifySwitchedAway != nil {
@@ -1071,6 +1134,27 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// A queue preset (a saved DLNA folder) recalls into the agent play-queue
+	// instead of the single-URL play below: reload its ordered tracks with the
+	// saved shuffle flag and start from the first. We already hold boxCmdMu, so
+	// use the *Locked variant (startQueue would re-lock and deadlock).
+	if p.Type == "queue" {
+		items := presetItemsToQueue(p.Items)
+		if len(items) == 0 {
+			http.Error(w, "preset has no playable tracks", http.StatusUnprocessableEntity)
+			return
+		}
+		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
+		if err := s.startQueueLocked(r.Context(), items, 0, p.Shuffle, repeatOff); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "Folder could not be played", "detail": guessErrorReason(err),
+				"slot": slot, "name": p.Name,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "queue"})
+		return
+	}
 	// Heal a legacy mis-saved Spotify preset before recall: older versions could
 	// store a Spotify selection as a non-spotify preset whose stream URL encoded
 	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The
@@ -2208,6 +2292,8 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	// Mark this as a deliberate stop BEFORE issuing it, so the disconnect the
 	// stop triggers does not race the auto-re-push into restarting the stream.
 	s.NoteUserStop()
+	// A stop ends any active library queue (no auto-advance after the user stops).
+	s.stopQueue()
 	if err := s.renderer.Stop(r.Context()); err != nil {
 		// Same idempotent treatment as Pause: stopping an already-idle
 		// box yields a "wrong state" UPnP fault that the user need not

@@ -51,22 +51,43 @@ type Preset struct {
 	// the same "website" link as the radio search rows in Recently-played (#135).
 	// Optional/additive: presets saved before this, or non-radio, leave it empty.
 	Homepage string `json:"homepage,omitempty"`
+	// Queue presets (Type=="queue") save a whole DLNA folder as a preset. They
+	// carry no single StreamURL/URI; instead Items holds the ordered tracks and
+	// Shuffle records whether the folder was saved with shuffle on, so a recall
+	// (soft or hardware) restarts the same library play-queue. Both
+	// optional/additive: every other preset type leaves them empty.
+	Shuffle bool         `json:"shuffle,omitempty"`
+	Items   []PresetItem `json:"items,omitempty"`
+}
+
+// PresetItem is one track in a queue preset (Type=="queue"). It mirrors the
+// agent-side queueItem fields the play path needs, so a saved folder can be
+// reloaded straight into the play queue. DurationSec is the track length in
+// seconds (0 when the DLNA server reported none).
+type PresetItem struct {
+	URL         string `json:"url"`
+	Title       string `json:"title,omitempty"`
+	Art         string `json:"art,omitempty"`
+	Mime        string `json:"mime,omitempty"`
+	DurationSec int    `json:"duration_sec,omitempty"`
 }
 
 // rawPreset is the disk format helper. Accepts multiple alias fields.
 type rawPreset struct {
-	Slot      int    `json:"slot"`
-	ID        int    `json:"id"`
-	Name      string `json:"name"`
-	StreamURL string `json:"stream_url"`
-	URL       string `json:"url"`
-	Type      string `json:"type"`
-	Art       string `json:"art"`
-	Bitrate   int    `json:"bitrate"`
-	URI       string `json:"uri"`
-	Account   string `json:"account"`
-	Source    string `json:"source"`
-	Homepage  string `json:"homepage"`
+	Slot      int          `json:"slot"`
+	ID        int          `json:"id"`
+	Name      string       `json:"name"`
+	StreamURL string       `json:"stream_url"`
+	URL       string       `json:"url"`
+	Type      string       `json:"type"`
+	Art       string       `json:"art"`
+	Bitrate   int          `json:"bitrate"`
+	URI       string       `json:"uri"`
+	Account   string       `json:"account"`
+	Source    string       `json:"source"`
+	Homepage  string       `json:"homepage"`
+	Shuffle   bool         `json:"shuffle"`
+	Items     []PresetItem `json:"items"`
 }
 
 // rawWrapper supports the object format {"presets": [...]}.
@@ -145,6 +166,8 @@ func normalize(in []rawPreset) []Preset {
 			Account:   p.Account,
 			Source:    p.Source,
 			Homepage:  p.Homepage,
+			Shuffle:   p.Shuffle,
+			Items:     p.Items,
 		})
 	}
 	return out
