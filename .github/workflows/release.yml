@@ -734,7 +734,7 @@ jobs:
           SIZE_MB=$((STAGE_MB + 200))
           echo "dmg-stage=${STAGE_MB}MB, rw image=${SIZE_MB}MB"
           hdiutil create -volname "STR" -fs HFS+ -size "${SIZE_MB}m" -ov \
-            -format UDRW "release-out/STR-macOS-rw.dmg"
+            "release-out/STR-macOS-rw.dmg"
           DEV=$(hdiutil attach -nobrowse -noverify -noautoopen "release-out/STR-macOS-rw.dmg" | awk '/Apple_HFS/{print $1; exit}')
           ditto "release-out/dmg-stage/ST Reborn.app" "/Volumes/STR/ST Reborn.app"
           ln -s /Applications "/Volumes/STR/Applications"
