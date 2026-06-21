@@ -969,9 +969,31 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			url = p.StreamURL
 			h.logger.Info("hardware preset location empty, falling back to store URL", "slot", slot)
 		}
+		// The box's ContentItem location can be a STALE Bose-cloud reference on a
+		// preset that predates STR or was never re-synced: e.g. a pre-shutdown
+		// TuneIn entry with location="/v1/playback/station/..." source=TUNEIN.
+		// Playing that fails with UPnP 402 "No URI supplied" and verifyPlayURL then
+		// retries it in a storm, so the button looks dead and the box churns
+		// (#45/#105, Brecht 2026-06-20). Our store holds the authoritative STR
+		// proxy URL, so prefer it whenever the box handed us something that is not
+		// one of STR's own stream URLs.
+		if p.StreamURL != "" && url != p.StreamURL && !isSTRStreamURL(url) {
+			h.logger.Info("hardware preset: box location is not an STR stream, using store URL",
+				"slot", slot, "boxLocation", url, "storeURL", p.StreamURL)
+			url = p.StreamURL
+		}
 	}
 	if url == "" {
 		h.logger.Info("hardware preset gedrueckt, kein Mapping", "slot", slot)
+		return
+	}
+	// A stale cloud preset with no STR replacement (a TuneIn/relative location and
+	// no store StreamURL) is not playable: the box answers SetAVTransportURI with
+	// UPnP 402, and verifyPlayURL below would then hammer it in a retry storm.
+	// Stand down with a clear, actionable log instead (re-save fixes it).
+	if !isPlayableURL(url) {
+		h.logger.Warn("hardware preset is a stale cloud entry (e.g. old TuneIn), not playable; re-save it in the app",
+			"slot", slot, "location", url)
 		return
 	}
 
@@ -1013,6 +1035,20 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// press. This re-issues until the box actually plays. Affects radio too.
 	go h.verifyPlayURL(slot, url, name, icon)
 	h.logger.Info("hardware preset zu upnp gemapped", "slot", slot, "name", name)
+}
+
+// isSTRStreamURL reports whether u is one of STR's own stream URLs (the radio
+// stream proxy or the Spotify Ogg passthrough), as opposed to a stale Bose
+// ContentItem location that a re-sync has not yet replaced.
+func isSTRStreamURL(u string) bool {
+	return strings.Contains(u, "/stream/") || strings.Contains(u, "/spotify/")
+}
+
+// isPlayableURL reports whether u is an absolute HTTP(S) URL the UPnP renderer can
+// actually load. Stale Bose-cloud ContentItems use relative, schemeless locations
+// (e.g. "/v1/playback/station/...") that the box rejects with UPnP 402.
+func isPlayableURL(u string) bool {
+	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
 }
 
 // OnRemoteSkip handles the SoundTouch remote's next/prev track keys during
