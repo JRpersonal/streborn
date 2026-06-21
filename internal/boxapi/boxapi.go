@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Client wraps http.Client + box host.
@@ -599,7 +600,27 @@ func (c *Client) getXML(ctx context.Context, path string, dst any) error {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil
 	}
-	return xml.Unmarshal(body, dst)
+	return xml.Unmarshal(ensureUTF8(body), dst)
+}
+
+// ensureUTF8 returns b unchanged when it is already valid UTF-8, otherwise it
+// reinterprets the bytes as Latin-1 (ISO-8859-1) and re-encodes them as UTF-8.
+// The SoundTouch firmware labels /info as UTF-8 but sometimes emits an umlaut
+// box name as a lone Latin-1 byte ("ü" = 0xFC). xml.Unmarshal then rejects the
+// whole document as invalid UTF-8, so GetInfo loses the deviceID + name (which
+// would also defeat the zone master-id resolution in webui.localDeviceID), and
+// the name renders garbled as "K�che" downstream (#70, Albrecht). Latin-1 maps
+// 1:1 to the first 256 code points, so ASCII is untouched and only high bytes
+// are widened; a body that is already valid UTF-8 is returned as-is.
+func ensureUTF8(b []byte) []byte {
+	if utf8.Valid(b) {
+		return b
+	}
+	out := make([]byte, 0, len(b)+8)
+	for _, c := range b {
+		out = utf8.AppendRune(out, rune(c))
+	}
+	return out
 }
 
 func (c *Client) postXML(ctx context.Context, path, body string) error {

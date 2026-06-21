@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -222,6 +223,13 @@ type Server struct {
 	// set. Lets the app show/preserve/recall them (Option C). Guarded by boxPresetsMu.
 	boxPresetsMu sync.Mutex
 	boxPresets   []BoxPreset
+	// deletedBoxSlots tombstones slots the user just deleted, so a presetsUpdated
+	// burst the box emits right after the removal does not resurrect the slot in
+	// the app's merged view before the box-side RemovePreset has settled (a user
+	// reported a deleted preset reappearing as a UPNP entry after an app restart).
+	// Keyed slot -> deletion time; entries older than boxPresetTombstoneTTL are
+	// ignored/pruned. Guarded by boxPresetsMu.
+	deletedBoxSlots map[int]time.Time
 
 	// queue is the agent-side DLNA library play queue (#202 follow-up). It
 	// auto-advances on track end so a NAS/FRITZ!Box folder plays through like the
@@ -239,6 +247,12 @@ type Server struct {
 	// long-lived queue watcher so it outlives the request that started the queue.
 	baseCtx context.Context
 }
+
+// boxPresetTombstoneTTL is how long a just-deleted slot is filtered out of the
+// box's reported preset list. It covers the box's post-change presetsUpdated
+// burst and the RemovePreset round-trip; after it expires a slot the box still
+// reports is shown again (it genuinely still exists on the box).
+const boxPresetTombstoneTTL = 90 * time.Second
 
 // BoxPreset is one of the box's own presets (incl. foreign sources like DEEZER),
 // served by GET /api/box/presets so the app can show and preserve them. Mirrors
@@ -847,9 +861,17 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		// Drop it from the box-preset snapshot right away and tombstone the slot so
+		// a trailing gabbo presetsUpdated does not resurface it as a foreign (UPNP)
+		// entry the user then "cannot delete" (reported after an app restart).
+		s.forgetBoxPreset(slot)
 		if s.boxHost != "" {
 			boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-			_ = boxcli.RemovePreset(boxCtx, s.boxHost, slot)
+			// Log the box-side removal outcome instead of dropping it: a silent
+			// failure here is exactly how the preset comes back on the next boot.
+			if err := boxcli.RemovePreset(boxCtx, s.boxHost, slot); err != nil {
+				s.logger.Warn("preset delete: box-side RemovePreset failed", "slot", slot, "err", err)
+			}
 			cancel()
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -2811,6 +2833,16 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	c := boxapi.New(s.boxHost)
 
+	// The master is always THIS box, so resolve its deviceID from the local
+	// firmware /info rather than trusting the app-supplied value (#70). The
+	// desktop derives a member's deviceID from discovery, where a two-chip
+	// chassis (ST20 spotty/BCO, Portable) announces its wlan0 (SMSC) MAC over
+	// mDNS, which is NOT the SoundTouch deviceID the firmware keys /setZone and
+	// /addGroup on (that is the SCM MAC in /info). For the master that mismatch
+	// is fatal: the firmware never recognizes itself as master, so the zone reads
+	// back empty (the "0.8.x regression" deqw and Albrecht hit was really this).
+	master.DeviceID = s.localDeviceID(ctx, c, master.DeviceID)
+
 	// A stereo pair is a firmware-native L/R group (POST /addGroup), not a
 	// multiroom zone. It needs exactly one partner; the master is the LEFT
 	// channel and the partner the RIGHT by Bose convention. Only the ST10
@@ -3006,6 +3038,29 @@ func verifyFollowersJoined(ctx context.Context, logger *slog.Logger, masterID st
 	return missing, unverifiable
 }
 
+// localDeviceID returns this box's authoritative Bose SoundTouch deviceID, read
+// from the local firmware /info, falling back to supplied when /info is
+// unreachable or carries no deviceID. The zone protocol (/setZone, /addGroup)
+// keys on this exact ID. The desktop derives a member's deviceID from discovery,
+// which on a two-chip chassis can be the wlan0 (SMSC) MAC instead of the
+// SoundTouch (SCM) deviceID; since the master is always the box this agent runs
+// on, the agent is the authority for its own ID and corrects the mismatch (#70).
+func (s *Server) localDeviceID(ctx context.Context, c *boxapi.Client, supplied string) string {
+	info, err := c.GetInfo(ctx)
+	if err != nil {
+		return supplied
+	}
+	real := strings.TrimSpace(info.DeviceID)
+	if real == "" {
+		return supplied
+	}
+	if supplied != "" && !strings.EqualFold(real, supplied) {
+		s.logger.Info("zone: corrected master deviceID from firmware /info (app sent the chassis wlan0/SMSC MAC, not the SoundTouch ID)",
+			"supplied", supplied, "firmware", real)
+	}
+	return real
+}
+
 // formStereoPair drives POST /addGroup to make a real left/right stereo pair
 // and persists it so it is honored on dissolve. master becomes LEFT, the single
 // partner becomes RIGHT. The firmware decides whether the box can pair (ST10
@@ -3066,6 +3121,12 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 		s.logger.Info("zone mirror: master is not playing yet; slaves will mirror once you start playback and the reconcile fires (beta)")
 		return
 	}
+	// lp.boxURL points the MASTER's own box at its loopback stream proxy
+	// (http://127.0.0.1:8888/...). A slave cannot fetch that; it must reach the
+	// master across the LAN. Rewrite the host to the master's LAN IP so each
+	// slave pulls the master's stream (#70: the slave's display updated but its
+	// audio kept its old stream because it was handed the master's loopback URL).
+	slaveURL := s.mirrorURLForSlaves(ctx, lp.boxURL, z.MasterIP)
 	for _, m := range z.Slaves {
 		if m.IP == "" {
 			continue
@@ -3073,51 +3134,88 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 		rr := upnp.NewBoseRenderer(m.IP)
 		var err error
 		if lp.mime != "" {
-			err = rr.PlayURLMime(ctx, lp.boxURL, lp.title, lp.art, lp.mime)
+			err = rr.PlayURLMime(ctx, slaveURL, lp.title, lp.art, lp.mime)
 		} else {
-			err = rr.PlayURL(ctx, lp.boxURL, lp.title, lp.art)
+			err = rr.PlayURL(ctx, slaveURL, lp.title, lp.art)
 		}
 		if err != nil {
 			s.logger.Warn("zone mirror: slave play failed", "slave", m.IP, "err", err)
 		} else {
-			s.logger.Info("zone mirror: slave mirroring master stream (beta)", "slave", m.IP, "url", lp.boxURL)
+			s.logger.Info("zone mirror: slave mirroring master stream (beta)", "slave", m.IP, "url", slaveURL)
 		}
 	}
 }
 
+// mirrorStreamPort is the port a SLAVE box uses to reach the master agent's
+// stream proxy. The proxy listens on :8888, but a remote box cannot use that
+// directly: on a BCO/whitelisted chassis (ST20 spotty/scm, Portable) the SMSC
+// chipset drops an external :8888 connection, routing external TCP only to
+// Bose-binary-owned listeners. Every chassis instead REDIRECTs :17008
+// (SoftwareUpdate, whitelisted) to the agent's loopback :8888, which is exactly
+// how the desktop app already reaches every box, so the mirror uses it too.
+const mirrorStreamPort = "17008"
+
+// mirrorURLForSlaves rewrites the master's own loopback stream URL
+// (http://127.0.0.1:8888/...) into one a SLAVE box can fetch over the LAN: the
+// master's LAN IP on the externally reachable :17008 redirect (mirrorStreamPort).
+// masterIP comes from the persisted zone; when it is empty we fall back to the
+// firmware /info IP. If no LAN IP can be resolved we return the URL unchanged
+// (a no-op push beats pointing a slave at the wrong host).
+func (s *Server) mirrorURLForSlaves(ctx context.Context, boxURL, masterIP string) string {
+	u, err := url.Parse(boxURL)
+	if err != nil {
+		return boxURL
+	}
+	if strings.TrimSpace(masterIP) == "" {
+		if info, ierr := boxapi.New(s.boxHost).GetInfo(ctx); ierr == nil {
+			masterIP = strings.TrimSpace(info.IP)
+		}
+	}
+	if masterIP == "" {
+		return boxURL
+	}
+	u.Host = net.JoinHostPort(masterIP, mirrorStreamPort)
+	return u.String()
+}
+
 // defaultZoneReconcilePath is the NAND flag file that opts a box INTO the
 // periodic zone reconcile (#70 beta). Absent (the default) means OFF: the box
-// never re-asserts a persisted zone, so a speaker the user plays on its own is
-// never dragged back into a group. Only an explicit "1"/"true"/"on"/"yes" turns
-// it on. The default is OFF after a multi-ST10 user reported standalone speakers
-// being pulled into the master's zone every few minutes (the master kept
-// re-asserting its persisted zone whenever a member left to play its own source).
+// never re-asserts a persisted native zone, so a speaker the user plays on its
+// own is never dragged back into a group. Only an explicit "1"/"true"/"on"/"yes"
+// turns it on. The default is OFF after multi-speaker users (Albrecht 5-box,
+// Michal multi-ST10, 2026-06-19) reported standalone speakers being pulled into
+// the master's zone every few minutes: when a member leaves to play its own
+// source the master's match-before-assert guard sees a missing member and
+// re-asserts setZone, dragging it back. On 0.8.x the native setZone does not even
+// distribute (slaves never join, "master read-back empty"), so the periodic
+// re-assert is pure churn with a real downside and no upside. Re-enable per box
+// once the native path is verified on hardware (#70).
 const defaultZoneReconcilePath = "/mnt/nv/streborn/zone-reconcile"
 
-// zoneReconcileEnabled reports whether the periodic zone reconcile runs on this
-// box. Default ON so a formed zone survives reboot/standby/Wi-Fi outage (v1.0
-// gate #2), which is the v0.7.29 behavior the fleet relied on. The flag file is
-// an explicit OPT-OUT (write "off"/"0") for a box whose members are often played
-// solo, where re-asserting the master's group would drag a member back in. The
-// match-before-assert guard in reconcileZoneOnce already skips a no-op re-assert.
+// zoneReconcileEnabled reports whether the periodic NATIVE zone re-assert runs on
+// this box. Default OFF (opt-in): the flag file must explicitly say
+// "1"/"true"/"on"/"yes" to turn it on. See defaultZoneReconcilePath for why the
+// default flipped to OFF. A mirror zone is unaffected: reconcileZoneOnce always
+// re-pushes a mirror group (that path works and does not drag a solo speaker), so
+// this gate only governs the broken/harmful native re-assert.
 func (s *Server) zoneReconcileEnabled() bool {
 	b, err := os.ReadFile(defaultZoneReconcilePath)
 	if err != nil {
-		return true // default ON
+		return false // default OFF (opt-in)
 	}
 	switch strings.ToLower(strings.TrimSpace(string(b))) {
-	case "0", "false", "off", "no":
-		return false // explicit opt-out
+	case "1", "true", "on", "yes":
+		return true // explicit opt-in
 	default:
-		return true
+		return false
 	}
 }
 
-// PeriodicZoneReconcile re-asserts a persisted group so it survives
-// reboot/standby/Wi-Fi outage (#70 beta). No-op when standalone OR when the box
-// is explicitly opted out (see zoneReconcileEnabled, default on). Started by
-// cmd/agent after the server is built. Lives on the Server so the mirror path
-// can reach s.lastPlay + the UPnP renderer.
+// PeriodicZoneReconcile re-pushes a persisted mirror group so it survives
+// reboot/standby/Wi-Fi outage (#70 beta), and re-asserts a native zone only when
+// the box is opted in (see zoneReconcileEnabled, default OFF). No-op when
+// standalone. Started by cmd/agent after the server is built. Lives on the Server
+// so the mirror path can reach s.lastPlay + the UPnP renderer.
 func (s *Server) PeriodicZoneReconcile() {
 	if s.zones == nil || s.boxHost == "" {
 		return
@@ -3132,10 +3230,6 @@ func (s *Server) PeriodicZoneReconcile() {
 }
 
 func (s *Server) reconcileZoneOnce() {
-	if !s.zoneReconcileEnabled() {
-		return // explicit opt-out only (default is on): a box flagged "off" never
-		// auto-re-asserts, so a speaker the user plays solo is not dragged back.
-	}
 	z, ok := s.zones.Get()
 	if !ok {
 		return // standalone
@@ -3143,7 +3237,10 @@ func (s *Server) reconcileZoneOnce() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if z.Mirror() {
-		// Re-push the master's current stream to the slaves (best-effort).
+		// Re-push the master's current stream to the slaves (best-effort). This
+		// path is always allowed: it just re-streams to slaves that the user
+		// grouped and does not drag a solo speaker into anything, so it is not
+		// gated by the native opt-in below.
 		s.mirrorToSlaves(ctx, z)
 		return
 	}
@@ -3152,6 +3249,12 @@ func (s *Server) reconcileZoneOnce() {
 		// zone. Re-asserting it with the zone API (/setZone) would use the wrong
 		// endpoint and could fight the firmware's own pairing, so leave a native
 		// stereo pair alone; the firmware persists it across reboot/standby itself.
+		return
+	}
+	if !s.zoneReconcileEnabled() {
+		// Native re-assert is opt-in (default OFF): re-asserting setZone whenever a
+		// member is missing dragged solo speakers back into the group, and on 0.8.x
+		// native zones do not distribute anyway. See zoneReconcileEnabled.
 		return
 	}
 	// Native: only re-assert when the live zone does not already match.
@@ -3767,11 +3870,53 @@ func writeFlagFile(path, val string) error {
 
 // NoteBoxPresets records the box's own preset list (from the gabbo
 // presetsUpdated frame, via the agent). Replaces the previous snapshot wholesale;
-// the box always reports the full list.
+// the box always reports the full list. A slot the user just deleted is dropped
+// while its tombstone is fresh, so a trailing presetsUpdated does not resurrect
+// it before the box-side removal settles.
 func (s *Server) NoteBoxPresets(ps []BoxPreset) {
 	s.boxPresetsMu.Lock()
-	s.boxPresets = ps
-	s.boxPresetsMu.Unlock()
+	defer s.boxPresetsMu.Unlock()
+	now := time.Now()
+	for slot, when := range s.deletedBoxSlots {
+		if now.Sub(when) > boxPresetTombstoneTTL {
+			delete(s.deletedBoxSlots, slot)
+		}
+	}
+	if len(s.deletedBoxSlots) == 0 {
+		s.boxPresets = ps
+		return
+	}
+	filtered := make([]BoxPreset, 0, len(ps))
+	for _, p := range ps {
+		if _, tombstoned := s.deletedBoxSlots[p.Slot]; tombstoned {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	s.boxPresets = filtered
+}
+
+// forgetBoxPreset removes a slot from the box-preset snapshot immediately and
+// tombstones it, so a just-deleted preset disappears from the app's merged view
+// at once and a trailing box presetsUpdated cannot bring it straight back.
+func (s *Server) forgetBoxPreset(slot int) {
+	s.boxPresetsMu.Lock()
+	defer s.boxPresetsMu.Unlock()
+	if s.deletedBoxSlots == nil {
+		s.deletedBoxSlots = make(map[int]time.Time)
+	}
+	s.deletedBoxSlots[slot] = time.Now()
+	if len(s.boxPresets) == 0 {
+		return
+	}
+	kept := make([]BoxPreset, 0, len(s.boxPresets))
+	for _, p := range s.boxPresets {
+		if p.Slot == slot {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	s.boxPresets = kept
 }
 
 // handleBoxPresets serves the box's OWN presets (incl. foreign sources like

@@ -3,12 +3,37 @@ package main
 import (
 	"embed"
 	"net"
+	"os"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// webviewDataDir returns a stable, version-independent folder for the WebView2
+// user-data profile on Windows. Without it WebView2 derives the profile from the
+// running executable, and because STR ships versioned executables
+// (STR-Windows-vX.Y.Z.exe) every update gets a fresh profile, wiping ALL
+// webview localStorage: radio favorites (str.favStations), the selected UI
+// language, the last selected speaker, the radio search-country filter, the
+// cached box list, and the setup region. Pinning the profile next to the
+// existing durable app state (UserConfigDir/ST Reborn, where app-state.json
+// already lives) keeps that state across updates. Returns "" on error so Wails
+// falls back to its default path.
+func webviewDataDir() string {
+	base, err := os.UserConfigDir()
+	if err != nil || base == "" {
+		return ""
+	}
+	dir := filepath.Join(base, "ST Reborn", "webview")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
+	}
+	return dir
+}
 
 // The embed below requires frontend/dist to exist at build time.
 // An empty frontend/dist/.gitkeep is tracked so a fresh clone can
@@ -52,7 +77,13 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
+		// Pin the WebView2 profile to a stable path so localStorage (favorites,
+		// language, last speaker, search country, cached boxes, setup region)
+		// survives updates instead of resetting with every versioned executable.
+		Windows: &windows.Options{
+			WebviewUserDataPath: webviewDataDir(),
+		},
+		OnStartup: app.startup,
 		// Single-instance guard. Two running app instances would each poll
 		// the speaker, doubling (or worse) the request rate the Bose
 		// firmware app already struggles with. The UniqueId is a FIXED

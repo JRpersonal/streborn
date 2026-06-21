@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -746,6 +747,40 @@ func run() error {
 	return firstErr
 }
 
+// httpErrorLogWriter bridges the stdlib http.Server ErrorLog into slog. The
+// Bose firmware opens a TCP connection to the redirected streaming.bose.com TLS
+// port (our marge-tls listener) about once a minute and closes it without ever
+// sending a ClientHello, so net/http logged `http: TLS handshake error from
+// <box>: EOF` to the process default logger every 60s. On the speaker that
+// default logger is teed to the NAND log, so the benign probe churned ~1440
+// NAND writes a day for no diagnostic value (seen across every box in #185 /
+// #187 bundles). Route that handshake noise to DEBUG (dropped at the default
+// info level) while keeping any genuine server error (e.g. a recovered handler
+// panic, which also reaches ErrorLog) at WARN so it still lands in a bundle.
+type httpErrorLogWriter struct {
+	logger *slog.Logger
+	name   string
+}
+
+func (w httpErrorLogWriter) Write(p []byte) (int, error) {
+	msg := strings.TrimRight(string(p), "\n")
+	if msg == "" {
+		return len(p), nil
+	}
+	if strings.Contains(msg, "TLS handshake error") {
+		w.logger.Debug("http server error", "comp", w.name, "msg", msg)
+	} else {
+		w.logger.Warn("http server error", "comp", w.name, "msg", msg)
+	}
+	return len(p), nil
+}
+
+// newHTTPErrorLog returns the *log.Logger to wire into http.Server.ErrorLog so
+// per-connection noise does not bypass slog and hit the NAND log directly.
+func newHTTPErrorLog(logger *slog.Logger, name string) *log.Logger {
+	return log.New(httpErrorLogWriter{logger: logger, name: name}, "", 0)
+}
+
 // startHTTP starts an HTTP server in a goroutine and reports errors to errs.
 //
 // The listener is opened via netutil.ListenTCP, which sets SO_REUSEADDR on
@@ -763,6 +798,7 @@ func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name,
 			Addr:              addr,
 			Handler:           handler,
 			ReadHeaderTimeout: 10 * time.Second,
+			ErrorLog:          newHTTPErrorLog(logger, name),
 		}
 		logger.Warn("listener phase: calling ListenTCP", "comp", name, "addr", addr)
 		ln, err := netutil.ListenTCP(ctx, addr)
@@ -801,6 +837,7 @@ func startHTTPS(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name
 			Handler:           handler,
 			TLSConfig:         tlsConfig,
 			ReadHeaderTimeout: 10 * time.Second,
+			ErrorLog:          newHTTPErrorLog(logger, name),
 		}
 		logger.Warn("listener phase: calling ListenTCP TLS", "comp", name, "addr", addr)
 		ln, err := netutil.ListenTCP(ctx, addr)
@@ -951,9 +988,31 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			url = p.StreamURL
 			h.logger.Info("hardware preset location empty, falling back to store URL", "slot", slot)
 		}
+		// The box's ContentItem location can be a STALE Bose-cloud reference on a
+		// preset that predates STR or was never re-synced: e.g. a pre-shutdown
+		// TuneIn entry with location="/v1/playback/station/..." source=TUNEIN.
+		// Playing that fails with UPnP 402 "No URI supplied" and verifyPlayURL then
+		// retries it in a storm, so the button looks dead and the box churns
+		// (#45/#105, Brecht 2026-06-20). Our store holds the authoritative STR
+		// proxy URL, so prefer it whenever the box handed us something that is not
+		// one of STR's own stream URLs.
+		if p.StreamURL != "" && url != p.StreamURL && !isSTRStreamURL(url) {
+			h.logger.Info("hardware preset: box location is not an STR stream, using store URL",
+				"slot", slot, "boxLocation", url, "storeURL", p.StreamURL)
+			url = p.StreamURL
+		}
 	}
 	if url == "" {
 		h.logger.Info("hardware preset pressed, no mapping", "slot", slot)
+		return
+	}
+	// A stale cloud preset with no STR replacement (a TuneIn/relative location and
+	// no store StreamURL) is not playable: the box answers SetAVTransportURI with
+	// UPnP 402, and verifyPlayURL below would then hammer it in a retry storm.
+	// Stand down with a clear, actionable log instead (re-save fixes it).
+	if !isPlayableURL(url) {
+		h.logger.Warn("hardware preset is a stale cloud entry (e.g. old TuneIn), not playable; re-save it in the app",
+			"slot", slot, "location", url)
 		return
 	}
 
@@ -995,6 +1054,20 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// press. This re-issues until the box actually plays. Affects radio too.
 	go h.verifyPlayURL(slot, url, name, icon)
 	h.logger.Info("hardware preset mapped to upnp", "slot", slot, "name", name)
+}
+
+// isSTRStreamURL reports whether u is one of STR's own stream URLs (the radio
+// stream proxy or the Spotify Ogg passthrough), as opposed to a stale Bose
+// ContentItem location that a re-sync has not yet replaced.
+func isSTRStreamURL(u string) bool {
+	return strings.Contains(u, "/stream/") || strings.Contains(u, "/spotify/")
+}
+
+// isPlayableURL reports whether u is an absolute HTTP(S) URL the UPnP renderer can
+// actually load. Stale Bose-cloud ContentItems use relative, schemeless locations
+// (e.g. "/v1/playback/station/...") that the box rejects with UPnP 402.
+func isPlayableURL(u string) bool {
+	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
 }
 
 // OnRemoteSkip handles the SoundTouch remote's next/prev track keys during

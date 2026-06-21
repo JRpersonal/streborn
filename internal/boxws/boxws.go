@@ -193,6 +193,19 @@ func (c *Client) noteUserActivity(ctx context.Context) {
 		debounced := !c.thumbLastFire.IsZero() && time.Since(c.thumbLastFire) < thumbDebounce
 		if explained || debounced {
 			c.thumbMu.Unlock()
+			// A lone user-activity reached the settle timer but was then
+			// suppressed. Both outcomes are otherwise invisible, which makes a
+			// "the thumb key does nothing" report (#187) impossible to diagnose
+			// from a bundle: we cannot tell a missing frame from a suppressed
+			// one. Log it at INFO. This path only runs for activity that was NOT
+			// already explained at arrival (volume ramps return earlier), so it
+			// stays rare and does not churn the NAND log.
+			switch {
+			case explained:
+				c.logger.Info("box ws: user-activity settled as explained, not firing thumb")
+			default:
+				c.logger.Info("box ws: user-activity debounced, thumb already fired recently")
+			}
 			return
 		}
 		c.thumbLastFire = time.Now()
@@ -688,6 +701,21 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// 2026-06-12 showed bare <userActivityUpdate/> as unrecognized).
 				c.noteUserActivity(ctx)
 				return
+			case "errorUpdate":
+				// The box reports playback/source failures as a bare <errorUpdate>
+				// frame (UPnP SetURI rejected, wrong state, bad URL, audio timeout).
+				// These used to fall through to the generic "unrecognized frame" INFO
+				// line, so real box errors were buried in diagnostics. Surface them at
+				// WARN with the code/name so a bundle shows exactly what the box
+				// rejected: e.g. 1036 UpnpRcvdContentItemInWrongState (SetURI raced a
+				// standby wake), 3101 AUDIO_ERROR_BAD_URL (a stale/unplayable preset),
+				// 3103 AUDIO_ERROR_TIMEOUT. Diagnostic only; STR's recall/verify paths
+				// already recover, this just makes the cause visible.
+				if v, name, sev, detail := parseBoxError(s); v != "" {
+					c.logger.Warn("box ws: box reported error",
+						"value", v, "name", name, "severity", sev, "detail", detail)
+					return
+				}
 			}
 			// Surface anything still unrecognized so we can map the events STR does
 			// not yet handle (the preset long-press store gesture). INFO and rare,
@@ -761,6 +789,25 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 // rootLocalName returns the local name of the first XML start element (the
 // frame's root), or "" if the data is not parseable. Used to recognise
 // bare-root frames the <updates>-typed parse does not capture.
+// parseBoxError extracts the fields of a bare <errorUpdate><error .../></errorUpdate>
+// gabbo frame. Returns an empty value when s is not an error frame, so the caller
+// can fall through to the generic unrecognized-frame path.
+func parseBoxError(s string) (value, name, severity, detail string) {
+	var e struct {
+		XMLName xml.Name `xml:"errorUpdate"`
+		Error   struct {
+			Value    string `xml:"value,attr"`
+			Name     string `xml:"name,attr"`
+			Severity string `xml:"severity,attr"`
+			Detail   string `xml:",chardata"`
+		} `xml:"error"`
+	}
+	if err := xml.Unmarshal([]byte(s), &e); err != nil {
+		return "", "", "", ""
+	}
+	return e.Error.Value, e.Error.Name, e.Error.Severity, strings.TrimSpace(e.Error.Detail)
+}
+
 func rootLocalName(s string) string {
 	dec := xml.NewDecoder(strings.NewReader(s))
 	for {

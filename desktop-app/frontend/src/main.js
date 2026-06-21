@@ -296,7 +296,7 @@ initSpotifyView({
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames });
 initLibraryView({ showSlotPicker, formatDuration });
-initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames });
+initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision });
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
 // pipe-separated set of candidate URLs) on each load error, swapping in the
@@ -3425,13 +3425,13 @@ async function refreshStatus() {
     // error. The speaker's ContentItems run through the stream
     // proxy, so accept the slot match from /stream/<slot> too.
     if (ps === 'PLAY_STATE') {
-      // First successful radio playback is the strongest moment to invite the
-      // user to the community world map (their box is alive again). Radio only
-      // (proxy /stream/, not Spotify/AUX/Bluetooth), fired once ever inside
-      // maybeInviteWorldMap.
-      if (/\/stream\//.test(loc) && !/\/spotify\//.test(loc)) {
-        maybeInviteWorldMap();
-      }
+      // Any successful playback is a valid "your box is alive again" moment, not
+      // just internet radio. The old filter (proxy /stream/ and not /spotify/)
+      // missed every Spotify, media-library, AUX/Bluetooth and hardware-button
+      // user, which is why so many never saw the pin invite. maybeInviteWorldMap
+      // is once-ever-guarded (synchronous flag + durable Go-side flag), so
+      // broadening the trigger only widens reach, it cannot double-invite.
+      maybeInviteWorldMap();
       const slotFromProxy = activeSlotFromLocation(loc);
       const ap = state.presets.find(p =>
         p.stream_url === loc || (slotFromProxy !== null && p.slot === slotFromProxy)
@@ -3487,6 +3487,7 @@ async function refreshStatus() {
 // the pin (the user taps a coarse region) and its own anti-spam token.
 const WORLD_MAP_FLAG = 'str.worldMapInvited';        // after the first radio play
 const WORLD_MAP_ALL_FLAG = 'str.worldMapInvitedAll'; // when the whole set runs STR
+const WORLD_MAP_PROVISIONED_PREFIX = 'str.worldMapProvisioned.'; // per box, right after a successful install
 // Session re-entry guard: the status poll fires every few seconds, so the async
 // flag check below must not let a second poll open a second invite before the
 // first has persisted the flag. Set synchronously on the first call.
@@ -3525,6 +3526,27 @@ async function maybeInviteWorldMap() {
   if (worldMapInviteHandled) return; // synchronous guard against status-poll re-entry
   worldMapInviteHandled = true;
   await inviteWorldMapOnce(WORLD_MAP_FLAG, 'first');
+}
+
+// inviteWorldMapAfterProvision celebrates a freshly provisioned box right after a
+// successful install. This is the strongest and most reliable "your SoundTouch is
+// alive again" moment, and the one nearly every user actually reaches: the old
+// triggers only fired on the first internet-radio play through the proxy, or once
+// the whole multi-box set ran STR, so users who play Spotify, AUX/Bluetooth, the
+// media library, or just press the hardware buttons never saw the pin invite,
+// which is exactly why so many ask how to drop a pin. Keyed per box (deviceID,
+// else host), so converting another speaker celebrates and invites again, while
+// re-running the installer on the same box does not nag. Called from the setup
+// view via the injected celebrateProvision dep.
+async function inviteWorldMapAfterProvision(box) {
+  const id = (box && (box.deviceID || box.deviceId || box.id || box.mac || box.host)) || '';
+  const flag = id ? (WORLD_MAP_PROVISIONED_PREFIX + id) : WORLD_MAP_FLAG;
+  // The provision moment supersedes the first-playback invite, for this session
+  // and forever, so the same box's "alive again" milestone is never doubled up.
+  worldMapInviteHandled = true;
+  try { localStorage.setItem(WORLD_MAP_FLAG, '1'); } catch {}
+  try { await SetAppFlag(WORLD_MAP_FLAG); } catch {}
+  await inviteWorldMapOnce(flag, 'first');
 }
 
 // maybeInviteWorldMapAllDone fires the SECOND invite once every supported
@@ -3746,11 +3768,18 @@ function buildSearchOpts() {
   const ord = state.searchOrder || 'votes';
   const limit = ord === 'name' ? PAGE_SIZE * 4 : PAGE_SIZE;
   // cc empty = all countries. top:true selects the vote-ordered top list (no
-  // free-text query).
+  // free-text query). On a free-text NAME search the language filter is dropped:
+  // it defaults to the app language, and many stations (small/US ones especially)
+  // have no language tag in radio-browser, so a default language filter silently
+  // hid a station the user searched for by name (e.g. "Real Talk 93.3", whose
+  // radio-browser entry has an empty language field). Language still scopes the
+  // browse/top list, where it aids discovery; a name lookup should find the
+  // station regardless of how radio-browser tagged its language. Country is
+  // already opt-in (never auto-defaulted), so it stays applied.
   return {
     q: isSearch ? state.searchLastQuery : '',
     cc: state.searchCountry || '',
-    lang: state.searchLang || '',
+    lang: isSearch ? '' : (state.searchLang || ''),
     tag: state.searchTag || '',
     order: ord,
     limit: limit,
@@ -4015,13 +4044,29 @@ function renderSearchResults() {
     }
   }
   if (list.length === 0) {
-    res.innerHTML = '<div class="muted">' + escapeHtml(
-      state.searchLastMode === 'favorites'
-        ? t('search.favEmpty')
-        : state.searchOnlyBose && (state.searchResults || []).length > 0
-          ? t('search.noBoseStations')
-          : t('search.noStationsFound')
-    ) + '</div>';
+    const msg = state.searchLastMode === 'favorites'
+      ? t('search.favEmpty')
+      : state.searchOnlyBose && (state.searchResults || []).length > 0
+        ? t('search.noBoseStations')
+        : t('search.noStationsFound');
+    let html = '<div class="muted">' + escapeHtml(msg) + '</div>';
+    // A name search that genuinely returned nothing (not the favorites view and
+    // not the Bose-filter-hid-everything case) means the station is not in the
+    // radio-browser directory. Surface the "add it yourself" guide right here so
+    // the user does not have to spot the small permanent hint in the filter row.
+    const genuinelyEmpty = state.searchLastMode === 'search'
+      && state.searchLastQuery
+      && (state.searchResults || []).length === 0;
+    if (genuinelyEmpty) {
+      html += '<div class="search-empty-addhint" style="margin-top:.6rem">'
+        + '<a href="#" class="search-addhint" id="emptyAddStationHint">'
+        + escapeHtml(t('search.addStationHint')) + '</a></div>';
+    }
+    res.innerHTML = html;
+    const addLink = $('emptyAddStationHint');
+    if (addLink) {
+      addLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} };
+    }
     return;
   }
   res.innerHTML = list.map((s, i) => {

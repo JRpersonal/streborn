@@ -85,6 +85,52 @@ func TestMergeSameKindKeepsNameAndFreshVersion(t *testing.T) {
 	}
 }
 
+// mergeSameKind must keep the Bose SoundTouch deviceID from the live :8090 /info
+// probe (PortVerified record), not the mDNS-announced one. On a two-chip chassis
+// (ST20 spotty/BCO, Portable) the mDNS TXT carries the agent's wlan0/SMSC MAC,
+// which is NOT the SoundTouch deviceID the firmware keys /setZone on, so a zone
+// formed with it silently never forms (#70). The verified /info deviceID wins
+// regardless of which record is the merge base.
+func TestMergeSameKindPrefersVerifiedDeviceID(t *testing.T) {
+	mdns := BoxInfo{ // mDNS: wlan0/SMSC MAC, not port-verified
+		Kind: "str", Host: "192.168.0.9", DeviceID: "74DAEA99C34C", PortVerified: false,
+	}
+	probe := BoxInfo{ // live /info probe: real SoundTouch (SCM) deviceID, verified
+		Kind: "str", Host: "192.168.0.9", DeviceID: "68C90B85A0A9", PortVerified: true, Port: 17008,
+	}
+	// Order must not matter: the verified deviceID wins as base OR as the other arg.
+	if out := mergeSameKind(mdns, probe); out.DeviceID != "68C90B85A0A9" {
+		t.Errorf("DeviceID = %q, want 68C90B85A0A9 (verified /info wins, mdns base)", out.DeviceID)
+	}
+	if out := mergeSameKind(probe, mdns); out.DeviceID != "68C90B85A0A9" {
+		t.Errorf("DeviceID = %q, want 68C90B85A0A9 (verified /info wins, probe base)", out.DeviceID)
+	}
+}
+
+// When the live probe answered :8888 but its :8090 /info enrichment failed (blank
+// deviceID), the mDNS deviceID is better than nothing and must be kept.
+func TestMergeSameKindKeepsMDNSDeviceIDWhenProbeBlank(t *testing.T) {
+	mdns := BoxInfo{Kind: "str", Host: "192.168.0.9", DeviceID: "AABBCCDDEEFF", PortVerified: false}
+	probe := BoxInfo{Kind: "str", Host: "192.168.0.9", DeviceID: "", PortVerified: true, Port: 8888}
+	if out := mergeSameKind(probe, mdns); out.DeviceID != "AABBCCDDEEFF" {
+		t.Errorf("DeviceID = %q, want AABBCCDDEEFF (fall back to mdns when probe has none)", out.DeviceID)
+	}
+}
+
+// A box name the firmware reports as a lone Latin-1 byte ("ü" = 0xFC) must be
+// repaired to valid UTF-8 so it does not render as garbled "K�che" (#70).
+func TestToValidUTF8(t *testing.T) {
+	if got := toValidUTF8("K\xfcche"); got != "Küche" {
+		t.Errorf("toValidUTF8(latin1) = %q, want Küche", got)
+	}
+	if got := toValidUTF8("Küche"); got != "Küche" {
+		t.Errorf("toValidUTF8(utf8) = %q, want Küche (unchanged)", got)
+	}
+	if got := toValidUTF8("Kitchen"); got != "Kitchen" {
+		t.Errorf("toValidUTF8(ascii) = %q, want Kitchen", got)
+	}
+}
+
 // After STR triggers an OTA, a stock sighting during the box's reboot (its Bose
 // :8090 answers before the agent) must NOT reclassify the box as stock: the
 // post-OTA pin forces it to stay STR for the reboot grace (#108).
