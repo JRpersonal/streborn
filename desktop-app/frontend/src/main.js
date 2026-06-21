@@ -2168,27 +2168,37 @@ async function doBoxUpdate(targetBox) {
     } else {
       showToast(t('update.tookLongerToast'));
     }
-    // Refresh app state regardless of confirmation so the user sees
-    // current truth (either updated or still in OTA).
-    await discoverBoxes();
-    // Force the confirmed new version onto the box record(s) so the view
-    // shows the updated version immediately instead of a stale "outdated"
-    // glitch until the next clean discovery cycle (Jens 2026-06-01:
-    // after OTA the screen kept the old version until a manual refresh).
-    // This also overrides a discovery-stickiness cache entry that might
-    // still carry the pre-OTA version for a box that just rebooted.
-    if (confirmed && confirmedVer) {
-      const patchVer = (b) => {
-        if (b && b.host === targetBox.host) {
-          if (confirmedVer.version) b.version = confirmedVer.version;
-          if (confirmedVer.build) b.build = confirmedVer.build;
-        }
-      };
-      patchVer(state.currentBox);
-      if (Array.isArray(state.boxes)) state.boxes.forEach(patchVer);
+    // Refresh app state regardless of confirmation so the user sees current
+    // truth (either updated or still in OTA). This is BEST-EFFORT and must never
+    // surface as "Update failed": the box is typically still mid-reboot here, so
+    // discoverBoxes / loadBoxSettings hit it while it is unreachable and can throw
+    // "context deadline exceeded (... while reading body)". That throw used to land
+    // in the outer catch and report a failed update even though the upload
+    // succeeded and the version poll already decided the real outcome (reported by
+    // the toast above). So swallow refresh errors here.
+    try {
+      await discoverBoxes();
+      // Force the confirmed new version onto the box record(s) so the view
+      // shows the updated version immediately instead of a stale "outdated"
+      // glitch until the next clean discovery cycle (Jens 2026-06-01:
+      // after OTA the screen kept the old version until a manual refresh).
+      // This also overrides a discovery-stickiness cache entry that might
+      // still carry the pre-OTA version for a box that just rebooted.
+      if (confirmed && confirmedVer) {
+        const patchVer = (b) => {
+          if (b && b.host === targetBox.host) {
+            if (confirmedVer.version) b.version = confirmedVer.version;
+            if (confirmedVer.build) b.build = confirmedVer.build;
+          }
+        };
+        patchVer(state.currentBox);
+        if (Array.isArray(state.boxes)) state.boxes.forEach(patchVer);
+      }
+      checkBoxUpdate();
+      if (state.view === 'settings') loadBoxSettings();
+    } catch (refreshErr) {
+      try { console.warn('post-update refresh failed (non-fatal, box likely still rebooting)', refreshErr); } catch {}
     }
-    checkBoxUpdate();
-    if (state.view === 'settings') loadBoxSettings();
     reset();
   } catch (e) {
     showError(t('update.failed', { err: String(e) }));
