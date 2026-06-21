@@ -1,13 +1,13 @@
-// Package boxws verbindet sich mit dem Bose WebSocket Notification Stream
-// auf Port 8080 (Subprotocol "gabbo") und reagiert auf eingehende Events.
+// Package boxws connects to the Bose WebSocket notification stream on port
+// 8080 (subprotocol "gabbo") and reacts to incoming events.
 //
-// Wenn ein User eine physische Preset Taste auf der Box drueckt, sendet
-// die BoseApp ueber diesen WebSocket eine `<updates>` Nachricht mit
-// `presetSelectionUpdated` oder `nowPlayingUpdated`. Wir hooken den Event
-// und triggern unseren UPnP Player mit der zugehoerigen Stream URL.
+// When a user presses a physical preset button on the box, the BoseApp sends
+// an `<updates>` message over this WebSocket with `presetSelectionUpdated` or
+// `nowPlayingUpdated`. We hook the event and trigger our UPnP player with the
+// associated stream URL.
 //
-// Damit funktionieren die Hardware Preset Tasten obwohl Bose's eigene
-// Music Services in der FW deaktiviert sind.
+// This is what makes the hardware preset buttons work even though Bose's own
+// music services are disabled in the firmware.
 package boxws
 
 import (
@@ -24,68 +24,65 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// PresetEvent wird gefeuert wenn die Box meldet dass ein Preset Slot
-// ausgewaehlt wurde.
+// PresetEvent is fired when the box reports that a preset slot was
+// selected.
 type PresetEvent struct {
 	Slot int
 }
 
-// Handler bekommt eingehende Events aus dem Box WebSocket.
+// Handler receives incoming events from the box WebSocket.
 type Handler interface {
-	// OnPresetSelected wird gefeuert wenn die Box meldet dass ein Preset
-	// Slot aktiv ausgewaehlt wurde (physische Hardware Taste oder
-	// API Trigger). location und title kommen aus dem Box ContentItem
-	// und koennen ueber UPnP an die Box geschickt werden.
+	// OnPresetSelected is fired when the box reports that a preset slot was
+	// actively selected (physical hardware button or API trigger). location
+	// and title come from the box ContentItem and can be sent to the box over
+	// UPnP.
 	OnPresetSelected(ctx context.Context, slot int, location string, title string)
 
-	// OnRemoteSkip wird gefeuert wenn die Fernbedienung Naechster/Vorheriger
-	// Titel drueckt (die Box kann eine UPnP Quelle nicht selbst skippen und
-	// meldet QPLAY_SKIP_*_FAILED). forward=true -> next, false -> prev.
+	// OnRemoteSkip is fired when the remote presses next/previous track (the
+	// box cannot skip a UPnP source itself and reports QPLAY_SKIP_*_FAILED).
+	// forward=true -> next, false -> prev.
 	OnRemoteSkip(ctx context.Context, forward bool)
 
-	// OnUserStop wird gefeuert wenn die Box meldet dass die Wiedergabe
-	// gestoppt wurde (playStatus STOP_STATE in einem nowPlayingUpdated Event),
-	// also der Nutzer ueber Fernbedienung/Box bewusst gestoppt hat. Der Agent
-	// nutzt das um die Auto-Wiederaufnahme nicht gegen einen gewollten Stop
-	// laufen zu lassen.
+	// OnUserStop is fired when the box reports that playback was stopped
+	// (playStatus STOP_STATE in a nowPlayingUpdated event), i.e. the user
+	// deliberately stopped it via remote/box. The agent uses this to avoid
+	// running the auto-resume against a deliberate stop.
 	OnUserStop(ctx context.Context)
 
-	// OnThumbActivity wird gefeuert wenn die Box ein "nacktes"
-	// userActivityUpdate meldet: ein Tastendruck ohne begleitendes
-	// Volume-/NowPlaying-/Preset-Event. Die Fernbedienungs-Daumen liefern auf
-	// dieser Firmware nur dieses generische Event ohne Hoch/Runter-Kennung;
-	// ein nacktes userActivity ist die beste verfuegbare Naeherung fuer einen
-	// Daumendruck. Der Agent nutzt es als (einzelnen, nicht
-	// hoch/runter-unterscheidbaren) Trigger fuer einen konfigurierten Webhook.
-	// Entprellt und gegen Volume/Preset gefiltert in boxws; trotzdem
-	// heuristisch, daher live tunebar.
+	// OnThumbActivity is fired when the box reports a "bare"
+	// userActivityUpdate: a key press without an accompanying
+	// volume/nowPlaying/preset event. On this firmware the remote thumb keys
+	// only deliver this generic event with no up/down identity; a bare
+	// userActivity is the best available approximation for a thumb press. The
+	// agent uses it as a (single, non up/down-distinguishable) trigger for a
+	// configured webhook. Debounced and filtered against volume/preset in
+	// boxws; still heuristic, hence live tunable.
 	OnThumbActivity(ctx context.Context)
 
-	// OnPowerKey wird bei einem powerStateUpdated (Power-Taste / Standby-Wechsel)
-	// gefeuert. Fuer den optionalen "power"-Webhook (nur zusaetzlich: STR kann das
-	// firmware-seitige Ein/Ausschalten nicht unterdruecken). Beta.
+	// OnPowerKey is fired on a powerStateUpdated (power button / standby
+	// change). For the optional "power" webhook (additive only: STR cannot
+	// suppress the firmware-side power on/off). Beta.
 	OnPowerKey(ctx context.Context)
 
-	// OnSourceAux wird gefeuert wenn die aktive Quelle auf AUX wechselt. Fuer den
-	// optionalen "aux"-Webhook (nur zusaetzlich; die Firmware schaltet den Eingang
-	// ohnehin um). Heuristisch ueber den source-Wechsel erkannt, daher Beta.
+	// OnSourceAux is fired when the active source switches to AUX. For the
+	// optional "aux" webhook (additive only; the firmware switches the input
+	// anyway). Detected heuristically via the source change, hence beta.
 	OnSourceAux(ctx context.Context)
 
-	// OnZoneChanged wird gefeuert wenn die Box ihre Multiroom-Zone bzw. ihr
-	// Stereo-Paar aendert (zoneUpdated). Damit kennt STR auch Gruppen, die NICHT
-	// in STR gebildet wurden (z.B. ein in AfterTouch/Bose definiertes Stereopaar),
-	// statt den Frame als "unrecognized" zu verwerfen. z.Master == "" heisst die
-	// Zone wurde aufgeloest.
+	// OnZoneChanged is fired when the box changes its multiroom zone or its
+	// stereo pair (zoneUpdated). This lets STR also know about groups that
+	// were NOT formed in STR (e.g. a stereo pair defined in AfterTouch/Bose),
+	// instead of discarding the frame as "unrecognized". z.Master == "" means
+	// the zone was dissolved.
 	OnZoneChanged(ctx context.Context, z ZoneState)
 
-	// OnPowerWake wird gefeuert wenn die Box aus dem Standby kommt: entweder ueber
-	// ein powerStateUpdated (NICHT STANDBY) auf Firmware die das schickt, ODER, auf
-	// SoundTouch-Firmware die KEIN powerStateUpdated sendet (Portable/taigan, live
-	// 2026-06-13 bestaetigt), ueber den DO_NOT_RESUME-Restore der letzten Auswahl
-	// beim Aufwachen. Treiber fuer den optionalen "letzten Sender beim Einschalten
-	// fortsetzen"-Default. Ein Self-Wake (Stereopaar/Zone) sieht identisch aus und
-	// wird downstream ueber die Zonen-Mitgliedschaft abgefangen (webui.boxInZone),
-	// nicht hier.
+	// OnPowerWake is fired when the box comes out of standby: either via a
+	// powerStateUpdated (NOT STANDBY) on firmware that sends it, OR, on
+	// SoundTouch firmware that does NOT send a powerStateUpdated (Portable/
+	// taigan, confirmed live 2026-06-13), via the DO_NOT_RESUME restore of the
+	// last selection on wake. Driver for the optional "resume the last station
+	// on power-on" default. A self-wake (stereo pair/zone) looks identical and
+	// is caught downstream via the zone membership (webui.boxInZone), not here.
 	OnPowerWake(ctx context.Context)
 
 	// OnPresetsChanged fires when the box reports its own preset list
@@ -108,7 +105,7 @@ type BoxPreset struct {
 	Name          string `json:"name"`          // itemName
 }
 
-// Client haelt die Verbindung zur Box.
+// Client holds the connection to the box.
 type Client struct {
 	logger  *slog.Logger
 	url     string
@@ -129,8 +126,8 @@ type Client struct {
 	// generic <userActivityUpdate/>; we treat a "lone" one (no volume / now
 	// playing / preset event around it) as a thumb press and fire
 	// OnThumbActivity once, debounced. See noteExplainedActivity / noteUserActivity.
-	thumbMu       sync.Mutex
-	thumbPending  *time.Timer
+	thumbMu        sync.Mutex
+	thumbPending   *time.Timer
 	thumbExplained time.Time
 	thumbLastFire  time.Time
 }
@@ -229,19 +226,18 @@ func attrValue(s, attr string) string {
 	return ""
 }
 
-// New erzeugt einen Client. url Beispiel: "ws://127.0.0.1:8080/".
+// New creates a Client. url example: "ws://127.0.0.1:8080/".
 func New(logger *slog.Logger, url string, handler Handler) *Client {
 	return &Client{logger: logger, url: url, handler: handler}
 }
 
-// Run blockiert und reconnected automatisch wenn die Verbindung abbricht.
-// Stop via ctx Cancel.
+// Run blocks and reconnects automatically when the connection drops. Stop via
+// ctx cancel.
 //
-// Box sendet keine eigenen Keepalive Frames; STR pingt den Socket selbst
-// (wsKeepaliveInterval), damit eine lange Leerlaufphase die Verbindung nicht
-// mehr abreissen laesst. Ein Reconnect synct den Box-State ueber den
-// OnConnected-Hook wieder. Wenn lange nichts passiert, ist das normal - keine
-// WARN-Spam dafuer.
+// The box does not send its own keepalive frames; STR pings the socket itself
+// (wsKeepaliveInterval) so a long idle period no longer tears the connection
+// down. A reconnect resyncs the box state via the OnConnected hook. When
+// nothing happens for a long time that is normal - no WARN spam for it.
 func (c *Client) Run(ctx context.Context) {
 	backoff := time.Second
 	for {
@@ -253,12 +249,12 @@ func (c *Client) Run(ctx context.Context) {
 			return
 		}
 		if err != nil {
-			// Read timeout ist normal wenn Box nicht aktiv ist, reconnect
-			// laeuft sauber. Andere Errors hingegen interessant.
+			// A read timeout is normal when the box is not active; the
+			// reconnect runs cleanly. Other errors are interesting though.
 			if strings.Contains(err.Error(), "i/o timeout") {
 				c.logger.Debug("box websocket idle reconnect", "retry_in", backoff)
 			} else {
-				c.logger.Warn("box websocket Verbindung verloren", "err", err, "retry_in", backoff)
+				c.logger.Warn("box websocket connection lost", "err", err, "retry_in", backoff)
 			}
 		}
 		select {
@@ -356,9 +352,9 @@ func (c *Client) runOnce(ctx context.Context) error {
 	}
 }
 
-// handleMessage parsed eine eingehende XML Notification.
+// handleMessage parses an incoming XML notification.
 //
-// Bose's WebSocket Format fuer Hardware Preset Tasten (gemessen 15.05.2026):
+// Bose's WebSocket format for hardware preset buttons (measured 2026-05-15):
 //
 //	<updates deviceID="...">
 //	  <nowSelectionUpdated>
@@ -370,9 +366,9 @@ func (c *Client) runOnce(ctx context.Context) error {
 //	  </nowSelectionUpdated>
 //	</updates>
 //
-// Box folgt mit `<nowSelectionUpdated><preset id="0">` und INVALID_SOURCE
-// wenn sie den Source nicht aktivieren kann. Wir interessieren uns nur fuer
-// den ersten Event mit id >= 1.
+// The box follows up with `<nowSelectionUpdated><preset id="0">` and
+// INVALID_SOURCE when it cannot activate the source. We only care about the
+// first event with id >= 1.
 // wsContentItem is the <ContentItem> Bose nests inside a preset or nowPlaying.
 type wsContentItem struct {
 	Source        string `xml:"source,attr"`
@@ -709,12 +705,12 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	var slot int
 	_, _ = fmt.Sscanf(pe.ID, "%d", &slot)
 	if slot < 1 || slot > 6 {
-		// id="0" + INVALID_SOURCE folgt auf den echten Press wenn Box den Source
-		// nicht selbst spielen kann. Ignorieren fuer die Wiedergabe, aber bei
-		// INVALID_SOURCE einmal loggen: das ist die Box-eigene fehlgeschlagene
-		// Self-Aktivierung, die das Display "Dienst nicht verfuegbar" zeigt
-		// (#22), bevor STR uebernimmt. Markers are matched within this preset
-		// element only (pe.Inner), so an unrelated frame's title cannot trip it.
+		// id="0" + INVALID_SOURCE follows the real press when the box cannot
+		// play the source itself. Ignore it for playback, but log it once on
+		// INVALID_SOURCE: this is the box's own failed self-activation that
+		// shows "service unavailable" on the display (#22) before STR takes
+		// over. Markers are matched within this preset element only (pe.Inner),
+		// so an unrelated frame's title cannot trip it.
 		if strings.Contains(pe.Inner, "INVALID_SOURCE") || strings.Contains(pe.Inner, "DISABLED") {
 			// A standby wake or a source teardown makes the box restore its last
 			// now-selection and, because it cannot natively play STR's UPNP
@@ -750,7 +746,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		}
 		return
 	}
-	c.logger.Info("hardware preset gedrueckt",
+	c.logger.Info("hardware preset pressed",
 		"slot", slot,
 		"location", pe.ContentItem.Location,
 		"source", pe.ContentItem.Source,

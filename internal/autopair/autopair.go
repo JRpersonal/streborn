@@ -1,13 +1,13 @@
-// Package autopair sorgt dafuer dass die Bose Box immer mit dem Stick
-// gepaart ist. Wird beim Agent Start ausgefuehrt und kann auch nach
-// Box Reboots aktiv getriggert werden.
+// Package autopair makes sure the Bose box is always paired with the
+// stick. Runs at agent start and can also be actively triggered after
+// box reboots.
 //
-// Pair Flow:
-//  1. GET http://<box>:8090/info um margeAccountUUID zu lesen
-//  2. Wenn leer: POST http://<box>:8090/setMargeAccount mit PairDeviceWithAccount XML
-//  3. Box ruft Stick's Marge Stub /streaming/account/.../device/ auf
-//  4. Stub antwortet mit adddeviceresponse (wrap201 Format)
-//  5. Box State Machine wechselt nach MargeStateAssociated
+// Pair flow:
+//  1. GET http://<box>:8090/info to read margeAccountUUID
+//  2. If empty: POST http://<box>:8090/setMargeAccount with PairDeviceWithAccount XML
+//  3. Box calls the stick's marge stub /streaming/account/.../device/
+//  4. Stub answers with adddeviceresponse (wrap201 format)
+//  5. Box state machine transitions to MargeStateAssociated
 package autopair
 
 import (
@@ -27,15 +27,15 @@ const (
 	defaultEmail     = "stick@local"
 )
 
-// Config beschreibt die Pair Identitaet.
+// Config describes the pair identity.
 type Config struct {
-	BoxHost   string // z.B. "127.0.0.1" oder Box LAN IP
-	AccountID string // z.B. "stick@local"
-	AuthToken string // wird als userAuthToken gesendet
+	BoxHost   string // e.g. "127.0.0.1" or box LAN IP
+	AccountID string // e.g. "stick@local"
+	AuthToken string // sent as userAuthToken
 	Email     string // optional
 }
 
-// Manager kann den Pair Status pruefen und triggern.
+// Manager can check and trigger the pair status.
 type Manager struct {
 	logger *slog.Logger
 	cfg    Config
@@ -50,7 +50,7 @@ type Manager struct {
 	tickCount  int
 }
 
-// New erstellt einen Manager mit sinnvollen Defaults.
+// New creates a Manager with sensible defaults.
 func New(logger *slog.Logger, cfg Config) *Manager {
 	if cfg.BoxHost == "" {
 		cfg.BoxHost = "127.0.0.1"
@@ -71,7 +71,7 @@ func New(logger *slog.Logger, cfg Config) *Manager {
 	}
 }
 
-// IsPaired liest /info und prueft ob margeAccountUUID gesetzt ist.
+// IsPaired reads /info and checks whether margeAccountUUID is set.
 func (m *Manager) IsPaired(ctx context.Context) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		fmt.Sprintf("http://%s:8090/info", m.cfg.BoxHost), nil)
@@ -97,8 +97,8 @@ func hasMargeUUID(body []byte) bool {
 	return len(m) == 2 && len(strings.TrimSpace(string(m[1]))) > 0
 }
 
-// Pair triggert den Pair Flow durch POST an /setMargeAccount.
-// Erfolg = Box antwortet 200 OK (margeAccountUUID wird danach gesetzt).
+// Pair triggers the pair flow via POST to /setMargeAccount.
+// Success = box answers 200 OK (margeAccountUUID is set afterwards).
 func (m *Manager) Pair(ctx context.Context) error {
 	body := buildPairXML(m.cfg.AccountID, m.cfg.AuthToken, m.cfg.Email)
 	url := fmt.Sprintf("http://%s:8090/setMargeAccount", m.cfg.BoxHost)
@@ -119,8 +119,8 @@ func (m *Manager) Pair(ctx context.Context) error {
 	return nil
 }
 
-// EnsurePaired prueft den Status und triggert Pair falls noetig.
-// Idempotent: laeuft Box bereits gepaart, macht es nichts.
+// EnsurePaired checks the status and triggers Pair if needed.
+// Idempotent: if the box is already paired, it does nothing.
 //
 // Before the first Pair attempt this also checks that the box's own
 // clock is past 2024. The Bose firmware's RTC reads 2015 right after
@@ -139,7 +139,7 @@ func (m *Manager) EnsurePaired(ctx context.Context) error {
 		// will retry, because "box silent for N ticks" is exactly the
 		// signal we need for #60.
 		m.logger.Warn("autopair phase: /info read failed", "err", err)
-		return fmt.Errorf("status pruefen: %w", err)
+		return fmt.Errorf("check status: %w", err)
 	}
 	m.recordPairedState(paired)
 	if paired {
@@ -215,12 +215,12 @@ func (m *Manager) boxClockSane(ctx context.Context) (bool, string) {
 	return true, t.UTC().Format(time.RFC3339)
 }
 
-// RunBackground laeuft im Hintergrund, paart einmal beim Start nach delay,
-// und re-paart wenn Box den Status verliert (alle "interval"). Stop via
-// ctx Cancel.
+// RunBackground runs in the background, pairs once at start after delay,
+// and re-pairs when the box loses the status (every "interval"). Stop via
+// ctx cancel.
 //
-// Das delay beim Start gibt der Box Zeit BoseApp Webserver hochzufahren
-// nach einem Box Reboot.
+// The delay at start gives the box time to bring up the BoseApp web
+// server after a box reboot.
 func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.Duration) {
 	if startDelay > 0 {
 		select {
@@ -262,8 +262,8 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 	}
 }
 
-// TriggerNow forciert ein Pair-Check Cycle, unabhaengig vom RunBackground
-// Ticker. Nuetzlich z.B. wenn boxws ein Reconnect signalisiert.
+// TriggerNow forces a pair-check cycle, independent of the RunBackground
+// ticker. Useful e.g. when boxws signals a reconnect.
 func (m *Manager) TriggerNow(ctx context.Context) {
 	if err := m.EnsurePaired(ctx); err != nil {
 		m.logger.Warn("auto pair trigger failed", "err", err)

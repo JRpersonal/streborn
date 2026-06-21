@@ -1,19 +1,19 @@
-// Package shepherd integriert den STR Agent in den Bose
-// shepherdd Watchdog auf der SoundTouch Box.
+// Package shepherd integrates the STR agent into the Bose
+// shepherdd watchdog on the SoundTouch box.
 //
-// Auf der Box gibt es das Init Skript /etc/init.d/SoundTouch das shepherdd
-// startet. Es liest Config Files aus /var/run/shepherd. Wenn statt dessen
-// /mnt/nv/shepherd als Verzeichnis existiert, wird dieser Pfad genutzt und
-// die Config Files dort werden uebernommen (Override Modus).
+// On the box there is the init script /etc/init.d/SoundTouch that starts
+// shepherdd. It reads config files from /var/run/shepherd. If instead
+// /mnt/nv/shepherd exists as a directory, this path is used and
+// the config files there are picked up (override mode).
 //
-// Dieses Paket pflegt /mnt/nv/shepherd: legt die Standard Symlinks an
-// (core, noncore, product, rhino, hsp) und schreibt unsere eigene
-// Shepherd-streborn.xml. Damit wird unser Agent von shepherdd
-// supervisiert und automatisch neu gestartet wenn er crasht.
+// This package maintains /mnt/nv/shepherd: it creates the standard
+// symlinks (core, noncore, product, rhino, hsp) and writes our own
+// Shepherd-streborn.xml. This way our agent is supervised by shepherdd
+// and automatically restarted if it crashes.
 //
-// Phase 1 (rc.local direct start) und Phase 2 (shepherdd Integration)
-// duerfen NICHT gleichzeitig aktiv sein. install.sh und ggf. dieses Paket
-// muessen das beim Aktivieren sicherstellen.
+// Phase 1 (rc.local direct start) and Phase 2 (shepherdd integration)
+// must NOT be active at the same time. install.sh and possibly this
+// package must ensure that when activating.
 package shepherd
 
 import (
@@ -25,21 +25,21 @@ import (
 	"strings"
 )
 
-// DefaultShepherdDir ist der Override Pfad, den /etc/init.d/SoundTouch erkennt.
+// DefaultShepherdDir is the override path that /etc/init.d/SoundTouch recognizes.
 const DefaultShepherdDir = "/mnt/nv/shepherd"
 
-// DefaultBoseConfigDir ist das Verzeichnis der Bose Standard Configs.
+// DefaultBoseConfigDir is the directory of the Bose standard configs.
 const DefaultBoseConfigDir = "/opt/Bose/etc"
 
-// DefaultStickBin ist der vermutete Pfad zum Agent Binary auf dem USB Stick.
+// DefaultStickBin is the presumed path to the agent binary on the USB stick.
 const DefaultStickBin = "/media/sda1/streborn-armv7l"
 
-// DefaultPresetsPath ist der vermutete Pfad zur presets.json.
+// DefaultPresetsPath is the presumed path to presets.json.
 const DefaultPresetsPath = "/media/sda1/presets.json"
 
-// StandardSymlinks sind die fuenf Bose Configs die wir per Symlink referenzieren
-// muessen damit shepherdd alle Standard Daemons findet. Reihenfolge identisch
-// zum Original Init Skript.
+// StandardSymlinks are the five Bose configs that we must reference via
+// symlink so shepherdd finds all standard daemons. Order identical to
+// the original init script.
 var StandardSymlinks = []string{
 	"Shepherd-core.xml",
 	"Shepherd-noncore.xml",
@@ -48,10 +48,10 @@ var StandardSymlinks = []string{
 	"Shepherd-hsp.xml",
 }
 
-// OwnConfigName ist der Dateiname unserer eigenen Shepherd Config.
+// OwnConfigName is the file name of our own shepherd config.
 const OwnConfigName = "Shepherd-streborn.xml"
 
-// Config beschreibt wie unsere Shepherd Integration aufgesetzt wird.
+// Config describes how our shepherd integration is set up.
 type Config struct {
 	// ShepherdDir, default DefaultShepherdDir.
 	ShepherdDir string
@@ -61,13 +61,13 @@ type Config struct {
 	AgentBinary string
 	// PresetsPath, default DefaultPresetsPath.
 	PresetsPath string
-	// AgentArgs sind die kompletten CLI Argumente die der Agent bekommt.
-	// Wenn nil, wird DefaultAgentArgs verwendet.
+	// AgentArgs are the complete CLI arguments the agent receives.
+	// If nil, DefaultAgentArgs is used.
 	AgentArgs []string
 }
 
-// DefaultAgentArgs sind die Flags die wir dem Agent mitgeben.
-// Identisch zu run.sh damit Phase 1 und Phase 2 austauschbar sind.
+// DefaultAgentArgs are the flags we pass to the agent.
+// Identical to run.sh so phase 1 and phase 2 are interchangeable.
 func DefaultAgentArgs(presetsPath string) []string {
 	return []string{
 		"--presets", presetsPath,
@@ -80,13 +80,13 @@ func DefaultAgentArgs(presetsPath string) []string {
 	}
 }
 
-// Manager kapselt die Operationen Setup, Status, Teardown.
+// Manager encapsulates the operations setup, status, teardown.
 type Manager struct {
 	cfg    Config
 	logger *slog.Logger
 }
 
-// New erstellt einen Manager mit Default Pfaden wenn die Config Felder leer sind.
+// New creates a Manager with default paths if the config fields are empty.
 func New(cfg Config, logger *slog.Logger) *Manager {
 	if cfg.ShepherdDir == "" {
 		cfg.ShepherdDir = DefaultShepherdDir
@@ -109,7 +109,7 @@ func New(cfg Config, logger *slog.Logger) *Manager {
 	return &Manager{cfg: cfg, logger: logger}
 }
 
-// Status beschreibt den aktuellen Zustand der Shepherd Integration.
+// Status describes the current state of the shepherd integration.
 type Status struct {
 	DirExists       bool
 	MissingSymlinks []string
@@ -117,12 +117,12 @@ type Status struct {
 	BrokenSymlinks  []string
 }
 
-// IsHealthy gibt true zurueck wenn die Integration komplett und konsistent ist.
+// IsHealthy returns true if the integration is complete and consistent.
 func (s Status) IsHealthy() bool {
 	return s.DirExists && len(s.MissingSymlinks) == 0 && s.HasOwnConfig && len(s.BrokenSymlinks) == 0
 }
 
-// Check liest den aktuellen Zustand von /mnt/nv/shepherd ohne ihn zu veraendern.
+// Check reads the current state of /mnt/nv/shepherd without changing it.
 func (m *Manager) Check() (Status, error) {
 	var st Status
 
@@ -135,7 +135,7 @@ func (m *Manager) Check() (Status, error) {
 		return st, fmt.Errorf("stat %s: %w", m.cfg.ShepherdDir, err)
 	}
 	if !fi.IsDir() {
-		return st, fmt.Errorf("%s ist keine Directory", m.cfg.ShepherdDir)
+		return st, fmt.Errorf("%s is not a directory", m.cfg.ShepherdDir)
 	}
 	st.DirExists = true
 
@@ -146,20 +146,20 @@ func (m *Manager) Check() (Status, error) {
 			st.MissingSymlinks = append(st.MissingSymlinks, name)
 			continue
 		}
-		// Pruefen ob es ein Symlink ist
+		// Check whether it is a symlink
 		if fi.Mode()&os.ModeSymlink == 0 {
-			// Existiert aber kein Symlink, akzeptieren wir auch (Bose koennte
-			// das selbst eingerichtet haben). Aber wir loggen es als hint.
-			m.logger.Debug("Eintrag ist kein Symlink", "name", name)
+			// Exists but is not a symlink; we accept that too (Bose could
+			// have set it up itself). But we log it as a hint.
+			m.logger.Debug("entry is not a symlink", "name", name)
 			continue
 		}
-		// Target lesen und pruefen ob es existiert
+		// Read the target and check whether it exists
 		target, err := os.Readlink(path)
 		if err != nil {
 			st.BrokenSymlinks = append(st.BrokenSymlinks, name)
 			continue
 		}
-		// Wenn target relativ, gegen ShepherdDir aufloesen
+		// If target is relative, resolve it against ShepherdDir
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(m.cfg.ShepherdDir, target)
 		}
@@ -176,69 +176,69 @@ func (m *Manager) Check() (Status, error) {
 	return st, nil
 }
 
-// Install richtet /mnt/nv/shepherd ein. Idempotent: wenn alles schon passt,
-// wird nichts angefasst.
+// Install sets up /mnt/nv/shepherd. Idempotent: if everything already
+// matches, nothing is touched.
 func (m *Manager) Install() error {
 	if err := os.MkdirAll(m.cfg.ShepherdDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", m.cfg.ShepherdDir, err)
 	}
 
-	// Standard Symlinks anlegen
+	// Create the standard symlinks
 	for _, name := range StandardSymlinks {
 		src := filepath.Join(m.cfg.BoseConfigDir, name)
 		dst := filepath.Join(m.cfg.ShepherdDir, name)
 
 		if _, err := os.Stat(src); err != nil {
-			// Wenn die Bose Config fehlt, Symlink ueberspringen aber nicht
-			// abbrechen. shepherdd ignoriert fehlende Files.
-			m.logger.Warn("Bose Config fehlt, Symlink uebersprungen",
+			// If the Bose config is missing, skip the symlink but do not
+			// abort. shepherdd ignores missing files.
+			m.logger.Warn("Bose config missing, symlink skipped",
 				"src", src, "err", err)
 			continue
 		}
 
-		// Existiert das Ziel schon und zeigt auf src? Dann nichts tun.
+		// Does the target already exist and point to src? Then do nothing.
 		if existing, err := os.Readlink(dst); err == nil && existing == src {
-			m.logger.Debug("Symlink bereits korrekt", "dst", dst)
+			m.logger.Debug("symlink already correct", "dst", dst)
 			continue
 		}
 
-		// Falls dst existiert (Symlink oder Datei), erst entfernen
+		// If dst exists (symlink or file), remove it first
 		_ = os.Remove(dst)
 
 		if err := os.Symlink(src, dst); err != nil {
 			return fmt.Errorf("symlink %s -> %s: %w", dst, src, err)
 		}
-		m.logger.Info("Symlink erstellt", "dst", dst, "src", src)
+		m.logger.Info("symlink created", "dst", dst, "src", src)
 	}
 
-	// Eigene Config schreiben
+	// Write our own config
 	xml := RenderConfig(m.cfg.AgentBinary, m.cfg.AgentArgs)
 	ownPath := filepath.Join(m.cfg.ShepherdDir, OwnConfigName)
 	tmpPath := ownPath + ".new"
 	if err := os.WriteFile(tmpPath, []byte(xml), 0o644); err != nil {
-		return fmt.Errorf("schreibe %s: %w", tmpPath, err)
+		return fmt.Errorf("write %s: %w", tmpPath, err)
 	}
 	if err := os.Rename(tmpPath, ownPath); err != nil {
 		return fmt.Errorf("rename %s -> %s: %w", tmpPath, ownPath, err)
 	}
-	m.logger.Info("Eigene Config geschrieben", "path", ownPath)
+	m.logger.Info("own config written", "path", ownPath)
 
 	return nil
 }
 
-// Uninstall entfernt /mnt/nv/shepherd komplett. Beim naechsten Reboot faellt
-// das Init Skript auf den Default Pfad /var/run/shepherd zurueck, unser
-// Agent startet dann nicht mehr automatisch.
+// Uninstall removes /mnt/nv/shepherd completely. On the next reboot the
+// init script falls back to the default path /var/run/shepherd, and our
+// agent no longer starts automatically.
 func (m *Manager) Uninstall() error {
 	if err := os.RemoveAll(m.cfg.ShepherdDir); err != nil {
-		return fmt.Errorf("entferne %s: %w", m.cfg.ShepherdDir, err)
+		return fmt.Errorf("remove %s: %w", m.cfg.ShepherdDir, err)
 	}
-	m.logger.Info("Shepherd Integration entfernt", "dir", m.cfg.ShepherdDir)
+	m.logger.Info("shepherd integration removed", "dir", m.cfg.ShepherdDir)
 	return nil
 }
 
-// RenderConfig produziert die XML Repraesentation unserer Shepherd Config.
-// Wir bauen es als String weil das XML simpel und uebersichtlich ist.
+// RenderConfig produces the XML representation of our shepherd config.
+// We build it as a string because the XML is simple and easy to read.
 func RenderConfig(binary string, args []string) string {
 	var sb strings.Builder
 	sb.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
@@ -252,7 +252,7 @@ func RenderConfig(binary string, args []string) string {
 	return sb.String()
 }
 
-// escapeXML escaped die fuenf Standard XML Entitaeten.
+// escapeXML escapes the five standard XML entities.
 func escapeXML(s string) string {
 	r := strings.NewReplacer(
 		"&", "&amp;",

@@ -7,12 +7,12 @@ import (
 )
 
 func TestDeviceIDFallback(t *testing.T) {
-	// Suche nach einer realen Interface die wir im Test verifizieren koennen.
-	// Wir koennen kein wlan0 erwarten (z.B. CI Linux), aber irgendeine Interface
-	// mit echter MAC ist normalerweise da (eth0 auf Linux, vEthernet auf Win).
+	// Look for a real interface we can verify in the test. We cannot expect
+	// wlan0 (e.g. CI Linux), but some interface with a real MAC is normally
+	// present (eth0 on Linux, vEthernet on Windows).
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		t.Skipf("kann Interfaces nicht lesen: %v", err)
+		t.Skipf("cannot read interfaces: %v", err)
 	}
 
 	haveAnyMAC := false
@@ -26,46 +26,46 @@ func TestDeviceIDFallback(t *testing.T) {
 		}
 	}
 	if !haveAnyMAC {
-		t.Skip("keine Interface mit MAC vorhanden")
+		t.Skip("no interface with a MAC present")
 	}
 
-	// Wir geben absichtlich nicht existierende Interface Praeferenzen, damit
-	// der Fallback Pfad genommen wird.
-	id, err := DeviceID([]string{"intf-existiert-nicht"})
+	// We deliberately pass non-existent interface preferences so the
+	// fallback path is taken.
+	id, err := DeviceID([]string{"intf-does-not-exist"})
 	if err != nil {
-		t.Fatalf("DeviceID Fallback fehlgeschlagen: %v", err)
+		t.Fatalf("DeviceID fallback failed: %v", err)
 	}
 	if len(id) != 12 {
-		t.Errorf("DeviceID Laenge falsch, got %d (%s)", len(id), id)
+		t.Errorf("DeviceID length wrong, got %d (%s)", len(id), id)
 	}
-	// Muss Uppercase Hex sein
+	// Must be uppercase hex
 	for _, r := range id {
 		if (r < '0' || r > '9') && (r < 'A' || r > 'F') {
-			t.Errorf("DeviceID enthaelt non hex: %s", id)
+			t.Errorf("DeviceID contains non-hex: %s", id)
 			break
 		}
 	}
 	if strings.Contains(id, ":") {
-		t.Errorf("DeviceID enthaelt Doppelpunkte: %s", id)
+		t.Errorf("DeviceID contains colons: %s", id)
 	}
 }
 
 func TestDeviceIDOhneTreffer(t *testing.T) {
-	// Wenn wir zwingen koennten dass nichts gefunden wird... das geht nicht
-	// portabel ohne Mock. Wir testen daher nur den happy path oben.
-	t.Skip("Negativ Test braucht Mocking, ausgelassen")
+	// If we could force a no-match... that is not portable without a mock,
+	// so we only test the happy path above.
+	t.Skip("negative test needs mocking, skipped")
 }
 
 func TestMACOfFehler(t *testing.T) {
 	_, err := MACOf("nichtexistierende-interface-xyz")
 	if err == nil {
-		t.Error("erwartete Fehler bei nicht existierender Interface")
+		t.Error("expected an error for a non-existent interface")
 	}
 }
 
 func TestIPOfFehler(t *testing.T) {
 	_, err := IPOf("nichtexistierende-interface-xyz")
 	if err == nil {
-		t.Error("erwartete Fehler bei nicht existierender Interface")
+		t.Error("expected an error for a non-existent interface")
 	}
 }

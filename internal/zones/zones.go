@@ -75,7 +75,7 @@ func Load(path string) (*Store, error) {
 		if os.IsNotExist(err) {
 			return s, nil
 		}
-		return s, fmt.Errorf("zones lesen: %w", err)
+		return s, fmt.Errorf("read zones: %w", err)
 	}
 	if len(b) == 0 {
 		return s, nil

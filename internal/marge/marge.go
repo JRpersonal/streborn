@@ -1,16 +1,16 @@
-// Package marge emuliert den Bose Marge Server (streaming.bose.com).
-// Marge ist der interne Codename für den Bose Cloud Server, der
-// Presets, Account Daten und Multiroom Steuerung verwaltet.
+// Package marge emulates the Bose Marge server (streaming.bose.com).
+// Marge is the internal codename for the Bose cloud server that
+// manages presets, account data and multiroom control.
 //
-// Diese Implementierung läuft in zwei Modi gleichzeitig:
+// This implementation runs in two modes at the same time:
 //
-//  1. Spy: jede eingehende Anfrage wird mit Method, Pfad, Headers und Body
-//     in den Logs aufgezeichnet. Damit lernen wir was die Box wirklich
-//     anfragt sobald die DNS Umleitung steht.
+//  1. Spy: every incoming request is recorded in the logs with method, path,
+//     headers and body. This lets us learn what the box actually
+//     requests once the DNS redirection is in place.
 //
-//  2. Stub: für die wahrscheinlichsten Endpoints liefern wir sinnvolle
-//     Defaults zurück. Die Antworten sind so konstruiert dass die Box im
-//     Zweifel "alles ok, kein Account, keine Presets" interpretiert.
+//  2. Stub: for the most likely endpoints we return sensible
+//     defaults. The responses are constructed so that the box, when in
+//     doubt, interprets "all ok, no account, no presets".
 package marge
 
 import (
@@ -30,7 +30,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
-// Server hält die Konfiguration und den HTTP Handler für die Marge Emulation.
+// Server holds the configuration and the HTTP handler for the Marge emulation.
 type Server struct {
 	logger   *slog.Logger
 	mu       sync.RWMutex
@@ -46,13 +46,13 @@ type Server struct {
 	// missing file = no reflection (the safe default).
 	reflectPath string
 
-	// requestLog speichert die letzten N Requests für Debug Zwecke
-	// (zugaenglich ueber /__spy/log auf demselben Listener).
+	// requestLog stores the last N requests for debug purposes
+	// (accessible via /__spy/log on the same listener).
 	requestLog    []SpyEntry
 	requestLogMax int
 }
 
-// SpyEntry ist ein einzelner gelogged HTTP Request.
+// SpyEntry is a single logged HTTP request.
 type SpyEntry struct {
 	When    time.Time
 	Method  string
@@ -61,25 +61,25 @@ type SpyEntry struct {
 	Body    string
 }
 
-// Option ist ein Functional Option Pattern für die Konfiguration.
+// Option is a functional option pattern for the configuration.
 type Option func(*Server)
 
-// WithDeviceID setzt die deviceID die in Antworten verwendet wird.
+// WithDeviceID sets the deviceID used in responses.
 func WithDeviceID(id string) Option {
 	return func(s *Server) { s.deviceID = id }
 }
 
-// WithSpyLogSize setzt wie viele Request Snapshots vorgehalten werden.
+// WithSpyLogSize sets how many request snapshots are retained.
 func WithSpyLogSize(n int) Option {
 	return func(s *Server) { s.requestLogMax = n }
 }
 
-// WithPresets initialisiert die Preset Liste.
+// WithPresets initializes the preset list.
 func WithPresets(p []Preset) Option {
 	return func(s *Server) { s.presets = p }
 }
 
-// WithSources initialisiert die Source Liste.
+// WithSources initializes the source list.
 func WithSources(items []SourceItem) Option {
 	return func(s *Server) { s.sources = items }
 }
@@ -106,7 +106,7 @@ func xmlEscapeText(in string) string {
 	return r.Replace(in)
 }
 
-// New erstellt einen neuen Marge Server.
+// New creates a new Marge server.
 func New(logger *slog.Logger, opts ...Option) *Server {
 	s := &Server{
 		logger:        logger,
@@ -118,26 +118,26 @@ func New(logger *slog.Logger, opts ...Option) *Server {
 	return s
 }
 
-// Handler liefert den HTTP Handler für die Marge Endpunkte.
+// Handler returns the HTTP handler for the Marge endpoints.
 //
-// Wir nutzen einen Catchall Handler der jede Anfrage durch den Spy
-// schickt, und dahinter ein Pattern Matching auf bekannte URL Schemata.
+// We use a catchall handler that sends every request through the spy,
+// and behind that a pattern matching on known URL schemes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// Diagnose Endpunkte. Praefix __ damit es nicht mit potentiellen
-	// echten Marge Pfaden kollidiert.
+	// Diagnostic endpoints. Prefix __ so it does not collide with potential
+	// real Marge paths.
 	mux.HandleFunc("/__spy/log", s.handleSpyLog)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 
-	// Catchall, faengt alles andere.
+	// Catchall, catches everything else.
 	mux.HandleFunc("/", s.handleCatchall)
 
 	return s.spyMiddleware(mux)
 }
 
-// Run startet einen optionalen eigenständigen Listener (für Tests).
-// Im Produktivbetrieb wird Handler() in den zentralen Listener gemountet.
+// Run starts an optional standalone listener (for tests).
+// In production Handler() is mounted into the central listener.
 // Uses SO_REUSEADDR so test runs can rebind a freshly-released port
 // without a TIME_WAIT cooldown.
 func (s *Server) Run(ctx context.Context, addr string) error {
@@ -156,15 +156,15 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	}
 }
 
-// spyMiddleware loggt jeden eingehenden Request bevor er an den eigentlichen
-// Handler weitergereicht wird. Body wird gepuffert damit er sowohl gelogged
-// als auch vom Handler gelesen werden kann.
+// spyMiddleware logs every incoming request before it is passed on to the
+// actual handler. The body is buffered so it can be both logged
+// and read by the handler.
 func (s *Server) spyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Body kopieren, damit downstream lesen kann.
+		// Copy the body so downstream can read it.
 		var bodyCopy []byte
 		if r.Body != nil {
-			buf, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1 MB Limit
+			buf, err := io.ReadAll(io.LimitReader(r.Body, 1<<20)) // 1 MB limit
 			if err == nil {
 				bodyCopy = buf
 				r.Body = io.NopCloser(bytes.NewReader(buf))
@@ -180,9 +180,9 @@ func (s *Server) spyMiddleware(next http.Handler) http.Handler {
 		}
 		s.recordSpy(entry)
 
-		// Auf Debug damit die periodischen Bose Lisa Polls (alle paar min)
-		// nicht den Log fluten. Bei Fehlern wird im Handler INFO/WARN
-		// geloggt.
+		// At debug level so the periodic Bose Lisa polls (every few min)
+		// do not flood the log. On errors INFO/WARN is logged in the
+		// handler.
 		s.logger.Debug("marge request",
 			slog.String("method", entry.Method),
 			slog.String("path", entry.Path),
@@ -195,7 +195,7 @@ func (s *Server) spyMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// recordSpy speichert einen Eintrag im Ring Buffer.
+// recordSpy stores an entry in the ring buffer.
 func (s *Server) recordSpy(e SpyEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -205,7 +205,7 @@ func (s *Server) recordSpy(e SpyEntry) {
 	}
 }
 
-// RecentRequests gibt eine Kopie der zuletzt gesehenen Requests zurueck.
+// RecentRequests returns a copy of the most recently seen requests.
 func (s *Server) RecentRequests() []SpyEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -214,14 +214,14 @@ func (s *Server) RecentRequests() []SpyEntry {
 	return out
 }
 
-// handleHealthz ist der Standard Probe Endpunkt.
+// handleHealthz is the standard probe endpoint.
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
 }
 
-// handleSpyLog gibt den Request Log als simpler Plaintext zurueck.
-// Nur fuer Debug Zwecke gedacht, nicht produktiv exponieren.
+// handleSpyLog returns the request log as plain text.
+// Intended for debug purposes only, do not expose in production.
 func (s *Server) handleSpyLog(w http.ResponseWriter, _ *http.Request) {
 	entries := s.RecentRequests()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -239,19 +239,19 @@ func (s *Server) handleSpyLog(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-// handleCatchall reagiert auf alles was nicht von einem konkreten Handler
-// bedient wird. Pattern Matching auf bekannte Pfad Schemata, sonst ein
-// generisches 200 OK mit XML.
+// handleCatchall responds to everything that is not served by a concrete
+// handler. Pattern matching on known path schemes, otherwise a
+// generic 200 OK with XML.
 func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
-	// TuneIn Partner Subdomain wird in /etc/hosts auf 127.0.0.1 umgeleitet
-	// fuer den Fall dass STSCertified den Endpoint je rufen wuerde. Aktuell
-	// passiert das in dieser FW nicht (siehe internal/marge/tunein.go).
-	// Falls Box doch dort connectet, faellt der Request in den catchall
-	// default mit generischem 200 OK <ack/>.
+	// The TuneIn partner subdomain is redirected to 127.0.0.1 in /etc/hosts
+	// in case STSCertified ever calls the endpoint. Currently this
+	// does not happen in this FW (see internal/marge/tunein.go).
+	// If the box does connect there, the request falls into the catchall
+	// default with a generic 200 OK <ack/>.
 
-	// Reale Bose Cloud Endpoints aus mitgeschnittenem Traffic
+	// Real Bose cloud endpoints from captured traffic
 	switch {
 	case strings.HasPrefix(path, "/streaming/support/power_on"):
 		s.respondPowerOn(w, r)
@@ -262,9 +262,9 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/streaming/sourceproviders"):
 		s.respondSourceProviders(w, r)
 		return
-	// AddDevice Sync: /streaming/account/<accountId>/device/ POST
-	// Box ruft das nach POST /setMargeAccount auf der Box selbst.
-	// Antwort muss adddeviceresponse XML sein mit margetoken Element.
+	// AddDevice sync: /streaming/account/<accountId>/device/ POST
+	// The box calls this after POST /setMargeAccount on the box itself.
+	// The response must be adddeviceresponse XML with a margetoken element.
 	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/device") && r.Method == http.MethodPost:
 		s.respondAddDevice(w, r)
 		return
@@ -279,7 +279,7 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback Pattern Matching (legacy)
+	// Fallback pattern matching (legacy)
 	switch {
 	case strings.Contains(path, "preset"):
 		s.respondPresets(w)
@@ -294,16 +294,16 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(path, "config"):
 		s.respondConfigStatus(w)
 	default:
-		// Generisches 200 OK damit die Box nicht in Retry Loops geht.
+		// Generic 200 OK so the box does not go into retry loops.
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ack/>`))
 	}
 }
 
-// respondPowerOn antwortet auf POST /streaming/support/power_on.
-// Box sendet beim Boot diagnostic data, wir muessen mit einem "OK"
-// antworten damit die Box uns nicht als "Cloud down" markiert.
+// respondPowerOn responds to POST /streaming/support/power_on.
+// The box sends diagnostic data at boot; we must respond with an "OK"
+// so the box does not mark us as "Cloud down".
 func (s *Server) respondPowerOn(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusOK)
@@ -313,22 +313,22 @@ func (s *Server) respondPowerOn(w http.ResponseWriter, _ *http.Request) {
 </response>`))
 }
 
-// respondStreamingSupport ist Catchall fuer alle anderen /streaming/support/* Pfade.
+// respondStreamingSupport is the catchall for all other /streaming/support/* paths.
 func (s *Server) respondStreamingSupport(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><response status="OK"/>`))
 }
 
-// respondBmxRegistry antwortet auf GET /bmx/registry/v1/services mit einer
-// Service Registry. STSCertified Code Pfad
-// `BMXController::GetServicesCB()` parsed diese Antwort und ENTFERNT jeden
-// Service der nicht in der Liste vorkommt
-// ("is no longer supported, so removing it"). Wir muessen also alle Music
-// Services aktiv listen damit STSCertified die Worker nicht abschaltet.
+// respondBmxRegistry responds to GET /bmx/registry/v1/services with a
+// service registry. The STSCertified code path
+// `BMXController::GetServicesCB()` parses this response and REMOVES every
+// service that does not appear in the list
+// ("is no longer supported, so removing it"). So we must actively list all
+// music services so STSCertified does not shut down the workers.
 //
-// askAgainAfter triggert das polling Intervall. Ohne den Wert stoppt
-// das polling sofort.
+// askAgainAfter triggers the polling interval. Without the value the
+// polling stops immediately.
 func (s *Server) respondBmxRegistry(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -348,29 +348,29 @@ func (s *Server) respondBmxRegistry(w http.ResponseWriter, _ *http.Request) {
 }`))
 }
 
-// respondBmxGeneric ist Catchall fuer andere /bmx/* Pfade.
+// respondBmxGeneric is the catchall for other /bmx/* paths.
 func (s *Server) respondBmxGeneric(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// respondSourceProviders antwortet auf GET /streaming/sourceproviders mit
-// einer Liste von Music Service Providern. Aus dem BoseApp Binary wissen wir:
-// das Wire Format ist XML (nicht Protobuf), das Schema hat zwei Felder pro
-// Provider: id und name. Box liest das, registriert die Provider und macht
-// die zugehoerigen Sources READY.
+// respondSourceProviders responds to GET /streaming/sourceproviders with
+// a list of music service providers. From the BoseApp binary we know:
+// the wire format is XML (not Protobuf), the schema has two fields per
+// provider: id and name. The box reads this, registers the providers and makes
+// the associated sources READY.
 //
-// Wenn TUNEIN in der Liste ist, sollte INTERNET_RADIO als Source verfuegbar
-// werden und Preset Tasten mit Internet Radio Stations funktionieren.
+// If TUNEIN is in the list, INTERNET_RADIO should become available as a source
+// and preset buttons with internet radio stations should work.
 func (s *Server) respondSourceProviders(w http.ResponseWriter, _ *http.Request) {
-	// ProtoToMarkup Konvention:
+	// ProtoToMarkup convention:
 	//   message sourceProviders { repeated SourceProvider sourceprovider = 1; }
 	//   message SourceProvider {
 	//     optional string id = 1;             // → attribute id="..."
 	//     optional Common.String name = 2;    // → child <name>VALUE</name>
 	//   }
-	// Wrapper aussen genauso wie bei addDevice success:
+	// Wrapper on the outside, same as for addDevice success:
 	// <response status="OK"><sourceProviders>...</sourceProviders></response>
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusOK)
@@ -385,32 +385,33 @@ func (s *Server) respondSourceProviders(w http.ResponseWriter, _ *http.Request) 
 		}
 		extra.WriteString(`<sourceprovider id="` + id + `"><name>` + xmlEscapeText(r.Name) + `</name></sourceprovider>`)
 	}
-	// ohne response wrapper, da AddDevice wrap201 nur fuer den initialen
-	// Pair Call relevant ist.
+	// without response wrapper, since AddDevice wrap201 is only relevant for the
+	// initial pair call.
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
 <sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="STORED_MUSIC"><name>Stored Music</name></sourceprovider>` + extra.String() + `</sourceProviders>`))
 }
 
-// respondAddDevice ist die Antwort auf den AddDevice Sync den die Box nach
-// POST /setMargeAccount triggert. Pfad: /streaming/account/<accountId>/device/
+// respondAddDevice is the response to the AddDevice sync that the box triggers
+// after POST /setMargeAccount. Path: /streaming/account/<accountId>/device/
 //
-// Aus Box-Spy beobachtet: Box schickt
-//   POST /streaming/account/<accountId>/device/
-//   Content-Type: application/vnd.bose.streaming-v1.2+xml
-//   Authorization: <userAuthToken aus PairDeviceWithAccount>
-//   Body: <device deviceid="..."><name>...</name><macaddress>...</macaddress></device>
+// Observed from box-spy: the box sends
 //
-// Box erwartet als Response ein adddeviceresponse XML mit margetoken Feld.
-// Wenn margetoken nicht leer ist, geht die State Machine in MargeStateAssociated.
-// addDeviceFormat steuert das XML Format der adddeviceresponse via Env Var.
-// Werte: "elem" (default), "attr", "wrap", "elem201", "attr201", "wrap201",
+//	POST /streaming/account/<accountId>/device/
+//	Content-Type: application/vnd.bose.streaming-v1.2+xml
+//	Authorization: <userAuthToken from PairDeviceWithAccount>
+//	Body: <device deviceid="..."><name>...</name><macaddress>...</macaddress></device>
+//
+// The box expects an adddeviceresponse XML with a margetoken field as response.
+// If margetoken is not empty, the state machine goes to MargeStateAssociated.
+// addDeviceFormat controls the XML format of the adddeviceresponse via env var.
+// Values: "elem" (default), "attr", "wrap", "elem201", "attr201", "wrap201",
 // "self".
 func addDeviceFormat() string {
 	v := os.Getenv("STICK_ADD_DEVICE_FORMAT")
 	if v == "" {
-		// wrap201 hat die Box im Sweep am 15.05.2026 dazu gebracht
-		// MargeStateAssociated zu erreichen (sie ruft danach
-		// /streaming/sourceproviders ab).
+		// wrap201 made the box reach MargeStateAssociated in the sweep on
+		// 2026-05-15 (it then fetches
+		// /streaming/sourceproviders).
 		return "wrap201"
 	}
 	return v
@@ -422,19 +423,19 @@ func (s *Server) respondAddDevice(w http.ResponseWriter, r *http.Request) {
 	if token == "" {
 		token = "11111111-1111-1111-1111-111111111111"
 	}
-	s.logger.Info("addDevice antwort gesendet",
+	s.logger.Info("addDevice response sent",
 		slog.String("comp", "marge"),
 		slog.String("clientPath", r.URL.Path),
 		slog.String("format", format),
 	)
-	// Bose ProtoToMarkup Konvention: TYPE_STRING Felder werden zu XML
-	// Attributes auf dem parent Element, message Felder werden zu Child
-	// Elements. Beispiel im Box Request:
-	//   <device deviceid="DEVICEID_PLACEHOLDER">          // string field als attribute
-	//     <name>...</name>                         // Common.String message als child
+	// Bose ProtoToMarkup convention: TYPE_STRING fields become XML
+	// attributes on the parent element, message fields become child
+	// elements. Example in the box request:
+	//   <device deviceid="DEVICEID_PLACEHOLDER">          // string field as attribute
+	//     <name>...</name>                         // Common.String message as child
 	//     <macaddress>...</macaddress>
 	//   </device>
-	// margetoken ist optional string, also Attribute.
+	// margetoken is an optional string, so an attribute.
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 
 	status := http.StatusOK
@@ -453,8 +454,8 @@ func (s *Server) respondAddDevice(w http.ResponseWriter, r *http.Request) {
 		body = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" ?>
 <response status="OK"><adddeviceresponse><margetoken>%s</margetoken></adddeviceresponse></response>`, token)
 	case strings.HasPrefix(format, "valueonly"):
-		// ProtoToMarkup value_only Option: outer tag enthaelt direkt
-		// den string value, kein inner margetoken element.
+		// ProtoToMarkup value_only option: the outer tag directly contains
+		// the string value, no inner margetoken element.
 		body = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" ?>
 <adddeviceresponse>%s</adddeviceresponse>`, token)
 	case strings.HasPrefix(format, "minimal"):
@@ -467,23 +468,23 @@ func (s *Server) respondAddDevice(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(body))
 }
 
-// respondAccountFull antwortet auf /streaming/account/<id>/full mit minimaler
-// FullAccount XML. Box benutzt das nach AddDevice um die Account Settings,
-// Devices und Sources zu laden.
+// respondAccountFull responds to /streaming/account/<id>/full with minimal
+// FullAccount XML. The box uses this after AddDevice to load the account settings,
+// devices and sources.
 func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusOK)
 	// FullAccount.proto: account { mode, devices, sources, providerSettings, ... }
-	// Sources enthaelt MargeSource.source mit type=INTERNET_RADIO und
-	// sourceproviderid=INTERNET_RADIO. Damit sollte die Box die Source
-	// als verfuegbar registrieren.
-	// ProtoToMarkup Konvention:
+	// Sources contains MargeSource.source with type=INTERNET_RADIO and
+	// sourceproviderid=INTERNET_RADIO. This should make the box register the
+	// source as available.
+	// ProtoToMarkup convention:
 	//   string field → attribute
-	//   Common.String field → child element mit text content
+	//   Common.String field → child element with text content
 	//   message field → nested child element
-	// Root element heisst nicht "fullAccount" sondern matched die message
-	// name "account" oder der parent field name. Hier probieren wir
-	// <fullAccount> als root (matched filename Konvention).
+	// The root element is not called "fullAccount" but matches the message
+	// name "account" or the parent field name. Here we try
+	// <fullAccount> as root (matches the filename convention).
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
 <fullAccount>
   <mode><text>global</text></mode>
@@ -522,9 +523,9 @@ func (s *Server) reflectedSourcesXML() string {
 	return b.String()
 }
 
-// respondGroup antwortet auf /streaming/account/<id>/device/<deviceid>/group/.
-// Box prueft ob das Geraet schon in einer Multiroom Gruppe ist. Wir sagen
-// "nein, kein Group".
+// respondGroup responds to /streaming/account/<id>/device/<deviceid>/group/.
+// The box checks whether the device is already in a multiroom group. We say
+// "no, no group".
 func (s *Server) respondGroup(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusNotFound)
@@ -532,8 +533,8 @@ func (s *Server) respondGroup(w http.ResponseWriter, _ *http.Request) {
 <errors deviceID="DEVICEID_PLACEHOLDER"><error value="5550" name="GROUP_NO_GROUP_TO_REMOVE_ERROR" severity="Unknown">5550</error></errors>`))
 }
 
-// respondProviderSettings antwortet auf /streaming/account/<id>/provider_settings.
-// Music Service Provider Settings (Spotify Token, etc). Wir geben leer zurueck.
+// respondProviderSettings responds to /streaming/account/<id>/provider_settings.
+// Music service provider settings (Spotify token, etc). We return empty.
 func (s *Server) respondProviderSettings(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusOK)
@@ -541,8 +542,8 @@ func (s *Server) respondProviderSettings(w http.ResponseWriter, _ *http.Request)
 <providerSettings/>`))
 }
 
-// respondMargeAccountFull liefert ein "konfiguriertes" Marge Account.
-// Wenn die Box Account Info erfragt, sagen wir "ja du bist eingeloggt".
+// respondMargeAccountFull returns a "configured" Marge account.
+// When the box requests account info, we say "yes, you are logged in".
 func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -627,7 +628,7 @@ func (s *Server) respondAccount(w http.ResponseWriter) {
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	if acc == nil {
-		// Bestaetigt der Box dass kein Account konfiguriert ist.
+		// Confirms to the box that no account is configured.
 		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><MargeAccount status="UNCONFIGURED"/>`))
 		return
 	}
@@ -652,14 +653,14 @@ func (s *Server) respondConfigStatus(w http.ResponseWriter) {
 	}
 }
 
-// SetAccount setzt den aktuellen Marge Account zur Laufzeit.
+// SetAccount sets the current Marge account at runtime.
 func (s *Server) SetAccount(acc *AccountInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.account = acc
 }
 
-// SetPresets ueberschreibt die Preset Liste zur Laufzeit.
+// SetPresets overwrites the preset list at runtime.
 func (s *Server) SetPresets(p []Preset) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
