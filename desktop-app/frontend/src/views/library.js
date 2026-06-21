@@ -21,6 +21,7 @@ import {
   ListMediaServers,
   BrowseLibrary,
   PlayURL,
+  StartQueue,
   SaveLibraryPreset,
   Status,
 } from '../api.js';
@@ -50,6 +51,8 @@ const libState = {
   capped: false,      // true when a folder exceeds LIB_MAX and was truncated
   filter: '',         // folder search text (client-side filter over the loaded items)
   browseToken: 0,     // bumped on each browse so a stale background page-loop abandons
+  shuffle: false,     // "Play folder" shuffle toggle (UI state, default off)
+  repeat: 'off',      // "Play folder" repeat mode: "off" | "all" | "one" (default off)
 };
 
 // Media-library paging (#119). DLNA servers (and the Bose box's own UPnP) cap
@@ -215,6 +218,46 @@ async function verifyLibraryPlayback(item) {
   showToast(t('library.formatMaybeUnsupported', { title: item.title || '' }), 8000);
 }
 
+// libraryPlayFolder starts an auto-advancing queue from every playable track in
+// the CURRENTLY OPEN container. It reuses the pagination accumulator that
+// libraryBrowseCurrent fills (libState.page.items already holds the whole folder
+// up to LIB_MAX), maps each track to the queue item shape the backend expects,
+// drops anything without a stream URL, and calls StartQueue with the current
+// shuffle/repeat UI state. Single-track clicks stay a plain PlayURL (which clears
+// the queue server-side): auto-advance happens ONLY here, by product decision.
+async function libraryPlayFolder() {
+  if (!state.currentBox) {
+    showToast(t('library.toastNoBox') || t('common.pickBox'));
+    return;
+  }
+  const all = (libState.page && libState.page.items) || [];
+  const items = all
+    .filter((it) => it.streamURL)
+    .map((it) => ({
+      url: it.streamURL,
+      title: it.title || '',
+      art: it.albumArtURL || '',
+      mime: it.mimeType || '',
+      duration_sec: it.durationSec || 0,
+    }));
+  if (items.length === 0) {
+    showError(t('library.errorNoURL'));
+    return;
+  }
+  const payload = {
+    items,
+    start: 0,
+    shuffle: !!libState.shuffle,
+    repeat: libState.repeat || 'off',
+  };
+  try {
+    await StartQueue(state.currentBox.host, state.currentBox.port, JSON.stringify(payload));
+    showToast(t('library.folderQueued', { n: items.length }));
+  } catch (e) {
+    showError(`StartQueue: ${e}`);
+  }
+}
+
 function librarySaveAsPreset(item) {
   if (!state.currentBox) {
     showToast(t('library.toastNoBox') || t('common.pickBox'));
@@ -374,6 +417,15 @@ function renderLibrary() {
 
     const nContainers = (libState.page.containers || []).length;
     const nItems = (libState.page.items || []).length;
+    // Folder actions: "Play folder" starts an auto-advancing queue from every
+    // playable track in this container, with shuffle/repeat toggles that feed the
+    // initial queue state. Shown only when the folder has playable items.
+    const folderActions = nItems > 0 ? `
+      <div class="library-folder-actions">
+        <button class="btn lib-play-folder-btn">&#9654; ${escapeHtml(t('controls.playFolder'))}</button>
+        <button class="btn btn-mini toggle-btn lib-queue-shuffle${libState.shuffle ? ' active' : ''}" title="${escapeAttr(t('controls.shuffle'))}">&#128256; ${escapeHtml(t('controls.shuffle'))}</button>
+        <button class="btn btn-mini toggle-btn lib-queue-repeat${libState.repeat !== 'off' ? ' active' : ''}" title="${escapeAttr(t('controls.repeat'))}">&#128257; ${escapeHtml(t('controls.repeat'))}${libState.repeat === 'one' ? ' ¹' : ''}</button>
+      </div>` : '';
     const searchRow = nItems > 0 ? `
       <div class="library-search-row">
         <input type="search" class="library-search" id="libSearch" placeholder="${escapeAttr(t('library.searchPlaceholder'))}" value="${escapeAttr(libState.filter || '')}">
@@ -387,6 +439,7 @@ function renderLibrary() {
 
     body = `
       <div class="library-crumbs">${crumbs}</div>
+      ${folderActions}
       ${searchRow}
       <ul class="library-list">${libraryListInnerHTML()}</ul>
       ${moreNote}
@@ -406,6 +459,19 @@ function renderLibrary() {
   el.querySelectorAll('.library-crumb').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); libraryGoTo(parseInt(a.dataset.depth, 10)); };
   });
+  const playFolderBtn = el.querySelector('.lib-play-folder-btn');
+  if (playFolderBtn) playFolderBtn.onclick = () => libraryPlayFolder();
+  const qShuffleBtn = el.querySelector('.lib-queue-shuffle');
+  if (qShuffleBtn) qShuffleBtn.onclick = () => {
+    libState.shuffle = !libState.shuffle;
+    qShuffleBtn.classList.toggle('active', libState.shuffle);
+  };
+  const qRepeatBtn = el.querySelector('.lib-queue-repeat');
+  if (qRepeatBtn) qRepeatBtn.onclick = () => {
+    libState.repeat = libState.repeat === 'off' ? 'all' : libState.repeat === 'all' ? 'one' : 'off';
+    qRepeatBtn.classList.toggle('active', libState.repeat !== 'off');
+    qRepeatBtn.innerHTML = `&#128257; ${escapeHtml(t('controls.repeat'))}${libState.repeat === 'one' ? ' ¹' : ''}`;
+  };
   wireLibraryRows(el);
   const libSearch = $('libSearch');
   if (libSearch) {

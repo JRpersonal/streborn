@@ -1888,6 +1888,73 @@ func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime,
 	return nil
 }
 
+// StartQueue starts an agent-side library play queue. payloadJSON is the full
+// request body the agent expects:
+// {"items":[{"url","title","art","mime","duration_sec"}],"start","shuffle","repeat"}.
+// The queue auto-advances on the box; a single PlayURL later clears it.
+func (a *App) StartQueue(host string, port int, payloadJSON string) error {
+	resp, err := a.playPost(host, port, "/api/queue", payloadJSON)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("%s", friendlyError(resp))
+	}
+	return nil
+}
+
+// QueueNext / QueuePrev skip within the active queue.
+func (a *App) QueueNext(host string, port int) error {
+	return a.queuePost(host, port, "/api/queue/next", "")
+}
+
+func (a *App) QueuePrev(host string, port int) error {
+	return a.queuePost(host, port, "/api/queue/prev", "")
+}
+
+// QueueShuffle turns shuffle on or off for the active queue.
+func (a *App) QueueShuffle(host string, port int, on bool) error {
+	b, _ := json.Marshal(map[string]bool{"on": on})
+	return a.queuePost(host, port, "/api/queue/shuffle", string(b))
+}
+
+// QueueRepeat sets the repeat mode ("off", "all", "one") for the active queue.
+func (a *App) QueueRepeat(host string, port int, mode string) error {
+	b, _ := json.Marshal(map[string]string{"mode": mode})
+	return a.queuePost(host, port, "/api/queue/repeat", string(b))
+}
+
+func (a *App) queuePost(host string, port int, path, body string) error {
+	resp, err := a.boxDo(host, port, http.MethodPost, path, "application/json", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
+// GetQueue returns the current queue snapshot (active, pos, shuffle, repeat,
+// items) or an empty object when no queue is active.
+func (a *App) GetQueue(host string, port int) (map[string]any, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/queue", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BoxSettings fetches name/volume/bass/network/sources of the box via the stick.
 func (a *App) BoxSettings(host string, port int) (map[string]any, error) {
 	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/settings", "", "")
