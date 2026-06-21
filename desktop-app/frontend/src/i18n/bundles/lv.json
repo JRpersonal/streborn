@@ -599,6 +599,7 @@
   "settingsView.sourceActive": "aktīvs",
   "settingsView.sourceInactive": "neaktīvs",
   "settingsView.sourceViaSTR": "via STR",
+  "settingsView.sourceAvailable": "pieejams",
   "settingsView.spotifyHint": "Spotify Connect nevar ieslēgt bez Bose mākoņa. Integrācija caur Spotify Web API ir plānos.",
   "settingsView.airplayHint": "AirPlay 2 ir aparatūrā, bet to ieslēdz tikai oriģinālā Bose iestatīšana ar Bose kontu. Ja skaļrunis nekad nav bijis savienots ar Bose kontu, tas paliek neaktīvs.",
   "settingsView.regionHeading": "Reģions",

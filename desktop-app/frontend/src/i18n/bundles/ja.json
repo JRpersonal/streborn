@@ -599,6 +599,7 @@
   "settingsView.sourceActive": "有効",
   "settingsView.sourceInactive": "無効",
   "settingsView.sourceViaSTR": "via STR",
+  "settingsView.sourceAvailable": "利用可能",
   "settingsView.spotifyHint": "Boseクラウドなしでは Spotify Connect を有効にできません。Spotify Web API連携はロードマップにあります。",
   "settingsView.airplayHint": "AirPlay 2 はハードウェアに搭載されていますが、Boseアカウントによる純正セットアップでのみ有効になります。Boseアカウントと一度もペアリングしていない場合は無効のままです。",
   "settingsView.regionHeading": "地域",

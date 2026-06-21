@@ -599,6 +599,7 @@
   "settingsView.sourceActive": "aktyvus",
   "settingsView.sourceInactive": "neaktyvus",
   "settingsView.sourceViaSTR": "via STR",
+  "settingsView.sourceAvailable": "prieinama",
   "settingsView.spotifyHint": "Spotify Connect negalima įjungti be Bose debesies. Integracija per Spotify Web API yra planuose.",
   "settingsView.airplayHint": "AirPlay 2 yra aparatinėje įrangoje, bet jį įjungia tik originali Bose sąranka su Bose paskyra. Jei garsiakalbis niekada nebuvo susietas su Bose paskyra, jis lieka neaktyvus.",
   "settingsView.regionHeading": "Regionas",

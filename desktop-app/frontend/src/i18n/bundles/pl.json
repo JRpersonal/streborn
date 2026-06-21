@@ -599,6 +599,7 @@
   "settingsView.sourceActive": "aktywne",
   "settingsView.sourceInactive": "nieaktywne",
   "settingsView.sourceViaSTR": "via STR",
+  "settingsView.sourceAvailable": "dostępne",
   "settingsView.spotifyHint": "Spotify Connect nie można włączyć bez chmury Bose. Integracja przez Spotify Web API jest na mapie drogowej.",
   "settingsView.airplayHint": "AirPlay 2 jest obecne w sprzęcie, ale włącza je tylko oryginalna konfiguracja Bose z kontem Bose. Jeśli głośnik nigdy nie był sparowany z kontem Bose, pozostaje nieaktywne.",
   "settingsView.regionHeading": "Region",

@@ -599,6 +599,7 @@
   "settingsView.sourceActive": "активне",
   "settingsView.sourceInactive": "неактивне",
   "settingsView.sourceViaSTR": "via STR",
+  "settingsView.sourceAvailable": "доступне",
   "settingsView.spotifyHint": "Spotify Connect не можна увімкнути без хмари Bose. Інтеграція зі Spotify Web API в планах розвитку.",
   "settingsView.airplayHint": "AirPlay 2 присутній на рівні обладнання, але вмикається лише заводським налаштуванням Bose з обліковим записом Bose. Якщо колонка ніколи не зв'язувалася з обліковим записом Bose, він залишається неактивним.",
   "settingsView.regionHeading": "Регіон",

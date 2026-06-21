@@ -599,6 +599,7 @@
   "settingsView.sourceActive": "actief",
   "settingsView.sourceInactive": "inactief",
   "settingsView.sourceViaSTR": "via STR",
+  "settingsView.sourceAvailable": "beschikbaar",
   "settingsView.spotifyHint": "Spotify Connect kan niet worden ingeschakeld zonder de Bose-cloud. Een integratie via de Spotify Web API staat op de roadmap.",
   "settingsView.airplayHint": "AirPlay 2 is in de hardware aanwezig maar wordt alleen ingeschakeld door de originele Bose-setup met een Bose-account. Als de speaker nooit met een Bose-account is gekoppeld, blijft het inactief.",
   "settingsView.regionHeading": "Regio",

@@ -599,6 +599,7 @@
   "settingsView.sourceActive": "etkin",
   "settingsView.sourceInactive": "etkin değil",
   "settingsView.sourceViaSTR": "via STR",
+  "settingsView.sourceAvailable": "kullanılabilir",
   "settingsView.spotifyHint": "Spotify Connect, Bose bulutu olmadan açılamaz. Spotify Web API üzerinden entegrasyon planlanmaktadır.",
   "settingsView.airplayHint": "AirPlay 2 donanımdadır, ancak yalnızca bir Bose hesabıyla orijinal Bose kurulumu onu açar. Hoparlör hiç bir Bose hesabıyla eşleştirilmediyse, etkin değil kalır.",
   "settingsView.regionHeading": "Bölge",
