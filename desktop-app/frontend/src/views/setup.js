@@ -82,6 +82,10 @@ let deps = {
   discoverBoxes: async () => {},
   doBoxUpdate: async () => {},
   getRoomNames: () => [],
+  // celebrateProvision(box): fire the community world-map pin invite right after a
+  // box is successfully provisioned with STR (the most reliable "alive again"
+  // moment). Wired in main.js; no-op default so the view never depends on it.
+  celebrateProvision: () => {},
 };
 export function initSetupView(d) {
   deps = { ...deps, ...d };
@@ -1510,6 +1514,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
             render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>`
               + `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`);
             deps.discoverBoxes();
+            try { deps.celebrateProvision(foundBox); } catch {}
           } else {
             const m2 = (rr && rr.message) || 'unknown';
             const log2 = (rr && rr.log)
@@ -1560,4 +1565,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   const goMusic = $('installGoMusic');
   if (goMusic) goMusic.onclick = () => deps.switchView('box');
   deps.discoverBoxes();
+  // The box is alive again: invite the user to drop a pin on the community world
+  // map. The most reliable moment to ask, and the one most users reach.
+  try { deps.celebrateProvision(foundBox); } catch {}
 }

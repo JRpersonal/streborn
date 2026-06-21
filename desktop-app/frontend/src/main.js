@@ -290,7 +290,7 @@ initSpotifyView({
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames });
 initLibraryView({ showSlotPicker, formatDuration });
-initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames });
+initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision });
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
 // pipe-separated set of candidate URLs) on each load error, swapping in the
@@ -3331,13 +3331,13 @@ async function refreshStatus() {
     // error. The speaker's ContentItems run through the stream
     // proxy, so accept the slot match from /stream/<slot> too.
     if (ps === 'PLAY_STATE') {
-      // First successful radio playback is the strongest moment to invite the
-      // user to the community world map (their box is alive again). Radio only
-      // (proxy /stream/, not Spotify/AUX/Bluetooth), fired once ever inside
-      // maybeInviteWorldMap.
-      if (/\/stream\//.test(loc) && !/\/spotify\//.test(loc)) {
-        maybeInviteWorldMap();
-      }
+      // Any successful playback is a valid "your box is alive again" moment, not
+      // just internet radio. The old filter (proxy /stream/ and not /spotify/)
+      // missed every Spotify, media-library, AUX/Bluetooth and hardware-button
+      // user, which is why so many never saw the pin invite. maybeInviteWorldMap
+      // is once-ever-guarded (synchronous flag + durable Go-side flag), so
+      // broadening the trigger only widens reach, it cannot double-invite.
+      maybeInviteWorldMap();
       const slotFromProxy = activeSlotFromLocation(loc);
       const ap = state.presets.find(p =>
         p.stream_url === loc || (slotFromProxy !== null && p.slot === slotFromProxy)
@@ -3393,6 +3393,7 @@ async function refreshStatus() {
 // the pin (the user taps a coarse region) and its own anti-spam token.
 const WORLD_MAP_FLAG = 'str.worldMapInvited';        // after the first radio play
 const WORLD_MAP_ALL_FLAG = 'str.worldMapInvitedAll'; // when the whole set runs STR
+const WORLD_MAP_PROVISIONED_PREFIX = 'str.worldMapProvisioned.'; // per box, right after a successful install
 // Session re-entry guard: the status poll fires every few seconds, so the async
 // flag check below must not let a second poll open a second invite before the
 // first has persisted the flag. Set synchronously on the first call.
@@ -3431,6 +3432,27 @@ async function maybeInviteWorldMap() {
   if (worldMapInviteHandled) return; // synchronous guard against status-poll re-entry
   worldMapInviteHandled = true;
   await inviteWorldMapOnce(WORLD_MAP_FLAG, 'first');
+}
+
+// inviteWorldMapAfterProvision celebrates a freshly provisioned box right after a
+// successful install. This is the strongest and most reliable "your SoundTouch is
+// alive again" moment, and the one nearly every user actually reaches: the old
+// triggers only fired on the first internet-radio play through the proxy, or once
+// the whole multi-box set ran STR, so users who play Spotify, AUX/Bluetooth, the
+// media library, or just press the hardware buttons never saw the pin invite,
+// which is exactly why so many ask how to drop a pin. Keyed per box (deviceID,
+// else host), so converting another speaker celebrates and invites again, while
+// re-running the installer on the same box does not nag. Called from the setup
+// view via the injected celebrateProvision dep.
+async function inviteWorldMapAfterProvision(box) {
+  const id = (box && (box.deviceID || box.deviceId || box.id || box.mac || box.host)) || '';
+  const flag = id ? (WORLD_MAP_PROVISIONED_PREFIX + id) : WORLD_MAP_FLAG;
+  // The provision moment supersedes the first-playback invite, for this session
+  // and forever, so the same box's "alive again" milestone is never doubled up.
+  worldMapInviteHandled = true;
+  try { localStorage.setItem(WORLD_MAP_FLAG, '1'); } catch {}
+  try { await SetAppFlag(WORLD_MAP_FLAG); } catch {}
+  await inviteWorldMapOnce(flag, 'first');
 }
 
 // maybeInviteWorldMapAllDone fires the SECOND invite once every supported
