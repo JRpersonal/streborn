@@ -21,7 +21,7 @@ import (
 	"streborn-app/agentbin"
 )
 
-// BoxAgentVersion fragt die Stick Agent Version der Box ab.
+// BoxAgentVersion queries the box's Stick Agent version.
 // Returns {version, build}. Uses boxDo so it tries BOTH agent ports (:8888 and
 // the :17008 redirect) with the self-healing cache, instead of forcing one port.
 // This matters on rhino ST10s where the Bose firewall blocks :8888: the version

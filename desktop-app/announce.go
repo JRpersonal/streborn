@@ -23,7 +23,7 @@ func (a *App) AnnounceExample(host string, port int) string {
 	if p == 0 {
 		p = 17008
 	}
-	return fmt.Sprintf(`curl -X POST "http://%s:%d/api/announce" -H "Content-Type: application/json" -d "{\"text\":\"Es klingelt an der Tuer\",\"volume\":20}"`, host, p)
+	return fmt.Sprintf(`curl -X POST "http://%s:%d/api/announce" -H "Content-Type: application/json" -d "{\"text\":\"Someone is at the door\",\"volume\":20}"`, host, p)
 }
 
 // SendAnnounce fires an announcement at the box (POST /api/announce). lang is the
