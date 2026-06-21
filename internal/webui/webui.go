@@ -222,6 +222,22 @@ type Server struct {
 	// set. Lets the app show/preserve/recall them (Option C). Guarded by boxPresetsMu.
 	boxPresetsMu sync.Mutex
 	boxPresets   []BoxPreset
+
+	// queue is the agent-side DLNA library play queue (#202 follow-up). It
+	// auto-advances on track end so a NAS/FRITZ!Box folder plays through like the
+	// original SoundTouch box-side queue, even with the desktop app closed. A
+	// watcher goroutine polls now_playing while a queue is active; queueGen
+	// invalidates the per-track timing when a new track is pushed. queueMu guards
+	// the watcher lifecycle and timing fields; the playQueue has its own lock.
+	queue           *playQueue
+	queueMu         sync.Mutex
+	queueCancel     context.CancelFunc
+	queueGen        int
+	queueTrackStart time.Time
+	queueTrackDur   time.Duration
+	// baseCtx is the server-lifetime context (set in Run), the parent for the
+	// long-lived queue watcher so it outlives the request that started the queue.
+	baseCtx context.Context
 }
 
 // BoxPreset is one of the box's own presets (incl. foreign sources like DEEZER),
@@ -475,7 +491,7 @@ func (s *Server) ensureBoxReady(ctx context.Context) {
 
 // New creates a new webui server.
 func New(addr string, logger *slog.Logger, opts ...Option) *Server {
-	s := &Server{addr: addr, logger: logger}
+	s := &Server{addr: addr, logger: logger, queue: newPlayQueue()}
 	for _, o := range opts {
 		o(s)
 	}
@@ -492,6 +508,7 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 // in the bundle to one that crashed mid-init.
 func (s *Server) Run(ctx context.Context) error {
 	s.logger.Warn("webui phase: Run entered", "addr", s.addr)
+	s.baseCtx = ctx
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -507,6 +524,11 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/pause", s.handlePause)
 	mux.HandleFunc("/api/resume", s.handleResume)
 	mux.HandleFunc("/api/stop", s.handleStop)
+	mux.HandleFunc("/api/queue", s.handleQueue)
+	mux.HandleFunc("/api/queue/next", s.handleQueueNext)
+	mux.HandleFunc("/api/queue/prev", s.handleQueuePrev)
+	mux.HandleFunc("/api/queue/shuffle", s.handleQueueShuffle)
+	mux.HandleFunc("/api/queue/repeat", s.handleQueueRepeat)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
@@ -986,6 +1008,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// A single play replaces any active library queue, so stop auto-advancing.
+	s.stopQueue()
 	// Ad-hoc radio: the box leaves any Spotify source; suppress the #14
 	// auto-attach so it does not jump back to Spotify.
 	if s.spotifySwitchedAway != nil {
@@ -2208,6 +2232,8 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	// Mark this as a deliberate stop BEFORE issuing it, so the disconnect the
 	// stop triggers does not race the auto-re-push into restarting the stream.
 	s.NoteUserStop()
+	// A stop ends any active library queue (no auto-advance after the user stops).
+	s.stopQueue()
 	if err := s.renderer.Stop(r.Context()); err != nil {
 		// Same idempotent treatment as Pause: stopping an already-idle
 		// box yields a "wrong state" UPnP fault that the user need not
