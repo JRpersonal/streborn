@@ -157,7 +157,7 @@ func (a *App) startup(ctx context.Context) {
 	// Verbose startup line so users always see SOMETHING in the
 	// log when they hit "Save diagnostic logs", even on a session
 	// where they did not poke any features that emit further logs.
-	a.logger.Info("Desktop App startet",
+	a.logger.Info("Desktop App started",
 		"version", appVersion,
 		"build", appBuild,
 		"logFile", LogFilePath(),
@@ -2796,7 +2796,16 @@ func (a *App) ListDrives() ([]sticksetup.Drive, error) {
 // gehen verloren. Wird vor WriteStickFiles aufgerufen wenn der User die
 // "Stick zuerst formatieren" Checkbox aktiviert hat.
 func (a *App) FormatStick(targetPath string) error {
-	return sticksetup.FormatFAT32(targetPath, "REBORN")
+	// Log the prepare step so a stick-boot install (the ST10 path, which
+	// never touches the SSH installer that does log) leaves a trail in the
+	// diagnostic bundle. Without this a failed self-install shows only
+	// discovery noise and the cause is invisible (see #195).
+	a.logger.Info("FormatStick", "comp", "sticksetup", "target", targetPath)
+	err := sticksetup.FormatFAT32(targetPath, "REBORN")
+	if err != nil {
+		a.logger.Warn("FormatStick failed", "comp", "sticksetup", "target", targetPath, "err", err)
+	}
+	return err
 }
 
 // WriteStickFiles bestueckt das angegebene Volume mit allen noetigen
@@ -2810,7 +2819,15 @@ func (a *App) WriteStickFiles(targetPath string) ([]string, error) {
 	if appBuild != "" && appBuild != "dev" {
 		v = appVersion + "+" + appBuild
 	}
-	return sticksetup.WriteStickFiles(targetPath, agentbin.Bytes(), agentbin.GoLibrespotBytes(), v)
+	files, err := sticksetup.WriteStickFiles(targetPath, agentbin.Bytes(), agentbin.GoLibrespotBytes(), v)
+	// Record what was staged onto the stick. agentBytes confirms the embedded
+	// agent is present (0 on a dev build, which is itself the cause of a
+	// non-starting agent), and the file count/version pins the attempt in the
+	// bundle so a later stick-boot failure is traceable (see #195).
+	a.logger.Info("WriteStickFiles",
+		"comp", "sticksetup", "target", targetPath, "version", v,
+		"agentBytes", len(agentbin.Bytes()), "fileCount", len(files), "err", err)
+	return files, err
 }
 
 // WriteWLANConfig schreibt eine WLAN Konfig auf den Stick. Optional vor
