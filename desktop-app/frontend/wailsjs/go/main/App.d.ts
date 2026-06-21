@@ -143,6 +143,8 @@ export function RevealUpdateFile(arg1:string):Promise<void>;
 
 export function SaveDiagnosticBundle(arg1:Array<string>,arg2:boolean):Promise<main.LogExportResult>;
 
+export function SaveFolderPreset(arg1:string,arg2:number,arg3:number,arg4:string):Promise<void>;
+
 export function SaveLibraryPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string):Promise<void>;
 
 export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string):Promise<void>;

@@ -91,6 +91,7 @@ export {
   SpotifyNowPlaying,
   SaveSpotifyPreset,
   SaveLibraryPreset,
+  SaveFolderPreset,
   RecentPlayed,
   ClearRecent,
   DeleteRecentCard,

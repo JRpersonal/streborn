@@ -11,7 +11,52 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
+	"github.com/JRpersonal/streborn/internal/presets"
 )
+
+// presetItemsToQueue maps a queue preset's stored tracks to the play-queue item
+// shape. Items without a URL are dropped, matching toQueueItems.
+func presetItemsToQueue(in []presets.PresetItem) []queueItem {
+	out := make([]queueItem, 0, len(in))
+	for _, it := range in {
+		if it.URL == "" {
+			continue
+		}
+		out = append(out, queueItem{
+			URL:      it.URL,
+			Title:    it.Title,
+			Art:      it.Art,
+			Mime:     it.Mime,
+			Duration: time.Duration(it.DurationSec) * time.Second,
+		})
+	}
+	return out
+}
+
+// RecallSlot handles a hardware preset-button press for a queue preset: if the
+// slot holds a saved DLNA folder it starts the play-queue and returns true.
+// Otherwise it returns false and the caller falls back to the existing
+// single-track recall. This keeps the queue logic in webui (it owns the queue)
+// without entangling the gabbo handler in cmd/agent.
+func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
+	if s.presets == nil {
+		return false
+	}
+	p, ok := s.presets.Get(slot)
+	if !ok || p.Type != "queue" {
+		return false
+	}
+	items := presetItemsToQueue(p.Items)
+	if len(items) == 0 {
+		return false
+	}
+	s.ensureBoxReady(ctx)
+	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
+	if err := s.startQueue(ctx, items, 0, p.Shuffle, repeatOff); err != nil {
+		s.logger.Warn("hardware queue recall failed", "slot", slot, "err", err)
+	}
+	return true
+}
 
 // Auto-advance tuning. The Bose box emits no native "track finished" event: a
 // finished file and a deliberate stop both surface only as a now_playing
@@ -59,6 +104,12 @@ func (s *Server) queueCtx() context.Context {
 func (s *Server) startQueue(ctx context.Context, items []queueItem, start int, shuffle bool, rep repeatMode) error {
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
+	return s.startQueueLocked(ctx, items, start, shuffle, rep)
+}
+
+// startQueueLocked is startQueue for callers that already hold boxCmdMu (e.g. a
+// preset slot recall, which takes the lock for the whole handler).
+func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start int, shuffle bool, rep repeatMode) error {
 	if s.renderer == nil {
 		return errors.New("renderer not configured")
 	}

@@ -708,6 +708,45 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		if p.Type == "" {
 			p.Type = "radio"
 		}
+		// A queue preset (a saved DLNA folder, #queue-preset) has no single
+		// StreamURL/URI: it carries an ordered Items list and a Shuffle flag and
+		// recalls into the agent play-queue. It skips the radio/spotify URL gates
+		// below; require at least one item with a URL instead, mirroring their
+		// 422 shape. The dedup loop below is keyed on URI/StreamURL, both empty
+		// here, so it is harmless for queue presets and leaves other slots alone.
+		if p.Type == "queue" {
+			hasItem := false
+			for _, it := range p.Items {
+				if it.URL != "" {
+					hasItem = true
+					break
+				}
+			}
+			if !hasItem {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error": "This folder can't be saved as a preset: it has no playable tracks. Open a folder with audio files and try again.",
+					"code":  "queue-empty",
+				})
+				return
+			}
+			if err := s.presets.SetSlot(p); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			// Register the slot on the box so the hardware button is mapped. The
+			// physical press is intercepted by RecallSlot (which starts the queue),
+			// but the box still needs an entry for the key to fire at all, so point
+			// it at this slot's stream proxy URL like every other preset.
+			if s.boxHost != "" {
+				boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+				if err := boxcli.AddPreset(boxCtx, s.boxHost, slot, p.Name, boxPresetURL(slot, false)); err != nil {
+					s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
+				}
+				cancel()
+			}
+			writeJSON(w, http.StatusOK, p)
+			return
+		}
 		// Reject (or heal) the saves that produced the dead presets that fail to
 		// recall with "Service not available" (#45/#105). A type=spotify preset
 		// MUST carry a replayable context URI; a non-spotify preset MUST carry a
@@ -1095,6 +1134,27 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// A queue preset (a saved DLNA folder) recalls into the agent play-queue
+	// instead of the single-URL play below: reload its ordered tracks with the
+	// saved shuffle flag and start from the first. We already hold boxCmdMu, so
+	// use the *Locked variant (startQueue would re-lock and deadlock).
+	if p.Type == "queue" {
+		items := presetItemsToQueue(p.Items)
+		if len(items) == 0 {
+			http.Error(w, "preset has no playable tracks", http.StatusUnprocessableEntity)
+			return
+		}
+		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
+		if err := s.startQueueLocked(r.Context(), items, 0, p.Shuffle, repeatOff); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": "Folder could not be played", "detail": guessErrorReason(err),
+				"slot": slot, "name": p.Name,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "queue"})
+		return
+	}
 	// Heal a legacy mis-saved Spotify preset before recall: older versions could
 	// store a Spotify selection as a non-spotify preset whose stream URL encoded
 	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The

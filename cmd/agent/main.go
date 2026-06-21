@@ -445,6 +445,9 @@ func run() error {
 			}
 			webuiSrv.NoteBoxPresets(out)
 		},
+		// Let a hardware press of a queue preset (a saved DLNA folder) start the
+		// webui play-queue instead of the single-track recall.
+		recallSlot: webuiSrv.RecallSlot,
 	}
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
@@ -868,6 +871,12 @@ type presetWsHandler struct {
 	// so the app can show and preserve them (Option C). Wired to
 	// webui.NoteBoxPresets. nil-safe.
 	noteBoxPresets func([]boxws.BoxPreset)
+	// recallSlot lets the webui claim a hardware preset press for a queue preset
+	// (a saved DLNA folder): it returns true and starts the play-queue when the
+	// slot is a queue preset, false otherwise so the single-track recall below
+	// still runs. The queue lives in webui, so the queue start happens there.
+	// Wired to webui.Server.RecallSlot. nil-safe.
+	recallSlot func(ctx context.Context, slot int) bool
 }
 
 // OnPresetsChanged forwards the box's own preset list to the webui (Option C).
@@ -893,6 +902,18 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			h.logger.Info("preset webhook replace mode: withholding preset playback", "slot", slot)
 			return
 		}
+	}
+	// A queue preset (a saved DLNA folder) is recalled by the webui's play-queue,
+	// not the single-track UPnP play below. Let it claim the press; it returns
+	// true (and starts the queue) only for a queue preset, so every other preset
+	// type falls through to the existing behaviour unchanged.
+	if h.recallSlot != nil && h.recallSlot(ctx, slot) {
+		if h.noteRecentPreset != nil {
+			if p, ok := h.store.Get(slot); ok {
+				h.noteRecentPreset(p)
+			}
+		}
+		return
 	}
 	// The URL stays the proxy URL (location = http://127.0.0.1:8888/stream/N)
 	// so the stream proxy handles the reconnect on token expiry. Name + icon

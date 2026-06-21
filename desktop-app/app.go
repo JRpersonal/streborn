@@ -1709,6 +1709,25 @@ func (a *App) SaveLibraryPreset(host string, port int, slot int, name, streamURL
 		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Source: source})
 }
 
+// SaveFolderPreset stores a queue preset (a whole DLNA folder, type=queue) on a
+// slot. payloadJSON is the already-built preset object from the Library tab
+// ({name, type:"queue", shuffle, items:[{url,title,art,mime,duration_sec}...]});
+// it is PUT verbatim to /api/presets/<slot> so the frontend owns the shape and
+// the agent reloads it into the play-queue on recall. Routed through boxDo for
+// the same :8888<->:17008 port fallback as the other preset saves.
+func (a *App) SaveFolderPreset(host string, port int, slot int, payloadJSON string) error {
+	resp, err := a.boxDo(host, port, http.MethodPut,
+		fmt.Sprintf("%s/%d", presetAPIPath, slot), "application/json", payloadJSON)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
 // SaveSpotifyPreset stores a real Spotify preset (type=spotify with the
 // playlist/album URI) on a slot. A long-press while a Spotify playlist plays
 // uses this so the saved preset is recallable, shuffled and account-aware,
