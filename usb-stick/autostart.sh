@@ -1,8 +1,8 @@
 #!/bin/sh
 # autostart.sh: DEPRECATED.
 #
-# Diese Datei stammt aus der Planungsphase. Die produktive Bootstrap
-# Kette ist jetzt:
+# This file dates from the planning phase. The production bootstrap
+# chain is now:
 #
 #   /mnt/nv/rc.local  (via shelby_local beim Boot)
 #       -> /media/sda1/run.sh
@@ -11,8 +11,8 @@
 # Installation:
 #   sh /media/sda1/install.sh
 #
-# Diese autostart.sh ist nur noch ein Fallback Eintrittspunkt der run.sh
-# aufruft. Kann ohne Verlust entfernt werden sobald die Migration
-# abgeschlossen ist.
+# This autostart.sh is now only a fallback entry point that calls
+# run.sh. It can be removed without loss once the migration is
+# complete.
 
 exec "$(dirname "$0")/run.sh" "$@"

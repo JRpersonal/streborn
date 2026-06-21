@@ -1,10 +1,10 @@
 #!/bin/sh
-# update.sh: prueft GitHub Releases und tauscht das Binary aus.
+# update.sh: checks GitHub releases and swaps out the binary.
 #
-# Achtung: Bose BusyBox auf der ST10 hat kein curl, nur wget. Daher hier
-# wget Pfade. wget 1.19.4 unterstuetzt --tries nicht, mit -T fuer Timeout
-# arbeiten. Releases werden via api.github.com geholt, aber api.github.com
-# liefert JSON. Wir greppen daraus den Tag Namen mit sed.
+# Note: the Bose BusyBox on the ST10 has no curl, only wget. Hence the
+# wget paths here. wget 1.19.4 does not support --tries, so work with -T
+# for the timeout. Releases are fetched via api.github.com, but
+# api.github.com returns JSON. We grep the tag name out of it with sed.
 
 set -u
 
@@ -16,7 +16,7 @@ BIN="${STICK_DIR}/${ARCH_ASSET}"
 
 CURRENT="$(cat "${VERSION_FILE}" 2>/dev/null || echo none)"
 
-# api.github.com mit wget, T 10 fuer 10 Sekunden Timeout
+# api.github.com via wget, T 10 for a 10 second timeout
 TMP="/tmp/streborn-release.json"
 if ! wget -qO "$TMP" -T 10 "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null; then
     echo "$(date) update: GitHub API unreachable" >&2
