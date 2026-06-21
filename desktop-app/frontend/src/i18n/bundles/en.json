@@ -181,6 +181,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> still runs the stock Bose firmware. A one-time USB stick installs STR directly on the speaker. After that you control it entirely from this app: internet radio, presets, multi-room.<br><br>Open the USB stick setup now?",
   "speaker.stockConfirmCta": "Open USB stick setup",
   "controls.pause": "Pause",
+  "controls.play": "Play",
   "controls.stop": "Stop",
   "controls.auxTitle": "Aux jack input",
   "controls.bluetoothTitle": "Bluetooth",

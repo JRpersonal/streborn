@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> nadal działa na oryginalnym oprogramowaniu Bose. Jednorazowy pendrive USB instaluje STR bezpośrednio na głośniku. Potem sterujesz nim w pełni z tej aplikacji: radio internetowe, zaprogramowane stacje, multiroom.<br><br>Otworzyć teraz przygotowanie pendrive'a USB?",
   "speaker.stockConfirmCta": "Otwórz przygotowanie pendrive'a USB",
   "controls.pause": "Pauza",
+  "controls.play": "Odtwórz",
   "controls.stop": "Stop",
   "controls.auxTitle": "Wejście Aux",
   "controls.bluetoothTitle": "Bluetooth",

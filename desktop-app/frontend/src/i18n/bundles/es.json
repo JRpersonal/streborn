@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> aún usa el firmware original de Bose. Una memoria USB única instala STR directamente en el altavoz. Después lo controlas por completo desde esta aplicación: radio por internet, preajustes, multisala.<br><br>¿Abrir la preparación de la memoria USB ahora?",
   "speaker.stockConfirmCta": "Abrir preparación de la memoria USB",
   "controls.pause": "Pausa",
+  "controls.play": "Reproducir",
   "controls.stop": "Detener",
   "controls.auxTitle": "Entrada de clavija Aux",
   "controls.bluetoothTitle": "Bluetooth",

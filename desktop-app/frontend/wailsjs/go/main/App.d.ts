@@ -91,6 +91,8 @@ export function LogClientError(arg1:string):Promise<void>;
 
 export function Pause(arg1:string,arg2:number):Promise<void>;
 
+export function Resume(arg1:string,arg2:number):Promise<void>;
+
 export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string):Promise<void>;

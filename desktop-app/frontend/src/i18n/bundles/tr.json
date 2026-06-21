@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> hâlâ orijinal Bose yazılımıyla çalışıyor. Tek seferlik bir USB bellek STR'yi doğrudan hoparlöre kurar. Sonrasında onu tamamen bu uygulamadan kontrol edersiniz: internet radyosu, ön ayarlar, multiroom.<br><br>USB bellek hazırlamayı şimdi açayım mı?",
   "speaker.stockConfirmCta": "USB bellek hazırlamayı aç",
   "controls.pause": "Duraklat",
+  "controls.play": "Oynat",
   "controls.stop": "Durdur",
   "controls.auxTitle": "Aux girişi",
   "controls.bluetoothTitle": "Bluetooth",

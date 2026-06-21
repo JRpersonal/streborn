@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> joprojām darbojas ar oriģinālo Bose programmatūru. Vienreizēja USB zibatmiņa instalē STR tieši skaļrunī. Pēc tam jūs to pilnībā vadāt no šīs lietotnes: interneta radio, iestatījumi, multiroom.<br><br>Atvērt USB zibatmiņas sagatavošanu tagad?",
   "speaker.stockConfirmCta": "Atvērt USB zibatmiņas sagatavošanu",
   "controls.pause": "Pauze",
+  "controls.play": "Atskaņot",
   "controls.stop": "Apturēt",
   "controls.auxTitle": "Aux ieeja",
   "controls.bluetoothTitle": "Bluetooth",

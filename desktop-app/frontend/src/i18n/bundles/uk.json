@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> усе ще працює на заводській прошивці Bose. Одноразова підготовка USB-накопичувача встановить STR прямо на колонку. Після цього ви керуєте нею повністю з цього застосунку: інтернет-радіо, пресети, мультирум.<br><br>Відкрити підготовку USB-накопичувача зараз?",
   "speaker.stockConfirmCta": "Відкрити підготовку USB-накопичувача",
   "controls.pause": "Пауза",
+  "controls.play": "Відтворити",
   "controls.stop": "Стоп",
   "controls.auxTitle": "Вхід Aux (роз'єм)",
   "controls.bluetoothTitle": "Bluetooth",

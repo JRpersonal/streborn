@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> vis dar veikia su originalia Bose programine įranga. Vienkartinė USB atmintinė įdiegia STR tiesiai į garsiakalbį. Po to jį visiškai valdote iš šios programos: interneto radijas, parinktys, multiroom.<br><br>Atverti USB atmintinės paruošimą dabar?",
   "speaker.stockConfirmCta": "Atverti USB atmintinės paruošimą",
   "controls.pause": "Pauzė",
+  "controls.play": "Groti",
   "controls.stop": "Stabdyti",
   "controls.auxTitle": "Aux įvestis",
   "controls.bluetoothTitle": "Bluetooth",

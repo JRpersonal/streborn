@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> draait nog de originele Bose-firmware. Een eenmalige USB-stick installeert STR rechtstreeks op de speaker. Daarna bedien je hem volledig vanuit deze app: internetradio, voorkeuzes, multiroom.<br><br>De USB-stick-voorbereiding nu openen?",
   "speaker.stockConfirmCta": "USB-stick-voorbereiding openen",
   "controls.pause": "Pauze",
+  "controls.play": "Afspelen",
   "controls.stop": "Stop",
   "controls.auxTitle": "Aux-ingang",
   "controls.bluetoothTitle": "Bluetooth",

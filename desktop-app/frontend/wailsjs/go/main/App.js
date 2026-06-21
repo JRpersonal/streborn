@@ -174,6 +174,10 @@ export function Pause(arg1, arg2) {
   return window['go']['main']['App']['Pause'](arg1, arg2);
 }
 
+export function Resume(arg1, arg2) {
+  return window['go']['main']['App']['Resume'](arg1, arg2);
+}
+
 export function PlaySlot(arg1, arg2, arg3) {
   return window['go']['main']['App']['PlaySlot'](arg1, arg2, arg3);
 }

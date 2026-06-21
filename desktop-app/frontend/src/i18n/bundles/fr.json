@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> utilise encore le firmware Bose d'origine. Une clé USB unique installe STR directement sur l'enceinte. Ensuite vous la contrôlez entièrement depuis cette application : radio internet, préréglages, multiroom.<br><br>Ouvrir la préparation de la clé USB maintenant ?",
   "speaker.stockConfirmCta": "Ouvrir la préparation de la clé USB",
   "controls.pause": "Pause",
+  "controls.play": "Lecture",
   "controls.stop": "Arrêt",
   "controls.auxTitle": "Entrée jack Aux",
   "controls.bluetoothTitle": "Bluetooth",

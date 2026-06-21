@@ -161,6 +161,7 @@
   "speaker.stockConfirmBody": "<b>{{label}}</b> はまだBose純正ファームウェアです。一度USBメモリを使うとSTRがスピーカーに直接インストールされます。その後はこのアプリだけで操作できます: インターネットラジオ、プリセット、マルチルーム。<br><br>今すぐUSBメモリの準備を開きますか?",
   "speaker.stockConfirmCta": "USBメモリの準備を開く",
   "controls.pause": "一時停止",
+  "controls.play": "再生",
   "controls.stop": "停止",
   "controls.auxTitle": "Auxジャック入力",
   "controls.bluetoothTitle": "Bluetooth",

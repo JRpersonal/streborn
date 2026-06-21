@@ -2708,8 +2708,9 @@ func friendlyError(resp *http.Response) string {
 }
 
 // Pause / Stop pro Box.
-func (a *App) Pause(host string, port int) error { return a.doAction(host, port, "pause") }
-func (a *App) Stop(host string, port int) error  { return a.doAction(host, port, "stop") }
+func (a *App) Pause(host string, port int) error  { return a.doAction(host, port, "pause") }
+func (a *App) Resume(host string, port int) error { return a.doAction(host, port, "resume") }
+func (a *App) Stop(host string, port int) error   { return a.doAction(host, port, "stop") }
 
 func (a *App) doAction(host string, port int, action string) error {
 	resp, err := a.boxDo(host, port, http.MethodPost, "/api/"+action, "application/json", "")

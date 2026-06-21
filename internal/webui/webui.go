@@ -505,6 +505,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/play", s.handlePlay)
 	mux.HandleFunc("/api/play/", s.handlePlaySlot)
 	mux.HandleFunc("/api/pause", s.handlePause)
+	mux.HandleFunc("/api/resume", s.handleResume)
 	mux.HandleFunc("/api/stop", s.handleStop)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/recent", s.handleRecent)
@@ -1801,6 +1802,15 @@ func (s *Server) NoteUserStop() {
 	s.lastUserStopMu.Unlock()
 }
 
+// ClearUserStop cancels a recorded user-stop so a manual resume re-enables the
+// guarded auto-re-push immediately instead of staying suppressed for the
+// userStopWindow.
+func (s *Server) ClearUserStop() {
+	s.lastUserStopMu.Lock()
+	s.lastUserStop = time.Time{}
+	s.lastUserStopMu.Unlock()
+}
+
 // userStoppedRecently reports whether a deliberate stop happened within
 // userStopWindow.
 func (s *Server) userStoppedRecently() bool {
@@ -2127,6 +2137,49 @@ func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paused"})
+}
+
+// handleResume resumes playback from a UPnP PAUSED state with a plain
+// AVTransport Play (what the Bose remote's own play/pause does), so a paused
+// network-library track continues from its position instead of restarting.
+// /api/play always re-pushes SetAVTransportURI, which restarts a finite track,
+// and Pause/Stop were the only transport controls STR exposed, so a paused NAS
+// track could not be resumed from the app (#202). If the box is no longer
+// paused (it left PAUSED after a standby/timeout, surfacing as a "wrong state"
+// fault), fall back to re-pushing the last stream.
+func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	if s.renderer == nil {
+		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
+		return
+	}
+	// A user-initiated resume cancels the deliberate-stop intent so the guarded
+	// auto-re-push is allowed again for the rest of the session.
+	s.ClearUserStop()
+	if err := s.renderer.Play(r.Context()); err != nil {
+		if isWrongTransportState(err) {
+			// The box is no longer in PAUSED. Re-push the last stream so the user
+			// still gets audio (from the start for a finite track).
+			s.lastPlayMu.Lock()
+			lp := s.lastPlay
+			s.lastPlayMu.Unlock()
+			if lp != nil {
+				if perr := s.renderer.PlayURLMime(r.Context(), lp.boxURL, lp.title, lp.art, lp.mime); perr == nil {
+					writeJSON(w, http.StatusOK, map[string]string{"status": "playing"})
+					return
+				}
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"status": "not_playing"})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "playing"})
 }
 
 // isWrongTransportState reports whether a UPnP AVTransport error was the
