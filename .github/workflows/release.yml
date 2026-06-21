@@ -690,21 +690,6 @@ jobs:
           cp glr-download/go-librespot-armv7l desktop-app/agentbin/go-librespot-armv7l
           ls -la desktop-app/agentbin/
 
-      - name: Free disk space
-        # GitHub macOS runners ship large iOS/tvOS/watchOS simulator runtimes
-        # (10+ GB) that a Wails build and DMG packaging never need. The release
-        # failed twice on fresh runners with "hdiutil: create failed - No space
-        # left on device" while staging the universal-binary app into the DMG,
-        # once the app grew. Reclaiming the simulator space gives the build and
-        # hdiutil the scratch room they need. Best-effort: never fail on a miss.
-        run: |
-          df -h /
-          xcrun simctl delete all || true
-          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches/* || true
-          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/* || true
-          sudo rm -rf /Library/Developer/CoreSimulator/Volumes/* || true
-          df -h /
-
       - name: Build macOS desktop app (universal)
         working-directory: desktop-app
         env:
@@ -716,6 +701,21 @@ jobs:
             -ldflags "-s -w -X main.appVersion=${VERSION} -X main.appBuild=${BUILD_STAMP}" \
             -trimpath \
             -clean
+
+      - name: Free disk space for DMG
+        # Runs AFTER the build (which needs the toolchain) and BEFORE packaging,
+        # since hdiutil/ditto are plain /usr/bin system tools. The first attempt
+        # removed the simulator RUNTIMES, which sit on the read-only system
+        # volume, so it only logged "Read-only file system" and freed nothing and
+        # the DMG still ran out of space. Reclaim the large, WRITABLE extra Xcode
+        # installs instead (the build is already done) so hdiutil has scratch room
+        # for the universal-binary DMG. Best-effort: never fail on a miss.
+        run: |
+          df -h /
+          sudo rm -rf /Applications/Xcode_*.app || true
+          rm -rf ~/Library/Developer/Xcode/DerivedData/* || true
+          rm -rf ~/Library/Developer/CoreSimulator/Devices/* || true
+          df -h /
 
       - name: Package as DMG
         run: |
