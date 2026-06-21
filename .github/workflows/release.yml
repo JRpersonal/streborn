@@ -721,16 +721,27 @@ jobs:
         run: |
           mkdir -p release-out
           # ditto preserves extended attrs and resource forks.
-          # hdiutil creates a compressed UDZO DMG. Drag-drop
-          # affordance: include an Applications symlink.
           ditto "desktop-app/build/bin/ST Reborn.app" "release-out/dmg-stage/ST Reborn.app"
           ln -s /Applications "release-out/dmg-stage/Applications"
-          hdiutil create \
-            -volname "STR" \
-            -srcfolder "release-out/dmg-stage" \
-            -ov \
-            -format UDZO \
-            "release-out/STR-macOS.dmg"
+          # Build the DMG via an EXPLICITLY sized read-write image, then convert to
+          # compressed UDZO. hdiutil's -srcfolder auto-size was marginal for the
+          # universal app and intermittently failed the copy with "hdiutil: create
+          # failed - No space left on device" on /Volumes/STR (the DMG volume, not
+          # the runner disk: v0.8.12 squeaked through, v0.8.13 did not). Sizing the
+          # RW image at the staged content + 200 MB slack makes the copy fit every
+          # time; the final UDZO is still compressed to the real size.
+          STAGE_MB=$(du -sm release-out/dmg-stage | awk '{print $1}')
+          SIZE_MB=$((STAGE_MB + 200))
+          echo "dmg-stage=${STAGE_MB}MB, rw image=${SIZE_MB}MB"
+          hdiutil create -volname "STR" -fs HFS+ -size "${SIZE_MB}m" -ov \
+            -format UDRW "release-out/STR-macOS-rw.dmg"
+          DEV=$(hdiutil attach -nobrowse -noverify -noautoopen "release-out/STR-macOS-rw.dmg" | awk '/Apple_HFS/{print $1; exit}')
+          ditto "release-out/dmg-stage/ST Reborn.app" "/Volumes/STR/ST Reborn.app"
+          ln -s /Applications "/Volumes/STR/Applications"
+          sync
+          hdiutil detach "$DEV"
+          hdiutil convert "release-out/STR-macOS-rw.dmg" -format UDZO -ov -o "release-out/STR-macOS.dmg"
+          rm -f "release-out/STR-macOS-rw.dmg"
           rm -rf release-out/dmg-stage
           cd release-out
           shasum -a 256 "STR-macOS.dmg" > "STR-macOS.dmg.sha256"
