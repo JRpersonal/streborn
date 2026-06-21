@@ -1,17 +1,17 @@
-// Package wifiprofiles liest WLAN Profile vom Host Betriebssystem aus
-// damit die Desktop App eine Liste bekannter SSIDs anzeigen kann. Wird
-// im Stick Setup verwendet damit der User die SSID nicht abtippen muss.
+// Package wifiprofiles reads WLAN profiles from the host operating
+// system so the desktop app can show a list of known SSIDs. Used in the
+// stick setup so the user does not have to type the SSID by hand.
 //
-// Plattformen:
+// Platforms:
 //
 //	Windows  netsh wlan show profiles
-//	Mac      networksetup -listpreferredwirelessnetworks (auf erstem WLAN Adapter)
+//	Mac      networksetup -listpreferredwirelessnetworks (on the first WLAN adapter)
 //	Linux    nmcli connection show
 //
-// Passwoerter werden NICHT automatisch ausgelesen weil das je nach
-// Plattform User Consent benoetigt. Es gibt ein optionales TryPassword
-// das es versuchen darf — wird vom Frontend nur auf expliziten Klick
-// "Passwort vorfuellen" aufgerufen.
+// Passwords are NOT read out automatically because that requires user
+// consent depending on the platform. There is an optional TryPassword
+// that may attempt it — the frontend only calls it on an explicit
+// "prefill password" click.
 package wifiprofiles
 
 import (
@@ -22,23 +22,23 @@ import (
 	"strings"
 )
 
-// run startet ein OS Command und verbirgt auf Windows das Console Fenster
-// das sonst kurz aufflackert. Funktioniert auch auf Mac/Linux ohne extra
-// Setup.
+// run starts an OS command and hides the console window on Windows that
+// would otherwise flash up briefly. Works on Mac/Linux too without extra
+// setup.
 func run(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
 	hideWindow(cmd)
 	return cmd.CombinedOutput()
 }
 
-// Profile beschreibt einen bekannten WLAN Eintrag.
+// Profile describes a known WLAN entry.
 type Profile struct {
-	SSID     string `json:"ssid"`
-	HasPass  bool   `json:"hasPass"` // true wenn Passwort vermutlich gespeichert (bei Windows aus netsh erkennbar)
-	Source   string `json:"source"`  // "netsh" / "networksetup" / "nmcli"
+	SSID    string `json:"ssid"`
+	HasPass bool   `json:"hasPass"` // true if a password is likely stored (detectable from netsh on Windows)
+	Source  string `json:"source"`  // "netsh" / "networksetup" / "nmcli"
 }
 
-// List liefert alle gespeicherten WLAN Profile auf dem Host.
+// List returns all stored WLAN profiles on the host.
 func List() ([]Profile, error) {
 	switch runtime.GOOS {
 	case "windows":
@@ -50,11 +50,11 @@ func List() ([]Profile, error) {
 	}
 }
 
-// TryPassword versucht das gespeicherte Passwort fuer eine SSID
-// auszulesen. Auf Windows: `netsh wlan show profile name=X key=clear`,
-// fordert Admin Rechte oder zumindest User Session permissions. Auf Mac
-// muss der Keychain Zugriff geben. Returns ("", nil) wenn nichts
-// gefunden, error bei OS Fehler.
+// TryPassword attempts to read out the stored password for an SSID. On
+// Windows: `netsh wlan show profile name=X key=clear`, which requires
+// admin rights or at least user session permissions. On Mac the keychain
+// must grant access. Returns ("", nil) if nothing is found, error on an
+// OS failure.
 func TryPassword(ssid string) (string, error) {
 	switch runtime.GOOS {
 	case "windows":
@@ -66,8 +66,8 @@ func TryPassword(ssid string) (string, error) {
 	}
 }
 
-// CurrentSSID liefert das aktuell verbundene WLAN auf dem Host. Leer
-// wenn der Host nicht im WLAN ist oder die Abfrage fehlschlaegt.
+// CurrentSSID returns the currently connected WLAN on the host. Empty
+// if the host is not on a WLAN or the query fails.
 func CurrentSSID() string {
 	switch runtime.GOOS {
 	case "windows":
@@ -84,8 +84,8 @@ func currentSSIDWindows() string {
 	if err != nil {
 		return ""
 	}
-	// "SSID                   : MeinWifi"
-	// "BSSID                  : aa:bb:..." → muss ausgeschlossen werden
+	// "SSID                   : MyWifi"
+	// "BSSID                  : aa:bb:..." → must be excluded
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -151,19 +151,18 @@ func listWindows() ([]Profile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("netsh: %v", err)
 	}
-	// Toleranter Parser: jede Zeile mit `:` wo der LEFT Key nicht
-	// offensichtlich ein Adapter Header ist und der Rest nicht leer.
-	// Funktioniert auf DE, EN und sehr wahrscheinlich auch weiteren
-	// Localizations weil wir nicht auf das Wort "Benutzerprofil" angewiesen
-	// sind sondern auf das Pattern "<irgendwas> : <SSID>".
+	// Tolerant parser: any line with `:` where the LEFT key is not
+	// obviously an adapter header and the rest is not empty. Works on DE,
+	// EN and very likely further localizations because we do not rely on
+	// the word "Benutzerprofil" but on the pattern "<anything> : <SSID>".
 	var profiles []Profile
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
 	for scanner.Scan() {
 		raw := scanner.Text()
-		// Items sind eingerueckt mit Leerzeichen. Ohne Einrueckung sind
-		// Header Zeilen ("Profile in WLAN-Adapter \"Wi-Fi\":") oder
-		// Sektionsueberschriften. Das ist plattformunabhaengig und sehr
-		// robust gegen Locale Variationen.
+		// Items are indented with spaces. Without indentation they are
+		// header lines ("Profile in WLAN-Adapter \"Wi-Fi\":") or section
+		// headings. This is platform-independent and very robust against
+		// locale variations.
 		if len(raw) == 0 || (raw[0] != ' ' && raw[0] != '\t') {
 			continue
 		}
@@ -178,7 +177,7 @@ func listWindows() ([]Profile, error) {
 			continue
 		}
 		keyLower := strings.ToLower(key)
-		// Adapter / Interface Header ausschliessen (defensive)
+		// Exclude adapter / interface headers (defensive)
 		if strings.Contains(keyLower, "schnittstell") ||
 			strings.Contains(keyLower, "interface") ||
 			strings.Contains(keyLower, "wlan-adapter") {
@@ -203,9 +202,9 @@ func tryPasswordWindows(ssid string) (string, error) {
 		}
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
-		// Spezifischer Match auf das ECHTE Passwort Feld. "Schluesselinhalt"
-		// (de neu), "Schlüsselinhalt" (de mit Umlaut), "Key Content" (en).
-		// NICHT matchen: "Verschluesselung", "Schluessel index" etc.
+		// Specific match on the REAL password field. "Schluesselinhalt"
+		// (de new), "Schlüsselinhalt" (de with umlaut), "Key Content" (en).
+		// Do NOT match: "Verschluesselung", "Schluessel index" etc.
 		klower := strings.ToLower(key)
 		isPassword := klower == "schluesselinhalt" ||
 			klower == "schlüsselinhalt" ||
@@ -225,7 +224,7 @@ func tryPasswordWindows(ssid string) (string, error) {
 // ----- Mac -----
 
 func listMac() ([]Profile, error) {
-	// Finde erstes Wireless Device
+	// Find the first wireless device
 	cmd := exec.Command("networksetup", "-listallhardwareports")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -246,7 +245,7 @@ func listMac() ([]Profile, error) {
 		}
 	}
 	if device == "" {
-		return nil, fmt.Errorf("kein Wi-Fi Adapter gefunden")
+		return nil, fmt.Errorf("no Wi-Fi adapter found")
 	}
 	cmd2 := exec.Command("networksetup", "-listpreferredwirelessnetworks", device)
 	out2, err := cmd2.CombinedOutput()
@@ -267,7 +266,7 @@ func listMac() ([]Profile, error) {
 
 func tryPasswordMac(ssid string) (string, error) {
 	cmd := exec.Command("security", "find-generic-password", "-ga", ssid)
-	// security gibt das Passwort auf stderr (!) und gibt einen 'password:' line.
+	// security prints the password on stderr (!) and emits a 'password:' line.
 	out, _ := cmd.CombinedOutput()
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
@@ -304,7 +303,7 @@ func listLinux() ([]Profile, error) {
 }
 
 func tryPasswordLinux(ssid string) (string, error) {
-	// Braucht root oder NetworkManager Permission. Best Effort.
+	// Needs root or NetworkManager permission. Best effort.
 	cmd := exec.Command("nmcli", "-s", "-g", "802-11-wireless-security.psk", "connection", "show", ssid)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

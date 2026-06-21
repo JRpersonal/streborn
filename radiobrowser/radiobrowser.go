@@ -1,12 +1,12 @@
-// Package radiobrowser ist ein duenner Client fuer https://radio-browser.info,
-// eine community Internet Radio Station Datenbank ohne API Key.
+// Package radiobrowser is a thin client for https://radio-browser.info,
+// a community internet radio station database without an API key.
 //
-// API Doku: https://api.radio-browser.info/
+// API docs: https://api.radio-browser.info/
 //
-// Wir nutzen mehrere Mirror Server mit automatischem Failover. Die Liste
-// ist hardcoded da die offizielle Server Discovery selbst einen Mirror
-// braucht — Henne-Ei. Mirrors sind alphabetisch nach Latenz aus DE/EU
-// Sicht sortiert.
+// We use several mirror servers with automatic failover. The list is
+// hardcoded because the official server discovery itself needs a mirror
+// — chicken-and-egg. Mirrors are sorted by latency from a DE/EU
+// perspective.
 package radiobrowser
 
 import (
@@ -48,11 +48,11 @@ var Mirrors = []string{
 	"https://91.98.4.78/json",
 }
 
-// Station beschreibt einen einzelnen Sender wie er von der API kommt.
+// Station describes a single station as it comes from the API.
 //
-// LastCheckOK ist 1 wenn radio-browser den Sender beim letzten Check
-// erreicht hat. ClickTrend ist der Aenderungstrend ueber 24h.
-// Favicon ist eine URL zu einem Logo, kann fehlen.
+// LastCheckOK is 1 if radio-browser reached the station on the last
+// check. ClickTrend is the change trend over 24h. Favicon is a URL to a
+// logo, may be missing.
 type Station struct {
 	StationUUID string `json:"stationuuid"`
 	Name        string `json:"name"`
@@ -78,13 +78,13 @@ type Station struct {
 	LastCheckOK int `json:"lastcheckok"`
 }
 
-// Tag ist ein Genre Tag mit Anzahl der Stations.
+// Tag is a genre tag with the number of stations.
 type Tag struct {
 	Name         string `json:"name"`
 	StationCount int    `json:"stationcount"`
 }
 
-// Language listet eine Sprache plus Sender Anzahl.
+// Language lists a language plus station count.
 type Language struct {
 	Name         string `json:"name"`
 	Iso639       string `json:"iso_639"`
@@ -100,7 +100,7 @@ type Language struct {
 // while still dialling the IP, so the fallback actually works.
 const ipMirrorServerName = "de1.api.radio-browser.info"
 
-// Client kapselt http.Client plus Mirror Rotation.
+// Client wraps http.Client plus mirror rotation.
 type Client struct {
 	HTTP    *http.Client // standard client for hostname mirrors
 	ipHTTP  *http.Client // client for IP-literal mirrors (TLS ServerName pinned)
@@ -109,7 +109,7 @@ type Client struct {
 	mirrors []string
 }
 
-// New erzeugt einen Client mit defaults und allen Mirrors.
+// New creates a Client with defaults and all mirrors.
 func New() *Client {
 	mirrors := make([]string, len(Mirrors))
 	copy(mirrors, Mirrors)
@@ -130,7 +130,7 @@ func New() *Client {
 	}
 }
 
-// SearchOpts buendelt alle Such Parameter.
+// SearchOpts bundles all search parameters.
 //
 // TagList is a list of substrings, each of which must match SOME tag
 // of a station (AND across the list, substring per element). Set this
@@ -147,7 +147,7 @@ type SearchOpts struct {
 	OnlyOK   bool
 }
 
-// Search sucht Stations nach den uebergebenen Optionen.
+// Search searches stations according to the given options.
 func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = 30
@@ -181,9 +181,9 @@ func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error)
 	if opts.OnlyOK {
 		q.Set("lastcheckok", "true")
 	}
-	// reverse=true bedeutet descending: bei votes/clickcount/clicktrend
-	// will man die hoechsten zuerst. Bei "name" wuerde reverse aus A->Z
-	// ein Z->A machen, also dort weglassen.
+	// reverse=true means descending: for votes/clickcount/clicktrend you
+	// want the highest first. For "name" reverse would turn A->Z into
+	// Z->A, so leave it out there.
 	if order != "name" {
 		q.Set("reverse", "true")
 	}
@@ -357,7 +357,7 @@ func tokenize(s string) []string {
 	return out
 }
 
-// TopVote liefert die meistgevoteten Sender, gefiltert nach country.
+// TopVote returns the most-voted stations, filtered by country.
 func (c *Client) TopVote(ctx context.Context, cc string, limit int, onlyOK bool) ([]Station, error) {
 	return c.Search(ctx, SearchOpts{
 		Country: cc,
@@ -367,13 +367,13 @@ func (c *Client) TopVote(ctx context.Context, cc string, limit int, onlyOK bool)
 	})
 }
 
-// ByCountry liefert alle Sender eines Landes (gut fuer Stoebern).
+// ByCountry returns all stations of a country (good for browsing).
 func (c *Client) ByCountry(ctx context.Context, cc string, limit int) ([]Station, error) {
 	return c.Search(ctx, SearchOpts{Country: cc, Limit: limit, Order: "votes"})
 }
 
-// TopTags liefert die populaersten Tags fuer Genre Chips. Limit hier ist
-// nicht ein API Parameter sondern eine clientseitige Begrenzung.
+// TopTags returns the most popular tags for genre chips. Limit here is
+// not an API parameter but a client-side cap.
 func (c *Client) TopTags(ctx context.Context, limit int) ([]Tag, error) {
 	q := url.Values{}
 	q.Set("order", "stationcount")
@@ -387,7 +387,7 @@ func (c *Client) TopTags(ctx context.Context, limit int) ([]Tag, error) {
 	return out, err
 }
 
-// Languages liefert die Sprach Liste (mit Anzahl der Stations).
+// Languages returns the language list (with the number of stations).
 func (c *Client) Languages(ctx context.Context, limit int) ([]Language, error) {
 	q := url.Values{}
 	q.Set("order", "stationcount")
@@ -401,11 +401,11 @@ func (c *Client) Languages(ctx context.Context, limit int) ([]Language, error) {
 	return out, err
 }
 
-// LanguagesByCountry holt alle Stations fuer einen Country Code und
-// aggregiert by language Feld. radio-browser.info hat keinen direkten
-// "languages by country" Endpoint, daher der Workaround. Pro Land sind
-// das ca. 1k bis 5k Stations — ein JSON Payload von 1 MB max, im
-// Server lokal aggregierbar in unter 100 ms.
+// LanguagesByCountry fetches all stations for a country code and
+// aggregates by the language field. radio-browser.info has no direct
+// "languages by country" endpoint, hence the workaround. Per country
+// that is about 1k to 5k stations — a JSON payload of 1 MB max,
+// aggregatable locally in the server in under 100 ms.
 func (c *Client) LanguagesByCountry(ctx context.Context, country string) ([]Language, error) {
 	stations, err := c.Search(ctx, SearchOpts{
 		Country: country,
@@ -418,9 +418,9 @@ func (c *Client) LanguagesByCountry(ctx context.Context, country string) ([]Lang
 	}
 	counts := make(map[string]int, 64)
 	for _, st := range stations {
-		// language Feld kann mehrere kommagetrennte Sprachen enthalten
-		// ("german,english"). Wir zaehlen jede einzeln damit Stationen
-		// die mehrere Sprachen tragen in jeder Sprache mitgezaehlt werden.
+		// the language field may contain several comma-separated languages
+		// ("german,english"). We count each one individually so stations
+		// carrying multiple languages are counted in each language.
 		for _, raw := range strings.Split(st.Language, ",") {
 			lang := strings.TrimSpace(strings.ToLower(raw))
 			if lang == "" {
@@ -433,7 +433,7 @@ func (c *Client) LanguagesByCountry(ctx context.Context, country string) ([]Lang
 	for name, n := range counts {
 		out = append(out, Language{Name: name, StationCount: n})
 	}
-	// Sort by stationcount desc damit das Frontend nicht selbst sortieren muss
+	// Sort by stationcount desc so the frontend does not have to sort itself
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].StationCount != out[j].StationCount {
 			return out[i].StationCount > out[j].StationCount
@@ -443,15 +443,15 @@ func (c *Client) LanguagesByCountry(ctx context.Context, country string) ([]Lang
 	return out, nil
 }
 
-// Vote schickt einen Daumen hoch fuer den Sender. Best Effort: Fehler
-// wird zurueckgegeben aber kann ignoriert werden.
+// Vote sends a thumbs up for the station. Best effort: the error is
+// returned but can be ignored.
 func (c *Client) Vote(ctx context.Context, uuid string) error {
 	var out map[string]any
 	return c.fetchJSON(ctx, "/vote/"+url.PathEscape(uuid), &out)
 }
 
-// Click traegt einen Click fuer den Sender ein. Damit zaehlt unsere App
-// in die Beliebtheits Statistik mit ein.
+// Click records a click for the station. This way our app counts toward
+// the popularity statistics.
 func (c *Client) Click(ctx context.Context, uuid string) error {
 	var out map[string]any
 	return c.fetchJSON(ctx, "/url/"+url.PathEscape(uuid), &out)
@@ -464,9 +464,9 @@ func (c *Client) Click(ctx context.Context, uuid string) error {
 // failover was effectively dead.
 const perMirrorTimeout = 6 * time.Second
 
-// fetchJSON probiert alle Mirrors der Reihe nach. Erster erfolgreicher
-// gewinnt. Bei Erfolg merken wir uns den Mirror als "primary" damit der
-// naechste Call denselben Server bevorzugt.
+// fetchJSON tries all mirrors in order. First success wins. On success
+// we remember the mirror as "primary" so the next call prefers the same
+// server.
 //
 // Each attempt runs under its own derived context with a 3 s timeout
 // instead of sharing the outer handler ctx. That way a single slow
@@ -489,7 +489,7 @@ func (c *Client) fetchJSON(ctx context.Context, path string, out any) error {
 		}
 		err := c.tryMirror(ctx, base, path, out)
 		if err == nil {
-			// Erfolg: Mirror nach vorne sortieren wenn nicht schon erster
+			// Success: move the mirror to the front if not already first
 			if i > 0 {
 				c.mu.Lock()
 				c.mirrors[0], c.mirrors[i] = c.mirrors[i], c.mirrors[0]
@@ -500,7 +500,7 @@ func (c *Client) fetchJSON(ctx context.Context, path string, out any) error {
 		lastErr = err
 	}
 	if lastErr == nil {
-		lastErr = fmt.Errorf("kein mirror erreichbar")
+		lastErr = fmt.Errorf("no mirror reachable")
 	}
 	return lastErr
 }
