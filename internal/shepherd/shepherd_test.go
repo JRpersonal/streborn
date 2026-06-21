@@ -68,7 +68,7 @@ func newTestManager(t *testing.T) (*Manager, string) {
 	return New(cfg, newTestLogger()), tmp
 }
 
-func TestRenderConfigWohlgeformt(t *testing.T) {
+func TestRenderConfigWellFormed(t *testing.T) {
 	xmlStr := RenderConfig("/media/sda1/streborn-armv7l",
 		[]string{"--listen-marge", ":8080", "--presets", "/media/sda1/presets.json"})
 
@@ -110,7 +110,7 @@ func TestRenderConfigEscapesXMLSpecials(t *testing.T) {
 	}
 }
 
-func TestCheckLeeresVerzeichnisFehlt(t *testing.T) {
+func TestCheckEmptyDirectoryMissing(t *testing.T) {
 	m, _ := newTestManager(t)
 	st, err := m.Check()
 	if err != nil {

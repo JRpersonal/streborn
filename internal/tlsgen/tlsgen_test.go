@@ -24,7 +24,7 @@ func newTestManager(t *testing.T) *Manager {
 	return New(dir, []string{"streaming.bose.com", "content.api.bose.io"}, logger)
 }
 
-func TestEnsureBundleGeneriertNeu(t *testing.T) {
+func TestEnsureBundleGeneratesNew(t *testing.T) {
 	m := newTestManager(t)
 	bundle, _, err := m.EnsureBundle()
 	if err != nil {
@@ -119,7 +119,7 @@ func TestServerCertVertrauenswuerdigKette(t *testing.T) {
 	}
 }
 
-func TestServerCertGueltigkeit(t *testing.T) {
+func TestServerCertValidity(t *testing.T) {
 	m := newTestManager(t)
 	bundle, _, err := m.EnsureBundle()
 	if err != nil {

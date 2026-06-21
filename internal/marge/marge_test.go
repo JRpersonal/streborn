@@ -33,20 +33,20 @@ func newTestServer() *Server {
 	)
 }
 
-func TestEmptyPresetsXMLWohlgeformt(t *testing.T) {
+func TestEmptyPresetsXMLWellFormed(t *testing.T) {
 	xmlWellFormed(t, EmptyPresetsXML)
 }
 
-func TestEmptyRecentsXMLWohlgeformt(t *testing.T) {
+func TestEmptyRecentsXMLWellFormed(t *testing.T) {
 	xmlWellFormed(t, EmptyRecentsXML)
 }
 
-func TestSoundTouchStatusXMLWohlgeformt(t *testing.T) {
+func TestSoundTouchStatusXMLWellFormed(t *testing.T) {
 	xmlWellFormed(t, SoundTouchConfiguredXML)
 	xmlWellFormed(t, SoundTouchNotConfiguredXML)
 }
 
-func TestPresetsHandlerLeer(t *testing.T) {
+func TestPresetsHandlerEmpty(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/preset/list", nil)
@@ -65,7 +65,7 @@ func TestPresetsHandlerMitInhalt(t *testing.T) {
 	s := newTestServer()
 	s.SetPresets([]Preset{
 		{ID: 1, Source: "SPOTIFY", Type: "uri", Location: "spotify:playlist:xyz",
-			SourceAccount: "user@example.com", ItemName: "Morgens",
+			SourceAccount: "user@example.com", ItemName: "Morning",
 			ContainerArt: "https://example.com/art.png",
 			CreatedOn:    1700000000, UpdatedOn: 1700000000},
 	})
@@ -74,7 +74,7 @@ func TestPresetsHandlerMitInhalt(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	body := rec.Body.String()
 	xmlWellFormed(t, body)
-	if !strings.Contains(body, "Morgens") {
+	if !strings.Contains(body, "Morning") {
 		t.Fatalf("preset name not found: %s", body)
 	}
 	if !strings.Contains(body, "spotify:playlist:xyz") {
@@ -138,7 +138,7 @@ func TestReflectDeezerSource(t *testing.T) {
 	}
 }
 
-func TestSourcesHandlerOhneItems(t *testing.T) {
+func TestSourcesHandlerWithoutItems(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/sources", nil)
@@ -162,7 +162,7 @@ func TestAccountHandlerUnkonfiguriert(t *testing.T) {
 	}
 }
 
-func TestAccountHandlerKonfiguriert(t *testing.T) {
+func TestAccountHandlerConfigured(t *testing.T) {
 	s := newTestServer()
 	s.SetAccount(&AccountInfo{
 		AccountUUID:  "uuid-123",
@@ -183,7 +183,7 @@ func TestAccountHandlerKonfiguriert(t *testing.T) {
 func TestSpyLogfaengtRequestsAuf(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/some/unbekannter/pfad",
+	req := httptest.NewRequest(http.MethodPost, "/some/unknown/path",
 		strings.NewReader("<?xml version=\"1.0\"?><test/>"))
 	req.Header.Set("Content-Type", "application/xml")
 	s.Handler().ServeHTTP(rec, req)
@@ -195,7 +195,7 @@ func TestSpyLogfaengtRequestsAuf(t *testing.T) {
 	if entries[0].Method != "POST" {
 		t.Fatalf("method wrong: %s", entries[0].Method)
 	}
-	if entries[0].Path != "/some/unbekannter/pfad" {
+	if entries[0].Path != "/some/unknown/path" {
 		t.Fatalf("path wrong: %s", entries[0].Path)
 	}
 	if !strings.Contains(entries[0].Body, "<test") {
@@ -203,7 +203,7 @@ func TestSpyLogfaengtRequestsAuf(t *testing.T) {
 	}
 }
 
-func TestSpyLogEndpunkt(t *testing.T) {
+func TestSpyLogEndpoint(t *testing.T) {
 	s := newTestServer()
 	// First a request to log something
 	rec := httptest.NewRecorder()
@@ -223,7 +223,7 @@ func TestSpyLogEndpunkt(t *testing.T) {
 func TestCatchallGenericAck(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/voellig/unbekannt", nil)
+	req := httptest.NewRequest(http.MethodGet, "/completely/unknown", nil)
 	s.Handler().ServeHTTP(rec, req)
 	body := rec.Body.String()
 	xmlWellFormed(t, body)

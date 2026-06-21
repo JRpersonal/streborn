@@ -50,20 +50,20 @@ func TestDeviceIDFallback(t *testing.T) {
 	}
 }
 
-func TestDeviceIDOhneTreffer(t *testing.T) {
+func TestDeviceIDNoMatch(t *testing.T) {
 	// If we could force a no-match... that is not portable without a mock,
 	// so we only test the happy path above.
 	t.Skip("negative test needs mocking, skipped")
 }
 
-func TestMACOfFehler(t *testing.T) {
+func TestMACOfError(t *testing.T) {
 	_, err := MACOf("nichtexistierende-interface-xyz")
 	if err == nil {
 		t.Error("expected an error for a non-existent interface")
 	}
 }
 
-func TestIPOfFehler(t *testing.T) {
+func TestIPOfError(t *testing.T) {
 	_, err := IPOf("nichtexistierende-interface-xyz")
 	if err == nil {
 		t.Error("expected an error for a non-existent interface")
