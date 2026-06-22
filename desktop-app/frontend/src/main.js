@@ -252,6 +252,7 @@ import {
 import { renderRecent, initRecentView } from './views/recent.js';
 import { renderMultiroom, initMultiroomView } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
+import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
 // Speaker Settings view (extracted from this monolith, same pattern as the views
 // above). loadBoxSettings is the entry point switchView calls; langOptionsHtml /
 // wireCombobox are reused by the Setup view below. throttledSetVolume /
@@ -297,6 +298,7 @@ initSpotifyView({
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames });
 initLibraryView({ showSlotPicker, formatDuration });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision });
+initPodcastsView();
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
 // pipe-separated set of candidate URLs) on each load error, swapping in the
@@ -413,6 +415,7 @@ document.querySelector('#app').innerHTML = `
     <button class="tab-btn" data-view="setup">${escapeHtml(t('nav.setupStick'))}</button>
     <button class="tab-btn" data-view="multiroom">${escapeHtml(t('nav.multiroom'))}<span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></button>
     <button class="tab-btn" data-view="spotify">${escapeHtml(t('nav.spotify'))}<span class="beta-pill">${escapeHtml(t('common.beta'))}</span></button>
+    <button class="tab-btn" data-view="podcasts">${escapeHtml(t('nav.podcasts'))}<span class="beta-pill planned-pill">${escapeHtml(t('common.planned'))}</span></button>
   </div>
   <div id="globalSecurityBanner" class="global-security-banner hidden">
     <span class="global-security-text">
@@ -427,6 +430,7 @@ document.querySelector('#app').innerHTML = `
   <div id="view-setup" class="view hidden"></div>
   <div id="view-multiroom" class="view hidden"></div>
   <div id="view-spotify" class="view hidden"></div>
+  <div id="view-podcasts" class="view hidden"></div>
 
   <div class="modal hidden" id="pickModal">
     <div class="modal-content">
@@ -570,6 +574,7 @@ function switchView(view) {
   $('view-setup').classList.toggle('hidden', view !== 'setup');
   $('view-multiroom').classList.toggle('hidden', view !== 'multiroom');
   $('view-spotify').classList.toggle('hidden', view !== 'spotify');
+  $('view-podcasts').classList.toggle('hidden', view !== 'podcasts');
   // Global SSH banner: the Setup tab has no speaker context, so hide
   // the banner there unconditionally. Otherwise let checkSshBanner
   // decide.
@@ -614,6 +619,7 @@ function switchView(view) {
   if (view === 'recent') renderRecent();
   if (view === 'multiroom') renderMultiroom(true);
   if (view === 'spotify') renderSpotifyAlpha();
+  if (view === 'podcasts') renderPodcasts();
 }
 
 

@@ -527,6 +527,31 @@ body {
   background: rgba(244, 67, 54, 0.22);
   color: #ef9a9a;
 }
+/* Planned pill: muted blue/grey to signal "not built yet, gathering
+ * feedback" — distinct from BETA (works, rough) and ALPHA (experimental). */
+.planned-pill {
+  background: rgba(120, 144, 156, 0.20);
+  color: #b0bec5;
+}
+
+/* ---------- Podcasts placeholder (feedback page) ---------- */
+.podcasts-intro {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+.podcasts-title {
+  margin: 0 0 12px;
+}
+.podcasts-lead {
+  font-size: 15px;
+}
+.podcasts-ask {
+  margin-top: 16px;
+}
+.podcasts-actions {
+  margin: 18px 0 6px;
+}
 
 /* ---------- Alpha-stage placeholder pages (Spotify, Multi-room) ---------- */
 .alpha-stage {
