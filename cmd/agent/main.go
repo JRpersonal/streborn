@@ -433,6 +433,10 @@ func run() error {
 		// reappears awake-but-idle on a gabbo reconnect, re-push the last stream.
 		// Reuses the power-on resume guards (opt-out, zone, user-stop).
 		onBoxReconnect: webuiSrv.RecoverAfterReconnect,
+		// Clear the transport when the box powers off STR's UPnP source, so ST20
+		// (scm) firmware that bounces UPNP<->STANDBY does not turn itself back on
+		// (#197). Zone-guarded and debounced in the webui.
+		onEnterStandby: webuiSrv.HandleEnterStandby,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -903,6 +907,11 @@ type presetWsHandler struct {
 	// press (#183). This recovers that stuck wake. Wired to
 	// webui.RecoverAfterReconnect, which reuses the power-on resume guards. nil-safe.
 	onBoxReconnect func()
+	// onEnterStandby fires when STR's UPnP source drops to STANDBY (a power-off
+	// seen over gabbo). It clears the box transport so ST20 (scm) firmware that
+	// oscillates UPNP<->STANDBY does not switch the speaker back on (#197). Wired to
+	// webui.HandleEnterStandby, which is zone-guarded and debounced. nil-safe.
+	onEnterStandby func()
 	// noteBoxPresets records the box's OWN preset list (gabbo presetsUpdated),
 	// including foreign sources like Deezer that STR did not set, into the webui
 	// so the app can show and preserve them (Option C). Wired to
@@ -1150,6 +1159,16 @@ func (h *presetWsHandler) OnPowerWake(_ context.Context) {
 func (h *presetWsHandler) OnConnected(_ context.Context) {
 	if h.onBoxReconnect != nil {
 		h.onBoxReconnect()
+	}
+}
+
+// OnEnterStandby fires when the box's UPnP (STR) source drops to STANDBY on a
+// power-off. It clears the transport so ST20 (scm) firmware that oscillates
+// UPNP<->STANDBY does not switch the speaker back on (#197). boxws calls this via
+// an optional interface, so only handlers that wire it (this one) react.
+func (h *presetWsHandler) OnEnterStandby(_ context.Context) {
+	if h.onEnterStandby != nil {
+		h.onEnterStandby()
 	}
 }
 

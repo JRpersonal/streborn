@@ -1336,6 +1336,9 @@ body {
 .recent-scope { display: flex; gap: 6px; }
 .recent-scope .chip { background: var(--brand-bg); color: var(--brand-text-mid); border: 1px solid var(--brand-border); border-radius: 14px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .recent-scope .chip.active { background: var(--brand); color: #04222e; border-color: var(--brand); font-weight: 600; }
+/* Speaker picker (#221): replaces the old "this speaker / all" chips. */
+.recent-box-select { background: var(--brand-bg); color: var(--brand-text-mid); border: 1px solid var(--brand-border); border-radius: 14px; padding: 4px 28px 4px 12px; font-size: 12px; cursor: pointer; max-width: 220px; }
+.recent-box-select:hover { border-color: var(--brand); }
 .recent-list { display: flex; flex-direction: column; gap: 12px; }
 .recent-empty, .recent-loading { color: var(--brand-text-mid); padding: 24px 4px; text-align: center; }
 .recent-card { background: #1b1b1b; border: 1px solid var(--brand-border); border-radius: 10px; overflow: hidden; }

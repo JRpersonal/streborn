@@ -480,19 +480,61 @@ var macRegex = regexp.MustCompile(`(?i)\b([0-9A-F]{2}[:-]){5}[0-9A-F]{2}\b`)
 var deviceIDRegex = regexp.MustCompile(`(?i)\b[0-9A-F]{12}\b`)
 var ssidHintRegex = regexp.MustCompile(`(?i)(ssid|ssid_name|wpa-psk\s+\S+|psk=)[^\s]*`)
 
-func sanitizeLog(b []byte) []byte {
-	s := string(b)
+// nameTagRegex catches the speaker's user-chosen friendly name as it appears in
+// gabbo frame bodies captured in the box debug state / agent log
+// (<nameUpdated>Living Room</nameUpdated>) and in any <name>...</name> a box
+// log echoes. A friendly name is a personal identifier (CLAUDE.md), so it must
+// be hashed even though it is free-form text with no fixed value shape.
+var nameTagRegex = regexp.MustCompile(`<(name|nameUpdated)>([^<]+)</(?:name|nameUpdated)>`)
+
+// friendlyNameJSONRegex catches the friendly name as a JSON value, e.g. the
+// /api/agent/version payload ("friendlyName":"Bose Wit") and any status JSON
+// that carries it. Keyed on the field name so radio/preset display names (also
+// "name") are not over-scrubbed.
+var friendlyNameJSONRegex = regexp.MustCompile(`(?i)("friendlyName"\s*:\s*")([^"]*)(")`)
+
+// scrubPII is the single sanitization pass shared by every text blob that can
+// leave the host (the app log, box-side logs pulled over SSH, the /api/debug
+// state, /api/status). Keeping one function means a field added to the bundle
+// cannot accidentally skip a scrub the other paths already do — the exact hole
+// that leaked real device IDs and friendly names through anonymizeText while
+// sanitizeLog scrubbed them (see #187/#197 diagnostic bundles).
+func scrubPII(s string) string {
 	s = ipv4Regex.ReplaceAllStringFunc(s, func(ip string) string { return maskIP(ip) })
 	s = macRegex.ReplaceAllStringFunc(s, func(m string) string { return "MAC#" + hashShort(m) })
 	s = deviceIDRegex.ReplaceAllStringFunc(s, func(m string) string { return "DEV#" + hashShort(m) })
+	s = nameTagRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := nameTagRegex.FindStringSubmatch(m)
+		return "<" + sub[1] + ">NAME#" + hashShort(sub[2]) + "</" + sub[1] + ">"
+	})
+	s = friendlyNameJSONRegex.ReplaceAllStringFunc(s, func(m string) string {
+		sub := friendlyNameJSONRegex.FindStringSubmatch(m)
+		return sub[1] + "NAME#" + hashShort(sub[2]) + sub[3]
+	})
 	s = ssidHintRegex.ReplaceAllString(s, "<SSID-REDACTED>")
-	return []byte(s)
+	return s
+}
+
+func sanitizeLog(b []byte) []byte {
+	return []byte(scrubPII(string(b)))
 }
 
 func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 	s.Host = maskIP(s.Host)
 	s.BoseInfo = anonymizeBoseInfoXML(s.BoseInfo)
 	s.STRStatus = anonymizeText(s.STRStatus)
+	// /api/agent/version carries the user-chosen friendlyName ("Bose Wit"), which
+	// was previously copied into the bundle verbatim. Round-trip the parsed map
+	// through scrubPII so friendlyName (and any device ID it grows) is hashed like
+	// everything else. Model/version/build are left intact.
+	if len(s.STRAgentVer) > 0 {
+		if b, err := json.Marshal(s.STRAgentVer); err == nil {
+			var m map[string]any
+			if json.Unmarshal([]byte(scrubPII(string(b))), &m) == nil {
+				s.STRAgentVer = m
+			}
+		}
+	}
 	if s.DebugState != nil {
 		s.DebugState = anonymizeDebugState(s.DebugState)
 	}
@@ -517,15 +559,12 @@ func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 	return s
 }
 
-// anonymizeText scrubs IPs, MACs, and SSID hints from a text blob
-// using the same rules as sanitizeLog above. Used for box-side
-// logs we pull over SSH so the user can safely attach them to a
-// public GitHub issue.
+// anonymizeText scrubs IPs, MACs, device IDs, friendly names, and SSID hints
+// from a text blob using the same shared pass (scrubPII) as the app log. Used
+// for box-side logs we pull over SSH and the /api/debug state so the user can
+// safely attach them to a public GitHub issue.
 func anonymizeText(s string) string {
-	s = ipv4Regex.ReplaceAllStringFunc(s, func(ip string) string { return maskIP(ip) })
-	s = macRegex.ReplaceAllStringFunc(s, func(m string) string { return "MAC#" + hashShort(m) })
-	s = ssidHintRegex.ReplaceAllString(s, "<SSID-REDACTED>")
-	return s
+	return scrubPII(s)
 }
 
 // anonymizeDebugState walks the /api/debug/state map and scrubs

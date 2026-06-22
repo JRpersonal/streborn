@@ -176,6 +176,14 @@ type Server struct {
 	lastUserStopMu sync.Mutex
 	lastUserStop   time.Time
 
+	// lastStandbyStop debounces the #197 standby-bounce mitigation: some ST20
+	// (scm) firmware oscillates UPNP->STANDBY->UPNP on a power-off, re-selecting
+	// STR's UPnP source so the box turns itself back on. HandleEnterStandby clears
+	// the transport once per standbyStopDebounce so the rapid flip does not issue a
+	// burst of Stops.
+	standbyStopMu   sync.Mutex
+	lastStandbyStop time.Time
+
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
 	// Empty falls back to defaultResumeOnPowerOnPath.
@@ -217,6 +225,11 @@ type Server struct {
 	recentMu          sync.Mutex
 	recentRadioCard   recentCardCtx
 	recentSpotifyCard recentCardCtx
+	// recentQueueCard remembers the DLNA folder currently playing as an
+	// auto-advancing queue, so each track the queue pushes is recorded under one
+	// "library" card (#220: folder plays were never added to Recently played).
+	// Cleared when the queue stops (a single play, a stop, or running out).
+	recentQueueCard recentCardCtx
 
 	// boxPresets is the box's OWN preset list as last reported over the gabbo
 	// presetsUpdated frame, including foreign sources (DEEZER etc.) STR did not
@@ -1167,7 +1180,8 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
-		if err := s.startQueueLocked(r.Context(), items, 0, p.Shuffle, repeatOff); err != nil {
+		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
+		if err := s.startQueueLocked(r.Context(), items, 0, p.Shuffle, repeatOff, card); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Folder could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
@@ -1433,6 +1447,40 @@ func (s *Server) recentNoteCard(source, key, name, art, url, account, homepage s
 		// even if its name happens to match the previous card's last track.
 		s.recentSpotifyCard = recentCardCtx{key: key, name: name, art: art, url: url, account: account}
 	}
+	s.recentMu.Unlock()
+}
+
+// recentNoteQueueCard records a DLNA folder played as an auto-advancing queue as
+// the start of a "library" (upnp) Recently-played card, and remembers it so each
+// track the queue pushes is hung under it (like radio ICY tracks under a station).
+// The replay target is the first track's URL; clicking the card re-plays it.
+func (s *Server) recentNoteQueueCard(key, name, art, url string) {
+	s.recentMu.Lock()
+	s.recentQueueCard = recentCardCtx{key: key, name: name, art: art, url: url}
+	s.recentMu.Unlock()
+	s.recentNoteCard("upnp", key, name, art, url, "", "")
+}
+
+// recentNoteQueueTrack hangs the track the play-queue just started under the
+// current folder card. No-op until a queue card has been recorded.
+func (s *Server) recentNoteQueueTrack(track string) {
+	if s.recent == nil || track == "" {
+		return
+	}
+	s.recentMu.Lock()
+	c := s.recentQueueCard
+	s.recentMu.Unlock()
+	if c.key == "" {
+		return
+	}
+	s.recent.Add(recent.Entry{Source: "upnp", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track})
+}
+
+// recentClearQueueCard forgets the active folder card so later tracks (a single
+// play, a new radio station) are not mis-attributed to a folder that has stopped.
+func (s *Server) recentClearQueueCard() {
+	s.recentMu.Lock()
+	s.recentQueueCard = recentCardCtx{}
 	s.recentMu.Unlock()
 }
 
@@ -1923,6 +1971,56 @@ func (s *Server) userStoppedRecently() bool {
 	s.lastUserStopMu.Lock()
 	defer s.lastUserStopMu.Unlock()
 	return !s.lastUserStop.IsZero() && time.Since(s.lastUserStop) < userStopWindow
+}
+
+// standbyStopDebounce coalesces the rapid UPNP<->STANDBY oscillation a power-off
+// produces on some ST20 (scm) firmware into a single transport Stop.
+const standbyStopDebounce = 4 * time.Second
+
+// standbyBounceFixEnabled gates the #197 mitigation. Default on; set
+// STR_STANDBY_STOP=0 on the box to disable it if it ever regresses, without an
+// OTA (run.sh exports the agent's environment).
+func standbyBounceFixEnabled() bool {
+	return os.Getenv("STR_STANDBY_STOP") != "0"
+}
+
+// HandleEnterStandby reacts to the box's own UPnP source dropping to STANDBY
+// (a power-off), seen over gabbo. On some ST20 (scm) firmware the box then
+// oscillates STANDBY->UPNP and switches itself back on because STR's UPnP
+// transport still has a URI loaded and is treated as the active source, so the
+// speaker "cannot be switched off" until several presses (#197, confirmed in a
+// diagnostic: UPNP->STANDBY->UPNP within ~170 ms, repeated). STR clears the
+// transport so the firmware has nothing to bounce back to.
+//
+// Conservative by design: it only runs when STR's own source (UPNP) was active,
+// never when the box is in a zone (a mirror/slave legitimately re-selects UPNP),
+// and is debounced so the flip does not issue a burst of Stops. Stopping a box
+// the user just powered off matches their intent, so the blast radius is small.
+func (s *Server) HandleEnterStandby() {
+	if !standbyBounceFixEnabled() || s.renderer == nil {
+		return
+	}
+	if s.boxInZone() {
+		return // a zone slave/master mirror re-selects UPNP on purpose; leave it
+	}
+	s.standbyStopMu.Lock()
+	if !s.lastStandbyStop.IsZero() && time.Since(s.lastStandbyStop) < standbyStopDebounce {
+		s.standbyStopMu.Unlock()
+		return
+	}
+	s.lastStandbyStop = time.Now()
+	s.standbyStopMu.Unlock()
+
+	// A power-off is a deliberate stop: hold the auto-re-push and drop any queue
+	// so neither fights the standby, then clear the transport.
+	s.NoteUserStop()
+	s.stopQueue()
+	s.logger.Info("standby bounce: box powered off STR's UPnP source, clearing transport so it stays off (#197)")
+	ctx, cancel := context.WithTimeout(s.queueCtx(), 5*time.Second)
+	defer cancel()
+	if err := s.renderer.Stop(ctx); err != nil {
+		s.logger.Debug("standby bounce: transport stop returned (expected if already off)", "err", err)
+	}
 }
 
 // HandleStreamDisconnect is called by the stream proxy when the Bose renderer

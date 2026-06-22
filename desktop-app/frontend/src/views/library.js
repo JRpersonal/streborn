@@ -245,11 +245,25 @@ async function libraryPlayFolder() {
     showError(t('library.errorNoURL'));
     return;
   }
+  // Recently-played card (#220): name the card after the open folder (last
+  // breadcrumb), key it on the server UDN + container id so repeated plays of the
+  // same folder group together, and seed its cover from the first track's art.
+  const stack = libState.stack || [];
+  const last = stack.length > 0 ? stack[stack.length - 1] : null;
+  const srv = libState.servers.find((s) => s.udn === libState.currentUDN);
+  const card = {
+    key: `queue:${libState.currentUDN || ''}:${(last && last.id) || ''}`,
+    name: (last && last.title)
+      || (srv && (srv.friendlyName || srv.address))
+      || t('controls.playFolder'),
+    art: items[0].art || '',
+  };
   const payload = {
     items,
     start: 0,
     shuffle: !!libState.shuffle,
     repeat: libState.repeat || 'off',
+    card,
   };
   try {
     await StartQueue(state.currentBox.host, state.currentBox.port, JSON.stringify(payload));

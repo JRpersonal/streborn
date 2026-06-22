@@ -94,3 +94,38 @@ func TestAnonymizeText(t *testing.T) {
 		}
 	}
 }
+
+// TestAnonymizeText_ScrubsDeviceIDAndFriendlyName guards the leak found in the
+// #187/#197 diagnostic bundles: the gabbo frames captured in the agent log /
+// debug state carried the raw device ID and the user-chosen friendly name
+// because anonymizeText only scrubbed IP/MAC/SSID. Both must now be hashed.
+func TestAnonymizeText_ScrubsDeviceIDAndFriendlyName(t *testing.T) {
+	raw := `<updates deviceID="B0D5CC04E5BF"><nameUpdated>ST-10-Firma 7ADB</nameUpdated></updates>` +
+		` nowPlaying deviceID="68C90B85A0A9"`
+	got := anonymizeText(raw)
+	for _, leaked := range []string{"B0D5CC04E5BF", "68C90B85A0A9", "ST-10-Firma 7ADB"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("anonymizeText leaked %q:\n%s", leaked, got)
+		}
+	}
+	if !strings.Contains(got, "DEV#") || !strings.Contains(got, "<nameUpdated>NAME#") {
+		t.Errorf("expected DEV#/NAME# markers:\n%s", got)
+	}
+}
+
+// TestAnonymizeSnapshot_ScrubsAgentFriendlyName guards the second leak: the
+// /api/agent/version friendlyName ("Bose Wit") was copied into box-<n>.json
+// verbatim because anonymizeSnapshot never touched STRAgentVer.
+func TestAnonymizeSnapshot_ScrubsAgentFriendlyName(t *testing.T) {
+	in := boxSnapshot{
+		Host:        "192.168.1.50",
+		STRAgentVer: map[string]any{"friendlyName": "Bose Wit", "model": "SoundTouch 20", "version": "v0.8.14"},
+	}
+	got := anonymizeSnapshot(in)
+	if fn, _ := got.STRAgentVer["friendlyName"].(string); strings.Contains(fn, "Bose Wit") || !strings.HasPrefix(fn, "NAME#") {
+		t.Errorf("friendlyName not hashed: %v", got.STRAgentVer["friendlyName"])
+	}
+	if got.STRAgentVer["model"] != "SoundTouch 20" {
+		t.Errorf("model must be left intact, got %v", got.STRAgentVer["model"])
+	}
+}

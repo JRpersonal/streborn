@@ -12,16 +12,17 @@ import (
 // recHandler records which gabbo events the parser dispatched so tests can
 // assert that marker words in user-supplied text no longer mis-fire.
 type recHandler struct {
-	presets    []int
-	userStops  int
-	powerKeys  int
-	powerWakes int
-	sourceAux  int
-	skips      []bool
-	zones      []ZoneState
-	boxPresets [][]BoxPreset
-	mu         sync.Mutex
-	thumbs     int // guarded by mu (fired from the debounce timer goroutine)
+	presets      []int
+	userStops    int
+	powerKeys    int
+	powerWakes   int
+	sourceAux    int
+	enterStandby int
+	skips        []bool
+	zones        []ZoneState
+	boxPresets   [][]BoxPreset
+	mu           sync.Mutex
+	thumbs       int // guarded by mu (fired from the debounce timer goroutine)
 }
 
 func (h *recHandler) thumbCount() int { h.mu.Lock(); defer h.mu.Unlock(); return h.thumbs }
@@ -38,12 +39,39 @@ func (h *recHandler) OnPowerKey(context.Context)                   { h.powerKeys
 func (h *recHandler) OnSourceAux(context.Context)                  { h.sourceAux++ }
 func (h *recHandler) OnZoneChanged(_ context.Context, z ZoneState) { h.zones = append(h.zones, z) }
 func (h *recHandler) OnPowerWake(context.Context)                  { h.powerWakes++ }
+func (h *recHandler) OnEnterStandby(context.Context)               { h.enterStandby++ }
 func (h *recHandler) OnPresetsChanged(_ context.Context, p []BoxPreset) {
 	h.boxPresets = append(h.boxPresets, p)
 }
 
 func newTestClient(h Handler) *Client {
 	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), "ws://127.0.0.1:8080/", h)
+}
+
+// TestHandleMessage_EnterStandbyOnlyFromUPNP covers the #197 hook: STR clears the
+// transport when its own UPnP source drops to STANDBY, but not on a power-off from
+// another source (AUX/Spotify), so it never fights an unrelated standby.
+func TestHandleMessage_EnterStandbyOnlyFromUPNP(t *testing.T) {
+	standbyFrame := `<updates deviceID="x"><nowPlayingUpdated><nowPlaying source="STANDBY">` +
+		`<ContentItem source="STANDBY"/></nowPlaying></nowPlayingUpdated></updates>`
+
+	// UPNP -> STANDBY fires the hook once.
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>PLAY_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
+	c.handleMessage(context.Background(), []byte(standbyFrame))
+	if h.enterStandby != 1 {
+		t.Fatalf("UPNP->STANDBY must fire OnEnterStandby once, got %d", h.enterStandby)
+	}
+
+	// AUX -> STANDBY must NOT fire it (STR did not drive that source).
+	h2 := &recHandler{}
+	c2 := newTestClient(h2)
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="AUX"/></nowPlayingUpdated></updates>`))
+	c2.handleMessage(context.Background(), []byte(standbyFrame))
+	if h2.enterStandby != 0 {
+		t.Fatalf("AUX->STANDBY must not fire OnEnterStandby, got %d", h2.enterStandby)
+	}
 }
 
 func TestHandleMessage_StopStateInTitleDoesNotFireUserStop(t *testing.T) {
