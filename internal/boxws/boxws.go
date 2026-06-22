@@ -559,6 +559,18 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				if src == "AUX" {
 					c.handler.OnSourceAux(ctx)
 				}
+				// #197: some ST20 (scm) firmware oscillates UPNP->STANDBY->UPNP on a
+				// power-off, re-selecting STR's UPnP source so the speaker switches
+				// itself back on. When STR's own source (UPNP) drops to STANDBY, give
+				// the handler a chance to clear the transport so the box has nothing to
+				// bounce back to. Optional interface so handlers that do not need it
+				// (tests) are unaffected. Gated to prev==UPNP so it only fires for
+				// STR-driven playback, never an AUX/Spotify power-off.
+				if src == "STANDBY" && prev == "UPNP" {
+					if h, ok := c.handler.(interface{ OnEnterStandby(context.Context) }); ok {
+						h.OnEnterStandby(ctx)
+					}
+				}
 			}
 		}
 	}

@@ -176,6 +176,14 @@ type Server struct {
 	lastUserStopMu sync.Mutex
 	lastUserStop   time.Time
 
+	// lastStandbyStop debounces the #197 standby-bounce mitigation: some ST20
+	// (scm) firmware oscillates UPNP->STANDBY->UPNP on a power-off, re-selecting
+	// STR's UPnP source so the box turns itself back on. HandleEnterStandby clears
+	// the transport once per standbyStopDebounce so the rapid flip does not issue a
+	// burst of Stops.
+	standbyStopMu   sync.Mutex
+	lastStandbyStop time.Time
+
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
 	// Empty falls back to defaultResumeOnPowerOnPath.
@@ -1963,6 +1971,56 @@ func (s *Server) userStoppedRecently() bool {
 	s.lastUserStopMu.Lock()
 	defer s.lastUserStopMu.Unlock()
 	return !s.lastUserStop.IsZero() && time.Since(s.lastUserStop) < userStopWindow
+}
+
+// standbyStopDebounce coalesces the rapid UPNP<->STANDBY oscillation a power-off
+// produces on some ST20 (scm) firmware into a single transport Stop.
+const standbyStopDebounce = 4 * time.Second
+
+// standbyBounceFixEnabled gates the #197 mitigation. Default on; set
+// STR_STANDBY_STOP=0 on the box to disable it if it ever regresses, without an
+// OTA (run.sh exports the agent's environment).
+func standbyBounceFixEnabled() bool {
+	return os.Getenv("STR_STANDBY_STOP") != "0"
+}
+
+// HandleEnterStandby reacts to the box's own UPnP source dropping to STANDBY
+// (a power-off), seen over gabbo. On some ST20 (scm) firmware the box then
+// oscillates STANDBY->UPNP and switches itself back on because STR's UPnP
+// transport still has a URI loaded and is treated as the active source, so the
+// speaker "cannot be switched off" until several presses (#197, confirmed in a
+// diagnostic: UPNP->STANDBY->UPNP within ~170 ms, repeated). STR clears the
+// transport so the firmware has nothing to bounce back to.
+//
+// Conservative by design: it only runs when STR's own source (UPNP) was active,
+// never when the box is in a zone (a mirror/slave legitimately re-selects UPNP),
+// and is debounced so the flip does not issue a burst of Stops. Stopping a box
+// the user just powered off matches their intent, so the blast radius is small.
+func (s *Server) HandleEnterStandby() {
+	if !standbyBounceFixEnabled() || s.renderer == nil {
+		return
+	}
+	if s.boxInZone() {
+		return // a zone slave/master mirror re-selects UPNP on purpose; leave it
+	}
+	s.standbyStopMu.Lock()
+	if !s.lastStandbyStop.IsZero() && time.Since(s.lastStandbyStop) < standbyStopDebounce {
+		s.standbyStopMu.Unlock()
+		return
+	}
+	s.lastStandbyStop = time.Now()
+	s.standbyStopMu.Unlock()
+
+	// A power-off is a deliberate stop: hold the auto-re-push and drop any queue
+	// so neither fights the standby, then clear the transport.
+	s.NoteUserStop()
+	s.stopQueue()
+	s.logger.Info("standby bounce: box powered off STR's UPnP source, clearing transport so it stays off (#197)")
+	ctx, cancel := context.WithTimeout(s.queueCtx(), 5*time.Second)
+	defer cancel()
+	if err := s.renderer.Stop(ctx); err != nil {
+		s.logger.Debug("standby bounce: transport stop returned (expected if already off)", "err", err)
+	}
 }
 
 // HandleStreamDisconnect is called by the stream proxy when the Bose renderer
