@@ -45,17 +45,37 @@ func Send(ctx context.Context, host, cmd string) (string, error) {
 	return sb.String(), nil
 }
 
-// PowerOn wakes the box from standby. Idempotent: if the box is already
-// on, it returns OK and does nothing.
+// PowerOn toggles the box's power. NOTE: `sys power` is a TOGGLE, not an
+// idempotent power-on — the same command also returns the box to standby (see
+// the announce standby-restore in internal/webui/announce.go). Callers must
+// therefore confirm the box is actually in standby before calling this, or they
+// risk turning a running box off. WakeAndWait does that gating; prefer it over
+// calling PowerOn directly.
 func PowerOn(ctx context.Context, host string) error {
 	_, err := Send(ctx, host, "sys power")
 	return err
 }
 
-// WakeAndWait makes sure the box is out of standby. Sends `sys power`
-// and polls `/now_playing` until source != STANDBY or timeout. The box
-// sometimes reacts with a delay or ignores sys power entirely when it is
-// in deep standby; in that case it is sent multiple times.
+// selfWakeGrace is how long WakeAndWait first watches for the box to leave
+// standby on its OWN before it sends a `sys power` toggle. Because `sys power`
+// is a power TOGGLE (see PowerOn), toggling a box that is already coming out of
+// standby — for example because the user just pressed the physical power button
+// or a hardware preset, which is exactly the press that produced the gabbo wake
+// frame STR is reacting to — would CANCEL that wake, and the box looks dead to
+// the button. That is the overnight-standby "won't switch on / needs several
+// presses" report (ST30 Klaus, ST20 #197, preset first-press #183), made easy to
+// hit once the keepalive (#183) started delivering the wake frame instantly,
+// mid-transition. Watching for a self-wake first means STR only toggles a box
+// that stays firmly, stably asleep — a genuine STR-initiated wake such as an app
+// play on an idle box with no user press.
+const selfWakeGrace = 2500 * time.Millisecond
+
+// WakeAndWait makes sure the box is out of standby. It first watches briefly for
+// the box to wake on its own (a user button press already waking it); only if it
+// stays in standby does it send the `sys power` toggle, polling `/now_playing`
+// until source != STANDBY or timeout. The box sometimes reacts with a delay or
+// ignores sys power entirely when it is in deep standby; in that case it is sent
+// multiple times.
 //
 // logger may be nil; when present, per-iteration phase markers are emitted
 // so a diagnostic bundle shows the standby-exit timeline (#60).
@@ -80,6 +100,32 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger
 
 	logPhase("wake phase: start", "host", host, "max_wait", maxWait.String())
 
+	// Phase 1: self-wake grace. The wake STR is reacting to was almost always
+	// caused by the user pressing a button, which is itself bringing the box out
+	// of standby. Give it that moment to surface so we do NOT toggle it back off.
+	graceDeadline := time.Now().Add(selfWakeGrace)
+	if graceDeadline.After(deadline) {
+		graceDeadline = deadline
+	}
+	for {
+		state, err := readSource(ctx, client, infoURL)
+		if err == nil && state != "STANDBY" {
+			logPhase("wake phase: box left standby on its own, not toggling (user wake)", "source", state)
+			return nil
+		}
+		if !time.Now().Before(graceDeadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			logPhase("wake phase: ctx cancelled (grace)", "err", ctx.Err().Error())
+			return ctx.Err()
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+
+	// Phase 2: still firmly asleep after the grace -> no user wake in progress,
+	// so this is a genuine STR-initiated wake. Toggle it on.
 	for i := 0; ; i++ {
 		// Check first: is the box maybe already awake?
 		state, err := readSource(ctx, client, infoURL)
