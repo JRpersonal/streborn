@@ -38,6 +38,27 @@ function recentStrBoxes() {
   return (state.boxes || []).filter((b) => b && b.kind !== 'stock' && b.host);
 }
 
+// recentBoxKey is the stable identity used both for the dropdown option values
+// and the per-entry _boxKey tag, so a picked speaker matches its history.
+function recentBoxKey(b) {
+  return b.deviceID || (b.host + ':' + b.port);
+}
+
+// recentSelectedBoxes resolves the view scope (#221) to the speakers to read:
+// every STR speaker when "All speakers" is chosen, the explicitly picked one
+// otherwise, falling back to the app-wide current box (then the first speaker)
+// so the view is never empty before the user touches the dropdown.
+function recentSelectedBoxes() {
+  const all = recentStrBoxes();
+  if (state.recentAllBoxes) return all;
+  if (state.recentBoxKey) {
+    const found = all.find((b) => recentBoxKey(b) === state.recentBoxKey);
+    if (found) return [found];
+  }
+  if (state.currentBox) return [state.currentBox];
+  return all.length ? [all[0]] : [];
+}
+
 // cardStation projects a recent card into the radio-station shape the search-row
 // helpers (playStation/openPick/toggleFav/isFav, stationLogoCandidates) expect,
 // so a radio card reuses them verbatim. CardKey is the stable favourite identity.
@@ -105,11 +126,9 @@ function groupRecentCards(entries) {
 // preset (= the box holds that account's token) can offer a play button that
 // recalls the slot. One presets fetch per box on view-open: app-side, no box poll.
 async function loadRecentCards() {
-  const boxes = state.recentAllBoxes
-    ? recentStrBoxes()
-    : (state.currentBox ? [state.currentBox] : []);
+  const boxes = recentSelectedBoxes();
   const results = await Promise.all(boxes.map(async (b) => {
-    const boxKey = b.deviceID || (b.host + ':' + b.port);
+    const boxKey = recentBoxKey(b);
     // friendlyName first: the backend always fills Name with a "str-<IP>" fallback,
     // so b.name is never empty. This matches the box switcher and the rest of the app.
     const boxName = getBoxLabel(b);
@@ -350,14 +369,24 @@ export async function renderRecent() {
   const root = $('view-recent');
   if (!root) return;
   stopRecentAutoRefresh(); // re-entry / scope toggle: never stack timers
-  const multi = recentStrBoxes().length > 1;
-  const showAll = multi && !!state.recentAllBoxes;
+  const boxesList = recentStrBoxes();
+  const multi = boxesList.length > 1;
+  // Speaker picker (#221): a dropdown so it is explicit WHICH speaker's history
+  // is shown (the old "This speaker" chip implicitly followed the Music tab), plus
+  // an "All speakers" merge. The currently scoped speaker is preselected.
+  const selectedBoxes = recentSelectedBoxes();
+  const selectedKey = (!state.recentAllBoxes && selectedBoxes.length === 1)
+    ? recentBoxKey(selectedBoxes[0]) : '';
   let html = `<div class="recent-head"><h2 class="recent-title">${escapeHtml(t('recent.title'))}</h2>`;
   if (multi) {
-    html += `<div class="recent-scope">`
-      + `<button class="chip${showAll ? '' : ' active'}" id="recentThisBox">${escapeHtml(t('recent.thisBox'))}</button>`
-      + `<button class="chip${showAll ? ' active' : ''}" id="recentAllBoxes">${escapeHtml(t('recent.allBoxes'))}</button>`
-      + `</div>`;
+    const opts = `<option value="__all__"${state.recentAllBoxes ? ' selected' : ''}>${escapeHtml(t('recent.allBoxes'))}</option>`
+      + boxesList.map((b) => {
+        const k = recentBoxKey(b);
+        const sel = (!state.recentAllBoxes && k === selectedKey) ? ' selected' : '';
+        return `<option value="${escapeAttr(k)}"${sel}>${escapeHtml(getBoxLabel(b))}</option>`;
+      }).join('');
+    html += `<div class="recent-scope"><select class="recent-box-select" id="recentBoxSelect" `
+      + `title="${escapeAttr(t('recent.thisBox'))}">${opts}</select></div>`;
   }
   // Clear the whole list (Brice). Clears every box in the current scope.
   html += `<button class="btn btn-mini recent-clear" id="recentClear" title="${escapeAttr(t('recent.clearAll'))}">${escapeHtml(t('recent.clearAll'))}</button>`;
@@ -365,15 +394,22 @@ export async function renderRecent() {
     + `<div class="recent-list" id="recentList"><div class="muted recent-loading">${escapeHtml(t('recent.loading'))}</div></div>`;
   root.innerHTML = html;
 
-  const tb = $('recentThisBox'), ab = $('recentAllBoxes');
-  if (tb) tb.onclick = () => { state.recentAllBoxes = false; renderRecent(); };
-  if (ab) ab.onclick = () => { state.recentAllBoxes = true; renderRecent(); };
+  const sel = $('recentBoxSelect');
+  if (sel) sel.onchange = () => {
+    if (sel.value === '__all__') {
+      state.recentAllBoxes = true;
+    } else {
+      state.recentAllBoxes = false;
+      state.recentBoxKey = sel.value;
+    }
+    renderRecent();
+  };
 
   const clr = $('recentClear');
   if (clr) clr.onclick = async () => {
     const ok = await confirmWarn(t('recent.clearConfirmTitle'), t('recent.clearConfirmBody'));
     if (!ok) return;
-    const boxes = state.recentAllBoxes ? recentStrBoxes() : (state.currentBox ? [state.currentBox] : []);
+    const boxes = recentSelectedBoxes();
     clr.disabled = true;
     for (const b of boxes) { try { await ClearRecent(b.host, b.port); } catch { /* skip unreachable box */ } }
     await refreshRecentList();

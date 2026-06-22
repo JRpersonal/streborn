@@ -8,6 +8,12 @@ export const state = {
   view: 'box',
   boxes: [],
   currentBox: null,
+  // Recently-played view scope (#221): an explicit speaker pick instead of
+  // implicitly following the Music-tab box. recentAllBoxes merges every STR
+  // speaker; otherwise recentBoxKey (deviceID or host:port) selects one, falling
+  // back to currentBox until the user picks from the dropdown.
+  recentAllBoxes: false,
+  recentBoxKey: null,
   settingsBox: null,   // The box whose settings are currently being edited
   presets: [],
   boxPresets: [],      // the box's OWN presets (incl. foreign sources like Deezer)
