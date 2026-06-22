@@ -1,9 +1,11 @@
 package boxws
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -267,6 +269,29 @@ func TestHandleMessage_BareUserActivityFiresThumb(t *testing.T) {
 	}
 	if h.thumbCount() != 1 {
 		t.Fatalf("bare userActivityUpdate must fire one thumb, got %d", h.thumbCount())
+	}
+}
+
+// TestHandleMessage_UserActivityLoggedAtInfo guards the #187 diagnostic: every
+// incoming userActivity frame must be recorded at INFO (deduped) so a bundle
+// shows whether the thumb key emits a frame at all, independent of whether the
+// heuristic fires. A second frame inside the dedup window must NOT add a second
+// "frame received" line, so a volume ramp cannot churn the NAND log.
+func TestHandleMessage_UserActivityLoggedAtInfo(t *testing.T) {
+	var buf bytes.Buffer
+	h := &recHandler{}
+	c := New(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		"ws://127.0.0.1:8080/", h)
+
+	c.handleMessage(context.Background(), []byte(`<userActivityUpdate deviceID="x" />`))
+	c.handleMessage(context.Background(), []byte(`<userActivityUpdate deviceID="x" />`))
+
+	got := buf.String()
+	if n := strings.Count(got, "user-activity frame received"); n != 1 {
+		t.Fatalf("want exactly one deduped 'frame received' INFO line, got %d:\n%s", n, got)
+	}
+	if !strings.Contains(got, "userActivityUpdate") {
+		t.Fatalf("the raw frame must be captured in the log, got:\n%s", got)
 	}
 }
 

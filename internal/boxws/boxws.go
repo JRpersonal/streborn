@@ -130,6 +130,11 @@ type Client struct {
 	thumbPending   *time.Timer
 	thumbExplained time.Time
 	thumbLastFire  time.Time
+	// lastUserActivityLog debounces the INFO log of an incoming userActivity
+	// frame so a volume ramp (which also emits userActivity) cannot churn the
+	// NAND log, while an isolated thumb press is still recorded. See
+	// noteUserActivity.
+	lastUserActivityLog time.Time
 }
 
 // thumbExplainWindow is how close an explained event (volume/preset/now
@@ -140,6 +145,11 @@ const (
 	thumbExplainWindow = 600 * time.Millisecond
 	thumbSettle        = 500 * time.Millisecond
 	thumbDebounce      = 2 * time.Second
+	// userActivityLogDedup is the minimum gap between INFO log lines for an
+	// incoming userActivity frame. A thumb press emits a single frame, so an
+	// isolated press is always logged; a volume ramp emits many, which collapse
+	// to one line per window so the NAND log does not churn (#187).
+	userActivityLogDedup = 3 * time.Second
 )
 
 // wsKeepaliveInterval is how often STR sends a WebSocket ping control frame to
@@ -177,15 +187,26 @@ func (c *Client) noteExplainedActivity() {
 // (debounced). Both the before- and after-cases are covered, so a volume key
 // (which emits volumeUpdated alongside userActivity, in either order) does not
 // misfire.
-func (c *Client) noteUserActivity(ctx context.Context) {
+func (c *Client) noteUserActivity(ctx context.Context, raw []byte) {
 	c.thumbMu.Lock()
 	defer c.thumbMu.Unlock()
+	// Record that a userActivity frame arrived at INFO (deduped), independent of
+	// whether the heuristic ends up firing. A "the thumb key does nothing" report
+	// (#187) is otherwise undiagnosable from a bundle: we cannot tell a frame that
+	// never arrived (box sends nothing for thumbs on this firmware) from one that
+	// arrived and was suppressed. The raw frame is also captured so we can see
+	// whether it carries any attribute that distinguishes thumb-up from -down.
+	if time.Since(c.lastUserActivityLog) > userActivityLogDedup {
+		c.lastUserActivityLog = time.Now()
+		c.logger.Info("box ws: user-activity frame received", "frame", preview(raw, 400))
+	}
 	if time.Since(c.thumbExplained) < thumbExplainWindow {
 		return // explained by a recent volume/preset/now-playing event
 	}
 	if c.thumbPending != nil {
 		return // already waiting to fire
 	}
+	framePrev := preview(raw, 400) // captured for the fire log below
 	c.thumbPending = time.AfterFunc(thumbSettle, func() {
 		c.thumbMu.Lock()
 		c.thumbPending = nil
@@ -210,7 +231,7 @@ func (c *Client) noteUserActivity(ctx context.Context) {
 		}
 		c.thumbLastFire = time.Now()
 		c.thumbMu.Unlock()
-		c.logger.Info("box ws: lone user-activity -> thumb trigger")
+		c.logger.Info("box ws: lone user-activity -> thumb trigger", "frame", framePrev)
 		if c.handler != nil {
 			c.handler.OnThumbActivity(ctx)
 		}
@@ -634,7 +655,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		// identity). Treat a lone one as a thumb press; noteUserActivity
 		// debounces it and suppresses it when an explained event bracketed it.
 		known = true
-		c.noteUserActivity(ctx)
+		c.noteUserActivity(ctx, data)
 	case f.NowPlaying != nil && f.NowSelection == nil:
 		known = true
 		c.noteExplainedActivity()
@@ -711,7 +732,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// Lone thumb ping (see noteUserActivity). Regressed for bare frames
 				// when the parser went typed; this restores it (live box log
 				// 2026-06-12 showed bare <userActivityUpdate/> as unrecognized).
-				c.noteUserActivity(ctx)
+				c.noteUserActivity(ctx, data)
 				return
 			case "errorUpdate":
 				// The box reports playback/source failures as a bare <errorUpdate>
