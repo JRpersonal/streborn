@@ -277,7 +277,16 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			gen, lastPos, obsTotal, sawPlay = curGen, 0, 0, false
 		}
 
-		ps, pos, total := s.pollNowPlaying()
+		ps, pos, total, standby := s.pollNowPlaying()
+		if standby {
+			// The box was powered off mid-queue (top switch, remote, or the app's
+			// Standby button -> now_playing source=STANDBY). A standby is never a
+			// track end: stop the queue so STR does not advance and re-push the next
+			// track, which would wake the box back up and resume playing (#219).
+			s.logger.Info("queue watcher: box entered standby, stopping queue (not advancing)")
+			s.stopQueue()
+			return
+		}
 		if total > obsTotal {
 			obsTotal = total // remember it even after the box later reports 0
 		}
@@ -345,22 +354,38 @@ func nearEnd(progress, end time.Duration) bool {
 var (
 	reNowPlayStatus = regexp.MustCompile(`<playStatus>([^<]+)</playStatus>`)
 	reNowPlayTime   = regexp.MustCompile(`<time total="(\d+)"\s*>(\d+)</time>`)
+	// reNowPlaySource reads the <nowPlaying source="..."> attribute (not a track
+	// title), so a station/track literally named "STANDBY" cannot be mistaken for
+	// the box being off.
+	reNowPlaySource = regexp.MustCompile(`<nowPlaying[^>]*\bsource="([^"]*)"`)
 )
 
-// pollNowPlaying reads the box's now_playing once and returns the play status
-// and the current/total position. Zero values on any error.
-func (s *Server) pollNowPlaying() (status string, pos, total time.Duration) {
+// nowPlayingStandby reports whether the box's now_playing says it is in standby
+// (powered off). The box reports source="STANDBY" (some firmwares
+// "NETWORK_STANDBY") on the nowPlaying root when it is off.
+func nowPlayingStandby(body string) bool {
+	if m := reNowPlaySource.FindStringSubmatch(body); m != nil {
+		return strings.Contains(m[1], "STANDBY")
+	}
+	return false
+}
+
+// pollNowPlaying reads the box's now_playing once and returns the play status,
+// the current/total position, and whether the box is in standby. Zero values on
+// any error.
+func (s *Server) pollNowPlaying() (status string, pos, total time.Duration, standby bool) {
 	if s.boxHost == "" {
-		return "", 0, 0
+		return "", 0, 0, false
 	}
 	cl := &http.Client{Timeout: 3 * time.Second}
 	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
 	if err != nil {
-		return "", 0, 0
+		return "", 0, 0, false
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	resp.Body.Close()
 	body := string(b)
+	standby = nowPlayingStandby(body)
 	if m := reNowPlayStatus.FindStringSubmatch(body); m != nil {
 		status = m[1]
 	} else {
@@ -383,7 +408,7 @@ func (s *Server) pollNowPlaying() (status string, pos, total time.Duration) {
 			pos = time.Duration(c) * time.Second
 		}
 	}
-	return status, pos, total
+	return status, pos, total, standby
 }
 
 // --- HTTP handlers -------------------------------------------------------

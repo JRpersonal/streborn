@@ -155,6 +155,21 @@ func TestQueueSetShuffleKeepsCurrent(t *testing.T) {
 	}
 }
 
+// TestNowPlayingStandby covers the #219 power-off-during-queue guard: a box that
+// went to standby must be detected so the watcher stops the queue instead of
+// advancing (which would wake the box and play the next track). A track literally
+// named "STANDBY" while actually playing must NOT be mistaken for it.
+func TestNowPlayingStandby(t *testing.T) {
+	standby := `<?xml version="1.0"?><nowPlaying deviceID="x" source="STANDBY"><ContentItem source="STANDBY" isPresetable="false" /></nowPlaying>`
+	if !nowPlayingStandby(standby) {
+		t.Fatal("a source=STANDBY nowPlaying must be detected as standby")
+	}
+	playing := `<?xml version="1.0"?><nowPlaying source="UPNP"><ContentItem source="UPNP" location="http://a"><itemName>STANDBY (band)</itemName></ContentItem><playStatus>PLAY_STATE</playStatus></nowPlaying>`
+	if nowPlayingStandby(playing) {
+		t.Fatal("a playing UPNP track named STANDBY must NOT count as standby")
+	}
+}
+
 func TestQueueSnapshot(t *testing.T) {
 	q := newPlayQueue()
 	q.load(mkItems(3), 1, false, repeatAll)
