@@ -217,6 +217,11 @@ type Server struct {
 	recentMu          sync.Mutex
 	recentRadioCard   recentCardCtx
 	recentSpotifyCard recentCardCtx
+	// recentQueueCard remembers the DLNA folder currently playing as an
+	// auto-advancing queue, so each track the queue pushes is recorded under one
+	// "library" card (#220: folder plays were never added to Recently played).
+	// Cleared when the queue stops (a single play, a stop, or running out).
+	recentQueueCard recentCardCtx
 
 	// boxPresets is the box's OWN preset list as last reported over the gabbo
 	// presetsUpdated frame, including foreign sources (DEEZER etc.) STR did not
@@ -1167,7 +1172,8 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
-		if err := s.startQueueLocked(r.Context(), items, 0, p.Shuffle, repeatOff); err != nil {
+		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
+		if err := s.startQueueLocked(r.Context(), items, 0, p.Shuffle, repeatOff, card); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Folder could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
@@ -1433,6 +1439,40 @@ func (s *Server) recentNoteCard(source, key, name, art, url, account, homepage s
 		// even if its name happens to match the previous card's last track.
 		s.recentSpotifyCard = recentCardCtx{key: key, name: name, art: art, url: url, account: account}
 	}
+	s.recentMu.Unlock()
+}
+
+// recentNoteQueueCard records a DLNA folder played as an auto-advancing queue as
+// the start of a "library" (upnp) Recently-played card, and remembers it so each
+// track the queue pushes is hung under it (like radio ICY tracks under a station).
+// The replay target is the first track's URL; clicking the card re-plays it.
+func (s *Server) recentNoteQueueCard(key, name, art, url string) {
+	s.recentMu.Lock()
+	s.recentQueueCard = recentCardCtx{key: key, name: name, art: art, url: url}
+	s.recentMu.Unlock()
+	s.recentNoteCard("upnp", key, name, art, url, "", "")
+}
+
+// recentNoteQueueTrack hangs the track the play-queue just started under the
+// current folder card. No-op until a queue card has been recorded.
+func (s *Server) recentNoteQueueTrack(track string) {
+	if s.recent == nil || track == "" {
+		return
+	}
+	s.recentMu.Lock()
+	c := s.recentQueueCard
+	s.recentMu.Unlock()
+	if c.key == "" {
+		return
+	}
+	s.recent.Add(recent.Entry{Source: "upnp", CardKey: c.key, CardName: c.name, CardArt: c.art, CardURL: c.url, Track: track})
+}
+
+// recentClearQueueCard forgets the active folder card so later tracks (a single
+// play, a new radio station) are not mis-attributed to a folder that has stopped.
+func (s *Server) recentClearQueueCard() {
+	s.recentMu.Lock()
+	s.recentQueueCard = recentCardCtx{}
 	s.recentMu.Unlock()
 }
 

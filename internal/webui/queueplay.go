@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -52,7 +53,10 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	}
 	s.ensureBoxReady(ctx)
 	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
-	if err := s.startQueue(ctx, items, 0, p.Shuffle, repeatOff); err != nil {
+	// Record the saved folder as a Recently-played card (#220), keyed on the slot
+	// so repeated recalls of the same preset group together.
+	card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
+	if err := s.startQueue(ctx, items, 0, p.Shuffle, repeatOff, card); err != nil {
 		s.logger.Warn("hardware queue recall failed", "slot", slot, "err", err)
 	}
 	return true
@@ -90,6 +94,9 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime string) e
 		return err
 	}
 	s.setLastPlay(playURL, title, art, mime)
+	// Recently-played (#220): hang this queue track under the active folder card.
+	// No-op outside a queue (pushStream is queue-only) or before a card is set.
+	s.recentNoteQueueTrack(title)
 	return nil
 }
 
@@ -100,16 +107,17 @@ func (s *Server) queueCtx() context.Context {
 	return context.Background()
 }
 
-// startQueue replaces the queue with items and starts playing from start.
-func (s *Server) startQueue(ctx context.Context, items []queueItem, start int, shuffle bool, rep repeatMode) error {
+// startQueue replaces the queue with items and starts playing from start. card
+// carries the Recently-played folder identity (#220); a zero card skips recording.
+func (s *Server) startQueue(ctx context.Context, items []queueItem, start int, shuffle bool, rep repeatMode, card recentCardCtx) error {
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
-	return s.startQueueLocked(ctx, items, start, shuffle, rep)
+	return s.startQueueLocked(ctx, items, start, shuffle, rep, card)
 }
 
 // startQueueLocked is startQueue for callers that already hold boxCmdMu (e.g. a
 // preset slot recall, which takes the lock for the whole handler).
-func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start int, shuffle bool, rep repeatMode) error {
+func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start int, shuffle bool, rep repeatMode, card recentCardCtx) error {
 	if s.renderer == nil {
 		return errors.New("renderer not configured")
 	}
@@ -123,6 +131,20 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 		return errors.New("empty queue")
 	}
 	s.ClearUserStop()
+	// Record the folder as a Recently-played card before the first push, so that
+	// push (and every auto-advance after it) is hung under it. The replay target
+	// and cover fall back to the first track when the caller left them empty.
+	if card.key != "" {
+		if card.url == "" {
+			card.url = it.URL
+		}
+		if card.art == "" {
+			card.art = it.Art
+		}
+		s.recentNoteQueueCard(card.key, card.name, card.art, card.url)
+	} else {
+		s.recentClearQueueCard()
+	}
 	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime); err != nil {
 		return err
 	}
@@ -167,6 +189,7 @@ func (s *Server) cancelWatcher() {
 func (s *Server) stopQueue() {
 	s.queue.clear()
 	s.cancelWatcher()
+	s.recentClearQueueCard()
 }
 
 // advanceAndPlay moves to the next track (natural end vs manual skip differ on
@@ -231,9 +254,10 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 	ticker := time.NewTicker(queuePollInterval)
 	defer ticker.Stop()
 	var (
-		gen     int
-		lastPos time.Duration
-		sawPlay bool
+		gen      int
+		lastPos  time.Duration
+		obsTotal time.Duration // largest total the box reported for this track
+		sawPlay  bool
 	)
 	for {
 		select {
@@ -250,13 +274,19 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		dur := s.queueTrackDur
 		s.queueMu.Unlock()
 		if curGen != gen {
-			gen, lastPos, sawPlay = curGen, 0, false
+			gen, lastPos, obsTotal, sawPlay = curGen, 0, 0, false
 		}
 
 		ps, pos, total := s.pollNowPlaying()
+		if total > obsTotal {
+			obsTotal = total // remember it even after the box later reports 0
+		}
+		// Track length: the queue item's duration, or the box's reported total
+		// when the item carried none (a DLNA server, e.g. Synology, that did not
+		// expose duration in its metadata leaves dur==0). #219
 		end := dur
-		if total > 0 {
-			end = total
+		if obsTotal > end {
+			end = obsTotal
 		}
 
 		switch ps {
@@ -265,7 +295,10 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 			if pos > 0 {
 				lastPos = pos
 			}
-			continue
+			// Do NOT continue: fall through to the wall-clock net. Some renderers
+			// (seen on the ST20 with direct-played NAS files) finish a finite file
+			// but stay in PLAY_STATE with the position frozen at the end instead of
+			// reporting STOP_STATE, so end detection cannot rely on the state alone.
 		case "PAUSE_STATE":
 			continue // paused: never advance, and freeze the wall-clock timer
 		case "STOP_STATE":
@@ -283,13 +316,21 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 				return
 			}
 			continue
+		default:
+			// No usable status this tick (poll error or an idle box).
+			if !sawPlay && time.Since(start) >= queueStallTimeout {
+				s.advanceAndPlay(true) // a track that never started: skip it
+				continue
+			}
 		}
 
-		// No usable status this tick (poll error or an idle box). Safety nets:
-		if !sawPlay && time.Since(start) >= queueStallTimeout {
-			s.advanceAndPlay(true) // a track that never started: skip it
-		} else if sawPlay && dur > 0 && time.Since(start) >= dur+queueTimerMargin {
-			s.advanceAndPlay(true) // missed the STOP frame: the track length elapsed
+		// Wall-clock safety net, reached on PLAY_STATE and on an unknown status:
+		// once playback was seen and the track length is known, advance a margin
+		// past it. This covers both a missed STOP frame and a box that freezes at
+		// PLAY_STATE on a finite file's EOF (#219), neither of which the STOP path
+		// above can catch.
+		if sawPlay && end > 0 && time.Since(start) >= end+queueTimerMargin {
+			s.advanceAndPlay(true)
 		}
 	}
 }
@@ -355,11 +396,21 @@ type queueStartItem struct {
 	DurationSec int    `json:"duration_sec"`
 }
 
+// queueCard is the optional Recently-played folder identity the desktop app
+// sends with a folder play (#220). When absent the queue still plays; it just is
+// not recorded as a card.
+type queueCard struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+	Art  string `json:"art"`
+}
+
 type queueStartRequest struct {
 	Items   []queueStartItem `json:"items"`
 	Start   int              `json:"start"`
 	Shuffle bool             `json:"shuffle"`
 	Repeat  string           `json:"repeat"`
+	Card    queueCard        `json:"card"`
 }
 
 func toQueueItems(in []queueStartItem) []queueItem {
@@ -398,7 +449,8 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no playable items", http.StatusBadRequest)
 			return
 		}
-		if err := s.startQueue(r.Context(), items, req.Start, req.Shuffle, parseRepeat(req.Repeat)); err != nil {
+		card := recentCardCtx{key: req.Card.Key, name: req.Card.Name, art: req.Card.Art}
+		if err := s.startQueue(r.Context(), items, req.Start, req.Shuffle, parseRepeat(req.Repeat), card); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
