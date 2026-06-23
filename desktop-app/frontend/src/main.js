@@ -1563,9 +1563,15 @@ function renderBoxSelect() {
 }
 
 function selectBox(box) {
+  // Clear the cached now-playing line when actually switching to a different
+  // speaker, so the status bar does not show the previous box's track until the
+  // first poll for the new box lands (#207). Re-selecting the same box must not
+  // blank it on every call.
+  const switched = !state.currentBox || state.currentBox.host !== (box && box.host);
   state.currentBox = box;
   if (box && box.deviceID) saveLastBox(box.deviceID);
   state.presetErrors = {};
+  if (switched) { resetNowPlaying(); renderNowPlayingBar(); }
   renderBoxSelect();
   loadPresets();
   refreshStatus();
@@ -3261,6 +3267,27 @@ function renderQueueControls() {
       ? t('queue.trackOf', { n, total: items.length })
       : '';
   }
+}
+
+// resetNowPlaying drops the cached now-playing line so switching speakers (in
+// particular tapping a different box / a group member) starts from a neutral
+// placeholder instead of showing the previously selected box's track until the
+// next status poll lands. Without this the marquee kept the previous speaker's
+// station + track for 5-10 s after a switch, and in a group it stuck on the
+// member's pre-group selection (#207).
+function resetNowPlaying() {
+  state.nowLocation = '';
+  state.nowName = '';
+  state.nowTitle = '';
+  state.nowSource = '';
+  state.nowPlayState = '';
+  state.nowIcon = '';
+  state.nowBitrate = 0;
+  state.nowSpotifyTrack = '';
+  state.nowSpotifyArtist = '';
+  state.nowSpotifyCover = '';
+  state.optimisticUntil = 0;
+  state.lastStatusHTML = '';
 }
 
 // renderNowPlayingBar paints the now-playing status line purely from cached
