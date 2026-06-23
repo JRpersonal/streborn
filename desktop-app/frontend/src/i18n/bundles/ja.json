@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "スピーカーを待機中。残り {{remaining}}...",
   "update.doneToast": "更新が完了しました。",
   "update.tookLongerToast": "スピーカーの応答が想定より遅れています。電源/ネットワークを確認してください。",
+  "update.deliveringSpotify": "Spotifyエンジンをスピーカーに転送しています...",
   "update.failed": "更新に失敗しました: {{err}}\n\nスピーカーが応答しなくなった場合は、電源を一度抜いて入れ直してください。",
   "update.otherBoxRunning": "{{name}} で更新を実行中 ...",
   "update.stickInTitle": "USBメモリがまだ挿さっています",

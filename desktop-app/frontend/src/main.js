@@ -35,6 +35,7 @@ import {
   EjectDrive,
   BoxAgentVersion,
   UpdateBoxAgent,
+  EnsureSpotifyEngine,
   WriteWLANConfig,
   WriteRegionConfig,
   WriteNameConfig,
@@ -2205,6 +2206,21 @@ async function doBoxUpdate(targetBox) {
     }
     if (confirmed) {
       showToast(t('update.doneToast'));
+      // The box just came up on the new, sidecar-capable agent. If it still
+      // reports the Spotify engine missing (it was upgraded from a pre-v0.8.22
+      // agent, where the in-OTA sidecar push hit an old agent with no sidecar
+      // endpoint and silently no-op'd, #237), deliver it now. The agent's Spotify
+      // manager polls for the binary and starts go-librespot live, so no extra
+      // reboot is needed. Best-effort and silent on failure: it must never turn a
+      // successful agent update into an error.
+      if (confirmedVer && confirmedVer.goLibrespot && confirmedVer.goLibrespot !== 'present') {
+        try {
+          setStatus(t('update.deliveringSpotify'));
+          await EnsureSpotifyEngine(targetBox.host, targetBox.port);
+        } catch (engErr) {
+          try { console.warn('post-update Spotify engine delivery failed (non-fatal)', engErr); } catch {}
+        }
+      }
     } else {
       showToast(t('update.tookLongerToast'));
     }

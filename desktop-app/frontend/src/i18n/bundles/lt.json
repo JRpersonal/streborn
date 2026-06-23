@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "Laukiama garsiakalbio, liko {{remaining}}...",
   "update.doneToast": "Atnaujinimas baigtas.",
   "update.tookLongerToast": "Garsiakalbis užtrunka ilgiau nei tikėtasi. Patikrinkite maitinimą / tinklą.",
+  "update.deliveringSpotify": "Į garsiakalbį siunčiamas „Spotify“ modulis...",
   "update.failed": "Atnaujinti nepavyko: {{err}}\n\nJei garsiakalbis neatsako, trumpam atjunkite jį nuo maitinimo ir vėl prijunkite.",
   "update.otherBoxRunning": "Vykdomas atnaujinimas {{name}} ...",
   "update.stickInTitle": "USB atmintinė vis dar įkišta",

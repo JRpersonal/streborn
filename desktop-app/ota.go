@@ -98,8 +98,11 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// (#45/#105). Pushed FIRST and strictly before the agent OTA: the agent OTA
 	// reboots ~1.5 s after its reply, and that reboot is what makes the fresh
 	// agent's Spotify manager pick up the now-present binary. Best-effort: a
-	// sidecar failure must never block the (more important) agent update.
-	a.pushSidecarIfNeeded(host, port)
+	// sidecar failure must never block the (more important) agent update. The
+	// returned error is intentionally ignored here (best-effort): when the box is
+	// still on a pre-v0.8.22 agent the push cannot land yet, and the desktop's
+	// post-OTA EnsureSpotifyEngine re-delivers it once the box is on the new agent.
+	_ = a.pushSidecarIfNeeded(host, port)
 
 	if perr := a.updateAgentPreflight(host, port); perr != nil {
 		a.recordOTA(host, "HTTP preflight rejected -> trying SSH: "+perr.Error())
@@ -156,16 +159,18 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 
 // pushSidecarIfNeeded delivers the embedded go-librespot Spotify sidecar to the
 // box over HTTP (POST /api/agent/sidecar) when the box is missing it or has a
-// different build. Strictly best-effort: any failure is logged to the OTA
-// journal and swallowed so it never aborts the agent OTA that follows. The
-// ~10 MB transfer is gated on the box's reported content hash so a steady-state
-// OTA (agent-only change, sidecar already current) costs just one cheap version
-// GET and sends zero sidecar bytes.
-func (a *App) pushSidecarIfNeeded(host string, port int) {
+// different build, and verifies it actually landed. Returns nil when the engine
+// is already current or was delivered and confirmed; returns an error when a
+// push was needed but did not land. The agent-OTA caller treats it as
+// best-effort (the error is ignored, the OTA still proceeds); EnsureSpotifyEngine
+// surfaces the outcome. The ~10 MB transfer is gated on the box's reported
+// content hash so a steady state (sidecar already current) costs just one cheap
+// version GET and sends zero sidecar bytes.
+func (a *App) pushSidecarIfNeeded(host string, port int) error {
 	if !agentbin.GoLibrespotAvailable() {
 		// Dev build (empty stub): nothing real to deliver. Never write 0 bytes.
 		a.recordOTA(host, "sidecar: skipped, no embedded go-librespot in this build")
-		return
+		return nil
 	}
 	bin := agentbin.GoLibrespotBytes()
 	sum := sha256.Sum256(bin)
@@ -176,7 +181,7 @@ func (a *App) pushSidecarIfNeeded(host string, port int) {
 	if ver, err := a.BoxAgentVersion(host, port); err == nil {
 		if ver["goLibrespot"] == "present" && ver["goLibrespotSha256"] == want {
 			a.recordOTA(host, "sidecar: box already has the current go-librespot, skipping ~10 MB push")
-			return
+			return nil
 		}
 	} else {
 		// Couldn't read the version: still try the push (a missing sidecar is the
@@ -188,10 +193,51 @@ func (a *App) pushSidecarIfNeeded(host string, port int) {
 	if err := a.streamPostBinary(host, port, "/api/agent/sidecar", bin); err != nil {
 		a.recordOTA(host, "sidecar: push failed (agent OTA still proceeds): "+err.Error())
 		a.logger.Warn("sidecar push failed; agent OTA continues, Spotify may stay unavailable until next OTA", "host", host, "err", err)
-		return
+		return fmt.Errorf("sidecar upload failed: %w", err)
+	}
+	// Verify the push actually landed. A pre-v0.8.22 agent has NO
+	// /api/agent/sidecar route, so its ServeMux falls through to the "/" index
+	// handler and answers 200 with the web UI: streamPostBinary then reports a
+	// false success and the 16 MB body is discarded. That is the gap that left a
+	// SoundTouch 30 upgraded from an older agent without the engine despite a
+	// "delivered" log (#237). Re-read the version and require the box to now
+	// report the engine present with our content hash; otherwise treat it as not
+	// delivered so the caller retries once the box is on the new, capable agent.
+	if ver, err := a.BoxAgentVersion(host, port); err != nil {
+		a.recordOTA(host, "sidecar: delivered but could not verify (version read failed): "+err.Error())
+		a.logger.Warn("sidecar push: delivered but post-push version read failed", "host", host, "err", err)
+		return fmt.Errorf("sidecar verify failed: %w", err)
+	} else if ver["goLibrespot"] != "present" || ver["goLibrespotSha256"] != want {
+		a.recordOTA(host, "sidecar: push did not land (agent has no sidecar endpoint yet); will retry after the box is on the new agent")
+		a.logger.Warn("sidecar push did not land; box still reports the engine missing/mismatched (old agent without the sidecar endpoint)",
+			"host", host, "goLibrespot", ver["goLibrespot"])
+		return fmt.Errorf("sidecar did not land: box reports goLibrespot=%q", ver["goLibrespot"])
 	}
 	a.recordOTA(host, "sidecar: go-librespot delivered")
 	a.logger.Info("sidecar push: go-librespot delivered over OTA", "host", host, "bytes", len(bin))
+	return nil
+}
+
+// EnsureSpotifyEngine makes sure the go-librespot Spotify sidecar is present on
+// the box, delivering it over the air when missing. It is the post-upgrade
+// reconcile for #237: the sidecar is normally pushed during the agent OTA, but a
+// box upgraded FROM a pre-v0.8.22 agent received that push on an old agent with
+// no sidecar endpoint, so it silently no-op'd and the box came up on the new
+// agent with a synced Spotify login but no engine (Spotify then failed with the
+// "tap this speaker in Spotify once" hint). The desktop calls this right after
+// the post-OTA version poll confirms the box is on the new, sidecar-capable
+// agent: the push now lands, and the box's Spotify manager (which polls for a
+// late-delivered binary) starts go-librespot live, with no extra reboot.
+// Idempotent and cheap when the engine is already current (one version GET, zero
+// bytes). Bound for the frontend; safe to call on any box.
+func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
+	if !agentbin.GoLibrespotAvailable() {
+		return "no embedded engine in this build", nil
+	}
+	if err := a.pushSidecarIfNeeded(host, port); err != nil {
+		return "", err
+	}
+	return "ok", nil
 }
 
 // refreshStick is a best-effort step run as part of an agent OTA, BEFORE the

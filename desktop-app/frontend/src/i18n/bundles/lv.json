@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "Tiek gaidīts skaļrunis, atlikušas {{remaining}}...",
   "update.doneToast": "Atjaunināšana pabeigta.",
   "update.tookLongerToast": "Skaļrunim vajag ilgāk nekā gaidīts. Pārbaudiet strāvu / tīklu.",
+  "update.deliveringSpotify": "Spotify dzinis tiek nosūtīts uz skaļruni...",
   "update.failed": "Atjaunināt neizdevās: {{err}}\n\nJa skaļrunis neatbild, uz brīdi atvienojiet to no strāvas un pievienojiet atkal.",
   "update.otherBoxRunning": "Notiek atjaunināšana {{name}} ...",
   "update.stickInTitle": "USB zibatmiņa joprojām ievietota",

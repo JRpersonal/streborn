@@ -86,6 +86,10 @@ export function EjectDrive(arg1) {
   return window['go']['main']['App']['EjectDrive'](arg1);
 }
 
+export function EnsureSpotifyEngine(arg1, arg2) {
+  return window['go']['main']['App']['EnsureSpotifyEngine'](arg1, arg2);
+}
+
 export function ExportDiagnosticLogs(arg1) {
   return window['go']['main']['App']['ExportDiagnosticLogs'](arg1);
 }

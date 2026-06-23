@@ -315,8 +315,12 @@ func (m *Manager) ensureConfig(ctx context.Context) error {
 // a short backoff if it exits. It returns immediately (idles) when not
 // Ready, so callers can start it unconditionally.
 func (m *Manager) Run(ctx context.Context) {
-	if !m.Ready() {
-		m.logger.Info("spotify manager idle: no go-librespot binary")
+	// The go-librespot binary can be absent at agent start: an OTA-only box that
+	// never received it from a USB stick (#45/#105), to be delivered later over
+	// the air (POST /api/agent/sidecar). Rather than idle forever after a single
+	// start-time check, wait for the binary so a late delivery is picked up live,
+	// with no extra reboot. Returns only when the binary appears or ctx ends.
+	if !m.waitForBinary(ctx) {
 		return
 	}
 	if err := m.ensureConfig(ctx); err != nil {
@@ -346,6 +350,34 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+// waitForBinary blocks until the go-librespot binary is present (m.Ready) or ctx
+// is cancelled, returning true the moment it appears. It returns immediately when
+// the binary is already there (the normal, stick-synced case), so it adds zero
+// latency to a box that has the engine. For an OTA-only box the binary lands
+// later via the sidecar push (webui.handleAgentSidecar); polling here makes the
+// manager start go-librespot as soon as it appears instead of needing another
+// reboot, closing the gap where a box upgraded to a sidecar-capable agent still
+// had no engine (the manager used to check exactly once and idle forever).
+func (m *Manager) waitForBinary(ctx context.Context) bool {
+	if m.Ready() {
+		return true
+	}
+	m.logger.Info("spotify manager: no go-librespot binary yet, waiting for an OTA sidecar delivery")
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-t.C:
+			if m.Ready() {
+				m.logger.Info("spotify manager: go-librespot binary now present, starting")
+				return true
+			}
 		}
 	}
 }
