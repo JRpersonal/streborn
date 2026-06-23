@@ -71,7 +71,15 @@ export function renderSpotifyAlpha() {
       else if (n > 0) showToast(t('spotify.syncPartial', { n, failed }));
       else showToast(t('spotify.syncNone'));
     } catch (e) {
-      showError(String(e));
+      const s = String(e);
+      // The backend rejects with a plain-English "no speaker is logged into
+      // Spotify yet" error; show the localized equivalent (same text as the
+      // empty-result path) instead of the raw string. Other errors fall through.
+      if (s.toLowerCase().includes('no speaker is logged into spotify')) {
+        showError(t('spotify.syncNone'));
+      } else {
+        showError(s);
+      }
     } finally {
       sync.disabled = false;
       sync.textContent = orig;
