@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
@@ -153,5 +154,67 @@ func TestLoggedIn(t *testing.T) {
 	}
 	if !m2.LoggedIn() {
 		t.Fatal("LoggedIn should be true once state.json carries a credential username")
+	}
+}
+
+// TestStateCredentialExportCapture covers the multi-account credential plumbing
+// on a current go-librespot: the credential lives in state.json (.credentials),
+// export/capture must read it there (not the absent credentials.json), and
+// writing a new active account must preserve the rest of state.json. This is the
+// path that copy-login-to-all and per-preset account switching depend on.
+func TestStateCredentialExportCapture(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "cfg")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := New("", cfg, "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	stateFile := filepath.Join(cfg, "state.json")
+	// data "YWxpY2UtdG9rZW4=" is base64("alice-token").
+	state := `{"device_id":"dev123","credentials":{"username":"alice","data":"YWxpY2UtdG9rZW4="},"last_volume":55}`
+	if err := os.WriteFile(stateFile, []byte(state), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Export pulls the credential out of state.json (credentials.json is absent).
+	blob, err := m.ExportCredential()
+	if err != nil {
+		t.Fatalf("ExportCredential: %v", err)
+	}
+	var got storedCredential
+	if err := json.Unmarshal(blob, &got); err != nil {
+		t.Fatalf("export blob: %v", err)
+	}
+	if got.Username != "alice" || string(got.Data) != "alice-token" {
+		t.Fatalf("export = %q/%q, want alice/alice-token", got.Username, string(got.Data))
+	}
+
+	// Capture stores it under the account key for a later SwitchAccount.
+	if err := m.captureCredential("alice"); err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sp-accounts", "alice.json")); err != nil {
+		t.Fatalf("captured credential missing: %v", err)
+	}
+
+	// Switching the active account must preserve device_id and last_volume.
+	if err := m.writeActiveCredential(storedCredential{Username: "bob", Data: []byte("bob-token")}); err != nil {
+		t.Fatalf("writeActiveCredential: %v", err)
+	}
+	b, _ := os.ReadFile(stateFile)
+	var after map[string]json.RawMessage
+	if err := json.Unmarshal(b, &after); err != nil {
+		t.Fatalf("reparse state: %v", err)
+	}
+	if string(after["device_id"]) != `"dev123"` {
+		t.Errorf("device_id not preserved: %s", after["device_id"])
+	}
+	if string(after["last_volume"]) != "55" {
+		t.Errorf("last_volume not preserved: %s", after["last_volume"])
+	}
+	cred, ok := m.readStateCredential()
+	if !ok || cred.Username != "bob" || string(cred.Data) != "bob-token" {
+		t.Fatalf("active credential after write = %+v ok=%v, want bob/bob-token", cred, ok)
 	}
 }
