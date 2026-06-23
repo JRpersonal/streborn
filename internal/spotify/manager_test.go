@@ -130,4 +130,28 @@ func TestLoggedIn(t *testing.T) {
 	if !m.LoggedIn() {
 		t.Fatal("LoggedIn should be true with a per-account stored credential")
 	}
+
+	// state.json is the current go-librespot credential layout (credentials.json
+	// is only a legacy read fallback). It counts as logged in when it carries a
+	// persisted username, but a bare state.json written before any login (only
+	// device_id/last_volume) must NOT count (a user diagnostic, 2026-06-23).
+	dir2 := t.TempDir()
+	cfg2 := filepath.Join(dir2, "cfg")
+	if err := os.MkdirAll(cfg2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m2 := New("", cfg2, "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	stateFile := filepath.Join(cfg2, "state.json")
+	if err := os.WriteFile(stateFile, []byte(`{"device_id":"d","last_volume":42}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if m2.LoggedIn() {
+		t.Fatal("LoggedIn should be false for a state.json with no credential username")
+	}
+	if err := os.WriteFile(stateFile, []byte(`{"device_id":"d","credentials":{"username":"alice","data":"AA=="},"last_volume":42}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !m2.LoggedIn() {
+		t.Fatal("LoggedIn should be true once state.json carries a credential username")
+	}
 }

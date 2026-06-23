@@ -1010,12 +1010,26 @@ func (m *Manager) ensureSession(ctx context.Context) bool {
 // it stays true while go-librespot is mid-restart, distinguishing "never logged
 // in" (actionable: log the speaker into Spotify first) from "logged in but
 // momentarily down" (recovers on its own).
+//
+// Current go-librespot persists the zeroconf credential into configDir/state.json
+// (under .credentials.username); credentials.json is only its read-only LEGACY
+// fallback for installs predating that merged-state layout, so a box logged in
+// via a current binary has state.json and NO credentials.json. Checking only
+// credentials.json reported every fresh install as not-logged-in and silently
+// blocked all Spotify recall, even with an active session (a user diagnostic,
+// 2026-06-23: go-librespot loaded its persisted credential and authenticated,
+// yet LoggedIn() was false). So check state.json too. go-librespot
+// also writes a bare state.json (device_id/last_volume only) before any login, so
+// require a non-empty persisted username there rather than mere file presence.
 func (m *Manager) LoggedIn() bool {
+	if stateHasCredential(filepath.Join(m.configDir, "state.json")) {
+		return true
+	}
 	if _, err := os.Stat(filepath.Join(m.configDir, "credentials.json")); err == nil {
 		return true
 	}
 	// A per-account credential copy (multi-account swap store) also counts: the
-	// active credentials.json can be briefly absent during a SwitchAccount swap.
+	// active credential can be briefly absent during a SwitchAccount swap.
 	if entries, err := os.ReadDir(m.credStore); err == nil {
 		for _, e := range entries {
 			if strings.HasSuffix(e.Name(), ".json") {
@@ -1024,6 +1038,26 @@ func (m *Manager) LoggedIn() bool {
 		}
 	}
 	return false
+}
+
+// stateHasCredential reports whether go-librespot's state.json at path holds a
+// persisted zeroconf credential (a non-empty credentials.username). go-librespot
+// writes state.json with only device_id/last_volume before any login, so file
+// presence alone is not proof of a credential.
+func stateHasCredential(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var st struct {
+		Credentials struct {
+			Username string `json:"username"`
+		} `json:"credentials"`
+	}
+	if json.Unmarshal(data, &st) != nil {
+		return false
+	}
+	return st.Credentials.Username != ""
 }
 
 // sanitizeUser maps a Spotify username to a filesystem-safe credential filename.
