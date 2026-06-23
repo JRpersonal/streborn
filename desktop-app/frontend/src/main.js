@@ -2207,7 +2207,18 @@ async function doBoxUpdate(targetBox) {
     }
     reset();
   } catch (e) {
-    showError(t('update.failed', { err: String(e) }));
+    // A timeout-class rejection ("context deadline exceeded ... while reading
+    // body", common on slow links or with an HTTP-inspecting security suite like
+    // Norton) does NOT mean the OTA failed: the box may still be applying it and
+    // rebooting. Show an actionable "still working" hint and let the user
+    // re-check the version shortly, instead of a raw Go error toast that two
+    // reporters hit while their speaker actually updated fine.
+    const msg = String(e);
+    if (/deadline exceeded|client\.timeout|while reading body/i.test(msg)) {
+      showToast(t('update.stillWorking'));
+    } else {
+      showError(t('update.failed', { err: msg }));
+    }
     reset();
   } finally {
     // Always clear the OTA-in-flight gate so the SSH banner can
