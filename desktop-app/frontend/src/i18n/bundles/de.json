@@ -1025,5 +1025,6 @@
   "banner.manualHint": "Das aktualisiert die App selbst und ersetzt die laufende Version. Von Hand heruntergeladene Installationsdateien kannst du löschen.",
   "settingsView.restoreNoneParsed": "Nichts wiederherzustellen: Aus dem eingefügten Text konnten keine Tasten gelesen werden. Füge entweder die komplette Tasten-Datei des Lautsprechers ein oder einen einzelnen <preset> ... </preset>-Block.",
   "settingsView.restoreNoneCloud": "{{count}} Tasten gelesen, aber keine nutzt einen kontogebundenen Dienst wie Deezer. Hier gibt es nichts wiederherzustellen.",
-  "settingsView.restoreUnavailable": "{{slots}} für {{services}} zurückgeschrieben, aber der Lautsprecher meldet {{unavailable}} weiterhin als nicht verfügbar. Starte den Lautsprecher neu; bleibt er nicht verfügbar, ist die gespeicherte Anmeldung für diesen Dienst vermutlich abgelaufen und lässt sich nicht zurückholen."
+  "settingsView.restoreUnavailable": "{{slots}} für {{services}} zurückgeschrieben, aber der Lautsprecher meldet {{unavailable}} weiterhin als nicht verfügbar. Starte den Lautsprecher neu; bleibt er nicht verfügbar, ist die gespeicherte Anmeldung für diesen Dienst vermutlich abgelaufen und lässt sich nicht zurückholen.",
+  "update.uploadingPct": "Hochladen {{pct}}%"
 }

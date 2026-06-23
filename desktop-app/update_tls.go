@@ -22,6 +22,9 @@ var caBundlePEM []byte
 var (
 	updateClientOnce sync.Once
 	updateClient     *http.Client
+
+	updateDLClientOnce sync.Once
+	updateDLClient     *http.Client
 )
 
 // updateHTTPClient returns the http.Client used for the external update-check
@@ -73,4 +76,43 @@ func updateHTTPClient() *http.Client {
 		}
 	})
 	return updateClient
+}
+
+// updateDownloadHTTPClient is the pure-Go client for the user-initiated update
+// manifest fetch and app download. Unlike updateHTTPClient (a 6 s TOTAL timeout,
+// fine for the tiny startup check) it has NO overall Client.Timeout: a ~30 MB app
+// download takes far longer than 6 s on a normal link, and reusing the 6 s-capped
+// client made the in-app "Update the app now" fail mid-body at whatever percent it
+// had reached ("context deadline exceeded ... while reading body"), forcing every
+// user back to the website download. A stalled transfer is instead bounded by the
+// dial / TLS / response-header timeouts plus the per-download context and stall
+// watchdog in DownloadUpdate, which retries rather than aborting.
+func updateDownloadHTTPClient() *http.Client {
+	updateDLClientOnce.Do(func() {
+		pool := x509.NewCertPool()
+		pool.AppendCertsFromPEM(caBundlePEM)
+		dialer := &net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Resolver:  &net.Resolver{PreferGo: true},
+		}
+		updateDLClient = &http.Client{
+			// No total Timeout on purpose; see the doc comment above.
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           dialer.DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          2,
+				IdleConnTimeout:       30 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second,
+				ExpectContinueTimeout: time.Second,
+				TLSClientConfig: &tls.Config{
+					RootCAs:    pool,
+					MinVersion: tls.VersionTLS12,
+				},
+			},
+		}
+	})
+	return updateDLClient
 }

@@ -1017,5 +1017,6 @@
   "banner.manualHint": "Ceci met à jour l'app elle-même et remplace la version en cours. Tu peux supprimer les fichiers d'installation que tu as téléchargés à la main auparavant.",
   "settingsView.restoreNoneParsed": "Rien à restaurer: aucun bouton n'a pu être lu dans le texte collé. Colle le fichier de presets complet de l'enceinte, ou un seul bloc <preset> ... </preset>.",
   "settingsView.restoreNoneCloud": "{{count}} boutons lus, mais aucun n'utilise un service lié à un compte comme Deezer, donc il n'y a rien à restaurer ici.",
-  "settingsView.restoreUnavailable": "{{slots}} réécrits pour {{services}}, mais l'enceinte signale toujours {{unavailable}} comme indisponible. Redémarre l'enceinte; si cela reste indisponible, l'identifiant enregistré pour ce service a probablement expiré et ne peut pas être récupéré."
+  "settingsView.restoreUnavailable": "{{slots}} réécrits pour {{services}}, mais l'enceinte signale toujours {{unavailable}} comme indisponible. Redémarre l'enceinte; si cela reste indisponible, l'identifiant enregistré pour ce service a probablement expiré et ne peut pas être récupéré.",
+  "update.uploadingPct": "Envoi {{pct}}%"
 }

@@ -1017,5 +1017,6 @@
   "banner.manualHint": "Bu, uygulamanın kendisini günceller ve çalışan sürümün yerine geçer. Daha önce elle indirdiğin kurulum dosyalarını silebilirsin.",
   "settingsView.restoreNoneParsed": "Geri yüklenecek bir şey yok: yapıştırılan metinden hiçbir düğme okunamadı. Hoparlörün tüm preset dosyasını ya da tek bir <preset> ... </preset> bloğunu yapıştır.",
   "settingsView.restoreNoneCloud": "{{count}} düğme okundu, ancak hiçbiri Deezer gibi hesaba bağlı bir hizmet kullanmıyor, bu yüzden burada geri yüklenecek bir şey yok.",
-  "settingsView.restoreUnavailable": "{{services}} için {{slots}} geri yazıldı, ancak hoparlör {{unavailable}} ögesini hâlâ kullanılamıyor olarak bildiriyor. Hoparlörü yeniden başlat; kullanılamaz kalırsa, o hizmet için kayıtlı oturum açma bilgisi büyük olasılıkla süresi dolmuş ve geri getirilemez."
+  "settingsView.restoreUnavailable": "{{services}} için {{slots}} geri yazıldı, ancak hoparlör {{unavailable}} ögesini hâlâ kullanılamıyor olarak bildiriyor. Hoparlörü yeniden başlat; kullanılamaz kalırsa, o hizmet için kayıtlı oturum açma bilgisi büyük olasılıkla süresi dolmuş ve geri getirilemez.",
+  "update.uploadingPct": "Yükleniyor {{pct}}%"
 }

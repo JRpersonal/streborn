@@ -763,8 +763,8 @@ function renderBoxSettings(s, box) {
         <p class="muted small">${escapeHtml(t('settingsView.removeSTRHelp'))}</p>
       </div>
     </div>
-    <div class="settings-section">
-      <h3>${escapeHtml(t('settingsView.restoreHeading'))} <span class="exp-badge">${escapeHtml(t('settingsView.experimentalBadge'))}</span></h3>
+    <details class="settings-section settings-expert">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.restoreHeading'))} <span class="exp-badge">${escapeHtml(t('settingsView.experimentalBadge'))}</span></summary>
       <p class="muted small">${escapeHtml(t('settingsView.restoreHelp'))}</p>
       <label class="muted small" for="boxRestoreXml">${escapeHtml(t('settingsView.restoreXmlLabel'))}</label>
       <textarea id="boxRestoreXml" rows="5" placeholder="${escapeAttr(t('settingsView.restoreImportPlaceholder'))}" style="width:100%;margin-top:4px"></textarea>
@@ -772,7 +772,7 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini" id="boxRestoreBtn">${escapeHtml(t('settingsView.restoreBtn'))}</button>
       </div>
       <div id="boxRestoreResult" class="muted small" style="margin-top:8px"></div>
-    </div>
+    </details>
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.speakerInfoHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.modelLabel'))}</span><span class="kv-val">${escapeHtml(info.type || '-')}</span></div>
