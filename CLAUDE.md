@@ -96,7 +96,7 @@ Hardware preset buttons 1 through 6 are re-enabled by hooking the
 Bose WebSocket bus (gabbo protocol on `:8080`).
 
 Beyond radio, the desktop app ships a DLNA media library (top-level
-`dlna/` package), Spotify Connect (beta), multiroom zones (alpha),
+`dlna/` package), Spotify Connect (beta), multiroom zones (beta),
 diagnostics export, and box maintenance (true factory reset,
 uninstall STR, setup-AP Wi-Fi push). The UI ships in 11 locales;
 English and German are first-class.
