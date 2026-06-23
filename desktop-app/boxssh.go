@@ -280,15 +280,47 @@ func boxSSHUploadStdin(host, cmd string, in io.Reader, timeout time.Duration) (s
 }
 
 func runSSHWithFlagsStdin(flags []string, host, cmd string, in io.Reader, timeout time.Duration) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	// Upload bounded by a STALL timeout (no progress for `timeout`), not a total
+	// deadline, so a large binary on a slow link is not cut off while it is still
+	// progressing. The watchdog cancels the context (killing ssh) only when no
+	// bytes have been consumed for `timeout`.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	beat := make(chan struct{}, 1)
+	in = &countingReader{r: in, onProgress: func(int64) {
+		select {
+		case beat <- struct{}{}:
+		default:
+		}
+	}}
+	go func() {
+		t := time.NewTimer(timeout)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-beat:
+				if !t.Stop() {
+					select {
+					case <-t.C:
+					default:
+					}
+				}
+				t.Reset(timeout)
+			case <-t.C:
+				cancel()
+				return
+			}
+		}
+	}()
 	args := append(append([]string{}, flags...), "root@"+host, cmd)
 	c := exec.CommandContext(ctx, "ssh", args...)
 	hideCmdWindow(c)
 	c.Stdin = in
 	out, err := c.CombinedOutput()
-	if ctx.Err() == context.DeadlineExceeded {
-		return string(out), fmt.Errorf("ssh upload timeout after %s", timeout)
+	if ctx.Err() != nil {
+		return string(out), fmt.Errorf("ssh upload stalled (no progress for %s)", timeout)
 	}
 	return string(out), err
 }
@@ -440,14 +472,48 @@ func nativeSSHRun(host, cmd string, stdin io.Reader, timeout time.Duration) (str
 		return "", false, err
 	}
 	defer sess.Close()
-	if stdin != nil {
-		sess.Stdin = stdin
-	}
 	type res struct {
 		out []byte
 		err error
 	}
 	ch := make(chan res, 1)
+	if stdin != nil {
+		// Upload (the ~10 MB OTA binary): bound by a STALL timeout (no bytes copied
+		// to the box for `timeout`), not a total deadline, so a large transfer on a
+		// slow link is not cut off mid-stream while it is still progressing. The
+		// stdin copier reads from countingReader only as fast as the box accepts
+		// data (ssh flow control), so a beat tracks real upload throughput; a real
+		// freeze stops the beats and trips the timer. A short command (stdin == nil)
+		// keeps the total timeout below.
+		beat := make(chan struct{}, 1)
+		sess.Stdin = &countingReader{r: stdin, onProgress: func(int64) {
+			select {
+			case beat <- struct{}{}:
+			default:
+			}
+		}}
+		go func() { out, e := sess.CombinedOutput(cmd); ch <- res{out, e} }()
+		t := time.NewTimer(timeout)
+		defer t.Stop()
+		for {
+			select {
+			case r := <-ch:
+				return string(r.out), true, r.err
+			case <-beat:
+				if !t.Stop() {
+					select {
+					case <-t.C:
+					default:
+					}
+				}
+				t.Reset(timeout)
+			case <-t.C:
+				_ = sess.Signal(ssh.SIGKILL)
+				_ = sess.Close()
+				return "", true, fmt.Errorf("ssh native upload stalled (no progress for %s)", timeout)
+			}
+		}
+	}
 	go func() { out, e := sess.CombinedOutput(cmd); ch <- res{out, e} }()
 	select {
 	case r := <-ch:
