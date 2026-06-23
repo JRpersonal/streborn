@@ -46,6 +46,12 @@ type Server struct {
 	// missing file = no reflection (the safe default).
 	reflectPath string
 
+	// reflectFormatPath points at an optional NAND marker file whose content
+	// selects the reflected-source XML shape (see reflectSourceFormat). It lets
+	// the Deezer source-revival sweep change the shape with a single file write
+	// and a box re-sync, no env var or launch-script edit. Empty = env var only.
+	reflectFormatPath string
+
 	// requestLog stores the last N requests for debug purposes
 	// (accessible via /__spy/log on the same listener).
 	requestLog    []SpyEntry
@@ -88,6 +94,12 @@ func WithSources(items []SourceItem) Option {
 // pre-existing account-linked cloud sources (Deezer "Path A").
 func WithReflectSourcesPath(path string) Option {
 	return func(s *Server) { s.reflectPath = path }
+}
+
+// WithReflectSourceFormatPath wires the NAND marker file whose content selects
+// the reflected-source XML shape, for the Deezer source-revival sweep.
+func WithReflectSourceFormatPath(path string) Option {
+	return func(s *Server) { s.reflectFormatPath = path }
 }
 
 // reflected returns the cloud sources to re-advertise to the box, read fresh
@@ -504,7 +516,8 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 // "Path A") as <source> elements for the account response, or "" when none are
 // reflected. Shared so the live account handler and tests agree on the shape.
 // reflectSourceFormat selects the XML shape of a reflected account source via
-// the STR_REFLECT_SOURCE_FORMAT env var, so the shape the box accepts as a READY
+// the STR_REFLECT_SOURCE_FORMAT env var (or, if unset, the reflectFormatPath
+// marker file), so the shape the box accepts as a READY
 // (playable) source can be swept on hardware, the same way addDeviceFormat sweeps
 // the addDevice reply. The box marking a re-advertised account source (Deezer)
 // READY again would mean the source went UNAVAILABLE only because STR stopped
@@ -512,12 +525,18 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 // keeps the original shape, so this is a no-op unless explicitly set.
 // Values: "default" (empty credential), "status" (+ status="READY"),
 // "statususer" (status + a non-empty username credential), "minimal" (id+type+name).
-func reflectSourceFormat() string {
-	v := strings.TrimSpace(os.Getenv("STR_REFLECT_SOURCE_FORMAT"))
-	if v == "" {
-		return "default"
+func (s *Server) reflectSourceFormat() string {
+	if v := strings.TrimSpace(os.Getenv("STR_REFLECT_SOURCE_FORMAT")); v != "" {
+		return v
 	}
-	return v
+	if s.reflectFormatPath != "" {
+		if b, err := os.ReadFile(s.reflectFormatPath); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				return v
+			}
+		}
+	}
+	return "default"
 }
 
 // renderReflectedSource renders one reflected account source as a <source>
@@ -547,7 +566,7 @@ func renderReflectedSource(format, acct, typ, name string) string {
 }
 
 func (s *Server) reflectedSourcesXML() string {
-	format := reflectSourceFormat()
+	format := s.reflectSourceFormat()
 	var b strings.Builder
 	for _, r := range s.reflected() {
 		typ := xmlEscapeText(strings.ToUpper(strings.TrimSpace(r.Source)))
