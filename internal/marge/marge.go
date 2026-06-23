@@ -503,7 +503,51 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 // reflectedSourcesXML renders the reflected account-linked cloud sources (Deezer
 // "Path A") as <source> elements for the account response, or "" when none are
 // reflected. Shared so the live account handler and tests agree on the shape.
+// reflectSourceFormat selects the XML shape of a reflected account source via
+// the STR_REFLECT_SOURCE_FORMAT env var, so the shape the box accepts as a READY
+// (playable) source can be swept on hardware, the same way addDeviceFormat sweeps
+// the addDevice reply. The box marking a re-advertised account source (Deezer)
+// READY again would mean the source went UNAVAILABLE only because STR stopped
+// advertising it, not because the cached account login expired. Empty/"default"
+// keeps the original shape, so this is a no-op unless explicitly set.
+// Values: "default" (empty credential), "status" (+ status="READY"),
+// "statususer" (status + a non-empty username credential), "minimal" (id+type+name).
+func reflectSourceFormat() string {
+	v := strings.TrimSpace(os.Getenv("STR_REFLECT_SOURCE_FORMAT"))
+	if v == "" {
+		return "default"
+	}
+	return v
+}
+
+// renderReflectedSource renders one reflected account source as a <source>
+// element in the chosen format. "default" reproduces the historical shape
+// byte-for-byte.
+func renderReflectedSource(format, acct, typ, name string) string {
+	switch format {
+	case "status":
+		return "\n    <source id=\"" + acct + "\" type=\"" + typ + "\" status=\"READY\">" +
+			"<credential type=\"\" text=\"\"/><name>" + name + "</name>" +
+			"<username>" + acct + "</username><sourceproviderid>" + typ + "</sourceproviderid>" +
+			"<sourcename>" + name + "</sourcename></source>"
+	case "statususer":
+		return "\n    <source id=\"" + acct + "\" type=\"" + typ + "\" status=\"READY\">" +
+			"<credential type=\"USERNAME\" text=\"" + acct + "\"/><name>" + name + "</name>" +
+			"<username>" + acct + "</username><sourceproviderid>" + typ + "</sourceproviderid>" +
+			"<sourcename>" + name + "</sourcename></source>"
+	case "minimal":
+		return "\n    <source id=\"" + acct + "\" type=\"" + typ + "\">" +
+			"<name>" + name + "</name><sourceproviderid>" + typ + "</sourceproviderid></source>"
+	default: // "default": the original shape
+		return "\n    <source id=\"" + acct + "\" type=\"" + typ + "\">" +
+			"<credential type=\"\" text=\"\"/><name>" + name + "</name>" +
+			"<username>" + acct + "</username><sourceproviderid>" + typ + "</sourceproviderid>" +
+			"<sourcename>" + name + "</sourcename></source>"
+	}
+}
+
 func (s *Server) reflectedSourcesXML() string {
+	format := reflectSourceFormat()
 	var b strings.Builder
 	for _, r := range s.reflected() {
 		typ := xmlEscapeText(strings.ToUpper(strings.TrimSpace(r.Source)))
@@ -515,10 +559,7 @@ func (s *Server) reflectedSourcesXML() string {
 		if name == "" {
 			name = typ
 		}
-		b.WriteString("\n    <source id=\"" + acct + "\" type=\"" + typ + "\">" +
-			"<credential type=\"\" text=\"\"/><name>" + name + "</name>" +
-			"<username>" + acct + "</username><sourceproviderid>" + typ + "</sourceproviderid>" +
-			"<sourcename>" + name + "</sourcename></source>")
+		b.WriteString(renderReflectedSource(format, acct, typ, name))
 	}
 	return b.String()
 }

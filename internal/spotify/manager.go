@@ -41,6 +41,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -100,9 +101,9 @@ type Manager struct {
 	box        *boxapi.Client // box REST: friendly name (device_name) + volume bridge
 	credStore  string         // per-account credential copies for multi-account swap
 
-	mu        sync.Mutex
-	name      string    // device name currently written to config.yml
-	configVol int       // initial_volume currently written to config.yml
+	mu           sync.Mutex
+	name         string    // device name currently written to config.yml
+	configVol    int       // initial_volume currently written to config.yml
 	sink         io.Writer // current HTTP consumer, nil when none
 	lastAttachAt time.Time // when the box last attached to the Ogg stream (re-attach storm detection)
 	cmd          *exec.Cmd
@@ -940,6 +941,67 @@ func (m *Manager) CurrentUsername(ctx context.Context) string {
 	return m.currentUsername(ctx)
 }
 
+// ErrNoSpotifySession is returned by PlayAccount when the speaker holds no live
+// Spotify session and none could be re-established (no persisted credential, or
+// the credential no longer authenticates, e.g. another controller took the
+// account's single live session). The caller maps it to an actionable "tap this
+// speaker in Spotify once" hint rather than letting the box buffer into nothing.
+var ErrNoSpotifySession = errors.New("spotify: no live device session for recall")
+
+// SessionActive reports whether go-librespot currently holds a live, authenticated
+// device session (an active Connect device that can accept /player/play), as
+// opposed to merely having a persisted credential on disk (LoggedIn). go-librespot
+// auto-loads the persisted zeroconf credential at process start and re-auths on
+// its own, but a cold start, a dropped AP connection (the "did not receive last
+// pong ack" case), or a takeover can leave it momentarily logged out even though
+// credentials.json exists. Recall checks this, not just LoggedIn.
+func (m *Manager) SessionActive(ctx context.Context) bool {
+	return m.currentUsername(ctx) != ""
+}
+
+// ensureSession makes go-librespot hold a live device session before a recall.
+// No-op (true) when a session is already active. When a persisted credential
+// exists but the session is dead (cold start / dropped AP), it restarts
+// go-librespot so it reloads and re-authenticates from the cached credential,
+// then waits (bounded) for an active session. Returns false when the box was
+// never logged in, or when no session could be re-established within the window.
+//
+// Validated live on a taigan box: after an AP drop go-librespot logs "loading
+// previously persisted zeroconf credentials" then "authenticated AP" with no
+// fresh tap, which is exactly what this restart triggers. The one case it cannot
+// recover is a credential invalidated by a takeover (Spotify's single-session
+// rule); there it returns false and the caller shows the tap-once hint instead of
+// looping restarts.
+func (m *Manager) ensureSession(ctx context.Context) bool {
+	if m.SessionActive(ctx) {
+		return true
+	}
+	if !m.LoggedIn() {
+		return false // never logged in: actionable as "tap this speaker once"
+	}
+	m.logger.Warn("spotify: persisted credential present but no live session; restarting go-librespot to re-auth before recall")
+	m.mu.Lock()
+	restart := m.runCancel
+	m.mu.Unlock()
+	if restart != nil {
+		restart() // supervise loop relaunches go-librespot, which reloads the credential
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(500 * time.Millisecond):
+		}
+		if m.SessionActive(ctx) {
+			m.logger.Info("spotify: live session re-established for recall")
+			return true
+		}
+	}
+	m.logger.Warn("spotify: could not re-establish a live session for recall")
+	return false
+}
+
 // LoggedIn reports whether this speaker has ever completed a Spotify Connect
 // login, i.e. a reusable credential is persisted on disk. Recall needs this:
 // without a credential go-librespot cannot start playback on its own, so the
@@ -1082,10 +1144,26 @@ func (m *Manager) SwitchAccount(ctx context.Context, username string) (bool, err
 // This is the recall entry point used by both the hardware-button and the
 // desktop/API paths.
 func (m *Manager) PlayAccount(ctx context.Context, uri, account string) error {
+	// Diagnostic: log the live session state at the recall boundary so a bundle
+	// disambiguates "never logged in" vs "dead session" vs "playing fine" without
+	// guesswork (every Spotify-recall investigation hit this blind spot).
+	m.logger.Info("spotify: recall start", "uri", uri, "wantAccount", account,
+		"sessionUser", m.currentUsername(ctx), "loggedIn", m.LoggedIn())
 	if account != "" {
 		if _, err := m.SwitchAccount(ctx, account); err != nil {
 			m.logger.Warn("spotify: account switch failed, playing with current account", "account", account, "err", err)
 		}
+	}
+	// Even with no account switch (single-account / already-active case), make sure
+	// go-librespot actually holds a live session before /player/play. Otherwise the
+	// box buffers forever and detaches: the "recall finds an empty account" failure
+	// that works on a box with a live session but fails on one whose session went
+	// cold. ensureSession restarts go-librespot to reload the persisted credential
+	// for the cold/dropped case; a box that is genuinely not logged in (or whose
+	// credential a takeover invalidated) yields ErrNoSpotifySession so the caller
+	// shows the tap-once hint instead of silently playing nothing.
+	if !m.ensureSession(ctx) {
+		return ErrNoSpotifySession
 	}
 	return m.Play(ctx, uri)
 }
