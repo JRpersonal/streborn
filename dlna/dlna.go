@@ -98,10 +98,10 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 		return nil, fmt.Errorf("ssdp resolve: %w", err)
 	}
 
-	mkMsg := func(st string) []byte {
+	mkMsg := func(st, host string) []byte {
 		return []byte(strings.Join([]string{
 			"M-SEARCH * HTTP/1.1",
-			"HOST: " + ssdpAddr,
+			"HOST: " + host,
 			"MAN: \"ssdp:discover\"",
 			fmt.Sprintf("MX: %d", defaultMXSecs),
 			"ST: " + st,
@@ -109,8 +109,8 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 			"", "",
 		}, "\r\n"))
 	}
-	typedMsg := mkMsg(mediaServerST)
-	allMsg := mkMsg("ssdp:all")
+	typedMsg := mkMsg(mediaServerST, ssdpAddr)
+	allMsg := mkMsg("ssdp:all", ssdpAddr)
 
 	// Enumerate candidate source IPs. Skip loopback, link-local
 	// (169.254.x.x), and any v6 addresses since SSDP here is v4 only.
@@ -123,6 +123,49 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 
 	locationsMu := sync.Mutex{}
 	locations := map[string]struct{}{}
+
+	// collect reads SSDP responses on conn until the discovery deadline and
+	// records each unique LOCATION. Shared by the per-interface multicast probes
+	// and the same-host loopback unicast probe.
+	collect := func(conn *net.UDPConn, label string) {
+		if deadline, _ := dctx.Deadline(); !deadline.IsZero() {
+			_ = conn.SetReadDeadline(deadline)
+		}
+		localHits := 0
+		buf := make([]byte, 4096)
+		for {
+			select {
+			case <-dctx.Done():
+				Logger.Info("dlna: SSDP probe done", "probe", label, "newLocations", localHits)
+				return
+			default:
+			}
+			n, raddr, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				break
+			}
+			loc := headerValue(buf[:n], "LOCATION")
+			if loc == "" {
+				continue
+			}
+			st := headerValue(buf[:n], "ST")
+			// Log every response that carries a LOCATION so a "no media servers
+			// found" report is debuggable (did the NAS even answer, from which
+			// interface). No ST filter: many MediaServers (Asustor/MiniDLNA/Plex)
+			// answer ssdp:all with an ST of ContentDirectory or a vendor URN and
+			// were silently dropped here despite serving a valid MediaServer
+			// device.xml. The real gate is the post-fetch CDSControlURL check (#110).
+			Logger.Info("dlna: SSDP response", "src", raddr.String(), "st", st, "location", loc)
+			locationsMu.Lock()
+			if _, dup := locations[loc]; !dup {
+				locations[loc] = struct{}{}
+				localHits++
+			}
+			locationsMu.Unlock()
+		}
+		Logger.Info("dlna: SSDP probe done", "probe", label, "newLocations", localHits)
+	}
+
 	var ifaceWg sync.WaitGroup
 	for _, ip := range ips {
 		ifaceWg.Add(1)
@@ -134,59 +177,39 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 				return
 			}
 			defer conn.Close()
-
-			sent := 0
 			for i := 0; i < 2; i++ {
-				if _, err := conn.WriteToUDP(typedMsg, mcAddr); err == nil {
-					sent++
-				}
-				if _, err := conn.WriteToUDP(allMsg, mcAddr); err == nil {
-					sent++
-				}
+				_, _ = conn.WriteToUDP(typedMsg, mcAddr)
+				_, _ = conn.WriteToUDP(allMsg, mcAddr)
 				time.Sleep(80 * time.Millisecond)
 			}
-
-			deadline, _ := dctx.Deadline()
-			if !deadline.IsZero() {
-				_ = conn.SetReadDeadline(deadline)
-			}
-
-			localHits := 0
-			buf := make([]byte, 4096)
-			for {
-				select {
-				case <-dctx.Done():
-					goto done
-				default:
-				}
-				n, raddr, err := conn.ReadFromUDP(buf)
-				if err != nil {
-					break
-				}
-				loc := headerValue(buf[:n], "LOCATION")
-				if loc == "" {
-					continue
-				}
-				st := headerValue(buf[:n], "ST")
-				// Log every response that carries a LOCATION so a "no media
-				// servers found" report is debuggable (did the NAS even answer,
-				// from which interface). No ST filter: many MediaServers
-				// (Asustor/MiniDLNA/Plex) answer ssdp:all with an ST of
-				// ContentDirectory or a vendor URN and were silently dropped
-				// here despite serving a valid MediaServer device.xml. The real
-				// gate is the post-fetch CDSControlURL check below (#110).
-				Logger.Info("dlna: SSDP response", "src", raddr.String(), "st", st, "location", loc)
-				locationsMu.Lock()
-				if _, dup := locations[loc]; !dup {
-					locations[loc] = struct{}{}
-					localHits++
-				}
-				locationsMu.Unlock()
-			}
-		done:
-			Logger.Info("dlna: SSDP interface done", "src", srcIP.String(), "sent", sent, "newLocations", localHits)
+			collect(conn, srcIP.String())
 		}(ip)
 	}
+
+	// A media server on the SAME PC as STR is missed by the multicast probes
+	// above: SSDP multicast does not reliably loop back to a server on the same
+	// host, so the user's own PC media server does not show up even though other
+	// LAN devices see it (#222). Probe it directly with a UNICAST M-SEARCH to the
+	// loopback, which a server bound to 0.0.0.0:1900 answers.
+	ifaceWg.Add(1)
+	go func() {
+		defer ifaceWg.Done()
+		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+		if err != nil {
+			Logger.Warn("dlna: loopback ListenUDP failed", "err", err.Error())
+			return
+		}
+		defer conn.Close()
+		loopAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1900}
+		loTyped := mkMsg(mediaServerST, "127.0.0.1:1900")
+		loAll := mkMsg("ssdp:all", "127.0.0.1:1900")
+		for i := 0; i < 2; i++ {
+			_, _ = conn.WriteToUDP(loTyped, loopAddr)
+			_, _ = conn.WriteToUDP(loAll, loopAddr)
+			time.Sleep(80 * time.Millisecond)
+		}
+		collect(conn, "loopback")
+	}()
 	ifaceWg.Wait()
 
 	Logger.Info("dlna: SSDP M-SEARCH done", "totalLocations", len(locations))
