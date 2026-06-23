@@ -11,6 +11,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,6 +90,17 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	a.notePostOTA(host)
 	a.refreshStick(host)
 
+	// Deliver the go-librespot Spotify sidecar over OTA too, so a box that was
+	// never successfully synced from a USB stick (e.g. an OTA-only SoundTouch 30
+	// whose USB port underpowers the stick) still gets Spotify. The sidecar
+	// historically shipped ONLY via the stick->NAND boot sync, so an OTA-only box
+	// had a synced login but no engine and Spotify silently never played
+	// (#45/#105). Pushed FIRST and strictly before the agent OTA: the agent OTA
+	// reboots ~1.5 s after its reply, and that reboot is what makes the fresh
+	// agent's Spotify manager pick up the now-present binary. Best-effort: a
+	// sidecar failure must never block the (more important) agent update.
+	a.pushSidecarIfNeeded(host, port)
+
 	if perr := a.updateAgentPreflight(host, port); perr != nil {
 		a.recordOTA(host, "HTTP preflight rejected -> trying SSH: "+perr.Error())
 		a.logger.Warn("update agent: HTTP preflight rejected, switching to SSH-OTA",
@@ -139,6 +152,46 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
 	}
 	return nil
+}
+
+// pushSidecarIfNeeded delivers the embedded go-librespot Spotify sidecar to the
+// box over HTTP (POST /api/agent/sidecar) when the box is missing it or has a
+// different build. Strictly best-effort: any failure is logged to the OTA
+// journal and swallowed so it never aborts the agent OTA that follows. The
+// ~10 MB transfer is gated on the box's reported content hash so a steady-state
+// OTA (agent-only change, sidecar already current) costs just one cheap version
+// GET and sends zero sidecar bytes.
+func (a *App) pushSidecarIfNeeded(host string, port int) {
+	if !agentbin.GoLibrespotAvailable() {
+		// Dev build (empty stub): nothing real to deliver. Never write 0 bytes.
+		a.recordOTA(host, "sidecar: skipped, no embedded go-librespot in this build")
+		return
+	}
+	bin := agentbin.GoLibrespotBytes()
+	sum := sha256.Sum256(bin)
+	want := hex.EncodeToString(sum[:])
+
+	// Ask the box what it already has. boxDo self-heals across :8888/:17008 and
+	// caches the working port for the agent OTA that follows.
+	if ver, err := a.BoxAgentVersion(host, port); err == nil {
+		if ver["goLibrespot"] == "present" && ver["goLibrespotSha256"] == want {
+			a.recordOTA(host, "sidecar: box already has the current go-librespot, skipping ~10 MB push")
+			return
+		}
+	} else {
+		// Couldn't read the version: still try the push (a missing sidecar is the
+		// whole reason this exists); worst case the POST also fails and is logged.
+		a.logger.Info("sidecar push: version probe failed, pushing anyway", "host", host, "err", err)
+	}
+
+	a.recordOTA(host, fmt.Sprintf("sidecar: pushing go-librespot (%d bytes, sha %s)", len(bin), want[:12]))
+	if err := a.streamPostBinary(host, port, "/api/agent/sidecar", bin); err != nil {
+		a.recordOTA(host, "sidecar: push failed (agent OTA still proceeds): "+err.Error())
+		a.logger.Warn("sidecar push failed; agent OTA continues, Spotify may stay unavailable until next OTA", "host", host, "err", err)
+		return
+	}
+	a.recordOTA(host, "sidecar: go-librespot delivered")
+	a.logger.Info("sidecar push: go-librespot delivered over OTA", "host", host, "bytes", len(bin))
 }
 
 // refreshStick is a best-effort step run as part of an agent OTA, BEFORE the
@@ -390,7 +443,17 @@ func (a *App) updateAgentPreflight(host string, port int) error {
 }
 
 func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
-	url := a.baseURL(host, port) + "/api/agent/update"
+	return a.streamPostBinary(host, port, "/api/agent/update", bin)
+}
+
+// streamPostBinary POSTs bin to path on the agent, streaming the body with a
+// live progress event ("box:update:progress") and the same abort policy the
+// agent OTA settled on: no total deadline (a 10 MB push to a busy box over slow
+// Wi-Fi can take minutes), a 60 s upload-stall watchdog, and a bounded
+// post-upload reply window. Shared by the agent-binary update and the
+// go-librespot sidecar push so they cannot drift on transfer behavior.
+func (a *App) streamPostBinary(host string, port int, path string, bin []byte) error {
+	url := a.baseURL(host, port) + path
 	// No total-transfer deadline. Streaming the ~10 MB agent to a busy box over slow
 	// Wi-Fi can legitimately take minutes, and the old fixed 240 s cap killed
 	// still-progressing uploads with "context deadline exceeded (Client.Timeout ...
@@ -527,6 +590,44 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// LAN. sync first so the just-renamed binary is flushed to NAND.
 	// boxReboot is the shared hardened form (this OTA path is where that
 	// form originated).
+	//
+	// Deliver the go-librespot sidecar over the SAME SSH session-class before
+	// the reboot, so a box that fell to the SSH path (HTTP preflight rejected)
+	// also gets Spotify. Best-effort: an SSH sidecar failure logs but never
+	// fails the agent OTA. The reboot below brings up the fresh agent that picks
+	// up the binary.
+	a.pushSidecarViaSSH(host)
 	_ = boxReboot(host)
 	return nil
+}
+
+// pushSidecarViaSSH writes the embedded go-librespot sidecar to
+// /mnt/nv/streborn/bin/go-librespot over SSH (the fallback delivery for boxes
+// whose HTTP listener is Bose's, taken alongside updateAgentViaSSH). Mirrors the
+// agent-binary upload: stream to .new, size-verify, chmod, atomic rename, then
+// stamp the content hash. Best-effort: every failure is logged and swallowed.
+func (a *App) pushSidecarViaSSH(host string) {
+	if !agentbin.GoLibrespotAvailable() {
+		return
+	}
+	bin := agentbin.GoLibrespotBytes()
+	const dst = "/mnt/nv/streborn/bin/go-librespot"
+	uploadCmd := "mkdir -p /mnt/nv/streborn/bin && cat > " + dst + ".new"
+	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
+		a.logger.Warn("sidecar SSH upload failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
+		return
+	}
+	sum := sha256.Sum256(bin)
+	sha := hex.EncodeToString(sum[:])
+	verifyCmd := fmt.Sprintf(
+		"size=$(wc -c < %s.new) && [ \"$size\" = \"%d\" ] && "+
+			"chmod 0755 %s.new && mv %s.new %s && "+
+			"printf %%s %s > %s.sha256 && echo OK_%d",
+		dst, len(bin), dst, dst, dst, sha, dst, len(bin))
+	sentinel := fmt.Sprintf("OK_%d", len(bin))
+	if out, err := boxSSHOutput(host, verifyCmd, 20*time.Second); err != nil || !strings.Contains(out, sentinel) {
+		a.logger.Warn("sidecar SSH size-verify/rename failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
+		return
+	}
+	a.logger.Info("sidecar push (SSH): go-librespot delivered over OTA", "host", host, "bytes", len(bin))
 }
