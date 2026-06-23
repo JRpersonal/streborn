@@ -157,6 +157,16 @@ func releaseManifestURL(version string) string {
 	return "https://github.com/JRpersonal/streborn/releases/download/" + version + "/manifest.json"
 }
 
+// releaseManifestLatestURL is the stable /releases/latest manifest. GitHub
+// resolves /latest to the newest PUBLISHED release, so this never 404s on a tag
+// that is still a draft or whose case differs from the manifest's version
+// string. Used as the fallback when the version-pinned manifest is unreachable
+// (the most likely cause of the "page not found" a user hit right after an
+// update banner appeared).
+func releaseManifestLatestURL() string {
+	return "https://github.com/JRpersonal/streborn/releases/latest/download/manifest.json"
+}
+
 // ResolveUpdateAsset fetches the release manifest for version and returns the
 // download for the host OS. Errors when the OS is unsupported or the manifest
 // lacks the asset (a malformed/old release).
@@ -165,42 +175,55 @@ func (a *App) ResolveUpdateAsset(version string) (UpdateAsset, error) {
 	if key == "" {
 		return UpdateAsset{}, fmt.Errorf("unsupported OS %q", runtime.GOOS)
 	}
-	ctx, cancel := context.WithTimeout(a.appCtx(), 15*time.Second)
-	defer cancel()
-	req, err := newGETRequest(ctx, releaseManifestURL(version))
+	fetch := func(url string) (UpdateAsset, error) {
+		ctx, cancel := context.WithTimeout(a.appCtx(), 15*time.Second)
+		defer cancel()
+		req, err := newGETRequest(ctx, url)
+		if err != nil {
+			return UpdateAsset{}, err
+		}
+		resp, err := updateHTTPClient().Do(req)
+		if err != nil {
+			return UpdateAsset{}, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return UpdateAsset{}, fmt.Errorf("manifest status %d", resp.StatusCode)
+		}
+		var m struct {
+			Version   string `json:"version"`
+			Artifacts map[string]struct {
+				URL      string `json:"url"`
+				SHA256   string `json:"sha256"`
+				Filename string `json:"filename"`
+			} `json:"artifacts"`
+		}
+		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&m); err != nil {
+			return UpdateAsset{}, err
+		}
+		art, ok := m.Artifacts[key]
+		if !ok || art.URL == "" || art.SHA256 == "" {
+			return UpdateAsset{}, fmt.Errorf("release %s has no %s asset", m.Version, key)
+		}
+		return UpdateAsset{
+			Version:     m.Version,
+			SHA256:      strings.ToLower(strings.TrimSpace(art.SHA256)),
+			URL:         art.URL,
+			Filename:    art.Filename,
+			AutoInstall: canSelfReplace(),
+		}, nil
+	}
+	// Try the version-pinned manifest first; if it is unreachable (a draft tag, a
+	// case mismatch, or a publish still propagating), fall back to /releases/latest
+	// so the one-click update never dead-ends on "page not found".
+	asset, err := fetch(releaseManifestURL(version))
 	if err != nil {
+		if asset2, err2 := fetch(releaseManifestLatestURL()); err2 == nil {
+			return asset2, nil
+		}
 		return UpdateAsset{}, err
 	}
-	resp, err := updateHTTPClient().Do(req)
-	if err != nil {
-		return UpdateAsset{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return UpdateAsset{}, fmt.Errorf("manifest status %d", resp.StatusCode)
-	}
-	var m struct {
-		Version   string `json:"version"`
-		Artifacts map[string]struct {
-			URL      string `json:"url"`
-			SHA256   string `json:"sha256"`
-			Filename string `json:"filename"`
-		} `json:"artifacts"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&m); err != nil {
-		return UpdateAsset{}, err
-	}
-	art, ok := m.Artifacts[key]
-	if !ok || art.URL == "" || art.SHA256 == "" {
-		return UpdateAsset{}, fmt.Errorf("release %s has no %s asset", version, key)
-	}
-	return UpdateAsset{
-		Version:     m.Version,
-		SHA256:      strings.ToLower(strings.TrimSpace(art.SHA256)),
-		URL:         art.URL,
-		Filename:    art.Filename,
-		AutoInstall: canSelfReplace(),
-	}, nil
+	return asset, nil
 }
 
 // updateDir is the per-user cache dir STR downloads updates into.

@@ -824,9 +824,12 @@ async function checkAppUpdate() {
     // present, else the matching GitHub release page for the new version,
     // else the releases list.
     const repo = ((state.appInfo && state.appInfo.githubUrl) || 'https://github.com/JRpersonal/streborn').replace(/\/+$/, '');
+    // /releases/latest always resolves to the newest PUBLISHED release, so it
+    // never 404s on a draft/just-published tag (the "page not found" a user hit).
+    const latestUrl = `${repo}/releases/latest`;
     const notesUrl = (typeof m.notesUrl === 'string' && /^https?:\/\//i.test(m.notesUrl))
       ? m.notesUrl
-      : (/^v\d+\.\d+\.\d+$/.test(m.version) ? `${repo}/releases/tag/${m.version}` : `${repo}/releases`);
+      : latestUrl;
     // The banner itself only shows for a genuinely newer version (CheckAppUpdate
     // returns nothing otherwise), and the download button only when the manifest
     // carries a real download URL. The button is a primary button so it stands
@@ -838,7 +841,10 @@ async function checkAppUpdate() {
     // manifest in the backend, so it no longer depends on the manifest carrying a
     // downloadUrl. notesUrl / releases page stays as the manual fallback.
     const isMacOS = /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '');
-    const installLabel = isMacOS ? t('banner.downloadUpdate') : t('banner.installNow');
+    // Label makes the target unambiguous: this updates THE APP itself, not the
+    // speaker (a non-technical user clicked the speaker-update expecting the app
+    // to update, and ended up with two .exe copies downloaded by hand).
+    const installLabel = isMacOS ? t('banner.downloadAppUpdate') : t('banner.installAppNow');
     banner.innerHTML = `
       <div><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></div>
       <button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(installLabel)}</button>
@@ -847,7 +853,7 @@ async function checkAppUpdate() {
     const notesLink = $('appUpdateNotes');
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
     const dl = $('appUpdateBtn');
-    if (dl) dl.onclick = () => runAppUpdate(m.version, dl, installLabel, isMacOS, dlUrl || notesUrl);
+    if (dl) dl.onclick = () => runAppUpdate(m.version, dl, installLabel, isMacOS, dlUrl || latestUrl);
   } catch (e) {
     try { console.warn('checkAppUpdate failed', e); } catch {}
   }
@@ -878,8 +884,12 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
   } catch (e) {
     showError(t('banner.updateFailed', { err: String(e) }));
     btn.disabled = false;
-    btn.textContent = t('banner.openWebsite');
+    btn.textContent = t('banner.getFromReleases');
     if (fallbackUrl) btn.onclick = () => BrowserOpenURL(fallbackUrl);
+    // Reassure the non-technical user: the app replaces itself, so any .exe they
+    // downloaded by hand earlier can simply be deleted (the duplicate-copies
+    // confusion that prompted this).
+    showToast(t('banner.manualHint'));
   } finally {
     if (typeof off === 'function') off();
   }
@@ -1929,7 +1939,7 @@ async function checkBoxUpdate() {
     if (otaElsewhere) {
       return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
     }
-    return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+    return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtnSpeaker'))}</button>`;
   };
   const boxName = getBoxLabel(state.currentBox);
   // OTA running on THIS box: show an honest "updating" banner instead of the
@@ -2076,7 +2086,7 @@ async function doBoxUpdate(targetBox) {
   };
   const reset = () => {
     if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
-    buttons().forEach(b => { b.disabled = false; b.textContent = t('update.refreshBtn'); });
+    buttons().forEach(b => { b.disabled = false; b.textContent = t('update.refreshBtnSpeaker'); });
   };
   // Mark this box as the OTA target AND flip the global in-flight
   // flag BEFORE first setStatus() so checkBoxUpdate() and the
