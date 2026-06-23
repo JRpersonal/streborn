@@ -3399,6 +3399,20 @@ async function refreshStatus() {
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
     state.nowSource = src;
 
+    // Native Bose Spotify receiver detection: source=SPOTIFY means the phone
+    // connected to the speaker's built-in Spotify Connect, not STR's go-librespot
+    // (STR's own playback is always source=UPNP via the stream proxy). STR cannot
+    // recall a preset on the native receiver, so hint once per episode and reset
+    // when the box leaves SPOTIFY again.
+    if (src === 'SPOTIFY') {
+      if (!state.nativeSpotifyWarned) {
+        state.nativeSpotifyWarned = true;
+        showToast(t('play.nativeSpotifyHint'));
+      }
+    } else {
+      state.nativeSpotifyWarned = false;
+    }
+
     // Piggy-back an SSH status check on the polling we are doing
     // anyway. Toggle the global banner so the user sees it on every
     // tab rather than only after entering the Settings tab.

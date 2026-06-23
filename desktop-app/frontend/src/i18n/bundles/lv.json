@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Spotify atsaukšanai nepieciešams Premium",
   "play.errSpotifyLogin": "Vienreiz izvēlies šo skaļruni Spotify",
   "play.errSpotifyLoginHelp": "STR atskaņo Spotify caur šo skaļruni kā Spotify Connect ierīci. Atver Spotify ierīcē tajā pašā Wi-Fi tīklā, pieskaries ierīču ikonai, izvēlies šo skaļruni un vienreiz atskaņo dziesmu. Pēc tam Spotify priekšiestatījumi tiks izsaukti paši.",
+  "play.nativeSpotifyHint": "Atskaņo, izmantojot skaļruņa iebūvēto Spotify. Nospied saglabātu Spotify pogu, lai pārslēgtos uz STR atskaņošanu.",
   "update.speakerUpdateAvailFor": "Pieejams atjauninājums skaļrunim '{{name}}'",
   "update.versionLine": "uzstādīta: {{installed}} → jauna: {{next}}",
   "update.appBehindTitle": "Šī lietotne ir vecāka nekā '{{name}}'",

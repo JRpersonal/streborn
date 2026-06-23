@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Spotify terughalen vereist Premium",
   "play.errSpotifyLogin": "Kies deze speaker één keer in Spotify",
   "play.errSpotifyLoginHelp": "STR speelt Spotify af via deze speaker als Spotify Connect-apparaat. Open Spotify op een apparaat in hetzelfde wifi-netwerk, tik op het apparaten-icoon, kies deze speaker en speel één keer een nummer af. Daarna worden Spotify-presets vanzelf opgehaald.",
+  "play.nativeSpotifyHint": "Speelt af via de ingebouwde Spotify van de speaker. Druk op een opgeslagen Spotify-knop om naar STR-weergave te wisselen.",
   "update.speakerUpdateAvailFor": "Update beschikbaar voor '{{name}}'",
   "update.versionLine": "geïnstalleerd: {{installed}} → nieuw: {{next}}",
   "update.appBehindTitle": "Deze app is ouder dan '{{name}}'",

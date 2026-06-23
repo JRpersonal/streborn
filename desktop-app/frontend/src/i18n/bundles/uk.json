@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Для виклику Spotify потрібен Premium",
   "play.errSpotifyLogin": "Виберіть цей динамік у Spotify один раз",
   "play.errSpotifyLoginHelp": "STR відтворює Spotify через цей динамік як пристрій Spotify Connect. Відкрийте Spotify на пристрої в тій самій мережі Wi-Fi, торкніться значка пристроїв, виберіть цей динамік і відтворіть один трек. Після цього пресети Spotify викликатимуться самі.",
+  "play.nativeSpotifyHint": "Відтворення через вбудований Spotify динаміка. Натисни збережену кнопку Spotify, щоб перейти до відтворення STR.",
   "update.speakerUpdateAvailFor": "Доступне оновлення для «{{name}}»",
   "update.versionLine": "встановлено: {{installed}} → нове: {{next}}",
   "update.appBehindTitle": "Цей застосунок старіший за «{{name}}»",

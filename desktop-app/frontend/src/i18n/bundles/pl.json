@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Przywoływanie Spotify wymaga konta Premium",
   "play.errSpotifyLogin": "Wybierz ten głośnik raz w Spotify",
   "play.errSpotifyLoginHelp": "STR odtwarza Spotify przez ten głośnik jako urządzenie Spotify Connect. Otwórz Spotify na urządzeniu w tej samej sieci Wi-Fi, dotknij ikony urządzeń, wybierz ten głośnik i odtwórz jeden utwór. Potem zapisane stacje Spotify będą przywoływane samodzielnie.",
+  "play.nativeSpotifyHint": "Odtwarzanie przez wbudowane Spotify głośnika. Naciśnij zapisany przycisk Spotify, aby przełączyć na odtwarzanie STR.",
   "update.speakerUpdateAvailFor": "Dostępna aktualizacja dla „{{name}}”",
   "update.versionLine": "zainstalowana: {{installed}} → nowa: {{next}}",
   "update.appBehindTitle": "Ta aplikacja jest starsza niż „{{name}}”",

@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Para retomar Spotify necesitas Premium",
   "play.errSpotifyLogin": "Selecciona este altavoz una vez en Spotify",
   "play.errSpotifyLoginHelp": "STR reproduce Spotify a través de este altavoz como dispositivo de Spotify Connect. Abre Spotify en un dispositivo de la misma red Wi-Fi, toca el icono de dispositivos, elige este altavoz y reproduce una canción una vez. Después, los preajustes de Spotify se recuperan solos.",
+  "play.nativeSpotifyHint": "Reproduciendo en el Spotify integrado del altavoz. Pulsa un botón de Spotify guardado para cambiar a la reproducción de STR.",
   "update.speakerUpdateAvailFor": "Actualización disponible para '{{name}}'",
   "update.versionLine": "instalada: {{installed}} → nueva: {{next}}",
   "update.appBehindTitle": "Esta app es más antigua que '{{name}}'",

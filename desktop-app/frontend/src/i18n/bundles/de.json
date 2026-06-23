@@ -258,6 +258,7 @@
   "play.errSpotifyPremium": "Spotify-Recall braucht Premium",
   "play.errSpotifyLogin": "Diesen Lautsprecher einmal in Spotify auswählen",
   "play.errSpotifyLoginHelp": "STR spielt Spotify über diesen Lautsprecher als Spotify-Connect-Gerät. Öffne Spotify auf einem Gerät im selben WLAN, tippe auf das Geräte-Symbol, wähle diesen Lautsprecher und spiele einmal einen Titel. Danach lassen sich Spotify-Presets von selbst abrufen.",
+  "play.nativeSpotifyHint": "Wiedergabe läuft über das eingebaute Spotify des Lautsprechers. Drücke eine gespeicherte Spotify-Taste, um zu STRs Wiedergabe zu wechseln.",
   "play.errServer500": "Sender-Fehler",
   "play.errUnreachable": "Sender nicht erreichbar",
   "play.errGeneric": "Fehler",

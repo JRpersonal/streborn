@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Le rappel Spotify nécessite Premium",
   "play.errSpotifyLogin": "Sélectionne cette enceinte une fois dans Spotify",
   "play.errSpotifyLoginHelp": "STR lit Spotify via cette enceinte comme appareil Spotify Connect. Ouvre Spotify sur un appareil du même Wi-Fi, touche l'icône des appareils, choisis cette enceinte et lis un titre une fois. Ensuite, les préréglages Spotify se rappellent tout seuls.",
+  "play.nativeSpotifyHint": "Lecture via le Spotify intégré de l'enceinte. Appuie sur un bouton Spotify enregistré pour passer à la lecture STR.",
   "update.speakerUpdateAvailFor": "Mise à jour disponible pour '{{name}}'",
   "update.versionLine": "installée : {{installed}} → nouvelle : {{next}}",
   "update.appBehindTitle": "Cette application est plus ancienne que '{{name}}'",
