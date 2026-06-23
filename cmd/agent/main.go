@@ -314,7 +314,8 @@ func run() error {
 	// Initialize subsystems
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
-		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()))
+		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
+		marge.WithReflectSourceFormatPath("/mnt/nv/streborn/reflect-format"))
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
 	// The AutoPair manager is created up here so it can also be used in the
 	// WS and webui handlers.
