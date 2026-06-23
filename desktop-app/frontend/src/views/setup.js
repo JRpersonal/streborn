@@ -883,6 +883,14 @@ async function updateDrivePanels() {
     return;
   }
 
+  // Small, already-FAT32 stick: no reformat needed. Clear any leftover format
+  // tick from a previous exFAT/large-stick selection so prepare does not invoke
+  // the (blockable) elevated formatter for nothing.
+  {
+    const cb = $('setupFormat');
+    if (cb && cb.checked && (drive.totalBytes || 0) <= 34e9) cb.checked = false;
+  }
+
   if (drive.hasStick) {
     try {
       const fromFull = (await StickVersion(drive.path) || '').trim();
@@ -953,7 +961,20 @@ async function doSetup() {
     }
   } catch {}
   const isFat32 = (drive.filesystem || '').toUpperCase() === 'FAT32';
-  const wantFormat = $('setupFormat') && $('setupFormat').checked;
+  const formatChecked = $('setupFormat') && $('setupFormat').checked;
+  // Re-check the stick: a small, writable, already-FAT32 stick (CheckStick
+  // reason '') needs no reformat, so skip the elevated formatter even if a stale
+  // tick survived from a prior exFAT/NTFS selection. This both avoids a needless
+  // erase and dodges Smart App Control / WDAC blocking the unsigned format
+  // helper. Large FAT32 sticks (>34 GB) are excluded so the 64 KB-cluster trap
+  // (#119) stays fixed: those still get reformatted to a speaker-readable layout.
+  let alreadyOk = false;
+  try {
+    const c = await CheckStick(drive.path);
+    alreadyOk = c && c.ok === true && (c.reason || '') === '';
+  } catch {}
+  const LARGE_FAT32 = 34e9;
+  const wantFormat = formatChecked && !(isFat32 && alreadyOk && (drive.totalBytes || 0) <= LARGE_FAT32);
   // The speaker only reads FAT32. If the stick is NTFS/exFAT and
   // the user has NOT enabled the format option, writing on top is
   // pointless. Block and explain.
@@ -992,7 +1013,14 @@ async function doSetup() {
           return;
         }
       } catch (fErr) {
-        $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(t('setup.formatFailed', { err: String(fErr) }))}</div>`;
+        const es = String(fErr);
+        // The signed Format-Volume fallback was also blocked by the OS security
+        // policy: tell the user how to format the stick by hand instead of
+        // showing a raw error they cannot act on.
+        const blocked = es.includes('format-blocked-manual');
+        $('setupResult').innerHTML = `<div class="setup-err">${escapeHtml(
+          blocked ? t('setup.formatBlockedManual') : t('setup.formatFailed', { err: es })
+        )}</div>`;
         $('setupGo').disabled = false;
         return;
       }

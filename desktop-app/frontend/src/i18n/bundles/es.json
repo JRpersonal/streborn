@@ -991,7 +991,7 @@
   "settingsView.restoreDone": "Teclas {{slots}} reescritas para {{services}}. Reinicia el altavoz para terminar y luego comprueba los botones.",
   "settingsView.restoreHeading": "Restaurar presets de la nube (Deezer, Amazon)",
   "settingsView.restoreHelp": "Si el altavoz descartó presets que usaban un servicio vinculado a una cuenta (por ejemplo Deezer), STR puede intentar reescribirlos en sus teclas y mantener el servicio disponible, para que el altavoz los reproduzca de nuevo con su propia sesión guardada. Esto es experimental y solo funciona mientras esa sesión guardada en el altavoz siga siendo válida.",
-  "settingsView.restoreImportPlaceholder": "Pega el XML de presets que descargaste del altavoz (el bloque <presets> ... </presets>).",
+  "settingsView.restoreImportPlaceholder": "Pega los presets que guardaste del altavoz: el bloque <presets> ... </presets> completo, o un único <preset> ... </preset> para un botón.",
   "settingsView.restoreNone": "Nada que restaurar: no se encontraron presets vinculados a una cuenta.",
   "settingsView.restoreRebootBody": "Los presets se reescribieron. El altavoz necesita reiniciarse para recargar el servicio. ¿Reiniciar ahora?",
   "settingsView.restoreRunning": "Restaurando ...",
@@ -1007,5 +1007,15 @@
   "spotify.syncNone": "Aún no hay ningún altavoz con sesión de Spotify iniciada. Inicia sesión en uno primero y vuelve a intentarlo.",
   "spotify.syncPartial": "Copiada a {{n}} altavoz(ces), no se pudo acceder a {{failed}}.",
   "spotify.syncRunning": "Copiando...",
-  "spotify.syncTitle": "Copiar tu sesión de Spotify a todos los altavoces"
+  "spotify.syncTitle": "Copiar tu sesión de Spotify a todos los altavoces",
+  "update.stillWorking": "La actualización sigue en curso en el altavoz. Con una conexión lenta puede tardar un minuto. Vuelve a comprobar la versión del altavoz en un momento; si no se actualiza, inténtalo otra vez.",
+  "update.refreshBtnSpeaker": "Actualizar altavoz",
+  "setup.formatBlockedManual": "Windows bloqueó el formateador de memorias integrado (Smart App Control o una directiva de seguridad). Formatea tú mismo la memoria como FAT32: abre el Explorador de archivos, haz clic derecho en la memoria, elige Formatear, pon Sistema de archivos en FAT32 y haz clic en Iniciar. Luego vuelve aquí y pulsa Preparar de nuevo. Si el formateo también está bloqueado, añade la carpeta de ST Reborn como exclusión en Seguridad de Windows.",
+  "banner.installAppNow": "Actualizar la app ahora",
+  "banner.downloadAppUpdate": "Descargar actualización de la app",
+  "banner.getFromReleases": "Conseguirla en la página de descargas",
+  "banner.manualHint": "Esto actualiza la propia app y reemplaza la versión en ejecución. Puedes borrar los archivos de instalación que descargaste a mano antes.",
+  "settingsView.restoreNoneParsed": "Nada que restaurar: no se pudo leer ningún botón del texto pegado. Pega el archivo de presets completo del altavoz, o un único bloque <preset> ... </preset>.",
+  "settingsView.restoreNoneCloud": "Se leyeron {{count}} botones, pero ninguno usa un servicio vinculado a una cuenta como Deezer, así que aquí no hay nada que restaurar.",
+  "settingsView.restoreUnavailable": "Se reescribieron {{slots}} para {{services}}, pero el altavoz sigue indicando {{unavailable}} como no disponible. Reinicia el altavoz; si sigue no disponible, el inicio de sesión guardado para ese servicio probablemente caducó y no se puede recuperar."
 }

@@ -3,6 +3,7 @@
 package sticksetup
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 )
 
@@ -113,16 +115,95 @@ func descForDrive(path, label, fs string, total int64) string {
 func listDrivesMac() ([]Drive, error)   { return nil, fmt.Errorf("not on Mac") }
 func listDrivesLinux() ([]Drive, error) { return nil, fmt.Errorf("not on Linux") }
 
-// formatFAT32Impl reformats the volume as FAT32 via the embedded
-// winformat.exe helper, which calls FmIfs.dll FormatEx directly. That has
-// no 32 GB limit (unlike the Format-Volume cmdlet) and returns a clean
-// exit code.
+// looksAppControlBlocked reports whether a stick-format failure is a Windows
+// application-control / Smart App Control / WDAC / antivirus block of the
+// unsigned winformat helper rather than a genuine format error. In that case
+// the helper never executed (a Win 11 reporter saw every attempt end with "Eine
+// Anwendungssteuerungsrichtlinie hat diese Datei blockiert"), so STR can retry
+// with the Microsoft-signed Format-Volume cmdlet, which passes SAC/WDAC.
+func looksAppControlBlocked(combined string) bool {
+	l := strings.ToLower(combined)
+	for _, m := range []string{
+		"anwendungssteuerungsrichtlinie", // DE: application control policy
+		"application control",
+		"blocked this file",
+		"blockiert", // DE: blocked
+		"smart app control",
+		"securitysoftware",
+		"this program is blocked by group policy",
+		"operation did not complete successfully because the file contains a virus",
+	} {
+		if strings.Contains(l, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// psEncodeCommand encodes s as a PowerShell -EncodedCommand argument (UTF-16LE
+// then base64). Building the elevated command this way in Go avoids every
+// quoting hazard of passing a nested script across the Start-Process -Verb
+// RunAs boundary.
+func psEncodeCommand(s string) string {
+	u := utf16.Encode([]rune(s))
+	b := make([]byte, len(u)*2)
+	for i, c := range u {
+		b[i*2] = byte(c)
+		b[i*2+1] = byte(c >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// formatViaFormatVolume reformats the volume as FAT32 using the Microsoft-signed
+// PowerShell Format-Volume cmdlet, run elevated. Unlike the embedded winformat
+// helper this passes Smart App Control / WDAC because the binary is
+// Microsoft-signed. Format-Volume caps FAT32 at ~32 GB, which is fine here: STR
+// steers >34 GB sticks through a separate reformat path, and for <=32 GB sticks
+// the default cluster size is one the speaker kernel can read. Used as the
+// fallback when the unsigned helper is blocked.
+func formatViaFormatVolume(letter, label string) error {
+	// One UAC prompt; the elevated child runs Format-Volume and reports success
+	// via its exit code. The inner script is base64-encoded (psEncodeCommand) and
+	// passed as -EncodedCommand, so no quoting survives across the elevation.
+	inner := fmt.Sprintf(
+		`try { Format-Volume -DriveLetter %s -FileSystem FAT32 -NewFileSystemLabel '%s' -Force -Confirm:$false -ErrorAction Stop | Out-Null; exit 0 } catch { exit 70 }`,
+		letter, strings.ReplaceAll(label, "'", "''"),
+	)
+	ps := fmt.Sprintf(
+		`$ErrorActionPreference='Stop'; try { $p = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-EncodedCommand','%s' -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode } catch { Write-Error $_.Exception.Message; exit 99 }`,
+		psEncodeCommand(inner),
+	)
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", ps)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	msg := strings.TrimSpace(string(out))
+	if strings.Contains(msg, "1223") || strings.Contains(strings.ToLower(msg), "cancel") {
+		return fmt.Errorf("admin permission was declined, please click Yes on the UAC dialog")
+	}
+	if looksAppControlBlocked(msg) {
+		// Both the unsigned helper AND the signed cmdlet were blocked: surface the
+		// distinct manual-format guidance code the frontend maps to a localized
+		// message.
+		return fmt.Errorf("format-blocked-manual: %s", msg)
+	}
+	return fmt.Errorf("Format-Volume fallback failed: %s", msg)
+}
+
+// formatFAT32Impl reformats the volume as FAT32 via the embedded winformat.exe
+// helper, which calls FmIfs.dll FormatEx directly. That has no 32 GB limit
+// (unlike the Format-Volume cmdlet) and returns a clean exit code. When the
+// unsigned helper is blocked by Smart App Control / WDAC / antivirus it never
+// runs, so the failure paths fall back to the Microsoft-signed Format-Volume
+// cmdlet (formatViaFormatVolume).
 //
 // Flow:
 //  1. Extract winformat.exe from the embed into TEMP
-//  2. Launch it with Start-Process -Verb RunAs — the user sees ONE UAC prompt
+//  2. Launch it with Start-Process -Verb RunAs (the user sees ONE UAC prompt)
 //  3. The helper runs elevated, calls FmIfs.FormatEx, writes the exit code
-//  4. We read stderr for a meaningful error message
+//  4. We read the status file for a meaningful error message
 func formatFAT32Impl(path, label string) error {
 	letter := strings.TrimSuffix(path, ":\\")
 	letter = strings.TrimSuffix(letter, ":/")
@@ -175,12 +256,24 @@ func formatFAT32Impl(path, label string) error {
 		return nil
 	}
 
-	// No OK status → either UAC was declined or the helper reported an error.
+	// No OK status: UAC declined, the helper reported an error, or the unsigned
+	// helper was blocked by Smart App Control / WDAC / antivirus before it could
+	// run. In the block case the helper produced no status, so the signed
+	// Format-Volume cmdlet is retried (it passes SAC/WDAC).
+	combined := strings.TrimSpace(string(out)) + " " + status
+	helperBlocked := looksAppControlBlocked(combined) ||
+		(runErr != nil && status == "") // helper never executed at all
+
 	if runErr != nil {
 		msg := strings.TrimSpace(string(out))
 		// Exit Code 1223 = ERROR_CANCELLED (UAC declined by user).
 		if strings.Contains(msg, "1223") || strings.Contains(strings.ToLower(msg), "cancel") {
 			return fmt.Errorf("admin permission was declined, please click Yes on the UAC dialog")
+		}
+		if helperBlocked {
+			Logger.Warn("winformat helper blocked, falling back to signed Format-Volume",
+				"drive", path, "detail", msg)
+			return formatViaFormatVolume(letter, label)
 		}
 		if status != "" {
 			return fmt.Errorf("format failed: %s", strings.TrimPrefix(status, "ERR "))
@@ -194,10 +287,10 @@ func formatFAT32Impl(path, label string) error {
 	if status != "" {
 		return fmt.Errorf("format failed: %s", strings.TrimPrefix(status, "ERR "))
 	}
-	// No status file written and no error returned: helper never ran
-	// (UAC dismissed before the prompt, or anti-virus blocked the
-	// helper binary).
-	return fmt.Errorf("format failed: helper never executed (UAC declined or antivirus blocked it?)")
+	// No status file and no runErr: helper never ran (UAC dismissed, or AV /
+	// app-control silently blocked the helper binary). Try the signed cmdlet.
+	Logger.Warn("winformat helper produced no status, falling back to signed Format-Volume", "drive", path)
+	return formatViaFormatVolume(letter, label)
 }
 
 // ejectImpl ejects the volume cleanly via the Win32 API directly.

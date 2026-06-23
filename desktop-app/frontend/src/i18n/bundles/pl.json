@@ -991,7 +991,7 @@
   "settingsView.restoreDone": "Zapisano z powrotem presety {{slots}} dla {{services}}. Uruchom ponownie głośnik, aby zakończyć, a potem sprawdź przyciski.",
   "settingsView.restoreHeading": "Przywróć presety z chmury (Deezer, Amazon)",
   "settingsView.restoreHelp": "Jeśli głośnik usunął presety korzystające z usługi powiązanej z kontem (na przykład Deezer), STR może spróbować zapisać je z powrotem w ich miejscach i zachować dostępność usługi, aby głośnik odtwarzał je ponownie przez własną zapisaną sesję logowania. To jest eksperymentalne i działa tylko, dopóki ta zapisana sesja logowania na głośniku jest jeszcze ważna.",
-  "settingsView.restoreImportPlaceholder": "Wklej XML presetów pobrany z głośnika (blok <presets> ... </presets>).",
+  "settingsView.restoreImportPlaceholder": "Wklej presety zapisane z głośnika: cały blok <presets> ... </presets> lub pojedynczy <preset> ... </preset> dla jednego przycisku.",
   "settingsView.restoreNone": "Nie ma czego przywracać: nie znaleziono presetów powiązanych z kontem.",
   "settingsView.restoreRebootBody": "Presety zostały zapisane z powrotem. Głośnik musi się zrestartować, aby ponownie wczytać usługę. Uruchomić ponownie teraz?",
   "settingsView.restoreRunning": "Przywracanie ...",
@@ -1007,5 +1007,15 @@
   "spotify.syncNone": "Żaden głośnik nie jest jeszcze zalogowany do Spotify. Zaloguj najpierw jeden, a potem spróbuj ponownie.",
   "spotify.syncPartial": "Skopiowano na {{n}} głośnik(ów), {{failed}} nie udało się osiągnąć.",
   "spotify.syncRunning": "Kopiowanie...",
-  "spotify.syncTitle": "Skopiuj swój login Spotify na wszystkie głośniki"
+  "spotify.syncTitle": "Skopiuj swój login Spotify na wszystkie głośniki",
+  "update.stillWorking": "Aktualizacja nadal trwa na głośniku. Przy wolnym połączeniu może to potrwać minutę. Za chwilę sprawdź ponownie wersję głośnika; jeśli się nie zaktualizuje, spróbuj jeszcze raz.",
+  "update.refreshBtnSpeaker": "Zaktualizuj głośnik",
+  "setup.formatBlockedManual": "Windows zablokował wbudowane narzędzie do formatowania pendrive'a (Smart App Control lub zasady zabezpieczeń). Sformatuj pendrive samodzielnie jako FAT32: otwórz Eksplorator plików, kliknij pendrive prawym przyciskiem, wybierz Formatuj, ustaw System plików na FAT32 i kliknij Rozpocznij. Następnie wróć tutaj i ponownie kliknij Przygotuj. Jeśli formatowanie też jest zablokowane, dodaj folder aplikacji ST Reborn jako wykluczenie w Zabezpieczeniach Windows.",
+  "banner.installAppNow": "Zaktualizuj aplikację teraz",
+  "banner.downloadAppUpdate": "Pobierz aktualizację aplikacji",
+  "banner.getFromReleases": "Pobierz ze strony pobierania",
+  "banner.manualHint": "To aktualizuje samą aplikację i zastępuje działającą wersję. Pliki instalacyjne pobrane wcześniej ręcznie możesz usunąć.",
+  "settingsView.restoreNoneParsed": "Nie ma czego przywracać: nie udało się odczytać żadnych przycisków z wklejonego tekstu. Wklej cały plik presetów z głośnika lub pojedynczy blok <preset> ... </preset>.",
+  "settingsView.restoreNoneCloud": "Odczytano {{count}} przycisków, ale żaden nie korzysta z usługi powiązanej z kontem, takiej jak Deezer, więc nie ma tu czego przywracać.",
+  "settingsView.restoreUnavailable": "Zapisano z powrotem {{slots}} dla {{services}}, ale głośnik nadal zgłasza {{unavailable}} jako niedostępne. Uruchom głośnik ponownie; jeśli pozostaje niedostępne, zapisane logowanie do tej usługi prawdopodobnie wygasło i nie da się go przywrócić."
 }

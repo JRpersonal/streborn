@@ -991,7 +991,7 @@
   "settingsView.restoreDone": "Iestatījumi {{slots}} pakalpojumam {{services}} ierakstīti atpakaļ. Restartē skaļruni, lai pabeigtu, tad pārbaudi taustiņus.",
   "settingsView.restoreHeading": "Atjaunot mākoņa iestatījumus (Deezer, Amazon)",
   "settingsView.restoreHelp": "Ja skaļrunis atmeta iestatījumus, kas izmantoja ar kontu saistītu pakalpojumu (piemēram, Deezer), STR var mēģināt tos ierakstīt atpakaļ to vietās un saglabāt pakalpojumu pieejamu, lai skaļrunis tos atskaņo no jauna, izmantojot savu saglabāto pieteikšanos. Tas ir eksperimentāli un darbojas tikai tik ilgi, kamēr šī saglabātā pieteikšanās skaļrunī vēl ir derīga.",
-  "settingsView.restoreImportPlaceholder": "Ielīmē iestatījumu XML, ko lejupielādēji no skaļruņa (bloku <presets> ... </presets>).",
+  "settingsView.restoreImportPlaceholder": "Ielīmējiet no skaļruņa saglabātos iestatījumus: visu <presets> ... </presets> bloku vai vienu <preset> ... </preset> vienai pogai.",
   "settingsView.restoreNone": "Nav ko atjaunot: netika atrasti ar kontu saistīti iestatījumi.",
   "settingsView.restoreRebootBody": "Iestatījumi tika ierakstīti atpakaļ. Skaļrunim nepieciešams restarts, lai pārlādētu pakalpojumu. Restartēt tagad?",
   "settingsView.restoreRunning": "Atjauno ...",
@@ -1007,5 +1007,15 @@
   "spotify.syncNone": "Neviens skaļrunis vēl nav pieteicies Spotify. Vispirms piesaki vienu, tad mēģini vēlreiz.",
   "spotify.syncPartial": "Nokopēts uz {{n}} skaļruni(-iem), {{failed}} nevarēja sasniegt.",
   "spotify.syncRunning": "Kopē...",
-  "spotify.syncTitle": "Kopēt savu Spotify pieteikšanos uz visiem skaļruņiem"
+  "spotify.syncTitle": "Kopēt savu Spotify pieteikšanos uz visiem skaļruņiem",
+  "update.stillWorking": "Atjauninājums skaļrunī joprojām notiek. Ar lēnu savienojumu tas var aizņemt minūti. Pēc brīža vēlreiz pārbaudiet skaļruņa versiju; ja tā neatjauninās, mēģiniet vēlreiz.",
+  "update.refreshBtnSpeaker": "Atjaunināt skaļruni",
+  "setup.formatBlockedManual": "„Windows” bloķēja iebūvēto zibatmiņas formatēšanas rīku (Smart App Control vai drošības politika). Lūdzu, formatējiet zibatmiņu pats kā FAT32: atveriet Failu pārlūku, ar peles labo pogu noklikšķiniet uz zibatmiņas, izvēlieties Formatēt, iestatiet failu sistēmu uz FAT32 un noklikšķiniet Sākt. Pēc tam atgriezieties šeit un vēlreiz noklikšķiniet Sagatavot. Ja arī formatēšana ir bloķēta, pievienojiet ST Reborn lietotnes mapi kā izņēmumu Windows drošībā.",
+  "banner.installAppNow": "Atjaunināt lietotni tagad",
+  "banner.downloadAppUpdate": "Lejupielādēt lietotnes atjauninājumu",
+  "banner.getFromReleases": "Iegūt no lejupielāžu lapas",
+  "banner.manualHint": "Tas atjaunina pašu lietotni un aizstāj palaisto versiju. Iepriekš ar roku lejupielādētos instalācijas failus vari dzēst.",
+  "settingsView.restoreNoneParsed": "Nav ko atjaunot: no ielīmētā teksta nevarēja nolasīt nevienu pogu. Ielīmējiet visu skaļruņa iestatījumu failu vai vienu <preset> ... </preset> bloku.",
+  "settingsView.restoreNoneCloud": "Nolasītas {{count}} pogas, taču neviena neizmanto ar kontu saistītu pakalpojumu, piemēram, Deezer, tāpēc šeit nav ko atjaunot.",
+  "settingsView.restoreUnavailable": "{{slots}} ({{services}}) ierakstīts atpakaļ, taču skaļrunis joprojām norāda {{unavailable}} kā nepieejamu. Restartējiet skaļruni; ja tas paliek nepieejams, saglabātā pieteikšanās šim pakalpojumam, visticamāk, ir beigusies un to nevar atjaunot."
 }

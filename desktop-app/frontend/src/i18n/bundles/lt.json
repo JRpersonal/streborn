@@ -991,7 +991,7 @@
   "settingsView.restoreDone": "Atstatyti nustatymai {{slots}} paslaugoms {{services}}. Paleisk garsiakalbį iš naujo, kad užbaigtum, tada patikrink mygtukus.",
   "settingsView.restoreHeading": "Atkurti debesies nustatymus (Deezer, Amazon)",
   "settingsView.restoreHelp": "Jei garsiakalbis pašalino nustatymus, kurie naudojo prie paskyros susietą paslaugą (pavyzdžiui, Deezer), STR gali pabandyti įrašyti juos atgal į jų vietas ir išlaikyti paslaugą pasiekiamą, kad garsiakalbis vėl grotų juos per savo paties išsaugotą prisijungimą. Tai eksperimentinė funkcija ir veikia tik tol, kol tas garsiakalbyje išsaugotas prisijungimas dar galioja.",
-  "settingsView.restoreImportPlaceholder": "Įklijuok nustatymų XML, kurį atsisiuntei iš garsiakalbio (bloką <presets> ... </presets>).",
+  "settingsView.restoreImportPlaceholder": "Įklijuokite iš kolonėlės įrašytus išankstinius nustatymus: visą <presets> ... </presets> bloką arba vieną <preset> ... </preset> vienam mygtukui.",
   "settingsView.restoreNone": "Nėra ką atkurti: prie paskyros susietų nustatymų nerasta.",
   "settingsView.restoreRebootBody": "Nustatymai įrašyti atgal. Garsiakalbiui reikia paleisti iš naujo, kad iš naujo įkeltų paslaugą. Paleisti dabar?",
   "settingsView.restoreRunning": "Atkuriama ...",
@@ -1007,5 +1007,15 @@
   "spotify.syncNone": "Nė vienas garsiakalbis dar neprisijungęs prie Spotify. Pirma prijunk vieną, tada bandyk dar kartą.",
   "spotify.syncPartial": "Nukopijuota į {{n}} garsiakalbį(-ius), {{failed}} nepavyko pasiekti.",
   "spotify.syncRunning": "Kopijuojama...",
-  "spotify.syncTitle": "Kopijuok savo Spotify prisijungimą į visus garsiakalbius"
+  "spotify.syncTitle": "Kopijuok savo Spotify prisijungimą į visus garsiakalbius",
+  "update.stillWorking": "Atnaujinimas vis dar vykdomas kolonėlėje. Esant lėtam ryšiui, tai gali užtrukti apie minutę. Po akimirkos vėl patikrinkite kolonėlės versiją; jei ji neatsinaujina, bandykite dar kartą.",
+  "update.refreshBtnSpeaker": "Atnaujinti kolonėlę",
+  "setup.formatBlockedManual": "„Windows“ užblokavo įmontuotą atmintinės formatavimo įrankį („Smart App Control“ arba saugumo politika). Suformatuokite atmintinę patys į FAT32: atidarykite Failų naršyklę, spustelėkite atmintinę dešiniuoju pelės klavišu, pasirinkite Formatuoti, nustatykite failų sistemą į FAT32 ir spustelėkite Pradėti. Tada grįžkite čia ir vėl spustelėkite Paruošti. Jei formatavimas taip pat blokuojamas, pridėkite ST Reborn programos aplanką kaip išimtį „Windows“ saugoje.",
+  "banner.installAppNow": "Atnaujinti programą dabar",
+  "banner.downloadAppUpdate": "Atsisiųsti programos atnaujinimą",
+  "banner.getFromReleases": "Gauti iš atsisiuntimų puslapio",
+  "banner.manualHint": "Tai atnaujina pačią programą ir pakeičia veikiančią versiją. Anksčiau ranka atsisiųstus diegimo failus galite ištrinti.",
+  "settingsView.restoreNoneParsed": "Nėra ką atkurti: iš įklijuoto teksto nepavyko nuskaityti jokių mygtukų. Įklijuokite visą kolonėlės išankstinių nustatymų failą arba vieną <preset> ... </preset> bloką.",
+  "settingsView.restoreNoneCloud": "Nuskaityta {{count}} mygtukų, bet nė vienas nenaudoja su paskyra susietos paslaugos, pvz., „Deezer“, todėl čia nėra ką atkurti.",
+  "settingsView.restoreUnavailable": "{{slots}} ({{services}}) įrašyta atgal, bet kolonėlė vis dar nurodo {{unavailable}} kaip nepasiekiamą. Paleiskite kolonėlę iš naujo; jei lieka nepasiekiama, įrašytas tos paslaugos prisijungimas tikriausiai nebegalioja ir jo atkurti nepavyks."
 }

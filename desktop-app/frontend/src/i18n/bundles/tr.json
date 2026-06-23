@@ -991,7 +991,7 @@
   "settingsView.restoreDone": "{{services}} için {{slots}} presetleri geri yazıldı. Bitirmek için hoparlörü yeniden başlat, sonra tuşları kontrol et.",
   "settingsView.restoreHeading": "Bulut presetlerini geri yükle (Deezer, Amazon)",
   "settingsView.restoreHelp": "Hoparlör, hesaba bağlı bir servis kullanan presetleri attıysa (örneğin Deezer), STR bunları yuvalarına geri yazmayı ve servisi kullanılabilir tutmayı deneyebilir, böylece hoparlör onları kendi kayıtlı girişiyle yeniden çalar. Bu deneyseldir ve yalnızca hoparlördeki o kayıtlı giriş hâlâ geçerliyken çalışır.",
-  "settingsView.restoreImportPlaceholder": "Hoparlörden indirdiğin presetler XML'ini yapıştır (<presets> ... </presets> bloğu).",
+  "settingsView.restoreImportPlaceholder": "Hoparlörden kaydettiğin presetleri yapıştır: tüm <presets> ... </presets> bloğu ya da bir düğme için tek bir <preset> ... </preset>.",
   "settingsView.restoreNone": "Geri yüklenecek bir şey yok: hesaba bağlı preset bulunamadı.",
   "settingsView.restoreRebootBody": "Presetler geri yazıldı. Hoparlörün servisi yeniden yüklemesi için yeniden başlatması gerekiyor. Şimdi yeniden başlatılsın mı?",
   "settingsView.restoreRunning": "Geri yükleniyor ...",
@@ -1007,5 +1007,15 @@
   "spotify.syncNone": "Henüz hiçbir hoparlör Spotify'a giriş yapmadı. Önce birini giriş yaptır, sonra tekrar dene.",
   "spotify.syncPartial": "{{n}} hoparlöre kopyalandı, {{failed}} tanesine ulaşılamadı.",
   "spotify.syncRunning": "Kopyalanıyor...",
-  "spotify.syncTitle": "Spotify girişini tüm hoparlörlere kopyala"
+  "spotify.syncTitle": "Spotify girişini tüm hoparlörlere kopyala",
+  "update.stillWorking": "Güncelleme hoparlörde hâlâ çalışıyor. Yavaş bağlantıda bir dakika sürebilir. Birazdan hoparlör sürümünü tekrar kontrol et; güncellenmezse bir kez daha dene.",
+  "update.refreshBtnSpeaker": "Hoparlörü güncelle",
+  "setup.formatBlockedManual": "Windows yerleşik bellek biçimlendiriciyi engelledi (Smart App Control veya bir güvenlik ilkesi). Lütfen belleği kendin FAT32 olarak biçimlendir: Dosya Gezgini'ni aç, belleğe sağ tıkla, Biçimlendir'i seç, Dosya sistemini FAT32 yap ve Başlat'a tıkla. Sonra buraya dönüp tekrar Hazırla'ya tıkla. Biçimlendirme de engelleniyorsa, ST Reborn uygulama klasörünü Windows Güvenliği'nde bir istisna olarak ekle.",
+  "banner.installAppNow": "Uygulamayı şimdi güncelle",
+  "banner.downloadAppUpdate": "Uygulama güncellemesini indir",
+  "banner.getFromReleases": "İndirme sayfasından al",
+  "banner.manualHint": "Bu, uygulamanın kendisini günceller ve çalışan sürümün yerine geçer. Daha önce elle indirdiğin kurulum dosyalarını silebilirsin.",
+  "settingsView.restoreNoneParsed": "Geri yüklenecek bir şey yok: yapıştırılan metinden hiçbir düğme okunamadı. Hoparlörün tüm preset dosyasını ya da tek bir <preset> ... </preset> bloğunu yapıştır.",
+  "settingsView.restoreNoneCloud": "{{count}} düğme okundu, ancak hiçbiri Deezer gibi hesaba bağlı bir hizmet kullanmıyor, bu yüzden burada geri yüklenecek bir şey yok.",
+  "settingsView.restoreUnavailable": "{{services}} için {{slots}} geri yazıldı, ancak hoparlör {{unavailable}} ögesini hâlâ kullanılamıyor olarak bildiriyor. Hoparlörü yeniden başlat; kullanılamaz kalırsa, o hizmet için kayıtlı oturum açma bilgisi büyük olasılıkla süresi dolmuş ve geri getirilemez."
 }

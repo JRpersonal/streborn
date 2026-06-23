@@ -991,7 +991,7 @@
   "settingsView.restoreDone": "{{services}}のプリセット{{slots}}を書き戻しました。スピーカーを再起動して完了させ、ボタンを確認してください。",
   "settingsView.restoreHeading": "クラウドプリセットを復元（Deezer、Amazon）",
   "settingsView.restoreHelp": "スピーカーがアカウント連携サービス（例: Deezer）を使ったプリセットを削除した場合、STRはそれらをスロットに書き戻してサービスを利用可能なまま保ち、スピーカーが自身の保存済みログインで再び再生できるよう試みます。これは実験的な機能で、スピーカーのその保存済みログインがまだ有効な間のみ動作します。",
-  "settingsView.restoreImportPlaceholder": "スピーカーからダウンロードしたプリセットXML（<presets> ... </presets>のブロック）を貼り付けてください。",
+  "settingsView.restoreImportPlaceholder": "スピーカーから保存したプリセットを貼り付けます: <presets> ... </presets> ブロック全体、または 1 つのボタン用の単一の <preset> ... </preset>。",
   "settingsView.restoreNone": "復元するものがありません: アカウント連携のプリセットは見つかりませんでした。",
   "settingsView.restoreRebootBody": "プリセットを書き戻しました。サービスを再読み込みするにはスピーカーの再起動が必要です。今すぐ再起動しますか？",
   "settingsView.restoreRunning": "復元中 ...",
@@ -1007,5 +1007,15 @@
   "spotify.syncNone": "まだSpotifyにログインしているスピーカーがありません。先に1台ログインしてから、もう一度お試しください。",
   "spotify.syncPartial": "{{n}}台のスピーカーにコピーしました。{{failed}}台に接続できませんでした。",
   "spotify.syncRunning": "コピー中...",
-  "spotify.syncTitle": "Spotifyのログインを全スピーカーにコピー"
+  "spotify.syncTitle": "Spotifyのログインを全スピーカーにコピー",
+  "update.stillWorking": "アップデートはスピーカーでまだ実行中です。接続が遅いと1分ほどかかることがあります。少し後にもう一度スピーカーのバージョンを確認してください。更新されない場合はもう一度お試しください。",
+  "update.refreshBtnSpeaker": "スピーカーを更新",
+  "setup.formatBlockedManual": "Windows が内蔵のスティック フォーマッターをブロックしました（Smart App Control またはセキュリティ ポリシー）。スティックを自分で FAT32 にフォーマットしてください。エクスプローラーを開き、スティックを右クリックして「フォーマット」を選び、ファイル システムを FAT32 にして「開始」をクリックします。その後ここに戻り、もう一度「準備」をクリックしてください。フォーマットもブロックされる場合は、Windows セキュリティで ST Reborn アプリのフォルダーを除外に追加してください。",
+  "banner.installAppNow": "アプリを今すぐ更新",
+  "banner.downloadAppUpdate": "アプリの更新をダウンロード",
+  "banner.getFromReleases": "ダウンロードページから入手",
+  "banner.manualHint": "これはアプリ自体を更新し、実行中のバージョンを置き換えます。以前に手動でダウンロードしたインストーラー ファイルは削除してかまいません。",
+  "settingsView.restoreNoneParsed": "復元するものがありません: 貼り付けたテキストからボタンを読み取れませんでした。スピーカーのプリセット ファイル全体、または単一の <preset> ... </preset> ブロックを貼り付けてください。",
+  "settingsView.restoreNoneCloud": "{{count}} 個のボタンを読み取りましたが、Deezer のようなアカウント連携サービスを使うものはありません。ここに復元するものはありません。",
+  "settingsView.restoreUnavailable": "{{services}} の {{slots}} を書き戻しましたが、スピーカーは {{unavailable}} を引き続き利用不可と報告しています。スピーカーを再起動してください。利用不可のままなら、そのサービスの保存済みログインはおそらく期限切れで、復元できません。"
 }

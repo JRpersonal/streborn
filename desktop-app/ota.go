@@ -11,8 +11,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -77,6 +79,17 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 		a.logger.Warn("update agent: HTTP preflight rejected, switching to SSH-OTA",
 			"host", host, "port", port, "reason", perr)
 		if sshErr := a.updateAgentViaSSH(host, bin); sshErr != nil {
+			// A preflight TIMEOUT (slow link, or an HTTP-inspecting security
+			// suite such as Norton stalling the probe) is not proof the box is
+			// unupdatable. If SSH is also unavailable, defer to the caller's
+			// post-OTA version poll rather than surfacing a raw "context
+			// deadline exceeded" failure (the box may still be reachable and
+			// updatable on a later, faster attempt). This is what two reporters
+			// hit: the agent was healthy yet the app showed "Update failed".
+			if isTimeoutLikeErr(perr) {
+				a.logger.Info("update agent: preflight timed out and SSH unavailable; deferring to the post-OTA version poll", "host", host, "preflightErr", perr, "sshErr", sshErr)
+				return nil
+			}
 			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %v)", port, sshErr, perr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
@@ -299,6 +312,35 @@ func isConnDropErr(err error) bool {
 	return !strings.Contains(err.Error(), "status ")
 }
 
+// isTimeoutLikeErr reports whether an OTA error is a transport timeout or
+// connection drop rather than a definite rejection. A timeout (including the
+// "context deadline exceeded (Client.Timeout or context cancellation while
+// reading body)" text Go emits, common when a slow link or an HTTP-inspecting
+// security suite such as Norton stalls the transfer) does NOT mean the OTA
+// failed: the binary may have landed and the box may be rebooting. Such cases
+// are deferred to the caller's post-OTA /api/agent/version poll instead of
+// being surfaced as a hard "Update failed". A clean ">= 400 status N" reply is
+// the only HTTP outcome that proves the binary was refused, so it is excluded.
+func isTimeoutLikeErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	var nerr net.Error
+	if errors.As(err, &nerr) && nerr.Timeout() {
+		return true
+	}
+	if strings.Contains(err.Error(), "status ") {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"deadline exceeded", "client.timeout", "while reading body", "timeout", "connection reset", "broken pipe"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // updateAgentPreflight checks that /api/agent/version on host:port really
 // answers as STR (JSON envelope containing a "version" key). A success
 // here is the green light for the 10 MB HTTP POST. Any other response
@@ -345,8 +387,10 @@ func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 	// response. 60 s was too tight over slow Wi-Fi and surfaced to users as
 	// "context deadline exceeded (Client.Timeout ... while reading body)" with the
 	// update never completing. The SSH OTA path already budgets 120 s for the same
-	// upload alone, so match that with headroom for the NAND write and reply.
-	client := &http.Client{Timeout: 180 * time.Second}
+	// upload alone, so match that with headroom for the NAND write and reply. A
+	// clean expiry here is NOT a hard failure: UpdateBoxAgent defers timeout-class
+	// errors (isTimeoutLikeErr) to the caller's post-OTA version poll.
+	client := &http.Client{Timeout: 240 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

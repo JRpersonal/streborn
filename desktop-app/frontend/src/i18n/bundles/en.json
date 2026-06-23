@@ -699,7 +699,7 @@
   "settingsView.restoreHelp": "If the speaker dropped presets that used an account-linked service (for example Deezer), STR can try to write them back to their slots and keep the service available, so the speaker plays them again through its own saved login. This is experimental and only works while that saved login on the speaker is still valid.",
   "settingsView.restoreBtn": "Restore",
   "settingsView.restoreXmlLabel": "Optional: paste the presets file you saved from the speaker. Leave it empty to use STR's own automatic backup.",
-  "settingsView.restoreImportPlaceholder": "Paste the presets XML you downloaded from the speaker (the <presets> ... </presets> block).",
+  "settingsView.restoreImportPlaceholder": "Paste the presets you saved from the speaker: the whole <presets> ... </presets> block, or a single <preset> ... </preset> for one button.",
   "settingsView.restoreRunning": "Restoring ...",
   "settingsView.restoreNone": "Nothing to restore: no account-linked presets were found.",
   "settingsView.restoreDone": "Wrote back presets {{slots}} for {{services}}. Restart the speaker to finish, then check the buttons.",
@@ -1015,5 +1015,15 @@
   "settingsView.announceDefault": "Thank you for using S T Reborn!",
   "settingsView.announceVolumeLabel": "Announcement volume",
   "settingsView.announceTranslate": "Translate",
-  "settingsView.announceTranslateTitle": "Translate the text into the selected voice language"
+  "settingsView.announceTranslateTitle": "Translate the text into the selected voice language",
+  "update.stillWorking": "Update is still running on the speaker. It may take a minute over a slow connection. Check the speaker version again in a moment; if it does not update, try once more.",
+  "update.refreshBtnSpeaker": "Update speaker",
+  "setup.formatBlockedManual": "Windows blocked the built-in stick formatter (Smart App Control or a security policy). Please format the stick yourself as FAT32: open File Explorer, right-click the stick, choose Format, set File system to FAT32, and click Start. Then come back here and click Prepare again. If formatting is also blocked, add the ST Reborn app folder as an exclusion in Windows Security.",
+  "banner.installAppNow": "Update the app now",
+  "banner.downloadAppUpdate": "Download app update",
+  "banner.getFromReleases": "Get it from the downloads page",
+  "banner.manualHint": "This updates the app itself and replaces the running version. You can delete any installer files you downloaded by hand earlier.",
+  "settingsView.restoreNoneParsed": "Nothing to restore: no buttons could be read from the pasted text. Paste either the whole presets file from the speaker, or a single <preset> ... </preset> block.",
+  "settingsView.restoreNoneCloud": "Read {{count}} buttons, but none use an account-linked service like Deezer, so there is nothing to restore here.",
+  "settingsView.restoreUnavailable": "Wrote back {{slots}} for {{services}}, but the speaker still reports {{unavailable}} as unavailable. Restart the speaker; if it stays unavailable, the saved login for that service has likely expired and cannot be brought back."
 }

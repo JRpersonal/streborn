@@ -699,7 +699,7 @@
   "settingsView.restoreHelp": "Wenn der Lautsprecher Tasten verloren hat, die einen kontogebundenen Dienst genutzt haben (zum Beispiel Deezer), kann STR versuchen, sie wieder auf ihre Tasten zu schreiben und den Dienst verfügbar zu halten, damit der Lautsprecher sie über seine eigene gespeicherte Anmeldung wieder abspielt. Das ist experimentell und funktioniert nur, solange diese gespeicherte Anmeldung am Lautsprecher noch gültig ist.",
   "settingsView.restoreBtn": "Wiederherstellen",
   "settingsView.restoreXmlLabel": "Optional: füge die Tasten-Datei ein, die du vom Lautsprecher gesichert hast. Lässt du das Feld leer, nutzt STR seine eigene automatische Sicherung.",
-  "settingsView.restoreImportPlaceholder": "Füge die Tasten-XML ein, die du vom Lautsprecher heruntergeladen hast (den Block <presets> ... </presets>).",
+  "settingsView.restoreImportPlaceholder": "Füge die vom Lautsprecher gespeicherten Tasten ein: den gesamten <presets> ... </presets>-Block oder einen einzelnen <preset> ... </preset> für eine Taste.",
   "settingsView.restoreRunning": "Wird wiederhergestellt ...",
   "settingsView.restoreNone": "Nichts wiederherzustellen: es wurden keine kontogebundenen Tasten gefunden.",
   "settingsView.restoreDone": "Tasten {{slots}} für {{services}} zurückgeschrieben. Starte den Lautsprecher neu, dann prüfe die Tasten.",
@@ -1015,5 +1015,15 @@
   "settingsView.announceDefault": "Vielen Dank, dass du S T Reborn nutzt!",
   "settingsView.announceVolumeLabel": "Durchsage-Lautstärke",
   "settingsView.announceTranslate": "Übersetzen",
-  "settingsView.announceTranslateTitle": "Text in die gewählte Stimmen-Sprache übersetzen"
+  "settingsView.announceTranslateTitle": "Text in die gewählte Stimmen-Sprache übersetzen",
+  "update.stillWorking": "Das Update läuft noch auf dem Lautsprecher. Über eine langsame Verbindung kann es eine Minute dauern. Prüfe die Lautsprecher-Version gleich erneut; falls sie sich nicht aktualisiert, versuche es noch einmal.",
+  "update.refreshBtnSpeaker": "Lautsprecher aktualisieren",
+  "setup.formatBlockedManual": "Windows hat das eingebaute Stick-Formatierwerkzeug blockiert (Smart App Control oder eine Sicherheitsrichtlinie). Bitte formatiere den Stick selbst als FAT32: Datei-Explorer öffnen, mit der rechten Maustaste auf den Stick klicken, Formatieren wählen, Dateisystem auf FAT32 setzen und auf Starten klicken. Komm danach hierher zurück und klicke erneut auf Vorbereiten. Falls auch das Formatieren blockiert wird, füge den ST-Reborn-Ordner in der Windows-Sicherheit als Ausnahme hinzu.",
+  "banner.installAppNow": "App jetzt aktualisieren",
+  "banner.downloadAppUpdate": "App-Update herunterladen",
+  "banner.getFromReleases": "Auf der Download-Seite holen",
+  "banner.manualHint": "Das aktualisiert die App selbst und ersetzt die laufende Version. Von Hand heruntergeladene Installationsdateien kannst du löschen.",
+  "settingsView.restoreNoneParsed": "Nichts wiederherzustellen: Aus dem eingefügten Text konnten keine Tasten gelesen werden. Füge entweder die komplette Tasten-Datei des Lautsprechers ein oder einen einzelnen <preset> ... </preset>-Block.",
+  "settingsView.restoreNoneCloud": "{{count}} Tasten gelesen, aber keine nutzt einen kontogebundenen Dienst wie Deezer. Hier gibt es nichts wiederherzustellen.",
+  "settingsView.restoreUnavailable": "{{slots}} für {{services}} zurückgeschrieben, aber der Lautsprecher meldet {{unavailable}} weiterhin als nicht verfügbar. Starte den Lautsprecher neu; bleibt er nicht verfügbar, ist die gespeicherte Anmeldung für diesen Dienst vermutlich abgelaufen und lässt sich nicht zurückholen."
 }

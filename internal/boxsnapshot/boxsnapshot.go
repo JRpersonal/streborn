@@ -18,6 +18,7 @@
 package boxsnapshot
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -409,9 +410,50 @@ func Load(path string) (Snapshot, error) {
 }
 
 // ParsePresetsXML parses a box /presets XML dump (e.g. one the user saved before
-// installing STR) into presets, so the restore action can write them back.
+// installing STR), OR a single <preset>...</preset> block the user copied for one
+// button, into presets so the restore action can write them back. Accepting the
+// single block matters: a user who pasted just one preset element got "no
+// account-linked buttons found" because the <presets>-rooted parser sees a bare
+// <preset> root as zero child presets.
 func ParsePresetsXML(body []byte) ([]Preset, error) {
-	return parsePresets(body)
+	ps, err := parsePresets(body)
+	if err == nil && len(ps) > 0 {
+		return ps, nil
+	}
+	trimmed := bytes.TrimSpace(body)
+	if bytes.HasPrefix(trimmed, []byte("<preset")) {
+		wrapped := append(append([]byte("<presets>"), trimmed...), []byte("</presets>")...)
+		if ps2, err2 := parsePresets(wrapped); err2 == nil && len(ps2) > 0 {
+			return ps2, nil
+		}
+	}
+	return ps, err
+}
+
+// SourceStatuses returns upper(source)->status from the box's live /sources, so a
+// restore can report whether a re-asserted account source actually came back
+// (status "READY") or is still "UNAVAILABLE" (the box-side login expired). The
+// source name is upper-cased and truncated at the first underscore so e.g.
+// "DEEZER" matches regardless of any account suffix.
+func SourceStatuses(ctx context.Context, boxHost string) (map[string]string, error) {
+	client := &http.Client{Timeout: 6 * time.Second}
+	body, err := get(ctx, client, boxHost, "/sources")
+	if err != nil {
+		return nil, err
+	}
+	_, srcs, err := parseSources(body)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, sc := range srcs {
+		s := strings.ToUpper(strings.TrimSpace(sc.Source))
+		if i := strings.IndexByte(s, '_'); i > 0 {
+			s = s[:i]
+		}
+		out[s] = strings.ToUpper(strings.TrimSpace(sc.Status))
+	}
+	return out, nil
 }
 
 // CloudPresets returns the subset of presets bound to an account-linked cloud
