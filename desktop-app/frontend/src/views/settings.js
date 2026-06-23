@@ -993,11 +993,26 @@ function renderBoxSettings(s, box) {
       const r = await RestoreBoxSnapshot(box.host, box.port, xml || '');
       const restored = (r && r.restored) || [];
       const services = (r && r.services) || [];
+      const unavailable = (r && r.unavailable) || [];
+      const parsed = (r && typeof r.parsed === 'number') ? r.parsed : null;
       if (!restored.length && !services.length) {
-        if (out) out.textContent = t('settingsView.restoreNone');
+        // Distinguish "could not read any buttons from the paste" (parsed 0,
+        // usually the wrong text) from "read buttons but none are account-bound"
+        // (parsed > 0, nothing to restore here), so the guidance is precise.
+        if (out) {
+          out.textContent = (parsed === 0)
+            ? t('settingsView.restoreNoneParsed')
+            : (parsed > 0 ? t('settingsView.restoreNoneCloud', { count: parsed }) : t('settingsView.restoreNone'));
+        }
         return;
       }
-      if (out) out.textContent = t('settingsView.restoreDone', { slots: restored.join(', '), services: services.join(', ') });
+      if (out) {
+        // If the box still lists the service as unavailable, its saved login has
+        // likely expired: say so honestly rather than implying a clean success.
+        out.textContent = unavailable.length
+          ? t('settingsView.restoreUnavailable', { slots: restored.join(', '), services: services.join(', '), unavailable: unavailable.join(', ') })
+          : t('settingsView.restoreDone', { slots: restored.join(', '), services: services.join(', ') });
+      }
       if (r && r.rebootRecommended) {
         const ok = await confirmWarn(t('speaker.rebootConfirmTitle'), t('settingsView.restoreRebootBody'));
         if (ok) {

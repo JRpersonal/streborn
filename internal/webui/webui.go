@@ -4104,8 +4104,14 @@ func (s *Server) handleBoxSnapshotRestore(w http.ResponseWriter, r *http.Request
 
 	cloud := boxsnapshot.CloudPresets(presets)
 	if len(cloud) == 0 {
+		// Distinguish "I read buttons but none are account-bound" from "I could
+		// not read any buttons at all" (usually a paste of the wrong text), so the
+		// UI can give precise guidance instead of one ambiguous message. parsed=0
+		// is the case a single <preset> block used to hit before ParsePresetsXML
+		// learned to wrap it.
 		writeJSON(w, http.StatusOK, map[string]any{
-			"restored": []int{}, "message": "no account-linked cloud presets found to restore",
+			"restored": []int{}, "parsed": len(presets),
+			"message": "no account-linked cloud presets found to restore",
 		})
 		return
 	}
@@ -4135,11 +4141,31 @@ func (s *Server) handleBoxSnapshotRestore(w http.ResponseWriter, r *http.Request
 	for k := range services {
 		svcList = append(svcList, k)
 	}
-	s.logger.Info("box snapshot restore (experimental)", "restored", restored, "failed", len(failed), "services", svcList)
+	// Re-read /sources so we report honestly whether the re-asserted account
+	// sources actually came back. The box plays an account service (Deezer, ...)
+	// only via its own still-valid stored login; if that login has expired the
+	// source stays UNAVAILABLE and STR cannot revive it. Reporting plain success
+	// in that case misleads the user (a reporter saw Deezer return as UNAVAILABLE
+	// after a "successful" restore). A reboot is still recommended, so an
+	// UNAVAILABLE here may clear after the restart the UI offers next.
+	unavailable := []string{}
+	if statuses, err := boxsnapshot.SourceStatuses(r.Context(), s.boxHost); err == nil {
+		for svc := range services {
+			key := svc
+			if i := strings.IndexByte(key, '_'); i > 0 {
+				key = key[:i]
+			}
+			if statuses[key] == "UNAVAILABLE" {
+				unavailable = append(unavailable, svc)
+			}
+		}
+	}
+	s.logger.Info("box snapshot restore (experimental)", "restored", restored, "failed", len(failed), "services", svcList, "unavailable", unavailable)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"restored":          restored,
 		"failed":            failed,
 		"services":          svcList,
+		"unavailable":       unavailable,
 		"rebootRecommended": true,
 	})
 }
