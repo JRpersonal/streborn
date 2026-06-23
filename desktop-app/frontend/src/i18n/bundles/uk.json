@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "Очікування колонки, залишилось {{remaining}}...",
   "update.doneToast": "Оновлення завершено.",
   "update.tookLongerToast": "Колонка відповідає довше за звичайне. Перевірте живлення / мережу.",
+  "update.deliveringSpotify": "Передавання рушія Spotify на динамік...",
   "update.failed": "Не вдалося оновити: {{err}}\n\nЯкщо колонка більше не відповідає, ненадовго відключіть живлення та знову увімкніть.",
   "update.otherBoxRunning": "Оновлення виконується на {{name}} ...",
   "update.stickInTitle": "USB-накопичувач усе ще вставлено",

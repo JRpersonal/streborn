@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "Hoparlör bekleniyor, kalan {{remaining}}...",
   "update.doneToast": "Güncelleme tamamlandı.",
   "update.tookLongerToast": "Hoparlör beklenenden uzun sürüyor. Gücü / ağı kontrol edin.",
+  "update.deliveringSpotify": "Spotify motoru hoparlöre aktarılıyor...",
   "update.failed": "Güncellenemedi: {{err}}\n\nHoparlör yanıt vermiyorsa, onu kısa süre güçten ayırıp tekrar takın.",
   "update.otherBoxRunning": "{{name}} güncelleniyor ...",
   "update.stickInTitle": "USB bellek hâlâ takılı",

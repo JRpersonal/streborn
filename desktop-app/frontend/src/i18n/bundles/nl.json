@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "Wachten op speaker, nog {{remaining}}...",
   "update.doneToast": "Update voltooid.",
   "update.tookLongerToast": "Speaker duurt langer dan verwacht. Controleer stroom / netwerk.",
+  "update.deliveringSpotify": "Spotify-onderdeel wordt naar de speaker gestuurd...",
   "update.failed": "Update mislukt: {{err}}\n\nAls de speaker niet meer antwoordt, haal kort de stekker eruit en steek hem weer in.",
   "update.otherBoxRunning": "Update bezig op {{name}} ...",
   "update.stickInTitle": "USB-stick zit er nog in",

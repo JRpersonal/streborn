@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "Oczekiwanie na głośnik, pozostało {{remaining}}...",
   "update.doneToast": "Aktualizacja zakończona.",
   "update.tookLongerToast": "Głośnik trwa dłużej niż oczekiwano. Sprawdź zasilanie / sieć.",
+  "update.deliveringSpotify": "Przesyłanie silnika Spotify do głośnika...",
   "update.failed": "Aktualizacja nie powiodła się: {{err}}\n\nJeśli głośnik nie odpowiada, odłącz go na chwilę od zasilania i podłącz ponownie.",
   "update.otherBoxRunning": "Trwa aktualizacja na {{name}} ...",
   "update.stickInTitle": "Pendrive USB nadal jest w głośniku",

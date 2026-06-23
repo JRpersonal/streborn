@@ -43,6 +43,7 @@ export {
   EjectDrive,
   BoxAgentVersion,
   UpdateBoxAgent,
+  EnsureSpotifyEngine,
   WriteWLANConfig,
   WriteRegionConfig,
   WriteNameConfig,

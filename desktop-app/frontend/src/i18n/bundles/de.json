@@ -326,6 +326,7 @@
   "update.waitingForSpeaker": "Lautsprecher startet neu und verbindet sich wieder, noch {{remaining}} ...",
   "update.doneToast": "Update fertig.",
   "update.tookLongerToast": "Lautsprecher braucht länger als erwartet. Prüfe Strom / Netzwerk.",
+  "update.deliveringSpotify": "Spotify-Komponente wird auf den Lautsprecher übertragen...",
   "update.failed": "Update fehlgeschlagen: {{err}}\n\nFalls der Lautsprecher danach nicht mehr antwortet, trenne kurz den Strom und stecke ihn wieder an.",
   "update.otherBoxRunning": "Update läuft auf {{name}} ...",
   "update.stickInTitle": "USB-Stick noch eingesteckt",

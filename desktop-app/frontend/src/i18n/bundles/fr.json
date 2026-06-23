@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "En attente de l'enceinte, {{remaining}} restantes...",
   "update.doneToast": "Mise à jour terminée.",
   "update.tookLongerToast": "L'enceinte met plus de temps que prévu. Vérifiez l'alimentation / le réseau.",
+  "update.deliveringSpotify": "Installation du module Spotify sur l'enceinte...",
   "update.failed": "Échec de la mise à jour : {{err}}\n\nSi l'enceinte ne répond plus, débranchez brièvement l'alimentation puis rebranchez.",
   "update.otherBoxRunning": "Mise à jour en cours sur {{name}} ...",
   "update.stickInTitle": "Clé USB toujours insérée",

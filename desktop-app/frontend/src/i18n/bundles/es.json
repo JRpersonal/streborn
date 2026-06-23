@@ -281,6 +281,7 @@
   "update.waitingForSpeaker": "Esperando al altavoz, quedan {{remaining}}...",
   "update.doneToast": "Actualización completada.",
   "update.tookLongerToast": "El altavoz tarda más de lo previsto. Comprueba la alimentación / la red.",
+  "update.deliveringSpotify": "Enviando el motor de Spotify al altavoz...",
   "update.failed": "Error en la actualización: {{err}}\n\nSi el altavoz ya no responde, desconecta brevemente la alimentación y vuelve a conectarla.",
   "update.otherBoxRunning": "Actualización en curso en {{name}} ...",
   "update.stickInTitle": "Memoria USB aún insertada",

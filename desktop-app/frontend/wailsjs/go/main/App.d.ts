@@ -47,6 +47,8 @@ export function DownloadUpdate(arg1:string):Promise<string>;
 
 export function EjectDrive(arg1:string):Promise<void>;
 
+export function EnsureSpotifyEngine(arg1:string,arg2:number):Promise<string>;
+
 export function ExportDiagnosticLogs(arg1:main.LogExportRequest):Promise<main.LogExportResult>;
 
 export function FormZone(arg1:string,arg2:number,arg3:main.ZoneSpec):Promise<Record<string, any>>;
