@@ -118,6 +118,25 @@ Privacy:
 		return LogExportResult{}, err
 	}
 
+	// 2b. Previous-session app log + the persistent OTA journal. str.log is
+	// rotated to <name>.1 on each launch and app.log above is only the current
+	// session, so an update-failure exported in a LATER session has lost the
+	// attempt. The previous session (often where it happened) is in app.prev.log,
+	// and every speaker-update attempt with its outcome is in ota-history.log,
+	// which is never rotated away. Both best-effort, omitted when absent.
+	if prev, perr := os.ReadFile(LogFilePath() + ".1"); perr == nil && len(prev) > 0 {
+		if req.Anonymize {
+			prev = sanitizeLog(prev)
+		}
+		_ = writeZipEntry(zw, "app.prev.log", prev)
+	}
+	if oj, oerr := os.ReadFile(otaJournalPath()); oerr == nil && len(oj) > 0 {
+		if req.Anonymize {
+			oj = sanitizeLog(oj)
+		}
+		_ = writeZipEntry(zw, "ota-history.log", oj)
+	}
+
 	// 3. Per-box snapshots.
 	manifest := struct {
 		Timestamp string          `json:"timestamp"`

@@ -58,11 +58,23 @@ func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) 
 // into /mnt/nv/streborn/bin/streborn-armv7l.new, size-verify, atomic-
 // rename, SIGTERM the running agent. run.sh's boot watchdog respawns it
 // from the new file within seconds.
-func (a *App) UpdateBoxAgent(host string, port int) error {
+func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	bin := agentbin.Bytes()
 	if len(bin) == 0 {
+		a.recordOTA(host, "start: aborted, no embedded agent binary in this build")
 		return fmt.Errorf("no embedded stick binary available")
 	}
+	a.recordOTA(host, fmt.Sprintf("start: port=%d bytes=%d app=%s build=%s", port, len(bin), appVersion, appBuild))
+	// Record the final outcome to the persistent OTA journal so an update-failure
+	// report is diagnosable even if the user exports the diagnostic in a later
+	// session: str.log is rotated away on the next launch, this journal is not.
+	defer func() {
+		if err != nil {
+			a.recordOTA(host, "outcome: reported failure: "+err.Error())
+		} else {
+			a.recordOTA(host, "outcome: no error (applied, or deferred to the version poll)")
+		}
+	}()
 	// Refresh the USB stick BEFORE the OTA push, while the box is still fully up.
 	// The push reboots the box ~1s after the binary swap (updateAgentViaSSH), and
 	// doing the stick write afterwards raced that reboot: the going-down
@@ -76,6 +88,7 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 	a.refreshStick(host)
 
 	if perr := a.updateAgentPreflight(host, port); perr != nil {
+		a.recordOTA(host, "HTTP preflight rejected -> trying SSH: "+perr.Error())
 		a.logger.Warn("update agent: HTTP preflight rejected, switching to SSH-OTA",
 			"host", host, "port", port, "reason", perr)
 		if sshErr := a.updateAgentViaSSH(host, bin); sshErr != nil {
@@ -96,6 +109,7 @@ func (a *App) UpdateBoxAgent(host string, port int) error {
 		return nil
 	}
 	if err := a.updateAgentViaHTTP(host, port, bin); err != nil {
+		a.recordOTA(host, "HTTP upload failed -> trying SSH: "+err.Error())
 		// The small preflight GET can pass while the 10 MB POST still fails: on
 		// BCO the :17008 REDIRECT path closes the connection mid-upload (live
 		// 2026-06-11, "connection forcibly closed"). Fall back to SSH-OTA instead
