@@ -1025,5 +1025,6 @@
   "banner.manualHint": "This updates the app itself and replaces the running version. You can delete any installer files you downloaded by hand earlier.",
   "settingsView.restoreNoneParsed": "Nothing to restore: no buttons could be read from the pasted text. Paste either the whole presets file from the speaker, or a single <preset> ... </preset> block.",
   "settingsView.restoreNoneCloud": "Read {{count}} buttons, but none use an account-linked service like Deezer, so there is nothing to restore here.",
-  "settingsView.restoreUnavailable": "Wrote back {{slots}} for {{services}}, but the speaker still reports {{unavailable}} as unavailable. Restart the speaker; if it stays unavailable, the saved login for that service has likely expired and cannot be brought back."
+  "settingsView.restoreUnavailable": "Wrote back {{slots}} for {{services}}, but the speaker still reports {{unavailable}} as unavailable. Restart the speaker; if it stays unavailable, the saved login for that service has likely expired and cannot be brought back.",
+  "update.uploadingPct": "Uploading {{pct}}%"
 }

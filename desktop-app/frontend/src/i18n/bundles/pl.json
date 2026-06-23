@@ -1017,5 +1017,6 @@
   "banner.manualHint": "To aktualizuje samą aplikację i zastępuje działającą wersję. Pliki instalacyjne pobrane wcześniej ręcznie możesz usunąć.",
   "settingsView.restoreNoneParsed": "Nie ma czego przywracać: nie udało się odczytać żadnych przycisków z wklejonego tekstu. Wklej cały plik presetów z głośnika lub pojedynczy blok <preset> ... </preset>.",
   "settingsView.restoreNoneCloud": "Odczytano {{count}} przycisków, ale żaden nie korzysta z usługi powiązanej z kontem, takiej jak Deezer, więc nie ma tu czego przywracać.",
-  "settingsView.restoreUnavailable": "Zapisano z powrotem {{slots}} dla {{services}}, ale głośnik nadal zgłasza {{unavailable}} jako niedostępne. Uruchom głośnik ponownie; jeśli pozostaje niedostępne, zapisane logowanie do tej usługi prawdopodobnie wygasło i nie da się go przywrócić."
+  "settingsView.restoreUnavailable": "Zapisano z powrotem {{slots}} dla {{services}}, ale głośnik nadal zgłasza {{unavailable}} jako niedostępne. Uruchom głośnik ponownie; jeśli pozostaje niedostępne, zapisane logowanie do tej usługi prawdopodobnie wygasło i nie da się go przywrócić.",
+  "update.uploadingPct": "Wysyłanie {{pct}}%"
 }

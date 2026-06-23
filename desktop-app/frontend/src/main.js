@@ -865,10 +865,21 @@ async function checkAppUpdate() {
 // the verified .dmg is opened for the user to drag into Applications). On any
 // failure the button becomes a "download from the website" fallback so the user
 // is never stuck.
+// fmtRate turns a bytes/second number into a short human rate for the live
+// download/upload throughput shown during an app update or a speaker update.
+function fmtRate(bps) {
+  bps = Number(bps) || 0;
+  if (bps >= 1024 * 1024) return (bps / 1048576).toFixed(1) + ' MB/s';
+  if (bps >= 1024) return Math.round(bps / 1024) + ' KB/s';
+  return Math.max(0, Math.round(bps)) + ' B/s';
+}
+
 async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
   btn.disabled = true;
-  const off = EventsOn('app:update:progress', (pct) => {
-    btn.textContent = t('banner.downloadingPct', { pct });
+  const off = EventsOn('app:update:progress', (p) => {
+    const pct = (p && typeof p === 'object') ? p.pct : p;
+    const rate = (p && typeof p === 'object' && p.bytesPerSec) ? ' (' + fmtRate(p.bytesPerSec) + ')' : '';
+    btn.textContent = t('banner.downloadingPct', { pct }) + rate;
   });
   try {
     btn.textContent = t('banner.downloadingPct', { pct: 0 });
@@ -2106,6 +2117,13 @@ async function doBoxUpdate(targetBox) {
   // interrupt the agent exec and may leave the box half-flashed.
   state.otaInProgress = true;
   setStatus(t('update.uploading'));
+  // Live upload progress + throughput while the ~10 MB agent streams to the box,
+  // so a slow link shows movement instead of a frozen "Uploading...".
+  const offBoxUp = EventsOn('box:update:progress', (p) => {
+    if (!p || typeof p !== 'object' || p.pct == null || p.pct < 0) return;
+    const rate = p.bytesPerSec ? ' (' + fmtRate(p.bytesPerSec) + ')' : '';
+    setStatus(t('update.uploadingPct', { pct: p.pct }) + rate);
+  });
   checkSshBanner();
   // Swap the banner heading to "updating" right away (the otaHere branch in
   // checkBoxUpdate), so it no longer reads "update available" while the OTA runs.
@@ -2237,6 +2255,7 @@ async function doBoxUpdate(targetBox) {
     }
     reset();
   } finally {
+    if (typeof offBoxUp === 'function') offBoxUp();
     // Always clear the OTA-in-flight gate so the SSH banner can
     // come back if it still applies, even if we threw mid-poll.
     state.otaInProgress = false;

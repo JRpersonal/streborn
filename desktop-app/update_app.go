@@ -182,7 +182,9 @@ func (a *App) ResolveUpdateAsset(version string) (UpdateAsset, error) {
 		if err != nil {
 			return UpdateAsset{}, err
 		}
-		resp, err := updateHTTPClient().Do(req)
+		// Download client (no 6 s total cap): a slow link could otherwise time the
+		// manifest fetch out too; the 15 s context still bounds it.
+		resp, err := updateDownloadHTTPClient().Do(req)
 		if err != nil {
 			return UpdateAsset{}, err
 		}
@@ -260,72 +262,98 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 	finalPath := filepath.Join(dir, name)
 	partPath := finalPath + ".part"
 
-	ctx, cancel := context.WithTimeout(a.appCtx(), 10*time.Minute)
-	defer cancel()
-	req, err := newGETRequest(ctx, asset.URL)
-	if err != nil {
-		return "", err
+	// Retry the whole download a few times with a short backoff: a transient stall
+	// or drop on a slow link (the common cause of the in-app update "failing")
+	// should recover on its own instead of dumping the user back to the website.
+	const maxAttempts = 4
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := a.downloadAssetOnce(asset.URL, asset.SHA256, partPath)
+		if err == nil {
+			if rerr := os.Rename(partPath, finalPath); rerr != nil {
+				os.Remove(partPath)
+				return "", rerr
+			}
+			a.logger.Info("update downloaded and verified", "version", version, "path", finalPath, "attempts", attempt)
+			return finalPath, nil
+		}
+		lastErr = err
+		os.Remove(partPath)
+		a.logger.Warn("app update: download attempt failed, retrying", "attempt", attempt, "max", maxAttempts, "err", err)
+		if attempt < maxAttempts {
+			select {
+			case <-a.appCtx().Done():
+				return "", a.appCtx().Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
 	}
-	resp, err := updateHTTPClient().Do(req)
+	return "", fmt.Errorf("download failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// downloadAssetOnce streams the asset to partPath, emitting app:update:progress
+// (percent + live throughput) and verifying the SHA256. It uses the
+// no-total-timeout download client so a large file on a slow link is not killed by
+// a client timeout, and a stall watchdog (no bytes for 45 s) turns a frozen
+// transfer into a prompt error the caller retries.
+func (a *App) downloadAssetOnce(url, wantSHA, partPath string) error {
+	ctx, cancel := context.WithTimeout(a.appCtx(), 15*time.Minute)
+	defer cancel()
+	req, err := newGETRequest(ctx, url)
 	if err != nil {
-		return "", err
+		return err
+	}
+	resp, err := updateDownloadHTTPClient().Do(req)
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("download status %d", resp.StatusCode)
+		return fmt.Errorf("download status %d", resp.StatusCode)
 	}
 
 	out, err := os.Create(partPath)
 	if err != nil {
-		return "", err
+		return err
 	}
+	defer out.Close()
+
 	h := sha256.New()
-	total := resp.ContentLength
+	prog := newTransferProgress(a, "app:update:progress", resp.ContentLength)
+	beat := make(chan struct{}, 1)
+	go watchStall(ctx, cancel, beat, 45*time.Second)
+
 	var done int64
-	lastPct := -1
 	buf := make([]byte, 64*1024)
 	for {
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := out.Write(buf[:n]); werr != nil {
-				out.Close()
-				os.Remove(partPath)
-				return "", werr
+				return werr
 			}
 			h.Write(buf[:n])
 			done += int64(n)
-			if total > 0 {
-				if pct := int(done * 100 / total); pct != lastPct {
-					lastPct = pct
-					wailsrt.EventsEmit(a.appCtx(), "app:update:progress", pct)
-				}
+			select {
+			case beat <- struct{}{}:
+			default:
 			}
+			prog.report(done)
 		}
 		if rerr == io.EOF {
 			break
 		}
 		if rerr != nil {
-			out.Close()
-			os.Remove(partPath)
-			return "", rerr
+			return rerr
 		}
 	}
 	if err := out.Close(); err != nil {
-		os.Remove(partPath)
-		return "", err
+		return err
 	}
-
 	got := hex.EncodeToString(h.Sum(nil))
-	if !strings.EqualFold(got, asset.SHA256) {
-		os.Remove(partPath)
-		return "", fmt.Errorf("checksum mismatch: got %s, expected %s", got, asset.SHA256)
+	if !strings.EqualFold(got, wantSHA) {
+		return fmt.Errorf("checksum mismatch: got %s, expected %s", got, wantSHA)
 	}
-	if err := os.Rename(partPath, finalPath); err != nil {
-		os.Remove(partPath)
-		return "", err
-	}
-	a.logger.Info("update downloaded and verified", "version", version, "path", finalPath)
-	return finalPath, nil
+	return nil
 }
 
 // assetExt is the fallback download extension per OS when the manifest omits a

@@ -390,7 +390,12 @@ func (a *App) updateAgentPreflight(host string, port int) error {
 
 func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 	url := a.baseURL(host, port) + "/api/agent/update"
-	req, err := http.NewRequestWithContext(a.appCtx(), http.MethodPost, url, strings.NewReader(string(bin)))
+	// Stream the body through a counting reader so the UI can show an upload
+	// percentage and live throughput (the box reads the body as we send it),
+	// instead of a blind "uploading" spinner that looks frozen on a slow link.
+	prog := newTransferProgress(a, "box:update:progress", int64(len(bin)))
+	body := &countingReader{r: bytes.NewReader(bin), onProgress: prog.report}
+	req, err := http.NewRequestWithContext(a.appCtx(), http.MethodPost, url, body)
 	if err != nil {
 		return err
 	}

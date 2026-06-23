@@ -1017,5 +1017,6 @@
   "banner.manualHint": "これはアプリ自体を更新し、実行中のバージョンを置き換えます。以前に手動でダウンロードしたインストーラー ファイルは削除してかまいません。",
   "settingsView.restoreNoneParsed": "復元するものがありません: 貼り付けたテキストからボタンを読み取れませんでした。スピーカーのプリセット ファイル全体、または単一の <preset> ... </preset> ブロックを貼り付けてください。",
   "settingsView.restoreNoneCloud": "{{count}} 個のボタンを読み取りましたが、Deezer のようなアカウント連携サービスを使うものはありません。ここに復元するものはありません。",
-  "settingsView.restoreUnavailable": "{{services}} の {{slots}} を書き戻しましたが、スピーカーは {{unavailable}} を引き続き利用不可と報告しています。スピーカーを再起動してください。利用不可のままなら、そのサービスの保存済みログインはおそらく期限切れで、復元できません。"
+  "settingsView.restoreUnavailable": "{{services}} の {{slots}} を書き戻しましたが、スピーカーは {{unavailable}} を引き続き利用不可と報告しています。スピーカーを再起動してください。利用不可のままなら、そのサービスの保存済みログインはおそらく期限切れで、復元できません。",
+  "update.uploadingPct": "アップロード中 {{pct}}%"
 }

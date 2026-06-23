@@ -1017,5 +1017,6 @@
   "banner.manualHint": "Tai atnaujina pačią programą ir pakeičia veikiančią versiją. Anksčiau ranka atsisiųstus diegimo failus galite ištrinti.",
   "settingsView.restoreNoneParsed": "Nėra ką atkurti: iš įklijuoto teksto nepavyko nuskaityti jokių mygtukų. Įklijuokite visą kolonėlės išankstinių nustatymų failą arba vieną <preset> ... </preset> bloką.",
   "settingsView.restoreNoneCloud": "Nuskaityta {{count}} mygtukų, bet nė vienas nenaudoja su paskyra susietos paslaugos, pvz., „Deezer“, todėl čia nėra ką atkurti.",
-  "settingsView.restoreUnavailable": "{{slots}} ({{services}}) įrašyta atgal, bet kolonėlė vis dar nurodo {{unavailable}} kaip nepasiekiamą. Paleiskite kolonėlę iš naujo; jei lieka nepasiekiama, įrašytas tos paslaugos prisijungimas tikriausiai nebegalioja ir jo atkurti nepavyks."
+  "settingsView.restoreUnavailable": "{{slots}} ({{services}}) įrašyta atgal, bet kolonėlė vis dar nurodo {{unavailable}} kaip nepasiekiamą. Paleiskite kolonėlę iš naujo; jei lieka nepasiekiama, įrašytas tos paslaugos prisijungimas tikriausiai nebegalioja ir jo atkurti nepavyks.",
+  "update.uploadingPct": "Įkeliama {{pct}}%"
 }

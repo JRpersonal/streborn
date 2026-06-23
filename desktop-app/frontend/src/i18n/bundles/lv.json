@@ -1017,5 +1017,6 @@
   "banner.manualHint": "Tas atjaunina pašu lietotni un aizstāj palaisto versiju. Iepriekš ar roku lejupielādētos instalācijas failus vari dzēst.",
   "settingsView.restoreNoneParsed": "Nav ko atjaunot: no ielīmētā teksta nevarēja nolasīt nevienu pogu. Ielīmējiet visu skaļruņa iestatījumu failu vai vienu <preset> ... </preset> bloku.",
   "settingsView.restoreNoneCloud": "Nolasītas {{count}} pogas, taču neviena neizmanto ar kontu saistītu pakalpojumu, piemēram, Deezer, tāpēc šeit nav ko atjaunot.",
-  "settingsView.restoreUnavailable": "{{slots}} ({{services}}) ierakstīts atpakaļ, taču skaļrunis joprojām norāda {{unavailable}} kā nepieejamu. Restartējiet skaļruni; ja tas paliek nepieejams, saglabātā pieteikšanās šim pakalpojumam, visticamāk, ir beigusies un to nevar atjaunot."
+  "settingsView.restoreUnavailable": "{{slots}} ({{services}}) ierakstīts atpakaļ, taču skaļrunis joprojām norāda {{unavailable}} kā nepieejamu. Restartējiet skaļruni; ja tas paliek nepieejams, saglabātā pieteikšanās šim pakalpojumam, visticamāk, ir beigusies un to nevar atjaunot.",
+  "update.uploadingPct": "Augšupielāde {{pct}}%"
 }
