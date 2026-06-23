@@ -6,7 +6,9 @@ package webui
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -563,6 +565,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// /api/radio/* and no longer compiles in the radiobrowser package.
 	mux.HandleFunc("/api/agent/version", s.handleAgentVersion)
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
+	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
 	mux.HandleFunc("/api/box/volume", s.handleBoxVolume)
@@ -2446,7 +2449,60 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 			}
 		}
 	}
+	// Report whether the go-librespot Spotify sidecar is deployed and which
+	// content it is, so the desktop app can decide whether to push it over OTA
+	// (it ships ~10 MB; we only want to send it when the box is missing it or
+	// has a different build). The binary historically reached the box ONLY via
+	// the stick->NAND boot sync, so a box that was ever only OTA-updated stayed
+	// without it and Spotify silently never played (#45/#105, e.g. an OTA-only
+	// SoundTouch 30). present/missing + the content hash drive that gate.
+	if present, sha := goLibrespotStamp(); present {
+		out["goLibrespot"] = "present"
+		if sha != "" {
+			out["goLibrespotSha256"] = sha
+		}
+	} else {
+		out["goLibrespot"] = "missing"
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// goLibrespotBinPath is where the agent runs the Spotify sidecar from; the
+// desktop OTA writes it here too. Kept in lock-step with cmd/agent's
+// goLibrespotPath and usb-stick/run.sh's NAND copy.
+const goLibrespotBinPath = "/mnt/nv/streborn/bin/go-librespot"
+
+// goLibrespotStamp reports whether the go-librespot sidecar is deployed
+// (>1 KB, i.e. a real binary not an empty stub) and the hex SHA256 of its
+// contents. The hash lets the desktop app skip re-pushing the ~10 MB binary
+// when the box already has the embedded build. It is cached in a sibling
+// .sha256 marker so a version poll does not re-hash 10 MB on the weak box CPU
+// every few minutes: the marker is trusted while it is at least as new as the
+// binary; otherwise (absent, or the binary was replaced by a stick install
+// that did not write a marker) it is computed once and cached. Best-effort:
+// a present binary with an unreadable hash reports present with an empty sha,
+// which the app treats as "push once" (correct and idempotent).
+func goLibrespotStamp() (present bool, sha string) {
+	fi, err := os.Stat(goLibrespotBinPath)
+	if err != nil || fi.Size() < 1024 {
+		return false, ""
+	}
+	marker := goLibrespotBinPath + ".sha256"
+	if mfi, err := os.Stat(marker); err == nil && !mfi.ModTime().Before(fi.ModTime()) {
+		if b, rerr := os.ReadFile(marker); rerr == nil {
+			if h := strings.TrimSpace(string(b)); h != "" {
+				return true, h
+			}
+		}
+	}
+	data, err := os.ReadFile(goLibrespotBinPath)
+	if err != nil {
+		return true, "" // present but hash unknown; app re-pushes once
+	}
+	sum := sha256.Sum256(data)
+	h := hex.EncodeToString(sum[:])
+	_ = os.WriteFile(marker, []byte(h), 0o644)
+	return true, h
 }
 
 // handleAgentUpdate receives a new stick agent binary, writes it
@@ -2456,48 +2512,13 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 // On success the stick still returns 200 OK and then exits. The
 // rc.local bootstrap starts the new agent.
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
+	body, ok := readUploadedELF(w, r)
+	if !ok {
 		return
 	}
-	if !isLocalLAN(r.RemoteAddr) {
-		http.Error(w, "update only allowed from LAN", http.StatusForbidden)
-		return
-	}
-	const maxSize = 30 * 1024 * 1024
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxSize+1))
-	if err != nil {
-		http.Error(w, "read: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if len(body) > maxSize {
-		http.Error(w, "binary too big", http.StatusRequestEntityTooLarge)
-		return
-	}
-	if len(body) < 1024 {
-		http.Error(w, "binary too small", http.StatusBadRequest)
-		return
-	}
-	// ELF Magic Check
-	if body[0] != 0x7f || body[1] != 'E' || body[2] != 'L' || body[3] != 'F' {
-		http.Error(w, "not an ELF binary", http.StatusBadRequest)
-		return
-	}
-
 	const dst = "/mnt/nv/streborn/bin/streborn-armv7l"
-	// On a fresh speaker the parent /mnt/nv/streborn/bin directory may
-	// not exist yet — first OTA after install hits this. Create it so
-	// the write does not 500 on "no such file or directory".
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		http.Error(w, "mkdir parent: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	tmp := dst + ".new"
-	if err := os.WriteFile(tmp, body, 0o755); err != nil {
-		http.Error(w, "write tmp: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
+	if err := writeBinaryAtomic(dst, body); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -2543,6 +2564,88 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 			os.Exit(0)
 		}
 	}()
+}
+
+// readUploadedELF reads and validates a raw ARM ELF binary POSTed to an OTA
+// endpoint: LAN-only, size-bounded, ELF-magic checked. On any problem it writes
+// the HTTP error response and returns ok=false. Shared by handleAgentUpdate and
+// handleAgentSidecar so the two upload endpoints cannot drift on their guards.
+func readUploadedELF(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return nil, false
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "update only allowed from LAN", http.StatusForbidden)
+		return nil, false
+	}
+	const maxSize = 30 * 1024 * 1024
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxSize+1))
+	if err != nil {
+		http.Error(w, "read: "+err.Error(), http.StatusBadRequest)
+		return nil, false
+	}
+	if len(body) > maxSize {
+		http.Error(w, "binary too big", http.StatusRequestEntityTooLarge)
+		return nil, false
+	}
+	if len(body) < 1024 {
+		http.Error(w, "binary too small", http.StatusBadRequest)
+		return nil, false
+	}
+	// ELF magic check.
+	if body[0] != 0x7f || body[1] != 'E' || body[2] != 'L' || body[3] != 'F' {
+		http.Error(w, "not an ELF binary", http.StatusBadRequest)
+		return nil, false
+	}
+	return body, true
+}
+
+// writeBinaryAtomic writes body to dst via a .new temp + rename so a partial
+// write never becomes the live binary, creating the parent dir on a fresh box
+// (first OTA after install has no /mnt/nv/streborn/bin yet). 0755 so the file
+// is executable.
+func writeBinaryAtomic(dst string, body []byte) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("mkdir parent: %w", err)
+	}
+	tmp := dst + ".new"
+	if err := os.WriteFile(tmp, body, 0o755); err != nil {
+		return fmt.Errorf("write tmp: %w", err)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
+}
+
+// handleAgentSidecar receives the go-librespot Spotify sidecar binary and
+// writes it atomically to /mnt/nv/streborn/bin/go-librespot. Unlike
+// handleAgentUpdate it does NOT reboot or restart anything: the desktop app
+// pushes the sidecar right BEFORE the agent OTA, and the agent OTA's own reboot
+// is what brings up the fresh agent whose Spotify manager then finds and
+// supervises the now-present binary (the manager checks for it once at start,
+// so the running agent does not pick it up live). This closes the gap where the
+// sidecar shipped only via the stick->NAND boot sync, leaving an OTA-only box
+// (e.g. a SoundTouch 30 whose USB stick never copied it) silently unable to
+// play Spotify despite a synced login (#45/#105).
+func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
+	body, ok := readUploadedELF(w, r)
+	if !ok {
+		return
+	}
+	if err := writeBinaryAtomic(goLibrespotBinPath, body); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Stamp the content hash next to the binary so the next /api/agent/version
+	// reports it and the desktop app skips re-pushing this ~10 MB binary when the
+	// box already has the embedded build.
+	sum := sha256.Sum256(body)
+	if err := os.WriteFile(goLibrespotBinPath+".sha256", []byte(hex.EncodeToString(sum[:])), 0o644); err != nil {
+		s.logger.Warn("go-librespot sidecar: hash marker write failed (non-fatal)", "err", err)
+	}
+	s.logger.Info("go-librespot sidecar written via OTA", "size", len(body))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // isLocalLAN true if the request comes from a private LAN IP
