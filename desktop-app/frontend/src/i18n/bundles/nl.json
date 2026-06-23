@@ -991,7 +991,7 @@
   "settingsView.restoreDone": "Presets {{slots}} voor {{services}} teruggeschreven. Start de luidspreker opnieuw op om af te ronden, controleer daarna de toetsen.",
   "settingsView.restoreHeading": "Cloud-presets herstellen (Deezer, Amazon)",
   "settingsView.restoreHelp": "Als de luidspreker presets heeft verwijderd die een aan een account gekoppelde dienst gebruikten (bijvoorbeeld Deezer), kan STR proberen ze terug te schrijven naar hun plekken en de dienst beschikbaar te houden, zodat de luidspreker ze weer afspeelt via zijn eigen opgeslagen login. Dit is experimenteel en werkt alleen zolang die opgeslagen login op de luidspreker nog geldig is.",
-  "settingsView.restoreImportPlaceholder": "Plak de presets-XML die je van de luidspreker hebt gedownload (het blok <presets> ... </presets>).",
+  "settingsView.restoreImportPlaceholder": "Plak de presets die je van de speaker hebt opgeslagen: het hele <presets> ... </presets>-blok, of een enkele <preset> ... </preset> voor één knop.",
   "settingsView.restoreNone": "Niets te herstellen: er zijn geen aan een account gekoppelde presets gevonden.",
   "settingsView.restoreRebootBody": "De presets zijn teruggeschreven. De luidspreker moet opnieuw opstarten om de dienst te herladen. Nu opnieuw opstarten?",
   "settingsView.restoreRunning": "Wordt hersteld ...",
@@ -1007,5 +1007,15 @@
   "spotify.syncNone": "Nog geen luidspreker is ingelogd bij Spotify. Log er eerst een in en probeer het dan opnieuw.",
   "spotify.syncPartial": "Gekopieerd naar {{n}} luidspreker(s), {{failed}} waren niet bereikbaar.",
   "spotify.syncRunning": "Bezig met kopiëren...",
-  "spotify.syncTitle": "Je Spotify-login naar alle luidsprekers kopiëren"
+  "spotify.syncTitle": "Je Spotify-login naar alle luidsprekers kopiëren",
+  "update.stillWorking": "De update draait nog op de speaker. Op een trage verbinding kan dat een minuut duren. Controleer zo meteen opnieuw de speakerversie; als die niet verandert, probeer het nog een keer.",
+  "update.refreshBtnSpeaker": "Speaker bijwerken",
+  "setup.formatBlockedManual": "Windows heeft de ingebouwde stickformatter geblokkeerd (Smart App Control of een beveiligingsbeleid). Formatteer de stick zelf als FAT32: open Verkenner, klik met de rechtermuisknop op de stick, kies Formatteren, zet Bestandssysteem op FAT32 en klik op Starten. Kom daarna hier terug en klik opnieuw op Voorbereiden. Als formatteren ook geblokkeerd is, voeg dan de ST Reborn-appmap toe als uitzondering in Windows-beveiliging.",
+  "banner.installAppNow": "App nu bijwerken",
+  "banner.downloadAppUpdate": "App-update downloaden",
+  "banner.getFromReleases": "Haal het van de downloadpagina",
+  "banner.manualHint": "Dit werkt de app zelf bij en vervangt de draaiende versie. Installatiebestanden die je eerder met de hand hebt gedownload, kun je verwijderen.",
+  "settingsView.restoreNoneParsed": "Niets om te herstellen: er konden geen knoppen uit de geplakte tekst worden gelezen. Plak het volledige presets-bestand van de speaker, of een enkel <preset> ... </preset>-blok.",
+  "settingsView.restoreNoneCloud": "{{count}} knoppen gelezen, maar geen ervan gebruikt een accountgekoppelde dienst zoals Deezer, dus hier is niets te herstellen.",
+  "settingsView.restoreUnavailable": "{{slots}} voor {{services}} teruggeschreven, maar de speaker meldt {{unavailable}} nog steeds als niet beschikbaar. Start de speaker opnieuw op; blijft het niet beschikbaar, dan is de opgeslagen login voor die dienst waarschijnlijk verlopen en niet terug te halen."
 }

@@ -991,7 +991,7 @@
   "settingsView.restoreDone": "Touches {{slots}} réécrites pour {{services}}. Redémarre l'enceinte pour terminer, puis vérifie les touches.",
   "settingsView.restoreHeading": "Restaurer les préréglages cloud (Deezer, Amazon)",
   "settingsView.restoreHelp": "Si l'enceinte a abandonné des préréglages qui utilisaient un service lié à un compte (par exemple Deezer), STR peut essayer de les réécrire sur leurs touches et de garder le service disponible, pour que l'enceinte les rejoue via sa propre connexion enregistrée. C'est expérimental et ne fonctionne que tant que cette connexion enregistrée sur l'enceinte est encore valide.",
-  "settingsView.restoreImportPlaceholder": "Colle le XML des préréglages que tu as téléchargé depuis l'enceinte (le bloc <presets> ... </presets>).",
+  "settingsView.restoreImportPlaceholder": "Colle les presets que tu as enregistrés depuis l'enceinte: le bloc <presets> ... </presets> entier, ou un seul <preset> ... </preset> pour un bouton.",
   "settingsView.restoreNone": "Rien à restaurer : aucun préréglage lié à un compte n'a été trouvé.",
   "settingsView.restoreRebootBody": "Les préréglages ont été réécrits. L'enceinte doit redémarrer pour recharger le service. Redémarrer maintenant ?",
   "settingsView.restoreRunning": "Restauration ...",
@@ -1007,5 +1007,15 @@
   "spotify.syncNone": "Aucune enceinte n'est encore connectée à Spotify. Connectes-en une d'abord, puis réessaie.",
   "spotify.syncPartial": "Copiée sur {{n}} enceinte(s), {{failed}} n'ont pas pu être jointes.",
   "spotify.syncRunning": "Copie...",
-  "spotify.syncTitle": "Copier ta connexion Spotify sur toutes les enceintes"
+  "spotify.syncTitle": "Copier ta connexion Spotify sur toutes les enceintes",
+  "update.stillWorking": "La mise à jour est encore en cours sur l'enceinte. Sur une connexion lente, cela peut prendre une minute. Vérifie de nouveau la version de l'enceinte dans un instant; si elle ne se met pas à jour, réessaie.",
+  "update.refreshBtnSpeaker": "Mettre à jour l'enceinte",
+  "setup.formatBlockedManual": "Windows a bloqué l'outil de formatage intégré (Smart App Control ou une stratégie de sécurité). Formate la clé toi-même en FAT32: ouvre l'Explorateur de fichiers, fais un clic droit sur la clé, choisis Formater, règle le système de fichiers sur FAT32 et clique sur Démarrer. Reviens ensuite ici et clique de nouveau sur Préparer. Si le formatage est aussi bloqué, ajoute le dossier de l'application ST Reborn comme exclusion dans la Sécurité Windows.",
+  "banner.installAppNow": "Mettre à jour l'app maintenant",
+  "banner.downloadAppUpdate": "Télécharger la mise à jour de l'app",
+  "banner.getFromReleases": "L'obtenir sur la page de téléchargements",
+  "banner.manualHint": "Ceci met à jour l'app elle-même et remplace la version en cours. Tu peux supprimer les fichiers d'installation que tu as téléchargés à la main auparavant.",
+  "settingsView.restoreNoneParsed": "Rien à restaurer: aucun bouton n'a pu être lu dans le texte collé. Colle le fichier de presets complet de l'enceinte, ou un seul bloc <preset> ... </preset>.",
+  "settingsView.restoreNoneCloud": "{{count}} boutons lus, mais aucun n'utilise un service lié à un compte comme Deezer, donc il n'y a rien à restaurer ici.",
+  "settingsView.restoreUnavailable": "{{slots}} réécrits pour {{services}}, mais l'enceinte signale toujours {{unavailable}} comme indisponible. Redémarre l'enceinte; si cela reste indisponible, l'identifiant enregistré pour ce service a probablement expiré et ne peut pas être récupéré."
 }
