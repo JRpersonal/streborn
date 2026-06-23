@@ -46,7 +46,7 @@ export function renderMultiroom(fetchLive) {
 
   const beta =
     `<div class="setup-help" style="margin-bottom:14px">` +
-    `<b>${escapeHtml(t('multiroom.heading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.beta'))}</span></b>` +
+    `<b>${escapeHtml(t('multiroom.heading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></b>` +
     `<div class="muted small" style="margin-top:6px">${escapeHtml(t('multiroom.betaNote'))}</div>` +
     `<div class="muted small" style="margin-top:6px">${escapeHtml(t('multiroom.feedbackPre'))} ` +
     `<a href="#" id="multiroomIssueLink">${escapeHtml(t('multiroom.issueLink'))}</a> &middot; ` +
@@ -135,7 +135,7 @@ export function renderMultiroom(fetchLive) {
      </div>
 
      <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--border,#333);padding-top:16px">
-       <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.beta'))}</span></b>
+       <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></b>
        <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
        ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>
