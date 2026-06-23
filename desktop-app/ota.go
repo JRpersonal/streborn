@@ -10,6 +10,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -390,26 +391,84 @@ func (a *App) updateAgentPreflight(host string, port int) error {
 
 func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 	url := a.baseURL(host, port) + "/api/agent/update"
+	// No total-transfer deadline. Streaming the ~10 MB agent to a busy box over slow
+	// Wi-Fi can legitimately take minutes, and the old fixed 240 s cap killed
+	// still-progressing uploads with "context deadline exceeded (Client.Timeout ...
+	// while reading body)". The abort conditions instead: a genuine upload stall (no
+	// bytes for 60 s), the box failing to begin its reply after the upload
+	// (ResponseHeaderTimeout, which covers the NAND write on the modest ARM CPU), and
+	// app shutdown (appCtx). Matches the in-app self-update download.
+	ctx, cancel := context.WithCancel(a.appCtx())
+	defer cancel()
+
+	total := int64(len(bin))
 	// Stream the body through a counting reader so the UI can show an upload
 	// percentage and live throughput (the box reads the body as we send it),
 	// instead of a blind "uploading" spinner that looks frozen on a slow link.
-	prog := newTransferProgress(a, "box:update:progress", int64(len(bin)))
-	body := &countingReader{r: bytes.NewReader(bin), onProgress: prog.report}
-	req, err := http.NewRequestWithContext(a.appCtx(), http.MethodPost, url, body)
+	prog := newTransferProgress(a, "box:update:progress", total)
+	beat := make(chan struct{}, 1)
+	uploadDone := make(chan struct{})
+	finished := false
+	body := &countingReader{r: bytes.NewReader(bin), onProgress: func(n int64) {
+		prog.report(n)
+		if n >= total {
+			// Body fully streamed. Stop the upload-stall watchdog so the box's
+			// NAND-write + reply window (bounded by ResponseHeaderTimeout) is not
+			// mistaken for a stall. onProgress runs on the single body-read
+			// goroutine, so this flag needs no lock.
+			if !finished {
+				finished = true
+				close(uploadDone)
+			}
+			return
+		}
+		select {
+		case beat <- struct{}{}:
+		default:
+		}
+	}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
-	req.ContentLength = int64(len(bin))
-	// This single Timeout has to cover the whole operation: streaming the ~10 MB
-	// agent to the box, the box writing it to NAND on a modest ARM CPU, and the
-	// response. 60 s was too tight over slow Wi-Fi and surfaced to users as
-	// "context deadline exceeded (Client.Timeout ... while reading body)" with the
-	// update never completing. The SSH OTA path already budgets 120 s for the same
-	// upload alone, so match that with headroom for the NAND write and reply. A
-	// clean expiry here is NOT a hard failure: UpdateBoxAgent defers timeout-class
-	// errors (isTimeoutLikeErr) to the caller's post-OTA version poll.
-	client := &http.Client{Timeout: 240 * time.Second}
+	req.ContentLength = total
+
+	// Upload-stall watchdog: cancel only if no bytes move for 60 s while the body
+	// is still being sent. Exits cleanly once the upload completes or the context
+	// is done, so it never trips during the post-upload NAND write.
+	go func() {
+		t := time.NewTimer(60 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-uploadDone:
+				return
+			case <-beat:
+				if !t.Stop() {
+					select {
+					case <-t.C:
+					default:
+					}
+				}
+				t.Reset(60 * time.Second)
+			case <-t.C:
+				cancel()
+				return
+			}
+		}
+	}()
+
+	client := &http.Client{
+		// No total Timeout (see above); only connect and post-upload-reply are bounded.
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			ResponseHeaderTimeout: 180 * time.Second,
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

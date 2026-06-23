@@ -297,7 +297,14 @@ func (a *App) DownloadUpdate(version string) (string, error) {
 // a client timeout, and a stall watchdog (no bytes for 45 s) turns a frozen
 // transfer into a prompt error the caller retries.
 func (a *App) downloadAssetOnce(url, wantSHA, partPath string) error {
-	ctx, cancel := context.WithTimeout(a.appCtx(), 15*time.Minute)
+	// No total-transfer deadline. A large asset on a slow link can legitimately
+	// take a long time, and a fixed cap (formerly 15 min) killed still-progressing
+	// downloads with "context deadline exceeded ... while reading body" on narrow
+	// bandwidth (the in-app update failing at ~70%). The only abort conditions are
+	// the stall watchdog below (no bytes for 45 s) via cancel, and the parent
+	// appCtx (app shutdown); the download client itself sets no total Timeout, only
+	// connect/TLS/response-header timeouts.
+	ctx, cancel := context.WithCancel(a.appCtx())
 	defer cancel()
 	req, err := newGETRequest(ctx, url)
 	if err != nil {
