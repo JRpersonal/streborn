@@ -1074,25 +1074,88 @@ func sanitizeUser(s string) string {
 	return b.String()
 }
 
-// captureCredential copies go-librespot's current credentials.json into the
-// per-account store keyed by username.
+// storedCredential is the on-disk shape STR uses for a captured, exported, or
+// per-account-stored Spotify credential. It is exactly go-librespot's
+// AppState.Credentials, so the same blob loads whether it lands in state.json
+// (.credentials, the active account) or credentials.json (go-librespot's legacy
+// read-only fallback). Data marshals as base64, matching go-librespot.
+type storedCredential struct {
+	Username string `json:"username"`
+	Data     []byte `json:"data"`
+}
+
+// readStateCredential returns the credential go-librespot has persisted in
+// state.json (its current store; credentials.json is only a legacy read-fallback
+// and is never written by go-librespot). ok is false when none is present.
+func (m *Manager) readStateCredential() (storedCredential, bool) {
+	b, err := os.ReadFile(filepath.Join(m.configDir, "state.json"))
+	if err != nil {
+		return storedCredential{}, false
+	}
+	var s struct {
+		Credentials storedCredential `json:"credentials"`
+	}
+	if json.Unmarshal(b, &s) != nil || s.Credentials.Username == "" || len(s.Credentials.Data) == 0 {
+		return storedCredential{}, false
+	}
+	return s.Credentials, true
+}
+
+// writeActiveCredential makes cred the active account by setting .credentials in
+// state.json, preserving every other field (device_id, last_volume, ...) so
+// go-librespot logs in as that account on its next start. The restart SIGKILLs
+// go-librespot (exec.CommandContext cancel), so the outgoing process never saves
+// state on the way out and cannot clobber this write. Writing credentials.json
+// instead would be ignored whenever the target's state.json already names an
+// account, which is why an account switch must land here.
+func (m *Manager) writeActiveCredential(cred storedCredential) error {
+	if err := os.MkdirAll(m.configDir, 0o755); err != nil {
+		return err
+	}
+	path := filepath.Join(m.configDir, "state.json")
+	st := map[string]json.RawMessage{}
+	if b, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(b, &st) // best-effort merge; a missing/corrupt file just starts fresh
+	}
+	raw, err := json.Marshal(cred)
+	if err != nil {
+		return err
+	}
+	st["credentials"] = raw
+	out, err := json.Marshal(st)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0o600)
+}
+
+// captureCredential snapshots go-librespot's current persisted credential into
+// the per-account store keyed by username, so a later recall of a preset stamped
+// with that account can switch back to it. This is the multi-account case: two
+// people each Connect to the same box, go-librespot persists whoever logged in
+// last, and each must be saved so each preset replays under its own account.
+// Reads state.json (go-librespot's current credential store).
 func (m *Manager) captureCredential(user string) error {
 	if user == "" {
 		return nil
 	}
-	data, err := os.ReadFile(filepath.Join(m.configDir, "credentials.json"))
+	cred, ok := m.readStateCredential()
+	if !ok {
+		return fmt.Errorf("no spotify credential to capture")
+	}
+	blob, err := json.Marshal(cred)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(m.credStore, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(m.credStore, sanitizeUser(user)+".json"), data, 0o600)
+	return os.WriteFile(filepath.Join(m.credStore, sanitizeUser(user)+".json"), blob, 0o600)
 }
 
 // captureLoop watches the active account and snapshots its credential whenever a
-// new account taps the device (go-librespot rewrites credentials.json on each
-// tap). Low NAND wear: it only writes on an account change or a missing copy.
+// new account taps the device (go-librespot rewrites state.json on each tap). Low
+// NAND wear: it only writes on an account change or a missing copy.
 func (m *Manager) captureLoop(ctx context.Context) {
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
@@ -1139,7 +1202,15 @@ func (m *Manager) SwitchAccount(ctx context.Context, username string) (bool, err
 		m.logger.Info("spotify: no stored credential for account, playing with current", "want", username)
 		return false, nil
 	}
-	if err := os.WriteFile(filepath.Join(m.configDir, "credentials.json"), data, 0o600); err != nil {
+	var cred storedCredential
+	if err := json.Unmarshal(data, &cred); err != nil || len(cred.Data) == 0 {
+		m.logger.Info("spotify: stored credential unreadable, playing with current", "want", username, "err", err)
+		return false, nil
+	}
+	if cred.Username == "" {
+		cred.Username = username
+	}
+	if err := m.writeActiveCredential(cred); err != nil {
 		return false, err
 	}
 	start := time.Now()
@@ -1209,6 +1280,12 @@ func (m *Manager) PlayAccount(ctx context.Context, uri, account string) error {
 // Spotify again. Returns an error when no credential is stored yet (the box was
 // never logged in). LAN-only, same trust model as the rest of the agent API.
 func (m *Manager) ExportCredential() ([]byte, error) {
+	// The credential lives in state.json on a current go-librespot; export it as a
+	// {username,data} blob the receiving box stages back in. Fall back to a legacy
+	// credentials.json (same shape) for a box that predates the state.json layout.
+	if cred, ok := m.readStateCredential(); ok {
+		return json.Marshal(cred)
+	}
 	data, err := os.ReadFile(filepath.Join(m.configDir, "credentials.json"))
 	if err != nil {
 		return nil, err
@@ -1231,11 +1308,20 @@ func (m *Manager) ImportCredential(ctx context.Context, data []byte) error {
 	if err := os.MkdirAll(m.configDir, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(m.configDir, "credentials.json"), data, 0o600); err != nil {
+	// The blob is go-librespot's {username,data} credential (from another box's
+	// state.json, or a legacy credentials.json of the same shape). Set it as the
+	// active account in state.json so go-librespot logs in as it on restart, even
+	// when the target already named a different account (writing credentials.json
+	// would then be ignored). A blob we cannot parse is staged as-is to
+	// credentials.json (legacy fallback).
+	var cred storedCredential
+	if json.Unmarshal(data, &cred) == nil && cred.Username != "" && len(cred.Data) > 0 {
+		if err := m.writeActiveCredential(cred); err != nil {
+			return err
+		}
+	} else if err := os.WriteFile(filepath.Join(m.configDir, "credentials.json"), data, 0o600); err != nil {
 		return err
 	}
-	// Also stamp it into the per-account store so a later SwitchAccount can find
-	// it; best-effort, keyed once go-librespot reports the username after restart.
 	m.logger.Info("spotify: imported credential from another speaker, restarting go-librespot")
 	m.mu.Lock()
 	restart := m.runCancel
