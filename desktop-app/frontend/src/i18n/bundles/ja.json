@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Spotify の呼び出しには Premium が必要です",
   "play.errSpotifyLogin": "Spotify でこのスピーカーを一度選んでください",
   "play.errSpotifyLoginHelp": "STR はこのスピーカーを Spotify Connect デバイスとして再生します。同じ Wi-Fi 上の端末で Spotify を開き、デバイスアイコンをタップしてこのスピーカーを選び、一度曲を再生してください。その後は Spotify のプリセットが自動で呼び出せます。",
+  "play.nativeSpotifyHint": "スピーカー内蔵の Spotify で再生中です。保存した Spotify ボタンを押すと STR の再生に切り替わります。",
   "update.speakerUpdateAvailFor": "'{{name}}' のアップデートがあります",
   "update.versionLine": "現在: {{installed}} → 新しいバージョン: {{next}}",
   "update.appBehindTitle": "このアプリは '{{name}}' より古いバージョンです",

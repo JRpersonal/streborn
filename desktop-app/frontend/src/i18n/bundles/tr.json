@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Spotify geri çağırma için Premium gerekir",
   "play.errSpotifyLogin": "Bu hoparlörü Spotify'da bir kez seç",
   "play.errSpotifyLoginHelp": "STR, Spotify'ı bu hoparlör üzerinden Spotify Connect cihazı olarak çalar. Aynı Wi-Fi'deki bir cihazda Spotify'ı aç, cihazlar simgesine dokun, bu hoparlörü seç ve bir parçayı bir kez çal. Bundan sonra Spotify ön ayarları kendiliğinden geri çağrılır.",
+  "play.nativeSpotifyHint": "Hoparlörün dahili Spotify'ında çalıyor. STR oynatmasına geçmek için kayıtlı bir Spotify düğmesine bas.",
   "update.speakerUpdateAvailFor": "'{{name}}' için güncelleme mevcut",
   "update.versionLine": "yüklü: {{installed}} → yeni: {{next}}",
   "update.appBehindTitle": "Bu uygulama '{{name}}' cihazından daha eski",

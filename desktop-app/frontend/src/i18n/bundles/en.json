@@ -258,6 +258,7 @@
   "play.errSpotifyPremium": "Spotify recall needs Premium",
   "play.errSpotifyLogin": "Tap this speaker in Spotify once",
   "play.errSpotifyLoginHelp": "STR plays Spotify through this speaker as a Spotify Connect device. Open Spotify on a phone or computer on the same Wi-Fi, tap the devices icon, pick this speaker, and play any track once. After that, Spotify presets recall on their own.",
+  "play.nativeSpotifyHint": "Playing on the speaker's built-in Spotify. Press a saved Spotify button to switch to STR's playback.",
   "play.errServer500": "station error",
   "play.errUnreachable": "station unreachable",
   "play.errGeneric": "Error",

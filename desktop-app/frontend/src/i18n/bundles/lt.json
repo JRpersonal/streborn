@@ -919,6 +919,7 @@
   "play.errSpotifyPremium": "Spotify atkūrimui reikia Premium",
   "play.errSpotifyLogin": "Vieną kartą pasirink šią kolonėlę Spotify",
   "play.errSpotifyLoginHelp": "STR groja Spotify per šią kolonėlę kaip Spotify Connect įrenginį. Tame pačiame Wi-Fi tinkle atidaryk Spotify, paliesk įrenginių piktogramą, pasirink šią kolonėlę ir vieną kartą paleisk dainą. Po to Spotify išankstiniai nustatymai bus iškviečiami savaime.",
+  "play.nativeSpotifyHint": "Grojama per kolonėlės integruotą „Spotify“. Paspausk išsaugotą „Spotify“ mygtuką, kad perjungtum į STR atkūrimą.",
   "update.speakerUpdateAvailFor": "Yra atnaujinimas garsiakalbiui „{{name}}“",
   "update.versionLine": "įdiegta: {{installed}} → nauja: {{next}}",
   "update.appBehindTitle": "Ši programa senesnė nei „{{name}}“",
