@@ -994,8 +994,9 @@ function renderBoxSettings(s, box) {
       const restored = (r && r.restored) || [];
       const services = (r && r.services) || [];
       const unavailable = (r && r.unavailable) || [];
+      const expired = (r && r.expired) || [];
       const parsed = (r && typeof r.parsed === 'number') ? r.parsed : null;
-      if (!restored.length && !services.length) {
+      if (!restored.length && !services.length && !expired.length) {
         // Distinguish "could not read any buttons from the paste" (parsed 0,
         // usually the wrong text) from "read buttons but none are account-bound"
         // (parsed > 0, nothing to restore here), so the guidance is precise.
@@ -1007,11 +1008,21 @@ function renderBoxSettings(s, box) {
         return;
       }
       if (out) {
-        // If the box still lists the service as unavailable, its saved login has
-        // likely expired: say so honestly rather than implying a clean success.
-        out.textContent = unavailable.length
-          ? t('settingsView.restoreUnavailable', { slots: restored.join(', '), services: services.join(', '), unavailable: unavailable.join(', ') })
-          : t('settingsView.restoreDone', { slots: restored.join(', '), services: services.join(', ') });
+        const parts = [];
+        if (restored.length) {
+          // If a written source still reads unavailable, its saved login has
+          // likely expired: say so honestly rather than implying a clean success.
+          parts.push(unavailable.length
+            ? t('settingsView.restoreUnavailable', { slots: restored.join(', '), services: services.join(', '), unavailable: unavailable.join(', ') })
+            : t('settingsView.restoreDone', { slots: restored.join(', '), services: services.join(', ') }));
+        }
+        if (expired.length) {
+          // Services whose saved login on the speaker already expired with the Bose
+          // cloud: STR did NOT write those buttons (the speaker drops them on its
+          // own within seconds) and a reboot cannot bring the login back.
+          parts.push(t('settingsView.restoreExpired', { services: expired.join(', ') }));
+        }
+        out.textContent = parts.join('\n');
       }
       if (r && r.rebootRecommended) {
         const ok = await confirmWarn(t('speaker.rebootConfirmTitle'), t('settingsView.restoreRebootBody'));

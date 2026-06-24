@@ -1020,5 +1020,6 @@
   "settingsView.restoreNoneParsed": "復元するものがありません: 貼り付けたテキストからボタンを読み取れませんでした。スピーカーのプリセット ファイル全体、または単一の <preset> ... </preset> ブロックを貼り付けてください。",
   "settingsView.restoreNoneCloud": "{{count}} 個のボタンを読み取りましたが、Deezer のようなアカウント連携サービスを使うものはありません。ここに復元するものはありません。",
   "settingsView.restoreUnavailable": "{{services}} の {{slots}} を書き戻しましたが、スピーカーは {{unavailable}} を引き続き利用不可と報告しています。スピーカーを再起動してください。利用不可のままなら、そのサービスの保存済みログインはおそらく期限切れで、復元できません。",
+  "settingsView.restoreExpired": "{{services}} 用にスピーカーへ保存されたログインは、Bose クラウドの終了とともに失効しました。STR はこれらのボタンを復元できず、変更せずに残しました。スピーカーは自動的にそれらを削除します。これらのサービスへの直接対応は今後の予定です。",
   "update.uploadingPct": "アップロード中 {{pct}}%"
 }

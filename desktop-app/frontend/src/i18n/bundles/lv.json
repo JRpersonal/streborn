@@ -1020,5 +1020,6 @@
   "settingsView.restoreNoneParsed": "Nav ko atjaunot: no ielīmētā teksta nevarēja nolasīt nevienu pogu. Ielīmējiet visu skaļruņa iestatījumu failu vai vienu <preset> ... </preset> bloku.",
   "settingsView.restoreNoneCloud": "Nolasītas {{count}} pogas, taču neviena neizmanto ar kontu saistītu pakalpojumu, piemēram, Deezer, tāpēc šeit nav ko atjaunot.",
   "settingsView.restoreUnavailable": "{{slots}} ({{services}}) ierakstīts atpakaļ, taču skaļrunis joprojām norāda {{unavailable}} kā nepieejamu. Restartējiet skaļruni; ja tas paliek nepieejams, saglabātā pieteikšanās šim pakalpojumam, visticamāk, ir beigusies un to nevar atjaunot.",
+  "settingsView.restoreExpired": "Skaļrunī saglabātā {{services}} pieteikšanās beidza darboties kopā ar Bose mākoni. STR nevar atjaunot šīs pogas un atstāja tās nemainītas; skaļrunis tās noņem pats. Tieša šo pakalpojumu atbalsta ir plānos.",
   "update.uploadingPct": "Augšupielāde {{pct}}%"
 }

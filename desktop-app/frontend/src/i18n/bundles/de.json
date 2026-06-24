@@ -1031,5 +1031,6 @@
   "settingsView.restoreNoneParsed": "Nichts wiederherzustellen: Aus dem eingefügten Text konnten keine Tasten gelesen werden. Füge entweder die komplette Tasten-Datei des Lautsprechers ein oder einen einzelnen <preset> ... </preset>-Block.",
   "settingsView.restoreNoneCloud": "{{count}} Tasten gelesen, aber keine nutzt einen kontogebundenen Dienst wie Deezer. Hier gibt es nichts wiederherzustellen.",
   "settingsView.restoreUnavailable": "{{slots}} für {{services}} zurückgeschrieben, aber der Lautsprecher meldet {{unavailable}} weiterhin als nicht verfügbar. Starte den Lautsprecher neu; bleibt er nicht verfügbar, ist die gespeicherte Anmeldung für diesen Dienst vermutlich abgelaufen und lässt sich nicht zurückholen.",
+  "settingsView.restoreExpired": "Die auf dem Lautsprecher gespeicherte Anmeldung für {{services}} ist zusammen mit der Bose-Cloud abgelaufen. STR kann diese Tasten nicht zurückholen und hat sie unverändert gelassen; der Lautsprecher verwirft sie von selbst. Eine direkte Unterstützung dieser Dienste ist geplant.",
   "update.uploadingPct": "Hochladen {{pct}}%"
 }
