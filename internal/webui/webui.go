@@ -4370,6 +4370,41 @@ func (s *Server) handleBoxSnapshot(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// serviceKeyOf normalises a source name to the key SourceStatuses uses: upper-
+// cased and truncated at the first underscore, so e.g. DEEZER_HIFI maps to the
+// same DEEZER status entry.
+func serviceKeyOf(source string) string {
+	k := strings.ToUpper(strings.TrimSpace(source))
+	if i := strings.IndexByte(k, '_'); i > 0 {
+		k = k[:i]
+	}
+	return k
+}
+
+// partitionRestorable splits account-linked cloud presets by whether the box's
+// own saved login for their service is still valid. A preset whose source the
+// box already reports UNAVAILABLE must NOT be written back: the firmware drops a
+// preset bound to a dead source within seconds, so writing it only makes the
+// button flash and vanish (a reporter watched exactly that). Those services are
+// returned as expired (normalised + deduplicated) so the caller reports them
+// honestly instead of claiming a restore a reboot can never make stick. A source
+// the box does not list at all counts as restorable (unknown, not proven dead).
+func partitionRestorable(cloud []boxsnapshot.Preset, statuses map[string]string) (writable []boxsnapshot.Preset, expired []string) {
+	expSet := map[string]bool{}
+	for _, p := range cloud {
+		key := serviceKeyOf(p.Source)
+		if statuses[key] == "UNAVAILABLE" {
+			expSet[key] = true
+			continue
+		}
+		writable = append(writable, p)
+	}
+	for k := range expSet {
+		expired = append(expired, k)
+	}
+	return writable, expired
+}
+
 // handleBoxSnapshotRestore (EXPERIMENTAL) writes account-linked cloud presets
 // (e.g. Deezer) back onto their original slots and re-advertises their sources
 // via the reflect-sources file, so the box plays them again through its own
@@ -4430,7 +4465,19 @@ func (s *Server) handleBoxSnapshotRestore(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Re-advertise the sources first so a reboot re-registers them (Path A).
+	// Read the box's CURRENT source availability BEFORE writing anything. STR can
+	// re-assert a cloud preset (Deezer, ...) only while the box's own saved login
+	// for that service is still valid. Once that login has expired with the Bose
+	// cloud the source reports UNAVAILABLE, and the firmware then drops any preset
+	// bound to it within seconds, so writing such a button just makes it appear and
+	// vanish (a reporter watched exactly that on :8090/presets). Detect the expired
+	// services up front and DO NOT write their buttons; report them honestly
+	// instead. A reboot cannot revive an expired box-side login.
+	statuses, _ := boxsnapshot.SourceStatuses(r.Context(), s.boxHost)
+	writable, expired := partitionRestorable(cloud, statuses)
+
+	// Re-advertise the still-valid sources so a reboot re-registers them (Path A);
+	// harmless for the expired ones.
 	if s.reflectPath != "" {
 		if err := boxsnapshot.MergeReflect(s.reflectPath, boxsnapshot.ReflectFromPresets(cloud)); err != nil {
 			s.logger.Warn("restore: reflect-sources merge failed", "err", err)
@@ -4440,7 +4487,7 @@ func (s *Server) handleBoxSnapshotRestore(w http.ResponseWriter, r *http.Request
 	restored := []int{}
 	failed := map[string]string{}
 	services := map[string]bool{}
-	for _, p := range cloud {
+	for _, p := range writable {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		err := boxcli.AddPresetRaw(ctx, s.boxHost, p.Slot, p.Source, p.Type, p.Location, p.Name, p.SourceAccount)
 		cancel()
@@ -4455,32 +4502,28 @@ func (s *Server) handleBoxSnapshotRestore(w http.ResponseWriter, r *http.Request
 	for k := range services {
 		svcList = append(svcList, k)
 	}
-	// Re-read /sources so we report honestly whether the re-asserted account
-	// sources actually came back. The box plays an account service (Deezer, ...)
-	// only via its own still-valid stored login; if that login has expired the
-	// source stays UNAVAILABLE and STR cannot revive it. Reporting plain success
-	// in that case misleads the user (a reporter saw Deezer return as UNAVAILABLE
-	// after a "successful" restore). A reboot is still recommended, so an
-	// UNAVAILABLE here may clear after the restart the UI offers next.
+	// A source that was valid at the pre-check can still come back UNAVAILABLE if
+	// the box rejected it on write: re-read and report those too, kept distinct
+	// from the expired ones we never wrote.
 	unavailable := []string{}
-	if statuses, err := boxsnapshot.SourceStatuses(r.Context(), s.boxHost); err == nil {
+	if post, err := boxsnapshot.SourceStatuses(r.Context(), s.boxHost); err == nil {
 		for svc := range services {
-			key := svc
-			if i := strings.IndexByte(key, '_'); i > 0 {
-				key = key[:i]
-			}
-			if statuses[key] == "UNAVAILABLE" {
+			if post[serviceKeyOf(svc)] == "UNAVAILABLE" {
 				unavailable = append(unavailable, svc)
 			}
 		}
 	}
-	s.logger.Info("box snapshot restore (experimental)", "restored", restored, "failed", len(failed), "services", svcList, "unavailable", unavailable)
+	// A reboot only helps when a button was actually written to a still-valid
+	// source; it cannot revive an expired login, so do not offer it otherwise.
+	rebootRecommended := len(restored) > 0
+	s.logger.Info("box snapshot restore (experimental)", "restored", restored, "failed", len(failed), "services", svcList, "unavailable", unavailable, "expired", expired)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"restored":          restored,
 		"failed":            failed,
 		"services":          svcList,
 		"unavailable":       unavailable,
-		"rebootRecommended": true,
+		"expired":           expired,
+		"rebootRecommended": rebootRecommended,
 	})
 }
 

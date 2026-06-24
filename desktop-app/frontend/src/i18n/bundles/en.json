@@ -1031,5 +1031,6 @@
   "settingsView.restoreNoneParsed": "Nothing to restore: no buttons could be read from the pasted text. Paste either the whole presets file from the speaker, or a single <preset> ... </preset> block.",
   "settingsView.restoreNoneCloud": "Read {{count}} buttons, but none use an account-linked service like Deezer, so there is nothing to restore here.",
   "settingsView.restoreUnavailable": "Wrote back {{slots}} for {{services}}, but the speaker still reports {{unavailable}} as unavailable. Restart the speaker; if it stays unavailable, the saved login for that service has likely expired and cannot be brought back.",
+  "settingsView.restoreExpired": "The speaker's saved login for {{services}} expired together with the Bose cloud. STR cannot bring these buttons back and left them unchanged; the speaker drops them on its own. Direct support for these services is on the roadmap.",
   "update.uploadingPct": "Uploading {{pct}}%"
 }

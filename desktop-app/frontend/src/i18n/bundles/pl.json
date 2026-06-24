@@ -1020,5 +1020,6 @@
   "settingsView.restoreNoneParsed": "Nie ma czego przywracać: nie udało się odczytać żadnych przycisków z wklejonego tekstu. Wklej cały plik presetów z głośnika lub pojedynczy blok <preset> ... </preset>.",
   "settingsView.restoreNoneCloud": "Odczytano {{count}} przycisków, ale żaden nie korzysta z usługi powiązanej z kontem, takiej jak Deezer, więc nie ma tu czego przywracać.",
   "settingsView.restoreUnavailable": "Zapisano z powrotem {{slots}} dla {{services}}, ale głośnik nadal zgłasza {{unavailable}} jako niedostępne. Uruchom głośnik ponownie; jeśli pozostaje niedostępne, zapisane logowanie do tej usługi prawdopodobnie wygasło i nie da się go przywrócić.",
+  "settingsView.restoreExpired": "Zapisane w głośniku logowanie do {{services}} wygasło wraz z chmurą Bose. STR nie może przywrócić tych przycisków i pozostawił je bez zmian; głośnik usuwa je samodzielnie. Bezpośrednia obsługa tych usług jest w planach.",
   "update.uploadingPct": "Wysyłanie {{pct}}%"
 }

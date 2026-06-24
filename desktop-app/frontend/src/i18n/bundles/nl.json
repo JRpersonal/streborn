@@ -1020,5 +1020,6 @@
   "settingsView.restoreNoneParsed": "Niets om te herstellen: er konden geen knoppen uit de geplakte tekst worden gelezen. Plak het volledige presets-bestand van de speaker, of een enkel <preset> ... </preset>-blok.",
   "settingsView.restoreNoneCloud": "{{count}} knoppen gelezen, maar geen ervan gebruikt een accountgekoppelde dienst zoals Deezer, dus hier is niets te herstellen.",
   "settingsView.restoreUnavailable": "{{slots}} voor {{services}} teruggeschreven, maar de speaker meldt {{unavailable}} nog steeds als niet beschikbaar. Start de speaker opnieuw op; blijft het niet beschikbaar, dan is de opgeslagen login voor die dienst waarschijnlijk verlopen en niet terug te halen.",
+  "settingsView.restoreExpired": "De op de speaker opgeslagen login voor {{services}} is samen met de Bose-cloud verlopen. STR kan deze knoppen niet terughalen en heeft ze ongewijzigd gelaten; de speaker verwijdert ze zelf. Directe ondersteuning voor deze diensten staat op de roadmap.",
   "update.uploadingPct": "Uploaden {{pct}}%"
 }

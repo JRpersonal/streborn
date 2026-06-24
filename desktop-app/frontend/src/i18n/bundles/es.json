@@ -1020,5 +1020,6 @@
   "settingsView.restoreNoneParsed": "Nada que restaurar: no se pudo leer ningún botón del texto pegado. Pega el archivo de presets completo del altavoz, o un único bloque <preset> ... </preset>.",
   "settingsView.restoreNoneCloud": "Se leyeron {{count}} botones, pero ninguno usa un servicio vinculado a una cuenta como Deezer, así que aquí no hay nada que restaurar.",
   "settingsView.restoreUnavailable": "Se reescribieron {{slots}} para {{services}}, pero el altavoz sigue indicando {{unavailable}} como no disponible. Reinicia el altavoz; si sigue no disponible, el inicio de sesión guardado para ese servicio probablemente caducó y no se puede recuperar.",
+  "settingsView.restoreExpired": "El inicio de sesión guardado en el altavoz para {{services}} caducó junto con la nube de Bose. STR no puede recuperar estos botones y los dejó sin cambios; el altavoz los descarta por sí solo. La compatibilidad directa con estos servicios está en la hoja de ruta.",
   "update.uploadingPct": "Subiendo {{pct}}%"
 }
