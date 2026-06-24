@@ -1038,6 +1038,24 @@ body {
 .modal-content { background: #2a2a2a; border-radius: 8px; padding: 20px; width: 90%; max-width: 480px; }
 .modal-content h3 { margin: 0 0 4px 0; color: var(--brand); }
 .modal-sub { margin: 0 0 16px 0; color: #aaa; font-size: 13px; }
+
+/* "Update all speakers" multi-progress overlay (logical props so RTL mirrors) */
+.ua-modal { max-width: 560px; }
+.ua-list { max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px 0; }
+.ua-row { background: #1f1f1f; border-radius: 6px; padding: 8px 10px; }
+.ua-row-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.ua-name { font-weight: 600; }
+.ua-model { color: #888; font-size: 11px; }
+.ua-status { margin-inline-start: auto; color: #bbb; font-size: 12px; text-align: end; }
+.ua-bar { height: 6px; background: #333; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+.ua-bar-fill { height: 100%; width: 0; background: var(--brand); transition: width 0.2s linear; }
+.ua-row.ua-done .ua-bar-fill { background: #3a9b6c; }
+.ua-row.ua-defer .ua-bar-fill { background: #c9933a; }
+.ua-row.ua-failed .ua-bar-fill { background: #c44; width: 100%; }
+.ua-row.ua-indet .ua-bar-fill { width: 40%; background: var(--brand); animation: ua-indet 1.2s ease-in-out infinite; }
+@keyframes ua-indet { 0% { margin-inline-start: -40%; } 100% { margin-inline-start: 100%; } }
+.beta-tag { font-size: 10px; background: #c9933a; color: #111; border-radius: 3px; padding: 1px 5px; margin-inline-start: 4px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
+
 .credits-list { max-height: 50vh; overflow-y: auto; margin-bottom: 14px; }
 .credit-row { padding: 7px 0; border-bottom: 1px solid #3a3a3a; font-size: 13px; }
 .credit-row:last-child { border-bottom: none; }
