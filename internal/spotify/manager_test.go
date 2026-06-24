@@ -3,12 +3,16 @@ package spotify
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -154,6 +158,63 @@ func TestLoggedIn(t *testing.T) {
 	}
 	if !m2.LoggedIn() {
 		t.Fatal("LoggedIn should be true once state.json carries a credential username")
+	}
+}
+
+// TestCanRecall verifies the recall-eligibility gate (#45; Patrick, ST10 rhino,
+// 2026-06-24). Recall must be allowed when go-librespot holds a LIVE session even
+// if no credential is persisted on disk (the box streams Spotify fine yet
+// LoggedIn() is false, which previously refused the recall), and when a
+// credential is persisted even if the session is momentarily down (ensureSession
+// restarts go-librespot and re-auths from it). It is refused only when BOTH are
+// false, which is the genuine "tap this speaker in Spotify once" case.
+func TestCanRecall(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// No persisted credential and no live session (/status unreachable): refuse.
+	cfg := filepath.Join(t.TempDir(), "cfg")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := New("", cfg, "", nil, logger)
+	m.apiAddr = "127.0.0.1:0" // nothing listening -> currentUsername == ""
+	if m.CanRecall(ctx) {
+		t.Fatal("CanRecall should be false with no credential and no live session")
+	}
+
+	// A live go-librespot session (mock /status reports a username) makes recall
+	// possible even though nothing is persisted on disk: exactly the Patrick case
+	// (streamed from the phone, go-librespot authenticated, nothing on NAND yet).
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			_, _ = w.Write([]byte(`{"username":"live-listener"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+	m.apiAddr = strings.TrimPrefix(ts.URL, "http://")
+	if m.LoggedIn() {
+		t.Fatal("precondition: LoggedIn should be false (nothing persisted)")
+	}
+	if !m.CanRecall(ctx) {
+		t.Fatal("CanRecall should be true with a live session even with no persisted credential")
+	}
+
+	// A persisted credential alone (session down) also allows recall.
+	cfg2 := filepath.Join(t.TempDir(), "cfg")
+	if err := os.MkdirAll(cfg2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m2 := New("", cfg2, "", nil, logger)
+	m2.apiAddr = "127.0.0.1:0" // session down
+	if err := os.WriteFile(filepath.Join(cfg2, "state.json"),
+		[]byte(`{"credentials":{"username":"alice","data":"AA=="}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !m2.CanRecall(ctx) {
+		t.Fatal("CanRecall should be true with a persisted credential even with no live session")
 	}
 }
 
