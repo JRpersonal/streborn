@@ -309,56 +309,31 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 // Idempotent and cheap when the engine is already current (one version GET, zero
 // bytes). Bound for the frontend; safe to call on any box.
 //
-// It retries with backoff because this runs right after the box's post-OTA
-// reboot: a box that has just come back up can still refuse or DROP the ~16 MB
-// sidecar push ("connection forcibly closed by the remote host") or read as
-// unreachable for a few seconds while it settles. A single attempt then leaves
-// goLibrespot missing until the user manually OTAs again, so Spotify silently
-// never plays (#240, observed live on a SoundTouch box updated through the app).
-// Each attempt first gates on the agent answering its version endpoint so the
-// large body is not fired into a half-booted box, then pushes. pushSidecarIfNeeded
-// is idempotent and costs one cheap version GET once the engine is present, so a
-// late success after early failures is free. The total backoff stays well inside
-// otaRebootGrace.
+// This is a SINGLE attempt by design: the desktop UI drives the retry loop so it
+// can show per-attempt progress and stop the instant the engine lands, instead
+// of blocking here with no visible feedback. A box that has just rebooted can
+// still refuse or DROP the push for a few seconds; returning the error lets the
+// caller retry quickly while keeping the user informed (#240).
 func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 	if !agentbin.GoLibrespotAvailable() {
 		return "no embedded engine in this build", nil
 	}
-	var lastErr error
-	for attempt := 1; attempt <= otaSidecarEnsureAttempts; attempt++ {
-		if _, verr := a.BoxAgentVersion(host, port); verr != nil {
-			// Box not answering yet (still rebooting). Wait and retry rather than
-			// fire the sidecar body into a listener that is not steadily up.
-			lastErr = verr
-		} else if err := a.pushSidecarIfNeeded(host, port); err != nil {
-			lastErr = err
-		} else {
-			if attempt > 1 {
-				a.recordOTA(host, fmt.Sprintf("sidecar: delivered on retry %d/%d", attempt, otaSidecarEnsureAttempts))
-				a.logger.Info("EnsureSpotifyEngine: sidecar delivered after retry", "host", host, "attempt", attempt)
-			}
-			return "ok", nil
-		}
-		if attempt < otaSidecarEnsureAttempts {
-			a.logger.Info("EnsureSpotifyEngine: sidecar not delivered yet, retrying after backoff",
-				"host", host, "attempt", attempt, "err", lastErr)
-			time.Sleep(otaSidecarEnsureBackoff(attempt))
-		}
+	if err := a.pushSidecarIfNeeded(host, port); err != nil {
+		return "", err
 	}
-	a.recordOTA(host, "sidecar: re-delivery still failing after retries: "+lastErr.Error())
-	return "", lastErr
+	return "ok", nil
 }
 
-// otaSidecarEnsureAttempts bounds the post-OTA sidecar re-delivery retry in
-// EnsureSpotifyEngine. With otaSidecarEnsureBackoff the cumulative wait across
-// attempts is 3+6+12+24+30 = 75 s, comfortably inside the 4-minute
-// otaRebootGrace, so a box that takes a while to come back up after its reboot
-// still gets the engine without the user retrying by hand.
+// otaSidecarEnsureAttempts bounds the pre-reboot sidecar staging retry in
+// stageSidecarBeforeReboot. With otaSidecarEnsureBackoff the cumulative wait
+// across attempts is 3+6+12+24+30 = 75 s, comfortably inside the 4-minute
+// otaRebootGrace, so a transient drop while staging the engine before the reboot
+// is retried without giving up too early.
 const otaSidecarEnsureAttempts = 6
 
-// otaSidecarEnsureBackoff is the wait before the next sidecar re-delivery
-// attempt: 3s, 6s, 12s, 24s, then capped at 30s. Exponential so a box that is
-// nearly up is retried quickly, with a cap so a slow box is not hammered.
+// otaSidecarEnsureBackoff is the wait before the next sidecar staging attempt:
+// 3s, 6s, 12s, 24s, then capped at 30s. Exponential so a box that is nearly
+// ready is retried quickly, with a cap so a slow box is not hammered.
 func otaSidecarEnsureBackoff(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1

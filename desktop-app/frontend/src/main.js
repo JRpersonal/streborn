@@ -2207,18 +2207,54 @@ async function doBoxUpdate(targetBox) {
     if (confirmed) {
       showToast(t('update.doneToast'));
       // The box just came up on the new, sidecar-capable agent. If it still
-      // reports the Spotify engine missing (it was upgraded from a pre-v0.8.22
-      // agent, where the in-OTA sidecar push hit an old agent with no sidecar
-      // endpoint and silently no-op'd, #237), deliver it now. The agent's Spotify
-      // manager polls for the binary and starts go-librespot live, so no extra
-      // reboot is needed. Best-effort and silent on failure: it must never turn a
-      // successful agent update into an error.
+      // reports the Spotify engine missing, this is the one-time legacy case
+      // (#240): it was upgraded FROM a pre-v0.8.22 agent that had no sidecar
+      // endpoint, so the engine could not be staged before the reboot and must be
+      // delivered now, after the restart. Make that final step VISIBLE and
+      // trackable rather than a silent blocking call: show a distinct status with
+      // a live countdown and per-attempt feedback, retry every 2 s, and stop the
+      // instant it lands. The box is already confirmed up (the version poll above
+      // broke on reachability), so delivery normally succeeds on the first try;
+      // the loop only covers a box that drops the ~16 MB push while still
+      // settling. The agent's Spotify manager picks up the binary live, no extra
+      // reboot. Best-effort: it must never turn a successful agent update into an
+      // error.
       if (confirmedVer && confirmedVer.goLibrespot && confirmedVer.goLibrespot !== 'present') {
+        const engDeadlineMs = Date.now() + 120_000;
+        let engDone = false;
+        let engAttempt = 0;
+        const renderEng = () => {
+          const remaining = formatRemaining(engDeadlineMs - Date.now());
+          setStatus(t('update.spotifyFinalStep', { remaining }));
+        };
+        renderEng();
+        const engTick = setInterval(renderEng, 1000);
         try {
-          setStatus(t('update.deliveringSpotify'));
-          await EnsureSpotifyEngine(targetBox.host, targetBox.port);
-        } catch (engErr) {
-          try { console.warn('post-update Spotify engine delivery failed (non-fatal)', engErr); } catch {}
+          while (Date.now() < engDeadlineMs) {
+            engAttempt++;
+            try {
+              await EnsureSpotifyEngine(targetBox.host, targetBox.port);
+              engDone = true;
+              break;
+            } catch (engErr) {
+              // Box still settling after the reboot, or it dropped the push.
+              // Keep the user informed and retry shortly; do not surface as a
+              // failed update.
+              try { console.warn(`post-update Spotify engine delivery attempt ${engAttempt} failed (will retry)`, engErr); } catch {}
+            }
+            await sleep(2_000);
+            renderEng();
+          }
+        } finally {
+          clearInterval(engTick);
+        }
+        if (engDone) {
+          showToast(t('update.spotifyDoneToast'));
+        } else {
+          // Could not land within the window; the engine is still missing but the
+          // agent update itself succeeded. Tell the user it will be retried next
+          // time they open this speaker (EnsureSpotifyEngine runs again then).
+          showToast(t('update.spotifyDeferredToast'));
         }
       }
     } else {
