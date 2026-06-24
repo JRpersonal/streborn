@@ -25,6 +25,7 @@ import pl from './bundles/pl.json';
 import lt from './bundles/lt.json';
 import lv from './bundles/lv.json';
 import tr from './bundles/tr.json';
+import ar from './bundles/ar.json';
 
 // Each bundle covers the full UI chrome; missing keys fall back to
 // English. The large country/genre/lang reference tables are not
@@ -33,7 +34,24 @@ import tr from './bundles/tr.json';
 // language; the Bose box sysLanguage enum has no Ukrainian, so a UA box
 // display falls back to English (deliberately NOT Russian). See
 // project_bose_language_enum.
-const BUNDLES = { en, de, fr, es, ja, uk, nl, pl, lt, lv, tr };
+const BUNDLES = { en, de, fr, es, ja, uk, nl, pl, lt, lv, tr, ar };
+
+// RTL_LOCALES drive the document text direction. Arabic is right-to-left; every
+// other shipped locale is left-to-right. applyDirection mirrors the whole UI by
+// setting <html dir>, which flips flexbox rows, text alignment and logical
+// margins for free, and sets <html lang> for correct shaping/hyphenation.
+const RTL_LOCALES = new Set(['ar']);
+
+function applyDirection(code) {
+  try {
+    const el = typeof document !== 'undefined' && document.documentElement;
+    if (!el) return;
+    el.dir = RTL_LOCALES.has(code) ? 'rtl' : 'ltr';
+    el.lang = code;
+  } catch (_) {
+    // no document (SSR/test): nothing to mirror.
+  }
+}
 
 // The language picker renders in this order: alphabetical by each
 // language's own endonym (Deutsch, English, ..., Latviešu, Lietuvių,
@@ -63,6 +81,7 @@ function detectInitialLocale() {
 }
 
 let currentLocale = detectInitialLocale();
+applyDirection(currentLocale); // mirror the UI on first paint when the stored/detected locale is RTL
 const listeners = new Set();
 
 export function getLocale() {
@@ -73,6 +92,7 @@ export function setLocale(code) {
   if (!BUNDLES[code]) return false;
   if (code === currentLocale) return true;
   currentLocale = code;
+  applyDirection(code); // flip <html dir>/lang so switching to/from Arabic mirrors the UI
   try {
     localStorage.setItem(LS_KEY, code);
   } catch (_) {
