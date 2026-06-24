@@ -12,10 +12,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
 const maxOTAJournalBytes = 64 * 1024
+
+// otaJournalMu serializes the append+cap of the OTA journal. recordOTA is called
+// from multiple goroutines when several speakers update at once (the "update all
+// speakers" batch): without this, two concurrent appends interleave and, worse,
+// two capOTAJournal read-modify-write rewrites race and can truncate or garble
+// the very journal used to diagnose those (often weak-Wi-Fi) batch updates.
+var otaJournalMu sync.Mutex
 
 // otaJournalPath is the OTA history file, next to str.log so it lands in the same
 // app-data dir the user already knows from logFile.
@@ -36,6 +44,10 @@ func (a *App) recordOTA(host, event string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
 	}
+	// Serialize the append+cap so concurrent per-box updates cannot interleave a
+	// line or race two capOTAJournal rewrites of the same file.
+	otaJournalMu.Lock()
+	defer otaJournalMu.Unlock()
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return

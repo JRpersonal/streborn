@@ -20,17 +20,23 @@ import (
 type transferProgress struct {
 	app      *App
 	event    string // wails event name, e.g. "app:update:progress"
+	host     string // box host this transfer targets ("" for the app self-update)
 	total    int64
 	start    time.Time
 	lastEmit time.Time
 	lastPct  int
 }
 
-func newTransferProgress(app *App, event string, total int64) *transferProgress {
+// newTransferProgress builds a progress emitter. host identifies the target
+// speaker so a multi-box "update all" overlay can route each event to the right
+// row; pass "" for the app self-update (no box). The legacy single-box listener
+// ignores the host field, so this is backward compatible.
+func newTransferProgress(app *App, event string, total int64, host string) *transferProgress {
 	now := time.Now()
 	return &transferProgress{
 		app:      app,
 		event:    event,
+		host:     host,
 		total:    total,
 		start:    now,
 		lastEmit: now.Add(-time.Second), // so the first report always emits
@@ -59,7 +65,7 @@ func (p *transferProgress) report(done int64) {
 		bps = int64(float64(done) / el)
 	}
 	wailsrt.EventsEmit(p.app.appCtx(), p.event, map[string]any{
-		"pct": pct, "bytesPerSec": bps, "done": done, "total": p.total,
+		"host": p.host, "pct": pct, "bytesPerSec": bps, "done": done, "total": p.total,
 	})
 }
 
