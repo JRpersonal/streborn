@@ -473,6 +473,17 @@ document.querySelector('#app').innerHTML = `
     </div>
   </div>
 
+  <div class="modal hidden" id="updateAllOverlay">
+    <div class="modal-content ua-modal">
+      <h3>${escapeHtml(t('updateAll.title'))} <span class="beta-tag">${escapeHtml(t('common.beta'))}</span></h3>
+      <p class="modal-sub" id="uaSummary"></p>
+      <div id="uaList" class="ua-list"></div>
+      <div class="warn-buttons">
+        <button class="btn" id="uaClose" disabled>${escapeHtml(t('common.close'))}</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>
 
   <footer class="app-footer" id="appFooter"></footer>
@@ -1959,6 +1970,14 @@ async function checkBoxUpdate() {
     }
     return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtnSpeaker'))}</button>`;
   };
+  // "Update all speakers" (beta): offered next to the single-speaker button when
+  // two or more speakers are behind, so a multi-speaker household updates them in
+  // one click instead of one at a time. Hidden while any OTA is already running.
+  const eligibleCount = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && boxNeedsUpdate(b)).length;
+  const renderUpdateAllBtn = () => (eligibleCount >= 2 && !state.otaInProgress)
+    ? `<button class="btn btn-secondary btn-mini" id="boxUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: eligibleCount }))} <span class="beta-tag">${escapeHtml(t('common.beta'))}</span></button>`
+    : '';
+  const wireUpdateAllBtn = () => { const b = $('boxUpdateAllBtn'); if (b) b.onclick = updateAllBoxes; };
   const boxName = getBoxLabel(state.currentBox);
   // OTA running on THIS box: show an honest "updating" banner instead of the
   // stale "update available" one (Jens, 2026-06-17: the heading kept saying
@@ -2005,9 +2024,11 @@ async function checkBoxUpdate() {
           <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
         </div>
         ${renderUpdateBtn()}
+        ${renderUpdateAllBtn()}
       `;
       banner.classList.remove('hidden');
       if (!otaElsewhere) $('boxUpdateBtn').onclick = doBoxUpdate;
+      wireUpdateAllBtn();
     } else {
       // Box newer than the app: an OTA would downgrade it. Point the user at the
       // app update instead and do NOT show the "Aktualisieren" button.
@@ -2031,11 +2052,89 @@ async function checkBoxUpdate() {
           <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
         </div>
         ${renderUpdateBtn()}
+        ${renderUpdateAllBtn()}
       `;
       banner.classList.remove('hidden');
       if (!otaElsewhere) $('boxUpdateBtn').onclick = doBoxUpdate;
+      wireUpdateAllBtn();
     }
   }
+}
+
+// runBoxUpdate runs the per-box OTA sequence for the "update all speakers" batch
+// (updateAllBoxes). It owns NO UI and NO lock: the caller drives status via
+// onPhase(phase, data) and owns the batch lock + the live byte-progress
+// (box:update:progress, now host-tagged). It is a faithful copy of the core
+// sequence inside doBoxUpdate (the single-speaker path) — KEEP THE TWO IN SYNC;
+// doBoxUpdate is deliberately left untouched as the battle-tested single-box flow.
+// Resolves to { outcome, version }:
+//   'done'    agent updated (engine present, or freshly delivered)
+//   'partial' agent updated but the engine could not be delivered in-window
+//             (self-heals next time the speaker is opened)
+//   'timeout' upload accepted but the box never confirmed the new build (6 min)
+// Throws ONLY on a hard failure (UpdateBoxAgent cleanly rejected the binary); a
+// timeout-class rejection is NOT a failure (the box is usually still applying it)
+// and falls through to the version poll, the real success signal.
+// phases: 'uploading' -> 'rebooting' -> 'verifying'{remainingMs} ->
+//   'spotify'{attempt, remainingMs} -> resolve.
+async function runBoxUpdate(box, onPhase) {
+  const phase = (p, d) => { try { if (onPhase) onPhase(p, d || {}); } catch {} };
+  const appBuild = state.appInfo && state.appInfo.build;
+  // Record what the box runs RIGHT NOW; the post-OTA success signal is "reachable
+  // AND no longer this pre-OTA build", which survives app/agent build-stamp drift.
+  let preBuild = '', preVersion = '';
+  try {
+    const pv = await BoxAgentVersion(box.host, box.port);
+    if (pv) { preBuild = pv.build || ''; preVersion = pv.version || ''; }
+  } catch { /* pre-OTA version unknown: fall back to the appBuild match */ }
+  phase('uploading');
+  try {
+    await UpdateBoxAgent(box.host, box.port);
+  } catch (e) {
+    // A timeout-class rejection ("deadline exceeded ... while reading body",
+    // common on a slow link or with an HTTP-inspecting suite like Norton) does
+    // NOT mean the OTA failed: the box may still be applying it, so fall through
+    // to the poll. A clean reject (binary definitely refused) is a real failure.
+    if (!/deadline exceeded|client\.timeout|while reading body/i.test(String(e))) throw e;
+  }
+  phase('rebooting');
+  const deadlineMs = Date.now() + 360_000;
+  const updated = (v) => {
+    if (!v) return false;
+    if (appBuild && v.build === appBuild) return true;
+    if (preBuild && v.build && v.build !== preBuild) return true;
+    if (preVersion && v.version && v.version !== preVersion) return true;
+    return false;
+  };
+  let confirmedVer = null;
+  while (Date.now() < deadlineMs) {
+    phase('verifying', { remainingMs: deadlineMs - Date.now() });
+    await sleep(2_000);
+    try {
+      const v = await BoxAgentVersion(box.host, box.port);
+      if (updated(v)) { confirmedVer = v; break; }
+    } catch { /* box still unreachable mid-reboot; keep waiting */ }
+  }
+  if (!confirmedVer) return { outcome: 'timeout', version: null };
+  // Post-reboot Spotify engine delivery for the one-time pre-v0.8.22 upgrade case
+  // (#240): the box is up but still reports the engine missing, so deliver it now.
+  if (confirmedVer.goLibrespot && confirmedVer.goLibrespot !== 'present') {
+    const engDeadlineMs = Date.now() + 120_000;
+    let attempt = 0;
+    while (Date.now() < engDeadlineMs) {
+      attempt++;
+      phase('spotify', { attempt, remainingMs: engDeadlineMs - Date.now() });
+      try {
+        await EnsureSpotifyEngine(box.host, box.port);
+        return { outcome: 'done', version: confirmedVer };
+      } catch (engErr) {
+        try { console.warn(`spotify engine delivery attempt ${attempt} failed (will retry)`, engErr); } catch {}
+      }
+      await sleep(2_000);
+    }
+    return { outcome: 'partial', version: confirmedVer };
+  }
+  return { outcome: 'done', version: confirmedVer };
 }
 
 async function doBoxUpdate(targetBox) {
@@ -2319,6 +2418,143 @@ async function doBoxUpdate(targetBox) {
     // the regular Update button immediately.
     checkBoxUpdate();
   }
+}
+
+// updateAllBoxes (beta) updates every eligible speaker in one click with a live
+// per-box multi-progress overlay. Built for a household with several speakers,
+// some on weak Wi-Fi: it asks ONCE up front, runs a BOUNDED pool (2 at a time, so
+// concurrent ~16 MB Spotify-engine pushes do not saturate a weak shared AP and
+// trip the 60 s upload-stall watchdog), and never lets one slow/failed box block
+// the rest. Calls runBoxUpdate directly (not doBoxUpdate) so it does not contend
+// on the single-box global lock, which it holds for the whole batch.
+async function updateAllBoxes() {
+  if (state.otaInProgress) return;
+  const targets = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && boxNeedsUpdate(b));
+  if (targets.length === 0) { showToast(t('updateAll.noneToUpdate')); return; }
+
+  // Pre-scan for sticks / weak Wi-Fi so the user is warned ONCE up front, not
+  // once per speaker (the per-box prompts the single-box path shows).
+  const notes = [];
+  for (const b of targets) {
+    try {
+      const r = await boxFetch(b, '/api/stick/status');
+      if (r.ok) { const d = await r.json(); if (d && d.mounted) notes.push(t('updateAll.noteStick', { name: getBoxLabel(b) })); }
+    } catch { /* stick status unknown: do not block */ }
+    try {
+      const s = await BoxSettings(b.host, b.port);
+      const ifs = (s && s.network && s.network.interfaces) || [];
+      const conn = ifs.find(i => (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') || (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
+      const sig = conn && conn.signal;
+      if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') notes.push(t('updateAll.noteWeakWifi', { name: getBoxLabel(b) }));
+    } catch { /* signal unknown: do not block */ }
+  }
+  const list = targets.map(b => '• ' + getBoxLabel(b)).join('\n');
+  const body = t('updateAll.confirmBody', { count: targets.length, list }) + (notes.length ? '\n\n' + notes.join('\n') : '');
+  if (!(await confirmWarn(t('updateAll.confirmTitle'), body))) return;
+
+  // Hold the single-box global lock for the whole batch: the single-speaker
+  // buttons then render "update running" and the SSH "remove stick" banner stays
+  // suppressed. The sentinel host makes every real box's button show that state.
+  state.otaInProgress = true;
+  state.otaTargetHost = '__batch__';
+  state.otaTargetName = t('updateAll.batchLabel');
+  checkSshBanner();
+  checkBoxUpdate();
+
+  // Build one overlay row per box.
+  const rowState = new Map(); // host -> { box, el, barFill, phaseEl, outcome }
+  const listEl = $('uaList');
+  if (listEl) listEl.innerHTML = '';
+  for (const b of targets) {
+    const row = document.createElement('div');
+    row.className = 'ua-row';
+    row.innerHTML = `
+      <div class="ua-row-head">
+        <span class="ua-name">${escapeHtml(getBoxLabel(b))}</span>
+        <span class="ua-model">${escapeHtml(b.model || '')}</span>
+        <span class="ua-status" data-role="phase">${escapeHtml(t('updateAll.phase.queued'))}</span>
+      </div>
+      <div class="ua-bar"><div class="ua-bar-fill" data-role="bar"></div></div>`;
+    if (listEl) listEl.appendChild(row);
+    rowState.set(b.host, { box: b, el: row, barFill: row.querySelector('[data-role=bar]'), phaseEl: row.querySelector('[data-role=phase]'), outcome: null });
+  }
+  const counts = () => {
+    let done = 0, fail = 0, defer = 0, busy = 0;
+    for (const r of rowState.values()) {
+      if (r.outcome === 'done') done++;
+      else if (r.outcome === 'failed') fail++;
+      else if (r.outcome === 'partial' || r.outcome === 'timeout') defer++;
+      else busy++;
+    }
+    return { done, fail, defer, busy };
+  };
+  const renderSummary = () => {
+    const c = counts();
+    const sum = $('uaSummary');
+    if (sum) sum.textContent = t('updateAll.summary', { done: c.done, deferred: c.defer, failed: c.fail, total: targets.length });
+    const closeBtn = $('uaClose');
+    if (closeBtn) closeBtn.disabled = c.busy > 0;
+  };
+  const setRow = (host, { phaseText, pct, barClass, indet } = {}) => {
+    const r = rowState.get(host); if (!r) return;
+    if (phaseText != null && r.phaseEl) r.phaseEl.textContent = phaseText;
+    if (pct != null && r.barFill) { r.barFill.style.width = Math.max(0, Math.min(100, pct)) + '%'; r.el.classList.remove('ua-indet'); }
+    if (indet) r.el.classList.add('ua-indet');
+    if (barClass) { r.el.classList.remove('ua-indet', 'ua-done', 'ua-failed', 'ua-defer'); r.el.classList.add(barClass); }
+  };
+
+  const overlay = $('updateAllOverlay');
+  if (overlay) overlay.classList.remove('hidden');
+  renderSummary();
+  // Route the host-tagged live byte-progress to the right row's bar.
+  const offProg = EventsOn('box:update:progress', (p) => {
+    if (!p || typeof p !== 'object' || !p.host || p.pct == null || p.pct < 0) return;
+    setRow(p.host, { pct: p.pct });
+  });
+  if ($('uaClose')) $('uaClose').onclick = () => { if (overlay) overlay.classList.add('hidden'); };
+
+  const runOne = async (b) => {
+    setRow(b.host, { phaseText: t('updateAll.phase.uploading'), indet: true });
+    let outcome = 'failed';
+    try {
+      const result = await runBoxUpdate(b, (ph, d) => {
+        switch (ph) {
+          case 'uploading': setRow(b.host, { phaseText: t('updateAll.phase.uploading'), pct: 0 }); break;
+          case 'rebooting': setRow(b.host, { phaseText: t('updateAll.phase.rebooting'), indet: true }); break;
+          case 'verifying': setRow(b.host, { phaseText: t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), indet: true }); break;
+          case 'spotify': setRow(b.host, { phaseText: t('updateAll.phase.spotify', { attempt: d.attempt }) }); break;
+        }
+      });
+      outcome = result.outcome;
+      if (outcome === 'done') setRow(b.host, { phaseText: t('updateAll.phase.done'), pct: 100, barClass: 'ua-done' });
+      else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.deferred'), pct: 100, barClass: 'ua-defer' });
+      else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
+    } catch (e) {
+      outcome = 'failed';
+      setRow(b.host, { phaseText: t('updateAll.phase.failed'), barClass: 'ua-failed' });
+      try { console.warn('update all: box failed', b.host, e); } catch {}
+    } finally {
+      const r = rowState.get(b.host); if (r) r.outcome = outcome;
+      renderSummary();
+    }
+  };
+
+  // Bounded worker pool: at most 2 speakers in flight at once.
+  const queue = targets.slice();
+  const worker = async () => { while (queue.length) { await runOne(queue.shift()); } };
+  await Promise.allSettled(Array.from({ length: Math.min(2, targets.length) }, () => worker()));
+
+  // Batch done: release the global lock, refresh, summarize.
+  offProg();
+  state.otaInProgress = false;
+  state.otaTargetHost = null;
+  state.otaTargetName = null;
+  renderSummary();
+  if ($('uaClose')) $('uaClose').disabled = false;
+  try { await discoverBoxes(); checkBoxUpdate(); if (state.view === 'settings') loadBoxSettings(); } catch { /* boxes still rebooting */ }
+  checkSshBanner();
+  const c = counts();
+  showToast(t('updateAll.doneToast', { done: c.done, deferred: c.defer, failed: c.fail }));
 }
 
 function updateBoxUiVisibility() {

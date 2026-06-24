@@ -326,7 +326,7 @@ func (a *App) downloadAssetOnce(url, wantSHA, partPath string) error {
 	defer out.Close()
 
 	h := sha256.New()
-	prog := newTransferProgress(a, "app:update:progress", resp.ContentLength)
+	prog := newTransferProgress(a, "app:update:progress", resp.ContentLength, "")
 	beat := make(chan struct{}, 1)
 	go watchStall(ctx, cancel, beat, 45*time.Second)
 

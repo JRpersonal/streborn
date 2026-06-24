@@ -619,7 +619,7 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) e
 	// Stream the body through a counting reader so the UI can show an upload
 	// percentage and live throughput (the box reads the body as we send it),
 	// instead of a blind "uploading" spinner that looks frozen on a slow link.
-	prog := newTransferProgress(a, "box:update:progress", total)
+	prog := newTransferProgress(a, "box:update:progress", total, host)
 	beat := make(chan struct{}, 1)
 	uploadDone := make(chan struct{})
 	finished := false
