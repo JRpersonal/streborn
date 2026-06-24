@@ -19,6 +19,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,31 @@ func (a *App) BoxAgentVersion(host string, port int) (map[string]string, error) 
 	return out, nil
 }
 
+// recordNANDHeadroom logs the box's writable-volume headroom to the OTA journal
+// before a push. The agent reports nandFreeBytes/nandTotalBytes from /api/agent/
+// version (added 2026-06-24); a box on an older agent simply omits them, in which
+// case we note "unknown". Best-effort and non-blocking: it never fails the OTA.
+// need is the binary size, so the journal shows whether the second copy the
+// atomic write requires can fit.
+func (a *App) recordNANDHeadroom(host string, port int, need int64) {
+	ver, err := a.BoxAgentVersion(host, port)
+	if err != nil {
+		a.recordOTA(host, "nand: headroom unknown (version read failed: "+err.Error()+")")
+		return
+	}
+	free, total := ver["nandFreeBytes"], ver["nandTotalBytes"]
+	if free == "" && total == "" {
+		a.recordOTA(host, "nand: headroom unknown (agent predates the disk-usage report)")
+		return
+	}
+	freeN, _ := strconv.ParseInt(free, 10, 64)
+	fits := "ok"
+	if freeN > 0 && freeN < need+512*1024 {
+		fits = "TIGHT (a second copy for the atomic write may not fit)"
+	}
+	a.recordOTA(host, fmt.Sprintf("nand: free=%sB total=%sB need=%dB -> %s", free, total, need, fits))
+}
+
 // UpdateBoxAgent ships the embedded ARM binary to the speaker. Preferred
 // path is HTTP POST to /api/agent/update on host:port — but only when a
 // preflight confirms STR's agent really answers there. On Series-I boxes
@@ -68,6 +94,12 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		return fmt.Errorf("no embedded stick binary available")
 	}
 	a.recordOTA(host, fmt.Sprintf("start: port=%d bytes=%d app=%s build=%s", port, len(bin), appVersion, appBuild))
+	// Record the box's NAND headroom before the push so a "no space left on
+	// device" failure is diagnosable from the journal (the ~31 MB writable volume
+	// must hold a second ~10 MB copy during the atomic write). Older agents do not
+	// report these fields; absent means "unknown", never blocks the OTA. The agent
+	// also embeds a full inventory in the failure error itself (#ST30, 2026-06-24).
+	a.recordNANDHeadroom(host, port, int64(len(bin)))
 	// Record the final outcome to the persistent OTA journal so an update-failure
 	// report is diagnosable even if the user exports the diagnostic in a later
 	// session: str.log is rotated away on the next launch, this journal is not.

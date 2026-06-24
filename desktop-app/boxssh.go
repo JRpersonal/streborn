@@ -178,13 +178,25 @@ func classifySSHError(out string, err error) string {
 	case strings.Contains(low, "permission denied"):
 		return "speaker refused passwordless root login. Bose's stock firmware allows it when /media/sda1 has the remote_services marker. Reboot the speaker with the STR stick plugged in, then retry."
 	case strings.Contains(low, "connection refused"):
-		return "speaker is reachable but not running sshd on port 22. It may be mid-reboot."
+		// Since v0.8.1 STR no longer force-opens root SSH on every boot: SSH is
+		// only open while the prepared STR stick is inserted (the remote_services
+		// marker). A reachable speaker that refuses :22 is almost always a normal
+		// stickless box, not a fault. For an over-the-air update this is expected
+		// (the update goes over the app's HTTP connection, SSH is only the
+		// fallback); a hard SSH dependency (uninstall) needs the stick in.
+		return "the speaker is reachable but SSH (port 22) is closed. Since v0.8.1 STR only opens SSH while the prepared STR stick is inserted, so on a normal (stickless) speaker this is expected. Over-the-air updates do not need SSH; if an operation does, re-insert the prepared STR stick and power-cycle the speaker, then retry."
 	case strings.Contains(low, "connection timed out"), strings.Contains(low, "operation timed out"):
 		return "TCP connection to the speaker timed out. Check that it is on your LAN."
 	case strings.Contains(low, "no route to host"), strings.Contains(low, "host is unreachable"):
 		return "speaker is not on the LAN (no route). It may have rebooted into a different IP."
 	}
 	if err != nil {
+		// A bare "exit status 255" with no recognised banner is OpenSSH's generic
+		// connect failure: on a stickless box that is the closed-SSH case above.
+		// Make it actionable instead of surfacing the raw exit code.
+		if strings.Contains(strings.ToLower(err.Error()), "exit status 255") && strings.TrimSpace(out) == "" {
+			return "could not open an SSH session to the speaker (it likely has SSH closed: since v0.8.1 STR only opens SSH while the prepared STR stick is inserted). Over-the-air updates do not need SSH; if an operation does, re-insert the prepared STR stick and power-cycle the speaker, then retry."
+		}
 		return err.Error()
 	}
 	return "no STR_SSH_OK marker received (check Wi-Fi to speaker)"
