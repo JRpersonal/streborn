@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -2464,6 +2465,15 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	} else {
 		out["goLibrespot"] = "missing"
 	}
+	// NAND headroom on the tiny (~31 MB) writable volume, so the desktop app can
+	// see before an OTA whether the ~10 MB agent + sidecar will fit and warn
+	// instead of pushing into a "no space left on device" failure (the stickless
+	// SoundTouch 30 case where SSH is closed and the disk state was otherwise
+	// invisible). Strings to match this endpoint's map[string]string shape.
+	if total, avail, ok := diskFree(nandRoot); ok {
+		out["nandTotalBytes"] = strconv.FormatInt(total, 10)
+		out["nandFreeBytes"] = strconv.FormatInt(avail, 10)
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -2604,18 +2614,215 @@ func readUploadedELF(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 // write never becomes the live binary, creating the parent dir on a fresh box
 // (first OTA after install has no /mnt/nv/streborn/bin yet). 0755 so the file
 // is executable.
+//
+// The box's writable NAND (/mnt/nv) is tiny (~31 MB, shared with the Bose
+// firmware), and the atomic write needs room for a SECOND full copy of the
+// ~10 MB binary beside the live one. On a SoundTouch 30 that tipped /mnt/nv
+// over and the OTA failed with "no space left on device" (Daniel, 2026-06-24),
+// with no way to see what was eating the space because the box was stickless so
+// SSH was closed. Two defences: (1) before writing, drop a stale .new from an
+// earlier interrupted OTA (a half-written temp from a failed attempt otherwise
+// eats the very headroom the retry needs, so every retry keeps failing until
+// the next boot's run.sh cleanup_nand runs) and, if still short, reclaim
+// obvious junk; (2) on failure, embed the NAND inventory (df + biggest entries
+// + foreign-firmware dirs) in the error so the desktop app surfaces it verbatim
+// and the user's report tells us whether the ST30 is genuinely tighter or is
+// carrying leftovers from a previous custom firmware.
 func writeBinaryAtomic(dst string, body []byte) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	dir := filepath.Dir(dst)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir parent: %w", err)
 	}
 	tmp := dst + ".new"
+	// Drop a stale temp from an earlier interrupted OTA before the space check.
+	_ = os.Remove(tmp)
+	need := int64(len(body))
+	if _, avail, ok := diskFree(dir); ok && avail < need+512*1024 {
+		reclaimNAND()
+	}
 	if err := os.WriteFile(tmp, body, 0o755); err != nil {
-		return fmt.Errorf("write tmp: %w", err)
+		_ = os.Remove(tmp) // leave no partial behind for the next attempt
+		return fmt.Errorf("write tmp: %w [NAND %s]", err, nandReportLine())
 	}
 	if err := os.Rename(tmp, dst); err != nil {
-		return fmt.Errorf("rename: %w", err)
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename: %w [NAND %s]", err, nandReportLine())
 	}
 	return nil
+}
+
+// --- NAND disk diagnostics -------------------------------------------------
+//
+// These mirror run.sh's nand_inventory + cleanup_nand on the agent so the same
+// picture is available over plain HTTP, not just in the SSH-gated diagnostic
+// bundle: in /api/agent/version (free/total, every poll), in /api/debug/state
+// (full inventory), and embedded into the OTA failure error. A stickless box
+// (SSH closed since v0.8.1) can then still reveal its disk state to the app.
+
+const nandRoot = "/mnt/nv"
+const strNANDDir = "/mnt/nv/streborn"
+
+// diskFree reports total and available-to-non-root bytes on the filesystem
+// backing path. ok is false if the statfs failed.
+func diskFree(path string) (total, avail int64, ok bool) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return 0, 0, false
+	}
+	bs := int64(st.Bsize)
+	return int64(st.Blocks) * bs, int64(st.Bavail) * bs, true
+}
+
+// dirBytes is a du -s in bytes for path, best-effort: unreadable entries are
+// skipped, never fatal. Cheap on the tiny NAND.
+func dirBytes(path string) int64 {
+	var total int64
+	_ = filepath.Walk(path, func(_ string, fi os.FileInfo, err error) error {
+		if err != nil || fi == nil {
+			return nil
+		}
+		if !fi.IsDir() {
+			total += fi.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+// isForeignNANDDir reports whether a top-level /mnt/nv dir is neither STR's nor
+// one of Bose's, i.e. a candidate leftover from a third-party post-cloud tool
+// or another custom firmware the owner ran before STR. Mirrors run.sh's
+// nand_inventory freshness check.
+func isForeignNANDDir(name string) bool {
+	switch name {
+	case "streborn", "nv", "lost+found":
+		return false
+	}
+	l := strings.ToLower(name)
+	if strings.Contains(l, "bose") || strings.Contains(l, "persistence") {
+		return false
+	}
+	return true
+}
+
+// nandEntry is one top-level /mnt/nv entry with its recursive size.
+type nandEntry struct {
+	Name    string `json:"name"`
+	Bytes   int64  `json:"bytes"`
+	IsDir   bool   `json:"isDir"`
+	Foreign bool   `json:"foreign"`
+}
+
+// nandInventory is the structured disk report used by /api/debug/state: df for
+// the writable filesystems plus per-entry sizes under /mnt/nv (sorted biggest
+// first) with foreign dirs flagged.
+func nandInventory() map[string]any {
+	rep := map[string]any{}
+	if total, avail, ok := diskFree(nandRoot); ok {
+		rep["nvTotalBytes"] = total
+		rep["nvFreeBytes"] = avail
+		rep["nvUsedBytes"] = total - avail
+	}
+	if total, avail, ok := diskFree("/"); ok {
+		rep["rootTotalBytes"] = total
+		rep["rootFreeBytes"] = avail
+	}
+	entries, err := os.ReadDir(nandRoot)
+	if err != nil {
+		rep["nvEntriesErr"] = err.Error()
+		return rep
+	}
+	list := make([]nandEntry, 0, len(entries))
+	foreign := []string{}
+	for _, e := range entries {
+		ne := nandEntry{
+			Name:  e.Name(),
+			Bytes: dirBytes(filepath.Join(nandRoot, e.Name())),
+			IsDir: e.IsDir(),
+		}
+		if e.IsDir() && isForeignNANDDir(e.Name()) {
+			ne.Foreign = true
+			foreign = append(foreign, e.Name())
+		}
+		list = append(list, ne)
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Bytes > list[j].Bytes })
+	rep["nvEntries"] = list
+	rep["foreignDirs"] = foreign // empty => STR/Bose-only ("fresh")
+	return rep
+}
+
+// nandReportLine is a compact one-line inventory for embedding in an OTA error
+// (which the desktop app surfaces verbatim and the user pastes into a report):
+// free/total, the biggest few /mnt/nv entries, and any foreign dirs.
+func nandReportLine() string {
+	var b strings.Builder
+	if total, avail, ok := diskFree(nandRoot); ok {
+		fmt.Fprintf(&b, "/mnt/nv free=%dKB total=%dKB", avail/1024, total/1024)
+	} else {
+		b.WriteString("/mnt/nv df unavailable")
+	}
+	entries, err := os.ReadDir(nandRoot)
+	if err != nil {
+		return b.String()
+	}
+	type es struct {
+		name    string
+		bytes   int64
+		foreign bool
+	}
+	list := make([]es, 0, len(entries))
+	foreign := []string{}
+	for _, e := range entries {
+		f := e.IsDir() && isForeignNANDDir(e.Name())
+		list = append(list, es{e.Name(), dirBytes(filepath.Join(nandRoot, e.Name())), f})
+		if f {
+			foreign = append(foreign, e.Name())
+		}
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].bytes > list[j].bytes })
+	b.WriteString("; top:")
+	for i, e := range list {
+		if i >= 6 {
+			break
+		}
+		fmt.Fprintf(&b, " %s=%dKB", e.name, e.bytes/1024)
+	}
+	if len(foreign) > 0 {
+		b.WriteString("; foreign(non-STR/Bose): " + strings.Join(foreign, ","))
+	} else {
+		b.WriteString("; foreign: none")
+	}
+	return b.String()
+}
+
+// reclaimNAND frees obvious, regenerable junk so a tight OTA write has room:
+// stale .new temps from an interrupted OTA and oversized/rotated logs. The
+// agent-side mirror of run.sh's cleanup_nand for the OTA path, which (unlike a
+// stick boot) does not pass through a reboot. Best-effort throughout; never
+// touches Bose files or the live binaries.
+func reclaimNAND() {
+	binDir := filepath.Join(strNANDDir, "bin")
+	for _, pat := range []string{
+		filepath.Join(binDir, "*.new"),
+		filepath.Join(strNANDDir, "cap*.ogg"),
+	} {
+		if matches, _ := filepath.Glob(pat); matches != nil {
+			for _, m := range matches {
+				_ = os.Remove(m)
+			}
+		}
+	}
+	_ = os.Remove(filepath.Join(strNANDDir, "agent.log.1"))
+	_ = os.Remove(filepath.Join(nandRoot, "sp-oauth.out"))
+	for _, name := range []string{"setup.log", "setup.log.prev", "agent.log", "previous.log", "boot.log"} {
+		p := filepath.Join(strNANDDir, name)
+		if fi, err := os.Stat(p); err == nil && fi.Size() > 131072 {
+			if b, rerr := os.ReadFile(p); rerr == nil && int64(len(b)) > 65536 {
+				_ = os.WriteFile(p, b[int64(len(b))-65536:], 0o644)
+			}
+		}
+	}
 }
 
 // handleAgentSidecar receives the go-librespot Spotify sidecar binary and
@@ -3703,6 +3910,10 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		"media_listing":  listDir("/media"),
 		"nv_listing":     listDir("/mnt/nv/streborn"),
 		"proc_mounts":    readTail("/proc/mounts"),
+		// Writable-volume usage: df for /mnt/nv + / and the per-entry sizes that
+		// answer "is this box genuinely tighter or carrying foreign firmware
+		// leftovers" without needing SSH (#ST30 OTA no-space, 2026-06-24).
+		"disk_usage": nandInventory(),
 	}
 	writeJSON(w, http.StatusOK, state)
 }
