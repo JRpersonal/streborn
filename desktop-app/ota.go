@@ -122,19 +122,21 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	a.notePostOTA(host)
 	a.refreshStick(host)
 
-	// Deliver the go-librespot Spotify sidecar over OTA too, so a box that was
-	// never successfully synced from a USB stick (e.g. an OTA-only SoundTouch 30
-	// whose USB port underpowers the stick) still gets Spotify. The sidecar
-	// historically shipped ONLY via the stick->NAND boot sync, so an OTA-only box
-	// had a synced login but no engine and Spotify silently never played
-	// (#45/#105). Pushed FIRST and strictly before the agent OTA: the agent OTA
-	// reboots ~1.5 s after its reply, and that reboot is what makes the fresh
-	// agent's Spotify manager pick up the now-present binary. Best-effort: a
-	// sidecar failure must never block the (more important) agent update. The
-	// returned error is intentionally ignored here (best-effort): when the box is
-	// still on a pre-v0.8.22 agent the push cannot land yet, and the desktop's
-	// post-OTA EnsureSpotifyEngine re-delivers it once the box is on the new agent.
-	_ = a.pushSidecarIfNeeded(host, port)
+	// Deliver the go-librespot Spotify sidecar BEFORE the agent binary push, and
+	// copy everything onto the box so it reboots exactly once with all files
+	// already in place — no post-reboot re-install (better UX). The agent binary
+	// push reboots the box ~1.5 s after its reply, so the sidecar must be on disk
+	// before that. When the box already runs a sidecar-capable agent we stage AND
+	// verify the sidecar here, retrying transient drops, and only then push the
+	// rebooting binary. The historical reason the sidecar shipped only via the
+	// stick->NAND boot sync was that an OTA-only box (e.g. a SoundTouch 30 whose
+	// USB port underpowers the stick) had a synced login but no engine, so
+	// Spotify silently never played (#45/#105). A box still on a pre-v0.8.22 agent
+	// has no /api/agent/sidecar endpoint and cannot be staged over HTTP at all;
+	// that one-time transition is the only case left to the post-OTA
+	// EnsureSpotifyEngine re-delivery (#240). Best-effort: a sidecar problem must
+	// never block the (more important) agent update.
+	a.stageSidecarBeforeReboot(host, port)
 
 	if perr := a.updateAgentPreflight(host, port); perr != nil {
 		a.recordOTA(host, "HTTP preflight rejected -> trying SSH: "+perr.Error())
@@ -248,6 +250,50 @@ func (a *App) pushSidecarIfNeeded(host string, port int) error {
 	a.recordOTA(host, "sidecar: go-librespot delivered")
 	a.logger.Info("sidecar push: go-librespot delivered over OTA", "host", host, "bytes", len(bin))
 	return nil
+}
+
+// stageSidecarBeforeReboot delivers the Spotify sidecar to the box during an
+// agent OTA, BEFORE the agent binary push triggers the single reboot, so the box
+// comes up with the engine already in place and needs no post-reboot re-install.
+//
+// It only blocks/retries when staging can actually succeed pre-reboot:
+//   - Sidecar-capable agent (reports the goLibrespot field, has the
+//     /api/agent/sidecar endpoint): stage and verify here, retrying transient
+//     drops, so the file is on disk before the reboot.
+//   - Pre-v0.8.22 agent (no goLibrespot field, no endpoint): the sidecar cannot
+//     be staged over HTTP at all because the *running* agent has no code to
+//     receive it (the new binary on disk only takes effect after the reboot). So
+//     that one-time transition is left to the post-OTA EnsureSpotifyEngine
+//     re-delivery (#240); blocking here would just waste the OTA window.
+//
+// Never fatal: a sidecar problem must not block the agent update.
+func (a *App) stageSidecarBeforeReboot(host string, port int) {
+	if !agentbin.GoLibrespotAvailable() {
+		// Dev build (empty stub): nothing real to deliver.
+		return
+	}
+	ver, err := a.BoxAgentVersion(host, port)
+	if err != nil {
+		// Can't tell whether the agent is sidecar-capable; one best-effort
+		// attempt, then leave anything unresolved to the post-OTA re-delivery.
+		_ = a.pushSidecarIfNeeded(host, port)
+		return
+	}
+	if _, capable := ver["goLibrespot"]; !capable {
+		a.recordOTA(host, "sidecar: box on a pre-sidecar agent, cannot stage over HTTP pre-reboot; will deliver after the box is on the new agent")
+		return
+	}
+	for attempt := 1; attempt <= otaSidecarEnsureAttempts; attempt++ {
+		if err := a.pushSidecarIfNeeded(host, port); err == nil {
+			return
+		} else if attempt < otaSidecarEnsureAttempts {
+			a.logger.Info("stageSidecarBeforeReboot: pre-reboot sidecar push not landed yet, retrying",
+				"host", host, "attempt", attempt, "err", err)
+			time.Sleep(otaSidecarEnsureBackoff(attempt))
+		} else {
+			a.recordOTA(host, "sidecar: pre-reboot staging still failing after retries; will retry after the box is on the new agent: "+err.Error())
+		}
+	}
 }
 
 // EnsureSpotifyEngine makes sure the go-librespot Spotify sidecar is present on
