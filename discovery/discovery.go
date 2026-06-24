@@ -426,6 +426,13 @@ func Browse(ctx context.Context, logger *slog.Logger) (<-chan Instance, error) {
 			// not silently break discovery.
 			for _, kv := range e.Text {
 				k, v, _ := strings.Cut(kv, "=")
+				// The mDNS library decodes TXT values into DNS presentation form:
+				// any non-printable-ASCII byte arrives as a literal \DDD (decimal)
+				// escape, so a raw-UTF-8 name like "Küche" (bytes C3 BC) shows up as
+				// "K\195\188che" and, being longer, even wins pickBoxName over the
+				// correct name from the live /info probe. Decode it back to bytes
+				// here, the single boundary where every TXT value enters STR.
+				v = unescapeTXT(v)
 				switch strings.ToLower(k) {
 				case "deviceid", "mac":
 					if inst.DeviceID == "" {
@@ -571,4 +578,42 @@ func nz(s, dflt string) string {
 		return dflt
 	}
 	return s
+}
+
+// unescapeTXT reverses the DNS presentation escaping the mDNS wire-decoder
+// applies to TXT values: a byte outside printable ASCII is returned as a literal
+// \DDD (decimal) sequence, and '\' and '"' as \\ and \". Raw UTF-8 multi-byte
+// names (e.g. "Küche") therefore arrive as "K\195\188che"; decoding the escapes
+// back to bytes restores the original UTF-8. Idempotent: a value with no
+// backslash is returned unchanged, so already-correct ASCII names are untouched.
+// A lone high byte (e.g. Latin-1 "\252") is preserved so the existing
+// ensureUTF8/toValidUTF8 widening downstream still handles it.
+func unescapeTXT(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			b.WriteByte(s[i])
+			continue
+		}
+		// \DDD decimal byte escape.
+		if i+3 < len(s) &&
+			s[i+1] >= '0' && s[i+1] <= '9' &&
+			s[i+2] >= '0' && s[i+2] <= '9' &&
+			s[i+3] >= '0' && s[i+3] <= '9' {
+			n := int(s[i+1]-'0')*100 + int(s[i+2]-'0')*10 + int(s[i+3]-'0')
+			if n <= 255 {
+				b.WriteByte(byte(n))
+				i += 3
+				continue
+			}
+		}
+		// \\ or \" or any other escaped literal: emit the next byte.
+		b.WriteByte(s[i+1])
+		i++
+	}
+	return b.String()
 }
