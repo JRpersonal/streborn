@@ -27,6 +27,35 @@ var (
 	updateDLClient     *http.Client
 )
 
+// updateCertPool builds the TLS root pool for the update clients: the OS/system
+// trust store first, then the embedded Mozilla bundle appended.
+//
+// Trusting the system store is what lets the update check work behind an
+// HTTPS-inspecting security suite (Norton and friends): such a suite terminates
+// TLS itself and re-presents a certificate signed by its OWN root CA, which it
+// installs into the OS trust store but which is NOT in the embedded Mozilla
+// bundle. Pinning to the embedded bundle alone failed the handshake with
+// "certificate signed by unknown authority", so the check failed SILENTLY and no
+// update banner ever appeared, even though the user's browser (which trusts the
+// suite's CA via the OS store) saw the site fine. Seeding from the system store
+// makes Go accept the interception cert exactly like the browser does. The
+// embedded bundle is still appended as a belt-and-braces anchor (Starfield /
+// st-reborn.de) for a sparse system store.
+//
+// The pool is ALWAYS non-nil, which preserves the #102 fix: a nil RootCAs routes
+// macOS verification through the cgo Security.framework path that crashed the app
+// at startup; a non-nil pool keeps verification in Go's own chain builder. The
+// downloaded binary is still SHA256-verified against the manifest, so trusting
+// whoever terminates TLS never weakens the integrity of what gets installed.
+func updateCertPool() *x509.CertPool {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	pool.AppendCertsFromPEM(caBundlePEM)
+	return pool
+}
+
 // updateHTTPClient returns the http.Client used for the external update-check
 // request, configured so its entire network path is pure Go with no cgo:
 //
@@ -47,12 +76,7 @@ var (
 // shared httpClient (used for plain-HTTP box LAN calls) untouched.
 func updateHTTPClient() *http.Client {
 	updateClientOnce.Do(func() {
-		pool := x509.NewCertPool()
-		// AppendCertsFromPEM returns false only if no certs parsed; the
-		// embedded bundle is fixed and known-good, so we proceed regardless
-		// (a worst case of an empty pool just fails the check = no banner,
-		// never a crash).
-		pool.AppendCertsFromPEM(caBundlePEM)
+		pool := updateCertPool()
 		dialer := &net.Dialer{
 			Timeout:   6 * time.Second,
 			KeepAlive: 30 * time.Second,
@@ -89,8 +113,7 @@ func updateHTTPClient() *http.Client {
 // watchdog in DownloadUpdate, which retries rather than aborting.
 func updateDownloadHTTPClient() *http.Client {
 	updateDLClientOnce.Do(func() {
-		pool := x509.NewCertPool()
-		pool.AppendCertsFromPEM(caBundlePEM)
+		pool := updateCertPool()
 		dialer := &net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 30 * time.Second,
