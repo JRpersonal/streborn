@@ -1072,6 +1072,24 @@ func (m *Manager) LoggedIn() bool {
 	return false
 }
 
+// CanRecall reports whether a Spotify preset recall can proceed: either
+// go-librespot holds a LIVE session right now (SessionActive, e.g. the user just
+// streamed to the box from their phone) OR a reusable credential is persisted on
+// disk (LoggedIn, so ensureSession can restart go-librespot and re-auth from it).
+//
+// Recall must gate on this, NOT on LoggedIn alone. A box with a live-but-never-
+// persisted zeroconf session (go-librespot authenticated the phone but wrote no
+// credential to state.json) reports LoggedIn()==false yet plays Spotify fine;
+// gating on LoggedIn alone refused recall on exactly such a box (Patrick, ST10
+// rhino, 2026-06-24: streamed Spotify, go-librespot running, box flipped to
+// source=SPOTIFY, yet the recall bailed "speaker not logged into Spotify"). Only
+// when BOTH are false is the recall genuinely impossible, so the "tap this
+// speaker in Spotify once" hint is correct. PlayAccount->ensureSession then
+// handles the live vs cold-restart decision from here.
+func (m *Manager) CanRecall(ctx context.Context) bool {
+	return m.SessionActive(ctx) || m.LoggedIn()
+}
+
 // stateHasCredential reports whether go-librespot's state.json at path holds a
 // persisted zeroconf credential (a non-empty credentials.username). go-librespot
 // writes state.json with only device_id/last_volume before any login, so file

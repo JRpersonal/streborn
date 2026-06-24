@@ -100,13 +100,15 @@ type Server struct {
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify
 	// is not configured.
 	spotifyReady func() bool
-	// spotifyLoggedIn reports whether the speaker has ever completed a Spotify
-	// Connect login (a credential is persisted). Without it go-librespot cannot
-	// start playback on its own, so a recall does nothing; the handler returns a
-	// clear "log this speaker into Spotify first" error instead of optimistically
-	// reporting "playing" and failing silently in the background (#45 Pierre). nil
+	// spotifyCanRecall reports whether a Spotify recall can proceed: go-librespot
+	// holds a live session right now OR a reusable credential is persisted (so it
+	// can re-auth from it). Gating on a persisted credential ALONE wrongly refused
+	// recall on a box with a live-but-never-persisted zeroconf session that played
+	// Spotify fine (Patrick, ST10, 2026-06-24). Only when this is false does the
+	// handler return the "log this speaker into Spotify first" hint instead of
+	// optimistically reporting "playing" and failing silently (#45 Pierre). nil
 	// until wired.
-	spotifyLoggedIn func() bool
+	spotifyCanRecall func(ctx context.Context) bool
 	// spotifyPremiumRequired reports whether the logged-in Spotify account is
 	// free/open and so cannot do the autonomous recall playback (#45). nil until
 	// wired; the recall handler uses it to return a clear "needs Premium" error.
@@ -470,11 +472,12 @@ func WithSpotifyPremiumRequired(f func() bool) Option {
 	return func(s *Server) { s.spotifyPremiumRequired = f }
 }
 
-// WithSpotifyLoggedIn registers the predicate that reports whether the speaker
-// has a persisted Spotify login, so a recall on a never-logged-in speaker fails
-// with a clear, actionable message instead of silently (#45).
-func WithSpotifyLoggedIn(f func() bool) Option {
-	return func(s *Server) { s.spotifyLoggedIn = f }
+// WithSpotifyCanRecall registers the predicate that reports whether a Spotify
+// recall can proceed (a live go-librespot session OR a persisted credential), so
+// a recall on a genuinely-never-logged-in speaker fails with a clear, actionable
+// message while one with a live session still plays (#45; Patrick, 2026-06-24).
+func WithSpotifyCanRecall(f func(ctx context.Context) bool) Option {
+	return func(s *Server) { s.spotifyCanRecall = f }
 }
 
 // WithSpotifyExportCred registers the function that returns this box's active
@@ -1240,12 +1243,16 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		// A speaker that has never been logged into Spotify has no credential for
-		// go-librespot, so it cannot start playback on its own and the recall would
-		// silently do nothing (#45 Pierre: saved preset account="" and go-librespot
-		// not running). Tell the user how to fix it instead of optimistically
-		// reporting "playing" and failing in the background.
-		if s.spotifyLoggedIn != nil && !s.spotifyLoggedIn() {
+		// A speaker that has never been logged into Spotify AND holds no live
+		// session has no way for go-librespot to start playback on its own, so the
+		// recall would silently do nothing (#45 Pierre: saved preset account="" and
+		// go-librespot not running). Tell the user how to fix it instead of
+		// optimistically reporting "playing" and failing in the background. Gate on
+		// CanRecall (live session OR persisted credential), NOT a persisted
+		// credential alone: a box with a live-but-never-persisted zeroconf session
+		// plays Spotify fine yet reports not-logged-in, and gating on the credential
+		// alone wrongly refused its recall (Patrick, ST10, 2026-06-24).
+		if s.spotifyCanRecall != nil && !s.spotifyCanRecall(r.Context()) {
 			s.logger.Info("spotify preset recall (app): speaker not logged into Spotify", "slot", slot)
 			// STR plays Spotify through this speaker as a Spotify Connect receiver
 			// (the go-librespot sidecar), not via any Bose account link. The

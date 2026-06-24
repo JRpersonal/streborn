@@ -377,7 +377,7 @@ func run() error {
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
 		webui.WithSpotifyReady(spotifyMgr.Ready),
-		webui.WithSpotifyLoggedIn(spotifyMgr.LoggedIn),
+		webui.WithSpotifyCanRecall(spotifyMgr.CanRecall),
 		webui.WithSpotifyPremiumRequired(spotifyMgr.PremiumRequired),
 		webui.WithSpotifyExportCred(spotifyMgr.ExportCredential),
 		webui.WithSpotifyImportCred(spotifyMgr.ImportCredential),
@@ -1219,11 +1219,16 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 		h.logger.Warn("spotify preset recall: preset has no Spotify URI, cannot autoplay", "slot", slot, "name", p.Name)
 		return
 	}
-	// No persisted Spotify login means go-librespot has no credential and cannot
-	// start playback on its own, so a hardware press would do nothing but thrash
+	// No live session AND no persisted Spotify login means go-librespot has no way
+	// to start playback on its own, so a hardware press would do nothing but thrash
 	// the box. Skip with a clear log instead of the silent retry loop (#45 Pierre).
-	if !h.spotify.LoggedIn() {
-		h.logger.Warn("spotify preset recall: speaker not logged into Spotify (no credential); log it into Spotify once first", "slot", slot, "name", p.Name)
+	// Gate on CanRecall (live session OR persisted credential), NOT a persisted
+	// credential alone: a box with a live-but-never-persisted zeroconf session
+	// plays Spotify fine yet LoggedIn() is false, and gating on the credential
+	// alone wrongly skipped its recall (Patrick, ST10, 2026-06-24). Mirror of the
+	// soft/app path in internal/webui (the two recall paths must stay in sync).
+	if !h.spotify.CanRecall(ctx) {
+		h.logger.Warn("spotify preset recall: speaker not logged into Spotify and no live session; log it into Spotify once first", "slot", slot, "name", p.Name)
 		return
 	}
 	if !h.spotify.Ready() {
