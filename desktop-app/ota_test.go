@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 )
 
 // fakeTimeout is a net.Error whose message carries no timeout keyword, so it
@@ -36,5 +37,36 @@ func TestIsTimeoutLikeErr(t *testing.T) {
 		if got := isTimeoutLikeErr(c.err); got != c.want {
 			t.Errorf("%s: isTimeoutLikeErr(%v) = %v, want %v", c.name, c.err, got, c.want)
 		}
+	}
+}
+
+func TestOTASidecarEnsureBackoff(t *testing.T) {
+	cases := []struct {
+		attempt int
+		want    time.Duration
+	}{
+		{0, 3 * time.Second}, // clamped to attempt 1
+		{1, 3 * time.Second},
+		{2, 6 * time.Second},
+		{3, 12 * time.Second},
+		{4, 24 * time.Second},
+		{5, 30 * time.Second}, // capped
+		{6, 30 * time.Second}, // capped
+		{20, 30 * time.Second},
+	}
+	for _, c := range cases {
+		if got := otaSidecarEnsureBackoff(c.attempt); got != c.want {
+			t.Errorf("otaSidecarEnsureBackoff(%d) = %v, want %v", c.attempt, got, c.want)
+		}
+	}
+
+	// The cumulative wait across all retry gaps must stay inside otaRebootGrace
+	// so a slow-to-reboot box is still covered without the user retrying by hand.
+	var total time.Duration
+	for attempt := 1; attempt < otaSidecarEnsureAttempts; attempt++ {
+		total += otaSidecarEnsureBackoff(attempt)
+	}
+	if total >= otaRebootGrace {
+		t.Errorf("cumulative sidecar retry backoff %v must stay below otaRebootGrace %v", total, otaRebootGrace)
 	}
 }
