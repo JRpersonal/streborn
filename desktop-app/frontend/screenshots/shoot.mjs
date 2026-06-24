@@ -22,7 +22,12 @@ const OUT = path.resolve(FRONTEND, '../../docs/screenshots');         // repo/do
 const PORT = 4178;
 const BASE = `http://127.0.0.1:${PORT}/`;
 
-const LANGS = ['en', 'de', 'fr', 'es', 'ja', 'uk', 'nl', 'pl', 'lt', 'lv', 'tr'];
+// All shipped UI locales. Override with SHOOT_LANGS=ar,de (comma-separated) to
+// re-shoot only some languages without regenerating the whole set.
+const ALL_LANGS = ['en', 'de', 'fr', 'es', 'ja', 'uk', 'nl', 'pl', 'lt', 'lv', 'tr', 'ar'];
+const LANGS = (process.env.SHOOT_LANGS && process.env.SHOOT_LANGS.trim())
+  ? process.env.SHOOT_LANGS.split(',').map((s) => s.trim()).filter(Boolean)
+  : ALL_LANGS;
 const VIEWS = ['app-library', 'app-listen', 'app-search', 'app-settings1', 'app-settings2', 'app-settings3', 'app-stick-step1', 'app-stick-step2'];
 
 // ---- demo data -------------------------------------------------------------
@@ -174,6 +179,14 @@ function installMocks({ locale, view, demo }) {
     GetAirplayOpt: () => P({ enabled: true }),
     ListMediaServers: () => P(demo.mediaServers),
     BrowseLibrary: () => P(demo.libraryPage),
+    // Radio search moved app-side (Wails bindings, no longer /api/radio), so the
+    // search view drives these instead of the routed HTTP endpoints below.
+    RadioSearch: () => P(demo.stations),
+    RadioLanguages: () => P(demo.languages),
+    RadioTags: () => P([]),
+    RadioClick: () => P(undefined),
+    RadioVote: () => P(undefined),
+    ResolveStationLogo: () => P(''),
     PlayURL: () => P(undefined),
     SetAppLocale: () => P(undefined),
     LogClientError: () => P(undefined),
