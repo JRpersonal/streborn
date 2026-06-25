@@ -366,6 +366,7 @@ func run() error {
 		webui.WithPresets(store),
 		webui.WithBoxHost(*boxHost),
 		webui.WithBoxSnapshotPath(boxsnapshot.DefaultPath()),
+		webui.WithLastPlayPath("/mnt/nv/streborn/last-play.json"),
 		webui.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
 		webui.WithAutoPair(autoPair),
 		webui.WithRegion(region),
