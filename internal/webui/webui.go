@@ -83,6 +83,9 @@ type Server struct {
 	// nil when Spotify is not configured. Injected as a func for decoupling.
 	// shuffle selects a fresh random start vs the default resume-where-left-off.
 	spotifyPlay func(ctx context.Context, uri, account string, shuffle bool) error
+	// peersFn lists the other STR speakers on the LAN for the on-box page's
+	// "Other speakers" section. nil hides the section.
+	peersFn func(ctx context.Context) []PeerLink
 	// spotifyUser returns go-librespot's currently logged-in account, used to
 	// stamp the account onto a newly saved Spotify preset. nil when Spotify
 	// is not configured.
@@ -433,6 +436,19 @@ func WithSpotifyInfo(h http.HandlerFunc) Option {
 	return func(s *Server) { s.spotifyInfo = h }
 }
 
+// PeerLink is one other STR speaker on the LAN, as shown in the on-box page's
+// "Other speakers" section so a phone can hop between speakers.
+type PeerLink struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// WithPeers registers the resolver that lists the other STR speakers on the
+// network (name + reachable web URL). nil disables the "Other speakers" section.
+func WithPeers(fn func(ctx context.Context) []PeerLink) Option {
+	return func(s *Server) { s.peersFn = fn }
+}
+
 // WithSpotifyControl registers the function that starts playback of a
 // Spotify URI on a given account in go-librespot (the Spotify-preset
 // control plane). An empty account plays with the current login; shuffle
@@ -546,6 +562,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.baseCtx = ctx
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/manifest.webmanifest", s.handleManifest)
+	mux.HandleFunc("/icon.png", s.handleIcon)
+	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -4974,4 +4993,35 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprint(w, indexHTML)
+}
+
+// handlePeers lists the other STR speakers on the LAN so the page can offer
+// links to hop between them. Returns [] when no resolver is wired.
+func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
+	if s.peersFn == nil {
+		writeJSON(w, http.StatusOK, []PeerLink{})
+		return
+	}
+	peers := s.peersFn(r.Context())
+	if peers == nil {
+		peers = []PeerLink{}
+	}
+	writeJSON(w, http.StatusOK, peers)
+}
+
+// handleManifest serves the PWA manifest so a phone can install the controller
+// page as a standalone home-screen app.
+func (s *Server) handleManifest(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/manifest+json")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = fmt.Fprint(w, webManifest)
+}
+
+// handleIcon serves the embedded STR app icon (favicon, iOS apple-touch-icon and
+// the PWA manifest icon). Tiny (a few KB) and cached hard to spare the NAND-bound
+// box repeat reads.
+func (s *Server) handleIcon(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	_, _ = w.Write(iconPNG)
 }
