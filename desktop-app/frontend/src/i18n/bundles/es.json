@@ -1,5 +1,5 @@
 {
-  "common.beta": "Beta",
+  "common.beta": "BETA",
   "updateAll.button": "Actualizar todos ({{count}})",
   "updateAll.title": "Actualizar todos los altavoces",
   "updateAll.summary": "{{done}} listos, {{deferred}} pendientes, {{failed}} fallidos de {{total}}",
@@ -110,7 +110,6 @@
   "spotify.bullet3": "Instrucciones para volver a emparejar en la aplicación STR cuando sea estable.",
   "spotify.feedbackPrompt": "Experimental. Si Spotify ya funciona o falla en tu altavoz, comparte los detalles en el ticket.",
   "spotify.issueLink": "Abrir ticket #78",
-  "common.beta": "BETA",
   "spotify.versionNote": "Requiere la última versión de STR en el altavoz.",
   "spotify.updateLink": "Abrir los ajustes del altavoz para actualizar",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "Se leyeron {{count}} botones, pero ninguno usa un servicio vinculado a una cuenta como Deezer, así que aquí no hay nada que restaurar.",
   "settingsView.restoreUnavailable": "Se reescribieron {{slots}} para {{services}}, pero el altavoz sigue indicando {{unavailable}} como no disponible. Reinicia el altavoz; si sigue no disponible, el inicio de sesión guardado para ese servicio probablemente caducó y no se puede recuperar.",
   "settingsView.restoreExpired": "El inicio de sesión guardado en el altavoz para {{services}} caducó junto con la nube de Bose. STR no puede recuperar estos botones y los dejó sin cambios; el altavoz los descarta por sí solo. La compatibilidad directa con estos servicios está en la hoja de ruta.",
-  "update.uploadingPct": "Subiendo {{pct}}%"
+  "update.uploadingPct": "Subiendo {{pct}}%",
+  "common.copy": "Copiar",
+  "common.copied": "Copiado",
+  "settingsView.groupBasics": "Básicos",
+  "settingsView.groupSound": "Sonido y pantalla",
+  "settingsView.groupNetwork": "Red",
+  "settingsView.groupInfo": "Estado e info",
+  "settingsView.groupActions": "Acciones",
+  "settingsView.groupAdvanced": "Avanzado",
+  "settingsView.phoneHeading": "Controla este altavoz desde tu móvil",
+  "settingsView.phoneHelp": "Escanea con la cámara, luego usa Añadir a pantalla de inicio para un mando de un toque."
 }

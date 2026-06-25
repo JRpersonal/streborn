@@ -125,7 +125,6 @@
   "spotify.bullet3": "Re-pairing instructions in the STR app once stable.",
   "spotify.feedbackPrompt": "Experimental. If Spotify already works or fails on your speaker, please share details on the issue.",
   "spotify.issueLink": "Open issue #78",
-  "common.beta": "Beta",
   "spotify.versionNote": "Requires the latest STR version on the speaker.",
   "spotify.updateLink": "Open speaker settings to update",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1052,5 +1051,15 @@
   "settingsView.restoreNoneCloud": "Read {{count}} buttons, but none use an account-linked service like Deezer, so there is nothing to restore here.",
   "settingsView.restoreUnavailable": "Wrote back {{slots}} for {{services}}, but the speaker still reports {{unavailable}} as unavailable. Restart the speaker; if it stays unavailable, the saved login for that service has likely expired and cannot be brought back.",
   "settingsView.restoreExpired": "The speaker's saved login for {{services}} expired together with the Bose cloud. STR cannot bring these buttons back and left them unchanged; the speaker drops them on its own. Direct support for these services is on the roadmap.",
-  "update.uploadingPct": "Uploading {{pct}}%"
+  "update.uploadingPct": "Uploading {{pct}}%",
+  "common.copy": "Copy",
+  "common.copied": "Copied",
+  "settingsView.groupBasics": "Basics",
+  "settingsView.groupSound": "Sound & display",
+  "settingsView.groupNetwork": "Network",
+  "settingsView.groupInfo": "Status & info",
+  "settingsView.groupActions": "Actions",
+  "settingsView.groupAdvanced": "Advanced",
+  "settingsView.phoneHeading": "Control this speaker on your phone",
+  "settingsView.phoneHelp": "Scan this with your phone camera, then use Add to Home Screen for a one-tap remote."
 }

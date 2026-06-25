@@ -1,5 +1,5 @@
 {
-  "common.beta": "Beta",
+  "common.beta": "BETA",
   "updateAll.button": "Atnaujinti visus ({{count}})",
   "updateAll.title": "Atnaujinti visas kolonėles",
   "updateAll.summary": "{{done}} atlikta, {{deferred}} atidėta, {{failed}} nepavyko iš {{total}}",
@@ -110,7 +110,6 @@
   "spotify.bullet3": "Pakartotinio susiejimo instrukcijos STR programoje, kai tai stabilizuosis.",
   "spotify.feedbackPrompt": "Eksperimentinė. Jei Spotify jau veikia ar neveikia jūsų garsiakalbyje, pasidalykite detalėmis problemoje.",
   "spotify.issueLink": "Atverti problemą #78",
-  "common.beta": "BETA",
   "spotify.versionNote": "Reikia naujausios STR versijos garsiakalbyje.",
   "spotify.updateLink": "Atverti garsiakalbio nustatymus atnaujinimui",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "Nuskaityta {{count}} mygtukų, bet nė vienas nenaudoja su paskyra susietos paslaugos, pvz., „Deezer“, todėl čia nėra ką atkurti.",
   "settingsView.restoreUnavailable": "{{slots}} ({{services}}) įrašyta atgal, bet kolonėlė vis dar nurodo {{unavailable}} kaip nepasiekiamą. Paleiskite kolonėlę iš naujo; jei lieka nepasiekiama, įrašytas tos paslaugos prisijungimas tikriausiai nebegalioja ir jo atkurti nepavyks.",
   "settingsView.restoreExpired": "Kolonėlėje išsaugotas {{services}} prisijungimas nustojo galioti kartu su Bose debesimi. STR negali atkurti šių mygtukų ir paliko juos nepakeistus; kolonėlė juos pašalina pati. Tiesioginis šių paslaugų palaikymas yra planuose.",
-  "update.uploadingPct": "Įkeliama {{pct}}%"
+  "update.uploadingPct": "Įkeliama {{pct}}%",
+  "common.copy": "Kopijuoti",
+  "common.copied": "Nukopijuota",
+  "settingsView.groupBasics": "Pagrindiniai",
+  "settingsView.groupSound": "Garsas ir ekranas",
+  "settingsView.groupNetwork": "Tinklas",
+  "settingsView.groupInfo": "Būsena ir informacija",
+  "settingsView.groupActions": "Veiksmai",
+  "settingsView.groupAdvanced": "Išplėstiniai",
+  "settingsView.phoneHeading": "Valdykite šią kolonėlę telefonu",
+  "settingsView.phoneHelp": "Nuskenuokite kamera, tada naudokite Pridėti į pagrindinį ekraną, kad gautumėte nuotolinį valdymą vienu palietimu."
 }

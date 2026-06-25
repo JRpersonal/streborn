@@ -29,6 +29,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 import {
   BoxSettings,
   BoxAgentVersion,
+  PhoneQR,
   RebootBox,
   SetPreset,
   SyncBoxPresets,
@@ -404,6 +405,74 @@ function isEmptySettings(s) {
   return !hasInfo && !hasNet && !hasSources;
 }
 
+
+// groupSettingsSections folds the long flat settings list into a few collapsible
+// accordions (#declutter): the Status block stays pinned at the top, everything
+// else is bucketed into Basics (open) / Sound & display / Network / Status & info
+// / Actions / Advanced (collapsed). It MOVES the existing section nodes (ids and
+// listeners intact), so no rewiring is needed, and re-runs cleanly on each render
+// because the template emits no .settings-group of its own.
+function groupSettingsSections() {
+  const body = $('settingsBody');
+  if (!body || body.querySelector('.settings-group')) return;
+  const GROUPS = [
+    { key: 'basics', label: t('settingsView.groupBasics'), open: true },
+    { key: 'sound', label: t('settingsView.groupSound'), open: false },
+    { key: 'network', label: t('settingsView.groupNetwork'), open: false },
+    { key: 'info', label: t('settingsView.groupInfo'), open: false },
+    { key: 'actions', label: t('settingsView.groupActions'), open: false },
+    { key: 'advanced', label: t('settingsView.groupAdvanced'), open: false },
+  ];
+  // Section -> group by stable id first, then by heading text (the same t() the
+  // template rendered, so it stays locale-safe). Expert blocks all go Advanced.
+  const byId = {
+    resumeOnPowerSection: 'sound',
+    displayTrackSection: 'sound',
+    airplayOptSection: 'sound',
+  };
+  const byHeading = {
+    [t('settingsView.nameHeading')]: 'basics',
+    [t('controls.volume')]: 'basics',
+    [t('settingsView.bassHeading')]: 'basics',
+    [t('settingsView.clockHeading')]: 'sound',
+    [t('settingsView.wlanHeading')]: 'network',
+    [t('settingsView.langHeading')]: 'network',
+    [t('settingsView.regionHeading')]: 'network',
+    [t('settingsView.sourcesHeading')]: 'info',
+    [t('settingsView.actionsHeading')]: 'actions',
+    [t('settingsView.speakerInfoHeading')]: 'info',
+  };
+  const buckets = {};
+  GROUPS.forEach(g => { buckets[g.key] = []; });
+  Array.from(body.querySelectorAll('.settings-section')).forEach(sec => {
+    // Status and the phone-control feature card stay pinned and visible at the
+    // top (the phone remote is a headline feature, not buried in a group).
+    if (sec.id === 'stickInfoSection' || sec.id === 'phoneCardSection') return;
+    let g;
+    if (sec.classList.contains('settings-expert')) g = 'advanced';
+    else if (sec.id && byId[sec.id]) g = byId[sec.id];
+    else {
+      const h = sec.querySelector('h3');
+      g = (h && byHeading[h.textContent.trim()]) || 'info';
+    }
+    buckets[g].push(sec);
+  });
+  const frag = document.createDocumentFragment();
+  GROUPS.forEach(g => {
+    const items = buckets[g.key];
+    if (!items.length) return;
+    const det = document.createElement('details');
+    det.className = 'settings-group';
+    if (g.open) det.open = true;
+    const sum = document.createElement('summary');
+    sum.className = 'settings-group-summary';
+    sum.textContent = g.label;
+    det.appendChild(sum);
+    items.forEach(it => det.appendChild(it)); // moves the node; ids/listeners intact
+    frag.appendChild(det);
+  });
+  body.appendChild(frag);
+}
 
 function renderBoxSettings(s, box) {
   const info = s.info || {};
@@ -782,7 +851,46 @@ function renderBoxSettings(s, box) {
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.deviceIdLabel'))}</span><span class="kv-val small muted">${escapeHtml(info.deviceID || '-')}</span></div>
       ${fwUpdateHint(info)}
     </div>
+    <div class="settings-section phone-feature" id="phoneCardSection">
+      <h3><span class="phone-feature-icon">&#128241;</span> ${escapeHtml(t('settingsView.phoneHeading'))}</h3>
+      <small class="muted small">${escapeHtml(t('settingsView.phoneHelp'))}</small>
+      <div class="phone-card">
+        <img id="phoneQrImg" class="phone-qr" alt="QR" />
+        <div class="phone-url-row">
+          <code id="phoneUrl" class="phone-url"></code>
+          <button class="btn btn-mini" id="phoneUrlCopy">${escapeHtml(t('common.copy'))}</button>
+        </div>
+      </div>
+    </div>
   `;
+
+  // Phone control: build this speaker's web-remote URL from its reachable
+  // host:port (probeSTR records the right port: 8888 direct or 17008 redirect)
+  // and render a locally generated QR (no external service). Grouped into the
+  // Status & info accordion by groupSettingsSections below.
+  (async () => {
+    const urlEl = $('phoneUrl');
+    if (!urlEl || !box || !box.host) return;
+    const url = `http://${box.host}:${box.port || 8888}/`;
+    urlEl.textContent = url;
+    const copyBtn = $('phoneUrlCopy');
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          copyBtn.textContent = t('common.copied');
+          setTimeout(() => { copyBtn.textContent = t('common.copy'); }, 1500);
+        } catch { /* clipboard blocked: the URL is still selectable */ }
+      };
+    }
+    try {
+      const data = await PhoneQR(url);
+      const img = $('phoneQrImg');
+      if (img && data) img.src = data;
+    } catch (e) { try { console.warn('phone QR failed', e); } catch {} }
+  })();
+
+  groupSettingsSections();
 
   // Name combobox: input + dropdown list, free-typeable + filterable.
   wireCombobox('boxNameInput', 'boxNameToggle', 'boxNameList', deps.getRoomNames());

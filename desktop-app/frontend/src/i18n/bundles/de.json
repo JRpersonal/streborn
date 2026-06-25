@@ -125,7 +125,6 @@
   "spotify.bullet3": "Anleitung in der STR-App sobald stabil.",
   "spotify.feedbackPrompt": "Experimentell. Wenn Spotify schon funktioniert oder scheitert, bitte ins Issue.",
   "spotify.issueLink": "Issue #78 öffnen",
-  "common.beta": "Beta",
   "spotify.versionNote": "Benötigt die neueste STR-Version auf dem Lautsprecher.",
   "spotify.updateLink": "Lautsprecher-Einstellungen zum Aktualisieren öffnen",
   "spotify.presetsTitle": "Playlist auf eine Preset-Taste legen",
@@ -1052,5 +1051,15 @@
   "settingsView.restoreNoneCloud": "{{count}} Tasten gelesen, aber keine nutzt einen kontogebundenen Dienst wie Deezer. Hier gibt es nichts wiederherzustellen.",
   "settingsView.restoreUnavailable": "{{slots}} für {{services}} zurückgeschrieben, aber der Lautsprecher meldet {{unavailable}} weiterhin als nicht verfügbar. Starte den Lautsprecher neu; bleibt er nicht verfügbar, ist die gespeicherte Anmeldung für diesen Dienst vermutlich abgelaufen und lässt sich nicht zurückholen.",
   "settingsView.restoreExpired": "Die auf dem Lautsprecher gespeicherte Anmeldung für {{services}} ist zusammen mit der Bose-Cloud abgelaufen. STR kann diese Tasten nicht zurückholen und hat sie unverändert gelassen; der Lautsprecher verwirft sie von selbst. Eine direkte Unterstützung dieser Dienste ist geplant.",
-  "update.uploadingPct": "Hochladen {{pct}}%"
+  "update.uploadingPct": "Hochladen {{pct}}%",
+  "common.copy": "Kopieren",
+  "common.copied": "Kopiert",
+  "settingsView.groupBasics": "Grundeinstellungen",
+  "settingsView.groupSound": "Klang & Anzeige",
+  "settingsView.groupNetwork": "Netzwerk",
+  "settingsView.groupInfo": "Status & Infos",
+  "settingsView.groupActions": "Aktionen",
+  "settingsView.groupAdvanced": "Erweitert",
+  "settingsView.phoneHeading": "Diesen Lautsprecher auf deinem Smartphone steuern",
+  "settingsView.phoneHelp": "Mit der Handy-Kamera scannen, dann „Zum Home-Bildschirm hinzufügen\" für eine Ein-Tipp-Fernbedienung."
 }

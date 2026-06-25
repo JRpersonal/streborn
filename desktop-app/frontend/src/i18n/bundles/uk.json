@@ -1,5 +1,5 @@
 {
-  "common.beta": "Бета",
+  "common.beta": "БЕТА",
   "updateAll.button": "Оновити всі ({{count}})",
   "updateAll.title": "Оновити всі колонки",
   "updateAll.summary": "{{done}} готово, {{deferred}} відкладено, {{failed}} помилок із {{total}}",
@@ -110,7 +110,6 @@
   "spotify.bullet3": "Інструкції з повторного зв'язування з'являться в застосунку STR після стабілізації.",
   "spotify.feedbackPrompt": "Експериментально. Якщо Spotify уже працює або не працює на вашій колонці, поділіться подробицями в завданні.",
   "spotify.issueLink": "Відкрити завдання #78",
-  "common.beta": "БЕТА",
   "spotify.versionNote": "Потрібна найновіша версія STR на колонці.",
   "spotify.updateLink": "Відкрити налаштування колонки для оновлення",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "Прочитано {{count}} кнопок, але жодна не використовує пов'язану з обліковим записом службу, як-от Deezer, тож тут нічого відновлювати.",
   "settingsView.restoreUnavailable": "{{slots}} для {{services}} записано назад, але колонка все ще повідомляє {{unavailable}} як недоступне. Перезапустіть колонку; якщо вона лишається недоступною, збережений вхід для цієї служби, імовірно, протермінувався і його не можна відновити.",
   "settingsView.restoreExpired": "Збережений у колонці вхід для {{services}} втратив чинність разом із хмарою Bose. STR не може відновити ці кнопки й залишив їх без змін; колонка видаляє їх сама. Пряма підтримка цих служб у планах.",
-  "update.uploadingPct": "Вивантаження {{pct}}%"
+  "update.uploadingPct": "Вивантаження {{pct}}%",
+  "common.copy": "Копіювати",
+  "common.copied": "Скопійовано",
+  "settingsView.groupBasics": "Основні",
+  "settingsView.groupSound": "Звук і дисплей",
+  "settingsView.groupNetwork": "Мережа",
+  "settingsView.groupInfo": "Стан та інфо",
+  "settingsView.groupActions": "Дії",
+  "settingsView.groupAdvanced": "Розширені",
+  "settingsView.phoneHeading": "Керуйте цією колонкою з телефона",
+  "settingsView.phoneHelp": "Відскануйте камерою, потім скористайтеся Додати на головний екран для пульта в один дотик."
 }

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -27,6 +28,7 @@ import (
 	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/sticksetup"
 	"github.com/JRpersonal/streborn/wifiprofiles"
+	qrcode "github.com/skip2/go-qrcode"
 	"streborn-app/agentbin"
 )
 
@@ -2765,6 +2767,22 @@ func (a *App) SyncBoxPresets(host string, port int) (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// PhoneQR returns a QR code (a PNG data URI) encoding url, for the "Open on
+// your phone" card in Speaker Settings: the user scans it with a phone camera
+// to open that speaker's web remote and add it to the home screen. Generated
+// locally, so the LAN address never leaves the machine. The caller builds url
+// from the box's reachable host:port (probeSTR already records the right port).
+func (a *App) PhoneQR(url string) (string, error) {
+	if strings.TrimSpace(url) == "" {
+		return "", fmt.Errorf("empty url")
+	}
+	png, err := qrcode.Encode(url, qrcode.Medium, 240)
+	if err != nil {
+		return "", err
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
 }
 
 // RebootBox triggers a restart of the Bose box (via the Stick Agent

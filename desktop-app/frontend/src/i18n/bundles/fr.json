@@ -1,5 +1,5 @@
 {
-  "common.beta": "Bêta",
+  "common.beta": "BÊTA",
   "updateAll.button": "Tout mettre à jour ({{count}})",
   "updateAll.title": "Mettre à jour toutes les enceintes",
   "updateAll.summary": "{{done}} terminé, {{deferred}} reporté, {{failed}} échoué sur {{total}}",
@@ -110,7 +110,6 @@
   "spotify.bullet3": "Instructions de réassociation dans l'application STR une fois stable.",
   "spotify.feedbackPrompt": "Expérimental. Si Spotify fonctionne déjà ou échoue sur votre enceinte, partagez les détails sur le ticket.",
   "spotify.issueLink": "Ouvrir le ticket #78",
-  "common.beta": "BÊTA",
   "spotify.versionNote": "Nécessite la dernière version de STR sur l'enceinte.",
   "spotify.updateLink": "Ouvrir les réglages de l'enceinte pour mettre à jour",
   "spotify.presetsTitle": "Enregistrer une playlist sur une touche de préréglage",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "{{count}} boutons lus, mais aucun n'utilise un service lié à un compte comme Deezer, donc il n'y a rien à restaurer ici.",
   "settingsView.restoreUnavailable": "{{slots}} réécrits pour {{services}}, mais l'enceinte signale toujours {{unavailable}} comme indisponible. Redémarre l'enceinte; si cela reste indisponible, l'identifiant enregistré pour ce service a probablement expiré et ne peut pas être récupéré.",
   "settingsView.restoreExpired": "L'identifiant enregistré sur l'enceinte pour {{services}} a expiré en même temps que le cloud Bose. STR ne peut pas récupérer ces boutons et les a laissés inchangés; l'enceinte les supprime d'elle-même. Une prise en charge directe de ces services est prévue.",
-  "update.uploadingPct": "Envoi {{pct}}%"
+  "update.uploadingPct": "Envoi {{pct}}%",
+  "common.copy": "Copier",
+  "common.copied": "Copié",
+  "settingsView.groupBasics": "Réglages de base",
+  "settingsView.groupSound": "Son & affichage",
+  "settingsView.groupNetwork": "Réseau",
+  "settingsView.groupInfo": "État & infos",
+  "settingsView.groupActions": "Actions",
+  "settingsView.groupAdvanced": "Avancé",
+  "settingsView.phoneHeading": "Commander cette enceinte depuis votre téléphone",
+  "settingsView.phoneHelp": "Scannez avec l'appareil photo, puis utilisez Ajouter à l'écran d'accueil pour une télécommande en un toucher."
 }

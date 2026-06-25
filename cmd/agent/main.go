@@ -386,6 +386,9 @@ func run() error {
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
+		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
+			return browsePeers(ctx, logger.With("comp", "peers"))
+		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
 		webui.WithRecent(recentStore))
@@ -1080,6 +1083,111 @@ func isSTRStreamURL(u string) bool {
 // (e.g. "/v1/playback/station/...") that the box rejects with UPnP 402.
 func isPlayableURL(u string) bool {
 	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
+}
+
+// --- Peer discovery for the on-box web UI "Other speakers" section ---
+
+var (
+	peersMu       sync.Mutex
+	peersCache    []webui.PeerLink
+	peersCachedAt time.Time
+)
+
+// browsePeers discovers the other STR speakers on the LAN over mDNS and returns
+// a link to each one's web UI, so a phone on the on-box page can hop between
+// speakers without re-typing an address. Resource-light by design: a short mDNS
+// browse plus at most two TCP reachability probes per peer, and the whole result
+// is cached, so repeated page loads cost at most one browse per cache window.
+func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
+	const cacheTTL = 45 * time.Second
+	peersMu.Lock()
+	if !peersCachedAt.IsZero() && time.Since(peersCachedAt) < cacheTTL {
+		c := peersCache
+		peersMu.Unlock()
+		return c
+	}
+	peersMu.Unlock()
+
+	bctx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
+	defer cancel()
+	ch, err := discovery.Browse(bctx, logger)
+	if err != nil {
+		logger.Debug("peers browse failed", "err", err)
+		return nil
+	}
+	mine := ownIPv4s()
+	seen := map[string]bool{}
+	var out []webui.PeerLink
+	for inst := range ch {
+		if inst.Kind != discovery.KindSTR {
+			continue // only STR speakers, not stock Bose
+		}
+		ip, self := "", false
+		for _, a := range inst.IPv4 {
+			if mine[a] {
+				self = true
+				break
+			}
+			if ip == "" {
+				ip = a
+			}
+		}
+		if self || ip == "" || seen[ip] {
+			continue
+		}
+		port := reachableWebPort(ip)
+		if port == 0 {
+			continue // neither web port answered; skip rather than link a dead URL
+		}
+		seen[ip] = true
+		name := inst.FriendlyName
+		if name == "" {
+			name = inst.Name
+		}
+		out = append(out, webui.PeerLink{Name: name, URL: fmt.Sprintf("http://%s:%d/", ip, port)})
+	}
+	peersMu.Lock()
+	peersCache = out
+	peersCachedAt = time.Now()
+	peersMu.Unlock()
+	return out
+}
+
+// ownIPv4s returns this speaker's own LAN IPv4 addresses, used to drop the
+// speaker itself from the discovered peer list.
+func ownIPv4s() map[string]bool {
+	m := map[string]bool{}
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if ipn, ok := a.(*net.IPNet); ok {
+			if v4 := ipn.IP.To4(); v4 != nil {
+				m[v4.String()] = true
+			}
+		}
+	}
+	return m
+}
+
+// reachableWebPort returns a peer's externally reachable web port: STR's direct
+// webui port (8888 on sm2/rhino/mojo) or the BCO REDIRECT port (17008 on
+// taigan/scm), whichever accepts a connection; 0 when neither answers. This
+// probe is why no per-model port has to be carried in mDNS.
+func reachableWebPort(ip string) int {
+	for _, p := range []int{8888, 17008} {
+		if dialable(ip, p) {
+			return p
+		}
+	}
+	return 0
+}
+
+func dialable(ip string, port int) bool {
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", ip, port), 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
 }
 
 // OnRemoteSkip handles the SoundTouch remote's next/prev track keys during

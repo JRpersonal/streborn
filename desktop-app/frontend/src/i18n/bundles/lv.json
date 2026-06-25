@@ -1,5 +1,5 @@
 {
-  "common.beta": "Beta",
+  "common.beta": "BETA",
   "updateAll.button": "Atjaunināt visus ({{count}})",
   "updateAll.title": "Atjaunināt visus skaļruņus",
   "updateAll.summary": "{{done}} pabeigti, {{deferred}} atlikti, {{failed}} neizdevās no {{total}}",
@@ -110,7 +110,6 @@
   "spotify.bullet3": "Atkārtotas savienošanas instrukcijas STR lietotnē, kad tas stabilizēsies.",
   "spotify.feedbackPrompt": "Eksperimentāli. Ja Spotify jau darbojas vai nedarbojas jūsu skaļrunī, dalieties ar detaļām problēmā.",
   "spotify.issueLink": "Atvērt problēmu #78",
-  "common.beta": "BETA",
   "spotify.versionNote": "Nepieciešama jaunākā STR versija skaļrunī.",
   "spotify.updateLink": "Atvērt skaļruņa iestatījumus, lai atjauninātu",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "Nolasītas {{count}} pogas, taču neviena neizmanto ar kontu saistītu pakalpojumu, piemēram, Deezer, tāpēc šeit nav ko atjaunot.",
   "settingsView.restoreUnavailable": "{{slots}} ({{services}}) ierakstīts atpakaļ, taču skaļrunis joprojām norāda {{unavailable}} kā nepieejamu. Restartējiet skaļruni; ja tas paliek nepieejams, saglabātā pieteikšanās šim pakalpojumam, visticamāk, ir beigusies un to nevar atjaunot.",
   "settingsView.restoreExpired": "Skaļrunī saglabātā {{services}} pieteikšanās beidza darboties kopā ar Bose mākoni. STR nevar atjaunot šīs pogas un atstāja tās nemainītas; skaļrunis tās noņem pats. Tieša šo pakalpojumu atbalsta ir plānos.",
-  "update.uploadingPct": "Augšupielāde {{pct}}%"
+  "update.uploadingPct": "Augšupielāde {{pct}}%",
+  "common.copy": "Kopēt",
+  "common.copied": "Nokopēts",
+  "settingsView.groupBasics": "Pamati",
+  "settingsView.groupSound": "Skaņa un ekrāns",
+  "settingsView.groupNetwork": "Tīkls",
+  "settingsView.groupInfo": "Statuss un info",
+  "settingsView.groupActions": "Darbības",
+  "settingsView.groupAdvanced": "Papildu",
+  "settingsView.phoneHeading": "Vadiet šo skaļruni no telefona",
+  "settingsView.phoneHelp": "Skenējiet ar kameru, pēc tam izmantojiet Pievienot sākuma ekrānam, lai iegūtu tālvadību ar vienu pieskārienu."
 }
