@@ -347,7 +347,7 @@
   "update.doneToast": "Update fertig.",
   "update.tookLongerToast": "Lautsprecher braucht länger als erwartet. Prüfe Strom / Netzwerk.",
   "update.deliveringSpotify": "Spotify-Komponente wird auf den Lautsprecher übertragen...",
-  "update.spotifyFinalStep": "Lautsprecher ist wieder da. Letzter Schritt: Spotify-Komponente wird installiert, noch {{remaining}} ...",
+  "update.spotifyFinalStep": "Lautsprecher ist wieder da. Spotify wird eingerichtet, der Lautsprecher startet dazu noch einmal neu, noch {{remaining}} ...",
   "update.spotifyDoneToast": "Spotify-Komponente installiert.",
   "update.spotifyDeferredToast": "Lautsprecher aktualisiert. Die Spotify-Komponente konnte noch nicht installiert werden; sie wird beim nächsten Öffnen dieses Lautsprechers übertragen.",
   "update.failed": "Update fehlgeschlagen: {{err}}\n\nFalls der Lautsprecher danach nicht mehr antwortet, trenne kurz den Strom und stecke ihn wieder an.",

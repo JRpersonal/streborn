@@ -2119,7 +2119,7 @@ async function runBoxUpdate(box, onPhase) {
   // Post-reboot Spotify engine delivery for the one-time pre-v0.8.22 upgrade case
   // (#240): the box is up but still reports the engine missing, so deliver it now.
   if (confirmedVer.goLibrespot && confirmedVer.goLibrespot !== 'present') {
-    const engDeadlineMs = Date.now() + 120_000;
+    const engDeadlineMs = Date.now() + 240_000;
     let attempt = 0;
     while (Date.now() < engDeadlineMs) {
       attempt++;
@@ -2319,7 +2319,7 @@ async function doBoxUpdate(targetBox) {
       // reboot. Best-effort: it must never turn a successful agent update into an
       // error.
       if (confirmedVer && confirmedVer.goLibrespot && confirmedVer.goLibrespot !== 'present') {
-        const engDeadlineMs = Date.now() + 120_000;
+        const engDeadlineMs = Date.now() + 240_000;
         let engDone = false;
         let engAttempt = 0;
         const renderEng = () => {
