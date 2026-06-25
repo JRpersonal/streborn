@@ -180,6 +180,12 @@ type Manager struct {
 	// write to exactly once, so there is no per-track flash wear.
 	hdrPath      string
 	hdrPersisted bool
+	// resume remembers, per context, the last track played from it so a default
+	// (non-shuffle) recall can continue where the user left off instead of
+	// restarting the context. curTrackURI is the current track's spotify: URI,
+	// captured from /status and metadata events to feed the resume store.
+	resume      *resumeStore
+	curTrackURI string
 }
 
 // New returns a Manager. binPath is the go-librespot binary, configDir
@@ -208,6 +214,10 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 		playClient: &http.Client{Timeout: 25 * time.Second},
 		hdrPath:    filepath.Join(configDir, "stream-headers.ogg"),
 	}
+	// Per-context resume memory lives next to the per-account credential store
+	// on NAND (a sibling of configDir), so it survives reboots and OTA agent
+	// swaps (which replace only the binary).
+	m.resume = newResumeStore(filepath.Join(filepath.Dir(configDir), "sp-resume.json"), logger)
 	// Warm the Ogg header cache from the last session so the very first box
 	// attach after a cold boot gets valid Ogg (buffers) instead of nothing
 	// (the "service unavailable" flash). Best-effort; absent on a fresh install.
@@ -338,6 +348,8 @@ func (m *Manager) Run(ctx context.Context) {
 	// building the per-account library that SwitchAccount swaps between for
 	// multi-account preset recall.
 	go m.captureLoop(ctx)
+	// Debounced writer for the per-context resume memory.
+	go m.resume.run(ctx)
 	// One-shot: rewrite config with the box's real name + volume once the box
 	// REST API answers (it is usually not up when config is first written), then
 	// restart go-librespot so the Spotify app sees the right volume, not 100%.
@@ -715,36 +727,64 @@ func readOggPage(r *bufio.Reader) ([]byte, error) {
 	return page, nil
 }
 
-// Play asks go-librespot to start playing a Spotify URI on this device,
-// using its own cached credential. This is the autonomous-recall path:
-// the agent calls it on a Spotify preset press, with no app involved.
+// PlayOptions tunes a Spotify context recall.
+type PlayOptions struct {
+	// Shuffle starts the context on a random track with shuffle enabled, the
+	// behaviour a preset saved with "shuffle" wants. When false (the default),
+	// recall RESUMES the context on the last track that played from it (the
+	// Spotify Connect "continue where you left off" behaviour) with shuffle OFF,
+	// so the speaker's remote next/prev walk the playlist in order.
+	Shuffle bool
+}
+
+// Play asks go-librespot to start playing a Spotify context (playlist/album/
+// track) on this device, using its own cached credential. This is the
+// autonomous-recall path: the agent calls it on a Spotify preset press, with no
+// app involved.
 //
 // The recall calls Play FIRST, then points the box at /spotify/stream.ogg.
 // With the sink-gated drain (see runOnce) go-librespot blocks on its full
 // output pipe until the box attaches, so the pipe holds the track's start
 // incl. the Ogg headers; the box therefore receives the stream from the
 // beginning and can decode it.
-func (m *Manager) Play(ctx context.Context, uri string) error {
-	// Start the playlist on a RANDOM track, shuffled, every recall.
-	// go-librespot's /player/play has no shuffle option, and shuffle_context
-	// only randomises the UPCOMING queue: the current track stays the context's
-	// first one, so play+shuffle alone replays the same first song each time
-	// (live-observed). So: load + play, enable shuffle, then skip once to land
-	// on a shuffled (random) track. It starts at the track's beginning; the
-	// flush-on-BOS in the drain keeps the boundary clean (no mid-track restart).
+//
+// Shuffle is driven by opts, NOT forced on. The previous code force-enabled
+// shuffle on EVERY recall, skipped to a random track, and never turned shuffle
+// off again, so every preset press landed on a random song AND the remote's
+// next key jumped around a still-shuffled queue (Patrick + Jens, 2026-06-25).
+// Now: a default (non-shuffle) recall resumes the context where the user left
+// off and keeps shuffle off; a shuffle preset starts on a fresh random track.
+func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error {
 	// Mark a recall in progress so ServeOgg does not resume the OLD (mid) track
-	// when the box attaches; this path drives the new track from its start.
+	// when the box attaches; this path drives the chosen track from its start.
 	m.SetRecalling()
-	// Load the context PAUSED so the speaker never hears the playlist's first
-	// (non-shuffled) track. The old flow played first, THEN shuffled + skipped,
-	// and because go-librespot takes a few seconds to load the context the skip
-	// landed late: the box audibly played the first track ("Real Love Baby") for
-	// ~6-24 s before jumping to a random one (live box log 2026-06-12). Now we:
-	// load paused -> wait for the context to load -> shuffle -> skip to a random
-	// track -> resume, so audio starts cleanly on the shuffled track from its
-	// start. The box buffers on the Ogg headers during the short paused window,
+	// Point the resume tracker at the context we are loading right now and drop
+	// the previous track. The will_play event that normally sets lastContext can
+	// lag or be missed, so without this a metadata/status event arriving after
+	// the recall window would record the NEW context against the OLD track and
+	// corrupt the resume store (review, 2026-06-25).
+	m.mu.Lock()
+	m.lastContext = uri
+	m.curTrackURI = ""
+	m.mu.Unlock()
+	// Default recall resumes on the last track that played from this context
+	// (skip_to_uri). A shuffle preset ignores the resume point and starts random.
+	resumeURI := ""
+	if !opts.Shuffle {
+		resumeURI = m.resume.trackFor(uri)
+	}
+	// Load the context PAUSED so the speaker never hears the wrong (non-resumed /
+	// non-shuffled) track. skip_to_uri positions the queue on the resume track
+	// before any audio flows; an empty skip_to_uri starts at the context's first
+	// track. We then wait for the context to load, set the desired shuffle state,
+	// and resume, so audio starts cleanly on the intended track from its start.
+	// The box buffers on the cached Ogg headers during the short paused window,
 	// the same way it already buffers during a cold load.
-	playBody, _ := json.Marshal(map[string]any{"uri": uri, "paused": true})
+	playReq := map[string]any{"uri": uri, "paused": true}
+	if resumeURI != "" {
+		playReq["skip_to_uri"] = resumeURI
+	}
+	playBody, _ := json.Marshal(playReq)
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", string(playBody)); err != nil {
 		return err
 	}
@@ -754,19 +794,27 @@ func (m *Manager) Play(ctx context.Context, uri string) error {
 	// shuffle_context is a no-op against an unloaded context (live: cold preset 6
 	// then skipped to the deterministic 2nd track), so wait for the track to load.
 	m.waitContextLoaded(ctx, 5*time.Second)
-	if err := m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`); err != nil {
-		m.logger.Debug("spotify: shuffle_context (post-load) failed", "err", err)
+	// Set shuffle EXPLICITLY to the desired state every recall. Setting it to
+	// false is what clears a stale shuffle left on by a previous shuffled recall
+	// (the cross-recall stickiness that made an unshuffled preset still shuffle
+	// and the remote next jump to a random song).
+	if err := m.apiPost(ctx, "/player/shuffle_context",
+		fmt.Sprintf(`{"shuffle_context":%t}`, opts.Shuffle)); err != nil {
+		m.logger.Debug("spotify: shuffle_context failed", "err", err, "shuffle", opts.Shuffle)
 	}
-	// shuffle_context only randomises the UPCOMING queue (the current track stays
-	// the context's first), so one skip lands on a random track. Still paused, so
-	// nothing reaches the speaker yet.
-	if err := m.apiPost(ctx, "/player/next", ""); err != nil {
-		m.logger.Debug("spotify: skip-to-random after shuffle failed", "err", err)
+	if opts.Shuffle {
+		// shuffle_context only randomises the UPCOMING queue (the current track
+		// stays the context's first), so one skip lands on a random track. Still
+		// paused, so nothing reaches the speaker yet.
+		if err := m.apiPost(ctx, "/player/next", ""); err != nil {
+			m.logger.Debug("spotify: skip-to-random after shuffle failed", "err", err)
+		}
 	}
-	// Resume: audio now flows, starting on the shuffled track from its beginning.
+	// Resume: audio now flows, starting on the chosen track from its beginning.
 	if err := m.apiPost(ctx, "/player/resume", ""); err != nil {
-		m.logger.Debug("spotify: resume after shuffle failed", "err", err)
+		m.logger.Debug("spotify: resume after recall failed", "err", err)
 	}
+	m.logger.Info("spotify: recall play", "uri", uri, "shuffle", opts.Shuffle, "resumeTrack", resumeURI != "")
 	// Debounce the will_play context change this recall triggers (this path
 	// already drives the box separately, so no extra re-point needed).
 	m.mu.Lock()
@@ -1295,10 +1343,11 @@ func (m *Manager) SwitchAccount(ctx context.Context, username string) (bool, err
 	return true, fmt.Errorf("account switch to %q timed out", username)
 }
 
-// PlayAccount switches to the preset's account (if needed) then plays the URI.
-// This is the recall entry point used by both the hardware-button and the
-// desktop/API paths.
-func (m *Manager) PlayAccount(ctx context.Context, uri, account string) error {
+// PlayAccount switches to the preset's account (if needed) then plays the URI
+// with the given options (shuffle vs resume). This is the recall entry point
+// used by both the hardware-button and the desktop/API paths, so both honour
+// the preset's shuffle flag and the per-context resume point identically.
+func (m *Manager) PlayAccount(ctx context.Context, uri, account string, opts PlayOptions) error {
 	// Diagnostic: log the live session state at the recall boundary so a bundle
 	// disambiguates "never logged in" vs "dead session" vs "playing fine" without
 	// guesswork (every Spotify-recall investigation hit this blind spot).
@@ -1320,7 +1369,32 @@ func (m *Manager) PlayAccount(ctx context.Context, uri, account string) error {
 	if !m.ensureSession(ctx) {
 		return ErrNoSpotifySession
 	}
-	return m.Play(ctx, uri)
+	return m.Play(ctx, uri, opts)
+}
+
+// noteResume records the current track as the resume point for the current
+// context, so a later default (non-shuffle) recall of that context continues on
+// it. No-op during an in-flight recall (the track is still settling) and when
+// the context or track URI is unknown. Called after every metadata/status
+// update; the resume store itself ignores unchanged tracks, so this is cheap.
+func (m *Manager) noteResume() {
+	if m.resume == nil {
+		return
+	}
+	// Take the recall-in-flight check and the context/track snapshot under one
+	// lock, so the pair recorded is exactly the state at this instant (no
+	// recheck-then-relock window). note() ignores an empty or non-spotify pair.
+	m.mu.Lock()
+	if time.Now().Before(m.recallUntil) {
+		m.mu.Unlock()
+		return
+	}
+	ctxURI, trackURI := m.lastContext, m.curTrackURI
+	m.mu.Unlock()
+	if ctxURI == "" || trackURI == "" {
+		return
+	}
+	m.resume.note(ctxURI, trackURI)
 }
 
 // ExportCredential returns the active go-librespot credential (credentials.json)
@@ -1570,6 +1644,7 @@ func (m *Manager) liveNowPlaying(ctx context.Context) (track, artist, cover stri
 	}
 	var st struct {
 		Track *struct {
+			URI           string   `json:"uri"`
 			Name          string   `json:"name"`
 			ArtistNames   []string `json:"artist_names"`
 			AlbumCoverURL string   `json:"album_cover_url"`
@@ -1583,8 +1658,12 @@ func (m *Manager) liveNowPlaying(ctx context.Context) (track, artist, cover stri
 	cover = st.Track.AlbumCoverURL
 	m.mu.Lock()
 	m.curName, m.curArtist, m.curCover = track, artist, cover
+	if st.Track.URI != "" {
+		m.curTrackURI = st.Track.URI
+	}
 	m.mu.Unlock()
 	m.notifyTrack()
+	m.noteResume()
 	return track, artist, cover, true
 }
 
@@ -1715,6 +1794,12 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 				m.mu.Lock()
 				changed := m.lastContext != "" && wp.ContextURI != m.lastContext
 				m.lastContext = wp.ContextURI
+				if changed {
+					// New context: drop the previous track so noteResume cannot
+					// pair this context with the old track before its own
+					// metadata lands (review, 2026-06-25).
+					m.curTrackURI = ""
+				}
 				m.mu.Unlock()
 				if changed {
 					m.repointBox()
@@ -1723,6 +1808,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 		case "metadata":
 			// Current track info for the desktop (and later box) display.
 			var md struct {
+				URI           string   `json:"uri"`
 				Name          string   `json:"name"`
 				ArtistNames   []string `json:"artist_names"`
 				AlbumCoverURL string   `json:"album_cover_url"`
@@ -1734,8 +1820,15 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			m.curName = md.Name
 			m.curArtist = strings.Join(md.ArtistNames, ", ")
 			m.curCover = md.AlbumCoverURL
+			if md.URI != "" {
+				m.curTrackURI = md.URI
+			}
 			m.mu.Unlock()
 			m.notifyTrack()
+			// Remember this track as the resume point for its context, so a
+			// later default recall continues here instead of restarting the
+			// playlist (the events stream covers the no-desktop-app case).
+			m.noteResume()
 		case "volume":
 			if m.box == nil {
 				continue // no box client: metadata only, no volume mirror

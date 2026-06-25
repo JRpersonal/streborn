@@ -81,7 +81,8 @@ type Server struct {
 	// the username the preset was saved under; an empty account plays with
 	// go-librespot's current login (see manager PlayAccount / SwitchAccount).
 	// nil when Spotify is not configured. Injected as a func for decoupling.
-	spotifyPlay func(ctx context.Context, uri, account string) error
+	// shuffle selects a fresh random start vs the default resume-where-left-off.
+	spotifyPlay func(ctx context.Context, uri, account string, shuffle bool) error
 	// spotifyUser returns go-librespot's currently logged-in account, used to
 	// stamp the account onto a newly saved Spotify preset. nil when Spotify
 	// is not configured.
@@ -434,8 +435,9 @@ func WithSpotifyInfo(h http.HandlerFunc) Option {
 
 // WithSpotifyControl registers the function that starts playback of a
 // Spotify URI on a given account in go-librespot (the Spotify-preset
-// control plane). An empty account plays with the current login.
-func WithSpotifyControl(play func(ctx context.Context, uri, account string) error) Option {
+// control plane). An empty account plays with the current login; shuffle
+// selects a fresh random start over the default resume-where-left-off.
+func WithSpotifyControl(play func(ctx context.Context, uri, account string, shuffle bool) error) Option {
 	return func(s *Server) { s.spotifyPlay = play }
 }
 
@@ -1298,7 +1300,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		}
 		s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "") // #135
-		uri, name, art, account := p.URI, p.Name, p.Art, p.Account
+		uri, name, art, account, shuffle := p.URI, p.Name, p.Art, p.Account, p.Shuffle
 		go func() {
 			bg := context.Background()
 			if s.spotifyReady != nil && !s.spotifyReady() {
@@ -1307,7 +1309,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 					time.Sleep(500 * time.Millisecond)
 				}
 			}
-			if err := s.spotifyPlay(bg, uri, account); err != nil {
+			if err := s.spotifyPlay(bg, uri, account, shuffle); err != nil {
 				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 			}
 			s.verifyRecall(func(ctx context.Context, lastAttempt bool) {
@@ -1319,7 +1321,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				// Only the last attempt does a full re-Play, to recover a genuine
 				// cold-boot auth race where the playlist never loaded at all.
 				if lastAttempt {
-					_ = s.spotifyPlay(ctx, uri, account)
+					_ = s.spotifyPlay(ctx, uri, account, shuffle)
 				}
 				_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
 			}, s.spotifyStreaming)

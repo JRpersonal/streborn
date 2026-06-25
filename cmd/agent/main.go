@@ -372,7 +372,9 @@ func run() error {
 		webui.WithRegionFile(*regionFile),
 		webui.WithStreamProxy(streamProxySrv),
 		webui.WithSpotifyStream(spotifyMgr.ServeOgg),
-		webui.WithSpotifyControl(spotifyMgr.PlayAccount),
+		webui.WithSpotifyControl(func(ctx context.Context, uri, account string, shuffle bool) error {
+			return spotifyMgr.PlayAccount(ctx, uri, account, spotify.PlayOptions{Shuffle: shuffle})
+		}),
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
@@ -1292,8 +1294,9 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 		h.autoPair.TriggerNow(pairCtx)
 		c()
 	}
-	// Load the playlist (audio): paused -> shuffle -> skip-to-random -> resume.
-	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account); err != nil {
+	// Load the playlist (audio): a default preset resumes where the user left off
+	// (shuffle off, in-order); a shuffle preset starts on a fresh random track.
+	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle}); err != nil {
 		h.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 	}
 	// Verify+retry in the background: the first press after a cold boot races
@@ -1348,7 +1351,7 @@ func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 		// where the playlist never loaded at all.
 		if attempt == 3 {
 			h.logger.Warn("spotify recall not playing, full re-Play (last resort)", "slot", slot)
-			_ = h.spotify.PlayAccount(ctx, p.URI, p.Account)
+			_ = h.spotify.PlayAccount(ctx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle})
 		} else {
 			h.logger.Warn("spotify recall not playing yet, re-pointing box", "slot", slot, "attempt", attempt)
 		}
