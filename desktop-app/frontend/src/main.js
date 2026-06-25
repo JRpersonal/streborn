@@ -547,6 +547,7 @@ const SUPPORTED_LINE = {
   lt: 'skirta SoundTouch 10, 20, 30 ir Portable',
   lv: 'SoundTouch 10, 20, 30 un Portable modeļiem',
   tr: 'SoundTouch 10, 20, 30 ve Portable için',
+  ar: 'لأجهزة SoundTouch 10 و20 و30 وPortable',
   en: 'for SoundTouch 10, 20, 30 and Portable',
 };
 
@@ -563,6 +564,7 @@ const TAGLINES = {
   lt: 'Toliau naudokitės savo Bose SoundTouch garsiakalbiais be Bose debesies.',
   lv: 'Turpiniet lietot savus Bose SoundTouch skaļruņus bez Bose mākoņa.',
   tr: 'Bose SoundTouch hoparlörlerinizi Bose bulutu olmadan kullanmaya devam edin.',
+  ar: 'واصِل استخدام مكبرات صوت Bose SoundTouch دون سحابة Bose.',
   en: 'Keep using your Bose SoundTouch speakers, without the Bose cloud.',
 };
 
