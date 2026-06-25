@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -542,7 +543,46 @@ type didlR struct {
 	Value        string `xml:",chardata"`
 }
 
+// stripIllegalXMLChars drops bytes/runes that are not valid characters in XML
+// 1.0, keeping tab, newline and carriage return. DLNA servers that surface ID3
+// metadata verbatim can leak control characters into their SOAP/DIDL responses
+// (#262); Go's xml parser then rejects the entire document. Removing only the
+// offending characters preserves the rest of the listing. Invalid UTF-8 is left
+// as the replacement rune (U+FFFD), which is itself valid XML.
+func stripIllegalXMLChars(b []byte) []byte {
+	if utf8.Valid(b) && !hasIllegalXMLByte(b) {
+		return b // common case: nothing to strip, no copy
+	}
+	out := make([]byte, 0, len(b))
+	for _, r := range string(b) {
+		if r == 0x09 || r == 0x0A || r == 0x0D ||
+			(r >= 0x20 && r <= 0xD7FF) ||
+			(r >= 0xE000 && r <= 0xFFFD) ||
+			(r >= 0x10000 && r <= 0x10FFFF) {
+			out = utf8.AppendRune(out, r)
+		}
+	}
+	return out
+}
+
+// hasIllegalXMLByte is a cheap scan for the ASCII control bytes that are illegal
+// in XML 1.0, so the all-valid common case avoids a full rune walk + copy.
+func hasIllegalXMLByte(b []byte) bool {
+	for _, c := range b {
+		if c < 0x20 && c != 0x09 && c != 0x0A && c != 0x0D {
+			return true
+		}
+	}
+	return false
+}
+
 func parseBrowseResponse(raw []byte) (BrowseResult, error) {
+	// Some DLNA servers embed raw control characters (e.g. U+0001 out of an ID3
+	// comment or genre tag) into the metadata they return, which makes Go's strict
+	// XML parser reject the WHOLE response ("illegal character code U+0001", #262).
+	// Strip the characters that are illegal in XML 1.0 so the rest of the library
+	// listing still parses, instead of failing the entire folder.
+	raw = stripIllegalXMLChars(raw)
 	var env soapBrowseEnvelope
 	if err := xml.Unmarshal(raw, &env); err != nil {
 		return BrowseResult{}, fmt.Errorf("soap envelope: %w", err)
@@ -555,7 +595,9 @@ func parseBrowseResponse(raw []byte) (BrowseResult, error) {
 		}, nil
 	}
 	var didl didlLite
-	if err := xml.Unmarshal([]byte(res), &didl); err != nil {
+	// The DIDL-Lite inside <Result> can carry the same bad characters once it is
+	// un-escaped, so sanitise it too before the second parse.
+	if err := xml.Unmarshal(stripIllegalXMLChars([]byte(res)), &didl); err != nil {
 		return BrowseResult{}, fmt.Errorf("didl-lite: %w", err)
 	}
 	out := BrowseResult{
