@@ -49,6 +49,16 @@ phase1_install() {
         echo "Phase 2 is active, removing it first"
         phase2_remove
     fi
+    # Free a stranded SSH-repair staging dir and known regenerable junk before
+    # copying, so a re-install on a tight NAND has room. A leftover
+    # streborn-install (the ~28 MB SSH-repair staging set) filled a ST30 to 80%
+    # so every OTA then failed with "no space left on device" (#ST30). Never
+    # remove our own source ($STICK): on the SSH-repair path STR_STICK IS the
+    # streborn-install staging dir.
+    for d in /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install; do
+        [ "$d" = "$STICK" ] || rm -rf "$d" 2>/dev/null
+    done
+    rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null
     echo "Copying $RC_SRC to $RC_DST"
     cp "$RC_SRC" "$RC_DST" || { echo "ERROR while copying" >&2; exit 1; }
     chmod +x "$RC_DST"

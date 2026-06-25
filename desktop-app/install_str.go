@@ -593,6 +593,19 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 		return res, nil
 	}
 
+	// install.sh copied everything into /mnt/nv/streborn, so the ~28 MB staging
+	// dir is now pure leftover. Remove it before the reboot, otherwise it sits on
+	// the NAND forever and starves later OTA updates of the room they need for the
+	// atomic .new write: a stranded streborn-install filled a ST30 to 80% and
+	// every agent update then failed with "no space left on device" (#ST30
+	// Daniel). Best-effort: a cleanup failure must not fail an otherwise-good
+	// install (the boot-time cleanup_nand is the backstop).
+	if _, cerr := boxSSHOutput(host, "rm -rf "+stage, 20*time.Second); cerr != nil {
+		a.logger.Warn("repair_ssh: could not remove install staging dir; boot cleanup is the backstop", "host", host, "dir", stage, "err", cerr)
+	} else {
+		a.logger.Info("repair_ssh: removed install staging dir", "host", host, "dir", stage)
+	}
+
 	res.OK = true
 	res.Step = "reboot"
 	res.Message = "STR installed over SSH (USB stick bypassed). The speaker will reboot and join your Wi-Fi."

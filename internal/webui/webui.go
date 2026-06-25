@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -2642,7 +2643,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	const dst = "/mnt/nv/streborn/bin/streborn-armv7l"
 	if err := writeBinaryAtomic(dst, body); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), nandWriteHTTPStatus(err))
 		return
 	}
 
@@ -2742,17 +2743,38 @@ func readUploadedELF(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 // + foreign-firmware dirs) in the error so the desktop app surfaces it verbatim
 // and the user's report tells us whether the ST30 is genuinely tighter or is
 // carrying leftovers from a previous custom firmware.
+// errInsufficientNAND is returned by writeBinaryAtomic when, even after
+// reclaiming regenerable junk, the NAND cannot hold the second (.new) copy the
+// atomic write needs. The OTA handlers map it to 507 Insufficient Storage so the
+// desktop app can tell "the box is full" apart from a generic write failure and
+// show the inventory instead of a raw 500 after a full upload (#ST30 Daniel).
+var errInsufficientNAND = errors.New("insufficient NAND space")
+
+// nandWriteMargin is the slack required above the binary size before an atomic
+// write is attempted: filesystem overhead plus a cushion so a borderline write
+// does not ENOSPC mid-stream.
+const nandWriteMargin = 512 * 1024
+
 func writeBinaryAtomic(dst string, body []byte) error {
 	dir := filepath.Dir(dst)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir parent: %w", err)
 	}
 	tmp := dst + ".new"
-	// Drop a stale temp from an earlier interrupted OTA before the space check.
+	// Drop this target's stale temp, then proactively reclaim regenerable junk on
+	// EVERY OTA write (not only when already tight), so a previous failed
+	// attempt's leftovers, a stale OTHER-binary .new, or oversized logs never eat
+	// the headroom this write needs (#ST30 Daniel). reclaimNAND never touches Bose
+	// files or the live binaries.
 	_ = os.Remove(tmp)
+	reclaimNAND()
+	// Pre-flight space gate: re-check AFTER reclaim and refuse up front, rather
+	// than buffering the whole binary onto a full disk and ENOSPC'ing at the end.
+	// The error carries the NAND inventory so the app can show what is eating the
+	// space and what to free.
 	need := int64(len(body))
-	if _, avail, ok := diskFree(dir); ok && avail < need+512*1024 {
-		reclaimNAND()
+	if _, avail, ok := diskFree(dir); ok && avail < need+nandWriteMargin {
+		return fmt.Errorf("%w: need %dKB, have %dKB free [NAND %s]", errInsufficientNAND, need/1024, avail/1024, nandReportLine())
 	}
 	if err := os.WriteFile(tmp, body, 0o755); err != nil {
 		_ = os.Remove(tmp) // leave no partial behind for the next attempt
@@ -2763,6 +2785,16 @@ func writeBinaryAtomic(dst string, body []byte) error {
 		return fmt.Errorf("rename: %w [NAND %s]", err, nandReportLine())
 	}
 	return nil
+}
+
+// nandWriteHTTPStatus maps a writeBinaryAtomic error to an HTTP status: 507
+// Insufficient Storage when the box is out of NAND (so the desktop app can tell a
+// full box apart from a generic failure and surface the inventory), else 500.
+func nandWriteHTTPStatus(err error) int {
+	if errors.Is(err, errInsufficientNAND) {
+		return http.StatusInsufficientStorage
+	}
+	return http.StatusInternalServerError
 }
 
 // --- NAND disk diagnostics -------------------------------------------------
@@ -2929,6 +2961,13 @@ func reclaimNAND() {
 	}
 	_ = os.Remove(filepath.Join(strNANDDir, "agent.log.1"))
 	_ = os.Remove(filepath.Join(nandRoot, "sp-oauth.out"))
+	// Stranded SSH-repair staging dir: the desktop app stages the ~28 MB install
+	// file set into <base>/streborn-install and the install copies it into
+	// /mnt/nv/streborn, but an older app left the staging copy behind, filling the
+	// NAND so the next OTA's .new could not fit (#ST30 Daniel). The running agent
+	// never uses it (it runs from streborn/bin), so it is always safe to drop here.
+	_ = os.RemoveAll(filepath.Join(nandRoot, "streborn-install"))
+	_ = os.RemoveAll(filepath.Join(strNANDDir, "streborn-install"))
 	for _, name := range []string{"setup.log", "setup.log.prev", "agent.log", "previous.log", "boot.log"} {
 		p := filepath.Join(strNANDDir, name)
 		if fi, err := os.Stat(p); err == nil && fi.Size() > 131072 {
@@ -2955,7 +2994,7 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := writeBinaryAtomic(goLibrespotBinPath, body); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), nandWriteHTTPStatus(err))
 		return
 	}
 	// Stamp the content hash next to the binary so the next /api/agent/version
