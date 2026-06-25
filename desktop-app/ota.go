@@ -283,6 +283,26 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 		a.recordOTA(host, "sidecar: box on a pre-sidecar agent, cannot stage over HTTP pre-reboot; will deliver after the box is on the new agent")
 		return
 	}
+	// Space gate (#ST30 Daniel). Staging the ~10 MB sidecar pre-reboot lands it
+	// on disk BEFORE the agent .new (~12 MB) is written, so on a tight box (e.g. a
+	// SoundTouch 30, ~31 MB NAND) the two second copies cannot coexist and the
+	// agent OTA then dies with "no space left on device". When the box cannot hold
+	// the agent AND the sidecar second copy together, skip the pre-reboot staging:
+	// the agent updates alone (it fits with the sidecar out of the way), and the
+	// post-OTA EnsureSpotifyEngine delivers the engine after the reboot, when the
+	// old agent's blocks have been reclaimed. Only a real, reported free figure
+	// gates this; an unknown free (older agent) keeps the previous behaviour.
+	if freeN, perr := strconv.ParseInt(ver["nandFreeBytes"], 10, 64); perr == nil && freeN > 0 {
+		agentLen := int64(len(agentbin.Bytes()))
+		sidecarLen := int64(len(agentbin.GoLibrespotBytes()))
+		const nandStageMargin = 2 * 1024 * 1024
+		if freeN < agentLen+sidecarLen+nandStageMargin {
+			a.recordOTA(host, fmt.Sprintf("sidecar: NAND tight (free=%dKB < agent %dKB + engine %dKB + margin), deferring the engine to the post-reboot delivery so the agent update fits", freeN/1024, agentLen/1024, sidecarLen/1024))
+			a.logger.Info("stageSidecarBeforeReboot: NAND too tight to stage the engine before the agent; deferring to post-OTA EnsureSpotifyEngine",
+				"host", host, "free", freeN, "agentLen", agentLen, "sidecarLen", sidecarLen)
+			return
+		}
+	}
 	for attempt := 1; attempt <= otaSidecarEnsureAttempts; attempt++ {
 		if _, err := a.pushSidecarIfNeeded(host, port); err == nil {
 			return
@@ -747,7 +767,15 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// a freshly-installed box does not need a separate round-trip. The
 	// 120 s timeout covers a 10 MB upload over slow Wi-Fi with the
 	// speaker's modest CPU spending time on SSH crypto.
-	uploadCmd := "mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new"
+	// Pre-clean before staging the .new so the SSH path is a real rescue on a full
+	// box, not a second failure: drop a stranded SSH-repair staging dir (the ~28 MB
+	// streborn-install that filled a ST30, #ST30 Daniel) and the same regenerable
+	// junk the agent's reclaimNAND clears, then write the fresh temp. Mirrors
+	// reclaimNAND + run.sh cleanup_nand; the agent runs from streborn/bin so the
+	// staging dir is always safe to drop. Best-effort, folded into the one session.
+	uploadCmd := "rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; " +
+		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; " +
+		"mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new"
 	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
 		return fmt.Errorf("ssh upload (%d bytes) failed: %v (%s)", len(bin), err, strings.TrimSpace(out))
 	}

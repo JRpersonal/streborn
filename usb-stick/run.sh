@@ -603,6 +603,13 @@ cleanup_nand() {
     rm -f /mnt/nv/streborn/cap*.ogg "$STICK"/cap*.ogg 2>/dev/null
     rm -f /mnt/nv/streborn/bin/*.new 2>/dev/null
 
+    #    streborn-install: the SSH-repair install stages the ~28 MB file set into
+    #    <base>/streborn-install, and install.sh copies it into /mnt/nv/streborn,
+    #    but an older app left the staging copy behind. It filled a ST30 to 80% so
+    #    the next OTA could not write its .new (#ST30). The running agent never
+    #    uses it (it runs from streborn/bin), so it is always safe to drop on boot.
+    rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null
+
     # 2) Log caps. The agent rotates agent.log -> agent.log.1 at 1 MiB, so the
     #    pair can hold ~2 MiB; drop the rotated backup and trim any oversized
     #    log to its tail. setup.log is now per-boot-rotated at the top of run.sh,
