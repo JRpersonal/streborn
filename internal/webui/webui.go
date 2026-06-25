@@ -174,6 +174,11 @@ type Server struct {
 	// stream on its own (reported: radio stops after ~11 min, no STR error).
 	lastPlayMu sync.Mutex
 	lastPlay   *lastPlayInfo
+	// lastPlayPath is the NAND file the last-played stream is persisted to, so
+	// the power-on resume survives an agent restart across a long/overnight
+	// standby (in-RAM only lost the station and the box fell back to its native
+	// "Preset not assigned", #119 Klaus). Empty disables persistence (tests).
+	lastPlayPath string
 
 	// lastUserStop is when the user last DELIBERATELY stopped playback, so the
 	// auto-re-push does not fight a wanted stop (v0.7.0: a single Stop
@@ -310,6 +315,12 @@ type lastPlayInfo struct {
 	rePushInFlight           bool
 }
 
+// resumeMaxAge bounds how stale the last station may be and still come back on a
+// power-on press. Generous (a week) because a user expects "abends aus, morgens
+// an" to resume, like Bose did; the persisted lastPlay on NAND makes a long age
+// reachable across the agent restart a long standby often causes (#119 Klaus).
+const resumeMaxAge = 7 * 24 * time.Hour
+
 // maxRePushes is the hard cap on consecutive resume attempts for one stream.
 // After this many the stream is declared dead and left alone (no re-arm) until
 // the user plays something new. The exponential backoff (capped at 30s) spaces
@@ -356,6 +367,12 @@ func WithBoxHost(host string) Option {
 		s.boxHost = host
 		s.renderer = upnp.NewBoseRenderer(host)
 	}
+}
+
+// WithLastPlayPath wires the NAND path the last-played stream is persisted to,
+// so the power-on resume survives an agent restart over a long standby (#119).
+func WithLastPlayPath(path string) Option {
+	return func(s *Server) { s.lastPlayPath = path }
 }
 
 // WithBoxSnapshotPath wires the NAND path of the pre-takeover box snapshot
@@ -546,6 +563,7 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 	for _, o := range opts {
 		o(s)
 	}
+	s.loadLastPlay()
 	return s
 }
 
@@ -1444,6 +1462,64 @@ func (s *Server) setLastPlay(boxURL, title, art, mime string) {
 	s.lastPlayMu.Lock()
 	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now}
 	s.lastPlayMu.Unlock()
+	// Persist so the power-on resume survives an agent restart over a long
+	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.
+	s.persistLastPlay(boxURL, title, art, mime, now)
+}
+
+// persistedLastPlay is the on-NAND shape of the last-played stream (the resume
+// target). The runtime re-push counters are deliberately omitted: a reload is a
+// fresh start.
+type persistedLastPlay struct {
+	BoxURL string    `json:"boxURL"`
+	Title  string    `json:"title"`
+	Art    string    `json:"art"`
+	Mime   string    `json:"mime"`
+	TS     time.Time `json:"ts"`
+}
+
+// persistLastPlay writes the resume target to NAND atomically (temp + rename),
+// so a power loss mid-write cannot leave a torn file. Best-effort, no-op without
+// a configured path.
+func (s *Server) persistLastPlay(boxURL, title, art, mime string, ts time.Time) {
+	if s.lastPlayPath == "" {
+		return
+	}
+	b, err := json.Marshal(persistedLastPlay{BoxURL: boxURL, Title: title, Art: art, Mime: mime, TS: ts})
+	if err != nil {
+		return
+	}
+	tmp := s.lastPlayPath + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		s.logger.Debug("last-play persist failed", "err", err)
+		return
+	}
+	if err := os.Rename(tmp, s.lastPlayPath); err != nil {
+		s.logger.Debug("last-play rename failed", "err", err)
+		_ = os.Remove(tmp)
+	}
+}
+
+// loadLastPlay restores the persisted resume target at agent start, so a power
+// press after an overnight standby (which often restarts the agent) still brings
+// the last station back instead of leaving the box on its native "Preset not
+// assigned" (#119 Klaus). Best-effort; absent/corrupt is just no resume target.
+func (s *Server) loadLastPlay() {
+	if s.lastPlayPath == "" {
+		return
+	}
+	b, err := os.ReadFile(s.lastPlayPath)
+	if err != nil {
+		return
+	}
+	var p persistedLastPlay
+	if json.Unmarshal(b, &p) != nil || p.BoxURL == "" || p.TS.IsZero() {
+		return
+	}
+	s.lastPlayMu.Lock()
+	s.lastPlay = &lastPlayInfo{boxURL: p.BoxURL, title: p.Title, art: p.Art, mime: p.Mime, ts: p.TS}
+	s.lastPlayMu.Unlock()
+	s.logger.Info("last-play restored from NAND for power-on resume", "title", p.Title, "ageMin", int(time.Since(p.TS).Minutes()))
 }
 
 // NoteLastPlay records a stream the agent pushed to the box OUTSIDE the webui
@@ -1634,9 +1710,19 @@ func (s *Server) ResumeLastPlay() {
 	}
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay
-	if lp == nil || time.Since(lp.ts) >= 12*time.Hour {
+	// Split the two no-resume reasons so a diagnostic shows which one hit, and
+	// allow a much longer age than the old 12h: a power press after an overnight
+	// (or weekend) standby still expects the last station back, like Bose did
+	// (#119 Klaus). The persisted lastPlay (NAND) survives the agent restart that
+	// a long standby often triggers, so this age is what actually gates now.
+	if lp == nil {
 		s.lastPlayMu.Unlock()
-		s.logger.Info("wake resume: nothing recent to resume")
+		s.logger.Info("wake resume: no last station remembered (no resume target on NAND yet)")
+		return
+	}
+	if age := time.Since(lp.ts); age >= resumeMaxAge {
+		s.lastPlayMu.Unlock()
+		s.logger.Info("wake resume: last station too old to resume", "ageHours", int(age.Hours()), "maxHours", int(resumeMaxAge.Hours()))
 		return
 	}
 	lp.failed = false
