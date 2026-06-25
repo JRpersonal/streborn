@@ -200,11 +200,11 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 // surfaces the outcome. The ~10 MB transfer is gated on the box's reported
 // content hash so a steady state (sidecar already current) costs just one cheap
 // version GET and sends zero sidecar bytes.
-func (a *App) pushSidecarIfNeeded(host string, port int) error {
+func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err error) {
 	if !agentbin.GoLibrespotAvailable() {
 		// Dev build (empty stub): nothing real to deliver. Never write 0 bytes.
 		a.recordOTA(host, "sidecar: skipped, no embedded go-librespot in this build")
-		return nil
+		return false, nil
 	}
 	bin := agentbin.GoLibrespotBytes()
 	sum := sha256.Sum256(bin)
@@ -215,7 +215,7 @@ func (a *App) pushSidecarIfNeeded(host string, port int) error {
 	if ver, err := a.BoxAgentVersion(host, port); err == nil {
 		if ver["goLibrespot"] == "present" && ver["goLibrespotSha256"] == want {
 			a.recordOTA(host, "sidecar: box already has the current go-librespot, skipping ~10 MB push")
-			return nil
+			return false, nil
 		}
 	} else {
 		// Couldn't read the version: still try the push (a missing sidecar is the
@@ -227,7 +227,7 @@ func (a *App) pushSidecarIfNeeded(host string, port int) error {
 	if err := a.streamPostBinary(host, port, "/api/agent/sidecar", bin); err != nil {
 		a.recordOTA(host, "sidecar: push failed (agent OTA still proceeds): "+err.Error())
 		a.logger.Warn("sidecar push failed; agent OTA continues, Spotify may stay unavailable until next OTA", "host", host, "err", err)
-		return fmt.Errorf("sidecar upload failed: %w", err)
+		return false, fmt.Errorf("sidecar upload failed: %w", err)
 	}
 	// Verify the push actually landed. A pre-v0.8.22 agent has NO
 	// /api/agent/sidecar route, so its ServeMux falls through to the "/" index
@@ -240,16 +240,16 @@ func (a *App) pushSidecarIfNeeded(host string, port int) error {
 	if ver, err := a.BoxAgentVersion(host, port); err != nil {
 		a.recordOTA(host, "sidecar: delivered but could not verify (version read failed): "+err.Error())
 		a.logger.Warn("sidecar push: delivered but post-push version read failed", "host", host, "err", err)
-		return fmt.Errorf("sidecar verify failed: %w", err)
+		return false, fmt.Errorf("sidecar verify failed: %w", err)
 	} else if ver["goLibrespot"] != "present" || ver["goLibrespotSha256"] != want {
 		a.recordOTA(host, "sidecar: push did not land (agent has no sidecar endpoint yet); will retry after the box is on the new agent")
 		a.logger.Warn("sidecar push did not land; box still reports the engine missing/mismatched (old agent without the sidecar endpoint)",
 			"host", host, "goLibrespot", ver["goLibrespot"])
-		return fmt.Errorf("sidecar did not land: box reports goLibrespot=%q", ver["goLibrespot"])
+		return false, fmt.Errorf("sidecar did not land: box reports goLibrespot=%q", ver["goLibrespot"])
 	}
 	a.recordOTA(host, "sidecar: go-librespot delivered")
 	a.logger.Info("sidecar push: go-librespot delivered over OTA", "host", host, "bytes", len(bin))
-	return nil
+	return true, nil
 }
 
 // stageSidecarBeforeReboot delivers the Spotify sidecar to the box during an
@@ -276,7 +276,7 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 	if err != nil {
 		// Can't tell whether the agent is sidecar-capable; one best-effort
 		// attempt, then leave anything unresolved to the post-OTA re-delivery.
-		_ = a.pushSidecarIfNeeded(host, port)
+		_, _ = a.pushSidecarIfNeeded(host, port)
 		return
 	}
 	if _, capable := ver["goLibrespot"]; !capable {
@@ -284,7 +284,7 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 		return
 	}
 	for attempt := 1; attempt <= otaSidecarEnsureAttempts; attempt++ {
-		if err := a.pushSidecarIfNeeded(host, port); err == nil {
+		if _, err := a.pushSidecarIfNeeded(host, port); err == nil {
 			return
 		} else if attempt < otaSidecarEnsureAttempts {
 			a.logger.Info("stageSidecarBeforeReboot: pre-reboot sidecar push not landed yet, retrying",
@@ -304,25 +304,62 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 // agent with a synced Spotify login but no engine (Spotify then failed with the
 // "tap this speaker in Spotify once" hint). The desktop calls this right after
 // the post-OTA version poll confirms the box is on the new, sidecar-capable
-// agent: the push now lands, and the box's Spotify manager (which polls for a
-// late-delivered binary) starts go-librespot live, with no extra reboot.
-// Idempotent and cheap when the engine is already current (one version GET, zero
-// bytes). Bound for the frontend; safe to call on any box.
+// agent: the push now lands, and the box is then rebooted a SECOND time, as part
+// of the same OTA, to bring the engine up cleanly. The running agent does not
+// activate a freshly delivered or updated engine live (its Spotify manager binds
+// the binary at process start, so an already-running or never-started
+// go-librespot is not hot-swapped), which is why Pierre had to reboot the box by
+// hand after the update (#240, 2026-06-25). Rebooting from here removes that
+// manual step. Idempotent and cheap when the engine is already current (one
+// version GET, zero bytes, no reboot). Bound for the frontend; only called as
+// part of an update, so the extra reboot stays inside the OTA process.
 //
-// This is a SINGLE attempt by design: the desktop UI drives the retry loop so it
-// can show per-attempt progress and stop the instant the engine lands, instead
-// of blocking here with no visible feedback. A box that has just rebooted can
-// still refuse or DROP the push for a few seconds; returning the error lets the
-// caller retry quickly while keeping the user informed (#240).
+// It blocks until the box is back up with the engine present (bounded by
+// otaEngineRebootWait) so the caller reports success only once Spotify can
+// actually play; the UI shows the "finishing + restarting" step meanwhile. On a
+// transient drop right after a reboot it returns the error so the caller's retry
+// loop tries again while keeping the user informed.
 func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 	if !agentbin.GoLibrespotAvailable() {
 		return "no embedded engine in this build", nil
 	}
-	if err := a.pushSidecarIfNeeded(host, port); err != nil {
+	delivered, err := a.pushSidecarIfNeeded(host, port)
+	if err != nil {
 		return "", err
 	}
-	return "ok", nil
+	if !delivered {
+		// Engine already current: the running agent is supervising it, no reboot.
+		return "ok", nil
+	}
+	// Reboot the box once more, as part of this same OTA, so the fresh agent picks
+	// up the new engine at start instead of leaving the user to restart by hand.
+	// notePostOTA keeps discovery pinning the box across the restart.
+	a.recordOTA(host, "engine: delivered, rebooting box once more to activate it")
+	a.notePostOTA(host)
+	if rerr := a.RebootBox(host, port); rerr != nil {
+		// The engine is staged on disk and will come up on the next restart, so do
+		// not hard-fail; report it so the UI can fall back to a manual restart hint.
+		a.logger.Warn("ensure spotify engine: activation reboot could not be triggered; engine staged, needs a restart", "host", host, "err", rerr)
+		return "engine-staged-reboot-failed", nil
+	}
+	// Wait for the box to return with the engine present.
+	deadline := time.Now().Add(otaEngineRebootWait)
+	for time.Now().Before(deadline) {
+		time.Sleep(3 * time.Second)
+		if ver, e := a.BoxAgentVersion(host, port); e == nil && ver["goLibrespot"] == "present" {
+			a.recordOTA(host, "engine: present after the activation reboot")
+			return "ok", nil
+		}
+	}
+	// Did not confirm in time (slow reboot, or a changed IP after DHCP): the engine
+	// is delivered and will be live once the box finishes; let the caller poll on.
+	return "", fmt.Errorf("engine delivered and box rebooted, but it did not report the engine present within %s", otaEngineRebootWait)
 }
+
+// otaEngineRebootWait bounds how long EnsureSpotifyEngine waits for the box to
+// come back with the engine present after the activation reboot. Generous
+// because a BCO box reboot plus the agent coming up can take well over a minute.
+const otaEngineRebootWait = 3 * time.Minute
 
 // otaSidecarEnsureAttempts bounds the pre-reboot sidecar staging retry in
 // stageSidecarBeforeReboot. With otaSidecarEnsureBackoff the cumulative wait
