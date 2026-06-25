@@ -13,7 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // makeOggPage builds a minimal valid Ogg page (single segment, body < 255).
@@ -215,6 +217,206 @@ func TestCanRecall(t *testing.T) {
 	}
 	if !m2.CanRecall(ctx) {
 		t.Fatal("CanRecall should be true with a persisted credential even with no live session")
+	}
+}
+
+// recordedCall is one go-librespot API request the mock server saw.
+type recordedCall struct {
+	path string
+	body string
+}
+
+// mockLibrespot stands in for go-librespot's local HTTP API: it records every
+// POST and answers /status with a loaded track so waitContextLoaded returns
+// promptly. The returned cleanup closes the server.
+func mockLibrespot(t *testing.T) (m *Manager, calls *[]recordedCall, cleanup func()) {
+	t.Helper()
+	var mu sync.Mutex
+	var got []recordedCall
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			_, _ = w.Write([]byte(`{"username":"u","track":{"uri":"spotify:track:cur","name":"Cur"}}`))
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		got = append(got, recordedCall{path: r.URL.Path, body: string(b)})
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	mgr := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	mgr.apiAddr = strings.TrimPrefix(ts.URL, "http://")
+	return mgr, &got, ts.Close
+}
+
+func pathsOf(calls []recordedCall) []string {
+	out := make([]string, len(calls))
+	for i, c := range calls {
+		out[i] = c.path
+	}
+	return out
+}
+
+func bodyForPath(calls []recordedCall, path string) (string, bool) {
+	for _, c := range calls {
+		if c.path == path {
+			return c.body, true
+		}
+	}
+	return "", false
+}
+
+// TestPlayDefaultResumesWithoutShuffle is the core fix (Patrick + Jens,
+// 2026-06-25): a default (non-shuffle) recall must (1) set shuffle OFF so the
+// remote next/prev walk the playlist in order, (2) NOT skip to a random track,
+// and (3) resume on the last-played track of that context via skip_to_uri.
+func TestPlayDefaultResumesWithoutShuffle(t *testing.T) {
+	m, calls, cleanup := mockLibrespot(t)
+	defer cleanup()
+	const ctxURI = "spotify:playlist:abc"
+	m.resume.note(ctxURI, "spotify:track:resume-here")
+
+	if err := m.Play(context.Background(), ctxURI, PlayOptions{Shuffle: false}); err != nil {
+		t.Fatalf("Play: %v", err)
+	}
+
+	playBody, ok := bodyForPath(*calls, "/player/play")
+	if !ok {
+		t.Fatal("no /player/play call recorded")
+	}
+	if !strings.Contains(playBody, `"skip_to_uri":"spotify:track:resume-here"`) {
+		t.Errorf("default recall must resume via skip_to_uri, play body = %s", playBody)
+	}
+	shufBody, ok := bodyForPath(*calls, "/player/shuffle_context")
+	if !ok || !strings.Contains(shufBody, `"shuffle_context":false`) {
+		t.Errorf("default recall must set shuffle OFF, got %q ok=%v", shufBody, ok)
+	}
+	for _, p := range pathsOf(*calls) {
+		if p == "/player/next" {
+			t.Error("default recall must NOT skip to a random track (/player/next)")
+		}
+	}
+}
+
+// TestPlayShuffleStartsRandom verifies a shuffle preset still gets the random
+// start: shuffle ON + one /player/next, and it ignores any resume point.
+func TestPlayShuffleStartsRandom(t *testing.T) {
+	m, calls, cleanup := mockLibrespot(t)
+	defer cleanup()
+	const ctxURI = "spotify:playlist:abc"
+	m.resume.note(ctxURI, "spotify:track:ignored-when-shuffling")
+
+	if err := m.Play(context.Background(), ctxURI, PlayOptions{Shuffle: true}); err != nil {
+		t.Fatalf("Play: %v", err)
+	}
+
+	playBody, _ := bodyForPath(*calls, "/player/play")
+	if strings.Contains(playBody, "skip_to_uri") {
+		t.Errorf("shuffle recall must NOT resume a track, play body = %s", playBody)
+	}
+	shufBody, ok := bodyForPath(*calls, "/player/shuffle_context")
+	if !ok || !strings.Contains(shufBody, `"shuffle_context":true`) {
+		t.Errorf("shuffle recall must set shuffle ON, got %q ok=%v", shufBody, ok)
+	}
+	sawNext := false
+	for _, p := range pathsOf(*calls) {
+		if p == "/player/next" {
+			sawNext = true
+		}
+	}
+	if !sawNext {
+		t.Error("shuffle recall must skip once (/player/next) to land on a random track")
+	}
+}
+
+// TestNoteResumeContextTracking locks in the review fix (2026-06-25): Play must
+// point lastContext at the context it is loading (so noteResume never records a
+// track under a stale previous context), noteResume must suppress recording
+// while a recall is in flight, and record correctly once it settles.
+func TestNoteResumeContextTracking(t *testing.T) {
+	m, _, cleanup := mockLibrespot(t)
+	defer cleanup()
+	const ctxURI = "spotify:playlist:abc"
+
+	// Pre-set a different context as if a previous playlist had been playing.
+	m.mu.Lock()
+	m.lastContext = "spotify:playlist:OLD"
+	m.curTrackURI = "spotify:track:from-old-playlist"
+	m.mu.Unlock()
+
+	if err := m.Play(context.Background(), ctxURI, PlayOptions{Shuffle: false}); err != nil {
+		t.Fatalf("Play: %v", err)
+	}
+	// Play must retarget the resume context and drop the stale track.
+	m.mu.Lock()
+	gotCtx, gotTrack := m.lastContext, m.curTrackURI
+	m.mu.Unlock()
+	if gotCtx != ctxURI {
+		t.Errorf("Play must set lastContext to the loaded context, got %q", gotCtx)
+	}
+	if gotTrack != "" {
+		t.Errorf("Play must clear the stale curTrackURI, got %q", gotTrack)
+	}
+
+	// Still inside the recall window: noteResume must not record anything.
+	m.mu.Lock()
+	m.curTrackURI = "spotify:track:settling"
+	m.mu.Unlock()
+	m.noteResume()
+	if got := m.resume.trackFor(ctxURI); got != "" {
+		t.Errorf("noteResume must not record during a recall, got %q", got)
+	}
+
+	// Recall window over: the now-stable track records under the right context.
+	m.mu.Lock()
+	m.recallUntil = time.Time{}
+	m.curTrackURI = "spotify:track:playing-now"
+	m.mu.Unlock()
+	m.noteResume()
+	if got := m.resume.trackFor(ctxURI); got != "spotify:track:playing-now" {
+		t.Errorf("noteResume after the recall window = %q, want spotify:track:playing-now", got)
+	}
+}
+
+// TestResumeStore covers the per-context resume memory: it records the last
+// track per context, ignores non-spotify and unchanged values, evicts the
+// least-recently-used beyond the cap, and round-trips through NAND.
+func TestResumeStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sp-resume.json")
+	s := newResumeStore(path, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	s.note("spotify:playlist:a", "spotify:track:1")
+	if got := s.trackFor("spotify:playlist:a"); got != "spotify:track:1" {
+		t.Fatalf("trackFor = %q, want spotify:track:1", got)
+	}
+	// Non-spotify URIs are ignored.
+	s.note("http://x", "spotify:track:9")
+	s.note("spotify:playlist:b", "not-a-uri")
+	if s.trackFor("http://x") != "" || s.trackFor("spotify:playlist:b") != "" {
+		t.Error("resume store must ignore non-spotify context/track URIs")
+	}
+	// Update to a new track on the same context.
+	s.note("spotify:playlist:a", "spotify:track:2")
+	if got := s.trackFor("spotify:playlist:a"); got != "spotify:track:2" {
+		t.Fatalf("trackFor after update = %q, want spotify:track:2", got)
+	}
+
+	// Eviction: fill past the cap; the oldest, untouched context drops out.
+	s2 := newResumeStore(filepath.Join(t.TempDir(), "r.json"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	first := "spotify:playlist:keep0"
+	s2.note(first, "spotify:track:x")
+	for i := 0; i < resumeMaxContexts+5; i++ {
+		s2.note("spotify:playlist:c"+string(rune('a'+i%26))+string(rune('a'+i/26)), "spotify:track:y")
+	}
+	if s2.trackFor(first) != "" {
+		t.Error("oldest context should have been evicted past the cap")
+	}
+
+	// Persistence round-trips through NAND.
+	s.flush()
+	reloaded := newResumeStore(path, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if got := reloaded.trackFor("spotify:playlist:a"); got != "spotify:track:2" {
+		t.Fatalf("reloaded trackFor = %q, want spotify:track:2", got)
 	}
 }
 
