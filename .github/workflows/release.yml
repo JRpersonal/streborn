@@ -987,6 +987,57 @@ jobs:
             dist/STR-macOS-*.dmg
             dist/STR-Linux-x64-*.tar.gz
 
+      - name: VirusTotal gate (stop the release on heavy detection)
+        # Waits for the scans of the just-uploaded desktop apps to complete and
+        # stops the release if an artifact is flagged by too many engines. The
+        # apps are unsigned (code signing is post-1.0), so a handful of heuristic
+        # false-positives is normal and must NOT block a release; only a broad
+        # detection (>= 10 engines OR >= 15% of them calling it malicious) does.
+        # If VirusTotal does not finish in the time budget we proceed and warn,
+        # so a VT outage never holds a release hostage. Skipped without VT_API_KEY.
+        if: |
+          (startsWith(github.ref, 'refs/tags/') ||
+           (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')) &&
+          env.VT_API_KEY != ''
+        working-directory: dist
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+        run: |
+          set -u
+          THRESHOLD=10   # fail if at least this many engines call it malicious
+          RATIO_PCT=15   # ...or at least this percent of all engines do
+          DEADLINE=$(( $(date +%s) + 360 ))  # ~6 min for the scans to finish
+          fail=0
+          for f in "STR-Windows-${VERSION}.exe" "STR-macOS-${VERSION}.dmg" "STR-Linux-x64-${VERSION}.tar.gz"; do
+            sha=$(awk -v n="$f" '$2==n{print $1}' SHA256SUMS)
+            if [ -z "$sha" ]; then echo "::warning::no SHA256 for $f, not gating it"; continue; fi
+            mal=""; total=""
+            while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+              resp=$(curl -s -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$sha" || true)
+              if printf '%s' "$resp" | jq -e '.data.attributes.last_analysis_stats' >/dev/null 2>&1; then
+                mal=$(printf '%s' "$resp" | jq -r '.data.attributes.last_analysis_stats.malicious // 0')
+                total=$(printf '%s' "$resp" | jq -r '[.data.attributes.last_analysis_stats[]] | add')
+                break
+              fi
+              sleep 20
+            done
+            if [ -z "$mal" ]; then
+              echo "::warning::VirusTotal scan for $f did not finish in time; releasing without gating it"
+              continue
+            fi
+            pct=0; if [ "${total:-0}" -gt 0 ]; then pct=$(( mal * 100 / total )); fi
+            echo "$f: $mal/$total engines malicious (${pct}%)"
+            if [ "$mal" -ge "$THRESHOLD" ] || [ "$pct" -ge "$RATIO_PCT" ]; then
+              echo "::error::$f is flagged malicious by $mal of $total engines (${pct}%), above the gate"
+              fail=1
+            fi
+          done
+          if [ "$fail" = 1 ]; then
+            echo "::error::VirusTotal gate: a release artifact is flagged above the threshold. Release stopped, investigate the report before retrying."
+            exit 1
+          fi
+          echo "VirusTotal gate passed (unsigned-app heuristic false-positives are below the threshold)."
+
       - name: Generate release notes
         working-directory: dist
         env:
