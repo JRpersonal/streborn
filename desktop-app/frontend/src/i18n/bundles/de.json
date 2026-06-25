@@ -47,7 +47,7 @@
   "common.planned": "Geplant",
   "podcasts.title": "Podcasts auf deinem Lautsprecher",
   "podcasts.lead": "Wir planen Podcast-Unterstützung: Podcasts durchsuchen und über die Box streamen sowie einen Podcast auf eine Preset-Taste legen, sodass ein Druck die neueste Folge abspielt.",
-  "podcasts.sources": "Die Suche würde offene Podcast-Verzeichnisse (Podcast Index, fyyd) nutzen – genau wie die Radiosuche radio-browser.info verwendet, ohne Bose-Cloud.",
+  "podcasts.sources": "Die Suche wuerde offene Podcast-Verzeichnisse (Podcast Index, fyyd) nutzen, so wie die Radiosuche radio-browser.info nutzt, ohne Bose-Cloud.",
   "podcasts.ask": "Hier funktioniert noch nichts. Wir sammeln zuerst Feedback: welche Podcasts du möchtest, wie sich Presets verhalten sollen und welche Quellen dir wichtig sind.",
   "podcasts.feedbackBtn": "Feedback auf GitHub geben",
   "podcasts.feedbackHint": "Öffnet den Design- und Feedback-Thread im Browser.",

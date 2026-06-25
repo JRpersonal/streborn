@@ -47,7 +47,7 @@
   "common.planned": "Planned",
   "podcasts.title": "Podcasts on your speaker",
   "podcasts.lead": "We are planning podcast support: browse and stream podcasts on the box, and subscribe a podcast to a preset button so a press plays the latest episode.",
-  "podcasts.sources": "Discovery would use open podcast directories (Podcast Index, fyyd) the same way radio search uses radio-browser.info — no Bose cloud.",
+  "podcasts.sources": "Discovery would use open podcast directories (Podcast Index, fyyd) the same way radio search uses radio-browser.info, no Bose cloud.",
   "podcasts.ask": "Nothing here works yet. We are collecting feedback first: which podcasts you want, how presets should behave, and which sources matter to you.",
   "podcasts.feedbackBtn": "Share feedback on GitHub",
   "podcasts.feedbackHint": "Opens the design and feedback thread in your browser.",
