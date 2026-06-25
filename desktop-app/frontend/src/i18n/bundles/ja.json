@@ -110,7 +110,6 @@
   "spotify.bullet3": "安定後にSTRアプリで再ペアリングの手順を案内します。",
   "spotify.feedbackPrompt": "実験的機能です。Spotifyがすでに動作する、または失敗する場合は、チケットで詳細を共有してください。",
   "spotify.issueLink": "チケット #78 を開く",
-  "common.beta": "ベータ",
   "spotify.versionNote": "スピーカーに最新のSTRバージョンが必要です。",
   "spotify.updateLink": "スピーカー設定を開いて更新",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "{{count}} 個のボタンを読み取りましたが、Deezer のようなアカウント連携サービスを使うものはありません。ここに復元するものはありません。",
   "settingsView.restoreUnavailable": "{{services}} の {{slots}} を書き戻しましたが、スピーカーは {{unavailable}} を引き続き利用不可と報告しています。スピーカーを再起動してください。利用不可のままなら、そのサービスの保存済みログインはおそらく期限切れで、復元できません。",
   "settingsView.restoreExpired": "{{services}} 用にスピーカーへ保存されたログインは、Bose クラウドの終了とともに失効しました。STR はこれらのボタンを復元できず、変更せずに残しました。スピーカーは自動的にそれらを削除します。これらのサービスへの直接対応は今後の予定です。",
-  "update.uploadingPct": "アップロード中 {{pct}}%"
+  "update.uploadingPct": "アップロード中 {{pct}}%",
+  "common.copy": "コピー",
+  "common.copied": "コピーしました",
+  "settingsView.groupBasics": "基本",
+  "settingsView.groupSound": "サウンドと表示",
+  "settingsView.groupNetwork": "ネットワーク",
+  "settingsView.groupInfo": "状態と情報",
+  "settingsView.groupActions": "操作",
+  "settingsView.groupAdvanced": "詳細設定",
+  "settingsView.phoneHeading": "このスピーカーをスマホで操作",
+  "settingsView.phoneHelp": "カメラでスキャンし、「ホーム画面に追加」でワンタップのリモコンに。"
 }

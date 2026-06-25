@@ -182,6 +182,10 @@ export function Pause(arg1, arg2) {
   return window['go']['main']['App']['Pause'](arg1, arg2);
 }
 
+export function PhoneQR(arg1) {
+  return window['go']['main']['App']['PhoneQR'](arg1);
+}
+
 export function PlaySlot(arg1, arg2, arg3) {
   return window['go']['main']['App']['PlaySlot'](arg1, arg2, arg3);
 }

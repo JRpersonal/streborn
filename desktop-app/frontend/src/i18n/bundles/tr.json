@@ -1,5 +1,5 @@
 {
-  "common.beta": "Beta",
+  "common.beta": "BETA",
   "updateAll.button": "Tümünü güncelle ({{count}})",
   "updateAll.title": "Tüm hoparlörleri güncelle",
   "updateAll.summary": "{{total}} hoparlörden {{done}} tamam, {{deferred}} ertelendi, {{failed}} başarısız",
@@ -110,7 +110,6 @@
   "spotify.bullet3": "Bu kararlı hale geldiğinde STR uygulamasında yeniden bağlama talimatları.",
   "spotify.feedbackPrompt": "Deneysel. Spotify hoparlörünüzde zaten çalışıyor ya da çalışmıyorsa, ayrıntıları sorunda paylaşın.",
   "spotify.issueLink": "Sorun #78'i aç",
-  "common.beta": "BETA",
   "spotify.versionNote": "Hoparlörde en yeni STR sürümünü gerektirir.",
   "spotify.updateLink": "Güncellemek için hoparlör ayarlarını aç",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "{{count}} düğme okundu, ancak hiçbiri Deezer gibi hesaba bağlı bir hizmet kullanmıyor, bu yüzden burada geri yüklenecek bir şey yok.",
   "settingsView.restoreUnavailable": "{{services}} için {{slots}} geri yazıldı, ancak hoparlör {{unavailable}} ögesini hâlâ kullanılamıyor olarak bildiriyor. Hoparlörü yeniden başlat; kullanılamaz kalırsa, o hizmet için kayıtlı oturum açma bilgisi büyük olasılıkla süresi dolmuş ve geri getirilemez.",
   "settingsView.restoreExpired": "Hoparlörde kayıtlı {{services}} oturum açma bilgisi Bose bulutuyla birlikte sona erdi. STR bu düğmeleri geri getiremez ve değiştirmeden bıraktı; hoparlör bunları kendiliğinden kaldırır. Bu hizmetler için doğrudan destek yol haritasında.",
-  "update.uploadingPct": "Yükleniyor {{pct}}%"
+  "update.uploadingPct": "Yükleniyor {{pct}}%",
+  "common.copy": "Kopyala",
+  "common.copied": "Kopyalandı",
+  "settingsView.groupBasics": "Temel",
+  "settingsView.groupSound": "Ses ve ekran",
+  "settingsView.groupNetwork": "Ağ",
+  "settingsView.groupInfo": "Durum ve bilgi",
+  "settingsView.groupActions": "Eylemler",
+  "settingsView.groupAdvanced": "Gelişmiş",
+  "settingsView.phoneHeading": "Bu hoparlörü telefonunuzdan kontrol edin",
+  "settingsView.phoneHelp": "Kamerayla tarayın, ardından tek dokunuşla kumanda için Ana Ekrana Ekle secenegini kullanın."
 }

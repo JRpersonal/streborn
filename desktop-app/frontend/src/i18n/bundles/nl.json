@@ -1,5 +1,5 @@
 {
-  "common.beta": "Bèta",
+  "common.beta": "BÈTA",
   "updateAll.button": "Alles bijwerken ({{count}})",
   "updateAll.title": "Alle speakers bijwerken",
   "updateAll.summary": "{{done}} klaar, {{deferred}} uitgesteld, {{failed}} mislukt van {{total}}",
@@ -110,7 +110,6 @@
   "spotify.bullet3": "Herkoppel-instructies in de STR-app zodra dit stabiel is.",
   "spotify.feedbackPrompt": "Experimenteel. Als Spotify al werkt of faalt op je speaker, deel dan details in het issue.",
   "spotify.issueLink": "Issue #78 openen",
-  "common.beta": "BÈTA",
   "spotify.versionNote": "Vereist de nieuwste STR-versie op de speaker.",
   "spotify.updateLink": "Open speakerinstellingen om bij te werken",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "{{count}} knoppen gelezen, maar geen ervan gebruikt een accountgekoppelde dienst zoals Deezer, dus hier is niets te herstellen.",
   "settingsView.restoreUnavailable": "{{slots}} voor {{services}} teruggeschreven, maar de speaker meldt {{unavailable}} nog steeds als niet beschikbaar. Start de speaker opnieuw op; blijft het niet beschikbaar, dan is de opgeslagen login voor die dienst waarschijnlijk verlopen en niet terug te halen.",
   "settingsView.restoreExpired": "De op de speaker opgeslagen login voor {{services}} is samen met de Bose-cloud verlopen. STR kan deze knoppen niet terughalen en heeft ze ongewijzigd gelaten; de speaker verwijdert ze zelf. Directe ondersteuning voor deze diensten staat op de roadmap.",
-  "update.uploadingPct": "Uploaden {{pct}}%"
+  "update.uploadingPct": "Uploaden {{pct}}%",
+  "common.copy": "Kopiëren",
+  "common.copied": "Gekopieerd",
+  "settingsView.groupBasics": "Basis",
+  "settingsView.groupSound": "Geluid & weergave",
+  "settingsView.groupNetwork": "Netwerk",
+  "settingsView.groupInfo": "Status & info",
+  "settingsView.groupActions": "Acties",
+  "settingsView.groupAdvanced": "Geavanceerd",
+  "settingsView.phoneHeading": "Bedien deze speaker vanaf je telefoon",
+  "settingsView.phoneHelp": "Scan met je camera, gebruik daarna Toevoegen aan beginscherm voor een afstandsbediening met één tik."
 }

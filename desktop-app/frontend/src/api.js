@@ -20,6 +20,7 @@ export {
   QueueRepeat,
   GetQueue,
   VoteStation,
+  PhoneQR,
   RebootBox,
   SyncBoxPresets,
   BoxPresets,

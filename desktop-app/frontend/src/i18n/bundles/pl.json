@@ -1,5 +1,5 @@
 {
-  "common.beta": "Beta",
+  "common.beta": "BETA",
   "updateAll.button": "Zaktualizuj wszystkie ({{count}})",
   "updateAll.title": "Zaktualizuj wszystkie głośniki",
   "updateAll.summary": "{{done}} gotowe, {{deferred}} odłożone, {{failed}} nieudane z {{total}}",
@@ -110,7 +110,6 @@
   "spotify.bullet3": "Instrukcje ponownego połączenia w aplikacji STR, gdy to się ustabilizuje.",
   "spotify.feedbackPrompt": "Eksperymentalne. Jeśli Spotify już działa lub zawodzi na Twoim głośniku, podziel się szczegółami w zgłoszeniu.",
   "spotify.issueLink": "Otwórz zgłoszenie #78",
-  "common.beta": "BETA",
   "spotify.versionNote": "Wymaga najnowszej wersji STR na głośniku.",
   "spotify.updateLink": "Otwórz ustawienia głośnika, aby zaktualizować",
   "spotify.presetsTitle": "Save a playlist to a preset button",
@@ -1041,5 +1040,15 @@
   "settingsView.restoreNoneCloud": "Odczytano {{count}} przycisków, ale żaden nie korzysta z usługi powiązanej z kontem, takiej jak Deezer, więc nie ma tu czego przywracać.",
   "settingsView.restoreUnavailable": "Zapisano z powrotem {{slots}} dla {{services}}, ale głośnik nadal zgłasza {{unavailable}} jako niedostępne. Uruchom głośnik ponownie; jeśli pozostaje niedostępne, zapisane logowanie do tej usługi prawdopodobnie wygasło i nie da się go przywrócić.",
   "settingsView.restoreExpired": "Zapisane w głośniku logowanie do {{services}} wygasło wraz z chmurą Bose. STR nie może przywrócić tych przycisków i pozostawił je bez zmian; głośnik usuwa je samodzielnie. Bezpośrednia obsługa tych usług jest w planach.",
-  "update.uploadingPct": "Wysyłanie {{pct}}%"
+  "update.uploadingPct": "Wysyłanie {{pct}}%",
+  "common.copy": "Kopiuj",
+  "common.copied": "Skopiowano",
+  "settingsView.groupBasics": "Podstawowe",
+  "settingsView.groupSound": "Dźwięk i wyświetlacz",
+  "settingsView.groupNetwork": "Sieć",
+  "settingsView.groupInfo": "Status i informacje",
+  "settingsView.groupActions": "Akcje",
+  "settingsView.groupAdvanced": "Zaawansowane",
+  "settingsView.phoneHeading": "Steruj tym głośnikiem z telefonu",
+  "settingsView.phoneHelp": "Zeskanuj aparatem, a następnie użyj Dodaj do ekranu głównego, aby mieć pilota jednym dotknięciem."
 }
