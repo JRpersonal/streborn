@@ -163,6 +163,9 @@ function installMocks({ locale, view, demo }) {
     DiscoverBoxes: () => P([demo.box]),
     BoxSettings: () => P(demo.settings),
     BoxAgentVersion: () => P({ version: demo.appInfo.version, build: demo.appInfo.build }),
+    // Phone-control QR card: a real demo QR (encodes http://demobox.local:8888/)
+    // so the "Control this speaker on your phone" card renders in screenshots.
+    PhoneQR: () => P('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAADwAQMAAAAEm3vRAAAABlBMVEX///8AAABVwtN+AAABRklEQVR42uyXsbHDIBBEV0PgkBIoRaVJpakUSlBIwLB/7jCWma8ff3NmAw/ScwI6du8wNTX14XJUgRkPMgL1OY6Pk/xu+vYMcd0pz94C9uSxoegJyL4XMhnC+mlj4P5luLj8qN/bDK6FvDDL4q86HxA/refa960zjYebFvHUiHW/Dw1z2CUEOYeiq7gSS3ZdloyLtXwLJCR51JQ8YQD7iJXyMgFBce5C0ibWXkeORS6wYBb3foHHxfCM2Hh1PeXdcsfFehvFcNq+1YROGMCnWs+iGRk0VbqosYqT10JmbpYrK28BI9Q+td5Vyh87Rx4UN9VRkdz7Qh4XXzOwFqg24Pl3n2oPP/tzyZLXsXTt3LD4NSIn1M6O2RKu40Y4NkqqMH4Lloo+m+XSBK6FrFhWtILbiKzhL/uGu3Gm8fDU1NS/6ScAAP//khi29LPtOrwAAAAASUVORK5CYII='),
     GetPresets: () => P(demo.presets),
     Status: () => P(status),
     StreamBitrate: () => P(256),
@@ -240,10 +243,27 @@ async function drive(page, view) {
   } else if (view.startsWith('app-settings')) {
     await click('.tab-btn[data-view="settings"]');
     await page.waitForSelector('#view-settings:not(.hidden) .settings-section', { timeout: 9000 });
-    // settings1/2/3 are three scroll positions through the long settings form.
-    if (view === 'app-settings1') await scrollY(0);
-    else if (view === 'app-settings2') await scrollY(640);
-    else await scrollY(100000); // app-settings3: bottom (Status / Actions / Speaker info)
+    // The settings list is now folded into collapsible groups (Basics open,
+    // the rest collapsed), so the three shots show: 1) the tidy overview with
+    // the phone-control card, 2) a couple of groups expanded, 3) everything
+    // expanded scrolled to the advanced/actions tail.
+    await page.waitForSelector('#view-settings .settings-group', { timeout: 9000 });
+    if (view === 'app-settings1') {
+      await scrollY(0);
+    } else if (view === 'app-settings2') {
+      await page.evaluate(() => {
+        const g = document.querySelectorAll('#view-settings .settings-group');
+        [g[1], g[2]].forEach((d) => { if (d) d.open = true; }); // Sound & display + Network
+        if (g[1]) g[1].scrollIntoView({ block: 'start' });       // scroll the expanded groups into view
+      });
+      await page.waitForTimeout(250);
+    } else {
+      await page.evaluate(() => {
+        document.querySelectorAll('#view-settings .settings-group').forEach((d) => { d.open = true; });
+      });
+      await page.waitForTimeout(250);
+      await scrollY(100000);
+    }
   } else if (view === 'app-stick-step1') {
     await click('.tab-btn[data-view="setup"]');
     await page.waitForSelector('#view-setup:not(.hidden) #drivesList .drive-row', { timeout: 9000 });
