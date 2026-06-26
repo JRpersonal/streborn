@@ -2140,6 +2140,13 @@ func (s *Server) standbyStoppedRecently() bool {
 	return !s.lastStandbyStop.IsZero() && time.Since(s.lastStandbyStop) < standbyBounceWakeWindow
 }
 
+// RecentlyPoweredOff reports whether STR saw this box's UPnP source drop to
+// STANDBY within the bounce window. Exported for the agent's hardware-preset
+// recall verify (cmd/agent), which must abort its re-push retries when the user
+// powered the box off mid-recall instead of treating standby as "not playing yet"
+// and re-pushing the stream (#197).
+func (s *Server) RecentlyPoweredOff() bool { return s.standbyStoppedRecently() }
+
 // noteStandbyStop arms the power-off suppression seen on a UPNP->STANDBY drop: it
 // refreshes lastStandbyStop (the #197 standbyStoppedRecently window) and records a
 // user-stop, independent of whether the caller then clears the transport. This
