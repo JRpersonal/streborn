@@ -1738,6 +1738,24 @@ func (s *Server) ResumeLastPlay() {
 		// after, so settle then read the real state.
 		time.Sleep(2 * time.Second)
 
+		// scm power-off bounce guard (#197). Some ST20 (scm) firmware oscillates
+		// UPNP->STANDBY->UPNP on a power-off, and the STANDBY->UPNP restore arrives
+		// as the SAME DO_NOT_RESUME frame a genuine power-ON does, so this
+		// OnPowerWake can fire from a power-OFF. If HandleEnterStandby just cleared
+		// the transport for this box (a UPNP->STANDBY we saw moments ago), this
+		// "wake" is that bounce, not a user switching the box on: stand down and,
+		// crucially, leave the user-stop HandleEnterStandby set intact (do NOT fall
+		// through to the clear below) so neither this resume nor the parallel auto
+		// re-push pulls the box back up. Without this, a power-off taken while the
+		// stream was still buffering left the box briefly reporting BUFFERING/PLAY
+		// at this settle point, so the standby && !busy guard below missed and STR
+		// woke the box back on (deqw, ST20 #197: "turns back on and continues
+		// playing music").
+		if s.standbyStoppedRecently() {
+			s.logger.Info("wake resume: standby bounce detected (box just powered off STR's source), not resuming (#197)")
+			return
+		}
+
 		// Klaus guard: a box pulled out of standby by its stereo pair / zone emits
 		// the SAME DO_NOT_RESUME wake as a user power press, so the frame cannot
 		// tell them apart. But a STANDALONE box can only leave standby by a user
@@ -2090,6 +2108,25 @@ func (s *Server) userStoppedRecently() bool {
 	s.lastUserStopMu.Lock()
 	defer s.lastUserStopMu.Unlock()
 	return !s.lastUserStop.IsZero() && time.Since(s.lastUserStop) < userStopWindow
+}
+
+// standbyBounceWakeWindow is how long after HandleEnterStandby cleared the
+// transport (a power-off STR saw as UPNP->STANDBY) a following DO_NOT_RESUME
+// "wake" is treated as the scm power-off BOUNCE rather than a genuine power-on.
+// On the ST20 (scm) the STANDBY->UPNP restore arrives within ~200 ms of the
+// power-off and ResumeLastPlay then settles for 2 s before it decides, so the
+// window must comfortably exceed that settle. See standbyStoppedRecently.
+const standbyBounceWakeWindow = 6 * time.Second
+
+// standbyStoppedRecently reports whether HandleEnterStandby (the #197 standby
+// bounce mitigation) cleared the transport within standbyBounceWakeWindow, i.e.
+// STR saw this box's UPnP source drop to STANDBY moments ago. ResumeLastPlay uses
+// it to tell the scm power-off bounce (a DO_NOT_RESUME that follows a power-OFF)
+// from a genuine power-on.
+func (s *Server) standbyStoppedRecently() bool {
+	s.standbyStopMu.Lock()
+	defer s.standbyStopMu.Unlock()
+	return !s.lastStandbyStop.IsZero() && time.Since(s.lastStandbyStop) < standbyBounceWakeWindow
 }
 
 // standbyStopDebounce coalesces the rapid UPNP<->STANDBY oscillation a power-off
