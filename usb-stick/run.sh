@@ -366,7 +366,12 @@ initial_snapshot() {
 # writes beyond the setup.log lines, run once at boot.
 nand_inventory() {
     setup_log "=== nand inventory (/mnt/nv) ==="
-    setup_log "nand df: $(df /mnt/nv 2>/dev/null | awk 'NR==2{print "total="$2"KB used="$3"KB free="$4"KB ("$5")"}')"
+    # Wrap-safe parse: `df` wraps the long ubi1:persistent_volume device name onto
+    # its own line on these boxes, so an `NR==2` read lands on the wrapped name and
+    # logs blank total/used/free. tail -1 + $(NF-n) reads the data row regardless
+    # of wrapping (matches the cleanup_nand form), so NAND headroom is finally
+    # visible in the bundle on BCO/scm boxes too (#119 no-space visibility).
+    setup_log "nand df: $(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print "total="$(NF-4)"KB used="$(NF-3)"KB free="$(NF-2)"KB ("$(NF-1)")"}')"
     setup_log "mem: $(grep -E 'MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree' /proc/meminfo 2>/dev/null | awk '{printf "%s=%s ",$1,$2}')"
     # Top-level entries with size and mtime so a human can see at a
     # glance what is on the box and how old each piece is.
@@ -2805,7 +2810,7 @@ AGENT_UNSTABLE_MARK="$PERSIST/logs/agent-unstable.txt"
 agent_resource_line() {
     _mf=$(awk '/^MemAvailable/{print $2"kB"}' /proc/meminfo 2>/dev/null)
     [ -z "$_mf" ] && _mf=$(awk '/^MemFree/{print $2"kB(MemFree)"}' /proc/meminfo 2>/dev/null)
-    _nf=$(df /mnt/nv 2>/dev/null | awk 'NR==2{print $4"kB("$5")"}')
+    _nf=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)"kB("$(NF-1)")"}')
     echo "memAvail=${_mf:-?} nandFree=${_nf:-?}"
 }
 
