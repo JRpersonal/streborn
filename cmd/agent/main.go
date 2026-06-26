@@ -444,6 +444,9 @@ func run() error {
 		// (scm) firmware that bounces UPNP<->STANDBY does not turn itself back on
 		// (#197). Zone-guarded and debounced in the webui.
 		onEnterStandby: webuiSrv.HandleEnterStandby,
+		// Let the hardware-recall verify stand down when the user powered the box
+		// off mid-recall, so it does not re-push the stream into a power-off (#197).
+		recentlyPoweredOff: webuiSrv.RecentlyPoweredOff,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -919,6 +922,13 @@ type presetWsHandler struct {
 	// oscillates UPNP<->STANDBY does not switch the speaker back on (#197). Wired to
 	// webui.HandleEnterStandby, which is zone-guarded and debounced. nil-safe.
 	onEnterStandby func()
+	// recentlyPoweredOff reports whether STR saw this box drop UPNP->STANDBY within
+	// the bounce window. The hardware-preset recall verify (verifyPlayURL) checks it
+	// so it does NOT re-push the stream when the user powered the box off mid-recall
+	// (the box reads "not playing" because it is in standby), which on scm ST20
+	// firmware switched the speaker back on (#197). Wired to webui.RecentlyPoweredOff.
+	// nil-safe.
+	recentlyPoweredOff func() bool
 	// noteBoxPresets records the box's OWN preset list (gabbo presetsUpdated),
 	// including foreign sources like Deezer that STR did not set, into the webui
 	// so the app can show and preserve them (Option C). Wired to
@@ -1428,6 +1438,16 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
 		if boxIsPlaying(h.boxHost) {
 			return
 		}
+		// The user powered the box off during the recall: the box reads "not
+		// playing" only because it is in standby. Re-pushing here re-arms the
+		// transport the power-off cleared, which on scm ST20 firmware bounces the
+		// speaker back on (#197, the "start via preset then power off" trigger). A
+		// genuine deep-standby wake (#183) carries no recent power-off, so the
+		// legitimate retry still runs.
+		if h.recentlyPoweredOff != nil && h.recentlyPoweredOff() {
+			h.logger.Info("hardware recall: box powered off mid-recall, not re-pushing (#197)", "slot", slot)
+			return
+		}
 		h.logger.Warn("hardware recall not playing yet, retrying", "slot", slot, "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		_ = h.renderer.PlayURL(ctx, url, name, icon)
@@ -1449,6 +1469,12 @@ func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 		// re-attaches and restarts the track). boxPlayingSpotify keys off the
 		// now_playing location, so it is true only when Spotify really plays.
 		if h.spotify.Streaming() || boxPlayingSpotify(h.boxHost) {
+			return
+		}
+		// Stand down if the user powered the box off mid-recall, so the re-point
+		// below does not re-wake a box the user just switched off (#197).
+		if h.recentlyPoweredOff != nil && h.recentlyPoweredOff() {
+			h.logger.Info("spotify recall: box powered off mid-recall, not re-pointing (#197)", "slot", slot)
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
