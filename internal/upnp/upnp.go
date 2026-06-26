@@ -52,6 +52,16 @@ func (r *Renderer) SetURI(ctx context.Context, streamURL, metaTitle, iconURL str
 	return r.soapCall(ctx, "SetAVTransportURI", body)
 }
 
+// ClearURI removes any loaded stream by setting an empty AVTransport URI. A plain
+// Stop is not enough on scm ST20 firmware that oscillates UPNP<->STANDBY on a
+// power-off: the box re-selects STR's still-loaded URI the instant it leaves
+// STANDBY and switches itself back on (#197). Emptying the URI leaves the firmware
+// nothing to bounce back to.
+func (r *Renderer) ClearURI(ctx context.Context) error {
+	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><CurrentURI></CurrentURI><CurrentURIMetaData></CurrentURIMetaData></u:SetAVTransportURI></s:Body></s:Envelope>`
+	return r.soapCall(ctx, "SetAVTransportURI", body)
+}
+
 // Play starts playback.
 func (r *Renderer) Play(ctx context.Context) error {
 	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play></s:Body></s:Envelope>`

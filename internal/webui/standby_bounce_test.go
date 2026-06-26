@@ -48,23 +48,14 @@ func TestNoteStandbyStopArmsSuppression(t *testing.T) {
 		t.Fatal("nothing armed yet, want both false")
 	}
 
-	// First flip of a burst: arms both signals and reports burstStart.
-	if !s.noteStandbyStop() {
-		t.Fatal("first standby-stop is the start of a burst, want true")
-	}
+	// A power-off arms BOTH the standby-bounce window (ResumeLastPlay) and the
+	// user-stop (maybeRePush / RecoverAfterReconnect), regardless of the transport-
+	// clear path the caller takes afterward.
+	s.noteStandbyStop()
 	if !s.standbyStoppedRecently() {
 		t.Fatal("standby-bounce window not armed after noteStandbyStop")
 	}
 	if !s.userStoppedRecently() {
 		t.Fatal("user-stop not armed after noteStandbyStop (maybeRePush/RecoverAfterReconnect rely on it)")
-	}
-
-	// A second flip within standbyStopDebounce is the same burst (no second
-	// transport-clear) but still refreshes the suppression.
-	if s.noteStandbyStop() {
-		t.Fatal("second flip within the debounce is not a new burst, want false")
-	}
-	if !s.standbyStoppedRecently() {
-		t.Fatal("suppression must stay armed across a debounced second flip")
 	}
 }
