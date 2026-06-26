@@ -66,7 +66,7 @@ phase1_install() {
     # so a roomy box keeps its engine. Mirrors the agent's reclaimSpotifyEngine.
     if [ -s "$BIN" ]; then
         need_kb=$(( ( $(wc -c < "$BIN") + 2097152 ) / 1024 ))
-        free_kb=$(df -k /mnt/nv 2>/dev/null | awk 'NR==2{print $4}')
+        free_kb=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}')
         if [ "${free_kb:-0}" -lt "$need_kb" ]; then
             echo "NAND tight (${free_kb:-?}KB free < ${need_kb}KB): dropping regenerable go-librespot engine to make room"
             rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null

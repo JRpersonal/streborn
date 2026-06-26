@@ -2323,6 +2323,7 @@ async function doBoxUpdate(targetBox) {
       if (confirmedVer && confirmedVer.goLibrespot && confirmedVer.goLibrespot !== 'present') {
         const engDeadlineMs = Date.now() + 240_000;
         let engDone = false;
+        let engTooFull = false;
         let engAttempt = 0;
         const renderEng = () => {
           const remaining = formatRemaining(engDeadlineMs - Date.now());
@@ -2338,9 +2339,13 @@ async function doBoxUpdate(targetBox) {
               engDone = true;
               break;
             } catch (engErr) {
-              // Box still settling after the reboot, or it dropped the push.
-              // Keep the user informed and retry shortly; do not surface as a
-              // failed update.
+              const m = String((engErr && engErr.message) || engErr || '');
+              // Genuinely too full to hold the ~16 MB engine even after the agent
+              // fit (the engine was dropped to make room). Retrying cannot help —
+              // only freeing space can — so stop the 240 s loop now and report a
+              // clean partial: the agent update SUCCEEDED, Spotify just needs room
+              // (#119). Anything else is the box still settling: keep retrying.
+              if (/insufficient nand|no space|507/i.test(m)) { engTooFull = true; break; }
               try { console.warn(`post-update Spotify engine delivery attempt ${engAttempt} failed (will retry)`, engErr); } catch {}
             }
             await sleep(2_000);
@@ -2351,6 +2356,11 @@ async function doBoxUpdate(targetBox) {
         }
         if (engDone) {
           showToast(t('update.spotifyDoneToast'));
+        } else if (engTooFull) {
+          // Agent updated fine, but the box is out of room for the engine.
+          // Retrying is pointless until the user frees space, so say so plainly
+          // instead of the "will be delivered next time" copy.
+          showToast(t('update.spotifyTooFullToast'));
         } else {
           // Could not land within the window; the engine is still missing but the
           // agent update itself succeeded. Tell the user it will be retried next
