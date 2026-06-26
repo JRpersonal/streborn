@@ -327,12 +327,27 @@ export async function loadBoxSettings() {
   // down the remaining attempts, gives up after 10 and then shows a
   // clear instruction (power cycle after a failed OTA update).
   const friendly = friendlySettingsError(lastErr);
+  // While an OTA is in flight on THIS box, a failed fetch is the EXPECTED reboot
+  // (the box restarts once, or twice on a tight NAND while it activates the
+  // Spotify engine), NOT a dead agent. Never escalate to the "agent died, unplug
+  // the speaker" panel during an update: it told users to power-cycle a speaker
+  // that was only restarting mid-OTA (#197). Show a calm "updating, restarting"
+  // banner and keep polling until the box comes back.
+  const otaHere = state.otaInProgress && state.otaTargetHost === state.settingsBox.host;
   state.settingsReconnect = state.settingsReconnect || { attempts: 0, max: 10 };
   state.settingsReconnect.attempts++;
   const remaining = state.settingsReconnect.max - state.settingsReconnect.attempts;
 
-  if (remaining > 0) {
-    const bannerHtml = `
+  if (otaHere || remaining > 0) {
+    const bannerHtml = otaHere
+      ? `
+      <div class="reconnect-banner">
+        <div>
+          <b>${escapeHtml(t('update.inProgressTitle', { name: state.settingsBox.name || '' }))}</b>
+          <small>${escapeHtml(t('update.rebootNote'))}</small>
+        </div>
+      </div>`
+      : `
       <div class="reconnect-banner">
         <div>
           <b>${escapeHtml(t('settingsView.speakerUnreachable'))}</b>

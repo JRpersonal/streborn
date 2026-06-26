@@ -59,6 +59,19 @@ phase1_install() {
         [ "$d" = "$STICK" ] || rm -rf "$d" 2>/dev/null
     done
     rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null
+    # When the NAND is still too tight for the agent copy after the cheap reclaim,
+    # also drop the ~16 MB go-librespot engine: it is regenerable (re-seeded from
+    # the stick / re-delivered after boot), so freeing it lets the agent fit on a
+    # nearly-full ST30 instead of failing the install (#119). Gated on a df check
+    # so a roomy box keeps its engine. Mirrors the agent's reclaimSpotifyEngine.
+    if [ -s "$BIN" ]; then
+        need_kb=$(( ( $(wc -c < "$BIN") + 2097152 ) / 1024 ))
+        free_kb=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}')
+        if [ "${free_kb:-0}" -lt "$need_kb" ]; then
+            echo "NAND tight (${free_kb:-?}KB free < ${need_kb}KB): dropping regenerable go-librespot engine to make room"
+            rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null
+        fi
+    fi
     echo "Copying $RC_SRC to $RC_DST"
     cp "$RC_SRC" "$RC_DST" || { echo "ERROR while copying" >&2; exit 1; }
     chmod +x "$RC_DST"
