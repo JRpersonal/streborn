@@ -86,6 +86,12 @@ pkill -KILL streborn-armv7l 2>/dev/null
 # Remove the STR install + the NAND override entry point.
 if [ -d /mnt/nv/streborn ]; then rm -rf /mnt/nv/streborn && REMOVED="$REMOVED /mnt/nv/streborn"; fi
 if [ -f /mnt/nv/rc.local ]; then rm -f /mnt/nv/rc.local && REMOVED="$REMOVED /mnt/nv/rc.local"; fi
+# STR/go-librespot traces that live OUTSIDE /mnt/nv/streborn, so the rm -rf above
+# leaves them behind: go-librespot's Spotify oauth dump (can be multi-MB) and a
+# stranded SSH-repair install-staging dir. Uninstall is "back to stock", so drop
+# every trace, not just the install dir.
+if [ -f /mnt/nv/sp-oauth.out ]; then rm -f /mnt/nv/sp-oauth.out && REMOVED="$REMOVED /mnt/nv/sp-oauth.out"; fi
+if [ -d /mnt/nv/streborn-install ]; then rm -rf /mnt/nv/streborn-install && REMOVED="$REMOVED /mnt/nv/streborn-install"; fi
 # Reset Bose-side state to factory OOB.
 for f in NetworkProfiles.xml AirPlay2_Home.xml AirplayConfiguration.xml SPOTIFY.SpotifyConnectUserName.xml SPOTIFY.SpotifyAlexaUserName.xml SystemConfigurationDB.xml; do
   if [ -f "$PERSIST/$f" ]; then rm -f "$PERSIST/$f" && REMOVED="$REMOVED $PERSIST/$f"; fi
