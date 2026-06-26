@@ -1517,6 +1517,10 @@ select option { background-color: #1a1a1a; color: #eee; }
 .update-banner b { color: var(--brand-text); }
 .update-banner small { color: var(--brand-text-mid); margin-left: 6px; }
 .update-banner .btn { flex-shrink: 0; }
+/* The text column must take the row's free width and wrap normally. As a bare
+   flex item it defaulted to min-content and collapsed to a ~50px column (one word
+   per line) while the update/Spotify-finishing status sat beside it (#197). */
+.update-msg { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 /* Pinned to the very top window edge: full width, flush, no rounding.
    Lives at body level (index.html), above the centered #app column, so
    it spans the whole window regardless of the 720px content width. */
