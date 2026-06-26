@@ -339,9 +339,15 @@ level.
 
 ## Communicating with users
 
-- Issues and PRs are in English. If a user opens a non-English
-  issue, respond in their language and add an English summary so
-  other maintainers can follow.
+- **Every issue/PR/discussion reply must be fully followable in
+  English AND also serve the original reporter in their own
+  language.** When a user writes in another language, structure the
+  reply as three parts: (1) an English translation of their message
+  (e.g. a short "User reports: ..." line), (2) your answer in English,
+  and (3) the same answer in the user's language. English is always
+  present so every reader can follow the thread; the native-language
+  copy is added so the reporter is served directly. When the user
+  already wrote in English, a plain English reply is enough.
 - Questions that are not bug reports belong in GitHub Discussions,
   not Issues.
 - The maintainer's contact email is the one on file at GitHub for
