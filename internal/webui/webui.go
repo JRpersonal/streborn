@@ -2870,11 +2870,19 @@ func writeBinaryAtomic(dst string, body []byte) error {
 	reclaimNAND()
 	// Pre-flight space gate: re-check AFTER reclaim and refuse up front, rather
 	// than buffering the whole binary onto a full disk and ENOSPC'ing at the end.
-	// The error carries the NAND inventory so the app can show what is eating the
-	// space and what to free.
 	need := int64(len(body))
-	if _, avail, ok := diskFree(dir); ok && avail < need+nandWriteMargin {
-		return fmt.Errorf("%w: need %dKB, have %dKB free [NAND %s]", errInsufficientNAND, need/1024, avail/1024, nandReportLine())
+	if !nandHasRoom(dir, need) {
+		// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
+		// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
+		// cheap reclaim above never touches it. Drop it so the agent .new fits
+		// rather than failing the whole update (#119); the desktop app re-delivers
+		// it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot !=
+		// "present"). Only runs when still tight, so a roomy box keeps its engine.
+		reclaimSpotifyEngine()
+		if !nandHasRoom(dir, need) {
+			_, avail, _ := diskFree(dir)
+			return fmt.Errorf("%w: need %dKB, have %dKB free [NAND %s]", errInsufficientNAND, need/1024, avail/1024, nandReportLine())
+		}
 	}
 	if err := os.WriteFile(tmp, body, 0o755); err != nil {
 		_ = os.Remove(tmp) // leave no partial behind for the next attempt
@@ -3076,6 +3084,28 @@ func reclaimNAND() {
 			}
 		}
 	}
+}
+
+// reclaimSpotifyEngine removes the go-librespot Spotify sidecar binary (and its
+// sha marker) to free the single biggest regenerable block on a tight NAND. The
+// running agent does not need it to apply an update, and the desktop app
+// re-delivers it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot
+// != "present"), so dropping it is always recoverable. Called only by the
+// space-pressed OTA write, never on a roomy box (#119).
+func reclaimSpotifyEngine() {
+	_ = os.Remove(goLibrespotBinPath)
+	_ = os.Remove(goLibrespotBinPath + ".sha256")
+}
+
+// nandHasRoom reports whether the filesystem backing dir can hold a need-byte
+// file plus the atomic-write margin. Returns true when df is unavailable, so an
+// unknown free figure never blocks a write (matching the original gate).
+func nandHasRoom(dir string, need int64) bool {
+	_, avail, ok := diskFree(dir)
+	if !ok {
+		return true
+	}
+	return avail >= need+nandWriteMargin
 }
 
 // handleAgentSidecar receives the go-librespot Spotify sidecar binary and

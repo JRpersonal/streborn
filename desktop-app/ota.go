@@ -773,9 +773,17 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// junk the agent's reclaimNAND clears, then write the fresh temp. Mirrors
 	// reclaimNAND + run.sh cleanup_nand; the agent runs from streborn/bin so the
 	// staging dir is always safe to drop. Best-effort, folded into the one session.
-	uploadCmd := "rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; " +
-		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; " +
-		"mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new"
+	// When the NAND is still too tight for the agent .new after the cheap reclaim,
+	// drop the ~16 MB go-librespot engine too (regenerable: the post-OTA
+	// EnsureSpotifyEngine re-delivers it). Gated on a df check so a roomy box keeps
+	// its engine and does not re-fetch it every SSH update (#119). Mirrors the
+	// on-box reclaimSpotifyEngine second tier.
+	needKB := (int64(len(bin)) + 2*1024*1024) / 1024
+	uploadCmd := fmt.Sprintf("rm -rf /mnt/nv/streborn-install /mnt/nv/streborn/streborn-install 2>/dev/null; "+
+		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; "+
+		"free=$(df -k /mnt/nv 2>/dev/null | awk 'NR==2{print $4}'); "+
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; fi; "+
+		"mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new", needKB)
 	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
 		return fmt.Errorf("ssh upload (%d bytes) failed: %v (%s)", len(bin), err, strings.TrimSpace(out))
 	}
