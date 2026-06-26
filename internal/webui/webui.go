@@ -1843,6 +1843,12 @@ func (s *Server) RecoverAfterReconnect() {
 	if s.userStoppedRecently() {
 		return
 	}
+	// A gabbo reconnect can land mid power-off bounce (a flapping scm box keeps
+	// reconnecting). If STR saw this box drop UPNP->STANDBY moments ago, stand down
+	// so the reconnect recovery does not re-push a URI the firmware bounces on (#197).
+	if s.standbyStoppedRecently() {
+		return
+	}
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay
 	if lp == nil || time.Since(lp.ts) >= 12*time.Hour {
@@ -2118,15 +2124,31 @@ func (s *Server) userStoppedRecently() bool {
 // window must comfortably exceed that settle. See standbyStoppedRecently.
 const standbyBounceWakeWindow = 6 * time.Second
 
-// standbyStoppedRecently reports whether HandleEnterStandby (the #197 standby
-// bounce mitigation) cleared the transport within standbyBounceWakeWindow, i.e.
-// STR saw this box's UPnP source drop to STANDBY moments ago. ResumeLastPlay uses
-// it to tell the scm power-off bounce (a DO_NOT_RESUME that follows a power-OFF)
-// from a genuine power-on.
+// standbyStoppedRecently reports whether STR saw this box's UPnP source drop to
+// STANDBY (a power-off) within standbyBounceWakeWindow. ResumeLastPlay, maybeRePush
+// and RecoverAfterReconnect use it to stand down on the scm power-off bounce (a
+// DO_NOT_RESUME / reconnect / stream-drop that follows a power-OFF) instead of
+// re-waking a box the user just switched off.
 func (s *Server) standbyStoppedRecently() bool {
 	s.standbyStopMu.Lock()
 	defer s.standbyStopMu.Unlock()
 	return !s.lastStandbyStop.IsZero() && time.Since(s.lastStandbyStop) < standbyBounceWakeWindow
+}
+
+// noteStandbyStop arms the power-off suppression seen on a UPNP->STANDBY drop: it
+// refreshes lastStandbyStop (the #197 standbyStoppedRecently window) and records a
+// user-stop, independent of whether the caller then clears the transport. This
+// decoupling is deliberate: the zone / debounce / disabled guards in
+// HandleEnterStandby govern only the transport-clear, but the suppression must
+// stay armed for all three wake paths regardless. Returns whether this is the
+// first flip of a debounce burst, so the caller can coalesce the transport-clear.
+func (s *Server) noteStandbyStop() (burstStart bool) {
+	s.standbyStopMu.Lock()
+	burstStart = s.lastStandbyStop.IsZero() || time.Since(s.lastStandbyStop) >= standbyStopDebounce
+	s.lastStandbyStop = time.Now()
+	s.standbyStopMu.Unlock()
+	s.NoteUserStop()
+	return burstStart
 }
 
 // standbyStopDebounce coalesces the rapid UPNP<->STANDBY oscillation a power-off
@@ -2156,20 +2178,26 @@ func (s *Server) HandleEnterStandby() {
 	if !standbyBounceFixEnabled() || s.renderer == nil {
 		return
 	}
-	if s.boxInZone() {
-		return // a zone slave/master mirror re-selects UPNP on purpose; leave it
-	}
-	s.standbyStopMu.Lock()
-	if !s.lastStandbyStop.IsZero() && time.Since(s.lastStandbyStop) < standbyStopDebounce {
-		s.standbyStopMu.Unlock()
-		return
-	}
-	s.lastStandbyStop = time.Now()
-	s.standbyStopMu.Unlock()
 
-	// A power-off is a deliberate stop: hold the auto-re-push and drop any queue
-	// so neither fights the standby, then clear the transport.
-	s.NoteUserStop()
+	// Arm the suppression signal on EVERY observed power-off, BEFORE the zone and
+	// debounce guards that only govern the transport-clear. The stamp (read by
+	// ResumeLastPlay's standbyStoppedRecently #197 guard) and the user-stop (read
+	// by maybeRePush / RecoverAfterReconnect) must stay armed even when we go on to
+	// skip the clear: a zoned box, or a debounced second flip of the same burst,
+	// would otherwise leave all three wake paths un-suppressed and free to re-wake
+	// a box the user just powered off. Refresh on every flip so a rapid second
+	// press keeps the window alive (the reporter's "needs multiple presses").
+	burstStart := s.noteStandbyStop()
+
+	if s.boxInZone() {
+		return // a zone slave/master mirror re-selects UPNP on purpose; leave its transport
+	}
+	if !burstStart {
+		return // coalesce the clear burst; the suppression above is already refreshed
+	}
+
+	// A power-off is a deliberate stop: drop any queue so it does not fight the
+	// standby, then clear the transport so the firmware has nothing to bounce to.
 	s.stopQueue()
 	s.logger.Info("standby bounce: box powered off STR's UPnP source, clearing transport so it stays off (#197)")
 	ctx, cancel := context.WithTimeout(s.queueCtx(), 5*time.Second)
@@ -2247,6 +2275,13 @@ func (s *Server) maybeRePush() {
 	// over gabbo) must hold. Genuine box-side drops carry no such stop and resume.
 	if s.userStoppedRecently() {
 		s.logger.Info("re-push: user stopped deliberately, not resuming")
+		return
+	}
+	// A power-off STR saw as UPNP->STANDBY (HandleEnterStandby) must also hold the
+	// re-push: on the scm bounce the box is flipping STANDBY<->UPNP and a re-push
+	// here would hand the firmware a fresh URI to switch back on with (#197).
+	if s.standbyStoppedRecently() {
+		s.logger.Info("re-push: box just powered off (standby bounce), not resuming (#197)")
 		return
 	}
 	standby, busy := s.boxPlayState()

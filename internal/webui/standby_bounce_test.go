@@ -36,3 +36,35 @@ func TestStandbyStoppedRecently(t *testing.T) {
 		t.Fatal("standby-stop older than the bounce window, want false")
 	}
 }
+
+// TestNoteStandbyStopArmsSuppression covers the decoupling: noteStandbyStop must
+// arm BOTH the standby-bounce window and the user-stop on every UPNP->STANDBY,
+// independent of the transport-clear, so a zoned/debounced power-off still
+// suppresses all three wake paths. It also debounces the burst.
+func TestNoteStandbyStopArmsSuppression(t *testing.T) {
+	s := &Server{}
+
+	if s.standbyStoppedRecently() || s.userStoppedRecently() {
+		t.Fatal("nothing armed yet, want both false")
+	}
+
+	// First flip of a burst: arms both signals and reports burstStart.
+	if !s.noteStandbyStop() {
+		t.Fatal("first standby-stop is the start of a burst, want true")
+	}
+	if !s.standbyStoppedRecently() {
+		t.Fatal("standby-bounce window not armed after noteStandbyStop")
+	}
+	if !s.userStoppedRecently() {
+		t.Fatal("user-stop not armed after noteStandbyStop (maybeRePush/RecoverAfterReconnect rely on it)")
+	}
+
+	// A second flip within standbyStopDebounce is the same burst (no second
+	// transport-clear) but still refreshes the suppression.
+	if s.noteStandbyStop() {
+		t.Fatal("second flip within the debounce is not a new burst, want false")
+	}
+	if !s.standbyStoppedRecently() {
+		t.Fatal("suppression must stay armed across a debounced second flip")
+	}
+}
