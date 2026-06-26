@@ -386,6 +386,8 @@ func run() error {
 		webui.WithSpotifyImportCred(spotifyMgr.ImportCredential),
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
+		// Activate a freshly delivered engine live (no second OTA reboot, #119).
+		webui.WithSpotifyEngineRestart(spotifyMgr.RestartEngine),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))

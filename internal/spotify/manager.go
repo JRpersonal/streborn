@@ -394,6 +394,25 @@ func (m *Manager) waitForBinary(ctx context.Context) bool {
 	}
 }
 
+// RestartEngine relaunches the supervised go-librespot so a freshly delivered
+// engine binary (POST /api/agent/sidecar) takes effect WITHOUT a box reboot.
+// go-librespot binds its binary at process start, so a running engine otherwise
+// keeps the OLD binary until the box restarts — and that extra OTA reboot is what
+// dropped some boxes off Wi-Fi (#119). Cancelling the per-process context makes
+// the supervise loop re-exec m.binPath (the new binary) on its next iteration.
+// When the engine was not running yet (binary just appeared on an OTA-only box),
+// runCancel is nil and waitForBinary starts it on its own, so this safely no-ops.
+func (m *Manager) RestartEngine() {
+	m.mu.Lock()
+	restart := m.runCancel
+	m.mu.Unlock()
+	if restart == nil {
+		return // not running yet; the supervise loop's waitForBinary will start it
+	}
+	m.logger.Info("spotify: restarting go-librespot to activate a freshly delivered engine binary")
+	restart()
+}
+
 // refreshVolumeConfigOnce rewrites config.yml with the box's real name and
 // volume once the box REST API first answers, then restarts go-librespot a
 // single time. config.yml is first written at agent start, usually before the

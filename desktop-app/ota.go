@@ -324,21 +324,14 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 // agent with a synced Spotify login but no engine (Spotify then failed with the
 // "tap this speaker in Spotify once" hint). The desktop calls this right after
 // the post-OTA version poll confirms the box is on the new, sidecar-capable
-// agent: the push now lands, and the box is then rebooted a SECOND time, as part
-// of the same OTA, to bring the engine up cleanly. The running agent does not
-// activate a freshly delivered or updated engine live (its Spotify manager binds
-// the binary at process start, so an already-running or never-started
-// go-librespot is not hot-swapped), which is why Pierre had to reboot the box by
-// hand after the update (#240, 2026-06-25). Rebooting from here removes that
-// manual step. Idempotent and cheap when the engine is already current (one
-// version GET, zero bytes, no reboot). Bound for the frontend; only called as
-// part of an update, so the extra reboot stays inside the OTA process.
-//
-// It blocks until the box is back up with the engine present (bounded by
-// otaEngineRebootWait) so the caller reports success only once Spotify can
-// actually play; the UI shows the "finishing + restarting" step meanwhile. On a
-// transient drop right after a reboot it returns the error so the caller's retry
-// loop tries again while keeping the user informed.
+// agent: the push now lands, and the agent activates the engine in place. The
+// running agent restarts go-librespot the moment it receives the binary
+// (handleAgentSidecar -> Manager.RestartEngine), so a freshly delivered or
+// updated engine goes live WITHOUT a box reboot. This both fixes the #240 case
+// where Pierre had to restart by hand AND removes the second OTA reboot that
+// dropped some boxes off Wi-Fi (#119). Idempotent and cheap when the engine is
+// already current (one version GET, zero bytes). Bound for the frontend; only
+// called as part of an update.
 func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 	if !agentbin.GoLibrespotAvailable() {
 		return "no embedded engine in this build", nil
@@ -351,35 +344,16 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 		// Engine already current: the running agent is supervising it, no reboot.
 		return "ok", nil
 	}
-	// Reboot the box once more, as part of this same OTA, so the fresh agent picks
-	// up the new engine at start instead of leaving the user to restart by hand.
-	// notePostOTA keeps discovery pinning the box across the restart.
-	a.recordOTA(host, "engine: delivered, rebooting box once more to activate it")
-	a.notePostOTA(host)
-	if rerr := a.RebootBox(host, port); rerr != nil {
-		// The engine is staged on disk and will come up on the next restart, so do
-		// not hard-fail; report it so the UI can fall back to a manual restart hint.
-		a.logger.Warn("ensure spotify engine: activation reboot could not be triggered; engine staged, needs a restart", "host", host, "err", rerr)
-		return "engine-staged-reboot-failed", nil
-	}
-	// Wait for the box to return with the engine present.
-	deadline := time.Now().Add(otaEngineRebootWait)
-	for time.Now().Before(deadline) {
-		time.Sleep(3 * time.Second)
-		if ver, e := a.BoxAgentVersion(host, port); e == nil && ver["goLibrespot"] == "present" {
-			a.recordOTA(host, "engine: present after the activation reboot")
-			return "ok", nil
-		}
-	}
-	// Did not confirm in time (slow reboot, or a changed IP after DHCP): the engine
-	// is delivered and will be live once the box finishes; let the caller poll on.
-	return "", fmt.Errorf("engine delivered and box rebooted, but it did not report the engine present within %s", otaEngineRebootWait)
+	// No second reboot. The agent restarts go-librespot in place the moment it
+	// receives the engine (handleAgentSidecar -> Manager.RestartEngine), and on a
+	// box where the engine had been dropped to make room the manager's
+	// waitForBinary starts it within a few seconds — either way the new engine goes
+	// live without restarting the box. That extra activation reboot was what
+	// dropped some boxes off Wi-Fi during an OTA (#119), and the binary is already
+	// verified present by pushSidecarIfNeeded, so there is nothing left to wait for.
+	a.recordOTA(host, "engine: delivered and activated in place by the agent (no reboot needed)")
+	return "ok", nil
 }
-
-// otaEngineRebootWait bounds how long EnsureSpotifyEngine waits for the box to
-// come back with the engine present after the activation reboot. Generous
-// because a BCO box reboot plus the agent coming up can take well over a minute.
-const otaEngineRebootWait = 3 * time.Minute
 
 // otaSidecarEnsureAttempts bounds the pre-reboot sidecar staging retry in
 // stageSidecarBeforeReboot. With otaSidecarEnsureBackoff the cumulative wait

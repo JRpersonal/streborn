@@ -170,6 +170,27 @@ func TestLoggedIn(t *testing.T) {
 // credential is persisted even if the session is momentarily down (ensureSession
 // restarts go-librespot and re-auths from it). It is refused only when BOTH are
 // false, which is the genuine "tap this speaker in Spotify once" case.
+func TestRestartEngine(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	m := New("", t.TempDir(), "", nil, logger)
+
+	// No engine running (runCancel nil): a delivered binary is picked up by the
+	// supervise loop's waitForBinary, so RestartEngine must be a safe no-op and
+	// never panic.
+	m.RestartEngine()
+
+	// Engine running: RestartEngine cancels the current process so the loop
+	// re-execs the new binary. Stub runCancel and assert it fires.
+	fired := false
+	m.mu.Lock()
+	m.runCancel = func() { fired = true }
+	m.mu.Unlock()
+	m.RestartEngine()
+	if !fired {
+		t.Fatal("RestartEngine should invoke runCancel when an engine is running")
+	}
+}
+
 func TestCanRecall(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

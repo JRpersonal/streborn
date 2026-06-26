@@ -131,6 +131,10 @@ type Server struct {
 	// (ready, measured bitrate, device name) the UI reads to show the real
 	// stream bitrate on a Spotify preset tile. nil when not configured.
 	spotifyInfo http.HandlerFunc
+	// spotifyEngineRestart relaunches the supervised go-librespot so a freshly
+	// delivered engine binary (handleAgentSidecar) goes live without a box reboot
+	// (#119). Wired to spotify.Manager.RestartEngine; nil-safe.
+	spotifyEngineRestart func()
 	// wifiSignalFn returns the latest Wi-Fi signal class observed on the
 	// gabbo WebSocket (set from cmd/agent's boxws client). Used to fill
 	// the signal for BCO boxes, whose /networkInfo reports none.
@@ -457,6 +461,12 @@ func WithSpotifyStream(h http.HandlerFunc) Option {
 // (ready, measured bitrate, device name) at /spotify/info.
 func WithSpotifyInfo(h http.HandlerFunc) Option {
 	return func(s *Server) { s.spotifyInfo = h }
+}
+
+// WithSpotifyEngineRestart registers the callback that relaunches go-librespot so
+// a freshly delivered engine binary goes live without a box reboot (#119).
+func WithSpotifyEngineRestart(f func()) Option {
+	return func(s *Server) { s.spotifyEngineRestart = f }
 }
 
 // PeerLink is one other STR speaker on the LAN, as shown in the on-box page's
@@ -3109,15 +3119,17 @@ func nandHasRoom(dir string, need int64) bool {
 }
 
 // handleAgentSidecar receives the go-librespot Spotify sidecar binary and
-// writes it atomically to /mnt/nv/streborn/bin/go-librespot. Unlike
-// handleAgentUpdate it does NOT reboot or restart anything: the desktop app
-// pushes the sidecar right BEFORE the agent OTA, and the agent OTA's own reboot
-// is what brings up the fresh agent whose Spotify manager then finds and
-// supervises the now-present binary (the manager checks for it once at start,
-// so the running agent does not pick it up live). This closes the gap where the
-// sidecar shipped only via the stick->NAND boot sync, leaving an OTA-only box
-// (e.g. a SoundTouch 30 whose USB stick never copied it) silently unable to
-// play Spotify despite a synced login (#45/#105).
+// writes it atomically to /mnt/nv/streborn/bin/go-librespot, then restarts the
+// running engine in place so the new binary goes live WITHOUT a box reboot
+// (#119). go-librespot binds its binary at process start, so historically the
+// desktop app rebooted the box "to activate" a freshly delivered engine — and
+// that extra OTA reboot is what dropped some boxes off Wi-Fi. The manager's
+// RestartEngine relaunches the supervised process (or no-ops and lets
+// waitForBinary start it, on an OTA-only box that had no engine yet), so the
+// box does not need to reboot a second time just for Spotify. Still closes the
+// original gap where the sidecar shipped only via the stick->NAND boot sync,
+// leaving an OTA-only box (e.g. a SoundTouch 30 whose USB stick never copied it)
+// unable to play Spotify despite a synced login (#45/#105).
 func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 	body, ok := readUploadedELF(w, r)
 	if !ok {
@@ -3135,6 +3147,11 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("go-librespot sidecar: hash marker write failed (non-fatal)", "err", err)
 	}
 	s.logger.Info("go-librespot sidecar written via OTA", "size", len(body))
+	// Activate it live: relaunch the supervised engine so the box does not need a
+	// second reboot just to pick up the new binary (#119).
+	if s.spotifyEngineRestart != nil {
+		s.spotifyEngineRestart()
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
