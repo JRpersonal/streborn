@@ -54,6 +54,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -275,6 +276,50 @@ func (m *Manager) ReloadBinary() bool {
 	}
 	m.logger.Info("spotify: hot-swapping go-librespot to the OTA-delivered engine (no box reboot)")
 	restart()
+	return true
+}
+
+// StopEngine stops the supervised go-librespot and waits (briefly) for the
+// process to exit, so the kernel releases its executable inode and the NAND
+// blocks it pinned are actually freed. This is the piece the #119 "drop the
+// regenerable engine to fit a tight agent update" reclaim was missing: an
+// os.Remove of a RUNNING binary only drops the directory entry, the blocks stay
+// pinned until the holder exits, so dropping the engine freed nothing while it
+// ran (which is the normal state during an OTA) and the update still failed with
+// "no space left". The OTA write calls this before unlinking the engine; the
+// engine is re-delivered after the reboot by EnsureSpotifyEngine, when free space
+// is high again. Safe to call when nothing is running (returns false). The
+// supervise loop relaunches go-librespot after a 3 s backoff and the caller
+// removes the binary right after this returns, so it does not re-pin the inode.
+func (m *Manager) StopEngine() bool {
+	m.mu.Lock()
+	cancel := m.runCancel
+	var proc *os.Process
+	if m.cmd != nil {
+		proc = m.cmd.Process
+	}
+	m.mu.Unlock()
+	if cancel == nil || proc == nil {
+		return false
+	}
+	// Confirm it is actually alive before claiming a stop (runCancel/cmd are not
+	// cleared between runs, so they can be stale when nothing is running). Signal 0
+	// probes liveness without delivering a signal; it is cross-platform (so the
+	// host test build keeps compiling), unlike syscall.Kill.
+	if proc.Signal(syscall.Signal(0)) != nil {
+		return false
+	}
+	cancel() // exec.CommandContext SIGKILLs the process when its context is cancelled
+	// Bounded wait for the process to be reaped (runOnce calls cmd.Wait once its
+	// stdout closes) so a subsequent df / nandHasRoom sees the freed blocks; the
+	// executable's pages are released at exit, just before the reap.
+	for i := 0; i < 40; i++ { // up to ~4 s
+		if proc.Signal(syscall.Signal(0)) != nil {
+			break // gone (reaped / finished): blocks released
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	m.logger.Info("spotify: stopped go-librespot to free NAND for an update", "pid", proc.Pid)
 	return true
 }
 

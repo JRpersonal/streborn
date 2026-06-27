@@ -137,6 +137,11 @@ type Server struct {
 	// write; returns whether a running engine was restarted. nil when Spotify is
 	// not configured. See Manager.ReloadBinary (#240).
 	spotifyReload func() bool
+	// spotifyStop stops the supervised go-librespot and waits for it to exit, so
+	// the space-pressed OTA write can actually free the engine's NAND blocks before
+	// dropping it (a running binary's blocks stay pinned through an unlink). nil
+	// when Spotify is not configured. See Manager.StopEngine (#119).
+	spotifyStop func() bool
 	// wifiSignalFn returns the latest Wi-Fi signal class observed on the
 	// gabbo WebSocket (set from cmd/agent's boxws client). Used to fill
 	// the signal for BCO boxes, whose /networkInfo reports none.
@@ -473,6 +478,15 @@ func WithSpotifyInfo(h http.HandlerFunc) Option {
 // post-delivery activation reboot (#240).
 func WithSpotifyReload(f func() bool) Option {
 	return func(s *Server) { s.spotifyReload = f }
+}
+
+// WithSpotifyStop injects the Spotify manager's engine-stop, used by the
+// space-pressed OTA write to genuinely free the regenerable go-librespot engine
+// (stop the process so its NAND blocks release, then drop the binary) when a tight
+// box cannot otherwise hold the agent update (#119). nil leaves the previous
+// best-effort os.Remove (a no-op while the engine runs).
+func WithSpotifyStop(f func() bool) Option {
+	return func(s *Server) { s.spotifyStop = f; engineStopHook = f }
 }
 
 // PeerLink is one other STR speaker on the LAN, as shown in the on-box page's
@@ -2879,6 +2893,12 @@ var errInsufficientNAND = errors.New("insufficient NAND space")
 // does not ENOSPC mid-stream.
 const nandWriteMargin = 512 * 1024
 
+// engineStopHook stops the running go-librespot so the space-pressed OTA write can
+// truly free the engine's NAND blocks before dropping it (an unlink of a running
+// binary frees nothing). Set by WithSpotifyStop; nil in tests and when Spotify is
+// not configured, in which case the reclaim falls back to a plain os.Remove.
+var engineStopHook func() bool
+
 func writeBinaryAtomic(dst string, body []byte) error {
 	dir := filepath.Dir(dst)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -2902,6 +2922,16 @@ func writeBinaryAtomic(dst string, body []byte) error {
 		// rather than failing the whole update (#119); the desktop app re-delivers
 		// it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot !=
 		// "present"). Only runs when still tight, so a roomy box keeps its engine.
+		//
+		// Stop the engine FIRST: it is normally running during an OTA, and a plain
+		// os.Remove of a running binary only unlinks the path while the kernel keeps
+		// its blocks pinned until the process exits, so dropping it freed nothing and
+		// the update still failed with "no space left" (#119). StopEngine kills it and
+		// waits for exit so the ~16 MB actually frees; reclaimSpotifyEngine then drops
+		// the (now-unused) binary.
+		if engineStopHook != nil {
+			engineStopHook()
+		}
 		reclaimSpotifyEngine()
 		if !nandHasRoom(dir, need) {
 			_, avail, _ := diskFree(dir)
