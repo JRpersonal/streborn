@@ -242,6 +242,42 @@ func (m *Manager) Ready() bool {
 	return true
 }
 
+// ReloadBinary restarts the supervised go-librespot so it re-execs from its
+// binary path, activating a freshly OTA-delivered engine WITHOUT a box reboot.
+// The OTA write (webui.handleAgentSidecar) overwrites the binary at m.binPath and
+// then calls this; the supervise loop cancels the current run and relaunches from
+// the same path, so the relaunch runs the new bytes. This closes the gap where an
+// engine UPDATE on an already-running agent needed a full box reboot to take
+// effect, the manual restart Pierre and Daniel had to do after an update (#240).
+// A first-time delivery to a box that had no engine running is already picked up
+// live by waitForBinary; this method covers the already-running case.
+//
+// The only side effect is a brief (~3 s) audio gap while the process relaunches;
+// the box's stream buffer covers most of it. It is the same trade-off as an
+// account switch, which already restarts the engine live and is unnoticeable in
+// practice. Returns true when a live restart was triggered, false when
+// go-librespot is not currently running (the supervise loop / waitForBinary then
+// starts the new binary on its own) or no binary is present.
+func (m *Manager) ReloadBinary() bool {
+	if !m.Ready() {
+		m.logger.Info("spotify: engine reload requested but no go-librespot binary present")
+		return false
+	}
+	m.mu.Lock()
+	restart := m.runCancel
+	m.mu.Unlock()
+	if restart == nil {
+		// Not running yet: the supervise loop (or waitForBinary on a cold start)
+		// will start the just-written binary on its own, so there is nothing to
+		// swap and still no reboot needed.
+		m.logger.Info("spotify: engine delivered; go-librespot not running yet, supervise loop will start the new binary (no reboot)")
+		return false
+	}
+	m.logger.Info("spotify: hot-swapping go-librespot to the OTA-delivered engine (no box reboot)")
+	restart()
+	return true
+}
+
 // configYAML is the go-librespot config the manager writes. /dev/stdout as
 // the pipe + passthrough makes go-librespot emit the raw Ogg/Vorbis on its
 // stdout (no decode); the box decodes it natively, which on the weak A8
