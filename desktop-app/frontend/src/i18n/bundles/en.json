@@ -784,6 +784,7 @@
   "fw.step2": "Open the Bose SoundTouch app on your phone (App Store / Play Store, if you still have it).",
   "fw.step3": "Pick the speaker. If an update is available, the app offers it.",
   "fw.step4": "Without the app: download the USB update tool from Bose, write the firmware to another stick, plug it into the speaker:",
+  "fw.boseGuideLink": "Open Bose's firmware update guide",
   "fw.hint": "Note: Bose update servers may still be online in some regions even though the cloud streaming has shut down. If the app route fails, the USB tool is the most reliable path.",
   "setup.heading": "Prepare USB stick",
   "setup.intro": "Prepares a USB stick that you plug into your Bose speaker once. STR then runs from the speaker itself. Stick needs at least 4 GB.",

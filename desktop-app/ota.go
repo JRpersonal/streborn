@@ -324,15 +324,18 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 // agent with a synced Spotify login but no engine (Spotify then failed with the
 // "tap this speaker in Spotify once" hint). The desktop calls this right after
 // the post-OTA version poll confirms the box is on the new, sidecar-capable
-// agent: the push now lands, and the box is then rebooted a SECOND time, as part
-// of the same OTA, to bring the engine up cleanly. The running agent does not
-// activate a freshly delivered or updated engine live (its Spotify manager binds
-// the binary at process start, so an already-running or never-started
-// go-librespot is not hot-swapped), which is why Pierre had to reboot the box by
-// hand after the update (#240, 2026-06-25). Rebooting from here removes that
-// manual step. Idempotent and cheap when the engine is already current (one
-// version GET, zero bytes, no reboot). Bound for the frontend; only called as
-// part of an update, so the extra reboot stays inside the OTA process.
+// agent: the push now lands and the engine is activated.
+//
+// Activation depends on the agent's capability. A hot-swap-capable agent
+// (engineHotSwap=true, #240) restarts go-librespot in place the instant the
+// sidecar write lands, so the engine is live with no reboot at all. An older
+// agent binds the binary only at process start, so an already-running or
+// never-started go-librespot is not picked up live, which is why Pierre had to
+// reboot the box by hand after the update (#240, 2026-06-25); for that case this
+// reboots the box a SECOND time, as part of the same OTA, to bring the engine up
+// cleanly. Idempotent and cheap when the engine is already current (one version
+// GET, zero bytes, no reboot). Bound for the frontend; only called as part of an
+// update, so any reboot stays inside the OTA process.
 //
 // It blocks until the box is back up with the engine present (bounded by
 // otaEngineRebootWait) so the caller reports success only once Spotify can
@@ -349,6 +352,18 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 	}
 	if !delivered {
 		// Engine already current: the running agent is supervising it, no reboot.
+		return "ok", nil
+	}
+	// Hot-swap path (#240): a sidecar-capable agent that advertises engineHotSwap
+	// restarts go-librespot in place the moment the sidecar write lands, so the
+	// freshly delivered engine is already active and no box reboot is needed. This
+	// removes the manual restart Pierre and Daniel had to do after an update. Only
+	// an older agent that binds the binary at process start (no engineHotSwap)
+	// falls back to the activation reboot below. The version read here is cheap and
+	// uses the port boxDo already cached during the sidecar push.
+	if ver, verr := a.BoxAgentVersion(host, port); verr == nil && ver["engineHotSwap"] == "true" {
+		a.recordOTA(host, "engine: delivered and hot-swapped live by the agent, no reboot needed")
+		a.logger.Info("ensure spotify engine: engine delivered and hot-swapped live, skipping the activation reboot", "host", host)
 		return "ok", nil
 	}
 	// Reboot the box once more, as part of this same OTA, so the fresh agent picks

@@ -704,6 +704,7 @@
   "fw.step2": "Abre la aplicación Bose SoundTouch en tu teléfono (App Store / Play Store, si aún la tienes).",
   "fw.step3": "Elige el altavoz. Si hay una actualización disponible, la aplicación la ofrece.",
   "fw.step4": "Sin la aplicación: descarga la herramienta de actualización USB de Bose, escribe el firmware en otra memoria, conéctala al altavoz:",
+  "fw.boseGuideLink": "Abrir la guía de actualización de firmware de Bose",
   "fw.hint": "Nota: los servidores de actualización de Bose pueden seguir en línea en algunas regiones aunque la transmisión en la nube se haya cerrado. Si la vía de la aplicación falla, la herramienta USB es el método más fiable.",
   "setup.heading": "Preparar memoria USB",
   "setup.intro": "Prepara una memoria USB que conectas una vez a tu altavoz Bose. STR se ejecuta luego desde el propio altavoz. La memoria necesita al menos 4 GB.",

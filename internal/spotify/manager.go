@@ -54,6 +54,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -239,6 +240,86 @@ func (m *Manager) Ready() bool {
 	if fi, err := os.Stat(m.binPath); err != nil || fi.IsDir() {
 		return false
 	}
+	return true
+}
+
+// ReloadBinary restarts the supervised go-librespot so it re-execs from its
+// binary path, activating a freshly OTA-delivered engine WITHOUT a box reboot.
+// The OTA write (webui.handleAgentSidecar) overwrites the binary at m.binPath and
+// then calls this; the supervise loop cancels the current run and relaunches from
+// the same path, so the relaunch runs the new bytes. This closes the gap where an
+// engine UPDATE on an already-running agent needed a full box reboot to take
+// effect, the manual restart Pierre and Daniel had to do after an update (#240).
+// A first-time delivery to a box that had no engine running is already picked up
+// live by waitForBinary; this method covers the already-running case.
+//
+// The only side effect is a brief (~3 s) audio gap while the process relaunches;
+// the box's stream buffer covers most of it. It is the same trade-off as an
+// account switch, which already restarts the engine live and is unnoticeable in
+// practice. Returns true when a live restart was triggered, false when
+// go-librespot is not currently running (the supervise loop / waitForBinary then
+// starts the new binary on its own) or no binary is present.
+func (m *Manager) ReloadBinary() bool {
+	if !m.Ready() {
+		m.logger.Info("spotify: engine reload requested but no go-librespot binary present")
+		return false
+	}
+	m.mu.Lock()
+	restart := m.runCancel
+	m.mu.Unlock()
+	if restart == nil {
+		// Not running yet: the supervise loop (or waitForBinary on a cold start)
+		// will start the just-written binary on its own, so there is nothing to
+		// swap and still no reboot needed.
+		m.logger.Info("spotify: engine delivered; go-librespot not running yet, supervise loop will start the new binary (no reboot)")
+		return false
+	}
+	m.logger.Info("spotify: hot-swapping go-librespot to the OTA-delivered engine (no box reboot)")
+	restart()
+	return true
+}
+
+// StopEngine stops the supervised go-librespot and waits (briefly) for the
+// process to exit, so the kernel releases its executable inode and the NAND
+// blocks it pinned are actually freed. This is the piece the #119 "drop the
+// regenerable engine to fit a tight agent update" reclaim was missing: an
+// os.Remove of a RUNNING binary only drops the directory entry, the blocks stay
+// pinned until the holder exits, so dropping the engine freed nothing while it
+// ran (which is the normal state during an OTA) and the update still failed with
+// "no space left". The OTA write calls this before unlinking the engine; the
+// engine is re-delivered after the reboot by EnsureSpotifyEngine, when free space
+// is high again. Safe to call when nothing is running (returns false). The
+// supervise loop relaunches go-librespot after a 3 s backoff and the caller
+// removes the binary right after this returns, so it does not re-pin the inode.
+func (m *Manager) StopEngine() bool {
+	m.mu.Lock()
+	cancel := m.runCancel
+	var proc *os.Process
+	if m.cmd != nil {
+		proc = m.cmd.Process
+	}
+	m.mu.Unlock()
+	if cancel == nil || proc == nil {
+		return false
+	}
+	// Confirm it is actually alive before claiming a stop (runCancel/cmd are not
+	// cleared between runs, so they can be stale when nothing is running). Signal 0
+	// probes liveness without delivering a signal; it is cross-platform (so the
+	// host test build keeps compiling), unlike syscall.Kill.
+	if proc.Signal(syscall.Signal(0)) != nil {
+		return false
+	}
+	cancel() // exec.CommandContext SIGKILLs the process when its context is cancelled
+	// Bounded wait for the process to be reaped (runOnce calls cmd.Wait once its
+	// stdout closes) so a subsequent df / nandHasRoom sees the freed blocks; the
+	// executable's pages are released at exit, just before the reap.
+	for i := 0; i < 40; i++ { // up to ~4 s
+		if proc.Signal(syscall.Signal(0)) != nil {
+			break // gone (reaped / finished): blocks released
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	m.logger.Info("spotify: stopped go-librespot to free NAND for an update", "pid", proc.Pid)
 	return true
 }
 

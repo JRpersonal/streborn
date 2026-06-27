@@ -711,6 +711,19 @@ var repairStageCandidates = []struct {
 	base     string
 	compress float64
 }{
+	// Prefer large RAM tmpfs so staging never lands on the tiny NAND we are about
+	// to install INTO. Staging into /mnt/nv and then copying within the same volume
+	// keeps TWO full copies of every file on a ~31 MB NAND at once, which ENOSPCs
+	// mid-install ("cp: write error: No space left on device", Klaus' ST30 #119,
+	// 2026-06-27): a factory-reset box has only ~22 MB free, enough for one install
+	// (~14 MB compressed) but not for staging + copy. /dev/shm and /run are ~60 MB
+	// RAM on these boxes (compress 1.0, RAM does not compress), so staging there
+	// and copying RAM -> NAND leaves only ONE copy on the NAND. /tmp is often only
+	// ~16 MB; /mnt/nv stays the last resort for a RAM-starved box, where
+	// install.sh's drop-the-engine reclaim is the backstop. A candidate that does
+	// not exist reads as 0 free and falls to the back, so this never blocks.
+	{"/dev/shm", 1.0},
+	{"/run", 1.0},
 	{"/tmp", 1.0},
 	{"/mnt/nv", 0.6},
 }

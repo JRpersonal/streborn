@@ -719,7 +719,44 @@ if [ -e /sys/block/sda ] || [ -e /dev/sda1 ]; then
         sleep 1
         _stick_wait=$((_stick_wait + 1))
     done
-    [ "$_stick_wait" -ge 25 ] && setup_log "stick: USB block device present but /media/sda1 not mounted after ${_stick_wait}s, continuing"
+    if [ "$_stick_wait" -ge 25 ]; then
+        # The kernel auto-mount fails when a previous box left the stick's FAT
+        # "dirty" (it was unplugged or powered off before its filesystem was
+        # clean). The next box then never mounts it and reports it as absent
+        # ("Stick nicht eingesteckt"), while a fresh stick works on the same box,
+        # so it looks like the stick stops being read after the first box (seen
+        # reusing one stick across several ST20s, #119). Repair the FAT (fsck
+        # clears the dirty flag) and
+        # mount it by hand before giving up. We always mount at /media/sda1 so
+        # STICK and the *_BIN paths derived above stay valid.
+        setup_log "stick: USB present but not auto-mounted after ${_stick_wait}s, trying fsck+manual mount (dirty FAT?)"
+        _fsck=""
+        command -v fsck.vfat >/dev/null 2>&1 && _fsck=fsck.vfat
+        if [ -z "$_fsck" ] && command -v dosfsck >/dev/null 2>&1; then _fsck=dosfsck; fi
+        mkdir -p /media/sda1 2>/dev/null
+        # Enumerate the USB block devices the kernel actually exposes rather than
+        # guessing a fixed name: large sticks put the FAT on a high partition
+        # (sda5 seen on ST20/ST30, not always sda1), so a fixed list misses it.
+        # The glob lists every partition (name ending in a digit) first, then the
+        # whole disks as a last resort for an unpartitioned stick. An unmatched
+        # glob stays literal and is filtered out by the [ -b ] test, so this is
+        # safe when no stick (or no such device) is present.
+        for _dev in /dev/sd*[0-9] /dev/mmcblk*p[0-9] /dev/sda /dev/sdb /dev/sdc /dev/sdd; do
+            [ -b "$_dev" ] || continue
+            [ -n "$_fsck" ] && "$_fsck" -a "$_dev" >/dev/null 2>&1
+            if mount -t vfat -o rw "$_dev" /media/sda1 2>/dev/null; then
+                if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ] || [ -e /media/sda1/install.sh ]; then
+                    STICK="/media/sda1"
+                    setup_log "stick: recovered $_dev via fsck+manual mount (auto-mount had failed, likely a dirty FAT from a previous box)"
+                    break
+                fi
+                umount /media/sda1 2>/dev/null
+            fi
+        done
+        if [ ! -e "$STICK/run.sh" ] && [ ! -e "$STICK/streborn-armv7l" ]; then
+            setup_log "stick: still no readable filesystem after fsck recovery, continuing stickless"
+        fi
+    fi
 else
     setup_log "stick: no USB block device, stickless NAND-only boot (no wait)"
 fi
