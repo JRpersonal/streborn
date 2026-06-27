@@ -2892,10 +2892,17 @@ func (s *Server) writeBinaryAtomic(dst string, body []byte) error {
 	// Pre-flight space gate: re-check AFTER reclaim and refuse up front, rather
 	// than buffering the whole binary onto a full disk and ENOSPC'ing at the end.
 	need := int64(len(body))
-	// STR_FORCE_ENGINE_RECLAIM=1 forces the engine drop even on a box with room,
-	// so the NAND-freeing can be exercised and observed on hardware that is not
-	// actually full (e.g. a Portable test) — the log shows free before/after.
+	// Force the engine drop even on a box with room, so the NAND-freeing can be
+	// exercised and observed on hardware that is not actually full (e.g. a Portable
+	// test): the log shows free before/after. Triggered by STR_FORCE_ENGINE_RECLAIM=1
+	// OR a NAND flag file (touch /mnt/nv/streborn/force-engine-reclaim over SSH, run
+	// an OTA, then rm it) — the file is the no-env-edit way to test it.
 	forceReclaim := os.Getenv("STR_FORCE_ENGINE_RECLAIM") == "1"
+	if !forceReclaim {
+		if _, err := os.Stat(filepath.Join(strNANDDir, "force-engine-reclaim")); err == nil {
+			forceReclaim = true
+		}
+	}
 	if !nandHasRoom(dir, need) || forceReclaim {
 		// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
 		// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
