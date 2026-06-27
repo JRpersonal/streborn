@@ -704,6 +704,7 @@
   "fw.step2": "Ouvrez l'application Bose SoundTouch sur votre téléphone (App Store / Play Store, si vous l'avez encore).",
   "fw.step3": "Choisissez l'enceinte. Si une mise à jour est disponible, l'application la propose.",
   "fw.step4": "Sans l'application : téléchargez l'outil de mise à jour USB de Bose, écrivez le firmware sur une autre clé, branchez-la dans l'enceinte :",
+  "fw.boseGuideLink": "Ouvrir le guide de mise à jour du micrologiciel Bose",
   "fw.hint": "Remarque : les serveurs de mise à jour Bose peuvent encore être en ligne dans certaines régions même si la diffusion cloud est arrêtée. Si la voie de l'application échoue, l'outil USB est la méthode la plus fiable.",
   "setup.heading": "Préparer la clé USB",
   "setup.intro": "Prépare une clé USB que vous branchez une fois dans votre enceinte Bose. STR s'exécute ensuite depuis l'enceinte elle-même. La clé doit faire au moins 4 Go.",

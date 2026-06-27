@@ -784,6 +784,7 @@
   "fw.step2": "Bose SoundTouch App vom Smartphone öffnen (App Store / Play Store, falls noch installiert).",
   "fw.step3": "Lautsprecher dort auswählen. Falls ein Update verfügbar ist, wird es angeboten.",
   "fw.step4": "Alternative ohne App: USB-Update-Tool von Bose laden, Firmware auf einen anderen Stick schreiben und in den Lautsprecher stecken:",
+  "fw.boseGuideLink": "Bose-Anleitung zum Firmware-Update öffnen",
   "fw.hint": "Hinweis: Bose-Update-Server könnten je nach Region noch online sein, auch wenn das Cloud-Streaming abgeschaltet ist. Falls der App-Weg nicht klappt, ist das USB-Tool der zuverlässigste Weg.",
   "setup.heading": "USB-Stick vorbereiten",
   "setup.intro": "Bereitet einen USB-Stick vor, den du einmalig in deinen Bose-Lautsprecher steckst. STR läuft dann vom Lautsprecher selbst. Stick braucht mindestens 4 GB.",

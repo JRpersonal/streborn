@@ -704,6 +704,7 @@
   "fw.step2": "Otwórz aplikację Bose SoundTouch na telefonie (App Store / Play Store, jeśli ją jeszcze masz).",
   "fw.step3": "Wybierz głośnik. Jeśli dostępna jest aktualizacja, aplikacja ją zaproponuje.",
   "fw.step4": "Bez aplikacji: pobierz narzędzie USB do aktualizacji Bose, zapisz oprogramowanie na innym pendrive i włóż go do głośnika:",
+  "fw.boseGuideLink": "Otwórz przewodnik aktualizacji oprogramowania Bose",
   "fw.hint": "Uwaga: serwery aktualizacji Bose mogą być w niektórych regionach jeszcze online, mimo że streaming z chmury się zakończył. Jeśli droga przez aplikację zawiedzie, narzędzie USB jest najpewniejsze.",
   "setup.heading": "Przygotuj pendrive USB",
   "setup.intro": "Przygotowuje pendrive USB, który raz wkładasz do głośnika Bose. STR działa potem z samego głośnika. Pendrive potrzebuje co najmniej 4 GB.",

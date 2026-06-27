@@ -704,6 +704,7 @@
   "fw.step2": "Atverkite Bose SoundTouch programą telefone (App Store / Play Store, jei dar turite).",
   "fw.step3": "Pasirinkite garsiakalbį. Jei yra atnaujinimas, programa jį pasiūlys.",
   "fw.step4": "Be programos: atsisiųskite Bose USB atnaujinimo įrankį, įrašykite programinę įrangą į kitą atmintinę ir įkiškite ją į garsiakalbį:",
+  "fw.boseGuideLink": "Atidaryti Bose programinės įrangos naujinimo vadovą",
   "fw.hint": "Pastaba: Bose atnaujinimų serveriai kai kuriuose regionuose gali būti dar prisijungę, nors debesies srautas nutrauktas. Jei kelias per programą nepavyksta, USB įrankis yra patikimiausias.",
   "setup.heading": "Paruošti USB atmintinę",
   "setup.intro": "Paruošia USB atmintinę, kurią vieną kartą įkišate į Bose garsiakalbį. STR po to veikia iš paties garsiakalbio. Atmintinei reikia bent 4 GB.",

@@ -704,6 +704,7 @@
   "fw.step2": "Atveriet Bose SoundTouch lietotni telefonā (App Store / Play Store, ja tā vēl ir).",
   "fw.step3": "Atlasiet skaļruni. Ja ir atjauninājums, lietotne to piedāvās.",
   "fw.step4": "Bez lietotnes: lejupielādējiet Bose USB atjaunināšanas rīku, ierakstiet programmatūru citā zibatmiņā un ievietojiet to skaļrunī:",
+  "fw.boseGuideLink": "Atvērt Bose aparātprogrammatūras atjaunināšanas ceļvedi",
   "fw.hint": "Piezīme: Bose atjaunināšanas serveri dažos reģionos var vēl būt tiešsaistē, lai gan mākoņa straume ir pārtraukta. Ja ceļš caur lietotni neizdodas, USB rīks ir visuzticamākais.",
   "setup.heading": "Sagatavot USB zibatmiņu",
   "setup.intro": "Sagatavo USB zibatmiņu, ko vienreiz ievietojat Bose skaļrunī. STR pēc tam darbojas no paša skaļruņa. Zibatmiņai nepieciešami vismaz 4 GB.",
