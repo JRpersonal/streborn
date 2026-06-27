@@ -54,6 +54,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
@@ -112,6 +113,12 @@ type Manager struct {
 	// Used to re-apply a changed device_name (go-librespot reads its name only
 	// at start). nil while no process runs.
 	runCancel context.CancelFunc
+	// enginePaused holds the supervise loop idle instead of relaunching
+	// go-librespot. StopEngine sets it so the binary can be removed to free its
+	// NAND blocks for a tight OTA write (an unlinked-but-running binary keeps its
+	// blocks until the process exits); RestartEngine clears it once the new engine
+	// is delivered. Guarded by mu. nil/false in the common case.
+	enginePaused bool
 	// actualKbps is the bitrate measured from the live Ogg stream (body bytes
 	// per granule second). 0 until enough of a track has streamed.
 	actualKbps int
@@ -355,6 +362,20 @@ func (m *Manager) Run(ctx context.Context) {
 	// restart go-librespot so the Spotify app sees the right volume, not 100%.
 	go m.refreshVolumeConfigOnce(ctx)
 	for ctx.Err() == nil {
+		m.mu.Lock()
+		paused := m.enginePaused
+		m.mu.Unlock()
+		if paused {
+			// Held stopped so its NAND blocks could be reclaimed for an update;
+			// idle (do NOT relaunch the removed binary) until a fresh engine is
+			// delivered and RestartEngine clears the pause, or ctx ends.
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+			}
+			continue
+		}
 		if err := m.runOnce(ctx); err != nil && ctx.Err() == nil {
 			m.logger.Warn("go-librespot exited, restarting", "err", err)
 		}
@@ -364,6 +385,43 @@ func (m *Manager) Run(ctx context.Context) {
 		case <-time.After(3 * time.Second):
 		}
 	}
+}
+
+// StopEngine stops the supervised go-librespot and blocks (bounded) until the
+// process has actually exited, so the caller can remove the binary and truly free
+// its ~16 MB on a tight NAND. Removing a still-running binary frees NOTHING: an
+// exec'd file's blocks stay allocated until the last open handle closes, so a
+// plain rm of a live engine reclaims no space (#119). The supervise loop stays
+// paused (no relaunch of the removed file) until RestartEngine resumes it after
+// the engine is re-delivered. No-op when the engine is not running.
+func (m *Manager) StopEngine() {
+	m.mu.Lock()
+	m.enginePaused = true
+	restart := m.runCancel
+	var proc *os.Process
+	if m.cmd != nil {
+		proc = m.cmd.Process
+	}
+	m.mu.Unlock()
+	if restart == nil {
+		return // not running: nothing holds the binary, the rm frees it directly
+	}
+	m.logger.Info("spotify: stopping go-librespot to free its NAND blocks for an update")
+	restart() // cancels the process context -> SIGKILL
+	if proc == nil {
+		return
+	}
+	// Wait for the kill to land so the unlinked-but-open blocks are released
+	// before the caller removes the file. SIGKILL is near-instant; cap it so a
+	// wedged process never blocks the OTA write indefinitely.
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := proc.Signal(syscall.Signal(0)); err != nil {
+			return // process gone, blocks released
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	m.logger.Warn("spotify: go-librespot did not exit within the stop window; reclaim may free less", "pid", proc.Pid)
 }
 
 // waitForBinary blocks until the go-librespot binary is present (m.Ready) or ctx
@@ -404,8 +462,17 @@ func (m *Manager) waitForBinary(ctx context.Context) bool {
 // runCancel is nil and waitForBinary starts it on its own, so this safely no-ops.
 func (m *Manager) RestartEngine() {
 	m.mu.Lock()
+	wasPaused := m.enginePaused
+	m.enginePaused = false
 	restart := m.runCancel
 	m.mu.Unlock()
+	if wasPaused {
+		// The supervise loop was idled by StopEngine (binary removed to free NAND).
+		// Clearing the pause is enough: the loop relaunches the now-delivered binary
+		// on its next tick. runCancel still points at the already-killed process.
+		m.logger.Info("spotify: resuming go-librespot with the freshly delivered engine")
+		return
+	}
 	if restart == nil {
 		return // not running yet; the supervise loop's waitForBinary will start it
 	}

@@ -388,6 +388,8 @@ func run() error {
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
 		// Activate a freshly delivered engine live (no second OTA reboot, #119).
 		webui.WithSpotifyEngineRestart(spotifyMgr.RestartEngine),
+		// Stop the engine so the NAND reclaim can truly free its blocks (#119).
+		webui.WithSpotifyEngineStop(spotifyMgr.StopEngine),
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))

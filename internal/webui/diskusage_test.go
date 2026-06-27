@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,7 +52,8 @@ func TestWriteBinaryAtomic(t *testing.T) {
 	for i := range body {
 		body[i] = byte(i)
 	}
-	if err := writeBinaryAtomic(dst, body); err != nil {
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if err := s.writeBinaryAtomic(dst, body); err != nil {
 		t.Fatalf("writeBinaryAtomic: %v", err)
 	}
 

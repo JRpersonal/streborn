@@ -135,6 +135,11 @@ type Server struct {
 	// delivered engine binary (handleAgentSidecar) goes live without a box reboot
 	// (#119). Wired to spotify.Manager.RestartEngine; nil-safe.
 	spotifyEngineRestart func()
+	// spotifyEngineStop stops the supervised go-librespot and waits for it to exit
+	// so reclaimSpotifyEngine can actually free its ~16 MB on a tight NAND (an
+	// unlinked-but-running binary keeps its blocks until the process exits, #119).
+	// Wired to spotify.Manager.StopEngine; nil-safe.
+	spotifyEngineStop func()
 	// wifiSignalFn returns the latest Wi-Fi signal class observed on the
 	// gabbo WebSocket (set from cmd/agent's boxws client). Used to fill
 	// the signal for BCO boxes, whose /networkInfo reports none.
@@ -467,6 +472,12 @@ func WithSpotifyInfo(h http.HandlerFunc) Option {
 // a freshly delivered engine binary goes live without a box reboot (#119).
 func WithSpotifyEngineRestart(f func()) Option {
 	return func(s *Server) { s.spotifyEngineRestart = f }
+}
+
+// WithSpotifyEngineStop registers the callback that stops go-librespot (and waits
+// for it to exit) so the NAND reclaim can truly free its blocks on a tight box (#119).
+func WithSpotifyEngineStop(f func()) Option {
+	return func(s *Server) { s.spotifyEngineStop = f }
 }
 
 // PeerLink is one other STR speaker on the LAN, as shown in the on-box page's
@@ -2752,7 +2763,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	const dst = "/mnt/nv/streborn/bin/streborn-armv7l"
-	if err := writeBinaryAtomic(dst, body); err != nil {
+	if err := s.writeBinaryAtomic(dst, body); err != nil {
 		http.Error(w, err.Error(), nandWriteHTTPStatus(err))
 		return
 	}
@@ -2865,7 +2876,7 @@ var errInsufficientNAND = errors.New("insufficient NAND space")
 // does not ENOSPC mid-stream.
 const nandWriteMargin = 512 * 1024
 
-func writeBinaryAtomic(dst string, body []byte) error {
+func (s *Server) writeBinaryAtomic(dst string, body []byte) error {
 	dir := filepath.Dir(dst)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir parent: %w", err)
@@ -2881,14 +2892,23 @@ func writeBinaryAtomic(dst string, body []byte) error {
 	// Pre-flight space gate: re-check AFTER reclaim and refuse up front, rather
 	// than buffering the whole binary onto a full disk and ENOSPC'ing at the end.
 	need := int64(len(body))
-	if !nandHasRoom(dir, need) {
+	// STR_FORCE_ENGINE_RECLAIM=1 forces the engine drop even on a box with room,
+	// so the NAND-freeing can be exercised and observed on hardware that is not
+	// actually full (e.g. a Portable test) — the log shows free before/after.
+	forceReclaim := os.Getenv("STR_FORCE_ENGINE_RECLAIM") == "1"
+	if !nandHasRoom(dir, need) || forceReclaim {
 		// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
 		// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
-		// cheap reclaim above never touches it. Drop it so the agent .new fits
-		// rather than failing the whole update (#119); the desktop app re-delivers
-		// it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot !=
-		// "present"). Only runs when still tight, so a roomy box keeps its engine.
-		reclaimSpotifyEngine()
+		// cheap reclaim above never touches it. Drop it so the .new fits rather than
+		// failing the whole update (#119); the desktop app re-delivers it (no reboot
+		// — the agent hot-restarts it). Only runs when still tight, so a roomy box
+		// keeps its engine.
+		_, before, _ := diskFree(dir)
+		s.reclaimSpotifyEngine()
+		_, after, _ := diskFree(dir)
+		s.logger.Info("NAND reclaim: dropped go-librespot engine to free space for an OTA write (#119)",
+			"freeBeforeKB", before/1024, "freeAfterKB", after/1024, "freedKB", (after-before)/1024,
+			"needKB", need/1024, "forced", forceReclaim)
 		if !nandHasRoom(dir, need) {
 			_, avail, _ := diskFree(dir)
 			return fmt.Errorf("%w: need %dKB, have %dKB free [NAND %s]", errInsufficientNAND, need/1024, avail/1024, nandReportLine())
@@ -3096,13 +3116,18 @@ func reclaimNAND() {
 	}
 }
 
-// reclaimSpotifyEngine removes the go-librespot Spotify sidecar binary (and its
-// sha marker) to free the single biggest regenerable block on a tight NAND. The
-// running agent does not need it to apply an update, and the desktop app
-// re-delivers it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot
-// != "present"), so dropping it is always recoverable. Called only by the
-// space-pressed OTA write, never on a roomy box (#119).
-func reclaimSpotifyEngine() {
+// reclaimSpotifyEngine frees the single biggest regenerable block on a tight NAND
+// by dropping the ~16 MB go-librespot Spotify sidecar. It STOPS the engine first:
+// go-librespot runs continuously, and unlinking a binary a process still has open
+// frees NONE of its blocks until that process exits, so a plain rm of a live
+// engine reclaims nothing (#119). spotifyEngineStop kills it and waits for the
+// exit, so the rm below actually releases the space. The desktop app re-delivers
+// the engine after the OTA and the agent hot-restarts it (no reboot), so dropping
+// it is always recoverable. Called only by the space-pressed OTA write.
+func (s *Server) reclaimSpotifyEngine() {
+	if s.spotifyEngineStop != nil {
+		s.spotifyEngineStop()
+	}
 	_ = os.Remove(goLibrespotBinPath)
 	_ = os.Remove(goLibrespotBinPath + ".sha256")
 }
@@ -3135,7 +3160,7 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := writeBinaryAtomic(goLibrespotBinPath, body); err != nil {
+	if err := s.writeBinaryAtomic(goLibrespotBinPath, body); err != nil {
 		http.Error(w, err.Error(), nandWriteHTTPStatus(err))
 		return
 	}

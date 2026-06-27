@@ -191,6 +191,30 @@ func TestRestartEngine(t *testing.T) {
 	}
 }
 
+func TestStopEnginePausesAndResumes(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	m := New("", t.TempDir(), "", nil, logger)
+
+	// Not running: StopEngine still pauses the supervise loop so it cannot
+	// relaunch the binary the caller is about to remove, and must not panic.
+	m.StopEngine()
+	m.mu.Lock()
+	paused := m.enginePaused
+	m.mu.Unlock()
+	if !paused {
+		t.Fatal("StopEngine should pause the supervise loop")
+	}
+
+	// RestartEngine clears the pause so the loop relaunches the re-delivered engine.
+	m.RestartEngine()
+	m.mu.Lock()
+	paused = m.enginePaused
+	m.mu.Unlock()
+	if paused {
+		t.Fatal("RestartEngine should clear the pause after re-delivery")
+	}
+}
+
 func TestCanRecall(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
