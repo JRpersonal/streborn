@@ -451,7 +451,7 @@ function groupSettingsSections() {
     [t('settingsView.bassHeading')]: 'basics',
     [t('settingsView.clockHeading')]: 'sound',
     [t('settingsView.wlanHeading')]: 'network',
-    [t('settingsView.langHeading')]: 'network',
+    [t('settingsView.langHeading')]: 'basics',
     [t('settingsView.regionHeading')]: 'network',
     [t('settingsView.sourcesHeading')]: 'info',
     [t('settingsView.actionsHeading')]: 'actions',
