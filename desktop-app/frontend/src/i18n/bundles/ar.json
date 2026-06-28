@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "الإجراءات",
   "settingsView.groupAdvanced": "متقدم",
   "settingsView.phoneHeading": "تحكم في هذه السماعة من هاتفك",
-  "settingsView.phoneHelp": "امسح بالكاميرا، ثم استخدم «إضافة إلى الشاشة الرئيسية» للحصول على جهاز تحكم بنقرة واحدة."
+  "settingsView.phoneHelp": "امسح بالكاميرا، ثم استخدم «إضافة إلى الشاشة الرئيسية» للحصول على جهاز تحكم بنقرة واحدة.",
+  "a11y.title": "العرض وإمكانية الوصول",
+  "a11y.textSize": "حجم النص",
+  "a11y.size.normal": "عادي",
+  "a11y.size.large": "كبير",
+  "a11y.size.xlarge": "كبير جدًا",
+  "a11y.theme": "السمة",
+  "a11y.theme.dark": "داكن",
+  "a11y.theme.light": "فاتح",
+  "a11y.theme.contrast": "تباين عالٍ"
 }

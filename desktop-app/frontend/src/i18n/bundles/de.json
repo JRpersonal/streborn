@@ -1063,5 +1063,14 @@
   "settingsView.groupActions": "Aktionen",
   "settingsView.groupAdvanced": "Erweitert",
   "settingsView.phoneHeading": "Diesen Lautsprecher auf deinem Smartphone steuern",
-  "settingsView.phoneHelp": "Mit der Handy-Kamera scannen, dann „Zum Home-Bildschirm hinzufügen\" für eine Ein-Tipp-Fernbedienung."
+  "settingsView.phoneHelp": "Mit der Handy-Kamera scannen, dann „Zum Home-Bildschirm hinzufügen\" für eine Ein-Tipp-Fernbedienung.",
+  "a11y.title": "Anzeige und Barrierefreiheit",
+  "a11y.textSize": "Textgröße",
+  "a11y.size.normal": "Normal",
+  "a11y.size.large": "Groß",
+  "a11y.size.xlarge": "Sehr groß",
+  "a11y.theme": "Darstellung",
+  "a11y.theme.dark": "Dunkel",
+  "a11y.theme.light": "Hell",
+  "a11y.theme.contrast": "Hoher Kontrast"
 }

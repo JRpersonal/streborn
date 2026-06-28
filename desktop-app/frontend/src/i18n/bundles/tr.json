@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "Eylemler",
   "settingsView.groupAdvanced": "Gelişmiş",
   "settingsView.phoneHeading": "Bu hoparlörü telefonunuzdan kontrol edin",
-  "settingsView.phoneHelp": "Kamerayla tarayın, ardından tek dokunuşla kumanda için Ana Ekrana Ekle secenegini kullanın."
+  "settingsView.phoneHelp": "Kamerayla tarayın, ardından tek dokunuşla kumanda için Ana Ekrana Ekle secenegini kullanın.",
+  "a11y.title": "Görüntü ve erişilebilirlik",
+  "a11y.textSize": "Yazı boyutu",
+  "a11y.size.normal": "Normal",
+  "a11y.size.large": "Büyük",
+  "a11y.size.xlarge": "Çok büyük",
+  "a11y.theme": "Tema",
+  "a11y.theme.dark": "Koyu",
+  "a11y.theme.light": "Açık",
+  "a11y.theme.contrast": "Yüksek kontrast"
 }

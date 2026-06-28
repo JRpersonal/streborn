@@ -1063,5 +1063,14 @@
   "settingsView.groupActions": "Actions",
   "settingsView.groupAdvanced": "Advanced",
   "settingsView.phoneHeading": "Control this speaker on your phone",
-  "settingsView.phoneHelp": "Scan this with your phone camera, then use Add to Home Screen for a one-tap remote."
+  "settingsView.phoneHelp": "Scan this with your phone camera, then use Add to Home Screen for a one-tap remote.",
+  "a11y.title": "Display & accessibility",
+  "a11y.textSize": "Text size",
+  "a11y.size.normal": "Normal",
+  "a11y.size.large": "Large",
+  "a11y.size.xlarge": "Extra large",
+  "a11y.theme": "Theme",
+  "a11y.theme.dark": "Dark",
+  "a11y.theme.light": "Light",
+  "a11y.theme.contrast": "High contrast"
 }

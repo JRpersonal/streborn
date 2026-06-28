@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "Acties",
   "settingsView.groupAdvanced": "Geavanceerd",
   "settingsView.phoneHeading": "Bedien deze speaker vanaf je telefoon",
-  "settingsView.phoneHelp": "Scan met je camera, gebruik daarna Toevoegen aan beginscherm voor een afstandsbediening met één tik."
+  "settingsView.phoneHelp": "Scan met je camera, gebruik daarna Toevoegen aan beginscherm voor een afstandsbediening met één tik.",
+  "a11y.title": "Weergave en toegankelijkheid",
+  "a11y.textSize": "Tekstgrootte",
+  "a11y.size.normal": "Normaal",
+  "a11y.size.large": "Groot",
+  "a11y.size.xlarge": "Extra groot",
+  "a11y.theme": "Thema",
+  "a11y.theme.dark": "Donker",
+  "a11y.theme.light": "Licht",
+  "a11y.theme.contrast": "Hoog contrast"
 }

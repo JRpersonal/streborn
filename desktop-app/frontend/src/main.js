@@ -254,6 +254,11 @@ import { renderRecent, initRecentView } from './views/recent.js';
 import { renderMultiroom, initMultiroomView } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
+// App-wide accessibility prefs (text size + theme). Applied to <html> before
+// the skeleton renders so the first paint already reflects the chosen size and
+// theme. The matching CSS lives in style.css (html.a11y-*).
+import { applyA11y, getScale, setScale, getTheme, setTheme } from './a11y.js';
+applyA11y();
 // Speaker Settings view (extracted from this monolith, same pattern as the views
 // above). loadBoxSettings is the entry point switchView calls; langOptionsHtml /
 // wireCombobox are reused by the Setup view below. throttledSetVolume /
@@ -391,6 +396,27 @@ document.querySelector('#app').innerHTML = `
         </svg>
       </span>
       <div class="app-brand">ST <span class="app-brand-accent">Reborn</span></div>
+      <div class="app-a11y a11y-dd">
+        <button type="button" class="a11y-dd-trigger" id="a11yTrigger" aria-haspopup="dialog" aria-expanded="false" aria-label="${escapeAttr(t('a11y.title'))}" title="${escapeAttr(t('a11y.title'))}"><span class="a11y-dd-icon" aria-hidden="true">Aa</span></button>
+        <div class="a11y-dd-menu" id="a11yMenu" role="dialog" aria-label="${escapeAttr(t('a11y.title'))}" hidden>
+          <div class="a11y-group">
+            <div class="a11y-group-label" id="a11ySizeLabel">${escapeHtml(t('a11y.textSize'))}</div>
+            <div class="a11y-seg" role="group" aria-labelledby="a11ySizeLabel">
+              <button type="button" data-scale="1" aria-pressed="${getScale() === 1}">${escapeHtml(t('a11y.size.normal'))}</button>
+              <button type="button" data-scale="2" aria-pressed="${getScale() === 2}">${escapeHtml(t('a11y.size.large'))}</button>
+              <button type="button" data-scale="3" aria-pressed="${getScale() === 3}">${escapeHtml(t('a11y.size.xlarge'))}</button>
+            </div>
+          </div>
+          <div class="a11y-group">
+            <div class="a11y-group-label" id="a11yThemeLabel">${escapeHtml(t('a11y.theme'))}</div>
+            <div class="a11y-seg" role="group" aria-labelledby="a11yThemeLabel">
+              <button type="button" data-theme="dark" aria-pressed="${getTheme() === 'dark'}">${escapeHtml(t('a11y.theme.dark'))}</button>
+              <button type="button" data-theme="light" aria-pressed="${getTheme() === 'light'}">${escapeHtml(t('a11y.theme.light'))}</button>
+              <button type="button" data-theme="contrast" aria-pressed="${getTheme() === 'contrast'}">${escapeHtml(t('a11y.theme.contrast'))}</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="app-locale locale-dd" role="group" aria-label="${escapeAttr(t('settings.language'))}">
         ${(() => {
           const cur = AVAILABLE_LOCALES.find(l => l.code === getLocale()) || AVAILABLE_LOCALES[0];
@@ -518,6 +544,31 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
   // Close on outside click or Escape.
   document.addEventListener('click', (e) => { if (!e.target.closest('.locale-dd')) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+})();
+
+// Accessibility menu (text size + theme) in the header. Mirrors the locale
+// dropdown's open/close behaviour. Unlike the locale switch these apply
+// instantly by toggling classes on <html>, so no page reload is needed.
+(function wireA11yPicker() {
+  const trigger = document.getElementById('a11yTrigger');
+  const menu = document.getElementById('a11yMenu');
+  if (!trigger || !menu) return;
+  const close = () => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); };
+  const open = () => { menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); };
+  trigger.onclick = (e) => { e.stopPropagation(); if (menu.hidden) open(); else close(); };
+  const syncPressed = (attr, val) => {
+    menu.querySelectorAll(`button[${attr}]`).forEach(b => {
+      b.setAttribute('aria-pressed', String(b.getAttribute(attr) === String(val)));
+    });
+  };
+  menu.querySelectorAll('button[data-scale]').forEach(b => {
+    b.onclick = () => { const n = Number(b.dataset.scale); setScale(n); syncPressed('data-scale', n); };
+  });
+  menu.querySelectorAll('button[data-theme]').forEach(b => {
+    b.onclick = () => { setTheme(b.dataset.theme); syncPressed('data-theme', b.dataset.theme); };
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.a11y-dd')) close(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 })();
 
@@ -860,7 +911,7 @@ async function checkAppUpdate() {
     // to update, and ended up with two .exe copies downloaded by hand).
     const installLabel = isMacOS ? t('banner.downloadAppUpdate') : t('banner.installAppNow');
     banner.innerHTML = `
-      <div><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></div>
+      <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#8593;</span><span><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></span></div>
       <button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(installLabel)}</button>
     `;
     banner.classList.remove('hidden');
@@ -926,7 +977,7 @@ $('view-box').innerHTML = `
   <div class="topbar">
     <div class="topbar-head">
       <div class="topbar-title">${escapeHtml(t('topbar.title'))}</div>
-      <button class="btn-icon" id="refreshBtn" title="${escapeAttr(t('topbar.refreshTitle'))}"><span class="refresh-icon">&#x21bb;</span></button>
+      <button class="btn-icon" id="refreshBtn" aria-label="${escapeAttr(t('topbar.refreshTitle'))}" title="${escapeAttr(t('topbar.refreshTitle'))}"><span class="refresh-icon" aria-hidden="true">&#x21bb;</span></button>
     </div>
     <div class="box-select" id="boxSelect">${escapeHtml(t('speaker.searching'))}</div>
   </div>
@@ -934,25 +985,25 @@ $('view-box').innerHTML = `
     <p>${escapeHtml(t('speaker.choose'))}</p>
   </div>
   <div id="boxControls" class="hidden">
-    <div class="status-bar" id="statusBar"></div>
+    <div class="status-bar" id="statusBar" role="status" aria-live="polite"></div>
     <div class="controls">
       <button class="btn" id="pauseBtn">&#9208; ${escapeHtml(t('controls.pause'))}</button>
       <button class="btn" id="stopBtn">&#9209; ${escapeHtml(t('controls.stop'))}</button>
       <div class="queue-controls hidden" id="queueControls">
-        <button class="btn btn-mini" id="queuePrevBtn" title="${escapeAttr(t('controls.prev'))}">&#9198;</button>
-        <button class="btn btn-mini" id="queueNextBtn" title="${escapeAttr(t('controls.next'))}">&#9197;</button>
-        <button class="btn btn-mini toggle-btn" id="queueShuffleBtn" title="${escapeAttr(t('controls.shuffle'))}">&#128256;</button>
-        <button class="btn btn-mini toggle-btn" id="queueRepeatBtn" title="${escapeAttr(t('controls.repeat'))}">&#128257;</button>
+        <button class="btn btn-mini" id="queuePrevBtn" aria-label="${escapeAttr(t('controls.prev'))}" title="${escapeAttr(t('controls.prev'))}">&#9198;</button>
+        <button class="btn btn-mini" id="queueNextBtn" aria-label="${escapeAttr(t('controls.next'))}" title="${escapeAttr(t('controls.next'))}">&#9197;</button>
+        <button class="btn btn-mini toggle-btn" id="queueShuffleBtn" aria-label="${escapeAttr(t('controls.shuffle'))}" title="${escapeAttr(t('controls.shuffle'))}">&#128256;</button>
+        <button class="btn btn-mini toggle-btn" id="queueRepeatBtn" aria-label="${escapeAttr(t('controls.repeat'))}" title="${escapeAttr(t('controls.repeat'))}">&#128257;</button>
         <span class="queue-pos" id="queuePos"></span>
       </div>
       <div class="source-buttons">
         <button class="btn btn-source" data-source="AUX" title="${escapeAttr(t('controls.auxTitle'))}">AUX</button>
-        <button class="btn btn-source btn-source-icon" data-source="BLUETOOTH" title="${escapeAttr(t('controls.bluetoothTitle'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline></svg></button>
-        <button class="btn btn-source btn-source-icon" data-source="STANDBY" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
+        <button class="btn btn-source btn-source-icon" data-source="BLUETOOTH" aria-label="${escapeAttr(t('controls.bluetoothTitle'))}" title="${escapeAttr(t('controls.bluetoothTitle'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true"><polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline></svg></button>
+        <button class="btn btn-source btn-source-icon" data-source="STANDBY" aria-label="${escapeAttr(t('controls.standbyTitle'))}" title="${escapeAttr(t('controls.standbyTitle'))}">&#9211;</button>
       </div>
       <div class="volume-control">
-        <span class="vol-icon" title="${escapeAttr(t('controls.volume'))}">&#128266;</span>
-        <input type="range" id="musicVolume" min="0" max="100" step="1" />
+        <span class="vol-icon" title="${escapeAttr(t('controls.volume'))}" aria-hidden="true">&#128266;</span>
+        <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" />
         <span class="vol-val" id="musicVolumeVal">--</span>
       </div>
     </div>
@@ -2980,7 +3031,7 @@ function renderPresets() {
       // that fails.
       presetCandidates.push(monogramDataUri(p.name));
       const logo =
-        `<img class="preset-logo" src="${escapeAttr(presetCandidates[0])}"
+        `<img class="preset-logo" alt="" src="${escapeAttr(presetCandidates[0])}"
               data-fallbacks="${escapeAttr(presetCandidates.slice(1).join('|'))}"/>`;
       // The active tile mirrors the live now-playing bitrate even when the
       // stored preset bitrate is still 0 (preset saved before the bitrate
@@ -3019,7 +3070,7 @@ function renderPresets() {
       if (bpActive) div.classList.add('playing');
       const srcLabel = boxSourceLabel(bp.source);
       const logo =
-        `<img class="preset-logo" src="${escapeAttr(monogramDataUri(bp.name || srcLabel || '?'))}"/>`;
+        `<img class="preset-logo" alt="" src="${escapeAttr(monogramDataUri(bp.name || srcLabel || '?'))}"/>`;
       div.innerHTML = `
         <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span></div>
         <div class="preset-body">
@@ -3665,11 +3716,14 @@ function renderNowPlayingBar() {
   const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && srcU !== 'AUX' && srcU !== 'BLUETOOTH' && !isAirplay;
   const brLabel = isStreamSrc ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
   bar.className = 'status-bar status-' + stateClass;
+  // Glyph reflects the actual transport state so play vs pause is not conveyed
+  // by colour alone (accessibility): play arrow normally, pause bars when paused.
+  const stateGlyph = ps === 'PAUSE_STATE' ? '&#9208;' : '&#9654;';
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"
     // marquees inside .now, exactly like the preset tiles.
-    statusHTML = `<span class="now"><span class="track-inner">&#9654; ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
+    statusHTML = `<span class="now"><span class="track-inner">${stateGlyph} ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
   } else if (stateLabel) {
     statusHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
   } else {

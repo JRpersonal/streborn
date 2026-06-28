@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "Actions",
   "settingsView.groupAdvanced": "Avancé",
   "settingsView.phoneHeading": "Commander cette enceinte depuis votre téléphone",
-  "settingsView.phoneHelp": "Scannez avec l'appareil photo, puis utilisez Ajouter à l'écran d'accueil pour une télécommande en un toucher."
+  "settingsView.phoneHelp": "Scannez avec l'appareil photo, puis utilisez Ajouter à l'écran d'accueil pour une télécommande en un toucher.",
+  "a11y.title": "Affichage et accessibilité",
+  "a11y.textSize": "Taille du texte",
+  "a11y.size.normal": "Normale",
+  "a11y.size.large": "Grande",
+  "a11y.size.xlarge": "Très grande",
+  "a11y.theme": "Thème",
+  "a11y.theme.dark": "Sombre",
+  "a11y.theme.light": "Clair",
+  "a11y.theme.contrast": "Contraste élevé"
 }

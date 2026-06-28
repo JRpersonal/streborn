@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "Darbības",
   "settingsView.groupAdvanced": "Papildu",
   "settingsView.phoneHeading": "Vadiet šo skaļruni no telefona",
-  "settingsView.phoneHelp": "Skenējiet ar kameru, pēc tam izmantojiet Pievienot sākuma ekrānam, lai iegūtu tālvadību ar vienu pieskārienu."
+  "settingsView.phoneHelp": "Skenējiet ar kameru, pēc tam izmantojiet Pievienot sākuma ekrānam, lai iegūtu tālvadību ar vienu pieskārienu.",
+  "a11y.title": "Attēlojums un pieejamība",
+  "a11y.textSize": "Teksta izmērs",
+  "a11y.size.normal": "Normāls",
+  "a11y.size.large": "Liels",
+  "a11y.size.xlarge": "Ļoti liels",
+  "a11y.theme": "Motīvs",
+  "a11y.theme.dark": "Tumšs",
+  "a11y.theme.light": "Gaišs",
+  "a11y.theme.contrast": "Augsts kontrasts"
 }
