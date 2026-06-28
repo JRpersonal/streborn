@@ -4990,6 +4990,9 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		SSID     string `json:"ssid"`
 		Password string `json:"password"`
+		// Force skips the site-survey pre-flight (the user chose to switch to a
+		// network the speaker cannot currently see, e.g. a momentarily-missed one).
+		Force bool `json:"force"`
 	}
 	if !decodeJSONRequest(w, r, 2048, &req) {
 		return
@@ -5004,6 +5007,39 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	if req.Password != "" && len(req.Password) < 8 {
 		http.Error(w, "password too short (at least 8 characters)", http.StatusBadRequest)
 		return
+	}
+
+	// Pre-flight: confirm the box can actually SEE the target network before the
+	// switch. SoundTouch speakers are 2.4 GHz only, so pointing one at a 5 GHz-only
+	// network strands it (it leaves the current network, cannot join the new one,
+	// and then needs a Bose-app re-pair). The box's own site survey only lists the
+	// bands it supports, so an invisible SSID is the clean signal to refuse; the
+	// `force` flag lets the user override a momentarily-missed but real network.
+	if !req.Force {
+		sctx, scancel := context.WithTimeout(r.Context(), 12*time.Second)
+		ssids, serr := boxapi.New(s.boxHost).SiteSurvey(sctx)
+		scancel()
+		if serr != nil {
+			s.logger.Warn("WLAN switch preflight: site survey failed, proceeding without it", "err", serr)
+		} else {
+			visible := false
+			for _, sid := range ssids {
+				if sid == req.SSID {
+					visible = true
+					break
+				}
+			}
+			if !visible {
+				s.logger.Info("WLAN switch refused: target SSID not visible to the speaker", "ssid", req.SSID, "visible", ssids)
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error":   "The speaker can't see that network. SoundTouch speakers only support 2.4 GHz Wi-Fi, so a 5 GHz network will not work. Pick a network the speaker can see, or switch anyway.",
+					"code":    "ssid-not-visible",
+					"ssid":    req.SSID,
+					"visible": ssids,
+				})
+				return
+			}
+		}
 	}
 
 	iface, mech := detectWlanMechanism()
