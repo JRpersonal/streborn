@@ -15,15 +15,15 @@
   <img src="docs/screenshots/OS%20Hero/app-listen.jpg" alt="ST Reborn desktop app" width="820">
 </p>
 
-Bose discontinued their SoundTouch cloud service in February 2026. STR keeps the speakers usable: a USB stick installs a small Go agent onto the speaker that stands in for the discontinued cloud locally, talks to the speaker over the home network, and brings the hardware preset buttons back to life. **Once the agent is installed, the stick can be removed**: the agent persists on the speaker and survives reboots.
+Bose discontinued their SoundTouch cloud service in February 2026. STR keeps the speakers usable: a USB stick installs a small Go agent onto the speaker that stands in for the discontinued cloud locally, talks to the speaker over the home network, and brings back internet radio, Spotify, your own media library, multiroom, and the hardware preset buttons. **Once the agent is installed, the stick can be removed**: the agent persists on the speaker and survives reboots.
 
 ## How it works in one paragraph
 
-After the first boot with the stick attached, the agent copies itself into the speaker's persistent storage and from then on starts automatically every time the speaker powers on, no stick required for normal use. It hosts a stand-in for the Bose cloud on the loopback interface and redirects the relevant DNS names so the speaker treats it as the real cloud. Internet Radio playback then happens over UPnP AVTransport on the speaker, which is supported natively. The hardware preset buttons are wired through the speaker's local WebSocket so a button press triggers playback of the saved station.
+After the first boot with the stick attached, the agent copies itself into the speaker's persistent storage and from then on starts automatically every time the speaker powers on, no stick required for normal use. It hosts a stand-in for the Bose cloud on the loopback interface and redirects the relevant DNS names so the speaker treats it as the real cloud. Playback then happens over UPnP AVTransport on the speaker, which is supported natively, whether the source is an internet radio station, a Spotify playlist, or a track from a media server on your own network. The hardware preset buttons are wired through the speaker's local WebSocket, so a button press recalls the saved source; the same bus lets a remote key fire a webhook to control your smart home. Several speakers can be grouped into a multiroom zone or a stereo pair.
 
 ## Screenshots
 
-The desktop app: browse and assign presets, search internet radio, browse a DLNA library, manage speaker settings, and prepare the USB stick.
+The desktop app: browse and assign presets, search internet radio, control Spotify, browse your local media library, manage speaker settings, and prepare the USB stick.
 
 | | | |
 |:--:|:--:|:--:|
@@ -44,14 +44,20 @@ STR is pre-1.0. This section is the honest snapshot. No marketing.
 - Playback control: play / pause / stop / volume / bass / source switch (AUX, Bluetooth, Standby) via the speaker's existing UPnP AVTransport endpoint on port 8091. I never route audio through the dead Bose cloud.
 - Radio search via radio-browser.info, queried directly by the desktop app (no API key); only the final stream URL goes to the speaker. HLS-only stations (BBC and co.) are converted on the fly by the agent's stream proxy. On a blocked or dead stream the app automatically tries another listing of the same station.
 - Six preset slots, persisted on the stick agent. Hardware preset buttons 1 to 6 work after install via a hook into Bose's WebSocket bus (gabbo). Existing non-STR presets (e.g. Deezer) are left untouched.
-- Spotify Connect (beta): a supervised go-librespot sidecar on the speaker; Spotify presets, multi-account, live now-playing.
-- DLNA music library: browse FRITZ!Box / Synology / Plex / miniDLNA servers and save tracks as presets.
-- Multiroom zones and stereo pairs (alpha).
-- Webhooks: user-configured HTTP triggers on box events (remote keys, power, AUX).
+- Spotify Connect (beta): a supervised go-librespot sidecar on the speaker. Spotify playlists, albums, and tracks save to preset slots and the hardware buttons, with multi-account switching and live now-playing. The raw Ogg stream is decoded by the speaker, never by the dead cloud.
+- Local media library: browse media servers on your home network over DLNA / UPnP AV (SSDP discovery, ContentDirectory browse), including FRITZ!Box, Synology, Plex and miniDLNA, and save any track as a preset. Lossless files (FLAC) play directly; the agent's stream proxy feeds the box.
+- Multiroom zones and stereo pairs (beta): group several speakers to play in sync, or pair two as a left/right stereo pair. Groups persist on the speaker and reform automatically after a reboot, standby cycle, or Wi-Fi outage.
+- Smart-home triggers (webhooks): turn a remote-control key, the power button, or an AUX change into a user-configured HTTP call, so a press can drive Home Assistant, ioBroker, Node-RED, or anything with an HTTP endpoint.
 - OTA agent updates from the desktop app, with an SSH fallback and a pre-reboot stick refresh so the update cannot be reverted by the boot sync. Build stamp comparison catches version drift.
 - WLAN reconfigure from the desktop app. I rewrite `/etc/wpa_supplicant.conf` in full because appending breaks Wi-Fi.
 - Setup wizard for the USB stick, including preset region, friendly name, box language, and Wi-Fi credentials. FAT32 formatting helper bundled.
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
+
+### In the works
+
+- **Podcasts**: search a show, play episodes, and subscribe a show to a preset so the newest episode is one button away. Design and feedback in #215.
+- **Deezer**: existing Deezer presets on the box already survive an install untouched. Reading and creating Deezer presets from STR is planned (see [`docs/ROADMAP.md`](./docs/ROADMAP.md)).
+- **More streaming sources**: SoundCloud (#241), SiriusXM (#242), and Pandora (#243) are at the feasibility stage. Like Spotify, each would run through a bridge STR controls, since the speakers' built-in sources died with the cloud.
 
 ### Supported models
 

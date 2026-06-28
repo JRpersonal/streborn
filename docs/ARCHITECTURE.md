@@ -54,9 +54,11 @@ flowchart LR
 ```
 
 The blue area is everything that survives without the public
-internet. Once the agent is installed, the speaker plays radio fully
-locally; the only outbound call is the upstream CDN serving the
-station's audio bytes.
+internet. Once the agent is installed, the speaker plays internet
+radio, Spotify, and tracks from your own media servers without any
+Bose cloud; the only outbound calls are the upstream radio CDN and the
+Spotify access points serving audio bytes. Multiroom grouping, preset
+recall, and the smart-home webhooks all run on the LAN.
 
 ## Components
 
@@ -64,13 +66,32 @@ station's audio bytes.
 |---|---|---|---|
 | **Stick agent** | `cmd/agent/`, `internal/` | Go binary on the speaker NAND, started by `/mnt/nv/streborn/run-override.sh` from Bose `rc.local` | Emulates the Bose cloud (marge, BMX), proxies radio streams (incl. HLS conversion), owns the preset store, announces over mDNS, hooks the speaker's WebSocket bus to re-enable hardware preset buttons, manages multiroom zones (NAND `zones.json`, auto-reform), and fires user-configured webhooks on box events (NAND `webhooks.json`). On whitelisted chassis it also installs the iptables PREROUTING REDIRECTs that make it LAN-reachable, and serves the `:17002` BatteryMonitor fallback on the Portable. |
 | **Spotify plane (beta)** | `internal/spotify/`, `go-librespot` binary on NAND | go-librespot runs as a Spotify Connect receiver, supervised by the agent's `spotify.Manager` | Spotify Connect on the speaker without the Bose cloud. go-librespot decodes nothing: with the fork's `audio_output_pipe_passthrough` it writes the raw Ogg/Vorbis bitstream to a pipe; the agent serves it at `/spotify/stream.ogg` on :8888 and points the box's UPnP renderer there. Preset recall drives go-librespot's local play API (no token plane). Multi-account is done by swapping credentials + restarting go-librespot (fragile, see fork issue #1). |
-| **Desktop app** | `desktop-app/` | Wails app (Go backend + Vite frontend), built for Windows, macOS, Linux | Discovers agents over mDNS, talks to them by REST, ships a UI for radio search (app-side, direct to radio-browser.info), presets, playback (with the live now-playing track + bitrate), a DLNA media library, Spotify Connect (beta), multiroom (beta), settings, webhooks, diagnostics export, OTA agent updates, USB stick provisioning, and box maintenance (true factory reset, uninstall STR, setup-AP Wi-Fi push). |
+| **Desktop app** | `desktop-app/` | Wails app (Go backend + Vite frontend), built for Windows, macOS, Linux | Discovers agents over mDNS, talks to them by REST, ships a UI for radio search (app-side, direct to radio-browser.info), presets, playback (with the live now-playing track + bitrate), a DLNA media library, Spotify Connect (beta), multiroom (beta), settings, webhooks (smart-home triggers), diagnostics export, OTA agent updates, USB stick provisioning, and box maintenance (true factory reset, uninstall STR, setup-AP Wi-Fi push). |
 | **Local library (DLNA)** | `dlna/` (top level so Wails can import it) | Imported by the desktop app | SSDP discovery + ContentDirectory browse of LAN media servers (FRITZ!Box, Synology, Plex, miniDLNA). The app saves a track's stream URL as a normal preset; the box pulls it via the streamproxy. |
 | **Multiroom (beta)** | `internal/zones/`, `internal/boxapi` zone primitives | Agent endpoints `/api/box/zone` + `/api/box/group` | Groups speakers via the box's native `/setZone` (firmware-synced) or a per-agent mirror fallback, plus stereo pairs. Membership persists in `/mnt/nv/streborn/zones.json` and auto-reforms after reboot/standby/Wi-Fi outage. |
 | **Setup wizard** | `sticksetup/`, `cmd/winformat/` (in-app); `setup/` (legacy PowerShell) | Embedded in the desktop app; `winformat.exe` handles FAT32 formatting | Prepares a FAT32 USB stick with Wi-Fi credentials, region, friendly name, language, and the bootstrap shell scripts, then drives the install over SSH. The standalone PowerShell wizard in `setup/` is legacy. |
 | **USB stick filesystem** | `usb-stick/` | Files written to a FAT32 stick by the wizard | Boot-time bootstrap (`rc.local`, `run.sh`, `install.sh`), one-shot config (`wlan.conf`, `name.conf`, `region.conf`, `lang.conf`, `presets.json`), `str-shim.so`, `version.txt`, and the agent binary itself. `run.sh` persists name/region to NAND as `name.txt`/`region.txt`. |
 | **mDNS discovery** | `discovery/` (top level on purpose, see `CLAUDE.md`) | Imported by both the agent and the desktop app | Service type `_streborn._tcp.local`. TXT record carries deviceID, model, friendly name, version. |
 | **Website** | separate repo `JRpersonal/streborn-website` | Astro static site, EN and DE | Downloads, FAQ, Verify page with SHA256 and Sigstore click-paths, legal pages. Built on `repository_dispatch` from this repo's release workflow. |
+
+**Sources are presets.** A preset slot or hardware button (1 to 6) can
+hold an internet radio station, a Spotify playlist/album/track, or a
+track from a LAN media server. They all converge on the same playback
+path: the box's UPnP renderer pulls from the agent's stream proxy
+(`/stream/...`, `/spotify/stream.ogg`) or directly from a radio CDN. No
+source ever depends on the dead Bose cloud.
+
+**In progress.** Two more sources reuse this pattern: **podcasts**
+(search, play, subscribe-a-show-to-a-preset; design in #215) and
+**Deezer** (read and create Deezer presets; see [`ROADMAP.md`](./ROADMAP.md)).
+SoundCloud (#241), SiriusXM (#242), and Pandora (#243) are at feasibility.
+Each runs through a bridge STR controls and hands the box a stream URL,
+never a cloud credential.
+
+**Smart home.** Box events on the gabbo bus (a remote-control key, the
+power button, an AUX change) can fire user-configured HTTP webhooks
+(NAND `webhooks.json`), so a key press can drive Home Assistant,
+ioBroker, Node-RED, or any HTTP endpoint on the LAN.
 
 ## Tech stack
 
