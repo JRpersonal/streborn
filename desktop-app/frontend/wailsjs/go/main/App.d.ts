@@ -5,6 +5,8 @@ import {sticksetup} from '../models';
 import {wifiprofiles} from '../models';
 import {radiobrowser} from '../models';
 
+export function AddBoxByIP(arg1:string):Promise<main.BoxInfo>;
+
 export function AnnounceExample(arg1:string,arg2:number):Promise<string>;
 
 export function AppInfo():Promise<main.AppInfo>;

@@ -134,8 +134,8 @@ export function renderMultiroom(fetchLive) {
        <div id="zoneCurrent" class="muted small" style="margin-top:10px">${currentHtml}</div>
      </div>
 
-     <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--border,#333);padding-top:16px">
-       <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></b>
+     <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--c-border);padding-top:16px">
+       <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></b>
        <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
        ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>

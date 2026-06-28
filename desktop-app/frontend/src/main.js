@@ -2,6 +2,7 @@ import './style.css';
 import {
   DiscoverBoxes,
   RefreshKnownBoxes,
+  AddBoxByIP,
   GetPresets,
   SetPreset,
   DeletePreset,
@@ -1495,11 +1496,38 @@ function renderBoxSelect() {
           <button class="btn btn-mini" id="emptyRetry">${escapeHtml(t('speaker.retry'))}</button>
           <button class="btn btn-primary btn-mini" id="emptyGoSetup">${escapeHtml(t('speaker.goSetup'))}</button>
         </div>
+        <div class="manual-ip">
+          <div class="empty-state-text">${escapeHtml(t('speaker.manualIpHelp'))}</div>
+          <div class="manual-ip-row">
+            <input type="text" id="emptyIpInput" class="manual-ip-input" placeholder="${escapeAttr(t('speaker.manualIpPlaceholder'))}" inputmode="decimal" autocomplete="off" spellcheck="false">
+            <button class="btn btn-mini" id="emptyAddIpBtn">${escapeHtml(t('speaker.manualIpButton'))}</button>
+          </div>
+        </div>
       </div>`;
     const go = document.getElementById('emptyGoSetup');
     if (go) go.onclick = () => switchView('setup');
     const rt = document.getElementById('emptyRetry');
     if (rt) rt.onclick = () => discoverBoxes();
+    // Manual connect-by-IP: the fallback when discovery is blocked by the
+    // network (AP isolation, a different subnet, a VPN, or a security suite).
+    const ipInput = document.getElementById('emptyIpInput');
+    const addIp = document.getElementById('emptyAddIpBtn');
+    const tryAddIp = async () => {
+      const ip = (ipInput.value || '').trim();
+      if (!ip) { ipInput.focus(); return; }
+      addIp.disabled = true;
+      showToast(t('speaker.manualIpSearching', { ip }));
+      try {
+        await AddBoxByIP(ip);
+        await discoverBoxes(); // RefreshKnownBoxes now includes the cached box
+      } catch (e) {
+        showError(t('speaker.manualIpNotFound', { ip }));
+      } finally {
+        addIp.disabled = false;
+      }
+    };
+    if (addIp) addIp.onclick = tryAddIp;
+    if (ipInput) ipInput.onkeydown = (e) => { if (e.key === 'Enter') tryAddIp(); };
     updateBoxUiVisibility();
     return;
   }

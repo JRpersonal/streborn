@@ -8,6 +8,7 @@
 export {
   DiscoverBoxes,
   RefreshKnownBoxes,
+  AddBoxByIP,
   GetPresets,
   SetPreset,
   DeletePreset,
