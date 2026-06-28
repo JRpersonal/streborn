@@ -543,7 +543,7 @@ body {
   padding-right: 10px;
 }
 .box-btn.stock:hover {
-  background: #292929;
+  background: var(--c-surface-2);
   border-color: var(--brand);
   color: var(--c-text);
 }
@@ -553,7 +553,7 @@ body {
   padding: 1px 6px;
   border-radius: 8px;
   background: rgba(204, 0, 0, 0.18);
-  color: #f08080;
+  color: var(--signal-red);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -565,12 +565,12 @@ body {
   flex: 1;
   display: block;
   padding: 8px 10px;
-  background: #111;
+  background: var(--c-bg);
   border: 1px solid var(--c-surface-3);
   border-radius: 6px;
   font-family: monospace;
   font-size: 11px;
-  color: #cfcfcf;
+  color: var(--c-text-2);
   word-break: break-all;
   white-space: pre-wrap;
   user-select: all;
@@ -628,7 +628,7 @@ body {
   margin: 32px auto;
   padding: 0 16px;
   line-height: 1.55;
-  color: #d8d8d8;
+  color: var(--c-text-2);
 }
 .alpha-stage h2 {
   margin: 0 0 12px;
@@ -675,7 +675,7 @@ body {
 .library-empty p { margin-bottom: 10px; }
 .library-pick-server { color: var(--c-muted); font-style: italic; padding: 12px 0; }
 .library-crumbs {
-  background: #181818;
+  background: var(--c-surface-2);
   padding: 8px 12px;
   border-radius: 4px;
   margin-bottom: 8px;
@@ -729,7 +729,7 @@ body {
 .status-bar .muted { color: var(--c-faint); }
 .status-bar.status-play { border-left: 3px solid var(--signal-green); padding-left: 10px; }
 .status-bar.status-buf { border-left: 3px solid var(--signal-yellow); padding-left: 10px; }
-.status-bar.status-err { border-left: 3px solid var(--signal-red); padding-left: 10px; color: #f99; }
+.status-bar.status-err { border-left: 3px solid var(--signal-red); padding-left: 10px; color: var(--signal-red); }
 .status-bar.status-idle { border-left: 3px solid var(--c-border); padding-left: 10px; }
 /* Battery indicator in the speaker tile (SoundTouch Portable only).
    Drawn as a real battery: a body with a terminal nub, so it reads
@@ -811,8 +811,8 @@ body {
   position: relative;
   user-select: none;
 }
-.preset:hover { background: #303030; }
-.preset:active { background: #383838; }
+.preset:hover { background: var(--c-surface-3); }
+.preset:active { background: var(--c-surface-3); }
 .preset.empty { color: var(--c-faint); border-style: dashed; }
 /* preset.playing nutzt SIGNAL-GREEN — bleibt grün als "spielt" Marker */
 .preset.playing {
@@ -904,7 +904,7 @@ body {
 .preset-state.state-play { color: var(--signal-green); }
 .preset-state.state-buf { color: var(--signal-yellow); animation: pulse 1.5s ease-in-out infinite; }
 .preset-state.state-pause { color: var(--c-muted); }
-.preset-state.state-err { color: #f88; }
+.preset-state.state-err { color: var(--signal-red); }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 .preset-hint {
@@ -1008,7 +1008,7 @@ body {
 }
 .tag-pill {
   display: inline-block;
-  background: #232b35;
+  background: var(--brand-bg);
   color: var(--brand-text-mid);
   border-radius: 10px;
   padding: 1px 8px;
@@ -1139,10 +1139,10 @@ body {
 .ps-num { font-size: 12px; color: var(--c-muted); }
 .ps-name { font-size: 13px; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; }
 
-.warn-title { color: #f88 !important; display: flex; align-items: center; gap: 8px; margin: 0 0 8px 0; }
+.warn-title { color: var(--signal-red) !important; display: flex; align-items: center; gap: 8px; margin: 0 0 8px 0; }
 .warn-icon { font-size: 24px; }
 .warn-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-.error-text { width: 100%; min-height: 110px; background: var(--c-bg); color: #f99; border: 1px solid var(--c-border-2); border-radius: 4px; padding: 8px; font-family: ui-monospace, "Consolas", monospace; font-size: 12px; resize: vertical; }
+.error-text { width: 100%; min-height: 110px; background: var(--c-bg); color: var(--signal-red); border: 1px solid var(--c-border-2); border-radius: 4px; padding: 8px; font-family: ui-monospace, "Consolas", monospace; font-size: 12px; resize: vertical; }
 
 .box-hint { background: var(--c-surface); padding: 24px; border-radius: 8px; text-align: center; color: var(--c-muted); margin-top: 8px; font-size: 13px; }
 .box-hint p { margin: 0; }
@@ -1378,7 +1378,7 @@ body {
 .setup-target-section { border-left: 3px solid var(--brand, #58a); }
 .setup-target-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .setup-target-card { background: var(--c-bg); border: 1px solid var(--c-surface-3); border-radius: 6px; padding: 10px 12px; cursor: pointer; text-align: left; width: 100%; color: var(--c-text); font: inherit; transition: background .15s, border-color .15s; }
-.setup-target-card:hover { background: #242424; border-color: var(--c-border); }
+.setup-target-card:hover { background: var(--c-surface-2); border-color: var(--c-border); }
 .setup-target-card.selected { border-color: var(--brand, #58a); background: var(--brand-bg, #1f2c3a); }
 .stc-row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .stc-left { display: flex; align-items: center; gap: 9px; min-width: 0; }
@@ -1389,7 +1389,7 @@ body {
 .setup-target-card.selected .stc-radio { border-color: var(--brand, #58a); }
 .setup-target-card.selected .stc-radio::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--brand, #58a); }
 .stc-label { font-size: 14px; color: var(--c-text); }
-.stc-badge { font-size: 10px; background: var(--c-border); color: #fff; padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
+.stc-badge { font-size: 10px; background: var(--c-surface-3); color: var(--c-text); border: 1px solid var(--c-border); padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
 .stc-badge.badge-warn { background: #d97706; }
 .stc-badge.badge-ok { background: #2a7f3f; }
 .stc-sublabel { font-size: 11px; color: var(--c-muted); margin-top: 3px; }
@@ -1422,7 +1422,7 @@ body {
 .recent-sub { font-size: 13px; margin-bottom: 14px; }
 .recent-scope { display: flex; gap: 6px; }
 .recent-scope .chip { background: var(--brand-bg); color: var(--brand-text-mid); border: 1px solid var(--brand-border); border-radius: 14px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
-.recent-scope .chip.active { background: var(--brand); color: #04222e; border-color: var(--brand); font-weight: 600; }
+.recent-scope .chip.active { background: var(--brand); color: var(--c-bg); border-color: var(--brand); font-weight: 600; }
 /* Speaker picker (#221): replaces the old "this speaker / all" chips. */
 .recent-box-select { background: var(--brand-bg); color: var(--brand-text-mid); border: 1px solid var(--brand-border); border-radius: 14px; padding: 4px 28px 4px 12px; font-size: 12px; cursor: pointer; max-width: 220px; }
 .recent-box-select:hover { border-color: var(--brand); }
@@ -1430,7 +1430,7 @@ body {
 .recent-empty, .recent-loading { color: var(--brand-text-mid); padding: 24px 4px; text-align: center; }
 .recent-card { background: var(--c-surface); border: 1px solid var(--brand-border); border-radius: 10px; overflow: hidden; }
 .recent-card .rc-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
-.rc-logo { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; flex: 0 0 auto; background: #0d0d0d; }
+.rc-logo { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; flex: 0 0 auto; background: var(--c-surface-3); }
 .rc-logo-ph { background: linear-gradient(135deg, #2a3a4a, #1f2a35); }
 .rc-meta { flex: 1 1 auto; min-width: 0; }
 .rc-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1449,7 +1449,7 @@ body {
 .recent-card.rc-now { border-color: var(--signal-green); box-shadow: 0 0 12px rgba(102, 204, 102, 0.25); }
 .rc-now-badge { color: var(--signal-green); font-size: 11px; font-weight: 600; white-space: nowrap; margin-left: 6px; }
 .setup-target-pill { margin-top: 10px; padding: 8px 12px; background: var(--c-bg); border: 1px solid var(--c-surface-3); border-radius: 4px; font-size: 13px; }
-.setup-target-pill b { color: #fff; }
+.setup-target-pill b { color: var(--c-text); }
 .small { font-size: 12px; }
 code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
 .drive-row { background: var(--c-bg); border: 1px solid var(--c-surface-3); border-radius: 6px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer; }
@@ -1486,7 +1486,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .setup-result { margin-top: 12px; font-size: 13px; }
 .setup-ok { color: var(--signal-green); }
 .setup-err { color: var(--signal-red); }
-.setup-warn { color: #f88; }
+.setup-warn { color: var(--signal-red); }
 .setup-ok-actions { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .setup-ok-actions .muted { max-width: 38rem; }
 .setup-help { margin-top: 12px; max-width: 40rem; font-size: 0.92em; }
@@ -1508,7 +1508,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .zone-card.master .zone-card-tick { color: var(--brand); }
 .zone-card.selected .zone-card-tick { color: #4caf50; }
 .zone-card-foot { margin-top: 10px; }
-.zone-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: var(--brand); color: #06121c; font-weight: 600; }
+.zone-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: var(--brand); color: var(--c-bg); font-weight: 600; }
 .zone-makemain { font-size: 10px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--c-border-2); background: transparent; color: var(--c-muted); cursor: pointer; }
 .zone-makemain:hover { border-color: var(--brand); color: var(--c-text); }
 .seg { display: inline-flex; border: 1px solid var(--c-border); border-radius: 6px; overflow: hidden; width: fit-content; }
@@ -1678,17 +1678,17 @@ html.a11y-contrast .app-update-banner .footer-link { color: #ffe066; }
 .phone-card { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .phone-qr { width: 160px; height: 160px; background: #fff; border-radius: 8px; padding: 6px; }
 .phone-url-row { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 200px; }
-.phone-url { font-size: 12px; color: var(--c-text-2); background: #181818; padding: 6px 8px; border-radius: 5px; word-break: break-all; flex: 1; }
+.phone-url { font-size: 12px; color: var(--c-text); background: var(--c-surface-2); border: 1px solid var(--c-border); padding: 6px 8px; border-radius: 5px; word-break: break-all; flex: 1; }
 
 /* Phone-control: a prominent, always-visible feature card (not buried in a
    group) since the phone remote is a headline feature. */
 .phone-feature {
   border: 1px solid var(--brand, #6bd);
-  background: #20262b;
+  background: var(--brand-bg);
 }
 .phone-feature h3 {
   font-size: 14px;
-  color: #fff;
+  color: var(--brand-text);
   display: flex;
   align-items: center;
   gap: 6px;
