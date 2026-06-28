@@ -755,7 +755,7 @@ func (a *App) enrichSeenBoxes(ctx context.Context, seen map[string]BoxInfo) {
 // /24 sweep entirely. It is the manual fallback for networks where discovery
 // cannot reach the boxes at all: Wi-Fi AP/client isolation, the PC on a
 // different subnet, a VPN/virtual adapter, or a security suite that blocks the
-// sweep (Thomas, 2026-06-28: both mDNS and the /24 TCP fallback returned 0 while
+// sweep (a tester, 2026-06-28: both mDNS and the /24 TCP fallback returned 0 while
 // the boxes were plainly on the LAN and visible in Windows Explorer). On a hit
 // the box is cached like a discovered one, so it shows in the list and the
 // periodic RefreshKnownBoxes keeps it live.
