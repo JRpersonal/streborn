@@ -53,17 +53,42 @@ const indexHTML = `<!doctype html>
 <link rel="apple-touch-icon" href="/icon.png">
 <title>ST Reborn</title>
 <style>
-:root { --bg:#1a1a1a; --card:#242424; --card2:#2a2a2a; --line:#3a3a3a; --fg:#eee; --muted:#9e9e9e; --accent:#e88; }
+:root {
+  color-scheme:dark;
+  --bg:#1a1a1a; --card:#242424; --card2:#2a2a2a; --line:#3a3a3a; --fg:#eee; --muted:#9e9e9e; --accent:#e88;
+  --hover:#333; --press:#3d3d3d; --nowgrad1:#2c2c2c; --nowgrad2:#242424;
+}
+/* Light theme: the greyscale tokens flip to a light palette and the coral
+   accent is darkened so it keeps contrast on white. color-scheme:light also
+   makes the native volume slider track render light. */
+html.a11y-light {
+  color-scheme:light;
+  --bg:#f4f4f5; --card:#ffffff; --card2:#ececef; --line:#d4d4d8; --fg:#1a1a1a; --muted:#5a5e66; --accent:#bd3c2c;
+  --hover:#e6e6ea; --press:#dadade; --nowgrad1:#ffffff; --nowgrad2:#f0f0f3;
+}
+/* High-contrast theme: black base, pure-white text and borders, a bright
+   accent. Also seeded automatically on first run when the OS asks for more
+   contrast (prefers-contrast: more). */
+html.a11y-contrast {
+  --bg:#000; --card:#000; --card2:#000; --line:#fff; --fg:#fff; --muted:#fff; --accent:#ffe066;
+  --hover:#1a1a1a; --press:#333; --nowgrad1:#000; --nowgrad2:#000;
+}
+/* Text size. The page uses pixel sizes throughout, so scaling root font-size
+   would not reach them; zoom scales the whole rendered page (text, controls,
+   hit targets) uniformly. */
+html.a11y-scale-l  body { zoom:1.15; }
+html.a11y-scale-xl body { zoom:1.30; }
 * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+html.a11y-contrast :focus-visible { outline-color:#fff; }
 body { margin:0; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); background:var(--bg); color:var(--fg); max-width:620px; margin:0 auto; }
 header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 header img { width:30px; height:30px; border-radius:7px; }
 header .brand { font-size:18px; font-weight:700; letter-spacing:.2px; }
 header .brand span { color:var(--accent); }
-header .dev { margin-left:auto; font-size:12px; color:var(--muted); text-align:right; max-width:55%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+header .dev { margin-left:auto; min-width:0; font-size:12px; color:var(--muted); text-align:right; max-width:42%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin:12px 0; }
-.nowcard { padding:14px 16px; background:linear-gradient(180deg,#2c2c2c,#242424); }
+.nowcard { padding:14px 16px; background:linear-gradient(180deg,var(--nowgrad1),var(--nowgrad2)); }
 .nowcard .now { display:block; color:var(--accent); font-weight:600; font-size:18px; line-height:1.25; }
 .nowcard .st { font-size:13px; color:var(--muted); margin-top:3px; }
 .nowcard.loading { opacity:.6; }
@@ -74,8 +99,8 @@ header .dev { margin-left:auto; font-size:12px; color:var(--muted); text-align:r
 .row.c3 { grid-template-columns:1fr 1fr 1fr; }
 button.btn, a.btn { display:flex; align-items:center; justify-content:center; min-height:44px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px; font-size:14px; cursor:pointer; text-decoration:none; transition:background .15s,border-color .15s,color .15s; }
 button.btn.active, a.btn.active { border-color:var(--accent); color:var(--accent); }
-button.btn:active { background:#3d3d3d; }
-@media (hover:hover) { button.btn:hover, a.btn:hover { background:#333; } .preset:hover { background:#333; } }
+button.btn:active { background:var(--press); }
+@media (hover:hover) { button.btn:hover, a.btn:hover { background:var(--hover); } .preset:hover { background:var(--hover); } }
 .vol { display:flex; align-items:center; gap:12px; }
 .vol input[type=range] { flex:1; accent-color:var(--accent); height:44px; }
 .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:24px; height:24px; border-radius:50%; background:var(--accent); }
@@ -83,7 +108,7 @@ button.btn:active { background:#3d3d3d; }
 .vol .val { width:36px; text-align:right; font-variant-numeric:tabular-nums; color:var(--fg); }
 .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
 .preset { background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:14px; cursor:pointer; min-height:80px; display:flex; flex-direction:column; justify-content:center; transition:background .15s; }
-.preset:active { background:#3d3d3d; }
+.preset:active { background:var(--press); }
 .preset:focus-visible { outline-offset:-2px; }
 .preset .num { font-size:11px; color:var(--muted); }
 .preset .name { font-size:15px; font-weight:600; margin-top:4px; }
@@ -101,13 +126,87 @@ footer .web { display:inline-block; margin-top:4px; color:var(--accent); text-de
 footer .web:hover { text-decoration:underline; }
 footer .ver { display:block; margin-top:8px; }
 footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
+/* "Aa" display-options menu (text size + theme), pinned to the header's right. */
+.a11y { position:relative; flex:none; }
+.a11y-trigger { display:inline-flex; align-items:center; min-height:36px; padding:6px 11px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-size:15px; font-weight:700; letter-spacing:-.5px; cursor:pointer; }
+.a11y-trigger:active { background:var(--press); }
+.a11y-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:50; padding:12px; min-width:228px; background:var(--card); border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+.a11y-menu[hidden] { display:none; }
+.a11y-group + .a11y-group { margin-top:12px; }
+.a11y-glabel { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:6px; }
+.a11y-seg { display:flex; gap:6px; }
+.a11y-seg button { flex:1; min-height:44px; padding:8px 6px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-size:13px; line-height:1.15; cursor:pointer; }
+.a11y-seg button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+@media (hover:hover) { .a11y-trigger:hover, .a11y-seg button:hover { background:var(--hover); } }
+/* Respect the OS "reduce motion" setting. */
+@media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
 </style>
+<script>
+// Display preferences (text size + theme). Applied to <html> here in <head>,
+// before the body paints, so the chosen theme/size is in effect on first paint
+// with no flash. Stored in localStorage (a phone-local UI preference, like the
+// language), so it costs the speaker nothing. On first run the theme is seeded
+// from the OS accessibility settings.
+(function(){
+  var SCALE_KEY='a11yScale', THEME_KEY='a11yTheme';
+  function osTheme(){
+    try {
+      if (window.matchMedia('(prefers-contrast: more)').matches) return 'contrast';
+      if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+    } catch (e) {}
+    return 'dark';
+  }
+  window.a11yGetScale=function(){
+    try { var n=Number(localStorage.getItem(SCALE_KEY)); if (n===2||n===3) return n; } catch (e) {}
+    return 1;
+  };
+  window.a11yGetTheme=function(){
+    try { var v=localStorage.getItem(THEME_KEY); if (v==='dark'||v==='light'||v==='contrast') return v; } catch (e) {}
+    return osTheme();
+  };
+  window.a11yApply=function(){
+    var el=document.documentElement;
+    el.classList.remove('a11y-scale-l','a11y-scale-xl','a11y-light','a11y-contrast');
+    var s=window.a11yGetScale();
+    if (s===2) el.classList.add('a11y-scale-l'); else if (s===3) el.classList.add('a11y-scale-xl');
+    var t=window.a11yGetTheme();
+    if (t==='light') el.classList.add('a11y-light'); else if (t==='contrast') el.classList.add('a11y-contrast');
+    // Keep the mobile browser chrome / PWA status bar in step with the theme.
+    var meta=document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', t==='light' ? '#f4f4f5' : (t==='contrast' ? '#000000' : '#1a1a1a'));
+  };
+  window.a11ySetScale=function(n){ try { localStorage.setItem(SCALE_KEY,String(n)); } catch (e) {} window.a11yApply(); };
+  window.a11ySetTheme=function(t){ try { localStorage.setItem(THEME_KEY,t); } catch (e) {} window.a11yApply(); };
+  window.a11yApply();
+})();
+</script>
 </head>
 <body>
 <header>
 <img src="/icon.png" alt="STR">
 <div class="brand">ST <span>Reborn</span></div>
 <div class="dev" id="dev"></div>
+<div class="a11y">
+<button type="button" class="a11y-trigger" id="a11yTrigger" aria-haspopup="dialog" aria-expanded="false" aria-label="Display &amp; accessibility" title="Display &amp; accessibility">Aa</button>
+<div class="a11y-menu" id="a11yMenu" role="dialog" aria-label="Display &amp; accessibility" hidden>
+<div class="a11y-group">
+<div class="a11y-glabel" id="a11ySizeLabel">Text size</div>
+<div class="a11y-seg" role="group" aria-labelledby="a11ySizeLabel">
+<button type="button" data-scale="1" aria-pressed="true">Normal</button>
+<button type="button" data-scale="2" aria-pressed="false">Large</button>
+<button type="button" data-scale="3" aria-pressed="false">Extra large</button>
+</div>
+</div>
+<div class="a11y-group">
+<div class="a11y-glabel" id="a11yThemeLabel">Theme</div>
+<div class="a11y-seg" role="group" aria-labelledby="a11yThemeLabel">
+<button type="button" data-theme="dark" aria-pressed="true">Dark</button>
+<button type="button" data-theme="light" aria-pressed="false">Light</button>
+<button type="button" data-theme="contrast" aria-pressed="false">High contrast</button>
+</div>
+</div>
+</div>
+</div>
 </header>
 
 <main>
@@ -262,6 +361,66 @@ async function loadVersion() {
   const v = await api('/api/agent/version');
   if (v && v.version) document.getElementById('ver').textContent = 'ST Reborn ' + v.version;
 }
+
+// Wire the "Aa" display-options menu. The preferences are applied instantly by
+// the helpers defined in the <head> (toggling classes on <html>), so there is
+// no reload and no request to the speaker.
+(function wireA11y() {
+  var trigger = document.getElementById('a11yTrigger');
+  var menu = document.getElementById('a11yMenu');
+  if (!trigger || !menu) return;
+  // Localize the menu labels to the phone's language, reusing the same strings
+  // as the desktop app. Only these controls are translated; the rest of the
+  // page is English. Done client-side from navigator.language, so it costs the
+  // speaker nothing.
+  var A11Y_I18N = {
+    en:{t:"Display & accessibility",sz:"Text size",n:"Normal",l:"Large",x:"Extra large",th:"Theme",d:"Dark",li:"Light",c:"High contrast"},
+    de:{t:"Anzeige und Barrierefreiheit",sz:"Textgröße",n:"Normal",l:"Groß",x:"Sehr groß",th:"Darstellung",d:"Dunkel",li:"Hell",c:"Hoher Kontrast"},
+    nl:{t:"Weergave en toegankelijkheid",sz:"Tekstgrootte",n:"Normaal",l:"Groot",x:"Extra groot",th:"Thema",d:"Donker",li:"Licht",c:"Hoog contrast"},
+    fr:{t:"Affichage et accessibilité",sz:"Taille du texte",n:"Normale",l:"Grande",x:"Très grande",th:"Thème",d:"Sombre",li:"Clair",c:"Contraste élevé"},
+    es:{t:"Pantalla y accesibilidad",sz:"Tamaño del texto",n:"Normal",l:"Grande",x:"Muy grande",th:"Tema",d:"Oscuro",li:"Claro",c:"Alto contraste"},
+    pl:{t:"Wyświetlanie i dostępność",sz:"Rozmiar tekstu",n:"Normalny",l:"Duży",x:"Bardzo duży",th:"Motyw",d:"Ciemny",li:"Jasny",c:"Wysoki kontrast"},
+    tr:{t:"Görüntü ve erişilebilirlik",sz:"Yazı boyutu",n:"Normal",l:"Büyük",x:"Çok büyük",th:"Tema",d:"Koyu",li:"Açık",c:"Yüksek kontrast"},
+    ar:{t:"العرض وإمكانية الوصول",sz:"حجم النص",n:"عادي",l:"كبير",x:"كبير جدًا",th:"السمة",d:"داكن",li:"فاتح",c:"تباين عالٍ"},
+    ja:{t:"表示とアクセシビリティ",sz:"文字サイズ",n:"標準",l:"大",x:"特大",th:"テーマ",d:"ダーク",li:"ライト",c:"ハイコントラスト"},
+    lt:{t:"Rodymas ir prieinamumas",sz:"Teksto dydis",n:"Normalus",l:"Didelis",x:"Labai didelis",th:"Tema",d:"Tamsi",li:"Šviesi",c:"Didelis kontrastas"},
+    lv:{t:"Attēlojums un pieejamība",sz:"Teksta izmērs",n:"Normāls",l:"Liels",x:"Ļoti liels",th:"Motīvs",d:"Tumšs",li:"Gaišs",c:"Augsts kontrasts"},
+    uk:{t:"Відображення та доступність",sz:"Розмір тексту",n:"Звичайний",l:"Великий",x:"Дуже великий",th:"Тема",d:"Темна",li:"Світла",c:"Високий контраст"}
+  };
+  var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
+  var code = 'en';
+  for (var i = 0; i < langs.length; i++) {
+    var pri = String(langs[i] || '').toLowerCase().split('-')[0];
+    if (A11Y_I18N[pri]) { code = pri; break; }
+  }
+  var L = A11Y_I18N[code];
+  menu.setAttribute('lang', code);
+  if (code === 'ar') menu.setAttribute('dir', 'rtl');
+  trigger.setAttribute('aria-label', L.t); trigger.title = L.t; menu.setAttribute('aria-label', L.t);
+  document.getElementById('a11ySizeLabel').textContent = L.sz;
+  document.getElementById('a11yThemeLabel').textContent = L.th;
+  var setTxt = function(sel, v) { var el = menu.querySelector(sel); if (el) el.textContent = v; };
+  setTxt('button[data-scale="1"]', L.n); setTxt('button[data-scale="2"]', L.l); setTxt('button[data-scale="3"]', L.x);
+  setTxt('button[data-theme="dark"]', L.d); setTxt('button[data-theme="light"]', L.li); setTxt('button[data-theme="contrast"]', L.c);
+  function close() { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); }
+  function open() { menu.hidden = false; trigger.setAttribute('aria-expanded', 'true'); }
+  trigger.onclick = function(e) { e.stopPropagation(); if (menu.hidden) open(); else close(); };
+  function sync(attr, val) {
+    menu.querySelectorAll('button[' + attr + ']').forEach(function(b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute(attr) === String(val)));
+    });
+  }
+  menu.querySelectorAll('button[data-scale]').forEach(function(b) {
+    b.onclick = function() { var n = Number(b.dataset.scale); a11ySetScale(n); sync('data-scale', n); };
+  });
+  menu.querySelectorAll('button[data-theme]').forEach(function(b) {
+    b.onclick = function() { a11ySetTheme(b.dataset.theme); sync('data-theme', b.dataset.theme); };
+  });
+  sync('data-scale', a11yGetScale());
+  sync('data-theme', a11yGetTheme());
+  document.addEventListener('click', function(e) { if (!e.target.closest('.a11y')) close(); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
+})();
 
 loadSettings(); loadPresets(); refreshStatus(); loadPeers(); loadVersion();
 setInterval(refreshStatus, 5000);
