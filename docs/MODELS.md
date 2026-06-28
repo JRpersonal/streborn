@@ -17,7 +17,9 @@ been validated.
 | **SoundTouch 20** | TI AM335x ARMv7l, module `scm` + SMSC, variant `spotty` (BCO) | **Working (contributor-confirmed; final stability confirmation in progress)** |
 | **SoundTouch 20** | TI AM335x ARMv7l, module SM2 (codename still `spotty`) | **Expected**: provisions Wi-Fi the Series-II way (real `wlan0`), but `run.sh` still applies the whitelisted-chassis reachability path (REDIRECT `:17008`->`:8888`) because the codename is `spotty`. Awaiting a live SM2-ST20 report. |
 | **SoundTouch 30** | TI AM335x ARMv7l, module SM2, variant `mojo` | **Working** (live-confirmed via the #123 diagnostic, 2026-06-10: box healthy, agent up; full end-to-end pass pending) |
-| Wave SoundTouch IV | unknown, possibly different CPU | **Unknown** |
+| Wave SoundTouch (IV) | AM335x ARMv7l, module `scm`, variant `lisa` + SMSC/Lightswitch | **Unknown** (#283: the agent would likely run on the scm module, but there is no validated first-install path yet) |
+| **Bose SA-4 amplifier** | AM335x ARMv7l, module `scm`, variant `lisa` + SMSC/Lightswitch | **Unknown** (#273: the box never opens the stick-gated SSH window at boot, so STR has no first-install channel; not the agent's fault) |
+| CineMate (520, ...) | module `sm2`, variant `lisa` | **Unknown** (#283) |
 | other (Soundbar, ST300, ...) | unknown | **Unknown** |
 
 All ARMv7l models run the same agent binary (`streborn-armv7l`); the

@@ -3848,7 +3848,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// announces its wlan0/SMSC MAC, not the deviceID the firmware keys /addGroup
 	// on. localDeviceID already corrects this for the master; the partner (RIGHT)
 	// needs the same, or AddGroup embeds the wrong chip's MAC and the firmware
-	// silently drops the channel (live: Dirk's ST10+ST10 pair never formed, #70).
+	// silently drops the channel (live: an ST10+ST10 pair never formed, #70).
 	if partner.IP != "" {
 		if pinfo, perr := boxapi.New(partner.IP).GetInfo(ctx); perr == nil {
 			if real := strings.TrimSpace(pinfo.DeviceID); real != "" {
@@ -3859,7 +3859,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 				partner.DeviceID = real
 			}
 			// Bose stereo /addGroup needs both speakers set up on the SAME marge
-			// account; an empty account is the usual silent reject (box-4, Dirk).
+			// account; an empty account is the usual silent reject (a tester's box-4).
 			if strings.TrimSpace(pinfo.MargeAccountUUID) == "" {
 				s.logger.Warn("stereo: partner has no marge account, /addGroup will likely be rejected (set the speaker up first)", "partnerIP", partner.IP)
 			}

@@ -123,6 +123,18 @@ When the agent is up on `:8888`, the matching `setup.log` (in `debugState.setup_
 - `bose /etc/Variant:` line for the Bose variant marker (often blank if the file is unreadable; populated on intact boxes)
 - `writable:` lines for `/etc`, `/mnt/nv`, `/tmp`, `/media/sda1`
 
+## The `lisa` variant (SA-4, Wave SoundTouch, CineMate) — UNVERIFIED
+
+Seen in the 2026-06-28 triage bundles (#273 SA-4, plus a Wave SoundTouch):
+
+| `moduleType` | `variant` | `type` | Components | First-install state |
+| --- | --- | --- | --- | --- |
+| `scm` | `lisa` | `SoundTouch SA-4` | SCM, PackagedProduct, **Lightswitch**, **SMSC** | **blocked** — the box never reads the stick at boot, so the stick-gated SSH window never opens (`reachableSSH=false` while `:8090` is up). Same "install-window-closed" signature `install_str.go` documents for the ST300. |
+| `scm` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, Lightswitch, SMSC | same family; the agent would likely run via the `:17008` REDIRECT like the `scm` ST20, but there is no validated first-install path. |
+| `sm2` | `lisa` | `CineMate` | SCM, PackagedProduct | unverified. |
+
+These are **Unknown/unsupported** (docs/MODELS.md). The UI should warn that a `variant=lisa` chassis is unverified instead of presenting it as installable/healable (#283). Note: in a diagnostic a stock `scm/lisa` box shows `reachable8888=true` because that field probes **:17008**, where Bose's own SoftwareUpdate answers; the authoritative "STR present" signal is the new `strDetected` field, not `reachable8888`.
+
 ## Why this matters for STR
 
 Code paths that diverge between hardware revisions (WLAN provisioning, USB-Ethernet bridge handling, watchdog behaviour, TLS bundle generation, hosts-file bind-mount) sit on top of these facts. New failure reports get their root cause matched against this matrix before we start speculating; if a row is missing we ask for a diagnostic before promising a fix.
