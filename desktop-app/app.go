@@ -751,6 +751,48 @@ func (a *App) enrichSeenBoxes(ctx context.Context, seen map[string]BoxInfo) {
 	wg.Wait()
 }
 
+// AddBoxByIP probes one speaker IP the user typed in, bypassing mDNS and the
+// /24 sweep entirely. It is the manual fallback for networks where discovery
+// cannot reach the boxes at all: Wi-Fi AP/client isolation, the PC on a
+// different subnet, a VPN/virtual adapter, or a security suite that blocks the
+// sweep (Thomas, 2026-06-28: both mDNS and the /24 TCP fallback returned 0 while
+// the boxes were plainly on the LAN and visible in Windows Explorer). On a hit
+// the box is cached like a discovered one, so it shows in the list and the
+// periodic RefreshKnownBoxes keeps it live.
+func (a *App) AddBoxByIP(host string) (BoxInfo, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return BoxInfo{}, fmt.Errorf("enter the speaker's IP address")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	a.logger.Info("AddBoxByIP: manual probe", "host", host)
+	var box BoxInfo
+	// An STR-flashed box still answers :8090, so probe :8888 (STR) first and
+	// prefer that record; fall back to the stock Bose box so a vanilla speaker
+	// is offered the USB-stick install.
+	if str, isSTR := probeSTRWithRetry(ctx, host, 2); isSTR {
+		box = str
+	} else if stock, ok := probeStock(ctx, host); ok {
+		box = stock
+	} else {
+		a.logger.Warn("AddBoxByIP: nothing answered", "host", host)
+		return BoxInfo{}, fmt.Errorf("no SoundTouch answered at %s. Check the address, and that this PC and the speaker are on the same network", host)
+	}
+	if box.Host == "" {
+		box.Host = host
+	}
+	now := time.Now()
+	a.discMu.Lock()
+	if a.discCache == nil {
+		a.discCache = map[string]discEntry{}
+	}
+	a.discCache[box.Host] = discEntry{box: box, seen: now}
+	a.discMu.Unlock()
+	a.logger.Info("AddBoxByIP: added speaker", "host", box.Host, "kind", box.Kind, "name", box.Name, "version", box.Version)
+	return box, nil
+}
+
 // probeLANForStock walks every local IPv4 /24 and HTTP-probes each
 // host on port 8090 for the stock Bose /info XML. This is the
 // fallback path used when mDNS returned no speakers at all: we
@@ -1459,7 +1501,23 @@ func (a *App) ensureZoneMembersReady(ips []string) memberReadiness {
 // FormZone forms (or replaces) a multiroom zone with masterHost as the master and
 // the given slaves (#70 beta). POSTed to the master's agent, which drives the
 // native Bose /setZone and persists it so the zone auto-reforms after a reboot.
-func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (map[string]any, error) {
+func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result map[string]any, err error) {
+	// Log every attempt + outcome here on the app side: the agent logs the
+	// firmware /setZone & /addGroup responses on the box, but a remote user's
+	// diagnostic bundle ships only app.log, so without this an alpha stereo-pair
+	// failure (e.g. the firmware refusing /addGroup) left no trace at all. The
+	// error returned to the frontend already carries the agent's "addGroup: ..."
+	// / "setZone: ..." text, so this records the real firmware reason.
+	a.logger.Info("FormZone: forming (stereo=alpha, zone=beta)", "masterHost", masterHost,
+		"master", spec.Master.DeviceID, "masterIP", spec.Master.IP, "slaves", len(spec.Slaves),
+		"stereo", spec.Stereo, "mode", spec.Mode)
+	defer func() {
+		if err != nil {
+			a.logger.Warn("FormZone: failed", "stereo", spec.Stereo, "master", spec.Master.DeviceID, "err", err)
+		} else {
+			a.logger.Info("FormZone: done", "stereo", spec.Stereo, "master", spec.Master.DeviceID, "result", result)
+		}
+	}()
 	if spec.Master.DeviceID == "" || len(spec.Slaves) == 0 {
 		return nil, fmt.Errorf("a master and at least one slave are required")
 	}

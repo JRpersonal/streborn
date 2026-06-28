@@ -310,6 +310,13 @@ type boxSnapshot struct {
 	ReachableSSH  bool           `json:"reachableSSH"`
 	Reachable8090 bool           `json:"reachable8090"`
 	Reachable8888 bool           `json:"reachable8888"`
+	// STRDetected is the authoritative "STR is actually installed and serving
+	// here" signal: true only when /api/agent/version returned a real version
+	// string. Reachable8888 alone is misleading because it probes :17008, where
+	// a STOCK scm box's own Bose SoftwareUpdate service also TCP-accepts, so
+	// reachable8888=true even with no STR present (this is what made the Wave /
+	// SA-4 / scm-ST30 look like a "broken STR agent" when they were plain stock).
+	STRDetected bool `json:"strDetected"`
 	// DebugState is /api/debug/state on 8888, if reachable. Contains
 	// the boot-race trace (setup.log, boot.log, agent_log_tail).
 	// Always present when the STR agent is up — the single most
@@ -378,6 +385,12 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		raw := httpGetText(fmt.Sprintf("http://%s:17008/api/agent/version", host), 1024)
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)
+		}
+		// Authoritative STR-present check: a real STR agent answers with a
+		// non-empty "version". A stock scm box's :17008 SoftwareUpdate replies
+		// with something else (or nothing parseable), so STRAgentVer stays empty.
+		if v, ok := s.STRAgentVer["version"].(string); ok && strings.TrimSpace(v) != "" {
+			s.STRDetected = true
 		}
 		// /api/debug/state holds the boot-race trace (setup.log,
 		// boot.log, agent_log_tail). Single most useful payload for

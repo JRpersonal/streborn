@@ -1376,8 +1376,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		uri, name, art, account, shuffle := p.URI, p.Name, p.Art, p.Account, p.Shuffle
 		go func() {
 			bg := context.Background()
+			t0 := time.Now()
+			warm := s.spotifyReady == nil || s.spotifyReady()
 			if s.spotifyReady != nil && !s.spotifyReady() {
-				s.logger.Info("spotify soft recall: waiting for go-librespot ready", "slot", slot)
+				s.logger.Info("spotify soft recall: waiting for go-librespot ready (cold start)", "slot", slot)
 				for i := 0; i < 24 && !s.spotifyReady(); i++ {
 					time.Sleep(500 * time.Millisecond)
 				}
@@ -1385,6 +1387,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			if err := s.spotifyPlay(bg, uri, account, shuffle); err != nil {
 				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 			}
+			s.logger.Info("spotify soft recall: context load issued", "slot", slot, "warm", warm, "loadAfterMs", time.Since(t0).Milliseconds())
 			s.verifyRecall(func(ctx context.Context, lastAttempt bool) {
 				// Re-point the box at the stream WITHOUT re-Play on the early
 				// tries: ServeOgg resumes go-librespot on attach, so this
@@ -3840,6 +3843,31 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		name = "Stereo pair"
 	}
 
+	// Resolve the partner's REAL SoundTouch deviceID from its OWN firmware /info.
+	// The app derives a member's deviceID from mDNS, where a two-chip chassis
+	// announces its wlan0/SMSC MAC, not the deviceID the firmware keys /addGroup
+	// on. localDeviceID already corrects this for the master; the partner (RIGHT)
+	// needs the same, or AddGroup embeds the wrong chip's MAC and the firmware
+	// silently drops the channel (live: Dirk's ST10+ST10 pair never formed, #70).
+	if partner.IP != "" {
+		if pinfo, perr := boxapi.New(partner.IP).GetInfo(ctx); perr == nil {
+			if real := strings.TrimSpace(pinfo.DeviceID); real != "" {
+				if !strings.EqualFold(real, partner.DeviceID) {
+					s.logger.Info("stereo: corrected partner deviceID from its firmware /info (app sent the chassis MAC, not the SoundTouch ID)",
+						"supplied", partner.DeviceID, "firmware", real, "partnerIP", partner.IP)
+				}
+				partner.DeviceID = real
+			}
+			// Bose stereo /addGroup needs both speakers set up on the SAME marge
+			// account; an empty account is the usual silent reject (box-4, Dirk).
+			if strings.TrimSpace(pinfo.MargeAccountUUID) == "" {
+				s.logger.Warn("stereo: partner has no marge account, /addGroup will likely be rejected (set the speaker up first)", "partnerIP", partner.IP)
+			}
+		} else {
+			s.logger.Warn("stereo: could not read partner /info, using the app-supplied deviceID", "err", perr, "partnerIP", partner.IP)
+		}
+	}
+
 	// Persist before driving the firmware so the dissolve path knows it is a
 	// stereo pair even after an agent restart. Stereo pairs are firmware-native,
 	// so the reconcile loop leaves them alone (the box re-forms across reboots).
@@ -3865,6 +3893,18 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	if err != nil {
 		s.logger.Warn("stereo: paired but getGroup read-back failed", "err", err)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stereo": true})
+		return
+	}
+	// Assert the firmware actually bound BOTH channels. /addGroup can return 200
+	// while silently dropping a member (wrong deviceID, account mismatch), which
+	// the old code reported as ok=true — the user thought it worked but only one
+	// speaker played. A real stereo pair must read back exactly two members.
+	if len(g.Members) != 2 {
+		s.logger.Warn("stereo: firmware formed an INCOMPLETE pair (a speaker was dropped)", "id", g.ID, "members", len(g.Members))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": false, "stereo": true, "members": len(g.Members),
+			"error": "the speaker did not accept the pair. Both speakers must be set up and on the same account, and only the SoundTouch 10 supports stereo pairs.",
+		})
 		return
 	}
 	s.logger.Info("stereo: paired", "id", g.ID, "members", len(g.Members))

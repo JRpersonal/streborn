@@ -456,6 +456,16 @@ body {
   justify-content: center;
   margin-top: 4px;
 }
+/* Manual connect-by-IP, shown in the "no speaker found" state as the fallback
+   for networks where discovery is blocked (AP isolation, VPN, other subnet). */
+.manual-ip { margin-top: 16px; border-top: 1px solid var(--c-border); padding-top: 14px; }
+.manual-ip-row { display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 8px; }
+.manual-ip-input {
+  flex: 0 1 200px; min-width: 0; padding: 7px 10px; font-size: 13px;
+  background: var(--c-bg); color: var(--c-text);
+  border: 1px solid var(--c-border); border-radius: 6px;
+}
+.manual-ip-input:focus { border-color: var(--brand); outline: none; }
 .reconnect-banner {
   background: var(--brand-bg);
   border: 1px solid var(--brand-border);
