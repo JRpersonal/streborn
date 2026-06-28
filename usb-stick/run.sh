@@ -2851,6 +2851,56 @@ agent_resource_line() {
     echo "memAvail=${_mf:-?} nandFree=${_nf:-?}"
 }
 
+# redeploy_agent_from_stick: self-heal for a crash-looping agent. When the NAND
+# binary fast-respawns past the watchdog cap AND the recovery stick is still
+# plugged in, recover the binary straight from the stick: a corrupt/short NAND
+# copy (md5 != stick) is overwritten with the known-good stick binary. An intact
+# copy is left as-is — the fault is then environmental (OOM / full NAND) and a
+# re-copy cannot fix it. (A bound-but-slow agent is NOT treated as broken: it
+# binds :8888 long before it answers /api/agent/version under boot load.) Runs at most once
+# per boot (the /tmp flag clears on reboot, so a wedged box self-heals on the
+# next boot without looping). Returns 0 only if it actually rewrote the binary,
+# so the caller knows a fresh restart is worth attempting. "Stick is recovery."
+# Self-heal budget: a per-boot guard (/tmp, clears on reboot) stops looping
+# within one boot; a persistent NAND counter caps the lifetime total so an
+# unsupported or unrecoverable chassis cannot redeploy on every single boot.
+SELFHEAL_BOOT_FLAG="/tmp/str-selfheal-done"
+SELFHEAL_COUNT="$PERSIST/logs/selfheal-count"
+SELFHEAL_MAX=3
+redeploy_agent_from_stick() {
+    [ -f "$SELFHEAL_BOOT_FLAG" ] && return 1
+    : > "$SELFHEAL_BOOT_FLAG"
+    _shn=$(cat "$SELFHEAL_COUNT" 2>/dev/null || echo 0)
+    case "$_shn" in ''|*[!0-9]*) _shn=0 ;; esac
+    if [ "$_shn" -ge "$SELFHEAL_MAX" ]; then
+        setup_log "self-heal: lifetime cap reached ($_shn/$SELFHEAL_MAX), not redeploying again (likely unsupported chassis or unrecoverable fault; a fresh stick install resets it)"
+        return 1
+    fi
+    if [ ! -f "$STICK_BIN" ]; then
+        setup_log "self-heal: recovery stick not present ($STICK_BIN), cannot redeploy agent"
+        return 1
+    fi
+    _shm5=$(md5sum "$STICK_BIN" 2>/dev/null | awk '{print $1}')
+    _nhm5=$(md5sum "$CACHED_BIN" 2>/dev/null | awk '{print $1}')
+    if [ -n "$_shm5" ] && [ "$_shm5" = "$_nhm5" ]; then
+        setup_log "self-heal: NAND binary already matches stick ($_nhm5); fault is not a corrupt binary (OOM / full NAND?), redeploy skipped"
+        return 1
+    fi
+    setup_log "self-heal: redeploying agent from stick (nand=${_nhm5:-none} -> stick=$_shm5)"
+    if cp "$STICK_BIN" "$CACHED_BIN.heal" 2>/dev/null \
+        && [ "$(md5sum "$CACHED_BIN.heal" 2>/dev/null | awk '{print $1}')" = "$_shm5" ]; then
+        chmod +x "$CACHED_BIN.heal" 2>/dev/null
+        mv "$CACHED_BIN.heal" "$CACHED_BIN" 2>/dev/null
+        sync
+        echo $((_shn+1)) > "$SELFHEAL_COUNT" 2>/dev/null
+        setup_log "self-heal: agent binary recovered from stick, md5 now $_shm5 (attempt $((_shn+1))/$SELFHEAL_MAX)"
+        return 0
+    fi
+    rm -f "$CACHED_BIN.heal" 2>/dev/null
+    setup_log "self-heal: redeploy copy/verify FAILED, NAND left as-is"
+    return 1
+}
+
 start_agent() {
     START_COUNT=$((${START_COUNT:-0}+1))
     # Fingerprint the binary on every launch: a corrupt / short NAND copy
@@ -3519,6 +3569,14 @@ agent_port_bound() {
             IN_GRACE=1
         fi
         if [ "$ALIVE" = "1" ] && [ "$BOUND" = "1" ]; then
+            # Bound is "good enough" here. The agent binds :8888 early but can
+            # take a long time to answer /api/agent/version under boot load
+            # (first-run CA gen, mDNS, the 5 s Bose /info wait, the shim swap):
+            # observed >100 s live on taigan. Killing a bound-but-slow agent
+            # only restarts its init and delays it, so we do NOT health-gate the
+            # continue. A genuinely broken binary crash-loops DEAD/unbound (not
+            # bound), and is recovered by the respawn path + the stick self-heal
+            # at the fast-respawn cap below.
             continue
         fi
         if [ "$ALIVE" = "1" ] && [ "$IN_GRACE" = "1" ]; then
@@ -3530,6 +3588,16 @@ agent_port_bound() {
         # agent up, something fundamental is wrong (binary corrupt,
         # NAND full, ...) and respawning faster will not help.
         if [ "$BOOT_RESTARTS" -ge 6 ]; then
+            # Last resort before declaring the agent unstable: if the NAND
+            # binary is corrupt and the recovery stick is still in, recover it
+            # from the stick and give the watchdog a fresh restart budget. The
+            # /tmp once-per-boot guard keeps this from looping forever.
+            if redeploy_agent_from_stick; then
+                setup_log "boot-watchdog: self-healed agent from stick after $BOOT_RESTARTS fast respawns, resetting restart budget"
+                BOOT_RESTARTS=0
+                i=0
+                continue
+            fi
             # The agent will not stay up. Raise a loud, machine-readable
             # marker the diagnostic bundle (and a future app-side check)
             # can surface as a clear "agent unstable" error instead of a
