@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "操作",
   "settingsView.groupAdvanced": "詳細設定",
   "settingsView.phoneHeading": "このスピーカーをスマホで操作",
-  "settingsView.phoneHelp": "カメラでスキャンし、「ホーム画面に追加」でワンタップのリモコンに。"
+  "settingsView.phoneHelp": "カメラでスキャンし、「ホーム画面に追加」でワンタップのリモコンに。",
+  "a11y.title": "表示とアクセシビリティ",
+  "a11y.textSize": "文字サイズ",
+  "a11y.size.normal": "標準",
+  "a11y.size.large": "大",
+  "a11y.size.xlarge": "特大",
+  "a11y.theme": "テーマ",
+  "a11y.theme.dark": "ダーク",
+  "a11y.theme.light": "ライト",
+  "a11y.theme.contrast": "ハイコントラスト"
 }

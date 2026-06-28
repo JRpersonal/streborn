@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "Akcje",
   "settingsView.groupAdvanced": "Zaawansowane",
   "settingsView.phoneHeading": "Steruj tym głośnikiem z telefonu",
-  "settingsView.phoneHelp": "Zeskanuj aparatem, a następnie użyj Dodaj do ekranu głównego, aby mieć pilota jednym dotknięciem."
+  "settingsView.phoneHelp": "Zeskanuj aparatem, a następnie użyj Dodaj do ekranu głównego, aby mieć pilota jednym dotknięciem.",
+  "a11y.title": "Wyświetlanie i dostępność",
+  "a11y.textSize": "Rozmiar tekstu",
+  "a11y.size.normal": "Normalny",
+  "a11y.size.large": "Duży",
+  "a11y.size.xlarge": "Bardzo duży",
+  "a11y.theme": "Motyw",
+  "a11y.theme.dark": "Ciemny",
+  "a11y.theme.light": "Jasny",
+  "a11y.theme.contrast": "Wysoki kontrast"
 }

@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "Veiksmai",
   "settingsView.groupAdvanced": "Išplėstiniai",
   "settingsView.phoneHeading": "Valdykite šią kolonėlę telefonu",
-  "settingsView.phoneHelp": "Nuskenuokite kamera, tada naudokite Pridėti į pagrindinį ekraną, kad gautumėte nuotolinį valdymą vienu palietimu."
+  "settingsView.phoneHelp": "Nuskenuokite kamera, tada naudokite Pridėti į pagrindinį ekraną, kad gautumėte nuotolinį valdymą vienu palietimu.",
+  "a11y.title": "Rodymas ir prieinamumas",
+  "a11y.textSize": "Teksto dydis",
+  "a11y.size.normal": "Normalus",
+  "a11y.size.large": "Didelis",
+  "a11y.size.xlarge": "Labai didelis",
+  "a11y.theme": "Tema",
+  "a11y.theme.dark": "Tamsi",
+  "a11y.theme.light": "Šviesi",
+  "a11y.theme.contrast": "Didelis kontrastas"
 }

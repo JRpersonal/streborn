@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "Acciones",
   "settingsView.groupAdvanced": "Avanzado",
   "settingsView.phoneHeading": "Controla este altavoz desde tu móvil",
-  "settingsView.phoneHelp": "Escanea con la cámara, luego usa Añadir a pantalla de inicio para un mando de un toque."
+  "settingsView.phoneHelp": "Escanea con la cámara, luego usa Añadir a pantalla de inicio para un mando de un toque.",
+  "a11y.title": "Pantalla y accesibilidad",
+  "a11y.textSize": "Tamaño del texto",
+  "a11y.size.normal": "Normal",
+  "a11y.size.large": "Grande",
+  "a11y.size.xlarge": "Muy grande",
+  "a11y.theme": "Tema",
+  "a11y.theme.dark": "Oscuro",
+  "a11y.theme.light": "Claro",
+  "a11y.theme.contrast": "Alto contraste"
 }

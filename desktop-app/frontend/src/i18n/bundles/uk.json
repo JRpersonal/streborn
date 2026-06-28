@@ -1062,5 +1062,14 @@
   "settingsView.groupActions": "Дії",
   "settingsView.groupAdvanced": "Розширені",
   "settingsView.phoneHeading": "Керуйте цією колонкою з телефона",
-  "settingsView.phoneHelp": "Відскануйте камерою, потім скористайтеся Додати на головний екран для пульта в один дотик."
+  "settingsView.phoneHelp": "Відскануйте камерою, потім скористайтеся Додати на головний екран для пульта в один дотик.",
+  "a11y.title": "Відображення та доступність",
+  "a11y.textSize": "Розмір тексту",
+  "a11y.size.normal": "Звичайний",
+  "a11y.size.large": "Великий",
+  "a11y.size.xlarge": "Дуже великий",
+  "a11y.theme": "Тема",
+  "a11y.theme.dark": "Темна",
+  "a11y.theme.light": "Світла",
+  "a11y.theme.contrast": "Високий контраст"
 }
