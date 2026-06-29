@@ -229,13 +229,13 @@ jobs:
           fi
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: out/streborn-${{ matrix.suffix }}
 
       - name: Sigstore attestation (shim)
         if: matrix.suffix == 'armv7l'
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373
         with:
           subject-path: out/str-shim.so
 
@@ -329,7 +329,7 @@ jobs:
           echo "size: $(stat -c %s dist/go-librespot-armv7l) bytes"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: dist/go-librespot-armv7l
 
@@ -460,7 +460,7 @@ jobs:
           cat "STR-Windows.zip.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
             release-out/STR-Windows.exe
@@ -626,7 +626,7 @@ jobs:
           cat "STR-Linux-x64.tar.gz.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: release-out/STR-Linux-x64.tar.gz
 
@@ -748,7 +748,7 @@ jobs:
           cat "STR-macOS.dmg.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: release-out/STR-macOS.dmg
 
@@ -954,7 +954,7 @@ jobs:
           cat manifest.json
 
       - name: Attest manifest
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373
         with:
           subject-path: dist/manifest.json
 
