@@ -187,6 +187,13 @@ type Manager struct {
 	// captured from /status and metadata events to feed the resume store.
 	resume      *resumeStore
 	curTrackURI string
+	// lowDisk is set when the configDir filesystem is below spotifyMinFreeBytes, so
+	// go-librespot is not started (it cannot persist its credential on a full NAND).
+	// Surfaced in ServeInfo so the desktop app shows "box NAND full" instead of
+	// Spotify silently appearing unavailable. lastLowDiskLogAt throttles the warning.
+	lowDisk          bool
+	lowDiskFreeKB    int64
+	lastLowDiskLogAt time.Time
 }
 
 // New returns a Manager. binPath is the go-librespot binary, configDir
@@ -386,6 +393,90 @@ func (m *Manager) boxNameAndVolume(ctx context.Context) (name string, vol int) {
 	return name, vol
 }
 
+// spotifyMinFreeBytes is the minimum free NAND below which go-librespot is not
+// started. The engine binary is already on disk by this point (waitForBinary
+// passed); this covers the small files the engine must still write — config.yml,
+// the zeroconf credential/state, sp-resume.json, stream-headers.ogg — plus a
+// margin so it can persist its login (which otherwise never sticks on a full
+// /mnt/nv) without competing with the Bose firmware for the last blocks (#ST30).
+const spotifyMinFreeBytes = 2 * 1024 * 1024
+
+// errLowDisk is returned by runOnce when the NAND is too full to start the
+// engine, so the supervise loop backs off and re-checks instead of treating it
+// like a crash.
+var errLowDisk = errors.New("insufficient NAND to start go-librespot")
+
+// freeBytes returns the bytes available to non-root on the filesystem backing
+// dir, ok=false if statfs fails. Mirrors webui.diskFree; kept local so the
+// spotify package takes no dependency on webui.
+func freeBytes(dir string) (int64, bool) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(dir, &st); err != nil {
+		return 0, false
+	}
+	return int64(st.Bavail) * int64(st.Bsize), true
+}
+
+// diskSpaceOK reports whether configDir's filesystem has the minimum free space
+// go-librespot needs. It records the low-disk state for ServeInfo and throttles
+// the warning. Fails OPEN when statfs is unavailable (an unknown free figure
+// never blocks), matching the OTA gate (webui.nandHasRoom).
+func (m *Manager) diskSpaceOK() bool {
+	free, ok := freeBytes(m.configDir)
+	if !ok {
+		// statfs unavailable: do not block (fail open, like webui.nandHasRoom).
+		m.setLowDisk(false, 0)
+		return true
+	}
+	if free >= spotifyMinFreeBytes {
+		m.setLowDisk(false, 0)
+		return true
+	}
+	m.setLowDisk(true, free/1024)
+	return false
+}
+
+// setLowDisk updates the surfaced low-disk state and logs the warning at most
+// once every 5 minutes so a tight box does not spam the log on every retry.
+func (m *Manager) setLowDisk(low bool, freeKB int64) {
+	m.mu.Lock()
+	m.lowDisk = low
+	m.lowDiskFreeKB = freeKB
+	shouldLog := low && time.Since(m.lastLowDiskLogAt) > 5*time.Minute
+	if shouldLog {
+		m.lastLowDiskLogAt = time.Now()
+	}
+	m.mu.Unlock()
+	if shouldLog {
+		m.logger.Warn("spotify: /mnt/nv too full to start go-librespot; free space and reboot",
+			"freeKB", freeKB, "needKB", spotifyMinFreeBytes/1024)
+	}
+}
+
+// waitForDiskSpace blocks until configDir has the minimum free NAND space, or ctx
+// ends. Returns true the moment space is available (immediately on a roomy box,
+// so zero added latency normally). On a full box it idles with a throttled
+// warning and a surfaced reason rather than spinning a go-librespot that cannot
+// persist its credential.
+func (m *Manager) waitForDiskSpace(ctx context.Context) bool {
+	if m.diskSpaceOK() {
+		return true
+	}
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-t.C:
+			if m.diskSpaceOK() {
+				m.logger.Info("spotify: NAND space recovered, starting go-librespot")
+				return true
+			}
+		}
+	}
+}
+
 func (m *Manager) ensureConfig(ctx context.Context) error {
 	if err := os.MkdirAll(m.configDir, 0o755); err != nil {
 		return err
@@ -414,6 +505,14 @@ func (m *Manager) Run(ctx context.Context) {
 	if !m.waitForBinary(ctx) {
 		return
 	}
+	// Gate on free NAND before writing config or launching the engine: on a full
+	// /mnt/nv go-librespot cannot persist its zeroconf credential (login never
+	// sticks) and the config WriteFile itself can ENOSPC, leaving the manager
+	// silently idle. Wait for space (a reboot's cleanup_nand, an OTA reclaim, or
+	// the user clearing room) and surface the reason meanwhile (#ST30 Daniel).
+	if !m.waitForDiskSpace(ctx) {
+		return
+	}
 	if err := m.ensureConfig(ctx); err != nil {
 		m.logger.Warn("spotify: cannot write config, manager idle", "err", err)
 		return
@@ -436,7 +535,7 @@ func (m *Manager) Run(ctx context.Context) {
 	// restart go-librespot so the Spotify app sees the right volume, not 100%.
 	go m.refreshVolumeConfigOnce(ctx)
 	for ctx.Err() == nil {
-		if err := m.runOnce(ctx); err != nil && ctx.Err() == nil {
+		if err := m.runOnce(ctx); err != nil && ctx.Err() == nil && !errors.Is(err, errLowDisk) {
 			m.logger.Warn("go-librespot exited, restarting", "err", err)
 		}
 		select {
@@ -576,6 +675,12 @@ func (m *Manager) watchDeviceName(ctx context.Context) {
 }
 
 func (m *Manager) runOnce(ctx context.Context) error {
+	// Re-check free NAND per launch: if the box filled up after the manager
+	// started, do not relaunch a go-librespot that cannot persist its credential;
+	// back off and let the supervise loop retry when space returns.
+	if !m.diskSpaceOK() {
+		return errLowDisk
+	}
 	// go-librespot uses pflag: the long flag needs two dashes (-config_dir
 	// is misparsed as a shorthand cluster). HOME is forced into the
 	// writable config dir because the box rootfs is read-only and
@@ -1777,6 +1882,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	m.mu.Lock()
 	track, artist, cover, context := m.curName, m.curArtist, m.curCover, m.lastContext
+	lowDisk, lowDiskFreeKB := m.lowDisk, m.lowDiskFreeKB
 	m.mu.Unlock()
 	// Prefer the live track from /status over the laggy cached metadata events.
 	if lt, la, lc, ok := m.liveNowPlaying(r.Context()); ok {
@@ -1795,6 +1901,11 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// which cannot do the autonomous on-demand playback a preset recall needs
 		// (#45). The UI shows a "recall needs Premium" note when set.
 		PremiumRequired bool `json:"premiumRequired"`
+		// LowDisk is true when the box NAND is too full to start go-librespot
+		// (#ST30). The UI shows "box storage full" instead of Spotify silently
+		// appearing unavailable; LowDiskFreeKB is the free space at the last check.
+		LowDisk       bool  `json:"lowDisk"`
+		LowDiskFreeKB int64 `json:"lowDiskFreeKB"`
 	}{
 		Ready:           m.Ready(),
 		Bitrate:         m.Bitrate(),
@@ -1805,6 +1916,8 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		Context:         context,
 		Account:         m.currentUsername(r.Context()),
 		PremiumRequired: m.PremiumRequired(),
+		LowDisk:         lowDisk,
+		LowDiskFreeKB:   lowDiskFreeKB,
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }

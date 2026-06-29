@@ -481,3 +481,45 @@ func TestStateCredentialExportCapture(t *testing.T) {
 		t.Fatalf("active credential after write = %+v ok=%v, want bob/bob-token", cred, ok)
 	}
 }
+
+// TestDiskSpaceGate covers the NAND free-space gate that keeps go-librespot from
+// starting on a full box (#ST30). A roomy temp dir must pass and clear the
+// low-disk state; setLowDisk must surface and clear the state for ServeInfo.
+func TestDiskSpaceGate(t *testing.T) {
+	cfg := t.TempDir()
+	m := New("", cfg, "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	if !m.diskSpaceOK() {
+		t.Fatal("diskSpaceOK = false on a roomy temp dir, want true")
+	}
+	m.mu.Lock()
+	low := m.lowDisk
+	m.mu.Unlock()
+	if low {
+		t.Errorf("lowDisk = true after a passing check, want false")
+	}
+
+	free, ok := freeBytes(cfg)
+	if !ok {
+		t.Fatal("freeBytes ok = false on a real dir")
+	}
+	if free <= 0 {
+		t.Errorf("freeBytes = %d, want > 0", free)
+	}
+
+	m.setLowDisk(true, 123)
+	m.mu.Lock()
+	low, freeKB := m.lowDisk, m.lowDiskFreeKB
+	m.mu.Unlock()
+	if !low || freeKB != 123 {
+		t.Errorf("after setLowDisk(true,123): lowDisk=%v freeKB=%d, want true/123", low, freeKB)
+	}
+
+	m.setLowDisk(false, 0)
+	m.mu.Lock()
+	low = m.lowDisk
+	m.mu.Unlock()
+	if low {
+		t.Error("after setLowDisk(false): lowDisk=true, want false")
+	}
+}

@@ -3116,6 +3116,9 @@ func reclaimNAND() {
 	binDir := filepath.Join(strNANDDir, "bin")
 	for _, pat := range []string{
 		filepath.Join(binDir, "*.new"),
+		// lib/*.new: interrupted shim atomic-replace temps (str-shim.so.new etc.);
+		// cleaned here too so the bin/ and lib/ atomic writes are symmetric.
+		filepath.Join(strNANDDir, "lib", "*.new"),
 		filepath.Join(strNANDDir, "cap*.ogg"),
 	} {
 		if matches, _ := filepath.Glob(pat); matches != nil {
@@ -3133,7 +3136,10 @@ func reclaimNAND() {
 	// never uses it (it runs from streborn/bin), so it is always safe to drop here.
 	_ = os.RemoveAll(filepath.Join(nandRoot, "streborn-install"))
 	_ = os.RemoveAll(filepath.Join(strNANDDir, "streborn-install"))
-	for _, name := range []string{"setup.log", "setup.log.prev", "agent.log", "previous.log", "boot.log"} {
+	// run.out (whole-session run-override.sh stdout) is bounded per boot but
+	// uncapped within one long uptime, and run.sh's cleanup_nand omits it; cap it
+	// here on every OTA write alongside the rotated logs.
+	for _, name := range []string{"setup.log", "setup.log.prev", "agent.log", "previous.log", "boot.log", "run.out"} {
 		p := filepath.Join(strNANDDir, name)
 		if fi, err := os.Stat(p); err == nil && fi.Size() > 131072 {
 			if b, rerr := os.ReadFile(p); rerr == nil && int64(len(b)) > 65536 {
@@ -3142,6 +3148,14 @@ func reclaimNAND() {
 		}
 	}
 }
+
+// ReclaimNAND frees regenerable NAND junk (stale OTA temps, the ~28 MB
+// SSH-repair staging dir, oversized logs) from outside the package. The agent
+// calls it once at startup so a box left tight by an interrupted OTA or an older
+// app's staging leftover self-heals on the next agent (re)start, without waiting
+// for a full run.sh reboot or the next OTA write. Best-effort; never touches Bose
+// files or the live binaries.
+func ReclaimNAND() { reclaimNAND() }
 
 // reclaimSpotifyEngine removes the go-librespot Spotify sidecar binary (and its
 // sha marker) to free the single biggest regenerable block on a tight NAND. The
@@ -5034,6 +5048,12 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 const (
 	wlanCredsPath = "/mnt/nv/streborn/wlan-creds"
 	wpaConfPath   = "/etc/wpa_supplicant.conf"
+	// wpaBackupPath holds the rollback copy of the live wpa_supplicant.conf on
+	// writable NAND. /etc is read-only on several chassis (rhino/scm), so the
+	// backup cannot live next to the conf: writing it to /etc is exactly what
+	// aborted runtime Wi-Fi switches before ("read-only file system"). run.sh's
+	// M3 boot path uses the same NAND location.
+	wpaBackupPath = "/mnt/nv/streborn/wpa_supplicant.conf.bak"
 )
 
 // detectWlanMechanism mirrors run.sh's interface detection: a wlan* iface means
@@ -5058,18 +5078,32 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string) {
 	defer s.wlanMu.Unlock()
 	switch mech {
 	case "wpa":
-		if s.applyWlanWPALive(iface, ssid, password) {
+		switch s.applyWlanWPALive(iface, ssid, password) {
+		case wpaConfirmed:
 			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface)
 			_ = os.Remove(wlanCredsPath + ".bak")
-			_ = os.Remove(wpaConfPath + ".bak")
-			return
+			_ = os.Remove(wpaBackupPath)
+		case wpaCannotApply:
+			// The conf could not be written live (read-only /etc and the
+			// bind-mount overlay both failed). The new creds are already on NAND,
+			// so reboot and let run.sh's boot path provision them (M3 applies the
+			// same bind workaround from a clean boot). Keep the new creds: do NOT
+			// roll back.
+			s.logger.Warn("WLAN: cannot switch live, rebooting to apply new network via boot path", "ssid", ssid)
+			// Drop the rollback backup before the reboot: we are committing the new
+			// creds via the boot path, so a stale backup must not survive on NAND and
+			// be used to roll a future switch back to this now-superseded conf.
+			_ = os.Remove(wpaBackupPath)
+			rebootBox()
+		default: // wpaNotAssociated
+			// Did not associate (e.g. wrong password): roll all the way back so
+			// the box stays on its previous network instead of unreachable. The
+			// agent runs ON the box, so it can do this even while the box is
+			// briefly off the LAN.
+			s.logger.Warn("WLAN: new network did not associate, rolling back to previous", "ssid", ssid)
+			restoreWlanCreds()
+			s.restoreWPAConfAndReload(iface)
 		}
-		// Did not associate: roll all the way back so a wrong password leaves the
-		// box on its previous network instead of unreachable. The agent runs ON
-		// the box, so it can do this even while the box is briefly off the LAN.
-		s.logger.Warn("WLAN: new network did not associate, rolling back to previous", "ssid", ssid)
-		restoreWlanCreds()
-		s.restoreWPAConfAndReload(iface)
 	default:
 		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid)
 		rebootBox()
@@ -5094,32 +5128,80 @@ func restoreWlanCreds() {
 	}
 }
 
+// wpaApplyResult reports how a live wpa switch ended so applyWLANChange can pick
+// the right recovery.
+type wpaApplyResult int
+
+const (
+	wpaConfirmed     wpaApplyResult = iota // box associated to the new SSID
+	wpaNotAssociated                       // conf written, but no association -> roll back
+	wpaCannotApply                         // conf could not be written live -> reboot to apply
+)
+
 // applyWlanWPALive writes the new wpa_supplicant.conf, reloads wpa_supplicant,
-// and reports whether the box associated to the new SSID within the timeout.
-// Backs up the running conf so applyWLANChange can roll back on failure.
-func (s *Server) applyWlanWPALive(iface, ssid, password string) bool {
+// and reports whether the box associated to the new SSID within the timeout. The
+// running conf is backed up to writable NAND first (NOT next to the conf: /etc is
+// read-only on rhino/scm) so a failed switch can roll back. A failed backup never
+// blocks the switch — it only forfeits the rollback.
+func (s *Server) applyWlanWPALive(iface, ssid, password string) wpaApplyResult {
 	if cur, err := os.ReadFile(wpaConfPath); err == nil {
-		// Abort if we have a config to roll back to but cannot save the backup
-		// (e.g. a read-only /etc): proceeding would make a failed switch
-		// unrecoverable because restoreWPAConfAndReload would find no .bak.
-		if werr := os.WriteFile(wpaConfPath+".bak", cur, 0o600); werr != nil {
-			s.logger.Warn("WLAN: could not back up wpa conf, aborting switch", "err", werr)
-			return false
+		if werr := os.WriteFile(wpaBackupPath, cur, 0o600); werr != nil {
+			// Read-only NAND would be unexpected, but never let a backup failure
+			// abort the switch (the old /etc backup did, breaking every switch on
+			// read-only-/etc boxes). Drop any stale backup so rollback won't
+			// restore an unrelated conf.
+			s.logger.Warn("WLAN: could not back up wpa conf, switching anyway (rollback unavailable)", "err", werr)
+			_ = os.Remove(wpaBackupPath)
 		}
+	} else {
+		// Could not read the current conf to back it up (e.g. it does not exist
+		// yet): drop any stale backup from an earlier switch so a later rollback
+		// can never restore an unrelated/older conf. Symmetric with the
+		// write-failure path above.
+		_ = os.Remove(wpaBackupPath)
 	}
-	if err := os.WriteFile(wpaConfPath, []byte(buildWPAConfig(ssid, password)), 0o600); err != nil {
-		s.logger.Warn("WLAN: write wpa conf failed", "err", err, "path", wpaConfPath)
-		return false
+	method, err := writeWPAConf(buildWPAConfig(ssid, password))
+	if err != nil {
+		s.logger.Warn("WLAN: write wpa conf failed, will reboot to apply via boot path", "err", err, "path", wpaConfPath)
+		return wpaCannotApply
 	}
+	s.logger.Info("WLAN: wpa conf written", "method", method, "iface", iface)
 	reloadWPA(iface)
 	deadline := time.Now().Add(25 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(2 * time.Second)
 		if wpaAssociatedTo(iface, ssid) {
-			return true
+			return wpaConfirmed
 		}
 	}
-	return false
+	return wpaNotAssociated
+}
+
+// writeWPAConf installs content as /etc/wpa_supplicant.conf, working around a
+// read-only /etc the way run.sh's M3 boot path does: a direct write first, and
+// if that fails, a bind mount overlaying the conf from a tmpfs copy so
+// wpa_supplicant reads the new content without /etc ever being written. Returns
+// the method used ("direct"/"bind") or an error if both fail.
+func writeWPAConf(content string) (string, error) {
+	return writeWPAConfAt(wpaConfPath, "/tmp/wpa_supplicant.conf.str", content)
+}
+
+// writeWPAConfAt is the path-injectable core of writeWPAConf, kept separate so
+// the direct-write path is unit-testable off-box.
+func writeWPAConfAt(confPath, tmpPath, content string) (string, error) {
+	directErr := os.WriteFile(confPath, []byte(content), 0o600)
+	if directErr == nil {
+		return "direct", nil
+	}
+	// /etc is read-only (rhino/scm): stage the conf in tmpfs and bind-mount it
+	// over the existing path so wpa_supplicant reads the new content.
+	if terr := os.WriteFile(tmpPath, []byte(content), 0o600); terr != nil {
+		return "", terr
+	}
+	if berr := exec.Command("mount", "--bind", tmpPath, confPath).Run(); berr != nil {
+		return "", fmt.Errorf("direct write (%w) and bind-mount (%v) both failed", directErr, berr)
+	}
+	return "bind", nil
 }
 
 // reloadWPA reloads the new conf in place via wpa_cli (preferred, keeps the
@@ -5155,11 +5237,11 @@ func wpaAssociatedTo(iface, ssid string) bool {
 }
 
 func (s *Server) restoreWPAConfAndReload(iface string) {
-	if b, err := os.ReadFile(wpaConfPath + ".bak"); err == nil {
-		if werr := os.WriteFile(wpaConfPath, b, 0o600); werr != nil {
+	if b, err := os.ReadFile(wpaBackupPath); err == nil {
+		if _, werr := writeWPAConf(string(b)); werr != nil {
 			s.logger.Warn("WLAN: rollback write failed", "err", werr)
 		}
-		_ = os.Remove(wpaConfPath + ".bak")
+		_ = os.Remove(wpaBackupPath)
 	}
 	reloadWPA(iface)
 }

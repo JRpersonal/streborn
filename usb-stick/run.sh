@@ -606,7 +606,7 @@ cleanup_nand() {
     #    bin/*.new: interrupted atomic-replace temp files from a failed OTA.
     rm -f /mnt/nv/sp-oauth.out 2>/dev/null
     rm -f /mnt/nv/streborn/cap*.ogg "$STICK"/cap*.ogg 2>/dev/null
-    rm -f /mnt/nv/streborn/bin/*.new 2>/dev/null
+    rm -f /mnt/nv/streborn/bin/*.new /mnt/nv/streborn/lib/*.new 2>/dev/null
 
     #    streborn-install: the SSH-repair install stages the ~28 MB file set into
     #    <base>/streborn-install, and install.sh copies it into /mnt/nv/streborn,
@@ -623,7 +623,8 @@ cleanup_nand() {
     #    the rotated setup.log.prev. Trigger lowered to 128KB / tail 64KB so a
     #    single boot cannot keep a quarter-MB on NAND.
     rm -f /mnt/nv/streborn/agent.log.1 2>/dev/null
-    for f in /mnt/nv/streborn/setup.log /mnt/nv/streborn/setup.log.prev /mnt/nv/streborn/agent.log; do
+    for f in /mnt/nv/streborn/setup.log /mnt/nv/streborn/setup.log.prev /mnt/nv/streborn/agent.log \
+             /mnt/nv/streborn/previous.log /mnt/nv/streborn/boot.log /mnt/nv/streborn/run.out; do
         [ -f "$f" ] || continue
         sz=$(wc -c < "$f" 2>/dev/null || echo 0)
         if [ "$sz" -gt 131072 ]; then
@@ -1931,6 +1932,88 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             fi
             WINNER="M0a-prelease"
         fi
+    fi
+
+    # ---- M_jukebox: on-box JukeBlox recon + GoForm + TAP (BCO/taigan) ----
+    # BCO speakers (Portable=taigan, some ST20) run a SMSC/Microchip JukeBlox
+    # DM870 Wi-Fi co-processor with its OWN GoAhead web server on :80. Its
+    # /goform/aformHandlerConfigureProfileSettings handler is the one that
+    # actually APPLIES a profile after the Bose cloud shutdown (the :8090
+    # /addWirelessProfile path is accepted but never associates here: dead
+    # MargeHSM). The desktop app drives that handler over the air from a PC on
+    # the setup-AP; this block tries to drive it FROM THE BOX. That can only
+    # work while the chipset is still in its OOB/setup-AP window (GoAhead binds
+    # all ifaces incl loopback, but the server comes down once the box
+    # associates). It is ALSO a recon pass: it dumps the box's exact network
+    # state and which :80 candidates answer to the stick's setup.log, so an
+    # unreachable channel is visible and we can iterate. Runs BEFORE M_air's
+    # reboot, so a win here skips the disruptive reboot path; every existing
+    # method stays as a fallback below. Heavy logging is intentional.
+    if [ "$WINNER" = "none" ] && { [ -n "$IS_TAIGAN" ] || [ "$BCO_MODE" = "1" ]; }; then
+        setup_log "M_jukebox: === BCO on-box recon + GoForm START (ssid='$SSID' src='${WLAN_SOURCE:-none}') ==="
+        for _ji in lo eth0 wlan0; do
+            [ -d "/sys/class/net/$_ji" ] || continue
+            setup_log "M_jukebox recon: $_ji operstate=$(cat "/sys/class/net/$_ji/operstate" 2>/dev/null) carrier=$(cat "/sys/class/net/$_ji/carrier" 2>/dev/null) ip=$(ip -4 addr show "$_ji" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | tr '\n' ',')"
+        done
+        setup_log "M_jukebox recon: default-route = $(ip route 2>/dev/null | sed -n 's/^default .*/&/p' | tr '\n' ';' | head -c 200)"
+        setup_log "M_jukebox recon: arp = $(cat /proc/net/arp 2>/dev/null | tr '\n' ';' | head -c 300)"
+        setup_log "M_jukebox recon: listen-80 = $(netstat -ltn 2>/dev/null | grep ':80 ' | tr '\n' ';' | head -c 200)"
+        setup_log "M_jukebox recon: setupState = $(wget -qO- -T 5 "$BOSE_API/setup" 2>/dev/null | tr -d '\r\n' | head -c 200)"
+        setup_log "M_jukebox recon: networkInfo = $(wget -qO- -T 5 "$BOSE_API/networkInfo" 2>/dev/null | tr -d '\r\n' | head -c 300)"
+        if command -v nc >/dev/null 2>&1; then
+            setup_log "M_jukebox recon: tap-wifi-status = $(printf 'network wifi status\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\r\n' '  ' | head -c 250)"
+        fi
+
+        # Locate the JukeBlox GoAhead :80 from the host: loopback, the
+        # documented setup-AP gateway, and eth0's real default gateway.
+        _jb_gw=$(ip route 2>/dev/null | sed -n 's/^default via \([0-9.]*\).*/\1/p' | head -1)
+        JB_HIT=""
+        for _jb in 127.0.0.1 192.168.1.1 ${_jb_gw:-x} 192.168.10.1 10.0.0.1; do
+            [ "$_jb" = "x" ] && continue
+            _jb_root=$(wget -qO- -T 5 "http://$_jb/" 2>/dev/null | tr -d '\r\n' | head -c 100)
+            _jb_apjs=$(wget -qO- -T 5 "http://$_jb/setup/js/ap.js" 2>/dev/null | tr -d '\r\n' | head -c 60)
+            setup_log "M_jukebox probe :80 @ $_jb -> root='${_jb_root:-none}' ap.js='${_jb_apjs:-none}'"
+            { [ -n "$_jb_root" ] || [ -n "$_jb_apjs" ]; } && [ -z "$JB_HIT" ] && JB_HIT="$_jb"
+        done
+
+        if [ -n "$JB_HIT" ] && [ -n "$SSID" ] && [ -n "$PASS" ]; then
+            # RFC-3986 url-encode (BusyBox-safe): keep unreserved, %XX the rest.
+            _ue() {
+                _ue_s="$1"; _ue_o=""
+                while [ -n "$_ue_s" ]; do
+                    _ue_c=${_ue_s%"${_ue_s#?}"}; _ue_s=${_ue_s#?}
+                    case "$_ue_c" in
+                        [a-zA-Z0-9._~-]) _ue_o="$_ue_o$_ue_c" ;;
+                        *) _ue_o="$_ue_o$(printf '%%%02X' "'$_ue_c")" ;;
+                    esac
+                done
+                printf '%s' "$_ue_o"
+            }
+            JB_BODY="ConfigManual=1&SSID=$(_ue "$SSID")&Passphrase=$(_ue "$PASS")&Key0=&Security=WPA2PSK&Cipher=CCMP&DHCPClient=1&IP=&Mask=&DefGW=&DNSSrv1=&DNSSrv2=&ProxyServer=&ProxyServerPort="
+            setup_log "M_jukebox: POST goform -> http://$JB_HIT/goform/aformHandlerConfigureProfileSettings (Security=WPA2PSK Cipher=CCMP DHCP=1, body ${#JB_BODY}B)"
+            JB_RESP=$(wget -qO- -T 25 \
+                --header="Content-Type: application/x-www-form-urlencoded" \
+                --header="Referer: http://$JB_HIT/" \
+                --post-data="$JB_BODY" \
+                "http://$JB_HIT/goform/aformHandlerConfigureProfileSettings" 2>&1)
+            setup_log "M_jukebox: goform rc=$? resp='$(printf '%s' "$JB_RESP" | tr -d '\r\n' | head -c 200)' (a reset/timeout here is the EXPECTED setup-AP teardown)"
+            persist_wlan_creds
+            if wait_for_sta_lease 90; then
+                WINNER="M_jukebox-goform"
+                setup_log "M_jukebox: result=YES lease=$(current_sta_lease) via on-box GoForm @ $JB_HIT"
+            else
+                setup_log "M_jukebox: goform sent but no STA lease in 90s (wrong addr / chipset wants AP context / dead MargeHSM) -- falling through to M_air + M1"
+            fi
+        else
+            setup_log "M_jukebox: no host-reachable GoAhead :80 (hit='${JB_HIT:-none}') or empty creds -- on-box GoForm impossible this boot; recon above shows why. Falling through to M_air + M1"
+        fi
+
+        # Flush the recon to the stick NOW: M_air below may reboot, and this
+        # boot's trace must survive. One bulk copy is boot-safe (not per-line).
+        if [ -d "$STICK" ] && [ -w "$STICK" ]; then
+            cp "$SETUP_LOG_NAND" "$SETUP_LOG" 2>/dev/null && sync 2>/dev/null
+        fi
+        setup_log "M_jukebox: === END (winner=$WINNER) ==="
     fi
 
     # Hard guard: every block below mutates Bose state (POSTs to

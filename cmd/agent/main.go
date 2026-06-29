@@ -241,6 +241,16 @@ func run() error {
 		logger.Info("DeviceID detected", "deviceID", deviceID)
 	}
 
+	// Reclaim regenerable NAND junk once at startup. The writable NAND is tiny
+	// (~31 MB, shared with the Bose firmware); an interrupted OTA can leave a
+	// stale ~10 MB binary .new, and an older desktop app could leave a ~28 MB
+	// streborn-install staging dir, either of which then blocks the next OTA and
+	// can starve go-librespot. Today that junk is only swept inside an OTA write
+	// or on a full run.sh reboot, so an agent that self-restarts (e.g. after an
+	// OTA) never clears it. Doing it here lets a tight box self-heal on the next
+	// agent start. Safe: never touches Bose files or the live binaries.
+	webui.ReclaimNAND()
+
 	// Load presets. On error do not crash but continue with an empty list, so
 	// the agent at least stays alive on its listeners and remains correctable.
 	//

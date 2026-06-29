@@ -65,15 +65,16 @@ func ListDrives() ([]Drive, error) {
 }
 
 // MinStickBytes is the lower bound the desktop app enforces on an install
-// stick. The agent plus templates are tiny (a few MB), but the install/setup
-// experience assumes a normal "8 GB" USB stick, so a clearly undersized stick
-// is rejected up front instead of failing cryptically later.
+// stick. The whole payload (agent + go-librespot + templates) is ~30 MB, so
+// this is only a floor against picking a wrong, oddly tiny volume, not a real
+// capacity need. Almost any USB stick, even a small or old one, works.
 //
-// The floor is 7.0 GB (decimal), not 8 GiB: a stick marketed as 8 GB measures
-// roughly 7.4 to 7.7 GiB of usable capacity, so an 8 GiB threshold would wrongly
-// reject genuine 8 GB sticks, while 7.0 GB still clears every 4 GB and smaller
-// stick.
-const MinStickBytes int64 = 7_000_000_000
+// It is 100 MB (decimal): comfortably above the FAT32 formatter's own 64 MB
+// minimum (cmd/winformat) with headroom for FAT32 overhead and the payload,
+// while accepting essentially every USB stick ever made. The previous 7.0 GB
+// floor wrongly rejected the 4 GB (and smaller) sticks the UI itself told users
+// to use, even though smaller sticks provision fine from the console (#119).
+const MinStickBytes int64 = 100_000_000
 
 // StickCheck is the technical verdict on whether a volume can be used as an STR
 // install stick. The setup wizard calls CheckStick before letting the user
