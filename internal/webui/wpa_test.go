@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -43,5 +45,31 @@ func TestBuildWPAConfig(t *testing.T) {
 	q := buildWPAConfig(`He"llo`, "12345678")
 	if !strings.Contains(q, `ssid="He\"llo"`) {
 		t.Errorf("ssid quote not escaped:\n%s", q)
+	}
+}
+
+// TestWriteWPAConfAtDirect covers the writable-target path: a direct write must
+// succeed, report "direct", and land the exact content. This is the regression
+// guard for the read-only-/etc fix — the runtime switch must actually write the
+// conf rather than abort on a backup failure.
+func TestWriteWPAConfAtDirect(t *testing.T) {
+	dir := t.TempDir()
+	conf := filepath.Join(dir, "wpa_supplicant.conf")
+	tmp := filepath.Join(dir, "wpa.str")
+	content := buildWPAConfig("MyNet", "supersecret")
+
+	method, err := writeWPAConfAt(conf, tmp, content)
+	if err != nil {
+		t.Fatalf("writeWPAConfAt returned error on writable target: %v", err)
+	}
+	if method != "direct" {
+		t.Errorf("method = %q, want %q", method, "direct")
+	}
+	got, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatalf("reading written conf: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("written conf mismatch:\ngot:\n%s\nwant:\n%s", got, content)
 	}
 }
