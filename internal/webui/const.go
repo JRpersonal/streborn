@@ -81,7 +81,12 @@ html.a11y-scale-xl body { zoom:1.30; }
 * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 html.a11y-contrast :focus-visible { outline-color:#fff; }
-body { margin:0; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); background:var(--bg); color:var(--fg); max-width:620px; margin:0 auto; }
+/* Pad every edge by the device safe-area inset on top of the base 16px. The
+   page is PWA "standalone" with a black-translucent status bar, so on a notch /
+   Dynamic Island phone (e.g. iPhone) iOS draws the content behind the status
+   bar; without the top inset the header collides with the clock. The insets are
+   0 on hardware that has none, so the base 16px is unchanged there. */
+body { margin:0; padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); background:var(--bg); color:var(--fg); max-width:620px; margin:0 auto; }
 header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 header img { width:30px; height:30px; border-radius:7px; }
 header .brand { font-size:18px; font-weight:700; letter-spacing:.2px; }
