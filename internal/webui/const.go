@@ -131,6 +131,13 @@ footer .web { display:inline-block; margin-top:4px; color:var(--accent); text-de
 footer .web:hover { text-decoration:underline; }
 footer .ver { display:block; margin-top:8px; }
 footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
+/* Power on/off toggle, pinned to the header's right next to "Aa". */
+.pwr { display:inline-flex; align-items:center; justify-content:center; flex:none; min-height:36px; min-width:40px; padding:6px 10px; margin-right:8px; background:var(--card2); color:var(--muted); border:1px solid var(--line); border-radius:8px; cursor:pointer; transition:background .15s,border-color .15s,color .15s; }
+.pwr svg { display:block; }
+.pwr.on { border-color:var(--accent); color:var(--accent); }
+.pwr.active { background:var(--press); }
+.pwr:active { background:var(--press); }
+@media (hover:hover) { .pwr:hover { background:var(--hover); } }
 /* "Aa" display-options menu (text size + theme), pinned to the header's right. */
 .a11y { position:relative; flex:none; }
 .a11y-trigger { display:inline-flex; align-items:center; min-height:36px; padding:6px 11px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-size:15px; font-weight:700; letter-spacing:-.5px; cursor:pointer; }
@@ -191,6 +198,7 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <img src="/icon.png" alt="STR">
 <div class="brand">ST <span>Reborn</span></div>
 <div class="dev" id="dev"></div>
+<button type="button" class="pwr" id="powerBtn" onclick="togglePower()" aria-label="Power" aria-pressed="true" title="Power"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="2.5" x2="12" y2="12"></line><path d="M7.5 6.3a7 7 0 1 0 9 0"></path></svg></button>
 <div class="a11y">
 <button type="button" class="a11y-trigger" id="a11yTrigger" aria-haspopup="dialog" aria-expanded="false" aria-label="Display &amp; accessibility" title="Display &amp; accessibility">Aa</button>
 <div class="a11y-menu" id="a11yMenu" role="dialog" aria-label="Display &amp; accessibility" hidden>
@@ -336,6 +344,22 @@ function setNow(name, state) {
 function press(btn) { if (!btn) return; btn.classList.add('active'); setTimeout(function(){ btn.classList.remove('active'); }, 600); }
 // pp = press + POST + refresh, for the Pause/Stop controls.
 async function pp(btn, path) { press(btn); await api(path, 'POST'); setTimeout(refreshStatus, 1200); }
+// Power on/off. The box has no "off" for a stream (Stop only pauses the
+// transport, the speaker stays on), so this is a real standby toggle: off -> Bose
+// standby, on -> wake + resume the last station. boxOn tracks the live state,
+// refreshed from /api/status, so the button reflects the speaker even when it is
+// switched at the box itself.
+var boxOn = true;
+function applyPowerUI() {
+  var b = document.getElementById('powerBtn');
+  if (b) { b.classList.toggle('on', boxOn); b.setAttribute('aria-pressed', String(boxOn)); }
+}
+async function togglePower() {
+  var target = !boxOn;
+  boxOn = target; applyPowerUI(); press(document.getElementById('powerBtn'));
+  await api('/api/box/power', 'POST', { on: target });
+  setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 4000);
+}
 // setSource selects an input and keeps that button highlighted until another is chosen.
 async function setSource(s, btn) {
   document.querySelectorAll('#inputs .btn').forEach(function(e){ e.classList.remove('active'); });
@@ -393,8 +417,13 @@ async function refreshStatus() {
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
   const name = m ? m[1] : '';
-  const human = { PLAY_STATE:'Playing', PAUSE_STATE:'Paused', STOP_STATE:'Stopped', BUFFERING_STATE:'Buffering', INVALID_SOURCE:'Stopped' };
-  setNow(name || src || 'Idle', human[state] || (state ? state.replace('_STATE','').toLowerCase() : 'stopped'));
+  // Track power state for the header toggle: the box is "on" unless it is in
+  // standby (a stopped-but-awake box still counts as on, so the button can switch
+  // it off, which was the whole point of the request).
+  boxOn = (state === 'PLAY_STATE' || state === 'PAUSE_STATE' || state === 'BUFFERING_STATE') || (!!src && src.toUpperCase() !== 'STANDBY');
+  applyPowerUI();
+  const human = { PLAY_STATE:T.playing, PAUSE_STATE:T.paused, STOP_STATE:T.stopped, BUFFERING_STATE:T.buffering, INVALID_SOURCE:T.stopped };
+  setNow(name || src || T.idle, human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
 }
 
 async function loadPeers() {
