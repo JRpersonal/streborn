@@ -216,43 +216,43 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 
 <main>
 <div class="card nowcard loading" id="statusCard">
-<div class="label">Now playing</div>
+<div class="label" id="lblNow">Now playing</div>
 <div id="status"><span class="now">Loading&hellip;</span></div>
 </div>
 
 <div class="card">
-<div class="label">Volume</div>
+<div class="label" id="lblVol">Volume</div>
 <div class="vol"><input type="range" id="vol" min="0" max="100" value="0" aria-label="Volume" oninput="onVol(this.value)"><span class="val" id="volval">0</span></div>
 </div>
 
 <div class="card">
-<div class="label">Input</div>
+<div class="label" id="lblInput">Input</div>
 <div class="row c3" id="inputs">
 <button class="btn" onclick="setSource('BLUETOOTH',this)">Bluetooth</button>
 <button class="btn" onclick="setSource('AUX',this)">AUX</button>
-<button class="btn" onclick="setSource('STANDBY',this)">Standby</button>
+<button class="btn" id="btnStandby" onclick="setSource('STANDBY',this)">Standby</button>
 </div>
 </div>
 
 <div class="card">
-<div class="label">Playback</div>
+<div class="label" id="lblPlayback">Playback</div>
 <div class="row c2">
-<button class="btn" onclick="pp(this,'/api/pause')">Pause</button>
-<button class="btn" onclick="pp(this,'/api/stop')">Stop</button>
+<button class="btn" id="btnPause" onclick="pp(this,'/api/pause')">Pause</button>
+<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')">Stop</button>
 </div>
 </div>
 
-<div class="label" style="margin:18px 12px 8px">Presets</div>
+<div class="label" id="lblPresets" style="margin:18px 12px 8px">Presets</div>
 <div class="grid" id="presets"></div>
 
 <div class="card" id="peersCard">
-<div class="label">Other speakers</div>
+<div class="label" id="lblPeers">Other speakers</div>
 <div class="row" id="peers"></div>
 </div>
 </main>
 
 <footer>
-<div class="label" style="margin-bottom:8px">Support ST Reborn</div>
+<div class="label" id="lblSupport" style="margin-bottom:8px">Support ST Reborn</div>
 <div class="sponsors">
 <a class="btn" href="https://github.com/sponsors/JRpersonal" target="_blank" rel="noopener">&#9829; GitHub</a>
 <a class="btn" href="https://ko-fi.com/streborn" target="_blank" rel="noopener">&#9749; Ko-fi</a>
@@ -260,10 +260,59 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 </div>
 <a class="web" href="https://st-reborn.de" target="_blank" rel="noopener">st-reborn.de</a>
 <span class="ver" id="ver"></span>
-<span class="hint">Tip: use your browser menu and "Add to Home Screen" to keep this as an app.</span>
+<span class="hint" id="lblTip">Tip: use your browser menu and "Add to Home Screen" to keep this as an app.</span>
 </footer>
 
 <script>
+// Page localization. The whole remote is translated client-side from the phone's
+// language (navigator.languages), so it costs the speaker nothing: the strings
+// ship inside this one embedded page and never touch the box. English is the
+// fallback for any locale or key we don't cover. Brand names (ST Reborn,
+// Bluetooth, AUX) and the box's own device name stay as-is. Keep this language
+// set in step with the "Aa" menu dictionary (A11Y_I18N) below.
+var I18N = {
+  en:{now:"Now playing",loading:"Loading…",vol:"Volume",input:"Input",standby:"Standby",playback:"Playback",pause:"Pause",stop:"Stop",presets:"Presets",peers:"Other speakers",support:"Support ST Reborn",tip:"Tip: use your browser menu and \"Add to Home Screen\" to keep this as an app.",empty:"empty",presetWord:"Preset",starting:"Starting",pleaseWait:"please wait",cantStart:"Could not start",tapAgain:"tap again",idle:"Idle",playing:"Playing",paused:"Paused",stopped:"Stopped",buffering:"Buffering",power:"Power"},
+  de:{now:"Wird gespielt",loading:"Lädt…",vol:"Lautstärke",input:"Eingang",standby:"Standby",playback:"Wiedergabe",pause:"Pause",stop:"Stopp",presets:"Voreinstellungen",peers:"Andere Lautsprecher",support:"ST Reborn unterstützen",tip:"Tipp: Über das Browser-Menü und „Zum Home-Bildschirm“ als App speichern.",empty:"leer",presetWord:"Voreinstellung",starting:"Starte",pleaseWait:"bitte warten",cantStart:"Start fehlgeschlagen",tapAgain:"nochmal tippen",idle:"Bereit",playing:"Wiedergabe",paused:"Pausiert",stopped:"Gestoppt",buffering:"Puffert",power:"Ein/Aus"},
+  nl:{now:"Speelt nu",loading:"Laden…",vol:"Volume",input:"Ingang",standby:"Stand-by",playback:"Afspelen",pause:"Pauze",stop:"Stop",presets:"Presets",peers:"Andere speakers",support:"Steun ST Reborn",tip:"Tip: gebruik het browsermenu en \"Zet op beginscherm\" om dit als app te bewaren.",empty:"leeg",presetWord:"Preset",starting:"Starten",pleaseWait:"even geduld",cantStart:"Kan niet starten",tapAgain:"tik opnieuw",idle:"Inactief",playing:"Speelt af",paused:"Gepauzeerd",stopped:"Gestopt",buffering:"Bufferen",power:"Aan/uit"},
+  fr:{now:"Lecture en cours",loading:"Chargement…",vol:"Volume",input:"Entrée",standby:"Veille",playback:"Lecture",pause:"Pause",stop:"Arrêt",presets:"Préréglages",peers:"Autres enceintes",support:"Soutenir ST Reborn",tip:"Astuce : utilisez le menu du navigateur et « Ajouter à l'écran d'accueil » pour garder ceci comme une app.",empty:"vide",presetWord:"Préréglage",starting:"Démarrage",pleaseWait:"veuillez patienter",cantStart:"Démarrage impossible",tapAgain:"appuyez à nouveau",idle:"Inactif",playing:"Lecture",paused:"En pause",stopped:"Arrêté",buffering:"Mise en mémoire tampon",power:"Marche/Arrêt"},
+  es:{now:"Reproduciendo",loading:"Cargando…",vol:"Volumen",input:"Entrada",standby:"Reposo",playback:"Reproducción",pause:"Pausa",stop:"Detener",presets:"Presintonías",peers:"Otros altavoces",support:"Apoya ST Reborn",tip:"Consejo: usa el menú del navegador y «Añadir a pantalla de inicio» para conservarlo como app.",empty:"vacío",presetWord:"Presintonía",starting:"Iniciando",pleaseWait:"espera",cantStart:"No se pudo iniciar",tapAgain:"toca de nuevo",idle:"Inactivo",playing:"Reproduciendo",paused:"En pausa",stopped:"Detenido",buffering:"Almacenando en búfer",power:"Encendido"},
+  pl:{now:"Teraz odtwarzane",loading:"Ładowanie…",vol:"Głośność",input:"Wejście",standby:"Czuwanie",playback:"Odtwarzanie",pause:"Pauza",stop:"Stop",presets:"Presety",peers:"Inne głośniki",support:"Wesprzyj ST Reborn",tip:"Wskazówka: użyj menu przeglądarki i „Dodaj do ekranu głównego”, aby zachować to jako aplikację.",empty:"puste",presetWord:"Preset",starting:"Uruchamianie",pleaseWait:"proszę czekać",cantStart:"Nie udało się uruchomić",tapAgain:"dotknij ponownie",idle:"Bezczynny",playing:"Odtwarzanie",paused:"Wstrzymano",stopped:"Zatrzymano",buffering:"Buforowanie",power:"Zasilanie"},
+  tr:{now:"Şimdi çalıyor",loading:"Yükleniyor…",vol:"Ses",input:"Giriş",standby:"Bekleme",playback:"Oynatma",pause:"Duraklat",stop:"Durdur",presets:"Ön ayarlar",peers:"Diğer hoparlörler",support:"ST Reborn'a destek ol",tip:"İpucu: tarayıcı menüsünü ve \"Ana Ekrana Ekle\" seçeneğini kullanarak bunu uygulama olarak tutun.",empty:"boş",presetWord:"Ön ayar",starting:"Başlatılıyor",pleaseWait:"lütfen bekleyin",cantStart:"Başlatılamadı",tapAgain:"tekrar dokunun",idle:"Boşta",playing:"Çalıyor",paused:"Duraklatıldı",stopped:"Durduruldu",buffering:"Arabelleğe alınıyor",power:"Güç"},
+  ar:{now:"قيد التشغيل الآن",loading:"جارٍ التحميل…",vol:"مستوى الصوت",input:"المدخل",standby:"وضع الاستعداد",playback:"التشغيل",pause:"إيقاف مؤقت",stop:"إيقاف",presets:"الإعدادات المسبقة",peers:"مكبرات صوت أخرى",support:"ادعم ST Reborn",tip:"نصيحة: استخدم قائمة المتصفح و\"إضافة إلى الشاشة الرئيسية\" للاحتفاظ بهذا كتطبيق.",empty:"فارغ",presetWord:"إعداد مسبق",starting:"جارٍ البدء",pleaseWait:"يرجى الانتظار",cantStart:"تعذّر البدء",tapAgain:"انقر مرة أخرى",idle:"خامل",playing:"قيد التشغيل",paused:"متوقف مؤقتًا",stopped:"متوقف",buffering:"جارٍ التخزين المؤقت",power:"الطاقة"},
+  ja:{now:"再生中",loading:"読み込み中…",vol:"音量",input:"入力",standby:"スタンバイ",playback:"再生",pause:"一時停止",stop:"停止",presets:"プリセット",peers:"他のスピーカー",support:"ST Reborn を支援",tip:"ヒント：ブラウザのメニューから「ホーム画面に追加」を使うと、アプリとして保存できます。",empty:"空き",presetWord:"プリセット",starting:"開始中",pleaseWait:"お待ちください",cantStart:"開始できませんでした",tapAgain:"もう一度タップ",idle:"待機中",playing:"再生中",paused:"一時停止中",stopped:"停止",buffering:"バッファ中",power:"電源"},
+  lt:{now:"Dabar grojama",loading:"Įkeliama…",vol:"Garsumas",input:"Įvestis",standby:"Budėjimas",playback:"Atkūrimas",pause:"Pristabdyti",stop:"Stabdyti",presets:"Išankstiniai nustatymai",peers:"Kitos kolonėlės",support:"Paremkite ST Reborn",tip:"Patarimas: naudokite naršyklės meniu ir „Pridėti į pradžios ekraną“, kad išsaugotumėte tai kaip programėlę.",empty:"tuščia",presetWord:"Nustatymas",starting:"Paleidžiama",pleaseWait:"palaukite",cantStart:"Nepavyko paleisti",tapAgain:"bakstelėkite dar kartą",idle:"Neaktyvus",playing:"Grojama",paused:"Pristabdyta",stopped:"Sustabdyta",buffering:"Buferiuojama",power:"Maitinimas"},
+  lv:{now:"Tagad atskaņo",loading:"Ielādē…",vol:"Skaļums",input:"Ievade",standby:"Gaidstāve",playback:"Atskaņošana",pause:"Pauze",stop:"Apturēt",presets:"Iepriekšiestatījumi",peers:"Citi skaļruņi",support:"Atbalstīt ST Reborn",tip:"Padoms: izmantojiet pārlūka izvēlni un \"Pievienot sākuma ekrānam\", lai saglabātu to kā lietotni.",empty:"tukšs",presetWord:"Iestatījums",starting:"Sākas",pleaseWait:"lūdzu, uzgaidiet",cantStart:"Neizdevās sākt",tapAgain:"pieskarieties vēlreiz",idle:"Dīkstāvē",playing:"Atskaņo",paused:"Pauzēts",stopped:"Apturēts",buffering:"Buferē",power:"Barošana"},
+  uk:{now:"Зараз грає",loading:"Завантаження…",vol:"Гучність",input:"Вхід",standby:"Очікування",playback:"Відтворення",pause:"Пауза",stop:"Стоп",presets:"Пресети",peers:"Інші колонки",support:"Підтримати ST Reborn",tip:"Порада: скористайтеся меню браузера та «Додати на головний екран», щоб зберегти це як застосунок.",empty:"порожньо",presetWord:"Пресет",starting:"Запуск",pleaseWait:"зачекайте",cantStart:"Не вдалося запустити",tapAgain:"торкніться ще раз",idle:"Очікування",playing:"Відтворення",paused:"Призупинено",stopped:"Зупинено",buffering:"Буферизація",power:"Живлення"}
+};
+// Pick the best matching locale from the phone and build T (chosen strings with
+// English fall-through per key). Runs immediately so the dynamic helpers below
+// can use T as soon as they execute.
+var T = (function(){
+  var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
+  var code = 'en';
+  for (var i = 0; i < langs.length; i++) {
+    var pri = String(langs[i] || '').toLowerCase().split('-')[0];
+    if (I18N[pri]) { code = pri; break; }
+  }
+  try { document.documentElement.lang = code; } catch (e) {}
+  var base = I18N.en, sel = I18N[code] || base, out = {};
+  for (var k in base) out[k] = (sel[k] != null ? sel[k] : base[k]);
+  return out;
+})();
+// applyStaticI18n fills the fixed labels/buttons from T. The English text stays
+// in the HTML as the no-JS fallback; this overwrites it once on load.
+function applyStaticI18n() {
+  var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
+  set('lblNow', T.now); set('lblVol', T.vol); set('lblInput', T.input);
+  set('btnStandby', T.standby); set('lblPlayback', T.playback);
+  set('btnPause', T.pause); set('btnStop', T.stop);
+  set('lblPresets', T.presets); set('lblPeers', T.peers);
+  set('lblSupport', T.support); set('lblTip', T.tip);
+  var v = document.getElementById('vol'); if (v) v.setAttribute('aria-label', T.vol);
+  var pb = document.getElementById('powerBtn'); if (pb) { pb.setAttribute('aria-label', T.power); pb.title = T.power; }
+  var st = document.getElementById('status'); if (st) st.innerHTML = '<span class="now">' + escapeHtml(T.loading) + '</span>';
+}
+
 async function api(path, method, body) {
   const r = await fetch(path, { method: method || 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   if (!r.ok) { console.error(path, r.status); return null; }
@@ -315,13 +364,13 @@ async function loadPresets() {
     const div = document.createElement('div');
     div.className = 'preset' + (p ? '' : ' empty');
     if (p) {
-      const nm = p.name || ('Preset ' + i);
+      const nm = p.name || (T.presetWord + ' ' + i);
       div.setAttribute('role','button'); div.tabIndex = 0;
       div.onclick = () => playSlot(i, div, nm);
       div.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playSlot(i, div, nm); } };
       div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(nm) + '</div>';
     }
-    else { div.innerHTML = '<div class="num">#' + i + '</div><div class="name">&mdash; empty &mdash;</div>'; }
+    else { div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(T.empty) + '</div>'; }
     grid.appendChild(div);
   }
 }
@@ -332,10 +381,10 @@ async function loadPresets() {
 async function playSlot(n, tile, name) {
   document.querySelectorAll('.preset.active').forEach(function(e){ e.classList.remove('active'); });
   if (tile) tile.classList.add('active');
-  setNow((name ? 'Starting ' + name : 'Starting'), 'please wait');
+  setNow((name ? T.starting + ' ' + name : T.starting), T.pleaseWait);
   const r = await api('/api/play/' + n, 'POST');
   if (r) { setTimeout(refreshStatus, 1200); setTimeout(refreshStatus, 3000); }
-  else { setNow('Could not start', 'tap again'); if (tile) tile.classList.remove('active'); }
+  else { setNow(T.cantStart, T.tapAgain); if (tile) tile.classList.remove('active'); }
 }
 
 async function refreshStatus() {
@@ -375,9 +424,9 @@ async function loadVersion() {
   var menu = document.getElementById('a11yMenu');
   if (!trigger || !menu) return;
   // Localize the menu labels to the phone's language, reusing the same strings
-  // as the desktop app. Only these controls are translated; the rest of the
-  // page is English. Done client-side from navigator.language, so it costs the
-  // speaker nothing.
+  // as the desktop app. The rest of the page is localized by the I18N block at
+  // the top of this script; this dictionary covers only the "Aa" menu. Done
+  // client-side from navigator.language, so it costs the speaker nothing.
   var A11Y_I18N = {
     en:{t:"Display & accessibility",sz:"Text size",n:"Normal",l:"Large",x:"Extra large",th:"Theme",d:"Dark",li:"Light",c:"High contrast"},
     de:{t:"Anzeige und Barrierefreiheit",sz:"Textgröße",n:"Normal",l:"Groß",x:"Sehr groß",th:"Darstellung",d:"Dunkel",li:"Hell",c:"Hoher Kontrast"},
