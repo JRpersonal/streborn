@@ -150,6 +150,14 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 .a11y-seg button { flex:1; min-height:44px; padding:8px 6px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-size:13px; line-height:1.15; cursor:pointer; }
 .a11y-seg button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
 @media (hover:hover) { .a11y-trigger:hover, .a11y-seg button:hover { background:var(--hover); } }
+/* Pull-to-refresh indicator: a home-screen PWA has no browser reload button,
+   so a pull down from the top re-fetches everything. */
+#ptr { position:fixed; top:env(safe-area-inset-top); left:0; right:0; display:flex; justify-content:center; z-index:60; pointer-events:none; }
+.ptr-spin { margin-top:8px; width:22px; height:22px; border-radius:50%; border:2.5px solid var(--line); border-top-color:var(--accent); opacity:0; transform:translateY(-40px); }
+#ptr.snap .ptr-spin { transition:transform .25s ease, opacity .25s ease; }
+#ptr.armed .ptr-spin { border-color:var(--accent); }
+#ptr.spinning .ptr-spin { opacity:1; transform:none; animation:ptr-rot .8s linear infinite; }
+@keyframes ptr-rot { from { transform:rotate(0); } to { transform:rotate(360deg); } }
 /* Respect the OS "reduce motion" setting. */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
 </style>
@@ -194,6 +202,7 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 </script>
 </head>
 <body>
+<div id="ptr" aria-hidden="true"><div class="ptr-spin"></div></div>
 <header>
 <img src="/icon.png" alt="STR">
 <div class="brand">ST <span>Reborn</span></div>
@@ -505,7 +514,53 @@ async function loadVersion() {
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
 })();
 
-loadSettings(); loadPresets(); refreshStatus(); loadPeers(); loadVersion();
+// refreshAll re-fetches every panel at once (used by pull-to-refresh and on
+// regaining foreground), with a short minimum so the spinner does not flash.
+function refreshAll(){
+  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), loadPeers(), loadVersion()]).catch(function(){});
+  var minSpin = new Promise(function(r){ setTimeout(r, 500); });
+  return Promise.all([work, minSpin]);
+}
+// A saved-to-home-screen PWA keeps running in the background; its data would be
+// stale on reopen, so re-fetch whenever the app returns to the foreground.
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible') refreshAll();
+});
+// Pull-to-refresh: in standalone PWA mode there is no browser reload button, so a
+// pull down from the very top re-fetches everything. Touch-only; ignores pulls
+// that start on a control or when the page is already scrolled.
+(function ptrInit(){
+  var ptr = document.getElementById('ptr');
+  if (!ptr || !('ontouchstart' in window)) return;
+  var spin = ptr.querySelector('.ptr-spin');
+  var startY = 0, pulling = false, dist = 0, busy = false;
+  var THRESHOLD = 70;
+  function clearSpin(){ spin.style.opacity = ''; spin.style.transform = ''; }
+  function retract(){ ptr.classList.add('snap'); spin.style.opacity = '0'; spin.style.transform = 'translateY(-40px)'; setTimeout(function(){ ptr.classList.remove('snap'); clearSpin(); busy = false; }, 300); }
+  document.addEventListener('touchstart', function(e){
+    if (busy || window.scrollY > 0 || (e.target.closest && e.target.closest('input,button,a,.preset,.a11y-menu'))) { startY = -1; return; }
+    startY = e.touches[0].clientY; pulling = false; dist = 0; ptr.classList.remove('snap');
+  }, {passive:true});
+  document.addEventListener('touchmove', function(e){
+    if (busy || startY < 0) return;
+    var dy = e.touches[0].clientY - startY;
+    if (dy <= 0 || window.scrollY > 0) return;
+    pulling = true; dist = dy * 0.5; e.preventDefault();
+    spin.style.opacity = Math.min(1, dist / THRESHOLD);
+    spin.style.transform = 'translateY(' + (Math.min(dist, 56) - 40) + 'px) rotate(' + (dist * 3) + 'deg)';
+    ptr.classList.toggle('armed', dist >= THRESHOLD);
+  }, {passive:false});
+  document.addEventListener('touchend', function(){
+    if (busy || !pulling) { startY = 0; pulling = false; return; }
+    var fire = dist >= THRESHOLD;
+    pulling = false; startY = 0; ptr.classList.remove('armed');
+    if (!fire) { retract(); return; }
+    busy = true; clearSpin(); ptr.classList.add('spinning');
+    refreshAll().then(function(){ ptr.classList.remove('spinning'); retract(); });
+  }, {passive:true});
+})();
+
+applyStaticI18n(); loadSettings(); loadPresets(); refreshStatus(); loadPeers(); loadVersion();
 setInterval(refreshStatus, 5000);
 </script>
 </body>
