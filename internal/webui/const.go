@@ -81,7 +81,12 @@ html.a11y-scale-xl body { zoom:1.30; }
 * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 html.a11y-contrast :focus-visible { outline-color:#fff; }
-body { margin:0; padding:16px 16px calc(16px + env(safe-area-inset-bottom)); background:var(--bg); color:var(--fg); max-width:620px; margin:0 auto; }
+/* Pad every edge by the device safe-area inset on top of the base 16px. The
+   page is PWA "standalone" with a black-translucent status bar, so on a notch /
+   Dynamic Island phone (e.g. iPhone) iOS draws the content behind the status
+   bar; without the top inset the header collides with the clock. The insets are
+   0 on hardware that has none, so the base 16px is unchanged there. */
+body { margin:0; padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); background:var(--bg); color:var(--fg); max-width:620px; margin:0 auto; }
 header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 header img { width:30px; height:30px; border-radius:7px; }
 header .brand { font-size:18px; font-weight:700; letter-spacing:.2px; }
@@ -126,6 +131,13 @@ footer .web { display:inline-block; margin-top:4px; color:var(--accent); text-de
 footer .web:hover { text-decoration:underline; }
 footer .ver { display:block; margin-top:8px; }
 footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
+/* Power on/off toggle, pinned to the header's right next to "Aa". */
+.pwr { display:inline-flex; align-items:center; justify-content:center; flex:none; min-height:36px; min-width:40px; padding:6px 10px; margin-right:8px; background:var(--card2); color:var(--muted); border:1px solid var(--line); border-radius:8px; cursor:pointer; transition:background .15s,border-color .15s,color .15s; }
+.pwr svg { display:block; }
+.pwr.on { border-color:var(--accent); color:var(--accent); }
+.pwr.active { background:var(--press); }
+.pwr:active { background:var(--press); }
+@media (hover:hover) { .pwr:hover { background:var(--hover); } }
 /* "Aa" display-options menu (text size + theme), pinned to the header's right. */
 .a11y { position:relative; flex:none; }
 .a11y-trigger { display:inline-flex; align-items:center; min-height:36px; padding:6px 11px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-size:15px; font-weight:700; letter-spacing:-.5px; cursor:pointer; }
@@ -138,6 +150,14 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 .a11y-seg button { flex:1; min-height:44px; padding:8px 6px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-size:13px; line-height:1.15; cursor:pointer; }
 .a11y-seg button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
 @media (hover:hover) { .a11y-trigger:hover, .a11y-seg button:hover { background:var(--hover); } }
+/* Pull-to-refresh indicator: a home-screen PWA has no browser reload button,
+   so a pull down from the top re-fetches everything. */
+#ptr { position:fixed; top:env(safe-area-inset-top); left:0; right:0; display:flex; justify-content:center; z-index:60; pointer-events:none; }
+.ptr-spin { margin-top:8px; width:22px; height:22px; border-radius:50%; border:2.5px solid var(--line); border-top-color:var(--accent); opacity:0; transform:translateY(-40px); }
+#ptr.snap .ptr-spin { transition:transform .25s ease, opacity .25s ease; }
+#ptr.armed .ptr-spin { border-color:var(--accent); }
+#ptr.spinning .ptr-spin { opacity:1; transform:none; animation:ptr-rot .8s linear infinite; }
+@keyframes ptr-rot { from { transform:rotate(0); } to { transform:rotate(360deg); } }
 /* Respect the OS "reduce motion" setting. */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
 </style>
@@ -182,10 +202,12 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 </script>
 </head>
 <body>
+<div id="ptr" aria-hidden="true"><div class="ptr-spin"></div></div>
 <header>
 <img src="/icon.png" alt="STR">
 <div class="brand">ST <span>Reborn</span></div>
 <div class="dev" id="dev"></div>
+<button type="button" class="pwr" id="powerBtn" onclick="togglePower()" aria-label="Power" aria-pressed="true" title="Power"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="2.5" x2="12" y2="12"></line><path d="M7.5 6.3a7 7 0 1 0 9 0"></path></svg></button>
 <div class="a11y">
 <button type="button" class="a11y-trigger" id="a11yTrigger" aria-haspopup="dialog" aria-expanded="false" aria-label="Display &amp; accessibility" title="Display &amp; accessibility">Aa</button>
 <div class="a11y-menu" id="a11yMenu" role="dialog" aria-label="Display &amp; accessibility" hidden>
@@ -211,43 +233,43 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 
 <main>
 <div class="card nowcard loading" id="statusCard">
-<div class="label">Now playing</div>
+<div class="label" id="lblNow">Now playing</div>
 <div id="status"><span class="now">Loading&hellip;</span></div>
 </div>
 
 <div class="card">
-<div class="label">Volume</div>
+<div class="label" id="lblVol">Volume</div>
 <div class="vol"><input type="range" id="vol" min="0" max="100" value="0" aria-label="Volume" oninput="onVol(this.value)"><span class="val" id="volval">0</span></div>
 </div>
 
 <div class="card">
-<div class="label">Input</div>
+<div class="label" id="lblInput">Input</div>
 <div class="row c3" id="inputs">
 <button class="btn" onclick="setSource('BLUETOOTH',this)">Bluetooth</button>
 <button class="btn" onclick="setSource('AUX',this)">AUX</button>
-<button class="btn" onclick="setSource('STANDBY',this)">Standby</button>
+<button class="btn" id="btnStandby" onclick="setSource('STANDBY',this)">Standby</button>
 </div>
 </div>
 
 <div class="card">
-<div class="label">Playback</div>
+<div class="label" id="lblPlayback">Playback</div>
 <div class="row c2">
-<button class="btn" onclick="pp(this,'/api/pause')">Pause</button>
-<button class="btn" onclick="pp(this,'/api/stop')">Stop</button>
+<button class="btn" id="btnPause" onclick="pp(this,'/api/pause')">Pause</button>
+<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')">Stop</button>
 </div>
 </div>
 
-<div class="label" style="margin:18px 12px 8px">Presets</div>
+<div class="label" id="lblPresets" style="margin:18px 12px 8px">Presets</div>
 <div class="grid" id="presets"></div>
 
 <div class="card" id="peersCard">
-<div class="label">Other speakers</div>
+<div class="label" id="lblPeers">Other speakers</div>
 <div class="row" id="peers"></div>
 </div>
 </main>
 
 <footer>
-<div class="label" style="margin-bottom:8px">Support ST Reborn</div>
+<div class="label" id="lblSupport" style="margin-bottom:8px">Support ST Reborn</div>
 <div class="sponsors">
 <a class="btn" href="https://github.com/sponsors/JRpersonal" target="_blank" rel="noopener">&#9829; GitHub</a>
 <a class="btn" href="https://ko-fi.com/streborn" target="_blank" rel="noopener">&#9749; Ko-fi</a>
@@ -255,10 +277,59 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 </div>
 <a class="web" href="https://st-reborn.de" target="_blank" rel="noopener">st-reborn.de</a>
 <span class="ver" id="ver"></span>
-<span class="hint">Tip: use your browser menu and "Add to Home Screen" to keep this as an app.</span>
+<span class="hint" id="lblTip">Tip: use your browser menu and "Add to Home Screen" to keep this as an app.</span>
 </footer>
 
 <script>
+// Page localization. The whole remote is translated client-side from the phone's
+// language (navigator.languages), so it costs the speaker nothing: the strings
+// ship inside this one embedded page and never touch the box. English is the
+// fallback for any locale or key we don't cover. Brand names (ST Reborn,
+// Bluetooth, AUX) and the box's own device name stay as-is. Keep this language
+// set in step with the "Aa" menu dictionary (A11Y_I18N) below.
+var I18N = {
+  en:{now:"Now playing",loading:"Loading…",vol:"Volume",input:"Input",standby:"Standby",playback:"Playback",pause:"Pause",stop:"Stop",presets:"Presets",peers:"Other speakers",support:"Support ST Reborn",tip:"Tip: use your browser menu and \"Add to Home Screen\" to keep this as an app.",empty:"empty",presetWord:"Preset",starting:"Starting",pleaseWait:"please wait",cantStart:"Could not start",tapAgain:"tap again",idle:"Idle",playing:"Playing",paused:"Paused",stopped:"Stopped",buffering:"Buffering",power:"Power"},
+  de:{now:"Wird gespielt",loading:"Lädt…",vol:"Lautstärke",input:"Eingang",standby:"Standby",playback:"Wiedergabe",pause:"Pause",stop:"Stopp",presets:"Voreinstellungen",peers:"Andere Lautsprecher",support:"ST Reborn unterstützen",tip:"Tipp: Über das Browser-Menü und „Zum Home-Bildschirm“ als App speichern.",empty:"leer",presetWord:"Voreinstellung",starting:"Starte",pleaseWait:"bitte warten",cantStart:"Start fehlgeschlagen",tapAgain:"nochmal tippen",idle:"Bereit",playing:"Wiedergabe",paused:"Pausiert",stopped:"Gestoppt",buffering:"Puffert",power:"Ein/Aus"},
+  nl:{now:"Speelt nu",loading:"Laden…",vol:"Volume",input:"Ingang",standby:"Stand-by",playback:"Afspelen",pause:"Pauze",stop:"Stop",presets:"Presets",peers:"Andere speakers",support:"Steun ST Reborn",tip:"Tip: gebruik het browsermenu en \"Zet op beginscherm\" om dit als app te bewaren.",empty:"leeg",presetWord:"Preset",starting:"Starten",pleaseWait:"even geduld",cantStart:"Kan niet starten",tapAgain:"tik opnieuw",idle:"Inactief",playing:"Speelt af",paused:"Gepauzeerd",stopped:"Gestopt",buffering:"Bufferen",power:"Aan/uit"},
+  fr:{now:"Lecture en cours",loading:"Chargement…",vol:"Volume",input:"Entrée",standby:"Veille",playback:"Lecture",pause:"Pause",stop:"Arrêt",presets:"Préréglages",peers:"Autres enceintes",support:"Soutenir ST Reborn",tip:"Astuce : utilisez le menu du navigateur et « Ajouter à l'écran d'accueil » pour garder ceci comme une app.",empty:"vide",presetWord:"Préréglage",starting:"Démarrage",pleaseWait:"veuillez patienter",cantStart:"Démarrage impossible",tapAgain:"appuyez à nouveau",idle:"Inactif",playing:"Lecture",paused:"En pause",stopped:"Arrêté",buffering:"Mise en mémoire tampon",power:"Marche/Arrêt"},
+  es:{now:"Reproduciendo",loading:"Cargando…",vol:"Volumen",input:"Entrada",standby:"Reposo",playback:"Reproducción",pause:"Pausa",stop:"Detener",presets:"Presintonías",peers:"Otros altavoces",support:"Apoya ST Reborn",tip:"Consejo: usa el menú del navegador y «Añadir a pantalla de inicio» para conservarlo como app.",empty:"vacío",presetWord:"Presintonía",starting:"Iniciando",pleaseWait:"espera",cantStart:"No se pudo iniciar",tapAgain:"toca de nuevo",idle:"Inactivo",playing:"Reproduciendo",paused:"En pausa",stopped:"Detenido",buffering:"Almacenando en búfer",power:"Encendido"},
+  pl:{now:"Teraz odtwarzane",loading:"Ładowanie…",vol:"Głośność",input:"Wejście",standby:"Czuwanie",playback:"Odtwarzanie",pause:"Pauza",stop:"Stop",presets:"Presety",peers:"Inne głośniki",support:"Wesprzyj ST Reborn",tip:"Wskazówka: użyj menu przeglądarki i „Dodaj do ekranu głównego”, aby zachować to jako aplikację.",empty:"puste",presetWord:"Preset",starting:"Uruchamianie",pleaseWait:"proszę czekać",cantStart:"Nie udało się uruchomić",tapAgain:"dotknij ponownie",idle:"Bezczynny",playing:"Odtwarzanie",paused:"Wstrzymano",stopped:"Zatrzymano",buffering:"Buforowanie",power:"Zasilanie"},
+  tr:{now:"Şimdi çalıyor",loading:"Yükleniyor…",vol:"Ses",input:"Giriş",standby:"Bekleme",playback:"Oynatma",pause:"Duraklat",stop:"Durdur",presets:"Ön ayarlar",peers:"Diğer hoparlörler",support:"ST Reborn'a destek ol",tip:"İpucu: tarayıcı menüsünü ve \"Ana Ekrana Ekle\" seçeneğini kullanarak bunu uygulama olarak tutun.",empty:"boş",presetWord:"Ön ayar",starting:"Başlatılıyor",pleaseWait:"lütfen bekleyin",cantStart:"Başlatılamadı",tapAgain:"tekrar dokunun",idle:"Boşta",playing:"Çalıyor",paused:"Duraklatıldı",stopped:"Durduruldu",buffering:"Arabelleğe alınıyor",power:"Güç"},
+  ar:{now:"قيد التشغيل الآن",loading:"جارٍ التحميل…",vol:"مستوى الصوت",input:"المدخل",standby:"وضع الاستعداد",playback:"التشغيل",pause:"إيقاف مؤقت",stop:"إيقاف",presets:"الإعدادات المسبقة",peers:"مكبرات صوت أخرى",support:"ادعم ST Reborn",tip:"نصيحة: استخدم قائمة المتصفح و\"إضافة إلى الشاشة الرئيسية\" للاحتفاظ بهذا كتطبيق.",empty:"فارغ",presetWord:"إعداد مسبق",starting:"جارٍ البدء",pleaseWait:"يرجى الانتظار",cantStart:"تعذّر البدء",tapAgain:"انقر مرة أخرى",idle:"خامل",playing:"قيد التشغيل",paused:"متوقف مؤقتًا",stopped:"متوقف",buffering:"جارٍ التخزين المؤقت",power:"الطاقة"},
+  ja:{now:"再生中",loading:"読み込み中…",vol:"音量",input:"入力",standby:"スタンバイ",playback:"再生",pause:"一時停止",stop:"停止",presets:"プリセット",peers:"他のスピーカー",support:"ST Reborn を支援",tip:"ヒント：ブラウザのメニューから「ホーム画面に追加」を使うと、アプリとして保存できます。",empty:"空き",presetWord:"プリセット",starting:"開始中",pleaseWait:"お待ちください",cantStart:"開始できませんでした",tapAgain:"もう一度タップ",idle:"待機中",playing:"再生中",paused:"一時停止中",stopped:"停止",buffering:"バッファ中",power:"電源"},
+  lt:{now:"Dabar grojama",loading:"Įkeliama…",vol:"Garsumas",input:"Įvestis",standby:"Budėjimas",playback:"Atkūrimas",pause:"Pristabdyti",stop:"Stabdyti",presets:"Išankstiniai nustatymai",peers:"Kitos kolonėlės",support:"Paremkite ST Reborn",tip:"Patarimas: naudokite naršyklės meniu ir „Pridėti į pradžios ekraną“, kad išsaugotumėte tai kaip programėlę.",empty:"tuščia",presetWord:"Nustatymas",starting:"Paleidžiama",pleaseWait:"palaukite",cantStart:"Nepavyko paleisti",tapAgain:"bakstelėkite dar kartą",idle:"Neaktyvus",playing:"Grojama",paused:"Pristabdyta",stopped:"Sustabdyta",buffering:"Buferiuojama",power:"Maitinimas"},
+  lv:{now:"Tagad atskaņo",loading:"Ielādē…",vol:"Skaļums",input:"Ievade",standby:"Gaidstāve",playback:"Atskaņošana",pause:"Pauze",stop:"Apturēt",presets:"Iepriekšiestatījumi",peers:"Citi skaļruņi",support:"Atbalstīt ST Reborn",tip:"Padoms: izmantojiet pārlūka izvēlni un \"Pievienot sākuma ekrānam\", lai saglabātu to kā lietotni.",empty:"tukšs",presetWord:"Iestatījums",starting:"Sākas",pleaseWait:"lūdzu, uzgaidiet",cantStart:"Neizdevās sākt",tapAgain:"pieskarieties vēlreiz",idle:"Dīkstāvē",playing:"Atskaņo",paused:"Pauzēts",stopped:"Apturēts",buffering:"Buferē",power:"Barošana"},
+  uk:{now:"Зараз грає",loading:"Завантаження…",vol:"Гучність",input:"Вхід",standby:"Очікування",playback:"Відтворення",pause:"Пауза",stop:"Стоп",presets:"Пресети",peers:"Інші колонки",support:"Підтримати ST Reborn",tip:"Порада: скористайтеся меню браузера та «Додати на головний екран», щоб зберегти це як застосунок.",empty:"порожньо",presetWord:"Пресет",starting:"Запуск",pleaseWait:"зачекайте",cantStart:"Не вдалося запустити",tapAgain:"торкніться ще раз",idle:"Очікування",playing:"Відтворення",paused:"Призупинено",stopped:"Зупинено",buffering:"Буферизація",power:"Живлення"}
+};
+// Pick the best matching locale from the phone and build T (chosen strings with
+// English fall-through per key). Runs immediately so the dynamic helpers below
+// can use T as soon as they execute.
+var T = (function(){
+  var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
+  var code = 'en';
+  for (var i = 0; i < langs.length; i++) {
+    var pri = String(langs[i] || '').toLowerCase().split('-')[0];
+    if (I18N[pri]) { code = pri; break; }
+  }
+  try { document.documentElement.lang = code; } catch (e) {}
+  var base = I18N.en, sel = I18N[code] || base, out = {};
+  for (var k in base) out[k] = (sel[k] != null ? sel[k] : base[k]);
+  return out;
+})();
+// applyStaticI18n fills the fixed labels/buttons from T. The English text stays
+// in the HTML as the no-JS fallback; this overwrites it once on load.
+function applyStaticI18n() {
+  var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
+  set('lblNow', T.now); set('lblVol', T.vol); set('lblInput', T.input);
+  set('btnStandby', T.standby); set('lblPlayback', T.playback);
+  set('btnPause', T.pause); set('btnStop', T.stop);
+  set('lblPresets', T.presets); set('lblPeers', T.peers);
+  set('lblSupport', T.support); set('lblTip', T.tip);
+  var v = document.getElementById('vol'); if (v) v.setAttribute('aria-label', T.vol);
+  var pb = document.getElementById('powerBtn'); if (pb) { pb.setAttribute('aria-label', T.power); pb.title = T.power; }
+  var st = document.getElementById('status'); if (st) st.innerHTML = '<span class="now">' + escapeHtml(T.loading) + '</span>';
+}
+
 async function api(path, method, body) {
   const r = await fetch(path, { method: method || 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   if (!r.ok) { console.error(path, r.status); return null; }
@@ -282,6 +353,22 @@ function setNow(name, state) {
 function press(btn) { if (!btn) return; btn.classList.add('active'); setTimeout(function(){ btn.classList.remove('active'); }, 600); }
 // pp = press + POST + refresh, for the Pause/Stop controls.
 async function pp(btn, path) { press(btn); await api(path, 'POST'); setTimeout(refreshStatus, 1200); }
+// Power on/off. The box has no "off" for a stream (Stop only pauses the
+// transport, the speaker stays on), so this is a real standby toggle: off -> Bose
+// standby, on -> wake + resume the last station. boxOn tracks the live state,
+// refreshed from /api/status, so the button reflects the speaker even when it is
+// switched at the box itself.
+var boxOn = true;
+function applyPowerUI() {
+  var b = document.getElementById('powerBtn');
+  if (b) { b.classList.toggle('on', boxOn); b.setAttribute('aria-pressed', String(boxOn)); }
+}
+async function togglePower() {
+  var target = !boxOn;
+  boxOn = target; applyPowerUI(); press(document.getElementById('powerBtn'));
+  await api('/api/box/power', 'POST', { on: target });
+  setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 4000);
+}
 // setSource selects an input and keeps that button highlighted until another is chosen.
 async function setSource(s, btn) {
   document.querySelectorAll('#inputs .btn').forEach(function(e){ e.classList.remove('active'); });
@@ -310,13 +397,13 @@ async function loadPresets() {
     const div = document.createElement('div');
     div.className = 'preset' + (p ? '' : ' empty');
     if (p) {
-      const nm = p.name || ('Preset ' + i);
+      const nm = p.name || (T.presetWord + ' ' + i);
       div.setAttribute('role','button'); div.tabIndex = 0;
       div.onclick = () => playSlot(i, div, nm);
       div.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playSlot(i, div, nm); } };
       div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(nm) + '</div>';
     }
-    else { div.innerHTML = '<div class="num">#' + i + '</div><div class="name">&mdash; empty &mdash;</div>'; }
+    else { div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(T.empty) + '</div>'; }
     grid.appendChild(div);
   }
 }
@@ -327,10 +414,10 @@ async function loadPresets() {
 async function playSlot(n, tile, name) {
   document.querySelectorAll('.preset.active').forEach(function(e){ e.classList.remove('active'); });
   if (tile) tile.classList.add('active');
-  setNow((name ? 'Starting ' + name : 'Starting'), 'please wait');
+  setNow((name ? T.starting + ' ' + name : T.starting), T.pleaseWait);
   const r = await api('/api/play/' + n, 'POST');
   if (r) { setTimeout(refreshStatus, 1200); setTimeout(refreshStatus, 3000); }
-  else { setNow('Could not start', 'tap again'); if (tile) tile.classList.remove('active'); }
+  else { setNow(T.cantStart, T.tapAgain); if (tile) tile.classList.remove('active'); }
 }
 
 async function refreshStatus() {
@@ -339,8 +426,13 @@ async function refreshStatus() {
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
   const name = m ? m[1] : '';
-  const human = { PLAY_STATE:'Playing', PAUSE_STATE:'Paused', STOP_STATE:'Stopped', BUFFERING_STATE:'Buffering', INVALID_SOURCE:'Stopped' };
-  setNow(name || src || 'Idle', human[state] || (state ? state.replace('_STATE','').toLowerCase() : 'stopped'));
+  // Track power state for the header toggle: the box is "on" unless it is in
+  // standby (a stopped-but-awake box still counts as on, so the button can switch
+  // it off, which was the whole point of the request).
+  boxOn = (state === 'PLAY_STATE' || state === 'PAUSE_STATE' || state === 'BUFFERING_STATE') || (!!src && src.toUpperCase() !== 'STANDBY');
+  applyPowerUI();
+  const human = { PLAY_STATE:T.playing, PAUSE_STATE:T.paused, STOP_STATE:T.stopped, BUFFERING_STATE:T.buffering, INVALID_SOURCE:T.stopped };
+  setNow(name || src || T.idle, human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
 }
 
 async function loadPeers() {
@@ -370,9 +462,9 @@ async function loadVersion() {
   var menu = document.getElementById('a11yMenu');
   if (!trigger || !menu) return;
   // Localize the menu labels to the phone's language, reusing the same strings
-  // as the desktop app. Only these controls are translated; the rest of the
-  // page is English. Done client-side from navigator.language, so it costs the
-  // speaker nothing.
+  // as the desktop app. The rest of the page is localized by the I18N block at
+  // the top of this script; this dictionary covers only the "Aa" menu. Done
+  // client-side from navigator.language, so it costs the speaker nothing.
   var A11Y_I18N = {
     en:{t:"Display & accessibility",sz:"Text size",n:"Normal",l:"Large",x:"Extra large",th:"Theme",d:"Dark",li:"Light",c:"High contrast"},
     de:{t:"Anzeige und Barrierefreiheit",sz:"Textgröße",n:"Normal",l:"Groß",x:"Sehr groß",th:"Darstellung",d:"Dunkel",li:"Hell",c:"Hoher Kontrast"},
@@ -422,7 +514,53 @@ async function loadVersion() {
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
 })();
 
-loadSettings(); loadPresets(); refreshStatus(); loadPeers(); loadVersion();
+// refreshAll re-fetches every panel at once (used by pull-to-refresh and on
+// regaining foreground), with a short minimum so the spinner does not flash.
+function refreshAll(){
+  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), loadPeers(), loadVersion()]).catch(function(){});
+  var minSpin = new Promise(function(r){ setTimeout(r, 500); });
+  return Promise.all([work, minSpin]);
+}
+// A saved-to-home-screen PWA keeps running in the background; its data would be
+// stale on reopen, so re-fetch whenever the app returns to the foreground.
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible') refreshAll();
+});
+// Pull-to-refresh: in standalone PWA mode there is no browser reload button, so a
+// pull down from the very top re-fetches everything. Touch-only; ignores pulls
+// that start on a control or when the page is already scrolled.
+(function ptrInit(){
+  var ptr = document.getElementById('ptr');
+  if (!ptr || !('ontouchstart' in window)) return;
+  var spin = ptr.querySelector('.ptr-spin');
+  var startY = 0, pulling = false, dist = 0, busy = false;
+  var THRESHOLD = 70;
+  function clearSpin(){ spin.style.opacity = ''; spin.style.transform = ''; }
+  function retract(){ ptr.classList.add('snap'); spin.style.opacity = '0'; spin.style.transform = 'translateY(-40px)'; setTimeout(function(){ ptr.classList.remove('snap'); clearSpin(); busy = false; }, 300); }
+  document.addEventListener('touchstart', function(e){
+    if (busy || window.scrollY > 0 || (e.target.closest && e.target.closest('input,button,a,.preset,.a11y-menu'))) { startY = -1; return; }
+    startY = e.touches[0].clientY; pulling = false; dist = 0; ptr.classList.remove('snap');
+  }, {passive:true});
+  document.addEventListener('touchmove', function(e){
+    if (busy || startY < 0) return;
+    var dy = e.touches[0].clientY - startY;
+    if (dy <= 0 || window.scrollY > 0) return;
+    pulling = true; dist = dy * 0.5; e.preventDefault();
+    spin.style.opacity = Math.min(1, dist / THRESHOLD);
+    spin.style.transform = 'translateY(' + (Math.min(dist, 56) - 40) + 'px) rotate(' + (dist * 3) + 'deg)';
+    ptr.classList.toggle('armed', dist >= THRESHOLD);
+  }, {passive:false});
+  document.addEventListener('touchend', function(){
+    if (busy || !pulling) { startY = 0; pulling = false; return; }
+    var fire = dist >= THRESHOLD;
+    pulling = false; startY = 0; ptr.classList.remove('armed');
+    if (!fire) { retract(); return; }
+    busy = true; clearSpin(); ptr.classList.add('spinning');
+    refreshAll().then(function(){ ptr.classList.remove('spinning'); retract(); });
+  }, {passive:true});
+})();
+
+applyStaticI18n(); loadSettings(); loadPresets(); refreshStatus(); loadPeers(); loadVersion();
 setInterval(refreshStatus, 5000);
 </script>
 </body>

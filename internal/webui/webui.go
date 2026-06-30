@@ -650,6 +650,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/volume", s.handleBoxVolume)
 	mux.HandleFunc("/api/box/bass", s.handleBoxBass)
 	mux.HandleFunc("/api/box/source", s.handleBoxSource)
+	mux.HandleFunc("/api/box/power", s.handleBoxPower)
 	mux.HandleFunc("/api/region", s.handleRegion)
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
@@ -3505,6 +3506,74 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"source": src})
+}
+
+// handleBoxPower is the mobile remote's single on/off control. Body {"on":bool}.
+//
+// "off" puts the box into Bose standby (GET /standby) - the real power-off. Users
+// reported that Stop only pauses the stream and the speaker stays on (the box has
+// no concept of "off" for a stream, Stop just halts the transport); standby is
+// what actually switches it off, so the remote needs its own power control.
+//
+// "on" wakes the box from standby and brings the last station back, the same
+// power-on resume a hardware power press gives. Because this is an explicit user
+// press, it skips the ResumeLastPlay self-wake/zone guards and pushes the last
+// stream directly; if nothing is remembered the bare wake still powers the box up.
+func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var req struct {
+		On bool `json:"on"`
+	}
+	if !decodeJSONRequest(w, r, 256, &req) {
+		return
+	}
+	if s.boxHost == "" {
+		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if !req.On {
+		// Power off: Bose /standby expects GET (POST returns 400). Same call the
+		// Standby input uses; the real power-off, unlike Stop/Pause.
+		client := &http.Client{Timeout: 6 * time.Second}
+		resp, err := client.Get(fmt.Sprintf("http://%s:8090/standby", s.boxHost))
+		if err != nil {
+			http.Error(w, "box unreachable: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			http.Error(w, "box error: "+string(body), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"on": false})
+		return
+	}
+	if s.renderer == nil {
+		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
+		return
+	}
+	// Power on: explicit user "play it again", so clear any deliberate-stop intent,
+	// wake the box, then re-push the last station from under the lock.
+	s.ClearUserStop()
+	s.ensureBoxReady(r.Context())
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	var boxURL, title, art, mime string
+	if lp != nil {
+		lp.failed = false
+		lp.rePushes = 0
+		boxURL, title, art, mime = lp.boxURL, lp.title, lp.art, lp.mime
+	}
+	s.lastPlayMu.Unlock()
+	if boxURL != "" {
+		if err := s.renderer.PlayURLMime(r.Context(), boxURL, title, art, mime); err != nil {
+			s.logger.Warn("power on: resume of last station failed", "err", err)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"on": true})
 }
 
 // handleBoxBass PUT sets the bass value. Body {"value":N}.
