@@ -390,6 +390,12 @@ func run() error {
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
+		webui.WithSpotifySkip(func(ctx context.Context, forward bool) error {
+			if forward {
+				return spotifyMgr.Next(ctx)
+			}
+			return spotifyMgr.Prev(ctx)
+		}),
 		webui.WithSpotifyReady(spotifyMgr.Ready),
 		webui.WithSpotifyCanRecall(spotifyMgr.CanRecall),
 		webui.WithSpotifyPremiumRequired(spotifyMgr.PremiumRequired),
@@ -437,8 +443,9 @@ func run() error {
 		spotify:  spotifyMgr,
 		// A box/remote stop seen over gabbo tells the webui to hold the
 		// auto-re-push, so a deliberate stop is not immediately undone.
-		onUserStop: webuiSrv.NoteUserStop,
-		webhooks:   webhooksStore,
+		onUserStop:   webuiSrv.NoteUserStop,
+		onRemoteSkip: webuiSrv.TransportSkip,
+		webhooks:     webhooksStore,
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back.
 		noteLastPlay: webuiSrv.NoteLastPlay,
@@ -914,6 +921,11 @@ type presetWsHandler struct {
 	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
 	// does not fight a wanted stop. nil-safe.
 	onUserStop func()
+	// onRemoteSkip advances playback on a hardware remote Next/Prev key, source-
+	// aware (Spotify or the STR play queue). Wired to webui.TransportSkip so the
+	// hardware keys use the same skip logic as the phone remote; without it a
+	// folder skip stalled until the current track ended naturally (#300). nil-safe.
+	onRemoteSkip func(ctx context.Context, forward bool) (string, error)
 	// webhooks fires the user-configured HTTP request on a "thumb" trigger (a
 	// lone userActivityUpdate, see OnThumbActivity). nil-safe.
 	webhooks *webhooks.Store
@@ -1222,27 +1234,26 @@ func dialable(ip string, port int) bool {
 	return true
 }
 
-// OnRemoteSkip handles the SoundTouch remote's next/prev track keys during
-// Spotify playback: the box cannot skip a UPnP source itself (it emits
-// QPLAY_SKIP_*_FAILED), so we skip in go-librespot instead. The new track
-// reaches the box after its buffer drains. No-op unless Spotify is streaming.
+// OnRemoteSkip handles the SoundTouch remote's next/prev track keys. The box
+// cannot skip a UPnP source itself (it emits QPLAY_SKIP_*_FAILED), so STR skips
+// on its behalf: go-librespot during Spotify, or the STR play queue during
+// folder/library playback. It routes through the same source-aware skip as the
+// phone remote (webui.TransportSkip). Before this the hardware keys only skipped
+// Spotify, so a folder skip stalled until the current track ended naturally,
+// which the box surfaced as "Action Unavailable" for the remaining track time
+// (#300). A no-op on a non-skippable source (radio, aux) just does nothing.
 func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
-	if h.spotify == nil || !h.spotify.Streaming() {
+	if h.onRemoteSkip == nil {
 		return
 	}
 	sctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	var err error
-	if forward {
-		err = h.spotify.Next(sctx)
-	} else {
-		err = h.spotify.Prev(sctx)
-	}
+	src, err := h.onRemoteSkip(sctx, forward)
 	if err != nil {
-		h.logger.Warn("spotify remote skip failed", "forward", forward, "err", err)
+		h.logger.Warn("remote skip failed", "forward", forward, "source", src, "err", err)
 		return
 	}
-	h.logger.Info("spotify remote skip", "forward", forward)
+	h.logger.Info("remote skip", "forward", forward, "source", src)
 }
 
 // OnUserStop is fired when the box reports a deliberate playback stop over

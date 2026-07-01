@@ -270,6 +270,7 @@ func staleServerCertPEM(t *testing.T, m *Manager) []byte {
 	keyBlock, _ := pem.Decode(rootKeyPEM)
 	if keyBlock == nil {
 		t.Fatal("root key PEM not decodable")
+		return nil
 	}
 	rootKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
 	if err != nil {
