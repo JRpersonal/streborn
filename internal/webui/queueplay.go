@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -505,6 +506,109 @@ func (s *Server) handleQueuePrev(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.queue.snapshot())
+}
+
+// transportSkip advances playback to the next (forward=true) or previous track
+// for the phone remote's Previous/Next controls. It is source-aware: Spotify is
+// skipped in go-librespot when it is the live source (the box cannot skip a UPnP
+// source itself, it emits QPLAY_SKIP_*_FAILED), otherwise the STR play queue is
+// advanced. On a non-skippable source (radio, aux, Bluetooth) the queue skip is
+// a graceful no-op, matching a hardware remote's Next/Prev on those sources. It
+// returns which source handled the skip, for logging.
+func (s *Server) transportSkip(ctx context.Context, forward bool) (source string, err error) {
+	// Route to Spotify whenever Spotify is the box's current source, not only
+	// while it is actively pulling the Ogg: spotifyStreaming() flaps to false the
+	// moment a Spotify playlist is paused (the Ogg sink detaches), and Next/Prev
+	// must still skip a paused playlist. boxSourceIsSpotify catches that case by
+	// reading the box's now_playing location.
+	if s.spotifySkip != nil && (s.spotifyIsStreaming() || s.boxSourceIsSpotify(ctx)) {
+		err := s.spotifySkip(ctx, forward)
+		if err != nil && isTimeoutErr(err) {
+			// go-librespot performs the skip but holds its /player/next response
+			// while the next track loads, past the API client's timeout; the track
+			// still changes. Report success rather than a spurious error, only a
+			// real transport failure (go-librespot down) propagates.
+			s.logger.Info("spotify skip: go-librespot slow to ack, skip issued", "forward", forward)
+			return "spotify", nil
+		}
+		return "spotify", err
+	}
+	if _, _, err := s.queueSkip(forward); err != nil {
+		return "queue", err
+	}
+	return "queue", nil
+}
+
+// TransportSkip advances playback to the next (forward=true) or previous track,
+// source-aware (Spotify or the STR play queue). Exposed so the hardware remote's
+// Next/Prev keys drive the same logic as the phone remote's controls: without it
+// the box could not skip a UPnP folder source itself and only advanced when the
+// track ended naturally, stalling for the remaining track time (#300).
+func (s *Server) TransportSkip(ctx context.Context, forward bool) (string, error) {
+	return s.transportSkip(ctx, forward)
+}
+
+// spotifyIsStreaming is a nil-safe wrapper around the streaming predicate.
+func (s *Server) spotifyIsStreaming() bool {
+	return s.spotifyStreaming != nil && s.spotifyStreaming()
+}
+
+// isTimeoutErr reports whether err is a network/deadline timeout (as opposed to
+// a connection failure). A go-librespot skip that times out awaiting the HTTP
+// response has still performed the skip, so the transport handler treats it as
+// success; a connection error (engine down) does not and is a real failure.
+func isTimeoutErr(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
+// boxSourceIsSpotify reports whether the box's now_playing is pointed at STR's
+// Spotify Ogg stream, regardless of play/pause. Used so the phone remote's
+// Next/Prev reach go-librespot even when a Spotify playlist is paused (where
+// spotifyStreaming() is false, since the Ogg sink has detached).
+func (s *Server) boxSourceIsSpotify(ctx context.Context) bool {
+	host := s.boxHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+":8090/now_playing", nil)
+	if err != nil {
+		return false
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	return strings.Contains(string(b), "spotify/stream")
+}
+
+func (s *Server) handleTransportNext(w http.ResponseWriter, r *http.Request) {
+	s.handleTransportSkip(w, r, true)
+}
+
+func (s *Server) handleTransportPrev(w http.ResponseWriter, r *http.Request) {
+	s.handleTransportSkip(w, r, false)
+}
+
+func (s *Server) handleTransportSkip(w http.ResponseWriter, r *http.Request, forward bool) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	src, err := s.transportSkip(ctx, forward)
+	if err != nil {
+		s.logger.Warn("transport skip failed", "forward", forward, "source", src, "err", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error(), "source": src})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "source": src})
 }
 
 func (s *Server) handleQueueShuffle(w http.ResponseWriter, r *http.Request) {

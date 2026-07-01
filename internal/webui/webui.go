@@ -100,6 +100,12 @@ type Server struct {
 	// stream, the definitive "Spotify is playing" signal for verifyRecall.
 	// nil when Spotify is not configured.
 	spotifyStreaming func() bool
+	// spotifySkip advances go-librespot to the next/previous track for the phone
+	// remote's Previous/Next controls (forward = next), the same skip the hardware
+	// remote keys perform during Spotify playback (the box cannot skip a UPnP
+	// source itself). nil when Spotify is not configured; the transport handler
+	// then falls back to skipping the STR play queue.
+	spotifySkip func(ctx context.Context, forward bool) error
 	// spotifyReady reports whether go-librespot has finished authenticating, so
 	// a soft Spotify recall can wait out a cold start instead of pointing the box
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify
@@ -535,6 +541,13 @@ func WithSpotifyReady(ready func() bool) Option {
 	return func(s *Server) { s.spotifyReady = ready }
 }
 
+// WithSpotifySkip registers the hook that skips go-librespot to the next
+// (forward=true) or previous track, wired to the phone remote's Previous/Next
+// controls. Mirrors the hardware remote's Spotify skip.
+func WithSpotifySkip(skip func(ctx context.Context, forward bool) error) Option {
+	return func(s *Server) { s.spotifySkip = skip }
+}
+
 // WithSpotifyPremiumRequired registers the predicate that reports whether the
 // logged-in Spotify account is free/open and so cannot do the autonomous recall
 // playback a preset needs (#45). The recall handler uses it to answer with a
@@ -632,6 +645,10 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/pause", s.handlePause)
 	mux.HandleFunc("/api/resume", s.handleResume)
 	mux.HandleFunc("/api/stop", s.handleStop)
+	// Source-aware skip for the phone remote's Previous/Next controls: skips
+	// Spotify when it is the live source, otherwise advances the STR play queue.
+	mux.HandleFunc("/api/next", s.handleTransportNext)
+	mux.HandleFunc("/api/prev", s.handleTransportPrev)
 	mux.HandleFunc("/api/queue", s.handleQueue)
 	mux.HandleFunc("/api/queue/next", s.handleQueueNext)
 	mux.HandleFunc("/api/queue/prev", s.handleQueuePrev)
