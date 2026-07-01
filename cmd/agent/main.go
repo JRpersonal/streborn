@@ -36,6 +36,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
+	"github.com/JRpersonal/streborn/internal/clocksync"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/netutil"
@@ -671,6 +672,14 @@ func run() error {
 	if *pendingNameFile != "" {
 		go applyPendingBoxName(context.Background(), *boxHost, *pendingNameFile, logger)
 	}
+
+	// Correct an implausibly old system clock in the background. SoundTouch
+	// speakers have no battery-backed RTC, so a cold boot can land in 2015, which
+	// breaks TLS for HTTPS radio and the Spotify sidecar. run.sh syncs the clock
+	// once at boot but can miss a network that is not up yet; this keeps retrying
+	// from an HTTP Date header until a valid time is set, then exits (a no-op when
+	// the clock is already fine). See internal/clocksync and #296.
+	go clocksync.RunUntilSynced(ctx, logger, 30*time.Second)
 
 	// If the USB stick has a newer run.sh than the NAND run-override.sh:
 	// copy it. This is the self-update path for the bootstrap. Without it

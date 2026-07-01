@@ -82,6 +82,40 @@ func fetchNetworkTime(ctx context.Context, client *http.Client, hosts []string) 
 	return time.Time{}, lastErr
 }
 
+// RunUntilSynced keeps correcting an implausibly old system clock from a network
+// HTTP Date header, retrying every interval until it succeeds or ctx is
+// cancelled. It returns immediately when the clock is already plausible, so it
+// is cheap to start unconditionally (best in a goroutine) at agent boot.
+//
+// This is the standing fallback for run.sh's one-shot boot sync, which can miss
+// a network that is not up yet: without a retry, a radio-only or idle box whose
+// boot sync failed would stay stuck in the past — no HTTPS radio, no Spotify —
+// until the next reboot. Once a valid time is set the clock stays put, so this
+// returns after the first success. A non-positive interval defaults to 30s.
+func RunUntilSynced(ctx context.Context, logger *slog.Logger, interval time.Duration) {
+	if !Implausible(time.Now()) {
+		return
+	}
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	for {
+		synced, err := SyncIfImplausible(ctx, client, logger)
+		if synced || !Implausible(time.Now()) {
+			return
+		}
+		if err != nil && logger != nil {
+			logger.Debug("clock-sync: clock still unset, will retry", "err", err, "retryIn", interval.String())
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+	}
+}
+
 // SyncIfImplausible sets the system clock from a network HTTP Date header, but
 // only when the local clock is implausibly old and a plausible, strictly later
 // network time is reachable — it never moves the clock backward. It returns true

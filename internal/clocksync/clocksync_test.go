@@ -78,6 +78,22 @@ func TestFetchNetworkTimeRejectsImplausibleDate(t *testing.T) {
 	}
 }
 
+func TestRunUntilSyncedReturnsWhenClockIsFine(t *testing.T) {
+	// The test host clock is current, so RunUntilSynced must return immediately
+	// rather than spin (no network, no root needed). A hang here fails the test
+	// via the deadline.
+	done := make(chan struct{})
+	go func() {
+		RunUntilSynced(context.Background(), nil, time.Second)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunUntilSynced did not return promptly with a plausible clock")
+	}
+}
+
 func TestSyncIfImplausibleNoopWhenClockIsFine(t *testing.T) {
 	// The local clock is current here (the test host), so SyncIfImplausible must
 	// do nothing and must not need network or root.
