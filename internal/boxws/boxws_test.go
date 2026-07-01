@@ -138,6 +138,7 @@ func TestHandleMessage_PresetsUpdatedCapturesForeignSource(t *testing.T) {
 	}
 	if deezer == nil {
 		t.Fatalf("slot 3 (Deezer) not captured: %+v", h.boxPresets[0])
+		return
 	}
 	if deezer.Source != "DEEZER" || deezer.Type != "playlist" || deezer.Location != "123456789" ||
 		deezer.SourceAccount != "1456373802" || deezer.Name != "My Flow" {
