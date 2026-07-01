@@ -143,12 +143,22 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/}"
           elif [[ -n "${INPUT_VERSION}" ]]; then
             VERSION="${INPUT_VERSION}"
-            if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "::error::version input '$VERSION' does not match vX.Y.Z[-suffix]"
-              exit 1
-            fi
           else
             VERSION="dev-$(git rev-parse --short HEAD)"
+          fi
+          # Validate any tag- or input-supplied version against a strict
+          # semver pattern. A git tag name can legally contain shell
+          # metacharacters, and VERSION flows into later build steps that
+          # hold the Sigstore signing identity (id-token / attestations:
+          # write), so an unchecked tag like 'v1.0.0;<cmd>' would be a
+          # template-injection foothold. Pinning it to vX.Y.Z[-suffix] at
+          # the source removes that surface everywhere downstream. The dev
+          # fallback is a hex short-hash and needs no check.
+          if [[ "${GITHUB_REF}" == refs/tags/* || -n "${INPUT_VERSION}" ]]; then
+            if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::version '$VERSION' does not match vX.Y.Z[-suffix]"
+              exit 1
+            fi
           fi
           BUILD_STAMP="$(date -u '+%Y-%m-%d-%H%M')"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -160,13 +170,18 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: "0"
+          # Passed as env, not interpolated into the script, so the value can
+          # never break out of the shell (defence in depth on top of the strict
+          # version validation in the derive-version step).
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_STAMP: ${{ steps.version.outputs.build_stamp }}
         run: |
           mkdir -p out
           OUT="out/streborn-${{ matrix.suffix }}"
           go build \
             -trimpath \
             -buildvcs=true \
-            -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }} -X main.buildStamp=${{ steps.version.outputs.build_stamp }}" \
+            -ldflags="-s -w -X main.version=${VERSION} -X main.buildStamp=${BUILD_STAMP}" \
             -o "${OUT}" \
             ./cmd/agent
 
@@ -179,10 +194,13 @@ jobs:
       # available" on every refresh. Tested by grepping the
       # stripped binary for the literal version string we passed in.
       - name: Verify agent version stamp
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_STAMP: ${{ steps.version.outputs.build_stamp }}
         run: |
           OUT="out/streborn-${{ matrix.suffix }}"
-          VER="${{ steps.version.outputs.version }}"
-          STAMP="${{ steps.version.outputs.build_stamp }}"
+          VER="${VERSION}"
+          STAMP="${BUILD_STAMP}"
           if ! grep -q "${VER}" "${OUT}"; then
             echo "::error::agent binary ${OUT} does not contain version string ${VER}; ldflags not applied"
             exit 1

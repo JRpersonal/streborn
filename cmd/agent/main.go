@@ -36,6 +36,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
+	"github.com/JRpersonal/streborn/internal/clocksync"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/netutil"
@@ -183,7 +184,7 @@ func run() error {
 		logLevel        = flag.String("log-level", "info", "Log level: debug, info, warn, error")
 		boxHost         = flag.String("box-host", "127.0.0.1", "Bose box IP for UPnP calls (webui /api/play). 127.0.0.1 when the agent runs on the box, otherwise the LAN IP.")
 		regionFile      = flag.String("region-file", "", "Path to region.txt with the ISO country code (from the setup wizard). The default radio country and language are derived from it.")
-		pendingNameFile = flag.String("pending-name-file", "", "Path to name.txt from the setup wizard. Its contents are applied once as the box name (plus a UID suffix) and the file is deleted afterwards.")
+		pendingNameFile = flag.String("pending-name-file", "", "Path to name.txt from the setup wizard. Its contents are applied once as the box name, verbatim, and the file is deleted afterwards.")
 		printVersion    = flag.Bool("version", false, "Print the version and exit")
 	)
 	flag.Parse()
@@ -669,8 +670,16 @@ func run() error {
 	}()
 
 	if *pendingNameFile != "" {
-		go applyPendingBoxName(context.Background(), *boxHost, *pendingNameFile, deviceID, logger)
+		go applyPendingBoxName(context.Background(), *boxHost, *pendingNameFile, logger)
 	}
+
+	// Correct an implausibly old system clock in the background. SoundTouch
+	// speakers have no battery-backed RTC, so a cold boot can land in 2015, which
+	// breaks TLS for HTTPS radio and the Spotify sidecar. run.sh syncs the clock
+	// once at boot but can miss a network that is not up yet; this keeps retrying
+	// from an HTTP Date header until a valid time is set, then exits (a no-op when
+	// the clock is already fine). See internal/clocksync and #296.
+	go clocksync.RunUntilSynced(ctx, logger, 30*time.Second)
 
 	// If the USB stick has a newer run.sh than the NAND run-override.sh:
 	// copy it. This is the self-update path for the bootstrap. Without it
@@ -1591,11 +1600,14 @@ func bytesEqual(a, b []byte) bool {
 	return true
 }
 
-// applyPendingBoxName applies a box name left by the setup wizard once to
-// the Bose box and appends the last 4 hex digits of the DeviceID as a UID
-// suffix so duplicates across multiple boxes on the LAN are ruled out. On
-// success the file is deleted.
-func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, logger *slog.Logger) {
+// applyPendingBoxName applies a box name left by the setup wizard once to the
+// Bose box, verbatim. The name is one the user deliberately typed for this
+// speaker during setup, so it is used exactly as chosen: appending the DeviceID
+// as a UID suffix here made the user's own name look untidy on every install and
+// update (#133, #292). Duplicate-name disambiguation is the caller's concern (the
+// user simply gives two speakers two different names); STR does not second-guess
+// a name the user picked. On success the file is deleted.
+func applyPendingBoxName(ctx context.Context, boxHost, path string, logger *slog.Logger) {
 	if boxHost == "" || path == "" {
 		return
 	}
@@ -1609,14 +1621,7 @@ func applyPendingBoxName(ctx context.Context, boxHost, path, deviceID string, lo
 		_ = os.Remove(path)
 		return
 	}
-	suffix := ""
-	if len(deviceID) >= 4 {
-		suffix = strings.ToUpper(deviceID[len(deviceID)-4:])
-	}
 	wanted := raw
-	if suffix != "" && !strings.HasSuffix(strings.ToUpper(wanted), suffix) {
-		wanted = raw + " " + suffix
-	}
 	// The box must be reachable. Wait until the BoseApp web server is up.
 	time.Sleep(10 * time.Second)
 	c := boxapi.New(boxHost)

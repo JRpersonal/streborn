@@ -3046,7 +3046,8 @@ func (a *App) WriteRegionConfig(targetPath, country string) error {
 
 // WriteNameConfig writes a name.conf JSON file with the box name
 // requested by the user onto the stick. The stick applies it on first
-// boot to the box via the Bose REST API and appends the UID box ID.
+// boot to the box via the Bose REST API, verbatim, so the user's chosen
+// name stays clean (#133, #292).
 func (a *App) WriteNameConfig(targetPath, name string) error {
 	return sticksetup.WriteNameConfig(targetPath, sticksetup.NameConfig{Name: name})
 }

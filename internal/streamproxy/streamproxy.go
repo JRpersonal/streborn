@@ -18,6 +18,8 @@ package streamproxy
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -240,28 +242,138 @@ func (s *Server) clearTitleForNewURL(url string) {
 func (s *Server) SetOnDisconnect(fn func(upstreamErr error)) { s.onDisconnect = fn }
 
 func New(store *presets.Store, logger *slog.Logger) *Server {
+	// The SSRF guard (loopback/link-local/metadata blocked after DNS
+	// resolution) is applied to every dial, plain or TLS, so a malicious
+	// radio-browser URL cannot point the box at its own loopback services or
+	// cloud metadata.
+	baseDialer := &net.Dialer{Control: netutil.DialGuardSSRF}
+	// DialTLSContext handles HTTPS itself so the clock-tolerant verification has
+	// the real dial host (including a bare-IP host, for which the client sends
+	// no SNI and tls.ConnectionState.ServerName would be empty). It reuses the
+	// SSRF-guarded dialer, then does the handshake with a per-connection config
+	// carrying that host. TLSClientConfig/TLSHandshakeTimeout are ignored once
+	// DialTLSContext is set, so the handshake deadline is applied here.
+	dialTLS := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := baseDialer.DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		hctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		conn := tls.Client(raw, clockTolerantTLSConfig(host))
+		if err := conn.HandshakeContext(hctx); err != nil {
+			_ = raw.Close()
+			return nil, err
+		}
+		return conn, nil
+	}
 	return &Server{
 		store:  store,
 		logger: logger,
 		// Our own client so we control redirect behaviour. The default is
 		// follow up to 10 — fine for Streamonkey & co. No timeout: streams
-		// are endless, we read until EOF. The DialContext guard blocks SSRF
-		// targets (loopback/link-local/metadata) after DNS resolution — a
-		// malicious radio-browser URL therefore cannot point the box at its
-		// own loopback services or cloud metadata.
+		// are endless, we read until EOF.
 		client: &http.Client{
 			Transport: &http.Transport{
 				Proxy:                 http.ProxyFromEnvironment,
-				DialContext:           (&net.Dialer{Control: netutil.DialGuardSSRF}).DialContext,
+				DialContext:           baseDialer.DialContext,
+				DialTLSContext:        dialTLS,
 				ForceAttemptHTTP2:     true,
 				MaxIdleConns:          100,
 				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
 				ExpectContinueTimeout: 1 * time.Second,
 			},
 		},
 		lastFail:   make(map[string]time.Time),
 		measuredBr: make(map[string]int),
+	}
+}
+
+// minPlausibleClock is a lower bound on a trustworthy wall clock. STR shipped in
+// 2026, so a box reporting a time before this has an unset clock. SoundTouch
+// speakers have no battery-backed RTC: after a cold boot, before NTP has synced
+// (or when NTP is blocked), the clock lands in the firmware's build epoch, often
+// mid-2015. See #296 and docs/FIRMWARE-NOTES.md.
+var minPlausibleClock = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// clockUntrustworthy reports whether the local wall clock is implausibly old,
+// which would make certificate time-validity checks fail spuriously. It reads
+// time.Now() live, so strict verification resumes automatically the moment NTP
+// corrects the clock.
+func clockUntrustworthy() bool { return time.Now().Before(minPlausibleClock) }
+
+// clockTolerantTLSConfig builds the per-connection TLS config the proxy uses for
+// an upstream HTTPS radio stream dialed at host (a hostname, or a bare-IP
+// literal). It always verifies the certificate chain to the system roots and the
+// host, but tolerates a wrong box clock: when the local clock is implausibly
+// old, a chain that is valid except for the certificate's time window is still
+// accepted. Without this, a speaker whose clock reset to 2015 rejected every
+// HTTPS station as "certificate is not yet valid" (#296: Virgin Radio and other
+// HTTPS streams would not play, while plain-HTTP BBC streams still did).
+//
+// Only the expiry/not-yet-valid window is relaxed, and only while the clock is
+// untrustworthy; chain-to-root and host are always enforced, so this does not
+// weaken MITM protection. host is passed explicitly (not read from
+// ConnectionState.ServerName) so a bare-IP upstream, which sends no SNI, is
+// still verified against the certificate's IP SANs.
+func clockTolerantTLSConfig(host string) *tls.Config {
+	return &tls.Config{
+		ServerName: host, // SNI for a hostname; ignored on the wire for an IP literal
+		// h2 stays available (DialTLSContext otherwise defaults to HTTP/1.1 only).
+		NextProtos: []string{"h2", "http/1.1"},
+		// The default verifier is disabled so the time window can be relaxed in
+		// VerifyConnection; chain and host are still checked there manually.
+		InsecureSkipVerify: true, //nolint:gosec // VerifyConnection re-implements chain+host verification below.
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			roots, _ := x509.SystemCertPool()
+			return verifyChainClockTolerant(cs.PeerCertificates, host, roots, time.Now(), clockUntrustworthy())
+		},
+	}
+}
+
+// verifyChainClockTolerant verifies leaf (certs[0]) against roots and host at
+// time now. host is matched against the certificate's DNS names, or, for an IP
+// literal, its IP SANs. If verification fails solely because the certificate is
+// outside its time window and clockBad is true, it retries with the time check
+// pinned to the leaf's NotBefore (so the window always passes) while still
+// requiring a valid chain and host. It is split out from clockTolerantTLSConfig
+// so the policy can be unit-tested without a live TLS handshake.
+func verifyChainClockTolerant(certs []*x509.Certificate, host string, roots *x509.CertPool, now time.Time, clockBad bool) error {
+	if len(certs) == 0 {
+		return errors.New("tls: no peer certificates")
+	}
+	// Require a host: x509.Verify silently skips host checking when DNSName is
+	// empty, so an empty host here would drop the host guard entirely. The
+	// caller derives it from the dial address, so an empty value means something
+	// is wrong and we must reject rather than relax.
+	if host == "" {
+		return errors.New("tls: empty host")
+	}
+	inter := x509.NewCertPool()
+	for _, c := range certs[1:] {
+		inter.AddCert(c)
+	}
+	leaf := certs[0]
+	opts := x509.VerifyOptions{DNSName: host, Roots: roots, Intermediates: inter, CurrentTime: now}
+	if _, err := leaf.Verify(opts); err == nil {
+		return nil
+	} else {
+		// Relax the time window only when the clock is untrustworthy and the
+		// failure was a time-validity problem (x509.Expired covers both
+		// not-yet-valid and expired). Any other failure (unknown authority,
+		// hostname mismatch) still rejects the connection.
+		var invalid x509.CertificateInvalidError
+		if clockBad && errors.As(err, &invalid) && invalid.Reason == x509.Expired {
+			opts.CurrentTime = leaf.NotBefore
+			if _, err2 := leaf.Verify(opts); err2 == nil {
+				return nil
+			}
+		}
+		return err
 	}
 }
 

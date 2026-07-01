@@ -123,6 +123,26 @@ Bose tracks: pairing, account, friendly name, Wi-Fi profile. It does
 and boots automatically once the brief setup-AP window times out.
 Removing STR is therefore a separate, explicit "Uninstall STR" step.
 
+## No battery-backed clock: TLS breaks after a cold boot
+
+SoundTouch speakers have no battery-backed RTC. On a cold boot the kernel
+clock starts in the firmware's build epoch (observed as mid-2015) and only
+jumps forward once NTP syncs, which can be delayed or, on locked-down
+networks, never happens. While the clock is stuck in the past, Go's default
+TLS verifier rejects every HTTPS upstream as "certificate is not yet valid":
+the cert's `NotBefore` (a real 2026 date) is in the future relative to the
+box's 2015 clock. The visible symptom is that plain-HTTP radio (e.g. some BBC
+streams) plays but HTTPS radio (e.g. Virgin Radio) and the Spotify sidecar's
+`apresolve.spotify.com` fetch do not (#296).
+
+The stream proxy mitigates this for radio: when the local clock is
+implausibly old it still verifies the certificate chain to the system roots
+and the hostname, but relaxes the time-validity window (see
+`clockTolerantTLS` in `internal/streamproxy/streamproxy.go`). Verification
+tightens again automatically once the clock is corrected. The Spotify sidecar
+(`go-librespot`) has its own HTTPS client and is not covered by this; a
+box-wide clock sync at agent start would be the more complete fix.
+
 ## See also
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component map, ports,

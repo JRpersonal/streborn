@@ -58,6 +58,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/clocksync"
 	"github.com/gorilla/websocket"
 )
 
@@ -534,9 +535,34 @@ func (m *Manager) Run(ctx context.Context) {
 	// REST API answers (it is usually not up when config is first written), then
 	// restart go-librespot so the Spotify app sees the right volume, not 100%.
 	go m.refreshVolumeConfigOnce(ctx)
+	var rapidCrashes int
+	var lastClockSync time.Time
 	for ctx.Err() == nil {
-		if err := m.runOnce(ctx); err != nil && ctx.Err() == nil && !errors.Is(err, errLowDisk) {
+		started := time.Now()
+		err := m.runOnce(ctx)
+		if err != nil && ctx.Err() == nil && !errors.Is(err, errLowDisk) {
 			m.logger.Warn("go-librespot exited, restarting", "err", err)
+		}
+		// Crash-loop detection: a run that ended almost immediately is a crash,
+		// not real playback (time.Since uses the monotonic clock, so it is
+		// correct even when the wall clock is wrong). A cold-booted box with no
+		// RTC often has a 2015 clock, which makes go-librespot's own TLS to
+		// Spotify fail on every launch; the one-shot clock sync in run.sh may
+		// have missed the network. After a couple of rapid crashes, re-attempt
+		// an HTTP-Date clock correction (rate-limited) so the next launch can
+		// authenticate (#296 root cause).
+		if err != nil && ctx.Err() == nil && time.Since(started) < 20*time.Second {
+			rapidCrashes++
+			if rapidCrashes >= 2 && clocksync.Implausible(time.Now()) && time.Since(lastClockSync) > 5*time.Minute {
+				lastClockSync = time.Now()
+				if synced, serr := clocksync.SyncIfImplausible(ctx, m.client, m.logger); serr != nil {
+					m.logger.Warn("spotify: clock resync after crash-loop failed", "err", serr)
+				} else if synced {
+					rapidCrashes = 0
+				}
+			}
+		} else {
+			rapidCrashes = 0
 		}
 		select {
 		case <-ctx.Done():
