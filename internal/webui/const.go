@@ -254,7 +254,7 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <div class="card">
 <div class="label" id="lblPlayback">Playback</div>
 <div class="row c2">
-<button class="btn" id="btnPause" onclick="pp(this,'/api/pause')">Pause</button>
+<button class="btn" id="btnPause" onclick="togglePlayPause(this)">Pause</button>
 <button class="btn" id="btnStop" onclick="pp(this,'/api/stop')">Stop</button>
 </div>
 </div>
@@ -288,18 +288,18 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 // Bluetooth, AUX) and the box's own device name stay as-is. Keep this language
 // set in step with the "Aa" menu dictionary (A11Y_I18N) below.
 var I18N = {
-  en:{now:"Now playing",loading:"Loading…",vol:"Volume",input:"Input",standby:"Standby",playback:"Playback",pause:"Pause",stop:"Stop",presets:"Presets",peers:"Other speakers",support:"Support ST Reborn",tip:"Tip: use your browser menu and \"Add to Home Screen\" to keep this as an app.",empty:"empty",presetWord:"Preset",starting:"Starting",pleaseWait:"please wait",cantStart:"Could not start",tapAgain:"tap again",idle:"Idle",playing:"Playing",paused:"Paused",stopped:"Stopped",buffering:"Buffering",power:"Power"},
-  de:{now:"Wird gespielt",loading:"Lädt…",vol:"Lautstärke",input:"Eingang",standby:"Standby",playback:"Wiedergabe",pause:"Pause",stop:"Stopp",presets:"Voreinstellungen",peers:"Andere Lautsprecher",support:"ST Reborn unterstützen",tip:"Tipp: Über das Browser-Menü und „Zum Home-Bildschirm“ als App speichern.",empty:"leer",presetWord:"Voreinstellung",starting:"Starte",pleaseWait:"bitte warten",cantStart:"Start fehlgeschlagen",tapAgain:"nochmal tippen",idle:"Bereit",playing:"Wiedergabe",paused:"Pausiert",stopped:"Gestoppt",buffering:"Puffert",power:"Ein/Aus"},
-  nl:{now:"Speelt nu",loading:"Laden…",vol:"Volume",input:"Ingang",standby:"Stand-by",playback:"Afspelen",pause:"Pauze",stop:"Stop",presets:"Presets",peers:"Andere speakers",support:"Steun ST Reborn",tip:"Tip: gebruik het browsermenu en \"Zet op beginscherm\" om dit als app te bewaren.",empty:"leeg",presetWord:"Preset",starting:"Starten",pleaseWait:"even geduld",cantStart:"Kan niet starten",tapAgain:"tik opnieuw",idle:"Inactief",playing:"Speelt af",paused:"Gepauzeerd",stopped:"Gestopt",buffering:"Bufferen",power:"Aan/uit"},
-  fr:{now:"Lecture en cours",loading:"Chargement…",vol:"Volume",input:"Entrée",standby:"Veille",playback:"Lecture",pause:"Pause",stop:"Arrêt",presets:"Préréglages",peers:"Autres enceintes",support:"Soutenir ST Reborn",tip:"Astuce : utilisez le menu du navigateur et « Ajouter à l'écran d'accueil » pour garder ceci comme une app.",empty:"vide",presetWord:"Préréglage",starting:"Démarrage",pleaseWait:"veuillez patienter",cantStart:"Démarrage impossible",tapAgain:"appuyez à nouveau",idle:"Inactif",playing:"Lecture",paused:"En pause",stopped:"Arrêté",buffering:"Mise en mémoire tampon",power:"Marche/Arrêt"},
-  es:{now:"Reproduciendo",loading:"Cargando…",vol:"Volumen",input:"Entrada",standby:"Reposo",playback:"Reproducción",pause:"Pausa",stop:"Detener",presets:"Presintonías",peers:"Otros altavoces",support:"Apoya ST Reborn",tip:"Consejo: usa el menú del navegador y «Añadir a pantalla de inicio» para conservarlo como app.",empty:"vacío",presetWord:"Presintonía",starting:"Iniciando",pleaseWait:"espera",cantStart:"No se pudo iniciar",tapAgain:"toca de nuevo",idle:"Inactivo",playing:"Reproduciendo",paused:"En pausa",stopped:"Detenido",buffering:"Almacenando en búfer",power:"Encendido"},
-  pl:{now:"Teraz odtwarzane",loading:"Ładowanie…",vol:"Głośność",input:"Wejście",standby:"Czuwanie",playback:"Odtwarzanie",pause:"Pauza",stop:"Stop",presets:"Presety",peers:"Inne głośniki",support:"Wesprzyj ST Reborn",tip:"Wskazówka: użyj menu przeglądarki i „Dodaj do ekranu głównego”, aby zachować to jako aplikację.",empty:"puste",presetWord:"Preset",starting:"Uruchamianie",pleaseWait:"proszę czekać",cantStart:"Nie udało się uruchomić",tapAgain:"dotknij ponownie",idle:"Bezczynny",playing:"Odtwarzanie",paused:"Wstrzymano",stopped:"Zatrzymano",buffering:"Buforowanie",power:"Zasilanie"},
-  tr:{now:"Şimdi çalıyor",loading:"Yükleniyor…",vol:"Ses",input:"Giriş",standby:"Bekleme",playback:"Oynatma",pause:"Duraklat",stop:"Durdur",presets:"Ön ayarlar",peers:"Diğer hoparlörler",support:"ST Reborn'a destek ol",tip:"İpucu: tarayıcı menüsünü ve \"Ana Ekrana Ekle\" seçeneğini kullanarak bunu uygulama olarak tutun.",empty:"boş",presetWord:"Ön ayar",starting:"Başlatılıyor",pleaseWait:"lütfen bekleyin",cantStart:"Başlatılamadı",tapAgain:"tekrar dokunun",idle:"Boşta",playing:"Çalıyor",paused:"Duraklatıldı",stopped:"Durduruldu",buffering:"Arabelleğe alınıyor",power:"Güç"},
-  ar:{now:"قيد التشغيل الآن",loading:"جارٍ التحميل…",vol:"مستوى الصوت",input:"المدخل",standby:"وضع الاستعداد",playback:"التشغيل",pause:"إيقاف مؤقت",stop:"إيقاف",presets:"الإعدادات المسبقة",peers:"مكبرات صوت أخرى",support:"ادعم ST Reborn",tip:"نصيحة: استخدم قائمة المتصفح و\"إضافة إلى الشاشة الرئيسية\" للاحتفاظ بهذا كتطبيق.",empty:"فارغ",presetWord:"إعداد مسبق",starting:"جارٍ البدء",pleaseWait:"يرجى الانتظار",cantStart:"تعذّر البدء",tapAgain:"انقر مرة أخرى",idle:"خامل",playing:"قيد التشغيل",paused:"متوقف مؤقتًا",stopped:"متوقف",buffering:"جارٍ التخزين المؤقت",power:"الطاقة"},
-  ja:{now:"再生中",loading:"読み込み中…",vol:"音量",input:"入力",standby:"スタンバイ",playback:"再生",pause:"一時停止",stop:"停止",presets:"プリセット",peers:"他のスピーカー",support:"ST Reborn を支援",tip:"ヒント：ブラウザのメニューから「ホーム画面に追加」を使うと、アプリとして保存できます。",empty:"空き",presetWord:"プリセット",starting:"開始中",pleaseWait:"お待ちください",cantStart:"開始できませんでした",tapAgain:"もう一度タップ",idle:"待機中",playing:"再生中",paused:"一時停止中",stopped:"停止",buffering:"バッファ中",power:"電源"},
-  lt:{now:"Dabar grojama",loading:"Įkeliama…",vol:"Garsumas",input:"Įvestis",standby:"Budėjimas",playback:"Atkūrimas",pause:"Pristabdyti",stop:"Stabdyti",presets:"Išankstiniai nustatymai",peers:"Kitos kolonėlės",support:"Paremkite ST Reborn",tip:"Patarimas: naudokite naršyklės meniu ir „Pridėti į pradžios ekraną“, kad išsaugotumėte tai kaip programėlę.",empty:"tuščia",presetWord:"Nustatymas",starting:"Paleidžiama",pleaseWait:"palaukite",cantStart:"Nepavyko paleisti",tapAgain:"bakstelėkite dar kartą",idle:"Neaktyvus",playing:"Grojama",paused:"Pristabdyta",stopped:"Sustabdyta",buffering:"Buferiuojama",power:"Maitinimas"},
-  lv:{now:"Tagad atskaņo",loading:"Ielādē…",vol:"Skaļums",input:"Ievade",standby:"Gaidstāve",playback:"Atskaņošana",pause:"Pauze",stop:"Apturēt",presets:"Iepriekšiestatījumi",peers:"Citi skaļruņi",support:"Atbalstīt ST Reborn",tip:"Padoms: izmantojiet pārlūka izvēlni un \"Pievienot sākuma ekrānam\", lai saglabātu to kā lietotni.",empty:"tukšs",presetWord:"Iestatījums",starting:"Sākas",pleaseWait:"lūdzu, uzgaidiet",cantStart:"Neizdevās sākt",tapAgain:"pieskarieties vēlreiz",idle:"Dīkstāvē",playing:"Atskaņo",paused:"Pauzēts",stopped:"Apturēts",buffering:"Buferē",power:"Barošana"},
-  uk:{now:"Зараз грає",loading:"Завантаження…",vol:"Гучність",input:"Вхід",standby:"Очікування",playback:"Відтворення",pause:"Пауза",stop:"Стоп",presets:"Пресети",peers:"Інші колонки",support:"Підтримати ST Reborn",tip:"Порада: скористайтеся меню браузера та «Додати на головний екран», щоб зберегти це як застосунок.",empty:"порожньо",presetWord:"Пресет",starting:"Запуск",pleaseWait:"зачекайте",cantStart:"Не вдалося запустити",tapAgain:"торкніться ще раз",idle:"Очікування",playing:"Відтворення",paused:"Призупинено",stopped:"Зупинено",buffering:"Буферизація",power:"Живлення"}
+  en:{now:"Now playing",loading:"Loading…",vol:"Volume",input:"Input",standby:"Standby",playback:"Playback",pause:"Pause",play:"Play",stop:"Stop",presets:"Presets",peers:"Other speakers",support:"Support ST Reborn",tip:"Tip: use your browser menu and \"Add to Home Screen\" to keep this as an app.",empty:"empty",presetWord:"Preset",starting:"Starting",pleaseWait:"please wait",cantStart:"Could not start",tapAgain:"tap again",idle:"Idle",playing:"Playing",paused:"Paused",stopped:"Stopped",buffering:"Buffering",power:"Power"},
+  de:{now:"Wird gespielt",loading:"Lädt…",vol:"Lautstärke",input:"Eingang",standby:"Standby",playback:"Wiedergabe",pause:"Pause",play:"Wiedergabe",stop:"Stopp",presets:"Voreinstellungen",peers:"Andere Lautsprecher",support:"ST Reborn unterstützen",tip:"Tipp: Über das Browser-Menü und „Zum Home-Bildschirm“ als App speichern.",empty:"leer",presetWord:"Voreinstellung",starting:"Starte",pleaseWait:"bitte warten",cantStart:"Start fehlgeschlagen",tapAgain:"nochmal tippen",idle:"Bereit",playing:"Wiedergabe",paused:"Pausiert",stopped:"Gestoppt",buffering:"Puffert",power:"Ein/Aus"},
+  nl:{now:"Speelt nu",loading:"Laden…",vol:"Volume",input:"Ingang",standby:"Stand-by",playback:"Afspelen",pause:"Pauze",play:"Afspelen",stop:"Stop",presets:"Presets",peers:"Andere speakers",support:"Steun ST Reborn",tip:"Tip: gebruik het browsermenu en \"Zet op beginscherm\" om dit als app te bewaren.",empty:"leeg",presetWord:"Preset",starting:"Starten",pleaseWait:"even geduld",cantStart:"Kan niet starten",tapAgain:"tik opnieuw",idle:"Inactief",playing:"Speelt af",paused:"Gepauzeerd",stopped:"Gestopt",buffering:"Bufferen",power:"Aan/uit"},
+  fr:{now:"Lecture en cours",loading:"Chargement…",vol:"Volume",input:"Entrée",standby:"Veille",playback:"Lecture",pause:"Pause",play:"Lecture",stop:"Arrêt",presets:"Préréglages",peers:"Autres enceintes",support:"Soutenir ST Reborn",tip:"Astuce : utilisez le menu du navigateur et « Ajouter à l'écran d'accueil » pour garder ceci comme une app.",empty:"vide",presetWord:"Préréglage",starting:"Démarrage",pleaseWait:"veuillez patienter",cantStart:"Démarrage impossible",tapAgain:"appuyez à nouveau",idle:"Inactif",playing:"Lecture",paused:"En pause",stopped:"Arrêté",buffering:"Mise en mémoire tampon",power:"Marche/Arrêt"},
+  es:{now:"Reproduciendo",loading:"Cargando…",vol:"Volumen",input:"Entrada",standby:"Reposo",playback:"Reproducción",pause:"Pausa",play:"Reproducir",stop:"Detener",presets:"Presintonías",peers:"Otros altavoces",support:"Apoya ST Reborn",tip:"Consejo: usa el menú del navegador y «Añadir a pantalla de inicio» para conservarlo como app.",empty:"vacío",presetWord:"Presintonía",starting:"Iniciando",pleaseWait:"espera",cantStart:"No se pudo iniciar",tapAgain:"toca de nuevo",idle:"Inactivo",playing:"Reproduciendo",paused:"En pausa",stopped:"Detenido",buffering:"Almacenando en búfer",power:"Encendido"},
+  pl:{now:"Teraz odtwarzane",loading:"Ładowanie…",vol:"Głośność",input:"Wejście",standby:"Czuwanie",playback:"Odtwarzanie",pause:"Pauza",play:"Odtwórz",stop:"Stop",presets:"Presety",peers:"Inne głośniki",support:"Wesprzyj ST Reborn",tip:"Wskazówka: użyj menu przeglądarki i „Dodaj do ekranu głównego”, aby zachować to jako aplikację.",empty:"puste",presetWord:"Preset",starting:"Uruchamianie",pleaseWait:"proszę czekać",cantStart:"Nie udało się uruchomić",tapAgain:"dotknij ponownie",idle:"Bezczynny",playing:"Odtwarzanie",paused:"Wstrzymano",stopped:"Zatrzymano",buffering:"Buforowanie",power:"Zasilanie"},
+  tr:{now:"Şimdi çalıyor",loading:"Yükleniyor…",vol:"Ses",input:"Giriş",standby:"Bekleme",playback:"Oynatma",pause:"Duraklat",play:"Oynat",stop:"Durdur",presets:"Ön ayarlar",peers:"Diğer hoparlörler",support:"ST Reborn'a destek ol",tip:"İpucu: tarayıcı menüsünü ve \"Ana Ekrana Ekle\" seçeneğini kullanarak bunu uygulama olarak tutun.",empty:"boş",presetWord:"Ön ayar",starting:"Başlatılıyor",pleaseWait:"lütfen bekleyin",cantStart:"Başlatılamadı",tapAgain:"tekrar dokunun",idle:"Boşta",playing:"Çalıyor",paused:"Duraklatıldı",stopped:"Durduruldu",buffering:"Arabelleğe alınıyor",power:"Güç"},
+  ar:{now:"قيد التشغيل الآن",loading:"جارٍ التحميل…",vol:"مستوى الصوت",input:"المدخل",standby:"وضع الاستعداد",playback:"التشغيل",pause:"إيقاف مؤقت",play:"تشغيل",stop:"إيقاف",presets:"الإعدادات المسبقة",peers:"مكبرات صوت أخرى",support:"ادعم ST Reborn",tip:"نصيحة: استخدم قائمة المتصفح و\"إضافة إلى الشاشة الرئيسية\" للاحتفاظ بهذا كتطبيق.",empty:"فارغ",presetWord:"إعداد مسبق",starting:"جارٍ البدء",pleaseWait:"يرجى الانتظار",cantStart:"تعذّر البدء",tapAgain:"انقر مرة أخرى",idle:"خامل",playing:"قيد التشغيل",paused:"متوقف مؤقتًا",stopped:"متوقف",buffering:"جارٍ التخزين المؤقت",power:"الطاقة"},
+  ja:{now:"再生中",loading:"読み込み中…",vol:"音量",input:"入力",standby:"スタンバイ",playback:"再生",pause:"一時停止",play:"再生",stop:"停止",presets:"プリセット",peers:"他のスピーカー",support:"ST Reborn を支援",tip:"ヒント：ブラウザのメニューから「ホーム画面に追加」を使うと、アプリとして保存できます。",empty:"空き",presetWord:"プリセット",starting:"開始中",pleaseWait:"お待ちください",cantStart:"開始できませんでした",tapAgain:"もう一度タップ",idle:"待機中",playing:"再生中",paused:"一時停止中",stopped:"停止",buffering:"バッファ中",power:"電源"},
+  lt:{now:"Dabar grojama",loading:"Įkeliama…",vol:"Garsumas",input:"Įvestis",standby:"Budėjimas",playback:"Atkūrimas",pause:"Pristabdyti",play:"Groti",stop:"Stabdyti",presets:"Išankstiniai nustatymai",peers:"Kitos kolonėlės",support:"Paremkite ST Reborn",tip:"Patarimas: naudokite naršyklės meniu ir „Pridėti į pradžios ekraną“, kad išsaugotumėte tai kaip programėlę.",empty:"tuščia",presetWord:"Nustatymas",starting:"Paleidžiama",pleaseWait:"palaukite",cantStart:"Nepavyko paleisti",tapAgain:"bakstelėkite dar kartą",idle:"Neaktyvus",playing:"Grojama",paused:"Pristabdyta",stopped:"Sustabdyta",buffering:"Buferiuojama",power:"Maitinimas"},
+  lv:{now:"Tagad atskaņo",loading:"Ielādē…",vol:"Skaļums",input:"Ievade",standby:"Gaidstāve",playback:"Atskaņošana",pause:"Pauze",play:"Atskaņot",stop:"Apturēt",presets:"Iepriekšiestatījumi",peers:"Citi skaļruņi",support:"Atbalstīt ST Reborn",tip:"Padoms: izmantojiet pārlūka izvēlni un \"Pievienot sākuma ekrānam\", lai saglabātu to kā lietotni.",empty:"tukšs",presetWord:"Iestatījums",starting:"Sākas",pleaseWait:"lūdzu, uzgaidiet",cantStart:"Neizdevās sākt",tapAgain:"pieskarieties vēlreiz",idle:"Dīkstāvē",playing:"Atskaņo",paused:"Pauzēts",stopped:"Apturēts",buffering:"Buferē",power:"Barošana"},
+  uk:{now:"Зараз грає",loading:"Завантаження…",vol:"Гучність",input:"Вхід",standby:"Очікування",playback:"Відтворення",pause:"Пауза",play:"Відтворити",stop:"Стоп",presets:"Пресети",peers:"Інші колонки",support:"Підтримати ST Reborn",tip:"Порада: скористайтеся меню браузера та «Додати на головний екран», щоб зберегти це як застосунок.",empty:"порожньо",presetWord:"Пресет",starting:"Запуск",pleaseWait:"зачекайте",cantStart:"Не вдалося запустити",tapAgain:"торкніться ще раз",idle:"Очікування",playing:"Відтворення",paused:"Призупинено",stopped:"Зупинено",buffering:"Буферизація",power:"Живлення"}
 };
 // Pick the best matching locale from the phone and build T (chosen strings with
 // English fall-through per key). Runs immediately so the dynamic helpers below
@@ -337,6 +337,14 @@ async function api(path, method, body) {
   return ct.includes('json') ? r.json() : r.text();
 }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+// decodeEntities turns the HTML/XML entities the box emits in its now_playing
+// track text (e.g. &apos; &#39; &amp;) back into their characters. The box
+// serves the title entity-encoded inside the now_playing XML; without decoding,
+// escapeHtml below would re-escape the leading &, so an apostrophe surfaced as a
+// literal "&apos;" in the remote (#295). A detached <textarea> decodes text-only
+// (no markup is executed), then setNow re-escapes the result, so this stays
+// safe against injection.
+function decodeEntities(s){ var el = document.createElement('textarea'); el.innerHTML = String(s); return el.value; }
 
 var volTimer = null, volLast = -1;
 function onVol(v) {
@@ -353,6 +361,21 @@ function setNow(name, state) {
 function press(btn) { if (!btn) return; btn.classList.add('active'); setTimeout(function(){ btn.classList.remove('active'); }, 600); }
 // pp = press + POST + refresh, for the Pause/Stop controls.
 async function pp(btn, path) { press(btn); await api(path, 'POST'); setTimeout(refreshStatus, 1200); }
+// The Pause button doubles as Play/Pause: when the box is paused it offers
+// Play (resume from the paused position via /api/resume, like the Bose remote),
+// otherwise Pause. Without a resume affordance a stream paused from the remote
+// could only be restarted from the app or the physical remote (#294, mirrors
+// the desktop app's #202 toggle). paused tracks the live transport state so the
+// tap sends the right command even between status polls.
+var paused = false;
+function applyTransportUI(state) {
+  paused = (state === 'PAUSE_STATE');
+  var b = document.getElementById('btnPause');
+  if (!b) return;
+  b.textContent = paused ? T.play : T.pause;
+  b.setAttribute('aria-label', paused ? T.play : T.pause);
+}
+async function togglePlayPause(btn) { await pp(btn, paused ? '/api/resume' : '/api/pause'); }
 // Power on/off. The box has no "off" for a stream (Stop only pauses the
 // transport, the speaker stays on), so this is a real standby toggle: off -> Bose
 // standby, on -> wake + resume the last station. boxOn tracks the live state,
@@ -425,12 +448,13 @@ async function refreshStatus() {
   const m = t.match(/<itemName>([^<]+)<\/itemName>/) || t.match(/<track>([^<]+)<\/track>/);
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
-  const name = m ? m[1] : '';
+  const name = m ? decodeEntities(m[1]) : '';
   // Track power state for the header toggle: the box is "on" unless it is in
   // standby (a stopped-but-awake box still counts as on, so the button can switch
   // it off, which was the whole point of the request).
   boxOn = (state === 'PLAY_STATE' || state === 'PAUSE_STATE' || state === 'BUFFERING_STATE') || (!!src && src.toUpperCase() !== 'STANDBY');
   applyPowerUI();
+  applyTransportUI(state);
   const human = { PLAY_STATE:T.playing, PAUSE_STATE:T.paused, STOP_STATE:T.stopped, BUFFERING_STATE:T.buffering, INVALID_SOURCE:T.stopped };
   setNow(name || src || T.idle, human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
 }

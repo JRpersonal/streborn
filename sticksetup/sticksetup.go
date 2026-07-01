@@ -395,7 +395,8 @@ func WriteRegionConfig(targetPath string, cfg RegionConfig) error {
 
 // NameConfig holds the box name the user chose during setup (e.g.
 // "Living Room"). Applied to the box from the stick on the first boot via
-// the Bose REST API. The stick automatically appends the box's UID.
+// the Bose REST API, verbatim, so the user's chosen name stays clean
+// (#133, #292).
 type NameConfig struct {
 	Name string `json:"name"`
 }
