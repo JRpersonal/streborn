@@ -10,6 +10,24 @@ import (
 // These tests guard the client-side behaviour reported in #294 and #295, which
 // lives only as embedded JS and so has no other automated coverage.
 
+// TestPhoneRemoteDecodesNowPlayingEntities guards #295: a now_playing title the
+// box serves entity-encoded (e.g. New York&apos;s) must be decoded before it is
+// re-escaped for display, otherwise the leading & is doubled and the remote
+// shows a literal "&apos;". The fix adds decodeEntities and runs the captured
+// itemName/track through it.
+func TestPhoneRemoteDecodesNowPlayingEntities(t *testing.T) {
+	if !strings.Contains(indexHTML, "function decodeEntities(") {
+		t.Fatal("indexHTML is missing the decodeEntities helper (#295)")
+	}
+	// The captured now-playing name must be decoded, not used raw.
+	if !strings.Contains(indexHTML, "const name = m ? decodeEntities(m[1]) : '';") {
+		t.Fatal("indexHTML must decode entities on the now_playing name before display (#295)")
+	}
+	if strings.Contains(indexHTML, "const name = m ? m[1] : '';") {
+		t.Fatal("indexHTML still uses the raw, un-decoded now_playing name (#295 regression)")
+	}
+}
+
 // TestPhoneRemotePlayPauseToggle guards #294: the single Pause button must double
 // as Play/Pause so a stream paused from the remote can be resumed from the remote
 // (via the existing /api/resume endpoint) instead of only from the app or the

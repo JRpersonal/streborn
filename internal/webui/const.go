@@ -337,6 +337,14 @@ async function api(path, method, body) {
   return ct.includes('json') ? r.json() : r.text();
 }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+// decodeEntities turns the HTML/XML entities the box emits in its now_playing
+// track text (e.g. &apos; &#39; &amp;) back into their characters. The box
+// serves the title entity-encoded inside the now_playing XML; without decoding,
+// escapeHtml below would re-escape the leading &, so an apostrophe surfaced as a
+// literal "&apos;" in the remote (#295). A detached <textarea> decodes text-only
+// (no markup is executed), then setNow re-escapes the result, so this stays
+// safe against injection.
+function decodeEntities(s){ var el = document.createElement('textarea'); el.innerHTML = String(s); return el.value; }
 
 var volTimer = null, volLast = -1;
 function onVol(v) {
@@ -440,7 +448,7 @@ async function refreshStatus() {
   const m = t.match(/<itemName>([^<]+)<\/itemName>/) || t.match(/<track>([^<]+)<\/track>/);
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
-  const name = m ? m[1] : '';
+  const name = m ? decodeEntities(m[1]) : '';
   // Track power state for the header toggle: the box is "on" unless it is in
   // standby (a stopped-but-awake box still counts as on, so the button can switch
   // it off, which was the whole point of the request).
