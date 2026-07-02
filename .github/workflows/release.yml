@@ -100,7 +100,11 @@ jobs:
         include:
           - goos: linux
             goarch: arm
-            goarm: "7"
+            # GOARM=5 (softfloat), not 7: some early SoundTouch CPUs lack
+            # working VFP and a hardware-float binary SIGILLs at os.init and
+            # soft-bricks the box (issue #302). GOARM=5 runs on every
+            # revision. Must match Makefile/build.yml. Filename stays armv7l.
+            goarm: "5"
             suffix: armv7l
           - goos: linux
             goarch: arm64

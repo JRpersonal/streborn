@@ -334,8 +334,11 @@ level.
 5. Run `go build ./...` and `make wails-dev` once to confirm the
    local environment is healthy. The stick agent contains Linux-only
    syscalls; on Windows or macOS hosts use
-   `GOOS=linux GOARCH=arm GOARM=7 go build ./...` to cross-compile
-   it for the actual target.
+   `GOOS=linux GOARCH=arm GOARM=5 go build ./...` to cross-compile
+   it for the actual target. GOARM=5 (softfloat) is deliberate: some
+   early SoundTouch CPUs lack working VFP and a hardware-float binary
+   SIGILLs at startup and soft-bricks the box (issue #302). `make
+   build-arm` / `make agent-embed` already pin this.
 
 ## Communicating with users
 

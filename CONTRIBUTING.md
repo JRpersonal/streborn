@@ -48,8 +48,10 @@ cd streborn
 
 # Sanity check (Linux). On Windows/macOS hosts the agent's Linux-only
 # syscalls make `go build ./...` fail in internal/webui; cross-compile
-# instead (GOOS=linux GOARCH=arm GOARM=7 go build ./... or make build-arm)
-# and run go test on the packages that build on your host.
+# instead (GOOS=linux GOARCH=arm GOARM=5 go build ./... or make build-arm)
+# and run go test on the packages that build on your host. GOARM=5
+# (softfloat) is intentional: some early SoundTouch CPUs lack working
+# VFP and a hardware-float agent SIGILLs at startup (issue #302).
 go build ./...
 go test ./...
 
