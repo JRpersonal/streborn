@@ -723,7 +723,7 @@
   "setup.targetCardBadgeSTR": "solo actualizar",
   "setup.targetCardBadgeStock": "primera instalación",
   "setup.targetCardBadgeFactory": "instalación por memoria",
-  "setup.targetCardFactoryHelp": "Para un altavoz nuevo o restablecido que aún no está en el Wi-Fi. Tras prepararla, conecta la memoria al altavoz y reinícialo. El altavoz lee las credenciales de Wi-Fi de la memoria y se une a tu Wi-Fi automáticamente.",
+  "setup.targetCardFactoryHelp": "Para un altavoz nuevo o restablecido que aún no está en el Wi-Fi. Prepara la memoria, conéctala y reinicia el altavoz (corta la corriente) para que lea las credenciales de Wi-Fi de la memoria y aparezca en la lista de abajo. Instalar STR es siempre el último paso y se inicia aquí en la app: elige el altavoz y pulsa Instalar. (Un altavoz que ya está en el Wi-Fi no necesita reinicio, solo inserta la memoria y pulsa Instalar.)",
   "setup.targetCardFactoryMacHint": "En macOS, la app puede pedir acceso al Llavero (Keychain) para leer tu contraseña de Wi-Fi y escribirla en la memoria USB. Permítelo o escribe la contraseña tú mismo.",
   "setup.targetPickedFor": "Seleccionado:",
   "setup.targetChange": "Cambiar",

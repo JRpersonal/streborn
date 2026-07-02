@@ -803,7 +803,7 @@
   "setup.targetCardBadgeSTR": "nur Update",
   "setup.targetCardBadgeStock": "Erstinstallation",
   "setup.targetCardBadgeFactory": "Stick-Install",
-  "setup.targetCardFactoryHelp": "Für neuen oder zurückgesetzten Lautsprecher, der noch nicht im WLAN ist. Stick vorbereiten, einstecken, Strom kurz weg. Lautsprecher liest WLAN-Daten vom Stick und meldet sich automatisch an.",
+  "setup.targetCardFactoryHelp": "Für einen neuen oder zurückgesetzten Lautsprecher, der noch nicht im WLAN ist. Stick vorbereiten, einstecken und den Strom kurz trennen, damit der Lautsprecher die WLAN-Daten vom Stick liest und unten in der Liste erscheint. Die Installation von STR ist immer der letzte Schritt und du startest sie hier in der App: Lautsprecher auswählen und auf Installieren tippen. (Ein Lautsprecher, der schon im WLAN ist, braucht keinen Neustart, einfach den Stick einstecken und auf Installieren tippen.)",
   "setup.targetCardFactoryMacHint": "Unter macOS fragt die App eventuell nach Keychain-Zugriff, um dein WLAN-Passwort zu lesen und auf den Stick zu schreiben. Erlaube es, oder gib das Passwort selbst ein.",
   "setup.targetPickedFor": "Ausgewählt:",
   "setup.targetChange": "Ändern",
