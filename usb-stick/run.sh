@@ -245,8 +245,16 @@ start_stick_log_mirror() {
         sleep 60
         while :; do
             if [ -d "$STICK" ] && [ -r "$SETUP_LOG_NAND" ]; then
-                cp "$SETUP_LOG_NAND" "$SETUP_LOG.mirror" 2>/dev/null \
-                    && mv "$SETUP_LOG.mirror" "$SETUP_LOG" 2>/dev/null
+                # sync after the rename so the FAT directory entry + cluster
+                # chain actually reach the stick. Without it the write sits in
+                # the OS buffer and a power-cycle (users cut power to reboot the
+                # speaker) corrupts the file that is mid-mirror: Windows then
+                # reports setup.log as "corrupted and unreadable" and the one
+                # diagnostic we need is lost (live-seen on an ST20 install).
+                if cp "$SETUP_LOG_NAND" "$SETUP_LOG.mirror" 2>/dev/null \
+                    && mv "$SETUP_LOG.mirror" "$SETUP_LOG" 2>/dev/null; then
+                    sync 2>/dev/null
+                fi
             fi
             sleep 25
         done
