@@ -803,7 +803,7 @@
   "setup.targetCardBadgeSTR": "update only",
   "setup.targetCardBadgeStock": "first install",
   "setup.targetCardBadgeFactory": "stick install",
-  "setup.targetCardFactoryHelp": "For a new or factory-reset speaker not yet on Wi-Fi. After preparing, plug stick into speaker and power-cycle. Speaker reads Wi-Fi credentials from stick and joins your Wi-Fi automatically.",
+  "setup.targetCardFactoryHelp": "For a new or factory-reset speaker not yet on Wi-Fi. Prepare the stick, plug it in and power-cycle the speaker so it joins your Wi-Fi from the stick and appears in the list below. Installing STR is always the last step and you start it here in the app: pick the speaker and press Install. (A speaker already on Wi-Fi needs no power-cycle, just insert the stick and press Install.)",
   "setup.targetCardFactoryMacHint": "On macOS the app may ask for Keychain permission to read your Wi-Fi password so it can put it on the stick. Allow it, or type the password in yourself.",
   "setup.targetPickedFor": "Selected:",
   "setup.targetChange": "Change",

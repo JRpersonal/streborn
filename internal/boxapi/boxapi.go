@@ -563,6 +563,25 @@ func (c *Client) SetVolume(ctx context.Context, v int) error {
 	return c.postXML(ctx, "/volume", body)
 }
 
+// GetVolume reads the box's current volume state (0-100 target/actual plus
+// mute). Lets a caller read the level for a relative adjustment or a status
+// display without loading the full /volume+bass+network settings blob.
+func (c *Client) GetVolume(ctx context.Context) (Volume, error) {
+	var raw struct {
+		Target int    `xml:"targetvolume"`
+		Actual int    `xml:"actualvolume"`
+		Mute   string `xml:"muteenabled"`
+	}
+	if err := c.getXML(ctx, "/volume", &raw); err != nil {
+		return Volume{}, err
+	}
+	return Volume{
+		Target: raw.Target,
+		Actual: raw.Actual,
+		Muted:  strings.EqualFold(raw.Mute, "true"),
+	}, nil
+}
+
 // SetBass sets the bass value (range from bassCapabilities — typical
 // ST10 range -9..0).
 func (c *Client) SetBass(ctx context.Context, b int) error {

@@ -3422,9 +3422,25 @@ func (s *Server) handleBoxName(w http.ResponseWriter, r *http.Request) {
 
 // handleBoxVolume PUT sets the volume. Body {"value":N}.
 func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPut) {
+	if !requireMethod(w, r, http.MethodGet, http.MethodPut) {
 		return
 	}
+	c := boxapi.New(s.boxHost)
+	// GET returns the current volume so home automation / a status display can
+	// read the level (and do relative up/down) without parsing the heavier
+	// /api/box/settings blob.
+	if r.Method == http.MethodGet {
+		ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+		defer cancel()
+		v, err := c.GetVolume(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"value": v.Actual, "target": v.Target, "muted": v.Muted})
+		return
+	}
+	// PUT sets the absolute volume (0-100).
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
 	var req struct {
@@ -3433,7 +3449,6 @@ func (s *Server) handleBoxVolume(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, 256, &req) {
 		return
 	}
-	c := boxapi.New(s.boxHost)
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
 	if err := c.SetVolume(ctx, req.Value); err != nil {

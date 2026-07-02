@@ -723,7 +723,7 @@
   "setup.targetCardBadgeSTR": "mise à jour uniquement",
   "setup.targetCardBadgeStock": "première installation",
   "setup.targetCardBadgeFactory": "installation par clé",
-  "setup.targetCardFactoryHelp": "Pour une enceinte neuve ou réinitialisée pas encore sur le Wi-Fi. Après préparation, branchez la clé dans l'enceinte et redémarrez-la. L'enceinte lit les identifiants Wi-Fi sur la clé et rejoint votre Wi-Fi automatiquement.",
+  "setup.targetCardFactoryHelp": "Pour une enceinte neuve ou réinitialisée pas encore sur le Wi-Fi. Préparez la clé, branchez-la et redémarrez l'enceinte (coupez l'alimentation) pour qu'elle lise les identifiants Wi-Fi de la clé et apparaisse dans la liste ci-dessous. L'installation de STR est toujours la dernière étape et vous la lancez ici dans l'app : choisissez l'enceinte et appuyez sur Installer. (Une enceinte déjà sur le Wi-Fi n'a pas besoin de redémarrage, insérez simplement la clé et appuyez sur Installer.)",
   "setup.targetCardFactoryMacHint": "Sur macOS, l'app peut demander l'accès au trousseau (Keychain) pour lire ton mot de passe Wi-Fi et l'écrire sur la clé. Autorise-le, ou saisis le mot de passe toi-même.",
   "setup.targetPickedFor": "Sélectionnée :",
   "setup.targetChange": "Changer",
