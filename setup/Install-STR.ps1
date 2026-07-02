@@ -469,7 +469,7 @@ function Action-UpdateWizard {
                 Write-Host ""
                 Write-Host "  Wichtig: schliesse den Wizard und starte ihn neu damit die Updates greifen." -ForegroundColor Yellow
                 Write-Host "  Auch das Binary in bin/ muss neu gebaut werden falls du Stick aktualisieren willst:"
-                Write-Host '    $env:GOOS="linux"; $env:GOARCH="arm"; $env:GOARM="7"; $env:CGO_ENABLED="0"'
+                Write-Host '    $env:GOOS="linux"; $env:GOARCH="arm"; $env:GOARM="5"; $env:CGO_ENABLED="0"'
                 Write-Host "    go build -o bin/streborn-armv7l ./cmd/agent"
             } catch {
                 Write-Fail "git pull fehlgeschlagen: $_"
@@ -480,7 +480,7 @@ function Action-UpdateWizard {
             Write-Host "  Manuelle Anleitung:"
             Write-Host "    1. Im Repo Verzeichnis: git pull"
             Write-Host "    2. Falls Binary neu gebaut werden soll:"
-            Write-Host '       set GOOS=linux & set GOARCH=arm & set GOARM=7 & set CGO_ENABLED=0'
+            Write-Host '       set GOOS=linux & set GOARCH=arm & set GOARM=5 & set CGO_ENABLED=0'
             Write-Host "       go build -o bin\streborn-armv7l .\cmd\agent"
             Write-Host "    3. Wizard schliessen und neu starten."
             Write-Host "    4. Im Wizard Menue Punkt 5 (Karte aktualisieren) waehlen."

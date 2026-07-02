@@ -2984,6 +2984,42 @@ redeploy_agent_from_stick() {
     return 1
 }
 
+# Defense-in-depth for a permanently-unstartable agent. When the agent
+# crash-loops (e.g. an illegal-instruction SIGILL on an old ST CPU built
+# for the wrong ISA, issue #302) it never binds :8888, and the box can be
+# left sitting at a full OOB / install progress bar. The on-box OOB gates
+# (finalize_oob_setup) only run on the WLAN-provision path for BCO boxes,
+# so a crash-looping-agent box never reaches them. This advances the Bose
+# setup state machine here too, so a dead agent does not soft-brick an
+# otherwise-usable speaker: BoseApp (:8090), SSH and UPnP still work, only
+# STR's own webui is gone. Same /language + /name POSTs finalize_oob_setup
+# makes (live-proven 2026-06-01). Self-gated on systemstate: a pure no-op
+# on any box already out of OOB (which includes every box where the agent
+# has ever come up). It NEVER reboots (could loop) and NEVER re-execs
+# run-override.sh. Only ever called once the agent is declared unstable.
+rescue_oob_display() {
+    _ro_api="http://127.0.0.1:8090"
+    _ro_state=$(wget -qO- -T 5 "$_ro_api/setup" 2>/dev/null)
+    # Log the raw state so the next diagnostic bundle proves whether the
+    # box was ever in the OOB state this rescue can act on (the stuck bar
+    # on older firmware may be a SoftwareUpdate screen, not systemstate).
+    setup_log "agent-unstable rescue: /setup state = $(printf '%s' "$_ro_state" | tr -d '\n\r' | cut -c1-200)"
+    case "$_ro_state" in
+        *SETUP_LANG_NOT_SET*) : ;;
+        *) setup_log "agent-unstable rescue: systemstate already past OOB (or /setup unavailable), no display rescue needed"; return 0 ;;
+    esac
+    _ro_lang=$(resolve_setup_language)
+    setup_log "agent-unstable rescue: box stuck in OOB with a dead agent, POSTing /language=$_ro_lang + /name to leave the setup screen"
+    wget -qO- -T 5 --header="Content-Type: text/xml" --post-data="<sysLanguage>${_ro_lang}</sysLanguage>" "$_ro_api/language" >/dev/null 2>&1
+    _ro_nm=""
+    [ -f "$STICK/name.conf" ] && _ro_nm=$(sed -n 's/.*"name":"\([^"]*\)".*/\1/p' "$STICK/name.conf" | head -1)
+    [ -z "$_ro_nm" ] && _ro_nm=$(wget -qO- -T 5 "$_ro_api/name" 2>/dev/null | sed -n 's:.*<name>\([^<]*\)</name>.*:\1:p' | head -1)
+    [ -z "$_ro_nm" ] && _ro_nm="SoundTouch"
+    _ro_nme=$(printf '%s' "$_ro_nm" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g')
+    wget -qO- -T 5 --header="Content-Type: text/xml" --post-data="<name>${_ro_nme}</name>" "$_ro_api/name" >/dev/null 2>&1
+    setup_log "agent-unstable rescue: posted /language + /name; box should leave the OOB screen and run as a plain speaker despite the dead agent"
+}
+
 start_agent() {
     START_COUNT=$((${START_COUNT:-0}+1))
     # Fingerprint the binary on every launch: a corrupt / short NAND copy
@@ -3023,7 +3059,8 @@ start_agent() {
         wait "$_bpid"
         _ec=$?
         case "$_ec" in
-            12[89]|1[3-9][0-9]) _sig=$((_ec-128)); _why="killed by signal $_sig (137=SIGKILL/OOM 134=SIGABRT/Go-fatal 139=SIGSEGV 143=SIGTERM)" ;;
+            12[89]|1[3-9][0-9]) _sig=$((_ec-128)); _why="killed by signal $_sig (132=SIGILL/illegal-instruction 134=SIGABRT/Go-fatal 137=SIGKILL/OOM 139=SIGSEGV 143=SIGTERM); a SIGILL here means the agent binary used a CPU instruction this SoundTouch lacks (old ST unit without VFP) -> rebuild with GOARM=5" ;;
+            2) _why="exit status 2 = Go runtime fatal (panic/throw, or a fatal signal such as SIGILL/illegal-instruction during os.init that the runtime reports then exits 2). On an older ST CPU this means the agent was built for an instruction set the box lacks -> rebuild with GOARM=5; see agent-crash.log for the Go traceback" ;;
             0) _why="clean exit (unexpected for a daemon)" ;;
             *) _why="exit status $_ec" ;;
         esac
@@ -3692,6 +3729,11 @@ agent_port_bound() {
                 echo "see agent-crash.log for the per-exit code/signal and the agent tail"
             } > "$AGENT_UNSTABLE_MARK" 2>/dev/null
             setup_log "boot-watchdog: $BOOT_RESTARTS restarts in 120s exhausted, agent UNSTABLE (marker written, $(agent_resource_line)), falling back to slow loop"
+            # Defense-in-depth: the agent is definitively dead. If the box is
+            # still sitting in OOB (full install/boot progress bar), advance
+            # the Bose setup state off it so it is at least a usable plain
+            # speaker. No-op if already out of OOB; never reboots (issue #302).
+            rescue_oob_display
             break
         fi
         BOOT_RESTARTS=$((BOOT_RESTARTS+1))

@@ -44,9 +44,18 @@ build:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(PKG)
 
+# GOARM=5, not 7, on purpose. Some early SoundTouch units (seen on an
+# older ST20 on 2017 firmware, issue #302) have a CPU/kernel without
+# working VFP hardware float. A GOARM=6/7 binary emits VFP instructions
+# and SIGILLs at the first stdlib float touch (os.init), crash-looping
+# the agent and soft-bricking the box. GOARM=5 is pure software float
+# with kernel-helper atomics: no ARMv7-optional instructions, so it runs
+# on every SoundTouch CPU revision (a compat superset of GOARM=7). The
+# agent does no heavy FP, so the softfloat cost is negligible. Keep this
+# in sync with release.yml / build.yml (goarm matrix) and agent-embed.
 build-arm:
 	@mkdir -p $(BIN_DIR)
-	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 \
+	GOOS=linux GOARCH=arm GOARM=5 CGO_ENABLED=0 \
 		$(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY)-armv7l $(PKG)
 
 build-arm64:
@@ -71,7 +80,7 @@ winformat-embed:
 # picks it up. Required for OTA-from-app to actually push a binary.
 agent-embed:
 	@mkdir -p $(dir $(AGENT_EMBED_OUT))
-	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 \
+	GOOS=linux GOARCH=arm GOARM=5 CGO_ENABLED=0 \
 		$(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(AGENT_EMBED_OUT) $(PKG)
 	@echo "embedded $$(stat -c %s $(AGENT_EMBED_OUT) 2>/dev/null || stat -f %z $(AGENT_EMBED_OUT)) bytes into $(AGENT_EMBED_OUT)"
 
