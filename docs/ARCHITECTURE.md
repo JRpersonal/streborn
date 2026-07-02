@@ -453,9 +453,14 @@ the app. The complete picture of what talks to what:
 | Website (`st-reborn.de`) | GoatCounter | Privacy-friendly, cookieless page analytics: no cookies, no cross-site tracking, the visitor IP is not stored. |
 
 Bose's own telemetry endpoint (`events.api.bosecm.com`) and software
-update endpoint (`worldwide.bose.com`) are likewise redirected to
-localhost and answered with a benign `200`, so the speaker emits nothing
-to Bose.
+update endpoint (`worldwide.bose.com`) are **not** redirected: since the
+Bose cloud shutdown they no longer resolve, so the speaker cannot reach
+them anyway. STR used to black-hole them to `0.0.0.0`, but that produced an
+instant connection reset that the BCO/scm SoundTouch 20's NetManager
+connectivity probe read as a broken link and reacted to by re-associating
+Wi-Fi (fatal on the ethernet-only path, which persists no Wi-Fi profile).
+Left at real DNS they simply fail the benign way the post-cloud box already
+tolerates.
 
 ## Storage layout on the speaker
 

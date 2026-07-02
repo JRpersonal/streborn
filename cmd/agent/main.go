@@ -312,14 +312,12 @@ func run() error {
 		logger.Warn("recent history load failed, starting empty", "err", rErr)
 	}
 
-	// Modify the hosts file
+	// Create the /etc/hosts manager now (so the shutdown path can Restore it),
+	// but DEFER the actual redirect until the marge listeners answer — see the
+	// deferred Apply after the listener boot below.
 	var hostsMgr *hosts.Manager
 	if *applyHosts {
 		hostsMgr = hosts.New(*hostsPath, logger)
-		if err := hostsMgr.Apply(hosts.DefaultEntries()); err != nil {
-			logger.Warn("hosts file could not be modified", "err", err)
-			hostsMgr = nil
-		}
 	}
 
 	// Initialize subsystems
@@ -736,6 +734,34 @@ func run() error {
 	logger.Warn("agent listeners spawned, deferred init continues in background",
 		"webui", *webuiAddr, "marge", *margeAddr, "bmx", *bmxAddr, "tlsEnabled", *tlsEnabled, "margeTLS", *margeTLSAddr)
 
+	// Deferred /etc/hosts redirect. Applying it at agent start pointed the box's
+	// Bose hosts (streaming.bose.com / content.api.bose.io) at 127.0.0.1 while
+	// marge-TLS on :443 was not listening yet (that listener waits on first-boot
+	// CA generation). On the BCO/scm SoundTouch 20 the box's NetManager runs a
+	// connectivity probe against those hosts; a connection-refused during that
+	// window is read as "no internet", so NetManager re-associates the Wi-Fi.
+	// The scm ethernet-only path persists no Wi-Fi profile, so that re-associate
+	// drops the speaker offline ("Wi-Fi Not Provided", #302/#303). Waiting until
+	// the marge endpoint actually accepts closes the window; on healthy boxes the
+	// redirect just lands a few seconds later, which is harmless.
+	if hostsMgr != nil {
+		waitAddr := *margeAddr
+		if *tlsEnabled {
+			waitAddr = *margeTLSAddr
+		}
+		go func() {
+			waitListenerReady(ctx, waitAddr, 30*time.Second, logger)
+			if ctx.Err() != nil {
+				return
+			}
+			if err := hostsMgr.Apply(hosts.DefaultEntries()); err != nil {
+				logger.Warn("hosts file could not be modified", "err", err)
+			} else {
+				logger.Info("hosts redirect applied after marge endpoint ready", "endpoint", waitAddr)
+			}
+		}()
+	}
+
 	// Self-probe loopback connect to each listener address. When the
 	// box is reachable but :8888 silently does not answer, the bash
 	// watchdog (agent_port_bound in run.sh) cannot always tell on a
@@ -831,6 +857,42 @@ func newHTTPErrorLog(logger *slog.Logger, name string) *log.Logger {
 //
 // Phase-marker logs are at WARN level on purpose: visible on any
 // --log-level setting and in the diagnostic bundle's tail capture.
+// waitListenerReady blocks until a plain TCP dial to the loopback side of addr
+// succeeds (proving the local listener accepts), ctx is cancelled, or timeout
+// elapses. Used to hold the /etc/hosts redirect until marge is actually up. A
+// TLS listener still accepts the TCP connection, so this works for :443 too.
+func waitListenerReady(ctx context.Context, addr string, timeout time.Duration, logger *slog.Logger) {
+	port := addr
+	if _, p, err := net.SplitHostPort(addr); err == nil {
+		port = p
+	} else {
+		port = strings.TrimPrefix(addr, ":")
+	}
+	target := net.JoinHostPort("127.0.0.1", port)
+	deadline := time.Now().Add(timeout)
+	for {
+		d := net.Dialer{Timeout: time.Second}
+		if c, err := d.DialContext(ctx, "tcp", target); err == nil {
+			_ = c.Close()
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			if logger != nil {
+				logger.Warn("marge endpoint not ready before timeout, applying hosts redirect anyway", "endpoint", target)
+			}
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+}
+
 func startHTTP(ctx context.Context, wg *sync.WaitGroup, errs chan<- error, name, addr string, handler http.Handler, logger *slog.Logger) {
 	logger.Warn("listener phase: spawn", "comp", name, "addr", addr)
 	wg.Add(1)

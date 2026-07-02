@@ -30,12 +30,19 @@ type Entry struct {
 // can emulate the TuneIn API and STSCertified BMXTuneInClient believes the
 // Bose TuneIn cloud is reachable.
 func DefaultEntries() []Entry {
+	// Only the three hosts marge actively emulates are redirected. We used to
+	// also black-hole events.api.bosecm.com and worldwide.bose.com to 0.0.0.0,
+	// but that served no STR function and hurt the BCO/scm ST20: connecting to
+	// 0.0.0.0 resolves to loopback and returns an instant RST, which the box's
+	// NetManager connectivity probe reads as an actively broken link and reacts
+	// to by re-associating the Wi-Fi. On the ethernet-only scm path STR persists
+	// no Wi-Fi profile, so that re-association drops the speaker offline
+	// ("Wi-Fi Not Provided", #302/#303). Left at real DNS these dead hosts just
+	// NXDOMAIN/time out, the benign way the stock post-cloud box already tolerates.
 	return []Entry{
 		{IP: "127.0.0.1", Host: "streaming.bose.com"},
 		{IP: "127.0.0.1", Host: "content.api.bose.io"},
 		{IP: "127.0.0.1", Host: "7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com"},
-		{IP: "0.0.0.0", Host: "events.api.bosecm.com"},
-		{IP: "0.0.0.0", Host: "worldwide.bose.com"},
 	}
 }
 
