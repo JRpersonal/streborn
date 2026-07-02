@@ -862,7 +862,7 @@ func newHTTPErrorLog(logger *slog.Logger, name string) *log.Logger {
 // elapses. Used to hold the /etc/hosts redirect until marge is actually up. A
 // TLS listener still accepts the TCP connection, so this works for :443 too.
 func waitListenerReady(ctx context.Context, addr string, timeout time.Duration, logger *slog.Logger) {
-	port := addr
+	var port string
 	if _, p, err := net.SplitHostPort(addr); err == nil {
 		port = p
 	} else {
