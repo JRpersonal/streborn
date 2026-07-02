@@ -639,58 +639,90 @@ cleanup_nand() {
     log "NAND cleanup done, ${free_kb:-?} KB free on /mnt/nv"
 }
 
+# NAND_BIN_CORRUPT is set to 1 when we wrote the agent binary to NAND but
+# could not flash-verify it (a full NAND lets the write land in the page
+# cache while the flash pages stay erased = 0xff, which exec later reads
+# back as an illegal instruction -> SIGILL crash-loop, live-seen on a tight
+# ST20, #302). The BIN selection then runs the agent from a RAM copy of the
+# stick binary instead. Unset/0 on a healthy or stickless boot.
+NAND_BIN_CORRUPT=0
 sync_stick_to_nand_always() {
-    # go-librespot (Spotify sidecar): cache stick -> NAND independently of
-    # the agent so it survives stick removal + reboot. Same atomic
-    # .new + mv pattern. Best-effort: absence just means no Spotify.
-    if [ -r "$STICK_GLR" ]; then
-        if cp "$STICK_GLR" "$CACHED_GLR.new" 2>/dev/null; then
-            chmod +x "$CACHED_GLR.new"
-            if mv "$CACHED_GLR.new" "$CACHED_GLR" 2>/dev/null; then
-                log "stick go-librespot deployed to NAND cache ($(wc -c < "$CACHED_GLR") bytes)"
-            else
-                log "stick -> NAND go-librespot mv failed, keeping previous"
-                rm -f "$CACHED_GLR.new"
-            fi
-        else
-            log "stick -> NAND go-librespot cp failed, keeping previous"
-            rm -f "$CACHED_GLR.new"
-        fi
-    fi
-
-    if [ ! -r "$STICK_BIN" ]; then
-        return 0
-    fi
-    if cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null; then
-        # chmod is part of the condition: a non-executable cache fails run.sh's
-        # [ -x "$CACHED_BIN" ] test at boot and would degrade to the stick
-        # fallback (or the "neither NAND cache" exit) with no clue why, so a
-        # silent chmod failure must keep the previous good cache instead.
-        if chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
+    # The AGENT BINARY is essential and goes FIRST, before the optional
+    # Spotify engine, so a tight NAND can never let go-librespot crowd the
+    # agent out (the old order wrote the 16 MB engine first and left no room
+    # for the 12 MB agent to commit -> corrupt agent, #302).
+    if [ -r "$STICK_BIN" ]; then
+        if cp "$STICK_BIN" "$CACHED_BIN.new" 2>/dev/null && chmod +x "$CACHED_BIN.new" && mv "$CACHED_BIN.new" "$CACHED_BIN" 2>/dev/null; then
             log "stick binary deployed to NAND cache ($(wc -c < "$CACHED_BIN") bytes)"
-            # Hash both copies so a corrupt / half-written NAND binary (a
-            # suspect for the ST10 crash-loop where the agent SIGSEGVs at
-            # once) is visible: a mismatch means the copy did not land
-            # intact and the agent will crash regardless of environment.
+            # Verify against FLASH, not the page cache. Without the sync +
+            # drop_caches the md5 reads back the bytes we just wrote from RAM
+            # cache and passes even when the flash writeback silently failed on
+            # a full NAND (ENOSPC), so a corrupt agent looked fine here and
+            # only surfaced as a SIGILL at run time. Force the pages to flash,
+            # drop the cache, then re-read from flash and compare to the stick.
+            sync 2>/dev/null
+            [ -w /proc/sys/vm/drop_caches ] && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
             _sm5=$(md5sum "$STICK_BIN" 2>/dev/null | awk '{print $1}')
             _nm5=$(md5sum "$CACHED_BIN" 2>/dev/null | awk '{print $1}')
             if [ -n "$_sm5" ] && [ "$_sm5" = "$_nm5" ]; then
-                setup_log "binary deploy: md5 OK $_nm5 ($(wc -c < "$CACHED_BIN") bytes)"
+                setup_log "binary deploy: md5 OK (flash-verified) $_nm5 ($(wc -c < "$CACHED_BIN") bytes)"
+                if [ -r "$STICK_VER_FILE" ]; then
+                    cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
+                    log "NAND version.txt updated: $(cat "$NAND_VER_FILE" 2>/dev/null)"
+                fi
             else
-                setup_log "binary deploy: md5 MISMATCH stick=$_sm5 nand=$_nm5 — NAND copy is corrupt, agent will crash"
+                NAND_BIN_CORRUPT=1
+                setup_log "binary deploy: md5 MISMATCH after flash sync stick=$_sm5 nand=$_nm5 — the NAND write did not commit (full NAND?); the agent will be run from a RAM copy instead (see RAM-exec)"
             fi
-            if [ -r "$STICK_VER_FILE" ]; then
-                cp "$STICK_VER_FILE" "$NAND_VER_FILE" 2>/dev/null
-                log "NAND version.txt updated: $(cat "$NAND_VER_FILE" 2>/dev/null)"
+        else
+            log "stick -> NAND binary cp/chmod/mv failed, keeping previous NAND binary"
+            rm -f "$CACHED_BIN.new"
+        fi
+    fi
+
+    # go-librespot (Spotify sidecar) is OPTIONAL. Deploy it only when there is
+    # real headroom AFTER the essential agent, so it can never crowd the agent
+    # out of a small NAND. When it does not fit, defer it (Spotify simply stays
+    # unavailable until the next OTA finds room) rather than filling the volume.
+    if [ -r "$STICK_GLR" ]; then
+        _glr_kb=$(( $(wc -c < "$STICK_GLR" 2>/dev/null || echo 0) / 1024 ))
+        _free_kb=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}')
+        if [ "${_glr_kb:-0}" -gt 0 ] && [ "${_free_kb:-0}" -gt $(( _glr_kb + 3072 )) ]; then
+            if cp "$STICK_GLR" "$CACHED_GLR.new" 2>/dev/null && chmod +x "$CACHED_GLR.new" && mv "$CACHED_GLR.new" "$CACHED_GLR" 2>/dev/null; then
+                log "stick go-librespot deployed to NAND cache ($(wc -c < "$CACHED_GLR") bytes)"
+            else
+                log "stick -> NAND go-librespot deploy failed, keeping previous"
+                rm -f "$CACHED_GLR.new"
             fi
+        else
+            log "NAND tight (${_free_kb:-?}KB free, go-librespot needs ${_glr_kb}KB + margin), deferring the Spotify engine so it cannot crowd out the agent binary"
+        fi
+    fi
+    return 0
+}
+
+# stage_ram_binary copies the STICK agent binary into tmpfs (RAM) and points
+# RAM_BIN at it. Used when the NAND write could not be flash-verified: tmpfs
+# has no flash writeback, so the bytes exec mmaps are exactly what we copied,
+# which sidesteps a full/unwritable NAND entirely (#302). Needs the stick as a
+# clean source — a stickless boot with an already-corrupt NAND cannot use this.
+RAM_BIN=""
+stage_ram_binary() {
+    [ -r "$STICK_BIN" ] || { setup_log "RAM-exec: no stick binary to stage (stickless boot), cannot bypass an unwritable NAND"; return 1; }
+    _rd=/dev/shm
+    { [ -d "$_rd" ] && [ -w "$_rd" ]; } || _rd=/tmp
+    RAM_BIN="$_rd/streborn-armv7l"
+    if cp "$STICK_BIN" "$RAM_BIN.new" 2>/dev/null && chmod +x "$RAM_BIN.new" && mv "$RAM_BIN.new" "$RAM_BIN" 2>/dev/null; then
+        _rm5=$(md5sum "$RAM_BIN" 2>/dev/null | awk '{print $1}')
+        _sm5=$(md5sum "$STICK_BIN" 2>/dev/null | awk '{print $1}')
+        if [ -n "$_rm5" ] && [ "$_rm5" = "$_sm5" ]; then
+            setup_log "RAM-exec: staged agent to $RAM_BIN (tmpfs) md5=$_rm5, running from RAM to bypass the unwritable NAND"
             return 0
         fi
-        log "stick -> NAND chmod/mv failed, keeping previous NAND binary"
-        rm -f "$CACHED_BIN.new"
-        return 1
     fi
-    log "stick -> NAND cp failed (stick I/O error?), keeping previous NAND binary"
-    rm -f "$CACHED_BIN.new"
+    setup_log "RAM-exec: staging the agent to tmpfs FAILED, falling back to the NAND/stick binary"
+    rm -f "$RAM_BIN.new" 2>/dev/null
+    RAM_BIN=""
     return 1
 }
 
@@ -1189,8 +1221,15 @@ shim_late_swap() {
 }
 (shim_late_swap) &
 
-# Binary selection: NAND cache first, stick as fallback.
-if [ -x "$CACHED_BIN" ]; then
+# Binary selection: a flash-verified NAND cache is preferred. If the NAND
+# write could not be committed (tight NAND -> erased 0xff pages that crash the
+# agent with SIGILL, #302), run from a RAM copy of the stick binary instead.
+# A NAND cache that verified fine, or a healthy stickless boot, uses NAND as
+# before; the stick binary directly is the last resort.
+if [ "$NAND_BIN_CORRUPT" = "1" ] && stage_ram_binary; then
+    BIN="$RAM_BIN"
+    log "running the agent from RAM ($BIN): the NAND copy did not commit to flash"
+elif [ -x "$CACHED_BIN" ]; then
     BIN="$CACHED_BIN"
 elif [ -x "$STICK_BIN" ]; then
     BIN="$STICK_BIN"
