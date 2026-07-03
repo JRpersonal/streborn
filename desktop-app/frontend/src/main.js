@@ -3742,7 +3742,12 @@ function renderNowPlayingBar() {
     stateClass = 'play';
   }
   const isStreamSrc = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE' || ps === 'PAUSE_STATE') && srcU !== 'AUX' && srcU !== 'BLUETOOTH' && !isAirplay;
-  const brLabel = isStreamSrc ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
+  // The bitrate readout only means something for a measured live stream: radio
+  // through the proxy (/stream/...) or Spotify. A direct library file is played
+  // straight to the box and STR never measures its rate, so it must not show a
+  // number (a leftover radio value) or a misleading "- kbit/s" (#310).
+  const measuredStream = /\/stream\//.test(state.nowLocation || '') || /\/spotify\/stream/.test(state.nowLocation || '');
+  const brLabel = (isStreamSrc && measuredStream) ? ` <small class="now-bitrate">${state.nowBitrate ? state.nowBitrate + ' kbit/s' : '- kbit/s'}</small>` : '';
   bar.className = 'status-bar status-' + stateClass;
   // Glyph reflects the actual transport state so play vs pause is not conveyed
   // by colour alone (accessibility): play arrow normally, pause bars when paused.
@@ -3878,7 +3883,12 @@ async function refreshStatus() {
         state.nowBitrate = (sp && sp.bitrate) ? sp.bitrate : 0;
       } else if (ap && ap.bitrate) {
         state.nowBitrate = ap.bitrate;
-      } else if (!newLoc) {
+      } else if (!newLoc ||
+                 (!/\/stream\//.test(newLoc) && !/\/spotify\/stream/.test(newLoc))) {
+        // Nothing playing, or a direct library file: a library track is played
+        // straight to the box (not through the stream proxy), so there is no
+        // measured live bitrate. Clear it instead of leaving a previous radio
+        // station's value behind (#310).
         state.nowBitrate = 0;
       }
       // Still playing through the stream proxy but with no bitrate yet
