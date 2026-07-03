@@ -599,9 +599,9 @@ function renderBoxSettings(s, box) {
       <small class="muted small">${escapeHtml(t('settingsView.langHelp'))}</small>
     </div>
 
-    <div class="settings-section">
+    <div class="settings-section" id="clockSection">
       <h3>${escapeHtml(t('settingsView.clockHeading'))}</h3>
-      <div class="setting-row">
+      <div class="setting-row" id="clockControlsRow">
         <select id="boxClockFormat">
           <option value="24">${escapeHtml(t('settingsView.clock24h'))}</option>
           <option value="12">${escapeHtml(t('settingsView.clock12h'))}</option>
@@ -609,7 +609,10 @@ function renderBoxSettings(s, box) {
         <button class="btn btn-mini toggle-btn" id="boxClockOn">${escapeHtml(t('settingsView.clockOn'))}</button>
         <button class="btn btn-mini toggle-btn" id="boxClockOff">${escapeHtml(t('settingsView.clockOff'))}</button>
       </div>
-      <small class="muted small">${escapeHtml(t('settingsView.clockHelp'))}</small>
+      <div class="setting-row hidden" id="clockNotSupportedRow">
+        <span class="muted small">${escapeHtml(t('settingsView.clockNotSupported'))}</span>
+      </div>
+      <small class="muted small" id="clockHelp">${escapeHtml(t('settingsView.clockHelp'))}</small>
     </div>
 
     <div class="settings-section" id="resumeOnPowerSection">
@@ -1356,56 +1359,72 @@ function renderBoxSettings(s, box) {
   const clockOn = $('boxClockOn');
   const clockOff = $('boxClockOff');
   const clockFormat = $('boxClockFormat');
-  // Reflect the current on/off state by highlighting the active button
-  // instead of a separate status line. null = unknown (neither lit).
-  const paintClock = (enabled) => {
-    if (clockOn) clockOn.classList.toggle('active', enabled === true);
-    if (clockOff) clockOff.classList.toggle('active', enabled === false);
-  };
-  // Preselect the box's current 12/24h format in the dropdown.
-  if (clockFormat) {
-    GetClockFormat24(boseHost).then(is24 => { clockFormat.value = is24 ? '24' : '12'; }).catch(() => {});
-  }
-  // refreshClock reads the current /clockDisplay state. Previously
-  // any non-200 / fetch failure surfaced "not supported on this
-  // model", but live-verified 2026-05-30 on a SoundTouch Portable
-  // (taigan): the GET path returns 200 most of the time but the
-  // box sometimes responds slowly or briefly drops the request
-  // during BoseApp restart, and that one missed GET painted the
-  // settings panel as "permanently unsupported" even though POST
-  // toggles work fine. Don't draw conclusions from a single GET:
-  // unknown means unknown, not unsupported.
-  let clockEnabled = false; // tracked so a format change re-sends with the right on/off state
-  const refreshClock = async () => {
-    try {
-      const s = await GetClockDisplay(boseHost);
-      clockEnabled = (s === 'true');
-      paintClock(s === 'true' ? true : (s === 'false' ? false : null));
-    } catch {
-      paintClock(null);
+  // The SoundTouch 10 (rhino) has no display at all, so a clock can never be
+  // shown on it regardless of what /clockDisplay reports. Gate by model
+  // identity (reliable) rather than the GET probe below (flaky): swap the
+  // controls for a plain "not supported" note, which is exactly what the help
+  // text promises, and skip the GET/POST wiring entirely. Fixes #299. Same
+  // \b10\b model test as the stereo-pair gate in multiroom.js.
+  const noClockDisplay = /\b10\b/.test(box.model || '');
+  if (noClockDisplay) {
+    const ctlRow = $('clockControlsRow');
+    const clockHelp = $('clockHelp');
+    const nsRow = $('clockNotSupportedRow');
+    if (ctlRow) ctlRow.classList.add('hidden');
+    if (clockHelp) clockHelp.classList.add('hidden');
+    if (nsRow) nsRow.classList.remove('hidden');
+  } else {
+    // Reflect the current on/off state by highlighting the active button
+    // instead of a separate status line. null = unknown (neither lit).
+    const paintClock = (enabled) => {
+      if (clockOn) clockOn.classList.toggle('active', enabled === true);
+      if (clockOff) clockOff.classList.toggle('active', enabled === false);
+    };
+    // Preselect the box's current 12/24h format in the dropdown.
+    if (clockFormat) {
+      GetClockFormat24(boseHost).then(is24 => { clockFormat.value = is24 ? '24' : '12'; }).catch(() => {});
     }
-  };
-  refreshClock();
-  const postClock = async (enable) => {
-    try {
-      // Real IANA time zone (e.g. "Europe/Berlin"), like the Bose iOS
-      // app sets, so the speaker handles DST itself. userOffsetMinute is
-      // sent too as a correct-now fallback: minutes EAST of UTC, i.e.
-      // the negated JS getTimezoneOffset().
-      let tz = '';
-      try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
-      const offsetMin = -new Date().getTimezoneOffset();
-      const fmt24 = (clockFormat ? clockFormat.value : '24') === '24';
-      await SetClockDisplay(boseHost, enable, tz, offsetMin, fmt24);
-      showToast(t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
-      await refreshClock();
-    } catch (e) { showError(e); }
-  };
-  if (clockOn) clockOn.onclick = () => { paintClock(true); postClock(true); };
-  if (clockOff) clockOff.onclick = () => { paintClock(false); postClock(false); };
-  // Send the 12/24h format to the box immediately on dropdown change,
-  // keeping the current on/off state (no need to click "On" again).
-  if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
+    // refreshClock reads the current /clockDisplay state. Previously
+    // any non-200 / fetch failure surfaced "not supported on this
+    // model", but live-verified 2026-05-30 on a SoundTouch Portable
+    // (taigan): the GET path returns 200 most of the time but the
+    // box sometimes responds slowly or briefly drops the request
+    // during BoseApp restart, and that one missed GET painted the
+    // settings panel as "permanently unsupported" even though POST
+    // toggles work fine. Don't draw conclusions from a single GET:
+    // unknown means unknown, not unsupported.
+    let clockEnabled = false; // tracked so a format change re-sends with the right on/off state
+    const refreshClock = async () => {
+      try {
+        const s = await GetClockDisplay(boseHost);
+        clockEnabled = (s === 'true');
+        paintClock(s === 'true' ? true : (s === 'false' ? false : null));
+      } catch {
+        paintClock(null);
+      }
+    };
+    refreshClock();
+    const postClock = async (enable) => {
+      try {
+        // Real IANA time zone (e.g. "Europe/Berlin"), like the Bose iOS
+        // app sets, so the speaker handles DST itself. userOffsetMinute is
+        // sent too as a correct-now fallback: minutes EAST of UTC, i.e.
+        // the negated JS getTimezoneOffset().
+        let tz = '';
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
+        const offsetMin = -new Date().getTimezoneOffset();
+        const fmt24 = (clockFormat ? clockFormat.value : '24') === '24';
+        await SetClockDisplay(boseHost, enable, tz, offsetMin, fmt24);
+        showToast(t('settingsView.clockSavedToast', { v: enable ? 'on' : 'off' }));
+        await refreshClock();
+      } catch (e) { showError(e); }
+    };
+    if (clockOn) clockOn.onclick = () => { paintClock(true); postClock(true); };
+    if (clockOff) clockOff.onclick = () => { paintClock(false); postClock(false); };
+    // Send the 12/24h format to the box immediately on dropdown change,
+    // keeping the current on/off state (no need to click "On" again).
+    if (clockFormat) clockFormat.onchange = () => postClock(clockEnabled);
+  }
 
   // Resume last station on power-on (all models, default on). GET reports the
   // current state; toggling applies live on the box (no reboot). The next real
