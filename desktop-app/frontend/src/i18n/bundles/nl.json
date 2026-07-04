@@ -963,7 +963,7 @@
   "update.appBehindLine": "De speaker draait {{boxVersion}}, nieuwer dan deze app ({{appVersion}}). Werk eerst de app bij.",
   "update.appBehindShort": "Speaker nieuwer dan de app, werk de app bij (app: {{appVersion}})",
   "settingsView.urlPresetHeading": "Een eigen URL afspelen vanaf een preset",
-  "settingsView.urlPresetHelp": "Koppel een audio-URL (bijvoorbeeld een MP3) aan een presetknop. Als je op de knop drukt, op de speaker of in de app, wordt deze afgespeeld. De URL moet bereikbaar zijn op je netwerk en met http beginnen (de speaker ondersteunt geen https). Door erop te drukken vervang je wat er nu speelt.",
+  "settingsView.urlPresetHelp": "Koppel een audio-URL aan een presetknop: een geluidsbestand (bijvoorbeeld een MP3) of een doorlopende stream, zoals een Icecast-station op je eigen netwerk. Als je op de knop drukt, op de speaker of in de app, wordt deze afgespeeld. De URL moet bereikbaar zijn op je netwerk; zowel http als https werken (STR stuurt de stream door naar de speaker). MP3 speelt het betrouwbaarst af; sommige OGG-streams mogelijk niet. Door erop te drukken vervang je wat er nu speelt.",
   "settingsView.urlPresetNamePlaceholder": "Naam (bijvoorbeeld Deurbel)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "Eigen URL",

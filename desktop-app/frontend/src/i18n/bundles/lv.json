@@ -963,7 +963,7 @@
   "update.appBehindLine": "Skaļrunī darbojas {{boxVersion}}, kas ir jaunāka par šo lietotni ({{appVersion}}). Lūdzu, vispirms atjaunini lietotni.",
   "update.appBehindShort": "Skaļrunis ir jaunāks par lietotni, lūdzu, atjaunini lietotni (lietotne: {{appVersion}})",
   "settingsView.urlPresetHeading": "Atskaņo pielāgotu URL no iestatījuma",
-  "settingsView.urlPresetHelp": "Piešķir audio URL (piemēram, MP3) iestatījumu taustiņam. Nospiežot taustiņu uz skaļruņa vai lietotnē, tas tiek atskaņots. URL ir jābūt pieejamam tavā tīklā un jāsākas ar http (skaļrunis neatbalsta https). Tā nospiešana aizstāj to, kas pašlaik tiek atskaņots.",
+  "settingsView.urlPresetHelp": "Piešķir audio URL iestatījumu taustiņam: skaņas failu (piemēram, MP3) vai nepārtrauktu straumi, piemēram, Icecast staciju savā tīklā. Nospiežot taustiņu uz skaļruņa vai lietotnē, tas tiek atskaņots. URL ir jābūt pieejamam tavā tīklā; darbojas gan http, gan https (STR pārsūta straumi uz skaļruni). Visuzticamāk atskaņo MP3; dažas OGG straumes var neatskaņoties. Tā nospiešana aizstāj to, kas pašlaik tiek atskaņots.",
   "settingsView.urlPresetNamePlaceholder": "Nosaukums (piemēram, Durvju zvans)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "Pielāgots URL",

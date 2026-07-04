@@ -661,7 +661,7 @@
   "settingsView.airplayOptSavedToast": "Saved. The speaker is restarting to apply it.",
   "settingsView.expertBadge": "Playground",
   "settingsView.urlPresetHeading": "Play a custom URL from a preset",
-  "settingsView.urlPresetHelp": "Assign an audio URL (for example an MP3) to a preset key. Pressing the key, on the speaker or in the app, plays it. The URL must be reachable on your network and start with http (the speaker does not support https). Pressing it replaces what is currently playing.",
+  "settingsView.urlPresetHelp": "Assign an audio URL to a preset key: a sound file (for example an MP3) or a continuous stream, such as an Icecast station on your own network. Pressing the key, on the speaker or in the app, plays it. The URL must be reachable on your network; both http and https work (STR relays the stream to the speaker). MP3 plays most reliably; some OGG streams may not. Pressing it replaces what is currently playing.",
   "settingsView.urlPresetNamePlaceholder": "Name (for example Doorbell)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "Custom URL",
