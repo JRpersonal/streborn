@@ -963,7 +963,7 @@
   "update.appBehindLine": "El altavoz usa {{boxVersion}}, más reciente que esta app ({{appVersion}}). Actualiza primero la app.",
   "update.appBehindShort": "El altavoz es más reciente que la app, actualiza la app (app: {{appVersion}})",
   "settingsView.urlPresetHeading": "Reproducir una URL personalizada desde un acceso directo",
-  "settingsView.urlPresetHelp": "Asigna una URL de audio (por ejemplo un MP3) a una tecla de acceso directo. Al pulsar la tecla, en el altavoz o en la app, se reproduce. La URL debe estar accesible en tu red y empezar por http (el altavoz no admite https). Al pulsarla se reemplaza lo que se esté reproduciendo.",
+  "settingsView.urlPresetHelp": "Asigna una URL de audio a una tecla de acceso directo: un archivo de sonido (por ejemplo un MP3) o una emisión continua, como una estación Icecast en tu propia red. Al pulsar la tecla, en el altavoz o en la app, se reproduce. La URL debe estar accesible en tu red; funcionan tanto http como https (STR reenvía la emisión al altavoz). El MP3 es el más fiable; algunas emisiones OGG pueden no reproducirse. Al pulsarla se reemplaza lo que se esté reproduciendo.",
   "settingsView.urlPresetNamePlaceholder": "Nombre (por ejemplo Timbre)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "URL personalizada",

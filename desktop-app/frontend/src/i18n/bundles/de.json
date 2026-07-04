@@ -661,7 +661,7 @@
   "settingsView.airplayOptSavedToast": "Gespeichert. Der Lautsprecher startet neu, um es zu übernehmen.",
   "settingsView.expertBadge": "Spielwiese",
   "settingsView.urlPresetHeading": "Eigene URL über ein Preset abspielen",
-  "settingsView.urlPresetHelp": "Lege eine Audio-URL (zum Beispiel eine MP3) auf eine Preset-Taste. Beim Drücken, am Lautsprecher oder in der App, wird sie abgespielt. Die URL muss im Netzwerk erreichbar sein und mit http beginnen (https unterstützt der Lautsprecher nicht). Beim Drücken wird die aktuelle Wiedergabe ersetzt.",
+  "settingsView.urlPresetHelp": "Lege eine Audio-URL auf eine Preset-Taste: eine Audiodatei (zum Beispiel eine MP3) oder einen fortlaufenden Stream, etwa eine Icecast-Station in deinem eigenen Netzwerk. Beim Drücken, am Lautsprecher oder in der App, wird sie abgespielt. Die URL muss im Netzwerk erreichbar sein; http und https funktionieren beide (STR leitet den Stream an den Lautsprecher weiter). MP3 spielt am zuverlässigsten; manche OGG-Streams eventuell nicht. Beim Drücken wird die aktuelle Wiedergabe ersetzt.",
   "settingsView.urlPresetNamePlaceholder": "Name (zum Beispiel Türklingel)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "Eigene URL",

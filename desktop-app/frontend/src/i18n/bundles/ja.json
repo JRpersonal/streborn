@@ -963,7 +963,7 @@
   "update.appBehindLine": "スピーカーは {{boxVersion}} で、このアプリ ({{appVersion}}) より新しいバージョンです。先にアプリをアップデートしてください。",
   "update.appBehindShort": "スピーカーがアプリより新しいバージョンです。アプリをアップデートしてください (アプリ: {{appVersion}})",
   "settingsView.urlPresetHeading": "プリセットからカスタム URL を再生",
-  "settingsView.urlPresetHelp": "音声 URL (例えば MP3) をプリセットキーに割り当てます。スピーカー本体かアプリでそのキーを押すと再生されます。URL はネットワークから到達できて、http で始まる必要があります (スピーカーは https に対応していません)。押すと、いま再生中のものが置き換わります。",
+  "settingsView.urlPresetHelp": "音声 URL をプリセットキーに割り当てます。音声ファイル (例えば MP3) でも、自分のネットワーク上の Icecast 局のような連続ストリームでも構いません。スピーカー本体かアプリでそのキーを押すと再生されます。URL はネットワークから到達できる必要があります。http と https のどちらも使えます (STR がストリームをスピーカーへ中継します)。MP3 が最も安定して再生されます。一部の OGG ストリームは再生できないことがあります。押すと、いま再生中のものが置き換わります。",
   "settingsView.urlPresetNamePlaceholder": "名前 (例えばドアベル)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "カスタム URL",
