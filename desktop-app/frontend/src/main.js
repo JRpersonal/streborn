@@ -991,8 +991,8 @@ $('view-box').innerHTML = `
       <button class="btn" id="pauseBtn">&#9208; ${escapeHtml(t('controls.pause'))}</button>
       <button class="btn" id="stopBtn">&#9209; ${escapeHtml(t('controls.stop'))}</button>
       <div class="queue-controls hidden" id="queueControls">
-        <button class="btn btn-mini" id="queuePrevBtn" aria-label="${escapeAttr(t('controls.prev'))}" title="${escapeAttr(t('controls.prev'))}">&#9198;</button>
-        <button class="btn btn-mini" id="queueNextBtn" aria-label="${escapeAttr(t('controls.next'))}" title="${escapeAttr(t('controls.next'))}">&#9197;</button>
+        <button class="btn btn-mini" id="queuePrevBtn" title="${escapeAttr(t('controls.prev'))}">&#9198; ${escapeHtml(t('controls.prev'))}</button>
+        <button class="btn btn-mini" id="queueNextBtn" title="${escapeAttr(t('controls.next'))}">&#9197; ${escapeHtml(t('controls.next'))}</button>
         <button class="btn btn-mini toggle-btn" id="queueShuffleBtn" aria-label="${escapeAttr(t('controls.shuffle'))}" title="${escapeAttr(t('controls.shuffle'))}">&#128256;</button>
         <button class="btn btn-mini toggle-btn" id="queueRepeatBtn" aria-label="${escapeAttr(t('controls.repeat'))}" title="${escapeAttr(t('controls.repeat'))}">&#128257;</button>
         <span class="queue-pos" id="queuePos"></span>
