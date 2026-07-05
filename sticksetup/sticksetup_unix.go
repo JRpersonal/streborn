@@ -79,9 +79,27 @@ func makeDrive(path string) Drive {
 	}
 }
 
-// detectFs is best-effort — Stat returns the filesystem type only on Linux.
+// detectFs reports the on-disk filesystem for a mounted stick path. On Linux it
+// asks findmnt, so a stick that is NOT FAT32 (Fedora and other distros default
+// larger USB sticks to exFAT) is correctly flagged as "needs format" instead of
+// being silently accepted, written to, and then rejected by the speaker (Helmut,
+// Fedora 44: a stick STR "prepared" was never read by the box). On platforms where
+// we cannot cheaply detect it, keep the historical FAT32 assumption so nothing
+// regresses.
 func detectFs(path string) string {
-	return "FAT32" // assumption for stick targets
+	if runtime.GOOS != "linux" {
+		return "FAT32"
+	}
+	out, err := exec.Command("findmnt", "-n", "-o", "FSTYPE", "--target", path).CombinedOutput()
+	if err != nil {
+		return "FAT32" // findmnt missing or path not a mount: assume FAT32, no regression
+	}
+	switch fs := strings.TrimSpace(string(out)); strings.ToLower(fs) {
+	case "", "vfat", "msdos", "fat", "fat32":
+		return "FAT32" // the Bose-readable FAT family (findmnt cannot split FAT16/32)
+	default:
+		return fs // exfat / ntfs / ext4 / ... -> caller flags it as not-FAT32
+	}
 }
 
 // formatFAT32Impl stub for Mac/Linux — not implemented yet.
@@ -113,9 +131,134 @@ func formatFAT32Impl(path, label string) error {
 			return fmt.Errorf("diskutil eraseDisk %s: %v: %s", whole, err, string(out))
 		}
 		return nil
+	case "linux":
+		return linuxFormatFAT32(path, label)
 	default:
-		return fmt.Errorf("format on this platform is not implemented yet; please format with system tools (e.g. mkfs.vfat)")
+		return fmt.Errorf("format on this platform is not implemented yet; please format with system tools (e.g. mkfs.vfat -F 32)")
 	}
+}
+
+// linuxFormatFAT32 reformats the stick behind a mounted path as FAT32 via
+// mkfs.vfat. It reformats the EXISTING backing partition (keeps the partition
+// table, swaps the filesystem), which is the minimal change that turns an exFAT /
+// ext4 Fedora stick into the FAT32 the speaker reads. Guarded hard so it can only
+// ever touch a removable USB/SD stick, never the system disk.
+//
+// UNVERIFIED on the full range of speakers/sticks yet (implemented for Helmut's
+// Fedora report; validate on hardware before relying on it). If a speaker still
+// rejects a stick whose FS is now FAT32, the next step is repartitioning to a
+// single MBR FAT32 partition, not just reformatting the filesystem.
+func linuxFormatFAT32(path, label string) error {
+	dev, err := linuxBackingDevice(path)
+	if err != nil {
+		return err
+	}
+	if err := linuxAssertRemovableStick(dev); err != nil {
+		return err
+	}
+	// mkfs refuses a mounted target; unmount the path and the device (best-effort).
+	_ = exec.Command("umount", path).Run()
+	_ = exec.Command("umount", dev).Run()
+	// mkfs.vfat -F 32 auto-selects a cluster size valid for the volume size,
+	// including small sticks (unlike our Windows helper's fixed default). -n sets
+	// the FAT label. Requires dosfstools.
+	out, err := exec.Command("mkfs.vfat", "-F", "32", "-n", sanitizeFatLabel(label), dev).CombinedOutput()
+	if err != nil {
+		if _, lookErr := exec.LookPath("mkfs.vfat"); lookErr != nil {
+			return fmt.Errorf("mkfs.vfat is not installed. Install dosfstools (Fedora: sudo dnf install dosfstools; Debian/Ubuntu: sudo apt install dosfstools), then try again")
+		}
+		return fmt.Errorf("mkfs.vfat %s: %v: %s", dev, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// linuxBackingDevice resolves a mounted path to the block device that backs it,
+// e.g. /run/media/user/STICK -> /dev/sdb1.
+func linuxBackingDevice(path string) (string, error) {
+	out, err := exec.Command("findmnt", "-n", "-o", "SOURCE", "--target", path).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("could not resolve the stick's device via findmnt: %v", err)
+	}
+	dev := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(dev, "/dev/") {
+		return "", fmt.Errorf("unexpected backing device %q for %q", dev, path)
+	}
+	return dev, nil
+}
+
+// linuxAssertRemovableStick refuses to format anything that is not clearly a
+// removable USB/SD stick, and never the disk that holds the running system. This
+// is the safety net for a tool that runs mkfs on a device path.
+func linuxAssertRemovableStick(dev string) error {
+	parent := diskParent(filepath.Base(dev))
+	if parent == "" {
+		return fmt.Errorf("could not determine the whole disk for %s", dev)
+	}
+	// Never the system disk.
+	if rootDev, rerr := linuxBackingDevice("/"); rerr == nil {
+		if diskParent(filepath.Base(rootDev)) == parent {
+			return fmt.Errorf("refusing to format %s: that is the system disk", dev)
+		}
+	}
+	rem, err := os.ReadFile("/sys/block/" + parent + "/removable")
+	if err != nil || strings.TrimSpace(string(rem)) != "1" {
+		return fmt.Errorf("refusing to format %s: it is not a removable USB stick. "+
+			"If it really is your stick, format it yourself with: sudo mkfs.vfat -F 32 %s", dev, dev)
+	}
+	return nil
+}
+
+// diskParent strips a partition suffix to get the whole-disk name:
+// sdb1 -> sdb, mmcblk0p1 -> mmcblk0, nvme0n1p3 -> nvme0n1.
+func diskParent(base string) string {
+	if strings.HasPrefix(base, "mmcblk") || strings.HasPrefix(base, "nvme") {
+		if i := strings.LastIndexByte(base, 'p'); i > 0 && allDigits(base[i+1:]) {
+			return base[:i]
+		}
+		return base
+	}
+	j := len(base)
+	for j > 0 && base[j-1] >= '0' && base[j-1] <= '9' {
+		j--
+	}
+	return base[:j]
+}
+
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// sanitizeFatLabel makes a FAT volume label: uppercase ASCII, no reserved
+// characters, at most 11 bytes. mkfs.vfat rejects a label that is too long.
+func sanitizeFatLabel(label string) string {
+	if label == "" {
+		return "REBORN"
+	}
+	var b strings.Builder
+	for _, r := range strings.ToUpper(label) {
+		if r > 127 {
+			continue
+		}
+		if strings.ContainsRune(`"*/:<>?\|.`, r) {
+			continue
+		}
+		b.WriteRune(r)
+		if b.Len() >= 11 {
+			break
+		}
+	}
+	if b.Len() == 0 {
+		return "REBORN"
+	}
+	return b.String()
 }
 
 // macParentWholeDisk takes a Volume path like "/Volumes/BOSE" and
