@@ -103,9 +103,13 @@ func logCrash(where string, r any) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
 	fmt.Fprintf(f, "time=%s level=ERROR msg=PANIC where=%q value=%v\n%s\n",
 		time.Now().Format(time.RFC3339), where, r, debug.Stack())
+	// Surface a close error on this writable crash log rather than discarding it;
+	// we are already on the crash path, so stderr is the only place left to note it.
+	if cerr := f.Close(); cerr != nil {
+		fmt.Fprintf(os.Stderr, "logCrash: closing %s failed: %v\n", LogFilePath(), cerr)
+	}
 }
 
 // newFileLogger returns a slog.Logger that writes to the file at

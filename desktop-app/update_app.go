@@ -536,11 +536,15 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
+	// Close exactly once and surface its error: a discarded close on a writable
+	// file can hide a flush failure that leaves a truncated app binary. The copy
+	// error dominates when both fail.
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
 	}
-	return out.Close()
+	return closeErr
 }
 
 // extractLargestFile writes the largest regular file inside a .tar.gz to dst. The
@@ -604,11 +608,14 @@ func extractLargestFile(tgz, dst string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(out, io.LimitReader(tr2, bestSize)); err != nil {
-			out.Close()
-			return err
+		// Close once and surface its error (a discarded close can hide a truncated
+		// extracted binary); the copy error dominates when both fail.
+		_, copyErr := io.Copy(out, io.LimitReader(tr2, bestSize))
+		closeErr := out.Close()
+		if copyErr != nil {
+			return copyErr
 		}
-		return out.Close()
+		return closeErr
 	}
 	return fmt.Errorf("archive entry vanished between passes")
 }

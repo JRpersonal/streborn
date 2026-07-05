@@ -9,14 +9,17 @@ name: Dependabot auto-merge
 # pass first. If a check fails, the PR is not merged.
 on: pull_request
 
+# Minimal at the top level; the single job below elevates only what it needs.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   automerge:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # enable auto-merge on the PR
+      pull-requests: write    # approve / comment on the PR
     steps:
       - name: Fetch Dependabot metadata
         id: meta

@@ -987,7 +987,10 @@ func boxInstallDiag(host string) string {
 func boxCoreCount(host string) int {
 	out, err := boxSSHOutput(host, "grep -c ^processor /proc/cpuinfo", 8*time.Second)
 	if err == nil {
-		if n, ok := lastIntField(out); ok && n > 0 {
+		// Bound the value before the int64->int conversion: it is a CPU-core count
+		// parsed from box output, so anything outside a sane range is bogus and the
+		// bound also keeps the conversion safe on 32-bit builds.
+		if n, ok := lastIntField(out); ok && n > 0 && n <= 4096 {
 			return int(n)
 		}
 	}

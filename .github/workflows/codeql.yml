@@ -11,10 +11,9 @@ on:
     # scheduler congestion.
     - cron: "30 6 * * 1"
 
+# Minimal at the top level; the analyze job below elevates only what it needs.
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 concurrency:
   group: codeql-${{ github.ref }}
@@ -24,6 +23,10 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload CodeQL results
+      actions: read
     strategy:
       fail-fast: false
       matrix:
