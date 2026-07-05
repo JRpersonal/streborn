@@ -138,20 +138,33 @@ func openLockDismount(letter string) (uintptr, error) {
 	return h, nil
 }
 
-// chooseClusterSize returns the Windows default FAT32 cluster size for the
-// given volume size. 0 = FmIfs default (works for small volumes, but for
-// > 32 GB results in too many clusters).
+// chooseClusterSize returns a FAT32 cluster size that keeps the data-cluster
+// count inside FAT32's valid window for the given volume size. Big volumes need a
+// big cluster (else too MANY clusters, > 0x0FFFFFF5); SMALL volumes need a small
+// cluster, else too FEW clusters (< 65525) and fat32QuickFormat rightly rejects
+// them. The old 4 KB default failed on a ~256 MB stick for exactly this reason
+// (Helmut: a 256 MB stick would not format, only Windows' own format, which picks
+// a smaller cluster, worked). Down to winformat's ~64 MB floor.
 func chooseClusterSize(totalBytes uint64) uint32 {
-	const GB = uint64(1) << 30
+	const (
+		GB = uint64(1) << 30
+		MB = uint64(1) << 20
+	)
 	switch {
 	case totalBytes > 32*GB:
-		return 32 * 1024 // 32 KB
+		return 32 * 1024
 	case totalBytes > 16*GB:
 		return 16 * 1024
 	case totalBytes > 8*GB:
 		return 8 * 1024
+	case totalBytes >= 512*MB:
+		return 4096 // the Windows default for typical sticks
+	case totalBytes >= 256*MB:
+		return 2048 // 4 KB here drops below the 65525-cluster FAT32 minimum
+	case totalBytes >= 128*MB:
+		return 1024
 	default:
-		return 0 // FmIfs default
+		return 512 // very small volumes, down to the ~64 MB floor
 	}
 }
 

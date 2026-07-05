@@ -761,6 +761,10 @@ async function renderFooter() {
   const links = [];
   if (i.githubUrl)  links.push(`<a href="#" data-url="${escapeAttr(i.githubUrl)}" class="footer-link">GitHub</a>`);
   if (i.websiteUrl) links.push(`<a href="#" data-url="${escapeAttr(i.websiteUrl)}" class="footer-link">${escapeHtml(t('footer.website'))}</a>`);
+  // Persistent way to reach the community pin map. The one-time celebration invite
+  // auto-dismisses, so users who miss it had no way back and kept asking "where do
+  // I add my pin?" (Helmut). This footer link is always available.
+  links.push(`<a href="#" id="footerWorldMap" class="footer-link" title="${escapeAttr(t('worldMap.inviteBtn'))}">🌍 ${escapeHtml(t('footer.worldMap'))}</a>`);
   links.push(`<a href="#" id="footerSaveLogs" class="footer-link" title="${escapeAttr(t('footer.saveLogsHint'))}">${escapeHtml(t('footer.saveLogs'))}</a>`);
   links.push(`<a href="#" id="footerCredits" class="footer-link">${escapeHtml(t('footer.credits'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
@@ -786,6 +790,8 @@ async function renderFooter() {
   if (verLink) verLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(releaseNotesUrl); };
   const creditsLink = $('footerCredits');
   if (creditsLink) creditsLink.onclick = (e) => { e.preventDefault(); showCredits(); };
+  const worldMapLink = $('footerWorldMap');
+  if (worldMapLink) worldMapLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(worldMapURL()); } catch {} };
   const saveLogsBtn = $('footerSaveLogs');
   if (saveLogsBtn) {
     saveLogsBtn.onclick = async (e) => {
@@ -1348,6 +1354,11 @@ async function discoverBoxes() {
     }
     const list = await DiscoverBoxes(4);
     applyBoxList(list || []);
+    // Recovery burst: if we had speakers and this cycle found NONE, the LAN most
+    // likely re-IP'd every box at once (router restart, or a LAN<->Wi-Fi / band
+    // switch). Re-sweep on a short burst so the list comes back on its own instead
+    // of the user staring at an empty picker and hitting Refresh.
+    updateRecoveryBurst(hadBoxes, (list || []).length);
     // Auto retry: if a recently set up speaker has not yet re-announced its
     // new name via mDNS, search again every 4 s (driven by pendingNames).
     scheduleNextAutoRefresh();
@@ -1421,6 +1432,38 @@ function applyBoxList(list) {
   // running STR (no stock box left to convert), celebrate the milestone again.
   maybeInviteWorldMapAllDone();
 }
+
+// Recovery burst: after a network event (router restart, LAN<->Wi-Fi, band switch)
+// every speaker can come back on a new IP at once. Discovery then briefly returns
+// nothing, and with no steady-state auto-refresh the list would stay empty until
+// the user hits Refresh. When a cycle finds none but we had speakers, re-sweep
+// every 6 s (up to ~1 min) until they reappear; a cycle that finds any box stops it.
+let _recoveryInterval = null;
+let _recoveryTicks = 0;
+const RECOVERY_MAX_TICKS = 10;
+function updateRecoveryBurst(hadBoxesBefore, foundNow) {
+  if (foundNow > 0) {
+    if (_recoveryInterval) { clearInterval(_recoveryInterval); _recoveryInterval = null; }
+    _recoveryTicks = 0;
+    return;
+  }
+  if (_recoveryInterval) return; // a burst is already running; let it continue
+  if (!hadBoxesBefore) return;   // nothing was there to lose: don't sweep-spam an empty LAN
+  _recoveryTicks = 0;
+  _recoveryInterval = setInterval(() => {
+    if (_recoveryTicks++ >= RECOVERY_MAX_TICKS) {
+      clearInterval(_recoveryInterval); _recoveryInterval = null; _recoveryTicks = 0;
+      return;
+    }
+    discoverBoxes(); // re-sweeps; a successful cycle calls updateRecoveryBurst and clears this
+  }, 6000);
+}
+
+// Active-box health: how many consecutive status polls have failed, and when we
+// last kicked a rediscovery because of it. See refreshStatus's catch: a box that
+// goes unreachable for several polls has almost certainly changed IP under us.
+let _statusFailCount = 0;
+let _lastUnreachableRediscover = 0;
 
 let _autoRefreshTimer = null;
 function scheduleNextAutoRefresh() {
@@ -3782,6 +3825,7 @@ async function refreshStatus() {
   refreshQueue();
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
+    _statusFailCount = 0; // the box answered: it is reachable at its current IP
     const name = decodeXmlEntities((xml.match(/<itemName>([^<]+)<\/itemName>/) || [])[1] || '');
     const src = (xml.match(/source="([^"]+)"/) || [])[1] || '';
     state.nowSource = src;
@@ -3962,6 +4006,18 @@ async function refreshStatus() {
     // known now-playing on screen instead of blanking it to a dash, which
     // looked like the display flickering to "---" and back even though
     // nothing actually changed. The next successful poll refreshes it.
+    _statusFailCount++;
+    // Several consecutive failures mean the active box is genuinely unreachable,
+    // most likely because its IP changed under us (a router restart re-leased the
+    // whole LAN, or a LAN<->Wi-Fi / band switch). Kick a full rediscovery so the
+    // /24 sweep finds it at its new address and applyBoxList re-binds it by
+    // deviceID. Debounced so a box that is simply switched off does not sweep the
+    // LAN every few seconds.
+    if (_statusFailCount >= 4 && Date.now() - _lastUnreachableRediscover > 20000) {
+      _lastUnreachableRediscover = Date.now();
+      _statusFailCount = 0;
+      discoverBoxes();
+    }
   }
 }
 
@@ -4130,8 +4186,10 @@ function showWorldMapInvite(variant) {
   if (mapBtn) mapBtn.onclick = openMap;
   const closeBtn = el.querySelector('#wmiClose');
   if (closeBtn) closeBtn.onclick = close;
-  // Auto-dismiss so it never lingers; the once-ever flag means it will not return.
-  setTimeout(close, 20000);
+  // Auto-dismiss so it never lingers. It will not return (once-ever flag), but the
+  // persistent World map footer link is always there if the user wants back in, so
+  // missing this window is no longer a dead end. A calmer 45 s gives time to react.
+  setTimeout(close, 45000);
 }
 
 // spawnConfetti drops a brief, CSS-animated emoji confetti burst above the invite

@@ -56,6 +56,12 @@ func (a *App) RadioSearch(o RadioSearchOpts) ([]radiobrowser.Station, error) {
 		Limit:    o.Limit,
 		Offset:   o.Offset,
 		OnlyOK:   o.OnlyOK,
+		// A free-text/name search is how a user looks for a station they just
+		// added to radio-browser. Keep not-yet-checked stations in the results so
+		// their own entry is findable and assignable right away instead of being
+		// hidden for hours by hidebroken (#252). Browse/top lists below stay
+		// strict. OnlyOK (an explicit "working only" filter) overrides this.
+		IncludeUnchecked: !o.Top && o.Q != "",
 	}
 	if !o.Top && o.Q != "" {
 		st, err := radioClient.SearchSmart(ctx, opts)
