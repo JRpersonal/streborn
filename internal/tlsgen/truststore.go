@@ -85,12 +85,16 @@ func appendRootIfNew(target string, rootCAPEM []byte) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	block := buildAppendBlock(rootCAPEM)
-	if _, err := f.Write(block); err != nil {
-		return err
+	// Close once and surface its error: a discarded close on this writable trust
+	// store can hide a flush failure that leaves a truncated CA appended. The write
+	// error dominates when both fail.
+	_, writeErr := f.Write(block)
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
 	}
-	return nil
+	return closeErr
 }
 
 // containsRootBlock checks whether current already contains a marker
