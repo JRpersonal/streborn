@@ -963,7 +963,7 @@
   "update.appBehindLine": "L'enceinte utilise la version {{boxVersion}}, plus récente que cette application ({{appVersion}}). Mets d'abord l'application à jour.",
   "update.appBehindShort": "Enceinte plus récente que l'application, mets l'application à jour (application : {{appVersion}})",
   "settingsView.urlPresetHeading": "Lire une URL personnalisée depuis un préréglage",
-  "settingsView.urlPresetHelp": "Associe une URL audio à une touche de préréglage : un fichier son (par exemple un MP3) ou un flux continu, comme une station Icecast sur ton propre réseau. Une pression sur la touche, sur l'enceinte ou dans l'application, la lit. L'URL doit être accessible sur ton réseau ; http et https fonctionnent tous les deux (STR relaie le flux vers l'enceinte). Le MP3 est le plus fiable ; certains flux OGG peuvent ne pas fonctionner. Une pression remplace ce qui est en cours de lecture.",
+  "settingsView.urlPresetHelp": "Associe une URL audio à une touche de préréglage : un fichier son (par exemple un MP3) ou un flux continu, comme une station Icecast sur ton propre réseau. Une pression sur la touche, sur l'enceinte ou dans l'application, la lit. L'URL doit être accessible sur ton réseau ; http et https fonctionnent tous les deux (STR relaie le flux vers l'enceinte). Le MP3 est le plus fiable ; certains flux OGG peuvent ne pas fonctionner. Une pression remplace ce qui est en cours de lecture. Encore mieux : ajoute la station sur radio-browser.info, ainsi elle apparaît dans la recherche pour tout le monde, pas seulement sur ce bouton.",
   "settingsView.urlPresetNamePlaceholder": "Nom (par exemple Sonnette)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "URL personnalisée",

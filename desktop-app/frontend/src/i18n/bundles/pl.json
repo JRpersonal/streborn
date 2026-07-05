@@ -963,7 +963,7 @@
   "update.appBehindLine": "Głośnik działa na wersji {{boxVersion}}, nowszej niż ta aplikacja ({{appVersion}}). Najpierw zaktualizuj aplikację.",
   "update.appBehindShort": "Głośnik nowszy niż aplikacja, zaktualizuj aplikację (aplikacja: {{appVersion}})",
   "settingsView.urlPresetHeading": "Odtwarzaj własny adres URL z presetu",
-  "settingsView.urlPresetHelp": "Przypisz do przycisku presetu adres URL audio: plik dźwiękowy (na przykład MP3) albo ciągły strumień, taki jak stacja Icecast w Twojej własnej sieci. Naciśnięcie przycisku, na głośniku albo w aplikacji, odtworzy go. Adres URL musi być dostępny w Twojej sieci; działają zarówno http, jak i https (STR przekazuje strumień do głośnika). MP3 odtwarza się najbardziej niezawodnie; niektóre strumienie OGG mogą się nie odtworzyć. Naciśnięcie zastępuje to, co aktualnie gra.",
+  "settingsView.urlPresetHelp": "Przypisz do przycisku presetu adres URL audio: plik dźwiękowy (na przykład MP3) albo ciągły strumień, taki jak stacja Icecast w Twojej własnej sieci. Naciśnięcie przycisku, na głośniku albo w aplikacji, odtworzy go. Adres URL musi być dostępny w Twojej sieci; działają zarówno http, jak i https (STR przekazuje strumień do głośnika). MP3 odtwarza się najbardziej niezawodnie; niektóre strumienie OGG mogą się nie odtworzyć. Naciśnięcie zastępuje to, co aktualnie gra. Jeszcze lepiej: dodaj stację na radio-browser.info, wtedy pojawi się w wyszukiwaniu dla wszystkich, nie tylko na tym przycisku.",
   "settingsView.urlPresetNamePlaceholder": "Nazwa (na przykład Dzwonek)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "Własny adres URL",

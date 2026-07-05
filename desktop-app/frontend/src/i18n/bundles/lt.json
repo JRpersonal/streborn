@@ -963,7 +963,7 @@
   "update.appBehindLine": "Garsiakalbyje veikia {{boxVersion}}, naujesnė nei šioje programoje ({{appVersion}}). Pirmiausia atnaujink programą.",
   "update.appBehindShort": "Garsiakalbis naujesnis nei programa, atnaujink programą (programa: {{appVersion}})",
   "settingsView.urlPresetHeading": "Groti pasirinktinį URL iš nustatymo",
-  "settingsView.urlPresetHelp": "Priskirk garso URL nustatymo klavišui: garso failą (pavyzdžiui, MP3) arba tęstinį srautą, pavyzdžiui, Icecast stotį savo paties tinkle. Paspaudus klavišą, garsiakalbyje ar programoje, jis bus paleistas. URL turi būti pasiekiamas tavo tinkle; veikia ir http, ir https (STR persiunčia srautą į garsiakalbį). Patikimiausiai groja MP3; kai kurie OGG srautai gali negroti. Paspaudus jį, bus pakeista tai, kas šiuo metu grojama.",
+  "settingsView.urlPresetHelp": "Priskirk garso URL nustatymo klavišui: garso failą (pavyzdžiui, MP3) arba tęstinį srautą, pavyzdžiui, Icecast stotį savo paties tinkle. Paspaudus klavišą, garsiakalbyje ar programoje, jis bus paleistas. URL turi būti pasiekiamas tavo tinkle; veikia ir http, ir https (STR persiunčia srautą į garsiakalbį). Patikimiausiai groja MP3; kai kurie OGG srautai gali negroti. Paspaudus jį, bus pakeista tai, kas šiuo metu grojama. Dar geriau: pridėk stotį radio-browser.info, tada ji atsiras paieškoje visiems, ne tik ant šio mygtuko.",
   "settingsView.urlPresetNamePlaceholder": "Pavadinimas (pavyzdžiui, Durų skambutis)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "Pasirinktinis URL",

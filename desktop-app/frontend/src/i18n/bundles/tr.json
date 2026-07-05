@@ -963,7 +963,7 @@
   "update.appBehindLine": "Hoparlör {{boxVersion}} sürümünü çalıştırıyor, bu uygulamadan ({{appVersion}}) daha yeni. Lütfen önce uygulamayı güncelle.",
   "update.appBehindShort": "Hoparlör uygulamadan daha yeni, lütfen uygulamayı güncelle (uygulama: {{appVersion}})",
   "settingsView.urlPresetHeading": "Bir ön ayardan özel URL çal",
-  "settingsView.urlPresetHelp": "Bir ön ayar tuşuna bir ses URL'si ata: bir ses dosyası (örneğin bir MP3) ya da sürekli bir yayın, örneğin kendi ağındaki bir Icecast istasyonu. Tuşa, hoparlörde ya da uygulamada bastığında çalar. URL ağında erişilebilir olmalı; hem http hem https çalışır (STR yayını hoparlöre iletir). En güvenilir çalan MP3'tür; bazı OGG yayınları çalmayabilir. Tuşa basmak o anda çalanın yerini alır.",
+  "settingsView.urlPresetHelp": "Bir ön ayar tuşuna bir ses URL'si ata: bir ses dosyası (örneğin bir MP3) ya da sürekli bir yayın, örneğin kendi ağındaki bir Icecast istasyonu. Tuşa, hoparlörde ya da uygulamada bastığında çalar. URL ağında erişilebilir olmalı; hem http hem https çalışır (STR yayını hoparlöre iletir). En güvenilir çalan MP3'tür; bazı OGG yayınları çalmayabilir. Tuşa basmak o anda çalanın yerini alır. Daha da iyisi: istasyonu radio-browser.info'ya ekle, böylece yalnızca bu düğmede değil herkes için aramada görünür.",
   "settingsView.urlPresetNamePlaceholder": "Ad (örneğin Kapı zili)",
   "settingsView.urlPresetUrlPlaceholder": "http://192.168.2.2/sound.mp3",
   "settingsView.urlPresetDefaultName": "Özel URL",
