@@ -287,7 +287,7 @@
   "search.addFav": "お気に入りに追加",
   "search.removeFav": "お気に入りから削除",
   "search.favEmpty": "お気に入りはまだありません。放送局の星マークをタップすると、ここに追加できます。",
-  "search.addStationHint": "放送局が見つかりませんか？ radio-browser.info で追加できます。しばらくするとここに表示され、プリセットに保存できます。",
+  "search.addStationHint": "放送局が見つかりませんか？ 自分で追加できます。radio-browser.info を開き、放送局の名前とストリーム URL（直接の音声リンク）を入力して追加します。URL が分からない場合は、ChatGPT のような AI チャットボットに放送局の直接ストリーム URL を尋ねて貼り付けてください。短い確認の後、ここに表示され、プリセットに保存できます。",
   "search.openWebsite": "ウェブサイトを開く",
   "search.errSelectSpeaker": "先にスピーカーを選んでください",
   "search.streamBlocked": "このストリームはお住まいの地域でブロックまたは地域制限されています。",

@@ -287,7 +287,7 @@
   "search.addFav": "Favorilere ekle",
   "search.removeFav": "Favorilerden çıkar",
   "search.favEmpty": "Henüz favori yok. Buraya eklemek için bir istasyondaki yıldıza dokun.",
-  "search.addStationHint": "İstasyon mu eksik? radio-browser.info adresinden ekleyebilirsin; bir süre sonra burada görünür ve ön ayar olarak kaydedilebilir.",
+  "search.addStationHint": "İstasyon mu eksik? Kendin ekleyebilirsin: radio-browser.info adresini aç ve istasyonu adı ve yayın URL'si (doğrudan ses bağlantısı) ile ekle. URL'yi bilmiyor musun? ChatGPT gibi bir yapay zeka sohbet botundan istasyonun doğrudan yayın URL'sini iste ve yapıştır. Kısa bir kontrolden sonra burada görünür ve ön ayar olarak kaydedilebilir.",
   "search.openWebsite": "Web sitesini aç",
   "search.errSelectSpeaker": "Önce bir hoparlör seçin",
   "search.streamBlocked": "Bu akış bölgenizde engellenmiş veya coğrafi olarak kısıtlanmış.",

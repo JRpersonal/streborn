@@ -287,7 +287,7 @@
   "search.addFav": "Añadir a favoritas",
   "search.removeFav": "Quitar de favoritas",
   "search.favEmpty": "Aún no tienes favoritas. Toca la estrella de una emisora para añadirla aquí.",
-  "search.addStationHint": "¿Falta una emisora? Puedes añadirla en radio-browser.info; aparece aquí al cabo de un rato y se puede guardar como preset.",
+  "search.addStationHint": "¿Falta una emisora? Puedes añadirla tú mismo: abre radio-browser.info y añádela allí con su nombre y la URL del stream (el enlace de audio directo). ¿No conoces la URL? Pídele a un chatbot de IA como ChatGPT la URL directa del stream de la emisora y pégala. Tras una breve comprobación aparece aquí y se puede guardar como preset.",
   "search.openWebsite": "Abrir sitio web",
   "search.errSelectSpeaker": "Elige primero un altavoz",
   "search.streamBlocked": "Este flujo está bloqueado o restringido geográficamente en tu región.",

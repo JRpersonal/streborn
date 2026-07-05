@@ -287,7 +287,7 @@
   "search.addFav": "Toevoegen aan favorieten",
   "search.removeFav": "Verwijderen uit favorieten",
   "search.favEmpty": "Nog geen favorieten. Tik op de ster bij een zender om hem hier toe te voegen.",
-  "search.addStationHint": "Mis je een zender? Je kunt hem toevoegen op radio-browser.info; hij verschijnt hier na een tijdje en kan als preset worden opgeslagen.",
+  "search.addStationHint": "Mis je een zender? Je kunt hem zelf toevoegen: open radio-browser.info en voeg hem daar toe met zijn naam en stream-URL (de directe audiolink). Ken je de URL niet? Vraag een AI-chatbot zoals ChatGPT om de directe stream-URL van de zender en plak die. Na een korte controle verschijnt hij hier en kan hij als preset worden opgeslagen.",
   "search.openWebsite": "Website openen",
   "search.errSelectSpeaker": "Kies eerst een speaker",
   "search.streamBlocked": "Deze stream is geblokkeerd of geografisch beperkt in jouw regio.",

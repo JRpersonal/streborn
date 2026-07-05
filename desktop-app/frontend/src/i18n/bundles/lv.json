@@ -287,7 +287,7 @@
   "search.addFav": "Pievienot iecienītajām",
   "search.removeFav": "Noņemt no iecienītajām",
   "search.favEmpty": "Vēl nav iecienīto. Pieskaries zvaigznītei pie stacijas, lai to pievienotu šeit.",
-  "search.addStationHint": "Trūkst stacijas? Vari to pievienot vietnē radio-browser.info; pēc neilga laika tā parādīsies šeit, un to var saglabāt kā priekšiestatījumu.",
+  "search.addStationHint": "Trūkst stacijas? Vari to pievienot pats: atver radio-browser.info un pievieno to tur ar nosaukumu un straumes URL (tiešo audio saiti). Nezini URL? Pajautā MI tērzēšanas robotam, piemēram ChatGPT, stacijas tiešo straumes URL un ielīmē to. Pēc īsas pārbaudes tā parādīsies šeit, un to var saglabāt kā priekšiestatījumu.",
   "search.openWebsite": "Atvērt vietni",
   "search.errSelectSpeaker": "Vispirms atlasiet skaļruni",
   "search.streamBlocked": "Šī straume jūsu reģionā ir bloķēta vai ģeogrāfiski ierobežota.",

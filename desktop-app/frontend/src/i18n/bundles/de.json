@@ -319,7 +319,7 @@
   "search.addFav": "Zu Favoriten hinzufügen",
   "search.removeFav": "Aus Favoriten entfernen",
   "search.favEmpty": "Noch keine Favoriten. Tippe den Stern an einem Sender, um ihn hier hinzuzufügen.",
-  "search.addStationHint": "Sender fehlt? Du kannst ihn auf radio-browser.info eintragen; er erscheint hier nach kurzer Zeit und kann als Preset gespeichert werden.",
+  "search.addStationHint": "Sender fehlt? Du kannst ihn selbst hinzufügen: Öffne radio-browser.info und trage ihn dort mit Namen und Stream-URL ein (dem direkten Audio-Link). URL unbekannt? Frag einen KI-Chatbot wie ChatGPT nach der direkten Stream-URL des Senders und füge sie ein. Nach einer kurzen Prüfung erscheint er hier und kann als Preset gespeichert werden.",
   "search.openWebsite": "Webseite öffnen",
   "search.errSelectSpeaker": "Erst Lautsprecher auswählen",
   "search.streamBlocked": "Dieser Stream ist in deiner Region gesperrt oder geoblockt.",

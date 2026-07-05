@@ -287,7 +287,7 @@
   "search.addFav": "Dodaj do ulubionych",
   "search.removeFav": "Usuń z ulubionych",
   "search.favEmpty": "Nie masz jeszcze ulubionych. Kliknij gwiazdkę przy stacji, aby ją tu dodać.",
-  "search.addStationHint": "Brakuje stacji? Możesz ją dodać na radio-browser.info; po chwili pojawi się tutaj i można ją zapisać jako zaprogramowaną stację.",
+  "search.addStationHint": "Brakuje stacji? Możesz dodać ją samodzielnie: otwórz radio-browser.info i dodaj ją tam z nazwą i adresem URL strumienia (bezpośrednim linkiem audio). Nie znasz adresu URL? Poproś chatbota AI, takiego jak ChatGPT, o bezpośredni adres URL strumienia stacji i wklej go. Po krótkim sprawdzeniu pojawi się tutaj i można ją zapisać jako zaprogramowaną stację.",
   "search.openWebsite": "Otwórz stronę",
   "search.errSelectSpeaker": "Najpierw wybierz głośnik",
   "search.streamBlocked": "Ten strumień jest zablokowany lub niedostępny w Twoim regionie.",
