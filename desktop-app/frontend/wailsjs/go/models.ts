@@ -560,6 +560,7 @@ export namespace radiobrowser {
 	    clickcount: number;
 	    clicktrend: number;
 	    lastcheckok: number;
+	    lastchecktime: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Station(source);
@@ -585,6 +586,7 @@ export namespace radiobrowser {
 	        this.clickcount = source["clickcount"];
 	        this.clicktrend = source["clicktrend"];
 	        this.lastcheckok = source["lastcheckok"];
+	        this.lastchecktime = source["lastchecktime"];
 	    }
 	}
 	export class Tag {

@@ -76,6 +76,21 @@ type Station struct {
 	ClickCount  int `json:"clickcount"`
 	ClickTrend  int `json:"clicktrend"`
 	LastCheckOK int `json:"lastcheckok"`
+	// LastCheckTime is when radio-browser last checked the stream. A station a
+	// user just added has NOT been checked yet, so this is empty / all-zeros AND
+	// LastCheckOK is 0. That combination must be told apart from a station that
+	// WAS checked and failed (broken): the former is a fresh, likely-good entry
+	// the user is trying to find, the latter is genuinely dead. See neverChecked
+	// and IncludeUnchecked (#252: a self-added station was invisible in search).
+	LastCheckTime string `json:"lastchecktime"`
+}
+
+// neverChecked reports whether radio-browser has not yet run its stream check on
+// this station (a just-added entry). radio-browser reports the never-checked time
+// as an empty string or an all-zero timestamp depending on the mirror.
+func neverChecked(s Station) bool {
+	t := strings.TrimSpace(s.LastCheckTime)
+	return t == "" || strings.HasPrefix(t, "0000-00-00")
 }
 
 // Tag is a genre tag with the number of stations.
@@ -145,6 +160,16 @@ type SearchOpts struct {
 	Limit    int
 	Offset   int
 	OnlyOK   bool
+	// IncludeUnchecked keeps stations radio-browser has not checked yet in the
+	// results. By default every search sends hidebroken=true, which hides any
+	// station whose last check failed OR that has never been checked — so a
+	// station the user just added does not appear until radio-browser's checker
+	// gets to it (hours later). With this set, the search drops hidebroken and
+	// instead filters client-side, keeping reachable AND never-checked stations
+	// while still dropping the genuinely checked-and-broken ones. Ignored when
+	// OnlyOK is set (the user explicitly asked for confirmed-working only).
+	// Set for name searches so a freshly self-added station is findable (#252).
+	IncludeUnchecked bool
 }
 
 // Search searches stations according to the given options.
@@ -173,11 +198,24 @@ func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error)
 		order = "votes"
 	}
 	q.Set("order", order)
-	q.Set("limit", fmt.Sprintf("%d", opts.Limit))
+	// Keep unchecked stations in play by filtering client-side (below) instead of
+	// letting hidebroken drop a just-added station server-side. Fetch a wider page
+	// then so the checked-and-broken rows we drop do not thin the visible window.
+	relaxUnchecked := opts.IncludeUnchecked && !opts.OnlyOK
+	fetchLimit := opts.Limit
+	if relaxUnchecked {
+		fetchLimit = opts.Limit * 3
+		if fetchLimit > 200 {
+			fetchLimit = 200
+		}
+	}
+	q.Set("limit", fmt.Sprintf("%d", fetchLimit))
 	if opts.Offset > 0 {
 		q.Set("offset", fmt.Sprintf("%d", opts.Offset))
 	}
-	q.Set("hidebroken", "true")
+	if !relaxUnchecked {
+		q.Set("hidebroken", "true")
+	}
 	if opts.OnlyOK {
 		q.Set("lastcheckok", "true")
 	}
@@ -188,8 +226,30 @@ func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error)
 		q.Set("reverse", "true")
 	}
 	var out []Station
-	err := c.fetchJSON(ctx, "/stations/search?"+q.Encode(), &out)
-	return out, err
+	if err := c.fetchJSON(ctx, "/stations/search?"+q.Encode(), &out); err != nil {
+		return out, err
+	}
+	if relaxUnchecked {
+		out = keepReachableOrUnchecked(out)
+		if len(out) > opts.Limit {
+			out = out[:opts.Limit]
+		}
+	}
+	return out, nil
+}
+
+// keepReachableOrUnchecked drops only the stations radio-browser has checked and
+// found broken (LastCheckOK==0 and it HAS been checked), keeping reachable ones
+// and never-checked ones. This is the client-side equivalent of hidebroken=true
+// minus the "hide the just-added station" side effect. Order is preserved.
+func keepReachableOrUnchecked(in []Station) []Station {
+	out := in[:0]
+	for _, s := range in {
+		if s.LastCheckOK == 1 || neverChecked(s) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // SearchSmart runs Search with the literal Name plus a tag-based
