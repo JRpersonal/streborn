@@ -38,6 +38,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/streamproxy"
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
+	"github.com/JRpersonal/streborn/internal/wlanlive"
 	"github.com/JRpersonal/streborn/internal/zones"
 )
 
@@ -3300,6 +3301,32 @@ func (s *Server) handleBoxSettings(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
+	}
+	// wlan0/wpa boxes: STR changes Wi-Fi by rewriting wpa_supplicant directly,
+	// bypassing Bose, so Bose /networkInfo keeps reporting the OLD profile (stale
+	// SSID / frequency / signal even though the box is really associated
+	// elsewhere). Read the LIVE association from wpa_supplicant and let it win;
+	// /networkInfo is only the fallback when the live read is unavailable or the
+	// field is empty. BCO/eth0 boxes have no wpa_supplicant and keep the
+	// gabbo-signal + provisionedSSID path below untouched.
+	if iface, mech := detectWlanMechanism(); mech == "wpa" {
+		if live := wlanlive.Read(ctx, iface); live.Associated {
+			for i := range settings.Network.Interfaces {
+				ni := &settings.Network.Interfaces[i]
+				if ni.Type != "WIFI_INTERFACE" {
+					continue
+				}
+				if live.SSID != "" {
+					ni.SSID = live.SSID
+				}
+				if live.FrequencyKHz != 0 {
+					ni.Frequency = live.FrequencyKHz
+				}
+				if live.Signal != "" {
+					ni.Signal = live.Signal
+				}
+			}
+		}
 	}
 	// BCO speakers (Portable, scm ST20) report the connected interface as
 	// ethernet with no signal in /networkInfo, but the box does emit the
