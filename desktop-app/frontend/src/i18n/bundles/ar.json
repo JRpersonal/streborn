@@ -529,6 +529,7 @@
   "settings.languageHelp": "لغة التطبيق. مستقلّة عن دولة البحث عن الراديو.",
   "combobox.noSuggestions": "لا توجد اقتراحات",
   "footer.website": "الموقع",
+  "footer.worldMap": "خريطة العالم",
   "footer.credits": "مفتوح المصدر",
   "credits.title": "مفتوح المصدر وشكر وتقدير",
   "credits.intro": "بُني STR على البرمجيات مفتوحة المصدر. شكرًا للمشاريع التي يضمّها أو يربط بها أو يبني عليها:",

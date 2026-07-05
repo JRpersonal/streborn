@@ -761,6 +761,10 @@ async function renderFooter() {
   const links = [];
   if (i.githubUrl)  links.push(`<a href="#" data-url="${escapeAttr(i.githubUrl)}" class="footer-link">GitHub</a>`);
   if (i.websiteUrl) links.push(`<a href="#" data-url="${escapeAttr(i.websiteUrl)}" class="footer-link">${escapeHtml(t('footer.website'))}</a>`);
+  // Persistent way to reach the community pin map. The one-time celebration invite
+  // auto-dismisses, so users who miss it had no way back and kept asking "where do
+  // I add my pin?" (Helmut). This footer link is always available.
+  links.push(`<a href="#" id="footerWorldMap" class="footer-link" title="${escapeAttr(t('worldMap.inviteBtn'))}">🌍 ${escapeHtml(t('footer.worldMap'))}</a>`);
   links.push(`<a href="#" id="footerSaveLogs" class="footer-link" title="${escapeAttr(t('footer.saveLogsHint'))}">${escapeHtml(t('footer.saveLogs'))}</a>`);
   links.push(`<a href="#" id="footerCredits" class="footer-link">${escapeHtml(t('footer.credits'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
@@ -786,6 +790,8 @@ async function renderFooter() {
   if (verLink) verLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(releaseNotesUrl); };
   const creditsLink = $('footerCredits');
   if (creditsLink) creditsLink.onclick = (e) => { e.preventDefault(); showCredits(); };
+  const worldMapLink = $('footerWorldMap');
+  if (worldMapLink) worldMapLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(worldMapURL()); } catch {} };
   const saveLogsBtn = $('footerSaveLogs');
   if (saveLogsBtn) {
     saveLogsBtn.onclick = async (e) => {
@@ -4180,8 +4186,10 @@ function showWorldMapInvite(variant) {
   if (mapBtn) mapBtn.onclick = openMap;
   const closeBtn = el.querySelector('#wmiClose');
   if (closeBtn) closeBtn.onclick = close;
-  // Auto-dismiss so it never lingers; the once-ever flag means it will not return.
-  setTimeout(close, 20000);
+  // Auto-dismiss so it never lingers. It will not return (once-ever flag), but the
+  // persistent World map footer link is always there if the user wants back in, so
+  // missing this window is no longer a dead end. A calmer 45 s gives time to react.
+  setTimeout(close, 45000);
 }
 
 // spawnConfetti drops a brief, CSS-animated emoji confetti burst above the invite

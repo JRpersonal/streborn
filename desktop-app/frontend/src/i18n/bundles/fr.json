@@ -529,6 +529,7 @@
   "settings.languageHelp": "Langue de l'application. Indépendante du pays de recherche radio.",
   "combobox.noSuggestions": "aucune suggestion",
   "footer.website": "Site web",
+  "footer.worldMap": "Carte du monde",
   "footer.credits": "Open source",
   "credits.title": "Open source et remerciements",
   "credits.intro": "STR repose sur l'open source. Merci aux projets qu'il intègre, référence ou sur lesquels il s'appuie :",

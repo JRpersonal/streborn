@@ -529,6 +529,7 @@
   "settings.languageHelp": "アプリの言語。ラジオ検索の国とは独立しています。",
   "combobox.noSuggestions": "候補なし",
   "footer.website": "ウェブサイト",
+  "footer.worldMap": "世界地図",
   "footer.credits": "オープンソース",
   "credits.title": "オープンソースとクレジット",
   "credits.intro": "STRはオープンソースで構築されています。同梱、リンク、または基盤として利用しているプロジェクトに感謝します:",
