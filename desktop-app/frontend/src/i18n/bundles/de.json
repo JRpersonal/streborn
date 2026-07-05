@@ -936,7 +936,7 @@
   "setup.awaitContinueBtn": "Weiter",
   "setup.awaitStep1": "Stick aus diesem Computer ziehen.",
   "setup.awaitStep2": "Steck ihn in den USB-Anschluss des Lautsprechers, egal welchen dein Lautsprecher hat, den großen USB-A oder den kleinen Micro-USB (die ST10 braucht einen Micro-USB-OTG-Adapter).",
-  "setup.awaitStep3": "Schalte den Lautsprecher aus und wieder ein, indem du den Stecker ziehst und wieder einsteckst. Lass den Stick drin. Es dauert 60 bis 90 Sekunden, bis er hochfährt. Der Lautsprecher startet ganz normal und installiert STR vom Stick, er bootet nicht vom Stick.",
+  "setup.awaitStep3": "Trenne den Lautsprecher kurz vom Strom (Netzstecker ziehen) und stecke ihn wieder ein, um ihn aus- und wieder einzuschalten. Der Stick bleibt dabei drin. Der Lautsprecher fährt dann ganz normal hoch (60 bis 90 Sekunden), erkennt den Stick von selbst und installiert STR. Er bootet nicht vom Stick, und du musst am Gerät nichts weiter tun. Am Lautsprecher blinken dabei nur die Lämpchen, ohne besondere Anzeige. Sobald er fertig ist, meldet sich dieses Fenster von selbst.",
   "setup.awaitConfirmBtn": "Lautsprecher ist bereit, ST Reborn jetzt installieren",
   "setupAPPush.probing": "Suche nach einem Lautsprecher im Setup-Modus ...",
   "setupAPPush.title": "WLAN direkt einrichten (experimentell)",

@@ -936,7 +936,7 @@
   "setup.awaitContinueBtn": "Continue",
   "setup.awaitStep1": "Remove the stick from this computer.",
   "setup.awaitStep2": "Plug it into the speaker's USB port, whichever your speaker has, the large USB-A or the small micro-USB (the ST10 needs a micro-USB OTG adapter).",
-  "setup.awaitStep3": "Switch the speaker off and on by unplugging its power and plugging it back in. Leave the stick in. It takes 60 to 90 seconds to come up. The speaker starts up as usual and installs STR from the stick; it does not boot from the stick.",
+  "setup.awaitStep3": "Briefly unplug the speaker from power and plug it back in, to switch it off and on again. Leave the stick in. The speaker then starts up as normal (60 to 90 seconds), finds the stick on its own, and installs STR. It does not boot from the stick, and there is nothing more to do on the speaker itself. On the speaker you will just see its lights blinking, with no special display. This window tells you the moment it is done.",
   "setup.awaitConfirmBtn": "Speaker is ready, install ST Reborn now",
   "setupAPPush.probing": "Looking for a speaker in setup mode ...",
   "setupAPPush.title": "Set up Wi-Fi directly (experimental)",
