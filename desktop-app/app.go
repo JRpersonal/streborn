@@ -476,10 +476,30 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 		}
 		a.discCache[key] = discEntry{box: b, seen: now}
 	}
+	// Devices GENUINELY seen this cycle (before any cache re-adds), keyed by their
+	// stable deviceID. Used just below to drop a stale cache entry for a device that
+	// reappeared at a NEW IP this cycle: a router restart (or a LAN<->Wi-Fi / band
+	// switch) hands every speaker a fresh DHCP lease at once, so without this each
+	// box would linger in the list a second time at its dead old IP until the sticky
+	// TTL expires, and half those tiles would fail to play.
+	freshDevices := make(map[string]string, len(seen)) // deviceID -> live host
+	for _, b := range seen {
+		if b.DeviceID != "" {
+			freshDevices[b.DeviceID] = b.Host
+		}
+	}
 	// Re-add recently-seen boxes the current cycle missed; evict stale.
 	for key, e := range a.discCache {
 		if _, ok := seen[key]; ok {
 			continue
+		}
+		// Same physical box found at a NEW IP this cycle -> this cached record is its
+		// dead old IP. Evict it so the speaker shows once, at its live address.
+		if e.box.DeviceID != "" {
+			if liveHost, moved := freshDevices[e.box.DeviceID]; moved && liveHost != key {
+				delete(a.discCache, key)
+				continue
+			}
 		}
 		ttl := discoveryStickyTTL
 		if e.box.Kind == "str" {

@@ -262,6 +262,47 @@ func TestForgetSTRDeviceByHostClearsMemory(t *testing.T) {
 	}
 }
 
+// A router restart (or a LAN<->Wi-Fi / band switch) re-leases every speaker to a
+// new IP at once. When the same device is found at a new IP this cycle, its stale
+// cache entry at the dead old IP must be evicted so the box shows once, at its
+// live address, instead of lingering as an unreachable duplicate.
+func TestDiscoveryDropsStaleIPWhenDeviceMovesToNewIP(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{
+			"192.168.0.50": {box: BoxInfo{Kind: "str", Host: "192.168.0.50", DeviceID: "DEV#MOVE", FriendlyName: "Küche"}, seen: time.Now()},
+		},
+	}
+	// This cycle finds the SAME device at a new IP (the /24 sweep after the restart).
+	seen := map[string]BoxInfo{
+		"192.168.0.77": {Kind: "str", Host: "192.168.0.77", DeviceID: "DEV#MOVE", FriendlyName: "Küche"},
+	}
+	a.mergeDiscoveryCache(seen)
+	if _, stale := seen["192.168.0.50"]; stale {
+		t.Errorf("stale old-IP entry should be evicted from the returned list")
+	}
+	if _, live := seen["192.168.0.77"]; !live {
+		t.Errorf("live new-IP entry missing from the returned list")
+	}
+	if _, cached := a.discCache["192.168.0.50"]; cached {
+		t.Errorf("stale old-IP entry should be removed from the cache")
+	}
+}
+
+// A cached box the current cycle simply missed (still at the SAME IP, just a flaky
+// cycle) must NOT be evicted by the dedup: only a genuine move to a new IP drops it.
+func TestDiscoveryKeepsCachedBoxOnFlakyCycleSameIP(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{
+			"192.168.0.60": {box: BoxInfo{Kind: "str", Host: "192.168.0.60", DeviceID: "DEV#STAY"}, seen: time.Now()},
+		},
+	}
+	seen := map[string]BoxInfo{} // nothing found this cycle (transient miss)
+	a.mergeDiscoveryCache(seen)
+	if _, ok := seen["192.168.0.60"]; !ok {
+		t.Errorf("a cached box missed on a flaky cycle must stay in the list (sticky TTL)")
+	}
+}
+
 func TestBlockDeviceBase(t *testing.T) {
 	cases := map[string]string{
 		"/dev/sda1": "sda",
