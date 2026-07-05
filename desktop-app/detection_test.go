@@ -180,6 +180,88 @@ func TestPostOTAPinExpires(t *testing.T) {
 	}
 }
 
+// A runtime Wi-Fi change / 2.4<->5 GHz band switch can move a box to a new DHCP
+// lease. It then reappears under a brand-new discovery key with no per-IP STR
+// history, so on an mDNS-dead LAN a transient stock-only sighting would relabel
+// it "STR not installed" (Albrecht, 2026-07-05). The deviceID identity memory
+// must keep the SAME physical device classified STR at its new IP.
+func TestSTRIdentityMemoryReclassifiesAcrossIPChange(t *testing.T) {
+	a := &App{discCache: map[string]discEntry{}}
+	// Cycle 1: the box is confirmed STR at its old IP -> its identity is recorded.
+	seen1 := map[string]BoxInfo{
+		"192.168.0.20": {Kind: "str", Host: "192.168.0.20", DeviceID: "DEV#HURRA",
+			FriendlyName: "Hurra", Version: "v0.8.45", Port: 8888, PortVerified: true},
+	}
+	a.mergeDiscoveryCache(seen1)
+	// Cycle 2: after the band switch the box is back on a new IP and only its stock
+	// :8090 answered this cycle (agent not yet reachable to the sweep).
+	seen2 := map[string]BoxInfo{
+		"192.168.0.99": {Kind: "stock", Host: "192.168.0.99", DeviceID: "DEV#HURRA"},
+	}
+	a.mergeDiscoveryCache(seen2)
+	got := seen2["192.168.0.99"]
+	if got.Kind != "str" {
+		t.Fatalf("Kind = %q, want str (identity memory must survive the IP change)", got.Kind)
+	}
+	if got.Host != "192.168.0.99" {
+		t.Errorf("Host = %q, want the live 192.168.0.99 (not the stale IP)", got.Host)
+	}
+	if got.Version != "v0.8.45" || got.FriendlyName != "Hurra" {
+		t.Errorf("lost remembered fields: version=%q name=%q", got.Version, got.FriendlyName)
+	}
+	if !got.PortVerified || got.Port != 8888 {
+		t.Errorf("port = %d verified=%v, want 8888 verified restored", got.Port, got.PortVerified)
+	}
+}
+
+// A stale STR identity (last confirmed longer ago than strKnownTTL) must NOT
+// reclassify a stock box, so a speaker genuinely reverted to stock eventually
+// gets its reinstall prompt back.
+func TestSTRIdentityMemoryExpires(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{},
+		strKnown: map[string]discEntry{
+			"DEV#OLD": {box: BoxInfo{Kind: "str", DeviceID: "DEV#OLD"},
+				seen: time.Now().Add(-strKnownTTL - time.Hour)},
+		},
+	}
+	seen := map[string]BoxInfo{
+		"192.168.0.30": {Kind: "stock", Host: "192.168.0.30", DeviceID: "DEV#OLD"},
+	}
+	a.mergeDiscoveryCache(seen)
+	if got := seen["192.168.0.30"].Kind; got != "stock" {
+		t.Errorf("Kind = %q, want stock (an expired identity must not force STR)", got)
+	}
+	if _, still := a.strKnown["DEV#OLD"]; still {
+		t.Errorf("expired identity memory should have been evicted")
+	}
+}
+
+// An in-app uninstall must forget the box's STR identity so the now-stock
+// speaker reclassifies immediately instead of lingering STR for strKnownTTL.
+func TestForgetSTRDeviceByHostClearsMemory(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{
+			"192.168.0.40": {box: BoxInfo{Kind: "str", Host: "192.168.0.40", DeviceID: "DEV#GONE"}},
+		},
+		strKnown: map[string]discEntry{
+			"DEV#GONE": {box: BoxInfo{Kind: "str", Host: "192.168.0.40", DeviceID: "DEV#GONE"}, seen: time.Now()},
+		},
+	}
+	a.forgetSTRDeviceByHost("192.168.0.40")
+	if _, still := a.strKnown["DEV#GONE"]; still {
+		t.Errorf("identity memory should be cleared after uninstall")
+	}
+	// A subsequent stock sighting must now stay stock (no lingering reclassify).
+	seen := map[string]BoxInfo{
+		"192.168.0.40": {Kind: "stock", Host: "192.168.0.40", DeviceID: "DEV#GONE"},
+	}
+	a.mergeDiscoveryCache(seen)
+	if got := seen["192.168.0.40"].Kind; got != "stock" {
+		t.Errorf("Kind = %q, want stock (uninstalled box must not relabel STR)", got)
+	}
+}
+
 func TestBlockDeviceBase(t *testing.T) {
 	cases := map[string]string{
 		"/dev/sda1": "sda",

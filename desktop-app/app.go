@@ -86,6 +86,19 @@ type App struct {
 	// reports. Guarded by discMu (same lock as discCache, always held together).
 	otaPinned map[string]time.Time
 
+	// strKnown remembers every box we have positively confirmed as running STR,
+	// keyed by its stable Bose deviceID (not its IP). The IP-keyed discCache and
+	// otaPinned above cannot protect a box across a DHCP change: a runtime Wi-Fi
+	// change, and especially a 2.4<->5 GHz band switch, can move the speaker to a
+	// new lease, so it reappears under a brand-new discovery key with no STR
+	// history. On a LAN where mDNS is dead (many Fritz!Box setups announce
+	// nothing for _streborn._tcp; observed live 2026-07-05 with instancesFromMDNS=0
+	// every cycle) the /24 sweep then sees only the box's stock :8090 before its
+	// agent is reachable again, and Settings tells the user to reinstall a speaker
+	// that never lost STR. deviceID survives the IP change, so a stock sighting of
+	// a device we recently knew as STR is relabelled STR. Guarded by discMu.
+	strKnown map[string]discEntry
+
 	// logoCache memoises resolved station-logo URLs (ResolveStationLogo)
 	// so the same station is validated against DuckDuckGo at most once per
 	// app run. Value "" means "no real logo, draw a monogram".
@@ -120,6 +133,16 @@ const discoverySTRStickyTTL = 6 * time.Minute
 // the box), while being short enough that a genuinely re-flashed-to-stock box
 // would correct itself soon after. See otaPinned and mergeDiscoveryCache (#108).
 const otaRebootGrace = 4 * time.Minute
+
+// strKnownTTL is how long a box's confirmed-STR identity is remembered by
+// deviceID after its last STR sighting. It must comfortably outlast a runtime
+// Wi-Fi change / band switch and a box left off overnight so the speaker never
+// flickers to a false "STR not installed" reinstall prompt when it returns on a
+// new DHCP lease, while still being short enough that a box genuinely reverted
+// to stock (uninstalled outside the app, or NAND wiped) eventually reclassifies.
+// An in-app uninstall clears the entry immediately (see UninstallSTR), so this
+// only bounds the exotic out-of-band case. See strKnown and mergeDiscoveryCache.
+const strKnownTTL = 24 * time.Hour
 
 // NewApp creates a new App instance.
 func NewApp() *App {
@@ -499,6 +522,97 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 		b.Build = appBuild
 		seen[host] = b
 		a.discCache[host] = discEntry{box: b, seen: now}
+	}
+
+	// STR identity memory (deviceID-keyed, survives an IP change). The pins above
+	// are keyed by IP and cannot help a box that returned on a new DHCP lease
+	// after a runtime Wi-Fi change / band switch — it reappears under a fresh key
+	// with no STR history, so a transient stock-only sighting relabels it "needs
+	// install" (Albrecht, 2026-07-05: switching a box from the 2.4 GHz to the
+	// 5 GHz SSID made STR report it as not installed). deviceID is stable across
+	// the lease change, so remember every confirmed-STR box by deviceID and keep a
+	// later stock sighting of the SAME device classified STR.
+	if a.strKnown == nil {
+		a.strKnown = map[string]discEntry{}
+	}
+	// Record: refresh the identity memory for every box confirmed STR this cycle.
+	for _, b := range seen {
+		if b.Kind == "str" && b.DeviceID != "" {
+			a.strKnown[b.DeviceID] = discEntry{box: b, seen: now}
+		}
+	}
+	// Reconcile: a stock sighting of a device we recently knew as STR is the
+	// misclassification above. mergeBoxInfo promotes it back to STR and restores
+	// the remembered port/version/name (so no spurious update prompt) while
+	// keeping the live host it answered on this cycle. Expire memories past the
+	// TTL so a box genuinely reverted to stock eventually reclassifies.
+	for key := range seen {
+		b := seen[key]
+		if b.Kind != "stock" || b.DeviceID == "" {
+			continue
+		}
+		memo, ok := a.strKnown[b.DeviceID]
+		if !ok {
+			continue
+		}
+		if now.Sub(memo.seen) > strKnownTTL {
+			delete(a.strKnown, b.DeviceID)
+			continue
+		}
+		relabelled := mergeBoxInfo(memo.box, b)
+		relabelled.Kind = "str"
+		// mergeBoxInfo only restores the port from a PortVerified memory, so a memory
+		// that originated from an mDNS announce would leave the stock :8090 on the
+		// relabelled STR box and the app would try to reach the agent there. We know
+		// memo IS the STR record, so prefer its agent port outright.
+		if memo.box.Port != 0 && memo.box.Port != 8090 {
+			relabelled.Port = memo.box.Port
+			if memo.box.PortVerified {
+				relabelled.PortVerified = true
+			}
+		}
+		seen[key] = relabelled
+		a.discCache[key] = discEntry{box: relabelled, seen: now}
+		a.strKnown[b.DeviceID] = discEntry{box: relabelled, seen: now}
+		if a.logger != nil {
+			a.logger.Info("discovery: box kept STR by device identity across a stock-only sighting (e.g. Wi-Fi band switch)",
+				"host", b.Host, "deviceID", b.DeviceID)
+		}
+	}
+	// Drop STR identity memories not refreshed within the TTL.
+	for id, e := range a.strKnown {
+		if now.Sub(e.seen) > strKnownTTL {
+			delete(a.strKnown, id)
+		}
+	}
+}
+
+// forgetSTRDeviceByHost drops a box's confirmed-STR discovery state so a genuine
+// return to stock firmware (an in-app uninstall) reclassifies it as stock instead
+// of lingering as STR — both the deviceID identity memory (strKnownTTL) and the
+// per-IP sticky cache entry (whose STR record would otherwise re-promote a stock
+// sighting via mergeBoxInfo for discoverySTRStickyTTL). Resolves the deviceID from
+// the cache for this host and also drops any state still pointing at this host in
+// case the box had moved IPs. See strKnown and mergeDiscoveryCache.
+func (a *App) forgetSTRDeviceByHost(host string) {
+	if host == "" {
+		return
+	}
+	a.discMu.Lock()
+	defer a.discMu.Unlock()
+	if e, ok := a.discCache[host]; ok && e.box.DeviceID != "" {
+		delete(a.strKnown, e.box.DeviceID)
+	}
+	delete(a.discCache, host)
+	for id, e := range a.strKnown {
+		if e.box.Host == host {
+			delete(a.strKnown, id)
+		}
+	}
+	for key, e := range a.discCache {
+		if e.box.Host == host {
+			delete(a.discCache, key)
+		}
 	}
 }
 

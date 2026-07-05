@@ -143,6 +143,11 @@ echo "STR_UNINSTALL_REMOVED:$REMOVED"
 	}
 	a.logger.Info("uninstall_str: removed", "host", host, "removedCount", len(res.RemovedFiles))
 
+	// The box is going back to stock, so drop its confirmed-STR identity memory:
+	// otherwise discovery would keep relabelling the now-stock speaker as STR for
+	// up to strKnownTTL and never offer the reinstall it now genuinely needs.
+	a.forgetSTRDeviceByHost(host)
+
 	// Step 3: reboot into vanilla Bose. Connection drops mid-command;
 	// fire-and-forget so the drop is not treated as a failure.
 	res.Step = "reboot"
