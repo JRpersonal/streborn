@@ -341,7 +341,7 @@ func (m *Manager) StopEngine() bool {
 func (m *Manager) configYAML(name string, initialVol int) string {
 	host, port := splitHostPort(m.apiAddr)
 	var b strings.Builder
-	fmt.Fprintf(&b, "device_name: %q\n", name)
+	fmt.Fprintf(&b, "device_name: %q\n", advertisedName(name))
 	b.WriteString("device_type: speaker\n")
 	fmt.Fprintf(&b, "bitrate: %d\n", m.bitr)
 	b.WriteString("audio_backend: pipe\n")
@@ -370,7 +370,71 @@ func (m *Manager) configYAML(name string, initialVol int) string {
 	b.WriteString("  type: zeroconf\n")
 	b.WriteString("  zeroconf:\n")
 	b.WriteString("    persist_credentials: true\n")
+	// Pin the Spotify Connect advert to one interface on multi-homed boxes so
+	// the same speaker is not announced twice in the Spotify app (#331). sm2
+	// boxes carry two MACs (SCM SoC + SMSC bridge) on one IP; with no pin,
+	// go-librespot's zeroconf advertises on every interface. This is the
+	// top-level zeroconf_interfaces_to_advertise key (not nested under
+	// credentials). Older go-librespot builds without this koanf key ignore it
+	// (the loader is non-strict), so it is a safe no-op there; an empty result
+	// keeps the advertise-on-all default rather than suppressing the advert.
+	if iface := primaryZeroconfIface(); iface != "" {
+		fmt.Fprintf(&b, "zeroconf_interfaces_to_advertise:\n  - %q\n", iface)
+	}
 	return b.String()
+}
+
+// strDeviceNameSuffix marks STR's go-librespot Spotify Connect entry so it is
+// distinguishable from the box's native Bose eSDK Connect entry. STR keeps the
+// native advert alive on purpose (marge advertises SPOTIFY so free Spotify
+// accounts, which go-librespot refuses, still work), so both announce
+// _spotify-connect._tcp under the box's own name; without a marker the Spotify
+// app shows two identically named entries per box (#331, "die Namen sind
+// identisch").
+const strDeviceNameSuffix = " (STR)"
+
+// advertisedName is the device_name go-librespot registers for Spotify Connect:
+// the box's friendly name plus the STR marker. Guarded so a config rewrite never
+// stacks the marker, and an empty name is left unchanged (go-librespot then
+// falls back to its own default).
+func advertisedName(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" || strings.HasSuffix(base, strDeviceNameSuffix) {
+		return base
+	}
+	return base + strDeviceNameSuffix
+}
+
+// primaryZeroconfIface returns the single network interface go-librespot should
+// advertise Spotify Connect on, or "" to keep the advertise-on-all default. It
+// picks the first UP, non-loopback, multicast interface bearing a routable IPv4
+// - wlan0 on sm2 boxes, eth0 on the Portable (taigan presents its Wi-Fi as
+// eth0), so it is model-agnostic and must not be hardcoded. Returning the first
+// such interface collapses the two-MAC/one-IP box to a single advert.
+func primaryZeroconfIface() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 || ifc.Flags&net.FlagMulticast == 0 {
+			continue
+		}
+		addrs, err := ifc.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			n, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if v4 := n.IP.To4(); v4 != nil && v4.IsGlobalUnicast() && !v4.IsLinkLocalUnicast() {
+				return ifc.Name
+			}
+		}
+	}
+	return ""
 }
 
 // boxNameAndVolume reads the speaker's friendly name and current volume from
@@ -1834,11 +1898,15 @@ func (m *Manager) repointBox() {
 	go cb(context.Background())
 }
 
-// DeviceName returns the name currently advertised to Spotify.
+// DeviceName returns the name currently advertised to Spotify - the box's
+// friendly name plus the STR marker (see advertisedName), matching what the
+// Spotify app shows so the STR UI and the Connect picker agree. m.name itself
+// stays the bare friendly name so watchDeviceName's change detection is not
+// tripped every cycle by the suffix.
 func (m *Manager) DeviceName() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.name
+	return advertisedName(m.name)
 }
 
 // liveNowPlaying pulls the current track straight from go-librespot's /status,
