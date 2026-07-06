@@ -1,8 +1,8 @@
-# Dependabot Konfiguration. Automatische PRs bei Security Issues und Updates.
+# Dependabot configuration. Opens PRs for security issues and version updates.
 # Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 version: 2
 updates:
-  # Go Hauptprojekt
+  # Main Go module
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
@@ -17,16 +17,16 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
-    # Bei Major Updates Vorsicht: nur als Hinweis, kein Auto Merge
+    # Major updates stay separate on purpose: reviewed manually, not auto-merged.
     groups:
       go-minor-patch:
         update-types: ["minor", "patch"]
 
   # Website npm dependencies have moved to a separate repository.
   # When the /website folder is removed from this repo, drop nothing
-  # else here — this section already does not exist.
+  # else here - this section already does not exist.
 
-  # GitHub Actions selbst aktualisieren wenn neue Versionen verfuegbar
+  # Keep GitHub Actions themselves up to date.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -39,3 +39,12 @@ updates:
       - "actions"
     commit-message:
       prefix: "ci"
+    groups:
+      # codeql-action ships init/autobuild/analyze/upload-sarif as separate
+      # sub-actions from a single repo. They must move in lockstep: a run
+      # fails with "Loaded a configuration file for version X, but running
+      # version Y" if init and analyze land on different releases. Bumping
+      # them in one atomic PR prevents that split-brain.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
