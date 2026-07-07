@@ -17,13 +17,11 @@
 // the community reports: the payload only fires when the box actually does a
 // marge/boseurls check. A box that still carries a Bose margeAccountUUID (it was
 // used with the Bose app before the cloud shut down) checks roughly every 60 s
-// and opens SSH quickly. A fully factory-reset box never checks on its own, so
-// the injection is written but never runs - there the USB stick stays the
-// reliable path. STR sends `sys reboot` over :17000 to trigger the boot-time
-// re-parse without the user touching the speaker, which covers the models that
-// fire on reboot (ST10/20/30, SA-4, CineMate). This is therefore an ADDITIVE
-// stick-free path with the stick as the documented fallback, not a hard
-// replacement.
+// and opens SSH quickly. A fully factory-reset box never checks on its own; that
+// case is handled by enableSSHViaTelnetBootstrap (telnet_bootstrap_marge.go),
+// which gives the box a dummy account and a local marge responder so the check
+// cycle runs. STR sends `sys reboot` over :17000 to trigger the boot-time
+// re-parse without the user touching the speaker.
 
 package main
 
@@ -40,16 +38,18 @@ import (
 // telnet command because it contains spaces and semicolons.
 const remoteServicesInjection = ";touch /tmp/remote_services;/etc/init.d/sshd start"
 
-// telnetEnableBase is the placeholder cloud host used while unlocking SSH. A
-// reserved .invalid name (RFC 6761) fails DNS instantly, so the injected
-// `<tool> <base>` fails fast and the `;touch;sshd` payload runs without waiting
-// on a network timeout. resetBoseURLsViaTelnet restores the real hosts after.
+// telnetEnableBase is the placeholder cloud host used while unlocking SSH on a
+// box that still does marge checks on its own. A reserved .invalid name
+// (RFC 6761) fails DNS instantly, so the injected `<tool> <base>` fails fast and
+// the `;touch;sshd` payload runs without waiting on a network timeout.
+// resetBoseURLsViaTelnet restores the real hosts after. (The factory-reset path
+// instead points the base at a live local marge; see telnet_bootstrap_marge.go.)
 const telnetEnableBase = "https://str-setup.invalid"
 
 // stockBoseURLs are the factory cloud URLs restored after a stick-free unlock,
 // so no command injection lingers in the box config and STR's marge interception
-// (which catches streaming.bose.com) works normally. Values read live from a
-// stock SoundTouch 300 and Portable on FW 27.0.6.
+// (which catches streaming.bose.com via /etc/hosts) works normally. Values read
+// live from a stock SoundTouch 300 and Portable on FW 27.0.6.
 var stockBoseURLs = struct{ marge, stats, swUpdate, bmx string }{
 	marge:    "https://streaming.bose.com",
 	stats:    "https://events.api.bosecm.com",
@@ -77,14 +77,17 @@ func buildEnableSSHCommands(base string) []string {
 }
 
 // buildResetBoseURLCommands returns the :17000 command list that restores stock
-// cloud URLs (removing the injection).
+// cloud URLs (removing the injection). The envswitch command is written first
+// (not last) so that if the TAP session drops mid-sequence, the layer the
+// running client actually loads at boot on ginger/taigan is the one most likely
+// to already be clean.
 func buildResetBoseURLCommands() []string {
 	return []string{
+		`envswitch boseurls set "` + stockBoseURLs.marge + `" "` + stockBoseURLs.swUpdate + `"`,
 		`sys configuration margeServerUrl "` + stockBoseURLs.marge + `"`,
 		`sys configuration statsServerUrl "` + stockBoseURLs.stats + `"`,
 		`sys configuration swUpdateUrl "` + stockBoseURLs.swUpdate + `"`,
 		`sys configuration bmxRegistryUrl "` + stockBoseURLs.bmx + `"`,
-		`envswitch boseurls set "` + stockBoseURLs.marge + `" "` + stockBoseURLs.swUpdate + `"`,
 	}
 }
 
@@ -139,9 +142,37 @@ func (t *tapConn) send(cmd string) (string, error) {
 
 func (t *tapConn) close() { _ = t.conn.Close() }
 
+// sendAndLog runs one TAP command, appends a "-> cmd\nreply" line to log, and
+// returns the transport error (nil on a clean round-trip). A firmware that does
+// not expose a given key replies "Command not found" / "Invalid Command"; that
+// is not a transport error, so the caller keeps going with the remaining
+// commands (best-effort, fallback-first). Shared by every :17000 command loop so
+// the log format and abort semantics live in one place.
+func sendAndLog(t *tapConn, log *strings.Builder, cmd string) error {
+	reply, err := t.send(cmd)
+	fmt.Fprintf(log, "-> %s\n%s\n", cmd, strings.TrimSpace(reply))
+	return err
+}
+
+// waitForSSHOpen polls TCP :22 until it accepts a connection or budget elapses.
+// Shared by both unlock paths.
+func (a *App) waitForSSHOpen(host string, budget time.Duration) bool {
+	deadline := time.Now().Add(budget)
+	for time.Now().Before(deadline) {
+		if tcpReachable(host, 22, 2*time.Second) {
+			return true
+		}
+		time.Sleep(4 * time.Second)
+	}
+	return false
+}
+
 // enableSSHViaTelnet writes the enable-SSH injection over :17000, reboots the
 // box to trigger it, and polls :22 up to a model-aware budget. Returns whether
-// SSH came up and a redaction-free command log for diagnostics.
+// SSH came up and a redaction-free command log for diagnostics. This is the
+// path for a box that still does marge checks on its own (residual Bose UUID);
+// the placeholder .invalid base means nothing on the LAN is left pointed at a
+// live host on failure, so this path needs no recovery reset.
 func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 	var log strings.Builder
 	t, err := dialTAP(host, 5*time.Second)
@@ -150,17 +181,10 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 		return false, "port 17000 not reachable: " + err.Error()
 	}
 	for _, cmd := range buildEnableSSHCommands(telnetEnableBase) {
-		reply, serr := t.send(cmd)
-		fmt.Fprintf(&log, "-> %s\n%s\n", cmd, strings.TrimSpace(reply))
-		if serr != nil {
+		if serr := sendAndLog(t, &log, cmd); serr != nil {
 			t.close()
 			a.logger.Warn("telnet-enable: command transport failed", "host", host, "cmd", cmd, "err", serr)
 			return false, log.String()
-		}
-		// A firmware variant may not expose every key; that is fine - the others
-		// still land (best-effort, fallback-first). Only a transport error aborts.
-		if strings.Contains(reply, "Command not found") || strings.Contains(reply, "Invalid Command") {
-			a.logger.Info("telnet-enable: box rejected a config key (continuing with the rest)", "host", host, "cmd", cmd)
 		}
 	}
 	if v, _ := t.send("getpdo CurrentSystemConfiguration"); strings.TrimSpace(v) != "" {
@@ -172,32 +196,63 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 	t.close()
 	a.logger.Info("telnet-enable: injection written and sys reboot sent; polling for SSH", "host", host, "model", model)
 
-	budget := agentWaitBudget(model)
-	deadline := time.Now().Add(budget)
-	for time.Now().Before(deadline) {
-		if tcpReachable(host, 22, 2*time.Second) {
-			a.logger.Info("telnet-enable: SSH opened stick-free via :17000 unlock", "host", host)
-			return true, log.String()
-		}
-		time.Sleep(4 * time.Second)
+	if a.waitForSSHOpen(host, agentWaitBudget(model)) {
+		a.logger.Info("telnet-enable: SSH opened stick-free via :17000 unlock", "host", host)
+		return true, log.String()
 	}
-	a.logger.Info("telnet-enable: SSH did not open within budget (box may need a physical power cycle, or is factory-reset and never checks marge)", "host", host, "budget", budget.String())
+	a.logger.Info("telnet-enable: SSH did not open within budget (box may need a physical power cycle, or is factory-reset - the bootstrap path handles that)", "host", host)
 	return false, log.String()
 }
 
-// resetBoseURLsViaTelnet restores stock cloud URLs over :17000 after SSH has
-// been unlocked, removing the command injection. Best-effort: run while :17000
-// is still the plain Bose TAP, before STR's install changes the box's posture.
+// resetBoseURLsViaTelnet restores stock cloud URLs over :17000 after a stick-free
+// unlock, removing the command injection so STR's own marge interception takes
+// over and no injection lingers. Retried, because leaving the box pointed at the
+// injection URL is the worst outcome of this whole flow: retries take a
+// just-reachable box and make the restore reliable. Returns nil once all
+// commands land cleanly in one attempt, otherwise the last error.
 func (a *App) resetBoseURLsViaTelnet(host string) error {
-	t, err := dialTAP(host, 5*time.Second)
-	if err != nil {
-		return err
-	}
-	defer t.close()
-	for _, cmd := range buildResetBoseURLCommands() {
-		if _, serr := t.send(cmd); serr != nil {
-			return serr
+	var lastErr error
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			time.Sleep(3 * time.Second)
+		}
+		t, err := dialTAP(host, 5*time.Second)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var log strings.Builder
+		ok := true
+		for _, cmd := range buildResetBoseURLCommands() {
+			if serr := sendAndLog(t, &log, cmd); serr != nil {
+				lastErr = serr
+				ok = false
+				break
+			}
+		}
+		t.close()
+		if ok {
+			return nil
 		}
 	}
-	return nil
+	return lastErr
+}
+
+// restoreStockBoseURLsAndReboot restores stock cloud URLs AND reboots the box so
+// the running marge client stops dialing whatever custom/dead host the unlock
+// pointed it at. Best-effort recovery for a FAILED stick-free unlock: without it
+// a box left with an injection URL (especially a live-LAN-IP one from the
+// bootstrap path) would marge-check a now-dead responder forever and defeat
+// STR's later streaming.bose.com interception. Errors are logged, not returned -
+// this runs on an already-failing path.
+func (a *App) restoreStockBoseURLsAndReboot(host string) {
+	if err := a.resetBoseURLsViaTelnet(host); err != nil {
+		a.logger.Warn("telnet-enable: failed to restore stock boseurls on the recovery path; box may keep dialing the unlock URL until a manual factory reset", "host", host, "err", err)
+		return
+	}
+	if t, err := dialTAP(host, 5*time.Second); err == nil {
+		_, _ = t.send("sys reboot")
+		t.close()
+		a.logger.Info("telnet-enable: restored stock boseurls and rebooted after a failed unlock", "host", host)
+	}
 }

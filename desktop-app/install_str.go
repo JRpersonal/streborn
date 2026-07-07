@@ -130,17 +130,40 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// caveat (there the stick stays the reliable fallback).
 		if tcpReachable(host, 17000, 2*time.Second) {
 			opened, tlog := a.enableSSHViaTelnet(host, model)
+			if !opened {
+				// Factory-reset fallback: an empty-UUID box never checks marge on its
+				// own, so the simple injection never fires. Give it a dummy account +
+				// a throwaway local marge responder so the check cycle runs and the
+				// injection fires (proven live on a factory-reset ST300). See
+				// telnet_bootstrap_marge.go.
+				a.logger.Info("install_str: simple :17000 unlock did not open SSH; trying the factory-reset bootstrap", "host", host)
+				var blog string
+				opened, blog = a.enableSSHViaTelnetBootstrap(host, model)
+				tlog = tlog + "\n--- factory-reset bootstrap ---\n" + blog
+			}
 			if opened {
 				a.logger.Info("install_str: SSH opened stick-free via :17000; installing STR over SSH", "host", host)
 				// Restore stock cloud URLs while :17000 is still the plain Bose TAP
 				// (STR's install may REDIRECT :17008 afterwards). Best-effort.
-				if rerr := a.resetBoseURLsViaTelnet(host); rerr != nil {
-					a.logger.Warn("install_str: could not restore stock boseurls after stick-free unlock", "host", host, "err", rerr)
+				resetErr := a.resetBoseURLsViaTelnet(host)
+				if resetErr != nil {
+					a.logger.Warn("install_str: could not restore stock boseurls after stick-free unlock", "host", host, "err", resetErr)
 				}
-				return a.RepairInstallViaSSH(host, model)
+				instRes, instErr := a.RepairInstallViaSSH(host, model)
+				if resetErr != nil && instRes.OK {
+					instRes.Message += " Note: the speaker's cloud URLs could not be fully restored automatically; if online radio or presets misbehave, reinstall once from a USB stick to reset them."
+				}
+				return instRes, instErr
 			}
+			// Neither unlock opened SSH. Both attempts may have written an
+			// injection URL into the box config (the simple path a dead .invalid
+			// host, the bootstrap this PC's live LAN IP). Restore stock URLs and
+			// reboot so the box is never left marge-checking a dead/reassignable
+			// host, which would also defeat STR's later streaming.bose.com
+			// interception on a subsequent stick install. Best-effort.
+			a.restoreStockBoseURLsAndReboot(host)
 			res.Log = tlog
-			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; giving stick guidance", "host", host)
+			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs, giving stick guidance", "host", host)
 		}
 
 		// The box did not boot with a stick (:22 closed) and the stick-free unlock
