@@ -14,6 +14,7 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -41,15 +42,16 @@ type UninstallSTRResult struct {
 //   - /mnt/nv/rc.local (the NAND override entry point, so Bose boots
 //     its own stack with no STR hook)
 //
-// Resets to factory OOB (same Bose persistence files as TrueFactoryReset
-// plus the STR-written Wi-Fi profile):
-//   - NetworkProfiles.xml, AirPlay2_Home.xml, Spotify*,
-//     SystemConfigurationDB.xml (reseeded empty), AirplayConfiguration.xml
-//     (STR's accountless PersistentWifiProfile + BCOResetTimer)
-//   - the STR marge redirect in /etc/hosts (a tmpfs bind-mount; unbound
-//     here and cleared by the reboot regardless)
+// Deliberately does NOT touch the Bose network/account state: the box keeps
+// its Wi-Fi, name and language so it stays on the LAN and discoverable after
+// the reboot - an uninstall must never knock the speaker off Wi-Fi into the
+// Bose setup AP. Only the STR marge redirect in /etc/hosts is dropped (a tmpfs
+// bind-mount, cleared by the reboot regardless). A full network/account wipe
+// is TrueFactoryReset's job, not this.
 //
-// After the reboot the speaker is a brand-new Bose device with no STR.
+// After the reboot the speaker is a normal (cloudless) Bose device with no STR,
+// still on Wi-Fi, ready to be re-onboarded with the Bose app or to have STR
+// reinstalled.
 func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	res := UninstallSTRResult{Step: "start"}
 	if host == "" {
@@ -66,12 +68,24 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 		// v0.8.1 sshd follows the remote_services / enable-ssh marker, so a box
 		// that was installed from a stick and then had the stick removed answers
 		// nothing on :22 even though STR is installed and running. That made
-		// "STR Remove" fail for every such box (user report). Open SSH the same
-		// stick-free way the installer does - over the :17000 setup shell - then
-		// restore stock cloud URLs (so the box is not left dialing the unlock URL)
-		// and retry the handshake.
+		// "STR Remove" fail for every such box (user report).
+		//
+		// PRIMARY fix: the STR agent is still running here and is root on the box,
+		// so ask IT to open SSH (touch the marker + start sshd). No stick, no
+		// reboot, no :17000 marge-injection - which fights STR's own autopair on an
+		// already-installed box and is unreliable there (that is exactly the path
+		// that left a box marge-checking a dead host in testing).
+		if a.enableSSHViaAgent(host) {
+			hello, helloErr = sshHandshake(host, 4)
+		}
+	}
+	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
+		// FALLBACK: the STR agent was not reachable (e.g. a wedged box). Try the
+		// stick-free :17000 unlock like the installer, and restore stock cloud URLs
+		// on EVERY exit so a failed attempt never leaves the box dialing the unlock
+		// URL (the review-caught gap the install path already guards).
 		if tcpReachable(host, 17000, 2*time.Second) {
-			a.logger.Info("uninstall_str: SSH closed; opening it stick-free via the :17000 setup shell", "host", host)
+			a.logger.Info("uninstall_str: STR agent unreachable; trying the :17000 stick-free unlock", "host", host)
 			opened, _ := a.enableSSHViaTelnet(host, "")
 			if !opened {
 				opened, _ = a.enableSSHViaTelnetBootstrap(host, "")
@@ -81,6 +95,8 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 					a.logger.Warn("uninstall_str: could not restore stock boseurls after the :17000 unlock", "host", host, "err", rerr)
 				}
 				hello, helloErr = sshHandshake(host, 4)
+			} else {
+				a.restoreStockBoseURLsAndReboot(host)
 			}
 		}
 	}
@@ -96,7 +112,6 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	// from the stick on the next boot.
 	res.Step = "uninstall"
 	const script = `set -u
-PERSIST=/mnt/nv/BoseApp-Persistence/1
 if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ] || [ -e /media/sda1/streborn ]; then
   echo "STR_UNINSTALL_ABORT_STICK_PRESENT"
   exit 0
@@ -115,25 +130,13 @@ if [ -f /mnt/nv/rc.local ]; then rm -f /mnt/nv/rc.local && REMOVED="$REMOVED /mn
 # every trace, not just the install dir.
 if [ -f /mnt/nv/sp-oauth.out ]; then rm -f /mnt/nv/sp-oauth.out && REMOVED="$REMOVED /mnt/nv/sp-oauth.out"; fi
 if [ -d /mnt/nv/streborn-install ]; then rm -rf /mnt/nv/streborn-install && REMOVED="$REMOVED /mnt/nv/streborn-install"; fi
-# Reset Bose-side state to factory OOB.
-for f in NetworkProfiles.xml AirPlay2_Home.xml AirplayConfiguration.xml SPOTIFY.SpotifyConnectUserName.xml SPOTIFY.SpotifyAlexaUserName.xml SystemConfigurationDB.xml; do
-  if [ -f "$PERSIST/$f" ]; then rm -f "$PERSIST/$f" && REMOVED="$REMOVED $PERSIST/$f"; fi
-done
-cat > "$PERSIST/SystemConfigurationDB.xml" <<'XML'
-<?xml version="1.0" encoding="UTF-8" ?>
-<SystemConfiguration>
-    <Password />
-    <DeviceName />
-    <AccountAssociatedEMail />
-    <AccountUUID />
-    <Locale />
-    <acctMode />
-    <isMultiDeviceAccount>true</isMultiDeviceAccount>
-    <margeAuthServerToken />
-    <powerSavingSettings powersaving_en="true" />
-</SystemConfiguration>
-XML
-REMOVED="$REMOVED ${PERSIST}/SystemConfigurationDB.xml(reseeded)"
+# STR Remove deliberately does NOT touch the Bose network/account state.
+# Wiping NetworkProfiles.xml (as this used to, for a "factory OOB" reset) drops
+# the box off Wi-Fi into the Bose setup AP, so it vanishes from the LAN - that
+# must never happen on an uninstall. The box keeps its Wi-Fi, name and language
+# and simply becomes a normal (cloudless) Bose speaker again, still on the LAN
+# and discoverable, so STR can be reinstalled. A full network/account wipe is
+# TrueFactoryReset's job, not this.
 # Drop the STR marge redirect from /etc/hosts. It is a tmpfs bind-mount,
 # so unbind it now; a reboot clears it regardless.
 umount /etc/hosts 2>/dev/null || true
@@ -184,4 +187,35 @@ echo "STR_UNINSTALL_REMOVED:$REMOVED"
 		len(res.RemovedFiles))
 	a.logger.Info("uninstall_str: done", "host", host, "removedCount", len(res.RemovedFiles))
 	return res
+}
+
+// enableSSHViaAgent asks the still-running STR agent to open root SSH: the agent
+// is root on the box, so POST /api/agent/enable-ssh makes it touch the
+// remote_services marker and start sshd (see internal/webui handleAgentEnableSSH).
+// This is the clean way to open SSH on a box that already runs STR - no stick, no
+// reboot, and none of the :17000 marge-injection that is unreliable against STR's
+// own autopair. Returns true once :22 accepts a connection. Best-effort: false if
+// the agent is not reachable or SSH does not come up in time.
+func (a *App) enableSSHViaAgent(host string) bool {
+	bi, ok := probeSTR(a.appCtx(), host)
+	if !ok {
+		return false
+	}
+	a.logger.Info("uninstall_str: SSH closed but the STR agent is reachable; asking it to open SSH", "host", host, "port", bi.Port)
+	resp, err := a.boxDo(host, bi.Port, http.MethodPost, "/api/agent/enable-ssh", "", "")
+	if err != nil {
+		a.logger.Warn("uninstall_str: agent enable-ssh request failed", "host", host, "err", err)
+		return false
+	}
+	_ = resp.Body.Close()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if tcpReachable(host, 22, 2*time.Second) {
+			a.logger.Info("uninstall_str: the STR agent opened SSH", "host", host)
+			return true
+		}
+		time.Sleep(2 * time.Second)
+	}
+	a.logger.Info("uninstall_str: agent enable-ssh did not open :22 within budget", "host", host)
+	return false
 }

@@ -663,6 +663,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/agent/version", s.handleAgentVersion)
 	mux.HandleFunc("/api/agent/update", s.handleAgentUpdate)
 	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
+	mux.HandleFunc("/api/agent/enable-ssh", s.handleAgentEnableSSH)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
 	mux.HandleFunc("/api/box/volume", s.handleBoxVolume)
@@ -2788,6 +2789,66 @@ func goLibrespotStamp() (present bool, sha string) {
 	h := hex.EncodeToString(sum[:])
 	_ = os.WriteFile(marker, []byte(h), 0o644)
 	return true, h
+}
+
+// handleAgentEnableSSH opens root SSH on the box on demand, so the desktop app
+// can SSH in (to uninstall STR, or run diagnostics) WITHOUT a USB stick and
+// WITHOUT the fragile :17000 marge-injection dance. The agent already runs here
+// as root, so it just does what run.sh's ensure_sshd_running does at boot: touch
+// the remote_services marker Bose's sshd init gates on, then start sshd. This is
+// the clean app-first path for a box that ALREADY runs STR (the uninstall case):
+// no marge check, no reboot, no autopair fight. The marker in /tmp is tmpfs, so
+// SSH closes again on the next reboot - deliberately transient, since the
+// uninstall's own final reboot returns the box to a stock, SSH-closed state.
+// LAN-only.
+func (s *Server) handleAgentEnableSSH(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "enable-ssh only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	// Bose's /etc/init.d/sshd only starts sshd when this marker is present.
+	if err := os.WriteFile("/tmp/remote_services", nil, 0o644); err != nil {
+		s.logger.Warn("enable-ssh: could not write remote_services marker", "err", err)
+	}
+	started := ensureSSHDRunning(s.logger)
+	s.logger.Info("enable-ssh: on-demand SSH open requested", "sshdRunning", started)
+	writeJSON(w, http.StatusOK, map[string]any{"sshd": started})
+}
+
+// sshdRunning reports whether an sshd process is alive (pidof sshd).
+func sshdRunning() bool {
+	out, _ := exec.Command("pidof", "sshd").Output()
+	return strings.TrimSpace(string(out)) != ""
+}
+
+// ensureSSHDRunning starts sshd if it is not already up, mirroring run.sh's
+// ensure_sshd_running: try the Bose init script (which needs the remote_services
+// marker), then fall back to /usr/sbin/sshd directly. The init script exit code
+// is untrustworthy (it prints "Not starting sshd" and still exit-0s), so success
+// is decided by a real process check, not the exit code.
+func ensureSSHDRunning(logger *slog.Logger) bool {
+	if sshdRunning() {
+		return true
+	}
+	if _, err := os.Stat("/etc/init.d/sshd"); err == nil {
+		_ = exec.Command("/etc/init.d/sshd", "start").Run()
+		if sshdRunning() {
+			return true
+		}
+	}
+	if _, err := os.Stat("/usr/sbin/sshd"); err == nil {
+		_ = exec.Command("/usr/sbin/sshd").Run()
+		if sshdRunning() {
+			return true
+		}
+		logger.Warn("enable-ssh: /usr/sbin/sshd ran but no sshd process appeared")
+		return false
+	}
+	logger.Warn("enable-ssh: no sshd init script and no /usr/sbin/sshd found")
+	return false
 }
 
 // handleAgentUpdate receives a new stick agent binary, writes it
