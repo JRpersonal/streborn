@@ -244,18 +244,17 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 
 <div class="card">
 <div class="label" id="lblInput">Input</div>
-<div class="row c3" id="inputs">
+<div class="row c2" id="inputs">
 <button class="btn" onclick="setSource('BLUETOOTH',this)">Bluetooth</button>
 <button class="btn" onclick="setSource('AUX',this)">AUX</button>
-<button class="btn" id="btnStandby" onclick="setSource('STANDBY',this)">Standby</button>
 </div>
 </div>
 
 <div class="card">
 <div class="label" id="lblPlayback">Playback</div>
 <div class="row c2" style="margin-bottom:8px">
-<button class="btn" id="btnPrev" onclick="skip(this,'/api/prev')" style="font-size:19px" aria-label="Previous" title="Previous">&#9198;</button>
-<button class="btn" id="btnNext" onclick="skip(this,'/api/next')" style="font-size:19px" aria-label="Next" title="Next">&#9197;</button>
+<button class="btn" id="btnPrev" onclick="skip(this,'/api/prev')" style="gap:6px" aria-label="Previous" title="Previous"><span aria-hidden="true" style="font-size:19px">&#9198;</span><span id="btnPrevLbl">Previous</span></button>
+<button class="btn" id="btnNext" onclick="skip(this,'/api/next')" style="gap:6px" aria-label="Next" title="Next"><span id="btnNextLbl">Next</span><span aria-hidden="true" style="font-size:19px">&#9197;</span></button>
 </div>
 <div class="row c2">
 <button class="btn" id="btnPause" onclick="togglePlayPause(this)">Pause</button>
@@ -325,14 +324,16 @@ var T = (function(){
 function applyStaticI18n() {
   var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
   set('lblNow', T.now); set('lblVol', T.vol); set('lblInput', T.input);
-  set('btnStandby', T.standby); set('lblPlayback', T.playback);
+  set('lblPlayback', T.playback);
   set('btnPause', T.pause); set('btnStop', T.stop);
   set('lblPresets', T.presets); set('lblPeers', T.peers);
   set('lblSupport', T.support); set('lblTip', T.tip);
   var v = document.getElementById('vol'); if (v) v.setAttribute('aria-label', T.vol);
   var pb = document.getElementById('powerBtn'); if (pb) { pb.setAttribute('aria-label', T.power); pb.title = T.power; }
-  // Prev/Next are icon-only (media glyphs), so localize the aria-label + title
-  // rather than the button text, which would overwrite the glyph.
+  // Prev/Next pair a media glyph with a visible text label (like the desktop
+  // app). The glyph stays put in its own aria-hidden span; only the sibling
+  // label span is localized, and the aria-label + title mirror it.
+  set('btnPrevLbl', T.prev); set('btnNextLbl', T.next);
   var pv = document.getElementById('btnPrev'); if (pv) { pv.setAttribute('aria-label', T.prev); pv.title = T.prev; }
   var nx = document.getElementById('btnNext'); if (nx) { nx.setAttribute('aria-label', T.next); nx.title = T.next; }
   var st = document.getElementById('status'); if (st) st.innerHTML = '<span class="now">' + escapeHtml(T.loading) + '</span>';
