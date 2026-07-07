@@ -62,8 +62,31 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	res.Step = "ssh-handshake"
 	hello, helloErr := sshHandshake(host, 4)
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
+		// A hardened STR box keeps SSH CLOSED after the stick is pulled: since
+		// v0.8.1 sshd follows the remote_services / enable-ssh marker, so a box
+		// that was installed from a stick and then had the stick removed answers
+		// nothing on :22 even though STR is installed and running. That made
+		// "STR Remove" fail for every such box (user report). Open SSH the same
+		// stick-free way the installer does - over the :17000 setup shell - then
+		// restore stock cloud URLs (so the box is not left dialing the unlock URL)
+		// and retry the handshake.
+		if tcpReachable(host, 17000, 2*time.Second) {
+			a.logger.Info("uninstall_str: SSH closed; opening it stick-free via the :17000 setup shell", "host", host)
+			opened, _ := a.enableSSHViaTelnet(host, "")
+			if !opened {
+				opened, _ = a.enableSSHViaTelnetBootstrap(host, "")
+			}
+			if opened {
+				if rerr := a.resetBoseURLsViaTelnet(host); rerr != nil {
+					a.logger.Warn("uninstall_str: could not restore stock boseurls after the :17000 unlock", "host", host, "err", rerr)
+				}
+				hello, helloErr = sshHandshake(host, 4)
+			}
+		}
+	}
+	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
-		res.Message = "SSH handshake to speaker failed: " + classifySSHError(hello, helloErr)
+		res.Message = "Could not open install access (SSH) to the speaker to remove STR: " + classifySSHError(hello, helloErr)
 		return res
 	}
 
