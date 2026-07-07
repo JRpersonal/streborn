@@ -870,6 +870,7 @@
   "setup.help.lowPowerStick": "Nimm einen kleinen, stromsparenden USB-2.0-Stick (4 bis 16 GB). Größere oder schnellere Sticks brauchen mehr Strom, als der USB-Anschluss des Lautsprechers liefern kann.",
   "setup.help.usbHub": "Oder schließe den Stick über einen aktiven USB-Hub (mit eigenem Netzteil) an, damit er unabhängig vom Anschluss des Lautsprechers stabil mit Strom versorgt wird.",
   "setup.st30StickPowerWarn": "SoundTouch 30 erkannt: Der USB-Anschluss kann manche Sticks nicht stabil mit Strom versorgen, das führt beim Installieren zu einem Stromfehler. Nimm einen kleinen, stromsparenden USB-2.0-Stick (4 bis 16 GB) oder schließe ihn über einen aktiven USB-Hub an.",
+  "setup.unverifiedHardware": "Ich habe STR mit diesem Lautsprechermodell noch nicht getestet und kann daher nicht versprechen, dass es funktioniert. Du kannst es trotzdem installieren, und vielleicht läuft alles einwandfrei. Bitte betrachte es aber als ungetestet und mach auf eigenes Risiko weiter. Wenn du es ausprobierst, sag mir bitte, wie es gelaufen ist, damit ich dein Modell in die Liste der geprüften Geräte aufnehmen kann.",
   "worldMap.inviteText": "Deine SoundTouch lebt wieder 🎉",
   "worldMap.inviteBtn": "Auf der Weltkarte teilen",
   "worldMap.countLine": "🌍 Schon {{n}} SoundTouch weltweit gerettet. Setz deinen Pin dazu!",

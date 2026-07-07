@@ -839,6 +839,7 @@
   "setup.help.lowPowerStick": "Küçük, düşük güç tüketen bir USB 2.0 bellek (4 ila 16 GB) kullan. Daha büyük veya daha hızlı bellekler, hoparlörün USB bağlantı noktasının sağlayabileceğinden daha fazla güç çeker.",
   "setup.help.usbHub": "Ya da belleği kendi güç kaynağı olan (harici beslemeli) bir USB hub üzerinden bağla, böylece hoparlörün bağlantı noktasından bağımsız olarak kararlı güç alır.",
   "setup.st30StickPowerWarn": "SoundTouch 30 algılandı: USB bağlantı noktası bazı bellekleri yeterince besleyemeyebilir ve bu, kurulum sırasında bir güç hatasına yol açar. Küçük, düşük güç tüketen bir USB 2.0 bellek (4 ila 16 GB) kullan ya da harici beslemeli bir USB hub üzerinden bağla.",
+  "setup.unverifiedHardware": "STR'yi bu hoparlör modeliyle henüz test etmedim, bu yüzden çalışacağına söz veremem. Yine de kurabilirsin ve sorunsuz çalışabilir, ama bunu test edilmemiş olarak değerlendir ve kendi sorumluluğunda devam et. Denersen, nasıl gittiğini bana bildir; böylece modelini doğrulanmış cihazlar listesine ekleyebilirim.",
   "worldMap.inviteText": "SoundTouch'ın yeniden hayatta 🎉",
   "worldMap.inviteBtn": "Dünya haritasında paylaş",
   "setup.stickLargeFat32": "Bu büyük bir bellek (32 GB üzeri). Büyük bellekler genellikle hoparlörün okuyamayacağı şekilde biçimlendirilir. Hazırlık sırasında uyumlu bir FAT32'ye yeniden biçimlendirilecek; bellekteki tüm veriler kaybolur.",

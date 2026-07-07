@@ -919,6 +919,7 @@
   "setup.help.lowPowerStick": "Use a small, low-power USB 2.0 stick (4 to 16 GB). Larger or faster sticks draw more power than the speaker's USB port can supply.",
   "setup.help.usbHub": "Or plug the stick into a powered USB hub (one with its own power supply), so it gets steady power independently of the speaker's port.",
   "setup.st30StickPowerWarn": "SoundTouch 30 detected: its USB port can struggle to power some sticks, which causes a power error during install. Use a small, low-power USB 2.0 stick (4 to 16 GB), or connect it through a powered USB hub.",
+  "setup.unverifiedHardware": "I have not verified STR on this speaker model yet, so I cannot promise it will work. You can still install it, and it may run fine, but please treat it as untested and proceed at your own risk. If you try it, please let me know how it went so I can add your model to the verified list.",
   "worldMap.inviteText": "Your SoundTouch is alive again 🎉",
   "worldMap.inviteBtn": "Share it on the world map",
   "worldMap.countLine": "🌍 {{n}} SoundTouch speakers rescued worldwide so far. Add yours!",

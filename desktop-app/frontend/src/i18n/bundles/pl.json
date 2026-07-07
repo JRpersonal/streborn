@@ -839,6 +839,7 @@
   "setup.help.lowPowerStick": "Użyj małego, energooszczędnego pendrive'a USB 2.0 (4 do 16 GB). Większe lub szybsze pendrive'y pobierają więcej prądu, niż port USB głośnika może dostarczyć.",
   "setup.help.usbHub": "Albo podłącz pendrive przez aktywny koncentrator USB (z własnym zasilaniem), aby otrzymywał stabilne zasilanie niezależnie od portu głośnika.",
   "setup.st30StickPowerWarn": "Wykryto SoundTouch 30: jego port USB może mieć problem z zasilaniem niektórych pendrive'ów, co powoduje błąd zasilania podczas instalacji. Użyj małego, energooszczędnego pendrive'a USB 2.0 (4 do 16 GB) albo podłącz go przez aktywny koncentrator USB.",
+  "setup.unverifiedHardware": "Nie testowałem jeszcze STR z tym modelem głośnika, więc nie mogę obiecać, że zadziała. Nadal możesz go zainstalować i być może zadziała bez zarzutu, ale potraktuj go jako nieprzetestowany i kontynuuj na własne ryzyko. Jeśli spróbujesz, daj mi znać, jak poszło, abym mógł dodać Twój model do listy zweryfikowanych urządzeń.",
   "worldMap.inviteText": "Twój SoundTouch znów działa 🎉",
   "worldMap.inviteBtn": "Pokaż na mapie świata",
   "setup.stickLargeFat32": "To duży pendrive (ponad 32 GB). Duże pendrive'y są często sformatowane w sposób, którego głośnik nie potrafi odczytać. Podczas przygotowania zostanie sformatowany na zgodny FAT32; wszystkie dane na pendrive zostaną utracone.",

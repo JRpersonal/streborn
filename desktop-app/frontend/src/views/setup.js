@@ -337,6 +337,75 @@ function targetIsST30(box) {
   return m === 'soundtouch30' || m === 'st30' || m === '30';
 }
 
+// Unverified-hardware warning (#283).
+//
+// KNOWN_VARIANTS is the set of Bose chassis codenames (FirmwareInfo.Variant) STR
+// has actually been verified on: rhino=ST10, taigan=Portable, spotty=ST20,
+// ginger=ST300, mojo=ST30. Any other variant — e.g. 'lisa' (SA-4 / Wave
+// SoundTouch / CineMate) or a codename we have never seen — has never been
+// confirmed with STR, so the picker flags it as untested hardware.
+//
+// Per Jens' "no unsupported devices, only a warning" direction this NEVER blocks
+// the install: the box still installs / heals normally, the user is just told STR
+// has not been confirmed on their model so they proceed knowingly and report back.
+// An empty/unknown variant counts as verified (compatibility-first: never cry
+// wolf on a box we could not fingerprint).
+const KNOWN_VARIANTS = new Set(['rhino', 'taigan', 'spotty', 'ginger', 'mojo']);
+function isUnverifiedVariant(variant) {
+  const v = String(variant || '').toLowerCase().trim();
+  if (!v) return false;
+  return !KNOWN_VARIANTS.has(v);
+}
+
+// Per-host cache of the box firmware Variant, used only for the unverified-
+// hardware warning. GetBoxFirmware hits the speaker's :8090 and the picker
+// re-renders on every discovery refresh (a few seconds apart), so the variant is
+// fetched once per host and reused — never polled in a loop. undefined = not yet
+// fetched; a string (possibly '') = fetched.
+const setupVariantCache = {};
+const unverifiedWarnId = (host) => 'setup-unverified-' + String(host || '');
+
+// unverifiedWarnSlot emits a box card's unverified-hardware slot. If the variant
+// is already cached AND unverified the warning is rendered inline (so it does not
+// flash away on the next discovery re-render); otherwise an empty, hidden slot is
+// emitted for paintUnverifiedWarning to fill once the async firmware lookup lands.
+function unverifiedWarnSlot(host) {
+  const id = escapeAttr(unverifiedWarnId(host));
+  const cached = setupVariantCache[host];
+  const show = cached !== undefined && isUnverifiedVariant(cached);
+  const body = show ? escapeHtml(t('setup.unverifiedHardware')) : '';
+  return `<div class="setup-target-st30-warn setup-target-unverified-warn" id="${id}"${show ? '' : ' hidden'}>${body}</div>`;
+}
+
+// paintUnverifiedWarning fills a box card's unverified slot after resolving the
+// firmware Variant (cached after the first lookup). Kept out of the synchronous
+// picker render so a slow or unreachable box never stalls the list; a failed or
+// unreachable probe leaves the slot hidden and is retried on the next render.
+async function paintUnverifiedWarning(host) {
+  if (!host) return;
+  let variant = setupVariantCache[host];
+  if (variant === undefined) {
+    try {
+      const f = await GetBoxFirmware(host);
+      if (f && f.reachable) {
+        variant = String(f.variant || '').toLowerCase().trim();
+        setupVariantCache[host] = variant; // cache only a real answer
+      } else {
+        variant = ''; // unreachable this pass: retry next render, do not cache
+      }
+    } catch { variant = ''; }
+  }
+  const el = $(unverifiedWarnId(host));
+  if (!el) return;
+  if (isUnverifiedVariant(variant)) {
+    el.textContent = t('setup.unverifiedHardware');
+    el.hidden = false;
+  } else {
+    el.textContent = '';
+    el.hidden = true;
+  }
+}
+
 export function renderSetupTargetPicker() {
   mountSetupShell(); // build the shell on first open (see note above)
   const body = $('setupTargetBody');
@@ -449,6 +518,9 @@ export function renderSetupTargetPicker() {
     if (targetIsST30(b)) {
       cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
     }
+    // Unverified-hardware slot (#283): filled async once the firmware Variant is
+    // known. Does not block install; only tells the user STR is untested here.
+    cards += unverifiedWarnSlot(b.host);
   }
   for (const b of strBoxes) {
     const label = b.friendlyName || b.name || b.host;
@@ -460,6 +532,7 @@ export function renderSetupTargetPicker() {
     if (targetIsST30(b)) {
       cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
     }
+    cards += unverifiedWarnSlot(b.host);
   }
   // No "unsupported" list any more: every discovered stock box is an install
   // target above, so there is nothing non-selectable to render here.
@@ -504,6 +577,13 @@ export function renderSetupTargetPicker() {
       updateSetupGoButtonLabel();
     };
   });
+
+  // Async fill of every discovered box's unverified-hardware slot (#283). Runs
+  // off the synchronous render so an unreachable box never stalls the picker; the
+  // per-host variant is cached, so this does not re-probe the box on each refresh.
+  for (const b of [...stockBoxes, ...strBoxes]) {
+    paintUnverifiedWarning(b.host).catch(() => {});
+  }
 
   // Async fill of the Setup-AP push panel (only present when
   // factory-reset is the current selection). Decoupled from the
