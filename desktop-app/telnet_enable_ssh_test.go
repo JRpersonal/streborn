@@ -66,3 +66,39 @@ func TestBuildResetBoseURLCommands(t *testing.T) {
 		t.Error("reset must also clear the envswitch layer")
 	}
 }
+
+// TestBuildBootstrapEnableSSHCommands asserts the factory-reset injection rides
+// BOTH the envswitch layer (what ginger/taigan load at boot) and the runtime
+// margeServerUrl, points at the live local marge base, keeps a reachable http
+// base before the "/;" shell break, and stays balanced-quoted.
+func TestBuildBootstrapEnableSSHCommands(t *testing.T) {
+	base := "http://192.0.2.10:19080/"
+	cmds := buildBootstrapEnableSSHCommands(base)
+	if len(cmds) != 2 {
+		t.Fatalf("want 2 commands, got %d: %v", len(cmds), cmds)
+	}
+	inj := base + remoteServicesInjection
+	want := []string{
+		`envswitch boseurls set "` + inj + `" "` + base + `update"`,
+		`sys configuration margeServerUrl "` + inj + `"`,
+	}
+	for i := range want {
+		if cmds[i] != want[i] {
+			t.Errorf("command %d:\n got %q\nwant %q", i, cmds[i], want[i])
+		}
+	}
+	for _, c := range cmds {
+		if !strings.Contains(c, remoteServicesInjection) {
+			t.Errorf("command missing injection: %q", c)
+		}
+		if strings.Count(c, `"`)%2 != 0 {
+			t.Errorf("unbalanced quotes in %q", c)
+		}
+		// The reachable http base must survive intact before the shell break so the
+		// box still connects to the responder (that is what keeps the check cycle
+		// alive); the ";" starts the payload.
+		if !strings.Contains(c, base+";") && !strings.Contains(c, base+`update`) {
+			t.Errorf("command lost the reachable base before the shell break: %q", c)
+		}
+	}
+}
