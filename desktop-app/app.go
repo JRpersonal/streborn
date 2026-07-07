@@ -39,6 +39,18 @@ type App struct {
 	logFile    *os.File // kept so ExportDiagnosticLogs can Sync before reading
 	httpClient *http.Client
 
+	// Install progress: the current network-install phase and start time, read by
+	// the shared waitForSSHOpen/waitForAgent heartbeat loops so they emit
+	// phase-labeled, elapsed-stamped install:progress events through the long
+	// silent stretches (the 3-5 min :17000 unlock, the up-to-240s agent wait).
+	// installMargeHits, when non-nil, returns the factory-reset bootstrap's
+	// marge-callback count so the UI can flag a firewall block (0 callbacks) instead
+	// of dying silently. Single-flight in practice (the frontend
+	// networkInstallRunning guard serialises installs).
+	installPhase     string
+	installStart     time.Time
+	installMargeHits func() int64
+
 	// portCache maps a box host to the agent port last seen answering it.
 	// BCO boxes (Portable/taigan, ST20-spotty) expose the agent only on
 	// the redirected :17008, classic boxes answer :8888 directly, and mDNS
@@ -146,7 +158,13 @@ const strKnownTTL = 24 * time.Hour
 
 // NewApp creates a new App instance.
 func NewApp() *App {
-	logger, logFile := newFileLogger(slog.LevelInfo)
+	// Log level: INFO by default; set STR_DEBUG=1 in the environment (dev/support
+	// sessions) to get DEBUG detail without shipping verbose logs in releases.
+	logLevel := slog.LevelInfo
+	if os.Getenv("STR_DEBUG") != "" {
+		logLevel = slog.LevelDebug
+	}
+	logger, logFile := newFileLogger(logLevel)
 	return &App{
 		logger:         logger,
 		logFile:        logFile,
@@ -401,6 +419,13 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// whenever it briefly vanished).
 	a.mergeDiscoveryCache(seen)
 
+	// Collapse any same-device duplicate that survived the IP-keyed upsert and the
+	// cache merge: a DHCP lease change leaves the box's stale mDNS record (old IP)
+	// cached and re-announced alongside its fresh one (new IP), so both reach `seen`
+	// this cycle under different host keys and the speaker shows up twice (live
+	// ST300, 2026-07-07: .35 stale + .43 live). Keeps the currently-reachable IP.
+	a.dedupeByDeviceID(seen)
+
 	out := make([]BoxInfo, 0, len(seen))
 	for _, b := range seen {
 		out = append(out, b)
@@ -605,6 +630,110 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 			delete(a.strKnown, id)
 		}
 	}
+}
+
+// dedupeByDeviceID collapses records that share a stable, non-empty DeviceID but
+// sit at different IPs. That duplicate is what a DHCP lease change leaves behind:
+// the box's stale mDNS A-record at its old IP is still cached and re-announced
+// alongside the fresh one at the new IP, so BOTH reach `seen` in the same cycle
+// under different host keys and the speaker shows up twice (live ST300,
+// 2026-07-07: .35 stale + .43 live). The IP-keyed upsert in DiscoverBoxes cannot
+// catch this (two IPs => two keys), and mergeDiscoveryCache only evicts a stale IP
+// that is cache-only, not one that was itself (re-)announced this cycle. For each
+// duplicated DeviceID it keeps the currently-reachable IP (a quick TCP probe) and
+// drops the rest from BOTH `seen` and the sticky cache, so a stale IP cannot
+// flicker back on a later cycle. Records without a DeviceID are left untouched:
+// stock Bose mDNS sometimes omits the MAC, and collapsing those would merge
+// distinct speakers (the reason the upsert is IP-keyed in the first place).
+func (a *App) dedupeByDeviceID(seen map[string]BoxInfo) {
+	byDevice := map[string][]string{}
+	for key, b := range seen {
+		if b.DeviceID == "" {
+			continue
+		}
+		byDevice[b.DeviceID] = append(byDevice[b.DeviceID], key)
+	}
+	var dropped []string
+	for dev, keys := range byDevice {
+		if len(keys) < 2 {
+			continue
+		}
+		winner := pickLiveBoxKey(seen, keys)
+		for _, key := range keys {
+			if key == winner {
+				continue
+			}
+			if a.logger != nil {
+				a.logger.Info("discovery: collapsed duplicate box at a stale IP (same deviceID as the reachable one)",
+					"deviceID", dev, "staleHost", key, "liveHost", winner)
+			}
+			delete(seen, key)
+			dropped = append(dropped, key)
+		}
+	}
+	if len(dropped) == 0 {
+		return
+	}
+	a.discMu.Lock()
+	for _, key := range dropped {
+		delete(a.discCache, key)
+	}
+	a.discMu.Unlock()
+}
+
+// pickLiveBoxKey chooses which of several host keys for one physical box to keep.
+// A currently-reachable IP wins outright; an STR record breaks ties over a stock
+// one, and the host string is the final deterministic tiebreaker (seen is a map,
+// so keys arrive in random order). If none is reachable — every IP mid-reboot, or
+// a transient probe miss — it still returns the best-scored key so the box never
+// drops off the list entirely (fallback-first).
+func pickLiveBoxKey(seen map[string]BoxInfo, keys []string) string {
+	sorted := append([]string(nil), keys...)
+	sort.Strings(sorted)
+	best := sorted[0]
+	bestScore := -1
+	for _, key := range sorted {
+		b := seen[key]
+		score := 0
+		if boxKeyReachable(b) {
+			score += 2
+		}
+		if b.Kind == "str" {
+			score++
+		}
+		if score > bestScore {
+			bestScore = score
+			best = key
+		}
+	}
+	return best
+}
+
+// boxKeyReachable reports whether a discovered box answers a TCP connect right
+// now, tried on its announced control port first and then the small set of ports
+// STR and stock Bose firmware listen on (8888 direct STR, 8090 stock REST, 17008
+// the BCO REDIRECT entry). Used only to break a DHCP-move duplicate, which is
+// rare, so a short per-port timeout keeps the probe cheap; the first hit wins.
+func boxKeyReachable(b BoxInfo) bool {
+	if b.Host == "" {
+		return false
+	}
+	tried := map[int]bool{}
+	ports := make([]int, 0, 4)
+	if b.Port > 0 {
+		ports = append(ports, b.Port)
+	}
+	ports = append(ports, 8888, 8090, 17008)
+	for _, p := range ports {
+		if p <= 0 || tried[p] {
+			continue
+		}
+		tried[p] = true
+		if tcpReachable(b.Host, p, 600*time.Millisecond) {
+			return true
+		}
+	}
+	return false
 }
 
 // forgetSTRDeviceByHost drops a box's confirmed-STR discovery state so a genuine
@@ -1517,7 +1646,13 @@ func (a *App) candidatePorts(host string, port int) []int {
 // immediately without flailing across ports. Caller closes resp.Body.
 func (a *App) boxDo(host string, port int, method, path, contentType, body string) (*http.Response, error) {
 	var lastErr error
-	for _, p := range a.candidatePorts(host, port) {
+	// stale404 holds a 404 that came from a port which is NOT the STR agent (the
+	// Bose stock firmware answers unknown /api/ paths on :8090 with 404). It is
+	// kept only as a fallback so a genuine agent 404 (a real missing resource) is
+	// still surfaced when no better port answers.
+	var stale404 *http.Response
+	cands := a.candidatePorts(host, port)
+	for i, p := range cands {
 		url := fmt.Sprintf("http://%s:%d%s", host, p, path)
 		var rdr io.Reader
 		if body != "" {
@@ -1525,6 +1660,9 @@ func (a *App) boxDo(host string, port int, method, path, contentType, body strin
 		}
 		req, err := http.NewRequestWithContext(a.appCtx(), method, url, rdr)
 		if err != nil {
+			if stale404 != nil {
+				stale404.Body.Close()
+			}
 			return nil, err
 		}
 		if contentType != "" {
@@ -1532,14 +1670,37 @@ func (a *App) boxDo(host string, port int, method, path, contentType, body strin
 		}
 		resp, err := a.httpClient.Do(req)
 		if err == nil {
+			// A 404 on an /api/ path means this port is not the STR agent: the
+			// Bose firmware on :8090 answers unknown /api/ paths with 404, and
+			// caching :8090 here made a post-OTA name/Wi-Fi write silently fail
+			// (the box still carried its pre-install stock port). Skip the port
+			// and try the next candidate; only fall back to the 404 if nothing
+			// better answers, so a real agent 404 is not masked.
+			if resp.StatusCode == http.StatusNotFound && strings.HasPrefix(path, "/api/") && i < len(cands)-1 {
+				if stale404 != nil {
+					stale404.Body.Close()
+				}
+				stale404 = resp
+				a.forgetPort(host)
+				continue
+			}
 			a.rememberPort(host, p)
+			if stale404 != nil {
+				stale404.Body.Close()
+			}
 			return resp, nil
 		}
 		lastErr = err
 		if !isTransportNotReady(err) {
+			if stale404 != nil {
+				return stale404, nil
+			}
 			return nil, err
 		}
 		a.forgetPort(host)
+	}
+	if stale404 != nil {
+		return stale404, nil
 	}
 	return nil, lastErr
 }

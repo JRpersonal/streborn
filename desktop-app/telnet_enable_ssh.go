@@ -162,6 +162,7 @@ func (a *App) waitForSSHOpen(host string, budget time.Duration) bool {
 		if tcpReachable(host, 22, 2*time.Second) {
 			return true
 		}
+		a.emitInstallHeartbeat()
 		time.Sleep(4 * time.Second)
 	}
 	return false

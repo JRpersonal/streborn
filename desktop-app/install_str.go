@@ -77,6 +77,9 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		return res, fmt.Errorf("host is required")
 	}
 	a.logger.Info("install_str: starting", "host", host, "model", model)
+	a.installStart = time.Now()
+	a.installPhase = ""
+	defer func() { a.installPhase = ""; a.installMargeHits = nil }()
 
 	// Read the box firmware (Bose :8090/info, reachable on stock and STR boxes)
 	// up front so it lands in the result and the logs. An old firmware is a
@@ -129,6 +132,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// adapter. See telnet_enable_ssh.go for the mechanism and the factory-reset
 		// caveat (there the stick stays the reliable fallback).
 		if tcpReachable(host, 17000, 2*time.Second) {
+			a.emitPhase("access")
 			opened, tlog := a.enableSSHViaTelnet(host, model)
 			if !opened {
 				// Factory-reset fallback: an empty-UUID box never checks marge on its
@@ -149,9 +153,22 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 				if resetErr != nil {
 					a.logger.Warn("install_str: could not restore stock boseurls after stick-free unlock", "host", host, "err", resetErr)
 				}
+				a.emitPhase("copy")
 				instRes, instErr := a.RepairInstallViaSSH(host, model)
 				if resetErr != nil && instRes.OK {
 					instRes.Message += " Note: the speaker's cloud URLs could not be fully restored automatically; if online radio or presets misbehave, reinstall once from a USB stick to reset them."
+				}
+				// RepairInstallViaSSH reboots and returns before the agent is up. Wait
+				// for :8888 here so the OTA path returns OK only once STR is actually
+				// running - the frontend then immediately writes the Wi-Fi profile.
+				if instRes.OK && instErr == nil {
+					a.emitPhase("wait")
+					if werr := a.waitForAgent(host, model); werr != nil {
+						a.logger.Warn("install_str: network install ran but the agent did not come up in time", "host", host, "err", werr)
+						instRes.OK = false
+						instRes.Code = "agent-not-up"
+						instRes.Message = "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute."
+					}
 				}
 				return instRes, instErr
 			}
@@ -270,6 +287,29 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 				a.logger.Warn("install_str: ssh probe failed after retries", "host", host, "err", probeErr, "hint", hint)
 				// (res, nil): keep res.Message reaching the frontend, see ssh-handshake.
 				return res, nil
+			}
+			// No stick mounted, but SSH is open and the box is reachable: this is the
+			// stick-free / OTA network-install case (a SoundTouch 300 that does not
+			// read a stick at boot, or any box reached with SSH already open). Do NOT
+			// ask the user for a stick they may not have - stage STR's embedded files
+			// onto NAND over SSH and install from there. Only on a release build with
+			// a real embedded agent.
+			if len(agentbin.Bytes()) > 0 {
+				a.logger.Info("install_str: no stick mounted but SSH is open; installing STR over SSH (no stick needed)", "host", host)
+				res.Step = "repair-ssh"
+				instRes, instErr := a.RepairInstallViaSSH(host, model)
+				// RepairInstallViaSSH reboots and returns before the agent is up. Wait
+				// for :8888 so a network install returns OK only once STR is running.
+				if instRes.OK && instErr == nil {
+					a.emitPhase("wait")
+					if werr := a.waitForAgent(host, model); werr != nil {
+						a.logger.Warn("install_str: SSH-staged install ran but the agent did not come up in time", "host", host, "err", werr)
+						instRes.OK = false
+						instRes.Code = "agent-not-up"
+						instRes.Message = "STR was installed over the network, but the speaker did not bring up the STR agent on port 8888 in time. It may still be rebooting; refresh the speaker list in a minute."
+					}
+				}
+				return instRes, instErr
 			}
 			res.Code = "stick-missing"
 			res.Message = "install.sh did not appear under /media, /mnt or /run/media within 60 s. " +
@@ -391,6 +431,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// connection, which manifests as a non-zero exit — that is the
 	// expected success path here, not an error.
 	res.Step = "reboot"
+	a.emitPhase("restart")
 	_ = boxReboot(host)
 	a.logger.Info("install_str: reboot signal sent", "host", host)
 
@@ -400,6 +441,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// time to win against Bose's service manager; cutting that off early was
 	// the main first-install failure (#114).
 	res.Step = "wait-agent"
+	a.emitPhase("wait")
 	if err := a.waitForAgent(host, model); err != nil {
 		// Specific message + finalize for the "stick read failed, so the agent
 		// binary never reached NAND" case. Defined once; used from both the
@@ -624,8 +666,62 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	res.Step = "reboot"
 	res.Message = "STR installed over SSH (USB stick bypassed). The speaker will reboot and join your Wi-Fi."
 	a.logger.Info("repair_ssh: install ran", "host", host, "outBytes", len(out))
+
+	// Restore any str-setup.invalid placeholder a stick-free :17000 unlock left in
+	// the persistent Bose SDK config back to the stock cloud hosts, BEFORE the
+	// reboot so the box reads healed URLs on its very next boot. This SSH-open
+	// install path (auto-repair: no stick, SSH already open) previously never
+	// restored them, so a box that had been :17000-unlocked booted with
+	// bmxRegistryUrl=https://str-setup.invalid, which NXDOMAINs, and its light bar
+	// swept forever (live ST300, 2026-07-07). The sys-configuration/envswitch
+	// restore over :17000 does NOT reliably persist to OverrideSdkPrivateCfg.xml
+	// across a hard reboot, so the file is edited directly here. Best-effort and
+	// idempotent (a no-op when no placeholder is present, e.g. a plain stick
+	// install), so it never fails an otherwise-good install.
+	if herr := a.healSDKCloudURLs(host); herr != nil {
+		a.logger.Warn("repair_ssh: could not heal SDK cloud URLs before reboot; a :17000-unlocked box may keep sweeping", "host", host, "err", herr)
+	}
+
+	a.emitPhase("restart")
 	_ = boxReboot(host)
 	return res, nil
+}
+
+// healSDKCloudURLsScript rewrites the bmx/stats/marge URL tags in the box's
+// persistent Bose SDK config, replacing any str-setup.invalid placeholder value
+// with the stock cloud hosts. Mirrors the on-box heal_sdk_cloud_urls in
+// usb-stick/install.sh line for line. It exits early (no-op) when the file is
+// absent or carries no placeholder, and prints STR_HEALED_SDK_URLS only when it
+// actually rewrote something. Runs over BusyBox sh via boxSSHOutput.
+const healSDKCloudURLsScript = `f=/mnt/nv/OverrideSdkPrivateCfg.xml
+[ -f "$f" ] || exit 0
+grep -q 'str-setup\.invalid' "$f" 2>/dev/null || exit 0
+sed -e 's#\(<bmxRegistryUrl>\)[^<]*str-setup\.invalid[^<]*\(</bmxRegistryUrl>\)#\1https://content.api.bose.io/bmx/registry/v1/services\2#g' -e 's#\(<statsServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</statsServerUrl>\)#\1https://events.api.bosecm.com\2#g' -e 's#\(<margeServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</margeServerUrl>\)#\1https://streaming.bose.com\2#g' "$f" > "$f.new" 2>/dev/null && mv "$f.new" "$f" 2>/dev/null && echo STR_HEALED_SDK_URLS`
+
+// healSDKCloudURLs restores any str-setup.invalid placeholder host that a
+// stick-free :17000 unlock (telnet_enable_ssh.go) left in the box's persistent
+// Bose SDK config back to the stock cloud hostnames, over SSH, editing
+// /mnt/nv/OverrideSdkPrivateCfg.xml in place. That file is the durable source of
+// the box's bmx/stats/marge URLs: the unlock points them at str-setup.invalid to
+// fire the SSH injection, and although the sys-configuration/envswitch layer is
+// normally restored afterwards (resetBoseURLsViaTelnet), that restore does NOT
+// reliably persist to this file across a hard reboot. STR only redirects the
+// STOCK hosts (streaming.bose.com, content.api.bose.io) via /etc/hosts, so the
+// box must carry the stock hostnames for the redirect to catch them. Idempotent
+// and best-effort: a no-op when no placeholder is present, and any SSH error is
+// returned so the caller can log it rather than fail the install. Must run BEFORE
+// the post-install reboot so the SDK reads the healed URLs on its next boot.
+func (a *App) healSDKCloudURLs(host string) error {
+	out, err := boxSSHOutput(host, healSDKCloudURLsScript, 15*time.Second)
+	if err != nil {
+		return fmt.Errorf("heal SDK cloud URLs: %s", classifySSHError(out, err))
+	}
+	if strings.Contains(out, "STR_HEALED_SDK_URLS") {
+		a.logger.Info("install_str: healed str-setup.invalid cloud URLs in OverrideSdkPrivateCfg.xml back to stock", "host", host)
+	} else {
+		a.logger.Info("install_str: no str-setup.invalid placeholder in the SDK config to heal (already stock)", "host", host)
+	}
+	return nil
 }
 
 // stageRepairFiles uploads the embedded install file set into stageDir on the
@@ -862,17 +958,46 @@ func installRunBudget(model string) time.Duration {
 // instead of a frozen "installing" line while STR waits for the box's CPU to
 // calm down.
 type InstallProgress struct {
-	Phase       string  `json:"phase"`       // "settle"
-	Load        float64 `json:"load"`        // box 1-min load average
-	Threshold   float64 `json:"threshold"`   // calm threshold (per-core scaled)
-	Busy        bool    `json:"busy"`        // true while still waiting to settle
-	RemainingMs int     `json:"remainingMs"` // until the safety cap fires
+	Phase       string  `json:"phase"`               // "settle" | "access" | "copy" | "restart" | "wait"
+	Label       string  `json:"label,omitempty"`     // optional human label (frontend usually maps phase->label itself)
+	Load        float64 `json:"load"`                // box 1-min load average
+	Threshold   float64 `json:"threshold"`           // calm threshold (per-core scaled)
+	Busy        bool    `json:"busy"`                // true while still waiting to settle
+	RemainingMs int     `json:"remainingMs"`         // until the safety cap fires
+	ElapsedMs   int     `json:"elapsedMs,omitempty"` // since install start, drives the live timer
+	MargeHits   int     `json:"margeHits,omitempty"` // factory-reset bootstrap: box->PC callbacks so far (0 => firewall?)
 }
 
 func (a *App) emitInstallProgress(p InstallProgress) {
 	if a.ctx != nil {
 		wailsrt.EventsEmit(a.ctx, "install:progress", p)
 	}
+}
+
+// emitPhase records the current install phase and pushes a phase-labeled,
+// elapsed-stamped progress event so the UI checklist advances a row.
+func (a *App) emitPhase(phase string) {
+	a.installPhase = phase
+	a.emitInstallHeartbeat()
+}
+
+// emitInstallHeartbeat re-emits the CURRENT phase with a fresh elapsed (and the
+// bootstrap marge-callback count while a factory-reset unlock is running). The
+// shared waitForSSHOpen/waitForAgent poll loops call it every few seconds so the
+// long silent stretches keep the checklist visibly alive. No-op before an install
+// has set a phase.
+func (a *App) emitInstallHeartbeat() {
+	if a.installPhase == "" {
+		return
+	}
+	p := InstallProgress{Phase: a.installPhase}
+	if !a.installStart.IsZero() {
+		p.ElapsedMs = int(time.Since(a.installStart) / time.Millisecond)
+	}
+	if a.installMargeHits != nil {
+		p.MargeHits = int(a.installMargeHits())
+	}
+	a.emitInstallProgress(p)
 }
 
 // waitForBoxLoad holds off launching the heavy install.sh until the box's CPU
@@ -1138,6 +1263,7 @@ func (a *App) waitForAgent(host, model string) error {
 	deadline := time.Now().Add(budget)
 	i := 0
 	for time.Now().Before(deadline) {
+		a.emitInstallHeartbeat()
 		ctx, cancel := context.WithTimeout(a.appCtx(), 5*time.Second)
 		_, ok := probeSTR(ctx, host)
 		cancel()

@@ -1494,6 +1494,51 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 #wlanSection input:focus, #wlanSection select:focus { outline: none; border-color: var(--brand); }
 #wlanSection h3 small { color: var(--c-border-2); font-weight: normal; font-size: 11px; }
 .setup-result { margin-top: 12px; font-size: 13px; }
+
+/* OTA-first setup: the network-install hero is the prominent primary action for
+   a reachable speaker; the USB-stick wizard is demoted into a collapsed
+   <details> that reads as a fallback. */
+.setup-primary-action { margin: 4px 0 12px; }
+.setup-hero { background: var(--brand-bg, #1f2c3a); border: 1px solid var(--brand, #58a); border-radius: 8px; padding: 16px; }
+.setup-hero h3 { margin: 0 0 6px 0; font-size: 16px; color: var(--c-text); font-weight: 600; }
+.setup-hero-body { color: var(--c-muted); font-size: 13px; margin: 0 0 12px 0; }
+.setup-stick-details { margin-bottom: 10px; }
+.setup-stick-details > summary { cursor: pointer; padding: 10px 12px; background: var(--c-surface); border-radius: 6px; color: var(--c-text-2); font-size: 13px; }
+.setup-stick-details > summary:hover { background: var(--c-surface-2); }
+.setup-stick-details[open] > summary { margin-bottom: 8px; }
+.setup-stick-summary-label { font-weight: 500; }
+.setup-stick-summary-hint { display: block; margin-top: 3px; }
+
+/* Live install checklist: phase rows + an independent timer so the long silent
+   install stretches always read as alive. */
+.setup-checklist { padding: 4px 0; }
+.chk-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; font-weight: 500; color: var(--c-text-2); }
+.chk-timer { font-variant-numeric: tabular-nums; color: var(--c-muted); font-size: 13px; }
+.chk-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--c-muted); font-size: 13px; }
+.chk-row.chk-run { color: var(--c-text); font-weight: 500; }
+.chk-row.chk-done { color: var(--c-text-2); }
+.chk-ico { flex: 0 0 16px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
+.chk-ico.chk-done { color: var(--signal-green); }
+.chk-ico.chk-pend::before { content: ''; width: 11px; height: 11px; border: 2px solid var(--c-surface-3); border-radius: 50%; }
+.chk-ico.chk-spin::before { content: ''; width: 11px; height: 11px; border: 2px solid var(--c-surface-3); border-top-color: var(--brand, #58a); border-radius: 50%; animation: chk-spin 0.8s linear infinite; }
+.chk-row.chk-fail { color: var(--c-text-2); }
+.chk-ico.chk-fail { color: var(--signal-red); }
+@keyframes chk-spin { to { transform: rotate(360deg); } }
+.chk-detail { margin: 2px 0 4px 24px; }
+.chk-reassure { margin-top: 12px; }
+/* Post-install provisioning checklist (name / language / time zone / Wi-Fi). */
+.setup-provision { margin-top: 10px; }
+/* Coprocessor power-cycle troubleshooting note on the done / failure screens. */
+.setup-powercycle { margin-top: 14px; max-width: 40rem; line-height: 1.4; }
+
+/* OTA card Wi-Fi block + safe-to-unplug line */
+.setup-hero-wifi { margin: 12px 0 14px; padding-top: 12px; border-top: 1px solid var(--c-surface-3); }
+.setup-hero-wifi-label { display: block; font-weight: 500; margin-bottom: 2px; }
+.setup-hero-wifi input[type="text"], .setup-hero-wifi input[type="password"] { width: 100%; margin-top: 6px; }
+.setup-hero-wifi .wlan-row select { flex: 1; min-width: 0; }
+.setup-hero-field { margin: 10px 0; }
+.setup-hero-field input, .setup-hero-field select { width: 100%; margin-top: 6px; }
+.setup-unplug { color: var(--signal-green); margin: 6px 0; font-size: 13px; }
 .setup-ok { color: var(--signal-green); }
 .setup-err { color: var(--signal-red); }
 .setup-warn { color: var(--signal-red); }

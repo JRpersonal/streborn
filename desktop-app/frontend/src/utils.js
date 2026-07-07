@@ -43,32 +43,36 @@ export function compareVerBuild(aVer, aBuild, bVer, bBuild) {
   return sa < sb ? -1 : 1;
 }
 
-// boxModelSupport classifies a Bose /info <type> model string for STR support.
-// STR only runs on the standalone SoundTouch speakers that have physical preset
-// buttons: SoundTouch 10, 20, 30, Portable, and the Wave SoundTouch system.
-// Other SoundTouch-speaking devices show up in discovery but cannot run STR, and
-// the install then dead-ends in an ssh255 error the user cannot interpret
-// (reported for Lifestyle / CineMate home-cinema systems, the SoundTouch 300
-// soundbar, and the SoundTouch Wireless Link Adapter). Returns:
-//   'supported'   - a standalone SoundTouch speaker STR targets
-//   'unsupported' - a known device STR cannot run on: show a clear note, no install
-//   'unknown'     - type absent or unrecognised: do NOT block. STR is
-//                   compatibility-first, so an odd type string on a real speaker
-//                   must still be installable; callers treat 'unknown' like
-//                   'supported' for gating and only special-case 'unsupported'.
+// boxModelSupport classifies a Bose /info <type> model string for STR.
+// Every SoundTouch-speaking device STR can reach on the LAN is an install
+// candidate now: a box reachable by IP installs over the network (stick-free
+// via the :17000 unlock + RepairInstallViaSSH), so no model is blocked. The
+// classification only frames the install:
+//   'supported' - a standalone SoundTouch speaker with the hardware preset
+//                 buttons 1-6 STR was built around (10, 20, 30, Portable, Wave)
+//   'limited'   - a SoundTouch-speaking device STR still installs on over the
+//                 network (soundbar / home-cinema system / Wireless Link Adapter)
+//                 but which has no hardware preset buttons 1-6. Installable;
+//                 callers add a short note that those buttons will not work.
+//   'unknown'   - type absent or unrecognised: treat like 'supported'
+//                 (compatibility-first). An odd type string on a real speaker
+//                 must still be installable.
+// Nothing here blocks an install any more; the old 'unsupported' verdict (which
+// dead-ended installs before the stick-free :17000 network path existed) is gone.
 export function boxModelSupport(model) {
   const m = String(model || '').toLowerCase().trim();
   if (!m || m === 'soundtouch') return 'unknown';
-  // Known-unsupported families first: a soundbar / home-cinema system / adapter
-  // can itself contain the word "soundtouch", so these take precedence over the
-  // speaker whitelist below.
+  // Soundbar / home-cinema / adapter families first: these can themselves
+  // contain the word "soundtouch", so they take precedence over the speaker
+  // whitelist below. STR installs on them over the network; they just lack the
+  // hardware preset buttons, hence 'limited' rather than a hard block.
   if (/\blifestyle\b/.test(m) || /\bcinemate\b/.test(m) || /\bacoustimass\b/.test(m)
       || /soundtouch\s*300\b/.test(m) || /\bsoundbar\b/.test(m)
       || /wireless\s*link\s*adapter/.test(m) || /\badapter\b/.test(m)) {
-    return 'unsupported';
+    return 'limited';
   }
-  // Supported standalone speakers. Match the model number as a whole token so
-  // "SoundTouch 30" does not also catch the "SoundTouch 300" soundbar.
+  // Standalone speakers with hardware preset buttons. Match the model number as
+  // a whole token so "SoundTouch 30" does not also catch the "SoundTouch 300".
   if (/soundtouch\s*(10|20|30)\b/.test(m) || /\bportable\b/.test(m) || /\bwave\b/.test(m)) {
     return 'supported';
   }

@@ -178,7 +178,6 @@ import {
   showError,
   showToast,
   compareVerBuild,
-  boxModelSupport,
   getBoxLabel,
 } from './utils.js';
 
@@ -304,7 +303,7 @@ initSpotifyView({
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames });
 initLibraryView({ showSlotPicker, formatDuration });
-initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision });
+initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, boxFetch, celebrateProvision: inviteWorldMapAfterProvision });
 initPodcastsView();
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
@@ -1608,16 +1607,12 @@ function renderBoxSelect() {
       ? `<span class="box-model" title="${escapeAttr(t('speaker.modelTitle'))}">${escapeHtml(b.model)}</span>`
       : '';
     if (isStock) {
-      // A SoundTouch-speaking device that STR cannot run on (Lifestyle / CineMate
-      // system, SoundTouch 300 soundbar, Wireless Link Adapter) still appears in
-      // discovery. Flag it as not supported instead of inviting an install that
-      // dead-ends in ssh255 (#unsupported-devices).
-      const unsupported = boxModelSupport(b.model) === 'unsupported';
-      const badge = unsupported
-        ? `<span class="box-stock-badge box-unsupported-badge">${escapeHtml(t('speaker.unsupportedBadge'))}</span>`
-        : `<span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span>`;
-      const tip = unsupported ? t('speaker.unsupportedBadgeTitle') : t('speaker.stockTooltip');
-      return `<span class="box-btn${stockCls}${unsupported ? ' unsupported' : ''}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(tip)}">${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
+      // Every stock Bose speaker STR discovers is an install candidate: a box
+      // reachable by IP installs over the network (stick-free), so we invite the
+      // install for any model rather than blocking one. Soundbars / adapters
+      // install too; their missing hardware preset buttons are noted in Setup.
+      const badge = `<span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span>`;
+      return `<span class="box-btn${stockCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(t('speaker.stockTooltip'))}">${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
     const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
     // Red dot when this speaker's agent is older than the app's embedded
@@ -1656,29 +1651,20 @@ function renderBoxSelect() {
       const box = state.boxes.find(b => b.host === host && b.port === port);
       if (!box) return;
       if (box.kind === 'stock') {
-        // Not a standalone SoundTouch speaker (Lifestyle / CineMate system,
-        // SoundTouch 300 soundbar, Wireless Link Adapter): STR cannot run on it
-        // and the install would dead-end in ssh255. Tell the user plainly instead
-        // of sending them into the stick setup (#unsupported-devices).
-        if (boxModelSupport(box.model) === 'unsupported') {
-          await confirmWarn(
-            t('speaker.unsupportedTitle'),
-            t('speaker.unsupportedBody', { model: escapeHtml(box.model || 'SoundTouch') }),
-            { icon: null, confirmLabel: t('common.close'), confirmClass: 'btn btn-primary' },
-          );
-          return;
-        }
-        // Stock speaker: not an error, this is the happy path. The user
-        // found a Bose speaker they can revive with STR. Invite them to
-        // the USB stick setup with a positive CTA (no warning triangle,
-        // no red "proceed anyway") instead of a danger prompt.
+        // Any stock Bose speaker is the happy path now: reachable boxes install
+        // over the network (stick-free), so we invite every model into Setup with
+        // a positive CTA instead of blocking soundbars / adapters. Setup notes the
+        // hardware-preset-button caveat for 'limited' models.
         const label = getBoxLabel(box);
         const ok = await confirmWarn(
           t('speaker.stockConfirmTitle'),
           t('speaker.stockConfirmBody', { label: escapeHtml(label) }),
           { icon: null, confirmLabel: t('speaker.stockConfirmCta'), confirmClass: 'btn btn-primary' },
         );
-        if (ok) switchView('setup');
+        // Pin the clicked box as the setup target so Setup opens on the
+        // network-install hero for THIS speaker (not an arbitrary one on a
+        // multi-box LAN, #44). The install starts from the hero button, not here.
+        if (ok) { state.setupTarget = { kind: 'stock', box }; switchView('setup'); }
         return;
       }
       selectBox(box);

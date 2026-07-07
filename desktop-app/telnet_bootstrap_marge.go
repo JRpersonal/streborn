@@ -193,6 +193,11 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 		return false, "could not start local marge responder: " + err.Error()
 	}
 	defer marge.Stop()
+	// Surface the box->PC marge callbacks to the install heartbeat so the UI can
+	// warn about a firewall block (0 callbacks after ~60s) instead of a silent
+	// multi-minute wait. Cleared when the bootstrap returns.
+	a.installMargeHits = func() int64 { return marge.hits.Load() }
+	defer func() { a.installMargeHits = nil }()
 
 	t, err := dialTAP(host, 5*time.Second)
 	if err != nil {

@@ -52,6 +52,9 @@ import {
   ListWiFiProfiles,
   TryWiFiPassword,
   CurrentWiFi,
+  SetBoxName,
+  SetBoxLanguage,
+  SetClockDisplay,
   SuggestBoxLanguage,
   InstallSTROnBox,
   RepairInstallViaSSH,
@@ -75,6 +78,68 @@ import {
 // need an injected helper for it.
 const isMacOS = /Mac OS X|Macintosh/.test(navigator.userAgent);
 
+// Timezone helpers for the OTA setup card. detectTimeZone returns the real IANA
+// zone of THIS computer (e.g. "Europe/Berlin", "America/New_York", "Asia/Tokyo")
+// with no regional bias. detectClockFormat24 derives 12h vs 24h from the OS
+// locale so we never force a format on the box. tzOptionsHtml builds the dropdown
+// from the platform's full IANA zone list when the runtime exposes it, always
+// including and pre-selecting the detected zone. On install we push the picked
+// IANA zone via SetClockDisplay(host, true, zone, 0, format24): with a real zone
+// set the box handles DST itself, so the offset MUST stay 0 (a non-zero offset on
+// top would double-shift the clock).
+function detectTimeZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
+}
+function detectClockFormat24() {
+  try {
+    const hc = Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hourCycle || '';
+    if (hc === 'h23' || hc === 'h24') return true;
+    if (hc === 'h11' || hc === 'h12') return false;
+  } catch {}
+  return true; // global-neutral default when the runtime does not report an hour cycle
+}
+// Worldwide fallback list, used only when Intl.supportedValuesOf is unavailable
+// (older WebViews). Deliberately spread across every continent, no home bias.
+const TZ_FALLBACK = [
+  'UTC',
+  'Europe/London', 'Europe/Berlin', 'Europe/Paris', 'Europe/Madrid', 'Europe/Rome',
+  'Europe/Amsterdam', 'Europe/Warsaw', 'Europe/Kyiv', 'Europe/Moscow', 'Europe/Istanbul',
+  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+  'America/Sao_Paulo', 'America/Mexico_City', 'America/Toronto',
+  'Africa/Cairo', 'Africa/Johannesburg', 'Africa/Lagos',
+  'Asia/Dubai', 'Asia/Kolkata', 'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Singapore', 'Asia/Seoul',
+  'Australia/Sydney', 'Pacific/Auckland',
+];
+function tzOptionsHtml(selected) {
+  let zones = [];
+  try {
+    if (typeof Intl.supportedValuesOf === 'function') zones = Intl.supportedValuesOf('timeZone') || [];
+  } catch {}
+  if (!zones.length) zones = TZ_FALLBACK.slice();
+  if (selected && zones.indexOf(selected) === -1) zones = [selected, ...zones];
+  return zones.map(z =>
+    `<option value="${escapeAttr(z)}"${z === selected ? ' selected' : ''}>${escapeHtml(z)}</option>`
+  ).join('');
+}
+
+// retryStep runs an async op up to `attempts` times with a short pause between
+// tries. Resolves to { ok, value }: a thrown error OR an explicit `false` return
+// counts as a failure and is retried; any other resolved value counts as success
+// and is returned. Used for post-install provisioning, where the box has just
+// restarted its agent and the first call or two often lands before it answers.
+async function retryStep(fn, attempts, delayMs) {
+  let last = { ok: false, value: undefined };
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const v = await fn();
+      if (v !== false) return { ok: true, value: v };
+      last = { ok: false, value: v };
+    } catch (e) { last = { ok: false, value: e }; }
+    if (i < attempts - 1) await sleep(delayMs);
+  }
+  return last;
+}
+
 // Injected main.js helpers (see initSetupView). These stay in main.js because
 // they are shared across views; the setup code calls them as deps.<name>.
 let deps = {
@@ -86,6 +151,10 @@ let deps = {
   // box is successfully provisioned with STR (the most reliable "alive again"
   // moment). Wired in main.js; no-op default so the view never depends on it.
   celebrateProvision: () => {},
+  // boxFetch(box, path, opts): self-healing fetch to the installed agent's HTTP
+  // API. Used to PUT /api/box/wlan right after a network install so a
+  // cable-installed speaker joins Wi-Fi. Wired in main.js.
+  boxFetch: async () => ({ ok: false }),
 };
 export function initSetupView(d) {
   deps = { ...deps, ...d };
@@ -104,13 +173,17 @@ function mountSetupShell() {
   setupShellMounted = true;
   root.innerHTML = `
     <h2>${escapeHtml(t('setup.heading'))}</h2>
-    <p class="setup-intro">${escapeHtml(t('setup.intro'))}</p>
-    <div class="setup-stay-on-wifi-note">${escapeHtml(t('setup.stayOnHomeWifi'))}</div>
     <div class="setup-section setup-target-section" id="setupTargetSection">
       <h3>${escapeHtml(t('setup.targetHeading'))}</h3>
-      <p class="muted small">${escapeHtml(t('setup.targetIntro'))}</p>
       <div id="setupTargetBody"></div>
     </div>
+    <div id="setupPrimaryAction" class="setup-primary-action"></div>
+    <div id="setupResult" class="setup-result"></div>
+    <details class="setup-stick-details" id="setupStickDetails">
+      <summary class="setup-stick-summary">
+        <span class="setup-stick-summary-label">${escapeHtml(t('setup.useStickInstead'))}</span>
+        <span class="muted small setup-stick-summary-hint">${escapeHtml(t('setup.useStickInsteadHint'))}</span>
+      </summary>
     <div class="setup-section">
       <div class="setup-section-head">
         <h3>${escapeHtml(t('setup.step1Heading'))}</h3>
@@ -162,12 +235,12 @@ function mountSetupShell() {
         <div>${t('setup.formatWarnBody')}</div>
       </div>
       <button class="btn btn-primary" id="setupGo" disabled>${escapeHtml(t('setup.goBtn'))}</button>
-      <div id="setupResult" class="setup-result"></div>
     </div>
     <div class="setup-section setup-skip-section" id="setupSkipSection">
       <button class="btn" id="setupSkipToInstall">${escapeHtml(t('setup.skipToInstallBtn'))}</button>
       <p class="muted small">${escapeHtml(t('setup.skipToInstallHint'))}</p>
     </div>
+    </details>
   `;
 
   // Wire the setup-tab name combobox with the same helper used in
@@ -276,24 +349,20 @@ export function renderSetupTargetPicker() {
   const seen = new Set();
   const stockBoxes = [];
   const strBoxes = [];
-  const unsupportedBoxes = [];
   for (const b of (state.boxes || [])) {
     if (!b || !b.host) continue;
     if (seen.has(b.host)) continue;
     seen.add(b.host);
-    if (b.kind === 'stock') {
-      // A SoundTouch-speaking device STR cannot run on (Lifestyle / CineMate
-      // system, SoundTouch 300 soundbar, Wireless Link Adapter) is shown as a
-      // non-selectable "not supported" row, never offered as an install target
-      // (the install would dead-end in ssh255).
-      if (boxModelSupport(b.model) === 'unsupported') unsupportedBoxes.push(b);
-      else stockBoxes.push(b);
-    } else if (b.kind === 'str') strBoxes.push(b);
+    // Every stock Bose speaker is an install target now, including soundbars /
+    // home-cinema systems / adapters ('limited'): a box reachable by IP installs
+    // over the network, so none is filtered out. The card adds a hardware-preset-
+    // button caveat for 'limited' models below.
+    if (b.kind === 'stock') stockBoxes.push(b);
+    else if (b.kind === 'str') strBoxes.push(b);
   }
   const byName = (a, b) => (a.friendlyName || a.name || '').localeCompare(b.friendlyName || b.name || '');
   stockBoxes.sort(byName);
   strBoxes.sort(byName);
-  unsupportedBoxes.sort(byName);
 
   // If the previously chosen STR/stock box has vanished from the
   // LAN, drop the cached target so the picker UI does not show a
@@ -347,7 +416,7 @@ export function renderSetupTargetPicker() {
   };
 
   let cards = '';
-  if (stockBoxes.length === 0 && strBoxes.length === 0 && unsupportedBoxes.length === 0) {
+  if (stockBoxes.length === 0 && strBoxes.length === 0) {
     cards += `<div class="muted small setup-target-empty">${escapeHtml(t('setup.targetEmpty'))}</div>`;
   }
   // boxIdentLine builds the sublabel pieces (model, serial, host)
@@ -370,16 +439,15 @@ export function renderSetupTargetPicker() {
     cards += cardHTML('stock', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindStock')),
       t('setup.targetCardBadgeStock'), 'badge-warn');
+    // Soundbars / home-cinema systems / adapters ('limited') install fine but
+    // have no hardware preset buttons 1-6; say so honestly under the card.
+    if (boxModelSupport(b.model) === 'limited') {
+      cards += `<div class="setup-target-limited-note muted small">${escapeHtml(t('setup.limitedNote'))}</div>`;
+    }
     // ST30 USB power warning, shown as soon as an ST30 is detected (not gated on
     // selection) so the user picks a low-power stick before preparing one.
     if (targetIsST30(b)) {
       cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
-    }
-    // A box already on Wi-Fi (the common case) just needs STR added via
-    // the stick: no reset, the existing Wi-Fi stays. Reassure here so
-    // users do not reach for a factory reset they do not need.
-    if (isSelected('stock', b.host)) {
-      cards += `<div class="setup-target-factory-help muted small">${escapeHtml(t('setup.stockKeepsWifi'))}</div>`;
     }
   }
   for (const b of strBoxes) {
@@ -393,19 +461,8 @@ export function renderSetupTargetPicker() {
       cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
     }
   }
-  // Unsupported devices: shown as non-selectable info rows (a distinct class so
-  // the card click handler below, which targets .setup-target-card, never picks
-  // them up). STR has no install path for these, so there is no radio dot and no
-  // "prepare stick" target (#unsupported-devices).
-  for (const b of unsupportedBoxes) {
-    const label = b.friendlyName || b.name || b.host;
-    cards += `<div class="setup-target-unsupported" aria-disabled="true">` +
-      `<div class="stc-row1"><span class="stc-left"><span class="stc-label">${escapeHtml(label)}</span></span>` +
-      `<span class="stc-badge badge-warn">${escapeHtml(t('speaker.unsupportedBadge'))}</span></div>` +
-      `<div class="stc-sublabel">${escapeHtml(boxIdentLine(b, t('setup.targetCardKindStock')))}</div>` +
-      `<div class="setup-target-factory-help muted small">${escapeHtml(t('speaker.unsupportedBadgeTitle'))}</div>` +
-      `</div>`;
-  }
+  // No "unsupported" list any more: every discovered stock box is an install
+  // target above, so there is nothing non-selectable to render here.
   // Factory-reset card is always shown. Append the macOS hint
   // inline only if we're on macOS, otherwise just the standard help.
   const isMac = (typeof navigator !== 'undefined' &&
@@ -425,28 +482,11 @@ export function renderSetupTargetPicker() {
     cards += `<div id="setupAPPushPanel" class="setup-ap-push-panel"></div>`;
   }
 
-  // Locked pill summarising the current choice, rendered below the
-  // cards. Hidden when no target is selected (very rare; the
-  // default fallbacks above usually populate something).
-  let pill = '';
-  if (sel) {
-    let targetLabel;
-    if (sel.kind === 'factory-reset') {
-      targetLabel = t('setup.targetFactoryLabel');
-    } else {
-      const b = sel.box;
-      const friendly = b.friendlyName || b.name || b.host;
-      const idTail = [];
-      if (b.model) idTail.push(b.model);
-      if (b.serialNumber) idTail.push(`SN ${b.serialNumber}`);
-      idTail.push(b.host);
-      targetLabel = `${friendly} (${idTail.join(' · ')})`;
-    }
-    pill = `<div class="setup-target-pill"><span class="muted small">${escapeHtml(t('setup.targetPickedFor'))}</span> ` +
-           `<b>${escapeHtml(targetLabel)}</b></div>`;
-  }
+  body.innerHTML = `<div class="setup-target-cards" role="radiogroup" aria-label="${escapeAttr(t('setup.targetHeading'))}">${cards}</div>`;
 
-  body.innerHTML = `<div class="setup-target-cards" role="radiogroup" aria-label="${escapeAttr(t('setup.targetHeading'))}">${cards}</div>${pill}`;
+  // Paint the OTA-first primary action for the current target: a network-install
+  // hero for a reachable stock box, or the collapsed stick wizard otherwise.
+  renderPrimaryAction();
 
   body.querySelectorAll('.setup-target-card').forEach(el => {
     el.onclick = () => {
@@ -633,6 +673,175 @@ function updateSetupGoButtonLabel() {
   // goBtnFormatPrepare / goBtnUpdate based on stick state). Do
   // nothing here — refreshDrives ran already during drive pick
   // and the existing label is correct for the picked stick.
+}
+
+// networkInstallRunning guards against a second network install being started
+// (a double-click on the hero button, or a hero re-render mid-install): it stays
+// true while startNetworkInstall runs, disabling the button.
+let networkInstallRunning = false;
+
+// renderPrimaryAction paints the OTA-first primary action above the (collapsed)
+// USB-stick wizard. For a reachable stock box it shows the network-install hero
+// whose button installs STR over the network with no stick; for str /
+// factory-reset / no target it clears the hero and opens the stick <details> so
+// the wizard is the primary surface (str stick-update / brand-new-speaker
+// territory). Called at the end of renderSetupTargetPicker, so it repaints on
+// every target change.
+function renderPrimaryAction() {
+  const host = $('setupPrimaryAction');
+  const details = $('setupStickDetails');
+  if (!host) return;
+  const sel = state.setupTarget;
+  if (sel && sel.kind === 'stock' && sel.box) {
+    const b = sel.box;
+    // Do NOT rebuild the card if it already shows THIS box. renderPrimaryAction
+    // runs on every discovery refresh (every few seconds); rebuilding would wipe
+    // the user's typed/selected Wi-Fi, name and language mid-interaction and could
+    // eat the install click (the button element gets replaced under the pointer).
+    // Only (re)build when the target box actually changes.
+    const existingHero = host.querySelector('.setup-hero');
+    if (existingHero && existingHero.getAttribute('data-host') === b.host) {
+      if (details) details.open = false;
+      return;
+    }
+    const model = b.model || 'SoundTouch';
+    const curName = b.friendlyName || b.name || '';
+    host.innerHTML =
+      `<div class="setup-hero" data-host="${escapeAttr(b.host)}">` +
+        `<p class="setup-hero-body">${escapeHtml(t('setup.cardPitch', { model }))}</p>` +
+        `<div class="setup-hero-field">` +
+          `<label class="setup-hero-wifi-label" for="netBoxName">${escapeHtml(t('setup.cardNameLabel'))}</label>` +
+          `<input type="text" id="netBoxName" autocomplete="off" value="${escapeAttr(curName)}" placeholder="${escapeAttr(t('setup.namePlaceholder'))}" />` +
+        `</div>` +
+        `<div class="setup-hero-field">` +
+          `<label class="setup-hero-wifi-label" for="netBoxLang">${escapeHtml(t('setup.langLabel'))}</label>` +
+          `<select id="netBoxLang"></select>` +
+        `</div>` +
+        `<div class="setup-hero-field">` +
+          `<label class="setup-hero-wifi-label" for="netBoxTz">${escapeHtml(t('setup.tzLabel'))}</label>` +
+          `<select id="netBoxTz"></select>` +
+          `<div class="muted small">${escapeHtml(t('setup.tzHint'))}</div>` +
+        `</div>` +
+        `<div class="setup-hero-wifi">` +
+          `<label class="setup-hero-wifi-label" for="netWlanSelect">${escapeHtml(t('setup.wifiFieldLabel'))}</label>` +
+          `<div class="muted small">${escapeHtml(t('setup.wifiFieldHint'))}</div>` +
+          `<div class="wlan-row">` +
+            `<select id="netWlanSelect"><option value="">${escapeHtml(t('settingsView.wlanPickPlaceholder'))}</option></select>` +
+            `<button type="button" class="btn btn-icon-sm" id="netWlanRefresh" title="${escapeAttr(t('setup.wlanRefreshTitle'))}">&#x21bb;</button>` +
+          `</div>` +
+          `<input type="text" id="netWlanSsid" autocomplete="off" placeholder="${escapeAttr(t('settingsView.wlanSsidPlaceholder'))}" />` +
+          `<div class="wlan-row">` +
+            `<input type="password" id="netWlanPass" placeholder="${escapeAttr(t('setup.wlanPassPlaceholder'))}" />` +
+            `<button type="button" class="btn btn-icon-sm" id="netWlanShowPass" title="${escapeAttr(t('settingsView.wlanShowPass'))}">&#128065;</button>` +
+          `</div>` +
+        `</div>` +
+        `<button class="btn btn-primary" id="setupHeroInstall"${networkInstallRunning ? ' disabled' : ''}>${escapeHtml(t('setup.netInstallBtn'))}</button>` +
+      `</div>`;
+    const btn = $('setupHeroInstall');
+    if (btn) btn.onclick = () => startNetworkInstall(b);
+    const showPass = $('netWlanShowPass');
+    if (showPass) showPass.onclick = () => {
+      const inp = $('netWlanPass');
+      if (!inp) return;
+      if (inp.type === 'password') { inp.type = 'text'; showPass.innerHTML = '&#128064;'; }
+      else { inp.type = 'password'; showPass.innerHTML = '&#128065;'; }
+    };
+    const wsel = $('netWlanSelect');
+    if (wsel) wsel.onchange = onCardWifiSelect;
+    const wref = $('netWlanRefresh');
+    if (wref) wref.onclick = () => loadCardWifi();
+    loadCardWifi();
+    const langSel = $('netBoxLang');
+    if (langSel) {
+      langSel.innerHTML = langOptionsHtml();
+      SuggestBoxLanguage(getLocale(), '').then(id => { if (id && langSel) langSel.value = String(id); }).catch(() => {});
+    }
+    // Timezone dropdown: default to THIS computer's IANA zone (no regional bias).
+    const tzSel = $('netBoxTz');
+    if (tzSel) {
+      const dz = detectTimeZone();
+      tzSel.innerHTML = tzOptionsHtml(dz);
+      if (dz) tzSel.value = dz;
+    }
+    if (details) details.open = false;
+  } else {
+    host.innerHTML = '';
+    if (details) details.open = true;
+  }
+}
+
+// prefillCardWifi fills the OTA card's Wi-Fi inputs from this PC's current Wi-Fi
+// (SSID always; password too, except on macOS where reading the Keychain pops an
+// admin prompt, #88). Best-effort: a binding error just leaves the fields blank.
+async function loadCardWifi() {
+  const sel = $('netWlanSelect');
+  if (!sel) return;
+  try {
+    const profiles = await ListWiFiProfiles() || [];
+    sel.innerHTML = `<option value="">${escapeHtml(t('settingsView.wlanPickPlaceholder'))}</option>` +
+      profiles.map(p => `<option value="${escapeAttr(p.ssid)}">${escapeHtml(p.ssid)}</option>`).join('');
+    try {
+      const current = await CurrentWiFi();
+      if (current && profiles.some(p => p.ssid === current)) {
+        sel.value = current;
+        await onCardWifiSelect();
+      }
+    } catch {}
+  } catch {
+    sel.innerHTML = `<option value="">${escapeHtml(t('setup.wlanListUnavailable'))}</option>`;
+  }
+}
+
+// onCardWifiSelect copies the picked profile's SSID into the card's SSID field
+// and auto-fills the password from the OS credential store (netsh/nmcli;
+// skipped on macOS where reading the Keychain pops an admin prompt, #88).
+async function onCardWifiSelect() {
+  const sel = $('netWlanSelect');
+  const v = sel ? sel.value : '';
+  const ssidEl = $('netWlanSsid');
+  if (ssidEl) ssidEl.value = v;
+  if (!v || isMacOS) return;
+  try {
+    const pw = await TryWiFiPassword(v);
+    const passEl = $('netWlanPass');
+    if (pw && passEl) passEl.value = pw;
+  } catch {}
+}
+
+// startNetworkInstall installs STR over the network on an already-reachable box:
+// it pins the target and hands the known box straight to waitForBoxAfterSetup,
+// whose knownBox path skips the 5-minute discovery wait and runs the same
+// hardened install + progress + SSH-repair + play-how flow as the stick path,
+// rendering into the shared #setupResult panel. No stick, no user reboot.
+async function startNetworkInstall(box) {
+  if (!box || networkInstallRunning) return;
+  networkInstallRunning = true;
+  const heroBtn = $('setupHeroInstall');
+  if (heroBtn) heroBtn.disabled = true;
+  state.setupTarget = { kind: 'stock', box };
+  const name = box.friendlyName || box.name || box.host;
+  const nameForBox = ($('netBoxName') && $('netBoxName').value.trim()) || '';
+  const langForBox = parseInt(($('netBoxLang') && $('netBoxLang').value) || '0', 10) || 0;
+  // Timezone to push after install. Empty => skip the clock write. The 12/24h
+  // format is derived from this computer's locale so no extra control is needed.
+  const tzForBox = ($('netBoxTz') && $('netBoxTz').value) || '';
+  const format24ForBox = detectClockFormat24();
+  // Wi-Fi to write onto the box after install so it stays reachable once the
+  // Ethernet cable is pulled. Empty SSID => skip the write (box stays wired). A
+  // non-empty SSID needs an open net (empty pass) or a >=8 char WPA passphrase
+  // (the agent's handleBoxWLAN guard); a bad password does NOT block the install,
+  // it just skips the Wi-Fi write, so the user is never stuck on a typo.
+  const ssid = ($('netWlanSsid') && $('netWlanSsid').value.trim()) || '';
+  const pass = ($('netWlanPass') && $('netWlanPass').value) || '';
+  const wifiForBox = (ssid && (pass === '' || pass.length >= 8)) ? { ssid, pass } : null;
+  const lead = `<div class="setup-ok">${escapeHtml(t('setup.netInstallOn', { name }))}</div>`;
+  try {
+    await waitForBoxAfterSetup({ ssid: '', pass: '', html: lead, knownBox: box, wifiForBox, nameForBox, langForBox, tzForBox, format24ForBox });
+  } finally {
+    networkInstallRunning = false;
+    const b2 = $('setupHeroInstall');
+    if (b2) b2.disabled = false;
+  }
 }
 
 function togglePasswordVisibility() {
@@ -1339,9 +1548,32 @@ const INSTALL_HELP_STEPS = {
   'stick-copy-failed': ['stickCopyFailed', 'stickInserted', 'differentStick', 'usbPicky', 'logs'],
 };
 
+// INSTALL_HELP_STEPS_NET is the OTA/network-install counterpart of the map
+// above. A network install has no USB stick, so stick-troubleshooting steps
+// (reseat / reformat / low-power stick) are wrong and confusing here; instead we
+// steer the user to the things that actually matter over the network: the LAN
+// cable, the Wi-Fi, the speaker being on the network, and a retry once it has
+// finished restarting. Used whenever the failed install came from the OTA path.
+const INSTALL_HELP_STEPS_NET = {
+  'install-timeout': ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'netLogs'],
+  'install-error': ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'netLogs'],
+  'install-script-error': ['netRetry', 'netLogs'],
+  'ssh-handshake': ['netWifi', 'netCable', 'netRetry'],
+  'ssh-probe': ['netOnNetwork', 'netWifi', 'netCable', 'netRetry'],
+  'agent-not-up': ['netRetry', 'netWifi', 'netLogs'],
+  'not-reachable': ['netOnNetwork', 'netWifi', 'netCable', 'netRetry'],
+  'install-window-closed': ['netRetry'],
+  'control-unresponsive': ['netRetry', 'netLogs'],
+  'stick-copy-failed': ['netRetry', 'netLogs'],
+};
+const NET_HELP_DEFAULT = ['netOnNetwork', 'netWifi', 'netCable', 'netRetry', 'netLogs'];
+
 // installHelpHtml renders the localized help checklist for a failure code.
-function installHelpHtml(code) {
-  const steps = INSTALL_HELP_STEPS[code] || ['freshBoot', 'wifi', 'stick', 'logs'];
+// isNetwork picks the OTA-appropriate step list (no USB-stick advice).
+function installHelpHtml(code, isNetwork) {
+  const steps = isNetwork
+    ? (INSTALL_HELP_STEPS_NET[code] || NET_HELP_DEFAULT)
+    : (INSTALL_HELP_STEPS[code] || ['freshBoot', 'wifi', 'stick', 'logs']);
   const items = steps.map(s => `<li>${escapeHtml(t('setup.help.' + s))}</li>`).join('');
   return `<div class="setup-help"><b>${escapeHtml(t('setup.helpTitle'))}</b><ul>${items}</ul>`
     + `<p class="small">${escapeHtml(t('setup.helpLogsInstruction'))}</p>`
@@ -1360,7 +1592,7 @@ function installHelpHtml(code) {
 //      via SSH so the user does not need the PowerShell wizard.
 //
 // Credentials are kept only in this closure and never persisted.
-async function waitForBoxAfterSetup({ ssid, pass, html }) {
+async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, nameForBox, langForBox, tzForBox, format24ForBox }) {
   const baseHtml = html;
   const setupResult = $('setupResult');
   if (!setupResult) return;
@@ -1389,7 +1621,10 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
     if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
   };
 
-  let foundBox = null;
+  // knownBox short-circuits the 5-minute discovery wait: an OTA/network
+  // install (startNetworkInstall) already has a reachable box in hand, so we
+  // skip straight to the install with no ticker and no polling.
+  let foundBox = knownBox || null;
 
   // Honour the target the user picked in Step 0 if any. Without
   // this the loop would lock onto an arbitrary speaker on a LAN
@@ -1422,7 +1657,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   // Anyone with a stock or factory-reset speaker now writes the stick
   // here, inserts it, power-cycles the speaker; the speaker joins
   // home Wi-Fi from the stick's wlan.conf on its own.
-  startTicker();
+  if (!foundBox) startTicker();
   while (Date.now() < deadline && !foundBox) {
     try {
       const list = await DiscoverBoxes(4);
@@ -1492,33 +1727,80 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   // Stock box (LAN-found or cold-bootstrapped): run installer.
   const installBase = `<div class="setup-ok">${escapeHtml(t('setup.boxFoundOnLAN', { ip: foundBox.host }))}</div>`;
   const runningLine = `<div class="muted small">${escapeHtml(t('setup.installRunning'))}</div>`;
-  render(installBase + runningLine);
-  // Live load-settle feedback: while the backend waits for the box's boot-time
-  // CPU storm to subside before launching install.sh, it pushes install:progress
-  // events. Show "reachable but still finishing boot" with a settle countdown,
-  // so the wait reads as deliberate rather than a hung install. Flip back to the
-  // running line once the box reports calm (busy=false).
+  // Live install checklist: one row per backend phase plus an independent JS
+  // mm:ss timer, so the long silent stretches (the 3-5 min :17000 unlock and the
+  // up-to-240s agent wait) always read as alive instead of a frozen "installing"
+  // line. Phases are emitted by install_str.go (access/copy/restart/wait); the
+  // settle event folds into the copy row as a sub-detail, and a firewall hint
+  // appears if the factory-reset bootstrap gets 0 callbacks (margeHits) - the
+  // exact silent failure the maintainer hit.
+  void installBase; void runningLine;
+  const PHASES = ['access', 'copy', 'restart', 'wait'];
+  const phaseLabels = {
+    access: t('setup.phase.access'), copy: t('setup.phase.copy'),
+    restart: t('setup.phase.restart'), wait: t('setup.phase.wait'),
+  };
+  let curPhase = 0, copyDetail = '', accessHint = '';
+  const installStartMs = Date.now();
+  const fmtMS = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const chkRow = (label, st, detail) => {
+    const dot = st === 'done' ? '<span class="chk-ico chk-done">&#10003;</span>'
+      : st === 'run' ? '<span class="chk-ico chk-spin"></span>'
+      : '<span class="chk-ico chk-pend"></span>';
+    return `<div class="chk-row chk-${st}">${dot}<span class="chk-lbl">${escapeHtml(label)}</span></div>` +
+      (detail ? `<div class="chk-detail muted small">${detail}</div>` : '');
+  };
+  const renderChecklist = () => {
+    let rows = '';
+    PHASES.forEach((ph, i) => {
+      const st = i < curPhase ? 'done' : i === curPhase ? 'run' : 'pend';
+      const detail = (ph === 'copy' && st === 'run') ? copyDetail : (ph === 'access' && st === 'run') ? accessHint : '';
+      rows += chkRow(phaseLabels[ph], st, detail);
+    });
+    render(`<div class="setup-checklist"><div class="chk-head"><span>${escapeHtml(t('setup.installRunning'))}</span>` +
+      `<span class="chk-timer">${fmtMS(Date.now() - installStartMs)}</span></div>${rows}` +
+      `<div class="chk-reassure muted small">${escapeHtml(t('setup.cardReassure'))}</div></div>`);
+  };
+  const timerHandle = setInterval(renderChecklist, 1000);
+  renderChecklist();
   const offProgress = EventsOn('install:progress', (p) => {
-    if (p && p.phase === 'settle' && p.busy) {
-      const load = (typeof p.load === 'number') ? p.load.toFixed(2) : '?';
-      const secs = Math.max(0, Math.round((p.remainingMs || 0) / 1000));
-      render(installBase + `<div class="muted small">${escapeHtml(t('setup.installBoxBusy', { load, secs }))}</div>`);
+    if (!p) return;
+    if (p.phase === 'settle') {
+      if (p.busy) {
+        const load = (typeof p.load === 'number') ? p.load.toFixed(2) : '?';
+        const secs = Math.max(0, Math.round((p.remainingMs || 0) / 1000));
+        copyDetail = escapeHtml(t('setup.installBoxBusy', { load, secs }));
+        if (curPhase < 1) curPhase = 1; // settle maps onto the copy row
+      } else {
+        copyDetail = '';
+      }
     } else {
-      render(installBase + runningLine);
+      const idx = PHASES.indexOf(p.phase);
+      if (idx > curPhase) curPhase = idx; // mark-earlier-done, never go backwards
+      if (p.phase === 'access') {
+        if (typeof p.margeHits === 'number' && p.margeHits === 0 && (p.elapsedMs || 0) > 60000) {
+          accessHint = escapeHtml(t('setup.installFirewallHint'));
+        } else if (p.margeHits > 0) {
+          accessHint = '';
+        }
+      }
     }
+    renderChecklist();
   });
   let result;
   try {
     result = await InstallSTROnBox(foundBox.host, foundBox.model || foundBox.type || '');
   } catch (err) {
+    clearInterval(timerHandle);
     if (offProgress) offProgress();
     render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`);
     return;
   }
+  clearInterval(timerHandle);
   if (offProgress) offProgress();
   if (!result || !result.ok) {
     const msg = (result && result.message) || 'unknown';
-    const help = installHelpHtml(result && result.code);
+    const help = installHelpHtml(result && result.code, !!knownBox);
     const log = (result && result.log)
       ? `<details class="setup-log"><summary>${escapeHtml(t('setup.installLogToggle'))}</summary><pre>${escapeHtml(result.log)}</pre></details>`
       : '';
@@ -1536,7 +1818,18 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
         + `<button class="btn btn-primary btn-mini" id="installRepairSSH">${escapeHtml(t('setup.repairSSHBtn'))}</button>`
         + ` <span class="muted small">${escapeHtml(t('setup.repairSSHHint'))}</span></div>`
       : '';
-    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + repairBtn + log);
+    // Coprocessor power-cycle advice: a soft reboot does not reset the box's
+    // coprocessor, so a sweeping light bar / dead playback often only clears with
+    // a full mains power-cycle (live-proven). Shown on every failure screen.
+    const powerCycleHint = `<div class="setup-powercycle muted small">${escapeHtml(t('setup.powerCycleAdvice'))}</div>`;
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + repairBtn + powerCycleHint + log);
+    // If the network path genuinely cannot proceed (no install window, box not
+    // reachable, controls wedged), reveal the USB-stick fallback (relocated into
+    // <details id="setupStickDetails">) so the user has an immediate next step.
+    if (result && ['install-window-closed', 'not-reachable', 'control-unresponsive'].indexOf(result.code) >= 0) {
+      const stickDetails = $('setupStickDetails');
+      if (stickDetails) stickDetails.open = true;
+    }
     const repEl = $('installRepairSSH');
     if (repEl) {
       repEl.onclick = async () => {
@@ -1546,7 +1839,8 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
           const rr = await RepairInstallViaSSH(foundBox.host, foundBox.model || foundBox.type || '');
           if (rr && rr.ok) {
             render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>`
-              + `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`);
+              + `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`
+              + `<div class="setup-powercycle muted small">${escapeHtml(t('setup.powerCycleAdvice'))}</div>`);
             deps.discoverBoxes();
             try { deps.celebrateProvision(foundBox); } catch {}
           } else {
@@ -1585,7 +1879,115 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
   // assumed STR was broken (HP Baehr, 2026-06-12). The recurring expectation
   // gap is that playback moved from the Bose app to the STR presets + the
   // speaker's own buttons 1-6, so say it plainly and offer a jump to the tab.
+  // Network install (knownBox) succeeded. The box has just restarted its agent,
+  // so it is often NOT ready to accept settings for another few seconds. On the
+  // real ST300 the name/language/timezone/Wi-Fi silently failed to take because
+  // provisioning ran against a still-rebooting box. So: wait for the agent + box
+  // to answer again, then apply name -> language -> timezone -> Wi-Fi IN ORDER,
+  // each with a short retry, and surface per-step success/failure in a live
+  // checklist. All best-effort: a step that cannot be applied never blocks the
+  // otherwise-successful install, and the user can set it later in Speaker
+  // settings. The Wi-Fi write keeps the box reachable after the Ethernet cable is
+  // pulled (agent persists creds to NAND, then wpa live-switch or BCO reboot).
+  let unplugLine = '';
+  let provisionFailed = false;
+  if (knownBox) {
+    // After install the box is an STR agent, reachable on :17008 (BCO REDIRECT)
+    // or :8888 (sm2 direct), NOT the pre-install stock :8090 that foundBox still
+    // carries (probeStock stamped it). Provision + probe readiness against the
+    // agent port: port 0 => candidatePorts(host, 0) tries 17008 then 8888, so
+    // name / Wi-Fi / status never hit the dead-for-this-purpose Bose :8090 (which
+    // answers /api/* with a 404 that boxDo/boxFetch would wrongly accept as a
+    // reachable response, silently failing name+Wi-Fi and burning the readiness
+    // gate's full 90 s). Language + timezone ARE Bose :8090 endpoints and keep
+    // using foundBox.host directly (no port), so they are unaffected.
+    const agentBox = { ...foundBox, port: 0 };
+    // Ordered steps, built only from what the user actually requested.
+    const steps = [];
+    if (nameForBox) {
+      steps.push({ id: 'name', label: t('setup.provisionName'),
+        run: () => SetBoxName(agentBox.host, agentBox.port, nameForBox) });
+    }
+    if (langForBox > 0) {
+      steps.push({ id: 'lang', label: t('setup.provisionLang'),
+        run: () => SetBoxLanguage(foundBox.host, langForBox) });
+    }
+    if (tzForBox) {
+      // Real IANA zone => the box derives the offset incl. DST itself, so the
+      // offset argument MUST stay 0 (a non-zero value would double-shift).
+      steps.push({ id: 'tz', label: t('setup.provisionTz'),
+        run: () => SetClockDisplay(foundBox.host, true, tzForBox, 0, !!format24ForBox) });
+    }
+    if (wifiForBox && wifiForBox.ssid) {
+      steps.push({ id: 'wifi', label: t('setup.provisionWifi'),
+        run: async () => {
+          const wr = await deps.boxFetch(agentBox, '/api/box/wlan', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ssid: wifiForBox.ssid, password: wifiForBox.pass }),
+          });
+          if (!wr || !wr.ok) return false;
+          let info = {};
+          try { info = await wr.json(); } catch {}
+          return info || {};
+        } });
+    }
+
+    // Live per-step checklist (reuses the .chk-* row styling plus a red-cross
+    // fail variant). A leading "waiting for the speaker" row covers the reboot
+    // gap before the first step runs.
+    const st = {}; steps.forEach(s => { st[s.id] = 'pend'; });
+    let waitingAgent = true;
+    const chkRowLike = (rowState, label) => {
+      const ico = rowState === 'done' ? '<span class="chk-ico chk-done">&#10003;</span>'
+        : rowState === 'fail' ? '<span class="chk-ico chk-fail">&#10007;</span>'
+        : rowState === 'run' ? '<span class="chk-ico chk-spin"></span>'
+        : '<span class="chk-ico chk-pend"></span>';
+      return `<div class="chk-row chk-${rowState}">${ico}<span class="chk-lbl">${escapeHtml(label)}</span></div>`;
+    };
+    const renderProvision = () => {
+      const head = `<div class="chk-head"><span>${escapeHtml(t('setup.provisionTitle'))}</span></div>`;
+      const agentRow = chkRowLike(waitingAgent ? 'run' : 'done', t('setup.provisionWaitAgent'));
+      const rows = steps.map(s => chkRowLike(st[s.id], s.label)).join('');
+      render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
+        `<div class="setup-checklist setup-provision">${head}${agentRow}${rows}</div>`);
+    };
+    renderProvision();
+
+    // Wait (up to ~90s) for the agent + box :8090 to answer via /api/status
+    // (self-healing fetch through the agent). If it never answers we still try
+    // the steps below; the per-step retries give more chances.
+    const readyDeadline = Date.now() + 90 * 1000;
+    while (Date.now() < readyDeadline) {
+      try { const r = await deps.boxFetch(agentBox, '/api/status', {}); if (r && r.ok) break; } catch {}
+      await sleep(3000);
+    }
+    waitingAgent = false;
+    renderProvision();
+
+    // Apply each step in order with a short retry, reflecting the result live.
+    for (const s of steps) {
+      st[s.id] = 'run'; renderProvision();
+      const res = await retryStep(s.run, 3, 2500);
+      st[s.id] = res.ok ? 'done' : 'fail';
+      if (!res.ok) provisionFailed = true;
+      if (s.id === 'wifi') {
+        if (res.ok) {
+          const info = res.value || {};
+          unplugLine = (info.mechanism === 'bco') ? t('setup.unplugSafeBco') : t('setup.unplugSafeWpa');
+        } else {
+          unplugLine = t('setup.wifiWriteFailed');
+        }
+      }
+      renderProvision();
+    }
+    if (!(wifiForBox && wifiForBox.ssid)) {
+      unplugLine = t('setup.unplugNoWifi');
+    }
+  }
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
+         (unplugLine ? `<div class="setup-unplug">${escapeHtml(unplugLine)}</div>` : '') +
+         (provisionFailed ? `<div class="setup-warn">${escapeHtml(t('setup.provisionSomeFailed'))}</div>` : '') +
          `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>` +
          `<div class="setup-playhow">` +
            `<h3>${escapeHtml(t('setup.playHowTitle'))}</h3>` +
@@ -1595,7 +1997,8 @@ async function waitForBoxAfterSetup({ ssid, pass, html }) {
            `</ol>` +
            `<p class="muted small">${escapeHtml(t('setup.playHowBoseApp'))}</p>` +
            `<button class="btn btn-primary" id="installGoMusic">${escapeHtml(t('setup.playHowGoBtn'))}</button>` +
-         `</div>`);
+         `</div>` +
+         `<div class="setup-powercycle muted small">${escapeHtml(t('setup.powerCycleAdvice'))}</div>`);
   const goMusic = $('installGoMusic');
   if (goMusic) goMusic.onclick = () => deps.switchView('box');
   deps.discoverBoxes();
