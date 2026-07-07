@@ -310,6 +310,14 @@ type boxSnapshot struct {
 	ReachableSSH  bool           `json:"reachableSSH"`
 	Reachable8090 bool           `json:"reachable8090"`
 	Reachable8888 bool           `json:"reachable8888"`
+	// Reachable8091 is the box's UPnP/DLNA media-renderer port, served by a
+	// separate firmware process from the Bose REST API (:8090) and the STR
+	// agent. A box that answers here but nowhere else is ON the network with a
+	// WEDGED control stack (the Portable "renderer up, control crashed" state),
+	// not off the network. Without this probe the bundle reported such a box as
+	// fully unreachable, which read as "box is off / off Wi-Fi" and sent the
+	// user down the wrong recovery path (Andi M., 06.07.2026).
+	Reachable8091 bool `json:"reachable8091"`
 	// STRDetected is the authoritative "STR is actually installed and serving
 	// here" signal: true only when /api/agent/version returned a real version
 	// string. Reachable8888 alone is misleading because it probes :17008, where
@@ -377,6 +385,11 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	// is loopback-only externally on all firmwares we have tested.
 	s.Reachable8888 = portOpen(host, 17008, 1200)
 	s.ReachableSSH = portOpen(host, 22, 1200)
+	// :8091 is the UPnP/DLNA media renderer, a separate firmware process. When
+	// :8090 is dead but :8091 answers, the box is online with a wedged control
+	// stack rather than off the network - the discriminator that keeps a
+	// diagnostic bundle from looking like a dead box (see field comment).
+	s.Reachable8091 = portOpen(host, 8091, 1200)
 	if s.Reachable8090 {
 		s.BoseInfo = httpGetText(fmt.Sprintf("http://%s:8090/info", host), 4096)
 	}

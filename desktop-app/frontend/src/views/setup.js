@@ -1317,6 +1317,12 @@ const INSTALL_HELP_STEPS = {
   'agent-not-up': ['powerCycle', 'wifi', 'logs'],
   'not-reachable': ['wifi', 'freshBoot'],
   'install-window-closed': ['freshBoot'],
+  // The box answers UPnP on :8091 but not SSH / the Bose port / the STR agent:
+  // it is on the network with a wedged control stack (the Portable "renderer up,
+  // control crashed" state). A power-cycle clears the wedge; do NOT show the
+  // 'wifi' step here (the default fallback does) - the box is already on Wi-Fi,
+  // so re-onboarding advice would just mislead.
+  'control-unresponsive': ['powerCycle', 'freshBoot', 'logs'],
   // Media read error: the speaker found install.sh but could not read it.
   // Usually a large stick force-formatted to FAT32 with a block size the
   // speaker can't read (the 64 GB case), or a faulty stick.

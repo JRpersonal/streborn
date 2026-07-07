@@ -135,12 +135,32 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 					"Bose only opens it while the speaker boots with the STR stick plugged in. " +
 					"Power the speaker off, insert the STR stick, power it back on, then install."
 				a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut; diag-port :17000 did not open SSH)", "host", host)
+			} else if tcpReachable(host, 8091, 3*time.Second) {
+				// :22, :8090 and :8888 are all closed, but the box still answers
+				// UPnP/DLNA on :8091 - its media renderer is a separate firmware
+				// process from the Bose REST API and the STR agent. So the box IS
+				// on the network and on Wi-Fi; only its control stack has wedged.
+				// This is the classic Portable "renderer up, control crashed"
+				// state (Andi M., 06.07.2026: SSDP + :8091 alive, :22/:8090/:8888
+				// all dead). The not-reachable branch below tells the user to
+				// re-onboard Wi-Fi, which is wrong and unactionable here: the box
+				// is already on Wi-Fi. A full power-cycle is what clears the wedge;
+				// keep the stick in so the reboot also re-runs the install if the
+				// STR agent itself stopped.
+				res.Code = "control-unresponsive"
+				res.Message = "The speaker at " + host + " is on your network (it still answers on the media port 8091), " +
+					"but its control software has stopped responding (no answer on the STR agent, the Bose port 8090, or SSH). " +
+					"Power the speaker fully off and back on with the STR stick plugged in, then refresh the speaker list and try again."
+				if strings.Contains(strings.ToLower(model), "portable") {
+					res.Message += " The Portable never fully powers off while it still has battery: hold the AUX button for about 10 seconds to force a restart."
+				}
+				a.logger.Warn("install_str: preflight, box answers UPnP :8091 but not :22/:8090/:8888 (control stack wedged; advising power-cycle)", "host", host)
 			} else {
 				res.Code = "not-reachable"
-				res.Message = "The speaker is not reachable on the network (no answer on SSH port 22 or the Bose port 8090 at " + host + "). " +
+				res.Message = "The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at " + host + "). " +
 					"First bring it onto your Wi-Fi with the Bose SoundTouch app and make sure this PC and the speaker are on the same network. " +
 					"Then reboot the speaker with the STR stick plugged in and try again."
-				a.logger.Warn("install_str: preflight failed, box not reachable on :22 or :8090", "host", host)
+				a.logger.Warn("install_str: preflight failed, box not reachable on :22, :8090 or :8091", "host", host)
 			}
 			return res, nil
 		}
