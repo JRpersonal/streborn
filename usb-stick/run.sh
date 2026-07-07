@@ -320,14 +320,24 @@ initial_snapshot() {
     # a human can scroll through and instantly see boundaries. The
     # hostname / variant / MAC fields below identify which box a
     # block belongs to even if Jens swaps the stick between rooms.
-    {
-        echo ""
-        echo "########################################################################"
-        echo "### BOOT MARKER  $(date)  uptime=$(uptime_s)s"
-        echo "###   host=$(hostname 2>/dev/null)  mac0=$(cat /sys/class/net/wlan0/address 2>/dev/null)  mac1=$(cat /sys/class/net/wlan1/address 2>/dev/null)"
-        echo "###   variant=$(head -c 40 /etc/Variant 2>/dev/null | tr -d '\n')  version=$(head -c 80 /etc/version 2>/dev/null | tr -d '\n')"
-        echo "########################################################################"
-    } >> "$SETUP_LOG" 2>/dev/null
+    #
+    # Stick-only marker: gate the write on the stick actually being mounted
+    # writable. On a stick-free OTA/SSH install /media/sda1 does not exist, and
+    # a bare `>> "$SETUP_LOG"` opens the redirect BEFORE 2>/dev/null takes
+    # effect, so the failed open leaks "run-override.sh: line N:
+    # /media/sda1/setup.log: No such file or directory" to the console every
+    # boot. The NAND setup.log (setup_log) is unaffected and still records the
+    # boot. When a stick IS present the guard passes and behaviour is unchanged.
+    if [ -d "$STICK" ] && [ -w "$STICK" ]; then
+        {
+            echo ""
+            echo "########################################################################"
+            echo "### BOOT MARKER  $(date)  uptime=$(uptime_s)s"
+            echo "###   host=$(hostname 2>/dev/null)  mac0=$(cat /sys/class/net/wlan0/address 2>/dev/null)  mac1=$(cat /sys/class/net/wlan1/address 2>/dev/null)"
+            echo "###   variant=$(head -c 40 /etc/Variant 2>/dev/null | tr -d '\n')  version=$(head -c 80 /etc/version 2>/dev/null | tr -d '\n')"
+            echo "########################################################################"
+        } >> "$SETUP_LOG" 2>/dev/null
+    fi
     setup_log "=== initial snapshot ==="
     setup_log "kernel: $(uname -a 2>/dev/null | head -c 200)"
     if [ -r /etc/version ]; then
@@ -2773,6 +2783,35 @@ mount | grep -q '/etc/hosts' || {
     mount --bind /tmp/hosts.live /etc/hosts 2>/dev/null
 }
 
+# === Heal any placeholder SDK cloud URL left by a stick-free unlock ===
+# A stick-free :17000 TAP unlock (desktop-app/telnet_enable_ssh.go) temporarily
+# points the Bose SDK's cloud URLs at the placeholder host str-setup.invalid to
+# fire an SSH injection, then restores them. If STR was installed via a path
+# that skipped that restore, /mnt/nv/OverrideSdkPrivateCfg.xml still carries
+# bmxRegistryUrl=https://str-setup.invalid, which NXDOMAINs, so the box can
+# never reach the SoundTouch service registry and its light bar sweeps forever
+# (live ST300 2026-07-07). Rewrite the placeholder inside the bmx/stats/marge
+# tags back to the STOCK hostnames: STR only redirects the stock hosts
+# (streaming.bose.com, content.api.bose.io) via the /etc/hosts bind mount above,
+# so the box MUST carry the stock hostnames for that redirect to catch them.
+# Best-effort + idempotent: the grep gate means a config with no placeholder is
+# left untouched, and only tags whose value actually contains the placeholder
+# are rewritten. The SDK already read the (bad) value earlier this boot, so this
+# heal takes effect on the following boot; install.sh does the same before the
+# post-install reboot so the very first boot is clean.
+SDK_CFG="/mnt/nv/OverrideSdkPrivateCfg.xml"
+if [ -f "$SDK_CFG" ] && grep -q 'str-setup\.invalid' "$SDK_CFG" 2>/dev/null; then
+    if sed -e 's#\(<bmxRegistryUrl>\)[^<]*str-setup\.invalid[^<]*\(</bmxRegistryUrl>\)#\1https://content.api.bose.io/bmx/registry/v1/services\2#g' \
+           -e 's#\(<statsServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</statsServerUrl>\)#\1https://events.api.bosecm.com\2#g' \
+           -e 's#\(<margeServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</margeServerUrl>\)#\1https://streaming.bose.com\2#g' \
+           "$SDK_CFG" > "$SDK_CFG.new" 2>/dev/null && mv "$SDK_CFG.new" "$SDK_CFG" 2>/dev/null; then
+        setup_log "healed str-setup.invalid SDK cloud URLs in $SDK_CFG back to stock (redirect-catchable); effective next boot"
+    else
+        rm -f "$SDK_CFG.new" 2>/dev/null
+        log "SDK cloud URL heal: sed/mv failed on $SDK_CFG (leaving it unchanged)"
+    fi
+fi
+
 # === iptables NAT optional ===
 if command -v iptables >/dev/null 2>&1; then
     log "iptables NAT available"
@@ -3916,7 +3955,7 @@ else
     # accessing it, we wait again — up to 90 s more. After that we do
     # not force the umount, but fall back to a read-only remount (flash
     # wear protection).
-    STICK_DEV=$(mount | grep " $STICK " | awk '{print \$1}')
+    STICK_DEV=$(mount | grep " $STICK " | awk '{print $1}')
     WAIT_BUSY=0
     while [ "$WAIT_BUSY" -lt 90 ]; do
         BUSY=$(ls -l /proc/*/fd/* 2>/dev/null | grep " $STICK/" | head -1)

@@ -39,6 +39,30 @@ CACHED_BIN="/mnt/nv/streborn/bin/streborn-armv7l"
 # Make sure the NAND persist directory exists.
 mkdir -p /mnt/nv/streborn/bin 2>/dev/null
 
+# heal_sdk_cloud_urls rewrites any placeholder host left in the Bose SDK config
+# back to the real stock hostnames. A stick-free :17000 unlock
+# (desktop-app/telnet_enable_ssh.go) points bmxRegistryUrl + statsServerUrl at the
+# placeholder host str-setup.invalid to fire the SSH injection, and normally
+# restores them afterwards. But when STR is installed via a path that skips that
+# restore (SSH already open -> straight to RepairInstallViaSSH), the box boots with
+# bmxRegistryUrl=https://str-setup.invalid, which NXDOMAINs, so the box can NEVER
+# reach the SoundTouch service registry and its light bar sweeps forever (live
+# ST300 2026-07-07). STR redirects only the STOCK hosts (streaming.bose.com,
+# content.api.bose.io) via /etc/hosts, so the box MUST carry the stock hostnames
+# for the redirect to catch them. Run this before the post-install reboot so the
+# SDK reads healed URLs on its very next boot. Idempotent: only rewrites tags whose
+# value actually contains the placeholder, leaves correct values untouched.
+heal_sdk_cloud_urls() {
+    sdk_cfg="/mnt/nv/OverrideSdkPrivateCfg.xml"
+    [ -f "$sdk_cfg" ] || return 0
+    grep -q 'str-setup\.invalid' "$sdk_cfg" 2>/dev/null || return 0
+    sed -e 's#\(<bmxRegistryUrl>\)[^<]*str-setup\.invalid[^<]*\(</bmxRegistryUrl>\)#\1https://content.api.bose.io/bmx/registry/v1/services\2#g' \
+        -e 's#\(<statsServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</statsServerUrl>\)#\1https://events.api.bosecm.com\2#g' \
+        -e 's#\(<margeServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</margeServerUrl>\)#\1https://streaming.bose.com\2#g' \
+        "$sdk_cfg" > "$sdk_cfg.new" 2>/dev/null && mv "$sdk_cfg.new" "$sdk_cfg" 2>/dev/null
+    echo "Healed str-setup.invalid cloud URLs in $sdk_cfg back to stock (redirect-catchable)"
+}
+
 phase1_install() {
     if [ ! -f "$RC_SRC" ]; then
         echo "ERROR: $RC_SRC not found" >&2
@@ -124,6 +148,13 @@ phase1_install() {
         echo "Migrating presets.json to NAND"
         cp "$PRESETS_SRC" "$PRESETS_DST"
     fi
+
+    # Undo any placeholder SDK cloud URL left by a stick-free :17000 unlock
+    # BEFORE the post-install reboot, so the box never boots with
+    # bmxRegistryUrl=https://str-setup.invalid (NXDOMAIN -> registry unreachable
+    # -> light bar sweeps forever). Idempotent: a config with no placeholder is
+    # left untouched.
+    heal_sdk_cloud_urls
 
     ls -la "$RC_DST" "$RUN_OVERRIDE" 2>/dev/null
     echo "Phase 1 active. On the next boot $RC_DST will run."
