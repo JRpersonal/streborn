@@ -13,15 +13,18 @@
 // Credit: the technique is from the gesellix/Bose-SoundTouch community
 // (issues #471, #515, #519). This is an independent Go port for STR.
 //
-// Reliability, from live testing on ST300 (ginger) and Portable (taigan) plus
-// the community reports: the payload only fires when the box actually does a
-// marge/boseurls check. A box that still carries a Bose margeAccountUUID (it was
-// used with the Bose app before the cloud shut down) checks roughly every 60 s
-// and opens SSH quickly. A fully factory-reset box never checks on its own; that
-// case is handled by enableSSHViaTelnetBootstrap (telnet_bootstrap_marge.go),
-// which gives the box a dummy account and a local marge responder so the check
-// cycle runs. STR sends `sys reboot` over :17000 to trigger the boot-time
-// re-parse without the user touching the speaker.
+// Reliability, from live testing on ST300 (ginger) and Portable (taigan): the
+// payload only fires when the box actually does a marge/boseurls check, and a
+// box only checks when it has a marge account. A used box that still carries a
+// Bose margeAccountUUID checks on its own; a factory-fresh box (empty UUID -
+// every new Portable/ST20) never does. enableSSHViaTelnet therefore SEEDS a
+// throwaway account over :17000 first (`envswitch accountid set`, see
+// unlockAccountID) so every box checks, then injects and sends `sys reboot` to
+// trigger the check on the next boot without the user touching the speaker. This
+// account seed - firewall-free, no local responder - is what opened :22 on the
+// taigan Portable, whose empty UUID had made every prior injection inert. A
+// heavier local-responder variant (enableSSHViaTelnetBootstrap,
+// telnet_bootstrap_marge.go) remains as a fallback for the uninstall path.
 
 package main
 
@@ -35,8 +38,28 @@ import (
 // remoteServicesInjection is appended to the marge URL. When the firmware next
 // shells out that URL it runs these commands: touch the remote_services marker
 // sshd checks for, then start sshd. The whole value is double-quoted in the
-// telnet command because it contains spaces and semicolons.
-const remoteServicesInjection = ";touch /tmp/remote_services;/etc/init.d/sshd start"
+// telnet command because it contains spaces and semicolons. The trailing " #"
+// is defensive: if a firmware build shells out the URL with a path appended
+// (curl $margeServerUrl/streaming/...), the "#" comments out that suffix so the
+// last command stays `/etc/init.d/sshd start` instead of becoming
+// `/etc/init.d/sshd start/streaming/...` (which would not start sshd). It is
+// harmless on builds that append nothing.
+const remoteServicesInjection = ";touch /tmp/remote_services;/etc/init.d/sshd start #"
+
+// unlockAccountID is a throwaway marge account id STR seeds over :17000 with
+// `envswitch accountid set` before injecting. It is the key to a stick-free
+// unlock on a box with no residual Bose account (every factory-fresh Portable /
+// ST20, whose /info shows an empty margeAccountUUID): the SSH injection only
+// fires when the box actually runs its periodic marge check, and a box with no
+// account never checks on its own. Seeding an account makes the box populate
+// margeAccountUUID (verified live: /info reflects it immediately) and start
+// checking, so on the next boot it shells out the injected margeServerUrl and
+// sshd comes up. Proven on a taigan Portable: with an account seeded, :22 opened
+// ~60 s after reboot; without it, the identical injection never fired. Seven
+// digits stays within the id length every SoundTouch firmware accepts (gesellix
+// IsValidAccountID); STR's autopair later replaces it with the real STR account,
+// and it is a dead post-cloud-shutdown id regardless.
+const unlockAccountID = "9999999"
 
 // telnetEnableBase is the placeholder cloud host used while unlocking SSH on a
 // box that still does marge checks on its own. A reserved .invalid name
@@ -168,18 +191,30 @@ func (a *App) waitForSSHOpen(host string, budget time.Duration) bool {
 	return false
 }
 
-// enableSSHViaTelnet writes the enable-SSH injection over :17000, reboots the
-// box to trigger it, and polls :22 up to a model-aware budget. Returns whether
-// SSH came up and a redaction-free command log for diagnostics. This is the
-// path for a box that still does marge checks on its own (residual Bose UUID);
-// the placeholder .invalid base means nothing on the LAN is left pointed at a
-// live host on failure, so this path needs no recovery reset.
+// enableSSHViaTelnet performs the full stick-free unlock over :17000: it seeds a
+// throwaway marge account (so a box with no residual account still runs the
+// marge check the injection rides on), writes the enable-SSH injection, reboots
+// the box to trigger it, and polls :22 up to a model-aware budget. Returns
+// whether SSH came up and a redaction-free command log for diagnostics. This one
+// path now covers both used boxes (residual Bose UUID) and factory-fresh ones
+// (empty UUID): the account seed is what made the previously-stuck taigan
+// Portable open :22 (its /info UUID was empty, so it never checked marge, so the
+// injection never fired - see unlockAccountID). The placeholder .invalid base
+// means nothing on the LAN is left pointed at a live host on failure, so this
+// path needs no recovery reset.
 func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 	var log strings.Builder
 	t, err := dialTAP(host, 5*time.Second)
 	if err != nil {
 		a.logger.Info("telnet-enable: :17000 not reachable, cannot unlock SSH stick-free", "host", host, "err", err)
 		return false, "port 17000 not reachable: " + err.Error()
+	}
+	// Seed a throwaway marge account first so a box with no residual Bose account
+	// still runs the marge check the injection rides on (see unlockAccountID).
+	// Best-effort: a firmware that rejects `envswitch accountid` still gets the
+	// injection written below, so log and keep going rather than abort.
+	if serr := sendAndLog(t, &log, "envswitch accountid set "+unlockAccountID); serr != nil {
+		a.logger.Warn("telnet-enable: seeding marge account failed (continuing to inject anyway)", "host", host, "err", serr)
 	}
 	for _, cmd := range buildEnableSSHCommands(telnetEnableBase) {
 		if serr := sendAndLog(t, &log, cmd); serr != nil {

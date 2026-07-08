@@ -133,33 +133,15 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// caveat (there the stick stays the reliable fallback).
 		if tcpReachable(host, 17000, 2*time.Second) {
 			a.emitPhase("access")
-			// Don't burn the simple unlock's multi-minute :22 wait (plus the reboot
-			// it costs) on a box we already know it cannot work on. The simple
-			// :17000 injection only fires when the box runs its periodic marge
-			// check, which needs a residual Bose margeAccountUUID; an empty-UUID
-			// (factory-reset / cloud-cleared) box - every fresh Portable - never
-			// checks on its own, so probe the UUID up front and go straight to the
-			// bootstrap when it is empty.
-			hasUUID := a.boxHasResidualMargeUUID(host)
-			var opened bool
-			var tlog string
-			if hasUUID {
-				opened, tlog = a.enableSSHViaTelnet(host, model)
-			} else {
-				a.logger.Info("install_str: box carries no residual marge account, so the simple :17000 unlock cannot fire; going straight to the factory-reset bootstrap", "host", host)
-			}
-			if !opened {
-				// Factory-reset path: an empty-UUID box never checks marge on its own,
-				// so give it a dummy account + a throwaway local marge responder so the
-				// check cycle runs and the injection fires (proven live on a
-				// factory-reset ST300). See telnet_bootstrap_marge.go.
-				if hasUUID {
-					a.logger.Info("install_str: simple :17000 unlock did not open SSH; trying the factory-reset bootstrap", "host", host)
-				}
-				var blog string
-				opened, blog = a.enableSSHViaTelnetBootstrap(host, model)
-				tlog = tlog + "\n--- factory-reset bootstrap ---\n" + blog
-			}
+			// One stick-free unlock path covers every box: enableSSHViaTelnet seeds a
+			// throwaway marge account (unlockAccountID) so even a factory-fresh box
+			// with an empty margeAccountUUID runs the marge check the injection rides
+			// on, then injects, reboots and waits for :22. This replaced an earlier
+			// residual-UUID probe that diverted no-account boxes (every fresh Portable)
+			// to a local-responder bootstrap that needed inbound LAN reachability and
+			// never fired on taigan; seeding the account is firewall-free and opened
+			// :22 on the Portable live.
+			opened, tlog := a.enableSSHViaTelnet(host, model)
 			if opened {
 				a.logger.Info("install_str: SSH opened stick-free via :17000; installing STR over SSH", "host", host)
 				// Restore stock cloud URLs while :17000 is still the plain Bose TAP
@@ -187,12 +169,11 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 				}
 				return instRes, instErr
 			}
-			// Neither unlock opened SSH. Both attempts may have written an
-			// injection URL into the box config (the simple path a dead .invalid
-			// host, the bootstrap this PC's live LAN IP). Restore stock URLs and
-			// reboot so the box is never left marge-checking a dead/reassignable
-			// host, which would also defeat STR's later streaming.bose.com
-			// interception on a subsequent stick install. Best-effort.
+			// The unlock did not open SSH. It may have written a dead .invalid
+			// injection URL into the box config; restore stock URLs and reboot so the
+			// box is never left marge-checking a dead host, which would also defeat
+			// STR's later streaming.bose.com interception on a subsequent stick
+			// install. Best-effort.
 			a.restoreStockBoseURLsAndReboot(host)
 			res.Log = tlog
 			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs, giving stick guidance", "host", host)
