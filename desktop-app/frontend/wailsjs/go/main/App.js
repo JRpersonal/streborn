@@ -6,6 +6,10 @@ export function AddBoxByIP(arg1) {
   return window['go']['main']['App']['AddBoxByIP'](arg1);
 }
 
+export function AddMediaServerByURL(arg1) {
+  return window['go']['main']['App']['AddMediaServerByURL'](arg1);
+}
+
 export function AnnounceExample(arg1, arg2) {
   return window['go']['main']['App']['AnnounceExample'](arg1, arg2);
 }
@@ -256,6 +260,10 @@ export function RecentPlayed(arg1, arg2) {
 
 export function RefreshKnownBoxes() {
   return window['go']['main']['App']['RefreshKnownBoxes']();
+}
+
+export function RemoveManualMediaServer(arg1) {
+  return window['go']['main']['App']['RemoveManualMediaServer'](arg1);
 }
 
 export function RepairInstallViaSSH(arg1, arg2) {
