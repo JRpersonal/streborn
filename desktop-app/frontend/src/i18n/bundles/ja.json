@@ -750,7 +750,7 @@
   "setup.targetCardBadgeSTR": "更新のみ",
   "setup.targetCardBadgeStock": "初回インストール",
   "setup.targetCardBadgeFactory": "Wi-Fi未接続",
-  "setup.targetCardFactoryHelp": "まだWi-Fiに接続していない新品または初期化済みのスピーカーの場合: まず公式のBose SoundTouchアプリ(下のリンク)でホームWi-Fiに接続してください。スピーカーがWi-Fiに入るとリストに表示され、USBメモリなしでボタンひとつでSTRをインストールできます: スピーカーを選んで「インストール」を押してください。",
+  "setup.targetCardFactoryHelp": "まだWi-Fiに接続していない新品または初期化済みのスピーカーの場合: まず公式のBose SoundTouchアプリ(下のリンク)でホームWi-Fiに接続してください。スピーカーがWi-Fiに入るとリストに表示され、USBメモリなしでボタンひとつでSTRをインストールできます: スピーカーを選んで「インストール」を押してください。 または、スピーカーにLANポートがある場合は、ネットワークケーブルでルーターに接続するだけでもかまいません。自動的にリストに表示され、同じ方法でインストールできます。",
   "setup.boseAppAndroid": "Android版 Bose SoundTouchアプリ(Google Play)",
   "setup.boseAppIos": "iPhone/iPad版 Bose SoundTouchアプリ(App Store)",
   "setup.targetCardFactoryMacHint": "macOSでは、Wi-Fiパスワードを読み取ってUSBメモリに書き込むために、アプリがキーチェーンへのアクセスを求めることがあります。許可するか、パスワードを自分で入力してください。",

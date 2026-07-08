@@ -750,7 +750,7 @@
   "setup.targetCardBadgeSTR": "yalnızca güncelle",
   "setup.targetCardBadgeStock": "ilk kurulum",
   "setup.targetCardBadgeFactory": "henüz Wi-Fi dışı",
-  "setup.targetCardFactoryHelp": "Henüz Wi-Fi ağınızda olmayan yeni veya sıfırlanmış bir hoparlör için: önce resmi Bose SoundTouch uygulamasıyla ev Wi-Fi ağınıza bağlayın (bağlantılar aşağıda). Hoparlör Wi-Fi ağınıza girer girmez listede görünür ve STR, USB bellek olmadan tek dokunuşla kurulur: hoparlörü seçin ve Kur'a dokunun.",
+  "setup.targetCardFactoryHelp": "Henüz Wi-Fi ağınızda olmayan yeni veya sıfırlanmış bir hoparlör için: önce resmi Bose SoundTouch uygulamasıyla ev Wi-Fi ağınıza bağlayın (bağlantılar aşağıda). Hoparlör Wi-Fi ağınıza girer girmez listede görünür ve STR, USB bellek olmadan tek dokunuşla kurulur: hoparlörü seçin ve Kur'a dokunun. Alternatif olarak, hoparlörünüzde LAN girişi varsa onu ağ kablosuyla doğrudan modeme bağlayın: listede kendiliğinden görünür ve aynı şekilde kurulur.",
   "setup.boseAppAndroid": "Android için Bose SoundTouch uygulaması (Google Play)",
   "setup.boseAppIos": "iPhone ve iPad için Bose SoundTouch uygulaması (App Store)",
   "setup.targetCardFactoryMacHint": "macOS'ta uygulama, Wi-Fi parolanı okuyup belleğe yazabilmek için Anahtar Zinciri (Keychain) izni isteyebilir. İzin ver ya da parolayı kendin yaz.",

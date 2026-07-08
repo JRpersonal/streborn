@@ -750,7 +750,7 @@
   "setup.targetCardBadgeSTR": "solo actualizar",
   "setup.targetCardBadgeStock": "primera instalación",
   "setup.targetCardBadgeFactory": "aún sin Wi-Fi",
-  "setup.targetCardFactoryHelp": "Para un altavoz nuevo o restablecido que aún no está en tu Wi-Fi: conéctalo primero a tu Wi-Fi con la aplicación oficial Bose SoundTouch (enlaces abajo). En cuanto el altavoz esté en tu Wi-Fi aparecerá en la lista y STR se instala sin memoria USB con solo pulsar un botón: elige el altavoz y pulsa Instalar.",
+  "setup.targetCardFactoryHelp": "Para un altavoz nuevo o restablecido que aún no está en tu Wi-Fi: conéctalo primero a tu Wi-Fi con la aplicación oficial Bose SoundTouch (enlaces abajo). En cuanto el altavoz esté en tu Wi-Fi aparecerá en la lista y STR se instala sin memoria USB con solo pulsar un botón: elige el altavoz y pulsa Instalar. Alternativa: si tu altavoz tiene puerto LAN, conéctalo simplemente al router con un cable de red: aparecerá solo en la lista y se instala de la misma forma.",
   "setup.boseAppAndroid": "Aplicación Bose SoundTouch para Android (Google Play)",
   "setup.boseAppIos": "Aplicación Bose SoundTouch para iPhone y iPad (App Store)",
   "setup.targetCardFactoryMacHint": "En macOS, la app puede pedir acceso al Llavero (Keychain) para leer tu contraseña de Wi-Fi y escribirla en la memoria USB. Permítelo o escribe la contraseña tú mismo.",

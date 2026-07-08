@@ -830,7 +830,7 @@
   "setup.targetCardBadgeSTR": "nur Update",
   "setup.targetCardBadgeStock": "Erstinstallation",
   "setup.targetCardBadgeFactory": "noch nicht im WLAN",
-  "setup.targetCardFactoryHelp": "Für einen neuen oder zurückgesetzten Lautsprecher, der noch nicht im WLAN ist: Verbinde ihn zuerst mit der offiziellen Bose SoundTouch App mit deinem Heim-WLAN (Links unten). Sobald der Lautsprecher im WLAN ist, erscheint er in der Lautsprecher-Liste und STR lässt sich ohne USB-Stick per Knopfdruck installieren: Lautsprecher auswählen und auf Installieren tippen.",
+  "setup.targetCardFactoryHelp": "Für einen neuen oder zurückgesetzten Lautsprecher, der noch nicht im WLAN ist: Verbinde ihn zuerst mit der offiziellen Bose SoundTouch App mit deinem Heim-WLAN (Links unten). Sobald der Lautsprecher im WLAN ist, erscheint er in der Lautsprecher-Liste und STR lässt sich ohne USB-Stick per Knopfdruck installieren: Lautsprecher auswählen und auf Installieren tippen. Alternativ kannst du den Lautsprecher, wenn er einen LAN-Anschluss hat, einfach per Netzwerkkabel an den Router anschließen: Er taucht dann von selbst in der Liste auf und wird genauso installiert.",
   "setup.boseAppAndroid": "Bose SoundTouch App für Android (Google Play)",
   "setup.boseAppIos": "Bose SoundTouch App für iPhone und iPad (App Store)",
   "setup.targetCardFactoryMacHint": "Unter macOS fragt die App eventuell nach Keychain-Zugriff, um dein WLAN-Passwort zu lesen und auf den Stick zu schreiben. Erlaube es, oder gib das Passwort selbst ein.",

@@ -750,7 +750,7 @@
   "setup.targetCardBadgeSTR": "alleen bijwerken",
   "setup.targetCardBadgeStock": "eerste installatie",
   "setup.targetCardBadgeFactory": "nog niet op wifi",
-  "setup.targetCardFactoryHelp": "Voor een nieuwe of gereset speaker die nog niet op je wifi zit: verbind hem eerst met je thuiswifi via de officiële Bose SoundTouch-app (links hieronder). Zodra de speaker op je wifi zit, verschijnt hij in de speakerlijst en installeer je STR zonder USB-stick met één druk op de knop: kies de speaker en tik op Installeren.",
+  "setup.targetCardFactoryHelp": "Voor een nieuwe of gereset speaker die nog niet op je wifi zit: verbind hem eerst met je thuiswifi via de officiële Bose SoundTouch-app (links hieronder). Zodra de speaker op je wifi zit, verschijnt hij in de speakerlijst en installeer je STR zonder USB-stick met één druk op de knop: kies de speaker en tik op Installeren. Heeft je speaker een LAN-poort, dan kun je hem ook gewoon met een netwerkkabel op je router aansluiten: hij verschijnt dan vanzelf in de lijst en wordt op dezelfde manier geïnstalleerd.",
   "setup.boseAppAndroid": "Bose SoundTouch-app voor Android (Google Play)",
   "setup.boseAppIos": "Bose SoundTouch-app voor iPhone en iPad (App Store)",
   "setup.targetCardFactoryMacHint": "Op macOS kan de app om Keychain-toegang vragen om je wifi-wachtwoord te lezen en op de stick te zetten. Sta dit toe of typ het wachtwoord zelf in.",
