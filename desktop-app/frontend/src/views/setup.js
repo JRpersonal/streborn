@@ -65,7 +65,16 @@ import {
   DiscoverBoxes,
   SaveDiagnosticBundle,
   EventsOn,
+  BrowserOpenURL,
+  PhoneQR,
 } from '../api.js';
+
+// Official Bose SoundTouch app store listings (verified live 2026-07-09). The
+// app's local Wi-Fi setup still works after the cloud shutdown, so it is the
+// recommended way to get a factory-reset speaker onto the LAN before STR's
+// stick-free network install takes over.
+const BOSE_APP_ANDROID_URL = 'https://play.google.com/store/apps/details?id=com.bose.soundtouch';
+const BOSE_APP_IOS_URL = 'https://apps.apple.com/app/bose-soundtouch/id708379313';
 
 // macOS gates the System keychain behind an admin prompt for every
 // `security find-generic-password -ga`. Auto-firing the password
@@ -558,6 +567,22 @@ export function renderSetupTargetPicker() {
   cards += cardHTML('factory-reset', '', t('setup.targetCardKindFactory'), '', t('setup.targetCardBadgeFactory'));
   if (isSelected('factory-reset', '')) {
     cards += `<div class="setup-target-factory-help muted small">${escapeHtml(t('setup.targetCardFactoryHelp'))}</div>`;
+    // Wi-Fi onboarding happens in the official Bose SoundTouch app (its local
+    // setup still works after the cloud shutdown); once the speaker is on the
+    // LAN, STR's network install takes over and no stick is needed. The app has
+    // to go onto the user's PHONE, so each store link gets a small QR code
+    // (painted async via PhoneQR after the innerHTML render) next to a plain
+    // button for whoever wants the link on this machine.
+    cards += `<div class="setup-factory-boseapp-links">
+      <div class="boseapp-store">
+        <img id="boseAppAndroidQr" class="boseapp-qr" alt="QR: Google Play" />
+        <button type="button" class="btn" id="boseAppAndroidBtn">${escapeHtml(t('setup.boseAppAndroid'))}</button>
+      </div>
+      <div class="boseapp-store">
+        <img id="boseAppIosQr" class="boseapp-qr" alt="QR: App Store" />
+        <button type="button" class="btn" id="boseAppIosBtn">${escapeHtml(t('setup.boseAppIos'))}</button>
+      </div>
+    </div>`;
     if (isMac) {
       cards += `<div class="setup-target-factory-mac">${escapeHtml(t('setup.targetCardFactoryMacHint'))}</div>`;
     }
@@ -571,6 +596,28 @@ export function renderSetupTargetPicker() {
   }
 
   body.innerHTML = `<div class="setup-target-cards" role="radiogroup" aria-label="${escapeAttr(t('setup.targetHeading'))}">${cards}</div>`;
+
+  // Store links for the Bose SoundTouch app (Wi-Fi onboarding). Wired after the
+  // innerHTML render; stopPropagation so a tap never doubles as a card select.
+  const wireStore = (id, url) => {
+    const b = body.querySelector('#' + id);
+    if (b) b.onclick = (e) => { e.stopPropagation(); BrowserOpenURL(url); };
+  };
+  wireStore('boseAppAndroidBtn', BOSE_APP_ANDROID_URL);
+  wireStore('boseAppIosBtn', BOSE_APP_IOS_URL);
+  // Small scannable QR per store link (the Bose app belongs on the phone, not
+  // on this PC). Locally generated (PhoneQR, no external service); on failure
+  // the QR img is dropped and the buttons remain.
+  const paintStoreQr = async (id, url) => {
+    const img = body.querySelector('#' + id);
+    if (!img) return;
+    try {
+      img.src = await PhoneQR(url);
+      img.classList.add('ready');
+    } catch { img.remove(); }
+  };
+  paintStoreQr('boseAppAndroidQr', BOSE_APP_ANDROID_URL).catch(() => {});
+  paintStoreQr('boseAppIosQr', BOSE_APP_IOS_URL).catch(() => {});
 
   // Paint the OTA-first primary action for the current target: a network-install
   // hero for a reachable stock box, or the collapsed stick wizard otherwise.
