@@ -3026,7 +3026,44 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	const dst = "/mnt/nv/streborn/bin/streborn-armv7l"
-	if err := writeBinaryAtomic(dst, body); err != nil {
+	err := writeBinaryAtomic(dst, body)
+	// Tier 2 (#270): a NAND that UBIFS parked read-only fails the write (or,
+	// sneakier, fails every reclaim delete so the write path reports "no
+	// space"). Probe, remount rw, retry once; if the volume stays protected,
+	// the truthful error beats another opaque 507.
+	if err != nil && (isReadOnlyFSErr(err) || !nandWritable()) {
+		if remountNANDRW(s.logger) {
+			err = writeBinaryAtomic(dst, body)
+		} else {
+			http.Error(w, errNANDReadOnly.Error(), http.StatusInsufficientStorage)
+			return
+		}
+	}
+	// Tier 3 (#270): the volume writes fine but cannot hold OLD + NEW agent
+	// side by side even after the reclaim (small ST20 volumes). Stage the new
+	// binary in RAM and let a detached helper swap it in after this process
+	// exits, then reboot — peak NAND need drops to a single copy.
+	if errors.Is(err, errInsufficientNAND) {
+		if serr := s.stageAndSwapViaRAM(dst, body); serr == nil {
+			writeJSON(w, http.StatusOK, map[string]string{
+				"status": "ok",
+				"action": "reboot",
+				"mode":   "ram-staged",
+			})
+			go func() {
+				// Give the 200 OK time to flush, then exit: the helper waits
+				// for this PID before copying (the running binary is ETXTBSY
+				// and its blocks are pinned until we are gone).
+				time.Sleep(1500 * time.Millisecond)
+				s.logger.Info("exiting for the RAM-staged binary swap; the helper reboots the box")
+				os.Exit(0)
+			}()
+			return
+		} else {
+			s.logger.Warn("RAM-staged swap unavailable, reporting the space failure", "err", serr)
+		}
+	}
+	if err != nil {
 		http.Error(w, err.Error(), nandWriteHTTPStatus(err))
 		return
 	}
