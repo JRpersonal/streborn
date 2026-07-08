@@ -640,6 +640,8 @@
   "settingsView.wlanWarn": "Waarschuwing: met het verkeerde wachtwoord verliest de speaker zijn netwerkverbinding. Herstel alleen via opnieuw provisioneren met de stick of een fabrieksreset.",
   "settingsView.wlanConfirmBody": "De speaker schakelt meteen over naar <b>{{ssid}}</b>. Met het verkeerde wachtwoord verliest hij de verbinding. Doorgaan?",
   "settingsView.wlanSwitchConfirmTitle": "Wifi wisselen",
+  "settingsView.wlanHiddenToggle": "Verborgen netwerk (zendt zijn naam niet uit)",
+  "settingsView.wlanHiddenHint": "Vink dit aan als het netwerk niet in scans verschijnt. De speaker zoekt het dan gericht op naam.",
   "settingsView.wlanSsidEmpty": "SSID mag niet leeg zijn",
   "settingsView.wlanSwitchedToast": "Wifi gewisseld. De speaker krijgt een nieuw IP, doorzoek de lijst zo opnieuw.",
   "settingsView.wlanRebootingToast": "Het nieuwe wifi-netwerk wordt toegepast. De Portable herstart hiervoor en is na een paar minuten terug, doorzoek dan de lijst opnieuw.",

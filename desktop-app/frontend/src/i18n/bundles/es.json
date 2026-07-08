@@ -640,6 +640,8 @@
   "settingsView.wlanWarn": "Advertencia: con una contraseña incorrecta el altavoz pierde su conexión de red. Recuperación solo mediante reaprovisionamiento por memoria o restablecimiento de fábrica.",
   "settingsView.wlanConfirmBody": "El altavoz cambia de inmediato a <b>{{ssid}}</b>. Con una contraseña incorrecta pierde la conexión. ¿Continuar?",
   "settingsView.wlanSwitchConfirmTitle": "Cambiar de Wi-Fi",
+  "settingsView.wlanHiddenToggle": "Red oculta (no difunde su nombre)",
+  "settingsView.wlanHiddenHint": "Marca esta casilla si la red no aparece en las búsquedas. El altavoz la buscará por su nombre.",
   "settingsView.wlanSsidEmpty": "El SSID no puede estar vacío",
   "settingsView.wlanSwitchedToast": "Wi-Fi cambiado. El altavoz está obteniendo una nueva IP, busca la lista de nuevo en un momento.",
   "settingsView.wlanRebootingToast": "Aplicando el nuevo Wi-Fi. El Portable se reinicia para esto y vuelve en unos minutos, luego busca la lista de nuevo.",

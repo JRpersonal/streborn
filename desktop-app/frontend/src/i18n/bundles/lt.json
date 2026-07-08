@@ -640,6 +640,8 @@
   "settingsView.wlanWarn": "Įspėjimas: su neteisingu slaptažodžiu garsiakalbis praras tinklo ryšį. Pataisyti galima tik iš naujo paruošiant per atmintinę arba atliekant gamyklinį atstatymą.",
   "settingsView.wlanConfirmBody": "Garsiakalbis iškart persijungs į <b>{{ssid}}</b>. Su neteisingu slaptažodžiu jis praras ryšį. Tęsti?",
   "settingsView.wlanSwitchConfirmTitle": "Keisti Wi-Fi",
+  "settingsView.wlanHiddenToggle": "Paslėptas tinklas (netransliuoja savo pavadinimo)",
+  "settingsView.wlanHiddenHint": "Pažymėkite, jei tinklas nerodomas paieškoje. Kolonėlė jo ieškos pagal pavadinimą.",
   "settingsView.wlanSsidEmpty": "SSID negali būti tuščias",
   "settingsView.wlanSwitchedToast": "Wi-Fi pakeistas. Garsiakalbis gaus naują IP, netrukus iš naujo nuskaitykite sąrašą.",
   "settingsView.wlanRebootingToast": "Taikomas naujas Wi-Fi. Portable dėl to paleidžiamas iš naujo ir grįžta po kelių minučių, tada iš naujo nuskaitykite sąrašą.",

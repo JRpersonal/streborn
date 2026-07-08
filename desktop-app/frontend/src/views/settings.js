@@ -580,6 +580,8 @@ function renderBoxSettings(s, box) {
           <button class="btn btn-icon-sm" id="boxWlanRefresh" title="${escapeAttr(t('settingsView.wlanRefreshTitle'))}">&#x21bb;</button>
         </div>
         <input type="text" id="boxWlanSSID" placeholder="${escapeAttr(t('settingsView.wlanSsidPlaceholder'))}" />
+        <label style="display:block;margin:4px 0 0"><input type="checkbox" id="boxWlanHidden" /> ${escapeHtml(t('settingsView.wlanHiddenToggle'))}</label>
+        <small class="muted small" style="display:block;margin-bottom:4px">${escapeHtml(t('settingsView.wlanHiddenHint'))}</small>
         <div class="wlan-row">
           <input type="password" id="boxWlanPass" placeholder="${escapeAttr(t('settingsView.wlanPassPlaceholder'))}" />
           <button class="btn btn-icon-sm" id="boxWlanShowPass" title="${escapeAttr(t('settingsView.wlanShowPass'))}">&#128065;</button>
@@ -1975,6 +1977,9 @@ function wireWlanSwitch(box) {
   $('boxWlanSave').onclick = async () => {
     const ssid = $('boxWlanSSID').value.trim();
     const pass = $('boxWlanPass').value;
+    // Hidden networks never appear in the speaker's site survey, so the flag
+    // also implies force: the agent skips the visibility preflight for them.
+    const hidden = !!($('boxWlanHidden') && $('boxWlanHidden').checked);
     if (!ssid) { showError(t('settingsView.wlanSsidEmpty')); return; }
     const ok = await confirmWarn(
       t('settingsView.wlanSwitchConfirmTitle'),
@@ -1985,7 +1990,7 @@ function wireWlanSwitch(box) {
       const r = await deps.boxFetch(box, '/api/box/wlan', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ssid, password: pass }),
+        body: JSON.stringify({ ssid, password: pass, hidden, force: hidden }),
       });
       if (!r.ok) {
         const body = await r.text();

@@ -1302,6 +1302,12 @@ WLAN_CREDS_NAND="$PERSIST/wlan-creds"
 WLAN_CONF="$STICK/wlan.conf"
 SSID=""
 PASS=""
+# HIDDEN=1 marks a hidden network (SSID broadcast disabled). Hidden APs never
+# answer broadcast probes, so wpa-based provisioning must set scan_ssid=1 or
+# the box will never find the network. Persisted alongside SSID/PASS in the
+# NAND wlan-creds (written by the agent's /api/box/wlan and by the persist
+# helpers below) so boot replay keeps the flag.
+HIDDEN=""
 WLAN_SOURCE=""
 
 # persist_wlan_creds writes the live SSID+PASS into NAND so a future
@@ -1325,6 +1331,7 @@ persist_wlan_creds() {
     [ -n "$PASS" ] || return 0
     { printf 'SSID=%s\n' "$SSID"
       printf 'PASS=%s\n' "$PASS"
+      if [ "$HIDDEN" = "1" ]; then printf 'HIDDEN=1\n'; fi
     } > "$WLAN_CREDS_NAND.new" 2>/dev/null
     if [ -s "$WLAN_CREDS_NAND.new" ]; then
         mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
@@ -1335,10 +1342,16 @@ persist_wlan_creds() {
 if [ -f "$WLAN_CONF" ]; then
     SSID=$(sed -n 's/.*"ssid":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
     PASS=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$WLAN_CONF" | head -1)
+    # Forward-compatible: a stick provisioned for a hidden network may carry
+    # "hidden":true in wlan.conf (with or without a space after the colon).
+    case "$(cat "$WLAN_CONF" 2>/dev/null)" in
+        *'"hidden":true'*|*'"hidden": true'*) HIDDEN=1 ;;
+    esac
     WLAN_SOURCE="stick wlan.conf"
 elif [ -r "$WLAN_CREDS_NAND" ]; then
     SSID=$(sed -n 's/^SSID=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
     PASS=$(sed -n 's/^PASS=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
+    HIDDEN=$(sed -n 's/^HIDDEN=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
     WLAN_SOURCE="NAND wlan-creds (replay)"
 fi
 # Wireless-interface detection. Two real cases on SoundTouch hardware
@@ -1419,6 +1432,7 @@ if [ -z "$WLAN_IFACE" ]; then
     echo "ethernet-only" > "$PERSIST/wlan-mode" 2>/dev/null
     SSID=""
     PASS=""
+    HIDDEN=""
 fi
 
 # Whole block runs in a backgrounded subshell so any slow upstream
@@ -1686,6 +1700,10 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     write_airplay_profile() {
         # Non-destructive: only slot 0 is set, other slots are left as-is,
         # existing profiles are never cleared. Sets AIR_WROTE=1 on success.
+        # Hidden-SSID note: the PersistentWifiProfile XML schema has no
+        # documented hidden/broadcast attribute, so HIDDEN=1 is NOT threaded
+        # into this path. Hidden-network support on BCO chassis is unverified
+        # chip-side; do not guess undocumented fields here.
         AIR_WROTE=""
         # A double-quote in SSID/PSK would break the XML attribute and
         # could corrupt the file the box boots from. Bail rather than risk
@@ -1962,6 +1980,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             # that wipes the NetManager DB can replay from NAND.
             { printf 'SSID=%s\n' "$SSID"
               printf 'PASS=%s\n' "$PASS"
+              if [ "$HIDDEN" = "1" ]; then printf 'HIDDEN=1\n'; fi
             } > "$WLAN_CREDS_NAND.new" 2>/dev/null
             if [ -s "$WLAN_CREDS_NAND.new" ]; then
                 mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
@@ -2046,6 +2065,10 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 done
                 printf '%s' "$_ue_o"
             }
+            # Hidden-SSID note: the GoForm ConfigureProfileSettings form has
+            # no known hidden-network field, so HIDDEN=1 is NOT threaded into
+            # this path. Hidden-network support on BCO chassis is unverified
+            # chip-side; do not guess undocumented form fields here.
             JB_BODY="ConfigManual=1&SSID=$(_ue "$SSID")&Passphrase=$(_ue "$PASS")&Key0=&Security=WPA2PSK&Cipher=CCMP&DHCPClient=1&IP=&Mask=&DefGW=&DNSSrv1=&DNSSrv2=&ProxyServer=&ProxyServerPort="
             setup_log "M_jukebox: POST goform -> http://$JB_HIT/goform/aformHandlerConfigureProfileSettings (Security=WPA2PSK Cipher=CCMP DHCP=1, body ${#JB_BODY}B)"
             JB_RESP=$(wget -qO- -T 25 \
@@ -2113,7 +2136,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     if [ "${AIR_WROTE:-}" = "1" ] && { [ "$BCO_MODE" = "1" ] || [ -n "${IS_TAIGAN:-}" ]; }; then
         if airplay_reboot_guard_ok; then
             setup_log "M_air: BCO chassis — profile written, rebooting once so BoseApp/BCONetworkServicesController applies it (skipping the dead addWirelessProfile path)"
-            { printf 'SSID=%s\n' "$SSID"; printf 'PASS=%s\n' "$PASS"; } > "$WLAN_CREDS_NAND.new" 2>/dev/null \
+            { printf 'SSID=%s\n' "$SSID"; printf 'PASS=%s\n' "$PASS"; if [ "$HIDDEN" = "1" ]; then printf 'HIDDEN=1\n'; fi; } > "$WLAN_CREDS_NAND.new" 2>/dev/null \
                 && mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null \
                 && chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
             sync 2>/dev/null; sleep 1
@@ -2487,6 +2510,14 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             setup_log "M3: write /etc/wpa_supplicant.conf + restart"
             WPA_CONF="/etc/wpa_supplicant.conf"
             TMP="/tmp/wpa_supplicant.conf.new"
+            # Hidden network: scan_ssid=1 makes wpa_supplicant send
+            # SSID-specific probe requests; a hidden AP never carries the
+            # SSID in its beacons so it is invisible to a broadcast scan.
+            # The variable expands to an extra line INSIDE the single
+            # network block (empty for normal networks).
+            WPA_SCAN=""
+            if [ "$HIDDEN" = "1" ]; then WPA_SCAN="
+    scan_ssid=1"; fi
             cat > "$TMP" <<WPAEOF
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root
 update_config=1
@@ -2496,7 +2527,7 @@ fast_reauth=1
 config_methods=virtual_display virtual_push_button keypad
 
 network={
-    ssid="$SSID"
+    ssid="$SSID"$WPA_SCAN
     psk="$PASS"
     key_mgmt=WPA-PSK
 }
@@ -2545,6 +2576,10 @@ WPAEOF
                 wpa_cli -i "$_WI" set_network "$NETID" ssid "\"$SSID_ESC\"" >/dev/null 2>&1; R1=$?
                 wpa_cli -i "$_WI" set_network "$NETID" psk "\"$PSK_ESC\""   >/dev/null 2>&1; R2=$?
                 wpa_cli -i "$_WI" set_network "$NETID" key_mgmt WPA-PSK    >/dev/null 2>&1; R3=$?
+                # Hidden network: probe for the SSID directly (never beaconed).
+                if [ "$HIDDEN" = "1" ]; then
+                    wpa_cli -i "$_WI" set_network "$NETID" scan_ssid 1     >/dev/null 2>&1
+                fi
                 wpa_cli -i "$_WI" enable_network "$NETID"                  >/dev/null 2>&1; R4=$?
                 wpa_cli -i "$_WI" select_network "$NETID"                  >/dev/null 2>&1; R5=$?
                 wpa_cli -i "$_WI" save_config                              >/dev/null 2>&1; R6=$?
@@ -2552,6 +2587,7 @@ WPAEOF
                 if [ "$R1" = "0" ] && [ "$R2" = "0" ] && [ "$R4" = "0" ]; then
                     { printf 'SSID=%s\n' "$SSID"
                       printf 'PASS=%s\n' "$PASS"
+                      if [ "$HIDDEN" = "1" ]; then printf 'HIDDEN=1\n'; fi
                     } > "$WLAN_CREDS_NAND.new" 2>/dev/null
                     if [ -s "$WLAN_CREDS_NAND.new" ]; then
                         mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null

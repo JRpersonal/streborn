@@ -640,6 +640,8 @@
   "settingsView.wlanWarn": "Brīdinājums: ar nepareizu paroli skaļrunis zaudēs tīkla savienojumu. To var izlabot tikai, atkārtoti sagatavojot caur zibatmiņu vai veicot rūpnīcas atiestatīšanu.",
   "settingsView.wlanConfirmBody": "Skaļrunis uzreiz pārslēgsies uz <b>{{ssid}}</b>. Ar nepareizu paroli tas zaudēs savienojumu. Turpināt?",
   "settingsView.wlanSwitchConfirmTitle": "Mainīt Wi-Fi",
+  "settingsView.wlanHiddenToggle": "Slēpts tīkls (neizplata savu nosaukumu)",
+  "settingsView.wlanHiddenHint": "Atzīmējiet, ja tīkls neparādās meklēšanā. Skaļrunis to meklēs pēc nosaukuma.",
   "settingsView.wlanSsidEmpty": "SSID nevar būt tukšs",
   "settingsView.wlanSwitchedToast": "Wi-Fi mainīts. Skaļrunis saņems jaunu IP, drīz skenējiet sarakstu vēlreiz.",
   "settingsView.wlanRebootingToast": "Tiek pielietots jaunais Wi-Fi. Portable šim restartējas un atgriežas pēc dažām minūtēm, tad skenējiet sarakstu vēlreiz.",

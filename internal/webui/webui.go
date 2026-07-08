@@ -5196,6 +5196,12 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		// Force skips the site-survey pre-flight (the user chose to switch to a
 		// network the speaker cannot currently see, e.g. a momentarily-missed one).
 		Force bool `json:"force"`
+		// Hidden marks the target as a hidden network (SSID broadcast disabled).
+		// A hidden SSID never appears in the box's site survey, so it implies
+		// skipping the pre-flight, and the wpa config gains scan_ssid=1 so
+		// wpa_supplicant probes for the SSID directly instead of waiting for a
+		// beacon that never carries it.
+		Hidden bool `json:"hidden"`
 	}
 	if !decodeJSONRequest(w, r, 2048, &req) {
 		return
@@ -5217,8 +5223,11 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	// network strands it (it leaves the current network, cannot join the new one,
 	// and then needs a Bose-app re-pair). The box's own site survey only lists the
 	// bands it supports, so an invisible SSID is the clean signal to refuse; the
-	// `force` flag lets the user override a momentarily-missed but real network.
-	if !req.Force {
+	// `force` flag lets the user override a momentarily-missed but real network,
+	// and `hidden` implies the same skip: a hidden SSID is invisible to the
+	// survey BY DESIGN, so refusing on invisibility would refuse every hidden
+	// network forever.
+	if wlanPreflightApplies(req.Force, req.Hidden) {
 		sctx, scancel := context.WithTimeout(r.Context(), 12*time.Second)
 		ssids, serr := boxapi.New(s.boxHost).SiteSurvey(sctx)
 		scancel()
@@ -5251,7 +5260,7 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	// runs in a background goroutine, so committing the canonical creds first
 	// means a crash after the response can never leave the client believing the
 	// switch happened while NAND still holds the old creds.
-	if err := backupAndWriteWlanCreds(req.SSID, req.Password); err != nil {
+	if err := backupAndWriteWlanCreds(req.SSID, req.Password, req.Hidden); err != nil {
 		http.Error(w, "persist wlan creds: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -5266,8 +5275,16 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		"ssid":      req.SSID,
 		"mechanism": mech,
 	})
-	s.logger.Info("WLAN switch requested", "ssid", req.SSID, "mechanism", mech, "iface", iface)
-	go s.applyWLANChange(iface, mech, req.SSID, req.Password)
+	s.logger.Info("WLAN switch requested", "ssid", req.SSID, "mechanism", mech, "iface", iface, "hidden", req.Hidden)
+	go s.applyWLANChange(iface, mech, req.SSID, req.Password, req.Hidden)
+}
+
+// wlanPreflightApplies reports whether the site-survey visibility pre-flight
+// should run for a WLAN change request. `force` is the user's explicit
+// override; `hidden` networks never show up in a site survey, so the
+// pre-flight is meaningless for them and must be skipped.
+func wlanPreflightApplies(force, hidden bool) bool {
+	return !force && !hidden
 }
 
 const (
@@ -5298,12 +5315,12 @@ func detectWlanMechanism() (iface, mech string) {
 // to wlan-creds / wpa_supplicant.conf and leave the box on an unpredictable
 // network. The creds were committed synchronously by the handler before this
 // runs, so this only drives the live switch / reboot.
-func (s *Server) applyWLANChange(iface, mech, ssid, password string) {
+func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool) {
 	s.wlanMu.Lock()
 	defer s.wlanMu.Unlock()
 	switch mech {
 	case "wpa":
-		switch s.applyWlanWPALive(iface, ssid, password) {
+		switch s.applyWlanWPALive(iface, ssid, password, hidden) {
 		case wpaConfirmed:
 			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface)
 			_ = os.Remove(wlanCredsPath + ".bak")
@@ -5336,15 +5353,26 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string) {
 }
 
 // backupAndWriteWlanCreds writes the canonical NAND wlan-creds (the SSID=/PASS=
-// format the boot path replays), keeping the previous set as .bak for rollback.
-func backupAndWriteWlanCreds(ssid, password string) error {
+// format the boot path replays, plus HIDDEN=1 for hidden networks), keeping the
+// previous set as .bak for rollback.
+func backupAndWriteWlanCreds(ssid, password string, hidden bool) error {
 	_ = os.Rename(wlanCredsPath, wlanCredsPath+".bak") // best-effort backup
+	return writeWlanCredsFile(wlanCredsPath, ssid, password, hidden)
+}
+
+// writeWlanCredsFile is the path-injectable core of backupAndWriteWlanCreds,
+// kept separate so the file format stays unit-testable off-box. run.sh's boot
+// replay parses these exact SSID=/PASS=/HIDDEN= lines.
+func writeWlanCredsFile(path, ssid, password string, hidden bool) error {
 	body := fmt.Sprintf("SSID=%s\nPASS=%s\n", ssid, password)
-	tmp := wlanCredsPath + ".new"
+	if hidden {
+		body += "HIDDEN=1\n"
+	}
+	tmp := path + ".new"
 	if err := os.WriteFile(tmp, []byte(body), 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, wlanCredsPath)
+	return os.Rename(tmp, path)
 }
 
 func restoreWlanCreds() {
@@ -5368,7 +5396,7 @@ const (
 // running conf is backed up to writable NAND first (NOT next to the conf: /etc is
 // read-only on rhino/scm) so a failed switch can roll back. A failed backup never
 // blocks the switch — it only forfeits the rollback.
-func (s *Server) applyWlanWPALive(iface, ssid, password string) wpaApplyResult {
+func (s *Server) applyWlanWPALive(iface, ssid, password string, hidden bool) wpaApplyResult {
 	if cur, err := os.ReadFile(wpaConfPath); err == nil {
 		if werr := os.WriteFile(wpaBackupPath, cur, 0o600); werr != nil {
 			// Read-only NAND would be unexpected, but never let a backup failure
@@ -5385,7 +5413,7 @@ func (s *Server) applyWlanWPALive(iface, ssid, password string) wpaApplyResult {
 		// write-failure path above.
 		_ = os.Remove(wpaBackupPath)
 	}
-	method, err := writeWPAConf(buildWPAConfig(ssid, password))
+	method, err := writeWPAConf(buildWPAConfig(ssid, password, hidden))
 	if err != nil {
 		s.logger.Warn("WLAN: write wpa conf failed, will reboot to apply via boot path", "err", err, "path", wpaConfPath)
 		return wpaCannotApply
@@ -5478,13 +5506,18 @@ func rebootBox() {
 }
 
 // buildWPAConfig generates a minimal wpa_supplicant.conf. With an empty
-// password key_mgmt=NONE is set (open WLAN).
-func buildWPAConfig(ssid, psk string) string {
+// password key_mgmt=NONE is set (open WLAN). hidden adds scan_ssid=1 to the
+// network block so wpa_supplicant sends SSID-specific probe requests, which is
+// the only way to find a network that does not broadcast its SSID.
+func buildWPAConfig(ssid, psk string, hidden bool) string {
 	var b strings.Builder
 	b.WriteString("ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=root\n")
 	b.WriteString("update_config=1\n")
 	b.WriteString("network={\n")
 	b.WriteString("    ssid=\"" + escapeWPAValue(ssid) + "\"\n")
+	if hidden {
+		b.WriteString("    scan_ssid=1\n")
+	}
 	if psk == "" {
 		b.WriteString("    key_mgmt=NONE\n")
 	} else {

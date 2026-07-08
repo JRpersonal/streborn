@@ -640,6 +640,8 @@
   "settingsView.wlanWarn": "Attention : avec un mauvais mot de passe, l'enceinte perd sa connexion réseau. Récupération uniquement via reprovisionnement par clé ou réinitialisation d'usine.",
   "settingsView.wlanConfirmBody": "L'enceinte bascule immédiatement sur <b>{{ssid}}</b>. Avec un mauvais mot de passe elle perd la connexion. Continuer ?",
   "settingsView.wlanSwitchConfirmTitle": "Changer de Wi-Fi",
+  "settingsView.wlanHiddenToggle": "Réseau masqué (le nom n'est pas diffusé)",
+  "settingsView.wlanHiddenHint": "Cochez cette case si le réseau n'apparaît pas dans les recherches. L'enceinte le cherchera alors par son nom.",
   "settingsView.wlanSsidEmpty": "Le SSID ne doit pas être vide",
   "settingsView.wlanSwitchedToast": "Wi-Fi changé. L'enceinte reçoit une nouvelle IP, recherchez la liste à nouveau dans un instant.",
   "settingsView.wlanRebootingToast": "Application du nouveau Wi-Fi. La Portable redémarre pour cela et revient dans quelques minutes, recherchez ensuite la liste à nouveau.",

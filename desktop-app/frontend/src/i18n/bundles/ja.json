@@ -640,6 +640,8 @@
   "settingsView.wlanWarn": "警告: パスワードが誤っているとスピーカーはネットワーク接続を失います。復旧はメモリでの再設定または工場出荷時リセットのみです。",
   "settingsView.wlanConfirmBody": "スピーカーは直ちに <b>{{ssid}}</b> に切り替わります。パスワードが誤っていると接続を失います。続行しますか?",
   "settingsView.wlanSwitchConfirmTitle": "Wi-Fiを切り替え",
+  "settingsView.wlanHiddenToggle": "非公開ネットワーク（SSIDステルス）",
+  "settingsView.wlanHiddenHint": "検索に表示されないネットワークの場合はチェックしてください。スピーカーが名前を指定して検索します。",
   "settingsView.wlanSsidEmpty": "SSIDは空にできません",
   "settingsView.wlanSwitchedToast": "Wi-Fiを切り替えました。スピーカーは新しいIPを取得中です。少し待ってから一覧を再検索してください。",
   "settingsView.wlanRebootingToast": "新しいWi-Fiを適用中です。Portableはこのため再起動し、数分で戻ります。その後、もう一度一覧を検索してください。",
