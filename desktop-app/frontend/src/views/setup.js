@@ -1840,14 +1840,22 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
     access: t('setup.phase.access'), copy: t('setup.phase.copy'),
     restart: t('setup.phase.restart'), wait: t('setup.phase.wait'),
   };
+  // Rough per-step durations from real installs (maintainer OTA journal, live
+  // Portable/ST300 runs, the code's own wait budgets), so the long silent
+  // stretches read as expected rather than stuck.
+  const phaseEtas = {
+    access: t('setup.phaseEta.access'), copy: t('setup.phaseEta.copy'),
+    restart: t('setup.phaseEta.restart'), wait: t('setup.phaseEta.wait'),
+  };
   let curPhase = 0, copyDetail = '', accessHint = '';
   const installStartMs = Date.now();
   const fmtMS = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
-  const chkRow = (label, st, detail) => {
+  const chkRow = (label, st, detail, eta) => {
     const dot = st === 'done' ? '<span class="chk-ico chk-done">&#10003;</span>'
       : st === 'run' ? '<span class="chk-ico chk-spin"></span>'
       : '<span class="chk-ico chk-pend"></span>';
-    return `<div class="chk-row chk-${st}">${dot}<span class="chk-lbl">${escapeHtml(label)}</span></div>` +
+    const etaHtml = eta ? `<span class="chk-eta muted small">${escapeHtml(eta)}</span>` : '';
+    return `<div class="chk-row chk-${st}">${dot}<span class="chk-lbl">${escapeHtml(label)}</span>${etaHtml}</div>` +
       (detail ? `<div class="chk-detail muted small">${detail}</div>` : '');
   };
   const renderChecklist = () => {
@@ -1855,7 +1863,9 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
     PHASES.forEach((ph, i) => {
       const st = i < curPhase ? 'done' : i === curPhase ? 'run' : 'pend';
       const detail = (ph === 'copy' && st === 'run') ? copyDetail : (ph === 'access' && st === 'run') ? accessHint : '';
-      rows += chkRow(phaseLabels[ph], st, detail);
+      // The estimate shows while a step is pending or running; once done the
+      // real time is history and the suffix disappears.
+      rows += chkRow(phaseLabels[ph], st, detail, st === 'done' ? '' : phaseEtas[ph]);
     });
     render(`<div class="setup-checklist"><div class="chk-head"><span>${escapeHtml(t('setup.installRunning'))}</span>` +
       `<span class="chk-timer">${fmtMS(Date.now() - installStartMs)}</span></div>${rows}` +
