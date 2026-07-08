@@ -199,6 +199,11 @@ type Server struct {
 	// "Preset not assigned", #119 Klaus). Empty disables persistence (tests).
 	lastPlayPath string
 
+	// mirrorSkips remembers, per zone member, why the last mirror reconcile
+	// tick skipped it, so the skip is logged at INFO only on a state change
+	// (#342). Touched only by the single reconcile goroutine — no lock.
+	mirrorSkips map[string]string
+
 	// lastUserStop is when the user last DELIBERATELY stopped playback, so the
 	// auto-re-push does not fight a wanted stop (v0.7.0: a single Stop
 	// did not hold because the proxy disconnect that a stop causes looks
@@ -684,6 +689,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/announce/audio", s.handleAnnounceAudio)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
+	mux.HandleFunc("/api/box/zone/purge", s.handleZonePurge)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/webhooks", s.handleWebhooks)
 	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
@@ -3835,7 +3841,9 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if mode == "mirror" {
-		s.mirrorToSlaves(ctx, z)
+		// Deliberate user action: push unconditionally (reconcile=false), the
+		// user just asked for exactly this group.
+		s.mirrorToSlaves(ctx, z, false)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "mirror"})
 		return
 	}
@@ -4119,13 +4127,32 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 // master box to play (s.lastPlay), which the slaves can pull from the master
 // agent's stream proxy. Looser than firmware sync, but works when the firmware
 // refuses to distribute STR's source. Best-effort + heavily logged.
-func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
+//
+// reconcile marks the periodic 5-minute re-form (PeriodicZoneReconcile) as
+// opposed to the user just having formed the group. The reconcile must only
+// repair what is actually broken: lastPlay is PERSISTED across reboots, so
+// without state guards an idle or standby master sprayed its stale last stream
+// onto every slave each tick — a slave busy with a Spotify playlist was yanked
+// to the master's old radio station every 5 minutes (#342), and a healthy
+// mirroring slave was re-pushed into a re-buffer hiccup each tick. With
+// reconcile set, the master must be actively playing the mirrored stream, and
+// each slave is only (re)pointed per slaveMirrorAction (never woken from
+// standby, never taken off another source it is playing).
+func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone, reconcile bool) {
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay
 	s.lastPlayMu.Unlock()
 	if lp == nil || lp.boxURL == "" {
 		s.logger.Info("zone mirror: master is not playing yet; slaves will mirror once you start playback and the reconcile fires (beta)")
 		return
+	}
+	if reconcile {
+		np := s.snapshotNowPlaying(ctx)
+		if reason := masterMirrorSkipReason(np, lp.boxURL); reason != "" {
+			s.logMirrorSkip("master", reason)
+			return
+		}
+		s.clearMirrorSkip("master")
 	}
 	// lp.boxURL points the MASTER's own box at its loopback stream proxy
 	// (http://127.0.0.1:8888/...). A slave cannot fetch that; it must reach the
@@ -4136,6 +4163,15 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone) {
 	for _, m := range z.Slaves {
 		if m.IP == "" {
 			continue
+		}
+		if reconcile {
+			push, reason := slaveMirrorAction(fetchNowPlaying(ctx, m.IP), slaveURL)
+			if !push {
+				s.logMirrorSkip("slave "+m.IP, reason)
+				continue
+			}
+			s.clearMirrorSkip("slave " + m.IP)
+			s.logger.Info("zone mirror: re-forming slave (beta)", "slave", m.IP, "reason", reason)
 		}
 		rr := upnp.NewBoseRenderer(m.IP)
 		var err error
@@ -4201,9 +4237,10 @@ const defaultZoneReconcilePath = "/mnt/nv/streborn/zone-reconcile"
 // zoneReconcileEnabled reports whether the periodic NATIVE zone re-assert runs on
 // this box. Default OFF (opt-in): the flag file must explicitly say
 // "1"/"true"/"on"/"yes" to turn it on. See defaultZoneReconcilePath for why the
-// default flipped to OFF. A mirror zone is unaffected: reconcileZoneOnce always
-// re-pushes a mirror group (that path works and does not drag a solo speaker), so
-// this gate only governs the broken/harmful native re-assert.
+// default flipped to OFF. A mirror zone is not gated here: its re-push has its
+// own per-tick state guards (see mirrorToSlaves/slaveMirrorAction — the master
+// must be actively playing, and standby or busy slaves are left alone, #342),
+// so this gate only governs the broken/harmful native re-assert.
 func (s *Server) zoneReconcileEnabled() bool {
 	b, err := os.ReadFile(defaultZoneReconcilePath)
 	if err != nil {
@@ -4243,11 +4280,14 @@ func (s *Server) reconcileZoneOnce() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if z.Mirror() {
-		// Re-push the master's current stream to the slaves (best-effort). This
-		// path is always allowed: it just re-streams to slaves that the user
-		// grouped and does not drag a solo speaker into anything, so it is not
-		// gated by the native opt-in below.
-		s.mirrorToSlaves(ctx, z)
+		// Re-form the mirror group, guarded (best-effort): the master must be
+		// actively playing the mirrored stream, and a slave is only (re)pointed
+		// when it is idle, dropped off the mirror, or on a stale master stream.
+		// A standby or otherwise-busy speaker is left alone — the unguarded
+		// version of this path hijacked a slave's Spotify playback with the
+		// master's persisted last station every 5 minutes (#342). Not gated by
+		// the native opt-in below; the guards make it safe on their own.
+		s.mirrorToSlaves(ctx, z, true)
 		return
 	}
 	if z.Stereo {
@@ -4347,6 +4387,12 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 		if err := s.zones.Clear(); err != nil {
 			s.logger.Warn("zone: clear store failed", "err", err)
 		}
+	}
+	// Also clear the group from every member's own persisted store
+	// (best-effort, background): a member that itself persisted a zone naming
+	// this box would otherwise keep re-forming the group forever (#342).
+	if master.DeviceID != "" || master.IP != "" {
+		s.purgePeerZones(master, slaves)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

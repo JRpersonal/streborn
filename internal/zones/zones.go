@@ -82,7 +82,7 @@ func Load(path string) (*Store, error) {
 	}
 	var z Zone
 	if err := json.Unmarshal(b, &z); err != nil {
-		return s, fmt.Errorf("zones parsen: %w", err)
+		return s, fmt.Errorf("parse zones: %w", err)
 	}
 	// An object with no master is standalone.
 	if z.Master == "" {
@@ -125,18 +125,18 @@ func (s *Store) Save() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.path == "" {
-		return fmt.Errorf("zones Store hat keinen Pfad")
+		return fmt.Errorf("zones store has no path")
 	}
 	var b []byte
 	var err error
 	if s.zone == nil {
 		b = []byte("{}\n")
 	} else if b, err = json.MarshalIndent(s.zone, "", "  "); err != nil {
-		return fmt.Errorf("zones serialisieren: %w", err)
+		return fmt.Errorf("marshal zones: %w", err)
 	}
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return fmt.Errorf("zones schreiben: %w", err)
+		return fmt.Errorf("write zones: %w", err)
 	}
 	return os.Rename(tmp, s.path)
 }
