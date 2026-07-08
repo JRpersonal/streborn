@@ -1827,7 +1827,7 @@ function renderBoxSettings(s, box) {
       if (!slot || !/^https?:\/\/\S+/i.test(url)) { showError(t('settingsView.urlPresetInvalid')); return; }
       urlPresetBtn.disabled = true;
       try {
-        await SetPreset(box.host, box.port, slot, name, url, '', 0, '');
+        await SetPreset(box.host, box.port, slot, name, url, '', 0, '', '');
         showToast(t('settingsView.urlPresetSaved', { n: slot }));
         if (state.currentBox && state.currentBox.host === box.host) await deps.loadPresets();
       } catch (e) { showError(e); }

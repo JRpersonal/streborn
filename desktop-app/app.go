@@ -1569,6 +1569,7 @@ type Preset struct {
 	Type      string `json:"type"`
 	Art       string `json:"art,omitempty"`
 	Bitrate   int    `json:"bitrate,omitempty"`
+	Codec     string `json:"codec,omitempty"`    // radio presets: station codec ("MP3", "AAC+"); recalls label AAC streams audio/aac (#252)
 	URI       string `json:"uri,omitempty"`      // Spotify presets: playlist/album URI
 	Account   string `json:"account,omitempty"`  // Spotify presets: owning account
 	Source    string `json:"source,omitempty"`   // DLNA presets: media server name (cosmetic badge)
@@ -2091,12 +2092,14 @@ func (a *App) GetPresets(host string, port int) ([]Preset, error) {
 }
 
 // SetPreset does PUT /api/presets/<slot>. art is the station logo URL,
-// sent to the box as upnp:albumArtURI on play. Routed through
+// sent to the box as upnp:albumArtURI on play. codec is radio-browser's
+// station codec ("MP3", "AAC+"); the agent labels AAC streams audio/aac on
+// recall so they do not decode to silence (#252). Routed through
 // boxPut so a preset save gets the same :8888<->:17008 port fallback as the
 // other box commands.
-func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, homepage string) error {
+func (a *App) SetPreset(host string, port int, slot int, name, streamURL, art string, bitrate int, homepage, codec string) error {
 	return a.boxPut(host, port, fmt.Sprintf("%s/%d", presetAPIPath, slot),
-		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Homepage: homepage})
+		Preset{Slot: slot, Name: name, StreamURL: streamURL, Type: "radio", Art: art, Bitrate: bitrate, Homepage: homepage, Codec: codec})
 }
 
 // SaveLibraryPreset stores a preset saved from a DLNA media server (the Library
@@ -2285,8 +2288,11 @@ func (a *App) waitAgentReady(host string, port int) bool {
 
 // PlayURL triggers POST /api/play with an arbitrary stream URL. icon is
 // the station logo URL (shown on the box), uuid lets
-// radio-browser count the click.
-func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime, homepage string) error {
+// radio-browser count the click. mime is the library-file codec MIME (also
+// the "play direct" marker, #139) and stays empty for radio; codec is
+// radio-browser's station codec ("MP3", "AAC+"), which the agent maps to the
+// DIDL MIME so AAC stations do not decode to silence (#252).
+func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime, homepage, codec string) error {
 	body, _ := json.Marshal(map[string]string{
 		"url":      streamURL,
 		"title":    title,
@@ -2294,6 +2300,7 @@ func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime,
 		"uuid":     uuid,
 		"mime":     mime,
 		"homepage": homepage,
+		"codec":    codec,
 	})
 	resp, err := a.playPost(host, port, "/api/play", string(body))
 	if err != nil {

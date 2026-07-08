@@ -2899,7 +2899,7 @@ async function healPresetLogos() {
         // onto a Spotify preset or its URI is lost.
         if (p.type === 'spotify') return;
         p.art = logo;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, logo, p.bitrate || 0, p.homepage || '').catch(() => {});
+        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, logo, p.bitrate || 0, p.homepage || '', p.codec || '').catch(() => {});
       } catch {}
     }));
   } finally {
@@ -3069,7 +3069,7 @@ function renderPresets() {
         addCands(state.nowIcon);
         // Auto-persist so the preset has its logo on the next load.
         p.art = state.nowIcon;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon, p.bitrate || 0, p.homepage || '').catch(() => {});
+        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon, p.bitrate || 0, p.homepage || '', p.codec || '').catch(() => {});
       }
       const streamHost = extractHost(p.stream_url);
       const hostsToTry = [];
@@ -3101,7 +3101,7 @@ function renderPresets() {
         // SetPreset is radio-only and would overwrite the Spotify URI.
         if ((p.bitrate || 0) !== state.nowBitrate && p.type !== 'spotify') {
           p.bitrate = state.nowBitrate;
-          SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, p.art || '', state.nowBitrate, p.homepage || '').catch(() => {});
+          SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, p.art || '', state.nowBitrate, p.homepage || '', p.codec || '').catch(() => {});
         }
       }
       div.innerHTML = `
@@ -3288,6 +3288,14 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
   el.addEventListener('touchcancel', cancel);
 }
 
+// APP_PLAY_FRESH_MS is how long the app trusts its own record of an ad-hoc
+// station it started (state.lastAppPlay) over the box-reported now-playing
+// when saving to a key. Short on purpose: it only needs to cover the
+// play-then-save gesture and the wake window in which an agent-side resume
+// could have raced the play (#252); after that, whatever the box reports IS
+// what the user hears, so the box report wins again.
+const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
+
 // saveCurrentToSlot saves the currently playing station onto the
 // given slot (overwrites whatever was there before). Uses the
 // now_playing data state.nowLocation + state.nowName plus the last
@@ -3378,12 +3386,38 @@ async function saveCurrentToSlot(slot) {
   // hardware press both often still hold the previous station.
   const sourceSlot = activeSlotFromLocation(state.nowLocation);
   if (sourceSlot !== null && sourceSlot !== slot) {
+    // The app itself started an ad-hoc station moments ago, yet the box
+    // reports a /stream/<slot> location: on a speaker that was asleep, an
+    // agent-side wake resume racing the play can have put the PREVIOUS
+    // preset back on (#252). Copying that preset here saved the OLD station
+    // onto the key while the user's chosen one silently vanished. The app
+    // knows exactly which station the user picked, so save its own record;
+    // the plain copy below remains for the true hardware-key case, where the
+    // app has no record of the play.
+    const app = state.lastAppPlay;
+    if (app && app.url && Date.now() - app.at < APP_PLAY_FRESH_MS) {
+      const aname = app.name || t('preset.placeholderSender');
+      try {
+        await SetPreset(
+          state.currentBox.host, state.currentBox.port,
+          slot, aname, app.url, app.icon || '', app.bitrate || 0, app.homepage || '', app.codec || ''
+        );
+        showToast(t('preset.savedToKey', { n: slot, name: aname }));
+        await loadPresets();
+        if (app.uuid) {
+          VoteStation(state.currentBox.host, state.currentBox.port, app.uuid).catch(() => {});
+        }
+      } catch (err) {
+        showError(t('preset.saveFailed', { err: String(err) }));
+      }
+      return;
+    }
     const src = state.presets.find(p => p.slot === sourceSlot);
     if (src && src.stream_url) {
       try {
         await SetPreset(
           state.currentBox.host, state.currentBox.port,
-          slot, src.name, src.stream_url, src.art || '', src.bitrate || 0, src.homepage || ''
+          slot, src.name, src.stream_url, src.art || '', src.bitrate || 0, src.homepage || '', src.codec || ''
         );
         showToast(t('preset.copiedToKey', { n: slot, name: src.name }));
         await loadPresets();
@@ -3399,10 +3433,15 @@ async function saveCurrentToSlot(slot) {
   // our proxy (for example a station started directly via the radio
   // search). Use state.nowLocation / nowName / nowIcon as before.
   const name = state.nowName || t('preset.placeholderSender');
+  // The codec is only known when this stream is the one the app itself
+  // started (radio-browser reported it at play time); the box does not
+  // report one.
+  const appRec = state.lastAppPlay;
+  const codec = (appRec && appRec.url === decodeProxyUrl(state.nowLocation)) ? (appRec.codec || '') : '';
   try {
     await SetPreset(
       state.currentBox.host, state.currentBox.port,
-      slot, name, decodeProxyUrl(state.nowLocation), state.nowIcon || '', state.nowBitrate || 0, ''
+      slot, name, decodeProxyUrl(state.nowLocation), state.nowIcon || '', state.nowBitrate || 0, '', codec
     );
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
@@ -3448,6 +3487,9 @@ async function play(slot) {
   // so we re-apply the user's chosen level afterwards only in that case
   // (a normal preset switch while already playing keeps the live volume).
   const wasIdle = !state.nowPlayState || state.nowSource === 'STANDBY';
+  // A preset recall supersedes any ad-hoc station the app started: drop the
+  // record so a later long-press save goes back to trusting the box report.
+  state.lastAppPlay = null;
   const p = state.presets.find(x => x.slot === slot);
   if (p) {
     // Optimistic UI: set BUFFERING_STATE immediately so the user
@@ -3575,7 +3617,7 @@ function scheduleLiveBitrate() {
           // uri), so persisting a Spotify preset would wipe its URI. The
           // Spotify rate stays live via state.nowBitrate + /spotify/info.
           if (!isSpotify) {
-            SetPreset(box.host, box.port, p.slot, p.name, p.stream_url, p.art || '', br, p.homepage || '').catch(() => {});
+            SetPreset(box.host, box.port, p.slot, p.name, p.stream_url, p.art || '', br, p.homepage || '', p.codec || '').catch(() => {});
           }
         }
         renderPresets();
@@ -4478,6 +4520,28 @@ async function findAlternativeStation(orig, triedHosts) {
   return candidates[0];
 }
 
+// preferMp3SiblingForBox returns an MP3-coded sibling entry (same station
+// name) when the chosen entry is AAC-coded and the given, already-loaded list
+// offers one (#252). The speaker's AAC decoding is the fragile path (HE-AAC
+// stations played silence for years under the fixed audio/mpeg label), while
+// the same station's MP3 mirror plays rock solid, so for BOX playback the MP3
+// sibling wins. No extra network round trip on purpose: with no list or no
+// sibling the chosen entry is returned unchanged and now plays with the
+// correct audio/aac label instead.
+function preferMp3SiblingForBox(s, list) {
+  if (!s || !/aac/i.test(s.codec || '') || !Array.isArray(list)) return s;
+  const wanted = (s.name || '').toLowerCase().trim();
+  if (!wanted) return s;
+  const siblings = list.filter(o => o && o !== s
+    && (o.name || '').toLowerCase().trim() === wanted
+    && /^mp3$/i.test(o.codec || '')
+    && (o.url_resolved || o.url));
+  if (siblings.length === 0) return s;
+  // Prefer a mirror radio-browser reached on its last check, then the best bitrate.
+  siblings.sort((a, b) => ((b.lastcheckok ? 1 : 0) - (a.lastcheckok ? 1 : 0)) || ((b.bitrate || 0) - (a.bitrate || 0)));
+  return siblings[0];
+}
+
 // playStation plays a radio station and, when its stream fails upstream
 // (403 geo-block, 503 down, dead URL), shows a clear reason and automatically
 // retries with another radio-browser entry of the SAME station before giving
@@ -4486,6 +4550,12 @@ async function findAlternativeStation(orig, triedHosts) {
 async function playStation(s) {
   const box = state.currentBox;
   if (!box) return;
+  // Box playback prefers an MP3 sibling over an AAC entry of the same station
+  // when the already-loaded result list offers one (#252): the speaker's AAC
+  // path is the fragile one, the MP3 mirror of the same station is rock solid.
+  // No sibling (or no list) plays the chosen entry unchanged; its AAC codec is
+  // now labelled correctly, so it works too.
+  s = preferMp3SiblingForBox(s, state.searchResults);
   const tried = new Set();
   let cur = s;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -4504,7 +4574,19 @@ async function playStation(s) {
 
     let fail = null;
     try {
-      await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '', '', s.homepage || '');
+      await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '', '', s.homepage || '', cur.codec || '');
+      // Remember the station the APP itself just started. A long-press save
+      // must prefer this over the box-reported now-playing: on a speaker that
+      // was asleep, the agent's wake resume can race the play and briefly put
+      // the PREVIOUS preset back on, and saving from the box report then
+      // copied the OLD station onto the key (#252). Cleared by any other play
+      // the app issues (preset recall etc.), so a true hardware-key press
+      // still saves via the box report.
+      state.lastAppPlay = {
+        url, name: s.name || '', icon: chain, bitrate: cur.bitrate || 0,
+        uuid: cur.stationuuid || '', homepage: s.homepage || '',
+        codec: cur.codec || '', at: Date.now(),
+      };
       // Register the play with radio-browser, but ONLY for a real station UUID.
       // Recently-played cards reuse the stream URL as their identity (no UUID), so
       // a plain `if (stationuuid)` fired RadioClick with a URL, which 404s. Guard
@@ -4528,6 +4610,7 @@ async function playStation(s) {
     if (!alt) {
       state.nowPlayState = '';
       state.nowLocation = '';
+      state.lastAppPlay = null; // never long-press-save a station that failed to play
       renderPresets();
       showToast(streamErrorMessage(fail.reason) + ' ' + t('search.allSourcesFailed'));
       return;
@@ -4538,6 +4621,7 @@ async function playStation(s) {
   // Exhausted the retry budget without a working source.
   state.nowPlayState = '';
   state.nowLocation = '';
+  state.lastAppPlay = null; // never long-press-save a station that failed to play
   renderPresets();
   showToast(t('search.allSourcesFailed'));
 }
@@ -4713,12 +4797,15 @@ function showSlotPicker({ title, subtitle, onPick }) {
 }
 
 function openPick(station) {
+  // Presets play on the box only, so the same MP3-over-AAC sibling preference
+  // as playStation applies to an assignment from the search list (#252).
+  station = preferMp3SiblingForBox(station, state.searchResults);
   showSlotPicker({
     title: t('preset.assignStationTitle'),
     subtitle: station.name + (station.bitrate ? ' (' + station.bitrate + ' kbit/s)' : ''),
     onPick: async (i) => {
       const logo = stationLogoChain(station);
-      await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0, station.homepage || '');
+      await SetPreset(state.currentBox.host, state.currentBox.port, i, station.name, station.url_resolved || station.url, logo, station.bitrate || 0, station.homepage || '', station.codec || '');
       if (station.stationuuid) {
         VoteStation(state.currentBox.host, state.currentBox.port, station.stationuuid).catch(() => {});
       }

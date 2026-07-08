@@ -33,6 +33,13 @@ export const state = {
   nowPlayState: '',    // current PlayState
   nowIcon: '',         // last known station logo (favicon)
   nowUUID: '',         // last radio-browser UUID
+  // lastAppPlay is the ad-hoc radio station the APP itself last started
+  // ({url, name, icon, bitrate, uuid, homepage, at}). A long-press save
+  // prefers this fresh record over the box-reported now-playing, because an
+  // agent-side wake resume racing the play can leave the box briefly
+  // reporting the PREVIOUS preset (#252). Cleared by preset recalls and by
+  // failed plays; null when the app has not started a station itself.
+  lastAppPlay: null,
   queue: null,         // current box play queue: {active, pos, shuffle, repeat, items[]} or null
   optimisticUntil: 0,  // timestamp until which refreshStatus trusts our optimistic state over the box
   presetErrors: {},    // slot → last error message (rendered red)

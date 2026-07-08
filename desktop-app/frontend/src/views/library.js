@@ -222,7 +222,10 @@ async function libraryPlay(item) {
     // Pass the track's real codec MIME so the box decodes FLAC/ALAC/M4A
     // correctly instead of being told audio/mpeg and rejecting it (#139).
     await PlayURL(state.currentBox.host, state.currentBox.port,
-      item.streamURL, item.title || '', item.albumArtURL || '', '', item.mimeType || '', '');
+      item.streamURL, item.title || '', item.albumArtURL || '', '', item.mimeType || '', '', '');
+    // A library play supersedes any ad-hoc radio station the app started, so
+    // a later long-press save must not resurrect that station (#252).
+    state.lastAppPlay = null;
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
     // Confirm it actually starts (see verifyLibraryPlayback, #139).
     verifyLibraryPlayback(item);
@@ -309,6 +312,8 @@ async function libraryPlayFolder() {
   };
   try {
     await StartQueue(state.currentBox.host, state.currentBox.port, JSON.stringify(payload));
+    // A folder play supersedes any ad-hoc radio station the app started (#252).
+    state.lastAppPlay = null;
     showToast(t('library.folderQueued', { n: items.length }));
   } catch (e) {
     showError(`StartQueue: ${e}`);

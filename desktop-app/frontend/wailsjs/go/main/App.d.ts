@@ -103,7 +103,7 @@ export function PhoneQR(arg1:string):Promise<string>;
 
 export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;
 
-export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string):Promise<void>;
+export function PlayURL(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:string,arg7:string,arg8:string,arg9:string):Promise<void>;
 
 export function ProbeSetupAP():Promise<main.BoxInfo|boolean>;
 
@@ -183,7 +183,7 @@ export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number
 
 export function SetDisplayTrack(arg1:string,arg2:number,arg3:boolean,arg4:string):Promise<void>;
 
-export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string):Promise<void>;
+export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string,arg9:string):Promise<void>;
 
 export function SetResumeOnPowerOn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
 

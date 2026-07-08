@@ -857,6 +857,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	p, ok := s.store.Get(slot)
 	if !ok || p.StreamURL == "" {
+		// Log before 404ing: the box fetching a slot the store cannot serve is
+		// exactly the "preset button does nothing" symptom, and this used to be
+		// the only branch in the recall chain with no trace at all (#252).
+		s.logger.Warn("stream proxy: box fetched a slot with no playable preset",
+			"slot", slot, "found", ok)
 		http.Error(w, "no preset", http.StatusNotFound)
 		return
 	}
