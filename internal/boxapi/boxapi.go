@@ -595,6 +595,47 @@ func (c *Client) url(path string) string {
 	return fmt.Sprintf("http://%s:8090%s", c.Host, path)
 }
 
+// SiteSurvey kicks the box radio into a ~5 s scan via /performWirelessSiteSurvey
+// and returns the SSIDs the box can actually SEE. SoundTouch speakers are 2.4 GHz
+// only, so a 5 GHz-only network never appears here. STR uses this as a pre-flight
+// before a Wi-Fi change so it never strands the box on a network it cannot join
+// (the box would otherwise leave its current network and fail to join the new
+// one, forcing a Bose-app re-pair).
+func (c *Client) SiteSurvey(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url("/performWirelessSiteSurvey"), strings.NewReader(`<PerformWirelessSiteSurvey timeout="5"/>`))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("box site survey: %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return nil, err
+	}
+	var raw struct {
+		Items []struct {
+			SSID string `xml:"ssid,attr"`
+		} `xml:"items>item"`
+	}
+	if err := xml.Unmarshal(ensureUTF8(body), &raw); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw.Items))
+	for _, it := range raw.Items {
+		if s := strings.TrimSpace(it.SSID); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) getXML(ctx context.Context, path string, dst any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(path), nil)
 	if err != nil {
