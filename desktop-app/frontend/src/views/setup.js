@@ -825,6 +825,7 @@ function renderPrimaryAction() {
             `<button type="button" class="btn btn-icon-sm" id="netWlanRefresh" title="${escapeAttr(t('setup.wlanRefreshTitle'))}">&#x21bb;</button>` +
           `</div>` +
           `<input type="text" id="netWlanSsid" autocomplete="off" placeholder="${escapeAttr(t('settingsView.wlanSsidPlaceholder'))}" />` +
+          `<label style="display:block;margin:4px 0 0" title="${escapeAttr(t('settingsView.wlanHiddenHint'))}"><input type="checkbox" id="netWlanHidden" /> ${escapeHtml(t('settingsView.wlanHiddenToggle'))}</label>` +
           `<div class="wlan-row">` +
             `<input type="password" id="netWlanPass" placeholder="${escapeAttr(t('setup.wlanPassPlaceholder'))}" />` +
             `<button type="button" class="btn btn-icon-sm" id="netWlanShowPass" title="${escapeAttr(t('settingsView.wlanShowPass'))}">&#128065;</button>` +
@@ -928,7 +929,11 @@ async function startNetworkInstall(box) {
   // it just skips the Wi-Fi write, so the user is never stuck on a typo.
   const ssid = ($('netWlanSsid') && $('netWlanSsid').value.trim()) || '';
   const pass = ($('netWlanPass') && $('netWlanPass').value) || '';
-  const wifiForBox = (ssid && (pass === '' || pass.length >= 8)) ? { ssid, pass } : null;
+  // Hidden networks never show up in the speaker's site survey, so the flag
+  // is passed through to the agent, which then skips its visibility preflight
+  // and provisions with scan_ssid=1.
+  const hidden = !!($('netWlanHidden') && $('netWlanHidden').checked);
+  const wifiForBox = (ssid && (pass === '' || pass.length >= 8)) ? { ssid, pass, hidden } : null;
   const lead = `<div class="setup-ok">${escapeHtml(t('setup.netInstallOn', { name }))}</div>`;
   try {
     await waitForBoxAfterSetup({ ssid: '', pass: '', html: lead, knownBox: box, wifiForBox, nameForBox, langForBox, tzForBox, format24ForBox });
@@ -2019,7 +2024,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
           const wr = await deps.boxFetch(agentBox, '/api/box/wlan', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid: wifiForBox.ssid, password: wifiForBox.pass }),
+            body: JSON.stringify({ ssid: wifiForBox.ssid, password: wifiForBox.pass, hidden: !!wifiForBox.hidden }),
           });
           if (!wr || !wr.ok) return false;
           let info = {};

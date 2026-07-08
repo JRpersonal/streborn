@@ -580,6 +580,8 @@ function renderBoxSettings(s, box) {
           <button class="btn btn-icon-sm" id="boxWlanRefresh" title="${escapeAttr(t('settingsView.wlanRefreshTitle'))}">&#x21bb;</button>
         </div>
         <input type="text" id="boxWlanSSID" placeholder="${escapeAttr(t('settingsView.wlanSsidPlaceholder'))}" />
+        <label style="display:block;margin:4px 0 0"><input type="checkbox" id="boxWlanHidden" /> ${escapeHtml(t('settingsView.wlanHiddenToggle'))}</label>
+        <small class="muted small" style="display:block;margin-bottom:4px">${escapeHtml(t('settingsView.wlanHiddenHint'))}</small>
         <div class="wlan-row">
           <input type="password" id="boxWlanPass" placeholder="${escapeAttr(t('settingsView.wlanPassPlaceholder'))}" />
           <button class="btn btn-icon-sm" id="boxWlanShowPass" title="${escapeAttr(t('settingsView.wlanShowPass'))}">&#128065;</button>
@@ -1975,21 +1977,47 @@ function wireWlanSwitch(box) {
   $('boxWlanSave').onclick = async () => {
     const ssid = $('boxWlanSSID').value.trim();
     const pass = $('boxWlanPass').value;
+    // Hidden networks never appear in the speaker's site survey, so the flag
+    // also implies force: the agent skips the visibility preflight for them.
+    const hidden = !!($('boxWlanHidden') && $('boxWlanHidden').checked);
     if (!ssid) { showError(t('settingsView.wlanSsidEmpty')); return; }
     const ok = await confirmWarn(
       t('settingsView.wlanSwitchConfirmTitle'),
       t('settingsView.wlanConfirmBody', { ssid: escapeHtml(ssid) })
     );
     if (!ok) return;
+    const putWlan = (force) => deps.boxFetch(box, '/api/box/wlan', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ssid, password: pass, hidden, force: hidden || force }),
+    });
     try {
-      const r = await deps.boxFetch(box, '/api/box/wlan', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ssid, password: pass }),
-      });
+      let r = await putWlan(false);
       if (!r.ok) {
         const body = await r.text();
-        throw new Error('HTTP ' + r.status + ': ' + body);
+        // The agent's visibility preflight (422 ssid-not-visible) refused the
+        // switch because the speaker's own scan cannot see the target SSID
+        // (typically a 5 GHz-only network; the speakers are 2.4 GHz only).
+        // Explain it and offer a localized "switch anyway" that re-PUTs with
+        // force:true instead of surfacing the raw JSON error.
+        let refuse = null;
+        if (r.status === 422) { try { refuse = JSON.parse(body); } catch {} }
+        if (refuse && refuse.code === 'ssid-not-visible') {
+          const visible = (Array.isArray(refuse.visible) ? refuse.visible : []).filter(Boolean);
+          const goAnyway = await confirmWarn(
+            t('settingsView.wlanNotVisibleTitle'),
+            t('settingsView.wlanNotVisibleBody', {
+              ssid: escapeHtml(ssid),
+              visible: escapeHtml(visible.join(', ') || '-'),
+            }),
+            { confirmLabel: t('settingsView.wlanForceBtn') },
+          );
+          if (!goAnyway) return;
+          r = await putWlan(true);
+          if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + await r.text());
+        } else {
+          throw new Error('HTTP ' + r.status + ': ' + body);
+        }
       }
       // The agent applies the switch in the background and the box leaves the
       // current network, so we rediscover it rather than wait. BCO speakers
