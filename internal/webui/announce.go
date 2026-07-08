@@ -185,26 +185,7 @@ func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 // snapshotNowPlaying reads the box's current now_playing so STR can restore it
 // after the announcement. Best-effort: a read error yields an empty snapshot.
 func (s *Server) snapshotNowPlaying(ctx context.Context) nowPlayingSnapshot {
-	var snap nowPlayingSnapshot
-	b, err := boxGet(ctx, "http://"+s.boxHost+":8090/now_playing", 16<<10)
-	if err != nil {
-		return snap
-	}
-	var np struct {
-		Source      string `xml:"source,attr"`
-		ContentItem struct {
-			Location string `xml:"location,attr"`
-			ItemName string `xml:"itemName"`
-		} `xml:"ContentItem"`
-		PlayStatus string `xml:"playStatus"`
-	}
-	if xml.Unmarshal(b, &np) == nil {
-		snap.Source = np.Source
-		snap.Location = np.ContentItem.Location
-		snap.ItemName = np.ContentItem.ItemName
-		snap.PlayStatus = np.PlayStatus
-	}
-	return snap
+	return fetchNowPlaying(ctx, s.boxHost)
 }
 
 // readVolume returns the box's current target volume, or -1 on error.
