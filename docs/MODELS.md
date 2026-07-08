@@ -3,6 +3,13 @@
 Which release asset goes with which speaker, and how far each model has
 been validated.
 
+Since the 2026-07-08 install rework the app's **network install** (via the
+speaker's `:17000` setup port, no USB stick) is the primary first-install
+channel whenever the speaker is reachable on the LAN; the USB stick remains
+the fallback and recovery path. This matters for the status table: models
+that never read a stick at boot (ST300, SA-4/SA-5, Wave, CineMate) now have
+a realistic install path for the first time.
+
 > Per-variant hardware fingerprints (moduleType, components, firmware
 > build stamps, kernel, RAM, WLAN-interface presence) live in
 > [`MODEL-VARIANTS.md`](MODEL-VARIANTS.md). Update that file when a new
@@ -17,10 +24,12 @@ been validated.
 | **SoundTouch 20** | TI AM335x ARMv7l, module `scm` + SMSC, variant `spotty` (BCO) | **Working (contributor-confirmed; final stability confirmation in progress)** |
 | **SoundTouch 20** | TI AM335x ARMv7l, module SM2 (codename still `spotty`) | **Expected**: provisions Wi-Fi the Series-II way (real `wlan0`), but `run.sh` still applies the whitelisted-chassis reachability path (REDIRECT `:17008`->`:8888`) because the codename is `spotty`. Awaiting a live SM2-ST20 report. |
 | **SoundTouch 30** | TI AM335x ARMv7l, module SM2, variant `mojo` | **Working** (live-confirmed via the #123 diagnostic, 2026-06-10: box healthy, agent up; full end-to-end pass pending) |
-| Wave SoundTouch (IV) | AM335x ARMv7l, module `scm`, variant `lisa` + SMSC/Lightswitch | **Unknown** (#283: the agent would likely run on the scm module, but there is no validated first-install path yet) |
-| **Bose SA-4 amplifier** | AM335x ARMv7l, module `scm`, variant `lisa` + SMSC/Lightswitch | **Unknown** (#273: the box never opens the stick-gated SSH window at boot, so STR has no first-install channel; not the agent's fault) |
+| **SoundTouch 300** | AM335x ARMv7l, module `sm2`, variant `ginger` | **Working (maintainer-confirmed)**: the stick-free network install brings the agent up and serving on a factory-reset unit (2026-07-08); full end-to-end playback pass in progress. The stick was never an option on this model (it does not read USB at boot). |
+| Wave SoundTouch (IV) | AM335x ARMv7l, module `scm` **or** `sm2` (both observed live), variant `lisa` + SMSC | **Unknown** (#283) - the sm2 unit seen in a 2026-07-04 diagnostic (#182) shares the verified models' module family and firmware, so the agent should run; the network install is the candidate first-install path. Looking for testers. |
+| **Bose SA-4 amplifier** | AM335x ARMv7l, module `scm`, variant `lisa` + SMSC/Lightswitch | **Unknown** (#273: never reads the stick at boot; the network install is the candidate path) |
+| **Bose SA-5 amplifier** | AM335x ARMv7l, module `sm2`, variant `burns` + SMSC | **Unknown** (#274: same story as the SA-4; fw 27.0.6 confirmed via diagnostics) |
 | CineMate (520, ...) | module `sm2`, variant `lisa` | **Unknown** (#283) |
-| other (Soundbar, ST300, ...) | unknown | **Unknown** |
+| other (Soundbar, ...) | unknown | **Unknown** |
 
 All ARMv7l models run the same agent binary (`streborn-armv7l`); the
 per-model release aliases are byte-identical copies for convenience.
