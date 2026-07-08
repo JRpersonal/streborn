@@ -1418,8 +1418,13 @@ body {
 .stc-sublabel { font-size: 11px; color: var(--c-muted); margin-top: 3px; }
 .setup-target-empty { padding: 8px 4px; }
 .setup-target-factory-help { background: var(--c-bg); border: 1px dashed var(--c-border); border-radius: 4px; padding: 8px 10px; margin-top: 6px; }
-.setup-factory-boseapp-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.setup-factory-boseapp-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
 .setup-factory-boseapp-links .btn { font-size: 12px; }
+.boseapp-store { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+/* Small but scannable; white quiet zone so the phone camera locks on. Hidden
+   until the locally generated QR data URI arrives. */
+.boseapp-qr { width: 110px; height: 110px; background: #fff; border-radius: 6px; padding: 5px; display: none; }
+.boseapp-qr.ready { display: block; }
 .setup-target-factory-mac { background: #2f1f0f; border-left: 3px solid #d97706; border-radius: 4px; padding: 8px 10px; margin-top: 6px; color: #e5d4b8; font-size: 12px; }
 .setup-target-st30-warn { background: #2f1f0f; border-left: 3px solid #d97706; border-radius: 4px; padding: 8px 10px; margin-top: 6px; color: #e5d4b8; font-size: 12px; }
 .worldmap-invite { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%) translateY(20px) scale(.96); display: flex; align-items: flex-start; gap: 12px; background: var(--c-surface); border: 1px solid var(--brand); border-radius: 10px; padding: 12px 30px 12px 14px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); opacity: 0; transition: opacity .3s ease, transform .35s cubic-bezier(.2,1.5,.4,1); z-index: 2000; max-width: 92vw; overflow: visible; }
