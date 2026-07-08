@@ -194,6 +194,14 @@ func (a *App) startup(ctx context.Context) {
 	// that returns zero results is indistinguishable from "no servers
 	// on the LAN" in the diagnostic bundle.
 	dlna.Logger = a.logger.With("comp", "dlna")
+	// Passive SSDP NOTIFY listener, running for the whole app lifetime.
+	// A media server on THIS PC (e.g. Windows Media Player sharing)
+	// announces itself via multicast NOTIFY but does not answer
+	// same-host M-SEARCH (on Windows, unicast to the shared :1900 is
+	// swallowed by the SSDP Discovery service), so without this the
+	// Library tab never finds it (#341). DiscoverServers merges what
+	// the listener has heard into every scan.
+	dlna.StartAnnounceListener(ctx)
 	// Same for sticksetup, so USB-stick discovery timing (a slow search
 	// while Windows finishes mounting a freshly inserted stick) is visible
 	// in the diagnostic bundle instead of an unexplained UI hang.

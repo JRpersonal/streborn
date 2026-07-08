@@ -1,6 +1,11 @@
 package dlna
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 // TestPickPlayableRes guards the #139 fix: a DLNA server (Synology) that lists a
 // transcoded res before the original must not make STR pick the transcode, which
@@ -59,6 +64,60 @@ func TestParseBrowseResponse_StripsIllegalXMLChars(t *testing.T) {
 	}
 	if res.Items[0].Title != "Song One" {
 		t.Errorf("title = %q, want %q (control char stripped)", res.Items[0].Title, "Song One")
+	}
+}
+
+// TestDescribeServer covers the manual add-server fallback (#341): a
+// valid MediaServer description must resolve to a populated Server
+// with an absolute ContentDirectory control URL, and a device without
+// a ContentDirectory service (or a non-XML response) must error so
+// the app does not persist an unusable manual entry.
+func TestDescribeServer(t *testing.T) {
+	const goodXML = `<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+    <friendlyName>Test Media Server</friendlyName>
+    <manufacturer>ACME</manufacturer>
+    <modelName>MediaBox 3000</modelName>
+    <UDN>uuid:test-1234</UDN>
+    <serviceList>
+      <service>
+        <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+        <controlURL>/ctl/ContentDir</controlURL>
+      </service>
+    </serviceList>
+  </device>
+</root>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rootDesc.xml":
+			w.Header().Set("Content-Type", "text/xml")
+			_, _ = w.Write([]byte(goodXML))
+		case "/no-cds.xml":
+			_, _ = w.Write([]byte(`<?xml version="1.0"?><root><device><UDN>uuid:x</UDN><friendlyName>Router</friendlyName></device></root>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	got, err := DescribeServer(context.Background(), srv.URL+"/rootDesc.xml")
+	if err != nil {
+		t.Fatalf("DescribeServer: %v", err)
+	}
+	if got.UDN != "uuid:test-1234" || got.FriendlyName != "Test Media Server" {
+		t.Errorf("server = %+v, want UDN uuid:test-1234 / Test Media Server", got)
+	}
+	if got.CDSControlURL != srv.URL+"/ctl/ContentDir" {
+		t.Errorf("CDSControlURL = %q, want %q", got.CDSControlURL, srv.URL+"/ctl/ContentDir")
+	}
+
+	if _, err := DescribeServer(context.Background(), srv.URL+"/no-cds.xml"); err == nil {
+		t.Error("device without ContentDirectory: want error, got nil")
+	}
+	if _, err := DescribeServer(context.Background(), srv.URL+"/missing.xml"); err == nil {
+		t.Error("404 description: want error, got nil")
 	}
 }
 

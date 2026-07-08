@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/net/ipv4"
 )
 
 const (
@@ -113,14 +115,15 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 	typedMsg := mkMsg(mediaServerST, ssdpAddr)
 	allMsg := mkMsg("ssdp:all", ssdpAddr)
 
-	// Enumerate candidate source IPs. Skip loopback, link-local
-	// (169.254.x.x), and any v6 addresses since SSDP here is v4 only.
-	ips := candidateIPv4Addrs()
-	if len(ips) == 0 {
+	// Enumerate candidate source interfaces/IPs. Skip loopback,
+	// link-local (169.254.x.x), and any v6 addresses since SSDP here
+	// is v4 only.
+	cands := candidateIPv4Interfaces()
+	if len(cands) == 0 {
 		Logger.Warn("dlna: no usable IPv4 interfaces, falling back to wildcard")
-		ips = []net.IP{net.IPv4zero}
+		cands = []ifaceIPv4{{ip: net.IPv4zero}}
 	}
-	Logger.Info("dlna: SSDP M-SEARCH starting", "interfaces", len(ips), "timeout", timeout.String())
+	Logger.Info("dlna: SSDP M-SEARCH starting", "interfaces", len(cands), "timeout", timeout.String())
 
 	locationsMu := sync.Mutex{}
 	locations := map[string]struct{}{}
@@ -168,23 +171,52 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 	}
 
 	var ifaceWg sync.WaitGroup
-	for _, ip := range ips {
+	for _, cand := range cands {
 		ifaceWg.Add(1)
-		go func(srcIP net.IP) {
+		go func(cand ifaceIPv4) {
 			defer ifaceWg.Done()
+			srcIP := cand.ip
 			conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: srcIP, Port: 0})
 			if err != nil {
 				Logger.Warn("dlna: ListenUDP failed", "src", srcIP.String(), "err", err.Error())
 				return
 			}
 			defer conn.Close()
+			// Pin multicast egress to THIS interface (Windows otherwise
+			// routes the send by route priority, defeating the whole
+			// per-interface sweep) and enable multicast loopback so a
+			// server on this same host at least has a chance to hear the
+			// search. Best-effort: a failure falls back to OS defaults.
+			p := ipv4.NewPacketConn(conn)
+			if cand.iface != nil {
+				if err := p.SetMulticastInterface(cand.iface); err != nil {
+					Logger.Debug("dlna: SetMulticastInterface failed", "src", srcIP.String(), "err", err.Error())
+				}
+			}
+			if err := p.SetMulticastLoopback(true); err != nil {
+				Logger.Debug("dlna: SetMulticastLoopback failed", "src", srcIP.String(), "err", err.Error())
+			}
+			// Same-host servers: besides the multicast search, unicast the
+			// search to our own LAN IP on :1900. NOTE: on Windows UDP :1900
+			// is shared (SO_REUSEADDR) with the SSDP Discovery service
+			// (SSDPSRV), and a unicast datagram to a shared port reaches
+			// only ONE of the bound sockets, usually SSDPSRV, so this probe
+			// (like the loopback one below) is best-effort at most. The
+			// NOTIFY listener (announce.go) is the authoritative same-host
+			// discovery path (#341).
+			selfAddr := &net.UDPAddr{IP: srcIP, Port: 1900}
+			selfHost := net.JoinHostPort(srcIP.String(), "1900")
+			selfTyped := mkMsg(mediaServerST, selfHost)
+			selfAll := mkMsg("ssdp:all", selfHost)
 			for i := 0; i < 2; i++ {
 				_, _ = conn.WriteToUDP(typedMsg, mcAddr)
 				_, _ = conn.WriteToUDP(allMsg, mcAddr)
+				_, _ = conn.WriteToUDP(selfTyped, selfAddr)
+				_, _ = conn.WriteToUDP(selfAll, selfAddr)
 				time.Sleep(80 * time.Millisecond)
 			}
 			collect(conn, srcIP.String())
-		}(ip)
+		}(cand)
 	}
 
 	// A media server on the SAME PC as STR is missed by the multicast probes
@@ -212,6 +244,21 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 		collect(conn, "loopback")
 	}()
 	ifaceWg.Wait()
+
+	// Merge everything the passive NOTIFY listener has heard. This is
+	// what actually finds a media server running on the same PC as the
+	// app (see announce.go, #341); it also catches servers that were
+	// too slow to answer this particular M-SEARCH window.
+	announced := 0
+	for _, loc := range announces.freshLocations(time.Now()) {
+		if _, dup := locations[loc]; !dup {
+			locations[loc] = struct{}{}
+			announced++
+		}
+	}
+	if announced > 0 {
+		Logger.Info("dlna: merged NOTIFY announcements", "newLocations", announced)
+	}
 
 	Logger.Info("dlna: SSDP M-SEARCH done", "totalLocations", len(locations))
 	if len(locations) == 0 {
@@ -254,19 +301,28 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 	return out, nil
 }
 
-// candidateIPv4Addrs returns the routable IPv4 addresses we should
-// send SSDP M-SEARCH from. Excludes loopback, link-local
-// (169.254.x.x) and any non-up interface. The result drives the
-// per-interface multicast send so a LAN that lives on Wi-Fi 1
-// gets probed even when Wi-Fi 2 is connected to a different network
-// (e.g. a Bose setup-AP) at the same time.
-func candidateIPv4Addrs() []net.IP {
-	var out []net.IP
+// ifaceIPv4 pairs an eligible interface with one of its routable IPv4
+// addresses. The M-SEARCH sweep opens one send socket per pair; the
+// NOTIFY listener joins the multicast group once per interface.
+type ifaceIPv4 struct {
+	iface *net.Interface
+	ip    net.IP
+}
+
+// candidateIPv4Interfaces returns the (interface, IPv4 address) pairs
+// we should run SSDP on. Excludes loopback, link-local (169.254.x.x)
+// and any non-up interface. The result drives the per-interface
+// multicast send so a LAN that lives on Wi-Fi 1 gets probed even when
+// Wi-Fi 2 is connected to a different network (e.g. a Bose setup-AP)
+// at the same time.
+func candidateIPv4Interfaces() []ifaceIPv4 {
+	var out []ifaceIPv4
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return out
 	}
-	for _, iface := range ifaces {
+	for i := range ifaces {
+		iface := &ifaces[i]
 		if iface.Flags&net.FlagUp == 0 {
 			continue
 		}
@@ -289,10 +345,31 @@ func candidateIPv4Addrs() []net.IP {
 			if ip4.IsLoopback() || ip4.IsLinkLocalUnicast() || ip4.IsLinkLocalMulticast() {
 				continue
 			}
-			out = append(out, ip4)
+			out = append(out, ifaceIPv4{iface: iface, ip: ip4})
 		}
 	}
 	return out
+}
+
+// DescribeServer fetches and parses the UPnP device description at
+// location and returns it as the same Server shape DiscoverServers
+// produces. Used by the desktop app's manual "add server by address"
+// fallback (#341) for servers that neither answer M-SEARCH nor send
+// NOTIFY announcements the app can hear. Errors when the description
+// is unreachable, unparseable, or describes a device without a
+// ContentDirectory service (i.e. not browsable as a media server).
+func DescribeServer(ctx context.Context, location string) (Server, error) {
+	s, err := fetchDeviceDescription(ctx, location)
+	if err != nil {
+		return Server{}, err
+	}
+	if s.UDN == "" {
+		return Server{}, fmt.Errorf("device description at %s has no UDN", location)
+	}
+	if s.CDSControlURL == "" {
+		return Server{}, fmt.Errorf("device at %s exposes no ContentDirectory service", location)
+	}
+	return s, nil
 }
 
 func headerValue(packet []byte, header string) string {
