@@ -40,6 +40,32 @@ func TestBuildDIDLMimeWellFormed(t *testing.T) {
 	}
 }
 
+// MimeForCodec must label the whole AAC family audio/aac (an AAC station
+// labelled audio/mpeg plays silence, #252) and leave everything else on the
+// audio/mpeg default ("" = caller keeps PlayURL).
+func TestMimeForCodec(t *testing.T) {
+	cases := map[string]string{
+		"AAC":        "audio/aac",
+		"AAC+":       "audio/aac",
+		"aacp":       "audio/aac",
+		"HE-AAC":     "audio/aac",
+		"audio/aac":  "audio/aac",
+		"audio/aacp": "audio/aac",
+		" aac ":      "audio/aac",
+		"MP3":        "",
+		"mp3":        "",
+		"OGG":        "",
+		"FLAC":       "",
+		"UNKNOWN":    "",
+		"":           "",
+	}
+	for codec, want := range cases {
+		if got := MimeForCodec(codec); got != want {
+			t.Errorf("MimeForCodec(%q) = %q, want %q", codec, got, want)
+		}
+	}
+}
+
 func TestBuildDIDLDefaults(t *testing.T) {
 	got := buildDIDL("http://x/y", "", "")
 	if !strings.Contains(got, "<dc:title>Stream</dc:title>") {

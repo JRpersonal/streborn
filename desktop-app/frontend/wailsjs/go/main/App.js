@@ -194,8 +194,8 @@ export function PlaySlot(arg1, arg2, arg3) {
   return window['go']['main']['App']['PlaySlot'](arg1, arg2, arg3);
 }
 
-export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
-  return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
+  return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
 }
 
 export function ProbeSetupAP() {
@@ -350,8 +350,8 @@ export function SetDisplayTrack(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SetDisplayTrack'](arg1, arg2, arg3, arg4);
 }
 
-export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
-  return window['go']['main']['App']['SetPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
+  return window['go']['main']['App']['SetPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
 }
 
 export function SetResumeOnPowerOn(arg1, arg2, arg3) {

@@ -269,6 +269,7 @@ export namespace main {
 	    type: string;
 	    art?: string;
 	    bitrate?: number;
+	    codec?: string;
 	    uri?: string;
 	    account?: string;
 	    source?: string;
@@ -286,6 +287,7 @@ export namespace main {
 	        this.type = source["type"];
 	        this.art = source["art"];
 	        this.bitrate = source["bitrate"];
+	        this.codec = source["codec"];
 	        this.uri = source["uri"];
 	        this.account = source["account"];
 	        this.source = source["source"];

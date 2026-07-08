@@ -890,7 +890,22 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 				})
 				return
 			}
-		} else if p.StreamURL != "" && !isHTTPURL(p.StreamURL) {
+		} else if p.StreamURL == "" {
+			// An EMPTY stream URL used to slip through the invalid-URL gate below
+			// and save as a dead radio preset: the box then fetches /stream/<slot>
+			// and the proxy 404s, i.e. a button that assigns fine but never plays
+			// (#252). A non-spotify, non-queue preset has nothing else playable,
+			// except a Spotify URI mis-typed as radio, which is healed instead.
+			if playableSpotifyURI(p.URI) {
+				p.Type = "spotify"
+			} else {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error": "This selection can't be saved as a preset (no playable stream). Pick a radio station or a Spotify playlist and try again.",
+					"code":  "stream-url-missing",
+				})
+				return
+			}
+		} else if !isHTTPURL(p.StreamURL) {
 			if uri := legacySpotifyURI(p.StreamURL); uri != "" {
 				p.Type, p.URI, p.StreamURL = "spotify", uri, ""
 			} else {
@@ -1102,6 +1117,14 @@ type playRequest struct {
 	// Homepage is the station website (radio only), recorded into Recently-played
 	// so a card can offer a "website" link like the radio search rows do (#135).
 	Homepage string `json:"homepage"`
+	// Codec is the station codec as reported by radio-browser ("MP3", "AAC",
+	// "AAC+", ...). It selects the DIDL protocolInfo MIME for RADIO plays: the
+	// box keys its decoder off that MIME, and an HE-AAC station labelled with
+	// the fixed audio/mpeg default played SILENCE while the proxy forwarded
+	// its bytes fine (#252, "Absolut Relax"). Deliberately a separate field
+	// from Mime, which doubles as the "library file, play direct" marker
+	// (#139) and must not be set for radio.
+	Codec string `json:"codec"`
 }
 
 // handleWebhooks gets (GET) or replaces (PUT) the webhook config. The config
@@ -1212,15 +1235,21 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if playDirect {
 		playURL = req.URL
 	}
-	s.logger.Info("play request", "direct", playDirect, "mime", req.Mime, "url", req.URL)
+	s.logger.Info("play request", "direct", playDirect, "mime", req.Mime, "codec", req.Codec, "url", req.URL)
 	// Advertise the real codec to the box when the caller knows it (a network
 	// library track carries its DLNA-reported MIME, e.g. audio/flac, audio/mp4).
-	// Radio leaves it empty and defaults to audio/mpeg. The box keys its decoder
-	// off this protocolInfo MIME, so a FLAC/ALAC/M4A file mislabelled as
-	// audio/mpeg is rejected (AUDIO_ERROR_BAD_URL) while an MP3 plays (#139).
+	// The box keys its decoder off this protocolInfo MIME, so a FLAC/ALAC/M4A
+	// file mislabelled as audio/mpeg is rejected (AUDIO_ERROR_BAD_URL) while an
+	// MP3 plays (#139). Radio derives the MIME from the station codec instead:
+	// an AAC/HE-AAC station must be labelled audio/aac or the box decodes it as
+	// MPEG and plays silence (#252); MP3/unknown keeps the audio/mpeg default.
+	mime := req.Mime
+	if mime == "" {
+		mime = upnp.MimeForCodec(req.Codec)
+	}
 	var playErr error
-	if req.Mime != "" {
-		playErr = s.renderer.PlayURLMime(r.Context(), playURL, req.Title, req.Icon, req.Mime)
+	if mime != "" {
+		playErr = s.renderer.PlayURLMime(r.Context(), playURL, req.Title, req.Icon, mime)
 	} else {
 		playErr = s.renderer.PlayURL(r.Context(), playURL, req.Title, req.Icon)
 	}
@@ -1232,7 +1261,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.setLastPlay(playURL, req.Title, req.Icon, req.Mime)
+	s.setLastPlay(playURL, req.Title, req.Icon, mime)
 	// Recently-played (#135): a network-library file carries a MIME; radio does
 	// not. Record the original URL as the replayable card target, not the proxy.
 	if req.Mime != "" {
@@ -1460,25 +1489,39 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// Use the stream proxy URL so playback continues even after token
 	// expiry (Bose sees the stable loopback URL).
 	playURL := boxurl.StreamSlot(slot)
-	if err := s.renderer.PlayURL(r.Context(), playURL, p.Name, p.Art); err != nil {
+	// A preset saved from an AAC/HE-AAC station carries its codec: label the
+	// stream audio/aac in the DIDL so the box picks the right decoder. The
+	// fixed audio/mpeg label made those stations play silence (#252).
+	mime := upnp.MimeForCodec(p.Codec)
+	var playErr error
+	if mime != "" {
+		playErr = s.renderer.PlayURLMime(r.Context(), playURL, p.Name, p.Art, mime)
+	} else {
+		playErr = s.renderer.PlayURL(r.Context(), playURL, p.Name, p.Art)
+	}
+	if playErr != nil {
 		// Log the failed radio recall: this 502 used to be returned with no
 		// agent-side trace at all, so a remote diagnostic bundle showed a recall
 		// that apparently never happened (#252).
 		s.logger.Warn("preset slot recall (app): radio play failed",
-			"slot", slot, "name", p.Name, "playURL", playURL, "err", err)
+			"slot", slot, "name", p.Name, "playURL", playURL, "err", playErr)
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error":  "Station could not be played",
-			"detail": guessErrorReason(err),
+			"detail": guessErrorReason(playErr),
 			"slot":   slot,
 			"name":   p.Name,
 		})
 		return
 	}
-	s.setLastPlay(playURL, p.Name, p.Art, "")
+	s.setLastPlay(playURL, p.Name, p.Art, mime)
 	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage) // #135
 	name, art := p.Name, p.Art
 	go s.verifyRecall(playURL, func(ctx context.Context, _ bool) {
-		_ = s.renderer.PlayURL(ctx, playURL, name, art)
+		if mime != "" {
+			_ = s.renderer.PlayURLMime(ctx, playURL, name, art, mime)
+		} else {
+			_ = s.renderer.PlayURL(ctx, playURL, name, art)
+		}
 	}, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
 }
@@ -4636,8 +4679,8 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		all := s.presets.All()
 		lines := make([]string, 0, len(all))
 		for _, p := range all {
-			lines = append(lines, fmt.Sprintf("slot %d: type=%s name=%q stream=%q uri=%q items=%d",
-				p.Slot, p.Type, p.Name, p.StreamURL, p.URI, len(p.Items)))
+			lines = append(lines, fmt.Sprintf("slot %d: type=%s name=%q codec=%q stream=%q uri=%q items=%d",
+				p.Slot, p.Type, p.Name, p.Codec, p.StreamURL, p.URI, len(p.Items)))
 		}
 		state["presets"] = lines
 	}

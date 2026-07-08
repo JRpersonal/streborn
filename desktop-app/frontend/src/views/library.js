@@ -180,7 +180,7 @@ async function libraryPlay(item) {
     // Pass the track's real codec MIME so the box decodes FLAC/ALAC/M4A
     // correctly instead of being told audio/mpeg and rejecting it (#139).
     await PlayURL(state.currentBox.host, state.currentBox.port,
-      item.streamURL, item.title || '', item.albumArtURL || '', '', item.mimeType || '', '');
+      item.streamURL, item.title || '', item.albumArtURL || '', '', item.mimeType || '', '', '');
     // A library play supersedes any ad-hoc radio station the app started, so
     // a later long-press save must not resurrect that station (#252).
     state.lastAppPlay = null;

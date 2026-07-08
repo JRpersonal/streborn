@@ -33,6 +33,12 @@ type Preset struct {
 	// and in now-playing without a live lookup. Optional/additive: older
 	// presets simply have 0.
 	Bitrate int `json:"bitrate,omitempty"`
+	// Codec is the station codec radio-browser reported at save time ("MP3",
+	// "AAC", "AAC+", ...). Recalls use it to advertise the right DIDL MIME to
+	// the box (audio/aac for the AAC family), because an AAC station labelled
+	// with the audio/mpeg default plays silence (#252). Optional/additive:
+	// presets saved before this have "" and keep the audio/mpeg default.
+	Codec string `json:"codec,omitempty"`
 	// Spotify presets (Type=="spotify") carry these instead of a playable
 	// StreamURL: URI is the Spotify resource to play (e.g.
 	// "spotify:playlist:..."), recalled via librespot, not UPnP. Account
@@ -82,6 +88,7 @@ type rawPreset struct {
 	Type      string       `json:"type"`
 	Art       string       `json:"art"`
 	Bitrate   int          `json:"bitrate"`
+	Codec     string       `json:"codec"`
 	URI       string       `json:"uri"`
 	Account   string       `json:"account"`
 	Source    string       `json:"source"`
@@ -162,6 +169,7 @@ func normalize(in []rawPreset) []Preset {
 			Type:      typ,
 			Art:       p.Art,
 			Bitrate:   p.Bitrate,
+			Codec:     p.Codec,
 			URI:       p.URI,
 			Account:   p.Account,
 			Source:    p.Source,

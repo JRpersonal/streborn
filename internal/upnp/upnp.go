@@ -240,6 +240,26 @@ func (r *Renderer) soapCall(ctx context.Context, action, body string) error {
 	return nil
 }
 
+// MimeForCodec maps a radio station's codec label (radio-browser's "codec"
+// field, e.g. "MP3", "AAC", "AAC+", or an upstream Content-Type like
+// "audio/aacp") to the DIDL res protocolInfo MIME the Bose renderer needs to
+// pick the right decoder. The box keys its decoder off this MIME, so an
+// HE-AAC station labelled with the historical audio/mpeg default decodes to
+// SILENCE while the proxy forwards its bytes just fine (#252, the "Absolut"
+// family on radio-browser). Returns "" when the codec is unknown or already
+// covered by the audio/mpeg default. Only the AAC family is mapped on
+// purpose: MP3 is the default anyway, and other codecs (Vorbis, FLAC radio)
+// are unverified on hardware, so they keep today's behavior rather than
+// trading a known failure for an unknown one.
+func MimeForCodec(codec string) string {
+	c := strings.ToLower(strings.TrimSpace(codec))
+	if strings.Contains(c, "aac") {
+		// Covers AAC, AAC+, AAC+ v2, aacp, HE-AAC, audio/aac, audio/aacp.
+		return "audio/aac"
+	}
+	return ""
+}
+
 // buildDIDL builds the CurrentURIMetaData XML for an audio stream.
 // DLNA renderers often want DIDL-Lite with upnp:class and res protocolInfo
 // to detect the stream codec. If iconURL is set it is embedded as

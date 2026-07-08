@@ -1082,6 +1082,10 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	url := location
 	name := title
 	icon := ""
+	// mime is the DIDL protocolInfo label for the recall. Presets saved from an
+	// AAC/HE-AAC station carry their codec; labelling them with the audio/mpeg
+	// default made the box decode them as MPEG and play silence (#252).
+	mime := ""
 	if p, ok := h.store.Get(slot); ok {
 		// Recently-played (#135): record the pressed preset (radio or Spotify)
 		// from the authoritative store entry, before the source-specific recall.
@@ -1099,6 +1103,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			name = p.Name
 		}
 		icon = p.Art
+		mime = upnp.MimeForCodec(p.Codec)
 		// Fallback: NetManager occasionally fires nowSelectionUpdated
 		// with an empty location — observed when Bose's preset cache
 		// was populated while BoseApp had not yet fully loaded the
@@ -1161,20 +1166,27 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 
 	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := h.renderer.PlayURL(playCtx, url, name, icon); err != nil {
-		h.logger.Warn("upnp play (initial) failed, will verify+retry", "slot", slot, "err", err)
+	var playErr error
+	if mime != "" {
+		playErr = h.renderer.PlayURLMime(playCtx, url, name, icon, mime)
+	} else {
+		playErr = h.renderer.PlayURL(playCtx, url, name, icon)
+	}
+	if playErr != nil {
+		h.logger.Warn("upnp play (initial) failed, will verify+retry", "slot", slot, "err", playErr)
 	}
 	// Record this hardware recall as the last play so the auto-re-push and the
 	// power-button wake-resume know what to bring back (the webui only tracks its
-	// own soft plays otherwise).
+	// own soft plays otherwise). The mime rides along so those re-pushes keep
+	// the AAC label too.
 	if h.noteLastPlay != nil {
-		h.noteLastPlay(url, name, icon, "")
+		h.noteLastPlay(url, name, icon, mime)
 	}
 	// Verify+retry in the background: the first hardware press after a cold
 	// boot can race the box/agent bringup so nothing plays until a second
 	// press. This re-issues until the box actually plays. Affects radio too.
-	go h.verifyPlayURL(slot, url, name, icon)
-	h.logger.Info("hardware preset mapped to upnp", "slot", slot, "name", name)
+	go h.verifyPlayURL(slot, url, name, icon, mime)
+	h.logger.Info("hardware preset mapped to upnp", "slot", slot, "name", name, "mime", mime)
 }
 
 // isSTRStreamURL reports whether u is one of STR's own stream URLs (the radio
@@ -1522,8 +1534,11 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 
 // verifyPlayURL confirms the box started playing a UPnP (radio) recall and
 // re-issues it a few times if not, fixing the "first hardware press after
-// reboot does nothing" race for radio presets too.
-func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
+// reboot does nothing" race for radio presets too. mime is the DIDL label of
+// the initial play ("" = audio/mpeg default); the retries must re-issue with
+// the SAME label or an AAC station recovered here would fall back to silence
+// (#252).
+func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) {
 	// Up to 5 attempts (~25s): a box waking from a deep/overnight standby can
 	// take longer than the old 3-attempt (~15s) window to finish bringing its
 	// network and playback subsystem back up before it accepts the stream (#183).
@@ -1544,7 +1559,11 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon string) {
 		}
 		h.logger.Warn("hardware recall not playing yet, retrying", "slot", slot, "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		_ = h.renderer.PlayURL(ctx, url, name, icon)
+		if mime != "" {
+			_ = h.renderer.PlayURLMime(ctx, url, name, icon, mime)
+		} else {
+			_ = h.renderer.PlayURL(ctx, url, name, icon)
+		}
 		cancel()
 	}
 	h.logger.Warn("hardware recall still not playing after retries", "slot", slot)
