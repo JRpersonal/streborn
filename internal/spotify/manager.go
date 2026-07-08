@@ -135,6 +135,11 @@ type Manager struct {
 	productCheckedAt  time.Time
 	productTriedAt    time.Time
 	sawFreeAccountLog bool
+	// lastPlayFailLine/-At remember go-librespot's most recent "failed handling
+	// request play" stderr line, so a bare /player/play 500 can carry the real
+	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).
+	lastPlayFailLine string
+	lastPlayFailAt   time.Time
 	// onActivate is invoked when go-librespot starts playing while no box is
 	// attached to the Ogg stream, i.e. the user pressed play in the Spotify app
 	// (selecting this device) but the box is still on another source. The
@@ -1062,6 +1067,12 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	}
 	playBody, _ := json.Marshal(playReq)
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", string(playBody)); err != nil {
+		// The API 500 is bare; the reason (e.g. Spotify's audio-key denial on
+		// a non-Premium account, #311) only appears on go-librespot's stderr.
+		// Attach it so the app's error message explains itself.
+		if hint := m.playDenialHint(); hint != "" {
+			return fmt.Errorf("%w: %s", err, hint)
+		}
 		return err
 	}
 	// Belt-and-braces: stay paused even if this go-librespot build ignores the
@@ -1204,6 +1215,12 @@ func (m *Manager) apiGet(ctx context.Context, path string) ([]byte, error) {
 // account signal. librespot refuses free accounts and logs that it does not
 // support them; seeing that latches sawFreeAccountLog so PremiumRequired can warn
 // that preset recall needs Premium (#45).
+//
+// It also remembers the most recent play-request failure line: Spotify's
+// audio-key denial ("failed retrieving aes key with code 1") surfaces ONLY
+// here while the API answers a bare 500 — a field report (#311) needed a full
+// diagnostic round just to see it. playDenialHint turns that memory into a
+// human-readable suffix on the play error.
 func (m *Manager) noteLibrespotLine(line string) {
 	lc := strings.ToLower(line)
 	if strings.Contains(lc, "free") && (strings.Contains(lc, "not support") || strings.Contains(lc, "premium")) {
@@ -1215,6 +1232,38 @@ func (m *Manager) noteLibrespotLine(line string) {
 			m.logger.Warn("spotify: go-librespot reports a non-Premium account; preset recall needs Premium (#45)", "line", line)
 		}
 	}
+	if strings.Contains(lc, "failed handling request play") {
+		m.mu.Lock()
+		m.lastPlayFailLine = lc
+		m.lastPlayFailAt = time.Now()
+		m.mu.Unlock()
+	}
+}
+
+// playDenialHint translates a just-logged play failure into a hint the app can
+// show verbatim. Only the audio-key denial is translated (the signature of a
+// non-Premium account, occasionally an unlicensed item); anything else returns
+// "" so unrelated failures keep their original error. Deliberately NOT latched
+// into PremiumRequired: a single denial can be item-specific, and a Premium
+// user must never be blocked on a false positive (#45 contract).
+func (m *Manager) playDenialHint() string {
+	// The stderr line usually lands just before the API's 500, but give a
+	// slow pipe one beat before concluding there is no detail.
+	for attempt := 0; attempt < 2; attempt++ {
+		m.mu.Lock()
+		line, at := m.lastPlayFailLine, m.lastPlayFailAt
+		m.mu.Unlock()
+		if !at.IsZero() && time.Since(at) < 15*time.Second &&
+			(strings.Contains(line, "aes key") || strings.Contains(line, "audio key")) {
+			return "Spotify refused to deliver the audio for this item (audio key denied). " +
+				"This usually means the Spotify account on the speaker has no Premium subscription, " +
+				"which STR's Spotify engine requires; occasionally the item itself is not licensed for streaming."
+		}
+		if attempt == 0 {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	return ""
 }
 
 // accountProduct returns the Spotify account product type ("premium"/"free"/
