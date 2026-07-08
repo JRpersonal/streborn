@@ -1946,39 +1946,64 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		logger.Debug("preset reconcile: box still in OOB setup (MargeHSM not associated), skipping until it joins a network")
 		return false
 	}
-	boxSlots, err := fetchBoxPresetSlots(boxHost)
+	boxLocs, err := fetchBoxPresets(boxHost)
 	if err != nil {
 		logger.Debug("preset reconcile: box presets not readable", "err", err)
 		return false
 	}
+	// Add the STR store presets the box is missing (or all, on a forced full
+	// re-sync). strSlots also drives the prune pass below.
+	strSlots := map[int]bool{}
 	var missing []boxcli.PresetSpec
 	for _, p := range stick {
-		if forceFull || !boxSlots[p.Slot] {
+		strSlots[p.Slot] = true
+		if _, onBox := boxLocs[p.Slot]; forceFull || !onBox {
 			missing = append(missing, boxcli.PresetSpec{
 				Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 			})
 		}
 	}
-	if len(missing) == 0 {
-		return true
-	}
-	if forceFull {
-		logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
-	} else {
-		logger.Info("preset reconcile: missing slots on box, syncing", "missing", len(missing))
-	}
-	errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
-	for slot, err := range errs {
-		if err == nil {
-			logger.Info("preset reconcile healed", "slot", slot)
+	if len(missing) > 0 {
+		if forceFull {
+			logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
+		} else {
+			logger.Info("preset reconcile: missing slots on box, syncing", "missing", len(missing))
 		}
+		for slot, serr := range boxcli.SyncAllPresets(context.Background(), boxHost, missing) {
+			if serr == nil {
+				logger.Info("preset reconcile healed", "slot", slot)
+			}
+		}
+	}
+	// Prune STR-owned box presets the store no longer backs, so a stale preset
+	// from an earlier install does not linger as a dead button. The box's Bose
+	// firmware keeps its preset list across an STR reinstall, but STR's store is
+	// fresh, so those slots show a name yet cannot play (the store stream URL is
+	// gone) - the reporter saw old presets reappear after a reinstall and not
+	// work. Remove ONLY STR's own UPnP /stream/ or /spotify/ presets that the
+	// store lacks; a foreign preset (e.g. a box-cached Deezer entry) or any slot
+	// STR does have is left untouched.
+	for slot, loc := range boxLocs {
+		if strSlots[slot] || !isSTRStreamURL(loc) {
+			continue
+		}
+		rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		if rerr := boxcli.RemovePreset(rctx, boxHost, slot); rerr != nil {
+			logger.Warn("preset reconcile: could not remove a stale STR preset", "slot", slot, "err", rerr)
+		} else {
+			logger.Info("preset reconcile: removed a stale STR preset the store no longer backs (dead button after reinstall)", "slot", slot)
+		}
+		cancel()
 	}
 	return true
 }
 
-// fetchBoxPresetSlots reads GET /presets from the Bose API and returns a
-// map of which slot is set in the box's list.
-func fetchBoxPresetSlots(boxHost string) (map[int]bool, error) {
+// fetchBoxPresets reads GET /presets from the Bose API and returns each set
+// slot's ContentItem location (slot -> location URL). The location is what tells
+// STR-owned presets (its own /stream/ or /spotify/ URLs) apart from foreign ones,
+// so the reconcile can prune only its own stale entries and never a box-native
+// preset.
+func fetchBoxPresets(boxHost string) (map[int]string, error) {
 	client := http.Client{Timeout: 4 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://%s:8090/presets", boxHost))
 	if err != nil {
@@ -1986,19 +2011,28 @@ func fetchBoxPresetSlots(boxHost string) (map[int]bool, error) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	out := map[int]bool{}
-	// Bose format: <presets><preset id="1" ...> ... </preset></presets>
-	for _, m := range presetIDRegex.FindAllStringSubmatch(string(body), -1) {
+	out := map[int]string{}
+	// Bose format: <presets><preset id="1" ...><ContentItem location="..."/></preset></presets>
+	for _, blk := range presetBlockRegex.FindAllStringSubmatch(string(body), -1) {
 		slot := 0
-		fmt.Sscanf(m[1], "%d", &slot)
-		if slot >= 1 && slot <= 6 {
-			out[slot] = true
+		fmt.Sscanf(blk[1], "%d", &slot)
+		if slot < 1 || slot > 6 {
+			continue
 		}
+		loc := ""
+		if lm := presetLocationRegex.FindStringSubmatch(blk[0]); lm != nil {
+			loc = lm[1]
+		}
+		out[slot] = loc
 	}
 	return out, nil
 }
 
-var presetIDRegex = regexp.MustCompile(`<preset id="(\d+)"`)
+// presetBlockRegex captures one <preset id="N" ...> ... </preset> block; (?s)
+// lets . span the newlines Bose puts inside the block. presetLocationRegex then
+// pulls the ContentItem location out of that block.
+var presetBlockRegex = regexp.MustCompile(`(?s)<preset id="(\d+)".*?</preset>`)
+var presetLocationRegex = regexp.MustCompile(`location="([^"]*)"`)
 
 // boxInSetupOOB reports whether BoseApp's /setup says the box is still
 // in out-of-box setup (SETUP_AP_OOB). Pushing presets in that state
