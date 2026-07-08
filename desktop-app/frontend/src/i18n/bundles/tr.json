@@ -860,6 +860,7 @@
   "setup.provisionWifi": "Wi-Fi hoparlöre kaydediliyor",
   "setup.provisionSomeFailed": "Bazı ayarlar otomatik olarak uygulanamadı. Bunları istediğiniz zaman Hoparlör ayarlarından yapabilirsiniz.",
   "setup.powerCycleAdvice": "Işık çubuğu hâlâ gidip geliyor ya da çalma başlamıyor mu? Hoparlörü tamamen kapatıp açın: fişini prizden yaklaşık 30 saniye çekin ve tekrar takın. Normal bir yeniden başlatma hoparlörün yardımcı işlemcisini sıfırlamaz.",
+  "setup.powerCyclePortable": "İpucu: kurulumdan sonra Portable'ı bir kez yeniden başlatın ki temiz açılsın. Pille çalışır ve fişten çekilemez, bu yüzden düğmelerle yeniden başlatmaya zorlayın: AUX'a basılı tutun ya da AUX ile sesi kısma düğmesini birlikte basılı tutun, yeniden başlayana kadar. Normal bir yeniden başlatma hoparlörün yardımcı işlemcisini sıfırlamaz.",
   "setup.help.netCable": "Kablolu kurulumda hoparlör ile yönlendirici arasındaki ağ kablosunun her iki uçta da sıkıca takılı olduğunu kontrol edin.",
   "setup.help.netWifi": "Hoparlörün bu bilgisayarla aynı ağda olduğundan emin olun. Zayıf bir Wi-Fi sinyali veya bir yineleyici bağlantıyı kesebilir.",
   "setup.help.netOnNetwork": "Hoparlörün açık olduğunu ve hoparlör listesinde göründüğünü kontrol edin. Listeden düştüyse, yeniden denemeden önce geri gelmesini bekleyin.",

@@ -860,6 +860,7 @@
   "setup.provisionWifi": "Wi-Fi įrašomas į garsiakalbį",
   "setup.provisionSomeFailed": "Kai kurių nustatymų nepavyko pritaikyti automatiškai. Juos bet kada galite nustatyti garsiakalbio nustatymuose.",
   "setup.powerCycleAdvice": "Šviesos juosta vis dar slenka arba grojimas neprasideda? Visiškai atjunkite garsiakalbį nuo maitinimo: ištraukite iš elektros lizdo maždaug 30 sekundžių ir vėl įjunkite. Įprastas paleidimas iš naujo neatstato garsiakalbio pagalbinio procesoriaus.",
+  "setup.powerCyclePortable": "Patarimas: po įdiegimo vieną kartą paleiskite Portable iš naujo, kad ji startuotų švariai. Ji veikia iš baterijos ir jos negalima atjungti nuo maitinimo, todėl priverstinai paleiskite iš naujo mygtukais: palaikykite nuspaustą AUX arba palaikykite AUX kartu su garsumo mažinimo mygtuku, kol ji pasileis iš naujo. Įprastas paleidimas iš naujo neatstato garsiakalbio pagalbinio procesoriaus.",
   "setup.help.netCable": "Jei diegiate laidu, patikrinkite, ar tinklo kabelis tarp garsiakalbio ir maršruto parinktuvo tvirtai prijungtas iš abiejų galų.",
   "setup.help.netWifi": "Įsitikinkite, kad garsiakalbis yra tame pačiame tinkle kaip ir šis kompiuteris. Silpnas Wi-Fi signalas ar kartotuvas gali nutraukti ryšį.",
   "setup.help.netOnNetwork": "Patikrinkite, ar garsiakalbis įjungtas ir matomas garsiakalbių sąraše. Jei jis dingo, palaukite, kol vėl atsiras, tada bandykite dar kartą.",

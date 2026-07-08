@@ -941,6 +941,7 @@
   "setup.provisionWifi": "Saving Wi-Fi to the speaker",
   "setup.provisionSomeFailed": "Some settings could not be applied automatically. You can set them any time in Speaker settings.",
   "setup.powerCycleAdvice": "Still seeing the light bar sweep, or playback will not start? Fully power-cycle the speaker: unplug it from the wall for about 30 seconds, then plug it back in. A normal restart does not reset the speaker's coprocessor.",
+  "setup.powerCyclePortable": "Tip: after installing, restart the Portable once so it starts clean. It runs on battery and cannot be unplugged, so force a restart with the buttons: press and hold AUX, or hold AUX and volume down together, until it restarts. A normal restart does not reset the speaker's coprocessor.",
   "setup.help.netCable": "For a wired install, check the network cable between the speaker and your router is firmly connected at both ends.",
   "setup.help.netWifi": "Make sure the speaker is on the same network as this computer. A weak Wi-Fi signal or a repeater can drop the connection.",
   "setup.help.netOnNetwork": "Check the speaker is switched on and appears in the speaker list. If it dropped off, wait for it to come back before retrying.",

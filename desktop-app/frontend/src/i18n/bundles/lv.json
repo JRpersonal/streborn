@@ -860,6 +860,7 @@
   "setup.provisionWifi": "Wi-Fi tiek saglabāts skaļrunī",
   "setup.provisionSomeFailed": "Dažus iestatījumus nevarēja piemērot automātiski. Tos jebkurā laikā varat iestatīt skaļruņa iestatījumos.",
   "setup.powerCycleAdvice": "Gaismas josla joprojām kustas vai atskaņošana nesākas? Pilnībā atslēdziet skaļruni no strāvas: atvienojiet no kontaktligzdas apmēram uz 30 sekundēm un pievienojiet atpakaļ. Parasta pārstartēšana neatiestata skaļruņa palīgprocesoru.",
+  "setup.powerCyclePortable": "Padoms: pēc instalēšanas restartējiet Portable vienu reizi, lai tā startētu tīri. Tā darbojas no akumulatora, un to nevar atvienot no strāvas, tāpēc piespiediet restartu ar pogām: turiet nospiestu AUX vai turiet nospiestu AUX kopā ar skaļuma samazināšanas pogu, līdz tā restartējas. Parasts restarts neatiestata skaļruņa palīgprocesoru.",
   "setup.help.netCable": "Instalējot ar vadu, pārbaudiet, vai tīkla kabelis starp skaļruni un maršrutētāju ir cieši pievienots abos galos.",
   "setup.help.netWifi": "Pārliecinieties, ka skaļrunis ir tajā pašā tīklā, kur šis dators. Vājš Wi-Fi signāls vai atkārtotājs var pārtraukt savienojumu.",
   "setup.help.netOnNetwork": "Pārbaudiet, vai skaļrunis ir ieslēgts un parādās skaļruņu sarakstā. Ja tas ir pazudis, pagaidiet, līdz tas atgriežas, un tad mēģiniet vēlreiz.",

@@ -860,6 +860,7 @@
   "setup.provisionWifi": "Zapisywanie Wi-Fi w głośniku",
   "setup.provisionSomeFailed": "Niektórych ustawień nie udało się zastosować automatycznie. Możesz je ustawić w dowolnej chwili w ustawieniach głośnika.",
   "setup.powerCycleAdvice": "Pasek świetlny wciąż się przesuwa albo odtwarzanie się nie zaczyna? Odłącz głośnik całkowicie od zasilania: wyjmij wtyczkę z gniazdka na około 30 sekund i włóż ją z powrotem. Zwykły restart nie resetuje koprocesora głośnika.",
+  "setup.powerCyclePortable": "Wskazówka: po instalacji uruchom ponownie Portable jeden raz, aby wystartował czysto. Działa na baterii i nie można go odłączyć od zasilania, więc wymuś restart przyciskami: przytrzymaj AUX lub przytrzymaj AUX razem z przyciskiem ciszej, aż się zrestartuje. Zwykły restart nie resetuje koprocesora głośnika.",
   "setup.help.netCable": "Przy instalacji przewodowej sprawdź, czy kabel sieciowy między głośnikiem a routerem jest dobrze podłączony po obu stronach.",
   "setup.help.netWifi": "Upewnij się, że głośnik jest w tej samej sieci co ten komputer. Słaby sygnał Wi-Fi lub wzmacniacz może zerwać połączenie.",
   "setup.help.netOnNetwork": "Sprawdź, czy głośnik jest włączony i widoczny na liście głośników. Jeśli zniknął, poczekaj, aż wróci, zanim spróbujesz ponownie.",

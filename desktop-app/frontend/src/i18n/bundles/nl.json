@@ -860,6 +860,7 @@
   "setup.provisionWifi": "Wi-Fi opslaan op de speaker",
   "setup.provisionSomeFailed": "Sommige instellingen konden niet automatisch worden toegepast. Je kunt ze altijd instellen bij Speakerinstellingen.",
   "setup.powerCycleAdvice": "Blijft de lichtbalk heen en weer gaan of start het afspelen niet? Zet de speaker helemaal uit en aan: haal de stekker ongeveer 30 seconden uit het stopcontact en steek hem er weer in. Een gewone herstart reset de coprocessor van de speaker niet.",
+  "setup.powerCyclePortable": "Tip: start de Portable na het installeren één keer opnieuw op zodat hij schoon start. Hij werkt op accu en kan niet worden losgekoppeld, dus forceer een herstart met de knoppen: houd AUX ingedrukt, of houd AUX en volume omlaag samen ingedrukt, tot hij opnieuw opstart. Een normale herstart reset de coprocessor van de speaker niet.",
   "setup.help.netCable": "Bij een installatie via kabel: controleer of de netwerkkabel tussen de speaker en je router aan beide kanten goed vastzit.",
   "setup.help.netWifi": "Zorg dat de speaker op hetzelfde netwerk zit als deze computer. Een zwak Wi-Fi-signaal of een repeater kan de verbinding verbreken.",
   "setup.help.netOnNetwork": "Controleer of de speaker aanstaat en in de speakerlijst verschijnt. Als hij is weggevallen, wacht dan tot hij terug is voordat je het opnieuw probeert.",

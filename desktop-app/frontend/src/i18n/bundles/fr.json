@@ -860,6 +860,7 @@
   "setup.provisionWifi": "Enregistrement du Wi-Fi sur l'enceinte",
   "setup.provisionSomeFailed": "Certains réglages n'ont pas pu être appliqués automatiquement. Vous pouvez les définir à tout moment dans les réglages de l'enceinte.",
   "setup.powerCycleAdvice": "La barre lumineuse continue de balayer ou la lecture ne démarre pas ? Éteignez complètement l'enceinte : débranchez-la de la prise pendant environ 30 secondes, puis rebranchez-la. Un simple redémarrage ne réinitialise pas le coprocesseur de l'enceinte.",
+  "setup.powerCyclePortable": "Astuce : après l'installation, redémarrez une fois la Portable pour qu'elle démarre proprement. Elle fonctionne sur batterie et ne peut pas être débranchée : forcez le redémarrage avec les boutons, maintenez AUX enfoncé, ou maintenez AUX et volume bas ensemble, jusqu'au redémarrage. Un redémarrage normal ne réinitialise pas le coprocesseur de l'enceinte.",
   "setup.help.netCable": "Pour une installation filaire, vérifiez que le câble réseau entre l’enceinte et votre routeur est bien branché aux deux extrémités.",
   "setup.help.netWifi": "Assurez-vous que l'enceinte est sur le même réseau que cet ordinateur. Un signal Wi-Fi faible ou un répéteur peut couper la connexion.",
   "setup.help.netOnNetwork": "Vérifiez que l'enceinte est allumée et apparaît dans la liste des enceintes. Si elle a disparu, attendez qu'elle revienne avant de réessayer.",

@@ -337,6 +337,21 @@ function targetIsST30(box) {
   return m === 'soundtouch30' || m === 'st30' || m === '30';
 }
 
+// powerCycleAdviceHtml returns the post-install power-cycle advice as a ready-to-
+// insert div, model-aware. A full power-cycle is what clears the coprocessor's
+// undefined "light bar keeps sweeping" state that a normal restart leaves behind
+// after an install (live-seen on ginger/SMSC ST300 and taigan). The battery
+// Portable cannot be unplugged, so it gets the AUX button-combo variant (hold
+// AUX, or hold AUX + volume-down); every mains-powered speaker keeps the
+// unplug-from-the-wall advice.
+function powerCycleAdviceHtml(box) {
+  const m = String((box && box.model) || '').toLowerCase().replace(/[\s_]+/g, '');
+  const v = String((box && box.variant) || '').toLowerCase();
+  const isPortable = m.includes('portable') || v === 'taigan';
+  const key = isPortable ? 'setup.powerCyclePortable' : 'setup.powerCycleAdvice';
+  return `<div class="setup-powercycle muted small">${escapeHtml(t(key))}</div>`;
+}
+
 // Unverified-hardware warning (#283).
 //
 // KNOWN_VARIANTS is the set of Bose chassis codenames (FirmwareInfo.Variant) STR
@@ -1901,7 +1916,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
     // Coprocessor power-cycle advice: a soft reboot does not reset the box's
     // coprocessor, so a sweeping light bar / dead playback often only clears with
     // a full mains power-cycle (live-proven). Shown on every failure screen.
-    const powerCycleHint = `<div class="setup-powercycle muted small">${escapeHtml(t('setup.powerCycleAdvice'))}</div>`;
+    const powerCycleHint = powerCycleAdviceHtml(foundBox);
     render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + repairBtn + powerCycleHint + log);
     // If the network path genuinely cannot proceed (no install window, box not
     // reachable, controls wedged), reveal the USB-stick fallback (relocated into
@@ -1920,7 +1935,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
           if (rr && rr.ok) {
             render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>`
               + `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>`
-              + `<div class="setup-powercycle muted small">${escapeHtml(t('setup.powerCycleAdvice'))}</div>`);
+              + powerCycleAdviceHtml(foundBox));
             deps.discoverBoxes();
             try { deps.celebrateProvision(foundBox); } catch {}
           } else {
@@ -2078,7 +2093,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
            `<p class="muted small">${escapeHtml(t('setup.playHowBoseApp'))}</p>` +
            `<button class="btn btn-primary" id="installGoMusic">${escapeHtml(t('setup.playHowGoBtn'))}</button>` +
          `</div>` +
-         `<div class="setup-powercycle muted small">${escapeHtml(t('setup.powerCycleAdvice'))}</div>`);
+         powerCycleAdviceHtml(foundBox));
   const goMusic = $('installGoMusic');
   if (goMusic) goMusic.onclick = () => deps.switchView('box');
   deps.discoverBoxes();

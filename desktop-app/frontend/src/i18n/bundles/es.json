@@ -860,6 +860,7 @@
   "setup.provisionWifi": "Guardando el Wi-Fi en el altavoz",
   "setup.provisionSomeFailed": "Algunos ajustes no se pudieron aplicar automáticamente. Puedes configurarlos cuando quieras en los ajustes del altavoz.",
   "setup.powerCycleAdvice": "¿La barra de luz sigue barriendo o no empieza la reproducción? Apaga y enciende el altavoz por completo: desconéctalo de la corriente unos 30 segundos y vuelve a enchufarlo. Un reinicio normal no reinicia el coprocesador del altavoz.",
+  "setup.powerCyclePortable": "Consejo: después de instalar, reinicia la Portable una vez para que arranque limpia. Funciona con batería y no se puede desenchufar, así que fuerza el reinicio con los botones: mantén pulsado AUX, o mantén pulsado AUX junto con bajar volumen, hasta que se reinicie. Un reinicio normal no restablece el coprocesador del altavoz.",
   "setup.help.netCable": "Para una instalación por cable, comprueba que el cable de red entre el altavoz y el router esté bien conectado por ambos extremos.",
   "setup.help.netWifi": "Asegúrate de que el altavoz esté en la misma red que este ordenador. Una señal Wi-Fi débil o un repetidor pueden cortar la conexión.",
   "setup.help.netOnNetwork": "Comprueba que el altavoz esté encendido y aparezca en la lista de altavoces. Si ha desaparecido, espera a que vuelva antes de reintentar.",

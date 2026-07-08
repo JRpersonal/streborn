@@ -941,6 +941,7 @@
   "setup.provisionWifi": "WLAN wird auf dem Lautsprecher gespeichert",
   "setup.provisionSomeFailed": "Einige Einstellungen konnten nicht automatisch übernommen werden. Du kannst sie jederzeit in den Lautsprecher-Einstellungen setzen.",
   "setup.powerCycleAdvice": "Läuft das Lichtband weiter durch oder startet die Wiedergabe nicht? Trenne den Lautsprecher komplett vom Strom: rund 30 Sekunden aus der Steckdose ziehen und wieder einstecken. Ein normaler Neustart setzt den Coprozessor des Lautsprechers nicht zurück.",
+  "setup.powerCyclePortable": "Tipp: Starte die Portable nach der Installation einmal neu, damit sie sauber startet. Sie läuft mit Akku und lässt sich nicht vom Strom trennen. Erzwinge den Neustart über die Tasten: AUX lange gedrückt halten, oder AUX und Leiser zusammen lange gedrückt halten, bis sie neu startet. Ein normaler Neustart setzt den Coprozessor nicht zurück.",
   "setup.help.netCable": "Bei einer Installation über Kabel: prüfe, ob das Netzwerkkabel zwischen Lautsprecher und Router an beiden Enden fest sitzt.",
   "setup.help.netWifi": "Stelle sicher, dass der Lautsprecher im selben Netzwerk ist wie dieser Computer. Ein schwaches WLAN-Signal oder ein Repeater kann die Verbindung abbrechen.",
   "setup.help.netOnNetwork": "Prüfe, ob der Lautsprecher eingeschaltet ist und in der Lautsprecherliste erscheint. Ist er verschwunden, warte, bis er wieder da ist, bevor du es erneut versuchst.",
