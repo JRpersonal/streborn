@@ -408,7 +408,7 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		// /api/debug/state holds the boot-race trace (setup.log,
 		// boot.log, agent_log_tail). Single most useful payload for
 		// "agent came up but is misbehaving" diagnostics.
-		debugRaw := httpGetText(fmt.Sprintf("http://%s:17008/api/debug/state", host), 256*1024)
+		debugRaw := httpGetTextTimeout(fmt.Sprintf("http://%s:17008/api/debug/state", host), 256*1024, 20*time.Second)
 		if debugRaw != "" {
 			var ds map[string]any
 			if err := json.Unmarshal([]byte(debugRaw), &ds); err == nil {
@@ -702,13 +702,27 @@ func portOpen(host string, port int, timeoutMs int) bool {
 }
 
 func httpGetText(url string, max int64) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	return httpGetTextTimeout(url, max, 4*time.Second)
+}
+
+// httpGetTextTimeout is httpGetText with an explicit timeout. The 4 s default is
+// right for the fast agent probes (/api/status, /api/agent/version), but the
+// single most useful diagnostic payload - /api/debug/state - reads several log
+// tails plus a NAND disk-usage walk, which can take much longer on a pegged box.
+// That is exactly the box a trace is needed for: a live #342 bundle from a
+// misbehaving scm ST20 came back with an EMPTY debugState (so we could not see
+// what fired) because the box was busy in a re-select loop and the 4 s probe
+// timed out, even though the fast /api/status probe on the same port succeeded.
+// The debug fetch therefore gets a much longer budget so the on-box log makes it
+// into the bundle even when the box is struggling.
+func httpGetTextTimeout(url string, max int64, timeout time.Duration) string {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return ""
 	}
-	cli := &http.Client{Timeout: 4 * time.Second}
+	cli := &http.Client{Timeout: timeout}
 	resp, err := cli.Do(req)
 	if err != nil {
 		return ""
