@@ -14,25 +14,6 @@ const shutdownTimeout = 5 * time.Second
 //go:embed assets/icon.png
 var iconPNG []byte
 
-// webManifest is the PWA manifest served at /manifest.webmanifest. With it (plus
-// the apple-mobile-web-app meta in indexHTML) a phone can "Add to Home Screen"
-// and the page opens full-screen as a standalone STR app.
-const webManifest = `{
-  "name": "ST Reborn",
-  "short_name": "STR",
-  "description": "Control your Bose SoundTouch speaker",
-  "start_url": "/",
-  "scope": "/",
-  "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#1a1a1a",
-  "theme_color": "#1a1a1a",
-  "icons": [
-    { "src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" }
-  ]
-}`
-
 // indexHTML is the self-contained controller page the agent serves on "/". It is
 // the phone remote: a mobile-first page (no desktop app needed) that drives the
 // box over the same REST API the desktop app uses. It is PWA-capable (save to
@@ -91,7 +72,10 @@ header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 header img { width:30px; height:30px; border-radius:7px; }
 header .brand { font-size:18px; font-weight:700; letter-spacing:.2px; }
 header .brand span { color:var(--accent); }
-header .dev { margin-left:auto; min-width:0; font-size:12px; color:var(--muted); text-align:right; max-width:42%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* The speaker name is the page's identity (one saved app per speaker), so it
+   reads as a headline: bright, semi-bold, and it WRAPS instead of getting cut
+   off - multi-word room names were ellipsized before. */
+header .dev { margin-left:auto; min-width:0; font-size:15px; font-weight:600; color:var(--fg); text-align:right; overflow-wrap:anywhere; line-height:1.25; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin:12px 0; }
 .nowcard { padding:14px 16px; background:linear-gradient(180deg,var(--nowgrad1),var(--nowgrad2)); }
 .nowcard .now { display:block; color:var(--accent); font-weight:600; font-size:18px; line-height:1.25; }
@@ -107,9 +91,6 @@ button.btn.active, a.btn.active { border-color:var(--accent); color:var(--accent
 button.btn:active { background:var(--press); }
 @media (hover:hover) { button.btn:hover, a.btn:hover { background:var(--hover); } .preset:hover { background:var(--hover); } }
 .vol { display:flex; align-items:center; gap:12px; }
-/* Second slider label in the same card (Bass under Volume): needs its own
-   top gap; both stay hidden until /api/box/settings confirms bass support. */
-.bass-label { margin-top:14px; }
 .vol input[type=range] { flex:1; accent-color:var(--accent); height:44px; }
 .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:24px; height:24px; border-radius:50%; background:var(--accent); }
 .vol input[type=range]::-moz-range-thumb { width:24px; height:24px; border:0; border-radius:50%; background:var(--accent); }
@@ -243,8 +224,6 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <div class="card">
 <div class="label" id="lblVol">Volume</div>
 <div class="vol"><input type="range" id="vol" min="0" max="100" value="0" aria-label="Volume" oninput="onVol(this.value)"><span class="val" id="volval">0</span></div>
-<div class="label bass-label" id="lblBass" style="display:none">Bass</div>
-<div class="vol" id="bassRow" style="display:none"><input type="range" id="bass" min="-9" max="0" value="0" aria-label="Bass" oninput="onBass(this.value)"><span class="val" id="bassval">0</span></div>
 </div>
 
 <div class="card">
@@ -273,6 +252,11 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <div class="card" id="peersCard">
 <div class="label" id="lblPeers">Other speakers</div>
 <div class="row" id="peers"></div>
+</div>
+
+<div class="card" id="bassCard" style="display:none">
+<div class="label" id="lblBass">Bass</div>
+<div class="vol"><input type="range" id="bass" min="-9" max="0" value="0" aria-label="Bass" oninput="onBass(this.value)"><span class="val" id="bassval">0</span></div>
 </div>
 </main>
 
@@ -448,8 +432,7 @@ async function loadSettings() {
     bassLast = s.bass.actual;
     b.value = s.bass.actual;
     document.getElementById('bassval').textContent = s.bass.actual;
-    document.getElementById('lblBass').style.display = '';
-    document.getElementById('bassRow').style.display = '';
+    document.getElementById('bassCard').style.display = '';
   }
 }
 
