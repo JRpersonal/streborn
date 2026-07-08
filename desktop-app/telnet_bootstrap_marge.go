@@ -52,40 +52,74 @@ const bootstrapMargePort = 19080
 // box's ~60s marge cycle completes and the envswitch shell injection fires.
 type bootstrapMarge struct {
 	srv  *http.Server
+	port int          // the port actually bound (bootstrapMargePort or a fallback)
 	hits atomic.Int64 // box requests served; diagnostic only, hence atomic
 }
 
-// startBootstrapMarge binds 0.0.0.0:bootstrapMargePort and serves the marge
-// endpoints. It returns the running responder (Stop it when done) or an error if
-// the port cannot be bound (e.g. already in use).
+// startBootstrapMarge binds the marge responder and serves the marge endpoints.
+// It prefers bootstrapMargePort but falls back to the next few ports when that
+// one is already bound - a stale responder from a prior attempt, a second app
+// instance, or an unrelated process. A bind failure must NOT abort the unlock:
+// it used to surface as misleading "prepare a USB stick" guidance for what is a
+// purely local port conflict. Returns the running responder (Stop it when done;
+// read .port for the port the box must call back on) or an error only if the
+// whole range is taken.
 func startBootstrapMarge() (*bootstrapMarge, error) {
 	b := &bootstrapMarge{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", b.handle)
-	ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", bootstrapMargePort))
-	if err != nil {
-		return nil, fmt.Errorf("bind marge responder: %w", err)
+	var ln net.Listener
+	var err error
+	for p := bootstrapMargePort; p <= bootstrapMargePort+5; p++ {
+		ln, err = net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", p))
+		if err == nil {
+			b.port = p
+			break
+		}
+	}
+	if ln == nil {
+		return nil, fmt.Errorf("bind marge responder on %d-%d: %w", bootstrapMargePort, bootstrapMargePort+5, err)
 	}
 	b.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = b.srv.Serve(ln) }()
 	return b, nil
 }
 
-// handle answers the box's device-check requests. Responses mirror
-// internal/marge/marge.go (adddeviceresponse "elem" form). The box only needs a
-// well-formed reply so its check cycle keeps running; the exact token is
-// irrelevant to the SSH unlock.
+// handle answers the box's marge handshake so a fresh box actually reaches
+// MargeStateAssociated and PERSISTS the dummy account (the whole point - a
+// persisted account is what makes the box run the boot marge check that fires
+// the SSH injection). Mirrors the full internal/marge/marge.go handshake, not a
+// minimal stub: the earlier minimal responder (plain "elem"/HTTP 200 addDevice,
+// no power_on) left the taigan account EMPTY, so the injection never fired.
 func (b *bootstrapMarge) handle(w http.ResponseWriter, r *http.Request) {
 	b.hits.Add(1)
+	// Re-anchor at /streaming/ so an injected or trailing-slash base still routes.
+	p := r.URL.Path
+	if i := strings.Index(p, "/streaming/"); i >= 0 {
+		p = p[i:]
+	}
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	switch {
-	case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/device"):
-		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>` +
-			"\n<adddeviceresponse><margetoken>str-bootstrap</margetoken></adddeviceresponse>"))
-	case strings.Contains(r.URL.Path, "/sourceproviders"):
-		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>` + "\n<sourceproviders></sourceproviders>"))
+	case strings.Contains(p, "/streaming/support/power_on"):
+		// Boot diagnostics: the box needs OK + a server-time or it marks the cloud
+		// as down and will not associate.
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>` + "\n" +
+			`<response status="OK"><server-time>` + time.Now().UTC().Format("2006-01-02T15:04:05Z") + `</server-time></response>`))
+	case strings.Contains(p, "/streaming/account/") && strings.Contains(p, "/device") && r.Method == http.MethodPost:
+		// wrap201: HTTP 201 + a wrapped, UUID-form margetoken is what drives the
+		// box to MargeStateAssociated so the dummy account PERSISTS (a plain
+		// elem/200 reply left the taigan margeAccountUUID empty). Mirrors
+		// internal/marge respondAddDevice wrap201.
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>` + "\n" +
+			`<response status="OK"><adddeviceresponse><margetoken>11111111-1111-1111-1111-111111111111</margetoken></adddeviceresponse></response>`))
+	case strings.Contains(p, "/full"):
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>` + "\n<fullAccount></fullAccount>"))
+	case strings.Contains(p, "sourceproviders"):
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>` + "\n" +
+			`<sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider></sourceProviders>`))
 	default:
-		_, _ = w.Write([]byte(`<response status="OK"></response>`))
+		_, _ = w.Write([]byte(`<response status="OK"/>`))
 	}
 }
 
@@ -185,14 +219,13 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 		a.logger.Info("telnet-bootstrap: cannot determine this PC's LAN IP for the box; skipping factory-reset unlock", "host", host, "err", err)
 		return false, "could not determine local IP: " + err.Error()
 	}
-	fmt.Fprintf(&log, "PC marge address for the box: http://%s:%d\n", pcIP, bootstrapMargePort)
-
 	marge, err := startBootstrapMarge()
 	if err != nil {
-		a.logger.Warn("telnet-bootstrap: could not start the local marge responder (port in use?)", "host", host, "err", err)
-		return false, "could not start local marge responder: " + err.Error()
+		a.logger.Warn("telnet-bootstrap: could not start the local marge responder on any candidate port; close any other STR instance or program using 19080-19085 and retry", "host", host, "err", err)
+		return false, "could not start the local marge responder: a port in the 19080-19085 range is in use by another program. Close any other running copy of this app and try again."
 	}
 	defer marge.Stop()
+	fmt.Fprintf(&log, "PC marge address for the box: http://%s:%d\n", pcIP, marge.port)
 	// Surface the box->PC marge callbacks to the install heartbeat so the UI can
 	// warn about a firewall block (0 callbacks after ~60s) instead of a silent
 	// multi-minute wait. Cleared when the bootstrap returns.
@@ -204,20 +237,53 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 		return false, "port 17000 not reachable: " + err.Error()
 	}
 
-	// Give the box an account so it begins doing marge checks. Done after the TAP
-	// dial succeeds so we do not set a dummy account on a box we then cannot reach
-	// over :17000 to inject or recover.
+	// Winning-sequence ORDER (this ordering bug is what failed the taigan unlock).
+	// FIRST point marge at the CLEAN local responder (no injection), and only THEN
+	// post the dummy account, so the box validates the account against a reachable,
+	// well-formed marge server and its margeAccountUUID PERSISTS. Posting the
+	// account while marge still points at dead streaming.bose.com means the box
+	// cannot validate it and silently drops it, so its boot marge check never runs
+	// and the injection never fires (the UUID came back empty after the reboot on
+	// the taigan). base is this PC's live IP:port; every failure exit restores
+	// stock URLs and reboots so the box is not left dialing a dead host.
+	base := fmt.Sprintf("http://%s:%d/", pcIP, marge.port)
+	for _, cmd := range []string{
+		`envswitch boseurls set "` + base + `" "` + base + `update"`,
+		`sys configuration margeServerUrl "` + base + `"`,
+	} {
+		if serr := sendAndLog(t, &log, cmd); serr != nil {
+			t.close()
+			return false, log.String()
+		}
+	}
 	a.setMargeAccountDummy(host)
+	// Wait for the association to actually PERSIST the account before injecting.
+	// The box POSTs to the responder over a few seconds (device -> full ->
+	// provider_settings) and only then stores its margeAccountUUID; checking
+	// immediately reads false (too early - live taigon 2026-07-08 read false while
+	// the box reached the responder ~30s later). Poll until the UUID is set (or a
+	// ~40s cap) so the account is confirmed stuck before we swap marge to the
+	// injection - only a persisted account makes the box run the boot marge check
+	// that fires the injection.
+	uuidStuck := false
+	for w := 0; w < 20; w++ {
+		if a.boxHasResidualMargeUUID(host) {
+			uuidStuck = true
+			break
+		}
+		a.emitInstallHeartbeat()
+		time.Sleep(2 * time.Second)
+	}
+	fmt.Fprintf(&log, "dummy account persisted against local responder: %v (margeHits=%d)\n", uuidStuck, marge.hits.Load())
+	a.logger.Info("telnet-bootstrap: dummy account association result", "host", host, "uuidPersisted", uuidStuck, "margeHits", marge.hits.Load())
 
-	// From here the box config carries this PC's live IP; every failure exit must
-	// restore stock URLs and reboot so the box is not left dialing a dead host.
-	base := fmt.Sprintf("http://%s:%d/", pcIP, bootstrapMargePort)
+	// Now swap marge to the INJECTION (same reachable base, so the boot curl
+	// connects to the responder as GET / and then runs the ;touch;sshd payload).
+	// The injection fires on the box's next power_on -> curl margeServerUrl (a shell
+	// curl), so a reboot triggers it.
 	for _, cmd := range buildBootstrapEnableSSHCommands(base) {
 		if serr := sendAndLog(t, &log, cmd); serr != nil {
 			t.close()
-			// The caller restores stock URLs + reboots on any failure exit (it
-			// owns cleanup so the simple path is covered too), so a partial write
-			// here is not left pointed at this PC.
 			return false, log.String()
 		}
 	}
@@ -225,13 +291,32 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 	t.close()
 	a.logger.Info("telnet-bootstrap: dummy account set, envswitch injection written, sys reboot sent; waiting for the box to check marge and open SSH", "host", host, "pcMarge", base)
 
-	// Budget: boot (~90s) plus at least one ~60s marge-check cycle. Give it the
-	// slow-model budget plus a margin so a genuine success is never cut off.
+	// Budget: boot (~90s) plus at least one ~60s marge-check cycle.
 	budget := agentWaitBudget(model) + 90*time.Second
 	if a.waitForSSHOpen(host, budget) {
 		a.logger.Info("telnet-bootstrap: SSH opened on the factory-reset box via the local-marge unlock", "host", host, "margeHits", marge.hits.Load())
 		return true, log.String()
 	}
-	a.logger.Info("telnet-bootstrap: SSH did not open within budget; caller will restore stock URLs so the box stops dialing this PC", "host", host, "budget", budget.String(), "margeHits", marge.hits.Load())
+	// State-aware diagnosis instead of a blind "timed out": the box callback count
+	// plus its reachability say which failure this is, so the caller/UI can give the
+	// right advice (firewall vs power-cycle vs "this chassis needs the USB stick").
+	hits := marge.hits.Load()
+	reachable := tcpReachable(host, 8090, 2*time.Second)
+	a.logger.Info("telnet-bootstrap: SSH did not open", "host", host, "margeHits", hits, "boxReachableNow", reachable, "diagnosis", bootstrapFailureReason(hits, reachable))
 	return false, log.String()
+}
+
+// bootstrapFailureReason turns the bootstrap end-state (how many times the box
+// called this PC's marge responder, and whether it is reachable now) into a
+// human reason, so a failed factory-reset unlock reports what actually went
+// wrong instead of a blind "timed out" plus generic USB-stick guidance.
+func bootstrapFailureReason(margeHits int64, reachable bool) string {
+	switch {
+	case margeHits == 0 && reachable:
+		return "the speaker came back on the network but never called this PC: a firewall is blocking the marge responder port, or this chassis resets the stick-free injection on boot and needs the USB stick"
+	case margeHits == 0 && !reachable:
+		return "the speaker did not come back on the network: it may be wedged (unplug it from mains for ~10s and retry) or it needs the USB stick"
+	default:
+		return "the speaker reached this PC but SSH still did not open: the injection ran but sshd did not start"
+	}
 }

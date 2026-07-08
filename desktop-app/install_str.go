@@ -133,14 +133,29 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// caveat (there the stick stays the reliable fallback).
 		if tcpReachable(host, 17000, 2*time.Second) {
 			a.emitPhase("access")
-			opened, tlog := a.enableSSHViaTelnet(host, model)
+			// Don't burn the simple unlock's multi-minute :22 wait (plus the reboot
+			// it costs) on a box we already know it cannot work on. The simple
+			// :17000 injection only fires when the box runs its periodic marge
+			// check, which needs a residual Bose margeAccountUUID; an empty-UUID
+			// (factory-reset / cloud-cleared) box - every fresh Portable - never
+			// checks on its own, so probe the UUID up front and go straight to the
+			// bootstrap when it is empty.
+			hasUUID := a.boxHasResidualMargeUUID(host)
+			var opened bool
+			var tlog string
+			if hasUUID {
+				opened, tlog = a.enableSSHViaTelnet(host, model)
+			} else {
+				a.logger.Info("install_str: box carries no residual marge account, so the simple :17000 unlock cannot fire; going straight to the factory-reset bootstrap", "host", host)
+			}
 			if !opened {
-				// Factory-reset fallback: an empty-UUID box never checks marge on its
-				// own, so the simple injection never fires. Give it a dummy account +
-				// a throwaway local marge responder so the check cycle runs and the
-				// injection fires (proven live on a factory-reset ST300). See
-				// telnet_bootstrap_marge.go.
-				a.logger.Info("install_str: simple :17000 unlock did not open SSH; trying the factory-reset bootstrap", "host", host)
+				// Factory-reset path: an empty-UUID box never checks marge on its own,
+				// so give it a dummy account + a throwaway local marge responder so the
+				// check cycle runs and the injection fires (proven live on a
+				// factory-reset ST300). See telnet_bootstrap_marge.go.
+				if hasUUID {
+					a.logger.Info("install_str: simple :17000 unlock did not open SSH; trying the factory-reset bootstrap", "host", host)
+				}
 				var blog string
 				opened, blog = a.enableSSHViaTelnetBootstrap(host, model)
 				tlog = tlog + "\n--- factory-reset bootstrap ---\n" + blog
@@ -565,6 +580,33 @@ func buildStickProbeCmd(paths []string) string {
 			`echo "STICKPATH=$cand"; exit 0; ` +
 			`fi; done; fi; done; echo MISSING`)
 	return b.String()
+}
+
+// boxHasResidualMargeUUID reports whether the speaker still carries a Bose
+// margeAccountUUID from before the cloud shutdown. Only such a box runs the
+// periodic marge check the simple :17000 SSH injection rides on; an empty-UUID
+// (factory-reset / cloud-cleared) box never checks on its own, so the simple
+// unlock can only time out. Probing this up front lets the install skip the
+// simple path's multi-minute :22 wait (and the reboot it costs) and go straight
+// to the bootstrap. On any read error it returns true, so an unknown box keeps
+// the old simple-then-bootstrap order and a probe failure never skips a path
+// that might have worked.
+func (a *App) boxHasResidualMargeUUID(host string) bool {
+	body, err := a.boseGet(host, "/info")
+	if err != nil {
+		return true
+	}
+	const openTag = "<margeAccountUUID>"
+	i := strings.Index(body, openTag)
+	if i < 0 {
+		return true
+	}
+	rest := body[i+len(openTag):]
+	j := strings.Index(rest, "<")
+	if j < 0 {
+		return true
+	}
+	return strings.TrimSpace(rest[:j]) != ""
 }
 
 // RepairInstallViaSSH is the install fallback for when the USB stick itself is
