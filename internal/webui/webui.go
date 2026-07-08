@@ -3018,13 +3018,31 @@ func writeBinaryAtomic(dst string, body []byte) error {
 		// the update still failed with "no space left" (#119). StopEngine kills it and
 		// waits for exit so the ~16 MB actually frees; reclaimSpotifyEngine then drops
 		// the (now-unused) binary.
+		stopped := false
 		if engineStopHook != nil {
-			engineStopHook()
+			stopped = engineStopHook()
 		}
-		reclaimSpotifyEngine()
-		if !nandHasRoom(dir, need) {
+		reclaimed := reclaimSpotifyEngine()
+		// Re-check with patience: UBIFS updates its free-space accounting lazily
+		// after a delete, and the engine's blocks release on process reap, so an
+		// immediate statfs can still show the old figure. A field report (#270)
+		// showed a 507 whose inventory still carried the engine with no way to
+		// tell which step failed; the outcome of each step is now logged and
+		// embedded in the error.
+		fits := false
+		for i := 0; i < 10; i++ {
+			if nandHasRoom(dir, need) {
+				fits = true
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		slog.Info("OTA write: space-pressed reclaim ran",
+			"engineStopped", stopped, "engineReclaim", reclaimed, "fits", fits)
+		if !fits {
 			_, avail, _ := diskFree(dir)
-			return fmt.Errorf("%w: need %dKB, have %dKB free [NAND %s]", errInsufficientNAND, need/1024, avail/1024, nandReportLine())
+			return fmt.Errorf("%w: need %dKB, have %dKB free after reclaim (%s; engine stop=%v) [NAND %s]",
+				errInsufficientNAND, need/1024, avail/1024, reclaimed, stopped, nandReportLine())
 		}
 	}
 	if err := os.WriteFile(tmp, body, 0o755); err != nil {
@@ -3145,6 +3163,9 @@ func nandInventory() map[string]any {
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Bytes > list[j].Bytes })
 	rep["nvEntries"] = list
+	// STR's own dir broken down (bin/ files included), so a bundle shows
+	// whether the agent binary, the Spotify engine, or logs eat the space.
+	rep["strEntries"] = strDirEntries()
 	rep["foreignDirs"] = foreign // empty => STR/Bose-only ("fresh")
 	return rep
 }
@@ -3185,12 +3206,50 @@ func nandReportLine() string {
 		}
 		fmt.Fprintf(&b, " %s=%dKB", e.name, e.bytes/1024)
 	}
+	// Break STR's own dir down too: a bare "streborn=30071KB" cannot show
+	// whether the space-pressed engine drop actually removed go-librespot
+	// (#270: the engine survived a reclaim and the report could not say so).
+	strList := strDirEntries()
+	if len(strList) > 0 {
+		b.WriteString("; str:")
+		for i, e := range strList {
+			if i >= 5 {
+				break
+			}
+			fmt.Fprintf(&b, " %s=%dKB", e.Name, e.Bytes/1024)
+		}
+	}
 	if len(foreign) > 0 {
 		b.WriteString("; foreign(non-STR/Bose): " + strings.Join(foreign, ","))
 	} else {
 		b.WriteString("; foreign: none")
 	}
 	return b.String()
+}
+
+// strDirEntries lists the entries under /mnt/nv/streborn (with bin/ broken out
+// into its files, since the two big binaries live there), biggest first.
+func strDirEntries() []nandEntry {
+	var list []nandEntry
+	for _, sub := range []string{strNANDDir, filepath.Join(strNANDDir, "bin")} {
+		ents, err := os.ReadDir(sub)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			if sub == strNANDDir && e.Name() == "bin" {
+				continue // broken out via the second pass
+			}
+			p := filepath.Join(sub, e.Name())
+			rel, rerr := filepath.Rel(nandRoot, p)
+			if rerr != nil {
+				rel = p
+			}
+			list = append(list, nandEntry{Name: rel, Bytes: dirBytes(p), IsDir: e.IsDir()})
+		}
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Bytes > list[j].Bytes })
+	return list
 }
 
 // reclaimNAND frees obvious, regenerable junk so a tight OTA write has room:
@@ -3248,10 +3307,21 @@ func ReclaimNAND() { reclaimNAND() }
 // running agent does not need it to apply an update, and the desktop app
 // re-delivers it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot
 // != "present"), so dropping it is always recoverable. Called only by the
-// space-pressed OTA write, never on a roomy box (#119).
-func reclaimSpotifyEngine() {
-	_ = os.Remove(goLibrespotBinPath)
+// space-pressed OTA write, never on a roomy box (#119). The returned outcome is
+// logged and embedded into a 507 error, because a silent failure here left a
+// field report (#270) with a full NAND and no clue whether the drop ever
+// happened.
+func reclaimSpotifyEngine() string {
 	_ = os.Remove(goLibrespotBinPath + ".sha256")
+	err := os.Remove(goLibrespotBinPath)
+	switch {
+	case err == nil:
+		return "engine dropped"
+	case os.IsNotExist(err):
+		return "engine absent"
+	default:
+		return "engine drop failed: " + err.Error()
+	}
 }
 
 // nandHasRoom reports whether the filesystem backing dir can hold a need-byte
