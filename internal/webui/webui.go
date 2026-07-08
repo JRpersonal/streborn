@@ -1408,7 +1408,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 			}
 			s.logger.Info("spotify soft recall: context load issued", "slot", slot, "warm", warm, "loadAfterMs", time.Since(t0).Milliseconds())
-			s.verifyRecall(func(ctx context.Context, lastAttempt bool) {
+			s.verifyRecall(slotURL, func(ctx context.Context, lastAttempt bool) {
 				// Re-point the box at the stream WITHOUT re-Play on the early
 				// tries: ServeOgg resumes go-librespot on attach, so this
 				// re-attaches without reshuffling/restarting the track (a re-Play
@@ -1450,7 +1450,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			s.setLastPlay(directURL, p.Name, p.Art, mime)
 			s.recentNoteCard("upnp", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "") // #135
 			name, art := p.Name, p.Art
-			go s.verifyRecall(func(ctx context.Context, _ bool) {
+			go s.verifyRecall(directURL, func(ctx context.Context, _ bool) {
 				_ = s.renderer.PlayURLMime(ctx, directURL, name, art, mime)
 			}, nil)
 			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
@@ -1461,6 +1461,11 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// expiry (Bose sees the stable loopback URL).
 	playURL := boxurl.StreamSlot(slot)
 	if err := s.renderer.PlayURL(r.Context(), playURL, p.Name, p.Art); err != nil {
+		// Log the failed radio recall: this 502 used to be returned with no
+		// agent-side trace at all, so a remote diagnostic bundle showed a recall
+		// that apparently never happened (#252).
+		s.logger.Warn("preset slot recall (app): radio play failed",
+			"slot", slot, "name", p.Name, "playURL", playURL, "err", err)
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error":  "Station could not be played",
 			"detail": guessErrorReason(err),
@@ -1472,16 +1477,24 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	s.setLastPlay(playURL, p.Name, p.Art, "")
 	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage) // #135
 	name, art := p.Name, p.Art
-	go s.verifyRecall(func(ctx context.Context, _ bool) {
+	go s.verifyRecall(playURL, func(ctx context.Context, _ bool) {
 		_ = s.renderer.PlayURL(ctx, playURL, name, art)
 	}, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
 }
 
-// verifyRecall confirms the box reached a playing state shortly after a recall
-// and re-issues the play a few times if not. Fixes the "first press after a
-// reboot does nothing, second press works" race (box/go-librespot not ready
-// yet) without any latency on the happy path (the initial play already ran).
+// verifyRecall confirms the box reached a playing state ON THE EXPECTED STREAM
+// shortly after a recall and re-issues the play a few times if not. Fixes the
+// "first press after a reboot does nothing, second press works" race
+// (box/go-librespot not ready yet) without any latency on the happy path (the
+// initial play already ran).
+//
+// expectedLocation is the box-side URL this recall pushed (e.g.
+// boxurl.StreamSlot(slot)). "Busy" alone used to count as success, which hid
+// exactly the #252 failure where a racing wake-resume replaced a just-issued
+// recall with the PREVIOUS station: the box was playing, just the wrong
+// stream. Now a busy box on a different location is re-issued like a silent
+// one. Empty expectedLocation keeps the busy-only check.
 //
 // retry receives lastAttempt=true only on the final try. Spotify uses it to
 // re-point the box without a full re-Play on the early tries (a re-Play
@@ -1489,7 +1502,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 // last-resort recovery. This is the same policy the hardware recall settled on
 // in v0.7.4 (cmd/agent verifySpotifyPlaying); routing both through one contract
 // keeps the soft and hardware paths from drifting again.
-func (s *Server) verifyRecall(retry func(ctx context.Context, lastAttempt bool), working func() bool) {
+func (s *Server) verifyRecall(expectedLocation string, retry func(ctx context.Context, lastAttempt bool), working func() bool) {
 	const attempts = 3
 	for attempt := 1; attempt <= attempts; attempt++ {
 		time.Sleep(5 * time.Second)
@@ -1501,15 +1514,65 @@ func (s *Server) verifyRecall(retry func(ctx context.Context, lastAttempt bool),
 		if working != nil && working() {
 			return
 		}
-		if _, busy := s.boxPlayState(); busy {
+		location, busy := s.boxPlayLocation()
+		if busy && recallLocationMatches(expectedLocation, location) {
 			return
 		}
-		s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
+		if busy {
+			s.logger.Warn("recall verify: box is playing a different stream than this recall pushed, re-issuing",
+				"attempt", attempt, "expected", expectedLocation, "playing", location)
+		} else {
+			s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		retry(ctx, attempt == attempts)
 		cancel()
 	}
 	s.logger.Warn("recall still not playing after retries")
+}
+
+// recallLocationMatches reports whether the box's now-playing location is the
+// stream a recall pushed. Lenient on missing data: with no expectation or no
+// readable location it returns true, so a now_playing read hiccup can never
+// turn the verify into a retry storm. Only a POSITIVE "the box is on a
+// different URL" counts as a mismatch (#252).
+func recallLocationMatches(expected, nowLocation string) bool {
+	if expected == "" || nowLocation == "" {
+		return true
+	}
+	return nowLocation == expected
+}
+
+// xmlAttrUnescape decodes the predefined XML entities the box emits in
+// now_playing attribute values (location="...&amp;..."), so the recall verify
+// compares real URLs, not encodings.
+func xmlAttrUnescape(s string) string {
+	r := strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'")
+	return r.Replace(s)
+}
+
+// boxPlayLocation reads now_playing once and reports the ContentItem location
+// the box is tuned to plus whether it is busy (playing, buffering or paused).
+// Best-effort: ("", false) when the box cannot be read; verifyRecall treats an
+// unreadable location as a match, so this can only ever ADD a justified retry,
+// never a spurious one.
+func (s *Server) boxPlayLocation() (location string, busy bool) {
+	if s.boxHost == "" {
+		return "", false
+	}
+	cl := &http.Client{Timeout: 5 * time.Second}
+	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	if err != nil {
+		return "", false
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	resp.Body.Close()
+	body := string(b)
+	if m := reNowPlayLocation.FindStringSubmatch(body); m != nil {
+		location = xmlAttrUnescape(m[1])
+	}
+	busy = strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE")
+	return location, busy
 }
 
 // setLastPlay records the box-facing stream + metadata for the auto-re-push. A
@@ -1786,7 +1849,7 @@ func (s *Server) ResumeLastPlay() {
 	}
 	lp.failed = false
 	lp.rePushes = 0
-	boxURL, title, art, mime := lp.boxURL, lp.title, lp.art, lp.mime
+	boxURL, title, art, mime, capturedTS := lp.boxURL, lp.title, lp.art, lp.mime, lp.ts
 	s.lastPlayMu.Unlock()
 
 	go func() {
@@ -1859,6 +1922,22 @@ func (s *Server) ResumeLastPlay() {
 		}
 		s.boxCmdMu.Lock()
 		defer s.boxCmdMu.Unlock()
+		// A play/recall that raced this resume may have been holding boxCmdMu
+		// while the checks above ran: it is the very request whose ensureBoxReady
+		// wake fired this DO_NOT_RESUME, and its stream had not started when the
+		// busy check above looked (so the check missed it). By the time we get
+		// the lock that recall has updated lastPlay, and pushing the target we
+		// captured at entry would replace the user's NEW station with the
+		// PREVIOUS one (#252: recall slot 5 right after a wake ended up back on
+		// slot 4). Re-read lastPlay under the lock and stand down when it moved.
+		s.lastPlayMu.Lock()
+		cur := s.lastPlay
+		s.lastPlayMu.Unlock()
+		if resumeIsStale(boxURL, capturedTS, cur) {
+			s.logger.Info("wake resume: a newer play started while this resume waited, standing down",
+				"captured", boxURL, "current", lastPlayURL(cur))
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		var err error
@@ -1873,6 +1952,30 @@ func (s *Server) ResumeLastPlay() {
 		}
 		s.logger.Info("wake resume: resumed last stream after power-on", "url", boxURL, "title", title)
 	}()
+}
+
+// resumeIsStale reports whether a resume target captured at the START of a
+// wake-resume / reconnect-recovery has been overtaken by a newer play by the
+// time the box command lock was finally acquired. Those paths capture lastPlay,
+// then wait (settle sleep, state probes, boxCmdMu); a user play/recall that
+// held the lock meanwhile has called setLastPlay, so the capture is the
+// PREVIOUS station and pushing it would clobber the one the user just started
+// (#252). A same-URL entry with a newer timestamp is stale too: the newer play
+// already (re)started that stream, and a second push only causes a
+// double-start hiccup.
+func resumeIsStale(capturedURL string, capturedTS time.Time, current *lastPlayInfo) bool {
+	if current == nil {
+		return true // nothing to resume anymore
+	}
+	return current.boxURL != capturedURL || !current.ts.Equal(capturedTS)
+}
+
+// lastPlayURL is a nil-safe accessor for the stand-down log line.
+func lastPlayURL(lp *lastPlayInfo) string {
+	if lp == nil {
+		return ""
+	}
+	return lp.boxURL
 }
 
 // RecoverAfterReconnect re-pushes the last stream when the gabbo WebSocket
@@ -1913,7 +2016,7 @@ func (s *Server) RecoverAfterReconnect() {
 		s.lastPlayMu.Unlock()
 		return
 	}
-	boxURL, title, art, mime := lp.boxURL, lp.title, lp.art, lp.mime
+	boxURL, title, art, mime, capturedTS := lp.boxURL, lp.title, lp.art, lp.mime, lp.ts
 	s.lastPlayMu.Unlock()
 
 	go func() {
@@ -1930,6 +2033,17 @@ func (s *Server) RecoverAfterReconnect() {
 		}
 		s.boxCmdMu.Lock()
 		defer s.boxCmdMu.Unlock()
+		// Same anti-clobber guard as the power-on resume (#252): a play/recall
+		// that held boxCmdMu while this recovery waited has updated lastPlay, and
+		// pushing the entry capture now would replace the user's new stream.
+		s.lastPlayMu.Lock()
+		cur := s.lastPlay
+		s.lastPlayMu.Unlock()
+		if resumeIsStale(boxURL, capturedTS, cur) {
+			s.logger.Info("reconnect recovery: a newer play started while this recovery waited, standing down",
+				"captured", boxURL, "current", lastPlayURL(cur))
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		var err error
@@ -4512,6 +4626,20 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// answer "is this box genuinely tighter or carrying foreign firmware
 		// leftovers" without needing SSH (#ST30 OTA no-space, 2026-06-24).
 		"disk_usage": nandInventory(),
+	}
+	// Preset store summary: one compact line per slot so a diagnostic bundle
+	// shows dead presets (empty/invalid stream URL) directly. Before this the
+	// store's content was invisible in bundles and a preset that saved wrong
+	// could only be diagnosed by asking the user to fetch presets.json (#252).
+	// Stream URLs are included in full; the app's exporter anonymizes bundles.
+	if s.presets != nil {
+		all := s.presets.All()
+		lines := make([]string, 0, len(all))
+		for _, p := range all {
+			lines = append(lines, fmt.Sprintf("slot %d: type=%s name=%q stream=%q uri=%q items=%d",
+				p.Slot, p.Type, p.Name, p.StreamURL, p.URI, len(p.Items)))
+		}
+		state["presets"] = lines
 	}
 	writeJSON(w, http.StatusOK, state)
 }

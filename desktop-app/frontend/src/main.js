@@ -3288,6 +3288,14 @@ function attachPresetHandlers(el, slot, preset, opts = {}) {
   el.addEventListener('touchcancel', cancel);
 }
 
+// APP_PLAY_FRESH_MS is how long the app trusts its own record of an ad-hoc
+// station it started (state.lastAppPlay) over the box-reported now-playing
+// when saving to a key. Short on purpose: it only needs to cover the
+// play-then-save gesture and the wake window in which an agent-side resume
+// could have raced the play (#252); after that, whatever the box reports IS
+// what the user hears, so the box report wins again.
+const APP_PLAY_FRESH_MS = 2 * 60 * 1000;
+
 // saveCurrentToSlot saves the currently playing station onto the
 // given slot (overwrites whatever was there before). Uses the
 // now_playing data state.nowLocation + state.nowName plus the last
@@ -3378,6 +3386,32 @@ async function saveCurrentToSlot(slot) {
   // hardware press both often still hold the previous station.
   const sourceSlot = activeSlotFromLocation(state.nowLocation);
   if (sourceSlot !== null && sourceSlot !== slot) {
+    // The app itself started an ad-hoc station moments ago, yet the box
+    // reports a /stream/<slot> location: on a speaker that was asleep, an
+    // agent-side wake resume racing the play can have put the PREVIOUS
+    // preset back on (#252). Copying that preset here saved the OLD station
+    // onto the key while the user's chosen one silently vanished. The app
+    // knows exactly which station the user picked, so save its own record;
+    // the plain copy below remains for the true hardware-key case, where the
+    // app has no record of the play.
+    const app = state.lastAppPlay;
+    if (app && app.url && Date.now() - app.at < APP_PLAY_FRESH_MS) {
+      const aname = app.name || t('preset.placeholderSender');
+      try {
+        await SetPreset(
+          state.currentBox.host, state.currentBox.port,
+          slot, aname, app.url, app.icon || '', app.bitrate || 0, app.homepage || ''
+        );
+        showToast(t('preset.savedToKey', { n: slot, name: aname }));
+        await loadPresets();
+        if (app.uuid) {
+          VoteStation(state.currentBox.host, state.currentBox.port, app.uuid).catch(() => {});
+        }
+      } catch (err) {
+        showError(t('preset.saveFailed', { err: String(err) }));
+      }
+      return;
+    }
     const src = state.presets.find(p => p.slot === sourceSlot);
     if (src && src.stream_url) {
       try {
@@ -3448,6 +3482,9 @@ async function play(slot) {
   // so we re-apply the user's chosen level afterwards only in that case
   // (a normal preset switch while already playing keeps the live volume).
   const wasIdle = !state.nowPlayState || state.nowSource === 'STANDBY';
+  // A preset recall supersedes any ad-hoc station the app started: drop the
+  // record so a later long-press save goes back to trusting the box report.
+  state.lastAppPlay = null;
   const p = state.presets.find(x => x.slot === slot);
   if (p) {
     // Optimistic UI: set BUFFERING_STATE immediately so the user
@@ -4505,6 +4542,17 @@ async function playStation(s) {
     let fail = null;
     try {
       await PlayURL(box.host, box.port, url, s.name, chain, cur.stationuuid || '', '', s.homepage || '');
+      // Remember the station the APP itself just started. A long-press save
+      // must prefer this over the box-reported now-playing: on a speaker that
+      // was asleep, the agent's wake resume can race the play and briefly put
+      // the PREVIOUS preset back on, and saving from the box report then
+      // copied the OLD station onto the key (#252). Cleared by any other play
+      // the app issues (preset recall etc.), so a true hardware-key press
+      // still saves via the box report.
+      state.lastAppPlay = {
+        url, name: s.name || '', icon: chain, bitrate: cur.bitrate || 0,
+        uuid: cur.stationuuid || '', homepage: s.homepage || '', at: Date.now(),
+      };
       // Register the play with radio-browser, but ONLY for a real station UUID.
       // Recently-played cards reuse the stream URL as their identity (no UUID), so
       // a plain `if (stationuuid)` fired RadioClick with a URL, which 404s. Guard
@@ -4528,6 +4576,7 @@ async function playStation(s) {
     if (!alt) {
       state.nowPlayState = '';
       state.nowLocation = '';
+      state.lastAppPlay = null; // never long-press-save a station that failed to play
       renderPresets();
       showToast(streamErrorMessage(fail.reason) + ' ' + t('search.allSourcesFailed'));
       return;
@@ -4538,6 +4587,7 @@ async function playStation(s) {
   // Exhausted the retry budget without a working source.
   state.nowPlayState = '';
   state.nowLocation = '';
+  state.lastAppPlay = null; // never long-press-save a station that failed to play
   renderPresets();
   showToast(t('search.allSourcesFailed'));
 }

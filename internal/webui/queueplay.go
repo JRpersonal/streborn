@@ -359,6 +359,10 @@ var (
 	// title), so a station/track literally named "STANDBY" cannot be mistaken for
 	// the box being off.
 	reNowPlaySource = regexp.MustCompile(`<nowPlaying[^>]*\bsource="([^"]*)"`)
+	// reNowPlayLocation reads the ContentItem location attribute: the URL the
+	// box is currently tuned to. Used by the recall verify to detect the box
+	// playing a DIFFERENT stream than the one just recalled (#252).
+	reNowPlayLocation = regexp.MustCompile(`\blocation="([^"]*)"`)
 )
 
 // nowPlayingStandby reports whether the box's now_playing says it is in standby
