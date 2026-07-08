@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net"
@@ -6021,9 +6022,34 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // ---- Index Page (minimal HTML for direct browser use) ----
 
+// remoteDisplayName is the speaker's friendly name for the phone remote's
+// identity (page title, iOS home-screen label, PWA manifest). Empty when the
+// box has not told us a name (yet).
+func (s *Server) remoteDisplayName() string {
+	if s.boxNameFn == nil {
+		return ""
+	}
+	name, _ := s.boxNameFn()
+	return strings.TrimSpace(name)
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = fmt.Fprint(w, indexHTML)
+	page := indexHTML
+	// Stamp the speaker's name into the page identity so "Add to Home Screen"
+	// saves one distinguishable app PER SPEAKER: iOS takes its label from the
+	// apple-mobile-web-app-title meta (and the title tag) at save time; each
+	// speaker is its own origin, so the phone keeps them apart as separate
+	// apps. The generic "ST Reborn" is only the fallback for a box whose name
+	// is not known yet.
+	if name := s.remoteDisplayName(); name != "" {
+		esc := html.EscapeString(name)
+		page = strings.Replace(page, "<title>ST Reborn</title>", "<title>"+esc+"</title>", 1)
+		page = strings.Replace(page,
+			`<meta name="apple-mobile-web-app-title" content="ST Reborn">`,
+			`<meta name="apple-mobile-web-app-title" content="`+esc+`">`, 1)
+	}
+	_, _ = fmt.Fprint(w, page)
 }
 
 // handlePeers lists the other STR speakers on the LAN so the page can offer
@@ -6041,11 +6067,39 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleManifest serves the PWA manifest so a phone can install the controller
-// page as a standalone home-screen app.
+// page as a standalone home-screen app. The app name is the SPEAKER's name, so
+// a user with several speakers saves several distinguishable apps (one per
+// origin); the generic branding is only the fallback while the box name is
+// unknown. Cache short: a rename should reach the next home-screen save.
 func (s *Server) handleManifest(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	name, short := "ST Reborn", "STR"
+	if n := s.remoteDisplayName(); n != "" {
+		name = n
+		// short_name shows under the icon; Android truncates around 12-15
+		// characters itself, but a deliberate cap keeps the label readable.
+		short = n
+		if r := []rune(short); len(r) > 14 {
+			short = string(r[:14])
+		}
+	}
 	w.Header().Set("Content-Type", "application/manifest+json")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	_, _ = fmt.Fprint(w, webManifest)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"name":             name,
+		"short_name":       short,
+		"description":      "Control your Bose SoundTouch speaker",
+		"start_url":        "/",
+		"scope":            "/",
+		"display":          "standalone",
+		"orientation":      "portrait",
+		"background_color": "#1a1a1a",
+		"theme_color":      "#1a1a1a",
+		"icons": []map[string]string{
+			{"src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+			{"src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+		},
+	})
 }
 
 // handleIcon serves the embedded STR app icon (favicon, iOS apple-touch-icon and
