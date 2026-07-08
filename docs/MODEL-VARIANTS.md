@@ -100,7 +100,15 @@ Not yet observed in a diagnostic bundle.
 
 ## Wave SoundTouch IV
 
-Not yet observed in a diagnostic bundle. Likely different CPU; do not assume the ARMv7l agent binary applies.
+Observed live in a 2026-07-04 diagnostic bundle (#182): `moduleType=sm2`,
+`variant=lisa`, `variantMode=NoAP`, SCM firmware 27.0.6.46330.5043500 (the
+same final build as every supported model) plus a `PackagedProduct`
+component (04.04.08) and an SCM + SMSC dual-MAC `networkInfo`. This
+supersedes the earlier "likely different CPU" assumption: the module IS an
+`sm2`, so the ARMv7l GOARM=5 agent binary should execute. What is missing
+is a validated first-install path (no stick-boot evidence on `lisa`
+chassis); the stick-free `:17000` network install is the candidate route.
+See the `lisa` table below.
 
 ## How to read a new bundle
 
@@ -131,6 +139,8 @@ Seen in the 2026-06-28 triage bundles (#273 SA-4, plus a Wave SoundTouch):
 | --- | --- | --- | --- | --- |
 | `scm` | `lisa` | `SoundTouch SA-4` | SCM, PackagedProduct, **Lightswitch**, **SMSC** | **blocked** — the box never reads the stick at boot, so the stick-gated SSH window never opens (`reachableSSH=false` while `:8090` is up). Same "install-window-closed" signature `install_str.go` documents for the ST300. |
 | `scm` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, Lightswitch, SMSC | same family; the agent would likely run via the `:17008` REDIRECT like the `scm` ST20, but there is no validated first-install path. |
+| `sm2` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, SMSC | seen 2026-07-04 (#182, `variantMode=NoAP`): the Wave ships on BOTH module types. Same install gap as the `scm` row; the `:17000` stick-free install is the candidate. |
+| `sm2` | `burns` | `SoundTouch SA-5` | SCM, PackagedProduct, SMSC | seen 2026-07-04 (#274 fleet bundle): fw 27.0.6, no STR, stick never read. Same story as `lisa`: agent should run, first-install path unvalidated. |
 | `sm2` | `lisa` | `CineMate` | SCM, PackagedProduct | unverified. |
 
 These are **Unknown/unsupported** (docs/MODELS.md). The UI should warn that a `variant=lisa` chassis is unverified instead of presenting it as installable/healable (#283). Note: in a diagnostic a stock `scm/lisa` box shows `reachable8888=true` because that field probes **:17008**, where Bose's own SoftwareUpdate answers; the authoritative "STR present" signal is the new `strDetected` field, not `reachable8888`.
