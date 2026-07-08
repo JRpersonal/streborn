@@ -683,6 +683,19 @@ body {
   color: var(--c-muted);
 }
 .library-empty p { margin-bottom: 10px; }
+.library-manual-add { margin: 4px 0 12px; font-size: 13px; }
+.library-manual-add summary { color: var(--c-muted); cursor: pointer; }
+.library-manual-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.library-manual-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-surface-3);
+  color: var(--c-text);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
 .library-pick-server { color: var(--c-muted); font-style: italic; padding: 12px 0; }
 .library-crumbs {
   background: var(--c-surface-2);

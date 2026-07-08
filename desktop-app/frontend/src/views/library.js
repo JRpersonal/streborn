@@ -20,6 +20,8 @@ import { t } from '../i18n/index.js';
 import {
   ListMediaServers,
   BrowseLibrary,
+  AddMediaServerByURL,
+  RemoveManualMediaServer,
   PlayURL,
   StartQueue,
   SaveLibraryPreset,
@@ -94,6 +96,46 @@ async function loadMediaServers() {
     libState.loading = false;
     renderLibrary();
   }
+}
+
+// Manual add-server fallback (#341): some servers are invisible to the
+// SSDP sweep (UDP filtered by a firewall, another subnet, exotic
+// same-host setups). The user can add one by IP or description URL;
+// the backend probes well-known description endpoints, persists the
+// entry, and merges it into every later scan.
+async function libraryAddManualServer(value, btn) {
+  const v = (value || '').trim();
+  if (!v) return;
+  if (btn) btn.disabled = true;
+  try {
+    const srv = await AddMediaServerByURL(v);
+    const i = libState.servers.findIndex(s => s.udn === srv.udn);
+    if (i >= 0) libState.servers[i] = srv; else libState.servers.push(srv);
+    libState.currentUDN = srv.udn;
+    libState.stack = [{ id: '0', title: srv.friendlyName || '' }];
+    await libraryBrowseCurrent();
+  } catch (e) {
+    showError(`${t('library.addServerError')}: ${e}`);
+    renderLibrary();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function libraryRemoveManualServer(udn) {
+  try {
+    await RemoveManualMediaServer(udn);
+  } catch (e) {
+    showError(`RemoveManualMediaServer: ${e}`);
+    return;
+  }
+  libState.servers = libState.servers.filter(s => s.udn !== udn);
+  if (libState.currentUDN === udn) {
+    libState.currentUDN = '';
+    libState.page = null;
+    libState.stack = [{ id: '0', title: '' }];
+  }
+  renderLibrary();
 }
 
 async function libraryPickServer(udn) {
@@ -466,13 +508,30 @@ function renderLibrary() {
       const sub = s.modelName ? ` (${escapeHtml(s.modelName)})` : '';
       return `<option value="${escapeAttr(s.udn)}"${sel}>${escapeHtml(s.friendlyName || s.address)}${sub}</option>`;
     }).join('');
+    // Manually added servers (#341) get a remove control when selected.
+    const cur = libState.servers.find(s => s.udn === libState.currentUDN);
+    const removeBtn = cur && cur.manual
+      ? `<button class="btn btn-mini btn-secondary" id="libManualRemoveBtn" title="${escapeAttr(t('library.removeServerBtn'))}">&#10005;</button>`
+      : '';
     serverPicker = `
       <div class="library-server-row">
         <label class="library-label">${escapeHtml(t('library.server'))}</label>
         <select class="library-select" id="libServerSelect">${opts}</select>
         <button class="btn btn-mini" id="libRefreshBtn" title="${escapeAttr(t('library.refresh'))}">&#8634;</button>
+        ${removeBtn}
       </div>`;
   }
+
+  // Manual fallback (#341): always available, discreet. For servers the
+  // SSDP sweep cannot see, the user adds an IP or a description URL.
+  const manualAdd = `
+    <details class="library-manual-add">
+      <summary>${escapeHtml(t('library.addServerManual'))}</summary>
+      <div class="library-manual-row">
+        <input type="text" class="library-manual-input" id="libManualUrl" placeholder="${escapeAttr(t('library.addServerPlaceholder'))}">
+        <button class="btn btn-mini" id="libManualAddBtn">${escapeHtml(t('library.addServerBtn'))}</button>
+      </div>
+    </details>`;
 
   // Breadcrumb + folder/track listing.
   let body = '';
@@ -519,13 +578,21 @@ function renderLibrary() {
     body = `<p class="library-pick-server">${escapeHtml(t('library.pickServer'))}</p>`;
   }
 
-  el.innerHTML = intro + serverPicker + body;
+  el.innerHTML = intro + serverPicker + manualAdd + body;
 
   // Wire interactions.
   const sel = $('libServerSelect');
   if (sel) sel.onchange = () => libraryPickServer(sel.value);
   const ref = $('libRefreshBtn');
   if (ref) ref.onclick = () => loadMediaServers();
+  const addBtn = $('libManualAddBtn');
+  const addInput = $('libManualUrl');
+  if (addBtn && addInput) {
+    addBtn.onclick = () => libraryAddManualServer(addInput.value, addBtn);
+    addInput.onkeydown = (e) => { if (e.key === 'Enter') libraryAddManualServer(addInput.value, addBtn); };
+  }
+  const rmBtn = $('libManualRemoveBtn');
+  if (rmBtn) rmBtn.onclick = () => libraryRemoveManualServer(libState.currentUDN);
 
   el.querySelectorAll('.library-crumb').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); libraryGoTo(parseInt(a.dataset.depth, 10)); };

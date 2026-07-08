@@ -3749,6 +3749,10 @@ type LibraryServer struct {
 	ModelName    string `json:"modelName"`
 	IconURL      string `json:"iconURL"`
 	Address      string `json:"address"`
+	// Manual is true for servers the user added by address
+	// (AddMediaServerByURL); the frontend shows a remove control for
+	// these.
+	Manual bool `json:"manual"`
 }
 
 // LibraryContainer is a folder / album node in the browse view.
@@ -3791,6 +3795,23 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Merge in the user's manually added servers (#341). Deduped by
+	// UDN: a manual server that ALSO showed up via SSDP is listed once
+	// but keeps its manual flag so the remove control stays available.
+	manualUDNs := map[string]bool{}
+	seen := map[string]bool{}
+	for _, s := range servers {
+		seen[s.UDN] = true
+	}
+	for _, m := range a.refreshedManualServers() {
+		manualUDNs[m.UDN] = true
+		if !seen[m.UDN] {
+			seen[m.UDN] = true
+			servers = append(servers, m)
+		}
+	}
+
 	a.libraryMu.Lock()
 	a.libraryServers = map[string]dlna.Server{}
 	for _, s := range servers {
@@ -3807,6 +3828,7 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 			ModelName:    s.ModelName,
 			IconURL:      s.IconURL,
 			Address:      s.Address,
+			Manual:       manualUDNs[s.UDN],
 		})
 	}
 	return out, nil

@@ -7,6 +7,8 @@ import {radiobrowser} from '../models';
 
 export function AddBoxByIP(arg1:string):Promise<main.BoxInfo>;
 
+export function AddMediaServerByURL(arg1:string):Promise<main.LibraryServer>;
+
 export function AnnounceExample(arg1:string,arg2:number):Promise<string>;
 
 export function AppInfo():Promise<main.AppInfo>;
@@ -132,6 +134,8 @@ export function RecallBoxPreset(arg1:string,arg2:number,arg3:number):Promise<voi
 export function RecentPlayed(arg1:string,arg2:number):Promise<Array<main.RecentItem>>;
 
 export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
+
+export function RemoveManualMediaServer(arg1:string):Promise<void>;
 
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
 

@@ -113,6 +113,8 @@ export {
   PushWLANToBox,
   ListMediaServers,
   BrowseLibrary,
+  AddMediaServerByURL,
+  RemoveManualMediaServer,
   LogClientError,
   GetZoneState,
   FormZone,
