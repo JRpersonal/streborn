@@ -65,6 +65,7 @@ import {
   DiscoverBoxes,
   SaveDiagnosticBundle,
   EventsOn,
+  BrowserOpenURL,
 } from '../api.js';
 
 // macOS gates the System keychain behind an admin prompt for every
@@ -558,6 +559,14 @@ export function renderSetupTargetPicker() {
   cards += cardHTML('factory-reset', '', t('setup.targetCardKindFactory'), '', t('setup.targetCardBadgeFactory'));
   if (isSelected('factory-reset', '')) {
     cards += `<div class="setup-target-factory-help muted small">${escapeHtml(t('setup.targetCardFactoryHelp'))}</div>`;
+    // Wi-Fi onboarding happens in the official Bose SoundTouch app (its local
+    // setup still works after the cloud shutdown); once the speaker is on the
+    // LAN, STR's network install takes over and no stick is needed. Two store
+    // buttons so a phone user lands directly on the right listing.
+    cards += `<div class="setup-factory-boseapp-links">
+      <button type="button" class="btn" id="boseAppAndroidBtn">${escapeHtml(t('setup.boseAppAndroid'))}</button>
+      <button type="button" class="btn" id="boseAppIosBtn">${escapeHtml(t('setup.boseAppIos'))}</button>
+    </div>`;
     if (isMac) {
       cards += `<div class="setup-target-factory-mac">${escapeHtml(t('setup.targetCardFactoryMacHint'))}</div>`;
     }
@@ -571,6 +580,15 @@ export function renderSetupTargetPicker() {
   }
 
   body.innerHTML = `<div class="setup-target-cards" role="radiogroup" aria-label="${escapeAttr(t('setup.targetHeading'))}">${cards}</div>`;
+
+  // Store links for the Bose SoundTouch app (Wi-Fi onboarding). Wired after the
+  // innerHTML render; stopPropagation so a tap never doubles as a card select.
+  const wireStore = (id, url) => {
+    const b = body.querySelector('#' + id);
+    if (b) b.onclick = (e) => { e.stopPropagation(); BrowserOpenURL(url); };
+  };
+  wireStore('boseAppAndroidBtn', 'https://play.google.com/store/apps/details?id=com.bose.soundtouch');
+  wireStore('boseAppIosBtn', 'https://apps.apple.com/app/bose-soundtouch/id708379313');
 
   // Paint the OTA-first primary action for the current target: a network-install
   // hero for a reachable stock box, or the collapsed stick wizard otherwise.
