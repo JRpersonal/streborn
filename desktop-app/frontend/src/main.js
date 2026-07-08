@@ -818,6 +818,11 @@ async function renderFooter() {
   // so even if it ever misbehaved it cannot abort startup. checkAppUpdate
   // is itself fully guarded (try/catch + Go-side recover).
   setTimeout(() => { try { checkAppUpdate(); } catch {} }, 8000);
+  // Long-running apps re-check every 12 hours (#71): STR often stays open for
+  // days on a media PC, and the startup-only check meant such installs never
+  // learned about a new release (and its security fixes) until a restart. The
+  // banner render is idempotent, so a repeat check just refreshes it.
+  setInterval(() => { try { checkAppUpdate(); } catch {} }, 12 * 3600 * 1000);
   // appInfo may have arrived after the first discovery completed; the
   // badge function defers until both are known. Re-render the box list
   // too so the per-speaker update dot (boxNeedsUpdate) appears once the
