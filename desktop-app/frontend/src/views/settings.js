@@ -1986,15 +1986,38 @@ function wireWlanSwitch(box) {
       t('settingsView.wlanConfirmBody', { ssid: escapeHtml(ssid) })
     );
     if (!ok) return;
+    const putWlan = (force) => deps.boxFetch(box, '/api/box/wlan', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ssid, password: pass, hidden, force: hidden || force }),
+    });
     try {
-      const r = await deps.boxFetch(box, '/api/box/wlan', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ssid, password: pass, hidden, force: hidden }),
-      });
+      let r = await putWlan(false);
       if (!r.ok) {
         const body = await r.text();
-        throw new Error('HTTP ' + r.status + ': ' + body);
+        // The agent's visibility preflight (422 ssid-not-visible) refused the
+        // switch because the speaker's own scan cannot see the target SSID
+        // (typically a 5 GHz-only network; the speakers are 2.4 GHz only).
+        // Explain it and offer a localized "switch anyway" that re-PUTs with
+        // force:true instead of surfacing the raw JSON error.
+        let refuse = null;
+        if (r.status === 422) { try { refuse = JSON.parse(body); } catch {} }
+        if (refuse && refuse.code === 'ssid-not-visible') {
+          const visible = (Array.isArray(refuse.visible) ? refuse.visible : []).filter(Boolean);
+          const goAnyway = await confirmWarn(
+            t('settingsView.wlanNotVisibleTitle'),
+            t('settingsView.wlanNotVisibleBody', {
+              ssid: escapeHtml(ssid),
+              visible: escapeHtml(visible.join(', ') || '-'),
+            }),
+            { confirmLabel: t('settingsView.wlanForceBtn') },
+          );
+          if (!goAnyway) return;
+          r = await putWlan(true);
+          if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + await r.text());
+        } else {
+          throw new Error('HTTP ' + r.status + ': ' + body);
+        }
       }
       // The agent applies the switch in the background and the box leaves the
       // current network, so we rediscover it rather than wait. BCO speakers
