@@ -818,7 +818,8 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	}
 	ctx, cancel := context.WithTimeout(a.appCtx(), 6*time.Second)
 	defer cancel()
-	seen := map[string]BoxInfo{}
+	seen := map[string]BoxInfo{}    // reached this cycle: refresh presence + eviction timer
+	offline := map[string]BoxInfo{} // not reached: keep visible in the grace window, do NOT reset the timer
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, kb := range known {
@@ -829,25 +830,43 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			// Fall back to the cached record if the direct probe misses; the
-			// sticky cache merge below keeps it from being downgraded/evicted.
 			b := kb
+			live := false
 			if probed, ok := probeSTR(ctx, kb.Host); ok {
 				b = probed
+				live = true
+			} else if portOpen(kb.Host, 8090, 1200) {
+				// STR's agent did not answer but the box's Bose port does, so it
+				// is still on the LAN (agent mid-reboot / stock). Treat as present.
+				live = true
 			}
 			b = a.enrichBoxWithStockInfo(ctx, b)
 			mu.Lock()
-			seen[b.Host] = b
+			if live {
+				seen[b.Host] = b
+			} else {
+				// Reachable on NO port this cycle: keep the cached record so the
+				// tile does not blink out mid-refresh, but do NOT feed it to
+				// mergeDiscoveryCache - refreshing its "seen" time every cycle is
+				// what kept an offline box (a powered-off Wave) in the list
+				// forever, because the sticky-TTL eviction never came due.
+				offline[b.Host] = b
+			}
 			mu.Unlock()
 		}()
 	}
 	wg.Wait()
 	a.mergeDiscoveryCache(seen)
-	out := make([]BoxInfo, 0, len(seen))
+	out := make([]BoxInfo, 0, len(seen)+len(offline))
 	for _, b := range seen {
 		out = append(out, b)
 	}
-	a.logger.Info("refresh known boxes done", "count", len(out))
+	for h, b := range offline {
+		if _, ok := seen[h]; !ok {
+			out = append(out, b)
+		}
+	}
+	a.logger.Info("refresh known boxes done", "count", len(out), "live", len(seen), "offline", len(offline))
 	return out, nil
 }
 
