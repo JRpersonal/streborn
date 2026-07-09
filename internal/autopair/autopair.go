@@ -236,7 +236,21 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 	// the standby window. Without this, a healthy paired box looks
 	// indistinguishable from a stalled goroutine in the log.
 	const heartbeatEvery = 6
-	tick := time.NewTicker(interval)
+	// A box loses its margeAccountUUID across a reboot/standby cycle and only
+	// re-reports it briefly during its own re-onboarding, so the very first
+	// post-boot check can see a stale "paired" and then the box sits UNPAIRED
+	// for a whole interval (live: scm/mojo ST30 dropped to an empty account for
+	// ~5 min after every reboot). Poll fast for the first couple of minutes so a
+	// cleared account is re-paired within seconds, then settle to the steady
+	// interval.
+	const fastInterval = 20 * time.Second
+	const fastFor = 2 * time.Minute
+	start := time.Now()
+	cur := fastInterval
+	if interval < fastInterval {
+		cur = interval
+	}
+	tick := time.NewTicker(cur)
 	defer tick.Stop()
 	for {
 		m.tickCount++
@@ -252,7 +266,12 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 				}
 			}
 			m.logger.Warn("autopair phase: heartbeat",
-				"tick", m.tickCount, "state", state, "interval", interval.String())
+				"tick", m.tickCount, "state", state, "interval", cur.String())
+		}
+		// Settle to the steady interval once the fast post-boot window elapses.
+		if cur != interval && time.Since(start) >= fastFor {
+			cur = interval
+			tick.Reset(interval)
 		}
 		select {
 		case <-ctx.Done():
