@@ -248,6 +248,10 @@ type BoxInfo struct {
 	// Used by the frontend update indicators to flag stamp drift
 	// even when version strings match.
 	Build string `json:"build"`
+	// BoxHealth is the agent's wedged-control verdict ("ok" or "wedged"): a
+	// wedged box accepts transport pushes but never plays, and only a
+	// power-cycle clears it. The UI turns "wedged" into a pull-the-plug hint.
+	BoxHealth string `json:"boxHealth,omitempty"`
 	// SerialNumber is the human-readable Bose PackagedProduct serial
 	// (the sticker on the bottom of the speaker, e.g.
 	// "069236P60560580AE"). Pulled from /info on 8090; empty if the
@@ -886,6 +890,12 @@ func mergeBoxInfo(prev, cur BoxInfo) BoxInfo {
 	if out.Build == "" {
 		out.Build = prev.Build
 	}
+	// BoxHealth: a fresh verdict wins; an empty one (stock sighting or an
+	// older agent) keeps the last known state so the pull-the-plug hint does
+	// not flicker between discovery cycles.
+	if out.BoxHealth == "" {
+		out.BoxHealth = prev.BoxHealth
+	}
 	if prev.PortVerified && !out.PortVerified && prev.Port != 0 {
 		out.Port = prev.Port
 		out.PortVerified = true
@@ -1290,6 +1300,7 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		// after an OTA restart. Without this the box showed as "str-<ip>".
 		FriendlyName: jsonStringField(s, "friendlyName"),
 		Model:        jsonStringField(s, "model"),
+		BoxHealth:    jsonStringField(s, "boxHealth"),
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
 	// /info endpoint. Failure is OK: caller still gets a usable

@@ -1126,5 +1126,7 @@
   "a11y.theme.light": "Gaišs",
   "a11y.theme.contrast": "Augsts kontrasts",
   "setup.stayOnPage": "Palieciet šajā lapā un neaizveriet lietotni, līdz instalēšana ir pabeigta.",
-  "setup.provisionNoAnswer": "skaļrunis neatbild"
+  "setup.provisionNoAnswer": "skaļrunis neatbild",
+  "speaker.wedgedTitle": "Skaļrunis nereaģē:",
+  "speaker.wedgedBanner": "\"{{name}}\" pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli."
 }

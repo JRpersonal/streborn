@@ -1126,5 +1126,7 @@
   "a11y.theme.light": "فاتح",
   "a11y.theme.contrast": "تباين عالٍ",
   "setup.stayOnPage": "يرجى البقاء في هذه الصفحة وإبقاء التطبيق مفتوحاً حتى انتهاء التثبيت.",
-  "setup.provisionNoAnswer": "لا استجابة من السمّاعة"
+  "setup.provisionNoAnswer": "لا استجابة من السمّاعة",
+  "speaker.wedgedTitle": "السمّاعة لا تستجيب:",
+  "speaker.wedgedBanner": "\"{{name}}\" لا تقبل التشغيل حالياً. افصلها عن الكهرباء للحظة ثم أعد توصيلها، وستعمل بشكل طبيعي مجدداً."
 }

@@ -1126,5 +1126,7 @@
   "a11y.theme.light": "Clair",
   "a11y.theme.contrast": "Contraste élevé",
   "setup.stayOnPage": "Restez sur cette page et laissez l'application ouverte jusqu'à la fin de l'installation.",
-  "setup.provisionNoAnswer": "pas de réponse de l'enceinte"
+  "setup.provisionNoAnswer": "pas de réponse de l'enceinte",
+  "speaker.wedgedTitle": "L'enceinte ne répond pas :",
+  "speaker.wedgedBanner": "\"{{name}}\" n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement."
 }

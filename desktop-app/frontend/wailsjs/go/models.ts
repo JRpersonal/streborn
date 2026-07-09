@@ -35,6 +35,7 @@ export namespace main {
 	    model: string;
 	    version: string;
 	    build: string;
+	    boxHealth?: string;
 	    serialNumber: string;
 	    kind: string;
 	    portVerified: boolean;
@@ -53,6 +54,7 @@ export namespace main {
 	        this.model = source["model"];
 	        this.version = source["version"];
 	        this.build = source["build"];
+	        this.boxHealth = source["boxHealth"];
 	        this.serialNumber = source["serialNumber"];
 	        this.kind = source["kind"];
 	        this.portVerified = source["portVerified"];

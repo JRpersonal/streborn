@@ -1126,5 +1126,7 @@
   "a11y.theme.light": "Šviesi",
   "a11y.theme.contrast": "Didelis kontrastas",
   "setup.stayOnPage": "Likite šiame puslapyje ir neuždarykite programos, kol diegimas bus baigtas.",
-  "setup.provisionNoAnswer": "garsiakalbis neatsako"
+  "setup.provisionNoAnswer": "garsiakalbis neatsako",
+  "speaker.wedgedTitle": "Garsiakalbis nereaguoja:",
+  "speaker.wedgedBanner": "„{{name}}“ šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai."
 }

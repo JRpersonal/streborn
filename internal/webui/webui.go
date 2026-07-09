@@ -205,6 +205,12 @@ type Server struct {
 	// (#342). Touched only by the single reconcile goroutine — no lock.
 	mirrorSkips map[string]string
 
+	// wedge tracks the "box accepts transport pushes but never plays" state
+	// that only a power-cycle clears; streamActivityFn (the stream proxy's
+	// LastActivity) tells it apart from a failing station. See wedge.go.
+	wedge            wedgeState
+	streamActivityFn func() (lastFetch, lastFailure time.Time)
+
 	// lastUserStop is when the user last DELIBERATELY stopped playback, so the
 	// auto-re-push does not fight a wanted stop (v0.7.0: a single Stop
 	// did not hold because the proxy disconnect that a stop causes looks
@@ -1562,10 +1568,12 @@ func (s *Server) verifyRecall(expectedLocation string, retry func(ctx context.Co
 		// attaches, and a re-issue would reshuffle + restart the track (the
 		// audible abort + UI play/stop/play flicker). Don't retry when working.
 		if working != nil && working() {
+			s.NoteBoxHealthy()
 			return
 		}
 		location, busy := s.boxPlayLocation()
 		if busy && recallLocationMatches(expectedLocation, location) {
+			s.NoteBoxHealthy()
 			return
 		}
 		if busy {
@@ -1579,6 +1587,9 @@ func (s *Server) verifyRecall(expectedLocation string, retry func(ctx context.Co
 		cancel()
 	}
 	s.logger.Warn("recall still not playing after retries")
+	// Wedge detection (#power-cycle hint): decide whether this exhaustion
+	// looks like the box rather than the station, and count it.
+	s.NoteRecallExhausted()
 }
 
 // recallLocationMatches reports whether the box's now-playing location is the
@@ -2913,6 +2924,14 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if total, avail, ok := diskFree(nandRoot); ok {
 		out["nandTotalBytes"] = strconv.FormatInt(total, 10)
 		out["nandFreeBytes"] = strconv.FormatInt(avail, 10)
+	}
+	// Wedged-control state (see wedge.go): the desktop app and the phone
+	// remote read this to tell the user a power-cycle is needed.
+	if status, since := s.BoxHealth(); status != "ok" {
+		out["boxHealth"] = status
+		out["boxHealthSinceSec"] = strconv.FormatInt(int64(time.Since(since).Seconds()), 10)
+	} else {
+		out["boxHealth"] = "ok"
 	}
 	writeJSON(w, http.StatusOK, out)
 }

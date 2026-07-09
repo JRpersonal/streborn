@@ -429,6 +429,9 @@ func run() error {
 	// own (reported: radio stops after ~11 min with no upstream error), the
 	// webui resumes it conservatively (only if the box stays on and idle).
 	streamProxySrv.SetOnDisconnect(webuiSrv.HandleStreamDisconnect)
+	// Wedge detection (see internal/webui/wedge.go): the proxy's last-fetch /
+	// last-failure timestamps tell a wedged box apart from a failing station.
+	webuiSrv.SetStreamActivityFn(streamProxySrv.LastActivity)
 
 	// ICY radio text: the proxy parses the live StreamTitle out of the
 	// stream; push it to the box display by re-issuing the current stream URI
@@ -455,6 +458,9 @@ func run() error {
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back.
 		noteLastPlay: webuiSrv.NoteLastPlay,
+		// Wedge detection (power-cycle hint) fed from the hardware path too.
+		noteRecallExhausted: webuiSrv.NoteRecallExhausted,
+		noteBoxHealthy:      webuiSrv.NoteBoxHealthy,
 		// Record hardware-preset presses into Recently-played (#135); the hardware
 		// recall bypasses the webui play handlers that capture app-driven plays.
 		noteRecentPreset: webuiSrv.NoteRecentPreset,
@@ -1004,6 +1010,11 @@ type presetWsHandler struct {
 	// plays straight through the renderer, bypassing the webui's own lastPlay).
 	// Wired to webui.NoteLastPlay. nil-safe.
 	noteLastPlay func(boxURL, title, art, mime string)
+	// Wedge detection hooks (webui.NoteRecallExhausted / NoteBoxHealthy): the
+	// hardware recall path reports exhausted/successful verifies so the
+	// power-cycle hint also fires when the user only uses the preset keys.
+	noteRecallExhausted func()
+	noteBoxHealthy      func()
 	// noteRecentPreset records a hardware-preset press into the recently-played
 	// ring (#135). Wired to webui.NoteRecentPreset. nil-safe.
 	noteRecentPreset func(presets.Preset)
@@ -1553,6 +1564,9 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 	for attempt := 1; attempt <= 5; attempt++ {
 		time.Sleep(5 * time.Second)
 		if boxIsPlaying(h.boxHost) {
+			if h.noteBoxHealthy != nil {
+				h.noteBoxHealthy()
+			}
 			return
 		}
 		// The user powered the box off during the recall: the box reads "not
@@ -1575,6 +1589,9 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 		cancel()
 	}
 	h.logger.Warn("hardware recall still not playing after retries", "slot", slot)
+	if h.noteRecallExhausted != nil {
+		h.noteRecallExhausted()
+	}
 }
 
 // verifySpotifyPlaying confirms the box reached a playing state after a Spotify

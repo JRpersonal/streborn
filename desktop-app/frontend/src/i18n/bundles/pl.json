@@ -1126,5 +1126,7 @@
   "a11y.theme.light": "Jasny",
   "a11y.theme.contrast": "Wysoki kontrast",
   "setup.stayOnPage": "Pozostań na tej stronie i nie zamykaj aplikacji, dopóki instalacja się nie zakończy.",
-  "setup.provisionNoAnswer": "brak odpowiedzi głośnika"
+  "setup.provisionNoAnswer": "brak odpowiedzi głośnika",
+  "speaker.wedgedTitle": "Głośnik nie odpowiada:",
+  "speaker.wedgedBanner": "\"{{name}}\" obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie."
 }

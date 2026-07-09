@@ -1127,5 +1127,7 @@
   "a11y.theme.light": "Hell",
   "a11y.theme.contrast": "Hoher Kontrast",
   "setup.stayOnPage": "Bitte bleib auf dieser Seite und lass die App geöffnet, bis die Installation abgeschlossen ist.",
-  "setup.provisionNoAnswer": "keine Antwort vom Lautsprecher"
+  "setup.provisionNoAnswer": "keine Antwort vom Lautsprecher",
+  "speaker.wedgedTitle": "Lautsprecher reagiert nicht:",
+  "speaker.wedgedBanner": "\"{{name}}\" nimmt gerade keine Wiedergabe an. Bitte kurz den Netzstecker ziehen und wieder einstecken - danach geht es normal weiter."
 }
