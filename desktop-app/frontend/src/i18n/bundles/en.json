@@ -940,7 +940,6 @@
   "setup.help.usbPower": "This is a power problem, not a faulty stick. The speaker's USB port could not keep the stick powered while reading it, so the stick dropped off during the install. The same stick normally works on a SoundTouch 10 or 20.",
   "setup.help.lowPowerStick": "Use a small, low-power USB 2.0 stick (4 to 16 GB). Larger or faster sticks draw more power than the speaker's USB port can supply.",
   "setup.help.usbHub": "Or plug the stick into a powered USB hub (one with its own power supply), so it gets steady power independently of the speaker's port.",
-  "setup.st30StickPowerWarn": "SoundTouch 30 detected: its USB port can struggle to power some sticks, which causes a power error during install. Use a small, low-power USB 2.0 stick (4 to 16 GB), or connect it through a powered USB hub.",
   "worldMap.inviteText": "Your SoundTouch is alive again 🎉",
   "worldMap.inviteBtn": "Share it on the world map",
   "worldMap.countLine": "🌍 {{n}} SoundTouch speakers rescued worldwide so far. Add yours!",
