@@ -88,6 +88,10 @@ type App struct {
 	// the next cycle re-finds it. See mergeDiscoveryCache.
 	discMu    sync.Mutex
 	discCache map[string]discEntry
+	// knownSpeakersWritten fingerprints the last-persisted known-speakers
+	// set so unchanged discovery cycles skip the file write.
+	knownSpeakersMu      sync.Mutex
+	knownSpeakersWritten string
 
 	// otaPinned maps a speaker IP to the time STR last initiated an agent OTA
 	// on it. During the post-OTA reboot the agent is down while the box's stock
@@ -334,6 +338,13 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		seen[key] = mergeSameKind(prev, b)
 	}
 
+	// Cold-start safety net: probe the speakers persisted from earlier runs
+	// directly and in parallel with the whole discovery. A speaker at its
+	// last-known IP then appears on the very first scan even when mDNS is
+	// blind on this host and the subnet sweep runs out of budget.
+	knownHits := make(chan BoxInfo, maxKnownSpeakers)
+	go probeKnownSpeakers(ctx, a.logger, knownHits)
+
 	for inst := range results {
 		host := pickReachableIP(inst.IPv4)
 		if host == "" {
@@ -408,7 +419,14 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	}()
 	fbWG.Wait()
 	fallbackCancel()
-	a.logger.Info("discovery: TCP fallback done", "stockHits", stockHits, "strHits", strHits)
+	// The known-speaker probes finished long ago (single 3 s probes launched
+	// at discovery start); fold their hits in on the single-threaded side.
+	knownFound := 0
+	for b := range knownHits {
+		knownFound++
+		upsert(b)
+	}
+	a.logger.Info("discovery: TCP fallback done", "stockHits", stockHits, "strHits", strHits, "knownDirect", knownFound)
 	a.logger.Info("discovery: returning", "totalBoxes", len(seen), "fromMDNS", mdnsHits)
 
 	// Enrich every box with the serial number and model from
@@ -433,6 +451,10 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 	// this cycle under different host keys and the speaker shows up twice (live
 	// ST300, 2026-07-07: .35 stale + .43 live). Keeps the currently-reachable IP.
 	a.dedupeByDeviceID(seen)
+
+	// Remember this cycle's speakers for the next cold start (best-effort,
+	// skipped when unchanged).
+	go a.persistKnownSpeakers()
 
 	out := make([]BoxInfo, 0, len(seen))
 	for _, b := range seen {
@@ -1078,8 +1100,6 @@ func (a *App) probeLANForStock(ctx context.Context) []BoxInfo {
 	}
 
 	hits := make(chan BoxInfo, 32)
-	sem := make(chan struct{}, 32)
-	var wg sync.WaitGroup
 
 	var out []BoxInfo
 	var collectWG sync.WaitGroup
@@ -1092,8 +1112,6 @@ func (a *App) probeLANForStock(ctx context.Context) []BoxInfo {
 	}()
 
 	probeOne := func(ip string) {
-		defer wg.Done()
-		defer func() { <-sem }()
 		b, ok := probeStock(ctx, ip)
 		if !ok {
 			return
@@ -1115,25 +1133,8 @@ func (a *App) probeLANForStock(ctx context.Context) []BoxInfo {
 		hits <- b
 	}
 
-	for _, subnet := range subnets {
-		base := subnet
-		for i := 1; i <= 254; i++ {
-			select {
-			case <-ctx.Done():
-				goto done
-			case sem <- struct{}{}:
-			}
-			wg.Add(1)
-			go probeOne(base + fmt.Sprintf("%d", i))
-		}
-	}
-done:
-	// Drain concurrently with spawning. The producers send to a buffered
-	// channel while still holding a sem slot; if more than the buffer's worth of
-	// hosts answer before any draining starts, they block on the send and wedge
-	// the spawn loop (no free sem slot) until ctx fires. Collecting in a separate
-	// goroutine that started before the loop removes that stall.
-	wg.Wait()
+	// Per-subnet parallel pools; see probeLANForSTR for why.
+	sweepSubnets(ctx, subnets, probeOne)
 	close(hits)
 	collectWG.Wait()
 	return out
@@ -1190,8 +1191,6 @@ func (a *App) probeLANForSTR(ctx context.Context) []BoxInfo {
 	}
 
 	hits := make(chan BoxInfo, 32)
-	sem := make(chan struct{}, 32)
-	var wg sync.WaitGroup
 
 	var out []BoxInfo
 	var collectWG sync.WaitGroup
@@ -1203,33 +1202,14 @@ func (a *App) probeLANForSTR(ctx context.Context) []BoxInfo {
 		}
 	}()
 
-	probeOne := func(ip string) {
-		defer wg.Done()
-		defer func() { <-sem }()
+	// Per-subnet parallel pools (sweepSubnets): a virtual adapter's dead /24
+	// used to starve the real LAN inside the shared discovery budget on a
+	// cold neighbor cache (every probe holds a worker for the full timeout).
+	sweepSubnets(ctx, subnets, func(ip string) {
 		if b, ok := probeSTR(ctx, ip); ok {
 			hits <- b
 		}
-	}
-
-	for _, subnet := range subnets {
-		base := subnet
-		for i := 1; i <= 254; i++ {
-			select {
-			case <-ctx.Done():
-				goto done
-			case sem <- struct{}{}:
-			}
-			wg.Add(1)
-			go probeOne(base + fmt.Sprintf("%d", i))
-		}
-	}
-done:
-	// Drain concurrently with spawning. The producers send to a buffered
-	// channel while still holding a sem slot; if more than the buffer's worth of
-	// hosts answer before any draining starts, they block on the send and wedge
-	// the spawn loop (no free sem slot) until ctx fires. Collecting in a separate
-	// goroutine that started before the loop removes that stall.
-	wg.Wait()
+	})
 	close(hits)
 	collectWG.Wait()
 	return out
