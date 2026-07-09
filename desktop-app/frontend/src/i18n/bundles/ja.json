@@ -1126,5 +1126,7 @@
   "a11y.theme.light": "ライト",
   "a11y.theme.contrast": "ハイコントラスト",
   "setup.stayOnPage": "インストールが完了するまで、このページを開いたままにしてアプリを閉じないでください。",
-  "setup.provisionNoAnswer": "スピーカーから応答がありません"
+  "setup.provisionNoAnswer": "スピーカーから応答がありません",
+  "speaker.wedgedTitle": "スピーカーが応答しません:",
+  "speaker.wedgedBanner": "「{{name}}」が再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。"
 }

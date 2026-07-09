@@ -1126,5 +1126,7 @@
   "a11y.theme.light": "Licht",
   "a11y.theme.contrast": "Hoog contrast",
   "setup.stayOnPage": "Blijf op deze pagina en houd de app open tot de installatie is afgerond.",
-  "setup.provisionNoAnswer": "geen antwoord van de speaker"
+  "setup.provisionNoAnswer": "geen antwoord van de speaker",
+  "speaker.wedgedTitle": "Speaker reageert niet:",
+  "speaker.wedgedBanner": "\"{{name}}\" accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal."
 }

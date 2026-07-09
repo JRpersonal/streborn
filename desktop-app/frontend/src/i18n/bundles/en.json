@@ -1127,5 +1127,7 @@
   "a11y.theme.light": "Light",
   "a11y.theme.contrast": "High contrast",
   "setup.stayOnPage": "Please stay on this page and keep the app open until the installation finishes.",
-  "setup.provisionNoAnswer": "no answer from the speaker"
+  "setup.provisionNoAnswer": "no answer from the speaker",
+  "speaker.wedgedTitle": "Speaker not responding:",
+  "speaker.wedgedBanner": "\"{{name}}\" is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again."
 }

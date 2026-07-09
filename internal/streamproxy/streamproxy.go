@@ -152,6 +152,13 @@ type Server struct {
 	errMu   sync.Mutex
 	lastErr streamFailure
 
+	// fetchMu guards lastFetch, the last time the BOX opened any proxied
+	// stream (slot or raw). The wedge detector uses it to tell "the box never
+	// even pulled the URL it accepted" (control stack wedged, needs a
+	// power-cycle) apart from "the box pulled it and the station failed".
+	fetchMu   sync.Mutex
+	lastFetch time.Time
+
 	// brMu guards the detected bitrate of the stream currently being
 	// proxied. We learn it from the upstream Icecast/Shoutcast "icy-br"
 	// header (exact, instant) or, when that is absent, by measuring
@@ -686,6 +693,26 @@ func (s *Server) clearFailure(url string) {
 
 // Register registers /stream/<slot> as well as /stream/raw for ad-hoc URLs
 // (e.g. from the radio search) on the supplied mux.
+// noteFetch records that the box opened a proxied stream just now.
+func (s *Server) noteFetch() {
+	s.fetchMu.Lock()
+	s.lastFetch = time.Now()
+	s.fetchMu.Unlock()
+}
+
+// LastActivity reports when the box last opened any proxied stream and when
+// the last terminal upstream failure happened (zero times = never). Consumed
+// by the webui's wedge detector.
+func (s *Server) LastActivity() (lastFetch, lastFailure time.Time) {
+	s.fetchMu.Lock()
+	lastFetch = s.lastFetch
+	s.fetchMu.Unlock()
+	s.errMu.Lock()
+	lastFailure = s.lastErr.when
+	s.errMu.Unlock()
+	return lastFetch, lastFailure
+}
+
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/stream/raw", s.handleRaw)
 	mux.HandleFunc("/stream/", s.handle)
@@ -767,6 +794,7 @@ func (s *Server) handleBitrate(w http.ResponseWriter, r *http.Request) {
 // play path so Bose's UPnP can receive HTTPS streams via us as well. The
 // URL arrives as a ?u=<base64url> parameter.
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
+	s.noteFetch()
 	enc := r.URL.Query().Get("u")
 	if enc == "" {
 		http.Error(w, "u missing", http.StatusBadRequest)
@@ -849,6 +877,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	s.noteFetch()
 	slotStr := strings.TrimPrefix(r.URL.Path, "/stream/")
 	slot, err := strconv.Atoi(slotStr)
 	if err != nil || slot < 1 || slot > 6 {

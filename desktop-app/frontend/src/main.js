@@ -1528,6 +1528,20 @@ async function refreshMusicZones() {
   renderBoxSelect();
 }
 
+// checkWedgeBanner shows the pull-the-plug hint when any STR speaker reports
+// the wedged-control state (transport accepted, never plays; only a
+// power-cycle clears it - see the agent's wedge detection). Global banner so
+// the hint is visible on every tab.
+function checkWedgeBanner() {
+  const el = $('boxWedgeBanner');
+  if (!el) return;
+  const wedged = (state.boxes || []).filter(b => b && b.boxHealth === 'wedged');
+  if (!wedged.length) { el.classList.add('hidden'); return; }
+  const names = wedged.map(b => getBoxLabel(b)).join(', ');
+  el.innerHTML = `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span><b>${escapeHtml(t('speaker.wedgedTitle'))}</b> ${escapeHtml(t('speaker.wedgedBanner', { name: names }))}</span></div>`;
+  el.classList.remove('hidden');
+}
+
 function renderBoxSelect() {
   const sel = $('boxSelect');
   if (state.boxes.length === 0) {
@@ -1576,6 +1590,7 @@ function renderBoxSelect() {
     if (addIp) addIp.onclick = tryAddIp;
     if (ipInput) ipInput.onkeydown = (e) => { if (e.key === 'Enter') tryAddIp(); };
     updateBoxUiVisibility();
+  checkWedgeBanner();
     return;
   }
   // Cluster speakers that share a live multiroom zone into a colored frame
@@ -1700,6 +1715,7 @@ function renderBoxSelect() {
     if (target) selectBox(target);
   }
   updateBoxUiVisibility();
+  checkWedgeBanner();
 }
 
 // speakerPickedInTab keeps the tabs in lock-step in the other direction: a

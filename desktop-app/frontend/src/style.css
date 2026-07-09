@@ -1685,6 +1685,10 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
   font-size: 14px;
 }
 .app-update-banner b { color: #3a2c00; }
+/* Wedged-speaker hint: same sticky banner slot, urgent orange - the one case
+   where the user must physically pull the plug. */
+.box-wedge-banner { background: #fdba74; color: #431407; }
+.box-wedge-banner b { color: #431407; }
 .app-update-text { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .app-update-icon { font-size: 18px; font-weight: 700; line-height: 1; flex: 0 0 auto; }
 .app-update-banner .footer-link { color: #7a5300; text-decoration: underline; }

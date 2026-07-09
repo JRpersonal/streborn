@@ -1126,5 +1126,7 @@
   "a11y.theme.light": "Claro",
   "a11y.theme.contrast": "Alto contraste",
   "setup.stayOnPage": "Permanece en esta página y mantén la app abierta hasta que termine la instalación.",
-  "setup.provisionNoAnswer": "sin respuesta del altavoz"
+  "setup.provisionNoAnswer": "sin respuesta del altavoz",
+  "speaker.wedgedTitle": "El altavoz no responde:",
+  "speaker.wedgedBanner": "\"{{name}}\" no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad."
 }
