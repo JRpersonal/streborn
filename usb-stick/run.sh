@@ -1986,25 +1986,51 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
                 chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
             fi
-            # Password-rotation refresh: the box is associated under
-            # SSID X with the OLD password and the user booted with
-            # a stick that has SSID X with a NEW password (e.g. they
-            # rotated their router PSK and want to update the box).
-            # Push the new password into NetManager's DB via a single
-            # non-destructive POST. No `profiles clear`, no setup-AP
-            # teardown — NetManager's /addWirelessProfile updates the
-            # entry for the same SSID in-place. If the new PSK is
-            # wrong NetManager will reject and the live association
-            # is unaffected. Skips on taigan where the endpoint is
-            # known to silently fail (see [[taigan-quirks]]).
-            if [ "$WLAN_SOURCE" = "stick wlan.conf" ] && [ -z "$IS_TAIGAN" ] \
-               && wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
+            # Non-destructive profile seed. TWO cases now use this single
+            # /addWirelessProfile POST (no `profiles clear`, no setup-AP
+            # teardown, live association unaffected if NetManager rejects):
+            #
+            #  1. Password-rotation refresh: the box is associated under SSID X
+            #     with the OLD password and the user booted with SSID X + a NEW
+            #     password; NetManager updates the entry in-place.
+            #  2. Seed a Wi-Fi profile for LATER failover on an ETHERNET-only
+            #     box (the Wi-Fi-via-eth0 / BCO chassis). The box works over
+            #     the cable, has no or a different stored Wi-Fi profile, and the
+            #     user asked STR to set a Wi-Fi network (app change -> NAND
+            #     replay, or a fresh stick). We do NOT tear down the working
+            #     ethernet; we only WRITE the target profile into NetManager so
+            #     that when the user later pulls the cable, the box fails over
+            #     to it. This is what makes "provision Wi-Fi cleanly + one
+            #     reboot, then the user decides when to unplug the cable" work
+            #     (SoundTouch 30 scm, 2026-07-09: pulling the cable live never
+            #     applied the app-set SSID because the profile was only
+            #     persisted to NAND for a stickless boot, never pushed to
+            #     NetManager while ethernet was up).
+            #
+            # Runs for any credential source now (stick or NAND replay), still
+            # skipped on taigan where this endpoint silently fails (the taigan
+            # Wi-Fi path is the goform :80 handler, see [[taigan-quirks]] /
+            # [[project_bco_wlan_profile_file]]).
+            #
+            # Backgrounded: M0a runs at ~57s but BoseApp :8090 (the POST target)
+            # only finishes coming up ~10s later on the ST30 scm, so a single
+            # in-line probe misses it and the seed silently never fires (live
+            # 2026-07-09). Poll for :8090 in a subshell and push once it is up,
+            # so the boot pipeline is not blocked and the seed still lands.
+            if [ -n "$SSID" ] && [ -z "$IS_TAIGAN" ]; then
                 ESSID_R=$(xml_escape "$SSID" 2>/dev/null || printf '%s' "$SSID")
                 EPASS_R=$(xml_escape "$PASS" 2>/dev/null || printf '%s' "$PASS")
-                REFRESH_BODY="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$ESSID_R\" password=\"$EPASS_R\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
-                REFRESH_RESP=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
-                       --post-data="$REFRESH_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
-                setup_log "M0a-refresh: non-destructive /addWirelessProfile rc=$? response='$(echo "$REFRESH_RESP" | head -c 200)'"
+                (
+                    _w=0
+                    while [ "$_w" -lt 45 ]; do
+                        if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then break; fi
+                        sleep 3; _w=$((_w + 3))
+                    done
+                    REFRESH_BODY="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$ESSID_R\" password=\"$EPASS_R\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
+                    REFRESH_RESP=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
+                           --post-data="$REFRESH_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
+                    setup_log "M0a-refresh: non-destructive /addWirelessProfile (seed for failover) waited=${_w}s rc=$? src='$WLAN_SOURCE' response='$(echo "$REFRESH_RESP" | head -c 200)'"
+                ) &
             fi
             WINNER="M0a-prelease"
         fi
