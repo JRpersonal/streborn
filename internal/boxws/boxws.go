@@ -135,6 +135,44 @@ type Client struct {
 	// NAND log, while an isolated thumb press is still recorded. See
 	// noteUserActivity.
 	lastUserActivityLog time.Time
+
+	// onLoginError fires when the box rejects a source because it considers
+	// itself not signed into an account (errorUpdate value 1036
+	// UNABLE_TO_PROCESS_NOT_LOGGED_IN, seen on the SoundTouch 300). The agent
+	// wires this to a forced re-login plus a signal that stands the recall retry
+	// down, so STR does not thrash a box that keeps rejecting the UPnP source
+	// (repeated re-pushes flap the source and can wedge the box). Rate-limited
+	// via lastLoginErrFire.
+	loginErrMu       sync.Mutex
+	onLoginError     func()
+	lastLoginErrFire time.Time
+}
+
+// loginErrDedup rate-limits the not-logged-in callback so a box that emits the
+// error repeatedly triggers at most one re-login attempt per window.
+const loginErrDedup = 20 * time.Second
+
+// SetOnLoginError registers a callback fired when the box rejects a source with
+// a not-logged-in error. Rate-limited internally; the callback runs in its own
+// goroutine so the read loop is never blocked.
+func (c *Client) SetOnLoginError(fn func()) {
+	c.loginErrMu.Lock()
+	c.onLoginError = fn
+	c.loginErrMu.Unlock()
+}
+
+// fireLoginError invokes the registered not-logged-in callback, at most once per
+// loginErrDedup window.
+func (c *Client) fireLoginError() {
+	c.loginErrMu.Lock()
+	fn := c.onLoginError
+	if fn == nil || (!c.lastLoginErrFire.IsZero() && time.Since(c.lastLoginErrFire) < loginErrDedup) {
+		c.loginErrMu.Unlock()
+		return
+	}
+	c.lastLoginErrFire = time.Now()
+	c.loginErrMu.Unlock()
+	go fn()
 }
 
 // thumbExplainWindow is how close an explained event (volume/preset/now
@@ -747,6 +785,14 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				if v, name, sev, detail := parseBoxError(s); v != "" {
 					c.logger.Warn("box ws: box reported error",
 						"value", v, "name", name, "severity", sev, "detail", detail)
+					// 1036 UNABLE_TO_PROCESS_NOT_LOGGED_IN: the box refuses the UPnP
+					// source because it does not think it is signed into an account.
+					// Re-pushing just flaps the source and can wedge the box (Michal's
+					// ST300). Signal the agent to force a re-login and stand the recall
+					// retry down instead of thrashing.
+					if v == "1036" || strings.Contains(strings.ToUpper(name), "NOT_LOGGED_IN") {
+						c.fireLoginError()
+					}
 					return
 				}
 			}

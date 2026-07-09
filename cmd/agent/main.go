@@ -524,6 +524,12 @@ func run() error {
 	// boxes, whose /networkInfo reports no signal.
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)
 
+	// When the box rejects a source as not-logged-in (errorUpdate 1036, seen on
+	// the SoundTouch 300), force a re-login and stand the recall retry down so
+	// STR self-heals instead of thrashing the box into a wedge (rate-limited in
+	// boxws).
+	wsClient.SetOnLoginError(webuiSrv.NoteBoxLoginError)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 

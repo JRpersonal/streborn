@@ -289,6 +289,21 @@ func (m *Manager) TriggerNow(ctx context.Context) {
 	}
 }
 
+// ForcePair re-asserts the account UNCONDITIONALLY, even when the box already
+// reports a margeAccountUUID. EnsurePaired skips a box that carries a UUID, but
+// some firmwares (the SoundTouch 300) keep the UUID yet tell STR they are
+// NOT_LOGGED_IN when handed a UPnP source; re-POSTing setMargeAccount can
+// restore the login state that the UUID-present check would otherwise skip.
+// Best-effort: a failure is logged, not fatal.
+func (m *Manager) ForcePair(ctx context.Context) {
+	m.logger.Warn("autopair: forcing a re-login (box reported not-logged-in)")
+	if err := m.Pair(ctx); err != nil {
+		m.logger.Warn("autopair: forced re-login failed", "err", err)
+		return
+	}
+	m.logger.Warn("autopair: forced re-login sent")
+}
+
 func buildPairXML(accountID, token, email string) string {
 	return `<?xml version="1.0" encoding="UTF-8" ?>` +
 		`<PairDeviceWithAccount>` +
