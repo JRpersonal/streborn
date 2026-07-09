@@ -189,6 +189,8 @@
   "speaker.modelTitle": "スピーカーのモデル",
   "speaker.stickVersionTitle": "メモリのバージョン",
   "speaker.updateBadgeTitle": "このスピーカーのアップデートがあります",
+  "speaker.playingNow": "再生中",
+  "speaker.groupLabelTitle": "{{name}} が主導するマルチルームグループ",
   "speaker.editTitle": "このスピーカーの設定",
   "speaker.noneSelected": "スピーカーが選択されていません。",
   "speaker.reboot": "スピーカーを再起動",
@@ -855,7 +857,6 @@
   "setup.help.lowPowerStick": "消費電力の小さい小容量（4GBから16GB）のUSB 2.0メモリを使ってください。容量の大きいメモリや高速なメモリは、スピーカーのUSBポートが供給できる以上の電力を必要とします。",
   "setup.help.usbHub": "または、電源付き（独自の電源を持つ）USBハブを介してメモリを接続すると、スピーカーのポートに依存せず安定して電力が供給されます。",
   "setup.st30StickPowerWarn": "SoundTouch 30 を検出しました。USBポートが一部のメモリへ十分に電力を供給できず、インストール中に電力エラーが発生することがあります。消費電力の小さい小容量（4GBから16GB）のUSB 2.0メモリを使うか、電源付きのUSBハブを介して接続してください。",
-  "setup.unverifiedHardware": "このスピーカーモデルではまだ STR を検証していないため、動作するとはお約束できません。それでもインストールは可能で、問題なく動く場合もありますが、未検証のものとしてご自身の責任で進めてください。お試しになった場合は、結果を教えていただけると、あなたのモデルを検証済みリストに追加できます。",
   "worldMap.inviteText": "あなたのSoundTouchがまた動き出しました 🎉",
   "worldMap.inviteBtn": "世界地図で共有する",
   "setup.stickLargeFat32": "これは大容量メモリ (32GB超) です。大容量メモリはスピーカーが読めない形式でフォーマットされていることがよくあります。準備時に、互換性のあるFAT32に再フォーマットされます。メモリ内のすべてのデータは失われます。",
@@ -1129,13 +1130,6 @@
   "setup.provisionNoAnswer": "スピーカーから応答がありません",
   "speaker.wedgedTitle": "スピーカーが応答しません:",
   "speaker.wedgedBanner": "「{{name}}」が再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。",
-  "presets.copyTitle": "このスピーカーのプリセットを記憶(コピー)",
-  "presets.pasteTitle": "「{{name}}」の記憶したプリセットをこのスピーカーへ転送",
-  "presets.pasteTitleEmpty": "先にコピー元スピーカーでプリセットをコピーしてください",
-  "presets.clipboardState": "「{{name}}」のプリセットを記憶中",
-  "presets.copiedToast": "「{{name}}」のプリセットを記憶しました - 転送先スピーカーを選んで貼り付けを押してください",
-  "presets.pasteConfirmTitle": "プリセットを転送しますか?",
-  "presets.pasteConfirmBody": "「{{from}}」のすべてのプリセットを「{{to}}」へ転送しますか?転送先の現在のボタンは上書きされます。",
-  "presets.pastedToast": "{{count}}件のプリセットを「{{name}}」へ転送しました",
-  "presets.pasteFailed": "プリセットの転送に失敗しました: {{err}}"
+  "presets.transferBtn": "転送",
+  "presets.transferNoTargets": "転送先となる他のスピーカーが見つかりません"
 }

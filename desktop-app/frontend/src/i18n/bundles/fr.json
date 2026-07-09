@@ -189,6 +189,8 @@
   "speaker.modelTitle": "Modèle d'enceinte",
   "speaker.stickVersionTitle": "Version de la clé",
   "speaker.updateBadgeTitle": "Mise à jour disponible pour cette enceinte",
+  "speaker.playingNow": "En lecture",
+  "speaker.groupLabelTitle": "Groupe multiroom dirigé par {{name}}",
   "speaker.editTitle": "Réglages de cette enceinte",
   "speaker.noneSelected": "Aucune enceinte sélectionnée.",
   "speaker.reboot": "Redémarrer l'enceinte",
@@ -855,7 +857,6 @@
   "setup.help.lowPowerStick": "Utilise une petite clé USB 2.0 à faible consommation (4 à 16 Go). Les clés plus grandes ou plus rapides consomment plus de courant que le port USB de l'enceinte ne peut fournir.",
   "setup.help.usbHub": "Ou branche la clé sur un hub USB alimenté (avec sa propre alimentation), pour qu'elle reçoive un courant stable indépendamment du port de l'enceinte.",
   "setup.st30StickPowerWarn": "SoundTouch 30 détectée : son port USB peut avoir du mal à alimenter certaines clés, ce qui provoque une erreur d'alimentation pendant l'installation. Utilise une petite clé USB 2.0 à faible consommation (4 à 16 Go), ou branche-la sur un hub USB alimenté.",
-  "setup.unverifiedHardware": "Je n'ai pas encore testé STR avec ce modèle d'enceinte, je ne peux donc pas garantir qu'il fonctionnera. Tu peux quand même l'installer et il fonctionnera peut-être très bien, mais considère-le comme non testé et continue à tes propres risques. Si tu l'essaies, dis-moi comment cela s'est passé pour que je puisse ajouter ton modèle à la liste des appareils vérifiés.",
   "worldMap.inviteText": "Ton enceinte SoundTouch revit 🎉",
   "worldMap.inviteBtn": "Partage-le sur la carte du monde",
   "setup.stickLargeFat32": "C'est une grande clé (plus de 32 Go). Les grandes clés sont souvent formatées d'une manière que l'enceinte ne peut pas lire. Elle sera reformatée en FAT32 compatible pendant la préparation ; toutes les données de la clé sont perdues.",
@@ -1129,13 +1130,6 @@
   "setup.provisionNoAnswer": "pas de réponse de l'enceinte",
   "speaker.wedgedTitle": "L'enceinte ne répond pas :",
   "speaker.wedgedBanner": "\"{{name}}\" n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement.",
-  "presets.copyTitle": "Mémoriser les présélections de cette enceinte (copier)",
-  "presets.pasteTitle": "Transférer les présélections mémorisées de « {{name}} » vers cette enceinte",
-  "presets.pasteTitleEmpty": "Copiez d'abord les présélections sur l'enceinte source",
-  "presets.clipboardState": "Présélections de « {{name}} » mémorisées",
-  "presets.copiedToast": "Présélections de « {{name}} » mémorisées - choisissez l'enceinte cible et appuyez sur coller",
-  "presets.pasteConfirmTitle": "Transférer les présélections ?",
-  "presets.pasteConfirmBody": "Transférer toutes les présélections de « {{from}} » vers « {{to}} » ? Les touches actuelles de l'enceinte cible seront remplacées.",
-  "presets.pastedToast": "{{count}} présélections transférées vers « {{name}} »",
-  "presets.pasteFailed": "Échec du transfert des présélections : {{err}}"
+  "presets.transferBtn": "Transférer",
+  "presets.transferNoTargets": "Aucune autre enceinte trouvée pour le transfert"
 }

@@ -528,6 +528,13 @@ body {
 .box-group-c4 { --bg-color: #d6a23d; }
 /* Star on the group's master speaker pill. */
 .box-group-master { color: var(--brand); margin-right: 4px; font-size: 12px; }
+/* Group name header on the multiroom frame — full width so the pills wrap
+   below it; coloured to match the frame so the zone is obvious at a glance. */
+.box-group-label { flex-basis: 100%; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--bg-color, var(--c-muted)); opacity: 0.9; margin: 0 2px 1px; }
+.box-group-label svg { flex: 0 0 auto; }
+/* Small speaker icon on a tile whose speaker is currently playing. */
+.box-playing { color: var(--brand); margin-right: 3px; display: inline-flex; vertical-align: middle; }
+.box-btn.active .box-playing { color: var(--brand-text); }
 /* Notification dot on a speaker button whose agent is out of date
    (#108). Same blue as the settings-tab badge (.tab-btn.has-update) on
    purpose: both mean "update available", so one colour, one meaning. Red
@@ -1537,9 +1544,10 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .chk-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--c-muted); font-size: 13px; }
 /* Preset transfer row (music view): copy on the left, paste on the right,
    clipboard state in between. Icon buttons with tooltip labels. */
-.preset-copy-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 2px 0; }
-.preset-copy-btn { font-size: 15px; line-height: 1; min-width: 34px; }
-.preset-copy-state { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-copy-row { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 6px 2px 0; }
+.preset-transfer-btn { display: inline-flex; align-items: center; gap: 6px; line-height: 1; }
+.preset-transfer-btn svg { flex: 0 0 auto; }
+.preset-xfer-select { margin-top: 8px; padding: 6px 8px; }
 .chk-eta { margin-left: auto; font-weight: 400; white-space: nowrap; }
 .chk-row.chk-run { color: var(--c-text); font-weight: 500; }
 .chk-row.chk-done { color: var(--c-text-2); }

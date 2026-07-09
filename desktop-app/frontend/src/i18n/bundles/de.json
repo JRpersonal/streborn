@@ -205,6 +205,8 @@
   "speaker.modelTitle": "Lautsprecher-Modell",
   "speaker.stickVersionTitle": "Stick-Version",
   "speaker.updateBadgeTitle": "Update für diesen Lautsprecher verfügbar",
+  "speaker.playingNow": "Spielt gerade",
+  "speaker.groupLabelTitle": "Multiroom-Gruppe, angeführt von {{name}}",
   "speaker.editTitle": "Einstellungen dieses Lautsprechers",
   "speaker.noneSelected": "Kein Lautsprecher ausgewählt.",
   "speaker.reboot": "Lautsprecher neu starten",
@@ -886,7 +888,6 @@
   "setup.help.lowPowerStick": "Nimm einen kleinen, stromsparenden USB-2.0-Stick (4 bis 16 GB). Größere oder schnellere Sticks brauchen mehr Strom, als der USB-Anschluss des Lautsprechers liefern kann.",
   "setup.help.usbHub": "Oder schließe den Stick über einen aktiven USB-Hub (mit eigenem Netzteil) an, damit er unabhängig vom Anschluss des Lautsprechers stabil mit Strom versorgt wird.",
   "setup.st30StickPowerWarn": "SoundTouch 30 erkannt: Der USB-Anschluss kann manche Sticks nicht stabil mit Strom versorgen, das führt beim Installieren zu einem Stromfehler. Nimm einen kleinen, stromsparenden USB-2.0-Stick (4 bis 16 GB) oder schließe ihn über einen aktiven USB-Hub an.",
-  "setup.unverifiedHardware": "Ich habe STR mit diesem Lautsprechermodell noch nicht getestet und kann daher nicht versprechen, dass es funktioniert. Du kannst es trotzdem installieren, und vielleicht läuft alles einwandfrei. Bitte betrachte es aber als ungetestet und mach auf eigenes Risiko weiter. Wenn du es ausprobierst, sag mir bitte, wie es gelaufen ist, damit ich dein Modell in die Liste der geprüften Geräte aufnehmen kann.",
   "worldMap.inviteText": "Deine SoundTouch lebt wieder 🎉",
   "worldMap.inviteBtn": "Auf der Weltkarte teilen",
   "worldMap.countLine": "🌍 Schon {{n}} SoundTouch weltweit gerettet. Setz deinen Pin dazu!",
@@ -1130,13 +1131,6 @@
   "setup.provisionNoAnswer": "keine Antwort vom Lautsprecher",
   "speaker.wedgedTitle": "Lautsprecher reagiert nicht:",
   "speaker.wedgedBanner": "\"{{name}}\" nimmt gerade keine Wiedergabe an. Bitte kurz den Netzstecker ziehen und wieder einstecken - danach geht es normal weiter.",
-  "presets.copyTitle": "Presets dieses Lautsprechers merken (kopieren)",
-  "presets.pasteTitle": "Gemerkte Presets von \"{{name}}\" auf diesen Lautsprecher übertragen",
-  "presets.pasteTitleEmpty": "Zuerst auf dem Quell-Lautsprecher die Presets kopieren",
-  "presets.clipboardState": "Presets von \"{{name}}\" gemerkt",
-  "presets.copiedToast": "Presets von \"{{name}}\" gemerkt - jetzt Ziel-Lautsprecher wählen und auf Einfügen drücken",
-  "presets.pasteConfirmTitle": "Presets übertragen?",
-  "presets.pasteConfirmBody": "Alle Presets von \"{{from}}\" auf \"{{to}}\" übertragen? Die aktuellen Tasten des Ziel-Lautsprechers werden überschrieben.",
-  "presets.pastedToast": "{{count}} Presets auf \"{{name}}\" übertragen",
-  "presets.pasteFailed": "Übertragen der Presets fehlgeschlagen: {{err}}"
+  "presets.transferBtn": "Übertragen",
+  "presets.transferNoTargets": "Kein anderer Lautsprecher zum Übertragen gefunden"
 }

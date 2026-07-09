@@ -189,6 +189,8 @@
   "speaker.modelTitle": "Modelo de altavoz",
   "speaker.stickVersionTitle": "Versión de la memoria",
   "speaker.updateBadgeTitle": "Actualización disponible para este altavoz",
+  "speaker.playingNow": "Reproduciendo ahora",
+  "speaker.groupLabelTitle": "Grupo multisala liderado por {{name}}",
   "speaker.editTitle": "Ajustes de este altavoz",
   "speaker.noneSelected": "Ningún altavoz seleccionado.",
   "speaker.reboot": "Reiniciar altavoz",
@@ -855,7 +857,6 @@
   "setup.help.lowPowerStick": "Usa una memoria USB 2.0 pequeña y de bajo consumo (4 a 16 GB). Las memorias más grandes o rápidas consumen más energía de la que el puerto USB del altavoz puede dar.",
   "setup.help.usbHub": "O conecta la memoria a través de un concentrador USB con alimentación propia, para que reciba energía estable independientemente del puerto del altavoz.",
   "setup.st30StickPowerWarn": "SoundTouch 30 detectado: su puerto USB puede tener problemas para alimentar algunas memorias, lo que provoca un error de alimentación durante la instalación. Usa una memoria USB 2.0 pequeña y de bajo consumo (4 a 16 GB), o conéctala a través de un concentrador USB con alimentación propia.",
-  "setup.unverifiedHardware": "Todavía no he probado STR con este modelo de altavoz, así que no puedo prometer que funcione. Aun así puedes instalarlo y puede que funcione perfectamente, pero considéralo no probado y continúa bajo tu propia responsabilidad. Si lo pruebas, dime qué tal fue para que pueda añadir tu modelo a la lista de dispositivos verificados.",
   "worldMap.inviteText": "Tu SoundTouch vuelve a la vida 🎉",
   "worldMap.inviteBtn": "Compártelo en el mapa mundial",
   "setup.stickLargeFat32": "Esta memoria es grande (más de 32 GB). Las memorias grandes suelen formatearse de un modo que el altavoz no puede leer. Se reformateará a un FAT32 compatible durante la preparación; se perderán todos los datos de la memoria.",
@@ -1129,13 +1130,6 @@
   "setup.provisionNoAnswer": "sin respuesta del altavoz",
   "speaker.wedgedTitle": "El altavoz no responde:",
   "speaker.wedgedBanner": "\"{{name}}\" no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad.",
-  "presets.copyTitle": "Recordar los presets de este altavoz (copiar)",
-  "presets.pasteTitle": "Transferir los presets recordados de \"{{name}}\" a este altavoz",
-  "presets.pasteTitleEmpty": "Primero copia los presets en el altavoz de origen",
-  "presets.clipboardState": "Presets de \"{{name}}\" recordados",
-  "presets.copiedToast": "Presets de \"{{name}}\" recordados - elige el altavoz de destino y pulsa pegar",
-  "presets.pasteConfirmTitle": "¿Transferir presets?",
-  "presets.pasteConfirmBody": "¿Transferir todos los presets de \"{{from}}\" a \"{{to}}\"? Se sobrescribirán las teclas actuales del altavoz de destino.",
-  "presets.pastedToast": "{{count}} presets transferidos a \"{{name}}\"",
-  "presets.pasteFailed": "Error al transferir los presets: {{err}}"
+  "presets.transferBtn": "Transferir",
+  "presets.transferNoTargets": "No se encontró otro altavoz al que transferir"
 }
