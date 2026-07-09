@@ -1126,5 +1126,6 @@
   "a11y.theme.dark": "Dark",
   "a11y.theme.light": "Light",
   "a11y.theme.contrast": "High contrast",
-  "setup.stayOnPage": "Please stay on this page and keep the app open until the installation finishes."
+  "setup.stayOnPage": "Please stay on this page and keep the app open until the installation finishes.",
+  "setup.provisionNoAnswer": "no answer from the speaker"
 }

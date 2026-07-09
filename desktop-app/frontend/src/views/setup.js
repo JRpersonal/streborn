@@ -193,11 +193,6 @@ function mountSetupShell() {
         <span class="setup-stick-summary-label">${escapeHtml(t('setup.useStickInstead'))}</span>
         <span class="muted small setup-stick-summary-hint">${escapeHtml(t('setup.useStickInsteadHint'))}</span>
       </summary>
-    <!-- ST30 stick-power warning: only relevant when actually preparing a
-         stick, so it lives here instead of shouting at the top of the speaker
-         picker (the network install does not care about stick power). Toggled
-         by renderPrimaryAction based on the selected target. -->
-    <div class="setup-target-st30-warn hidden" id="stickSt30Warn"></div>
     <div class="setup-section">
       <div class="setup-section-head">
         <h3>${escapeHtml(t('setup.step1Heading'))}</h3>
@@ -542,6 +537,11 @@ export function renderSetupTargetPicker() {
     if (boxModelSupport(b.model) === 'limited') {
       cards += `<div class="setup-target-limited-note muted small">${escapeHtml(t('setup.limitedNote'))}</div>`;
     }
+    // ST30 USB power warning, shown as soon as an ST30 is detected (not gated on
+    // selection) so the user picks a low-power stick before preparing one.
+    if (targetIsST30(b)) {
+      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
+    }
     // Unverified-hardware slot (#283): filled async once the firmware Variant is
     // known. Does not block install; only tells the user STR is untested here.
     cards += unverifiedWarnSlot(b.host);
@@ -551,6 +551,11 @@ export function renderSetupTargetPicker() {
     cards += cardHTML('str', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindSTR')),
       t('setup.targetCardBadgeSTR'), 'badge-ok');
+    // The same ST30 USB power caveat applies to an update stick (the box reads
+    // it on boot), so warn here too.
+    if (targetIsST30(b)) {
+      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
+    }
     cards += unverifiedWarnSlot(b.host);
   }
   // No "unsupported" list any more: every discovered stock box is an install
@@ -830,15 +835,6 @@ function renderPrimaryAction() {
   const host = $('setupPrimaryAction');
   const details = $('setupStickDetails');
   if (!host) return;
-  // ST30 stick-power warning, shown only inside the stick section and only
-  // when the selected target actually is an ST30.
-  const st30Warn = $('stickSt30Warn');
-  if (st30Warn) {
-    const b = state.setupTarget && state.setupTarget.box;
-    const isST30 = !!(b && targetIsST30(b));
-    st30Warn.classList.toggle('hidden', !isST30);
-    if (isST30) st30Warn.textContent = t('setup.st30StickPowerWarn');
-  }
   const sel = state.setupTarget;
   if (sel && sel.kind === 'stock' && sel.box) {
     const b = sel.box;
@@ -1921,8 +1917,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
       rows += chkRow(phaseLabels[ph], st, detail, st === 'done' ? '' : phaseEtas[ph]);
     });
     render(`<div class="setup-checklist"><div class="chk-head"><span>${escapeHtml(t('setup.installRunning'))}</span>` +
-      `<span class="chk-timer">${fmtMS(Date.now() - installStartMs)}</span></div>` +
-      `<div class="chk-stay muted small">${escapeHtml(t('setup.stayOnPage'))}</div>${rows}` +
+      `<span class="chk-timer">${fmtMS(Date.now() - installStartMs)}</span></div>${rows}` +
       `<div class="chk-reassure muted small">${escapeHtml(t('setup.cardReassure'))}</div></div>`);
   };
   const timerHandle = setInterval(renderChecklist, 1000);
@@ -2055,6 +2050,7 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
   // pulled (agent persists creds to NAND, then wpa live-switch or BCO reboot).
   let unplugLine = '';
   let provisionFailed = false;
+  let failReasons = {};
   if (knownBox) {
     // After install the box is an STR agent, reachable on :17008 (BCO REDIRECT)
     // or :8888 (sm2 direct), NOT the pre-install stock :8090 that foundBox still
@@ -2085,12 +2081,29 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
     if (wifiForBox && wifiForBox.ssid) {
       steps.push({ id: 'wifi', label: t('setup.provisionWifi'),
         run: async () => {
+          // force:true - this is the FIRST setup and the user just typed this
+          // network in. The visibility preflight refused a cable-connected
+          // ST30 whose site survey came back empty (live 2026-07-09,
+          // "WLAN switch refused ... visible=[]"), silently breaking the
+          // Wi-Fi save; on a first install the cable stays in anyway, so the
+          // strand-protection the preflight exists for does not apply.
           const wr = await deps.boxFetch(agentBox, '/api/box/wlan', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ssid: wifiForBox.ssid, password: wifiForBox.pass, hidden: !!wifiForBox.hidden }),
+            body: JSON.stringify({ ssid: wifiForBox.ssid, password: wifiForBox.pass, hidden: !!wifiForBox.hidden, force: true }),
           });
-          if (!wr || !wr.ok) return false;
+          if (!wr || !wr.ok) {
+            let reason = wr ? 'HTTP ' + wr.status : t('setup.provisionNoAnswer');
+            try {
+              const body = await wr.text();
+              try {
+                const j = JSON.parse(body);
+                if (j && j.error) reason = j.error;
+                else if (body) reason = body.slice(0, 160);
+              } catch { if (body) reason = body.slice(0, 160); }
+            } catch {}
+            throw new Error(reason);
+          }
           let info = {};
           try { info = await wr.json(); } catch {}
           return info || {};
@@ -2134,7 +2147,12 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
       st[s.id] = 'run'; renderProvision();
       const res = await retryStep(s.run, 3, 2500);
       st[s.id] = res.ok ? 'done' : 'fail';
-      if (!res.ok) provisionFailed = true;
+      if (!res.ok) {
+        provisionFailed = true;
+        // Keep the REAL reason: "some settings could not be applied" without
+        // saying which and why sent the maintainer log-diving (2026-07-09).
+        failReasons[s.id] = { label: s.label, reason: String((res.value && res.value.message) || res.value || t('setup.provisionNoAnswer')) };
+      }
       if (s.id === 'wifi') {
         if (res.ok) {
           const info = res.value || {};
@@ -2149,9 +2167,11 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
       unplugLine = t('setup.unplugNoWifi');
     }
   }
+  const failDetails = Object.values(failReasons)
+    .map(f => `<div class="setup-warn-detail muted small">${escapeHtml(f.label)}: ${escapeHtml(f.reason)}</div>`).join('');
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
          (unplugLine ? `<div class="setup-unplug">${escapeHtml(unplugLine)}</div>` : '') +
-         (provisionFailed ? `<div class="setup-warn">${escapeHtml(t('setup.provisionSomeFailed'))}</div>` : '') +
+         (provisionFailed ? `<div class="setup-warn">${escapeHtml(t('setup.provisionSomeFailed'))}${failDetails}</div>` : '') +
          `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>` +
          `<div class="setup-playhow">` +
            `<h3>${escapeHtml(t('setup.playHowTitle'))}</h3>` +

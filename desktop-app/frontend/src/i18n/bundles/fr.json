@@ -1125,5 +1125,6 @@
   "a11y.theme.dark": "Sombre",
   "a11y.theme.light": "Clair",
   "a11y.theme.contrast": "Contraste élevé",
-  "setup.stayOnPage": "Restez sur cette page et laissez l'application ouverte jusqu'à la fin de l'installation."
+  "setup.stayOnPage": "Restez sur cette page et laissez l'application ouverte jusqu'à la fin de l'installation.",
+  "setup.provisionNoAnswer": "pas de réponse de l'enceinte"
 }
