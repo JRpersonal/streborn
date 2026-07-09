@@ -189,6 +189,8 @@
   "speaker.modelTitle": "Skaļruņa modelis",
   "speaker.stickVersionTitle": "Zibatmiņas versija",
   "speaker.updateBadgeTitle": "Pieejams šī skaļruņa atjauninājums",
+  "speaker.playingNow": "Šobrīd atskaņo",
+  "speaker.groupLabelTitle": "Vairāku telpu grupa, kuru vada {{name}}",
   "speaker.editTitle": "Šī skaļruņa iestatījumi",
   "speaker.noneSelected": "Nav atlasīts skaļrunis.",
   "speaker.reboot": "Restartēt skaļruni",
@@ -855,7 +857,6 @@
   "setup.help.lowPowerStick": "Izmantojiet mazu, enerģiju taupošu USB 2.0 zibatmiņu (4 līdz 16 GB). Lielākas vai ātrākas zibatmiņas patērē vairāk strāvas, nekā skaļruņa USB pieslēgvieta var nodrošināt.",
   "setup.help.usbHub": "Vai pievienojiet zibatmiņu caur USB centrmezglu ar atsevišķu barošanu, lai tā saņemtu stabilu strāvu neatkarīgi no skaļruņa pieslēgvietas.",
   "setup.st30StickPowerWarn": "Atklāts SoundTouch 30: tā USB pieslēgvieta var nespēt pietiekami nodrošināt dažas zibatmiņas ar strāvu, kas instalēšanas laikā rada barošanas kļūdu. Izmantojiet mazu, enerģiju taupošu USB 2.0 zibatmiņu (4 līdz 16 GB) vai pievienojiet to caur USB centrmezglu ar atsevišķu barošanu.",
-  "setup.unverifiedHardware": "Es vēl neesmu pārbaudījis STR ar šo skaļruņa modeli, tāpēc nevaru solīt, ka tas darbosies. Jūs joprojām varat to instalēt, un tas var darboties lieliski, taču uzskatiet to par nepārbaudītu un turpiniet uz savu atbildību. Ja to izmēģināsiet, pastāstiet man, kā gāja, lai es varētu pievienot jūsu modeli pārbaudīto ierīču sarakstam.",
   "worldMap.inviteText": "Tavs SoundTouch atkal darbojas 🎉",
   "worldMap.inviteBtn": "Dalies pasaules kartē",
   "setup.stickLargeFat32": "Šī ir liela zibatmiņa (vairāk nekā 32 GB). Lielas zibatmiņas bieži ir formatētas tā, ka skaļrunis tās nevar nolasīt. Sagatavošanas laikā tā tiks pārformatēta uz saderīgu FAT32; visi dati zibatmiņā tiks zaudēti.",
@@ -1129,13 +1130,6 @@
   "setup.provisionNoAnswer": "skaļrunis neatbild",
   "speaker.wedgedTitle": "Skaļrunis nereaģē:",
   "speaker.wedgedBanner": "\"{{name}}\" pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli.",
-  "presets.copyTitle": "Atcerēties šī skaļruņa iestatījumus (kopēt)",
-  "presets.pasteTitle": "Pārnest atcerētos \"{{name}}\" iestatījumus uz šo skaļruni",
-  "presets.pasteTitleEmpty": "Vispirms nokopējiet iestatījumus avota skaļrunī",
-  "presets.clipboardState": "Atcerēti \"{{name}}\" iestatījumi",
-  "presets.copiedToast": "Atcerēti \"{{name}}\" iestatījumi - izvēlieties mērķa skaļruni un nospiediet ielīmēt",
-  "presets.pasteConfirmTitle": "Pārnest iestatījumus?",
-  "presets.pasteConfirmBody": "Pārnest visus iestatījumus no \"{{from}}\" uz \"{{to}}\"? Mērķa skaļruņa pašreizējie taustiņi tiks pārrakstīti.",
-  "presets.pastedToast": "{{count}} iestatījumi pārnesti uz \"{{name}}\"",
-  "presets.pasteFailed": "Iestatījumu pārnešana neizdevās: {{err}}"
+  "presets.transferBtn": "Pārnest",
+  "presets.transferNoTargets": "Nav atrasts cits skaļrunis, uz kuru pārnest"
 }

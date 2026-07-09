@@ -1020,9 +1020,7 @@ $('view-box').innerHTML = `
     </div>
     <div class="grid" id="presets"></div>
     <div class="preset-copy-row">
-      <button class="btn btn-mini preset-copy-btn" id="presetCopyBtn" aria-label="" title="">&#128203;</button>
-      <span class="muted small preset-copy-state" id="presetCopyState"></span>
-      <button class="btn btn-mini preset-copy-btn" id="presetPasteBtn" aria-label="" title="" disabled>&#128229;</button>
+      <button class="btn btn-mini preset-transfer-btn" id="presetTransferBtn" aria-label="" title="" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg> ${escapeHtml(t('presets.transferBtn'))}</button>
     </div>
     <div class="search">
       <h3>${escapeHtml(t('search.heading'))} <small>(${escapeHtml(t('search.headingSub'))})</small></h3>
@@ -1429,6 +1427,8 @@ function applyBoxList(list) {
   // Refresh the live multiroom zones so the music-tab group frames are current.
   // Debounced (not a tight loop) and best-effort; repaints the selector on result.
   refreshMusicZones();
+  // Mark which speakers are currently playing (small speaker icon on their tile).
+  refreshBoxPlaying();
   updateSettingsTabBadge();
   // Re-evaluate the Favorites entry on every box-list refresh. This is the first
   // point after boot where localStorage is reliably restored in the WebView, so
@@ -1529,6 +1529,39 @@ async function refreshMusicZones() {
     state.zoneLive = map;
   } catch { /* keep previous frames */ } finally {
     state.zoneLiveBusy = false;
+  }
+  renderBoxSelect();
+}
+
+// refreshBoxPlaying fetches every STR speaker's now-playing so the music-tab
+// selector can mark which speakers are currently playing (a small speaker icon
+// on their tile). Debounced to at most once per 8s, same cadence and best-effort
+// contract as refreshMusicZones. The currently-selected box is also marked live
+// from state.nowPlayState in the pill renderer, so its icon never lags the poll.
+let _boxPlayingFetchAt = 0;
+async function refreshBoxPlaying() {
+  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.deviceID && b.host);
+  if (!strBoxes.length) return;
+  const now = Date.now();
+  if (state.boxPlayingBusy || now - _boxPlayingFetchAt < 8000) return;
+  _boxPlayingFetchAt = now;
+  state.boxPlayingBusy = true;
+  try {
+    const results = await Promise.allSettled(strBoxes.map(b => Status(b.host, b.port)));
+    const map = {};
+    results.forEach((r, i) => {
+      let playing = false;
+      if (r.status === 'fulfilled' && typeof r.value === 'string') {
+        const xml = r.value;
+        const ps = (xml.match(/playStatus>([^<]+)</) || [])[1] || '';
+        const src = (xml.match(/nowPlaying[^>]*source="([^"]*)"/) || [])[1] || '';
+        playing = (ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') && src !== 'STANDBY';
+      }
+      map[strBoxes[i].deviceID] = playing;
+    });
+    state.boxPlaying = map;
+  } catch { /* keep previous marks */ } finally {
+    state.boxPlayingBusy = false;
   }
   renderBoxSelect();
 }
@@ -1648,7 +1681,16 @@ function renderBoxSelect() {
     const updDot = boxNeedsUpdate(b)
       ? `<span class="box-update-dot" title="${escapeAttr(t('speaker.updateBadgeTitle'))}" aria-label="${escapeAttr(t('speaker.updateBadgeTitle'))}"></span>`
       : '';
-    return `<span class="box-btn${active}${updCls}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${groupMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
+    // Small speaker icon on a tile whose speaker is currently playing, so the
+    // playing speaker is obvious among several. The selected box is marked live
+    // from nowPlayState (no poll lag); the others from the refreshBoxPlaying poll.
+    const isCurrent = state.currentBox && state.currentBox.host === b.host;
+    const playingNow = (state.boxPlaying && state.boxPlaying[b.deviceID])
+      || (isCurrent && (state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE'));
+    const playMark = playingNow
+      ? `<span class="box-playing" title="${escapeAttr(t('speaker.playingNow'))}" aria-label="${escapeAttr(t('speaker.playingNow'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a7 7 0 0 1 0 14.14"></path></svg></span>`
+      : '';
+    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${groupMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
   };
   const groups = Object.keys(memberCount).filter(m => memberCount[m] >= 2).sort();
   if (groups.length === 0) {
@@ -1661,7 +1703,14 @@ function renderBoxSelect() {
       const members = state.boxes.filter(b => masterOf(b) === m);
       // master first inside the frame
       members.sort((a, b) => (((b.deviceID || '').toUpperCase() === m ? 1 : 0) - ((a.deviceID || '').toUpperCase() === m ? 1 : 0)));
-      html += `<div class="box-group box-group-c${colorOf[m]}">${members.map(pill).join('')}</div>`;
+      // Name the group after its master speaker so it is obvious which zone the
+      // frame is (the master leads the multiroom group).
+      const masterBox = state.boxes.find(b => (b.deviceID || '').toUpperCase() === m);
+      const groupName = masterBox ? getBoxLabel(masterBox) : '';
+      const groupLabel = groupName
+        ? `<span class="box-group-label" title="${escapeAttr(t('speaker.groupLabelTitle', { name: groupName }))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg> ${escapeHtml(groupName)}</span>`
+        : '';
+      html += `<div class="box-group box-group-c${colorOf[m]}">${groupLabel}${members.map(pill).join('')}</div>`;
     }
     html += state.boxes.filter(b => { const mm = masterOf(b); return !(mm && memberCount[mm] >= 2); }).map(pill).join('');
     sel.innerHTML = html;
@@ -3064,60 +3113,77 @@ function presetStateLabel(slot, isActive, hasErr) {
   return m ? `<div class="preset-state ${m[0]}">${escapeHtml(t(m[1]))}</div>` : '';
 }
 
-// Preset transfer (music view): the copy button remembers which box's presets
-// to take, the paste button transfers all six onto the CURRENT box via the
-// existing CopyPresetsAcrossBoxes backend (which reads the live store from the
-// source agent, so the clipboard only needs the source identity).
-function updatePresetCopyRow() {
-  const copyBtn = $('presetCopyBtn');
-  const pasteBtn = $('presetPasteBtn');
-  const stateEl = $('presetCopyState');
-  if (!copyBtn || !pasteBtn) return;
+// Preset transfer (music view): one button that pushes THIS speaker's six
+// presets onto another box. Clicking asks which target to send to (a picker of
+// the other STR speakers, plus an "all" option when there is more than one),
+// then reuses the same CopyPresetsAcrossBoxes backend + settingsView.copyPresets
+// strings as the Expert transfer in the speaker settings. The source agent
+// serves its live store, so only the target identity is chosen here.
+function presetTransferTargets() {
   const box = state.currentBox;
-  const clip = state.presetClipboard;
-  const copyOk = !!(box && box.kind !== 'stock');
-  copyBtn.disabled = !copyOk;
-  copyBtn.title = t('presets.copyTitle');
-  copyBtn.setAttribute('aria-label', t('presets.copyTitle'));
-  const sameBox = !!(clip && box && clip.host === box.host);
-  pasteBtn.disabled = !(clip && copyOk && !sameBox);
-  pasteBtn.title = clip
-    ? t('presets.pasteTitle', { name: clip.name })
-    : t('presets.pasteTitleEmpty');
-  pasteBtn.setAttribute('aria-label', pasteBtn.title);
-  if (stateEl) stateEl.textContent = clip ? t('presets.clipboardState', { name: clip.name }) : '';
+  if (!box || box.kind === 'stock') return [];
+  return (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.host !== box.host);
 }
 
-function wirePresetCopyRow() {
-  const copyBtn = $('presetCopyBtn');
-  const pasteBtn = $('presetPasteBtn');
-  if (!copyBtn || !pasteBtn || copyBtn.dataset.wired) return;
-  copyBtn.dataset.wired = '1';
-  copyBtn.onclick = () => {
+function updatePresetTransferRow() {
+  const btn = $('presetTransferBtn');
+  if (!btn) return;
+  const targets = presetTransferTargets();
+  const ok = targets.length > 0;
+  btn.disabled = !ok;
+  btn.title = ok ? t('settingsView.copyPresetsHeading') : t('presets.transferNoTargets');
+  btn.setAttribute('aria-label', btn.title);
+}
+
+function wirePresetTransferRow() {
+  const btn = $('presetTransferBtn');
+  if (!btn || btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+  btn.onclick = async () => {
     const box = state.currentBox;
     if (!box || box.kind === 'stock') return;
-    state.presetClipboard = { host: box.host, port: box.port || 0, name: getBoxLabel(box) };
-    showToast(t('presets.copiedToast', { name: getBoxLabel(box) }));
-    updatePresetCopyRow();
-  };
-  pasteBtn.onclick = async () => {
-    const box = state.currentBox;
-    const clip = state.presetClipboard;
-    if (!box || !clip || clip.host === box.host) return;
-    const ok = await confirmWarn(
-      t('presets.pasteConfirmTitle'),
-      t('presets.pasteConfirmBody', { from: clip.name, to: getBoxLabel(box) })
-    );
+    const targets = presetTransferTargets();
+    if (!targets.length) { showToast(t('presets.transferNoTargets')); return; }
+    const opts = targets
+      .map(b => `<option value="${escapeAttr(b.host)}|${b.port || 0}">${escapeHtml(getBoxLabel(b))}</option>`)
+      .join('');
+    const allOpt = targets.length > 1
+      ? `<option value="__ALL__">${escapeHtml(t('settingsView.copyPresetsAllTargets'))}</option>`
+      : '';
+    const body = `<p>${escapeHtml(t('settingsView.copyPresetsHelp'))}</p>`
+      + `<select id="presetXferTarget" class="preset-xfer-select" style="width:100%;box-sizing:border-box;">${opts}${allOpt}</select>`;
+    const ok = await confirmWarn(t('settingsView.copyPresetsHeading'), body, {
+      confirmLabel: t('presets.transferBtn'),
+      confirmClass: 'btn btn-warning',
+    });
     if (!ok) return;
-    pasteBtn.disabled = true;
+    const sel = document.querySelector('#presetXferTarget');
+    const val = sel ? sel.value : '';
+    if (!val) return;
+    btn.disabled = true;
     try {
-      const n = await CopyPresetsAcrossBoxes(clip.host, clip.port, box.host, box.port || 0);
-      showToast(t('presets.pastedToast', { count: n, name: getBoxLabel(box) }));
-      await loadPresets();
+      if (val === '__ALL__') {
+        let done = 0;
+        const failed = [];
+        for (const tb of targets) {
+          try {
+            await CopyPresetsAcrossBoxes(box.host, box.port || 0, tb.host, tb.port || 0);
+            done++;
+          } catch { failed.push(getBoxLabel(tb)); }
+        }
+        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: targets.length, failed: failed.join(', ') }));
+        else showToast(t('settingsView.copyPresetsAllDone', { n: targets.length }));
+      } else {
+        const [thost, tportRaw] = val.split('|');
+        const tport = parseInt(tportRaw, 10) || 0;
+        const target = targets.find(b => b.host === thost);
+        const n = await CopyPresetsAcrossBoxes(box.host, box.port || 0, thost, tport);
+        showToast(t('settingsView.copyPresetsDone', { n, target: target ? getBoxLabel(target) : thost }));
+      }
     } catch (e) {
-      showError(t('presets.pasteFailed', { err: String(e) }));
+      showError(e);
     } finally {
-      updatePresetCopyRow();
+      updatePresetTransferRow();
     }
   };
 }
@@ -3125,9 +3191,9 @@ function wirePresetCopyRow() {
 function renderPresets() {
   const grid = $('presets');
   grid.innerHTML = '';
-  // The copy/paste row lives right under the grid and follows the selection.
-  wirePresetCopyRow();
-  updatePresetCopyRow();
+  // The transfer row lives right under the grid and follows the selection.
+  wirePresetTransferRow();
+  updatePresetTransferRow();
   const activeSlot = activeSlotFromLocation(state.nowLocation);
   // Remember the active Spotify slot from the per-slot /spotify/stream-<slot>.ogg
   // URL. A hardware next/prev advances go-librespot but can drop the slot from

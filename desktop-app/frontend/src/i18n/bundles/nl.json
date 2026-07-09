@@ -189,6 +189,8 @@
   "speaker.modelTitle": "Speakermodel",
   "speaker.stickVersionTitle": "Stick-versie",
   "speaker.updateBadgeTitle": "Update beschikbaar voor deze speaker",
+  "speaker.playingNow": "Speelt nu",
+  "speaker.groupLabelTitle": "Multiroomgroep geleid door {{name}}",
   "speaker.editTitle": "Instellingen voor deze speaker",
   "speaker.noneSelected": "Geen speaker geselecteerd.",
   "speaker.reboot": "Speaker herstarten",
@@ -855,7 +857,6 @@
   "setup.help.lowPowerStick": "Gebruik een kleine, zuinige USB 2.0-stick (4 tot 16 GB). Grotere of snellere sticks vragen meer stroom dan de USB-poort van de speaker kan leveren.",
   "setup.help.usbHub": "Of sluit de stick aan via een USB-hub met eigen voeding, zodat hij stabiel stroom krijgt los van de poort van de speaker.",
   "setup.st30StickPowerWarn": "SoundTouch 30 gedetecteerd: de USB-poort kan sommige sticks niet goed van stroom voorzien, wat tijdens de installatie een stroomfout geeft. Gebruik een kleine, zuinige USB 2.0-stick (4 tot 16 GB), of sluit hem aan via een USB-hub met eigen voeding.",
-  "setup.unverifiedHardware": "Ik heb STR nog niet getest met dit luidsprekermodel, dus ik kan niet beloven dat het werkt. Je kunt het toch installeren en misschien werkt het prima, maar beschouw het als ongetest en ga verder op eigen risico. Als je het probeert, laat me dan weten hoe het ging, zodat ik jouw model aan de lijst met geverifieerde apparaten kan toevoegen.",
   "worldMap.inviteText": "Je SoundTouch leeft weer 🎉",
   "worldMap.inviteBtn": "Deel het op de wereldkaart",
   "setup.stickLargeFat32": "Dit is een grote stick (meer dan 32 GB). Grote sticks zijn vaak geformatteerd op een manier die de speaker niet kan lezen. Hij wordt tijdens de voorbereiding opnieuw geformatteerd naar een compatibel FAT32; alle gegevens op de stick gaan verloren.",
@@ -1129,13 +1130,6 @@
   "setup.provisionNoAnswer": "geen antwoord van de speaker",
   "speaker.wedgedTitle": "Speaker reageert niet:",
   "speaker.wedgedBanner": "\"{{name}}\" accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal.",
-  "presets.copyTitle": "Presets van deze speaker onthouden (kopiëren)",
-  "presets.pasteTitle": "Onthouden presets van \"{{name}}\" naar deze speaker overzetten",
-  "presets.pasteTitleEmpty": "Kopieer eerst de presets op de bron-speaker",
-  "presets.clipboardState": "Presets van \"{{name}}\" onthouden",
-  "presets.copiedToast": "Presets van \"{{name}}\" onthouden - kies nu de doel-speaker en druk op plakken",
-  "presets.pasteConfirmTitle": "Presets overzetten?",
-  "presets.pasteConfirmBody": "Alle presets van \"{{from}}\" naar \"{{to}}\" overzetten? De huidige toetsen van de doel-speaker worden overschreven.",
-  "presets.pastedToast": "{{count}} presets overgezet naar \"{{name}}\"",
-  "presets.pasteFailed": "Overzetten van presets mislukt: {{err}}"
+  "presets.transferBtn": "Overzetten",
+  "presets.transferNoTargets": "Geen andere speaker gevonden om naar over te zetten"
 }

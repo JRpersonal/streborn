@@ -205,6 +205,8 @@
   "speaker.modelTitle": "Speaker model",
   "speaker.stickVersionTitle": "Stick version",
   "speaker.updateBadgeTitle": "Update available for this speaker",
+  "speaker.playingNow": "Playing now",
+  "speaker.groupLabelTitle": "Multiroom group led by {{name}}",
   "speaker.editTitle": "Settings for this speaker",
   "speaker.noneSelected": "No speaker selected.",
   "speaker.reboot": "Restart speaker",
@@ -935,7 +937,6 @@
   "setup.help.lowPowerStick": "Use a small, low-power USB 2.0 stick (4 to 16 GB). Larger or faster sticks draw more power than the speaker's USB port can supply.",
   "setup.help.usbHub": "Or plug the stick into a powered USB hub (one with its own power supply), so it gets steady power independently of the speaker's port.",
   "setup.st30StickPowerWarn": "SoundTouch 30 detected: its USB port can struggle to power some sticks, which causes a power error during install. Use a small, low-power USB 2.0 stick (4 to 16 GB), or connect it through a powered USB hub.",
-  "setup.unverifiedHardware": "I have not verified STR on this speaker model yet, so I cannot promise it will work. You can still install it, and it may run fine, but please treat it as untested and proceed at your own risk. If you try it, please let me know how it went so I can add your model to the verified list.",
   "worldMap.inviteText": "Your SoundTouch is alive again 🎉",
   "worldMap.inviteBtn": "Share it on the world map",
   "worldMap.countLine": "🌍 {{n}} SoundTouch speakers rescued worldwide so far. Add yours!",
@@ -1130,13 +1131,6 @@
   "setup.provisionNoAnswer": "no answer from the speaker",
   "speaker.wedgedTitle": "Speaker not responding:",
   "speaker.wedgedBanner": "\"{{name}}\" is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again.",
-  "presets.copyTitle": "Remember this speaker's presets (copy)",
-  "presets.pasteTitle": "Transfer the remembered presets from \"{{name}}\" to this speaker",
-  "presets.pasteTitleEmpty": "First copy the presets on the source speaker",
-  "presets.clipboardState": "Presets from \"{{name}}\" remembered",
-  "presets.copiedToast": "Presets from \"{{name}}\" remembered - now pick the target speaker and press the paste button",
-  "presets.pasteConfirmTitle": "Transfer presets?",
-  "presets.pasteConfirmBody": "Transfer all presets from \"{{from}}\" to \"{{to}}\"? The target speaker's current preset keys will be overwritten.",
-  "presets.pastedToast": "{{count}} presets transferred to \"{{name}}\"",
-  "presets.pasteFailed": "Transferring presets failed: {{err}}"
+  "presets.transferBtn": "Transfer",
+  "presets.transferNoTargets": "No other speaker found to transfer to"
 }
