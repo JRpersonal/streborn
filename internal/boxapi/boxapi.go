@@ -551,6 +551,19 @@ func (c *Client) SetName(ctx context.Context, name string) error {
 	return c.postXML(ctx, "/name", body)
 }
 
+// LeaveSetup tells the firmware to leave its out-of-box SETUP source. A box
+// that finished install but never completed Bose's app-driven onboarding keeps
+// the SETUP source active: the display shows "follow the SoundTouch app
+// instructions" and every play is refused, even though the box is otherwise
+// configured and on the network (live: SoundTouch 300 and scm-ST30, 2026-07-09,
+// now_playing source="SETUP"). A single POST /setup state="SETUP_LEAVE" clears
+// it to INVALID_SOURCE, after which UPnP radio plays normally. Verified live on
+// an scm-ST30. Harmless when the box is not in setup (the firmware just echoes
+// the state back), so it is safe to call unconditionally as a repair.
+func (c *Client) LeaveSetup(ctx context.Context) error {
+	return c.postXML(ctx, "/setup", `<setupState state="SETUP_LEAVE" />`)
+}
+
 // SetVolume sets the target volume (0-100).
 func (c *Client) SetVolume(ctx context.Context, v int) error {
 	if v < 0 {

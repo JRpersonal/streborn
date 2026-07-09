@@ -417,6 +417,14 @@ func run() error {
 	// the current stream + the UPnP renderer.
 	go webuiSrv.PeriodicZoneReconcile()
 
+	// Auto-leave the out-of-box SETUP source. A box that installed STR over the
+	// network but never finished Bose's app-driven onboarding keeps the SETUP
+	// source active: the display shows "follow the SoundTouch app instructions"
+	// and every play is refused, though the box is otherwise ready (live:
+	// ST300 + scm-ST30, 2026-07-09). One POST /setup SETUP_LEAVE clears it and
+	// UPnP radio plays. Watch for it and repair it so no user has to power-cycle.
+	go leaveSetupSourceWatcher(context.Background(), *boxHost, logger)
+
 	// Auto-re-push (#4): when the Bose renderer drops a proxied stream on its
 	// own (reported: radio stops after ~11 min with no upstream error), the
 	// webui resumes it conservatively (only if the box stays on and idle).
@@ -2391,6 +2399,73 @@ func readUptimeSec() int64 {
 		return -1
 	}
 	return int64(sec)
+}
+
+// boxNowPlayingSource returns the source attribute of the box's now_playing
+// (e.g. "SETUP", "STANDBY", "UPNP", "INVALID_SOURCE"), or "" on any error.
+func boxNowPlayingSource(boxHost string) string {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	m := regexp.MustCompile(`source="([^"]*)"`).FindSubmatch(b)
+	if len(m) == 2 {
+		return string(m[1])
+	}
+	return ""
+}
+
+// leaveSetupSourceWatcher clears a stuck out-of-box SETUP source so the box can
+// play. It checks soon after boot (the common case: a fresh network install
+// that never went through Bose's app onboarding), retries a few times to catch
+// a box whose agent came up before the firmware settled, then drops to a slow
+// maintenance poll. A POST /setup SETUP_LEAVE is harmless when the box is not
+// in setup, so a stray check costs nothing. See boxapi.LeaveSetup.
+func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.Logger) {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	client := boxapi.New(boxHost)
+	check := func() {
+		if boxNowPlayingSource(boxHost) != "SETUP" {
+			return
+		}
+		lctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		err := client.LeaveSetup(lctx)
+		cancel()
+		if err != nil {
+			logger.Warn("leave-setup: could not clear the out-of-box SETUP source", "err", err)
+			return
+		}
+		logger.Info("leave-setup: cleared the box's stuck out-of-box SETUP source so it can play (no power-cycle needed)")
+	}
+	// Prompt initial sweep: a handful of tries over the first ~2 minutes.
+	for i := 0; i < 8; i++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(15 * time.Second):
+		}
+		check()
+	}
+	// Maintenance: a box can re-enter the SETUP source after a firmware event,
+	// so keep a slow watch running.
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			check()
+		}
+	}
 }
 
 // boxIsPlaying reports whether the Bose box is actively rendering audio (any
