@@ -860,7 +860,6 @@
   "setup.help.usbPower": "Tai maitinimo problema, o ne sugedusi atmintinė. Garsiakalbio USB lizdas negalėjo stabiliai maitinti atmintinės ją skaitydamas, todėl atmintinė atsijungė diegimo metu. Ta pati atmintinė paprastai veikia su SoundTouch 10 arba 20.",
   "setup.help.lowPowerStick": "Naudokite mažą, mažai energijos naudojančią USB 2.0 atmintinę (4 iki 16 GB). Didesnės arba greitesnės atmintinės naudoja daugiau srovės, nei gali patiekti garsiakalbio USB lizdas.",
   "setup.help.usbHub": "Arba prijunkite atmintinę per USB šakotuvą su atskiru maitinimu, kad ji gautų stabilų maitinimą nepriklausomai nuo garsiakalbio lizdo.",
-  "setup.st30StickPowerWarn": "Aptiktas SoundTouch 30: jo USB lizdas gali nepakankamai maitinti kai kurias atmintines, todėl diegimo metu kyla maitinimo klaida. Naudokite mažą, mažai energijos naudojančią USB 2.0 atmintinę (4 iki 16 GB) arba prijunkite ją per USB šakotuvą su atskiru maitinimu.",
   "worldMap.inviteText": "Jūsų SoundTouch vėl veikia 🎉",
   "worldMap.inviteBtn": "Pasidalykite pasaulio žemėlapyje",
   "setup.stickLargeFat32": "Tai didelė atmintinė (daugiau nei 32 GB). Didelės atmintinės dažnai suformatuotos taip, kad kolonėlė negali jų nuskaityti. Paruošimo metu ji bus performatuota į suderinamą FAT32; visi atmintinės duomenys bus prarasti.",

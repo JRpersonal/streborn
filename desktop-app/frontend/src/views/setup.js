@@ -334,19 +334,6 @@ function mountSetupShell() {
 // target is preserved unless the chosen speaker actually drops off
 // the LAN (brief mDNS gaps would otherwise yank the choice).
 
-// targetIsST30 reports whether a discovered box is a SoundTouch 30. The ST30's
-// USB port cannot reliably keep a higher-draw stick powered: under read load
-// VBUS collapses and the stick disconnects mid-install (a power error, not a
-// faulty stick, the same stick works on ST10/ST20). We warn in the picker so
-// the user reaches for a low-power stick before preparing one. Matches the
-// human label discovery emits ("SoundTouch 30") and the raw mDNS codes as a
-// fallback.
-function targetIsST30(box) {
-  if (!box) return false;
-  const m = String(box.model || '').toLowerCase().replace(/[\s_]+/g, '');
-  return m === 'soundtouch30' || m === 'st30' || m === '30';
-}
-
 // powerCycleAdviceHtml returns the post-install power-cycle advice as a ready-to-
 // insert div, model-aware. A full power-cycle is what clears the coprocessor's
 // undefined "light bar keeps sweeping" state that a normal restart leaves behind
@@ -469,22 +456,12 @@ export function renderSetupTargetPicker() {
     if (boxModelSupport(b.model) === 'limited') {
       cards += `<div class="setup-target-limited-note muted small">${escapeHtml(t('setup.limitedNote'))}</div>`;
     }
-    // ST30 USB power warning, shown as soon as an ST30 is detected (not gated on
-    // selection) so the user picks a low-power stick before preparing one.
-    if (targetIsST30(b)) {
-      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
-    }
   }
   for (const b of strBoxes) {
     const label = b.friendlyName || b.name || b.host;
     cards += cardHTML('str', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindSTR')),
       t('setup.targetCardBadgeSTR'), 'badge-ok');
-    // The same ST30 USB power caveat applies to an update stick (the box reads
-    // it on boot), so warn here too.
-    if (targetIsST30(b)) {
-      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
-    }
   }
   // No "unsupported" list any more: every discovered stock box is an install
   // target above, so there is nothing non-selectable to render here.

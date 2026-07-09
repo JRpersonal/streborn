@@ -891,7 +891,6 @@
   "setup.help.usbPower": "Das ist ein Stromproblem, kein defekter Stick. Der USB-Anschluss des Lautsprechers konnte den Stick beim Lesen nicht stabil mit Strom versorgen, deshalb hat sich der Stick während der Installation abgemeldet. Derselbe Stick funktioniert normalerweise an einer SoundTouch 10 oder 20.",
   "setup.help.lowPowerStick": "Nimm einen kleinen, stromsparenden USB-2.0-Stick (4 bis 16 GB). Größere oder schnellere Sticks brauchen mehr Strom, als der USB-Anschluss des Lautsprechers liefern kann.",
   "setup.help.usbHub": "Oder schließe den Stick über einen aktiven USB-Hub (mit eigenem Netzteil) an, damit er unabhängig vom Anschluss des Lautsprechers stabil mit Strom versorgt wird.",
-  "setup.st30StickPowerWarn": "SoundTouch 30 erkannt: Der USB-Anschluss kann manche Sticks nicht stabil mit Strom versorgen, das führt beim Installieren zu einem Stromfehler. Nimm einen kleinen, stromsparenden USB-2.0-Stick (4 bis 16 GB) oder schließe ihn über einen aktiven USB-Hub an.",
   "worldMap.inviteText": "Deine SoundTouch lebt wieder 🎉",
   "worldMap.inviteBtn": "Auf der Weltkarte teilen",
   "worldMap.countLine": "🌍 Schon {{n}} SoundTouch weltweit gerettet. Setz deinen Pin dazu!",
