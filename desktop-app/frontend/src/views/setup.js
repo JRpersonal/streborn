@@ -250,6 +250,7 @@ function mountSetupShell() {
       <p class="muted small">${escapeHtml(t('setup.skipToInstallHint'))}</p>
     </div>
     </details>
+    <div id="setupAwaitResult" class="setup-result"></div>
   `;
 
   // Wire the setup-tab name combobox with the same helper used in
@@ -1495,9 +1496,16 @@ async function doContinueWithStick() {
 // it sees, including the common "speaker booted without the stick" case, so
 // users stop dropping out at this fragile step.
 function showAwaitBoxReadyPanel({ ssid, pass, html }) {
-  const setupResult = $('setupResult');
-  if (!setupResult) return;
-  setupResult.innerHTML = html +
+  // Render the "do this on the speaker now" instructions at the VERY END,
+  // below the stick wizard and the "prepare USB stick" button (setupAwaitResult
+  // sits after the </details>), not in setupResult which is ABOVE the button.
+  // Otherwise the user, looking at the button they just pressed, never scrolls
+  // up to see the next steps and drops out here.
+  const target = $('setupAwaitResult') || $('setupResult');
+  if (!target) return;
+  const oldResult = $('setupResult');
+  if (oldResult && target !== oldResult) oldResult.innerHTML = '';
+  target.innerHTML = html +
     `<div class="setup-section setup-await-ready">` +
     `<div class="setup-ok"><b>${escapeHtml(t('setup.awaitBoxReadyTitle'))}</b></div>` +
     `<ol class="setup-await-steps">` +
@@ -1509,6 +1517,7 @@ function showAwaitBoxReadyPanel({ ssid, pass, html }) {
     `<div class="setup-await-status" id="setupAwaitStatus"></div>` +
     `<button class="btn btn-primary" id="setupSpeakerReady" disabled>${escapeHtml(t('setup.awaitConfirmWaiting'))}</button>` +
     `</div>`;
+  try { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* older webview */ }
   watchForSpeakerReady({ ssid, pass, html });
 }
 
