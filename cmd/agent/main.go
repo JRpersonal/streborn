@@ -698,6 +698,17 @@ func run() error {
 	// once at boot but can miss a network that is not up yet; this keeps retrying
 	// from an HTTP Date header until a valid time is set, then exits (a no-op when
 	// the clock is already fine). See internal/clocksync and #296.
+	//
+	// One synchronous attempt FIRST (short timeout), before the goroutine and
+	// before we serve: on a stick-free network install run.sh never ran at
+	// install time to do the boot Date sync, so without this the very first
+	// requests could hit a 2015 clock until the goroutine catches up. Best-effort
+	// - if the network is not up yet the goroutine below keeps retrying (#375).
+	func() {
+		sctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+		defer cancel()
+		clocksync.SyncNowIfImplausible(sctx, logger)
+	}()
 	go clocksync.RunUntilSynced(ctx, logger, 30*time.Second)
 
 	// If the USB stick has a newer run.sh than the NAND run-override.sh:
