@@ -1125,5 +1125,6 @@
   "a11y.theme": "Theme",
   "a11y.theme.dark": "Dark",
   "a11y.theme.light": "Light",
-  "a11y.theme.contrast": "High contrast"
+  "a11y.theme.contrast": "High contrast",
+  "setup.stayOnPage": "Please stay on this page and keep the app open until the installation finishes."
 }

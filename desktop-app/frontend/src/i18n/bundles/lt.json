@@ -1124,5 +1124,6 @@
   "a11y.theme": "Tema",
   "a11y.theme.dark": "Tamsi",
   "a11y.theme.light": "Šviesi",
-  "a11y.theme.contrast": "Didelis kontrastas"
+  "a11y.theme.contrast": "Didelis kontrastas",
+  "setup.stayOnPage": "Likite šiame puslapyje ir neuždarykite programos, kol diegimas bus baigtas."
 }

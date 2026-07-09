@@ -193,6 +193,11 @@ function mountSetupShell() {
         <span class="setup-stick-summary-label">${escapeHtml(t('setup.useStickInstead'))}</span>
         <span class="muted small setup-stick-summary-hint">${escapeHtml(t('setup.useStickInsteadHint'))}</span>
       </summary>
+    <!-- ST30 stick-power warning: only relevant when actually preparing a
+         stick, so it lives here instead of shouting at the top of the speaker
+         picker (the network install does not care about stick power). Toggled
+         by renderPrimaryAction based on the selected target. -->
+    <div class="setup-target-st30-warn hidden" id="stickSt30Warn"></div>
     <div class="setup-section">
       <div class="setup-section-head">
         <h3>${escapeHtml(t('setup.step1Heading'))}</h3>
@@ -537,11 +542,6 @@ export function renderSetupTargetPicker() {
     if (boxModelSupport(b.model) === 'limited') {
       cards += `<div class="setup-target-limited-note muted small">${escapeHtml(t('setup.limitedNote'))}</div>`;
     }
-    // ST30 USB power warning, shown as soon as an ST30 is detected (not gated on
-    // selection) so the user picks a low-power stick before preparing one.
-    if (targetIsST30(b)) {
-      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
-    }
     // Unverified-hardware slot (#283): filled async once the firmware Variant is
     // known. Does not block install; only tells the user STR is untested here.
     cards += unverifiedWarnSlot(b.host);
@@ -551,11 +551,6 @@ export function renderSetupTargetPicker() {
     cards += cardHTML('str', b.host, label,
       boxIdentLine(b, t('setup.targetCardKindSTR')),
       t('setup.targetCardBadgeSTR'), 'badge-ok');
-    // The same ST30 USB power caveat applies to an update stick (the box reads
-    // it on boot), so warn here too.
-    if (targetIsST30(b)) {
-      cards += `<div class="setup-target-st30-warn">${escapeHtml(t('setup.st30StickPowerWarn'))}</div>`;
-    }
     cards += unverifiedWarnSlot(b.host);
   }
   // No "unsupported" list any more: every discovered stock box is an install
@@ -835,6 +830,15 @@ function renderPrimaryAction() {
   const host = $('setupPrimaryAction');
   const details = $('setupStickDetails');
   if (!host) return;
+  // ST30 stick-power warning, shown only inside the stick section and only
+  // when the selected target actually is an ST30.
+  const st30Warn = $('stickSt30Warn');
+  if (st30Warn) {
+    const b = state.setupTarget && state.setupTarget.box;
+    const isST30 = !!(b && targetIsST30(b));
+    st30Warn.classList.toggle('hidden', !isST30);
+    if (isST30) st30Warn.textContent = t('setup.st30StickPowerWarn');
+  }
   const sel = state.setupTarget;
   if (sel && sel.kind === 'stock' && sel.box) {
     const b = sel.box;
@@ -1917,7 +1921,8 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
       rows += chkRow(phaseLabels[ph], st, detail, st === 'done' ? '' : phaseEtas[ph]);
     });
     render(`<div class="setup-checklist"><div class="chk-head"><span>${escapeHtml(t('setup.installRunning'))}</span>` +
-      `<span class="chk-timer">${fmtMS(Date.now() - installStartMs)}</span></div>${rows}` +
+      `<span class="chk-timer">${fmtMS(Date.now() - installStartMs)}</span></div>` +
+      `<div class="chk-stay muted small">${escapeHtml(t('setup.stayOnPage'))}</div>${rows}` +
       `<div class="chk-reassure muted small">${escapeHtml(t('setup.cardReassure'))}</div></div>`);
   };
   const timerHandle = setInterval(renderChecklist, 1000);
