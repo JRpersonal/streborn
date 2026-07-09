@@ -634,6 +634,8 @@ export function renderSetupTargetPicker() {
         const box = list.find(b => b.host === host);
         if (!box) return;
         state.setupTarget = { kind, box };
+        // Lock-step with the music tab and the Settings picker.
+        if (deps.speakerPicked) deps.speakerPicked(box);
       }
       renderSetupTargetPicker();
       updateSetupGoButtonLabel();

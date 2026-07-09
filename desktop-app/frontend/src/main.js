@@ -301,9 +301,9 @@ initSpotifyView({
     .filter(b => b && b.kind !== 'stock' && b.deviceID && b.host)
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
-initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames });
+initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab });
 initLibraryView({ showSlotPicker, formatDuration });
-initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, boxFetch, celebrateProvision: inviteWorldMapAfterProvision });
+initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, boxFetch, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initPodcastsView();
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
@@ -1700,6 +1700,19 @@ function renderBoxSelect() {
   updateBoxUiVisibility();
 }
 
+// speakerPickedInTab keeps the tabs in lock-step in the other direction: a
+// speaker picked in Settings or Setup becomes the music tab's active box too.
+// Stock boxes cannot be driven from the music tab, so they only preselect the
+// Settings/Setup pickers and leave the music selection alone.
+function speakerPickedInTab(box) {
+  if (!box) return;
+  state.settingsBox = box;
+  state.setupTarget = { kind: box.kind === 'stock' ? 'stock' : 'str', box };
+  if (box.kind !== 'stock' && (!state.currentBox || state.currentBox.host !== box.host)) {
+    selectBox(box);
+  }
+}
+
 function selectBox(box) {
   // Clear the cached now-playing line when actually switching to a different
   // speaker, so the status bar does not show the previous box's track until the
@@ -1708,6 +1721,14 @@ function selectBox(box) {
   const switched = !state.currentBox || state.currentBox.host !== (box && box.host);
   state.currentBox = box;
   if (box && box.deviceID) saveLastBox(box.deviceID);
+  // Tab-selection lock-step: the speaker picked here is preselected in the
+  // Settings and Setup tabs too (their pickers re-render on every tab entry),
+  // so switching tabs never lands on a different speaker than the one the
+  // user was just controlling.
+  if (box) {
+    state.settingsBox = box;
+    state.setupTarget = { kind: box.kind === 'stock' ? 'stock' : 'str', box };
+  }
   state.presetErrors = {};
   if (switched) { resetNowPlaying(); renderNowPlayingBar(); }
   renderBoxSelect();
