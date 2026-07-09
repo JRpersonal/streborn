@@ -214,6 +214,14 @@ type Server struct {
 	fetchMu   sync.Mutex
 	lastFetch time.Time
 
+	// netMu guards a briefly-cached verdict on whether the SPEAKER itself can
+	// reach the public internet. It lets /api/stream-status tell "this one
+	// station is unreachable" apart from "the speaker has no internet at all"
+	// (a box that landed on a dead Wi-Fi fails EVERY station this way, #375).
+	netMu      sync.Mutex
+	netCheckAt time.Time
+	netOnline  bool
+
 	// brMu guards the detected bitrate of the stream currently being
 	// proxied. We learn it from the upstream Icecast/Shoutcast "icy-br"
 	// header (exact, instant) or, when that is absent, by measuring
@@ -736,6 +744,37 @@ func (s *Server) recordFailure(url string, err error) {
 	s.errMu.Unlock()
 }
 
+// boxHasOutbound reports whether the speaker itself can reach the public
+// internet, cached for a few seconds. It lets handleStreamStatus tell a single
+// unreachable station apart from the speaker being offline entirely (#375): a
+// box on a dead Wi-Fi fails EVERY station with a network-level error, which
+// otherwise reads as each station being individually broken. Dials a couple of
+// well-known hosts by NAME on :443 (so DNS, which radio also needs, is part of
+// the test) plus a raw resolver IP; any success means online.
+func (s *Server) boxHasOutbound() bool {
+	s.netMu.Lock()
+	if !s.netCheckAt.IsZero() && time.Since(s.netCheckAt) < 8*time.Second {
+		v := s.netOnline
+		s.netMu.Unlock()
+		return v
+	}
+	s.netMu.Unlock()
+	online := false
+	for _, h := range []string{"www.google.com:443", "www.cloudflare.com:443", "1.1.1.1:53"} {
+		c, err := net.DialTimeout("tcp", h, 2*time.Second)
+		if err == nil {
+			_ = c.Close()
+			online = true
+			break
+		}
+	}
+	s.netMu.Lock()
+	s.netOnline = online
+	s.netCheckAt = time.Now()
+	s.netMu.Unlock()
+	return online
+}
+
 // clearFailure drops any recorded failure for url once it streams successfully,
 // so a recovered station does not keep reporting a stale error to the app.
 func (s *Server) clearFailure(url string) {
@@ -793,6 +832,15 @@ func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
 	if f.when.IsZero() || time.Since(f.when) > streamStatusTTL {
 		fmt.Fprint(w, `{"error":false}`)
 		return
+	}
+	// A network-level "unreachable" is ambiguous: the one station may be down,
+	// or the speaker has no internet at all. When outbound is also down, report a
+	// distinct "offline" reason so the app can say "the speaker has no internet
+	// connection" and offer to re-run Wi-Fi setup, instead of blaming every
+	// station in turn (#375). Only checked on the "unreachable" catch-all, so a
+	// clear 403/blocked/gone is never masked and the probe stays off the hot path.
+	if f.reason == "unreachable" && !s.boxHasOutbound() {
+		f.reason = "offline"
 	}
 	body, err := json.Marshal(struct {
 		Error  bool   `json:"error"`

@@ -4663,8 +4663,27 @@ function streamErrorMessage(reason) {
     case 'gone':        return t('search.streamGone');
     case 'unavailable': return t('search.streamUnavailable');
     case 'hls':         return t('search.streamHls');
+    case 'offline':     return t('search.streamOffline');
     default:            return t('search.streamUnreachable');
   }
+}
+
+// openBoxWifiSetup takes the user to a speaker's Wi-Fi setup: it makes the box
+// the settings target (keeping the tabs in sync), switches to the settings view,
+// and expands + scrolls to the WLAN switch section. Used from the "speaker has
+// no internet" prompt so a box that landed on a dead Wi-Fi can be re-provisioned
+// in one tap instead of a manual factory reset (#375).
+function openBoxWifiSetup(box) {
+  if (!box) return;
+  speakerPickedInTab(box);
+  switchView('settings');
+  setTimeout(() => {
+    const toggle = $('wlanSwitchToggle');
+    if (!toggle) return;
+    const form = $('wlanSwitchForm');
+    if (form && form.classList.contains('hidden')) toggle.click();
+    toggle.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 250);
 }
 
 // pollStreamFailure asks the agent whether the stream the box just started has
@@ -4801,6 +4820,23 @@ async function playStation(s) {
       fail = { reason: 'unreachable', status: 0 };
     }
     if (!fail) return; // playing fine
+
+    if (fail.reason === 'offline') {
+      // The speaker itself has no internet: every station will fail the same
+      // way, so do not cycle through alternatives. Say so plainly and offer to
+      // re-run its Wi-Fi setup (#375).
+      state.nowPlayState = '';
+      state.nowLocation = '';
+      state.lastAppPlay = null;
+      renderPresets();
+      const fix = await confirmWarn(
+        t('search.streamOfflineTitle'),
+        t('search.streamOfflineBody', { name: getBoxLabel(box) }),
+        { icon: null, confirmLabel: t('search.streamOfflineFix'), confirmClass: 'btn btn-primary' }
+      );
+      if (fix) openBoxWifiSetup(box);
+      return;
+    }
 
     const alt = await findAlternativeStation(s, tried);
     if (!alt) {
