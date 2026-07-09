@@ -76,7 +76,7 @@
   "multiroom.needTwo": "Il te faut au moins deux enceintes sous ST Reborn pour former un groupe.",
   "multiroom.masterLabel": "Enceinte principale (diffuse la source)",
   "multiroom.slavesLabel": "Grouper avec",
-  "multiroom.groupNamePh": "Nom du groupe (facultatif)",
+  "multiroom.groupNameNote": "Le groupe apparaît dans Spotify et sur l'enceinte sous le nom de l'enceinte maîtresse.",
   "multiroom.createBtn": "Créer le groupe",
   "multiroom.ungroupBtn": "Dissoudre le groupe",
   "multiroom.currentZone": "Groupe actuel",

@@ -125,7 +125,7 @@ export function renderMultiroom(fetchLive) {
        <div class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
          <div class="seg">${modeBtn('native', t('multiroom.modeNative'))}${modeBtn('mirror', t('multiroom.modeMirror'))}</div>
          <span class="muted small">${escapeHtml(t('multiroom.modeHelp'))}</span></div>
-       <input id="zoneName" type="text" placeholder="${escapeAttr(t('multiroom.groupNamePh'))}"${dis} />
+       <div class="zone-name-note muted small">${escapeHtml(t('multiroom.groupNameNote'))}</div>
        <div class="zone-actions">
          <button id="zoneCreate" class="btn"${dis}>${escapeHtml(t('multiroom.createBtn'))}</button>
          <button id="zoneUngroup" class="btn btn-mini"${dis}>${escapeHtml(t('multiroom.ungroupBtn'))}</button>
@@ -252,13 +252,12 @@ async function doFormZone(strBoxes) {
     renderMultiroom(false);
     return;
   }
-  const name = ($('zoneName').value || '').trim();
   const mode = state.zoneMode || 'native';
   $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
     const res = await FormZone(master.host, master.port, {
       master: { deviceID: master.deviceID, ip: master.host },
-      slaves, name, stereo: false, mode,
+      slaves, stereo: false, mode,
     });
     // Real feedback: mirror reports back {ok,mode}; native returns the live
     // zone, so verify the firmware actually took the members.

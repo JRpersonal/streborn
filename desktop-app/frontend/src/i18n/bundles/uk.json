@@ -76,7 +76,7 @@
   "multiroom.needTwo": "Щоб створити групу, потрібні щонайменше дві колонки з ST Reborn.",
   "multiroom.masterLabel": "Головна колонка (відтворює джерело)",
   "multiroom.slavesLabel": "Об'єднати з",
-  "multiroom.groupNamePh": "Назва групи (необов'язково)",
+  "multiroom.groupNameNote": "Група відображається у Spotify та на динаміку під назвою головного динаміка.",
   "multiroom.createBtn": "Створити групу",
   "multiroom.ungroupBtn": "Роз'єднати",
   "multiroom.currentZone": "Поточна група",

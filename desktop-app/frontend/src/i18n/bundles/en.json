@@ -80,7 +80,7 @@
   "multiroom.needTwo": "You need at least two speakers running ST Reborn to make a group.",
   "multiroom.masterLabel": "Main speaker (plays the source)",
   "multiroom.slavesLabel": "Group with",
-  "multiroom.groupNamePh": "Group name (optional)",
+  "multiroom.groupNameNote": "The group appears in Spotify and on the speaker under the master speaker's name.",
   "multiroom.createBtn": "Create group",
   "multiroom.ungroupBtn": "Ungroup",
   "multiroom.currentZone": "Current group",

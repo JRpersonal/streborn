@@ -76,7 +76,7 @@
   "multiroom.needTwo": "Bir grup oluşturmak için ST Reborn çalıştıran en az iki hoparlöre ihtiyacınız var.",
   "multiroom.masterLabel": "Ana hoparlör (kaynağı çalar)",
   "multiroom.slavesLabel": "Şunlarla grupla",
-  "multiroom.groupNamePh": "Grup adı (isteğe bağlı)",
+  "multiroom.groupNameNote": "Grup, Spotify'da ve hoparlörde ana hoparlörün adıyla görünür.",
   "multiroom.createBtn": "Grup oluştur",
   "multiroom.ungroupBtn": "Grubu çöz",
   "multiroom.currentZone": "Mevcut grup",

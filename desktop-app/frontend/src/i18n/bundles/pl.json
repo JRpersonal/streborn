@@ -76,7 +76,7 @@
   "multiroom.needTwo": "Potrzebujesz co najmniej dwóch głośników z ST Reborn, aby utworzyć grupę.",
   "multiroom.masterLabel": "Główny głośnik (odtwarza źródło)",
   "multiroom.slavesLabel": "Zgrupuj z",
-  "multiroom.groupNamePh": "Nazwa grupy (opcjonalnie)",
+  "multiroom.groupNameNote": "Grupa pojawia się w Spotify i na głośniku pod nazwą głównego głośnika.",
   "multiroom.createBtn": "Utwórz grupę",
   "multiroom.ungroupBtn": "Rozgrupuj",
   "multiroom.currentZone": "Bieżąca grupa",

@@ -76,7 +76,7 @@
   "multiroom.needTwo": "グループを作るには、ST Rebornで動作するスピーカーが少なくとも2台必要です。",
   "multiroom.masterLabel": "メインのスピーカー (音源を再生)",
   "multiroom.slavesLabel": "グループに追加",
-  "multiroom.groupNamePh": "グループ名 (任意)",
+  "multiroom.groupNameNote": "グループは Spotify とスピーカー上ではマスタースピーカーの名前で表示されます。",
   "multiroom.createBtn": "グループを作成",
   "multiroom.ungroupBtn": "グループを解除",
   "multiroom.currentZone": "現在のグループ",

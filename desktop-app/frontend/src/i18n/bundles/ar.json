@@ -76,7 +76,7 @@
   "multiroom.needTwo": "تحتاج إلى سمّاعتين على الأقل تعملان بـ ST Reborn لإنشاء مجموعة.",
   "multiroom.masterLabel": "السمّاعة الرئيسية (تشغّل المصدر)",
   "multiroom.slavesLabel": "التجميع مع",
-  "multiroom.groupNamePh": "اسم المجموعة (اختياري)",
+  "multiroom.groupNameNote": "تظهر المجموعة في Spotify وعلى السمّاعة باسم السمّاعة الرئيسية.",
   "multiroom.createBtn": "إنشاء مجموعة",
   "multiroom.ungroupBtn": "إلغاء التجميع",
   "multiroom.currentZone": "المجموعة الحالية",
