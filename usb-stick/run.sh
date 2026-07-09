@@ -1645,6 +1645,58 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             -e "s/'/\&apos;/g"
     }
 
+    # goform_wlan_push SSID PASS
+    # Pushes a Wi-Fi profile straight to the SMSC/JukeBlox coprocessor's
+    # GoAhead :80 goform handler — the ONE path that actually PROGRAMS the
+    # radio on the BCO/scm chassis. NetManager's /addWirelessProfile writes
+    # its DB but the coprocessor never applies it (live 2026-07-09, scm
+    # SoundTouch 30: /addWirelessProfile set the active profile yet the box
+    # would not associate; the goform POST answered "New settings were
+    # successfully applied" and it joined JJ3). This is now the standard
+    # provisioning step: safe on ANY model because it only POSTs where a
+    # goform server actually answers — on an sm2 box with no :80 coprocessor
+    # the probe finds nothing and it no-ops. Non-destructive: it configures a
+    # profile, it does not tear down a working ethernet link. Returns 0 on a
+    # confirmed apply. Best-effort and heavily logged.
+    goform_wlan_push() {
+        _gf_ssid="$1"; _gf_pass="$2"
+        [ -n "$_gf_ssid" ] || return 1
+        # RFC-3986 url-encode, BusyBox-safe (same technique as M_jukebox _ue).
+        _gf_ue() {
+            _gf_s="$1"; _gf_o=""
+            while [ -n "$_gf_s" ]; do
+                _gf_c=${_gf_s%"${_gf_s#?}"}; _gf_s=${_gf_s#?}
+                case "$_gf_c" in
+                    [a-zA-Z0-9._~-]) _gf_o="$_gf_o$_gf_c" ;;
+                    *) _gf_o="$_gf_o$(printf '%%%02X' "'$_gf_c")" ;;
+                esac
+            done
+            printf '%s' "$_gf_o"
+        }
+        _gf_sec=""; _gf_cip=""; _gf_pp=""
+        if [ -n "$_gf_pass" ]; then
+            _gf_sec="WPA2PSK"; _gf_cip="CCMP"; _gf_pp=$(_gf_ue "$_gf_pass")
+        fi
+        _gf_body="ConfigManual=1&SSID=$(_gf_ue "$_gf_ssid")&Passphrase=$_gf_pp&Key0=&Security=$_gf_sec&Cipher=$_gf_cip&DHCPClient=1&IP=&Mask=&DefGW=&DNSSrv1=&DNSSrv2=&ProxyServer=&ProxyServerPort="
+        _gf_gw=$(ip route 2>/dev/null | sed -n 's/^default via \([0-9.]*\).*/\1/p' | head -1)
+        for _gf_h in 127.0.0.1 ${_gf_gw:-x} 192.168.1.1; do
+            [ "$_gf_h" = "x" ] && continue
+            # Only POST where the goform handler actually answers, so we never
+            # spray an unrelated :80 on the LAN.
+            wget -qO- -T 4 "http://$_gf_h/goform/aformHandlerConfigureProfileSettings" >/dev/null 2>&1 || continue
+            _gf_resp=$(wget -qO- -T 20 \
+                --header="Content-Type: application/x-www-form-urlencoded" \
+                --header="Referer: http://$_gf_h/" \
+                --post-data="$_gf_body" \
+                "http://$_gf_h/goform/aformHandlerConfigureProfileSettings" 2>&1)
+            setup_log "goform_wlan_push @ $_gf_h ssid='$_gf_ssid' rc=$? resp='$(echo "$_gf_resp" | tr -d '\r\n' | head -c 120)'"
+            case "$_gf_resp" in
+                *"successfully applied"*|*EndRes*) return 0 ;;
+            esac
+        done
+        return 1
+    }
+
     # ---- M_air helpers: AirplayConfiguration.xml WLAN profile ----------
     # On BCO chassis (Portable/taigan, ST20-spotty) the Wi-Fi coprocessor
     # is driven by BoseApp's BCONetworkServicesController, which reads the
@@ -2026,10 +2078,17 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                         if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then break; fi
                         sleep 3; _w=$((_w + 3))
                     done
+                    # 1) NetManager DB entry (so the profile is on record).
                     REFRESH_BODY="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$ESSID_R\" password=\"$EPASS_R\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
                     REFRESH_RESP=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
                            --post-data="$REFRESH_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
                     setup_log "M0a-refresh: non-destructive /addWirelessProfile (seed for failover) waited=${_w}s rc=$? src='$WLAN_SOURCE' response='$(echo "$REFRESH_RESP" | head -c 200)'"
+                    # 2) Program the Wi-Fi coprocessor directly via goform — the
+                    # step that actually makes a BCO/scm box associate (the DB
+                    # entry alone does not; live 2026-07-09 scm ST30). No-op on
+                    # sm2 boxes without the :80 coprocessor. This is what lets
+                    # the box fail over to the app-chosen network on cable pull.
+                    goform_wlan_push "$SSID" "$PASS"
                 ) &
             fi
             WINNER="M0a-prelease"
