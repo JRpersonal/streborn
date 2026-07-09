@@ -2069,7 +2069,7 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
             # in-line probe misses it and the seed silently never fires (live
             # 2026-07-09). Poll for :8090 in a subshell and push once it is up,
             # so the boot pipeline is not blocked and the seed still lands.
-            if [ -n "$SSID" ] && [ -z "$IS_TAIGAN" ]; then
+            if [ -n "$SSID" ]; then
                 ESSID_R=$(xml_escape "$SSID" 2>/dev/null || printf '%s' "$SSID")
                 EPASS_R=$(xml_escape "$PASS" 2>/dev/null || printf '%s' "$PASS")
                 (
@@ -2079,15 +2079,20 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                         sleep 3; _w=$((_w + 3))
                     done
                     # 1) NetManager DB entry (so the profile is on record).
-                    REFRESH_BODY="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$ESSID_R\" password=\"$EPASS_R\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
-                    REFRESH_RESP=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
-                           --post-data="$REFRESH_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
-                    setup_log "M0a-refresh: non-destructive /addWirelessProfile (seed for failover) waited=${_w}s rc=$? src='$WLAN_SOURCE' response='$(echo "$REFRESH_RESP" | head -c 200)'"
+                    # Skipped on taigan, where the endpoint silently fails.
+                    if [ -z "$IS_TAIGAN" ]; then
+                        REFRESH_BODY="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$ESSID_R\" password=\"$EPASS_R\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
+                        REFRESH_RESP=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
+                               --post-data="$REFRESH_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
+                        setup_log "M0a-refresh: non-destructive /addWirelessProfile (seed for failover) waited=${_w}s rc=$? src='$WLAN_SOURCE' response='$(echo "$REFRESH_RESP" | head -c 200)'"
+                    fi
                     # 2) Program the Wi-Fi coprocessor directly via goform — the
                     # step that actually makes a BCO/scm box associate (the DB
-                    # entry alone does not; live 2026-07-09 scm ST30). No-op on
-                    # sm2 boxes without the :80 coprocessor. This is what lets
-                    # the box fail over to the app-chosen network on cable pull.
+                    # entry alone does not; live 2026-07-09 scm ST30). Runs on
+                    # ALL chassis including taigan (this is taigan's working
+                    # path); no-op on sm2 boxes without the :80 coprocessor.
+                    # This is what lets the box fail over to the app-chosen
+                    # network the moment the cable is pulled.
                     goform_wlan_push "$SSID" "$PASS"
                 ) &
             fi
