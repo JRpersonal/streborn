@@ -76,7 +76,7 @@
   "multiroom.needTwo": "Lai izveidotu grupu, vajadzīgi vismaz divi skaļruņi ar ST Reborn.",
   "multiroom.masterLabel": "Galvenais skaļrunis (atskaņo avotu)",
   "multiroom.slavesLabel": "Grupēt ar",
-  "multiroom.groupNamePh": "Grupas nosaukums (neobligāti)",
+  "multiroom.groupNameNote": "Grupa Spotify un skaļrunī tiek rādīta ar galvenā skaļruņa nosaukumu.",
   "multiroom.createBtn": "Izveidot grupu",
   "multiroom.ungroupBtn": "Atgrupēt",
   "multiroom.currentZone": "Pašreizējā grupa",

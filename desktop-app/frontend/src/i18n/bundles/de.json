@@ -80,7 +80,7 @@
   "multiroom.needTwo": "Du brauchst mindestens zwei Lautsprecher mit ST Reborn, um eine Gruppe zu bilden.",
   "multiroom.masterLabel": "Haupt-Lautsprecher (spielt die Quelle)",
   "multiroom.slavesLabel": "Gruppieren mit",
-  "multiroom.groupNamePh": "Gruppenname (optional)",
+  "multiroom.groupNameNote": "Die Gruppe erscheint in Spotify und am Lautsprecher unter dem Namen des Master-Lautsprechers.",
   "multiroom.createBtn": "Gruppe erstellen",
   "multiroom.ungroupBtn": "Gruppe auflösen",
   "multiroom.currentZone": "Aktuelle Gruppe",

@@ -76,7 +76,7 @@
   "multiroom.needTwo": "Grupei sudaryti reikia bent dviejų garsiakalbių su ST Reborn.",
   "multiroom.masterLabel": "Pagrindinis garsiakalbis (groja šaltinį)",
   "multiroom.slavesLabel": "Grupuoti su",
-  "multiroom.groupNamePh": "Grupės pavadinimas (neprivaloma)",
+  "multiroom.groupNameNote": "Grupė „Spotify\" ir garsiakalbyje rodoma pagrindinio garsiakalbio vardu.",
   "multiroom.createBtn": "Sukurti grupę",
   "multiroom.ungroupBtn": "Išardyti grupę",
   "multiroom.currentZone": "Dabartinė grupė",
