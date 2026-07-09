@@ -4857,7 +4857,14 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		"stick_listing":  listDir("/media/sda1"),
 		"media_listing":  listDir("/media"),
 		"nv_listing":     listDir("/mnt/nv/streborn"),
-		"proc_mounts":    readTail("/proc/mounts"),
+		// The /mnt/nv ROOT, not just STR's own subdir: a stock or STR-only box
+		// carries only Bose's persistent state and streborn/ here, so anything
+		// else (e.g. an aftertouch/ dir) is a leftover from another mod that can
+		// clash with STR's Wi-Fi/marge path. Surfacing it lets a bundle spot such
+		// remnants without SSH (do NOT blanket-wipe /mnt/nv: it holds the box's
+		// own Wi-Fi/AirPlay/account persistence).
+		"nv_root_listing": listDir("/mnt/nv"),
+		"proc_mounts":     readTail("/proc/mounts"),
 		// Writable-volume usage: df for /mnt/nv + / and the per-entry sizes that
 		// answer "is this box genuinely tighter or carrying foreign firmware
 		// leftovers" without needing SSH (#ST30 OTA no-space, 2026-06-24).
