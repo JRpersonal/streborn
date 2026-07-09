@@ -116,6 +116,22 @@ func RunUntilSynced(ctx context.Context, logger *slog.Logger, interval time.Dura
 	}
 }
 
+// SyncNowIfImplausible makes a single best-effort attempt to correct an
+// implausibly old clock, with its own short-lived HTTP client. It returns true
+// when it set the clock. Meant to be called synchronously at agent startup,
+// before the agent serves requests, so the very first request already has a
+// sane clock on a stick-free network install (where run.sh never ran at install
+// time to do the boot Date sync). The RunUntilSynced goroutine still runs after
+// this to keep retrying if the network was not up yet (#375).
+func SyncNowIfImplausible(ctx context.Context, logger *slog.Logger) bool {
+	if !Implausible(time.Now()) {
+		return false
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	ok, _ := SyncIfImplausible(ctx, client, logger)
+	return ok
+}
+
 // SyncIfImplausible sets the system clock from a network HTTP Date header, but
 // only when the local clock is implausibly old and a plausible, strictly later
 // network time is reachable — it never moves the clock backward. It returns true
