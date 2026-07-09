@@ -114,6 +114,8 @@ function mountSettingsShell() {
     if (box) {
       state.settingsBox = box;
       loadBoxSettings();
+      // Lock-step with the music tab (and the Setup target picker).
+      if (deps.speakerPicked) deps.speakerPicked(box);
     }
   };
   $('settingsRefreshBtn').onclick = async () => {
