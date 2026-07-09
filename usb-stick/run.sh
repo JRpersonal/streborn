@@ -147,6 +147,60 @@ setup_log() {
     echo "$line" >> "$SETUP_LOG_NAND" 2>/dev/null
 }
 
+# goform_wlan_push SSID PASS
+# Pushes a Wi-Fi profile straight to the SMSC/JukeBlox coprocessor's GoAhead
+# :80 goform handler — the ONE path that actually PROGRAMS the radio on the
+# BCO/scm chassis. NetManager's /addWirelessProfile writes its DB but the
+# coprocessor never applies it (live 2026-07-09, scm SoundTouch 30:
+# /addWirelessProfile set the active profile yet the box would not associate;
+# the goform POST answered "New settings were successfully applied" and it
+# joined). This is the standard Wi-Fi provisioning step. Safe on ANY model:
+# it only POSTs where a goform server actually answers, so on an sm2 box with
+# no :80 coprocessor the probe finds nothing and it no-ops; and it configures
+# a profile without tearing down a working ethernet link. Cheap (a couple of
+# tiny HTTP POSTs, negligible USB-port power draw), which is why it is also
+# used for the early low-power one-shot before the heavy stick copy. Returns
+# 0 on a confirmed apply. Defined at top level so both the early one-shot and
+# the full provisioning subshell can call it. Best-effort and heavily logged.
+goform_wlan_push() {
+    _gf_ssid="$1"; _gf_pass="$2"
+    [ -n "$_gf_ssid" ] || return 1
+    # RFC-3986 url-encode, BusyBox-safe (same technique as M_jukebox _ue).
+    _gf_ue() {
+        _gf_s="$1"; _gf_o=""
+        while [ -n "$_gf_s" ]; do
+            _gf_c=${_gf_s%"${_gf_s#?}"}; _gf_s=${_gf_s#?}
+            case "$_gf_c" in
+                [a-zA-Z0-9._~-]) _gf_o="$_gf_o$_gf_c" ;;
+                *) _gf_o="$_gf_o$(printf '%%%02X' "'$_gf_c")" ;;
+            esac
+        done
+        printf '%s' "$_gf_o"
+    }
+    _gf_sec=""; _gf_cip=""; _gf_pp=""
+    if [ -n "$_gf_pass" ]; then
+        _gf_sec="WPA2PSK"; _gf_cip="CCMP"; _gf_pp=$(_gf_ue "$_gf_pass")
+    fi
+    _gf_body="ConfigManual=1&SSID=$(_gf_ue "$_gf_ssid")&Passphrase=$_gf_pp&Key0=&Security=$_gf_sec&Cipher=$_gf_cip&DHCPClient=1&IP=&Mask=&DefGW=&DNSSrv1=&DNSSrv2=&ProxyServer=&ProxyServerPort="
+    _gf_gw=$(ip route 2>/dev/null | sed -n 's/^default via \([0-9.]*\).*/\1/p' | head -1)
+    for _gf_h in 127.0.0.1 ${_gf_gw:-x} 192.168.1.1; do
+        [ "$_gf_h" = "x" ] && continue
+        # Only POST where the goform handler actually answers, so we never
+        # spray an unrelated :80 on the LAN.
+        wget -qO- -T 2 "http://$_gf_h/goform/aformHandlerConfigureProfileSettings" >/dev/null 2>&1 || continue
+        _gf_resp=$(wget -qO- -T 20 \
+            --header="Content-Type: application/x-www-form-urlencoded" \
+            --header="Referer: http://$_gf_h/" \
+            --post-data="$_gf_body" \
+            "http://$_gf_h/goform/aformHandlerConfigureProfileSettings" 2>&1)
+        setup_log "goform_wlan_push @ $_gf_h ssid='$_gf_ssid' rc=$? resp='$(echo "$_gf_resp" | tr -d '\r\n' | head -c 120)'"
+        case "$_gf_resp" in
+            *"successfully applied"*|*EndRes*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 # Earliest breadcrumb: prove run.sh actually started and stamp the box
 # fingerprint (kernel + Bose variant/firmware) up front, BEFORE the ~170 lines
 # of provisioning logic that could abort. A genuinely failed ST10 boot left a
@@ -825,6 +879,37 @@ if [ -f "$STICK/run.sh" ]; then
     cp "$STICK/run.sh" /mnt/nv/streborn/run-override.sh 2>/dev/null
     chmod +x /mnt/nv/streborn/run-override.sh 2>/dev/null
     log "redeployed /mnt/nv/streborn/run-override.sh from stick (effective next boot)"
+fi
+
+# === Early low-power Wi-Fi one-shot (BEFORE the heavy stick->NAND copy) ===
+# The sync_stick_to_nand_always below reads ~28 MB (agent + go-librespot) off
+# the USB stick — the single most power-hungry operation of the boot. On a
+# port that cannot sustain it, the read browns out and the install never
+# finishes. So fire a MINIMAL Wi-Fi provisioning first: a couple of tiny
+# goform POSTs (negligible power) that program the speaker's Wi-Fi
+# coprocessor, so that even if the port then collapses mid-copy, the box is
+# already on Wi-Fi and can be loaded with STR over the network (network
+# install / OTA). The full provisioning below re-applies and verifies it once
+# the box is fully up, so this is a best-effort head start, not the only pass.
+#
+# GUARD: only runs when an SSID+PASS was actually provided (stick wlan.conf,
+# or the NAND wlan-creds an app change / OTA persisted). A box with no creds
+# is never touched, so a working Wi-Fi profile is never clobbered.
+_es_ssid=""; _es_pass=""
+if [ -f "$STICK/wlan.conf" ]; then
+    _es_ssid=$(sed -n 's/.*"ssid":"\([^"]*\)".*/\1/p' "$STICK/wlan.conf" | head -1)
+    _es_pass=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$STICK/wlan.conf" | head -1)
+elif [ -r "$PERSIST/wlan-creds" ]; then
+    _es_ssid=$(sed -n 's/^SSID=\(.*\)$/\1/p' "$PERSIST/wlan-creds" | head -1)
+    _es_pass=$(sed -n 's/^PASS=\(.*\)$/\1/p' "$PERSIST/wlan-creds" | head -1)
+fi
+if [ -n "$_es_ssid" ] && [ -n "$_es_pass" ]; then
+    setup_log "early WLAN one-shot: provisioning '$_es_ssid' via goform BEFORE the heavy stick copy (power-weak safety net)"
+    goform_wlan_push "$_es_ssid" "$_es_pass" \
+        && setup_log "early WLAN one-shot: coprocessor accepted the profile" \
+        || setup_log "early WLAN one-shot: no goform apply yet (coprocessor :80 maybe not up); full provisioning will retry"
+else
+    setup_log "early WLAN one-shot: no SSID/PASS provided, skipping (no profile change)"
 fi
 
 cleanup_nand
@@ -1986,25 +2071,63 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
                 mv "$WLAN_CREDS_NAND.new" "$WLAN_CREDS_NAND" 2>/dev/null
                 chmod 600 "$WLAN_CREDS_NAND" 2>/dev/null
             fi
-            # Password-rotation refresh: the box is associated under
-            # SSID X with the OLD password and the user booted with
-            # a stick that has SSID X with a NEW password (e.g. they
-            # rotated their router PSK and want to update the box).
-            # Push the new password into NetManager's DB via a single
-            # non-destructive POST. No `profiles clear`, no setup-AP
-            # teardown — NetManager's /addWirelessProfile updates the
-            # entry for the same SSID in-place. If the new PSK is
-            # wrong NetManager will reject and the live association
-            # is unaffected. Skips on taigan where the endpoint is
-            # known to silently fail (see [[taigan-quirks]]).
-            if [ "$WLAN_SOURCE" = "stick wlan.conf" ] && [ -z "$IS_TAIGAN" ] \
-               && wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then
+            # Non-destructive profile seed. TWO cases now use this single
+            # /addWirelessProfile POST (no `profiles clear`, no setup-AP
+            # teardown, live association unaffected if NetManager rejects):
+            #
+            #  1. Password-rotation refresh: the box is associated under SSID X
+            #     with the OLD password and the user booted with SSID X + a NEW
+            #     password; NetManager updates the entry in-place.
+            #  2. Seed a Wi-Fi profile for LATER failover on an ETHERNET-only
+            #     box (the Wi-Fi-via-eth0 / BCO chassis). The box works over
+            #     the cable, has no or a different stored Wi-Fi profile, and the
+            #     user asked STR to set a Wi-Fi network (app change -> NAND
+            #     replay, or a fresh stick). We do NOT tear down the working
+            #     ethernet; we only WRITE the target profile into NetManager so
+            #     that when the user later pulls the cable, the box fails over
+            #     to it. This is what makes "provision Wi-Fi cleanly + one
+            #     reboot, then the user decides when to unplug the cable" work
+            #     (SoundTouch 30 scm, 2026-07-09: pulling the cable live never
+            #     applied the app-set SSID because the profile was only
+            #     persisted to NAND for a stickless boot, never pushed to
+            #     NetManager while ethernet was up).
+            #
+            # Runs for any credential source now (stick or NAND replay), still
+            # skipped on taigan where this endpoint silently fails (the taigan
+            # Wi-Fi path is the goform :80 handler, see [[taigan-quirks]] /
+            # [[project_bco_wlan_profile_file]]).
+            #
+            # Backgrounded: M0a runs at ~57s but BoseApp :8090 (the POST target)
+            # only finishes coming up ~10s later on the ST30 scm, so a single
+            # in-line probe misses it and the seed silently never fires (live
+            # 2026-07-09). Poll for :8090 in a subshell and push once it is up,
+            # so the boot pipeline is not blocked and the seed still lands.
+            if [ -n "$SSID" ]; then
                 ESSID_R=$(xml_escape "$SSID" 2>/dev/null || printf '%s' "$SSID")
                 EPASS_R=$(xml_escape "$PASS" 2>/dev/null || printf '%s' "$PASS")
-                REFRESH_BODY="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$ESSID_R\" password=\"$EPASS_R\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
-                REFRESH_RESP=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
-                       --post-data="$REFRESH_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
-                setup_log "M0a-refresh: non-destructive /addWirelessProfile rc=$? response='$(echo "$REFRESH_RESP" | head -c 200)'"
+                (
+                    _w=0
+                    while [ "$_w" -lt 45 ]; do
+                        if wget -qO- -T 2 "$BOSE_API/info" >/dev/null 2>&1; then break; fi
+                        sleep 3; _w=$((_w + 3))
+                    done
+                    # 1) NetManager DB entry (so the profile is on record).
+                    # Skipped on taigan, where the endpoint silently fails.
+                    if [ -z "$IS_TAIGAN" ]; then
+                        REFRESH_BODY="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$ESSID_R\" password=\"$EPASS_R\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>"
+                        REFRESH_RESP=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
+                               --post-data="$REFRESH_BODY" "$BOSE_API/addWirelessProfile" 2>&1)
+                        setup_log "M0a-refresh: non-destructive /addWirelessProfile (seed for failover) waited=${_w}s rc=$? src='$WLAN_SOURCE' response='$(echo "$REFRESH_RESP" | head -c 200)'"
+                    fi
+                    # 2) Program the Wi-Fi coprocessor directly via goform — the
+                    # step that actually makes a BCO/scm box associate (the DB
+                    # entry alone does not; live 2026-07-09 scm ST30). Runs on
+                    # ALL chassis including taigan (this is taigan's working
+                    # path); no-op on sm2 boxes without the :80 coprocessor.
+                    # This is what lets the box fail over to the app-chosen
+                    # network the moment the cable is pulled.
+                    goform_wlan_push "$SSID" "$PASS"
+                ) &
             fi
             WINNER="M0a-prelease"
         fi
