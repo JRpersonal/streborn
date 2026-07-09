@@ -370,6 +370,24 @@ func run() error {
 	// kernel + NEON as the Portable where Spotify works).
 	syscheck.Run(logger, goLibrespotPath)
 	spotifyMgr := spotify.New(goLibrespotPath, "/mnt/nv/streborn/sp-cache", "ST Reborn", spotifyBox, logger.With("comp", "spotify"))
+	// Mirror a Spotify Connect volume change onto the whole multiroom group:
+	// go-librespot runs only on the master, so feed it the current followers'
+	// IPs from the zone store (empty when standalone).
+	if zonesStore != nil {
+		spotifyMgr.SetGroupSlaveIPsFn(func() []string {
+			z, ok := zonesStore.Get()
+			if !ok {
+				return nil
+			}
+			ips := make([]string, 0, len(z.Slaves))
+			for _, sl := range z.Slaves {
+				if sl.IP != "" {
+					ips = append(ips, sl.IP)
+				}
+			}
+			return ips
+		})
+	}
 
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
