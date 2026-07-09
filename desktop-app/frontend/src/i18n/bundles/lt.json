@@ -310,7 +310,7 @@
   "update.speakerAppLine": "Garsiakalbis: {{box}} · Programa: {{app}}",
   "update.speakerRunningOld": "Garsiakalbis veikia su versija {{boxVersion}}, programa veikia su {{appVersion}}.",
   "update.refreshBtn": "Atnaujinti",
-  "update.rebootNote": "Atnaujinimas paleis garsiakalbį iš naujo. Jis trumpam bus nepasiekiamas ir pats prisijungs; programa automatiškai patikrins naują versiją.",
+  "update.rebootNote": "Atnaujinimo metu garsiakalbis paleidžiamas iš naujo - priklausomai nuo atnaujinimo vieną ar du kartus - ir prisijungia pats. Tai ne atstatymas: išsaugoti nustatymai ir stotys lieka.",
   "update.uploading": "Įkeliama (apie 1 min.)...",
   "update.uploadedToast": "Atnaujinimas įkeltas. Garsiakalbis paleidžiamas iš naujo ir gali užtrukti iki kelių minučių, kol vėl atsakys.",
   "update.rebooting": "Garsiakalbis paleidžiamas iš naujo ir jungiasi (paprastai 2-4 min.)...",

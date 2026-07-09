@@ -342,7 +342,7 @@
   "update.speakerAppLine": "Speaker: {{box}} · App: {{app}}",
   "update.speakerRunningOld": "The speaker runs version {{boxVersion}}, the app is on {{appVersion}}.",
   "update.refreshBtn": "Update",
-  "update.rebootNote": "The speaker briefly restarts during the update and reconnects on its own. This is not a reset: your presets and settings are kept.",
+  "update.rebootNote": "The speaker restarts during the update - depending on the update once or twice - and reconnects on its own. This is not a reset: your presets and settings are kept.",
   "update.speakerUpdateAvailFor": "Update available for '{{name}}'",
   "update.versionLine": "installed: {{installed}} → new: {{next}}",
   "update.appBehindTitle": "This app is older than '{{name}}'",

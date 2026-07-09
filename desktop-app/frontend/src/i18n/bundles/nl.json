@@ -310,7 +310,7 @@
   "update.speakerAppLine": "Speaker: {{box}} · App: {{app}}",
   "update.speakerRunningOld": "De speaker draait versie {{boxVersion}}, de app draait {{appVersion}}.",
   "update.refreshBtn": "Bijwerken",
-  "update.rebootNote": "Bijwerken herstart de speaker. Hij is kort niet beschikbaar en verbindt vanzelf opnieuw; de app controleert de nieuwe versie automatisch.",
+  "update.rebootNote": "De speaker herstart tijdens de update - afhankelijk van de update één of twee keer - en verbindt vanzelf opnieuw. Dit is geen reset: presets en instellingen blijven behouden.",
   "update.uploading": "Uploaden (ca. 1 min)...",
   "update.uploadedToast": "Update geüpload. De speaker herstart en heeft tot enkele minuten nodig om weer te antwoorden.",
   "update.rebooting": "Speaker herstart en verbindt opnieuw (meestal 2-4 min)...",

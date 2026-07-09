@@ -2243,13 +2243,35 @@ async function runBoxUpdate(box, onPhase) {
     return false;
   };
   let confirmedVer = null;
+  // Bootstrap-reboot stability window: the first boot after an OTA can
+  // deliberately reboot ONCE more (~35 s after the agent API is back) when the
+  // new agent refreshed run-override.sh/rc.local on the NAND. Reporting
+  // success on the first version match made the app say "done" while the
+  // speaker went down again and blinked through another boot with no
+  // explanation (ST300, 2026-07-09). Confirm only after the box stays
+  // reachable on the new version for a full window; a drop inside the window
+  // returns to waiting and the next match confirms immediately-ish (the
+  // bootstrap reboot is one-time and loop-guarded on the agent side).
+  const stabilityMs = 50_000;
+  let stableSince = 0, sawSecondDrop = false;
   while (Date.now() < deadlineMs) {
     phase('verifying', { remainingMs: deadlineMs - Date.now() });
     await sleep(2_000);
     try {
       const v = await BoxAgentVersion(box.host, box.port);
-      if (updated(v)) { confirmedVer = v; break; }
-    } catch { /* box still unreachable mid-reboot; keep waiting */ }
+      if (updated(v)) {
+        if (!stableSince) stableSince = Date.now();
+        const windowDone = sawSecondDrop || (Date.now() - stableSince >= stabilityMs);
+        if (windowDone) { confirmedVer = v; break; }
+      } else {
+        stableSince = 0;
+      }
+    } catch {
+      // Unreachable: either still mid-first-reboot, or the bootstrap reboot
+      // just took the box down again after we already saw the new version.
+      if (stableSince) sawSecondDrop = true;
+      stableSince = 0;
+    }
   }
   if (!confirmedVer) return { outcome: 'timeout', version: null };
   // Post-reboot Spotify engine delivery for the one-time pre-v0.8.22 upgrade case
