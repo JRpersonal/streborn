@@ -211,6 +211,11 @@ type Server struct {
 	wedge            wedgeState
 	streamActivityFn func() (lastFetch, lastFailure time.Time)
 
+	// loginErr tracks the last time the box rejected a source as not-logged-in
+	// (errorUpdate 1036), so verifyRecall stands its retry down while a forced
+	// re-login runs instead of thrashing the box. See wedge.go / NoteBoxLoginError.
+	loginErr loginErrState
+
 	// lastUserStop is when the user last DELIBERATELY stopped playback, so the
 	// auto-re-push does not fight a wanted stop (v0.7.0: a single Stop
 	// did not hold because the proxy disconnect that a stop causes looks
@@ -1594,6 +1599,17 @@ func (s *Server) verifyRecall(expectedLocation string, retry func(ctx context.Co
 		location, busy := s.boxPlayLocation()
 		if busy && recallLocationMatches(expectedLocation, location) {
 			s.NoteBoxHealthy()
+			return
+		}
+		// The box just rejected the source because it is not signed in (1036).
+		// Re-pushing the same UPnP source only flaps it and can wedge the box
+		// (Michal's ST300). A forced re-login was already kicked off by the
+		// not-logged-in signal; stand this retry loop down and let the next user
+		// recall land once the box is signed back in - no thrashing, no manual
+		// "re-pair" step for the user.
+		if s.recentLoginError() {
+			s.logger.Warn("recall verify: box reported not-logged-in; standing down the retry (a re-login was triggered) instead of re-pushing and risking a wedge",
+				"attempt", attempt)
 			return
 		}
 		if busy {
