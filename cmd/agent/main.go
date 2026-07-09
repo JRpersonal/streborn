@@ -2248,6 +2248,14 @@ func maybeRebootAfterBootstrapSync(logger *slog.Logger) {
 	}
 	logger.Warn("bootstrap reboot: boot path was refreshed, rebooting once so the new run-override.sh/rc.local run this cycle instead of waiting for a manual power-cycle",
 		"stamp", stamp)
+	// On the lisa chassis (Wave SoundTouch, SA-4), a reboot fired seconds after
+	// boot — stacked on the install/bootstrap reboot — trips Bose's shepherdd
+	// watchdog into --recovery mode, where the Bose services never start and
+	// radio cannot play until a manual power-cycle (#372). Wait for the Bose
+	// stack to come up first so shepherd marks this boot successful and resets
+	// its crash-loop counter; the reboot that follows is then a clean single
+	// reboot. No-op on every other chassis.
+	settleBeforeFragileReboot(logger)
 	// Flush pending writes (the stick log, the bootstrap files and the
 	// guard stamp on NAND) before we pull the rug out. busybox `sync`
 	// keeps this portable at compile time, matching the reboot exec.
@@ -2256,6 +2264,45 @@ func maybeRebootAfterBootstrapSync(logger *slog.Logger) {
 	if err := exec.Command("reboot").Run(); err != nil {
 		logger.Error("bootstrap reboot: reboot command failed, continuing on stale boot path", "err", err)
 	}
+}
+
+// boxVariant returns the Bose chassis codename from /proc/variant (e.g. "lisa",
+// "taigan", "rhino", "mojo"), lowercased, or "" when it cannot be read.
+func boxVariant() string {
+	b, err := os.ReadFile("/proc/variant")
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(string(b)))
+}
+
+// settleBeforeFragileReboot delays a STR-initiated early-boot reboot on the
+// lisa chassis until the Bose service stack has come up on this boot, so a
+// reboot stacked on the install/bootstrap reboot does not trip shepherdd into
+// --recovery mode (#372). Waiting for :8090 to answer means shepherd has
+// marked this boot successful and reset its crash-loop counter. Best-effort:
+// after the settle window it reboots anyway. No-op on every other chassis,
+// where the stacked reboot has never tripped recovery (rhino/mojo/taigan are
+// verified).
+func settleBeforeFragileReboot(logger *slog.Logger) {
+	if boxVariant() != "lisa" {
+		return
+	}
+	const (
+		maxWait = 100 * time.Second
+		grace   = 5 * time.Second
+	)
+	logger.Info("bootstrap reboot: lisa chassis — waiting for the Bose stack (:8090) before rebooting so shepherdd does not enter recovery (#372)")
+	deadline := time.Now().Add(maxWait)
+	for time.Now().Before(deadline) {
+		if dialable("127.0.0.1", 8090) {
+			logger.Info("bootstrap reboot: Bose stack is up (:8090); shepherd boot marked healthy, proceeding with a single clean reboot")
+			time.Sleep(grace) // let shepherd finish marking the boot successful
+			return
+		}
+		time.Sleep(2 * time.Second)
+	}
+	logger.Warn("bootstrap reboot: lisa chassis — Bose stack did not come up within the settle window; rebooting anyway (best-effort)")
 }
 
 // stampVersionFiles writes this binary's version (semver + build stamp)
