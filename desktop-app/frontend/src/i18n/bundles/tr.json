@@ -1125,5 +1125,6 @@
   "a11y.theme.dark": "Koyu",
   "a11y.theme.light": "Açık",
   "a11y.theme.contrast": "Yüksek kontrast",
-  "setup.stayOnPage": "Kurulum bitene kadar lütfen bu sayfada kalın ve uygulamayı açık tutun."
+  "setup.stayOnPage": "Kurulum bitene kadar lütfen bu sayfada kalın ve uygulamayı açık tutun.",
+  "setup.provisionNoAnswer": "hoparlörden yanıt yok"
 }

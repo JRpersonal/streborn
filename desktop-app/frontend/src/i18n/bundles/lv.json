@@ -1125,5 +1125,6 @@
   "a11y.theme.dark": "Tumšs",
   "a11y.theme.light": "Gaišs",
   "a11y.theme.contrast": "Augsts kontrasts",
-  "setup.stayOnPage": "Palieciet šajā lapā un neaizveriet lietotni, līdz instalēšana ir pabeigta."
+  "setup.stayOnPage": "Palieciet šajā lapā un neaizveriet lietotni, līdz instalēšana ir pabeigta.",
+  "setup.provisionNoAnswer": "skaļrunis neatbild"
 }

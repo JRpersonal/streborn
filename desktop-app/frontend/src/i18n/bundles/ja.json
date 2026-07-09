@@ -1125,5 +1125,6 @@
   "a11y.theme.dark": "ダーク",
   "a11y.theme.light": "ライト",
   "a11y.theme.contrast": "ハイコントラスト",
-  "setup.stayOnPage": "インストールが完了するまで、このページを開いたままにしてアプリを閉じないでください。"
+  "setup.stayOnPage": "インストールが完了するまで、このページを開いたままにしてアプリを閉じないでください。",
+  "setup.provisionNoAnswer": "スピーカーから応答がありません"
 }

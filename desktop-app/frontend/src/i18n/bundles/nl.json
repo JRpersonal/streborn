@@ -1125,5 +1125,6 @@
   "a11y.theme.dark": "Donker",
   "a11y.theme.light": "Licht",
   "a11y.theme.contrast": "Hoog contrast",
-  "setup.stayOnPage": "Blijf op deze pagina en houd de app open tot de installatie is afgerond."
+  "setup.stayOnPage": "Blijf op deze pagina en houd de app open tot de installatie is afgerond.",
+  "setup.provisionNoAnswer": "geen antwoord van de speaker"
 }

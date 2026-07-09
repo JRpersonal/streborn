@@ -1125,5 +1125,6 @@
   "a11y.theme.dark": "Ciemny",
   "a11y.theme.light": "Jasny",
   "a11y.theme.contrast": "Wysoki kontrast",
-  "setup.stayOnPage": "Pozostań na tej stronie i nie zamykaj aplikacji, dopóki instalacja się nie zakończy."
+  "setup.stayOnPage": "Pozostań na tej stronie i nie zamykaj aplikacji, dopóki instalacja się nie zakończy.",
+  "setup.provisionNoAnswer": "brak odpowiedzi głośnika"
 }
