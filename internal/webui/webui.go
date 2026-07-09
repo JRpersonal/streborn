@@ -606,16 +606,30 @@ func WithRecent(r *recent.Store) Option {
 // Called before every play call.
 func (s *Server) ensureBoxReady(ctx context.Context) {
 	if s.boxHost != "" {
-		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		// Detach from the caller's request context: a slow wake must not be
+		// cancellable by the app giving up on the play POST, because the very
+		// same r.Context() then drives the SetURI that follows. When the wake
+		// (or the pair below) blocked past the app's request timeout, the app
+		// cancelled the request and the recall's own PlayURL then ran on an
+		// already-cancelled context and failed instantly with "context
+		// cancelled" - every preset recall dead on ST20/ST30 (bernd, #252).
+		wakeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 8*time.Second)
 		if err := boxcli.WakeAndWait(wakeCtx, s.boxHost, 6*time.Second, s.logger); err != nil {
 			s.logger.Warn("Box could not be woken from STANDBY", "err", err)
 		}
 		cancel()
 	}
 	if s.autoPair != nil {
-		pairCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
-		s.autoPair.TriggerNow(pairCtx)
-		cancel()
+		// Fire-and-forget. The marge-account refresh is NOT needed for the
+		// UPnP playback that follows, yet the box's :8090 setMargeAccount POST
+		// can hang for seconds on some firmwares. Running it inline blocked the
+		// recall past the app's request timeout (see above), so run it in the
+		// background on its own context and never delay the play on it.
+		go func() {
+			pairCtx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			defer cancel()
+			s.autoPair.TriggerNow(pairCtx)
+		}()
 	}
 }
 
@@ -1506,11 +1520,17 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// stream audio/aac in the DIDL so the box picks the right decoder. The
 	// fixed audio/mpeg label made those stations play silence (#252).
 	mime := upnp.MimeForCodec(p.Codec)
+	// Detach the play command from the request context: a preset recall should
+	// still reach the speaker if the app already gave up on the HTTP response,
+	// and it must never fail on a context the caller cancelled while the box was
+	// still being woken (the "context cancelled" recall regression, #252).
+	playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 12*time.Second)
+	defer playCancel()
 	var playErr error
 	if mime != "" {
-		playErr = s.renderer.PlayURLMime(r.Context(), playURL, p.Name, p.Art, mime)
+		playErr = s.renderer.PlayURLMime(playCtx, playURL, p.Name, p.Art, mime)
 	} else {
-		playErr = s.renderer.PlayURL(r.Context(), playURL, p.Name, p.Art)
+		playErr = s.renderer.PlayURL(playCtx, playURL, p.Name, p.Art)
 	}
 	if playErr != nil {
 		// Log the failed radio recall: this 502 used to be returned with no
