@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "يرجى البقاء في هذه الصفحة وإبقاء التطبيق مفتوحاً حتى انتهاء التثبيت.",
   "setup.provisionNoAnswer": "لا استجابة من السمّاعة",
   "speaker.wedgedTitle": "السمّاعة لا تستجيب:",
-  "speaker.wedgedBanner": "\"{{name}}\" لا تقبل التشغيل حالياً. افصلها عن الكهرباء للحظة ثم أعد توصيلها، وستعمل بشكل طبيعي مجدداً."
+  "speaker.wedgedBanner": "\"{{name}}\" لا تقبل التشغيل حالياً. افصلها عن الكهرباء للحظة ثم أعد توصيلها، وستعمل بشكل طبيعي مجدداً.",
+  "presets.copyTitle": "تذكّر إعدادات هذه السمّاعة (نسخ)",
+  "presets.pasteTitle": "نقل الإعدادات المحفوظة من \"{{name}}\" إلى هذه السمّاعة",
+  "presets.pasteTitleEmpty": "انسخ الإعدادات من السمّاعة المصدر أولاً",
+  "presets.clipboardState": "تم تذكّر إعدادات \"{{name}}\"",
+  "presets.copiedToast": "تم تذكّر إعدادات \"{{name}}\" - اختر السمّاعة الهدف ثم اضغط لصق",
+  "presets.pasteConfirmTitle": "نقل الإعدادات؟",
+  "presets.pasteConfirmBody": "نقل كل الإعدادات من \"{{from}}\" إلى \"{{to}}\"؟ سيتم استبدال أزرار السمّاعة الهدف الحالية.",
+  "presets.pastedToast": "تم نقل {{count}} إعدادات إلى \"{{name}}\"",
+  "presets.pasteFailed": "فشل نقل الإعدادات: {{err}}"
 }

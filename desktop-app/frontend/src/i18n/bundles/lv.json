@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "Palieciet šajā lapā un neaizveriet lietotni, līdz instalēšana ir pabeigta.",
   "setup.provisionNoAnswer": "skaļrunis neatbild",
   "speaker.wedgedTitle": "Skaļrunis nereaģē:",
-  "speaker.wedgedBanner": "\"{{name}}\" pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli."
+  "speaker.wedgedBanner": "\"{{name}}\" pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli.",
+  "presets.copyTitle": "Atcerēties šī skaļruņa iestatījumus (kopēt)",
+  "presets.pasteTitle": "Pārnest atcerētos \"{{name}}\" iestatījumus uz šo skaļruni",
+  "presets.pasteTitleEmpty": "Vispirms nokopējiet iestatījumus avota skaļrunī",
+  "presets.clipboardState": "Atcerēti \"{{name}}\" iestatījumi",
+  "presets.copiedToast": "Atcerēti \"{{name}}\" iestatījumi - izvēlieties mērķa skaļruni un nospiediet ielīmēt",
+  "presets.pasteConfirmTitle": "Pārnest iestatījumus?",
+  "presets.pasteConfirmBody": "Pārnest visus iestatījumus no \"{{from}}\" uz \"{{to}}\"? Mērķa skaļruņa pašreizējie taustiņi tiks pārrakstīti.",
+  "presets.pastedToast": "{{count}} iestatījumi pārnesti uz \"{{name}}\"",
+  "presets.pasteFailed": "Iestatījumu pārnešana neizdevās: {{err}}"
 }

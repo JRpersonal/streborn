@@ -1535,7 +1535,11 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .chk-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; font-weight: 500; color: var(--c-text-2); }
 .chk-timer { font-variant-numeric: tabular-nums; color: var(--c-muted); font-size: 13px; }
 .chk-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--c-muted); font-size: 13px; }
-.chk-stay { margin: 2px 0 8px; }
+/* Preset transfer row (music view): copy on the left, paste on the right,
+   clipboard state in between. Icon buttons with tooltip labels. */
+.preset-copy-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 2px 0; }
+.preset-copy-btn { font-size: 15px; line-height: 1; min-width: 34px; }
+.preset-copy-state { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chk-eta { margin-left: auto; font-weight: 400; white-space: nowrap; }
 .chk-row.chk-run { color: var(--c-text); font-weight: 500; }
 .chk-row.chk-done { color: var(--c-text-2); }

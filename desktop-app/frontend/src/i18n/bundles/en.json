@@ -1129,5 +1129,14 @@
   "setup.stayOnPage": "Please stay on this page and keep the app open until the installation finishes.",
   "setup.provisionNoAnswer": "no answer from the speaker",
   "speaker.wedgedTitle": "Speaker not responding:",
-  "speaker.wedgedBanner": "\"{{name}}\" is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again."
+  "speaker.wedgedBanner": "\"{{name}}\" is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again.",
+  "presets.copyTitle": "Remember this speaker's presets (copy)",
+  "presets.pasteTitle": "Transfer the remembered presets from \"{{name}}\" to this speaker",
+  "presets.pasteTitleEmpty": "First copy the presets on the source speaker",
+  "presets.clipboardState": "Presets from \"{{name}}\" remembered",
+  "presets.copiedToast": "Presets from \"{{name}}\" remembered - now pick the target speaker and press the paste button",
+  "presets.pasteConfirmTitle": "Transfer presets?",
+  "presets.pasteConfirmBody": "Transfer all presets from \"{{from}}\" to \"{{to}}\"? The target speaker's current preset keys will be overwritten.",
+  "presets.pastedToast": "{{count}} presets transferred to \"{{name}}\"",
+  "presets.pasteFailed": "Transferring presets failed: {{err}}"
 }

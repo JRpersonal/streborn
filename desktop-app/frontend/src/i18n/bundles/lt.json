@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "Likite šiame puslapyje ir neuždarykite programos, kol diegimas bus baigtas.",
   "setup.provisionNoAnswer": "garsiakalbis neatsako",
   "speaker.wedgedTitle": "Garsiakalbis nereaguoja:",
-  "speaker.wedgedBanner": "„{{name}}“ šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai."
+  "speaker.wedgedBanner": "„{{name}}“ šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai.",
+  "presets.copyTitle": "Įsiminti šio garsiakalbio stotis (kopijuoti)",
+  "presets.pasteTitle": "Perkelti įsimintas \"{{name}}\" stotis į šį garsiakalbį",
+  "presets.pasteTitleEmpty": "Pirmiausia nukopijuokite stotis šaltinio garsiakalbyje",
+  "presets.clipboardState": "Įsimintos \"{{name}}\" stotys",
+  "presets.copiedToast": "Įsimintos \"{{name}}\" stotys - pasirinkite paskirties garsiakalbį ir spauskite įklijuoti",
+  "presets.pasteConfirmTitle": "Perkelti stotis?",
+  "presets.pasteConfirmBody": "Perkelti visas stotis iš \"{{from}}\" į \"{{to}}\"? Dabartiniai paskirties garsiakalbio mygtukai bus perrašyti.",
+  "presets.pastedToast": "{{count}} stotys perkeltos į \"{{name}}\"",
+  "presets.pasteFailed": "Stočių perkėlimas nepavyko: {{err}}"
 }

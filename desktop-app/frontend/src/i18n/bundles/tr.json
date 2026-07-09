@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "Kurulum bitene kadar lütfen bu sayfada kalın ve uygulamayı açık tutun.",
   "setup.provisionNoAnswer": "hoparlörden yanıt yok",
   "speaker.wedgedTitle": "Hoparlör yanıt vermiyor:",
-  "speaker.wedgedBanner": "\"{{name}}\" şu anda oynatmayı kabul etmiyor. Fişini kısa süre çekip tekrar takın - ardından normal çalışır."
+  "speaker.wedgedBanner": "\"{{name}}\" şu anda oynatmayı kabul etmiyor. Fişini kısa süre çekip tekrar takın - ardından normal çalışır.",
+  "presets.copyTitle": "Bu hoparlörün kayıtlarını aklında tut (kopyala)",
+  "presets.pasteTitle": "\"{{name}}\" hoparlörünün kayıtlarını bu hoparlöre aktar",
+  "presets.pasteTitleEmpty": "Önce kaynak hoparlörde kayıtları kopyalayın",
+  "presets.clipboardState": "\"{{name}}\" kayıtları akılda",
+  "presets.copiedToast": "\"{{name}}\" kayıtları akılda - şimdi hedef hoparlörü seçip yapıştıra basın",
+  "presets.pasteConfirmTitle": "Kayıtlar aktarılsın mı?",
+  "presets.pasteConfirmBody": "\"{{from}}\" hoparlörünün tüm kayıtları \"{{to}}\" hoparlörüne aktarılsın mı? Hedef hoparlörün mevcut tuşlarının üzerine yazılır.",
+  "presets.pastedToast": "{{count}} kayıt \"{{name}}\" hoparlörüne aktarıldı",
+  "presets.pasteFailed": "Kayıtların aktarımı başarısız: {{err}}"
 }

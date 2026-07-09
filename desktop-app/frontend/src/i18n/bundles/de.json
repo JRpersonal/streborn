@@ -1129,5 +1129,14 @@
   "setup.stayOnPage": "Bitte bleib auf dieser Seite und lass die App geöffnet, bis die Installation abgeschlossen ist.",
   "setup.provisionNoAnswer": "keine Antwort vom Lautsprecher",
   "speaker.wedgedTitle": "Lautsprecher reagiert nicht:",
-  "speaker.wedgedBanner": "\"{{name}}\" nimmt gerade keine Wiedergabe an. Bitte kurz den Netzstecker ziehen und wieder einstecken - danach geht es normal weiter."
+  "speaker.wedgedBanner": "\"{{name}}\" nimmt gerade keine Wiedergabe an. Bitte kurz den Netzstecker ziehen und wieder einstecken - danach geht es normal weiter.",
+  "presets.copyTitle": "Presets dieses Lautsprechers merken (kopieren)",
+  "presets.pasteTitle": "Gemerkte Presets von \"{{name}}\" auf diesen Lautsprecher übertragen",
+  "presets.pasteTitleEmpty": "Zuerst auf dem Quell-Lautsprecher die Presets kopieren",
+  "presets.clipboardState": "Presets von \"{{name}}\" gemerkt",
+  "presets.copiedToast": "Presets von \"{{name}}\" gemerkt - jetzt Ziel-Lautsprecher wählen und auf Einfügen drücken",
+  "presets.pasteConfirmTitle": "Presets übertragen?",
+  "presets.pasteConfirmBody": "Alle Presets von \"{{from}}\" auf \"{{to}}\" übertragen? Die aktuellen Tasten des Ziel-Lautsprechers werden überschrieben.",
+  "presets.pastedToast": "{{count}} Presets auf \"{{name}}\" übertragen",
+  "presets.pasteFailed": "Übertragen der Presets fehlgeschlagen: {{err}}"
 }

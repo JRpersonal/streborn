@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "Restez sur cette page et laissez l'application ouverte jusqu'à la fin de l'installation.",
   "setup.provisionNoAnswer": "pas de réponse de l'enceinte",
   "speaker.wedgedTitle": "L'enceinte ne répond pas :",
-  "speaker.wedgedBanner": "\"{{name}}\" n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement."
+  "speaker.wedgedBanner": "\"{{name}}\" n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement.",
+  "presets.copyTitle": "Mémoriser les présélections de cette enceinte (copier)",
+  "presets.pasteTitle": "Transférer les présélections mémorisées de « {{name}} » vers cette enceinte",
+  "presets.pasteTitleEmpty": "Copiez d'abord les présélections sur l'enceinte source",
+  "presets.clipboardState": "Présélections de « {{name}} » mémorisées",
+  "presets.copiedToast": "Présélections de « {{name}} » mémorisées - choisissez l'enceinte cible et appuyez sur coller",
+  "presets.pasteConfirmTitle": "Transférer les présélections ?",
+  "presets.pasteConfirmBody": "Transférer toutes les présélections de « {{from}} » vers « {{to}} » ? Les touches actuelles de l'enceinte cible seront remplacées.",
+  "presets.pastedToast": "{{count}} présélections transférées vers « {{name}} »",
+  "presets.pasteFailed": "Échec du transfert des présélections : {{err}}"
 }

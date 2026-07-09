@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "インストールが完了するまで、このページを開いたままにしてアプリを閉じないでください。",
   "setup.provisionNoAnswer": "スピーカーから応答がありません",
   "speaker.wedgedTitle": "スピーカーが応答しません:",
-  "speaker.wedgedBanner": "「{{name}}」が再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。"
+  "speaker.wedgedBanner": "「{{name}}」が再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。",
+  "presets.copyTitle": "このスピーカーのプリセットを記憶(コピー)",
+  "presets.pasteTitle": "「{{name}}」の記憶したプリセットをこのスピーカーへ転送",
+  "presets.pasteTitleEmpty": "先にコピー元スピーカーでプリセットをコピーしてください",
+  "presets.clipboardState": "「{{name}}」のプリセットを記憶中",
+  "presets.copiedToast": "「{{name}}」のプリセットを記憶しました - 転送先スピーカーを選んで貼り付けを押してください",
+  "presets.pasteConfirmTitle": "プリセットを転送しますか?",
+  "presets.pasteConfirmBody": "「{{from}}」のすべてのプリセットを「{{to}}」へ転送しますか?転送先の現在のボタンは上書きされます。",
+  "presets.pastedToast": "{{count}}件のプリセットを「{{name}}」へ転送しました",
+  "presets.pasteFailed": "プリセットの転送に失敗しました: {{err}}"
 }
