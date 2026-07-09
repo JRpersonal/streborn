@@ -732,10 +732,10 @@
   "setup.phase.copy": "جارٍ نسخ STR إلى السمّاعة",
   "setup.phase.restart": "جارٍ إعادة تشغيل السمّاعة",
   "setup.phase.wait": "بانتظار بدء تشغيل STR",
-  "setup.phaseEta.access": "عادةً 2-5 دقائق",
-  "setup.phaseEta.copy": "عادةً 1-2 دقيقة",
+  "setup.phaseEta.access": "عادةً 1-2 دقيقة",
+  "setup.phaseEta.copy": "حوالي دقيقة",
   "setup.phaseEta.restart": "حوالي دقيقة",
-  "setup.phaseEta.wait": "عادةً 2-4 دقائق",
+  "setup.phaseEta.wait": "عادةً 1-2 دقيقة",
   "setup.unplugSafeWpa": "تم تثبيت STR وسمّاعتك تمتلك شبكة Wi-Fi الخاصة بك. حالما تظهر مجددًا في قائمة السمّاعات، يمكنك فصل كابل الشبكة.",
   "setup.unplugSafeBco": "تم تثبيت STR. سمّاعتك تنتقل الآن إلى Wi-Fi؛ امنحها نحو دقيقة، وحالما تظهر مجددًا في قائمة السمّاعات يمكنك فصل كابل الشبكة.",
   "setup.unplugNoWifi": "تم تثبيت STR. أضِف شبكة Wi-Fi في إعدادات السمّاعة، ثم يمكنك فصل كابل الشبكة.",
@@ -1124,5 +1124,6 @@
   "a11y.theme": "السمة",
   "a11y.theme.dark": "داكن",
   "a11y.theme.light": "فاتح",
-  "a11y.theme.contrast": "تباين عالٍ"
+  "a11y.theme.contrast": "تباين عالٍ",
+  "setup.stayOnPage": "يرجى البقاء في هذه الصفحة وإبقاء التطبيق مفتوحاً حتى انتهاء التثبيت."
 }

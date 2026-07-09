@@ -732,10 +732,10 @@
   "setup.phase.copy": "STR hoparlöre kopyalanıyor",
   "setup.phase.restart": "Hoparlör yeniden başlatılıyor",
   "setup.phase.wait": "STR'nin başlaması bekleniyor",
-  "setup.phaseEta.access": "genellikle 2-5 dk",
-  "setup.phaseEta.copy": "genellikle 1-2 dk",
+  "setup.phaseEta.access": "genellikle 1-2 dk",
+  "setup.phaseEta.copy": "yaklaşık 1 dk",
   "setup.phaseEta.restart": "yaklaşık 1 dk",
-  "setup.phaseEta.wait": "genellikle 2-4 dk",
+  "setup.phaseEta.wait": "genellikle 1-2 dk",
   "setup.unplugSafeWpa": "STR kuruldu ve hoparlörünüzde Wi-Fi'niz var. Hoparlör listesinde yeniden göründüğünde ağ kablosunu çıkarabilirsiniz.",
   "setup.unplugSafeBco": "STR kuruldu. Hoparlörünüz Wi-Fi'ye geçiyor; yaklaşık bir dakika verin, hoparlör listesinde yeniden göründüğünde ağ kablosunu çıkarabilirsiniz.",
   "setup.unplugNoWifi": "STR kuruldu. Wi-Fi'nizi Hoparlör ayarları bölümünde ekleyin, ardından ağ kablosunu çıkarabilirsiniz.",
@@ -1124,5 +1124,6 @@
   "a11y.theme": "Tema",
   "a11y.theme.dark": "Koyu",
   "a11y.theme.light": "Açık",
-  "a11y.theme.contrast": "Yüksek kontrast"
+  "a11y.theme.contrast": "Yüksek kontrast",
+  "setup.stayOnPage": "Kurulum bitene kadar lütfen bu sayfada kalın ve uygulamayı açık tutun."
 }

@@ -1535,6 +1535,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .chk-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; font-weight: 500; color: var(--c-text-2); }
 .chk-timer { font-variant-numeric: tabular-nums; color: var(--c-muted); font-size: 13px; }
 .chk-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--c-muted); font-size: 13px; }
+.chk-stay { margin: 2px 0 8px; }
 .chk-eta { margin-left: auto; font-weight: 400; white-space: nowrap; }
 .chk-row.chk-run { color: var(--c-text); font-weight: 500; }
 .chk-row.chk-done { color: var(--c-text-2); }

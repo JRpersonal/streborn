@@ -732,10 +732,10 @@
   "setup.phase.copy": "Kopiowanie STR na głośnik",
   "setup.phase.restart": "Ponowne uruchamianie głośnika",
   "setup.phase.wait": "Oczekiwanie na uruchomienie STR",
-  "setup.phaseEta.access": "zwykle 2-5 min",
-  "setup.phaseEta.copy": "zwykle 1-2 min",
+  "setup.phaseEta.access": "zwykle 1-2 min",
+  "setup.phaseEta.copy": "ok. 1 min",
   "setup.phaseEta.restart": "ok. 1 min",
-  "setup.phaseEta.wait": "zwykle 2-4 min",
+  "setup.phaseEta.wait": "zwykle 1-2 min",
   "setup.unplugSafeWpa": "STR jest zainstalowany, a Twój głośnik ma Twoje Wi-Fi. Gdy tylko pojawi się ponownie na liście głośników, możesz odłączyć kabel sieciowy.",
   "setup.unplugSafeBco": "STR jest zainstalowany. Twój głośnik przełącza się na Wi-Fi; daj mu około minuty, a gdy tylko pojawi się ponownie na liście głośników, możesz odłączyć kabel sieciowy.",
   "setup.unplugNoWifi": "STR jest zainstalowany. Dodaj swoje Wi-Fi w Ustawieniach głośnika, a potem możesz odłączyć kabel sieciowy.",
@@ -1124,5 +1124,6 @@
   "a11y.theme": "Motyw",
   "a11y.theme.dark": "Ciemny",
   "a11y.theme.light": "Jasny",
-  "a11y.theme.contrast": "Wysoki kontrast"
+  "a11y.theme.contrast": "Wysoki kontrast",
+  "setup.stayOnPage": "Pozostań na tej stronie i nie zamykaj aplikacji, dopóki instalacja się nie zakończy."
 }

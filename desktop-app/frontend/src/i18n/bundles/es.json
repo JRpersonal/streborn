@@ -732,10 +732,10 @@
   "setup.phase.copy": "Copiando STR al altavoz",
   "setup.phase.restart": "Reiniciando el altavoz",
   "setup.phase.wait": "Esperando a que STR arranque",
-  "setup.phaseEta.access": "normalmente 2-5 min",
-  "setup.phaseEta.copy": "normalmente 1-2 min",
+  "setup.phaseEta.access": "normalmente 1-2 min",
+  "setup.phaseEta.copy": "aprox. 1 min",
   "setup.phaseEta.restart": "aprox. 1 min",
-  "setup.phaseEta.wait": "normalmente 2-4 min",
+  "setup.phaseEta.wait": "normalmente 1-2 min",
   "setup.unplugSafeWpa": "STR está instalado y tu altavoz tiene tu Wi-Fi. En cuanto vuelva a aparecer en la lista de altavoces, puedes desconectar el cable de red.",
   "setup.unplugSafeBco": "STR está instalado. Tu altavoz está cambiando al Wi-Fi; dale alrededor de un minuto y, en cuanto vuelva a aparecer en la lista de altavoces, puedes desconectar el cable de red.",
   "setup.unplugNoWifi": "STR está instalado. Añade tu Wi-Fi en Ajustes del altavoz y luego podrás desconectar el cable de red.",
@@ -1124,5 +1124,6 @@
   "a11y.theme": "Tema",
   "a11y.theme.dark": "Oscuro",
   "a11y.theme.light": "Claro",
-  "a11y.theme.contrast": "Alto contraste"
+  "a11y.theme.contrast": "Alto contraste",
+  "setup.stayOnPage": "Permanece en esta página y mantén la app abierta hasta que termine la instalación."
 }
