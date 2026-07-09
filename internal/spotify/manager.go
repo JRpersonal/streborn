@@ -101,6 +101,13 @@ type Manager struct {
 	client     *http.Client   // short ops: pause/resume/volume/info
 	playClient *http.Client   // /player/play: a cold playlist load can take >5s
 	box        *boxapi.Client // box REST: friendly name (device_name) + volume bridge
+
+	// groupSlaveIPsFn returns the LAN IPs of the multiroom followers this box
+	// leads (empty when standalone). A Spotify Connect volume change targets the
+	// whole group, but go-librespot runs only on the master, so the manager
+	// mirrors the volume onto each follower too. Wired by the agent from the
+	// zones store; nil = no propagation.
+	groupSlaveIPsFn func() []string
 	credStore  string         // per-account credential copies for multi-account swap
 
 	mu           sync.Mutex
@@ -1906,6 +1913,15 @@ func (m *Manager) recalling() bool {
 // SetOnActivate wires the callback that points the box at the Spotify stream
 // when the user starts playback from the Spotify app while the box is on
 // another source (#14).
+// SetGroupSlaveIPsFn wires a provider for the LAN IPs of the multiroom
+// followers this box leads, so a Spotify Connect volume change is mirrored to
+// the whole group, not just the master.
+func (m *Manager) SetGroupSlaveIPsFn(fn func() []string) {
+	m.mu.Lock()
+	m.groupSlaveIPsFn = fn
+	m.mu.Unlock()
+}
+
 func (m *Manager) SetOnActivate(f func(context.Context)) {
 	m.mu.Lock()
 	m.onActivate = f
@@ -2187,8 +2203,45 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			}
 			cancel()
 			m.logger.Info("spotify: volume mirrored to box", "pct", pct)
+			// A group's volume must reach every follower, not just the master this
+			// go-librespot runs on. Mirror the same level onto each slave too.
+			m.mirrorVolumeToGroup(ctx, pct)
 		}
 	}
+}
+
+// mirrorVolumeToGroup pushes pct onto every multiroom follower this box leads,
+// in parallel and best-effort, so a Spotify Connect volume change applies to the
+// whole group (go-librespot runs only on the master, so without this only the
+// master's volume moves).
+func (m *Manager) mirrorVolumeToGroup(ctx context.Context, pct int) {
+	m.mu.Lock()
+	fn := m.groupSlaveIPsFn
+	m.mu.Unlock()
+	if fn == nil {
+		return
+	}
+	ips := fn()
+	if len(ips) == 0 {
+		return
+	}
+	var wg sync.WaitGroup
+	for _, ip := range ips {
+		if ip == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(ip string) {
+			defer wg.Done()
+			sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			defer cancel()
+			if err := boxapi.New(ip).SetVolume(sctx, pct); err != nil {
+				m.logger.Debug("spotify: group follower SetVolume failed", "ip", ip, "err", err, "pct", pct)
+			}
+		}(ip)
+	}
+	wg.Wait()
+	m.logger.Info("spotify: volume mirrored to group followers", "count", len(ips), "pct", pct)
 }
 
 // jsonString quotes a string as a JSON value.
