@@ -533,8 +533,10 @@ body {
 .box-group-label { flex-basis: 100%; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--bg-color, var(--c-muted)); opacity: 0.9; margin: 0 2px 1px; }
 .box-group-label svg { flex: 0 0 auto; }
 /* Small speaker icon on a tile whose speaker is currently playing. */
-.box-playing { color: var(--brand); margin-right: 3px; display: inline-flex; vertical-align: middle; }
-.box-btn.active .box-playing { color: var(--brand-text); }
+/* Green, matching the "playing" status bar (--signal-green), so the icon means
+   the same thing on a tile as in the status. */
+.box-playing { color: var(--signal-green); margin-right: 3px; display: inline-flex; vertical-align: middle; }
+.box-btn.active .box-playing { color: var(--signal-green); }
 /* Notification dot on a speaker button whose agent is out of date
    (#108). Same blue as the settings-tab badge (.tab-btn.has-update) on
    purpose: both mean "update available", so one colour, one meaning. Red
@@ -1544,7 +1546,19 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .chk-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--c-muted); font-size: 13px; }
 /* Preset transfer row (music view): copy on the left, paste on the right,
    clipboard state in between. Icon buttons with tooltip labels. */
-.preset-copy-row { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 6px 2px 0; }
+.preset-copy-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px; margin: 6px 2px 0; }
+/* Group control: chips to add/remove the other speakers to a group led by the
+   selected one, plus one volume slider for the whole group. Own line under the
+   Transfer button so it never crowds it. */
+.group-control { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.group-control:empty { display: none; margin: 0; }
+.group-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.group-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; font-size: 12px; line-height: 1.5; border: 1px solid var(--c-border); border-radius: 14px; background: var(--c-surface); color: var(--c-text); cursor: pointer; }
+.group-chip:hover { border-color: var(--brand); }
+.group-chip.in-group { border-color: var(--signal-green); background: rgba(102, 204, 102, 0.12); color: var(--signal-green); }
+.group-chip-mark { font-weight: 700; opacity: 0.85; }
+.group-vol-row { display: flex; align-items: center; gap: 8px; max-width: 360px; }
+.group-vol-row input[type=range] { flex: 1; min-width: 120px; }
 .preset-transfer-btn { display: inline-flex; align-items: center; gap: 6px; line-height: 1; }
 .preset-transfer-btn svg { flex: 0 0 auto; }
 .preset-xfer-select { margin-top: 8px; padding: 6px 8px; }

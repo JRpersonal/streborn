@@ -1134,5 +1134,12 @@
   "speaker.wedgedTitle": "Głośnik nie odpowiada:",
   "speaker.wedgedBanner": "\"{{name}}\" obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie.",
   "presets.transferBtn": "Przenieś",
-  "presets.transferNoTargets": "Nie znaleziono innego głośnika do przeniesienia"
+  "presets.transferNoTargets": "Nie znaleziono innego głośnika do przeniesienia",
+  "group.label": "Grupa:",
+  "group.addTitle": "Dodaj {{name}} do grupy",
+  "group.removeTitle": "Usuń {{name}} z grupy",
+  "group.volumeLabel": "Głośność grupy",
+  "group.dissolvedToast": "Grupa rozwiązana",
+  "group.addedToast": "Dodano {{name}} do grupy",
+  "group.removedToast": "Usunięto {{name}} z grupy"
 }

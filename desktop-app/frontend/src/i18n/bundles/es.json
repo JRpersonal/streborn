@@ -1134,5 +1134,12 @@
   "speaker.wedgedTitle": "El altavoz no responde:",
   "speaker.wedgedBanner": "\"{{name}}\" no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad.",
   "presets.transferBtn": "Transferir",
-  "presets.transferNoTargets": "No se encontró otro altavoz al que transferir"
+  "presets.transferNoTargets": "No se encontró otro altavoz al que transferir",
+  "group.label": "Grupo:",
+  "group.addTitle": "Añadir {{name}} al grupo",
+  "group.removeTitle": "Quitar {{name}} del grupo",
+  "group.volumeLabel": "Volumen del grupo",
+  "group.dissolvedToast": "Grupo deshecho",
+  "group.addedToast": "{{name}} añadido al grupo",
+  "group.removedToast": "{{name}} quitado del grupo"
 }

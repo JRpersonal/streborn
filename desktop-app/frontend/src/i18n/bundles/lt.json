@@ -1134,5 +1134,12 @@
   "speaker.wedgedTitle": "Garsiakalbis nereaguoja:",
   "speaker.wedgedBanner": "„{{name}}“ šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai.",
   "presets.transferBtn": "Perkelti",
-  "presets.transferNoTargets": "Nerasta kito garsiakalbio, į kurį perkelti"
+  "presets.transferNoTargets": "Nerasta kito garsiakalbio, į kurį perkelti",
+  "group.label": "Grupė:",
+  "group.addTitle": "Pridėti {{name}} į grupę",
+  "group.removeTitle": "Pašalinti {{name}} iš grupės",
+  "group.volumeLabel": "Grupės garsumas",
+  "group.dissolvedToast": "Grupė išformuota",
+  "group.addedToast": "{{name}} pridėta į grupę",
+  "group.removedToast": "{{name}} pašalinta iš grupės"
 }

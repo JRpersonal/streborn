@@ -1134,5 +1134,12 @@
   "speaker.wedgedTitle": "Speaker reageert niet:",
   "speaker.wedgedBanner": "\"{{name}}\" accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal.",
   "presets.transferBtn": "Overzetten",
-  "presets.transferNoTargets": "Geen andere speaker gevonden om naar over te zetten"
+  "presets.transferNoTargets": "Geen andere speaker gevonden om naar over te zetten",
+  "group.label": "Groep:",
+  "group.addTitle": "{{name}} aan de groep toevoegen",
+  "group.removeTitle": "{{name}} uit de groep verwijderen",
+  "group.volumeLabel": "Groepsvolume",
+  "group.dissolvedToast": "Groep opgeheven",
+  "group.addedToast": "{{name}} aan de groep toegevoegd",
+  "group.removedToast": "{{name}} uit de groep verwijderd"
 }

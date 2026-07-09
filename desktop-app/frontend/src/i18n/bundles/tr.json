@@ -1134,5 +1134,12 @@
   "speaker.wedgedTitle": "Hoparlör yanıt vermiyor:",
   "speaker.wedgedBanner": "\"{{name}}\" şu anda oynatmayı kabul etmiyor. Fişini kısa süre çekip tekrar takın - ardından normal çalışır.",
   "presets.transferBtn": "Aktar",
-  "presets.transferNoTargets": "Aktarılacak başka hoparlör bulunamadı"
+  "presets.transferNoTargets": "Aktarılacak başka hoparlör bulunamadı",
+  "group.label": "Grup:",
+  "group.addTitle": "{{name}} grubu ekle",
+  "group.removeTitle": "{{name}} gruptan çıkar",
+  "group.volumeLabel": "Grup ses düzeyi",
+  "group.dissolvedToast": "Grup dağıtıldı",
+  "group.addedToast": "{{name}} gruba eklendi",
+  "group.removedToast": "{{name}} gruptan çıkarıldı"
 }

@@ -1134,5 +1134,12 @@
   "speaker.wedgedTitle": "السمّاعة لا تستجيب:",
   "speaker.wedgedBanner": "\"{{name}}\" لا تقبل التشغيل حالياً. افصلها عن الكهرباء للحظة ثم أعد توصيلها، وستعمل بشكل طبيعي مجدداً.",
   "presets.transferBtn": "نقل",
-  "presets.transferNoTargets": "لا توجد سمّاعة أخرى للنقل إليها"
+  "presets.transferNoTargets": "لا توجد سمّاعة أخرى للنقل إليها",
+  "group.label": "المجموعة:",
+  "group.addTitle": "إضافة {{name}} إلى المجموعة",
+  "group.removeTitle": "إزالة {{name}} من المجموعة",
+  "group.volumeLabel": "مستوى صوت المجموعة",
+  "group.dissolvedToast": "تم حل المجموعة",
+  "group.addedToast": "تمت إضافة {{name}} إلى المجموعة",
+  "group.removedToast": "تمت إزالة {{name}} من المجموعة"
 }

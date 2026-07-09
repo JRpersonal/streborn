@@ -96,6 +96,8 @@ import {
   LogClientError,
   BrowserOpenURL,
   GetZoneState,
+  FormZone,
+  DissolveZone,
   EventsOn,
 } from './api.js';
 
@@ -1021,6 +1023,7 @@ $('view-box').innerHTML = `
     <div class="grid" id="presets"></div>
     <div class="preset-copy-row">
       <button class="btn btn-mini preset-transfer-btn" id="presetTransferBtn" aria-label="" title="" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg> ${escapeHtml(t('presets.transferBtn'))}</button>
+      <div class="group-control" id="groupControl"></div>
     </div>
     <div class="search">
       <h3>${escapeHtml(t('search.heading'))} <small>(${escapeHtml(t('search.headingSub'))})</small></h3>
@@ -1531,6 +1534,7 @@ async function refreshMusicZones() {
     state.zoneLiveBusy = false;
   }
   renderBoxSelect();
+  renderGroupControl(); // keep the group chips + slider in sync with the live zones
 }
 
 // refreshBoxPlaying fetches every STR speaker's now-playing so the music-tab
@@ -3188,12 +3192,119 @@ function wirePresetTransferRow() {
   };
 }
 
+// ---- Group control (below the presets, next to Transfer) ----
+// Chips to add/remove the other speakers to a multiroom group led by the
+// selected speaker, plus one volume slider for the whole group. Bose forms the
+// zone natively; the group's name comes from the master (see the Multi-Room tab).
+
+// currentGroupSlaves returns the speakers currently following the selected box in
+// a live zone (from the same state.zoneLive the group frames use).
+function currentGroupSlaves() {
+  const box = state.currentBox;
+  if (!box || !box.deviceID) return [];
+  const master = box.deviceID.toUpperCase();
+  const zl = state.zoneLive || {};
+  return (state.boxes || []).filter(b => {
+    if (!b || b.kind === 'stock' || !b.deviceID || b.host === box.host) return false;
+    const z = zl[b.deviceID];
+    return !!(z && z.master && z.master.toUpperCase() === master);
+  });
+}
+
+let _groupVolTimer = null;
+// setGroupVolume moves the master AND every follower to pct, so the slider
+// controls the whole group. Debounced so a slider drag does not flood the boxes.
+function setGroupVolume(pct) {
+  if (_groupVolTimer) clearTimeout(_groupVolTimer);
+  _groupVolTimer = setTimeout(() => {
+    const box = state.currentBox;
+    if (!box) return;
+    [box, ...currentGroupSlaves()].forEach(b => { SetBoxVolume(b.host, b.port, pct).catch(() => {}); });
+  }, 120);
+}
+
+// toggleGroupMember adds/removes the speaker at host to/from the group led by the
+// selected box. Removing the last one dissolves the zone; a removed speaker is
+// stopped so the music stops on it too.
+async function toggleGroupMember(host, port) {
+  const box = state.currentBox;
+  if (!box || box.kind === 'stock') return;
+  const target = (state.boxes || []).find(b => b.host === host);
+  if (!target) return;
+  const slaves = currentGroupSlaves();
+  const wasIn = slaves.some(b => b.host === host);
+  const next = wasIn ? slaves.filter(b => b.host !== host) : [...slaves, target];
+  try {
+    if (next.length === 0) {
+      await DissolveZone(box.host, box.port);
+      await Promise.allSettled(slaves.map(b => Stop(b.host, b.port))); // stop the ex-followers
+      showToast(t('group.dissolvedToast'));
+    } else {
+      await FormZone(box.host, box.port, {
+        master: { deviceID: box.deviceID, ip: box.host },
+        slaves: next.map(b => ({ deviceID: b.deviceID, ip: b.host })),
+        stereo: false, mode: 'native',
+      });
+      if (wasIn) { try { await Stop(target.host, target.port); } catch {} } // a removed speaker stops
+      showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
+    }
+    // Optimistic zone update so the chips + frames reflect the change at once;
+    // the 8s zone poll confirms (or corrects) it shortly after.
+    const zl = { ...(state.zoneLive || {}) };
+    const masterUp = (box.deviceID || '').toUpperCase();
+    for (const b of (state.boxes || [])) {
+      if (b.deviceID && zl[b.deviceID] && (zl[b.deviceID].master || '').toUpperCase() === masterUp) zl[b.deviceID] = null;
+    }
+    next.forEach(b => { if (b.deviceID) zl[b.deviceID] = { master: box.deviceID }; });
+    state.zoneLive = zl;
+    renderBoxSelect();
+  } catch (e) {
+    showError(String(e));
+  }
+  refreshMusicZones();
+  renderGroupControl();
+}
+
+// renderGroupControl paints the group chips + (when a group is active) the group
+// volume slider into #groupControl, based on the selected box.
+function renderGroupControl() {
+  const cont = $('groupControl');
+  if (!cont) return;
+  const box = state.currentBox;
+  const others = presetTransferTargets();
+  if (!box || box.kind === 'stock' || others.length === 0) { cont.innerHTML = ''; return; }
+  const slaves = currentGroupSlaves();
+  const inGroup = new Set(slaves.map(b => b.host));
+  const chips = others.map(b => {
+    const on = inGroup.has(b.host);
+    const label = getBoxLabel(b);
+    return `<button class="group-chip${on ? ' in-group' : ''}" data-host="${b.host}" data-port="${b.port}" `
+      + `title="${escapeAttr(t(on ? 'group.removeTitle' : 'group.addTitle', { name: label }))}">`
+      + `<span class="group-chip-mark" aria-hidden="true">${on ? '&#10003;' : '&#43;'}</span>${escapeHtml(label)}</button>`;
+  }).join('');
+  const volRow = slaves.length > 0
+    ? `<div class="group-vol-row"><span class="vol-icon" aria-hidden="true">&#128266;</span>`
+      + `<input type="range" id="groupVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('group.volumeLabel'))}" />`
+      + `<span class="muted small">${escapeHtml(t('group.volumeLabel'))}</span></div>`
+    : '';
+  cont.innerHTML = `<span class="group-label muted small">${escapeHtml(t('group.label'))}</span>`
+    + `<div class="group-chips">${chips}</div>${volRow}`;
+  cont.querySelectorAll('.group-chip').forEach(chip => {
+    chip.onclick = () => toggleGroupMember(chip.dataset.host, parseInt(chip.dataset.port, 10));
+  });
+  const vol = $('groupVolume');
+  const seed = $('musicVolume');
+  if (vol && seed && seed.value) vol.value = seed.value; // start at the master's level
+  if (vol) vol.oninput = () => setGroupVolume(parseInt(vol.value, 10));
+}
+
 function renderPresets() {
   const grid = $('presets');
   grid.innerHTML = '';
   // The transfer row lives right under the grid and follows the selection.
   wirePresetTransferRow();
   updatePresetTransferRow();
+  renderGroupControl();
   const activeSlot = activeSlotFromLocation(state.nowLocation);
   // Remember the active Spotify slot from the per-slot /spotify/stream-<slot>.ogg
   // URL. A hardware next/prev advances go-librespot but can drop the slot from

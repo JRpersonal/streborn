@@ -1135,5 +1135,12 @@
   "speaker.wedgedTitle": "Speaker not responding:",
   "speaker.wedgedBanner": "\"{{name}}\" is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again.",
   "presets.transferBtn": "Transfer",
-  "presets.transferNoTargets": "No other speaker found to transfer to"
+  "presets.transferNoTargets": "No other speaker found to transfer to",
+  "group.label": "Group:",
+  "group.addTitle": "Add {{name}} to the group",
+  "group.removeTitle": "Remove {{name}} from the group",
+  "group.volumeLabel": "Group volume",
+  "group.dissolvedToast": "Group dissolved",
+  "group.addedToast": "{{name}} added to the group",
+  "group.removedToast": "{{name}} removed from the group"
 }
