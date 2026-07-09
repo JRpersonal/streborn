@@ -1619,7 +1619,9 @@ function renderBoxSelect() {
       const badge = `<span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span>`;
       return `<span class="box-btn${stockCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(t('speaker.stockTooltip'))}">${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
-    const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
+    // "STR v0.9.1", not a bare "v0.9.1": the pill labels STR's own firmware
+    // version, and without the prefix users read it as the Bose firmware.
+    const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml('STR ' + b.version)}</span>` : '';
     // Red dot when this speaker's agent is older than the app's embedded
     // one: a glanceable "update available" cue right on the speaker button
     // itself, in addition to the settings-tab badge and the music-tab
