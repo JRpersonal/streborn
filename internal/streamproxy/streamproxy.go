@@ -128,6 +128,61 @@ func isHLSorDASHContentType(ct string) bool {
 	return strings.Contains(ct, "mpegurl") || strings.Contains(ct, "dash+xml")
 }
 
+// errPlaylistIsHLS signals that a response STR started to stream as a raw byte
+// stream turned out to be an HLS playlist (recognised by its body, not a .m3u8
+// URL suffix). The caller re-runs the request through serveHLS, which demuxes
+// the segments into one continuous stream. Returned only before any audio (or
+// response headers) have been written, so switching paths is safe.
+var errPlaylistIsHLS = errors.New("streamproxy: response is an HLS playlist")
+
+// hasHTTPScheme reports whether s begins with an http(s) scheme.
+func hasHTTPScheme(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// firstMediaURLFromPlaylist extracts the first playable stream URL from a plain
+// M3U or PLS pointer playlist (a short text file that just lists the real stream
+// URL, as Icecast/Shoutcast directory stations and the Absolut* stations serve
+// under an audio/x-mpegurl MIME even when the URL has no .m3u suffix, #252).
+// M3U: the first non-comment line that is a URL. PLS: the first FileN=URL entry.
+// A relative M3U entry is resolved against baseURL. Returns "" when the body
+// carries no stream URL (e.g. it is actually an HLS segment playlist, which the
+// caller detects separately via the #EXT-X- markers).
+func firstMediaURLFromPlaylist(body, baseURL string) string {
+	base, _ := url.Parse(baseURL)
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			// blank line or M3U comment/directive (#EXTM3U, #EXTINF, #EXT-X-*).
+			continue
+		}
+		lower := strings.ToLower(line)
+		// PLS entry: FileN=URL (key is case-insensitive, N is a number).
+		if eq := strings.IndexByte(line, '='); eq > 0 && strings.HasPrefix(lower, "file") {
+			if cand := strings.TrimSpace(line[eq+1:]); hasHTTPScheme(cand) {
+				return cand
+			}
+			continue
+		}
+		// Absolute M3U entry.
+		if hasHTTPScheme(line) {
+			return line
+		}
+		// PLS metadata / section headers ([playlist], NumberOfEntries=1,
+		// Title1=..., Version=2) are not stream URLs.
+		if strings.ContainsAny(line, "=[]") {
+			continue
+		}
+		// A relative URI in an M3U — resolve it against the playlist URL.
+		if base != nil {
+			if ref, err := url.Parse(line); err == nil {
+				return base.ResolveReference(ref).String()
+			}
+		}
+	}
+	return ""
+}
+
 // hlsNotPlayableMsg is the user-facing reason returned to the box for an HLS/
 // DASH stream. Kept short; the box shows a not-playable state rather than a
 // silent reconnect storm.
@@ -851,6 +906,17 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		}
 		var boseAlive bool
 		boseAlive, lastErr = s.streamOne(r.Context(), w, r, url, !headersSent)
+		if errors.Is(lastErr, errPlaylistIsHLS) && !headersSent {
+			// The URL had no .m3u8 suffix but its body is an HLS playlist; demux
+			// it (#252). serveHLS only errors before writing audio, so http.Error
+			// stays valid here.
+			if err := s.serveHLS(r.Context(), w, r, url); err != nil {
+				s.logger.Warn("stream proxy: HLS (via content-type) playback failed", "kind", "raw", "url", url, "err", err)
+				s.recordFailure(url, err)
+				http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+			}
+			return
+		}
 		if !boseAlive {
 			// Bose closed the connection (station switch, standby) — a
 			// normal end, distinct from the give-up case below.
@@ -947,8 +1013,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		if !ok || cur.StreamURL == "" {
 			return
 		}
-		boseAlive, err := s.streamOne(r.Context(), w, r, unwrapSelfProxy(cur.StreamURL), !headersSent)
+		curURL := unwrapSelfProxy(cur.StreamURL)
+		boseAlive, err := s.streamOne(r.Context(), w, r, curURL, !headersSent)
 		lastErr = err
+		if errors.Is(err, errPlaylistIsHLS) && !headersSent {
+			// A preset whose URL had no .m3u8 suffix but serves an HLS playlist
+			// body — demux it (#252). serveHLS only errors before writing audio.
+			if herr := s.serveHLS(r.Context(), w, r, curURL); herr != nil {
+				s.logger.Warn("stream proxy: HLS (via content-type) preset playback failed", "slot", slot, "url", curURL, "err", herr)
+				s.recordFailure(curURL, herr)
+				http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+			}
+			return
+		}
 		if !boseAlive {
 			// Bose closed the connection (standby, station switch). A normal
 			// end, kept clearly distinct from the give-up case below, so the
@@ -978,6 +1055,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 // EOF or a normal Bose disconnect); the caller logs it at stream end so a
 // box stop can be told apart from outbound problems.
 func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.Request, url string, sendHeaders bool) (bool, error) {
+	return s.streamOneDepth(ctx, w, r, url, sendHeaders, 0)
+}
+
+// streamOneDepth is streamOne with a playlist-resolution recursion guard: an
+// audio/x-mpegurl response that turns out to be a plain M3U/PLS pointer file is
+// re-fetched at its first real stream URL (depth+1), capped so a playlist that
+// points at itself or at another playlist cannot loop forever.
+func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *http.Request, url string, sendHeaders bool, depth int) (bool, error) {
 	if err := safeHTTPURL(url); err != nil {
 		s.logger.Warn("stream proxy refusing url", "url", url, "err", err)
 		if sendHeaders {
@@ -1036,19 +1121,49 @@ func (s *Server) streamOne(ctx context.Context, w http.ResponseWriter, r *http.R
 		return true, statusErr
 	}
 
-	// HLS/DASH detected by MIME type (a URL without the telltale suffix). These
-	// are segment playlists, not raw streams, so reading the body as audio yields
-	// instant EOF and a reconnect storm. Report not-playable and stop instead.
+	// HLS/DASH/playlist detected by MIME type (a URL without the telltale
+	// suffix). Reading a segment playlist or a pointer file as audio yields
+	// instant EOF and a reconnect storm, so classify it here, before any bytes
+	// are written, and switch paths:
+	//   - DASH (dash+xml): still unsupported -> report not-playable and stop.
+	//   - HLS body (#EXT-X- markers): re-run through serveHLS, which demuxes it.
+	//   - plain M3U/PLS pointer: resolve to its first real stream URL and play
+	//     that (#252: Absolut Relax et al. serve audio/x-mpegurl on a URL with
+	//     no .m3u suffix, so it never reached the .m3u8 HLS branch upstream).
 	if ct := resp.Header.Get("Content-Type"); isHLSorDASHContentType(ct) {
-		if s.shouldLogFail(url) {
-			s.logger.Warn("stream proxy: HLS/DASH content-type not supported yet", "url", url, "contentType", ct)
+		if strings.Contains(strings.ToLower(ct), "dash") {
+			if s.shouldLogFail(url) {
+				s.logger.Warn("stream proxy: DASH content-type not supported yet", "url", url, "contentType", ct)
+			}
+			dashErr := fmt.Errorf("dash not supported (content-type %q)", ct)
+			s.recordFailure(url, dashErr)
+			if sendHeaders {
+				http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
+			}
+			return false, dashErr
 		}
-		hlsErr := fmt.Errorf("hls/dash not supported (content-type %q)", ct)
-		s.recordFailure(url, hlsErr)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+		text := string(body)
+		if strings.Contains(text, "#EXT-X-") {
+			// A real HLS playlist reached the raw path (URL had no .m3u8 suffix).
+			// Let the caller re-serve it through serveHLS.
+			return false, errPlaylistIsHLS
+		}
+		if media := firstMediaURLFromPlaylist(text, url); media != "" && media != url && depth < 2 {
+			s.logger.Info("stream proxy: resolved playlist pointer to stream URL",
+				"playlist", url, "stream", media, "depth", depth+1)
+			resp.Body.Close()
+			return s.streamOneDepth(ctx, w, r, media, sendHeaders, depth+1)
+		}
+		if s.shouldLogFail(url) {
+			s.logger.Warn("stream proxy: playlist content-type not resolvable", "url", url, "contentType", ct)
+		}
+		plErr := fmt.Errorf("playlist not resolvable (content-type %q)", ct)
+		s.recordFailure(url, plErr)
 		if sendHeaders {
 			http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
 		}
-		return false, hlsErr
+		return false, plErr
 	}
 
 	// Successful reach — clear any dedup entry so a future failure
