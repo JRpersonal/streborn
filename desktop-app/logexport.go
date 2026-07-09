@@ -377,13 +377,24 @@ type sshFallback struct {
 func captureBoxSnapshot(host string) boxSnapshot {
 	s := boxSnapshot{Host: host}
 	s.Reachable8090 = portOpen(host, 8090, 1200)
-	// :17008 is STR's external entry point via the SoftwareUpdate
-	// shim hijack — the chipset-whitelisted slot reachable on every
-	// SoundTouch variant. Reachable8888 stays in the field name for
-	// schema continuity with existing diagnostic readers, but the
-	// probe now targets the hijack port. STR's actual :8888 listener
-	// is loopback-only externally on all firmwares we have tested.
-	s.Reachable8888 = portOpen(host, 17008, 1200)
+	// STR's external webui port depends on the chassis: Series-II / sm2 boxes
+	// (ST10 rhino, ST30 mojo, Wave lisa) serve STR DIRECTLY on :8888, made
+	// LAN-reachable by the stick's iptables INPUT ACCEPT rule with no :17008
+	// REDIRECT; BCO/whitelisted chassis (Portable taigan, ST20 spotty) expose
+	// STR ONLY on the REDIRECTed :17008 (their own :8888 is loopback-only). Probe
+	// BOTH, exactly like discovery's probeSTR, and use whichever answers. A
+	// :17008-only probe here falsely reported every healthy sm2 box as
+	// reachable8888=false / strDetected=false (Kai's ST10 + Wave bundle,
+	// 2026-07-09, both sm2 yet both flagged STR-absent while actually running).
+	// Reachable8888 keeps its name for schema continuity but now means "STR's
+	// webui reachable on either external port".
+	strPort := 0
+	if portOpen(host, 8888, 1200) {
+		strPort = 8888
+	} else if portOpen(host, 17008, 1200) {
+		strPort = 17008
+	}
+	s.Reachable8888 = strPort != 0
 	s.ReachableSSH = portOpen(host, 22, 1200)
 	// :8091 is the UPnP/DLNA media renderer, a separate firmware process. When
 	// :8090 is dead but :8091 answers, the box is online with a wedged control
@@ -394,8 +405,9 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		s.BoseInfo = httpGetText(fmt.Sprintf("http://%s:8090/info", host), 4096)
 	}
 	if s.Reachable8888 {
-		s.STRStatus = httpGetText(fmt.Sprintf("http://%s:17008/api/status", host), 4096)
-		raw := httpGetText(fmt.Sprintf("http://%s:17008/api/agent/version", host), 1024)
+		base := fmt.Sprintf("http://%s:%d", host, strPort)
+		s.STRStatus = httpGetText(base+"/api/status", 4096)
+		raw := httpGetText(base+"/api/agent/version", 1024)
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)
 		}
@@ -408,7 +420,7 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		// /api/debug/state holds the boot-race trace (setup.log,
 		// boot.log, agent_log_tail). Single most useful payload for
 		// "agent came up but is misbehaving" diagnostics.
-		debugRaw := httpGetTextTimeout(fmt.Sprintf("http://%s:17008/api/debug/state", host), 256*1024, 20*time.Second)
+		debugRaw := httpGetTextTimeout(base+"/api/debug/state", 256*1024, 20*time.Second)
 		if debugRaw != "" {
 			var ds map[string]any
 			if err := json.Unmarshal([]byte(debugRaw), &ds); err == nil {
