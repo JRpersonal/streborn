@@ -310,7 +310,7 @@
   "update.speakerAppLine": "スピーカー: {{box}} · アプリ: {{app}}",
   "update.speakerRunningOld": "スピーカーはバージョン {{boxVersion}}、アプリは {{appVersion}} です。",
   "update.refreshBtn": "更新",
-  "update.rebootNote": "更新するとスピーカーが再起動します。短時間利用できなくなり、自動的に再接続します。アプリが新しいバージョンを自動で確認します。",
+  "update.rebootNote": "アップデート中にスピーカーは再起動します(アップデートによって1回または2回)。自動的に再接続します。リセットではないので、プリセットや設定はそのまま残ります。",
   "update.uploading": "アップロード中(約1分)...",
   "update.uploadedToast": "更新をアップロードしました。スピーカーが再起動し、再び応答するまで数分かかることがあります。",
   "update.rebooting": "スピーカーが再起動して再接続します(通常2〜4分)...",
