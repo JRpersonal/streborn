@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "Pozostań na tej stronie i nie zamykaj aplikacji, dopóki instalacja się nie zakończy.",
   "setup.provisionNoAnswer": "brak odpowiedzi głośnika",
   "speaker.wedgedTitle": "Głośnik nie odpowiada:",
-  "speaker.wedgedBanner": "\"{{name}}\" obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie."
+  "speaker.wedgedBanner": "\"{{name}}\" obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie.",
+  "presets.copyTitle": "Zapamiętaj presety tego głośnika (kopiuj)",
+  "presets.pasteTitle": "Przenieś zapamiętane presety z \"{{name}}\" na ten głośnik",
+  "presets.pasteTitleEmpty": "Najpierw skopiuj presety na głośniku źródłowym",
+  "presets.clipboardState": "Zapamiętano presety z \"{{name}}\"",
+  "presets.copiedToast": "Zapamiętano presety z \"{{name}}\" - wybierz głośnik docelowy i naciśnij wklej",
+  "presets.pasteConfirmTitle": "Przenieść presety?",
+  "presets.pasteConfirmBody": "Przenieść wszystkie presety z \"{{from}}\" na \"{{to}}\"? Obecne przyciski głośnika docelowego zostaną nadpisane.",
+  "presets.pastedToast": "Przeniesiono {{count}} presetów na \"{{name}}\"",
+  "presets.pasteFailed": "Przenoszenie presetów nie powiodło się: {{err}}"
 }

@@ -1019,6 +1019,11 @@ $('view-box').innerHTML = `
       </div>
     </div>
     <div class="grid" id="presets"></div>
+    <div class="preset-copy-row">
+      <button class="btn btn-mini preset-copy-btn" id="presetCopyBtn" aria-label="" title="">&#128203;</button>
+      <span class="muted small preset-copy-state" id="presetCopyState"></span>
+      <button class="btn btn-mini preset-copy-btn" id="presetPasteBtn" aria-label="" title="" disabled>&#128229;</button>
+    </div>
     <div class="search">
       <h3>${escapeHtml(t('search.heading'))} <small>(${escapeHtml(t('search.headingSub'))})</small></h3>
       <div class="search-input-row">
@@ -1634,9 +1639,7 @@ function renderBoxSelect() {
       const badge = `<span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span>`;
       return `<span class="box-btn${stockCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(t('speaker.stockTooltip'))}">${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
-    // "STR v0.9.1", not a bare "v0.9.1": the pill labels STR's own firmware
-    // version, and without the prefix users read it as the Bose firmware.
-    const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml('STR ' + b.version)}</span>` : '';
+    const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
     // Red dot when this speaker's agent is older than the app's embedded
     // one: a glanceable "update available" cue right on the speaker button
     // itself, in addition to the settings-tab badge and the music-tab
@@ -3061,9 +3064,70 @@ function presetStateLabel(slot, isActive, hasErr) {
   return m ? `<div class="preset-state ${m[0]}">${escapeHtml(t(m[1]))}</div>` : '';
 }
 
+// Preset transfer (music view): the copy button remembers which box's presets
+// to take, the paste button transfers all six onto the CURRENT box via the
+// existing CopyPresetsAcrossBoxes backend (which reads the live store from the
+// source agent, so the clipboard only needs the source identity).
+function updatePresetCopyRow() {
+  const copyBtn = $('presetCopyBtn');
+  const pasteBtn = $('presetPasteBtn');
+  const stateEl = $('presetCopyState');
+  if (!copyBtn || !pasteBtn) return;
+  const box = state.currentBox;
+  const clip = state.presetClipboard;
+  const copyOk = !!(box && box.kind !== 'stock');
+  copyBtn.disabled = !copyOk;
+  copyBtn.title = t('presets.copyTitle');
+  copyBtn.setAttribute('aria-label', t('presets.copyTitle'));
+  const sameBox = !!(clip && box && clip.host === box.host);
+  pasteBtn.disabled = !(clip && copyOk && !sameBox);
+  pasteBtn.title = clip
+    ? t('presets.pasteTitle', { name: clip.name })
+    : t('presets.pasteTitleEmpty');
+  pasteBtn.setAttribute('aria-label', pasteBtn.title);
+  if (stateEl) stateEl.textContent = clip ? t('presets.clipboardState', { name: clip.name }) : '';
+}
+
+function wirePresetCopyRow() {
+  const copyBtn = $('presetCopyBtn');
+  const pasteBtn = $('presetPasteBtn');
+  if (!copyBtn || !pasteBtn || copyBtn.dataset.wired) return;
+  copyBtn.dataset.wired = '1';
+  copyBtn.onclick = () => {
+    const box = state.currentBox;
+    if (!box || box.kind === 'stock') return;
+    state.presetClipboard = { host: box.host, port: box.port || 0, name: getBoxLabel(box) };
+    showToast(t('presets.copiedToast', { name: getBoxLabel(box) }));
+    updatePresetCopyRow();
+  };
+  pasteBtn.onclick = async () => {
+    const box = state.currentBox;
+    const clip = state.presetClipboard;
+    if (!box || !clip || clip.host === box.host) return;
+    const ok = await confirmWarn(
+      t('presets.pasteConfirmTitle'),
+      t('presets.pasteConfirmBody', { from: clip.name, to: getBoxLabel(box) })
+    );
+    if (!ok) return;
+    pasteBtn.disabled = true;
+    try {
+      const n = await CopyPresetsAcrossBoxes(clip.host, clip.port, box.host, box.port || 0);
+      showToast(t('presets.pastedToast', { count: n, name: getBoxLabel(box) }));
+      await loadPresets();
+    } catch (e) {
+      showError(t('presets.pasteFailed', { err: String(e) }));
+    } finally {
+      updatePresetCopyRow();
+    }
+  };
+}
+
 function renderPresets() {
   const grid = $('presets');
   grid.innerHTML = '';
+  // The copy/paste row lives right under the grid and follows the selection.
+  wirePresetCopyRow();
+  updatePresetCopyRow();
   const activeSlot = activeSlotFromLocation(state.nowLocation);
   // Remember the active Spotify slot from the per-slot /spotify/stream-<slot>.ogg
   // URL. A hardware next/prev advances go-librespot but can drop the slot from

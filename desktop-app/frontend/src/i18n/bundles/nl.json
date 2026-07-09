@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "Blijf op deze pagina en houd de app open tot de installatie is afgerond.",
   "setup.provisionNoAnswer": "geen antwoord van de speaker",
   "speaker.wedgedTitle": "Speaker reageert niet:",
-  "speaker.wedgedBanner": "\"{{name}}\" accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal."
+  "speaker.wedgedBanner": "\"{{name}}\" accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal.",
+  "presets.copyTitle": "Presets van deze speaker onthouden (kopiëren)",
+  "presets.pasteTitle": "Onthouden presets van \"{{name}}\" naar deze speaker overzetten",
+  "presets.pasteTitleEmpty": "Kopieer eerst de presets op de bron-speaker",
+  "presets.clipboardState": "Presets van \"{{name}}\" onthouden",
+  "presets.copiedToast": "Presets van \"{{name}}\" onthouden - kies nu de doel-speaker en druk op plakken",
+  "presets.pasteConfirmTitle": "Presets overzetten?",
+  "presets.pasteConfirmBody": "Alle presets van \"{{from}}\" naar \"{{to}}\" overzetten? De huidige toetsen van de doel-speaker worden overschreven.",
+  "presets.pastedToast": "{{count}} presets overgezet naar \"{{name}}\"",
+  "presets.pasteFailed": "Overzetten van presets mislukt: {{err}}"
 }

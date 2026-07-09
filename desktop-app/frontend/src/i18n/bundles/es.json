@@ -1128,5 +1128,14 @@
   "setup.stayOnPage": "Permanece en esta página y mantén la app abierta hasta que termine la instalación.",
   "setup.provisionNoAnswer": "sin respuesta del altavoz",
   "speaker.wedgedTitle": "El altavoz no responde:",
-  "speaker.wedgedBanner": "\"{{name}}\" no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad."
+  "speaker.wedgedBanner": "\"{{name}}\" no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad.",
+  "presets.copyTitle": "Recordar los presets de este altavoz (copiar)",
+  "presets.pasteTitle": "Transferir los presets recordados de \"{{name}}\" a este altavoz",
+  "presets.pasteTitleEmpty": "Primero copia los presets en el altavoz de origen",
+  "presets.clipboardState": "Presets de \"{{name}}\" recordados",
+  "presets.copiedToast": "Presets de \"{{name}}\" recordados - elige el altavoz de destino y pulsa pegar",
+  "presets.pasteConfirmTitle": "¿Transferir presets?",
+  "presets.pasteConfirmBody": "¿Transferir todos los presets de \"{{from}}\" a \"{{to}}\"? Se sobrescribirán las teclas actuales del altavoz de destino.",
+  "presets.pastedToast": "{{count}} presets transferidos a \"{{name}}\"",
+  "presets.pasteFailed": "Error al transferir los presets: {{err}}"
 }
