@@ -184,6 +184,14 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 				a.logger.Info("update agent: HTTP connection dropped (agent restarting) and SSH raced the reboot; deferring to the post-OTA version poll", "host", host, "httpErr", err, "sshErr", sshErr)
 				return nil
 			}
+			// A 507 means the speaker's storage is full and its (old) agent
+			// cannot free space by itself, and the SSH recovery could not open
+			// SSH either (no :17000, or the unlock failed). Tell the user the
+			// one thing that always works — a one-time USB-stick update — rather
+			// than a raw "status 507".
+			if strings.Contains(err.Error(), "507") || strings.Contains(strings.ToLower(err.Error()), "insufficient nand") {
+				return fmt.Errorf("the speaker's storage is full and it is on an older STR version that cannot free space over the network. Update this speaker once from a USB stick (that cleans up the storage and installs the current version); after that, updates manage the space themselves. Details: %v", err)
+			}
 			return fmt.Errorf("HTTP OTA failed (%v) and the SSH fallback also failed: %w", err, sshErr)
 		}
 		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
@@ -776,7 +784,42 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// 4 spaced attempts (sshHandshake): the OTA path runs when the box is
 	// busiest, exactly where the one-shot 8 s attempt used to flake (#114).
 	if hello, err := sshHandshake(host, 4); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
-		return fmt.Errorf("ssh handshake failed: %v (%s)", err, strings.TrimSpace(hello))
+		// SSH is closed (opt-in since v0.8.1). Before giving up, open it
+		// stick-free via the box's :17000 setup port — the same unlock the
+		// install path uses. This is the ONLY remote rescue for a box stuck
+		// on a pre-reclaim agent (< v0.8.34, e.g. v0.8.32) whose NAND is full:
+		// that old agent cannot free space during an HTTP update and SSH is
+		// off, so the update otherwise dead-ends at "ssh handshake failed"
+		// (Peter's ST10, 2026-07-09). Once SSH is open, the SSH upload command
+		// below frees the NAND (drops the ~16 MB engine when tight) and pushes
+		// the fresh agent, after which the box self-manages space. Only when
+		// :17000 answers.
+		opened := false
+		if tcpReachable(host, 17000, 2*time.Second) {
+			a.logger.Info("SSH-OTA: plain SSH closed, opening it stick-free via :17000 to recover a full/old box", "host", host)
+			var tlog string
+			opened, tlog = a.enableSSHViaTelnet(host, "")
+			if opened {
+				// Restore stock cloud URLs while :17000 is still plain Bose TAP,
+				// so the injected str-setup.invalid does not leave the box
+				// marge-checking a dead host (the light-bar sweep). Best-effort.
+				if rerr := a.resetBoseURLsViaTelnet(host); rerr != nil {
+					a.logger.Warn("SSH-OTA: could not restore cloud URLs after stick-free unlock", "host", host, "err", rerr)
+				}
+				a.logger.Info("SSH-OTA: SSH opened stick-free via :17000; continuing the update over SSH", "host", host)
+			} else {
+				// The unlock may have written a dead .invalid URL; restore stock
+				// URLs + reboot so the box is never left marge-checking a dead
+				// host (also protects a later stick install's interception).
+				a.restoreStockBoseURLsAndReboot(host)
+				a.logger.Warn("SSH-OTA: stick-free :17000 unlock did not open SSH", "host", host, "log", lastN(tlog, 200))
+			}
+		}
+		if !opened {
+			if hello, err := sshHandshake(host, 2); err != nil || !strings.Contains(hello, "STR_SSH_OK") {
+				return fmt.Errorf("ssh handshake failed: %v (%s)", err, strings.TrimSpace(hello))
+			}
+		}
 	}
 	// mkdir + cat in one ssh-with-stdin session so a missing parent dir on
 	// a freshly-installed box does not need a separate round-trip. The
