@@ -4610,11 +4610,30 @@ type followerZoneFetch func(ctx context.Context, ip string) (boxapi.Zone, error)
 // can flag it instead of claiming success. Followers with no known IP cannot be
 // verified and are returned in "unverifiable" (left to the master's view).
 func verifyFollowersJoined(ctx context.Context, logger *slog.Logger, masterID string, slaves []boxapi.ZoneMember, fetch followerZoneFetch) (missing, unverifiable []string) {
-	const (
-		perFollowerBudget = 4 * time.Second
-		pollInterval      = 700 * time.Millisecond
-		perCallTimeout    = 2 * time.Second
-	)
+	return verifyFollowersJoinedTimed(ctx, logger, masterID, slaves, fetch, defaultFollowerVerifyTiming)
+}
+
+// followerVerifyTiming bounds verifyFollowersJoined's polling. Injected so the
+// tests can shrink the budget from seconds to milliseconds; production always
+// uses defaultFollowerVerifyTiming.
+type followerVerifyTiming struct {
+	perFollowerBudget time.Duration
+	pollInterval      time.Duration
+	perCallTimeout    time.Duration
+}
+
+var defaultFollowerVerifyTiming = followerVerifyTiming{
+	perFollowerBudget: 4 * time.Second,
+	pollInterval:      700 * time.Millisecond,
+	perCallTimeout:    2 * time.Second,
+}
+
+// verifyFollowersJoinedTimed is verifyFollowersJoined with explicit timing;
+// see there for the semantics.
+func verifyFollowersJoinedTimed(ctx context.Context, logger *slog.Logger, masterID string, slaves []boxapi.ZoneMember, fetch followerZoneFetch, timing followerVerifyTiming) (missing, unverifiable []string) {
+	perFollowerBudget := timing.perFollowerBudget
+	pollInterval := timing.pollInterval
+	perCallTimeout := timing.perCallTimeout
 	for _, sl := range slaves {
 		if sl.IP == "" {
 			unverifiable = append(unverifiable, sl.DeviceID)
