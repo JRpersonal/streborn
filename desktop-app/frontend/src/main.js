@@ -1487,6 +1487,33 @@ function applyBoxList(list) {
   // Second world-map invite: once the user's whole supported SoundTouch set is
   // running STR (no stock box left to convert), celebrate the milestone again.
   maybeInviteWorldMapAllDone();
+  // Self-heal a mid-reboot misclassification (see updateStockReprobe).
+  updateStockReprobe();
+}
+
+// Stock self-heal: a speaker captured mid-reboot classifies as "stock" (its
+// Bose port answers before the STR agent is up) and, with no steady-state
+// auto-refresh, stayed labelled "ready for STR" until a manual refresh even
+// though the agent came back seconds later (live: an ST30 right after an OTA
+// reboot). While ANY listed box reads as stock, gently re-probe the known
+// addresses every 45s (direct probes only - no mDNS, no sweep); the cycle
+// that reaches the agent re-labels the tile and, once no stock box is left,
+// the timer stops. A genuinely stock speaker costs two tiny HTTP probes per
+// cycle, which is negligible next to the regular status polling.
+let _stockReprobeTimer = null;
+function updateStockReprobe() {
+  const anyStock = (state.boxes || []).some(b => b && b.kind === 'stock');
+  if (!anyStock) {
+    if (_stockReprobeTimer) { clearInterval(_stockReprobeTimer); _stockReprobeTimer = null; }
+    return;
+  }
+  if (_stockReprobeTimer) return;
+  _stockReprobeTimer = setInterval(async () => {
+    try {
+      const quick = await RefreshKnownBoxes();
+      if (quick && quick.length) applyBoxList(quick);
+    } catch { /* best-effort; next tick retries */ }
+  }, 45000);
 }
 
 // Recovery burst: after a network event (router restart, LAN<->Wi-Fi, band switch)
