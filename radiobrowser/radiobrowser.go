@@ -159,24 +159,109 @@ type SearchOpts struct {
 	Order    string
 	Limit    int
 	Offset   int
-	OnlyOK   bool
+	// OnlyOK requests confirmed-working stations. On browse/top lists (no
+	// Name/Tag/TagList) it maps to the server-side lastcheckok filter. On
+	// name and tag searches combined with IncludeUnchecked it means "drop
+	// stations checked AND found broken" — a never-checked (just-added)
+	// station stays visible, see IncludeUnchecked.
+	OnlyOK bool
 	// IncludeUnchecked keeps stations radio-browser has not checked yet in the
 	// results. By default every search sends hidebroken=true, which hides any
 	// station whose last check failed OR that has never been checked — so a
 	// station the user just added does not appear until radio-browser's checker
-	// gets to it (hours later). With this set, the search drops hidebroken and
-	// instead filters client-side, keeping reachable AND never-checked stations
-	// while still dropping the genuinely checked-and-broken ones. Ignored when
-	// OnlyOK is set (the user explicitly asked for confirmed-working only).
-	// Set for name searches so a freshly self-added station is findable (#252).
+	// gets to it (hours later). With this set, name and tag searches drop the
+	// server-side filters and filter client-side instead, keeping reachable AND
+	// never-checked stations while still dropping the genuinely
+	// checked-and-broken ones — regardless of OnlyOK (#252, #267: the app's
+	// default OnlyOK used to disable this, hiding fresh stations on every
+	// default install). Browse/top lists keep the strict server-side behavior
+	// when OnlyOK is set: a ranking of thousands of stations should not
+	// surface unverified entries.
 	IncludeUnchecked bool
 }
 
-// Search searches stations according to the given options.
+// SearchResult bundles the stations of one search with how they were found.
+type SearchResult struct {
+	Stations []Station
+	// Relaxed reports that the filtered search returned zero stations and the
+	// list instead comes from a one-shot fallback pass without the
+	// broken-station filters. Entries may then include stations
+	// radio-browser's remote checker flagged broken — e.g. geo-fenced streams
+	// that play fine locally — so the caller can badge the list accordingly.
+	Relaxed bool
+}
+
+// Search searches stations according to the given options. It is
+// SearchDetailed minus the metadata, for callers that do not care whether
+// the fallback pass produced the list.
 func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error) {
+	res, err := c.SearchDetailed(ctx, opts)
+	return res.Stations, err
+}
+
+// SearchDetailed searches stations and additionally reports whether the
+// broken-station filters had to be relaxed to produce any results.
+//
+// Filter semantics per search kind:
+//   - Name and tag searches ("find this station"): filtering runs
+//     client-side via keepReachableOrUnchecked whenever IncludeUnchecked is
+//     set, regardless of OnlyOK — server-side hidebroken/lastcheckok would
+//     hide a just-added, never-checked station (#252, #267).
+//   - Browse/top lists: strict server-side behavior is kept.
+//
+// Fallback: a NAME search that finds nothing WITH the filters applied is
+// retried once without them and the result is marked Relaxed — a station
+// wrongly flagged broken by radio-browser's remote checker (geo-fenced
+// streams that play fine locally) stays findable instead of vanishing.
+func (c *Client) SearchDetailed(ctx context.Context, opts SearchOpts) (SearchResult, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = 30
 	}
+	// "Find this station" searches (name- or tag-scoped) may relax; pure
+	// browse/top lists only relax when the caller did not insist on OnlyOK.
+	targeted := opts.Name != "" || opts.Tag != "" || len(opts.TagList) > 0
+	relaxUnchecked := opts.IncludeUnchecked && (targeted || !opts.OnlyOK)
+	// When filtering client-side, fetch a wider page so the checked-and-broken
+	// rows we drop do not thin the visible window.
+	fetchLimit := opts.Limit
+	if relaxUnchecked {
+		fetchLimit = opts.Limit * 3
+		if fetchLimit > 200 {
+			fetchLimit = 200
+		}
+	}
+	raw, err := c.fetchStations(ctx, opts, !relaxUnchecked, fetchLimit)
+	if err != nil {
+		return SearchResult{Stations: raw}, err
+	}
+	if relaxUnchecked {
+		kept := keepReachableOrUnchecked(raw)
+		if len(kept) == 0 && len(raw) > 0 && opts.Name != "" {
+			// Every hit was checked-and-broken. The remote checker flags
+			// geo-fenced streams broken even though they play fine locally,
+			// so show the raw hits instead of nothing.
+			return SearchResult{Stations: capStations(raw, opts.Limit), Relaxed: true}, nil
+		}
+		return SearchResult{Stations: capStations(kept, opts.Limit)}, nil
+	}
+	if len(raw) == 0 && opts.Name != "" {
+		// The strict pass sent hidebroken (and lastcheckok when OnlyOK). Zero
+		// hits can mean "hidden by the checker", not "does not exist" — retry
+		// once unfiltered. Best effort: on a failed or still-empty retry the
+		// original (empty, unrelaxed) result stands.
+		relaxed, rerr := c.fetchStations(ctx, opts, false, opts.Limit)
+		if rerr == nil && len(relaxed) > 0 {
+			return SearchResult{Stations: relaxed, Relaxed: true}, nil
+		}
+	}
+	return SearchResult{Stations: raw}, nil
+}
+
+// fetchStations executes a single /stations/search request. serverFilters
+// selects the strict server-side reachability filtering (hidebroken, plus
+// lastcheckok when opts.OnlyOK); without it the raw page comes back for
+// client-side filtering or the relaxed fallback pass.
+func (c *Client) fetchStations(ctx context.Context, opts SearchOpts, serverFilters bool, fetchLimit int) ([]Station, error) {
 	q := url.Values{}
 	if opts.Name != "" {
 		q.Set("name", opts.Name)
@@ -198,26 +283,15 @@ func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error)
 		order = "votes"
 	}
 	q.Set("order", order)
-	// Keep unchecked stations in play by filtering client-side (below) instead of
-	// letting hidebroken drop a just-added station server-side. Fetch a wider page
-	// then so the checked-and-broken rows we drop do not thin the visible window.
-	relaxUnchecked := opts.IncludeUnchecked && !opts.OnlyOK
-	fetchLimit := opts.Limit
-	if relaxUnchecked {
-		fetchLimit = opts.Limit * 3
-		if fetchLimit > 200 {
-			fetchLimit = 200
-		}
-	}
 	q.Set("limit", fmt.Sprintf("%d", fetchLimit))
 	if opts.Offset > 0 {
 		q.Set("offset", fmt.Sprintf("%d", opts.Offset))
 	}
-	if !relaxUnchecked {
+	if serverFilters {
 		q.Set("hidebroken", "true")
-	}
-	if opts.OnlyOK {
-		q.Set("lastcheckok", "true")
+		if opts.OnlyOK {
+			q.Set("lastcheckok", "true")
+		}
 	}
 	// reverse=true means descending: for votes/clickcount/clicktrend you
 	// want the highest first. For "name" reverse would turn A->Z into
@@ -226,16 +300,16 @@ func (c *Client) Search(ctx context.Context, opts SearchOpts) ([]Station, error)
 		q.Set("reverse", "true")
 	}
 	var out []Station
-	if err := c.fetchJSON(ctx, "/stations/search?"+q.Encode(), &out); err != nil {
-		return out, err
+	err := c.fetchJSON(ctx, "/stations/search?"+q.Encode(), &out)
+	return out, err
+}
+
+// capStations trims a station list to limit, preserving order.
+func capStations(in []Station, limit int) []Station {
+	if len(in) > limit {
+		return in[:limit]
 	}
-	if relaxUnchecked {
-		out = keepReachableOrUnchecked(out)
-		if len(out) > opts.Limit {
-			out = out[:opts.Limit]
-		}
-	}
-	return out, nil
+	return in
 }
 
 // keepReachableOrUnchecked drops only the stations radio-browser has checked and
