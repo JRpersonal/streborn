@@ -24,18 +24,18 @@ func TestIsPlainHTTPURL(t *testing.T) {
 // from the file extension to advertise the right protocolInfo to the box.
 func TestMimeFromURL(t *testing.T) {
 	cases := map[string]string{
-		"http://nas/music/song.flac":          "audio/flac",
-		"http://nas/music/song.FLAC":          "audio/flac", // case-insensitive
-		"http://nas/music/song.wav":           "audio/wav",
-		"http://nas/music/song.m4a":           "audio/mp4",
-		"http://nas/music/song.aac":           "audio/mp4",
-		"http://nas/music/song.ogg":           "audio/ogg",
-		"http://nas/music/song.aiff":          "audio/aiff",
-		"http://nas/music/song.mp3":           "audio/mpeg",
-		"http://nas/music/song.flac?sid=abc":  "audio/flac", // query stripped
-		"http://nas/music/song.flac#frag":     "audio/flac", // fragment stripped
-		"http://nas/stream/raw":               "",           // no extension
-		"http://nas/music/cover.png":          "",           // not audio
+		"http://nas/music/song.flac":         "audio/flac",
+		"http://nas/music/song.FLAC":         "audio/flac", // case-insensitive
+		"http://nas/music/song.wav":          "audio/wav",
+		"http://nas/music/song.m4a":          "audio/mp4",
+		"http://nas/music/song.aac":          "audio/mp4",
+		"http://nas/music/song.ogg":          "audio/ogg",
+		"http://nas/music/song.aiff":         "audio/aiff",
+		"http://nas/music/song.mp3":          "audio/mpeg",
+		"http://nas/music/song.flac?sid=abc": "audio/flac", // query stripped
+		"http://nas/music/song.flac#frag":    "audio/flac", // fragment stripped
+		"http://nas/stream/raw":              "",           // no extension
+		"http://nas/music/cover.png":         "",           // not audio
 	}
 	for in, want := range cases {
 		if got := mimeFromURL(in); got != want {

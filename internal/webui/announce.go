@@ -249,7 +249,7 @@ func mp3DurationSec(b []byte) float64 {
 		if b[i] != 0xFF || b[i+1]&0xE0 != 0xE0 {
 			continue
 		}
-		ver := (b[i+1] >> 3) & 0x03  // 3=MPEG1, 2=MPEG2, 0=MPEG2.5
+		ver := (b[i+1] >> 3) & 0x03   // 3=MPEG1, 2=MPEG2, 0=MPEG2.5
 		layer := (b[i+1] >> 1) & 0x03 // 1=Layer III
 		if layer != 0x01 {
 			continue

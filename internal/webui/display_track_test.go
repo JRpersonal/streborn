@@ -10,7 +10,7 @@ func TestSplitStreamTitle(t *testing.T) {
 	}{
 		{"Nacho Sotomayor - I wonder", "Nacho Sotomayor", "I wonder"},
 		{"Don't let me go / Kelvin Jones", "Kelvin Jones", "Don't let me go"}, // slash flips
-		{"Just A Station Name", "", "Just A Station Name"},                     // no separator
+		{"Just A Station Name", "", "Just A Station Name"},                    // no separator
 		{"A - B - C", "A", "B - C"},                                           // first dash splits
 		{"- leading dash", "", "- leading dash"},                              // empty side -> not split
 		{"", "", ""},
