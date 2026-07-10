@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -1405,10 +1406,42 @@ func (h *presetWsHandler) OnUserStop(_ context.Context) {
 // firmware; up and down are indistinguishable, so it is a single toggle-style
 // trigger). The detection + debounce live in boxws; here we just fire.
 func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
+	// A lone userActivityUpdate is ALSO the only trace a DEAD hardware preset
+	// key leaves: the box's key layer can lose its preset registrations while
+	// /presets still lists every slot (#342, display shows "Action
+	// unavailable"), and then a press emits no selection frame at all - which
+	// is exactly this trigger. The missing-only reconcile never heals that
+	// state, so ask it for one forced full re-sync (rate-limited). If the
+	// press really was a thumbs key, the extra AddPreset round is harmless.
+	requestPresetKeyResync(h.logger)
 	if h.webhooks == nil {
 		return
 	}
 	h.webhooks.FireThumb(ctx)
+}
+
+// presetResyncAsk flags one forced full box-preset re-sync for the periodic
+// reconcile (the #342 dead-key self-heal). presetResyncLast rate-limits the
+// requests so repeated thumbs presses cannot cause a re-sync storm.
+var (
+	presetResyncAsk  atomic.Bool
+	presetResyncLast atomic.Int64 // unix seconds of the last accepted request
+)
+
+func requestPresetKeyResync(logger *slog.Logger) {
+	const minGapSec = 10 * 60
+	now := time.Now().Unix()
+	last := presetResyncLast.Load()
+	if last != 0 && now-last < minGapSec {
+		return
+	}
+	if !presetResyncLast.CompareAndSwap(last, now) {
+		return
+	}
+	presetResyncAsk.Store(true)
+	if logger != nil {
+		logger.Info("preset self-heal: lone key activity with no selection frame; scheduling a full box preset re-sync (#342)")
+	}
 }
 
 // OnPowerKey fires the configured "power" webhook on a power-off (standby)
@@ -1961,15 +1994,20 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 		for _, p := range pending {
 			retrySpecs = append(retrySpecs, p)
 		}
+		// SyncAllPresets returns ONLY the failed slots; absence means the
+		// slot landed. The old loop ranged over the error map and looked for
+		// nil values, which never occur - so successes were re-pushed on all
+		// 12 attempts and "all synced" could never log (#342).
 		errs := boxcli.SyncAllPresets(context.Background(), boxHost, retrySpecs)
-		for slot, err := range errs {
-			if err == nil {
-				delete(pending, slot)
-				logger.Info("box preset synced", "slot", slot, "name", pending[slot].Name, "attempt", attempt)
+		for _, spec := range retrySpecs {
+			err, failed := errs[spec.Slot]
+			if !failed {
+				delete(pending, spec.Slot)
+				logger.Info("box preset synced", "slot", spec.Slot, "name", spec.Name, "attempt", attempt)
 			} else if attempt == 5 {
-				logger.Warn("box preset sync failed permanently", "slot", slot, "err", err)
+				logger.Warn("box preset sync failed permanently", "slot", spec.Slot, "err", err)
 			} else {
-				logger.Debug("box preset sync fail, retry", "slot", slot, "attempt", attempt, "err", err)
+				logger.Debug("box preset sync fail, retry", "slot", spec.Slot, "attempt", attempt, "err", err)
 			}
 		}
 	}
@@ -2008,10 +2046,22 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	time.Sleep(15 * time.Second)
 	fullDone := false
 	for {
-		ready := reconcileOnce(store, boxHost, logger, !fullDone)
+		force := !fullDone
+		if !force && presetResyncAsk.CompareAndSwap(true, false) {
+			// Dead-key self-heal (#342): a hardware press produced no
+			// selection frame, so the box's key layer likely lost its
+			// registrations even though /presets still lists them.
+			force = true
+		}
+		ready := reconcileOnce(store, boxHost, logger, force)
 		fullDone = ready
 		if fullDone {
-			time.Sleep(5 * time.Minute)
+			// Maintenance cadence, but wake early when the self-heal asked
+			// for a forced re-sync so a dead key recovers in seconds, not
+			// after up to five minutes.
+			for waited := time.Duration(0); waited < 5*time.Minute && !presetResyncAsk.Load(); waited += 10 * time.Second {
+				time.Sleep(10 * time.Second)
+			}
 		} else {
 			time.Sleep(10 * time.Second)
 		}
@@ -2059,9 +2109,16 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		} else {
 			logger.Info("preset reconcile: missing slots on box, syncing", "missing", len(missing))
 		}
-		for slot, serr := range boxcli.SyncAllPresets(context.Background(), boxHost, missing) {
-			if serr == nil {
-				logger.Info("preset reconcile healed", "slot", slot)
+		// SyncAllPresets returns ONLY failed slots; the old nil-check here
+		// could never fire, so healed slots never logged and - worse -
+		// persistent AddPreset failures were swallowed silently, invisible
+		// in every diagnostic bundle (#342).
+		errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
+		for _, spec := range missing {
+			if serr, failed := errs[spec.Slot]; failed {
+				logger.Warn("preset reconcile: AddPreset failed", "slot", spec.Slot, "err", serr)
+			} else {
+				logger.Info("preset reconcile healed", "slot", spec.Slot)
 			}
 		}
 	}
