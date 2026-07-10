@@ -1070,6 +1070,33 @@ body {
 .search-addhint { display: inline-block; margin: 12px 0 4px; opacity: 0.7; text-decoration: none; }
 .search-addhint:hover { opacity: 1; text-decoration: underline; }
 
+/* Dismissible hint above the results when the quality filters had to be
+   relaxed: quiet, one line, an x to dismiss for the current result set. */
+.search-relaxed-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  background: var(--brand-bg);
+  color: var(--c-muted);
+  font-size: 11px;
+}
+.search-relaxed-dismiss {
+  background: transparent;
+  border: 0;
+  color: var(--c-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.search-relaxed-dismiss:hover { color: var(--c-text); }
+
 /* Genre Chips */
 .genre-chips {
   display: flex;

@@ -84,6 +84,9 @@ import {
   InstallSTROnBox,
   RepairInstallViaSSH,
   RadioSearch,
+  RadioSearchDetailed,
+  RadioStationsByURL,
+  isMissingBinding,
   RadioTags,
   RadioLanguages,
   RadioClick,
@@ -198,6 +201,16 @@ import {
   parsePlayRejection,
   resolveBoxByRef,
 } from './groups.js';
+
+// Pure decisions of the search flow (URL-paste detection, the synthetic
+// play-this-URL card, the relaxed-filters hint) live in searchflow.js so
+// vitest covers them without a DOM.
+import {
+  isStreamURL,
+  syntheticStationForURL,
+  normalizeDetailedSearch,
+  relaxedHintVisible,
+} from './searchflow.js';
 
 import {
   COUNTRIES,
@@ -4743,7 +4756,30 @@ async function doSearch() {
   state.searchLastMode = q ? 'search' : 'top';
   state.searchOffset = 0;
   if (!q) { return doTop(); }
+  // A pasted stream URL is not a name query: look it up in the directory
+  // by URL (a known station renders as a normal result, logo and all), or
+  // fall back to a single synthetic play-this-URL card.
+  if (isStreamURL(q)) { return searchByStreamURL(q); }
   await fetchSearchPage(false);
+}
+
+// searchByStreamURL resolves a pasted stream URL. Directory hits render
+// through the normal result path; no hits (or an app built against the older
+// binding set, or a directory outage) render the synthetic card instead, so
+// a pasted URL always ends in something playable and long-press-savable.
+async function searchByStreamURL(url) {
+  $('searchResults').innerHTML = `<div class="muted">${escapeHtml(t('search.loadingStations'))}</div>`;
+  $('loadMoreRow').classList.add('hidden');
+  state.searchRelaxed = false;
+  let list = [];
+  try {
+    list = await RadioStationsByURL(url) || [];
+  } catch {
+    list = [];
+  }
+  if (list.length === 0) list = [syntheticStationForURL(url)];
+  state.searchResults = list;
+  renderSearchResults();
 }
 
 async function doTop() {
@@ -4799,7 +4835,27 @@ async function fetchSearchPage(append) {
     // as a point of failure for search (the HTTP 502s in #121). The
     // radiobrowser client does its own multi-mirror failover, so no per-call
     // retry is needed here.
-    const page = await RadioSearch(buildSearchOpts()) || [];
+    //
+    // Prefer the detailed search: it also says whether the backend had to
+    // relax the quality filters to find anything, which drives the
+    // "showing unverified results too" hint. An app built against the older
+    // binding set falls back to the plain search (no hint, same results);
+    // a real search failure is NOT swallowed by the fallback and surfaces
+    // through the catch below like before.
+    let page;
+    let relaxed = false;
+    try {
+      const detailed = normalizeDetailedSearch(await RadioSearchDetailed(buildSearchOpts()));
+      page = detailed.stations;
+      relaxed = detailed.relaxed;
+    } catch (err) {
+      if (!isMissingBinding(err)) throw err;
+      page = await RadioSearch(buildSearchOpts()) || [];
+    }
+    // Relaxed is per result set: a fresh search resets it (and the dismiss),
+    // a "load more" keeps the hint once any page needed relaxing.
+    state.searchRelaxed = append ? (state.searchRelaxed || relaxed) : relaxed;
+    if (!append) state.searchRelaxedDismissed = false;
     if (append) {
       state.searchResults = state.searchResults.concat(page);
     } else {
@@ -5150,6 +5206,25 @@ function renderSearchResults() {
       cnt.classList.remove('hidden');
     }
   }
+  // Small dismissible hint above the results when the backend had to relax
+  // the quality filters: entries may be unverified, and the user should know
+  // why. Rendered inside #searchResults so no markup outside src/ changes.
+  let hintHtml = '';
+  if (relaxedHintVisible(state.searchRelaxed, state.searchRelaxedDismissed, state.searchLastMode)) {
+    hintHtml = '<div class="search-relaxed-hint" id="relaxedHint">'
+      + '<span>' + escapeHtml(t('search.relaxedHint')) + '</span>'
+      + `<button class="search-relaxed-dismiss" id="relaxedHintDismiss" title="${escapeAttr(t('search.relaxedHintDismiss'))}">&times;</button>`
+      + '</div>';
+  }
+  const wireRelaxedDismiss = () => {
+    const d = $('relaxedHintDismiss');
+    if (!d) return;
+    d.onclick = () => {
+      state.searchRelaxedDismissed = true;
+      const h = $('relaxedHint');
+      if (h) h.remove();
+    };
+  };
   if (list.length === 0) {
     const msg = state.searchLastMode === 'favorites'
       ? t('search.favEmpty')
@@ -5169,14 +5244,15 @@ function renderSearchResults() {
         + '<a href="#" class="search-addhint" id="emptyAddStationHint">'
         + escapeHtml(t('search.addStationHint')) + '</a></div>';
     }
-    res.innerHTML = html;
+    res.innerHTML = hintHtml + html;
+    wireRelaxedDismiss();
     const addLink = $('emptyAddStationHint');
     if (addLink) {
       addLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://www.radio-browser.info/'); } catch {} };
     }
     return;
   }
-  res.innerHTML = list.map((s, i) => {
+  res.innerHTML = hintHtml + list.map((s, i) => {
     const flag = flagFromCC(s.countrycode);
     const okClass = s.lastcheckok ? 'ok' : 'bad';
     const webUrl = (typeof s.homepage === 'string' && /^https?:\/\//i.test(s.homepage)) ? s.homepage : '';
@@ -5189,12 +5265,22 @@ function renderSearchResults() {
     const tagChips = translateTags(s.tags).slice(0, 4).map(tag => `<span class="tag-pill">${escapeHtml(tag)}</span>`).join('');
 
     const metaBits = [];
-    if (countryDe) metaBits.push(escapeHtml(countryDe));
-    // Always show a bitrate cell. Many radio-browser stations report no
-    // bitrate (e.g. "Sunshine Live - Die 90er"); show "- kbit/s" rather
-    // than hiding the field so the column stays consistent.
-    metaBits.push(s.bitrate ? `${s.bitrate} kbit/s` : '- kbit/s');
-    if (s.votes)   metaBits.push(t('search.votes', { n: formatNumber(s.votes) }));
+    if (s.synthetic) {
+      // The synthetic play-this-URL card: no directory metadata exists, so
+      // the meta line carries the localized card label instead.
+      metaBits.push(escapeHtml(t('search.playUrlCard')));
+    } else {
+      if (countryDe) metaBits.push(escapeHtml(countryDe));
+      // Always show a bitrate cell. Many radio-browser stations report no
+      // bitrate (e.g. "Sunshine Live - Die 90er"); show "- kbit/s" rather
+      // than hiding the field so the column stays consistent.
+      metaBits.push(s.bitrate ? `${s.bitrate} kbit/s` : '- kbit/s');
+      if (s.votes)   metaBits.push(t('search.votes', { n: formatNumber(s.votes) }));
+    }
+
+    // The online dot reflects radio-browser's last check; a synthetic card
+    // was never checked, so it gets no dot rather than a false "broken" red.
+    const okDot = s.synthetic ? '' : `<span class="result-online-dot ${okClass}" title="${escapeAttr(okTitle)}"></span>`;
 
     const logo = `
       <div class="result-logo">
@@ -5206,7 +5292,7 @@ function renderSearchResults() {
         ${logo}
         <div class="result-text">
           <div class="result-name">
-            <span class="result-online-dot ${okClass}" title="${escapeAttr(okTitle)}"></span>
+            ${okDot}
             <span class="result-name-text">${escapeHtml(s.name || t('search.unnamed'))}</span>
             ${trend}
           </div>
@@ -5221,6 +5307,7 @@ function renderSearchResults() {
       </div>
     `;
   }).join('');
+  wireRelaxedDismiss();
   res.querySelectorAll('.play-now').forEach(btn => {
     btn.onclick = async (e) => {
       e.stopPropagation();

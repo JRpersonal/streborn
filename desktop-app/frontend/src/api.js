@@ -124,6 +124,49 @@ export {
 
 export { BrowserOpenURL, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
+// Optional bindings. The wailsjs bindings are regenerated only when the Go
+// backend and the frontend are built together, so a frontend change that
+// starts using a brand-new Go method must not name-import it above: the named
+// re-export would fail to build against the older generated App module. The
+// namespace import below always builds; the wrapper turns a missing binding
+// into a rejected promise carrying MISSING_BINDING so callers can fall back
+// to the older binding set instead of crashing.
+import * as AppBindings from '../wailsjs/go/main/App';
+
+const MISSING_BINDING = 'STR_MISSING_BINDING';
+
+// isMissingBinding says whether a rejection came from calling an optional
+// binding that this build's generated bindings do not have (as opposed to a
+// real backend failure, which callers must surface, not silently fall back on).
+export function isMissingBinding(err) {
+  if (!err) return false;
+  if (err.code === MISSING_BINDING) return true;
+  return String(err.message || err).includes(MISSING_BINDING);
+}
+
+function callOptionalBinding(name, args) {
+  const fn = AppBindings[name];
+  if (typeof fn !== 'function') {
+    const e = new Error(`${MISSING_BINDING}: ${name} is not available in this build`);
+    e.code = MISSING_BINDING;
+    return Promise.reject(e);
+  }
+  return fn(...args);
+}
+
+// RadioSearchDetailed is RadioSearch plus a relaxed flag: same opts object,
+// returns {stations, relaxed} where relaxed=true means the backend had to
+// drop the quality filters to find anything.
+export function RadioSearchDetailed(opts) {
+  return callOptionalBinding('RadioSearchDetailed', [opts]);
+}
+
+// RadioStationsByURL looks a pasted stream URL up in the radio-browser
+// directory and returns the matching stations (possibly none).
+export function RadioStationsByURL(streamURL) {
+  return callOptionalBinding('RadioStationsByURL', [streamURL]);
+}
+
 // boxURL builds an absolute URL for an agent endpoint on a given box.
 // Centralised so the host/port pattern is in one place and switching
 // to HTTPS later only takes touching this helper.

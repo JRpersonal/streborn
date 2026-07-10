@@ -58,6 +58,11 @@ export const state = {
   searchOffset: 0,
   searchLastMode: 'top', // "top" or "search" — for "load more"
   searchLastQuery: '',
+  // searchRelaxed: the last fetch only found results after the backend
+  // relaxed the quality filters (entries may be unverified). Drives the
+  // dismissible hint above the results; both reset on every fresh search.
+  searchRelaxed: false,
+  searchRelaxedDismissed: false,
   tags: [],            // cache of top tags for chips
   languages: [],       // cache of languages
   // Pending names: box ID -> { name, until } — after a local rename
