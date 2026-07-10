@@ -295,7 +295,7 @@ import {
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
 initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav });
-initMultiroomView({ boxNeedsUpdate, discoverBoxes });
+initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox });
 initSpotifyView({
   switchView,
   // Live STR speaker list for the "sync Spotify login to all speakers" action.
@@ -304,7 +304,7 @@ initSpotifyView({
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab });
-initLibraryView({ showSlotPicker, formatDuration });
+initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, boxFetch, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initPodcastsView();
 
@@ -3211,6 +3211,27 @@ function currentGroupSlaves() {
   });
 }
 
+// effectivePlayTarget returns the box a play command must actually go to: a
+// zone FOLLOWER rejects direct UPnP control (the firmware answers 501 "Can't
+// control member of group", #70), so when the selected box follows a master,
+// the play belongs on that master and it distributes the audio to the group.
+// Falls back to the selected box (standalone, master, or master not found).
+function effectivePlayTarget() {
+  const box = state.currentBox;
+  if (!box || !box.deviceID) return box;
+  const zl = (state.zoneLive || {})[box.deviceID];
+  if (!zl || !zl.master) return box;
+  const master = String(zl.master).toUpperCase();
+  if (box.deviceID.toUpperCase() === master) return box;
+  const mb = (state.boxes || []).find(b =>
+    b && b.kind !== 'stock' && b.deviceID && b.deviceID.toUpperCase() === master);
+  if (mb) {
+    try { console.info(`play retargeted to group lead ${mb.host} (selected box is a zone follower)`); } catch {}
+    return mb;
+  }
+  return box;
+}
+
 let _groupVolTimer = null;
 // setGroupVolume moves the master AND every follower to pct, so the slider
 // controls the whole group. Debounced so a slider drag does not flood the boxes.
@@ -3240,11 +3261,20 @@ async function toggleGroupMember(host, port) {
       await Promise.allSettled(slaves.map(b => Stop(b.host, b.port))); // stop the ex-followers
       showToast(t('group.dissolvedToast'));
     } else {
-      await FormZone(box.host, box.port, {
+      const res = await FormZone(box.host, box.port, {
         master: { deviceID: box.deviceID, ip: box.host },
         slaves: next.map(b => ({ deviceID: b.deviceID, ip: b.host })),
         stereo: false, mode: 'native',
       });
+      if (res && res.ok === false) {
+        // HTTP 200 with ok:false means the firmware formed NOTHING (#70).
+        // Treating it as success painted checked chips and a group volume
+        // slider that controlled a phantom group.
+        showError(t('multiroom.formedNone'));
+        refreshMusicZones();
+        renderGroupControl();
+        return;
+      }
       if (wasIn) { try { await Stop(target.host, target.port); } catch {} } // a removed speaker stops
       showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
     }
@@ -3256,6 +3286,10 @@ async function toggleGroupMember(host, port) {
       if (b.deviceID && zl[b.deviceID] && (zl[b.deviceID].master || '').toUpperCase() === masterUp) zl[b.deviceID] = null;
     }
     next.forEach(b => { if (b.deviceID) zl[b.deviceID] = { master: box.deviceID }; });
+    // The master keeps its OWN zone entry: nulling it (like the loop above
+    // did) made the master render outside its own group frame and the
+    // Multi-Room summary claim "no zone" until the next real poll.
+    if (next.length > 0 && box.deviceID) zl[box.deviceID] = { master: box.deviceID };
     state.zoneLive = zl;
     renderBoxSelect();
   } catch (e) {
@@ -4874,7 +4908,8 @@ function preferMp3SiblingForBox(s, list) {
 // up. This turns the most common "every station errors" frustration into a
 // usually-silent recovery. Used by every radio play-now button.
 async function playStation(s) {
-  const box = state.currentBox;
+  // A play aimed at a zone follower must go to its master instead (#70).
+  const box = effectivePlayTarget();
   if (!box) return;
   // Box playback prefers an MP3 sibling over an AAC entry of the same station
   // when the already-loaded result list offers one (#252): the speaker's AAC

@@ -4169,6 +4169,31 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Native: drive the firmware zone and read back what it actually formed.
+	//
+	// /setZone tears down the master's in-flight UPnP session (#70): the
+	// firmware cannot adopt an externally pushed session into a fresh zone, so
+	// forming a group while music plays deselects the source (INVALID_SOURCE,
+	// errorUpdate 1036 UpnpRcvdContentItemInWrongState) and the room goes
+	// silent even though the zone reports formed, with "Select a preset..." on
+	// the display. Capture whether STR's stream was playing BEFORE the form and
+	// re-push it to the now-grouped master afterwards; the master distributes
+	// it to the followers (verified live: a play pushed to the master after
+	// forming reaches every member).
+	var resume *lastPlayInfo
+	if _, busy := s.boxPlayState(); busy {
+		s.lastPlayMu.Lock()
+		if s.lastPlay != nil {
+			cp := *s.lastPlay
+			resume = &cp
+		}
+		s.lastPlayMu.Unlock()
+	}
+
+	// Never form against a standby master: the firmware then wakes INTO its
+	// stale UPnP item, throws the 1036 wrong-state error and self-dissolves
+	// the fresh zone ~300ms after reporting ok (#70, observed live).
+	s.ensureBoxReady(ctx)
+
 	if err := c.SetZone(ctx, master, slaves); err != nil {
 		s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
 		http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
@@ -4217,12 +4242,64 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		"masterMissing", strings.Join(masterMissing, ","),
 		"verified", verified, "missing", strings.Join(missing, ","),
 		"unverifiable", strings.Join(unverifiable, ","))
+	if resume != nil && masterFormed {
+		go s.resumeAfterZoneForm(*resume)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
 		"members": z2.Members, "requested": len(slaves),
 		"verified": verified, "missing": missing, "unverifiable": unverifiable,
 		"masterMissing": masterMissing,
 	})
+}
+
+// resumeAfterZoneForm re-pushes the stream that was playing on this box before
+// a native zone form tore it down (see handleZoneForm). The firmware needs a
+// settle moment after /setZone before it accepts a new SetURI - pushing too
+// early just re-triggers the 1036 wrong-state error - so wait, then push under
+// the box command lock, standing down when the user stopped meanwhile or a
+// newer play superseded the captured one.
+func (s *Server) resumeAfterZoneForm(lp lastPlayInfo) {
+	if s.renderer == nil {
+		return
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if s.userStoppedRecently() {
+		s.logger.Info("zone: not restarting playback after forming, user stopped meanwhile")
+		return
+	}
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	s.lastPlayMu.Lock()
+	cur := s.lastPlay
+	s.lastPlayMu.Unlock()
+	if resumeIsStale(lp.boxURL, lp.ts, cur) {
+		s.logger.Info("zone: not restarting playback after forming, a newer play superseded it",
+			"captured", lp.boxURL, "current", lastPlayURL(cur))
+		return
+	}
+	push := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if lp.mime != "" {
+			return s.renderer.PlayURLMime(ctx, lp.boxURL, lp.title, lp.art, lp.mime)
+		}
+		return s.renderer.PlayURL(ctx, lp.boxURL, lp.title, lp.art)
+	}
+	err := push()
+	if err != nil {
+		// One retry after a longer settle: right after /setZone the firmware
+		// sporadically rejects the first SetURI while the zone is still wiring
+		// its followers.
+		time.Sleep(3 * time.Second)
+		err = push()
+	}
+	if err != nil {
+		s.logger.Warn("zone: could not restart the master's stream after forming; the group is formed but silent - press play or a preset to start it",
+			"err", err, "url", lp.boxURL)
+		return
+	}
+	s.logger.Info("zone: master's stream restarted after group forming", "url", lp.boxURL, "title", lp.title)
 }
 
 // handleSpotifyCredential moves the go-librespot Spotify login between speakers

@@ -14,6 +14,7 @@ import { GetZoneState, FormZone, DissolveZone, BrowserOpenURL } from '../api.js'
 let deps = {
   boxNeedsUpdate: () => false,
   discoverBoxes: async () => {},
+  selectBox: () => {},
 };
 export function initMultiroomView(d) {
   deps = { ...deps, ...d };
@@ -288,6 +289,13 @@ async function doFormZone(strBoxes) {
       } else {
         state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: verified }))}</div>`;
       }
+    }
+    // Move the app's playback selection to the group master (#70 scenario c):
+    // leaving it on a previous (possibly just-ungrouped) speaker sent the next
+    // play command to a box OUTSIDE the fresh group, so music came out of the
+    // wrong speaker while the group stayed silent.
+    if (state.currentBox && state.currentBox.host !== master.host) {
+      deps.selectBox(master);
     }
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;

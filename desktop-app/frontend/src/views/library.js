@@ -34,6 +34,10 @@ import {
 let deps = {
   showSlotPicker() {},
   formatDuration() {},
+  // Resolves the box a play must go to (the group master when the selected
+  // box is a zone follower, #70). Overridden by main.js; the fallback keeps
+  // the old behavior if the dep is ever missing.
+  effectivePlayTarget: () => state.currentBox,
 };
 export function initLibraryView(d) {
   deps = { ...deps, ...d };
@@ -218,17 +222,20 @@ async function libraryPlay(item) {
     showError(t('library.errorNoURL'));
     return;
   }
+  // A play aimed at a zone follower must go to its master (#70): the follower's
+  // own UPnP endpoint rejects control with 501 "Can't control member of group".
+  const target = deps.effectivePlayTarget() || state.currentBox;
   try {
     // Pass the track's real codec MIME so the box decodes FLAC/ALAC/M4A
     // correctly instead of being told audio/mpeg and rejecting it (#139).
-    await PlayURL(state.currentBox.host, state.currentBox.port,
+    await PlayURL(target.host, target.port,
       item.streamURL, item.title || '', item.albumArtURL || '', '', item.mimeType || '', '', '');
     // A library play supersedes any ad-hoc radio station the app started, so
     // a later long-press save must not resurrect that station (#252).
     state.lastAppPlay = null;
     showToast(t('library.toastPlaying') + ': ' + (item.title || ''));
     // Confirm it actually starts (see verifyLibraryPlayback, #139).
-    verifyLibraryPlayback(item);
+    verifyLibraryPlayback(item, target);
   } catch (e) {
     showError(`PlayURL: ${e}`);
   }
@@ -242,14 +249,16 @@ async function libraryPlay(item) {
 // Poll the box play state for a short window; if it never starts (or the box
 // reports the source invalid), surface a soft, format-agnostic hint. Run
 // fire-and-forget so the click stays responsive.
-async function verifyLibraryPlayback(item) {
-  const box = state.currentBox;
+async function verifyLibraryPlayback(item, target) {
+  // Watch the box the play was actually sent to (the group master when the
+  // selected box is a follower, #70), not blindly the selected box.
+  const box = target || state.currentBox;
   if (!box) return;
   const deadline = Date.now() + 12000;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 2000));
-    // Bail if the user moved to another box or started something else.
-    if (!state.currentBox || state.currentBox.host !== box.host) return;
+    // Bail if the user moved to another box entirely.
+    if (!state.currentBox) return;
     let xml = '';
     try {
       xml = await Status(box.host, box.port);
@@ -310,8 +319,12 @@ async function libraryPlayFolder() {
     repeat: libState.repeat || 'off',
     card,
   };
+  // A queue aimed at a zone follower must start on its master (#70): the
+  // follower's UPnP endpoint rejects control with 501 "Can't control member
+  // of group" (that raw SOAP fault is exactly what users saw).
+  const target = deps.effectivePlayTarget() || state.currentBox;
   try {
-    await StartQueue(state.currentBox.host, state.currentBox.port, JSON.stringify(payload));
+    await StartQueue(target.host, target.port, JSON.stringify(payload));
     // A folder play supersedes any ad-hoc radio station the app started (#252).
     state.lastAppPlay = null;
     showToast(t('library.folderQueued', { n: items.length }));
