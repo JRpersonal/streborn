@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/radiobrowser"
@@ -40,14 +41,11 @@ func (a *App) radioCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(parent, 20*time.Second)
 }
 
-// RadioSearch runs a station search/top-list directly against radio-browser.
-// For a free-text query it uses SearchSmart (name + tag fallback); for the top
-// list (no query) it uses a plain vote-ordered Search. Returns the raw station
-// list the frontend already knows how to render.
-func (a *App) RadioSearch(o RadioSearchOpts) ([]radiobrowser.Station, error) {
-	ctx, cancel := a.radioCtx()
-	defer cancel()
-	opts := radiobrowser.SearchOpts{
+// searchOptsFrom maps the frontend's search filters onto the radiobrowser
+// package's options. Shared by RadioSearch and RadioSearchDetailed so the two
+// bindings cannot drift on filter semantics.
+func searchOptsFrom(o RadioSearchOpts) radiobrowser.SearchOpts {
+	return radiobrowser.SearchOpts{
 		Name:     o.Q,
 		Tag:      o.Tag,
 		Country:  o.Country,
@@ -59,10 +57,22 @@ func (a *App) RadioSearch(o RadioSearchOpts) ([]radiobrowser.Station, error) {
 		// A free-text/name search is how a user looks for a station they just
 		// added to radio-browser. Keep not-yet-checked stations in the results so
 		// their own entry is findable and assignable right away instead of being
-		// hidden for hours by hidebroken (#252). Browse/top lists below stay
-		// strict. OnlyOK (an explicit "working only" filter) overrides this.
+		// hidden for hours by hidebroken (#252). Browse/top lists stay strict.
+		// The radiobrowser package applies this on name/tag searches regardless
+		// of OnlyOK, which then only drops stations checked AND found broken -
+		// never-checked ones stay visible (#267).
 		IncludeUnchecked: !o.Top && o.Q != "",
 	}
+}
+
+// RadioSearch runs a station search/top-list directly against radio-browser.
+// For a free-text query it uses SearchSmart (name + tag fallback); for the top
+// list (no query) it uses a plain vote-ordered Search. Returns the raw station
+// list the frontend already knows how to render.
+func (a *App) RadioSearch(o RadioSearchOpts) ([]radiobrowser.Station, error) {
+	ctx, cancel := a.radioCtx()
+	defer cancel()
+	opts := searchOptsFrom(o)
 	if !o.Top && o.Q != "" {
 		st, err := radioClient.SearchSmart(ctx, opts)
 		// Borrow a logo from a sibling result for the same station so a
@@ -73,6 +83,42 @@ func (a *App) RadioSearch(o RadioSearchOpts) ([]radiobrowser.Station, error) {
 	}
 	st, err := radioClient.Search(ctx, opts)
 	return radiobrowser.EnrichSiblingLogos(nonNilStations(st)), err
+}
+
+// RadioSearchResult is the detailed search reply for the frontend: the station
+// list plus whether the broken-station filters had to be relaxed to produce it
+// (so the UI can badge entries radio-browser's checker flagged broken, e.g.
+// geo-fenced streams that play fine locally).
+type RadioSearchResult struct {
+	Stations []radiobrowser.Station `json:"stations"`
+	Relaxed  bool                   `json:"relaxed"`
+}
+
+// RadioSearchDetailed is RadioSearch plus the relaxed-filters flag: same opts
+// mapping, but through the radiobrowser package's SearchDetailed so the
+// frontend learns when the list only exists because the reachability filters
+// were dropped.
+func (a *App) RadioSearchDetailed(o RadioSearchOpts) (RadioSearchResult, error) {
+	ctx, cancel := a.radioCtx()
+	defer cancel()
+	res, err := radioClient.SearchDetailed(ctx, searchOptsFrom(o))
+	return RadioSearchResult{
+		Stations: radiobrowser.EnrichSiblingLogos(nonNilStations(res.Stations)),
+		Relaxed:  res.Relaxed,
+	}, err
+}
+
+// RadioStationsByURL resolves a pasted stream URL to its radio-browser station
+// entries (name, logo, UUID) via the stations/byurl lookup. An empty input
+// short-circuits to an empty list without a network round trip.
+func (a *App) RadioStationsByURL(streamURL string) ([]radiobrowser.Station, error) {
+	if strings.TrimSpace(streamURL) == "" {
+		return []radiobrowser.Station{}, nil
+	}
+	ctx, cancel := a.radioCtx()
+	defer cancel()
+	st, err := radioClient.ByURL(ctx, streamURL)
+	return nonNilStations(st), err
 }
 
 // RadioTags returns the most popular genre tags for the chips.
