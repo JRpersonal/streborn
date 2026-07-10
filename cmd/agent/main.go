@@ -1060,6 +1060,15 @@ type presetWsHandler struct {
 	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
 	// does not fight a wanted stop. nil-safe.
 	onUserStop func()
+	// lastUserStop is when OnUserStop last fired (guarded by lastUserStopMu).
+	// The hardware recall verifies (verifyPlayURL / verifySpotifyPlaying)
+	// compare it against their recall start so a deliberate stop DURING the
+	// verify window stands the re-push down instead of being overridden --
+	// stop-after-recall-start, mirroring the webui side's stand-down, not a
+	// rolling window (an older stop must not suppress a recall the user just
+	// asked for).
+	lastUserStopMu sync.Mutex
+	lastUserStop   time.Time
 	// onRemoteSkip advances playback on a hardware remote Next/Prev key, source-
 	// aware (Spotify or the STR play queue). Wired to webui.TransportSkip so the
 	// hardware keys use the same skip logic as the phone remote; without it a
@@ -1421,11 +1430,34 @@ func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
 
 // OnUserStop is fired when the box reports a deliberate playback stop over
 // gabbo. It tells the webui's auto-re-push to stand down so a wanted stop holds
-// (v0.7.0: a single stop did not stick because the resume restarted it).
+// (v0.7.0: a single stop did not stick because the resume restarted it), and
+// records the stop time so the hardware recall verifies can stand down too.
 func (h *presetWsHandler) OnUserStop(_ context.Context) {
+	h.lastUserStopMu.Lock()
+	h.lastUserStop = time.Now()
+	h.lastUserStopMu.Unlock()
 	if h.onUserStop != nil {
 		h.onUserStop()
 	}
+}
+
+// userStoppedSince reports whether the box reported a deliberate stop (gabbo
+// STOP_STATE -> OnUserStop) after start.
+func (h *presetWsHandler) userStoppedSince(start time.Time) bool {
+	h.lastUserStopMu.Lock()
+	defer h.lastUserStopMu.Unlock()
+	return userStopAbortsVerify(start, h.lastUserStop)
+}
+
+// userStopAbortsVerify is the recall-verify stand-down decision: only a user
+// stop that happened strictly AFTER the recall started aborts the verify
+// re-push loop (stop-after-recall-start, the same semantics the webui's soft
+// recall side settled on), never a rolling window. An older stop must not
+// suppress the recall the user just asked for; strict After also biases a
+// same-instant tie toward completing the recall, since the recall's own
+// transport flip can emit a transient STOP_STATE.
+func userStopAbortsVerify(recallStart, lastStop time.Time) bool {
+	return !lastStop.IsZero() && lastStop.After(recallStart)
 }
 
 // OnThumbActivity fires the user-configured webhook when the box reports a lone
@@ -1664,6 +1696,11 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 // the SAME label or an AAC station recovered here would fall back to silence
 // (#252).
 func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) {
+	// Anchor for the user-stop stand-down: only a STOP_STATE recorded after
+	// this point aborts the loop. Captured at verify start, i.e. after the
+	// initial play's SOAP round-trip, so the transient STOP_STATE that flip
+	// itself can emit has usually already been recorded and does not count.
+	recallStart := time.Now()
 	// Up to 5 attempts (~25s): a box waking from a deep/overnight standby can
 	// take longer than the old 3-attempt (~15s) window to finish bringing its
 	// network and playback subsystem back up before it accepts the stream (#183).
@@ -1685,6 +1722,13 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 			h.logger.Info("hardware recall: box powered off mid-recall, not re-pushing (#197)", "slot", slot)
 			return
 		}
+		// The user deliberately stopped playback (gabbo STOP_STATE, e.g. the Bose
+		// remote's stop key) after this recall started: the stop must hold, like
+		// the webui side's stand-down, instead of being overridden by a re-push.
+		if h.userStoppedSince(recallStart) {
+			h.logger.Info("hardware recall: user stopped playback mid-recall, not re-pushing", "slot", slot)
+			return
+		}
 		h.logger.Warn("hardware recall not playing yet, retrying", "slot", slot, "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		if mime != "" {
@@ -1704,6 +1748,9 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 // recall and re-issues the recall a few times if not, fixing the "first press
 // after reboot does nothing" race without needing a second press.
 func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
+	// Anchor for the user-stop stand-down (see verifyPlayURL): only a
+	// STOP_STATE recorded after this point aborts the loop.
+	recallStart := time.Now()
 	for attempt := 1; attempt <= 3; attempt++ {
 		time.Sleep(5 * time.Second)
 		// Success = the box is actually on the Spotify stream. Use the
@@ -1719,6 +1766,12 @@ func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 		// below does not re-wake a box the user just switched off (#197).
 		if h.recentlyPoweredOff != nil && h.recentlyPoweredOff() {
 			h.logger.Info("spotify recall: box powered off mid-recall, not re-pointing (#197)", "slot", slot)
+			return
+		}
+		// A deliberate stop (gabbo STOP_STATE) after this recall started must
+		// hold; do not re-point the box over the user's stop.
+		if h.userStoppedSince(recallStart) {
+			h.logger.Info("spotify recall: user stopped playback mid-recall, not re-pointing", "slot", slot)
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
