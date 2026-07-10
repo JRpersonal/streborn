@@ -230,6 +230,7 @@ func (a *App) enableSSHViaTelnet(host, model string) (bool, string) {
 	// speaker. This is STR's advantage over the manual CLI flow.
 	_, _ = t.send("sys reboot")
 	t.close()
+	boxSSHClients.invalidateHost(host)
 	a.logger.Info("telnet-enable: injection written and sys reboot sent; polling for SSH", "host", host, "model", model)
 
 	if a.waitForSSHOpen(host, agentWaitBudget(model)) {
@@ -289,6 +290,7 @@ func (a *App) restoreStockBoseURLsAndReboot(host string) {
 	if t, err := dialTAP(host, 5*time.Second); err == nil {
 		_, _ = t.send("sys reboot")
 		t.close()
+		boxSSHClients.invalidateHost(host)
 		a.logger.Info("telnet-enable: restored stock boseurls and rebooted after a failed unlock", "host", host)
 	}
 }

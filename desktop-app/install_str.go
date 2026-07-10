@@ -14,6 +14,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -651,6 +652,18 @@ func (a *App) RepairInstallViaSSH(host, model string) (InstallResult, error) {
 	if serr != nil {
 		res.Code = "repair-upload-failed"
 		res.Message = "could not copy STR to the speaker: " + serr.Error()
+		// When EVERY target failed with a short upload, the network path itself
+		// cannot carry the transfer (the classic reverse-DNS-stall LAN, where the
+		// speaker's sshd adds ~10 s to every connection). Point the user at the
+		// USB-stick install, which does not touch the network at all, instead of
+		// leaving them to retry a path that will keep failing the same way.
+		var allTrunc *allTargetsTruncatedError
+		if errors.As(serr, &allTrunc) {
+			res.Message += ". The network install could not transfer STR to this speaker " +
+				"(this can happen on networks that slow every connection to the speaker). " +
+				"The most reliable alternative is the USB-stick install: prepare a stick in the app, " +
+				"plug it into the speaker, and reboot it."
+		}
 		a.logger.Warn("repair_ssh: staging failed on all targets", "host", host, "err", serr)
 		return res, nil
 	}
@@ -747,19 +760,35 @@ func (a *App) healSDKCloudURLs(host string) error {
 	return nil
 }
 
+// uploadTruncatedError is the staging failure where the file landed on the box
+// but the byte-count verify read fewer bytes than were sent. One of these can
+// be weak Wi-Fi mid-transfer; ALL targets failing this way is the signature of
+// a network path that cannot carry the transfer at all, which is what the
+// caller keys the USB-stick guidance on (errors.As through the staging chain).
+type uploadTruncatedError struct{ msg string }
+
+func (e *uploadTruncatedError) Error() string { return e.msg }
+
 // stageRepairFiles uploads the embedded install file set into stageDir on the
 // box over SSH and verifies every file arrived byte-exact, so a truncated
 // weak-Wi-Fi transfer is caught before install.sh trusts it. The agent binary
 // is the only large file and gets one upload retry, since a transient stall
 // mid-stream is exactly what staging-then-verify is meant to absorb. Returns a
 // human-readable error naming the file and where it failed; nil on success.
+//
+// The 30 s command timeouts here (and on the df probe below) look generous for
+// what are millisecond commands on the box, but they must survive the
+// system-ssh fallback path paying a full handshake per command on networks
+// where the box's sshd stalls ~10.5 s on reverse DNS (see boxssh.go): the old
+// 8-10 s budgets died mid-handshake there, and every staging target then
+// failed as "truncated"/"no space" even though the box was healthy.
 func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) error {
-	if out, err := boxSSHOutput(host, "rm -rf "+stageDir+" && mkdir -p "+stageDir+"/bin", 20*time.Second); err != nil {
+	if out, err := boxSSHOutput(host, "rm -rf "+stageDir+" && mkdir -p "+stageDir+"/bin", 30*time.Second); err != nil {
 		return fmt.Errorf("could not create staging dir %s: %s", stageDir, classifySSHError(out, err))
 	}
 	for name, data := range files {
 		if i := strings.LastIndex(name, "/"); i >= 0 {
-			_, _ = boxSSHOutput(host, "mkdir -p "+stageDir+"/"+name[:i], 10*time.Second)
+			_, _ = boxSSHOutput(host, "mkdir -p "+stageDir+"/"+name[:i], 30*time.Second)
 		}
 		dst := stageDir + "/" + name
 		attempts := 1
@@ -785,7 +814,7 @@ func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) e
 			// LogLevel=ERROR now suppresses that banner at the source,
 			// but parsing the count keeps the check correct against any
 			// residual stderr noise regardless.
-			got, _ := boxSSHOutput(host, "wc -c < "+dst+" 2>/dev/null", 10*time.Second)
+			got, _ := boxSSHOutput(host, "wc -c < "+dst+" 2>/dev/null", 30*time.Second)
 			if n, ok := lastIntField(got); ok && n == int64(len(data)) {
 				lastErr = nil
 				break
@@ -794,13 +823,13 @@ func (a *App) stageRepairFiles(host, stageDir string, files map[string][]byte) e
 			if n, ok := lastIntField(got); ok {
 				recv = strconv.FormatInt(n, 10)
 			}
-			lastErr = fmt.Errorf("upload %s truncated: speaker received %s of %d bytes", name, recv, len(data))
+			lastErr = &uploadTruncatedError{msg: fmt.Sprintf("upload %s truncated: speaker received %s of %d bytes", name, recv, len(data))}
 		}
 		if lastErr != nil {
 			return lastErr
 		}
 	}
-	_, _ = boxSSHOutput(host, "chmod +x "+stageDir+"/install.sh "+stageDir+"/run.sh "+stageDir+"/streborn-armv7l 2>/dev/null", 15*time.Second)
+	_, _ = boxSSHOutput(host, "chmod +x "+stageDir+"/install.sh "+stageDir+"/run.sh "+stageDir+"/streborn-armv7l 2>/dev/null", 30*time.Second)
 	return nil
 }
 
@@ -881,10 +910,17 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 		}
 	}
 	var lastErr error
+	allTruncated := true
+	attempts := 0
 	for _, base := range append(fits, tooSmall...) {
 		stage := base + "/streborn-install"
 		if err := a.stageRepairFiles(host, stage, files); err != nil {
 			lastErr = err
+			attempts++
+			var trunc *uploadTruncatedError
+			if !errors.As(err, &trunc) {
+				allTruncated = false
+			}
 			a.logger.Warn("repair_ssh: staging attempt failed", "host", host, "dir", stage, "err", err)
 			continue
 		}
@@ -894,15 +930,37 @@ func (a *App) stageRepairFilesBestEffort(host string, rawNeed int64, files map[s
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no staging directory available on the speaker")
 	}
+	// Every target failed the SAME way — the upload arrived short on all of them.
+	// That is not a per-directory space problem (each is a different filesystem);
+	// it is a network path that cannot carry the transfer, the exact signature of
+	// the reverse-DNS-stall LAN this fix targets. Flag it so the caller steers the
+	// user to the USB-stick install, which does not depend on the network at all.
+	if allTruncated && attempts > 0 {
+		return "", &allTargetsTruncatedError{err: lastErr}
+	}
 	return "", lastErr
 }
+
+// allTargetsTruncatedError wraps the last staging error when EVERY on-box target
+// failed with a truncated upload. RepairInstallViaSSH classifies it into
+// guidance that names the USB-stick install as the reliable alternative.
+type allTargetsTruncatedError struct{ err error }
+
+func (e *allTargetsTruncatedError) Error() string { return e.err.Error() }
+func (e *allTargetsTruncatedError) Unwrap() error { return e.err }
 
 // freeBytesAtPath returns the free space in bytes on the filesystem backing path
 // on the box via BusyBox `df -k`, or 0 if it cannot be read or parsed (treated as
 // "unknown, do not assume room"). Parsing lives in parseDfAvailBytes so it is
 // unit-testable without a box.
 func freeBytesAtPath(host, path string) int64 {
-	out, err := boxSSHOutput(host, "df -k "+path+" 2>/dev/null", 8*time.Second)
+	// 30 s, not a snappier 8 s: on a LAN where the box's sshd stalls ~10.5 s on
+	// reverse DNS (see boxssh.go), an 8 s df died mid-handshake for every target
+	// and read as 0 free, so staging wrongly rejected a healthy NAND and the
+	// install failed 100% (user diagnostic 2026-07-10). With the client cache the
+	// probe is fast; the generous budget only matters on the first command or the
+	// system-ssh fallback, where it must clear one slow handshake.
+	out, err := boxSSHOutput(host, "df -k "+path+" 2>/dev/null", 30*time.Second)
 	if err != nil {
 		return 0
 	}

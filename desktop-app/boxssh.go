@@ -1,9 +1,9 @@
 // SSH transport for the desktop app. The installer, OTA, uninstall, true
 // factory reset and the diagnostic log export all run shell commands on the
-// stock Bose box over passwordless root SSH, so the transport (flag-set
-// fallback chain, subprocess runners, error classification, the shared
-// handshake/reboot policies and the TCP reachability probe) lives here rather
-// than inside any one feature file.
+// stock Bose box over passwordless root SSH, so the transport (the per-host
+// cached native client, the flag-set fallback chain, subprocess runners, error
+// classification, the shared handshake/reboot policies and the TCP
+// reachability probe) lives here rather than inside any one feature file.
 //
 // Auth: Bose's stock firmware ships /etc/shadow with an empty root password and
 // accepts it while the remote_services marker is present on /media/sda1 (our
@@ -13,8 +13,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os/exec"
 	"runtime"
@@ -225,7 +227,9 @@ func extractBadOption(out string) string {
 }
 
 // boxSSHOutput runs cmd on the box over SSH and returns combined
-// stdout+stderr. timeout caps the whole call.
+// stdout+stderr. On the native path, timeout scopes the command execution
+// (the handshake, if one is even needed, runs under the client cache's own
+// budget); on the system-ssh fallback below, it caps each subprocess call.
 //
 // Walks sshFlagSets in order: if a set is rejected with "Bad
 // configuration option" (the user's local OpenSSH does not know
@@ -366,8 +370,13 @@ const rebootCmd = "(sleep 1; sync; /sbin/reboot) </dev/null >/dev/null 2>&1 &"
 
 // boxReboot triggers the hardened detached reboot on the box. The dropped
 // connection is the expected outcome, so the fire-and-forget result is ignored.
+// The cached SSH connection is doomed with the box going down, so it is dropped
+// here; the first post-reboot command then dials fresh instead of burning its
+// attempt on the dead socket.
 func boxReboot(host string) error {
-	return boxSSHFireAndForget(host, rebootCmd, 6*time.Second)
+	err := boxSSHFireAndForget(host, rebootCmd, 6*time.Second)
+	boxSSHClients.invalidateHost(host)
+	return err
 }
 
 // sshHandshake verifies the SSH channel is usable by running a trivial echo,
@@ -456,34 +465,245 @@ func nativeSSHConfig(timeout time.Duration) *ssh.ClientConfig {
 	return cfg
 }
 
+// === Cached native SSH transport ===
+//
+// One live *ssh.Client is kept per host so the TCP dial + SSH handshake happen
+// once per host, not once per command. That matters far beyond raw speed: on
+// LANs where the router silently DROPS reverse-DNS (PTR) queries, the box's
+// 2014-era sshd (OpenSSH UseDNS default) stalls ~10.5 s on EVERY new connection
+// before auth even starts. The old dial-per-command transport paid that tax on
+// every round trip, and several call sites budget 10 s or less for the whole
+// command — so the stick-free network install failed 100% on such networks
+// (df probes read as freeBytes=0, the staging byte-count verify died
+// mid-handshake as "truncated", the diagnostic SSH fallback came back empty;
+// user diagnostic 2026-07-10). With the cache, only the FIRST command after a
+// (re)boot pays the handshake, under its own generous budget, and per-command
+// timeouts scope just the command.
+
+// sshTransport is the minimal *ssh.Client surface the per-host cache stores.
+// A seam so the cache bookkeeping is testable without a live SSH server.
+type sshTransport interface {
+	NewSession() (*ssh.Session, error)
+	Close() error
+}
+
+// Connection budgets for the cached native transport. The TCP connect is
+// LAN-fast (or fails fast), so it keeps a moderate budget; the SSH handshake
+// gets a generous one because the sshd-side reverse-DNS stall described above
+// is real and unavoidable. Deliberately independent of the per-command
+// timeouts: a caller that gives a command 8 s must still survive a 10.5 s
+// first handshake.
+const (
+	sshTCPConnectBudget = 10 * time.Second
+	sshHandshakeBudget  = 30 * time.Second
+)
+
+// sshSlowHandshakeWarn is the first-handshake duration past which the cache
+// logs a one-time WARN per host, so a diagnostic bundle from an affected LAN
+// self-explains instead of showing a spread of odd timeouts.
+const sshSlowHandshakeWarn = 5 * time.Second
+
+// sshClientCache keeps one live SSH connection per host. Each host has its own
+// slot with its own mutex, so a slow handshake to one speaker never blocks
+// commands to another, and two concurrent commands to the same host share a
+// single dial (the second waits on the slot, then reuses the cached client;
+// ssh.Client multiplexes sessions over one connection).
+type sshClientCache struct {
+	mu     sync.Mutex
+	hosts  map[string]*sshHostConn
+	dial   func(host string) (sshTransport, error)
+	logger *slog.Logger
+	// warnAfter is sshSlowHandshakeWarn, overridable in tests.
+	warnAfter time.Duration
+}
+
+// sshHostConn is one host's cache slot: the live client (nil when none) and
+// the once-per-host slow-network warn latch.
+type sshHostConn struct {
+	mu         sync.Mutex
+	client     sshTransport
+	warnedSlow bool
+}
+
+// boxSSHClients is the app-wide per-host client cache used by nativeSSHRun.
+// startup() points its logger at the app log file.
+var boxSSHClients = newSSHClientCache(dialNativeSSH)
+
+func newSSHClientCache(dial func(host string) (sshTransport, error)) *sshClientCache {
+	return &sshClientCache{
+		hosts:     map[string]*sshHostConn{},
+		dial:      dial,
+		logger:    slog.Default(),
+		warnAfter: sshSlowHandshakeWarn,
+	}
+}
+
+// setLogger routes the cache's log lines (the slow-handshake WARN) into the
+// app's file logger. Called once at startup, before any SSH traffic.
+func (c *sshClientCache) setLogger(l *slog.Logger) {
+	if l == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logger = l
+}
+
+func (c *sshClientCache) log() *slog.Logger {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.logger
+}
+
+// slot returns host's cache slot, creating it on first use. Slots are never
+// removed (a session's host set is a handful of LAN speakers), only their
+// clients are.
+func (c *sshClientCache) slot(host string) *sshHostConn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.hosts[host]
+	if s == nil {
+		s = &sshHostConn{}
+		c.hosts[host] = s
+	}
+	return s
+}
+
+// get returns the cached live transport for host, dialing and caching a fresh
+// one when none is cached. The first handshake to a host is timed: past
+// warnAfter it logs the one-time WARN that makes affected-LAN diagnostics
+// self-explaining.
+func (c *sshClientCache) get(host string) (sshTransport, error) {
+	slot := c.slot(host)
+	slot.mu.Lock()
+	defer slot.mu.Unlock()
+	if slot.client != nil {
+		return slot.client, nil
+	}
+	start := time.Now()
+	client, err := c.dial(host)
+	if err != nil {
+		return nil, err
+	}
+	if d := time.Since(start); d >= c.warnAfter && !slot.warnedSlow {
+		slot.warnedSlow = true
+		c.log().Warn("slow SSH handshake: this network adds a fixed delay to every new speaker connection"+
+			" (typically the speaker's sshd waiting on a reverse-DNS query the router never answers);"+
+			" STR caches the connection, so the delay is paid once per speaker instead of once per command",
+			"host", host, "delaySeconds", fmt.Sprintf("%.1f", d.Seconds()))
+	}
+	slot.client = client
+	return client, nil
+}
+
+// invalidate drops the cached transport for host if it is still `client`, then
+// closes it. The identity check keeps a stale failure from evicting a fresh
+// connection another goroutine already re-dialed. Closing also tears down any
+// in-flight session on the same connection: the command that hit the error is
+// failing anyway, and a rare concurrent command on the same broken connection
+// fails with it and re-dials via its own retry.
+func (c *sshClientCache) invalidate(host string, client sshTransport) {
+	if client == nil {
+		return
+	}
+	slot := c.slot(host)
+	slot.mu.Lock()
+	if slot.client == client {
+		slot.client = nil
+	}
+	slot.mu.Unlock()
+	_ = client.Close()
+}
+
+// invalidateHost drops whatever transport is cached for host. Called on every
+// path that KNOWS the box is rebooting (boxReboot, the telnet `sys reboot`
+// sites, the agent's HTTP reboot): the connection is doomed, so the next
+// command should dial fresh instead of burning its first attempt on the dead
+// socket.
+func (c *sshClientCache) invalidateHost(host string) {
+	slot := c.slot(host)
+	slot.mu.Lock()
+	client := slot.client
+	slot.client = nil
+	slot.mu.Unlock()
+	if client != nil {
+		_ = client.Close()
+	}
+}
+
+// dialNativeSSH opens one TCP+SSH connection to the box with the bundled Go
+// client. TCP connect and handshake run under their own budgets (see above);
+// the deadline is cleared after the handshake so long-lived sessions (the
+// 10 MB OTA upload) are not cut off mid-stream.
+func dialNativeSSH(host string) (sshTransport, error) {
+	addr := net.JoinHostPort(host, "22")
+	conn, err := net.DialTimeout("tcp", addr, sshTCPConnectBudget)
+	if err != nil {
+		return nil, err
+	}
+	_ = conn.SetDeadline(time.Now().Add(sshHandshakeBudget))
+	cc, chans, reqs, err := ssh.NewClientConn(conn, addr, nativeSSHConfig(sshHandshakeBudget))
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	_ = conn.SetDeadline(time.Time{})
+	return ssh.NewClient(cc, chans, reqs), nil
+}
+
+// sshTransportSuspect reports whether a session error means the underlying
+// connection may be broken. A non-zero remote exit (*ssh.ExitError) proves the
+// transport round-tripped fine; everything else — a drop, a missing exit
+// status (reboot), our synthesized timeouts — leaves the connection suspect,
+// and one extra handshake is cheap insurance against reusing a broken client.
+func sshTransportSuspect(err error) bool {
+	if err == nil {
+		return false
+	}
+	var exitErr *ssh.ExitError
+	return !errors.As(err, &exitErr)
+}
+
 // nativeSSHRun runs cmd on the box with the bundled Go SSH client. It returns
 // the combined output, whether the command actually RAN on the box (transport
 // established), and any error. ran=false means the native transport could not
 // connect/handshake/authenticate, so the caller should fall back to system ssh;
 // ran=true means the command executed (err, if any, is the remote command error
 // or a drop, e.g. on reboot) and no fallback is needed.
+//
+// The transport comes from the per-host client cache; timeout scopes only the
+// command execution (plus stdin streaming), never the handshake. A dead cached
+// connection (box rebooted, Wi-Fi drop) surfaces as a NewSession error and is
+// retried ONCE on a fresh dial before handing off to the system-ssh fallback.
 func nativeSSHRun(host, cmd string, stdin io.Reader, timeout time.Duration) (string, bool, error) {
-	addr := net.JoinHostPort(host, "22")
-	conn, err := net.DialTimeout("tcp", addr, timeout)
+	client, err := boxSSHClients.get(host)
 	if err != nil {
 		return "", false, err
 	}
-	// Bound the handshake by the timeout, then clear the deadline so a long
-	// upload (the 10 MB OTA binary) is not cut off mid-stream.
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-	cc, chans, reqs, err := ssh.NewClientConn(conn, addr, nativeSSHConfig(timeout))
-	if err != nil {
-		_ = conn.Close()
-		return "", false, err
-	}
-	_ = conn.SetDeadline(time.Time{})
-	client := ssh.NewClient(cc, chans, reqs)
-	defer client.Close()
 	sess, err := client.NewSession()
 	if err != nil {
-		return "", false, err
+		boxSSHClients.invalidate(host, client)
+		client, err = boxSSHClients.get(host)
+		if err != nil {
+			return "", false, err
+		}
+		if sess, err = client.NewSession(); err != nil {
+			boxSSHClients.invalidate(host, client)
+			return "", false, err
+		}
 	}
 	defer sess.Close()
+	out, err := runNativeSession(sess, cmd, stdin, timeout)
+	if sshTransportSuspect(err) {
+		boxSSHClients.invalidate(host, client)
+	}
+	return out, true, err
+}
+
+// runNativeSession executes cmd on an open session. A plain command (stdin ==
+// nil) runs under a total timeout; an upload (stdin != nil) runs under a STALL
+// timeout, see below.
+func runNativeSession(sess *ssh.Session, cmd string, stdin io.Reader, timeout time.Duration) (string, error) {
 	type res struct {
 		out []byte
 		err error
@@ -510,7 +730,7 @@ func nativeSSHRun(host, cmd string, stdin io.Reader, timeout time.Duration) (str
 		for {
 			select {
 			case r := <-ch:
-				return string(r.out), true, r.err
+				return string(r.out), r.err
 			case <-beat:
 				if !t.Stop() {
 					select {
@@ -522,17 +742,17 @@ func nativeSSHRun(host, cmd string, stdin io.Reader, timeout time.Duration) (str
 			case <-t.C:
 				_ = sess.Signal(ssh.SIGKILL)
 				_ = sess.Close()
-				return "", true, fmt.Errorf("ssh native upload stalled (no progress for %s)", timeout)
+				return "", fmt.Errorf("ssh native upload stalled (no progress for %s)", timeout)
 			}
 		}
 	}
 	go func() { out, e := sess.CombinedOutput(cmd); ch <- res{out, e} }()
 	select {
 	case r := <-ch:
-		return string(r.out), true, r.err
+		return string(r.out), r.err
 	case <-time.After(timeout):
 		_ = sess.Signal(ssh.SIGKILL)
-		return "", true, fmt.Errorf("ssh native timeout after %s", timeout)
+		return "", fmt.Errorf("ssh native timeout after %s", timeout)
 	}
 }
 

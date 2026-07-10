@@ -228,6 +228,11 @@ func (a *App) startup(ctx context.Context) {
 	// while Windows finishes mounting a freshly inserted stick) is visible
 	// in the diagnostic bundle instead of an unexplained UI hang.
 	sticksetup.Logger = a.logger.With("comp", "sticksetup")
+	// And for the SSH client cache, so its one-time slow-handshake WARN (a
+	// router that drops the sshd's reverse-DNS queries taxes every new
+	// connection) lands in the diagnostic bundle next to the install steps
+	// it explains.
+	boxSSHClients.setLogger(a.logger.With("comp", "boxssh"))
 	// Verbose startup line so users always see SOMETHING in the
 	// log when they hit "Save diagnostic logs", even on a session
 	// where they did not poke any features that emit further logs.
@@ -3290,6 +3295,9 @@ func (a *App) RebootBox(host string, port int) error {
 	if resp.StatusCode >= 400 {
 		return readHTTPError(resp)
 	}
+	// The box is going down: drop any cached SSH connection to it so the next
+	// SSH command after the reboot dials fresh instead of failing once first.
+	boxSSHClients.invalidateHost(host)
 	return nil
 }
 

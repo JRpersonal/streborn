@@ -289,6 +289,7 @@ func (a *App) enableSSHViaTelnetBootstrap(host, model string) (bool, string) {
 	}
 	_, _ = t.send("sys reboot")
 	t.close()
+	boxSSHClients.invalidateHost(host)
 	a.logger.Info("telnet-bootstrap: dummy account set, envswitch injection written, sys reboot sent; waiting for the box to check marge and open SSH", "host", host, "pcMarge", base)
 
 	// Budget: boot (~90s) plus at least one ~60s marge-check cycle.

@@ -460,11 +460,22 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	return s
 }
 
+// sshFallbackMinFieldTimeout floors every per-field SSH timeout in
+// pullSSHFallback. The per-field ms values below are sized for the command's
+// own runtime, but on a LAN where the box's sshd stalls ~10.5 s on reverse DNS
+// (see boxssh.go) a fresh connection alone eats a 3-15 s budget before the
+// command starts, and the field came back empty even for /proc/uptime — the
+// exact "sshFallback fields empty" signature of the 2026-07-10 diagnostic. The
+// client cache means only the first field here pays a handshake, but the export
+// runs in the background, so flooring every field at 30 s costs nothing on a
+// healthy LAN and lets every field clear one slow handshake on an affected one.
+const sshFallbackMinFieldTimeout = 30 * time.Second
+
 // pullSSHFallback fetches the diagnostic tails over SSH using the
 // same legacy-algorithm flags install_str.go uses. Total time
-// budgeted to ~30 s so a misbehaving box does not stall the whole
-// diagnostic export. Each command runs with its own short timeout
-// so a single hang does not consume the budget.
+// budgeted so a misbehaving box does not stall the whole diagnostic
+// export. Each command runs with its own timeout (floored at
+// sshFallbackMinFieldTimeout) so a single hang does not consume the budget.
 func pullSSHFallback(host string) *sshFallback {
 	type field struct {
 		name string
@@ -528,7 +539,11 @@ func pullSSHFallback(host string) *sshFallback {
 		"agentLogTail": true, "agentLogNand": true,
 	}
 	for _, f := range fields {
-		txt, _ := boxSSHOutput(host, f.cmd, time.Duration(f.ms)*time.Millisecond)
+		timeout := time.Duration(f.ms) * time.Millisecond
+		if timeout < sshFallbackMinFieldTimeout {
+			timeout = sshFallbackMinFieldTimeout
+		}
+		txt, _ := boxSSHOutput(host, f.cmd, timeout)
 		txt = strings.TrimSpace(txt)
 		if logFields[f.name] {
 			txt = tailString(txt, sshFallbackLogCap)
