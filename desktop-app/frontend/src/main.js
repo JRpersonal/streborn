@@ -180,6 +180,7 @@ import {
   showToast,
   compareVerBuild,
   getBoxLabel,
+  savePresetCase,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -3700,12 +3701,17 @@ async function saveCurrentToSlot(slot) {
     return;
   }
 
+  // Which save path applies is a pure decision (savePresetCase in utils.js,
+  // unit-tested): spotify / app-play / copy-slot / direct.
+  const sourceSlot = activeSlotFromLocation(state.nowLocation);
+  const saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS);
+
   // Case Spotify: the speaker is playing a Spotify playlist. Save a REAL
   // Spotify preset (type=spotify with the playlist URI), not a radio link to
   // the raw stream. The latter showed the album cover instead of the Spotify
   // logo and could not recall/shuffle the playlist. Needs the current context
   // (playlist URI) from /spotify/info.
-  if (/\/spotify\/stream|\/playback\/container/.test(state.nowLocation)) {
+  if (saveCase === 'spotify') {
     // We can only save a real, recallable Spotify preset when we know the
     // playlist/album/track context URI. state.nowSpotifyContext is only
     // refreshed by a throttled (>3s) background poll, so at save time it can
@@ -3773,11 +3779,10 @@ async function saveCurrentToSlot(slot) {
   // directly onto the target slot: name, URL, art logo one to one.
   // That bypasses state.nowIcon / state.nowName completely; on
   // hardware press both often still hold the previous station.
-  const sourceSlot = activeSlotFromLocation(state.nowLocation);
   // Same-slot saves (sourceSlot === slot) must take this path too: falling
   // through to Case B would store the box-visible /stream/<n> proxy URL and
   // permanently clobber the preset's origin URL (#252).
-  if (sourceSlot !== null) {
+  if (saveCase === 'app-play' || saveCase === 'copy-slot') {
     // The app itself started an ad-hoc station moments ago, yet the box
     // reports a /stream/<slot> location: on a speaker that was asleep, an
     // agent-side wake resume racing the play can have put the PREVIOUS
@@ -3787,7 +3792,7 @@ async function saveCurrentToSlot(slot) {
     // the plain copy below remains for the true hardware-key case, where the
     // app has no record of the play.
     const app = state.lastAppPlay;
-    if (app && app.url && Date.now() - app.at < APP_PLAY_FRESH_MS) {
+    if (saveCase === 'app-play') {
       const aname = app.name || t('preset.placeholderSender');
       try {
         await SetPreset(

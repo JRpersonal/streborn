@@ -113,6 +113,27 @@ export function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+// savePresetCase is the pure decision behind saveCurrentToSlot: which save
+// path applies to the currently playing location.
+//   'spotify'   playing via the Spotify engine — save a real Spotify preset.
+//   'app-play'  a proxy slot is playing but the app itself started an ad-hoc
+//               station within freshMs — trust the app's own record (an
+//               agent-side wake resume racing the play can leave the box
+//               briefly reporting the PREVIOUS preset, #252).
+//   'copy-slot' a proxy slot is playing (hardware key / other soft slot) —
+//               copy the source preset one to one.
+//   'direct'    a non-proxy stream — save the box-reported now-playing.
+// sourceSlot is activeSlotFromLocation(nowLocation), passed in so the caller
+// computes it once; null means "not a proxy location".
+export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs) {
+  if (/\/spotify\/stream|\/playback\/container/.test(nowLocation || '')) return 'spotify';
+  if (sourceSlot !== null && sourceSlot !== undefined) {
+    if (lastAppPlay && lastAppPlay.url && nowMs - lastAppPlay.at < freshMs) return 'app-play';
+    return 'copy-slot';
+  }
+  return 'direct';
+}
+
 // formatRemaining turns a remaining-ms value into a "m:ss" string for
 // countdown UI. Negative or zero inputs return "0:00". Used by the
 // stick-install and OTA-wait flows where the previous implementation
