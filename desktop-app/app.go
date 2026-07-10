@@ -127,6 +127,15 @@ type App struct {
 type discEntry struct {
 	box  BoxInfo
 	seen time.Time
+	// firstMiss is when the box first failed ALL probes in an unbroken run
+	// of misses (zero while the box keeps answering). Eviction is based on
+	// this, not on `seen`: discovery cycles only run on user actions, so a
+	// wall-clock TTL on `seen` evicted a speaker that rebooted after the
+	// user had simply been listening for a few minutes - the very first
+	// failed cycle saw a long-expired timestamp and dropped it with no way
+	// back short of a manual refresh. Miss-based, every box gets the full
+	// grace window of ACTUAL misses to finish its reboot.
+	firstMiss time.Time
 }
 
 // discoveryStickyTTL is how long a box stays in the list after its last
@@ -515,6 +524,15 @@ func (a *App) notePostOTA(host string) {
 // refreshing its timestamp, so it still expires relative to its last
 // genuine sighting). Boxes past the TTL are evicted.
 func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
+	a.mergeDiscoveryCacheWith(seen, nil)
+}
+
+// mergeDiscoveryCacheWith is mergeDiscoveryCache with an extra presenceOnly
+// set (keyed like seen): hosts that answered ONLY on the stock :8090 port this
+// cycle. They count as present (eviction timer refreshes) but NOT as an STR
+// sighting, so a box whose agent is permanently gone (uninstalled out-of-band,
+// NAND wiped) stops perpetually re-confirming its stale STR identity memory.
+func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[string]bool) {
 	now := time.Now()
 	a.discMu.Lock()
 	defer a.discMu.Unlock()
@@ -547,7 +565,8 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 			freshDevices[b.DeviceID] = b.Host
 		}
 	}
-	// Re-add recently-seen boxes the current cycle missed; evict stale.
+	// Re-add boxes the current cycle missed; evict after a full grace window
+	// of consecutive misses.
 	for key, e := range a.discCache {
 		if _, ok := seen[key]; ok {
 			continue
@@ -567,9 +586,20 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 			// install" (#108).
 			ttl = discoverySTRStickyTTL
 		}
-		if now.Sub(e.seen) <= ttl {
+		if e.firstMiss.IsZero() {
+			// First miss of a streak: start the grace window NOW. Basing it on
+			// `seen` instead evicted a rebooting speaker on the very first
+			// failed cycle whenever no discovery had run for a while (the
+			// status-fail auto-rediscover then found nothing mid-reboot, the
+			// box got deselected, and nothing ever brought it back).
+			e.firstMiss = now
+			a.discCache[key] = e
+			seen[key] = e.box
+		} else if now.Sub(e.firstMiss) <= ttl {
 			seen[key] = e.box
 		} else {
+			// Missed every probe for the whole grace window: genuinely gone
+			// (powered off / left the LAN).
 			delete(a.discCache, key)
 		}
 	}
@@ -614,8 +644,14 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 	if a.strKnown == nil {
 		a.strKnown = map[string]discEntry{}
 	}
-	// Record: refresh the identity memory for every box confirmed STR this cycle.
-	for _, b := range seen {
+	// Record: refresh the identity memory for every box confirmed STR this
+	// cycle. Presence-only sightings (stock :8090 answered, agent did not) are
+	// excluded: they prove the box is on the LAN, not that STR still runs on
+	// it, and counting them kept a genuinely reverted box labelled STR forever.
+	for key, b := range seen {
+		if presenceOnly[key] {
+			continue
+		}
 		if b.Kind == "str" && b.DeviceID != "" {
 			a.strKnown[b.DeviceID] = discEntry{box: b, seen: now}
 		}
@@ -652,7 +688,12 @@ func (a *App) mergeDiscoveryCache(seen map[string]BoxInfo) {
 		}
 		seen[key] = relabelled
 		a.discCache[key] = discEntry{box: relabelled, seen: now}
-		a.strKnown[b.DeviceID] = discEntry{box: relabelled, seen: now}
+		// Update the memory's box record (live host/port) but keep its ORIGINAL
+		// timestamp: the relabel itself is not an STR confirmation, and stamping
+		// it fresh here meant the strKnownTTL escape hatch ("a box genuinely
+		// reverted to stock eventually reclassifies") could never fire while
+		// the app was in use.
+		a.strKnown[b.DeviceID] = discEntry{box: relabelled, seen: memo.seen}
 		if a.logger != nil {
 			a.logger.Info("discovery: box kept STR by device identity across a stock-only sighting (e.g. Wi-Fi band switch)",
 				"host", b.Host, "deviceID", b.DeviceID)
@@ -818,8 +859,9 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	}
 	ctx, cancel := context.WithTimeout(a.appCtx(), 6*time.Second)
 	defer cancel()
-	seen := map[string]BoxInfo{}    // reached this cycle: refresh presence + eviction timer
-	offline := map[string]BoxInfo{} // not reached: keep visible in the grace window, do NOT reset the timer
+	seen := map[string]BoxInfo{}      // reached this cycle: refresh presence + eviction timer
+	offline := map[string]BoxInfo{}   // not reached: keep visible in the grace window, do NOT reset the timer
+	presenceOnly := map[string]bool{} // reached on the stock :8090 only: present, but NOT an STR confirmation
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	for _, kb := range known {
@@ -832,9 +874,11 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 			defer wg.Done()
 			b := kb
 			live := false
+			strConfirmed := false
 			if probed, ok := probeSTR(ctx, kb.Host); ok {
 				b = probed
 				live = true
+				strConfirmed = true
 			} else if portOpen(kb.Host, 8090, 1200) {
 				// STR's agent did not answer but the box's Bose port does, so it
 				// is still on the LAN (agent mid-reboot / stock). Treat as present.
@@ -844,6 +888,9 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 			mu.Lock()
 			if live {
 				seen[b.Host] = b
+				if !strConfirmed {
+					presenceOnly[b.Host] = true
+				}
 			} else {
 				// Reachable on NO port this cycle: keep the cached record so the
 				// tile does not blink out mid-refresh, but do NOT feed it to
@@ -856,7 +903,7 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 		}()
 	}
 	wg.Wait()
-	a.mergeDiscoveryCache(seen)
+	a.mergeDiscoveryCacheWith(seen, presenceOnly)
 	out := make([]BoxInfo, 0, len(seen)+len(offline))
 	for _, b := range seen {
 		out = append(out, b)
