@@ -173,6 +173,10 @@ type Server struct {
 	statusBody []byte
 	statusCode int
 	statusAt   time.Time
+	// statusStaleWarned dedupes the "serving a stale status" WARN so a box
+	// that stays unreachable logs once per outage, not once per client poll.
+	// Guarded by statusMu; reset whenever a fresh body is cached.
+	statusStaleWarned bool
 
 	// boxCmdMu serializes state-changing commands sent to the speaker
 	// (play, volume, pause, stop, source, bass). The Bose firmware's tiny
@@ -384,6 +388,13 @@ const maxRePushes = 10
 // thus the maximum /now_playing hit rate against the Bose app to about
 // 1/TTL per second regardless of client poll frequency.
 const statusCacheTTL = 2 * time.Second
+
+// statusStaleAfter is the cached now_playing age past which /api/status marks
+// its fallback response as stale (X-STR-Status-Stale) and logs one WARN. The
+// body itself keeps being served: clients regex-parse it as the box's XML, so
+// blanking or replacing it would break them, but without the marker a box
+// whose BoseApp died kept "Playing <station>" on every client forever.
+const statusStaleAfter = 30 * time.Second
 
 // playDetachTimeout bounds a play/recall push that has been detached from the
 // caller's request context (#252): long enough for the standby wake (~6-8s)
@@ -6359,14 +6370,37 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	s.statusMu.Unlock()
 
-	resp, err := http.Get(fmt.Sprintf("http://%s:8090/now_playing", s.boxHost))
+	// A bounded client, NOT http.Get: a BoseApp that accepts the connection
+	// but never answers (the documented Portable freeze) would otherwise hang
+	// every /api/status poll forever.
+	cl := &http.Client{Timeout: 5 * time.Second}
+	resp, err := cl.Get(fmt.Sprintf("http://%s:8090/now_playing", s.boxHost))
 	if err != nil {
-		// Fall back to the last cached body on a transient box error so a
-		// brief BoseApp hiccup does not blank the now-playing display.
+		// Fall back to the last cached body on a box error so a brief BoseApp
+		// hiccup does not blank the now-playing display. The body must stay
+		// the box's own XML (clients regex-parse it), so once the outage is no
+		// longer brief the staleness is signalled OUT OF BAND: response
+		// headers carry the age, and one WARN marks the transition. Without
+		// this, a box whose BoseApp died kept showing hours-old "playing"
+		// state on every client with nothing in the log.
 		s.statusMu.Lock()
 		body, code, have := s.statusBody, s.statusCode, s.statusBody != nil
+		age := time.Since(s.statusAt)
+		stale := have && age >= statusStaleAfter
+		warn := stale && !s.statusStaleWarned
+		if warn {
+			s.statusStaleWarned = true
+		}
 		s.statusMu.Unlock()
 		if have {
+			if warn {
+				s.logger.Warn("box now_playing unreachable; /api/status keeps serving the last cached body, now marked stale",
+					"ageSec", int(age.Seconds()), "err", err)
+			}
+			w.Header().Set("X-STR-Status-Age", strconv.Itoa(int(age.Seconds())))
+			if stale {
+				w.Header().Set("X-STR-Status-Stale", "1")
+			}
 			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 			w.WriteHeader(code)
 			_, _ = w.Write(body)
@@ -6385,6 +6419,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		s.statusBody = body
 		s.statusCode = resp.StatusCode
 		s.statusAt = time.Now()
+		s.statusStaleWarned = false
 		s.statusMu.Unlock()
 	}
 
