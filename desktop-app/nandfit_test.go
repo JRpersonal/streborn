@@ -53,6 +53,47 @@ func TestReclaimableEngineBytes(t *testing.T) {
 	}
 }
 
+func TestNANDNeedCompressed(t *testing.T) {
+	const mb = int64(1024 * 1024)
+	// The credit: raw size scaled by the UBIFS-LZO fraction plus the fixed margin.
+	raw := 16 * mb
+	if got, want := nandNeedCompressed(raw), int64(float64(raw)*ubifsCompressedFraction)+nandNeedMargin; got != want {
+		t.Errorf("nandNeedCompressed(16MB) = %d, want %d", got, want)
+	}
+	// Zero raw bytes still reserve the fixed margin.
+	if got := nandNeedCompressed(0); got != nandNeedMargin {
+		t.Errorf("nandNeedCompressed(0) = %d, want the bare margin %d", got, nandNeedMargin)
+	}
+	// For any realistic binary the credited need must stay BELOW the raw size:
+	// gating on more than the raw size would re-introduce the over-refusal.
+	if got := nandNeedCompressed(10 * mb); got >= 10*mb {
+		t.Errorf("nandNeedCompressed(10MB) = %d, must be below the raw size", got)
+	}
+}
+
+// The regression the compression credit fixes: a ~16 MB engine aimed at a box
+// whose pessimistic UBIFS free figure reads 13 MB. The old gate (raw size +
+// 2 MB margin = 18 MB) refused it, although the write lands at ~10-11 MB on
+// UBIFS-LZO and agent + engine already fit a 26.7 MB ST20 NAND. The gate is
+// only a cheap pre-filter now (the agent-side write is authoritative), so it
+// passes tight-but-possible pushes and still refuses clearly hopeless ones.
+func TestNANDGateCompressionCredit(t *testing.T) {
+	const mb = int64(1024 * 1024)
+	if !nandFits(13*mb, 0, nandNeedCompressed(16*mb)) {
+		t.Errorf("a 16MB engine onto 13MB pessimistic free must pass with the compression credit")
+	}
+	// Clearly hopeless: 5 MB free cannot take a 16 MB engine even compressed.
+	if nandFits(5*mb, 0, nandNeedCompressed(16*mb)) {
+		t.Errorf("a 16MB engine onto 5MB free is hopeless and must stay refused")
+	}
+	// The stage gate sums agent + engine before crediting: 12 MB + 16 MB raw
+	// onto 21 MB free passes (credited ~20.6 MB), while the raw sum (30 MB)
+	// would have deferred the staging.
+	if !nandFits(21*mb, 0, nandNeedCompressed(12*mb+16*mb)) {
+		t.Errorf("staging agent+engine onto 21MB pessimistic free must pass with the compression credit")
+	}
+}
+
 // The two sidecar gates parse nandFreeBytes with ParseInt and feed the result
 // straight into nandFits. Replicate that exact sequence for the field shapes
 // agents actually send so the fail-open contract (missing field, old agent)
