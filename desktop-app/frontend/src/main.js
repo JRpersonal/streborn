@@ -95,7 +95,6 @@ import {
   BrowseLibrary,
   LogClientError,
   BrowserOpenURL,
-  GetZoneState,
   FormZone,
   DissolveZone,
   EventsOn,
@@ -182,6 +181,22 @@ import {
   compareVerBuild,
   getBoxLabel,
 } from './utils.js';
+
+// Group membership (who follows master X) and the shared zoneLive poll live
+// in groups.js: ONE implementation for the selector frames, the group chips
+// and the Multi-Room tab. masterOf is imported under a distinct name because
+// renderBoxSelect keeps a local box-shaped wrapper of the same name.
+import {
+  masterOf as zoneMasterOf,
+  followersOf,
+  groupMembersOf,
+  resolvePlayTarget,
+  applyOptimisticZone,
+  fetchZoneLive,
+  sameBoxIdentity,
+  parsePlayRejection,
+  resolveBoxByRef,
+} from './groups.js';
 
 import {
   COUNTRIES,
@@ -1513,26 +1528,16 @@ function applyPendingNames(list) {
   });
 }
 
-// refreshMusicZones fetches every STR speaker's live multiroom zone so the
-// music-tab group frames are accurate, then repaints the selector. Debounced to
-// at most once per 8s (NOT a tight loop) and shares state.zoneLive with the
-// Multi-Room tab. Best-effort: on error the frames simply stay as they were.
-let _musicZoneFetchAt = 0;
-async function refreshMusicZones() {
-  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.deviceID && b.host);
-  if (strBoxes.length < 2) { return; } // a zone needs at least two speakers
-  const now = Date.now();
-  if (state.zoneLiveBusy || now - _musicZoneFetchAt < 8000) return;
-  _musicZoneFetchAt = now;
-  state.zoneLiveBusy = true;
-  try {
-    const results = await Promise.allSettled(strBoxes.map(b => GetZoneState(b.host, b.port)));
-    const map = {};
-    results.forEach((r, i) => { map[strBoxes[i].deviceID] = (r.status === 'fulfilled' && r.value) ? r.value : null; });
-    state.zoneLive = map;
-  } catch { /* keep previous frames */ } finally {
-    state.zoneLiveBusy = false;
-  }
+// refreshMusicZones fetches every STR speaker's live multiroom zone through
+// the shared groups.js poll (ONE implementation with the Multi-Room tab) so
+// the music-tab group frames are accurate, then repaints the selector.
+// Debounced to at most one fetch per 8s (NOT a tight loop); force=true skips
+// the debounce for the confirming fetch right after a group change, which
+// the debounce used to swallow, leaving the optimistic state unconfirmed.
+// Best-effort: a failed per-box poll keeps its last-good entry (groups.js).
+async function refreshMusicZones(force) {
+  const ran = await fetchZoneLive(state.boxes, { maxAgeMs: force ? 0 : 8000, minBoxes: 2 });
+  if (!ran) return;
   renderBoxSelect();
   renderGroupControl(); // keep the group chips + slider in sync with the live zones
 }
@@ -1639,11 +1644,9 @@ function renderBoxSelect() {
   // (display only; grouping is done in the Multi-Room tab). Defensive: with no
   // live group of >=2 discovered speakers the selector renders exactly as before.
   const zlMap = state.zoneLive || {};
-  const masterOf = (b) => {
-    if (b.kind === 'stock') return '';
-    const zl = zlMap[b.deviceID];
-    return (zl && zl.master) ? zl.master.toUpperCase() : '';
-  };
+  // Box-shaped wrapper around the shared groups.js helper (stock boxes are
+  // never zone members, whatever their deviceID collides with).
+  const masterOf = (b) => (b.kind === 'stock' ? '' : zoneMasterOf(b.deviceID, zlMap));
   const memberCount = {};
   state.boxes.forEach(b => { const m = masterOf(b); if (m) memberCount[m] = (memberCount[m] || 0) + 1; });
   // A box is a framed master only when its group actually renders a frame, i.e.
@@ -3215,18 +3218,13 @@ function wirePresetTransferRow() {
 // selected speaker, plus one volume slider for the whole group. Bose forms the
 // zone natively; the group's name comes from the master (see the Multi-Room tab).
 
-// currentGroupSlaves returns the speakers currently following the selected box in
-// a live zone (from the same state.zoneLive the group frames use).
+// currentGroupSlaves returns the speakers currently following the selected box
+// in a live zone (the shared groups.js view of the same state.zoneLive the
+// group frames use).
 function currentGroupSlaves() {
   const box = state.currentBox;
   if (!box || !box.deviceID) return [];
-  const master = box.deviceID.toUpperCase();
-  const zl = state.zoneLive || {};
-  return (state.boxes || []).filter(b => {
-    if (!b || b.kind === 'stock' || !b.deviceID || b.host === box.host) return false;
-    const z = zl[b.deviceID];
-    return !!(z && z.master && z.master.toUpperCase() === master);
-  });
+  return followersOf(box.deviceID, state.zoneLive, state.boxes).filter(b => b.host !== box.host);
 }
 
 // effectivePlayTarget returns the box a play command must actually go to: a
@@ -3234,20 +3232,15 @@ function currentGroupSlaves() {
 // control member of group", #70), so when the selected box follows a master,
 // the play belongs on that master and it distributes the audio to the group.
 // Falls back to the selected box (standalone, master, or master not found).
+// The decision itself is groups.js's resolvePlayTarget; this wraps it around
+// the app state and logs the retarget.
 function effectivePlayTarget() {
   const box = state.currentBox;
-  if (!box || !box.deviceID) return box;
-  const zl = (state.zoneLive || {})[box.deviceID];
-  if (!zl || !zl.master) return box;
-  const master = String(zl.master).toUpperCase();
-  if (box.deviceID.toUpperCase() === master) return box;
-  const mb = (state.boxes || []).find(b =>
-    b && b.kind !== 'stock' && b.deviceID && b.deviceID.toUpperCase() === master);
-  if (mb) {
-    try { console.info(`play retargeted to group lead ${mb.host} (selected box is a zone follower)`); } catch {}
-    return mb;
+  const target = resolvePlayTarget(box, state.zoneLive, state.boxes);
+  if (target !== box && target) {
+    try { console.info(`play retargeted to group lead ${target.host} (selected box is a zone follower)`); } catch {}
   }
-  return box;
+  return target;
 }
 
 let _groupVolTimer = null;
@@ -3262,58 +3255,67 @@ function setGroupVolume(pct) {
   }, 120);
 }
 
-// toggleGroupMember adds/removes the speaker at host to/from the group led by the
-// selected box. Removing the last one dissolves the zone; a removed speaker is
-// stopped so the music stops on it too.
+// toggleGroupMember adds/removes the speaker at host to/from the group led by
+// the selected box. Removing the last one dissolves the zone; a removed
+// speaker is stopped so the music stops on it too. The edit starts from
+// groups.js's groupMembersOf — the union of the followers' self-reports and
+// the master's own member list — so a follower whose single zone poll failed
+// or that briefly dropped out of discovery is preserved instead of being
+// silently kicked by an unrelated add/remove.
 async function toggleGroupMember(host, port) {
   const box = state.currentBox;
   if (!box || box.kind === 'stock') return;
   const target = (state.boxes || []).find(b => b.host === host);
   if (!target) return;
-  const slaves = currentGroupSlaves();
-  const wasIn = slaves.some(b => b.host === host);
-  const next = wasIn ? slaves.filter(b => b.host !== host) : [...slaves, target];
+  const members = groupMembersOf(box, state.zoneLive, state.boxes);
+  const wasIn = members.some(m => m.ip === host);
+  const next = wasIn
+    ? members.filter(m => m.ip !== host)
+    : [...members, { deviceID: target.deviceID, ip: target.host, box: target }];
   try {
     if (next.length === 0) {
       await DissolveZone(box.host, box.port);
-      await Promise.allSettled(slaves.map(b => Stop(b.host, b.port))); // stop the ex-followers
+      // Stop the ex-followers we can reach (their agent port is only known
+      // for discovered boxes).
+      await Promise.allSettled(members.filter(m => m.box).map(m => Stop(m.box.host, m.box.port)));
       showToast(t('group.dissolvedToast'));
     } else {
+      // Preserve the group's mode when the agent reports one (a mirror group
+      // must not be silently converted to native by an add/remove); older
+      // agents carry no mode field, then native is what today's zones are.
+      const own = (state.zoneLive || {})[box.deviceID];
+      const mode = (own && typeof own.mode === 'string' && own.mode) ? own.mode : 'native';
       const res = await FormZone(box.host, box.port, {
         master: { deviceID: box.deviceID, ip: box.host },
-        slaves: next.map(b => ({ deviceID: b.deviceID, ip: b.host })),
-        stereo: false, mode: 'native',
+        slaves: next.map(m => ({ deviceID: m.deviceID, ip: m.ip })),
+        stereo: false, mode,
       });
       if (res && res.ok === false) {
         // HTTP 200 with ok:false means the firmware formed NOTHING (#70).
         // Treating it as success painted checked chips and a group volume
         // slider that controlled a phantom group.
         showError(t('multiroom.formedNone'));
-        refreshMusicZones();
+        refreshMusicZones(true);
         renderGroupControl();
         return;
       }
       if (wasIn) { try { await Stop(target.host, target.port); } catch {} } // a removed speaker stops
       showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
     }
-    // Optimistic zone update so the chips + frames reflect the change at once;
-    // the 8s zone poll confirms (or corrects) it shortly after.
-    const zl = { ...(state.zoneLive || {}) };
-    const masterUp = (box.deviceID || '').toUpperCase();
-    for (const b of (state.boxes || [])) {
-      if (b.deviceID && zl[b.deviceID] && (zl[b.deviceID].master || '').toUpperCase() === masterUp) zl[b.deviceID] = null;
-    }
-    next.forEach(b => { if (b.deviceID) zl[b.deviceID] = { master: box.deviceID }; });
-    // The master keeps its OWN zone entry: nulling it (like the loop above
-    // did) made the master render outside its own group frame and the
-    // Multi-Room summary claim "no zone" until the next real poll.
-    if (next.length > 0 && box.deviceID) zl[box.deviceID] = { master: box.deviceID };
-    state.zoneLive = zl;
+    // Optimistic zone update so the chips + frames + Multi-Room summary
+    // reflect the change at once, in the same shape a real poll returns
+    // (including the master's OWN entry); the confirming poll below
+    // corrects it shortly after.
+    state.zoneLive = applyOptimisticZone(state.zoneLive, box, next);
     renderBoxSelect();
   } catch (e) {
     showError(String(e));
   }
-  refreshMusicZones();
+  // Confirming fetch: force past the 8s debounce, which used to swallow this
+  // call entirely and left the optimistic state on screen until the next
+  // unrelated discovery cycle. Slightly delayed because a follower's own
+  // zone self-report can lag the form/removal by around a second.
+  setTimeout(() => refreshMusicZones(true), 1200);
   renderGroupControl();
 }
 

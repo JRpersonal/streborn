@@ -8,7 +8,10 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { GetZoneState, FormZone, DissolveZone, BrowserOpenURL } from '../api.js';
+import { FormZone, DissolveZone, BrowserOpenURL } from '../api.js';
+// Group membership + the shared zoneLive poll live in groups.js: ONE
+// implementation for this tab, the music-tab frames and the group chips.
+import { masterOf as zoneMasterOf, fetchZoneLive } from '../groups.js';
 
 // Injected main.js helpers (see initMultiroomView).
 let deps = {
@@ -63,8 +66,9 @@ export function renderMultiroom(fetchLive) {
   const liveLine = (b) => {
     const zl = state.zoneLive[b.deviceID];
     if (zl === undefined) return '';
-    if (zl && zl.master) {
-      const isLead = (zl.master || '').toUpperCase() === (b.deviceID || '').toUpperCase();
+    const m = zoneMasterOf(b.deviceID, state.zoneLive);
+    if (m) {
+      const isLead = m === (b.deviceID || '').toUpperCase();
       const txt = isLead ? t('multiroom.liveLeading', { n: (zl.members || []).length }) : t('multiroom.liveInGroup');
       return `<div class="zone-live in">&#9679; ${escapeHtml(txt)}</div>`;
     }
@@ -94,11 +98,12 @@ export function renderMultiroom(fetchLive) {
   const dis = enough ? '' : ' disabled';
   const modeBtn = (m, lbl) => `<button class="seg-btn${state.zoneMode === m ? ' active' : ''}" data-mode="${m}">${escapeHtml(lbl)}</button>`;
 
-  // Summary line for the chosen master, computed from the cached live map.
+  // Summary line for the chosen master, computed from the cached live map
+  // via the same masterOf helper the frames and chips use.
   const masterBox = strBoxes.find(b => b.deviceID === state.zoneMaster);
   const ml = masterBox ? state.zoneLive[masterBox.deviceID] : undefined;
   let currentHtml = '';
-  if (ml && ml.master) {
+  if (masterBox && zoneMasterOf(masterBox.deviceID, state.zoneLive)) {
     const names = (ml.members || []).map(m => {
       const b = strBoxes.find(x => (x.deviceID || '').toUpperCase() === (m.deviceID || '').toUpperCase());
       return b ? zoneLabel(b) : (m.ip || m.deviceID);
@@ -188,25 +193,17 @@ export function renderMultiroom(fetchLive) {
   }
 
   // Live status: parallel, non-blocking, after paint. Never blocks the tab.
-  if (fetchLive && strBoxes.length) setTimeout(() => refreshZoneLive(strBoxes), 0);
+  if (fetchLive && strBoxes.length) setTimeout(() => refreshZoneLive(), 0);
 }
 
-// refreshZoneLive queries every speaker's live zone in parallel (non-blocking),
-// caches the result, and repaints the badges without re-fetching.
-async function refreshZoneLive(strBoxes) {
-  if (state.zoneLiveBusy) return;
-  state.zoneLiveBusy = true;
-  try {
-    const results = await Promise.allSettled(strBoxes.map(b => GetZoneState(b.host, b.port)));
-    const map = {};
-    results.forEach((r, i) => {
-      map[strBoxes[i].deviceID] = (r.status === 'fulfilled' && r.value) ? r.value : null;
-    });
-    state.zoneLive = map;
-  } catch {} finally {
-    state.zoneLiveBusy = false;
-  }
-  renderMultiroom(false);
+// refreshZoneLive queries every speaker's live zone through the shared
+// groups.js poll (non-blocking) and repaints the badges without re-fetching.
+// maxAgeMs 0 keeps this tab's always-fetch behavior; when the music-tab poll
+// is already in flight the call shares its result instead of skipping the
+// repaint (which used to leave stale badges).
+async function refreshZoneLive() {
+  const ran = await fetchZoneLive(state.boxes, { maxAgeMs: 0, minBoxes: 1 });
+  if (ran) renderMultiroom(false);
 }
 
 // doFormStereo creates a real left/right stereo pair on two SoundTouch 10s
