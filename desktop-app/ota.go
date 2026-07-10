@@ -227,9 +227,16 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 			return false, nil
 		}
 	} else {
-		// Couldn't read the version: still try the push (a missing sidecar is the
-		// whole reason this exists); worst case the POST also fails and is logged.
-		a.logger.Info("sidecar push: version probe failed, pushing anyway", "host", host, "err", verErr)
+		// STR's agent is not answering. Pushing blind would stream ~16 MB at
+		// whatever owns the port instead - during the post-reboot window on
+		// whitelisted chassis that is Bose's OWN SoftwareUpdate daemon on
+		// :17008, and each bogus push repaints the speaker's update display
+		// ("0% uploading", #270). The push can never land without the agent,
+		// so fail fast; callers retry with a cheap version GET. Pre-sidecar
+		// agents still answer /api/agent/version, so gating on the probe
+		// loses nothing.
+		a.recordOTA(host, "sidecar: agent version probe failed, not pushing blind: "+verErr.Error())
+		return false, fmt.Errorf("sidecar: agent unreachable (version probe failed): %w", verErr)
 	}
 
 	// Space pre-flight (#270 deqw). Never stream ~16 MB the box cannot hold: the
@@ -240,18 +247,31 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 	// in the diagnostic bundle (nv_root_listing / disk_usage) so leftovers eating
 	// the space can be spotted, and the agent's own supervise loop delivers the
 	// engine once space frees.
-	if verErr == nil {
-		if freeN, perr := strconv.ParseInt(ver["nandFreeBytes"], 10, 64); perr == nil && freeN > 0 {
-			need := int64(len(bin)) + otaSidecarSpaceMargin
-			if freeN < need {
-				totalKB := int64(0)
-				if t, e := strconv.ParseInt(ver["nandTotalBytes"], 10, 64); e == nil {
-					totalKB = t / 1024
-				}
-				a.recordOTA(host, fmt.Sprintf("sidecar: not enough NAND for the engine right now (free=%dKB total=%dKB, need~%dKB) - skipping the upload to avoid thrashing; the agent will deliver it once space frees. See the diagnostic bundle's /mnt/nv listing for leftovers.", freeN/1024, totalKB, need/1024))
-				a.logger.Warn("sidecar push: insufficient NAND, skipping the upload to avoid the retry thrash", "host", host, "freeBytes", freeN, "needBytes", need)
-				return false, fmt.Errorf("sidecar: insufficient NAND (free=%d need=%d)", freeN, need)
+	//
+	// A present-but-outdated engine counts as free space: the agent's sidecar
+	// write drops the old engine before writing the new one (its reclaim
+	// cascade), so gating on the raw free figure alone would refuse an engine
+	// UPDATE on a tight box forever even though the swap fits.
+	if freeN, perr := strconv.ParseInt(ver["nandFreeBytes"], 10, 64); perr == nil && freeN > 0 {
+		reclaimable := int64(0)
+		if ver["goLibrespot"] == "present" {
+			if sz, e := strconv.ParseInt(ver["goLibrespotSizeBytes"], 10, 64); e == nil && sz > 0 {
+				reclaimable = sz
+			} else {
+				// Agent predates the size report: engine builds differ only
+				// marginally in size, assume the embedded one.
+				reclaimable = int64(len(bin))
 			}
+		}
+		need := int64(len(bin)) + otaSidecarSpaceMargin
+		if freeN+reclaimable < need {
+			totalKB := int64(0)
+			if t, e := strconv.ParseInt(ver["nandTotalBytes"], 10, 64); e == nil {
+				totalKB = t / 1024
+			}
+			a.recordOTA(host, fmt.Sprintf("sidecar: not enough NAND for the engine right now (free=%dKB reclaimable=%dKB total=%dKB, need~%dKB) - skipping the upload to avoid thrashing; the agent will deliver it once space frees. See the diagnostic bundle's /mnt/nv listing for leftovers.", freeN/1024, reclaimable/1024, totalKB, need/1024))
+			a.logger.Warn("sidecar push: insufficient NAND, skipping the upload to avoid the retry thrash", "host", host, "freeBytes", freeN, "reclaimableBytes", reclaimable, "needBytes", need)
+			return false, fmt.Errorf("sidecar: insufficient NAND (free=%d reclaimable=%d need=%d)", freeN, reclaimable, need)
 		}
 	}
 
@@ -328,6 +348,15 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 		agentLen := int64(len(agentbin.Bytes()))
 		sidecarLen := int64(len(agentbin.GoLibrespotBytes()))
 		const nandStageMargin = 2 * 1024 * 1024
+		// A present old engine is dropped by the sidecar write before the new
+		// one lands, so count it as headroom (same rule as pushSidecarIfNeeded).
+		if ver["goLibrespot"] == "present" {
+			if sz, e := strconv.ParseInt(ver["goLibrespotSizeBytes"], 10, 64); e == nil && sz > 0 {
+				freeN += sz
+			} else {
+				freeN += sidecarLen
+			}
+		}
 		if freeN < agentLen+sidecarLen+nandStageMargin {
 			a.recordOTA(host, fmt.Sprintf("sidecar: NAND tight (free=%dKB < agent %dKB + engine %dKB + margin), deferring the engine to the post-reboot delivery so the agent update fits", freeN/1024, agentLen/1024, sidecarLen/1024))
 			a.logger.Info("stageSidecarBeforeReboot: NAND too tight to stage the engine before the agent; deferring to post-OTA EnsureSpotifyEngine",
@@ -383,8 +412,10 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 		return "", err
 	}
 	if !delivered {
-		// Engine already current: the running agent is supervising it, no reboot.
-		return "ok", nil
+		// Engine already current: the running agent is supervising it, no
+		// reboot. Distinct return value so callers can tell "nothing to do"
+		// from "delivered now" (the UI only announces the latter).
+		return "current", nil
 	}
 	// Hot-swap path (#240): a sidecar-capable agent that advertises engineHotSwap
 	// restarts go-librespot in place the moment the sidecar write lands, so the
@@ -924,8 +955,23 @@ func (a *App) pushSidecarViaSSH(host string) {
 	}
 	bin := agentbin.GoLibrespotBytes()
 	const dst = "/mnt/nv/streborn/bin/go-librespot"
-	uploadCmd := "mkdir -p /mnt/nv/streborn/bin && cat > " + dst + ".new"
+	// Space gate, mirroring updateAgentViaSSH's df check (#270): the .new copy
+	// must fit NEXT TO whatever is on the NAND. When it does not, drop the old
+	// engine first (regenerable - this push replaces it anyway) and re-check;
+	// if the box still cannot hold it, skip instead of writing a truncated
+	// binary into ENOSPC (that is what happened live on a tight ST20). The
+	// post-OTA EnsureSpotifyEngine retries once space frees.
+	needKB := (int64(len(bin)) + 2*1024*1024) / 1024
+	uploadCmd := fmt.Sprintf("free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f %s %s.sha256 2>/dev/null; fi; "+
+		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
+		"if [ \"${free:-0}\" -lt \"%d\" ]; then echo STR_NO_SPACE; exit 1; fi; "+
+		"mkdir -p /mnt/nv/streborn/bin && cat > %s.new", needKB, dst, dst, needKB, dst)
 	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
+		if strings.Contains(out, "STR_NO_SPACE") {
+			a.logger.Warn("sidecar SSH push skipped: NAND cannot hold the engine (agent OTA still proceeds; delivered later once space frees)", "host", host, "needKB", needKB)
+			return
+		}
 		a.logger.Warn("sidecar SSH upload failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
 		return
 	}

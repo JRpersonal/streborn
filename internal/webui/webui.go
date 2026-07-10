@@ -2941,6 +2941,13 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 		if sha != "" {
 			out["goLibrespotSha256"] = sha
 		}
+		// Size of the deployed engine, so the desktop app's sidecar space
+		// pre-flight can count a present (old) engine as reclaimable: the
+		// sidecar write drops it before the new one lands, so an engine
+		// UPDATE fits on a tight box even when the raw free figure says no.
+		if fi, err := os.Stat(goLibrespotBinPath); err == nil {
+			out["goLibrespotSizeBytes"] = strconv.FormatInt(fi.Size(), 10)
+		}
 	} else {
 		out["goLibrespot"] = "missing"
 	}

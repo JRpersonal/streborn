@@ -2348,9 +2348,12 @@ async function runBoxUpdate(box, onPhase) {
     }
   }
   if (!confirmedVer) return { outcome: 'timeout', version: null };
-  // Post-reboot Spotify engine delivery for the one-time pre-v0.8.22 upgrade case
-  // (#240): the box is up but still reports the engine missing, so deliver it now.
-  if (confirmedVer.goLibrespot && confirmedVer.goLibrespot !== 'present') {
+  // Post-reboot Spotify engine reconcile: covers the one-time pre-v0.8.22
+  // upgrade case (#240, engine missing) AND a present-but-outdated engine on a
+  // tight box whose pre-reboot staging was deferred (the old engine's space is
+  // reclaimable only after the reboot). EnsureSpotifyEngine is cheap when the
+  // engine is already current (one version GET, returns "current").
+  if (confirmedVer.goLibrespot) {
     const engDeadlineMs = Date.now() + 240_000;
     let attempt = 0;
     while (Date.now() < engDeadlineMs) {
@@ -2360,9 +2363,16 @@ async function runBoxUpdate(box, onPhase) {
         await EnsureSpotifyEngine(box.host, box.port);
         return { outcome: 'done', version: confirmedVer };
       } catch (engErr) {
+        const m = String((engErr && engErr.message) || engErr || '');
+        // Too full even counting the reclaimable old engine: retrying cannot
+        // help, only freeing space can. The agent update itself succeeded.
+        if (/insufficient nand|no space|507/i.test(m)) break;
         try { console.warn(`spotify engine delivery attempt ${attempt} failed (will retry)`, engErr); } catch {}
       }
-      await sleep(2_000);
+      // Exponential backoff (2s -> 30s cap): each failed attempt costs the
+      // box a probe, and during a slow agent start hammering it every 2s
+      // just prolongs the settling (#270).
+      await sleep(Math.min(30_000, 2_000 * Math.pow(2, attempt - 1)));
     }
     return { outcome: 'partial', version: confirmedVer };
   }
@@ -2550,9 +2560,10 @@ async function doBoxUpdate(targetBox) {
       // settling. The agent's Spotify manager picks up the binary live, no extra
       // reboot. Best-effort: it must never turn a successful agent update into an
       // error.
-      if (confirmedVer && confirmedVer.goLibrespot && confirmedVer.goLibrespot !== 'present') {
+      if (confirmedVer && confirmedVer.goLibrespot) {
         const engDeadlineMs = Date.now() + 240_000;
         let engDone = false;
+        let engDelivered = false;
         let engTooFull = false;
         let engAttempt = 0;
         const renderEng = () => {
@@ -2565,8 +2576,11 @@ async function doBoxUpdate(targetBox) {
           while (Date.now() < engDeadlineMs) {
             engAttempt++;
             try {
-              await EnsureSpotifyEngine(targetBox.host, targetBox.port);
+              const engRes = await EnsureSpotifyEngine(targetBox.host, targetBox.port);
               engDone = true;
+              // "current" = nothing was pushed (engine already up to date);
+              // everything else means the engine actually got (re)delivered.
+              engDelivered = engRes !== 'current';
               break;
             } catch (engErr) {
               const m = String((engErr && engErr.message) || engErr || '');
@@ -2578,14 +2592,18 @@ async function doBoxUpdate(targetBox) {
               if (/insufficient nand|no space|507/i.test(m)) { engTooFull = true; break; }
               try { console.warn(`post-update Spotify engine delivery attempt ${engAttempt} failed (will retry)`, engErr); } catch {}
             }
-            await sleep(2_000);
+            // Exponential backoff (2s -> 30s cap, #270): a box that is still
+            // settling after the reboot gains nothing from a 2s hammer.
+            await sleep(Math.min(30_000, 2_000 * Math.pow(2, engAttempt - 1)));
             renderEng();
           }
         } finally {
           clearInterval(engTick);
         }
-        if (engDone) {
+        if (engDone && engDelivered) {
           showToast(t('update.spotifyDoneToast'));
+        } else if (engDone) {
+          // Engine was already current: nothing to announce.
         } else if (engTooFull) {
           // Agent updated fine, but the box is out of room for the engine.
           // Retrying is pointless until the user frees space, so say so plainly
