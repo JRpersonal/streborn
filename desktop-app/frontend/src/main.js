@@ -1369,9 +1369,12 @@ function doRefilter() {
 async function discoverBoxes() {
   const hadBoxes = state.boxes.length > 0;
   if (!hadBoxes) {
-    // First search: explicit message so the user understands the
-    // app is doing something.
-    $('boxSelect').textContent = t('speaker.searching');
+    // First search: explicit message so the user understands the app is
+    // doing something. But NOT while the user is typing into the empty
+    // state's manual connect-by-IP field: the recovery burst re-runs this
+    // every 6s and replacing the selector destroyed the input mid-typing,
+    // making the manual fallback unusable exactly when it is needed.
+    if (!manualIpInputBusy()) $('boxSelect').textContent = t('speaker.searching');
   } else {
     // Background refresh: the refresh icon spins, the existing list
     // stays visible.
@@ -1601,9 +1604,22 @@ function checkWedgeBanner() {
   el.classList.remove('hidden');
 }
 
+// manualIpInputBusy reports whether the empty state's manual connect-by-IP
+// input is in use (focused or holding text). While it is, the empty state
+// must not be re-rendered: the recovery burst repaints every ~6s and a
+// rebuild wiped the user's half-typed address and their focus.
+function manualIpInputBusy() {
+  const el = document.getElementById('emptyIpInput');
+  if (!el) return false;
+  return document.activeElement === el || !!(el.value || '').trim();
+}
+
 function renderBoxSelect() {
   const sel = $('boxSelect');
   if (state.boxes.length === 0) {
+    // The empty state is static markup; while the manual-IP field is in use
+    // an identical rebuild would only destroy the input, so keep the DOM.
+    if (manualIpInputBusy()) return;
     sel.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-title">${escapeHtml(t('speaker.emptyTitle'))}</div>
