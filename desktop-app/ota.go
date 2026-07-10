@@ -68,11 +68,53 @@ func (a *App) recordNANDHeadroom(host string, port int, need int64) {
 	}
 	freeN, _ := strconv.ParseInt(free, 10, 64)
 	fits := "ok"
-	if freeN > 0 && freeN < need+512*1024 {
+	if !nandFits(freeN, 0, need+nandHeadroomMargin) {
 		fits = "TIGHT (a second copy for the atomic write may not fit)"
 	}
 	a.recordOTA(host, fmt.Sprintf("nand: free=%sB total=%sB need=%dB -> %s", free, total, need, fits))
 }
+
+// nandFits is the single "will it fit on the box's writable volume" decision
+// behind every app-side OTA space check (agent-write headroom journal, the
+// sidecar push gate, the pre-reboot staging gate). Deliberately fail-open: a
+// box that reports no usable free figure (freeBytes <= 0 after the ParseInt
+// of a missing/garbled nandFreeBytes) never blocks an operation, because
+// older agents simply do not report the field. reclaimableBytes is space the
+// write itself frees before it lands (the present engine dropped by the
+// agent's sidecar reclaim cascade); needBytes already includes the caller's
+// margin.
+func nandFits(freeBytes, reclaimableBytes, needBytes int64) bool {
+	if freeBytes <= 0 {
+		return true
+	}
+	return freeBytes+reclaimableBytes >= needBytes
+}
+
+// reclaimableEngineBytes is how much NAND the agent's sidecar write frees
+// before the new engine lands: a present engine is dropped first (the
+// reclaim cascade), so gating on the raw free figure alone would refuse an
+// engine UPDATE on a tight box forever even though the swap fits. An agent
+// that predates the size report gets embeddedEngineSize as the estimate
+// (engine builds differ only marginally in size).
+func reclaimableEngineBytes(ver map[string]string, embeddedEngineSize int64) int64 {
+	if ver["goLibrespot"] != "present" {
+		return 0
+	}
+	if sz, err := strconv.ParseInt(ver["goLibrespotSizeBytes"], 10, 64); err == nil && sz > 0 {
+		return sz
+	}
+	return embeddedEngineSize
+}
+
+// nandHeadroomMargin is the extra room the pre-push journal note requires on
+// top of the agent binary before it stops calling the headroom TIGHT: the
+// atomic write briefly needs a second copy.
+const nandHeadroomMargin = 512 * 1024
+
+// errInsufficientNAND marks a push refused by the NAND space gate. Free
+// space cannot change within an OTA's retry window, so retry loops stop on
+// it instead of backing off and re-asking a question whose answer stays no.
+var errInsufficientNAND = errors.New("insufficient NAND space")
 
 // UpdateBoxAgent ships the embedded ARM binary to the speaker. Preferred
 // path is HTTP POST to /api/agent/update on host:port — but only when a
@@ -248,31 +290,20 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 	// the space can be spotted, and the agent's own supervise loop delivers the
 	// engine once space frees.
 	//
-	// A present-but-outdated engine counts as free space: the agent's sidecar
-	// write drops the old engine before writing the new one (its reclaim
-	// cascade), so gating on the raw free figure alone would refuse an engine
-	// UPDATE on a tight box forever even though the swap fits.
-	if freeN, perr := strconv.ParseInt(ver["nandFreeBytes"], 10, 64); perr == nil && freeN > 0 {
-		reclaimable := int64(0)
-		if ver["goLibrespot"] == "present" {
-			if sz, e := strconv.ParseInt(ver["goLibrespotSizeBytes"], 10, 64); e == nil && sz > 0 {
-				reclaimable = sz
-			} else {
-				// Agent predates the size report: engine builds differ only
-				// marginally in size, assume the embedded one.
-				reclaimable = int64(len(bin))
-			}
+	// A present-but-outdated engine counts as free space (see
+	// reclaimableEngineBytes): the agent's sidecar write drops the old engine
+	// before writing the new one.
+	freeN, _ := strconv.ParseInt(ver["nandFreeBytes"], 10, 64)
+	reclaimable := reclaimableEngineBytes(ver, int64(len(bin)))
+	need := int64(len(bin)) + otaSidecarSpaceMargin
+	if !nandFits(freeN, reclaimable, need) {
+		totalKB := int64(0)
+		if t, e := strconv.ParseInt(ver["nandTotalBytes"], 10, 64); e == nil {
+			totalKB = t / 1024
 		}
-		need := int64(len(bin)) + otaSidecarSpaceMargin
-		if freeN+reclaimable < need {
-			totalKB := int64(0)
-			if t, e := strconv.ParseInt(ver["nandTotalBytes"], 10, 64); e == nil {
-				totalKB = t / 1024
-			}
-			a.recordOTA(host, fmt.Sprintf("sidecar: not enough NAND for the engine right now (free=%dKB reclaimable=%dKB total=%dKB, need~%dKB) - skipping the upload to avoid thrashing; the agent will deliver it once space frees. See the diagnostic bundle's /mnt/nv listing for leftovers.", freeN/1024, reclaimable/1024, totalKB, need/1024))
-			a.logger.Warn("sidecar push: insufficient NAND, skipping the upload to avoid the retry thrash", "host", host, "freeBytes", freeN, "reclaimableBytes", reclaimable, "needBytes", need)
-			return false, fmt.Errorf("sidecar: insufficient NAND (free=%d reclaimable=%d need=%d)", freeN, reclaimable, need)
-		}
+		a.recordOTA(host, fmt.Sprintf("sidecar: not enough NAND for the engine right now (free=%dKB reclaimable=%dKB total=%dKB, need~%dKB) - skipping the upload to avoid thrashing; the agent will deliver it once space frees. See the diagnostic bundle's /mnt/nv listing for leftovers.", freeN/1024, reclaimable/1024, totalKB, need/1024))
+		a.logger.Warn("sidecar push: insufficient NAND, skipping the upload to avoid the retry thrash", "host", host, "freeBytes", freeN, "reclaimableBytes", reclaimable, "needBytes", need)
+		return false, fmt.Errorf("sidecar: %w (free=%d reclaimable=%d need=%d)", errInsufficientNAND, freeN, reclaimable, need)
 	}
 
 	a.recordOTA(host, fmt.Sprintf("sidecar: pushing go-librespot (%d bytes, sha %s)", len(bin), want[:12]))
@@ -343,31 +374,33 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 	// the agent updates alone (it fits with the sidecar out of the way), and the
 	// post-OTA EnsureSpotifyEngine delivers the engine after the reboot, when the
 	// old agent's blocks have been reclaimed. Only a real, reported free figure
-	// gates this; an unknown free (older agent) keeps the previous behaviour.
-	if freeN, perr := strconv.ParseInt(ver["nandFreeBytes"], 10, 64); perr == nil && freeN > 0 {
-		agentLen := int64(len(agentbin.Bytes()))
-		sidecarLen := int64(len(agentbin.GoLibrespotBytes()))
-		const nandStageMargin = 2 * 1024 * 1024
-		// A present old engine is dropped by the sidecar write before the new
-		// one lands, so count it as headroom (same rule as pushSidecarIfNeeded).
-		if ver["goLibrespot"] == "present" {
-			if sz, e := strconv.ParseInt(ver["goLibrespotSizeBytes"], 10, 64); e == nil && sz > 0 {
-				freeN += sz
-			} else {
-				freeN += sidecarLen
-			}
-		}
-		if freeN < agentLen+sidecarLen+nandStageMargin {
-			a.recordOTA(host, fmt.Sprintf("sidecar: NAND tight (free=%dKB < agent %dKB + engine %dKB + margin), deferring the engine to the post-reboot delivery so the agent update fits", freeN/1024, agentLen/1024, sidecarLen/1024))
-			a.logger.Info("stageSidecarBeforeReboot: NAND too tight to stage the engine before the agent; deferring to post-OTA EnsureSpotifyEngine",
-				"host", host, "free", freeN, "agentLen", agentLen, "sidecarLen", sidecarLen)
-			return
-		}
+	// gates this; an unknown free (older agent) keeps the previous behaviour
+	// (nandFits fails open).
+	agentLen := int64(len(agentbin.Bytes()))
+	sidecarLen := int64(len(agentbin.GoLibrespotBytes()))
+	freeN, _ := strconv.ParseInt(ver["nandFreeBytes"], 10, 64)
+	// A present old engine is dropped by the sidecar write before the new
+	// one lands, so count it as headroom (same rule as pushSidecarIfNeeded).
+	reclaimable := reclaimableEngineBytes(ver, sidecarLen)
+	if !nandFits(freeN, reclaimable, agentLen+sidecarLen+nandStageMargin) {
+		a.recordOTA(host, fmt.Sprintf("sidecar: NAND tight (free=%dKB < agent %dKB + engine %dKB + margin), deferring the engine to the post-reboot delivery so the agent update fits", (freeN+reclaimable)/1024, agentLen/1024, sidecarLen/1024))
+		a.logger.Info("stageSidecarBeforeReboot: NAND too tight to stage the engine before the agent; deferring to post-OTA EnsureSpotifyEngine",
+			"host", host, "free", freeN+reclaimable, "agentLen", agentLen, "sidecarLen", sidecarLen)
+		return
 	}
 	for attempt := 1; attempt <= otaSidecarEnsureAttempts; attempt++ {
-		if _, err := a.pushSidecarIfNeeded(host, port); err == nil {
+		_, err := a.pushSidecarIfNeeded(host, port)
+		if err == nil {
 			return
-		} else if attempt < otaSidecarEnsureAttempts {
+		}
+		if errors.Is(err, errInsufficientNAND) {
+			// Free space cannot change within this 75 s retry window, so
+			// retrying is pure thrash; the push gate already journaled the
+			// shortfall and the post-OTA delivery runs after the reboot has
+			// reclaimed the old agent's blocks.
+			return
+		}
+		if attempt < otaSidecarEnsureAttempts {
 			a.logger.Info("stageSidecarBeforeReboot: pre-reboot sidecar push not landed yet, retrying",
 				"host", host, "attempt", attempt, "err", err)
 			time.Sleep(otaSidecarEnsureBackoff(attempt))
@@ -460,10 +493,15 @@ func (a *App) EnsureSpotifyEngine(host string, port int) (string, error) {
 const otaEngineRebootWait = 3 * time.Minute
 
 // otaSidecarSpaceMargin is the NAND headroom required on top of the engine size
-// before pushSidecarIfNeeded will stream it. Matches the pre-reboot stage gate;
-// covers the atomic-write temp copy and normal UBIFS overhead so a push is only
-// attempted when it can actually land (#270).
+// before pushSidecarIfNeeded will stream it. Matches the pre-reboot stage gate
+// (nandStageMargin); covers the atomic-write temp copy and normal UBIFS
+// overhead so a push is only attempted when it can actually land (#270).
 const otaSidecarSpaceMargin = 2 * 1024 * 1024
+
+// nandStageMargin is the headroom stageSidecarBeforeReboot requires on top of
+// agent + engine before it stages the engine ahead of the reboot (#ST30: the
+// two second copies must coexist on a ~31 MB volume).
+const nandStageMargin = 2 * 1024 * 1024
 
 // otaSidecarEnsureAttempts bounds the pre-reboot sidecar staging retry in
 // stageSidecarBeforeReboot. With otaSidecarEnsureBackoff the cumulative wait
