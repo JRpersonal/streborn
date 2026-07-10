@@ -238,6 +238,14 @@ export function RadioSearch(arg1) {
   return window['go']['main']['App']['RadioSearch'](arg1);
 }
 
+export function RadioSearchDetailed(arg1) {
+  return window['go']['main']['App']['RadioSearchDetailed'](arg1);
+}
+
+export function RadioStationsByURL(arg1) {
+  return window['go']['main']['App']['RadioStationsByURL'](arg1);
+}
+
 export function RadioTags(arg1) {
   return window['go']['main']['App']['RadioTags'](arg1);
 }

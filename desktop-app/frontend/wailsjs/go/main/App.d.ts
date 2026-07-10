@@ -123,6 +123,10 @@ export function RadioLanguages(arg1:string,arg2:number):Promise<Array<radiobrows
 
 export function RadioSearch(arg1:main.RadioSearchOpts):Promise<Array<radiobrowser.Station>>;
 
+export function RadioSearchDetailed(arg1:main.RadioSearchOpts):Promise<main.RadioSearchResult>;
+
+export function RadioStationsByURL(arg1:string):Promise<Array<radiobrowser.Station>>;
+
 export function RadioTags(arg1:number):Promise<Array<radiobrowser.Tag>>;
 
 export function RadioVote(arg1:string):Promise<void>;
