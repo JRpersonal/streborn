@@ -790,7 +790,16 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 					// Re-pushing just flaps the source and can wedge the box (Michal's
 					// ST300). Signal the agent to force a re-login and stand the recall
 					// retry down instead of thrashing.
-					if v == "1036" || strings.Contains(strings.ToUpper(name), "NOT_LOGGED_IN") {
+					//
+					// The box reuses code 1036 for a second, unrelated flavor:
+					// UpnpRcvdContentItemInWrongState - the routine race of a SetURI
+					// against a standby wake, and the expected teardown when /setZone
+					// kills an in-flight UPnP session during group forming (#70). That
+					// flavor is NOT a login problem: firing the self-heal on it killed
+					// the recall retry and forced a pointless re-pair on every wake
+					// race, so it must never trigger here.
+					wrongState := strings.Contains(detail, "UpnpRcvdContentItemInWrongState")
+					if !wrongState && (v == "1036" || strings.Contains(strings.ToUpper(name), "NOT_LOGGED_IN")) {
 						c.fireLoginError()
 					}
 					return
