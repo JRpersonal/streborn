@@ -3421,6 +3421,13 @@ func (a *App) Pause(host string, port int) error  { return a.doAction(host, port
 func (a *App) Resume(host string, port int) error { return a.doAction(host, port, "resume") }
 func (a *App) Stop(host string, port int) error   { return a.doAction(host, port, "stop") }
 
+// Next / Prev advance or rewind the current track. Source-aware on the agent:
+// it skips go-librespot when Spotify is the live source, otherwise the STR play
+// queue (a DLNA folder). Radio has nothing to skip, so the app only shows these
+// for a Spotify playlist or a media-server queue.
+func (a *App) Next(host string, port int) error { return a.doAction(host, port, "next") }
+func (a *App) Prev(host string, port int) error { return a.doAction(host, port, "prev") }
+
 func (a *App) doAction(host string, port int, action string) error {
 	resp, err := a.boxDo(host, port, http.MethodPost, "/api/"+action, "application/json", "")
 	if err != nil {

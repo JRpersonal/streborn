@@ -34,6 +34,8 @@ export {
   Pause,
   Resume,
   Stop,
+  Next,
+  Prev,
   Status,
   ListDrives,
   WriteStickFiles,

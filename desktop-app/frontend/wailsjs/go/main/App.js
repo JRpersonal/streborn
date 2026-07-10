@@ -186,6 +186,10 @@ export function LogClientError(arg1) {
   return window['go']['main']['App']['LogClientError'](arg1);
 }
 
+export function Next(arg1, arg2) {
+  return window['go']['main']['App']['Next'](arg1, arg2);
+}
+
 export function Pause(arg1, arg2) {
   return window['go']['main']['App']['Pause'](arg1, arg2);
 }
@@ -200,6 +204,10 @@ export function PlaySlot(arg1, arg2, arg3) {
 
 export function PlayURL(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
   return window['go']['main']['App']['PlayURL'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+}
+
+export function Prev(arg1, arg2) {
+  return window['go']['main']['App']['Prev'](arg1, arg2);
 }
 
 export function ProbeSetupAP() {

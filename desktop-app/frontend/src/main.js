@@ -20,6 +20,8 @@ import {
   Pause,
   Resume,
   Stop,
+  Next,
+  Prev,
   Status,
   QueueNext,
   QueuePrev,
@@ -1029,7 +1031,9 @@ $('view-box').innerHTML = `
   <div id="boxControls" class="hidden">
     <div class="status-bar" id="statusBar" role="status" aria-live="polite"></div>
     <div class="controls">
+      <button class="btn btn-mini hidden" id="trackPrevBtn" title="${escapeAttr(t('controls.prev'))}" aria-label="${escapeAttr(t('controls.prev'))}">&#9198;</button>
       <button class="btn" id="pauseBtn">&#9208; ${escapeHtml(t('controls.pause'))}</button>
+      <button class="btn btn-mini hidden" id="trackNextBtn" title="${escapeAttr(t('controls.next'))}" aria-label="${escapeAttr(t('controls.next'))}">&#9197;</button>
       <button class="btn" id="stopBtn">&#9209; ${escapeHtml(t('controls.stop'))}</button>
       <div class="queue-controls hidden" id="queueControls">
         <button class="btn btn-mini" id="queuePrevBtn" title="${escapeAttr(t('controls.prev'))}">&#9198; ${escapeHtml(t('controls.prev'))}</button>
@@ -1129,6 +1133,10 @@ if (gsb) gsb.onclick = async () => {
 };
 $('pauseBtn').onclick = () => action(state.nowPlayState === 'PAUSE_STATE' ? 'resume' : 'pause');
 $('stopBtn').onclick = () => action('stop');
+// Track skip for a Spotify playlist (the DLNA folder queue has its own controls
+// in #queueControls). The agent's /api/next//api/prev are source-aware.
+$('trackNextBtn').onclick = () => action('next');
+$('trackPrevBtn').onclick = () => action('prev');
 
 // Queue transport controls (DLNA folder play queue). Each fires its action and
 // then a quick GetQueue refresh so the indicator and toggle states catch up
@@ -4150,9 +4158,14 @@ function scheduleLiveTitle() {
 
 async function action(kind) {
   if (!state.currentBox) return;
-  const fn = kind === 'pause' ? Pause : kind === 'resume' ? Resume : Stop;
+  const fn = kind === 'pause' ? Pause
+    : kind === 'resume' ? Resume
+      : kind === 'next' ? Next
+        : kind === 'prev' ? Prev
+          : Stop;
   try { await fn(state.currentBox.host, state.currentBox.port); } catch (e) { showError(e); }
-  setTimeout(refreshStatus, 1000);
+  // Skip lands on a new track fast; poll a touch sooner so the title updates.
+  setTimeout(refreshStatus, (kind === 'next' || kind === 'prev') ? 600 : 1000);
 }
 
 // queueAction runs a queue binding for the current box, then refreshes the
@@ -4251,6 +4264,14 @@ function renderNowPlayingBar() {
       ? '&#9654; ' + escapeHtml(t('controls.play'))
       : '&#9208; ' + escapeHtml(t('controls.pause'));
   }
+  // Track skip/previous: only for a Spotify playlist (the DLNA folder queue has
+  // its own prev/next in #queueControls). The buttons flank Play/Pause and hide
+  // for radio and single sources, which have nothing to skip.
+  const isSpotify = /\/spotify\/stream/.test(loc);
+  const nextBtn = $('trackNextBtn');
+  const prevBtn = $('trackPrevBtn');
+  if (nextBtn) nextBtn.classList.toggle('hidden', !isSpotify);
+  if (prevBtn) prevBtn.classList.toggle('hidden', !isSpotify);
   let displayName = name;
   if (/\/spotify\/stream/.test(loc) && state.nowSpotifyTrack) {
     const song = state.nowSpotifyArtist
