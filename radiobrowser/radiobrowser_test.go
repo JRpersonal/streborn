@@ -299,3 +299,36 @@ func TestSearchBrowseZeroResultsNoFallback(t *testing.T) {
 		t.Errorf("requests = %d, want 1 (no fallback for browse)", f.requestCount())
 	}
 }
+
+// ByURL resolves a pasted stream URL to its station entries; the URL is
+// query-encoded on the wire and arrives decoded at the endpoint.
+func TestByURL(t *testing.T) {
+	streamURL := "http://radio.example/stream?a=1&b=zwei drei"
+	f := newFakeMirror(t, map[int]string{
+		0: `[{"stationuuid":"uuid-1","name":"My Station","url":"http://radio.example/stream?a=1&b=zwei drei"}]`,
+	})
+	st, err := f.client().ByURL(context.Background(), " "+streamURL+" ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st) != 1 || st[0].Name != "My Station" || st[0].StationUUID != "uuid-1" {
+		t.Errorf("stations = %+v, want the single My Station entry", st)
+	}
+	req := f.request(t, 0)
+	if req.Path != "/json/stations/byurl" {
+		t.Errorf("path = %q, want /json/stations/byurl", req.Path)
+	}
+	if got := req.Query().Get("url"); got != streamURL {
+		t.Errorf("decoded url param = %q, want %q", got, streamURL)
+	}
+}
+
+func TestByURLEmptyInput(t *testing.T) {
+	f := newFakeMirror(t, nil)
+	if _, err := f.client().ByURL(context.Background(), "   "); err == nil {
+		t.Fatal("expected error for empty stream URL")
+	}
+	if f.requestCount() != 0 {
+		t.Errorf("requests = %d, want 0", f.requestCount())
+	}
+}

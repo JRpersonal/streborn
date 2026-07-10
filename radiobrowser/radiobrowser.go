@@ -577,6 +577,25 @@ func (c *Client) LanguagesByCountry(ctx context.Context, country string) ([]Lang
 	return out, nil
 }
 
+// ByURL looks up the station entries whose registered stream URL exactly
+// matches streamURL (radio-browser's stations/byurl endpoint), so a pasted
+// stream URL can be resolved to its station entry (name, logo, UUID).
+// radio-browser may return several sibling entries for one stream; order is
+// kept as returned. The stream URL travels query-encoded, so URLs containing
+// spaces, '&', or non-ASCII path parts survive the round trip — the mirror
+// decodes them back before matching.
+func (c *Client) ByURL(ctx context.Context, streamURL string) ([]Station, error) {
+	streamURL = strings.TrimSpace(streamURL)
+	if streamURL == "" {
+		return nil, fmt.Errorf("byurl: empty stream URL")
+	}
+	q := url.Values{}
+	q.Set("url", streamURL)
+	var out []Station
+	err := c.fetchJSON(ctx, "/stations/byurl?"+q.Encode(), &out)
+	return out, err
+}
+
 // Vote sends a thumbs up for the station. Best effort: the error is
 // returned but can be ignored.
 func (c *Client) Vote(ctx context.Context, uuid string) error {
