@@ -39,6 +39,15 @@ type App struct {
 	logFile    *os.File // kept so ExportDiagnosticLogs can Sync before reading
 	httpClient *http.Client
 
+	// probeSTRFn/portOpenFn are the network probes RefreshKnownBoxes feeds
+	// into classifyKnownBox (probeSTR and portOpen when nil). Injectable so
+	// tests can assert the live/offline eviction contract without sockets:
+	// the pre-98883aa regression (an offline box merged back into the cache
+	// every cycle, so it never expired) was invisible to tests exactly
+	// because these calls were hard-wired.
+	probeSTRFn func(ctx context.Context, host string) (BoxInfo, bool)
+	portOpenFn func(host string, port int, timeoutMs int) bool
+
 	// Install progress: the current network-install phase and start time, read by
 	// the shared waitForSSHOpen/waitForAgent heartbeat loops so they emit
 	// phase-labeled, elapsed-stamped install:progress events through the long
@@ -859,6 +868,14 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	}
 	ctx, cancel := context.WithTimeout(a.appCtx(), 6*time.Second)
 	defer cancel()
+	probe := a.probeSTRFn
+	if probe == nil {
+		probe = probeSTR
+	}
+	open := a.portOpenFn
+	if open == nil {
+		open = portOpen
+	}
 	seen := map[string]BoxInfo{}      // reached this cycle: refresh presence + eviction timer
 	offline := map[string]BoxInfo{}   // not reached: keep visible in the grace window, do NOT reset the timer
 	presenceOnly := map[string]bool{} // reached on the stock :8090 only: present, but NOT an STR confirmation
@@ -872,18 +889,12 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			b := kb
-			live := false
-			strConfirmed := false
-			if probed, ok := probeSTR(ctx, kb.Host); ok {
-				b = probed
-				live = true
-				strConfirmed = true
-			} else if portOpen(kb.Host, 8090, 1200) {
-				// STR's agent did not answer but the box's Bose port does, so it
-				// is still on the LAN (agent mid-reboot / stock). Treat as present.
-				live = true
+			probed, probeOK := probe(ctx, kb.Host)
+			bosePortOpen := false
+			if !probeOK {
+				bosePortOpen = open(kb.Host, 8090, 1200)
 			}
+			b, live, strConfirmed := classifyKnownBox(kb, probed, probeOK, bosePortOpen)
 			b = a.enrichBoxWithStockInfo(ctx, b)
 			mu.Lock()
 			if live {
@@ -892,11 +903,6 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 					presenceOnly[b.Host] = true
 				}
 			} else {
-				// Reachable on NO port this cycle: keep the cached record so the
-				// tile does not blink out mid-refresh, but do NOT feed it to
-				// mergeDiscoveryCache - refreshing its "seen" time every cycle is
-				// what kept an offline box (a powered-off Wave) in the list
-				// forever, because the sticky-TTL eviction never came due.
 				offline[b.Host] = b
 			}
 			mu.Unlock()
@@ -915,6 +921,29 @@ func (a *App) RefreshKnownBoxes() ([]BoxInfo, error) {
 	}
 	a.logger.Info("refresh known boxes done", "count", len(out), "live", len(seen), "offline", len(offline))
 	return out, nil
+}
+
+// classifyKnownBox is the pure per-box decision behind RefreshKnownBoxes,
+// turning one probe outcome into the merge contract fixed in 98883aa:
+//
+//   - The STR agent answered: live and STR-confirmed, use the fresh record.
+//   - Only the stock :8090 answered (agent mid-reboot, or plain stock): the
+//     box is on the LAN, so presence refreshes the eviction timer, but it is
+//     NOT an STR confirmation (see mergeDiscoveryCacheWith's presenceOnly).
+//     Keep the cached record so the tile does not thin out.
+//   - Nothing answered: not live. The cached record is still returned so the
+//     tile stays visible through the miss-grace window, but callers must NOT
+//     feed it back into mergeDiscoveryCache: re-merging an unreachable box
+//     every cycle resets its last-seen and is exactly the bug that kept a
+//     powered-off Wave listed forever.
+func classifyKnownBox(cached, probed BoxInfo, probeOK, bosePortOpen bool) (record BoxInfo, live, strConfirmed bool) {
+	if probeOK {
+		return probed, true, true
+	}
+	if bosePortOpen {
+		return cached, true, false
+	}
+	return cached, false, false
 }
 
 // mergeBoxInfo keeps the richer of two records for the same physical box
