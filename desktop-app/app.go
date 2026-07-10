@@ -3316,6 +3316,17 @@ func friendlyError(resp *http.Response) string {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err == nil {
+		// A grouped-follower rejection (409 {"error":"box-grouped","master":...})
+		// must pass through as the RAW JSON body: the frontend's
+		// parsePlayRejection parses the master field out of the error string to
+		// retarget the play at the group's lead speaker, and the friendly
+		// reduction below would strip it down to the bare code, losing master.
+		if e, _ := m["error"].(string); e == "box-grouped" {
+			return string(b)
+		}
+		if c, _ := m["code"].(string); c == "box-grouped" {
+			return string(b)
+		}
 		msg := ""
 		if d, ok := m["detail"].(string); ok && d != "" {
 			msg = d
