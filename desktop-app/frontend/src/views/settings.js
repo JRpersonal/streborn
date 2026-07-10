@@ -26,6 +26,10 @@ import {
 } from '../utils.js';
 import { t, tLookup } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
+// The box-to-box preset copy continues past rejected slots and reports them
+// as one combined error; reconstructing "how many still copied" from that
+// message is a pure decision in copyreport.js (vitest-covered).
+import { summarizePresetCopyError, countValidPresetSlots } from '../copyreport.js';
 import {
   BoxSettings,
   BoxAgentVersion,
@@ -57,6 +61,7 @@ import {
   TestWebhook,
   TestWebhookAction,
   CopyPresetsAcrossBoxes,
+  GetPresets,
   SetBoxName,
   SetBoxVolume,
   SetBoxBass,
@@ -1774,6 +1779,15 @@ function renderBoxSettings(s, box) {
     copyBtn.onclick = async () => {
       const sel = $('copyPresetTarget');
       if (!sel || !sel.value) return;
+      // The backend copies past rejected slots and reports them in ONE
+      // combined error; the Wails rejection carries only that message, so the
+      // copied count is reconstructed as source-slots minus rejected slots.
+      // Counted lazily (only when a rejection needs it) to keep the happy
+      // path at one round trip.
+      const sourceSlotCount = async () => {
+        try { return countValidPresetSlots(await GetPresets(box.host, box.port)); }
+        catch { return null; }
+      };
       // "Apply to all": copy this box's 1-6 onto every other STR speaker.
       if (sel.value === '__ALL__') {
         const all = (state.boxes || []).filter(b => b.kind !== 'stock' && b.host !== box.host);
@@ -1785,15 +1799,34 @@ function renderBoxSettings(s, box) {
         copyBtn.disabled = true;
         let done = 0;
         const failed = [];
+        const slotIssues = [];
+        let totalSlots;
         for (const tb of all) {
+          const tbName = tb.friendlyName || tb.name || tb.host;
           try {
             await CopyPresetsAcrossBoxes(box.host, box.port, tb.host, tb.port || 0);
             done++;
             if (state.currentBox && state.currentBox.host === tb.host) await deps.loadPresets();
-          } catch { failed.push(tb.friendlyName || tb.name || tb.host); }
+          } catch (e) {
+            if (totalSlots === undefined) totalSlots = await sourceSlotCount();
+            const part = summarizePresetCopyError(e, totalSlots);
+            if (part && part.copied !== 0) {
+              // Most slots arrived on this target: count it as reached, but
+              // keep the per-slot detail for the honest summary below.
+              done++;
+              slotIssues.push(`${tbName}: ${part.detail}`);
+              if (state.currentBox && state.currentBox.host === tb.host) await deps.loadPresets();
+            } else {
+              failed.push(tbName);
+            }
+          }
         }
         copyBtn.disabled = false;
-        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: all.length, failed: failed.join(', ') }));
+        const slotMsg = slotIssues.length
+          ? t('settingsView.copyPresetsAllSlotIssues', { detail: slotIssues.join(' | ') })
+          : '';
+        if (failed.length) showError(t('settingsView.copyPresetsAllPartial', { done, total: all.length, failed: failed.join(', ') }) + (slotMsg ? ' ' + slotMsg : ''));
+        else if (slotMsg) showError(slotMsg);
         else showToast(t('settingsView.copyPresetsAllDone', { n: all.length }));
         return;
       }
@@ -1811,7 +1844,19 @@ function renderBoxSettings(s, box) {
         const n = await CopyPresetsAcrossBoxes(box.host, box.port, thost, tport);
         showToast(t('settingsView.copyPresetsDone', { n, target: targetName }));
         if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
-      } catch (e) { showError(e); }
+      } catch (e) {
+        // A per-slot rejection is usually a PARTIAL success (the other slots
+        // copied); saying only "error" hid that and read as all-or-nothing.
+        const part = summarizePresetCopyError(e, await sourceSlotCount());
+        if (part && part.copied !== 0) {
+          showToast(part.copied === null
+            ? t('settingsView.copyPresetsSomeFailed', { target: targetName, detail: part.detail })
+            : t('settingsView.copyPresetsPartial', { n: part.copied, target: targetName, detail: part.detail }));
+          if (state.currentBox && state.currentBox.host === thost) await deps.loadPresets();
+        } else {
+          showError(e);
+        }
+      }
       copyBtn.disabled = false;
     };
   }
