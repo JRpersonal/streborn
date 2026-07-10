@@ -29,6 +29,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -116,6 +117,61 @@ func unwrapSelfProxy(raw string) string {
 			return raw
 		}
 		raw = inner
+	}
+	return raw
+}
+
+// selfProxySlotRe matches the agent's own per-slot proxy path (/stream/1..6).
+var selfProxySlotRe = regexp.MustCompile(`^/stream/([1-6])$`)
+
+// selfProxySlotRef reports whether raw points at this agent's own
+// /stream/<slot> proxy (the box-visible preset location, never a valid
+// station origin) and which slot it references. Mirrors webui's save gate.
+func selfProxySlotRef(raw string) (int, bool) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return 0, false
+	}
+	m := selfProxySlotRe.FindStringSubmatch(u.Path)
+	if m == nil {
+		return 0, false
+	}
+	host, port := u.Hostname(), u.Port()
+	if port != "8888" && port != "17008" && host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return 0, false
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n, true
+}
+
+// resolvePresetURL heals a stored preset URL before serving. Two poisoned
+// forms exist in the field (#252): the /stream/raw?u=<base64> self-wrap
+// (decoded by unwrapSelfProxy) and the bare /stream/<n> slot form an older
+// same-slot save left behind. For the slot form, n != slot dereferences the
+// referenced slot's stored origin (loop-guarded); n == slot is unrecoverable -
+// the origin URL is gone - and logs a distinct WARN naming the remedy instead
+// of the generic SSRF dial error the box otherwise trips.
+func (s *Server) resolvePresetURL(slot int, raw string) string {
+	raw = unwrapSelfProxy(raw)
+	seen := map[int]bool{slot: true}
+	for i := 0; i < 6; i++ {
+		ref, self := selfProxySlotRef(raw)
+		if !self {
+			return raw
+		}
+		if seen[ref] {
+			s.logger.Warn("stream proxy: preset stores its own proxy URL, origin lost - re-save the station in the app (#252)",
+				"slot", slot, "ref", ref)
+			return raw
+		}
+		seen[ref] = true
+		p, ok := s.store.Get(ref)
+		if !ok || p.StreamURL == "" {
+			s.logger.Warn("stream proxy: preset references another slot's proxy URL but that slot is empty - re-save the station in the app (#252)",
+				"slot", slot, "ref", ref)
+			return raw
+		}
+		raw = unwrapSelfProxy(p.StreamURL)
 	}
 	return raw
 }
@@ -1008,7 +1064,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no preset", http.StatusNotFound)
 		return
 	}
-	p.StreamURL = unwrapSelfProxy(p.StreamURL)
+	p.StreamURL = s.resolvePresetURL(slot, p.StreamURL)
 	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
 
 	if isDASHURL(p.StreamURL) {
@@ -1061,7 +1117,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		if !ok || cur.StreamURL == "" {
 			return
 		}
-		curURL := unwrapSelfProxy(cur.StreamURL)
+		curURL := s.resolvePresetURL(slot, cur.StreamURL)
 		boseAlive, err := s.streamOne(r.Context(), w, r, curURL, !headersSent)
 		lastErr = err
 		if errors.Is(err, errPlaylistIsHLS) && !headersSent {

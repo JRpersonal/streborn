@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -945,6 +946,49 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 					"code":  "stream-url-invalid",
 				})
 				return
+			}
+		}
+		// A stream URL that points at THIS agent's own /stream/<n> proxy is a
+		// poisoned save (#252): an older client stored the box-visible proxy
+		// location instead of the station's origin URL, permanently
+		// clobbering the preset (recall then trips the SSRF dial guard with
+		// AUDIO_ERROR_BAD_URL). Heal it from the referenced slot's stored
+		// origin; refuse when there is nothing left to heal from.
+		if p.Type != "spotify" && p.StreamURL != "" {
+			if ref, self := selfProxySlot(p.StreamURL); self {
+				healed := false
+				for _, src := range s.presets.All() {
+					if src.Slot != ref || src.StreamURL == "" {
+						continue
+					}
+					if _, srcSelf := selfProxySlot(src.StreamURL); srcSelf {
+						break // the stored entry is poisoned too: origin lost
+					}
+					s.logger.Warn("preset save: healed a self-proxy stream URL from the referenced slot's stored origin (#252)",
+						"slot", slot, "ref", ref)
+					p.StreamURL = src.StreamURL
+					if p.Codec == "" {
+						p.Codec = src.Codec
+					}
+					if p.Bitrate == 0 {
+						p.Bitrate = src.Bitrate
+					}
+					if p.Name == "" {
+						p.Name = src.Name
+					}
+					if p.Art == "" {
+						p.Art = src.Art
+					}
+					healed = true
+					break
+				}
+				if !healed {
+					writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+						"error": "This save would store the speaker's own proxy address instead of the station. Play the station again (or re-search it) and save then.",
+						"code":  "stream-url-self-proxy",
+					})
+					return
+				}
 			}
 		}
 		// Stamp the account a Spotify preset belongs to (go-librespot's current
@@ -3336,6 +3380,31 @@ const strNANDDir = "/mnt/nv/streborn"
 // diskFree lives in statfs_linux.go / statfs_other.go: the Linux build does a
 // real statfs, other hosts report "unknown" so the package stays testable on
 // dev machines.
+
+// selfProxyPathRe matches the agent's own per-slot proxy path (/stream/1..6),
+// which is the box-visible preset location and never a valid station origin.
+var selfProxyPathRe = regexp.MustCompile(`^/stream/([1-6])$`)
+
+// selfProxySlot reports whether raw points at this agent's own /stream/<slot>
+// proxy and which slot it references. Heuristic: the per-slot proxy path plus
+// either a loopback host or one of STR's own ports - a real station origin
+// never matches all of that (#252).
+func selfProxySlot(raw string) (int, bool) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return 0, false
+	}
+	m := selfProxyPathRe.FindStringSubmatch(u.Path)
+	if m == nil {
+		return 0, false
+	}
+	host, port := u.Hostname(), u.Port()
+	if port != "8888" && port != "17008" && host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return 0, false
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n, true
+}
 
 // dirBytes is a du -s in bytes for path, best-effort: unreadable entries are
 // skipped, never fatal. Cheap on the tiny NAND.
