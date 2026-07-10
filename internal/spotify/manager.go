@@ -161,6 +161,11 @@ type Manager struct {
 	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).
 	lastPlayFailLine string
 	lastPlayFailAt   time.Time
+	// desyncAt collects recent Connect-desync markers from the engine's
+	// stderr (put-state failures, dealer receive failures); lastDesyncHeal
+	// rate-limits the self-heal restart. See noteDesyncSignature.
+	desyncAt       []time.Time
+	lastDesyncHeal time.Time
 	// onActivate is invoked when go-librespot starts playing while no box is
 	// attached to the Ogg stream, i.e. the user pressed play in the Spotify app
 	// (selecting this device) but the box is still on another source. The
@@ -1266,6 +1271,47 @@ func (m *Manager) noteLibrespotLine(line string) {
 		m.lastPlayFailLine = lc
 		m.lastPlayFailAt = time.Now()
 		m.mu.Unlock()
+	}
+	// Connect-desync markers (upstream go-librespot #300): a "put connect
+	// state" timeout desyncs the device from the Spotify cluster - the app's
+	// buttons go dead/laggy, the device flaps in the picker, the engine can
+	// enter a rapid-skip loop, and upstream never recovers without a restart.
+	// Live-observed on a Portable 2026-07-10 (both engine builds).
+	if strings.Contains(lc, "failed put state") ||
+		strings.Contains(lc, "put state request failed") ||
+		strings.Contains(lc, "failed receiving dealer message") {
+		m.noteDesyncSignature()
+	}
+}
+
+// noteDesyncSignature counts Connect-desync markers and, at three within two
+// minutes, restarts the engine once (rate-limited to one heal per ten
+// minutes): the relaunch re-registers the device with the cluster and heals
+// in seconds what upstream #300 says needs a manual reboot. Sporadic single
+// markers (the dealer's routine reconnects) never reach the threshold. The
+// box's attached Ogg stream survives an engine restart by design (ServeOgg
+// buffering), so a heal during playback costs at most a short dropout.
+func (m *Manager) noteDesyncSignature() {
+	now := time.Now()
+	m.mu.Lock()
+	keep := m.desyncAt[:0]
+	for _, t := range m.desyncAt {
+		if now.Sub(t) < 2*time.Minute {
+			keep = append(keep, t)
+		}
+	}
+	m.desyncAt = append(keep, now)
+	healedRecently := !m.lastDesyncHeal.IsZero() && now.Sub(m.lastDesyncHeal) < 10*time.Minute
+	var cancel context.CancelFunc
+	if len(m.desyncAt) >= 3 && !healedRecently {
+		m.lastDesyncHeal = now
+		m.desyncAt = m.desyncAt[:0]
+		cancel = m.runCancel
+	}
+	m.mu.Unlock()
+	if cancel != nil {
+		m.logger.Warn("spotify: Connect desync detected (put-state/dealer failures piling up, upstream go-librespot #300); restarting the engine to re-register the device")
+		cancel()
 	}
 }
 
