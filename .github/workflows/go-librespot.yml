@@ -12,18 +12,42 @@ name: go-librespot
 # Why go-librespot over librespot-org: it ships a local HTTP control API
 # (POST /player/play {uri}) so hardware preset buttons can recall a saved
 # Spotify playlist autonomously, with no phone app and no Spotify Web API
-# token stored on the box. The cost is the build: go-librespot decodes
-# Vorbis/FLAC through cgo (libogg, libvorbis, flac), so unlike librespot's
-# pure-Rust static musl it needs a cgo cross build.
+# token stored on the box.
 #
-# Target is armv7 STATIC: the speaker runs glibc 2.15 (2012), far too old
-# for a modern dynamic build. We build inside an emulated arm/v7 Alpine
-# (musl) container and statically link everything, so the binary runs on
-# the box regardless of its ancient libc. GPL-3.0 obliges us to offer the
-# source; it is public and the build is pinned + reproducible.
+# STR-LEAN BUILD (pure Go, no cgo). STR runs the engine EXCLUSIVELY as
+# audio_backend: pipe with audio_output_pipe_passthrough: true, so the raw
+# Ogg/Vorbis container is written to the pipe and no decoding ever happens in
+# the engine. The cgo decoders (libvorbis/libogg for Vorbis, libFLAC for FLAC)
+# are therefore dead weight, and this workflow strips them:
+#   - vorbis/decoder.go, flac/decoder.go and the ALSA output driver are
+#     replaced by pure-Go error stubs (same technique for all three, below);
+#   - .github/patches/go-librespot-cgo-free.patch swaps the last libogg use
+#     (the Spotify metadata-page extraction in vorbis/metadata.go) for a
+#     pure-Go Ogg first-page parser with tests, and pins the format selection
+#     to Vorbis whenever passthrough is on, so no selection path can route
+#     into a stripped decoder (FLAC requests fall back to the nearest-bitrate
+#     Vorbis file; a residual FLAC stream errors out cleanly, it cannot
+#     crash).
+# With the last cgo dependency gone the build is CGO_ENABLED=0 GOARM=5
+# (softfloat): fully static without any Alpine/musl machinery, and immune to
+# the latent-SIGILL class on early SoundTouch CPUs without working VFP that
+# the hardfloat arm/v7 cgo build carried (the exact failure class the agent
+# already avoids with GOARM=5, issue #302).
+#
+# HARDWARE VERIFICATION REQUIRED: the next dispatch produces the first
+# cgo-free softfloat engine. Before it ships to any user (embed, OTA, or
+# release.yml porting), verify on a real speaker:
+#   1. Spotify Connect playback (start, pause, seek, track change),
+#   2. hardware preset recall of a saved Spotify preset,
+#   3. a FLAC/lossless selection attempt (must fall back to Vorbis playback
+#      or a clean error, never a crash or silent hang).
+# release.yml still carries the previous cgo/Alpine build steps; port this
+# job there only after the on-box verification passed.
 #
 # Run it from the Actions tab (workflow_dispatch). The artifact is the
-# attested go-librespot-armv7l plus its SHA256, for the on-box test.
+# attested go-librespot-armv7l plus its SHA256, for the on-box test. (The
+# name is the deployment name on the armv7 boxes; like the agent's
+# streborn-armv7l it is a GOARM=5 softfloat binary.)
 
 on:
   workflow_dispatch:
@@ -44,37 +68,35 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - name: Checkout STR (for the passthrough patch)
+      - name: Checkout STR (for the cgo-free patch)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up QEMU (arm/v7 emulation)
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-        with:
-          platforms: arm
-
-      - name: Clone go-librespot (our fork)
+      - name: Clone go-librespot (our fork) + strip cgo decoders
         env:
           # Build from STR's own fork JRpersonal/go-librespot. Its master has the
-          # Ogg-passthrough (audio_output_pipe_passthrough) MERGED, so no external
-          # patch is applied any more: the source we ship is exactly what the fork
-          # contains, fully public and reviewable. workflow_dispatch supplies
-          # inputs.ref; the release pipeline calls this build with master too.
+          # Ogg-passthrough (audio_output_pipe_passthrough) MERGED, so the source
+          # we ship is what the fork contains plus the STR-lean strip below, all
+          # public and reviewable. workflow_dispatch supplies inputs.ref.
           REF: ${{ github.event.inputs.ref || 'master' }}
         run: |
           git clone --depth 1 --branch "$REF" https://github.com/JRpersonal/go-librespot go-librespot
           echo "Built from JRpersonal/go-librespot $REF at $(git -C go-librespot rev-parse HEAD)"
           mkdir -p dist
 
-          # Drop the ALSA output backend. STR drives playback through the
-          # pipe backend only, and Alpine ships no static libasound (.a), so
-          # linking it would block the fully static armv7 build. Remove the
-          # two cgo alsa files and stub the one symbol the rest of the
-          # package references (newAlsaOutput, the backend switch in
-          # output.go). No functional loss for the pipe backend; smaller
-          # binary + less cgo surface. This is a build-time strip on top of the
-          # fork source (the Ogg-passthrough already lives in the fork), and it
-          # is visible here.
-          rm -f go-librespot/output/driver-alsa.go go-librespot/output/mixer-alsa.go
+          # Drop the cgo code paths STR never executes and stub the symbols the
+          # rest of the build references, so the packages still compile:
+          #   - ALSA output driver: STR drives playback through the pipe backend
+          #     only (no functional loss, and Alpine never had a static
+          #     libasound anyway);
+          #   - Vorbis decoder (xlab/vorbis-go -> libvorbis/libogg): passthrough
+          #     hands the raw Ogg to the pipe, the decoder is never constructed;
+          #   - FLAC decoder (inline cgo -> libFLAC): unreachable, the cgo-free
+          #     patch pins the format selection to Vorbis under passthrough.
+          # The stubs return a clear error should any future code path still
+          # try to construct a decoder.
+          rm -f go-librespot/output/driver-alsa.go go-librespot/output/mixer-alsa.go \
+                go-librespot/vorbis/decoder.go go-librespot/flac/decoder.go
+
           cat > go-librespot/output/driver-alsa-noalsa.go <<'GO'
           //go:build !android && !darwin && !js && !windows && !nintendosdk
 
@@ -87,42 +109,100 @@ jobs:
           }
           GO
 
-      - name: Build (static musl, cgo, arm/v7)
-        # Native compile inside an emulated arm/v7 Alpine container so cgo
-        # targets the speaker arch directly. Static link the C decoders so
-        # the result runs on the box's glibc 2.15. Module + build caches
-        # live under the mounted workspace so nothing leaks host state.
+          cat > go-librespot/vorbis/decoder-stub.go <<'GO'
+          package vorbis
+
+          import (
+          	"errors"
+
+          	librespot "github.com/devgianlu/go-librespot"
+          )
+
+          const DataChunkSize = 4096
+
+          var errNoDecoder = errors.New("vorbis decoder not compiled in this build (pipe passthrough only)")
+
+          type Decoder struct {
+          	SampleRate int32
+          	Channels   int32
+          }
+
+          func New(librespot.Logger, librespot.SizedReadAtSeeker, *MetadataPage, float32) (*Decoder, error) {
+          	return nil, errNoDecoder
+          }
+
+          func (d *Decoder) Read([]float32) (int, error) { return 0, errNoDecoder }
+
+          func (d *Decoder) SetPositionMs(int64) error { return errNoDecoder }
+
+          func (d *Decoder) PositionMs() int64 { return 0 }
+
+          func (d *Decoder) Close() {}
+          GO
+
+          cat > go-librespot/flac/decoder-stub.go <<'GO'
+          package flac
+
+          import (
+          	"errors"
+
+          	librespot "github.com/devgianlu/go-librespot"
+          )
+
+          var errNoDecoder = errors.New("flac decoder not compiled in this build (pipe passthrough only)")
+
+          type Decoder struct {
+          	SampleRate int32
+          	Channels   int32
+          }
+
+          func New(librespot.Logger, librespot.SizedReadAtSeeker, float32) (*Decoder, error) {
+          	return nil, errNoDecoder
+          }
+
+          func (d *Decoder) Read([]float32) (int, error) { return 0, errNoDecoder }
+
+          func (d *Decoder) SetPositionMs(int64) error { return errNoDecoder }
+
+          func (d *Decoder) PositionMs() int64 { return 0 }
+
+          func (d *Decoder) Close() error { return nil }
+          GO
+
+          # Pure-Go Ogg metadata-page parser (replaces the last libogg use) and
+          # the passthrough-pins-Vorbis guard, with tests.
+          git -C go-librespot apply --stat ../.github/patches/go-librespot-cgo-free.patch
+          git -C go-librespot apply ../.github/patches/go-librespot-cgo-free.patch
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go-librespot/go.mod
+          cache-dependency-path: go-librespot/go.sum
+
+      - name: Test the pure-Go Ogg parser
+        working-directory: go-librespot
+        run: CGO_ENABLED=0 go test ./vorbis/
+
+      - name: Build (pure Go, static, softfloat arm)
+        working-directory: go-librespot
+        # -buildvcs=false: the clone is shallow and the commit is logged in the
+        # clone step, so the VCS stamp is not needed. GOARM=5 = softfloat, see
+        # the header. CGO_ENABLED=0 makes the binary fully static by itself; no
+        # container, no QEMU, no musl toolchain.
         run: |
-          docker run --rm --platform linux/arm/v7 \
-            -v "$PWD/go-librespot:/src" -v "$PWD/dist:/dist" \
-            -w /src golang:1.25-alpine sh -euxc '
-              # -dev brings the headers + .so; the fully static link needs
-              # the .a archives, which Alpine splits into -static subpackages.
-              # No alsa: the ALSA backend was removed in the clone step (the
-              # pipe backend is what STR uses), and Alpine has no static
-              # libasound anyway.
-              apk add --no-cache build-base git \
-                libogg-dev libvorbis-dev flac-dev \
-                libogg-static libvorbis-static flac-static
-              # -buildvcs=false: the mounted repo is owned by the host UID,
-              # so in-container git trips "dubious ownership" and Go VCS
-              # stamping fails (exit 128). We log the upstream commit above
-              # instead, so the stamp is not needed.
-              CGO_ENABLED=1 go build -trimpath -buildvcs=false \
-                -tags "osusergo netgo" \
-                -ldflags "-s -w -linkmode external -extldflags \"-static\"" \
-                -o /dist/go-librespot-armv7l ./cmd/daemon
-              /dist/go-librespot-armv7l --help >/dev/null 2>&1 || true
-            '
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5 \
+            go build -trimpath -buildvcs=false -ldflags "-s -w" \
+            -o ../dist/go-librespot-armv7l ./cmd/daemon
 
       - name: Collect + checksum
         run: |
-          # The binary is written by the in-container root user, so the
-          # unprivileged runner cannot chmod it; runners allow passwordless
-          # sudo. (go build already produces it executable; this just makes
-          # the bit explicit.)
-          sudo chmod +x dist/go-librespot-armv7l
+          chmod +x dist/go-librespot-armv7l
           file dist/go-librespot-armv7l || true
+          if [ "$(head -c 4 dist/go-librespot-armv7l | xxd -p)" != "7f454c46" ]; then
+            echo "not an ELF binary" >&2
+            exit 1
+          fi
           sha256sum dist/go-librespot-armv7l | tee dist/go-librespot-armv7l.sha256
           echo "size: $(stat -c %s dist/go-librespot-armv7l) bytes"
 

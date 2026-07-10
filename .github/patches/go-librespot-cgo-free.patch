@@ -1,0 +1,383 @@
+diff --git a/player/player.go b/player/player.go
+index 2766de6..fba5aa5 100644
+--- a/player/player.go
++++ b/player/player.go
+@@ -175,7 +175,11 @@ func NewPlayer(opts *Options) (*Player, error) {
+ 		audioKey:                  opts.AudioKey,
+ 		events:                    opts.Events,
+ 		cdnQuarantine:             make(map[string]time.Time),
+-		flacEnabled:               opts.FlacEnabled,
++		// Passthrough hands the raw Ogg Vorbis container to the pipe; a FLAC
++		// selection could not be passed through (different container) nor
++		// decoded in the STR build (the FLAC decoder is stubbed out), so pin
++		// the format selection to Vorbis whenever passthrough is enabled.
++		flacEnabled:               opts.FlacEnabled && !opts.AudioOutputPipePassthrough,
+ 		passthrough:               opts.AudioOutputPipePassthrough,
+ 		normalisationEnabled:      opts.NormalisationEnabled,
+ 		normalisationUseAlbumGain: opts.NormalisationUseAlbumGain,
+@@ -722,6 +726,12 @@ func (p *Player) NewStream(ctx context.Context, client *http.Client, spotId libr
+ 			stream = vorbisStream
+ 		}
+ 	} else if audioFormat == AudioFormatFLAC {
++		if p.passthrough {
++			// Unreachable via selectBestMediaFormat (flacEnabled is pinned off
++			// in passthrough mode); hard guard so no future selection path can
++			// route a FLAC stream into the stubbed decoder below.
++			return nil, fmt.Errorf("flac is not supported in passthrough mode")
++		}
+ 		audioStream := io.NewSectionReader(decryptedStream, 0, rawStream.Size())
+ 		flacStream, err := flac.New(log, audioStream, normalisationFactor)
+ 		if err != nil {
+diff --git a/vorbis/metadata.go b/vorbis/metadata.go
+index 8db7d6e..d4def37 100644
+--- a/vorbis/metadata.go
++++ b/vorbis/metadata.go
+@@ -8,7 +8,6 @@ import (
+ 	"io"
+ 
+ 	librespot "github.com/devgianlu/go-librespot"
+-	"github.com/xlab/vorbis-go/vorbis"
+ )
+ 
+ const (
+@@ -49,51 +48,24 @@ type MetadataPage struct {
+ }
+ 
+ func ExtractMetadataPage(log librespot.Logger, r io.ReaderAt, limit int64) (librespot.SizedReadAtSeeker, *MetadataPage, error) {
+-	var syncState vorbis.OggSyncState
+-	vorbis.OggSyncInit(&syncState)
+-
+-	defer func() {
+-		vorbis.OggSyncClear(&syncState)
+-		syncState.Free()
+-	}()
+-
+-	rr := io.NewSectionReader(r, 0, limit)
+-
+-	// read enough bytes for the first ogg packet to fit
+-	buf := vorbis.OggSyncBuffer(&syncState, 512)
+-	n, err := io.ReadFull(rr, buf[:512])
+-	vorbis.OggSyncWrote(&syncState, n)
+-	if err != nil {
+-		return nil, nil, fmt.Errorf("failed reading vorbis stream head")
+-	}
+-
+-	var page vorbis.OggPage
+-	if ret := vorbis.OggSyncPageout(&syncState, &page); ret != 1 {
+-		return nil, nil, errors.New("vorbis: not a valid Ogg bitstream")
++	// The metadata page is a single small self-contained Ogg page at the very
++	// start of the decrypted stream. 512 bytes is the same read window the
++	// previous libogg-based implementation used; the page is ~170 bytes.
++	head := make([]byte, 512)
++	if limit < int64(len(head)) {
++		head = head[:limit]
+ 	}
+-
+-	var streamState vorbis.OggStreamState
+-	vorbis.OggStreamInit(&streamState, vorbis.OggPageSerialno(&page))
+-
+-	defer func() {
+-		vorbis.OggStreamClear(&streamState)
+-		streamState.Free()
+-	}()
+-
+-	if ret := vorbis.OggStreamPagein(&streamState, &page); ret < 0 {
+-		return nil, nil, errors.New("vorbis: the supplied page does not belong this Vorbis stream")
++	if _, err := io.ReadFull(io.NewSectionReader(r, 0, limit), head); err != nil {
++		return nil, nil, fmt.Errorf("failed reading vorbis stream head")
+ 	}
+ 
+-	var packet vorbis.OggPacket
+-	if ret := vorbis.OggStreamPacketout(&streamState, &packet); ret != 1 {
+-		return nil, nil, errors.New("vorbis: unable to fetch initial Vorbis packet from the first page")
++	page, err := parseFirstOggPage(head)
++	if err != nil {
++		return nil, nil, fmt.Errorf("vorbis: not a valid Ogg bitstream: %w", err)
+ 	}
+ 
+-	defer packet.Free()
+-
+ 	// we have the ogg packet, check it is the metadata page
+-	packet.Deref()
+-	body := bytes.NewReader(packet.Packet[:packet.Bytes])
++	body := bytes.NewReader(page.packet)
+ 	if b, _ := body.ReadByte(); b != 0x81 {
+ 		return nil, nil, fmt.Errorf("invalid metadata page")
+ 	}
+@@ -179,8 +151,7 @@ func ExtractMetadataPage(log librespot.Logger, r io.ReaderAt, limit int64) (libr
+ 	}
+ 
+ 	// return a new stream without the metadata page
+-	syncState.Deref()
+-	return io.NewSectionReader(r, int64(syncState.Returned), limit-int64(syncState.Returned)), &metadata, nil
++	return io.NewSectionReader(r, int64(page.size), limit-int64(page.size)), &metadata, nil
+ }
+ 
+ func (m MetadataPage) GetSeekPosition(samplesPos int64) int64 {
+diff --git a/vorbis/oggpage.go b/vorbis/oggpage.go
+new file mode 100644
+index 0000000..57e4922
+--- /dev/null
++++ b/vorbis/oggpage.go
+@@ -0,0 +1,108 @@
++package vorbis
++
++import (
++	"bytes"
++	"encoding/binary"
++	"errors"
++	"fmt"
++)
++
++// Pure-Go parser for the FIRST page of an Ogg bitstream (RFC 3533). It
++// replaces the libogg (cgo) sync/stream machinery that ExtractMetadataPage
++// used only to pull the single Spotify metadata page off the front of the
++// decrypted stream. Dropping that last libogg use lets the STR passthrough
++// build compile with CGO_ENABLED=0 (fully static pure-Go binary, softfloat).
++
++const oggHeaderFixedSize = 27 // bytes before the segment table
++
++// oggCRCTable implements the Ogg page checksum: CRC-32 with the polynomial
++// 0x04c11db7, initial value 0, no bit reversal, no final XOR (RFC 3533
++// appendix A; identical to what libogg's ogg_sync_pageout verifies).
++var oggCRCTable = func() (t [256]uint32) {
++	for i := range t {
++		r := uint32(i) << 24
++		for k := 0; k < 8; k++ {
++			if r&0x80000000 != 0 {
++				r = (r << 1) ^ 0x04c11db7
++			} else {
++				r <<= 1
++			}
++		}
++		t[i] = r
++	}
++	return
++}()
++
++func oggCRC(crc uint32, p []byte) uint32 {
++	for _, b := range p {
++		crc = (crc << 8) ^ oggCRCTable[byte(crc>>24)^b]
++	}
++	return crc
++}
++
++// firstOggPage is the parsed first page of an Ogg stream.
++type firstOggPage struct {
++	// packet is the body of the first packet on the page. The page must
++	// contain the complete packet (no continuation onto a later page).
++	packet []byte
++	// size is the total page size in bytes, i.e. the stream offset at which
++	// the next page begins.
++	size int
++}
++
++// parseFirstOggPage parses and CRC-verifies the Ogg page at offset 0 of buf.
++// It fails when buf does not start with a complete, valid page or when the
++// page's first packet is not fully contained in it, mirroring how the old
++// libogg path errored out on anything but a self-contained head page.
++func parseFirstOggPage(buf []byte) (*firstOggPage, error) {
++	if len(buf) < oggHeaderFixedSize+1 {
++		return nil, errors.New("ogg: stream head too short")
++	}
++	if !bytes.Equal(buf[0:4], []byte("OggS")) {
++		return nil, errors.New("ogg: missing capture pattern")
++	}
++	if buf[4] != 0 {
++		return nil, fmt.Errorf("ogg: unsupported stream structure version %d", buf[4])
++	}
++
++	nsegs := int(buf[26])
++	headerLen := oggHeaderFixedSize + nsegs
++	if len(buf) < headerLen {
++		return nil, errors.New("ogg: truncated segment table")
++	}
++
++	bodyLen := 0
++	packetLen := 0
++	packetDone := false
++	for _, l := range buf[oggHeaderFixedSize:headerLen] {
++		bodyLen += int(l)
++		if !packetDone {
++			packetLen += int(l)
++			if l < 255 {
++				packetDone = true
++			}
++		}
++	}
++	if !packetDone {
++		return nil, errors.New("ogg: first packet continues past the first page")
++	}
++
++	pageLen := headerLen + bodyLen
++	if len(buf) < pageLen {
++		return nil, errors.New("ogg: truncated page body")
++	}
++
++	// The CRC field (bytes 22..25) is zero while the checksum is computed.
++	wantCRC := binary.LittleEndian.Uint32(buf[22:26])
++	crc := oggCRC(0, buf[0:22])
++	crc = oggCRC(crc, []byte{0, 0, 0, 0})
++	crc = oggCRC(crc, buf[26:pageLen])
++	if crc != wantCRC {
++		return nil, fmt.Errorf("ogg: page checksum mismatch (got %08x want %08x)", crc, wantCRC)
++	}
++
++	return &firstOggPage{
++		packet: buf[headerLen : headerLen+packetLen],
++		size:   pageLen,
++	}, nil
++}
+diff --git a/vorbis/oggpage_test.go b/vorbis/oggpage_test.go
+new file mode 100644
+index 0000000..fd0c06a
+--- /dev/null
++++ b/vorbis/oggpage_test.go
+@@ -0,0 +1,147 @@
++package vorbis
++
++import (
++	"bytes"
++	"encoding/binary"
++	"io"
++	"math"
++	"os"
++	"testing"
++)
++
++// TestOggCRCCheckValue pins the CRC parameters to the catalogued check value:
++// poly 0x04c11db7, init 0, no reflection, no final XOR over "123456789" is
++// 0x89a1897f (CRC-32/CKSUM's 0x765e7680 without the final XOR).
++func TestOggCRCCheckValue(t *testing.T) {
++	if got := oggCRC(0, []byte("123456789")); got != 0x89a1897f {
++		t.Fatalf("oggCRC check value = %08x, want 89a1897f", got)
++	}
++}
++
++// TestParseFirstOggPageRealFile validates the parser (structure + CRC) against
++// a real libogg-produced file when one is present. Set OGG_SAMPLE to any .ogg
++// file; the test is skipped otherwise so CI does not need a fixture.
++func TestParseFirstOggPageRealFile(t *testing.T) {
++	path := os.Getenv("OGG_SAMPLE")
++	if path == "" {
++		t.Skip("OGG_SAMPLE not set")
++	}
++	data, err := os.ReadFile(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	page, err := parseFirstOggPage(data)
++	if err != nil {
++		t.Fatalf("parseFirstOggPage on real file: %v", err)
++	}
++	// A Vorbis stream's first packet is the 30-byte identification header.
++	if !bytes.HasPrefix(page.packet, []byte("\x01vorbis")) {
++		t.Fatalf("first packet does not look like a Vorbis id header: %x", page.packet[:8])
++	}
++	// The next page must start right at the reported page size.
++	if !bytes.Equal(data[page.size:page.size+4], []byte("OggS")) {
++		t.Fatalf("page size %d does not land on the next page boundary", page.size)
++	}
++}
++
++// buildMetadataPage assembles a synthetic Spotify metadata page (packet type
++// 0x81 with a seek-table and a replay-gain segment) wrapped in a valid Ogg
++// page, followed by trailing audio bytes.
++func buildMetadataPage(t *testing.T, corruptCRC bool) ([]byte, int) {
++	t.Helper()
++
++	var packet bytes.Buffer
++	packet.WriteByte(0x81)
++
++	// seek table segment: type 0, samples, size, offset index, 100 indices
++	var seek bytes.Buffer
++	seek.WriteByte(0)
++	_ = binary.Write(&seek, binary.LittleEndian, uint32(44100*60))
++	_ = binary.Write(&seek, binary.LittleEndian, uint32(1_000_000))
++	seek.WriteByte(0)
++	for i := 0; i < 100; i++ {
++		seek.WriteByte(10)
++	}
++	_ = binary.Write(&packet, binary.LittleEndian, uint16(seek.Len()))
++	packet.Write(seek.Bytes())
++
++	// replay gain segment: type 1, four float32
++	var gain bytes.Buffer
++	gain.WriteByte(1)
++	for _, f := range []float32{-1.5, 0.9, -2.5, 0.95} {
++		_ = binary.Write(&gain, binary.LittleEndian, math.Float32bits(f))
++	}
++	_ = binary.Write(&packet, binary.LittleEndian, uint16(gain.Len()))
++	packet.Write(gain.Bytes())
++
++	// lacing values for the single packet
++	var lacing []byte
++	rest := packet.Len()
++	for rest >= 255 {
++		lacing = append(lacing, 255)
++		rest -= 255
++	}
++	lacing = append(lacing, byte(rest))
++
++	var page bytes.Buffer
++	page.WriteString("OggS")
++	page.WriteByte(0)                                            // version
++	page.WriteByte(2)                                            // header type: BOS
++	page.Write(make([]byte, 8))                                  // granule
++	_ = binary.Write(&page, binary.LittleEndian, uint32(0xdead)) // serial
++	_ = binary.Write(&page, binary.LittleEndian, uint32(0))      // sequence
++	page.Write(make([]byte, 4))                                  // crc placeholder
++	page.WriteByte(byte(len(lacing)))
++	page.Write(lacing)
++	page.Write(packet.Bytes())
++
++	raw := page.Bytes()
++	crc := oggCRC(0, raw)
++	if corruptCRC {
++		crc ^= 1
++	}
++	binary.LittleEndian.PutUint32(raw[22:26], crc)
++
++	pageLen := len(raw)
++	audio := bytes.Repeat([]byte{0xaa}, 700)
++	return append(raw, audio...), pageLen
++}
++
++func TestExtractMetadataPagePureGo(t *testing.T) {
++	stream, pageLen := buildMetadataPage(t, false)
++
++	rest, meta, err := ExtractMetadataPage(nil, bytes.NewReader(stream), int64(len(stream)))
++	if err != nil {
++		t.Fatalf("ExtractMetadataPage: %v", err)
++	}
++	if !meta.hasSeekTable || !meta.hasReplayGain {
++		t.Fatal("metadata segments not parsed")
++	}
++	if meta.trackGainDb != -1.5 || meta.albumGainDb != -2.5 {
++		t.Fatalf("replay gain mismatch: %v %v", meta.trackGainDb, meta.albumGainDb)
++	}
++	if got := rest.Size(); got != int64(len(stream)-pageLen) {
++		t.Fatalf("audio stream size = %d, want %d", got, len(stream)-pageLen)
++	}
++	b := make([]byte, 4)
++	if _, err := io.ReadFull(io.NewSectionReader(rest, 0, rest.Size()), b); err != nil {
++		t.Fatal(err)
++	}
++	if !bytes.Equal(b, []byte{0xaa, 0xaa, 0xaa, 0xaa}) {
++		t.Fatalf("audio stream does not start after the metadata page: %x", b)
++	}
++}
++
++func TestExtractMetadataPageRejectsBadCRC(t *testing.T) {
++	stream, _ := buildMetadataPage(t, true)
++	if _, _, err := ExtractMetadataPage(nil, bytes.NewReader(stream), int64(len(stream))); err == nil {
++		t.Fatal("corrupt page accepted")
++	}
++}
++
++func TestExtractMetadataPageRejectsNonOgg(t *testing.T) {
++	junk := bytes.Repeat([]byte{0x42}, 600)
++	if _, _, err := ExtractMetadataPage(nil, bytes.NewReader(junk), int64(len(junk))); err == nil {
++		t.Fatal("junk accepted as Ogg")
++	}
++}
