@@ -195,10 +195,23 @@ func (s *Server) stopQueue() {
 
 // advanceAndPlay moves to the next track (natural end vs manual skip differ on
 // repeatOne) and plays it, or stops the queue at the end. The caller must NOT
-// hold boxCmdMu.
-func (s *Server) advanceAndPlay(natural bool) {
+// hold boxCmdMu. gen is the queue generation the advance decision was based
+// on: the watcher decides from a now_playing poll BEFORE this lock, and a user
+// starting a new queue/track meanwhile holds boxCmdMu through wake+push (up to
+// several seconds) and bumps queueGen. Acting on the stale decision would
+// advance the NEW queue and cut off the first track the user just chose, so
+// the advance re-checks the generation once it holds the lock and aborts when
+// superseded.
+func (s *Server) advanceAndPlay(natural bool, gen int) {
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
+	s.queueMu.Lock()
+	superseded := s.queueGen != gen
+	s.queueMu.Unlock()
+	if superseded {
+		s.logger.Info("queue advance: a new queue/track started while this advance waited, standing down")
+		return
+	}
 	var (
 		it queueItem
 		ok bool
@@ -320,7 +333,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 				prog = time.Since(start) // box reported no position; use elapsed
 			}
 			if nearEnd(prog, end) {
-				s.advanceAndPlay(true)
+				s.advanceAndPlay(true, curGen)
 			} else {
 				s.stopQueue() // stopped well before the end: a real stop, not an end
 				return
@@ -329,7 +342,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		default:
 			// No usable status this tick (poll error or an idle box).
 			if !sawPlay && time.Since(start) >= queueStallTimeout {
-				s.advanceAndPlay(true) // a track that never started: skip it
+				s.advanceAndPlay(true, curGen) // a track that never started: skip it
 				continue
 			}
 		}
@@ -340,7 +353,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// PLAY_STATE on a finite file's EOF (#219), neither of which the STOP path
 		// above can catch.
 		if sawPlay && end > 0 && time.Since(start) >= end+queueTimerMargin {
-			s.advanceAndPlay(true)
+			s.advanceAndPlay(true, curGen)
 		}
 	}
 }
@@ -480,7 +493,12 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		card := recentCardCtx{key: req.Card.Key, name: req.Card.Name, art: req.Card.Art}
-		if err := s.startQueue(r.Context(), items, req.Start, req.Shuffle, parseRepeat(req.Repeat), card); err != nil {
+		// Detach the queue start from the request context (#252): the standby
+		// wake inside startQueue can outlast the app's HTTP timeout, and the
+		// first track's push must still reach the box after the app gave up.
+		playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
+		defer playCancel()
+		if err := s.startQueue(playCtx, items, req.Start, req.Shuffle, parseRepeat(req.Repeat), card); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}

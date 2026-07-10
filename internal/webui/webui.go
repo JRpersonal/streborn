@@ -194,6 +194,13 @@ type Server struct {
 	// stream on its own (reported: radio stops after ~11 min, no STR error).
 	lastPlayMu sync.Mutex
 	lastPlay   *lastPlayInfo
+	// recallGen counts every stream push recorded via setLastPlay. Each
+	// recall's verify loop captures the generation of its own play; any later
+	// play bumps it, telling the older verify it was superseded so it stands
+	// down instead of re-pushing its now-unwanted stream over the user's newer
+	// choice (two rapid preset presses used to ping-pong stations for ~15s).
+	// Guarded by lastPlayMu.
+	recallGen uint64
 	// lastPlayPath is the NAND file the last-played stream is persisted to, so
 	// the power-on resume survives an agent restart across a long/overnight
 	// standby (in-RAM only lost the station and the box fell back to its native
@@ -377,6 +384,12 @@ const maxRePushes = 10
 // thus the maximum /now_playing hit rate against the Bose app to about
 // 1/TTL per second regardless of client poll frequency.
 const statusCacheTTL = 2 * time.Second
+
+// playDetachTimeout bounds a play/recall push that has been detached from the
+// caller's request context (#252): long enough for the standby wake (~6-8s)
+// plus the UPnP SetURI+Play on a just-woken box, short enough that an
+// abandoned request cannot hold boxCmdMu indefinitely.
+const playDetachTimeout = 12 * time.Second
 
 // SetWifiSignalFn wires a provider for the latest Wi-Fi signal class
 // (from the boxws gabbo stream). cmd/agent calls this after creating the
@@ -1282,12 +1295,18 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// Detach the play from the request context (#252, same pattern as the
+	// preset recall): the standby wake above can outlast the app's HTTP
+	// timeout, and a caller that gave up must not cancel the playback it asked
+	// for mid-start ("context canceled" right after a slow wake).
+	playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
+	defer playCancel()
 	// A single play replaces any active library queue, so stop auto-advancing.
 	s.stopQueue()
 	// Ad-hoc radio: the box leaves any Spotify source; suppress the #14
 	// auto-attach so it does not jump back to Spotify.
 	if s.spotifySwitchedAway != nil {
-		s.spotifySwitchedAway(r.Context())
+		s.spotifySwitchedAway(playCtx)
 	}
 	// Decide how the box reaches the audio.
 	//
@@ -1324,9 +1343,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	}
 	var playErr error
 	if mime != "" {
-		playErr = s.renderer.PlayURLMime(r.Context(), playURL, req.Title, req.Icon, mime)
+		playErr = s.renderer.PlayURLMime(playCtx, playURL, req.Title, req.Icon, mime)
 	} else {
-		playErr = s.renderer.PlayURL(r.Context(), playURL, req.Title, req.Icon)
+		playErr = s.renderer.PlayURL(playCtx, playURL, req.Title, req.Icon)
 	}
 	if playErr != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{
@@ -1375,6 +1394,17 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ensureBoxReady(r.Context())
+	// recallStart anchors the verify's stand-down decision: a deliberate user
+	// stop/pause/power-off that arrives AFTER this moment must end the verify
+	// retries (the rolling userStopWindow alone expires between the 5s ticks).
+	recallStart := time.Now()
+	// Detach every box-facing step of this recall from the request context
+	// (#252): the standby wake above can outlast the app's HTTP timeout, and a
+	// caller that gave up must not cancel the playback it asked for mid-start.
+	// Previously only the radio branch was detached; the Spotify, library and
+	// queue recalls still died with "context canceled" after a slow wake.
+	playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
+	defer playCancel()
 	// A queue preset (a saved DLNA folder) recalls into the agent play-queue
 	// instead of the single-URL play below: reload its ordered tracks with the
 	// saved shuffle flag and start from the first. We already hold boxCmdMu, so
@@ -1387,7 +1417,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		}
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
 		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
-		if err := s.startQueueLocked(r.Context(), items, 0, p.Shuffle, repeatOff, card); err != nil {
+		if err := s.startQueueLocked(playCtx, items, 0, p.Shuffle, repeatOff, card); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Folder could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
@@ -1397,6 +1427,11 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name, "type": "queue"})
 		return
 	}
+	// Every non-queue recall replaces an active library queue. Without this the
+	// queue watcher kept evaluating the OLD track's timing and, when its
+	// wall-clock net tripped minutes later, yanked playback from the station
+	// the user explicitly chose back to the next queue track.
+	s.stopQueue()
 	// Heal a legacy mis-saved Spotify preset before recall: older versions could
 	// store a Spotify selection as a non-spotify preset whose stream URL encoded
 	// the Spotify container (e.g. /playback/container/<base64 spotify:...>). The
@@ -1451,7 +1486,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		// credential alone: a box with a live-but-never-persisted zeroconf session
 		// plays Spotify fine yet reports not-logged-in, and gating on the credential
 		// alone wrongly refused its recall (Patrick, ST10, 2026-06-24).
-		if s.spotifyCanRecall != nil && !s.spotifyCanRecall(r.Context()) {
+		// Checked on the detached context: on a slow wake the request context
+		// is already cancelled here and the probe would misreport "not picked
+		// in Spotify yet" (422) for a speaker that is logged in fine (#252).
+		if s.spotifyCanRecall != nil && !s.spotifyCanRecall(playCtx) {
 			s.logger.Info("spotify preset recall (app): speaker not logged into Spotify", "slot", slot)
 			// STR plays Spotify through this speaker as a Spotify Connect receiver
 			// (the go-librespot sidecar), not via any Bose account link. The
@@ -1488,14 +1526,14 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			s.spotifySetRecalling()
 		}
 		slotURL := boxurl.SpotifySlot(slot)
-		if err := s.renderer.PlayURLMime(r.Context(), slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
+		if err := s.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
 			})
 			return
 		}
-		s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
+		gen := s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "") // #135
 		uri, name, art, account, shuffle := p.URI, p.Name, p.Art, p.Account, p.Shuffle
 		go func() {
@@ -1512,7 +1550,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
 			}
 			s.logger.Info("spotify soft recall: context load issued", "slot", slot, "warm", warm, "loadAfterMs", time.Since(t0).Milliseconds())
-			s.verifyRecall(slotURL, func(ctx context.Context, lastAttempt bool) {
+			s.verifyRecall(gen, recallStart, slotURL, func(ctx context.Context, lastAttempt bool) {
 				// Re-point the box at the stream WITHOUT re-Play on the early
 				// tries: ServeOgg resumes go-librespot on attach, so this
 				// re-attaches without reshuffling/restarting the track (a re-Play
@@ -1532,7 +1570,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// Radio recall: tell Spotify the box switched away so its #14 auto-attach
 	// does not yank the box back to a still-advancing go-librespot.
 	if s.spotifySwitchedAway != nil {
-		s.spotifySwitchedAway(r.Context())
+		s.spotifySwitchedAway(playCtx)
 	}
 	// A library preset (saved from the Library tab, so Source is set) points at a
 	// finite file on a LAN media server. Recall it like the Library play path:
@@ -1544,17 +1582,17 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		if mime := mimeFromURL(p.StreamURL); mime != "" {
 			directURL := p.StreamURL
 			s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime)
-			if err := s.renderer.PlayURLMime(r.Context(), directURL, p.Name, p.Art, mime); err != nil {
+			if err := s.renderer.PlayURLMime(playCtx, directURL, p.Name, p.Art, mime); err != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]any{
 					"error": "Track could not be played", "detail": guessErrorReason(err),
 					"slot": slot, "name": p.Name,
 				})
 				return
 			}
-			s.setLastPlay(directURL, p.Name, p.Art, mime)
+			gen := s.setLastPlay(directURL, p.Name, p.Art, mime)
 			s.recentNoteCard("upnp", p.StreamURL, p.Name, p.Art, p.StreamURL, "", "") // #135
 			name, art := p.Name, p.Art
-			go s.verifyRecall(directURL, func(ctx context.Context, _ bool) {
+			go s.verifyRecall(gen, recallStart, directURL, func(ctx context.Context, _ bool) {
 				_ = s.renderer.PlayURLMime(ctx, directURL, name, art, mime)
 			}, nil)
 			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
@@ -1568,12 +1606,6 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// stream audio/aac in the DIDL so the box picks the right decoder. The
 	// fixed audio/mpeg label made those stations play silence (#252).
 	mime := upnp.MimeForCodec(p.Codec)
-	// Detach the play command from the request context: a preset recall should
-	// still reach the speaker if the app already gave up on the HTTP response,
-	// and it must never fail on a context the caller cancelled while the box was
-	// still being woken (the "context cancelled" recall regression, #252).
-	playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 12*time.Second)
-	defer playCancel()
 	var playErr error
 	if mime != "" {
 		playErr = s.renderer.PlayURLMime(playCtx, playURL, p.Name, p.Art, mime)
@@ -1594,10 +1626,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.setLastPlay(playURL, p.Name, p.Art, mime)
+	gen := s.setLastPlay(playURL, p.Name, p.Art, mime)
 	s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage) // #135
 	name, art := p.Name, p.Art
-	go s.verifyRecall(playURL, func(ctx context.Context, _ bool) {
+	go s.verifyRecall(gen, recallStart, playURL, func(ctx context.Context, _ bool) {
 		if mime != "" {
 			_ = s.renderer.PlayURLMime(ctx, playURL, name, art, mime)
 		} else {
@@ -1626,10 +1658,23 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 // last-resort recovery. This is the same policy the hardware recall settled on
 // in v0.7.4 (cmd/agent verifySpotifyPlaying); routing both through one contract
 // keeps the soft and hardware paths from drifting again.
-func (s *Server) verifyRecall(expectedLocation string, retry func(ctx context.Context, lastAttempt bool), working func() bool) {
+//
+// gen is the recall generation returned by this recall's setLastPlay and
+// started is when the recall was issued. They feed the stand-down decision
+// (verifyStandDownReason): a newer play supersedes this verify (two rapid
+// preset presses used to spawn dueling verifies that ping-ponged the stations
+// for ~15s), and a deliberate user stop/pause/power-off after `started` ends
+// it (the retry used to audibly restart a station the user had just stopped,
+// and re-armed the transport of a box the user had just powered off - the
+// #197 vector the hardware verifies were already guarded against).
+func (s *Server) verifyRecall(gen uint64, started time.Time, expectedLocation string, retry func(ctx context.Context, lastAttempt bool), working func() bool) {
 	const attempts = 3
 	for attempt := 1; attempt <= attempts; attempt++ {
 		time.Sleep(5 * time.Second)
+		if reason := s.recallStandDownReason(gen, started); reason != "" {
+			s.logger.Info("recall verify: standing down", "reason", reason, "attempt", attempt)
+			return
+		}
 		// working() is a source-specific "it is already fine" signal checked
 		// before the box now_playing state. For Spotify it reports whether the
 		// box is pulling the Ogg stream: now_playing flaps while the box
@@ -1661,14 +1706,71 @@ func (s *Server) verifyRecall(expectedLocation string, retry func(ctx context.Co
 		} else {
 			s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
 		}
+		// Serialize the re-push with every other box command: the Bose
+		// firmware mishandles concurrent writes (see boxCmdMu), and a retry
+		// SOAP call landing during a volume PUT re-created exactly the
+		// collision the mutex was added to prevent.
+		s.boxCmdMu.Lock()
+		// Re-decide under the lock: a newer play or a user stop may have
+		// landed while this retry waited for it, and pushing now would
+		// clobber that newer intent.
+		if reason := s.recallStandDownReason(gen, started); reason != "" {
+			s.boxCmdMu.Unlock()
+			s.logger.Info("recall verify: standing down", "reason", reason, "attempt", attempt)
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		retry(ctx, attempt == attempts)
 		cancel()
+		s.boxCmdMu.Unlock()
 	}
 	s.logger.Warn("recall still not playing after retries")
 	// Wedge detection (#power-cycle hint): decide whether this exhaustion
 	// looks like the box rather than the station, and count it.
 	s.NoteRecallExhausted()
+}
+
+// recallStandDownReason gathers the live inputs for verifyStandDownReason: the
+// current recall generation and the last user-stop / power-off stamps.
+func (s *Server) recallStandDownReason(gen uint64, started time.Time) string {
+	s.lastPlayMu.Lock()
+	curGen := s.recallGen
+	s.lastPlayMu.Unlock()
+	s.lastUserStopMu.Lock()
+	userStop := s.lastUserStop
+	s.lastUserStopMu.Unlock()
+	s.standbyStopMu.Lock()
+	standbyStop := s.lastStandbyStop
+	s.standbyStopMu.Unlock()
+	return verifyStandDownReason(gen, curGen, started, userStop, standbyStop)
+}
+
+// verifyStandDownReason decides whether an in-flight recall verify must abort
+// instead of re-pushing its stream, and why (empty = keep verifying). Pure so
+// the policy is unit-testable:
+//
+//   - A newer play bumped the recall generation: this verify is superseded.
+//     Re-pushing would yank the box off the stream the user chose afterwards.
+//   - The box was powered off after the recall started (#197): a re-push
+//     re-arms the transport and scm ST20 firmware switches back on with it.
+//   - The user deliberately stopped/paused after the recall started: the
+//     retry would audibly restart what they just stopped. Compared against
+//     the recall start, NOT the rolling userStopWindow: that 6s window
+//     expires between the verify's 5/10/15s ticks, so a stop at t=1s would
+//     have been forgotten by the t=10s retry.
+//
+// Stops that PRECEDE the recall never stand it down: recalling a preset right
+// after stopping another station is a normal action whose verify must run.
+func verifyStandDownReason(recallGen, curGen uint64, recallStart, lastUserStop, lastStandbyStop time.Time) string {
+	switch {
+	case curGen != recallGen:
+		return "superseded by a newer play"
+	case !lastStandbyStop.IsZero() && lastStandbyStop.After(recallStart):
+		return "box powered off after the recall (#197)"
+	case !lastUserStop.IsZero() && lastUserStop.After(recallStart):
+		return "user stopped playback after the recall"
+	}
+	return ""
 }
 
 // recallLocationMatches reports whether the box's now-playing location is the
@@ -1718,15 +1820,19 @@ func (s *Server) boxPlayLocation() (location string, busy bool) {
 // setLastPlay records the box-facing stream + metadata for the auto-re-push. A
 // fresh play resets the re-push state (rePushes=0, failed=false), so a stream
 // that was previously declared dead gets a clean slate when the user plays it
-// again.
-func (s *Server) setLastPlay(boxURL, title, art, mime string) {
+// again. It returns the new recall generation; a recall passes it to
+// verifyRecall so the verify stands down as soon as a later play bumps it.
+func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	now := time.Now()
 	s.lastPlayMu.Lock()
 	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now}
+	s.recallGen++
+	gen := s.recallGen
 	s.lastPlayMu.Unlock()
 	// Persist so the power-on resume survives an agent restart over a long
 	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.
 	s.persistLastPlay(boxURL, title, art, mime, now)
+	return gen
 }
 
 // persistedLastPlay is the on-NAND shape of the last-played stream (the resume
@@ -1789,6 +1895,11 @@ func (s *Server) loadLastPlay() {
 // lets the auto-re-push (#4) and the power-button wake-resume work for hardware
 // presses too, which otherwise left lastPlay unset and the box un-resumable.
 func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
+	// A hardware recall is by definition a non-queue play (cmd/agent routes a
+	// queue preset through RecallSlot, which never reaches here): drop any
+	// active library queue so its watcher does not advance over the user's new
+	// choice minutes later.
+	s.stopQueue()
 	s.setLastPlay(boxURL, title, art, mime)
 }
 
