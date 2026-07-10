@@ -1,7 +1,7 @@
 // Diagnostic-log export. Bundles the desktop app log file plus
 // per-known-box snapshots (Bose /info, STR /api/status, STR
-// /api/agent/version) into a single zip that the user can attach
-// to a GitHub issue.
+// /api/agent/version, the live multiroom zone) into a single zip
+// that the user can attach to a GitHub issue.
 //
 // All output is anonymized for public sharing by default:
 //   - Real LAN IPs in the box list and inside the log are masked to
@@ -88,7 +88,7 @@ Boxes asked: %d
 Contents:
   README.txt            this file
   app.log               desktop app log (rolling, up to 2 MB)
-  box-<n>.json          per-box snapshot (Bose /info + STR /api/status + /api/agent/version)
+  box-<n>.json          per-box snapshot (Bose /info + STR /api/status + /api/agent/version + /api/box/zone)
   stick-<n>/setup.log   FAT32 setup.log if an STR stick is plugged into this PC
   stick-<n>/_meta.json  drive metadata (path, label, free space)
   manifest.json         summary
@@ -303,13 +303,18 @@ type boxIndexEntry struct {
 }
 
 type boxSnapshot struct {
-	Host          string         `json:"host"`
-	BoseInfo      string         `json:"boseInfoXml"`
-	STRStatus     string         `json:"strStatusJson"`
-	STRAgentVer   map[string]any `json:"strAgentVersion"`
-	ReachableSSH  bool           `json:"reachableSSH"`
-	Reachable8090 bool           `json:"reachable8090"`
-	Reachable8888 bool           `json:"reachable8888"`
+	Host        string         `json:"host"`
+	BoseInfo    string         `json:"boseInfoXml"`
+	STRStatus   string         `json:"strStatusJson"`
+	STRAgentVer map[string]any `json:"strAgentVersion"`
+	// STRZone is the box's live multiroom zone (GET /api/box/zone via the
+	// agent), best-effort and empty when the agent is down or predates the
+	// zone API. Group bugs (#70) were previously undiagnosable from a bundle
+	// because nothing recorded who was master/member at export time.
+	STRZone       string `json:"strZoneJson,omitempty"`
+	ReachableSSH  bool   `json:"reachableSSH"`
+	Reachable8090 bool   `json:"reachable8090"`
+	Reachable8888 bool   `json:"reachable8888"`
 	// Reachable8091 is the box's UPnP/DLNA media-renderer port, served by a
 	// separate firmware process from the Bose REST API (:8090) and the STR
 	// agent. A box that answers here but nowhere else is ON the network with a
@@ -407,6 +412,9 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	if s.Reachable8888 {
 		base := fmt.Sprintf("http://%s:%d", host, strPort)
 		s.STRStatus = httpGetText(base+"/api/status", 4096)
+		// Live multiroom zone, best-effort (empty on stock boxes, agents
+		// without the zone API, or a zone read the box firmware rejects).
+		s.STRZone = httpGetText(base+"/api/box/zone", 4096)
 		raw := httpGetText(base+"/api/agent/version", 1024)
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)
@@ -580,6 +588,8 @@ func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 	s.Host = maskIP(s.Host)
 	s.BoseInfo = anonymizeBoseInfoXML(s.BoseInfo)
 	s.STRStatus = anonymizeText(s.STRStatus)
+	// The zone JSON carries member IPs and device IDs.
+	s.STRZone = anonymizeText(s.STRZone)
 	// /api/agent/version carries the user-chosen friendlyName ("Bose Wit"), which
 	// was previously copied into the bundle verbatim. Round-trip the parsed map
 	// through scrubPII so friendlyName (and any device ID it grows) is hashed like

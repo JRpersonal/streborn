@@ -1974,15 +1974,21 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 }
 
 // DissolveZone tears down the multiroom zone led by masterHost (#70 beta).
+// Logged with the outcome: group bugs reported from the field were previously
+// undiagnosable because the app log never said which zone operations ran.
 func (a *App) DissolveZone(masterHost string, masterPort int) error {
 	resp, err := a.boxDo(masterHost, masterPort, http.MethodDelete, "/api/box/zone", "", "")
 	if err != nil {
+		a.logger.Info("zone: dissolve failed", "master", masterHost, "err", err)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return readHTTPError(resp)
+		herr := readHTTPError(resp)
+		a.logger.Info("zone: dissolve rejected", "master", masterHost, "err", herr)
+		return herr
 	}
+	a.logger.Info("zone: dissolved", "master", masterHost)
 	return nil
 }
 
@@ -2408,12 +2414,16 @@ func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime,
 	})
 	resp, err := a.playPost(host, port, "/api/play", string(body))
 	if err != nil {
+		a.logger.Info("play: url failed", "host", host, "title", title, "err", err)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", friendlyError(resp))
+		msg := friendlyError(resp)
+		a.logger.Info("play: url rejected", "host", host, "title", title, "status", resp.StatusCode, "err", msg)
+		return fmt.Errorf("%s", msg)
 	}
+	a.logger.Info("play: url accepted", "host", host, "title", title, "mime", mime, "codec", codec)
 	return nil
 }
 
@@ -2422,14 +2432,25 @@ func (a *App) PlayURL(host string, port int, streamURL, title, icon, uuid, mime,
 // {"items":[{"url","title","art","mime","duration_sec"}],"start","shuffle","repeat"}.
 // The queue auto-advances on the box; a single PlayURL later clears it.
 func (a *App) StartQueue(host string, port int, payloadJSON string) error {
+	// Item count and shuffle flag pulled out for the log line only; the
+	// payload itself passes through untouched (the frontend owns the shape).
+	var q struct {
+		Items   []json.RawMessage `json:"items"`
+		Shuffle bool              `json:"shuffle"`
+	}
+	_ = json.Unmarshal([]byte(payloadJSON), &q)
 	resp, err := a.playPost(host, port, "/api/queue", payloadJSON)
 	if err != nil {
+		a.logger.Info("queue: start failed", "host", host, "items", len(q.Items), "err", err)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", friendlyError(resp))
+		msg := friendlyError(resp)
+		a.logger.Info("queue: start rejected", "host", host, "items", len(q.Items), "status", resp.StatusCode, "err", msg)
+		return fmt.Errorf("%s", msg)
 	}
+	a.logger.Info("queue: started", "host", host, "items", len(q.Items), "shuffle", q.Shuffle)
 	return nil
 }
 
