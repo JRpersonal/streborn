@@ -1660,6 +1660,15 @@ type Preset struct {
 	Account   string `json:"account,omitempty"`  // Spotify presets: owning account
 	Source    string `json:"source,omitempty"`   // DLNA presets: media server name (cosmetic badge)
 	Homepage  string `json:"homepage,omitempty"` // radio presets: station website (recent "website" link)
+	// Queue presets (Type=="queue", a saved DLNA folder) carry the shuffle
+	// flag and the ordered track list. Items stays raw JSON on purpose: the
+	// agent owns that schema (internal/presets PresetItem), and the copy-
+	// presets flow must round-trip it VERBATIM. A typed mirror was missing
+	// here once already, so GetPresets silently dropped the tracks and the
+	// target then rejected the copied preset as an empty folder, aborting the
+	// whole transfer.
+	Shuffle bool            `json:"shuffle,omitempty"`
+	Items   json.RawMessage `json:"items,omitempty"`
 }
 
 func (a *App) baseURL(host string, port int) string {
@@ -2244,21 +2253,30 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 		return 0, fmt.Errorf("read source presets: %w", err)
 	}
 	copied := 0
+	var slotErrs []string
 	for _, p := range presets {
 		if p.Slot < 1 || p.Slot > 6 || p.Name == "" {
 			continue
 		}
 		// PUT the source preset verbatim (via boxPut, so the target's port
-		// fallback applies too) so radio and Spotify presets keep all their
-		// fields (type, uri, account, art, bitrate) with no field mapping.
+		// fallback applies too) so radio, Spotify and queue presets keep all
+		// their fields (type, uri, account, art, bitrate, shuffle, items)
+		// with no field mapping. A rejected slot is reported but must not
+		// abort the transfer: the remaining slots still copy.
 		if err := a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p); err != nil {
-			return copied, fmt.Errorf("write preset %d: %w", p.Slot, err)
+			a.logger.Warn("copy presets: slot rejected by the target",
+				"src", srcHost, "dst", dstHost, "slot", p.Slot, "type", p.Type, "err", err)
+			slotErrs = append(slotErrs, fmt.Sprintf("preset %d (%s): %v", p.Slot, p.Name, err))
+			continue
 		}
 		copied++
 	}
 	// Re-push the target's hardware keys so 1-6 on the speaker match the copy.
 	if _, err := a.SyncBoxPresets(dstHost, dstPort); err != nil {
 		a.logger.Warn("copy presets: target hardware sync failed", "dst", dstHost, "err", err)
+	}
+	if len(slotErrs) > 0 {
+		return copied, fmt.Errorf("%s", strings.Join(slotErrs, "; "))
 	}
 	return copied, nil
 }
