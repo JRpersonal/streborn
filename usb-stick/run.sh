@@ -758,16 +758,64 @@ sync_stick_to_nand_always() {
     # unavailable until the next OTA finds room) rather than filling the volume.
     if [ -r "$STICK_GLR" ]; then
         _glr_kb=$(( $(wc -c < "$STICK_GLR" 2>/dev/null || echo 0) / 1024 ))
-        _free_kb=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}')
-        if [ "${_glr_kb:-0}" -gt 0 ] && [ "${_free_kb:-0}" -gt $(( _glr_kb + 3072 )) ]; then
-            if cp "$STICK_GLR" "$CACHED_GLR.new" 2>/dev/null && chmod +x "$CACHED_GLR.new" && mv "$CACHED_GLR.new" "$CACHED_GLR" 2>/dev/null; then
-                log "stick go-librespot deployed to NAND cache ($(wc -c < "$CACHED_GLR") bytes)"
-            else
-                log "stick -> NAND go-librespot deploy failed, keeping previous"
-                rm -f "$CACHED_GLR.new"
-            fi
+        _sgm5=$(md5sum "$STICK_GLR" 2>/dev/null | awk '{print $1}')
+        _ngm5=""
+        [ -s "$CACHED_GLR" ] && _ngm5=$(md5sum "$CACHED_GLR" 2>/dev/null | awk '{print $1}')
+        if [ "${_glr_kb:-0}" -le 0 ] || [ -z "$_sgm5" ]; then
+            # Empty or unhashable stick engine: never trade a working NAND
+            # engine for a source we cannot even read back.
+            [ "${_glr_kb:-0}" -gt 0 ] && log "stick go-librespot unreadable (md5 failed), keeping the current NAND engine"
+        elif [ -n "$_ngm5" ] && [ "$_sgm5" = "$_ngm5" ]; then
+            # Identical engine already cached: no copy, no removal, no flash
+            # wear on the steady-state boot.
+            :
         else
-            log "NAND tight (${_free_kb:-?}KB free, go-librespot needs ${_glr_kb}KB + margin), deferring the Spotify engine so it cannot crowd out the agent binary"
+            if [ -n "$_ngm5" ]; then
+                # The stick carries a DIFFERENT engine. Old + new (~16 MB
+                # each) never fit side by side on a tight NAND, so remove the
+                # old engine (and its .sha256 stamp, see webui.go's
+                # goLibrespotStamp) BEFORE staging the copy and re-read df so
+                # the freed space counts toward the gate. Failure window: a
+                # power cut between this remove and the verified copy below
+                # leaves the box engine-less - acceptable, the agent's
+                # EnsureSpotifyEngine re-delivers over the air and the next
+                # stick boot retries this sync.
+                log "stick carries a different go-librespot (stick=$_sgm5 nand=$_ngm5), removing the old NAND engine before staging the new one"
+                rm -f "$CACHED_GLR" "$CACHED_GLR.sha256" "$CACHED_GLR.new" 2>/dev/null
+                sync 2>/dev/null
+            fi
+            _free_kb=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}')
+            # UBIFS compresses transparently (LZO, measured 1.5-1.6x on Go
+            # binaries) and its df free figure is deliberately pessimistic
+            # (it assumes future writes are incompressible). Gating the raw
+            # binary size against that figure refuses engines that actually
+            # fit, so gate on a conservative 1.33x compression estimate of
+            # the on-flash size instead.
+            _glr_flash_kb=$(( _glr_kb * 3 / 4 ))
+            if [ "${_free_kb:-0}" -gt $(( _glr_flash_kb + 3072 )) ]; then
+                if cp "$STICK_GLR" "$CACHED_GLR.new" 2>/dev/null && chmod +x "$CACHED_GLR.new" && mv "$CACHED_GLR.new" "$CACHED_GLR" 2>/dev/null; then
+                    # Same flash-verify as the agent binary above: on a full
+                    # NAND the write can land in the page cache while the
+                    # flash pages stay erased (#302). A corrupt OPTIONAL
+                    # engine is worse than a missing one (the agent's
+                    # supervise loop would crash-loop it), so drop it on
+                    # mismatch and let EnsureSpotifyEngine re-deliver.
+                    sync 2>/dev/null
+                    [ -w /proc/sys/vm/drop_caches ] && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
+                    _ngm5=$(md5sum "$CACHED_GLR" 2>/dev/null | awk '{print $1}')
+                    if [ "$_ngm5" = "$_sgm5" ]; then
+                        log "stick go-librespot deployed to NAND cache ($(wc -c < "$CACHED_GLR") bytes, flash-verified)"
+                    else
+                        rm -f "$CACHED_GLR" "$CACHED_GLR.sha256" 2>/dev/null
+                        log "stick -> NAND go-librespot flash-verify FAILED (stick=$_sgm5 nand=$_ngm5), removed the unverified engine; the agent re-delivers it over the air"
+                    fi
+                else
+                    log "stick -> NAND go-librespot deploy failed; engine absent until the agent re-delivers it over the air"
+                    rm -f "$CACHED_GLR.new"
+                fi
+            else
+                log "NAND tight (${_free_kb:-?}KB free, go-librespot needs ~${_glr_flash_kb}KB on flash + margin), deferring the Spotify engine so it cannot crowd out the agent binary"
+            fi
         fi
     fi
     return 0
