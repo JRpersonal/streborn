@@ -43,9 +43,9 @@ func TestExtractLargestFile(t *testing.T) {
 	tgz := filepath.Join(dir, "app.tar.gz")
 	binContent := string(bytes.Repeat([]byte("X"), 5000)) // the "binary"
 	makeTarGz(t, tgz, map[string]string{
-		"README.txt":  "small readme",
-		"ST Reborn":   binContent,
-		"LICENSE":     "license text",
+		"README.txt": "small readme",
+		"ST Reborn":  binContent,
+		"LICENSE":    "license text",
 	})
 	out := filepath.Join(dir, "extracted")
 	if err := extractLargestFile(tgz, out); err != nil {
