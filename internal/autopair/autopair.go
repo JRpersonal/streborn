@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -40,6 +41,19 @@ type Manager struct {
 	logger *slog.Logger
 	cfg    Config
 	client *http.Client
+	// base is the box's BoseApp REST origin ("http://<host>:8090").
+	// A field (not recomputed per request) so tests can point the
+	// Manager at an httptest server.
+	base string
+
+	// inFlight makes the pair cycle single-flight: the RunBackground
+	// ticker, hardware preset presses and app recalls all trigger
+	// pairing concurrently, and /setMargeAccount can hang for many
+	// seconds on a slow/booting box. Without this the triggers stack
+	// into a POST storm against :8090 (seen live: repeated 8s-timeout
+	// pair POSTs every tick, #375). A trigger that finds a cycle
+	// already running simply coalesces into it.
+	inFlight atomic.Bool
 
 	// lastPaired is the result of the most recent EnsurePaired call.
 	// nil = unknown (no successful status read yet), &true / &false
@@ -68,13 +82,13 @@ func New(logger *slog.Logger, cfg Config) *Manager {
 		logger: logger,
 		cfg:    cfg,
 		client: &http.Client{Timeout: 8 * time.Second},
+		base:   "http://" + cfg.BoxHost + ":8090",
 	}
 }
 
 // IsPaired reads /info and checks whether margeAccountUUID is set.
 func (m *Manager) IsPaired(ctx context.Context) (bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("http://%s:8090/info", m.cfg.BoxHost), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.base+"/info", nil)
 	if err != nil {
 		return false, err
 	}
@@ -101,8 +115,7 @@ func hasMargeUUID(body []byte) bool {
 // Success = box answers 200 OK (margeAccountUUID is set afterwards).
 func (m *Manager) Pair(ctx context.Context) error {
 	body := buildPairXML(m.cfg.AccountID, m.cfg.AuthToken, m.cfg.Email)
-	url := fmt.Sprintf("http://%s:8090/setMargeAccount", m.cfg.BoxHost)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.base+"/setMargeAccount", strings.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -131,6 +144,26 @@ func (m *Manager) Pair(ctx context.Context) error {
 // Gating here lets the periodic ticker simply retry until the clock
 // is sane.
 func (m *Manager) EnsurePaired(ctx context.Context) error {
+	return m.ensure(ctx, false)
+}
+
+// ensure is EnsurePaired's implementation. force additionally re-asserts the
+// account when the box already reports paired: used on the first cycle after
+// agent start, where a stale "paired" can hide two real problems - (a) the
+// box's boot-time cloud check ran against the real, dead streaming.bose.com
+// before STR's marge stub was up (/etc/hosts is tmpfs on several firmwares,
+// so the interception is lost on every reboot) and left the amber cloud icon
+// on; the setMargeAccount -> marge round trip is the documented clearer
+// (#270, v0.5.26 finding). (b) Some firmwares keep the UUID but drop the
+// login state (SoundTouch 300).
+func (m *Manager) ensure(ctx context.Context, force bool) error {
+	if !m.inFlight.CompareAndSwap(false, true) {
+		// Another trigger's cycle is already running; it answers for this
+		// one too. Never stack setMargeAccount POSTs on a slow box (#375).
+		m.logger.Debug("autopair: pair cycle already in flight, coalescing")
+		return nil
+	}
+	defer m.inFlight.Store(false)
 	paired, err := m.IsPaired(ctx)
 	if err != nil {
 		// Status read failure is a phase marker on its own: it tells the
@@ -142,7 +175,7 @@ func (m *Manager) EnsurePaired(ctx context.Context) error {
 		return fmt.Errorf("check status: %w", err)
 	}
 	m.recordPairedState(paired)
-	if paired {
+	if paired && !force {
 		// Debug-level on the steady-state tick; the every-Nth heartbeat
 		// emitted by RunBackground keeps the diagnostic bundle honest
 		// without flooding the log on a healthy box.
@@ -154,7 +187,11 @@ func (m *Manager) EnsurePaired(ctx context.Context) error {
 			"boxDate", when)
 		return nil
 	}
-	m.logger.Warn("autopair phase: box not paired, starting auto pair", "accountID", m.cfg.AccountID)
+	if paired {
+		m.logger.Warn("autopair phase: first cycle after start, re-asserting the account (clears a stale paired state and the dead-cloud amber icon)", "accountID", m.cfg.AccountID)
+	} else {
+		m.logger.Warn("autopair phase: box not paired, starting auto pair", "accountID", m.cfg.AccountID)
+	}
 	if err := m.Pair(ctx); err != nil {
 		return fmt.Errorf("pair: %w", err)
 	}
@@ -187,8 +224,7 @@ func (m *Manager) recordPairedState(paired bool) {
 // later. The second return value is the parsed (or raw) date string
 // for logging.
 func (m *Manager) boxClockSane(ctx context.Context) (bool, string) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("http://%s:8090/info", m.cfg.BoxHost), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.base+"/info", nil)
 	if err != nil {
 		return false, "request-build-failed"
 	}
@@ -254,7 +290,11 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 	defer tick.Stop()
 	for {
 		m.tickCount++
-		if err := m.EnsurePaired(ctx); err != nil {
+		// The first cycle after start forces a re-assert even when the box
+		// reports paired: see ensure() for the two live failure modes a
+		// stale "paired" hides (amber cloud icon after reboot, ST300 silent
+		// login loss).
+		if err := m.ensure(ctx, m.tickCount == 1); err != nil {
 			m.logger.Warn("auto pair failed, will retry next tick", "err", err)
 		} else if m.tickCount%heartbeatEvery == 0 {
 			state := "unknown"
