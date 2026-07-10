@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -101,6 +102,11 @@ func TestClassifyNANDWriteErr(t *testing.T) {
 // cannot leave a (truncated) .new behind: the cleanup also covers the
 // optimistic attempt that the pessimistic gate would previously have refused.
 func TestWriteBinaryAtomicCleansTruncatedTempOnFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The read-only-dir stand-in for ENOSPC only blocks writes on POSIX;
+		// Windows directory permissions do not stop file creation.
+		t.Skip("read-only dir does not fail writes on windows")
+	}
 	orig := nandHasRoom
 	nandHasRoom = func(string, int64) bool { return false }
 	defer func() { nandHasRoom = orig }()
