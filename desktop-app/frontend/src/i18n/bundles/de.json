@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "\"{{name}}\" nimmt gerade keine Wiedergabe an. Bitte kurz den Netzstecker ziehen und wieder einstecken - danach geht es normal weiter.",
   "presets.transferBtn": "Übertragen",
   "presets.transferNoTargets": "Kein anderer Lautsprecher zum Übertragen gefunden",
-  "group.label": "Gruppe:",
+  "group.label": "Gruppe erstellen mit:",
   "group.addTitle": "{{name}} zur Gruppe hinzufügen",
   "group.removeTitle": "{{name}} aus der Gruppe entfernen",
   "group.volumeLabel": "Gruppen-Lautstärke",

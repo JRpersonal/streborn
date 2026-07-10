@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "\"{{name}}\" لا تقبل التشغيل حالياً. افصلها عن الكهرباء للحظة ثم أعد توصيلها، وستعمل بشكل طبيعي مجدداً.",
   "presets.transferBtn": "نقل",
   "presets.transferNoTargets": "لا توجد سمّاعة أخرى للنقل إليها",
-  "group.label": "المجموعة:",
+  "group.label": "إنشاء مجموعة مع:",
   "group.addTitle": "إضافة {{name}} إلى المجموعة",
   "group.removeTitle": "إزالة {{name}} من المجموعة",
   "group.volumeLabel": "مستوى صوت المجموعة",

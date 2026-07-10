@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "\"{{name}}\" pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli.",
   "presets.transferBtn": "Pārnest",
   "presets.transferNoTargets": "Nav atrasts cits skaļrunis, uz kuru pārnest",
-  "group.label": "Grupa:",
+  "group.label": "Izveidot grupu ar:",
   "group.addTitle": "Pievienot {{name}} grupai",
   "group.removeTitle": "Noņemt {{name}} no grupas",
   "group.volumeLabel": "Grupas skaļums",

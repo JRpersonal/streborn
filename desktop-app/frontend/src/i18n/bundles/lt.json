@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "„{{name}}“ šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai.",
   "presets.transferBtn": "Perkelti",
   "presets.transferNoTargets": "Nerasta kito garsiakalbio, į kurį perkelti",
-  "group.label": "Grupė:",
+  "group.label": "Sukurti grupę su:",
   "group.addTitle": "Pridėti {{name}} į grupę",
   "group.removeTitle": "Pašalinti {{name}} iš grupės",
   "group.volumeLabel": "Grupės garsumas",

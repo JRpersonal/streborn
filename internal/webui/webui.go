@@ -4911,6 +4911,20 @@ func (s *Server) mirrorToSlaves(ctx context.Context, z zones.Zone, reconcile boo
 		s.logger.Info("zone mirror: master is not playing yet; slaves will mirror once you start playback and the reconcile fires (beta)")
 		return
 	}
+	// A deliberate form/remove must NOT resurrect playback the user stopped.
+	// lastPlay outlives a stop, so pushing it here on the unconditional
+	// (reconcile=false) path restarted a group the user had just stopped:
+	// stopping a mirror group and then removing one slave restarted the stream
+	// on ALL members including the removed one (live, Portable master + 2 ST10,
+	// 2026-07-10). Only push when the master is actually playing its stream and
+	// no user stop is in effect; otherwise just update the membership silently.
+	// The reconcile=true path has its own per-box now-playing guards below.
+	if !reconcile {
+		if standby, busy := s.boxPlayState(); standby || !busy || s.userStoppedRecently() {
+			s.logger.Info("zone mirror: master is stopped, updating group membership without restarting playback (beta)")
+			return
+		}
+	}
 	if reconcile {
 		np := s.snapshotNowPlaying(ctx)
 		if reason := masterMirrorSkipReason(np, lp.boxURL); reason != "" {

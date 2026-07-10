@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "\"{{name}}\" no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad.",
   "presets.transferBtn": "Transferir",
   "presets.transferNoTargets": "No se encontró otro altavoz al que transferir",
-  "group.label": "Grupo:",
+  "group.label": "Crear grupo con:",
   "group.addTitle": "Añadir {{name}} al grupo",
   "group.removeTitle": "Quitar {{name}} del grupo",
   "group.volumeLabel": "Volumen del grupo",

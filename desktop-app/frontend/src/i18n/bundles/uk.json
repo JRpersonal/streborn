@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "\"{{name}}\" зараз не приймає відтворення. На мить вимкніть його з розетки та увімкніть знову - після цього він працюватиме нормально.",
   "presets.transferBtn": "Перенести",
   "presets.transferNoTargets": "Не знайдено іншого динаміка для перенесення",
-  "group.label": "Група:",
+  "group.label": "Створити групу з:",
   "group.addTitle": "Додати {{name}} до групи",
   "group.removeTitle": "Вилучити {{name}} з групи",
   "group.volumeLabel": "Гучність групи",

@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "「{{name}}」が再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。",
   "presets.transferBtn": "転送",
   "presets.transferNoTargets": "転送先となる他のスピーカーが見つかりません",
-  "group.label": "グループ:",
+  "group.label": "グループを作成:",
   "group.addTitle": "{{name}} をグループに追加",
   "group.removeTitle": "{{name}} をグループから外す",
   "group.volumeLabel": "グループの音量",

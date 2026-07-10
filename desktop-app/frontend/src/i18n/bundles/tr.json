@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "\"{{name}}\" şu anda oynatmayı kabul etmiyor. Fişini kısa süre çekip tekrar takın - ardından normal çalışır.",
   "presets.transferBtn": "Aktar",
   "presets.transferNoTargets": "Aktarılacak başka hoparlör bulunamadı",
-  "group.label": "Grup:",
+  "group.label": "Grup oluştur:",
   "group.addTitle": "{{name}} grubu ekle",
   "group.removeTitle": "{{name}} gruptan çıkar",
   "group.volumeLabel": "Grup ses düzeyi",

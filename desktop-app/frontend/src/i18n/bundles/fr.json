@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "\"{{name}}\" n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement.",
   "presets.transferBtn": "Transférer",
   "presets.transferNoTargets": "Aucune autre enceinte trouvée pour le transfert",
-  "group.label": "Groupe :",
+  "group.label": "Créer un groupe avec :",
   "group.addTitle": "Ajouter {{name}} au groupe",
   "group.removeTitle": "Retirer {{name}} du groupe",
   "group.volumeLabel": "Volume du groupe",

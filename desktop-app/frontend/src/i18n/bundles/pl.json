@@ -1142,7 +1142,7 @@
   "speaker.wedgedBanner": "\"{{name}}\" obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie.",
   "presets.transferBtn": "Przenieś",
   "presets.transferNoTargets": "Nie znaleziono innego głośnika do przeniesienia",
-  "group.label": "Grupa:",
+  "group.label": "Utwórz grupę z:",
   "group.addTitle": "Dodaj {{name}} do grupy",
   "group.removeTitle": "Usuń {{name}} z grupy",
   "group.volumeLabel": "Głośność grupy",
