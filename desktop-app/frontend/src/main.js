@@ -3925,7 +3925,28 @@ async function play(slot) {
     if (wasIdle) reapplyDesiredVolume();
     refreshStatus();
     setTimeout(refreshStatus, 1500);
-  } catch (e) {
+  } catch (e0) {
+    let e = e0;
+    // Newer agents reject a recall sent to a grouped follower with a
+    // structured 409 ({"error":"box-grouped","master":...}): retry ONCE on
+    // the group master, which distributes the audio to the group. Older
+    // agents send a raw SOAP string and take the error path unchanged.
+    const rej = parsePlayRejection(e0);
+    if (rej.grouped) {
+      const mb = resolveBoxByRef(rej.master, state.boxes) || effectivePlayTarget();
+      if (mb && state.currentBox && mb.host !== state.currentBox.host) {
+        try {
+          await PlaySlot(mb.host, mb.port, slot);
+          delete state.presetErrors[slot];
+          if (wasIdle) reapplyDesiredVolume();
+          refreshStatus();
+          setTimeout(refreshStatus, 1500);
+          return;
+        } catch (e2) {
+          e = e2; // surface the master's error, not the follower's rejection
+        }
+      }
+    }
     const errStr = String(e);
     state.nowPlayState = '';
     state.nowLocation = '';
@@ -4965,8 +4986,15 @@ function preferMp3SiblingForBox(s, list) {
 // usually-silent recovery. Used by every radio play-now button.
 async function playStation(s) {
   // A play aimed at a zone follower must go to its master instead (#70).
-  const box = effectivePlayTarget();
+  let box = effectivePlayTarget();
   if (!box) return;
+  // The user-facing selection when this play started. Every await below
+  // re-checks it: without the guard, a speaker switch during the retry loop
+  // kept starting playback on the PREVIOUS speaker and painted its buffering
+  // state onto the newly selected one. Identity, not object equality — a
+  // background discovery replaces the box object for the same device.
+  const startBox = state.currentBox;
+  const switched = () => !sameBoxIdentity(state.currentBox, startBox);
   // Box playback prefers an MP3 sibling over an AAC entry of the same station
   // when the already-loaded result list offers one (#252): the speaker's AAC
   // path is the fragile one, the MP3 mirror of the same station is rock solid.
@@ -4975,7 +5003,9 @@ async function playStation(s) {
   s = preferMp3SiblingForBox(s, state.searchResults);
   const tried = new Set();
   let cur = s;
+  let retargeted = false;
   for (let attempt = 0; attempt < 4; attempt++) {
+    if (switched()) return;
     const url = cur.url_resolved || cur.url;
     const host = extractHost(url);
     if (host) tried.add(host);
@@ -5018,9 +5048,29 @@ async function playStation(s) {
       setTimeout(refreshStatus, 1200);
       fail = await pollStreamFailure(box, url);
     } catch (err) {
+      // Newer agents reject a play sent to a grouped follower with a
+      // structured 409 ({"error":"box-grouped","master":...}): retarget the
+      // play ONCE to the group master instead of cycling through alternative
+      // sources. Older agents send a raw SOAP string, which falls through to
+      // the unreachable path below exactly as before.
+      const rej = parsePlayRejection(err);
+      if (rej.grouped && !retargeted) {
+        const mb = resolveBoxByRef(rej.master, state.boxes)
+          || resolvePlayTarget(box, state.zoneLive, state.boxes);
+        if (mb && mb.host !== box.host) {
+          retargeted = true;
+          box = mb;
+          attempt--; // the retarget must not burn an alternative-source attempt
+          continue;
+        }
+      }
       // A synchronous failure (box refused the URI) reads as unreachable.
       fail = { reason: 'unreachable', status: 0 };
     }
+    // The user may have switched speakers during the play/verdict round trip:
+    // stop here so the failure handling below cannot repaint the new
+    // speaker's UI or start an alternative stream on the old one.
+    if (switched()) return;
     if (!fail) return; // playing fine
 
     if (fail.reason === 'offline') {
@@ -5041,6 +5091,7 @@ async function playStation(s) {
     }
 
     const alt = await findAlternativeStation(s, tried);
+    if (switched()) return; // speaker switched during the search: stop quietly
     if (!alt) {
       state.nowPlayState = '';
       state.nowLocation = '';
