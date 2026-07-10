@@ -1213,9 +1213,16 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		cancel()
 	}
 	if h.autoPair != nil {
-		pairCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
-		h.autoPair.TriggerNow(pairCtx)
-		cancel()
+		// Fire-and-forget, mirroring the app-recall path (9a9b0c7): the
+		// :8090 pair POST hangs for seconds on several firmwares, and running
+		// it inline here kept the box's own "SERVICE NOT AVAILABLE" flash on
+		// screen for that whole gap on every hardware press (#270). Pairing
+		// is not a precondition for the UPnP push below.
+		go func() {
+			pairCtx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			defer cancel()
+			h.autoPair.TriggerNow(pairCtx)
+		}()
 	}
 
 	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -1569,9 +1576,13 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 		c()
 	}
 	if h.autoPair != nil {
-		pairCtx, c := context.WithTimeout(ctx, 6*time.Second)
-		h.autoPair.TriggerNow(pairCtx)
-		c()
+		// Fire-and-forget (9a9b0c7): never let a hanging :8090 pair POST sit
+		// between the button press and playback (#270).
+		go func() {
+			pairCtx, c := context.WithTimeout(context.Background(), 6*time.Second)
+			defer c()
+			h.autoPair.TriggerNow(pairCtx)
+		}()
 	}
 	// Load the playlist (audio): a default preset resumes where the user left off
 	// (shuffle off, in-order); a shuffle preset starts on a fresh random track.
