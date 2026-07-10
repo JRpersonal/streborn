@@ -373,20 +373,47 @@ func run() error {
 	spotifyMgr := spotify.New(goLibrespotPath, "/mnt/nv/streborn/sp-cache", "ST Reborn", spotifyBox, logger.With("comp", "spotify"))
 	// Mirror a Spotify Connect volume change onto the whole multiroom group:
 	// go-librespot runs only on the master, so feed it the current followers'
-	// IPs from the zone store (empty when standalone).
+	// IPs. LIVE-verified on every use: zones.json deliberately outlives the
+	// firmware zone (a member leaves to play its own source, a reboot drops
+	// it) and its member IPs are stale DHCP hints, so trusting it raw made a
+	// Connect volume change yank speakers that had left the group long ago.
+	// Only the box's own /getZone says who follows RIGHT NOW; the persisted
+	// zone is just the cheap precondition. Cached briefly because Connect
+	// volume events arrive in bursts.
 	if zonesStore != nil {
+		var (
+			gvMu  sync.Mutex
+			gvAt  time.Time
+			gvIPs []string
+		)
 		spotifyMgr.SetGroupSlaveIPsFn(func() []string {
-			z, ok := zonesStore.Get()
+			gvMu.Lock()
+			defer gvMu.Unlock()
+			if time.Since(gvAt) < 5*time.Second {
+				return gvIPs
+			}
+			gvAt = time.Now()
+			gvIPs = nil
+			persisted, ok := zonesStore.Get()
 			if !ok {
 				return nil
 			}
-			ips := make([]string, 0, len(z.Slaves))
-			for _, sl := range z.Slaves {
-				if sl.IP != "" {
-					ips = append(ips, sl.IP)
-				}
+			gctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			z, err := boxapi.New(*boxHost).GetZone(gctx)
+			if err != nil || z.Master == "" || !strings.EqualFold(z.Master, persisted.Master) {
+				// No live zone (or led by someone else): nothing to fan to.
+				return nil
 			}
-			return ips
+			for _, mem := range z.Members {
+				// The member list can include the master itself; volume for
+				// the master is already handled by the box mirror.
+				if mem.IP == "" || strings.EqualFold(mem.DeviceID, z.Master) {
+					continue
+				}
+				gvIPs = append(gvIPs, mem.IP)
+			}
+			return gvIPs
 		})
 	}
 

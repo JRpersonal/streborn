@@ -108,9 +108,23 @@ type Manager struct {
 	// mirrors the volume onto each follower too. Wired by the agent from the
 	// zones store; nil = no propagation.
 	groupSlaveIPsFn func() []string
-	credStore       string // per-account credential copies for multi-account swap
+	// groupVolumeSetFn pushes one follower's volume. Defaults to the HTTP
+	// implementation (follower agent first, then the Bose port); a field so
+	// tests can count/observe fan-outs without a network.
+	groupVolumeSetFn func(ctx context.Context, ip string, pct int) error
+	credStore        string // per-account credential copies for multi-account swap
 
-	mu           sync.Mutex
+	mu sync.Mutex
+	// selfVolUntil marks a volume change as caused by the manager itself (the
+	// slider seed + nudge in syncVolumeFromBox): go-librespot echoes API
+	// volume changes as "volume" events, and the group fan-out must ignore
+	// those or every device activation rewrites the followers' individually
+	// set levels.
+	selfVolUntil time.Time
+	// volFanCh feeds the fan-out worker with latest-value coalescing, so the
+	// go-librespot event loop never blocks on follower HTTP calls (an offline
+	// follower costs seconds, and a slider drag emits event bursts).
+	volFanCh     chan int
 	name         string    // device name currently written to config.yml
 	configVol    int       // initial_volume currently written to config.yml
 	sink         io.Writer // current HTTP consumer, nil when none
@@ -1183,7 +1197,22 @@ func (m *Manager) SetVolume(ctx context.Context, pct int) error {
 	if pct > 100 {
 		pct = 100
 	}
+	// Mark the change self-caused for the event loop: go-librespot echoes API
+	// volume changes as "volume" events, and only genuine Spotify-Connect
+	// changes may fan out to the multiroom group (see selfVolActive).
+	m.mu.Lock()
+	m.selfVolUntil = time.Now().Add(3 * time.Second)
+	m.mu.Unlock()
 	return m.apiPost(ctx, "/player/volume", fmt.Sprintf(`{"volume":%d}`, pct))
+}
+
+// selfVolActive reports whether a recent volume change originated from the
+// manager itself (slider seed/nudge) rather than from a Spotify Connect
+// client.
+func (m *Manager) selfVolActive() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return time.Now().Before(m.selfVolUntil)
 }
 
 // ---- Multi-account credential swap (#27) ----
@@ -2196,23 +2225,70 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			}
 			cancel()
 			m.logger.Info("spotify: volume mirrored to box", "pct", pct)
-			// A group's volume must reach every follower, not just the master this
-			// go-librespot runs on. Mirror the same level onto each slave too.
-			m.mirrorVolumeToGroup(ctx, pct)
+			// A group's volume must reach every follower, not just the master
+			// this go-librespot runs on. Only for GENUINE Connect changes:
+			// the manager's own seed/nudge echoes back as the same event, and
+			// fanning that out rewrote every follower's individually-set
+			// level on each device activation. Handed to a worker so a slow/
+			// offline follower can never stall this event loop.
+			if m.selfVolActive() {
+				m.logger.Debug("spotify: volume event caused by own seed/nudge, not fanning out to group", "pct", pct)
+			} else {
+				m.requestGroupVolume(pct)
+			}
 		}
+	}
+}
+
+// requestGroupVolume hands a group volume fan-out to the dedicated worker with
+// latest-value coalescing: a slider-drag burst collapses to the final level,
+// and the go-librespot event loop never blocks on follower HTTP calls.
+func (m *Manager) requestGroupVolume(pct int) {
+	m.mu.Lock()
+	if m.volFanCh == nil {
+		m.volFanCh = make(chan int, 1)
+		go m.volumeFanWorker(m.volFanCh)
+	}
+	ch := m.volFanCh
+	m.mu.Unlock()
+	for {
+		select {
+		case ch <- pct:
+			return
+		default:
+			// Worker busy and a value queued: drop the superseded one.
+			select {
+			case <-ch:
+			default:
+			}
+		}
+	}
+}
+
+// volumeFanWorker serially applies queued group fan-outs. Serial on purpose:
+// each fan-out is itself parallel across followers, and running two fan-outs
+// concurrently could deliver an old level after a newer one.
+func (m *Manager) volumeFanWorker(ch chan int) {
+	for pct := range ch {
+		m.mirrorVolumeToGroup(context.Background(), pct)
 	}
 }
 
 // mirrorVolumeToGroup pushes pct onto every multiroom follower this box leads,
 // in parallel and best-effort, so a Spotify Connect volume change applies to the
 // whole group (go-librespot runs only on the master, so without this only the
-// master's volume moves).
+// master's volume moves). The follower list provider live-verifies the zone,
+// so a speaker that left the group is never touched.
 func (m *Manager) mirrorVolumeToGroup(ctx context.Context, pct int) {
 	m.mu.Lock()
 	fn := m.groupSlaveIPsFn
+	set := m.groupVolumeSetFn
 	m.mu.Unlock()
 	if fn == nil {
 		return
+	}
+	if set == nil {
+		set = m.setFollowerVolume
 	}
 	ips := fn()
 	if len(ips) == 0 {
@@ -2226,15 +2302,51 @@ func (m *Manager) mirrorVolumeToGroup(ctx context.Context, pct int) {
 		wg.Add(1)
 		go func(ip string) {
 			defer wg.Done()
-			sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			sctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
-			if err := boxapi.New(ip).SetVolume(sctx, pct); err != nil {
+			if err := set(sctx, ip, pct); err != nil {
 				m.logger.Debug("spotify: group follower SetVolume failed", "ip", ip, "err", err, "pct", pct)
 			}
 		}(ip)
 	}
 	wg.Wait()
 	m.logger.Info("spotify: volume mirrored to group followers", "count", len(ips), "pct", pct)
+}
+
+// setFollowerVolume sets one follower's volume, preferring the follower's STR
+// agent (which serializes box commands behind its own lock - a raw :8090
+// volume PUT can land mid play-start and kill it, a documented firmware
+// flaw) and falling back to the Bose port when the agent is unreachable.
+func (m *Manager) setFollowerVolume(ctx context.Context, ip string, pct int) error {
+	body := fmt.Sprintf(`{"value":%d}`, pct)
+	var lastErr error
+	for _, port := range []string{"17008", "8888"} {
+		rctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		req, err := http.NewRequestWithContext(rctx, http.MethodPut,
+			"http://"+ip+":"+port+"/api/box/volume", strings.NewReader(body))
+		if err != nil {
+			cancel()
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		cancel()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode < 300 {
+			return nil
+		}
+		lastErr = fmt.Errorf("agent volume PUT %s: status %d", port, resp.StatusCode)
+	}
+	// No reachable STR agent on the follower: drive the Bose port directly.
+	if err := boxapi.New(ip).SetVolume(ctx, pct); err != nil {
+		return fmt.Errorf("%w (agent fallback: %v)", err, lastErr)
+	}
+	return nil
 }
 
 // jsonString quotes a string as a JSON value.
