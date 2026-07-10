@@ -3,8 +3,10 @@ package webui
 // Last-resort OTA paths for a NAND that cannot take the update (#270).
 //
 // Tier 1 is the reclaim cascade in writeBinaryAtomic (drop stale temps, logs,
-// the regenerable Spotify engine). Field data showed two eventualities it
-// cannot handle:
+// the regenerable Spotify engine), followed by an OPTIMISTIC write attempt:
+// the pessimistic UBIFS statfs figure steers the cascade but never refuses the
+// write, so only a real ENOSPC from the filesystem escalates further. Field
+// data showed two eventualities tier 1 cannot handle:
 //
 //   - UBIFS flips the volume to READ-ONLY after an I/O error (its protective
 //     mode on aging NAND). Every delete in the cascade then fails silently,

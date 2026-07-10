@@ -3287,10 +3287,13 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Tier 3 (#270): the volume writes fine but cannot hold OLD + NEW agent
-	// side by side even after the reclaim (small ST20 volumes). Stage the new
-	// binary in RAM and let a detached helper swap it in after this process
-	// exits, then reboot — peak NAND need drops to a single copy.
+	// Tier 3 (#270): the volume writes fine but genuinely cannot hold OLD + NEW
+	// agent side by side even after the reclaim (small ST20 volumes). Stage the
+	// new binary in RAM and let a detached helper swap it in after this process
+	// exits, then reboot — peak NAND need drops to a single copy. Since the
+	// optimistic-write change errInsufficientNAND means a REAL failed write
+	// attempt (ENOSPC / short write), never a pessimistic statfs prediction, so
+	// this tier only engages when the filesystem itself said no.
 	if errors.Is(err, errInsufficientNAND) {
 		if serr := s.stageAndSwapViaRAM(dst, body); serr == nil {
 			writeJSON(w, http.StatusOK, map[string]string{
@@ -3394,29 +3397,13 @@ func readUploadedELF(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	return body, true
 }
 
-// writeBinaryAtomic writes body to dst via a .new temp + rename so a partial
-// write never becomes the live binary, creating the parent dir on a fresh box
-// (first OTA after install has no /mnt/nv/streborn/bin yet). 0755 so the file
-// is executable.
-//
-// The box's writable NAND (/mnt/nv) is tiny (~31 MB, shared with the Bose
-// firmware), and the atomic write needs room for a SECOND full copy of the
-// ~10 MB binary beside the live one. On a SoundTouch 30 that tipped /mnt/nv
-// over and the OTA failed with "no space left on device" (Daniel, 2026-06-24),
-// with no way to see what was eating the space because the box was stickless so
-// SSH was closed. Two defences: (1) before writing, drop a stale .new from an
-// earlier interrupted OTA (a half-written temp from a failed attempt otherwise
-// eats the very headroom the retry needs, so every retry keeps failing until
-// the next boot's run.sh cleanup_nand runs) and, if still short, reclaim
-// obvious junk; (2) on failure, embed the NAND inventory (df + biggest entries
-// + foreign-firmware dirs) in the error so the desktop app surfaces it verbatim
-// and the user's report tells us whether the ST30 is genuinely tighter or is
-// carrying leftovers from a previous custom firmware.
-// errInsufficientNAND is returned by writeBinaryAtomic when, even after
-// reclaiming regenerable junk, the NAND cannot hold the second (.new) copy the
-// atomic write needs. The OTA handlers map it to 507 Insufficient Storage so the
-// desktop app can tell "the box is full" apart from a generic write failure and
-// show the inventory instead of a raw 500 after a full upload (#ST30 Daniel).
+// errInsufficientNAND is returned by writeBinaryAtomic when an actually
+// attempted .new write (or its rename) failed with a real out-of-space error
+// even after reclaiming regenerable junk. The OTA handlers map it to 507
+// Insufficient Storage so the desktop app can tell "the box is full" apart
+// from a generic write failure and show the inventory instead of a raw 500
+// after a full upload (#ST30 Daniel), and handleAgentUpdate's RAM-staged
+// tier 3 keys off it.
 var errInsufficientNAND = errors.New("insufficient NAND space")
 
 // nandWriteMargin is the slack required above the binary size before an atomic
@@ -3430,6 +3417,32 @@ const nandWriteMargin = 512 * 1024
 // not configured, in which case the reclaim falls back to a plain os.Remove.
 var engineStopHook func() bool
 
+// writeBinaryAtomic writes body to dst via a .new temp + rename so a partial
+// write never becomes the live binary, creating the parent dir on a fresh box
+// (first OTA after install has no /mnt/nv/streborn/bin yet). 0755 so the file
+// is executable.
+//
+// The box's writable NAND (/mnt/nv) is tiny (~31 MB, shared with the Bose
+// firmware), and the atomic write needs room for a SECOND full copy of the
+// ~10 MB binary beside the live one. On a SoundTouch 30 that tipped /mnt/nv
+// over and the OTA failed with "no space left on device" (Daniel, 2026-06-24),
+// with no way to see what was eating the space because the box was stickless so
+// SSH was closed. Two defences: (1) before writing, drop a stale .new from an
+// earlier interrupted OTA (a half-written temp from a failed attempt otherwise
+// eats the very headroom the retry needs, so every retry keeps failing until
+// the next boot's run.sh cleanup_nand runs) and, if statfs predicts a shortage,
+// reclaim obvious junk; (2) on failure, embed the NAND inventory (df + biggest
+// entries + foreign-firmware dirs) in the error so the desktop app surfaces it
+// verbatim and the user's report tells us whether the ST30 is genuinely tighter
+// or is carrying leftovers from a previous custom firmware.
+//
+// The write itself is OPTIMISTIC: the statfs prediction steers the reclaim
+// cascade but never refuses the write. UBIFS free space is deliberately
+// pessimistic (it assumes incompressible data while the volume compresses
+// transparently, ~1.5x on Go binaries; measured 2026-07-10), so its "no" is
+// frequently wrong for this write while its "yes" is always safe. Only the
+// filesystem's own verdict on the actual write (a real ENOSPC / short write)
+// maps to errInsufficientNAND now.
 func writeBinaryAtomic(dst string, body []byte) error {
 	dir := filepath.Dir(dst)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -3443,16 +3456,18 @@ func writeBinaryAtomic(dst string, body []byte) error {
 	// files or the live binaries.
 	_ = os.Remove(tmp)
 	reclaimNAND()
-	// Pre-flight space gate: re-check AFTER reclaim and refuse up front, rather
-	// than buffering the whole binary onto a full disk and ENOSPC'ing at the end.
 	need := int64(len(body))
+	engineStopped := false
+	engineReclaim := ""
+	predictedFull := false
 	if !nandHasRoom(dir, need) {
 		// Second-tier reclaim: the go-librespot Spotify engine (~16 MB) is the one
 		// big regenerable block left on a nearly-full NAND (ST30, ~31 MB), and the
 		// cheap reclaim above never touches it. Drop it so the agent .new fits
 		// rather than failing the whole update (#119); the desktop app re-delivers
 		// it after the reboot (EnsureSpotifyEngine, triggered by goLibrespot !=
-		// "present"). Only runs when still tight, so a roomy box keeps its engine.
+		// "present"). Only runs when statfs predicts a shortage, so a roomy box
+		// keeps its engine.
 		//
 		// Stop the engine FIRST: it is normally running during an OTA, and a plain
 		// os.Remove of a running binary only unlinks the path while the kernel keeps
@@ -3460,11 +3475,10 @@ func writeBinaryAtomic(dst string, body []byte) error {
 		// the update still failed with "no space left" (#119). StopEngine kills it and
 		// waits for exit so the ~16 MB actually frees; reclaimSpotifyEngine then drops
 		// the (now-unused) binary.
-		stopped := false
 		if engineStopHook != nil {
-			stopped = engineStopHook()
+			engineStopped = engineStopHook()
 		}
-		reclaimed := reclaimSpotifyEngine()
+		engineReclaim = reclaimSpotifyEngine()
 		// Re-check with patience: UBIFS updates its free-space accounting lazily
 		// after a delete, and the engine's blocks release on process reap, so an
 		// immediate statfs can still show the old figure. A field report (#270)
@@ -3479,23 +3493,61 @@ func writeBinaryAtomic(dst string, body []byte) error {
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
+		predictedFull = !fits
 		slog.Info("OTA write: space-pressed reclaim ran",
-			"engineStopped", stopped, "engineReclaim", reclaimed, "fits", fits)
+			"engineStopped", engineStopped, "engineReclaim", engineReclaim, "fits", fits)
 		if !fits {
+			// Do NOT refuse: agent+engine measurably fit the tightest (ST20,
+			// ~26.7 MB) NAND once compression is accounted for, and refusing on
+			// the pessimistic figure is what kept those boxes un-updatable.
 			_, avail, _ := diskFree(dir)
-			return fmt.Errorf("%w: need %dKB, have %dKB free after reclaim (%s; engine stop=%v) [NAND %s]",
-				errInsufficientNAND, need/1024, avail/1024, reclaimed, stopped, nandReportLine())
+			slog.Info("OTA write: statfs still predicts no room after reclaim; attempting the write anyway (UBIFS under-reports free space for compressible data)",
+				"needKB", need/1024, "availKB", avail/1024)
 		}
 	}
 	if err := os.WriteFile(tmp, body, 0o755); err != nil {
-		_ = os.Remove(tmp) // leave no partial behind for the next attempt
-		return fmt.Errorf("write tmp: %w [NAND %s]", err, nandReportLine())
+		// A mid-stream ENOSPC leaves a truncated tmp; remove it so no partial
+		// .new survives for the next attempt.
+		_ = os.Remove(tmp)
+		return classifyNANDWriteErr("write tmp", err, dir, need, engineStopped, engineReclaim, predictedFull)
 	}
 	if err := os.Rename(tmp, dst); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("rename: %w [NAND %s]", err, nandReportLine())
+		return classifyNANDWriteErr("rename", err, dir, need, engineStopped, engineReclaim, predictedFull)
 	}
 	return nil
+}
+
+// isNoSpaceErr reports whether err is a REAL filesystem out-of-space failure:
+// ENOSPC (usually wrapped in fs.PathError -> fmt.Errorf chains) or a short
+// write. This filesystem verdict is what the optimistic OTA write trusts, as
+// opposed to the pessimistic statfs prediction that used to refuse up front.
+func isNoSpaceErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, syscall.ENOSPC) ||
+		errors.Is(err, io.ErrShortWrite) ||
+		strings.Contains(err.Error(), "no space left")
+}
+
+// classifyNANDWriteErr turns a failed step of the atomic OTA write into the
+// error the handlers act on: a real out-of-space failure maps to
+// errInsufficientNAND (507 + inventory; handleAgentUpdate's RAM-staged tier 3
+// keys off it), anything else stays a plain write error (500, or the EROFS
+// tier 2 when it smells read-only). The message records that the write WAS
+// actually attempted, so a field report can tell a genuine ENOSPC apart from
+// the pre-flight refusals older agents issued.
+func classifyNANDWriteErr(step string, err error, dir string, need int64, engineStopped bool, engineReclaim string, predictedFull bool) error {
+	if !isNoSpaceErr(err) {
+		return fmt.Errorf("%s: %w [NAND %s]", step, err, nandReportLine())
+	}
+	if engineReclaim == "" {
+		engineReclaim = "reclaim not needed, statfs predicted room"
+	}
+	_, avail, _ := diskFree(dir)
+	return fmt.Errorf("%w: the write was actually attempted and the filesystem refused it (%s: %v): need %dKB, statfs free %dKB after reclaim (%s; engine stop=%v; statfs predicted full=%v) [NAND %s]",
+		errInsufficientNAND, step, err, need/1024, avail/1024, engineReclaim, engineStopped, predictedFull, nandReportLine())
 }
 
 // nandWriteHTTPStatus maps a writeBinaryAtomic error to an HTTP status: 507
@@ -3786,8 +3838,11 @@ func reclaimSpotifyEngine() string {
 
 // nandHasRoom reports whether the filesystem backing dir can hold a need-byte
 // file plus the atomic-write margin. Returns true when df is unavailable, so an
-// unknown free figure never blocks a write (matching the original gate).
-func nandHasRoom(dir string, need int64) bool {
+// unknown free figure never blocks a write (matching the original gate). Since
+// the optimistic-write change it only steers the reclaim cascade and logging;
+// it no longer refuses the write. Var so the test for that optimistic attempt
+// can force the pessimistic "no room" prediction on a roomy temp dir.
+var nandHasRoom = func(dir string, need int64) bool {
 	_, avail, ok := diskFree(dir)
 	if !ok {
 		return true
