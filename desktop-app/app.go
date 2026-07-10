@@ -3916,26 +3916,76 @@ type LibraryPage struct {
 	Returned     int                `json:"returned"`
 }
 
-// ListMediaServers does an SSDP sweep for DLNA MediaServers on the
-// LAN and returns the list. Result is cached so BrowseLibrary can
-// look up the server by UDN without rediscovering.
+// ListMediaServers finds the DLNA MediaServers the Library tab can
+// browse. Four sources run in parallel and are merged, deduped by UDN:
+// the SSDP M-SEARCH sweep, the servers remembered from earlier scans
+// (known-servers.json, which removes the cold-start blind window where
+// a same-PC server was invisible until its next periodic NOTIFY,
+// #341), the well-known description endpoints probed against this
+// host's own addresses, and the user's manually added servers. Result
+// is cached so BrowseLibrary can look up the server by UDN without
+// rediscovering.
 func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
-	if timeoutSec <= 0 {
-		timeoutSec = 3
+	// The M-SEARCH goes out with MX=3: a compliant server may wait up
+	// to 3 s before answering, so the previous 3 s window regularly cut
+	// off stragglers (slow NAS boxes). Enforce at least 5 s; the direct
+	// probes below finish well inside that budget.
+	if timeoutSec < 5 {
+		timeoutSec = 5
 	}
-	servers, err := dlna.DiscoverServers(a.ctx, time.Duration(timeoutSec)*time.Second)
-	if err != nil {
-		return nil, err
+	var (
+		wg      sync.WaitGroup
+		ssdp    []dlna.Server
+		ssdpErr error
+		known   []dlna.Server
+		local   []dlna.Server
+	)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		ssdp, ssdpErr = dlna.DiscoverServers(a.appCtx(), time.Duration(timeoutSec)*time.Second)
+	}()
+	go func() {
+		defer wg.Done()
+		known = a.probeKnownServers(a.appCtx())
+	}()
+	go func() {
+		defer wg.Done()
+		local = a.probeWellKnownLocalServers(a.appCtx())
+	}()
+	wg.Wait()
+
+	seen := map[string]bool{}
+	var servers []dlna.Server
+	add := func(list []dlna.Server) {
+		for _, s := range list {
+			if s.UDN == "" || seen[s.UDN] {
+				continue
+			}
+			seen[s.UDN] = true
+			servers = append(servers, s)
+		}
 	}
+	add(ssdp)
+	add(known)
+	add(local)
+	if ssdpErr != nil {
+		// The sweep failing outright (no usable sockets) must not blank
+		// the list when the direct probes still answered.
+		if len(servers) == 0 {
+			return nil, ssdpErr
+		}
+		a.logger.Warn("library: SSDP sweep failed, listing direct-probe results only", "err", ssdpErr.Error())
+	}
+	// Everything above was successfully described this scan: remember it
+	// so the NEXT scan (or the next app start) finds it without waiting
+	// for an announcement.
+	a.rememberKnownServers(servers)
 
 	// Merge in the user's manually added servers (#341). Deduped by
 	// UDN: a manual server that ALSO showed up via SSDP is listed once
 	// but keeps its manual flag so the remove control stays available.
 	manualUDNs := map[string]bool{}
-	seen := map[string]bool{}
-	for _, s := range servers {
-		seen[s.UDN] = true
-	}
 	for _, m := range a.refreshedManualServers() {
 		manualUDNs[m.UDN] = true
 		if !seen[m.UDN] {
@@ -3943,6 +3993,8 @@ func (a *App) ListMediaServers(timeoutSec int) ([]LibraryServer, error) {
 			servers = append(servers, m)
 		}
 	}
+	a.logger.Info("library: media server scan done",
+		"ssdp", len(ssdp), "known", len(known), "local", len(local), "total", len(servers))
 
 	a.libraryMu.Lock()
 	a.libraryServers = map[string]dlna.Server{}

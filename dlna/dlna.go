@@ -48,6 +48,12 @@ type Server struct {
 	// UDN is the unique device identifier (uuid:...), stable across
 	// reboots. Used by the desktop app as the dropdown key.
 	UDN string
+	// Location is the device-description URL this record was resolved
+	// from. Persisted by the desktop app (known-servers.json) so a later
+	// scan can re-probe the server directly even when SSDP stays silent:
+	// without it a same-PC server was invisible until its next periodic
+	// NOTIFY, up to 30 minutes after an app start (#341).
+	Location string
 	// FriendlyName as advertised by the device, e.g. "FRITZ!Box 7590".
 	FriendlyName string
 	// Manufacturer / ModelName let the UI show a useful subtitle.
@@ -248,9 +254,11 @@ func DiscoverServers(ctx context.Context, timeout time.Duration) ([]Server, erro
 	// Merge everything the passive NOTIFY listener has heard. This is
 	// what actually finds a media server running on the same PC as the
 	// app (see announce.go, #341); it also catches servers that were
-	// too slow to answer this particular M-SEARCH window.
+	// too slow to answer this particular M-SEARCH window. Includes
+	// expired-but-retained announcements: the description fetch below
+	// filters the ones that are genuinely gone.
 	announced := 0
-	for _, loc := range announces.freshLocations(time.Now()) {
+	for _, loc := range announces.candidateLocations(time.Now()) {
 		if _, dup := locations[loc]; !dup {
 			locations[loc] = struct{}{}
 			announced++
@@ -449,6 +457,7 @@ func fetchDeviceDescription(ctx context.Context, location string) (Server, error
 	}
 
 	s := Server{
+		Location:     location,
 		FriendlyName: root.Device.FriendlyName,
 		Manufacturer: root.Device.Manufacturer,
 		ModelName:    root.Device.ModelName,

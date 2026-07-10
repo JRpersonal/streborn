@@ -23,8 +23,10 @@ package dlna
 // probes remain for fast first-scan results from remote devices.
 //
 // The listener maintains a location -> expiry cache honoring
-// CACHE-CONTROL max-age. DiscoverServers merges the fresh cache
-// entries into its result before the description-fetch stage.
+// CACHE-CONTROL max-age. DiscoverServers merges the cache entries into
+// its result before the description-fetch stage; entries past their
+// max-age are kept as candidates for a retention window because the
+// description fetch already filters servers that are genuinely gone.
 
 import (
 	"bytes"
@@ -51,6 +53,15 @@ const (
 	// interfaces and joins the SSDP group on ones that appeared (or
 	// recovered) since the last pass, e.g. after a Wi-Fi reconnect.
 	announceRejoinInterval = 3 * time.Minute
+	// announceExpiredRetention is how long past its advertised lifetime
+	// an announcement is still offered as a merge CANDIDATE. Expiry used
+	// to hard-drop the entry, but a server that merely skipped a
+	// re-announce (host asleep, one lost multicast datagram) then fell
+	// out of the Library list even though it was still up. The
+	// description fetch is the real liveness filter: a stale candidate
+	// costs one failed HTTP GET, a dropped live server costs the user
+	// their library (#341). byebye still retires entries immediately.
+	announceExpiredRetention = 24 * time.Hour
 )
 
 type announceEntry struct {
@@ -114,14 +125,16 @@ func (c *announceCache) handlePacket(pkt []byte, now time.Time) string {
 	return ""
 }
 
-// freshLocations prunes expired entries and returns the locations that
-// are still within their advertised lifetime.
-func (c *announceCache) freshLocations(now time.Time) []string {
+// candidateLocations returns every location worth a description probe:
+// entries within their advertised lifetime plus expired ones still
+// inside announceExpiredRetention (the fetch filters the dead ones).
+// Entries expired for longer than the retention are forgotten.
+func (c *announceCache) candidateLocations(now time.Time) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := make([]string, 0, len(c.entries))
 	for loc, e := range c.entries {
-		if now.After(e.expires) {
+		if now.After(e.expires.Add(announceExpiredRetention)) {
 			delete(c.entries, loc)
 			continue
 		}

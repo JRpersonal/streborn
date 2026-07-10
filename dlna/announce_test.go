@@ -30,7 +30,7 @@ func TestAnnounceCache_AliveByebye(t *testing.T) {
 	if got := c.handlePacket(alive, now); got != "alive" {
 		t.Fatalf("alive packet: action = %q, want %q", got, "alive")
 	}
-	locs := c.freshLocations(now)
+	locs := c.candidateLocations(now)
 	if len(locs) != 1 || locs[0] != "http://192.0.2.10:8200/rootDesc.xml" {
 		t.Fatalf("after alive: locations = %v, want the announced LOCATION", locs)
 	}
@@ -45,7 +45,7 @@ func TestAnnounceCache_AliveByebye(t *testing.T) {
 	if got := c.handlePacket(byebye, now); got != "byebye" {
 		t.Fatalf("byebye packet: action = %q, want %q", got, "byebye")
 	}
-	if locs := c.freshLocations(now); len(locs) != 0 {
+	if locs := c.candidateLocations(now); len(locs) != 0 {
 		t.Fatalf("after byebye: locations = %v, want empty", locs)
 	}
 }
@@ -60,15 +60,17 @@ func TestAnnounceCache_IgnoresNonNotify(t *testing.T) {
 	if got := c.handlePacket(aliveNoLocation, time.Now()); got != "" {
 		t.Errorf("alive without LOCATION: action = %q, want ignored", got)
 	}
-	if locs := c.freshLocations(time.Now()); len(locs) != 0 {
+	if locs := c.candidateLocations(time.Now()); len(locs) != 0 {
 		t.Errorf("cache = %v, want empty", locs)
 	}
 }
 
-// TestAnnounceCache_Expiry: an entry must honor its CACHE-CONTROL
-// max-age and disappear once expired, so a server that went away
-// without a byebye does not linger forever.
-func TestAnnounceCache_Expiry(t *testing.T) {
+// TestAnnounceCache_ExpiredEntriesStayCandidates: an entry past its
+// CACHE-CONTROL max-age must STAY a probe candidate for the retention
+// window (a server that skipped one re-announce is usually still up;
+// the description fetch filters genuinely dead ones, #341) and is only
+// forgotten once expired for longer than announceExpiredRetention.
+func TestAnnounceCache_ExpiredEntriesStayCandidates(t *testing.T) {
 	c := &announceCache{entries: map[string]announceEntry{}}
 	now := time.Now()
 	alive := notifyPacket(
@@ -78,11 +80,15 @@ func TestAnnounceCache_Expiry(t *testing.T) {
 		"USN: uuid:abc-123",
 	)
 	c.handlePacket(alive, now)
-	if locs := c.freshLocations(now.Add(30 * time.Second)); len(locs) != 1 {
+	if locs := c.candidateLocations(now.Add(30 * time.Second)); len(locs) != 1 {
 		t.Fatalf("at 30s of a 60s max-age: locations = %v, want 1", locs)
 	}
-	if locs := c.freshLocations(now.Add(90 * time.Second)); len(locs) != 0 {
-		t.Fatalf("at 90s of a 60s max-age: locations = %v, want expired", locs)
+	if locs := c.candidateLocations(now.Add(90 * time.Second)); len(locs) != 1 {
+		t.Fatalf("at 90s of a 60s max-age: locations = %v, want kept as a candidate", locs)
+	}
+	past := now.Add(60 * time.Second).Add(announceExpiredRetention).Add(time.Minute)
+	if locs := c.candidateLocations(past); len(locs) != 0 {
+		t.Fatalf("past the retention window: locations = %v, want forgotten", locs)
 	}
 }
 

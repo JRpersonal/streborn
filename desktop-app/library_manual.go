@@ -109,14 +109,16 @@ func (a *App) refreshedManualServers() []dlna.Server {
 // wellKnownDescriptionEndpoints are the device-description locations
 // of the DLNA servers users most commonly run on a PC or NAS, probed
 // when AddMediaServerByURL gets a bare IP/hostname without a full
-// description URL. Deliberately short: anything else can always be
-// added via its exact URL.
+// description URL, and against this host's own addresses on every
+// Library scan (probeWellKnownLocalServers, #341). Deliberately short:
+// anything else can always be added via its exact URL.
 //
 //	:8200/rootDesc.xml                  MiniDLNA / ReadyMedia
 //	:9000/plugins/UPnP/MediaServer.xml  Twonky
 //	:50001/desc/device.xml              Synology Media Server
 //	:8895/rootDesc.xml                  Serviio and MiniDLNA variants
 //	:5000/DeviceDescription.xml         generic NAS media servers
+//	:32469/DeviceDescription.xml        Plex DLNA server
 var wellKnownDescriptionEndpoints = []struct {
 	port string
 	path string
@@ -126,6 +128,7 @@ var wellKnownDescriptionEndpoints = []struct {
 	{"50001", "/desc/device.xml"},
 	{"8895", "/rootDesc.xml"},
 	{"5000", "/DeviceDescription.xml"},
+	{"32469", "/DeviceDescription.xml"},
 }
 
 // manualServerCandidates normalizes the user's input into the list of
