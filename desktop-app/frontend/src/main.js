@@ -1225,6 +1225,13 @@ async function syncMusicTabVolumeFromBox() {
   if (Date.now() < (state.musicVolUntil || 0)) return;
   try {
     const data = await BoxSettings(box.host, box.port);
+    // Guard against a box switch while the request was in flight: a late
+    // reply from the previous speaker would show ITS volume for the new one,
+    // and the user's first slider touch would then send that stale level.
+    if (!sameBoxIdentity(state.currentBox, box)) return;
+    // The user may have started dragging during the round trip; re-check the
+    // drag guards so the reply cannot yank the thumb from under them.
+    if (state.musicVolBusy || Date.now() < (state.musicVolUntil || 0)) return;
     const vol = (data && data.volume && data.volume.actual);
     if (typeof vol !== 'number') return;
     const current = parseInt(musicVolEl.value, 10);
@@ -1275,6 +1282,11 @@ async function loadMusicTabVolume() {
   if (!box || !musicVolEl) return;
   try {
     const data = await BoxSettings(box.host, box.port);
+    // Guard against a box switch while the request was in flight: two quick
+    // speaker clicks race their replies, and the slower (previous) speaker's
+    // volume must not land on the newly selected one — the first slider
+    // touch would send it there (a sudden loud jump).
+    if (!sameBoxIdentity(state.currentBox, box)) return;
     const vol = (data && data.volume && data.volume.actual) || 0;
     musicVolEl.value = String(vol);
     if (musicVolValEl) musicVolValEl.textContent = String(vol);
