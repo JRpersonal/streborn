@@ -2293,9 +2293,20 @@ func (s *Server) RecoverAfterReconnect() {
 	if s.standbyStoppedRecently() {
 		return
 	}
+	// A deliberate user stop must survive a WS reconnect: without this guard a
+	// reconnect resumed the last stream the user had stopped.
+	if s.userStoppedRecently() {
+		s.logger.Info("reconnect recovery: user stopped recently, not resuming")
+		return
+	}
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay
-	if lp == nil || time.Since(lp.ts) >= 12*time.Hour {
+	// Reconnect recovery is for a box that dropped its WS WHILE playing our
+	// stream and came back with the selection stuck - a recent event. A WS
+	// reconnect resuming an hours-old stream is wrong (the box was not playing
+	// it just before the blip), so use a short window here, unlike the
+	// power-on resume's generous age.
+	if lp == nil || time.Since(lp.ts) >= reconnectResumeMaxAge {
 		s.lastPlayMu.Unlock()
 		return
 	}
@@ -2311,8 +2322,22 @@ func (s *Server) RecoverAfterReconnect() {
 			s.logger.Info("reconnect recovery: box in a zone / stereo pair, standing down (self-wake guard)")
 			return
 		}
-		if !s.boxSelectionStuck() {
+		stuck, selLoc := s.boxStuckSelection()
+		if !stuck {
 			return // asleep, already playing, or on a native source: nothing to recover
+		}
+		// Only resume when the box is stuck on OUR last stream. A non-empty
+		// selection location that does NOT reference lastPlay means the box
+		// moved on (e.g. a failed Spotify preset recall left it on a different
+		// selection); resurrecting the old stream then surprised the user by
+		// starting an unrelated preset (#ST30 preset 1 self-started, 2026-07-10).
+		// An empty INVALID_SOURCE (the box restored STR's UPNP source but could
+		// not self-activate it, #183) carries no location and is the genuine
+		// recovery target, gated by the freshness + user-stop guards above.
+		if selLoc != "" && !sameStream(selLoc, boxURL) {
+			s.logger.Info("reconnect recovery: box is stuck on a different selection than our last stream, not resuming",
+				"selection", selLoc, "lastPlay", boxURL)
+			return
 		}
 		s.boxCmdMu.Lock()
 		defer s.boxCmdMu.Unlock()
@@ -2351,28 +2376,70 @@ func (s *Server) RecoverAfterReconnect() {
 // on a native source (AUX, Bluetooth) all return false so the recovery never
 // fights them.
 func (s *Server) boxSelectionStuck() bool {
+	stuck, _ := s.boxStuckSelection()
+	return stuck
+}
+
+// nowPlayingLocationRe pulls the ContentItem location out of a now_playing body.
+var nowPlayingLocationRe = regexp.MustCompile(`location="([^"]*)"`)
+
+// boxStuckSelection reports whether the box is awake with a stuck STR selection
+// (see boxSelectionStuck's contract) AND the location of that selection, so the
+// caller can tell whether the box is stuck on OUR last stream (resume it) or on
+// something else (leave it). An empty location means the box carries no
+// ContentItem (a bare INVALID_SOURCE), the #183 recovery target.
+func (s *Server) boxStuckSelection() (stuck bool, location string) {
 	if s.boxHost == "" {
-		return false
+		return false, ""
 	}
 	cl := &http.Client{Timeout: 5 * time.Second}
 	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
 	if err != nil {
-		return false
+		return false, ""
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	body := string(b)
 	if strings.Contains(body, "STANDBY") {
-		return false // box asleep: a routine idle reconnect, nothing to recover
+		return false, "" // box asleep: a routine idle reconnect, nothing to recover
 	}
 	if strings.Contains(body, "PLAY_STATE") || strings.Contains(body, "BUFFERING_STATE") || strings.Contains(body, "PAUSE_STATE") {
-		return false // already playing/paused
+		return false, "" // already playing/paused
 	}
 	// Only recover an STR-owned selection (UPNP) or the box's failed
 	// self-activation of it (INVALID_SOURCE). A native source the user picked
 	// (AUX, BLUETOOTH, ...) is left alone.
-	return strings.Contains(body, `source="UPNP"`) || strings.Contains(body, "INVALID_SOURCE")
+	if !strings.Contains(body, `source="UPNP"`) && !strings.Contains(body, "INVALID_SOURCE") {
+		return false, ""
+	}
+	if m := nowPlayingLocationRe.FindStringSubmatch(body); m != nil {
+		location = m[1]
+	}
+	return true, location
 }
+
+// sameStream reports whether two box-facing stream URLs point at the same STR
+// stream, comparing by path (the host differs between the master's own loopback
+// form http://127.0.0.1:8888/stream/2 and the box-visible :17008 form). Used to
+// tell whether the box's stuck selection is our last stream.
+func sameStream(a, b string) bool {
+	pa, pb := streamPath(a), streamPath(b)
+	return pa != "" && pa == pb
+}
+
+func streamPath(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Path
+}
+
+// reconnectResumeMaxAge bounds how old the last stream may be for a WS-reconnect
+// recovery to resume it. Short on purpose: a reconnect resumes a stream the box
+// was playing JUST before a brief WS blip, not an hours-old one (the power-on
+// resume uses a far larger window for a deliberate power press).
+const reconnectResumeMaxAge = 10 * time.Minute
 
 // defaultResumeOnPowerOnPath is the NAND flag file for the per-box power-on
 // resume opt-out. Absent or "1" means on (the default), "0" means off.
