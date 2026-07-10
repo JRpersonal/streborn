@@ -278,6 +278,8 @@ export namespace main {
 	    account?: string;
 	    source?: string;
 	    homepage?: string;
+	    shuffle?: boolean;
+	    items?: number[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Preset(source);
@@ -296,6 +298,8 @@ export namespace main {
 	        this.account = source["account"];
 	        this.source = source["source"];
 	        this.homepage = source["homepage"];
+	        this.shuffle = source["shuffle"];
+	        this.items = source["items"];
 	    }
 	}
 	export class RadioSearchOpts {
