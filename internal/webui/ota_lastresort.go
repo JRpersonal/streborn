@@ -125,7 +125,7 @@ func (s *Server) stageAndSwapViaRAM(dst string, body []byte) error {
 	cmd := exec.Command("sh", "-c", script)
 	// Own session: the helper must survive this agent's exit and any process-
 	// group teardown on the way down.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = sysProcAttrSetsid()
 	if err := cmd.Start(); err != nil {
 		_ = os.Remove(ramStagePath)
 		return fmt.Errorf("start swap helper: %w", err)

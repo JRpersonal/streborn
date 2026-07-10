@@ -25,7 +25,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/autopair"
@@ -3164,7 +3163,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 			shCmd := "sleep 70 && exec " + strings.Join(quoted, " ") + " >> /tmp/streborn-agent.log 2>&1"
 			cmd := exec.Command("sh", "-c", shCmd)
-			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+			cmd.SysProcAttr = sysProcAttrSetsid()
 			if serr := cmd.Start(); serr != nil {
 				s.logger.Error("self-restart fallback also failed", "err", serr)
 				return
@@ -3334,16 +3333,9 @@ func nandWriteHTTPStatus(err error) int {
 const nandRoot = "/mnt/nv"
 const strNANDDir = "/mnt/nv/streborn"
 
-// diskFree reports total and available-to-non-root bytes on the filesystem
-// backing path. ok is false if the statfs failed.
-func diskFree(path string) (total, avail int64, ok bool) {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(path, &st); err != nil {
-		return 0, 0, false
-	}
-	bs := int64(st.Bsize)
-	return int64(st.Blocks) * bs, int64(st.Bavail) * bs, true
-}
+// diskFree lives in statfs_linux.go / statfs_other.go: the Linux build does a
+// real statfs, other hosts report "unknown" so the package stays testable on
+// dev machines.
 
 // dirBytes is a du -s in bytes for path, best-effort: unreadable entries are
 // skipped, never fatal. Cheap on the tiny NAND.

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -499,12 +500,17 @@ func TestDiskSpaceGate(t *testing.T) {
 		t.Errorf("lowDisk = true after a passing check, want false")
 	}
 
-	free, ok := freeBytes(cfg)
-	if !ok {
-		t.Fatal("freeBytes ok = false on a real dir")
-	}
-	if free <= 0 {
-		t.Errorf("freeBytes = %d, want > 0", free)
+	// Only the Linux build has a real statfs; the dev-host stub reports
+	// ok=false by design (fail open), so the real-figure assertions are
+	// meaningful only where the agent actually runs.
+	if runtime.GOOS == "linux" {
+		free, ok := freeBytes(cfg)
+		if !ok {
+			t.Fatal("freeBytes ok = false on a real dir")
+		}
+		if free <= 0 {
+			t.Errorf("freeBytes = %d, want > 0", free)
+		}
 	}
 
 	m.setLowDisk(true, 123)

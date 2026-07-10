@@ -108,7 +108,7 @@ type Manager struct {
 	// mirrors the volume onto each follower too. Wired by the agent from the
 	// zones store; nil = no propagation.
 	groupSlaveIPsFn func() []string
-	credStore  string         // per-account credential copies for multi-account swap
+	credStore       string // per-account credential copies for multi-account swap
 
 	mu           sync.Mutex
 	name         string    // device name currently written to config.yml
@@ -483,16 +483,9 @@ const spotifyMinFreeBytes = 2 * 1024 * 1024
 // like a crash.
 var errLowDisk = errors.New("insufficient NAND to start go-librespot")
 
-// freeBytes returns the bytes available to non-root on the filesystem backing
-// dir, ok=false if statfs fails. Mirrors webui.diskFree; kept local so the
-// spotify package takes no dependency on webui.
-func freeBytes(dir string) (int64, bool) {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(dir, &st); err != nil {
-		return 0, false
-	}
-	return int64(st.Bavail) * int64(st.Bsize), true
-}
+// freeBytes lives in statfs_linux.go / statfs_other.go: the Linux build does a
+// real statfs, other hosts fail open so the package stays testable on dev
+// machines.
 
 // diskSpaceOK reports whether configDir's filesystem has the minimum free space
 // go-librespot needs. It records the low-disk state for ServeInfo and throttles
