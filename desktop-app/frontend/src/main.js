@@ -3726,7 +3726,10 @@ async function saveCurrentToSlot(slot) {
   // That bypasses state.nowIcon / state.nowName completely; on
   // hardware press both often still hold the previous station.
   const sourceSlot = activeSlotFromLocation(state.nowLocation);
-  if (sourceSlot !== null && sourceSlot !== slot) {
+  // Same-slot saves (sourceSlot === slot) must take this path too: falling
+  // through to Case B would store the box-visible /stream/<n> proxy URL and
+  // permanently clobber the preset's origin URL (#252).
+  if (sourceSlot !== null) {
     // The app itself started an ad-hoc station moments ago, yet the box
     // reports a /stream/<slot> location: on a speaker that was asleep, an
     // agent-side wake resume racing the play can have put the PREVIOUS
@@ -3768,6 +3771,11 @@ async function saveCurrentToSlot(slot) {
         return;
       }
     }
+    // No stored preset to copy from (empty source slot) and no fresh app
+    // play record: the only URL available is the box's own /stream/<n>
+    // proxy location, which must never be saved as a preset.
+    showError(t('preset.saveFailed', { err: 'source preset empty' }));
+    return;
   }
 
   // Case B: speaker is playing a stream that does NOT go through
