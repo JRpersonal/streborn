@@ -236,11 +236,17 @@ export function showError(msg) {
 }
 
 let toastTimer = null;
+// showToast displays msg for ms milliseconds. ms <= 0 keeps it up until the
+// next showToast call replaces it - used for "in progress" states so a slow
+// background action (e.g. a preset+login transfer over the LAN) does not look
+// idle and invite a second button press.
 export function showToast(msg, ms = 2200) {
   const t = $('toast');
   if (!t) return;
   t.textContent = msg;
   t.classList.add('show');
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+  if (ms > 0) {
+    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
 }

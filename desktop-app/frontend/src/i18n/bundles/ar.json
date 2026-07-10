@@ -1148,5 +1148,7 @@
   "group.volumeLabel": "مستوى صوت المجموعة",
   "group.dissolvedToast": "تم حل المجموعة",
   "group.addedToast": "تمت إضافة {{name}} إلى المجموعة",
-  "group.removedToast": "تمت إزالة {{name}} من المجموعة"
+  "group.removedToast": "تمت إزالة {{name}} من المجموعة",
+  "settingsView.copyPresetsProgress": "جارٍ نقل الإعدادات المسبقة وتسجيل دخول Spotify إلى السمّاعة...",
+  "settingsView.copyPresetsBusyBtn": "جارٍ النقل..."
 }

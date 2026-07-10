@@ -1148,5 +1148,7 @@
   "group.volumeLabel": "Grup ses düzeyi",
   "group.dissolvedToast": "Grup dağıtıldı",
   "group.addedToast": "{{name}} gruba eklendi",
-  "group.removedToast": "{{name}} gruptan çıkarıldı"
+  "group.removedToast": "{{name}} gruptan çıkarıldı",
+  "settingsView.copyPresetsProgress": "Ön ayarlar ve Spotify oturumu hoparlöre aktarılıyor...",
+  "settingsView.copyPresetsBusyBtn": "Aktarılıyor..."
 }

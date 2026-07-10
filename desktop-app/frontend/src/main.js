@@ -3255,6 +3255,13 @@ function wirePresetTransferRow() {
     const val = sel ? sel.value : '';
     if (!val) return;
     btn.disabled = true;
+    const origLabel = btn.textContent;
+    btn.textContent = t('settingsView.copyPresetsBusyBtn');
+    // Persistent progress toast: the copy also carries the Spotify login and
+    // restarts the target's engine, which takes a few seconds over the LAN.
+    // Without a visible "running" state the row looks idle and invites a
+    // second press (same trap as the STR install button).
+    showToast(t('settingsView.copyPresetsProgress'), 0);
     try {
       if (val === '__ALL__') {
         let done = 0;
@@ -3277,6 +3284,7 @@ function wirePresetTransferRow() {
     } catch (e) {
       showError(e);
     } finally {
+      btn.textContent = origLabel;
       updatePresetTransferRow();
     }
   };

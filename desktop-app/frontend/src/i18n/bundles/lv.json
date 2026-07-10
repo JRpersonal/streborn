@@ -1148,5 +1148,7 @@
   "group.volumeLabel": "Grupas skaļums",
   "group.dissolvedToast": "Grupa izformēta",
   "group.addedToast": "{{name}} pievienots grupai",
-  "group.removedToast": "{{name}} noņemts no grupas"
+  "group.removedToast": "{{name}} noņemts no grupas",
+  "settingsView.copyPresetsProgress": "Notiek priekšiestatījumu un Spotify pieteikšanās pārsūtīšana uz skaļruni...",
+  "settingsView.copyPresetsBusyBtn": "Notiek pārsūtīšana..."
 }

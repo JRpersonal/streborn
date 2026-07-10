@@ -1148,5 +1148,7 @@
   "group.volumeLabel": "Groepsvolume",
   "group.dissolvedToast": "Groep opgeheven",
   "group.addedToast": "{{name}} aan de groep toegevoegd",
-  "group.removedToast": "{{name}} uit de groep verwijderd"
+  "group.removedToast": "{{name}} uit de groep verwijderd",
+  "settingsView.copyPresetsProgress": "Presets en Spotify-login worden naar de speaker overgezet...",
+  "settingsView.copyPresetsBusyBtn": "Bezig met overzetten..."
 }

@@ -1148,5 +1148,7 @@
   "group.volumeLabel": "Гучність групи",
   "group.dissolvedToast": "Групу розпущено",
   "group.addedToast": "{{name}} додано до групи",
-  "group.removedToast": "{{name}} вилучено з групи"
+  "group.removedToast": "{{name}} вилучено з групи",
+  "settingsView.copyPresetsProgress": "Перенесення пресетів і входу Spotify на динамік...",
+  "settingsView.copyPresetsBusyBtn": "Перенесення..."
 }

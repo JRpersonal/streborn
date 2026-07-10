@@ -1148,5 +1148,7 @@
   "group.volumeLabel": "グループの音量",
   "group.dissolvedToast": "グループを解除しました",
   "group.addedToast": "{{name}} をグループに追加しました",
-  "group.removedToast": "{{name}} をグループから外しました"
+  "group.removedToast": "{{name}} をグループから外しました",
+  "settingsView.copyPresetsProgress": "プリセットとSpotifyログインをスピーカーに転送しています...",
+  "settingsView.copyPresetsBusyBtn": "転送中..."
 }

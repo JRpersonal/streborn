@@ -1797,6 +1797,7 @@ function renderBoxSettings(s, box) {
         );
         if (!ok) return;
         copyBtn.disabled = true;
+        showToast(t('settingsView.copyPresetsProgress'), 0);
         let done = 0;
         const failed = [];
         const slotIssues = [];
@@ -1840,6 +1841,7 @@ function renderBoxSettings(s, box) {
       );
       if (!ok) return;
       copyBtn.disabled = true;
+      showToast(t('settingsView.copyPresetsProgress'), 0);
       try {
         const n = await CopyPresetsAcrossBoxes(box.host, box.port, thost, tport);
         showToast(t('settingsView.copyPresetsDone', { n, target: targetName }));

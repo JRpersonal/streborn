@@ -1148,5 +1148,7 @@
   "group.volumeLabel": "Grupės garsumas",
   "group.dissolvedToast": "Grupė išformuota",
   "group.addedToast": "{{name}} pridėta į grupę",
-  "group.removedToast": "{{name}} pašalinta iš grupės"
+  "group.removedToast": "{{name}} pašalinta iš grupės",
+  "settingsView.copyPresetsProgress": "Išankstiniai nustatymai ir Spotify prisijungimas perkeliami į garsiakalbį...",
+  "settingsView.copyPresetsBusyBtn": "Perkeliama..."
 }

@@ -1148,5 +1148,7 @@
   "group.volumeLabel": "Volumen del grupo",
   "group.dissolvedToast": "Grupo deshecho",
   "group.addedToast": "{{name}} añadido al grupo",
-  "group.removedToast": "{{name}} quitado del grupo"
+  "group.removedToast": "{{name}} quitado del grupo",
+  "settingsView.copyPresetsProgress": "Transfiriendo presintonías e inicio de sesión de Spotify al altavoz...",
+  "settingsView.copyPresetsBusyBtn": "Transfiriendo..."
 }
