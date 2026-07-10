@@ -232,6 +232,70 @@ func TestCatchallGenericAck(t *testing.T) {
 	}
 }
 
+// TestMargeGroupCreateReadDelete exercises the stereo-pair group CRUD the ST10
+// firmware runs against marge as the cloud half of /addGroup and /removeGroup
+// (#166). The captured create call is
+// POST /streaming/account/stick@local/group/ with a <group> descriptor; the box
+// must get a group record back or it fails with GROUP_CREATE_GROUP_ON_MARGE_ERROR.
+func TestMargeGroupCreateReadDelete(t *testing.T) {
+	s := newTestServer()
+	serve := func(method, path, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		s.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	const acct = "stick@local"
+	const master = "EC24B8B790CC"
+	const slave = "94E36DF9CE40"
+	createBody := `<?xml version="1.0" encoding="UTF-8" ?><group><masterDeviceId>` + master +
+		`</masterDeviceId><name>Stereo TEST</name><roles>` +
+		`<groupRole><deviceId>` + master + `</deviceId><role>LEFT</role></groupRole>` +
+		`<groupRole><deviceId>` + slave + `</deviceId><role>RIGHT</role></groupRole>` +
+		`</roles></group>`
+
+	// Create: must not fall through to the account handler, must echo the group.
+	rec := serve(http.MethodPost, "/streaming/account/"+acct+"/group/", createBody)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status=%d, want 201\nbody=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	xmlWellFormed(t, body)
+	for _, want := range []string{"<group ", "id=", master, slave, "LEFT", "RIGHT"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("create response missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "<account") {
+		t.Fatalf("create leaked into the account handler: %s", body)
+	}
+
+	// Poll: with a stored pair the box's group poll must read the pair back.
+	rec = serve(http.MethodGet, "/streaming/account/"+acct+"/device/"+master+"/group/", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("poll status=%d, want 200", rec.Code)
+	}
+	poll := rec.Body.String()
+	xmlWellFormed(t, poll)
+	if !strings.Contains(poll, master) || !strings.Contains(poll, slave) {
+		t.Fatalf("poll did not return the stored pair: %s", poll)
+	}
+
+	// Delete: dissolve clears the store.
+	rec = serve(http.MethodDelete, "/streaming/account/"+acct+"/group/", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete status=%d, want 200", rec.Code)
+	}
+	xmlWellFormed(t, rec.Body.String())
+
+	// After delete the poll falls back to the standalone (account) behaviour.
+	rec = serve(http.MethodGet, "/streaming/account/"+acct+"/device/"+master+"/group/", "")
+	if strings.Contains(rec.Body.String(), "<group ") {
+		t.Fatalf("group still returned after delete: %s", rec.Body.String())
+	}
+}
+
 func TestHealthz(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()

@@ -16,6 +16,7 @@ package marge
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log/slog"
@@ -56,6 +57,13 @@ type Server struct {
 	// (accessible via /__spy/log on the same listener).
 	requestLog    []SpyEntry
 	requestLogMax int
+
+	// group holds the stereo-pair (L/R) record the ST10 firmware created "on
+	// marge" via POST /streaming/account/<acct>/group/, the cloud half of the
+	// box's /addGroup. nil means no pair. Kept in memory only: the box firmware
+	// owns the actual pairing across reboots, so on an agent restart the box
+	// simply re-creates the record on its next /addGroup or group poll.
+	group *groupRecord
 }
 
 // SpyEntry is a single logged HTTP request.
@@ -273,6 +281,17 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 		return
 	case strings.HasPrefix(path, "/streaming/sourceproviders"):
 		s.respondSourceProviders(w, r)
+		return
+	// Stereo-pair group CRUD (#166). During /addGroup the ST10 firmware creates
+	// the L/R group record "on marge" via POST /streaming/account/<acct>/group/,
+	// polls it via GET /streaming/account/<acct>/device/<dev>/group/, and drops
+	// it on /removeGroup. Without a handler the POST fell through to the generic
+	// account response below, so the box could not parse a group back and failed
+	// with GROUP_CREATE_GROUP_ON_MARGE_ERROR (5580) -> /addGroup HTTP 500. Must
+	// sit before the /device and generic /streaming/account cases, since the poll
+	// path contains "/device" too.
+	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/group"):
+		s.handleMargeGroup(w, r)
 		return
 	// AddDevice sync: /streaming/account/<accountId>/device/ POST
 	// The box calls this after POST /setMargeAccount on the box itself.
@@ -583,14 +602,162 @@ func (s *Server) reflectedSourcesXML() string {
 	return b.String()
 }
 
-// respondGroup responds to /streaming/account/<id>/device/<deviceid>/group/.
-// The box checks whether the device is already in a multiroom group. We say
-// "no, no group".
-func (s *Server) respondGroup(w http.ResponseWriter, _ *http.Request) {
+// groupRole is one <groupRole> entry inside a stereo-pair group descriptor.
+type groupRole struct {
+	DeviceID string `xml:"deviceId"`
+	Role     string `xml:"role"`
+	IP       string `xml:"ipAddress"`
+}
+
+// groupRecord mirrors the <group> descriptor the ST10 firmware POSTs to marge
+// to create the L/R stereo pair, and the shape the box's own /getGroup returns:
+// id as an attribute, name/masterDeviceId as child elements, and the members as
+// <roles><groupRole>. Live captured 2026-07-10 from EC24B8B790CC.
+type groupRecord struct {
+	XMLName        xml.Name    `xml:"group"`
+	ID             string      `xml:"id,attr"`
+	Name           string      `xml:"name"`
+	MasterDeviceID string      `xml:"masterDeviceId"`
+	Roles          []groupRole `xml:"roles>groupRole"`
+}
+
+// groupCreateFormat selects the shape of the group-create acknowledgement, so
+// the response the firmware accepts can be swept on hardware the same way
+// addDeviceFormat sweeps the AddDevice reply. Values: "bare201" (default: HTTP
+// 201 Created + a bare <group id=...>), "bare200", "wrap201"/"wrap200" (the
+// <response status="OK"> envelope the AddDevice path uses). Empty falls back to
+// the default.
+func groupCreateFormat() string {
+	if v := strings.TrimSpace(os.Getenv("STICK_GROUP_CREATE_FORMAT")); v != "" {
+		return v
+	}
+	return "bare201"
+}
+
+// margeGroupID derives a stable, non-empty group id from the master device id
+// so a create and the follow-up poll echo the same id. The box treats the
+// marge group id as opaque (its own /getGroup returns a firmware-assigned id).
+func margeGroupID(master string) string {
+	m := strings.TrimSpace(master)
+	if m == "" {
+		m = "stereo"
+	}
+	return "str-grp-" + m
+}
+
+// renderGroupXML renders a group record in the <group id=...> shape the box's
+// /getGroup parses, echoing the posted roles back (with ipAddress only when the
+// firmware supplied one).
+func renderGroupXML(g *groupRecord) string {
+	var b strings.Builder
+	b.WriteString(`<group id="`)
+	b.WriteString(xmlEscapeText(g.ID))
+	b.WriteString(`"><name>`)
+	b.WriteString(xmlEscapeText(g.Name))
+	b.WriteString(`</name><masterDeviceId>`)
+	b.WriteString(xmlEscapeText(g.MasterDeviceID))
+	b.WriteString(`</masterDeviceId><roles>`)
+	for _, role := range g.Roles {
+		b.WriteString(`<groupRole><deviceId>`)
+		b.WriteString(xmlEscapeText(role.DeviceID))
+		b.WriteString(`</deviceId><role>`)
+		b.WriteString(xmlEscapeText(role.Role))
+		b.WriteString(`</role>`)
+		if strings.TrimSpace(role.IP) != "" {
+			b.WriteString(`<ipAddress>`)
+			b.WriteString(xmlEscapeText(role.IP))
+			b.WriteString(`</ipAddress>`)
+		}
+		b.WriteString(`</groupRole>`)
+	}
+	b.WriteString(`</roles></group>`)
+	return b.String()
+}
+
+// handleMargeGroup dispatches the stereo-pair group CRUD the firmware runs
+// against marge as the cloud half of /addGroup and /removeGroup.
+func (s *Server) handleMargeGroup(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost, http.MethodPut:
+		s.createMargeGroup(w, r)
+	case http.MethodDelete:
+		s.deleteMargeGroup(w, r)
+	default: // GET/HEAD: the box's "is this device in a group?" poll.
+		s.readMargeGroup(w, r)
+	}
+}
+
+// createMargeGroup answers the firmware's "create this group on marge" POST.
+// It stores the record and echoes it back with a server-assigned id, which is
+// what unblocks the box's /addGroup (previously HTTP 500 / error 5580).
+func (s *Server) createMargeGroup(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	var g groupRecord
+	if err := xml.Unmarshal(body, &g); err != nil {
+		s.logger.Warn("marge group create: could not parse body",
+			slog.String("comp", "marge"), slog.String("err", err.Error()))
+	}
+	if strings.TrimSpace(g.ID) == "" {
+		g.ID = margeGroupID(g.MasterDeviceID)
+	}
+	s.mu.Lock()
+	s.group = &g
+	s.mu.Unlock()
+
+	roles := make([]string, 0, len(g.Roles))
+	for _, role := range g.Roles {
+		roles = append(roles, role.Role+"="+role.DeviceID)
+	}
+	s.logger.Info("marge group created",
+		slog.String("comp", "marge"),
+		slog.String("groupId", g.ID),
+		slog.String("master", g.MasterDeviceID),
+		slog.String("roles", strings.Join(roles, ",")),
+	)
+
+	status := http.StatusCreated
+	if strings.HasSuffix(groupCreateFormat(), "200") {
+		status = http.StatusOK
+	}
+	body = []byte(`<?xml version="1.0" encoding="UTF-8" ?>` + renderGroupXML(&g))
+	if strings.HasPrefix(groupCreateFormat(), "wrap") {
+		body = []byte(`<?xml version="1.0" encoding="UTF-8" ?><response status="OK">` + renderGroupXML(&g) + `</response>`)
+	}
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
-	w.WriteHeader(http.StatusNotFound)
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<errors deviceID="DEVICEID_PLACEHOLDER"><error value="5550" name="GROUP_NO_GROUP_TO_REMOVE_ERROR" severity="Unknown">5550</error></errors>`))
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+}
+
+// readMargeGroup answers the periodic group poll. When a pair exists we return
+// it so the box keeps the pair; otherwise we preserve the historical standalone
+// behaviour (the box tolerates the account response as "not grouped").
+func (s *Server) readMargeGroup(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	g := s.group
+	s.mu.RUnlock()
+	if g == nil {
+		s.respondMargeAccountFull(w, r)
+		return
+	}
+	s.logger.Debug("marge group poll answered from store",
+		slog.String("comp", "marge"), slog.String("groupId", g.ID))
+	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>` + renderGroupXML(g)))
+}
+
+// deleteMargeGroup drops the stored pair when the box dissolves it (/removeGroup
+// -> the firmware's group DELETE on marge).
+func (s *Server) deleteMargeGroup(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	existed := s.group != nil
+	s.group = nil
+	s.mu.Unlock()
+	s.logger.Info("marge group deleted",
+		slog.String("comp", "marge"), slog.Bool("existed", existed))
+	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?><response status="OK"/>`))
 }
 
 // respondProviderSettings responds to /streaming/account/<id>/provider_settings.
