@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -214,12 +215,19 @@ func isStreamReachable(ctx context.Context, u string) bool {
 }
 
 func (r *Renderer) soapCall(ctx context.Context, action, body string) error {
+	_, err := r.soapCallBody(ctx, action, body)
+	return err
+}
+
+// soapCallBody is soapCall returning the response envelope, for the few
+// actions whose ANSWER matters (GetTransportInfo).
+func (r *Renderer) soapCallBody(ctx context.Context, action, body string) ([]byte, error) {
 	if r.ControlURL == "" {
-		return errors.New("ControlURL not set")
+		return nil, errors.New("ControlURL not set")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.ControlURL, strings.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", `text/xml; charset=utf-8`)
 	req.Header.Set("SOAPACTION", fmt.Sprintf(`"urn:schemas-upnp-org:service:AVTransport:1#%s"`, action))
@@ -230,14 +238,34 @@ func (r *Renderer) soapCall(ctx context.Context, action, body string) error {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("soap %s status %d: %s", action, resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("soap %s status %d: %s", action, resp.StatusCode, string(respBody))
 	}
-	return nil
+	return respBody, nil
+}
+
+var transportStateRe = regexp.MustCompile(`<CurrentTransportState>([^<]+)</CurrentTransportState>`)
+
+// TransportState reports the renderer's current AVTransport state (PLAYING,
+// STOPPED, PAUSED_PLAYBACK, TRANSITIONING, NO_MEDIA_PRESENT). It exists so a
+// Stop can be VERIFIED: a wedged renderer ACKs Stop with 200 yet keeps
+// playing (observed live on a Portable, 2026-07-10), and a blind "stopped"
+// reply hid exactly that from every caller.
+func (r *Renderer) TransportState(ctx context.Context) (string, error) {
+	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetTransportInfo xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID></u:GetTransportInfo></s:Body></s:Envelope>`
+	resp, err := r.soapCallBody(ctx, "GetTransportInfo", body)
+	if err != nil {
+		return "", err
+	}
+	m := transportStateRe.FindSubmatch(resp)
+	if m == nil {
+		return "", errors.New("no CurrentTransportState in GetTransportInfo response")
+	}
+	return string(m[1]), nil
 }
 
 // MimeForCodec maps a radio station's codec label (radio-browser's "codec"

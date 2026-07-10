@@ -3094,7 +3094,47 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	// Verify the renderer actually stopped: a wedged renderer ACKs Stop yet
+	// keeps playing (observed live on a Portable, 2026-07-10 - transport
+	// stayed PLAYING while the source machine sat at INVALID_SOURCE). One
+	// re-issued Stop, then an honest answer, so callers can escalate (reboot
+	// hint) instead of trusting a blind 200.
+	if state, ok := s.verifyRendererStopped(r.Context()); !ok {
+		s.logger.Warn("stop: renderer ignored Stop and keeps playing (control wedge, a reboot usually clears it)", "transportState", state)
+		writeJSON(w, http.StatusOK, map[string]string{"status": "stopped", "renderer": "still-playing"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+}
+
+// verifyRendererStopped polls the renderer's transport state briefly after a
+// Stop, re-issuing the Stop once if it still reports PLAYING. Returns the
+// last observed state and whether the renderer left PLAYING. Best-effort: an
+// unreadable state counts as stopped (no false alarms on boxes whose
+// GetTransportInfo is flaky).
+func (s *Server) verifyRendererStopped(ctx context.Context) (string, bool) {
+	retried := false
+	state := ""
+	for i := 0; i < 4; i++ {
+		time.Sleep(600 * time.Millisecond)
+		tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		st, err := s.renderer.TransportState(tctx)
+		cancel()
+		if err != nil {
+			return state, true
+		}
+		state = st
+		if st != "PLAYING" {
+			return st, true
+		}
+		if !retried {
+			retried = true
+			sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			_ = s.renderer.Stop(sctx)
+			cancel()
+		}
+	}
+	return state, false
 }
 
 // handleAgentVersion returns the running stick agent version. Used by
