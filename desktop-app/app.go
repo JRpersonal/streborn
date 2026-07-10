@@ -2286,10 +2286,67 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 	if _, err := a.SyncBoxPresets(dstHost, dstPort); err != nil {
 		a.logger.Warn("copy presets: target hardware sync failed", "dst", dstHost, "err", err)
 	}
+	// A copied Spotify preset is dead on a speaker that lacks the Spotify
+	// login: the credential lives per box, so recalls there fail with
+	// "speaker not logged into Spotify" until the user taps the target in the
+	// Spotify app. Users rightly expect the copy to carry the login along
+	// (Jens, 2026-07-10), so transfer the source's credential too, best-effort
+	// - a transfer failure must not fail the preset copy (the presets DID
+	// land; the recall error still tells the user the manual way).
+	if hasSpotifyPreset(presets) {
+		a.transferSpotifyCredential(srcHost, srcPort, dstHost, dstPort)
+	}
 	if len(slotErrs) > 0 {
 		return copied, fmt.Errorf("%s", strings.Join(slotErrs, "; "))
 	}
 	return copied, nil
+}
+
+// hasSpotifyPreset reports whether any preset in the set is a Spotify one.
+func hasSpotifyPreset(presets []Preset) bool {
+	for _, p := range presets {
+		if p.Type == "spotify" {
+			return true
+		}
+	}
+	return false
+}
+
+// transferSpotifyCredential copies the source speaker's active Spotify login
+// to the target (the agent's credential endpoints: GET exports the blob, POST
+// imports it and restarts the engine so the login is live immediately).
+// Best-effort by contract: every failure is logged and swallowed. A target
+// that already has the SAME account keeps it (the import is idempotent); a
+// target on a different account gets the source's login, which matches the
+// user intent of copying that source's presets.
+func (a *App) transferSpotifyCredential(srcHost string, srcPort int, dstHost string, dstPort int) {
+	resp, err := a.boxDo(srcHost, srcPort, http.MethodGet, "/api/spotify/credential", "", "")
+	if err != nil {
+		a.logger.Warn("copy presets: source Spotify credential not readable", "src", srcHost, "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		// 404 = no login stored on the source; nothing to transfer.
+		a.logger.Info("copy presets: source has no stored Spotify login, skipping credential transfer", "src", srcHost, "status", resp.StatusCode)
+		return
+	}
+	blob, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil || len(blob) == 0 {
+		a.logger.Warn("copy presets: reading the Spotify credential failed", "src", srcHost, "err", err)
+		return
+	}
+	postResp, err := a.boxDo(dstHost, dstPort, http.MethodPost, "/api/spotify/credential", "application/octet-stream", string(blob))
+	if err != nil {
+		a.logger.Warn("copy presets: Spotify credential transfer to the target failed", "dst", dstHost, "err", err)
+		return
+	}
+	defer postResp.Body.Close()
+	if postResp.StatusCode >= 400 {
+		a.logger.Warn("copy presets: target rejected the Spotify credential", "dst", dstHost, "status", postResp.StatusCode)
+		return
+	}
+	a.logger.Info("copy presets: Spotify login transferred with the presets", "src", srcHost, "dst", dstHost)
 }
 
 // DeletePreset does DELETE /api/presets/<slot>.
