@@ -499,6 +499,10 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
 		defer playCancel()
 		if err := s.startQueue(playCtx, items, req.Start, req.Shuffle, parseRepeat(req.Repeat), card); err != nil {
+			if isGroupedRejection(err) {
+				s.writeGroupedPlayError(w, err)
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}

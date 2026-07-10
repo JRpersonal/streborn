@@ -1348,6 +1348,10 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		playErr = s.renderer.PlayURL(playCtx, playURL, req.Title, req.Icon)
 	}
 	if playErr != nil {
+		if isGroupedRejection(playErr) {
+			s.writeGroupedPlayError(w, playErr)
+			return
+		}
 		writeJSON(w, http.StatusBadGateway, map[string]string{
 			"error":  "Station could not be played",
 			"detail": guessErrorReason(playErr),
@@ -1418,6 +1422,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		s.logger.Info("preset slot recall (app): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
 		card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
 		if err := s.startQueueLocked(playCtx, items, 0, p.Shuffle, repeatOff, card); err != nil {
+			if isGroupedRejection(err) {
+				s.writeGroupedPlayError(w, err)
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Folder could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
@@ -1527,6 +1535,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		}
 		slotURL := boxurl.SpotifySlot(slot)
 		if err := s.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
+			if isGroupedRejection(err) {
+				s.writeGroupedPlayError(w, err)
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": "Spotify stream could not be played", "detail": guessErrorReason(err),
 				"slot": slot, "name": p.Name,
@@ -1583,6 +1595,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 			directURL := p.StreamURL
 			s.logger.Info("preset slot recall (app): direct library file", "slot", slot, "mime", mime)
 			if err := s.renderer.PlayURLMime(playCtx, directURL, p.Name, p.Art, mime); err != nil {
+				if isGroupedRejection(err) {
+					s.writeGroupedPlayError(w, err)
+					return
+				}
 				writeJSON(w, http.StatusBadGateway, map[string]any{
 					"error": "Track could not be played", "detail": guessErrorReason(err),
 					"slot": slot, "name": p.Name,
@@ -1618,6 +1634,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		// that apparently never happened (#252).
 		s.logger.Warn("preset slot recall (app): radio play failed",
 			"slot", slot, "name", p.Name, "playURL", playURL, "err", playErr)
+		if isGroupedRejection(playErr) {
+			s.writeGroupedPlayError(w, playErr)
+			return
+		}
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error":  "Station could not be played",
 			"detail": guessErrorReason(playErr),
@@ -3849,6 +3869,49 @@ func guessErrorReason(err error) string {
 	default:
 		return s
 	}
+}
+
+// isGroupedRejection reports whether a UPnP play failure is the box refusing
+// transport control because it is currently a FOLLOWER in a multiroom zone /
+// stereo group: the firmware answers SetAVTransportURI with UPnP error 501
+// "Can't control member of group" (#70). Matched on the fault description
+// (the code 501 alone is the generic "Action Failed").
+func isGroupedRejection(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "member of group")
+}
+
+// writeGroupedPlayError answers a play request the box rejected as a group
+// follower (#70) with a structured 409 instead of the raw SOAP fault, so the
+// app can tell the user to drive the group's lead speaker (and offer to jump
+// there) rather than showing an inscrutable UPnP error. The master hint is
+// best-effort and omitted when unknown.
+func (s *Server) writeGroupedPlayError(w http.ResponseWriter, err error) {
+	resp := map[string]string{"error": "box-grouped"}
+	if master := s.groupMasterHint(); master != "" {
+		resp["master"] = master
+	}
+	s.logger.Info("play rejected: box is a grouped follower, answering 409 box-grouped",
+		"master", resp["master"], "err", err)
+	writeJSON(w, http.StatusConflict, resp)
+}
+
+// groupMasterHint resolves the current zone master (deviceID, falling back to
+// the master's LAN IP) from the box's own /getZone, with a short budget so a
+// slow firmware cannot stall the error response. Empty when unknown.
+func (s *Server) groupMasterHint() string {
+	if s.boxHost == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	z, err := boxapi.New(s.boxHost).GetZone(ctx)
+	if err != nil {
+		return ""
+	}
+	if z.Master != "" {
+		return z.Master
+	}
+	return z.SenderIP
 }
 
 // ---- Box Settings (Bose API Proxy) ----
