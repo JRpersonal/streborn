@@ -319,7 +319,7 @@
   "update.speakerAppLine": "Głośnik: {{box}} · Aplikacja: {{app}}",
   "update.speakerRunningOld": "Głośnik działa w wersji {{boxVersion}}, aplikacja działa w {{appVersion}}.",
   "update.refreshBtn": "Aktualizuj",
-  "update.rebootNote": "Głośnik uruchamia się ponownie podczas aktualizacji - w zależności od aktualizacji raz lub dwa razy - i sam się łączy. To nie jest reset: presety i ustawienia zostają zachowane.",
+  "update.rebootNote": "Głośnik uruchamia się ponownie podczas aktualizacji - w zależności od aktualizacji raz lub dwa razy - i sam się łączy. To nie jest reset: presety i ustawienia zostają zachowane. Jeśli po kilku minutach nie wróci lub kontrolki głośnika migają na bursztynowo, odłącz go na chwilę od zasilania i podłącz ponownie.",
   "update.uploading": "Przesyłanie (ok. 1 min)...",
   "update.uploadedToast": "Aktualizacja wysłana. Głośnik się restartuje i potrzebuje do kilku minut, by znów odpowiadać.",
   "update.rebooting": "Głośnik uruchamia się ponownie i łączy (zwykle 2-4 min)...",

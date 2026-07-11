@@ -319,7 +319,7 @@
   "update.speakerAppLine": "Enceinte : {{box}} · Application : {{app}}",
   "update.speakerRunningOld": "L'enceinte est en version {{boxVersion}}, l'application en {{appVersion}}.",
   "update.refreshBtn": "Mettre à jour",
-  "update.rebootNote": "L'enceinte redémarre pendant la mise à jour - une ou deux fois selon la mise à jour - et se reconnecte d'elle-même. Ce n'est pas une réinitialisation : vos présélections et réglages sont conservés.",
+  "update.rebootNote": "L'enceinte redémarre pendant la mise à jour - une ou deux fois selon la mise à jour - et se reconnecte d'elle-même. Ce n'est pas une réinitialisation : vos présélections et réglages sont conservés. S'il ne revient pas après quelques minutes ou si les voyants clignotent en orange, débranchez brièvement l'enceinte, puis rebranchez-la.",
   "update.uploading": "Envoi en cours (environ 1 min)...",
   "update.uploadedToast": "Mise à jour envoyée. L'enceinte redémarre et met jusqu'à quelques minutes à répondre de nouveau.",
   "update.rebooting": "L'enceinte redémarre et se reconnecte (en général 2 à 4 min)...",

@@ -319,7 +319,7 @@
   "update.speakerAppLine": "Skaļrunis: {{box}} · Lietotne: {{app}}",
   "update.speakerRunningOld": "Skaļrunis darbojas ar versiju {{boxVersion}}, lietotne darbojas ar {{appVersion}}.",
   "update.refreshBtn": "Atjaunināt",
-  "update.rebootNote": "Atjaunināšanas laikā skaļrunis restartējas - atkarībā no atjauninājuma vienu vai divas reizes - un pats atkal pieslēdzas. Tā nav atiestatīšana: iestatījumi un stacijas saglabājas.",
+  "update.rebootNote": "Atjaunināšanas laikā skaļrunis restartējas - atkarībā no atjauninājuma vienu vai divas reizes - un pats atkal pieslēdzas. Tā nav atiestatīšana: iestatījumi un stacijas saglabājas. Ja pēc dažām minūtēm tas neatgriežas vai skaļruņa indikatori mirgo dzintarkrāsā, uz brīdi atvienojiet to no strāvas un pievienojiet no jauna.",
   "update.uploading": "Notiek augšupielāde (apmēram 1 min)...",
   "update.uploadedToast": "Atjauninājums augšupielādēts. Skaļrunis tiek restartēts un var paiet līdz dažām minūtēm, līdz tas atkal atbild.",
   "update.rebooting": "Skaļrunis restartējas un atkal pieslēdzas (parasti 2-4 min)...",

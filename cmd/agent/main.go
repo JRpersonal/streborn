@@ -2431,13 +2431,14 @@ func maybeRebootAfterBootstrapSync(logger *slog.Logger) {
 	}
 	logger.Warn("bootstrap reboot: boot path was refreshed, rebooting once so the new run-override.sh/rc.local run this cycle instead of waiting for a manual power-cycle",
 		"stamp", stamp)
-	// On the lisa chassis (Wave SoundTouch, SA-4), a reboot fired seconds after
-	// boot — stacked on the install/bootstrap reboot — trips Bose's shepherdd
-	// watchdog into --recovery mode, where the Bose services never start and
-	// radio cannot play until a manual power-cycle (#372). Wait for the Bose
-	// stack to come up first so shepherd marks this boot successful and resets
-	// its crash-loop counter; the reboot that follows is then a clean single
-	// reboot. No-op on every other chassis.
+	// A reboot fired seconds after boot — stacked on the install/bootstrap/OTA
+	// reboot — trips Bose's shepherdd watchdog into --recovery mode, where the
+	// Bose services never start and radio cannot play until a manual power-cycle
+	// (the box shows the alternating amber LED pattern). First seen on the lisa
+	// chassis (Wave, SA-4, #372) and now confirmed on ginger (SoundTouch 300,
+	// reported 2026-07-11 after a v0.9.4 OTA). Wait for the Bose stack to come up
+	// first so shepherd marks this boot successful and resets its crash-loop
+	// counter; the reboot that follows is then a clean single reboot.
 	settleBeforeFragileReboot(logger)
 	// Flush pending writes (the stick log, the bootstrap files and the
 	// guard stamp on NAND) before we pull the rug out. busybox `sync`
@@ -2459,23 +2460,37 @@ func boxVariant() string {
 	return strings.ToLower(strings.TrimSpace(string(b)))
 }
 
-// settleBeforeFragileReboot delays a STR-initiated early-boot reboot on the
-// lisa chassis until the Bose service stack has come up on this boot, so a
-// reboot stacked on the install/bootstrap reboot does not trip shepherdd into
-// --recovery mode (#372). Waiting for :8090 to answer means shepherd has
-// marked this boot successful and reset its crash-loop counter. Best-effort:
-// after the settle window it reboots anyway. No-op on every other chassis,
-// where the stacked reboot has never tripped recovery (rhino/mojo/taigan are
-// verified).
+// verifiedFastRebootChassis are the Bose chassis codenames Jens has
+// hardware-verified to survive a stacked early-boot reboot without shepherdd
+// entering --recovery, so they skip the settle wait and reboot immediately.
+// Every OTHER chassis (lisa/Wave/SA-4 #372, ginger/ST300, and any unknown or
+// unreadable variant) waits for the Bose stack first: the amber-recovery trip
+// turned out NOT to be lisa-only, so the safe default is to settle unless a
+// chassis is on this proven-fast allowlist.
+var verifiedFastRebootChassis = map[string]bool{
+	"rhino":  true, // SoundTouch 10
+	"mojo":   true, // SoundTouch 30 (scm/sm2)
+	"taigan": true, // SoundTouch Portable
+}
+
+// settleBeforeFragileReboot delays a STR-initiated early-boot reboot until the
+// Bose service stack has come up on this boot, so a reboot stacked on the
+// install/bootstrap/OTA reboot does not trip shepherdd into --recovery mode
+// (the alternating amber LED lockup that needs a manual power-cycle, #372 lisa +
+// ginger/ST300). Waiting for :8090 to answer means shepherd has marked this boot
+// successful and reset its crash-loop counter. Skipped on the hardware-verified
+// fast chassis; best-effort everywhere else — after the settle window it reboots
+// anyway.
 func settleBeforeFragileReboot(logger *slog.Logger) {
-	if boxVariant() != "lisa" {
+	variant := boxVariant()
+	if verifiedFastRebootChassis[variant] {
 		return
 	}
 	const (
 		maxWait = 100 * time.Second
 		grace   = 5 * time.Second
 	)
-	logger.Info("bootstrap reboot: lisa chassis — waiting for the Bose stack (:8090) before rebooting so shepherdd does not enter recovery (#372)")
+	logger.Info("bootstrap reboot: waiting for the Bose stack (:8090) before rebooting so shepherdd does not enter recovery (#372)", "variant", variant)
 	deadline := time.Now().Add(maxWait)
 	for time.Now().Before(deadline) {
 		if dialable("127.0.0.1", 8090) {
@@ -2485,7 +2500,7 @@ func settleBeforeFragileReboot(logger *slog.Logger) {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	logger.Warn("bootstrap reboot: lisa chassis — Bose stack did not come up within the settle window; rebooting anyway (best-effort)")
+	logger.Warn("bootstrap reboot: Bose stack did not come up within the settle window; rebooting anyway (best-effort)", "variant", variant)
 }
 
 // stampVersionFiles writes this binary's version (semver + build stamp)

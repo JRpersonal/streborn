@@ -319,7 +319,7 @@
   "update.speakerAppLine": "Altavoz: {{box}} · Aplicación: {{app}}",
   "update.speakerRunningOld": "El altavoz tiene la versión {{boxVersion}}, la aplicación la {{appVersion}}.",
   "update.refreshBtn": "Actualizar",
-  "update.rebootNote": "El altavoz se reinicia durante la actualización - una o dos veces según la actualización - y se reconecta solo. No es un restablecimiento: se conservan los presets y ajustes.",
+  "update.rebootNote": "El altavoz se reinicia durante la actualización - una o dos veces según la actualización - y se reconecta solo. No es un restablecimiento: se conservan los presets y ajustes. Si no vuelve tras unos minutos o los pilotos del altavoz parpadean en ámbar, desenchúfalo un momento de la corriente y vuelve a enchufarlo.",
   "update.uploading": "Subiendo (aprox. 1 min)...",
   "update.uploadedToast": "Actualización subida. El altavoz se reinicia y tarda hasta unos minutos en responder de nuevo.",
   "update.rebooting": "El altavoz se reinicia y se reconecta (normalmente 2-4 min)...",

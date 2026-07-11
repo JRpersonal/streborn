@@ -351,7 +351,7 @@
   "update.speakerAppLine": "Lautsprecher: {{box}} · App: {{app}}",
   "update.speakerRunningOld": "Der Lautsprecher läuft mit Version {{boxVersion}}, die App hat Version {{appVersion}}.",
   "update.refreshBtn": "Aktualisieren",
-  "update.rebootNote": "Der Lautsprecher startet während des Updates neu - je nach Update ein- oder zweimal - und verbindet sich von selbst wieder. Das ist kein Reset: Presets und Einstellungen bleiben erhalten.",
+  "update.rebootNote": "Der Lautsprecher startet während des Updates neu - je nach Update ein- oder zweimal - und verbindet sich von selbst wieder. Das ist kein Reset: Presets und Einstellungen bleiben erhalten. Kommt er nach ein paar Minuten nicht zurück oder blinken die Lichter am Lautsprecher gelb, trenne ihn kurz vom Strom und stecke ihn wieder ein.",
   "update.speakerUpdateAvailFor": "Update für '{{name}}' verfügbar",
   "update.versionLine": "installiert: {{installed}} → neu: {{next}}",
   "update.appBehindTitle": "Diese App ist älter als '{{name}}'",

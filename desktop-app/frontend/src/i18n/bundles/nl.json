@@ -319,7 +319,7 @@
   "update.speakerAppLine": "Speaker: {{box}} · App: {{app}}",
   "update.speakerRunningOld": "De speaker draait versie {{boxVersion}}, de app draait {{appVersion}}.",
   "update.refreshBtn": "Bijwerken",
-  "update.rebootNote": "De speaker herstart tijdens de update - afhankelijk van de update één of twee keer - en verbindt vanzelf opnieuw. Dit is geen reset: presets en instellingen blijven behouden.",
+  "update.rebootNote": "De speaker herstart tijdens de update - afhankelijk van de update één of twee keer - en verbindt vanzelf opnieuw. Dit is geen reset: presets en instellingen blijven behouden. Komt hij na een paar minuten niet terug of knipperen de lampjes op de speaker oranje, koppel hem dan even los van de stroom en sluit hem weer aan.",
   "update.uploading": "Uploaden (ca. 1 min)...",
   "update.uploadedToast": "Update geüpload. De speaker herstart en heeft tot enkele minuten nodig om weer te antwoorden.",
   "update.rebooting": "Speaker herstart en verbindt opnieuw (meestal 2-4 min)...",

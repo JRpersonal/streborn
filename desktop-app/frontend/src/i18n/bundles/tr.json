@@ -319,7 +319,7 @@
   "update.speakerAppLine": "Hoparlör: {{box}} · Uygulama: {{app}}",
   "update.speakerRunningOld": "Hoparlör {{boxVersion}} sürümüyle, uygulama {{appVersion}} ile çalışıyor.",
   "update.refreshBtn": "Güncelle",
-  "update.rebootNote": "Hoparlör güncelleme sırasında yeniden başlar - güncellemeye bağlı olarak bir veya iki kez - ve kendiliğinden yeniden bağlanır. Bu bir sıfırlama değildir: kayıtlar ve ayarlar korunur.",
+  "update.rebootNote": "Hoparlör güncelleme sırasında yeniden başlar - güncellemeye bağlı olarak bir veya iki kez - ve kendiliğinden yeniden bağlanır. Bu bir sıfırlama değildir: kayıtlar ve ayarlar korunur. Birkaç dakika içinde geri gelmezse veya hoparlörde sarı ışıklar yanıp sönerse, cihazı kısa süreliğine fişten çekip tekrar takın.",
   "update.uploading": "Yükleniyor (yaklaşık 1 dk)...",
   "update.uploadedToast": "Güncelleme yüklendi. Hoparlör yeniden başlatılıyor ve tekrar yanıt vermesi birkaç dakika sürebilir.",
   "update.rebooting": "Hoparlör yeniden başlatılıyor ve bağlanıyor (genellikle 2-4 dk)...",
