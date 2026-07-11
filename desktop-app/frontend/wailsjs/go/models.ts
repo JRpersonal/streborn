@@ -36,6 +36,8 @@ export namespace main {
 	    version: string;
 	    build: string;
 	    boxHealth?: string;
+	    conflictingMod?: string;
+	    wlanCredsMissing?: boolean;
 	    serialNumber: string;
 	    kind: string;
 	    portVerified: boolean;
@@ -55,6 +57,8 @@ export namespace main {
 	        this.version = source["version"];
 	        this.build = source["build"];
 	        this.boxHealth = source["boxHealth"];
+	        this.conflictingMod = source["conflictingMod"];
+	        this.wlanCredsMissing = source["wlanCredsMissing"];
 	        this.serialNumber = source["serialNumber"];
 	        this.kind = source["kind"];
 	        this.portVerified = source["portVerified"];
