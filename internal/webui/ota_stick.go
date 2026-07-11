@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // OTA stick refresh (discussion #381).
@@ -60,9 +61,38 @@ func refreshStickAgentBinary(body []byte, logger *slog.Logger) {
 			"path", dst, "err", err)
 		return
 	}
-	// Flush to the device: the reboot follows within seconds and a vfat write
-	// otherwise sits in the page cache and is lost (same reason ota.go's SSH
-	// refresh does a durable unmount). Best-effort; busybox always has sync.
+	// Durably commit to the stick before the reboot. A plain sync flushes only
+	// the kernel page cache; on these boxes the write then still sits in the USB
+	// controller's own volatile cache, and the post-OTA reboot cuts USB power
+	// dirty, so the stick reverts to its last cleanly-ejected image and the boot
+	// sync copies the OLD binary back over NAND - the very #381 loop this exists
+	// to stop (project_durable_stick_write, live-verified). The load-bearing step
+	// is `echo 1 > /sys/block/<disk>/device/delete`, which drives the kernel's
+	// SCSI SYNCHRONIZE CACHE - exactly what the desktop app's SSH unmountStick
+	// does. Safe here because the running agent executes from the NAND cache, not
+	// the stick, so detaching the stick device does not kill it, and the reboot
+	// follows immediately. Best-effort throughout.
 	_ = exec.Command("sync").Run()
+	if disk := stickDiskBase(mnt); disk != "" {
+		_ = exec.Command("umount", mnt).Run()
+		del := filepath.Join(sysBlockRoot, disk, "device", "delete")
+		if err := os.WriteFile(del, []byte("1\n"), 0o644); err != nil {
+			logger.Warn("OTA stick refresh: could not force the USB cache commit; a stale stick could still revert this OTA on the next boot (#381)", "disk", disk, "err", err)
+		}
+	}
 	logger.Info("OTA stick refresh: stick binary updated so the boot sync keeps this OTA", "path", dst, "bytes", len(body))
+}
+
+// stickDiskBase returns the whole-disk name (e.g. "sda") for a stick mount path
+// that stickMountDir built as mediaRoot/<disk>1, so the durable device/delete
+// node can be addressed. "" if the path does not have that shape.
+func stickDiskBase(mnt string) string {
+	if mnt == "" {
+		return ""
+	}
+	base := strings.TrimRight(filepath.Base(mnt), "0123456789") // "sda1" -> "sda"
+	if base == "." || base == "/" || base == "" {
+		return ""
+	}
+	return base
 }

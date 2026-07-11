@@ -5,8 +5,25 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// TestStickDiskBase covers the whole-disk name derivation used to address the
+// durable device/delete node (#381).
+func TestStickDiskBase(t *testing.T) {
+	cases := map[string]string{
+		"/media/sda1": "sda",
+		"/media/sdb1": "sdb",
+		"/mnt/x/sdc2": "sdc",
+		"":            "",
+	}
+	for in, want := range cases {
+		if got := stickDiskBase(in); got != want {
+			t.Errorf("stickDiskBase(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
 
 // TestRefreshStickAgentBinary covers the #381 OTA revert: run.sh's boot sync
 // copies a stick's agent binary over NAND unconditionally, so an OTA must
@@ -28,7 +45,7 @@ func TestRefreshStickAgentBinary(t *testing.T) {
 		}
 	})
 
-	t.Run("stale stick binary is replaced", func(t *testing.T) {
+	t.Run("stale stick binary is replaced and the USB cache is committed", func(t *testing.T) {
 		sysRoot, medRoot := t.TempDir(), t.TempDir()
 		oldSys, oldMed := sysBlockRoot, mediaRoot
 		sysBlockRoot, mediaRoot = sysRoot, medRoot
@@ -43,6 +60,16 @@ func TestRefreshStickAgentBinary(t *testing.T) {
 		if err := os.WriteFile(dst, []byte("OLD-AGENT-BINARY"), 0o755); err != nil {
 			t.Fatal(err)
 		}
+		// A writable delete node stands in for /sys/block/sda/device/delete so the
+		// durable-commit write (#381) can be observed without touching real sysfs.
+		delDir := filepath.Join(sysRoot, "sda", "device")
+		if err := os.MkdirAll(delDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		del := filepath.Join(delDir, "delete")
+		if err := os.WriteFile(del, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
 
 		refreshStickAgentBinary(newBin, logger)
 
@@ -52,6 +79,12 @@ func TestRefreshStickAgentBinary(t *testing.T) {
 		}
 		if _, err := os.Stat(dst + ".new"); !os.IsNotExist(err) {
 			t.Fatalf("temp file left behind on the stick: %v", err)
+		}
+		// The load-bearing #381 fix: a bare sync leaves the write in the USB
+		// controller cache and the reboot reverts it. The device/delete write must
+		// have fired to force the SCSI cache commit.
+		if b, err := os.ReadFile(del); err != nil || strings.TrimSpace(string(b)) != "1" {
+			t.Fatalf("device/delete not written to commit the USB cache (#381): got %q err=%v", b, err)
 		}
 	})
 
