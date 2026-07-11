@@ -73,6 +73,14 @@ const (
 	queueEndEpsilon   = 12 * time.Second // progress within this of the end == "ended"
 	queueTimerMargin  = 6 * time.Second  // grace past the track length before the net trips
 	queueStallTimeout = 25 * time.Second // a track that never starts is skipped
+	// queueFrozenTimeout advances when the box sits in PLAY_STATE with its
+	// position frozen and the track length is UNKNOWN. Some DLNA servers (a
+	// FRITZ!Box mediaserver) expose no duration AND the box reports no total, so
+	// end==0 and the wall-clock net cannot fire; the box also finishes the file
+	// but stays PLAY_STATE frozen at EOF instead of emitting STOP, so that path
+	// cannot fire either, and a folder hung on its first track forever (#380,
+	// #381). A position that has not moved for this long is a finished track.
+	queueFrozenTimeout = 15 * time.Second
 )
 
 // pushStream sends one stream to the box, choosing direct play (a plain-HTTP
@@ -222,6 +230,19 @@ func (s *Server) advanceAndPlay(natural bool, gen int) {
 		it, ok = s.queue.next()
 	}
 	if !ok {
+		// Queue exhausted. On a NATURAL end the box is frozen in PLAY_STATE on the
+		// last track (it finished the file but never emitted STOP, #380), so the
+		// app/remote/display keep showing it "playing" until standby. Stop the box
+		// so now_playing goes STOP_STATE and every UI updates at once. Mirror
+		// handleStop (NoteUserStop + Stop) so the 6s guard suppresses an auto
+		// re-push. A user-driven skip past the end (natural=false) already left the
+		// box stopped, so only the natural case needs this.
+		if natural {
+			s.NoteUserStop()
+			if err := s.renderer.Stop(s.queueCtx()); err != nil {
+				s.logger.Warn("queue end: stopping the box failed", "err", err)
+			}
+		}
 		s.cancelWatcher()
 		return
 	}
@@ -268,10 +289,11 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 	ticker := time.NewTicker(queuePollInterval)
 	defer ticker.Stop()
 	var (
-		gen      int
-		lastPos  time.Duration
-		obsTotal time.Duration // largest total the box reported for this track
-		sawPlay  bool
+		gen       int
+		lastPos   time.Duration
+		lastPosAt time.Time     // when lastPos last increased (frozen-position net)
+		obsTotal  time.Duration // largest total the box reported for this track
+		sawPlay   bool
 	)
 	for {
 		select {
@@ -288,7 +310,7 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		dur := s.queueTrackDur
 		s.queueMu.Unlock()
 		if curGen != gen {
-			gen, lastPos, obsTotal, sawPlay = curGen, 0, 0, false
+			gen, lastPos, lastPosAt, obsTotal, sawPlay = curGen, 0, time.Time{}, 0, false
 		}
 
 		ps, pos, total, standby := s.pollNowPlaying()
@@ -315,8 +337,13 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		switch ps {
 		case "PLAY_STATE", "BUFFERING_STATE":
 			sawPlay = true
-			if pos > 0 {
+			// Track the MAX position and when it last advanced: the box's position
+			// climbs each second while playing and then freezes at EOF, so a
+			// position that stops moving is the finished-track signal for the
+			// unknown-length case below.
+			if pos > lastPos {
 				lastPos = pos
+				lastPosAt = time.Now()
 			}
 			// Do NOT continue: fall through to the wall-clock net. Some renderers
 			// (seen on the ST20 with direct-played NAS files) finish a finite file
@@ -353,6 +380,18 @@ func (s *Server) runQueueWatcher(ctx context.Context) {
 		// PLAY_STATE on a finite file's EOF (#219), neither of which the STOP path
 		// above can catch.
 		if sawPlay && end > 0 && time.Since(start) >= end+queueTimerMargin {
+			s.advanceAndPlay(true, curGen)
+			continue
+		}
+		// Frozen-position net, for the UNKNOWN-length case only (end==0): the box
+		// stays PLAY_STATE but its position has not advanced for queueFrozenTimeout,
+		// which the wall-clock net above cannot catch without a length. Gated on
+		// end==0 so any queue with a known duration/total keeps the vetted
+		// wall-clock net unchanged (the Synology/#219 path does not regress). A
+		// genuine mid-track stall reports BUFFERING_STATE (excluded here), so this
+		// trips only at a real EOF (#380, #381 FRITZ!Box mediaserver).
+		if sawPlay && ps == "PLAY_STATE" && end == 0 && lastPos > 0 &&
+			!lastPosAt.IsZero() && time.Since(lastPosAt) >= queueFrozenTimeout {
 			s.advanceAndPlay(true, curGen)
 		}
 	}
