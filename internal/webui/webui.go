@@ -3481,6 +3481,10 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 				// for this PID before copying (the running binary is ETXTBSY
 				// and its blocks are pinned until we are gone).
 				time.Sleep(1500 * time.Millisecond)
+				// Refresh a still-inserted stick BEFORE exiting so the boot
+				// sync cannot revert this update (#381). Delaying our exit is
+				// safe: the swap helper waits for this PID.
+				refreshStickAgentBinary(body, s.logger)
 				s.logger.Info("exiting for the RAM-staged binary swap; the helper reboots the box")
 				os.Exit(0)
 			}()
@@ -3512,6 +3516,12 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	// above flushes to the desktop app before the box drops off the LAN.
 	go func() {
 		time.Sleep(1500 * time.Millisecond)
+		// Refresh a still-inserted stick BEFORE the reboot: run.sh's boot sync
+		// copies the stick binary over NAND unconditionally, so a stale stick
+		// would silently revert the binary just written to dst (#381). The
+		// desktop app's SSH stick refresh covers this only when SSH is open;
+		// this on-box write needs nothing. The reboot waits for it.
+		refreshStickAgentBinary(body, s.logger)
 		s.logger.Info("post-OTA reboot")
 		_ = dst // the new binary is in place at dst; the boot path runs it
 		if err := exec.Command("reboot").Run(); err != nil {
@@ -5373,25 +5383,37 @@ func diskIsRemovableUSB(disk string) bool {
 // forever with nothing to remove. Reading an STR marker off the mount instead
 // keys on the one thing only a real, inserted STR stick produces.
 func stickReallyMounted() (bool, string) {
+	mnt := stickMountDir()
+	if mnt == "" {
+		return false, ""
+	}
+	// version.txt is the authoritative marker and carries the stick version.
+	if b, err := os.ReadFile(filepath.Join(mnt, "version.txt")); err == nil {
+		return true, strings.TrimSpace(string(b))
+	}
+	return true, ""
+}
+
+// stickMountDir returns the mount directory of a real, inserted STR stick, or
+// "" when none is present. Same positive-proof contract as stickReallyMounted
+// (#179): a readable STR marker on a mounted /media/<disk>1, never a bare
+// removable/USB block device.
+func stickMountDir() string {
 	for _, disk := range []string{"sda", "sdb"} {
 		if !diskIsRemovableUSB(disk) {
 			continue
 		}
 		mnt := filepath.Join(mediaRoot, disk+"1")
-		// version.txt is the authoritative marker and carries the stick version.
-		if b, err := os.ReadFile(filepath.Join(mnt, "version.txt")); err == nil {
-			return true, strings.TrimSpace(string(b))
-		}
-		// Sticks that predate version.txt: accept the STR stick layout itself.
-		// Still requires the stick to be mounted (these paths only exist on a
-		// real, inserted stick), so the #179 phantom sda with no mount stays false.
-		for _, marker := range []string{"install.sh", "run.sh", "streborn-armv7l"} {
+		// Sticks that predate version.txt count via the STR stick layout itself.
+		// All markers only exist on a real, inserted stick, so the #179 phantom
+		// sda with no mount stays false.
+		for _, marker := range []string{"version.txt", "install.sh", "run.sh", "streborn-armv7l"} {
 			if _, err := os.Stat(filepath.Join(mnt, marker)); err == nil {
-				return true, ""
+				return mnt
 			}
 		}
 	}
-	return false, ""
+	return ""
 }
 
 // handleStickStatus reports whether the USB stick is actually in the box right
