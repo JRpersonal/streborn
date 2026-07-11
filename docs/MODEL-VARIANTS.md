@@ -105,10 +105,13 @@ Observed live in a 2026-07-04 diagnostic bundle (#182): `moduleType=sm2`,
 same final build as every supported model) plus a `PackagedProduct`
 component (04.04.08) and an SCM + SMSC dual-MAC `networkInfo`. This
 supersedes the earlier "likely different CPU" assumption: the module IS an
-`sm2`, so the ARMv7l GOARM=5 agent binary should execute. What is missing
-is a validated first-install path (no stick-boot evidence on `lisa`
-chassis); the stick-free `:17000` network install is the candidate route.
-See the `lisa` table below.
+`sm2`, so the ARMv7l GOARM=5 agent binary executes. The stick-free
+`:17000` network install (v0.9.0+) is the validated first-install route:
+the maintainer and two independent #182 users installed end to end
+(2026-07-09 and 2026-07-11), with presets, NAS/DLNA playback, and ST20
+grouping working, and the IR remote's preset keys 1-6 recalling STR
+presets under the SoundTouch source. The Wave never reads a USB stick at
+boot, so the network install is the only path. See the `lisa` table below.
 
 ## How to read a new bundle
 
@@ -131,19 +134,20 @@ When the agent is up on `:8888`, the matching `setup.log` (in `debugState.setup_
 - `bose /etc/Variant:` line for the Bose variant marker (often blank if the file is unreadable; populated on intact boxes)
 - `writable:` lines for `/etc`, `/mnt/nv`, `/tmp`, `/media/sda1`
 
-## The `lisa` variant (SA-4, Wave SoundTouch, CineMate) — UNVERIFIED
+## The `lisa` variant (SA-4, Wave SoundTouch, CineMate)
 
-Seen in the 2026-06-28 triage bundles (#273 SA-4, plus a Wave SoundTouch):
+Seen in the 2026-06-28 triage bundles (#273 SA-4, plus a Wave SoundTouch)
+and installed end to end since:
 
 | `moduleType` | `variant` | `type` | Components | First-install state |
 | --- | --- | --- | --- | --- |
-| `scm` | `lisa` | `SoundTouch SA-4` | SCM, PackagedProduct, **Lightswitch**, **SMSC** | **blocked** — the box never reads the stick at boot, so the stick-gated SSH window never opens (`reachableSSH=false` while `:8090` is up). Same "install-window-closed" signature `install_str.go` documents for the ST300. |
-| `scm` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, Lightswitch, SMSC | same family; the agent would likely run via the `:17008` REDIRECT like the `scm` ST20, but there is no validated first-install path. |
-| `sm2` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, SMSC | seen 2026-07-04 (#182, `variantMode=NoAP`): the Wave ships on BOTH module types. Same install gap as the `scm` row; the `:17000` stick-free install is the candidate. |
-| `sm2` | `burns` | `SoundTouch SA-5` | SCM, PackagedProduct, SMSC | seen 2026-07-04 (#274 fleet bundle): fw 27.0.6, no STR, stick never read. Same story as `lisa`: agent should run, first-install path unvalidated. |
-| `sm2` | `lisa` | `CineMate` | SCM, PackagedProduct | unverified. |
+| `scm` | `lisa` | `SoundTouch SA-4` | SCM, PackagedProduct, **Lightswitch**, **SMSC** | **validated** — a user network-installed STR end to end 2026-07-09. The stick was never an option (it does not read USB at boot); the stick-free `:17000` network install is the path. |
+| `scm` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, Lightswitch, SMSC | **validated** — the agent runs via the `:17008` REDIRECT like the `scm` ST20; stick-free network install confirmed end to end (#182, 2026-07-09 and 2026-07-11). |
+| `sm2` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, SMSC | **validated** — seen 2026-07-04 (#182, `variantMode=NoAP`): the Wave ships on BOTH module types. Stick-free network install confirmed end to end (#182, 2026-07-09 and 2026-07-11: presets, NAS/DLNA playback, ST20 grouping). |
+| `sm2` | `burns` | `SoundTouch SA-5` | SCM, PackagedProduct, SMSC | seen 2026-07-04 (#274 fleet bundle): fw 27.0.6, no STR, stick never read. Agent should run, first-install path still unvalidated. |
+| `sm2` | `lisa` | `CineMate 520` | SCM, PackagedProduct | **validated** — a user network-installed STR end to end 2026-07-09. Other CineMate models remain untested. |
 
-These are **Unknown/unsupported** (docs/MODELS.md). The UI should warn that a `variant=lisa` chassis is unverified instead of presenting it as installable/healable (#283). Note: in a diagnostic a stock `scm/lisa` box shows `reachable8888=true` because that field probes **:17008**, where Bose's own SoftwareUpdate answers; the authoritative "STR present" signal is the new `strDetected` field, not `reachable8888`.
+The Wave, SA-4, and CineMate 520 are now **Working** (docs/MODELS.md); the untested-model UI warning was removed in v0.9.2 (#283 follow-up). The SA-5 (`burns`) remains unvalidated. Note: in a diagnostic a stock `scm/lisa` box shows `reachable8888=true` because that field probes **:17008**, where Bose's own SoftwareUpdate answers; the authoritative "STR present" signal is the `strDetected` field, not `reachable8888`.
 
 ## Why this matters for STR
 
