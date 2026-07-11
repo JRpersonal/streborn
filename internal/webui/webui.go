@@ -1890,12 +1890,15 @@ func (s *Server) persistLastPlay(boxURL, title, art, mime string, ts time.Time) 
 		return
 	}
 	tmp := s.lastPlayPath + ".tmp"
+	// Warn, not Debug: on a full NAND this is the ONLY trace of why the
+	// power-on resume has no station to bring back after the next standby
+	// (#119, ST30 with a full /mnt/nv).
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		s.logger.Debug("last-play persist failed", "err", err)
+		s.logger.Warn("last-play persist failed", "err", err)
 		return
 	}
 	if err := os.Rename(tmp, s.lastPlayPath); err != nil {
-		s.logger.Debug("last-play rename failed", "err", err)
+		s.logger.Warn("last-play rename failed", "err", err)
 		_ = os.Remove(tmp)
 	}
 }
@@ -2284,29 +2287,25 @@ func (s *Server) RecoverAfterReconnect() {
 	if !s.resumeOnPowerOnEnabled() {
 		return
 	}
-	if s.userStoppedRecently() {
-		return
-	}
-	// A gabbo reconnect can land mid power-off bounce (a flapping scm box keeps
-	// reconnecting). If STR saw this box drop UPNP->STANDBY moments ago, stand down
-	// so the reconnect recovery does not re-push a URI the firmware bounces on (#197).
-	if s.standbyStoppedRecently() {
-		return
-	}
 	// A deliberate user stop must survive a WS reconnect: without this guard a
 	// reconnect resumed the last stream the user had stopped.
 	if s.userStoppedRecently() {
 		s.logger.Info("reconnect recovery: user stopped recently, not resuming")
 		return
 	}
+	// A gabbo reconnect can land mid power-off bounce (a flapping scm box keeps
+	// reconnecting). If STR saw this box drop UPNP->STANDBY moments ago, stand down
+	// so the reconnect recovery does not re-push a URI the firmware bounces on (#197).
+	if s.standbyStoppedRecently() {
+		s.logger.Info("reconnect recovery: box just dropped to standby, not resuming (#197)")
+		return
+	}
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay
-	// Reconnect recovery is for a box that dropped its WS WHILE playing our
-	// stream and came back with the selection stuck - a recent event. A WS
-	// reconnect resuming an hours-old stream is wrong (the box was not playing
-	// it just before the blip), so use a short window here, unlike the
-	// power-on resume's generous age.
-	if lp == nil || time.Since(lp.ts) >= reconnectResumeMaxAge {
+	// The strict age gate depends on WHAT the box is stuck on and is applied
+	// below once the selection is known (reconnectResumeWindow); here only the
+	// generous outer bound shared with the power-on resume applies.
+	if lp == nil || time.Since(lp.ts) >= resumeMaxAge {
 		s.lastPlayMu.Unlock()
 		return
 	}
@@ -2337,6 +2336,11 @@ func (s *Server) RecoverAfterReconnect() {
 		if selLoc != "" && !sameStream(selLoc, boxURL) {
 			s.logger.Info("reconnect recovery: box is stuck on a different selection than our last stream, not resuming",
 				"selection", selLoc, "lastPlay", boxURL)
+			return
+		}
+		if age := time.Since(capturedTS); age >= reconnectResumeWindow(selLoc) {
+			s.logger.Info("reconnect recovery: last stream too old for this recovery, not resuming",
+				"age", age, "window", reconnectResumeWindow(selLoc))
 			return
 		}
 		s.boxCmdMu.Lock()
@@ -2435,11 +2439,28 @@ func streamPath(raw string) string {
 	return u.Path
 }
 
-// reconnectResumeMaxAge bounds how old the last stream may be for a WS-reconnect
-// recovery to resume it. Short on purpose: a reconnect resumes a stream the box
-// was playing JUST before a brief WS blip, not an hours-old one (the power-on
-// resume uses a far larger window for a deliberate power press).
+// reconnectResumeMaxAge bounds how old the last stream may be when the box is
+// stuck on OUR OWN stream location after a WS blip: that shape means the box
+// dropped the stream mid-playback, so it only counts as "just playing" for a
+// few minutes. Deliberately short - resurrecting an hours-old stopped stream
+// surprised users (#ST30 self-start, 2026-07-10).
 const reconnectResumeMaxAge = 10 * time.Minute
+
+// reconnectResumeWindow returns how old the last stream may be for the
+// reconnect recovery to resume it, depending on the box's stuck selection. A
+// bare INVALID_SOURCE with no location is the wake signature (#183): after a
+// deep standby the box often reboots, the wake frame beats the rebooted
+// agent's first gabbo connect, and this recovery is then the ONLY path that
+// brings the last station back - so it keeps the power-on resume's generous
+// window ("abends aus, morgens an", #119). A selection stuck on our own stream
+// location is a mid-playback drop and only resumes when it happened minutes
+// ago (see reconnectResumeMaxAge).
+func reconnectResumeWindow(stuckSelectionLocation string) time.Duration {
+	if stuckSelectionLocation == "" {
+		return resumeMaxAge
+	}
+	return reconnectResumeMaxAge
+}
 
 // defaultResumeOnPowerOnPath is the NAND flag file for the per-box power-on
 // resume opt-out. Absent or "1" means on (the default), "0" means off.

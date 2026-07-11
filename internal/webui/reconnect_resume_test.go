@@ -29,3 +29,18 @@ func TestSameStream(t *testing.T) {
 		}
 	}
 }
+
+// A bare INVALID_SOURCE (no location) is the deep-standby wake signature: the
+// box rebooted, the wake frame beat the agent's first gabbo connect, and the
+// reconnect recovery is the only path that brings the last station back. That
+// case must keep the power-on resume's generous window, or the overnight
+// resume breaks again (#119). A selection stuck on our own stream location is
+// a mid-playback drop and must stay inside the short blip window.
+func TestReconnectResumeWindow(t *testing.T) {
+	if got := reconnectResumeWindow(""); got != resumeMaxAge {
+		t.Errorf("empty location: window = %v, want resumeMaxAge %v", got, resumeMaxAge)
+	}
+	if got := reconnectResumeWindow("http://192.0.2.9:17008/stream/2"); got != reconnectResumeMaxAge {
+		t.Errorf("own-stream location: window = %v, want reconnectResumeMaxAge %v", got, reconnectResumeMaxAge)
+	}
+}
