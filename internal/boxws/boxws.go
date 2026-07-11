@@ -122,6 +122,20 @@ type Client struct {
 	// rather than repeatedly while AUX stays the active source.
 	lastSource string
 
+	// lastInvalidSourceAt / lastPresetPressAt time the box's own UPnP-source
+	// teardown. On scm/mojo firmware (ST30) a preset switch AND an involuntary
+	// stream drop both tear STR's UPNP source down through INVALID_SOURCE and
+	// emit a transient STOP_STATE nowPlaying frame. Treating that STOP_STATE as a
+	// deliberate user stop latched lastUserStop, which then suppressed BOTH the
+	// box-side-drop recovery (maybeRePush: a radio stream stayed dead after a few
+	// minutes) and the recall verify retry (verifyPlayURL: a re-press never
+	// recovered a SetURI that raced the wake) - the preset buttons looked broken
+	// (#ST30 "button 2 dies after a few minutes, re-press does not fix it",
+	// 2026-07-11). These stamps let the STOP_STATE handler tell that teardown
+	// apart from a genuine stop. Guarded by mu.
+	lastInvalidSourceAt time.Time
+	lastPresetPressAt   time.Time
+
 	// Thumb-trigger heuristic state. The remote thumbs keys surface only as a
 	// generic <userActivityUpdate/>; we treat a "lone" one (no volume / now
 	// playing / preset event around it) as a thumb press and fire
@@ -564,6 +578,50 @@ type ZoneMemberState struct {
 	Role     string
 }
 
+// presetTeardownWindow / invalidSourceTeardownWindow bound how soon after a
+// hardware preset press or an INVALID_SOURCE flap a STOP_STATE still counts as
+// the box's own teardown rather than a deliberate user stop. Kept short: the
+// teardown STOP_STATE arrives within a fraction of a second of the flap/press on
+// the observed scm/mojo firmware, while a real stop the user makes seconds later
+// is well outside these windows and still honoured.
+const (
+	presetTeardownWindow        = 4 * time.Second
+	invalidSourceTeardownWindow = 2 * time.Second
+)
+
+// stopStateIsTeardown reports whether a STOP_STATE nowPlaying frame is the box's
+// own UPnP-source teardown (a preset switch or an involuntary stream drop, both
+// of which flap the source through INVALID_SOURCE) rather than a deliberate user
+// stop. Only a genuine stop must fire OnUserStop; a teardown must not, or the
+// latched user-stop suppresses the drop recovery and the recall retry and the
+// preset buttons look dead (#ST30 2026-07-11). Returns the reason for the log.
+func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
+	// The frame itself admits the box could not hold STR's source: either the
+	// nowPlaying source attribute or its nested ContentItem reads INVALID_SOURCE
+	// (the failed self-activation) or STANDBY (a power-off teardown, already
+	// covered elsewhere but never a "user stopped the stream").
+	if np != nil {
+		for _, src := range []string{np.Source, np.ContentItem.Source} {
+			if src == "INVALID_SOURCE" || src == "STANDBY" {
+				return true, "nowPlaying source=" + src
+			}
+		}
+	}
+	c.mu.Lock()
+	sincePress := time.Since(c.lastPresetPressAt)
+	sinceInvalid := time.Since(c.lastInvalidSourceAt)
+	pressSet := !c.lastPresetPressAt.IsZero()
+	invalidSet := !c.lastInvalidSourceAt.IsZero()
+	c.mu.Unlock()
+	if pressSet && sincePress < presetTeardownWindow {
+		return true, "hardware preset pressed " + sincePress.Round(time.Millisecond).String() + " ago"
+	}
+	if invalidSet && sinceInvalid < invalidSourceTeardownWindow {
+		return true, "source flapped to INVALID_SOURCE " + sinceInvalid.Round(time.Millisecond).String() + " ago"
+	}
+	return false, ""
+}
+
 func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	c.logger.Debug("box ws frame", "bytes", len(data), "preview", preview(data, 400))
 
@@ -607,6 +665,12 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			changed := src != c.lastSource
 			prev := c.lastSource
 			c.lastSource = src
+			// Stamp every flap to INVALID_SOURCE (the box's failed self-activation
+			// of STR's UPNP source): a STOP_STATE within a moment of it is that
+			// teardown, not a user stop. See stopStateIsTeardown.
+			if src == "INVALID_SOURCE" {
+				c.lastInvalidSourceAt = time.Now()
+			}
 			c.mu.Unlock()
 			if changed {
 				// Log every source transition at INFO (rare by construction: only
@@ -704,8 +768,16 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		// longer trip it. INFO, not DEBUG: stops are rare and this is the signal
 		// the re-push decision hinges on, so it must be visible in a bundle.
 		if f.NowPlaying.playStatus() == "STOP_STATE" && c.handler != nil {
-			c.logger.Info("box ws: playback stopped (STOP_STATE), treating as user stop")
-			c.handler.OnUserStop(ctx)
+			if teardown, why := c.stopStateIsTeardown(f.NowPlaying); teardown {
+				// Not a user stop: the box tore its own UPNP source down (a preset
+				// switch or an involuntary stream drop). Firing OnUserStop here
+				// latched a phantom user-stop that killed the drop recovery and the
+				// re-press retry, so the buttons looked dead (#ST30 2026-07-11).
+				c.logger.Info("box ws: STOP_STATE during a source teardown, not a user stop (recovery stays armed)", "reason", why)
+			} else {
+				c.logger.Info("box ws: playback stopped (STOP_STATE), treating as user stop")
+				c.handler.OnUserStop(ctx)
+			}
 		}
 	case f.PresetsUpdated != nil:
 		// The box reported its own preset list (#14). Surface the full set incl.
@@ -868,6 +940,11 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		"source", pe.ContentItem.Source,
 		"title", pe.ContentItem.ItemName,
 	)
+	// Stamp the press so the STOP_STATE this switch teardown emits a moment later
+	// is recognised as teardown, not a user stop (see stopStateIsTeardown).
+	c.mu.Lock()
+	c.lastPresetPressAt = time.Now()
+	c.mu.Unlock()
 	if c.handler != nil {
 		c.handler.OnPresetSelected(ctx, slot,
 			pe.ContentItem.Location, pe.ContentItem.ItemName)

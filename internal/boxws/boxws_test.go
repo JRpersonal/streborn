@@ -104,6 +104,43 @@ func TestHandleMessage_RealStopStateFiresUserStop(t *testing.T) {
 	}
 }
 
+// A STOP_STATE the box emits while tearing its own UPNP source down (a preset
+// switch, or an involuntary drop that flaps through INVALID_SOURCE) must NOT be
+// read as a deliberate user stop: doing so latched a phantom user-stop that
+// suppressed the drop recovery and the recall retry, so the preset buttons died
+// after a few minutes and a re-press did not fix them (#ST30 2026-07-11).
+func TestHandleMessage_TeardownStopStateIsNotUserStop(t *testing.T) {
+	stop := `<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>STOP_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`
+
+	// (a) STOP_STATE right after a hardware preset press = the switch teardown.
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.handleMessage(context.Background(), []byte(`<updates><nowSelectionUpdated><preset id="2">`+
+		`<ContentItem source="UPNP" location="http://127.0.0.1:8888/stream/2"><itemName>1LIVE</itemName></ContentItem>`+
+		`</preset></nowSelectionUpdated></updates>`))
+	c.handleMessage(context.Background(), []byte(stop))
+	if h.userStops != 0 {
+		t.Fatalf("STOP_STATE right after a preset press must not fire OnUserStop, got %d", h.userStops)
+	}
+
+	// (b) STOP_STATE shortly after an INVALID_SOURCE flap = an involuntary drop.
+	h2 := &recHandler{}
+	c2 := newTestClient(h2)
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="INVALID_SOURCE"/></nowPlayingUpdated></updates>`))
+	c2.handleMessage(context.Background(), []byte(stop))
+	if h2.userStops != 0 {
+		t.Fatalf("STOP_STATE after an INVALID_SOURCE flap must not fire OnUserStop, got %d", h2.userStops)
+	}
+
+	// (c) STOP_STATE whose own frame reports source=INVALID_SOURCE.
+	h3 := &recHandler{}
+	c3 := newTestClient(h3)
+	c3.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="INVALID_SOURCE"><playStatus>STOP_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
+	if h3.userStops != 0 {
+		t.Fatalf("STOP_STATE with source=INVALID_SOURCE must not fire OnUserStop, got %d", h3.userStops)
+	}
+}
+
 func TestHandleMessage_PresetRecall(t *testing.T) {
 	h := &recHandler{}
 	c := newTestClient(h)
