@@ -246,8 +246,8 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <button class="btn" id="btnNext" onclick="skip(this,'/api/next')" style="gap:6px" aria-label="Next" title="Next"><span id="btnNextLbl">Next</span><span aria-hidden="true" style="font-size:19px">&#9197;</span></button>
 </div>
 <div class="row c2">
-<button class="btn" id="btnPause" onclick="togglePlayPause(this)">Pause</button>
-<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')">Stop</button>
+<button class="btn" id="btnPause" onclick="togglePlayPause(this)" style="gap:6px" aria-label="Pause" title="Pause"><span id="btnPauseIcon" aria-hidden="true" style="font-size:19px">&#9208;</span><span id="btnPauseLbl">Pause</span></button>
+<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')" style="gap:6px" aria-label="Stop" title="Stop"><span aria-hidden="true" style="font-size:19px">&#9209;</span><span id="btnStopLbl">Stop</span></button>
 </div>
 </div>
 
@@ -319,7 +319,10 @@ function applyStaticI18n() {
   var set = function(id, v){ var el = document.getElementById(id); if (el) el.textContent = v; };
   set('lblNow', T.now); set('lblVol', T.vol); set('lblInput', T.input);
   set('lblPlayback', T.playback);
-  set('btnPause', T.pause); set('btnStop', T.stop);
+  // Pause/Stop pair a media glyph with a localized text label, like Prev/Next
+  // (#382). Only the label span is translated; the glyph stays in its own
+  // aria-hidden span. applyTransportUI swaps the pause glyph to play when paused.
+  set('btnPauseLbl', T.pause); set('btnStopLbl', T.stop);
   set('lblPresets', T.presets); set('lblPeers', T.peers);
   set('lblSupport', T.support); set('lblTip', T.tip);
   set('lblBass', T.bass);
@@ -394,8 +397,14 @@ function applyTransportUI(state) {
   paused = (state === 'PAUSE_STATE');
   var b = document.getElementById('btnPause');
   if (!b) return;
-  b.textContent = paused ? T.play : T.pause;
+  // Swap both the glyph and the label so a paused stream offers Play (#382): the
+  // label lives in its own span (kept next to the icon), the aria-label mirrors it.
+  var lbl = document.getElementById('btnPauseLbl');
+  if (lbl) lbl.textContent = paused ? T.play : T.pause;
+  var ic = document.getElementById('btnPauseIcon');
+  if (ic) ic.innerHTML = paused ? '&#9205;' : '&#9208;';
   b.setAttribute('aria-label', paused ? T.play : T.pause);
+  b.title = paused ? T.play : T.pause;
 }
 async function togglePlayPause(btn) { await pp(btn, paused ? '/api/resume' : '/api/pause'); }
 // Power on/off. The box has no "off" for a stream (Stop only pauses the
@@ -499,7 +508,14 @@ async function refreshStatus() {
   applyPowerUI();
   applyTransportUI(state);
   const human = { PLAY_STATE:T.playing, PAUSE_STATE:T.paused, STOP_STATE:T.stopped, BUFFERING_STATE:T.buffering, INVALID_SOURCE:T.stopped };
-  setNow(name || src || T.idle, human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
+  // A stopped/idle box reports source INVALID_SOURCE or STANDBY and carries no
+  // track name. Never show that raw firmware string as the "now playing" title
+  // (#384): fall through to the friendly idle text instead. A real named source
+  // (radio/library/AUX) is still shown as-is.
+  const upSrc = src.toUpperCase();
+  const idleSrc = upSrc === 'INVALID_SOURCE' || upSrc === 'STANDBY' || upSrc === '';
+  const bigName = name || (idleSrc ? '' : src) || T.idle;
+  setNow(bigName, human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
 }
 
 async function loadPeers() {

@@ -28,6 +28,37 @@ func TestPhoneRemoteDecodesNowPlayingEntities(t *testing.T) {
 	}
 }
 
+// TestPhoneRemotePauseStopHaveIcons guards #382: the Pause and Stop buttons carry
+// a media glyph plus a localized label span (like Prev/Next), not bare text, and
+// the label swap keeps the glyph.
+func TestPhoneRemotePauseStopHaveIcons(t *testing.T) {
+	for _, id := range []string{"btnPauseLbl", "btnStopLbl", "btnPauseIcon"} {
+		if !strings.Contains(indexHTML, `id="`+id+`"`) {
+			t.Fatalf("phone remote missing %s span (#382)", id)
+		}
+	}
+	// The label swap must target the label span, never the whole button (which
+	// would wipe the icon).
+	if !strings.Contains(indexHTML, "getElementById('btnPauseLbl')") {
+		t.Fatal("applyTransportUI must set the label span, not the button text (#382)")
+	}
+	if strings.Contains(indexHTML, "b.textContent = paused") {
+		t.Fatal("applyTransportUI still overwrites the whole Pause button, wiping its icon (#382 regression)")
+	}
+}
+
+// TestPhoneRemoteHidesRawSource guards #384: a stopped/idle box reports source
+// INVALID_SOURCE / STANDBY with no track name, and that raw firmware string must
+// never be shown as the now-playing title.
+func TestPhoneRemoteHidesRawSource(t *testing.T) {
+	if strings.Contains(indexHTML, "setNow(name || src || T.idle") {
+		t.Fatal("phone remote still shows the raw source (INVALID_SOURCE) as the title (#384 regression)")
+	}
+	if !strings.Contains(indexHTML, "INVALID_SOURCE") || !strings.Contains(indexHTML, "idleSrc") {
+		t.Fatal("phone remote must map an idle INVALID_SOURCE/STANDBY source to the friendly idle text (#384)")
+	}
+}
+
 // TestPhoneRemotePlayPauseToggle guards #294: the single Pause button must double
 // as Play/Pause so a stream paused from the remote can be resumed from the remote
 // (via the existing /api/resume endpoint) instead of only from the app or the
