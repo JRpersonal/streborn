@@ -2944,6 +2944,33 @@ WPAEOF
     if [ "$BCO_MODE" = "1" ]; then
         ( finalize_oob_setup ) &
     fi
+
+    # BCO cold-boot re-association watchdog (#157): on scm/spotty ST20 and other
+    # BCO/eth0 boxes the SMSC Wi-Fi coprocessor intermittently fails to associate
+    # on a cold boot (orange icon, no IP) even though a good profile is stored,
+    # and the box self-heals only after a long delay. STR cannot drive
+    # NetManager's associate, but goform_wlan_push re-PROGRAMS the coprocessor and
+    # its GoAhead :80 handler stays up while unassociated. Nudge recovery WITHOUT
+    # ever touching the stored profile: while there is no lease and we know the
+    # creds, re-push the same known-good creds via goform on a slow cadence (a
+    # no-op if :80 is down or the box is already fine). Self-exits the moment any
+    # lease (Wi-Fi or ethernet) appears; bounded to ~12 min so it cannot spin
+    # forever. Never runs `profiles clear` / wpa teardown.
+    if [ "$BCO_MODE" = "1" ] && [ -n "$SSID" ] && [ -n "$PASS" ]; then
+        (
+            _rw=0
+            while [ "$_rw" -lt 720 ]; do
+                sleep 60
+                _rw=$(( _rw + 60 ))
+                if current_sta_lease >/dev/null 2>&1; then
+                    setup_log "reassoc-watchdog: lease present at +${_rw}s, done"
+                    break
+                fi
+                setup_log "reassoc-watchdog: no lease at +${_rw}s, non-destructive goform re-push"
+                goform_wlan_push "$SSID" "$PASS"
+            done
+        ) &
+    fi
     setup_log "=== WLAN provisioning end ==="
 else
     WLAN_T1=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
