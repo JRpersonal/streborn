@@ -210,11 +210,75 @@ body {
 }
 
 .donate-side small { color: var(--c-faint); font-size: 10px; }
+
+/* Share trigger under the donate buttons: the escalation from "you like it"
+   (donate) to "you love it" (share). Dashed + accent-tinted so it catches the
+   eye without competing with the branded donate buttons; opens the share modal,
+   so it is never a permanent wall of buttons. */
+.donate-side .share-trigger {
+  width: 130px;
+  margin-top: 4px;
+  padding: 7px 8px;
+  border-radius: 18px;
+  border: 1px dashed var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  color: var(--brand-text);
+  font-weight: 600;
+  font-size: 11.5px;
+  line-height: 1.25;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.donate-side .share-trigger:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--brand) 18%, transparent); }
+.donate-side .share-trigger .share-heart { color: var(--brand); }
+
 /* Bei zu schmalen Fenstern ueberlappt der Donate sonst die App
    — dann ausblenden, der Footer Link bleibt als Backup. */
 @media (max-width: 1080px) {
   .donate-side { display: none; }
 }
+
+/* Share modal: one tile per platform. Each tile opens the browser share on this
+   PC and carries a QR that opens the same platform's post on a phone. */
+.share-modal { max-width: 560px; }
+.share-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+@media (max-width: 520px) { .share-tiles { grid-template-columns: repeat(2, 1fr); } }
+.share-tile {
+  border: 1px solid var(--c-surface);
+  background: var(--c-bg);
+  border-radius: 12px;
+  padding: 12px 8px 9px;
+  text-decoration: none;
+  color: var(--c-text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.share-tile:hover { transform: translateY(-2px); border-color: var(--brand); }
+.share-tile .share-ic {
+  width: 30px; height: 30px; border-radius: 9px;
+  display: grid; place-items: center; color: #fff; background: var(--brand);
+}
+.share-tile .share-ic svg { width: 18px; height: 18px; }
+.share-tile .share-name { font-size: 12.5px; font-weight: 700; }
+.share-tile .share-qr {
+  width: 96px; height: 96px; background: #fff; border-radius: 9px;
+  padding: 7px; color: #0d1420;
+}
+.share-tile .share-qr svg { width: 100%; height: 100%; display: block; }
+.share-tile .share-scan { font-size: 10.5px; color: var(--c-muted); letter-spacing: 0.02em; }
+.share-foot { display: flex; gap: 8px; justify-content: flex-end; }
 
 #app {
   max-width: 720px;

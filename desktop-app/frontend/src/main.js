@@ -284,6 +284,7 @@ import {
 // is main.js-local, injected below. New views should follow this pattern so this
 // file stops growing.
 import { renderRecent, initRecentView } from './views/recent.js';
+import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from './share.js';
 import { renderMultiroom, initMultiroomView } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
@@ -531,6 +532,8 @@ document.querySelector('#app').innerHTML = `
       <button class="btn" id="creditsClose">${escapeHtml(t('common.close'))}</button>
     </div>
   </div>
+
+  ${shareModalHTML()}
 
   <div class="modal hidden" id="updateAllOverlay">
     <div class="modal-content ua-modal">
@@ -799,6 +802,7 @@ async function renderFooter() {
   links.push(`<a href="#" id="footerWorldMap" class="footer-link" title="${escapeAttr(t('worldMap.inviteBtn'))}">🌍 ${escapeHtml(t('footer.worldMap'))}</a>`);
   links.push(`<a href="#" id="footerSaveLogs" class="footer-link" title="${escapeAttr(t('footer.saveLogsHint'))}">${escapeHtml(t('footer.saveLogs'))}</a>`);
   links.push(`<a href="#" id="footerCredits" class="footer-link">${escapeHtml(t('footer.credits'))}</a>`);
+  links.push(`<a href="#" id="footerShare" class="footer-link">${escapeHtml(t('share.footer'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
   // Clicking the version opens the release notes. For a clean tagged
   // build that is the matching GitHub release page (which carries the
@@ -822,6 +826,8 @@ async function renderFooter() {
   if (verLink) verLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(releaseNotesUrl); };
   const creditsLink = $('footerCredits');
   if (creditsLink) creditsLink.onclick = (e) => { e.preventDefault(); showCredits(); };
+  const shareLink = $('footerShare');
+  if (shareLink) shareLink.onclick = (e) => { e.preventDefault(); openShareModal(); };
   const worldMapLink = $('footerWorldMap');
   if (worldMapLink) worldMapLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(worldMapURL()); } catch {} };
   const saveLogsBtn = $('footerSaveLogs');
@@ -903,6 +909,7 @@ function renderDonateSidebar() {
       <span class="donate-btn-icon">${coffeeSvg}</span>
       <span class="donate-btn-label">Ko-fi</span>
     </button>
+    ${shareTriggerHTML()}
   `;
 
   const wire = (id, url) => {
@@ -912,6 +919,8 @@ function renderDonateSidebar() {
   wire('donateGhBtn',     'https://github.com/sponsors/JRpersonal');
   wire('donatePayPalBtn', 'https://paypal.me/JR31337');
   wire('donateKofiBtn',   'https://ko-fi.com/streborn');
+  const shareBtn = $('shareTrigger');
+  if (shareBtn) shareBtn.onclick = openShareModal;
 }
 
 async function checkAppUpdate() {
@@ -5570,6 +5579,7 @@ function formatDuration(sec) {
 }
 
 renderFooter();
+wireShareModal();
 
 // Prefill from the cache first so the UI shows the last selected
 // speaker immediately. discoverBoxes refreshes the real list in the
