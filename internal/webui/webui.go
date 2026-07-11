@@ -206,6 +206,15 @@ type Server struct {
 	// choice (two rapid preset presses used to ping-pong stations for ~15s).
 	// Guarded by lastPlayMu.
 	recallGen uint64
+	// resumeAttempts counts consecutive AUTOMATIC resume attempts (power-on
+	// resume / reconnect recovery) that never reached stable playback, and
+	// lastResumeAt is when the newest one was pushed. They drive the
+	// auto-resume crash-loop guard (#381, see resume_guard.go): a stream that
+	// crashes the box on playback otherwise loops boot -> auto-resume ->
+	// crash -> watchdog reboot forever. Guarded by lastPlayMu; persisted
+	// inside last-play.json so the count survives the very reboot it counts.
+	resumeAttempts int
+	lastResumeAt   time.Time
 	// lastPlayPath is the NAND file the last-played stream is persisted to, so
 	// the power-on resume survives an agent restart across a long/overnight
 	// standby (in-RAM only lost the station and the box fell back to its native
@@ -1860,32 +1869,43 @@ func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	s.lastPlay = &lastPlayInfo{boxURL: boxURL, title: title, art: art, mime: mime, ts: now}
 	s.recallGen++
 	gen := s.recallGen
+	// A fresh play is an explicit user "play this" and may well be a different
+	// stream: re-arm the auto-resume crash-loop guard (#381).
+	s.resumeAttempts = 0
+	s.lastResumeAt = time.Time{}
 	s.lastPlayMu.Unlock()
 	// Persist so the power-on resume survives an agent restart over a long
 	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.
-	s.persistLastPlay(boxURL, title, art, mime, now)
+	s.persistLastPlay(boxURL, title, art, mime, now, 0, time.Time{})
 	return gen
 }
 
 // persistedLastPlay is the on-NAND shape of the last-played stream (the resume
 // target). The runtime re-push counters are deliberately omitted: a reload is a
-// fresh start.
+// fresh start. The auto-resume guard counters (#381) ARE persisted: they exist
+// precisely to survive the reboot a crashing resume causes.
 type persistedLastPlay struct {
 	BoxURL string    `json:"boxURL"`
 	Title  string    `json:"title"`
 	Art    string    `json:"art"`
 	Mime   string    `json:"mime"`
 	TS     time.Time `json:"ts"`
+	// ResumeAttempts / LastResumeAt: the auto-resume crash-loop guard state
+	// (#381, see resume_guard.go). Absent in files from older agents, which
+	// unmarshals to the zero values = guard disarmed.
+	ResumeAttempts int       `json:"resumeAttempts,omitempty"`
+	LastResumeAt   time.Time `json:"lastResumeAt,omitzero"`
 }
 
 // persistLastPlay writes the resume target to NAND atomically (temp + rename),
 // so a power loss mid-write cannot leave a torn file. Best-effort, no-op without
 // a configured path.
-func (s *Server) persistLastPlay(boxURL, title, art, mime string, ts time.Time) {
+func (s *Server) persistLastPlay(boxURL, title, art, mime string, ts time.Time, resumeAttempts int, lastResumeAt time.Time) {
 	if s.lastPlayPath == "" {
 		return
 	}
-	b, err := json.Marshal(persistedLastPlay{BoxURL: boxURL, Title: title, Art: art, Mime: mime, TS: ts})
+	b, err := json.Marshal(persistedLastPlay{BoxURL: boxURL, Title: title, Art: art, Mime: mime, TS: ts,
+		ResumeAttempts: resumeAttempts, LastResumeAt: lastResumeAt})
 	if err != nil {
 		return
 	}
@@ -1921,8 +1941,12 @@ func (s *Server) loadLastPlay() {
 	}
 	s.lastPlayMu.Lock()
 	s.lastPlay = &lastPlayInfo{boxURL: p.BoxURL, title: p.Title, art: p.Art, mime: p.Mime, ts: p.TS}
+	// Restore the auto-resume guard count (#381): after a crash-caused reboot
+	// this is what tells the automatic resume it is looping.
+	s.resumeAttempts = p.ResumeAttempts
+	s.lastResumeAt = p.LastResumeAt
 	s.lastPlayMu.Unlock()
-	s.logger.Info("last-play restored from NAND for power-on resume", "title", p.Title, "ageMin", int(time.Since(p.TS).Minutes()))
+	s.logger.Info("last-play restored from NAND for power-on resume", "title", p.Title, "ageMin", int(time.Since(p.TS).Minutes()), "resumeAttempts", p.ResumeAttempts)
 }
 
 // NoteLastPlay records a stream the agent pushed to the box OUTSIDE the webui
@@ -2116,6 +2140,14 @@ func (s *Server) ResumeLastPlay() {
 		s.logger.Info("wake resume: power-on resume disabled for this box, not resuming")
 		return
 	}
+	// Crash-loop guard (#381): when the last attempts all ended in a reboot
+	// before playback stabilised, the persisted stream itself is the prime
+	// suspect for crashing the box. Stand down BEFORE the wake call below so a
+	// guarded box is not even woken. A manual play re-arms via setLastPlay.
+	if s.autoResumeBlocked() {
+		s.logger.Warn("wake resume: standing down, the last automatic resumes each ended in a reboot before playback stabilised (crash-loop guard, #381); press a preset key or start playback from the app to re-enable")
+		return
+	}
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay
 	// Split the two no-resume reasons so a diagnostic shows which one hit, and
@@ -2224,6 +2256,9 @@ func (s *Server) ResumeLastPlay() {
 				"captured", boxURL, "current", lastPlayURL(cur))
 			return
 		}
+		// Count the attempt and persist BEFORE the push: if this stream crashes
+		// the box, the incremented count is what the next boot loads (#381).
+		s.noteAutoResumeAttempt()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		var err error
@@ -2285,6 +2320,14 @@ func (s *Server) RecoverAfterReconnect() {
 		return
 	}
 	if !s.resumeOnPowerOnEnabled() {
+		return
+	}
+	// Crash-loop guard (#381). This path is the one a crash-caused REBOOT
+	// takes: the agent starts, the gabbo WS connects, the box sits awake with
+	// the stuck STR selection the crash left behind, and without this guard
+	// the recovery re-pushes the very stream that crashed the box - forever.
+	if s.autoResumeBlocked() {
+		s.logger.Warn("reconnect recovery: standing down, the last automatic resumes each ended in a reboot before playback stabilised (crash-loop guard, #381); press a preset key or start playback from the app to re-enable")
 		return
 	}
 	// A deliberate user stop must survive a WS reconnect: without this guard a
@@ -2356,6 +2399,9 @@ func (s *Server) RecoverAfterReconnect() {
 				"captured", boxURL, "current", lastPlayURL(cur))
 			return
 		}
+		// Count the attempt and persist BEFORE the push: if this stream crashes
+		// the box, the incremented count is what the next boot loads (#381).
+		s.noteAutoResumeAttempt()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		var err error
