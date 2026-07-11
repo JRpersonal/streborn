@@ -3336,6 +3336,17 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	} else {
 		out["boxHealth"] = "ok"
 	}
+	// Two heads-up flags for the desktop app (#270), emitted only when there is
+	// something to warn about so the common response stays small: a rival
+	// SoundTouch tool's leftover files (they fight STR), and no STR-saved Wi-Fi
+	// (the box only stays online with the stick/cable and strands the user on the
+	// next cold boot).
+	if mod := detectConflictingMod(); mod != "" {
+		out["conflictingMod"] = mod
+	}
+	if !hasSavedWLANCreds() {
+		out["wlanCreds"] = "missing"
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -3809,12 +3820,50 @@ func isForeignNANDDir(name string) bool {
 	switch name {
 	case "streborn", "nv", "lost+found":
 		return false
+	// Bose-native persistence STR must NOT flag as foreign: AWS IoT certs, the
+	// Bluetooth Profile Manager store, the Wi-Fi supplicant state, Avahi/mDNS,
+	// and the box's own logs. Before this a stock box wrongly listed these as
+	// "foreign", which buried the real signal (a rival mod's marker files, see
+	// detectConflictingMod) in noise.
+	case "IoTCerts", "btpm", "wpa_supplicant", "avahi", "BoseLog":
+		return false
 	}
 	l := strings.ToLower(name)
 	if strings.Contains(l, "bose") || strings.Contains(l, "persistence") {
 		return false
 	}
 	return true
+}
+
+// hasSavedWLANCreds reports whether STR persisted the box's Wi-Fi SSID+password
+// to NAND (run.sh writes strNANDDir/wlan-creds so the box can rejoin Wi-Fi on a
+// stick-free cold boot). False means STR has no saved Wi-Fi: the box only stays
+// online while the stick or an ethernet cable is inserted, so it strands the user
+// on the next cold boot. A user who set Wi-Fi up via the Bose app instead of
+// STR's own Wi-Fi setup hits exactly this (#270). Best-effort.
+func hasSavedWLANCreds() bool {
+	fi, err := os.Stat(filepath.Join(strNANDDir, "wlan-creds"))
+	return err == nil && fi.Size() > 0
+}
+
+// conflictingModMarkers are files a RIVAL cloud-free SoundTouch tool leaves in
+// /mnt/nv. STR never creates them; their presence means a second revival tool
+// (chiefly AfterTouch, github.com/gesellix/Bose-SoundTouch) is or was installed.
+// Two tools both redirecting the Bose cloud and both driving the OLED / Wi-Fi /
+// presets fight each other and strand the box (flashing display, orange Wi-Fi, no
+// playback, #270). Narrow, non-Bose, non-STR names so a Bose-native entry is
+// never mistaken for a conflicting mod.
+var conflictingModMarkers = []string{"test_oled_stop", "bco_needs_factory_reset"}
+
+// detectConflictingMod returns the rival SoundTouch tool whose marker files sit
+// in /mnt/nv, or "" for an STR-only box. Best-effort.
+func detectConflictingMod() string {
+	for _, m := range conflictingModMarkers {
+		if _, err := os.Stat(filepath.Join(nandRoot, m)); err == nil {
+			return "AfterTouch"
+		}
+	}
+	return ""
 }
 
 // nandEntry is one top-level /mnt/nv entry with its recursive size.
@@ -3864,6 +3913,10 @@ func nandInventory() map[string]any {
 	// whether the agent binary, the Spotify engine, or logs eat the space.
 	rep["strEntries"] = strDirEntries()
 	rep["foreignDirs"] = foreign // empty => STR/Bose-only ("fresh")
+	// Two "the box will misbehave / strand the user" signals (#270): a rival
+	// SoundTouch tool's marker files, and no STR-saved Wi-Fi (stick-only online).
+	rep["conflictingMod"] = detectConflictingMod()
+	rep["hasWLANCreds"] = hasSavedWLANCreds()
 	return rep
 }
 

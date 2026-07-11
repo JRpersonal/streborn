@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "لا استجابة من السمّاعة",
   "speaker.wedgedTitle": "السمّاعة لا تستجيب:",
   "speaker.wedgedBanner": "\"{{name}}\" لا تقبل التشغيل حالياً. افصلها عن الكهرباء للحظة ثم أعد توصيلها، وستعمل بشكل طبيعي مجدداً.",
+  "speaker.conflictModBanner": "{{name}}: هناك أداة SoundTouch أخرى ({{mod}}) مثبتة على هذه السمّاعة وتتعارض مع STR. أزلها (اطلب من مشروع {{mod}} خطوات إلغاء التثبيت) أو أعد ضبط السمّاعة وثبّت STR وحده.",
+  "speaker.noWifiBanner": "{{name}}: لا يوجد Wi-Fi محفوظ في STR، لذا تبقى هذه السمّاعة متصلة فقط عبر ذاكرة USB أو كابل إيثرنت. افتح الإعدادات وأعدّ Wi-Fi في STR.",
   "presets.transferBtn": "نقل",
   "presets.transferNoTargets": "لا توجد سمّاعة أخرى للنقل إليها",
   "group.label": "إنشاء مجموعة مع:",

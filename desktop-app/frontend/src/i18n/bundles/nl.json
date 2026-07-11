@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "geen antwoord van de speaker",
   "speaker.wedgedTitle": "Speaker reageert niet:",
   "speaker.wedgedBanner": "\"{{name}}\" accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal.",
+  "speaker.conflictModBanner": "{{name}}: op deze speaker staat een ander SoundTouch-hulpmiddel ({{mod}}) dat botst met STR. Verwijder het (vraag het {{mod}}-project om de-installatie) of reset de speaker en installeer alleen STR.",
+  "speaker.noWifiBanner": "{{name}}: er is geen wifi opgeslagen in STR, dus deze speaker blijft alleen online met de USB-stick of een ethernetkabel. Open de instellingen en stel wifi in via STR.",
   "presets.transferBtn": "Overzetten",
   "presets.transferNoTargets": "Geen andere speaker gevonden om naar over te zetten",
   "group.label": "Groep maken met:",

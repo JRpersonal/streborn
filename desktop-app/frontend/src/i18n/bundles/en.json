@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "no answer from the speaker",
   "speaker.wedgedTitle": "Speaker not responding:",
   "speaker.wedgedBanner": "\"{{name}}\" is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again.",
+  "speaker.conflictModBanner": "{{name}}: another SoundTouch tool ({{mod}}) is installed on this speaker and conflicts with STR. Remove it (ask the {{mod}} project for its uninstall) or factory-reset and reinstall STR alone.",
+  "speaker.noWifiBanner": "{{name}}: no Wi-Fi is saved in STR, so this speaker only stays online with the USB stick or an ethernet cable. Open its settings and set up Wi-Fi in STR.",
   "presets.transferBtn": "Transfer",
   "presets.transferNoTargets": "No other speaker found to transfer to",
   "group.label": "Create group with:",

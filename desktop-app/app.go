@@ -275,6 +275,16 @@ type BoxInfo struct {
 	// wedged box accepts transport pushes but never plays, and only a
 	// power-cycle clears it. The UI turns "wedged" into a pull-the-plug hint.
 	BoxHealth string `json:"boxHealth,omitempty"`
+	// ConflictingMod names a rival cloud-free SoundTouch tool (e.g. "AfterTouch")
+	// whose leftover files STR found on the box. Two such tools fight over the
+	// cloud redirect, OLED, Wi-Fi and presets; the UI warns the user to remove it
+	// (#270). Empty on an STR-only box.
+	ConflictingMod string `json:"conflictingMod,omitempty"`
+	// WLANCredsMissing is true when STR has no saved Wi-Fi on the box: it only
+	// stays online while the stick or an ethernet cable is inserted and strands
+	// the user on the next cold boot. The UI warns the user to run STR's own
+	// Wi-Fi setup (#270).
+	WLANCredsMissing bool `json:"wlanCredsMissing,omitempty"`
 	// SerialNumber is the human-readable Bose PackagedProduct serial
 	// (the sticker on the bottom of the speaker, e.g.
 	// "069236P60560580AE"). Pulled from /info on 8090; empty if the
@@ -1398,9 +1408,11 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		// labelled straight from this one verified probe, even when the
 		// :8090 /info enrichment below fails because the box is busy right
 		// after an OTA restart. Without this the box showed as "str-<ip>".
-		FriendlyName: jsonStringField(s, "friendlyName"),
-		Model:        jsonStringField(s, "model"),
-		BoxHealth:    jsonStringField(s, "boxHealth"),
+		FriendlyName:     jsonStringField(s, "friendlyName"),
+		Model:            jsonStringField(s, "model"),
+		BoxHealth:        jsonStringField(s, "boxHealth"),
+		ConflictingMod:   jsonStringField(s, "conflictingMod"),
+		WLANCredsMissing: jsonStringField(s, "wlanCreds") == "missing",
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
 	// /info endpoint. Failure is OK: caller still gets a usable

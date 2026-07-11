@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "keine Antwort vom Lautsprecher",
   "speaker.wedgedTitle": "Lautsprecher reagiert nicht:",
   "speaker.wedgedBanner": "\"{{name}}\" nimmt gerade keine Wiedergabe an. Bitte kurz den Netzstecker ziehen und wieder einstecken - danach geht es normal weiter.",
+  "speaker.conflictModBanner": "{{name}}: Auf diesem Lautsprecher ist ein weiteres SoundTouch-Tool ({{mod}}) installiert, das mit STR kollidiert. Entferne es (frag beim {{mod}}-Projekt nach der Deinstallation) oder setze den Lautsprecher zurück und installiere nur STR.",
+  "speaker.noWifiBanner": "{{name}}: In STR ist kein WLAN gespeichert, dieser Lautsprecher bleibt nur mit USB-Stick oder LAN-Kabel online. Öffne die Einstellungen und richte das WLAN in STR ein.",
   "presets.transferBtn": "Übertragen",
   "presets.transferNoTargets": "Kein anderer Lautsprecher zum Übertragen gefunden",
   "group.label": "Gruppe erstellen mit:",

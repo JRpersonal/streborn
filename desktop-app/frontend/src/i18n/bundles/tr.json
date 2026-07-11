@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "hoparlörden yanıt yok",
   "speaker.wedgedTitle": "Hoparlör yanıt vermiyor:",
   "speaker.wedgedBanner": "\"{{name}}\" şu anda oynatmayı kabul etmiyor. Fişini kısa süre çekip tekrar takın - ardından normal çalışır.",
+  "speaker.conflictModBanner": "{{name}}: bu hoparlörde STR ile çakışan başka bir SoundTouch aracı ({{mod}}) yüklü. Kaldırın ({{mod}} projesinden kaldırma adımlarını isteyin) ya da hoparlörü sıfırlayıp yalnızca STR kurun.",
+  "speaker.noWifiBanner": "{{name}}: STR'de kayıtlı Wi-Fi yok, bu yüzden bu hoparlör yalnızca USB bellek veya ethernet kablosuyla çevrimiçi kalır. Ayarları açıp Wi-Fi'yi STR'de kurun.",
   "presets.transferBtn": "Aktar",
   "presets.transferNoTargets": "Aktarılacak başka hoparlör bulunamadı",
   "group.label": "Grup oluştur:",

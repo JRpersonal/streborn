@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "スピーカーから応答がありません",
   "speaker.wedgedTitle": "スピーカーが応答しません:",
   "speaker.wedgedBanner": "「{{name}}」が再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。",
+  "speaker.conflictModBanner": "{{name}}: このスピーカーには別の SoundTouch ツール ({{mod}}) が入っており、STR と競合します。削除するか（{{mod}} プロジェクトにアンインストール方法を確認）、スピーカーを初期化して STR だけを入れ直してください。",
+  "speaker.noWifiBanner": "{{name}}: STR に Wi-Fi が保存されていないため、このスピーカーは USB スティックか有線 LAN でしかオンラインになりません。設定を開いて STR で Wi-Fi を設定してください。",
   "presets.transferBtn": "転送",
   "presets.transferNoTargets": "転送先となる他のスピーカーが見つかりません",
   "group.label": "グループを作成:",

@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "skaļrunis neatbild",
   "speaker.wedgedTitle": "Skaļrunis nereaģē:",
   "speaker.wedgedBanner": "\"{{name}}\" pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli.",
+  "speaker.conflictModBanner": "{{name}}: šajā skaļrunī ir cits SoundTouch rīks ({{mod}}), kas konfliktē ar STR. Noņemiet to (pajautājiet {{mod}} projektam atinstalēšanas soļus) vai atiestatiet skaļruni un instalējiet tikai STR.",
+  "speaker.noWifiBanner": "{{name}}: STR nav saglabāts Wi-Fi, tāpēc šis skaļrunis paliek tiešsaistē tikai ar USB zibatmiņu vai eterneta kabeli. Atveriet iestatījumus un iestatiet Wi-Fi programmā STR.",
   "presets.transferBtn": "Pārnest",
   "presets.transferNoTargets": "Nav atrasts cits skaļrunis, uz kuru pārnest",
   "group.label": "Izveidot grupu ar:",

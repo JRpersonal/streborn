@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "sin respuesta del altavoz",
   "speaker.wedgedTitle": "El altavoz no responde:",
   "speaker.wedgedBanner": "\"{{name}}\" no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad.",
+  "speaker.conflictModBanner": "{{name}}: en este altavoz hay otra herramienta SoundTouch ({{mod}}) que entra en conflicto con STR. Quítala (pide la desinstalación al proyecto {{mod}}) o restablece el altavoz e instala solo STR.",
+  "speaker.noWifiBanner": "{{name}}: no hay Wi-Fi guardado en STR, así que este altavoz solo permanece en línea con la memoria USB o un cable ethernet. Abre los ajustes y configura el Wi-Fi en STR.",
   "presets.transferBtn": "Transferir",
   "presets.transferNoTargets": "No se encontró otro altavoz al que transferir",
   "group.label": "Crear grupo con:",

@@ -1653,6 +1653,30 @@ function checkWedgeBanner() {
   el.classList.remove('hidden');
 }
 
+// checkBoxIssueBanner warns when a speaker is in a state that will misbehave or
+// strand the user: a rival cloud-free SoundTouch tool's leftover files (they
+// fight STR), or no STR-saved Wi-Fi (the box only stays online with the
+// stick/cable and drops off on the next cold boot). Global banner, #270.
+function checkBoxIssueBanner() {
+  const el = $('boxIssueBanner');
+  if (!el) return;
+  const boxes = state.boxes || [];
+  const conflict = boxes.filter(b => b && b.conflictingMod);
+  const noWifi = boxes.filter(b => b && b.wlanCredsMissing);
+  const msgs = [];
+  if (conflict.length) {
+    const names = conflict.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.conflictModBanner', { name: names, mod: conflict[0].conflictingMod })));
+  }
+  if (noWifi.length) {
+    const names = noWifi.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.noWifiBanner', { name: names })));
+  }
+  if (!msgs.length) { el.classList.add('hidden'); return; }
+  el.innerHTML = `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>`;
+  el.classList.remove('hidden');
+}
+
 // manualIpInputBusy reports whether the empty state's manual connect-by-IP
 // input is in use (focused or holding text). While it is, the empty state
 // must not be re-rendered: the recovery burst repaints every ~6s and a
@@ -1715,6 +1739,7 @@ function renderBoxSelect() {
     if (ipInput) ipInput.onkeydown = (e) => { if (e.key === 'Enter') tryAddIp(); };
     updateBoxUiVisibility();
   checkWedgeBanner();
+  checkBoxIssueBanner();
     return;
   }
   // Cluster speakers that share a live multiroom zone into a colored frame
@@ -1852,6 +1877,7 @@ function renderBoxSelect() {
   }
   updateBoxUiVisibility();
   checkWedgeBanner();
+  checkBoxIssueBanner();
 }
 
 // speakerPickedInTab keeps the tabs in lock-step in the other direction: a

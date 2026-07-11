@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "brak odpowiedzi głośnika",
   "speaker.wedgedTitle": "Głośnik nie odpowiada:",
   "speaker.wedgedBanner": "\"{{name}}\" obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie.",
+  "speaker.conflictModBanner": "{{name}}: na tym głośniku jest inne narzędzie SoundTouch ({{mod}}), które koliduje z STR. Usuń je (poproś projekt {{mod}} o instrukcję deinstalacji) albo zresetuj głośnik i zainstaluj samo STR.",
+  "speaker.noWifiBanner": "{{name}}: w STR nie zapisano Wi-Fi, więc ten głośnik pozostaje online tylko z pendrivem USB lub kablem ethernet. Otwórz ustawienia i skonfiguruj Wi-Fi w STR.",
   "presets.transferBtn": "Przenieś",
   "presets.transferNoTargets": "Nie znaleziono innego głośnika do przeniesienia",
   "group.label": "Utwórz grupę z:",

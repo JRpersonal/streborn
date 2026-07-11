@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "garsiakalbis neatsako",
   "speaker.wedgedTitle": "Garsiakalbis nereaguoja:",
   "speaker.wedgedBanner": "„{{name}}“ šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai.",
+  "speaker.conflictModBanner": "{{name}}: šiame garsiakalbyje įdiegtas kitas SoundTouch įrankis ({{mod}}), kuris konfliktuoja su STR. Pašalinkite jį (paprašykite {{mod}} projekto pašalinimo instrukcijų) arba atkurkite garsiakalbį ir įdiekite vien STR.",
+  "speaker.noWifiBanner": "{{name}}: STR neįrašytas Wi-Fi, todėl šis garsiakalbis lieka prisijungęs tik su USB atmintuku arba eterneto kabeliu. Atverkite nustatymus ir sukonfigūruokite Wi-Fi STR.",
   "presets.transferBtn": "Perkelti",
   "presets.transferNoTargets": "Nerasta kito garsiakalbio, į kurį perkelti",
   "group.label": "Sukurti grupę su:",

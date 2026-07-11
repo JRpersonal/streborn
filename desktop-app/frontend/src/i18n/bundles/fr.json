@@ -1140,6 +1140,8 @@
   "setup.provisionNoAnswer": "pas de réponse de l'enceinte",
   "speaker.wedgedTitle": "L'enceinte ne répond pas :",
   "speaker.wedgedBanner": "\"{{name}}\" n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement.",
+  "speaker.conflictModBanner": "{{name}} : un autre outil SoundTouch ({{mod}}) est installé sur cette enceinte et entre en conflit avec STR. Retirez-le (demandez la désinstallation au projet {{mod}}) ou réinitialisez l'enceinte et réinstallez STR seul.",
+  "speaker.noWifiBanner": "{{name}} : aucun Wi-Fi n'est enregistré dans STR, cette enceinte ne reste connectée qu'avec la clé USB ou un câble ethernet. Ouvrez les réglages et configurez le Wi-Fi dans STR.",
   "presets.transferBtn": "Transférer",
   "presets.transferNoTargets": "Aucune autre enceinte trouvée pour le transfert",
   "group.label": "Créer un groupe avec :",
