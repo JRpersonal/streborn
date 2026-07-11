@@ -577,7 +577,7 @@
   "settingsView.errRefused": "L'enceinte a refusé la connexion. Cela arrive brièvement après un renommage ou juste après la sortie de veille.",
   "settingsView.errTimeout": "L'enceinte ne répond pas pour le moment. Elle est peut-être en veille ou pas encore de retour sur le Wi-Fi.",
   "settingsView.errBoseBusy": "L'app Bose de l'enceinte démarre encore ou est occupée et n'a pas envoyé de données. Réessayez dans un instant.",
-  "settingsView.errNoRoute": "L'enceinte n'est pas joignable sur le réseau. Vérifiez qu'elle est allumée et sur le Wi-Fi.",
+  "settingsView.errNoRoute": "L'enceinte n'est pas joignable sur le réseau. Vérifiez qu'elle est allumée et sur le Wi-Fi. S'il reste injoignable, vérifiez qu'un pare-feu ou un antivirus ne bloque pas ST Reborn, et que ce PC et l'enceinte sont sur le même réseau Wi-Fi.",
   "settingsView.errGeneric": "Échec de la connexion. {{err}}",
   "settingsView.nameHeading": "Nom",
   "settingsView.namePlaceholder": "Saisissez une pièce ou choisissez dans la liste",

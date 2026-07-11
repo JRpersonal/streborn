@@ -213,8 +213,8 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		} else {
 			res.Code = "not-reachable"
 			res.Message = "The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at " + host + "). " +
-				"First bring it onto your Wi-Fi with the Bose SoundTouch app and make sure this PC and the speaker are on the same network. " +
-				"Then reboot the speaker with the STR stick plugged in and try again."
+				"Most often this is a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks: allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi (not a guest network). " +
+				"If it still fails, bring the speaker onto Wi-Fi with the Bose SoundTouch app, then reboot it with the STR stick plugged in and try again."
 			a.logger.Warn("install_str: preflight failed, box not reachable on :22, :8090 or :8091", "host", host)
 		}
 		return res, nil

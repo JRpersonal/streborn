@@ -577,7 +577,7 @@
   "settingsView.errRefused": "Hoparlör bağlantıyı reddetti. Bu, ad değişikliğinden hemen sonra veya beklemeden yeni uyandığında olur.",
   "settingsView.errTimeout": "Hoparlör şu anda yanıt vermiyor. Bekleme modunda olabilir veya henüz Wi-Fi'ye geri dönmemiş olabilir.",
   "settingsView.errBoseBusy": "Hoparlörün Bose uygulaması hâlâ başlıyor veya meşgul ve henüz veri göndermedi. Yakında tekrar deneyin.",
-  "settingsView.errNoRoute": "Hoparlör ağda erişilemez. Açık ve Wi-Fi'ye bağlı olup olmadığını kontrol edin.",
+  "settingsView.errNoRoute": "Hoparlör ağda erişilemez. Açık ve Wi-Fi'ye bağlı olup olmadığını kontrol edin. Hâlâ erişilemiyorsa, bir güvenlik duvarı veya antivirüsün ST Reborn'u engellemediğini ve bu bilgisayar ile hoparlörün aynı Wi-Fi ağında olduğunu kontrol edin.",
   "settingsView.errGeneric": "Bağlanılamadı. {{err}}",
   "settingsView.nameHeading": "Ad",
   "settingsView.namePlaceholder": "Bir oda girin veya listeden seçin",

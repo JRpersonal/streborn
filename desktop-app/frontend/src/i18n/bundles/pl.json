@@ -577,7 +577,7 @@
   "settingsView.errRefused": "Głośnik odrzucił połączenie. Zdarza się to zaraz po zmianie nazwy lub tuż po wybudzeniu z czuwania.",
   "settingsView.errTimeout": "Głośnik teraz nie odpowiada. Może być w czuwaniu lub jeszcze nie wrócił do Wi-Fi.",
   "settingsView.errBoseBusy": "Aplikacja Bose głośnika jeszcze się uruchamia lub jest zajęta i nie przysłała jeszcze danych. Spróbuj za chwilę.",
-  "settingsView.errNoRoute": "Głośnik jest nieosiągalny w sieci. Sprawdź, czy jest włączony i połączony z Wi-Fi.",
+  "settingsView.errNoRoute": "Głośnik jest nieosiągalny w sieci. Sprawdź, czy jest włączony i połączony z Wi-Fi. Jeśli nadal jest nieosiągalny, sprawdź, czy zapora lub antywirus nie blokuje ST Reborn oraz czy ten komputer i głośnik są w tej samej sieci Wi-Fi.",
   "settingsView.errGeneric": "Połączenie nie powiodło się. {{err}}",
   "settingsView.nameHeading": "Nazwa",
   "settingsView.namePlaceholder": "Wpisz pomieszczenie lub wybierz z listy",

@@ -577,7 +577,7 @@
   "settingsView.errRefused": "Garsiakalbis atmetė ryšį. Tai nutinka iškart po pavadinimo pakeitimo arba ką tik pabudus iš budėjimo.",
   "settingsView.errTimeout": "Garsiakalbis dabar neatsako. Jis gali būti budėjimo režime arba dar negrįžęs į Wi-Fi.",
   "settingsView.errBoseBusy": "Garsiakalbio Bose programa dar paleidžiama arba užimta ir dar neatsiuntė duomenų. Pabandykite netrukus.",
-  "settingsView.errNoRoute": "Garsiakalbis nepasiekiamas tinkle. Patikrinkite, ar jis įjungtas ir prijungtas prie Wi-Fi.",
+  "settingsView.errNoRoute": "Garsiakalbis nepasiekiamas tinkle. Patikrinkite, ar jis įjungtas ir prijungtas prie Wi-Fi. Jei jis vis tiek nepasiekiamas, patikrinkite, ar ugniasienė arba antivirusinė programa neblokuoja ST Reborn ir ar šis kompiuteris bei garsiakalbis yra tame pačiame Wi-Fi tinkle.",
   "settingsView.errGeneric": "Nepavyko prisijungti. {{err}}",
   "settingsView.nameHeading": "Pavadinimas",
   "settingsView.namePlaceholder": "Įveskite kambarį arba pasirinkite iš sąrašo",

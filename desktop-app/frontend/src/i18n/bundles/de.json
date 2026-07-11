@@ -614,7 +614,7 @@
   "settingsView.errRefused": "Der Lautsprecher hat die Verbindung abgelehnt. Beim Umbenennen oder direkt nach dem Aufwachen aus Standby kommt das kurz vor.",
   "settingsView.errTimeout": "Der Lautsprecher antwortet gerade nicht. Eventuell steht er auf Standby oder ist im WLAN noch nicht wieder da.",
   "settingsView.errBoseBusy": "Die Bose-App am Lautsprecher startet noch oder ist beschäftigt und hat noch keine Daten geliefert. Gleich erneut versuchen.",
-  "settingsView.errNoRoute": "Der Lautsprecher ist im Netzwerk nicht erreichbar. Prüfe ob er eingeschaltet und im WLAN ist.",
+  "settingsView.errNoRoute": "Der Lautsprecher ist im Netzwerk nicht erreichbar. Prüfe ob er eingeschaltet und im WLAN ist. Bleibt er unerreichbar, prüfe, ob eine Firewall oder ein Antivirus ST Reborn blockiert, und ob dieser PC und der Lautsprecher im selben WLAN sind.",
   "settingsView.errGeneric": "Verbindung fehlgeschlagen. {{err}}",
   "settingsView.nameHeading": "Name",
   "settingsView.namePlaceholder": "Raum eintippen oder aus Liste wählen",

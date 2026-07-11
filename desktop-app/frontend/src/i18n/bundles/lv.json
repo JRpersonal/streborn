@@ -577,7 +577,7 @@
   "settingsView.errRefused": "Skaļrunis noraidīja savienojumu. Tas notiek uzreiz pēc nosaukuma maiņas vai tikko pamostoties no gaidstāves.",
   "settingsView.errTimeout": "Skaļrunis pašlaik neatbild. Tas var būt gaidstāves režīmā vai vēl nav atgriezies Wi-Fi tīklā.",
   "settingsView.errBoseBusy": "Skaļruņa Bose lietotne vēl startē vai ir aizņemta un vēl nav nosūtījusi datus. Mēģiniet drīz vēlreiz.",
-  "settingsView.errNoRoute": "Skaļrunis nav sasniedzams tīklā. Pārbaudiet, vai tas ir ieslēgts un pievienots Wi-Fi.",
+  "settingsView.errNoRoute": "Skaļrunis nav sasniedzams tīklā. Pārbaudiet, vai tas ir ieslēgts un pievienots Wi-Fi. Ja tas joprojām nav sasniedzams, pārbaudiet, vai ugunsmūris vai antivīruss nebloķē ST Reborn un vai šis dators un skaļrunis ir vienā Wi-Fi tīklā.",
   "settingsView.errGeneric": "Neizdevās pievienoties. {{err}}",
   "settingsView.nameHeading": "Nosaukums",
   "settingsView.namePlaceholder": "Ievadiet istabu vai atlasiet no saraksta",

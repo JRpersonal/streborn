@@ -614,7 +614,7 @@
   "settingsView.errRefused": "The speaker refused the connection. This happens briefly after a rename or right after waking from standby.",
   "settingsView.errTimeout": "The speaker is not answering right now. It might be on standby or not yet back on Wi-Fi.",
   "settingsView.errBoseBusy": "The speaker's Bose app is still starting or busy and sent no data yet. Try again in a moment.",
-  "settingsView.errNoRoute": "The speaker is not reachable on the network. Check that it is powered on and on Wi-Fi.",
+  "settingsView.errNoRoute": "The speaker is not reachable on the network. Check that it is powered on and on Wi-Fi. If it stays unreachable, check that a firewall or antivirus is not blocking ST Reborn, and that this PC and the speaker are on the same Wi-Fi.",
   "settingsView.errGeneric": "Connection failed. {{err}}",
   "settingsView.nameHeading": "Name",
   "settingsView.namePlaceholder": "Type a room or pick from the list",

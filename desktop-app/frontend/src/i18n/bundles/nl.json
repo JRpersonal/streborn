@@ -577,7 +577,7 @@
   "settingsView.errRefused": "De speaker weigerde de verbinding. Dit gebeurt kort na een naamswijziging of net na het ontwaken uit stand-by.",
   "settingsView.errTimeout": "De speaker antwoordt nu niet. Hij staat mogelijk in stand-by of zit nog niet terug op wifi.",
   "settingsView.errBoseBusy": "De Bose-app van de speaker start nog op of is bezig en heeft nog geen gegevens gestuurd. Probeer het zo opnieuw.",
-  "settingsView.errNoRoute": "De speaker is niet bereikbaar op het netwerk. Controleer of hij aanstaat en op wifi zit.",
+  "settingsView.errNoRoute": "De speaker is niet bereikbaar op het netwerk. Controleer of hij aanstaat en op wifi zit. Blijft hij onbereikbaar, controleer dan of een firewall of antivirus ST Reborn blokkeert en of deze pc en de speaker op hetzelfde wifi-netwerk zitten.",
   "settingsView.errGeneric": "Verbinding mislukt. {{err}}",
   "settingsView.nameHeading": "Naam",
   "settingsView.namePlaceholder": "Typ een ruimte of kies uit de lijst",

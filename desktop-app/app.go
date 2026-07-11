@@ -1811,7 +1811,23 @@ func (a *App) boxDo(host string, port int, method, path, contentType, body strin
 	if stale404 != nil {
 		return stale404, nil
 	}
-	return nil, lastErr
+	return nil, reachabilityHint(lastErr)
+}
+
+// reachabilityHint turns a bare "cannot reach the speaker" connection error
+// (every candidate port timed out or refused) into an actionable one by naming
+// the two things that most often cause it: a firewall or antivirus blocking ST
+// Reborn's own network access, or this PC and the speaker being on different
+// Wi-Fi networks. A user (2026-07-11) hit exactly this - the app timed out to
+// BOTH github.com and every speaker port while their browser downloaded fine,
+// i.e. a security suite was filtering the app, not the network. Wrapped with %w so
+// errors.Is and callers that match the original text still work; a cancelled
+// context (app shutdown) is returned unchanged so it never shows the hint.
+func reachabilityHint(err error) error {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return err
+	}
+	return fmt.Errorf("%w\n\nThe app could not reach the speaker. This is usually a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks. Allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi network.", err)
 }
 
 // ---- Multiroom zone (#70, BETA) ----

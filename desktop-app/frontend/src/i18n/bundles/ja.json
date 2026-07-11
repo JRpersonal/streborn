@@ -577,7 +577,7 @@
   "settingsView.errRefused": "スピーカーが接続を拒否しました。名前の変更直後やスタンバイ復帰直後に短時間起こります。",
   "settingsView.errTimeout": "スピーカーが現在応答しません。スタンバイ中か、まだWi-Fiに戻っていない可能性があります。",
   "settingsView.errBoseBusy": "スピーカーのBoseアプリが起動中または処理中で、まだデータがありません。少し待って再試行してください。",
-  "settingsView.errNoRoute": "スピーカーにネットワーク上で接続できません。電源が入りWi-Fiに接続されているか確認してください。",
+  "settingsView.errNoRoute": "スピーカーにネットワーク上で接続できません。電源が入りWi-Fiに接続されているか確認してください。 それでも接続できない場合は、ファイアウォールやウイルス対策ソフトが ST Reborn をブロックしていないか、そしてこの PC とスピーカーが同じ Wi-Fi ネットワークにあるかを確認してください。",
   "settingsView.errGeneric": "接続に失敗しました。{{err}}",
   "settingsView.nameHeading": "名前",
   "settingsView.namePlaceholder": "部屋名を入力するか一覧から選択",
