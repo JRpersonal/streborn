@@ -1241,27 +1241,13 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		h.spotify.SwitchedAway(ctx)
 	}
 
-	// Wake the box from standby + ensure pairing.
-	if h.boxHost != "" {
-		wakeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
-			h.logger.Warn("could not bring box out of STANDBY", "err", err)
-		}
-		cancel()
-	}
-	if h.autoPair != nil {
-		// Fire-and-forget, mirroring the app-recall path (9a9b0c7): the
-		// :8090 pair POST hangs for seconds on several firmwares, and running
-		// it inline here kept the box's own "SERVICE NOT AVAILABLE" flash on
-		// screen for that whole gap on every hardware press (#270). Pairing
-		// is not a precondition for the UPnP push below.
-		go func() {
-			pairCtx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-			defer cancel()
-			h.autoPair.TriggerNow(pairCtx)
-		}()
-	}
-
+	// Push the stream FIRST, before the wake and pairing, mirroring the Spotify
+	// path. On a hardware/remote press the box is already awake (it just emitted
+	// the gabbo frame) and briefly shows its own "Service Unavailable" flash from
+	// failing to natively self-activate the UPNP preset; getting STR's SetURI in
+	// as early as possible shortens that flash (#383). Pairing is not a
+	// precondition for the SetURI, and a cold-standby race (UPnP 1036) is caught
+	// by the background verifyPlayURL retry below.
 	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var playErr error
@@ -1279,6 +1265,28 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// the AAC label too.
 	if h.noteLastPlay != nil {
 		h.noteLastPlay(url, name, icon, mime)
+	}
+
+	// Wake from standby (fast on a hardware press, the box is already awake) AFTER
+	// the display push, so the SetURI is not delayed behind it.
+	if h.boxHost != "" {
+		wakeCtx, wcancel := context.WithTimeout(ctx, 8*time.Second)
+		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
+			h.logger.Warn("could not bring box out of STANDBY", "err", err)
+		}
+		wcancel()
+	}
+	if h.autoPair != nil {
+		// Fire-and-forget, mirroring the app-recall path (9a9b0c7): the
+		// :8090 pair POST hangs for seconds on several firmwares, and running
+		// it inline here kept the box's own "SERVICE NOT AVAILABLE" flash on
+		// screen for that whole gap on every hardware press (#270). Pairing
+		// is not a precondition for the UPnP push above.
+		go func() {
+			pairCtx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			defer cancel()
+			h.autoPair.TriggerNow(pairCtx)
+		}()
 	}
 	// Verify+retry in the background: the first hardware press after a cold
 	// boot can race the box/agent bringup so nothing plays until a second
