@@ -197,6 +197,16 @@ jobs:
       # The desktop-app's update banner then claimed "update
       # available" on every refresh. Tested by grepping the
       # stripped binary for the literal version string we passed in.
+      #
+      # The grep only proves the string exists SOMEWHERE in the binary
+      # (docs and embedded files can carry version strings too), so the
+      # amd64 build — which runs natively on this runner — is additionally
+      # EXECUTED and its `-version` output compared exactly. That makes
+      # the check authoritative for the whole matrix: all three targets
+      # are linked from the same source with the same ldflags, so a wrong
+      # stamp cannot hit one architecture only. Discussion #381 suspected
+      # exactly this kind of release-pipeline mispackaging (a v0.9.5
+      # asset reporting v0.9.4); the executed check settles it per release.
       - name: Verify agent version stamp
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -212,6 +222,14 @@ jobs:
           if ! grep -q "${STAMP}" "${OUT}"; then
             echo "::error::agent binary ${OUT} does not contain build stamp ${STAMP}; ldflags not applied"
             exit 1
+          fi
+          if [ "${{ matrix.suffix }}" = "amd64" ]; then
+            GOT="$("${OUT}" -version)"
+            if [ "${GOT}" != "${VER}" ]; then
+              echo "::error::agent binary ${OUT} reports version '${GOT}', expected '${VER}'; the release would ship a wrongly-stamped agent (#381)"
+              exit 1
+            fi
+            echo "agent ${OUT} executed: reports version=${GOT}"
           fi
           echo "agent ${OUT} contains version=${VER} build=${STAMP}"
 
