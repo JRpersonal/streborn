@@ -129,3 +129,25 @@ func TestAnonymizeSnapshot_ScrubsAgentFriendlyName(t *testing.T) {
 		t.Errorf("model must be left intact, got %v", got.STRAgentVer["model"])
 	}
 }
+
+// TestScrubPII_MasksUserHomePaths guards the third leak: OS account names
+// (often the user's real first name) shipped verbatim in public bundles via
+// log lines like "logFile=/Users/Dennis/Library/..." and
+// "logFile=C:\Users\Rettcom\AppData\..." (seen in #270/#119 exports).
+func TestScrubPII_MasksUserHomePaths(t *testing.T) {
+	cases := []struct{ in, leaked string }{
+		{`logFile=/Users/Dennis/Library/Application Support/STReborn/str.log`, "Dennis"},
+		{`logFile=C:\Users\Rettcom\AppData\Local\STReborn\str.log`, "Rettcom"},
+		{`"path":"C:\Users\Rettcom\AppData\Local\STReborn"`, "Rettcom"},
+		{`config at /home/jensr/.config/streborn`, "jensr"},
+	}
+	for _, c := range cases {
+		got := scrubPII(c.in)
+		if strings.Contains(got, c.leaked) {
+			t.Errorf("scrubPII leaked %q:\n in: %s\nout: %s", c.leaked, c.in, got)
+		}
+		if !strings.Contains(got, "<user>") {
+			t.Errorf("scrubPII did not insert the <user> mask:\n in: %s\nout: %s", c.in, got)
+		}
+	}
+}
