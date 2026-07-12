@@ -3344,10 +3344,62 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if mod := detectConflictingMod(); mod != "" {
 		out["conflictingMod"] = mod
 	}
-	if !hasSavedWLANCreds() {
+	if wlanCredsWarningWarranted() {
 		out["wlanCreds"] = "missing"
 	}
+	// The ON-DISK agent binary's hash (the running build is in version/build
+	// above). Together they let the desktop app tell "the binary landed but
+	// the box still runs the old version" (a durability rollback, #381) apart
+	// from "the push never arrived", and stop re-pushing into a reboot loop.
+	if sha := agentBinaryStamp(); sha != "" {
+		out["agentBinarySha256"] = sha
+	}
+	// A failed tier-3 RAM-staged swap leaves a marker instead of rebooting
+	// into a silently-old binary; surface it so the failure is visible on a
+	// stickless box where nothing else is.
+	if msg, err := os.ReadFile(swapFailMarker); err == nil && len(msg) > 0 {
+		out["otaSwapFailed"] = strings.TrimSpace(string(msg))
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// agentBinNANDPath is the NAND path of the agent binary — the only binary a
+// stickless boot ever executes, and the OTA write target.
+const agentBinNANDPath = "/mnt/nv/streborn/bin/streborn-armv7l"
+
+// agentBinShaCache memoizes the on-disk agent binary hash keyed by
+// mtime+size, so the frequent version polls (every 2 s during an OTA) do not
+// re-hash 12.5 MB on the weak box CPU. Re-hashes only when the file changes.
+var agentBinShaCache struct {
+	sync.Mutex
+	mtime time.Time
+	size  int64
+	sha   string
+}
+
+// agentBinaryStamp returns the hex SHA256 of the agent binary on NAND, or ""
+// when it cannot be read.
+func agentBinaryStamp() string {
+	fi, err := os.Stat(agentBinNANDPath)
+	if err != nil {
+		return ""
+	}
+	agentBinShaCache.Lock()
+	defer agentBinShaCache.Unlock()
+	if agentBinShaCache.sha != "" &&
+		fi.ModTime().Equal(agentBinShaCache.mtime) &&
+		fi.Size() == agentBinShaCache.size {
+		return agentBinShaCache.sha
+	}
+	b, err := os.ReadFile(agentBinNANDPath)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	agentBinShaCache.mtime = fi.ModTime()
+	agentBinShaCache.size = fi.Size()
+	agentBinShaCache.sha = hex.EncodeToString(sum[:])
+	return agentBinShaCache.sha
 }
 
 // goLibrespotBinPath is where the agent runs the Spotify sidecar from; the
@@ -3459,7 +3511,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	const dst = "/mnt/nv/streborn/bin/streborn-armv7l"
+	const dst = agentBinNANDPath
 	err := writeBinaryAtomic(dst, body)
 	// Tier 2 (#270): a NAND that UBIFS parked read-only fails the write (or,
 	// sneakier, fails every reclaim delete so the write path reports "no
@@ -3509,7 +3561,28 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.Info("agent update written, rebooting box for a clean post-OTA state", "size", len(body))
+	// Safe-over-fast (#381): prove the binary is ON FLASH before telling the
+	// app anything and before any reboot. The fsync inside writeBinaryAtomic
+	// should make this a formality, but UBIFS + these boxes have burned us:
+	// verify by re-reading past the page cache, retry the write once on a
+	// mismatch, and refuse with a truthful error rather than reboot into the
+	// old binary and let the app loop-push forever.
+	if verr := verifyBinaryOnFlash(dst, body); verr != nil {
+		s.logger.Warn("agent update: flash verify failed, rewriting once", "err", verr)
+		if err := writeBinaryAtomic(dst, body); err != nil {
+			http.Error(w, err.Error(), nandWriteHTTPStatus(err))
+			return
+		}
+		if verr = verifyBinaryOnFlash(dst, body); verr != nil {
+			s.logger.Error("agent update: flash verify failed twice, refusing to reboot", "err", verr)
+			http.Error(w, "update did not persist to flash: "+verr.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// A verified write supersedes any earlier tier-3 swap failure.
+	_ = os.Remove(swapFailMarker)
+	s.logger.Info("agent update written and flash-verified, rebooting box for a clean post-OTA state", "size", len(body))
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "ok",
 		"action": "reboot",
@@ -3533,6 +3606,12 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		// desktop app's SSH stick refresh covers this only when SSH is open;
 		// this on-box write needs nothing. The reboot waits for it.
 		refreshStickAgentBinary(body, s.logger)
+		// Unconditional flush before the reboot. refreshStickAgentBinary syncs
+		// only when a stick is mounted; on a stickless box (the #381 field
+		// case) nothing else flushed this path before v0.9.7. Every other
+		// reboot in the project already syncs first — this one now does too.
+		_ = exec.Command("sync").Run()
+		time.Sleep(2 * time.Second)
 		s.logger.Info("post-OTA reboot")
 		_ = dst // the new binary is in place at dst; the boot path runs it
 		if err := exec.Command("reboot").Run(); err != nil {
@@ -3701,7 +3780,7 @@ func writeBinaryAtomic(dst string, body []byte) error {
 				"needKB", need/1024, "availKB", avail/1024)
 		}
 	}
-	if err := os.WriteFile(tmp, body, 0o755); err != nil {
+	if err := writeFileSynced(tmp, body, 0o755); err != nil {
 		// A mid-stream ENOSPC leaves a truncated tmp; remove it so no partial
 		// .new survives for the next attempt.
 		_ = os.Remove(tmp)
@@ -3710,6 +3789,67 @@ func writeBinaryAtomic(dst string, body []byte) error {
 	if err := os.Rename(tmp, dst); err != nil {
 		_ = os.Remove(tmp)
 		return classifyNANDWriteErr("rename", err, dir, need, engineStopped, engineReclaim, predictedFull)
+	}
+	// fsync the parent directory so the rename itself reaches the UBIFS
+	// journal. Without this the whole write + rename can sit in the page
+	// cache, and the post-OTA reboot 1.5 s later rolls the file back to the
+	// pre-OTA binary — the box then boots the OLD version byte-perfect while
+	// the app keeps re-pushing forever (#381 meierchen006, cgb280).
+	syncDir(dir)
+	return nil
+}
+
+// writeFileSynced is os.WriteFile plus an fsync before close, so the data is
+// on flash (not just in the page cache) when it returns. Every binary the OTA
+// path writes is followed by a reboot soon after; an unsynced write on UBIFS
+// simply does not survive that (#381).
+func writeFileSynced(path string, body []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(body); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// syncDir fsyncs a directory so a just-completed rename is journaled.
+// Best-effort: some filesystems/platforms refuse directory handles.
+func syncDir(dir string) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	_ = d.Sync()
+	_ = d.Close()
+}
+
+// verifyBinaryOnFlash forces the just-written binary out to flash and proves
+// it survived: global sync, drop the page cache, re-read dst and compare its
+// hash against what was uploaded. This is the same lesson run.sh's #302
+// deploy learned — "the md5 reads back the bytes we just wrote from RAM
+// cache … even when the flash writeback silently failed" — applied to the
+// OTA path. Only called right before a reboot, so dropping the page cache is
+// free. Returns nil when the on-flash bytes match.
+func verifyBinaryOnFlash(dst string, body []byte) error {
+	_ = exec.Command("sync").Run()
+	// Best-effort: /proc/sys/vm/drop_caches needs root (the agent is root on
+	// the box) but does not exist in tests.
+	_ = os.WriteFile("/proc/sys/vm/drop_caches", []byte("3"), 0o200)
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		return fmt.Errorf("flash verify re-read: %w", err)
+	}
+	want := sha256.Sum256(body)
+	have := sha256.Sum256(got)
+	if want != have {
+		return fmt.Errorf("flash verify: on-flash binary differs from the upload (%d vs %d bytes) — the NAND write did not persist", len(got), len(body))
 	}
 	return nil
 }
@@ -3846,24 +3986,60 @@ func hasSavedWLANCreds() bool {
 	return err == nil && fi.Size() > 0
 }
 
-// conflictingModMarkers are files a RIVAL cloud-free SoundTouch tool leaves in
-// /mnt/nv. STR never creates them; their presence means a second revival tool
-// (chiefly AfterTouch, github.com/gesellix/Bose-SoundTouch) is or was installed.
-// Two tools both redirecting the Bose cloud and both driving the OLED / Wi-Fi /
-// presets fight each other and strand the box (flashing display, orange Wi-Fi, no
-// playback, #270). Narrow, non-Bose, non-STR names so a Bose-native entry is
-// never mistaken for a conflicting mod.
-var conflictingModMarkers = []string{"test_oled_stop", "bco_needs_factory_reset"}
-
-// detectConflictingMod returns the rival SoundTouch tool whose marker files sit
-// in /mnt/nv, or "" for an STR-only box. Best-effort.
+// detectConflictingMod returns the rival cloud-free SoundTouch tool (chiefly
+// AfterTouch, github.com/gesellix/Bose-SoundTouch) whose real artifacts sit on
+// the box, or "" for an STR-only box. Two tools both redirecting the Bose
+// cloud and both driving the OLED / Wi-Fi / presets fight each other and
+// strand the box (flashing display, orange Wi-Fi, no playback, #270).
+//
+// v0.9.7: v0.9.6 keyed this on two marker files (test_oled_stop,
+// bco_needs_factory_reset) believed to be AfterTouch's. Field diagnostics
+// proved them Bose-native: healthy STR-only speakers carry them (and they
+// survive every factory reset because /mnt/nv is never wiped, so the warned
+// user could never clear the warning), while a box with REAL AfterTouch
+// leftovers (an /mnt/nv/aftertouch directory) carried neither. Detection now
+// keys on AfterTouch's actual footprint: its NAND directory, its resolv.conf
+// override, and an rc.local hook mentioning it. Best-effort.
 func detectConflictingMod() string {
-	for _, m := range conflictingModMarkers {
-		if _, err := os.Stat(filepath.Join(nandRoot, m)); err == nil {
-			return "AfterTouch"
-		}
+	if fi, err := os.Stat(filepath.Join(nandRoot, "aftertouch")); err == nil && fi.IsDir() {
+		return "AfterTouch"
+	}
+	if _, err := os.Stat(filepath.Join(nandRoot, "aftertouch.resolv.conf")); err == nil {
+		return "AfterTouch"
+	}
+	// STR's own rc.local never references the rival tool, so a hook line in
+	// the boot script is an unambiguous fingerprint.
+	if b, err := os.ReadFile(filepath.Join(nandRoot, "rc.local")); err == nil &&
+		strings.Contains(strings.ToLower(string(b)), "aftertouch") {
+		return "AfterTouch"
 	}
 	return ""
+}
+
+// wlanCredsWarningWarranted reports whether the "no Wi-Fi saved in STR"
+// warning should fire: only when the creds file is missing on a chassis whose
+// Wi-Fi lives in the volatile coprocessor store (wlan-mode "bco" /
+// "taigan-bco") — there STR's boot-time replay really is what keeps the box
+// on Wi-Fi, and a missing file does strand the user on the next cold boot.
+//
+// v0.9.7: v0.9.6 warned on ANY missing wlan-creds and hit healthy boxes whose
+// Wi-Fi persists in the Bose firmware's own store (sm2 wpa_supplicant
+// profiles) or that run on ethernet — boxes with months of clean cold boots
+// suddenly told the user they would strand (#381 cgb280, #119). An unknown or
+// absent wlan-mode stays quiet for the same reason.
+func wlanCredsWarningWarranted() bool {
+	if hasSavedWLANCreds() {
+		return false
+	}
+	mode, err := os.ReadFile(filepath.Join(strNANDDir, "wlan-mode"))
+	if err != nil {
+		return false
+	}
+	switch strings.TrimSpace(string(mode)) {
+	case "bco", "taigan-bco":
+		return true
+	}
+	return false
 }
 
 // nandEntry is one top-level /mnt/nv entry with its recursive size.
@@ -4117,6 +4293,11 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 	if err := os.WriteFile(goLibrespotBinPath+".sha256", []byte(hex.EncodeToString(sum[:])), 0o644); err != nil {
 		s.logger.Warn("go-librespot sidecar: hash marker write failed (non-fatal)", "err", err)
 	}
+	// Flush now: an agent OTA often reboots the box right after this delivery,
+	// and an unsynced 16 MB engine simply vanished across that reboot (deqw,
+	// 2026-07-12: "delivered" 09:18:51, gone after the 09:19 reboot, re-pushed
+	// 09:22:50 — which then wedged the box).
+	_ = exec.Command("sync").Run()
 	s.logger.Info("go-librespot sidecar written via OTA", "size", len(body))
 	// Activate the freshly delivered engine live: restart the supervised
 	// go-librespot so it re-execs the new binary, with no box reboot. A first-time
