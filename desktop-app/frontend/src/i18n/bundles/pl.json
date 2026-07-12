@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "Głośnik nie odpowiada:",
   "speaker.wedgedBanner": "\"{{name}}\" obecnie nie przyjmuje odtwarzania. Odłącz go na chwilę od zasilania i podłącz ponownie - potem będzie działał normalnie.",
   "speaker.conflictModBanner": "{{name}}: na tym głośniku znajdują się pozostałości innego narzędzia SoundTouch ({{mod}}), które mogą kolidować ze STR. Zwykłe przywrócenie ustawień fabrycznych ich nie usuwa; zapytaj projekt {{mod}} o czystą deinstalację.",
-  "speaker.noWifiBanner": "{{name}}: STR nie ma zapisanej kopii Wi-Fi dla tego głośnika. Zwykle łączy się on sam; z kopią w ustawieniach głośnika STR może samodzielnie przywrócić Wi-Fi, gdyby po restarcie zniknęło.",
+  "speaker.noWifiBanner": "{{name}}: na tym głośniku nie ma zapisanej kopii Wi-Fi od STR. Zwykle łączy się on sam; z kopią (jednorazowo w ustawieniach głośnika) głośnik może przy włączeniu sam naprawić swoje Wi-Fi, gdyby je utracił.",
   "speaker.issueDismiss": "Ukryj",
   "presets.transferBtn": "Przenieś",
   "presets.transferNoTargets": "Nie znaleziono innego głośnika do przeniesienia",

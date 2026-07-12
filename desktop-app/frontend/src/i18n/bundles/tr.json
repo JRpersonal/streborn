@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "Hoparlör yanıt vermiyor:",
   "speaker.wedgedBanner": "\"{{name}}\" şu anda oynatmayı kabul etmiyor. Fişini kısa süre çekip tekrar takın - ardından normal çalışır.",
   "speaker.conflictModBanner": "{{name}}: bu hoparlörde STR ile çakışabilecek başka bir SoundTouch aracının ({{mod}}) kalıntıları var. Normal fabrika sıfırlaması bunları kaldırmaz; temiz kaldırma için {{mod}} projesine danış.",
-  "speaker.noWifiBanner": "{{name}}: STR'de bu hoparlör için kayıtlı bir Wi-Fi yedeği yok. Genellikle kendi kendine yeniden bağlanır; hoparlör ayarlarına bir yedek eklersen, yeniden başlatma sonrası Wi-Fi kaybolursa STR onu kendisi geri yükleyebilir.",
+  "speaker.noWifiBanner": "{{name}}: bu hoparlörde kayıtlı bir STR Wi-Fi yedeği yok. Genellikle kendi kendine yeniden bağlanır; bir yedekle (hoparlör ayarlarında bir kez kurulur) hoparlör, Wi-Fi kaybolursa açılışta kendi kendine onarabilir.",
   "speaker.issueDismiss": "Gizle",
   "presets.transferBtn": "Aktar",
   "presets.transferNoTargets": "Aktarılacak başka hoparlör bulunamadı",

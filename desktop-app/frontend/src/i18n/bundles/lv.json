@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "Skaļrunis nereaģē:",
   "speaker.wedgedBanner": "\"{{name}}\" pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli.",
   "speaker.conflictModBanner": "{{name}}: šajā skaļrunī ir cita SoundTouch rīka ({{mod}}) paliekas, kas var konfliktēt ar STR. Parasta rūpnīcas atiestatīšana tās nenoņem; jautājiet {{mod}} projektam par tīru atinstalēšanu.",
-  "speaker.noWifiBanner": "{{name}}: STR nav saglabāta šī skaļruņa Wi-Fi rezerves kopija. Parasti tas pievienojas pats; ar rezerves kopiju skaļruņa iestatījumos STR var pats atjaunot Wi-Fi, ja tas pēc restarta pazūd.",
+  "speaker.noWifiBanner": "{{name}}: šajā skaļrunī nav saglabāta STR Wi-Fi rezerves kopija. Parasti tas pievienojas pats; ar rezerves kopiju (vienreiz iestata skaļruņa iestatījumos) skaļrunis ieslēgšanas brīdī var pats salabot savu Wi-Fi, ja tas pazūd.",
   "speaker.issueDismiss": "Paslēpt",
   "presets.transferBtn": "Pārnest",
   "presets.transferNoTargets": "Nav atrasts cits skaļrunis, uz kuru pārnest",

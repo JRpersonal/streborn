@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "スピーカーが応答しません:",
   "speaker.wedgedBanner": "「{{name}}」が再生を受け付けていません。電源プラグを一度抜いて挿し直すと、通常どおり動作します。",
   "speaker.conflictModBanner": "{{name}}: このスピーカーには別の SoundTouch ツール（{{mod}}）の残存ファイルがあり、STR と競合する可能性があります。通常の初期化では削除されません。完全なアンインストール方法は {{mod}} プロジェクトにお問い合わせください。",
-  "speaker.noWifiBanner": "{{name}}: STR にはこのスピーカーの Wi-Fi バックアップが保存されていません。通常は自動的に再接続されますが、スピーカー設定でバックアップを保存しておくと、再起動後に Wi-Fi が失われた場合でも STR が自動で復元できます。",
+  "speaker.noWifiBanner": "{{name}}: このスピーカーには STR の Wi-Fi バックアップが保存されていません。通常は自動的に再接続されますが、バックアップ（スピーカー設定で一度設定）があれば、Wi-Fi が失われた場合でもスピーカーが起動時に自力で修復できます。",
   "speaker.issueDismiss": "非表示",
   "presets.transferBtn": "転送",
   "presets.transferNoTargets": "転送先となる他のスピーカーが見つかりません",

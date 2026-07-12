@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "Speaker not responding:",
   "speaker.wedgedBanner": "\"{{name}}\" is not accepting playback right now. Unplug it from power for a moment, plug it back in, and it will work normally again.",
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can conflict with STR. A normal factory reset does not remove them; ask the {{mod}} project for its clean uninstall.",
-  "speaker.noWifiBanner": "{{name}}: STR has no Wi-Fi backup saved for this speaker. It usually reconnects on its own anyway; a backup in the speaker settings lets STR restore Wi-Fi by itself if it is ever lost after a restart.",
+  "speaker.noWifiBanner": "{{name}}: no STR Wi-Fi backup is stored on this speaker. It usually reconnects on its own anyway; with a backup (set up once in the speaker settings) the speaker can repair its own Wi-Fi at power-on if it is ever lost.",
   "speaker.issueDismiss": "Dismiss",
   "presets.transferBtn": "Transfer",
   "presets.transferNoTargets": "No other speaker found to transfer to",

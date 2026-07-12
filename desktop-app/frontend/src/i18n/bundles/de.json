@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "Lautsprecher reagiert nicht:",
   "speaker.wedgedBanner": "\"{{name}}\" nimmt gerade keine Wiedergabe an. Bitte kurz den Netzstecker ziehen und wieder einstecken - danach geht es normal weiter.",
   "speaker.conflictModBanner": "{{name}}: Auf diesem Lautsprecher liegen Reste eines weiteren SoundTouch-Tools ({{mod}}), die mit STR kollidieren können. Ein normaler Werksreset entfernt sie nicht; frag beim {{mod}}-Projekt nach der sauberen Deinstallation.",
-  "speaker.noWifiBanner": "{{name}}: In STR ist kein WLAN-Backup für diesen Lautsprecher hinterlegt. Meist verbindet er sich trotzdem von selbst; mit einem Backup in den Lautsprecher-Einstellungen kann STR das WLAN nach einem Neustart notfalls selbst wiederherstellen.",
+  "speaker.noWifiBanner": "{{name}}: Auf diesem Lautsprecher ist kein WLAN-Backup von STR hinterlegt. Er verbindet sich meist trotzdem von selbst; mit einem Backup (einmal in den Lautsprecher-Einstellungen einrichten) kann der Lautsprecher sein WLAN beim Einschalten notfalls selbst reparieren.",
   "speaker.issueDismiss": "Ausblenden",
   "presets.transferBtn": "Übertragen",
   "presets.transferNoTargets": "Kein anderer Lautsprecher zum Übertragen gefunden",

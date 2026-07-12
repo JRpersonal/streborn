@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "Garsiakalbis nereaguoja:",
   "speaker.wedgedBanner": "„{{name}}“ šiuo metu nepriima atkūrimo. Trumpam ištraukite maitinimo kištuką ir vėl įkiškite - tada jis vėl veiks normaliai.",
   "speaker.conflictModBanner": "{{name}}: šiame garsiakalbyje yra kito SoundTouch įrankio ({{mod}}) likučių, kurie gali konfliktuoti su STR. Įprastas gamyklinis atstatymas jų nepašalina; paklauskite {{mod}} projekto apie švarų pašalinimą.",
-  "speaker.noWifiBanner": "{{name}}: STR neturi šio garsiakalbio Wi-Fi atsarginės kopijos. Paprastai jis prisijungia pats; su atsargine kopija garsiakalbio nustatymuose STR gali pats atkurti Wi-Fi, jei po paleidimo iš naujo jis dingtų.",
+  "speaker.noWifiBanner": "{{name}}: šiame garsiakalbyje nėra išsaugotos STR Wi-Fi atsarginės kopijos. Paprastai jis prisijungia pats; su atsargine kopija (vieną kartą nustatoma garsiakalbio nustatymuose) garsiakalbis įjungtas gali pats atkurti savo Wi-Fi, jei jis dingtų.",
   "speaker.issueDismiss": "Slėpti",
   "presets.transferBtn": "Perkelti",
   "presets.transferNoTargets": "Nerasta kito garsiakalbio, į kurį perkelti",

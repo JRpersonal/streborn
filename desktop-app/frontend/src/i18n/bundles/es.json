@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "El altavoz no responde:",
   "speaker.wedgedBanner": "\"{{name}}\" no acepta reproducción ahora mismo. Desenchúfalo un momento, vuelve a enchufarlo y funcionará con normalidad.",
   "speaker.conflictModBanner": "{{name}}: en este altavoz hay restos de otra herramienta SoundTouch ({{mod}}) que pueden entrar en conflicto con STR. Un restablecimiento de fábrica normal no los elimina; pregunta al proyecto {{mod}} por su desinstalación limpia.",
-  "speaker.noWifiBanner": "{{name}}: STR no tiene guardada una copia del Wi-Fi para este altavoz. Normalmente se reconecta solo; con una copia en los ajustes del altavoz, STR puede restaurar el Wi-Fi por sí mismo si se pierde tras un reinicio.",
+  "speaker.noWifiBanner": "{{name}}: en este altavoz no hay guardada una copia del Wi-Fi de STR. Normalmente se reconecta solo; con una copia (se configura una vez en los ajustes del altavoz) el propio altavoz puede reparar su Wi-Fi al encenderse si alguna vez lo pierde.",
   "speaker.issueDismiss": "Ocultar",
   "presets.transferBtn": "Transferir",
   "presets.transferNoTargets": "No se encontró otro altavoz al que transferir",
