@@ -5572,13 +5572,36 @@ func (s *Server) handleBoxGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, g)
 }
 
-// sysBlockRoot and mediaRoot are the sysfs block-device root and the mount root.
-// They are vars (not consts) so the stick-detection test can point them at a temp
-// tree; in production they are the real paths.
+// sysBlockRoot, mediaRoot and nvRoot are the sysfs block-device root, the mount
+// root, and the writable NAND root. They are vars (not consts) so the
+// stick-detection test can point them at a temp tree; in production they are the
+// real paths.
 var (
 	sysBlockRoot = "/sys/block"
 	mediaRoot    = "/media"
+	nvRoot       = "/mnt/nv"
 )
+
+// sshPersistentEnabled reports whether root SSH is configured to stay open across
+// reboots on this box, independent of any inserted stick. Two persistent NAND
+// markers count: STR's own opt-in (/mnt/nv/streborn/enable-ssh, honored by
+// run.sh) and a maintainer-placed /mnt/nv/remote_services. Both live on NAND and
+// survive a reboot, so when SSH is open because of one of them the "pull the
+// stick and reboot to close it" advice is wrong — the box is deliberately left
+// open (#381, #385). Transient stick-driven SSH (the /media/sda1 or /tmp
+// remote_services marker) leaves neither file, so it still reads as "still
+// inserted".
+func sshPersistentEnabled() bool {
+	for _, p := range []string{
+		filepath.Join(nvRoot, "streborn", "enable-ssh"),
+		filepath.Join(nvRoot, "remote_services"),
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
 
 // diskIsRemovableUSB reports whether the named block disk (e.g. "sda") is a
 // REMOVABLE USB device, i.e. a USB stick, rather than the speaker's built-in
@@ -5669,6 +5692,13 @@ func (s *Server) handleStickStatus(w http.ResponseWriter, _ *http.Request) {
 	if conn, dialErr := net.DialTimeout("tcp", "127.0.0.1:22", 200*time.Millisecond); dialErr == nil {
 		_ = conn.Close()
 		out["sshOpen"] = true
+		// Distinguish transient stick-driven SSH (closes on the next stickless
+		// reboot) from a persistent NAND opt-in (survives reboots). The app uses
+		// this to stop telling remote_services users to "pull the stick and
+		// reboot" when no stick is involved and a reboot would not close SSH.
+		if sshPersistentEnabled() {
+			out["sshPersistent"] = true
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
