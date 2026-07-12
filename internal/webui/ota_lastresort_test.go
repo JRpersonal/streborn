@@ -32,20 +32,30 @@ func TestIsReadOnlyFSErr(t *testing.T) {
 	}
 }
 
-// The swap helper must wait for the agent PID, copy stage->dst, verify by
-// size and (when available) SHA256 with one retry, clean the stage, and
-// reboot. Guard the script's load-bearing pieces so a refactor cannot
-// silently drop one.
+// The swap helper must wait for the agent PID with kill -9 escalation, ABORT
+// without rebooting when the agent will not die (cp over a live binary fails
+// ETXTBSY and leaves the old version in place), copy stage->dst, verify the
+// CONTENT on flash (sha256sum, else cmp against the stage; size is only the
+// last resort because consecutive releases are byte-equal in size), retry
+// once, and only reboot after a passing verify. Guard the script's
+// load-bearing pieces so a refactor cannot silently drop one.
 func TestSwapHelperScript(t *testing.T) {
 	script := swapHelperScript(4242, "/dev/shm/streborn-ota.stage",
 		"/mnt/nv/streborn/bin/streborn-armv7l", 12345678, "abc123")
 	for _, want := range []string{
 		"/proc/4242",
+		"kill -9 4242",
+		"swap aborted", // agent still alive -> abort marker, no reboot
 		`cp "/dev/shm/streborn-ota.stage" "/mnt/nv/streborn/bin/streborn-armv7l"`,
-		`wc -c < "/mnt/nv/streborn/bin/streborn-armv7l"`,
-		"12345678",
+		"drop_caches", // verify must read flash, not page cache
 		"sha256sum",
 		"abc123",
+		`cmp -s "/dev/shm/streborn-ota.stage" "/mnt/nv/streborn/bin/streborn-armv7l"`,
+		`wc -c < "/mnt/nv/streborn/bin/streborn-armv7l"`,
+		"12345678",
+		"killall -9 streborn-armv7l", // retry must clear a watchdog-respawned agent
+		"swap failed",                // failed verify -> marker, no reboot
+		swapFailMarker,
 		`rm -f "/dev/shm/streborn-ota.stage"`,
 		"reboot",
 	} {
@@ -53,8 +63,12 @@ func TestSwapHelperScript(t *testing.T) {
 			t.Errorf("helper script is missing %q:\n%s", want, script)
 		}
 	}
+	// The two abort paths must exit before the reboot line.
+	if strings.LastIndex(script, "exit 1") > strings.Index(script, "reboot") {
+		t.Errorf("abort paths must come before the reboot:\n%s", script)
+	}
 	// BusyBox sh only: no bashisms.
-	for _, forbidden := range []string{"[[", "function ", "$((i++))"} {
+	for _, forbidden := range []string{"[[", "function ", "$((i++))", "local "} {
 		if strings.Contains(script, forbidden) {
 			t.Errorf("helper script contains non-POSIX construct %q", forbidden)
 		}

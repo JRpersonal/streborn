@@ -92,24 +92,79 @@ var errNANDReadOnly = errors.New(
 
 // swapHelperScript builds the BusyBox-sh script the detached helper runs:
 // wait for this agent process to exit (releasing the old binary), copy the
-// staged binary over it, verify by size (and SHA256 when the box has
-// sha256sum), sync and reboot. One retry on a bad copy; the staged file is
-// removed either way so RAM is not held across the reboot.
+// staged binary over it, flash-verify, sync and reboot.
+//
+// Hardened for v0.9.7 (#381 class): the old script copied even when the agent
+// was STILL ALIVE after the 90 s wait — cp then failed with ETXTBSY leaving
+// the OLD binary in place, and the size-only verify could not notice because
+// consecutive releases are byte-equal in size (v0.9.4/5/6 are all exactly
+// 12517538 bytes). It then rebooted a box that had already answered 200 OK,
+// so the app saw a "successful" update that never happened. Now:
+//   - the agent gets kill -9 escalation after the wait; if it STILL will not
+//     die, the helper ABORTS without rebooting (run.sh's watchdog respawns
+//     the old agent, the box stays usable, the app's version poll reports
+//     the truth) and leaves a marker for diagnostics.
+//   - verification is content-based: sha256sum when present, else cmp
+//     against the still-present RAM stage; the size check is only the
+//     last-resort fallback. The re-read goes through a sync + page-cache
+//     drop so it proves flash, not RAM (#302 lesson).
+//   - one retry (after killing any watchdog-respawned agent that re-pinned
+//     the binary); on a second failure it aborts without rebooting and
+//     leaves the marker instead of rebooting into a silently-old binary.
 func swapHelperScript(agentPID int, stage, dst string, size int, sha string) string {
 	return fmt.Sprintf(`i=0
 while [ -d /proc/%d ] && [ "$i" -lt 90 ]; do sleep 1; i=$((i+1)); done
-cp %q %q; sync
-ok=1
-[ "$(wc -c < %q 2>/dev/null | tr -d ' ')" = "%d" ] || ok=0
-if [ "$ok" = "1" ] && command -v sha256sum >/dev/null 2>&1; then
-  [ "$(sha256sum %q | cut -d' ' -f1)" = "%s" ] || ok=0
+if [ -d /proc/%d ]; then kill -9 %d 2>/dev/null; sleep 3; fi
+if [ -d /proc/%d ]; then
+  echo "swap aborted: agent PID %d still alive after kill -9" > %q; sync
+  rm -f %q
+  exit 1
 fi
-if [ "$ok" != "1" ]; then cp %q %q; sync; fi
-rm -f %q
+verify_flash() {
+  sync
+  echo 3 > /proc/sys/vm/drop_caches 2>/dev/null
+  if command -v sha256sum >/dev/null 2>&1; then
+    [ "$(sha256sum %q | cut -d' ' -f1)" = "%s" ]
+  elif command -v cmp >/dev/null 2>&1; then
+    cmp -s %q %q
+  else
+    [ "$(wc -c < %q 2>/dev/null | tr -d ' ')" = "%d" ]
+  fi
+}
+cp %q %q; sync
+if ! verify_flash; then
+  killall -9 streborn-armv7l 2>/dev/null
+  sleep 2
+  cp %q %q; sync
+  if ! verify_flash; then
+    echo "swap failed: flash verify mismatch after retry" > %q; sync
+    rm -f %q
+    exit 1
+  fi
+fi
+rm -f %q %q
+sync
 sleep 1
 reboot`,
-		agentPID, stage, dst, dst, size, dst, sha, stage, dst, stage)
+		agentPID,
+		agentPID, agentPID,
+		agentPID,
+		agentPID, swapFailMarker,
+		stage,
+		dst, sha,
+		stage, dst,
+		dst, size,
+		stage, dst,
+		stage, dst,
+		swapFailMarker,
+		stage,
+		stage, swapFailMarker)
 }
+
+// swapFailMarker is where the swap helper records an aborted/failed tier-3
+// swap so the next agent start (and /api/agent/version) can surface it
+// instead of the failure staying invisible on a stickless box.
+const swapFailMarker = "/mnt/nv/streborn/ota-swap-failed"
 
 // stageAndSwapViaRAM implements tier 3: write body to the RAM stage, spawn
 // the detached swap helper, and return nil when the caller may answer the
