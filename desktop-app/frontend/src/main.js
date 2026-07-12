@@ -2769,7 +2769,14 @@ async function doBoxUpdate(targetBox) {
   // "Update running on <name>" label there.
   const setStatus = (text) => {
     if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
-    buttons().forEach(b => { b.textContent = text; b.disabled = true; });
+    // Idempotent: only touch the DOM when a value actually changes. The 1 s
+    // countdown tick called this every second during the post-update wait, and
+    // re-setting `disabled` each time re-triggered the button's CSS transition,
+    // which read as a per-second flicker through the whole 2nd (Spotify) upload.
+    buttons().forEach(b => {
+      if (b.textContent !== text) b.textContent = text;
+      if (!b.disabled) b.disabled = true;
+    });
   };
   const reset = () => {
     if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
