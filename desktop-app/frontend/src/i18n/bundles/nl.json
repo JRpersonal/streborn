@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "Speaker reageert niet:",
   "speaker.wedgedBanner": "\"{{name}}\" accepteert momenteel geen weergave. Haal de stekker even uit het stopcontact en steek hem er weer in - daarna werkt hij weer normaal.",
   "speaker.conflictModBanner": "{{name}}: op deze speaker staan resten van een andere SoundTouch-tool ({{mod}}) die met STR kunnen botsen. Een normale fabrieksreset verwijdert ze niet; vraag het {{mod}}-project naar de schone de-installatie.",
-  "speaker.noWifiBanner": "{{name}}: STR heeft geen wifi-back-up voor deze speaker opgeslagen. Meestal verbindt hij toch vanzelf; met een back-up in de speakerinstellingen kan STR de wifi zelf herstellen als die na een herstart ooit wegvalt.",
+  "speaker.noWifiBanner": "{{name}}: op deze speaker is geen wifi-back-up van STR opgeslagen. Meestal verbindt hij toch vanzelf; met een back-up (eenmalig instellen in de speakerinstellingen) kan de speaker zijn wifi bij het inschakelen zelf herstellen als die ooit wegvalt.",
   "speaker.issueDismiss": "Verbergen",
   "presets.transferBtn": "Overzetten",
   "presets.transferNoTargets": "Geen andere speaker gevonden om naar over te zetten",

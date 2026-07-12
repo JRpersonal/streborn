@@ -1154,7 +1154,7 @@
   "speaker.wedgedTitle": "L'enceinte ne répond pas :",
   "speaker.wedgedBanner": "\"{{name}}\" n'accepte pas la lecture pour le moment. Débranchez-la un instant, rebranchez-la, et elle fonctionnera à nouveau normalement.",
   "speaker.conflictModBanner": "{{name}} : des restes d'un autre outil SoundTouch ({{mod}}) se trouvent sur cette enceinte et peuvent entrer en conflit avec STR. Une réinitialisation d'usine normale ne les supprime pas ; demandez au projet {{mod}} sa procédure de désinstallation.",
-  "speaker.noWifiBanner": "{{name}} : STR n'a pas de sauvegarde du Wi-Fi pour cette enceinte. Elle se reconnecte généralement seule ; avec une sauvegarde dans les réglages de l'enceinte, STR peut rétablir le Wi-Fi lui-même s'il est perdu après un redémarrage.",
+  "speaker.noWifiBanner": "{{name}} : aucune sauvegarde Wi-Fi de STR n'est stockée sur cette enceinte. Elle se reconnecte généralement seule ; avec une sauvegarde (à configurer une fois dans les réglages de l'enceinte), l'enceinte peut réparer elle-même son Wi-Fi à l'allumage s'il est perdu.",
   "speaker.issueDismiss": "Masquer",
   "presets.transferBtn": "Transférer",
   "presets.transferNoTargets": "Aucune autre enceinte trouvée pour le transfert",
