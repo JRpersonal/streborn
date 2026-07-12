@@ -9,6 +9,7 @@ export namespace main {
 	    donateUrl: string;
 	    donateSlogan: string;
 	    updateManifestUrl: string;
+	    agentBinBytes: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -24,6 +25,7 @@ export namespace main {
 	        this.donateUrl = source["donateUrl"];
 	        this.donateSlogan = source["donateSlogan"];
 	        this.updateManifestUrl = source["updateManifestUrl"];
+	        this.agentBinBytes = source["agentBinBytes"];
 	    }
 	}
 	export class BoxInfo {

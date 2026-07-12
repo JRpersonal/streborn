@@ -33,6 +33,8 @@ export function CheckAppUpdate():Promise<Record<string, string>>;
 
 export function CheckStick(arg1:string):Promise<sticksetup.StickCheck>;
 
+export function ClassifyOTAResult(arg1:string,arg2:number):Promise<string>;
+
 export function ClearRecent(arg1:string,arg2:number):Promise<void>;
 
 export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:number):Promise<number>;
@@ -140,6 +142,8 @@ export function RebootBox(arg1:string,arg2:number):Promise<void>;
 export function RecallBoxPreset(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function RecentPlayed(arg1:string,arg2:number):Promise<Array<main.RecentItem>>;
+
+export function RecordOTAOutcome(arg1:string,arg2:string):Promise<void>;
 
 export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
 

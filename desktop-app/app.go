@@ -955,6 +955,13 @@ func classifyKnownBox(cached, probed BoxInfo, probeOK, bosePortOpen bool) (recor
 	if probeOK {
 		return probed, true, true
 	}
+	// Warning flags come from a live agent probe only; while the agent is not
+	// answering, a cached warning may be a stale mid-boot snapshot (a "no
+	// Wi-Fi saved" banner stuck on a box that was down, #270 2026-07-12).
+	// Serve the cached record without them; the next confirmed probe re-sets
+	// whatever is really true.
+	cached.ConflictingMod = ""
+	cached.WLANCredsMissing = false
 	if bosePortOpen {
 		return cached, true, false
 	}
@@ -1090,6 +1097,32 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 	}
 	if out.Name == "" {
 		out.Name = b.Name
+	}
+
+	// Warning flags (ConflictingMod / WLANCredsMissing / BoxHealth): only a
+	// live agent probe carries them, so the PortVerified side is
+	// authoritative — INCLUDING its no-warning reading, which must clear a
+	// stale cached warning (before v0.9.7 these fields were never merged, so
+	// a single bad snapshot could stick in the banner, #270). Test against
+	// the ORIGINAL flags, same as DeviceID above. With no verified side, keep
+	// whichever record has a value.
+	switch {
+	case a.PortVerified:
+		// out already carries a's values verbatim
+	case b.PortVerified:
+		out.ConflictingMod = b.ConflictingMod
+		out.WLANCredsMissing = b.WLANCredsMissing
+		out.BoxHealth = b.BoxHealth
+	default:
+		if out.ConflictingMod == "" {
+			out.ConflictingMod = b.ConflictingMod
+		}
+		if !out.WLANCredsMissing {
+			out.WLANCredsMissing = b.WLANCredsMissing
+		}
+		if out.BoxHealth == "" {
+			out.BoxHealth = b.BoxHealth
+		}
 	}
 	return out
 }
@@ -3701,6 +3734,10 @@ type AppInfo struct {
 	DonateURL         string `json:"donateUrl"`
 	DonateSlogan      string `json:"donateSlogan"`
 	UpdateManifestURL string `json:"updateManifestUrl"`
+	// AgentBinBytes is the size of the embedded agent binary this app pushes
+	// on a speaker update (0 on dev builds with the empty stub). The frontend
+	// uses it for the storage pre-flight before an OTA.
+	AgentBinBytes int64 `json:"agentBinBytes"`
 }
 
 // Versions are set via -ldflags X in the build; defaults are for
@@ -3728,6 +3765,7 @@ func (a *App) AppInfo() AppInfo {
 		// then returns a small JSON manifest. See CheckAppUpdate for the
 		// request/response contract.
 		UpdateManifestURL: "https://st-reborn.de/api/update-check.php",
+		AgentBinBytes:     int64(len(agentbin.Bytes())),
 	}
 }
 

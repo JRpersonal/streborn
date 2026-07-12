@@ -39,6 +39,8 @@ import {
   BoxAgentVersion,
   UpdateBoxAgent,
   EnsureSpotifyEngine,
+  RecordOTAOutcome,
+  ClassifyOTAResult,
   WriteWLANConfig,
   WriteRegionConfig,
   WriteNameConfig,
@@ -2298,7 +2300,7 @@ async function checkBoxUpdate() {
   // "Update all speakers" (beta): offered next to the single-speaker button when
   // two or more speakers are behind, so a multi-speaker household updates them in
   // one click instead of one at a time. Hidden while any OTA is already running.
-  const eligibleCount = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && boxNeedsUpdate(b)).length;
+  const eligibleCount = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && boxNeedsUpdate(b) && !otaStuck(b)).length;
   const renderUpdateAllBtn = () => (eligibleCount >= 2 && !state.otaInProgress)
     ? `<button class="btn btn-secondary btn-mini" id="boxUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: eligibleCount }))} <span class="beta-tag">${escapeHtml(t('common.beta'))}</span></button>`
     : '';
@@ -2342,6 +2344,24 @@ async function checkBoxUpdate() {
     const instDisp = sameVer && boxBuild ? `${boxVer} (Build ${boxBuild})` : boxVer;
     const nextDisp = sameVer && appBuild ? `${appVer} (Build ${appBuild})` : appVer;
     if (cmp > 0) {
+      // Loop breaker (#381): pushes of this exact app build have already
+      // failed to take effect on this box. Re-offering the one-click push
+      // would reboot the speaker again for the same non-result, so show the
+      // diagnostic state; retrying stays possible but is an explicit choice.
+      const stuck = otaStuck(state.currentBox);
+      if (stuck) {
+        banner.innerHTML = `
+          <div class="update-msg">
+            <b>${escapeHtml(t('update.notStickingTitle', { name: boxName }))}</b><br>
+            <small>${escapeHtml(t('update.notStickingLine'))}</small>
+          </div>
+          <button class="btn btn-secondary btn-mini" id="boxUpdateRetryBtn">${escapeHtml(t('update.retryAnyway'))}</button>
+        `;
+        banner.classList.remove('hidden');
+        const rb = $('boxUpdateRetryBtn');
+        if (rb && !otaElsewhere) rb.onclick = () => { clearOTAStuck(state.currentBox); doBoxUpdate(); };
+        return;
+      }
       banner.innerHTML = `
         <div class="update-msg">
           <b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: boxName }))}</b><br>
@@ -2370,6 +2390,20 @@ async function checkBoxUpdate() {
     // direction guard so a newer box never gets a downgrade offer.
     const cv = state.currentBox.version;
     if (cv && compareVerBuild(state.appInfo.version, '', cv, '') > 0) {
+      if (otaStuck(state.currentBox)) {
+        // Loop breaker: same gate as the live-version branch above.
+        banner.innerHTML = `
+          <div class="update-msg">
+            <b>${escapeHtml(t('update.notStickingTitle', { name: boxName }))}</b><br>
+            <small>${escapeHtml(t('update.notStickingLine'))}</small>
+          </div>
+          <button class="btn btn-secondary btn-mini" id="boxUpdateRetryBtn">${escapeHtml(t('update.retryAnyway'))}</button>
+        `;
+        banner.classList.remove('hidden');
+        const rb = $('boxUpdateRetryBtn');
+        if (rb && !otaElsewhere) rb.onclick = () => { clearOTAStuck(state.currentBox); doBoxUpdate(); };
+        return;
+      }
       banner.innerHTML = `
         <div class="update-msg">
           <b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: boxName }))}</b><br>
@@ -2384,6 +2418,68 @@ async function checkBoxUpdate() {
       wireUpdateAllBtn();
     }
   }
+}
+
+// --- OTA loop breaker (#381) -------------------------------------------------
+// A box whose reported version never changes after a push used to get the
+// full push+reboot cycle re-offered forever (the banner re-armed on every
+// discovery). Remember per box how pushes of THIS app build ended; after a
+// hard "cannot help to retry" classification or two unconfirmed cycles, the
+// banner switches to a diagnostic message and re-pushing needs an explicit
+// user override. Keyed to the app build so a NEW app version resets the state.
+function otaStuckKey(box) {
+  return 'otaStuck:' + (box.deviceId || box.host);
+}
+function readOTAStuck(box) {
+  try {
+    const rec = JSON.parse(localStorage.getItem(otaStuckKey(box)) || 'null');
+    if (!rec || rec.build !== (state.appInfo && state.appInfo.build)) return null;
+    return rec;
+  } catch { return null; }
+}
+function noteOTAFailure(box, cls) {
+  try {
+    const build = state.appInfo && state.appInfo.build;
+    const cur = readOTAStuck(box) || { build, count: 0 };
+    const rec = { build, count: (cur.count || 0) + 1, cls, at: Date.now() };
+    localStorage.setItem(otaStuckKey(box), JSON.stringify(rec));
+  } catch {}
+}
+function clearOTAStuck(box) {
+  try { localStorage.removeItem(otaStuckKey(box)); } catch {}
+}
+// otaStuck returns the record when the box is in the give-up state: one
+// "re-pushing the same bytes cannot help" verdict, or 2+ unconfirmed cycles.
+function otaStuck(box) {
+  const rec = readOTAStuck(box);
+  if (!rec) return null;
+  if (rec.cls === 'landed-not-running' || rec.cls === 'swap-failed') return rec;
+  if ((rec.count || 0) >= 2) return rec;
+  return null;
+}
+
+// isEngineStreamDrop matches errors that mean the ~16 MB engine push was cut
+// mid-stream (box rebooting or its network stack folding under the write):
+// re-streaming immediately races the next reboot with the very payload that
+// cut the last one (deqw's ST20 died exactly this way, 2026-07-12).
+function isEngineStreamDrop(msg) {
+  return /broken pipe|connection reset|deadline exceeded|forcibly closed|host is down|unexpected eof|wsarecv/i.test(msg);
+}
+
+// waitForStableAgent waits (bounded by deadlineMs) until the box's agent
+// answers again and KEEPS answering for stableMs, so the next engine attempt
+// streams at a settled box instead of one mid-reboot.
+async function waitForStableAgent(box, deadlineMs, stableMs = 15_000) {
+  let up = 0;
+  while (Date.now() < deadlineMs) {
+    await sleep(3_000);
+    try {
+      await BoxAgentVersion(box.host, box.port);
+      if (!up) up = Date.now();
+      if (Date.now() - up >= stableMs) return true;
+    } catch { up = 0; }
+  }
+  return false;
 }
 
 // runBoxUpdate runs the per-box OTA sequence for the "update all speakers" batch
@@ -2462,7 +2558,15 @@ async function runBoxUpdate(box, onPhase) {
       stableSince = 0;
     }
   }
-  if (!confirmedVer) return { outcome: 'timeout', version: null };
+  if (!confirmedVer) {
+    // Journal the real verdict and classify why (unreachable / not landed /
+    // landed-but-not-running), feeding the loop breaker so an update that
+    // cannot stick is not re-offered as a fresh one-click push forever.
+    try { noteOTAFailure(box, await ClassifyOTAResult(box.host, box.port)); } catch {}
+    return { outcome: 'timeout', version: null };
+  }
+  clearOTAStuck(box);
+  try { RecordOTAOutcome(box.host, `confirmed: box is on build ${confirmedVer.build || '?'} (stability window passed)`); } catch {}
   // Post-reboot Spotify engine reconcile: covers the one-time pre-v0.8.22
   // upgrade case (#240, engine missing) AND a present-but-outdated engine on a
   // tight box whose pre-reboot staging was deferred (the old engine's space is
@@ -2483,6 +2587,12 @@ async function runBoxUpdate(box, onPhase) {
         // help, only freeing space can. The agent update itself succeeded.
         if (/insufficient nand|no space|507/i.test(m)) break;
         try { console.warn(`spotify engine delivery attempt ${attempt} failed (will retry)`, engErr); } catch {}
+        // Mid-stream drop: the box is likely rebooting. Wait until its agent
+        // answers steadily before streaming 16 MB at it again.
+        if (isEngineStreamDrop(m)) {
+          await waitForStableAgent(box, engDeadlineMs);
+          continue;
+        }
       }
       // Exponential backoff (2s -> 30s cap): each failed attempt costs the
       // box a probe, and during a slow agent start hammering it every 2s
@@ -2544,6 +2654,26 @@ async function doBoxUpdate(targetBox) {
       if (!ok) return; // user chose to improve the signal first
     }
   } catch { /* signal unknown: do not block the update */ }
+
+  // Storage pre-flight (v0.9.7, #381/#119): a tight NAND makes the update the
+  // riskiest thing the app can do to a speaker — on rollout day two boxes went
+  // down mid-update with 5-8 MB free while the app proceeded silently. The
+  // user stays in control: show the real numbers and what will happen (more
+  // than one restart, Spotify engine reinstalled after the restart) and let
+  // them decide. An unknown free figure (older agent) never blocks.
+  try {
+    const v = await BoxAgentVersion(targetBox.host, targetBox.port);
+    const free = parseInt(v.nandFreeBytes || '', 10);
+    const agentBytes = (state.appInfo && state.appInfo.agentBinBytes) || 0;
+    if (Number.isFinite(free) && free > 0 && agentBytes > 0 && free < agentBytes) {
+      const fmtMB = (n) => (n / 1048576).toFixed(1);
+      const ok = await confirmWarn(
+        t('update.tightNandTitle'),
+        t('update.tightNandBody', { freeMB: fmtMB(free), needMB: fmtMB(agentBytes) })
+      );
+      if (!ok) return; // user cancelled: no OTA, no reboot
+    }
+  } catch { /* headroom unknown: do not block the update */ }
 
   // Drive both update buttons together (banner up top + stick info section)
   const buttons = () => ['boxUpdateBtn', 'stickInfoUpdateBtn'].map(id => $(id)).filter(Boolean);
@@ -2644,23 +2774,46 @@ async function doBoxUpdate(targetBox) {
       if (preVersion && v.version && v.version !== preVersion) return true;
       return false;
     };
+    // Bootstrap-reboot stability window, ported from runBoxUpdate (#360 fixed
+    // only the batch path despite the KEEP-IN-SYNC note): the first boot after
+    // an OTA can deliberately reboot ONCE more when the new agent refreshed
+    // run-override.sh/rc.local on the NAND. Confirming on the FIRST version
+    // match fired the ~16 MB engine push straight into that window, and on a
+    // Wi-Fi-fragile ST20 the cut upload plus the extra reboot took the box off
+    // the network for good (deqw, 2026-07-12). Confirm only after the box
+    // stays reachable on the new version for a full window.
+    const stabilityMs = 50_000;
+    let stableSince = 0, sawSecondDrop = false;
     try {
       while (Date.now() < deadlineMs) {
         await sleep(pollIntervalMs);
         try {
           const v = await BoxAgentVersion(targetBox.host, targetBox.port);
           if (updated(v)) {
-            confirmed = true;
-            confirmedVer = v;
-            break;
+            if (!stableSince) stableSince = Date.now();
+            const windowDone = sawSecondDrop || (Date.now() - stableSince >= stabilityMs);
+            if (windowDone) {
+              confirmed = true;
+              confirmedVer = v;
+              break;
+            }
+          } else {
+            stableSince = 0;
           }
-        } catch { /* box still unreachable mid-reboot; keep waiting */ }
+        } catch {
+          // Unreachable: still mid-first-reboot, or the bootstrap reboot just
+          // took the box down again after we already saw the new version.
+          if (stableSince) sawSecondDrop = true;
+          stableSince = 0;
+        }
         renderStatus();
       }
     } finally {
       clearInterval(tickHandle);
     }
     if (confirmed) {
+      clearOTAStuck(targetBox);
+      try { RecordOTAOutcome(targetBox.host, `confirmed: box is on build ${(confirmedVer && confirmedVer.build) || '?'} (stability window passed)`); } catch {}
       showToast(t('update.doneToast'));
       // The box just came up on the new, sidecar-capable agent. If it still
       // reports the Spotify engine missing, this is the one-time legacy case
@@ -2706,6 +2859,13 @@ async function doBoxUpdate(targetBox) {
               // (#119). Anything else is the box still settling: keep retrying.
               if (/insufficient nand|no space|507/i.test(m)) { engTooFull = true; break; }
               try { console.warn(`post-update Spotify engine delivery attempt ${engAttempt} failed (will retry)`, engErr); } catch {}
+              // Mid-stream drop: the box is likely rebooting. Wait until its
+              // agent answers steadily before streaming 16 MB at it again.
+              if (isEngineStreamDrop(m)) {
+                await waitForStableAgent(targetBox, engDeadlineMs);
+                renderEng();
+                continue;
+              }
             }
             // Exponential backoff (2s -> 30s cap, #270): a box that is still
             // settling after the reboot gains nothing from a 2s hammer.
@@ -2732,7 +2892,18 @@ async function doBoxUpdate(targetBox) {
         }
       }
     } else {
-      showToast(t('update.tookLongerToast'));
+      // Journal the real verdict, classify why, and feed the loop breaker.
+      // A "cannot help to retry" classification switches the banner to the
+      // diagnostic state instead of re-offering the same push.
+      let cls = '';
+      try { cls = await ClassifyOTAResult(targetBox.host, targetBox.port); } catch {}
+      if (cls === 'confirmed') {
+        clearOTAStuck(targetBox);
+        showToast(t('update.doneToast'));
+      } else {
+        noteOTAFailure(targetBox, cls || 'unreachable');
+        showToast(t('update.tookLongerToast'));
+      }
     }
     // Refresh app state regardless of confirmation so the user sees current
     // truth (either updated or still in OTA). This is BEST-EFFORT and must never
@@ -2804,7 +2975,7 @@ async function doBoxUpdate(targetBox) {
 // on the single-box global lock, which it holds for the whole batch.
 async function updateAllBoxes() {
   if (state.otaInProgress) return;
-  const targets = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && boxNeedsUpdate(b));
+  const targets = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && boxNeedsUpdate(b) && !otaStuck(b));
   if (targets.length === 0) { showToast(t('updateAll.noneToUpdate')); return; }
 
   // Pre-scan for sticks / weak Wi-Fi so the user is warned ONCE up front, not

@@ -11,6 +11,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -168,11 +169,21 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// Record the final outcome to the persistent OTA journal so an update-failure
 	// report is diagnosable even if the user exports the diagnostic in a later
 	// session: str.log is rotated away on the next launch, this journal is not.
+	//
+	// v0.9.7: the old single "no error" line read as success even when the box
+	// was unreachable over HTTP AND SSH — a dead box's ota-history then ended
+	// on an apparent success (#381/#119 forensics). The upload phase now
+	// journals what it actually knows, and the frontend's version poll writes
+	// the real end-to-end verdict via RecordOTAOutcome/ClassifyOTAResult.
+	outcomeNote := ""
 	defer func() {
-		if err != nil {
+		switch {
+		case err != nil:
 			a.recordOTA(host, "outcome: reported failure: "+err.Error())
-		} else {
-			a.recordOTA(host, "outcome: no error (applied, or deferred to the version poll)")
+		case outcomeNote != "":
+			a.recordOTA(host, "outcome: "+outcomeNote)
+		default:
+			a.recordOTA(host, "outcome: upload accepted; success is decided by the version poll (a later outcome line records its verdict)")
 		}
 	}()
 	// Refresh the USB stick BEFORE the OTA push, while the box is still fully up.
@@ -217,6 +228,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// hit: the agent was healthy yet the app showed "Update failed".
 			if isTimeoutLikeErr(perr) {
 				a.logger.Info("update agent: preflight timed out and SSH unavailable; deferring to the post-OTA version poll", "host", host, "preflightErr", perr, "sshErr", sshErr)
+				outcomeNote = "UNCONFIRMED: box answered neither HTTP nor SSH; nothing was uploaded, deferred to the version poll — this line is NOT a success"
 				return nil
 			}
 			return fmt.Errorf("HTTP preflight rejected the listener at :%d and SSH fallback also failed: %w (preflight: %v)", port, sshErr, perr)
@@ -247,6 +259,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 			// an SSH failure is a real, report-worthy failure.
 			if isConnDropErr(err) {
 				a.logger.Info("update agent: HTTP connection dropped (agent restarting) and SSH raced the reboot; deferring to the post-OTA version poll", "host", host, "httpErr", err, "sshErr", sshErr)
+				outcomeNote = "UNCONFIRMED: HTTP dropped mid-upload (the agent may be applying it) and SSH raced the reboot; deferred to the version poll — this line is NOT a success"
 				return nil
 			}
 			// A 507 means the speaker's storage is full and its (old) agent
@@ -262,6 +275,55 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		a.logger.Info("update agent: SSH-OTA succeeded after HTTP failure", "host", host, "bytes", len(bin))
 	}
 	return nil
+}
+
+// RecordOTAOutcome writes the frontend's final OTA poll verdict into the
+// per-host OTA journal. Before v0.9.7 the journal's last word on a push was
+// the upload-phase "no error" line even when the box never came back, which
+// made two dead-box reports read as successes (#381/#119). Bound for the
+// frontend, which calls it when its version poll resolves.
+func (a *App) RecordOTAOutcome(host, verdict string) {
+	if len(verdict) > 300 {
+		verdict = verdict[:300]
+	}
+	a.recordOTA(host, "outcome: "+verdict)
+}
+
+// ClassifyOTAResult probes the box after the frontend's post-OTA version poll
+// gave up, classifies WHY the update did not confirm, and journals the
+// verdict. The classification is what lets the app stop re-push loops: a box
+// that keeps reporting the old version after a successful upload used to get
+// pushed and rebooted forever (#381 meierchen006). Returns one of:
+//
+//	"confirmed"          box runs this app's build after all (late reboot)
+//	"landed-not-running" pushed binary IS on the box's disk, old version runs
+//	                     — a boot rollback / swap failure; re-pushing the same
+//	                     bytes cannot help
+//	"swap-failed"        the box reports a failed tier-3 binary swap
+//	"not-landed"         box answers with the old version and does not have
+//	                     the pushed binary on disk
+//	"unreachable"        box does not answer at all
+func (a *App) ClassifyOTAResult(host string, port int) string {
+	ver, err := a.BoxAgentVersion(host, port)
+	if err != nil {
+		a.recordOTA(host, "outcome: NOT CONFIRMED - box unreachable after the verify window: "+err.Error())
+		return "unreachable"
+	}
+	if ver["build"] == appBuild && appBuild != "" {
+		a.recordOTA(host, "outcome: confirmed late - box is on build "+ver["build"])
+		return "confirmed"
+	}
+	if msg := ver["otaSwapFailed"]; msg != "" {
+		a.recordOTA(host, "outcome: NOT CONFIRMED - the box reports a failed binary swap: "+msg)
+		return "swap-failed"
+	}
+	sum := sha256.Sum256(agentbin.Bytes())
+	if ver["agentBinarySha256"] == hex.EncodeToString(sum[:]) {
+		a.recordOTA(host, "outcome: NOT CONFIRMED - the pushed binary IS on the box's disk but the running agent is still "+ver["version"]+" build "+ver["build"]+"; the update did not take effect (boot rollback / swap failure), an identical re-push cannot help")
+		return "landed-not-running"
+	}
+	a.recordOTA(host, "outcome: NOT CONFIRMED - box still runs "+ver["version"]+" build "+ver["build"]+" and does not report the pushed binary on disk")
+	return "not-landed"
 }
 
 // pushSidecarIfNeeded delivers the embedded go-librespot Spotify sidecar to the
@@ -334,7 +396,7 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 	}
 
 	a.recordOTA(host, fmt.Sprintf("sidecar: pushing go-librespot (%d bytes, sha %s)", len(bin), want[:12]))
-	if err := a.streamPostBinary(host, port, "/api/agent/sidecar", bin); err != nil {
+	if _, err := a.streamPostBinary(host, port, "/api/agent/sidecar", bin); err != nil {
 		a.recordOTA(host, "sidecar: push failed (agent OTA still proceeds): "+err.Error())
 		a.logger.Warn("sidecar push failed; agent OTA continues, Spotify may stay unavailable until next OTA", "host", host, "err", err)
 		return false, fmt.Errorf("sidecar upload failed: %w", err)
@@ -408,14 +470,23 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 	agentLen := int64(len(agentbin.Bytes()))
 	sidecarLen := int64(len(agentbin.GoLibrespotBytes()))
 	freeN, _ := strconv.ParseInt(ver["nandFreeBytes"], 10, 64)
-	// A present old engine is dropped by the sidecar write before the new
-	// one lands, so count it as headroom (same rule as pushSidecarIfNeeded).
-	reclaimable := reclaimableEngineBytes(ver, sidecarLen)
+	// v0.9.7, safe over fast (#381 rollout day): the PRE-reboot gate gets NO
+	// old-engine reclaim credit and no benefit of the doubt. Crediting the
+	// present engine's blocks as headroom let a 16.5 MB engine stream start
+	// at boxes with 5-8 MB free (the agent drops the old engine mid-cascade,
+	// the fresh engine is then re-dropped by the agent .new write, and the
+	// box crash-rebooted or wedged mid-upload on rollout day — Rettcom's ST30
+	// and deqw's ST20, 2026-07-12). Pre-reboot staging is an optimization
+	// only: whenever the box is remotely tight, defer the engine to the
+	// post-reboot EnsureSpotifyEngine, which runs after the old agent's
+	// blocks are genuinely reclaimed and is the path that reliably works.
+	// The reclaim credit remains valid there (pushSidecarIfNeeded).
+	agentTight := freeN > 0 && freeN < agentLen
 	need := nandNeedCompressed(agentLen + sidecarLen)
-	if !nandFits(freeN, reclaimable, need) {
-		a.recordOTA(host, fmt.Sprintf("sidecar: NAND tight (free=%dKB < ~%dKB for agent %dKB + engine %dKB after the flash-compression credit), deferring the engine to the post-reboot delivery so the agent update fits", (freeN+reclaimable)/1024, need/1024, agentLen/1024, sidecarLen/1024))
-		a.logger.Info("stageSidecarBeforeReboot: NAND too tight to stage the engine before the agent; deferring to post-OTA EnsureSpotifyEngine",
-			"host", host, "free", freeN+reclaimable, "needCompressed", need, "agentLen", agentLen, "sidecarLen", sidecarLen)
+	if agentTight || !nandFits(freeN, 0, need) {
+		a.recordOTA(host, fmt.Sprintf("sidecar: NAND tight (free=%dKB, agent %dKB + engine %dKB), deferring the engine to the post-reboot delivery so the agent update fits and the box is not driven into the ground mid-upload", freeN/1024, agentLen/1024, sidecarLen/1024))
+		a.logger.Info("stageSidecarBeforeReboot: NAND tight; deferring the engine to post-OTA EnsureSpotifyEngine",
+			"host", host, "free", freeN, "needCompressed", need, "agentLen", agentLen, "sidecarLen", sidecarLen, "agentTight", agentTight)
 		return
 	}
 	for attempt := 1; attempt <= otaSidecarEnsureAttempts; attempt++ {
@@ -428,6 +499,15 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 			// retrying is pure thrash; the push gate already journaled the
 			// shortfall and the post-OTA delivery runs after the reboot has
 			// reclaimed the old agent's blocks.
+			return
+		}
+		if isCleanHTTPReject(err) {
+			// The agent looked at the upload and said no (4xx/5xx). Re-sending
+			// the identical 16 MB cannot change that answer; a past storm
+			// re-streamed the engine ~30 times in 8 minutes at a box that kept
+			// answering 500 (deqw, 2026-07-09). Leave it to the post-reboot
+			// delivery.
+			a.recordOTA(host, "sidecar: box cleanly rejected the upload, not retrying pre-reboot: "+err.Error())
 			return
 		}
 		if attempt < otaSidecarEnsureAttempts {
@@ -729,6 +809,15 @@ func isConnDropErr(err error) bool {
 	return !strings.Contains(err.Error(), "status ")
 }
 
+// isCleanHTTPReject reports whether an OTA push error carries a real HTTP
+// >= 400 status: the box received the upload and refused it, so re-sending
+// the identical bytes cannot change the answer and retry loops must stop
+// (a 2026-07-09 storm re-streamed the 16 MB engine ~30 times at a box that
+// kept answering 500). streamPostBinary formats these as "status N: ...".
+func isCleanHTTPReject(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "status ")
+}
+
 // isTimeoutLikeErr reports whether an OTA error is a transport timeout or
 // connection drop rather than a definite rejection. A timeout (including the
 // "context deadline exceeded (Client.Timeout or context cancellation while
@@ -792,7 +881,18 @@ func (a *App) updateAgentPreflight(host string, port int) error {
 }
 
 func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
-	return a.streamPostBinary(host, port, "/api/agent/update", bin)
+	body, err := a.streamPostBinary(host, port, "/api/agent/update", bin)
+	if err != nil {
+		return err
+	}
+	// Journal which apply mode the agent chose (the 200 reply carries
+	// {mode: "ram-staged"} on the tier-3 path). A RAM-staged swap has its own
+	// failure modes (see the swap helper), so a later "version never changed"
+	// report needs to show which path ran.
+	if strings.Contains(body, "ram-staged") {
+		a.recordOTA(host, "apply mode: ram-staged (tier 3 — agent exits, detached helper swaps the binary and reboots)")
+	}
+	return nil
 }
 
 // streamPostBinary POSTs bin to path on the agent, streaming the body with a
@@ -801,7 +901,7 @@ func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 // Wi-Fi can take minutes), a 60 s upload-stall watchdog, and a bounded
 // post-upload reply window. Shared by the agent-binary update and the
 // go-librespot sidecar push so they cannot drift on transfer behavior.
-func (a *App) streamPostBinary(host string, port int, path string, bin []byte) error {
+func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (string, error) {
 	url := a.baseURL(host, port) + path
 	// No total-transfer deadline. Streaming the ~10 MB agent to a busy box over slow
 	// Wi-Fi can legitimately take minutes, and the old fixed 240 s cap killed
@@ -841,7 +941,7 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) e
 	}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = total
@@ -883,14 +983,17 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) e
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
-	return nil
+	// The success reply is small JSON (e.g. {mode: "ram-staged"}); return it so
+	// the agent-update caller can journal the chosen apply mode.
+	reply, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return string(reply), nil
 }
 
 // updateAgentViaSSH streams bin into /mnt/nv/streborn/bin/streborn-armv7l
@@ -963,18 +1066,28 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
 		return fmt.Errorf("ssh upload (%d bytes) failed: %v (%s)", len(bin), err, strings.TrimSpace(out))
 	}
-	// Size-verify before the atomic rename so a half-uploaded file never
-	// becomes the live agent. Sentinel "OK_<size>" so the caller can
+	// Content-verify before the atomic rename so a half-uploaded OR corrupted
+	// file never becomes the live agent. A size check alone cannot do that
+	// job: consecutive releases are byte-equal in size (v0.9.4/5/6 are all
+	// exactly 12517538 bytes), so a stale same-size file would "verify".
+	// Prefer sha256sum, fall back to md5sum (ubiquitous on BusyBox), and only
+	// then size. sync after the rename so the swap survives the reboot that
+	// follows (UBIFS write-back, #381). Sentinel "OK_<size>" so the caller can
 	// distinguish a successful rename from any stderr noise.
+	sum := sha256.Sum256(bin)
+	md5sum := md5.Sum(bin)
 	verifyCmd := fmt.Sprintf(
-		"size=$(wc -c < /mnt/nv/streborn/bin/streborn-armv7l.new) && "+
-			"[ \"$size\" = \"%d\" ] && "+
-			"chmod 0755 /mnt/nv/streborn/bin/streborn-armv7l.new && "+
-			"mv /mnt/nv/streborn/bin/streborn-armv7l.new /mnt/nv/streborn/bin/streborn-armv7l && "+
-			"echo OK_%d", len(bin), len(bin))
+		"new=/mnt/nv/streborn/bin/streborn-armv7l.new; "+
+			"if command -v sha256sum >/dev/null 2>&1; then [ \"$(sha256sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
+			"elif command -v md5sum >/dev/null 2>&1; then [ \"$(md5sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
+			"else [ \"$(wc -c < $new)\" = \"%d\" ] || { echo STR_HASH_FAIL; exit 1; }; fi && "+
+			"chmod 0755 $new && "+
+			"mv $new /mnt/nv/streborn/bin/streborn-armv7l && "+
+			"sync && echo OK_%d",
+		hex.EncodeToString(sum[:]), hex.EncodeToString(md5sum[:]), len(bin), len(bin))
 	sentinel := fmt.Sprintf("OK_%d", len(bin))
-	if out, err := boxSSHOutput(host, verifyCmd, 15*time.Second); err != nil || !strings.Contains(out, sentinel) {
-		return fmt.Errorf("ssh size-verify or rename failed: %v (%s)", err, strings.TrimSpace(out))
+	if out, err := boxSSHOutput(host, verifyCmd, 45*time.Second); err != nil || !strings.Contains(out, sentinel) {
+		return fmt.Errorf("ssh content-verify or rename failed: %v (%s)", err, strings.TrimSpace(out))
 	}
 	// Always reboot after the binary swap. Jens 2026-06-01: an OTA that
 	// only SIGTERMs the agent and relies on run.sh's watchdog respawn
@@ -1034,14 +1147,22 @@ func (a *App) pushSidecarViaSSH(host string) {
 	}
 	sum := sha256.Sum256(bin)
 	sha := hex.EncodeToString(sum[:])
+	md5s := md5.Sum(bin)
+	// Content-verify (sha256sum, else md5sum, else size — same rationale as
+	// the agent binary above) and sync so the engine survives the reboot that
+	// follows the agent swap (an unsynced engine vanished across exactly that
+	// reboot, deqw 2026-07-12).
 	verifyCmd := fmt.Sprintf(
-		"size=$(wc -c < %s.new) && [ \"$size\" = \"%d\" ] && "+
-			"chmod 0755 %s.new && mv %s.new %s && "+
-			"printf %%s %s > %s.sha256 && echo OK_%d",
-		dst, len(bin), dst, dst, dst, sha, dst, len(bin))
+		"new=%s.new; "+
+			"if command -v sha256sum >/dev/null 2>&1; then [ \"$(sha256sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
+			"elif command -v md5sum >/dev/null 2>&1; then [ \"$(md5sum $new | cut -d' ' -f1)\" = \"%s\" ] || { echo STR_HASH_FAIL; exit 1; }; "+
+			"else [ \"$(wc -c < $new)\" = \"%d\" ] || { echo STR_HASH_FAIL; exit 1; }; fi && "+
+			"chmod 0755 $new && mv $new %s && "+
+			"printf %%s %s > %s.sha256 && sync && echo OK_%d",
+		dst, sha, hex.EncodeToString(md5s[:]), len(bin), dst, sha, dst, len(bin))
 	sentinel := fmt.Sprintf("OK_%d", len(bin))
-	if out, err := boxSSHOutput(host, verifyCmd, 20*time.Second); err != nil || !strings.Contains(out, sentinel) {
-		a.logger.Warn("sidecar SSH size-verify/rename failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
+	if out, err := boxSSHOutput(host, verifyCmd, 45*time.Second); err != nil || !strings.Contains(out, sentinel) {
+		a.logger.Warn("sidecar SSH content-verify/rename failed (agent OTA still proceeds)", "host", host, "err", err, "out", strings.TrimSpace(out))
 		return
 	}
 	a.logger.Info("sidecar push (SSH): go-librespot delivered over OTA", "host", host, "bytes", len(bin))
