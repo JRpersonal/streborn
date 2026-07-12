@@ -911,6 +911,7 @@ function renderDonateSidebar() {
       <span class="donate-btn-icon">${coffeeSvg}</span>
       <span class="donate-btn-label">Ko-fi</span>
     </button>
+    <div class="donate-slogan donate-share-lead">${escapeHtml(t('footer.shareLead'))}</div>
     ${shareTriggerHTML()}
   `;
 
@@ -1664,16 +1665,24 @@ function checkWedgeBanner() {
   el.classList.remove('hidden');
 }
 
-// checkBoxIssueBanner warns when a speaker is in a state that will misbehave or
-// strand the user: a rival cloud-free SoundTouch tool's leftover files (they
-// fight STR), or no STR-saved Wi-Fi (the box only stays online with the
-// stick/cable and drops off on the next cold boot). Global banner, #270.
+// checkBoxIssueBanner is a heads-up when a speaker carries leftovers of a
+// rival cloud-free SoundTouch tool (they can fight STR) or has no STR Wi-Fi
+// backup saved. Global banner, #270. Dismissible per box and warning type:
+// both are informational (a healthy speaker keeps playing either way), so the
+// user must be able to acknowledge them once instead of being nagged forever
+// (Jens, 2026-07-12).
+function warnDismissKey(box, type) {
+  return 'warnDismiss:' + (box.deviceId || box.host) + ':' + type;
+}
+function warnDismissed(box, type) {
+  try { return !!localStorage.getItem(warnDismissKey(box, type)); } catch { return false; }
+}
 function checkBoxIssueBanner() {
   const el = $('boxIssueBanner');
   if (!el) return;
   const boxes = state.boxes || [];
-  const conflict = boxes.filter(b => b && b.conflictingMod);
-  const noWifi = boxes.filter(b => b && b.wlanCredsMissing);
+  const conflict = boxes.filter(b => b && b.conflictingMod && !warnDismissed(b, 'conflict'));
+  const noWifi = boxes.filter(b => b && b.wlanCredsMissing && !warnDismissed(b, 'nowifi'));
   const msgs = [];
   if (conflict.length) {
     const names = conflict.map(b => getBoxLabel(b)).join(', ');
@@ -1684,7 +1693,16 @@ function checkBoxIssueBanner() {
     msgs.push(escapeHtml(t('speaker.noWifiBanner', { name: names })));
   }
   if (!msgs.length) { el.classList.add('hidden'); return; }
-  el.innerHTML = `<div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>`;
+  el.innerHTML = `
+    <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
+    <button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>`;
+  const d = $('boxIssueDismissBtn');
+  if (d) d.onclick = () => {
+    const stamp = String(Date.now());
+    conflict.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'conflict'), stamp); } catch {} });
+    noWifi.forEach(b => { try { localStorage.setItem(warnDismissKey(b, 'nowifi'), stamp); } catch {} });
+    el.classList.add('hidden');
+  };
   el.classList.remove('hidden');
 }
 
