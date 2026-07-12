@@ -2663,9 +2663,12 @@ async function doBoxUpdate(targetBox) {
   try {
     const s = await BoxSettings(targetBox.host, targetBox.port);
     const ifs = (s && s.network && s.network.interfaces) || [];
-    const conn = ifs.find(i =>
-      (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') ||
-      (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
+    // Only a real WIFI_INTERFACE reading gates the update: that class comes
+    // from the firmware live. Coprocessor boxes (ETHERNET-presented Wi-Fi)
+    // carry only the agent's last gabbo snapshot - a display hint, not a
+    // current measurement, and it false-alarmed on a Portable sitting next
+    // to the router (2026-07-12).
+    const conn = ifs.find(i => i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED');
     const sig = conn && conn.signal;
     if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') {
       const ok = await confirmWarn(t('update.weakWifiTitle'), t('update.weakWifiBody'));
@@ -3007,7 +3010,9 @@ async function updateAllBoxes() {
     try {
       const s = await BoxSettings(b.host, b.port);
       const ifs = (s && s.network && s.network.interfaces) || [];
-      const conn = ifs.find(i => (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') || (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
+      // Firmware-reported Wi-Fi class only, same rule as doBoxUpdate: the
+      // coprocessor boxes' agent-relayed snapshot is not a live measurement.
+      const conn = ifs.find(i => i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED');
       const sig = conn && conn.signal;
       if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') notes.push(t('updateAll.noteWeakWifi', { name: getBoxLabel(b) }));
     } catch { /* signal unknown: do not block */ }
