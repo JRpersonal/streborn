@@ -1872,7 +1872,7 @@ func reachabilityHint(err error) error {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return err
 	}
-	return fmt.Errorf("%w\n\nThe app could not reach the speaker. This is usually a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks. Allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi network.", err)
+	return fmt.Errorf("%w\n\nThe app could not reach the speaker. This is usually a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks. Allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi network", err)
 }
 
 // ---- Multiroom zone (#70, BETA) ----
