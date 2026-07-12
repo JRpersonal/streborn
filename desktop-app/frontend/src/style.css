@@ -862,6 +862,9 @@ body {
   accent-color: var(--brand);
 }
 .volume-control .vol-val { font-size: 12px; color: var(--c-muted); min-width: 28px; text-align: right; }
+/* Compact square +/- volume steppers: precise, accident-free adjustment that
+   also works on touch, flanking the slider. */
+.volume-control .vol-step { flex: 0 0 auto; padding: 4px 8px; min-width: 26px; line-height: 1; font-size: 15px; font-weight: 600; }
 .btn { background: var(--c-surface-2); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
 .btn:hover { background: var(--c-border); }
 .btn-mini { padding: 4px 10px; font-size: 13px; }
