@@ -944,12 +944,14 @@ fi
 # or the NAND wlan-creds an app change / OTA persisted). A box with no creds
 # is never touched, so a working Wi-Fi profile is never clobbered.
 _es_ssid=""; _es_pass=""
+# v0.9.7 hands-off boot: the early one-shot fires ONLY for a fresh stick
+# wlan.conf (an explicit user setup). It used to also fire from the NAND
+# wlan-creds replay on every normal boot, which meant STR re-programmed the
+# Wi-Fi coprocessor of boxes that were already perfectly online - the prime
+# suspect for unexplained Wi-Fi losses and orange network icons (#270).
 if [ -f "$STICK/wlan.conf" ]; then
     _es_ssid=$(sed -n 's/.*"ssid":"\([^"]*\)".*/\1/p' "$STICK/wlan.conf" | head -1)
     _es_pass=$(sed -n 's/.*"password":"\([^"]*\)".*/\1/p' "$STICK/wlan.conf" | head -1)
-elif [ -r "$PERSIST/wlan-creds" ]; then
-    _es_ssid=$(sed -n 's/^SSID=\(.*\)$/\1/p' "$PERSIST/wlan-creds" | head -1)
-    _es_pass=$(sed -n 's/^PASS=\(.*\)$/\1/p' "$PERSIST/wlan-creds" | head -1)
 fi
 if [ -n "$_es_ssid" ] && [ -n "$_es_pass" ]; then
     setup_log "early WLAN one-shot: provisioning '$_es_ssid' via goform BEFORE the heavy stick copy (power-weak safety net)"
@@ -1762,6 +1764,50 @@ fi
 if [ -n "$SSID" ] && [ -n "$PASS" ]; then
     setup_log "=== WLAN provisioning start (boot at $(uptime | tr -s ' ')) source=$WLAN_SOURCE ==="
     setup_log "wlan.conf parsed: SSID='$SSID' password_length=${#PASS}"
+
+    # ---- v0.9.7 hands-off boot (Jens, 2026-07-12) ----------------------
+    # On a NORMAL boot (credentials replayed from NAND, no fresh stick
+    # wlan.conf) STR no longer provisions Wi-Fi AT ALL: no
+    # /addWirelessProfile, no profile-file writes, no goform apply. Every
+    # boot-time intervention added since v0.8.48 is the prime suspect for
+    # unexplained Wi-Fi losses and for online boxes showing an orange
+    # network icon (#270; live-confirmed 2026-07-12 on an scm ST30 whose
+    # boot got a needless M1 profile POST while it was already online).
+    # The stock firmware owns its Wi-Fi state until a verified-stable path
+    # through the boxes' own web interfaces exists. Wi-Fi is provisioned
+    # only on explicit user action: a stick wlan.conf (install/setup) or
+    # the app's Wi-Fi settings (runtime API).
+    #
+    # Single exception, pure OFFLINE rescue: if the box holds no lease at
+    # all after a 90s grace, the non-destructive goform re-push watchdog
+    # (#157) still nudges the coprocessor on a slow cadence. It exits the
+    # moment any lease appears and never touches an online box; without it
+    # a cold-boot association failure (scm ST20 class) strands the box
+    # until a manual power-cycle.
+    case "$WLAN_SOURCE" in
+        *replay*)
+            if wait_for_sta_lease 90; then
+                setup_log "hands-off: box came online by itself ($(current_sta_lease 2>/dev/null)) - no boot-time Wi-Fi provisioning (v0.9.7)"
+            else
+                setup_log "hands-off: no lease after 90s - starting the pure-rescue goform watchdog (non-destructive re-push only, no profile writes)"
+                (
+                    _rw=0
+                    while [ "$_rw" -lt 720 ]; do
+                        sleep 60
+                        _rw=$(( _rw + 60 ))
+                        if current_sta_lease >/dev/null 2>&1; then
+                            setup_log "hands-off rescue: lease present at +${_rw}s, done"
+                            break
+                        fi
+                        setup_log "hands-off rescue: still no lease at +${_rw}s, non-destructive goform re-push"
+                        goform_wlan_push "$SSID" "$PASS"
+                    done
+                ) &
+            fi
+            setup_log "=== WLAN provisioning end (hands-off) ==="
+            exit 0
+            ;;
+    esac
 
     BOSE_API="http://127.0.0.1:8090"
     WINNER="none"
