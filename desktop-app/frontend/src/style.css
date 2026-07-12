@@ -1602,6 +1602,10 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .security-warn-text { color: #e5d4b8; font-size: 12px; line-height: 1.4; margin-bottom: 8px; }
 .security-warn button { background: #d97706; color: #fff; border: none; }
 .security-warn button:hover { background: #b45309; }
+/* Informational variant: SSH deliberately left open (persistent marker). Neutral
+   blue, no call-to-action, so it does not read as a problem to fix (#381/#385). */
+.security-warn.security-info { background: linear-gradient(135deg, #0f2030 0%, #1a2a3a 100%); border-left-color: #3b82f6; }
+.security-warn.security-info .security-warn-text { color: #c7d8ec; margin-bottom: 0; }
 .global-security-banner { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: linear-gradient(90deg, #3a2a1a 0%, #2f1f0f 100%); border-bottom: 2px solid #d97706; color: #fbbf24; font-size: 13px; }
 .global-security-banner.hidden { display: none; }
 .global-security-text { flex: 1; color: #e5d4b8; }

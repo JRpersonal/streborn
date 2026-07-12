@@ -1304,7 +1304,12 @@ async function checkSshBanner() {
     // is in but never auto-mounts so mounted=false (Jens, 2026-06-17). The old
     // mounted-based gate was a workaround from when sshd was always up (#11).
     // (Setup view and the OTA window are already excluded above.)
-    const show = !!(data && data.sshOpen);
+    // Suppress the nag when SSH is deliberately kept open across reboots via a
+    // persistent NAND marker (remote_services / enable-ssh): the banner's whole
+    // point is "remove the stick to close SSH", which does not apply and cannot
+    // be acted on here (#381/#385). The detailed, correctly-worded note lives in
+    // Speaker Settings. The transient stick-driven case still shows the banner.
+    const show = !!(data && data.sshOpen && !data.sshPersistent);
     gb.classList.toggle('hidden', !show);
   } catch {}
 }

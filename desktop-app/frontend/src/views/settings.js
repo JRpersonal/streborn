@@ -992,12 +992,17 @@ function renderBoxSettings(s, box) {
     // agent versions.
     let stickLine = `<span class="muted small">${escapeHtml(t('common.unknown'))}</span>`;
     let sshOpen = false;
+    let sshPersistent = false;
     try {
       const r = await deps.boxFetch(box, '/api/stick/status');
       const ct = r.headers.get('content-type') || '';
       if (r.ok && ct.includes('json')) {
         const data = await r.json();
         sshOpen = !!data.sshOpen;
+        // Persistent SSH left open via a NAND marker (remote_services /
+        // enable-ssh) is a deliberate stickless choice; a reboot does not close
+        // it, so it must not be reported as "stick still inserted" (#381, #385).
+        sshPersistent = !!data.sshPersistent;
         // Trust the agent's mounted flag (v0.7.33+ stickReallyMounted reports it
         // only for a real stick, not the leftover empty mountpoint, #105). Do NOT
         // also require data.version: the agent can report mounted without a
@@ -1005,6 +1010,11 @@ function renderBoxSettings(s, box) {
         // (#105 follow-up).
         if (data.mounted) {
           stickLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.stickDetected'))}</span>` + (data.version ? ` <span class="muted small">${escapeHtml(data.version)}</span>` : '');
+        } else if (sshOpen && sshPersistent) {
+          // No stick, but SSH is deliberately kept open across reboots via a NAND
+          // marker. Report it as an intentional, informational state, not as a
+          // stuck stick (Jens, #381/#385 meierchen006).
+          stickLine = `<span class="muted small">${escapeHtml(t('settingsView.sshPersistent'))}</span>`;
         } else if (sshOpen) {
           // Stick not mounted but SSH is open. On STR that only happens because a
           // stick was in at boot (it opens sshd via the remote_services marker;
@@ -1056,14 +1066,26 @@ function renderBoxSettings(s, box) {
     // `sshOpen && !stickMounted` happened to work there, but `mounted` boxes
     // showed nothing. Suppressed during the OTA window (the agent restarts and
     // the reboot button would interrupt it).
-    const securityWarn = (sshOpen && !state.otaInProgress) ? `
+    // When SSH is open because the user set a persistent NAND marker, the
+    // "reboot to close it" advice is wrong (the reboot keeps it open), so show a
+    // calm informational note on how to actually close it, with no reboot button
+    // (#381/#385). The transient stick-driven case keeps the reboot recommendation.
+    let securityWarn = '';
+    if (sshOpen && !state.otaInProgress) {
+      securityWarn = sshPersistent ? `
+      <div class="security-warn security-info">
+        <div class="security-warn-text">
+          ${escapeHtml(t('banner.sshPersistentNote'))}
+        </div>
+      </div>` : `
       <div class="security-warn">
         <div class="security-warn-title">${escapeHtml(t('banner.recommendationShort'))}</div>
         <div class="security-warn-text">
           ${escapeHtml(t('banner.sshRecommend'))}
         </div>
         <button class="btn btn-mini" id="securityRebootBtn">${escapeHtml(t('speaker.rebootNow'))}</button>
-      </div>` : '';
+      </div>`;
+    }
 
     // Prominent update banner at the very TOP of Speaker Settings whenever an
     // update is available (softwareBtn is only set then). Moved here from the

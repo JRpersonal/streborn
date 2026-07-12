@@ -80,3 +80,44 @@ func TestStickReallyMounted(t *testing.T) {
 		t.Fatalf("a removable sdb with an STR marker must be detected, got ok=%v ver=%q", ok, ver)
 	}
 }
+
+// TestSSHPersistentEnabled covers #381/#385: SSH left open via a persistent NAND
+// marker (a maintainer-placed /mnt/nv/remote_services, or STR's own
+// /mnt/nv/streborn/enable-ssh opt-in) must be reported as persistent, so the app
+// stops mislabeling a stickless box as "stick still inserted" and stops advising
+// a reboot that would not close SSH.
+func TestSSHPersistentEnabled(t *testing.T) {
+	nv := t.TempDir()
+	old := nvRoot
+	nvRoot = nv
+	t.Cleanup(func() { nvRoot = old })
+
+	// Clean NAND, no markers -> not persistent (transient stick-driven SSH).
+	if sshPersistentEnabled() {
+		t.Fatal("no NAND marker must report not-persistent")
+	}
+
+	// The maintainer-placed /mnt/nv/remote_services marker -> persistent.
+	if err := os.WriteFile(filepath.Join(nv, "remote_services"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !sshPersistentEnabled() {
+		t.Fatal("/mnt/nv/remote_services must report persistent SSH")
+	}
+
+	// STR's own opt-in marker, in a nested dir, also counts.
+	nv2 := t.TempDir()
+	nvRoot = nv2
+	if err := os.MkdirAll(filepath.Join(nv2, "streborn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if sshPersistentEnabled() {
+		t.Fatal("an empty streborn dir without the marker must not count")
+	}
+	if err := os.WriteFile(filepath.Join(nv2, "streborn", "enable-ssh"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !sshPersistentEnabled() {
+		t.Fatal("/mnt/nv/streborn/enable-ssh must report persistent SSH")
+	}
+}
