@@ -1061,7 +1061,9 @@ $('view-box').innerHTML = `
       </div>
       <div class="volume-control">
         <span class="vol-icon" title="${escapeAttr(t('controls.volume'))}" aria-hidden="true">&#128266;</span>
-        <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" />
+        <button class="btn btn-mini vol-step" id="volDown" aria-label="${escapeAttr(t('controls.volumeDown'))}" title="${escapeAttr(t('controls.volumeDown'))}">&#8722;</button>
+        <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" title="${escapeAttr(t('controls.volumeWheelHint'))}" />
+        <button class="btn btn-mini vol-step" id="volUp" aria-label="${escapeAttr(t('controls.volumeUp'))}" title="${escapeAttr(t('controls.volumeUp'))}">+</button>
         <span class="vol-val" id="musicVolumeVal">--</span>
       </div>
     </div>
@@ -1244,6 +1246,48 @@ if (musicVolEl) {
   musicVolEl.addEventListener('pointerleave', () => {
     if (state.musicVolBusy) endBusy();
   });
+
+  // Precise stepping: the +/- buttons and the mouse wheel both nudge the volume
+  // by exactly one, sharing one clamped helper. stepVolume mirrors what an
+  // oninput drag does (move the thumb, update the label, push to the box) and
+  // holds off the periodic auto-refresh for the same grace period so it does not
+  // snap the thumb back before the box has applied the change.
+  const stepVolume = (delta) => {
+    const box = state.currentBox;
+    if (!box) return;
+    const cur = parseInt(musicVolEl.value, 10) || 0;
+    const next = Math.max(0, Math.min(100, cur + delta));
+    if (next === cur) return;
+    musicVolEl.value = String(next);
+    if (musicVolValEl) musicVolValEl.textContent = String(next);
+    musicVolBox = box;
+    state.desiredVolume = next;
+    state.musicVolBusy = false;
+    state.musicVolUntil = Date.now() + 1200;
+    throttledSetVolume(box.host, box.port, next);
+  };
+  const volDown = $('volDown');
+  const volUp = $('volUp');
+  // Focusing the slider on a button press also arms the wheel gesture below, so
+  // a user can click "+" once and then keep scrolling to fine-tune.
+  if (volDown) volDown.onclick = () => { musicVolEl.focus(); stepVolume(-1); };
+  if (volUp) volUp.onclick = () => { musicVolEl.focus(); stepVolume(1); };
+
+  // Mouse wheel over the slider adjusts the volume, but ONLY while the slider is
+  // focused (the user clicked it or used the +/- buttons). Passively scrolling
+  // the page with the cursor merely passing over the slider must never change
+  // the volume: that accidental blast is exactly what we are guarding against.
+  // When not engaged we do not preventDefault, so the page scrolls as usual.
+  // Rate-limited to one step per notch so a fast flick moves one at a time.
+  let volWheelAt = 0;
+  musicVolEl.addEventListener('wheel', (e) => {
+    if (document.activeElement !== musicVolEl) return;
+    e.preventDefault();
+    const now = Date.now();
+    if (now - volWheelAt < 60) return;
+    volWheelAt = now;
+    stepVolume(e.deltaY < 0 ? 1 : -1);
+  }, { passive: false });
 }
 
 // syncMusicTabVolumeFromBox refreshes the music-tab slider so
