@@ -4508,7 +4508,7 @@ function renderNowPlayingBar() {
   const ppBtn = $('pauseBtn');
   if (ppBtn) {
     ppBtn.innerHTML = ps === 'PAUSE_STATE'
-      ? '&#9654; ' + escapeHtml(t('controls.play'))
+      ? '&#9205; ' + escapeHtml(t('controls.play'))
       : '&#9208; ' + escapeHtml(t('controls.pause'));
   }
   // Track skip/previous: only for a Spotify playlist (the DLNA folder queue has
@@ -4561,7 +4561,7 @@ function renderNowPlayingBar() {
   bar.className = 'status-bar status-' + stateClass;
   // Glyph reflects the actual transport state so play vs pause is not conveyed
   // by colour alone (accessibility): play arrow normally, pause bars when paused.
-  const stateGlyph = ps === 'PAUSE_STATE' ? '&#9208;' : '&#9654;';
+  const stateGlyph = ps === 'PAUSE_STATE' ? '&#9208;' : '&#9205;';
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"
