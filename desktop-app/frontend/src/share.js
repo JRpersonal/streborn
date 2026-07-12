@@ -56,6 +56,7 @@ export function shareModalHTML() {
       <p class="modal-sub" id="shareSay">${escapeHtml(t('share.say'))}</p>
       <div class="share-tiles">${tiles}</div>
       <div class="share-foot">
+        <button class="btn" id="shareEmail" type="button">&#9993; ${escapeHtml(t('share.email'))}</button>
         <button class="btn" id="shareCopy" type="button">&#128203; ${escapeHtml(t('share.copy'))}</button>
         <button class="btn" id="shareClose" type="button">${escapeHtml(t('common.close'))}</button>
       </div>
@@ -71,6 +72,14 @@ export function wireShareModal() {
   modal.querySelectorAll('.share-tile[data-url]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(a.dataset.url); };
   });
+  // Open the user's mail app with a ready-to-send message, so sharing by email
+  // is one click instead of "copy the link, now go write an email yourself".
+  const email = document.getElementById('shareEmail');
+  if (email) email.onclick = () => {
+    const url = 'mailto:?subject=' + encodeURIComponent(t('share.emailSubject')) +
+      '&body=' + encodeURIComponent(t('share.emailBody'));
+    BrowserOpenURL(url);
+  };
   const copy = document.getElementById('shareCopy');
   if (copy) copy.onclick = async () => {
     try { await navigator.clipboard.writeText(SHARE_SITE); } catch (e) {}
