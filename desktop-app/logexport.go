@@ -573,6 +573,13 @@ var nameTagRegex = regexp.MustCompile(`<(name|nameUpdated)>([^<]+)</(?:name|name
 // "name") are not over-scrubbed.
 var friendlyNameJSONRegex = regexp.MustCompile(`(?i)("friendlyName"\s*:\s*")([^"]*)(")`)
 
+// userPathRegex masks the account segment of user-home paths in bundled logs:
+// macOS /Users/<name>/, Windows C:\Users\<name>\ (also the JSON-escaped \\
+// form), Linux /home/<name>/. The OS account name is often the user's real
+// first name, and it shipped verbatim in public bundles via lines like
+// "logFile=/Users/<name>/Library/..." until v0.9.7.
+var userPathRegex = regexp.MustCompile(`(?i)([/\\]+(?:Users|home)[/\\]+)([^/\\\s"',;]+)`)
+
 // scrubPII is the single sanitization pass shared by every text blob that can
 // leave the host (the app log, box-side logs pulled over SSH, the /api/debug
 // state, /api/status). Keeping one function means a field added to the bundle
@@ -592,6 +599,7 @@ func scrubPII(s string) string {
 		return sub[1] + "NAME#" + hashShort(sub[2]) + sub[3]
 	})
 	s = ssidHintRegex.ReplaceAllString(s, "<SSID-REDACTED>")
+	s = userPathRegex.ReplaceAllString(s, "${1}<user>")
 	return s
 }
 
