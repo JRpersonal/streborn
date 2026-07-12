@@ -141,6 +141,11 @@ body {
   color: var(--brand-text);
   line-height: 1.4;
 }
+/* Transition line between the donate buttons and the share trigger ("and if
+   you really like STR: share it"). Slightly set off from the buttons above. */
+.donate-side .donate-share-lead {
+  margin-top: 10px;
+}
 /* Three donate buttons, each branded per the provider's official
    guidelines. Common shell: 130px wide, 32px tall, inline icon + text.
    The brand-specific class overrides background / text / border. */
