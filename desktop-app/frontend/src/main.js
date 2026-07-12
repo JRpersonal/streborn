@@ -485,6 +485,7 @@ document.querySelector('#app').innerHTML = `
       <b>${escapeHtml(t('banner.recommendation'))}</b> ${escapeHtml(t('banner.sshRecommend'))}
     </span>
     <button class="btn btn-mini" id="globalSecurityRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
+    <button class="btn btn-secondary btn-mini" id="globalSecurityDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>
   </div>
   <div id="view-box" class="view"></div>
   <div id="view-library" class="view hidden"></div>
@@ -1143,6 +1144,16 @@ if (gsb) gsb.onclick = async () => {
     setTimeout(discoverBoxes, 35000);
   } catch (e) { showError(e); }
 };
+// Dismiss the SSH reminder for the current speaker. The user has seen the
+// "remove the stick" hint and chooses not to be reminded again on this box
+// (persisted per speaker, like the conflict/no-Wi-Fi banners). #381/#385.
+const gsd = $('globalSecurityDismissBtn');
+if (gsd) gsd.onclick = () => {
+  const box = state.currentBox || (state.boxes && state.boxes[0]);
+  if (box) { try { localStorage.setItem(warnDismissKey(box, 'ssh'), String(Date.now())); } catch {} }
+  const gb = $('globalSecurityBanner');
+  if (gb) gb.classList.add('hidden');
+};
 $('pauseBtn').onclick = () => action(state.nowPlayState === 'PAUSE_STATE' ? 'resume' : 'pause');
 $('stopBtn').onclick = () => action('stop');
 // Track skip for a Spotify playlist (the DLNA folder queue has its own controls
@@ -1308,8 +1319,10 @@ async function checkSshBanner() {
     // persistent NAND marker (remote_services / enable-ssh): the banner's whole
     // point is "remove the stick to close SSH", which does not apply and cannot
     // be acted on here (#381/#385). The detailed, correctly-worded note lives in
-    // Speaker Settings. The transient stick-driven case still shows the banner.
-    const show = !!(data && data.sshOpen && !data.sshPersistent);
+    // Speaker Settings. The transient stick-driven case still shows the banner so
+    // non-technical users learn to pull the stick, but it is dismissible per
+    // speaker (the reminder should not reappear on every app start once seen).
+    const show = !!(data && data.sshOpen && !data.sshPersistent) && !warnDismissed(box, 'ssh');
     gb.classList.toggle('hidden', !show);
   } catch {}
 }
