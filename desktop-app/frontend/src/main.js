@@ -912,7 +912,6 @@ function renderDonateSidebar() {
       <span class="donate-btn-icon">${coffeeSvg}</span>
       <span class="donate-btn-label">Ko-fi</span>
     </button>
-    <div class="donate-slogan donate-share-lead">${escapeHtml(t('footer.shareLead'))}</div>
     ${shareTriggerHTML()}
   `;
 
