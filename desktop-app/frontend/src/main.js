@@ -1755,9 +1755,18 @@ function checkBoxIssueBanner() {
     msgs.push(escapeHtml(t('speaker.noWifiBanner', { name: names })));
   }
   if (!msgs.length) { el.classList.add('hidden'); return; }
+  // When a speaker has no saved Wi-Fi, give the user a direct way to act on it
+  // instead of just telling them to "set it up in the settings": the button
+  // jumps straight to that speaker's settings, where the Wi-Fi section is.
+  const wifiBtn = noWifi.length
+    ? `<button class="btn btn-mini" id="boxIssueWifiBtn">${escapeHtml(t('speaker.wifiSaveBtn'))}</button>`
+    : '';
   el.innerHTML = `
     <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
+    ${wifiBtn}
     <button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>`;
+  const wb = $('boxIssueWifiBtn');
+  if (wb) wb.onclick = () => { selectBox(noWifi[0]); switchView('settings'); };
   const d = $('boxIssueDismissBtn');
   if (d) d.onclick = () => {
     const stamp = String(Date.now());
