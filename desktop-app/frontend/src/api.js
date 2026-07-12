@@ -48,6 +48,8 @@ export {
   BoxAgentVersion,
   UpdateBoxAgent,
   EnsureSpotifyEngine,
+  RecordOTAOutcome,
+  ClassifyOTAResult,
   WriteWLANConfig,
   WriteRegionConfig,
   WriteNameConfig,

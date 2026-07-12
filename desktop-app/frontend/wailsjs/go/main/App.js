@@ -58,6 +58,10 @@ export function CheckStick(arg1) {
   return window['go']['main']['App']['CheckStick'](arg1);
 }
 
+export function ClassifyOTAResult(arg1, arg2) {
+  return window['go']['main']['App']['ClassifyOTAResult'](arg1, arg2);
+}
+
 export function ClearRecent(arg1, arg2) {
   return window['go']['main']['App']['ClearRecent'](arg1, arg2);
 }
@@ -272,6 +276,10 @@ export function RecallBoxPreset(arg1, arg2, arg3) {
 
 export function RecentPlayed(arg1, arg2) {
   return window['go']['main']['App']['RecentPlayed'](arg1, arg2);
+}
+
+export function RecordOTAOutcome(arg1, arg2) {
+  return window['go']['main']['App']['RecordOTAOutcome'](arg1, arg2);
 }
 
 export function RefreshKnownBoxes() {
