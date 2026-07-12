@@ -115,8 +115,14 @@ type Client struct {
 	// over the gabbo stream (GOOD_SIGNAL / MARGINAL_SIGNAL / ...). On BCO
 	// speakers (Portable, scm ST20) /networkInfo exposes no signal, so
 	// the settings UI uses this instead. Guarded; read via LastWifiSignal.
-	mu         sync.Mutex
-	lastSignal string
+	// lastSignalAt: connectionState frames fire on connection TRANSITIONS,
+	// i.e. mostly at boot while the link is still settling, and then never
+	// again in steady state. Without an expiry, a low boot-time reading
+	// stuck for the whole uptime and a Portable one meter from the router
+	// showed "marginal signal" all day (Jens, 2026-07-12).
+	mu           sync.Mutex
+	lastSignal   string
+	lastSignalAt time.Time
 	// lastSource tracks the most recent active source seen on a now-selection /
 	// now-playing frame, so the aux webhook fires once on the transition to AUX
 	// rather than repeatedly while AUX stays the active source.
@@ -295,8 +301,18 @@ func (c *Client) noteUserActivity(ctx context.Context, raw []byte) {
 func (c *Client) LastWifiSignal() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Expire stale readings: better an honest "not reported" in the UI than
+	// a boot-time class presented as current (see lastSignalAt above).
+	if c.lastSignal == "" || time.Since(c.lastSignalAt) > wifiSignalTTL {
+		return ""
+	}
 	return c.lastSignal
 }
+
+// wifiSignalTTL bounds how long a gabbo-reported signal class counts as
+// current. connectionState frames only fire on transitions, so anything
+// older describes a long-gone moment (usually the boot association).
+const wifiSignalTTL = 15 * time.Minute
 
 // attrValue pulls attr="VALUE" out of a raw XML fragment, or "".
 func attrValue(s, attr string) string {
@@ -744,6 +760,7 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		if sig := attrValue(s, "signal"); sig != "" {
 			c.mu.Lock()
 			c.lastSignal = sig
+			c.lastSignalAt = time.Now()
 			c.mu.Unlock()
 		}
 	case f.VolumeUpdated != nil:
