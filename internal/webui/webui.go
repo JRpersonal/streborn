@@ -94,6 +94,12 @@ type Server struct {
 	// stamp the account onto a newly saved Spotify preset. nil when Spotify
 	// is not configured.
 	spotifyUser func(ctx context.Context) string
+	// spotifyContext returns the Spotify context URI go-librespot is currently
+	// playing, used by the preset-save path to stamp the LIVE account when the
+	// saved preset is the content that is playing right now (so a preset saved
+	// from another household member's session gets that member's account, not a
+	// stale one). nil when Spotify is not configured.
+	spotifyContext func() string
 	// spotifyMeta resolves a stable cover image URL and the human title for a
 	// Spotify context URI (the playlist image + name), stamped onto a newly
 	// saved Spotify preset so its tile has a steady logo and a real name (not a
@@ -552,6 +558,11 @@ func WithSpotifyStop(f func() bool) Option {
 type PeerLink struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+	// Reachable is false for a peer that was seen recently over mDNS but did not
+	// answer a web-port probe on the last sweep. Such peers are still listed (so a
+	// speaker briefly missed by a lossy mDNS round does not vanish and reappear,
+	// #404/#381/#385) but the on-box page renders them dimmed / non-clickable.
+	Reachable bool `json:"reachable"`
 }
 
 // WithPeers registers the resolver that lists the other STR speakers on the
@@ -572,6 +583,13 @@ func WithSpotifyControl(play func(ctx context.Context, uri, account string, shuf
 // used to stamp the account onto a newly saved Spotify preset.
 func WithSpotifyUser(user func(ctx context.Context) string) Option {
 	return func(s *Server) { s.spotifyUser = user }
+}
+
+// WithSpotifyContext registers the resolver for the Spotify context URI
+// go-librespot is currently playing, used by the preset-save path to stamp the
+// live account when saving the content that is playing right now.
+func WithSpotifyContext(ctxURI func() string) Option {
+	return func(s *Server) { s.spotifyContext = ctxURI }
 }
 
 // WithSpotifyMeta registers the resolver for a Spotify context's stable cover
@@ -738,6 +756,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/region", s.handleRegion)
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
+	mux.HandleFunc("/api/box/remove-conflicting-mod", s.handleRemoveConflictingMod)
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
@@ -1027,16 +1046,29 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		}
 		// Stamp the account a Spotify preset belongs to (go-librespot's current
 		// login) so a later recall can switch back to it on a multi-account box
-		// (#27). The client may already supply it; only fill when empty.
+		// (#27). Two cases: (a) no account yet, fill it from the current login;
+		// (b) the preset being saved IS the content go-librespot is playing right
+		// now, so the live account owns it and must win even over a stale account
+		// carried in from an earlier save. Case (b) fixes the report that a preset
+		// saved from a second household member's Spotify session kept the first
+		// member's account (jensukk) because the old value was never refreshed
+		// (ST30, 2026-07-14). A save for a NON-playing preset keeps its stored
+		// account, so a bulk rename never clobbers another account's preset.
 		// Account + cover are best-effort enrichment: use a fresh background
 		// context, not r.Context(), so a client that disconnects right after the
 		// PUT (e.g. a raw one-shot request) does not cancel them mid-fetch.
-		if p.Type == "spotify" && p.Account == "" && s.spotifyUser != nil {
-			uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			if u := s.spotifyUser(uctx); u != "" {
-				p.Account = u
+		if p.Type == "spotify" && s.spotifyUser != nil {
+			savingLiveContext := p.URI != "" && s.spotifyContext != nil && s.spotifyContext() == p.URI
+			if p.Account == "" || savingLiveContext {
+				uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				if u := s.spotifyUser(uctx); u != "" && u != p.Account {
+					if p.Account != "" {
+						s.logger.Info("preset save: refreshed Spotify account to the live playing account", "slot", slot, "from", p.Account, "to", u)
+					}
+					p.Account = u
+				}
+				cancel()
 			}
-			cancel()
 		}
 		// Give a Spotify preset a stable tile logo (the playlist image, #24) and a
 		// real name (the playlist title), so the box display and the tile show
@@ -2204,6 +2236,24 @@ func (s *Server) ResumeLastPlay() {
 		// Checked live (authoritative) rather than from cached zone events.
 		if s.boxInZone() {
 			s.logger.Info("wake resume: box is in a zone / stereo pair, not auto-resuming (self-wake guard)")
+			return
+		}
+
+		// Power-off bounce guard for boxes where the UPnP-source standby did not
+		// arm standbyStoppedRecently above. A rhino ST10 reports a power-off as a
+		// gabbo STOP_STATE (-> NoteUserStop) rather than the UPNP->STANDBY that
+		// HandleEnterStandby keys on, so the #197 guard missed it and this wake
+		// resumed a box the user had just switched off (Svagerka, ST10: "off does
+		// not stick, playback resumes within seconds"). Discriminator: a power-OFF
+		// is preceded by a deliberate stop within the last few seconds (the box was
+		// playing when off was pressed), whereas a genuine power-ON follows a box
+		// that was already stopped/off, so no fresh stop precedes it. If a user stop
+		// landed within userStopWindow, treat this wake as the power-off bounce and
+		// stand down, keeping the user-stop intact so the parallel auto re-push does
+		// not pull the box back up either. A real power-on hours later has no recent
+		// stop, so it still resumes.
+		if s.userStoppedRecently() {
+			s.logger.Info("wake resume: a deliberate stop immediately preceded this wake (power-off bounce), not resuming")
 			return
 		}
 
@@ -4014,6 +4064,77 @@ func detectConflictingMod() string {
 		return "AfterTouch"
 	}
 	return ""
+}
+
+// handleRemoveConflictingMod removes the leftovers of a rival cloud-free
+// SoundTouch tool (AfterTouch) that clash with STR: its /mnt/nv/aftertouch
+// directory, its resolv.conf override, and any aftertouch hook line in rc.local.
+// It touches ONLY those artifacts, never the rest of /mnt/nv (which holds the
+// box's own Wi-Fi/AirPlay/account persistence and STR's own streborn/ dir). The
+// desktop app surfaces this as a one-click button so users never need SSH; a
+// reboot afterwards fully clears the rival tool's already-running processes.
+func (s *Server) handleRemoveConflictingMod(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	mod := detectConflictingMod()
+	if mod == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "mod": "", "removed": []string{}})
+		return
+	}
+	removed := []string{}
+	// 1. The rival tool's NAND directory.
+	dir := filepath.Join(nandRoot, "aftertouch")
+	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+		if err := os.RemoveAll(dir); err != nil {
+			http.Error(w, "could not remove aftertouch/: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		removed = append(removed, "aftertouch/")
+	}
+	// 2. Its resolv.conf override.
+	resolv := filepath.Join(nandRoot, "aftertouch.resolv.conf")
+	if _, err := os.Stat(resolv); err == nil {
+		if err := os.Remove(resolv); err != nil {
+			http.Error(w, "could not remove aftertouch.resolv.conf: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		removed = append(removed, "aftertouch.resolv.conf")
+	}
+	// 3. Any aftertouch hook line in rc.local. Rewrite it without those lines,
+	// keeping every other line (STR's own boot hooks and Bose defaults) intact.
+	rcl := filepath.Join(nandRoot, "rc.local")
+	if b, err := os.ReadFile(rcl); err == nil && strings.Contains(strings.ToLower(string(b)), "aftertouch") {
+		lines := strings.Split(string(b), "\n")
+		kept := lines[:0]
+		dropped := 0
+		for _, ln := range lines {
+			if strings.Contains(strings.ToLower(ln), "aftertouch") {
+				dropped++
+				continue
+			}
+			kept = append(kept, ln)
+		}
+		if dropped > 0 {
+			if err := os.WriteFile(rcl, []byte(strings.Join(kept, "\n")), 0o755); err != nil {
+				http.Error(w, "could not clean rc.local: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			removed = append(removed, fmt.Sprintf("rc.local (%d line)", dropped))
+		}
+	}
+	_ = exec.Command("sync").Run()
+	s.logger.Info("removed conflicting-mod leftovers", "mod", mod, "removed", removed)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":        "ok",
+		"mod":           mod,
+		"removed":       removed,
+		"stillDetected": detectConflictingMod() != "",
+	})
 }
 
 // wlanCredsWarningWarranted reports whether the "no Wi-Fi saved in STR"
