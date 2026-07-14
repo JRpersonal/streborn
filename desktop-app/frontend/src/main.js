@@ -1760,12 +1760,22 @@ function checkBoxIssueBanner() {
   const wifiBtn = noWifi.length
     ? `<button class="btn btn-mini" id="boxIssueWifiBtn">${escapeHtml(t('speaker.wifiSaveBtn'))}</button>`
     : '';
+  // A conflicting-mod (AfterTouch) leftover is now removable in one click under
+  // the speaker's settings > Actions, so point the user there instead of leaving
+  // the banner as a dead end that suggested asking the other project / running an
+  // SSH command most users cannot act on.
+  const conflictBtn = conflict.length
+    ? `<button class="btn btn-mini" id="boxIssueConflictBtn">${escapeHtml(t('speaker.conflictRemoveBtn'))}</button>`
+    : '';
   el.innerHTML = `
     <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
+    ${conflictBtn}
     ${wifiBtn}
     <button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>`;
   const wb = $('boxIssueWifiBtn');
   if (wb) wb.onclick = () => { selectBox(noWifi[0]); switchView('settings'); };
+  const cb = $('boxIssueConflictBtn');
+  if (cb) cb.onclick = () => { selectBox(conflict[0]); switchView('settings'); };
   const d = $('boxIssueDismissBtn');
   if (d) d.onclick = () => {
     const stamp = String(Date.now());
@@ -3613,7 +3623,7 @@ function wirePresetTransferRow() {
 // in a live zone (the shared groups.js view of the same state.zoneLive the
 // group frames use).
 function currentGroupSlaves() {
-  const box = state.currentBox;
+  const box = groupControlBox();
   if (!box || !box.deviceID) return [];
   return followersOf(box.deviceID, state.zoneLive, state.boxes).filter(b => b.host !== box.host);
 }
@@ -3634,13 +3644,24 @@ function effectivePlayTarget() {
   return target;
 }
 
+// groupControlBox returns the box the group controls operate on. A zone FOLLOWER
+// has no followers of its own and the firmware rejects zone edits aimed at it, so
+// the group panel used to render empty for a selected member: membership could
+// only be changed while the master was selected, and picking a member to adjust
+// its volume dropped the group controls with no hint the box was still grouped
+// (akuethe, 8-box zone, 2026-07-14). Resolve to the master so the chips + group
+// volume work from any selected member. A standalone or master box returns itself.
+function groupControlBox() {
+  return resolvePlayTarget(state.currentBox, state.zoneLive, state.boxes) || state.currentBox;
+}
+
 let _groupVolTimer = null;
 // setGroupVolume moves the master AND every follower to pct, so the slider
 // controls the whole group. Debounced so a slider drag does not flood the boxes.
 function setGroupVolume(pct) {
   if (_groupVolTimer) clearTimeout(_groupVolTimer);
   _groupVolTimer = setTimeout(() => {
-    const box = state.currentBox;
+    const box = groupControlBox();
     if (!box) return;
     [box, ...currentGroupSlaves()].forEach(b => { SetBoxVolume(b.host, b.port, pct).catch(() => {}); });
   }, 120);
@@ -3654,7 +3675,10 @@ function setGroupVolume(pct) {
 // or that briefly dropped out of discovery is preserved instead of being
 // silently kicked by an unrelated add/remove.
 async function toggleGroupMember(host, port) {
-  const box = state.currentBox;
+  // Edit the group the selection belongs to: when a follower is selected, its
+  // master is the box that must receive the FormZone/DissolveZone (a follower
+  // rejects zone control), so resolve to it first.
+  const box = groupControlBox();
   if (!box || box.kind === 'stock') return;
   const target = (state.boxes || []).find(b => b.host === host);
   if (!target) return;
@@ -3715,9 +3739,17 @@ async function toggleGroupMember(host, port) {
 function renderGroupControl() {
   const cont = $('groupControl');
   if (!cont) return;
-  const box = state.currentBox;
-  const others = presetTransferTargets();
-  if (!box || box.kind === 'stock' || others.length === 0) { cont.innerHTML = ''; return; }
+  const sel = state.currentBox;
+  if (!sel || sel.kind === 'stock') { cont.innerHTML = ''; return; }
+  // Manage the group through its master: when the selected speaker is a zone
+  // follower, box is its master (so chips + volume act on the real group and the
+  // member can be removed from any selection); otherwise box is the selection.
+  const box = groupControlBox();
+  const isMember = !!box && box.host !== sel.host;
+  // Chips are every other STR speaker relative to the MASTER (not the selection),
+  // so the selected follower itself appears as an in-group chip that can be removed.
+  const others = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.host !== box.host);
+  if (others.length === 0) { cont.innerHTML = ''; return; }
   const slaves = currentGroupSlaves();
   const inGroup = new Set(slaves.map(b => b.host));
   const chips = others.map(b => {
@@ -3732,7 +3764,13 @@ function renderGroupControl() {
       + `<input type="range" id="groupVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('group.volumeLabel'))}" />`
       + `<span class="muted small">${escapeHtml(t('group.volumeLabel'))}</span></div>`
     : '';
+  // When a member is selected, name the group it belongs to so it is clear the
+  // panel below now manages that group (not the empty state it used to show).
+  const memberNote = isMember
+    ? `<div class="group-member-note muted small">${escapeHtml(t('group.memberOf', { name: getBoxLabel(box) }))}</div>`
+    : '';
   cont.innerHTML = `<span class="group-label muted small">${escapeHtml(t('group.label'))}</span>`
+    + memberNote
     + `<div class="group-chips">${chips}</div>${volRow}`;
   cont.querySelectorAll('.group-chip').forEach(chip => {
     chip.onclick = () => toggleGroupMember(chip.dataset.host, parseInt(chip.dataset.port, 10));

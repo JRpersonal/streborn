@@ -147,6 +147,8 @@ export function RecordOTAOutcome(arg1:string,arg2:string):Promise<void>;
 
 export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
 
+export function RemoveConflictingMod(arg1:string,arg2:number):Promise<string>;
+
 export function RemoveManualMediaServer(arg1:string):Promise<void>;
 
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;

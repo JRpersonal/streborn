@@ -286,6 +286,10 @@ export function RefreshKnownBoxes() {
   return window['go']['main']['App']['RefreshKnownBoxes']();
 }
 
+export function RemoveConflictingMod(arg1, arg2) {
+  return window['go']['main']['App']['RemoveConflictingMod'](arg1, arg2);
+}
+
 export function RemoveManualMediaServer(arg1) {
   return window['go']['main']['App']['RemoveManualMediaServer'](arg1);
 }
