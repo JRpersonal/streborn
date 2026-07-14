@@ -104,6 +104,7 @@ import {
   BrowserOpenURL,
   FormZone,
   DissolveZone,
+  WakeBox,
   EventsOn,
 } from './api.js';
 
@@ -3700,6 +3701,11 @@ async function toggleGroupMember(host, port) {
       // agents carry no mode field, then native is what today's zones are.
       const own = (state.zoneLive || {})[box.deviceID];
       const mode = (own && typeof own.mode === 'string' && own.mode) ? own.mode : 'native';
+      // Wake every member before enrolling it (#70): a box a user switched off at
+      // the speaker still answers STR (the agent stays up in standby), so the
+      // firmware would add it to the zone but it stays silent. Waking an
+      // already-awake box is a fast no-op, so this is safe to do for all members.
+      await Promise.allSettled(next.filter(m => m.box).map(m => WakeBox(m.box.host, m.box.port)));
       const res = await FormZone(box.host, box.port, {
         master: { deviceID: box.deviceID, ip: box.host },
         slaves: next.map(m => ({ deviceID: m.deviceID, ip: m.ip })),

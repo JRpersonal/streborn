@@ -478,6 +478,10 @@ export function VoteStation(arg1, arg2, arg3) {
   return window['go']['main']['App']['VoteStation'](arg1, arg2, arg3);
 }
 
+export function WakeBox(arg1, arg2) {
+  return window['go']['main']['App']['WakeBox'](arg1, arg2);
+}
+
 export function WriteLangConfig(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['WriteLangConfig'](arg1, arg2, arg3, arg4);
 }

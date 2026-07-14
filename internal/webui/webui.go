@@ -661,6 +661,28 @@ func WithRecent(r *recent.Store) Option {
 // ensureBoxReady wakes the box from standby (with retry+poll until
 // really awake) and ensures the marge account is active.
 // Called before every play call.
+// handleBoxWake wakes the speaker from standby (the :17000 TAP wake) WITHOUT
+// starting any playback. The desktop app calls it on a zone member that a user
+// switched off at the speaker before enrolling it: the firmware otherwise adds a
+// still-asleep box to the group and it stays silent while STR reports success
+// (#70). Waking an already-awake box is a fast no-op.
+func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if s.boxHost == "" {
+		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+	defer cancel()
+	if err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger); err != nil {
+		http.Error(w, "wake failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"awake": true})
+}
+
 func (s *Server) ensureBoxReady(ctx context.Context) {
 	if s.boxHost != "" {
 		// Detach from the caller's request context: a slow wake must not be
@@ -757,6 +779,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
 	mux.HandleFunc("/api/box/remove-conflicting-mod", s.handleRemoveConflictingMod)
+	mux.HandleFunc("/api/box/wake", s.handleBoxWake)
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
@@ -6683,7 +6706,24 @@ const (
 	// aborted runtime Wi-Fi switches before ("read-only file system"). run.sh's
 	// M3 boot path uses the same NAND location.
 	wpaBackupPath = "/mnt/nv/streborn/wpa_supplicant.conf.bak"
+	// wlanApplyMarkerPath is a one-shot marker the app-initiated Wi-Fi change
+	// drops before a reboot so run.sh's boot path treats that boot as an active
+	// "program the new SSID" provision instead of a passive replay of the current
+	// network. run.sh deletes it on read, so a wrong password cannot loop (#184).
+	wlanApplyMarkerPath = "/mnt/nv/streborn/.wlan-apply-pending"
 )
+
+// touchWLANApplyMarker drops the one-shot boot marker that makes run.sh actively
+// provision the new Wi-Fi after an app "apply now" change, rather than replaying
+// the old network and exiting hands-off (which left an app Wi-Fi change dead-
+// ending when the old AP was still in range, #184).
+func touchWLANApplyMarker() {
+	if err := os.WriteFile(wlanApplyMarkerPath, []byte("1\n"), 0o600); err != nil {
+		// Non-fatal: without the marker the boot falls back to the old replay
+		// behaviour, i.e. the pre-fix behaviour, never worse.
+		return
+	}
+}
 
 // detectWlanMechanism mirrors run.sh's interface detection: a wlan* iface means
 // a wpa_supplicant stack (live switch possible); eth0-only is the BCO pattern
@@ -6723,6 +6763,9 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			// creds via the boot path, so a stale backup must not survive on NAND and
 			// be used to roll a future switch back to this now-superseded conf.
 			_ = os.Remove(wpaBackupPath)
+			// Mark this as an active apply so run.sh programs the new SSID on boot
+			// instead of replaying the old network hands-off (#184).
+			touchWLANApplyMarker()
 			rebootBox()
 		default: // wpaNotAssociated
 			// Did not associate (e.g. wrong password): roll all the way back so
@@ -6735,6 +6778,9 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 		}
 	default:
 		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid)
+		// Mark this as an active apply so run.sh programs the new SSID on boot
+		// instead of replaying the old network hands-off (#184).
+		touchWLANApplyMarker()
 		rebootBox()
 	}
 }

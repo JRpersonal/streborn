@@ -24,6 +24,7 @@ export {
   PhoneQR,
   RebootBox,
   RemoveConflictingMod,
+  WakeBox,
   SyncBoxPresets,
   BoxPresets,
   BoxSnapshot,
