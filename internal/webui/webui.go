@@ -142,6 +142,11 @@ type Server struct {
 	// track from its start instead of resuming mid-position. nil when Spotify is
 	// not configured.
 	spotifySetRecalling func()
+	// spotifySuppressActivate holds go-librespot's auto-repoint (maybeActivate/
+	// repointBox) off for the given window. The hardware-skip recovery calls it so
+	// the competing #14 auto-attach cannot race the clean slot recall while the box
+	// is tearing its UPnP source down. nil when Spotify is not configured.
+	spotifySuppressActivate func(time.Duration)
 	// spotifyInfo answers GET /spotify/info with the live Spotify state
 	// (ready, measured bitrate, device name) the UI reads to show the real
 	// stream bitrate on a Spotify preset tile. nil when not configured.
@@ -650,6 +655,13 @@ func WithSpotifyImportCred(f func(ctx context.Context, data []byte) error) Optio
 // ServeOgg drives the new track from its start.
 func WithSpotifySetRecalling(setRecalling func()) Option {
 	return func(s *Server) { s.spotifySetRecalling = setRecalling }
+}
+
+// WithSpotifySuppressActivate registers the hook that holds go-librespot's
+// auto-repoint off for a window, so the hardware-skip recovery's clean slot
+// recall is not raced by the #14 auto-attach.
+func WithSpotifySuppressActivate(suppress func(time.Duration)) Option {
+	return func(s *Server) { s.spotifySuppressActivate = suppress }
 }
 
 // WithRecent wires the recently-played ring (#135) so the play handlers record

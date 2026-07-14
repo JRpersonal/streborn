@@ -22,8 +22,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -448,6 +448,7 @@ func run() error {
 		webui.WithSpotifyExportCred(spotifyMgr.ExportCredential),
 		webui.WithSpotifyImportCred(spotifyMgr.ImportCredential),
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
+		webui.WithSpotifySuppressActivate(spotifyMgr.SuppressActivate),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
 		webui.WithSpotifyReload(spotifyMgr.ReloadBinary),
 		webui.WithSpotifyStop(spotifyMgr.StopEngine),
@@ -500,8 +501,12 @@ func run() error {
 		spotify:  spotifyMgr,
 		// A box/remote stop seen over gabbo tells the webui to hold the
 		// auto-re-push, so a deliberate stop is not immediately undone.
-		onUserStop:   webuiSrv.NoteUserStop,
-		onRemoteSkip: webuiSrv.TransportSkip,
+		onUserStop: webuiSrv.NoteUserStop,
+		// The physical remote Next/Prev take the hardware path, NOT the app's soft
+		// skip: the box tears its UPnP source down on its own failed native skip, so
+		// a layered go-librespot skip wedges it (3102). HardwareSkip recovers a
+		// Spotify preset with a single clean slot recall instead (see its doc).
+		onRemoteSkip: webuiSrv.HardwareSkip,
 		webhooks:     webhooksStore,
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back.

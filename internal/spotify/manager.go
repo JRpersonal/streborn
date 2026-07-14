@@ -2049,6 +2049,22 @@ func (m *Manager) SetRecalling() {
 	m.mu.Unlock()
 }
 
+// SuppressActivate holds maybeActivate/repointBox off for d, so STR does not
+// auto-repoint the box at the Spotify stream during a window where a different,
+// deliberate recovery is in flight. The hardware-skip recovery uses it: when the
+// box runs its own failed native skip it tears the UPnP source down while
+// go-librespot is still playing, which would otherwise trip maybeActivate into
+// re-pointing the box at the slot-less stream and racing the clean slot recall
+// (box then attaches mid-restart and wedges on a 3102 decoder error). Extends the
+// window rather than shrinking it, so it never cuts an existing suppression short.
+func (m *Manager) SuppressActivate(d time.Duration) {
+	m.mu.Lock()
+	if t := time.Now().Add(d); t.After(m.suppressActivateUntil) {
+		m.suppressActivateUntil = t
+	}
+	m.mu.Unlock()
+}
+
 // recalling reports whether a recall is currently in progress.
 func (m *Manager) recalling() bool {
 	m.mu.Lock()
