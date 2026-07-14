@@ -645,12 +645,21 @@ func (s *Server) spotifyRecoverAfterSkip() {
 				s.NoteBoxHealthy()
 				return
 			}
+			// Re-point at a DISTINCT URL each time (a changing query the ServeOgg
+			// route ignores) so the box fully resets its UPnP renderer and Ogg
+			// decoder, exactly the way a preset switch to a different stream URL
+			// does. Re-pointing to the SAME URL after a skip left the box choking on
+			// the mid-stream Ogg logical-stream change (a new track = new codebooks):
+			// it re-attached but never reached PLAY_STATE. A fresh location makes the
+			// box treat it as a brand-new stream, which is why switching presets
+			// works while an in-place skip did not.
+			url := boxURL + fmt.Sprintf("?s=%d", time.Now().UnixNano())
 			s.boxCmdMu.Lock()
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			_ = s.renderer.PlayURLMime(ctx, boxURL, title, art, "audio/ogg")
+			_ = s.renderer.PlayURLMime(ctx, url, title, art, "audio/ogg")
 			cancel()
 			s.boxCmdMu.Unlock()
-			s.logger.Warn("spotify skip recovery: box not playing after skip, re-pointed", "attempt", attempt, "sinceMs", time.Since(started).Milliseconds())
+			s.logger.Warn("spotify skip recovery: box not playing after skip, re-pointed (fresh URL)", "attempt", attempt, "sinceMs", time.Since(started).Milliseconds())
 		}
 	}()
 }
