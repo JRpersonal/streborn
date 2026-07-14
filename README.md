@@ -67,11 +67,11 @@ STR is pre-1.0. This section is the honest snapshot. No marketing.
 | SoundTouch 20               | ✅ Works (same platform) |
 | SoundTouch 30               | ✅ Works (same platform) |
 | SoundTouch Portable         | ✅ Verified on hardware  |
+| Wave SoundTouch series IV   | ✅ Works (network install) |
+| SoundTouch 300              | ✅ Works (network install) |
 | SoundTouch SA-5 amplifier   | ❌ Not supported yet     |
-| Wave SoundTouch series IV   | ❌ Not supported yet     |
-| SoundTouch 300              | ❌ Not supported yet     |
 
-Per-model detail and the variant fingerprints are in [`docs/MODELS.md`](./docs/MODELS.md). If you own a model marked "Not supported yet", I would like to hear from you so we can work out how close it is. Each has a tracking issue to talk it through: SoundTouch 300 (#167), Wave SoundTouch (#272), SoundTouch SA-5 amplifier (#274).
+Per-model detail and the variant fingerprints are in [`docs/MODELS.md`](./docs/MODELS.md). If you own a model marked "Not supported yet", I would like to hear from you so we can work out how close it is. The SoundTouch SA-5 amplifier has a tracking issue to talk it through: #274.
 
 ### What I do for security
 
