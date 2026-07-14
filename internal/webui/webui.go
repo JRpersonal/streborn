@@ -6806,15 +6806,82 @@ func (s *Server) applyWlanWPALive(iface, ssid, password string, hidden bool) wpa
 		return wpaCannotApply
 	}
 	s.logger.Info("WLAN: wpa conf written", "method", method, "iface", iface)
+	// Escalate the way run.sh's boot path does (M3 restart, M4 add_network)
+	// instead of a single reconfigure+reassociate then rollback. A bare
+	// reconfigure does not dislodge a config NetManager reverted, so a runtime
+	// switch that run.sh would have completed on the next boot used to fail live
+	// and roll straight back (#288). Each stage only runs if the previous one did
+	// not associate, and the rollback in applyWLANChange still protects a genuine
+	// failure (e.g. a wrong password), so this can only help, never strand.
 	reloadWPA(iface)
-	deadline := time.Now().Add(25 * time.Second)
+	if waitWPAAssociated(iface, ssid, 12*time.Second) {
+		return wpaConfirmed
+	}
+	s.logger.Warn("WLAN: reconfigure did not associate, restarting wpa_supplicant (M3)", "ssid", ssid)
+	restartWPA(iface)
+	if waitWPAAssociated(iface, ssid, 12*time.Second) {
+		return wpaConfirmed
+	}
+	s.logger.Warn("WLAN: restart did not associate, trying wpa_cli add_network fallback (M4)", "ssid", ssid)
+	if wpaAddNetwork(iface, ssid, password, hidden) && waitWPAAssociated(iface, ssid, 12*time.Second) {
+		return wpaConfirmed
+	}
+	return wpaNotAssociated
+}
+
+// waitWPAAssociated polls wpaAssociatedTo until the box is COMPLETED on ssid or
+// the window elapses.
+func waitWPAAssociated(iface, ssid string, window time.Duration) bool {
+	deadline := time.Now().Add(window)
 	for time.Now().Before(deadline) {
 		time.Sleep(2 * time.Second)
 		if wpaAssociatedTo(iface, ssid) {
-			return wpaConfirmed
+			return true
 		}
 	}
-	return wpaNotAssociated
+	return false
+}
+
+// restartWPA fully restarts wpa_supplicant (run.sh M3): a reconfigure keeps a
+// stale/NetManager-reverted association, a clean relaunch reads the new conf from
+// scratch. Independent of wpa_cli being present.
+func restartWPA(iface string) {
+	_ = exec.Command("killall", "wpa_supplicant").Run()
+	time.Sleep(time.Second)
+	_ = exec.Command("wpa_supplicant", "-B", "-i", iface, "-s", "-c", wpaConfPath, "-D", "nl80211").Start()
+}
+
+// wpaAddNetwork is run.sh's M4 fallback: build the network directly through
+// wpa_cli (add_network / set_network / enable / select / save_config) when the
+// conf-file path did not take. scan_ssid=1 lets a hidden SSID be found. Returns
+// false if wpa_cli is absent or add_network fails.
+func wpaAddNetwork(iface, ssid, password string, hidden bool) bool {
+	if _, err := exec.LookPath("wpa_cli"); err != nil {
+		return false
+	}
+	run := func(args ...string) string {
+		out, _ := exec.Command("wpa_cli", append([]string{"-i", iface}, args...)...).Output()
+		return strings.TrimSpace(string(out))
+	}
+	id := run("add_network")
+	if id == "" || strings.Contains(id, "FAIL") {
+		return false
+	}
+	// wpa_cli set_network wants the ssid/psk quoted; %q emits the surrounding
+	// double quotes wpa_cli expects, and exec passes the arg verbatim (no shell).
+	run("set_network", id, "ssid", fmt.Sprintf("%q", ssid))
+	if password != "" {
+		run("set_network", id, "psk", fmt.Sprintf("%q", password))
+	} else {
+		run("set_network", id, "key_mgmt", "NONE")
+	}
+	if hidden {
+		run("set_network", id, "scan_ssid", "1")
+	}
+	run("enable_network", id)
+	run("select_network", id)
+	run("save_config")
+	return true
 }
 
 // writeWPAConf installs content as /etc/wpa_supplicant.conf, working around a
