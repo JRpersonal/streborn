@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -432,6 +433,7 @@ func run() error {
 			return spotifyMgr.PlayAccount(ctx, uri, account, spotify.PlayOptions{Shuffle: shuffle})
 		}),
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
+		webui.WithSpotifyContext(spotifyMgr.PlayingContext),
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
 		webui.WithSpotifySkip(func(ctx context.Context, forward bool) error {
@@ -1069,6 +1071,13 @@ type presetWsHandler struct {
 	// asked for).
 	lastUserStopMu sync.Mutex
 	lastUserStop   time.Time
+	// lastSourceReject is when the box last rejected STR's UPnP source with a 1036
+	// UpnpRcvdContentItemInWrongState (a preset->preset switch racing the previous
+	// source's teardown). verifySpotifyPlaying consults it so it re-points instead
+	// of standing down on the box's "attached + buffering" appearance while the box
+	// is actually stuck on that rejection and never plays (ST30 4->5, 2026-07-14).
+	sourceRejectMu   sync.Mutex
+	lastSourceReject time.Time
 	// onRemoteSkip advances playback on a hardware remote Next/Prev key, source-
 	// aware (Spotify or the STR play queue). Wired to webui.TransportSkip so the
 	// hardware keys use the same skip logic as the phone remote; without it a
@@ -1311,69 +1320,127 @@ func isPlayableURL(u string) bool {
 
 // --- Peer discovery for the on-box web UI "Other speakers" section ---
 
+// peerEntry accumulates what we know about one other STR speaker across mDNS
+// sweeps, so a peer missed in a single lossy round is not dropped from the list.
+type peerEntry struct {
+	name      string
+	port      int // last web port that answered (0 = never reached)
+	lastSeen  time.Time
+	reachable bool // answered a web-port probe on the most recent sweep
+}
+
 var (
 	peersMu       sync.Mutex
-	peersCache    []webui.PeerLink
-	peersCachedAt time.Time
+	peersByIP     = map[string]*peerEntry{}
+	peersBrowseAt time.Time
 )
 
-// browsePeers discovers the other STR speakers on the LAN over mDNS and returns
-// a link to each one's web UI, so a phone on the on-box page can hop between
-// speakers without re-typing an address. Resource-light by design: a short mDNS
-// browse plus at most two TCP reachability probes per peer, and the whole result
-// is cached, so repeated page loads cost at most one browse per cache window.
+// browsePeers discovers the other STR speakers on the LAN over mDNS and returns a
+// link to each one's web UI, so a phone on the on-box page can hop between
+// speakers without re-typing an address.
+//
+// A single 2.5s mDNS window plus a drop-on-unreachable filter and a 45s wholesale
+// cache made each speaker show a DIFFERENT, often incomplete subset (8-box fleets
+// saw 5-6; a box that failed one probe vanished for 45s): #404 / disc-381 /
+// disc-385. Now the results MERGE into a longer-lived per-IP map: each sweep
+// refreshes the peers it sees, a peer stays listed for peerTTL after it was last
+// seen (marked offline if it is not currently reachable, so the page can dim it
+// rather than drop it), and sweeps are throttled to rebrowseEvery so repeated page
+// loads stay cheap. The browse window is widened so more peers answer per round.
 func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
-	const cacheTTL = 45 * time.Second
+	const (
+		rebrowseEvery = 15 * time.Second
+		browseWindow  = 3500 * time.Millisecond
+		peerTTL       = 7 * time.Minute
+	)
 	peersMu.Lock()
-	if !peersCachedAt.IsZero() && time.Since(peersCachedAt) < cacheTTL {
-		c := peersCache
-		peersMu.Unlock()
-		return c
-	}
+	needBrowse := peersBrowseAt.IsZero() || time.Since(peersBrowseAt) >= rebrowseEvery
 	peersMu.Unlock()
 
-	bctx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
-	defer cancel()
-	ch, err := discovery.Browse(bctx, logger)
-	if err != nil {
-		logger.Debug("peers browse failed", "err", err)
-		return nil
+	if needBrowse {
+		bctx, cancel := context.WithTimeout(ctx, browseWindow)
+		ch, err := discovery.Browse(bctx, logger)
+		mine := ownIPv4s()
+		type found struct {
+			ip, name string
+			port     int
+		}
+		var fresh []found
+		if err == nil {
+			for inst := range ch {
+				if inst.Kind != discovery.KindSTR {
+					continue // only STR speakers, not stock Bose
+				}
+				ip, self := "", false
+				for _, a := range inst.IPv4 {
+					if mine[a] {
+						self = true
+						break
+					}
+					if ip == "" {
+						ip = a
+					}
+				}
+				if self || ip == "" {
+					continue
+				}
+				name := inst.FriendlyName
+				if name == "" {
+					name = inst.Name
+				}
+				fresh = append(fresh, found{ip: ip, name: name, port: reachableWebPort(ip)})
+			}
+		} else {
+			logger.Debug("peers browse failed", "err", err)
+		}
+		cancel()
+
+		peersMu.Lock()
+		now := time.Now()
+		for _, f := range fresh {
+			e := peersByIP[f.ip]
+			if e == nil {
+				e = &peerEntry{}
+				peersByIP[f.ip] = e
+			}
+			if f.name != "" {
+				e.name = f.name
+			}
+			e.lastSeen = now
+			e.reachable = f.port != 0
+			if f.port != 0 {
+				e.port = f.port
+			}
+		}
+		peersBrowseAt = now
+		peersMu.Unlock()
 	}
-	mine := ownIPv4s()
-	seen := map[string]bool{}
-	var out []webui.PeerLink
-	for inst := range ch {
-		if inst.Kind != discovery.KindSTR {
-			continue // only STR speakers, not stock Bose
-		}
-		ip, self := "", false
-		for _, a := range inst.IPv4 {
-			if mine[a] {
-				self = true
-				break
-			}
-			if ip == "" {
-				ip = a
-			}
-		}
-		if self || ip == "" || seen[ip] {
+
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	now := time.Now()
+	out := make([]webui.PeerLink, 0, len(peersByIP))
+	for ip, e := range peersByIP {
+		if now.Sub(e.lastSeen) > peerTTL {
+			delete(peersByIP, ip)
 			continue
 		}
-		port := reachableWebPort(ip)
+		port := e.port
 		if port == 0 {
-			continue // neither web port answered; skip rather than link a dead URL
+			port = 8888 // never reached yet: best-effort URL so the entry still resolves once it comes up
 		}
-		seen[ip] = true
-		name := inst.FriendlyName
-		if name == "" {
-			name = inst.Name
-		}
-		out = append(out, webui.PeerLink{Name: name, URL: fmt.Sprintf("http://%s:%d/", ip, port)})
+		out = append(out, webui.PeerLink{
+			Name:      e.name,
+			URL:       fmt.Sprintf("http://%s:%d/", ip, port),
+			Reachable: e.reachable,
+		})
 	}
-	peersMu.Lock()
-	peersCache = out
-	peersCachedAt = time.Now()
-	peersMu.Unlock()
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].URL < out[j].URL
+	})
 	return out
 }
 
@@ -1455,6 +1522,26 @@ func (h *presetWsHandler) userStoppedSince(start time.Time) bool {
 	h.lastUserStopMu.Lock()
 	defer h.lastUserStopMu.Unlock()
 	return userStopAbortsVerify(start, h.lastUserStop)
+}
+
+// OnSourceRejected records that the box rejected STR's UPnP source with a 1036
+// UpnpRcvdContentItemInWrongState (boxws optional hook). The routine preset->
+// preset switch race: the box is still tearing down the previous source when
+// STR's SetURI lands, refuses it, and can hang attached-but-buffering on the
+// Spotify stream without ever playing. verifySpotifyPlaying reads the timestamp
+// to re-point in that case instead of trusting the stuck state.
+func (h *presetWsHandler) OnSourceRejected(_ context.Context) {
+	h.sourceRejectMu.Lock()
+	h.lastSourceReject = time.Now()
+	h.sourceRejectMu.Unlock()
+}
+
+// lastSourceRejectTime returns when the box last rejected STR's source (zero if
+// never), for the verify loop's re-point-on-wrong-state decision.
+func (h *presetWsHandler) lastSourceRejectTime() time.Time {
+	h.sourceRejectMu.Lock()
+	defer h.sourceRejectMu.Unlock()
+	return h.lastSourceReject
 }
 
 // userStopAbortsVerify is the recall-verify stand-down decision: only a user
@@ -1759,15 +1846,39 @@ func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 	// Anchor for the user-stop stand-down (see verifyPlayURL): only a
 	// STOP_STATE recorded after this point aborts the loop.
 	recallStart := time.Now()
+	// Track the box's 1036 wrong-state rejections so a fresh one within a verify
+	// tick forces a re-point instead of trusting the box's playing-looking state.
+	lastRejectSeen := recallStart
 	for attempt := 1; attempt <= 3; attempt++ {
 		time.Sleep(5 * time.Second)
+		// A box that just rejected STR's source (1036 UpnpRcvdContentItemInWrongState,
+		// the preset->preset switch race) can report attached + BUFFERING on the
+		// Spotify location without ever reaching audio, then detach ~30s later with no
+		// music (ST30 4->5, 2026-07-14: "loaded 30s, never played, second press worked").
+		// So if a NEW rejection landed since the last tick, do not stand down on the
+		// playing-check; fall through to re-point, the automatic version of the user's
+		// second press.
+		rej := h.lastSourceRejectTime()
+		freshReject := rej.After(lastRejectSeen)
+		if rej.After(lastRejectSeen) {
+			lastRejectSeen = rej
+		}
 		// Success = the box is actually on the Spotify stream. Use the
 		// location-aware check, not a bare play-state: a bounce-to-radio reads
 		// as playing (would skip recovery -> double-tap) and a bare Streaming()
 		// flaps to false even while Spotify plays (re-pointing on that flap
 		// re-attaches and restarts the track). boxPlayingSpotify keys off the
 		// now_playing location, so it is true only when Spotify really plays.
-		if h.spotify.Streaming() || boxPlayingSpotify(h.boxHost) {
+		//
+		// A fresh 1036 wrong-state normally forces a re-point (the box can hang
+		// attached+buffering after it). But if the box has ALREADY reached real
+		// PLAY_STATE despite that transient flap, re-pointing would only knock the
+		// already-playing box back into buffering (ST30 4->5: "right song plays a
+		// few seconds, then stops to the buffering logo"). So on a fresh reject,
+		// still stand down when the box is GENUINELY playing (PLAY_STATE, not merely
+		// BUFFERING); only re-point a box that is stuck.
+		if (h.spotify.Streaming() || boxPlayingSpotify(h.boxHost)) &&
+			(!freshReject || boxReallyPlayingSpotify(h.boxHost)) {
 			return
 		}
 		// Stand down if the user powered the box off mid-recall, so the re-point
@@ -2476,7 +2587,13 @@ func boxVariant() string {
 // turned out NOT to be lisa-only, so the safe default is to settle unless a
 // chassis is on this proven-fast allowlist.
 var verifiedFastRebootChassis = map[string]bool{
-	"rhino":  true, // SoundTouch 10
+	// rhino (ST10) was removed 2026-07-14: two field ST10s went network-unstable
+	// on an OTA reboot until a manual power-cycle (#403), the same shepherdd
+	// --recovery trip as lisa (#372) and ginger/ST300 (a56b0ae). Three of this
+	// allowlist's assumptions have now been disproven, so only chassis with
+	// repeated first-hand confirmation stay: mojo and taigan have each survived
+	// many stacked reboots on Jens' own boxes. The settle wait is a cheap
+	// best-effort with no downside on a genuinely fast box.
 	"mojo":   true, // SoundTouch 30 (scm/sm2)
 	"taigan": true, // SoundTouch Portable
 }
@@ -2781,6 +2898,26 @@ func boxPlayingSpotify(boxHost string) bool {
 		return false
 	}
 	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+}
+
+// boxReallyPlayingSpotify is the strict form of boxPlayingSpotify: the box is on
+// the Spotify stream AND actually in PLAY_STATE (audio flowing), not merely
+// BUFFERING. The verify loop uses it to avoid re-pointing, and thereby disrupting,
+// a box that has genuinely started playing after a transient 1036 wrong-state flap
+// on a preset->preset switch.
+func boxReallyPlayingSpotify(boxHost string) bool {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s := string(b)
+	return strings.Contains(s, "spotify/stream") && strings.Contains(s, "PLAY_STATE")
 }
 
 func readSelfRSS() (rssKB, threads int64) {
