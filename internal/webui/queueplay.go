@@ -594,7 +594,11 @@ func (s *Server) transportSkip(ctx context.Context, forward bool) (source string
 			// still changes. Report success rather than a spurious error, only a
 			// real transport failure (go-librespot down) propagates.
 			s.logger.Info("spotify skip: go-librespot slow to ack, skip issued", "forward", forward)
+			s.spotifyRecoverAfterSkip()
 			return "spotify", nil
+		}
+		if err == nil {
+			s.spotifyRecoverAfterSkip()
 		}
 		return "spotify", err
 	}
@@ -602,6 +606,78 @@ func (s *Server) transportSkip(ctx context.Context, forward bool) (source string
 		return "queue", err
 	}
 	return "queue", nil
+}
+
+// spotifyRecoverAfterSkip re-establishes the box on its current Spotify stream
+// when a remote Next/Prev knocked it into the 1036 wrong-state flap: go-librespot
+// advances the track, but on some firmware the box then attaches to a stalled
+// stream and detaches ~30s later with no audio (the "buffering logo after a
+// remote skip" case, ST30 2026-07-14). The recall verify cannot help here, since
+// its stand-down signals (spotifyStreaming / a busy now_playing) read TRUE for a
+// box that is attached-but-only-buffering. So use a PLAY_STATE-strict check, the
+// same distinction that fixed the preset-switch overlap: re-point the box until
+// it is genuinely playing, and stand down the instant it is (so a box that
+// recovered on its own is never disrupted). No re-Play: the skip already advanced
+// the track; ServeOgg resumes go-librespot on the box's re-attach.
+func (s *Server) spotifyRecoverAfterSkip() {
+	if s.renderer == nil {
+		return
+	}
+	s.lastPlayMu.Lock()
+	var boxURL, title, art string
+	if s.lastPlay != nil {
+		boxURL, title, art = s.lastPlay.boxURL, s.lastPlay.title, s.lastPlay.art
+	}
+	s.lastPlayMu.Unlock()
+	if boxURL == "" || !strings.Contains(boxURL, "spotify/stream") {
+		return
+	}
+	started := time.Now()
+	go func() {
+		for attempt := 1; attempt <= 3; attempt++ {
+			time.Sleep(5 * time.Second)
+			// Do not fight a deliberate stop, and do not thrash a box that reported
+			// not-logged-in (a re-login is already in flight, re-pushing can wedge it).
+			if s.userStoppedRecently() || s.recentLoginError() {
+				return
+			}
+			if s.boxSpotifyReallyPlaying() {
+				s.NoteBoxHealthy()
+				return
+			}
+			s.boxCmdMu.Lock()
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			_ = s.renderer.PlayURLMime(ctx, boxURL, title, art, "audio/ogg")
+			cancel()
+			s.boxCmdMu.Unlock()
+			s.logger.Warn("spotify skip recovery: box not playing after skip, re-pointed", "attempt", attempt, "sinceMs", time.Since(started).Milliseconds())
+		}
+	}()
+}
+
+// boxSpotifyReallyPlaying reports whether the box's now_playing is on STR's
+// Spotify Ogg stream AND actually in PLAY_STATE (audio flowing), not merely
+// attached/BUFFERING. The strict signal spotifyRecoverAfterSkip needs to tell a
+// genuinely playing box from one stuck buffering on a stalled stream.
+func (s *Server) boxSpotifyReallyPlaying() bool {
+	host := s.boxHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+":8090/now_playing", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := (&http.Client{Timeout: 4 * time.Second}).Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s2 := string(b)
+	return strings.Contains(s2, "spotify/stream") && strings.Contains(s2, "PLAY_STATE")
 }
 
 // TransportSkip advances playback to the next (forward=true) or previous track,

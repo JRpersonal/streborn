@@ -888,7 +888,19 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 					// the recall retry and forced a pointless re-pair on every wake
 					// race, so it must never trigger here.
 					wrongState := strings.Contains(detail, "UpnpRcvdContentItemInWrongState")
-					if !wrongState && (v == "1036" || strings.Contains(strings.ToUpper(name), "NOT_LOGGED_IN")) {
+					if wrongState {
+						// The box rejected STR's SetURI as "wrong state": the routine race
+						// of a preset->preset switch (or a standby wake) where the box is
+						// still tearing down the previous source. It does NOT retry on its
+						// own and can hang attached-but-buffering on the Spotify stream
+						// without ever reaching audio, which needed a manual second preset
+						// press to clear (ST30 4->5 switch, 2026-07-14). Signal the recall so
+						// its verify re-points instead of trusting that stuck state. NOT a
+						// login problem, so it must not fire the re-login self-heal.
+						if h, ok := c.handler.(interface{ OnSourceRejected(context.Context) }); ok {
+							h.OnSourceRejected(ctx)
+						}
+					} else if v == "1036" || strings.Contains(strings.ToUpper(name), "NOT_LOGGED_IN") {
 						c.fireLoginError()
 					}
 					return
