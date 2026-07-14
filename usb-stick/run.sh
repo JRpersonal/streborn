@@ -1488,6 +1488,17 @@ elif [ -r "$WLAN_CREDS_NAND" ]; then
     PASS=$(sed -n 's/^PASS=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
     HIDDEN=$(sed -n 's/^HIDDEN=\(.*\)$/\1/p' "$WLAN_CREDS_NAND" | head -1)
     WLAN_SOURCE="NAND wlan-creds (replay)"
+    # #184: an app-initiated "apply now" Wi-Fi change drops this one-shot marker
+    # before rebooting. Its intent is to PROGRAM the new SSID, not to passively
+    # replay the current network, so skip the hands-off *replay* early-exit below
+    # and run the active provisioning pipeline (goform / M-path) once. Delete the
+    # marker on read so a wrong password cannot loop: the next boot is a normal
+    # replay again, never worse than before the fix.
+    if [ -f "$PERSIST/.wlan-apply-pending" ]; then
+        rm -f "$PERSIST/.wlan-apply-pending" 2>/dev/null
+        WLAN_SOURCE="NAND wlan-creds (app apply)"
+        setup_log "wlan-creds: app apply-pending marker present -> active provision this boot (#184)"
+    fi
 fi
 # Wireless-interface detection. Two real cases on SoundTouch hardware
 # (every model has Wi-Fi — the Portable has ONLY Wi-Fi, no RJ45):
