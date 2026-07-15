@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"os"
 	"sync"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // Member is one speaker in a zone: its stable deviceID plus a last-known IP
@@ -134,9 +136,10 @@ func (s *Store) Save() error {
 	} else if b, err = json.MarshalIndent(s.zone, "", "  "); err != nil {
 		return fmt.Errorf("marshal zones: %w", err)
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// Durable write (fsync + rename): a plain write+rename can leave the file at
+	// 0 bytes after a speaker's standby power-cut.
+	if err := atomicfile.WriteFile(s.path, b, 0o644); err != nil {
 		return fmt.Errorf("write zones: %w", err)
 	}
-	return os.Rename(tmp, s.path)
+	return nil
 }

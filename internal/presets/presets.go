@@ -15,10 +15,13 @@
 package presets
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // Preset describes a single preset slot.
@@ -112,38 +115,69 @@ type Store struct {
 // New creates an empty Store without a persistence path.
 func New() *Store { return &Store{} }
 
-// Load reads the presets.json from the given path.
-// If the file does not exist or is empty, an empty Store is returned.
-// On parse error an empty Store is also returned plus the error so the
-// caller decides whether it crashes or continues.
+// Load reads presets.json from path. A primary that is MISSING, ZERO BYTES, or
+// unparseable is recovered from the durable backup (presets.json.bak, written on
+// every non-empty save), and the primary is rewritten from it: this brings back a
+// preset store that a power-cut truncated to 0 bytes (the overnight-standby data
+// loss) instead of coming up empty. A genuinely empty preset set (an explicit
+// clear, stored as {"presets":null}) is honored, NOT treated as loss. With no
+// usable primary and no backup, an empty Store is returned (first boot). A parse
+// error with no backup returns an empty Store plus the error so the caller
+// decides whether to crash or continue.
 func Load(path string) (*Store, error) {
 	s := &Store{path: path}
 	b, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return s, nil
-		}
+	if err != nil && !os.IsNotExist(err) {
 		return s, fmt.Errorf("read presets: %w", err)
 	}
-	if len(b) == 0 {
-		return s, nil
+	// A non-empty, parseable primary is authoritative (an explicit empty set
+	// parses fine and is kept as-is).
+	if len(b) > 0 {
+		if data, perr := parse(b); perr == nil {
+			s.data = data
+			return s, nil
+		}
+		// Primary present but corrupt: fall through to the backup.
 	}
-
-	// First try the array format
-	var arr []rawPreset
-	if err := json.Unmarshal(b, &arr); err == nil {
-		s.data = normalize(arr)
-		return s, nil
+	// Primary missing / 0 bytes / corrupt: recover from the durable backup.
+	if bb, berr := os.ReadFile(path + ".bak"); berr == nil && len(bb) > 0 {
+		if data, perr := parse(bb); perr == nil && len(data) > 0 {
+			s.data = data
+			// Restore the primary durably so the box is whole again and
+			// GET /api/presets stops returning empty. Best-effort.
+			_ = atomicfile.WriteFile(path, bb, 0o644)
+			return s, nil
+		}
 	}
-
-	// Then the object format with "presets" wrapper
-	var wrap rawWrapper
-	if err := json.Unmarshal(b, &wrap); err == nil && wrap.Presets != nil {
-		s.data = normalize(wrap.Presets)
-		return s, nil
+	if len(b) > 0 {
+		return s, fmt.Errorf("parse presets: unknown format in %s", path)
 	}
+	return s, nil
+}
 
-	return s, fmt.Errorf("parse presets: unknown format in %s", path)
+// parse decodes presets in either supported layout. A bare array [ ... ] and the
+// wrapper object {"presets":[ ... ]} are both accepted; {"presets":null} and []
+// decode to an empty (but valid) set. Malformed JSON returns an error.
+func parse(b []byte) ([]Preset, error) {
+	trimmed := bytes.TrimSpace(b)
+	if len(trimmed) == 0 {
+		return nil, nil
+	}
+	switch trimmed[0] {
+	case '[':
+		var arr []rawPreset
+		if err := json.Unmarshal(b, &arr); err != nil {
+			return nil, err
+		}
+		return normalize(arr), nil
+	case '{':
+		var wrap rawWrapper
+		if err := json.Unmarshal(b, &wrap); err != nil {
+			return nil, err
+		}
+		return normalize(wrap.Presets), nil
+	}
+	return nil, fmt.Errorf("unknown format")
 }
 
 // normalize converts rawPreset into Preset, with alias resolution.
@@ -250,9 +284,16 @@ func (s *Store) Save() error {
 	if err != nil {
 		return fmt.Errorf("serialize presets: %w", err)
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// Durable write (fsync + rename): a plain write+rename left presets.json at 0
+	// bytes after a speaker's overnight standby power-cut, wiping every preset.
+	if err := atomicfile.WriteFile(s.path, b, 0o644); err != nil {
 		return fmt.Errorf("write presets: %w", err)
 	}
-	return os.Rename(tmp, s.path)
+	// Keep a durable backup of the last NON-EMPTY preset set so a primary that is
+	// ever lost can be recovered on the next load (see Load). Never back up an
+	// empty set: a stray empty save must not erase the safety net.
+	if len(s.data) > 0 {
+		_ = atomicfile.WriteFile(s.path+".bak", b, 0o644)
+	}
+	return nil
 }

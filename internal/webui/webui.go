@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
@@ -1964,9 +1965,11 @@ type persistedLastPlay struct {
 	LastResumeAt   time.Time `json:"lastResumeAt,omitzero"`
 }
 
-// persistLastPlay writes the resume target to NAND atomically (temp + rename),
-// so a power loss mid-write cannot leave a torn file. Best-effort, no-op without
-// a configured path.
+// persistLastPlay writes the resume target to NAND durably (fsync + rename), so
+// a power loss mid-write cannot leave a torn OR zero-byte file. A plain
+// write+rename left last-play.json at 0 bytes after an overnight standby
+// power-cut (the same loss that wiped presets.json, 2026-07-15). Best-effort,
+// no-op without a configured path.
 func (s *Server) persistLastPlay(boxURL, title, art, mime string, ts time.Time, resumeAttempts int, lastResumeAt time.Time) {
 	if s.lastPlayPath == "" {
 		return
@@ -1976,17 +1979,11 @@ func (s *Server) persistLastPlay(boxURL, title, art, mime string, ts time.Time, 
 	if err != nil {
 		return
 	}
-	tmp := s.lastPlayPath + ".tmp"
 	// Warn, not Debug: on a full NAND this is the ONLY trace of why the
 	// power-on resume has no station to bring back after the next standby
 	// (#119, ST30 with a full /mnt/nv).
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := atomicfile.WriteFile(s.lastPlayPath, b, 0o644); err != nil {
 		s.logger.Warn("last-play persist failed", "err", err)
-		return
-	}
-	if err := os.Rename(tmp, s.lastPlayPath); err != nil {
-		s.logger.Warn("last-play rename failed", "err", err)
-		_ = os.Remove(tmp)
 	}
 }
 

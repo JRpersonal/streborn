@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // resumeStore remembers, per Spotify context (a playlist or album URI), the
@@ -146,13 +148,9 @@ func (s *resumeStore) flush() {
 	if err != nil || s.path == "" {
 		return
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// Durable write (fsync + rename): a plain write+rename can leave the file at
+	// 0 bytes after a speaker's standby power-cut.
+	if err := atomicfile.WriteFile(s.path, b, 0o644); err != nil {
 		s.logger.Debug("spotify: resume store write failed", "err", err)
-		return
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		s.logger.Debug("spotify: resume store rename failed", "err", err)
-		_ = os.Remove(tmp) // don't orphan the temp file on NAND
 	}
 }

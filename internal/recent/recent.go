@@ -28,6 +28,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // maxEntries caps the ring. #135 specifies "last 30 tracks across all sources".
@@ -43,14 +45,14 @@ const flushDelay = 90 * time.Second
 // for the same card repeat the card fields; that redundancy keeps the box logic
 // trivial and the file self-contained.
 type Entry struct {
-	TS       string `json:"ts"`                // RFC3339, when this play/track started
-	Source   string `json:"source"`            // "radio" | "spotify" | "upnp" | "airplay" | ...
-	CardKey  string `json:"cardKey"`           // stable group key (replay target identity)
-	CardName string `json:"cardName"`          // station / playlist / folder name
-	CardArt  string `json:"cardArt,omitempty"` // logo / cover URL
-	CardURL  string `json:"cardURL,omitempty"` // replay target: stream URL / spotify URI / NAS location
-	Track    string `json:"track,omitempty"`   // song / track title; empty for stations without ICY
-	Account  string `json:"account,omitempty"` // sourceAccount (e.g. which Spotify account)
+	TS       string `json:"ts"`                 // RFC3339, when this play/track started
+	Source   string `json:"source"`             // "radio" | "spotify" | "upnp" | "airplay" | ...
+	CardKey  string `json:"cardKey"`            // stable group key (replay target identity)
+	CardName string `json:"cardName"`           // station / playlist / folder name
+	CardArt  string `json:"cardArt,omitempty"`  // logo / cover URL
+	CardURL  string `json:"cardURL,omitempty"`  // replay target: stream URL / spotify URI / NAS location
+	Track    string `json:"track,omitempty"`    // song / track title; empty for stations without ICY
+	Account  string `json:"account,omitempty"`  // sourceAccount (e.g. which Spotify account)
 	Homepage string `json:"homepage,omitempty"` // station website, for the "website" link (radio)
 }
 
@@ -285,12 +287,13 @@ func (s *Store) Flush() error {
 	s.dirty = false
 	s.mu.Unlock()
 
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// Durable write (fsync + rename): a plain write+rename can leave the file at
+	// 0 bytes after a speaker's standby power-cut.
+	if err := atomicfile.WriteFile(s.path, b, 0o644); err != nil {
 		s.mu.Lock()
 		s.dirty = true // write failed; re-arm on the next Add
 		s.mu.Unlock()
 		return fmt.Errorf("recent write: %w", err)
 	}
-	return os.Rename(tmp, s.path)
+	return nil
 }
