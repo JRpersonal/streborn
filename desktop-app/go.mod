@@ -6,8 +6,8 @@ require (
 	github.com/JRpersonal/streborn v0.0.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/wails/v2 v2.12.0
-	golang.org/x/crypto v0.53.0
-	golang.org/x/sys v0.46.0
+	golang.org/x/crypto v0.54.0
+	golang.org/x/sys v0.47.0
 )
 
 require github.com/grandcat/zeroconf v1.0.0 // indirect
@@ -42,9 +42,9 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	golang.org/x/mod v0.36.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
-	golang.org/x/tools v0.45.0 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 )
