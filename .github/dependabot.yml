@@ -22,6 +22,29 @@ updates:
       go-minor-patch:
         update-types: ["minor", "patch"]
 
+  # Desktop-app Go module. It is a SEPARATE module from the main one and shares
+  # transitive deps (golang.org/x/...) with it. Without watching it here, a
+  # Dependabot bump of the main module left the desktop-app go.mod stale and the
+  # build workflow's "go vet ./..." failed with "updates to go.mod needed"
+  # (2026-07-15). Watch it too so both modules move together.
+  - package-ecosystem: "gomod"
+    directory: "/desktop-app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      go-minor-patch:
+        update-types: ["minor", "patch"]
+
   # Website npm dependencies have moved to a separate repository.
   # When the /website folder is removed from this repo, drop nothing
   # else here - this section already does not exist.

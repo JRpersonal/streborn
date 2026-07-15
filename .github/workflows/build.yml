@@ -72,6 +72,20 @@ jobs:
           cache: true
           cache-dependency-path: desktop-app/go.sum
 
+      # Guard against the desktop-app module's go.mod/go.sum drifting out of tidy
+      # (e.g. a Dependabot bump of the main module that did not update this one):
+      # that made `go vet` fail with "updates to go.mod needed" and turned the
+      # whole workflow red while releases still shipped (2026-07-15). Fail early
+      # with an actionable message instead.
+      - name: go.mod tidy check
+        working-directory: desktop-app
+        run: |
+          go mod tidy
+          if ! git diff --exit-code go.mod go.sum; then
+            echo "::error::desktop-app go.mod/go.sum are not tidy. Run 'go mod tidy' in desktop-app and commit the result."
+            exit 1
+          fi
+
       - name: go vet
         working-directory: desktop-app
         run: go vet ./...
