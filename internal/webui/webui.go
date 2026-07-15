@@ -5077,6 +5077,41 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// the fresh zone ~300ms after reporting ok (#70, observed live).
 	s.ensureBoxReady(ctx)
 
+	// Remove members the user dropped from the group. /setZone only ADDS the
+	// listed slaves, it never removes one, so re-forming with a smaller list -
+	// exactly how the app removes a member (uncheck + apply) - leaves the dropped
+	// box in the firmware zone: it "briefly leaves then comes back" (Albrecht,
+	// 7-box fleet, 2026-07-14). Read the live zone and RemoveZoneSlave anyone no
+	// longer wanted. Match on IP, the chassis-stable key: a two-chip box (Portable,
+	// ST20 BCO) announces its wlan0 MAC over discovery, which is NOT the SCM
+	// deviceID the firmware lists for it, so a deviceID-only match would wrongly
+	// keep the dropped box. Best-effort, before the add below.
+	if live, gerr := c.GetZone(ctx); gerr == nil && live.Master != "" && len(live.Members) > 0 {
+		wantIP := make(map[string]bool, len(slaves))
+		wantDev := make(map[string]bool, len(slaves))
+		for _, sl := range slaves {
+			if sl.IP != "" {
+				wantIP[sl.IP] = true
+			}
+			if sl.DeviceID != "" {
+				wantDev[strings.ToLower(sl.DeviceID)] = true
+			}
+		}
+		var toRemove []boxapi.ZoneMember
+		for _, m := range live.Members {
+			keep := (m.IP != "" && wantIP[m.IP]) || (m.DeviceID != "" && wantDev[strings.ToLower(m.DeviceID)])
+			if !keep {
+				toRemove = append(toRemove, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+			}
+		}
+		if len(toRemove) > 0 {
+			s.logger.Info("zone: dropping members no longer in the group before re-forming", "count", len(toRemove), "master", master.DeviceID)
+			if err := c.RemoveZoneSlave(ctx, master, toRemove); err != nil {
+				s.logger.Warn("zone: reconcile removeZoneSlave failed", "err", err)
+			}
+		}
+	}
+
 	if err := c.SetZone(ctx, master, slaves); err != nil {
 		s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
 		http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
