@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // Action is one configured trigger action. Type selects the transport: an HTTP
@@ -172,12 +174,9 @@ func (s *Store) save(c Config) error {
 	if err != nil {
 		return err
 	}
-	tmp := s.path + ".new"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		_ = os.Remove(tmp)
+	// Durable write (fsync + rename): a plain write+rename can leave the file at
+	// 0 bytes after a speaker's standby power-cut.
+	if err := atomicfile.WriteFile(s.path, b, 0o644); err != nil {
 		return err
 	}
 	return nil

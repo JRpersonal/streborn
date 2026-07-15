@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"os"
 	"sync"
+
+	"github.com/JRpersonal/streborn/internal/atomicfile"
 )
 
 // Preset describes a single preset slot.
@@ -250,9 +252,10 @@ func (s *Store) Save() error {
 	if err != nil {
 		return fmt.Errorf("serialize presets: %w", err)
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	// Durable write (fsync + rename): a plain write+rename left presets.json at 0
+	// bytes after a speaker's overnight standby power-cut, wiping every preset.
+	if err := atomicfile.WriteFile(s.path, b, 0o644); err != nil {
 		return fmt.Errorf("write presets: %w", err)
 	}
-	return os.Rename(tmp, s.path)
+	return nil
 }
