@@ -161,6 +161,12 @@ type Manager struct {
 	// reason (e.g. Spotify's audio-key denial on a non-Premium account, #311).
 	lastPlayFailLine string
 	lastPlayFailAt   time.Time
+	// lastSeekFailAt remembers when go-librespot last reported it could not seek to
+	// the requested resume track (skip_to_uri) because that track is no longer in
+	// the context (a volatile Radio/Daily-Mix playlist whose track set drifted).
+	// Play uses it to replay the context from the top instead of leaving the box on
+	// a stalled, never-loading stream (ST30 intermittent-silence recall, #recall).
+	lastSeekFailAt time.Time
 	// desyncAt collects recent Connect-desync markers from the engine's
 	// stderr (put-state failures, dealer receive failures); lastDesyncHeal
 	// rate-limits the self-heal restart. See noteDesyncSignature.
@@ -192,6 +198,13 @@ type Manager struct {
 	// our Play loads the new shuffled track, so the first song started mid-song.
 	// During a recall, Play drives playback (track from its start) instead.
 	recallUntil time.Time
+	// recallRestartAt is when a cross-account SwitchAccount last restarted
+	// go-librespot. ServeOgg uses it to tell a cross-account recall (which leaves
+	// the engine paused in the restart gap and must be resumed on re-attach) apart
+	// from a same-account preset switch (where resuming replays the OLD playlist's
+	// track for a few seconds until Play loads the new one: the preset-switch audio
+	// overlap, ST30 2026-07-14).
+	recallRestartAt time.Time
 	// lastContext is the Spotify context (playlist/album) URI go-librespot last
 	// announced via will_play. When it changes (the app switched to another
 	// playlist) the box is re-pointed at the stream so it drops its buffer and
@@ -1084,6 +1097,7 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	if resumeURI != "" {
 		playReq["skip_to_uri"] = resumeURI
 	}
+	playAt := time.Now()
 	playBody, _ := json.Marshal(playReq)
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", string(playBody)); err != nil {
 		// The API 500 is bare; the reason (e.g. Spotify's audio-key denial on
@@ -1099,7 +1113,28 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	_ = m.apiPost(ctx, "/player/pause", "")
 	// shuffle_context is a no-op against an unloaded context (live: cold preset 6
 	// then skipped to the deterministic 2nd track), so wait for the track to load.
-	m.waitContextLoaded(ctx, 5*time.Second)
+	loaded := m.waitContextLoaded(ctx, 5*time.Second)
+	// A resume-point recall passes skip_to_uri to seek to the track the user last
+	// heard from this context. On a volatile context (a Spotify auto-generated
+	// Radio / Daily Mix playlist whose track set drifts between sessions) that track
+	// is frequently gone; go-librespot logs "failed seeking to track in context ...
+	// could not find track" and loads nothing, so the box attaches to a silent
+	// stream, the firmware throws UpnpRcvdContentItemInWrongState and detaches: the
+	// intermittent "preset plays no music" seen on tight boxes (ST30, 2026-07-14).
+	// Detect it (no track loaded, or the seek-failure line since this play) and
+	// re-issue WITHOUT skip_to_uri so playback starts from the top of the context
+	// instead of stalling. Shuffle recalls never set skip_to_uri, so they are
+	// unaffected.
+	if resumeURI != "" && (!loaded || m.seekFailedSince(playAt)) {
+		m.logger.Warn("spotify: resume track not found in context, replaying from the top", "uri", uri, "resumeTrack", resumeURI)
+		fromTop, _ := json.Marshal(map[string]any{"uri": uri, "paused": true})
+		if err := m.apiPostC(ctx, m.playClient, "/player/play", string(fromTop)); err != nil {
+			m.logger.Debug("spotify: replay-from-top after seek fail failed", "err", err)
+		} else {
+			_ = m.apiPost(ctx, "/player/pause", "")
+			m.waitContextLoaded(ctx, 5*time.Second)
+		}
+	}
 	// Set shuffle EXPLICITLY to the desired state every recall. Setting it to
 	// false is what clears a stale shuffle left on by a previous shuffled recall
 	// (the cross-recall stickiness that made an unshuffled preset still shuffle
@@ -1131,8 +1166,10 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 
 // waitContextLoaded polls go-librespot's /status until a track is loaded (the
 // context is ready) or max elapses. Used by Play before shuffle_context, which
-// is a no-op against an unloaded context.
-func (m *Manager) waitContextLoaded(ctx context.Context, max time.Duration) {
+// is a no-op against an unloaded context. Returns true once a track is loaded,
+// false if max/ctx elapsed with none (a stalled context, e.g. a resume seek that
+// found no track), so the caller can recover.
+func (m *Manager) waitContextLoaded(ctx context.Context, max time.Duration) bool {
 	deadline := time.Now().Add(max)
 	for time.Now().Before(deadline) {
 		if data, err := m.apiGet(ctx, "/status"); err == nil {
@@ -1142,15 +1179,35 @@ func (m *Manager) waitContextLoaded(ctx context.Context, max time.Duration) {
 				} `json:"track"`
 			}
 			if json.Unmarshal(data, &st) == nil && st.Track != nil && st.Track.Name != "" {
-				return
+				return true
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+	return false
+}
+
+// seekFailedSince reports whether go-librespot logged a resume-seek failure
+// ("could not find track") after t. Mirrors playDenialHint's one-beat retry: the
+// stderr line lands right after /player/play returns, so give a slow pipe a moment
+// before concluding the seek was fine.
+func (m *Manager) seekFailedSince(t time.Time) bool {
+	for attempt := 0; attempt < 2; attempt++ {
+		m.mu.Lock()
+		at := m.lastSeekFailAt
+		m.mu.Unlock()
+		if at.After(t) {
+			return true
+		}
+		if attempt == 0 {
+			time.Sleep(300 * time.Millisecond)
+		}
+	}
+	return false
 }
 
 // Next and Prev skip tracks. Wired to the SoundTouch remote's next/prev keys:
@@ -1270,6 +1327,15 @@ func (m *Manager) noteLibrespotLine(line string) {
 		m.mu.Lock()
 		m.lastPlayFailLine = lc
 		m.lastPlayFailAt = time.Now()
+		m.mu.Unlock()
+	}
+	// A resume-point recall passes skip_to_uri to seek to the last-played track; on
+	// a volatile context that track is often gone and go-librespot logs "failed
+	// seeking to track in context ... could not find track" and loads nothing.
+	// Remember it so Play can fall back to replaying the context from the top.
+	if strings.Contains(lc, "could not find track") || strings.Contains(lc, "failed seeking to track") {
+		m.mu.Lock()
+		m.lastSeekFailAt = time.Now()
 		m.mu.Unlock()
 	}
 	// Connect-desync markers (upstream go-librespot #300): a "put connect
@@ -1419,6 +1485,17 @@ func (m *Manager) currentUsername(ctx context.Context) string {
 // new Spotify preset so a later recall can switch back to that account.
 func (m *Manager) CurrentUsername(ctx context.Context) string {
 	return m.currentUsername(ctx)
+}
+
+// PlayingContext returns the Spotify context URI (playlist/album) go-librespot is
+// currently playing, or "" if none. The preset-save path uses it to decide when
+// the live account is authoritative: saving a preset for the content that is
+// playing right now should stamp the account that is actually playing it, even
+// over a stale account carried in from an earlier save.
+func (m *Manager) PlayingContext() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastContext
 }
 
 // ErrNoSpotifySession is returned by PlayAccount when the speaker holds no live
@@ -1714,6 +1791,7 @@ func (m *Manager) SwitchAccount(ctx context.Context, username string) (bool, err
 	start := time.Now()
 	m.mu.Lock()
 	restart := m.runCancel
+	m.recallRestartAt = start // mark the restart so ServeOgg resumes this cross-account recall on re-attach
 	m.mu.Unlock()
 	if restart != nil {
 		restart() // supervise loop relaunches go-librespot, which reads the swapped credential
@@ -1971,11 +2049,38 @@ func (m *Manager) SetRecalling() {
 	m.mu.Unlock()
 }
 
+// SuppressActivate holds maybeActivate/repointBox off for d, so STR does not
+// auto-repoint the box at the Spotify stream during a window where a different,
+// deliberate recovery is in flight. The hardware-skip recovery uses it: when the
+// box runs its own failed native skip it tears the UPnP source down while
+// go-librespot is still playing, which would otherwise trip maybeActivate into
+// re-pointing the box at the slot-less stream and racing the clean slot recall
+// (box then attaches mid-restart and wedges on a 3102 decoder error). Extends the
+// window rather than shrinking it, so it never cuts an existing suppression short.
+func (m *Manager) SuppressActivate(d time.Duration) {
+	m.mu.Lock()
+	if t := time.Now().Add(d); t.After(m.suppressActivateUntil) {
+		m.suppressActivateUntil = t
+	}
+	m.mu.Unlock()
+}
+
 // recalling reports whether a recall is currently in progress.
 func (m *Manager) recalling() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return time.Now().Before(m.recallUntil)
+}
+
+// recallRestartedRecently reports whether a cross-account SwitchAccount restarted
+// go-librespot within the current recall window. ServeOgg uses it to resume the
+// engine on a re-attach only for that case (the restart gap leaves it paused),
+// while a same-account preset switch defers to Play and does not replay the old
+// track. Scoped to the recall window so a stale restart never triggers it.
+func (m *Manager) recallRestartedRecently() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.recallRestartAt.IsZero() && time.Since(m.recallRestartAt) < 10*time.Second
 }
 
 // SetOnActivate wires the callback that points the box at the Spotify stream
@@ -2543,14 +2648,16 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// The drain pauses go-librespot while no box is attached; resume it so the
-	// live stream flows to this box. Skip the resume ONLY on a FRESH recall
-	// attach (reattach == false): there, resuming would replay the old track at
-	// its mid position before Play loads the new shuffled track, and Play drives
-	// playback instead. On a RE-attach (reattach == true) always resume: a recall
-	// that restarted go-librespot (a cross-account switch) leaves it paused in
-	// the restart gap, and without this resume the box would stay buffering on a
-	// paused stream (observed: preset stuck after playing another account).
-	if reattach || !m.recalling() {
+	// live stream flows to this box. Do NOT resume while a recall is driving
+	// playback: Play() loads and resumes the NEW track itself, so a resume here
+	// would only replay the OLD one. This covers both a fresh recall attach and a
+	// same-account preset switch (reattach): the latter used to resume the previous
+	// playlist's track for a few seconds until Play caught up, which the box played
+	// out as audible overlap (ST30 5->4 switch, 2026-07-14). The one exception is a
+	// cross-account recall: SwitchAccount restarted go-librespot and left it paused
+	// in the restart gap, so on the box's re-fetch resume it or it hangs buffering
+	// on a paused stream (observed: preset stuck after playing another account).
+	if !m.recalling() || (reattach && m.recallRestartedRecently()) {
 		rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		_ = m.Resume(rctx)
 		cancel()

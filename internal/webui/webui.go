@@ -94,6 +94,12 @@ type Server struct {
 	// stamp the account onto a newly saved Spotify preset. nil when Spotify
 	// is not configured.
 	spotifyUser func(ctx context.Context) string
+	// spotifyContext returns the Spotify context URI go-librespot is currently
+	// playing, used by the preset-save path to stamp the LIVE account when the
+	// saved preset is the content that is playing right now (so a preset saved
+	// from another household member's session gets that member's account, not a
+	// stale one). nil when Spotify is not configured.
+	spotifyContext func() string
 	// spotifyMeta resolves a stable cover image URL and the human title for a
 	// Spotify context URI (the playlist image + name), stamped onto a newly
 	// saved Spotify preset so its tile has a steady logo and a real name (not a
@@ -136,6 +142,11 @@ type Server struct {
 	// track from its start instead of resuming mid-position. nil when Spotify is
 	// not configured.
 	spotifySetRecalling func()
+	// spotifySuppressActivate holds go-librespot's auto-repoint (maybeActivate/
+	// repointBox) off for the given window. The hardware-skip recovery calls it so
+	// the competing #14 auto-attach cannot race the clean slot recall while the box
+	// is tearing its UPnP source down. nil when Spotify is not configured.
+	spotifySuppressActivate func(time.Duration)
 	// spotifyInfo answers GET /spotify/info with the live Spotify state
 	// (ready, measured bitrate, device name) the UI reads to show the real
 	// stream bitrate on a Spotify preset tile. nil when not configured.
@@ -552,6 +563,11 @@ func WithSpotifyStop(f func() bool) Option {
 type PeerLink struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+	// Reachable is false for a peer that was seen recently over mDNS but did not
+	// answer a web-port probe on the last sweep. Such peers are still listed (so a
+	// speaker briefly missed by a lossy mDNS round does not vanish and reappear,
+	// #404/#381/#385) but the on-box page renders them dimmed / non-clickable.
+	Reachable bool `json:"reachable"`
 }
 
 // WithPeers registers the resolver that lists the other STR speakers on the
@@ -572,6 +588,13 @@ func WithSpotifyControl(play func(ctx context.Context, uri, account string, shuf
 // used to stamp the account onto a newly saved Spotify preset.
 func WithSpotifyUser(user func(ctx context.Context) string) Option {
 	return func(s *Server) { s.spotifyUser = user }
+}
+
+// WithSpotifyContext registers the resolver for the Spotify context URI
+// go-librespot is currently playing, used by the preset-save path to stamp the
+// live account when saving the content that is playing right now.
+func WithSpotifyContext(ctxURI func() string) Option {
+	return func(s *Server) { s.spotifyContext = ctxURI }
 }
 
 // WithSpotifyMeta registers the resolver for a Spotify context's stable cover
@@ -634,6 +657,13 @@ func WithSpotifySetRecalling(setRecalling func()) Option {
 	return func(s *Server) { s.spotifySetRecalling = setRecalling }
 }
 
+// WithSpotifySuppressActivate registers the hook that holds go-librespot's
+// auto-repoint off for a window, so the hardware-skip recovery's clean slot
+// recall is not raced by the #14 auto-attach.
+func WithSpotifySuppressActivate(suppress func(time.Duration)) Option {
+	return func(s *Server) { s.spotifySuppressActivate = suppress }
+}
+
 // WithRecent wires the recently-played ring (#135) so the play handlers record
 // the user's listening history and GET /api/recent serves it.
 func WithRecent(r *recent.Store) Option {
@@ -643,6 +673,28 @@ func WithRecent(r *recent.Store) Option {
 // ensureBoxReady wakes the box from standby (with retry+poll until
 // really awake) and ensures the marge account is active.
 // Called before every play call.
+// handleBoxWake wakes the speaker from standby (the :17000 TAP wake) WITHOUT
+// starting any playback. The desktop app calls it on a zone member that a user
+// switched off at the speaker before enrolling it: the firmware otherwise adds a
+// still-asleep box to the group and it stays silent while STR reports success
+// (#70). Waking an already-awake box is a fast no-op.
+func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if s.boxHost == "" {
+		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+	defer cancel()
+	if err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger); err != nil {
+		http.Error(w, "wake failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"awake": true})
+}
+
 func (s *Server) ensureBoxReady(ctx context.Context) {
 	if s.boxHost != "" {
 		// Detach from the caller's request context: a slow wake must not be
@@ -738,6 +790,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/region", s.handleRegion)
 	mux.HandleFunc("/api/box/wlan", s.handleBoxWLAN)
 	mux.HandleFunc("/api/box/reboot", s.handleBoxReboot)
+	mux.HandleFunc("/api/box/remove-conflicting-mod", s.handleRemoveConflictingMod)
+	mux.HandleFunc("/api/box/wake", s.handleBoxWake)
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
@@ -1027,16 +1081,29 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		}
 		// Stamp the account a Spotify preset belongs to (go-librespot's current
 		// login) so a later recall can switch back to it on a multi-account box
-		// (#27). The client may already supply it; only fill when empty.
+		// (#27). Two cases: (a) no account yet, fill it from the current login;
+		// (b) the preset being saved IS the content go-librespot is playing right
+		// now, so the live account owns it and must win even over a stale account
+		// carried in from an earlier save. Case (b) fixes the report that a preset
+		// saved from a second household member's Spotify session kept the first
+		// member's account (jensukk) because the old value was never refreshed
+		// (ST30, 2026-07-14). A save for a NON-playing preset keeps its stored
+		// account, so a bulk rename never clobbers another account's preset.
 		// Account + cover are best-effort enrichment: use a fresh background
 		// context, not r.Context(), so a client that disconnects right after the
 		// PUT (e.g. a raw one-shot request) does not cancel them mid-fetch.
-		if p.Type == "spotify" && p.Account == "" && s.spotifyUser != nil {
-			uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			if u := s.spotifyUser(uctx); u != "" {
-				p.Account = u
+		if p.Type == "spotify" && s.spotifyUser != nil {
+			savingLiveContext := p.URI != "" && s.spotifyContext != nil && s.spotifyContext() == p.URI
+			if p.Account == "" || savingLiveContext {
+				uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				if u := s.spotifyUser(uctx); u != "" && u != p.Account {
+					if p.Account != "" {
+						s.logger.Info("preset save: refreshed Spotify account to the live playing account", "slot", slot, "from", p.Account, "to", u)
+					}
+					p.Account = u
+				}
+				cancel()
 			}
-			cancel()
 		}
 		// Give a Spotify preset a stable tile logo (the playlist image, #24) and a
 		// real name (the playlist title), so the box display and the tile show
@@ -2204,6 +2271,24 @@ func (s *Server) ResumeLastPlay() {
 		// Checked live (authoritative) rather than from cached zone events.
 		if s.boxInZone() {
 			s.logger.Info("wake resume: box is in a zone / stereo pair, not auto-resuming (self-wake guard)")
+			return
+		}
+
+		// Power-off bounce guard for boxes where the UPnP-source standby did not
+		// arm standbyStoppedRecently above. A rhino ST10 reports a power-off as a
+		// gabbo STOP_STATE (-> NoteUserStop) rather than the UPNP->STANDBY that
+		// HandleEnterStandby keys on, so the #197 guard missed it and this wake
+		// resumed a box the user had just switched off (Svagerka, ST10: "off does
+		// not stick, playback resumes within seconds"). Discriminator: a power-OFF
+		// is preceded by a deliberate stop within the last few seconds (the box was
+		// playing when off was pressed), whereas a genuine power-ON follows a box
+		// that was already stopped/off, so no fresh stop precedes it. If a user stop
+		// landed within userStopWindow, treat this wake as the power-off bounce and
+		// stand down, keeping the user-stop intact so the parallel auto re-push does
+		// not pull the box back up either. A real power-on hours later has no recent
+		// stop, so it still resumes.
+		if s.userStoppedRecently() {
+			s.logger.Info("wake resume: a deliberate stop immediately preceded this wake (power-off bounce), not resuming")
 			return
 		}
 
@@ -4016,6 +4101,77 @@ func detectConflictingMod() string {
 	return ""
 }
 
+// handleRemoveConflictingMod removes the leftovers of a rival cloud-free
+// SoundTouch tool (AfterTouch) that clash with STR: its /mnt/nv/aftertouch
+// directory, its resolv.conf override, and any aftertouch hook line in rc.local.
+// It touches ONLY those artifacts, never the rest of /mnt/nv (which holds the
+// box's own Wi-Fi/AirPlay/account persistence and STR's own streborn/ dir). The
+// desktop app surfaces this as a one-click button so users never need SSH; a
+// reboot afterwards fully clears the rival tool's already-running processes.
+func (s *Server) handleRemoveConflictingMod(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	mod := detectConflictingMod()
+	if mod == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "mod": "", "removed": []string{}})
+		return
+	}
+	removed := []string{}
+	// 1. The rival tool's NAND directory.
+	dir := filepath.Join(nandRoot, "aftertouch")
+	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+		if err := os.RemoveAll(dir); err != nil {
+			http.Error(w, "could not remove aftertouch/: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		removed = append(removed, "aftertouch/")
+	}
+	// 2. Its resolv.conf override.
+	resolv := filepath.Join(nandRoot, "aftertouch.resolv.conf")
+	if _, err := os.Stat(resolv); err == nil {
+		if err := os.Remove(resolv); err != nil {
+			http.Error(w, "could not remove aftertouch.resolv.conf: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		removed = append(removed, "aftertouch.resolv.conf")
+	}
+	// 3. Any aftertouch hook line in rc.local. Rewrite it without those lines,
+	// keeping every other line (STR's own boot hooks and Bose defaults) intact.
+	rcl := filepath.Join(nandRoot, "rc.local")
+	if b, err := os.ReadFile(rcl); err == nil && strings.Contains(strings.ToLower(string(b)), "aftertouch") {
+		lines := strings.Split(string(b), "\n")
+		kept := lines[:0]
+		dropped := 0
+		for _, ln := range lines {
+			if strings.Contains(strings.ToLower(ln), "aftertouch") {
+				dropped++
+				continue
+			}
+			kept = append(kept, ln)
+		}
+		if dropped > 0 {
+			if err := os.WriteFile(rcl, []byte(strings.Join(kept, "\n")), 0o755); err != nil {
+				http.Error(w, "could not clean rc.local: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			removed = append(removed, fmt.Sprintf("rc.local (%d line)", dropped))
+		}
+	}
+	_ = exec.Command("sync").Run()
+	s.logger.Info("removed conflicting-mod leftovers", "mod", mod, "removed", removed)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":        "ok",
+		"mod":           mod,
+		"removed":       removed,
+		"stillDetected": detectConflictingMod() != "",
+	})
+}
+
 // wlanCredsWarningWarranted reports whether the "no Wi-Fi saved in STR"
 // warning should fire: only when the creds file is missing on a chassis whose
 // Wi-Fi lives in the volatile coprocessor store (wlan-mode "bco" /
@@ -4920,6 +5076,41 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// stale UPnP item, throws the 1036 wrong-state error and self-dissolves
 	// the fresh zone ~300ms after reporting ok (#70, observed live).
 	s.ensureBoxReady(ctx)
+
+	// Remove members the user dropped from the group. /setZone only ADDS the
+	// listed slaves, it never removes one, so re-forming with a smaller list -
+	// exactly how the app removes a member (uncheck + apply) - leaves the dropped
+	// box in the firmware zone: it "briefly leaves then comes back" (Albrecht,
+	// 7-box fleet, 2026-07-14). Read the live zone and RemoveZoneSlave anyone no
+	// longer wanted. Match on IP, the chassis-stable key: a two-chip box (Portable,
+	// ST20 BCO) announces its wlan0 MAC over discovery, which is NOT the SCM
+	// deviceID the firmware lists for it, so a deviceID-only match would wrongly
+	// keep the dropped box. Best-effort, before the add below.
+	if live, gerr := c.GetZone(ctx); gerr == nil && live.Master != "" && len(live.Members) > 0 {
+		wantIP := make(map[string]bool, len(slaves))
+		wantDev := make(map[string]bool, len(slaves))
+		for _, sl := range slaves {
+			if sl.IP != "" {
+				wantIP[sl.IP] = true
+			}
+			if sl.DeviceID != "" {
+				wantDev[strings.ToLower(sl.DeviceID)] = true
+			}
+		}
+		var toRemove []boxapi.ZoneMember
+		for _, m := range live.Members {
+			keep := (m.IP != "" && wantIP[m.IP]) || (m.DeviceID != "" && wantDev[strings.ToLower(m.DeviceID)])
+			if !keep {
+				toRemove = append(toRemove, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+			}
+		}
+		if len(toRemove) > 0 {
+			s.logger.Info("zone: dropping members no longer in the group before re-forming", "count", len(toRemove), "master", master.DeviceID)
+			if err := c.RemoveZoneSlave(ctx, master, toRemove); err != nil {
+				s.logger.Warn("zone: reconcile removeZoneSlave failed", "err", err)
+			}
+		}
+	}
 
 	if err := c.SetZone(ctx, master, slaves); err != nil {
 		s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
@@ -6562,7 +6753,24 @@ const (
 	// aborted runtime Wi-Fi switches before ("read-only file system"). run.sh's
 	// M3 boot path uses the same NAND location.
 	wpaBackupPath = "/mnt/nv/streborn/wpa_supplicant.conf.bak"
+	// wlanApplyMarkerPath is a one-shot marker the app-initiated Wi-Fi change
+	// drops before a reboot so run.sh's boot path treats that boot as an active
+	// "program the new SSID" provision instead of a passive replay of the current
+	// network. run.sh deletes it on read, so a wrong password cannot loop (#184).
+	wlanApplyMarkerPath = "/mnt/nv/streborn/.wlan-apply-pending"
 )
+
+// touchWLANApplyMarker drops the one-shot boot marker that makes run.sh actively
+// provision the new Wi-Fi after an app "apply now" change, rather than replaying
+// the old network and exiting hands-off (which left an app Wi-Fi change dead-
+// ending when the old AP was still in range, #184).
+func touchWLANApplyMarker() {
+	if err := os.WriteFile(wlanApplyMarkerPath, []byte("1\n"), 0o600); err != nil {
+		// Non-fatal: without the marker the boot falls back to the old replay
+		// behaviour, i.e. the pre-fix behaviour, never worse.
+		return
+	}
+}
 
 // detectWlanMechanism mirrors run.sh's interface detection: a wlan* iface means
 // a wpa_supplicant stack (live switch possible); eth0-only is the BCO pattern
@@ -6602,6 +6810,9 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			// creds via the boot path, so a stale backup must not survive on NAND and
 			// be used to roll a future switch back to this now-superseded conf.
 			_ = os.Remove(wpaBackupPath)
+			// Mark this as an active apply so run.sh programs the new SSID on boot
+			// instead of replaying the old network hands-off (#184).
+			touchWLANApplyMarker()
 			rebootBox()
 		default: // wpaNotAssociated
 			// Did not associate (e.g. wrong password): roll all the way back so
@@ -6614,6 +6825,9 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 		}
 	default:
 		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid)
+		// Mark this as an active apply so run.sh programs the new SSID on boot
+		// instead of replaying the old network hands-off (#184).
+		touchWLANApplyMarker()
 		rebootBox()
 	}
 }
@@ -6685,15 +6899,82 @@ func (s *Server) applyWlanWPALive(iface, ssid, password string, hidden bool) wpa
 		return wpaCannotApply
 	}
 	s.logger.Info("WLAN: wpa conf written", "method", method, "iface", iface)
+	// Escalate the way run.sh's boot path does (M3 restart, M4 add_network)
+	// instead of a single reconfigure+reassociate then rollback. A bare
+	// reconfigure does not dislodge a config NetManager reverted, so a runtime
+	// switch that run.sh would have completed on the next boot used to fail live
+	// and roll straight back (#288). Each stage only runs if the previous one did
+	// not associate, and the rollback in applyWLANChange still protects a genuine
+	// failure (e.g. a wrong password), so this can only help, never strand.
 	reloadWPA(iface)
-	deadline := time.Now().Add(25 * time.Second)
+	if waitWPAAssociated(iface, ssid, 12*time.Second) {
+		return wpaConfirmed
+	}
+	s.logger.Warn("WLAN: reconfigure did not associate, restarting wpa_supplicant (M3)", "ssid", ssid)
+	restartWPA(iface)
+	if waitWPAAssociated(iface, ssid, 12*time.Second) {
+		return wpaConfirmed
+	}
+	s.logger.Warn("WLAN: restart did not associate, trying wpa_cli add_network fallback (M4)", "ssid", ssid)
+	if wpaAddNetwork(iface, ssid, password, hidden) && waitWPAAssociated(iface, ssid, 12*time.Second) {
+		return wpaConfirmed
+	}
+	return wpaNotAssociated
+}
+
+// waitWPAAssociated polls wpaAssociatedTo until the box is COMPLETED on ssid or
+// the window elapses.
+func waitWPAAssociated(iface, ssid string, window time.Duration) bool {
+	deadline := time.Now().Add(window)
 	for time.Now().Before(deadline) {
 		time.Sleep(2 * time.Second)
 		if wpaAssociatedTo(iface, ssid) {
-			return wpaConfirmed
+			return true
 		}
 	}
-	return wpaNotAssociated
+	return false
+}
+
+// restartWPA fully restarts wpa_supplicant (run.sh M3): a reconfigure keeps a
+// stale/NetManager-reverted association, a clean relaunch reads the new conf from
+// scratch. Independent of wpa_cli being present.
+func restartWPA(iface string) {
+	_ = exec.Command("killall", "wpa_supplicant").Run()
+	time.Sleep(time.Second)
+	_ = exec.Command("wpa_supplicant", "-B", "-i", iface, "-s", "-c", wpaConfPath, "-D", "nl80211").Start()
+}
+
+// wpaAddNetwork is run.sh's M4 fallback: build the network directly through
+// wpa_cli (add_network / set_network / enable / select / save_config) when the
+// conf-file path did not take. scan_ssid=1 lets a hidden SSID be found. Returns
+// false if wpa_cli is absent or add_network fails.
+func wpaAddNetwork(iface, ssid, password string, hidden bool) bool {
+	if _, err := exec.LookPath("wpa_cli"); err != nil {
+		return false
+	}
+	run := func(args ...string) string {
+		out, _ := exec.Command("wpa_cli", append([]string{"-i", iface}, args...)...).Output()
+		return strings.TrimSpace(string(out))
+	}
+	id := run("add_network")
+	if id == "" || strings.Contains(id, "FAIL") {
+		return false
+	}
+	// wpa_cli set_network wants the ssid/psk quoted; %q emits the surrounding
+	// double quotes wpa_cli expects, and exec passes the arg verbatim (no shell).
+	run("set_network", id, "ssid", fmt.Sprintf("%q", ssid))
+	if password != "" {
+		run("set_network", id, "psk", fmt.Sprintf("%q", password))
+	} else {
+		run("set_network", id, "key_mgmt", "NONE")
+	}
+	if hidden {
+		run("set_network", id, "scan_ssid", "1")
+	}
+	run("enable_network", id)
+	run("select_network", id)
+	run("save_config")
+	return true
 }
 
 // writeWPAConf installs content as /etc/wpa_supplicant.conf, working around a

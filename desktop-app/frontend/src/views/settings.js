@@ -42,6 +42,7 @@ import {
   BrowserOpenURL,
   TrueFactoryReset,
   UninstallSTR,
+  RemoveConflictingMod,
   GetBoxLanguage,
   SetBoxLanguage,
   GetClockFormat24,
@@ -852,6 +853,8 @@ function renderBoxSettings(s, box) {
         <p class="muted small">${escapeHtml(t('settingsView.emailSupportHelp'))}</p>
         <button class="btn btn-mini btn-warning" id="boxRebootBtn">${escapeHtml(t('speaker.reboot'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.rebootHelp'))}</p>
+        ${box && box.conflictingMod ? `<button class="btn btn-mini btn-warning" id="boxRemoveConflictBtn">${escapeHtml(t('settingsView.removeConflictBtn', { mod: box.conflictingMod }))}</button>
+        <p class="muted small">${escapeHtml(t('settingsView.removeConflictHelp', { mod: box.conflictingMod }))}</p>` : ''}
         <hr class="actions-divider" />
         <button class="btn btn-mini btn-danger" id="boxTrueFactoryResetBtn">${escapeHtml(t('settingsView.trueFactoryResetBtn'))}</button>
         <p class="muted small">${escapeHtml(t('settingsView.trueFactoryResetHelpShort'))}</p>
@@ -1273,6 +1276,49 @@ function renderBoxSettings(s, box) {
         // The speaker is gone for ~30 s, then trigger discovery again.
         setTimeout(deps.discoverBoxes, 35000);
       } catch (e) { showError(e); }
+    };
+  }
+
+  // Remove the leftovers of a rival cloud-free SoundTouch tool (AfterTouch) that
+  // clash with STR. One click, no SSH; the box-issue banner points here. Only
+  // rendered when the box actually carries such leftovers (box.conflictingMod).
+  const rmConflictBtn = $('boxRemoveConflictBtn');
+  if (rmConflictBtn) {
+    rmConflictBtn.onclick = async () => {
+      const mod = (box && box.conflictingMod) || 'AfterTouch';
+      const ok = await confirmWarn(
+        t('settingsView.removeConflictBtn', { mod }),
+        t('settingsView.removeConflictConfirm', { mod, name: box.friendlyName || box.name || box.host })
+      );
+      if (!ok) return;
+      rmConflictBtn.disabled = true;
+      rmConflictBtn.textContent = t('settingsView.removeConflictRunning');
+      try {
+        const raw = await RemoveConflictingMod(box.host, box.port);
+        let res = {};
+        try { res = JSON.parse(raw); } catch { /* keep empty */ }
+        const removed = res.removed || [];
+        showToast(t('settingsView.removeConflictDoneToast', { mod, n: removed.length }));
+        // A reboot fully clears the rival tool's already-running processes.
+        const wantReboot = await confirmWarn(
+          t('settingsView.removeConflictRebootTitle'),
+          t('settingsView.removeConflictRebootBody', { name: box.friendlyName || box.name || box.host })
+        );
+        if (wantReboot) {
+          try {
+            await RebootBox(box.host, box.port);
+            showToast(t('speaker.rebootingToast'));
+            setTimeout(deps.discoverBoxes, 35000);
+          } catch (e) { showError(e); }
+        } else if (deps.discoverBoxes) {
+          deps.discoverBoxes();
+        }
+      } catch (e) {
+        showError(e);
+      } finally {
+        rmConflictBtn.disabled = false;
+        rmConflictBtn.textContent = t('settingsView.removeConflictBtn', { mod });
+      }
     };
   }
 

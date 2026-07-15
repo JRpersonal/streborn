@@ -23,6 +23,8 @@ export {
   VoteStation,
   PhoneQR,
   RebootBox,
+  RemoveConflictingMod,
+  WakeBox,
   SyncBoxPresets,
   BoxPresets,
   BoxSnapshot,

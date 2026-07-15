@@ -594,7 +594,11 @@ func (s *Server) transportSkip(ctx context.Context, forward bool) (source string
 			// still changes. Report success rather than a spurious error, only a
 			// real transport failure (go-librespot down) propagates.
 			s.logger.Info("spotify skip: go-librespot slow to ack, skip issued", "forward", forward)
+			s.spotifyRecoverAfterSkip()
 			return "spotify", nil
+		}
+		if err == nil {
+			s.spotifyRecoverAfterSkip()
 		}
 		return "spotify", err
 	}
@@ -602,6 +606,91 @@ func (s *Server) transportSkip(ctx context.Context, forward bool) (source string
 		return "queue", err
 	}
 	return "queue", nil
+}
+
+// slotFromSpotifyStreamURL extracts the preset slot N from a per-slot Spotify Ogg
+// URL (".../spotify/stream-N.ogg"), or 0 if the URL is the slot-less default.
+func slotFromSpotifyStreamURL(u string) int {
+	m := regexp.MustCompile(`/spotify/stream-(\d+)\.ogg`).FindStringSubmatch(u)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
+
+// spotifyRecoverAfterSkip is the SOFT-skip (app Next/Prev button) safety net. The
+// soft skip keeps the box attached and plays through the track change fine, so
+// this normally just confirms the box is playing and stands down. The HARDWARE
+// remote key no longer reaches here at all: boxws routes it to HardwareSkip, which
+// does a clean slot recall (the box tears its own UPnP source down on a hardware
+// skip and only a full recall clears that). On the rare occasion a soft skip does
+// leave the box not playing, recover with that SAME clean slot recall. Stand down
+// the instant the box is genuinely playing so a working soft skip is never
+// disrupted.
+func (s *Server) spotifyRecoverAfterSkip() {
+	if s.renderer == nil {
+		return
+	}
+	s.lastPlayMu.Lock()
+	var boxURL string
+	if s.lastPlay != nil {
+		boxURL = s.lastPlay.boxURL
+	}
+	s.lastPlayMu.Unlock()
+	if boxURL == "" || !strings.Contains(boxURL, "spotify/stream") {
+		return
+	}
+	slot := slotFromSpotifyStreamURL(boxURL)
+	go func() {
+		time.Sleep(5 * time.Second)
+		// Do not fight a deliberate stop, and do not thrash a box that reported
+		// not-logged-in (a re-login is already in flight, re-pushing can wedge it).
+		if s.userStoppedRecently() || s.recentLoginError() {
+			return
+		}
+		// Soft skip (and any box that re-synced on its own): already playing, leave it.
+		if s.boxSpotifyReallyPlaying() {
+			s.NoteBoxHealthy()
+			return
+		}
+		// A soft skip that (unusually) left the box not playing recovers with the
+		// same proven clean slot recall the hardware path uses - identical to
+		// /api/play/<slot>, which reloads the context and hands the box a clean
+		// track boundary. For a shuffle preset (slots 4/5) that lands a fresh track;
+		// a resume preset restarts its context.
+		if slot >= 1 && slot <= 6 {
+			s.recallSlotClean(context.Background(), slot)
+			s.logger.Info("spotify skip recovery: clean slot recall after a skip left the box not playing", "slot", slot)
+			return
+		}
+		s.logger.Warn("spotify skip recovery: box not playing and no slot to recall", "boxURL", boxURL)
+	}()
+}
+
+// boxSpotifyReallyPlaying reports whether the box's now_playing is on STR's
+// Spotify Ogg stream AND actually in PLAY_STATE (audio flowing), not merely
+// attached/BUFFERING. The strict signal spotifyRecoverAfterSkip needs to tell a
+// genuinely playing box from one stuck buffering on a stalled stream.
+func (s *Server) boxSpotifyReallyPlaying() bool {
+	host := s.boxHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+":8090/now_playing", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := (&http.Client{Timeout: 4 * time.Second}).Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s2 := string(b)
+	return strings.Contains(s2, "spotify/stream") && strings.Contains(s2, "PLAY_STATE")
 }
 
 // TransportSkip advances playback to the next (forward=true) or previous track,
@@ -612,6 +701,94 @@ func (s *Server) transportSkip(ctx context.Context, forward bool) (source string
 func (s *Server) TransportSkip(ctx context.Context, forward bool) (string, error) {
 	return s.transportSkip(ctx, forward)
 }
+
+// HardwareSkip handles the SoundTouch remote's physical Next/Prev keys, which
+// take a DIFFERENT path from the app's soft skip (TransportSkip). On the app skip
+// the box stays attached to the Ogg stream and a go-librespot skip plays straight
+// through. On the hardware key the box first runs its OWN native skip on the UPnP
+// source, fails (QPLAY_SKIP_*_FAILED) and tears the source down to INVALID_SOURCE
+// while go-librespot is still playing. A go-librespot skip layered on top then
+// races: the engine advances (tripping the #14 auto-repoint to the slot-less
+// stream), a delayed preset re-press restarts the engine again, and the box
+// attaches mid-double-restart to a mismatched-header Ogg, wedging on a 3102
+// decoder error (played the new track for a second, then stopped: live ST30,
+// 2026-07-14). A SINGLE clean slot recall, exactly the app's /api/play/<slot>
+// path, recovers reliably to PLAY_STATE where the skip+recovery does not. For a
+// shuffle preset (slots 4/5) it lands a fresh random track, a real "next"; a
+// resume preset restarts its context. So for a Spotify preset, recall the slot
+// cleanly instead of skipping; non-Spotify sources keep the queue-skip path.
+func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error) {
+	slot := s.currentSpotifySlot()
+	if slot < 1 || slot > 6 {
+		return s.transportSkip(ctx, forward)
+	}
+	// Hold the competing auto-repoint off for the whole recovery: the box is
+	// tearing its UPnP source down right now while go-librespot still plays, so
+	// maybeActivate is primed to fire the instant it sees no sink. Suppressing
+	// first keeps it from re-pointing the box at the slot-less stream and racing
+	// the clean recall below.
+	if s.spotifySuppressActivate != nil {
+		s.spotifySuppressActivate(12 * time.Second)
+	}
+	// A single clean slot recall (identical to /api/play/<slot>) is the ONLY
+	// reliable recovery. A tempting "fast path" - advance the engine one track in
+	// the already-loaded context (/player/next) and just re-point the box, skipping
+	// the recall's full context reload - was tried and WEDGES the box: without the
+	// paused context reload the box re-attaches to a mid-transition Ogg and stalls
+	// (INVALID_SOURCE, ~20s to recover via fallback), slower than the recall it was
+	// meant to beat (live ST30, 2026-07-14). The context reload IS the mechanism
+	// that hands the box a clean track boundary, so it cannot be skipped. The
+	// recovery time (box teardown ~3s + recall, ~6s warm / ~12s cold) is the floor
+	// for this firmware.
+	s.recallSlotClean(ctx, slot)
+	s.logger.Info("hardware skip: clean Spotify slot recall (native skip on a UPnP source cannot skip; recall recovers)", "slot", slot, "forward", forward)
+	return "spotify-recall", nil
+}
+
+// currentSpotifySlot returns the preset slot (1-6) the box is currently playing a
+// Spotify preset from, or 0 if it is not on a numbered Spotify preset stream (the
+// slot-less /spotify/stream.ogg, i.e. app-driven playback, or a non-Spotify
+// source). Read from lastPlay, the URL STR last pointed the box at.
+func (s *Server) currentSpotifySlot() int {
+	s.lastPlayMu.Lock()
+	var boxURL string
+	if s.lastPlay != nil {
+		boxURL = s.lastPlay.boxURL
+	}
+	s.lastPlayMu.Unlock()
+	if boxURL == "" || !strings.Contains(boxURL, "spotify/stream") {
+		return 0
+	}
+	return slotFromSpotifyStreamURL(boxURL)
+}
+
+// recallSlotClean recalls a preset slot through the exact same code path as the
+// app's POST /api/play/<slot>, so a hardware-driven recovery behaves identically
+// to a soft recall (SetRecalling before the box attaches, cold-engine wait,
+// background verify). It drives handlePlaySlot with a synthetic in-process request
+// and discards the response: the caller (HardwareSkip) only needs the box driven,
+// not the HTTP body.
+func (s *Server) recallSlotClean(ctx context.Context, slot int) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/api/play/"+strconv.Itoa(slot), nil)
+	if err != nil {
+		return
+	}
+	s.handlePlaySlot(&discardResponseWriter{}, req)
+}
+
+// discardResponseWriter is a throwaway http.ResponseWriter for in-process handler
+// calls (recallSlotClean) whose response nobody reads.
+type discardResponseWriter struct{ header http.Header }
+
+func (w *discardResponseWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = http.Header{}
+	}
+	return w.header
+}
+
+func (w *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (w *discardResponseWriter) WriteHeader(int)             {}
 
 // spotifyIsStreaming is a nil-safe wrapper around the streaming predicate.
 func (s *Server) spotifyIsStreaming() bool {

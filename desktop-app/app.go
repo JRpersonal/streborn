@@ -3419,6 +3419,41 @@ func (a *App) RebootBox(host string, port int) error {
 	return nil
 }
 
+// WakeBox wakes a speaker from standby without starting playback, so the
+// frontend can bring a zone member that a user switched off at the speaker back
+// up before enrolling it in a group (#70). Best-effort: a failure is not fatal to
+// the group form.
+func (a *App) WakeBox(host string, port int) error {
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/wake", "application/json", "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return readHTTPError(resp)
+	}
+	return nil
+}
+
+// RemoveConflictingMod removes the leftovers of a rival cloud-free SoundTouch
+// tool (AfterTouch) from the box so they stop clashing with STR. Surfaced as a
+// one-click button in the settings Actions tab and pointed to from the box-issue
+// banner, so the user never needs an SSH command. Returns the agent's JSON
+// result verbatim (removed entries + whether anything is still detected) for the
+// frontend to show.
+func (a *App) RemoveConflictingMod(host string, port int) (string, error) {
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/box/remove-conflicting-mod", "application/json", "")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return "", readHTTPError(resp)
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return string(b), nil
+}
+
 // VoteStation gives a station a thumbs-up on radio-browser.
 // Best effort; the error is returned but does not have to be shown.
 func (a *App) VoteStation(host string, port int, uuid string) error {

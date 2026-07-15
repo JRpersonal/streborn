@@ -286,6 +286,10 @@ export function RefreshKnownBoxes() {
   return window['go']['main']['App']['RefreshKnownBoxes']();
 }
 
+export function RemoveConflictingMod(arg1, arg2) {
+  return window['go']['main']['App']['RemoveConflictingMod'](arg1, arg2);
+}
+
 export function RemoveManualMediaServer(arg1) {
   return window['go']['main']['App']['RemoveManualMediaServer'](arg1);
 }
@@ -472,6 +476,10 @@ export function UpdateBoxAgent(arg1, arg2) {
 
 export function VoteStation(arg1, arg2, arg3) {
   return window['go']['main']['App']['VoteStation'](arg1, arg2, arg3);
+}
+
+export function WakeBox(arg1, arg2) {
+  return window['go']['main']['App']['WakeBox'](arg1, arg2);
 }
 
 export function WriteLangConfig(arg1, arg2, arg3, arg4) {

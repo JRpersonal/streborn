@@ -8,7 +8,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { FormZone, DissolveZone, BrowserOpenURL } from '../api.js';
+import { FormZone, DissolveZone, WakeBox, BrowserOpenURL } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive } from '../groups.js';
@@ -253,6 +253,11 @@ async function doFormZone(strBoxes) {
   const mode = state.zoneMode || 'native';
   $('zoneResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
+    // Wake the master and every selected member before enrolling them (#70): a box
+    // switched off at the speaker still answers STR but would join the zone silent.
+    // Waking an already-awake box is a fast no-op.
+    const slaveBoxes = strBoxes.filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID]);
+    await Promise.allSettled([master, ...slaveBoxes].map(b => WakeBox(b.host, b.port)));
     const res = await FormZone(master.host, master.port, {
       master: { deviceID: master.deviceID, ip: master.host },
       slaves, stereo: false, mode,

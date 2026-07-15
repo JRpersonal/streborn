@@ -482,18 +482,6 @@ async function loadSettings() {
     var el = document.getElementById('vol'); el.value = s.volume.actual;
     document.getElementById('volval').textContent = s.volume.actual;
   }
-  // Wedged-control hint: the agent latches boxHealth=wedged when the box
-  // accepts transport pushes but never pulls the stream (only a power-cycle
-  // clears that state). Tell the user standing at the speaker what to do.
-  try {
-    const av = await api('/api/agent/version');
-    const card = document.getElementById('wedgeCard');
-    if (card) {
-      const wedged = av && av.boxHealth === 'wedged';
-      card.style.display = wedged ? '' : 'none';
-      if (wedged) document.getElementById('wedgeText').textContent = T.wedgeText;
-    }
-  } catch (e) {}
   if (s.bass && s.bass.available && typeof s.bass.actual === 'number') {
     var b = document.getElementById('bass');
     if (typeof s.bass.min === 'number') b.min = s.bass.min;
@@ -503,6 +491,22 @@ async function loadSettings() {
     document.getElementById('bassval').textContent = s.bass.actual;
     document.getElementById('bassCard').style.display = '';
   }
+}
+
+// refreshWedge toggles the "speaker not responding" card from the agent's own
+// health, independent of /api/box/settings. loadSettings returns early (skipping
+// its old inline wedge check) precisely when the box is wedged, and the 5s poll
+// only refreshed status, so a remote that was already open when the box wedged
+// never saw the banner appear (disc-402). Now it is polled on the interval.
+async function refreshWedge() {
+  try {
+    const av = await api('/api/agent/version');
+    const card = document.getElementById('wedgeCard');
+    if (!card) return;
+    const wedged = av && av.boxHealth === 'wedged';
+    card.style.display = wedged ? '' : 'none';
+    if (wedged) document.getElementById('wedgeText').textContent = T.wedgeText;
+  } catch (e) {}
 }
 
 async function loadPresets() {
@@ -567,8 +571,14 @@ async function loadPeers() {
   if (!list || !list.length) return;
   const box = document.getElementById('peers'); box.innerHTML = '';
   list.forEach(function(p){
-    const a = document.createElement('a'); a.className = 'btn peer'; a.href = p.url; a.rel = 'noopener';
-    a.innerHTML = '<span class="dot"></span>' + escapeHtml(p.name || p.url);
+    const a = document.createElement('a'); a.className = 'btn peer'; a.rel = 'noopener';
+    // reachable is omitted by older agents -> treat as online. An offline peer
+    // (seen recently over mDNS but not answering now) is still shown, dimmed and
+    // non-clickable, so a speaker briefly missed by a sweep does not vanish.
+    const online = p.reachable !== false;
+    if (online) { a.href = p.url; }
+    else { a.setAttribute('aria-disabled', 'true'); a.style.opacity = '0.5'; a.style.pointerEvents = 'none'; a.title = (p.name || p.url); }
+    a.innerHTML = '<span class="dot"' + (online ? '' : ' style="background:#9ca3af"') + '></span>' + escapeHtml(p.name || p.url);
     box.appendChild(a);
   });
   document.getElementById('peersCard').style.display = 'block';
@@ -642,7 +652,7 @@ async function loadVersion() {
 // refreshAll re-fetches every panel at once (used by pull-to-refresh and on
 // regaining foreground), with a short minimum so the spinner does not flash.
 function refreshAll(){
-  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), loadPeers(), loadVersion()]).catch(function(){});
+  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion()]).catch(function(){});
   var minSpin = new Promise(function(r){ setTimeout(r, 500); });
   return Promise.all([work, minSpin]);
 }
@@ -685,8 +695,8 @@ document.addEventListener('visibilitychange', function(){
   }, {passive:true});
 })();
 
-applyStaticI18n(); loadSettings(); loadPresets(); refreshStatus(); loadPeers(); loadVersion();
-setInterval(refreshStatus, 5000);
+applyStaticI18n(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion();
+setInterval(function(){ refreshStatus(); refreshWedge(); }, 5000);
 </script>
 </body>
 </html>

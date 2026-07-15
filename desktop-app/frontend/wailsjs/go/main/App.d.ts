@@ -147,6 +147,8 @@ export function RecordOTAOutcome(arg1:string,arg2:string):Promise<void>;
 
 export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
 
+export function RemoveConflictingMod(arg1:string,arg2:number):Promise<string>;
+
 export function RemoveManualMediaServer(arg1:string):Promise<void>;
 
 export function RepairInstallViaSSH(arg1:string,arg2:string):Promise<main.InstallResult>;
@@ -240,6 +242,8 @@ export function UninstallSTR(arg1:string):Promise<main.UninstallSTRResult>;
 export function UpdateBoxAgent(arg1:string,arg2:number):Promise<void>;
 
 export function VoteStation(arg1:string,arg2:number,arg3:string):Promise<void>;
+
+export function WakeBox(arg1:string,arg2:number):Promise<void>;
 
 export function WriteLangConfig(arg1:string,arg2:string,arg3:string,arg4:number):Promise<void>;
 
