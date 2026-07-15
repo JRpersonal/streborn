@@ -1,10 +1,67 @@
 package presets
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 )
+
+// A primary presets.json truncated to 0 bytes (the overnight-standby power-cut
+// loss) must be recovered from the durable backup on the next Load, and the
+// primary rewritten from it.
+func TestBackupRecoversZeroedPrimary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "presets.json")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(new): %v", err)
+	}
+	if err := s.SetSlot(Preset{Slot: 1, Name: "NDR2", Type: "radio", StreamURL: "http://example/ndr2.mp3"}); err != nil {
+		t.Fatalf("SetSlot: %v", err)
+	}
+	// The save must have produced a durable backup.
+	if _, err := os.Stat(path + ".bak"); err != nil {
+		t.Fatalf("backup not written: %v", err)
+	}
+	// Simulate the power-cut loss: primary is now 0 bytes.
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(after zeroing): %v", err)
+	}
+	got, ok := reloaded.Get(1)
+	if !ok || got.Name != "NDR2" || got.StreamURL != "http://example/ndr2.mp3" {
+		t.Fatalf("preset not recovered from backup: %+v ok=%v", got, ok)
+	}
+	// The primary must have been rewritten (non-empty) so the box is whole again.
+	if b, _ := os.ReadFile(path); len(b) == 0 {
+		t.Fatal("primary was not restored from backup")
+	}
+}
+
+// An explicit empty preset set ({"presets":null}) is a valid state and must NOT
+// be overridden by the backup, or clearing presets would be impossible.
+func TestExplicitEmptyNotRecovered(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "presets.json")
+	// A backup exists with content...
+	if err := os.WriteFile(path+".bak", []byte(`{"presets":[{"slot":1,"name":"Old"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// ...but the primary is a deliberate empty set, not a 0-byte loss.
+	if err := os.WriteFile(path, []byte(`{"presets":null}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if n := len(s.All()); n != 0 {
+		t.Fatalf("explicit empty set was overridden by backup: %d presets", n)
+	}
+}
 
 // normalize must carry the Spotify fields (Type/URI/Account) through, and
 // keep defaulting Type to "radio" for legacy entries that omit it.
