@@ -125,9 +125,19 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger
 	}
 
 	// Phase 2: still firmly asleep after the grace -> no user wake in progress,
-	// so this is a genuine STR-initiated wake. Toggle it on.
+	// so this is a genuine STR-initiated wake. Send ONE `sys power` toggle, then
+	// poll patiently for the box to wake; only re-toggle if it is STILL firmly
+	// asleep after a long beat.
+	//
+	// `sys power` is a TOGGLE (see PowerOn). Re-sending it while a SLOW box is
+	// still coming out of standby flips it back off. A soundbar (SoundTouch 300)
+	// wakes slowly enough that the old "re-send every 800ms" toggled it
+	// on/off/on/off five or six times and drove it into its alternating-LED
+	// recovery-blink state, which only a manual power-cycle clears (Jens' ST300,
+	// 2026-07-15). The fast SoundTouch 10/20/30 wake within the first poll, so
+	// they still take a single toggle and this changes nothing for them.
+	const toggleEvery = 4 * time.Second
 	for i := 0; ; i++ {
-		// Check first: is the box maybe already awake?
 		state, err := readSource(ctx, client, infoURL)
 		if err == nil && state != "STANDBY" {
 			logPhase("wake phase: already awake", "attempt", i, "source", state)
@@ -138,26 +148,32 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger
 		} else {
 			logPhase("wake phase: STANDBY, sending sys power", "attempt", i, "source", state)
 		}
-		// Standby or unclear state -> send power on.
 		if pwrErr := PowerOn(ctx, host); pwrErr != nil {
 			logPhase("wake phase: sys power write failed", "attempt", i, "err", pwrErr.Error())
 		}
-		// Short pause so the box can process the command.
-		select {
-		case <-ctx.Done():
-			logPhase("wake phase: ctx cancelled", "attempt", i, "err", ctx.Err().Error())
-			return ctx.Err()
-		case <-time.After(800 * time.Millisecond):
-		}
-		// Check again
-		state, err = readSource(ctx, client, infoURL)
-		if err == nil && state != "STANDBY" {
-			logPhase("wake phase: woke", "attempt", i, "source", state)
-			return nil
-		}
-		if time.Now().After(deadline) {
-			logPhase("wake phase: timeout", "attempts", i+1, "last_source", state)
-			return fmt.Errorf("box stays in STANDBY after %d attempts", i+1)
+		toggledAt := time.Now()
+		// Poll for the wake WITHOUT re-toggling, giving a slow box time to come up
+		// rather than toggling it back off. Re-toggle only after toggleEvery of
+		// continued standby (a toggle the box genuinely ignored), never mid-wake.
+		for {
+			select {
+			case <-ctx.Done():
+				logPhase("wake phase: ctx cancelled", "attempt", i, "err", ctx.Err().Error())
+				return ctx.Err()
+			case <-time.After(400 * time.Millisecond):
+			}
+			state, err = readSource(ctx, client, infoURL)
+			if err == nil && state != "STANDBY" {
+				logPhase("wake phase: woke", "attempt", i, "source", state)
+				return nil
+			}
+			if time.Now().After(deadline) {
+				logPhase("wake phase: timeout", "attempts", i+1, "last_source", state)
+				return fmt.Errorf("box stays in STANDBY after %d attempts", i+1)
+			}
+			if time.Since(toggledAt) >= toggleEvery {
+				break // still firmly asleep after a long beat -> re-toggle
+			}
 		}
 	}
 }
