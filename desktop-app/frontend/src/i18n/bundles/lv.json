@@ -329,7 +329,7 @@
   "update.tookLongerToast": "Skaļrunim vajag ilgāk nekā gaidīts. Pārbaudiet strāvu / tīklu.",
   "update.deliveringSpotify": "Spotify dzinis tiek nosūtīts uz skaļruni...",
   "update.spotifyFinalStep": "Skaļrunis atkal darbojas. Tiek pabeigta Spotify iestatīšana un skaļrunis tiek restartēts vēlreiz, lai to aktivizētu, atlikušas {{remaining}}...",
-  "update.spotifyDoneToast": "Spotify dzinis instalēts.",
+  "update.spotifyDoneToast": "Spotify dzinis instalēts. Pirmajā atskaņošanas reizē skaļrunis var uz brīdi restartēties, lai pabeigtu, tas ir normāli.",
   "update.spotifyDeferredToast": "Skaļrunis atjaunināts. Spotify dzini pagaidām nevarēja instalēt; tas tiks piegādāts nākamreiz, kad atvērsiet šo skaļruni.",
   "update.spotifyTooFullToast": "Skaļrunis atjaunināts. Tajā nepietiek brīvas vietas Spotify dzinim; atbrīvojiet nedaudz vietas, un tas tiks instalēts automātiski.",
   "update.failed": "Atjaunināt neizdevās: {{err}}\n\nJa skaļrunis neatbild, uz brīdi atvienojiet to no strāvas un pievienojiet atkal.",

@@ -329,7 +329,7 @@
   "update.tookLongerToast": "El altavoz tarda más de lo previsto. Comprueba la alimentación / la red.",
   "update.deliveringSpotify": "Enviando el motor de Spotify al altavoz...",
   "update.spotifyFinalStep": "El altavoz se ha reiniciado. Finalizando la configuración de Spotify y reiniciando el altavoz una vez más para activarlo, quedan {{remaining}}...",
-  "update.spotifyDoneToast": "Motor de Spotify instalado.",
+  "update.spotifyDoneToast": "Motor de Spotify instalado. La primera vez que reproduzcas, el altavoz puede reiniciarse un momento para terminar, es normal.",
   "update.spotifyDeferredToast": "Altavoz actualizado. El motor de Spotify aún no se pudo instalar; se entregará la próxima vez que abras este altavoz.",
   "update.spotifyTooFullToast": "Altavoz actualizado. No hay suficiente espacio libre para el motor de Spotify; libera algo de espacio en el altavoz y se instalará automáticamente.",
   "update.failed": "Error en la actualización: {{err}}\n\nSi el altavoz ya no responde, desconecta brevemente la alimentación y vuelve a conectarla.",

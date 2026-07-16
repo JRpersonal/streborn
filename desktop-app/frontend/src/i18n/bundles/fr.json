@@ -329,7 +329,7 @@
   "update.tookLongerToast": "L'enceinte met plus de temps que prévu. Vérifiez l'alimentation / le réseau.",
   "update.deliveringSpotify": "Installation du module Spotify sur l'enceinte...",
   "update.spotifyFinalStep": "L'enceinte a redémarré. Finalisation de la configuration Spotify et redémarrage de l'enceinte une dernière fois pour l'activer, {{remaining}} restant...",
-  "update.spotifyDoneToast": "Moteur Spotify installé.",
+  "update.spotifyDoneToast": "Moteur Spotify installé. À la première lecture, l'enceinte peut redémarrer brièvement pour terminer, c'est normal.",
   "update.spotifyDeferredToast": "Enceinte mise à jour. Le moteur Spotify n'a pas encore pu être installé ; il sera livré la prochaine fois que vous ouvrirez cette enceinte.",
   "update.spotifyTooFullToast": "Enceinte mise à jour. Il n'y a pas assez d'espace libre pour le moteur Spotify ; libérez de l'espace sur l'enceinte et il s'installera automatiquement.",
   "update.failed": "Échec de la mise à jour : {{err}}\n\nSi l'enceinte ne répond plus, débranchez brièvement l'alimentation puis rebranchez.",
