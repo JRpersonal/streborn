@@ -1090,16 +1090,32 @@ function renderBoxSettings(s, box) {
       </div>`;
     }
 
+    // "Update all (N)" alternative to the single-speaker update, shown here in
+    // Settings whenever 2+ speakers need an update, regardless of whether THIS
+    // one does. Previously the button only appeared inside the selected box's
+    // update banner, so a user whose selected speaker was already current could
+    // not find it at all (Michal, 6 speakers, 2026-07-16).
+    let updateAllBtn = '';
+    try {
+      const n = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && deps.boxNeedsUpdate && deps.boxNeedsUpdate(b)).length;
+      if (n >= 2 && !state.otaInProgress && deps.updateAllBoxes) {
+        updateAllBtn = `<button class="btn btn-mini btn-secondary" id="settingsUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: n }))} <span class="beta-tag">${escapeHtml(t('common.beta'))}</span></button>`;
+      }
+    } catch { /* box list not ready */ }
+
     // Prominent update banner at the very TOP of Speaker Settings whenever an
-    // update is available (softwareBtn is only set then). Moved here from the
-    // music view so normal users see it where they manage the speaker and do
-    // not mis-click it while just listening. The update button lives in the
-    // banner now; the software kv-row below keeps the version status text.
-    const updateBanner = softwareBtn ? `
+    // update is available (softwareBtn is only set then) OR two or more speakers
+    // can be updated together (updateAllBtn). Moved here from the music view so
+    // normal users see it where they manage the speaker. The update button lives
+    // in the banner now; the software kv-row below keeps the version status text.
+    const bannerMsg = softwareBtn
+      ? `<b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: box.friendlyName || box.name || box.host }))}</b>`
+      : `<b>${escapeHtml(t('updateAll.title'))}</b>`;
+    const updateBanner = (softwareBtn || updateAllBtn) ? `
       <div class="update-banner" style="margin-bottom:14px">
-        <div class="update-msg"><b>${escapeHtml(t('update.speakerUpdateAvailFor', { name: box.friendlyName || box.name || box.host }))}</b><br>
+        <div class="update-msg">${bannerMsg}<br>
           <small class="muted">${escapeHtml(t('update.rebootNote'))}</small></div>
-        ${softwareBtn}
+        ${softwareBtn}${updateAllBtn}
       </div>` : '';
     body.innerHTML = updateBanner + `
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.softwareLabel'))}</span>
@@ -1118,6 +1134,8 @@ function renderBoxSettings(s, box) {
       // OTA-ing the music-tab box instead of the one shown here (#105).
       ub.onclick = () => deps.doBoxUpdate(box);
     }
+    const uaAll = $('settingsUpdateAllBtn');
+    if (uaAll && deps.updateAllBoxes) uaAll.onclick = () => deps.updateAllBoxes();
     const sb = $('securityRebootBtn');
     if (sb) sb.onclick = async () => {
       const ok = await confirmWarn(

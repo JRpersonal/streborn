@@ -338,7 +338,7 @@ initSpotifyView({
     .filter(b => b && b.kind !== 'stock' && b.deviceID && b.host)
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
-initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab });
+initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab });
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, boxFetch, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initPodcastsView();
@@ -1043,6 +1043,7 @@ $('view-box').innerHTML = `
   </div>
   <div id="boxControls" class="hidden">
     <div class="status-bar" id="statusBar" role="status" aria-live="polite"></div>
+    <div class="group-control" id="groupControl"></div>
     <div class="controls">
       <button class="btn btn-mini hidden" id="trackPrevBtn" title="${escapeAttr(t('controls.prev'))}" aria-label="${escapeAttr(t('controls.prev'))}">&#9198;</button>
       <button class="btn" id="pauseBtn">&#9208; ${escapeHtml(t('controls.pause'))}</button>
@@ -1071,7 +1072,6 @@ $('view-box').innerHTML = `
     <div class="grid" id="presets"></div>
     <div class="preset-copy-row">
       <button class="btn btn-mini preset-transfer-btn" id="presetTransferBtn" aria-label="" title="" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg> ${escapeHtml(t('presets.transferBtn'))}</button>
-      <div class="group-control" id="groupControl"></div>
     </div>
     <div class="search">
       <h3>${escapeHtml(t('search.heading'))} <small>(${escapeHtml(t('search.headingSub'))})</small></h3>
@@ -2374,6 +2374,35 @@ function updateSettingsTabBadge() {
   btn.classList.toggle('has-update', needsUpdate);
 }
 
+// engineHealAt debounces the #406 Spotify-engine self-heal per box (host ->
+// last-attempt ms) so a discovery/selection refresh loop never re-streams the
+// ~16 MB engine repeatedly.
+const engineHealAt = {};
+
+// healMissingEngine re-delivers go-librespot to a box that reports it missing,
+// in the background. A box whose post-update engine delivery was interrupted was
+// left with goLibrespot "missing" forever, because EnsureSpotifyEngine only ran
+// as part of an OTA and the app otherwise saw "version current" and never
+// re-delivered (#406). Now, whenever we read a box's version and the engine is
+// gone, we heal it, so it recovers the next time the speaker is opened, with no
+// re-update. Debounced, best-effort, and a no-op on a dev build with no embedded
+// engine (EnsureSpotifyEngine returns that itself).
+async function healMissingEngine(box) {
+  if (!box || !box.host) return;
+  const now = Date.now();
+  if (now - (engineHealAt[box.host] || 0) < 120000) return; // at most once / 2 min per box
+  engineHealAt[box.host] = now;
+  try {
+    const res = await EnsureSpotifyEngine(box.host, box.port);
+    if (res && res !== 'current' && !/no embedded engine/i.test(res)) {
+      showToast(t('update.spotifyDoneToast'));
+    }
+  } catch (e) {
+    try { console.warn('spotify engine self-heal failed (will retry later)', e); } catch {}
+    engineHealAt[box.host] = now - 90000; // let a still-settling box retry sooner
+  }
+}
+
 async function checkBoxUpdate() {
   if (!state.currentBox || !state.appInfo) return;
   const banner = $('boxUpdateBanner');
@@ -2428,6 +2457,10 @@ async function checkBoxUpdate() {
     const boxBuild = v.build || '';
     const appVer = state.appInfo.version;
     const appBuild = state.appInfo.build || '';
+    // #406 self-heal: re-deliver a missing Spotify engine even when the box is
+    // already on the current version (the case that never recovered before, since
+    // the version comparison below returns early for a same-version box).
+    if (v && v.goLibrespot === 'missing') healMissingEngine(state.currentBox);
     // Direction matters. The speaker update pushes THIS app's embedded agent, so
     // it only makes sense when the app is newer than the box. The old code fired
     // on any difference and so offered "Aktualisieren" even when the box was

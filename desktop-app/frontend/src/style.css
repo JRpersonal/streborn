@@ -1653,14 +1653,21 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 /* Group control: chips to add/remove the other speakers to a group led by the
    selected one, plus one volume slider for the whole group. Own line under the
    Transfer button so it never crowds it. */
-.group-control { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.group-control { flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; }
 .group-control:empty { display: none; margin: 0; }
+/* The label + notes use the .muted utility, which carries a global 10px padding
+   (for empty-state blocks). Here that indented the label and pushed it off its
+   chips, so reset it: the label then aligns flush left and sits tight (4px, the
+   flex gap) above the buttons it labels. */
+.group-control .muted { padding: 0; }
+.group-label { line-height: 1.2; }
 .group-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .group-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; font-size: 12px; line-height: 1.5; border: 1px solid var(--c-border); border-radius: 14px; background: var(--c-surface); color: var(--c-text); cursor: pointer; }
 .group-chip:hover { border-color: var(--brand); }
 .group-chip.in-group { border-color: var(--signal-green); background: rgba(102, 204, 102, 0.12); color: var(--signal-green); }
 .group-chip-mark { font-weight: 700; opacity: 0.85; }
-.group-vol-row { display: flex; align-items: center; gap: 8px; max-width: 360px; }
+/* The group volume is a separate control, so set it apart from the chips above. */
+.group-vol-row { display: flex; align-items: center; gap: 8px; max-width: 360px; margin-top: 6px; }
 .group-vol-row input[type=range] { flex: 1; min-width: 120px; }
 .preset-transfer-btn { display: inline-flex; align-items: center; gap: 6px; line-height: 1; }
 .preset-transfer-btn svg { flex: 0 0 auto; }
