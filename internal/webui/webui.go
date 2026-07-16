@@ -750,6 +750,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/manifest.webmanifest", s.handleManifest)
 	mux.HandleFunc("/icon.png", s.handleIcon)
+	mux.HandleFunc("/icon-large.png", s.handleIconLarge)
 	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -7341,6 +7342,10 @@ func (s *Server) handleManifest(w http.ResponseWriter, _ *http.Request) {
 		"icons": []map[string]string{
 			{"src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
 			{"src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+			// A >= 512px icon is required for Android to offer an installable
+			// home-screen app rather than only a bookmark; the 1024x1024 covers it.
+			{"src": "/icon-large.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any"},
+			{"src": "/icon-large.png", "sizes": "1024x1024", "type": "image/png", "purpose": "maskable"},
 		},
 	})
 }
@@ -7352,4 +7357,11 @@ func (s *Server) handleIcon(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
 	_, _ = w.Write(iconPNG)
+}
+
+// handleIconLarge serves the 1024x1024 icon for the PWA manifest's >= 512px slot.
+func (s *Server) handleIconLarge(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
+	_, _ = w.Write(iconLargePNG)
 }
