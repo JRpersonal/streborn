@@ -371,6 +371,7 @@
   "update.deliveringSpotify": "Spotify-Komponente wird auf den Lautsprecher übertragen...",
   "update.spotifyFinalStep": "Lautsprecher ist wieder da. Spotify wird eingerichtet, der Lautsprecher startet dazu noch einmal neu, noch {{remaining}} ...",
   "update.spotifyDoneToast": "Spotify-Komponente installiert. Beim ersten Abspielen startet der Lautsprecher evtl. kurz neu, um fertig zu werden, das ist normal.",
+  "update.st300PowerCycle": "SoundTouch 300: zum Abschluss 10 Sekunden vom Strom trennen, die Lichter blinken bis dahin.",
   "update.spotifyDeferredToast": "Lautsprecher aktualisiert. Die Spotify-Komponente konnte noch nicht installiert werden; sie wird beim nächsten Öffnen dieses Lautsprechers übertragen.",
   "update.spotifyTooFullToast": "Lautsprecher aktualisiert. Auf dem Lautsprecher ist nicht genug Speicher für die Spotify-Komponente frei. Gib etwas Speicher frei, dann wird sie automatisch installiert.",
   "update.failed": "Update fehlgeschlagen: {{err}}\n\nFalls der Lautsprecher danach nicht mehr antwortet, trenne kurz den Strom und stecke ihn wieder an.",

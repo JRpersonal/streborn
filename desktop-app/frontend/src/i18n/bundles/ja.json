@@ -330,6 +330,7 @@
   "update.deliveringSpotify": "Spotifyエンジンをスピーカーに転送しています...",
   "update.spotifyFinalStep": "スピーカーが復帰しました。Spotify の設定を完了し、有効化のためにもう一度スピーカーを再起動します。残り {{remaining}}...",
   "update.spotifyDoneToast": "Spotify エンジンをインストールしました。最初の再生時にスピーカーが仕上げのため一度再起動することがありますが、正常です。",
+  "update.st300PowerCycle": "SoundTouch 300: 完了するには10秒間電源を抜いてください。それまでランプが点滅します。",
   "update.spotifyDeferredToast": "スピーカーを更新しました。Spotify エンジンはまだインストールできませんでした。次にこのスピーカーを開いたときに配信されます。",
   "update.spotifyTooFullToast": "スピーカーを更新しました。Spotify エンジン用の空き容量が足りません。スピーカーの空き容量を確保すると自動的にインストールされます。",
   "update.failed": "更新に失敗しました: {{err}}\n\nスピーカーが応答しなくなった場合は、電源を一度抜いて入れ直してください。",

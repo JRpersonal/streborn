@@ -371,6 +371,7 @@
   "update.deliveringSpotify": "Delivering the Spotify engine to the speaker...",
   "update.spotifyFinalStep": "Speaker is back up. Finishing Spotify setup and restarting the speaker once more to activate it, {{remaining}} left...",
   "update.spotifyDoneToast": "Spotify engine installed. The first time you play, the speaker may briefly restart to finish, that's normal.",
+  "update.st300PowerCycle": "SoundTouch 300: unplug it for 10 seconds to finish, its lights blink until then.",
   "update.spotifyDeferredToast": "Speaker updated. The Spotify engine could not be installed yet; it will be delivered next time you open this speaker.",
   "update.spotifyTooFullToast": "Speaker updated. There isn't enough free space on it for the Spotify engine. Free some space on the speaker and it installs automatically.",
   "update.failed": "Update failed: {{err}}\n\nIf the speaker no longer answers, briefly unplug power and plug it back in.",

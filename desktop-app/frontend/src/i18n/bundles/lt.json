@@ -330,6 +330,7 @@
   "update.deliveringSpotify": "Į garsiakalbį siunčiamas „Spotify“ modulis...",
   "update.spotifyFinalStep": "Kolonėlė vėl veikia. Užbaigiama „Spotify“ sąranka ir kolonėlė paleidžiama iš naujo, kad būtų suaktyvinta, liko {{remaining}}...",
   "update.spotifyDoneToast": "„Spotify“ variklis įdiegtas. Pirmą kartą leidžiant garsiakalbis gali trumpai persijungti, kad užbaigtų, tai normalu.",
+  "update.st300PowerCycle": "SoundTouch 300: kad užbaigtumėte, 10 sekundžių atjunkite maitinimą; iki tol lemputės mirksi.",
   "update.spotifyDeferredToast": "Kolonėlė atnaujinta. „Spotify“ variklio kol kas nepavyko įdiegti; jis bus pristatytas kitą kartą atidarius šią kolonėlę.",
   "update.spotifyTooFullToast": "Kolonėlė atnaujinta. Joje nepakanka laisvos vietos „Spotify“ varikliui; atlaisvinkite šiek tiek vietos ir jis bus įdiegtas automatiškai.",
   "update.failed": "Atnaujinti nepavyko: {{err}}\n\nJei garsiakalbis neatsako, trumpam atjunkite jį nuo maitinimo ir vėl prijunkite.",

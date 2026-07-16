@@ -3047,6 +3047,10 @@ async function doBoxUpdate(targetBox) {
         showToast(t('update.tookLongerToast'));
       }
     }
+    // The SoundTouch 300 drops into its blinking update-pending state after an
+    // OTA and needs a manual power-cycle to finish; the agent cannot clear it, so
+    // tell the user (#ST300 blink, Michal + Jens 2026-07-16).
+    if ((targetBox.model || '').includes('300')) showToast(t('update.st300PowerCycle'));
     // Refresh app state regardless of confirmation so the user sees current
     // truth (either updated or still in OTA). This is BEST-EFFORT and must never
     // surface as "Update failed": the box is typically still mid-reboot here, so
@@ -3216,7 +3220,23 @@ async function updateAllBoxes() {
         }
       });
       outcome = result.outcome;
-      if (outcome === 'done') setRow(b.host, { phaseText: t('updateAll.phase.done'), pct: 100, barClass: 'ua-done' });
+      // Honesty check: a box can LOSE its just-delivered engine to an extra
+      // reboot AFTER the engine step returned (tight-NAND ST30, the Portable's
+      // battery/fd-leak reboot). So before calling it "done", confirm the engine
+      // is actually present; if it is gone, report "Spotify pending" (deferred)
+      // instead of a green "done". The #406 self-heal re-delivers it on next open.
+      if (outcome === 'done') {
+        try {
+          const fv = await BoxAgentVersion(b.host, b.port);
+          if (fv && fv.goLibrespot === 'missing') outcome = 'partial';
+        } catch { /* box still settling: keep the reported outcome */ }
+      }
+      // The SoundTouch 300 drops into its blinking update-pending state after an
+      // OTA and is non-functional until it is unplugged; the agent cannot clear
+      // it. Tell the user that on the row rather than a misleading plain "done".
+      if (outcome !== 'failed' && (b.model || '').includes('300')) {
+        setRow(b.host, { phaseText: t('update.st300PowerCycle'), pct: 100, barClass: 'ua-defer' });
+      } else if (outcome === 'done') setRow(b.host, { phaseText: t('updateAll.phase.done'), pct: 100, barClass: 'ua-done' });
       else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.deferred'), pct: 100, barClass: 'ua-defer' });
       else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
     } catch (e) {
