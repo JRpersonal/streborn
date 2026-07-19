@@ -139,7 +139,9 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	if !ok {
 		return errors.New("empty queue")
 	}
-	s.ClearUserStop()
+	// A queue start is an explicit user play: clear the stop latches and anchor
+	// the standby-flip discriminator (#419).
+	s.NoteUserPlay()
 	// Record the folder as a Recently-played card before the first push, so that
 	// push (and every auto-advance after it) is hung under it. The replay target
 	// and cover fall back to the first track when the caller left them empty.
