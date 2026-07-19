@@ -98,3 +98,14 @@ func TestPhoneRemoteLocalesHavePlayLabel(t *testing.T) {
 		t.Fatalf("expected one play label per locale bundle: %d bundles but %d play keys", nowCount, len(playKeys))
 	}
 }
+
+// TestPhoneRemoteHidesUnavailableSources guards #417/#418: the input buttons
+// must be gated on the box's own /sources list so a Wave (no selectable AUX
+// through the pedestal) does not offer a dead AUX button.
+func TestPhoneRemoteHidesUnavailableSources(t *testing.T) {
+	for _, tok := range []string{`id="btnSrcAux"`, `id="btnSrcBt"`, "have.AUX", "have.BLUETOOTH", "s.sources"} {
+		if !strings.Contains(indexHTML, tok) {
+			t.Fatalf("phone remote missing source-availability gating token %q (#417/#418)", tok)
+		}
+	}
+}
