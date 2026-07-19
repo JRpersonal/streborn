@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "ПЗ",
   "settingsView.usbStickLabel": "USB-накопичувач",
   "settingsView.swCurrent": "актуально",
+  "settingsView.swCurrentNoEngine": "актуально, але відсутній рушій Spotify",
   "settingsView.swUpdateAvail": "Доступне оновлення",
   "settingsView.swOutdated": "застаріло",
   "settingsView.stickDetected": "виявлено",

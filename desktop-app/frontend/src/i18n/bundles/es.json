@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "Software",
   "settingsView.usbStickLabel": "Memoria USB",
   "settingsView.swCurrent": "actualizado",
+  "settingsView.swCurrentNoEngine": "actualizado, pero falta el motor de Spotify",
   "settingsView.swUpdateAvail": "Actualización disponible",
   "settingsView.swOutdated": "desactualizado",
   "settingsView.stickDetected": "detectada",

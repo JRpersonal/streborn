@@ -10,8 +10,13 @@
 # appicon.png: that is the icon source Wails rasterises into the window /
 # exe / taskbar icon at build time, so CI needs it in the repo. (bin/,
 # windows/icon.ico, etc. stay ignored and are regenerated each build.)
+# darwin/Info.plist is a tracked TEMPLATE (adds the macOS local-network
+# privacy keys, #420); Wails only generates a default when it is absent.
 /desktop-app/build/*
 !/desktop-app/build/appicon.png
+!/desktop-app/build/darwin/
+/desktop-app/build/darwin/*
+!/desktop-app/build/darwin/Info.plist
 /desktop-app/frontend/dist/
 /desktop-app/frontend/node_modules/
 /desktop-app/desktop-app/

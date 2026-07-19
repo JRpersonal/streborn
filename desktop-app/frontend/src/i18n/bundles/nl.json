@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "Software",
   "settingsView.usbStickLabel": "USB-stick",
   "settingsView.swCurrent": "up-to-date",
+  "settingsView.swCurrentNoEngine": "actueel, maar de Spotify-engine ontbreekt",
   "settingsView.swUpdateAvail": "Update beschikbaar",
   "settingsView.swOutdated": "verouderd",
   "settingsView.stickDetected": "gedetecteerd",

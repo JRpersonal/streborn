@@ -247,13 +247,13 @@ function recentCardHTML(c, i) {
   let actions;
   if (isRadio) {
     const fav = deps.isFav ? deps.isFav(cardStation(c)) : false;
-    actions = `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9654;</button>`
+    actions = `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>`
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`
       + `<button class="btn btn-mini rc-fav${fav ? ' is-fav' : ''}" id="recFav${i}" title="${escapeAttr(fav ? t('search.removeFav') : t('search.addFav'))}">${fav ? '&#9733;' : '&#9734;'}</button>`;
   } else {
     const canPlay = c.playSlot != null;
     actions = (canPlay
-      ? `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9654;</button>`
+      ? `<button class="btn btn-mini rc-play" id="recPlay${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>`
       : '')
       + `<button class="btn btn-mini rc-pick" id="recPick${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>`;
   }
@@ -263,7 +263,7 @@ function recentCardHTML(c, i) {
   // "Now playing" badge, reusing the preset tile's own state label so the wording
   // matches the preset card exactly (and is already translated in every bundle).
   const nowBadge = nowPlaying
-    ? ` <span class="rc-now-badge">&#9654; ${escapeHtml(t('preset.statePlay'))}</span>`
+    ? ` <span class="rc-now-badge">&#9205; ${escapeHtml(t('preset.statePlay'))}</span>`
     : '';
   return `<div class="recent-card rc-${escapeAttr(c.source)}${nowPlaying ? ' rc-now' : ''}">`
     + `<div class="rc-head">${logoImg(c)}`

@@ -1798,7 +1798,11 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
 .update-banner { background: var(--brand-bg); border: 1px solid var(--brand-border); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
 .update-banner b { color: var(--brand-text); }
 .update-banner small { color: var(--brand-text-mid); margin-left: 6px; }
-.update-banner .btn { flex-shrink: 0; }
+/* OTA status prose (setStatus) lands in these buttons. Bound their width and
+   let the sentence wrap in readable lines: unbounded, a long status either
+   collapsed to one character per line or pushed the banner off the page
+   (discussion #406, speaker settings after an update). */
+.update-banner .btn { flex-shrink: 0; max-width: 55%; white-space: normal; }
 /* The text column must take the row's free width and wrap normally. As a bare
    flex item it defaulted to min-content and collapsed to a ~50px column (one word
    per line) while the update/Spotify-finishing status sat beside it (#197). */

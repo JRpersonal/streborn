@@ -974,7 +974,16 @@ function renderBoxSettings(s, box) {
         : `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
       if (cmp === 0) {
         const buildSuffix = boxBuild ? ` (Build ${escapeHtml(boxBuild)})` : '';
-        softwareLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.swCurrent'))}</span> <span class="muted small">${escapeHtml(boxVer)}${buildSuffix}</span>`;
+        if (v.goLibrespot === 'missing') {
+          // The agent is current but the Spotify engine sidecar is absent (an
+          // interrupted engine delivery, discussion #406). A bare green "up to
+          // date" here hid that; say it and offer the update button, which
+          // re-delivers the engine.
+          softwareLine = `<span class="fw-warn">${escapeHtml(t('settingsView.swCurrentNoEngine'))}</span> <span class="muted small">${escapeHtml(boxVer)}${buildSuffix}</span>`;
+          softwareBtn = otaBtn();
+        } else {
+          softwareLine = `<span class="fw-ok">&#10003; ${escapeHtml(t('settingsView.swCurrent'))}</span> <span class="muted small">${escapeHtml(boxVer)}${buildSuffix}</span>`;
+        }
       } else if (cmp > 0) {
         // When only the build stamp differs (same version string), show the
         // build on both sides so the line is not the confusing "v0.8.1 -> v0.8.1"

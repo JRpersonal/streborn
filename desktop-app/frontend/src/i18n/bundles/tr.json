@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "Yazılım",
   "settingsView.usbStickLabel": "USB bellek",
   "settingsView.swCurrent": "en güncel",
+  "settingsView.swCurrentNoEngine": "güncel, ancak Spotify motoru eksik",
   "settingsView.swUpdateAvail": "Güncelleme mevcut",
   "settingsView.swOutdated": "güncel değil",
   "settingsView.stickDetected": "algılandı",

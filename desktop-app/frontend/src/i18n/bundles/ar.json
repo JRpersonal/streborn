@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "البرنامج",
   "settingsView.usbStickLabel": "ذاكرة USB",
   "settingsView.swCurrent": "محدّث",
+  "settingsView.swCurrentNoEngine": "محدّث، لكن محرك Spotify مفقود",
   "settingsView.swUpdateAvail": "يتوفّر تحديث",
   "settingsView.swOutdated": "قديم",
   "settingsView.stickDetected": "مكتشفة",

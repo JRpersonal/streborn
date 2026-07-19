@@ -240,13 +240,21 @@ let toastTimer = null;
 // next showToast call replaces it - used for "in progress" states so a slow
 // background action (e.g. a preset+login transfer over the LAN) does not look
 // idle and invite a second button press.
-export function showToast(msg, ms = 2200) {
+export function showToast(msg, ms = -1) {
   const t = $('toast');
   if (!t) return;
   t.textContent = msg;
   t.classList.add('show');
   if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
-  if (ms > 0) {
-    toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  // ms 0 = sticky (the caller hides it later, e.g. the copy-presets progress).
+  if (ms === 0) return;
+  // Default: scale the display time with the amount of text. The old fixed
+  // 2.2 s was too short to read a two-line message (discussion #406); bounded
+  // so short toasts stay snappy and long ones do not linger forever. An
+  // explicit positive ms still wins.
+  if (ms < 0) {
+    const words = String(msg).trim().split(/\s+/).length;
+    ms = Math.min(8000, Math.max(2600, 1200 + words * 320));
   }
+  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
 }

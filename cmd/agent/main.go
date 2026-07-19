@@ -532,6 +532,10 @@ func run() error {
 		// Let the hardware-recall verify stand down when the user powered the box
 		// off mid-recall, so it does not re-push the stream into a power-off (#197).
 		recentlyPoweredOff: webuiSrv.RecentlyPoweredOff,
+		// A hardware preset press is the strongest possible "play" signal: it
+		// clears any deliberate-stop latch an earlier (or spontaneous, #419)
+		// power-off armed, so the recall is not suppressed by stale intent.
+		noteUserPlay: webuiSrv.NoteUserPlay,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -576,6 +580,10 @@ func run() error {
 	// Let the WebUI fill the Wi-Fi signal from the gabbo stream on BCO
 	// boxes, whose /networkInfo reports no signal.
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)
+	// Let HandleEnterStandby tell a physical power-off (accompanied by a
+	// userActivityUpdate key frame) from the firmware spontaneously powering
+	// off STR's UPnP source (#419).
+	webuiSrv.SetUserActivityFn(wsClient.LastUserActivity)
 
 	// When the box rejects a source as not-logged-in (errorUpdate 1036, seen on
 	// the SoundTouch 300), force a re-login and stand the recall retry down so
@@ -1140,6 +1148,11 @@ type presetWsHandler struct {
 	// still runs. The queue lives in webui, so the queue start happens there.
 	// Wired to webui.Server.RecallSlot. nil-safe.
 	recallSlot func(ctx context.Context, slot int) bool
+	// noteUserPlay records a hardware preset press as an explicit user play in
+	// the webui: it clears the deliberate-stop latches (a press outranks any
+	// earlier stop, #419) and anchors the standby-flip discriminator. Wired to
+	// webui.Server.NoteUserPlay. nil-safe.
+	noteUserPlay func()
 }
 
 // OnPresetsChanged forwards the box's own preset list to the webui (Option C).
@@ -1165,6 +1178,14 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			h.logger.Info("preset webhook replace mode: withholding preset playback", "slot", slot)
 			return
 		}
+	}
+	// The press is the user explicitly asking for playback: clear any stale
+	// deliberate-stop latch BEFORE the recall so a preceding (or spontaneous,
+	// #419) power-off cannot suppress it, and anchor the webui's standby-flip
+	// discriminator so a source flip during this recall is not read as a
+	// user power-off.
+	if h.noteUserPlay != nil {
+		h.noteUserPlay()
 	}
 	// A queue preset (a saved DLNA folder) is recalled by the webui's play-queue,
 	// not the single-track UPnP play below. Let it claim the press; it returns

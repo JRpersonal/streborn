@@ -155,6 +155,13 @@ type Client struct {
 	// NAND log, while an isolated thumb press is still recorded. See
 	// noteUserActivity.
 	lastUserActivityLog time.Time
+	// lastUserActivityAt is when the box last emitted ANY userActivityUpdate
+	// frame (box buttons and IR remote keys alike; the firmware sends it as a
+	// generic ping alongside the concrete event). The webui's standby handler
+	// reads it (via LastUserActivity) to tell a physical power-off, which is
+	// accompanied by such a frame, from the firmware spontaneously powering
+	// off STR's UPnP source with no user input at all (#419). Guarded by thumbMu.
+	lastUserActivityAt time.Time
 
 	// onLoginError fires when the box rejects a source because it considers
 	// itself not signed into an account (errorUpdate value 1036
@@ -248,6 +255,10 @@ func (c *Client) noteExplainedActivity() {
 func (c *Client) noteUserActivity(ctx context.Context, raw []byte) {
 	c.thumbMu.Lock()
 	defer c.thumbMu.Unlock()
+	// Every userActivityUpdate is a physical key press (box or IR remote),
+	// whether or not it is later explained by a sibling event. Stamp it for
+	// LastUserActivity's spontaneous-power-off discriminator (#419).
+	c.lastUserActivityAt = time.Now()
 	// Record that a userActivity frame arrived at INFO (deduped), independent of
 	// whether the heuristic ends up firing. A "the thumb key does nothing" report
 	// (#187) is otherwise undiagnosable from a bundle: we cannot tell a frame that
@@ -313,6 +324,18 @@ func (c *Client) LastWifiSignal() string {
 // current. connectionState frames only fire on transitions, so anything
 // older describes a long-gone moment (usually the boot association).
 const wifiSignalTTL = 15 * time.Minute
+
+// LastUserActivity returns when the box last reported a userActivityUpdate
+// frame (any physical key on the box or the IR remote), or the zero time if
+// none has been seen since the agent started. The webui's standby handler uses
+// it to tell a user power-off from the firmware spontaneously powering off
+// STR's UPnP source (#419): a real key press is accompanied by such a frame,
+// a spontaneous drop is not.
+func (c *Client) LastUserActivity() time.Time {
+	c.thumbMu.Lock()
+	defer c.thumbMu.Unlock()
+	return c.lastUserActivityAt
+}
 
 // attrValue pulls attr="VALUE" out of a raw XML fragment, or "".
 func attrValue(s, attr string) string {

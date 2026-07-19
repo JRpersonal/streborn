@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "Logiciel",
   "settingsView.usbStickLabel": "Clé USB",
   "settingsView.swCurrent": "à jour",
+  "settingsView.swCurrentNoEngine": "à jour, mais le moteur Spotify est manquant",
   "settingsView.swUpdateAvail": "Mise à jour disponible",
   "settingsView.swOutdated": "obsolète",
   "settingsView.stickDetected": "détectée",

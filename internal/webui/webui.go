@@ -271,6 +271,23 @@ type Server struct {
 	// the clear re-fires on each flip of the UPNP<->STANDBY oscillation so a clear
 	// that lost the ~170 ms race is retried, bounded by standbyClearMinGap.
 	lastStandbyClear time.Time
+	// lastUserPlayStart is when a user last explicitly asked for playback (a
+	// hardware preset press or an app play). HandleEnterStandby reads it to tell
+	// a UPNP->STANDBY flip that interrupts the user's own fresh recall (firmware
+	// settling, #419) from a real power-off, and NoteUserPlay stamps it while
+	// clearing the stop latches (the press is newer intent than any prior stop).
+	// Guarded by standbyStopMu.
+	lastUserPlayStart time.Time
+	// lastSpontResume single-flights the spontaneous-power-off recovery so a
+	// flapping source cannot stack resume goroutines. Guarded by standbyStopMu.
+	lastSpontResume time.Time
+	// userActivityFn reports when the box last emitted a userActivityUpdate
+	// frame (a physical key press, box or IR remote); zero = none seen. Wired to
+	// boxws.LastUserActivity. HandleEnterStandby uses it to recognise the
+	// firmware spontaneously powering off STR's UPnP source with no user input
+	// (#419). nil or all-zero (a firmware that never sends the frame) falls back
+	// to the conservative power-off handling.
+	userActivityFn func() time.Time
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
@@ -1420,6 +1437,9 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		playURL = req.URL
 	}
 	s.logger.Info("play request", "direct", playDirect, "mime", req.Mime, "codec", req.Codec, "url", req.URL)
+	// An explicit app play overrides any earlier stop latch and anchors the
+	// standby-flip discriminator (#419).
+	s.NoteUserPlay()
 	// Advertise the real codec to the box when the caller knows it (a network
 	// library track carries its DLNA-reported MIME, e.g. audio/flac, audio/mp4).
 	// The box keys its decoder off this protocolInfo MIME, so a FLAC/ALAC/M4A
@@ -1487,6 +1507,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "preset not configured", http.StatusNotFound)
 		return
 	}
+	// An explicit preset recall overrides any earlier stop latch and anchors the
+	// standby-flip discriminator (#419). Before the wake: the wake itself can
+	// flip the source states around.
+	s.NoteUserPlay()
 	s.ensureBoxReady(r.Context())
 	// recallStart anchors the verify's stand-down decision: a deliberate user
 	// stop/pause/power-off that arrives AFTER this moment must end the verify
@@ -2843,6 +2867,56 @@ func standbyBounceFixEnabled() bool {
 	return os.Getenv("STR_STANDBY_STOP") != "0"
 }
 
+// spontaneousResumeEnabled gates the #419 spontaneous-power-off recovery.
+// Default on; set STR_SPONT_RESUME=0 on the box to disable it without an OTA.
+func spontaneousResumeEnabled() bool {
+	return os.Getenv("STR_SPONT_RESUME") != "0"
+}
+
+// Discriminator windows for HandleEnterStandby (#419).
+const (
+	// userPlayGuardWindow is how long after a user-initiated play a
+	// UPNP->STANDBY flip is still considered part of that recall settling
+	// (the hardware verify retries for ~30s; the box can flip mid-verify).
+	userPlayGuardWindow = 35 * time.Second
+	// userPlayActivityEpsilon separates the userActivityUpdate that belongs to
+	// the preset press that STARTED the recall (it can trail the
+	// nowSelectionUpdated by a moment) from a genuinely NEW key press during
+	// the recall (e.g. the user pressing power to stop it, the original #197).
+	userPlayActivityEpsilon = 2 * time.Second
+	// spontaneousOffWindow: a UPNP->STANDBY drop with no physical key press
+	// this recent is the firmware powering the source off on its own (#419:
+	// observed correlating with Wi-Fi instability, 40 min into stable playback).
+	spontaneousOffWindow = 12 * time.Second
+	// spontResumeMinGap single-flights the spontaneous recovery.
+	spontResumeMinGap = 30 * time.Second
+	// spontResumeStreamWindow: the recovery only fires when the box was
+	// actively pulling a stream this recently, so STR only ever resumes music
+	// the drop actually interrupted, never long-idle boxes.
+	spontResumeStreamWindow = 60 * time.Second
+)
+
+// SetUserActivityFn wires boxws.LastUserActivity so HandleEnterStandby can tell
+// a physical power-off from a spontaneous firmware source power-off (#419).
+func (s *Server) SetUserActivityFn(fn func() time.Time) {
+	s.userActivityFn = fn
+}
+
+// NoteUserPlay records that the user explicitly asked for playback (hardware
+// preset press or app play). It clears the deliberate-stop latches: the press
+// is newer intent than any earlier stop, so a stand-down armed by a previous
+// power-off must not suppress the recall the user just asked for (#419: after
+// a source bounce every preset press died against the stale latch until a
+// power pull). It also stamps lastUserPlayStart for HandleEnterStandby's
+// mid-recall discriminator.
+func (s *Server) NoteUserPlay() {
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now()
+	s.lastStandbyStop = time.Time{}
+	s.standbyStopMu.Unlock()
+	s.ClearUserStop()
+}
+
 // HandleEnterStandby reacts to the box's own UPnP source dropping to STANDBY
 // (a power-off), seen over gabbo. On some ST20 (scm) firmware the box then
 // oscillates STANDBY->UPNP and switches itself back on because STR's UPnP
@@ -2857,6 +2931,49 @@ func standbyBounceFixEnabled() bool {
 // the user just powered off matches their intent, so the blast radius is small.
 func (s *Server) HandleEnterStandby() {
 	if !standbyBounceFixEnabled() || s.renderer == nil {
+		return
+	}
+
+	// Classify the drop before treating it as a user power-off (#419). Two
+	// non-user cases must NOT arm the deliberate-stop latches, which suppress
+	// every recovery path (wake resume, auto-re-push, recall verify) and left
+	// both of the reporter's boxes silent until a power pull:
+	//
+	//  1. The flip lands moments after the user explicitly asked for playback
+	//     and no NEW key was pressed since: the box is settling/oscillating
+	//     during STR's own recall. Latching here killed the very recall the
+	//     user just requested, and clearing the transport yanked the URI out
+	//     from under the in-flight verify retries (1036 wrong-state loop).
+	//  2. The flip arrives with no physical key press anywhere near it: the
+	//     firmware powered STR's source off on its own (observed correlating
+	//     with Wi-Fi instability). That is a box-side drop, not a user stop,
+	//     so STR may recover the stream instead of standing down.
+	//
+	// A firmware that never emits userActivityUpdate yields a zero lastKey and
+	// falls through to the conservative power-off handling, so #197 behaviour
+	// is unchanged wherever the discriminator has no signal.
+	now := time.Now()
+	s.standbyStopMu.Lock()
+	playStart := s.lastUserPlayStart
+	s.standbyStopMu.Unlock()
+	var lastKey time.Time
+	if s.userActivityFn != nil {
+		lastKey = s.userActivityFn()
+	}
+	// A deliberate stop STR itself initiated (app/phone-remote Stop, Pause or
+	// Standby call NoteUserStop) produces no gabbo key frame, so the activity
+	// discriminator alone would misread the resulting source drop as
+	// spontaneous and wake the box right back up. A fresh user-stop always
+	// means deliberate: keep the conservative handling.
+	deliberateStop := s.userStoppedRecently()
+	recallActive := !playStart.IsZero() && now.Sub(playStart) < userPlayGuardWindow
+	newKeySinceRecall := lastKey.After(playStart.Add(userPlayActivityEpsilon))
+	if recallActive && !newKeySinceRecall && !deliberateStop {
+		s.logger.Info("standby bounce: source dropped during the user's own recall with no new key press, leaving transport and latches alone (#419)")
+		return
+	}
+	if !recallActive && !deliberateStop && !lastKey.IsZero() && now.Sub(lastKey) > spontaneousOffWindow {
+		s.handleSpontaneousSourceOff(now.Sub(lastKey))
 		return
 	}
 
@@ -2900,6 +3017,98 @@ func (s *Server) HandleEnterStandby() {
 	if err := s.renderer.ClearURI(ctx); err != nil {
 		s.logger.Debug("standby bounce: clear transport URI returned", "err", err)
 	}
+}
+
+// handleSpontaneousSourceOff handles a UPNP->STANDBY drop with no physical key
+// press anywhere near it: the firmware powered STR's source off on its own
+// (#419, observed on ST10+ST30 correlating with Wi-Fi/router instability, e.g.
+// 40 min into stable playback). It deliberately does NOT arm the user-stop
+// latches (nobody stopped anything), and when the drop interrupted an actively
+// playing stream it wakes the box and re-pushes it, so the music survives the
+// firmware hiccup instead of staying dead until a power pull.
+func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
+	s.logger.Info("standby bounce: firmware powered off STR's source with no user input, not treating as a user stop (#419)",
+		"lastKeyAgoS", int(sinceKey.Seconds()))
+	if !spontaneousResumeEnabled() {
+		return
+	}
+	// Only recover music the drop actually interrupted: the stream proxy must
+	// have served the box this recently. A long-idle box that drifts to standby
+	// on its own is left alone.
+	if s.streamActivityFn == nil {
+		return
+	}
+	fetch, _ := s.streamActivityFn()
+	if fetch.IsZero() || time.Since(fetch) > spontResumeStreamWindow {
+		return
+	}
+	// Single-flight + crash-loop guard. The #381 attempt counter caps a
+	// firmware that re-drops the source on every recovery at
+	// maxAutoResumeAttempts per window instead of a wake/drop tug-of-war.
+	s.standbyStopMu.Lock()
+	tooSoon := !s.lastSpontResume.IsZero() && time.Since(s.lastSpontResume) < spontResumeMinGap
+	if !tooSoon {
+		s.lastSpontResume = time.Now()
+	}
+	s.standbyStopMu.Unlock()
+	if tooSoon || s.autoResumeBlocked() {
+		return
+	}
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	var boxURL, title, art, mime string
+	var capturedTS time.Time
+	if lp != nil {
+		boxURL, title, art, mime, capturedTS = lp.boxURL, lp.title, lp.art, lp.mime, lp.ts
+	}
+	s.lastPlayMu.Unlock()
+	if boxURL == "" {
+		return
+	}
+	go func() {
+		// Let the flip settle; a genuine user power-off that the activity
+		// discriminator somehow missed reaches stable STANDBY here and the
+		// user-stop latch check below (armed by a STOP_STATE on some models)
+		// still gets a chance to hold it.
+		time.Sleep(3 * time.Second)
+		if s.userStoppedRecently() || s.standbyStoppedRecently() {
+			s.logger.Info("spontaneous-off recovery: a deliberate stop arrived while settling, standing down")
+			return
+		}
+		if s.boxInZone() {
+			s.logger.Info("spontaneous-off recovery: box is in a zone, standing down")
+			return
+		}
+		s.noteAutoResumeAttempt()
+		if s.boxHost != "" {
+			wctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			_ = boxcli.WakeAndWait(wctx, s.boxHost, 6*time.Second, s.logger)
+			cancel()
+		}
+		s.boxCmdMu.Lock()
+		defer s.boxCmdMu.Unlock()
+		// A newer user play may have raced this recovery; never clobber it (#252).
+		s.lastPlayMu.Lock()
+		cur := s.lastPlay
+		s.lastPlayMu.Unlock()
+		if resumeIsStale(boxURL, capturedTS, cur) {
+			s.logger.Info("spontaneous-off recovery: a newer play started while settling, standing down")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		var err error
+		if mime != "" {
+			err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
+		} else {
+			err = s.renderer.PlayURL(ctx, boxURL, title, art)
+		}
+		if err != nil {
+			s.logger.Warn("spontaneous-off recovery: re-push failed", "err", err, "url", boxURL)
+			return
+		}
+		s.logger.Info("spontaneous-off recovery: resumed the stream the firmware dropped (#419)", "url", boxURL, "title", title)
+	}()
 }
 
 // HandleStreamDisconnect is called by the stream proxy when the Bose renderer
@@ -3248,8 +3457,9 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A user-initiated resume cancels the deliberate-stop intent so the guarded
-	// auto-re-push is allowed again for the rest of the session.
-	s.ClearUserStop()
+	// auto-re-push is allowed again for the rest of the session; it also anchors
+	// the standby-flip discriminator like any other explicit play (#419).
+	s.NoteUserPlay()
 	if err := s.renderer.Play(r.Context()); err != nil {
 		if isWrongTransportState(err) {
 			// The box is no longer in PAUSED. Re-push the last stream so the user
@@ -3418,6 +3628,13 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 		out["boxHealthSinceSec"] = strconv.FormatInt(int64(time.Since(since).Seconds()), 10)
 	} else {
 		out["boxHealth"] = "ok"
+	}
+	// Pre-latch wedge evidence (#402): the strike count and the age of the most
+	// recent strike, so a diagnostic taken mid-wedge is distinguishable from a
+	// healthy box even before the second strike latches boxHealth=wedged.
+	if strikes, lastHit := s.BoxHealthStrikes(); strikes > 0 {
+		out["boxHealthStrikes"] = strconv.Itoa(strikes)
+		out["boxHealthLastStrikeSec"] = strconv.FormatInt(int64(time.Since(lastHit).Seconds()), 10)
 	}
 	// Two heads-up flags for the desktop app (#270), emitted only when there is
 	// something to warn about so the common response stays small: a rival
@@ -4779,6 +4996,10 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 	// only triggers the LED animation, /standby is the real endpoint —
 	// and Bose expects **GET**, not POST (POST returns 400).
 	if src == "STANDBY" {
+		// An app-initiated standby is a deliberate stop: arm the latch BEFORE
+		// the call so the UPNP->STANDBY flip it causes is not classified as a
+		// spontaneous firmware drop and auto-resumed (#419).
+		s.NoteUserStop()
 		u := fmt.Sprintf("http://%s:8090/standby", s.boxHost)
 		resp, err := client.Get(u)
 		if err != nil {
@@ -4862,7 +5083,10 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 	}
 	if !req.On {
 		// Power off: Bose /standby expects GET (POST returns 400). Same call the
-		// Standby input uses; the real power-off, unlike Stop/Pause.
+		// Standby input uses; the real power-off, unlike Stop/Pause. Arm the
+		// deliberate-stop latch BEFORE the call so the UPNP->STANDBY flip it
+		// causes is not classified as a spontaneous firmware drop (#419).
+		s.NoteUserStop()
 		client := &http.Client{Timeout: 6 * time.Second}
 		resp, err := client.Get(fmt.Sprintf("http://%s:8090/standby", s.boxHost))
 		if err != nil {
@@ -4882,9 +5106,10 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "renderer not configured", http.StatusServiceUnavailable)
 		return
 	}
-	// Power on: explicit user "play it again", so clear any deliberate-stop intent,
-	// wake the box, then re-push the last station from under the lock.
-	s.ClearUserStop()
+	// Power on: explicit user "play it again", so clear any deliberate-stop intent
+	// (and anchor the standby-flip discriminator, #419), wake the box, then
+	// re-push the last station from under the lock.
+	s.NoteUserPlay()
 	s.ensureBoxReady(r.Context())
 	s.lastPlayMu.Lock()
 	lp := s.lastPlay

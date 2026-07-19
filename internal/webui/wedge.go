@@ -36,6 +36,7 @@ type wedgeState struct {
 	strikes int
 	wedged  bool
 	since   time.Time
+	lastHit time.Time // when the most recent strike was recorded
 }
 
 // loginErrState tracks the most recent not-logged-in rejection (errorUpdate
@@ -108,6 +109,7 @@ func (s *Server) NoteRecallExhausted() {
 	}
 	s.wedge.mu.Lock()
 	s.wedge.strikes++
+	s.wedge.lastHit = time.Now()
 	latch := s.wedge.strikes >= wedgeStrikesToLatch && !s.wedge.wedged
 	if latch {
 		s.wedge.wedged = true
@@ -131,6 +133,7 @@ func (s *Server) NoteBoxHealthy() {
 	s.wedge.strikes = 0
 	s.wedge.wedged = false
 	s.wedge.since = time.Time{}
+	s.wedge.lastHit = time.Time{}
 	s.wedge.mu.Unlock()
 	if wasWedged {
 		s.logger.Info("box wedge cleared: playback observed")
@@ -145,4 +148,16 @@ func (s *Server) BoxHealth() (status string, since time.Time) {
 		return "wedged", s.wedge.since
 	}
 	return "ok", time.Time{}
+}
+
+// BoxHealthStrikes reports the current wedge-strike count and when the most
+// recent strike landed. A diagnostic comparison of a wedged vs. healthy box
+// showed the pre-latch state was invisible over the API (boxHealth stays "ok"
+// at one strike while the user already sees "service unavailable"), so tools
+// could not tell a building wedge from a healthy box (#402). Exposed via
+// /api/agent/version alongside boxHealth.
+func (s *Server) BoxHealthStrikes() (strikes int, lastHit time.Time) {
+	s.wedge.mu.Lock()
+	defer s.wedge.mu.Unlock()
+	return s.wedge.strikes, s.wedge.lastHit
 }

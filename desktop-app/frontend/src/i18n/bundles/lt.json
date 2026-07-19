@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "Programinė įranga",
   "settingsView.usbStickLabel": "USB atmintinė",
   "settingsView.swCurrent": "naujausia",
+  "settingsView.swCurrentNoEngine": "atnaujinta, bet trūksta Spotify variklio",
   "settingsView.swUpdateAvail": "Galimas atnaujinimas",
   "settingsView.swOutdated": "pasenusi",
   "settingsView.stickDetected": "aptikta",

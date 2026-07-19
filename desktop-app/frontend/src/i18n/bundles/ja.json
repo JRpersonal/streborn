@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "ソフトウェア",
   "settingsView.usbStickLabel": "USBメモリ",
   "settingsView.swCurrent": "最新",
+  "settingsView.swCurrentNoEngine": "最新ですが、Spotifyエンジンがありません",
   "settingsView.swUpdateAvail": "更新があります",
   "settingsView.swOutdated": "古い",
   "settingsView.stickDetected": "検出済み",

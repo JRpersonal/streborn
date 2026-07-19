@@ -2047,18 +2047,26 @@ function selectBox(box) {
 // detection that lands later (Bose stock /info enrichment).
 //
 // Two layers: a model-name heuristic gives an immediate answer (the
-// SoundTouch Portable has no Bluetooth), then the box's actual /sources
-// list refines it. The list is authoritative and model-agnostic, so it
-// also catches ST20 hardware variants that ship without Bluetooth (see
-// issue #102, where the box answered a BT /select with 1005
-// UNKNOWN_SOURCE_ERROR). AUX and STANDBY exist on every model.
+// SoundTouch Portable has no Bluetooth, the Wave pedestal exposes no
+// selectable AUX), then the box's actual /sources list refines it. The
+// list is authoritative and model-agnostic, so it also catches ST20
+// hardware variants that ship without Bluetooth (see issue #102, where
+// the box answered a BT /select with 1005 UNKNOWN_SOURCE_ERROR) and the
+// Wave, whose own Aux input is not reachable through the SoundTouch
+// pedestal (#417). Visibility is recomputed both ways on every box
+// switch, so a button hidden after a 1005 rejection on one box comes
+// back when a box that has the source is selected (#417: it previously
+// stayed hidden for every box until an app restart). STANDBY exists on
+// every model.
 async function updateSourceButtonVisibility() {
   const btBtn = document.querySelector('.btn-source[data-source="BLUETOOTH"]');
-  if (!btBtn || !state.currentBox) return;
+  const auxBtn = document.querySelector('.btn-source[data-source="AUX"]');
+  if ((!btBtn && !auxBtn) || !state.currentBox) return;
   const model = (state.currentBox.model) || '';
-  // Immediate heuristic so the button is correct before the async
+  // Immediate heuristic so the buttons are correct before the async
   // source list arrives.
-  btBtn.classList.toggle('hidden', /portable/i.test(model));
+  if (btBtn) btBtn.classList.toggle('hidden', /portable/i.test(model));
+  if (auxBtn) auxBtn.classList.toggle('hidden', /wave/i.test(model));
   const box = state.currentBox;
   try {
     const settings = await BoxSettings(box.host, box.port);
@@ -2068,8 +2076,9 @@ async function updateSourceButtonVisibility() {
     // Only trust a non-empty list; an empty one means the box did not
     // answer /sources and we keep the heuristic result.
     if (Array.isArray(sources) && sources.length) {
-      const hasBT = sources.some(s => (s.source || '').toUpperCase() === 'BLUETOOTH');
-      btBtn.classList.toggle('hidden', !hasBT);
+      const has = (name) => sources.some(s => (s.source || '').toUpperCase() === name);
+      if (btBtn) btBtn.classList.toggle('hidden', !has('BLUETOOTH'));
+      if (auxBtn) auxBtn.classList.toggle('hidden', !has('AUX'));
     }
   } catch {
     // Keep the heuristic result on any error.
@@ -5759,7 +5768,7 @@ function renderSearchResults() {
           ${tagChips ? `<div class="result-tag-chips">${tagChips}</div>` : ''}
         </div>
         <div class="result-actions">
-          <button class="btn btn-mini play-now" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9654;</button>
+          <button class="btn btn-mini play-now" data-i="${i}" title="${escapeAttr(t('search.playNow'))}">&#9205;</button>
           <button class="btn btn-mini pick" data-i="${i}" title="${escapeAttr(t('search.assignToKey'))}">&#10133;</button>
           <button class="btn btn-mini fav-toggle${isFav(s) ? ' is-fav' : ''}" data-i="${i}" title="${escapeAttr(isFav(s) ? t('search.removeFav') : t('search.addFav'))}">${isFav(s) ? '&#9733;' : '&#9734;'}</button>
         </div>

@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "Programmatūra",
   "settingsView.usbStickLabel": "USB zibatmiņa",
   "settingsView.swCurrent": "jaunākā",
+  "settingsView.swCurrentNoEngine": "atjaunināts, bet trūkst Spotify dzinēja",
   "settingsView.swUpdateAvail": "Pieejams atjauninājums",
   "settingsView.swOutdated": "novecojusi",
   "settingsView.stickDetected": "konstatēta",

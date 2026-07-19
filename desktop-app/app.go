@@ -1214,15 +1214,33 @@ func (a *App) AddBoxByIP(host string) (BoxInfo, error) {
 	defer cancel()
 	a.logger.Info("AddBoxByIP: manual probe", "host", host)
 	var box BoxInfo
-	// An STR-flashed box still answers :8090, so probe :8888 (STR) first and
-	// prefer that record; fall back to the stock Bose box so a vanilla speaker
-	// is offered the USB-stick install.
+	// Probe STR (:8888/:17008) and the stock Bose API (:8090) in PARALLEL and
+	// prefer the STR record. The old sequential order starved the stock probe
+	// on routed/firewalled networks: a firewall that silently DROPS packets to
+	// the closed STR ports makes every STR connect hang until its own timeout,
+	// the two 3 s retry rounds ate the entire 6 s budget, and probeStock then
+	// ran against an already-expired context. Result: "no speaker reachable"
+	// after exactly 6 s although :8090 answered curl in 20 ms (#420, macOS
+	// across two routed subnets).
+	type stockRes struct {
+		box BoxInfo
+		ok  bool
+		err error
+	}
+	stockCh := make(chan stockRes, 1)
+	go func() {
+		b, ok, err := probeStockDetail(ctx, host)
+		stockCh <- stockRes{b, ok, err}
+	}()
 	if str, isSTR := probeSTRWithRetry(ctx, host, 2); isSTR {
 		box = str
-	} else if stock, ok := probeStock(ctx, host); ok {
-		box = stock
+	} else if stock := <-stockCh; stock.ok {
+		box = stock.box
 	} else {
-		a.logger.Warn("AddBoxByIP: nothing answered", "host", host)
+		// Surface the underlying network error: without it a local-network
+		// privacy denial, a routing failure, a timeout and a non-SoundTouch
+		// responder were indistinguishable in a diagnostic bundle (#420).
+		a.logger.Warn("AddBoxByIP: nothing answered", "host", host, "stockProbeErr", stock.err)
 		return BoxInfo{}, fmt.Errorf("no SoundTouch answered at %s. Check the address, and that this PC and the speaker are on the same network", host)
 	}
 	if box.Host == "" {
@@ -1406,8 +1424,8 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 			// missed probe relabels a flashed speaker as "needs install".
 			// The version endpoint is tiny, so a generous timeout only
 			// costs latency on a genuinely dead host.
-			body, ok := httpGetSmall(ctx, url, 3*time.Second, 1024)
-			if !ok || !strings.Contains(string(body), `"version"`) {
+			body, err := httpGetSmall(ctx, url, 3*time.Second, 1024)
+			if err != nil || !strings.Contains(string(body), `"version"`) {
 				hits <- result{}
 				return
 			}
@@ -1523,14 +1541,23 @@ func jsonStringField(s, key string) string {
 // Conservative timeouts so a sweep across 254 hosts stays cheap on a
 // LAN where most addresses do not respond.
 func probeStock(ctx context.Context, ip string) (BoxInfo, bool) {
+	b, ok, _ := probeStockDetail(ctx, ip)
+	return b, ok
+}
+
+// probeStockDetail is probeStock with the underlying failure preserved, so the
+// manual add-by-IP path can log WHY the probe failed (timeout vs. refused vs.
+// privacy denial vs. a non-SoundTouch responder). The sweep callers keep the
+// cheap two-value form (#420).
+func probeStockDetail(ctx context.Context, ip string) (BoxInfo, bool, error) {
 	url := fmt.Sprintf("http://%s:8090/info", ip)
-	body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 4096)
-	if !ok {
-		return BoxInfo{}, false
+	body, err := httpGetSmall(ctx, url, 1200*time.Millisecond, 4096)
+	if err != nil {
+		return BoxInfo{}, false, err
 	}
 	s := string(body)
 	if !strings.Contains(s, "<info ") || !strings.Contains(s, "deviceID=") {
-		return BoxInfo{}, false
+		return BoxInfo{}, false, fmt.Errorf("%s answered but the reply is not a SoundTouch /info document", url)
 	}
 	deviceID := strings.ToUpper(extractAttr(s, "deviceID"))
 	// The Bose /info XML labels itself UTF-8 but reports an umlaut box name as a
@@ -1548,7 +1575,7 @@ func probeStock(ctx context.Context, ip string) (BoxInfo, bool) {
 		Model:        model,
 		SerialNumber: serial,
 		Kind:         "stock",
-	}, true
+	}, true, nil
 }
 
 // extractPackagedProductSerial pulls the human-readable Bose serial
@@ -1604,8 +1631,8 @@ func (a *App) enrichBoxWithStockInfo(ctx context.Context, b BoxInfo) BoxInfo {
 	probeCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
 	url := fmt.Sprintf("http://%s:8090/info", b.Host)
-	body, ok := httpGetSmall(probeCtx, url, 1200*time.Millisecond, 4096)
-	if !ok {
+	body, err := httpGetSmall(probeCtx, url, 1200*time.Millisecond, 4096)
+	if err != nil {
 		return b
 	}
 	xml := string(body)
@@ -1622,27 +1649,31 @@ func (a *App) enrichBoxWithStockInfo(ctx context.Context, b BoxInfo) BoxInfo {
 	return b
 }
 
-func httpGetSmall(ctx context.Context, url string, timeout time.Duration, max int64) ([]byte, bool) {
+// httpGetSmall fetches a small document with a hard timeout. It returns the
+// underlying error (client.Do, status, read) instead of a bare bool so probe
+// callers can log WHAT failed; a swallowed error made a macOS local-network
+// privacy denial indistinguishable from a plain timeout in diagnostics (#420).
+func httpGetSmall(ctx context.Context, url string, timeout time.Duration, max int64) ([]byte, error) {
 	c, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(c, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, false
+		return nil, fmt.Errorf("%s: HTTP %d", url, resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, max))
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
-	return b, true
+	return b, nil
 }
 
 func extractAttr(xml, key string) string {
@@ -2501,9 +2532,9 @@ func (a *App) waitAgentReady(host string, port int) bool {
 		for _, p := range a.candidatePorts(host, port) {
 			url := fmt.Sprintf("http://%s:%d/api/agent/version", host, p)
 			ctx, cancel := context.WithTimeout(a.appCtx(), 1200*time.Millisecond)
-			body, ok := httpGetSmall(ctx, url, 1200*time.Millisecond, 512)
+			body, err := httpGetSmall(ctx, url, 1200*time.Millisecond, 512)
 			cancel()
-			if ok && strings.Contains(string(body), `"version"`) {
+			if err == nil && strings.Contains(string(body), `"version"`) {
 				a.rememberPort(host, p)
 				return true
 			}
