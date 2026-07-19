@@ -825,6 +825,7 @@
   "settingsView.softwareLabel": "Software",
   "settingsView.usbStickLabel": "USB-Stick",
   "settingsView.swCurrent": "aktuell",
+  "settingsView.swCurrentNoEngine": "aktuell, aber die Spotify-Engine fehlt",
   "settingsView.swUpdateAvail": "Update verfügbar",
   "settingsView.swOutdated": "veraltet",
   "settingsView.stickDetected": "erkannt",

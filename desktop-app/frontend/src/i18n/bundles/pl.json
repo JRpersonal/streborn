@@ -736,6 +736,7 @@
   "settingsView.softwareLabel": "Oprogramowanie",
   "settingsView.usbStickLabel": "Pendrive USB",
   "settingsView.swCurrent": "aktualne",
+  "settingsView.swCurrentNoEngine": "aktualne, ale brakuje silnika Spotify",
   "settingsView.swUpdateAvail": "Dostępna aktualizacja",
   "settingsView.swOutdated": "nieaktualne",
   "settingsView.stickDetected": "wykryty",
