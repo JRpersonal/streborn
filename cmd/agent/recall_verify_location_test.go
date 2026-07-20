@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -16,7 +17,7 @@ func TestSourceRejectIsScopedToThisRecall(t *testing.T) {
 	// milliseconds is enough to establish the same ordering here.
 	recallStart := time.Now()
 	time.Sleep(2 * time.Millisecond)
-	h.OnSourceRejected(nil)
+	h.OnSourceRejected(context.Background())
 	if !h.lastSourceRejectTime().After(recallStart) {
 		t.Fatal("a rejection during this recall must be visible to the verify")
 	}
