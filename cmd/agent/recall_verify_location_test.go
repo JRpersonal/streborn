@@ -1,6 +1,32 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// TestSourceRejectIsScopedToThisRecall covers the trigger of the fast re-push:
+// only a wrong-state rejection recorded AFTER this recall started may cause it.
+// An older rejection (e.g. from the previous preset press) must not, or every
+// recall following one rejection would be pushed twice.
+func TestSourceRejectIsScopedToThisRecall(t *testing.T) {
+	h := &presetWsHandler{}
+
+	// The box reports the rejection ~0.8 s after the press; a couple of
+	// milliseconds is enough to establish the same ordering here.
+	recallStart := time.Now()
+	time.Sleep(2 * time.Millisecond)
+	h.OnSourceRejected(nil)
+	if !h.lastSourceRejectTime().After(recallStart) {
+		t.Fatal("a rejection during this recall must be visible to the verify")
+	}
+
+	// A rejection that predates the recall must not count.
+	later := time.Now().Add(time.Second)
+	if h.lastSourceRejectTime().After(later) {
+		t.Fatal("a rejection older than the recall must not trigger the re-push")
+	}
+}
 
 // The radio recall verify decides success from the box's now_playing document.
 // These cover nowPlayingIsURL, the discriminator behind boxPlayingURL.
