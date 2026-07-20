@@ -536,6 +536,10 @@ func run() error {
 		// clears any deliberate-stop latch an earlier (or spontaneous, #419)
 		// power-off armed, so the recall is not suppressed by stale intent.
 		noteUserPlay: webuiSrv.NoteUserPlay,
+		// Ground truth for the recall verify: the box opening a proxied stream
+		// proves it is playing, where now_playing can still name the previous
+		// preset for seconds after the switch.
+		streamActivity: streamProxySrv.LastActivity,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -1153,6 +1157,23 @@ type presetWsHandler struct {
 	// earlier stop, #419) and anchors the standby-flip discriminator. Wired to
 	// webui.Server.NoteUserPlay. nil-safe.
 	noteUserPlay func()
+	// streamActivity reports when the box last OPENED a proxied stream. It is
+	// the recall verify's ground truth: the box pulling audio through the proxy
+	// proves it is playing, whereas now_playing lags and can still name the
+	// PREVIOUS preset seconds after the box switched. Wired to
+	// streamproxy.Server.LastActivity. nil-safe.
+	streamActivity func() (lastFetch, lastFailure time.Time)
+}
+
+// pulledStreamSince reports whether the box opened a proxied stream after t,
+// i.e. it really is fetching what this recall pushed. Used by the recall verify
+// as the authoritative success signal.
+func (h *presetWsHandler) pulledStreamSince(t time.Time) bool {
+	if h.streamActivity == nil {
+		return false
+	}
+	lastFetch, _ := h.streamActivity()
+	return !lastFetch.IsZero() && lastFetch.After(t)
 }
 
 // OnPresetsChanged forwards the box's own preset list to the webui (Option C).
@@ -1849,7 +1870,12 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 		// showed the station, no audio ever came, no retry ran and no wedge strike
 		// was recorded. The Spotify verify already keys off the now_playing location
 		// for this very reason (see boxPlayingSpotify); radio now does too.
-		if boxPlayingURL(h.boxHost, url) {
+		// The box pulling a proxied stream since this recall started is proof it
+		// is playing what we pushed, and it is checked FIRST because now_playing
+		// lags: a Portable kept naming the PREVIOUS preset for seconds after it
+		// had already opened the new stream, so a location check alone declared a
+		// healthy recall dead and the "repair" tore the working stream down.
+		if h.pulledStreamSince(recallStart) || boxPlayingURL(h.boxHost, url) {
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
 			}
@@ -1907,7 +1933,7 @@ func (h *presetWsHandler) rePushAfterSourceReject(slot int, url, name, icon, mim
 	if !h.lastSourceRejectTime().After(recallStart) {
 		return // the box did not refuse this recall; the normal verify governs
 	}
-	if boxPlayingURL(h.boxHost, url) {
+	if h.pulledStreamSince(recallStart) || boxPlayingURL(h.boxHost, url) {
 		return // refused once, then started anyway
 	}
 	if h.recentlyPoweredOff != nil && h.recentlyPoweredOff() {
