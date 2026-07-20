@@ -288,6 +288,61 @@ func MimeForCodec(codec string) string {
 	return ""
 }
 
+// MimeForCodecOrURL is MimeForCodec with a fallback that reads the codec off
+// the stream URL when the preset carries none.
+//
+// A preset saved before the codec was recorded (or by a client that did not
+// send one) has an empty codec, so an AAC station was labelled with the
+// audio/mpeg default and the box decoded it as MPEG and played silence (#252).
+// A field diagnostic showed exactly that: an AAC station stored with no codec,
+// its URL plainly containing "aac-64". Station URLs name their codec in the
+// path far more often than not, so this recovers the common case at no cost;
+// an unrecognisable URL keeps the previous behaviour.
+func MimeForCodecOrURL(codec, streamURL string) string {
+	if m := MimeForCodec(codec); m != "" {
+		return m
+	}
+	if codec != "" {
+		return "" // the preset states a codec and it is not AAC; trust it
+	}
+	u := strings.ToLower(streamURL)
+	// Match the codec as its own path/query token ("/aac", "aac-64", ".aac",
+	// "format=aac"), never as a substring of an unrelated word.
+	for _, tok := range []string{"aac", "aacp", "aac_", "he-aac"} {
+		if containsToken(u, tok) {
+			return "audio/aac"
+		}
+	}
+	return ""
+}
+
+// containsToken reports whether s contains tok delimited by non-alphanumeric
+// characters (or the string bounds), so "aac" matches "/aac-64/" but not
+// "isaachome".
+func containsToken(s, tok string) bool {
+	for i := 0; ; {
+		j := strings.Index(s[i:], tok)
+		if j < 0 {
+			return false
+		}
+		start := i + j
+		end := start + len(tok)
+		beforeOK := start == 0 || !isAlnum(s[start-1])
+		afterOK := end == len(s) || !isAlnum(s[end])
+		if beforeOK && afterOK {
+			return true
+		}
+		i = start + 1
+		if i >= len(s) {
+			return false
+		}
+	}
+}
+
+func isAlnum(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
 // buildDIDL builds the CurrentURIMetaData XML for an audio stream.
 // DLNA renderers often want DIDL-Lite with upnp:class and res protocolInfo
 // to detect the stream codec. If iconURL is set it is embedded as

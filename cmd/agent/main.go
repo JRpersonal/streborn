@@ -1229,7 +1229,10 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			name = p.Name
 		}
 		icon = p.Art
-		mime = upnp.MimeForCodec(p.Codec)
+		// A preset stored before the codec was recorded has none, and an AAC
+		// station then got the audio/mpeg default and played silence (#252). Read
+		// the codec off the station URL in that case.
+		mime = upnp.MimeForCodecOrURL(p.Codec, p.StreamURL)
 		// Fallback: NetManager occasionally fires nowSelectionUpdated
 		// with an empty location — observed when Bose's preset cache
 		// was populated while BoseApp had not yet fully loaded the
