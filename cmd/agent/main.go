@@ -1822,12 +1822,31 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 	// initial play's SOAP round-trip, so the transient STOP_STATE that flip
 	// itself can emit has usually already been recorded and does not count.
 	recallStart := time.Now()
+	// Fast recovery for the wrong-state race, before the 5 s loop below: on a
+	// Wave the box answers every hardware press with 1036
+	// UpnpRcvdContentItemInWrongState about 0.8 s in, because it first tries to
+	// activate its OWN stored ContentItem (which no longer works without the
+	// Bose cloud) and STR's push lands while that teardown is still running.
+	// Waiting a full verify tick to react leaves the user in silence for five
+	// seconds; re-pushing as soon as the rejection is visible is the automatic
+	// version of the second press users learned to do by hand.
+	h.rePushAfterSourceReject(slot, url, name, icon, mime, recallStart)
 	// Up to 5 attempts (~25s): a box waking from a deep/overnight standby can
 	// take longer than the old 3-attempt (~15s) window to finish bringing its
 	// network and playback subsystem back up before it accepts the stream (#183).
 	for attempt := 1; attempt <= 5; attempt++ {
 		time.Sleep(5 * time.Second)
-		if boxIsPlaying(h.boxHost) {
+		// Success means the box is playing THIS recall, not merely "some play
+		// state". A bare play-state check silently passed the exact failure the
+		// verify exists for: on a Wave every hardware press is rejected with 1036
+		// UpnpRcvdContentItemInWrongState, the box then flips UPNP -> INVALID_SOURCE
+		// -> UPNP while still reporting a stale PLAY/BUFFERING state from the
+		// previous stream, and it never fetches the new URL. boxIsPlaying read that
+		// as success at the first tick, so the recall returned silently: the display
+		// showed the station, no audio ever came, no retry ran and no wedge strike
+		// was recorded. The Spotify verify already keys off the now_playing location
+		// for this very reason (see boxPlayingSpotify); radio now does too.
+		if boxPlayingURL(h.boxHost, url) {
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
 			}
@@ -1862,6 +1881,45 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 	h.logger.Warn("hardware recall still not playing after retries", "slot", slot)
 	if h.noteRecallExhausted != nil {
 		h.noteRecallExhausted()
+	}
+}
+
+// sourceRejectProbeDelay is how long verifyPlayURL waits before looking for a
+// wrong-state rejection of the recall it just pushed. The box reports the 1036
+// about 0.8 s after a hardware press and its source flap settles within ~50 ms
+// of that, so this both catches the rejection and lets the teardown finish; a
+// recall that simply started normally is already playing by now and is left
+// alone.
+const sourceRejectProbeDelay = 1500 * time.Millisecond
+
+// rePushAfterSourceReject re-issues a recall the box refused with 1036
+// UpnpRcvdContentItemInWrongState, without waiting for the first 5 s verify
+// tick. The rejection means the box positively declined this stream, so
+// pushing it again is a repair rather than a guess; a recall that is already
+// playing, a box the user powered off, and a deliberate stop are all left
+// alone. Fires at most once per recall: the verify loop owns everything after
+// it.
+func (h *presetWsHandler) rePushAfterSourceReject(slot int, url, name, icon, mime string, recallStart time.Time) {
+	time.Sleep(sourceRejectProbeDelay)
+	if !h.lastSourceRejectTime().After(recallStart) {
+		return // the box did not refuse this recall; the normal verify governs
+	}
+	if boxPlayingURL(h.boxHost, url) {
+		return // refused once, then started anyway
+	}
+	if h.recentlyPoweredOff != nil && h.recentlyPoweredOff() {
+		return // #197: never push into a box the user just switched off
+	}
+	if h.userStoppedSince(recallStart) {
+		return
+	}
+	h.logger.Warn("hardware recall: box refused the stream (wrong state), pushing it again", "slot", slot)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if mime != "" {
+		_ = h.renderer.PlayURLMime(ctx, url, name, icon, mime)
+	} else {
+		_ = h.renderer.PlayURL(ctx, url, name, icon)
 	}
 }
 
@@ -2897,6 +2955,62 @@ func boxIsPlaying(boxHost string) bool {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	s := string(b)
 	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+}
+
+// boxPlayingURL reports whether the box is in a play/buffering state AND its
+// now_playing actually points at wantURL, the URL this recall pushed. It is the
+// success signal for the radio recall verify.
+//
+// The location check is what a bare play-state check misses: a box that rejects
+// the recall (1036 UpnpRcvdContentItemInWrongState, chronic on the Wave) keeps
+// reporting the PREVIOUS stream's play state while never fetching the new one,
+// so the verify passed at its first tick and the user was left with a display
+// that shows the station and no audio at all.
+//
+// Deliberately forgiving in one direction: firmware whose now_playing carries NO
+// location at all falls back to the plain play-state verdict, so a model that
+// simply does not report a location does not end up in an endless re-push loop.
+func boxPlayingURL(boxHost, wantURL string) bool {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	return nowPlayingIsURL(string(b), wantURL)
+}
+
+// nowPlayingIsURL is boxPlayingURL's verdict over an already-fetched
+// now_playing document; split out so the discriminator is testable without
+// hardware or a fixed :8090 listener.
+func nowPlayingIsURL(doc, wantURL string) bool {
+	if !strings.Contains(doc, "PLAY_STATE") && !strings.Contains(doc, "BUFFERING_STATE") {
+		return false
+	}
+	// Compare on the path (e.g. "/stream/5"), not the whole URL: the box echoes
+	// the location it was given, but host spellings differ across the paths that
+	// build these URLs (loopback vs the box's LAN address).
+	want := streamPath(wantURL)
+	if want == "" || !strings.Contains(doc, `location="`) {
+		return true // nothing to compare against; keep the old play-state verdict
+	}
+	return strings.Contains(doc, want)
+}
+
+// streamPath reduces an STR stream URL to the path+query the box echoes back in
+// now_playing ("http://127.0.0.1:8888/stream/5" -> "/stream/5"), so a location
+// comparison does not depend on which host spelling built the URL. Returns ""
+// for anything that is not an STR stream URL, which disables the comparison.
+func streamPath(u string) string {
+	i := strings.Index(u, "/stream/")
+	if i < 0 {
+		return ""
+	}
+	return u[i:]
 }
 
 // boxPlayingSpotify reports whether the box's now_playing is STR's Spotify
