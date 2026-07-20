@@ -1734,8 +1734,9 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	playURL := boxurl.StreamSlot(slot)
 	// A preset saved from an AAC/HE-AAC station carries its codec: label the
 	// stream audio/aac in the DIDL so the box picks the right decoder. The
-	// fixed audio/mpeg label made those stations play silence (#252).
-	mime := upnp.MimeForCodec(p.Codec)
+	// fixed audio/mpeg label made those stations play silence (#252). A preset
+	// stored without a codec falls back to reading it off the station URL.
+	mime := upnp.MimeForCodecOrURL(p.Codec, p.StreamURL)
 	var playErr error
 	if mime != "" {
 		playErr = s.renderer.PlayURLMime(playCtx, playURL, p.Name, p.Art, mime)
@@ -2896,6 +2897,23 @@ const (
 	spontResumeStreamWindow = 60 * time.Second
 )
 
+// recallOwnsRetryWindow is how long after a user-started play the recall's own
+// verify owns the retry, so maybeRePush does not push on top of it. It spans
+// the press, the wrong-state re-push and the first verify ticks, which is where
+// the two used to collide; after it the verify's own pacing is 5 s apart, far
+// from a storm.
+const recallOwnsRetryWindow = 12 * time.Second
+
+// userPlayedRecently reports whether the user started a play (hardware preset
+// press or app play) within recallOwnsRetryWindow. A stream drop inside that
+// window is almost always the PREVIOUS stream being torn down by the new
+// selection, not a box-side dropout worth resuming.
+func (s *Server) userPlayedRecently() bool {
+	s.standbyStopMu.Lock()
+	defer s.standbyStopMu.Unlock()
+	return !s.lastUserPlayStart.IsZero() && time.Since(s.lastUserPlayStart) < recallOwnsRetryWindow
+}
+
 // SetUserActivityFn wires boxws.LastUserActivity so HandleEnterStandby can tell
 // a physical power-off from a spontaneous firmware source power-off (#419).
 func (s *Server) SetUserActivityFn(fn func() time.Time) {
@@ -3175,6 +3193,18 @@ func (s *Server) maybeRePush() {
 	}
 	time.Sleep(backoff)
 
+	// A recall the user just started owns its own retry: its verify re-pushes
+	// every 5 s until the box really plays that stream. Re-pushing here as well
+	// makes the two fight, and each push tears the other's stream down, which
+	// arms yet another disconnect. A Wave diagnostic caught the resulting storm:
+	// four stream starts and two re-pushes inside 1.7 s, 680 ms apart despite
+	// this function's 2 s backoff, because the drop being "recovered" was just
+	// the PREVIOUS preset being torn down by the new press. Stand down for that
+	// window and let the recall's verify do the work.
+	if s.userPlayedRecently() {
+		s.logger.Info("re-push: a preset/play the user just started owns the retry, not resuming on top of it")
+		return
+	}
 	// A deliberate user stop (STR Stop/Pause, or the box/remote stop button seen
 	// over gabbo) must hold. Genuine box-side drops carry no such stop and resume.
 	if s.userStoppedRecently() {
