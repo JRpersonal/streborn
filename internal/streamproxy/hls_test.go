@@ -33,11 +33,40 @@ func TestParseMediaPlaylistSegmentsAndFlags(t *testing.T) {
 	if pl.targetDur != 6 {
 		t.Errorf("targetDur = %d, want 6", pl.targetDur)
 	}
+	if pl.mediaSeq != 100 {
+		t.Errorf("mediaSeq = %d, want 100 (EXT-X-MEDIA-SEQUENCE drives live-edge dedup)", pl.mediaSeq)
+	}
+	if !pl.hasMediaSeq {
+		t.Errorf("hasMediaSeq = false, want true (tag was present)")
+	}
 	if pl.endList {
 		t.Errorf("endList = true, want false (live)")
 	}
 	if pl.isFMP4 {
 		t.Errorf("isFMP4 = true, want false (TS segments)")
+	}
+}
+
+// A live playlist that omits EXT-X-MEDIA-SEQUENCE must set hasMediaSeq=false so
+// serveHLS falls back to URL dedup instead of trusting a sequence cursor that
+// would read every refresh's segment[0] as sequence 0 (stall/replay). mediaSeq
+// itself defaults to 0, which is why the separate presence flag is needed.
+func TestParseMediaPlaylistNoMediaSequence(t *testing.T) {
+	media := "#EXTM3U\n" +
+		"#EXT-X-TARGETDURATION:4\n" +
+		"#EXTINF:4.0,\n" +
+		"a.ts\n" +
+		"#EXTINF:4.0,\n" +
+		"b.ts\n"
+	pl := parseMediaPlaylist(media, "https://x/y/playlist.m3u8")
+	if pl.hasMediaSeq {
+		t.Errorf("hasMediaSeq = true, want false (no EXT-X-MEDIA-SEQUENCE tag)")
+	}
+	if pl.mediaSeq != 0 {
+		t.Errorf("mediaSeq = %d, want 0 default", pl.mediaSeq)
+	}
+	if pl.endList {
+		t.Errorf("endList = true, want false (live)")
 	}
 }
 

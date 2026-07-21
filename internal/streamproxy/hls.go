@@ -26,9 +26,11 @@ import (
 	"time"
 )
 
-// hlsMaxSegments caps how many segments we keep track of as "already played"
-// so a long-running live stream does not grow the seen-set without bound.
-const hlsMaxSegments = 512
+// hlsFallbackMaxSegments bounds the URL "already played" set used ONLY on the
+// fallback path (a live playlist that omits EXT-X-MEDIA-SEQUENCE, so the
+// media-sequence cursor cannot be trusted). The normal, sequence-based path is
+// O(1) and does not use this.
+const hlsFallbackMaxSegments = 512
 
 // hlsRefreshFloor / hlsRefreshCeil bound how long we wait before re-fetching a
 // live media playlist. Half the target duration is the usual HLS guidance;
@@ -52,8 +54,14 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 
 	flusher, _ := w.(http.Flusher)
 	headersSent := false
+	var lastSeq int64 = -1 // media sequence of the last segment we sent (-1 = none yet)
+	// Fallback dedup state, used ONLY when the live playlist omits
+	// EXT-X-MEDIA-SEQUENCE (see seqReliable below). seqReliable is decided on
+	// the first playlist and kept, since a stream does not switch modes.
+	seqReliable := true
+	seqModeDecided := false
 	seen := map[string]bool{}
-	var order []string // FIFO of seen keys to bound the map
+	var seenOrder []string // FIFO of seen URLs to bound the map
 	firstPass := true
 	loggedPlaylist := false
 	var lastWrite time.Time // when we last sent audio bytes to the box
@@ -108,29 +116,88 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 			continue
 		}
 
-		// On the very first pass of a LIVE stream, start near the live edge
-		// instead of replaying the whole sliding window (which would play
-		// minutes of stale audio before catching up). For a VOD playlist
-		// (ENDLIST) play from the beginning.
-		segs := pl.segments
-		if firstPass && !pl.endList && len(segs) > 3 {
-			segs = segs[len(segs)-3:]
+		// Dedup is by media sequence number, not by URL. Each segment's
+		// sequence is EXT-X-MEDIA-SEQUENCE + its index; we only play segments
+		// whose sequence is greater than the last one we sent (lastSeq). This
+		// is O(1) in memory and correct for arbitrarily large DVR windows.
+		// A bounded "seen URL" set is not: once the sliding window is bigger
+		// than the set it forgets old URLs and replays them from the top --
+		// hr1 ships a ~5h / ~4500-segment window, which is what surfaced this.
+		//
+		// Decide the dedup mode once, from the first playlist. The
+		// media-sequence cursor needs a stable per-segment sequence number: a
+		// LIVE sliding-window playlist that omits EXT-X-MEDIA-SEQUENCE (allowed
+		// to default to 0, but then every refresh's segment[0] looks like
+		// sequence 0) would make the cursor either stall or replay. For that
+		// case fall back to bounded URL dedup, the pre-cursor behaviour. VOD
+		// (ENDLIST) plays each segment once in order, so the cursor is fine
+		// there even without the tag.
+		if !seqModeDecided {
+			seqReliable = pl.endList || pl.hasMediaSeq
+			seqModeDecided = true
+			if !seqReliable {
+				s.logger.Info("hls: live playlist has no EXT-X-MEDIA-SEQUENCE, using URL dedup fallback",
+					"segments", len(pl.segments))
+			}
 		}
-		firstPass = false
+
+		// First pass of a LIVE stream: start near the live edge instead of
+		// replaying the whole sliding window. In sequence mode, arm lastSeq
+		// just below the edge; in fallback mode, mark all but the last few
+		// segments as already seen so only the tail plays. VOD plays from the
+		// beginning either way.
+		if firstPass {
+			if !pl.endList && len(pl.segments) > 3 {
+				if seqReliable {
+					lastSeq = pl.mediaSeq + int64(len(pl.segments)) - 1 - 3
+				} else {
+					for _, seg := range pl.segments[:len(pl.segments)-3] {
+						seen[seg] = true
+						seenOrder = append(seenOrder, seg)
+					}
+				}
+			}
+			firstPass = false
+		}
+
+		// Encoder restart / sequence rewind (sequence mode only): if the whole
+		// playlist now sits at or below our cursor, re-arm at the new live edge
+		// instead of stalling forever on a sequence that will never come.
+		if seqReliable && lastSeq >= 0 && !pl.endList {
+			lastInPlaylist := pl.mediaSeq + int64(len(pl.segments)) - 1
+			if lastInPlaylist < lastSeq {
+				s.logger.Warn("hls: media sequence rewound, re-arming at live edge",
+					"lastSeq", lastSeq, "playlistEnd", lastInPlaylist)
+				lastSeq = pl.mediaSeq - 1
+				if len(pl.segments) > 3 {
+					lastSeq = pl.mediaSeq + int64(len(pl.segments)) - 1 - 3
+				}
+			}
+		}
 
 		played := 0
-		for _, seg := range segs {
+		for i, seg := range pl.segments {
 			if r.Context().Err() != nil {
 				return nil
 			}
-			if seen[seg] {
-				continue
-			}
-			seen[seg] = true
-			order = append(order, seg)
-			if len(order) > hlsMaxSegments {
-				delete(seen, order[0])
-				order = order[1:]
+			if seqReliable {
+				seq := pl.mediaSeq + int64(i)
+				if seq <= lastSeq {
+					continue
+				}
+				// Advance the cursor before fetching: a CDN hiccup on this
+				// segment then skips forward instead of retrying stale audio.
+				lastSeq = seq
+			} else {
+				if seen[seg] {
+					continue
+				}
+				seen[seg] = true
+				seenOrder = append(seenOrder, seg)
+				if len(seenOrder) > hlsFallbackMaxSegments {
+					delete(seen, seenOrder[0])
+					seenOrder = seenOrder[1:]
+				}
 			}
 
 			data, err := s.fetchBytes(ctx, seg)
@@ -282,10 +349,12 @@ func parseBandwidth(line string) int {
 
 // mediaPlaylist is the parsed shape of an HLS media playlist.
 type mediaPlaylist struct {
-	segments  []string // absolute segment URLs, in order
-	targetDur int      // #EXT-X-TARGETDURATION seconds (0 if absent)
-	endList   bool     // #EXT-X-ENDLIST present (VOD, not live)
-	isFMP4    bool     // #EXT-X-MAP present (fMP4/CMAF init segment) -> stage 3
+	segments    []string // absolute segment URLs, in order
+	mediaSeq    int64    // #EXT-X-MEDIA-SEQUENCE: sequence number of segments[0] (0 if absent)
+	hasMediaSeq bool     // whether an EXT-X-MEDIA-SEQUENCE tag was actually present
+	targetDur   int      // #EXT-X-TARGETDURATION seconds (0 if absent)
+	endList     bool     // #EXT-X-ENDLIST present (VOD, not live)
+	isFMP4      bool     // #EXT-X-MAP present (fMP4/CMAF init segment) -> stage 3
 }
 
 // parseMediaPlaylist parses a media playlist body, resolving segment URIs
@@ -304,6 +373,9 @@ func parseMediaPlaylist(body, baseURL string) mediaPlaylist {
 		case strings.HasPrefix(line, "#EXT-X-MAP"):
 			// An init segment means fMP4/CMAF segments follow.
 			pl.isFMP4 = true
+		case strings.HasPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"):
+			pl.mediaSeq = atoi64Safe(strings.TrimPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"))
+			pl.hasMediaSeq = true
 		case strings.HasPrefix(line, "#EXT-X-TARGETDURATION:"):
 			pl.targetDur = atoiSafe(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
 		case strings.HasPrefix(line, "#"):
@@ -381,6 +453,20 @@ func atoiSafe(s string) int {
 			break
 		}
 		n = n*10 + int(c-'0')
+	}
+	return n
+}
+
+// atoi64Safe parses leading digits of s into an int64 (0 on none). Media
+// sequence numbers on long-running live streams can exceed int32 range.
+func atoi64Safe(s string) int64 {
+	s = strings.TrimSpace(s)
+	var n int64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int64(c-'0')
 	}
 	return n
 }
