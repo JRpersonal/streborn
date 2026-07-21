@@ -1942,13 +1942,43 @@ func (h *presetWsHandler) rePushAfterSourceReject(slot int, url, name, icon, mim
 	if h.userStoppedSince(recallStart) {
 		return
 	}
-	h.logger.Warn("hardware recall: box refused the stream (wrong state), pushing it again", "slot", slot)
+	h.logger.Warn("hardware recall: box refused the stream (wrong state), clearing the transport and pushing again", "slot", slot)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	// The box refused the stream because its transport is stuck in the wrong
+	// state: it is still holding its own dead-cloud ContentItem active (the box
+	// answers with name=UNABLE_TO_PROCESS_NOT_LOGGED_IN detail=WrongState). Pushing
+	// the IDENTICAL SetURI onto that stuck state is what the box just rejected, so a
+	// blind re-push is rejected again and again until a power pull (bundle 55/56
+	// ST30, 59/60 Wave, all v0.9.15). Force the transport out of the wrong state
+	// first - Stop + ClearURI - then set the URI and Play from a clean slate. This
+	// mirrors the proven clean-slot recall that fixed the analogous hardware-skip
+	// INVALID_SOURCE wedge on Spotify (HardwareSkip, 59da772). The re-login
+	// self-heal fired in parallel from the boxws NOT_LOGGED_IN routing.
+	h.clearTransportForRePush(ctx, slot)
 	if mime != "" {
 		_ = h.renderer.PlayURLMime(ctx, url, name, icon, mime)
 	} else {
 		_ = h.renderer.PlayURL(ctx, url, name, icon)
+	}
+}
+
+// clearTransportForRePush forces the box's UPnP transport out of a stuck
+// wrong-state before a re-push: a Stop followed by an empty SetAVTransportURI
+// (ClearURI) so the firmware releases the dead ContentItem it keeps trying to
+// self-activate. Best-effort - both calls are advisory and a wedged renderer may
+// ACK them without acting - but starting the re-push from an emptied transport is
+// what turns the persistent 1036 loop into a recoverable one. Kept tiny and
+// side-effect-free on the happy path: it only runs on the wrong-state repair.
+func (h *presetWsHandler) clearTransportForRePush(ctx context.Context, slot int) {
+	if h.renderer == nil {
+		return
+	}
+	if err := h.renderer.Stop(ctx); err != nil {
+		h.logger.Debug("wrong-state repair: transport stop returned (expected if already stopped)", "slot", slot, "err", err)
+	}
+	if err := h.renderer.ClearURI(ctx); err != nil {
+		h.logger.Debug("wrong-state repair: clear transport URI returned", "slot", slot, "err", err)
 	}
 }
 

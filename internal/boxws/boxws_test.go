@@ -14,18 +14,21 @@ import (
 // recHandler records which gabbo events the parser dispatched so tests can
 // assert that marker words in user-supplied text no longer mis-fire.
 type recHandler struct {
-	presets      []int
-	userStops    int
-	powerKeys    int
-	powerWakes   int
-	sourceAux    int
-	enterStandby int
-	skips        []bool
-	zones        []ZoneState
-	boxPresets   [][]BoxPreset
-	mu           sync.Mutex
-	thumbs       int // guarded by mu (fired from the debounce timer goroutine)
+	presets       []int
+	userStops     int
+	powerKeys     int
+	powerWakes    int
+	sourceAux     int
+	enterStandby  int
+	skips         []bool
+	zones         []ZoneState
+	boxPresets    [][]BoxPreset
+	sourceRejects int
+	mu            sync.Mutex
+	thumbs        int // guarded by mu (fired from the debounce timer goroutine)
 }
+
+func (h *recHandler) OnSourceRejected(context.Context) { h.sourceRejects++ }
 
 func (h *recHandler) thumbCount() int { h.mu.Lock(); defer h.mu.Unlock(); return h.thumbs }
 
@@ -138,6 +141,21 @@ func TestHandleMessage_TeardownStopStateIsNotUserStop(t *testing.T) {
 	c3.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="INVALID_SOURCE"><playStatus>STOP_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
 	if h3.userStops != 0 {
 		t.Fatalf("STOP_STATE with source=INVALID_SOURCE must not fire OnUserStop, got %d", h3.userStops)
+	}
+
+	// (d) The #419 spontaneous-off oscillation: the box flips UPNP->STANDBY->UPNP
+	// and emits a STOP_STATE on the way back up whose OWN source reads UPNP (so
+	// the INVALID_SOURCE/STANDBY frame checks miss it). It must still be read as
+	// the bounce teardown, not a user stop - otherwise the latched user-stop
+	// defeats the #419 exemption on the next leg and the box goes silent until a
+	// power pull (bundle 17, three sm2 boxes on v0.9.15).
+	h4 := &recHandler{}
+	c4 := newTestClient(h4)
+	c4.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>PLAY_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
+	c4.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="STANDBY"><ContentItem source="STANDBY"/></nowPlaying></nowPlayingUpdated></updates>`))
+	c4.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>STOP_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
+	if h4.userStops != 0 {
+		t.Fatalf("STOP_STATE riding a UPNP<->STANDBY bounce must not fire OnUserStop, got %d", h4.userStops)
 	}
 }
 
