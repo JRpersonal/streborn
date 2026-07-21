@@ -26,10 +26,6 @@ import (
 	"time"
 )
 
-// hlsMaxSegments caps how many segments we keep track of as "already played"
-// so a long-running live stream does not grow the seen-set without bound.
-const hlsMaxSegments = 512
-
 // hlsRefreshFloor / hlsRefreshCeil bound how long we wait before re-fetching a
 // live media playlist. Half the target duration is the usual HLS guidance;
 // the bounds stop a degenerate playlist (no/ën huge target duration) from
@@ -52,8 +48,7 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 
 	flusher, _ := w.(http.Flusher)
 	headersSent := false
-	seen := map[string]bool{}
-	var order []string // FIFO of seen keys to bound the map
+	var lastSeq int64 = -1 // media sequence of the last segment we sent (-1 = none yet)
 	firstPass := true
 	loggedPlaylist := false
 	var lastWrite time.Time // when we last sent audio bytes to the box
@@ -108,30 +103,51 @@ func (s *Server) serveHLS(ctx context.Context, w http.ResponseWriter, r *http.Re
 			continue
 		}
 
-		// On the very first pass of a LIVE stream, start near the live edge
-		// instead of replaying the whole sliding window (which would play
-		// minutes of stale audio before catching up). For a VOD playlist
-		// (ENDLIST) play from the beginning.
-		segs := pl.segments
-		if firstPass && !pl.endList && len(segs) > 3 {
-			segs = segs[len(segs)-3:]
+		// Dedup is by media sequence number, not by URL. Each segment's
+		// sequence is EXT-X-MEDIA-SEQUENCE + its index; we only play segments
+		// whose sequence is greater than the last one we sent (lastSeq). This
+		// is O(1) in memory and correct for arbitrarily large DVR windows.
+		// A bounded "seen URL" set is not: once the sliding window is bigger
+		// than the set it forgets old URLs and replays them from the top --
+		// hr1 ships a ~5h / ~4500-segment window, which is what surfaced this.
+		//
+		// First pass of a LIVE stream: arm lastSeq just below the live edge so
+		// we start on the last few segments, not the whole back-catalogue. VOD
+		// (ENDLIST): play from the beginning (lastSeq stays -1).
+		if firstPass {
+			if !pl.endList && len(pl.segments) > 3 {
+				lastSeq = pl.mediaSeq + int64(len(pl.segments)) - 1 - 3
+			}
+			firstPass = false
 		}
-		firstPass = false
+
+		// Encoder restart / sequence rewind: if the whole playlist now sits at
+		// or below our cursor, re-arm at the new live edge instead of stalling
+		// forever on a sequence that will never come.
+		if lastSeq >= 0 && !pl.endList {
+			lastInPlaylist := pl.mediaSeq + int64(len(pl.segments)) - 1
+			if lastInPlaylist < lastSeq {
+				s.logger.Warn("hls: media sequence rewound, re-arming at live edge",
+					"lastSeq", lastSeq, "playlistEnd", lastInPlaylist)
+				lastSeq = pl.mediaSeq - 1
+				if len(pl.segments) > 3 {
+					lastSeq = pl.mediaSeq + int64(len(pl.segments)) - 1 - 3
+				}
+			}
+		}
 
 		played := 0
-		for _, seg := range segs {
+		for i, seg := range pl.segments {
 			if r.Context().Err() != nil {
 				return nil
 			}
-			if seen[seg] {
+			seq := pl.mediaSeq + int64(i)
+			if seq <= lastSeq {
 				continue
 			}
-			seen[seg] = true
-			order = append(order, seg)
-			if len(order) > hlsMaxSegments {
-				delete(seen, order[0])
-				order = order[1:]
-			}
+			// Advance the cursor before fetching: a CDN hiccup on this segment
+			// then skips forward instead of retrying stale audio out of order.
+			lastSeq = seq
 
 			data, err := s.fetchBytes(ctx, seg)
 			if err != nil {
@@ -283,6 +299,7 @@ func parseBandwidth(line string) int {
 // mediaPlaylist is the parsed shape of an HLS media playlist.
 type mediaPlaylist struct {
 	segments  []string // absolute segment URLs, in order
+	mediaSeq  int64    // #EXT-X-MEDIA-SEQUENCE: sequence number of segments[0] (0 if absent)
 	targetDur int      // #EXT-X-TARGETDURATION seconds (0 if absent)
 	endList   bool     // #EXT-X-ENDLIST present (VOD, not live)
 	isFMP4    bool     // #EXT-X-MAP present (fMP4/CMAF init segment) -> stage 3
@@ -304,6 +321,8 @@ func parseMediaPlaylist(body, baseURL string) mediaPlaylist {
 		case strings.HasPrefix(line, "#EXT-X-MAP"):
 			// An init segment means fMP4/CMAF segments follow.
 			pl.isFMP4 = true
+		case strings.HasPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"):
+			pl.mediaSeq = atoi64Safe(strings.TrimPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"))
 		case strings.HasPrefix(line, "#EXT-X-TARGETDURATION:"):
 			pl.targetDur = atoiSafe(strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:"))
 		case strings.HasPrefix(line, "#"):
@@ -381,6 +400,20 @@ func atoiSafe(s string) int {
 			break
 		}
 		n = n*10 + int(c-'0')
+	}
+	return n
+}
+
+// atoi64Safe parses leading digits of s into an int64 (0 on none). Media
+// sequence numbers on long-running live streams can exceed int32 range.
+func atoi64Safe(s string) int64 {
+	s = strings.TrimSpace(s)
+	var n int64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int64(c-'0')
 	}
 	return n
 }

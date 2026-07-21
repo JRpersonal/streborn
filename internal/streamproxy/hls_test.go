@@ -33,6 +33,9 @@ func TestParseMediaPlaylistSegmentsAndFlags(t *testing.T) {
 	if pl.targetDur != 6 {
 		t.Errorf("targetDur = %d, want 6", pl.targetDur)
 	}
+	if pl.mediaSeq != 100 {
+		t.Errorf("mediaSeq = %d, want 100 (EXT-X-MEDIA-SEQUENCE drives live-edge dedup)", pl.mediaSeq)
+	}
 	if pl.endList {
 		t.Errorf("endList = true, want false (live)")
 	}
