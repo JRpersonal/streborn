@@ -142,6 +142,18 @@ type Client struct {
 	lastInvalidSourceAt time.Time
 	lastPresetPressAt   time.Time
 
+	// lastStandbyFlapAt times the box's own UPNP<->STANDBY oscillation on a
+	// spontaneous firmware source power-off (#419). That drop is not a single
+	// transition: the box flips UPNP->STANDBY->UPNP within ~100 ms, and the
+	// STANDBY->UPNP leg carries a nowPlaying STOP_STATE whose source attribute
+	// reads UPNP (not INVALID_SOURCE/STANDBY), so stopStateIsTeardown missed it
+	// and fired OnUserStop. That latched a user-stop that then defeated the #419
+	// spontaneous-off exemption on the NEXT leg of the same oscillation, so #197
+	// tore the transport down and every recovery path stood down until a power
+	// pull (bundle 17, three sm2 boxes on v0.9.15). Stamping every flap to OR
+	// from STANDBY lets the STOP_STATE handler recognise the bounce. Guarded by mu.
+	lastStandbyFlapAt time.Time
+
 	// Thumb-trigger heuristic state. The remote thumbs keys surface only as a
 	// generic <userActivityUpdate/>; we treat a "lone" one (no volume / now
 	// playing / preset event around it) as a thumb press and fire
@@ -626,6 +638,12 @@ type ZoneMemberState struct {
 const (
 	presetTeardownWindow        = 4 * time.Second
 	invalidSourceTeardownWindow = 2 * time.Second
+	// standbyFlapTeardownWindow bounds how soon after a UPNP<->STANDBY flap a
+	// STOP_STATE still counts as the spontaneous-off oscillation's teardown
+	// (#419) rather than a deliberate stop. The observed bounce completes in
+	// ~100-150 ms; 3 s covers a slow flap without swallowing a real stop the user
+	// makes seconds after a genuine power event.
+	standbyFlapTeardownWindow = 3 * time.Second
 )
 
 // stopStateIsTeardown reports whether a STOP_STATE nowPlaying frame is the box's
@@ -649,14 +667,28 @@ func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
 	c.mu.Lock()
 	sincePress := time.Since(c.lastPresetPressAt)
 	sinceInvalid := time.Since(c.lastInvalidSourceAt)
+	sinceStandbyFlap := time.Since(c.lastStandbyFlapAt)
 	pressSet := !c.lastPresetPressAt.IsZero()
 	invalidSet := !c.lastInvalidSourceAt.IsZero()
+	standbyFlapSet := !c.lastStandbyFlapAt.IsZero()
 	c.mu.Unlock()
 	if pressSet && sincePress < presetTeardownWindow {
 		return true, "hardware preset pressed " + sincePress.Round(time.Millisecond).String() + " ago"
 	}
 	if invalidSet && sinceInvalid < invalidSourceTeardownWindow {
 		return true, "source flapped to INVALID_SOURCE " + sinceInvalid.Round(time.Millisecond).String() + " ago"
+	}
+	// The spontaneous-off oscillation (#419) flips UPNP->STANDBY->UPNP and emits a
+	// STOP_STATE on the way back up whose source reads UPNP, so the two checks
+	// above miss it. A STOP_STATE within a moment of a STANDBY flap is that
+	// bounce, not a deliberate stop: reading it as a user stop re-latched
+	// lastUserStop and defeated the #419 spontaneous-off exemption on the next leg
+	// of the same oscillation, so #197 cleared the transport and the box went
+	// silent until a power pull (bundle 17, three sm2 boxes on v0.9.15). A real
+	// power press is unaffected: on this firmware it emits a userActivityUpdate,
+	// so HandleEnterStandby still classifies and latches it via its own path.
+	if standbyFlapSet && sinceStandbyFlap < standbyFlapTeardownWindow {
+		return true, "source flapped through STANDBY " + sinceStandbyFlap.Round(time.Millisecond).String() + " ago"
 	}
 	return false, ""
 }
@@ -709,6 +741,13 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// teardown, not a user stop. See stopStateIsTeardown.
 			if src == "INVALID_SOURCE" {
 				c.lastInvalidSourceAt = time.Now()
+			}
+			// Stamp every flap to OR from STANDBY: the spontaneous-off oscillation
+			// (#419) carries a STOP_STATE on its STANDBY->UPNP leg whose source reads
+			// UPNP, so this is the only trace that the STOP_STATE belongs to the
+			// bounce and is not a deliberate user stop. See stopStateIsTeardown.
+			if src == "STANDBY" || prev == "STANDBY" {
+				c.lastStandbyFlapAt = time.Now()
 			}
 			c.mu.Unlock()
 			if changed {
@@ -903,27 +942,56 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 					// ST300). Signal the agent to force a re-login and stand the recall
 					// retry down instead of thrashing.
 					//
-					// The box reuses code 1036 for a second, unrelated flavor:
-					// UpnpRcvdContentItemInWrongState - the routine race of a SetURI
-					// against a standby wake, and the expected teardown when /setZone
-					// kills an in-flight UPnP session during group forming (#70). That
-					// flavor is NOT a login problem: firing the self-heal on it killed
-					// the recall retry and forced a pointless re-pair on every wake
-					// race, so it must never trigger here.
+					// The box reuses code 1036 for two flavors that can arrive
+					// SEPARATELY or TOGETHER:
+					//   - name UNABLE_TO_PROCESS_NOT_LOGGED_IN: the box refuses the
+					//     source because it lost its logged-in/associated state (it can
+					//     keep a margeAccountUUID yet still report this). The 5-min
+					//     autopair heartbeat skips a box that carries a UUID, so only a
+					//     forced re-assert of setMargeAccount (ForcePair) restores it.
+					//   - detail UpnpRcvdContentItemInWrongState: the routine race of a
+					//     SetURI against a standby wake / a preset->preset teardown, and
+					//     the expected teardown when /setZone kills an in-flight UPnP
+					//     session during group forming (#70). By itself NOT a login
+					//     problem: firing the self-heal on it killed the recall retry
+					//     and forced a pointless re-pair on every wake race.
+					//
+					// The decisive field is the NAME (the box's authoritative reason).
+					// Real hardware-preset rejections on the Portable/ST10/ST20/ST30
+					// carry BOTH markers at once -
+					// name=UNABLE_TO_PROCESS_NOT_LOGGED_IN detail=UpnpRcvdContentItemInWrongState
+					// (53/53 field log lines) - because the box could not activate its
+					// own stored ContentItem PRECISELY because it is not logged in. The
+					// previous detail-first check misread every one of those as a plain
+					// wake race and re-pushed the identical SetURI into a box that keeps
+					// answering 1036 until a power pull, never re-registering it. So
+					// classify by the name first: a not-logged-in name means re-login,
+					// even when the wrong-state teardown rides along in the detail.
+					notLoggedIn := strings.Contains(strings.ToUpper(name), "NOT_LOGGED_IN")
 					wrongState := strings.Contains(detail, "UpnpRcvdContentItemInWrongState")
-					if wrongState {
-						// The box rejected STR's SetURI as "wrong state": the routine race
-						// of a preset->preset switch (or a standby wake) where the box is
-						// still tearing down the previous source. It does NOT retry on its
-						// own and can hang attached-but-buffering on the Spotify stream
-						// without ever reaching audio, which needed a manual second preset
-						// press to clear (ST30 4->5 switch, 2026-07-14). Signal the recall so
-						// its verify re-points instead of trusting that stuck state. NOT a
-						// login problem, so it must not fire the re-login self-heal.
+					switch {
+					case notLoggedIn:
+						// Root cause: the box is not logged in. Re-assert the account so
+						// it accepts STR's source. Also nudge the recall's verify to
+						// re-point once the re-login lands (the box hangs
+						// attached-but-buffering otherwise); the self-heal is rate-limited
+						// and the verify re-push is a no-op once the box plays.
+						c.fireLoginError()
 						if h, ok := c.handler.(interface{ OnSourceRejected(context.Context) }); ok {
 							h.OnSourceRejected(ctx)
 						}
-					} else if v == "1036" || strings.Contains(strings.ToUpper(name), "NOT_LOGGED_IN") {
+					case wrongState:
+						// Pure wake/teardown race (name is a plain UNABLE_TO_PROCESS, no
+						// NOT_LOGGED_IN). It does NOT retry on its own and can hang
+						// attached-but-buffering on the Spotify stream without reaching
+						// audio, which needed a manual second preset press to clear (ST30
+						// 4->5 switch, 2026-07-14). Signal the recall so its verify
+						// re-points instead of trusting that stuck state. NOT a login
+						// problem, so it must not fire the re-login self-heal.
+						if h, ok := c.handler.(interface{ OnSourceRejected(context.Context) }); ok {
+							h.OnSourceRejected(ctx)
+						}
+					case v == "1036":
 						c.fireLoginError()
 					}
 					return
