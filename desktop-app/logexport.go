@@ -157,6 +157,13 @@ Privacy:
 	for i, host := range hosts {
 		snap := captureBoxSnapshot(host)
 		entry := boxIndexEntry{Index: i, Host: host}
+		if !snap.ReachableSSH && !snap.Reachable8090 && !snap.Reachable8888 && !snap.Reachable8091 {
+			entry.Offline = true
+			// WARN, not Info: an offline box means this bundle carries no
+			// on-box evidence for it, which support must see immediately.
+			a.logger.Warn("log export: box unreachable on every port, its snapshot carries no on-box data",
+				"host", entry.Host, "boxIndex", i)
+		}
 		if req.Anonymize {
 			entry.Host = maskIP(host)
 			snap = anonymizeSnapshot(snap)
@@ -300,6 +307,11 @@ func tailString(s string, cap int) string {
 type boxIndexEntry struct {
 	Index int    `json:"index"`
 	Host  string `json:"host"`
+	// Offline marks a snapshot captured while the box answered on NO port at
+	// all: its box-<n>.json is empty of on-box data. Without the marker such a
+	// bundle silently looked complete - a reporter exported four bundles of a
+	// flapping box and every one carried zero on-box evidence.
+	Offline bool `json:"offline,omitempty"`
 }
 
 type boxSnapshot struct {
