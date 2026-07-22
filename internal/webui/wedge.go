@@ -52,6 +52,12 @@ type loginErrState struct {
 // STR does not immediately re-push the source the box just refused.
 const recentLoginErrorWindow = 20 * time.Second
 
+// loginErrWedgeSkipWindow is how long after a not-logged-in rejection an
+// exhausted recall verify is attributed to the login instead of a wedge. Wider
+// than recentLoginErrorWindow: the hardware verify exhausts ~26s after the
+// press that provoked the 1036.
+const loginErrWedgeSkipWindow = 60 * time.Second
+
 // NoteBoxLoginError records that the box just rejected a source because it does
 // not think it is signed in (errorUpdate 1036), and kicks off a forced re-login
 // in the background. Wired from the boxws not-logged-in callback. The box keeps
@@ -72,12 +78,18 @@ func (s *Server) NoteBoxLoginError() {
 	}
 }
 
+// loginErrorRecentWithin reports whether the box rejected a source as
+// not-logged-in within the given window.
+func (s *Server) loginErrorRecentWithin(window time.Duration) bool {
+	s.loginErr.mu.Lock()
+	defer s.loginErr.mu.Unlock()
+	return !s.loginErr.last.IsZero() && time.Since(s.loginErr.last) < window
+}
+
 // recentLoginError reports whether the box rejected a source as not-logged-in
 // within recentLoginErrorWindow.
 func (s *Server) recentLoginError() bool {
-	s.loginErr.mu.Lock()
-	defer s.loginErr.mu.Unlock()
-	return !s.loginErr.last.IsZero() && time.Since(s.loginErr.last) < recentLoginErrorWindow
+	return s.loginErrorRecentWithin(recentLoginErrorWindow)
 }
 
 // SetStreamActivityFn wires the stream proxy's LastActivity so the wedge
@@ -96,6 +108,16 @@ func (s *Server) NoteRecallExhausted() {
 	np := s.snapshotNowPlaying(npCtx)
 	cancel()
 	if np.Source == "STANDBY" || np.Source == "" {
+		return
+	}
+	// A recall that exhausted while the box was rejecting sources as
+	// not-logged-in failed on the LOGIN, not on a wedged transport: counting
+	// it latched boxHealth=wedged and told the user to power-cycle a box that
+	// only needed the re-login to stick (field bundle: strike at +25s after a
+	// 1036). The window is wider than recentLoginError's 20s because the
+	// verify exhausts ~26s after the press.
+	if s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
+		s.logger.Info("recall exhausted during a not-logged-in window; not counting a wedge strike (login failure, not a wedge)")
 		return
 	}
 	if s.streamActivityFn != nil {

@@ -100,3 +100,44 @@ func TestSlotFetchStampsOnlyValidSlots(t *testing.T) {
 		t.Fatal("other slots must stay unstamped")
 	}
 }
+
+// TestSlotPulledSinceLiveness pins the recall verify's success signal against
+// the field failure: the box's re-login source bounce opens the slot stream
+// for 36ms-2.4s and drops it, which must NOT count as playback, while a
+// still-open connection or a sustained (>= minSustainedFetch) session must.
+func TestSlotPulledSinceLiveness(t *testing.T) {
+	s := New(presets.New(), silentLogger())
+	anchor := time.Now().Add(-time.Minute)
+
+	if s.SlotPulledSince(2, anchor) {
+		t.Fatal("no fetch at all must not read as pulled")
+	}
+
+	// Dead fetch: opened and closed within the bounce (well under sustain).
+	s.noteSlotFetch(2)
+	s.noteSlotFetchDone(2)
+	if s.SlotPulledSince(2, anchor) {
+		t.Fatal("a fetch that died right after opening must not certify the recall")
+	}
+
+	// Open connection: playback in progress.
+	s.noteSlotFetch(3)
+	if !s.SlotPulledSince(3, anchor) {
+		t.Fatal("an open connection after the press must count as playback")
+	}
+	// Fetch opened BEFORE the press proves nothing about this recall.
+	if s.SlotPulledSince(3, time.Now().Add(time.Second)) {
+		t.Fatal("a fetch opened before the anchor must not count")
+	}
+	s.noteSlotFetchDone(3)
+
+	// Sustained session that already ended still counts (box played, then
+	// reconnect churn closed the socket moments before the verify tick).
+	s.fetchMu.Lock()
+	s.slotFetch[4] = time.Now().Add(-10 * time.Second)
+	s.slotFetchEnd[4] = time.Now()
+	s.fetchMu.Unlock()
+	if !s.SlotPulledSince(4, time.Now().Add(-time.Minute)) {
+		t.Fatal("a sustained finished session must count as playback")
+	}
+}

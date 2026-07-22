@@ -35,30 +35,31 @@ func TestSuperseded(t *testing.T) {
 	}
 }
 
-// TestSlotPulledSince covers the slot-scoped success signal: only THIS slot's
-// proxied fetch after the press counts, so cross-traffic (another slot's
-// reconnect, a zone follower) can no longer certify a failed recall as healthy.
+// TestSlotPulledSince covers the handler's slot-scoped success pass-through:
+// the decision itself (liveness, sustained-fetch) lives in
+// streamproxy.SlotPulledSince and is tested there; here the wiring must be
+// nil-safe and forward slot + anchor untouched.
 func TestSlotPulledSince(t *testing.T) {
 	h := &presetWsHandler{}
 	if h.slotPulledSince(3, time.Now().Add(-time.Minute)) {
-		t.Fatal("nil slotStreamActivity must read as not pulled")
+		t.Fatal("nil slotPulled must read as not pulled")
 	}
 
-	stamp := time.Now()
-	h.slotStreamActivity = func(slot int) time.Time {
-		if slot == 3 {
-			return stamp
-		}
-		return time.Time{}
+	var gotSlot int
+	var gotSince time.Time
+	h.slotPulled = func(slot int, since time.Time) bool {
+		gotSlot, gotSince = slot, since
+		return slot == 3
 	}
-	if !h.slotPulledSince(3, stamp.Add(-time.Second)) {
-		t.Fatal("this slot's fetch after the press must count as success")
+	anchor := time.Now()
+	if !h.slotPulledSince(3, anchor) {
+		t.Fatal("wired signal must decide")
 	}
-	if h.slotPulledSince(3, stamp.Add(time.Second)) {
-		t.Fatal("a fetch BEFORE the press must not count")
+	if gotSlot != 3 || !gotSince.Equal(anchor) {
+		t.Fatalf("slot/anchor must pass through untouched, got slot=%d since=%v", gotSlot, gotSince)
 	}
-	if h.slotPulledSince(2, stamp.Add(-time.Second)) {
-		t.Fatal("another slot's fetch must not certify this recall")
+	if h.slotPulledSince(2, anchor) {
+		t.Fatal("another slot must not certify this recall")
 	}
 }
 
@@ -91,5 +92,37 @@ func TestIsOwnBoxPresetLocation(t *testing.T) {
 		if isOwnBoxPresetLocation(u) {
 			t.Errorf("foreign location must never be prunable: %s", u)
 		}
+	}
+}
+
+// TestUrgentResyncHasOwnBudget: the urgent re-sync (a 1036/re-login wipe is
+// imminent) must not be starved by a routine ask that consumed the normal
+// budget minutes earlier - the field bundles showed five dead-key presses
+// producing no heal because the boot-time ask had eaten the shared budget.
+func TestUrgentResyncHasOwnBudget(t *testing.T) {
+	presetResyncAsk.Store(false)
+	presetResyncLast.Store(time.Now().Unix()) // routine budget just consumed
+	presetResyncUrgentLast.Store(0)
+	t.Cleanup(func() {
+		presetResyncAsk.Store(false)
+		presetResyncLast.Store(0)
+		presetResyncUrgentLast.Store(0)
+	})
+
+	requestPresetKeyResync(nil)
+	if presetResyncAsk.Load() {
+		t.Fatal("routine ask inside its gap must be rate-limited")
+	}
+
+	requestPresetKeyResyncUrgent(nil)
+	if !presetResyncAsk.Load() {
+		t.Fatal("urgent ask must not be starved by the routine budget")
+	}
+
+	// The urgent budget itself still bounds a 1036 storm.
+	presetResyncAsk.Store(false)
+	requestPresetKeyResyncUrgent(nil)
+	if presetResyncAsk.Load() {
+		t.Fatal("urgent asks inside the urgent gap must coalesce")
 	}
 }

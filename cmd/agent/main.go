@@ -326,7 +326,41 @@ func run() error {
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
 		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
-		marge.WithReflectSourceFormatPath("/mnt/nv/streborn/reflect-format"))
+		marge.WithReflectSourceFormatPath("/mnt/nv/streborn/reflect-format"),
+		// The box re-reads its cloud presets from marge during every
+		// setMargeAccount re-onboarding. Answering with an empty <presets/>
+		// made the firmware WIPE its own hardware-key registrations after
+		// every forced re-login ("Preset noch nicht festgelegt" until the
+		// reconcile healed them minutes later). Serve the stick store live so
+		// the cloud view always matches the keys.
+		marge.WithPresetSource(func() []marge.Preset {
+			all := store.All()
+			out := make([]marge.Preset, 0, len(all))
+			for _, p := range all {
+				out = append(out, marge.Preset{
+					ID:            p.Slot,
+					Source:        "UPNP",
+					Type:          "audio",
+					Location:      boxPresetURL(p),
+					SourceAccount: "UPnPUserName",
+					ItemName:      margeXMLEscape(p.Name),
+					ContainerArt:  margeXMLEscape(firstArtURL(p.Art)),
+				})
+			}
+			return out
+		}))
+	// A configured account makes every legacy account/config probe answer
+	// "signed in": some firmwares poll marge account endpoints that fell into
+	// the UNCONFIGURED fallback, which reads as "not logged in" and feeds the
+	// 1036 rejections on fresh installs (boxes with a cached pre-shutdown Bose
+	// account never ask). Matches the ACTIVE account respondMargeAccountFull
+	// already reports on the /streaming paths.
+	margeSrv.SetAccount(&marge.AccountInfo{
+		AccountUUID:  "streborn-local-account",
+		AccountEmail: "stick@local",
+		AuthToken:    "local-token-v1",
+		CreatedAt:    "2026-01-01T00:00:00Z",
+	})
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
 	// The AutoPair manager is created up here so it can also be used in the
 	// WS and webui handlers.
@@ -543,12 +577,13 @@ func run() error {
 		// clears any deliberate-stop latch an earlier (or spontaneous, #419)
 		// power-off armed, so the recall is not suppressed by stale intent.
 		noteUserPlay: webuiSrv.NoteUserPlay,
-		// Ground truth for the recall verify: the box opening THIS slot's proxied
-		// stream proves it is playing what the recall pushed, where now_playing
-		// can still name the previous preset for seconds after the switch.
-		// Slot-scoped so cross-traffic (another slot, a zone follower) cannot
-		// certify a failed recall as healthy (#252).
-		slotStreamActivity: streamProxySrv.LastFetchForSlot,
+		// Ground truth for the recall verify: the box pulling THIS slot's proxied
+		// stream (still open, or served a sustained stretch) proves it is playing
+		// what the recall pushed, where now_playing can still name the previous
+		// preset for seconds after the switch. Slot-scoped and liveness-aware so
+		// neither cross-traffic nor a dead 36ms fetch can certify a failed
+		// recall as healthy (#252).
+		slotPulled: streamProxySrv.SlotPulledSince,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -599,6 +634,14 @@ func run() error {
 	// stamp the same classifier.
 	renderer.OnTransportCommand = wsClient.NoteOwnTransportCommand
 	webuiSrv.SetTransportCommandHook(wsClient.NoteOwnTransportCommand)
+	// The standby classifier reads the same stamp: a source flip right after
+	// STR's own push (a wake-resume/recall the firmware rejects) must not be
+	// classified as a user power-off.
+	webuiSrv.SetOwnTransportCmdFn(wsClient.LastOwnTransportCommand)
+	// A completed (re-)onboarding wipes the box's hardware-key preset
+	// registrations; re-register them right away instead of waiting for the
+	// reconcile cadence.
+	autoPair.SetOnPaired(func() { requestPresetKeyResyncUrgent(logger) })
 	// Let the WebUI fill the Wi-Fi signal from the gabbo stream on BCO
 	// boxes, whose /networkInfo reports no signal.
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)
@@ -1207,28 +1250,27 @@ type presetWsHandler struct {
 	// earlier stop, #419) and anchors the standby-flip discriminator. Wired to
 	// webui.Server.NoteUserPlay. nil-safe.
 	noteUserPlay func()
-	// slotStreamActivity reports when the box last OPENED the given slot's
-	// proxied stream. It is the recall verify's ground truth: the box pulling
-	// THIS slot's audio through the proxy proves it plays what this recall
-	// pushed, whereas now_playing lags and can still name the PREVIOUS preset
-	// seconds after the box switched. Slot-scoped on purpose: the old global
-	// stamp let any proxied fetch (another slot's reconnect, a zone follower,
-	// even a 404) certify a failed recall as healthy at the first tick, so no
-	// retry ran and the wedge counter was falsely cleared (#252). Wired to
-	// streamproxy.Server.LastFetchForSlot. nil-safe.
-	slotStreamActivity func(slot int) time.Time
+	// slotPulled reports whether the box is credibly playing THIS slot's
+	// proxied stream for a recall anchored at the given time. It is the recall
+	// verify's ground truth: the box pulling THIS slot's audio through the
+	// proxy proves it plays what this recall pushed, whereas now_playing lags
+	// and can still name the PREVIOUS preset seconds after the box switched.
+	// Slot-scoped AND liveness-aware on purpose: the old global stamp let any
+	// proxied fetch certify a failed recall, and even the slot stamp alone let
+	// a 36ms fetch that died in the box's re-login bounce count as success
+	// (#252 field bundles). Wired to streamproxy.Server.SlotPulledSince.
+	// nil-safe.
+	slotPulled func(slot int, since time.Time) bool
 }
 
-// slotPulledSince reports whether the box opened THIS slot's proxied stream
-// after t, i.e. it really is fetching what this recall pushed. A preset that
-// plays a direct (non-proxied) URL never stamps; the now_playing check decides
-// for it.
+// slotPulledSince reports whether the box is credibly playing THIS slot's
+// proxied stream for a recall anchored at t. A preset that plays a direct
+// (non-proxied) URL never stamps; the now_playing check decides for it.
 func (h *presetWsHandler) slotPulledSince(slot int, t time.Time) bool {
-	if h.slotStreamActivity == nil {
+	if h.slotPulled == nil {
 		return false
 	}
-	lf := h.slotStreamActivity(slot)
-	return !lf.IsZero() && lf.After(t)
+	return h.slotPulled(slot, t)
 }
 
 // superseded reports whether a newer hardware press (pressSeq moved past seq)
@@ -1727,6 +1769,12 @@ func (h *presetWsHandler) OnSourceRejected(_ context.Context) {
 	h.sourceRejectMu.Lock()
 	h.lastSourceReject = time.Now()
 	h.sourceRejectMu.Unlock()
+	// A 1036 rejection precedes the forced re-login, and the re-onboarding
+	// that follows is when the firmware wipes its hardware-key preset
+	// registrations (field bundles: "missing=5/6" healed right after every
+	// "forced re-login sent"). Schedule the heal proactively; own short
+	// budget, so a routine ask cannot starve it.
+	requestPresetKeyResyncUrgent(h.logger)
 }
 
 // lastSourceRejectTime returns when the box last rejected STR's source (zero if
@@ -1769,14 +1817,21 @@ func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
 
 // presetResyncAsk flags one forced full box-preset re-sync for the periodic
 // reconcile (the #342 dead-key self-heal). presetResyncLast rate-limits the
-// requests so repeated thumbs presses cannot cause a re-sync storm.
+// routine requests so repeated thumbs presses cannot cause a re-sync storm;
+// presetResyncUrgentLast is a SEPARATE, shorter budget for the deterministic
+// wipe moments (a 1036 source rejection precedes a forced re-login, and the
+// re-onboarding is when the firmware drops its key registrations) so a routine
+// ask consumed minutes earlier cannot starve the heal that is actually needed
+// now (field bundles 2026-07-22: five dead-key presses produced no resync
+// because the boot-time ask had eaten the 10-minute budget).
 var (
-	presetResyncAsk  atomic.Bool
-	presetResyncLast atomic.Int64 // unix seconds of the last accepted request
+	presetResyncAsk        atomic.Bool
+	presetResyncLast       atomic.Int64 // unix seconds of the last accepted routine request
+	presetResyncUrgentLast atomic.Int64 // unix seconds of the last accepted urgent request
 )
 
 func requestPresetKeyResync(logger *slog.Logger) {
-	const minGapSec = 10 * 60
+	const minGapSec = 2 * 60
 	now := time.Now().Unix()
 	last := presetResyncLast.Load()
 	if last != 0 && now-last < minGapSec {
@@ -1787,7 +1842,27 @@ func requestPresetKeyResync(logger *slog.Logger) {
 	}
 	presetResyncAsk.Store(true)
 	if logger != nil {
-		logger.Info("preset self-heal: lone key activity with no selection frame; scheduling a full box preset re-sync (#342)")
+		logger.Info("preset self-heal: scheduling a full box preset re-sync (#342)")
+	}
+}
+
+// requestPresetKeyResyncUrgent is requestPresetKeyResync for the moments where
+// a box-side key wipe is EXPECTED (a 1036 rejection / forced re-login, a fresh
+// pairing): it uses its own short budget so it cannot be starved by a routine
+// ask, and the reconcile's 10s wake bounds how often the forced pass can run.
+func requestPresetKeyResyncUrgent(logger *slog.Logger) {
+	const minGapSec = 60
+	now := time.Now().Unix()
+	last := presetResyncUrgentLast.Load()
+	if last != 0 && now-last < minGapSec {
+		return
+	}
+	if !presetResyncUrgentLast.CompareAndSwap(last, now) {
+		return
+	}
+	presetResyncAsk.Store(true)
+	if logger != nil {
+		logger.Info("preset self-heal: urgent full box preset re-sync scheduled (re-login/pairing wipes the key registrations)")
 	}
 }
 
@@ -2675,6 +2750,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			})
 		}
 	}
+	syncFailed := false
 	if len(missing) > 0 {
 		if forceFull {
 			logger.Info("preset reconcile: full re-sync after box became ready (registers hardware buttons)", "slots", len(missing))
@@ -2688,6 +2764,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
 		for _, spec := range missing {
 			if serr, failed := errs[spec.Slot]; failed {
+				syncFailed = true
 				logger.Warn("preset reconcile: AddPreset failed", "slot", spec.Slot, "err", serr)
 			} else {
 				logger.Info("preset reconcile healed", "slot", spec.Slot)
@@ -2715,6 +2792,16 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			logger.Info("preset reconcile: removed a stale STR preset the store no longer backs (dead button after reinstall)", "slot", slot)
 		}
 		cancel()
+	}
+	// A pass with failed AddPresets is NOT done: returning true here dropped
+	// the loop to the 5-minute maintenance cadence while the box's key layer
+	// stayed empty, which is exactly the "hardware keys dead for ~6.5 minutes
+	// after every power cycle" window in the field bundles (a just-booted
+	// BoseApp accepts GET /presets but rejects AddPreset for a while). Report
+	// not-ready so the 10s fast cadence retries until every slot registered.
+	if syncFailed {
+		logger.Warn("preset reconcile: some AddPresets failed, keeping the fast retry cadence")
+		return false
 	}
 	return true
 }
@@ -2793,6 +2880,22 @@ var xmlEntityReplacer = strings.NewReplacer(
 	"&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'")
 
 func xmlEntityUnescape(s string) string { return xmlEntityReplacer.Replace(s) }
+
+// margeXMLEscape escapes user-provided text (station names, art URLs) for the
+// marge preset template, which is a text/template and does not escape XML.
+var margeXMLEscaper = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;")
+
+func margeXMLEscape(s string) string { return margeXMLEscaper.Replace(s) }
+
+// firstArtURL returns the first entry of a pipe-separated art fallback chain
+// (how preset.Art is persisted); the box only ever gets one URL.
+func firstArtURL(art string) string {
+	if idx := strings.Index(art, "|"); idx >= 0 {
+		return art[:idx]
+	}
+	return art
+}
 
 // seedBoxPresetsAndRecoverStore runs once in the background at agent start.
 // Two jobs (#252, the ST20 whose presets showed "unassigned although they are

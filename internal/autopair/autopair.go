@@ -64,6 +64,13 @@ type Manager struct {
 	lastPaired *bool
 	tickCount  int
 
+	// onPaired fires when the box transitions from unpaired to paired (a
+	// completed (re-)onboarding). The firmware wipes its hardware-key preset
+	// registrations during exactly that onboarding, so the agent hooks this to
+	// schedule an immediate key re-sync instead of waiting for the reconcile
+	// cadence. Set once at wiring time, before RunBackground starts.
+	onPaired func()
+
 	// Login-suspicion state. A margeAccountUUID on the box does NOT mean the
 	// box considers itself logged in: fresh installs and factory-reset boxes
 	// keep the UUID while their MargeHSM drops back to not-logged-in (every
@@ -283,9 +290,25 @@ func (m *Manager) recordPairedState(paired bool) {
 	if *m.lastPaired != paired {
 		m.logger.Warn("autopair phase: paired state changed",
 			"from", *m.lastPaired, "to", paired)
+		wasUnpaired := !*m.lastPaired
 		v := paired
 		m.lastPaired = &v
+		// unpaired -> paired = a (re-)onboarding just completed; the firmware
+		// wipes its key-layer preset registrations in that transition, so let
+		// the agent re-register them right away. The initial observation is
+		// deliberately NOT a transition: an already-paired box at agent start
+		// went through no onboarding.
+		if paired && wasUnpaired && m.onPaired != nil {
+			m.onPaired()
+		}
 	}
+}
+
+// SetOnPaired registers the unpaired->paired transition hook. Call before
+// RunBackground starts; the callback must be fast (it runs inside the pair
+// cycle).
+func (m *Manager) SetOnPaired(fn func()) {
+	m.onPaired = fn
 }
 
 // boxClockSane returns true if the box's own clock — as reported by
@@ -351,6 +374,14 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 	// interval.
 	const fastInterval = 20 * time.Second
 	const fastFor = 2 * time.Minute
+	// fastForUnpairedMax extends the fast window while the box has NOT yet
+	// been observed paired: on scm/mojo the post-boot clock sync and account
+	// clear can take ~5-8 minutes, and the old fixed 2-minute window left the
+	// box unpaired on the 5-minute steady cadence for most of that time (the
+	// field bundle showed an ~8-minute unpaired hole after a reboot, with the
+	// hardware keys dead throughout). Bounded so a permanently unreachable box
+	// still settles to the cheap steady interval eventually.
+	const fastForUnpairedMax = 10 * time.Minute
 	start := time.Now()
 	cur := fastInterval
 	if interval < fastInterval {
@@ -378,8 +409,10 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 			m.logger.Warn("autopair phase: heartbeat",
 				"tick", m.tickCount, "state", state, "interval", cur.String())
 		}
-		// Settle to the steady interval once the fast post-boot window elapses.
-		if cur != interval && time.Since(start) >= fastFor {
+		// Settle to the steady interval once the fast post-boot window elapses;
+		// a box not yet observed paired holds the fast cadence longer (capped).
+		pairedObserved := m.lastPaired != nil && *m.lastPaired
+		if cur != interval && shouldSettleToSteady(time.Since(start), pairedObserved, fastFor, fastForUnpairedMax) {
 			cur = interval
 			tick.Reset(interval)
 		}
@@ -389,6 +422,16 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 		case <-tick.C:
 		}
 	}
+}
+
+// shouldSettleToSteady decides when the post-boot fast poll drops to the
+// steady interval: after fastFor once the box has been observed paired, or
+// after the (longer) unpaired cap otherwise.
+func shouldSettleToSteady(elapsed time.Duration, pairedObserved bool, fastFor, fastForUnpairedMax time.Duration) bool {
+	if pairedObserved {
+		return elapsed >= fastFor
+	}
+	return elapsed >= fastForUnpairedMax
 }
 
 // TriggerNow forces a pair-check cycle, independent of the RunBackground

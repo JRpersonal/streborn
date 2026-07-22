@@ -745,6 +745,16 @@ func (c *Client) NoteOwnTransportCommand() {
 	c.mu.Unlock()
 }
 
+// LastOwnTransportCommand returns when STR last issued a transport-mutating
+// SOAP command (zero time if never). The webui's standby classifier reads it
+// to recognise a source flip that merely answers STR's OWN push (the firmware
+// rejecting a wake-resume/recall) instead of reading it as a user power-off.
+func (c *Client) LastOwnTransportCommand() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastOwnCmdAt
+}
+
 func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	c.logger.Debug("box ws frame", "bytes", len(data), "preview", preview(data, 400))
 

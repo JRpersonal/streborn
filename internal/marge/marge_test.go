@@ -372,3 +372,69 @@ func TestAddDeviceIdempotentAcrossForcedRelogins(t *testing.T) {
 		}
 	}
 }
+
+// TestPresetSourceServedDuringRelogin pins the anti-wipe contract: the box
+// re-reads its cloud presets during every setMargeAccount re-onboarding, and
+// an empty <presets/> makes the firmware wipe its own hardware-key
+// registrations. With a live preset source wired (the stick store), marge must
+// serve the real presets - on every read, so repeated re-logins stay safe -
+// with user text XML-escaped upstream.
+func TestPresetSourceServedDuringRelogin(t *testing.T) {
+	calls := 0
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("DEVICEID_PLACEHOLDER"),
+		WithPresetSource(func() []Preset {
+			calls++
+			return []Preset{
+				{ID: 1, Source: "UPNP", Type: "audio",
+					Location: "http://127.0.0.1:8888/stream/1", SourceAccount: "UPnPUserName",
+					ItemName: "Pop &amp; Rock"},
+				{ID: 4, Source: "UPNP", Type: "audio",
+					Location: "http://127.0.0.1:8888/spotify/stream-4.ogg", SourceAccount: "UPnPUserName",
+					ItemName: "Spotify"},
+			}
+		}))
+	h := s.Handler()
+	for round := 1; round <= 2; round++ {
+		req := httptest.NewRequest(http.MethodGet, "/preset/list", nil)
+		rw := httptest.NewRecorder()
+		h.ServeHTTP(rw, req)
+		body := rw.Body.String()
+		xmlWellFormed(t, body)
+		if strings.Contains(body, "<presets/>") {
+			t.Fatalf("round %d: live store must never answer an empty preset list (the firmware wipes its keys on it):\n%s", round, body)
+		}
+		for _, want := range []string{`id="1"`, `id="4"`, "Pop &amp; Rock", "/spotify/stream-4.ogg"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("round %d: preset response missing %q:\n%s", round, want, body)
+			}
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("the source must be read live on every request, got %d reads", calls)
+	}
+}
+
+// TestConfiguredAccountAnswersLegacyProbes: some firmwares poll legacy account/
+// config endpoints; an UNCONFIGURED answer there reads as "not signed in" and
+// feeds the 1036 rejections. With an account set, both must report signed-in.
+func TestConfiguredAccountAnswersLegacyProbes(t *testing.T) {
+	s := newTestServer()
+	s.SetAccount(&AccountInfo{AccountUUID: "streborn-local-account",
+		AccountEmail: "stick@local", AuthToken: "local-token-v1",
+		CreatedAt: "2026-01-01T00:00:00Z"})
+	h := s.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/legacy/marge/account", nil)
+	rw := httptest.NewRecorder()
+	h.ServeHTTP(rw, req)
+	if strings.Contains(rw.Body.String(), "UNCONFIGURED") {
+		t.Fatalf("configured account must not answer UNCONFIGURED:\n%s", rw.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/legacy/config", nil)
+	rw = httptest.NewRecorder()
+	h.ServeHTTP(rw, req)
+	if !strings.Contains(rw.Body.String(), "SOUNDTOUCH_CONFIGURED") {
+		t.Fatalf("configured box must report SOUNDTOUCH_CONFIGURED:\n%s", rw.Body.String())
+	}
+}

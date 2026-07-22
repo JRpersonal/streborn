@@ -240,3 +240,48 @@ func TestHandleEnterStandby_SpontaneousDropResumesActiveStream(t *testing.T) {
 	}
 	t.Fatalf("spontaneous-off recovery never re-pushed the interrupted stream, got %v", rec.list())
 }
+
+// TestHandleEnterStandby_FlipAfterOwnPushIsNotAPowerOff encodes the field
+// signature that survived F4: power-ON key press, STR's own wake-resume push
+// ~2s later, source flip 200ms after the push. The key press satisfied the
+// adjacency check, so the flip latched "user stopped deliberately" and the
+// very resume the key asked for was suppressed. A flip right after STR's own
+// transport command - with no key press since that command - answers OUR push
+// and must leave the latches and transport alone.
+func TestHandleEnterStandby_FlipAfterOwnPushIsNotAPowerOff(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	now := time.Now()
+	s.SetUserActivityFn(func() time.Time { return now.Add(-2400 * time.Millisecond) })
+	s.SetOwnTransportCmdFn(func() time.Time { return now.Add(-200 * time.Millisecond) })
+
+	s.HandleEnterStandby()
+
+	if s.standbyStoppedRecently() || s.userStoppedRecently() {
+		t.Fatal("a flip answering STR's own push must not arm the stop latches")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if rec.count() != 0 {
+		t.Fatalf("a flip answering STR's own push must not clear the transport, got %v", rec.list())
+	}
+}
+
+// TestHandleEnterStandby_KeyAfterOwnPushStillLatches guards #197 against the
+// new excusal: a key press AFTER STR's last push is the user acting (the power
+// key), so the conservative power-off handling must win.
+func TestHandleEnterStandby_KeyAfterOwnPushStillLatches(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-10 * time.Second) // recall still active
+	s.standbyStopMu.Unlock()
+	s.SetOwnTransportCmdFn(func() time.Time { return time.Now().Add(-2 * time.Second) })
+	s.SetUserActivityFn(func() time.Time { return time.Now() }) // power press AFTER our push
+
+	s.HandleEnterStandby()
+
+	if !s.standbyStoppedRecently() || !s.userStoppedRecently() {
+		t.Fatal("a key press after STR's own push is a real power-off and must latch (#197)")
+	}
+	if !waitForAction(t, rec, "Stop") {
+		t.Fatalf("a real power-off must still clear the transport (#197), got %v", rec.list())
+	}
+}

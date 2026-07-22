@@ -267,3 +267,76 @@ func TestEnsurePairedSingleFlight(t *testing.T) {
 		t.Fatalf("8 concurrent triggers must coalesce into 1 pair POST, got %d", got)
 	}
 }
+
+func TestOnPairedFiresOnlyOnUnpairedToPairedTransition(t *testing.T) {
+	box := &fakeBox{infoBody: unpairedInfo}
+	m := newTestManager(t, box)
+	fired := 0
+	m.SetOnPaired(func() { fired++ })
+
+	// Initial observation (unpaired) is not a transition.
+	if err := m.EnsurePaired(context.Background()); err != nil {
+		t.Fatalf("EnsurePaired: %v", err)
+	}
+	if fired != 0 {
+		t.Fatalf("initial unpaired observation must not fire, got %d", fired)
+	}
+
+	// The box completed its onboarding: unpaired -> paired must fire once
+	// (the firmware wipes its key registrations during the onboarding, and
+	// this hook is what schedules the immediate re-registration).
+	box.mu.Lock()
+	box.infoBody = pairedInfo
+	box.mu.Unlock()
+	if err := m.EnsurePaired(context.Background()); err != nil {
+		t.Fatalf("EnsurePaired: %v", err)
+	}
+	if fired != 1 {
+		t.Fatalf("unpaired->paired must fire the hook once, got %d", fired)
+	}
+
+	// Steady paired state: no more fires.
+	if err := m.EnsurePaired(context.Background()); err != nil {
+		t.Fatalf("EnsurePaired: %v", err)
+	}
+	if fired != 1 {
+		t.Fatalf("steady paired state must not re-fire, got %d", fired)
+	}
+}
+
+func TestOnPairedDoesNotFireOnInitialPairedObservation(t *testing.T) {
+	// A box that is already paired at agent start went through no onboarding:
+	// no wipe happened, so no forced re-sync is needed.
+	box := &fakeBox{infoBody: pairedInfo}
+	m := newTestManager(t, box)
+	fired := 0
+	m.SetOnPaired(func() { fired++ })
+	if err := m.EnsurePaired(context.Background()); err != nil {
+		t.Fatalf("EnsurePaired: %v", err)
+	}
+	if fired != 0 {
+		t.Fatalf("initial paired observation must not fire, got %d", fired)
+	}
+}
+
+func TestShouldSettleToSteady(t *testing.T) {
+	const fastFor = 2 * time.Minute
+	const unpairedMax = 10 * time.Minute
+	cases := []struct {
+		name    string
+		elapsed time.Duration
+		paired  bool
+		want    bool
+	}{
+		{"paired, inside fast window", time.Minute, true, false},
+		{"paired, fast window elapsed", 3 * time.Minute, true, true},
+		{"unpaired, would have settled before", 3 * time.Minute, false, false},
+		{"unpaired, holds the fast cadence long", 9 * time.Minute, false, false},
+		{"unpaired, capped eventually", 11 * time.Minute, false, true},
+	}
+	for _, c := range cases {
+		if got := shouldSettleToSteady(c.elapsed, c.paired, fastFor, unpairedMax); got != c.want {
+			t.Errorf("%s: shouldSettleToSteady = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

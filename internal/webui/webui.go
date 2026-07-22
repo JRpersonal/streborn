@@ -289,6 +289,12 @@ type Server struct {
 	// to the conservative power-off handling.
 	userActivityFn func() time.Time
 
+	// ownTransportCmdFn reports when STR itself last issued a transport-
+	// mutating SOAP command; zero = never. Wired to
+	// boxws.LastOwnTransportCommand. HandleEnterStandby uses it to excuse a
+	// source flip that answers STR's own push. nil-safe.
+	ownTransportCmdFn func() time.Time
+
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
 	// Empty falls back to defaultResumeOnPowerOnPath.
@@ -2930,6 +2936,11 @@ const (
 	// nowSelectionUpdated by a moment) from a genuinely NEW key press during
 	// the recall (e.g. the user pressing power to stop it, the original #197).
 	userPlayActivityEpsilon = 2 * time.Second
+	// ownPushFlipWindow: a UPNP->STANDBY flip this soon after one of STR's OWN
+	// transport commands (SetURI/Play of a wake-resume or recall) is the
+	// firmware answering that push, not a user power-off - provided no key
+	// press arrived after the push.
+	ownPushFlipWindow = 3 * time.Second
 	// powerKeyAdjacencyWindow: for a key press during a recall to count as the
 	// user powering the box off, the UPNP->STANDBY flip must follow the key
 	// within this window (a power press flips the source near-instantly). A key
@@ -2971,6 +2982,17 @@ func (s *Server) userPlayedRecently() bool {
 // a physical power-off from a spontaneous firmware source power-off (#419).
 func (s *Server) SetUserActivityFn(fn func() time.Time) {
 	s.userActivityFn = fn
+}
+
+// SetOwnTransportCmdFn wires boxws.LastOwnTransportCommand so HandleEnterStandby
+// can recognise a source flip that answers STR's OWN transport push (the
+// firmware rejecting a wake-resume or recall SetURI) instead of classifying it
+// as a user power-off. Field signature: power-on key press, STR's resume push
+// ~2s later, flip 200ms after the push - the key press satisfied the adjacency
+// check and the flip latched "user stopped deliberately", so the resume the
+// user asked for was suppressed.
+func (s *Server) SetOwnTransportCmdFn(fn func() time.Time) {
+	s.ownTransportCmdFn = fn
 }
 
 // NoteUserPlay records that the user explicitly asked for playback (hardware
@@ -3047,6 +3069,23 @@ func (s *Server) HandleEnterStandby() {
 	// recovery off mid-recall (#252).
 	newKeySinceRecall := lastKey.After(playStart.Add(userPlayActivityEpsilon))
 	keyAdjacentToFlip := !lastKey.IsZero() && now.Sub(lastKey) <= powerKeyAdjacencyWindow
+	// A flip right after STR's OWN transport push, with no key press SINCE that
+	// push, is the firmware rejecting/settling OUR command - not a user
+	// power-off, even when a key press sits just before the push (field case:
+	// power-ON key, STR's wake-resume push 2s later, flip 200ms after the
+	// push; the key satisfied the adjacency check and the flip latched "user
+	// stopped deliberately", suppressing the very resume the key asked for).
+	// A real power-off is unaffected: its key press comes AFTER our last push.
+	var lastOwnCmd time.Time
+	if s.ownTransportCmdFn != nil {
+		lastOwnCmd = s.ownTransportCmdFn()
+	}
+	ownPushAnswered := !lastOwnCmd.IsZero() && now.Sub(lastOwnCmd) <= ownPushFlipWindow &&
+		lastOwnCmd.After(lastKey)
+	if ownPushAnswered && !deliberateStop {
+		s.logger.Info("standby bounce: source flipped right after STR's own transport push, treating as the firmware answering the push, not a user power-off")
+		return
+	}
 	if recallActive && !(newKeySinceRecall && keyAdjacentToFlip) && !deliberateStop {
 		s.logger.Info("standby bounce: source dropped during the user's own recall with no adjacent new key press, leaving transport and latches alone (#419)")
 		return

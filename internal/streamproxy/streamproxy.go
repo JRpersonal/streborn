@@ -276,7 +276,14 @@ type Server struct {
 	// display, no audio, clean log).
 	fetchMu   sync.Mutex
 	lastFetch time.Time
-	slotFetch [7]time.Time // index 1..6
+	slotFetch [7]time.Time // index 1..6: when the box last OPENED the slot
+	// slotFetchEnd / slotOpen make the per-slot signal liveness-aware: a
+	// 36ms-2.4s fetch that dies in the box's re-login source bounce used to
+	// satisfy "opened since the press" and certified a dead recall as healthy
+	// (field bundles 2026-07-22). A recall counts as pulled only while a
+	// connection is OPEN or after it served a sustained stretch.
+	slotFetchEnd [7]time.Time
+	slotOpen     [7]int
 
 	// netMu guards a briefly-cached verdict on whether the SPEAKER itself can
 	// reach the public internet. It lets /api/stream-status tell "this one
@@ -860,20 +867,34 @@ func (s *Server) noteFetch() {
 
 // noteSlotFetch records that the box opened THIS slot's proxied stream. Called
 // only after the slot validated and the store had a playable preset, so a 404
-// or a foreign fetch can never stamp it.
+// or a foreign fetch can never stamp it. Paired with noteSlotFetchDone.
 func (s *Server) noteSlotFetch(slot int) {
 	if slot < 1 || slot > 6 {
 		return
 	}
 	s.fetchMu.Lock()
 	s.slotFetch[slot] = time.Now()
+	s.slotOpen[slot]++
+	s.fetchMu.Unlock()
+}
+
+// noteSlotFetchDone records that a slot connection closed, for the liveness
+// half of SlotPulledSince.
+func (s *Server) noteSlotFetchDone(slot int) {
+	if slot < 1 || slot > 6 {
+		return
+	}
+	s.fetchMu.Lock()
+	if s.slotOpen[slot] > 0 {
+		s.slotOpen[slot]--
+	}
+	s.slotFetchEnd[slot] = time.Now()
 	s.fetchMu.Unlock()
 }
 
 // LastFetchForSlot reports when the box last opened the given slot's proxied
-// stream (zero time = never, or slot out of range). The hardware recall verify
-// uses it as its slot-scoped success signal; the global LastActivity stamp
-// stays for the wedge detector, which deliberately counts any fetch.
+// stream (zero time = never, or slot out of range). The global LastActivity
+// stamp stays for the wedge detector, which deliberately counts any fetch.
 func (s *Server) LastFetchForSlot(slot int) time.Time {
 	if slot < 1 || slot > 6 {
 		return time.Time{}
@@ -881,6 +902,33 @@ func (s *Server) LastFetchForSlot(slot int) time.Time {
 	s.fetchMu.Lock()
 	defer s.fetchMu.Unlock()
 	return s.slotFetch[slot]
+}
+
+// minSustainedFetch is how long a now-closed slot fetch must have served to
+// still count as "the box played this recall". The box's re-login source
+// bounce opens the stream for 36ms-2.4s and drops it; a genuine playback
+// session either stays open or lasted well past this.
+const minSustainedFetch = 3 * time.Second
+
+// SlotPulledSince reports whether the box is credibly playing this slot's
+// proxied stream for a recall anchored at t: a connection opened after t that
+// is still OPEN, or one that served at least minSustainedFetch before closing.
+// This is the hardware recall verify's success signal; "opened once since t"
+// alone certified dead recalls as healthy (#252 field bundles).
+func (s *Server) SlotPulledSince(slot int, t time.Time) bool {
+	if slot < 1 || slot > 6 {
+		return false
+	}
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	start := s.slotFetch[slot]
+	if start.IsZero() || !start.After(t) {
+		return false
+	}
+	if s.slotOpen[slot] > 0 {
+		return true
+	}
+	return s.slotFetchEnd[slot].Sub(start) >= minSustainedFetch
 }
 
 // LastActivity reports when the box last opened any proxied stream and when
@@ -1099,6 +1147,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	p.StreamURL = s.resolvePresetURL(slot, p.StreamURL)
 	s.noteSlotFetch(slot)
+	defer s.noteSlotFetchDone(slot)
 	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
 
 	if isDASHURL(p.StreamURL) {
