@@ -390,6 +390,13 @@ jobs:
   build-desktop-windows:
     needs: [build-agent, build-go-librespot]
     runs-on: windows-latest
+    env:
+      # Mirror of the Trusted Signing client id into an env var so the signing
+      # step's `if:` can test for its presence (GitHub does not allow reading
+      # `secrets.*` directly in an `if:`). When the Azure Trusted Signing secrets
+      # are not configured, the signing step is skipped and the release still
+      # builds an (unsigned) exe, so nothing breaks before the account is set up.
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
     permissions:
       contents: read
       id-token: write
@@ -479,6 +486,38 @@ jobs:
             -ldflags "-s -w -X main.appVersion=${VERSION} -X main.appBuild=${BUILD_STAMP}" \
             -trimpath \
             -clean
+
+      # Sign the .exe with Azure Trusted Signing. Smart App Control and the
+      # stricter SmartScreen prompts block the UNSIGNED build outright (SAC has
+      # no per-app override), and a Trusted Signing signature chains to a
+      # Microsoft-trusted root, so it clears both. ~$10/month, no HSM token.
+      #
+      # Runs BEFORE the rename+hash and the Sigstore attestation below, so the
+      # published SHA256 and the provenance attestation both cover the SIGNED
+      # binary (a hash taken before signing would never match what users get).
+      #
+      # Gated on AZURE_CLIENT_ID: with the secrets unset the step is skipped and
+      # the release still produces an unsigned exe, so this can land before the
+      # Trusted Signing account exists without breaking a release.
+      #
+      # TODO: pin this action to a commit SHA (repo policy is SHA-pinned actions)
+      # and confirm the input names against the current Trusted Signing docs
+      # before the first signed release.
+      - name: Sign Windows app (Azure Trusted Signing)
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        uses: azure/trusted-signing-action@v0.5.9
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.TRUSTED_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\desktop-app\build\bin
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
 
       - name: Rename and hash output
         shell: bash
