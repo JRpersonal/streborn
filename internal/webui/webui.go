@@ -295,6 +295,9 @@ type Server struct {
 	// source flip that answers STR's own push. nil-safe.
 	ownTransportCmdFn func() time.Time
 
+	// playStateFn overrides boxPlayState for tests. nil = the real :8090 probe.
+	playStateFn func() (standby, busy bool)
+
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
 	// Empty falls back to defaultResumeOnPowerOnPath.
@@ -2864,6 +2867,14 @@ func (s *Server) userStoppedRecently() bool {
 	return !s.lastUserStop.IsZero() && time.Since(s.lastUserStop) < userStopWindow
 }
 
+// userStoppedAfter reports whether a deliberate stop happened strictly after t
+// (absolute, so a long wait cannot expire it out of the rolling window).
+func (s *Server) userStoppedAfter(t time.Time) bool {
+	s.lastUserStopMu.Lock()
+	defer s.lastUserStopMu.Unlock()
+	return !s.lastUserStop.IsZero() && s.lastUserStop.After(t)
+}
+
 // standbyBounceWakeWindow is how long after HandleEnterStandby cleared the
 // transport (a power-off STR saw as UPNP->STANDBY) a following DO_NOT_RESUME
 // "wake" is treated as the scm power-off BOUNCE rather than a genuine power-on.
@@ -3308,10 +3319,6 @@ func (s *Server) maybeRePush() {
 	// this function's 2 s backoff, because the drop being "recovered" was just
 	// the PREVIOUS preset being torn down by the new press. Stand down for that
 	// window and let the recall's verify do the work.
-	if s.userPlayedRecently() {
-		s.logger.Info("re-push: a preset/play the user just started owns the retry, not resuming on top of it")
-		return
-	}
 	// A deliberate user stop (STR Stop/Pause, or the box/remote stop button seen
 	// over gabbo) must hold. Genuine box-side drops carry no such stop and resume.
 	if s.userStoppedRecently() {
@@ -3324,6 +3331,38 @@ func (s *Server) maybeRePush() {
 	if s.standbyStoppedRecently() {
 		s.logger.Info("re-push: box just powered off (standby bounce), not resuming (#197)")
 		return
+	}
+	if s.userPlayedRecently() {
+		// The recall's verify owns the retry inside this window - but only
+		// while it is still alive. A stream drop 5-12s after a user play used
+		// to be orphaned: the verify had already exited on its first success,
+		// this path returned permanently, and the music stayed off with a
+		// clean log (field bundle: slot-6 drop at +5.5s, box off, zero
+		// recovery). Wait out the remainder of the window and re-evaluate. A
+		// NEWER play started while waiting hands ownership to that recall's
+		// verify; a stop or power-off that arrived while waiting is compared
+		// against absolute stamps so it cannot expire out of a rolling window
+		// during the wait.
+		s.logger.Info("re-push: a preset/play the user just started owns the retry; re-checking once the ownership window ends")
+		waitStart := time.Now()
+		s.standbyStopMu.Lock()
+		playStart := s.lastUserPlayStart
+		s.standbyStopMu.Unlock()
+		if remain := recallOwnsRetryWindow - time.Since(playStart) + time.Second; remain > 0 {
+			time.Sleep(remain)
+		}
+		if s.userPlayedRecently() {
+			s.logger.Info("re-push: a newer play started while waiting, standing down")
+			return
+		}
+		if s.userStoppedAfter(waitStart) {
+			s.logger.Info("re-push: user stopped while waiting out the ownership window, not resuming")
+			return
+		}
+		if s.StandbyStoppedAfter(waitStart) {
+			s.logger.Info("re-push: box powered off while waiting out the ownership window, not resuming (#197)")
+			return
+		}
 	}
 	standby, busy := s.boxPlayState()
 	if standby {
@@ -3521,6 +3560,9 @@ func (s *Server) pushDisplayDefault() {
 // and idle" and trigger a resume. One quick retry first so a single hiccup does
 // not abort a legitimate stream recovery (where the box really is awake+idle).
 func (s *Server) boxPlayState() (standby, busy bool) {
+	if s.playStateFn != nil {
+		return s.playStateFn()
+	}
 	if s.boxHost == "" {
 		return true, false
 	}

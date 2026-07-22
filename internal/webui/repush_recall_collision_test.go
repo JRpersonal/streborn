@@ -55,3 +55,54 @@ func TestRecallWindowOutlivesTheVerifyStorm(t *testing.T) {
 		t.Fatalf("window %v must span the verify's first two ticks (%v)", recallOwnsRetryWindow, twoVerifyTicks)
 	}
 }
+
+// TestMaybeRePushRearmsAfterRecallOwnsRetryWindow reproduces the orphaned-drop
+// field signature: a stream drop ~6s after a user play fell into the recall's
+// ownership window, the verify had already exited on its first success, and
+// maybeRePush returned permanently - the box sat silent with a clean log. The
+// re-push must wait out the window and then resume.
+func TestMaybeRePushRearmsAfterRecallOwnsRetryWindow(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, false } // box on, idle
+	s.setLastPlay("http://127.0.0.1:8888/stream/6", "Antenne", "", "")
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-6 * time.Second) // drop 6s into the recall
+	s.standbyStopMu.Unlock()
+
+	done := make(chan struct{})
+	go func() { s.maybeRePush(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("maybeRePush did not return")
+	}
+	if !rec.has("SetAVTransportURI") {
+		t.Fatalf("an orphaned drop must be re-pushed once the ownership window ends, got %v", rec.list())
+	}
+}
+
+// TestMaybeRePushHonorsStopDuringOwnershipWait: a deliberate stop that arrives
+// WHILE maybeRePush waits out the ownership window must hold - compared via
+// absolute stamps, so it cannot expire out of the rolling 6s window during the
+// wait.
+func TestMaybeRePushHonorsStopDuringOwnershipWait(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, false }
+	s.setLastPlay("http://127.0.0.1:8888/stream/2", "NDR", "", "")
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-6 * time.Second)
+	s.standbyStopMu.Unlock()
+	stopTimer := time.AfterFunc(3*time.Second, s.NoteUserStop)
+	defer stopTimer.Stop()
+
+	done := make(chan struct{})
+	go func() { s.maybeRePush(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("maybeRePush did not return")
+	}
+	if rec.has("SetAVTransportURI") {
+		t.Fatalf("a stop during the ownership wait must hold, got %v", rec.list())
+	}
+}

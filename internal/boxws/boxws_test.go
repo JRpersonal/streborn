@@ -402,3 +402,33 @@ func TestHandleMessage_QplaySkip(t *testing.T) {
 		t.Fatalf("expected [next, prev] skips, got %v", h.skips)
 	}
 }
+
+// TestHandleMessage_EnterStandbyViaInvalidSourceFlap: on taigan/spotty/lisa
+// firmware the box's give-up after a failed self-activation reaches STANDBY
+// through INVALID_SOURCE (UPNP -> INVALID_SOURCE -> STANDBY), never directly
+// from UPNP. The prev==UPNP gate made that route bypass the entire standby
+// machinery (no classification, no #197 clear, no recovery) while the box
+// switched itself off - every observed standby entry in the 2026-07-22 field
+// bundles took this route. The flap must fire OnEnterStandby; an AUX power-off
+// (no recent UPNP) still must not.
+func TestHandleMessage_EnterStandbyViaInvalidSourceFlap(t *testing.T) {
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>PLAY_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="INVALID_SOURCE"/></nowPlayingUpdated></updates>`))
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="STANDBY"><ContentItem source="STANDBY"/></nowPlaying></nowPlayingUpdated></updates>`))
+	if h.enterStandby != 1 {
+		t.Fatalf("UPNP->INVALID_SOURCE->STANDBY must fire OnEnterStandby once, got %d", h.enterStandby)
+	}
+
+	// AUX -> INVALID_SOURCE -> STANDBY: STR's source was never active, the
+	// standby machinery must stay out of it.
+	h2 := &recHandler{}
+	c2 := newTestClient(h2)
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="AUX"/></nowPlayingUpdated></updates>`))
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="INVALID_SOURCE"/></nowPlayingUpdated></updates>`))
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="STANDBY"><ContentItem source="STANDBY"/></nowPlaying></nowPlayingUpdated></updates>`))
+	if h2.enterStandby != 0 {
+		t.Fatalf("a standby entry with no recent UPNP activity must not fire OnEnterStandby, got %d", h2.enterStandby)
+	}
+}

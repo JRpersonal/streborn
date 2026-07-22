@@ -155,6 +155,13 @@ type Client struct {
 	// really did stop. Guarded by mu.
 	lastOwnCmdAt time.Time
 
+	// lastUpnpActiveAt is when STR's own source (UPNP) last stopped being the
+	// active source. The firmware's give-up after a failed self-activation
+	// reaches STANDBY through INVALID_SOURCE (UPNP -> INVALID_SOURCE ->
+	// STANDBY), and the prev==UPNP gate alone made that route bypass the
+	// standby handling entirely. Guarded by mu.
+	lastUpnpActiveAt time.Time
+
 	// lastStandbyFlapAt times the box's own UPNP<->STANDBY oscillation on a
 	// spontaneous firmware source power-off (#419). That drop is not a single
 	// transition: the box flips UPNP->STANDBY->UPNP within ~100 ms, and the
@@ -657,6 +664,10 @@ const (
 	// within a fraction of a second of the SOAP round-trip; kept short so a
 	// real stop the user makes a moment later is still honoured.
 	ownCmdTeardownWindow = 3 * time.Second
+	// upnpFlapWindow bounds how long after UPNP stopped being the active
+	// source a STANDBY entry still counts as an STR-driven power-off (the
+	// UPNP -> INVALID_SOURCE -> STANDBY give-up completes within ~1-2s).
+	upnpFlapWindow = 5 * time.Second
 	// ownCmdKeyVeto: a physical key press this close to the STOP_STATE means
 	// the stop came from the user (remote/box stop key), NOT from STR's own
 	// command, even inside ownCmdTeardownWindow. The firmware sends a
@@ -811,6 +822,16 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			if src == "STANDBY" || prev == "STANDBY" {
 				c.lastStandbyFlapAt = time.Now()
 			}
+			// Stamp when STR's own source (UPNP) STOPS being active: the box's
+			// give-up after a failed self-activation reaches STANDBY through
+			// INVALID_SOURCE (UPNP -> INVALID_SOURCE -> STANDBY), and the
+			// standby handling below must still recognise that STR-driven
+			// playback is what just powered off.
+			if prev == "UPNP" {
+				c.lastUpnpActiveAt = time.Now()
+			}
+			upnpRecently := prev == "UPNP" ||
+				(!c.lastUpnpActiveAt.IsZero() && time.Since(c.lastUpnpActiveAt) < upnpFlapWindow)
 			c.mu.Unlock()
 			if changed {
 				// Log every source transition at INFO (rare by construction: only
@@ -827,9 +848,15 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// itself back on. When STR's own source (UPNP) drops to STANDBY, give
 				// the handler a chance to clear the transport so the box has nothing to
 				// bounce back to. Optional interface so handlers that do not need it
-				// (tests) are unaffected. Gated to prev==UPNP so it only fires for
-				// STR-driven playback, never an AUX/Spotify power-off.
-				if src == "STANDBY" && prev == "UPNP" {
+				// (tests) are unaffected. Gated so it only fires for STR-driven
+				// playback, never an AUX/Spotify power-off: either a direct
+				// UPNP->STANDBY drop, or the give-up flap UPNP->INVALID_SOURCE->
+				// STANDBY the firmware performs after a failed self-activation -
+				// that flap used to bypass the entire standby machinery, so no
+				// classification/recovery ran while the box switched itself off
+				// (field bundles 2026-07-22, all standby entries on taigan/spotty/
+				// lisa took this route).
+				if src == "STANDBY" && upnpRecently {
 					if h, ok := c.handler.(interface{ OnEnterStandby(context.Context) }); ok {
 						h.OnEnterStandby(ctx)
 					}

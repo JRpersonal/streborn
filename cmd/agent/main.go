@@ -1250,6 +1250,15 @@ type presetWsHandler struct {
 	// earlier stop, #419) and anchors the standby-flip discriminator. Wired to
 	// webui.Server.NoteUserPlay. nil-safe.
 	noteUserPlay func()
+	// Test seams over the box CLI / now_playing probes. nil = the real
+	// implementations (boxcli.WakeAndWait, boxcli.PowerOn, boxPlayingURL,
+	// boxNowPlayingSource); the verify tests stub them so wake ordering and
+	// the stuck-source nudge are assertable without hardware.
+	wakeBox      func(ctx context.Context, host string) error
+	sysPowerFn   func(ctx context.Context, host string) error
+	boxPlayingFn func(url string) bool
+	boxSourceFn  func() string
+
 	// slotPulled reports whether the box is credibly playing THIS slot's
 	// proxied stream for a recall anchored at the given time. It is the recall
 	// verify's ground truth: the box pulling THIS slot's audio through the
@@ -1286,6 +1295,48 @@ func (h *presetWsHandler) superseded(seq, gen uint64) bool {
 		return true
 	}
 	return false
+}
+
+// wake brings the box out of standby (no-op without a configured box host or
+// when the box is already awake). Seam-aware for the verify tests.
+func (h *presetWsHandler) wake(ctx context.Context) error {
+	if h.boxHost == "" {
+		return nil
+	}
+	if h.wakeBox != nil {
+		return h.wakeBox(ctx, h.boxHost)
+	}
+	return boxcli.WakeAndWait(ctx, h.boxHost, 6*time.Second, h.logger)
+}
+
+// sysPowerToggle sends one `sys power` toggle over the TAP CLI (the stuck-
+// INVALID_SOURCE nudge). Seam-aware for the verify tests.
+func (h *presetWsHandler) sysPowerToggle(ctx context.Context) error {
+	if h.boxHost == "" {
+		return nil
+	}
+	if h.sysPowerFn != nil {
+		return h.sysPowerFn(ctx, h.boxHost)
+	}
+	return boxcli.PowerOn(ctx, h.boxHost)
+}
+
+// playingURL reports whether the box's now_playing points at url in a play
+// state. Seam-aware for the verify tests.
+func (h *presetWsHandler) playingURL(url string) bool {
+	if h.boxPlayingFn != nil {
+		return h.boxPlayingFn(url)
+	}
+	return boxPlayingURL(h.boxHost, url)
+}
+
+// currentBoxSource returns the box's now_playing source attribute ("" on any
+// error). Seam-aware for the verify tests.
+func (h *presetWsHandler) currentBoxSource() string {
+	if h.boxSourceFn != nil {
+		return h.boxSourceFn()
+	}
+	return boxNowPlayingSource(h.boxHost)
 }
 
 // poweredOffSince reports whether the user powered the box off after t,
@@ -2119,6 +2170,7 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 	// Up to 5 attempts (~25s): a box waking from a deep/overnight standby can
 	// take longer than the old 3-attempt (~15s) window to finish bringing its
 	// network and playback subsystem back up before it accepts the stream (#183).
+	nudged := false
 	for attempt := 1; attempt <= 5; attempt++ {
 		time.Sleep(5 * time.Second)
 		// A newer press or app recall owns the transport now: this loop's URL is
@@ -2144,7 +2196,7 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// lags: a Portable kept naming the PREVIOUS preset for seconds after it
 		// had already opened the new stream, so a location check alone declared a
 		// healthy recall dead and the "repair" tore the working stream down.
-		if h.slotPulledSince(slot, pressAt) || boxPlayingURL(h.boxHost, url) {
+		if h.slotPulledSince(slot, pressAt) || h.playingURL(url) {
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
 			}
@@ -2169,6 +2221,20 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		}
 		h.logger.Warn("hardware recall not playing yet, retrying", "slot", slot, "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		// A box stuck in INVALID_SOURCE ignores wake (WakeAndWait only toggles
+		// out of STANDBY) and inertly ACKs every SetURI+Play without ever
+		// fetching audio; in the mojo/ST30 field bundle the ONLY successful
+		// source activation of the day followed a real sys-power toggle. If the
+		// box still reports INVALID_SOURCE by the third attempt, send one
+		// bounded nudge before pushing again.
+		if nudgeStuckSource(attempt, nudged, h.currentBoxSource()) {
+			nudged = true
+			h.logger.Warn("hardware recall: box stuck in INVALID_SOURCE, sending one sys-power nudge", "slot", slot)
+			if err := h.sysPowerToggle(ctx); err != nil {
+				h.logger.Warn("hardware recall: sys-power nudge failed", "slot", slot, "err", err)
+			}
+			time.Sleep(1500 * time.Millisecond)
+		}
 		// Wake the box first: after the 1036 wrong-state rejection the firmware
 		// often gives up on its failed self-activation and powers the source off
 		// through INVALID_SOURCE -> STANDBY (field bundles 2026-07-22, all
@@ -2178,10 +2244,8 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// user power-off cannot reach this line (poweredOffSince stands the
 		// loop down above), so waking here only ever reverses the box's own
 		// give-up. No-op when the box is awake (a single now_playing read).
-		if h.boxHost != "" {
-			if err := boxcli.WakeAndWait(ctx, h.boxHost, 6*time.Second, h.logger); err != nil {
-				h.logger.Warn("hardware recall retry: could not wake box", "slot", slot, "err", err)
-			}
+		if err := h.wake(ctx); err != nil {
+			h.logger.Warn("hardware recall retry: could not wake box", "slot", slot, "err", err)
 		}
 		if mime != "" {
 			_ = h.renderer.PlayURLMime(ctx, url, name, icon, mime)
@@ -2221,7 +2285,7 @@ func (h *presetWsHandler) rePushAfterSourceReject(seq, gen uint64, pressAt time.
 		// THIS press's URL would actively tear the newer recall down.
 		return
 	}
-	if h.slotPulledSince(slot, pressAt) || boxPlayingURL(h.boxHost, url) {
+	if h.slotPulledSince(slot, pressAt) || h.playingURL(url) {
 		return // refused once, then started anyway
 	}
 	if h.poweredOffSince(pressAt) {
@@ -2238,10 +2302,8 @@ func (h *presetWsHandler) rePushAfterSourceReject(seq, gen uint64, pressAt time.
 	// re-pushing into that sleeping box did nothing. Wake it first - a no-op
 	// when it is awake, and a user power-off never reaches this line (checked
 	// above).
-	if h.boxHost != "" {
-		if err := boxcli.WakeAndWait(ctx, h.boxHost, 6*time.Second, h.logger); err != nil {
-			h.logger.Warn("wrong-state repair: could not wake box", "slot", slot, "err", err)
-		}
+	if err := h.wake(ctx); err != nil {
+		h.logger.Warn("wrong-state repair: could not wake box", "slot", slot, "err", err)
 	}
 	// The box refused the stream because its transport is stuck in the wrong
 	// state: it is still holding its own dead-cloud ContentItem active (the box
@@ -3493,6 +3555,14 @@ func boxIsPlaying(boxHost string) bool {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	s := string(b)
 	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+}
+
+// nudgeStuckSource is the sys-power-nudge decision: the box still reports
+// INVALID_SOURCE at the third verify attempt and no nudge ran yet. Bounded to
+// exactly one nudge per recall; earlier attempts give the normal wake+re-push
+// a chance first.
+func nudgeStuckSource(attempt int, nudged bool, source string) bool {
+	return attempt == 3 && !nudged && source == "INVALID_SOURCE"
 }
 
 // boxPlayingURL reports whether the box is in a play/buffering state AND its
