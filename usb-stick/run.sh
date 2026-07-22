@@ -3091,12 +3091,33 @@ mount | grep -q '/etc/hosts' || {
 # heal takes effect on the following boot; install.sh does the same before the
 # post-install reboot so the very first boot is clean.
 SDK_CFG="/mnt/nv/OverrideSdkPrivateCfg.xml"
-if [ -f "$SDK_CFG" ] && grep -q 'str-setup\.invalid' "$SDK_CFG" 2>/dev/null; then
-    if sed -e 's#\(<bmxRegistryUrl>\)[^<]*str-setup\.invalid[^<]*\(</bmxRegistryUrl>\)#\1https://content.api.bose.io/bmx/registry/v1/services\2#g' \
-           -e 's#\(<statsServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</statsServerUrl>\)#\1https://events.api.bosecm.com\2#g' \
-           -e 's#\(<margeServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</margeServerUrl>\)#\1https://streaming.bose.com\2#g' \
+SDK_HEAL_NEEDED=0
+if [ -f "$SDK_CFG" ]; then
+    # Heal ANY non-stock host in the three cloud tags, not just STR's own
+    # str-setup.invalid placeholder: third-party mods (TechEndure) reroute the
+    # same tags to their servers, and such a host can never be caught by the
+    # stock-hostname redirect above - the cloud icon stays amber and the marge
+    # login never sticks, even after the user deleted the mod's files (live
+    # report 2026-07-22). Only non-empty, non-stock values trigger a rewrite.
+    if grep -q '<bmxRegistryUrl>[^<]' "$SDK_CFG" 2>/dev/null && \
+       ! grep -q '<bmxRegistryUrl>https://content\.api\.bose\.io' "$SDK_CFG" 2>/dev/null; then
+        SDK_HEAL_NEEDED=1
+    fi
+    if grep -q '<statsServerUrl>[^<]' "$SDK_CFG" 2>/dev/null && \
+       ! grep -q '<statsServerUrl>https://events\.api\.bosecm\.com' "$SDK_CFG" 2>/dev/null; then
+        SDK_HEAL_NEEDED=1
+    fi
+    if grep -q '<margeServerUrl>[^<]' "$SDK_CFG" 2>/dev/null && \
+       ! grep -q '<margeServerUrl>https://streaming\.bose\.com' "$SDK_CFG" 2>/dev/null; then
+        SDK_HEAL_NEEDED=1
+    fi
+fi
+if [ "$SDK_HEAL_NEEDED" = "1" ]; then
+    if sed -e 's#<bmxRegistryUrl>[^<][^<]*</bmxRegistryUrl>#<bmxRegistryUrl>https://content.api.bose.io/bmx/registry/v1/services</bmxRegistryUrl>#g' \
+           -e 's#<statsServerUrl>[^<][^<]*</statsServerUrl>#<statsServerUrl>https://events.api.bosecm.com</statsServerUrl>#g' \
+           -e 's#<margeServerUrl>[^<][^<]*</margeServerUrl>#<margeServerUrl>https://streaming.bose.com</margeServerUrl>#g' \
            "$SDK_CFG" > "$SDK_CFG.new" 2>/dev/null && mv "$SDK_CFG.new" "$SDK_CFG" 2>/dev/null; then
-        setup_log "healed str-setup.invalid SDK cloud URLs in $SDK_CFG back to stock (redirect-catchable); effective next boot"
+        setup_log "healed non-stock SDK cloud URLs in $SDK_CFG back to stock (redirect-catchable); effective next boot"
     else
         rm -f "$SDK_CFG.new" 2>/dev/null
         log "SDK cloud URL heal: sed/mv failed on $SDK_CFG (leaving it unchanged)"

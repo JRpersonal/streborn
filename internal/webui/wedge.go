@@ -162,6 +162,22 @@ func (s *Server) NoteBoxHealthy() {
 	}
 }
 
+// BoxStateHint reports the speaker-side condition that would make streams fail
+// regardless of the station: "wedged" (transport accepted but the box never
+// pulls or plays; a power-cycle is required) or "login-error" (the box is
+// rejecting sources as not-logged-in while the re-login self-heal runs). "" =
+// no known box-side problem. Surfaced via /api/stream-status so the desktop
+// app can name the real cause instead of cycling station alternates.
+func (s *Server) BoxStateHint() string {
+	if status, _ := s.BoxHealth(); status == "wedged" {
+		return "wedged"
+	}
+	if s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
+		return "login-error"
+	}
+	return ""
+}
+
 // BoxHealth reports "ok" or "wedged" (plus the latch time for the latter).
 func (s *Server) BoxHealth() (status string, since time.Time) {
 	s.wedge.mu.Lock()

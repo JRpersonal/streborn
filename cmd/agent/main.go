@@ -515,6 +515,10 @@ func run() error {
 	// Wedge detection (see internal/webui/wedge.go): the proxy's last-fetch /
 	// last-failure timestamps tell a wedged box apart from a failing station.
 	webuiSrv.SetStreamActivityFn(streamProxySrv.LastActivity)
+	// Surface speaker-side failure states ("wedged", "login-error") in
+	// /api/stream-status, so the app can name the real cause instead of
+	// blaming the station and cycling radio-browser alternates.
+	streamProxySrv.SetBoxStateFn(webuiSrv.BoxStateHint)
 
 	// ICY radio text: the proxy parses the live StreamTitle out of the
 	// stream; push it to the box display by re-issuing the current stream URI

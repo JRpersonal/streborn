@@ -285,6 +285,12 @@ type Server struct {
 	slotFetchEnd [7]time.Time
 	slotOpen     [7]int
 
+	// boxStateFn reports a speaker-side condition that makes every station
+	// fail ("wedged", "login-error"; "" = fine). Wired to webui.BoxStateHint;
+	// surfaced in /api/stream-status so the app can distinguish a box problem
+	// from a station problem. nil-safe.
+	boxStateFn func() string
+
 	// netMu guards a briefly-cached verdict on whether the SPEAKER itself can
 	// reach the public internet. It lets /api/stream-status tell "this one
 	// station is unreachable" apart from "the speaker has no internet at all"
@@ -931,6 +937,12 @@ func (s *Server) SlotPulledSince(slot int, t time.Time) bool {
 	return s.slotFetchEnd[slot].Sub(start) >= minSustainedFetch
 }
 
+// SetBoxStateFn wires the speaker-side condition reporter for
+// /api/stream-status (see boxStateFn).
+func (s *Server) SetBoxStateFn(fn func() string) {
+	s.boxStateFn = fn
+}
+
 // LastActivity reports when the box last opened any proxied stream and when
 // the last terminal upstream failure happened (zero times = never). Consumed
 // by the webui's wedge detector.
@@ -963,10 +975,24 @@ func (s *Server) Register(mux *http.ServeMux) {
 // streamStatusTTL are reported so a long-past error never blocks a fresh play.
 func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	// boxState surfaces a SPEAKER-side condition ("wedged", "login-error")
+	// that makes every station fail, so the app can say what is actually
+	// wrong instead of blaming the station and cycling radio-browser
+	// alternates ("Sender spielt nicht ... suche andere Quelle" while the box
+	// was rejecting sources as not-logged-in). Additive: absent when the box
+	// is fine, ignored by older frontends.
+	boxState := ""
+	if s.boxStateFn != nil {
+		boxState = s.boxStateFn()
+	}
 	s.errMu.Lock()
 	f := s.lastErr
 	s.errMu.Unlock()
 	if f.when.IsZero() || time.Since(f.when) > streamStatusTTL {
+		if boxState != "" {
+			fmt.Fprintf(w, `{"error":false,"boxState":%q}`, boxState)
+			return
+		}
 		fmt.Fprint(w, `{"error":false}`)
 		return
 	}
@@ -980,17 +1006,19 @@ func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
 		f.reason = "offline"
 	}
 	body, err := json.Marshal(struct {
-		Error  bool   `json:"error"`
-		Status int    `json:"status"`
-		Reason string `json:"reason"`
-		URL    string `json:"url"`
-		AgeMs  int64  `json:"ageMs"`
+		Error    bool   `json:"error"`
+		Status   int    `json:"status"`
+		Reason   string `json:"reason"`
+		URL      string `json:"url"`
+		AgeMs    int64  `json:"ageMs"`
+		BoxState string `json:"boxState,omitempty"`
 	}{
-		Error:  true,
-		Status: f.code,
-		Reason: f.reason,
-		URL:    f.url,
-		AgeMs:  time.Since(f.when).Milliseconds(),
+		Error:    true,
+		Status:   f.code,
+		Reason:   f.reason,
+		URL:      f.url,
+		AgeMs:    time.Since(f.when).Milliseconds(),
+		BoxState: boxState,
 	})
 	if err != nil {
 		fmt.Fprint(w, `{"error":false}`)
