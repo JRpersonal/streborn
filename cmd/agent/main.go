@@ -665,10 +665,15 @@ func run() error {
 	// the recently-played history can identify (#252: presets displayed as
 	// "unassigned although they are assigned" and every hardware press 404ed
 	// after a pre-v0.9.14 standby power-cut wiped presets.json and the OTA
-	// restart surfaced the loss).
+	// restart surfaced the loss). seedFirstRead closes once the first box
+	// preset read was attempted; autopair's start waits on it (bounded) so the
+	// first forced re-assert cannot re-onboard the box - and thereby wipe its
+	// preset list - before the recovery had its one chance to snapshot it.
+	seedFirstRead := make(chan struct{})
 	go seedBoxPresetsAndRecoverStore(store, recentStore, *boxHost,
 		func(bps []webui.BoxPreset) { webuiSrv.NoteBoxPresets(bps) },
-		logger.With("comp", "presetrecovery"))
+		logger.With("comp", "presetrecovery"),
+		func() { close(seedFirstRead) })
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -718,10 +723,19 @@ func run() error {
 	// Auto-pair background: pairs the box automatically on start. Re-pairs
 	// every 5 minutes in case the box is ever lost. Plus: the WS handler
 	// triggers TriggerNow on a preset press so pairing happens immediately
-	// after waking from standby.
+	// after waking from standby. Starts only after the preset recovery's
+	// first box read was attempted (bounded wait): the first pair cycle
+	// forces a re-assert, and the re-onboarding it triggers wipes the box
+	// preset list the recovery needs to read (#252 warm-restart race).
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		select {
+		case <-seedFirstRead:
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			return
+		}
 		autoPair.RunBackground(ctx, 8*time.Second, 5*time.Minute)
 	}()
 
@@ -1303,14 +1317,50 @@ func (h *presetWsHandler) superseded(seq, gen uint64) bool {
 
 // wake brings the box out of standby (no-op without a configured box host or
 // when the box is already awake). Seam-aware for the verify tests.
-func (h *presetWsHandler) wake(ctx context.Context) error {
+//
+// abort (nil = never) is consulted by the wake helper immediately before it
+// would send the `sys power` toggle: the verify paths pass their stand-down
+// predicate so a user power press that lands AFTER the caller's loop-top check
+// but BEFORE the toggle still keeps the box off - the standby classifier
+// stamps the latch within milliseconds of the flip, while the wake's own
+// self-wake grace is 2.5s, so by toggle time the stamp is reliably visible.
+func (h *presetWsHandler) wake(ctx context.Context, abort func() bool) error {
 	if h.boxHost == "" {
 		return nil
 	}
 	if h.wakeBox != nil {
+		if abort != nil && abort() {
+			return nil
+		}
 		return h.wakeBox(ctx, h.boxHost)
 	}
-	return boxcli.WakeAndWait(ctx, h.boxHost, 6*time.Second, h.logger)
+	return boxcli.WakeAndWaitAbort(ctx, h.boxHost, 6*time.Second, h.logger, abort)
+}
+
+// triggerPairAsync fires one fire-and-forget pair cycle (9a9b0c7): the :8090
+// pair POST hangs for seconds on several firmwares, so it must never sit
+// between a button press and playback (#270). timeout bounds the cycle (press
+// paths use a short budget; wake/reconnect paths can afford a longer one).
+func (h *presetWsHandler) triggerPairAsync(timeout time.Duration) {
+	if h.autoPair == nil {
+		return
+	}
+	go func() {
+		pairCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		h.autoPair.TriggerNow(pairCtx)
+	}()
+}
+
+// recallStandDown reports whether an in-flight hardware recall must leave the
+// box alone: a newer press/play owns the transport, the user powered the box
+// off, or the user deliberately stopped playback since the press. Re-checked
+// not only at each verify tick but immediately before every escalation (wake,
+// sys-power nudge, re-push): those run seconds after the loop-top check, and a
+// power press inside that gap used to be reversed by the very wake that was
+// meant to recover the box's own give-up (#197).
+func (h *presetWsHandler) recallStandDown(seq, gen uint64, pressAt time.Time) bool {
+	return h.superseded(seq, gen) || h.poweredOffSince(pressAt) || h.userStoppedSince(pressAt)
 }
 
 // sysPowerToggle sends one `sys power` toggle over the TAP CLI (the stuck-
@@ -1345,6 +1395,10 @@ func (h *presetWsHandler) currentBoxSource() string {
 
 // poweredOffSince reports whether the user powered the box off after t,
 // preferring the absolute stamp over the rolling window (see standbyStopAfter).
+// The recentlyPoweredOff fallback is unreachable in production (main wires both
+// funcs from the same webui server); it exists so a partially-wired test - or a
+// future caller that only has the rolling window - still gets the conservative
+// answer instead of nil-func false.
 func (h *presetWsHandler) poweredOffSince(t time.Time) bool {
 	if h.standbyStopAfter != nil {
 		return h.standbyStopAfter(t)
@@ -1363,11 +1417,9 @@ func (h *presetWsHandler) OnPresetsChanged(_ context.Context, presets []boxws.Bo
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
-	// Sequence + press time are taken while still on the gabbo read loop, so
-	// rapid presses are ordered exactly as the user made them and every
+	// Press time is taken while still on the gabbo read loop, so every
 	// stand-down check anchors to when the user actually pressed, not to when
 	// STR got around to the recall.
-	seq := h.pressSeq.Add(1)
 	pressAt := time.Now()
 	// Per-key webhook (beta): fire the configured "preset<slot>" webhook on a
 	// hardware preset press (front panel or remote; app recalls take a different
@@ -1390,6 +1442,11 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 			return
 		}
 	}
+	// The press sequence orders rapid presses exactly as the user made them.
+	// Bumped only for presses that actually recall (i.e. after the replace-mode
+	// return above): a webhook-only press starts no recall of its own, so it
+	// must not read as "a newer press" to an unrelated in-flight verify.
+	seq := h.pressSeq.Add(1)
 	// The press is the user explicitly asking for playback: clear any stale
 	// deliberate-stop latch BEFORE the recall so a preceding (or spontaneous,
 	// #419) power-off cannot suppress it, and anchor the webui's standby-flip
@@ -1548,26 +1605,16 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	}
 
 	// Wake from standby (fast on a hardware press, the box is already awake) AFTER
-	// the display push, so the SetURI is not delayed behind it.
-	if h.boxHost != "" {
-		wakeCtx, wcancel := context.WithTimeout(ctx, 8*time.Second)
-		if err := boxcli.WakeAndWait(wakeCtx, h.boxHost, 6*time.Second, h.logger); err != nil {
-			h.logger.Warn("could not bring box out of STANDBY", "err", err)
-		}
-		wcancel()
+	// the display push, so the SetURI is not delayed behind it. No abort: the
+	// press itself is the user's most recent intent.
+	wakeCtx, wcancel := context.WithTimeout(ctx, 8*time.Second)
+	if err := h.wake(wakeCtx, nil); err != nil {
+		h.logger.Warn("could not bring box out of STANDBY", "err", err)
 	}
-	if h.autoPair != nil {
-		// Fire-and-forget, mirroring the app-recall path (9a9b0c7): the
-		// :8090 pair POST hangs for seconds on several firmwares, and running
-		// it inline here kept the box's own "SERVICE NOT AVAILABLE" flash on
-		// screen for that whole gap on every hardware press (#270). Pairing
-		// is not a precondition for the UPnP push above.
-		go func() {
-			pairCtx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-			defer cancel()
-			h.autoPair.TriggerNow(pairCtx)
-		}()
-	}
+	wcancel()
+	// Fire-and-forget, mirroring the app-recall path: pairing is not a
+	// precondition for the UPnP push above.
+	h.triggerPairAsync(6 * time.Second)
 	// Verify+retry in the background: the first hardware press after a cold
 	// boot can race the box/agent bringup so nothing plays until a second
 	// press. This re-issues until the box actually plays. Affects radio too.
@@ -1955,13 +2002,7 @@ func (h *presetWsHandler) OnPowerWake(_ context.Context) {
 	// pairing right at the wake. On a healthy box this is one /info read; on
 	// a login-suspect box (a recent 1036 NOT_LOGGED_IN) it re-asserts the
 	// account before the user's first press instead of after its failure.
-	if h.autoPair != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			h.autoPair.TriggerNow(ctx)
-		}()
-	}
+	h.triggerPairAsync(10 * time.Second)
 	if h.onPowerWake != nil {
 		h.logger.Info("power-on detected, attempting last-station resume")
 		h.onPowerWake()
@@ -1984,13 +2025,7 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	requestPresetKeyResync(h.logger)
 	// Re-check the fake login too (see OnPowerWake): the reconnect moments
 	// are when the MargeHSM state decays on fresh-install boxes.
-	if h.autoPair != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			h.autoPair.TriggerNow(ctx)
-		}()
-	}
+	h.triggerPairAsync(10 * time.Second)
 	if h.onBoxReconnect != nil {
 		h.onBoxReconnect()
 	}
@@ -2129,15 +2164,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 		}
 		c()
 	}
-	if h.autoPair != nil {
-		// Fire-and-forget (9a9b0c7): never let a hanging :8090 pair POST sit
-		// between the button press and playback (#270).
-		go func() {
-			pairCtx, c := context.WithTimeout(context.Background(), 6*time.Second)
-			defer c()
-			h.autoPair.TriggerNow(pairCtx)
-		}()
-	}
+	h.triggerPairAsync(6 * time.Second)
 	// Load the playlist (audio): a default preset resumes where the user left off
 	// (shuffle off, in-order); a shuffle preset starts on a fresh random track.
 	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle}); err != nil {
@@ -2225,14 +2252,27 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		}
 		h.logger.Warn("hardware recall not playing yet, retrying", "slot", slot, "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		// standDown re-checks the loop-top conditions right before every
+		// escalation below: the currentBoxSource probe, the nudge settle and
+		// the wake together stretch several seconds past the loop-top check,
+		// and a user power press inside that gap was correctly classified and
+		// stamped - but the already-running iteration then toggled the box
+		// straight back on (#197 check-then-act).
+		standDown := func() bool { return h.recallStandDown(seq, gen, pressAt) }
 		// A box stuck in INVALID_SOURCE ignores wake (WakeAndWait only toggles
 		// out of STANDBY) and inertly ACKs every SetURI+Play without ever
 		// fetching audio; in the mojo/ST30 field bundle the ONLY successful
 		// source activation of the day followed a real sys-power toggle. If the
 		// box still reports INVALID_SOURCE by the third attempt, send one
-		// bounded nudge before pushing again.
-		if nudgeStuckSource(attempt, nudged, h.currentBoxSource()) {
+		// bounded nudge before pushing again. The source probe (an up-to-4s
+		// :8090 read) only runs on the attempt that can consume it.
+		if attempt == 3 && !nudged && nudgeStuckSource(attempt, nudged, h.currentBoxSource()) {
 			nudged = true
+			if standDown() {
+				h.logger.Info("hardware recall: stand-down while preparing the sys-power nudge, leaving the box alone", "slot", slot)
+				cancel()
+				return
+			}
 			h.logger.Warn("hardware recall: box stuck in INVALID_SOURCE, sending one sys-power nudge", "slot", slot)
 			if err := h.sysPowerToggle(ctx); err != nil {
 				h.logger.Warn("hardware recall: sys-power nudge failed", "slot", slot, "err", err)
@@ -2245,11 +2285,18 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// models: the box "switches itself off" after the press). Every retry
 		// then pushed SetURI+Play into a sleeping box and the recall never
 		// converged, even though the forced re-login had already landed. A
-		// user power-off cannot reach this line (poweredOffSince stands the
-		// loop down above), so waking here only ever reverses the box's own
-		// give-up. No-op when the box is awake (a single now_playing read).
-		if err := h.wake(ctx); err != nil {
+		// user power-off stands the loop down above AND aborts the wake's
+		// toggle via the predicate, so waking here only ever reverses the
+		// box's own give-up. No-op when the box is awake.
+		if err := h.wake(ctx, standDown); err != nil {
 			h.logger.Warn("hardware recall retry: could not wake box", "slot", slot, "err", err)
+		}
+		// Final gate before the push: the wake can take seconds, and a stop or
+		// power press during it must hold.
+		if standDown() {
+			h.logger.Info("hardware recall: stand-down after wake, not re-pushing", "slot", slot)
+			cancel()
+			return
 		}
 		if mime != "" {
 			_ = h.renderer.PlayURLMime(ctx, url, name, icon, mime)
@@ -2304,10 +2351,16 @@ func (h *presetWsHandler) rePushAfterSourceReject(seq, gen uint64, pressAt time.
 	// The rejection's INVALID_SOURCE flap can end in STANDBY within ~1s of the
 	// press (the box gives up on its failed self-activation and powers off);
 	// re-pushing into that sleeping box did nothing. Wake it first - a no-op
-	// when it is awake, and a user power-off never reaches this line (checked
-	// above).
-	if err := h.wake(ctx); err != nil {
+	// when it is awake. The stand-down predicate covers the check-then-act
+	// gap: a user power press between the checks above and the wake's toggle
+	// must keep the box off (#197).
+	standDown := func() bool { return h.recallStandDown(seq, gen, pressAt) }
+	if err := h.wake(ctx, standDown); err != nil {
 		h.logger.Warn("wrong-state repair: could not wake box", "slot", slot, "err", err)
+	}
+	if standDown() {
+		h.logger.Info("wrong-state repair: stand-down after wake, not re-pushing", "slot", slot)
+		return
 	}
 	// The box refused the stream because its transport is stuck in the wrong
 	// state: it is still holding its own dead-cloud ContentItem active (the box
@@ -2979,18 +3032,39 @@ func firstArtURL(art string) string {
 //     layer works. Restore what the recently-played history can identify by
 //     exact station/playlist name, so the buttons come back without the user
 //     re-saving every slot.
-func seedBoxPresetsAndRecoverStore(store *presets.Store, recentStore *recent.Store, boxHost string, seed func([]webui.BoxPreset), logger *slog.Logger) {
+//
+// firstAttempt (nil = none) is called exactly once, right after the FIRST
+// :8090/presets read attempt returns, success or not. main gates autopair's
+// first forced re-assert on it: that re-assert makes the box re-read its cloud
+// presets from marge, and with an EMPTY stick store marge answers an empty
+// list, which wipe-prone firmwares translate into dropping their own preset
+// list within seconds - i.e. the re-onboarding at t=8s destroyed the very box
+// list this recovery wanted to read at t=20s, and the presets were lost for
+// good on exactly the warm-restart (#252/OTA) case the recovery targets.
+// Reading first, then pairing, closes the race.
+func seedBoxPresetsAndRecoverStore(store *presets.Store, recentStore *recent.Store, boxHost string, seed func([]webui.BoxPreset), logger *slog.Logger, firstAttempt func()) {
 	if boxHost == "" || store == nil {
+		if firstAttempt != nil {
+			firstAttempt()
+		}
 		return
 	}
-	// The box needs ~60s after a cold boot before :8090 answers; poll gently
-	// and give up quietly after ~10 minutes (the periodic reconcile keeps
-	// running regardless).
+	// First read attempt runs IMMEDIATELY: on a warm agent restart (OTA) the
+	// box answers right away, and the snapshot must be taken before autopair's
+	// first forced re-assert (see firstAttempt above). Only a cold boot - where
+	// :8090 needs ~60s to come up - falls back to the gentle 20s polling, which
+	// gives up quietly after ~10 minutes (the periodic reconcile keeps running
+	// regardless).
 	var entries []boxPresetEntry
 	for i := 0; i < 30; i++ {
-		time.Sleep(20 * time.Second)
+		if i > 0 {
+			time.Sleep(20 * time.Second)
+		}
 		var err error
 		entries, err = fetchBoxPresetsFull(boxHost)
+		if i == 0 && firstAttempt != nil {
+			firstAttempt()
+		}
 		if err == nil {
 			break
 		}

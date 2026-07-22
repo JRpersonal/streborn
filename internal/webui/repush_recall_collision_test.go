@@ -106,3 +106,43 @@ func TestMaybeRePushHonorsStopDuringOwnershipWait(t *testing.T) {
 		t.Fatalf("a stop during the ownership wait must hold, got %v", rec.list())
 	}
 }
+
+// TestStreamDropCoalescingSurvivesNewPlay pins the drop-coalescing latch to the
+// Server, not the per-play struct: setLastPlay replaces the lastPlayInfo struct
+// on every fresh play, and a per-play latch let a drop of the NEW stream spawn
+// a second concurrent re-pusher while the first was still alive - the box got
+// double SetURI+Play (two audible re-buffers), and the first goroutine's
+// deferred release then cleared the latch the second one owned.
+func TestStreamDropCoalescingSurvivesNewPlay(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, false } // box on, idle
+	s.setLastPlay("http://127.0.0.1:8888/stream/6", "First", "", "")
+
+	s.HandleStreamDisconnect(nil) // arms the latch, spawns re-pusher #1 (2s backoff)
+	s.setLastPlay("http://127.0.0.1:8888/stream/2", "Second", "", "")
+	s.HandleStreamDisconnect(nil) // drop of the NEW stream must coalesce, not stack
+
+	// #1 wakes after its backoff and re-pushes exactly once.
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) && !rec.has("SetAVTransportURI") {
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(500 * time.Millisecond) // let a mistaken second pusher surface
+	pushes := 0
+	for _, a := range rec.list() {
+		if a == "SetAVTransportURI" {
+			pushes++
+		}
+	}
+	if pushes != 1 {
+		t.Fatalf("one drop episode must produce exactly one re-push, got %d (%v)", pushes, rec.list())
+	}
+	// The deferred release must free the SERVER latch even though lastPlay was
+	// swapped mid-run, so a later genuine drop can re-arm.
+	s.lastPlayMu.Lock()
+	latched := s.rePushInFlight
+	s.lastPlayMu.Unlock()
+	if latched {
+		t.Fatal("the coalescing latch must be released after the re-pusher exits")
+	}
+}

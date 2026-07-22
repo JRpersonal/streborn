@@ -162,6 +162,18 @@ type Client struct {
 	// standby handling entirely. Guarded by mu.
 	lastUpnpActiveAt time.Time
 
+	// upnpEpisode is true while the box sits in the INVALID_SOURCE (or
+	// subsequent STANDBY) state it entered FROM STR's UPNP source. The
+	// rolling upnpFlapWindow only covers the fast give-up flap; a struggling
+	// box can dwell in INVALID_SOURCE for 16+ seconds (the state the
+	// sys-power nudge exists for), and a user power press at the end of that
+	// dwell produced INVALID_SOURCE->STANDBY with the window long expired -
+	// so no standby classification ran, nothing latched, and the recall
+	// verify's wake actively powered the just-switched-off box back on
+	// (#197). Set on UPNP->INVALID_SOURCE, cleared when the source becomes
+	// anything other than INVALID_SOURCE/STANDBY. Guarded by mu.
+	upnpEpisode bool
+
 	// lastStandbyFlapAt times the box's own UPNP<->STANDBY oscillation on a
 	// spontaneous firmware source power-off (#419). That drop is not a single
 	// transition: the box flips UPNP->STANDBY->UPNP within ~100 ms, and the
@@ -674,6 +686,16 @@ const (
 	// userActivityUpdate alongside real key presses; STR's SOAP commands never
 	// produce one.
 	ownCmdKeyVeto = 1500 * time.Millisecond
+	// ownCmdKeylessTeardownWindow replaces ownCmdTeardownWindow on firmware
+	// that has never emitted a userActivityUpdate: the key veto has no signal
+	// there, so the full 3s window would excuse EVERY stop within 3s of any of
+	// STR's own SOAP commands - and during a struggling recall STR pushes on a
+	// ~5s cadence, so a deliberate remote stop was near-guaranteed to be
+	// swallowed and the re-push overrode it. The box's echo to our own command
+	// arrives within a fraction of a second of the SOAP round-trip, so a tight
+	// window still excuses the genuine echo while a user stop a second later
+	// latches.
+	ownCmdKeylessTeardownWindow = 750 * time.Millisecond
 	// standbyFlapTeardownWindow bounds how soon after a UPNP<->STANDBY flap a
 	// STOP_STATE still counts as the spontaneous-off oscillation's teardown
 	// (#419) rather than a deliberate stop. The observed bounce completes in
@@ -734,12 +756,19 @@ func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
 	// physical key press right next to the frame means the user pressed stop on
 	// the remote/box even inside this window - the firmware accompanies real key
 	// presses with a userActivityUpdate, which STR's SOAP commands never cause.
-	if ownCmdSet && sinceOwnCmd < ownCmdTeardownWindow {
+	// Firmware that has NEVER emitted a userActivityUpdate gives the veto no
+	// signal, so only the much tighter keyless window applies there (see the
+	// constant): a real remote stop on such a box must still latch.
+	if ownCmdSet {
 		c.thumbMu.Lock()
 		sinceKey := time.Since(c.lastUserActivityAt)
 		keySet := !c.lastUserActivityAt.IsZero()
 		c.thumbMu.Unlock()
-		if !keySet || sinceKey > ownCmdKeyVeto {
+		window := ownCmdTeardownWindow
+		if !keySet {
+			window = ownCmdKeylessTeardownWindow
+		}
+		if sinceOwnCmd < window && (!keySet || sinceKey > ownCmdKeyVeto) {
 			return true, "STR's own transport command " + sinceOwnCmd.Round(time.Millisecond).String() + " ago"
 		}
 	}
@@ -815,6 +844,19 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			if src == "INVALID_SOURCE" {
 				c.lastInvalidSourceAt = time.Now()
 			}
+			// Track the whole UPNP-driven INVALID_SOURCE episode, not just its
+			// first seconds: a long dwell before the STANDBY entry must still
+			// count as "STR's playback is what powered off" (see upnpEpisode).
+			switch {
+			case src == "INVALID_SOURCE":
+				if prev == "UPNP" {
+					c.upnpEpisode = true
+				}
+			case src == "STANDBY":
+				// keep: the episode's terminal state is what we classify
+			default:
+				c.upnpEpisode = false
+			}
 			// Stamp every flap to OR from STANDBY: the spontaneous-off oscillation
 			// (#419) carries a STOP_STATE on its STANDBY->UPNP leg whose source reads
 			// UPNP, so this is the only trace that the STOP_STATE belongs to the
@@ -831,7 +873,8 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				c.lastUpnpActiveAt = time.Now()
 			}
 			upnpRecently := prev == "UPNP" ||
-				(!c.lastUpnpActiveAt.IsZero() && time.Since(c.lastUpnpActiveAt) < upnpFlapWindow)
+				(!c.lastUpnpActiveAt.IsZero() && time.Since(c.lastUpnpActiveAt) < upnpFlapWindow) ||
+				c.upnpEpisode
 			c.mu.Unlock()
 			if changed {
 				// Log every source transition at INFO (rare by construction: only

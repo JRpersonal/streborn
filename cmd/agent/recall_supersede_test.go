@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -243,5 +244,96 @@ func TestOnPresetSelectedReturnsBeforeSlowRecall(t *testing.T) {
 
 	if elapsed > time.Second {
 		t.Fatalf("OnPresetSelected blocked the gabbo dispatch for %v; the slow recall must run in the background", elapsed)
+	}
+}
+
+// TestRecallStandDown pins the shared stand-down decision the verify paths
+// re-check before every escalation (wake, sys-power nudge, re-push): those run
+// seconds after the loop-top check, and a power press inside that gap used to
+// be reversed by the very wake meant to recover the box's own give-up (#197).
+func TestRecallStandDown(t *testing.T) {
+	h := &presetWsHandler{}
+	seq := h.pressSeq.Add(1)
+	pressAt := time.Now()
+	if h.recallStandDown(seq, 0, pressAt) {
+		t.Fatal("a fresh recall with no events must not stand down")
+	}
+
+	h.standbyStopAfter = func(since time.Time) bool { return true }
+	if !h.recallStandDown(seq, 0, pressAt) {
+		t.Fatal("a power-off after the press must stand the recall down")
+	}
+	h.standbyStopAfter = nil
+
+	h.pressSeq.Add(1)
+	if !h.recallStandDown(seq, 0, pressAt) {
+		t.Fatal("a newer press must stand the older recall down")
+	}
+}
+
+// TestWakeSkipsWhenAbortSignalled: the wake helper consults the caller's abort
+// predicate so a stand-down that arrives after the caller decided to wake
+// still keeps the box off (#197 check-then-act).
+func TestWakeSkipsWhenAbortSignalled(t *testing.T) {
+	called := 0
+	h := &presetWsHandler{
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		boxHost: "192.0.2.9",
+		wakeBox: func(ctx context.Context, host string) error { called++; return nil },
+	}
+	if err := h.wake(context.Background(), func() bool { return true }); err != nil {
+		t.Fatalf("an aborted wake must be a quiet no-op, got %v", err)
+	}
+	if called != 0 {
+		t.Fatal("an abort that already holds must skip the wake entirely")
+	}
+	if err := h.wake(context.Background(), nil); err != nil {
+		t.Fatalf("wake: %v", err)
+	}
+	if called != 1 {
+		t.Fatal("nil abort must wake as before")
+	}
+}
+
+// TestVerifyPowerOffDuringWakeIsNotOverridden reproduces the #197
+// check-then-act window: the verify iteration passes its loop-top stand-downs,
+// then the user presses power while the wake helper is already running. The
+// re-check after the wake must catch the fresh stamp and no SOAP push may
+// follow - pre-fix the box was actively powered back on and the stale URL
+// re-armed.
+func TestVerifyPowerOffDuringWakeIsNotOverridden(t *testing.T) {
+	var mu sync.Mutex
+	pushes := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		pushes++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	var poweredOff atomic.Bool
+	h := &presetWsHandler{
+		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		boxHost:  "192.0.2.9",
+		renderer: &upnp.Renderer{ControlURL: srv.URL, Client: srv.Client()},
+		wakeBox: func(ctx context.Context, host string) error {
+			// The user presses power while the wake helper runs; the standby
+			// classifier stamps the latch within milliseconds.
+			poweredOff.Store(true)
+			return nil
+		},
+		standbyStopAfter: func(since time.Time) bool { return poweredOff.Load() },
+		boxPlayingFn:     func(url string) bool { return false },
+		boxSourceFn:      func() string { return "STANDBY" },
+	}
+	seq := h.pressSeq.Add(1)
+
+	h.verifyPlayURL(seq, 0, time.Now(), 2, "http://127.0.0.1:8888/stream/2", "S", "", "")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if pushes != 0 {
+		t.Fatalf("a power press during the wake must hold: no SOAP push may follow, got %d", pushes)
 	}
 }

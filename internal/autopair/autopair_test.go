@@ -340,3 +340,75 @@ func TestShouldSettleToSteady(t *testing.T) {
 		}
 	}
 }
+
+// TestForcePairDoesNotOverlapEnsure: the press-time suspect re-assert and the
+// same press's 1036-driven ForcePair used to POST setMargeAccount concurrently
+// - exactly the stacked-POST pattern the single-flight guard exists for
+// (#375). ForcePair now runs inside the same guard: with a slow POST handler
+// one of the two waits, and no two POSTs are ever in flight at once.
+func TestForcePairDoesNotOverlapEnsure(t *testing.T) {
+	var mu sync.Mutex
+	inFlight, maxInFlight, total := 0, 0, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/setMargeAccount" {
+			mu.Lock()
+			inFlight++
+			total++
+			if inFlight > maxInFlight {
+				maxInFlight = inFlight
+			}
+			mu.Unlock()
+			time.Sleep(400 * time.Millisecond) // the slow box the guard exists for
+			mu.Lock()
+			inFlight--
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write([]byte(pairedInfo))
+	}))
+	defer srv.Close()
+	m := New(slog.Default(), Config{BoxHost: "127.0.0.1"})
+	m.base = srv.URL
+	m.NoteLoginRejected() // login-suspect: the ensure cycle POSTs too
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); _ = m.EnsurePaired(context.Background()) }()
+	go func() {
+		defer wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		m.ForcePair(ctx)
+	}()
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if maxInFlight > 1 {
+		t.Fatalf("setMargeAccount POSTs overlapped (max %d in flight); the single-flight guard must cover ForcePair too (#375)", maxInFlight)
+	}
+	if total < 1 {
+		t.Fatal("at least one re-assert must have been sent")
+	}
+}
+
+// TestForcePairStampsSuspectAssert: the forced re-login IS a suspect
+// re-assert, so the next ensure trigger inside the min-gap must not POST a
+// second re-onboarding right behind it.
+func TestForcePairStampsSuspectAssert(t *testing.T) {
+	box := &fakeBox{infoBody: pairedInfo}
+	m := newTestManager(t, box)
+
+	m.ForcePair(context.Background())
+	if got := box.pairPosts.Load(); got != 1 {
+		t.Fatalf("ForcePair must POST, got %d", got)
+	}
+
+	if err := m.EnsurePaired(context.Background()); err != nil {
+		t.Fatalf("EnsurePaired: %v", err)
+	}
+	if got := box.pairPosts.Load(); got != 1 {
+		t.Fatalf("an ensure right after a forced re-login must coalesce into its min-gap, got %d POSTs", got)
+	}
+}

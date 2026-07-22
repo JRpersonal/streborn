@@ -901,6 +901,10 @@ func (s *Server) noteSlotFetchDone(slot int) {
 // LastFetchForSlot reports when the box last opened the given slot's proxied
 // stream (zero time = never, or slot out of range). The global LastActivity
 // stamp stays for the wedge detector, which deliberately counts any fetch.
+// No production caller since the recall verify moved to the liveness-aware
+// SlotPulledSince (a bare open-stamp certified failed recalls); kept as the
+// low-level accessor its tests and future diagnostics read the raw stamp
+// through.
 func (s *Server) LastFetchForSlot(slot int) time.Time {
 	if slot < 1 || slot > 6 {
 		return time.Time{}

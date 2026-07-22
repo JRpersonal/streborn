@@ -50,8 +50,9 @@ mkdir -p /mnt/nv/streborn/bin 2>/dev/null
 # ST300 2026-07-07). STR redirects only the STOCK hosts (streaming.bose.com,
 # content.api.bose.io) via /etc/hosts, so the box MUST carry the stock hostnames
 # for the redirect to catch them. Run this before the post-install reboot so the
-# SDK reads healed URLs on its very next boot. Idempotent: only rewrites tags whose
-# value actually contains the placeholder, leaves correct values untouched.
+# SDK reads healed URLs on its very next boot. Idempotent: a fully stock (or
+# empty) config is never touched, and re-running the heal reproduces the same
+# canonical stock values.
 heal_sdk_cloud_urls() {
     sdk_cfg="/mnt/nv/OverrideSdkPrivateCfg.xml"
     [ -f "$sdk_cfg" ] || return 0
@@ -60,9 +61,11 @@ heal_sdk_cloud_urls() {
     # same tags to their servers, and a box carrying such a host can never be
     # caught by STR's /etc/hosts redirect of the STOCK hostnames - the cloud
     # icon stays amber and the marge login never sticks, even after the user
-    # deleted the mod's files (live report 2026-07-22). Only non-empty values
-    # that do not already carry the stock host are rewritten; a stock or empty
-    # tag is left untouched, so the heal stays idempotent.
+    # deleted the mod's files (live report 2026-07-22). A non-empty, non-stock
+    # value in ANY of the three tags triggers the heal, and the sed then
+    # rewrites ALL non-empty tags to their canonical stock values (an
+    # already-stock tag is rewritten to the same value, so the heal stays
+    # idempotent; a fully stock or empty config is never touched at all).
     needs_heal=0
     if grep -q '<bmxRegistryUrl>[^<]' "$sdk_cfg" 2>/dev/null && \
        ! grep -q '<bmxRegistryUrl>https://content\.api\.bose\.io' "$sdk_cfg" 2>/dev/null; then

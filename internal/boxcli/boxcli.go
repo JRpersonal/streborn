@@ -80,6 +80,18 @@ const selfWakeGrace = 2500 * time.Millisecond
 // logger may be nil; when present, per-iteration phase markers are emitted
 // so a diagnostic bundle shows the standby-exit timeline (#60).
 func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger *slog.Logger) error {
+	return WakeAndWaitAbort(ctx, host, maxWait, logger, nil)
+}
+
+// WakeAndWaitAbort is WakeAndWait with an abort predicate, consulted
+// immediately before EACH `sys power` toggle would be sent. Callers whose
+// wake decision can be invalidated while the wake is already running - the
+// recall verify, whose "the box's own give-up put it in standby" conclusion a
+// user power press can overtake at any moment - pass their stand-down check
+// here, so the toggle never re-powers a box the user just switched off
+// (#197). nil = never abort. Aborting returns nil: the box deliberately stays
+// as it is.
+func WakeAndWaitAbort(ctx context.Context, host string, maxWait time.Duration, logger *slog.Logger, abort func() bool) error {
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -147,6 +159,10 @@ func WakeAndWait(ctx context.Context, host string, maxWait time.Duration, logger
 			logPhase("wake phase: pre-check read failed", "attempt", i, "err", err.Error())
 		} else {
 			logPhase("wake phase: STANDBY, sending sys power", "attempt", i, "source", state)
+		}
+		if abort != nil && abort() {
+			logPhase("wake phase: abort signalled (caller stood down), not toggling", "attempt", i)
+			return nil
 		}
 		if pwrErr := PowerOn(ctx, host); pwrErr != nil {
 			logPhase("wake phase: sys power write failed", "attempt", i, "err", pwrErr.Error())

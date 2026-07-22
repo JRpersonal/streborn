@@ -3085,11 +3085,11 @@ mount | grep -q '/etc/hosts' || {
 # tags back to the STOCK hostnames: STR only redirects the stock hosts
 # (streaming.bose.com, content.api.bose.io) via the /etc/hosts bind mount above,
 # so the box MUST carry the stock hostnames for that redirect to catch them.
-# Best-effort + idempotent: the grep gate means a config with no placeholder is
-# left untouched, and only tags whose value actually contains the placeholder
-# are rewritten. The SDK already read the (bad) value earlier this boot, so this
-# heal takes effect on the following boot; install.sh does the same before the
-# post-install reboot so the very first boot is clean.
+# Best-effort + idempotent: the grep gate means a config whose tags are all
+# stock (or empty) is left untouched entirely. The SDK already read the (bad)
+# value earlier this boot, so this heal takes effect on the following boot;
+# install.sh does the same before the post-install reboot so the very first
+# boot is clean.
 SDK_CFG="/mnt/nv/OverrideSdkPrivateCfg.xml"
 SDK_HEAL_NEEDED=0
 if [ -f "$SDK_CFG" ]; then
@@ -3098,7 +3098,10 @@ if [ -f "$SDK_CFG" ]; then
     # same tags to their servers, and such a host can never be caught by the
     # stock-hostname redirect above - the cloud icon stays amber and the marge
     # login never sticks, even after the user deleted the mod's files (live
-    # report 2026-07-22). Only non-empty, non-stock values trigger a rewrite.
+    # report 2026-07-22). A non-empty, non-stock value in ANY of the three
+    # tags triggers the heal, and the sed below then rewrites ALL non-empty
+    # tags to their canonical stock values (an already-stock tag is rewritten
+    # to the same value, so the result is idempotent either way).
     if grep -q '<bmxRegistryUrl>[^<]' "$SDK_CFG" 2>/dev/null && \
        ! grep -q '<bmxRegistryUrl>https://content\.api\.bose\.io' "$SDK_CFG" 2>/dev/null; then
         SDK_HEAL_NEEDED=1

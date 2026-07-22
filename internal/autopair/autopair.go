@@ -61,8 +61,13 @@ type Manager struct {
 	// for the last known state. Used to emit phase-marker logs only
 	// on transitions so a diagnostic bundle has a clean timeline
 	// without the 5-min heartbeat drowning everything else.
+	// Guarded by pairedMu: ensure cycles run on whichever goroutine
+	// triggered them (RunBackground tick, press-time TriggerNow, boxws
+	// reconnect), while RunBackground reads the state for its heartbeat.
+	pairedMu   sync.Mutex
 	lastPaired *bool
-	tickCount  int
+	// tickCount is only touched by RunBackground's own goroutine.
+	tickCount int
 
 	// onPaired fires when the box transitions from unpaired to paired (a
 	// completed (re-)onboarding). The firmware wipes its hardware-key preset
@@ -281,27 +286,42 @@ func (m *Manager) ensure(ctx context.Context, force bool) error {
 // so the diagnostic bundle always carries an explicit "initial state"
 // line right after agent start.
 func (m *Manager) recordPairedState(paired bool) {
+	m.pairedMu.Lock()
 	if m.lastPaired == nil {
-		m.logger.Warn("autopair phase: initial state observed", "paired", paired)
 		v := paired
 		m.lastPaired = &v
+		m.pairedMu.Unlock()
+		m.logger.Warn("autopair phase: initial state observed", "paired", paired)
 		return
 	}
-	if *m.lastPaired != paired {
-		m.logger.Warn("autopair phase: paired state changed",
-			"from", *m.lastPaired, "to", paired)
-		wasUnpaired := !*m.lastPaired
-		v := paired
-		m.lastPaired = &v
-		// unpaired -> paired = a (re-)onboarding just completed; the firmware
-		// wipes its key-layer preset registrations in that transition, so let
-		// the agent re-register them right away. The initial observation is
-		// deliberately NOT a transition: an already-paired box at agent start
-		// went through no onboarding.
-		if paired && wasUnpaired && m.onPaired != nil {
-			m.onPaired()
-		}
+	if *m.lastPaired == paired {
+		m.pairedMu.Unlock()
+		return
 	}
+	was := *m.lastPaired
+	v := paired
+	m.lastPaired = &v
+	m.pairedMu.Unlock()
+	m.logger.Warn("autopair phase: paired state changed", "from", was, "to", paired)
+	// unpaired -> paired = a (re-)onboarding just completed; the firmware
+	// wipes its key-layer preset registrations in that transition, so let
+	// the agent re-register them right away. The initial observation is
+	// deliberately NOT a transition: an already-paired box at agent start
+	// went through no onboarding.
+	if paired && !was && m.onPaired != nil {
+		m.onPaired()
+	}
+}
+
+// pairedState reports the last observed pair state: known=false means no
+// successful status read has happened yet. Safe for concurrent use.
+func (m *Manager) pairedState() (known, paired bool) {
+	m.pairedMu.Lock()
+	defer m.pairedMu.Unlock()
+	if m.lastPaired == nil {
+		return false, false
+	}
+	return true, *m.lastPaired
 }
 
 // SetOnPaired registers the unpaired->paired transition hook. Call before
@@ -399,8 +419,8 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 			m.logger.Warn("auto pair failed, will retry next tick", "err", err)
 		} else if m.tickCount%heartbeatEvery == 0 {
 			state := "unknown"
-			if m.lastPaired != nil {
-				if *m.lastPaired {
+			if known, paired := m.pairedState(); known {
+				if paired {
 					state = "paired"
 				} else {
 					state = "not paired"
@@ -411,7 +431,7 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 		}
 		// Settle to the steady interval once the fast post-boot window elapses;
 		// a box not yet observed paired holds the fast cadence longer (capped).
-		pairedObserved := m.lastPaired != nil && *m.lastPaired
+		_, pairedObserved := m.pairedState()
 		if cur != interval && shouldSettleToSteady(time.Since(start), pairedObserved, fastFor, fastForUnpairedMax) {
 			cur = interval
 			tick.Reset(interval)
@@ -448,17 +468,49 @@ func (m *Manager) TriggerNow(ctx context.Context) {
 // NOT_LOGGED_IN when handed a UPnP source; re-POSTing setMargeAccount can
 // restore the login state that the UUID-present check would otherwise skip.
 // Best-effort: a failure is logged, not fatal.
+//
+// Runs inside the same single-flight guard as ensure(): the press-time suspect
+// re-assert and the same press's 1036-driven ForcePair used to POST
+// setMargeAccount concurrently to a box whose POST handler can hang for
+// seconds, re-introducing exactly the stacked-POST pattern the guard exists
+// for (#375). ForcePair now waits (bounded by ctx) for a running cycle to
+// finish instead of overlapping it, and skips its own POST when that cycle
+// just re-asserted the account anyway. Deliberately does NOT read /info first:
+// the whole point is to POST even when the paired state looks fine.
 func (m *Manager) ForcePair(ctx context.Context) {
 	// A reactive forced re-login means the box's login state is decaying:
 	// mark it login-suspect so the regular pair cycles (press, wake,
 	// reconnect, heartbeat) keep re-asserting the account proactively for a
 	// while instead of trusting the UUID-present skip again.
 	m.NoteLoginRejected()
+	for !m.inFlight.CompareAndSwap(false, true) {
+		select {
+		case <-ctx.Done():
+			m.logger.Info("autopair: forced re-login skipped, another pair cycle ran for the whole window (it re-asserts too: the box is now login-suspect)")
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	defer m.inFlight.Store(false)
+	// If a suspect-driven re-assert completed while we waited, the account was
+	// just POSTed; a second POST right behind it only churns the MargeHSM.
+	m.suspectMu.Lock()
+	justAsserted := !m.lastSuspectAssert.IsZero() && time.Since(m.lastSuspectAssert) < 5*time.Second
+	m.suspectMu.Unlock()
+	if justAsserted {
+		m.logger.Info("autopair: forced re-login coalesced into a just-completed suspect re-assert")
+		return
+	}
 	m.logger.Warn("autopair: forcing a re-login (box reported not-logged-in)")
 	if err := m.Pair(ctx); err != nil {
 		m.logger.Warn("autopair: forced re-login failed", "err", err)
 		return
 	}
+	// Stamp the suspect min-gap so the next ensure trigger (press, wake,
+	// reconnect, tick) does not immediately re-POST within seconds of this one.
+	m.suspectMu.Lock()
+	m.lastSuspectAssert = time.Now()
+	m.suspectMu.Unlock()
 	m.logger.Warn("autopair: forced re-login sent")
 }
 

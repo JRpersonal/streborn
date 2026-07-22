@@ -199,6 +199,28 @@ func TestHandleEnterStandby_NoActivitySignalStaysConservative(t *testing.T) {
 	}
 }
 
+// TestHandleEnterStandby_OwnPushWithNoKeySignalStaysConservative: on firmware
+// that never emits userActivityUpdate, lastKey is the zero time and the
+// own-push excusal's "push after key" comparison is vacuously true for EVERY
+// push - and during a struggling recall STR pushes on a ~5s cadence, so a real
+// power press was near-always within the flip window of some push. With no key
+// signal the excusal must not fire: the drop keeps the documented conservative
+// #197 handling (latch + clear), or the verify's wake powers the box back on.
+func TestHandleEnterStandby_OwnPushWithNoKeySignalStaysConservative(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.SetUserActivityFn(func() time.Time { return time.Time{} })
+	s.SetOwnTransportCmdFn(func() time.Time { return time.Now().Add(-2 * time.Second) })
+
+	s.HandleEnterStandby()
+
+	if !s.standbyStoppedRecently() || !s.userStoppedRecently() {
+		t.Fatal("without a key signal an own push must not excuse the drop; the conservative #197 latching must win")
+	}
+	if !waitForAction(t, rec, "Stop") {
+		t.Fatalf("without a key signal the transport must still be cleared (#197), got %v", rec.list())
+	}
+}
+
 // TestHandleEnterStandby_AppStandbyStaysDeliberate: a standby STR itself sent
 // (app / phone remote) produces no gabbo key frame, so the activity
 // discriminator alone would misread the resulting drop as spontaneous and wake
