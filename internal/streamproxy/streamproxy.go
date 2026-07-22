@@ -267,8 +267,16 @@ type Server struct {
 	// stream (slot or raw). The wedge detector uses it to tell "the box never
 	// even pulled the URL it accepted" (control stack wedged, needs a
 	// power-cycle) apart from "the box pulled it and the station failed".
+	// slotFetch records the same moment PER preset slot, stamped only after
+	// the slot validated and the store served a preset. The hardware recall
+	// verify keys its success signal off the slot it pushed: the global stamp
+	// let ANY proxied fetch (another slot's reconnect, a zone follower, even a
+	// 404) certify a failed recall as healthy at the first tick, so no retry
+	// ran and wedge strikes were falsely cleared (#252: station on the
+	// display, no audio, clean log).
 	fetchMu   sync.Mutex
 	lastFetch time.Time
+	slotFetch [7]time.Time // index 1..6
 
 	// netMu guards a briefly-cached verdict on whether the SPEAKER itself can
 	// reach the public internet. It lets /api/stream-status tell "this one
@@ -850,6 +858,31 @@ func (s *Server) noteFetch() {
 	s.fetchMu.Unlock()
 }
 
+// noteSlotFetch records that the box opened THIS slot's proxied stream. Called
+// only after the slot validated and the store had a playable preset, so a 404
+// or a foreign fetch can never stamp it.
+func (s *Server) noteSlotFetch(slot int) {
+	if slot < 1 || slot > 6 {
+		return
+	}
+	s.fetchMu.Lock()
+	s.slotFetch[slot] = time.Now()
+	s.fetchMu.Unlock()
+}
+
+// LastFetchForSlot reports when the box last opened the given slot's proxied
+// stream (zero time = never, or slot out of range). The hardware recall verify
+// uses it as its slot-scoped success signal; the global LastActivity stamp
+// stays for the wedge detector, which deliberately counts any fetch.
+func (s *Server) LastFetchForSlot(slot int) time.Time {
+	if slot < 1 || slot > 6 {
+		return time.Time{}
+	}
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	return s.slotFetch[slot]
+}
+
 // LastActivity reports when the box last opened any proxied stream and when
 // the last terminal upstream failure happened (zero times = never). Consumed
 // by the webui's wedge detector.
@@ -1065,6 +1098,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.StreamURL = s.resolvePresetURL(slot, p.StreamURL)
+	s.noteSlotFetch(slot)
 	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
 
 	if isDASHURL(p.StreamURL) {

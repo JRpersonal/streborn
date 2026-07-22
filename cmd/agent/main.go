@@ -509,8 +509,12 @@ func run() error {
 		onRemoteSkip: webuiSrv.HardwareSkip,
 		webhooks:     webhooksStore,
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
-		// what to bring back.
+		// what to bring back. Returns the recall generation for supersession.
 		noteLastPlay: webuiSrv.NoteLastPlay,
+		// Supersession: a hardware verify stands down as soon as a newer play
+		// (hardware or app) bumps the shared recall generation, mirroring the
+		// soft path's verifyRecall guard ("pressed 2, got 1").
+		recallGenFn: webuiSrv.RecallGeneration,
 		// Wedge detection (power-cycle hint) fed from the hardware path too.
 		noteRecallExhausted: webuiSrv.NoteRecallExhausted,
 		noteBoxHealthy:      webuiSrv.NoteBoxHealthy,
@@ -531,15 +535,20 @@ func run() error {
 		onEnterStandby: webuiSrv.HandleEnterStandby,
 		// Let the hardware-recall verify stand down when the user powered the box
 		// off mid-recall, so it does not re-push the stream into a power-off (#197).
+		// The absolute variant is preferred: the rolling 6s window could expire
+		// between verify ticks and let a re-push wake the powered-off box.
 		recentlyPoweredOff: webuiSrv.RecentlyPoweredOff,
+		standbyStopAfter:   webuiSrv.StandbyStoppedAfter,
 		// A hardware preset press is the strongest possible "play" signal: it
 		// clears any deliberate-stop latch an earlier (or spontaneous, #419)
 		// power-off armed, so the recall is not suppressed by stale intent.
 		noteUserPlay: webuiSrv.NoteUserPlay,
-		// Ground truth for the recall verify: the box opening a proxied stream
-		// proves it is playing, where now_playing can still name the previous
-		// preset for seconds after the switch.
-		streamActivity: streamProxySrv.LastActivity,
+		// Ground truth for the recall verify: the box opening THIS slot's proxied
+		// stream proves it is playing what the recall pushed, where now_playing
+		// can still name the previous preset for seconds after the switch.
+		// Slot-scoped so cross-traffic (another slot, a zone follower) cannot
+		// certify a failed recall as healthy (#252).
+		slotStreamActivity: streamProxySrv.LastFetchForSlot,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -581,6 +590,15 @@ func run() error {
 		fmt.Sprintf("ws://%s:8080/", *boxHost),
 		wsHandler,
 	)
+	// Tell the gabbo classifier about STR's OWN transport commands: the box
+	// answers a SOAP Stop (and a SetURI flip) with a STOP_STATE frame that is
+	// indistinguishable from the user pressing stop, and reading it as a user
+	// stop latched a phantom stand-down that killed the very recall the command
+	// belonged to (#252 post-v0.9.16: the wrong-state repair's Stop+ClearURI
+	// aborted its own verify). Both renderer instances drive THIS box, so both
+	// stamp the same classifier.
+	renderer.OnTransportCommand = wsClient.NoteOwnTransportCommand
+	webuiSrv.SetTransportCommandHook(wsClient.NoteOwnTransportCommand)
 	// Let the WebUI fill the Wi-Fi signal from the gabbo stream on BCO
 	// boxes, whose /networkInfo reports no signal.
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)
@@ -594,6 +612,16 @@ func run() error {
 	// STR self-heals instead of thrashing the box into a wedge (rate-limited in
 	// boxws).
 	wsClient.SetOnLoginError(webuiSrv.NoteBoxLoginError)
+
+	// Seed the box-native preset snapshot once at start and, if the NAND preset
+	// store came up empty while the box still lists STR presets, restore what
+	// the recently-played history can identify (#252: presets displayed as
+	// "unassigned although they are assigned" and every hardware press 404ed
+	// after a pre-v0.9.14 standby power-cut wiped presets.json and the OTA
+	// restart surfaced the loss).
+	go seedBoxPresetsAndRecoverStore(store, recentStore, *boxHost,
+		func(bps []webui.BoxPreset) { webuiSrv.NoteBoxPresets(bps) },
+		logger.With("comp", "presetrecovery"))
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -1106,8 +1134,23 @@ type presetWsHandler struct {
 	// noteLastPlay records a hardware-preset recall as the webui's lastPlay so
 	// the auto-re-push and the wake-resume know what to resume (the hardware path
 	// plays straight through the renderer, bypassing the webui's own lastPlay).
+	// Returns the new recall generation for the supersession check below.
 	// Wired to webui.NoteLastPlay. nil-safe.
-	noteLastPlay func(boxURL, title, art, mime string)
+	noteLastPlay func(boxURL, title, art, mime string) uint64
+	// recallGenFn reads the webui's current recall generation. A hardware
+	// verify captures the generation its own noteLastPlay returned and stands
+	// down as soon as the live value moves on: a newer play (second hardware
+	// press or an app recall) supersedes the old loop, which otherwise kept
+	// re-pushing its stale URL over the user's newest choice for up to ~26s
+	// ("pressed 2, got 1"). The soft path has had exactly this guard
+	// (verifyRecall's recallGen) all along. Wired to webui.RecallGeneration.
+	// nil-safe.
+	recallGenFn func() uint64
+	// pressSeq orders the hardware presses themselves. It is bumped on the
+	// gabbo read loop (strictly in press order) before the slow recall work is
+	// handed to a goroutine, so a stale recall goroutine can recognise that a
+	// newer press exists even before either has reached noteLastPlay.
+	pressSeq atomic.Uint64
 	// Wedge detection hooks (webui.NoteRecallExhausted / NoteBoxHealthy): the
 	// hardware recall path reports exhausted/successful verifies so the
 	// power-cycle hint also fires when the user only uses the preset keys.
@@ -1141,6 +1184,13 @@ type presetWsHandler struct {
 	// firmware switched the speaker back on (#197). Wired to webui.RecentlyPoweredOff.
 	// nil-safe.
 	recentlyPoweredOff func() bool
+	// standbyStopAfter is the absolute variant of recentlyPoweredOff: it reports
+	// a power-off strictly AFTER the given time (the press). The rolling 6s
+	// window could expire between two verify ticks and let a re-push wake the
+	// powered-off box after all; the absolute stamp cannot. Preferred when
+	// wired; recentlyPoweredOff stays as the fallback. Wired to
+	// webui.StandbyStoppedAfter. nil-safe.
+	standbyStopAfter func(t time.Time) bool
 	// noteBoxPresets records the box's OWN preset list (gabbo presetsUpdated),
 	// including foreign sources like Deezer that STR did not set, into the webui
 	// so the app can show and preserve them (Option C). Wired to
@@ -1157,23 +1207,55 @@ type presetWsHandler struct {
 	// earlier stop, #419) and anchors the standby-flip discriminator. Wired to
 	// webui.Server.NoteUserPlay. nil-safe.
 	noteUserPlay func()
-	// streamActivity reports when the box last OPENED a proxied stream. It is
-	// the recall verify's ground truth: the box pulling audio through the proxy
-	// proves it is playing, whereas now_playing lags and can still name the
-	// PREVIOUS preset seconds after the box switched. Wired to
-	// streamproxy.Server.LastActivity. nil-safe.
-	streamActivity func() (lastFetch, lastFailure time.Time)
+	// slotStreamActivity reports when the box last OPENED the given slot's
+	// proxied stream. It is the recall verify's ground truth: the box pulling
+	// THIS slot's audio through the proxy proves it plays what this recall
+	// pushed, whereas now_playing lags and can still name the PREVIOUS preset
+	// seconds after the box switched. Slot-scoped on purpose: the old global
+	// stamp let any proxied fetch (another slot's reconnect, a zone follower,
+	// even a 404) certify a failed recall as healthy at the first tick, so no
+	// retry ran and the wedge counter was falsely cleared (#252). Wired to
+	// streamproxy.Server.LastFetchForSlot. nil-safe.
+	slotStreamActivity func(slot int) time.Time
 }
 
-// pulledStreamSince reports whether the box opened a proxied stream after t,
-// i.e. it really is fetching what this recall pushed. Used by the recall verify
-// as the authoritative success signal.
-func (h *presetWsHandler) pulledStreamSince(t time.Time) bool {
-	if h.streamActivity == nil {
+// slotPulledSince reports whether the box opened THIS slot's proxied stream
+// after t, i.e. it really is fetching what this recall pushed. A preset that
+// plays a direct (non-proxied) URL never stamps; the now_playing check decides
+// for it.
+func (h *presetWsHandler) slotPulledSince(slot int, t time.Time) bool {
+	if h.slotStreamActivity == nil {
 		return false
 	}
-	lastFetch, _ := h.streamActivity()
-	return !lastFetch.IsZero() && lastFetch.After(t)
+	lf := h.slotStreamActivity(slot)
+	return !lf.IsZero() && lf.After(t)
+}
+
+// superseded reports whether a newer hardware press (pressSeq moved past seq)
+// or a newer play of any kind (the webui recall generation moved past gen)
+// exists. Verify/re-push loops of an older recall stand down on it instead of
+// fighting the newest recall for the transport. gen==0 means the generation
+// was never captured (no webui wired); only the press sequence decides then.
+func (h *presetWsHandler) superseded(seq, gen uint64) bool {
+	if h.pressSeq.Load() != seq {
+		return true
+	}
+	if gen != 0 && h.recallGenFn != nil && h.recallGenFn() != gen {
+		return true
+	}
+	return false
+}
+
+// poweredOffSince reports whether the user powered the box off after t,
+// preferring the absolute stamp over the rolling window (see standbyStopAfter).
+func (h *presetWsHandler) poweredOffSince(t time.Time) bool {
+	if h.standbyStopAfter != nil {
+		return h.standbyStopAfter(t)
+	}
+	if h.recentlyPoweredOff != nil {
+		return h.recentlyPoweredOff()
+	}
+	return false
 }
 
 // OnPresetsChanged forwards the box's own preset list to the webui (Option C).
@@ -1184,17 +1266,28 @@ func (h *presetWsHandler) OnPresetsChanged(_ context.Context, presets []boxws.Bo
 }
 
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
+	// Sequence + press time are taken while still on the gabbo read loop, so
+	// rapid presses are ordered exactly as the user made them and every
+	// stand-down check anchors to when the user actually pressed, not to when
+	// STR got around to the recall.
+	seq := h.pressSeq.Add(1)
+	pressAt := time.Now()
 	// Per-key webhook (beta): fire the configured "preset<slot>" webhook on a
 	// hardware preset press (front panel or remote; app recalls take a different
 	// path and never reach here). In replace mode, withhold the preset playback
 	// so only the webhook runs (the user has cleared the STR preset for this
-	// slot); in additional mode, the preset plays AND the webhook fires.
+	// slot); in additional mode, the preset plays AND the webhook fires. The
+	// replace decision is a config read and stays synchronous; the HTTP fire
+	// runs in a goroutine because a slow webhook target stalled the read loop
+	// for up to 8s per press, delaying every queued frame.
 	if h.webhooks != nil && slot >= 1 && slot <= 6 {
 		id := fmt.Sprintf("preset%d", slot)
 		replace := h.webhooks.ButtonReplaceEnabled(id)
-		if h.webhooks.FireButton(ctx, id) {
-			h.logger.Info("preset webhook fired", "slot", slot, "replace", replace)
-		}
+		go func() {
+			if h.webhooks.FireButton(ctx, id) {
+				h.logger.Info("preset webhook fired", "slot", slot, "replace", replace)
+			}
+		}()
 		if replace {
 			h.logger.Info("preset webhook replace mode: withholding preset playback", "slot", slot)
 			return
@@ -1208,6 +1301,27 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	if h.noteUserPlay != nil {
 		h.noteUserPlay()
 	}
+	// Everything below talks to the box (SOAP, wake, pairing) and takes seconds
+	// on a cold or wedged box - exactly the boxes whose presses were failing.
+	// It used to run synchronously right here on the gabbo read loop, holding
+	// up every queued frame (the teardown STOP_STATE, the press's own trailing
+	// userActivityUpdate, 1036 errorUpdates, the user's next press) for up to
+	// ~18s. All the teardown windows in boxws and the #419 power-off
+	// discriminator in the webui measure at frame-PROCESSING time, so that
+	// delay made them read the box's routine teardown as user intent: a
+	// phantom user stop killed the verify, and the trailing key frame turned a
+	// mid-recall standby flap into a "user power-off" that cleared the
+	// transport - the ST20 that "switches itself off on every preset press"
+	// and the ST30 whose remote presses never play (#252). The read loop must
+	// keep draining; the recall runs beside it.
+	go h.recallPreset(ctx, seq, pressAt, slot, location, title)
+}
+
+// recallPreset is the slow half of a hardware preset press: the queue-preset
+// claim, the Spotify branch, URL selection, the UPnP push, wake, pairing and
+// the background verify. Runs OFF the gabbo read loop; seq/pressAt come from
+// the press event and drive supersession and the stand-down anchors.
+func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt time.Time, slot int, location, title string) {
 	// A queue preset (a saved DLNA folder) is recalled by the webui's play-queue,
 	// not the single-track UPnP play below. Let it claim the press; it returns
 	// true (and starts the queue) only for a queue preset, so every other preset
@@ -1243,7 +1357,7 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		// recalled by telling go-librespot to play the saved URI and then
 		// pointing the box's UPnP renderer at our live /spotify/stream.
 		if p.Type == "spotify" && p.URI != "" {
-			h.playSpotifyPreset(ctx, slot, p)
+			h.playSpotifyPreset(ctx, seq, pressAt, slot, p)
 			return
 		}
 		if p.Name != "" {
@@ -1300,6 +1414,23 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 		h.spotify.SwitchedAway(ctx)
 	}
 
+	// Record this hardware recall as the last play BEFORE the push: the returned
+	// recall generation is what stands every OLDER verify loop down, and bumping
+	// it first means a stale loop cannot clobber this recall while the SetURI is
+	// still in flight. The auto-re-push and the power-button wake-resume read
+	// the same record to know what to bring back (the webui only tracks its own
+	// soft plays otherwise); the mime rides along so re-pushes keep the AAC
+	// label too (#252).
+	var gen uint64
+	if h.noteLastPlay != nil {
+		if h.pressSeq.Load() != seq {
+			// A newer press exists before this recall even pushed: never let the
+			// older goroutine overwrite the newer press's lastPlay or URL.
+			h.logger.Info("hardware recall superseded before push, standing down", "slot", slot)
+			return
+		}
+		gen = h.noteLastPlay(url, name, icon, mime)
+	}
 	// Push the stream FIRST, before the wake and pairing, mirroring the Spotify
 	// path. On a hardware/remote press the box is already awake (it just emitted
 	// the gabbo frame) and briefly shows its own "Service Unavailable" flash from
@@ -1317,13 +1448,6 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	}
 	if playErr != nil {
 		h.logger.Warn("upnp play (initial) failed, will verify+retry", "slot", slot, "err", playErr)
-	}
-	// Record this hardware recall as the last play so the auto-re-push and the
-	// power-button wake-resume know what to bring back (the webui only tracks its
-	// own soft plays otherwise). The mime rides along so those re-pushes keep
-	// the AAC label too.
-	if h.noteLastPlay != nil {
-		h.noteLastPlay(url, name, icon, mime)
 	}
 
 	// Wake from standby (fast on a hardware press, the box is already awake) AFTER
@@ -1350,15 +1474,28 @@ func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, locati
 	// Verify+retry in the background: the first hardware press after a cold
 	// boot can race the box/agent bringup so nothing plays until a second
 	// press. This re-issues until the box actually plays. Affects radio too.
-	go h.verifyPlayURL(slot, url, name, icon, mime)
+	go h.verifyPlayURL(seq, gen, pressAt, slot, url, name, icon, mime)
 	h.logger.Info("hardware preset mapped to upnp", "slot", slot, "name", name, "mime", mime)
 }
 
 // isSTRStreamURL reports whether u is one of STR's own stream URLs (the radio
 // stream proxy or the Spotify Ogg passthrough), as opposed to a stale Bose
-// ContentItem location that a re-sync has not yet replaced.
+// ContentItem location that a re-sync has not yet replaced. Deliberately loose
+// (substring): used only to PREFER the store URL over a box-provided location.
 func isSTRStreamURL(u string) bool {
 	return strings.Contains(u, "/stream/") || strings.Contains(u, "/spotify/")
+}
+
+// ownBoxPresetLocRe matches exactly the locations STR itself writes into the
+// box's preset slots (boxurl.Preset / boxurl.StreamSlot / boxurl.SpotifySlot).
+// The reconcile prune keys DELETION off this, so it must never match a foreign
+// station URL that merely contains "/stream/".
+var ownBoxPresetLocRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/(?:stream/[1-6]|spotify/stream(?:-[1-6])?\.ogg)$`)
+
+// isOwnBoxPresetLocation reports whether loc is a box-preset location STR
+// itself wrote (strict match), the only shape the prune may remove.
+func isOwnBoxPresetLocation(loc string) bool {
+	return ownBoxPresetLocRe.MatchString(loc)
 }
 
 // isPlayableURL reports whether u is an absolute HTTP(S) URL the UPnP renderer can
@@ -1543,14 +1680,20 @@ func (h *presetWsHandler) OnRemoteSkip(ctx context.Context, forward bool) {
 	if h.onRemoteSkip == nil {
 		return
 	}
-	sctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	src, err := h.onRemoteSkip(sctx, forward)
-	if err != nil {
-		h.logger.Warn("remote skip failed", "forward", forward, "source", src, "err", err)
-		return
-	}
-	h.logger.Info("remote skip", "forward", forward, "source", src)
+	// Off the gabbo read loop: a skip against a slow/wedged transport held the
+	// loop for up to 8s per press, delaying every queued frame and skewing the
+	// processing-time classification windows (#252). The webui skip serializes
+	// box commands internally, so concurrent presses do not interleave SOAP.
+	go func() {
+		sctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		src, err := h.onRemoteSkip(sctx, forward)
+		if err != nil {
+			h.logger.Warn("remote skip failed", "forward", forward, "source", src, "err", err)
+			return
+		}
+		h.logger.Info("remote skip", "forward", forward, "source", src)
+	}()
 }
 
 // OnUserStop is fired when the box reports a deliberate playback stop over
@@ -1654,9 +1797,12 @@ func requestPresetKeyResync(logger *slog.Logger) {
 // the webhook does not false-fire on STR's own wake-for-recall.
 func (h *presetWsHandler) OnPowerKey(ctx context.Context) {
 	if h.webhooks != nil {
-		if h.webhooks.FireButton(ctx, "power") {
-			h.logger.Info("power webhook fired")
-		}
+		// Async: the webhook HTTP request must not stall the gabbo read loop.
+		go func() {
+			if h.webhooks.FireButton(ctx, "power") {
+				h.logger.Info("power webhook fired")
+			}
+		}()
 	}
 }
 
@@ -1702,9 +1848,12 @@ func (h *presetWsHandler) OnEnterStandby(_ context.Context) {
 // AUX input. Additional-only.
 func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
 	if h.webhooks != nil {
-		if h.webhooks.FireButton(ctx, "aux") {
-			h.logger.Info("aux webhook fired")
-		}
+		// Async: the webhook HTTP request must not stall the gabbo read loop.
+		go func() {
+			if h.webhooks.FireButton(ctx, "aux") {
+				h.logger.Info("aux webhook fired")
+			}
+		}()
 	}
 }
 
@@ -1730,7 +1879,7 @@ var spotifyStreamURL = boxurl.SpotifyDefault()
 // playSpotifyPreset recalls a Spotify preset: wake + pair the box, tell
 // go-librespot to play the saved URI (autonomous, no app), then point the
 // box at the live /spotify/stream so it plays the audio over UPnP.
-func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p presets.Preset) {
+func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pressAt time.Time, slot int, p presets.Preset) {
 	// Log the inputs up front so a remote "recall does nothing" report (e.g.
 	// ST20 #45) shows immediately which precondition failed: no Spotify
 	// manager, no stored account/URI on the preset, or go-librespot not ready.
@@ -1798,9 +1947,15 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 		h.logger.Warn("spotify upnp play (display) failed, will verify+retry", "slot", slot, "err", err)
 	}
 	// Record this hardware recall as the last play so the power-button
-	// wake-resume can bring the Spotify stream back.
+	// wake-resume can bring the Spotify stream back. The returned recall
+	// generation feeds the verify's supersession check below.
+	var gen uint64
 	if h.noteLastPlay != nil {
-		h.noteLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
+		if h.pressSeq.Load() != seq {
+			h.logger.Info("spotify recall superseded before push, standing down", "slot", slot)
+			return
+		}
+		gen = h.noteLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 	}
 	// Wake from standby + ensure pairing (the box is awake on a hardware press,
 	// so these return fast); kept AFTER the display push so the buffering state
@@ -1830,7 +1985,7 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 	// go-librespot's auth, so the box gets no audio and the user had to press
 	// twice. This retries until the box actually plays, with no latency on the
 	// happy path (the initial attempt above already played).
-	go h.verifySpotifyPlaying(slot, p)
+	go h.verifySpotifyPlaying(seq, gen, pressAt, slot, p)
 	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", p.Account)
 }
 
@@ -1840,12 +1995,11 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, slot int, p pre
 // the initial play ("" = audio/mpeg default); the retries must re-issue with
 // the SAME label or an AAC station recovered here would fall back to silence
 // (#252).
-func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) {
-	// Anchor for the user-stop stand-down: only a STOP_STATE recorded after
-	// this point aborts the loop. Captured at verify start, i.e. after the
-	// initial play's SOAP round-trip, so the transient STOP_STATE that flip
-	// itself can emit has usually already been recorded and does not count.
-	recallStart := time.Now()
+func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot int, url, name, icon, mime string) {
+	// All stand-down checks anchor to pressAt, the moment the user pressed the
+	// key (stamped on the gabbo read loop). The old anchor - verify-start,
+	// i.e. after the initial SOAP push and wake - meant a user stop or a 1036
+	// rejection that landed DURING a slow push was invisible to the loop.
 	// Fast recovery for the wrong-state race, before the 5 s loop below: on a
 	// Wave the box answers every hardware press with 1036
 	// UpnpRcvdContentItemInWrongState about 0.8 s in, because it first tries to
@@ -1854,12 +2008,20 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 	// Waiting a full verify tick to react leaves the user in silence for five
 	// seconds; re-pushing as soon as the rejection is visible is the automatic
 	// version of the second press users learned to do by hand.
-	h.rePushAfterSourceReject(slot, url, name, icon, mime, recallStart)
+	h.rePushAfterSourceReject(seq, gen, pressAt, slot, url, name, icon, mime)
 	// Up to 5 attempts (~25s): a box waking from a deep/overnight standby can
 	// take longer than the old 3-attempt (~15s) window to finish bringing its
 	// network and playback subsystem back up before it accepts the stream (#183).
 	for attempt := 1; attempt <= 5; attempt++ {
 		time.Sleep(5 * time.Second)
+		// A newer press or app recall owns the transport now: this loop's URL is
+		// stale, and re-pushing it would flip the box back to the previous
+		// station ("pressed 2, got 1"). The soft path has had this guard all
+		// along (verifyRecall's recallGen); the hardware loop lacked it.
+		if h.superseded(seq, gen) {
+			h.logger.Info("hardware recall superseded by a newer play, standing down", "slot", slot)
+			return
+		}
 		// Success means the box is playing THIS recall, not merely "some play
 		// state". A bare play-state check silently passed the exact failure the
 		// verify exists for: on a Wave every hardware press is rejected with 1036
@@ -1870,12 +2032,12 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 		// showed the station, no audio ever came, no retry ran and no wedge strike
 		// was recorded. The Spotify verify already keys off the now_playing location
 		// for this very reason (see boxPlayingSpotify); radio now does too.
-		// The box pulling a proxied stream since this recall started is proof it
+		// The box pulling THIS SLOT's proxied stream since the press is proof it
 		// is playing what we pushed, and it is checked FIRST because now_playing
 		// lags: a Portable kept naming the PREVIOUS preset for seconds after it
 		// had already opened the new stream, so a location check alone declared a
 		// healthy recall dead and the "repair" tore the working stream down.
-		if h.pulledStreamSince(recallStart) || boxPlayingURL(h.boxHost, url) {
+		if h.slotPulledSince(slot, pressAt) || boxPlayingURL(h.boxHost, url) {
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
 			}
@@ -1887,14 +2049,14 @@ func (h *presetWsHandler) verifyPlayURL(slot int, url, name, icon, mime string) 
 		// speaker back on (#197, the "start via preset then power off" trigger). A
 		// genuine deep-standby wake (#183) carries no recent power-off, so the
 		// legitimate retry still runs.
-		if h.recentlyPoweredOff != nil && h.recentlyPoweredOff() {
+		if h.poweredOffSince(pressAt) {
 			h.logger.Info("hardware recall: box powered off mid-recall, not re-pushing (#197)", "slot", slot)
 			return
 		}
 		// The user deliberately stopped playback (gabbo STOP_STATE, e.g. the Bose
-		// remote's stop key) after this recall started: the stop must hold, like
-		// the webui side's stand-down, instead of being overridden by a re-push.
-		if h.userStoppedSince(recallStart) {
+		// remote's stop key) after this press: the stop must hold, like the webui
+		// side's stand-down, instead of being overridden by a re-push.
+		if h.userStoppedSince(pressAt) {
 			h.logger.Info("hardware recall: user stopped playback mid-recall, not re-pushing", "slot", slot)
 			return
 		}
@@ -1925,21 +2087,26 @@ const sourceRejectProbeDelay = 1500 * time.Millisecond
 // UpnpRcvdContentItemInWrongState, without waiting for the first 5 s verify
 // tick. The rejection means the box positively declined this stream, so
 // pushing it again is a repair rather than a guess; a recall that is already
-// playing, a box the user powered off, and a deliberate stop are all left
-// alone. Fires at most once per recall: the verify loop owns everything after
-// it.
-func (h *presetWsHandler) rePushAfterSourceReject(slot int, url, name, icon, mime string, recallStart time.Time) {
+// playing, a box the user powered off, a deliberate stop, and a recall a newer
+// press superseded are all left alone. Fires at most once per recall: the
+// verify loop owns everything after it.
+func (h *presetWsHandler) rePushAfterSourceReject(seq, gen uint64, pressAt time.Time, slot int, url, name, icon, mime string) {
 	time.Sleep(sourceRejectProbeDelay)
-	if !h.lastSourceRejectTime().After(recallStart) {
+	if !h.lastSourceRejectTime().After(pressAt) {
 		return // the box did not refuse this recall; the normal verify governs
 	}
-	if h.pulledStreamSince(recallStart) || boxPlayingURL(h.boxHost, url) {
+	if h.superseded(seq, gen) {
+		// A newer press/recall owns the transport: clearing it and re-pushing
+		// THIS press's URL would actively tear the newer recall down.
+		return
+	}
+	if h.slotPulledSince(slot, pressAt) || boxPlayingURL(h.boxHost, url) {
 		return // refused once, then started anyway
 	}
-	if h.recentlyPoweredOff != nil && h.recentlyPoweredOff() {
+	if h.poweredOffSince(pressAt) {
 		return // #197: never push into a box the user just switched off
 	}
-	if h.userStoppedSince(recallStart) {
+	if h.userStoppedSince(pressAt) {
 		return
 	}
 	h.logger.Warn("hardware recall: box refused the stream (wrong state), clearing the transport and pushing again", "slot", slot)
@@ -1985,15 +2152,22 @@ func (h *presetWsHandler) clearTransportForRePush(ctx context.Context, slot int)
 // verifySpotifyPlaying confirms the box reached a playing state after a Spotify
 // recall and re-issues the recall a few times if not, fixing the "first press
 // after reboot does nothing" race without needing a second press.
-func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
-	// Anchor for the user-stop stand-down (see verifyPlayURL): only a
-	// STOP_STATE recorded after this point aborts the loop.
-	recallStart := time.Now()
+func (h *presetWsHandler) verifySpotifyPlaying(seq, gen uint64, pressAt time.Time, slot int, p presets.Preset) {
+	// Anchors mirror verifyPlayURL: pressAt (the moment of the key press) for
+	// the user-stop / power-off stand-downs, seq/gen for supersession.
 	// Track the box's 1036 wrong-state rejections so a fresh one within a verify
 	// tick forces a re-point instead of trusting the box's playing-looking state.
-	lastRejectSeen := recallStart
+	lastRejectSeen := pressAt
 	for attempt := 1; attempt <= 3; attempt++ {
 		time.Sleep(5 * time.Second)
+		// A newer press or app recall owns the transport: re-pointing at this
+		// Spotify slot now would yank the user's newest choice (e.g. a radio
+		// press made during this loop's 15s window used to bounce back to
+		// Spotify). Stand down.
+		if h.superseded(seq, gen) {
+			h.logger.Info("spotify recall superseded by a newer play, standing down", "slot", slot)
+			return
+		}
 		// A box that just rejected STR's source (1036 UpnpRcvdContentItemInWrongState,
 		// the preset->preset switch race) can report attached + BUFFERING on the
 		// Spotify location without ever reaching audio, then detach ~30s later with no
@@ -2026,13 +2200,13 @@ func (h *presetWsHandler) verifySpotifyPlaying(slot int, p presets.Preset) {
 		}
 		// Stand down if the user powered the box off mid-recall, so the re-point
 		// below does not re-wake a box the user just switched off (#197).
-		if h.recentlyPoweredOff != nil && h.recentlyPoweredOff() {
+		if h.poweredOffSince(pressAt) {
 			h.logger.Info("spotify recall: box powered off mid-recall, not re-pointing (#197)", "slot", slot)
 			return
 		}
-		// A deliberate stop (gabbo STOP_STATE) after this recall started must
-		// hold; do not re-point the box over the user's stop.
-		if h.userStoppedSince(recallStart) {
+		// A deliberate stop (gabbo STOP_STATE) after this press must hold; do
+		// not re-point the box over the user's stop.
+		if h.userStoppedSince(pressAt) {
 			h.logger.Info("spotify recall: user stopped playback mid-recall, not re-pointing", "slot", slot)
 			return
 		}
@@ -2469,11 +2643,13 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// firmware keeps its preset list across an STR reinstall, but STR's store is
 	// fresh, so those slots show a name yet cannot play (the store stream URL is
 	// gone) - the reporter saw old presets reappear after a reinstall and not
-	// work. Remove ONLY STR's own UPnP /stream/ or /spotify/ presets that the
-	// store lacks; a foreign preset (e.g. a box-cached Deezer entry) or any slot
-	// STR does have is left untouched.
+	// work. Remove ONLY locations STR itself wrote (strict boxurl shape, not the
+	// loose "/stream/" substring match, which could misread a foreign Icecast
+	// URL containing /stream/ as STR-owned and delete a working box preset); a
+	// foreign preset (e.g. a box-cached Deezer entry) or any slot STR does have
+	// is left untouched.
 	for slot, loc := range boxLocs {
-		if strSlots[slot] || !isSTRStreamURL(loc) {
+		if strSlots[slot] || !isOwnBoxPresetLocation(loc) {
 			continue
 		}
 		rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
@@ -2493,6 +2669,32 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 // so the reconcile can prune only its own stale entries and never a box-native
 // preset.
 func fetchBoxPresets(boxHost string) (map[int]string, error) {
+	entries, err := fetchBoxPresetsFull(boxHost)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int]string{}
+	for _, e := range entries {
+		out[e.Slot] = e.Location
+	}
+	return out, nil
+}
+
+// boxPresetEntry is one slot of the box's own :8090/presets list, with enough
+// ContentItem detail to seed the webui's box-native snapshot and to identify a
+// lost STR preset for the store recovery.
+type boxPresetEntry struct {
+	Slot     int
+	Location string
+	Name     string
+	Source   string
+	Type     string
+	Account  string
+}
+
+// fetchBoxPresetsFull reads GET /presets and returns each set slot's
+// ContentItem fields.
+func fetchBoxPresetsFull(boxHost string) ([]boxPresetEntry, error) {
 	client := http.Client{Timeout: 4 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://%s:8090/presets", boxHost))
 	if err != nil {
@@ -2500,7 +2702,7 @@ func fetchBoxPresets(boxHost string) (map[int]string, error) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	out := map[int]string{}
+	var out []boxPresetEntry
 	// Bose format: <presets><preset id="1" ...><ContentItem location="..."/></preset></presets>
 	for _, blk := range presetBlockRegex.FindAllStringSubmatch(string(body), -1) {
 		slot := 0
@@ -2508,13 +2710,127 @@ func fetchBoxPresets(boxHost string) (map[int]string, error) {
 		if slot < 1 || slot > 6 {
 			continue
 		}
-		loc := ""
-		if lm := presetLocationRegex.FindStringSubmatch(blk[0]); lm != nil {
-			loc = lm[1]
+		e := boxPresetEntry{Slot: slot}
+		if m := presetLocationRegex.FindStringSubmatch(blk[0]); m != nil {
+			e.Location = m[1]
 		}
-		out[slot] = loc
+		if m := presetItemNameRegex.FindStringSubmatch(blk[0]); m != nil {
+			e.Name = xmlEntityUnescape(m[1])
+		}
+		if m := presetSourceRegex.FindStringSubmatch(blk[0]); m != nil {
+			e.Source = m[1]
+		}
+		if m := presetTypeRegex.FindStringSubmatch(blk[0]); m != nil {
+			e.Type = m[1]
+		}
+		if m := presetAccountRegex.FindStringSubmatch(blk[0]); m != nil {
+			e.Account = m[1]
+		}
+		out = append(out, e)
 	}
 	return out, nil
+}
+
+// xmlEntityUnescape reverses the five predefined XML entities in text content
+// (Bose escapes station names like "Pop & Rock" in /presets).
+var xmlEntityReplacer = strings.NewReplacer(
+	"&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&apos;", "'")
+
+func xmlEntityUnescape(s string) string { return xmlEntityReplacer.Replace(s) }
+
+// seedBoxPresetsAndRecoverStore runs once in the background at agent start.
+// Two jobs (#252, the ST20 whose presets showed "unassigned although they are
+// assigned"):
+//
+//  1. Seed the webui's box-native preset snapshot from :8090/presets. The
+//     snapshot otherwise stays empty until the box happens to emit a gabbo
+//     presetsUpdated frame, so the app showed every slot as unassigned even
+//     though the box's own list still held them.
+//  2. If the NAND preset store came up EMPTY while the box still lists STR's
+//     own /stream/ presets, the store was lost (the pre-v0.9.14 non-durable
+//     save left presets.json at 0 bytes after a standby power-cut; the loss
+//     surfaced when the OTA restarted the agent). Every hardware press then
+//     404s at the stream proxy: the buttons are dead although the box's key
+//     layer works. Restore what the recently-played history can identify by
+//     exact station/playlist name, so the buttons come back without the user
+//     re-saving every slot.
+func seedBoxPresetsAndRecoverStore(store *presets.Store, recentStore *recent.Store, boxHost string, seed func([]webui.BoxPreset), logger *slog.Logger) {
+	if boxHost == "" || store == nil {
+		return
+	}
+	// The box needs ~60s after a cold boot before :8090 answers; poll gently
+	// and give up quietly after ~10 minutes (the periodic reconcile keeps
+	// running regardless).
+	var entries []boxPresetEntry
+	for i := 0; i < 30; i++ {
+		time.Sleep(20 * time.Second)
+		var err error
+		entries, err = fetchBoxPresetsFull(boxHost)
+		if err == nil {
+			break
+		}
+		entries = nil
+	}
+	if len(entries) == 0 {
+		return
+	}
+	if seed != nil {
+		bps := make([]webui.BoxPreset, 0, len(entries))
+		for _, e := range entries {
+			bps = append(bps, webui.BoxPreset{
+				Slot: e.Slot, Source: e.Source, Type: e.Type,
+				Location: e.Location, SourceAccount: e.Account, Name: e.Name,
+			})
+		}
+		seed(bps)
+		logger.Info("box preset snapshot seeded from :8090/presets", "slots", len(bps))
+	}
+	if recentStore == nil || len(store.All()) > 0 {
+		return
+	}
+	recovered := 0
+	recents := recentStore.All()
+	for _, e := range entries {
+		if !isOwnBoxPresetLocation(e.Location) || e.Name == "" {
+			continue
+		}
+		if _, exists := store.Get(e.Slot); exists {
+			continue
+		}
+		wantSpotify := strings.Contains(e.Location, "/spotify/")
+		// Newest matching history entry wins (the ring is oldest-first).
+		for i := len(recents) - 1; i >= 0; i-- {
+			r := recents[i]
+			if r.CardName != e.Name || r.CardURL == "" {
+				continue
+			}
+			if wantSpotify != (r.Source == "spotify") {
+				continue
+			}
+			p := presets.Preset{Slot: e.Slot, Name: e.Name, Art: r.CardArt, Homepage: r.Homepage}
+			if wantSpotify {
+				p.Type = "spotify"
+				p.URI = r.CardURL
+				p.Account = r.Account
+			} else {
+				p.Type = "radio"
+				p.StreamURL = r.CardURL
+			}
+			if err := store.SetSlot(p); err != nil {
+				logger.Warn("preset store recovery: could not save recovered slot", "slot", e.Slot, "err", err)
+			} else {
+				// Warn on purpose: this must be visible in a diagnostic bundle.
+				logger.Warn("preset store recovery: restored a lost preset from the recently-played history",
+					"slot", e.Slot, "name", e.Name, "type", p.Type)
+				recovered++
+			}
+			break
+		}
+	}
+	if recovered > 0 {
+		logger.Warn("preset store recovery: the preset store was empty while the box still lists STR presets (likely wiped by a pre-v0.9.14 standby power-cut); restored what the history could identify",
+			"recovered", recovered)
+	}
 }
 
 // presetBlockRegex captures one <preset id="N" ...> ... </preset> block; (?s)
@@ -2522,6 +2838,10 @@ func fetchBoxPresets(boxHost string) (map[int]string, error) {
 // pulls the ContentItem location out of that block.
 var presetBlockRegex = regexp.MustCompile(`(?s)<preset id="(\d+)".*?</preset>`)
 var presetLocationRegex = regexp.MustCompile(`location="([^"]*)"`)
+var presetItemNameRegex = regexp.MustCompile(`<itemName>([^<]*)</itemName>`)
+var presetSourceRegex = regexp.MustCompile(`source="([^"]*)"`)
+var presetTypeRegex = regexp.MustCompile(`type="([^"]*)"`)
+var presetAccountRegex = regexp.MustCompile(`sourceAccount="([^"]*)"`)
 
 // boxInSetupOOB reports whether BoseApp's /setup says the box is still
 // in out-of-box setup (SETUP_AP_OOB). Pushing presets in that state

@@ -2043,13 +2043,58 @@ func (s *Server) loadLastPlay() {
 // (the hardware preset recall in cmd/agent goes straight to the renderer). It
 // lets the auto-re-push (#4) and the power-button wake-resume work for hardware
 // presses too, which otherwise left lastPlay unset and the box un-resumable.
-func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
+// It returns the new recall generation so the hardware verify can stand down
+// as soon as a later play (hardware or app) supersedes it, mirroring the soft
+// path's verifyRecall.
+func (s *Server) NoteLastPlay(boxURL, title, art, mime string) uint64 {
 	// A hardware recall is by definition a non-queue play (cmd/agent routes a
 	// queue preset through RecallSlot, which never reaches here): drop any
 	// active library queue so its watcher does not advance over the user's new
 	// choice minutes later.
 	s.stopQueue()
-	s.setLastPlay(boxURL, title, art, mime)
+	return s.setLastPlay(boxURL, title, art, mime)
+}
+
+// RecallGeneration returns the current recall generation (bumped by every
+// stream push recorded via setLastPlay, hardware and app alike). The hardware
+// recall verifies in cmd/agent compare it against the generation of their own
+// recall: a mismatch means a newer play started and the stale verify must
+// stand down instead of re-pushing its old URL over the user's newest choice
+// ("pressed 2, got 1").
+func (s *Server) RecallGeneration() uint64 {
+	s.lastPlayMu.Lock()
+	defer s.lastPlayMu.Unlock()
+	return s.recallGen
+}
+
+// bumpRecallGen advances the recall generation without recording a lastPlay.
+// Used by recall paths whose own setLastPlay only runs on success (the queue
+// preset start), so the claim itself already supersedes any older verify loop.
+func (s *Server) bumpRecallGen() {
+	s.lastPlayMu.Lock()
+	s.recallGen++
+	s.lastPlayMu.Unlock()
+}
+
+// StandbyStoppedAfter reports whether STR saw this box's UPnP source drop to
+// STANDBY (a power-off) strictly after t. The hardware recall verify anchors
+// this to its press time: unlike the rolling RecentlyPoweredOff window, the
+// stamp cannot expire between two verify ticks, so a power-off mid-recall
+// reliably stands the re-push down for the recall's whole lifetime (#197).
+func (s *Server) StandbyStoppedAfter(t time.Time) bool {
+	s.standbyStopMu.Lock()
+	defer s.standbyStopMu.Unlock()
+	return !s.lastStandbyStop.IsZero() && s.lastStandbyStop.After(t)
+}
+
+// SetTransportCommandHook wires the webui's own renderer into the gabbo
+// classifier's own-command excusal (boxws.NoteOwnTransportCommand): re-pushes,
+// resumes and the standby-bounce clear all make the box emit STOP_STATE frames
+// that must not latch a phantom user stop. No-op without a renderer.
+func (s *Server) SetTransportCommandHook(fn func()) {
+	if s.renderer != nil {
+		s.renderer.OnTransportCommand = fn
+	}
 }
 
 // --- Recently played (#135) ---
@@ -2885,6 +2930,14 @@ const (
 	// nowSelectionUpdated by a moment) from a genuinely NEW key press during
 	// the recall (e.g. the user pressing power to stop it, the original #197).
 	userPlayActivityEpsilon = 2 * time.Second
+	// powerKeyAdjacencyWindow: for a key press during a recall to count as the
+	// user powering the box off, the UPNP->STANDBY flip must follow the key
+	// within this window (a power press flips the source near-instantly). A key
+	// press that is merely SOMEWHERE in the recall window - a volume tweak, a
+	// thumbs key - used to reclassify a later firmware flap as a user power-off,
+	// which cleared the transport and latched every recovery off, so "press
+	// preset, touch volume, box dies" (#252: the ST20 switching itself off).
+	powerKeyAdjacencyWindow = 3 * time.Second
 	// spontaneousOffWindow: a UPNP->STANDBY drop with no physical key press
 	// this recent is the firmware powering the source off on its own (#419:
 	// observed correlating with Wi-Fi instability, 40 min into stable playback).
@@ -2985,9 +3038,17 @@ func (s *Server) HandleEnterStandby() {
 	// means deliberate: keep the conservative handling.
 	deliberateStop := s.userStoppedRecently()
 	recallActive := !playStart.IsZero() && now.Sub(playStart) < userPlayGuardWindow
+	// A key press only reads as "the user powered the box off mid-recall" when
+	// it is BOTH newer than the press that started the recall (outside the
+	// trailing-frame epsilon) AND immediately adjacent to the flip - a power
+	// press flips the source within a moment. Requiring only "any key since
+	// recall start" made a volume tweak seconds earlier reclassify a routine
+	// firmware flap as a power-off, clearing the transport and latching every
+	// recovery off mid-recall (#252).
 	newKeySinceRecall := lastKey.After(playStart.Add(userPlayActivityEpsilon))
-	if recallActive && !newKeySinceRecall && !deliberateStop {
-		s.logger.Info("standby bounce: source dropped during the user's own recall with no new key press, leaving transport and latches alone (#419)")
+	keyAdjacentToFlip := !lastKey.IsZero() && now.Sub(lastKey) <= powerKeyAdjacencyWindow
+	if recallActive && !(newKeySinceRecall && keyAdjacentToFlip) && !deliberateStop {
+		s.logger.Info("standby bounce: source dropped during the user's own recall with no adjacent new key press, leaving transport and latches alone (#419)")
 		return
 	}
 	if !recallActive && !deliberateStop && !lastKey.IsZero() && now.Sub(lastKey) > spontaneousOffWindow {
@@ -3025,16 +3086,23 @@ func (s *Server) HandleEnterStandby() {
 	// A power-off is a deliberate stop: drop any queue so it does not fight the
 	// standby, then Stop and EMPTY the transport URI so the firmware has nothing to
 	// bounce back to (Stop alone leaves the URI loaded and the box re-selects it).
+	// The SOAP calls run in a goroutine: HandleEnterStandby is invoked
+	// synchronously from the gabbo read loop, and up to ~5s of SOAP blocked
+	// every queued frame - which is exactly what skewed the processing-time
+	// stamps the teardown classification depends on (#252). The min-gap above
+	// already bounds how many of these can be in flight.
 	s.stopQueue()
 	s.logger.Info("standby bounce: box powered off STR's UPnP source, stopping + clearing the transport URI so it stays off (#197)")
-	ctx, cancel := context.WithTimeout(s.queueCtx(), 5*time.Second)
-	defer cancel()
-	if err := s.renderer.Stop(ctx); err != nil {
-		s.logger.Debug("standby bounce: transport stop returned (expected if already off)", "err", err)
-	}
-	if err := s.renderer.ClearURI(ctx); err != nil {
-		s.logger.Debug("standby bounce: clear transport URI returned", "err", err)
-	}
+	go func() {
+		ctx, cancel := context.WithTimeout(s.queueCtx(), 5*time.Second)
+		defer cancel()
+		if err := s.renderer.Stop(ctx); err != nil {
+			s.logger.Debug("standby bounce: transport stop returned (expected if already off)", "err", err)
+		}
+		if err := s.renderer.ClearURI(ctx); err != nil {
+			s.logger.Debug("standby bounce: clear transport URI returned", "err", err)
+		}
+	}()
 }
 
 // handleSpontaneousSourceOff handles a UPNP->STANDBY drop with no physical key

@@ -24,6 +24,16 @@ type Renderer struct {
 
 	// Client is used for all SOAP requests. If nil, http.DefaultClient.
 	Client *http.Client
+
+	// OnTransportCommand, when set, is invoked at the start of every SOAP
+	// transport command (SetAVTransportURI, Play, Pause, Stop). The gabbo
+	// event classifier uses it to recognise the box's reaction to STR's OWN
+	// commands: a SOAP Stop (or a SetURI flip) makes the box emit a nowPlaying
+	// STOP_STATE that is indistinguishable on the wire from the user pressing
+	// stop, and reading it as a user stop latched a phantom stand-down that
+	// killed the very recall the command belonged to (#252 post-v0.9.16).
+	// Optional; must be safe for concurrent use.
+	OnTransportCommand func()
 }
 
 // NewBoseRenderer returns a Renderer for the typical Bose SoundTouch
@@ -215,6 +225,12 @@ func isStreamReachable(ctx context.Context, u string) bool {
 }
 
 func (r *Renderer) soapCall(ctx context.Context, action, body string) error {
+	// Every soapCall action mutates the transport (queries go through
+	// soapCallBody directly), so this is the one choke point where STR knows
+	// "the next transport-state frame on gabbo is our own doing".
+	if r.OnTransportCommand != nil {
+		r.OnTransportCommand()
+	}
 	_, err := r.soapCallBody(ctx, action, body)
 	return err
 }

@@ -159,6 +159,48 @@ func TestHandleMessage_TeardownStopStateIsNotUserStop(t *testing.T) {
 	}
 }
 
+// A STOP_STATE the box emits in reaction to one of STR's OWN transport
+// commands (the wrong-state repair's Stop+ClearURI, a verify re-push's
+// SetURI+Play) must not be read as a deliberate user stop: on a slow box the
+// repair's Stop landed outside the press window and the phantom stop aborted
+// the very verify the repair belonged to (#252 post-v0.9.16). A fresh physical
+// key press vetoes the excusal: the firmware accompanies real key presses with
+// a userActivityUpdate, which STR's SOAP commands never cause.
+func TestHandleMessage_OwnTransportCommandStopStateIsNotUserStop(t *testing.T) {
+	stop := `<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>STOP_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`
+
+	// (a) STOP_STATE right after STR's own SOAP command: excused.
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.NoteOwnTransportCommand()
+	c.handleMessage(context.Background(), []byte(stop))
+	if h.userStops != 0 {
+		t.Fatalf("STOP_STATE right after STR's own transport command must not fire OnUserStop, got %d", h.userStops)
+	}
+
+	// (b) A fresh key press alongside it means the user really pressed stop on
+	// the remote/box: the veto keeps the real stop honoured.
+	h2 := &recHandler{}
+	c2 := newTestClient(h2)
+	c2.NoteOwnTransportCommand()
+	c2.handleMessage(context.Background(), []byte(`<userActivityUpdate deviceID="x"/>`))
+	c2.handleMessage(context.Background(), []byte(stop))
+	if h2.userStops != 1 {
+		t.Fatalf("a key press next to the STOP_STATE means a real user stop even inside the own-command window, got %d", h2.userStops)
+	}
+
+	// (c) An own-command older than the window does not excuse a stop.
+	h3 := &recHandler{}
+	c3 := newTestClient(h3)
+	c3.mu.Lock()
+	c3.lastOwnCmdAt = time.Now().Add(-10 * time.Second)
+	c3.mu.Unlock()
+	c3.handleMessage(context.Background(), []byte(stop))
+	if h3.userStops != 1 {
+		t.Fatalf("an own-command outside the window must not excuse a stop, got %d", h3.userStops)
+	}
+}
+
 func TestHandleMessage_PresetRecall(t *testing.T) {
 	h := &recHandler{}
 	c := newTestClient(h)

@@ -115,10 +115,26 @@ func TestHandleEnterStandby_DropDuringOwnRecall(t *testing.T) {
 	}
 }
 
+// waitForAction polls for an async transport action: HandleEnterStandby issues
+// its Stop+ClearURI in a goroutine so the SOAP round-trips cannot stall the
+// gabbo read loop (#252).
+func waitForAction(t *testing.T, rec *soapRecorder, action string) bool {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if rec.has(action) {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
 // TestHandleEnterStandby_PowerOffDuringRecallStillLatches guards #197: the user
 // starting a preset and then pressing power DURING the recall is a real
-// power-off (a NEW key press landed after the recall start). It must latch and
-// clear the transport exactly as before.
+// power-off (a NEW key press landed after the recall start, immediately
+// adjacent to the flip). It must latch and clear the transport exactly as
+// before.
 func TestHandleEnterStandby_PowerOffDuringRecallStillLatches(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.standbyStopMu.Lock()
@@ -134,8 +150,35 @@ func TestHandleEnterStandby_PowerOffDuringRecallStillLatches(t *testing.T) {
 	if !s.userStoppedRecently() {
 		t.Fatal("a power press during the recall must still arm the user-stop (#197)")
 	}
-	if !rec.has("Stop") {
+	if !waitForAction(t, rec, "Stop") {
 		t.Fatalf("a power press during the recall must still clear the transport (#197), got %v", rec.list())
+	}
+}
+
+// TestHandleEnterStandby_StaleKeyDuringRecallDoesNotLatch: a key press that is
+// merely SOMEWHERE in the recall window (a volume tweak seconds earlier) is not
+// a power press - the source flip does not follow it immediately. Latching on
+// it reclassified a routine firmware flap as a user power-off, cleared the
+// transport mid-recall and stood every recovery down: the ST20 that "switches
+// itself off on every preset press" (#252).
+func TestHandleEnterStandby_StaleKeyDuringRecallDoesNotLatch(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-20 * time.Second) // recall still active
+	s.standbyStopMu.Unlock()
+	// New key since the press (outside the trailing-frame epsilon) but NOT
+	// adjacent to the flip: a volume tweak ~8s ago, flip now.
+	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-8 * time.Second) })
+
+	s.HandleEnterStandby()
+
+	if s.standbyStoppedRecently() || s.userStoppedRecently() {
+		t.Fatal("a non-adjacent key during the recall must not arm the stop latches (#252)")
+	}
+	// Give a mistaken async clear a moment to surface before asserting.
+	time.Sleep(150 * time.Millisecond)
+	if rec.count() != 0 {
+		t.Fatalf("a non-adjacent key during the recall must not clear the transport, got %v", rec.list())
 	}
 }
 
@@ -151,7 +194,7 @@ func TestHandleEnterStandby_NoActivitySignalStaysConservative(t *testing.T) {
 	if !s.standbyStoppedRecently() || !s.userStoppedRecently() {
 		t.Fatal("without an activity signal every drop must keep the conservative #197 latching")
 	}
-	if !rec.has("Stop") {
+	if !waitForAction(t, rec, "Stop") {
 		t.Fatalf("without an activity signal the transport must still be cleared (#197), got %v", rec.list())
 	}
 }
@@ -171,7 +214,7 @@ func TestHandleEnterStandby_AppStandbyStaysDeliberate(t *testing.T) {
 	if !s.standbyStoppedRecently() {
 		t.Fatal("an app-initiated standby must keep the deliberate power-off handling (#419)")
 	}
-	if !rec.has("Stop") {
+	if !waitForAction(t, rec, "Stop") {
 		t.Fatalf("an app-initiated standby must still clear the transport (#197), got %v", rec.list())
 	}
 }

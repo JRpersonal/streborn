@@ -142,6 +142,19 @@ type Client struct {
 	lastInvalidSourceAt time.Time
 	lastPresetPressAt   time.Time
 
+	// lastOwnCmdAt is when STR itself last issued a transport-mutating SOAP
+	// command (SetURI/Play/Pause/Stop), stamped via NoteOwnTransportCommand from
+	// the upnp renderer's OnTransportCommand hook. The box answers a SOAP Stop
+	// (and a SetURI flip of an active transport) with a nowPlaying STOP_STATE
+	// that looks exactly like the user pressing stop; the v0.9.16 wrong-state
+	// repair (Stop+ClearURI ~1.5 s into a recall, after the press window
+	// expired) therefore latched a phantom user stop that aborted its OWN
+	// verify loop and stood every recovery down (#252 post-v0.9.16: "remote
+	// useless"). stopStateIsTeardown reads this stamp to excuse such an echo -
+	// unless a fresh physical key press accompanied it, which means the user
+	// really did stop. Guarded by mu.
+	lastOwnCmdAt time.Time
+
 	// lastStandbyFlapAt times the box's own UPNP<->STANDBY oscillation on a
 	// spontaneous firmware source power-off (#419). That drop is not a single
 	// transition: the box flips UPNP->STANDBY->UPNP within ~100 ms, and the
@@ -638,6 +651,18 @@ type ZoneMemberState struct {
 const (
 	presetTeardownWindow        = 4 * time.Second
 	invalidSourceTeardownWindow = 2 * time.Second
+	// ownCmdTeardownWindow bounds how soon after one of STR's OWN transport
+	// commands (SOAP Stop / SetURI / Play) a STOP_STATE still counts as the
+	// box's reaction to that command rather than a user stop. The echo arrives
+	// within a fraction of a second of the SOAP round-trip; kept short so a
+	// real stop the user makes a moment later is still honoured.
+	ownCmdTeardownWindow = 3 * time.Second
+	// ownCmdKeyVeto: a physical key press this close to the STOP_STATE means
+	// the stop came from the user (remote/box stop key), NOT from STR's own
+	// command, even inside ownCmdTeardownWindow. The firmware sends a
+	// userActivityUpdate alongside real key presses; STR's SOAP commands never
+	// produce one.
+	ownCmdKeyVeto = 1500 * time.Millisecond
 	// standbyFlapTeardownWindow bounds how soon after a UPNP<->STANDBY flap a
 	// STOP_STATE still counts as the spontaneous-off oscillation's teardown
 	// (#419) rather than a deliberate stop. The observed bounce completes in
@@ -668,9 +693,11 @@ func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
 	sincePress := time.Since(c.lastPresetPressAt)
 	sinceInvalid := time.Since(c.lastInvalidSourceAt)
 	sinceStandbyFlap := time.Since(c.lastStandbyFlapAt)
+	sinceOwnCmd := time.Since(c.lastOwnCmdAt)
 	pressSet := !c.lastPresetPressAt.IsZero()
 	invalidSet := !c.lastInvalidSourceAt.IsZero()
 	standbyFlapSet := !c.lastStandbyFlapAt.IsZero()
+	ownCmdSet := !c.lastOwnCmdAt.IsZero()
 	c.mu.Unlock()
 	if pressSet && sincePress < presetTeardownWindow {
 		return true, "hardware preset pressed " + sincePress.Round(time.Millisecond).String() + " ago"
@@ -690,7 +717,32 @@ func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
 	if standbyFlapSet && sinceStandbyFlap < standbyFlapTeardownWindow {
 		return true, "source flapped through STANDBY " + sinceStandbyFlap.Round(time.Millisecond).String() + " ago"
 	}
+	// STR itself just drove the transport (the wrong-state repair's Stop+ClearURI,
+	// a verify re-push's SetURI+Play, a re-push/resume from the webui): the box
+	// answers those with a STOP_STATE that is not a user stop. The veto: a
+	// physical key press right next to the frame means the user pressed stop on
+	// the remote/box even inside this window - the firmware accompanies real key
+	// presses with a userActivityUpdate, which STR's SOAP commands never cause.
+	if ownCmdSet && sinceOwnCmd < ownCmdTeardownWindow {
+		c.thumbMu.Lock()
+		sinceKey := time.Since(c.lastUserActivityAt)
+		keySet := !c.lastUserActivityAt.IsZero()
+		c.thumbMu.Unlock()
+		if !keySet || sinceKey > ownCmdKeyVeto {
+			return true, "STR's own transport command " + sinceOwnCmd.Round(time.Millisecond).String() + " ago"
+		}
+	}
 	return false, ""
+}
+
+// NoteOwnTransportCommand stamps that STR itself just issued a transport-
+// mutating SOAP command. Wired to upnp.Renderer.OnTransportCommand (for every
+// renderer that drives THIS box) so stopStateIsTeardown can excuse the box's
+// STOP_STATE reaction to STR's own commands. Safe for concurrent use.
+func (c *Client) NoteOwnTransportCommand() {
+	c.mu.Lock()
+	c.lastOwnCmdAt = time.Now()
+	c.mu.Unlock()
 }
 
 func (c *Client) handleMessage(ctx context.Context, data []byte) {
