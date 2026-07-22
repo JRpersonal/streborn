@@ -1814,6 +1814,13 @@ func (h *presetWsHandler) OnPowerKey(ctx context.Context) {
 // guard, so a stereo-pair self-wake (which looks identical on the wire) never
 // makes the box start playing on its own.
 func (h *presetWsHandler) OnPowerWake(_ context.Context) {
+	// The firmware loses hardware-key preset registrations across power
+	// cycles (field bundles 2026-07-22: the reconcile heals "missing=5/6"
+	// slots again and again; users see "preset not assigned" until the next
+	// 5-minute reconcile tick, and "after power-on only the first program
+	// plays"). Ask for a full re-sync right at the wake so the keys work
+	// within seconds instead of minutes. Rate-limited internally.
+	requestPresetKeyResync(h.logger)
 	if h.onPowerWake != nil {
 		h.logger.Info("power-on detected, attempting last-station resume")
 		h.onPowerWake()
@@ -1829,6 +1836,11 @@ func (h *presetWsHandler) OnPowerWake(_ context.Context) {
 // stream through the guarded resume (opt-out, zone, user-stop). A routine idle
 // reconnect (box in standby) or a box already playing is a no-op.
 func (h *presetWsHandler) OnConnected(_ context.Context) {
+	// A gabbo reconnect usually means the box just came back from a standby
+	// or reboot - exactly when the firmware tends to have dropped its
+	// hardware-key preset registrations (see OnPowerWake). Ask for a full
+	// re-sync so the keys are registered again within seconds.
+	requestPresetKeyResync(h.logger)
 	if h.onBoxReconnect != nil {
 		h.onBoxReconnect()
 	}
@@ -2062,6 +2074,20 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		}
 		h.logger.Warn("hardware recall not playing yet, retrying", "slot", slot, "attempt", attempt)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		// Wake the box first: after the 1036 wrong-state rejection the firmware
+		// often gives up on its failed self-activation and powers the source off
+		// through INVALID_SOURCE -> STANDBY (field bundles 2026-07-22, all
+		// models: the box "switches itself off" after the press). Every retry
+		// then pushed SetURI+Play into a sleeping box and the recall never
+		// converged, even though the forced re-login had already landed. A
+		// user power-off cannot reach this line (poweredOffSince stands the
+		// loop down above), so waking here only ever reverses the box's own
+		// give-up. No-op when the box is awake (a single now_playing read).
+		if h.boxHost != "" {
+			if err := boxcli.WakeAndWait(ctx, h.boxHost, 6*time.Second, h.logger); err != nil {
+				h.logger.Warn("hardware recall retry: could not wake box", "slot", slot, "err", err)
+			}
+		}
 		if mime != "" {
 			_ = h.renderer.PlayURLMime(ctx, url, name, icon, mime)
 		} else {
@@ -2112,6 +2138,16 @@ func (h *presetWsHandler) rePushAfterSourceReject(seq, gen uint64, pressAt time.
 	h.logger.Warn("hardware recall: box refused the stream (wrong state), clearing the transport and pushing again", "slot", slot)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	// The rejection's INVALID_SOURCE flap can end in STANDBY within ~1s of the
+	// press (the box gives up on its failed self-activation and powers off);
+	// re-pushing into that sleeping box did nothing. Wake it first - a no-op
+	// when it is awake, and a user power-off never reaches this line (checked
+	// above).
+	if h.boxHost != "" {
+		if err := boxcli.WakeAndWait(ctx, h.boxHost, 6*time.Second, h.logger); err != nil {
+			h.logger.Warn("wrong-state repair: could not wake box", "slot", slot, "err", err)
+		}
+	}
 	// The box refused the stream because its transport is stuck in the wrong
 	// state: it is still holding its own dead-cloud ContentItem active (the box
 	// answers with name=UNABLE_TO_PROCESS_NOT_LOGGED_IN detail=WrongState). Pushing
