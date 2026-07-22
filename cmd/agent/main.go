@@ -1821,6 +1821,17 @@ func (h *presetWsHandler) OnPowerWake(_ context.Context) {
 	// plays"). Ask for a full re-sync right at the wake so the keys work
 	// within seconds instead of minutes. Rate-limited internally.
 	requestPresetKeyResync(h.logger)
+	// The fake marge login decays across the same power cycles: re-check the
+	// pairing right at the wake. On a healthy box this is one /info read; on
+	// a login-suspect box (a recent 1036 NOT_LOGGED_IN) it re-asserts the
+	// account before the user's first press instead of after its failure.
+	if h.autoPair != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			h.autoPair.TriggerNow(ctx)
+		}()
+	}
 	if h.onPowerWake != nil {
 		h.logger.Info("power-on detected, attempting last-station resume")
 		h.onPowerWake()
@@ -1841,6 +1852,15 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	// hardware-key preset registrations (see OnPowerWake). Ask for a full
 	// re-sync so the keys are registered again within seconds.
 	requestPresetKeyResync(h.logger)
+	// Re-check the fake login too (see OnPowerWake): the reconnect moments
+	// are when the MargeHSM state decays on fresh-install boxes.
+	if h.autoPair != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			h.autoPair.TriggerNow(ctx)
+		}()
+	}
 	if h.onBoxReconnect != nil {
 		h.onBoxReconnect()
 	}

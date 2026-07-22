@@ -308,3 +308,67 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("body=%q", rec.Body.String())
 	}
 }
+
+// TestLoginFlowPathsNeverError pins the fake-login contract on the stub side:
+// every endpoint the box touches while establishing or re-validating its marge
+// login must answer with a success status. The firmware treats cloud errors
+// during onboarding as "not signed in" (MargeHSM falls back and every UPnP
+// source activation is then refused with 1036 NOT_LOGGED_IN), so a single
+// regression to a 4xx/5xx here silently kills the hardware preset buttons on
+// exactly the boxes that have no cached pre-shutdown Bose account left.
+func TestLoginFlowPathsNeverError(t *testing.T) {
+	s := newTestServer()
+	h := s.Handler()
+
+	paths := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/streaming/support/power_on"},
+		{http.MethodGet, "/streaming/support/anything"},
+		{http.MethodGet, "/streaming/sourceproviders"},
+		{http.MethodPost, "/streaming/account/stick@local/device/"},
+		{http.MethodGet, "/streaming/account/stick@local"},
+		{http.MethodGet, "/streaming/auth/token"},
+		{http.MethodGet, "/bmx/registry/v1/services"},
+		{http.MethodGet, "/bmx/anything/else"},
+		// Paths STR has not mapped explicitly must still succeed generically:
+		// an unknown firmware variant probing a new endpoint must never be
+		// told "error" mid-login.
+		{http.MethodGet, "/streaming/some/new/endpoint"},
+		{http.MethodPost, "/totally/unknown"},
+	}
+	for _, p := range paths {
+		req := httptest.NewRequest(p.method, p.path, strings.NewReader("<x/>"))
+		rw := httptest.NewRecorder()
+		h.ServeHTTP(rw, req)
+		if rw.Code >= 400 {
+			t.Errorf("%s %s: status %d - a login-flow path must never error", p.method, p.path, rw.Code)
+		}
+	}
+}
+
+// TestAddDeviceIdempotentAcrossForcedRelogins: the login maintenance re-asserts
+// setMargeAccount repeatedly on a login-suspect box, so the box re-runs its
+// addDevice call again and again. Every round must keep answering the full
+// adddeviceresponse (with a margetoken), or a later round would leave the
+// MargeHSM in a worse state than the first.
+func TestAddDeviceIdempotentAcrossForcedRelogins(t *testing.T) {
+	s := newTestServer()
+	h := s.Handler()
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/streaming/account/stick@local/device/",
+			strings.NewReader(`<adddevicerequest/>`))
+		rw := httptest.NewRecorder()
+		h.ServeHTTP(rw, req)
+		// wrap201 answers 201 Created, the format the firmware accepts.
+		if rw.Code < 200 || rw.Code > 299 {
+			t.Fatalf("addDevice round %d: status %d", i+1, rw.Code)
+		}
+		body := rw.Body.String()
+		xmlWellFormed(t, body)
+		if !strings.Contains(body, "margetoken") {
+			t.Fatalf("addDevice round %d: response carries no margetoken:\n%s", i+1, body)
+		}
+	}
+}
