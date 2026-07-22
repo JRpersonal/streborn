@@ -9,5 +9,11 @@
   "author": {
     "name": "Jens",
     "email": "str@sichtbar-app.de"
+  },
+  "info": {
+    "companyName": "STR (SoundTouch Reborn)",
+    "productName": "ST Reborn",
+    "copyright": "Copyright (c) 2026",
+    "comments": "SoundTouch Reborn - local control for Bose SoundTouch speakers after the cloud shutdown. Unofficial, not affiliated with or endorsed by Bose."
   }
 }

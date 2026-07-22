@@ -390,6 +390,13 @@ jobs:
   build-desktop-windows:
     needs: [build-agent, build-go-librespot]
     runs-on: windows-latest
+    env:
+      # Mirror the cert thumbprint into an env var so the signing steps' `if:`
+      # can test for its presence (GitHub does not allow reading `secrets.*`
+      # directly in an `if:`). With the Certum secrets unset the signing steps
+      # are skipped and the release still builds an (unsigned) exe, so nothing
+      # breaks before the certificate is issued.
+      CERT_THUMBPRINT: ${{ secrets.CERT_THUMBPRINT }}
     permissions:
       contents: read
       id-token: write
@@ -479,6 +486,42 @@ jobs:
             -ldflags "-s -w -X main.appVersion=${VERSION} -X main.appBuild=${BUILD_STAMP}" \
             -trimpath \
             -clean
+
+      # Sign the .exe with the Certum "Open Source" code signing certificate via
+      # SimplySign (cloud). The unsigned build trips SmartScreen's "unknown
+      # publisher" prompt; a Certum signature stamps the verified individual
+      # publisher name (CN=Jens Roggenfelder) and lets SmartScreen reputation
+      # build up over downloads. Certum does NOT chain to a Microsoft-owned root,
+      # so it does not instantly satisfy Smart App Control the way Azure Trusted
+      # Signing would — a deliberate trade to keep publishing under a private
+      # individual identity rather than a registered organisation.
+      #
+      # The two steps run BEFORE the rename+hash and the Sigstore attestation
+      # below, so the published SHA256 and the provenance both cover the SIGNED
+      # binary (a hash taken before signing would never match what users get).
+      #
+      # Gated on CERT_THUMBPRINT: with the Certum secrets unset both steps are
+      # skipped and the release still produces an unsigned exe, so this can land
+      # before the certificate exists without breaking a release.
+      #
+      # SimplySign reaches the cloud key only through an authenticated desktop
+      # session; simplysign-ci-login.ps1 opens one non-interactively via a TOTP
+      # derived from the enrolment secret, then certum-sign.ps1 signs by
+      # thumbprint. TODO(before first signed release): confirm the SimplySign
+      # Desktop install/login CLI in simplysign-ci-login.ps1 against the locally
+      # installed version, then verify end to end with a throwaway exe.
+      - name: Start SimplySign session (Certum)
+        if: ${{ env.CERT_THUMBPRINT != '' }}
+        shell: powershell
+        env:
+          SIMPLYSIGN_TOKEN: ${{ secrets.SIMPLYSIGN_TOKEN }}
+          SIMPLYSIGN_OTP_SECRET: ${{ secrets.SIMPLYSIGN_OTP_SECRET }}
+        run: .\tools\simplysign-ci-login.ps1
+
+      - name: Sign Windows app (Certum SimplySign)
+        if: ${{ env.CERT_THUMBPRINT != '' }}
+        shell: powershell
+        run: .\tools\certum-sign.ps1 -File "desktop-app/build/bin/ST Reborn.exe"
 
       - name: Rename and hash output
         shell: bash
