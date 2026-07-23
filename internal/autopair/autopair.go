@@ -76,61 +76,22 @@ type Manager struct {
 	// cadence. Set once at wiring time, before RunBackground starts.
 	onPaired func()
 
-	// Login-suspicion state. A margeAccountUUID on the box does NOT mean the
-	// box considers itself logged in: fresh installs and factory-reset boxes
-	// keep the UUID while their MargeHSM drops back to not-logged-in (every
-	// UPnP source activation is then refused with 1036
-	// UNABLE_TO_PROCESS_NOT_LOGGED_IN - field bundles 2026-07-22, all
-	// models). Boxes that still carry a cached pre-shutdown Bose account do
-	// not show this. The UUID-present skip in ensure() therefore let every
-	// press-time TriggerNow do nothing while the login was actually broken,
-	// and only the reactive ForcePair after a failed press re-asserted it.
-	// NoteLoginRejected marks the box suspect; while suspect, every ensure
-	// cycle (press, wake, reconnect, heartbeat tick) re-asserts the account
-	// proactively so the fake login is MAINTAINED, not just repaired.
+	// ForcePair coalescing state. A reactive forced re-login (after the box
+	// refused a source 1036 NOT_LOGGED_IN on a real press) may race the regular
+	// pair cycle; lastSuspectAssert stamps the most recent account POST so a
+	// second one right behind it is skipped instead of churning the MargeHSM.
 	// Guarded by suspectMu.
+	//
+	// STR used to keep the box "login-suspect" for an hour after any 1036 and
+	// re-POST setMargeAccount on every heartbeat to proactively MAINTAIN the fake
+	// login. That was removed: re-onboarding a *playing* box bounces its active
+	// source and the firmware powers it off mid-song (the 0.9.17 self-off, all
+	// models), and it never actually prevented the box's own post-standby 1036
+	// anyway (proven live 2026-07-23). v0.9.0 had no proactive maintenance at all
+	// and was stable for exactly this reason. Only the reactive ForcePair (which
+	// un-wedges an ST300 after a real failed press, #342) remains.
 	suspectMu         sync.Mutex
-	lastLoginReject   time.Time
 	lastSuspectAssert time.Time
-}
-
-const (
-	// loginSuspectWindow is how long after a not-logged-in rejection the box
-	// stays "login-suspect": within it, every pair cycle re-asserts the
-	// account even though the box reports a UUID. Long on purpose - the
-	// decay recurs across standby cycles - while a box that never rejects
-	// (e.g. one with a cached real Bose account) is never touched.
-	loginSuspectWindow = time.Hour
-	// suspectReassertMinGap rate-limits the suspect-driven re-asserts so a
-	// burst of presses cannot turn into a setMargeAccount storm (#375); the
-	// single-flight guard additionally coalesces concurrent triggers.
-	suspectReassertMinGap = time.Minute
-)
-
-// NoteLoginRejected records that the box just refused a source because it does
-// not consider itself logged in (errorUpdate 1036 NOT_LOGGED_IN). While the
-// suspicion is fresh, every pair cycle re-asserts the account instead of
-// trusting the UUID-present skip. Safe for concurrent use.
-func (m *Manager) NoteLoginRejected() {
-	m.suspectMu.Lock()
-	m.lastLoginReject = time.Now()
-	m.suspectMu.Unlock()
-}
-
-// consumeSuspectReassert reports whether a suspect-driven re-assert should run
-// now, and if so stamps the rate limit. The two-step check keeps the min-gap
-// accounting inside one lock.
-func (m *Manager) consumeSuspectReassert() bool {
-	m.suspectMu.Lock()
-	defer m.suspectMu.Unlock()
-	if m.lastLoginReject.IsZero() || time.Since(m.lastLoginReject) > loginSuspectWindow {
-		return false
-	}
-	if !m.lastSuspectAssert.IsZero() && time.Since(m.lastSuspectAssert) < suspectReassertMinGap {
-		return false
-	}
-	m.lastSuspectAssert = time.Now()
-	return true
 }
 
 // New creates a Manager with sensible defaults.
@@ -244,22 +205,15 @@ func (m *Manager) ensure(ctx context.Context, force bool) error {
 		return fmt.Errorf("check status: %w", err)
 	}
 	m.recordPairedState(paired)
-	suspectAssert := false
 	if paired && !force {
-		// The UUID-present skip is only valid while the login is healthy: a
-		// box that recently refused a source with 1036 NOT_LOGGED_IN keeps
-		// its UUID yet is NOT signed in, and skipping here left every
-		// press-time trigger a no-op while the buttons stayed dead (field
-		// bundles 2026-07-22). While the box is login-suspect, re-assert.
-		if m.consumeSuspectReassert() {
-			suspectAssert = true
-		} else {
-			// Debug-level on the steady-state tick; the every-Nth heartbeat
-			// emitted by RunBackground keeps the diagnostic bundle honest
-			// without flooding the log on a healthy box.
-			m.logger.Debug("box already paired, no re-pair needed")
-			return nil
-		}
+		// A paired box (margeAccountUUID present) is a no-op on the regular
+		// cycle - the v0.9.0 behaviour. The proactive per-heartbeat re-assert
+		// that used to run here was removed (see the suspectMu comment): it
+		// re-onboarded playing boxes and powered them off, and never actually
+		// prevented the box's own post-standby 1036. The reactive ForcePair
+		// after a real failed press still re-logs in to un-wedge the box.
+		m.logger.Debug("box already paired, no re-pair needed")
+		return nil
 	}
 	if ok, when := m.boxClockSane(ctx); !ok {
 		m.logger.Info("auto pair deferred, box clock not yet synced (will retry next tick)",
@@ -267,8 +221,6 @@ func (m *Manager) ensure(ctx context.Context, force bool) error {
 		return nil
 	}
 	switch {
-	case suspectAssert:
-		m.logger.Warn("autopair phase: box is login-suspect (recent 1036 NOT_LOGGED_IN), re-asserting the account despite a present UUID", "accountID", m.cfg.AccountID)
 	case paired:
 		m.logger.Warn("autopair phase: first cycle after start, re-asserting the account (clears a stale paired state and the dead-cloud amber icon)", "accountID", m.cfg.AccountID)
 	default:
@@ -478,11 +430,6 @@ func (m *Manager) TriggerNow(ctx context.Context) {
 // just re-asserted the account anyway. Deliberately does NOT read /info first:
 // the whole point is to POST even when the paired state looks fine.
 func (m *Manager) ForcePair(ctx context.Context) {
-	// A reactive forced re-login means the box's login state is decaying:
-	// mark it login-suspect so the regular pair cycles (press, wake,
-	// reconnect, heartbeat) keep re-asserting the account proactively for a
-	// while instead of trusting the UUID-present skip again.
-	m.NoteLoginRejected()
 	for !m.inFlight.CompareAndSwap(false, true) {
 		select {
 		case <-ctx.Done():
