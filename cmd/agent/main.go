@@ -588,6 +588,13 @@ func run() error {
 		// neither cross-traffic nor a dead 36ms fetch can certify a failed
 		// recall as healthy (#252).
 		slotPulled: streamProxySrv.SlotPulledSince,
+		// Login-error carve-out for the recall verify: a NOT_LOGGED_IN rejection for
+		// a recall makes a now-closed short slot pull an unreliable "played" signal
+		// (the box's re-login source bounce serves the stream ~3s then drops it with
+		// no audio). slotFetchLive tells a still-open pull from that bounce;
+		// loginErrorSinceFn tells whether a 1036 landed for this recall.
+		slotFetchLive:     streamProxySrv.SlotFetchLive,
+		loginErrorSinceFn: webuiSrv.LoginErrorSince,
 		// Surface the box's own presets (incl. foreign sources like Deezer) to the
 		// webui so the app can show/preserve them (Option C). Map boxws -> webui at
 		// the composition root to keep the two packages decoupled.
@@ -1288,6 +1295,17 @@ type presetWsHandler struct {
 	// (#252 field bundles). Wired to streamproxy.Server.SlotPulledSince.
 	// nil-safe.
 	slotPulled func(slot int, since time.Time) bool
+	// slotFetchLive reports whether the box currently holds an OPEN connection to
+	// the slot's proxied stream (streamproxy.Server.SlotFetchLive). Unlike
+	// slotPulled it makes no sustained-duration call on a closed fetch, so the
+	// recall verify can tell "still pulling audio" from a login error's brief
+	// source bounce that opened the stream and closed. nil-safe.
+	slotFetchLive func(slot int) bool
+	// loginErrorSinceFn reports whether the box rejected a source as
+	// NOT_LOGGED_IN (1036) after t (webui.Server.LoginErrorSince). Wired so the
+	// recall verify does not trust a now-closed short slot pull as success while
+	// a login error is in flight for this recall. nil-safe.
+	loginErrorSinceFn func(t time.Time) bool
 }
 
 // slotPulledSince reports whether the box is credibly playing THIS slot's
@@ -1298,6 +1316,48 @@ func (h *presetWsHandler) slotPulledSince(slot int, t time.Time) bool {
 		return false
 	}
 	return h.slotPulled(slot, t)
+}
+
+// slotFetchLiveNow reports whether the box currently holds an open pull of the
+// slot's proxied stream. nil-safe (false when unwired).
+func (h *presetWsHandler) slotFetchLiveNow(slot int) bool {
+	if h.slotFetchLive == nil {
+		return false
+	}
+	return h.slotFetchLive(slot)
+}
+
+// loginErrorSince reports whether a NOT_LOGGED_IN rejection landed after t.
+// nil-safe (false when unwired).
+func (h *presetWsHandler) loginErrorSince(t time.Time) bool {
+	if h.loginErrorSinceFn == nil {
+		return false
+	}
+	return h.loginErrorSinceFn(t)
+}
+
+// recallReachedAudio reports whether a recall anchored at pressAt has credibly
+// reached audio: the box is playing this URL, or it pulled the slot's proxied
+// stream in a way that counts. The login-error carve-out is the fix's core: a
+// NOT_LOGGED_IN rejection for THIS recall makes a now-CLOSED slot pull an
+// unreliable success signal, because the box's re-login source bounce opens the
+// proxied stream and serves it right around minSustainedFetch (~3s) before
+// dropping it WITHOUT audio and powering off (Portable 2026-07-23). In that
+// window only a still-live pull or an actual playing state proves audio;
+// otherwise the verify loop keeps retrying until the forced re-login lands.
+func (h *presetWsHandler) recallReachedAudio(slot int, url string, pressAt time.Time) bool {
+	if h.playingURL(url) {
+		return true
+	}
+	if !h.slotPulledSince(slot, pressAt) {
+		return false
+	}
+	// slot pulled since the press. Trust it unless a login error is in flight for
+	// this recall AND the pull is no longer live (a closed short login-bounce).
+	if h.loginErrorSince(pressAt) && !h.slotFetchLiveNow(slot) {
+		return false
+	}
+	return true
 }
 
 // superseded reports whether a newer hardware press (pressSeq moved past seq)
@@ -2227,7 +2287,7 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// lags: a Portable kept naming the PREVIOUS preset for seconds after it
 		// had already opened the new stream, so a location check alone declared a
 		// healthy recall dead and the "repair" tore the working stream down.
-		if h.slotPulledSince(slot, pressAt) || h.playingURL(url) {
+		if h.recallReachedAudio(slot, url, pressAt) {
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
 			}
@@ -2336,7 +2396,7 @@ func (h *presetWsHandler) rePushAfterSourceReject(seq, gen uint64, pressAt time.
 		// THIS press's URL would actively tear the newer recall down.
 		return
 	}
-	if h.slotPulledSince(slot, pressAt) || h.playingURL(url) {
+	if h.recallReachedAudio(slot, url, pressAt) {
 		return // refused once, then started anyway
 	}
 	if h.poweredOffSince(pressAt) {

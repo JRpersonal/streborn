@@ -86,6 +86,18 @@ func (s *Server) loginErrorRecentWithin(window time.Duration) bool {
 	return !s.loginErr.last.IsZero() && time.Since(s.loginErr.last) < window
 }
 
+// LoginErrorSince reports whether the box rejected a source as not-logged-in
+// (1036) at any point after t. The hardware recall verify reads this to decide
+// whether a now-closed slot fetch is trustworthy proof of playback: a login
+// error means the box's re-login source bounce can serve the proxied stream for
+// ~3s and drop it without audio, so a closed short pull is NOT success in that
+// window. Safe for concurrent use.
+func (s *Server) LoginErrorSince(t time.Time) bool {
+	s.loginErr.mu.Lock()
+	defer s.loginErr.mu.Unlock()
+	return !s.loginErr.last.IsZero() && s.loginErr.last.After(t)
+}
+
 // recentLoginError reports whether the box rejected a source as not-logged-in
 // within recentLoginErrorWindow.
 func (s *Server) recentLoginError() bool {

@@ -941,6 +941,20 @@ func (s *Server) SlotPulledSince(slot int, t time.Time) bool {
 	return s.slotFetchEnd[slot].Sub(start) >= minSustainedFetch
 }
 
+// SlotFetchLive reports whether the box currently has an OPEN connection to this
+// slot's proxied stream. Unlike SlotPulledSince it makes no sustained-duration
+// judgement on a closed fetch: it is the "is the box pulling audio right now"
+// signal the recall verify uses to distinguish a genuine playback from a login
+// error's brief source bounce (which opens the stream, serves ~3s and closes).
+func (s *Server) SlotFetchLive(slot int) bool {
+	if slot < 1 || slot > 6 {
+		return false
+	}
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	return s.slotOpen[slot] > 0
+}
+
 // SetBoxStateFn wires the speaker-side condition reporter for
 // /api/stream-status (see boxStateFn).
 func (s *Server) SetBoxStateFn(fn func() string) {

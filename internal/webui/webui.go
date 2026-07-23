@@ -2971,6 +2971,17 @@ const (
 	// this recent is the firmware powering the source off on its own (#419:
 	// observed correlating with Wi-Fi instability, 40 min into stable playback).
 	spontaneousOffWindow = 12 * time.Second
+	// loginGiveupStandbyWindow: a UPNP->STANDBY drop this soon after the box
+	// refused a source as NOT_LOGGED_IN (1036) is the box giving up on its own
+	// failed self-activation (it flaps INVALID_SOURCE -> STANDBY ~4s after the
+	// press), NOT a user power-off. That drop lands in a dead zone - a hardware
+	// press never stamps lastUserPlayStart so recallActive is false, and 4s is
+	// inside spontaneousOffWindow - so it fell through to the #197 power-off
+	// clear, which stood the recall-verify down before the forced re-login could
+	// land: the first hardware press after a standby-cleared login died silently
+	// (field: Portable 2026-07-23). Kept tight so a real power press that happens
+	// to follow a login error is still handled conservatively.
+	loginGiveupStandbyWindow = 6 * time.Second
 	// spontResumeMinGap single-flights the spontaneous recovery.
 	spontResumeMinGap = 30 * time.Second
 	// spontResumeStreamWindow: the recovery only fires when the box was
@@ -3077,6 +3088,18 @@ func (s *Server) HandleEnterStandby() {
 	// spontaneous and wake the box right back up. A fresh user-stop always
 	// means deliberate: keep the conservative handling.
 	deliberateStop := s.userStoppedRecently()
+	// A standby right after a NOT_LOGGED_IN rejection is the box giving up on its
+	// own failed source self-activation, not a user power-off (see
+	// loginGiveupStandbyWindow). Latching the deliberate-stop signals and clearing
+	// the transport here stood the recall-verify loop down before the forced
+	// re-login landed, so the first hardware press after a standby-cleared login
+	// played nothing (Portable 2026-07-23). Leave the transport and latches alone
+	// so the verify loop can wake the box and re-push once the re-login completes.
+	// A real user power-off carries no recent 1036, so it is unaffected.
+	if !deliberateStop && s.loginErrorRecentWithin(loginGiveupStandbyWindow) {
+		s.logger.Info("standby bounce: box dropped to standby right after a NOT_LOGGED_IN rejection, treating as a login give-up, not a user power-off (recovery stays armed)")
+		return
+	}
 	recallActive := !playStart.IsZero() && now.Sub(playStart) < userPlayGuardWindow
 	// A key press only reads as "the user powered the box off mid-recall" when
 	// it is BOTH newer than the press that started the recall (outside the
@@ -3185,11 +3208,21 @@ func (s *Server) HandleEnterStandby() {
 			s.logger.Debug("standby bounce: transport stop returned (expected if already off)", "err", err)
 		}
 		if staleClear() {
-			s.logger.Info("standby bounce: a user play arrived mid-clear, not clearing the transport URI")
+			s.logger.Info("standby bounce: a newer user play superseded the transport clear, leaving the fresh recall alone")
 			return
 		}
+		// Empty the transport URI so the firmware has nothing to bounce back to
+		// after a deliberate power-off (#197: an ST20-scm re-selected its
+		// still-loaded URI and woke itself back on). NOTE: this clear is NOT the
+		// cause of the dead preset-after-standby 1036 - live-tested 2026-07-23 on
+		// the Portable, leaving the URI loaded did not stop the hardware press
+		// from provoking the box's own login-gated UPNP activation, which the
+		// firmware still refused 1036 UpnpRcvdContentItemInWrongState. The 1036 is
+		// inherent to the box's cloud-gated source activation and independent of
+		// STR's transport state; the recovery band-aid (login give-up standby
+		// discriminator) is what carries the press back to audio.
 		if err := s.renderer.ClearURI(ctx); err != nil {
-			s.logger.Debug("standby bounce: clear transport URI returned", "err", err)
+			s.logger.Debug("standby bounce: transport clear returned (expected if already off)", "err", err)
 		}
 	}()
 }
