@@ -847,12 +847,12 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// Track the whole UPNP-driven INVALID_SOURCE episode, not just its
 			// first seconds: a long dwell before the STANDBY entry must still
 			// count as "STR's playback is what powered off" (see upnpEpisode).
-			switch {
-			case src == "INVALID_SOURCE":
+			switch src {
+			case "INVALID_SOURCE":
 				if prev == "UPNP" {
 					c.upnpEpisode = true
 				}
-			case src == "STANDBY":
+			case "STANDBY":
 				// keep: the episode's terminal state is what we classify
 			default:
 				c.upnpEpisode = false

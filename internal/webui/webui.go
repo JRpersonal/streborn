@@ -3136,7 +3136,7 @@ func (s *Server) HandleEnterStandby() {
 		s.logger.Info("standby bounce: source flipped right after STR's own transport push, treating as the firmware answering the push, not a user power-off")
 		return
 	}
-	if recallActive && !(newKeySinceRecall && keyAdjacentToFlip) && !deliberateStop {
+	if recallActive && (!newKeySinceRecall || !keyAdjacentToFlip) && !deliberateStop {
 		s.logger.Info("standby bounce: source dropped during the user's own recall with no adjacent new key press, leaving transport and latches alone (#419)")
 		return
 	}
