@@ -74,3 +74,34 @@ func TestLoginErrorFiresOnCombinedNotLoggedInWrongState(t *testing.T) {
 		t.Fatalf("combined 1036 must also signal OnSourceRejected for the verify re-point, got %d", h.sourceRejects)
 	}
 }
+
+// TestLoginErrorDedupWindow: a box that answers EVERY press with the 1036
+// NOT_LOGGED_IN frame (the fresh-install steady state seen in the field
+// bundles) must trigger at most one re-login per dedup window - the re-assert
+// cadence is owned by autopair's own rate limit, not by frame arrival.
+func TestLoginErrorDedupWindow(t *testing.T) {
+	h := &recHandler{}
+	c := newTestClient(h)
+	var fires atomic.Int64
+	c.SetOnLoginError(func() { fires.Add(1) })
+
+	frame := []byte(`<errorUpdate><error value="1036" name="UNABLE_TO_PROCESS_NOT_LOGGED_IN" severity="Unrecoverable">` +
+		`UpnpRcvdContentItemInWrongState</error></errorUpdate>`)
+	for i := 0; i < 4; i++ {
+		c.handleMessage(context.Background(), frame)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && fires.Load() == 0 {
+		time.Sleep(25 * time.Millisecond)
+	}
+	// Give a mistaken extra fire a moment to surface before asserting.
+	time.Sleep(150 * time.Millisecond)
+	if got := fires.Load(); got != 1 {
+		t.Fatalf("repeated 1036 frames within the dedup window must fire once, fired %d times", got)
+	}
+	// The verify re-point signal is per-frame, not deduped: every rejected
+	// press needs its re-point.
+	if h.sourceRejects != 4 {
+		t.Fatalf("every 1036 frame must signal OnSourceRejected, got %d of 4", h.sourceRejects)
+	}
+}

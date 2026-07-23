@@ -40,6 +40,10 @@ type Server struct {
 	sources  []SourceItem
 	deviceID string
 
+	// presetSource, when set, provides the preset list live on every request
+	// (wired to the stick preset store). See WithPresetSource.
+	presetSource func() []Preset
+
 	// reflectPath points at the reflect-sources file (internal/boxsnapshot).
 	// Account-linked cloud sources listed there (e.g. Deezer) are re-advertised
 	// to the box in the source-provider + account responses so the box keeps
@@ -91,6 +95,18 @@ func WithSpyLogSize(n int) Option {
 // WithPresets initializes the preset list.
 func WithPresets(p []Preset) Option {
 	return func(s *Server) { s.presets = p }
+}
+
+// WithPresetSource wires a live preset provider, read fresh on every request.
+// This is what the box's post-setMargeAccount re-onboarding consumes: answering
+// it with an empty <presets/> made the firmware WIPE its own hardware-key
+// preset registrations after every forced re-login (field bundles 2026-07-22:
+// "preset reconcile: missing slots on box, syncing missing=5/6" right after
+// each "forced re-login sent", users saw "Preset noch nicht festgelegt"). A
+// live source keeps the cloud view identical to the stick store without any
+// refresh choreography.
+func WithPresetSource(fn func() []Preset) Option {
+	return func(s *Server) { s.presetSource = fn }
 }
 
 // WithSources initializes the source list.
@@ -795,7 +811,16 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request)
 func (s *Server) respondPresets(w http.ResponseWriter) {
 	s.mu.RLock()
 	presets := s.presets
+	source := s.presetSource
 	s.mu.RUnlock()
+	// The live source (the stick preset store) wins over the static list: the
+	// box re-reads its cloud presets during every re-onboarding, and an empty
+	// answer makes the firmware wipe its own key registrations.
+	if source != nil {
+		if live := source(); len(live) > 0 {
+			presets = live
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	if len(presets) == 0 {

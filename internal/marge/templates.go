@@ -100,6 +100,12 @@ type ServiceAvailability struct {
 }
 
 // Preset represents a single preset entry.
+//
+// Escaping contract: every string field is inserted VERBATIM into the presets
+// XML (see PresetsXML) - the caller must XML-escape user-controlled values
+// (station names, art URLs) before handing them over. The agent's preset
+// source does this via its margeXMLEscape helper; keep any new producer to the
+// same rule or a station name containing '&' breaks the box's preset parse.
 type Preset struct {
 	ID            int
 	CreatedOn     int64

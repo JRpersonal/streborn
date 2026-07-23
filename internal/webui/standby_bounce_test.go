@@ -115,10 +115,26 @@ func TestHandleEnterStandby_DropDuringOwnRecall(t *testing.T) {
 	}
 }
 
+// waitForAction polls for an async transport action: HandleEnterStandby issues
+// its Stop+ClearURI in a goroutine so the SOAP round-trips cannot stall the
+// gabbo read loop (#252).
+func waitForAction(t *testing.T, rec *soapRecorder, action string) bool {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if rec.has(action) {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
 // TestHandleEnterStandby_PowerOffDuringRecallStillLatches guards #197: the user
 // starting a preset and then pressing power DURING the recall is a real
-// power-off (a NEW key press landed after the recall start). It must latch and
-// clear the transport exactly as before.
+// power-off (a NEW key press landed after the recall start, immediately
+// adjacent to the flip). It must latch and clear the transport exactly as
+// before.
 func TestHandleEnterStandby_PowerOffDuringRecallStillLatches(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.standbyStopMu.Lock()
@@ -134,8 +150,35 @@ func TestHandleEnterStandby_PowerOffDuringRecallStillLatches(t *testing.T) {
 	if !s.userStoppedRecently() {
 		t.Fatal("a power press during the recall must still arm the user-stop (#197)")
 	}
-	if !rec.has("Stop") {
+	if !waitForAction(t, rec, "Stop") {
 		t.Fatalf("a power press during the recall must still clear the transport (#197), got %v", rec.list())
+	}
+}
+
+// TestHandleEnterStandby_StaleKeyDuringRecallDoesNotLatch: a key press that is
+// merely SOMEWHERE in the recall window (a volume tweak seconds earlier) is not
+// a power press - the source flip does not follow it immediately. Latching on
+// it reclassified a routine firmware flap as a user power-off, cleared the
+// transport mid-recall and stood every recovery down: the ST20 that "switches
+// itself off on every preset press" (#252).
+func TestHandleEnterStandby_StaleKeyDuringRecallDoesNotLatch(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-20 * time.Second) // recall still active
+	s.standbyStopMu.Unlock()
+	// New key since the press (outside the trailing-frame epsilon) but NOT
+	// adjacent to the flip: a volume tweak ~8s ago, flip now.
+	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-8 * time.Second) })
+
+	s.HandleEnterStandby()
+
+	if s.standbyStoppedRecently() || s.userStoppedRecently() {
+		t.Fatal("a non-adjacent key during the recall must not arm the stop latches (#252)")
+	}
+	// Give a mistaken async clear a moment to surface before asserting.
+	time.Sleep(150 * time.Millisecond)
+	if rec.count() != 0 {
+		t.Fatalf("a non-adjacent key during the recall must not clear the transport, got %v", rec.list())
 	}
 }
 
@@ -151,8 +194,30 @@ func TestHandleEnterStandby_NoActivitySignalStaysConservative(t *testing.T) {
 	if !s.standbyStoppedRecently() || !s.userStoppedRecently() {
 		t.Fatal("without an activity signal every drop must keep the conservative #197 latching")
 	}
-	if !rec.has("Stop") {
+	if !waitForAction(t, rec, "Stop") {
 		t.Fatalf("without an activity signal the transport must still be cleared (#197), got %v", rec.list())
+	}
+}
+
+// TestHandleEnterStandby_OwnPushWithNoKeySignalStaysConservative: on firmware
+// that never emits userActivityUpdate, lastKey is the zero time and the
+// own-push excusal's "push after key" comparison is vacuously true for EVERY
+// push - and during a struggling recall STR pushes on a ~5s cadence, so a real
+// power press was near-always within the flip window of some push. With no key
+// signal the excusal must not fire: the drop keeps the documented conservative
+// #197 handling (latch + clear), or the verify's wake powers the box back on.
+func TestHandleEnterStandby_OwnPushWithNoKeySignalStaysConservative(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.SetUserActivityFn(func() time.Time { return time.Time{} })
+	s.SetOwnTransportCmdFn(func() time.Time { return time.Now().Add(-2 * time.Second) })
+
+	s.HandleEnterStandby()
+
+	if !s.standbyStoppedRecently() || !s.userStoppedRecently() {
+		t.Fatal("without a key signal an own push must not excuse the drop; the conservative #197 latching must win")
+	}
+	if !waitForAction(t, rec, "Stop") {
+		t.Fatalf("without a key signal the transport must still be cleared (#197), got %v", rec.list())
 	}
 }
 
@@ -171,7 +236,7 @@ func TestHandleEnterStandby_AppStandbyStaysDeliberate(t *testing.T) {
 	if !s.standbyStoppedRecently() {
 		t.Fatal("an app-initiated standby must keep the deliberate power-off handling (#419)")
 	}
-	if !rec.has("Stop") {
+	if !waitForAction(t, rec, "Stop") {
 		t.Fatalf("an app-initiated standby must still clear the transport (#197), got %v", rec.list())
 	}
 }
@@ -196,4 +261,49 @@ func TestHandleEnterStandby_SpontaneousDropResumesActiveStream(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("spontaneous-off recovery never re-pushed the interrupted stream, got %v", rec.list())
+}
+
+// TestHandleEnterStandby_FlipAfterOwnPushIsNotAPowerOff encodes the field
+// signature that survived F4: power-ON key press, STR's own wake-resume push
+// ~2s later, source flip 200ms after the push. The key press satisfied the
+// adjacency check, so the flip latched "user stopped deliberately" and the
+// very resume the key asked for was suppressed. A flip right after STR's own
+// transport command - with no key press since that command - answers OUR push
+// and must leave the latches and transport alone.
+func TestHandleEnterStandby_FlipAfterOwnPushIsNotAPowerOff(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	now := time.Now()
+	s.SetUserActivityFn(func() time.Time { return now.Add(-2400 * time.Millisecond) })
+	s.SetOwnTransportCmdFn(func() time.Time { return now.Add(-200 * time.Millisecond) })
+
+	s.HandleEnterStandby()
+
+	if s.standbyStoppedRecently() || s.userStoppedRecently() {
+		t.Fatal("a flip answering STR's own push must not arm the stop latches")
+	}
+	time.Sleep(150 * time.Millisecond)
+	if rec.count() != 0 {
+		t.Fatalf("a flip answering STR's own push must not clear the transport, got %v", rec.list())
+	}
+}
+
+// TestHandleEnterStandby_KeyAfterOwnPushStillLatches guards #197 against the
+// new excusal: a key press AFTER STR's last push is the user acting (the power
+// key), so the conservative power-off handling must win.
+func TestHandleEnterStandby_KeyAfterOwnPushStillLatches(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-10 * time.Second) // recall still active
+	s.standbyStopMu.Unlock()
+	s.SetOwnTransportCmdFn(func() time.Time { return time.Now().Add(-2 * time.Second) })
+	s.SetUserActivityFn(func() time.Time { return time.Now() }) // power press AFTER our push
+
+	s.HandleEnterStandby()
+
+	if !s.standbyStoppedRecently() || !s.userStoppedRecently() {
+		t.Fatal("a key press after STR's own push is a real power-off and must latch (#197)")
+	}
+	if !waitForAction(t, rec, "Stop") {
+		t.Fatalf("a real power-off must still clear the transport (#197), got %v", rec.list())
+	}
 }

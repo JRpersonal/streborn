@@ -159,6 +159,48 @@ func TestHandleMessage_TeardownStopStateIsNotUserStop(t *testing.T) {
 	}
 }
 
+// A STOP_STATE the box emits in reaction to one of STR's OWN transport
+// commands (the wrong-state repair's Stop+ClearURI, a verify re-push's
+// SetURI+Play) must not be read as a deliberate user stop: on a slow box the
+// repair's Stop landed outside the press window and the phantom stop aborted
+// the very verify the repair belonged to (#252 post-v0.9.16). A fresh physical
+// key press vetoes the excusal: the firmware accompanies real key presses with
+// a userActivityUpdate, which STR's SOAP commands never cause.
+func TestHandleMessage_OwnTransportCommandStopStateIsNotUserStop(t *testing.T) {
+	stop := `<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>STOP_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`
+
+	// (a) STOP_STATE right after STR's own SOAP command: excused.
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.NoteOwnTransportCommand()
+	c.handleMessage(context.Background(), []byte(stop))
+	if h.userStops != 0 {
+		t.Fatalf("STOP_STATE right after STR's own transport command must not fire OnUserStop, got %d", h.userStops)
+	}
+
+	// (b) A fresh key press alongside it means the user really pressed stop on
+	// the remote/box: the veto keeps the real stop honoured.
+	h2 := &recHandler{}
+	c2 := newTestClient(h2)
+	c2.NoteOwnTransportCommand()
+	c2.handleMessage(context.Background(), []byte(`<userActivityUpdate deviceID="x"/>`))
+	c2.handleMessage(context.Background(), []byte(stop))
+	if h2.userStops != 1 {
+		t.Fatalf("a key press next to the STOP_STATE means a real user stop even inside the own-command window, got %d", h2.userStops)
+	}
+
+	// (c) An own-command older than the window does not excuse a stop.
+	h3 := &recHandler{}
+	c3 := newTestClient(h3)
+	c3.mu.Lock()
+	c3.lastOwnCmdAt = time.Now().Add(-10 * time.Second)
+	c3.mu.Unlock()
+	c3.handleMessage(context.Background(), []byte(stop))
+	if h3.userStops != 1 {
+		t.Fatalf("an own-command outside the window must not excuse a stop, got %d", h3.userStops)
+	}
+}
+
 func TestHandleMessage_PresetRecall(t *testing.T) {
 	h := &recHandler{}
 	c := newTestClient(h)
@@ -358,5 +400,137 @@ func TestHandleMessage_QplaySkip(t *testing.T) {
 	c.handleMessage(context.Background(), []byte(`<updates><errorUpdate>QPLAY_SKIP_PREV_FAILED</errorUpdate></updates>`))
 	if len(h.skips) != 2 || h.skips[0] != true || h.skips[1] != false {
 		t.Fatalf("expected [next, prev] skips, got %v", h.skips)
+	}
+}
+
+// TestHandleMessage_EnterStandbyViaInvalidSourceFlap: on taigan/spotty/lisa
+// firmware the box's give-up after a failed self-activation reaches STANDBY
+// through INVALID_SOURCE (UPNP -> INVALID_SOURCE -> STANDBY), never directly
+// from UPNP. The prev==UPNP gate made that route bypass the entire standby
+// machinery (no classification, no #197 clear, no recovery) while the box
+// switched itself off - every observed standby entry in the 2026-07-22 field
+// bundles took this route. The flap must fire OnEnterStandby; an AUX power-off
+// (no recent UPNP) still must not.
+func TestHandleMessage_EnterStandbyViaInvalidSourceFlap(t *testing.T) {
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>PLAY_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`))
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="INVALID_SOURCE"/></nowPlayingUpdated></updates>`))
+	c.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="STANDBY"><ContentItem source="STANDBY"/></nowPlaying></nowPlayingUpdated></updates>`))
+	if h.enterStandby != 1 {
+		t.Fatalf("UPNP->INVALID_SOURCE->STANDBY must fire OnEnterStandby once, got %d", h.enterStandby)
+	}
+
+	// AUX -> INVALID_SOURCE -> STANDBY: STR's source was never active, the
+	// standby machinery must stay out of it.
+	h2 := &recHandler{}
+	c2 := newTestClient(h2)
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="AUX"/></nowPlayingUpdated></updates>`))
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="INVALID_SOURCE"/></nowPlayingUpdated></updates>`))
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="STANDBY"><ContentItem source="STANDBY"/></nowPlaying></nowPlayingUpdated></updates>`))
+	if h2.enterStandby != 0 {
+		t.Fatalf("a standby entry with no recent UPNP activity must not fire OnEnterStandby, got %d", h2.enterStandby)
+	}
+}
+
+// TestHandleMessage_KeylessOwnCommandWindowIsTight: firmware that has never
+// emitted a userActivityUpdate gives the key veto no signal, so the full 3s
+// own-command window would excuse EVERY stop within 3s of any of STR's SOAP
+// commands - and during a struggling recall STR pushes on a ~5s cadence, so a
+// deliberate remote stop was near-guaranteed to be swallowed and the re-push
+// overrode it. On keyless firmware only the immediate echo of our own command
+// (the tight window) is excused; a stop a second and a half later must latch.
+func TestHandleMessage_KeylessOwnCommandWindowIsTight(t *testing.T) {
+	stop := `<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>STOP_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`
+
+	// (a) Keyless firmware, own command 1.5s ago (inside the old 3s window,
+	// outside the tight keyless window): a real remote stop, must latch.
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.mu.Lock()
+	c.lastOwnCmdAt = time.Now().Add(-1500 * time.Millisecond)
+	c.mu.Unlock()
+	c.handleMessage(context.Background(), []byte(stop))
+	if h.userStops != 1 {
+		t.Fatalf("keyless firmware: a stop 1.5s after our own command is the user's, got %d OnUserStop", h.userStops)
+	}
+
+	// (b) Keyless firmware, immediate echo of our own command: still excused.
+	h2 := &recHandler{}
+	c2 := newTestClient(h2)
+	c2.NoteOwnTransportCommand()
+	c2.handleMessage(context.Background(), []byte(stop))
+	if h2.userStops != 0 {
+		t.Fatalf("keyless firmware: the immediate echo of our own command must stay excused, got %d", h2.userStops)
+	}
+
+	// (c) Key-emitting firmware (a key was seen earlier, not adjacent): the
+	// full window with the key veto keeps working as before.
+	h3 := &recHandler{}
+	c3 := newTestClient(h3)
+	c3.thumbMu.Lock()
+	c3.lastUserActivityAt = time.Now().Add(-10 * time.Second)
+	c3.thumbMu.Unlock()
+	c3.mu.Lock()
+	c3.lastOwnCmdAt = time.Now().Add(-1500 * time.Millisecond)
+	c3.mu.Unlock()
+	c3.handleMessage(context.Background(), []byte(stop))
+	if h3.userStops != 0 {
+		t.Fatalf("keyed firmware: a stop 1.5s after our own command with no adjacent key stays excused, got %d", h3.userStops)
+	}
+}
+
+// TestHandleMessage_EnterStandbyAfterLongInvalidSourceDwell covers the box
+// give-up route with a long dwell: UPNP -> INVALID_SOURCE, the box then SITS
+// in INVALID_SOURCE well past the 5s flap window (the state the sys-power
+// nudge exists for), and only then enters STANDBY (typically because the user
+// gave up and pressed power). That entry must still run the standby
+// classification: with the rolling window alone it bypassed the entire
+// machinery, nothing latched, and the recall verify's wake powered the
+// just-switched-off box back on (#197).
+func TestHandleMessage_EnterStandbyAfterLongInvalidSourceDwell(t *testing.T) {
+	standbyFrame := `<updates deviceID="x"><nowPlayingUpdated><nowPlaying source="STANDBY">` +
+		`<ContentItem source="STANDBY"/></nowPlaying></nowPlayingUpdated></updates>`
+	upnpFrame := `<updates><nowPlayingUpdated><nowPlaying source="UPNP"><playStatus>PLAY_STATE</playStatus></nowPlaying></nowPlayingUpdated></updates>`
+	invalidFrame := `<updates><nowPlayingUpdated><nowPlaying source="INVALID_SOURCE"/></nowPlayingUpdated></updates>`
+
+	// UPNP -> INVALID_SOURCE -> (long dwell) -> STANDBY fires the hook.
+	h := &recHandler{}
+	c := newTestClient(h)
+	c.handleMessage(context.Background(), []byte(upnpFrame))
+	c.handleMessage(context.Background(), []byte(invalidFrame))
+	c.mu.Lock()
+	c.lastUpnpActiveAt = time.Now().Add(-16 * time.Second) // dwell far past upnpFlapWindow
+	c.mu.Unlock()
+	c.handleMessage(context.Background(), []byte(standbyFrame))
+	if h.enterStandby != 1 {
+		t.Fatalf("a STANDBY entry ending a UPNP-driven INVALID_SOURCE episode must fire OnEnterStandby, got %d", h.enterStandby)
+	}
+
+	// Counter-leg: an INVALID_SOURCE episode NOT entered from UPNP (foreign
+	// source trouble) must still not fire it.
+	h2 := &recHandler{}
+	c2 := newTestClient(h2)
+	c2.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="AUX"/></nowPlayingUpdated></updates>`))
+	c2.handleMessage(context.Background(), []byte(invalidFrame))
+	c2.handleMessage(context.Background(), []byte(standbyFrame))
+	if h2.enterStandby != 0 {
+		t.Fatalf("an INVALID_SOURCE episode not entered from UPNP must not fire OnEnterStandby, got %d", h2.enterStandby)
+	}
+
+	// Recovery clears the episode: UPNP -> INVALID_SOURCE -> UPNP (healthy
+	// again) -> AUX -> (aged stamps) -> STANDBY is a foreign power-off.
+	h3 := &recHandler{}
+	c3 := newTestClient(h3)
+	c3.handleMessage(context.Background(), []byte(upnpFrame))
+	c3.handleMessage(context.Background(), []byte(invalidFrame))
+	c3.handleMessage(context.Background(), []byte(upnpFrame))
+	c3.handleMessage(context.Background(), []byte(`<updates><nowPlayingUpdated><nowPlaying source="AUX"/></nowPlayingUpdated></updates>`))
+	c3.mu.Lock()
+	c3.lastUpnpActiveAt = time.Now().Add(-16 * time.Second)
+	c3.mu.Unlock()
+	c3.handleMessage(context.Background(), []byte(standbyFrame))
+	if h3.enterStandby != 0 {
+		t.Fatalf("a recovered episode followed by a foreign-source power-off must not fire OnEnterStandby, got %d", h3.enterStandby)
 	}
 }

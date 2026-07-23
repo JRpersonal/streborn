@@ -50,17 +50,41 @@ mkdir -p /mnt/nv/streborn/bin 2>/dev/null
 # ST300 2026-07-07). STR redirects only the STOCK hosts (streaming.bose.com,
 # content.api.bose.io) via /etc/hosts, so the box MUST carry the stock hostnames
 # for the redirect to catch them. Run this before the post-install reboot so the
-# SDK reads healed URLs on its very next boot. Idempotent: only rewrites tags whose
-# value actually contains the placeholder, leaves correct values untouched.
+# SDK reads healed URLs on its very next boot. Idempotent: a fully stock (or
+# empty) config is never touched, and re-running the heal reproduces the same
+# canonical stock values.
 heal_sdk_cloud_urls() {
     sdk_cfg="/mnt/nv/OverrideSdkPrivateCfg.xml"
     [ -f "$sdk_cfg" ] || return 0
-    grep -q 'str-setup\.invalid' "$sdk_cfg" 2>/dev/null || return 0
-    sed -e 's#\(<bmxRegistryUrl>\)[^<]*str-setup\.invalid[^<]*\(</bmxRegistryUrl>\)#\1https://content.api.bose.io/bmx/registry/v1/services\2#g' \
-        -e 's#\(<statsServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</statsServerUrl>\)#\1https://events.api.bosecm.com\2#g' \
-        -e 's#\(<margeServerUrl>\)[^<]*str-setup\.invalid[^<]*\(</margeServerUrl>\)#\1https://streaming.bose.com\2#g' \
+    # Heal ANY non-stock host in the three cloud tags, not just STR's own
+    # str-setup.invalid placeholder: third-party mods (TechEndure) reroute the
+    # same tags to their servers, and a box carrying such a host can never be
+    # caught by STR's /etc/hosts redirect of the STOCK hostnames - the cloud
+    # icon stays amber and the marge login never sticks, even after the user
+    # deleted the mod's files (live report 2026-07-22). A non-empty, non-stock
+    # value in ANY of the three tags triggers the heal, and the sed then
+    # rewrites ALL non-empty tags to their canonical stock values (an
+    # already-stock tag is rewritten to the same value, so the heal stays
+    # idempotent; a fully stock or empty config is never touched at all).
+    needs_heal=0
+    if grep -q '<bmxRegistryUrl>[^<]' "$sdk_cfg" 2>/dev/null && \
+       ! grep -q '<bmxRegistryUrl>https://content\.api\.bose\.io' "$sdk_cfg" 2>/dev/null; then
+        needs_heal=1
+    fi
+    if grep -q '<statsServerUrl>[^<]' "$sdk_cfg" 2>/dev/null && \
+       ! grep -q '<statsServerUrl>https://events\.api\.bosecm\.com' "$sdk_cfg" 2>/dev/null; then
+        needs_heal=1
+    fi
+    if grep -q '<margeServerUrl>[^<]' "$sdk_cfg" 2>/dev/null && \
+       ! grep -q '<margeServerUrl>https://streaming\.bose\.com' "$sdk_cfg" 2>/dev/null; then
+        needs_heal=1
+    fi
+    [ "$needs_heal" = "1" ] || return 0
+    sed -e 's#<bmxRegistryUrl>[^<][^<]*</bmxRegistryUrl>#<bmxRegistryUrl>https://content.api.bose.io/bmx/registry/v1/services</bmxRegistryUrl>#g' \
+        -e 's#<statsServerUrl>[^<][^<]*</statsServerUrl>#<statsServerUrl>https://events.api.bosecm.com</statsServerUrl>#g' \
+        -e 's#<margeServerUrl>[^<][^<]*</margeServerUrl>#<margeServerUrl>https://streaming.bose.com</margeServerUrl>#g' \
         "$sdk_cfg" > "$sdk_cfg.new" 2>/dev/null && mv "$sdk_cfg.new" "$sdk_cfg" 2>/dev/null
-    echo "Healed str-setup.invalid cloud URLs in $sdk_cfg back to stock (redirect-catchable)"
+    echo "Healed non-stock cloud URLs in $sdk_cfg back to stock (redirect-catchable)"
 }
 
 phase1_install() {

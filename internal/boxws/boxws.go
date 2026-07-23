@@ -142,6 +142,38 @@ type Client struct {
 	lastInvalidSourceAt time.Time
 	lastPresetPressAt   time.Time
 
+	// lastOwnCmdAt is when STR itself last issued a transport-mutating SOAP
+	// command (SetURI/Play/Pause/Stop), stamped via NoteOwnTransportCommand from
+	// the upnp renderer's OnTransportCommand hook. The box answers a SOAP Stop
+	// (and a SetURI flip of an active transport) with a nowPlaying STOP_STATE
+	// that looks exactly like the user pressing stop; the v0.9.16 wrong-state
+	// repair (Stop+ClearURI ~1.5 s into a recall, after the press window
+	// expired) therefore latched a phantom user stop that aborted its OWN
+	// verify loop and stood every recovery down (#252 post-v0.9.16: "remote
+	// useless"). stopStateIsTeardown reads this stamp to excuse such an echo -
+	// unless a fresh physical key press accompanied it, which means the user
+	// really did stop. Guarded by mu.
+	lastOwnCmdAt time.Time
+
+	// lastUpnpActiveAt is when STR's own source (UPNP) last stopped being the
+	// active source. The firmware's give-up after a failed self-activation
+	// reaches STANDBY through INVALID_SOURCE (UPNP -> INVALID_SOURCE ->
+	// STANDBY), and the prev==UPNP gate alone made that route bypass the
+	// standby handling entirely. Guarded by mu.
+	lastUpnpActiveAt time.Time
+
+	// upnpEpisode is true while the box sits in the INVALID_SOURCE (or
+	// subsequent STANDBY) state it entered FROM STR's UPNP source. The
+	// rolling upnpFlapWindow only covers the fast give-up flap; a struggling
+	// box can dwell in INVALID_SOURCE for 16+ seconds (the state the
+	// sys-power nudge exists for), and a user power press at the end of that
+	// dwell produced INVALID_SOURCE->STANDBY with the window long expired -
+	// so no standby classification ran, nothing latched, and the recall
+	// verify's wake actively powered the just-switched-off box back on
+	// (#197). Set on UPNP->INVALID_SOURCE, cleared when the source becomes
+	// anything other than INVALID_SOURCE/STANDBY. Guarded by mu.
+	upnpEpisode bool
+
 	// lastStandbyFlapAt times the box's own UPNP<->STANDBY oscillation on a
 	// spontaneous firmware source power-off (#419). That drop is not a single
 	// transition: the box flips UPNP->STANDBY->UPNP within ~100 ms, and the
@@ -638,6 +670,32 @@ type ZoneMemberState struct {
 const (
 	presetTeardownWindow        = 4 * time.Second
 	invalidSourceTeardownWindow = 2 * time.Second
+	// ownCmdTeardownWindow bounds how soon after one of STR's OWN transport
+	// commands (SOAP Stop / SetURI / Play) a STOP_STATE still counts as the
+	// box's reaction to that command rather than a user stop. The echo arrives
+	// within a fraction of a second of the SOAP round-trip; kept short so a
+	// real stop the user makes a moment later is still honoured.
+	ownCmdTeardownWindow = 3 * time.Second
+	// upnpFlapWindow bounds how long after UPNP stopped being the active
+	// source a STANDBY entry still counts as an STR-driven power-off (the
+	// UPNP -> INVALID_SOURCE -> STANDBY give-up completes within ~1-2s).
+	upnpFlapWindow = 5 * time.Second
+	// ownCmdKeyVeto: a physical key press this close to the STOP_STATE means
+	// the stop came from the user (remote/box stop key), NOT from STR's own
+	// command, even inside ownCmdTeardownWindow. The firmware sends a
+	// userActivityUpdate alongside real key presses; STR's SOAP commands never
+	// produce one.
+	ownCmdKeyVeto = 1500 * time.Millisecond
+	// ownCmdKeylessTeardownWindow replaces ownCmdTeardownWindow on firmware
+	// that has never emitted a userActivityUpdate: the key veto has no signal
+	// there, so the full 3s window would excuse EVERY stop within 3s of any of
+	// STR's own SOAP commands - and during a struggling recall STR pushes on a
+	// ~5s cadence, so a deliberate remote stop was near-guaranteed to be
+	// swallowed and the re-push overrode it. The box's echo to our own command
+	// arrives within a fraction of a second of the SOAP round-trip, so a tight
+	// window still excuses the genuine echo while a user stop a second later
+	// latches.
+	ownCmdKeylessTeardownWindow = 750 * time.Millisecond
 	// standbyFlapTeardownWindow bounds how soon after a UPNP<->STANDBY flap a
 	// STOP_STATE still counts as the spontaneous-off oscillation's teardown
 	// (#419) rather than a deliberate stop. The observed bounce completes in
@@ -668,9 +726,11 @@ func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
 	sincePress := time.Since(c.lastPresetPressAt)
 	sinceInvalid := time.Since(c.lastInvalidSourceAt)
 	sinceStandbyFlap := time.Since(c.lastStandbyFlapAt)
+	sinceOwnCmd := time.Since(c.lastOwnCmdAt)
 	pressSet := !c.lastPresetPressAt.IsZero()
 	invalidSet := !c.lastInvalidSourceAt.IsZero()
 	standbyFlapSet := !c.lastStandbyFlapAt.IsZero()
+	ownCmdSet := !c.lastOwnCmdAt.IsZero()
 	c.mu.Unlock()
 	if pressSet && sincePress < presetTeardownWindow {
 		return true, "hardware preset pressed " + sincePress.Round(time.Millisecond).String() + " ago"
@@ -690,7 +750,49 @@ func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
 	if standbyFlapSet && sinceStandbyFlap < standbyFlapTeardownWindow {
 		return true, "source flapped through STANDBY " + sinceStandbyFlap.Round(time.Millisecond).String() + " ago"
 	}
+	// STR itself just drove the transport (the wrong-state repair's Stop+ClearURI,
+	// a verify re-push's SetURI+Play, a re-push/resume from the webui): the box
+	// answers those with a STOP_STATE that is not a user stop. The veto: a
+	// physical key press right next to the frame means the user pressed stop on
+	// the remote/box even inside this window - the firmware accompanies real key
+	// presses with a userActivityUpdate, which STR's SOAP commands never cause.
+	// Firmware that has NEVER emitted a userActivityUpdate gives the veto no
+	// signal, so only the much tighter keyless window applies there (see the
+	// constant): a real remote stop on such a box must still latch.
+	if ownCmdSet {
+		c.thumbMu.Lock()
+		sinceKey := time.Since(c.lastUserActivityAt)
+		keySet := !c.lastUserActivityAt.IsZero()
+		c.thumbMu.Unlock()
+		window := ownCmdTeardownWindow
+		if !keySet {
+			window = ownCmdKeylessTeardownWindow
+		}
+		if sinceOwnCmd < window && (!keySet || sinceKey > ownCmdKeyVeto) {
+			return true, "STR's own transport command " + sinceOwnCmd.Round(time.Millisecond).String() + " ago"
+		}
+	}
 	return false, ""
+}
+
+// NoteOwnTransportCommand stamps that STR itself just issued a transport-
+// mutating SOAP command. Wired to upnp.Renderer.OnTransportCommand (for every
+// renderer that drives THIS box) so stopStateIsTeardown can excuse the box's
+// STOP_STATE reaction to STR's own commands. Safe for concurrent use.
+func (c *Client) NoteOwnTransportCommand() {
+	c.mu.Lock()
+	c.lastOwnCmdAt = time.Now()
+	c.mu.Unlock()
+}
+
+// LastOwnTransportCommand returns when STR last issued a transport-mutating
+// SOAP command (zero time if never). The webui's standby classifier reads it
+// to recognise a source flip that merely answers STR's OWN push (the firmware
+// rejecting a wake-resume/recall) instead of reading it as a user power-off.
+func (c *Client) LastOwnTransportCommand() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastOwnCmdAt
 }
 
 func (c *Client) handleMessage(ctx context.Context, data []byte) {
@@ -742,6 +844,19 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			if src == "INVALID_SOURCE" {
 				c.lastInvalidSourceAt = time.Now()
 			}
+			// Track the whole UPNP-driven INVALID_SOURCE episode, not just its
+			// first seconds: a long dwell before the STANDBY entry must still
+			// count as "STR's playback is what powered off" (see upnpEpisode).
+			switch {
+			case src == "INVALID_SOURCE":
+				if prev == "UPNP" {
+					c.upnpEpisode = true
+				}
+			case src == "STANDBY":
+				// keep: the episode's terminal state is what we classify
+			default:
+				c.upnpEpisode = false
+			}
 			// Stamp every flap to OR from STANDBY: the spontaneous-off oscillation
 			// (#419) carries a STOP_STATE on its STANDBY->UPNP leg whose source reads
 			// UPNP, so this is the only trace that the STOP_STATE belongs to the
@@ -749,6 +864,17 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			if src == "STANDBY" || prev == "STANDBY" {
 				c.lastStandbyFlapAt = time.Now()
 			}
+			// Stamp when STR's own source (UPNP) STOPS being active: the box's
+			// give-up after a failed self-activation reaches STANDBY through
+			// INVALID_SOURCE (UPNP -> INVALID_SOURCE -> STANDBY), and the
+			// standby handling below must still recognise that STR-driven
+			// playback is what just powered off.
+			if prev == "UPNP" {
+				c.lastUpnpActiveAt = time.Now()
+			}
+			upnpRecently := prev == "UPNP" ||
+				(!c.lastUpnpActiveAt.IsZero() && time.Since(c.lastUpnpActiveAt) < upnpFlapWindow) ||
+				c.upnpEpisode
 			c.mu.Unlock()
 			if changed {
 				// Log every source transition at INFO (rare by construction: only
@@ -765,9 +891,15 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// itself back on. When STR's own source (UPNP) drops to STANDBY, give
 				// the handler a chance to clear the transport so the box has nothing to
 				// bounce back to. Optional interface so handlers that do not need it
-				// (tests) are unaffected. Gated to prev==UPNP so it only fires for
-				// STR-driven playback, never an AUX/Spotify power-off.
-				if src == "STANDBY" && prev == "UPNP" {
+				// (tests) are unaffected. Gated so it only fires for STR-driven
+				// playback, never an AUX/Spotify power-off: either a direct
+				// UPNP->STANDBY drop, or the give-up flap UPNP->INVALID_SOURCE->
+				// STANDBY the firmware performs after a failed self-activation -
+				// that flap used to bypass the entire standby machinery, so no
+				// classification/recovery ran while the box switched itself off
+				// (field bundles 2026-07-22, all standby entries on taigan/spotty/
+				// lisa took this route).
+				if src == "STANDBY" && upnpRecently {
 					if h, ok := c.handler.(interface{ OnEnterStandby(context.Context) }); ok {
 						h.OnEnterStandby(ctx)
 					}

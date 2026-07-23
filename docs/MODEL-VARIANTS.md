@@ -22,7 +22,7 @@ The final firmware Bose shipped before the cloud shutdown on 2026-02. Anything o
 | SoundTouch 10 | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | **2022-08-04** |
 | SoundTouch 20 | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | **2022-08-04** |
 | SoundTouch 30 | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | **2022-08-04** |
-| SoundTouch Portable | (to be confirmed from a diagnostic) | (to be confirmed) |
+| SoundTouch Portable | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | **2022-08-04** |
 
 ## SoundTouch 20
 
@@ -30,6 +30,16 @@ The final firmware Bose shipped before the cloud shutdown on 2026-02. Anything o
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `spotty` | `normal` | SCM, PackagedProduct | `wlan0`, `wlan1` | `GB` / `GB` |
 | `scm` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `spotty` | `normal` | SCM, PackagedProduct, **Lightswitch**, **SMSC** | varies (ethernet-only observed) | `EU` / `` (empty) |
+| `sm2` | `27.0.3.46298.4608935` | pre-2022 | **no (outdated)** | `spotty` | (unknown) | (unknown - box offline in every bundle) | (unknown) | (unknown) |
+
+- Row 3 (2026-07-22 mail bundle): the first live SM2-ST20 on a firmware
+  OLDER than the final 2022 build - the installer's `install_str` log
+  flagged it `outdated=true`. The box flapped offline in ~1-minute cycles
+  (established-TCP resets on `:8888` and `:17008`, SSH dead), so every
+  diagnostic export came back without on-box data and components/WLAN
+  remain unobserved. Treat reports from 27.0.3 boxes with care: this
+  firmware predates every behavior sample in this matrix, and the network
+  instability itself is unexplained (candidate confound: the old firmware).
 
 ### Critical differences (what actually changes STR's code path)
 
@@ -90,13 +100,30 @@ Confirmed from a diagnostic bundle (2026-06-10, #123 box-0):
 | `moduleType` | SCM `softwareVersion` | Build year | Latest official? | `variant` | `variantMode` | Components present | WLAN interfaces | `countryCode` / `regionCode` samples |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `mojo` | `normal` | SCM, PackagedProduct | `wlan0`, `wlan1` | `GB` / `GB` |
+| `scm` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `mojo` | `normal` | (per boseInfoXml; SMSC-class chassis) | (unrecorded) | (unrecorded) |
 
 - Kernel: `Linux mojo 3.14.43+ #137 Wed Oct 25 21:06:53 EDT 2017 armv7l` (same kernel as ST10/ST20).
-- `is_series_one=0`: like the ST10 (`rhino`), the ST30 (`mojo`) is **not** chipset-whitelisted. STR's `:8888` is reached directly once the iptables INPUT ACCEPT rule opens it; the LD_PRELOAD SoftwareUpdate shim is unnecessary and is skipped for `sm2` chassis (the `.so` cannot even load on `mojo`). See `usb-stick/run.sh` `shim_stage_wrapper`.
+- Row 1 (`sm2`): `is_series_one=0`: like the ST10 (`rhino`), this ST30 (`mojo`) is **not** chipset-whitelisted. STR's `:8888` is reached directly once the iptables INPUT ACCEPT rule opens it; the LD_PRELOAD SoftwareUpdate shim is unnecessary and is skipped for `sm2` chassis (the `.so` cannot even load on `mojo`). See `usb-stick/run.sh` `shim_stage_wrapper`.
+- Row 2 (`scm`, 2026-07-22 mail bundle): the ST30 ALSO ships as an `scm`
+  chassis - the agent installed the `:17008 -> :8888` PREROUTING REDIRECT
+  on it (rule packet counters confirmed live traffic), i.e. this variant
+  takes the whitelisted-chassis path like the `scm` ST20 and the Portable.
+  The architecture sketch's "ST30 = sm2, reached directly" grouping holds
+  only for row 1; always check `moduleType` before assuming the port path.
 
 ## SoundTouch Portable
 
-Not yet observed in a diagnostic bundle.
+Confirmed from a 2026-07-22 mail bundle:
+
+| `moduleType` | SCM `softwareVersion` | Build year | Latest official? | `variant` | `variantMode` | `countryCode` samples |
+| --- | --- | --- | --- | --- | --- | --- |
+| `scm` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | 2022 | **yes** | `taigan` | `normal` | `US` |
+
+- Whitelisted chassis: reached via the `:17008 -> :8888` REDIRECT, matching
+  the long-standing `taigan` handling in `usb-stick/run.sh`.
+- This also settles the reference table above: the Portable's final Bose
+  firmware is the same 2022-08-04 `27.0.6.46330.5043500` build as the other
+  models.
 
 ## Wave SoundTouch IV
 
@@ -112,6 +139,28 @@ the maintainer and two independent #182 users installed end to end
 grouping working, and the IR remote's preset keys 1-6 recalling STR
 presets under the SoundTouch source. The Wave never reads a USB stick at
 boot, so the network install is the only path. See the `lisa` table below.
+
+A second Wave fingerprint (2026-07-22 mail bundle) reports
+`moduleType=scm`, `variant=lisa`, `variantMode=normal`, the same final SCM
+firmware 27.0.6.46330.5043500, `PackagedProduct` 04.04.08 and an SCM +
+SMSC dual `networkInfo` - i.e. the Wave, like the ST20 and ST30, exists in
+both an `sm2` and an `scm` chassis generation. The `scm` Wave takes the
+`:17008` REDIRECT path.
+
+## Lifestyle (SoundTouch console)
+
+First fingerprint from a 2026-07-22 mail bundle (STR was NOT installed on
+this box; observed via the stock probes only):
+
+| `type` | `moduleType` | SCM `softwareVersion` | `variant` | Components present | `networkInfo` entries | `countryCode` / `regionCode` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Lifestyle` | `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | `bardeen` | SCM, PackagedProduct (`1.16.7.5043495`) | 2 (SCM + SMSC) | `GB` / `GB` |
+
+- The bundle also showed a stale `margeURL` pointing at a LAN host that no
+  longer exists (a previous STR/mod install on another machine), with an
+  empty `margeAccountUUID` - a setup probe against such a console should
+  expect leftover cloud config from earlier experiments.
+- STR has never run on a `bardeen`; no support claim is implied by this row.
 
 ## How to read a new bundle
 

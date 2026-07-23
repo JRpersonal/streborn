@@ -52,6 +52,11 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	if len(items) == 0 {
 		return false
 	}
+	// Supersede any still-running hardware verify at claim time: startQueue's
+	// own setLastPlay only bumps the generation once the first push SUCCEEDS,
+	// and until then a stale verify loop from an earlier press would keep
+	// re-pushing its old URL over this queue start.
+	s.bumpRecallGen()
 	s.ensureBoxReady(ctx)
 	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
 	// Record the saved folder as a Recently-played card (#220), keyed on the slot

@@ -75,3 +75,30 @@ func TestSetLastPlayBumpsRecallGeneration(t *testing.T) {
 		t.Errorf("newest recall: stand-down reason %q, want none", reason)
 	}
 }
+
+// TestLoginErrorWindows pins the two windows hung off the same 1036 stamp: the
+// short retry stand-down (recentLoginError) and the wider wedge-attribution
+// skip that stops an exhausted, login-broken recall from counting as a wedge
+// strike (the field bundle latched boxHealth=wedged ~25s after a 1036 and told
+// the user to power-cycle a box that only needed the re-login to stick).
+func TestLoginErrorWindows(t *testing.T) {
+	s := &Server{}
+	if s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
+		t.Fatal("no login error recorded yet, want false")
+	}
+	s.loginErr.mu.Lock()
+	s.loginErr.last = time.Now().Add(-30 * time.Second)
+	s.loginErr.mu.Unlock()
+	if s.recentLoginError() {
+		t.Fatal("a 30s-old login error is outside the 20s retry stand-down window")
+	}
+	if !s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
+		t.Fatal("a 30s-old login error is inside the wedge-skip window: the exhaustion it caused must not count a strike")
+	}
+	s.loginErr.mu.Lock()
+	s.loginErr.last = time.Now().Add(-loginErrWedgeSkipWindow - time.Second)
+	s.loginErr.mu.Unlock()
+	if s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
+		t.Fatal("an old login error must not suppress wedge accounting")
+	}
+}

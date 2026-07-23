@@ -32,9 +32,11 @@ them back **without any Bose cloud dependency**.
 ```
 Client (Browser / Desktop App)
   -- REST API --> Stick Agent webui :8888
-     (sm2 boxes (ST10 rhino, ST30 mojo) reached directly; BCO/whitelisted
-      chassis (Portable/taigan, ST20 spotty/scm) reached via iptables
-      PREROUTING REDIRECT :17008 -> loopback :8888)
+     (sm2 boxes (ST10 rhino, sm2-ST30 mojo) reached directly; BCO/whitelisted
+      chassis (Portable/taigan, ST20 spotty/scm, scm-ST30 mojo, scm-Wave lisa)
+      reached via iptables PREROUTING REDIRECT :17008 -> loopback :8888;
+      the ST20/ST30/Wave each exist in BOTH chassis generations - see
+      docs/MODEL-VARIANTS.md before assuming the port path)
                             |
                             +--> /api/presets        preset store on NAND
                             +--> /api/play, /api/play/<slot>, /api/pause, /api/stop

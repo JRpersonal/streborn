@@ -55,3 +55,94 @@ func TestRecallWindowOutlivesTheVerifyStorm(t *testing.T) {
 		t.Fatalf("window %v must span the verify's first two ticks (%v)", recallOwnsRetryWindow, twoVerifyTicks)
 	}
 }
+
+// TestMaybeRePushRearmsAfterRecallOwnsRetryWindow reproduces the orphaned-drop
+// field signature: a stream drop ~6s after a user play fell into the recall's
+// ownership window, the verify had already exited on its first success, and
+// maybeRePush returned permanently - the box sat silent with a clean log. The
+// re-push must wait out the window and then resume.
+func TestMaybeRePushRearmsAfterRecallOwnsRetryWindow(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, false } // box on, idle
+	s.setLastPlay("http://127.0.0.1:8888/stream/6", "Antenne", "", "")
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-6 * time.Second) // drop 6s into the recall
+	s.standbyStopMu.Unlock()
+
+	done := make(chan struct{})
+	go func() { s.maybeRePush(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("maybeRePush did not return")
+	}
+	if !rec.has("SetAVTransportURI") {
+		t.Fatalf("an orphaned drop must be re-pushed once the ownership window ends, got %v", rec.list())
+	}
+}
+
+// TestMaybeRePushHonorsStopDuringOwnershipWait: a deliberate stop that arrives
+// WHILE maybeRePush waits out the ownership window must hold - compared via
+// absolute stamps, so it cannot expire out of the rolling 6s window during the
+// wait.
+func TestMaybeRePushHonorsStopDuringOwnershipWait(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, false }
+	s.setLastPlay("http://127.0.0.1:8888/stream/2", "NDR", "", "")
+	s.standbyStopMu.Lock()
+	s.lastUserPlayStart = time.Now().Add(-6 * time.Second)
+	s.standbyStopMu.Unlock()
+	stopTimer := time.AfterFunc(3*time.Second, s.NoteUserStop)
+	defer stopTimer.Stop()
+
+	done := make(chan struct{})
+	go func() { s.maybeRePush(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("maybeRePush did not return")
+	}
+	if rec.has("SetAVTransportURI") {
+		t.Fatalf("a stop during the ownership wait must hold, got %v", rec.list())
+	}
+}
+
+// TestStreamDropCoalescingSurvivesNewPlay pins the drop-coalescing latch to the
+// Server, not the per-play struct: setLastPlay replaces the lastPlayInfo struct
+// on every fresh play, and a per-play latch let a drop of the NEW stream spawn
+// a second concurrent re-pusher while the first was still alive - the box got
+// double SetURI+Play (two audible re-buffers), and the first goroutine's
+// deferred release then cleared the latch the second one owned.
+func TestStreamDropCoalescingSurvivesNewPlay(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, false } // box on, idle
+	s.setLastPlay("http://127.0.0.1:8888/stream/6", "First", "", "")
+
+	s.HandleStreamDisconnect(nil) // arms the latch, spawns re-pusher #1 (2s backoff)
+	s.setLastPlay("http://127.0.0.1:8888/stream/2", "Second", "", "")
+	s.HandleStreamDisconnect(nil) // drop of the NEW stream must coalesce, not stack
+
+	// #1 wakes after its backoff and re-pushes exactly once.
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) && !rec.has("SetAVTransportURI") {
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(500 * time.Millisecond) // let a mistaken second pusher surface
+	pushes := 0
+	for _, a := range rec.list() {
+		if a == "SetAVTransportURI" {
+			pushes++
+		}
+	}
+	if pushes != 1 {
+		t.Fatalf("one drop episode must produce exactly one re-push, got %d (%v)", pushes, rec.list())
+	}
+	// The deferred release must free the SERVER latch even though lastPlay was
+	// swapped mid-run, so a later genuine drop can re-arm.
+	s.lastPlayMu.Lock()
+	latched := s.rePushInFlight
+	s.lastPlayMu.Unlock()
+	if latched {
+		t.Fatal("the coalescing latch must be released after the re-pusher exits")
+	}
+}

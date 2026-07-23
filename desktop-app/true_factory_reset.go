@@ -75,6 +75,10 @@ func (a *App) TrueFactoryReset(host string) TrueFactoryResetResult {
 	if helloErr != nil || !strings.Contains(hello, "STR_SSH_OK") {
 		res.Log = hello
 		res.Message = "SSH handshake to speaker failed: " + classifySSHError(hello, helloErr)
+		// Every failed step must land in the log: a field bundle showed only
+		// "starting" for a reset that never ran, so support could not tell a
+		// completed wipe from a dead SSH port.
+		a.logger.Warn("true_factory_reset: ssh handshake failed", "host", host, "err", helloErr, "message", res.Message)
 		return res
 	}
 
@@ -121,6 +125,7 @@ echo "TFR_WIPED:$WIPED"
 	res.Log = out
 	if err != nil {
 		res.Message = "wipe failed: " + classifySSHError(out, err)
+		a.logger.Warn("true_factory_reset: wipe failed", "host", host, "err", err, "message", res.Message)
 		return res
 	}
 	for _, line := range strings.Split(out, "\n") {
@@ -130,6 +135,7 @@ echo "TFR_WIPED:$WIPED"
 	}
 	if len(res.WipedFiles) == 0 {
 		res.Message = "wipe returned no file list — script may have failed silently. See log."
+		a.logger.Warn("true_factory_reset: wipe returned no file list", "host", host)
 		return res
 	}
 	a.logger.Info("true_factory_reset: persistence wiped",

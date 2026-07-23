@@ -211,6 +211,15 @@ type Server struct {
 	// stream on its own (reported: radio stops after ~11 min, no STR error).
 	lastPlayMu sync.Mutex
 	lastPlay   *lastPlayInfo
+	// rePushInFlight coalesces stream-drop resumes (see HandleStreamDisconnect).
+	// A SERVER-level latch on purpose, guarded by lastPlayMu: it used to live on
+	// lastPlayInfo, but setLastPlay replaces that struct on every fresh play, so
+	// a drop of the NEW stream while an older maybeRePush was still waiting out
+	// the recall-ownership window spawned a second concurrent re-pusher, and the
+	// first one's deferred release then cleared the latch the second one owned -
+	// the box got double SetURI+Play (two audible re-buffers) and a third
+	// goroutine could stack. One latch per Server survives the struct swap.
+	rePushInFlight bool
 	// recallGen counts every stream push recorded via setLastPlay. Each
 	// recall's verify loop captures the generation of its own play; any later
 	// play bumps it, telling the older verify it was superseded so it stands
@@ -288,6 +297,15 @@ type Server struct {
 	// (#419). nil or all-zero (a firmware that never sends the frame) falls back
 	// to the conservative power-off handling.
 	userActivityFn func() time.Time
+
+	// ownTransportCmdFn reports when STR itself last issued a transport-
+	// mutating SOAP command; zero = never. Wired to
+	// boxws.LastOwnTransportCommand. HandleEnterStandby uses it to excuse a
+	// source flip that answers STR's own push. nil-safe.
+	ownTransportCmdFn func() time.Time
+
+	// playStateFn overrides boxPlayState for tests. nil = the real :8090 probe.
+	playStateFn func() (standby, busy bool)
 
 	// resumeOnPowerOnPath persists the per-box opt-out for "resume the last
 	// station when the speaker is switched on" (default on; file absent or "1").
@@ -394,16 +412,14 @@ type recentCardCtx struct{ key, name, art, url, account, homepage string }
 // re-push state. rePushes counts consecutive resume attempts on THIS stream and
 // drives an exponential backoff; once it hits maxRePushes the stream is marked
 // failed and never re-pushed again until a fresh play (setLastPlay) replaces it.
-// rePushInFlight coalesces drops: a dead stream fires a disconnect on every
-// failed resume, and without this each one spawned a new goroutine (reported
-// v0.7.5: a dead slot-3 URL produced dozens of resume attempts per second that
-// starved the control port :8888).
+// The drop-coalescing latch lives on the Server (rePushInFlight), NOT here: a
+// per-play latch died with every setLastPlay struct swap and let concurrent
+// re-pushers stack (see the Server field).
 type lastPlayInfo struct {
 	boxURL, title, art, mime string
 	ts                       time.Time
 	rePushes                 int
 	failed                   bool
-	rePushInFlight           bool
 }
 
 // resumeMaxAge bounds how stale the last station may be and still come back on a
@@ -2043,13 +2059,58 @@ func (s *Server) loadLastPlay() {
 // (the hardware preset recall in cmd/agent goes straight to the renderer). It
 // lets the auto-re-push (#4) and the power-button wake-resume work for hardware
 // presses too, which otherwise left lastPlay unset and the box un-resumable.
-func (s *Server) NoteLastPlay(boxURL, title, art, mime string) {
+// It returns the new recall generation so the hardware verify can stand down
+// as soon as a later play (hardware or app) supersedes it, mirroring the soft
+// path's verifyRecall.
+func (s *Server) NoteLastPlay(boxURL, title, art, mime string) uint64 {
 	// A hardware recall is by definition a non-queue play (cmd/agent routes a
 	// queue preset through RecallSlot, which never reaches here): drop any
 	// active library queue so its watcher does not advance over the user's new
 	// choice minutes later.
 	s.stopQueue()
-	s.setLastPlay(boxURL, title, art, mime)
+	return s.setLastPlay(boxURL, title, art, mime)
+}
+
+// RecallGeneration returns the current recall generation (bumped by every
+// stream push recorded via setLastPlay, hardware and app alike). The hardware
+// recall verifies in cmd/agent compare it against the generation of their own
+// recall: a mismatch means a newer play started and the stale verify must
+// stand down instead of re-pushing its old URL over the user's newest choice
+// ("pressed 2, got 1").
+func (s *Server) RecallGeneration() uint64 {
+	s.lastPlayMu.Lock()
+	defer s.lastPlayMu.Unlock()
+	return s.recallGen
+}
+
+// bumpRecallGen advances the recall generation without recording a lastPlay.
+// Used by recall paths whose own setLastPlay only runs on success (the queue
+// preset start), so the claim itself already supersedes any older verify loop.
+func (s *Server) bumpRecallGen() {
+	s.lastPlayMu.Lock()
+	s.recallGen++
+	s.lastPlayMu.Unlock()
+}
+
+// StandbyStoppedAfter reports whether STR saw this box's UPnP source drop to
+// STANDBY (a power-off) strictly after t. The hardware recall verify anchors
+// this to its press time: unlike the rolling RecentlyPoweredOff window, the
+// stamp cannot expire between two verify ticks, so a power-off mid-recall
+// reliably stands the re-push down for the recall's whole lifetime (#197).
+func (s *Server) StandbyStoppedAfter(t time.Time) bool {
+	s.standbyStopMu.Lock()
+	defer s.standbyStopMu.Unlock()
+	return !s.lastStandbyStop.IsZero() && s.lastStandbyStop.After(t)
+}
+
+// SetTransportCommandHook wires the webui's own renderer into the gabbo
+// classifier's own-command excusal (boxws.NoteOwnTransportCommand): re-pushes,
+// resumes and the standby-bounce clear all make the box emit STOP_STATE frames
+// that must not latch a phantom user stop. No-op without a renderer.
+func (s *Server) SetTransportCommandHook(fn func()) {
+	if s.renderer != nil {
+		s.renderer.OnTransportCommand = fn
+	}
 }
 
 // --- Recently played (#135) ---
@@ -2813,6 +2874,14 @@ func (s *Server) userStoppedRecently() bool {
 	return !s.lastUserStop.IsZero() && time.Since(s.lastUserStop) < userStopWindow
 }
 
+// userStoppedAfter reports whether a deliberate stop happened strictly after t
+// (absolute, so a long wait cannot expire it out of the rolling window).
+func (s *Server) userStoppedAfter(t time.Time) bool {
+	s.lastUserStopMu.Lock()
+	defer s.lastUserStopMu.Unlock()
+	return !s.lastUserStop.IsZero() && s.lastUserStop.After(t)
+}
+
 // standbyBounceWakeWindow is how long after HandleEnterStandby cleared the
 // transport (a power-off STR saw as UPNP->STANDBY) a following DO_NOT_RESUME
 // "wake" is treated as the scm power-off BOUNCE rather than a genuine power-on.
@@ -2885,6 +2954,19 @@ const (
 	// nowSelectionUpdated by a moment) from a genuinely NEW key press during
 	// the recall (e.g. the user pressing power to stop it, the original #197).
 	userPlayActivityEpsilon = 2 * time.Second
+	// ownPushFlipWindow: a UPNP->STANDBY flip this soon after one of STR's OWN
+	// transport commands (SetURI/Play of a wake-resume or recall) is the
+	// firmware answering that push, not a user power-off - provided no key
+	// press arrived after the push.
+	ownPushFlipWindow = 3 * time.Second
+	// powerKeyAdjacencyWindow: for a key press during a recall to count as the
+	// user powering the box off, the UPNP->STANDBY flip must follow the key
+	// within this window (a power press flips the source near-instantly). A key
+	// press that is merely SOMEWHERE in the recall window - a volume tweak, a
+	// thumbs key - used to reclassify a later firmware flap as a user power-off,
+	// which cleared the transport and latched every recovery off, so "press
+	// preset, touch volume, box dies" (#252: the ST20 switching itself off).
+	powerKeyAdjacencyWindow = 3 * time.Second
 	// spontaneousOffWindow: a UPNP->STANDBY drop with no physical key press
 	// this recent is the firmware powering the source off on its own (#419:
 	// observed correlating with Wi-Fi instability, 40 min into stable playback).
@@ -2918,6 +3000,17 @@ func (s *Server) userPlayedRecently() bool {
 // a physical power-off from a spontaneous firmware source power-off (#419).
 func (s *Server) SetUserActivityFn(fn func() time.Time) {
 	s.userActivityFn = fn
+}
+
+// SetOwnTransportCmdFn wires boxws.LastOwnTransportCommand so HandleEnterStandby
+// can recognise a source flip that answers STR's OWN transport push (the
+// firmware rejecting a wake-resume or recall SetURI) instead of classifying it
+// as a user power-off. Field signature: power-on key press, STR's resume push
+// ~2s later, flip 200ms after the push - the key press satisfied the adjacency
+// check and the flip latched "user stopped deliberately", so the resume the
+// user asked for was suppressed.
+func (s *Server) SetOwnTransportCmdFn(fn func() time.Time) {
+	s.ownTransportCmdFn = fn
 }
 
 // NoteUserPlay records that the user explicitly asked for playback (hardware
@@ -2985,9 +3078,43 @@ func (s *Server) HandleEnterStandby() {
 	// means deliberate: keep the conservative handling.
 	deliberateStop := s.userStoppedRecently()
 	recallActive := !playStart.IsZero() && now.Sub(playStart) < userPlayGuardWindow
+	// A key press only reads as "the user powered the box off mid-recall" when
+	// it is BOTH newer than the press that started the recall (outside the
+	// trailing-frame epsilon) AND immediately adjacent to the flip - a power
+	// press flips the source within a moment. Requiring only "any key since
+	// recall start" made a volume tweak seconds earlier reclassify a routine
+	// firmware flap as a power-off, clearing the transport and latching every
+	// recovery off mid-recall (#252).
 	newKeySinceRecall := lastKey.After(playStart.Add(userPlayActivityEpsilon))
-	if recallActive && !newKeySinceRecall && !deliberateStop {
-		s.logger.Info("standby bounce: source dropped during the user's own recall with no new key press, leaving transport and latches alone (#419)")
+	keyAdjacentToFlip := !lastKey.IsZero() && now.Sub(lastKey) <= powerKeyAdjacencyWindow
+	// A flip right after STR's OWN transport push, with no key press SINCE that
+	// push, is the firmware rejecting/settling OUR command - not a user
+	// power-off, even when a key press sits just before the push (field case:
+	// power-ON key, STR's wake-resume push 2s later, flip 200ms after the
+	// push; the key satisfied the adjacency check and the flip latched "user
+	// stopped deliberately", suppressing the very resume the key asked for).
+	// A real power-off is unaffected: its key press comes AFTER our last push.
+	//
+	// The excusal requires an actual key signal (a nonzero lastKey): on
+	// firmware that never emits userActivityUpdate the "push after key"
+	// comparison is vacuously true for EVERY push, and STR pushes on a ~5s
+	// cadence while a recall struggles - so a genuine power press within 3s of
+	// any push would be excused, nothing would latch, and the verify's wake
+	// would power the box back on (#197). With no key signal we keep the
+	// documented conservative fall-through above; the field case that
+	// motivated the excusal had a real key press and still passes.
+	var lastOwnCmd time.Time
+	if s.ownTransportCmdFn != nil {
+		lastOwnCmd = s.ownTransportCmdFn()
+	}
+	ownPushAnswered := !lastOwnCmd.IsZero() && now.Sub(lastOwnCmd) <= ownPushFlipWindow &&
+		!lastKey.IsZero() && lastOwnCmd.After(lastKey)
+	if ownPushAnswered && !deliberateStop {
+		s.logger.Info("standby bounce: source flipped right after STR's own transport push, treating as the firmware answering the push, not a user power-off")
+		return
+	}
+	if recallActive && !(newKeySinceRecall && keyAdjacentToFlip) && !deliberateStop {
+		s.logger.Info("standby bounce: source dropped during the user's own recall with no adjacent new key press, leaving transport and latches alone (#419)")
 		return
 	}
 	if !recallActive && !deliberateStop && !lastKey.IsZero() && now.Sub(lastKey) > spontaneousOffWindow {
@@ -3025,16 +3152,46 @@ func (s *Server) HandleEnterStandby() {
 	// A power-off is a deliberate stop: drop any queue so it does not fight the
 	// standby, then Stop and EMPTY the transport URI so the firmware has nothing to
 	// bounce back to (Stop alone leaves the URI loaded and the box re-selects it).
+	// The SOAP calls run in a goroutine: HandleEnterStandby is invoked
+	// synchronously from the gabbo read loop, and up to ~5s of SOAP blocked
+	// every queued frame - which is exactly what skewed the processing-time
+	// stamps the teardown classification depends on (#252). The min-gap above
+	// already bounds how many of these can be in flight.
+	//
+	// The goroutine re-checks user intent before EACH SOAP call: moving the
+	// clear off the read loop also un-serialized it from the next queued frame,
+	// so a preset press right after the power-off (the routine power-on-via-
+	// preset flow) could have its fresh SetURI overtaken by this straggler's
+	// ClearURI - a Stop can block for seconds against a box that is shutting
+	// down, and the ClearURI then wiped the transport the new recall had just
+	// armed. A user play newer than this clear means the clear no longer
+	// represents current intent, so it stands down.
 	s.stopQueue()
 	s.logger.Info("standby bounce: box powered off STR's UPnP source, stopping + clearing the transport URI so it stays off (#197)")
-	ctx, cancel := context.WithTimeout(s.queueCtx(), 5*time.Second)
-	defer cancel()
-	if err := s.renderer.Stop(ctx); err != nil {
-		s.logger.Debug("standby bounce: transport stop returned (expected if already off)", "err", err)
-	}
-	if err := s.renderer.ClearURI(ctx); err != nil {
-		s.logger.Debug("standby bounce: clear transport URI returned", "err", err)
-	}
+	clearArmedAt := time.Now()
+	go func() {
+		ctx, cancel := context.WithTimeout(s.queueCtx(), 5*time.Second)
+		defer cancel()
+		staleClear := func() bool {
+			s.standbyStopMu.Lock()
+			defer s.standbyStopMu.Unlock()
+			return s.lastUserPlayStart.After(clearArmedAt)
+		}
+		if staleClear() {
+			s.logger.Info("standby bounce: a newer user play superseded the transport clear, leaving the fresh recall alone")
+			return
+		}
+		if err := s.renderer.Stop(ctx); err != nil {
+			s.logger.Debug("standby bounce: transport stop returned (expected if already off)", "err", err)
+		}
+		if staleClear() {
+			s.logger.Info("standby bounce: a user play arrived mid-clear, not clearing the transport URI")
+			return
+		}
+		if err := s.renderer.ClearURI(ctx); err != nil {
+			s.logger.Debug("standby bounce: clear transport URI returned", "err", err)
+		}
+	}()
 }
 
 // handleSpontaneousSourceOff handles a UPNP->STANDBY drop with no physical key
@@ -3143,12 +3300,13 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 	// declared dead, or a resume is already in flight. A dead/moved URL fires a
 	// disconnect on EVERY failed resume; without this latch each one spawned a
 	// fresh maybeRePush goroutine, producing the dozens-per-second runaway that
-	// starved :8888 (v0.7.5).
-	if lp == nil || time.Since(lp.ts) >= 6*time.Hour || lp.failed || lp.rePushInFlight {
+	// starved :8888 (v0.7.5). The latch is Server-level so it survives
+	// setLastPlay swapping the lastPlayInfo struct mid-wait.
+	if lp == nil || time.Since(lp.ts) >= 6*time.Hour || lp.failed || s.rePushInFlight {
 		s.lastPlayMu.Unlock()
 		return
 	}
-	lp.rePushInFlight = true
+	s.rePushInFlight = true
 	s.lastPlayMu.Unlock()
 	go s.maybeRePush()
 }
@@ -3162,11 +3320,11 @@ func (s *Server) HandleStreamDisconnect(upstreamErr error) {
 func (s *Server) maybeRePush() {
 	// Release the in-flight latch on exit so a later genuine drop can re-arm
 	// (HandleStreamDisconnect refuses to spawn a second goroutine until then).
+	// The latch is a Server field, so this release cannot land on the wrong
+	// struct after setLastPlay swapped lastPlay mid-run.
 	defer func() {
 		s.lastPlayMu.Lock()
-		if s.lastPlay != nil {
-			s.lastPlay.rePushInFlight = false
-		}
+		s.rePushInFlight = false
 		s.lastPlayMu.Unlock()
 	}()
 
@@ -3193,18 +3351,6 @@ func (s *Server) maybeRePush() {
 	}
 	time.Sleep(backoff)
 
-	// A recall the user just started owns its own retry: its verify re-pushes
-	// every 5 s until the box really plays that stream. Re-pushing here as well
-	// makes the two fight, and each push tears the other's stream down, which
-	// arms yet another disconnect. A Wave diagnostic caught the resulting storm:
-	// four stream starts and two re-pushes inside 1.7 s, 680 ms apart despite
-	// this function's 2 s backoff, because the drop being "recovered" was just
-	// the PREVIOUS preset being torn down by the new press. Stand down for that
-	// window and let the recall's verify do the work.
-	if s.userPlayedRecently() {
-		s.logger.Info("re-push: a preset/play the user just started owns the retry, not resuming on top of it")
-		return
-	}
 	// A deliberate user stop (STR Stop/Pause, or the box/remote stop button seen
 	// over gabbo) must hold. Genuine box-side drops carry no such stop and resume.
 	if s.userStoppedRecently() {
@@ -3217,6 +3363,45 @@ func (s *Server) maybeRePush() {
 	if s.standbyStoppedRecently() {
 		s.logger.Info("re-push: box just powered off (standby bounce), not resuming (#197)")
 		return
+	}
+	if s.userPlayedRecently() {
+		// A recall the user just started owns its own retry: its verify
+		// re-pushes every 5 s until the box really plays that stream.
+		// Re-pushing here as well makes the two fight, and each push tears the
+		// other's stream down, which arms yet another disconnect. A Wave
+		// diagnostic caught the resulting storm: four stream starts and two
+		// re-pushes inside 1.7 s, because the drop being "recovered" was just
+		// the PREVIOUS preset being torn down by the new press.
+		//
+		// But the verify is only alive for so long. A stream drop 5-12s after
+		// a user play used to be orphaned: the verify had already exited on
+		// its first success, this path returned permanently, and the music
+		// stayed off with a clean log (field bundle: slot-6 drop at +5.5s,
+		// box off, zero recovery). Wait out the remainder of the window and
+		// re-evaluate. A NEWER play started while waiting hands ownership to
+		// that recall's verify; a stop or power-off that arrived while
+		// waiting is compared against absolute stamps so it cannot expire out
+		// of a rolling window during the wait.
+		s.logger.Info("re-push: a preset/play the user just started owns the retry; re-checking once the ownership window ends")
+		waitStart := time.Now()
+		s.standbyStopMu.Lock()
+		playStart := s.lastUserPlayStart
+		s.standbyStopMu.Unlock()
+		if remain := recallOwnsRetryWindow - time.Since(playStart) + time.Second; remain > 0 {
+			time.Sleep(remain)
+		}
+		if s.userPlayedRecently() {
+			s.logger.Info("re-push: a newer play started while waiting, standing down")
+			return
+		}
+		if s.userStoppedAfter(waitStart) {
+			s.logger.Info("re-push: user stopped while waiting out the ownership window, not resuming")
+			return
+		}
+		if s.StandbyStoppedAfter(waitStart) {
+			s.logger.Info("re-push: box powered off while waiting out the ownership window, not resuming (#197)")
+			return
+		}
 	}
 	standby, busy := s.boxPlayState()
 	if standby {
@@ -3259,6 +3444,14 @@ func (s *Server) maybeRePush() {
 	s.logger.Info("re-push: box dropped the stream while idle, resuming", "url", boxURL, "attempt", n, "max", maxRePushes)
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
+	// Re-check under the command mutex, mirroring the spontaneous-off path: a
+	// verify push or app play that held boxCmdMu while we waited may have
+	// started the box, and re-pushing over it would re-buffer a stream that is
+	// already playing.
+	if _, busy := s.boxPlayState(); busy {
+		s.logger.Info("re-push: box started playing while waiting for the command slot, standing down")
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	var err error
@@ -3414,6 +3607,9 @@ func (s *Server) pushDisplayDefault() {
 // and idle" and trigger a resume. One quick retry first so a single hiccup does
 // not abort a legitimate stream recovery (where the box really is awake+idle).
 func (s *Server) boxPlayState() (standby, busy bool) {
+	if s.playStateFn != nil {
+		return s.playStateFn()
+	}
 	if s.boxHost == "" {
 		return true, false
 	}

@@ -98,40 +98,9 @@ func TestNowPlayingIsURL_RawStreamMatches(t *testing.T) {
 	}
 }
 
-// TestPulledStreamSince covers the verify's authoritative success signal. A
-// Portable kept naming the PREVIOUS preset in now_playing for seconds after it
-// had already opened the new stream, so a location check alone called a healthy
-// recall dead and the "repair" tore the working stream down. The box opening a
-// proxied stream after the recall started settles it.
-func TestPulledStreamSince(t *testing.T) {
-	recallStart := time.Now()
-
-	none := &presetWsHandler{}
-	if none.pulledStreamSince(recallStart) {
-		t.Fatal("without a stream-activity source there is no proof of playback")
-	}
-
-	old := &presetWsHandler{streamActivity: func() (time.Time, time.Time) {
-		return recallStart.Add(-time.Minute), time.Time{}
-	}}
-	if old.pulledStreamSince(recallStart) {
-		t.Fatal("a stream opened BEFORE this recall proves nothing about it")
-	}
-
-	fresh := &presetWsHandler{streamActivity: func() (time.Time, time.Time) {
-		return recallStart.Add(2 * time.Second), time.Time{}
-	}}
-	if !fresh.pulledStreamSince(recallStart) {
-		t.Fatal("a stream opened after the recall started means the box is playing it")
-	}
-
-	never := &presetWsHandler{streamActivity: func() (time.Time, time.Time) {
-		return time.Time{}, time.Time{}
-	}}
-	if never.pulledStreamSince(recallStart) {
-		t.Fatal("a zero timestamp must not count as playback")
-	}
-}
+// The verify's authoritative success signal is now slot-scoped; see
+// TestSlotPulledSince in recall_supersede_test.go (the old global
+// pulledStreamSince let any proxied fetch certify a failed recall, #252).
 
 // TestStreamPath covers the comparison key, including the non-STR URL that
 // disables the comparison.

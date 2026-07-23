@@ -308,3 +308,133 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("body=%q", rec.Body.String())
 	}
 }
+
+// TestLoginFlowPathsNeverError pins the fake-login contract on the stub side:
+// every endpoint the box touches while establishing or re-validating its marge
+// login must answer with a success status. The firmware treats cloud errors
+// during onboarding as "not signed in" (MargeHSM falls back and every UPnP
+// source activation is then refused with 1036 NOT_LOGGED_IN), so a single
+// regression to a 4xx/5xx here silently kills the hardware preset buttons on
+// exactly the boxes that have no cached pre-shutdown Bose account left.
+func TestLoginFlowPathsNeverError(t *testing.T) {
+	s := newTestServer()
+	h := s.Handler()
+
+	paths := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/streaming/support/power_on"},
+		{http.MethodGet, "/streaming/support/anything"},
+		{http.MethodGet, "/streaming/sourceproviders"},
+		{http.MethodPost, "/streaming/account/stick@local/device/"},
+		{http.MethodGet, "/streaming/account/stick@local"},
+		{http.MethodGet, "/streaming/auth/token"},
+		{http.MethodGet, "/bmx/registry/v1/services"},
+		{http.MethodGet, "/bmx/anything/else"},
+		// Paths STR has not mapped explicitly must still succeed generically:
+		// an unknown firmware variant probing a new endpoint must never be
+		// told "error" mid-login.
+		{http.MethodGet, "/streaming/some/new/endpoint"},
+		{http.MethodPost, "/totally/unknown"},
+	}
+	for _, p := range paths {
+		req := httptest.NewRequest(p.method, p.path, strings.NewReader("<x/>"))
+		rw := httptest.NewRecorder()
+		h.ServeHTTP(rw, req)
+		if rw.Code >= 400 {
+			t.Errorf("%s %s: status %d - a login-flow path must never error", p.method, p.path, rw.Code)
+		}
+	}
+}
+
+// TestAddDeviceIdempotentAcrossForcedRelogins: the login maintenance re-asserts
+// setMargeAccount repeatedly on a login-suspect box, so the box re-runs its
+// addDevice call again and again. Every round must keep answering the full
+// adddeviceresponse (with a margetoken), or a later round would leave the
+// MargeHSM in a worse state than the first.
+func TestAddDeviceIdempotentAcrossForcedRelogins(t *testing.T) {
+	s := newTestServer()
+	h := s.Handler()
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/streaming/account/stick@local/device/",
+			strings.NewReader(`<adddevicerequest/>`))
+		rw := httptest.NewRecorder()
+		h.ServeHTTP(rw, req)
+		// wrap201 answers 201 Created, the format the firmware accepts.
+		if rw.Code < 200 || rw.Code > 299 {
+			t.Fatalf("addDevice round %d: status %d", i+1, rw.Code)
+		}
+		body := rw.Body.String()
+		xmlWellFormed(t, body)
+		if !strings.Contains(body, "margetoken") {
+			t.Fatalf("addDevice round %d: response carries no margetoken:\n%s", i+1, body)
+		}
+	}
+}
+
+// TestPresetSourceServedDuringRelogin pins the anti-wipe contract: the box
+// re-reads its cloud presets during every setMargeAccount re-onboarding, and
+// an empty <presets/> makes the firmware wipe its own hardware-key
+// registrations. With a live preset source wired (the stick store), marge must
+// serve the real presets - on every read, so repeated re-logins stay safe -
+// with user text XML-escaped upstream.
+func TestPresetSourceServedDuringRelogin(t *testing.T) {
+	calls := 0
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("DEVICEID_PLACEHOLDER"),
+		WithPresetSource(func() []Preset {
+			calls++
+			return []Preset{
+				{ID: 1, Source: "UPNP", Type: "audio",
+					Location: "http://127.0.0.1:8888/stream/1", SourceAccount: "UPnPUserName",
+					ItemName: "Pop &amp; Rock"},
+				{ID: 4, Source: "UPNP", Type: "audio",
+					Location: "http://127.0.0.1:8888/spotify/stream-4.ogg", SourceAccount: "UPnPUserName",
+					ItemName: "Spotify"},
+			}
+		}))
+	h := s.Handler()
+	for round := 1; round <= 2; round++ {
+		req := httptest.NewRequest(http.MethodGet, "/preset/list", nil)
+		rw := httptest.NewRecorder()
+		h.ServeHTTP(rw, req)
+		body := rw.Body.String()
+		xmlWellFormed(t, body)
+		if strings.Contains(body, "<presets/>") {
+			t.Fatalf("round %d: live store must never answer an empty preset list (the firmware wipes its keys on it):\n%s", round, body)
+		}
+		for _, want := range []string{`id="1"`, `id="4"`, "Pop &amp; Rock", "/spotify/stream-4.ogg"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("round %d: preset response missing %q:\n%s", round, want, body)
+			}
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("the source must be read live on every request, got %d reads", calls)
+	}
+}
+
+// TestConfiguredAccountAnswersLegacyProbes: some firmwares poll legacy account/
+// config endpoints; an UNCONFIGURED answer there reads as "not signed in" and
+// feeds the 1036 rejections. With an account set, both must report signed-in.
+func TestConfiguredAccountAnswersLegacyProbes(t *testing.T) {
+	s := newTestServer()
+	s.SetAccount(&AccountInfo{AccountUUID: "streborn-local-account",
+		AccountEmail: "stick@local", AuthToken: "local-token-v1",
+		CreatedAt: "2026-01-01T00:00:00Z"})
+	h := s.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/legacy/marge/account", nil)
+	rw := httptest.NewRecorder()
+	h.ServeHTTP(rw, req)
+	if strings.Contains(rw.Body.String(), "UNCONFIGURED") {
+		t.Fatalf("configured account must not answer UNCONFIGURED:\n%s", rw.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/legacy/config", nil)
+	rw = httptest.NewRecorder()
+	h.ServeHTTP(rw, req)
+	if !strings.Contains(rw.Body.String(), "SOUNDTOUCH_CONFIGURED") {
+		t.Fatalf("configured box must report SOUNDTOUCH_CONFIGURED:\n%s", rw.Body.String())
+	}
+}

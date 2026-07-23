@@ -267,8 +267,29 @@ type Server struct {
 	// stream (slot or raw). The wedge detector uses it to tell "the box never
 	// even pulled the URL it accepted" (control stack wedged, needs a
 	// power-cycle) apart from "the box pulled it and the station failed".
+	// slotFetch records the same moment PER preset slot, stamped only after
+	// the slot validated and the store served a preset. The hardware recall
+	// verify keys its success signal off the slot it pushed: the global stamp
+	// let ANY proxied fetch (another slot's reconnect, a zone follower, even a
+	// 404) certify a failed recall as healthy at the first tick, so no retry
+	// ran and wedge strikes were falsely cleared (#252: station on the
+	// display, no audio, clean log).
 	fetchMu   sync.Mutex
 	lastFetch time.Time
+	slotFetch [7]time.Time // index 1..6: when the box last OPENED the slot
+	// slotFetchEnd / slotOpen make the per-slot signal liveness-aware: a
+	// 36ms-2.4s fetch that dies in the box's re-login source bounce used to
+	// satisfy "opened since the press" and certified a dead recall as healthy
+	// (field bundles 2026-07-22). A recall counts as pulled only while a
+	// connection is OPEN or after it served a sustained stretch.
+	slotFetchEnd [7]time.Time
+	slotOpen     [7]int
+
+	// boxStateFn reports a speaker-side condition that makes every station
+	// fail ("wedged", "login-error"; "" = fine). Wired to webui.BoxStateHint;
+	// surfaced in /api/stream-status so the app can distinguish a box problem
+	// from a station problem. nil-safe.
+	boxStateFn func() string
 
 	// netMu guards a briefly-cached verdict on whether the SPEAKER itself can
 	// reach the public internet. It lets /api/stream-status tell "this one
@@ -850,6 +871,82 @@ func (s *Server) noteFetch() {
 	s.fetchMu.Unlock()
 }
 
+// noteSlotFetch records that the box opened THIS slot's proxied stream. Called
+// only after the slot validated and the store had a playable preset, so a 404
+// or a foreign fetch can never stamp it. Paired with noteSlotFetchDone.
+func (s *Server) noteSlotFetch(slot int) {
+	if slot < 1 || slot > 6 {
+		return
+	}
+	s.fetchMu.Lock()
+	s.slotFetch[slot] = time.Now()
+	s.slotOpen[slot]++
+	s.fetchMu.Unlock()
+}
+
+// noteSlotFetchDone records that a slot connection closed, for the liveness
+// half of SlotPulledSince.
+func (s *Server) noteSlotFetchDone(slot int) {
+	if slot < 1 || slot > 6 {
+		return
+	}
+	s.fetchMu.Lock()
+	if s.slotOpen[slot] > 0 {
+		s.slotOpen[slot]--
+	}
+	s.slotFetchEnd[slot] = time.Now()
+	s.fetchMu.Unlock()
+}
+
+// LastFetchForSlot reports when the box last opened the given slot's proxied
+// stream (zero time = never, or slot out of range). The global LastActivity
+// stamp stays for the wedge detector, which deliberately counts any fetch.
+// No production caller since the recall verify moved to the liveness-aware
+// SlotPulledSince (a bare open-stamp certified failed recalls); kept as the
+// low-level accessor its tests and future diagnostics read the raw stamp
+// through.
+func (s *Server) LastFetchForSlot(slot int) time.Time {
+	if slot < 1 || slot > 6 {
+		return time.Time{}
+	}
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	return s.slotFetch[slot]
+}
+
+// minSustainedFetch is how long a now-closed slot fetch must have served to
+// still count as "the box played this recall". The box's re-login source
+// bounce opens the stream for 36ms-2.4s and drops it; a genuine playback
+// session either stays open or lasted well past this.
+const minSustainedFetch = 3 * time.Second
+
+// SlotPulledSince reports whether the box is credibly playing this slot's
+// proxied stream for a recall anchored at t: a connection opened after t that
+// is still OPEN, or one that served at least minSustainedFetch before closing.
+// This is the hardware recall verify's success signal; "opened once since t"
+// alone certified dead recalls as healthy (#252 field bundles).
+func (s *Server) SlotPulledSince(slot int, t time.Time) bool {
+	if slot < 1 || slot > 6 {
+		return false
+	}
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	start := s.slotFetch[slot]
+	if start.IsZero() || !start.After(t) {
+		return false
+	}
+	if s.slotOpen[slot] > 0 {
+		return true
+	}
+	return s.slotFetchEnd[slot].Sub(start) >= minSustainedFetch
+}
+
+// SetBoxStateFn wires the speaker-side condition reporter for
+// /api/stream-status (see boxStateFn).
+func (s *Server) SetBoxStateFn(fn func() string) {
+	s.boxStateFn = fn
+}
+
 // LastActivity reports when the box last opened any proxied stream and when
 // the last terminal upstream failure happened (zero times = never). Consumed
 // by the webui's wedge detector.
@@ -882,10 +979,24 @@ func (s *Server) Register(mux *http.ServeMux) {
 // streamStatusTTL are reported so a long-past error never blocks a fresh play.
 func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	// boxState surfaces a SPEAKER-side condition ("wedged", "login-error")
+	// that makes every station fail, so the app can say what is actually
+	// wrong instead of blaming the station and cycling radio-browser
+	// alternates ("Sender spielt nicht ... suche andere Quelle" while the box
+	// was rejecting sources as not-logged-in). Additive: absent when the box
+	// is fine, ignored by older frontends.
+	boxState := ""
+	if s.boxStateFn != nil {
+		boxState = s.boxStateFn()
+	}
 	s.errMu.Lock()
 	f := s.lastErr
 	s.errMu.Unlock()
 	if f.when.IsZero() || time.Since(f.when) > streamStatusTTL {
+		if boxState != "" {
+			fmt.Fprintf(w, `{"error":false,"boxState":%q}`, boxState)
+			return
+		}
 		fmt.Fprint(w, `{"error":false}`)
 		return
 	}
@@ -899,17 +1010,19 @@ func (s *Server) handleStreamStatus(w http.ResponseWriter, r *http.Request) {
 		f.reason = "offline"
 	}
 	body, err := json.Marshal(struct {
-		Error  bool   `json:"error"`
-		Status int    `json:"status"`
-		Reason string `json:"reason"`
-		URL    string `json:"url"`
-		AgeMs  int64  `json:"ageMs"`
+		Error    bool   `json:"error"`
+		Status   int    `json:"status"`
+		Reason   string `json:"reason"`
+		URL      string `json:"url"`
+		AgeMs    int64  `json:"ageMs"`
+		BoxState string `json:"boxState,omitempty"`
 	}{
-		Error:  true,
-		Status: f.code,
-		Reason: f.reason,
-		URL:    f.url,
-		AgeMs:  time.Since(f.when).Milliseconds(),
+		Error:    true,
+		Status:   f.code,
+		Reason:   f.reason,
+		URL:      f.url,
+		AgeMs:    time.Since(f.when).Milliseconds(),
+		BoxState: boxState,
 	})
 	if err != nil {
 		fmt.Fprint(w, `{"error":false}`)
@@ -1065,6 +1178,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.StreamURL = s.resolvePresetURL(slot, p.StreamURL)
+	s.noteSlotFetch(slot)
+	defer s.noteSlotFetchDone(slot)
 	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
 
 	if isDASHURL(p.StreamURL) {
