@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxurl"
 )
 
 // Send sends a single command to port 17000 and collects up to 200 ms
@@ -239,6 +241,14 @@ func PresetKey(ctx context.Context, host string, slot int, mode string) error {
 //
 //	ws AddPreset <SOURCE> <TYPE> <LOCATION> <LABEL> <SOURCEACCOUNT> <PRESETID>
 func AddPreset(ctx context.Context, host string, slot int, name, streamURL string) error {
+	// A native LOCAL_INTERNET_RADIO preset (an Orion station location) self-
+	// activates on the box with no login-gated UPNP 1036 - the box resolves the
+	// station against the agent's marge stub and plays the stream itself, and
+	// STR's recall steps aside. Emit the native command for it; every other
+	// location stays a UPNP audio preset (the proven fallback).
+	if boxurl.IsOrionStation(streamURL) {
+		return AddPresetRaw(ctx, host, slot, "LOCAL_INTERNET_RADIO", "stationurl", streamURL, name, "")
+	}
 	// LABEL must be in quotes, otherwise the box splits it at the space.
 	// LOCATION should have no quotes.
 	cmd := fmt.Sprintf(`ws AddPreset UPNP audio %s "%s" UPnPUserName %d`,

@@ -16,6 +16,8 @@ package marge
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -315,11 +317,42 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/device") && r.Method == http.MethodPost:
 		s.respondAddDevice(w, r)
 		return
+	case strings.HasPrefix(path, "/streaming/account") && strings.Contains(path, "/provider_settings"):
+		s.respondProviderSettings(w, r)
+		return
 	case strings.HasPrefix(path, "/streaming/account") || strings.HasPrefix(path, "/streaming/auth"):
 		s.respondMargeAccountFull(w, r)
 		return
+	// The BMX services-availability go/no-go: the box gates auto-adding an
+	// anonymous-account service (and thus the bmx_token POST that mounts it) on
+	// this returning the service with canAdd:true. Must sit before the generic
+	// /bmx/registry/ case, which would otherwise swallow it into the services
+	// list. Contains() matches both /bmx/registry/v1/servicesAvailability and the
+	// ../servicesAvailability href resolution (/bmx/registry/servicesAvailability).
+	case strings.Contains(path, "servicesAvailability"):
+		s.respondBmxServicesAvailability(w, r)
+		return
 	case strings.HasPrefix(path, "/bmx/registry/"):
 		s.respondBmxRegistry(w, r)
+		return
+	// Per-source anonymous token mint for the BMX radio services advertised in
+	// the registry. The box POSTs baseUrl + _links.bmx_token.href once it sees
+	// authenticationModel.anonymousAccount enabled, and mounts the source READY
+	// on a valid token. Orion (LOCAL_INTERNET_RADIO) and TuneIn have distinct
+	// token shapes. These must sit before the /bmx/ catchall (TuneIn) and the
+	// legacy fallback (Orion path is not under /bmx/).
+	case strings.Contains(path, "svc-bmx-adapter-orion") && strings.HasSuffix(path, "/token"):
+		s.respondOrionToken(w, r)
+		return
+	// The box GETs the Orion station endpoint when it resolves a stored
+	// LOCAL_INTERNET_RADIO preset location (the absolute URL in the preset's
+	// ContentItem). It expects a BmxPlaybackResponse whose streamUrl points at
+	// STR's own stream proxy. Without this it fell through to the generic <ack/>.
+	case strings.Contains(path, "svc-bmx-adapter-orion") && strings.Contains(path, "/station"):
+		s.respondOrionStation(w, r)
+		return
+	case strings.HasPrefix(path, "/bmx/tunein") && strings.HasSuffix(path, "/token"):
+		s.respondTuneInToken(w, r)
 		return
 	case strings.HasPrefix(path, "/bmx/"):
 		s.respondBmxGeneric(w, r)
@@ -379,20 +412,146 @@ func (s *Server) respondStreamingSupport(w http.ResponseWriter, _ *http.Request)
 func (s *Server) respondBmxRegistry(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+	// The registry is served in TWO shapes at once for compatibility:
+	//   - the legacy `services` array (STR's original guess; kept so STSCertified
+	//     does not drop the infra services it already accepts), and
+	//   - the `bmx_services` array in the exact shape gesellix reverse-engineered
+	//     from real Bose cloud captures. The box's BMXController reads the entries
+	//     and, for any service whose authenticationModel.anonymousAccount is
+	//     enabled+autoCreate, mints a per-source token by POSTing the service's
+	//     _links.bmx_token.href against baseUrl - with NO real credential. That is
+	//     the missing step that keeps radio sources UNAVAILABLE and forces the
+	//     box's own preset activation down the account-gated path that 1036s.
+	//     LOCAL_INTERNET_RADIO (Orion "Custom Stations", provider id 11) carries
+	//     the anonymous account; its token endpoint is answered by respondOrionToken.
+	//     baseUrl points at content.api.bose.io, which the box redirects to this
+	//     stub, so the token POST lands here. askAgainAfter is kept short during
+	//     the bring-up so the box re-polls quickly after the flag lands.
+	const askAgainAfter = 120
+	ts := time.Now().Unix()
 	_, _ = w.Write([]byte(`{
+  "_links": { "bmx_services_availability": { "href": "../servicesAvailability" } },
+  "askAgainAfter": ` + fmt.Sprintf("%d", askAgainAfter) + `,
+  "ts": ` + fmt.Sprintf("%d", ts) + `,
   "services": [
-    {"name": "streaming", "url": "https://streaming.bose.com", "version": "v1.2", "askAgainAfter": 3600},
-    {"name": "content", "url": "https://content.api.bose.io", "version": "v1", "askAgainAfter": 3600},
-    {"name": "marge", "url": "https://streaming.bose.com", "version": "v1", "askAgainAfter": 3600},
-    {"name": "TUNEIN", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "INTERNET_RADIO", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "IHEART", "url": "https://api2.iheart.com", "baseURL": "https://api2.iheart.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "SPOTIFY", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "DEEZER", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600}
+    {"name": "streaming", "url": "https://streaming.bose.com", "version": "v1.2", "askAgainAfter": ` + fmt.Sprintf("%d", askAgainAfter) + `},
+    {"name": "content", "url": "https://content.api.bose.io", "version": "v1", "askAgainAfter": ` + fmt.Sprintf("%d", askAgainAfter) + `},
+    {"name": "marge", "url": "https://streaming.bose.com", "version": "v1", "askAgainAfter": ` + fmt.Sprintf("%d", askAgainAfter) + `}
   ],
-  "askAgainAfter": 3600,
-  "ts": ` + fmt.Sprintf("%d", time.Now().Unix()) + `
+  "bmx_services": [
+    {
+      "_links": { "bmx_token": { "href": "/token" }, "bmx_navigate": { "href": "/navigate" }, "self": { "href": "/" } },
+      "askAdapter": false,
+      "assets": { "color": "#000000", "description": "Custom radio stations.", "name": "Custom Stations" },
+      "authenticationModel": { "anonymousAccount": { "autoCreate": true, "enabled": true } },
+      "baseUrl": "https://content.api.bose.io/core02/svc-bmx-adapter-orion/prod/orion",
+      "id": { "name": "LOCAL_INTERNET_RADIO", "value": 11 },
+      "streamTypes": [ "liveRadio" ]
+    },
+    {
+      "_links": { "bmx_token": { "href": "/v1/token" }, "bmx_navigate": { "href": "/v1/navigate" }, "self": { "href": "/" } },
+      "askAdapter": false,
+      "assets": { "color": "#000000", "description": "TuneIn radio.", "name": "TuneIn" },
+      "authenticationModel": { "anonymousAccount": { "autoCreate": true, "enabled": true } },
+      "baseUrl": "https://content.api.bose.io/bmx/tunein",
+      "id": { "name": "TUNEIN", "value": 25 },
+      "streamTypes": [ "liveRadio", "onDemand" ]
+    }
+  ]
 }`))
+}
+
+// respondOrionToken answers the per-source token mint that the box POSTs for an
+// anonymous-account BMX radio service (LOCAL_INTERNET_RADIO / Orion). The box
+// sends no credential; it just wants an access/refresh token back so it can mark
+// the source logged-in and mount it READY. Shape matches gesellix HandleOrionToken
+// (access_token == refresh_token, empty _embedded.bmx_account, no expiry field).
+// Without this the box's token POST fell through to the generic <ack/> and the
+// source never mounted.
+func (s *Server) respondOrionToken(w http.ResponseWriter, _ *http.Request) {
+	const token = "stick-orion-anon-token"
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"_embedded":{"bmx_account":{"displayName":"","username":""}},"access_token":"` + token + `","refresh_token":"` + token + `"}`))
+}
+
+// respondTuneInToken answers the TuneIn anonymous token mint. gesellix echoes the
+// posted refresh_token; a stable token is sufficient here.
+func (s *Server) respondTuneInToken(w http.ResponseWriter, _ *http.Request) {
+	const token = "stick-tunein-anon-token"
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"access_token":"` + token + `","refresh_token":"` + token + `"}`))
+}
+
+// respondOrionStation resolves a LOCAL_INTERNET_RADIO station the box GETs when
+// it follows a stored preset location. The preset location carries the station
+// as ?data=<base64(JSON{name,imageUrl,streamUrl})>; STR decodes it and returns a
+// BmxPlaybackResponse (gesellix's exact shape) whose audio.streamUrl points at
+// STR's continuous ADTS/MP3/AAC stream proxy - NEVER HLS (fw27 cannot parse it).
+// This is the cloud-free path gesellix uses: no anonymous account or token mint,
+// the box just fetches the streamUrl and plays.
+func (s *Server) respondOrionStation(w http.ResponseWriter, r *http.Request) {
+	var p struct {
+		Name      string `json:"name"`
+		ImageURL  string `json:"imageUrl"`
+		StreamURL string `json:"streamUrl"`
+	}
+	if data := r.URL.Query().Get("data"); data != "" {
+		raw, err := base64.RawURLEncoding.DecodeString(data)
+		if err != nil {
+			// Tolerate std base64 too (a client that URL-encoded +/=): the box's
+			// own presets use RawURLEncoding, but be liberal in what we accept.
+			raw, err = base64.StdEncoding.DecodeString(data)
+		}
+		if err == nil {
+			_ = json.Unmarshal(raw, &p)
+		}
+	}
+	s.logger.Info("orion station playback resolved",
+		slog.String("comp", "marge"),
+		slog.String("name", p.Name),
+		slog.String("streamUrl", p.StreamURL),
+	)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `{"audio":{"hasPlaylist":true,"isRealtime":true,"streamUrl":%q,"streams":[{"hasPlaylist":true,"isRealtime":true,"streamUrl":%q}]},"imageUrl":%q,"name":%q,"streamType":"liveRadio"}`,
+		p.StreamURL, p.StreamURL, p.ImageURL, p.Name)
+}
+
+// respondBmxServicesAvailability answers GET /bmx/registry/v1/servicesAvailability.
+// This is the missing go/no-go the box waits on after /streaming/sourceproviders:
+// it only auto-creates an anonymous account (and POSTs the service's bmx_token
+// endpoint that mounts the source READY) for a service listed here with
+// canAdd:true. Advertise TUNEIN as addable - it carries the anonymousAccount in
+// the registry - which is what unsticks the sm2 ST10 that otherwise polled the
+// registry, fetched sourceproviders and stopped. Shape matches gesellix
+// bmx_services_availability.json (minus the login-gated SiriusXM entry).
+func (s *Server) respondBmxServicesAvailability(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"services":[{"canAdd":true,"canRemove":false,"service":"TUNEIN"},{"canAdd":true,"canRemove":false,"service":"LOCAL_INTERNET_RADIO"}]}`))
+}
+
+// respondProviderSettings answers GET /streaming/account/<id>/provider_settings,
+// the last leg of the marge streaming handshake (the box fetches it right after
+// account/full). Answering it in the gesellix shape instead of letting it fall
+// through to the account XML removes a divergence the taigan/scm boxes complete.
+func (s *Server) respondProviderSettings(w http.ResponseWriter, r *http.Request) {
+	acct := "stick@local"
+	if i := strings.Index(r.URL.Path, "/account/"); i >= 0 {
+		rest := r.URL.Path[i+len("/account/"):]
+		if j := strings.IndexByte(rest, '/'); j >= 0 {
+			acct = rest[:j]
+		} else if rest != "" {
+			acct = rest
+		}
+	}
+	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	w.WriteHeader(http.StatusOK)
+	a := xmlEscapeText(acct)
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<providerSettings><providerSetting boseID="` + a + `" keyName="ELIGIBLE_FOR_TRIAL" value="false" providerID="14"/><providerSetting boseID="` + a + `" keyName="STREAMING_QUALITY" value="2" providerID="15"/></providerSettings>`))
 }
 
 // respondBmxGeneric is the catchall for other /bmx/* paths.
@@ -434,8 +593,12 @@ func (s *Server) respondSourceProviders(w http.ResponseWriter, _ *http.Request) 
 	}
 	// without response wrapper, since AddDevice wrap201 is only relevant for the
 	// initial pair call.
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="STORED_MUSIC"><name>Stored Music</name></sourceprovider>` + extra.String() + `</sourceProviders>`))
+	// Provider ids are DECIMAL (the box binds a source's <sourceproviderid> to
+	// these), names symbolic - matching gesellix and the Bose provider-id enum
+	// (INTERNET_RADIO=2, LOCAL_INTERNET_RADIO=11, TUNEIN=25, RADIO_BROWSER=39).
+	// TUNEIN=25 is the one the account/full source correlates against.
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sourceProviders><sourceprovider id="2"><createdOn>2012-09-19T12:43:00.000+00:00</createdOn><name>INTERNET_RADIO</name><updatedOn>2012-09-19T12:43:00.000+00:00</updatedOn></sourceprovider><sourceprovider id="11"><createdOn>2013-01-10T09:45:00.000+00:00</createdOn><name>LOCAL_INTERNET_RADIO</name><updatedOn>2013-01-10T09:45:00.000+00:00</updatedOn></sourceprovider><sourceprovider id="25"><createdOn>2016-04-08T17:27:21.000+00:00</createdOn><name>TUNEIN</name><updatedOn>2016-04-08T17:27:21.000+00:00</updatedOn></sourceprovider><sourceprovider id="39"><createdOn>2026-03-14T22:47:00.000+00:00</createdOn><name>RADIO_BROWSER</name><updatedOn>2026-03-14T22:47:00.000+00:00</updatedOn></sourceprovider>` + extra.String() + `</sourceProviders>`))
 }
 
 // respondAddDevice is the response to the AddDevice sync that the box triggers
@@ -532,16 +695,23 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 	// The root element is not called "fullAccount" but matches the message
 	// name "account" or the parent field name. Here we try
 	// <fullAccount> as root (matches the filename convention).
+	// Declare a TUNEIN source carrying a token credential. The BMX registry now
+	// advertises TUNEIN with an anonymous auto-created account, so a source of
+	// that type here with a token credential is what makes the box mint the
+	// per-source token (against the registry's bmx_token endpoint) and mount the
+	// source READY - the missing link that left every radio source UNAVAILABLE
+	// and forced preset activation down the account-gated UPNP path (1036). The
+	// source type/providerid are aligned with the registry TUNEIN entry.
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
 <fullAccount>
   <mode><text>global</text></mode>
   <sources>
-    <source id="TuneInUser" type="INTERNET_RADIO">
-      <credential type="" text=""/>
-      <name>TuneIn Radio</name>
+    <source id="TuneInUser" type="TUNEIN">
+      <credential type="token">stick-tunein-anon-token</credential>
+      <name>TuneIn</name>
       <username>TuneInUser</username>
-      <sourceproviderid>INTERNET_RADIO</sourceproviderid>
-      <sourcename>TuneIn Radio</sourcename>
+      <sourceproviderid>TUNEIN</sourceproviderid>
+      <sourcename>TuneIn</sourcename>
     </source>
   </sources>
 </fullAccount>`))
@@ -776,35 +946,55 @@ func (s *Server) deleteMargeGroup(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?><response status="OK"/>`))
 }
 
-// respondProviderSettings responds to /streaming/account/<id>/provider_settings.
-// Music service provider settings (Spotify token, etc). We return empty.
-func (s *Server) respondProviderSettings(w http.ResponseWriter, _ *http.Request) {
+// respondMargeAccountFull returns a "configured" Marge account in the exact
+// shape gesellix reverse-engineered from real Bose cloud captures: root
+// <account id=..> with accountStatus/mode/preferredLanguage and a <sources>
+// list. The TUNEIN <source> carries a decimal <sourceproviderid>25</> (matching
+// the sourceproviders catalog) and a non-empty <credential type="token">; that
+// pair is what the box binds to mount the source READY (on the marge-only
+// chassis - taigan/scm - this account/full source IS the whole lever; the sm2
+// ST10 additionally needs the BMX servicesAvailability go-ahead). No <status>
+// element is sent: READY is the box's own internal mount state once account +
+// token + provider bind together.
+func (s *Server) respondMargeAccountFull(w http.ResponseWriter, r *http.Request) {
+	acct := "stick@local"
+	if i := strings.Index(r.URL.Path, "/account/"); i >= 0 {
+		rest := r.URL.Path[i+len("/account/"):]
+		if j := strings.IndexByte(rest, '/'); j >= 0 {
+			acct = rest[:j]
+		} else if rest != "" {
+			acct = rest
+		}
+	}
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<providerSettings/>`))
-}
-
-// respondMargeAccountFull returns a "configured" Marge account.
-// When the box requests account info, we say "yes, you are logged in".
-func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	// Reflect the box's pre-existing account-linked cloud sources (Deezer
-	// "Path A") inside the account so the box re-registers them and plays them
-	// via its own cached token. Best-effort + experimental: the exact schema the
-	// box consumes here is unverified; this is a no-op when nothing is reflected
-	// (the safe default on a fresh install or a box that never had a cloud src).
-	srcBlock := ""
-	if sx := s.reflectedSourcesXML(); sx != "" {
-		srcBlock = "\n  <sources>" + sx + "\n  </sources>"
-	}
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
-<account status="ACTIVE">
-  <uuid>streborn-local-account</uuid>
-  <email>local@streborn</email>
-  <token>local-token-v1</token>
-  <created>2026-01-01T00:00:00Z</created>` + srcBlock + `
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<account id="` + xmlEscapeText(acct) + `">
+  <accountStatus>OK</accountStatus>
+  <mode>global</mode>
+  <preferredLanguage>en</preferredLanguage>
+  <sources>
+    <source id="10004" type="Audio">
+      <createdOn>2017-07-20T16:43:48.000+00:00</createdOn>
+      <credential type="token">stick-tunein-anon-token</credential>
+      <name>TUNEIN</name>
+      <sourceproviderid>25</sourceproviderid>
+      <sourcename></sourcename>
+      <sourceSettings/>
+      <updatedOn>2017-07-20T16:43:48.000+00:00</updatedOn>
+      <username></username>
+    </source>
+    <source id="10011" type="Audio">
+      <createdOn>2017-07-20T16:43:48.000+00:00</createdOn>
+      <credential type="token">stick-orion-anon-token</credential>
+      <name>LOCAL_INTERNET_RADIO</name>
+      <sourceproviderid>11</sourceproviderid>
+      <sourcename></sourcename>
+      <sourceSettings/>
+      <updatedOn>2017-07-20T16:43:48.000+00:00</updatedOn>
+      <username>LOCAL_INTERNET_RADIOUserName</username>
+    </source>` + s.reflectedSourcesXML() + `
+  </sources>
 </account>`))
 }
 

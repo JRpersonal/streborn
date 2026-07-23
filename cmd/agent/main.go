@@ -199,6 +199,14 @@ func run() error {
 	logger := newLogger(*logLevel)
 	logger.Info("streborn starting", "version", version)
 
+	// Native LOCAL_INTERNET_RADIO preset self-activation is opt-in per box until
+	// the source mount is hardware-verified reliable across firmwares. Off by
+	// default: radio presets stay on the proven UPNP stream-proxy path.
+	if os.Getenv("STICK_NATIVE_RADIO") == "1" {
+		boxurl.NativeRadioPresets = true
+		logger.Info("native radio presets ENABLED (STICK_NATIVE_RADIO=1): storing radio presets as LOCAL_INTERNET_RADIO")
+	}
+
 	// Self-heal the bootstrap layer if the agent OTA brought a newer
 	// binary onto a box whose run.sh / rc.local still date from an
 	// older release. Without this, an HTTP- or SSH-OTA only refreshes
@@ -337,12 +345,21 @@ func run() error {
 			all := store.All()
 			out := make([]marge.Preset, 0, len(all))
 			for _, p := range all {
+				loc := boxPresetURL(p)
+				// The cloud /presets view the box re-reads on every re-onboarding
+				// must MATCH the native box-side store (else the firmware rewrites
+				// the slots back). A radio preset is stored as a native
+				// LOCAL_INTERNET_RADIO Orion location; Spotify + legacy stay UPNP.
+				src, typ, acct := "UPNP", "audio", "UPnPUserName"
+				if boxurl.IsOrionStation(loc) {
+					src, typ, acct = "LOCAL_INTERNET_RADIO", "stationurl", "LOCAL_INTERNET_RADIOUserName"
+				}
 				out = append(out, marge.Preset{
 					ID:            p.Slot,
-					Source:        "UPNP",
-					Type:          "audio",
-					Location:      boxPresetURL(p),
-					SourceAccount: "UPnPUserName",
+					Source:        src,
+					Type:          typ,
+					Location:      loc,
+					SourceAccount: acct,
 					ItemName:      margeXMLEscape(p.Name),
 					ContainerArt:  margeXMLEscape(firstArtURL(p.Art)),
 				})
@@ -1548,6 +1565,10 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 		}
 		return
 	}
+	// The box-provided location, captured before it is remapped to the store URL
+	// below. A native LOCAL_INTERNET_RADIO preset carries an Orion station
+	// location here; that decides native-first vs the legacy UPnP push.
+	boxLoc := location
 	// The URL stays the proxy URL (location = http://127.0.0.1:8888/stream/N)
 	// so the stream proxy handles the reconnect on token expiry. Name + icon
 	// come from the stick preset store — the Bose ContentItem metadata has no
@@ -1628,29 +1649,44 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 		h.spotify.SwitchedAway(ctx)
 	}
 
+	// Native-first: a LOCAL_INTERNET_RADIO preset (an Orion station location) is
+	// self-activated by the box itself - it resolves the station against STR's
+	// marge stub (respondOrionStation) and plays the /stream/<slot> proxy directly,
+	// with no login-gated UPNP 1036. Let it, and arm a delayed fallback: if native
+	// audio does not materialise within the window (a flaky source mount or an
+	// early drop), the proven :8091 UPnP push fires so a hardware button is NEVER
+	// dead. The fallback pushes the stream PROXY (StreamSlot), not the raw station
+	// URL that the remap above left in `url`.
+	if boxurl.IsOrionStation(boxLoc) {
+		url = boxurl.StreamSlot(slot)
+		h.logger.Info("hardware preset: native radio, letting the box self-activate; UPnP fallback armed", "slot", slot)
+		go h.nativeRadioFallbackOrUpnp(seq, pressAt, slot, url, name, icon, mime)
+		return
+	}
+
+	h.recallUpnpPush(ctx, seq, pressAt, slot, url, name, icon, mime)
+}
+
+// recallUpnpPush plays a preset through STR's direct UPnP AVTransport push
+// (:8091) - the proven post-cloud audio path. Used for legacy source=UPNP presets
+// and as the fallback when a native LOCAL_INTERNET_RADIO self-activation does not
+// reach audio.
+func (h *presetWsHandler) recallUpnpPush(ctx context.Context, seq uint64, pressAt time.Time, slot int, url, name, icon, mime string) {
 	// Record this hardware recall as the last play BEFORE the push: the returned
-	// recall generation is what stands every OLDER verify loop down, and bumping
-	// it first means a stale loop cannot clobber this recall while the SetURI is
-	// still in flight. The auto-re-push and the power-button wake-resume read
-	// the same record to know what to bring back (the webui only tracks its own
-	// soft plays otherwise); the mime rides along so re-pushes keep the AAC
-	// label too (#252).
+	// recall generation stands every OLDER verify loop down, and bumping it first
+	// means a stale loop cannot clobber this recall while the SetURI is in flight.
+	// The mime rides along so re-pushes keep the AAC label too (#252).
 	var gen uint64
 	if h.noteLastPlay != nil {
 		if h.pressSeq.Load() != seq {
-			// A newer press exists before this recall even pushed: never let the
-			// older goroutine overwrite the newer press's lastPlay or URL.
 			h.logger.Info("hardware recall superseded before push, standing down", "slot", slot)
 			return
 		}
 		gen = h.noteLastPlay(url, name, icon, mime)
 	}
-	// Push the stream FIRST, before the wake and pairing, mirroring the Spotify
-	// path. On a hardware/remote press the box is already awake (it just emitted
-	// the gabbo frame) and briefly shows its own "Service Unavailable" flash from
-	// failing to natively self-activate the UPNP preset; getting STR's SetURI in
-	// as early as possible shortens that flash (#383). Pairing is not a
-	// precondition for the SetURI, and a cold-standby race (UPnP 1036) is caught
+	// Push the stream FIRST, before the wake and pairing. On a hardware/remote
+	// press the box is already awake; getting STR's SetURI in early shortens the
+	// "Service Unavailable" flash (#383). A cold-standby race (UPnP 1036) is caught
 	// by the background verifyPlayURL retry below.
 	playCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -1663,23 +1699,39 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	if playErr != nil {
 		h.logger.Warn("upnp play (initial) failed, will verify+retry", "slot", slot, "err", playErr)
 	}
-
-	// Wake from standby (fast on a hardware press, the box is already awake) AFTER
-	// the display push, so the SetURI is not delayed behind it. No abort: the
-	// press itself is the user's most recent intent.
+	// Wake from standby AFTER the display push so the SetURI is not delayed behind
+	// it. No abort: the press is the user's most recent intent.
 	wakeCtx, wcancel := context.WithTimeout(ctx, 8*time.Second)
 	if err := h.wake(wakeCtx, nil); err != nil {
 		h.logger.Warn("could not bring box out of STANDBY", "err", err)
 	}
 	wcancel()
-	// Fire-and-forget, mirroring the app-recall path: pairing is not a
-	// precondition for the UPnP push above.
 	h.triggerPairAsync(6 * time.Second)
-	// Verify+retry in the background: the first hardware press after a cold
-	// boot can race the box/agent bringup so nothing plays until a second
-	// press. This re-issues until the box actually plays. Affects radio too.
 	go h.verifyPlayURL(seq, gen, pressAt, slot, url, name, icon, mime)
 	h.logger.Info("hardware preset mapped to upnp", "slot", slot, "name", name, "mime", mime)
+}
+
+// nativeRadioFallbackOrUpnp waits out the native LOCAL_INTERNET_RADIO
+// self-activation window and, only if the box did not reach sustained audio on
+// the slot, falls back to the UPnP push - so a native preset is never a dead
+// button when the source mount is flaky or the native stream drops early. Runs on
+// a background context (the press is the user's latest intent).
+func (h *presetWsHandler) nativeRadioFallbackOrUpnp(seq uint64, pressAt time.Time, slot int, url, name, icon, mime string) {
+	if h.noteRecentPreset != nil {
+		if p, ok := h.store.Get(slot); ok {
+			h.noteRecentPreset(p)
+		}
+	}
+	time.Sleep(6 * time.Second)
+	if h.pressSeq.Load() != seq {
+		return // a newer press supersedes this one
+	}
+	if h.slotPulledSince(slot, pressAt) {
+		h.logger.Info("hardware preset: native radio reached audio, no UPnP fallback needed", "slot", slot)
+		return
+	}
+	h.logger.Info("hardware preset: native radio did not reach audio, falling back to the UPnP push", "slot", slot)
+	h.recallUpnpPush(context.Background(), seq, pressAt, slot, url, name, icon, mime)
 }
 
 // isSTRStreamURL reports whether u is one of STR's own stream URLs (the radio
@@ -1696,10 +1748,17 @@ func isSTRStreamURL(u string) bool {
 // station URL that merely contains "/stream/".
 var ownBoxPresetLocRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/(?:stream/[1-6]|spotify/stream(?:-[1-6])?\.ogg)$`)
 
+// ownOrionPresetPrefix is the exact prefix of a native LOCAL_INTERNET_RADIO
+// preset location STR writes (boxurl.OrionStation). Strict so the prune never
+// deletes a foreign radio preset that merely mentions orion.
+const ownOrionPresetPrefix = "https://content.api.bose.io/core02/svc-bmx-adapter-orion/prod/orion/station?data="
+
 // isOwnBoxPresetLocation reports whether loc is a box-preset location STR
-// itself wrote (strict match), the only shape the prune may remove.
+// itself wrote (strict match), the only shape the prune may remove. Includes the
+// native Orion station location so the reconcile keeps (does not treat as
+// foreign, and may re-sync) STR's own native radio presets.
 func isOwnBoxPresetLocation(loc string) bool {
-	return ownBoxPresetLocRe.MatchString(loc)
+	return ownBoxPresetLocRe.MatchString(loc) || strings.HasPrefix(loc, ownOrionPresetPrefix)
 }
 
 // isPlayableURL reports whether u is an absolute HTTP(S) URL the UPnP renderer can
