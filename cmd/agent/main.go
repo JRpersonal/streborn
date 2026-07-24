@@ -2086,9 +2086,63 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	// Re-check the fake login too (see OnPowerWake): the reconnect moments
 	// are when the MargeHSM state decays on fresh-install boxes.
 	h.triggerPairAsync(10 * time.Second)
+	// Log-only probe for the deep-standby missed-first-press race (#435): a
+	// gabbo reconnect follows a wake/reboot, and if the box activated a preset
+	// while our WS was still down, it now sits on that preset's ContentItem but
+	// never got the SetURI, so it is not playing. Confirm the signature in field
+	// logs before wiring a post-wake reconciliation push. Best-effort, off the
+	// hot path.
+	go h.logStandbyRaceSignature()
 	if h.onBoxReconnect != nil {
 		h.onBoxReconnect()
 	}
+}
+
+// logStandbyRaceSignature records (log-only) whether, shortly after a gabbo
+// reconnect, the box is parked on one of STR's own preset streams without
+// playing it - the tell-tale of a deep-standby first press that arrived while
+// our WebSocket was still reconnecting (#435). It changes no behaviour; it
+// exists so a field diagnostic proves the race before a reconciliation push is
+// added. One now_playing read after a short settle.
+func (h *presetWsHandler) logStandbyRaceSignature() {
+	if h.boxHost == "" {
+		return
+	}
+	// Let the reconnect and the box's own (failing) self-activation settle.
+	time.Sleep(4 * time.Second)
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + h.boxHost + ":8090/now_playing")
+	if err != nil {
+		return
+	}
+	doc, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	_ = resp.Body.Close()
+	s := string(doc)
+	source := firstAttr(s, "source")
+	location := firstAttr(s, "location")
+	playing := strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+	if isSTRStreamURL(location) && !playing {
+		h.logger.Warn("standby-race probe: box parked on an STR preset stream but NOT playing after a gabbo reconnect; candidate missed first-press (#435)",
+			"location", location, "source", source)
+		return
+	}
+	h.logger.Info("standby-race probe: box state after gabbo reconnect",
+		"source", source, "playing", playing, "onSTRPreset", isSTRStreamURL(location))
+}
+
+// firstAttr extracts the first value of an XML attribute (e.g. source="X",
+// location="Y") from a now_playing document. Empty if absent.
+func firstAttr(doc, name string) string {
+	key := name + `="`
+	i := strings.Index(doc, key)
+	if i < 0 {
+		return ""
+	}
+	rest := doc[i+len(key):]
+	if j := strings.IndexByte(rest, '"'); j >= 0 {
+		return rest[:j]
+	}
+	return ""
 }
 
 // OnEnterStandby fires when the box's UPnP (STR) source drops to STANDBY on a
