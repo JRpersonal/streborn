@@ -205,6 +205,18 @@ type Manager struct {
 	// track for a few seconds until Play loads the new one: the preset-switch audio
 	// overlap, ST30 2026-07-14).
 	recallRestartAt time.Time
+	// engineHotUntil suppresses the drain's "no sink -> pause go-librespot" during
+	// a recall. On a HARDWARE Spotify preset press the box first activates its own
+	// stored ContentItem, which 1036s and flaps its UPnP source through
+	// INVALID_SOURCE for several seconds; each flap drops the Ogg sink, and the
+	// drain paused go-librespot the instant the sink went away. The box then
+	// settled into a stable attach ~10 s later but the engine was stranded paused
+	// and never revived, so it buffered header-only and never played (forwardedKB=0,
+	// live .79 v0.9.18 2026-07-24). The soft/app path never hit this because the
+	// box does not self-activate there, so the sink stays attached and the engine
+	// never pauses. Keeping the engine playing across the flap means the box gets
+	// live audio the instant it re-attaches. Guarded by mu.
+	engineHotUntil time.Time
 	// lastContext is the Spotify context (playlist/album) URI go-librespot last
 	// announced via will_play. When it changes (the app switched to another
 	// playlist) the box is re-pointed at the stream so it drops its buffer and
@@ -962,7 +974,13 @@ func (m *Manager) runOnce(ctx context.Context) error {
 		// go-librespot so it stops producing (no racing) until a box attaches
 		// and ServeOgg resumes it.
 		pending = pending[:0]
-		if !paused && haveHdr {
+		// During a recall keep the engine playing even with no sink: a hardware
+		// preset press makes the box flap its source (1036 INVALID_SOURCE) and
+		// drop the sink repeatedly before it settles, and pausing here stranded
+		// the engine so the settled box never got audio. engineHot() covers the
+		// recall + verify window; outside it, pause as before so an idle box does
+		// not keep go-librespot decoding to nothing.
+		if !paused && haveHdr && !m.engineHot() {
 			pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			_ = m.Pause(pctx)
 			cancel()
@@ -2045,8 +2063,25 @@ func (m *Manager) syncVolumeFromBox(ctx context.Context) {
 // a recall, before the box attaches.
 func (m *Manager) SetRecalling() {
 	m.mu.Lock()
-	m.recallUntil = time.Now().Add(8 * time.Second)
+	now := time.Now()
+	m.recallUntil = now.Add(8 * time.Second)
+	// Keep the engine playing across the whole recall + verify window (the
+	// hardware verify re-points up to ~25 s after the press). A shorter window
+	// than recallUntil would let the drain pause the engine mid-flap and strand
+	// it again. See engineHotUntil.
+	if t := now.Add(30 * time.Second); t.After(m.engineHotUntil) {
+		m.engineHotUntil = t
+	}
 	m.mu.Unlock()
+}
+
+// engineHot reports whether the drain should keep go-librespot playing even
+// with no box sink attached (a recall is in flight; the box may be flapping
+// through its own 1036 teardown and will re-attach shortly).
+func (m *Manager) engineHot() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return time.Now().Before(m.engineHotUntil)
 }
 
 // SuppressActivate holds maybeActivate/repointBox off for d, so STR does not
