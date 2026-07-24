@@ -2383,32 +2383,62 @@ function updateSettingsTabBadge() {
   btn.classList.toggle('has-update', needsUpdate);
 }
 
-// engineHealAt debounces the #406 Spotify-engine self-heal per box (host ->
-// last-attempt ms) so a discovery/selection refresh loop never re-streams the
-// ~16 MB engine repeatedly.
-const engineHealAt = {};
+// foreignMod maps a leftover /mnt/nv directory name (as the agent reports it in
+// foreignDirs / conflictingMod) to a human-readable name of the OTHER SoundTouch
+// tool it belongs to, so the app can tell the user exactly what to remove to
+// free NAND for the Spotify engine. Unknown names are shown verbatim.
+const foreignMod = {
+  aftertouch: 'AfterTouch',
+  opentouchcloud: 'OpenTouchCloud',
+  opentouch: 'OpenTouchCloud',
+  bosman: 'Bosman',
+  betterst: 'BetterST',
+  sixback: 'SixBack',
+  soundploy: 'SoundPloy',
+};
 
-// healMissingEngine re-delivers go-librespot to a box that reports it missing,
-// in the background. A box whose post-update engine delivery was interrupted was
-// left with goLibrespot "missing" forever, because EnsureSpotifyEngine only ran
-// as part of an OTA and the app otherwise saw "version current" and never
-// re-delivered (#406). Now, whenever we read a box's version and the engine is
-// gone, we heal it, so it recovers the next time the speaker is opened, with no
-// re-update. Debounced, best-effort, and a no-op on a dev build with no embedded
-// engine (EnsureSpotifyEngine returns that itself).
-async function healMissingEngine(box) {
+// foreignSoftwareLabel turns a box version's foreignDirs/conflictingMod into a
+// readable, de-duplicated list ("AfterTouch, OpenTouchCloud") for the
+// "not enough space" message. Empty when the box carries no foreign leftovers.
+function foreignSoftwareLabel(v) {
+  const names = [];
+  const push = (raw) => {
+    if (!raw) return;
+    String(raw).split(',').forEach((n) => {
+      const key = n.trim().toLowerCase();
+      if (!key) return;
+      const label = foreignMod[key] || n.trim();
+      if (!names.includes(label)) names.push(label);
+    });
+  };
+  if (v) { push(v.conflictingMod); push(v.foreignDirs); }
+  return names.join(', ');
+}
+
+// installSpotifyEngineVisible delivers the Spotify engine (go-librespot) to a box
+// ON DEMAND, from a visible button, with honest feedback. It replaces the old
+// silent background self-heal: a box does not free NAND on its own, so a silent
+// retry was pointless and hid the real cause. If the box is too full, we name
+// the OTHER SoundTouch software eating the space so the user knows what to
+// remove; otherwise we confirm success. Re-renders the banner afterwards.
+async function installSpotifyEngineVisible(box) {
   if (!box || !box.host) return;
-  const now = Date.now();
-  if (now - (engineHealAt[box.host] || 0) < 120000) return; // at most once / 2 min per box
-  engineHealAt[box.host] = now;
+  const btn = $('boxInstallEngineBtn');
+  if (btn) { btn.disabled = true; btn.textContent = t('spotify.engineInstalling'); }
   try {
     const res = await EnsureSpotifyEngine(box.host, box.port);
-    if (res && res !== 'current' && !/no embedded engine/i.test(res)) {
-      showToast(t('update.spotifyDoneToast'));
-    }
+    if (res && !/no embedded engine/i.test(res)) showToast(t('update.spotifyDoneToast'));
   } catch (e) {
-    try { console.warn('spotify engine self-heal failed (will retry later)', e); } catch {}
-    engineHealAt[box.host] = now - 90000; // let a still-settling box retry sooner
+    const m = String((e && e.message) || e || '');
+    if (/insufficient nand|no space|507/i.test(m)) {
+      let foreign = '';
+      try { foreign = foreignSoftwareLabel(await BoxAgentVersion(box.host, box.port)); } catch {}
+      showToast(foreign ? t('spotify.engineTooFullNamed', { software: foreign }) : t('spotify.engineTooFull'));
+    } else {
+      showToast(t('spotify.engineInstallFailed'));
+    }
+  } finally {
+    try { await checkBoxUpdate(); } catch {}
   }
 }
 
@@ -2466,17 +2496,33 @@ async function checkBoxUpdate() {
     const boxBuild = v.build || '';
     const appVer = state.appInfo.version;
     const appBuild = state.appInfo.build || '';
-    // #406 self-heal: re-deliver a missing Spotify engine even when the box is
-    // already on the current version (the case that never recovered before, since
-    // the version comparison below returns early for a same-version box).
-    if (v && v.goLibrespot === 'missing') healMissingEngine(state.currentBox);
+    // Spotify engine state. We no longer silently re-push a missing engine in the
+    // background: a box gains no NAND on its own, so a silent retry is pointless
+    // and hides the cause. If the box is otherwise up to date but the engine is
+    // missing, show a visible, actionable "install" banner below; a box that is
+    // BEHIND delivers the engine as a visible step of the normal update flow.
+    const engineMissing = !!(v && v.goLibrespot === 'missing');
     // Direction matters. The speaker update pushes THIS app's embedded agent, so
     // it only makes sense when the app is newer than the box. The old code fired
     // on any difference and so offered "Aktualisieren" even when the box was
     // newer than the app, which would have downgraded the box and confused the
     // user (#105: an old app v0.6.22 next to a box on v0.7.32).
     const cmp = compareVerBuild(appVer, appBuild, boxVer, boxBuild);
-    if (cmp === 0) return;
+    if (cmp === 0) {
+      if (engineMissing) {
+        banner.innerHTML = `
+          <div class="update-msg">
+            <b>${escapeHtml(t('spotify.engineMissingTitle', { name: boxName }))}</b><br>
+            <small>${escapeHtml(t('spotify.engineMissingLine'))}</small>
+          </div>
+          <button class="btn btn-primary btn-mini" id="boxInstallEngineBtn"${otaElsewhere ? ' disabled' : ''}>${escapeHtml(t('spotify.engineInstallBtn'))}</button>
+        `;
+        banner.classList.remove('hidden');
+        const eb = $('boxInstallEngineBtn');
+        if (eb && !otaElsewhere) eb.onclick = () => installSpotifyEngineVisible(state.currentBox);
+      }
+      return;
+    }
     // When only the build stamp differs (same version string), show the build on
     // both sides so the line is not the confusing "v0.8.1 -> v0.8.1" (Jens,
     // 2026-06-17). A real release bumps the version, so production never hits the
@@ -3031,15 +3077,18 @@ async function doBoxUpdate(targetBox) {
         } else if (engDone) {
           // Engine was already current: nothing to announce.
         } else if (engTooFull) {
-          // Agent updated fine, but the box is out of room for the engine.
-          // Retrying is pointless until the user frees space, so say so plainly
-          // instead of the "will be delivered next time" copy.
-          showToast(t('update.spotifyTooFullToast'));
+          // Agent updated fine, but the box is out of room for the engine. Name
+          // the OTHER SoundTouch software eating the NAND so the user knows what
+          // to remove; retrying is pointless until they free space.
+          const foreign = foreignSoftwareLabel(confirmedVer);
+          showToast(foreign
+            ? t('spotify.engineTooFullNamed', { software: foreign })
+            : t('spotify.engineTooFull'));
         } else {
           // Could not land within the window; the engine is still missing but the
-          // agent update itself succeeded. Tell the user it will be retried next
-          // time they open this speaker (EnsureSpotifyEngine runs again then).
-          showToast(t('update.spotifyDeferredToast'));
+          // agent update itself succeeded. No silent retry - the speaker screen
+          // now shows a visible "Install Spotify engine" action.
+          showToast(t('spotify.engineDeferredVisible'));
         }
       }
     } else {

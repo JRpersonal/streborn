@@ -3903,6 +3903,15 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if mod := detectConflictingMod(); mod != "" {
 		out["conflictingMod"] = mod
 	}
+	// The foreign (neither STR's nor Bose's) top-level /mnt/nv dirs, names only.
+	// Cheap: one readdir, no recursive sizing, so it is fine on every version
+	// poll. These are leftovers of OTHER SoundTouch mods that eat the NAND the
+	// Spotify engine needs; the desktop app names them when it has to tell the
+	// user to free space (#270 / Spotify-engine space-fail UX). Emitted only when
+	// something foreign exists, to keep the common response small.
+	if fd := foreignNANDDirNames(); len(fd) > 0 {
+		out["foreignDirs"] = strings.Join(fd, ",")
+	}
 	if wlanCredsWarningWarranted() {
 		out["wlanCreds"] = "missing"
 	}
@@ -4515,6 +4524,25 @@ func dirBytes(path string) int64 {
 // one of Bose's, i.e. a candidate leftover from a third-party post-cloud tool
 // or another custom firmware the owner ran before STR. Mirrors run.sh's
 // nand_inventory freshness check.
+// foreignNANDDirNames lists the top-level /mnt/nv directories that are neither
+// STR's nor Bose's own persistence (isForeignNANDDir), by name. Cheap: a single
+// readdir with no recursive sizing, so it is safe on every version poll. Wired
+// into /api/agent/version as foreignDirs so the desktop app can name the other
+// SoundTouch mods a user must remove to free space for the Spotify engine.
+func foreignNANDDirNames() []string {
+	entries, err := os.ReadDir(nandRoot)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() && isForeignNANDDir(e.Name()) {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
 func isForeignNANDDir(name string) bool {
 	switch name {
 	case "streborn", "nv", "lost+found":
