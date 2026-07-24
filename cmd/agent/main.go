@@ -669,7 +669,26 @@ func run() error {
 	// A completed (re-)onboarding wipes the box's hardware-key preset
 	// registrations; re-register them right away instead of waiting for the
 	// reconcile cadence.
-	autoPair.SetOnPaired(func() { requestPresetKeyResyncUrgent(logger) })
+	autoPair.SetOnPaired(func() {
+		requestPresetKeyResyncUrgent(logger)
+		// Native mode: the box just re-read its account, but on BCO/taigan it
+		// does NOT mount a freshly-served source (LOCAL_INTERNET_RADIO) from that
+		// read alone - it needs a sourcesUpdated notification to re-fetch /full
+		// and bind the new source (gesellix checks_refresh_sources). Fire it
+		// right after onboarding so the native radio source mounts without
+		// waiting on the box's own slow poll cadence.
+		if boxurl.NativeRadioPresets && *boxHost != "" {
+			go func() {
+				nctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+				defer cancel()
+				if err := boxcli.NotifySourcesUpdated(nctx, *boxHost, deviceID); err != nil {
+					logger.Warn("native radio: sourcesUpdated notification failed", "err", err)
+				} else {
+					logger.Info("native radio: pushed sourcesUpdated so the box re-fetches its sources")
+				}
+			}()
+		}
+	})
 	// Let the WebUI fill the Wi-Fi signal from the gabbo stream on BCO
 	// boxes, whose /networkInfo reports no signal.
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)

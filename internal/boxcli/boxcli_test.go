@@ -5,6 +5,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -111,5 +112,49 @@ func TestWakeAndWaitTogglesWhenAsleep(t *testing.T) {
 	}
 	if n := b.powerCmd.Load(); n < 1 {
 		t.Fatalf("WakeAndWait sent %d `sys power` toggle(s) to an asleep box; want >=1", n)
+	}
+}
+
+// TestNotifySourcesUpdated verifies the native-radio source-refresh push: a POST
+// to :8090/notification carrying the box's deviceID and a <sourcesUpdated/>
+// element, so the box re-fetches /full and mounts a freshly-served source.
+func TestNotifySourcesUpdated(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:8090")
+	if err != nil {
+		t.Skipf("cannot bind 127.0.0.1:8090 (in use?): %v", err)
+	}
+	var gotMethod, gotPath, gotCT, gotBody string
+	var hits atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/notification", func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotCT = r.Header.Get("Content-Type")
+		buf := make([]byte, 512)
+		n, _ := r.Body.Read(buf)
+		gotBody = string(buf[:n])
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := &http.Server{Handler: mux}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := NotifySourcesUpdated(ctx, "127.0.0.1", "08DF1F0C9870"); err != nil {
+		t.Fatalf("NotifySourcesUpdated returned error: %v", err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("box received %d notifications; want exactly 1", hits.Load())
+	}
+	if gotMethod != http.MethodPost || gotPath != "/notification" {
+		t.Fatalf("got %s %s; want POST /notification", gotMethod, gotPath)
+	}
+	if !strings.Contains(gotCT, "xml") {
+		t.Fatalf("Content-Type = %q; want an xml type", gotCT)
+	}
+	if !strings.Contains(gotBody, "<sourcesUpdated/>") || !strings.Contains(gotBody, "08DF1F0C9870") {
+		t.Fatalf("body = %q; want it to carry <sourcesUpdated/> and the deviceID", gotBody)
 	}
 }

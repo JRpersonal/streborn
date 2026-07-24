@@ -220,6 +220,45 @@ func readSource(ctx context.Context, c *http.Client, url string) (string, error)
 	return "", fmt.Errorf("source attribute not found")
 }
 
+// NotifySourcesUpdated POSTs a sourcesUpdated notification to the box's :8090
+// so it re-fetches /streaming/account/<id>/full and picks up a source STR just
+// added to the emulated marge account (e.g. a native LOCAL_INTERNET_RADIO
+// entry). Without this the box only re-reads the account on its own poll
+// cadence (~minutes, unreliable on BCO/taigan), so a freshly-served source can
+// take minutes to mount READY or never mount at all. Modelled on gesellix's
+// checks_refresh_sources. Best-effort: a non-2xx or transport error is
+// returned but is not fatal to the caller.
+//
+// CAVEAT (gesellix, verbatim): a brand-new source TYPE (as opposed to updated
+// metadata for an existing type) sometimes still needs a box REBOOT to take
+// effect on this firmware; the notification alone reliably refreshes only types
+// the box has already seen. Callers that just introduced LOCAL_INTERNET_RADIO
+// for the first time should be prepared to reboot once if the source does not
+// appear READY afterwards.
+func NotifySourcesUpdated(ctx context.Context, host, deviceID string) error {
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	body := `<updates deviceID="` + strings.NewReplacer(`"`, "", "<", "", ">", "").Replace(deviceID) +
+		`"><sourcesUpdated/></updates>`
+	url := fmt.Sprintf("http://%s:8090/notification", host)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/xml")
+	c := &http.Client{Timeout: 5 * time.Second}
+	resp, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("notify sourcesUpdated: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("notify sourcesUpdated: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // PresetKey simulates a physical preset key press.
 //
 //	slot 1..6
