@@ -966,13 +966,35 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, r *http.Request)
 			acct = rest
 		}
 	}
+	// The BCO/taigan firmware (Bose_Lisa/27.0.6) mounts its cloud sources ONLY
+	// from account/full, and ONLY when it finds its OWN deviceid enumerated in
+	// <devices> (the sources are device-scoped; the box adopts them only for the
+	// device it paired as). Without the <devices> block the box decodes an empty
+	// source registry and mounts nothing -> native preset press 1036s. The sm2
+	// path (BMX registry) does not need this, so it is additive. deviceID is the
+	// box's own MAC-derived id (set at wiring + refreshed from the AddDevice POST).
+	s.mu.RLock()
+	dev := s.deviceID
+	s.mu.RUnlock()
+	devicesBlock := ""
+	if dev != "" {
+		devicesBlock = `
+  <devices>
+    <device deviceid="` + xmlEscapeText(dev) + `"><name>SoundTouch</name></device>
+  </devices>`
+	}
+	a := xmlEscapeText(acct)
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<account id="` + xmlEscapeText(acct) + `">
-  <accountStatus>OK</accountStatus>
+<account id="` + a + `">
+  <accountStatus>OK</accountStatus>` + devicesBlock + `
   <mode>global</mode>
   <preferredLanguage>en</preferredLanguage>
+  <providerSettings>
+    <providerSetting boseID="` + a + `" keyName="ELIGIBLE_FOR_TRIAL" value="false" providerID="14"/>
+    <providerSetting boseID="` + a + `" keyName="STREAMING_QUALITY" value="2" providerID="15"/>
+  </providerSettings>
   <sources>
     <source id="10004" type="Audio">
       <createdOn>2017-07-20T16:43:48.000+00:00</createdOn>
