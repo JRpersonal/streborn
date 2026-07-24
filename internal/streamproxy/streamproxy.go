@@ -17,6 +17,7 @@
 package streamproxy
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -394,6 +395,22 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 	// radio-browser URL cannot point the box at its own loopback services or
 	// cloud metadata.
 	baseDialer := &net.Dialer{Control: netutil.DialGuardSSRF}
+	// Legacy SHOUTcast v1 servers answer the stream request with an "ICY 200 OK"
+	// status line instead of "HTTP/1.0 200 OK". Go's net/http rejects that as a
+	// malformed response ("Received HTTP/0.9 when not allowed"), so those stations
+	// never play on STR even though media players (and other radio-browser apps)
+	// handle them fine - the whole class of old SHOUTcast stations was silently
+	// broken (field: "Radio Studio D" http://...:8018/;). This dialer wraps the
+	// plain-HTTP connection so the first response line's "ICY" prefix is rewritten
+	// to "HTTP/1.0" before Go parses it; everything else (headers, ICY metadata,
+	// audio) is untouched. HTTPS is left to dialTLS (SHOUTcast-over-TLS is rare).
+	icyDial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		raw, err := baseDialer.DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &icyConn{Conn: raw, br: bufio.NewReader(raw)}, nil
+	}
 	// DialTLSContext handles HTTPS itself so the clock-tolerant verification has
 	// the real dial host (including a bare-IP host, for which the client sends
 	// no SNI and tls.ConnectionState.ServerName would be empty). It reuses the
@@ -427,7 +444,7 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		client: &http.Client{
 			Transport: &http.Transport{
 				Proxy:                 http.ProxyFromEnvironment,
-				DialContext:           baseDialer.DialContext,
+				DialContext:           icyDial,
 				DialTLSContext:        dialTLS,
 				ForceAttemptHTTP2:     true,
 				MaxIdleConns:          100,
@@ -438,6 +455,42 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		lastFail:   make(map[string]time.Time),
 		measuredBr: make(map[string]int),
 	}
+}
+
+// icyConn wraps a net.Conn so a legacy SHOUTcast "ICY 200 OK" response line is
+// rewritten to "HTTP/1.0 200 OK" on the first read, letting Go's net/http parse
+// the response instead of rejecting it. All bytes after the status line (headers,
+// the ICY-interleaved audio) pass through unchanged. Only the very first line is
+// inspected; a normal "HTTP/1.x ..." response is left exactly as received.
+type icyConn struct {
+	net.Conn
+	br        *bufio.Reader
+	inspected bool
+	prefix    []byte // rewritten status-line bytes not yet handed to the caller
+}
+
+func (c *icyConn) Read(p []byte) (int, error) {
+	if !c.inspected {
+		c.inspected = true
+		// Peek only as far as the protocol token; blocks until the response
+		// arrives, which is exactly when http.Transport issues its first read.
+		if head, err := c.br.Peek(4); err == nil && string(head[:3]) == "ICY" && (head[3] == ' ' || head[3] == '\t') {
+			if line, err := c.br.ReadString('\n'); err == nil {
+				// "ICY 200 OK\r\n" -> "HTTP/1.0 200 OK\r\n" (keep the rest verbatim).
+				c.prefix = append([]byte("HTTP/1.0"), line[3:]...)
+			} else {
+				// No full line yet: hand back what we consumed unchanged so we
+				// never lose bytes; the transport will keep reading.
+				c.prefix = []byte(line)
+			}
+		}
+	}
+	if len(c.prefix) > 0 {
+		n := copy(p, c.prefix)
+		c.prefix = c.prefix[n:]
+		return n, nil
+	}
+	return c.br.Read(p)
 }
 
 // minPlausibleClock is a lower bound on a trustworthy wall clock. STR shipped in
