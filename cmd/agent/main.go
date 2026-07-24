@@ -2238,6 +2238,42 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", p.Account)
 }
 
+// readBoxVolume returns the box's current target volume (0 on any error / no box
+// host). Best-effort, used to remember the user's level across a recall.
+func (h *presetWsHandler) readBoxVolume() int {
+	if h.boxHost == "" {
+		return 0
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	if v, err := boxapi.New(h.boxHost).GetVolume(ctx); err == nil {
+		return v.Target
+	}
+	return 0
+}
+
+// restorePreRecallVolume re-applies the volume the user had before a recall when
+// a 1036-standby recovery reset it (the box forgets its volume across standby and
+// comes back at its own default after STR wakes it). No-op when the volume is
+// unknown or unchanged, so the happy path (no standby) never touches it.
+func (h *presetWsHandler) restorePreRecallVolume(preVol int) {
+	if preVol <= 0 || h.boxHost == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c := boxapi.New(h.boxHost)
+	cur, err := c.GetVolume(ctx)
+	if err != nil || cur.Target == preVol {
+		return
+	}
+	if err := c.SetVolume(ctx, preVol); err != nil {
+		h.logger.Warn("volume restore after recall failed", "want", preVol, "err", err)
+		return
+	}
+	h.logger.Info("restored user volume after a recall recovery reset it", "from", cur.Target, "to", preVol)
+}
+
 // verifyPlayURL confirms the box started playing a UPnP (radio) recall and
 // re-issues it a few times if not, fixing the "first hardware press after
 // reboot does nothing" race for radio presets too. mime is the DIDL label of
@@ -2257,6 +2293,12 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 	// Waiting a full verify tick to react leaves the user in silence for five
 	// seconds; re-pushing as soon as the rejection is visible is the automatic
 	// version of the second press users learned to do by hand.
+	// Capture the user's volume before any recovery runs: the box FORGETS its
+	// volume across a 1036-standby and comes back at its own default (~30) after
+	// STR wakes it, so a recovered preset would otherwise blast the room (field:
+	// scm/taigan remote-preset -> reattach + volume reset). Restored at the
+	// success below, only if it actually changed.
+	preVol := h.readBoxVolume()
 	h.rePushAfterSourceReject(seq, gen, pressAt, slot, url, name, icon, mime)
 	// Up to 5 attempts (~25s): a box waking from a deep/overnight standby can
 	// take longer than the old 3-attempt (~15s) window to finish bringing its
@@ -2288,6 +2330,7 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// had already opened the new stream, so a location check alone declared a
 		// healthy recall dead and the "repair" tore the working stream down.
 		if h.recallReachedAudio(slot, url, pressAt) {
+			h.restorePreRecallVolume(preVol)
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
 			}
