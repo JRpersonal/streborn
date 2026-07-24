@@ -99,83 +99,31 @@ func TestForceReassertsDespitePaired(t *testing.T) {
 // contract: a rejection marks the box login-suspect, and while suspect every
 // pair cycle re-asserts the account instead of trusting the UUID-present skip.
 
-func TestLoginRejectForcesReassertDespitePaired(t *testing.T) {
+func TestPairedBoxNoOpEvenAfterLoginError(t *testing.T) {
+	// v0.9.0 behaviour, restored: a paired box (margeAccountUUID present) is a
+	// no-op on the regular pair cycle even right after the box refused a source
+	// as not-logged-in (1036). The old proactive per-heartbeat re-assert was
+	// removed because re-onboarding a playing box powered it off mid-song (the
+	// 0.9.17 self-off) and never prevented the box's own post-standby 1036. Only
+	// the reactive ForcePair re-logs in, and only after a real failed press.
 	box := &fakeBox{infoBody: pairedInfo}
 	m := newTestManager(t, box)
 
-	// Healthy paired box: no re-assert.
-	if err := m.EnsurePaired(context.Background()); err != nil {
-		t.Fatalf("EnsurePaired: %v", err)
-	}
-	if got := box.pairPosts.Load(); got != 0 {
-		t.Fatalf("healthy paired box must not be re-asserted, got %d POSTs", got)
-	}
-
-	// The box refused a source as not-logged-in: the next cycle must
-	// re-assert even though /info still reports a UUID.
-	m.NoteLoginRejected()
-	if err := m.EnsurePaired(context.Background()); err != nil {
-		t.Fatalf("EnsurePaired (suspect): %v", err)
-	}
-	if got := box.pairPosts.Load(); got != 1 {
-		t.Fatalf("login-suspect box must be re-asserted despite the UUID, got %d POSTs", got)
-	}
-}
-
-func TestSuspectReassertIsRateLimited(t *testing.T) {
-	box := &fakeBox{infoBody: pairedInfo}
-	m := newTestManager(t, box)
-	m.NoteLoginRejected()
-
-	// A burst of presses (each triggering a pair cycle) must not turn into a
-	// setMargeAccount storm: one re-assert per suspectReassertMinGap.
 	for i := 0; i < 5; i++ {
 		if err := m.EnsurePaired(context.Background()); err != nil {
 			t.Fatalf("EnsurePaired #%d: %v", i, err)
 		}
 	}
-	if got := box.pairPosts.Load(); got != 1 {
-		t.Fatalf("suspect re-asserts within the min-gap must coalesce to 1 POST, got %d", got)
-	}
-
-	// Once the gap has passed, the suspicion (still fresh) re-asserts again:
-	// maintenance, not a one-shot repair.
-	m.suspectMu.Lock()
-	m.lastSuspectAssert = time.Now().Add(-suspectReassertMinGap - time.Second)
-	m.suspectMu.Unlock()
-	if err := m.EnsurePaired(context.Background()); err != nil {
-		t.Fatalf("EnsurePaired (after gap): %v", err)
-	}
-	if got := box.pairPosts.Load(); got != 2 {
-		t.Fatalf("a fresh suspicion must re-assert again after the min-gap, got %d POSTs", got)
-	}
-}
-
-func TestLoginSuspicionExpires(t *testing.T) {
-	box := &fakeBox{infoBody: pairedInfo}
-	m := newTestManager(t, box)
-
-	// A rejection long ago must not keep re-asserting forever: outside the
-	// suspect window the UUID-present skip is trusted again, so a box that
-	// healed (or one with a cached real Bose account that never rejects
-	// again) sees zero extra traffic.
-	m.suspectMu.Lock()
-	m.lastLoginReject = time.Now().Add(-loginSuspectWindow - time.Minute)
-	m.suspectMu.Unlock()
-	if err := m.EnsurePaired(context.Background()); err != nil {
-		t.Fatalf("EnsurePaired: %v", err)
-	}
 	if got := box.pairPosts.Load(); got != 0 {
-		t.Fatalf("an expired suspicion must not re-assert, got %d POSTs", got)
+		t.Fatalf("a paired box must never be re-asserted on the regular cycle, got %d POSTs", got)
 	}
 }
 
-func TestForcePairMarksLoginSuspect(t *testing.T) {
-	// The reactive re-login (boxws 1036 routing -> webui -> ForcePair) must
-	// arm the proactive maintenance too: after it, the next regular cycle
-	// keeps re-asserting (once per min-gap) instead of falling back to the
-	// UUID-present skip - that fallback is exactly what left the buttons
-	// dead between two presses in the field.
+func TestForcePairReLogsInReactively(t *testing.T) {
+	// The reactive re-login (boxws 1036 routing -> webui -> ForcePair) must POST
+	// unconditionally to un-wedge the box (#342, ST300), independent of the
+	// UUID-present skip. A second ForcePair right behind it coalesces so a burst
+	// of failed presses does not storm setMargeAccount (#375).
 	box := &fakeBox{infoBody: pairedInfo}
 	m := newTestManager(t, box)
 
@@ -183,19 +131,10 @@ func TestForcePairMarksLoginSuspect(t *testing.T) {
 	if got := box.pairPosts.Load(); got != 1 {
 		t.Fatalf("ForcePair must POST unconditionally, got %d", got)
 	}
-	m.suspectMu.Lock()
-	if m.lastLoginReject.IsZero() {
-		m.suspectMu.Unlock()
-		t.Fatal("ForcePair must mark the box login-suspect")
-	}
-	m.lastSuspectAssert = time.Now().Add(-suspectReassertMinGap - time.Second)
-	m.suspectMu.Unlock()
-
-	if err := m.EnsurePaired(context.Background()); err != nil {
-		t.Fatalf("EnsurePaired: %v", err)
-	}
-	if got := box.pairPosts.Load(); got != 2 {
-		t.Fatalf("the cycle after a ForcePair must keep maintaining the login, got %d POSTs", got)
+	// Immediately again: coalesced into the just-completed re-login.
+	m.ForcePair(context.Background())
+	if got := box.pairPosts.Load(); got != 1 {
+		t.Fatalf("a ForcePair right behind another must coalesce, got %d POSTs", got)
 	}
 }
 
@@ -225,13 +164,13 @@ func TestForcePairPostsEvenWhenInfoFails(t *testing.T) {
 	}
 }
 
-func TestClockGateDefersSuspectReassert(t *testing.T) {
-	// The 2015-RTC gate must also hold for suspect-driven re-asserts: pairing
-	// against a not-yet-synced clock fails with a TLS error anyway, so the
-	// cycle defers and the next tick retries.
-	box := &fakeBox{infoBody: pairedInfo, infoDate: "Mon, 02 Feb 2015 10:00:00 GMT"}
+func TestClockGateDefersPairing(t *testing.T) {
+	// The 2015-RTC gate holds pairing: pairing against a not-yet-synced clock
+	// fails with a TLS error anyway, so the cycle defers and the next tick
+	// retries. Uses an unpaired box, the only path that reaches the clock gate
+	// now that a paired box short-circuits to a no-op.
+	box := &fakeBox{infoBody: unpairedInfo, infoDate: "Mon, 02 Feb 2015 10:00:00 GMT"}
 	m := newTestManager(t, box)
-	m.NoteLoginRejected()
 	if err := m.EnsurePaired(context.Background()); err != nil {
 		t.Fatalf("EnsurePaired: %v", err)
 	}
@@ -365,12 +304,13 @@ func TestForcePairDoesNotOverlapEnsure(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		_, _ = w.Write([]byte(pairedInfo))
+		_, _ = w.Write([]byte(unpairedInfo))
 	}))
 	defer srv.Close()
 	m := New(slog.Default(), Config{BoxHost: "127.0.0.1"})
 	m.base = srv.URL
-	m.NoteLoginRejected() // login-suspect: the ensure cycle POSTs too
+	// Unpaired box: the EnsurePaired cycle POSTs to pair, and the concurrent
+	// ForcePair POSTs too - the two must not overlap (single-flight guard, #375).
 
 	var wg sync.WaitGroup
 	wg.Add(2)
