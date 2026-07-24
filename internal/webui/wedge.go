@@ -59,23 +59,26 @@ const recentLoginErrorWindow = 20 * time.Second
 const loginErrWedgeSkipWindow = 60 * time.Second
 
 // NoteBoxLoginError records that the box just rejected a source because it does
-// not think it is signed in (errorUpdate 1036), and kicks off a forced re-login
-// in the background. Wired from the boxws not-logged-in callback. The box keeps
-// a marge account UUID yet still reports not-logged-in on some firmwares (the
-// SoundTouch 300), so a plain EnsurePaired would skip it - ForcePair re-asserts
-// the account unconditionally. verifyRecall reads recentLoginError() to stand
-// its retry down meanwhile, so STR self-heals without thrashing the box.
+// not think it is signed in (errorUpdate 1036). Wired from the boxws
+// not-logged-in callback. verifyRecall reads recentLoginError() to stand its
+// retry down meanwhile, so STR self-heals via a bare stream re-push (v0.9.0
+// behaviour) without thrashing the box.
+//
+// It deliberately does NOT force a re-login. A forced re-assert of the marge
+// account (ForcePair -> setMargeAccount) makes the box re-onboard mid-recall,
+// which bounces its active source through INVALID_SOURCE and the firmware then
+// powers the source off to STANDBY - the "reconnect with volume reset" users
+// saw on every taigan/scm remote-preset press (field 2026-07-23). v0.9.0 had no
+// such reactive re-login and recalled cleanly; the re-assert never actually
+// cured the 1036 (the UPnP activation login is not levered by the marge
+// account, proven on .79) - it only cost a self-off. A genuinely un-paired box
+// is still re-paired by the proactive EnsurePaired on the next wake / connect /
+// press (triggerPairAsync), which is a no-op when the box is already paired and
+// therefore never bounces a live source.
 func (s *Server) NoteBoxLoginError() {
 	s.loginErr.mu.Lock()
 	s.loginErr.last = time.Now()
 	s.loginErr.mu.Unlock()
-	if s.autoPair != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-			defer cancel()
-			s.autoPair.ForcePair(ctx)
-		}()
-	}
 }
 
 // loginErrorRecentWithin reports whether the box rejected a source as
