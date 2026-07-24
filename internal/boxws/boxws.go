@@ -1070,17 +1070,21 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 						"value", v, "name", name, "severity", sev, "detail", detail)
 					// 1036 UNABLE_TO_PROCESS_NOT_LOGGED_IN: the box refuses the UPnP
 					// source because it does not think it is signed into an account.
-					// Re-pushing just flaps the source and can wedge the box (Michal's
-					// ST300). Signal the agent to force a re-login and stand the recall
-					// retry down instead of thrashing.
+					// Signal the agent (via the OnLoginError callback) so the recall
+					// verify stands its retry down for a beat and recovers with a bare
+					// stream re-push, instead of thrashing the box. The callback does
+					// NOT force an account re-login: re-onboarding a live source
+					// bounced it into a self-off + volume reset on taigan/scm (see
+					// webui.NoteBoxLoginError / project_selfoff_login_maintenance).
 					//
 					// The box reuses code 1036 for two flavors that can arrive
 					// SEPARATELY or TOGETHER:
 					//   - name UNABLE_TO_PROCESS_NOT_LOGGED_IN: the box refuses the
 					//     source because it lost its logged-in/associated state (it can
-					//     keep a margeAccountUUID yet still report this). The 5-min
-					//     autopair heartbeat skips a box that carries a UUID, so only a
-					//     forced re-assert of setMargeAccount (ForcePair) restores it.
+					//     keep a margeAccountUUID yet still report this). Re-asserting
+					//     the marge account does NOT actually cure this (the UPnP
+					//     activation login is not tied to it, proven on .79); a bare
+					//     re-push of the stream is what recovers it, as in v0.9.0.
 					//   - detail UpnpRcvdContentItemInWrongState: the routine race of a
 					//     SetURI against a standby wake / a preset->preset teardown, and
 					//     the expected teardown when /setZone kills an in-flight UPnP
