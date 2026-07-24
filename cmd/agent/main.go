@@ -2394,6 +2394,11 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		if err := h.wake(ctx, standDown); err != nil {
 			h.logger.Warn("hardware recall retry: could not wake box", "slot", slot, "err", err)
 		}
+		// The box reset its volume to the box default when it dropped to standby;
+		// restore the user's level right after the wake so the recovered preset
+		// does not play the room loud for the seconds until the loop-top success
+		// check would otherwise restore it. Idempotent (no-op when unchanged).
+		h.restorePreRecallVolume(preVol)
 		// Final gate before the push: the wake can take seconds, and a stop or
 		// power press during it must hold.
 		if standDown() {
