@@ -2656,15 +2656,31 @@ function isEngineStreamDrop(msg) {
 // waitForStableAgent waits (bounded by deadlineMs) until the box's agent
 // answers again and KEEPS answering for stableMs, so the next engine attempt
 // streams at a settled box instead of one mid-reboot.
-async function waitForStableAgent(box, deadlineMs, stableMs = 15_000) {
+//
+// Agents that report their box uptime (uptimeSec, v0.9.20+) get two extra
+// gates, learned from the #466 bundles where the FIRST post-confirm 16 MB push
+// reliably died with a connection reset ~107 s in while a retry minutes later
+// sailed through in ~15 s: the box must be past the reboot-prone post-OTA
+// settling window (uptime >= minUptimeSec), and an uptime DROP between two
+// probes is a reboot that plain reachability polling misses entirely (the box
+// can be back up before the next probe) - it resets the stability clock.
+// Older agents without uptimeSec keep the reachability-only behavior.
+async function waitForStableAgent(box, deadlineMs, stableMs = 30_000, minUptimeSec = 150) {
   let up = 0;
+  let lastUptime = -1;
   while (Date.now() < deadlineMs) {
     await sleep(3_000);
     try {
-      await BoxAgentVersion(box.host, box.port);
+      const v = await BoxAgentVersion(box.host, box.port);
+      const uptime = v && v.uptimeSec ? parseInt(v.uptimeSec, 10) : NaN;
+      if (!Number.isNaN(uptime)) {
+        if (uptime < lastUptime) up = 0; // rebooted between probes
+        lastUptime = uptime;
+        if (uptime < minUptimeSec) continue; // still in the settling window
+      }
       if (!up) up = Date.now();
       if (Date.now() - up >= stableMs) return true;
-    } catch { up = 0; }
+    } catch { up = 0; lastUptime = -1; }
   }
   return false;
 }
@@ -2760,11 +2776,18 @@ async function runBoxUpdate(box, onPhase) {
   // reclaimable only after the reboot). EnsureSpotifyEngine is cheap when the
   // engine is already current (one version GET, returns "current").
   if (confirmedVer.goLibrespot) {
-    const engDeadlineMs = Date.now() + 240_000;
+    // 10 min window, and every push attempt is gated on a settled box. The
+    // old 240 s window with an ungated first push burned itself on exactly
+    // two doomed ~107 s streams per OTA (#466): the box reliably reboots or
+    // resets large uploads in its first post-OTA minutes, while a push at a
+    // genuinely settled box completes in ~15 s. Waiting out the settling
+    // window first costs a minute in the good case and wins the bad ones.
+    const engDeadlineMs = Date.now() + 600_000;
     let attempt = 0;
     while (Date.now() < engDeadlineMs) {
       attempt++;
       phase('spotify', { attempt, remainingMs: engDeadlineMs - Date.now() });
+      await waitForStableAgent(box, engDeadlineMs);
       try {
         await EnsureSpotifyEngine(box.host, box.port);
         return { outcome: 'done', version: confirmedVer };
@@ -2774,12 +2797,10 @@ async function runBoxUpdate(box, onPhase) {
         // help, only freeing space can. The agent update itself succeeded.
         if (/insufficient nand|no space|507/i.test(m)) break;
         try { console.warn(`spotify engine delivery attempt ${attempt} failed (will retry)`, engErr); } catch {}
-        // Mid-stream drop: the box is likely rebooting. Wait until its agent
-        // answers steadily before streaming 16 MB at it again.
-        if (isEngineStreamDrop(m)) {
-          await waitForStableAgent(box, engDeadlineMs);
-          continue;
-        }
+        // Mid-stream drop: the box rebooted or reset the stream. Loop straight
+        // back: the top-of-loop settle gate does the waiting (reachable,
+        // uptime past the settling window, stable for 30 s).
+        if (isEngineStreamDrop(m)) continue;
       }
       // Exponential backoff (2s -> 30s cap): each failed attempt costs the
       // box a probe, and during a slow agent start hammering it every 2s
@@ -3026,7 +3047,11 @@ async function doBoxUpdate(targetBox) {
       // reboot. Best-effort: it must never turn a successful agent update into an
       // error.
       if (confirmedVer && confirmedVer.goLibrespot) {
-        const engDeadlineMs = Date.now() + 240_000;
+        // 10 min window with a settle gate before every push, mirroring
+        // runBoxUpdate (#466): the box reliably reboots or resets large
+        // uploads in its first post-OTA minutes, so the old 240 s window
+        // spent itself on two doomed ~107 s streams and gave up.
+        const engDeadlineMs = Date.now() + 600_000;
         let engDone = false;
         let engDelivered = false;
         let engTooFull = false;
@@ -3040,6 +3065,8 @@ async function doBoxUpdate(targetBox) {
         try {
           while (Date.now() < engDeadlineMs) {
             engAttempt++;
+            await waitForStableAgent(targetBox, engDeadlineMs);
+            renderEng();
             try {
               const engRes = await EnsureSpotifyEngine(targetBox.host, targetBox.port);
               engDone = true;
@@ -3056,13 +3083,9 @@ async function doBoxUpdate(targetBox) {
               // (#119). Anything else is the box still settling: keep retrying.
               if (/insufficient nand|no space|507/i.test(m)) { engTooFull = true; break; }
               try { console.warn(`post-update Spotify engine delivery attempt ${engAttempt} failed (will retry)`, engErr); } catch {}
-              // Mid-stream drop: the box is likely rebooting. Wait until its
-              // agent answers steadily before streaming 16 MB at it again.
-              if (isEngineStreamDrop(m)) {
-                await waitForStableAgent(targetBox, engDeadlineMs);
-                renderEng();
-                continue;
-              }
+              // Mid-stream drop: the box rebooted or reset the stream. Loop
+              // straight back; the top-of-loop settle gate does the waiting.
+              if (isEngineStreamDrop(m)) continue;
             }
             // Exponential backoff (2s -> 30s cap, #270): a box that is still
             // settling after the reboot gains nothing from a 2s hammer.
