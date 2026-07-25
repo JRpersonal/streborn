@@ -64,6 +64,14 @@ func (p *transferProgress) report(done int64) {
 	if el := now.Sub(p.start).Seconds(); el > 0 {
 		bps = int64(float64(done) / el)
 	}
+	// Only emit once the Wails runtime is live: EventsEmit REQUIRES the real
+	// lifecycle context and Fatals on any other (appCtx() falls back to
+	// Background before startup). A bound App method can legitimately run before
+	// startup, and the OTA flow is exercised headless in tests, so a nil ctx must
+	// skip the UI event, not kill the process. Mirrors emitInstallProgress' guard.
+	if p.app == nil || p.app.ctx == nil {
+		return
+	}
 	wailsrt.EventsEmit(p.app.appCtx(), p.event, map[string]any{
 		"host": p.host, "pct": pct, "bytesPerSec": bps, "done": done, "total": p.total,
 	})

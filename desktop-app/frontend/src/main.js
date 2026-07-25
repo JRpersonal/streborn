@@ -2383,32 +2383,62 @@ function updateSettingsTabBadge() {
   btn.classList.toggle('has-update', needsUpdate);
 }
 
-// engineHealAt debounces the #406 Spotify-engine self-heal per box (host ->
-// last-attempt ms) so a discovery/selection refresh loop never re-streams the
-// ~16 MB engine repeatedly.
-const engineHealAt = {};
+// foreignMod maps a leftover /mnt/nv directory name (as the agent reports it in
+// foreignDirs / conflictingMod) to a human-readable name of the OTHER SoundTouch
+// tool it belongs to, so the app can tell the user exactly what to remove to
+// free NAND for the Spotify engine. Unknown names are shown verbatim.
+const foreignMod = {
+  aftertouch: 'AfterTouch',
+  opentouchcloud: 'OpenTouchCloud',
+  opentouch: 'OpenTouchCloud',
+  bosman: 'Bosman',
+  betterst: 'BetterST',
+  sixback: 'SixBack',
+  soundploy: 'SoundPloy',
+};
 
-// healMissingEngine re-delivers go-librespot to a box that reports it missing,
-// in the background. A box whose post-update engine delivery was interrupted was
-// left with goLibrespot "missing" forever, because EnsureSpotifyEngine only ran
-// as part of an OTA and the app otherwise saw "version current" and never
-// re-delivered (#406). Now, whenever we read a box's version and the engine is
-// gone, we heal it, so it recovers the next time the speaker is opened, with no
-// re-update. Debounced, best-effort, and a no-op on a dev build with no embedded
-// engine (EnsureSpotifyEngine returns that itself).
-async function healMissingEngine(box) {
+// foreignSoftwareLabel turns a box version's foreignDirs/conflictingMod into a
+// readable, de-duplicated list ("AfterTouch, OpenTouchCloud") for the
+// "not enough space" message. Empty when the box carries no foreign leftovers.
+function foreignSoftwareLabel(v) {
+  const names = [];
+  const push = (raw) => {
+    if (!raw) return;
+    String(raw).split(',').forEach((n) => {
+      const key = n.trim().toLowerCase();
+      if (!key) return;
+      const label = foreignMod[key] || n.trim();
+      if (!names.includes(label)) names.push(label);
+    });
+  };
+  if (v) { push(v.conflictingMod); push(v.foreignDirs); }
+  return names.join(', ');
+}
+
+// installSpotifyEngineVisible delivers the Spotify engine (go-librespot) to a box
+// ON DEMAND, from a visible button, with honest feedback. It replaces the old
+// silent background self-heal: a box does not free NAND on its own, so a silent
+// retry was pointless and hid the real cause. If the box is too full, we name
+// the OTHER SoundTouch software eating the space so the user knows what to
+// remove; otherwise we confirm success. Re-renders the banner afterwards.
+async function installSpotifyEngineVisible(box) {
   if (!box || !box.host) return;
-  const now = Date.now();
-  if (now - (engineHealAt[box.host] || 0) < 120000) return; // at most once / 2 min per box
-  engineHealAt[box.host] = now;
+  const btn = $('boxInstallEngineBtn');
+  if (btn) { btn.disabled = true; btn.textContent = t('spotify.engineInstalling'); }
   try {
     const res = await EnsureSpotifyEngine(box.host, box.port);
-    if (res && res !== 'current' && !/no embedded engine/i.test(res)) {
-      showToast(t('update.spotifyDoneToast'));
-    }
+    if (res && !/no embedded engine/i.test(res)) showToast(t('update.spotifyDoneToast'));
   } catch (e) {
-    try { console.warn('spotify engine self-heal failed (will retry later)', e); } catch {}
-    engineHealAt[box.host] = now - 90000; // let a still-settling box retry sooner
+    const m = String((e && e.message) || e || '');
+    if (/insufficient nand|no space|507/i.test(m)) {
+      let foreign = '';
+      try { foreign = foreignSoftwareLabel(await BoxAgentVersion(box.host, box.port)); } catch {}
+      showToast(foreign ? t('spotify.engineTooFullNamed', { software: foreign }) : t('spotify.engineTooFull'));
+    } else {
+      showToast(t('spotify.engineInstallFailed'));
+    }
+  } finally {
+    try { await checkBoxUpdate(); } catch {}
   }
 }
 
@@ -2466,17 +2496,33 @@ async function checkBoxUpdate() {
     const boxBuild = v.build || '';
     const appVer = state.appInfo.version;
     const appBuild = state.appInfo.build || '';
-    // #406 self-heal: re-deliver a missing Spotify engine even when the box is
-    // already on the current version (the case that never recovered before, since
-    // the version comparison below returns early for a same-version box).
-    if (v && v.goLibrespot === 'missing') healMissingEngine(state.currentBox);
+    // Spotify engine state. We no longer silently re-push a missing engine in the
+    // background: a box gains no NAND on its own, so a silent retry is pointless
+    // and hides the cause. If the box is otherwise up to date but the engine is
+    // missing, show a visible, actionable "install" banner below; a box that is
+    // BEHIND delivers the engine as a visible step of the normal update flow.
+    const engineMissing = !!(v && v.goLibrespot === 'missing');
     // Direction matters. The speaker update pushes THIS app's embedded agent, so
     // it only makes sense when the app is newer than the box. The old code fired
     // on any difference and so offered "Aktualisieren" even when the box was
     // newer than the app, which would have downgraded the box and confused the
     // user (#105: an old app v0.6.22 next to a box on v0.7.32).
     const cmp = compareVerBuild(appVer, appBuild, boxVer, boxBuild);
-    if (cmp === 0) return;
+    if (cmp === 0) {
+      if (engineMissing) {
+        banner.innerHTML = `
+          <div class="update-msg">
+            <b>${escapeHtml(t('spotify.engineMissingTitle', { name: boxName }))}</b><br>
+            <small>${escapeHtml(t('spotify.engineMissingLine'))}</small>
+          </div>
+          <button class="btn btn-primary btn-mini" id="boxInstallEngineBtn"${otaElsewhere ? ' disabled' : ''}>${escapeHtml(t('spotify.engineInstallBtn'))}</button>
+        `;
+        banner.classList.remove('hidden');
+        const eb = $('boxInstallEngineBtn');
+        if (eb && !otaElsewhere) eb.onclick = () => installSpotifyEngineVisible(state.currentBox);
+      }
+      return;
+    }
     // When only the build stamp differs (same version string), show the build on
     // both sides so the line is not the confusing "v0.8.1 -> v0.8.1" (Jens,
     // 2026-06-17). A real release bumps the version, so production never hits the
@@ -2610,15 +2656,31 @@ function isEngineStreamDrop(msg) {
 // waitForStableAgent waits (bounded by deadlineMs) until the box's agent
 // answers again and KEEPS answering for stableMs, so the next engine attempt
 // streams at a settled box instead of one mid-reboot.
-async function waitForStableAgent(box, deadlineMs, stableMs = 15_000) {
+//
+// Agents that report their box uptime (uptimeSec, v0.9.20+) get two extra
+// gates, learned from the #466 bundles where the FIRST post-confirm 16 MB push
+// reliably died with a connection reset ~107 s in while a retry minutes later
+// sailed through in ~15 s: the box must be past the reboot-prone post-OTA
+// settling window (uptime >= minUptimeSec), and an uptime DROP between two
+// probes is a reboot that plain reachability polling misses entirely (the box
+// can be back up before the next probe) - it resets the stability clock.
+// Older agents without uptimeSec keep the reachability-only behavior.
+async function waitForStableAgent(box, deadlineMs, stableMs = 30_000, minUptimeSec = 150) {
   let up = 0;
+  let lastUptime = -1;
   while (Date.now() < deadlineMs) {
     await sleep(3_000);
     try {
-      await BoxAgentVersion(box.host, box.port);
+      const v = await BoxAgentVersion(box.host, box.port);
+      const uptime = v && v.uptimeSec ? parseInt(v.uptimeSec, 10) : NaN;
+      if (!Number.isNaN(uptime)) {
+        if (uptime < lastUptime) up = 0; // rebooted between probes
+        lastUptime = uptime;
+        if (uptime < minUptimeSec) continue; // still in the settling window
+      }
       if (!up) up = Date.now();
       if (Date.now() - up >= stableMs) return true;
-    } catch { up = 0; }
+    } catch { up = 0; lastUptime = -1; }
   }
   return false;
 }
@@ -2703,8 +2765,20 @@ async function runBoxUpdate(box, onPhase) {
     // Journal the real verdict and classify why (unreachable / not landed /
     // landed-but-not-running), feeding the loop breaker so an update that
     // cannot stick is not re-offered as a fresh one-click push forever.
-    try { noteOTAFailure(box, await ClassifyOTAResult(box.host, box.port)); } catch {}
-    return { outcome: 'timeout', version: null };
+    let cls = '';
+    try { cls = await ClassifyOTAResult(box.host, box.port); } catch {}
+    // "confirmed" = the box IS on the new build, it just crossed the verify
+    // window late (slow boot / late reachability). Treating that as a timeout
+    // made update-all report a perfectly updated ST10 as stuck (live
+    // 2026-07-25, "confirmed late" at +6 min). Count it as updated and fall
+    // through to the engine step like any confirmed box.
+    if (cls === 'confirmed') {
+      try { confirmedVer = await BoxAgentVersion(box.host, box.port); } catch {}
+    }
+    if (!confirmedVer) {
+      try { noteOTAFailure(box, cls); } catch {}
+      return { outcome: 'timeout', version: null };
+    }
   }
   clearOTAStuck(box);
   try { RecordOTAOutcome(box.host, `confirmed: box is on build ${confirmedVer.build || '?'} (stability window passed)`); } catch {}
@@ -2714,11 +2788,18 @@ async function runBoxUpdate(box, onPhase) {
   // reclaimable only after the reboot). EnsureSpotifyEngine is cheap when the
   // engine is already current (one version GET, returns "current").
   if (confirmedVer.goLibrespot) {
-    const engDeadlineMs = Date.now() + 240_000;
+    // 10 min window, and every push attempt is gated on a settled box. The
+    // old 240 s window with an ungated first push burned itself on exactly
+    // two doomed ~107 s streams per OTA (#466): the box reliably reboots or
+    // resets large uploads in its first post-OTA minutes, while a push at a
+    // genuinely settled box completes in ~15 s. Waiting out the settling
+    // window first costs a minute in the good case and wins the bad ones.
+    const engDeadlineMs = Date.now() + 600_000;
     let attempt = 0;
     while (Date.now() < engDeadlineMs) {
       attempt++;
       phase('spotify', { attempt, remainingMs: engDeadlineMs - Date.now() });
+      await waitForStableAgent(box, engDeadlineMs);
       try {
         await EnsureSpotifyEngine(box.host, box.port);
         return { outcome: 'done', version: confirmedVer };
@@ -2728,12 +2809,10 @@ async function runBoxUpdate(box, onPhase) {
         // help, only freeing space can. The agent update itself succeeded.
         if (/insufficient nand|no space|507/i.test(m)) break;
         try { console.warn(`spotify engine delivery attempt ${attempt} failed (will retry)`, engErr); } catch {}
-        // Mid-stream drop: the box is likely rebooting. Wait until its agent
-        // answers steadily before streaming 16 MB at it again.
-        if (isEngineStreamDrop(m)) {
-          await waitForStableAgent(box, engDeadlineMs);
-          continue;
-        }
+        // Mid-stream drop: the box rebooted or reset the stream. Loop straight
+        // back: the top-of-loop settle gate does the waiting (reachable,
+        // uptime past the settling window, stable for 30 s).
+        if (isEngineStreamDrop(m)) continue;
       }
       // Exponential backoff (2s -> 30s cap): each failed attempt costs the
       // box a probe, and during a slow agent start hammering it every 2s
@@ -2980,7 +3059,11 @@ async function doBoxUpdate(targetBox) {
       // reboot. Best-effort: it must never turn a successful agent update into an
       // error.
       if (confirmedVer && confirmedVer.goLibrespot) {
-        const engDeadlineMs = Date.now() + 240_000;
+        // 10 min window with a settle gate before every push, mirroring
+        // runBoxUpdate (#466): the box reliably reboots or resets large
+        // uploads in its first post-OTA minutes, so the old 240 s window
+        // spent itself on two doomed ~107 s streams and gave up.
+        const engDeadlineMs = Date.now() + 600_000;
         let engDone = false;
         let engDelivered = false;
         let engTooFull = false;
@@ -2994,6 +3077,8 @@ async function doBoxUpdate(targetBox) {
         try {
           while (Date.now() < engDeadlineMs) {
             engAttempt++;
+            await waitForStableAgent(targetBox, engDeadlineMs);
+            renderEng();
             try {
               const engRes = await EnsureSpotifyEngine(targetBox.host, targetBox.port);
               engDone = true;
@@ -3010,13 +3095,9 @@ async function doBoxUpdate(targetBox) {
               // (#119). Anything else is the box still settling: keep retrying.
               if (/insufficient nand|no space|507/i.test(m)) { engTooFull = true; break; }
               try { console.warn(`post-update Spotify engine delivery attempt ${engAttempt} failed (will retry)`, engErr); } catch {}
-              // Mid-stream drop: the box is likely rebooting. Wait until its
-              // agent answers steadily before streaming 16 MB at it again.
-              if (isEngineStreamDrop(m)) {
-                await waitForStableAgent(targetBox, engDeadlineMs);
-                renderEng();
-                continue;
-              }
+              // Mid-stream drop: the box rebooted or reset the stream. Loop
+              // straight back; the top-of-loop settle gate does the waiting.
+              if (isEngineStreamDrop(m)) continue;
             }
             // Exponential backoff (2s -> 30s cap, #270): a box that is still
             // settling after the reboot gains nothing from a 2s hammer.
@@ -3031,15 +3112,18 @@ async function doBoxUpdate(targetBox) {
         } else if (engDone) {
           // Engine was already current: nothing to announce.
         } else if (engTooFull) {
-          // Agent updated fine, but the box is out of room for the engine.
-          // Retrying is pointless until the user frees space, so say so plainly
-          // instead of the "will be delivered next time" copy.
-          showToast(t('update.spotifyTooFullToast'));
+          // Agent updated fine, but the box is out of room for the engine. Name
+          // the OTHER SoundTouch software eating the NAND so the user knows what
+          // to remove; retrying is pointless until they free space.
+          const foreign = foreignSoftwareLabel(confirmedVer);
+          showToast(foreign
+            ? t('spotify.engineTooFullNamed', { software: foreign })
+            : t('spotify.engineTooFull'));
         } else {
           // Could not land within the window; the engine is still missing but the
-          // agent update itself succeeded. Tell the user it will be retried next
-          // time they open this speaker (EnsureSpotifyEngine runs again then).
-          showToast(t('update.spotifyDeferredToast'));
+          // agent update itself succeeded. No silent retry - the speaker screen
+          // now shows a visible "Install Spotify engine" action.
+          showToast(t('spotify.engineDeferredVisible'));
         }
       }
     } else {

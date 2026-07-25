@@ -77,3 +77,29 @@ func TestPresetWsHandlerOnUserStopNilHook(t *testing.T) {
 		t.Fatal("stop must be recorded even without the webui hook")
 	}
 }
+
+// The volume restore after a 1036-standby recovery must stand down when the
+// user physically adjusted the box after the press: the pre-recall snapshot
+// taken right after a deep standby is the box's own wake default (10 on a
+// spotty ST20), and re-applying it clamped a hand-raised level back down
+// (#435 bundle, "restored user volume ... from=34 to=10").
+func TestUserAdjustedSince(t *testing.T) {
+	h := &presetWsHandler{}
+	pressAt := time.Now().Add(-30 * time.Second)
+	if h.userAdjustedSince(pressAt) {
+		t.Fatal("without boxws wiring the gate must read as no interaction")
+	}
+
+	// The press's own userActivityUpdate lands within the epsilon: no veto.
+	act := pressAt.Add(500 * time.Millisecond)
+	h.lastUserActivity = func() time.Time { return act }
+	if h.userAdjustedSince(pressAt) {
+		t.Fatal("the press's own activity frame must not read as an adjustment")
+	}
+
+	// A later key press (volume keys mid-recovery) must veto the restore.
+	act = pressAt.Add(10 * time.Second)
+	if !h.userAdjustedSince(pressAt) {
+		t.Fatal("a key press after the epsilon must veto the volume restore")
+	}
+}

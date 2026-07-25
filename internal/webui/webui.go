@@ -3871,6 +3871,19 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	if s.spotifyReload != nil {
 		out["engineHotSwap"] = "true"
 	}
+	// Box uptime, so the desktop app can sequence the post-OTA engine delivery
+	// deterministically (#466): the first ~2-3 minutes after a post-OTA boot are
+	// reboot-prone (Bose settling, shepherd recovery) and the first 16 MB push
+	// into that window reliably died with a connection reset. The app gates
+	// large pushes on "uptime past the settling window and still rising"; a
+	// DROP between two probes is a reboot the reachability probe alone misses.
+	if up, err := os.ReadFile("/proc/uptime"); err == nil {
+		if f := strings.Fields(string(up)); len(f) > 0 {
+			if secs, perr := strconv.ParseFloat(f[0], 64); perr == nil {
+				out["uptimeSec"] = strconv.FormatInt(int64(secs), 10)
+			}
+		}
+	}
 	// NAND headroom on the tiny (~31 MB) writable volume, so the desktop app can
 	// see before an OTA whether the ~10 MB agent + sidecar will fit and warn
 	// instead of pushing into a "no space left on device" failure (the stickless
@@ -3902,6 +3915,15 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// next cold boot).
 	if mod := detectConflictingMod(); mod != "" {
 		out["conflictingMod"] = mod
+	}
+	// The foreign (neither STR's nor Bose's) top-level /mnt/nv dirs, names only.
+	// Cheap: one readdir, no recursive sizing, so it is fine on every version
+	// poll. These are leftovers of OTHER SoundTouch mods that eat the NAND the
+	// Spotify engine needs; the desktop app names them when it has to tell the
+	// user to free space (#270 / Spotify-engine space-fail UX). Emitted only when
+	// something foreign exists, to keep the common response small.
+	if fd := foreignNANDDirNames(); len(fd) > 0 {
+		out["foreignDirs"] = strings.Join(fd, ",")
 	}
 	if wlanCredsWarningWarranted() {
 		out["wlanCreds"] = "missing"
@@ -4066,7 +4088,7 @@ func ensureSSHDRunning(logger *slog.Logger) bool {
 // On success the stick still returns 200 OK and then exits. The
 // rc.local bootstrap starts the new agent.
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
-	body, ok := readUploadedELF(w, r)
+	body, ok := readUploadedELF(w, r, s.logger, "agent-update")
 	if !ok {
 		return
 	}
@@ -4201,7 +4223,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 // endpoint: LAN-only, size-bounded, ELF-magic checked. On any problem it writes
 // the HTTP error response and returns ok=false. Shared by handleAgentUpdate and
 // handleAgentSidecar so the two upload endpoints cannot drift on their guards.
-func readUploadedELF(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+func readUploadedELF(w http.ResponseWriter, r *http.Request, logger *slog.Logger, what string) ([]byte, bool) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return nil, false
 	}
@@ -4210,11 +4232,26 @@ func readUploadedELF(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 		return nil, false
 	}
 	const maxSize = 30 * 1024 * 1024
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxSize+1))
+	// Log the whole upload lifecycle. The #466 bundles showed the app-side
+	// view of a dying post-OTA push (RST after ~107 s) while the box-side log
+	// carried no trace of the upload at all, so the box-side failure mode
+	// (request never arrived vs stream stalled at byte N vs read completed
+	// but reply lost) was undiagnosable. These lines make the next bundle
+	// answer that directly.
+	logger.Info("upload started", "endpoint", what,
+		"contentLength", r.ContentLength, "remote", r.RemoteAddr)
+	upr := &uploadProgressReader{
+		r: io.LimitReader(r.Body, maxSize+1), start: time.Now(), logger: logger, what: what,
+	}
+	body, err := io.ReadAll(upr)
 	if err != nil {
+		logger.Warn("upload aborted mid-stream", "endpoint", what,
+			"bytesRead", upr.n, "elapsedMs", time.Since(upr.start).Milliseconds(), "err", err)
 		http.Error(w, "read: "+err.Error(), http.StatusBadRequest)
 		return nil, false
 	}
+	logger.Info("upload body received", "endpoint", what,
+		"bytes", len(body), "elapsedMs", time.Since(upr.start).Milliseconds())
 	if len(body) > maxSize {
 		http.Error(w, "binary too big", http.StatusRequestEntityTooLarge)
 		return nil, false
@@ -4229,6 +4266,29 @@ func readUploadedELF(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 		return nil, false
 	}
 	return body, true
+}
+
+// uploadProgressReader logs a large upload's progress every few MB so the
+// box-side agent log shows exactly how far a doomed transfer got before its
+// connection died. Wraps the size-limited body reader in readUploadedELF.
+type uploadProgressReader struct {
+	r       io.Reader
+	n       int64
+	lastLog int64
+	start   time.Time
+	logger  *slog.Logger
+	what    string
+}
+
+func (u *uploadProgressReader) Read(p []byte) (int, error) {
+	n, err := u.r.Read(p)
+	u.n += int64(n)
+	if u.n-u.lastLog >= 4*1024*1024 {
+		u.lastLog = u.n
+		u.logger.Info("upload progress", "endpoint", u.what,
+			"bytes", u.n, "elapsedMs", time.Since(u.start).Milliseconds())
+	}
+	return n, err
 }
 
 // errInsufficientNAND is returned by writeBinaryAtomic when an actually
@@ -4515,6 +4575,25 @@ func dirBytes(path string) int64 {
 // one of Bose's, i.e. a candidate leftover from a third-party post-cloud tool
 // or another custom firmware the owner ran before STR. Mirrors run.sh's
 // nand_inventory freshness check.
+// foreignNANDDirNames lists the top-level /mnt/nv directories that are neither
+// STR's nor Bose's own persistence (isForeignNANDDir), by name. Cheap: a single
+// readdir with no recursive sizing, so it is safe on every version poll. Wired
+// into /api/agent/version as foreignDirs so the desktop app can name the other
+// SoundTouch mods a user must remove to free space for the Spotify engine.
+func foreignNANDDirNames() []string {
+	entries, err := os.ReadDir(nandRoot)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() && isForeignNANDDir(e.Name()) {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
 func isForeignNANDDir(name string) bool {
 	switch name {
 	case "streborn", "nv", "lost+found":
@@ -4908,7 +4987,7 @@ var nandHasRoom = func(dir string, need int64) bool {
 // running process until it exits, so killing+relaunching it on the write releases
 // that ~10 MB immediately instead of holding it until the next reboot.
 func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
-	body, ok := readUploadedELF(w, r)
+	body, ok := readUploadedELF(w, r, s.logger, "sidecar")
 	if !ok {
 		return
 	}
@@ -6414,8 +6493,24 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		return out
 	}
 
+	// The NAND-mirrored agent log is the only log that survives a reboot on a
+	// box without SSH and without a previous.log (taigan writes none). Every
+	// mid-upload reboot investigation (#466) needs exactly the minutes BEFORE
+	// the current boot, so give this one a larger tail than the 8 KB default.
+	readTailN := func(path string, max int) string {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return "ERR: " + err.Error()
+		}
+		if len(b) > max {
+			return "...(truncated)\n" + string(b[len(b)-max:])
+		}
+		return string(b)
+	}
+
 	state := map[string]any{
 		"agent_log_tail": readTail("/tmp/streborn-agent.log"),
+		"agent_log_nand": readTailN("/mnt/nv/streborn/agent.log", 32*1024),
 		"previous_log":   readTail("/mnt/nv/streborn/previous.log"),
 		"setup_log":      readTail("/mnt/nv/streborn/setup.log"),
 		"boot_log":       readTail("/mnt/nv/streborn/boot.log"),

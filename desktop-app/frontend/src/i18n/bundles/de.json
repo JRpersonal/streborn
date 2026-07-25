@@ -1186,5 +1186,13 @@
   "group.addedToast": "{{name}} zur Gruppe hinzugefügt",
   "group.removedToast": "{{name}} aus der Gruppe entfernt",
   "settingsView.copyPresetsProgress": "Übertrage Presets und Spotify-Login auf den Lautsprecher...",
-  "settingsView.copyPresetsBusyBtn": "Übertrage..."
+  "settingsView.copyPresetsBusyBtn": "Übertrage...",
+  "spotify.engineMissingTitle": "Spotify-Engine auf {{name}} nicht installiert",
+  "spotify.engineMissingLine": "Spotify-Presets brauchen eine kleine Engine auf dem Lautsprecher. Installiere sie, um Spotify über die Preset-Tasten abzuspielen.",
+  "spotify.engineInstallBtn": "Spotify-Engine installieren",
+  "spotify.engineInstalling": "Installiere...",
+  "spotify.engineTooFull": "Nicht genug freier Speicher auf dem Lautsprecher für die Spotify-Engine. Entferne andere SoundTouch-Zusatzsoftware davon, um Platz zu schaffen, und versuche es erneut.",
+  "spotify.engineTooFullNamed": "Nicht genug freier Speicher für die Spotify-Engine. Entferne zuerst diese andere SoundTouch-Software vom Lautsprecher: {{software}}. Danach erneut versuchen.",
+  "spotify.engineInstallFailed": "Die Spotify-Engine konnte nicht installiert werden. Bitte erneut versuchen.",
+  "spotify.engineDeferredVisible": "Lautsprecher aktualisiert. Die Spotify-Engine ist noch nicht installiert - du kannst sie auf dem Lautsprecher-Bildschirm installieren."
 }

@@ -1186,5 +1186,13 @@
   "group.addedToast": "{{name}} added to the group",
   "group.removedToast": "{{name}} removed from the group",
   "settingsView.copyPresetsProgress": "Transferring presets and Spotify login to the speaker...",
-  "settingsView.copyPresetsBusyBtn": "Transferring..."
+  "settingsView.copyPresetsBusyBtn": "Transferring...",
+  "spotify.engineMissingTitle": "Spotify engine not installed on {{name}}",
+  "spotify.engineMissingLine": "Spotify presets need a small engine on the speaker. Install it to play Spotify from the preset buttons.",
+  "spotify.engineInstallBtn": "Install Spotify engine",
+  "spotify.engineInstalling": "Installing...",
+  "spotify.engineTooFull": "Not enough free space on the speaker for the Spotify engine. Remove other SoundTouch add-ons from it to free space, then try again.",
+  "spotify.engineTooFullNamed": "Not enough free space for the Spotify engine. Remove this other SoundTouch software from the speaker first: {{software}}. Then try again.",
+  "spotify.engineInstallFailed": "Could not install the Spotify engine. Please try again.",
+  "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen."
 }
