@@ -505,14 +505,17 @@ jobs:
       # before the certificate exists without breaking a release.
       #
       # SimplySign reaches the cloud key only through an authenticated desktop
-      # session; simplysign-ci-login.ps1 opens one non-interactively via a TOTP
-      # derived from the enrolment secret, then certum-sign.ps1 signs by
-      # thumbprint. TODO(before first signed release): confirm the SimplySign
-      # Desktop install/login CLI in simplysign-ci-login.ps1 against the locally
-      # installed version, then verify end to end with a throwaway exe.
+      # session; simplysign-ci-login.ps1 opens one non-interactively: it
+      # installs SimplySign Desktop from Certum's official MSI, drives the
+      # connect dialog via SendKeys with a TOTP derived from the enrolment
+      # secret (SimplySign has no headless login CLI), and waits until the
+      # certificate is mounted in CurrentUser\My. certum-sign.ps1 then signs by
+      # thumbprint. First verified via a release dry-run once the secrets are
+      # set; timeout guards the SendKeys path wedging on an unexpected dialog.
       - name: Start SimplySign session (Certum)
         if: ${{ env.CERT_THUMBPRINT != '' }}
         shell: powershell
+        timeout-minutes: 10
         env:
           SIMPLYSIGN_TOKEN: ${{ secrets.SIMPLYSIGN_TOKEN }}
           SIMPLYSIGN_OTP_SECRET: ${{ secrets.SIMPLYSIGN_OTP_SECRET }}
@@ -1135,6 +1138,9 @@ jobs:
         working-directory: dist
         env:
           VERSION: ${{ needs.build-agent.outputs.version }}
+          # Presence toggles the signing paragraph in the notes below so they
+          # match what the Windows build job actually did with the same secret.
+          CERT_THUMBPRINT: ${{ secrets.CERT_THUMBPRINT }}
         run: |
           {
             echo "## STR ${VERSION}"
@@ -1182,10 +1188,23 @@ jobs:
           gh attestation verify STR-Windows-${VERSION}.exe --owner ${GITHUB_REPOSITORY_OWNER}
           \`\`\`
 
+          MD
+          # Signing status: written from the same secret that gates the signing
+          # steps in the Windows build job, so the notes never claim a state the
+          # binaries do not have.
+          if [ -n "${CERT_THUMBPRINT}" ]; then
+            cat <<MD
+          ### Code signing
+
+          The Windows app is signed with a Certum Open Source code signing certificate. SmartScreen may still warn while the new signature builds download reputation. macOS builds are not notarized yet; Gatekeeper may warn (documented on the website Verify page).
+          MD
+          else
+            cat <<MD
           ### Not yet code-signed
 
-          Windows installers are not signed with an EV certificate yet; SmartScreen may warn on first download. macOS builds are not notarized yet; Gatekeeper may warn. Both are tracked under post-1.0 in CLAUDE.md.
+          Windows installers in this build are not code-signed; SmartScreen may warn on first download. macOS builds are not notarized yet; Gatekeeper may warn. Both are documented on the website Verify page.
           MD
+          fi
           # VirusTotal: linked to the permanent per-hash report so it survives and
           # matches what the website renders from manifest.json's sha256. Only when
           # VT_API_KEY is set (the upload step above ran), else the links would 404.
