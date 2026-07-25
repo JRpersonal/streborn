@@ -660,6 +660,10 @@ func run() error {
 	// userActivityUpdate key frame) from the firmware spontaneously powering
 	// off STR's UPnP source (#419).
 	webuiSrv.SetUserActivityFn(wsClient.LastUserActivity)
+	// The volume restore consults the same signal so a hand-adjusted level
+	// during a recall recovery is never clamped back to the pre-recall
+	// snapshot (which after a deep standby is the box's own wake default).
+	wsHandler.lastUserActivity = wsClient.LastUserActivity
 
 	// When the box rejects a source as not-logged-in (errorUpdate 1036, seen on
 	// the SoundTouch 300), force a re-login and stand the recall retry down so
@@ -1175,6 +1179,12 @@ type presetWsHandler struct {
 	// over gabbo (STOP_STATE). Wired to webui.NoteUserStop so the auto-re-push
 	// does not fight a wanted stop. nil-safe.
 	onUserStop func()
+	// lastUserActivity reports when the box last emitted a userActivityUpdate
+	// (any physical key on the box or IR remote). Wired to
+	// boxws.Client.LastUserActivity; nil-safe. The volume restore consults it
+	// so a level the user chose BY HAND during a recall recovery is never
+	// overridden.
+	lastUserActivity func() time.Time
 	// lastUserStop is when OnUserStop last fired (guarded by lastUserStopMu).
 	// The hardware recall verifies (verifyPlayURL / verifySpotifyPlaying)
 	// compare it against their recall start so a deliberate stop DURING the
@@ -2292,6 +2302,18 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	h.logger.Info("spotify preset recalled", "slot", slot, "name", p.Name, "account", p.Account)
 }
 
+// userAdjustedSince reports whether the box saw a physical key press (any
+// userActivityUpdate) after anchor plus a small epsilon. The epsilon exists
+// because the anchoring press ITSELF emits a userActivityUpdate; anything
+// later means the user interacted with the box again. nil-safe: without the
+// boxws wiring (tests, exotic firmware) it reads as "no interaction".
+func (h *presetWsHandler) userAdjustedSince(anchor time.Time) bool {
+	if h.lastUserActivity == nil {
+		return false
+	}
+	return h.lastUserActivity().After(anchor.Add(2 * time.Second))
+}
+
 // readBoxVolume returns the box's current target volume (0 on any error / no box
 // host). Best-effort, used to remember the user's level across a recall.
 func (h *presetWsHandler) readBoxVolume() int {
@@ -2306,12 +2328,25 @@ func (h *presetWsHandler) readBoxVolume() int {
 	return 0
 }
 
-// restorePreRecallVolume re-applies the volume the user had before a recall when
+// restorePreRecallVolume re-applies the volume the box had before a recall when
 // a 1036-standby recovery reset it (the box forgets its volume across standby and
 // comes back at its own default after STR wakes it). No-op when the volume is
 // unknown or unchanged, so the happy path (no standby) never touches it.
-func (h *presetWsHandler) restorePreRecallVolume(preVol int) {
+//
+// The pre-recall snapshot is NOT always the user's chosen level: a press right
+// after a deep standby reads the box's own low wake default (10 on a spotty
+// ST20), and blindly re-applying that forced the level back DOWN over the
+// user's manual correction during the ~25 s recovery window (#435 bundle,
+// "from=34 to=10", twice). A physical volume change emits a
+// userActivityUpdate, so any user activity after the press (plus a small
+// epsilon, since the press itself emits one) means the CURRENT level is the
+// user's choice and the restore stands down.
+func (h *presetWsHandler) restorePreRecallVolume(pressAt time.Time, preVol int) {
 	if preVol <= 0 || h.boxHost == "" {
+		return
+	}
+	if h.userAdjustedSince(pressAt) {
+		h.logger.Info("volume restore stood down: user adjusted the box during the recovery", "preVol", preVol)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -2384,7 +2419,7 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// had already opened the new stream, so a location check alone declared a
 		// healthy recall dead and the "repair" tore the working stream down.
 		if h.recallReachedAudio(slot, url, pressAt) {
-			h.restorePreRecallVolume(preVol)
+			h.restorePreRecallVolume(pressAt, preVol)
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
 			}
@@ -2452,7 +2487,7 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// restore the user's level right after the wake so the recovered preset
 		// does not play the room loud for the seconds until the loop-top success
 		// check would otherwise restore it. Idempotent (no-op when unchanged).
-		h.restorePreRecallVolume(preVol)
+		h.restorePreRecallVolume(pressAt, preVol)
 		// Final gate before the push: the wake can take seconds, and a stop or
 		// power press during it must hold.
 		if standDown() {
