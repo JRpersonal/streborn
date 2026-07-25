@@ -52,7 +52,24 @@ jobs:
   # a release fails here, not after a 10 minute multi-OS build.
   verify-source:
     runs-on: ubuntu-latest
+    # sign_windows steers whether the sign-windows job (self-hosted runner on
+    # the maintainer's machine) runs at all. Job-level `if:` cannot read
+    # secrets directly, so the presence of CERT_THUMBPRINT is exported here as
+    # a job output. With the secret unset, every run (PRs, dry-runs, forks)
+    # skips the self-hosted job entirely and behaves exactly as before.
+    outputs:
+      sign_windows: ${{ steps.signgate.outputs.enabled }}
     steps:
+      - name: Signing gate
+        id: signgate
+        env:
+          CERT_THUMBPRINT: ${{ secrets.CERT_THUMBPRINT }}
+        run: |
+          if [ -n "${CERT_THUMBPRINT}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -390,13 +407,11 @@ jobs:
   build-desktop-windows:
     needs: [build-agent, build-go-librespot]
     runs-on: windows-latest
-    env:
-      # Mirror the cert thumbprint into an env var so the signing steps' `if:`
-      # can test for its presence (GitHub does not allow reading `secrets.*`
-      # directly in an `if:`). With the Certum secrets unset the signing steps
-      # are skipped and the release still builds an (unsigned) exe, so nothing
-      # breaks before the certificate is issued.
-      CERT_THUMBPRINT: ${{ secrets.CERT_THUMBPRINT }}
+    # Code signing happens in the separate sign-windows job below (self-hosted
+    # runner with the maintainer's live SimplySign session), gated on the same
+    # CERT_THUMBPRINT secret via the verify-source signing gate. This build job
+    # stays hosted-runner-only and always produces the plain unsigned build,
+    # so dry-runs and forks never depend on the self-hosted runner.
     permissions:
       contents: read
       id-token: write
@@ -487,42 +502,6 @@ jobs:
             -trimpath \
             -clean
 
-      # Sign the .exe with the Certum "Open Source" code signing certificate via
-      # SimplySign (cloud). The unsigned build trips SmartScreen's "unknown
-      # publisher" prompt; a Certum signature stamps the verified individual
-      # publisher name (CN=Jens Roggenfelder) and lets SmartScreen reputation
-      # build up over downloads. Certum does NOT chain to a Microsoft-owned root,
-      # so it does not instantly satisfy Smart App Control the way Azure Trusted
-      # Signing would — a deliberate trade to keep publishing under a private
-      # individual identity rather than a registered organisation.
-      #
-      # The two steps run BEFORE the rename+hash and the Sigstore attestation
-      # below, so the published SHA256 and the provenance both cover the SIGNED
-      # binary (a hash taken before signing would never match what users get).
-      #
-      # Gated on CERT_THUMBPRINT: with the Certum secrets unset both steps are
-      # skipped and the release still produces an unsigned exe, so this can land
-      # before the certificate exists without breaking a release.
-      #
-      # SimplySign reaches the cloud key only through an authenticated desktop
-      # session; simplysign-ci-login.ps1 opens one non-interactively via a TOTP
-      # derived from the enrolment secret, then certum-sign.ps1 signs by
-      # thumbprint. TODO(before first signed release): confirm the SimplySign
-      # Desktop install/login CLI in simplysign-ci-login.ps1 against the locally
-      # installed version, then verify end to end with a throwaway exe.
-      - name: Start SimplySign session (Certum)
-        if: ${{ env.CERT_THUMBPRINT != '' }}
-        shell: powershell
-        env:
-          SIMPLYSIGN_TOKEN: ${{ secrets.SIMPLYSIGN_TOKEN }}
-          SIMPLYSIGN_OTP_SECRET: ${{ secrets.SIMPLYSIGN_OTP_SECRET }}
-        run: .\tools\simplysign-ci-login.ps1
-
-      - name: Sign Windows app (Certum SimplySign)
-        if: ${{ env.CERT_THUMBPRINT != '' }}
-        shell: powershell
-        run: .\tools\certum-sign.ps1 -File "desktop-app/build/bin/ST Reborn.exe"
-
       - name: Rename and hash output
         shell: bash
         run: |
@@ -558,6 +537,79 @@ jobs:
             release-out/STR-Windows.exe.sha256
             release-out/STR-Windows.zip
             release-out/STR-Windows.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
+
+  # 2b-sign. Sign the Windows app with the Certum "Open Source" certificate.
+  # Runs on the maintainer's self-hosted runner (labels: self-hosted, windows,
+  # signing) where a SimplySign Desktop session is opened MANUALLY before the
+  # release (the cloud key is only reachable through such a session; there is
+  # no reliable headless login, see PR #467 history). The job is skipped
+  # entirely when CERT_THUMBPRINT is unset (verify-source gate), so PRs,
+  # forks, dry-runs, and the weekly schedule never queue on the private
+  # runner. It downloads the unsigned build, signs + verifies by thumbprint,
+  # rebuilds the zip fallback from the signed exe, attests BOTH signed
+  # artifacts (attestation binds to the digest, so the signed exe needs its
+  # own), and uploads them under -signed names; the release job swaps them in
+  # before hashing, so SHA256SUMS, manifest.json, and VirusTotal all cover
+  # exactly the bytes users download.
+  #
+  # A Certum signature stamps the verified publisher name and lets
+  # SmartScreen reputation build; it does not chain to a Microsoft root, so
+  # Smart App Control acceptance still depends on accrued reputation.
+  sign-windows:
+    needs: [verify-source, build-desktop-windows]
+    if: needs.verify-source.outputs.sign_windows == 'true'
+    runs-on: [self-hosted, windows, signing]
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      CERT_THUMBPRINT: ${{ secrets.CERT_THUMBPRINT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Download unsigned Windows build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: desktop-windows
+          path: release-out
+
+      - name: Sign and verify (Certum SimplySign session must be open)
+        shell: powershell
+        run: .\tools\certum-sign.ps1 -File "release-out/STR-Windows.exe"
+
+      - name: Repackage signed outputs
+        shell: powershell
+        working-directory: release-out
+        run: |
+          # Rebuild the zip fallback around the SIGNED exe (the zip carries the
+          # exe under its stable inner name), then move both to -signed names
+          # so the merged artifact download in the release job cannot collide
+          # with the unsigned files of the same name.
+          Compress-Archive -Path 'STR-Windows.exe' -DestinationPath 'STR-Windows-signed.zip' -Force
+          Move-Item 'STR-Windows.exe' 'STR-Windows-signed.exe' -Force
+          Get-ChildItem
+
+      - name: Sigstore attestation (signed)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            release-out/STR-Windows-signed.exe
+            release-out/STR-Windows-signed.zip
+
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-windows-signed
+          path: |
+            release-out/STR-Windows-signed.exe
+            release-out/STR-Windows-signed.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -856,16 +908,29 @@ jobs:
       - build-desktop-windows
       - build-desktop-linux
       - build-desktop-macos
+      - sign-windows
     # The release job runs on every trigger (tag push, workflow_dispatch,
     # schedule) so a dry-run also exercises change-note generation, the
     # manifest, and attestation. Only the final Publish and Notify steps
     # are gated on a real release (a tag, or a dispatch with a version),
     # so a no-version dispatch / scheduled run builds everything but
     # publishes nothing.
+    #
+    # sign-windows is allowed to be SKIPPED (signing gate off): the release
+    # then ships the unsigned build exactly as before. Every build job must
+    # still have succeeded; the explicit result checks are required because a
+    # skipped job in `needs` would otherwise skip this job entirely.
     if: |
-      startsWith(github.ref, 'refs/tags/') ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule'
+      !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/') ||
+       github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'schedule') &&
+      needs.build-agent.result == 'success' &&
+      needs.build-go-librespot.result == 'success' &&
+      needs.build-desktop-windows.result == 'success' &&
+      needs.build-desktop-linux.result == 'success' &&
+      needs.build-desktop-macos.result == 'success' &&
+      (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -894,6 +959,18 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: Swap in the signed Windows build
+        # Replaces the unsigned exe/zip with the signed ones (distinct -signed
+        # names avoid any merge collision above). Runs BEFORE the rename and
+        # SHA256SUMS steps, so every published hash, the manifest, and the
+        # VirusTotal scan cover the signed bytes users actually download.
+        if: needs.sign-windows.result == 'success'
+        working-directory: dist
+        run: |
+          mv -f "STR-Windows-signed.exe" "STR-Windows.exe"
+          mv -f "STR-Windows-signed.zip" "STR-Windows.zip"
+          ls -la
 
       - name: Version the desktop download filenames
         working-directory: dist
@@ -1135,6 +1212,9 @@ jobs:
         working-directory: dist
         env:
           VERSION: ${{ needs.build-agent.outputs.version }}
+          # Presence toggles the signing paragraph in the notes below so they
+          # match what the Windows build job actually did with the same secret.
+          CERT_THUMBPRINT: ${{ secrets.CERT_THUMBPRINT }}
         run: |
           {
             echo "## STR ${VERSION}"
@@ -1182,10 +1262,23 @@ jobs:
           gh attestation verify STR-Windows-${VERSION}.exe --owner ${GITHUB_REPOSITORY_OWNER}
           \`\`\`
 
+          MD
+          # Signing status: written from the same secret that gates the signing
+          # steps in the Windows build job, so the notes never claim a state the
+          # binaries do not have.
+          if [ -n "${CERT_THUMBPRINT}" ]; then
+            cat <<MD
+          ### Code signing
+
+          The Windows app is signed with a Certum Open Source code signing certificate. SmartScreen may still warn while the new signature builds download reputation. macOS builds are not notarized yet; Gatekeeper may warn (documented on the website Verify page).
+          MD
+          else
+            cat <<MD
           ### Not yet code-signed
 
-          Windows installers are not signed with an EV certificate yet; SmartScreen may warn on first download. macOS builds are not notarized yet; Gatekeeper may warn. Both are tracked under post-1.0 in CLAUDE.md.
+          Windows installers in this build are not code-signed; SmartScreen may warn on first download. macOS builds are not notarized yet; Gatekeeper may warn. Both are documented on the website Verify page.
           MD
+          fi
           # VirusTotal: linked to the permanent per-hash report so it survives and
           # matches what the website renders from manifest.json's sha256. Only when
           # VT_API_KEY is set (the upload step above ran), else the links would 404.
