@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // The sanitizers are the last line of defense before a user attaches a
@@ -149,5 +150,50 @@ func TestScrubPII_MasksUserHomePaths(t *testing.T) {
 		if !strings.Contains(got, "<user>") {
 			t.Errorf("scrubPII did not insert the <user> mask:\n in: %s\nout: %s", c.in, got)
 		}
+	}
+}
+
+// The bundle filename must self-identify (model, STR version, date) so an
+// upload in a GitHub thread is readable without opening the zip - reporters
+// were renaming bundles by hand to carry exactly this (issue #435).
+
+func TestShortModel(t *testing.T) {
+	cases := map[string]string{
+		"SoundTouch 20":        "ST20",
+		"SoundTouch 10":        "ST10",
+		"SoundTouch 300":       "ST300",
+		"SoundTouch Portable":  "Portable",
+		"Bose SoundTouch 30":   "ST30",
+		"Bose Wave SoundTouch": "WaveSoundTouch",
+		"SoundTouch":           "SoundTouch",
+		"":                     "",
+		"weird/model name":     "weird-modelname",
+	}
+	for in, want := range cases {
+		if got := shortModel(in); got != want {
+			t.Errorf("shortModel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestFilenameToken(t *testing.T) {
+	if got := filenameToken("v0.9.18"); got != "v0.9.18" {
+		t.Errorf("version token mangled: %q", got)
+	}
+	if got := filenameToken("a b:c*d"); got != "a-b-c-d" {
+		t.Errorf("unsafe chars not hyphenated: %q", got)
+	}
+	long := strings.Repeat("x", 40)
+	if got := filenameToken(long); len(got) != 24 {
+		t.Errorf("token not capped at 24: %d", len(got))
+	}
+}
+
+func TestDiagnosticDefaultName_FallbackWithoutBoxes(t *testing.T) {
+	now := time.Date(2026, 7, 25, 6, 26, 3, 0, time.UTC)
+	got := diagnosticDefaultName(nil, now)
+	want := "str-diagnostic-20260725-062603.zip"
+	if got != want {
+		t.Errorf("diagnosticDefaultName(nil) = %q, want %q", got, want)
 	}
 }

@@ -34,6 +34,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -69,6 +70,48 @@ func (a *App) ExportDiagnosticLogs(req LogExportRequest) (LogExportResult, error
 		return LogExportResult{}, fmt.Errorf("savePath is required")
 	}
 
+	// Capture every box snapshot up front so the README and manifest can
+	// name each box's model and agent version in the first lines of the
+	// bundle. Reporters rename their uploads by hand to carry exactly this
+	// (issue #435: "st20--0.9.18--str-diagnostic-...zip") because neither
+	// the filename nor the README said which box, which STR version, when.
+	hosts := append([]string{}, req.BoxHosts...)
+	sort.Strings(hosts) // stable ordering so subsequent runs diff cleanly
+	snaps := make([]boxSnapshot, len(hosts))
+	entries := make([]boxIndexEntry, len(hosts))
+	var boxSummary strings.Builder
+	for i, host := range hosts {
+		snap := captureBoxSnapshot(host)
+		entry := boxIndexEntry{Index: i, Host: host}
+		if !snap.ReachableSSH && !snap.Reachable8090 && !snap.Reachable8888 && !snap.Reachable8091 {
+			entry.Offline = true
+			// WARN, not Info: an offline box means this bundle carries no
+			// on-box evidence for it, which support must see immediately.
+			a.logger.Warn("log export: box unreachable on every port, its snapshot carries no on-box data",
+				"host", entry.Host, "boxIndex", i)
+		}
+		if m, ok := snap.STRAgentVer["model"].(string); ok {
+			entry.Model = strings.TrimSpace(m)
+		}
+		if v, ok := snap.STRAgentVer["version"].(string); ok {
+			entry.AgentVersion = strings.TrimSpace(v)
+		}
+		if req.Anonymize {
+			entry.Host = maskIP(host)
+			snap = anonymizeSnapshot(snap)
+		}
+		snaps[i] = snap
+		entries[i] = entry
+		switch {
+		case entry.Offline:
+			fmt.Fprintf(&boxSummary, "  box-%d  %-15s  unreachable at export time\n", i, entry.Host)
+		case entry.AgentVersion == "":
+			fmt.Fprintf(&boxSummary, "  box-%d  %-15s  no STR agent detected\n", i, entry.Host)
+		default:
+			fmt.Fprintf(&boxSummary, "  box-%d  %-15s  %s  STR %s\n", i, entry.Host, entry.Model, entry.AgentVersion)
+		}
+	}
+
 	f, err := os.Create(req.SavePath)
 	if err != nil {
 		return LogExportResult{}, fmt.Errorf("create zip: %w", err)
@@ -84,7 +127,7 @@ OS:          %s/%s
 App version: %s
 Anonymized:  %v
 Boxes asked: %d
-
+%s
 Contents:
   README.txt            this file
   app.log               desktop app log (rolling, up to 2 MB)
@@ -99,7 +142,7 @@ Privacy:
   hashed (first 8 chars of SHA256), and SSID-looking strings in the
   app log are scrubbed. Even so, please skim the files before
   attaching to a public issue.
-`, time.Now().UTC().Format(time.RFC3339), runtime.GOOS, runtime.GOARCH, appVersion, req.Anonymize, len(req.BoxHosts))
+`, time.Now().UTC().Format(time.RFC3339), runtime.GOOS, runtime.GOARCH, appVersion, req.Anonymize, len(req.BoxHosts), boxSummary.String())
 	if err := writeZipEntry(zw, "README.txt", []byte(readme)); err != nil {
 		return LogExportResult{}, err
 	}
@@ -137,7 +180,7 @@ Privacy:
 		_ = writeZipEntry(zw, "ota-history.log", oj)
 	}
 
-	// 3. Per-box snapshots.
+	// 3. Per-box snapshots (captured up front, before the README).
 	manifest := struct {
 		Timestamp string          `json:"timestamp"`
 		OS        string          `json:"os"`
@@ -149,29 +192,11 @@ Privacy:
 		OS:        runtime.GOOS,
 		Arch:      runtime.GOARCH,
 		Anonymize: req.Anonymize,
+		Boxes:     entries,
 	}
-
-	// Stable ordering so subsequent runs diff cleanly.
-	hosts := append([]string{}, req.BoxHosts...)
-	sort.Strings(hosts)
-	for i, host := range hosts {
-		snap := captureBoxSnapshot(host)
-		entry := boxIndexEntry{Index: i, Host: host}
-		if !snap.ReachableSSH && !snap.Reachable8090 && !snap.Reachable8888 && !snap.Reachable8091 {
-			entry.Offline = true
-			// WARN, not Info: an offline box means this bundle carries no
-			// on-box evidence for it, which support must see immediately.
-			a.logger.Warn("log export: box unreachable on every port, its snapshot carries no on-box data",
-				"host", entry.Host, "boxIndex", i)
-		}
-		if req.Anonymize {
-			entry.Host = maskIP(host)
-			snap = anonymizeSnapshot(snap)
-		}
-		manifest.Boxes = append(manifest.Boxes, entry)
-		name := fmt.Sprintf("box-%d.json", i)
-		b, _ := json.MarshalIndent(snap, "", "  ")
-		if err := writeZipEntry(zw, name, b); err != nil {
+	for i := range snaps {
+		b, _ := json.MarshalIndent(snaps[i], "", "  ")
+		if err := writeZipEntry(zw, fmt.Sprintf("box-%d.json", i), b); err != nil {
 			return LogExportResult{}, err
 		}
 	}
@@ -312,6 +337,12 @@ type boxIndexEntry struct {
 	// bundle silently looked complete - a reporter exported four bundles of a
 	// flapping box and every one carried zero on-box evidence.
 	Offline bool `json:"offline,omitempty"`
+	// Model / AgentVersion are copied out of /api/agent/version so the
+	// manifest (and the README box list built from the same entries)
+	// identifies each box without opening its box-<n>.json. Model and
+	// version are not personal identifiers, so they survive anonymize.
+	Model        string `json:"model,omitempty"`
+	AgentVersion string `json:"agentVersion,omitempty"`
 }
 
 type boxSnapshot struct {
@@ -801,12 +832,124 @@ func writeZipEntry(zw *zip.Writer, name string, data []byte) error {
 	return err
 }
 
+// probeBoxIdentity fetches just model + agent version from one box, on
+// whichever external STR port answers. Deliberately tiny and short-lived:
+// it runs BEFORE the save dialog opens, so the user must not wait behind
+// the full snapshot capture (that runs after they pick a path).
+func probeBoxIdentity(host string) (model, version string) {
+	strPort := 0
+	if portOpen(host, 8888, 800) {
+		strPort = 8888
+	} else if portOpen(host, 17008, 800) {
+		strPort = 17008
+	}
+	if strPort == 0 {
+		return "", ""
+	}
+	raw := httpGetTextTimeout(fmt.Sprintf("http://%s:%d/api/agent/version", host, strPort), 1024, 2*time.Second)
+	if raw == "" {
+		return "", ""
+	}
+	var m map[string]any
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return "", ""
+	}
+	mo, _ := m["model"].(string)
+	ve, _ := m["version"].(string)
+	return strings.TrimSpace(mo), strings.TrimSpace(ve)
+}
+
+// shortModel compresses a Bose model string into a filename token:
+// "SoundTouch 20" -> "ST20", "SoundTouch Portable" -> "Portable",
+// "Bose Wave SoundTouch" -> "WaveSoundTouch". Empty when unknown.
+func shortModel(model string) string {
+	m := strings.TrimSpace(model)
+	m = strings.TrimPrefix(m, "Bose ")
+	if rest, ok := strings.CutPrefix(m, "SoundTouch"); ok {
+		rest = strings.TrimSpace(rest)
+		if rest != "" {
+			if _, err := strconv.Atoi(rest); err == nil {
+				return "ST" + rest
+			}
+			m = rest
+		}
+	}
+	return filenameToken(strings.ReplaceAll(m, " ", ""))
+}
+
+// filenameToken keeps a string safe for a cross-platform filename:
+// alphanumerics, dot, plus, underscore, hyphen; everything else becomes
+// a hyphen. Capped so a weird model string cannot blow the name up.
+func filenameToken(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '.', r == '+', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := b.String()
+	if len(out) > 24 {
+		out = out[:24]
+	}
+	return out
+}
+
+// diagnosticDefaultName builds the save-dialog default filename with the
+// box model(s), STR agent version(s), and timestamp embedded, so the
+// uploaded file self-identifies in a GitHub issue thread. Reporters were
+// renaming bundles by hand to exactly this shape (issue #435). Boxes
+// without a reachable STR agent contribute nothing; with no identified
+// box at all the name falls back to the plain timestamp form.
+func diagnosticDefaultName(hosts []string, now time.Time) string {
+	// Probe all boxes concurrently: an offline box costs two 800 ms port
+	// timeouts, and the dialog must not wait for them back to back.
+	type identity struct{ model, version string }
+	ids := make([]identity, len(hosts))
+	var wg sync.WaitGroup
+	for i, host := range hosts {
+		wg.Add(1)
+		go func(i int, host string) {
+			defer wg.Done()
+			mo, ve := probeBoxIdentity(host)
+			ids[i] = identity{model: mo, version: ve}
+		}(i, host)
+	}
+	wg.Wait()
+
+	var models, versions []string
+	seenM, seenV := map[string]bool{}, map[string]bool{}
+	for _, id := range ids {
+		mo, ve := id.model, id.version
+		if t := shortModel(mo); t != "" && !seenM[t] && len(models) < 3 {
+			seenM[t] = true
+			models = append(models, t)
+		}
+		if t := filenameToken(ve); t != "" && !seenV[t] && len(versions) < 3 {
+			seenV[t] = true
+			versions = append(versions, t)
+		}
+	}
+	parts := []string{"str-diagnostic"}
+	if len(models) > 0 {
+		parts = append(parts, strings.Join(models, "+"))
+	}
+	if len(versions) > 0 {
+		parts = append(parts, strings.Join(versions, "+"))
+	}
+	parts = append(parts, now.Format("20060102-150405"))
+	return strings.Join(parts, "-") + ".zip"
+}
+
 // SaveDiagnosticBundle is the one-call frontend entry point: pops
 // the OS save-file dialog with a sensible default filename, then
 // writes the zip there. Returns the resulting path or empty string
 // if the user cancelled. Anonymize defaults to true.
 func (a *App) SaveDiagnosticBundle(boxHosts []string, anonymize bool) (LogExportResult, error) {
-	defaultName := fmt.Sprintf("str-diagnostic-%s.zip", time.Now().UTC().Format("20060102-150405"))
+	defaultName := diagnosticDefaultName(boxHosts, time.Now().UTC())
 	path, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
 		DefaultFilename: defaultName,
 		Title:           "Save STR diagnostic bundle",
