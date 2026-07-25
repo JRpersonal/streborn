@@ -2765,8 +2765,20 @@ async function runBoxUpdate(box, onPhase) {
     // Journal the real verdict and classify why (unreachable / not landed /
     // landed-but-not-running), feeding the loop breaker so an update that
     // cannot stick is not re-offered as a fresh one-click push forever.
-    try { noteOTAFailure(box, await ClassifyOTAResult(box.host, box.port)); } catch {}
-    return { outcome: 'timeout', version: null };
+    let cls = '';
+    try { cls = await ClassifyOTAResult(box.host, box.port); } catch {}
+    // "confirmed" = the box IS on the new build, it just crossed the verify
+    // window late (slow boot / late reachability). Treating that as a timeout
+    // made update-all report a perfectly updated ST10 as stuck (live
+    // 2026-07-25, "confirmed late" at +6 min). Count it as updated and fall
+    // through to the engine step like any confirmed box.
+    if (cls === 'confirmed') {
+      try { confirmedVer = await BoxAgentVersion(box.host, box.port); } catch {}
+    }
+    if (!confirmedVer) {
+      try { noteOTAFailure(box, cls); } catch {}
+      return { outcome: 'timeout', version: null };
+    }
   }
   clearOTAStuck(box);
   try { RecordOTAOutcome(box.host, `confirmed: box is on build ${confirmedVer.build || '?'} (stability window passed)`); } catch {}
