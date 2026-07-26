@@ -200,6 +200,7 @@
   "speaker.needsInstallBadge": "Gotowy na STR",
   "speaker.stockTooltip": "Oryginalne oprogramowanie Bose. STR przywraca radio internetowe i zaprogramowane stacje na tym głośniku.",
   "speaker.offlineTooltip": "Niedostępny, ostatnio widziany {{ago}}. Kliknij, aby wyszukać ponownie.",
+  "radio.mirrorsDown": "Katalog stacji jest chwilowo niedostępny. Sprawdź połączenie z internetem i spróbuj ponownie za chwilę.",
   "speaker.stockConfirmTitle": "Przywrócić ten głośnik do życia za pomocą STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> nadal działa na oryginalnym oprogramowaniu Bose. STR instaluje się bezpośrednio przez Twoją sieć, bez pendrive'a USB. Potem sterujesz nim w pełni z tej aplikacji: radio internetowe, zaprogramowane stacje, multiroom.<br><br>Przejść do instalacji?",
   "speaker.stockConfirmCta": "Przejdź do instalacji",

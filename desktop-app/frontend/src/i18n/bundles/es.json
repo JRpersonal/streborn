@@ -200,6 +200,7 @@
   "speaker.needsInstallBadge": "Listo para STR",
   "speaker.stockTooltip": "Firmware original de Bose. STR restaura la radio por internet y los preajustes en este altavoz.",
   "speaker.offlineTooltip": "Sin conexión, visto por última vez {{ago}}. Haz clic para buscar de nuevo.",
+  "radio.mirrorsDown": "El directorio de emisoras no está disponible temporalmente. Comprueba tu conexión a internet e inténtalo de nuevo en un momento.",
   "speaker.stockConfirmTitle": "¿Devolver la vida a este altavoz con STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> aún usa el firmware original de Bose. STR se instala directamente por tu red, sin memoria USB. Después lo controlas por completo desde esta aplicación: radio por internet, preajustes, multisala.<br><br>¿Continuar con la instalación?",
   "speaker.stockConfirmCta": "A la instalación",

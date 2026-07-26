@@ -200,6 +200,7 @@
   "speaker.needsInstallBadge": "Prête pour STR",
   "speaker.stockTooltip": "Firmware Bose d'origine. STR rétablit la radio internet et les préréglages sur cette enceinte.",
   "speaker.offlineTooltip": "Hors ligne, vu pour la dernière fois {{ago}}. Cliquez pour relancer la recherche.",
+  "radio.mirrorsDown": "L'annuaire des stations est temporairement inaccessible. Vérifiez votre connexion internet et réessayez dans un instant.",
   "speaker.stockConfirmTitle": "Redonner vie à cette enceinte avec STR ?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> utilise encore le firmware Bose d'origine. STR s'installe directement via votre réseau, sans clé USB. Ensuite vous la contrôlez entièrement depuis cette application : radio internet, préréglages, multiroom.<br><br>Continuer vers l'installation ?",
   "speaker.stockConfirmCta": "Vers l'installation",

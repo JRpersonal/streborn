@@ -200,6 +200,7 @@
   "speaker.needsInstallBadge": "Paruošta STR",
   "speaker.stockTooltip": "Originali Bose programinė įranga. STR grąžina interneto radiją ir parinktis šiame garsiakalbyje.",
   "speaker.offlineTooltip": "Nepasiekiamas, paskutinį kartą matytas {{ago}}. Spustelėkite, kad ieškotumėte iš naujo.",
+  "radio.mirrorsDown": "Stočių katalogas laikinai nepasiekiamas. Patikrinkite interneto ryšį ir netrukus bandykite dar kartą.",
   "speaker.stockConfirmTitle": "Atgaivinti šį garsiakalbį su STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> vis dar veikia su originalia Bose programine įranga. STR įsidiegia tiesiai per jūsų tinklą, be USB atmintinės. Po to jį visiškai valdote iš šios programos: interneto radijas, parinktys, multiroom.<br><br>Tęsti diegimą?",
   "speaker.stockConfirmCta": "Į diegimą",

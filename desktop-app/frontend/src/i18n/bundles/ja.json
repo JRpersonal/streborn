@@ -200,6 +200,7 @@
   "speaker.needsInstallBadge": "STR導入可能",
   "speaker.stockTooltip": "Bose純正ファームウェア。STRはこのスピーカーにインターネットラジオとプリセットを復活させます。",
   "speaker.offlineTooltip": "オフライン、最終確認 {{ago}}。クリックで再検索します。",
+  "radio.mirrorsDown": "ステーションディレクトリに一時的にアクセスできません。インターネット接続を確認して、しばらくしてからもう一度お試しください。",
   "speaker.stockConfirmTitle": "このスピーカーをSTRで復活させますか?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> はまだBose純正ファームウェアです。STRはあなたのネットワーク経由で直接インストールされ、USBメモリは不要です。その後はこのアプリだけで操作できます: インターネットラジオ、プリセット、マルチルーム。<br><br>インストールに進みますか?",
   "speaker.stockConfirmCta": "インストールへ",
