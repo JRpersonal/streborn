@@ -26,7 +26,6 @@ package main
 //      3 s probe, no sweep at all.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -37,7 +36,6 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
-	"time"
 )
 
 // knownSpeaker is one persisted speaker from a previous discovery: just
@@ -175,16 +173,26 @@ func (a *App) distributeKnownSpeakers() {
 		return
 	}
 	go func() {
-		cl := &http.Client{Timeout: 5 * time.Second}
+		ok := 0
 		for _, t := range targets {
-			resp, err := cl.Post(fmt.Sprintf("http://%s:%d/api/peers/seed", t.Host, t.Port),
-				"application/json", bytes.NewReader(body))
+			// boxDo, not a direct POST: mDNS announces port 8888 for every
+			// agent, but BCO chassis (Portable/taigan, scm, Wave) are only
+			// reachable from outside via :17008 - a direct POST to the
+			// announced port silently failed for exactly those boxes (live,
+			// 2026-07-26: the Portable never received the seed). boxDo walks
+			// the cached/announced/alternate ports the way every other agent
+			// call in the app does.
+			resp, err := a.boxDo(t.Host, t.Port, "POST", "/api/peers/seed", "application/json", string(body))
 			if err != nil {
+				a.logger.Warn("discovery: peer-seed push failed", "host", t.Host, "err", err)
 				continue
+			}
+			if resp.StatusCode == http.StatusNoContent {
+				ok++
 			}
 			_ = resp.Body.Close()
 		}
-		a.logger.Info("discovery: distributed the speaker set to the fleet", "speakers", len(seeds))
+		a.logger.Info("discovery: distributed the speaker set to the fleet", "speakers", len(seeds), "delivered", ok)
 	}()
 }
 
