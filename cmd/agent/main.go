@@ -361,6 +361,17 @@ func run() error {
 		AuthToken:    "local-token-v1",
 		CreatedAt:    "2026-01-01T00:00:00Z",
 	})
+
+	// Forensic sections for /api/debug/state. The marge trail (millisecond
+	// timestamps) is what lets a bundle answer whether the box exchanged
+	// anything with marge inside the ~200 ms window of a Wave sysLanguage
+	// revert, and the clock verdict correlates 1036 storms / dead-playback
+	// boots with a plug-pull RTC loss (#419 Finding 4). Registered before the
+	// listeners spawn so the very first debug fetch already carries them.
+	webui.RegisterDebugSection("marge_recent_requests", func() any {
+		return margeSrv.RecentRequestLines(60)
+	})
+	webui.RegisterDebugSection("clock_status", clockStatusSnapshot)
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
 	// The AutoPair manager is created up here so it can also be used in the
 	// WS and webui handlers.
@@ -875,12 +886,16 @@ func run() error {
 	// install time to do the boot Date sync, so without this the very first
 	// requests could hit a 2015 clock until the goroutine catches up. Best-effort
 	// - if the network is not up yet the goroutine below keeps retrying (#375).
+	noteBootClock(logger)
 	func() {
 		sctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 		defer cancel()
 		clocksync.SyncNowIfImplausible(sctx, logger)
 	}()
-	go clocksync.RunUntilSynced(ctx, logger, 30*time.Second)
+	go func() {
+		clocksync.RunUntilSynced(ctx, logger, 30*time.Second)
+		noteClockHealed(logger)
+	}()
 
 	// If the USB stick has a newer run.sh than the NAND run-override.sh:
 	// copy it. This is the self-update path for the bootstrap. Without it
@@ -1011,6 +1026,70 @@ func run() error {
 	return firstErr
 }
 
+// clockForensicsState records the boot-time clock verdict. A plug-pulled
+// speaker has no battery RTC and boots in 2015; the field capture behind #419
+// Finding 4 showed such a boot with EVERY playback dying within 2-13 s for the
+// whole boot even though the clock was later corrected - the Bose firmware
+// itself stays poisoned until a soft reboot. These markers plus the
+// clock_status debug section let a bundle separate the three cases: clock still
+// bad (TLS to marge/CDNs failing), clock healed but firmware poisoned, and
+// clock fine all along.
+var clockForensicsState struct {
+	mu                sync.Mutex
+	startClock        time.Time
+	implausibleAtBoot bool
+	correctedAt       time.Time
+}
+
+func noteBootClock(logger *slog.Logger) {
+	now := time.Now()
+	bad := clocksync.Implausible(now)
+	clockForensicsState.mu.Lock()
+	clockForensicsState.startClock = now
+	clockForensicsState.implausibleAtBoot = bad
+	clockForensicsState.mu.Unlock()
+	if bad {
+		logger.Warn("clock forensics: implausible system clock at agent start (no battery RTC; plug-pull boot). TLS to marge and HTTPS radio will fail until the clock syncs, and the Bose firmware can stay broken for the whole boot even after it does (#419 Finding 4)",
+			"clock", now.UTC().Format(time.RFC3339), "build", buildStamp)
+	}
+}
+
+// noteClockHealed runs after RunUntilSynced returns. It marks the moment the
+// clock became sane on a boot that started implausible: everything the Bose
+// firmware did BEFORE this line ran on the bad clock, which is the correlation
+// the dead-playback-until-soft-reboot reports need.
+func noteClockHealed(logger *slog.Logger) {
+	if clocksync.Implausible(time.Now()) {
+		return // ctx canceled before a sync landed; verdict unchanged
+	}
+	clockForensicsState.mu.Lock()
+	wasBad := clockForensicsState.implausibleAtBoot && clockForensicsState.correctedAt.IsZero()
+	if wasBad {
+		clockForensicsState.correctedAt = time.Now()
+	}
+	clockForensicsState.mu.Unlock()
+	if wasBad {
+		logger.Warn("clock forensics: clock corrected AFTER the Bose firmware booted on the bad clock; if playback keeps dying this boot, a soft reboot (not a plug pull) is the known cure (#419 Finding 4)")
+	}
+}
+
+// clockStatusSnapshot is the clock_status debug/state section.
+func clockStatusSnapshot() any {
+	clockForensicsState.mu.Lock()
+	defer clockForensicsState.mu.Unlock()
+	out := map[string]any{
+		"now":                        time.Now().UTC().Format(time.RFC3339),
+		"agent_start_clock":          clockForensicsState.startClock.UTC().Format(time.RFC3339),
+		"implausible_at_agent_start": clockForensicsState.implausibleAtBoot,
+		"implausible_now":            clocksync.Implausible(time.Now()),
+		"build_stamp":                buildStamp,
+	}
+	if !clockForensicsState.correctedAt.IsZero() {
+		out["corrected_at"] = clockForensicsState.correctedAt.UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
 // httpErrorLogWriter bridges the stdlib http.Server ErrorLog into slog. The
 // Bose firmware opens a TCP connection to the redirected streaming.bose.com TLS
 // port (our marge-tls listener) about once a minute and closes it without ever
@@ -1031,12 +1110,29 @@ func (w httpErrorLogWriter) Write(p []byte) (int, error) {
 	if msg == "" {
 		return len(p), nil
 	}
-	if strings.Contains(msg, "TLS handshake error") {
+	if strings.Contains(msg, "TLS handshake error") && !tlsHandshakeIsRejection(msg) {
 		w.logger.Debug("http server error", "comp", w.name, "msg", msg)
 	} else {
 		w.logger.Warn("http server error", "comp", w.name, "msg", msg)
 	}
 	return len(p), nil
+}
+
+// tlsHandshakeIsRejection separates the box actively REFUSING our certificate
+// from the benign once-a-minute empty probe (EOF before any ClientHello). A
+// refusal reaches the alert/certificate stage ("remote error: tls: bad
+// certificate", "unknown certificate authority", "expired certificate") and is
+// the on-box evidence for two known field states: a plug-pull boot whose 2015
+// clock makes every cert invalid (#419 Finding 4) and a stale root CA after a
+// bundle regen. Demoting these to DEBUG with the probe noise hid exactly that
+// evidence from bundles.
+func tlsHandshakeIsRejection(msg string) bool {
+	for _, marker := range []string{"remote error", "alert", "certificate", "expired"} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // newHTTPErrorLog returns the *log.Logger to wire into http.Server.ErrorLog so
@@ -1293,6 +1389,9 @@ type presetWsHandler struct {
 	sysPowerFn   func(ctx context.Context, host string) error
 	boxPlayingFn func(url string) bool
 	boxSourceFn  func() string
+	// boxSummaryFn seams the now_playing settle probe (boxNowPlayingSummary)
+	// the verify logs on success/exhaustion. nil = real :8090 fetch.
+	boxSummaryFn func() (source, itemName, playStatus string)
 
 	// slotPulled reports whether the box is credibly playing THIS slot's
 	// proxied stream for a recall anchored at the given time. It is the recall
@@ -1356,18 +1455,30 @@ func (h *presetWsHandler) loginErrorSince(t time.Time) bool {
 // window only a still-live pull or an actual playing state proves audio;
 // otherwise the verify loop keeps retrying until the forced re-login lands.
 func (h *presetWsHandler) recallReachedAudio(slot int, url string, pressAt time.Time) bool {
+	ok, _ := h.recallReachedAudioSignal(slot, url, pressAt)
+	return ok
+}
+
+// recallReachedAudioSignal is recallReachedAudio plus WHICH signal decided.
+// The verify logs the signal on success because the two signals have very
+// different reliability: "slot_fetch" is the proxy serving audio since the
+// press (ground truth), while "now_playing" is the box's own report, which can
+// resurrect a stale same-slot ContentItem after a failed self-activation
+// (#419 Finding 1). A success line reading signal=now_playing next to an
+// INVALID_SOURCE source is that false positive, made visible in bundles.
+func (h *presetWsHandler) recallReachedAudioSignal(slot int, url string, pressAt time.Time) (bool, string) {
 	if h.playingURL(url) {
-		return true
+		return true, "now_playing"
 	}
 	if !h.slotPulledSince(slot, pressAt) {
-		return false
+		return false, ""
 	}
 	// slot pulled since the press. Trust it unless a login error is in flight for
 	// this recall AND the pull is no longer live (a closed short login-bounce).
 	if h.loginErrorSince(pressAt) && !h.slotFetchLiveNow(slot) {
-		return false
+		return false, ""
 	}
-	return true
+	return true, "slot_fetch"
 }
 
 // superseded reports whether a newer hardware press (pressSeq moved past seq)
@@ -2418,7 +2529,16 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// lags: a Portable kept naming the PREVIOUS preset for seconds after it
 		// had already opened the new stream, so a location check alone declared a
 		// healthy recall dead and the "repair" tore the working stream down.
-		if h.recallReachedAudio(slot, url, pressAt) {
+		if ok, signal := h.recallReachedAudioSignal(slot, url, pressAt); ok {
+			// The verify used to exit success SILENTLY, which hid the #419
+			// Finding-1 false positive (a stale same-slot now_playing passing
+			// the check) from every bundle. Log the deciding signal plus the
+			// box's own view: signal=now_playing with source=INVALID_SOURCE or
+			// an empty itemName IS that false success, now visible.
+			src, item, status := h.nowPlayingSummary()
+			h.logger.Info("hardware recall: verify success", "slot", slot,
+				"attempt", attempt, "signal", signal,
+				"source", src, "itemName", item, "playStatus", status)
 			h.restorePreRecallVolume(pressAt, preVol)
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
@@ -2502,7 +2622,9 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		}
 		cancel()
 	}
-	h.logger.Warn("hardware recall still not playing after retries", "slot", slot)
+	src, item, status := h.nowPlayingSummary()
+	h.logger.Warn("hardware recall still not playing after retries", "slot", slot,
+		"source", src, "itemName", item, "playStatus", status)
 	if h.noteRecallExhausted != nil {
 		h.noteRecallExhausted()
 	}
@@ -3053,6 +3175,15 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	if err != nil {
 		logger.Debug("preset reconcile: box presets not readable", "err", err)
 		return false
+	}
+	// A box-side EMPTY list while STR's store has presets is the "all presets
+	// suddenly empty" field state (Wave 2026-07-25: keys dead by evening, a
+	// plug pull did not restore them). WARN with both counts so the bundle
+	// shows the loss moment and whether the re-registration below healed it or
+	// the per-slot AddPreset failures explain why the keys stayed dead.
+	if len(boxLocs) == 0 {
+		logger.Warn("preset forensics: box reports an EMPTY preset list while the STR store has presets (box lost its key registrations; re-registering now)",
+			"storeCount", len(stick))
 	}
 	// Add the STR store presets the box is missing (or all, on a forced full
 	// re-sync). strSlots also drives the prune pass below.
@@ -3830,6 +3961,45 @@ func boxIsPlaying(boxHost string) bool {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	s := string(b)
 	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+}
+
+// boxNowPlayingSummary returns compact now_playing evidence for the recall
+// settle logs: the active source, the box's own itemName (what a display model
+// like the Wave/ST20 shows) and the playStatus. It answers two open field
+// questions at once: which side of the Wave wrong-state race won (audio
+// without name vs name without audio - itemName empty on the winning STR push,
+// #469/Wave 2026-07-25), and whether a verify success was the box's stale
+// same-slot ContentItem rather than a real fetch (#419 Finding 1).
+func boxNowPlayingSummary(boxHost string) (source, itemName, playStatus string) {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return "", "", ""
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s := string(b)
+	if m := regexp.MustCompile(`source="([^"]*)"`).FindStringSubmatch(s); len(m) == 2 {
+		source = m[1]
+	}
+	if m := regexp.MustCompile(`<itemName>([^<]*)</itemName>`).FindStringSubmatch(s); len(m) == 2 {
+		itemName = m[1]
+	}
+	if m := regexp.MustCompile(`<playStatus>([^<]*)</playStatus>`).FindStringSubmatch(s); len(m) == 2 {
+		playStatus = m[1]
+	}
+	return source, itemName, playStatus
+}
+
+// nowPlayingSummary is the seam-aware wrapper over boxNowPlayingSummary.
+func (h *presetWsHandler) nowPlayingSummary() (string, string, string) {
+	if h.boxSummaryFn != nil {
+		return h.boxSummaryFn()
+	}
+	return boxNowPlayingSummary(h.boxHost)
 }
 
 // nudgeStuckSource is the sys-power-nudge decision: the box still reports

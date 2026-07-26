@@ -6547,6 +6547,25 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		}
 		state["presets"] = lines
 	}
+	// Forensic sections registered by main.go (marge request trail, clock
+	// verdict, ...). Called fresh per request; a panicking provider must not
+	// take the whole debug endpoint down mid-investigation.
+	debugSectionsMu.Lock()
+	fns := make(map[string]func() any, len(debugSections))
+	for k, fn := range debugSections {
+		fns[k] = fn
+	}
+	debugSectionsMu.Unlock()
+	for k, fn := range fns {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					state[k] = fmt.Sprintf("ERR: provider panicked: %v", r)
+				}
+			}()
+			state[k] = fn()
+		}()
+	}
 	writeJSON(w, http.StatusOK, state)
 }
 
@@ -7754,6 +7773,24 @@ func SetAgentVersion(v string) { agentVersion = func() string { return v } }
 
 // SetAgentBuild sets the build stamp (date/commit) as additional info.
 func SetAgentBuild(b string) { agentBuild = func() string { return b } }
+
+// debugSections holds extra named providers merged into the /api/debug/state
+// JSON. main.go registers agent-side forensics here (the marge request trail,
+// the boot clock verdict) without webui needing to know their types; each fn is
+// called fresh per request. Guarded: registrations race the first HTTP request.
+var (
+	debugSectionsMu sync.Mutex
+	debugSections   = map[string]func() any{}
+)
+
+// RegisterDebugSection adds (or replaces) a named section in /api/debug/state.
+// Keys collide with the built-in state map last-write-wins; pick prefixed names
+// (e.g. "marge_recent_requests") that cannot shadow a built-in.
+func RegisterDebugSection(key string, fn func() any) {
+	debugSectionsMu.Lock()
+	defer debugSectionsMu.Unlock()
+	debugSections[key] = fn
+}
 
 // handleStatus proxies the box's now_playing XML, with a short
 // micro-cache (statusCacheTTL) in front. Multiple or too-rapidly polling

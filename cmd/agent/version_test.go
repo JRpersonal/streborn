@@ -22,8 +22,8 @@ import "testing"
 //
 // The matching ldflag-pair contract is:
 //
-//   -X main.version=<semver>      sets `version`
-//   -X main.buildStamp=<yyyymmdd> sets `buildStamp`
+//	-X main.version=<semver>      sets `version`
+//	-X main.buildStamp=<yyyymmdd> sets `buildStamp`
 //
 // See .github/workflows/release.yml line 167 (build-agent step)
 // and the Makefile's LDFLAGS for the canonical invocations.

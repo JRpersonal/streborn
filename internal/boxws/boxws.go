@@ -123,6 +123,18 @@ type Client struct {
 	mu           sync.Mutex
 	lastSignal   string
 	lastSignalAt time.Time
+	// lastLang / lastLangAt time the most recent languageUpdated frame so a
+	// second frame with a DIFFERENT value arriving within languageRevertWindow
+	// is flagged as a firmware-side revert (Wave: user saves German=2, box
+	// broadcasts 2 then 3 within 200 ms and the setting is back on English).
+	lastLang   string
+	lastLangAt time.Time
+	// err1036Times is a sliding window of recent 1036 rejections; when the box
+	// answers essentially every recall with 1036 (the storm state that today
+	// only a power-cycle or soft reboot clears), one bounded WARN marks the
+	// storm so bundles can correlate it with the boot clock and marge trail.
+	err1036Times   []time.Time
+	lastStormLogAt time.Time
 	// lastSource tracks the most recent active source seen on a now-selection /
 	// now-playing frame, so the aux webhook fires once on the transition to AUX
 	// rather than repeatedly while AUX stays the active source.
@@ -369,6 +381,64 @@ func (c *Client) LastWifiSignal() string {
 // older describes a long-gone moment (usually the boot association).
 const wifiSignalTTL = 15 * time.Minute
 
+// languageRevertWindow is how close together two languageUpdated frames with
+// different values must be to count as a firmware-side revert rather than two
+// independent user changes. The live Wave captures show 38-183 ms; 2 s leaves
+// margin without misreading a user changing their mind.
+const languageRevertWindow = 2 * time.Second
+
+// noteLanguageUpdated logs sysLanguage transitions and flags the Wave revert
+// pattern: a fresh value overwritten by a different one within
+// languageRevertWindow. The WARN carries both values and the gap so a bundle
+// can be correlated (by millisecond timestamp) with the marge request trail in
+// debug/state and with any app-side save, answering WHO wrote the second value.
+func (c *Client) noteLanguageUpdated(v string) {
+	now := time.Now()
+	c.mu.Lock()
+	prev, prevAt := c.lastLang, c.lastLangAt
+	c.lastLang, c.lastLangAt = v, now
+	c.mu.Unlock()
+	if prev != "" && prev != v && now.Sub(prevAt) < languageRevertWindow {
+		c.logger.Warn("box ws: sysLanguage overwritten right after a change (firmware-side revert; correlate with marge_recent_requests and any app save at this timestamp)",
+			"from", prev, "to", v, "afterMs", now.Sub(prevAt).Milliseconds())
+		return
+	}
+	c.logger.Info("box ws: languageUpdated", "sysLanguage", v, "prev", prev)
+}
+
+// storm1036Threshold / storm1036Window / storm1036LogEvery bound the 1036-storm
+// marker: at least storm1036Threshold rejections inside storm1036Window, logged
+// at most once per storm1036LogEvery so a day-long storm (observed on a mojo
+// ST30: every press 1036, all day) does not churn the NAND log.
+const (
+	storm1036Threshold = 6
+	storm1036Window    = 10 * time.Minute
+	storm1036LogEvery  = 30 * time.Minute
+)
+
+// note1036 feeds the storm detector. The WARN is diagnostic only (no behavior
+// hangs off it): it timestamps the storm START so bundles can correlate it
+// with the boot clock state (plug-pull RTC loss poisons the firmware, #419
+// Finding 4), TLS handshake failures on marge-tls, and the marge trail.
+func (c *Client) note1036() {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	keep := c.err1036Times[:0]
+	for _, t := range c.err1036Times {
+		if now.Sub(t) < storm1036Window {
+			keep = append(keep, t)
+		}
+	}
+	c.err1036Times = append(keep, now)
+	if len(c.err1036Times) < storm1036Threshold || now.Sub(c.lastStormLogAt) < storm1036LogEvery {
+		return
+	}
+	c.lastStormLogAt = now
+	c.logger.Warn("box ws: 1036 storm - the box rejects essentially every recall (check clock_status and marge-tls handshake errors in this bundle; a soft reboot has cleared this state in the field)",
+		"count", len(c.err1036Times), "windowMin", int(storm1036Window.Minutes()))
+}
+
 // LastUserActivity returns when the box last reported a userActivityUpdate
 // frame (any physical key on the box or the IR remote), or the zero time if
 // none has been seen since the agent started. The webui's standby handler uses
@@ -610,6 +680,15 @@ type gabboFrame struct {
 	// it changes. Non-nil whenever a <zoneUpdated><zone> is present; an empty
 	// <zone/> (Master == "") means the zone dissolved (#70, Klaus 2026-06-12).
 	ZoneUpdated *wsZone `xml:"zoneUpdated>zone"`
+
+	// LanguageUpdated carries the box's sysLanguage whenever it changes. Parsed
+	// typed (not left as an unrecognized frame) because the Wave firmware
+	// overwrites a user's language save within ~40-200 ms (2 then 3 back to
+	// back, live bundle 2026-07-25) and the revert can only be root-caused by
+	// timing the two frames against what else touched the box in that window.
+	LanguageUpdated *struct {
+		Sys string `xml:"sysLanguage"`
+	} `xml:"languageUpdated"`
 }
 
 // wsZone is the <zone> body of a zoneUpdated frame. Bose puts the master's
@@ -1034,6 +1113,9 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		if c.handler != nil {
 			c.handler.OnZoneChanged(ctx, z)
 		}
+	case f.LanguageUpdated != nil:
+		known = true
+		c.noteLanguageUpdated(strings.TrimSpace(f.LanguageUpdated.Sys))
 	}
 
 	pe := f.NowSelection
@@ -1068,6 +1150,9 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				if v, name, sev, detail := parseBoxError(s); v != "" {
 					c.logger.Warn("box ws: box reported error",
 						"value", v, "name", name, "severity", sev, "detail", detail)
+					if v == "1036" {
+						c.note1036()
+					}
 					// 1036 UNABLE_TO_PROCESS_NOT_LOGGED_IN: the box refuses the UPnP
 					// source because it does not think it is signed into an account.
 					// Signal the agent (via the OnLoginError callback) so the recall

@@ -250,6 +250,23 @@ func (s *Server) RecentRequests() []SpyEntry {
 	return out
 }
 
+// RecentRequestLines renders the newest n spy entries as compact one-line
+// strings (millisecond timestamps) for the diagnostic bundle. The trail is what
+// lets a bundle answer "did the box talk to marge inside THIS 200 ms window?"
+// - the question the Wave sysLanguage revert investigation hangs on.
+func (s *Server) RecentRequestLines(n int) []string {
+	entries := s.RecentRequests()
+	if n > 0 && len(entries) > n {
+		entries = entries[len(entries)-n:]
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, fmt.Sprintf("%s %s %s bodyBytes=%d",
+			e.When.Format("2006-01-02T15:04:05.000Z07:00"), e.Method, e.Path, len(e.Body)))
+	}
+	return out
+}
+
 // handleHealthz is the standard probe endpoint.
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
