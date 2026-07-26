@@ -135,6 +135,10 @@ type Client struct {
 	// storm so bundles can correlate it with the boot clock and marge trail.
 	err1036Times   []time.Time
 	lastStormLogAt time.Time
+	// prevEndedIdle marks that the previous WS session ended in a plain idle
+	// read timeout, so the next "connected" phase marker logs at Debug instead
+	// of churning the NAND log. Only touched from the Run loop goroutine.
+	prevEndedIdle bool
 	// lastSource tracks the most recent active source seen on a now-selection /
 	// now-playing frame, so the aux webhook fires once on the transition to AUX
 	// rather than repeatedly while AUX stays the active source.
@@ -282,6 +286,11 @@ const (
 // application layer: a protocol ping needs no gabbo request semantics and the
 // server answers it with a pong.
 const wsKeepaliveInterval = 4 * time.Minute
+
+// wsReadDeadline bounds how long the reader waits without ANY life sign (data
+// frame or pong). Two keepalive intervals plus slack: two consecutive lost
+// pings mean the peer is genuinely gone.
+const wsReadDeadline = 2*wsKeepaliveInterval + 3*time.Minute
 
 // wsWriteTimeout bounds a single ping write so a half-dead socket cannot wedge
 // the keepalive goroutine; a failed/blocked write closes the conn and the read
@@ -483,18 +492,32 @@ func (c *Client) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		start := time.Now()
 		err := c.runOnce(ctx)
 		if ctx.Err() != nil {
 			return
+		}
+		// A session that lived a while was a healthy connection: reset the
+		// backoff so the NEXT reattach is fast again. Without this the backoff
+		// initialized once, hit its 8 s cap during the first outage and stayed
+		// there for the whole agent lifetime, adding a flat 8 s to every
+		// reconnect forever (part of the fixed 674.5 s self-timeout cadence in
+		// the 2026-07-26 field bundle).
+		if time.Since(start) > time.Minute {
+			backoff = time.Second
 		}
 		if err != nil {
 			// A read timeout is normal when the box is not active; the
 			// reconnect runs cleanly. Other errors are interesting though.
 			if strings.Contains(err.Error(), "i/o timeout") {
 				c.logger.Debug("box websocket idle reconnect", "retry_in", backoff)
+				c.prevEndedIdle = true
 			} else {
 				c.logger.Warn("box websocket connection lost", "err", err, "retry_in", backoff)
+				c.prevEndedIdle = false
 			}
+		} else {
+			c.prevEndedIdle = false
 		}
 		select {
 		case <-ctx.Done():
@@ -523,9 +546,16 @@ func (c *Client) runOnce(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	// Phase marker at WARN so a reconnect after standby/resume is
-	// visible in the diagnostic bundle without raising log level.
-	c.logger.Warn("box websocket phase: connected", "url", c.url)
+	// Phase marker at WARN so a reconnect after standby/resume is visible in
+	// the diagnostic bundle without raising log level. A reconnect after a
+	// plain idle self-timeout logs at Debug instead: that churn (a full WARN +
+	// re-sync block every ~11 min) rotated the 32 KB NAND log in ~3.5 h and
+	// destroyed the actual failure evidence in the 2026-07-26 field bundle.
+	if c.prevEndedIdle {
+		c.logger.Debug("box websocket phase: connected (after idle reconnect)", "url", c.url)
+	} else {
+		c.logger.Warn("box websocket phase: connected", "url", c.url)
+	}
 
 	// After a deep/overnight standby the box wakes and emits its first
 	// preset/now-selection frame BEFORE this reconnect lands (the backoff had
@@ -545,6 +575,20 @@ func (c *Client) runOnce(ctx context.Context) error {
 	// is the only writer and is safe to call concurrently with the reader. The
 	// goroutine exits when this runOnce returns (conn.Close unblocks the read
 	// and closeKeepalive is closed) or when ctx is cancelled.
+	// The box answers our keepalive pings with pongs, but gorilla/websocket
+	// consumes pongs INSIDE ReadMessage without returning from it: without a
+	// pong handler the per-iteration read deadline below was never refreshed
+	// while the reader blocked on an idle socket, so the client tore down its
+	// own healthy connection like clockwork (live: 18 reconnects at
+	// 674.5 s +-0.2 s in the 2026-07-26 ST10 bundle = 660 s deadline + capped
+	// backoff + re-sync tail). The June keepalive fix only moved the old
+	// ~10.5 min firmware-drop cadence to this ~11.2 min self-timeout. With
+	// each pong pushing the deadline, it now fires only on a genuinely dead
+	// peer.
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
+	})
+
 	closeKeepalive := make(chan struct{})
 	defer close(closeKeepalive)
 	go func() {
@@ -575,11 +619,11 @@ func (c *Client) runOnce(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// Read deadline sits above two keepalive intervals (wsKeepaliveInterval):
-		// a healthy idle socket is held open by our ping, so the only thing this
-		// deadline should now fire on is a genuinely dead peer (no pong, no data).
-		// Reconnect stays clean: OnConnected resyncs box state on every reconnect.
-		_ = conn.SetReadDeadline(time.Now().Add(2*wsKeepaliveInterval + 3*time.Minute))
+		// Read deadline sits above two keepalive intervals; the pong handler
+		// above refreshes it on every keepalive answer, so it only fires on a
+		// genuinely dead peer (no pong, no data). Reconnect stays clean:
+		// OnConnected resyncs box state on every reconnect.
+		_ = conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
 		mt, data, err := conn.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("read: %w", err)
