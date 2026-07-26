@@ -1467,7 +1467,7 @@ func (h *presetWsHandler) recallReachedAudio(slot int, url string, pressAt time.
 // (#419 Finding 1). A success line reading signal=now_playing next to an
 // INVALID_SOURCE source is that false positive, made visible in bundles.
 func (h *presetWsHandler) recallReachedAudioSignal(slot int, url string, pressAt time.Time) (bool, string) {
-	if h.playingURL(url) {
+	if h.playingURL(url) && !h.staleSameSlotSuspect(slot, url, pressAt) {
 		return true, "now_playing"
 	}
 	if !h.slotPulledSince(slot, pressAt) {
@@ -1479,6 +1479,29 @@ func (h *presetWsHandler) recallReachedAudioSignal(slot int, url string, pressAt
 		return false, ""
 	}
 	return true, "slot_fetch"
+}
+
+// staleSameSlotSuspect flags the #419 Finding-1 false success: on a same-slot
+// re-press the box's own FAILED self-activation (1036) resurrects the previous
+// play's ContentItem - identical /stream/<slot> path, briefly play-ish state -
+// so a bare now_playing match passed at the first tick and the verify exited
+// silently while the box sat at INVALID_SOURCE in silence (captured on-site,
+// ST30 2026-07-25: press slot 5 after a standby teardown of slot 5 -> 1036 ->
+// no fetch, no retry, no sound). Tightly scoped so it cannot regress healthy
+// recalls: it only fires for PROXIED streams (where an open proxy fetch is a
+// physical precondition for audio, so demanding fetch evidence is exact, not
+// heuristic) and only when the box actually refused THIS recall. A same-slot
+// re-press over a still-playing stream keeps its open pull (slotFetchLiveNow)
+// and stays a success; direct-URL plays and unrefused recalls keep the old
+// now_playing trust unchanged.
+func (h *presetWsHandler) staleSameSlotSuspect(slot int, url string, pressAt time.Time) bool {
+	if streamPath(url) == "" {
+		return false // direct URL: no proxy evidence exists, keep trusting now_playing
+	}
+	if !h.lastSourceRejectTime().After(pressAt) && !h.loginErrorSince(pressAt) {
+		return false // the box never refused this recall; its report is trustworthy
+	}
+	return !h.slotPulledSince(slot, pressAt) && !h.slotFetchLiveNow(slot)
 }
 
 // superseded reports whether a newer hardware press (pressSeq moved past seq)
@@ -2611,18 +2634,20 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// box still reports INVALID_SOURCE by the third attempt, send one
 		// bounded nudge before pushing again. The source probe (an up-to-4s
 		// :8090 read) only runs on the attempt that can consume it.
-		if attempt == 3 && !nudged && nudgeStuckSource(attempt, nudged, h.currentBoxSource()) {
-			nudged = true
-			if standDown() {
-				h.logger.Info("hardware recall: stand-down while preparing the sys-power nudge, leaving the box alone", "slot", slot)
-				cancel()
-				return
+		if attempt == 3 && !nudged {
+			if src := h.currentBoxSource(); nudgeStuckSource(attempt, nudged, src) || h.inertAckNudge(src, slot, url, pressAt) {
+				nudged = true
+				if standDown() {
+					h.logger.Info("hardware recall: stand-down while preparing the sys-power nudge, leaving the box alone", "slot", slot)
+					cancel()
+					return
+				}
+				h.logger.Warn("hardware recall: box inert (stuck source or ACKing without fetching), sending one sys-power nudge", "slot", slot, "source", src)
+				if err := h.sysPowerToggle(ctx); err != nil {
+					h.logger.Warn("hardware recall: sys-power nudge failed", "slot", slot, "err", err)
+				}
+				time.Sleep(1500 * time.Millisecond)
 			}
-			h.logger.Warn("hardware recall: box stuck in INVALID_SOURCE, sending one sys-power nudge", "slot", slot)
-			if err := h.sysPowerToggle(ctx); err != nil {
-				h.logger.Warn("hardware recall: sys-power nudge failed", "slot", slot, "err", err)
-			}
-			time.Sleep(1500 * time.Millisecond)
 		}
 		// Wake the box first: after the 1036 wrong-state rejection the firmware
 		// often gives up on its failed self-activation and powers the source off
@@ -4041,6 +4066,22 @@ func (h *presetWsHandler) nowPlayingSummary() (string, string, string) {
 // a chance first.
 func nudgeStuckSource(attempt int, nudged bool, source string) bool {
 	return attempt == 3 && !nudged && source == "INVALID_SOURCE"
+}
+
+// inertAckNudge is the second sys-power-nudge trigger (#419 Finding 2): the
+// box reports source=UPNP and ACKs every SetURI+Play, yet has not fetched a
+// single byte of THIS recall's proxied stream by the third attempt - the
+// "ACKs everything, fetches nothing" freeze the INVALID_SOURCE-only condition
+// missed (on-site ST30 capture 2026-07-25: five honest attempts, source=UPNP
+// throughout, zero fetches, nudge never ran; the same box's field bundle shows
+// the ONLY successful source activation of the day followed a real sys-power
+// toggle). Tightly scoped so it can never interrupt real audio: proxied
+// streams only (open proxy fetch = physical precondition for audio, so zero
+// fetch evidence at attempt 3 proves silence), and any other source string
+// (AUX, BLUETOOTH, a user-started session) never nudges.
+func (h *presetWsHandler) inertAckNudge(source string, slot int, url string, pressAt time.Time) bool {
+	return source == "UPNP" && streamPath(url) != "" &&
+		!h.slotPulledSince(slot, pressAt) && !h.slotFetchLiveNow(slot)
 }
 
 // boxPlayingURL reports whether the box is in a play/buffering state AND its
