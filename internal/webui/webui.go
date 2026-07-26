@@ -1065,6 +1065,15 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// encodes a Spotify container (an older mis-save) is healed into a proper
 		// Spotify preset instead of being stored as a dead radio link.
 		if p.Type == "spotify" {
+			// Unwrap an ephemeral autoplay STATION context before storing: the
+			// save path captures the engine's live context, and after autoplay
+			// kicked in that is spotify:station:playlist:X - a session-bound
+			// radio wrapper that recalls a foreign/expired station later (field
+			// 2026-07-26: every recall of such a preset played an unrelated
+			// station and skipped through 51 unplayable tracks). The wrapped
+			// context is what the user actually chose, so unwrapping is the
+			// faithful save.
+			p.URI = normalizeSpotifyURI(p.URI)
 			if !playableSpotifyURI(p.URI) {
 				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 					"error": "This Spotify selection can't be saved to a preset: it has no replayable playlist, album or track. Open a playlist or album and try again.",
@@ -1246,6 +1255,19 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// normalizeSpotifyURI rewrites an ephemeral autoplay STATION context to the
+// real context it wraps: spotify:station:playlist:X -> spotify:playlist:X.
+// Station contexts are session-bound; stored in a preset they later recall a
+// foreign or expired station. Applied on save (above) and on recall (heals
+// presets stored before this fix).
+func normalizeSpotifyURI(uri string) string {
+	uri = strings.TrimSpace(uri)
+	if rest, ok := strings.CutPrefix(uri, "spotify:station:"); ok && rest != "" {
+		return "spotify:" + rest
+	}
+	return uri
 }
 
 // playableSpotifyURI reports whether uri is a Spotify context that go-librespot
@@ -1704,7 +1726,9 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		}
 		gen := s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "") // #135
-		uri, name, art, account, shuffle := p.URI, p.Name, p.Art, p.Account, p.Shuffle
+		// normalizeSpotifyURI on recall heals presets that stored an ephemeral
+		// station context before the save-side unwrap existed.
+		uri, name, art, account, shuffle := normalizeSpotifyURI(p.URI), p.Name, p.Art, p.Account, p.Shuffle
 		go func() {
 			bg := context.Background()
 			t0 := time.Now()
@@ -1715,8 +1739,16 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 					time.Sleep(500 * time.Millisecond)
 				}
 			}
+			keyDenied := false
 			if err := s.spotifyPlay(bg, uri, account, shuffle); err != nil {
-				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
+				// An audio-key denial means Spotify refuses this account/session
+				// the decryption keys: every additional Play just triggers
+				// another engine skip-storm (one key request per track) and feeds
+				// the account throttle that keeps the denial alive (429, field
+				// 2026-07-26: 51-track storms per press). Remember it so the
+				// verify below never fires the recovery re-Play into that state.
+				keyDenied = strings.Contains(err.Error(), "audio key denied")
+				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err, "keyDenied", keyDenied)
 			}
 			s.logger.Info("spotify soft recall: context load issued", "slot", slot, "warm", warm, "loadAfterMs", time.Since(t0).Milliseconds())
 			s.verifyRecall(gen, recallStart, slotURL, func(ctx context.Context, lastAttempt bool) {
@@ -1726,8 +1758,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				// every retry was the "same song restarts a few seconds in" bug,
 				// fixed for hardware in v0.7.4 but previously still present here).
 				// Only the last attempt does a full re-Play, to recover a genuine
-				// cold-boot auth race where the playlist never loaded at all.
-				if lastAttempt {
+				// cold-boot auth race where the playlist never loaded at all - and
+				// never on an audio-key denial, where it would only amplify the
+				// skip storm.
+				if lastAttempt && !keyDenied {
 					_ = s.spotifyPlay(ctx, uri, account, shuffle)
 				}
 				_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
