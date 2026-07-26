@@ -2203,7 +2203,19 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	// or reboot - exactly when the firmware tends to have dropped its
 	// hardware-key preset registrations (see OnPowerWake). Ask for a full
 	// re-sync so the keys are registered again within seconds.
-	requestPresetKeyResync(h.logger)
+	//
+	// UNLESS the box demonstrably idles in STANDBY: the firmware recycles the
+	// idle gabbo socket every ~12 minutes, and the unconditional ask here wrote
+	// two AddPresets into BoseApp on every recycle, all night - which reset the
+	// firmware's deep-standby countdown forever (#119 bundles 2026-07-26:
+	// /proc/uptime spanning days; boxes never low-powered since v0.9.17 shipped
+	// this path, while v0.9.16 with the same 5-minute READ-ONLY heartbeats deep
+	// slept fine - reads are safe, the blind writes are the difference). Every
+	// real dead-key moment keeps its own forced trigger: OnPowerWake (power
+	// press), OnThumbActivity (dead-press evidence), the urgent 1036/re-pair
+	// asks, and the boot-time force-all. Probe errors fall back to the old
+	// unconditional ask, so unknown states never lose the heal.
+	go h.resyncUnlessIdleStandby()
 	// Re-check the fake login too (see OnPowerWake): the reconnect moments
 	// are when the MargeHSM state decays on fresh-install boxes.
 	h.triggerPairAsync(10 * time.Second)
@@ -2217,6 +2229,27 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	if h.onBoxReconnect != nil {
 		h.onBoxReconnect()
 	}
+}
+
+// resyncUnlessIdleStandby is OnConnected's re-sync decision, off the WS hot
+// path. One now_playing read: a box sitting in STANDBY and not playing gets no
+// forced AddPreset sweep (the deep-standby fix, #119); anything else - another
+// source, an active play state, or a failed probe - keeps the pre-existing
+// unconditional ask. The periodic missing-only reconcile continues either way,
+// so a wiped preset LIST still heals on the normal cadence even in standby.
+func (h *presetWsHandler) resyncUnlessIdleStandby() {
+	if h.boxHost != "" {
+		// Let a mid-transition source settle so a wake in progress is not
+		// misread as idle standby (the wake also fires OnPowerWake's own ask).
+		time.Sleep(1500 * time.Millisecond)
+		src, _, status := h.nowPlayingSummary()
+		playing := status == "PLAY_STATE" || status == "BUFFERING_STATE"
+		if src == "STANDBY" && !playing {
+			h.logger.Info("preset self-heal: reconnect while the box idles in STANDBY, skipping the forced key re-sync so deep standby can engage (#119)")
+			return
+		}
+	}
+	requestPresetKeyResync(h.logger)
 }
 
 // logStandbyRaceSignature records (log-only) whether, shortly after a gabbo
