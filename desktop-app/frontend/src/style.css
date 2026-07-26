@@ -1988,3 +1988,19 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   background: var(--brand-bg); border-color: var(--brand);
   color: var(--brand-text); font-weight: 600;
 }
+
+/* Sticky offline speaker tiles (2026-07-26): a speaker once sighted stays
+   listed when scans miss it, clearly greyed out with a disconnect mark and a
+   "last seen ..." tooltip, until it answers again. */
+.box-btn.offline {
+  opacity: .45;
+  filter: grayscale(.85);
+  cursor: default;
+}
+.box-btn.offline:hover { opacity: .6; }
+.box-offline-mark {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  color: var(--err, #c66);
+}

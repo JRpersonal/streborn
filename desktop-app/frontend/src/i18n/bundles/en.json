@@ -220,6 +220,7 @@
   "speaker.unsupportedTitle": "This device is not supported",
   "speaker.unsupportedBody": "<b>{{model}}</b> is not a standalone SoundTouch speaker. STR runs only on the SoundTouch 10, 20, 30 and Portable. Its main feature, the hardware preset buttons 1 to 6, does not exist on this device, so there would be nothing for the presets to use.",
   "speaker.stockTooltip": "Stock Bose firmware. STR brings back internet radio and presets on this speaker.",
+  "speaker.offlineTooltip": "Offline, last seen {{ago}}. Click to search again.",
   "speaker.stockConfirmTitle": "Bring this speaker back to life with STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> still runs the stock Bose firmware. STR installs directly over your network, no USB stick needed. After that you control it entirely from this app: internet radio, presets, multi-room.<br><br>Continue to the install?",
   "speaker.stockConfirmCta": "To the install",

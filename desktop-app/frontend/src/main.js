@@ -1695,7 +1695,9 @@ async function refreshMusicZones(force) {
 // from state.nowPlayState in the pill renderer, so its icon never lags the poll.
 let _boxPlayingFetchAt = 0;
 async function refreshBoxPlaying() {
-  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.deviceID && b.host);
+  // Offline tiles are excluded: every Status() against them just times out
+  // and would delay the whole Promise.allSettled round for nothing.
+  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.deviceID && b.host && !b.offline);
   if (!strBoxes.length) return;
   const now = Date.now();
   if (state.boxPlayingBusy || now - _boxPlayingFetchAt < 8000) return;
@@ -1805,6 +1807,21 @@ function manualIpInputBusy() {
   return document.activeElement === el || !!(el.value || '').trim();
 }
 
+// offlineAgo renders "how long unseen" for an offline speaker tile via
+// Intl.RelativeTimeFormat in the app locale, so the phrase localizes itself
+// ("vor 5 Minuten" / "5 minutes ago") without per-language time strings.
+function offlineAgo(sec) {
+  try {
+    const rtf = new Intl.RelativeTimeFormat(getLocale() || 'en', { numeric: 'auto' });
+    if (sec < 3600) return rtf.format(-Math.max(1, Math.round(sec / 60)), 'minute');
+    if (sec < 86400) return rtf.format(-Math.round(sec / 3600), 'hour');
+    return rtf.format(-Math.round(sec / 86400), 'day');
+  } catch { return Math.max(1, Math.round(sec / 60)) + ' min'; }
+}
+function offlineTitle(b) {
+  return t('speaker.offlineTooltip', { ago: offlineAgo(b.offlineSinceSec || 0) });
+}
+
 function renderBoxSelect() {
   const sel = $('boxSelect');
   if (state.boxes.length === 0) {
@@ -1878,6 +1895,16 @@ function renderBoxSelect() {
   };
   const pill = (b) => {
     const isStock = b.kind === 'stock';
+    // Sticky offline tiles (2026-07-26): a speaker once sighted stays listed
+    // when scans miss it (reboot, plug pulled), clearly greyed out with a
+    // disconnect mark and a "last seen ..." tooltip, until it answers again.
+    const off = !!b.offline;
+    const offCls = off ? ' offline' : '';
+    const offTitle = off ? offlineTitle(b) : '';
+    const offAttr = off ? ` data-offline="1" title="${escapeAttr(offTitle)}"` : '';
+    const offMark = off
+      ? `<span class="box-offline-mark" aria-label="${escapeAttr(offTitle)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path><path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg></span>`
+      : '';
     const groupMark = isFramedMaster(b)
       ? `<span class="box-group-master" title="${escapeAttr(t('multiroom.groupMasterTitle'))}">&#9733;</span>`
       : '';
@@ -1897,7 +1924,8 @@ function renderBoxSelect() {
       // install for any model rather than blocking one. Soundbars / adapters
       // install too; their missing hardware preset buttons are noted in Setup.
       const badge = `<span class="box-stock-badge">${escapeHtml(t('speaker.needsInstallBadge'))}</span>`;
-      return `<span class="box-btn${stockCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1" role="button" tabindex="0" title="${escapeAttr(t('speaker.stockTooltip'))}">${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
+      const stockTitle = off ? offTitle : t('speaker.stockTooltip');
+      return `<span class="box-btn${stockCls}${offCls}" data-host="${b.host}" data-port="${b.port}" data-stock="1"${off ? ' data-offline="1"' : ''} role="button" tabindex="0" title="${escapeAttr(stockTitle)}">${offMark}${escapeHtml(label)}${model} <small>${b.host}</small>${badge}</span>`;
     }
     const ver = b.version ? `<span class="box-ver" title="${escapeAttr(t('speaker.stickVersionTitle'))}">${escapeHtml(b.version)}</span>` : '';
     // Red dot when this speaker's agent is older than the app's embedded
@@ -1917,7 +1945,7 @@ function renderBoxSelect() {
     const playMark = playingNow
       ? `<span class="box-playing" title="${escapeAttr(t('speaker.playingNow'))}" aria-label="${escapeAttr(t('speaker.playingNow'))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a7 7 0 0 1 0 14.14"></path></svg></span>`
       : '';
-    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}" data-host="${b.host}" data-port="${b.port}" role="button" tabindex="0">${groupMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
+    return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
   };
   const groups = Object.keys(memberCount).filter(m => memberCount[m] >= 2).sort();
   if (groups.length === 0) {
@@ -1947,6 +1975,14 @@ function renderBoxSelect() {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.
       if (e.target.closest('.box-edit')) return;
+      // An offline tile cannot be selected (every call would fail); clicking
+      // it explains itself and kicks off a fresh discovery, which is also the
+      // fastest way to bring a returned speaker back to life in the list.
+      if (btn.dataset.offline) {
+        showToast(btn.title || t('speaker.offlineTooltip', { ago: '' }));
+        discoverBoxes();
+        return;
+      }
       const host = btn.dataset.host;
       const port = parseInt(btn.dataset.port, 10);
       const box = state.boxes.find(b => b.host === host && b.port === port);

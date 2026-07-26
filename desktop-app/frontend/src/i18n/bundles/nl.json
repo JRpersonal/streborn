@@ -199,6 +199,7 @@
   "speaker.rebootingToast": "Speaker wordt herstart. Hij is zo weer beschikbaar.",
   "speaker.needsInstallBadge": "Klaar voor STR",
   "speaker.stockTooltip": "Originele Bose-firmware. STR brengt internetradio en voorkeuzes terug op deze speaker.",
+  "speaker.offlineTooltip": "Offline, laatst gezien {{ago}}. Klik om opnieuw te zoeken.",
   "speaker.stockConfirmTitle": "Deze speaker met STR weer tot leven wekken?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> draait nog de originele Bose-firmware. STR installeert rechtstreeks via je netwerk, zonder USB-stick. Daarna bedien je hem volledig vanuit deze app: internetradio, voorkeuzes, multiroom.<br><br>Doorgaan naar de installatie?",
   "speaker.stockConfirmCta": "Naar de installatie",

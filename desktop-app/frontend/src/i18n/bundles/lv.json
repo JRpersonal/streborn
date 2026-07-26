@@ -199,6 +199,7 @@
   "speaker.rebootingToast": "Skaļrunis tiek restartēts. Drīz tas atkal būs pieejams.",
   "speaker.needsInstallBadge": "Gatavs STR",
   "speaker.stockTooltip": "Oriģinālā Bose programmatūra. STR atgriež interneta radio un iestatījumus šajā skaļrunī.",
+  "speaker.offlineTooltip": "Nav sasniedzams, pēdējoreiz redzēts {{ago}}. Noklikšķiniet, lai meklētu vēlreiz.",
   "speaker.stockConfirmTitle": "Atdzīvināt šo skaļruni ar STR?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> joprojām darbojas ar oriģinālo Bose programmatūru. STR instalējas tieši caur jūsu tīklu, bez USB zibatmiņas. Pēc tam jūs to pilnībā vadāt no šīs lietotnes: interneta radio, iestatījumi, multiroom.<br><br>Turpināt uz instalēšanu?",
   "speaker.stockConfirmCta": "Uz instalēšanu",
