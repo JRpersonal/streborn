@@ -90,6 +90,8 @@ type Server struct {
 	spotifyPlay func(ctx context.Context, uri, account string, shuffle bool) error
 	// peerSeedFn accepts speakers pushed from the desktop app (see WithPeerSeed).
 	peerSeedFn func([]PeerSeed)
+	// peerForgetFn removes one sticky-picker entry (see WithPeerForget).
+	peerForgetFn func(host string) bool
 	// peersFn lists the other STR speakers on the LAN for the on-box page's
 	// "Other speakers" section. nil hides the section.
 	peersFn func(ctx context.Context) []PeerLink
@@ -627,6 +629,12 @@ func WithPeerSeed(fn func([]PeerSeed)) Option {
 	return func(s *Server) { s.peerSeedFn = fn }
 }
 
+// WithPeerForget registers the remover for one pushed/stale peer entry (POST
+// /api/peers/forget). Returns whether the host was known. nil: 404.
+func WithPeerForget(fn func(host string) bool) Option {
+	return func(s *Server) { s.peerForgetFn = fn }
+}
+
 // WithSpotifyControl registers the function that starts playback of a
 // Spotify URI on a given account in go-librespot (the Spotify-preset
 // control plane). An empty account plays with the current login; shuffle
@@ -803,6 +811,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/icon-large.png", s.handleIconLarge)
 	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/api/peers/seed", s.handlePeerSeed)
+	mux.HandleFunc("/api/peers/forget", s.handlePeerForget)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -7966,6 +7975,31 @@ func (s *Server) handlePeerSeed(w http.ResponseWriter, r *http.Request) {
 		seeds = seeds[:32]
 	}
 	s.peerSeedFn(seeds)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePeerForget removes one entry from the sticky picker (POST, JSON
+// {"host":"..."}). 204 when removed, 404 when the host was not listed.
+func (s *Server) handlePeerForget(w http.ResponseWriter, r *http.Request) {
+	if s.peerForgetFn == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Host string `json:"host"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil || req.Host == "" {
+		http.Error(w, "bad forget request", http.StatusBadRequest)
+		return
+	}
+	if !s.peerForgetFn(req.Host) {
+		http.NotFound(w, r)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

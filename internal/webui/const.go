@@ -688,6 +688,12 @@ async function loadPeers() {
   });
   document.getElementById('peersCard').style.display = 'block';
 }
+// The picker self-heals while the page is open: the first render right after
+// opening can show stale dim states (the agent re-probes peers on demand and
+// in a 60 s background tick, so a just-opened page may be seconds ahead of
+// the freshest verdict). Re-fetching keeps dim/clickable live without a
+// reload. 20 s matches the agent's sweep cadence without hammering it.
+setInterval(function(){ loadPeers().catch(function(){}); }, 20000);
 
 async function loadVersion() {
   const v = await api('/api/agent/version');

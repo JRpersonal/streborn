@@ -467,6 +467,21 @@ func run() error {
 	// Restore the sticky speaker-picker list before the webui serves its first
 	// page, so the picker is complete from the very first load after a reboot.
 	loadPersistedPeers(logger.With("comp", "peers"))
+	// Keep the peer verdicts fresh INDEPENDENTLY of page loads: the sweep and
+	// the TCP fallback probes used to run only when someone requested
+	// /api/peers, so the first render after opening the page showed stale
+	// "unreachable" states for speakers that were fine (live 2026-07-26: two
+	// running ST10/ST30 rendered dimmed, then flipped clickable on the next
+	// poll). A background tick keeps lastSeen current so the first render is
+	// already right. browsePeers throttles internally, so an open page's own
+	// polls and this tick never double-browse.
+	go func() {
+		t := time.NewTicker(60 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			_ = browsePeers(context.Background(), logger.With("comp", "peers"))
+		}
+	}()
 
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
@@ -508,6 +523,9 @@ func run() error {
 		}),
 		webui.WithPeerSeed(func(seeds []webui.PeerSeed) {
 			seedPeers(seeds, logger.With("comp", "peers"))
+		}),
+		webui.WithPeerForget(func(host string) bool {
+			return forgetPeer(host, logger.With("comp", "peers"))
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
@@ -2000,7 +2018,26 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 	probeStalePeers(logger)
 }
 
-// probeStalePeers re-checks up to four longest-unseen listed peers over plain
+// forgetPeer removes one entry from the sticky picker (POST /api/peers/forget):
+// the manual way out for an entry that does not belong there (a mistyped seed,
+// a speaker that moved households) without waiting out the 12 h TTL.
+func forgetPeer(host string, logger *slog.Logger) bool {
+	ip := strings.TrimSpace(host)
+	if ip == "" {
+		return false
+	}
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	if _, ok := peersByIP[ip]; !ok {
+		return false
+	}
+	delete(peersByIP, ip)
+	savePersistedPeersLocked(logger)
+	logger.Info("peer removed from the sticky picker", "host", ip)
+	return true
+}
+
+// probeStalePeers re-checks up to eight longest-unseen listed peers over plain
 // TCP. This is what keeps the list honest INDEPENDENTLY of mDNS: a speaker
 // whose announcements get lost (the exact "missing because one lookup failed"
 // complaint) is still confirmed alive by its web port and stays listed and
@@ -2026,8 +2063,8 @@ func probeStalePeers(logger *slog.Logger) {
 	}
 	peersMu.Unlock()
 	sort.Slice(stale, func(i, j int) bool { return stale[i].seen.Before(stale[j].seen) })
-	if len(stale) > 4 {
-		stale = stale[:4]
+	if len(stale) > 8 {
+		stale = stale[:8]
 	}
 	go func() {
 		defer func() {
@@ -2074,9 +2111,10 @@ func probeStalePeers(logger *slog.Logger) {
 const peerTTL = 12 * time.Hour
 
 // peerDimAfter is how long after the last confirmation a listed peer renders
-// dimmed/non-clickable. Short: the 15 s sweeps plus the fallback probes
-// re-confirm a live box well inside it, so only genuinely silent boxes dim.
-const peerDimAfter = 90 * time.Second
+// dimmed/non-clickable. Sized against the confirmation cadence (60 s background
+// tick, probes in batches of 8) so a live box is always re-confirmed well
+// inside the window even in a large fleet, and only genuinely silent boxes dim.
+const peerDimAfter = 3 * time.Minute
 
 func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 	const (
