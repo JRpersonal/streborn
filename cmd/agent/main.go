@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -463,6 +464,10 @@ func run() error {
 		})
 	}
 
+	// Restore the sticky speaker-picker list before the webui serves its first
+	// page, so the picker is complete from the very first load after a reboot.
+	loadPersistedPeers(logger.With("comp", "peers"))
+
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
 		webui.WithBoxHost(*boxHost),
@@ -500,6 +505,9 @@ func run() error {
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))
+		}),
+		webui.WithPeerSeed(func(seeds []webui.PeerSeed) {
+			seedPeers(seeds, logger.With("comp", "peers"))
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
@@ -1868,7 +1876,183 @@ var (
 	peersMu       sync.Mutex
 	peersByIP     = map[string]*peerEntry{}
 	peersBrowseAt time.Time
+	peersProbing  bool      // one fallback-probe goroutine at a time
+	peersSavedFP  string    // membership fingerprint of the last NAND write
+	peersSavedAt  time.Time // last NAND write (rate-limits lastSeen refreshes)
 )
+
+// peersStorePath persists the peer list across reboots so the on-box page's
+// speaker picker is complete from the first load. Requirement (Jens,
+// 2026-07-26): better one speaker too many than one missing because a single
+// mDNS round failed - the list only shrinks after peerTTL, never because of a
+// momentary lookup failure or a reboot.
+const peersStorePath = "/mnt/nv/streborn/peers.json"
+
+// peerDiskEntry is the JSON shape of one persisted peer.
+type peerDiskEntry struct {
+	IP       string    `json:"ip"`
+	Name     string    `json:"name"`
+	Port     int       `json:"port"`
+	LastSeen time.Time `json:"lastSeen"`
+}
+
+// loadPersistedPeers seeds peersByIP from NAND at agent start. Entries come
+// back dimmed (reachable=false); the browse sweep's fallback probe promotes
+// the ones that actually answer within about a minute.
+func loadPersistedPeers(logger *slog.Logger) {
+	b, err := os.ReadFile(peersStorePath)
+	if err != nil {
+		return
+	}
+	var list []peerDiskEntry
+	if json.Unmarshal(b, &list) != nil || len(list) == 0 {
+		return
+	}
+	now := time.Now()
+	peersMu.Lock()
+	n := 0
+	for _, d := range list {
+		if d.IP == "" || now.Sub(d.LastSeen) > peerTTL {
+			continue
+		}
+		peersByIP[d.IP] = &peerEntry{name: d.Name, port: d.Port, lastSeen: d.LastSeen}
+		n++
+	}
+	peersMu.Unlock()
+	if n > 0 {
+		logger.Info("peer list restored from NAND", "count", n)
+	}
+}
+
+// savePersistedPeersLocked writes the peer list to NAND when its membership
+// (IPs, names, ports) changed, or at most every 6 h to refresh lastSeen
+// stamps. Rate-limited on purpose: lastSeen moves on every sweep and NAND
+// writes are precious. Caller holds peersMu.
+func savePersistedPeersLocked(logger *slog.Logger) {
+	list := make([]peerDiskEntry, 0, len(peersByIP))
+	fp := ""
+	for ip, e := range peersByIP {
+		list = append(list, peerDiskEntry{IP: ip, Name: e.name, Port: e.port, LastSeen: e.lastSeen})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].IP < list[j].IP })
+	for _, d := range list {
+		fp += d.IP + "|" + d.Name + "|" + strconv.Itoa(d.Port) + ";"
+	}
+	if fp == peersSavedFP && time.Since(peersSavedAt) < 6*time.Hour {
+		return
+	}
+	b, err := json.MarshalIndent(list, "", " ")
+	if err != nil {
+		return
+	}
+	tmp := peersStorePath + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		logger.Debug("peer list persist failed", "err", err)
+		return
+	}
+	if err := os.Rename(tmp, peersStorePath); err != nil {
+		logger.Debug("peer list persist rename failed", "err", err)
+		return
+	}
+	peersSavedFP = fp
+	peersSavedAt = time.Now()
+}
+
+// seedPeers merges a speaker list pushed by the desktop app (POST
+// /api/peers/seed) into the peer map, so speakers the local mDNS never
+// managed to see still appear in the on-box picker. A seed counts as a
+// sighting (the app just saw that speaker); reachability is then confirmed by
+// the same async probe the browse sweep uses.
+func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
+	if len(seeds) == 0 {
+		return
+	}
+	mine := ownIPv4s()
+	now := time.Now()
+	peersMu.Lock()
+	added := 0
+	for _, s := range seeds {
+		ip := strings.TrimSpace(s.Host)
+		if ip == "" || mine[ip] {
+			continue
+		}
+		e := peersByIP[ip]
+		if e == nil {
+			e = &peerEntry{}
+			peersByIP[ip] = e
+			added++
+		}
+		if s.Name != "" {
+			e.name = s.Name
+		}
+		if s.Port != 0 && e.port == 0 {
+			e.port = s.Port
+		}
+		if e.lastSeen.Before(now) {
+			e.lastSeen = now
+		}
+	}
+	savePersistedPeersLocked(logger)
+	peersMu.Unlock()
+	if added > 0 {
+		logger.Info("peer list seeded by the app", "added", added, "total", len(seeds))
+	}
+	probeStalePeers(logger)
+}
+
+// probeStalePeers re-checks up to four longest-unseen listed peers over plain
+// TCP. This is what keeps the list honest INDEPENDENTLY of mDNS: a speaker
+// whose announcements get lost (the exact "missing because one lookup failed"
+// complaint) is still confirmed alive by its web port and stays listed and
+// clickable; a genuinely gone one stays dimmed until peerTTL expires it. One
+// goroutine at a time, a few 300 ms dials per round.
+func probeStalePeers(logger *slog.Logger) {
+	peersMu.Lock()
+	if peersProbing {
+		peersMu.Unlock()
+		return
+	}
+	peersProbing = true
+	type cand struct {
+		ip   string
+		seen time.Time
+	}
+	var stale []cand
+	now := time.Now()
+	for ip, e := range peersByIP {
+		if now.Sub(e.lastSeen) > 30*time.Second {
+			stale = append(stale, cand{ip: ip, seen: e.lastSeen})
+		}
+	}
+	peersMu.Unlock()
+	sort.Slice(stale, func(i, j int) bool { return stale[i].seen.Before(stale[j].seen) })
+	if len(stale) > 4 {
+		stale = stale[:4]
+	}
+	go func() {
+		defer func() {
+			peersMu.Lock()
+			peersProbing = false
+			peersMu.Unlock()
+		}()
+		for _, c := range stale {
+			port := reachableWebPort(c.ip)
+			if port == 0 {
+				continue
+			}
+			peersMu.Lock()
+			if e := peersByIP[c.ip]; e != nil {
+				e.lastSeen = time.Now()
+				e.reachable = true
+				e.port = port
+			}
+			peersMu.Unlock()
+		}
+		if logger != nil {
+			logger.Debug("peer fallback probe done", "checked", len(stale))
+		}
+	}()
+}
 
 // browsePeers discovers the other STR speakers on the LAN over mDNS and returns a
 // link to each one's web UI, so a phone on the on-box page can hop between
@@ -1882,11 +2066,22 @@ var (
 // seen (marked offline if it is not currently reachable, so the page can dim it
 // rather than drop it), and sweeps are throttled to rebrowseEvery so repeated page
 // loads stay cheap. The browse window is widened so more peers answer per round.
+// peerTTL is how long a speaker stays in the picker after it was last
+// confirmed (mDNS, HTTP fallback probe, or an app seed). Hours on purpose
+// (Jens, 2026-07-26): a box in overnight deep standby or behind a flaky mDNS
+// round must not vanish; it is shown dimmed until it answers again, and only
+// a box unseen for a full peerTTL is dropped.
+const peerTTL = 12 * time.Hour
+
+// peerDimAfter is how long after the last confirmation a listed peer renders
+// dimmed/non-clickable. Short: the 15 s sweeps plus the fallback probes
+// re-confirm a live box well inside it, so only genuinely silent boxes dim.
+const peerDimAfter = 90 * time.Second
+
 func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 	const (
 		rebrowseEvery = 15 * time.Second
 		browseWindow  = 3500 * time.Millisecond
-		peerTTL       = 7 * time.Minute
 	)
 	peersMu.Lock()
 	needBrowse := peersBrowseAt.IsZero() || time.Since(peersBrowseAt) >= rebrowseEvery
@@ -1948,7 +2143,11 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 			}
 		}
 		peersBrowseAt = now
+		savePersistedPeersLocked(logger)
 		peersMu.Unlock()
+		// Independently of mDNS, re-confirm the longest-unseen listed peers over
+		// TCP so a speaker with lost announcements stays in the picker (async).
+		probeStalePeers(logger)
 	}
 
 	peersMu.Lock()
@@ -1965,9 +2164,11 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 			port = 8888 // never reached yet: best-effort URL so the entry still resolves once it comes up
 		}
 		out = append(out, webui.PeerLink{
-			Name:      e.name,
-			URL:       fmt.Sprintf("http://%s:%d/", ip, port),
-			Reachable: e.reachable,
+			Name: e.name,
+			URL:  fmt.Sprintf("http://%s:%d/", ip, port),
+			// A peer confirmed within peerDimAfter is clickable; anything older
+			// stays listed (sticky by design) but dims until it answers again.
+			Reachable: e.reachable && now.Sub(e.lastSeen) <= peerDimAfter,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

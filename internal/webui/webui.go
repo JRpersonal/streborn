@@ -88,6 +88,8 @@ type Server struct {
 	// nil when Spotify is not configured. Injected as a func for decoupling.
 	// shuffle selects a fresh random start vs the default resume-where-left-off.
 	spotifyPlay func(ctx context.Context, uri, account string, shuffle bool) error
+	// peerSeedFn accepts speakers pushed from the desktop app (see WithPeerSeed).
+	peerSeedFn func([]PeerSeed)
 	// peersFn lists the other STR speakers on the LAN for the on-box page's
 	// "Other speakers" section. nil hides the section.
 	peersFn func(ctx context.Context) []PeerLink
@@ -610,6 +612,21 @@ func WithPeers(fn func(ctx context.Context) []PeerLink) Option {
 	return func(s *Server) { s.peersFn = fn }
 }
 
+// PeerSeed is one speaker pushed into the agent's peer list from outside (the
+// desktop app distributes its known-speakers set to every agent so the on-box
+// picker is complete even where local mDNS is lossy).
+type PeerSeed struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+// WithPeerSeed registers the sink for externally pushed peers (POST
+// /api/peers/seed). nil returns 404 on the endpoint.
+func WithPeerSeed(fn func([]PeerSeed)) Option {
+	return func(s *Server) { s.peerSeedFn = fn }
+}
+
 // WithSpotifyControl registers the function that starts playback of a
 // Spotify URI on a given account in go-librespot (the Spotify-preset
 // control plane). An empty account plays with the current login; shuffle
@@ -785,6 +802,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/icon.png", s.handleIcon)
 	mux.HandleFunc("/icon-large.png", s.handleIconLarge)
 	mux.HandleFunc("/api/peers", s.handlePeers)
+	mux.HandleFunc("/api/peers/seed", s.handlePeerSeed)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -7924,6 +7942,31 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 		peers = []PeerLink{}
 	}
 	writeJSON(w, http.StatusOK, peers)
+}
+
+// handlePeerSeed accepts the desktop app's known-speaker list (POST, JSON
+// array of PeerSeed) and merges it into the agent's peer store, so speakers
+// the local mDNS never saw still show up in the on-box picker. Body capped;
+// list capped to keep a stray client from ballooning the NAND store.
+func (s *Server) handlePeerSeed(w http.ResponseWriter, r *http.Request) {
+	if s.peerSeedFn == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var seeds []PeerSeed
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&seeds); err != nil {
+		http.Error(w, "bad seed list", http.StatusBadRequest)
+		return
+	}
+	if len(seeds) > 32 {
+		seeds = seeds[:32]
+	}
+	s.peerSeedFn(seeds)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleManifest serves the PWA manifest so a phone can install the controller
