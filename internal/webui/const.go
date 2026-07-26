@@ -67,6 +67,13 @@ html.a11y-contrast {
 html.a11y-scale-l  body { zoom:1.15; }
 html.a11y-scale-xl body { zoom:1.30; }
 * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+/* iOS Safari reads a fast second tap on a control as double-tap-to-zoom, so
+   hammering the volume +/- steppers zoomed the page instead of stepping
+   again. touch-action:manipulation disables double-tap zoom ON THE CONTROLS
+   and removes the ~350 ms tap delay, so rapid taps land as taps - while
+   pinch-zoom on the page stays available (accessibility; deliberately NOT
+   the maximum-scale=1 sledgehammer). */
+button, a, input, select, label { touch-action: manipulation; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 html.a11y-contrast :focus-visible { outline-color:#fff; }
 /* Pad every edge by the device safe-area inset on top of the base 16px. The
