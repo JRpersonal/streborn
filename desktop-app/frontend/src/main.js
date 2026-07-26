@@ -1566,6 +1566,14 @@ function applyBoxList(list) {
   updateFavModeBtn();
   // Setup-tab target picker reuses the same state.boxes feed.
   renderSetupTargetPicker();
+  // Per-speaker pin invite for stick installs: the USB stick provisions the
+  // speaker autonomously on power-cycle, so unlike the network/SSH install
+  // flows there is no in-app completion hook and celebrateProvision never
+  // fired - users saw no pin prompt after their first stick-installed speaker
+  // and only got the whole-set invite at the very end (2026-07-26). The
+  // discovery feed knows the moment instead: a box this session saw as stock
+  // reappearing as STR just got rescued.
+  maybeInviteStickProvisioned();
   // Second world-map invite: once the user's whole supported SoundTouch set is
   // running STR (no stock box left to convert), celebrate the milestone again.
   maybeInviteWorldMapAllDone();
@@ -5108,6 +5116,35 @@ async function inviteWorldMapAfterProvision(box) {
   try { localStorage.setItem(WORLD_MAP_FLAG, '1'); } catch {}
   try { await SetAppFlag(WORLD_MAP_FLAG); } catch {}
   await inviteWorldMapOnce(flag, 'first');
+}
+
+// maybeInviteStickProvisioned fires the per-speaker pin invite for speakers
+// provisioned via the USB stick, where the app has no install-completion hook:
+// the stick installs autonomously on power-cycle and the box simply reappears
+// in discovery as STR. A stock -> str transition observed within this session
+// is that completion signal. Two guards keep it honest: a box ever seen as STR
+// earlier in the session never fires (an OTA/reboot briefly misclassifies a
+// live STR box as stock when its Bose port answers before the agent is up, see
+// updateStockReprobe), and the durable per-box flag inside
+// inviteWorldMapAfterProvision suppresses repeats across sessions. Keyed by
+// host: the deviceID only becomes visible once STR runs, so the host is the
+// only identity stable across the transition.
+const worldMapKindSeen = new Map(); // host -> last seen kind, this session
+const worldMapEverStr = new Set();  // hosts ever seen as str, this session
+function maybeInviteStickProvisioned() {
+  for (const b of (state.boxes || [])) {
+    if (!b || !b.host || !b.kind) continue;
+    const prev = worldMapKindSeen.get(b.host);
+    worldMapKindSeen.set(b.host, b.kind);
+    const isStr = b.kind !== 'stock';
+    if (prev === 'stock' && isStr && !worldMapEverStr.has(b.host)) {
+      worldMapEverStr.add(b.host);
+      // Freshly rescued via stick: celebrate like the in-app install paths do.
+      inviteWorldMapAfterProvision(b);
+      continue;
+    }
+    if (isStr) worldMapEverStr.add(b.host);
+  }
 }
 
 // maybeInviteWorldMapAllDone fires the SECOND invite once every supported
