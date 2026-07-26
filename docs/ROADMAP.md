@@ -148,6 +148,14 @@ hard blockers exist and a clean answer to each is a prerequisite:
    seven days of non-use. Presets and settings must be source-of-
    truth on the agent, not in the PWA. This actually fits STR's
    existing architecture, but is worth confirming.
+5. **Hardware volume buttons.** Coupling the phone's volume side
+   buttons to the speaker volume while the page is open (user wish,
+   2026-07-26) is not possible from a web page: Safari exposes no
+   event for the hardware buttons, `HTMLMediaElement.volume` is
+   read-only on iOS, and there is no system-volume change event a
+   page could observe. This needs a native shell (the buttons are
+   only observable from a native audio session), so it lands here
+   as a native-app argument, not in the web UI.
 
 If the TLS-trust story can be made acceptable (one-tap profile
 install with a clear consent screen, or a route that does not need
