@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -107,7 +108,10 @@ func (a *App) persistKnownSpeakers() {
 	sort.Slice(list, func(i, j int) bool { return list[i].Host < list[j].Host })
 	fingerprint := ""
 	for _, k := range list {
-		fingerprint += k.Host + "|"
+		// Kind is part of the fingerprint so a stock -> str conversion counts as
+		// a change: it must re-trigger both the file write and the peer-seed
+		// distribution below, even though the host set is identical.
+		fingerprint += k.Host + "|" + k.Kind + ";"
 	}
 	a.knownSpeakersMu.Lock()
 	changed := fingerprint != a.knownSpeakersWritten
@@ -117,12 +121,79 @@ func (a *App) persistKnownSpeakers() {
 		return
 	}
 	path, err := knownSpeakersPath()
+	if err == nil {
+		if err := saveKnownSpeakersTo(path, list); err != nil {
+			a.logger.Warn("discovery: persist known speakers failed", "err", err)
+		}
+	}
+	// The speaker set changed: distribute it to the fleet so every speaker's
+	// on-box picker knows the whole set (sticky picker, 2026-07-26).
+	a.distributeKnownSpeakers()
+}
+
+// distributeKnownSpeakers pushes the currently known STR speaker set to every
+// STR agent (POST /api/peers/seed). Each agent merges the list into its own
+// sticky picker store, so a speaker whose local mDNS is lossy still lists the
+// whole fleet on its phone page. Best-effort and async: agents predating the
+// endpoint answer 404 and are simply unchanged; a speaker that is offline is
+// skipped by the timeout. Runs only when the discovered set changed, so it is
+// a handful of small POSTs per change, not per discovery cycle.
+func (a *App) distributeKnownSpeakers() {
+	type seed struct {
+		Name string `json:"name"`
+		Host string `json:"host"`
+		Port int    `json:"port"`
+	}
+	a.discMu.Lock()
+	var seeds []seed
+	var targets []seed
+	for _, e := range a.discCache {
+		b := e.box
+		if b.Host == "" || b.Kind == "stock" {
+			continue
+		}
+		port := b.Port
+		if port == 0 {
+			port = 8888
+		}
+		name := b.Name
+		if name == "" {
+			name = b.FriendlyName
+		}
+		s := seed{Name: name, Host: b.Host, Port: port}
+		seeds = append(seeds, s)
+		targets = append(targets, s)
+	}
+	a.discMu.Unlock()
+	if len(seeds) < 2 {
+		return // with 0-1 STR speakers there is nothing to cross-distribute
+	}
+	body, err := json.Marshal(seeds)
 	if err != nil {
 		return
 	}
-	if err := saveKnownSpeakersTo(path, list); err != nil {
-		a.logger.Warn("discovery: persist known speakers failed", "err", err)
-	}
+	go func() {
+		ok := 0
+		for _, t := range targets {
+			// boxDo, not a direct POST: mDNS announces port 8888 for every
+			// agent, but BCO chassis (Portable/taigan, scm, Wave) are only
+			// reachable from outside via :17008 - a direct POST to the
+			// announced port silently failed for exactly those boxes (live,
+			// 2026-07-26: the Portable never received the seed). boxDo walks
+			// the cached/announced/alternate ports the way every other agent
+			// call in the app does.
+			resp, err := a.boxDo(t.Host, t.Port, "POST", "/api/peers/seed", "application/json", string(body))
+			if err != nil {
+				a.logger.Warn("discovery: peer-seed push failed", "host", t.Host, "err", err)
+				continue
+			}
+			if resp.StatusCode == http.StatusNoContent {
+				ok++
+			}
+			_ = resp.Body.Close()
+		}
+		a.logger.Info("discovery: distributed the speaker set to the fleet", "speakers", len(seeds), "delivered", ok)
+	}()
 }
 
 // probeKnownSpeakers directly probes the speakers persisted from earlier runs

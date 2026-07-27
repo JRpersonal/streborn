@@ -168,6 +168,14 @@ const discoverySTRStickyTTL = 6 * time.Minute
 // would correct itself soon after. See otaPinned and mergeDiscoveryCache (#108).
 const otaRebootGrace = 4 * time.Minute
 
+// discoveryOfflineRetention is how long a box that misses EVERY probe stays
+// listed as a greyed-out offline tile after its grace window (the sticky TTLs
+// above) ran out. Requirement (2026-07-26): a speaker once sighted must not
+// vanish from the list just because it is rebooting or a scan misfired; it
+// greys out, shows how long it has been unseen, and comes back to life the
+// moment it answers. Only a box silent for a full day is dropped.
+const discoveryOfflineRetention = 24 * time.Hour
+
 // strKnownTTL is how long a box's confirmed-STR identity is remembered by
 // deviceID after its last STR sighting. It must comfortably outlast a runtime
 // Wi-Fi change / band switch and a box left off overnight so the speaker never
@@ -271,6 +279,14 @@ type BoxInfo struct {
 	// Used by the frontend update indicators to flag stamp drift
 	// even when version strings match.
 	Build string `json:"build"`
+	// Offline marks a speaker that was seen earlier but has missed every probe
+	// for longer than its reboot grace window (e.g. it is rebooting for a long
+	// time, powered off, or off the LAN). The tile stays listed greyed out
+	// (sticky list, 2026-07-26) until the box answers again or the 24 h
+	// retention expires. OfflineSinceSec is how long ago the miss streak
+	// started, for the "last seen ..." tooltip; only meaningful while Offline.
+	Offline         bool `json:"offline,omitempty"`
+	OfflineSinceSec int  `json:"offlineSinceSec,omitempty"`
 	// BoxHealth is the agent's wedged-control verdict ("ok" or "wedged"): a
 	// wedged box accepts transport pushes but never plays, and only a
 	// power-cycle clears it. The UI turns "wedged" into a pull-the-plug hint.
@@ -573,8 +589,12 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 	for key, b := range seen {
 		if prev, ok := a.discCache[key]; ok {
 			b = mergeBoxInfo(prev.box, b)
-			seen[key] = b
 		}
+		// A genuine sighting always clears the offline marker, whatever the
+		// merge carried over from the cached record.
+		b.Offline = false
+		b.OfflineSinceSec = 0
+		seen[key] = b
 		a.discCache[key] = discEntry{box: b, seen: now}
 	}
 	// Devices GENUINELY seen this cycle (before any cache re-adds), keyed by their
@@ -621,9 +641,17 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			seen[key] = e.box
 		} else if now.Sub(e.firstMiss) <= ttl {
 			seen[key] = e.box
+		} else if now.Sub(e.firstMiss) <= discoveryOfflineRetention {
+			// Missed every probe past the reboot grace: keep the tile, greyed
+			// out, instead of dropping it (sticky list, 2026-07-26). The box
+			// record is annotated on the fly; the cached record stays clean so
+			// a comeback restores it verbatim.
+			b := e.box
+			b.Offline = true
+			b.OfflineSinceSec = int(now.Sub(e.firstMiss).Seconds())
+			seen[key] = b
 		} else {
-			// Missed every probe for the whole grace window: genuinely gone
-			// (powered off / left the LAN).
+			// Silent for a full day: genuinely gone (powered off / removed).
 			delete(a.discCache, key)
 		}
 	}

@@ -37,6 +37,8 @@ export namespace main {
 	    model: string;
 	    version: string;
 	    build: string;
+	    offline?: boolean;
+	    offlineSinceSec?: number;
 	    boxHealth?: string;
 	    conflictingMod?: string;
 	    wlanCredsMissing?: boolean;
@@ -58,6 +60,8 @@ export namespace main {
 	        this.model = source["model"];
 	        this.version = source["version"];
 	        this.build = source["build"];
+	        this.offline = source["offline"];
+	        this.offlineSinceSec = source["offlineSinceSec"];
 	        this.boxHealth = source["boxHealth"];
 	        this.conflictingMod = source["conflictingMod"];
 	        this.wlanCredsMissing = source["wlanCredsMissing"];

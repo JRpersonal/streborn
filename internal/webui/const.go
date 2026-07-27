@@ -67,6 +67,13 @@ html.a11y-contrast {
 html.a11y-scale-l  body { zoom:1.15; }
 html.a11y-scale-xl body { zoom:1.30; }
 * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+/* iOS Safari reads a fast second tap on a control as double-tap-to-zoom, so
+   hammering the volume +/- steppers zoomed the page instead of stepping
+   again. touch-action:manipulation disables double-tap zoom ON THE CONTROLS
+   and removes the ~350 ms tap delay, so rapid taps land as taps - while
+   pinch-zoom on the page stays available (accessibility; deliberately NOT
+   the maximum-scale=1 sledgehammer). */
+button, a, input, select, label { touch-action: manipulation; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 html.a11y-contrast :focus-visible { outline-color:#fff; }
 /* Pad every edge by the device safe-area inset on top of the base 16px. The
@@ -98,7 +105,7 @@ button.btn.active, a.btn.active { border-color:var(--accent); color:var(--accent
 button.btn:active { background:var(--press); }
 @media (hover:hover) { button.btn:hover, a.btn:hover { background:var(--hover); } .preset:hover { background:var(--hover); } }
 .vol { display:flex; align-items:center; gap:12px; }
-.vol .volstep { flex-shrink:0; padding:6px 12px; }
+.vol .volstep { flex-shrink:0; padding:6px 12px; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 .vol input[type=range] { flex:1 1 auto; min-width:0; }
 .vol input[type=range] { flex:1; accent-color:var(--accent); height:44px; }
 .vol input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:24px; height:24px; border-radius:50%; background:var(--accent); }
@@ -239,9 +246,9 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <div class="label" id="lblVol">Volume</div>
 <div class="vol">
 <button class="btn volstep" id="volMute" onclick="toggleMute()" aria-label="Mute" title="Mute" style="font-size:16px">&#128266;</button>
-<button class="btn volstep" id="volDown" onclick="stepVol(-1)" aria-label="Quieter">&minus;</button>
+<button class="btn volstep" id="volDown" aria-label="Quieter">&minus;</button>
 <input type="range" id="vol" min="0" max="100" value="0" aria-label="Volume" oninput="onVol(this.value)">
-<button class="btn volstep" id="volUp" onclick="stepVol(1)" aria-label="Louder">+</button>
+<button class="btn volstep" id="volUp" aria-label="Louder">+</button>
 <span class="val" id="volval">0</span>
 </div>
 </div>
@@ -417,7 +424,8 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;',
 // safe against injection.
 function decodeEntities(s){ var el = document.createElement('textarea'); el.innerHTML = String(s); return el.value; }
 
-var volTimer = null, volLast = -1, muteSaved = -1;
+var volTimer = null, volLast = -1, muteSaved = -1, volSentAt = 0;
+function volSend(v) { volLast = +v; volSentAt = Date.now(); api('/api/box/volume','PUT',{value:+v}); }
 function onVol(v) {
   document.getElementById('volval').textContent = v;
   // Any move to an audible level ends a mute (#385): the saved level is stale.
@@ -426,7 +434,13 @@ function onVol(v) {
     var mb = document.getElementById('volMute'); if (mb) mb.innerHTML = '&#128266;';
   }
   if (volTimer) clearTimeout(volTimer);
-  volTimer = setTimeout(function(){ if (+v !== volLast) { volLast = +v; api('/api/box/volume','PUT',{value:+v}); } }, 250);
+  // Leading send every ~300 ms: a held stepper repeats faster than the 250 ms
+  // trailing debounce, which would postpone the PUT until release and make the
+  // box jump instead of ramp. The leading path lets the ear track the level
+  // live (also makes slider drags feel direct); the trailing debounce still
+  // catches the final value.
+  if (Date.now() - volSentAt > 300) { if (+v !== volLast) volSend(v); return; }
+  volTimer = setTimeout(function(){ if (+v !== volLast) { volSend(v); } }, 250);
 }
 // Fine volume steps (#398): same +/- steppers the desktop app has.
 function stepVol(d) {
@@ -435,6 +449,37 @@ function stepVol(d) {
   el.value = v;
   onVol(String(v));
 }
+// Hold-to-repeat on the steppers, iPhone-side-button style: the press steps
+// once immediately; keeping it held starts repeating after 450 ms at a calm
+// 320 ms per step and gently accelerates to a 140 ms floor (~3 -> ~7 volume
+// points/s). Deliberately linear single steps with a bounded ramp so a held
+// button can never blast a room. Pointer events cover touch + mouse; keyboard
+// activation (a click with detail 0, no pointerdown) still steps once.
+function bindVolHold(id, d) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var t = null;
+  var fire = function(interval) {
+    stepVol(d);
+    t = setTimeout(function(){ fire(Math.max(140, interval - 15)); }, interval);
+  };
+  var stop = function() { if (t) { clearTimeout(t); t = null; } };
+  el.addEventListener('pointerdown', function(e) {
+    // preventDefault stops the iOS long-press side shows (text callout /
+    // magnifier) on the held button; double-tap zoom is already off via
+    // touch-action:manipulation.
+    e.preventDefault();
+    stepVol(d);
+    stop();
+    t = setTimeout(function(){ fire(320); }, 450);
+  });
+  ['pointerup','pointercancel','pointerleave'].forEach(function(ev){ el.addEventListener(ev, stop); });
+  el.addEventListener('click', function(e) {
+    if (e.detail === 0) { stepVol(d); } // keyboard/AT activation
+  });
+}
+bindVolHold('volUp', 1);
+bindVolHold('volDown', -1);
 // Mute toggle on the speaker glyph (#385): volume 0 and back, via the same
 // debounced volume PUT, so it works on every agent version.
 function toggleMute() {
@@ -643,6 +688,12 @@ async function loadPeers() {
   });
   document.getElementById('peersCard').style.display = 'block';
 }
+// The picker self-heals while the page is open: the first render right after
+// opening can show stale dim states (the agent re-probes peers on demand and
+// in a 60 s background tick, so a just-opened page may be seconds ahead of
+// the freshest verdict). Re-fetching keeps dim/clickable live without a
+// reload. 20 s matches the agent's sweep cadence without hammering it.
+setInterval(function(){ loadPeers().catch(function(){}); }, 20000);
 
 async function loadVersion() {
   const v = await api('/api/agent/version');

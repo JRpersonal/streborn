@@ -1086,6 +1086,16 @@ type PlayOptions struct {
 // Now: a default (non-shuffle) recall resumes the context where the user left
 // off and keeps shuffle off; a shuffle preset starts on a fresh random track.
 func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error {
+	// Unwrap an ephemeral autoplay STATION context (spotify:station:playlist:X
+	// -> spotify:playlist:X) at the single choke point every recall path -
+	// app, hardware key, resume - flows through. Station contexts are
+	// session-bound: recalled later they load a foreign or expired station
+	// (field 2026-07-26: 51-track skip storms on every press of such a
+	// preset). Mirrors webui's save-side normalizeSpotifyURI, which heals the
+	// store; this heals whatever still arrives un-normalized.
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(uri), "spotify:station:"); ok && rest != "" {
+		uri = "spotify:" + rest
+	}
 	// Mark a recall in progress so ServeOgg does not resume the OLD (mid) track
 	// when the box attaches; this path drives the chosen track from its start.
 	m.SetRecalling()

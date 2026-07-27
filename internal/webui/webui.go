@@ -88,6 +88,10 @@ type Server struct {
 	// nil when Spotify is not configured. Injected as a func for decoupling.
 	// shuffle selects a fresh random start vs the default resume-where-left-off.
 	spotifyPlay func(ctx context.Context, uri, account string, shuffle bool) error
+	// peerSeedFn accepts speakers pushed from the desktop app (see WithPeerSeed).
+	peerSeedFn func([]PeerSeed)
+	// peerForgetFn removes one sticky-picker entry (see WithPeerForget).
+	peerForgetFn func(host string) bool
 	// peersFn lists the other STR speakers on the LAN for the on-box page's
 	// "Other speakers" section. nil hides the section.
 	peersFn func(ctx context.Context) []PeerLink
@@ -610,6 +614,27 @@ func WithPeers(fn func(ctx context.Context) []PeerLink) Option {
 	return func(s *Server) { s.peersFn = fn }
 }
 
+// PeerSeed is one speaker pushed into the agent's peer list from outside (the
+// desktop app distributes its known-speakers set to every agent so the on-box
+// picker is complete even where local mDNS is lossy).
+type PeerSeed struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+// WithPeerSeed registers the sink for externally pushed peers (POST
+// /api/peers/seed). nil returns 404 on the endpoint.
+func WithPeerSeed(fn func([]PeerSeed)) Option {
+	return func(s *Server) { s.peerSeedFn = fn }
+}
+
+// WithPeerForget registers the remover for one pushed/stale peer entry (POST
+// /api/peers/forget). Returns whether the host was known. nil: 404.
+func WithPeerForget(fn func(host string) bool) Option {
+	return func(s *Server) { s.peerForgetFn = fn }
+}
+
 // WithSpotifyControl registers the function that starts playback of a
 // Spotify URI on a given account in go-librespot (the Spotify-preset
 // control plane). An empty account plays with the current login; shuffle
@@ -785,6 +810,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/icon.png", s.handleIcon)
 	mux.HandleFunc("/icon-large.png", s.handleIconLarge)
 	mux.HandleFunc("/api/peers", s.handlePeers)
+	mux.HandleFunc("/api/peers/seed", s.handlePeerSeed)
+	mux.HandleFunc("/api/peers/forget", s.handlePeerForget)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -1038,6 +1065,15 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// encodes a Spotify container (an older mis-save) is healed into a proper
 		// Spotify preset instead of being stored as a dead radio link.
 		if p.Type == "spotify" {
+			// Unwrap an ephemeral autoplay STATION context before storing: the
+			// save path captures the engine's live context, and after autoplay
+			// kicked in that is spotify:station:playlist:X - a session-bound
+			// radio wrapper that recalls a foreign/expired station later (field
+			// 2026-07-26: every recall of such a preset played an unrelated
+			// station and skipped through 51 unplayable tracks). The wrapped
+			// context is what the user actually chose, so unwrapping is the
+			// faithful save.
+			p.URI = normalizeSpotifyURI(p.URI)
 			if !playableSpotifyURI(p.URI) {
 				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 					"error": "This Spotify selection can't be saved to a preset: it has no replayable playlist, album or track. Open a playlist or album and try again.",
@@ -1219,6 +1255,19 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// normalizeSpotifyURI rewrites an ephemeral autoplay STATION context to the
+// real context it wraps: spotify:station:playlist:X -> spotify:playlist:X.
+// Station contexts are session-bound; stored in a preset they later recall a
+// foreign or expired station. Applied on save (above) and on recall (heals
+// presets stored before this fix).
+func normalizeSpotifyURI(uri string) string {
+	uri = strings.TrimSpace(uri)
+	if rest, ok := strings.CutPrefix(uri, "spotify:station:"); ok && rest != "" {
+		return "spotify:" + rest
+	}
+	return uri
 }
 
 // playableSpotifyURI reports whether uri is a Spotify context that go-librespot
@@ -1677,7 +1726,9 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		}
 		gen := s.setLastPlay(slotURL, p.Name, p.Art, "audio/ogg")
 		s.recentNoteCard("spotify", p.URI, p.Name, p.Art, p.URI, p.Account, "") // #135
-		uri, name, art, account, shuffle := p.URI, p.Name, p.Art, p.Account, p.Shuffle
+		// normalizeSpotifyURI on recall heals presets that stored an ephemeral
+		// station context before the save-side unwrap existed.
+		uri, name, art, account, shuffle := normalizeSpotifyURI(p.URI), p.Name, p.Art, p.Account, p.Shuffle
 		go func() {
 			bg := context.Background()
 			t0 := time.Now()
@@ -1688,8 +1739,16 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 					time.Sleep(500 * time.Millisecond)
 				}
 			}
+			keyDenied := false
 			if err := s.spotifyPlay(bg, uri, account, shuffle); err != nil {
-				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
+				// An audio-key denial means Spotify refuses this account/session
+				// the decryption keys: every additional Play just triggers
+				// another engine skip-storm (one key request per track) and feeds
+				// the account throttle that keeps the denial alive (429, field
+				// 2026-07-26: 51-track storms per press). Remember it so the
+				// verify below never fires the recovery re-Play into that state.
+				keyDenied = strings.Contains(err.Error(), "audio key denied")
+				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err, "keyDenied", keyDenied)
 			}
 			s.logger.Info("spotify soft recall: context load issued", "slot", slot, "warm", warm, "loadAfterMs", time.Since(t0).Milliseconds())
 			s.verifyRecall(gen, recallStart, slotURL, func(ctx context.Context, lastAttempt bool) {
@@ -1699,8 +1758,10 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				// every retry was the "same song restarts a few seconds in" bug,
 				// fixed for hardware in v0.7.4 but previously still present here).
 				// Only the last attempt does a full re-Play, to recover a genuine
-				// cold-boot auth race where the playlist never loaded at all.
-				if lastAttempt {
+				// cold-boot auth race where the playlist never loaded at all - and
+				// never on an audio-key denial, where it would only amplify the
+				// skip storm.
+				if lastAttempt && !keyDenied {
 					_ = s.spotifyPlay(ctx, uri, account, shuffle)
 				}
 				_ = s.renderer.PlayURLMime(ctx, slotURL, name, art, "audio/ogg")
@@ -6547,6 +6608,25 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		}
 		state["presets"] = lines
 	}
+	// Forensic sections registered by main.go (marge request trail, clock
+	// verdict, ...). Called fresh per request; a panicking provider must not
+	// take the whole debug endpoint down mid-investigation.
+	debugSectionsMu.Lock()
+	fns := make(map[string]func() any, len(debugSections))
+	for k, fn := range debugSections {
+		fns[k] = fn
+	}
+	debugSectionsMu.Unlock()
+	for k, fn := range fns {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					state[k] = fmt.Sprintf("ERR: provider panicked: %v", r)
+				}
+			}()
+			state[k] = fn()
+		}()
+	}
 	writeJSON(w, http.StatusOK, state)
 }
 
@@ -7755,6 +7835,24 @@ func SetAgentVersion(v string) { agentVersion = func() string { return v } }
 // SetAgentBuild sets the build stamp (date/commit) as additional info.
 func SetAgentBuild(b string) { agentBuild = func() string { return b } }
 
+// debugSections holds extra named providers merged into the /api/debug/state
+// JSON. main.go registers agent-side forensics here (the marge request trail,
+// the boot clock verdict) without webui needing to know their types; each fn is
+// called fresh per request. Guarded: registrations race the first HTTP request.
+var (
+	debugSectionsMu sync.Mutex
+	debugSections   = map[string]func() any{}
+)
+
+// RegisterDebugSection adds (or replaces) a named section in /api/debug/state.
+// Keys collide with the built-in state map last-write-wins; pick prefixed names
+// (e.g. "marge_recent_requests") that cannot shadow a built-in.
+func RegisterDebugSection(key string, fn func() any) {
+	debugSectionsMu.Lock()
+	defer debugSectionsMu.Unlock()
+	debugSections[key] = fn
+}
+
 // handleStatus proxies the box's now_playing XML, with a short
 // micro-cache (statusCacheTTL) in front. Multiple or too-rapidly polling
 // clients thus share the same box roundtrip instead of hitting the
@@ -7887,6 +7985,56 @@ func (s *Server) handlePeers(w http.ResponseWriter, r *http.Request) {
 		peers = []PeerLink{}
 	}
 	writeJSON(w, http.StatusOK, peers)
+}
+
+// handlePeerSeed accepts the desktop app's known-speaker list (POST, JSON
+// array of PeerSeed) and merges it into the agent's peer store, so speakers
+// the local mDNS never saw still show up in the on-box picker. Body capped;
+// list capped to keep a stray client from ballooning the NAND store.
+func (s *Server) handlePeerSeed(w http.ResponseWriter, r *http.Request) {
+	if s.peerSeedFn == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var seeds []PeerSeed
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&seeds); err != nil {
+		http.Error(w, "bad seed list", http.StatusBadRequest)
+		return
+	}
+	if len(seeds) > 32 {
+		seeds = seeds[:32]
+	}
+	s.peerSeedFn(seeds)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePeerForget removes one entry from the sticky picker (POST, JSON
+// {"host":"..."}). 204 when removed, 404 when the host was not listed.
+func (s *Server) handlePeerForget(w http.ResponseWriter, r *http.Request) {
+	if s.peerForgetFn == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Host string `json:"host"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil || req.Host == "" {
+		http.Error(w, "bad forget request", http.StatusBadRequest)
+		return
+	}
+	if !s.peerForgetFn(req.Host) {
+		http.NotFound(w, r)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleManifest serves the PWA manifest so a phone can install the controller

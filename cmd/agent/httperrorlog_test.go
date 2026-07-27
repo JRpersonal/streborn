@@ -53,6 +53,25 @@ func TestHTTPErrorLogRoutesHandshakeNoiseToDebug(t *testing.T) {
 			line: "http: panic serving 192.0.2.1: runtime error",
 			want: slog.LevelWarn,
 		},
+		{
+			// The box actively refusing our certificate is field evidence (a
+			// 2015 clock after a plug-pull boot, #419 Finding 4, or a stale
+			// root CA after a bundle regen) and must reach a bundle - it was
+			// previously demoted to DEBUG together with the probe noise.
+			name: "tls bad certificate -> warn",
+			line: "http: TLS handshake error from 192.0.2.1:43566: remote error: tls: bad certificate",
+			want: slog.LevelWarn,
+		},
+		{
+			name: "tls unknown authority -> warn",
+			line: "http: TLS handshake error from 192.0.2.1:43567: remote error: tls: unknown certificate authority",
+			want: slog.LevelWarn,
+		},
+		{
+			name: "tls expired certificate alert -> warn",
+			line: "http: TLS handshake error from 192.0.2.1:43568: remote error: tls: expired certificate",
+			want: slog.LevelWarn,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

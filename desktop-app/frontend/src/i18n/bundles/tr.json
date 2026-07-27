@@ -199,6 +199,8 @@
   "speaker.rebootingToast": "Hoparlör yeniden başlatılıyor. Yakında tekrar erişilebilir olacak.",
   "speaker.needsInstallBadge": "STR için hazır",
   "speaker.stockTooltip": "Orijinal Bose yazılımı. STR bu hoparlöre internet radyosunu ve ön ayarları geri getirir.",
+  "speaker.offlineTooltip": "Çevrimdışı, son görülme {{ago}}. Yeniden aramak için tıklayın.",
+  "radio.mirrorsDown": "İstasyon dizinine şu anda ulaşılamıyor. İnternet bağlantınızı kontrol edip birazdan tekrar deneyin.",
   "speaker.stockConfirmTitle": "Bu hoparlörü STR ile canlandır?",
   "speaker.stockConfirmBody": "<b>{{label}}</b> hâlâ orijinal Bose yazılımıyla çalışıyor. STR doğrudan ağınız üzerinden kurulur, USB bellek gerekmez. Sonrasında onu tamamen bu uygulamadan kontrol edersiniz: internet radyosu, ön ayarlar, multiroom.<br><br>Kuruluma devam edilsin mi?",
   "speaker.stockConfirmCta": "Kuruluma geç",

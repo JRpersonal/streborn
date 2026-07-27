@@ -231,7 +231,15 @@ export function showError(msg) {
   wireError();
   const m = $('errorModal');
   if (!m) return;
-  $('errorText').value = String(msg || t('modal.unknownError'));
+  let text = String(msg || t('modal.unknownError'));
+  // The radio-directory outage error carries a stable marker followed by raw
+  // mirror detail (which can include the bare last-resort IP mirror, e.g.
+  // https://91.98.4.78 - alarming-looking to users, field 2026-07-26). Show
+  // the friendly localized message instead; the raw detail stays in app.log.
+  if (text.includes('radio directory unreachable')) {
+    text = t('radio.mirrorsDown');
+  }
+  $('errorText').value = text;
   m.classList.remove('hidden');
 }
 

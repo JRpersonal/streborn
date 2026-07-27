@@ -40,13 +40,32 @@ func TestEvictionGraceStartsAtFirstMiss(t *testing.T) {
 		t.Fatalf("box inside the miss grace window must stay listed")
 	}
 
-	// Missed for longer than the grace window: evict.
+	// Missed for longer than the grace window: NOT evicted anymore - the tile
+	// stays listed as a greyed-out offline entry with the miss age exposed
+	// (sticky list, 2026-07-26), so a rebooting or briefly unplugged speaker
+	// never vanishes from the app.
 	e.firstMiss = time.Now().Add(-discoverySTRStickyTTL - time.Minute)
 	a.discCache["192.0.2.10"] = e
 	seen = map[string]BoxInfo{}
 	a.mergeDiscoveryCacheWith(seen, nil)
+	off, ok := seen["192.0.2.10"]
+	if !ok {
+		t.Fatalf("box missed past the grace window must stay listed as an offline tile")
+	}
+	if !off.Offline || off.OfflineSinceSec <= 0 {
+		t.Fatalf("offline tile must carry Offline=true and the miss age, got %+v", off)
+	}
+	if cached := a.discCache["192.0.2.10"]; cached.box.Offline {
+		t.Fatalf("the cached record must stay clean so a comeback restores it verbatim")
+	}
+
+	// Silent for the full retention: genuinely gone, now evict.
+	e.firstMiss = time.Now().Add(-discoveryOfflineRetention - time.Minute)
+	a.discCache["192.0.2.10"] = e
+	seen = map[string]BoxInfo{}
+	a.mergeDiscoveryCacheWith(seen, nil)
 	if _, ok := seen["192.0.2.10"]; ok {
-		t.Fatalf("box missed past the grace window must be evicted")
+		t.Fatalf("box silent past the offline retention must be evicted")
 	}
 	if _, ok := a.discCache["192.0.2.10"]; ok {
 		t.Fatalf("evicted box must leave the cache")

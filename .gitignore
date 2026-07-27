@@ -73,3 +73,4 @@ Thumbs.db
 # (network captures, Bose firmware binaries, API docs, local settings,
 # agent memory/notes). MUST NEVER be committed.
 .claude/
+.gotmp/

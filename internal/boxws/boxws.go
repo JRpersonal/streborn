@@ -123,6 +123,22 @@ type Client struct {
 	mu           sync.Mutex
 	lastSignal   string
 	lastSignalAt time.Time
+	// lastLang / lastLangAt time the most recent languageUpdated frame so a
+	// second frame with a DIFFERENT value arriving within languageRevertWindow
+	// is flagged as a firmware-side revert (Wave: user saves German=2, box
+	// broadcasts 2 then 3 within 200 ms and the setting is back on English).
+	lastLang   string
+	lastLangAt time.Time
+	// err1036Times is a sliding window of recent 1036 rejections; when the box
+	// answers essentially every recall with 1036 (the storm state that today
+	// only a power-cycle or soft reboot clears), one bounded WARN marks the
+	// storm so bundles can correlate it with the boot clock and marge trail.
+	err1036Times   []time.Time
+	lastStormLogAt time.Time
+	// prevEndedIdle marks that the previous WS session ended in a plain idle
+	// read timeout, so the next "connected" phase marker logs at Debug instead
+	// of churning the NAND log. Only touched from the Run loop goroutine.
+	prevEndedIdle bool
 	// lastSource tracks the most recent active source seen on a now-selection /
 	// now-playing frame, so the aux webhook fires once on the transition to AUX
 	// rather than repeatedly while AUX stays the active source.
@@ -271,6 +287,11 @@ const (
 // server answers it with a pong.
 const wsKeepaliveInterval = 4 * time.Minute
 
+// wsReadDeadline bounds how long the reader waits without ANY life sign (data
+// frame or pong). Two keepalive intervals plus slack: two consecutive lost
+// pings mean the peer is genuinely gone.
+const wsReadDeadline = 2*wsKeepaliveInterval + 3*time.Minute
+
 // wsWriteTimeout bounds a single ping write so a half-dead socket cannot wedge
 // the keepalive goroutine; a failed/blocked write closes the conn and the read
 // loop returns, triggering a clean reconnect.
@@ -369,6 +390,64 @@ func (c *Client) LastWifiSignal() string {
 // older describes a long-gone moment (usually the boot association).
 const wifiSignalTTL = 15 * time.Minute
 
+// languageRevertWindow is how close together two languageUpdated frames with
+// different values must be to count as a firmware-side revert rather than two
+// independent user changes. The live Wave captures show 38-183 ms; 2 s leaves
+// margin without misreading a user changing their mind.
+const languageRevertWindow = 2 * time.Second
+
+// noteLanguageUpdated logs sysLanguage transitions and flags the Wave revert
+// pattern: a fresh value overwritten by a different one within
+// languageRevertWindow. The WARN carries both values and the gap so a bundle
+// can be correlated (by millisecond timestamp) with the marge request trail in
+// debug/state and with any app-side save, answering WHO wrote the second value.
+func (c *Client) noteLanguageUpdated(v string) {
+	now := time.Now()
+	c.mu.Lock()
+	prev, prevAt := c.lastLang, c.lastLangAt
+	c.lastLang, c.lastLangAt = v, now
+	c.mu.Unlock()
+	if prev != "" && prev != v && now.Sub(prevAt) < languageRevertWindow {
+		c.logger.Warn("box ws: sysLanguage overwritten right after a change (firmware-side revert; correlate with marge_recent_requests and any app save at this timestamp)",
+			"from", prev, "to", v, "afterMs", now.Sub(prevAt).Milliseconds())
+		return
+	}
+	c.logger.Info("box ws: languageUpdated", "sysLanguage", v, "prev", prev)
+}
+
+// storm1036Threshold / storm1036Window / storm1036LogEvery bound the 1036-storm
+// marker: at least storm1036Threshold rejections inside storm1036Window, logged
+// at most once per storm1036LogEvery so a day-long storm (observed on a mojo
+// ST30: every press 1036, all day) does not churn the NAND log.
+const (
+	storm1036Threshold = 6
+	storm1036Window    = 10 * time.Minute
+	storm1036LogEvery  = 30 * time.Minute
+)
+
+// note1036 feeds the storm detector. The WARN is diagnostic only (no behavior
+// hangs off it): it timestamps the storm START so bundles can correlate it
+// with the boot clock state (plug-pull RTC loss poisons the firmware, #419
+// Finding 4), TLS handshake failures on marge-tls, and the marge trail.
+func (c *Client) note1036() {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	keep := c.err1036Times[:0]
+	for _, t := range c.err1036Times {
+		if now.Sub(t) < storm1036Window {
+			keep = append(keep, t)
+		}
+	}
+	c.err1036Times = append(keep, now)
+	if len(c.err1036Times) < storm1036Threshold || now.Sub(c.lastStormLogAt) < storm1036LogEvery {
+		return
+	}
+	c.lastStormLogAt = now
+	c.logger.Warn("box ws: 1036 storm - the box rejects essentially every recall (check clock_status and marge-tls handshake errors in this bundle; a soft reboot has cleared this state in the field)",
+		"count", len(c.err1036Times), "windowMin", int(storm1036Window.Minutes()))
+}
+
 // LastUserActivity returns when the box last reported a userActivityUpdate
 // frame (any physical key on the box or the IR remote), or the zero time if
 // none has been seen since the agent started. The webui's standby handler uses
@@ -413,18 +492,32 @@ func (c *Client) Run(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		start := time.Now()
 		err := c.runOnce(ctx)
 		if ctx.Err() != nil {
 			return
+		}
+		// A session that lived a while was a healthy connection: reset the
+		// backoff so the NEXT reattach is fast again. Without this the backoff
+		// initialized once, hit its 8 s cap during the first outage and stayed
+		// there for the whole agent lifetime, adding a flat 8 s to every
+		// reconnect forever (part of the fixed 674.5 s self-timeout cadence in
+		// the 2026-07-26 field bundle).
+		if time.Since(start) > time.Minute {
+			backoff = time.Second
 		}
 		if err != nil {
 			// A read timeout is normal when the box is not active; the
 			// reconnect runs cleanly. Other errors are interesting though.
 			if strings.Contains(err.Error(), "i/o timeout") {
 				c.logger.Debug("box websocket idle reconnect", "retry_in", backoff)
+				c.prevEndedIdle = true
 			} else {
 				c.logger.Warn("box websocket connection lost", "err", err, "retry_in", backoff)
+				c.prevEndedIdle = false
 			}
+		} else {
+			c.prevEndedIdle = false
 		}
 		select {
 		case <-ctx.Done():
@@ -453,9 +546,16 @@ func (c *Client) runOnce(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	// Phase marker at WARN so a reconnect after standby/resume is
-	// visible in the diagnostic bundle without raising log level.
-	c.logger.Warn("box websocket phase: connected", "url", c.url)
+	// Phase marker at WARN so a reconnect after standby/resume is visible in
+	// the diagnostic bundle without raising log level. A reconnect after a
+	// plain idle self-timeout logs at Debug instead: that churn (a full WARN +
+	// re-sync block every ~11 min) rotated the 32 KB NAND log in ~3.5 h and
+	// destroyed the actual failure evidence in the 2026-07-26 field bundle.
+	if c.prevEndedIdle {
+		c.logger.Debug("box websocket phase: connected (after idle reconnect)", "url", c.url)
+	} else {
+		c.logger.Warn("box websocket phase: connected", "url", c.url)
+	}
 
 	// After a deep/overnight standby the box wakes and emits its first
 	// preset/now-selection frame BEFORE this reconnect lands (the backoff had
@@ -475,6 +575,20 @@ func (c *Client) runOnce(ctx context.Context) error {
 	// is the only writer and is safe to call concurrently with the reader. The
 	// goroutine exits when this runOnce returns (conn.Close unblocks the read
 	// and closeKeepalive is closed) or when ctx is cancelled.
+	// The box answers our keepalive pings with pongs, but gorilla/websocket
+	// consumes pongs INSIDE ReadMessage without returning from it: without a
+	// pong handler the per-iteration read deadline below was never refreshed
+	// while the reader blocked on an idle socket, so the client tore down its
+	// own healthy connection like clockwork (live: 18 reconnects at
+	// 674.5 s +-0.2 s in the 2026-07-26 ST10 bundle = 660 s deadline + capped
+	// backoff + re-sync tail). The June keepalive fix only moved the old
+	// ~10.5 min firmware-drop cadence to this ~11.2 min self-timeout. With
+	// each pong pushing the deadline, it now fires only on a genuinely dead
+	// peer.
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
+	})
+
 	closeKeepalive := make(chan struct{})
 	defer close(closeKeepalive)
 	go func() {
@@ -505,11 +619,11 @@ func (c *Client) runOnce(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// Read deadline sits above two keepalive intervals (wsKeepaliveInterval):
-		// a healthy idle socket is held open by our ping, so the only thing this
-		// deadline should now fire on is a genuinely dead peer (no pong, no data).
-		// Reconnect stays clean: OnConnected resyncs box state on every reconnect.
-		_ = conn.SetReadDeadline(time.Now().Add(2*wsKeepaliveInterval + 3*time.Minute))
+		// Read deadline sits above two keepalive intervals; the pong handler
+		// above refreshes it on every keepalive answer, so it only fires on a
+		// genuinely dead peer (no pong, no data). Reconnect stays clean:
+		// OnConnected resyncs box state on every reconnect.
+		_ = conn.SetReadDeadline(time.Now().Add(wsReadDeadline))
 		mt, data, err := conn.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("read: %w", err)
@@ -610,6 +724,15 @@ type gabboFrame struct {
 	// it changes. Non-nil whenever a <zoneUpdated><zone> is present; an empty
 	// <zone/> (Master == "") means the zone dissolved (#70, Klaus 2026-06-12).
 	ZoneUpdated *wsZone `xml:"zoneUpdated>zone"`
+
+	// LanguageUpdated carries the box's sysLanguage whenever it changes. Parsed
+	// typed (not left as an unrecognized frame) because the Wave firmware
+	// overwrites a user's language save within ~40-200 ms (2 then 3 back to
+	// back, live bundle 2026-07-25) and the revert can only be root-caused by
+	// timing the two frames against what else touched the box in that window.
+	LanguageUpdated *struct {
+		Sys string `xml:"sysLanguage"`
+	} `xml:"languageUpdated"`
 }
 
 // wsZone is the <zone> body of a zoneUpdated frame. Bose puts the master's
@@ -1034,6 +1157,9 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		if c.handler != nil {
 			c.handler.OnZoneChanged(ctx, z)
 		}
+	case f.LanguageUpdated != nil:
+		known = true
+		c.noteLanguageUpdated(strings.TrimSpace(f.LanguageUpdated.Sys))
 	}
 
 	pe := f.NowSelection
@@ -1068,6 +1194,9 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				if v, name, sev, detail := parseBoxError(s); v != "" {
 					c.logger.Warn("box ws: box reported error",
 						"value", v, "name", name, "severity", sev, "detail", detail)
+					if v == "1036" {
+						c.note1036()
+					}
 					// 1036 UNABLE_TO_PROCESS_NOT_LOGGED_IN: the box refuses the UPnP
 					// source because it does not think it is signed into an account.
 					// Signal the agent (via the OnLoginError callback) so the recall

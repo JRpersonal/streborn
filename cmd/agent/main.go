@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -361,6 +362,17 @@ func run() error {
 		AuthToken:    "local-token-v1",
 		CreatedAt:    "2026-01-01T00:00:00Z",
 	})
+
+	// Forensic sections for /api/debug/state. The marge trail (millisecond
+	// timestamps) is what lets a bundle answer whether the box exchanged
+	// anything with marge inside the ~200 ms window of a Wave sysLanguage
+	// revert, and the clock verdict correlates 1036 storms / dead-playback
+	// boots with a plug-pull RTC loss (#419 Finding 4). Registered before the
+	// listeners spawn so the very first debug fetch already carries them.
+	webui.RegisterDebugSection("marge_recent_requests", func() any {
+		return margeSrv.RecentRequestLines(60)
+	})
+	webui.RegisterDebugSection("clock_status", clockStatusSnapshot)
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
 	// The AutoPair manager is created up here so it can also be used in the
 	// WS and webui handlers.
@@ -452,6 +464,25 @@ func run() error {
 		})
 	}
 
+	// Restore the sticky speaker-picker list before the webui serves its first
+	// page, so the picker is complete from the very first load after a reboot.
+	loadPersistedPeers(logger.With("comp", "peers"))
+	// Keep the peer verdicts fresh INDEPENDENTLY of page loads: the sweep and
+	// the TCP fallback probes used to run only when someone requested
+	// /api/peers, so the first render after opening the page showed stale
+	// "unreachable" states for speakers that were fine (live 2026-07-26: two
+	// running ST10/ST30 rendered dimmed, then flipped clickable on the next
+	// poll). A background tick keeps lastSeen current so the first render is
+	// already right. browsePeers throttles internally, so an open page's own
+	// polls and this tick never double-browse.
+	go func() {
+		t := time.NewTicker(60 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			_ = browsePeers(context.Background(), logger.With("comp", "peers"))
+		}
+	}()
+
 	webuiSrv := webui.New(*webuiAddr, logger.With("comp", "webui"),
 		webui.WithPresets(store),
 		webui.WithBoxHost(*boxHost),
@@ -489,6 +520,12 @@ func run() error {
 		webui.WithSpotifySwitchedAway(spotifyMgr.SwitchedAway),
 		webui.WithPeers(func(ctx context.Context) []webui.PeerLink {
 			return browsePeers(ctx, logger.With("comp", "peers"))
+		}),
+		webui.WithPeerSeed(func(seeds []webui.PeerSeed) {
+			seedPeers(seeds, logger.With("comp", "peers"))
+		}),
+		webui.WithPeerForget(func(host string) bool {
+			return forgetPeer(host, logger.With("comp", "peers"))
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
@@ -875,12 +912,16 @@ func run() error {
 	// install time to do the boot Date sync, so without this the very first
 	// requests could hit a 2015 clock until the goroutine catches up. Best-effort
 	// - if the network is not up yet the goroutine below keeps retrying (#375).
+	noteBootClock(logger)
 	func() {
 		sctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 		defer cancel()
 		clocksync.SyncNowIfImplausible(sctx, logger)
 	}()
-	go clocksync.RunUntilSynced(ctx, logger, 30*time.Second)
+	go func() {
+		clocksync.RunUntilSynced(ctx, logger, 30*time.Second)
+		noteClockHealed(logger)
+	}()
 
 	// If the USB stick has a newer run.sh than the NAND run-override.sh:
 	// copy it. This is the self-update path for the bootstrap. Without it
@@ -1011,6 +1052,70 @@ func run() error {
 	return firstErr
 }
 
+// clockForensicsState records the boot-time clock verdict. A plug-pulled
+// speaker has no battery RTC and boots in 2015; the field capture behind #419
+// Finding 4 showed such a boot with EVERY playback dying within 2-13 s for the
+// whole boot even though the clock was later corrected - the Bose firmware
+// itself stays poisoned until a soft reboot. These markers plus the
+// clock_status debug section let a bundle separate the three cases: clock still
+// bad (TLS to marge/CDNs failing), clock healed but firmware poisoned, and
+// clock fine all along.
+var clockForensicsState struct {
+	mu                sync.Mutex
+	startClock        time.Time
+	implausibleAtBoot bool
+	correctedAt       time.Time
+}
+
+func noteBootClock(logger *slog.Logger) {
+	now := time.Now()
+	bad := clocksync.Implausible(now)
+	clockForensicsState.mu.Lock()
+	clockForensicsState.startClock = now
+	clockForensicsState.implausibleAtBoot = bad
+	clockForensicsState.mu.Unlock()
+	if bad {
+		logger.Warn("clock forensics: implausible system clock at agent start (no battery RTC; plug-pull boot). TLS to marge and HTTPS radio will fail until the clock syncs, and the Bose firmware can stay broken for the whole boot even after it does (#419 Finding 4)",
+			"clock", now.UTC().Format(time.RFC3339), "build", buildStamp)
+	}
+}
+
+// noteClockHealed runs after RunUntilSynced returns. It marks the moment the
+// clock became sane on a boot that started implausible: everything the Bose
+// firmware did BEFORE this line ran on the bad clock, which is the correlation
+// the dead-playback-until-soft-reboot reports need.
+func noteClockHealed(logger *slog.Logger) {
+	if clocksync.Implausible(time.Now()) {
+		return // ctx canceled before a sync landed; verdict unchanged
+	}
+	clockForensicsState.mu.Lock()
+	wasBad := clockForensicsState.implausibleAtBoot && clockForensicsState.correctedAt.IsZero()
+	if wasBad {
+		clockForensicsState.correctedAt = time.Now()
+	}
+	clockForensicsState.mu.Unlock()
+	if wasBad {
+		logger.Warn("clock forensics: clock corrected AFTER the Bose firmware booted on the bad clock; if playback keeps dying this boot, a soft reboot (not a plug pull) is the known cure (#419 Finding 4)")
+	}
+}
+
+// clockStatusSnapshot is the clock_status debug/state section.
+func clockStatusSnapshot() any {
+	clockForensicsState.mu.Lock()
+	defer clockForensicsState.mu.Unlock()
+	out := map[string]any{
+		"now":                        time.Now().UTC().Format(time.RFC3339),
+		"agent_start_clock":          clockForensicsState.startClock.UTC().Format(time.RFC3339),
+		"implausible_at_agent_start": clockForensicsState.implausibleAtBoot,
+		"implausible_now":            clocksync.Implausible(time.Now()),
+		"build_stamp":                buildStamp,
+	}
+	if !clockForensicsState.correctedAt.IsZero() {
+		out["corrected_at"] = clockForensicsState.correctedAt.UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
 // httpErrorLogWriter bridges the stdlib http.Server ErrorLog into slog. The
 // Bose firmware opens a TCP connection to the redirected streaming.bose.com TLS
 // port (our marge-tls listener) about once a minute and closes it without ever
@@ -1031,12 +1136,29 @@ func (w httpErrorLogWriter) Write(p []byte) (int, error) {
 	if msg == "" {
 		return len(p), nil
 	}
-	if strings.Contains(msg, "TLS handshake error") {
+	if strings.Contains(msg, "TLS handshake error") && !tlsHandshakeIsRejection(msg) {
 		w.logger.Debug("http server error", "comp", w.name, "msg", msg)
 	} else {
 		w.logger.Warn("http server error", "comp", w.name, "msg", msg)
 	}
 	return len(p), nil
+}
+
+// tlsHandshakeIsRejection separates the box actively REFUSING our certificate
+// from the benign once-a-minute empty probe (EOF before any ClientHello). A
+// refusal reaches the alert/certificate stage ("remote error: tls: bad
+// certificate", "unknown certificate authority", "expired certificate") and is
+// the on-box evidence for two known field states: a plug-pull boot whose 2015
+// clock makes every cert invalid (#419 Finding 4) and a stale root CA after a
+// bundle regen. Demoting these to DEBUG with the probe noise hid exactly that
+// evidence from bundles.
+func tlsHandshakeIsRejection(msg string) bool {
+	for _, marker := range []string{"remote error", "alert", "certificate", "expired"} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // newHTTPErrorLog returns the *log.Logger to wire into http.Server.ErrorLog so
@@ -1293,6 +1415,9 @@ type presetWsHandler struct {
 	sysPowerFn   func(ctx context.Context, host string) error
 	boxPlayingFn func(url string) bool
 	boxSourceFn  func() string
+	// boxSummaryFn seams the now_playing settle probe (boxNowPlayingSummary)
+	// the verify logs on success/exhaustion. nil = real :8090 fetch.
+	boxSummaryFn func() (source, itemName, playStatus string)
 
 	// slotPulled reports whether the box is credibly playing THIS slot's
 	// proxied stream for a recall anchored at the given time. It is the recall
@@ -1356,18 +1481,53 @@ func (h *presetWsHandler) loginErrorSince(t time.Time) bool {
 // window only a still-live pull or an actual playing state proves audio;
 // otherwise the verify loop keeps retrying until the forced re-login lands.
 func (h *presetWsHandler) recallReachedAudio(slot int, url string, pressAt time.Time) bool {
-	if h.playingURL(url) {
-		return true
+	ok, _ := h.recallReachedAudioSignal(slot, url, pressAt)
+	return ok
+}
+
+// recallReachedAudioSignal is recallReachedAudio plus WHICH signal decided.
+// The verify logs the signal on success because the two signals have very
+// different reliability: "slot_fetch" is the proxy serving audio since the
+// press (ground truth), while "now_playing" is the box's own report, which can
+// resurrect a stale same-slot ContentItem after a failed self-activation
+// (#419 Finding 1). A success line reading signal=now_playing next to an
+// INVALID_SOURCE source is that false positive, made visible in bundles.
+func (h *presetWsHandler) recallReachedAudioSignal(slot int, url string, pressAt time.Time) (bool, string) {
+	if h.playingURL(url) && !h.staleSameSlotSuspect(slot, url, pressAt) {
+		return true, "now_playing"
 	}
 	if !h.slotPulledSince(slot, pressAt) {
-		return false
+		return false, ""
 	}
 	// slot pulled since the press. Trust it unless a login error is in flight for
 	// this recall AND the pull is no longer live (a closed short login-bounce).
 	if h.loginErrorSince(pressAt) && !h.slotFetchLiveNow(slot) {
-		return false
+		return false, ""
 	}
-	return true
+	return true, "slot_fetch"
+}
+
+// staleSameSlotSuspect flags the #419 Finding-1 false success: on a same-slot
+// re-press the box's own FAILED self-activation (1036) resurrects the previous
+// play's ContentItem - identical /stream/<slot> path, briefly play-ish state -
+// so a bare now_playing match passed at the first tick and the verify exited
+// silently while the box sat at INVALID_SOURCE in silence (captured on-site,
+// ST30 2026-07-25: press slot 5 after a standby teardown of slot 5 -> 1036 ->
+// no fetch, no retry, no sound). Tightly scoped so it cannot regress healthy
+// recalls: it only fires for PROXIED streams (where an open proxy fetch is a
+// physical precondition for audio, so demanding fetch evidence is exact, not
+// heuristic) and only when the box actually refused THIS recall. A same-slot
+// re-press over a still-playing stream keeps its open pull (slotFetchLiveNow)
+// and stays a success; direct-URL plays and unrefused recalls keep the old
+// now_playing trust unchanged.
+func (h *presetWsHandler) staleSameSlotSuspect(slot int, url string, pressAt time.Time) bool {
+	if streamPath(url) == "" {
+		return false // direct URL: no proxy evidence exists, keep trusting now_playing
+	}
+	if !h.lastSourceRejectTime().After(pressAt) && !h.loginErrorSince(pressAt) {
+		return false // the box never refused this recall; its report is trustworthy
+	}
+	return !h.slotPulledSince(slot, pressAt) && !h.slotFetchLiveNow(slot)
 }
 
 // superseded reports whether a newer hardware press (pressSeq moved past seq)
@@ -1734,7 +1894,202 @@ var (
 	peersMu       sync.Mutex
 	peersByIP     = map[string]*peerEntry{}
 	peersBrowseAt time.Time
+	peersProbing  bool      // one fallback-probe goroutine at a time
+	peersSavedFP  string    // membership fingerprint of the last NAND write
+	peersSavedAt  time.Time // last NAND write (rate-limits lastSeen refreshes)
 )
+
+// peersStorePath persists the peer list across reboots so the on-box page's
+// speaker picker is complete from the first load. Requirement (Jens,
+// 2026-07-26): better one speaker too many than one missing because a single
+// mDNS round failed - the list only shrinks after peerTTL, never because of a
+// momentary lookup failure or a reboot.
+const peersStorePath = "/mnt/nv/streborn/peers.json"
+
+// peerDiskEntry is the JSON shape of one persisted peer.
+type peerDiskEntry struct {
+	IP       string    `json:"ip"`
+	Name     string    `json:"name"`
+	Port     int       `json:"port"`
+	LastSeen time.Time `json:"lastSeen"`
+}
+
+// loadPersistedPeers seeds peersByIP from NAND at agent start. Entries come
+// back dimmed (reachable=false); the browse sweep's fallback probe promotes
+// the ones that actually answer within about a minute.
+func loadPersistedPeers(logger *slog.Logger) {
+	b, err := os.ReadFile(peersStorePath)
+	if err != nil {
+		return
+	}
+	var list []peerDiskEntry
+	if json.Unmarshal(b, &list) != nil || len(list) == 0 {
+		return
+	}
+	now := time.Now()
+	peersMu.Lock()
+	n := 0
+	for _, d := range list {
+		if d.IP == "" || now.Sub(d.LastSeen) > peerTTL {
+			continue
+		}
+		peersByIP[d.IP] = &peerEntry{name: d.Name, port: d.Port, lastSeen: d.LastSeen}
+		n++
+	}
+	peersMu.Unlock()
+	if n > 0 {
+		logger.Info("peer list restored from NAND", "count", n)
+	}
+}
+
+// savePersistedPeersLocked writes the peer list to NAND when its membership
+// (IPs, names, ports) changed, or at most every 6 h to refresh lastSeen
+// stamps. Rate-limited on purpose: lastSeen moves on every sweep and NAND
+// writes are precious. Caller holds peersMu.
+func savePersistedPeersLocked(logger *slog.Logger) {
+	list := make([]peerDiskEntry, 0, len(peersByIP))
+	fp := ""
+	for ip, e := range peersByIP {
+		list = append(list, peerDiskEntry{IP: ip, Name: e.name, Port: e.port, LastSeen: e.lastSeen})
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].IP < list[j].IP })
+	for _, d := range list {
+		fp += d.IP + "|" + d.Name + "|" + strconv.Itoa(d.Port) + ";"
+	}
+	if fp == peersSavedFP && time.Since(peersSavedAt) < 6*time.Hour {
+		return
+	}
+	b, err := json.MarshalIndent(list, "", " ")
+	if err != nil {
+		return
+	}
+	tmp := peersStorePath + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		logger.Debug("peer list persist failed", "err", err)
+		return
+	}
+	if err := os.Rename(tmp, peersStorePath); err != nil {
+		logger.Debug("peer list persist rename failed", "err", err)
+		return
+	}
+	peersSavedFP = fp
+	peersSavedAt = time.Now()
+}
+
+// seedPeers merges a speaker list pushed by the desktop app (POST
+// /api/peers/seed) into the peer map, so speakers the local mDNS never
+// managed to see still appear in the on-box picker. A seed counts as a
+// sighting (the app just saw that speaker); reachability is then confirmed by
+// the same async probe the browse sweep uses.
+func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
+	if len(seeds) == 0 {
+		return
+	}
+	mine := ownIPv4s()
+	now := time.Now()
+	peersMu.Lock()
+	added := 0
+	for _, s := range seeds {
+		ip := strings.TrimSpace(s.Host)
+		if ip == "" || mine[ip] {
+			continue
+		}
+		e := peersByIP[ip]
+		if e == nil {
+			e = &peerEntry{}
+			peersByIP[ip] = e
+			added++
+		}
+		if s.Name != "" {
+			e.name = s.Name
+		}
+		if s.Port != 0 && e.port == 0 {
+			e.port = s.Port
+		}
+		if e.lastSeen.Before(now) {
+			e.lastSeen = now
+		}
+	}
+	savePersistedPeersLocked(logger)
+	peersMu.Unlock()
+	if added > 0 {
+		logger.Info("peer list seeded by the app", "added", added, "total", len(seeds))
+	}
+	probeStalePeers(logger)
+}
+
+// forgetPeer removes one entry from the sticky picker (POST /api/peers/forget):
+// the manual way out for an entry that does not belong there (a mistyped seed,
+// a speaker that moved households) without waiting out the 12 h TTL.
+func forgetPeer(host string, logger *slog.Logger) bool {
+	ip := strings.TrimSpace(host)
+	if ip == "" {
+		return false
+	}
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	if _, ok := peersByIP[ip]; !ok {
+		return false
+	}
+	delete(peersByIP, ip)
+	savePersistedPeersLocked(logger)
+	logger.Info("peer removed from the sticky picker", "host", ip)
+	return true
+}
+
+// probeStalePeers re-checks up to eight longest-unseen listed peers over plain
+// TCP. This is what keeps the list honest INDEPENDENTLY of mDNS: a speaker
+// whose announcements get lost (the exact "missing because one lookup failed"
+// complaint) is still confirmed alive by its web port and stays listed and
+// clickable; a genuinely gone one stays dimmed until peerTTL expires it. One
+// goroutine at a time, a few 300 ms dials per round.
+func probeStalePeers(logger *slog.Logger) {
+	peersMu.Lock()
+	if peersProbing {
+		peersMu.Unlock()
+		return
+	}
+	peersProbing = true
+	type cand struct {
+		ip   string
+		seen time.Time
+	}
+	var stale []cand
+	now := time.Now()
+	for ip, e := range peersByIP {
+		if now.Sub(e.lastSeen) > 30*time.Second {
+			stale = append(stale, cand{ip: ip, seen: e.lastSeen})
+		}
+	}
+	peersMu.Unlock()
+	sort.Slice(stale, func(i, j int) bool { return stale[i].seen.Before(stale[j].seen) })
+	if len(stale) > 8 {
+		stale = stale[:8]
+	}
+	go func() {
+		defer func() {
+			peersMu.Lock()
+			peersProbing = false
+			peersMu.Unlock()
+		}()
+		for _, c := range stale {
+			port := reachableWebPort(c.ip)
+			if port == 0 {
+				continue
+			}
+			peersMu.Lock()
+			if e := peersByIP[c.ip]; e != nil {
+				e.lastSeen = time.Now()
+				e.reachable = true
+				e.port = port
+			}
+			peersMu.Unlock()
+		}
+		if logger != nil {
+			logger.Debug("peer fallback probe done", "checked", len(stale))
+		}
+	}()
+}
 
 // browsePeers discovers the other STR speakers on the LAN over mDNS and returns a
 // link to each one's web UI, so a phone on the on-box page can hop between
@@ -1748,11 +2103,23 @@ var (
 // seen (marked offline if it is not currently reachable, so the page can dim it
 // rather than drop it), and sweeps are throttled to rebrowseEvery so repeated page
 // loads stay cheap. The browse window is widened so more peers answer per round.
+// peerTTL is how long a speaker stays in the picker after it was last
+// confirmed (mDNS, HTTP fallback probe, or an app seed). Hours on purpose
+// (Jens, 2026-07-26): a box in overnight deep standby or behind a flaky mDNS
+// round must not vanish; it is shown dimmed until it answers again, and only
+// a box unseen for a full peerTTL is dropped.
+const peerTTL = 12 * time.Hour
+
+// peerDimAfter is how long after the last confirmation a listed peer renders
+// dimmed/non-clickable. Sized against the confirmation cadence (60 s background
+// tick, probes in batches of 8) so a live box is always re-confirmed well
+// inside the window even in a large fleet, and only genuinely silent boxes dim.
+const peerDimAfter = 3 * time.Minute
+
 func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 	const (
 		rebrowseEvery = 15 * time.Second
 		browseWindow  = 3500 * time.Millisecond
-		peerTTL       = 7 * time.Minute
 	)
 	peersMu.Lock()
 	needBrowse := peersBrowseAt.IsZero() || time.Since(peersBrowseAt) >= rebrowseEvery
@@ -1814,7 +2181,11 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 			}
 		}
 		peersBrowseAt = now
+		savePersistedPeersLocked(logger)
 		peersMu.Unlock()
+		// Independently of mDNS, re-confirm the longest-unseen listed peers over
+		// TCP so a speaker with lost announcements stays in the picker (async).
+		probeStalePeers(logger)
 	}
 
 	peersMu.Lock()
@@ -1831,9 +2202,11 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 			port = 8888 // never reached yet: best-effort URL so the entry still resolves once it comes up
 		}
 		out = append(out, webui.PeerLink{
-			Name:      e.name,
-			URL:       fmt.Sprintf("http://%s:%d/", ip, port),
-			Reachable: e.reachable,
+			Name: e.name,
+			URL:  fmt.Sprintf("http://%s:%d/", ip, port),
+			// A peer confirmed within peerDimAfter is clickable; anything older
+			// stays listed (sticky by design) but dims until it answers again.
+			Reachable: e.reachable && now.Sub(e.lastSeen) <= peerDimAfter,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -2092,7 +2465,19 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	// or reboot - exactly when the firmware tends to have dropped its
 	// hardware-key preset registrations (see OnPowerWake). Ask for a full
 	// re-sync so the keys are registered again within seconds.
-	requestPresetKeyResync(h.logger)
+	//
+	// UNLESS the box demonstrably idles in STANDBY: the firmware recycles the
+	// idle gabbo socket every ~12 minutes, and the unconditional ask here wrote
+	// two AddPresets into BoseApp on every recycle, all night - which reset the
+	// firmware's deep-standby countdown forever (#119 bundles 2026-07-26:
+	// /proc/uptime spanning days; boxes never low-powered since v0.9.17 shipped
+	// this path, while v0.9.16 with the same 5-minute READ-ONLY heartbeats deep
+	// slept fine - reads are safe, the blind writes are the difference). Every
+	// real dead-key moment keeps its own forced trigger: OnPowerWake (power
+	// press), OnThumbActivity (dead-press evidence), the urgent 1036/re-pair
+	// asks, and the boot-time force-all. Probe errors fall back to the old
+	// unconditional ask, so unknown states never lose the heal.
+	go h.resyncUnlessIdleStandby()
 	// Re-check the fake login too (see OnPowerWake): the reconnect moments
 	// are when the MargeHSM state decays on fresh-install boxes.
 	h.triggerPairAsync(10 * time.Second)
@@ -2106,6 +2491,27 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	if h.onBoxReconnect != nil {
 		h.onBoxReconnect()
 	}
+}
+
+// resyncUnlessIdleStandby is OnConnected's re-sync decision, off the WS hot
+// path. One now_playing read: a box sitting in STANDBY and not playing gets no
+// forced AddPreset sweep (the deep-standby fix, #119); anything else - another
+// source, an active play state, or a failed probe - keeps the pre-existing
+// unconditional ask. The periodic missing-only reconcile continues either way,
+// so a wiped preset LIST still heals on the normal cadence even in standby.
+func (h *presetWsHandler) resyncUnlessIdleStandby() {
+	if h.boxHost != "" {
+		// Let a mid-transition source settle so a wake in progress is not
+		// misread as idle standby (the wake also fires OnPowerWake's own ask).
+		time.Sleep(1500 * time.Millisecond)
+		src, _, status := h.nowPlayingSummary()
+		playing := status == "PLAY_STATE" || status == "BUFFERING_STATE"
+		if src == "STANDBY" && !playing {
+			h.logger.Info("preset self-heal: reconnect while the box idles in STANDBY, skipping the forced key re-sync so deep standby can engage (#119)")
+			return
+		}
+	}
+	requestPresetKeyResync(h.logger)
 }
 
 // logStandbyRaceSignature records (log-only) whether, shortly after a gabbo
@@ -2418,7 +2824,16 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// lags: a Portable kept naming the PREVIOUS preset for seconds after it
 		// had already opened the new stream, so a location check alone declared a
 		// healthy recall dead and the "repair" tore the working stream down.
-		if h.recallReachedAudio(slot, url, pressAt) {
+		if ok, signal := h.recallReachedAudioSignal(slot, url, pressAt); ok {
+			// The verify used to exit success SILENTLY, which hid the #419
+			// Finding-1 false positive (a stale same-slot now_playing passing
+			// the check) from every bundle. Log the deciding signal plus the
+			// box's own view: signal=now_playing with source=INVALID_SOURCE or
+			// an empty itemName IS that false success, now visible.
+			src, item, status := h.nowPlayingSummary()
+			h.logger.Info("hardware recall: verify success", "slot", slot,
+				"attempt", attempt, "signal", signal,
+				"source", src, "itemName", item, "playStatus", status)
 			h.restorePreRecallVolume(pressAt, preVol)
 			if h.noteBoxHealthy != nil {
 				h.noteBoxHealthy()
@@ -2458,18 +2873,20 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		// box still reports INVALID_SOURCE by the third attempt, send one
 		// bounded nudge before pushing again. The source probe (an up-to-4s
 		// :8090 read) only runs on the attempt that can consume it.
-		if attempt == 3 && !nudged && nudgeStuckSource(attempt, nudged, h.currentBoxSource()) {
-			nudged = true
-			if standDown() {
-				h.logger.Info("hardware recall: stand-down while preparing the sys-power nudge, leaving the box alone", "slot", slot)
-				cancel()
-				return
+		if attempt == 3 && !nudged {
+			if src := h.currentBoxSource(); nudgeStuckSource(attempt, nudged, src) || h.inertAckNudge(src, slot, url, pressAt) {
+				nudged = true
+				if standDown() {
+					h.logger.Info("hardware recall: stand-down while preparing the sys-power nudge, leaving the box alone", "slot", slot)
+					cancel()
+					return
+				}
+				h.logger.Warn("hardware recall: box inert (stuck source or ACKing without fetching), sending one sys-power nudge", "slot", slot, "source", src)
+				if err := h.sysPowerToggle(ctx); err != nil {
+					h.logger.Warn("hardware recall: sys-power nudge failed", "slot", slot, "err", err)
+				}
+				time.Sleep(1500 * time.Millisecond)
 			}
-			h.logger.Warn("hardware recall: box stuck in INVALID_SOURCE, sending one sys-power nudge", "slot", slot)
-			if err := h.sysPowerToggle(ctx); err != nil {
-				h.logger.Warn("hardware recall: sys-power nudge failed", "slot", slot, "err", err)
-			}
-			time.Sleep(1500 * time.Millisecond)
 		}
 		// Wake the box first: after the 1036 wrong-state rejection the firmware
 		// often gives up on its failed self-activation and powers the source off
@@ -2502,7 +2919,9 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 		}
 		cancel()
 	}
-	h.logger.Warn("hardware recall still not playing after retries", "slot", slot)
+	src, item, status := h.nowPlayingSummary()
+	h.logger.Warn("hardware recall still not playing after retries", "slot", slot,
+		"source", src, "itemName", item, "playStatus", status)
 	if h.noteRecallExhausted != nil {
 		h.noteRecallExhausted()
 	}
@@ -3053,6 +3472,15 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	if err != nil {
 		logger.Debug("preset reconcile: box presets not readable", "err", err)
 		return false
+	}
+	// A box-side EMPTY list while STR's store has presets is the "all presets
+	// suddenly empty" field state (Wave 2026-07-25: keys dead by evening, a
+	// plug pull did not restore them). WARN with both counts so the bundle
+	// shows the loss moment and whether the re-registration below healed it or
+	// the per-slot AddPreset failures explain why the keys stayed dead.
+	if len(boxLocs) == 0 {
+		logger.Warn("preset forensics: box reports an EMPTY preset list while the STR store has presets (box lost its key registrations; re-registering now)",
+			"storeCount", len(stick))
 	}
 	// Add the STR store presets the box is missing (or all, on a forced full
 	// re-sync). strSlots also drives the prune pass below.
@@ -3832,12 +4260,67 @@ func boxIsPlaying(boxHost string) bool {
 	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
 }
 
+// boxNowPlayingSummary returns compact now_playing evidence for the recall
+// settle logs: the active source, the box's own itemName (what a display model
+// like the Wave/ST20 shows) and the playStatus. It answers two open field
+// questions at once: which side of the Wave wrong-state race won (audio
+// without name vs name without audio - itemName empty on the winning STR push,
+// #469/Wave 2026-07-25), and whether a verify success was the box's stale
+// same-slot ContentItem rather than a real fetch (#419 Finding 1).
+func boxNowPlayingSummary(boxHost string) (source, itemName, playStatus string) {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return "", "", ""
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	s := string(b)
+	if m := regexp.MustCompile(`source="([^"]*)"`).FindStringSubmatch(s); len(m) == 2 {
+		source = m[1]
+	}
+	if m := regexp.MustCompile(`<itemName>([^<]*)</itemName>`).FindStringSubmatch(s); len(m) == 2 {
+		itemName = m[1]
+	}
+	if m := regexp.MustCompile(`<playStatus>([^<]*)</playStatus>`).FindStringSubmatch(s); len(m) == 2 {
+		playStatus = m[1]
+	}
+	return source, itemName, playStatus
+}
+
+// nowPlayingSummary is the seam-aware wrapper over boxNowPlayingSummary.
+func (h *presetWsHandler) nowPlayingSummary() (string, string, string) {
+	if h.boxSummaryFn != nil {
+		return h.boxSummaryFn()
+	}
+	return boxNowPlayingSummary(h.boxHost)
+}
+
 // nudgeStuckSource is the sys-power-nudge decision: the box still reports
 // INVALID_SOURCE at the third verify attempt and no nudge ran yet. Bounded to
 // exactly one nudge per recall; earlier attempts give the normal wake+re-push
 // a chance first.
 func nudgeStuckSource(attempt int, nudged bool, source string) bool {
 	return attempt == 3 && !nudged && source == "INVALID_SOURCE"
+}
+
+// inertAckNudge is the second sys-power-nudge trigger (#419 Finding 2): the
+// box reports source=UPNP and ACKs every SetURI+Play, yet has not fetched a
+// single byte of THIS recall's proxied stream by the third attempt - the
+// "ACKs everything, fetches nothing" freeze the INVALID_SOURCE-only condition
+// missed (on-site ST30 capture 2026-07-25: five honest attempts, source=UPNP
+// throughout, zero fetches, nudge never ran; the same box's field bundle shows
+// the ONLY successful source activation of the day followed a real sys-power
+// toggle). Tightly scoped so it can never interrupt real audio: proxied
+// streams only (open proxy fetch = physical precondition for audio, so zero
+// fetch evidence at attempt 3 proves silence), and any other source string
+// (AUX, BLUETOOTH, a user-started session) never nudges.
+func (h *presetWsHandler) inertAckNudge(source string, slot int, url string, pressAt time.Time) bool {
+	return source == "UPNP" && streamPath(url) != "" &&
+		!h.slotPulledSince(slot, pressAt) && !h.slotFetchLiveNow(slot)
 }
 
 // boxPlayingURL reports whether the box is in a play/buffering state AND its

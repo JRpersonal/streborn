@@ -651,11 +651,25 @@ func (c *Client) fetchJSON(ctx context.Context, path string, out any) error {
 			return nil
 		}
 		lastErr = err
+		// The mirrors share radio-browser's per-client rate limiting: after a
+		// 429, hammering the next mirror immediately mostly collects the next
+		// 429. A short breather gives the retry a real chance.
+		if strings.Contains(err.Error(), ": 429:") {
+			select {
+			case <-ctx.Done():
+			case <-time.After(600 * time.Millisecond):
+			}
+		}
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no mirror reachable")
 	}
-	return lastErr
+	// Stable, user-presentable marker first, raw detail behind it: the app
+	// surfaces error strings in toasts, and the raw mirror detail (a bare
+	// last-resort IP like https://91.98.4.78 plus a status body) read like
+	// something broken or suspicious to users (field 2026-07-26). The
+	// frontend maps the marker to a localized message; logs keep the detail.
+	return fmt.Errorf("radio directory unreachable: %w", lastErr)
 }
 
 // tryMirror executes a single mirror attempt under its own short ctx.
