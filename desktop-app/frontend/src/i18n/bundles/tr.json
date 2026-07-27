@@ -195,7 +195,7 @@
   "speakerUpdate.btnAll": "{{n}} cihazın hepsini şimdi güncelle",
   "speakerUpdate.later": "Daha sonra",
   "speaker.updateChip": "Güncelleme",
-  "speaker.updateChipTitle": "Hoparlör {{box}}, uygulama {{app}} sürümünde. Güncellemek için dişli simgesine tıkla.",
+  "speaker.updateChipTitle": "Hoparlör {{box}}, uygulama {{app}} sürümünde. Güncellemek için tıkla.",
   "speaker.playingNow": "Şu an çalıyor",
   "speaker.groupLabelTitle": "{{name}} tarafından yönetilen çoklu oda grubu",
   "speaker.editTitle": "Bu hoparlörün ayarları",

@@ -195,7 +195,7 @@
   "speakerUpdate.btnAll": "Actualizar los {{n}} ahora",
   "speakerUpdate.later": "Más tarde",
   "speaker.updateChip": "Actualizar",
-  "speaker.updateChipTitle": "El altavoz tiene la {{box}} y la app la {{app}}. Haz clic en la rueda dentada para actualizar.",
+  "speaker.updateChipTitle": "El altavoz tiene la {{box}} y la app la {{app}}. Haz clic para actualizar.",
   "speaker.playingNow": "Reproduciendo ahora",
   "speaker.groupLabelTitle": "Grupo multisala liderado por {{name}}",
   "speaker.editTitle": "Ajustes de este altavoz",

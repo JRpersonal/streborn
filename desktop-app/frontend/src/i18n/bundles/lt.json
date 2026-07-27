@@ -195,7 +195,7 @@
   "speakerUpdate.btnAll": "Atnaujinti visas {{n}} dabar",
   "speakerUpdate.later": "Vėliau",
   "speaker.updateChip": "Atnaujinimas",
-  "speaker.updateChipTitle": "Kolonėlėje {{box}}, programėlėje {{app}}. Spustelėk krumpliaratį, kad atnaujintum.",
+  "speaker.updateChipTitle": "Kolonėlėje {{box}}, programėlėje {{app}}. Spustelėk, kad atnaujintum.",
   "speaker.playingNow": "Dabar groja",
   "speaker.groupLabelTitle": "Kelių kambarių grupė, kuriai vadovauja {{name}}",
   "speaker.editTitle": "Šio garsiakalbio nustatymai",

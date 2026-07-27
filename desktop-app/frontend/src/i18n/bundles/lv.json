@@ -195,7 +195,7 @@
   "speakerUpdate.btnAll": "Atjaunināt visus {{n}} tagad",
   "speakerUpdate.later": "Vēlāk",
   "speaker.updateChip": "Atjauninājums",
-  "speaker.updateChipTitle": "Skaļrunī ir {{box}}, lietotnē {{app}}. Noklikšķini uz zobrata, lai atjauninātu.",
+  "speaker.updateChipTitle": "Skaļrunī ir {{box}}, lietotnē {{app}}. Noklikšķini, lai atjauninātu.",
   "speaker.playingNow": "Šobrīd atskaņo",
   "speaker.groupLabelTitle": "Vairāku telpu grupa, kuru vada {{name}}",
   "speaker.editTitle": "Šī skaļruņa iestatījumi",

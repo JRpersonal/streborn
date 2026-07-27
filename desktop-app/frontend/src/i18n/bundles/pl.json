@@ -195,7 +195,7 @@
   "speakerUpdate.btnAll": "Zaktualizuj wszystkie {{n}} teraz",
   "speakerUpdate.later": "Później",
   "speaker.updateChip": "Aktualizacja",
-  "speaker.updateChipTitle": "Głośnik ma {{box}}, aplikacja {{app}}. Kliknij koło zębate, aby zaktualizować.",
+  "speaker.updateChipTitle": "Głośnik ma {{box}}, aplikacja {{app}}. Kliknij, aby zaktualizować.",
   "speaker.playingNow": "Teraz odtwarza",
   "speaker.groupLabelTitle": "Grupa multiroom prowadzona przez {{name}}",
   "speaker.editTitle": "Ustawienia tego głośnika",

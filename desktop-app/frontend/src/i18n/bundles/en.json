@@ -212,7 +212,7 @@
   "speakerUpdate.btnAll": "Update all {{n}} now",
   "speakerUpdate.later": "Later",
   "speaker.updateChip": "Update",
-  "speaker.updateChipTitle": "Speaker runs {{box}}, app runs {{app}}. Click the gear to update.",
+  "speaker.updateChipTitle": "Speaker runs {{box}}, app runs {{app}}. Click to update.",
   "speaker.playingNow": "Playing now",
   "speaker.groupLabelTitle": "Multiroom group led by {{name}}",
   "speaker.editTitle": "Settings for this speaker",

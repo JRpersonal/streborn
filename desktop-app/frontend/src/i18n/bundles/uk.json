@@ -195,7 +195,7 @@
   "speakerUpdate.btnAll": "Оновити всі {{n}} зараз",
   "speakerUpdate.later": "Пізніше",
   "speaker.updateChip": "Оновлення",
-  "speaker.updateChipTitle": "Колонка має {{box}}, застосунок {{app}}. Натисни шестірню, щоб оновити.",
+  "speaker.updateChipTitle": "Колонка має {{box}}, застосунок {{app}}. Натисни, щоб оновити.",
   "speaker.playingNow": "Зараз відтворює",
   "speaker.groupLabelTitle": "Мультирум-група під керуванням {{name}}",
   "speaker.editTitle": "Налаштування цієї колонки",

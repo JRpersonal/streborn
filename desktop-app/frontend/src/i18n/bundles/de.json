@@ -212,7 +212,7 @@
   "speakerUpdate.btnAll": "Alle {{n}} jetzt aktualisieren",
   "speakerUpdate.later": "Später",
   "speaker.updateChip": "Update",
-  "speaker.updateChipTitle": "Lautsprecher läuft auf {{box}}, App auf {{app}}. Klick auf das Zahnrad, um zu aktualisieren.",
+  "speaker.updateChipTitle": "Lautsprecher läuft auf {{box}}, App auf {{app}}. Klicken zum Aktualisieren.",
   "speaker.playingNow": "Spielt gerade",
   "speaker.groupLabelTitle": "Multiroom-Gruppe, angeführt von {{name}}",
   "speaker.editTitle": "Einstellungen dieses Lautsprechers",

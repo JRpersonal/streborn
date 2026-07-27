@@ -195,7 +195,7 @@
   "speakerUpdate.btnAll": "{{n}} 台すべてを今すぐ更新",
   "speakerUpdate.later": "あとで",
   "speaker.updateChip": "更新",
-  "speaker.updateChipTitle": "スピーカーは {{box}}、アプリは {{app}} です。歯車をクリックすると更新できます。",
+  "speaker.updateChipTitle": "スピーカーは {{box}}、アプリは {{app}} です。クリックで更新します。",
   "speaker.playingNow": "再生中",
   "speaker.groupLabelTitle": "{{name}} が主導するマルチルームグループ",
   "speaker.editTitle": "このスピーカーの設定",

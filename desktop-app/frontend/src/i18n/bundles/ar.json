@@ -195,7 +195,7 @@
   "speakerUpdate.btnAll": "حدّث كل الـ {{n}} الآن",
   "speakerUpdate.later": "لاحقًا",
   "speaker.updateChip": "تحديث",
-  "speaker.updateChipTitle": "مكبر الصوت على {{box}} والتطبيق على {{app}}. انقر على الترس للتحديث.",
+  "speaker.updateChipTitle": "مكبر الصوت على {{box}} والتطبيق على {{app}}. انقر للتحديث.",
   "speaker.playingNow": "قيد التشغيل الآن",
   "speaker.groupLabelTitle": "مجموعة متعددة الغرف بقيادة {{name}}",
   "speaker.editTitle": "إعدادات هذه السمّاعة",

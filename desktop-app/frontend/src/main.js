@@ -2007,7 +2007,7 @@ function renderBoxSelect() {
     // he was writing to ask why his speaker kept switching itself off
     // (2026-07-27). The tooltip spells out both versions.
     const updDot = boxNeedsUpdate(b)
-      ? `<span class="box-update-chip" title="${escapeAttr(t('speaker.updateChipTitle', { box: b.version || '?', app: (state.appInfo && state.appInfo.version) || '?' }))}">${escapeHtml(t('speaker.updateChip'))}</span>`
+      ? `<span class="box-update-chip" role="button" tabindex="0" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.updateChipTitle', { box: b.version || '?', app: (state.appInfo && state.appInfo.version) || '?' }))}">${escapeHtml(t('speaker.updateChip'))}</span>`
       : '';
     // Small speaker icon on a tile whose speaker is currently playing, so the
     // playing speaker is obvious among several. The selected box is marked live
@@ -2047,7 +2047,7 @@ function renderBoxSelect() {
     btn.onclick = async (e) => {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.
-      if (e.target.closest('.box-edit')) return;
+      if (e.target.closest('.box-edit') || e.target.closest('.box-update-chip')) return;
       // An offline tile cannot be selected (every call would fail); clicking
       // it explains itself and kicks off a fresh discovery, which is also the
       // fastest way to bring a returned speaker back to life in the list.
@@ -2081,6 +2081,23 @@ function renderBoxSelect() {
     };
   });
   // Gear click: set settingsBox and switch the tab.
+  // The "Update" chip is a button, like the gear: clicking it starts this
+  // speaker's update right away instead of making the user hunt for it in
+  // Speaker Settings. Keyboard-reachable (Enter/Space) for the same reason
+  // the gear is.
+  sel.querySelectorAll('.box-update-chip').forEach(chip => {
+    const start = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const host = chip.dataset.host;
+      const port = parseInt(chip.dataset.port, 10);
+      const box = (state.boxes || []).find(b => b.host === host && b.port === port);
+      if (!box) return;
+      doBoxUpdate(box).catch(showError);
+    };
+    chip.onclick = start;
+    chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') start(e); };
+  });
   sel.querySelectorAll('.box-edit').forEach(icon => {
     icon.onclick = (e) => {
       e.stopPropagation();

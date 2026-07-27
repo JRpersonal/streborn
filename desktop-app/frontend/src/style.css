@@ -638,7 +638,10 @@ body {
   line-height: 1.6;
   vertical-align: middle;
   white-space: nowrap;
+  cursor: pointer;
 }
+.box-update-chip:hover { background: #1c62c4; }
+.box-update-chip:focus-visible { outline: 2px solid var(--c-fg); outline-offset: 2px; }
 
 /* The once-per-start speaker-update card. Deliberately calm: it sits above the
    content like the other banners, is never modal, and disappears for good once
