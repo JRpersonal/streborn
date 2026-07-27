@@ -623,6 +623,48 @@ body {
   box-shadow: 0 0 0 2px var(--c-surface);
 }
 .box-btn.needs-update.active .box-update-dot { box-shadow: 0 0 0 2px var(--brand-bg); }
+/* The readable replacement for the update dot: a small word chip. Same blue as
+   the settings-tab badge (one colour, one meaning); red would read as an error,
+   which an available update is not. Inline so it never overlaps the name. */
+.box-update-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #2f80ed;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* The once-per-start speaker-update card. Deliberately calm: it sits above the
+   content like the other banners, is never modal, and disappears for good once
+   the speakers are current. */
+.speaker-update-card {
+  background: #eaf2fe;
+  border-bottom: 1px solid #c7ddfb;
+  color: #10305c;
+  padding: 14px 18px;
+}
+.speaker-update-card .suc-body { max-width: 720px; margin: 0 auto; }
+.speaker-update-card .suc-title { font-weight: 700; margin-bottom: 4px; }
+.speaker-update-card .suc-text { font-size: 14px; line-height: 1.5; }
+.speaker-update-card .suc-list {
+  margin: 8px 0 10px;
+  padding-left: 20px;
+  font-size: 14px;
+}
+.speaker-update-card .suc-ver { color: #4a6591; font-size: 12px; }
+.speaker-update-card .suc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+html.a11y-contrast .speaker-update-card {
+  background: #000;
+  color: #fff;
+  border-bottom-color: #fff;
+}
+html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .box-btn.stock {
   background: var(--c-surface);
   border-style: dashed;

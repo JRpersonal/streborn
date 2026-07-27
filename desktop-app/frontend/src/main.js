@@ -1577,8 +1577,76 @@ function applyBoxList(list) {
   // Second world-map invite: once the user's whole supported SoundTouch set is
   // running STR (no stock box left to convert), celebrate the milestone again.
   maybeInviteWorldMapAllDone();
+  // Speakers left behind on an old agent: the single most common support
+  // theme (2026-07-27). Ask once per app start, right where the user works.
+  maybeShowSpeakerUpdateCard();
   // Self-heal a mid-reboot misclassification (see updateStockReprobe).
   updateStockReprobe();
+}
+
+// The speaker-update prompt. Users update the APP (the website tells them to)
+// and never learn that the speaker carries its own software: three independent
+// "my speaker switches itself off" reports on the same day all turned out to be
+// speakers left on an old agent, one of them proven by a screenshot showing app
+// v0.9.21 next to speaker v0.9.17. The existing cues were a blue dot on the
+// tile and a banner buried in Speaker Settings, and the screenshot proved both
+// are missable: dots read as decoration, and a user who never opens that tab
+// never sees the banner.
+//
+// So: ask ONCE PER APP START, in the music view where everyone works, naming
+// the affected speakers and offering one button that updates all of them. Not
+// a modal (that trains people to dismiss), not repeated within a session, and
+// it disappears by itself as soon as the speakers are current, because it is
+// driven purely by boxNeedsUpdate.
+let speakerUpdateCardShown = false;
+function maybeShowSpeakerUpdateCard() {
+  const el = $('speakerUpdateCard');
+  if (!el || speakerUpdateCardShown) return;
+  if (!state.appInfo || !state.appInfo.version) return;
+  const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+  // No speakers behind (or none discovered yet): stay silent and re-check on
+  // the next discovery cycle, so a box that appears late is still covered.
+  if (!outdated.length) return;
+  speakerUpdateCardShown = true;
+
+  const list = outdated
+    .map(b => `<li>${escapeHtml(getBoxLabel(b))} <span class="suc-ver">${escapeHtml(b.version || '')}</span></li>`)
+    .join('');
+  const btnLabel = outdated.length > 1
+    ? t('speakerUpdate.btnAll', { n: outdated.length })
+    : t('speakerUpdate.btnOne');
+  el.innerHTML =
+    `<div class="suc-body">` +
+      `<div class="suc-title">${escapeHtml(t('speakerUpdate.title'))}</div>` +
+      `<div class="suc-text">${escapeHtml(t('speakerUpdate.text', { version: state.appInfo.version }))}</div>` +
+      `<ul class="suc-list">${list}</ul>` +
+      `<div class="suc-actions">` +
+        `<button class="btn btn-primary btn-mini" id="sucUpdate">${escapeHtml(btnLabel)}</button>` +
+        `<button class="btn btn-mini" id="sucLater">${escapeHtml(t('speakerUpdate.later'))}</button>` +
+      `</div>` +
+    `</div>`;
+  el.classList.remove('hidden');
+
+  const hide = () => el.classList.add('hidden');
+  const later = $('sucLater');
+  if (later) later.onclick = hide;
+  const go = $('sucUpdate');
+  if (go) {
+    go.onclick = async () => {
+      hide();
+      // One speaker: the normal single-box update (it shows its own progress
+      // and prompts). Several: the existing update-all flow, which pre-checks
+      // sticks and weak Wi-Fi once instead of per speaker.
+      try {
+        if (outdated.length === 1) {
+          switchView('settings');
+          await doBoxUpdate(outdated[0]);
+        } else {
+          await updateAllBoxes();
+        }
+      } catch (e) { showError(e); }
+    };
+  }
 }
 
 // Stock self-heal: a speaker captured mid-reboot classifies as "stock" (its
@@ -1933,8 +2001,13 @@ function renderBoxSelect() {
     // itself, in addition to the settings-tab badge and the music-tab
     // banner (#108).
     const updCls = boxNeedsUpdate(b) ? ' needs-update' : '';
+    // A WORD, not a dot: the blue dot that used to sit here reads as decoration
+    // to non-technical users. A screenshot from a user whose speaker had been
+    // three versions behind for days showed the dot in plain sight, twice, while
+    // he was writing to ask why his speaker kept switching itself off
+    // (2026-07-27). The tooltip spells out both versions.
     const updDot = boxNeedsUpdate(b)
-      ? `<span class="box-update-dot" title="${escapeAttr(t('speaker.updateBadgeTitle'))}" aria-label="${escapeAttr(t('speaker.updateBadgeTitle'))}"></span>`
+      ? `<span class="box-update-chip" title="${escapeAttr(t('speaker.updateChipTitle', { box: b.version || '?', app: (state.appInfo && state.appInfo.version) || '?' }))}">${escapeHtml(t('speaker.updateChip'))}</span>`
       : '';
     // Small speaker icon on a tile whose speaker is currently playing, so the
     // playing speaker is obvious among several. The selected box is marked live
