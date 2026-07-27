@@ -2981,7 +2981,12 @@ async function doBoxUpdate(targetBox) {
   // a second one. The UI also renders the button disabled in that
   // case via checkBoxUpdate(), but the redundant check here guards
   // against races where the user clicked through a stale render.
-  if (state.otaInProgress) return;
+  // Say so out loud: returning silently made a second press look like a dead
+  // button and invited a third (live, 2026-07-27).
+  if (state.otaInProgress) {
+    showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('common.unknown') }));
+    return;
+  }
 
   // Stick gate, checked at the single OTA chokepoint so EVERY caller
   // (the music-tab banner button and the stick-info button) is covered.
@@ -3052,8 +3057,20 @@ async function doBoxUpdate(targetBox) {
   // what the other box is doing. The state.otaTargetHost guard
   // below in checkBoxUpdate() takes care of rendering the right
   // "Update running on <name>" label there.
+  // "Looking at the target box" means the SETTINGS view (where the update
+  // buttons and progress live since they moved out of the music view) or the
+  // music selection. Comparing against state.currentBox alone was a leftover
+  // from the music-view era: updating any speaker other than the currently
+  // selected one silently suppressed every progress line, so the settings
+  // page just sat there and users pressed Update again (live, 2026-07-27).
+  const lookingAtTarget = () => {
+    const t = state.otaTargetHost;
+    if (!t) return false;
+    return (state.settingsBox && state.settingsBox.host === t) ||
+           (state.currentBox && state.currentBox.host === t);
+  };
   const setStatus = (text) => {
-    if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
+    if (!lookingAtTarget()) return;
     // Idempotent: only touch the DOM when a value actually changes. The 1 s
     // countdown tick called this every second during the post-update wait, and
     // re-setting `disabled` each time re-triggered the button's CSS transition,
@@ -3104,6 +3121,14 @@ async function doBoxUpdate(targetBox) {
     const pv = await BoxAgentVersion(targetBox.host, targetBox.port);
     if (pv) { preBuild = pv.build || ''; preVersion = pv.version || ''; }
   } catch { /* box version unknown pre-OTA: fall back to the appBuild match */ }
+  let boxWasTouched = false;
+  // From here on the speaker itself is involved: anything that fails after the
+  // transfer started may leave it mid-restart, which is when the power-cycle
+  // advice below is genuinely useful. Everything BEFORE this point (no embedded
+  // agent in this build, box unreachable, a gate the user cancelled) never
+  // touched the speaker, and telling those users to pull the plug is both
+  // pointless and alarming.
+  boxWasTouched = true;
   try {
     await UpdateBoxAgent(targetBox.host, targetBox.port);
     // Agent has accepted the binary. It will detach, sleep ~70 s
@@ -3332,7 +3357,9 @@ async function doBoxUpdate(targetBox) {
     if (/deadline exceeded|client\.timeout|while reading body/i.test(msg)) {
       showToast(t('update.stillWorking'));
     } else {
-      showError(t('update.failed', { err: msg }));
+      showError(boxWasTouched
+        ? t('update.failed', { err: msg })
+        : t('update.failedNoChange', { err: msg }));
     }
     reset();
   } finally {

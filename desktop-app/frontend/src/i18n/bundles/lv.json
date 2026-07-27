@@ -344,6 +344,8 @@
   "update.spotifyDeferredToast": "Skaļrunis atjaunināts. Spotify dzini pagaidām nevarēja instalēt; tas tiks piegādāts nākamreiz, kad atvērsiet šo skaļruni.",
   "update.spotifyTooFullToast": "Skaļrunis atjaunināts. Tajā nepietiek brīvas vietas Spotify dzinim; atbrīvojiet nedaudz vietas, un tas tiks instalēts automātiski.",
   "update.failed": "Atjaunināt neizdevās: {{err}}\n\nJa skaļrunis neatbild, uz brīdi atvienojiet to no strāvas un pievienojiet atkal.",
+  "update.alreadyRunning": "{{name}} atjaunināšana jau notiek. Lūdzu, pagaidi, līdz tā beidzas.",
+  "update.failedNoChange": "Atjaunināšana neizdevās: {{err}}\n\nSkaļrunī nekas netika mainīts, tas darbojas kā iepriekš.",
   "update.otherBoxRunning": "Notiek atjaunināšana {{name}} ...",
   "update.stickInTitle": "USB zibatmiņa joprojām ievietota",
   "update.stickInBody": "USB zibatmiņa joprojām ir skaļrunī. Atjauninājums tiks atcelts nākamajā startēšanā, jo skaļrunis atkal instalēs (vecāku) versiju no zibatmiņas.<br><br>Vispirms izņemiet USB zibatmiņu no skaļruņa, tad atjauniniet.",

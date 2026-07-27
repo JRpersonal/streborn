@@ -381,6 +381,8 @@
   "update.spotifyDeferredToast": "Speaker updated. The Spotify engine could not be installed yet; it will be delivered next time you open this speaker.",
   "update.spotifyTooFullToast": "Speaker updated. There isn't enough free space on it for the Spotify engine. Free some space on the speaker and it installs automatically.",
   "update.failed": "Update failed: {{err}}\n\nIf the speaker no longer answers, briefly unplug power and plug it back in.",
+  "update.alreadyRunning": "An update for {{name}} is already running. Please wait until it finishes.",
+  "update.failedNoChange": "Update failed: {{err}}\n\nNothing was changed on the speaker, it keeps running as before.",
   "update.otherBoxRunning": "Update running on {{name}} ...",
   "update.stickInTitle": "USB stick still inserted",
   "update.stickInBody": "The USB stick is still in the speaker. An update will be undone on the next reboot, because the speaker re-installs the (older) version from the stick.<br><br>Pull the USB stick out of the speaker first, then update.",

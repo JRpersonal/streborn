@@ -381,6 +381,8 @@
   "update.spotifyDeferredToast": "Lautsprecher aktualisiert. Die Spotify-Komponente konnte noch nicht installiert werden; sie wird beim nächsten Öffnen dieses Lautsprechers übertragen.",
   "update.spotifyTooFullToast": "Lautsprecher aktualisiert. Auf dem Lautsprecher ist nicht genug Speicher für die Spotify-Komponente frei. Gib etwas Speicher frei, dann wird sie automatisch installiert.",
   "update.failed": "Update fehlgeschlagen: {{err}}\n\nFalls der Lautsprecher danach nicht mehr antwortet, trenne kurz den Strom und stecke ihn wieder an.",
+  "update.alreadyRunning": "Es läuft bereits ein Update für {{name}}. Bitte warte, bis es fertig ist.",
+  "update.failedNoChange": "Update fehlgeschlagen: {{err}}\n\nAm Lautsprecher wurde nichts verändert, er läuft unverändert weiter.",
   "update.otherBoxRunning": "Update läuft auf {{name}} ...",
   "update.stickInTitle": "USB-Stick noch eingesteckt",
   "update.stickInBody": "Im Lautsprecher steckt noch der USB-Stick. Ein Update wird beim nächsten Neustart wieder rückgängig gemacht, weil der Lautsprecher die (ältere) Version vom Stick erneut installiert.<br><br>Zieh erst den USB-Stick aus dem Lautsprecher, dann aktualisiere.",

@@ -344,6 +344,8 @@
   "update.spotifyDeferredToast": "Kolonėlė atnaujinta. „Spotify“ variklio kol kas nepavyko įdiegti; jis bus pristatytas kitą kartą atidarius šią kolonėlę.",
   "update.spotifyTooFullToast": "Kolonėlė atnaujinta. Joje nepakanka laisvos vietos „Spotify“ varikliui; atlaisvinkite šiek tiek vietos ir jis bus įdiegtas automatiškai.",
   "update.failed": "Atnaujinti nepavyko: {{err}}\n\nJei garsiakalbis neatsako, trumpam atjunkite jį nuo maitinimo ir vėl prijunkite.",
+  "update.alreadyRunning": "{{name}} atnaujinimas jau vyksta. Palauk, kol jis baigsis.",
+  "update.failedNoChange": "Atnaujinimas nepavyko: {{err}}\n\nKolonėlėje niekas nepakeista, ji veikia kaip anksčiau.",
   "update.otherBoxRunning": "Vykdomas atnaujinimas {{name}} ...",
   "update.stickInTitle": "USB atmintinė vis dar įkišta",
   "update.stickInBody": "USB atmintinė vis dar garsiakalbyje. Atnaujinimas bus atšauktas kito paleidimo metu, nes garsiakalbis vėl įdiegs (senesnę) versiją iš atmintinės.<br><br>Pirmiausia išimkite USB atmintinę iš garsiakalbio, tada atnaujinkite.",

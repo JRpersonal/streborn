@@ -344,6 +344,8 @@
   "update.spotifyDeferredToast": "Altavoz actualizado. El motor de Spotify aún no se pudo instalar; se entregará la próxima vez que abras este altavoz.",
   "update.spotifyTooFullToast": "Altavoz actualizado. No hay suficiente espacio libre para el motor de Spotify; libera algo de espacio en el altavoz y se instalará automáticamente.",
   "update.failed": "Error en la actualización: {{err}}\n\nSi el altavoz ya no responde, desconecta brevemente la alimentación y vuelve a conectarla.",
+  "update.alreadyRunning": "Ya hay una actualización en marcha para {{name}}. Espera a que termine.",
+  "update.failedNoChange": "La actualización falló: {{err}}\n\nNo se cambió nada en el altavoz, sigue funcionando como antes.",
   "update.otherBoxRunning": "Actualización en curso en {{name}} ...",
   "update.stickInTitle": "Memoria USB aún insertada",
   "update.stickInBody": "La memoria USB sigue en el altavoz. Una actualización se deshará en el próximo reinicio, porque el altavoz reinstala la versión (más antigua) desde la memoria.<br><br>Retira primero la memoria USB del altavoz y luego actualiza.",

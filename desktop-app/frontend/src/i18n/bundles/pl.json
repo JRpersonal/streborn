@@ -344,6 +344,8 @@
   "update.spotifyDeferredToast": "Zaktualizowano głośnik. Nie udało się jeszcze zainstalować silnika Spotify; zostanie dostarczony przy następnym otwarciu tego głośnika.",
   "update.spotifyTooFullToast": "Zaktualizowano głośnik. Nie ma na nim wystarczająco wolnego miejsca na silnik Spotify; zwolnij trochę miejsca, a zainstaluje się automatycznie.",
   "update.failed": "Aktualizacja nie powiodła się: {{err}}\n\nJeśli głośnik nie odpowiada, odłącz go na chwilę od zasilania i podłącz ponownie.",
+  "update.alreadyRunning": "Aktualizacja dla {{name}} już trwa. Poczekaj, aż się zakończy.",
+  "update.failedNoChange": "Aktualizacja nie powiodła się: {{err}}\n\nNa głośniku nic nie zostało zmienione, działa tak jak wcześniej.",
   "update.otherBoxRunning": "Trwa aktualizacja na {{name}} ...",
   "update.stickInTitle": "Pendrive USB nadal jest w głośniku",
   "update.stickInBody": "Pendrive USB nadal jest w głośniku. Aktualizacja zostanie cofnięta przy następnym restarcie, bo głośnik ponownie zainstaluje (starszą) wersję z pendrive'a.<br><br>Najpierw wyjmij pendrive USB z głośnika, a potem aktualizuj.",
