@@ -625,21 +625,25 @@ SetAppLocale(getLocale()).catch(() => {});
 // the languages we have native-speaker copy for. New languages added
 // to i18n/bundles fall back to English until a maintainer adds
 // localized prose here.
+// Since the network install landed, every SoundTouch model runs STR - also the
+// ones that never read a USB stick at boot (300, Wave, SA-4/SA-5, CineMate).
+// Naming four models here was both wrong and discouraging for owners of the
+// others, so the line now says what is true: all of them.
 const SUPPORTED_LINE = {
-  de: 'für SoundTouch 10, 20, 30 und Portable',
-  fr: 'pour SoundTouch 10, 20, 30 et Portable',
-  it: 'per SoundTouch 10, 20, 30 e Portable',
-  es: 'para SoundTouch 10, 20, 30 y Portable',
-  nl: 'voor SoundTouch 10, 20, 30 en Portable',
-  pt: 'para SoundTouch 10, 20, 30 e Portable',
-  ja: 'SoundTouch 10、20、30、Portable に対応',
-  uk: 'для SoundTouch 10, 20, 30 і Portable',
-  pl: 'dla SoundTouch 10, 20, 30 i Portable',
-  lt: 'skirta SoundTouch 10, 20, 30 ir Portable',
-  lv: 'SoundTouch 10, 20, 30 un Portable modeļiem',
-  tr: 'SoundTouch 10, 20, 30 ve Portable için',
-  ar: 'لأجهزة SoundTouch 10 و20 و30 وPortable',
-  en: 'for SoundTouch 10, 20, 30 and Portable',
+  de: 'für alle SoundTouch Modelle',
+  fr: 'pour tous les modèles SoundTouch',
+  it: 'per tutti i modelli SoundTouch',
+  es: 'para todos los modelos SoundTouch',
+  nl: 'voor alle SoundTouch modellen',
+  pt: 'para todos os modelos SoundTouch',
+  ja: 'すべての SoundTouch モデルに対応',
+  uk: 'для всіх моделей SoundTouch',
+  pl: 'dla wszystkich modeli SoundTouch',
+  lt: 'visiems SoundTouch modeliams',
+  lv: 'visiem SoundTouch modeļiem',
+  tr: 'tüm SoundTouch modelleri için',
+  ar: 'لجميع طُرز SoundTouch',
+  en: 'for every SoundTouch model',
 };
 
 const TAGLINES = {
@@ -2093,6 +2097,13 @@ function renderBoxSelect() {
       const port = parseInt(chip.dataset.port, 10);
       const box = (state.boxes || []).find(b => b.host === host && b.port === port);
       if (!box) return;
+      // Switch to Speaker Settings for this box FIRST: that is where the
+      // update progress renders (the music view has no progress elements), so
+      // starting the OTA from here without switching looked like the click had
+      // done nothing at all.
+      state.settingsBox = box;
+      switchView('settings');
+      showToast(t('speakerUpdate.starting', { name: getBoxLabel(box) }));
       doBoxUpdate(box).catch(showError);
     };
     chip.onclick = start;
