@@ -1022,6 +1022,19 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// classification/recovery ran while the box switched itself off
 				// (field bundles 2026-07-22, all standby entries on taigan/spotty/
 				// lisa took this route).
+				// Any wake OUT of standby re-registers the hardware keys. The
+				// v0.9.21 keepalive+skip fixes removed the accidental every-11-min
+				// re-sync that had been silently healing boxes whose firmware
+				// de-registers the key layer without a trace (#487: 70 minutes
+				// of steady state, zero press frames, remote dead while /presets
+				// still listed all slots). A standby exit is the moment the user
+				// is back, and a write to an awake box never touches the
+				// deep-standby countdown. Rate-limited inside the request.
+				if prev == "STANDBY" && src != "STANDBY" {
+					if h, ok := c.handler.(interface{ OnStandbyExit(context.Context) }); ok {
+						h.OnStandbyExit(ctx)
+					}
+				}
 				if src == "STANDBY" && upnpRecently {
 					if h, ok := c.handler.(interface{ OnEnterStandby(context.Context) }); ok {
 						h.OnEnterStandby(ctx)

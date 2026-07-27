@@ -2493,6 +2493,16 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 	}
 }
 
+// OnStandbyExit fires when the box's source leaves STANDBY for anything else
+// (boxws optional hook). It re-registers the hardware keys the moment the
+// user is back at the box: the wake write cannot touch the deep-standby
+// countdown (the box is awake), and it is the guaranteed heal for firmware
+// that silently de-registered the key layer during standby (#487, where dead
+// presses emit no frame and no other trigger ever fires).
+func (h *presetWsHandler) OnStandbyExit(_ context.Context) {
+	requestPresetKeyResync(h.logger)
+}
+
 // resyncUnlessIdleStandby is OnConnected's re-sync decision, off the WS hot
 // path. One now_playing read: a box sitting in STANDBY and not playing gets no
 // forced AddPreset sweep (the deep-standby fix, #119); anything else - another
@@ -3427,6 +3437,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	// box later drops back to OOB (ready=false -> fullDone=false).
 	time.Sleep(15 * time.Second)
 	fullDone := false
+	lastAwakeForce := time.Now()
 	for {
 		force := !fullDone
 		if !force && presetResyncAsk.CompareAndSwap(true, false) {
@@ -3434,6 +3445,29 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// selection frame, so the box's key layer likely lost its
 			// registrations even though /presets still lists them.
 			force = true
+		}
+		// Periodic dead-key insurance while the box is AWAKE (#487): the
+		// firmware can silently de-register the hardware key layer while
+		// /presets still lists every slot, and on some boxes a dead press
+		// emits no frame at all - so no event-driven heal ever fires. Before
+		// v0.9.21 the accidental every-11-min reconnect re-sync papered over
+		// this; the keepalive fix removed it and one ST10's remote went dead
+		// within an hour. A forced pass every 20 minutes restores that
+		// insurance, gated on the box NOT being in standby: writes to an
+		// awake box never touch the deep-standby countdown (#119), and a box
+		// in standby gets its re-sync from the standby-exit hook the moment
+		// it wakes.
+		if !force && time.Since(lastAwakeForce) > 20*time.Minute {
+			if src := boxNowPlayingSource(boxHost); src != "" && src != "STANDBY" {
+				force = true
+				logger.Info("preset reconcile: periodic awake re-sync (dead-key insurance, #487)")
+			}
+			// Stamp even when skipped in standby: re-check 20 min later, not
+			// every 10 s tick, and the standby-exit hook owns the wake moment.
+			lastAwakeForce = time.Now()
+		}
+		if force {
+			lastAwakeForce = time.Now()
 		}
 		ready := reconcileOnce(store, boxHost, logger, force)
 		fullDone = ready
