@@ -45,6 +45,9 @@ Client (Browser / Desktop App)
                             +--> /api/box/*          speaker settings (name/volume/bass/
                             |     source/wlan/reboot/airplay-opt/sync-presets/zone/group)
                             +--> /api/region, /api/stick/status, /api/debug/*
+                            +--> /api/peers, /api/peers/seed, /api/peers/forget
+                            |     sticky speaker roster for the on-box picker
+                            |     (NAND-persisted; app distributes the fleet)
                             +--> /api/agent/version, /api/agent/update
                             |     OTA (HTTP; the app falls back to SSH-OTA and
                             |     refreshes a still-inserted stick before the reboot)

@@ -72,6 +72,20 @@ presses and connection-state changes are published there. STR subscribes
 playback over UPnP. This is how hardware buttons 1 to 6 come back to life
 without any cloud. See `internal/boxws/boxws.go`.
 
+**Connection lifetime lore (corrected 2026-07-27):** the long-standing
+belief that "the firmware drops an idle gabbo socket every ~10 minutes"
+was wrong on two counts. The original ~10.5 min drops were real, but the
+June 2026 keepalive "fix" only appeared to help: without a pong handler,
+gorilla/websocket consumed the firmware's pong replies inside
+`ReadMessage`, the read deadline was never refreshed, and the CLIENT tore
+down its own healthy connection every ~11.2 min (machine-regular 674.5 s
+cadence in field bundles, zero `connection lost` warnings because a
+client-side timeout logs differently than a peer drop). Since v0.9.21 the
+pong handler refreshes the deadline and the connection is genuinely
+persistent; the firmware answers protocol pings indefinitely. Every gap
+had been a 10-14 s window that lost a hardware press (#435 feeder) and a
+log-churn source that rotated the 32 KB NAND log in ~3.5 h.
+
 ## Reaching the agent on BCO speakers (chipset whitelist)
 
 On the newer "BCO" chassis (Portable, and the scm/spotty ST20 revision)
@@ -139,9 +153,42 @@ The stream proxy mitigates this for radio: when the local clock is
 implausibly old it still verifies the certificate chain to the system roots
 and the hostname, but relaxes the time-validity window (see
 `clockTolerantTLS` in `internal/streamproxy/streamproxy.go`). Verification
-tightens again automatically once the clock is corrected. The Spotify sidecar
-(`go-librespot`) has its own HTTPS client and is not covered by this; a
-box-wide clock sync at agent start would be the more complete fix.
+tightens again automatically once the clock is corrected. The agent
+additionally corrects an implausibly old clock at start and keeps retrying
+from an HTTP Date header until a sane time is set
+(`internal/clocksync`, #296/#375), which also covers the Spotify sidecar.
+
+**A plug-pull boot can stay poisoned even after the clock heals** (#419
+Finding 4, on-site ST30 capture): the Bose firmware processes start on the
+2015 clock, and on such boots every playback died within 2-13 s for the
+whole boot even though the clock was corrected shortly after; only a soft
+reboot (API-triggered, clock stays sane) cured it, reproduced twice. The
+agent logs `clock forensics` markers (implausible-at-start, healed-after-
+firmware-boot) and exposes `clock_status` in `/api/debug/state` so bundles
+show exactly this sequence. Practical rule: after a wall power-cycle that
+misbehaves, prefer a software reboot over another plug pull.
+
+## Deep standby: what resets the countdown
+
+SoundTouch speakers drop into a deep standby (network fully off, woken
+only at the device) after a long idle period. Which activity resets that
+countdown was pinned down via #119 (ST30 fleet bundles, 2026-07-26):
+
+- **Box-API READS do not block deep standby.** v0.9.16 speakers deep
+  slept fine under 5-minute read-only heartbeats and periodic
+  `GET /presets` reconciles.
+- **Box-API WRITES reset the countdown.** From v0.9.17 the (then
+  ~11-minute) gabbo reconnect cycle scheduled a forced key re-sync with
+  two blind `AddPreset` writes per cycle; fleet boxes stopped deep
+  sleeping entirely (`/proc/uptime` spanning days). v0.9.21 removes the
+  reconnect churn and skips the forced re-sync while a box demonstrably
+  idles in standby.
+
+Standing rule for all future work: any feature that would add periodic
+box-API writes must be checked against this countdown first. Keep-awake
+mechanisms are explicitly out of scope for STR; a deep-sleeping speaker
+being unreachable over the network is correct behavior, surfaced in the
+UIs as a dimmed sticky tile.
 
 ## See also
 

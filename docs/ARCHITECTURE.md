@@ -137,7 +137,7 @@ firmware ports are stock. External reachability splits by chassis:
 | 443 | STR marge HTTPS | TLS cloud-stub for `streaming.bose.com` after the Hosts redirect. | loopback (firmware) |
 | 3678 | go-librespot local API (started by STR) | The agent's `spotify.Manager` drives playback here (`/player/play`, shuffle, next, volume) and reads track events. | loopback |
 | 7000 | STSCertified (Bose) | TLS endpoint inside the firmware. Untouched. | internal |
-| 8080 | WebServer / gabbo (Bose) | Hosts the `/gabbo` WebSocket bus. STR connects as a client. | internal |
+| 8080 | WebServer / gabbo (Bose) | Hosts the `/gabbo` WebSocket bus. STR connects as a client and keeps the connection genuinely persistent via ping/pong keepalive (a silent ~11 min client-side self-timeout was fixed in v0.9.21; see `FIRMWARE-NOTES.md`). | internal |
 | 8081 | STR BMX stub | Healthz-only placeholder for `content.api.bose.io`; the `/bmx/registry/v1/services` route is answered by marge via the hosts rewrite. | sm2: direct (INPUT ACCEPT) / whitelisted chassis: loopback |
 | 8090 | BoseApp (Bose) | REST: `/info`, `/now_playing`, `/presets`, `/select`, `/volume`, zones, ... STR reads and writes here. | internal |
 | 8091 | UPnP AVTransport (Bose) | STR sets the stream URL via SetURI; the speaker fetches and decodes. | internal |
@@ -426,6 +426,32 @@ through cgo (Security.framework) and crashed an old Mac on this very
 call; the pure-Go path removes the last cgo dependency from the check.
 See `desktop-app/update_tls.go`.
 
+### 8. Sticky speaker roster (the on-box picker)
+
+Every agent maintains a durable roster of the other STR speakers so the
+phone page's picker is complete even where mDNS is lossy, and stays
+complete across reboots ("better one speaker too many than one missing").
+Four independent feeds merge into one per-IP map:
+
+1. **mDNS browse** on demand plus a 60 s background tick.
+2. **TCP fallback probes**: each sweep re-dials the longest-unseen listed
+   peers on their web ports, so a speaker whose announcements get lost is
+   still confirmed alive. Confirmation is read-only by design (see the
+   deep-standby note in `FIRMWARE-NOTES.md`).
+3. **NAND persistence** (`/mnt/nv/streborn/peers.json`): the roster
+   survives reboots; entries return dimmed until re-confirmed. Writes are
+   membership-change-only and rate-limited to spare the NAND.
+4. **App seeding**: whenever the desktop app's discovered speaker set
+   changes, it POSTs the full STR set to every agent
+   (`POST /api/peers/seed`, delivered via the same cached-port failover as
+   all agent calls). Agents predating the endpoint answer 404 and are
+   unaffected. `POST /api/peers/forget` removes a stray entry.
+
+Entries dim (listed, not clickable) after ~3 minutes without confirmation
+and are dropped only after 12 hours of silence. A speaker in deep standby
+therefore stays visible as a dimmed tile until it is woken at the device;
+nothing in this subsystem ever wakes or writes to a speaker.
+
 ## External dependencies at runtime
 
 | Service | Used by | Required? |
@@ -473,6 +499,7 @@ tolerates.
   presets.json                preset store; same schema as /media/sda1/presets.json
   zones.json                  multiroom group membership (auto-reformed after reboot)
   webhooks.json               webhook trigger config
+  peers.json                  sticky speaker roster for the on-box picker (see flow 8)
   lib/                        str-shim.so + SoftwareUpdate-real backup + SU-wrapper.sh
                               (chipset-whitelist shim; skipped on all catalogued chassis)
   region.txt                  ISO country code from the setup wizard
