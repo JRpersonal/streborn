@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -27,7 +28,7 @@ func TestRecallVerify_StaleSameSlotFalseSuccessRejected(t *testing.T) {
 		slotPulled:    func(int, time.Time) bool { return false },
 		slotFetchLive: func(int) bool { return false },
 	}
-	h.OnSourceRejected(nil) // 1036 lands ~0.8s after the press
+	h.OnSourceRejected(context.TODO()) // 1036 lands ~0.8s after the press
 	ok, _ := h.recallReachedAudioSignal(5, proxiedURL, pressAt)
 	if ok {
 		t.Fatal("stale same-slot now_playing passed the verify despite a rejection and zero proxy evidence (#419 Finding 1)")
@@ -43,7 +44,7 @@ func TestRecallVerify_LivePullKeepsSameSlotSuccess(t *testing.T) {
 		slotPulled:    func(int, time.Time) bool { return false }, // pull predates the press
 		slotFetchLive: func(int) bool { return true },             // but it is still open
 	}
-	h.OnSourceRejected(nil)
+	h.OnSourceRejected(context.TODO())
 	ok, signal := h.recallReachedAudioSignal(5, proxiedURL, pressAt)
 	if !ok || signal != "now_playing" {
 		t.Fatalf("still-playing same-slot re-press must stay a success, got ok=%v signal=%q", ok, signal)
@@ -69,7 +70,7 @@ func TestRecallVerify_DirectURLUnaffectedByCarveOut(t *testing.T) {
 	h := &presetWsHandler{
 		boxPlayingFn: func(string) bool { return true },
 	}
-	h.OnSourceRejected(nil)
+	h.OnSourceRejected(context.TODO())
 	ok, _ := h.recallReachedAudioSignal(5, "http://radio.example/live.mp3", pressAt)
 	if !ok {
 		t.Fatal("direct-URL recall wrongly subjected to the proxy-evidence carve-out")
