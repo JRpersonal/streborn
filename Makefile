@@ -28,6 +28,18 @@ LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.buildStamp=$(BUILD_STAMP
 APP_LDFLAGS := -s -w -X main.appVersion=$(VERSION) -X main.appBuild=$(BUILD_STAMP)
 GO          ?= go
 
+# Some Windows make builds do not pass the inherited environment into recipe
+# sub-shells: TMP/TEMP vanish (Go dies with "mkdir C:\WINDOWS\go-buildN:
+# Zugriff verweigert") and even USERPROFILE/GOPATH disappear ("module cache
+# not found"). Recurring since 2026-07-26. Two-part durable fix: pin Go's
+# scratch dir to a repo-local folder that needs no environment at all, and
+# force-export the variables Go derives its defaults from. Explicitly
+# exported make variables DO reach the sub-shell even when plain inherited
+# ones do not. Harmless on Linux/macOS/CI (values pass through unchanged).
+export GOTMPDIR := $(CURDIR)/.gotmp
+$(shell mkdir -p $(CURDIR)/.gotmp)
+export HOME USERPROFILE TMP TEMP APPDATA LOCALAPPDATA GOPATH GOMODCACHE GOCACHE GOFLAGS PATH
+
 # Embed targets — must exist before go:embed in desktop-app/agentbin
 # and sticksetup respectively. CI overwrites the empty stubs that
 # are checked in; these targets do the same locally.
