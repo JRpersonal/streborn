@@ -54,9 +54,13 @@ jobs:
     runs-on: ubuntu-latest
     # sign_windows steers whether the sign-windows job (self-hosted runner on
     # the maintainer's machine) runs at all. Job-level `if:` cannot read
-    # secrets directly, so the presence of CERT_THUMBPRINT is exported here as
-    # a job output. With the secret unset, every run (PRs, dry-runs, forks)
-    # skips the self-hosted job entirely and behaves exactly as before.
+    # secrets directly, so the gate is exported here as a job output. Two
+    # conditions: CERT_THUMBPRINT present AND a real version input. Signing
+    # needs the maintainer's live SimplySign session, which no scheduled or
+    # manual DRY-run can have - the first post-signing dry-run (2026-07-27)
+    # failed only on that human prerequisite and would have turned every
+    # weekly dry-run red. Dry-runs (empty version) now skip the job and stay
+    # meaningful; real releases still hard-require the signature.
     outputs:
       sign_windows: ${{ steps.signgate.outputs.enabled }}
     steps:
@@ -64,8 +68,9 @@ jobs:
         id: signgate
         env:
           CERT_THUMBPRINT: ${{ secrets.CERT_THUMBPRINT }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "${CERT_THUMBPRINT}" ]; then
+          if [ -n "${CERT_THUMBPRINT}" ] && [ -n "${RELEASE_VERSION}" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
