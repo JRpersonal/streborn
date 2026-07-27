@@ -249,6 +249,10 @@ func TestHandleEnterStandby_SpontaneousDropResumesActiveStream(t *testing.T) {
 	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-5 * time.Minute) })
 	s.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Now(), time.Time{} })
 	s.setLastPlay("http://127.0.0.1:8888/stream/3", "Station", "", "")
+	// The #419 shape: the firmware killed the SOURCE while the box stayed
+	// awake. Only then may the recovery push immediately (a box that is
+	// actually off is handled by the deferred path, see the test below).
+	s.boxSourceFn = func() string { return "UPNP" }
 
 	s.HandleEnterStandby()
 
@@ -306,4 +310,35 @@ func TestHandleEnterStandby_KeyAfterOwnPushStillLatches(t *testing.T) {
 	if !waitForAction(t, rec, "Stop") {
 		t.Fatalf("a real power-off must still clear the transport (#197), got %v", rec.list())
 	}
+}
+
+// TestHandleEnterStandby_StandbyDefersInsteadOfWaking encodes the #487 rule:
+// when the box is genuinely in standby, STR must NOT power it on. The Wave
+// emits no userActivityUpdate for its power key, so a real user power-off
+// reaches this path looking exactly like a firmware drop, and the wake that
+// used to live here switched the speaker back on 6 s after its owner had
+// switched it off. The resume must be deferred to the user's next wake.
+func TestHandleEnterStandby_StandbyDefersInsteadOfWaking(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.SetUserActivityFn(func() time.Time { return time.Now().Add(-5 * time.Minute) })
+	s.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Now(), time.Time{} })
+	s.setLastPlay("http://127.0.0.1:8888/stream/3", "Station", "", "")
+	s.boxSourceFn = func() string { return "STANDBY" }
+
+	s.HandleEnterStandby()
+
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) {
+		s.deferredMu.Lock()
+		armed := s.deferred != nil
+		s.deferredMu.Unlock()
+		if armed {
+			if rec.has("SetAVTransportURI") {
+				t.Fatalf("a box in standby must not be pushed to, got %v", rec.list())
+			}
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("the resume was not deferred for the next user wake, actions %v", rec.list())
 }

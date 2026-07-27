@@ -213,6 +213,14 @@ type Server struct {
 	// lastPlay remembers the stream STR last told the box to play, so the
 	// auto-re-push (#4) can resume it when the Bose renderer drops a long
 	// stream on its own (reported: radio stops after ~11 min, no STR error).
+	// boxSourceFn seams the now_playing source read (boxSourceNow) so the
+	// standby-vs-awake decision is assertable without a live box.
+	boxSourceFn func() string
+	// deferred holds a resume waiting for the user to switch the box on; STR
+	// never powers a speaker on by itself (#487). Guarded by deferredMu.
+	deferredMu sync.Mutex
+	deferred   *deferredResume
+
 	lastPlayMu sync.Mutex
 	lastPlay   *lastPlayInfo
 	// rePushInFlight coalesces stream-drop resumes (see HandleStreamDisconnect).
@@ -3299,16 +3307,20 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 	s.logger.Info("standby bounce: firmware powered off STR's source with no user input, not treating as a user stop (#419)",
 		"lastKeyAgoS", int(sinceKey.Seconds()))
 	if !spontaneousResumeEnabled() {
+		s.logger.Info("spontaneous-off recovery: disabled by setting, standing down")
 		return
 	}
 	// Only recover music the drop actually interrupted: the stream proxy must
 	// have served the box this recently. A long-idle box that drifts to standby
 	// on its own is left alone.
 	if s.streamActivityFn == nil {
+		s.logger.Info("spontaneous-off recovery: no stream-activity signal wired, standing down")
 		return
 	}
 	fetch, _ := s.streamActivityFn()
 	if fetch.IsZero() || time.Since(fetch) > spontResumeStreamWindow {
+		s.logger.Info("spontaneous-off recovery: the stream proxy did not serve this box recently, standing down",
+			"lastFetchAgoS", int(time.Since(fetch).Seconds()), "windowS", int(spontResumeStreamWindow.Seconds()))
 		return
 	}
 	// Single-flight + crash-loop guard. The #381 attempt counter caps a
@@ -3321,6 +3333,8 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 	}
 	s.standbyStopMu.Unlock()
 	if tooSoon || s.autoResumeBlocked() {
+		s.logger.Info("spontaneous-off recovery: standing down",
+			"reason", map[bool]string{true: "another recovery ran just now", false: "auto-resume blocked (crash-loop guard or opt-out)"}[tooSoon])
 		return
 	}
 	s.lastPlayMu.Lock()
@@ -3332,6 +3346,7 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 	}
 	s.lastPlayMu.Unlock()
 	if boxURL == "" {
+		s.logger.Info("spontaneous-off recovery: no last-play to restore, standing down")
 		return
 	}
 	go func() {
@@ -3349,10 +3364,25 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 			return
 		}
 		s.noteAutoResumeAttempt()
-		if s.boxHost != "" {
-			wctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-			_ = boxcli.WakeAndWait(wctx, s.boxHost, 6*time.Second, s.logger)
-			cancel()
+		// NEVER power a box on from an automatic path (#487 field capture,
+		// 2026-07-27): the Wave emits no userActivityUpdate for its power key,
+		// so a real user power-off is indistinguishable here from a firmware
+		// drop, and the wake that used to sit at this line switched the
+		// speaker back on 6 s after its owner had switched it off. A box that
+		// is genuinely still in STANDBY is therefore left alone, and the
+		// resume is DEFERRED: armDeferredResume hands it to the standby-exit
+		// path, so the stream comes back the moment the user turns the box on
+		// themselves. The #419 case this function exists for is unaffected -
+		// there the firmware drops the SOURCE while the box stays awake, and
+		// the re-push below still runs immediately.
+		// An unknown source (probe failed) counts as "possibly off" and defers
+		// too: pushing a transport into a box that is actually off can switch
+		// scm firmware back on, which is the same harm by another route.
+		if src := s.boxSourceNow(); src == "STANDBY" || src == "" {
+			s.armDeferredResume(boxURL, title, art, mime, capturedTS)
+			s.logger.Info("spontaneous-off recovery: box is in standby, NOT powering it on; resume deferred to the next user wake",
+				"source", src, "url", boxURL)
+			return
 		}
 		s.boxCmdMu.Lock()
 		defer s.boxCmdMu.Unlock()
@@ -3378,6 +3408,103 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 		}
 		s.logger.Info("spontaneous-off recovery: resumed the stream the firmware dropped (#419)", "url", boxURL, "title", title)
 	}()
+}
+
+// boxSourceNow reads the box's current source attribute ("" on any error).
+// Used by the spontaneous-off recovery to tell "the firmware dropped the
+// source while the box stayed awake" (recoverable right now) from "the box is
+// off" (must never be powered on automatically, #487).
+func (s *Server) boxSourceNow() string {
+	if s.boxSourceFn != nil {
+		return s.boxSourceFn()
+	}
+	if s.boxHost == "" {
+		return ""
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if m := regexp.MustCompile(`source="([^"]*)"`).FindSubmatch(b); len(m) == 2 {
+		return string(m[1])
+	}
+	return ""
+}
+
+// deferredResume is a stream the firmware dropped while the box was (or went)
+// off. STR refuses to power a speaker on by itself, so the recovery waits here
+// until the user switches the box on and the gabbo standby-exit arrives.
+type deferredResume struct {
+	boxURL, title, art, mime string
+	capturedTS               time.Time
+	armedAt                  time.Time
+}
+
+// deferredResumeTTL bounds how long a deferred resume stays armed. Long enough
+// to cover "switched off in the evening, on again next morning" without
+// resurrecting a stream from days ago.
+const deferredResumeTTL = 18 * time.Hour
+
+// armDeferredResume stores the resume for the next user wake. A newer arm
+// replaces an older one: the most recent interrupted stream is what the user
+// expects back.
+func (s *Server) armDeferredResume(boxURL, title, art, mime string, capturedTS time.Time) {
+	s.deferredMu.Lock()
+	s.deferred = &deferredResume{boxURL: boxURL, title: title, art: art, mime: mime, capturedTS: capturedTS, armedAt: time.Now()}
+	s.deferredMu.Unlock()
+}
+
+// RunDeferredResume replays a stream armed by armDeferredResume, if any. Wired
+// to the gabbo standby-exit (the box just left STANDBY, i.e. the user turned it
+// on), so the music the firmware dropped comes back on the user's own action
+// instead of STR waking the speaker. All the usual guards still apply: a
+// deliberate stop, a zone, a newer play, an opt-out or an expired arm cancel it.
+func (s *Server) RunDeferredResume() {
+	s.deferredMu.Lock()
+	d := s.deferred
+	s.deferred = nil
+	s.deferredMu.Unlock()
+	if d == nil {
+		return
+	}
+	if time.Since(d.armedAt) > deferredResumeTTL {
+		s.logger.Info("deferred resume: too old, dropping", "ageMin", int(time.Since(d.armedAt).Minutes()))
+		return
+	}
+	if !spontaneousResumeEnabled() || s.autoResumeBlocked() {
+		s.logger.Info("deferred resume: auto-resume disabled or blocked, standing down")
+		return
+	}
+	if s.userStoppedRecently() || s.standbyStoppedRecently() || s.boxInZone() {
+		s.logger.Info("deferred resume: a deliberate stop or a zone is in play, standing down")
+		return
+	}
+	s.lastPlayMu.Lock()
+	cur := s.lastPlay
+	s.lastPlayMu.Unlock()
+	if resumeIsStale(d.boxURL, d.capturedTS, cur) {
+		s.logger.Info("deferred resume: a newer play took over, standing down")
+		return
+	}
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	var err error
+	if d.mime != "" {
+		err = s.renderer.PlayURLMime(ctx, d.boxURL, d.title, d.art, d.mime)
+	} else {
+		err = s.renderer.PlayURL(ctx, d.boxURL, d.title, d.art)
+	}
+	if err != nil {
+		s.logger.Warn("deferred resume: re-push failed", "err", err, "url", d.boxURL)
+		return
+	}
+	s.logger.Info("deferred resume: restored the stream the firmware had dropped, on the user's own wake (#487)",
+		"url", d.boxURL, "title", d.title)
 }
 
 // HandleStreamDisconnect is called by the stream proxy when the Bose renderer

@@ -677,13 +677,36 @@ func (m *Manager) Run(ctx context.Context) {
 		} else {
 			rapidCrashes = 0
 		}
+		// Back off when the engine keeps dying instantly. A box with a broken
+		// network (no DNS: go-librespot cannot resolve apresolve.spotify.com,
+		// #487) otherwise relaunches every 3 s forever, and each crash writes
+		// several log lines: the 32 KB NAND forensic buffer was burned down to
+		// ~84 s of history, destroying exactly the evidence such a box needs.
+		// Healthy playback resets rapidCrashes, so a normal restart still
+		// takes the fast 3 s path.
+		wait := 3 * time.Second
+		if rapidCrashes >= 3 {
+			wait = time.Duration(rapidCrashes) * 5 * time.Second
+			if wait > spotifyMaxRestartBackoff {
+				wait = spotifyMaxRestartBackoff
+			}
+			if rapidCrashes == 3 || rapidCrashes%10 == 0 {
+				m.logger.Warn("spotify: engine keeps failing right after launch, slowing the restarts down (check the speaker's network/DNS)",
+					"rapidCrashes", rapidCrashes, "retryInS", int(wait.Seconds()))
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(3 * time.Second):
+		case <-time.After(wait):
 		}
 	}
 }
+
+// spotifyMaxRestartBackoff caps the crash-loop backoff. One minute keeps a
+// recovered network unnoticeably fast to pick up while cutting the log churn
+// of a permanently offline box by a factor of twenty.
+const spotifyMaxRestartBackoff = 60 * time.Second
 
 // waitForBinary blocks until the go-librespot binary is present (m.Ready) or ctx
 // is cancelled, returning true the moment it appears. It returns immediately when

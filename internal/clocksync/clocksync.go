@@ -33,10 +33,18 @@ var maxPlausible = time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
 // dateHosts are queried over plain HTTP — no TLS, so there is no chicken-and-egg
 // with the very clock we are trying to fix — for their Date response header.
 // Same set as run.sh try_http_date_sync.
+// The IP literals at the end are the escape hatch for a box with no working
+// name resolution at all: a speaker whose DHCP lease carries no DNS server
+// could never fix its clock, which in turn hard-gated autopair and left the
+// box displaying "SoundTouch not configured" forever, with radio dead on top
+// (#487 field bundle, 2026-07-27). These answer plain HTTP on the bare
+// address, so the clock heals even before the DNS bootstrap lands.
 var dateHosts = []string{
 	"http://www.google.com/",
 	"http://www.cloudflare.com/",
 	"http://www.bose.com/",
+	"http://1.1.1.1/",
+	"http://8.8.8.8/",
 }
 
 // Implausible reports whether now is too far in the past to be a real wall

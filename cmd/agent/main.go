@@ -40,6 +40,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/clocksync"
+	"github.com/JRpersonal/streborn/internal/dnsboot"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/netutil"
@@ -373,6 +374,16 @@ func run() error {
 		return margeSrv.RecentRequestLines(60)
 	})
 	webui.RegisterDebugSection("clock_status", clockStatusSnapshot)
+	// dns_status makes the #487 fault class visible in one glance: a bundle
+	// with an empty nameserver list explains dead radio, a stuck clock, an
+	// unpaired box and a crash-looping Spotify engine all at once.
+	webui.RegisterDebugSection("dns_status", func() any {
+		return map[string]any{
+			"nameservers":     dnsboot.Nameservers(),
+			"resolv_conf":     dnsboot.RawResolvConf(),
+			"default_gateway": dnsboot.DefaultGateway(),
+		}
+	})
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
 	// The AutoPair manager is created up here so it can also be used in the
 	// WS and webui handlers.
@@ -608,6 +619,7 @@ func run() error {
 		// (scm) firmware that bounces UPNP<->STANDBY does not turn itself back on
 		// (#197). Zone-guarded and debounced in the webui.
 		onEnterStandby: webuiSrv.HandleEnterStandby,
+		onStandbyExit:  webuiSrv.RunDeferredResume,
 		// Let the hardware-recall verify stand down when the user powered the box
 		// off mid-recall, so it does not re-push the stream into a power-off (#197).
 		// The absolute variant is preferred: the rolling 6s window could expire
@@ -912,6 +924,12 @@ func run() error {
 	// install time to do the boot Date sync, so without this the very first
 	// requests could hit a 2015 clock until the goroutine catches up. Best-effort
 	// - if the network is not up yet the goroutine below keeps retrying (#375).
+	// DNS bootstrap BEFORE the clock sync: a box whose DHCP lease carries no
+	// nameserver cannot resolve the clock hosts, cannot pair (autopair is
+	// gated on a plausible clock) and cannot play radio, and every repair path
+	// STR owns needs the very thing that is missing (#487). Repairing the
+	// resolver first unlocks all three. No-op on a healthy box.
+	dnsboot.EnsureResolver(logger.With("comp", "dnsboot"))
 	noteBootClock(logger)
 	func() {
 		sctx, cancel := context.WithTimeout(ctx, 6*time.Second)
@@ -1372,6 +1390,10 @@ type presetWsHandler struct {
 	// press (#183). This recovers that stuck wake. Wired to
 	// webui.RecoverAfterReconnect, which reuses the power-on resume guards. nil-safe.
 	onBoxReconnect func()
+	// onStandbyExit fires when the box leaves STANDBY (the user switched it on).
+	// Wired to webui.Server.RunDeferredResume so a stream the firmware dropped
+	// while the box was off comes back on the user's own wake. nil-safe.
+	onStandbyExit func()
 	// onEnterStandby fires when STR's UPnP source drops to STANDBY (a power-off
 	// seen over gabbo). It clears the box transport so ST20 (scm) firmware that
 	// oscillates UPNP<->STANDBY does not switch the speaker back on (#197). Wired to
@@ -2501,6 +2523,12 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 // presses emit no frame and no other trigger ever fires).
 func (h *presetWsHandler) OnStandbyExit(_ context.Context) {
 	requestPresetKeyResync(h.logger)
+	// The user just switched the box on. If the firmware had dropped a stream
+	// while the box was off, STR replays it NOW - on the user's own action -
+	// instead of powering the speaker on by itself (#487).
+	if h.onStandbyExit != nil {
+		go h.onStandbyExit()
+	}
 }
 
 // resyncUnlessIdleStandby is OnConnected's re-sync decision, off the WS hot
