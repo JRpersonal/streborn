@@ -1189,13 +1189,32 @@ func pickModelName(a, b string) string {
 // on a LAN with many speakers; per-call timeout (1.5s, inside
 // enrichBoxWithStockInfo) caps the worst case.
 func (a *App) enrichSeenBoxes(ctx context.Context, seen map[string]BoxInfo) {
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	var mu sync.Mutex
+	// Snapshot the work list BEFORE fanning out. The goroutines below write
+	// back into `seen`, and Go treats a map write while a range over the SAME
+	// map is still in progress as a fatal runtime error ("concurrent map
+	// iteration and map write") - fatal meaning it cannot be recovered and
+	// kills the whole app on the spot, with no dialog and no log line. The
+	// mutex here only serialized the writers against each other, never
+	// against this loop, and the semaphore even parks the loop mid-range
+	// once eight enrichments are in flight, so the window is wide open on a
+	// LAN with several speakers. Iterating a snapshot removes the race
+	// entirely; the writers keep the mutex for their own overlap.
+	type enrichJob struct {
+		key string
+		box BoxInfo
+	}
+	jobs := make([]enrichJob, 0, len(seen))
 	for key, b := range seen {
 		if b.SerialNumber != "" && b.Model != "" {
 			continue
 		}
+		jobs = append(jobs, enrichJob{key: key, box: b})
+	}
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	var mu sync.Mutex
+	for _, jb := range jobs {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(key string, b BoxInfo) {
@@ -1220,7 +1239,7 @@ func (a *App) enrichSeenBoxes(ctx context.Context, seen map[string]BoxInfo) {
 				}
 				seen[key] = cur
 			}
-		}(key, b)
+		}(jb.key, jb.box)
 	}
 	wg.Wait()
 }
