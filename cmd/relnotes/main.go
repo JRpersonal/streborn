@@ -161,6 +161,11 @@ func collect(start, end string) ([]change, error) {
 	return changes, nil
 }
 
+// prNumberSuffixRE matches the " (#123)" that a squash merge appends to the
+// subject. It is bookkeeping for the repository, not something a user reading
+// "what changed" needs, so it is trimmed off the displayed summary.
+var prNumberSuffixRE = regexp.MustCompile(`\s*\(#\d+\)\s*$`)
+
 // noteTrailerRE matches a "Release-Note: type(scope): summary" line anywhere
 // in a commit body.
 var noteTrailerRE = regexp.MustCompile(`(?im)^[ \t]*Release-Note:[ \t]*(.+?)[ \t]*$`)
@@ -206,7 +211,7 @@ func parseSubject(subject string) (change, bool) {
 		Type:     m[1],
 		Scope:    m[2],
 		Breaking: m[3] == "!",
-		Summary:  capitalize(strings.TrimSpace(m[4])),
+		Summary:  capitalize(strings.TrimSpace(prNumberSuffixRE.ReplaceAllString(m[4], ""))),
 	}
 	if c.Breaking {
 		return c, true
