@@ -62,7 +62,9 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	// Record the saved folder as a Recently-played card (#220), keyed on the slot
 	// so repeated recalls of the same preset group together.
 	card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
-	if err := s.startQueue(ctx, items, 0, p.Shuffle, repeatOff, card); err != nil {
+	// -1 = the user recalled the whole preset without picking a track, so with
+	// shuffle on the queue may start anywhere (#490).
+	if err := s.startQueue(ctx, items, -1, p.Shuffle, repeatOff, card); err != nil {
 		s.logger.Warn("hardware queue recall failed", "slot", slot, "err", err)
 	}
 	return true

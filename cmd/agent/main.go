@@ -2221,11 +2221,47 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 	peersMu.Lock()
 	defer peersMu.Unlock()
 	now := time.Now()
+	// One physical speaker can sit in the map under two addresses after a DHCP
+	// lease change: the sticky roster keeps the old entry until its TTL while
+	// the new one is already live, so the phone page listed the same speaker
+	// twice, once of them nameless (#494). Keep only the freshest entry per
+	// name, and prefer a reachable one over a dimmed one.
+	bestByName := map[string]string{} // display name -> ip of the entry to keep
+	for ip, e := range peersByIP {
+		if e.name == "" || now.Sub(e.lastSeen) > peerTTL {
+			continue
+		}
+		cur, ok := bestByName[e.name]
+		if !ok {
+			bestByName[e.name] = ip
+			continue
+		}
+		prev := peersByIP[cur]
+		if e.reachable != prev.reachable {
+			if e.reachable {
+				bestByName[e.name] = ip
+			}
+			continue
+		}
+		if e.lastSeen.After(prev.lastSeen) {
+			bestByName[e.name] = ip
+		}
+	}
 	out := make([]webui.PeerLink, 0, len(peersByIP))
 	for ip, e := range peersByIP {
 		if now.Sub(e.lastSeen) > peerTTL {
 			delete(peersByIP, ip)
 			continue
+		}
+		// A speaker whose name we never learned would render as its bare IP
+		// address, which reads like a broken entry next to the named ones
+		// (#494). Skip it: mDNS or the next app seed supplies the name shortly,
+		// and an unnamed duplicate helps nobody.
+		if e.name == "" {
+			continue
+		}
+		if keep, ok := bestByName[e.name]; ok && keep != ip {
+			continue // an entry for the same speaker at a fresher address wins
 		}
 		port := e.port
 		if port == 0 {

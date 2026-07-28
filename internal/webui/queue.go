@@ -75,6 +75,14 @@ func newPlayQueue() *playQueue {
 
 // load replaces the queue with items and positions it at start. With shuffle
 // on, start is played first and the rest follow in random order.
+//
+// A NEGATIVE start means "no track was chosen": the caller just wants the
+// list played. With shuffle on, that now begins on a random track instead of
+// always the first one - a playlist recalled from a preset opened with the
+// same track every time even in shuffle mode (#490), because the preset path
+// has no chosen track and passed 0, which buildOrder then pinned to the front.
+// A real user choice (tapping a track in the library) still plays that track
+// first and shuffles the rest, which is what people expect there.
 func (q *playQueue) load(items []queueItem, start int, shuffle bool, rep repeatMode) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -84,6 +92,9 @@ func (q *playQueue) load(items []queueItem, start int, shuffle bool, rep repeatM
 	if len(q.items) == 0 {
 		q.order, q.pos, q.active = nil, 0, false
 		return
+	}
+	if start < 0 && shuffle {
+		start = q.rnd.Intn(len(q.items))
 	}
 	if start < 0 || start >= len(q.items) {
 		start = 0
