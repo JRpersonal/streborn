@@ -2233,7 +2233,7 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 			// Never let a placeholder overwrite a name we already know: mDNS can
 			// answer with the instance name only, and replacing "Kitchen" with
 			// "str-192.0.2.5" is the #494 defect arriving by the back door.
-			if f.name != "" && !(placeholderPeerName(f.name) && e.name != "" && !placeholderPeerName(e.name)) {
+			if f.name != "" && (!placeholderPeerName(f.name) || e.name == "" || placeholderPeerName(e.name)) {
 				e.name = f.name
 			}
 			e.lastSeen = now
