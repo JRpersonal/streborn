@@ -3100,6 +3100,12 @@ async function doBoxUpdate(targetBox) {
   // so a slow link shows movement instead of a frozen "Uploading...".
   const offBoxUp = EventsOn('box:update:progress', (p) => {
     if (!p || typeof p !== 'object' || p.pct == null || p.pct < 0) return;
+    // At 100% the whole binary is on the box; it now writes NAND and reboots,
+    // and its reply is usually lost in that reboot (BCO/taigan especially), so
+    // the backend's UpdateBoxAgent call hangs another ~minute. Flip the label
+    // to "restarting" the moment the upload completes instead of leaving the
+    // user on "uploading" through the reboot the app cannot yet see.
+    if (p.pct >= 100) { setStatus(t('update.rebooting')); return; }
     const rate = p.bytesPerSec ? ' (' + fmtRate(p.bytesPerSec) + ')' : '';
     setStatus(t('update.uploadingPct', { pct: p.pct }) + rate);
   });
@@ -3468,6 +3474,11 @@ async function updateAllBoxes() {
   // Route the host-tagged live byte-progress to the right row's bar.
   const offProg = EventsOn('box:update:progress', (p) => {
     if (!p || typeof p !== 'object' || !p.host || p.pct == null || p.pct < 0) return;
+    // At 100% the binary is on the box and it reboots; its reply is often lost
+    // in that reboot, so runBoxUpdate's own 'rebooting' phase does not fire for
+    // another ~minute. Flip the row to "restarting" on upload completion so it
+    // does not sit at "uploading" through a reboot the app cannot yet see.
+    if (p.pct >= 100) { setRow(p.host, { phaseText: t('updateAll.phase.rebooting'), indet: true }); return; }
     setRow(p.host, { pct: p.pct });
   });
   if ($('uaClose')) $('uaClose').onclick = () => { if (overlay) overlay.classList.add('hidden'); };

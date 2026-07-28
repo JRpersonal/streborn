@@ -236,7 +236,24 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
 		return nil
 	}
-	if err := a.updateAgentViaHTTP(host, port, bin); err != nil {
+	if bodySent, err := a.updateAgentViaHTTP(host, port, bin); err != nil {
+		// A connection drop AFTER the whole binary reached the box is the
+		// self-replacing agent applying it and rebooting, which severs the reply
+		// before the 200 can arrive. The binary is on the box and the version
+		// poll will confirm the new build, so falling back to SSH here is not just
+		// unnecessary, it is harmful on BCO/taigan: with plain SSH closed, the SSH
+		// path opens it via the :17000 telnet-enable unlock, which itself REBOOTS
+		// the box a second time (live 2026-07-25 Portable: the app sat on
+		// "uploading" for ~3.5 min through an HTTP reset + a :17000 unlock reboot +
+		// SSH-OTA, all to redo an update the first upload had already delivered).
+		// Only a drop MID-upload (binary did not fully land) or a clean rejection
+		// still needs the SSH fallback.
+		if bodySent && isConnDropErr(err) {
+			a.recordOTA(host, "HTTP reply lost after the full binary uploaded (agent applying + rebooting); deferring to the version poll instead of SSH")
+			a.logger.Info("update agent: full upload delivered, reply lost to the agent's reboot; skipping SSH fallback, deferring to the post-OTA version poll", "host", host, "httpErr", err)
+			outcomeNote = "UNCONFIRMED: full binary delivered, HTTP reply lost to the reboot; deferred to the version poll — this line is NOT a success"
+			return nil
+		}
 		a.recordOTA(host, "HTTP upload failed -> trying SSH: "+err.Error())
 		// The small preflight GET can pass while the 10 MB POST still fails: on
 		// BCO the :17008 REDIRECT path closes the connection mid-upload (live
@@ -396,7 +413,7 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 	}
 
 	a.recordOTA(host, fmt.Sprintf("sidecar: pushing go-librespot (%d bytes, sha %s)", len(bin), want[:12]))
-	if _, err := a.streamPostBinary(host, port, "/api/agent/sidecar", bin); err != nil {
+	if _, _, err := a.streamPostBinary(host, port, "/api/agent/sidecar", bin); err != nil {
 		a.recordOTA(host, "sidecar: push failed (agent OTA still proceeds): "+err.Error())
 		a.logger.Warn("sidecar push failed; agent OTA continues, Spotify may stay unavailable until next OTA", "host", host, "err", err)
 		return false, fmt.Errorf("sidecar upload failed: %w", err)
@@ -880,10 +897,10 @@ func (a *App) updateAgentPreflight(host string, port int) error {
 	return nil
 }
 
-func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
-	body, err := a.streamPostBinary(host, port, "/api/agent/update", bin)
+func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) (bodySent bool, err error) {
+	body, sent, err := a.streamPostBinary(host, port, "/api/agent/update", bin)
 	if err != nil {
-		return err
+		return sent, err
 	}
 	// Journal which apply mode the agent chose (the 200 reply carries
 	// {mode: "ram-staged"} on the tier-3 path). A RAM-staged swap has its own
@@ -892,7 +909,7 @@ func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 	if strings.Contains(body, "ram-staged") {
 		a.recordOTA(host, "apply mode: ram-staged (tier 3 — agent exits, detached helper swaps the binary and reboots)")
 	}
-	return nil
+	return sent, nil
 }
 
 // streamPostBinary POSTs bin to path on the agent, streaming the body with a
@@ -901,7 +918,7 @@ func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) error {
 // Wi-Fi can take minutes), a 60 s upload-stall watchdog, and a bounded
 // post-upload reply window. Shared by the agent-binary update and the
 // go-librespot sidecar push so they cannot drift on transfer behavior.
-func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (string, error) {
+func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (reply string, bodySent bool, err error) {
 	url := a.baseURL(host, port) + path
 	// No total-transfer deadline. Streaming the ~10 MB agent to a busy box over slow
 	// Wi-Fi can legitimately take minutes, and the old fixed 240 s cap killed
@@ -941,7 +958,7 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = total
@@ -983,17 +1000,21 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		// finished is written on the body-read goroutine, which has stopped by the
+		// time Do returns, so this read is safe. It tells the caller whether the
+		// whole binary reached the box before the connection died: a drop AFTER a
+		// full upload is the self-replacing agent rebooting, not a failed transfer.
+		return "", finished, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+		return "", finished, fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}
 	// The success reply is small JSON (e.g. {mode: "ram-staged"}); return it so
 	// the agent-update caller can journal the chosen apply mode.
-	reply, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return string(reply), nil
+	replyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return string(replyBytes), finished, nil
 }
 
 // updateAgentViaSSH streams bin into /mnt/nv/streborn/bin/streborn-armv7l
