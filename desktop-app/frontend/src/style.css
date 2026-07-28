@@ -940,6 +940,24 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .btn-warning:hover { background: #e68a30; }
 .btn-warning:disabled { background: #6a4a30; color: #aa8; border-color: #6a4a30; cursor: not-allowed; }
 
+/* High contrast: a disabled button must stay READABLE, because during a speaker
+   update the live status ("uploading 42%", "restarting", the countdown) is
+   written into the button itself while it is disabled. The generic rule above
+   resolves to --c-faint (#e6e6e6) on --c-border (#ffffff) in this theme, i.e.
+   near-white on white, so the whole progress reporting was invisible to exactly
+   the users who need contrast most (reported 2026-07-28, discussion #430). The
+   warning variant's hardcoded browns are just as unreadable here.
+   Disabled is still obvious: the cursor and the missing hover both say so. */
+html.a11y-contrast .btn:disabled,
+html.a11y-contrast .btn-primary:disabled,
+html.a11y-contrast .btn-warning:disabled {
+  background: #000000;
+  color: #ffffff;
+  border-color: #ffffff;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
 /* ---------- Settings actions panel ---------- */
 .actions-grid { display: grid; grid-template-columns: max-content 1fr; gap: 12px 14px; align-items: center; margin-top: 10px; }
 .actions-grid > .btn { width: 100%; white-space: nowrap; }
