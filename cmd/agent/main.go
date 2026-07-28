@@ -511,7 +511,15 @@ func run() error {
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
 		webui.WithSpotifyContext(spotifyMgr.PlayingContext),
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
-		webui.WithSpotifyStreaming(spotifyMgr.Streaming),
+		// "Streaming" must mean audio is actually flowing, not merely that the
+		// box holds the connection open: a stalled sink (attached, zero audio
+		// pages) used to satisfy the recall verify, so a failed Spotify recall
+		// reported success while the user stared at a spinner until the box
+		// timed out (field 2026-07-27). Treat a stall as not-streaming so the
+		// verify keeps working on it and the failure becomes visible.
+		webui.WithSpotifyStreaming(func() bool {
+			return spotifyMgr.Streaming() && !spotifyMgr.StreamStalled()
+		}),
 		webui.WithSpotifySkip(func(ctx context.Context, forward bool) error {
 			if forward {
 				return spotifyMgr.Next(ctx)
