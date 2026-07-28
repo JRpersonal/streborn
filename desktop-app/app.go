@@ -1889,6 +1889,13 @@ func (a *App) candidatePorts(host string, port int) []int {
 	return out
 }
 
+// zoneCallTimeout is the budget for forming or dissolving a zone. The agent
+// wakes every member first (up to 8 s each) and only then talks to the Bose
+// firmware, so the shared 6 s client cut the call off before the work started.
+// Generous on purpose: a zone call is a deliberate user action that happens
+// rarely, and a slow success beats a fast lie.
+const zoneCallTimeout = 45 * time.Second
+
 // boxDo performs an HTTP request against the agent with transparent port
 // fallback. It tries each candidate port in turn; the first that connects
 // is cached for the host and its response returned. A transport-level
@@ -1898,6 +1905,29 @@ func (a *App) candidatePorts(host string, port int) []int {
 // transport error (a real HTTP response the caller must see) is returned
 // immediately without flailing across ports. Caller closes resp.Body.
 func (a *App) boxDo(host string, port int, method, path, contentType, body string) (*http.Response, error) {
+	return a.boxDoTimeout(host, port, method, path, contentType, body, 0)
+}
+
+// boxDoTimeout is boxDo with a per-call deadline. A timeout of 0 uses the shared
+// client's 6 s, which is right for the reads and small writes that make up
+// nearly every call.
+//
+// It exists because a few agent endpoints are legitimately slower than that, and
+// silently failing them is worse than waiting. Forming a zone is the case that
+// exposed it: handleZoneForm calls ensureBoxReady first, which alone may spend
+// 8 s waking a speaker out of standby before the firmware call even starts. The
+// app gave up at 6 s and told the user the group could not be formed, while the
+// box went on to form it. The user then tried again and got
+// GROUP_ALREADY_EXISTS from a group that had been created by the attempt they
+// were told had failed (#442, and the zone timeouts in the 2026-07-28 ST10
+// bundle).
+func (a *App) boxDoTimeout(host string, port int, method, path, contentType, body string, timeout time.Duration) (*http.Response, error) {
+	client := a.httpClient
+	if timeout > 0 {
+		c := *a.httpClient
+		c.Timeout = timeout
+		client = &c
+	}
 	var lastErr error
 	// stale404 holds a 404 that came from a port which is NOT the STR agent (the
 	// Bose stock firmware answers unknown /api/ paths on :8090 with 404). It is
@@ -1921,7 +1951,7 @@ func (a *App) boxDo(host string, port int, method, path, contentType, body strin
 		if contentType != "" {
 			req.Header.Set("Content-Type", contentType)
 		}
-		resp, err := a.httpClient.Do(req)
+		resp, err := client.Do(req)
 		if err == nil {
 			// A 404 on an /api/ path means this port is not the STR agent: the
 			// Bose firmware on :8090 answers unknown /api/ paths with 404, and
@@ -2119,7 +2149,10 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 	if err != nil {
 		return nil, err
 	}
-	resp, err := a.boxDo(masterHost, masterPort, http.MethodPost, "/api/box/zone", "application/json", string(b))
+	// Zone forming needs its own budget: the agent wakes the speaker first, which
+	// can take most of the default 6 s on its own, and a timeout here leaves the
+	// user with a failure message for a group the box actually went on to form.
+	resp, err := a.boxDoTimeout(masterHost, masterPort, http.MethodPost, "/api/box/zone", "application/json", string(b), zoneCallTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -2142,7 +2175,9 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 // Logged with the outcome: group bugs reported from the field were previously
 // undiagnosable because the app log never said which zone operations ran.
 func (a *App) DissolveZone(masterHost string, masterPort int) error {
-	resp, err := a.boxDo(masterHost, masterPort, http.MethodDelete, "/api/box/zone", "", "")
+	// Same budget as forming: dissolving also wakes the members first, and a
+	// timeout here is what leaves a half-dissolved group behind (#442).
+	resp, err := a.boxDoTimeout(masterHost, masterPort, http.MethodDelete, "/api/box/zone", "", "", zoneCallTimeout)
 	if err != nil {
 		a.logger.Info("zone: dissolve failed", "master", masterHost, "err", err)
 		return err

@@ -17,8 +17,23 @@
         <string>{{.Info.ProductVersion}}</string>
         <key>CFBundleIconFile</key>
         <string>iconfile</string>
+        <!-- macOS 12 is a HARD floor, not a preference. The Go toolchain STR is
+             built with resolves Security.framework symbols lazily, and one of
+             them, SecTrustCopyCertificateChain, only exists from macOS 12. On an
+             older system the app launches, shows its window, and then dies the
+             instant it makes its first HTTPS call, which is the moment Wi-Fi
+             comes up and the radio catalogue is queried:
+
+               dyld: lazy symbol binding failed: Symbol not found:
+                     _SecTrustCopyCertificateChain
+               Service exited with abnormal code: 2
+
+             Reported as "the app closes as soon as Wi-Fi is on" (2026-07-28,
+             Intel Broadwell Mac). This key used to say 10.13, so macOS launched
+             it and let it crash with no explanation. Declaring the real floor
+             makes macOS refuse the launch and say why. -->
         <key>LSMinimumSystemVersion</key>
-        <string>10.13.0</string>
+        <string>12.0</string>
         <key>NSHighResolutionCapable</key>
         <string>true</string>
         <key>NSHumanReadableCopyright</key>
