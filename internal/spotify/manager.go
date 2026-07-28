@@ -217,6 +217,17 @@ type Manager struct {
 	// never pauses. Keeping the engine playing across the flap means the box gets
 	// live audio the instant it re-attaches. Guarded by mu.
 	engineHotUntil time.Time
+	// Per-attachment sink counters. They exist to answer the one question a
+	// bundle could not answer before: did the box actually RECEIVE audio, or
+	// did it sit on an attached-but-silent stream until the Bose transport
+	// gave up (field 2026-07-27: a preset that "plays a few seconds", another
+	// on the same box that plays fine). Reset on every attach, logged on
+	// detach. Guarded by m.mu like the sink itself.
+	sinkAttachedAt   time.Time
+	sinkBytes        int64
+	sinkPages        int64
+	sinkFirstAudioAt time.Time
+	sinkLastPageAt   time.Time
 	// lastContext is the Spotify context (playlist/album) URI go-librespot last
 	// announced via will_play. When it changes (the app switched to another
 	// playlist) the box is re-pointed at the stream so it drops its buffer and
@@ -1017,6 +1028,41 @@ func (m *Manager) runOnce(ctx context.Context) error {
 }
 
 // forward writes p to the box sink; on write error it drops the sink.
+// StreamStalled reports whether a box is attached to the Ogg stream but has
+// not been handed a single audio page for longer than stallAfter. That is the
+// silent-stream failure the recall verify used to count as success: the box
+// shows the playlist name and a spinner while nothing decodes, until the Bose
+// transport gives up ~30 s later with AUDIO_ERROR_BAD_URL (field 2026-07-27).
+// False when no box is attached at all.
+func (m *Manager) StreamStalled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sink == nil || m.sinkAttachedAt.IsZero() {
+		return false
+	}
+	if !m.sinkFirstAudioAt.IsZero() {
+		return false // audio did flow at least once on this attachment
+	}
+	return time.Since(m.sinkAttachedAt) > stallAfter
+}
+
+// stallAfter is how long an attached box may wait for its first audio page
+// before STR calls it a stall. Comfortably above a normal cold start (the box
+// gets the cached headers immediately and audio within a second or two) and
+// well below the box's own ~30 s transport timeout, so STR notices first.
+const stallAfter = 6 * time.Second
+
+// oggGranule reads an Ogg page's granule position (sample count so far). A
+// value above zero marks a page that carries actual audio, as opposed to the
+// identification/comment/setup header pages that open every logical stream.
+// Returns 0 for anything too short to be a page.
+func oggGranule(page []byte) int64 {
+	if len(page) < 14 {
+		return 0
+	}
+	return int64(binary.LittleEndian.Uint64(page[6:14]))
+}
+
 func (m *Manager) forward(sink io.Writer, p []byte) {
 	if _, err := sink.Write(p); err != nil {
 		m.mu.Lock()
@@ -1026,6 +1072,19 @@ func (m *Manager) forward(sink io.Writer, p []byte) {
 		m.mu.Unlock()
 		return
 	}
+	m.mu.Lock()
+	if m.sink == sink {
+		m.sinkBytes += int64(len(p))
+		m.sinkPages++
+		now := time.Now()
+		m.sinkLastPageAt = now
+		// The first page carrying audio (as opposed to the header pages) is
+		// the moment the box can actually start decoding.
+		if m.sinkFirstAudioAt.IsZero() && oggGranule(p) > 0 {
+			m.sinkFirstAudioAt = now
+		}
+	}
+	m.mu.Unlock()
 	if f, ok := sink.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -2199,6 +2258,20 @@ func (m *Manager) repointBox() {
 		return
 	}
 	m.lastActivate = time.Now()
+	// Keep the engine playing across the re-point, exactly as SetRecalling does
+	// for a preset recall. The UPnP push below makes the box tear its current
+	// Ogg fetch down and open a new one; for the ~1 s in between there is no
+	// sink, and without this the drain takes its "no consumer" branch and
+	// PAUSES go-librespot. The box then re-attaches to a paused engine, gets
+	// the previous track's headers and no audio, and the Bose transport gives
+	// up 30 s later with AUDIO_ERROR_BAD_URL. That is the "Spotify stops after
+	// about half an hour" report: half an hour is simply how long an album
+	// runs before Spotify moves to the next context and triggers this path
+	// (field bundle 2026-07-27, seven boxes, every occurrence). PR #454 closed
+	// the identical hole for hardware presets and missed this one.
+	if t := m.lastActivate.Add(30 * time.Second); t.After(m.engineHotUntil) {
+		m.engineHotUntil = t
+	}
 	m.mu.Unlock()
 	m.logger.Info("spotify: playlist context changed, re-pointing box to play the new stream")
 	go cb(context.Background())
@@ -2694,6 +2767,10 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	// reattach=true means the box dropped and re-fetched the stream (the prime
 	// suspect for a track appearing to restart): it then gets the cached
 	// granule-0 headers again. Logged so the restart can be correlated.
+	m.mu.Lock()
+	m.sinkAttachedAt, m.sinkBytes, m.sinkPages = time.Now(), 0, 0
+	m.sinkFirstAudioAt, m.sinkLastPageAt = time.Time{}, time.Time{}
+	m.mu.Unlock()
 	m.logger.Info("spotify: box attached to Ogg stream", "remote", r.RemoteAddr, "headerBytes", len(hdr), "reattach", reattach)
 
 	// A fresh (non-reattach) attach is a clean recall start, not a storm: clear
@@ -2740,7 +2817,26 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 		m.sink = nil
 	}
 	m.mu.Unlock()
-	m.logger.Info("spotify: box detached from Ogg stream")
+	m.mu.Lock()
+	attachedMs := int64(0)
+	if !m.sinkAttachedAt.IsZero() {
+		attachedMs = time.Since(m.sinkAttachedAt).Milliseconds()
+	}
+	firstAudioMs := int64(-1)
+	if !m.sinkFirstAudioAt.IsZero() && !m.sinkAttachedAt.IsZero() {
+		firstAudioMs = m.sinkFirstAudioAt.Sub(m.sinkAttachedAt).Milliseconds()
+	}
+	bytes, pages := m.sinkBytes, m.sinkPages
+	m.mu.Unlock()
+	kbps := int64(0)
+	if attachedMs > 0 {
+		kbps = bytes * 8 / attachedMs
+	}
+	// firstAudioMs = -1 means the box was attached but never received a single
+	// audio page: the silent-stream failure that used to look like success.
+	m.logger.Info("spotify: box detached from Ogg stream",
+		"attachedMs", attachedMs, "forwardedKB", bytes/1024, "pages", pages,
+		"firstAudioAfterMs", firstAudioMs, "kbps", kbps)
 }
 
 // closeNotifyWriter signals done on the first failed write so ServeOgg

@@ -1020,7 +1020,13 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, p)
 	case http.MethodPut:
 		var p presets.Preset
-		if !decodeJSONRequest(w, r, 1<<16, &p) {
+		// A queue preset carries the whole track list of a DLNA folder or an
+		// .m3u playlist, so 64 KB is not a safety margin, it is a hard cap on
+		// how long a playlist may be: a 341-line list already failed with
+		// "request body too large" (#489). The box only ever stores what its
+		// own NAND holds and the preset store is written whole, so a MB is
+		// still bounded and comfortably fits any realistic playlist.
+		if !decodeJSONRequest(w, r, 1<<20, &p) {
 			return
 		}
 		p.Slot = slot
