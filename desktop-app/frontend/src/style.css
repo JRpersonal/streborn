@@ -623,6 +623,51 @@ body {
   box-shadow: 0 0 0 2px var(--c-surface);
 }
 .box-btn.needs-update.active .box-update-dot { box-shadow: 0 0 0 2px var(--brand-bg); }
+/* The readable replacement for the update dot: a small word chip. Same blue as
+   the settings-tab badge (one colour, one meaning); red would read as an error,
+   which an available update is not. Inline so it never overlaps the name. */
+.box-update-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #2f80ed;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: middle;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.box-update-chip:hover { background: #1c62c4; }
+.box-update-chip:focus-visible { outline: 2px solid var(--c-fg); outline-offset: 2px; }
+
+/* The once-per-start speaker-update card. Deliberately calm: it sits above the
+   content like the other banners, is never modal, and disappears for good once
+   the speakers are current. */
+.speaker-update-card {
+  background: #eaf2fe;
+  border-bottom: 1px solid #c7ddfb;
+  color: #10305c;
+  padding: 14px 18px;
+}
+.speaker-update-card .suc-body { max-width: 720px; margin: 0 auto; }
+.speaker-update-card .suc-title { font-weight: 700; margin-bottom: 4px; }
+.speaker-update-card .suc-text { font-size: 14px; line-height: 1.5; }
+.speaker-update-card .suc-list {
+  margin: 8px 0 10px;
+  padding-left: 20px;
+  font-size: 14px;
+}
+.speaker-update-card .suc-ver { color: #4a6591; font-size: 12px; }
+.speaker-update-card .suc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+html.a11y-contrast .speaker-update-card {
+  background: #000;
+  color: #fff;
+  border-bottom-color: #fff;
+}
+html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .box-btn.stock {
   background: var(--c-surface);
   border-style: dashed;
@@ -1818,11 +1863,21 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
    override below. */
 .app-update-banner {
   position: sticky; top: 0; z-index: 60;
-  background: #fde68a; color: #3a2c00;
-  border: none; border-bottom: 2px solid #d97706;
-  padding: 10px 16px; margin: 0; border-radius: 0; width: 100%;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  /* A soft warm gradient instead of the flat highlighter yellow, with a
+     hairline bottom edge rather than a heavy rule: this is good news, not a
+     warning. Slides in once instead of appearing abruptly. */
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  color: #3a2c00;
+  border: none; border-bottom: 1px solid rgba(180, 120, 10, 0.35);
+  box-shadow: 0 1px 6px rgba(120, 80, 0, 0.10);
+  padding: 12px 18px; margin: 0; border-radius: 0; width: 100%;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
   font-size: 14px;
+  animation: app-update-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes app-update-in {
+  from { opacity: 0; transform: translateY(-100%); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .app-update-banner b { color: #3a2c00; }
 /* Wedged-speaker hint: same sticky banner slot, urgent orange - the one case
@@ -1840,12 +1895,44 @@ html.a11y-contrast .app-update-banner .footer-link { color: #ffe066; }
 /* The download button is the call to action: make it large, bold and gently
    pulsing so it draws the eye. The leading arrow marks it as a download. The
    pulse is a transform (no reflow) and is disabled by the reduced-motion rule. */
-.app-update-btn { flex: 0 0 auto; white-space: nowrap; font-weight: 700; font-size: 14px; padding: 9px 18px; transform-origin: center; animation: update-btn-pulse 1.8s ease-in-out infinite; }
-.app-update-btn::before { content: "\2193"; margin-right: 7px; font-weight: 700; }
-@keyframes update-btn-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.06); }
+.app-update-btn {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(120, 80, 0, 0.22);
+  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
 }
+/* A slow sheen sweeping across the button replaces the old scale pulse, which
+   read as restless and cheap next to otherwise calm UI. Pure transform, so it
+   never triggers layout, and it rests off-screen between passes. */
+.app-update-btn::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.55) 50%, transparent 100%);
+  transform: skewX(-18deg);
+  animation: app-update-sheen 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+.app-update-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(120, 80, 0, 0.30);
+  filter: brightness(1.04);
+}
+.app-update-btn:active { transform: translateY(0); box-shadow: 0 1px 4px rgba(120, 80, 0, 0.25); }
+@keyframes app-update-sheen {
+  0%   { left: -60%; }
+  55%  { left: 130%; }
+  100% { left: 130%; }
+}
+.app-update-btn::before { content: "\2193"; margin-right: 7px; font-weight: 700; }
+
 .format-toggle {
   display: flex;
   gap: 8px;

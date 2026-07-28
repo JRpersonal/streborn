@@ -625,21 +625,25 @@ SetAppLocale(getLocale()).catch(() => {});
 // the languages we have native-speaker copy for. New languages added
 // to i18n/bundles fall back to English until a maintainer adds
 // localized prose here.
+// Since the network install landed, every SoundTouch model runs STR - also the
+// ones that never read a USB stick at boot (300, Wave, SA-4/SA-5, CineMate).
+// Naming four models here was both wrong and discouraging for owners of the
+// others, so the line now says what is true: all of them.
 const SUPPORTED_LINE = {
-  de: 'für SoundTouch 10, 20, 30 und Portable',
-  fr: 'pour SoundTouch 10, 20, 30 et Portable',
-  it: 'per SoundTouch 10, 20, 30 e Portable',
-  es: 'para SoundTouch 10, 20, 30 y Portable',
-  nl: 'voor SoundTouch 10, 20, 30 en Portable',
-  pt: 'para SoundTouch 10, 20, 30 e Portable',
-  ja: 'SoundTouch 10、20、30、Portable に対応',
-  uk: 'для SoundTouch 10, 20, 30 і Portable',
-  pl: 'dla SoundTouch 10, 20, 30 i Portable',
-  lt: 'skirta SoundTouch 10, 20, 30 ir Portable',
-  lv: 'SoundTouch 10, 20, 30 un Portable modeļiem',
-  tr: 'SoundTouch 10, 20, 30 ve Portable için',
-  ar: 'لأجهزة SoundTouch 10 و20 و30 وPortable',
-  en: 'for SoundTouch 10, 20, 30 and Portable',
+  de: 'für alle SoundTouch Modelle',
+  fr: 'pour tous les modèles SoundTouch',
+  it: 'per tutti i modelli SoundTouch',
+  es: 'para todos los modelos SoundTouch',
+  nl: 'voor alle SoundTouch modellen',
+  pt: 'para todos os modelos SoundTouch',
+  ja: 'すべての SoundTouch モデルに対応',
+  uk: 'для всіх моделей SoundTouch',
+  pl: 'dla wszystkich modeli SoundTouch',
+  lt: 'visiems SoundTouch modeliams',
+  lv: 'visiem SoundTouch modeļiem',
+  tr: 'tüm SoundTouch modelleri için',
+  ar: 'لجميع طُرز SoundTouch',
+  en: 'for every SoundTouch model',
 };
 
 const TAGLINES = {
@@ -1577,8 +1581,76 @@ function applyBoxList(list) {
   // Second world-map invite: once the user's whole supported SoundTouch set is
   // running STR (no stock box left to convert), celebrate the milestone again.
   maybeInviteWorldMapAllDone();
+  // Speakers left behind on an old agent: the single most common support
+  // theme (2026-07-27). Ask once per app start, right where the user works.
+  maybeShowSpeakerUpdateCard();
   // Self-heal a mid-reboot misclassification (see updateStockReprobe).
   updateStockReprobe();
+}
+
+// The speaker-update prompt. Users update the APP (the website tells them to)
+// and never learn that the speaker carries its own software: three independent
+// "my speaker switches itself off" reports on the same day all turned out to be
+// speakers left on an old agent, one of them proven by a screenshot showing app
+// v0.9.21 next to speaker v0.9.17. The existing cues were a blue dot on the
+// tile and a banner buried in Speaker Settings, and the screenshot proved both
+// are missable: dots read as decoration, and a user who never opens that tab
+// never sees the banner.
+//
+// So: ask ONCE PER APP START, in the music view where everyone works, naming
+// the affected speakers and offering one button that updates all of them. Not
+// a modal (that trains people to dismiss), not repeated within a session, and
+// it disappears by itself as soon as the speakers are current, because it is
+// driven purely by boxNeedsUpdate.
+let speakerUpdateCardShown = false;
+function maybeShowSpeakerUpdateCard() {
+  const el = $('speakerUpdateCard');
+  if (!el || speakerUpdateCardShown) return;
+  if (!state.appInfo || !state.appInfo.version) return;
+  const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+  // No speakers behind (or none discovered yet): stay silent and re-check on
+  // the next discovery cycle, so a box that appears late is still covered.
+  if (!outdated.length) return;
+  speakerUpdateCardShown = true;
+
+  const list = outdated
+    .map(b => `<li>${escapeHtml(getBoxLabel(b))} <span class="suc-ver">${escapeHtml(b.version || '')}</span></li>`)
+    .join('');
+  const btnLabel = outdated.length > 1
+    ? t('speakerUpdate.btnAll', { n: outdated.length })
+    : t('speakerUpdate.btnOne');
+  el.innerHTML =
+    `<div class="suc-body">` +
+      `<div class="suc-title">${escapeHtml(t('speakerUpdate.title'))}</div>` +
+      `<div class="suc-text">${escapeHtml(t('speakerUpdate.text', { version: state.appInfo.version }))}</div>` +
+      `<ul class="suc-list">${list}</ul>` +
+      `<div class="suc-actions">` +
+        `<button class="btn btn-primary btn-mini" id="sucUpdate">${escapeHtml(btnLabel)}</button>` +
+        `<button class="btn btn-mini" id="sucLater">${escapeHtml(t('speakerUpdate.later'))}</button>` +
+      `</div>` +
+    `</div>`;
+  el.classList.remove('hidden');
+
+  const hide = () => el.classList.add('hidden');
+  const later = $('sucLater');
+  if (later) later.onclick = hide;
+  const go = $('sucUpdate');
+  if (go) {
+    go.onclick = async () => {
+      hide();
+      // One speaker: the normal single-box update (it shows its own progress
+      // and prompts). Several: the existing update-all flow, which pre-checks
+      // sticks and weak Wi-Fi once instead of per speaker.
+      try {
+        if (outdated.length === 1) {
+          switchView('settings');
+          await doBoxUpdate(outdated[0]);
+        } else {
+          await updateAllBoxes();
+        }
+      } catch (e) { showError(e); }
+    };
+  }
 }
 
 // Stock self-heal: a speaker captured mid-reboot classifies as "stock" (its
@@ -1933,8 +2005,13 @@ function renderBoxSelect() {
     // itself, in addition to the settings-tab badge and the music-tab
     // banner (#108).
     const updCls = boxNeedsUpdate(b) ? ' needs-update' : '';
+    // A WORD, not a dot: the blue dot that used to sit here reads as decoration
+    // to non-technical users. A screenshot from a user whose speaker had been
+    // three versions behind for days showed the dot in plain sight, twice, while
+    // he was writing to ask why his speaker kept switching itself off
+    // (2026-07-27). The tooltip spells out both versions.
     const updDot = boxNeedsUpdate(b)
-      ? `<span class="box-update-dot" title="${escapeAttr(t('speaker.updateBadgeTitle'))}" aria-label="${escapeAttr(t('speaker.updateBadgeTitle'))}"></span>`
+      ? `<span class="box-update-chip" role="button" tabindex="0" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.updateChipTitle', { box: b.version || '?', app: (state.appInfo && state.appInfo.version) || '?' }))}">${escapeHtml(t('speaker.updateChip'))}</span>`
       : '';
     // Small speaker icon on a tile whose speaker is currently playing, so the
     // playing speaker is obvious among several. The selected box is marked live
@@ -1974,7 +2051,7 @@ function renderBoxSelect() {
     btn.onclick = async (e) => {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.
-      if (e.target.closest('.box-edit')) return;
+      if (e.target.closest('.box-edit') || e.target.closest('.box-update-chip')) return;
       // An offline tile cannot be selected (every call would fail); clicking
       // it explains itself and kicks off a fresh discovery, which is also the
       // fastest way to bring a returned speaker back to life in the list.
@@ -2008,6 +2085,30 @@ function renderBoxSelect() {
     };
   });
   // Gear click: set settingsBox and switch the tab.
+  // The "Update" chip is a button, like the gear: clicking it starts this
+  // speaker's update right away instead of making the user hunt for it in
+  // Speaker Settings. Keyboard-reachable (Enter/Space) for the same reason
+  // the gear is.
+  sel.querySelectorAll('.box-update-chip').forEach(chip => {
+    const start = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const host = chip.dataset.host;
+      const port = parseInt(chip.dataset.port, 10);
+      const box = (state.boxes || []).find(b => b.host === host && b.port === port);
+      if (!box) return;
+      // Switch to Speaker Settings for this box FIRST: that is where the
+      // update progress renders (the music view has no progress elements), so
+      // starting the OTA from here without switching looked like the click had
+      // done nothing at all.
+      state.settingsBox = box;
+      switchView('settings');
+      showToast(t('speakerUpdate.starting', { name: getBoxLabel(box) }));
+      doBoxUpdate(box).catch(showError);
+    };
+    chip.onclick = start;
+    chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') start(e); };
+  });
   sel.querySelectorAll('.box-edit').forEach(icon => {
     icon.onclick = (e) => {
       e.stopPropagation();
@@ -2880,7 +2981,12 @@ async function doBoxUpdate(targetBox) {
   // a second one. The UI also renders the button disabled in that
   // case via checkBoxUpdate(), but the redundant check here guards
   // against races where the user clicked through a stale render.
-  if (state.otaInProgress) return;
+  // Say so out loud: returning silently made a second press look like a dead
+  // button and invited a third (live, 2026-07-27).
+  if (state.otaInProgress) {
+    showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('common.unknown') }));
+    return;
+  }
 
   // Stick gate, checked at the single OTA chokepoint so EVERY caller
   // (the music-tab banner button and the stick-info button) is covered.
@@ -2951,8 +3057,20 @@ async function doBoxUpdate(targetBox) {
   // what the other box is doing. The state.otaTargetHost guard
   // below in checkBoxUpdate() takes care of rendering the right
   // "Update running on <name>" label there.
+  // "Looking at the target box" means the SETTINGS view (where the update
+  // buttons and progress live since they moved out of the music view) or the
+  // music selection. Comparing against state.currentBox alone was a leftover
+  // from the music-view era: updating any speaker other than the currently
+  // selected one silently suppressed every progress line, so the settings
+  // page just sat there and users pressed Update again (live, 2026-07-27).
+  const lookingAtTarget = () => {
+    const t = state.otaTargetHost;
+    if (!t) return false;
+    return (state.settingsBox && state.settingsBox.host === t) ||
+           (state.currentBox && state.currentBox.host === t);
+  };
   const setStatus = (text) => {
-    if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
+    if (!lookingAtTarget()) return;
     // Idempotent: only touch the DOM when a value actually changes. The 1 s
     // countdown tick called this every second during the post-update wait, and
     // re-setting `disabled` each time re-triggered the button's CSS transition,
@@ -3003,6 +3121,14 @@ async function doBoxUpdate(targetBox) {
     const pv = await BoxAgentVersion(targetBox.host, targetBox.port);
     if (pv) { preBuild = pv.build || ''; preVersion = pv.version || ''; }
   } catch { /* box version unknown pre-OTA: fall back to the appBuild match */ }
+  let boxWasTouched = false;
+  // From here on the speaker itself is involved: anything that fails after the
+  // transfer started may leave it mid-restart, which is when the power-cycle
+  // advice below is genuinely useful. Everything BEFORE this point (no embedded
+  // agent in this build, box unreachable, a gate the user cancelled) never
+  // touched the speaker, and telling those users to pull the plug is both
+  // pointless and alarming.
+  boxWasTouched = true;
   try {
     await UpdateBoxAgent(targetBox.host, targetBox.port);
     // Agent has accepted the binary. It will detach, sleep ~70 s
@@ -3231,7 +3357,9 @@ async function doBoxUpdate(targetBox) {
     if (/deadline exceeded|client\.timeout|while reading body/i.test(msg)) {
       showToast(t('update.stillWorking'));
     } else {
-      showError(t('update.failed', { err: msg }));
+      showError(boxWasTouched
+        ? t('update.failed', { err: msg })
+        : t('update.failedNoChange', { err: msg }));
     }
     reset();
   } finally {
