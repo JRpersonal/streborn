@@ -3247,6 +3247,29 @@ func (s *Server) HandleEnterStandby() {
 		return
 	}
 
+	// #419 Finding 3: the frame this classification rests on lies in BOTH
+	// directions. The reporter captured a userActivityUpdate under controlled
+	// conditions with nobody near the box, the app closed and the remote out of
+	// the room, and the original report documents firmware standby transitions
+	// that carry no frame at all. So reaching this point does not prove the user
+	// pressed anything: it may equally be a phantom frame that happened to land
+	// inside the adjacency window.
+	//
+	// The conservative handling below stays exactly as it was, because on a real
+	// power-off it is right and because #197 forbids ever waking the box back up.
+	// What changes is the cost of being wrong: when the ONLY evidence is a lone
+	// key frame, the stream the user was listening to is armed for a deferred
+	// resume. Nothing happens to the speaker now. If the frame was real, the arm
+	// matches what power-on resume would do anyway; if it was a phantom, the user
+	// gets their station back the next time they switch the speaker on, instead
+	// of the silence that today only a power cycle ends.
+	//
+	// deliberateStop means STR itself was told to stop (app, phone remote), which
+	// is real intent and must not be undone, so it is excluded.
+	if !deliberateStop {
+		s.armDeferredResumeFromLastPlay("lone key frame classified as a user power-off (#419 Finding 3)")
+	}
+
 	// A power-off is a deliberate stop: drop any queue so it does not fight the
 	// standby, then Stop and EMPTY the transport URI so the firmware has nothing to
 	// bounce back to (Stop alone leaves the URI loaded and the box re-selects it).
@@ -3457,6 +3480,30 @@ const deferredResumeTTL = 18 * time.Hour
 // armDeferredResume stores the resume for the next user wake. A newer arm
 // replaces an older one: the most recent interrupted stream is what the user
 // expects back.
+// armDeferredResumeFromLastPlay arms the deferred resume with whatever was last
+// playing, if anything. Used where STR must not act on the speaker now but
+// wants the music to come back when the user switches it on themselves.
+//
+// It deliberately does NOT check the wake/stop latches: it changes nothing on
+// the box, it only records what to restore, and RunDeferredResume re-checks
+// every guard (deliberate stop, zone, newer play, opt-out, expiry) at the
+// moment it would actually play.
+func (s *Server) armDeferredResumeFromLastPlay(why string) {
+	s.lastPlayMu.Lock()
+	lp := s.lastPlay
+	var boxURL, title, art, mime string
+	var capturedTS time.Time
+	if lp != nil {
+		boxURL, title, art, mime, capturedTS = lp.boxURL, lp.title, lp.art, lp.mime, lp.ts
+	}
+	s.lastPlayMu.Unlock()
+	if boxURL == "" {
+		return
+	}
+	s.armDeferredResume(boxURL, title, art, mime, capturedTS)
+	s.logger.Info("deferred resume armed: the speaker is left alone, the stream returns when the user switches it on", "why", why, "title", title)
+}
+
 func (s *Server) armDeferredResume(boxURL, title, art, mime string, capturedTS time.Time) {
 	s.deferredMu.Lock()
 	s.deferred = &deferredResume{boxURL: boxURL, title: title, art: art, mime: mime, capturedTS: capturedTS, armedAt: time.Now()}
