@@ -2190,6 +2190,16 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 				if name == "" {
 					name = inst.Name
 				}
+				if placeholderPeerName(name) {
+					// mDNS sometimes carries only the instance name, which is the
+					// "str-<ip>" placeholder the app also uses before a speaker is
+					// identified. Rendering that in the picker is the same defect as
+					// rendering a bare address (#494): the owner sees an address where
+					// a name belongs. The speaker knows its own name, so ask it.
+					if friendly := peerFriendlyName(ip); friendly != "" {
+						name = friendly
+					}
+				}
 				fresh = append(fresh, found{ip: ip, name: name, port: reachableWebPort(ip)})
 			}
 		} else {
@@ -2307,6 +2317,45 @@ func ownIPv4s() map[string]bool {
 // webui port (8888 on sm2/rhino/mojo) or the BCO REDIRECT port (17008 on
 // taigan/scm), whichever accepts a connection; 0 when neither answers. This
 // probe is why no per-model port has to be carried in mDNS.
+// placeholderPeerName reports whether a discovered name is the "str-<ip>"
+// stand-in rather than something a person chose.
+func placeholderPeerName(name string) bool {
+	return strings.HasPrefix(name, "str-") && net.ParseIP(strings.TrimPrefix(name, "str-")) != nil
+}
+
+// peerFriendlyName asks a peer what it calls itself. The agent's version
+// envelope carries friendlyName, so one short request turns a placeholder into
+// the name on the speaker. Best effort and tightly bounded: this runs inside a
+// discovery sweep, and a silent peer must not hold it up.
+func peerFriendlyName(ip string) string {
+	port := reachableWebPort(ip)
+	if port == 0 {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("http://%s:%d/api/agent/version", ip, port), nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var out struct {
+		FriendlyName string `json:"friendlyName"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&out); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out.FriendlyName)
+}
+
 func reachableWebPort(ip string) int {
 	for _, p := range []int{8888, 17008} {
 		if dialable(ip, p) {
