@@ -2111,11 +2111,26 @@ func probeStalePeers(logger *slog.Logger) {
 			if port == 0 {
 				continue
 			}
+			// While we have the speaker on the line anyway, turn a placeholder
+			// name into the real one. A roster entry restored from NAND, or one
+			// seeded by the app before the speaker was identified, keeps the
+			// "str-<ip>" stand-in forever otherwise: the mDNS path never revisits
+			// a name it did not just receive, so the owner kept seeing an address
+			// where a name belongs (#494, seen live 2026-07-28).
+			var friendly string
 			peersMu.Lock()
+			if e := peersByIP[c.ip]; e != nil && placeholderPeerName(e.name) {
+				peersMu.Unlock()
+				friendly = peerFriendlyName(c.ip)
+				peersMu.Lock()
+			}
 			if e := peersByIP[c.ip]; e != nil {
 				e.lastSeen = time.Now()
 				e.reachable = true
 				e.port = port
+				if friendly != "" {
+					e.name = friendly
+				}
 			}
 			peersMu.Unlock()
 		}
@@ -2215,7 +2230,10 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 				e = &peerEntry{}
 				peersByIP[f.ip] = e
 			}
-			if f.name != "" {
+			// Never let a placeholder overwrite a name we already know: mDNS can
+			// answer with the instance name only, and replacing "Kitchen" with
+			// "str-192.0.2.5" is the #494 defect arriving by the back door.
+			if f.name != "" && !(placeholderPeerName(f.name) && e.name != "" && !placeholderPeerName(e.name)) {
 				e.name = f.name
 			}
 			e.lastSeen = now
