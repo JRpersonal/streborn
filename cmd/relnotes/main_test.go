@@ -74,3 +74,27 @@ func TestRenderMarkdownEmpty(t *testing.T) {
 		t.Errorf("empty changelog should note a maintenance release, got:\n%s", md)
 	}
 }
+
+// A squash merge collapses a whole branch into one subject, so a pull request
+// that fixed several user-visible things could only announce one of them.
+func TestParseNoteTrailers(t *testing.T) {
+	body := "Some prose about the change.\n\n" +
+		"Release-Note: fix(webui): saving a very long playlist as a preset works\n" +
+		"Release-Note: feat(app): the speaker tile shows when an update is waiting\n" +
+		"Release-Note: chore(ci): bump an action\n" +
+		"Refs #489.\n"
+	got := parseNoteTrailers(body)
+	if len(got) != 2 {
+		t.Fatalf("want 2 user-facing entries (the chore trailer is dropped), got %d: %+v", len(got), got)
+	}
+	if got[0].Type != "fix" || got[0].Scope != "webui" ||
+		got[0].Summary != "Saving a very long playlist as a preset works" {
+		t.Errorf("first trailer parsed wrong: %+v", got[0])
+	}
+	if got[1].Type != "feat" || got[1].Scope != "app" {
+		t.Errorf("second trailer parsed wrong: %+v", got[1])
+	}
+	if len(parseNoteTrailers("no trailers here\nRelease-Notes: not the key\n")) != 0 {
+		t.Error("only the exact Release-Note key may count")
+	}
+}

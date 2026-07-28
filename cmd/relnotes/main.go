@@ -121,8 +121,10 @@ func collect(start, end string) ([]change, error) {
 	if start != "" {
 		rng = start + ".." + end
 	}
-	// %H<TAB>%s, one commit per line, no merges.
-	args := []string{"log", "--no-merges", "--pretty=format:%H\t%s", rng}
+	// %H<TAB>%s<TAB>%b, one record per commit, no merges. The body is included
+	// so a commit can declare extra entries via Release-Note trailers; records
+	// are separated by a NUL because bodies contain newlines.
+	args := []string{"log", "--no-merges", "--pretty=format:%H\t%s\t%b%x00", rng}
 	out, err := exec.Command("git", args...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("git log %s: %w", rng, err)
@@ -130,27 +132,59 @@ func collect(start, end string) ([]change, error) {
 
 	var changes []change
 	seen := map[string]bool{}
-	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		hash, subject, ok := strings.Cut(line, "\t")
-		if !ok {
-			continue
-		}
-		c, keep := parseSubject(subject)
-		if !keep {
-			continue
-		}
+	add := func(c change, hash string) {
 		c.Commit = shortHash(hash)
 		key := c.Type + "|" + c.Scope + "|" + c.Summary
 		if seen[key] {
-			continue
+			return
 		}
 		seen[key] = true
 		changes = append(changes, c)
 	}
+	for _, rec := range strings.Split(string(out), "\x00") {
+		rec = strings.TrimLeft(rec, "\n")
+		if strings.TrimSpace(rec) == "" {
+			continue
+		}
+		hash, rest, ok := strings.Cut(rec, "\t")
+		if !ok {
+			continue
+		}
+		subject, body, _ := strings.Cut(rest, "\t")
+		if c, keep := parseSubject(subject); keep {
+			add(c, hash)
+		}
+		for _, c := range parseNoteTrailers(body) {
+			add(c, hash)
+		}
+	}
 	return changes, nil
+}
+
+// noteTrailerRE matches a "Release-Note: type(scope): summary" line anywhere
+// in a commit body.
+var noteTrailerRE = regexp.MustCompile(`(?im)^[ \t]*Release-Note:[ \t]*(.+?)[ \t]*$`)
+
+// parseNoteTrailers extracts the entries a commit declares in its body.
+//
+// A squash merge collapses a branch into ONE subject, so a pull request that
+// fixed three separate user-visible things announced only the one the subject
+// happened to name and the other two shipped silently. Any commit can now name
+// additional entries:
+//
+//	Release-Note: fix(webui): saving a very long playlist as a preset works
+//
+// Each trailer is parsed exactly like a subject, so the same type filter and
+// the same "the summary is shown to users almost verbatim" rule apply, and a
+// commit whose own type is not user-facing (chore, docs) can still carry them.
+func parseNoteTrailers(body string) []change {
+	var out []change
+	for _, m := range noteTrailerRE.FindAllStringSubmatch(body, -1) {
+		if c, keep := parseSubject(m[1]); keep {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func shortHash(h string) string {
