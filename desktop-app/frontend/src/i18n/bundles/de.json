@@ -199,6 +199,7 @@
   "speaker.manualIpHelp": "Lautsprecher wird nicht gefunden? In manchen Netzwerken (Gast-WLAN, VPN oder mit Geräte-Isolierung) ist die Suche blockiert. Gib die IP-Adresse des Lautsprechers (aus deinem Router) ein, um dich direkt zu verbinden.",
   "speaker.manualIpPlaceholder": "z. B. 192.168.1.50",
   "speaker.manualIpButton": "Per IP verbinden",
+  "speaker.addByIp": "Per IP hinzufügen",
   "speaker.manualIpSearching": "Verbinde mit {{ip}}...",
   "speaker.manualIpNotFound": "Kein Lautsprecher unter {{ip}} erreichbar. Prüfe die Adresse und ob PC und Lautsprecher im selben Netzwerk sind.",
   "speaker.retry": "Erneut suchen",

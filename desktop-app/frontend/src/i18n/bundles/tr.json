@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "Hoparlör bulunamıyor mu? Bazı ağlarda (misafir Wi-Fi, VPN veya cihaz yalıtımı olan ağlar) arama engellenir. Doğrudan bağlanmak için hoparlörün IP adresini (yönlendiricinizden) girin.",
   "speaker.manualIpPlaceholder": "ör. 192.168.1.50",
   "speaker.manualIpButton": "IP ile bağlan",
+  "speaker.addByIp": "IP ile ekle",
   "speaker.manualIpSearching": "{{ip}} adresine bağlanılıyor...",
   "speaker.manualIpNotFound": "{{ip}} adresinde hoparlör yanıt vermedi. Adresi ve bilgisayar ile hoparlörün aynı ağda olduğunu kontrol edin.",
   "speaker.retry": "Yeniden ara",

@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "تعذّر العثور على السماعة؟ في بعض الشبكات (واي فاي الضيوف، VPN، أو التي تعزل الأجهزة) يكون البحث محظورًا. أدخل عنوان IP للسماعة (من جهاز التوجيه) للاتصال مباشرة.",
   "speaker.manualIpPlaceholder": "مثال: 192.168.1.50",
   "speaker.manualIpButton": "الاتصال عبر IP",
+  "speaker.addByIp": "إضافة عبر IP",
   "speaker.manualIpSearching": "جارٍ الاتصال بـ {{ip}}...",
   "speaker.manualIpNotFound": "لم تستجب أي سماعة على {{ip}}. تحقق من العنوان وأن الكمبيوتر والسماعة على الشبكة نفسها.",
   "speaker.retry": "البحث مجدّدًا",

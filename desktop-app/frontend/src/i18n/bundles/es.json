@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "¿No encuentras el altavoz? En algunas redes (wifi de invitados, VPN o con aislamiento de dispositivos) la búsqueda está bloqueada. Escribe la dirección IP del altavoz (desde tu router) para conectarte directamente.",
   "speaker.manualIpPlaceholder": "p. ej. 192.168.1.50",
   "speaker.manualIpButton": "Conectar por IP",
+  "speaker.addByIp": "Añadir por IP",
   "speaker.manualIpSearching": "Conectando con {{ip}}...",
   "speaker.manualIpNotFound": "Ningún altavoz respondió en {{ip}}. Comprueba la dirección y que el PC y el altavoz estén en la misma red.",
   "speaker.retry": "Buscar de nuevo",

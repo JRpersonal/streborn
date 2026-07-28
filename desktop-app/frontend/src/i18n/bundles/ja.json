@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "スピーカーが見つかりませんか？一部のネットワーク（ゲストWi-Fi、VPN、デバイス分離あり）では検索がブロックされます。ルーターで確認したスピーカーのIPアドレスを入力すると直接接続できます。",
   "speaker.manualIpPlaceholder": "例: 192.168.1.50",
   "speaker.manualIpButton": "IPで接続",
+  "speaker.addByIp": "IP で追加",
   "speaker.manualIpSearching": "{{ip}} に接続しています...",
   "speaker.manualIpNotFound": "{{ip}} で応答するスピーカーがありません。アドレスと、PCとスピーカーが同じネットワークにあるか確認してください。",
   "speaker.retry": "再検索",

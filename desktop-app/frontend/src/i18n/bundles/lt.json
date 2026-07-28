@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "Nerandate garsiakalbio? Kai kuriuose tinkluose (svečių Wi-Fi, VPN ar su įrenginių izoliacija) paieška blokuojama. Įveskite garsiakalbio IP adresą (iš maršruto parinktuvo), kad prisijungtumėte tiesiogiai.",
   "speaker.manualIpPlaceholder": "pvz. 192.168.1.50",
   "speaker.manualIpButton": "Jungtis per IP",
+  "speaker.addByIp": "Pridėti pagal IP",
   "speaker.manualIpSearching": "Jungiamasi prie {{ip}}...",
   "speaker.manualIpNotFound": "Joks garsiakalbis neatsiliepė adresu {{ip}}. Patikrinkite adresą ir ar kompiuteris bei garsiakalbis yra tame pačiame tinkle.",
   "speaker.retry": "Ieškoti iš naujo",

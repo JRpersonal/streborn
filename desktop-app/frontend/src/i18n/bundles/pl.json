@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "Nie znaleziono głośnika? W niektórych sieciach (Wi-Fi dla gości, VPN lub z izolacją urządzeń) wyszukiwanie jest zablokowane. Wpisz adres IP głośnika (z routera), aby połączyć się bezpośrednio.",
   "speaker.manualIpPlaceholder": "np. 192.168.1.50",
   "speaker.manualIpButton": "Połącz przez IP",
+  "speaker.addByIp": "Dodaj przez IP",
   "speaker.manualIpSearching": "Łączenie z {{ip}}...",
   "speaker.manualIpNotFound": "Żaden głośnik nie odpowiedział pod {{ip}}. Sprawdź adres oraz czy komputer i głośnik są w tej samej sieci.",
   "speaker.retry": "Szukaj ponownie",

@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "Enceinte introuvable ? Sur certains réseaux (Wi-Fi invité, VPN ou avec isolation des appareils), la recherche est bloquée. Saisissez l'adresse IP de l'enceinte (depuis votre routeur) pour vous connecter directement.",
   "speaker.manualIpPlaceholder": "ex. 192.168.1.50",
   "speaker.manualIpButton": "Connexion par IP",
+  "speaker.addByIp": "Ajouter par IP",
   "speaker.manualIpSearching": "Connexion à {{ip}}...",
   "speaker.manualIpNotFound": "Aucune enceinte n'a répondu à {{ip}}. Vérifiez l'adresse et que le PC et l'enceinte sont sur le même réseau.",
   "speaker.retry": "Rechercher à nouveau",
