@@ -2104,3 +2104,48 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   margin-right: 4px;
   color: var(--err, #c66);
 }
+
+/* Track progress bar (#399). Shown under the status line while a speaker is
+   playing. Radio has no end, so the bar hides itself and only the elapsed time
+   remains. */
+.track-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 10px;
+  font-variant-numeric: tabular-nums;
+}
+.track-time { font-size: 12px; color: var(--c-text-dim, #888); min-width: 34px; }
+.track-time:last-child { text-align: right; }
+.track-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-border, #d8d8d8);
+  overflow: hidden;
+}
+.track-bar-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--brand);
+  transition: width 0.9s linear;
+}
+
+/* Per-speaker volume inside a group (#401). The group slider above moves these
+   together; each one sets a single speaker so a mixed group (say a Wave next to
+   an ST 20) can be balanced once and then adjusted as a whole. */
+.group-member-vols { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px 26px; }
+.group-member-vol { display: flex; align-items: center; gap: 8px; }
+.group-member-name {
+  flex: 0 0 auto;
+  min-width: 90px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--c-text-dim, #888);
+}
+.group-member-vol input[type=range] { flex: 1; }
+.group-member-vol .vol-val { min-width: 26px; text-align: right; font-size: 12px; }

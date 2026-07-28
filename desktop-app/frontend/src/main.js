@@ -10,6 +10,7 @@ import {
   PlayURL,
   VoteStation,
   RebootBox,
+  TrackPosition,
   SyncBoxPresets,
   BoxPresets,
   BoxSnapshot,
@@ -870,6 +871,9 @@ async function renderFooter() {
   // learned about a new release (and its security fixes) until a restart. The
   // banner render is idempotent, so a repeat check just refreshes it.
   setInterval(() => { try { checkAppUpdate(); } catch {} }, 12 * 3600 * 1000);
+  // Advance the track progress once a second between speaker polls, so the bar
+  // moves like a clock instead of stepping whenever the status poll lands.
+  setInterval(() => { try { renderTrackProgress(); } catch {} }, 1000);
   // appInfo may have arrived after the first discovery completed; the
   // badge function defers until both are known. Re-render the box list
   // too so the per-speaker update dot (boxNeedsUpdate) appears once the
@@ -1047,6 +1051,11 @@ $('view-box').innerHTML = `
   </div>
   <div id="boxControls" class="hidden">
     <div class="status-bar" id="statusBar" role="status" aria-live="polite"></div>
+    <div class="track-progress hidden" id="trackProgress">
+      <span class="track-time" id="trackElapsed">0:00</span>
+      <div class="track-bar" id="trackBar"><div class="track-bar-fill" id="trackBarFill"></div></div>
+      <span class="track-time" id="trackTotal"></span>
+    </div>
     <div class="group-control" id="groupControl"></div>
     <div class="controls">
       <button class="btn btn-mini hidden" id="trackPrevBtn" title="${escapeAttr(t('controls.prev'))}" aria-label="${escapeAttr(t('controls.prev'))}">&#9198;</button>
@@ -1827,6 +1836,12 @@ function checkBoxIssueBanner() {
   const boxes = state.boxes || [];
   const conflict = boxes.filter(b => b && b.conflictingMod && !warnDismissed(b, 'conflict'));
   const noWifi = boxes.filter(b => b && b.wlanCredsMissing && !warnDismissed(b, 'nowifi'));
+  // A speaker refusing essentially every preset recall (Bose error 1036). This
+  // one is NOT dismissible: nothing the user presses will play until it clears,
+  // and the remedy people find on their own, pulling the plug, resets the box
+  // clock and poisons the next boot, while a soft restart clears it (#419
+  // Finding 4). Saying so at the moment it happens is the whole point.
+  const storm = boxes.filter(b => b && b.storm1036);
   const msgs = [];
   if (conflict.length) {
     const names = conflict.map(b => getBoxLabel(b)).join(', ');
@@ -1835,6 +1850,10 @@ function checkBoxIssueBanner() {
   if (noWifi.length) {
     const names = noWifi.map(b => getBoxLabel(b)).join(', ');
     msgs.push(escapeHtml(t('speaker.noWifiBanner', { name: names })));
+  }
+  if (storm.length) {
+    const names = storm.map(b => getBoxLabel(b)).join(', ');
+    msgs.push(escapeHtml(t('speaker.stormBanner', { name: names })));
   }
   if (!msgs.length) { el.classList.add('hidden'); return; }
   // When a speaker has no saved Wi-Fi, give the user a direct way to act on it
@@ -1850,11 +1869,30 @@ function checkBoxIssueBanner() {
   const conflictBtn = conflict.length
     ? `<button class="btn btn-mini" id="boxIssueConflictBtn">${escapeHtml(t('speaker.conflictRemoveBtn'))}</button>`
     : '';
+  // The soft restart, offered right where the problem is stated. The speaker
+  // comes back in about a minute and the state is gone.
+  const stormBtn = storm.length
+    ? `<button class="btn btn-primary btn-mini" id="boxIssueStormBtn">${escapeHtml(t('speaker.stormRestartBtn'))}</button>`
+    : '';
   el.innerHTML = `
     <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#9888;</span><span>${msgs.join('<br>')}</span></div>
+    ${stormBtn}
     ${conflictBtn}
     ${wifiBtn}
-    <button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>`;
+    ${(conflict.length || noWifi.length) ? `<button class="btn btn-secondary btn-mini" id="boxIssueDismissBtn">${escapeHtml(t('speaker.issueDismiss'))}</button>` : ''}`;
+  const sb = $('boxIssueStormBtn');
+  if (sb) sb.onclick = async () => {
+    const box = storm[0];
+    sb.disabled = true;
+    showToast(t('speaker.stormRestarting', { name: getBoxLabel(box) }));
+    try {
+      await RebootBox(box.host, box.port);
+    } catch (e) {
+      showError(String(e));
+    } finally {
+      sb.disabled = false;
+    }
+  };
   const wb = $('boxIssueWifiBtn');
   if (wb) wb.onclick = () => { selectBox(noWifi[0]); switchView('settings'); };
   const cb = $('boxIssueConflictBtn');
@@ -4027,13 +4065,83 @@ function groupControlBox() {
 let _groupVolTimer = null;
 // setGroupVolume moves the master AND every follower to pct, so the slider
 // controls the whole group. Debounced so a slider drag does not flood the boxes.
+// groupVol holds the per-member levels the user set, plus the group slider
+// position they were captured at.
+//
+// The group slider is RELATIVE, and that is the whole point of #401: speakers of
+// different types need different levels to sound equally loud, and the old
+// behaviour of writing one absolute value to every member destroyed that balance
+// on the first group adjustment. Now the group slider shifts every member by the
+// same offset, and the offset is always computed against the captured baseline
+// rather than against the current levels. That matters at the ends: without it,
+// members that hit 0 or 100 would silently lose their spacing and never get it
+// back. Computing from the baseline means returning the slider to where it was
+// restores exactly the levels the user dialled in.
+const groupVol = { base: {}, at: null, members: {} };
+
+// captureGroupBaseline snapshots the members' current levels as the reference
+// the group slider offsets from.
+function captureGroupBaseline(anchor) {
+  groupVol.base = {};
+  Object.keys(groupVol.members).forEach(h => { groupVol.base[h] = groupVol.members[h]; });
+  groupVol.at = anchor;
+}
+
 function setGroupVolume(pct) {
   if (_groupVolTimer) clearTimeout(_groupVolTimer);
   _groupVolTimer = setTimeout(() => {
     const box = groupControlBox();
     if (!box) return;
-    [box, ...currentGroupSlaves()].forEach(b => { SetBoxVolume(b.host, b.port, pct).catch(() => {}); });
+    const all = [box, ...currentGroupSlaves()];
+    if (groupVol.at === null) captureGroupBaseline(pct);
+    const delta = pct - groupVol.at;
+    all.forEach(b => {
+      const base = typeof groupVol.base[b.host] === 'number' ? groupVol.base[b.host] : pct;
+      const v = Math.max(0, Math.min(100, Math.round(base + delta)));
+      groupVol.members[b.host] = v;
+      SetBoxVolume(b.host, b.port, v).catch(() => {});
+      const el = document.getElementById('memberVol-' + cssId(b.host));
+      if (el && document.activeElement !== el) {
+        el.value = String(v);
+        const lbl = document.getElementById('memberVolVal-' + cssId(b.host));
+        if (lbl) lbl.textContent = String(v);
+      }
+    });
   }, 120);
+}
+
+// setMemberVolume sets ONE speaker in the group and makes that the new balance:
+// the baseline is re-captured so the next group move offsets from what the user
+// just dialled in.
+function setMemberVolume(host, port, pct) {
+  groupVol.members[host] = pct;
+  const slider = $('groupVolume');
+  captureGroupBaseline(slider ? parseInt(slider.value, 10) : pct);
+  SetBoxVolume(host, port, pct).catch(() => {});
+}
+
+// cssId makes a host safe to embed in an element id.
+function cssId(host) { return String(host).replace(/[^a-zA-Z0-9]/g, '_'); }
+
+// loadGroupMemberVolumes reads each member's current level so the per-speaker
+// sliders start where the speakers actually are, not at a guess.
+async function loadGroupMemberVolumes(members) {
+  await Promise.all(members.map(async b => {
+    try {
+      const data = await BoxSettings(b.host, b.port);
+      const v = data && data.volume && data.volume.actual;
+      if (typeof v !== 'number') return;
+      groupVol.members[b.host] = v;
+      const el = document.getElementById('memberVol-' + cssId(b.host));
+      if (el && document.activeElement !== el) {
+        el.value = String(v);
+        const lbl = document.getElementById('memberVolVal-' + cssId(b.host));
+        if (lbl) lbl.textContent = String(v);
+      }
+    } catch {}
+  }));
+  const slider = $('groupVolume');
+  captureGroupBaseline(slider ? parseInt(slider.value, 10) : 0);
 }
 
 // toggleGroupMember adds/removes the speaker at host to/from the group led by
@@ -4133,10 +4241,23 @@ function renderGroupControl() {
       + `title="${escapeAttr(t(on ? 'group.removeTitle' : 'group.addTitle', { name: label }))}">`
       + `<span class="group-chip-mark" aria-hidden="true">${on ? '&#10003;' : '&#43;'}</span>${escapeHtml(label)}</button>`;
   }).join('');
+  // One slider per member below the group slider (#401): speakers of different
+  // types need different levels to sound equally loud, and the group slider then
+  // moves them together while keeping that balance.
+  const members = slaves.length > 0 ? [box, ...slaves] : [];
+  const memberRows = members.map(b => {
+    const id = cssId(b.host);
+    const v = typeof groupVol.members[b.host] === 'number' ? groupVol.members[b.host] : 0;
+    return `<div class="group-member-vol">`
+      + `<span class="group-member-name" title="${escapeAttr(getBoxLabel(b))}">${escapeHtml(getBoxLabel(b))}</span>`
+      + `<input type="range" id="memberVol-${id}" data-host="${b.host}" data-port="${b.port}" min="0" max="100" step="1" value="${v}" aria-label="${escapeAttr(t('group.memberVolumeLabel', { name: getBoxLabel(b) }))}" />`
+      + `<span class="vol-val" id="memberVolVal-${id}">${v}</span></div>`;
+  }).join('');
   const volRow = slaves.length > 0
     ? `<div class="group-vol-row"><span class="vol-icon" aria-hidden="true">&#128266;</span>`
       + `<input type="range" id="groupVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('group.volumeLabel'))}" />`
       + `<span class="muted small">${escapeHtml(t('group.volumeLabel'))}</span></div>`
+      + `<div class="group-member-vols">${memberRows}</div>`
     : '';
   // When a member is selected, name the group it belongs to so it is clear the
   // panel below now manages that group (not the empty state it used to show).
@@ -4152,7 +4273,18 @@ function renderGroupControl() {
   const vol = $('groupVolume');
   const seed = $('musicVolume');
   if (vol && seed && seed.value) vol.value = seed.value; // start at the master's level
-  if (vol) vol.oninput = () => setGroupVolume(parseInt(vol.value, 10));
+  if (vol) {
+    vol.onpointerdown = () => captureGroupBaseline(parseInt(vol.value, 10));
+    vol.oninput = () => setGroupVolume(parseInt(vol.value, 10));
+  }
+  cont.querySelectorAll('.group-member-vol input[type=range]').forEach(el => {
+    el.oninput = () => {
+      const lbl = document.getElementById('memberVolVal-' + cssId(el.dataset.host));
+      if (lbl) lbl.textContent = el.value;
+      setMemberVolume(el.dataset.host, parseInt(el.dataset.port, 10), parseInt(el.value, 10));
+    };
+  });
+  if (members.length) loadGroupMemberVolumes(members);
 }
 
 function renderPresets() {
@@ -5052,6 +5184,79 @@ function renderNowPlayingBar() {
   }
 }
 
+// Track progress (#399). The speaker's own AVTransport clock is the source of
+// truth, polled on the status cadence; between polls the bar advances locally
+// so it moves smoothly instead of stepping every few seconds.
+//
+// Two rules keep it honest. It never runs backwards on its own: now_playing and
+// the transport can disagree for a second around a track change, and a bar that
+// jumps back reads as a bug even when the number is momentarily right. And a
+// track change resets it hard, because that is the one moment when going back
+// to zero is correct.
+const trackPos = { sec: 0, dur: 0, at: 0, key: '', polling: false };
+
+function fmtClock(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function resetTrackProgress(key) {
+  trackPos.sec = 0;
+  trackPos.dur = 0;
+  trackPos.at = Date.now();
+  trackPos.key = key || '';
+  renderTrackProgress();
+}
+
+function renderTrackProgress() {
+  const wrap = $('trackProgress');
+  if (!wrap) return;
+  const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
+  if (!playing || trackPos.at === 0) { wrap.classList.add('hidden'); return; }
+  // Interpolate forward from the last reading while the speaker is playing.
+  const drift = state.nowPlayState === 'PLAY_STATE' ? (Date.now() - trackPos.at) / 1000 : 0;
+  const shown = trackPos.sec + drift;
+  wrap.classList.remove('hidden');
+  $('trackElapsed').textContent = fmtClock(shown);
+  const bar = $('trackBar');
+  const fill = $('trackBarFill');
+  if (trackPos.dur > 0) {
+    // A track with a known length: show the bar and the total.
+    bar.classList.remove('hidden');
+    fill.style.width = Math.min(100, (shown / trackPos.dur) * 100).toFixed(1) + '%';
+    $('trackTotal').textContent = fmtClock(trackPos.dur);
+  } else {
+    // Radio has no end. Elapsed time only, no bar to fill.
+    bar.classList.add('hidden');
+    $('trackTotal').textContent = '';
+  }
+}
+
+async function pollTrackPosition() {
+  if (trackPos.polling || !state.currentBox || state.view !== 'box') return;
+  const playing = state.nowPlayState === 'PLAY_STATE' || state.nowPlayState === 'BUFFERING_STATE';
+  if (!playing) { trackPos.at = 0; renderTrackProgress(); return; }
+  trackPos.polling = true;
+  try {
+    const [pos, dur] = await TrackPosition(state.currentBox.host, state.currentBox.port);
+    if (pos < 0) return; // could not ask: keep the bar where it is
+    // Only accept a backwards jump when the track itself changed, which
+    // resetTrackProgress has already handled by clearing the reading.
+    const drifted = trackPos.sec + (Date.now() - trackPos.at) / 1000;
+    if (trackPos.at !== 0 && pos + 2 < drifted && dur === trackPos.dur) return;
+    trackPos.sec = pos;
+    trackPos.dur = dur;
+    trackPos.at = Date.now();
+  } catch {
+    // leave the last reading in place
+  } finally {
+    trackPos.polling = false;
+    renderTrackProgress();
+  }
+}
+
 async function refreshStatus() {
   if (!state.currentBox || state.view !== 'box') return;
   // Reflect hardware-button volume changes back into the slider.
@@ -5061,6 +5266,9 @@ async function refreshStatus() {
   // Keep the queue transport controls in step with the box. Fired alongside the
   // Status fetch (not awaited) so it shares the poll cadence without delaying it.
   refreshQueue();
+  // Track position rides the same cadence, not awaited so a slow AVTransport
+  // read cannot delay the status poll.
+  pollTrackPosition();
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
     _statusFailCount = 0; // the box answered: it is reachable at its current IP
@@ -5108,6 +5316,10 @@ async function refreshStatus() {
     const newLoc = optimistic ? state.nowLocation : loc;
     const newName = optimistic ? state.nowName : name;
     const stateChanged = state.nowPlayState !== ps || state.nowLocation !== newLoc || state.nowName !== newName;
+    // A different track means the progress must start over; anything else keeps
+    // its reading so the bar does not stutter on an unrelated status change.
+    const trackKey = newLoc + '|' + newName;
+    if (trackKey !== trackPos.key) resetTrackProgress(trackKey);
     state.nowPlayState = ps;
     state.nowLocation = newLoc;
     state.nowName = newName;

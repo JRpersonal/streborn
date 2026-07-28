@@ -296,6 +296,14 @@ type BoxInfo struct {
 	// cloud redirect, OLED, Wi-Fi and presets; the UI warns the user to remove it
 	// (#270). Empty on an STR-only box.
 	ConflictingMod string `json:"conflictingMod,omitempty"`
+	// Storm1036 is true while the box rejects essentially every preset recall
+	// (Bose error 1036, "not logged in"). Nothing the user presses will play
+	// until the state clears, and the remedy people reach for on their own,
+	// pulling the plug, resets the box clock and poisons the next boot, while a
+	// SOFT reboot clears it (#419 Finding 4). The UI says so and offers the
+	// reboot. Storm1036SinceSec is how long it has been going.
+	Storm1036         bool `json:"storm1036,omitempty"`
+	Storm1036SinceSec int  `json:"storm1036SinceSec,omitempty"`
 	// WLANCredsMissing is true when STR has no saved Wi-Fi on the box: it only
 	// stays online while the stick or an ethernet cable is inserted and strands
 	// the user on the next cold boot. The UI warns the user to run STR's own
@@ -990,6 +998,8 @@ func classifyKnownBox(cached, probed BoxInfo, probeOK, bosePortOpen bool) (recor
 	// whatever is really true.
 	cached.ConflictingMod = ""
 	cached.WLANCredsMissing = false
+	cached.Storm1036 = false
+	cached.Storm1036SinceSec = 0
 	if bosePortOpen {
 		return cached, true, false
 	}
@@ -1141,9 +1151,15 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		out.ConflictingMod = b.ConflictingMod
 		out.WLANCredsMissing = b.WLANCredsMissing
 		out.BoxHealth = b.BoxHealth
+		out.Storm1036 = b.Storm1036
+		out.Storm1036SinceSec = b.Storm1036SinceSec
 	default:
 		if out.ConflictingMod == "" {
 			out.ConflictingMod = b.ConflictingMod
+		}
+		if !out.Storm1036 {
+			out.Storm1036 = b.Storm1036
+			out.Storm1036SinceSec = b.Storm1036SinceSec
 		}
 		if !out.WLANCredsMissing {
 			out.WLANCredsMissing = b.WLANCredsMissing
@@ -1506,10 +1522,15 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		// labelled straight from this one verified probe, even when the
 		// :8090 /info enrichment below fails because the box is busy right
 		// after an OTA restart. Without this the box showed as "str-<ip>".
-		FriendlyName:     jsonStringField(s, "friendlyName"),
-		Model:            jsonStringField(s, "model"),
-		BoxHealth:        jsonStringField(s, "boxHealth"),
-		ConflictingMod:   jsonStringField(s, "conflictingMod"),
+		FriendlyName:   jsonStringField(s, "friendlyName"),
+		Model:          jsonStringField(s, "model"),
+		BoxHealth:      jsonStringField(s, "boxHealth"),
+		ConflictingMod: jsonStringField(s, "conflictingMod"),
+		Storm1036:      jsonStringField(s, "preset1036Storm") == "active",
+		Storm1036SinceSec: func() int {
+			n, _ := strconv.Atoi(jsonStringField(s, "preset1036SinceSec"))
+			return n
+		}(),
 		WLANCredsMissing: jsonStringField(s, "wlanCreds") == "missing",
 	}
 	// Best-effort enrichment from the underlying Bose firmware's
@@ -3357,6 +3378,35 @@ func (a *App) StreamBitrate(host string, port int) int {
 		return 0
 	}
 	return out.Bitrate
+}
+
+// TrackPosition returns where the speaker is inside the current track, in
+// seconds, plus the track length. A length of 0 means "no end", which is what
+// radio reports and is a normal answer, not a failure: the UI then shows the
+// elapsed time without a bar (#399). Both are -1 when the speaker could not be
+// asked at all, so the caller can leave the previous reading alone instead of
+// snapping the bar back to zero on one missed poll.
+//
+// Routed through boxDo like the other agent reads, so it self-heals across
+// :8888 and :17008.
+func (a *App) TrackPosition(host string, port int) (int, int) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/position", "", "")
+	if err != nil {
+		return -1, -1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return -1, -1
+	}
+	var out struct {
+		OK       bool `json:"ok"`
+		Position int  `json:"positionSec"`
+		Duration int  `json:"durationSec"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || !out.OK {
+		return -1, -1
+	}
+	return out.Position, out.Duration
 }
 
 // SpotifyBitrate returns the bitrate the agent measured from the live

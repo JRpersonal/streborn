@@ -448,6 +448,36 @@ func (c *Client) note1036() {
 		"count", len(c.err1036Times), "windowMin", int(storm1036Window.Minutes()))
 }
 
+// Storm1036 reports whether the box is currently rejecting essentially every
+// recall, and since when. Same window and threshold as the log marker above.
+//
+// Until now the storm was diagnostic only, visible in a bundle after the fact.
+// But it is the one state where the user's own remedy is actively harmful: the
+// advice that spreads between users is to pull the plug, and a plug pull resets
+// the box's clock to 2015 and poisons the whole next boot, while a SOFT reboot
+// clears the state (#419 Finding 4, reproduced twice on-site). Reporting it lets
+// the app say so at the moment it matters instead of after the damage.
+//
+// The "since" is the OLDEST rejection still inside the window, i.e. how long the
+// box has been in this state as far as we can still see.
+func (c *Client) Storm1036() (active bool, count int, since time.Time) {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var oldest time.Time
+	n := 0
+	for _, t := range c.err1036Times {
+		if now.Sub(t) >= storm1036Window {
+			continue
+		}
+		n++
+		if oldest.IsZero() || t.Before(oldest) {
+			oldest = t
+		}
+	}
+	return n >= storm1036Threshold, n, oldest
+}
+
 // LastUserActivity returns when the box last reported a userActivityUpdate
 // frame (any physical key on the box or the IR remote), or the zero time if
 // none has been seen since the agent started. The webui's standby handler uses

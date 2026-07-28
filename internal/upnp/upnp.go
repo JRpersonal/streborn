@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -395,4 +396,68 @@ func xmlEscape(s string) string {
 func xmlEscapeAttr(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", `'`, "&apos;")
 	return r.Replace(s)
+}
+
+// PositionInfo asks the renderer where it is inside the current track.
+//
+// This is a QUERY, so it goes through soapCallBody and never marks a transport
+// command: a poll for the progress bar must not make the gabbo listener think
+// STR moved the transport itself.
+//
+// Both values are best-effort. A radio stream reports an advancing RelTime and
+// a zero TrackDuration (there is no end), which is exactly the "position known,
+// length unknown" case the UI has to handle anyway; a box that does not
+// implement the action at all returns ok=false. Durations come back as
+// H:MM:SS, and Bose also answers "NOT_IMPLEMENTED" for fields it has no value
+// for, so anything unparseable is reported as zero rather than as an error.
+func (r *Renderer) PositionInfo(ctx context.Context) (rel, dur time.Duration, ok bool) {
+	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetPositionInfo xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID></u:GetPositionInfo></s:Body></s:Envelope>`
+	out, err := r.soapCallBody(ctx, "GetPositionInfo", body)
+	if err != nil {
+		return 0, 0, false
+	}
+	return parseClock(innerText(string(out), "RelTime")), parseClock(innerText(string(out), "TrackDuration")), true
+}
+
+// innerText pulls the text of the first <tag>...</tag> out of an XML blob. The
+// SOAP reply is flat and machine-generated, so this stays cheaper and more
+// forgiving than a full unmarshal (namespace prefixes vary between firmwares).
+func innerText(doc, tag string) string {
+	open := "<" + tag + ">"
+	i := strings.Index(doc, open)
+	if i < 0 {
+		return ""
+	}
+	rest := doc[i+len(open):]
+	j := strings.Index(rest, "</"+tag+">")
+	if j < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:j])
+}
+
+// parseClock turns "H:MM:SS" (or "MM:SS") into a duration. Anything else,
+// including the "NOT_IMPLEMENTED" the firmware answers for unknown fields,
+// is zero.
+func parseClock(s string) time.Duration {
+	parts := strings.Split(s, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return 0
+	}
+	var total time.Duration
+	units := []time.Duration{time.Hour, time.Minute, time.Second}
+	if len(parts) == 2 {
+		units = units[1:]
+	}
+	for i, p := range parts {
+		if idx := strings.Index(p, "."); idx >= 0 { // "SS.mmm" on some stacks
+			p = p[:idx]
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return 0
+		}
+		total += time.Duration(n) * units[i]
+	}
+	return total
 }

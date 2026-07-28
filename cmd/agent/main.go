@@ -717,6 +717,10 @@ func run() error {
 	// userActivityUpdate key frame) from the firmware spontaneously powering
 	// off STR's UPnP source (#419).
 	webuiSrv.SetUserActivityFn(wsClient.LastUserActivity)
+	// Report an ongoing "the box refuses every recall" state so the app can
+	// offer a soft reboot, which clears it, instead of leaving the user with
+	// the plug pull they would otherwise try (#419 Finding 4).
+	webuiSrv.SetStorm1036Fn(wsClient.Storm1036)
 	// The volume restore consults the same signal so a hand-adjusted level
 	// during a recall recovery is never clamped back to the pre-recall
 	// snapshot (which after a deep standby is the box's own wake default).
