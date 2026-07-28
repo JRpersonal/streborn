@@ -535,6 +535,19 @@ body {
   border: 1px solid var(--c-border); border-radius: 6px;
 }
 .manual-ip-input:focus { border-color: var(--brand); outline: none; }
+
+/* "Add by IP" tile at the end of a populated speaker list (#420): on a routed
+   network only the local subnet is discovered, and the empty state's address
+   field vanishes with the first speaker found. Dashed and muted so it reads as
+   an action, not as another speaker. */
+.box-btn.box-add-ip {
+  border-style: dashed;
+  opacity: 0.72;
+  font-weight: 500;
+}
+.box-btn.box-add-ip:hover { opacity: 1; }
+.box-add-ip-row { display: inline-flex; margin-top: 0; vertical-align: middle; }
+.box-add-ip-row .manual-ip-input { max-width: 190px; }
 .reconnect-banner {
   background: var(--brand-bg);
   border: 1px solid var(--brand-border);

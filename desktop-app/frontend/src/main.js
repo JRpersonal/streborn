@@ -1869,14 +1869,45 @@ function checkBoxIssueBanner() {
   el.classList.remove('hidden');
 }
 
-// manualIpInputBusy reports whether the empty state's manual connect-by-IP
-// input is in use (focused or holding text). While it is, the empty state
-// must not be re-rendered: the recovery burst repaints every ~6s and a
-// rebuild wiped the user's half-typed address and their focus.
+// manualIpInputBusy reports whether a manual connect-by-IP input is in use
+// (focused or holding text). While one is, the speaker area must not be
+// re-rendered: the recovery burst repaints every ~6s and a rebuild wiped the
+// user's half-typed address and their focus. Both the empty state's field and
+// the one behind the "add by IP" tile count.
 function manualIpInputBusy() {
-  const el = document.getElementById('emptyIpInput');
-  if (!el) return false;
-  return document.activeElement === el || !!(el.value || '').trim();
+  return ['emptyIpInput', 'listIpInput'].some(id => {
+    const el = document.getElementById(id);
+    if (!el) return false;
+    return document.activeElement === el || !!(el.value || '').trim();
+  });
+}
+
+// wireManualIp connects one connect-by-IP input/button pair. Shared by the
+// empty state and by the "add by IP" tile that sits at the end of a populated
+// speaker list: on a routed network, discovery finds ONE speaker and the empty
+// state disappears, which used to leave no way at all to add the second and
+// third by address (#420).
+function wireManualIp(inputId, btnId) {
+  const ipInput = document.getElementById(inputId);
+  const addIp = document.getElementById(btnId);
+  if (!ipInput || !addIp) return;
+  const tryAddIp = async () => {
+    const ip = (ipInput.value || '').trim();
+    if (!ip) { ipInput.focus(); return; }
+    addIp.disabled = true;
+    showToast(t('speaker.manualIpSearching', { ip }));
+    try {
+      await AddBoxByIP(ip);
+      ipInput.value = ''; // so the next address can be typed straight away
+      await discoverBoxes(); // RefreshKnownBoxes now includes the cached box
+    } catch (e) {
+      showError(t('speaker.manualIpNotFound', { ip }));
+    } finally {
+      addIp.disabled = false;
+    }
+  };
+  addIp.onclick = tryAddIp;
+  ipInput.onkeydown = (e) => { if (e.key === 'Enter') tryAddIp(); };
 }
 
 // offlineAgo renders "how long unseen" for an offline speaker tile via
@@ -1926,24 +1957,7 @@ function renderBoxSelect() {
     if (rt) rt.onclick = () => discoverBoxes();
     // Manual connect-by-IP: the fallback when discovery is blocked by the
     // network (AP isolation, a different subnet, a VPN, or a security suite).
-    const ipInput = document.getElementById('emptyIpInput');
-    const addIp = document.getElementById('emptyAddIpBtn');
-    const tryAddIp = async () => {
-      const ip = (ipInput.value || '').trim();
-      if (!ip) { ipInput.focus(); return; }
-      addIp.disabled = true;
-      showToast(t('speaker.manualIpSearching', { ip }));
-      try {
-        await AddBoxByIP(ip);
-        await discoverBoxes(); // RefreshKnownBoxes now includes the cached box
-      } catch (e) {
-        showError(t('speaker.manualIpNotFound', { ip }));
-      } finally {
-        addIp.disabled = false;
-      }
-    };
-    if (addIp) addIp.onclick = tryAddIp;
-    if (ipInput) ipInput.onkeydown = (e) => { if (e.key === 'Enter') tryAddIp(); };
+    wireManualIp('emptyIpInput', 'emptyAddIpBtn');
     updateBoxUiVisibility();
   checkWedgeBanner();
   checkBoxIssueBanner();
@@ -2024,9 +2038,21 @@ function renderBoxSelect() {
       : '';
     return `<span class="box-btn${active}${updCls}${playingNow ? ' playing-now' : ''}${offCls}" data-host="${b.host}" data-port="${b.port}"${offAttr} role="button" tabindex="0">${groupMark}${offMark}${playMark}${escapeHtml(label)}${model} <small>${b.host}</small>${ver}${updDot}<span class="box-edit" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.editTitle'))}">&#9881;</span></span>`;
   };
+  // "Add by IP" tile, always available once at least one speaker is listed.
+  // On a routed network mDNS and the local /24 scan find only the speakers on
+  // this subnet, and the empty state's address field is gone the moment the
+  // first one shows up, so there was no path left to add the others (#420).
+  // Collapsed to a small tile until clicked, so it stays out of the way for
+  // everyone whose speakers are simply found.
+  const addIpTile = () => `
+    <span class="box-btn box-add-ip" id="addIpTile" role="button" tabindex="0" title="${escapeAttr(t('speaker.manualIpHelp'))}">+ ${escapeHtml(t('speaker.addByIp'))}</span>
+    <span class="manual-ip-row box-add-ip-row hidden" id="addIpRow">
+      <input type="text" id="listIpInput" class="manual-ip-input" placeholder="${escapeAttr(t('speaker.manualIpPlaceholder'))}" inputmode="decimal" autocomplete="off" spellcheck="false">
+      <button class="btn btn-mini" id="listAddIpBtn">${escapeHtml(t('speaker.manualIpButton'))}</button>
+    </span>`;
   const groups = Object.keys(memberCount).filter(m => memberCount[m] >= 2).sort();
   if (groups.length === 0) {
-    sel.innerHTML = state.boxes.map(pill).join('');
+    sel.innerHTML = state.boxes.map(pill).join('') + addIpTile();
   } else {
     const colorOf = {};
     groups.forEach((m, i) => { colorOf[m] = (i % 4) + 1; });
@@ -2045,8 +2071,21 @@ function renderBoxSelect() {
       html += `<div class="box-group box-group-c${colorOf[m]}">${groupLabel}${members.map(pill).join('')}</div>`;
     }
     html += state.boxes.filter(b => { const mm = masterOf(b); return !(mm && memberCount[mm] >= 2); }).map(pill).join('');
-    sel.innerHTML = html;
+    sel.innerHTML = html + addIpTile();
   }
+  const ipTile = document.getElementById('addIpTile');
+  const ipRow = document.getElementById('addIpRow');
+  if (ipTile && ipRow) {
+    const openIpRow = () => {
+      ipTile.classList.add('hidden');
+      ipRow.classList.remove('hidden');
+      const inp = document.getElementById('listIpInput');
+      if (inp) inp.focus();
+    };
+    ipTile.onclick = openIpRow;
+    ipTile.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openIpRow(); } };
+  }
+  wireManualIp('listIpInput', 'listAddIpBtn');
   sel.querySelectorAll('.box-btn').forEach(btn => {
     btn.onclick = async (e) => {
       // A click on the gear icon opens the settings view rather than

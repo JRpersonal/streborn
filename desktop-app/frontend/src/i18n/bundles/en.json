@@ -199,6 +199,7 @@
   "speaker.manualIpHelp": "Can't find your speaker? On some networks (guest Wi-Fi, a VPN, or one that isolates devices) discovery is blocked. Type the speaker's IP address (from your router) to connect directly.",
   "speaker.manualIpPlaceholder": "e.g. 192.168.1.50",
   "speaker.manualIpButton": "Connect by IP",
+  "speaker.addByIp": "Add by IP",
   "speaker.manualIpSearching": "Connecting to {{ip}}...",
   "speaker.manualIpNotFound": "No speaker answered at {{ip}}. Check the address and that the PC and speaker share the same network.",
   "speaker.retry": "Search again",

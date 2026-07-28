@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "Не вдається знайти колонку? У деяких мережах (гостьовий Wi-Fi, VPN або з ізоляцією пристроїв) пошук заблоковано. Введіть IP-адресу колонки (з роутера), щоб підключитися напряму.",
   "speaker.manualIpPlaceholder": "напр. 192.168.1.50",
   "speaker.manualIpButton": "Підключити за IP",
+  "speaker.addByIp": "Додати за IP",
   "speaker.manualIpSearching": "Підключення до {{ip}}...",
   "speaker.manualIpNotFound": "Жодна колонка не відповіла за адресою {{ip}}. Перевірте адресу та чи ПК і колонка в одній мережі.",
   "speaker.retry": "Шукати знову",

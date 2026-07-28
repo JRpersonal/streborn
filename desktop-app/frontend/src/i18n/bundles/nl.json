@@ -182,6 +182,7 @@
   "speaker.manualIpHelp": "Speaker niet gevonden? In sommige netwerken (gast-wifi, VPN of met apparaatisolatie) is het zoeken geblokkeerd. Voer het IP-adres van de speaker (uit je router) in om direct te verbinden.",
   "speaker.manualIpPlaceholder": "bijv. 192.168.1.50",
   "speaker.manualIpButton": "Verbinden via IP",
+  "speaker.addByIp": "Toevoegen via IP",
   "speaker.manualIpSearching": "Verbinden met {{ip}}...",
   "speaker.manualIpNotFound": "Geen speaker bereikbaar op {{ip}}. Controleer het adres en of pc en speaker in hetzelfde netwerk zitten.",
   "speaker.retry": "Opnieuw zoeken",
