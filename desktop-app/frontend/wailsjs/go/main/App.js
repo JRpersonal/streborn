@@ -454,6 +454,10 @@ export function TestWebhookAction(arg1, arg2, arg3) {
   return window['go']['main']['App']['TestWebhookAction'](arg1, arg2, arg3);
 }
 
+export function TrackPosition(arg1, arg2) {
+  return window['go']['main']['App']['TrackPosition'](arg1, arg2);
+}
+
 export function Translate(arg1, arg2) {
   return window['go']['main']['App']['Translate'](arg1, arg2);
 }

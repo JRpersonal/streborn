@@ -310,6 +310,15 @@ type Server struct {
 	// to the conservative power-off handling.
 	userActivityFn func() time.Time
 
+	// storm1036Fn reports whether the box is currently rejecting essentially
+	// every recall (1036), how many rejections are in the window and since
+	// when. Wired to boxws.Storm1036. Surfaced on the version envelope so the
+	// desktop app and the phone remote can offer a SOFT reboot: the remedy
+	// users reach for on their own, pulling the plug, resets the box clock and
+	// poisons the next boot, while a soft reboot clears the state (#419
+	// Finding 4). nil = not wired (no storm reported).
+	storm1036Fn func() (bool, int, time.Time)
+
 	// ownTransportCmdFn reports when STR itself last issued a transport-
 	// mutating SOAP command; zero = never. Wired to
 	// boxws.LastOwnTransportCommand. HandleEnterStandby uses it to excuse a
@@ -843,6 +852,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/queue/shuffle", s.handleQueueShuffle)
 	mux.HandleFunc("/api/queue/repeat", s.handleQueueRepeat)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/position", s.handlePosition)
 	mux.HandleFunc("/api/recent", s.handleRecent)
 	// Radio search/browse moved app-side (the app queries radio-browser
 	// directly; see the app-first direction). The box no longer serves
@@ -3088,6 +3098,12 @@ func (s *Server) SetUserActivityFn(fn func() time.Time) {
 	s.userActivityFn = fn
 }
 
+// SetStorm1036Fn wires boxws.Storm1036 so the version envelope can report an
+// ongoing "the box refuses every recall" state to the app.
+func (s *Server) SetStorm1036Fn(fn func() (bool, int, time.Time)) {
+	s.storm1036Fn = fn
+}
+
 // SetOwnTransportCmdFn wires boxws.LastOwnTransportCommand so HandleEnterStandby
 // can recognise a source flip that answers STR's OWN transport push (the
 // firmware rejecting a wake-resume or recall SetURI) instead of classifying it
@@ -4109,6 +4125,19 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// next cold boot).
 	if mod := detectConflictingMod(); mod != "" {
 		out["conflictingMod"] = mod
+	}
+	// Ongoing 1036 storm: the box is refusing essentially every recall, so
+	// nothing the user presses will play until the state is cleared. Emitted
+	// only while it lasts, and carrying the age so the app can say how long it
+	// has been going.
+	if s.storm1036Fn != nil {
+		if active, count, since := s.storm1036Fn(); active {
+			out["preset1036Storm"] = "active"
+			out["preset1036Count"] = strconv.Itoa(count)
+			if !since.IsZero() {
+				out["preset1036SinceSec"] = strconv.FormatInt(int64(time.Since(since).Seconds()), 10)
+			}
+		}
 	}
 	// The foreign (neither STR's nor Bose's) top-level /mnt/nv dirs, names only.
 	// Cheap: one readdir, no recursive sizing, so it is fine on every version

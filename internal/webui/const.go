@@ -95,6 +95,11 @@ header .dev { margin-left:auto; min-width:0; font-size:15px; font-weight:600; co
 .nowcard .now { display:block; color:var(--accent); font-weight:600; font-size:18px; line-height:1.25; }
 .nowcard .st { font-size:13px; color:var(--muted); margin-top:3px; }
 .nowcard.loading { opacity:.6; }
+.trackprog { display:flex; align-items:center; gap:8px; margin-top:8px; font-variant-numeric:tabular-nums; }
+.trackprog .tt { font-size:12px; color:var(--muted); min-width:34px; }
+.trackprog .tt:last-child { text-align:right; }
+.trackprog .tbar { flex:1; height:4px; border-radius:2px; background:rgba(127,127,127,.35); overflow:hidden; }
+.trackprog .tfill { height:100%; width:0; border-radius:2px; background:var(--accent); transition:width .9s linear; }
 @media (prefers-reduced-motion:no-preference) { .nowcard.loading { animation:pulse 1.2s ease-in-out infinite; } @keyframes pulse { 50% { opacity:.3; } } }
 .label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:8px; }
 .row { display:grid; gap:8px; }
@@ -240,6 +245,11 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <div class="card nowcard loading" id="statusCard">
 <div class="label" id="lblNow">Now playing</div>
 <div id="status"><span class="now">Loading&hellip;</span></div>
+<div class="trackprog" id="trackProg" style="display:none">
+<span class="tt" id="trackEl">0:00</span>
+<div class="tbar" id="trackBar"><div class="tfill" id="trackFill"></div></div>
+<span class="tt" id="trackTot"></span>
+</div>
 </div>
 
 <div class="card">
@@ -667,7 +677,54 @@ async function refreshStatus() {
   const idleSrc = upSrc === 'INVALID_SOURCE' || upSrc === 'STANDBY' || upSrc === '';
   const bigName = name || (idleSrc ? '' : src) || T.idle;
   setNow(bigName, human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
+  tp.playing = (state === 'PLAY_STATE' || state === 'BUFFERING_STATE');
+  var key = name + '|' + src;
+  if (key !== tp.key) { tp.key = key; tp.sec = 0; tp.dur = 0; tp.at = 0; }
+  if (tp.playing) { pollProg(); } else { tp.at = 0; renderProg(); }
 }
+
+// Track progress (#399). The speaker's AVTransport clock is polled on the status
+// cadence and interpolated forward in between, so the bar moves like a clock.
+// Radio reports no length: then only the elapsed time is shown, with no bar.
+var tp = { sec: 0, dur: 0, at: 0, key: '', busy: false, playing: false };
+function fmtClock(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+function renderProg() {
+  var wrap = document.getElementById('trackProg');
+  if (!wrap) return;
+  if (!tp.playing || tp.at === 0) { wrap.style.display = 'none'; return; }
+  var shown = tp.sec + (tp.playing ? (Date.now() - tp.at) / 1000 : 0);
+  wrap.style.display = '';
+  document.getElementById('trackEl').textContent = fmtClock(shown);
+  var bar = document.getElementById('trackBar');
+  if (tp.dur > 0) {
+    bar.style.display = '';
+    document.getElementById('trackFill').style.width = Math.min(100, (shown / tp.dur) * 100).toFixed(1) + '%';
+    document.getElementById('trackTot').textContent = fmtClock(tp.dur);
+  } else {
+    bar.style.display = 'none';
+    document.getElementById('trackTot').textContent = '';
+  }
+}
+async function pollProg() {
+  if (tp.busy || !tp.playing) return;
+  tp.busy = true;
+  try {
+    var r = await fetch('/api/position');
+    if (!r.ok) return;
+    var j = await r.json();
+    if (!j.ok) return;
+    // Never let the bar run backwards on its own; only a track change resets it.
+    var drifted = tp.sec + (Date.now() - tp.at) / 1000;
+    if (tp.at !== 0 && j.positionSec + 2 < drifted && j.durationSec === tp.dur) return;
+    tp.sec = j.positionSec; tp.dur = j.durationSec; tp.at = Date.now();
+  } catch (e) {
+    // keep the last reading
+  } finally { tp.busy = false; renderProg(); }
+}
+setInterval(renderProg, 1000);
 
 async function loadPeers() {
   // Forward-compatible: the /api/peers endpoint is added with the peer-browse

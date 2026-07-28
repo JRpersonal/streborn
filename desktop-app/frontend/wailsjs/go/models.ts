@@ -41,6 +41,8 @@ export namespace main {
 	    offlineSinceSec?: number;
 	    boxHealth?: string;
 	    conflictingMod?: string;
+	    storm1036?: boolean;
+	    storm1036SinceSec?: number;
 	    wlanCredsMissing?: boolean;
 	    serialNumber: string;
 	    kind: string;
@@ -64,6 +66,8 @@ export namespace main {
 	        this.offlineSinceSec = source["offlineSinceSec"];
 	        this.boxHealth = source["boxHealth"];
 	        this.conflictingMod = source["conflictingMod"];
+	        this.storm1036 = source["storm1036"];
+	        this.storm1036SinceSec = source["storm1036SinceSec"];
 	        this.wlanCredsMissing = source["wlanCredsMissing"];
 	        this.serialNumber = source["serialNumber"];
 	        this.kind = source["kind"];
