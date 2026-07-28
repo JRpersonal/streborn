@@ -14,9 +14,15 @@ name: release
 # https://github.com/JRpersonal/streborn/releases/latest/download/<name>
 # still works for them.
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  # NOTE: there is deliberately NO tag-push trigger. The publish step creates
+  # the tag itself, and it does so with a PAT, which (unlike GITHUB_TOKEN) DOES
+  # start further workflow runs. A tag trigger therefore fired a SECOND full
+  # pipeline on the tag the first one had just created - and that second run
+  # had no `version` input, so the signing gate turned itself off, the
+  # sign-windows job was skipped, and the publish step happily uploaded the
+  # UNSIGNED Windows build over the signed one. That is exactly what happened
+  # to v0.9.22 (published 2026-07-27, found unsigned on 2026-07-28). Releases
+  # are cut with `gh workflow run release.yml -f version=vX.Y.Z`.
   workflow_dispatch:
     inputs:
       version:
@@ -921,14 +927,15 @@ jobs:
     # so a no-version dispatch / scheduled run builds everything but
     # publishes nothing.
     #
-    # sign-windows is allowed to be SKIPPED (signing gate off): the release
-    # then ships the unsigned build exactly as before. Every build job must
-    # still have succeeded; the explicit result checks are required because a
-    # skipped job in `needs` would otherwise skip this job entirely.
+    # sign-windows is allowed to be SKIPPED, but ONLY on a dry-run: a skipped
+    # signing job on a real release means the build would go out unsigned, and
+    # the guard step below turns that into a hard failure rather than a quietly
+    # unsigned download. Every build job must still have succeeded; the explicit
+    # result checks are required because a skipped job in `needs` would
+    # otherwise skip this job entirely.
     if: |
       !cancelled() &&
-      (startsWith(github.ref, 'refs/tags/') ||
-       github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' ||
        github.event_name == 'schedule') &&
       needs.build-agent.result == 'success' &&
       needs.build-go-librespot.result == 'success' &&
@@ -1305,13 +1312,25 @@ jobs:
           } > release-notes.md
           cat release-notes.md
 
+      - name: Refuse to publish an unsigned Windows build
+        # Last line of defence for the v0.9.22 accident: a real release whose
+        # signing job did not succeed must FAIL here, loudly, instead of
+        # publishing a Windows download that trips SmartScreen for everyone.
+        if: github.event.inputs.version != ''
+        env:
+          SIGN_RESULT: ${{ needs.sign-windows.result }}
+        run: |
+          if [ "${SIGN_RESULT}" != "success" ]; then
+            echo "::error::sign-windows did not succeed (result: ${SIGN_RESULT}). Refusing to publish an unsigned Windows build. Connect the SimplySign session and run the workflow again."
+            exit 1
+          fi
+          echo "Windows build is signed."
+
       - name: Publish GitHub Release
-        # Only on a real release: a tag push, or a dispatch with a
-        # version input. A no-version dispatch / scheduled run reaches
-        # here but skips publishing (build + manifest + notes only).
-        if: |
-          startsWith(github.ref, 'refs/tags/') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+        # Only on a real release: a dispatch with a version input. A no-version
+        # dispatch / scheduled run reaches here but skips publishing (build +
+        # manifest + notes only).
+        if: github.event.inputs.version != ''
         # tag_name is explicit so the workflow_dispatch path works:
         # the action creates the tag at github.sha when it does not
         # already exist. The tag-push path uses the same value (the
