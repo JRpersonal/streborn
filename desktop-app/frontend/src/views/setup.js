@@ -57,6 +57,10 @@ import {
   SetClockDisplay,
   SuggestBoxLanguage,
   InstallSTROnBox,
+  BoxAgentVersion,
+  EnsureSpotifyEngine,
+  UpdateFailureReport,
+  SetOTARunning,
   RepairInstallViaSSH,
   BoxInstallReachable,
   ProbeSetupAP,
@@ -1852,13 +1856,74 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
     }
     renderChecklist();
   });
+// installFailureReportHtml renders the copyable account of an install that did
+// not reach its goal, the same one the update flow shows. A user should never
+// have to describe a failure they cannot see.
+async function installFailureReportHtml(box, phase, errMsg) {
+  if (!box || !box.host) return '';
+  let report = '';
+  try { report = await UpdateFailureReport(box.host, box.port || 0, phase, errMsg, ''); } catch { return ''; }
+  if (!report) return '';
+  return `<div class="failreport-inline">`
+    + `<p class="muted small">${escapeHtml(t('update.reportHelp'))}</p>`
+    + `<textarea class="failreport-text" id="setupFailReport" readonly rows="12">${escapeHtml(report)}</textarea>`
+    + `<button class="btn btn-mini" id="setupFailCopy">${escapeHtml(t('update.reportCopy'))}</button>`
+    + `</div>`;
+}
+
+// wireInstallFailureReport makes the copy button work after the HTML landed.
+function wireInstallFailureReport() {
+  const btn = document.getElementById('setupFailCopy');
+  const ta = document.getElementById('setupFailReport');
+  if (!btn || !ta) return;
+  btn.onclick = async () => {
+    try { await navigator.clipboard.writeText(ta.value); }
+    catch { ta.select(); document.execCommand('copy'); }
+    btn.textContent = t('update.reportCopied');
+  };
+}
+
+// verifyInstalledState holds the install open until the speaker really is
+// there. Same contract as the update: the speaker's own report decides, the
+// state is re-checked throughout, and the Spotify engine is delivered inside
+// this flow because nothing is allowed to deliver it afterwards in the
+// background.
+async function verifyInstalledState(box, onState) {
+  const deadline = Date.now() + 600_000;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    attempt++;
+    let live = null;
+    try { live = await BoxAgentVersion(box.host, box.port || 0); } catch {}
+    if (onState) onState({ attempt, reachable: !!live, remainingMs: deadline - Date.now(),
+      version: (live && live.version) || '', engine: (live && live.goLibrespot) || 'unknown' });
+    if (live && live.goLibrespot === 'present') return { ok: true, version: live };
+    if (live && live.goLibrespot === 'missing') {
+      try { await EnsureSpotifyEngine(box.host, box.port || 0); } catch (e) {
+        const m = String((e && e.message) || e || '');
+        // Too full to ever fit: retrying cannot help, only freeing space can.
+        if (/insufficient nand|no space|507/i.test(m)) return { ok: false, reason: m };
+      }
+    }
+    await new Promise(r => setTimeout(r, Math.min(20_000, 3_000 * attempt)));
+  }
+  return { ok: false, reason: 'timeout waiting for the speaker to reach the installed state' };
+}
+
   let result;
+  // A first install writes software to a speaker just like an update does,
+  // so it plays by the same rules: the window asks before closing while this
+  // runs, and the flow does not consider itself finished until the speaker is
+  // really in the state it was supposed to reach.
+  try { SetOTARunning(true); } catch {}
   try {
     result = await InstallSTROnBox(foundBox.host, foundBox.model || foundBox.type || '');
   } catch (err) {
     clearInterval(timerHandle);
     if (offProgress) offProgress();
-    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`);
+    try { SetOTARunning(false); } catch {}
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`
+      + await installFailureReportHtml(foundBox, 'install', String(err)));
     return;
   }
   clearInterval(timerHandle);
@@ -1887,7 +1952,10 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
     // coprocessor, so a sweeping light bar / dead playback often only clears with
     // a full mains power-cycle (live-proven). Shown on every failure screen.
     const powerCycleHint = powerCycleAdviceHtml(foundBox);
-    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + repairBtn + powerCycleHint + log);
+    try { SetOTARunning(false); } catch {}
+    const failReport = await installFailureReportHtml(foundBox, 'install:' + ((result && result.code) || 'unknown'), msg);
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + repairBtn + powerCycleHint + failReport + log);
+    wireInstallFailureReport();
     // If the network path genuinely cannot proceed (no install window, box not
     // reachable, controls wedged), reveal the USB-stick fallback (relocated into
     // <details id="setupStickDetails">) so the user has an immediate next step.
@@ -1954,6 +2022,22 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
   // otherwise-successful install, and the user can set it later in Speaker
   // settings. The Wi-Fi write keeps the box reachable after the Ethernet cable is
   // pulled (agent persists creds to NAND, then wpa live-switch or BCO reboot).
+  // The install reported success. That is not the same as the speaker being
+  // in the state it was supposed to reach, and nothing will fix it later in
+  // the background, so the flow stays here until the speaker itself says so.
+  const installed = await verifyInstalledState(foundBox, (st) => {
+    render(`<div class="muted">${escapeHtml(st.reachable
+      ? t('updateAll.phase.spotifyState', { engine: st.engine })
+      : t('updateAll.phase.spotifyUnreachable'))}</div>`);
+  });
+  try { SetOTARunning(false); } catch {}
+  if (!installed.ok) {
+    const rep = await installFailureReportHtml(foundBox, 'install:verify', installed.reason || '');
+    render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>` + rep);
+    wireInstallFailureReport();
+    return;
+  }
+
   let unplugLine = '';
   let provisionFailed = false;
   let failReasons = {};
