@@ -874,6 +874,15 @@ func run() error {
 	// Let the version endpoint report the box name/model the announcer holds,
 	// so the desktop app never has to fall back to "str-<ip>" when its own
 	// /info probe is slow right after this agent restarts (#108).
+	// The peer roster needs our own name to recognise a stale entry for an
+	// address we no longer hold (see browsePeers).
+	peerSelfNameFn = func() string {
+		mdnsMu.Lock()
+		ann := mdnsAnnouncer
+		mdnsMu.Unlock()
+		n, _ := ann.Snapshot()
+		return n
+	}
 	webuiSrv.SetBoxNameFn(func() (string, string) {
 		mdnsMu.Lock()
 		ann := mdnsAnnouncer
@@ -2015,6 +2024,11 @@ func savePersistedPeersLocked(logger *slog.Logger) {
 // managed to see still appear in the on-box picker. A seed counts as a
 // sighting (the app just saw that speaker); reachability is then confirmed by
 // the same async probe the browse sweep uses.
+// peerSelfNameFn reports this speaker's own display name, so the roster can
+// recognise an entry that is really us. Wired at startup from the mDNS
+// announcer, which is the same source the version envelope uses.
+var peerSelfNameFn func() string
+
 func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 	if len(seeds) == 0 {
 		return
@@ -2250,6 +2264,11 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		probeStalePeers(logger)
 	}
 
+	selfName := ""
+	if peerSelfNameFn != nil {
+		selfName = strings.TrimSpace(peerSelfNameFn())
+	}
+	mineNow := ownIPv4s()
 	peersMu.Lock()
 	defer peersMu.Unlock()
 	now := time.Now()
@@ -2285,11 +2304,25 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 			delete(peersByIP, ip)
 			continue
 		}
+		if mineNow[ip] {
+			delete(peersByIP, ip) // one of our own current addresses
+			continue
+		}
 		// A speaker whose name we never learned would render as its bare IP
 		// address, which reads like a broken entry next to the named ones
 		// (#494). Skip it: mDNS or the next app seed supplies the name shortly,
 		// and an unnamed duplicate helps nobody.
 		if e.name == "" {
+			continue
+		}
+		// Never list ourselves. The mDNS and seed paths already compare against
+		// our CURRENT addresses, but neither can catch an entry left behind at an
+		// address we used to have: after a new DHCP lease the old one is no longer
+		// "ours", so the speaker kept offering a link to itself under its own name
+		// until the entry aged out (seen live on an ST30, 2026-07-28). Our own
+		// name is the one signal that survives an address change.
+		if selfName != "" && strings.EqualFold(e.name, selfName) {
+			delete(peersByIP, ip)
 			continue
 		}
 		if keep, ok := bestByName[e.name]; ok && keep != ip {

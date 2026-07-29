@@ -4072,6 +4072,11 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 		}
 	} else {
 		out["goLibrespot"] = "missing"
+		if engineDroppedForUpdate() {
+			// Not "never installed": this speaker HAD the engine and it was
+			// deleted to fit an agent update. The app re-delivers on sight.
+			out["goLibrespotDroppedForUpdate"] = "true"
+		}
 	}
 	// Advertise that this agent hot-swaps the Spotify engine live: it restarts
 	// go-librespot in place right after a sidecar OTA write, so a freshly
@@ -4210,6 +4215,33 @@ func agentBinaryStamp() string {
 // desktop OTA writes it here too. Kept in lock-step with cmd/agent's
 // goLibrespotPath and usb-stick/run.sh's NAND copy.
 const goLibrespotBinPath = "/mnt/nv/streborn/bin/go-librespot"
+
+// engineDroppedMarkerPath records that the Spotify engine was deleted to make
+// room for an agent update, as opposed to never having been installed.
+//
+// The two look identical from outside (goLibrespot="missing"), and the
+// difference decides whether anything should act: an engine that was dropped
+// FOR an update is expected back, and if the app is closed before its post-OTA
+// re-delivery finishes, nothing ever notices and the speaker silently loses
+// Spotify for good. That is the shape of repeated field reports. With the
+// marker the speaker can say "mine was taken away, please send it again", and
+// it survives the reboot because it lives on NAND next to the binary.
+const engineDroppedMarkerPath = "/mnt/nv/streborn/engine-dropped-for-update"
+
+// noteEngineDroppedForUpdate / clearEngineDroppedMarker maintain that marker.
+// Both are best effort: the marker is a hint, never a gate.
+func noteEngineDroppedForUpdate() {
+	_ = os.WriteFile(engineDroppedMarkerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+func clearEngineDroppedMarker() {
+	_ = os.Remove(engineDroppedMarkerPath)
+}
+
+func engineDroppedForUpdate() bool {
+	_, err := os.Stat(engineDroppedMarkerPath)
+	return err == nil
+}
 
 // goLibrespotStamp reports whether the go-librespot sidecar is deployed
 // (>1 KB, i.e. a real binary not an empty stub) and the hex SHA256 of its
@@ -5174,6 +5206,7 @@ func reclaimSpotifyEngine() string {
 	err := os.Remove(goLibrespotBinPath)
 	switch {
 	case err == nil:
+		noteEngineDroppedForUpdate()
 		return "engine dropped"
 	case os.IsNotExist(err):
 		return "engine absent"
@@ -5230,6 +5263,9 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 	// 2026-07-12: "delivered" 09:18:51, gone after the 09:19 reboot, re-pushed
 	// 09:22:50 — which then wedged the box).
 	_ = exec.Command("sync").Run()
+	// The engine is back, so the "it was taken away for an update" marker has
+	// served its purpose. Clearing it stops the app from re-delivering forever.
+	clearEngineDroppedMarker()
 	s.logger.Info("go-librespot sidecar written via OTA", "size", len(body))
 	// Activate the freshly delivered engine live: restart the supervised
 	// go-librespot so it re-execs the new binary, with no box reboot. A first-time
