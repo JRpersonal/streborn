@@ -521,7 +521,16 @@ function renderLibrary() {
         <button class="btn" id="libRefreshBtn">${escapeHtml(t('library.refresh'))}</button>
       </div>`;
   } else {
-    const opts = libState.servers.map(s => {
+    // With more than one server nothing is selected yet, and a <select> shows
+    // its FIRST option regardless. So the box read as if the Synology were
+    // already chosen while the page below still said "pick a server", and
+    // clicking that same entry fired no change event: a dead end with no way
+    // forward (reported with a screenshot, 2026-07-28). An explicit placeholder
+    // makes the control tell the truth and makes every pick a real change.
+    const placeholder = libState.currentUDN
+      ? ''
+      : `<option value="" selected disabled>${escapeHtml(t('library.chooseServer'))}</option>`;
+    const opts = placeholder + libState.servers.map(s => {
       const sel = s.udn === libState.currentUDN ? ' selected' : '';
       const sub = s.modelName ? ` (${escapeHtml(s.modelName)})` : '';
       return `<option value="${escapeAttr(s.udn)}"${sel}>${escapeHtml(s.friendlyName || s.address)}${sub}</option>`;

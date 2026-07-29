@@ -142,6 +142,7 @@
   "library.loading": "Ieškoma muzikos serverių ir aplankų...",
   "library.noServers": "Tinkle nerasta muzikos serverio. Įsitikinkite, kad FRITZ!Box, NAS ar kitas DLNA serveris įjungtas ir pasiekiamas.",
   "library.pickServer": "Pasirinkite muzikos serverį viršuje, kad pradėtumėte.",
+  "library.chooseServer": "Pasirink muzikos serverį …",
   "library.root": "Šakninis aplankas",
   "library.emptyFolder": "Šis aplankas tuščias.",
   "library.play": "Groti",

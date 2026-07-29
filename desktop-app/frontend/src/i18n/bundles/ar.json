@@ -142,6 +142,7 @@
   "library.loading": "جارٍ البحث عن خوادم الموسيقى والمجلدات...",
   "library.noServers": "لم يُعثر على خادم موسيقى على الشبكة. تأكّد من أن FRITZ!Box أو وحدة التخزين أو خادم DLNA آخر مشغّل ويمكن الوصول إليه.",
   "library.pickServer": "اختر خادم موسيقى أعلاه لبدء التصفّح.",
+  "library.chooseServer": "اختر خادم موسيقى …",
   "library.root": "الجذر",
   "library.emptyFolder": "هذا المجلد فارغ.",
   "library.play": "تشغيل",
