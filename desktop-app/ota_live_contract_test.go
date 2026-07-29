@@ -37,7 +37,7 @@ func TestLiveUpdateContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("baseline read %s:%d: %v", host, port, err)
 	}
-	t.Logf("BEFORE version=%s engine=%s nandFree=%s", before["version"], before["goLibrespot"], before["nandFreeBytes"])
+	t.Logf("BEFORE version=%s build=%s engine=%s nandFree=%s", before["version"], before["build"], before["goLibrespot"], before["nandFreeBytes"])
 
 	target := appVersion
 	name := before["friendlyName"]
@@ -77,7 +77,7 @@ func TestLiveUpdateContract(t *testing.T) {
 			continue
 		}
 		last = v
-		t.Logf("  waiting: version=%s engine=%s", v["version"], v["goLibrespot"])
+		t.Logf("  waiting: version=%s build=%s engine=%s", v["version"], v["build"], v["goLibrespot"])
 		if v["goLibrespot"] == "missing" {
 			res, eerr := a.EnsureSpotifyEngine(host, port)
 			t.Logf("  engine delivery -> %q (err=%v)", res, eerr)
@@ -92,7 +92,11 @@ func TestLiveUpdateContract(t *testing.T) {
 			}
 			continue
 		}
-		if v["goLibrespot"] == "present" {
+		// Both halves, same rule as the fleet run: the engine surviving the
+		// reboot must not pass a speaker whose agent is still being replaced.
+		// agentReached compares against the agent this build actually carries,
+		// so a local build off an unchanged commit can be verified at all.
+		if v["goLibrespot"] == "present" && agentReached(v, before["version"], before["build"]) {
 			reached = true
 			break
 		}
