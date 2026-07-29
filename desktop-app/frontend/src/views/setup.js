@@ -1898,7 +1898,12 @@ async function verifyInstalledState(box, onState) {
     try { live = await BoxAgentVersion(box.host, box.port || 0); } catch {}
     if (onState) onState({ attempt, reachable: !!live, remainingMs: deadline - Date.now(),
       version: (live && live.version) || '', engine: (live && live.goLibrespot) || 'unknown' });
-    if (live && live.goLibrespot === 'present') return { ok: true, version: live };
+    // Both halves, never one: a speaker can report the engine present while
+    // its agent is still being written, and stopping there declares success
+    // on software that is not installed yet (fleet run 2026-07-29). A first
+    // install has no previous version to compare against, so any reported
+    // version means the agent is up.
+    if (live && live.goLibrespot === 'present' && live.version) return { ok: true, version: live };
     if (live && live.goLibrespot === 'missing') {
       try {
         const r = await EnsureSpotifyEngine(box.host, box.port || 0);

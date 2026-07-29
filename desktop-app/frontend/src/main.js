@@ -2960,6 +2960,28 @@ async function waitForStableAgent(box, deadlineMs, stableMs = 30_000, minUptimeS
 // and falls through to the version poll, the real success signal.
 // phases: 'uploading' -> 'rebooting' -> 'verifying'{remainingMs} ->
 //   'spotify'{attempt, remainingMs} -> resolve.
+// speakerReachedTarget answers the only question that matters at the end of an
+// install or an update: is this speaker actually where it was meant to be.
+//
+// It exists because judging on one half is how a run lies. A speaker whose
+// Spotify engine survived the reboot reports the engine present within seconds,
+// while its agent is still being replaced, and anything that stops looking at
+// that moment declares success on the old software. The mirror case is just as
+// real: the agent lands and the engine is still missing. Both halves, always,
+// and the caller is told WHICH half is outstanding so it can say so rather than
+// showing a spinner with no explanation.
+//
+// Learned from a fleet run on 2026-07-29 where a Portable passed on the old
+// build and only finished minutes later. Users hit the same on slow speakers.
+function speakerReachedTarget(live, preVersion, wantEngine) {
+  if (!live) return { done: false, missing: 'unreachable' };
+  const agentDone = !!live.version && (!preVersion || live.version !== preVersion);
+  const engineDone = !wantEngine || live.goLibrespot === 'present';
+  if (!agentDone) return { done: false, missing: 'agent' };
+  if (!engineDone) return { done: false, missing: 'engine' };
+  return { done: true, missing: '' };
+}
+
 async function runBoxUpdate(box, onPhase) {
   const phase = (p, d) => { try { if (onPhase) onPhase(p, d || {}); } catch {} };
   const appBuild = state.appInfo && state.appInfo.build;
@@ -3072,7 +3094,8 @@ async function runBoxUpdate(box, onPhase) {
       });
       // Already in the target state (another pass landed it, or the agent
       // hot-swapped it in): nothing left to do.
-      if (live && live.goLibrespot === 'present') {
+      const verdict = speakerReachedTarget(live, preVersion, true);
+      if (verdict.done) {
         try { ClearUpdateIntent(box.host, box.port); } catch {}
         return { outcome: 'done', version: live };
       }
