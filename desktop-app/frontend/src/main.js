@@ -3691,9 +3691,21 @@ async function updateAllBoxes() {
   });
   if ($('uaClose')) $('uaClose').onclick = () => { if (overlay) overlay.classList.add('hidden'); };
 
+  // The batch writes software to speakers exactly like the single update,
+  // so it carries the same guarantees: the window asks before closing for
+  // the whole run, every speaker's target is written down before its turn,
+  // and a speaker that does not get there produces the copyable report
+  // instead of a red row nobody can act on.
+  try { SetOTARunning(true); } catch {}
+
+  let uaReportShown = false;
   const runOne = async (b) => {
     setRow(b.host, { phaseText: t('updateAll.phase.uploading'), indet: true });
     let outcome = 'failed';
+    try {
+      RecordUpdateIntent(b.host, b.port, (state.appInfo && state.appInfo.version) || '',
+        b.deviceID || '', getBoxLabel(b), true);
+    } catch {}
     try {
       const result = await runBoxUpdate(b, (ph, d) => {
         switch (ph) {
@@ -3710,7 +3722,9 @@ async function updateAllBoxes() {
       // reboot AFTER the engine step returned (tight-NAND ST30, the Portable's
       // battery/fd-leak reboot). So before calling it "done", confirm the engine
       // is actually present; if it is gone, report "Spotify pending" (deferred)
-      // instead of a green "done". The #406 self-heal re-delivers it on next open.
+      // instead of a green "done". Nothing re-delivers it later on its own any
+      // more, so the record of what this speaker should be running stays, and
+      // the user is told once the next time they open it.
       if (outcome === 'done') {
         try {
           const fv = await BoxAgentVersion(b.host, b.port);
@@ -3728,6 +3742,10 @@ async function updateAllBoxes() {
     } catch (e) {
       outcome = 'failed';
       setRow(b.host, { phaseText: t('updateAll.phase.failed'), barClass: 'ua-failed' });
+      // Same account of the failure the single update gives, for the
+      // FIRST speaker that fails: a wall of reports would help nobody, and
+      // the rest stay on record for the next time each is opened.
+      if (!uaReportShown) { uaReportShown = true; showUpdateFailureReport(b, 'update-all', String(e)); }
       try { console.warn('update all: box failed', b.host, e); } catch {}
     } finally {
       const r = rowState.get(b.host); if (r) r.outcome = outcome;
@@ -3742,6 +3760,7 @@ async function updateAllBoxes() {
 
   // Batch done: release the global lock, refresh, summarize.
   offProg();
+  try { SetOTARunning(false); } catch {}
   state.otaInProgress = false;
   state.otaTargetHost = null;
   state.otaTargetName = null;

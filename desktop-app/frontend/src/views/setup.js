@@ -61,6 +61,7 @@ import {
   EnsureSpotifyEngine,
   UpdateFailureReport,
   SetOTARunning,
+  RecordUpdateIntent,
   RepairInstallViaSSH,
   BoxInstallReachable,
   ProbeSetupAP,
@@ -1915,6 +1916,14 @@ async function verifyInstalledState(box, onState) {
   // so it plays by the same rules: the window asks before closing while this
   // runs, and the flow does not consider itself finished until the speaker is
   // really in the state it was supposed to reach.
+  // Write the target down before anything is copied, so an install cut short
+  // by a closed window is still known about the next time this speaker is
+  // opened, instead of looking like a speaker that was never touched.
+  try {
+    RecordUpdateIntent(foundBox.host, foundBox.port || 0,
+      (state.appInfo && state.appInfo.version) || '', foundBox.deviceID || '',
+      foundBox.friendlyName || foundBox.name || foundBox.host, true);
+  } catch {}
   try { SetOTARunning(true); } catch {}
   try {
     result = await InstallSTROnBox(foundBox.host, foundBox.model || foundBox.type || '');
