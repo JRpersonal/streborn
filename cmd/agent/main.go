@@ -2371,7 +2371,37 @@ func ownIPv4s() map[string]bool {
 // placeholderPeerName reports whether a discovered name is the "str-<ip>"
 // stand-in rather than something a person chose.
 func placeholderPeerName(name string) bool {
-	return strings.HasPrefix(name, "str-") && net.ParseIP(strings.TrimPrefix(name, "str-")) != nil
+	rest, ok := cutPrefixFold(name, "str-")
+	if !ok {
+		return false
+	}
+	// "str-<ip>" is what the app calls a speaker it has not identified yet.
+	if net.ParseIP(rest) != nil {
+		return true
+	}
+	// "STR-3E6CE1" is what a speaker announces over mDNS when its friendly name
+	// is not available: the tail of its device ID, which is its MAC. Users read
+	// that as gibberish, and one reported seeing "part of their MAC addresses"
+	// in the picker (#494, 2026-07-28). Hex-only and at least four characters,
+	// so a real name that merely starts with "str-" is left alone.
+	if len(rest) < 4 {
+		return false
+	}
+	for _, r := range rest {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return false
+		}
+	}
+	return true
+}
+
+// cutPrefixFold is strings.CutPrefix, case-insensitively: the placeholder
+// arrives as "str-" from the app and "STR-" from mDNS.
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) < len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
+		return "", false
+	}
+	return s[len(prefix):], true
 }
 
 // peerFriendlyName asks a peer what it calls itself. The agent's version
