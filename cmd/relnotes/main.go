@@ -132,6 +132,7 @@ func collect(start, end string) ([]change, error) {
 
 	var changes []change
 	seen := map[string]bool{}
+	dropped := map[string]bool{}
 	add := func(c change, hash string) {
 		c.Commit = shortHash(hash)
 		key := c.Type + "|" + c.Scope + "|" + c.Summary
@@ -151,12 +152,43 @@ func collect(start, end string) ([]change, error) {
 			continue
 		}
 		subject, body, _ := strings.Cut(rest, "\t")
-		if c, keep := parseSubject(subject); keep {
+		// Trailers REPLACE the subject, they do not add to it. A commit that
+		// spells out its user-visible changes has already said what it wants
+		// said, and listing its subject as well produced pairs of near-identical
+		// lines, which reads as sloppiness in the one place users actually look.
+		// A commit that wants its subject listed too simply repeats it as a
+		// trailer.
+		// Withdrawals are read FIRST and unconditionally: a commit whose only
+		// purpose is to take back an entry carries no trailers of its own, and
+		// reading drops inside the trailer branch silently ignored exactly that
+		// commit.
+		for _, d := range parseNoteDrops(body) {
+			dropped[strings.ToLower(d)] = true
+		}
+		trailers := parseNoteTrailers(body)
+		if len(trailers) == 0 {
+			if c, keep := parseSubject(subject); keep {
+				add(c, hash)
+			}
+			continue
+		}
+		for _, c := range trailers {
 			add(c, hash)
 		}
-		for _, c := range parseNoteTrailers(body) {
-			add(c, hash)
+	}
+	// Withdraw entries a later commit invalidated. Direction changes inside one
+	// release window are normal, and announcing a behaviour that was removed
+	// again before anyone could see it is worse than saying nothing: it sends
+	// users looking for something that is not there.
+	if len(dropped) > 0 {
+		kept := changes[:0]
+		for _, c := range changes {
+			if dropped[strings.ToLower(c.Summary)] {
+				continue
+			}
+			kept = append(kept, c)
 		}
+		changes = kept
 	}
 	return changes, nil
 }
@@ -169,6 +201,24 @@ var prNumberSuffixRE = regexp.MustCompile(`\s*\(#\d+\)\s*$`)
 // noteTrailerRE matches a "Release-Note: type(scope): summary" line anywhere
 // in a commit body.
 var noteTrailerRE = regexp.MustCompile(`(?im)^[ \t]*Release-Note:[ \t]*(.+?)[ \t]*$`)
+
+// noteDropRE matches a "Release-Note-Drop: <exact summary>" line.
+var noteDropRE = regexp.MustCompile(`(?im)^[ 	]*Release-Note-Drop:[ 	]*(.+?)[ 	]*$`)
+
+// parseNoteDrops extracts entries this commit withdraws from the notes.
+//
+// For work that was announced and then changed course before the release went
+// out. The match is on the rendered summary, case-insensitively, because that
+// is what a reader of the preview can see and copy.
+func parseNoteDrops(body string) []string {
+	var out []string
+	for _, m := range noteDropRE.FindAllStringSubmatch(body, -1) {
+		if v := capitalize(strings.TrimSpace(m[1])); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
 
 // parseNoteTrailers extracts the entries a commit declares in its body.
 //

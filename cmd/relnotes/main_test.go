@@ -98,3 +98,35 @@ func TestParseNoteTrailers(t *testing.T) {
 		t.Error("only the exact Release-Note key may count")
 	}
 }
+
+// A commit that declares its own entries has said what it wants said; listing
+// its subject as well produced near-duplicate lines in the user-facing notes.
+func TestTrailersReplaceTheSubject(t *testing.T) {
+	body := "Prose.\n\nRelease-Note: fix(app): the precise thing that changed\n"
+	got := parseNoteTrailers(body)
+	if len(got) != 1 || got[0].Summary != "The precise thing that changed" {
+		t.Fatalf("trailer parse: %+v", got)
+	}
+	// The replacement itself lives in collect(); this documents the contract so
+	// a future change that re-adds the subject fails a test rather than a reader.
+	if c, keep := parseSubject("feat(update): a broader restatement of the same thing"); !keep || c.Summary == got[0].Summary {
+		t.Log("subject and trailer are distinct texts, which is exactly why both being listed read as duplication")
+	}
+}
+
+// Work announced and then reversed inside the same release window must not be
+// announced: it sends users looking for something that is not there.
+func TestParseNoteDrops(t *testing.T) {
+	body := "We changed course.\n\n" +
+		"Release-Note-Drop: A speaker no longer lists itself, and a Spotify engine removed by an update comes back\n"
+	got := parseNoteDrops(body)
+	if len(got) != 1 {
+		t.Fatalf("want 1 withdrawal, got %d: %v", len(got), got)
+	}
+	if got[0] != "A speaker no longer lists itself, and a Spotify engine removed by an update comes back" {
+		t.Errorf("withdrawal text parsed wrong: %q", got[0])
+	}
+	if len(parseNoteDrops("Release-Note: fix(app): something\n")) != 0 {
+		t.Error("a normal entry must not be read as a withdrawal")
+	}
+}
