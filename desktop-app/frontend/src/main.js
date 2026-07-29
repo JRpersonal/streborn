@@ -188,6 +188,7 @@ import {
   debounce,
   sleep,
   formatRemaining,
+  splitUpdateTargets,
   confirmWarn,
   closeWarn,
   showError,
@@ -2647,11 +2648,6 @@ function foreignSoftwareLabel(v) {
   return names.join(', ');
 }
 
-// installSpotifyEngineVisible delivers the Spotify engine (go-librespot) to a box
-// ON DEMAND, from a visible button, with honest feedback. It replaces the old
-// silent background self-heal: a box does not free NAND on its own, so a silent
-// retry was pointless and hid the real cause. If the box is too full, we name
-// the OTHER SoundTouch software eating the space so the user knows what to
 // superviseUpdateIntent reports an update that never reached its goal. It does
 // NOT act.
 //
@@ -2680,6 +2676,11 @@ async function superviseUpdateIntent(box) {
   showToast(t('update.leftUnfinished', { name: pending.name || getBoxLabel(box) }));
 }
 
+// installSpotifyEngineVisible delivers the Spotify engine (go-librespot) to a box
+// ON DEMAND, from a visible button, with honest feedback. It replaces the old
+// silent background self-heal: a box does not free NAND on its own, so a silent
+// retry was pointless and hid the real cause. If the box is too full, we name
+// the OTHER SoundTouch software eating the space so the user knows what to
 // remove; otherwise we confirm success. Re-renders the banner afterwards.
 async function installSpotifyEngineVisible(box) {
   if (!box || !box.host) return;
@@ -3634,13 +3635,33 @@ async function doBoxUpdate(targetBox) {
 // on the single-box global lock, which it holds for the whole batch.
 async function updateAllBoxes() {
   if (state.otaInProgress) return;
-  const targets = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && boxNeedsUpdate(b) && !otaStuck(b));
+  const candidates = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && !otaStuck(b));
+  // Ask every speaker that is NOT behind whether it still has its Spotify
+  // engine, so one that quietly lost it is repaired by this run instead of
+  // being skipped (splitUpdateTargets carries the reasoning). One version read
+  // per speaker; one in deep standby does not answer and is left alone, as a
+  // read must.
+  const rows = [];
+  for (const b of candidates) {
+    const needsUpdate = boxNeedsUpdate(b);
+    let engineMissing = false;
+    if (!needsUpdate) {
+      try {
+        const v = await BoxAgentVersion(b.host, b.port);
+        engineMissing = !!(v && v.goLibrespot === 'missing');
+      } catch { /* asleep or unreachable: leave it untouched */ }
+    }
+    rows.push({ box: b, needsUpdate, engineMissing });
+  }
+  const { updateTargets, engineTargets, targets } = splitUpdateTargets(rows);
   if (targets.length === 0) { showToast(t('updateAll.noneToUpdate')); return; }
+  // Hosts that only need the engine put back, not a whole agent update.
+  const engineOnly = new Set(engineTargets.map(b => b.host));
 
   // Pre-scan for sticks / weak Wi-Fi so the user is warned ONCE up front, not
   // once per speaker (the per-box prompts the single-box path shows).
   const notes = [];
-  for (const b of targets) {
+  for (const b of updateTargets) {
     try {
       const r = await boxFetch(b, '/api/stick/status');
       if (r.ok) { const d = await r.json(); if (d && d.mounted) notes.push(t('updateAll.noteStick', { name: getBoxLabel(b) })); }
@@ -3655,9 +3676,17 @@ async function updateAllBoxes() {
       if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') notes.push(t('updateAll.noteWeakWifi', { name: getBoxLabel(b) }));
     } catch { /* signal unknown: do not block */ }
   }
-  const list = targets.map(b => '• ' + getBoxLabel(b)).join('\n');
-  const body = t('updateAll.confirmBody', { count: targets.length, list }) + (notes.length ? '\n\n' + notes.join('\n') : '');
-  if (!(await confirmWarn(t('updateAll.confirmTitle'), body))) return;
+  const list = updateTargets.map(b => '• ' + getBoxLabel(b)).join('\n');
+  const engineList = engineTargets.map(b => '• ' + getBoxLabel(b)).join('\n');
+  // Two groups with two different promises: the first restarts, the second
+  // normally does not. Saying which is which up front is the difference between
+  // a run the user can predict and one that surprises them.
+  let body = '';
+  if (updateTargets.length) body += t('updateAll.confirmBody', { count: updateTargets.length, list });
+  if (engineTargets.length) body += (body ? '\n\n' : '') + t('updateAll.confirmBodyEngine', { count: engineTargets.length, list: engineList });
+  if (notes.length) body += '\n\n' + notes.join('\n');
+  const confirmTitle = updateTargets.length ? t('updateAll.confirmTitle') : t('updateAll.confirmTitleEngine');
+  if (!(await confirmWarn(confirmTitle, body))) return;
 
   // Hold the single-box global lock for the whole batch: the single-speaker
   // buttons then render "update running" and the SSH "remove stick" banner stays
@@ -3716,6 +3745,10 @@ async function updateAllBoxes() {
   // Route the host-tagged live byte-progress to the right row's bar.
   const offProg = EventsOn('box:update:progress', (p) => {
     if (!p || typeof p !== 'object' || !p.host || p.pct == null || p.pct < 0) return;
+    // An engine-only repair streams its bytes through this same channel, but a
+    // current agent swaps the engine in place and does NOT restart. Its row
+    // therefore only follows the bar and never claims a restart it will not make.
+    if (engineOnly.has(p.host)) { setRow(p.host, { pct: p.pct }); return; }
     // At 100% the binary is on the box and it reboots; its reply is often lost
     // in that reboot, so runBoxUpdate's own 'rebooting' phase does not fire for
     // another ~minute. Flip the row to "restarting" on upload completion so it
@@ -3733,7 +3766,63 @@ async function updateAllBoxes() {
   try { SetOTARunning(true); } catch {}
 
   let uaReportShown = false;
+  // runEngineOnly puts the Spotify engine back on a speaker whose agent is
+  // already current. Nothing else is written to it, and a current agent
+  // hot-swaps the engine the moment it lands, so this normally costs no restart
+  // at all. It still records the target first, like every other speaker in the
+  // run, so a window closed halfway is noticed afterwards instead of looking
+  // like nothing ever happened.
+  const runEngineOnly = async (b) => {
+    setRow(b.host, { phaseText: t('updateAll.phase.engineOnly'), indet: true });
+    let outcome = 'failed';
+    try {
+      RecordUpdateIntent(b.host, b.port, (state.appInfo && state.appInfo.version) || '',
+        b.deviceID || '', getBoxLabel(b), true);
+    } catch {}
+    try {
+      const res = await EnsureSpotifyEngine(b.host, b.port);
+      if (/no embedded engine/i.test(String(res || ''))) {
+        // This app build carries no engine, so there is nothing to deliver.
+        outcome = 'partial';
+        setRow(b.host, { phaseText: t('updateAll.phase.deferred'), pct: 100, barClass: 'ua-defer' });
+      } else {
+        // The same honesty check the update path does: a speaker can lose the
+        // engine again to a reboot right after it was delivered, so confirm it
+        // is really there before the row goes green.
+        let stillMissing = false;
+        try {
+          const fv = await BoxAgentVersion(b.host, b.port);
+          stillMissing = !!(fv && fv.goLibrespot === 'missing');
+        } catch { /* still settling: trust the delivery */ }
+        outcome = stillMissing ? 'partial' : 'done';
+        if (stillMissing) {
+          setRow(b.host, { phaseText: t('updateAll.phase.deferred'), pct: 100, barClass: 'ua-defer' });
+        } else {
+          setRow(b.host, { phaseText: t('updateAll.phase.engineDone'), pct: 100, barClass: 'ua-done' });
+          try { ClearUpdateIntent(b.host, b.port); } catch {}
+        }
+      }
+    } catch (e) {
+      outcome = 'failed';
+      const m = String((e && e.message) || e || '');
+      // A full NAND is not something to retry blindly, so it gets its own row
+      // text instead of a bare "failed"; the speaker's own screen names the
+      // other SoundTouch software eating the space.
+      if (/insufficient nand|no space|507/i.test(m)) {
+        setRow(b.host, { phaseText: t('updateAll.phase.engineTooFull'), barClass: 'ua-failed' });
+      } else {
+        setRow(b.host, { phaseText: t('updateAll.phase.failed'), barClass: 'ua-failed' });
+        if (!uaReportShown) { uaReportShown = true; showUpdateFailureReport(b, 'update-all-engine', String(e)); }
+      }
+      try { console.warn('update all: engine repair failed', b.host, e); } catch {}
+    } finally {
+      const r = rowState.get(b.host); if (r) r.outcome = outcome;
+      renderSummary();
+    }
+  };
+
   const runOne = async (b) => {
+    if (engineOnly.has(b.host)) return runEngineOnly(b);
     setRow(b.host, { phaseText: t('updateAll.phase.uploading'), indet: true });
     let outcome = 'failed';
     try {

@@ -140,6 +140,30 @@ export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, fres
 // showed elapsed seconds that jumped 3-6s at a time (the value was
 // updated once per polling cycle, which is uneven), confusing users
 // who could not tell how much wait was left.
+// splitUpdateTargets decides who takes part in an "update all" run.
+//
+// A speaker that is behind gets the full update. A speaker that is already
+// current is NOT dropped when its Spotify engine is missing: the engine is the
+// other half of what an update delivers, and a speaker that lost it (tight NAND
+// freed for the agent, or an update cut short at the restart) used to be left
+// out of the whole-house run entirely, so the only way back was to open that one
+// speaker and press its own button (Jens, 2026-07-29). The two groups are kept
+// apart because they promise different things: the first restarts, the second
+// normally does not.
+//
+// rows: [{ box, needsUpdate, engineMissing }]. A speaker that could not be asked
+// (asleep, unreachable) carries engineMissing false and is simply left alone.
+export function splitUpdateTargets(rows) {
+  const updateTargets = [];
+  const engineTargets = [];
+  for (const r of rows || []) {
+    if (!r || !r.box) continue;
+    if (r.needsUpdate) updateTargets.push(r.box);
+    else if (r.engineMissing) engineTargets.push(r.box);
+  }
+  return { updateTargets, engineTargets, targets: updateTargets.concat(engineTargets) };
+}
+
 export function formatRemaining(ms) {
   const total = Math.max(0, Math.ceil(ms / 1000));
   const m = Math.floor(total / 60);
