@@ -742,7 +742,13 @@ type gabboFrame struct {
 		Inner string `xml:",innerxml"`
 	} `xml:"powerStateUpdated"`
 	VolumeUpdated *struct{} `xml:"volumeUpdated"`
-	UserActivity  *struct{} `xml:"userActivityUpdate"`
+	// BassUpdated is the same shape for the bass control. Turning the bass knob
+	// on the speaker or its remote emits a burst of these, and until now every
+	// one was logged as an unrecognized frame: seven in 400 ms filled a field
+	// log while the real point, that this IS identifiable user activity, was
+	// lost (ST30 bundle, 2026-07-29).
+	BassUpdated  *struct{} `xml:"bassUpdated"`
+	UserActivity *struct{} `xml:"userActivityUpdate"`
 
 	// PresetsUpdated carries the box's full preset list when it changes; the
 	// landing spot for preset sync from the box (#14).
@@ -1123,6 +1129,12 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			c.lastSignalAt = time.Now()
 			c.mu.Unlock()
 		}
+	case f.BassUpdated != nil:
+		// Same reasoning as volume: a bass change is a person at the speaker, so
+		// it explains the userActivity ping that arrives with it and must not be
+		// mistaken for a thumb press.
+		known = true
+		c.noteExplainedActivity()
 	case f.VolumeUpdated != nil:
 		// A volume change is identifiable activity: the box emits a
 		// userActivityUpdate alongside it, so mark this as "explained" and the
