@@ -142,6 +142,7 @@
   "library.loading": "Recherche de serveurs musicaux et de dossiers...",
   "library.noServers": "Aucun serveur musical trouvé sur le réseau. Vérifiez que votre FRITZ!Box, NAS ou autre serveur DLNA est allumé et accessible.",
   "library.pickServer": "Choisissez un serveur musical ci-dessus pour commencer à parcourir.",
+  "library.chooseServer": "Choisir un serveur de musique …",
   "library.root": "Racine",
   "library.emptyFolder": "Ce dossier est vide.",
   "library.play": "Lire",

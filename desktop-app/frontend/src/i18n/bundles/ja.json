@@ -142,6 +142,7 @@
   "library.loading": "音楽サーバーとフォルダーを検索中...",
   "library.noServers": "ネットワーク上に音楽サーバーが見つかりません。FRITZ!Box、NAS、その他のDLNAサーバーの電源が入り、接続可能か確認してください。",
   "library.pickServer": "上から音楽サーバーを選ぶと参照を開始します。",
+  "library.chooseServer": "ミュージックサーバーを選択 …",
   "library.root": "ルート",
   "library.emptyFolder": "このフォルダーは空です。",
   "library.play": "再生",

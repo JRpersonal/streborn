@@ -1905,6 +1905,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 // #197 vector the hardware verifies were already guarded against).
 func (s *Server) verifyRecall(gen uint64, started time.Time, expectedLocation string, retry func(ctx context.Context, lastAttempt bool), working func() bool) {
 	const attempts = 3
+	nudged := false
 	for attempt := 1; attempt <= attempts; attempt++ {
 		time.Sleep(5 * time.Second)
 		if reason := s.recallStandDownReason(gen, started); reason != "" {
@@ -1941,6 +1942,25 @@ func (s *Server) verifyRecall(gen uint64, started time.Time, expectedLocation st
 				"attempt", attempt, "expected", expectedLocation, "playing", location)
 		} else {
 			s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
+		}
+		// Last resort before the final re-push: a box parked in INVALID_SOURCE
+		// that has fetched nothing since we pushed is not "starting slowly", it
+		// is the dead-source state, and re-pushing into it has already failed
+		// twice. The hardware-key path has had this escalation for a while; a
+		// play started from the app or the phone had none, so a Wave in this
+		// state answered every single request with silence until its owner
+		// pulled the plug (2026-07-28: seven plays, not one stream fetch, no
+		// escalation anywhere in the log).
+		//
+		// The guard is deliberately narrow, because `sys power` is a TOGGLE and
+		// sending it to a healthy box switches it OFF: only on the last attempt,
+		// only once, only while the box reports exactly INVALID_SOURCE (no source
+		// selected, so there is no playback to interrupt), and only when the
+		// stream proxy has served nothing since this recall started.
+		if attempt == attempts && !nudged && s.recallBoxInert(started) {
+			nudged = true
+			s.logger.Warn("recall verify: box sits in INVALID_SOURCE and fetched nothing since the push; sending one power nudge before the final retry")
+			s.nudgeDeadSource()
 		}
 		// Serialize the re-push with every other box command: the Bose
 		// firmware mishandles concurrent writes (see boxCmdMu), and a retry
@@ -3432,6 +3452,35 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 	}()
 }
 
+// recallBoxInert reports the one state a power nudge is right for: the box says
+// INVALID_SOURCE, i.e. it has no source selected at all, and the stream proxy
+// has served nothing since this recall began. Anything else, including a box
+// that is merely slow or genuinely in STANDBY, must be left alone.
+func (s *Server) recallBoxInert(started time.Time) bool {
+	if s.boxSourceNow() != "INVALID_SOURCE" {
+		return false
+	}
+	if s.streamActivityFn == nil {
+		return false // no evidence available: never nudge on a guess
+	}
+	fetch, _ := s.streamActivityFn()
+	return fetch.Before(started)
+}
+
+// nudgeDeadSource sends a single `sys power` toggle to shake a box out of the
+// dead-source state. Bounded and fire-and-forget: the caller re-pushes right
+// after, and a nudge that does nothing costs one CLI call.
+func (s *Server) nudgeDeadSource() {
+	if s.boxHost == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if err := boxcli.PowerOn(ctx, s.boxHost); err != nil {
+		s.logger.Warn("recall verify: power nudge failed", "err", err)
+	}
+}
+
 // boxSourceNow reads the box's current source attribute ("" on any error).
 // Used by the spontaneous-off recovery to tell "the firmware dropped the
 // source while the box stayed awake" (recoverable right now) from "the box is
@@ -4072,6 +4121,11 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 		}
 	} else {
 		out["goLibrespot"] = "missing"
+		if engineDroppedForUpdate() {
+			// Not "never installed": this speaker HAD the engine and it was
+			// deleted to fit an agent update. The app re-delivers on sight.
+			out["goLibrespotDroppedForUpdate"] = "true"
+		}
 	}
 	// Advertise that this agent hot-swaps the Spotify engine live: it restarts
 	// go-librespot in place right after a sidecar OTA write, so a freshly
@@ -4210,6 +4264,33 @@ func agentBinaryStamp() string {
 // desktop OTA writes it here too. Kept in lock-step with cmd/agent's
 // goLibrespotPath and usb-stick/run.sh's NAND copy.
 const goLibrespotBinPath = "/mnt/nv/streborn/bin/go-librespot"
+
+// engineDroppedMarkerPath records that the Spotify engine was deleted to make
+// room for an agent update, as opposed to never having been installed.
+//
+// The two look identical from outside (goLibrespot="missing"), and the
+// difference decides whether anything should act: an engine that was dropped
+// FOR an update is expected back, and if the app is closed before its post-OTA
+// re-delivery finishes, nothing ever notices and the speaker silently loses
+// Spotify for good. That is the shape of repeated field reports. With the
+// marker the speaker can say "mine was taken away, please send it again", and
+// it survives the reboot because it lives on NAND next to the binary.
+const engineDroppedMarkerPath = "/mnt/nv/streborn/engine-dropped-for-update"
+
+// noteEngineDroppedForUpdate / clearEngineDroppedMarker maintain that marker.
+// Both are best effort: the marker is a hint, never a gate.
+func noteEngineDroppedForUpdate() {
+	_ = os.WriteFile(engineDroppedMarkerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
+}
+
+func clearEngineDroppedMarker() {
+	_ = os.Remove(engineDroppedMarkerPath)
+}
+
+func engineDroppedForUpdate() bool {
+	_, err := os.Stat(engineDroppedMarkerPath)
+	return err == nil
+}
 
 // goLibrespotStamp reports whether the go-librespot sidecar is deployed
 // (>1 KB, i.e. a real binary not an empty stub) and the hex SHA256 of its
@@ -5174,6 +5255,7 @@ func reclaimSpotifyEngine() string {
 	err := os.Remove(goLibrespotBinPath)
 	switch {
 	case err == nil:
+		noteEngineDroppedForUpdate()
 		return "engine dropped"
 	case os.IsNotExist(err):
 		return "engine absent"
@@ -5230,6 +5312,9 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 	// 2026-07-12: "delivered" 09:18:51, gone after the 09:19 reboot, re-pushed
 	// 09:22:50 — which then wedged the box).
 	_ = exec.Command("sync").Run()
+	// The engine is back, so the "it was taken away for an update" marker has
+	// served its purpose. Clearing it stops the app from re-delivering forever.
+	clearEngineDroppedMarker()
 	s.logger.Info("go-librespot sidecar written via OTA", "size", len(body))
 	// Activate the freshly delivered engine live: restart the supervised
 	// go-librespot so it re-execs the new binary, with no box reboot. A first-time

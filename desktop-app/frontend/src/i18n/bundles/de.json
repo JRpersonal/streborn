@@ -149,6 +149,7 @@
   "library.loading": "Suche Musikserver und Ordner...",
   "library.noServers": "Kein Musikserver im LAN gefunden. Prüfe, ob deine FRITZ!Box, dein NAS oder ein anderer DLNA-Server eingeschaltet und erreichbar ist.",
   "library.pickServer": "Wähle oben einen Musikserver, um loszulegen.",
+  "library.chooseServer": "Musikserver auswählen …",
   "library.root": "Anfang",
   "library.emptyFolder": "Dieser Ordner ist leer.",
   "library.play": "Abspielen",

@@ -142,6 +142,7 @@
   "library.loading": "Tiek meklēti mūzikas serveri un mapes...",
   "library.noServers": "Tīklā nav atrasts mūzikas serveris. Pārliecinieties, ka FRITZ!Box, NAS vai cits DLNA serveris ir ieslēgts un pieejams.",
   "library.pickServer": "Atlasiet mūzikas serveri augšpusē, lai sāktu.",
+  "library.chooseServer": "Izvēlies mūzikas serveri …",
   "library.root": "Saknes mape",
   "library.emptyFolder": "Šī mape ir tukša.",
   "library.play": "Atskaņot",

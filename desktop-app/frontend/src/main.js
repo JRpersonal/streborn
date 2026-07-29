@@ -2642,6 +2642,38 @@ function foreignSoftwareLabel(v) {
 // silent background self-heal: a box does not free NAND on its own, so a silent
 // retry was pointless and hid the real cause. If the box is too full, we name
 // the OTHER SoundTouch software eating the space so the user knows what to
+// reclaimedEngineTried remembers which speakers we already offered the engine
+// back to in this session, so a speaker that keeps refusing (no space) is not
+// hammered on every poll.
+const reclaimedEngineTried = new Set();
+
+// restoreReclaimedEngine gives a speaker its Spotify engine back when the
+// speaker itself reports that the engine was DELETED to make room for an agent
+// update, rather than never installed.
+//
+// This closes the case where the engine simply stayed gone: the update flow
+// re-delivers it after the reboot, but only while the app is still open on that
+// flow. Close the app during the reboot, or update from another machine, and
+// nothing ever came back for it. The speaker now carries that fact across the
+// reboot, so any app that sees the speaker can finish the job.
+async function restoreReclaimedEngine(box) {
+  if (!box || !box.host || box.kind === 'stock') return;
+  const key = box.host + ':' + box.port;
+  if (reclaimedEngineTried.has(key)) return;
+  if (state.otaInFlight) return; // the update flow owns the engine while it runs
+  let ver;
+  try { ver = await BoxAgentVersion(box.host, box.port); } catch { return; }
+  if (!ver || ver.goLibrespotDroppedForUpdate !== 'true') return;
+  reclaimedEngineTried.add(key);
+  try {
+    await EnsureSpotifyEngine(box.host, box.port);
+    showToast(t('update.spotifyDoneToast'));
+  } catch {
+    // No space, or the speaker is busy. The speaker keeps its marker, so the
+    // next app session tries again.
+  }
+}
+
 // remove; otherwise we confirm success. Re-renders the banner afterwards.
 async function installSpotifyEngineVisible(box) {
   if (!box || !box.host) return;
@@ -2666,6 +2698,10 @@ async function installSpotifyEngineVisible(box) {
 
 async function checkBoxUpdate() {
   if (!state.currentBox || !state.appInfo) return;
+  // Piggy-back the engine recovery on a check that already runs whenever a
+  // speaker is looked at; it costs one version read and only acts on a speaker
+  // that says its engine was taken away for an update.
+  restoreReclaimedEngine(state.currentBox);
   const banner = $('boxUpdateBanner');
   // The speaker-update banner moved out of the music view into Speaker
   // Settings (rendered prominently at the top by loadBoxSettings for the

@@ -142,6 +142,7 @@
   "library.loading": "Zoeken naar muziekservers en mappen...",
   "library.noServers": "Geen muziekserver gevonden op het netwerk. Zorg dat je FRITZ!Box, NAS of andere DLNA-server aanstaat en bereikbaar is.",
   "library.pickServer": "Kies hierboven een muziekserver om te beginnen.",
+  "library.chooseServer": "Kies een muziekserver …",
   "library.root": "Hoofdmap",
   "library.emptyFolder": "Deze map is leeg.",
   "library.play": "Afspelen",

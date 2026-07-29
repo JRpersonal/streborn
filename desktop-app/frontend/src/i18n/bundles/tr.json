@@ -142,6 +142,7 @@
   "library.loading": "Müzik sunucuları ve klasörler aranıyor...",
   "library.noServers": "Ağda müzik sunucusu bulunamadı. FRITZ!Box, NAS veya başka bir DLNA sunucusunun açık ve erişilebilir olduğundan emin olun.",
   "library.pickServer": "Başlamak için yukarıdan bir müzik sunucusu seçin.",
+  "library.chooseServer": "Bir müzik sunucusu seç …",
   "library.root": "Kök klasör",
   "library.emptyFolder": "Bu klasör boş.",
   "library.play": "Çal",
