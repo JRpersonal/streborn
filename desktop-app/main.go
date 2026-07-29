@@ -84,6 +84,12 @@ func main() {
 			WebviewUserDataPath: webviewDataDir(),
 		},
 		OnStartup: app.startup,
+		// Refuse to close while an update is running. A binary only reaches a
+		// speaker while this flow is on screen (standing rule, 2026-07-29: no
+		// background delivery, ever), so closing the window mid-update is the one
+		// way to leave a speaker half-finished, and it used to happen silently.
+		// The user can still close, they are just told what it costs first.
+		OnBeforeClose: app.beforeClose,
 		// Single-instance guard. Two running app instances would each poll
 		// the speaker, doubling (or worse) the request rate the Bose
 		// firmware app already struggles with. The UniqueId is a FIXED
