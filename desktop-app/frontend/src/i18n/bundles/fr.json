@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "Enceinte de gauche",
   "multiroom.stereoRight": "Enceinte de droite",
   "multiroom.stereoCreateBtn": "Créer une paire stéréo (expérimental)",
+  "multiroom.stereoDissolveBtn": "Défaire la paire stéréo",
   "multiroom.stereoSamePicked": "Choisis deux enceintes différentes pour la gauche et la droite.",
   "multiroom.stereoFormed": "Paire stéréo créée. Patientez quelques secondes. Si une enceinte reste muette ou si les deux jouent le même canal, envoie-moi les journaux.",
   "multiroom.pickHint": "Choisis l'enceinte principale (l'étoile), puis touche les autres pour les ajouter au groupe.",

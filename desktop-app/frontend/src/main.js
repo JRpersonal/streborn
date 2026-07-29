@@ -2130,6 +2130,11 @@ function renderBoxSelect() {
   }
   wireManualIp('listIpInput', 'listAddIpBtn');
   sel.querySelectorAll('.box-btn').forEach(btn => {
+    // The "add by IP" tile shares the .box-btn look but is not a speaker.
+    // Without this it got the speaker handler assigned over its own, and
+    // since it carries no host the handler found nothing and returned in
+    // silence: the tile simply did not react to a click (live 2026-07-29).
+    if (btn.classList.contains('box-add-ip')) return;
     btn.onclick = async (e) => {
       // A click on the gear icon opens the settings view rather than
       // selecting the speaker.

@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "Linkerspeaker",
   "multiroom.stereoRight": "Rechterspeaker",
   "multiroom.stereoCreateBtn": "Stereopaar maken (experimenteel)",
+  "multiroom.stereoDissolveBtn": "Stereopaar opheffen",
   "multiroom.stereoSamePicked": "Kies twee verschillende speakers voor links en rechts.",
   "multiroom.stereoFormed": "Stereopaar gemaakt. Geef het een paar seconden. Als een speaker stil blijft of beide hetzelfde kanaal afspelen, stuur dan de logs.",
   "multiroom.pickHint": "Kies de hoofdspeaker (de ster) en tik daarna de andere aan om ze aan de groep toe te voegen.",

@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "السمّاعة اليسرى",
   "multiroom.stereoRight": "السمّاعة اليمنى",
   "multiroom.stereoCreateBtn": "إنشاء اقتران استريو (تجريبي)",
+  "multiroom.stereoDissolveBtn": "إلغاء الزوج الستيريو",
   "multiroom.stereoSamePicked": "اختر سمّاعتين مختلفتين لليسار واليمين.",
   "multiroom.stereoFormed": "تم إنشاء الاقتران الاستريو. أمهله بضع ثوانٍ. إذا بقيت سمّاعة صامتة أو شغّلت كلتاهما القناة نفسها، فأرسل السجلات.",
   "multiroom.pickHint": "اختر السمّاعة الرئيسية (النجمة)، ثم انقر على البقية لإضافتها إلى المجموعة.",

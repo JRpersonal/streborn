@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "Kreisais skaļrunis",
   "multiroom.stereoRight": "Labais skaļrunis",
   "multiroom.stereoCreateBtn": "Izveidot stereo pāri (eksperimentāli)",
+  "multiroom.stereoDissolveBtn": "Atsaist stēreo pāri",
   "multiroom.stereoSamePicked": "Kreisajam un labajam izvēlieties divus dažādus skaļruņus.",
   "multiroom.stereoFormed": "Stereo pāris izveidots. Dodiet tam dažas sekundes. Ja kāds skaļrunis paliek kluss vai abi atskaņo to pašu kanālu, atsūtiet žurnālus.",
   "multiroom.pickHint": "Izvēlieties galveno skaļruni (zvaigznīte), pēc tam pieskarieties pārējiem, lai pievienotu tos grupai.",

@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "Sol hoparlör",
   "multiroom.stereoRight": "Sağ hoparlör",
   "multiroom.stereoCreateBtn": "Stereo çift oluştur (deneysel)",
+  "multiroom.stereoDissolveBtn": "Stereo çifti çöz",
   "multiroom.stereoSamePicked": "Sol ve sağ için iki farklı hoparlör seçin.",
   "multiroom.stereoFormed": "Stereo çift oluşturuldu. Birkaç saniye verin. Bir hoparlör sessiz kalırsa ya da ikisi de aynı kanalı çalarsa, günlükleri gönderin.",
   "multiroom.pickHint": "Ana hoparlörü seçin (yıldız), sonra gruba eklemek için diğerlerine dokunun.",

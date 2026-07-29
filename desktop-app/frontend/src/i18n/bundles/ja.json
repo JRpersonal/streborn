@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "左のスピーカー",
   "multiroom.stereoRight": "右のスピーカー",
   "multiroom.stereoCreateBtn": "ステレオペアを作成 (実験的)",
+  "multiroom.stereoDissolveBtn": "ステレオペアを解除",
   "multiroom.stereoSamePicked": "左と右に別々のスピーカーを選んでください。",
   "multiroom.stereoFormed": "ステレオペアを作成しました。数秒お待ちください。一方のスピーカーが無音だったり、両方が同じチャンネルを再生する場合は、ログを送ってください。",
   "multiroom.pickHint": "メインのスピーカー (星印) を選び、ほかのスピーカーをタップしてグループに追加します。",

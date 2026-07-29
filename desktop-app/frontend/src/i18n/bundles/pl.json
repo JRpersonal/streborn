@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "Lewy głośnik",
   "multiroom.stereoRight": "Prawy głośnik",
   "multiroom.stereoCreateBtn": "Utwórz parę stereo (eksperymentalne)",
+  "multiroom.stereoDissolveBtn": "Rozłącz parę stereo",
   "multiroom.stereoSamePicked": "Wybierz dwa różne głośniki dla lewego i prawego.",
   "multiroom.stereoFormed": "Para stereo utworzona. Daj jej kilka sekund. Jeśli głośnik milczy albo oba odtwarzają ten sam kanał, prześlij logi.",
   "multiroom.pickHint": "Wybierz główny głośnik (gwiazdka), a potem dotknij pozostałe, aby dodać je do grupy.",

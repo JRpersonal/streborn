@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "Altavoz izquierdo",
   "multiroom.stereoRight": "Altavoz derecho",
   "multiroom.stereoCreateBtn": "Crear par estéreo (experimental)",
+  "multiroom.stereoDissolveBtn": "Deshacer el par estéreo",
   "multiroom.stereoSamePicked": "Elige dos altavoces distintos para izquierda y derecha.",
   "multiroom.stereoFormed": "Par estéreo creado. Dale unos segundos. Si un altavoz se queda en silencio o ambos reproducen el mismo canal, envía los registros.",
   "multiroom.pickHint": "Elige el altavoz principal (la estrella) y luego toca los demás para añadirlos al grupo.",

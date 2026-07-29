@@ -148,7 +148,10 @@ export function renderMultiroom(fetchLive) {
          <select id="stereoLeft"${pairDis}>${pairOpts(0)}</select></label>
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoRight'))}</span>
          <select id="stereoRight"${pairDis}>${pairOpts(1)}</select></label>
-       <div class="zone-actions"><button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button></div>
+       <div class="zone-actions">
+         <button id="stereoCreate" class="btn"${pairDis}>${escapeHtml(t('multiroom.stereoCreateBtn'))}</button>
+         <button id="stereoDissolve" class="btn btn-mini"${pairDis}>${escapeHtml(t('multiroom.stereoDissolveBtn'))}</button>
+       </div>
        <div id="stereoResult">${state.stereoMsg || ''}</div>
      </div>`;
 
@@ -190,6 +193,11 @@ export function renderMultiroom(fetchLive) {
   }
   if (canPair) {
     $('stereoCreate').onclick = () => doFormStereo(pairCands);
+    // A pair could be created but never undone: the button to make one sat
+    // right there while its counterpart did not exist, so the only way out
+    // was the old Bose app (discussion #499). Dissolving is the operation
+    // the zone section already offers, applied to the speakers chosen above.
+    $('stereoDissolve').onclick = () => doDissolveZone(pairCands);
   }
 
   // Live status: parallel, non-blocking, after paint. Never blocks the tab.

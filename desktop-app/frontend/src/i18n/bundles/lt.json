@@ -99,6 +99,7 @@
   "multiroom.stereoLeft": "Kairysis garsiakalbis",
   "multiroom.stereoRight": "Dešinysis garsiakalbis",
   "multiroom.stereoCreateBtn": "Sukurti stereo porą (eksperimentinė)",
+  "multiroom.stereoDissolveBtn": "Išardyti stereo porą",
   "multiroom.stereoSamePicked": "Kairei ir dešinei pasirinkite du skirtingus garsiakalbius.",
   "multiroom.stereoFormed": "Stereo pora sukurta. Palaukite kelias sekundes. Jei garsiakalbis tyli arba abu groja tą patį kanalą, atsiųskite žurnalus.",
   "multiroom.pickHint": "Pasirinkite pagrindinį garsiakalbį (žvaigždutė), tada bakstelėkite kitus, kad pridėtumėte juos į grupę.",
