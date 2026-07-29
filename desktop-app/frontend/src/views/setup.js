@@ -1900,7 +1900,12 @@ async function verifyInstalledState(box, onState) {
       version: (live && live.version) || '', engine: (live && live.goLibrespot) || 'unknown' });
     if (live && live.goLibrespot === 'present') return { ok: true, version: live };
     if (live && live.goLibrespot === 'missing') {
-      try { await EnsureSpotifyEngine(box.host, box.port || 0); } catch (e) {
+      try {
+        const r = await EnsureSpotifyEngine(box.host, box.port || 0);
+        // Nothing to deliver in this build: the speaker is as finished as it
+        // can get, so do not wait out the window for an impossibility.
+        if (r && /no embedded engine/i.test(r)) return { ok: true, version: live };
+      } catch (e) {
         const m = String((e && e.message) || e || '');
         // Too full to ever fit: retrying cannot help, only freeing space can.
         if (/insufficient nand|no space|507/i.test(m)) return { ok: false, reason: m };

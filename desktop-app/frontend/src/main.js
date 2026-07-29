@@ -3078,7 +3078,13 @@ async function runBoxUpdate(box, onPhase) {
       }
       await waitForStableAgent(box, engDeadlineMs);
       try {
-        await EnsureSpotifyEngine(box.host, box.port);
+        const engRes = await EnsureSpotifyEngine(box.host, box.port);
+        // A build that carries no engine cannot deliver one, so waiting the
+        // full window would only burn ten minutes to reach the same answer.
+        if (engRes && /no embedded engine/i.test(engRes)) {
+          try { ClearUpdateIntent(box.host, box.port); } catch {}
+          return { outcome: 'done', version: live || confirmedVer };
+        }
         // Do not take the delivery's word for it. The update may only be
         // called finished when the speaker itself reports the state it was
         // supposed to end up in.
