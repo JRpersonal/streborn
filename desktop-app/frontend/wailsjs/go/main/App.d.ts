@@ -37,6 +37,8 @@ export function ClassifyOTAResult(arg1:string,arg2:number):Promise<string>;
 
 export function ClearRecent(arg1:string,arg2:number):Promise<void>;
 
+export function ClearUpdateIntent(arg1:string,arg2:number):Promise<void>;
+
 export function CopyPresetsAcrossBoxes(arg1:string,arg2:number,arg3:string,arg4:number):Promise<number>;
 
 export function CurrentWiFi():Promise<string>;
@@ -103,6 +105,8 @@ export function Next(arg1:string,arg2:number):Promise<void>;
 
 export function Pause(arg1:string,arg2:number):Promise<void>;
 
+export function PendingUpdateIntent(arg1:string,arg2:number):Promise<Record<string, string>>;
+
 export function PhoneQR(arg1:string):Promise<string>;
 
 export function PlaySlot(arg1:string,arg2:number,arg3:number):Promise<void>;
@@ -144,6 +148,8 @@ export function RecallBoxPreset(arg1:string,arg2:number,arg3:number):Promise<voi
 export function RecentPlayed(arg1:string,arg2:number):Promise<Array<main.RecentItem>>;
 
 export function RecordOTAOutcome(arg1:string,arg2:string):Promise<void>;
+
+export function RecordUpdateIntent(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string,arg6:boolean):Promise<void>;
 
 export function RefreshKnownBoxes():Promise<Array<main.BoxInfo>>;
 
@@ -197,6 +203,8 @@ export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number
 
 export function SetDisplayTrack(arg1:string,arg2:number,arg3:boolean,arg4:string):Promise<void>;
 
+export function SetOTARunning(arg1:boolean):Promise<void>;
+
 export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string,arg9:string):Promise<void>;
 
 export function SetResumeOnPowerOn(arg1:string,arg2:number,arg3:boolean):Promise<void>;
@@ -242,6 +250,8 @@ export function TryWiFiPassword(arg1:string):Promise<string>;
 export function UninstallSTR(arg1:string):Promise<main.UninstallSTRResult>;
 
 export function UpdateBoxAgent(arg1:string,arg2:number):Promise<void>;
+
+export function UpdateFailureReport(arg1:string,arg2:number,arg3:string,arg4:string,arg5:string):Promise<string>;
 
 export function VoteStation(arg1:string,arg2:number,arg3:string):Promise<void>;
 

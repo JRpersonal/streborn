@@ -66,6 +66,10 @@ export function ClearRecent(arg1, arg2) {
   return window['go']['main']['App']['ClearRecent'](arg1, arg2);
 }
 
+export function ClearUpdateIntent(arg1, arg2) {
+  return window['go']['main']['App']['ClearUpdateIntent'](arg1, arg2);
+}
+
 export function CopyPresetsAcrossBoxes(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['CopyPresetsAcrossBoxes'](arg1, arg2, arg3, arg4);
 }
@@ -198,6 +202,10 @@ export function Pause(arg1, arg2) {
   return window['go']['main']['App']['Pause'](arg1, arg2);
 }
 
+export function PendingUpdateIntent(arg1, arg2) {
+  return window['go']['main']['App']['PendingUpdateIntent'](arg1, arg2);
+}
+
 export function PhoneQR(arg1) {
   return window['go']['main']['App']['PhoneQR'](arg1);
 }
@@ -280,6 +288,10 @@ export function RecentPlayed(arg1, arg2) {
 
 export function RecordOTAOutcome(arg1, arg2) {
   return window['go']['main']['App']['RecordOTAOutcome'](arg1, arg2);
+}
+
+export function RecordUpdateIntent(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['RecordUpdateIntent'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function RefreshKnownBoxes() {
@@ -386,6 +398,10 @@ export function SetDisplayTrack(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SetDisplayTrack'](arg1, arg2, arg3, arg4);
 }
 
+export function SetOTARunning(arg1) {
+  return window['go']['main']['App']['SetOTARunning'](arg1);
+}
+
 export function SetPreset(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) {
   return window['go']['main']['App']['SetPreset'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
 }
@@ -476,6 +492,10 @@ export function UninstallSTR(arg1) {
 
 export function UpdateBoxAgent(arg1, arg2) {
   return window['go']['main']['App']['UpdateBoxAgent'](arg1, arg2);
+}
+
+export function UpdateFailureReport(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['UpdateFailureReport'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function VoteStation(arg1, arg2, arg3) {

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -74,4 +75,26 @@ func capOTAJournal(path string) {
 		}
 	}
 	_ = os.WriteFile(path, tail, 0o644)
+}
+
+// otaHistoryTail returns the last n journal lines for one speaker, for the
+// copyable failure report. Best effort: an unreadable journal simply yields an
+// empty section rather than failing the report the user is trying to send.
+func (a *App) otaHistoryTail(host string, n int) string {
+	otaJournalMu.Lock()
+	b, err := os.ReadFile(otaJournalPath())
+	otaJournalMu.Unlock()
+	if err != nil {
+		return ""
+	}
+	var keep []string
+	for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		if strings.Contains(line, "host="+host+" ") {
+			keep = append(keep, line)
+		}
+	}
+	if len(keep) > n {
+		keep = keep[len(keep)-n:]
+	}
+	return strings.Join(keep, "\n")
 }

@@ -10,6 +10,11 @@ import {
   PlayURL,
   VoteStation,
   RebootBox,
+  RecordUpdateIntent,
+  UpdateFailureReport,
+  SetOTARunning,
+  ClearUpdateIntent,
+  PendingUpdateIntent,
   TrackPosition,
   SyncBoxPresets,
   BoxPresets,
@@ -2642,36 +2647,32 @@ function foreignSoftwareLabel(v) {
 // silent background self-heal: a box does not free NAND on its own, so a silent
 // retry was pointless and hid the real cause. If the box is too full, we name
 // the OTHER SoundTouch software eating the space so the user knows what to
-// reclaimedEngineTried remembers which speakers we already offered the engine
-// back to in this session, so a speaker that keeps refusing (no space) is not
-// hammered on every poll.
-const reclaimedEngineTried = new Set();
-
-// restoreReclaimedEngine gives a speaker its Spotify engine back when the
-// speaker itself reports that the engine was DELETED to make room for an agent
-// update, rather than never installed.
+// superviseUpdateIntent reports an update that never reached its goal. It does
+// NOT act.
 //
-// This closes the case where the engine simply stayed gone: the update flow
-// re-delivers it after the reboot, but only while the app is still open on that
-// flow. Close the app during the reboot, or update from another machine, and
-// nothing ever came back for it. The speaker now carries that fact across the
-// reboot, so any app that sees the speaker can finish the job.
-async function restoreReclaimedEngine(box) {
+// Standing rule (Jens, 2026-07-29): a binary reaches a speaker only while an
+// install or update is running, never from a background task. Anything that
+// quietly pushed files onto speakers on its own is gone, because a speaker that
+// rewrites itself when nobody asked is worse than one that is plainly out of
+// date: the user cannot predict it, cannot see it, and cannot stop it.
+//
+// So all that is left of the old repair is telling the truth. The target was
+// written down when the update started, and if the speaker never got there, the
+// user is told once and decides.
+const supervisedIntent = new Set();
+
+async function superviseUpdateIntent(box) {
   if (!box || !box.host || box.kind === 'stock') return;
+  if (state.otaInProgress) return;
   const key = box.host + ':' + box.port;
-  if (reclaimedEngineTried.has(key)) return;
-  if (state.otaInFlight) return; // the update flow owns the engine while it runs
-  let ver;
-  try { ver = await BoxAgentVersion(box.host, box.port); } catch { return; }
-  if (!ver || ver.goLibrespotDroppedForUpdate !== 'true') return;
-  reclaimedEngineTried.add(key);
-  try {
-    await EnsureSpotifyEngine(box.host, box.port);
-    showToast(t('update.spotifyDoneToast'));
-  } catch {
-    // No space, or the speaker is busy. The speaker keeps its marker, so the
-    // next app session tries again.
-  }
+  if (supervisedIntent.has(key)) return;
+  let pending;
+  try { pending = await PendingUpdateIntent(box.host, box.port); } catch { return; }
+  if (!pending || !pending.action) return;
+  supervisedIntent.add(key);
+  // One line, once per speaker per session, pointing at the button the user
+  // would press anyway. No push, no reboot, no surprise.
+  showToast(t('update.leftUnfinished', { name: pending.name || getBoxLabel(box) }));
 }
 
 // remove; otherwise we confirm success. Re-renders the banner afterwards.
@@ -2701,7 +2702,7 @@ async function checkBoxUpdate() {
   // Piggy-back the engine recovery on a check that already runs whenever a
   // speaker is looked at; it costs one version read and only acts on a speaker
   // that says its engine was taken away for an update.
-  restoreReclaimedEngine(state.currentBox);
+  superviseUpdateIntent(state.currentBox);
   const banner = $('boxUpdateBanner');
   // The speaker-update banner moved out of the music view into Speaker
   // Settings (rendered prominently at the top by loadBoxSettings for the
@@ -3056,11 +3057,37 @@ async function runBoxUpdate(box, onPhase) {
     let attempt = 0;
     while (Date.now() < engDeadlineMs) {
       attempt++;
-      phase('spotify', { attempt, remainingMs: engDeadlineMs - Date.now() });
+      // Report the live state on every pass, not just "attempt 3": the user
+      // is being asked to wait, so they get to see WHAT is being waited for,
+      // whether the speaker is answering at all, which build it runs and
+      // whether the engine is there yet.
+      let live = null;
+      try { live = await BoxAgentVersion(box.host, box.port); } catch {}
+      phase('spotify', {
+        attempt,
+        remainingMs: engDeadlineMs - Date.now(),
+        reachable: !!live,
+        version: (live && live.version) || '',
+        engine: (live && live.goLibrespot) || 'unknown',
+      });
+      // Already in the target state (another pass landed it, or the agent
+      // hot-swapped it in): nothing left to do.
+      if (live && live.goLibrespot === 'present') {
+        try { ClearUpdateIntent(box.host, box.port); } catch {}
+        return { outcome: 'done', version: live };
+      }
       await waitForStableAgent(box, engDeadlineMs);
       try {
         await EnsureSpotifyEngine(box.host, box.port);
-        return { outcome: 'done', version: confirmedVer };
+        // Do not take the delivery's word for it. The update may only be
+        // called finished when the speaker itself reports the state it was
+        // supposed to end up in.
+        const check = await BoxAgentVersion(box.host, box.port).catch(() => null);
+        if (check && check.goLibrespot === 'present') {
+          try { ClearUpdateIntent(box.host, box.port); } catch {}
+          return { outcome: 'done', version: check };
+        }
+        continue; // delivered but not visible yet: stay in the loop
       } catch (engErr) {
         const m = String((engErr && engErr.message) || engErr || '');
         // Too full even counting the reclaimable old engine: retrying cannot
@@ -3077,9 +3104,61 @@ async function runBoxUpdate(box, onPhase) {
       // just prolongs the settling (#270).
       await sleep(Math.min(30_000, 2_000 * Math.pow(2, attempt - 1)));
     }
-    return { outcome: 'partial', version: confirmedVer };
+    // The agent is on the target build but the engine is not there. The
+    // record stays, so the next time this speaker is seen the app finishes
+    // the job instead of leaving it half-done.
+    return { outcome: 'partial', version: confirmedVer, unmet: 'spotify-engine' };
   }
+  try { ClearUpdateIntent(box.host, box.port); } catch {}
   return { outcome: 'done', version: confirmedVer };
+}
+
+// showUpdateFailureReport offers the user a copyable account of an update that
+// did not reach its goal, gathered while the evidence is still there.
+//
+// A failure the user cannot describe is a failure that gets reported as "it
+// does not work", and by the time anyone asks for a diagnostic the speaker has
+// usually been restarted and the trail is cold. Everything relevant is
+// collected at the moment it happens, shown in full so the user can read it
+// before sending, and copyable in one click.
+async function showUpdateFailureReport(box, phase, errMsg) {
+  if (!box || !box.host) return;
+  let report = '';
+  try {
+    report = await UpdateFailureReport(box.host, box.port, phase, errMsg,
+      (state.appInfo && state.appInfo.version) || '');
+  } catch { return; }
+  if (!report) return;
+  const host = $('updateFailureReport');
+  if (!host) return;
+  host.innerHTML = `
+    <div class="failreport-inner">
+      <div class="failreport-title">${escapeHtml(t('update.reportTitle', { name: getBoxLabel(box) }))}</div>
+      <p class="muted small">${escapeHtml(t('update.reportHelp'))}</p>
+      <textarea class="failreport-text" id="failReportText" readonly rows="14">${escapeHtml(report)}</textarea>
+      <div class="failreport-actions">
+        <button class="btn btn-primary btn-mini" id="failReportCopy">${escapeHtml(t('update.reportCopy'))}</button>
+        <button class="btn btn-mini" id="failReportMail">${escapeHtml(t('update.reportMail'))}</button>
+        <button class="btn btn-secondary btn-mini" id="failReportClose">${escapeHtml(t('common.close'))}</button>
+      </div>
+    </div>`;
+  host.classList.remove('hidden');
+  const ta = $('failReportText');
+  const copy = $('failReportCopy');
+  if (copy) copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(report); }
+    catch { if (ta) { ta.select(); document.execCommand('copy'); } }
+    copy.textContent = t('update.reportCopied');
+  };
+  const mail = $('failReportMail');
+  if (mail) mail.onclick = () => {
+    try {
+      BrowserOpenURL('mailto:str@sichtbar-app.de?subject=' +
+        encodeURIComponent('ST Reborn update failed') + '&body=' + encodeURIComponent(report));
+    } catch {}
+  };
+  const close = $('failReportClose');
+  if (close) close.onclick = () => host.classList.add('hidden');
 }
 
 async function doBoxUpdate(targetBox) {
@@ -3201,6 +3280,17 @@ async function doBoxUpdate(targetBox) {
   // flag BEFORE first setStatus() so checkBoxUpdate() and the
   // setStatus guard both see a consistent (target, in-flight)
   // pair at every point in this flow. Reset together in finally{}.
+  // Write down what this speaker is supposed to end up running BEFORE any of
+  // it happens. From here on the target survives this app process: if the
+  // window is closed during the reboot, or the machine goes to sleep, the
+  // next run compares the speaker against this record and finishes the job.
+  try {
+    RecordUpdateIntent(targetBox.host, targetBox.port, (state.appInfo && state.appInfo.version) || '',
+      targetBox.deviceID || '', getBoxLabel(targetBox), true);
+  } catch {}
+  // Tell the backend an update owns the app now, so the window asks before
+  // closing. Cleared in the finally below.
+  try { SetOTARunning(true); } catch {}
   state.otaTargetHost = targetBox.host;
   state.otaTargetName = getBoxLabel(targetBox);
   // Suppress the SSH "remove stick and reboot" banner for the whole
@@ -3479,12 +3569,17 @@ async function doBoxUpdate(targetBox) {
       showError(boxWasTouched
         ? t('update.failed', { err: msg })
         : t('update.failedNoChange', { err: msg }));
+      // The update could not put this speaker into the state it was meant to
+      // reach, so hand the user everything needed to report it instead of
+      // making them describe a failure they cannot see.
+      showUpdateFailureReport(targetBox, 'update', msg);
     }
     reset();
   } finally {
     if (typeof offBoxUp === 'function') offBoxUp();
     // Always clear the OTA-in-flight gate so the SSH banner can
     // come back if it still applies, even if we threw mid-poll.
+    try { SetOTARunning(false); } catch {}
     state.otaInProgress = false;
     state.otaTargetHost = null;
     state.otaTargetName = null;
@@ -3605,7 +3700,9 @@ async function updateAllBoxes() {
           case 'uploading': setRow(b.host, { phaseText: t('updateAll.phase.uploading'), pct: 0 }); break;
           case 'rebooting': setRow(b.host, { phaseText: t('updateAll.phase.rebooting'), indet: true }); break;
           case 'verifying': setRow(b.host, { phaseText: t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), indet: true }); break;
-          case 'spotify': setRow(b.host, { phaseText: t('updateAll.phase.spotify', { attempt: d.attempt }) }); break;
+          case 'spotify': setRow(b.host, { phaseText: d.reachable
+            ? t('updateAll.phase.spotifyState', { engine: d.engine })
+            : t('updateAll.phase.spotifyUnreachable') }); break;
         }
       });
       outcome = result.outcome;

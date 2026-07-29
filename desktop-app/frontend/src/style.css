@@ -2167,3 +2167,41 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 }
 .group-member-vol input[type=range] { flex: 1; }
 .group-member-vol .vol-val { min-width: 26px; text-align: right; font-size: 12px; }
+
+/* Copyable report for an update that could not reach the state it was meant to.
+   Deliberately large and readable rather than a toast: the user is expected to
+   read it, then copy or mail it. */
+.failreport {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 24px;
+}
+.failreport-inner {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 18px 20px;
+  max-width: 760px;
+  width: 100%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.failreport-title { font-weight: 600; margin-bottom: 6px; }
+.failreport-text {
+  width: 100%;
+  margin: 10px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 10px;
+  resize: vertical;
+}
+.failreport-actions { display: flex; gap: 8px; flex-wrap: wrap; }

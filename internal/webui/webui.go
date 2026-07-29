@@ -4123,7 +4123,11 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 		out["goLibrespot"] = "missing"
 		if engineDroppedForUpdate() {
 			// Not "never installed": this speaker HAD the engine and it was
-			// deleted to fit an agent update. The app re-delivers on sight.
+			// deleted to fit an agent update. Reported so the app can SAY so
+			// where the user is already looking, and so a diagnostic tells the
+			// two cases apart. Nothing acts on it: a binary reaches a speaker
+			// only while an install or update is running (standing rule,
+			// 2026-07-29), never from a background task.
 			out["goLibrespotDroppedForUpdate"] = "true"
 		}
 	}
