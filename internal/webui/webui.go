@@ -1905,6 +1905,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 // #197 vector the hardware verifies were already guarded against).
 func (s *Server) verifyRecall(gen uint64, started time.Time, expectedLocation string, retry func(ctx context.Context, lastAttempt bool), working func() bool) {
 	const attempts = 3
+	nudged := false
 	for attempt := 1; attempt <= attempts; attempt++ {
 		time.Sleep(5 * time.Second)
 		if reason := s.recallStandDownReason(gen, started); reason != "" {
@@ -1941,6 +1942,25 @@ func (s *Server) verifyRecall(gen uint64, started time.Time, expectedLocation st
 				"attempt", attempt, "expected", expectedLocation, "playing", location)
 		} else {
 			s.logger.Warn("recall did not reach playing, retrying", "attempt", attempt)
+		}
+		// Last resort before the final re-push: a box parked in INVALID_SOURCE
+		// that has fetched nothing since we pushed is not "starting slowly", it
+		// is the dead-source state, and re-pushing into it has already failed
+		// twice. The hardware-key path has had this escalation for a while; a
+		// play started from the app or the phone had none, so a Wave in this
+		// state answered every single request with silence until its owner
+		// pulled the plug (2026-07-28: seven plays, not one stream fetch, no
+		// escalation anywhere in the log).
+		//
+		// The guard is deliberately narrow, because `sys power` is a TOGGLE and
+		// sending it to a healthy box switches it OFF: only on the last attempt,
+		// only once, only while the box reports exactly INVALID_SOURCE (no source
+		// selected, so there is no playback to interrupt), and only when the
+		// stream proxy has served nothing since this recall started.
+		if attempt == attempts && !nudged && s.recallBoxInert(started) {
+			nudged = true
+			s.logger.Warn("recall verify: box sits in INVALID_SOURCE and fetched nothing since the push; sending one power nudge before the final retry")
+			s.nudgeDeadSource()
 		}
 		// Serialize the re-push with every other box command: the Bose
 		// firmware mishandles concurrent writes (see boxCmdMu), and a retry
@@ -3430,6 +3450,35 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 		}
 		s.logger.Info("spontaneous-off recovery: resumed the stream the firmware dropped (#419)", "url", boxURL, "title", title)
 	}()
+}
+
+// recallBoxInert reports the one state a power nudge is right for: the box says
+// INVALID_SOURCE, i.e. it has no source selected at all, and the stream proxy
+// has served nothing since this recall began. Anything else, including a box
+// that is merely slow or genuinely in STANDBY, must be left alone.
+func (s *Server) recallBoxInert(started time.Time) bool {
+	if s.boxSourceNow() != "INVALID_SOURCE" {
+		return false
+	}
+	if s.streamActivityFn == nil {
+		return false // no evidence available: never nudge on a guess
+	}
+	fetch, _ := s.streamActivityFn()
+	return fetch.Before(started)
+}
+
+// nudgeDeadSource sends a single `sys power` toggle to shake a box out of the
+// dead-source state. Bounded and fire-and-forget: the caller re-pushes right
+// after, and a nudge that does nothing costs one CLI call.
+func (s *Server) nudgeDeadSource() {
+	if s.boxHost == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if err := boxcli.PowerOn(ctx, s.boxHost); err != nil {
+		s.logger.Warn("recall verify: power nudge failed", "err", err)
+	}
 }
 
 // boxSourceNow reads the box's current source attribute ("" on any error).
