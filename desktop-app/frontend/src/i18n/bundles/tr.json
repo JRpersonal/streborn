@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: bu hoparlörde kayıtlı bir STR Wi-Fi yedeği yok. Genellikle kendi kendine yeniden bağlanır; bir yedekle (hoparlör ayarlarında bir kez kurulur) hoparlör, Wi-Fi kaybolursa açılışta kendi kendine onarabilir.",
-  "speaker.stormBanner": "{{name}} şu anda her istasyonu reddediyor. Bu, hoparlör oturumunu kaybettiğinde olur. Yeniden başlatmak sorunu çözer. Lütfen fişi çekme, bu hoparlörün saatini sıfırlar ve durumu kötüleştirir.",
+  "speaker.stormBanner": "{{name}} şu anda her istasyonu reddediyor. Hoparlör, STR'nin Bose bulutu yerine geçen yerel bileşenine yaptığı oturum açmayı kaybetti. Bu tamamen dahili bir şey: sizin hesabınızla ilgisi yok ve girmeniz gereken bir şey de yok. Yeniden başlatmak sorunu çözer. Lütfen fişi çekmeyin, bu hoparlörün saatini sıfırlar ve durumu kötüleştirir.",
   "speaker.stormRestartBtn": "Hoparlörü yeniden başlat",
   "speaker.stormRestarting": "{{name}} yeniden başlatılıyor, bu yaklaşık bir dakika sürer.",
   "speaker.issueDismiss": "Gizle",

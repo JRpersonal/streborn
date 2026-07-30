@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: en este altavoz no hay guardada una copia del Wi-Fi de STR. Normalmente se reconecta solo; con una copia (se configura una vez en los ajustes del altavoz) el propio altavoz puede reparar su Wi-Fi al encenderse si alguna vez lo pierde.",
-  "speaker.stormBanner": "{{name}} está rechazando todas las emisoras. Ocurre cuando el altavoz ha perdido su sesión. Reiniciarlo lo soluciona. No desenchufes el altavoz, eso reinicia su reloj y empeora las cosas.",
+  "speaker.stormBanner": "{{name}} está rechazando todas las emisoras. El altavoz ha perdido el inicio de sesión que hace con el sustituto local de STR para la nube de Bose. Es algo interno: no interviene ninguna cuenta tuya y no tienes que introducir nada. Un reinicio lo soluciona. No desenchufes el altavoz, eso reinicia su reloj y lo empeora.",
   "speaker.stormRestartBtn": "Reiniciar altavoz",
   "speaker.stormRestarting": "Reiniciando {{name}}, tarda alrededor de un minuto.",
   "speaker.issueDismiss": "Ocultar",

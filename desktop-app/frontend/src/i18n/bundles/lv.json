@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: šajā skaļrunī nav saglabāta STR Wi-Fi rezerves kopija. Parasti tas pievienojas pats; ar rezerves kopiju (vienreiz iestata skaļruņa iestatījumos) skaļrunis ieslēgšanas brīdī var pats salabot savu Wi-Fi, ja tas pazūd.",
-  "speaker.stormBanner": "{{name}} pašlaik noraida visas stacijas. Tā notiek, kad skaļrunis ir zaudējis savu pieteikšanos. Pārstartēšana to novērš. Lūdzu, neatvieno kontaktdakšu, tas atiestata skaļruņa pulksteni un pasliktina situāciju.",
+  "speaker.stormBanner": "{{name}} pašlaik atsaka katru staciju. Skaļrunis ir zaudējis pieteikšanos, ko tas veic STR lokālajā Bose mākoņa aizstājējā. Tas ir iekšējs jautājums: neviens tavs konts te nav iesaistīts un nekas nav jāievada. Restarts to novērš. Lūdzu, neraujiet ārā kontaktdakšu, tas atiestata skaļruņa pulksteni un padara situāciju sliktāku.",
   "speaker.stormRestartBtn": "Pārstartēt skaļruni",
   "speaker.stormRestarting": "{{name}} tiek pārstartēts, tas aizņem apmēram minūti.",
   "speaker.issueDismiss": "Paslēpt",

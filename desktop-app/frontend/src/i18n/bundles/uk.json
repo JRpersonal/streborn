@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: на цій колонці немає збереженої резервної копії Wi-Fi від STR. Зазвичай вона під'єднується сама; з резервною копією (налаштовується один раз у налаштуваннях колонки) колонка зможе сама відновити свій Wi-Fi під час увімкнення, якщо він зникне.",
-  "speaker.stormBanner": "{{name}} зараз відхиляє будь-яку станцію. Це трапляється, коли колонка втратила свій вхід. Перезапуск це виправляє. Не виймай вилку, це скидає годинник колонки й погіршує ситуацію.",
+  "speaker.stormBanner": "{{name}} зараз відхиляє кожну станцію. Колонка втратила вхід, який вона виконує до локальної заміни хмари Bose в STR. Це суто внутрішнє: жодного вашого облікового запису це не стосується і вводити нічого не потрібно. Перезапуск це виправляє. Не витягайте вилку, це скидає годинник колонки і робить гірше.",
   "speaker.stormRestartBtn": "Перезапустити колонку",
   "speaker.stormRestarting": "Перезапуск {{name}}, це займе близько хвилини.",
   "speaker.issueDismiss": "Приховати",

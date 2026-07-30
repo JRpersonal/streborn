@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: op deze speaker is geen wifi-back-up van STR opgeslagen. Meestal verbindt hij toch vanzelf; met een back-up (eenmalig instellen in de speakerinstellingen) kan de speaker zijn wifi bij het inschakelen zelf herstellen als die ooit wegvalt.",
-  "speaker.stormBanner": "{{name}} weigert op dit moment elke zender. Dat gebeurt als de luidspreker zijn aanmelding kwijt is. Opnieuw opstarten lost het op. Trek de stekker er niet uit, dat zet de klok van de luidspreker terug en maakt het erger.",
+  "speaker.stormBanner": "{{name}} weigert momenteel elke zender. De speaker is de aanmelding kwijt die hij doet bij STR's lokale vervanger van de Bose-cloud. Dat is intern: er is geen account van jou bij betrokken en je hoeft nergens iets in te vullen. Een herstart lost het op. Trek alsjeblieft niet de stekker eruit, dat zet de klok van de speaker terug en maakt het erger.",
   "speaker.stormRestartBtn": "Luidspreker opnieuw opstarten",
   "speaker.stormRestarting": "{{name}} wordt opnieuw opgestart, dit duurt ongeveer een minuut.",
   "speaker.issueDismiss": "Verbergen",

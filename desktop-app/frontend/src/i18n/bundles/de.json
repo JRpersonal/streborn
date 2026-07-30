@@ -1200,7 +1200,7 @@
   "speaker.conflictRemoveBtn": "Reste entfernen",
   "speaker.wifiSaveBtn": "WLAN speichern",
   "speaker.noWifiBanner": "{{name}}: STR hat das WLAN dieses Lautsprechers noch nicht gespeichert. Im Normalbetrieb läuft alles. Wenn du das WLAN speicherst, kann sich der Lautsprecher nach einem Stromausfall oder einer Störung selbst wieder verbinden.",
-  "speaker.stormBanner": "{{name}} lehnt gerade jeden Sender ab. Das passiert, wenn der Lautsprecher seine Anmeldung verloren hat. Ein Neustart behebt es. Zieh bitte nicht den Stecker, das stellt die Uhr des Lautsprechers zurück und macht es schlimmer.",
+  "speaker.stormBanner": "{{name}} lehnt gerade jeden Sender ab. Der Lautsprecher hat die Anmeldung verloren, die er bei STRs lokalem Ersatz für die Bose-Cloud macht. Das ist rein intern: es gehört kein Konto von dir dazu und du musst nirgends etwas eingeben. Ein Neustart behebt es. Zieh bitte nicht den Stecker, das stellt die Uhr des Lautsprechers zurück und macht es schlimmer.",
   "speaker.stormRestartBtn": "Lautsprecher neu starten",
   "speaker.stormRestarting": "{{name}} wird neu gestartet, das dauert etwa eine Minute.",
   "speaker.issueDismiss": "Ausblenden",

@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: na tym głośniku nie ma zapisanej kopii Wi-Fi od STR. Zwykle łączy się on sam; z kopią (jednorazowo w ustawieniach głośnika) głośnik może przy włączeniu sam naprawić swoje Wi-Fi, gdyby je utracił.",
-  "speaker.stormBanner": "{{name}} odrzuca teraz każdą stację. Dzieje się tak, gdy głośnik stracił swoje logowanie. Ponowne uruchomienie to naprawia. Nie wyciągaj wtyczki, to cofa zegar głośnika i pogarsza sprawę.",
+  "speaker.stormBanner": "{{name}} odrzuca teraz każdą stację. Głośnik utracił logowanie, które wykonuje do lokalnego zamiennika chmury Bose w STR. To sprawa wewnętrzna: nie dotyczy żadnego twojego konta i nie musisz nic wpisywać. Ponowne uruchomienie to naprawia. Nie wyciągaj wtyczki, to cofa zegar głośnika i pogarsza sprawę.",
   "speaker.stormRestartBtn": "Uruchom głośnik ponownie",
   "speaker.stormRestarting": "Ponowne uruchamianie {{name}}, to potrwa około minuty.",
   "speaker.issueDismiss": "Ukryj",

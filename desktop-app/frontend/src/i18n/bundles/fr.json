@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}} : aucune sauvegarde Wi-Fi de STR n'est stockée sur cette enceinte. Elle se reconnecte généralement seule ; avec une sauvegarde (à configurer une fois dans les réglages de l'enceinte), l'enceinte peut réparer elle-même son Wi-Fi à l'allumage s'il est perdu.",
-  "speaker.stormBanner": "{{name}} refuse actuellement toutes les stations. Cela arrive quand l’enceinte a perdu sa connexion. Un redémarrage résout le problème. Ne débranche pas l’enceinte, cela remet son horloge à zéro et aggrave la situation.",
+  "speaker.stormBanner": "{{name}} refuse actuellement toutes les stations. L'enceinte a perdu la connexion qu'elle établit auprès du remplaçant local de STR pour le cloud Bose. C'est interne : aucun compte à vous n'est concerné et vous n'avez rien à saisir. Un redémarrage règle le problème. Ne débranchez pas l'enceinte, cela remet son horloge à zéro et aggrave la situation.",
   "speaker.stormRestartBtn": "Redémarrer l’enceinte",
   "speaker.stormRestarting": "Redémarrage de {{name}}, cela prend environ une minute.",
   "speaker.issueDismiss": "Masquer",

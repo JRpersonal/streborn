@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: このスピーカーには STR の Wi-Fi バックアップが保存されていません。通常は自動的に再接続されますが、バックアップ（スピーカー設定で一度設定）があれば、Wi-Fi が失われた場合でもスピーカーが起動時に自力で修復できます。",
-  "speaker.stormBanner": "{{name}} は現在すべての局を拒否しています。スピーカーがログインを失ったときに起きます。再起動で解消します。電源プラグは抜かないでください。時計が戻り、状態が悪化します。",
+  "speaker.stormBanner": "{{name}} は現在すべての局を拒否しています。スピーカーが、STR が Bose クラウドの代わりに動かしているローカルの仕組みへのサインインを失いました。これは内部的なもので、お客様のアカウントは関係なく、入力していただくものもありません。再起動で直ります。電源プラグは抜かないでください。スピーカーの時計が戻り、状況が悪化します。",
   "speaker.stormRestartBtn": "スピーカーを再起動",
   "speaker.stormRestarting": "{{name}} を再起動しています。約1分かかります。",
   "speaker.issueDismiss": "非表示",

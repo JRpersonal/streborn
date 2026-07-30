@@ -1191,7 +1191,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: لا توجد نسخة احتياطية من Wi-Fi خاصة بـ STR على هذا المكبر. عادةً ما يعيد الاتصال بنفسه؛ ومع نسخة احتياطية (تُعد مرة واحدة في إعدادات المكبر) يمكن للمكبر إصلاح شبكته بنفسه عند التشغيل إذا فُقدت.",
-  "speaker.stormBanner": "يرفض {{name}} حاليا كل محطة. يحدث هذا عندما يفقد مكبر الصوت تسجيل دخوله. إعادة التشغيل تحل المشكلة. لا تفصل القابس، فذلك يعيد ضبط ساعة مكبر الصوت ويزيد الأمر سوءا.",
+  "speaker.stormBanner": "{{name}} يرفض حاليًا كل محطة. فقد مكبر الصوت تسجيل الدخول الذي يجريه إلى البديل المحلي لسحابة Bose في STR. هذا أمر داخلي: لا علاقة له بأي حساب يخصك ولا يوجد ما تحتاج إلى إدخاله. إعادة التشغيل تحل المشكلة. من فضلك لا تنزع القابس، فذلك يعيد ضبط ساعة مكبر الصوت ويزيد الأمر سوءًا.",
   "speaker.stormRestartBtn": "إعادة تشغيل مكبر الصوت",
   "speaker.stormRestarting": "جارٍ إعادة تشغيل {{name}}، وهذا يستغرق حوالي دقيقة.",
   "speaker.issueDismiss": "إخفاء",

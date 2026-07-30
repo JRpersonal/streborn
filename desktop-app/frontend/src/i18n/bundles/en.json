@@ -1199,7 +1199,7 @@
   "speaker.conflictModBanner": "{{name}}: leftovers of another SoundTouch tool ({{mod}}) are on this speaker and can clash with STR. A normal factory reset does not remove them. You can clear them under this speaker's Settings, Actions.",
   "speaker.conflictRemoveBtn": "Remove leftovers",
   "speaker.noWifiBanner": "{{name}}: STR has not saved this speaker's Wi-Fi yet. It works fine as it is. If you save the Wi-Fi, the speaker can reconnect on its own after a power cut or an outage.",
-  "speaker.stormBanner": "{{name}} is currently refusing every station. That happens when the speaker has lost its login. A restart fixes it. Please do not pull the plug, that resets the speaker’s clock and makes it worse.",
+  "speaker.stormBanner": "{{name}} is currently refusing every station. It has lost the sign-in it makes to STR's local stand-in for the Bose cloud. That is internal: no account of yours is involved and there is nothing for you to enter. A restart fixes it. Please do not pull the plug, that resets the speaker's clock and makes it worse.",
   "speaker.stormRestartBtn": "Restart speaker",
   "speaker.stormRestarting": "Restarting {{name}}, this takes about a minute.",
   "speaker.wifiSaveBtn": "Save Wi-Fi",
