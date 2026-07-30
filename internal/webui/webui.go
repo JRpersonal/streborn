@@ -4654,8 +4654,28 @@ var errInsufficientNAND = errors.New("insufficient NAND space")
 
 // nandWriteMargin is the slack required above the binary size before an atomic
 // write is attempted: filesystem overhead plus a cushion so a borderline write
-// does not ENOSPC mid-stream.
-const nandWriteMargin = 512 * 1024
+// does not stall or ENOSPC mid-stream.
+//
+// It is deliberately generous, because this figure does not refuse anything: it
+// only decides whether the engine is reclaimed FIRST. Being too mean here is
+// what hurt. At 512 KB, a speaker with 13.65 MB free counted as having room for
+// a 12.78 MB write, so it kept its engine and wrote a second full copy of the
+// binary into a volume that then had under 1 MB left. Sometimes that works and
+// sometimes the write never returns: the agent logs the body as received and
+// then goes silent, never answers, and the speaker reboots onto the old binary.
+//
+// Two of Jens' speakers proved it on 2026-07-30. Both ST10s, 13,680 KB and
+// 13,652 KB free, the same 12.78 MB update: one replied in 15 s, the other
+// received the whole body and was never heard from again. The same signature is
+// in three field reports (#511 three times on one speaker, and two install
+// reports the same day), and in every one of them the speaker that was clearly
+// TIGHT succeeded, because being told "no room" is what triggers the reclaim
+// that then gives the write 15 MB of air.
+//
+// 3 MB puts a borderline speaker on the reclaim path instead of the cliff. The
+// engine it drops is re-delivered right after the reboot, which is the flow
+// that already existed and is well tested.
+const nandWriteMargin = 3 * 1024 * 1024
 
 // engineStopHook stops the running go-librespot so the space-pressed OTA write can
 // truly free the engine's NAND blocks before dropping it (an unlink of a running
