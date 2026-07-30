@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "Alle Lautsprecher sind bereits aktuell.",
   "updateAll.confirmTitle": "Alle Lautsprecher aktualisieren?",
   "updateAll.confirmBody": "Diese {{count}} Lautsprecher aktualisieren? Jeder startet einmal neu.\n{{list}}",
+  "update.retrying": "Die Software ist nicht auf dem Lautsprecher angekommen. Neuer Versuch...",
+  "updateAll.phase.retrying": "Neuer Versuch",
   "updateAll.confirmTitleEngine": "Spotify-Engine wiederherstellen?",
   "updateAll.confirmBodyEngine": "Diese {{count}} Lautsprecher sind aktuell, haben aber keine Spotify-Engine. Sie wird ohne vollständiges Update nachgeholt, normalerweise ohne Neustart:\n{{list}}",
   "updateAll.phase.engineOnly": "Spotify-Engine wird nachgeholt",

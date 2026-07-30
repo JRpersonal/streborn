@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "Alle speakers zijn al up-to-date.",
   "updateAll.confirmTitle": "Alle speakers bijwerken?",
   "updateAll.confirmBody": "Deze {{count}} speakers bijwerken? Elke start één keer opnieuw op.\n{{list}}",
+  "update.retrying": "De software is niet op de speaker aangekomen. Nog een poging...",
+  "updateAll.phase.retrying": "Nog een poging",
   "updateAll.confirmTitleEngine": "Spotify-engine herstellen?",
   "updateAll.confirmBodyEngine": "Deze {{count}} speakers zijn up-to-date, maar missen de Spotify-engine. Die wordt zonder volledige update teruggezet, normaal gesproken zonder herstart:\n{{list}}",
   "updateAll.phase.engineOnly": "Spotify-engine wordt hersteld",

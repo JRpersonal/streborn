@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "Visos kolonėlės jau atnaujintos.",
   "updateAll.confirmTitle": "Atnaujinti visas kolonėles?",
   "updateAll.confirmBody": "Atnaujinti šias {{count}} kolonėles? Kiekviena vieną kartą pasileis iš naujo.\n{{list}}",
+  "update.retrying": "Programinė įranga nepasiekė kolonėlės. Bandoma dar kartą...",
+  "updateAll.phase.retrying": "Bandoma dar kartą",
   "updateAll.confirmTitleEngine": "Atkurti Spotify variklį?",
   "updateAll.confirmBodyEngine": "Šios {{count}} kolonėlės yra atnaujintos, bet neturi Spotify variklio. Jis bus atkurtas be viso atnaujinimo, paprastai be perkrovimo:\n{{list}}",
   "updateAll.phase.engineOnly": "Atkuriamas Spotify variklis",

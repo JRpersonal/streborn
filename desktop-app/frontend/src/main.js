@@ -2988,7 +2988,7 @@ function speakerReachedTarget(live, preVersion, wantEngine) {
   return { done: true, missing: '' };
 }
 
-async function runBoxUpdate(box, onPhase) {
+async function runBoxUpdate(box, onPhase, attempt = 1) {
   const phase = (p, d) => { try { if (onPhase) onPhase(p, d || {}); } catch {} };
   const appBuild = state.appInfo && state.appInfo.build;
   // Record what the box runs RIGHT NOW; the post-OTA success signal is "reachable
@@ -3061,6 +3061,22 @@ async function runBoxUpdate(box, onPhase) {
     // through to the engine step like any confirmed box.
     if (cls === 'confirmed') {
       try { confirmedVer = await BoxAgentVersion(box.host, box.port); } catch {}
+    }
+    // "not-landed" means the speaker took the whole file and the new software
+    // never reached its disk. That is the write squeezing itself into the last
+    // megabyte of a nearly full speaker: it stalls instead of failing, so the
+    // speaker reboots onto its old version. It is marginal rather than
+    // permanent, proven on two near-identical speakers where one stalled, and
+    // the very same push then succeeded on a retry. So retry once here rather
+    // than hand back a failure whose fix is "press the button again".
+    //
+    // Only this verdict. "landed-not-running" already knows an identical
+    // re-push cannot help, and an unreachable speaker is switched off or gone
+    // from the network, where retrying just hammers it.
+    if (!confirmedVer && cls === 'not-landed' && attempt < 2) {
+      try { RecordOTAOutcome(box.host, 'retrying once: the software never reached the speaker disk (marginal write)'); } catch {}
+      phase('retrying', { attempt: attempt + 1 });
+      return runBoxUpdate(box, onPhase, attempt + 1);
     }
     if (!confirmedVer) {
       try { noteOTAFailure(box, cls); } catch {}
@@ -3549,6 +3565,25 @@ async function doBoxUpdate(targetBox) {
       if (cls === 'confirmed') {
         clearOTAStuck(targetBox);
         showToast(t('update.doneToast'));
+      } else if (cls === 'not-landed') {
+        // The speaker took the whole file and the new software never reached
+        // its disk: the write squeezed itself into the last megabyte and
+        // stalled, so the speaker rebooted onto its old version. That is
+        // marginal, not permanent, and the identical push usually wins the
+        // second time, so retry once here instead of telling the user it took
+        // too long and leaving them to press the button again. Updating a
+        // whole house does the same (runBoxUpdate), and this is the same
+        // routine, so both paths behave identically.
+        showToast(t('update.retrying'));
+        let retry = null;
+        try { retry = await runBoxUpdate(targetBox, null); } catch { /* handled below */ }
+        if (retry && retry.version) {
+          clearOTAStuck(targetBox);
+          showToast(t('update.doneToast'));
+        } else {
+          noteOTAFailure(targetBox, cls);
+          showToast(t('update.tookLongerToast'));
+        }
       } else {
         noteOTAFailure(targetBox, cls || 'unreachable');
         showToast(t('update.tookLongerToast'));
@@ -3835,6 +3870,7 @@ async function updateAllBoxes() {
           case 'uploading': setRow(b.host, { phaseText: t('updateAll.phase.uploading'), pct: 0 }); break;
           case 'rebooting': setRow(b.host, { phaseText: t('updateAll.phase.rebooting'), indet: true }); break;
           case 'verifying': setRow(b.host, { phaseText: t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), indet: true }); break;
+          case 'retrying': setRow(b.host, { phaseText: t('updateAll.phase.retrying'), indet: true }); break;
           case 'spotify': setRow(b.host, { phaseText: d.reachable
             ? t('updateAll.phase.spotifyState', { engine: d.engine })
             : t('updateAll.phase.spotifyUnreachable') }); break;

@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "すべてのスピーカーは最新です。",
   "updateAll.confirmTitle": "すべてのスピーカーを更新しますか？",
   "updateAll.confirmBody": "これら {{count}} 台のスピーカーを更新しますか？各機器が一度再起動します。\n{{list}}",
+  "update.retrying": "ソフトウェアがスピーカーに届きませんでした。もう一度試しています...",
+  "updateAll.phase.retrying": "もう一度試しています",
   "updateAll.confirmTitleEngine": "Spotify エンジンを復元しますか?",
   "updateAll.confirmBodyEngine": "これら {{count}} 台のスピーカーは最新ですが、Spotify エンジンがありません。完全な更新なしで、通常は再起動なしで復元されます:\n{{list}}",
   "updateAll.phase.engineOnly": "Spotify エンジンを復元中",

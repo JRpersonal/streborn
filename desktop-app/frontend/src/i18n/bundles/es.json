@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "Todos los altavoces ya están actualizados.",
   "updateAll.confirmTitle": "¿Actualizar todos los altavoces?",
   "updateAll.confirmBody": "¿Actualizar estos {{count}} altavoces? Cada uno se reiniciará una vez.\n{{list}}",
+  "update.retrying": "El software no llegó al altavoz. Intentándolo otra vez...",
+  "updateAll.phase.retrying": "Intentándolo otra vez",
   "updateAll.confirmTitleEngine": "¿Restaurar el motor de Spotify?",
   "updateAll.confirmBodyEngine": "Estos {{count}} altavoces están actualizados, pero no tienen el motor de Spotify. Se restaura sin una actualización completa, normalmente sin reiniciar:\n{{list}}",
   "updateAll.phase.engineOnly": "Restaurando el motor de Spotify",

@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "جميع مكبرات الصوت محدّثة بالفعل.",
   "updateAll.confirmTitle": "تحديث جميع مكبرات الصوت؟",
   "updateAll.confirmBody": "تحديث مكبرات الصوت الـ {{count}} هذه؟ سيُعاد تشغيل كل منها مرة واحدة.\n{{list}}",
+  "update.retrying": "لم يصل البرنامج إلى مكبر الصوت. تتم المحاولة مرة أخرى...",
+  "updateAll.phase.retrying": "تتم المحاولة مرة أخرى",
   "updateAll.confirmTitleEngine": "استعادة محرك Spotify؟",
   "updateAll.confirmBodyEngine": "مكبرات الصوت هذه ({{count}}) محدّثة، لكن محرك Spotify مفقود. ستتم استعادته دون تحديث كامل، وعادةً دون إعادة تشغيل:\n{{list}}",
   "updateAll.phase.engineOnly": "جارٍ استعادة محرك Spotify",

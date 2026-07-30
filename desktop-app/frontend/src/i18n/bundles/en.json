@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "All speakers are already up to date.",
   "updateAll.confirmTitle": "Update all speakers?",
   "updateAll.confirmBody": "Update these {{count}} speakers? Each will restart once.\n{{list}}",
+  "update.retrying": "The software did not reach the speaker. Trying once more...",
+  "updateAll.phase.retrying": "Trying once more",
   "updateAll.confirmTitleEngine": "Restore the Spotify engine?",
   "updateAll.confirmBodyEngine": "These {{count}} speakers are up to date but have no Spotify engine. It is put back without a full update, normally without a restart:\n{{list}}",
   "updateAll.phase.engineOnly": "Restoring the Spotify engine",

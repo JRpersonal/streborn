@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "Tüm hoparlörler zaten güncel.",
   "updateAll.confirmTitle": "Tüm hoparlörler güncellensin mi?",
   "updateAll.confirmBody": "Bu {{count}} hoparlör güncellensin mi? Her biri bir kez yeniden başlar.\n{{list}}",
+  "update.retrying": "Yazılım hoparlöre ulaşmadı. Bir kez daha deneniyor...",
+  "updateAll.phase.retrying": "Bir kez daha deneniyor",
   "updateAll.confirmTitleEngine": "Spotify motoru geri yüklensin mi?",
   "updateAll.confirmBodyEngine": "Bu {{count}} hoparlör güncel, ancak Spotify motoru yok. Tam güncelleme olmadan, genellikle yeniden başlatmadan geri yüklenir:\n{{list}}",
   "updateAll.phase.engineOnly": "Spotify motoru geri yükleniyor",

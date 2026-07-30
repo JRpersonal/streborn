@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "Toutes les enceintes sont déjà à jour.",
   "updateAll.confirmTitle": "Mettre à jour toutes les enceintes ?",
   "updateAll.confirmBody": "Mettre à jour ces {{count}} enceintes ? Chacune redémarrera une fois.\n{{list}}",
+  "update.retrying": "Le logiciel n'est pas arrivé sur l'enceinte. Nouvelle tentative...",
+  "updateAll.phase.retrying": "Nouvelle tentative",
   "updateAll.confirmTitleEngine": "Restaurer le moteur Spotify ?",
   "updateAll.confirmBodyEngine": "Ces {{count}} enceintes sont à jour mais n'ont pas le moteur Spotify. Il est restauré sans mise à jour complète, normalement sans redémarrage :\n{{list}}",
   "updateAll.phase.engineOnly": "Restauration du moteur Spotify",

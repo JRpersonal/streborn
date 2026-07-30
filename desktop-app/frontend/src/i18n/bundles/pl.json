@@ -6,6 +6,8 @@
   "updateAll.noneToUpdate": "Wszystkie głośniki są już aktualne.",
   "updateAll.confirmTitle": "Zaktualizować wszystkie głośniki?",
   "updateAll.confirmBody": "Zaktualizować te {{count}} głośniki? Każdy raz się zrestartuje.\n{{list}}",
+  "update.retrying": "Oprogramowanie nie dotarło do głośnika. Kolejna próba...",
+  "updateAll.phase.retrying": "Kolejna próba",
   "updateAll.confirmTitleEngine": "Przywrócić silnik Spotify?",
   "updateAll.confirmBodyEngine": "Te głośniki ({{count}}) są aktualne, ale nie mają silnika Spotify. Zostanie przywrócony bez pełnej aktualizacji, zwykle bez ponownego uruchomienia:\n{{list}}",
   "updateAll.phase.engineOnly": "Przywracanie silnika Spotify",
