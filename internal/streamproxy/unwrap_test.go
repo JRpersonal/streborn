@@ -13,12 +13,12 @@ func TestUnwrapSelfProxy(t *testing.T) {
 		base64.RawURLEncoding.EncodeToString([]byte(wrapped))
 
 	cases := map[string]string{
-		wrapped:                        real, // the regression case
-		doubleWrapped:                  real, // tolerate multiple wraps
-		real:                           real, // a real URL passes through
-		"https://example.com/a.mp3":    "https://example.com/a.mp3",
+		wrapped:                          real, // the regression case
+		doubleWrapped:                    real, // tolerate multiple wraps
+		real:                             real, // a real URL passes through
+		"https://example.com/a.mp3":      "https://example.com/a.mp3",
 		"http://127.0.0.1:8888/stream/3": "http://127.0.0.1:8888/stream/3", // slot URL, not /stream/raw: unchanged
-		"":                             "",
+		"":                               "",
 	}
 	for in, want := range cases {
 		if got := unwrapSelfProxy(in); got != want {
