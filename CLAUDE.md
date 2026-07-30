@@ -27,84 +27,23 @@ them back **without any Bose cloud dependency**.
   with downloads, FAQ, privacy, imprint. Maintained in a separate
   repository.
 
-### Architecture in one picture
+### Architecture
 
-```
-Client (Browser / Desktop App)
-  -- REST API --> Stick Agent webui :8888
-     (sm2 boxes (ST10 rhino, sm2-ST30 mojo) reached directly; BCO/whitelisted
-      chassis (Portable/taigan, ST20 spotty/scm, scm-ST30 mojo, scm-Wave lisa)
-      reached via iptables PREROUTING REDIRECT :17008 -> loopback :8888;
-      the ST20/ST30/Wave each exist in BOTH chassis generations - see
-      docs/MODEL-VARIANTS.md before assuming the port path)
-                            |
-                            +--> /api/presets        preset store on NAND
-                            +--> /api/play, /api/play/<slot>, /api/pause, /api/stop
-                            |     upnp.PlayURL -> Box:8091/AVTransport
-                            +--> /api/status         proxy Box:8090/now_playing (cached)
-                            +--> /api/box/*          speaker settings (name/volume/bass/
-                            |     source/wlan/reboot/airplay-opt/sync-presets/zone/group)
-                            +--> /api/region, /api/stick/status, /api/debug/*
-                            +--> /api/peers, /api/peers/seed, /api/peers/forget
-                            |     sticky speaker roster for the on-box picker
-                            |     (NAND-persisted; app distributes the fleet)
-                            +--> /api/agent/version, /api/agent/update
-                            |     OTA (HTTP; the app falls back to SSH-OTA and
-                            |     refreshes a still-inserted stick before the reboot)
-                            +--> /api/webhooks, /api/webhooks/test
-                            |     user-configured HTTP triggers on box events (NAND)
-                            +--> /stream/<slot>, /stream/raw
-                            |     streamproxy (survives CDN token expiry; converts
-                            |     HLS playlists to one continuous ADTS/MP3 stream)
-                            +--> /api/stream/bitrate, /api/stream/title, /api/stream-status
-                            +--> /spotify/stream.ogg, /spotify/stream-1..6.ogg, /spotify/info
-                            |     Spotify Connect (beta): supervised go-librespot
-                            |     sidecar, raw Ogg passthrough (internal/spotify)
-                            |
-                            +--> boxws  ws://127.0.0.1:8080/ (gabbo protocol)
-                            |     nowSelectionUpdated -> upnp.PlayURL
-                            |
-                            +--> autopair  POST /setMargeAccount every 5 min
-                            |
-                            +--> marge stub  :9080 (HTTP) / :443 (TLS)
-                            |     emulates streaming.bose.com + content.api.bose.io
-                            |     /streaming/account/.../device/  -> adddeviceresponse
-                            |     /streaming/sourceproviders      -> source list
-                            |     /bmx/registry/v1/services       -> service list
-                            +--> bmx stub    :8081  (healthz-only placeholder; the
-                            |     registry route above is answered by marge)
-                            |
-                            +--> :17002 BatteryMonitor fallback (Portable only)
-                            |     accepts BoseApp's battery client when the stock
-                            |     BatteryMonitor is wedged -> stops the fd-leak
-                            |     reboot loop (see docs/FIRMWARE-NOTES.md)
-                            |
-                            +--> mDNS announce _streborn._tcp.local
+The component map, the full port table, and the sequence diagrams for
+discovery, playback, marge emulation, install, and OTA live in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-Bose firmware ports STR talks to / around:
-  :8080 gabbo WS    :8090 BoseApp REST    :8091 UPnP AVTransport
-  :17000 TAP CLI (standby wake, provisioning probes)
-  :17008 SoftwareUpdate (external entry on whitelisted chassis, REDIRECT -> :8888)
-  :17002 BatteryMonitor
-```
+The trap that document does not shout loudly enough: the ST20, ST30,
+and Wave each exist in BOTH chassis generations, so read
+[`docs/MODEL-VARIANTS.md`](docs/MODEL-VARIANTS.md) before assuming
+whether a box is reached on `:8888` directly (sm2) or via the
+`:17008` PREROUTING REDIRECT (BCO/whitelisted chassis).
 
 Audio path: UPnP AVTransport directly to the speaker on port 8091.
 We never proxy audio through the dead Bose cloud.
 
-Radio search runs **app-side**: the desktop app queries
-`radio-browser.info` (free, no API key) directly via the top-level
-`radiobrowser/` package (`desktop-app/radio.go`); the agent no longer
-serves `/api/radio` and only receives the final stream URL to play.
-This replaces the discontinued Bose TuneIn integration.
-
 Hardware preset buttons 1 through 6 are re-enabled by hooking the
 Bose WebSocket bus (gabbo protocol on `:8080`).
-
-Beyond radio, the desktop app ships a DLNA media library (top-level
-`dlna/` package), Spotify Connect (beta), multiroom zones (beta),
-diagnostics export, and box maintenance (true factory reset,
-uninstall STR, setup-AP Wi-Fi push). The UI ships in 11 locales;
-English and German are first-class.
 
 ## Conventions in this repo
 
@@ -200,28 +139,6 @@ are post-1.0. Forward-looking ideas beyond v1.0, currently an iOS
 PWA proposal and a factory-reset wizard for the desktop app, live
 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-## Release pipeline dry-run
-
-`release.yml` runs a weekly automatic dry-run (Sundays 04:30 UTC) so
-Dependabot bumps of release-only actions like
-`attest-build-provenance`, `action-gh-release`, or
-`upload-artifact`'s release-only usage pattern are exercised before
-the next real tag. PR CI does not exercise these actions.
-
-To trigger a dry-run manually (e.g. after a Dependabot bump you do
-not want to wait a week for), dispatch the release workflow without
-a version input:
-
-```bash
-gh workflow run release.yml
-```
-
-Either path runs verify-source, builds the agent and all three
-desktop OS packages, and attests every artifact via Sigstore. The
-final `Publish GitHub Release` step is skipped automatically when
-no `version` input is supplied. If a dry-run green-checks, the next
-real `vX.Y.Z` tag will work.
-
 ## Build version stamping
 
 The Wails desktop app embeds the ARM stick agent binary and is the
@@ -273,51 +190,25 @@ the shared version stamp.
 
 ## Repository layout
 
-```
-cmd/
-  agent/         Stick agent main
-  mdns-probe/    mDNS debug CLI
-  relnotes/      Release-notes generator (conventional commits -> notes)
-  winformat/     FAT32 format helper for the Windows installer
-desktop-app/     Wails project (Vite frontend, Go backend; own Go module)
-discovery/       mDNS discovery (top-level so Wails can import it)
-dlna/            DLNA MediaServer client for the Library tab (top-level)
-docs/            Sanitised technical docs only
-internal/        Stick-agent-only packages (boxapi, marge, autopair, ...)
-radiobrowser/    radio-browser.info client (app-side radio search)
-setup/           Legacy PowerShell setup wizard (superseded by the
-                 desktop app's in-app stick setup)
-sticksetup/      Embedded setup workflow
-tools/           Support diagnostics scripts
-usb-stick/       Stick filesystem layout and run.sh
-wifiprofiles/    Cross-platform Wi-Fi profile reader for the wizard
-.github/         Workflows, dependabot, CODEOWNERS, security policies
-```
-
-The website (st-reborn.de) lives in a separate repository
-(`JRpersonal/streborn-website`). A release here triggers a build
-there via `repository_dispatch`.
-
 `discovery/`, `dlna/`, `radiobrowser/`, `sticksetup/`, and
 `wifiprofiles/` live at the top level on purpose. The desktop app is
 its own Go module and imports them; Go forbids importing from another
 module's `internal/`.
+
+The website (st-reborn.de) lives in a separate repository
+(`JRpersonal/streborn-website`). A release here triggers a build
+there via `repository_dispatch`.
 
 Hardware support state per model is tracked in
 [`docs/MODELS.md`](docs/MODELS.md).
 
 ## Workflows
 
-Workflows live in `.github/workflows/`: `build.yml` (source
-verification: lockfile consistency, vulnerability scan, tests,
-cross-compiles, shellcheck), `release.yml` (release publication on
-signed tags), `codeql.yml`, `scorecard.yml` (OSSF Scorecard),
-`dependabot-automerge.yml`, and two `workflow_dispatch` builds of the
-Spotify sidecar binaries (`go-librespot.yml` primary, with the STR
-Ogg-passthrough patch from `.github/patches/`; `librespot.yml`
-fallback), both Sigstore-attested. Dependabot, Secret Scanning, and
-Push Protection are additionally enabled at the repository settings
-level.
+Workflows live in `.github/workflows/`. Two things are not visible
+from those files: the Spotify sidecar builds are `workflow_dispatch`
+only (`go-librespot.yml` primary, `librespot.yml` fallback), and
+Dependabot, Secret Scanning, and Push Protection are enabled at the
+repository settings level rather than in any workflow file.
 
 ## How a new Claude session should start
 
