@@ -6,7 +6,7 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, getBoxLabel } from '../utils.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel, showToast } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, WakeBox, BrowserOpenURL } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
@@ -197,7 +197,7 @@ export function renderMultiroom(fetchLive) {
     // right there while its counterpart did not exist, so the only way out
     // was the old Bose app (discussion #499). Dissolving is the operation
     // the zone section already offers, applied to the speakers chosen above.
-    $('stereoDissolve').onclick = () => doDissolveZone(pairCands);
+    $('stereoDissolve').onclick = () => doDissolveStereo(pairCands);
   }
 
   // Live status: parallel, non-blocking, after paint. Never blocks the tab.
@@ -313,12 +313,40 @@ async function doFormZone(strBoxes) {
   renderMultiroom(true);
 }
 
+// doDissolveStereo undoes a stereo pair and reports it WHERE THE USER IS
+// LOOKING. Both buttons used to call doDissolveZone, which writes its outcome
+// into the zone section further up the page and phrases it as "no group right
+// now". So pressing "Undo stereo pair" looked like nothing had happened: the
+// confirmation existed, but in another part of the page and about another
+// feature. A user asked for exactly this, having watched the pair come apart
+// with no sign that it had (2026-07-31). The toast makes it visible even when
+// the stereo section has scrolled out of view.
+async function doDissolveStereo(pairCands) {
+  const master = pairCands.find(b => b.deviceID === state.zoneMaster)
+    || pairCands.find(b => b.deviceID === ($('stereoLeft') || {}).value);
+  if (!master) {
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
+    renderMultiroom(false);
+    return;
+  }
+  $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
+  try {
+    await DissolveZone(master.host, master.port);
+    state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`;
+    showToast(t('multiroom.stereoDissolved'));
+  } catch (e) {
+    state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
+  renderMultiroom(true);
+}
+
 async function doDissolveZone(strBoxes) {
   const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
   if (!master) return;
   try {
     await DissolveZone(master.host, master.port);
-    state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.noZone'))}</div>`;
+    state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`;
+    showToast(t('multiroom.zoneDissolved'));
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
