@@ -82,7 +82,16 @@ func serveBatteryMonitorFallback(ctx context.Context, logger *slog.Logger) {
 				continue
 			}
 		}
-		logger.Warn("battery-monitor fallback: :17002 unserved (BatteryMonitor wedged or absent), agent now accepting BoseApp battery clients to stop the connect-storm fd leak")
+		// INFO, not WARN. On a speaker with no battery there is no
+		// BatteryMonitor to be wedged in the first place, so the port is simply
+		// free and we take it. That is every SoundTouch 10, 20 and 30, which
+		// means a WARN here put "BatteryMonitor wedged or absent" into the log
+		// of every speaker on every boot and said nothing was wrong. Verified
+		// across a cold boot of four speakers on 2026-07-30: all four logged it,
+		// none had a problem. The warning now belongs to the case that IS worth
+		// seeing, a battery client actually turning up, which only happens where
+		// the real service is wedged.
+		logger.Info("battery-monitor fallback: holding :17002 (nothing else serves it), so a BoseApp battery client cannot connect-storm a wedged BatteryMonitor")
 		acceptBatteryClients(ctx, ln, logger)
 		// acceptBatteryClients only returns on ctx cancellation (it closes
 		// the listener on its way out).
@@ -112,7 +121,12 @@ func acceptBatteryClients(ctx context.Context, ln net.Listener, logger *slog.Log
 			return
 		}
 		total++
-		if total == 1 || total%200 == 0 {
+		if total == 1 {
+			// A battery client really did turn up, so the speaker's own
+			// BatteryMonitor is wedged and this fallback is doing the work that
+			// stops the fd leak. THIS is the line worth noticing in a bundle.
+			logger.Warn("battery-monitor fallback: a BoseApp battery client connected, so this speaker's BatteryMonitor is wedged; holding the connection to stop the fd leak")
+		} else if total%200 == 0 {
 			logger.Info("battery-monitor fallback: serving BoseApp battery clients", "totalAccepted", total)
 		}
 		go drainBatteryConn(conn)
