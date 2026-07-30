@@ -4531,6 +4531,31 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 // endpoint: LAN-only, size-bounded, ELF-magic checked. On any problem it writes
 // the HTTP error response and returns ok=false. Shared by handleAgentUpdate and
 // handleAgentSidecar so the two upload endpoints cannot drift on their guards.
+// uploadMemKB reports MemAvailable and MemTotal in KB, or -1 each when
+// /proc/meminfo cannot be read. Logged around every upload so a bundle from a
+// speaker whose push died mid-stream says whether it ran out of memory,
+// instead of leaving that to be inferred from the app side.
+func uploadMemKB() (avail, total int64) {
+	avail, total = -1, -1
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		switch f[0] {
+		case "MemAvailable:":
+			avail, _ = strconv.ParseInt(f[1], 10, 64)
+		case "MemTotal:":
+			total, _ = strconv.ParseInt(f[1], 10, 64)
+		}
+	}
+	return
+}
+
 func readUploadedELF(w http.ResponseWriter, r *http.Request, logger *slog.Logger, what string) ([]byte, bool) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return nil, false
@@ -4546,20 +4571,39 @@ func readUploadedELF(w http.ResponseWriter, r *http.Request, logger *slog.Logger
 	// (request never arrived vs stream stalled at byte N vs read completed
 	// but reply lost) was undiagnosable. These lines make the next bundle
 	// answer that directly.
+	memAtStart, memTotal := uploadMemKB()
 	logger.Info("upload started", "endpoint", what,
-		"contentLength", r.ContentLength, "remote", r.RemoteAddr)
+		"contentLength", r.ContentLength, "remote", r.RemoteAddr,
+		"memAvailableKB", memAtStart, "memTotalKB", memTotal)
 	upr := &uploadProgressReader{
 		r: io.LimitReader(r.Body, maxSize+1), start: time.Now(), logger: logger, what: what,
 	}
-	body, err := io.ReadAll(upr)
+	// Reserve the whole body up front instead of letting io.ReadAll grow by
+	// doubling. The doubling briefly holds the old AND the new buffer, so a
+	// 16 MB engine peaked near 33 MB on a box with about 120 MB of RAM in
+	// total and well under half of it free. Two field reports (2026-07-30)
+	// show the ~16 MB sidecar push dying five times in a row with the box
+	// closing the connection about 100 s in, which is what an agent killed
+	// under memory pressure looks like from the app side. One allocation of
+	// the exact size removes that peak.
+	var buf bytes.Buffer
+	if cl := r.ContentLength; cl > 0 && cl <= maxSize {
+		buf.Grow(int(cl))
+	}
+	_, err := buf.ReadFrom(upr)
+	body := buf.Bytes()
 	if err != nil {
+		memNow, _ := uploadMemKB()
 		logger.Warn("upload aborted mid-stream", "endpoint", what,
-			"bytesRead", upr.n, "elapsedMs", time.Since(upr.start).Milliseconds(), "err", err)
+			"bytesRead", upr.n, "elapsedMs", time.Since(upr.start).Milliseconds(),
+			"memAvailableKB", memNow, "memAvailableAtStartKB", memAtStart, "err", err)
 		http.Error(w, "read: "+err.Error(), http.StatusBadRequest)
 		return nil, false
 	}
+	memAfter, _ := uploadMemKB()
 	logger.Info("upload body received", "endpoint", what,
-		"bytes", len(body), "elapsedMs", time.Since(upr.start).Milliseconds())
+		"bytes", len(body), "elapsedMs", time.Since(upr.start).Milliseconds(),
+		"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart)
 	if len(body) > maxSize {
 		http.Error(w, "binary too big", http.StatusRequestEntityTooLarge)
 		return nil, false
