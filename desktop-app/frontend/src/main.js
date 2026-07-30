@@ -1203,7 +1203,10 @@ document.querySelectorAll('.btn-source').forEach(btn => {
   btn.onclick = async () => {
     const box = state.currentBox;
     if (!box) { showToast(t('speaker.noneSelected')); return; }
-    const src = btn.dataset.source;
+    // A speaker that calls its analogue input LOCAL must be switched with
+    // LOCAL: the button keeps its familiar AUX label, but the name that goes
+    // to the speaker is the one the speaker itself reports (see #491).
+    const src = btn.dataset.sourceActual || btn.dataset.source;
     btn.disabled = true;
     try {
       await SelectBoxSource(box.host, box.port, src);
@@ -2086,10 +2089,13 @@ function renderBoxSelect() {
   // On a routed network mDNS and the local /24 scan find only the speakers on
   // this subnet, and the empty state's address field is gone the moment the
   // first one shows up, so there was no path left to add the others (#420).
-  // Collapsed to a small tile until clicked, so it stays out of the way for
-  // everyone whose speakers are simply found.
+  // Collapsed to a bare plus until clicked, so it stays out of the way for
+  // everyone whose speakers are simply found: this is a rescue path for a
+  // network that hides them, not something most people ever need. It carries
+  // its name as the accessible label and its explanation as the tooltip, so
+  // nothing is lost by dropping the words next to the symbol.
   const addIpTile = () => `
-    <span class="box-btn box-add-ip" id="addIpTile" role="button" tabindex="0" title="${escapeAttr(t('speaker.manualIpHelp'))}">+ ${escapeHtml(t('speaker.addByIp'))}</span>
+    <span class="box-btn box-add-ip" id="addIpTile" role="button" tabindex="0" aria-label="${escapeAttr(t('speaker.addByIp'))}" title="${escapeAttr(t('speaker.manualIpHelp'))}">+</span>
     <span class="manual-ip-row box-add-ip-row hidden" id="addIpRow">
       <input type="text" id="listIpInput" class="manual-ip-input" placeholder="${escapeAttr(t('speaker.manualIpPlaceholder'))}" inputmode="decimal" autocomplete="off" spellcheck="false">
       <button class="btn btn-mini" id="listAddIpBtn">${escapeHtml(t('speaker.manualIpButton'))}</button>
@@ -2300,6 +2306,8 @@ async function updateSourceButtonVisibility() {
   // source list arrives.
   if (btBtn) btBtn.classList.toggle('hidden', /portable/i.test(model));
   if (auxBtn) auxBtn.classList.toggle('hidden', /wave/i.test(model));
+  // Until the speaker's own list arrives, assume the usual name.
+  if (auxBtn) auxBtn.dataset.sourceActual = 'AUX';
   const box = state.currentBox;
   try {
     const settings = await BoxSettings(box.host, box.port);
@@ -2311,7 +2319,17 @@ async function updateSourceButtonVisibility() {
     if (Array.isArray(sources) && sources.length) {
       const has = (name) => sources.some(s => (s.source || '').toUpperCase() === name);
       if (btBtn) btBtn.classList.toggle('hidden', !has('BLUETOOTH'));
-      if (auxBtn) auxBtn.classList.toggle('hidden', !has('AUX'));
+      // The analogue input is not called the same thing on every model. A
+      // Cinemate reports it as LOCAL, and because STR only ever looked for
+      // AUX the button was hidden on a speaker that has the input and was
+      // even playing through it, while the same button showed up fine on the
+      // owner's ST10 and ST20 (#491). Accept either name and remember which
+      // one this speaker uses, so switching sends back what it understands.
+      if (auxBtn) {
+        const localName = has('AUX') ? 'AUX' : (has('LOCAL') ? 'LOCAL' : '');
+        auxBtn.classList.toggle('hidden', !localName);
+        auxBtn.dataset.sourceActual = localName || 'AUX';
+      }
     }
   } catch {
     // Keep the heuristic result on any error.
@@ -2988,7 +3006,48 @@ function speakerReachedTarget(live, preVersion, wantEngine) {
   return { done: true, missing: '' };
 }
 
-async function runBoxUpdate(box, onPhase, attempt = 1) {
+// makeUploadGate serializes the network-heavy part of an update while leaving
+// everything else free to overlap.
+//
+// Updating a house used to run two speakers at a time from start to finish, so
+// a speaker that had already been written to held its slot for the whole of its
+// restart, four to six minutes in which it needs nothing from the network and
+// nobody else may start. Six speakers took the best part of an hour, almost all
+// of it spent watching speakers reboot one pair at a time (#390).
+//
+// Only the pushes actually compete: two concurrent ~16 MB streams saturate a
+// weak shared access point and trip the 60 s upload-stall watchdog, which is
+// what the old limit was protecting against. Restarting and waiting cost no
+// bandwidth at all. So the pushes queue here and everything else runs at once,
+// which turns a house of six into roughly one upload after another with all the
+// restarts happening in parallel behind them.
+function makeUploadGate(limit = 1) {
+  let active = 0;
+  const waiting = [];
+  const pump = () => {
+    while (active < limit && waiting.length) {
+      active++;
+      waiting.shift()();
+    }
+  };
+  return {
+    // run holds the gate for the duration of fn and always gives it back, so
+    // one speaker throwing mid-push cannot strand the queue behind it.
+    async run(fn) {
+      await new Promise((resolve) => { waiting.push(resolve); pump(); });
+      try {
+        return await fn();
+      } finally {
+        active--;
+        pump();
+      }
+    },
+  };
+}
+
+// gate is optional: a single-speaker update has nothing to queue behind.
+async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
+  const gated = (fn) => (gate ? gate.run(fn) : fn());
   const phase = (p, d) => { try { if (onPhase) onPhase(p, d || {}); } catch {} };
   const appBuild = state.appInfo && state.appInfo.build;
   // Record what the box runs RIGHT NOW; the post-OTA success signal is "reachable
@@ -3000,7 +3059,7 @@ async function runBoxUpdate(box, onPhase, attempt = 1) {
   } catch { /* pre-OTA version unknown: fall back to the appBuild match */ }
   phase('uploading');
   try {
-    await UpdateBoxAgent(box.host, box.port);
+    await gated(() => UpdateBoxAgent(box.host, box.port));
   } catch (e) {
     // A timeout-class rejection ("deadline exceeded ... while reading body",
     // common on a slow link or with an HTTP-inspecting suite like Norton) does
@@ -3038,6 +3097,11 @@ async function runBoxUpdate(box, onPhase, attempt = 1) {
         if (!stableSince) stableSince = Date.now();
         const windowDone = sawSecondDrop || (Date.now() - stableSince >= stabilityMs);
         if (windowDone) { confirmedVer = v; break; }
+        // The speaker IS back on the new version; we are only holding it for
+        // the stability window before believing it. Saying "restarting" here
+        // reads as if the app had not noticed, which is exactly how it looked
+        // to Jens watching two speakers that had visibly already come back.
+        phase('settling', { remainingMs: stabilityMs - (Date.now() - stableSince) });
       } else {
         stableSince = 0;
       }
@@ -3076,7 +3140,7 @@ async function runBoxUpdate(box, onPhase, attempt = 1) {
     if (!confirmedVer && cls === 'not-landed' && attempt < 2) {
       try { RecordOTAOutcome(box.host, 'retrying once: the software never reached the speaker disk (marginal write)'); } catch {}
       phase('retrying', { attempt: attempt + 1 });
-      return runBoxUpdate(box, onPhase, attempt + 1);
+      return runBoxUpdate(box, onPhase, attempt + 1, gate);
     }
     if (!confirmedVer) {
       try { noteOTAFailure(box, cls); } catch {}
@@ -3123,7 +3187,16 @@ async function runBoxUpdate(box, onPhase, attempt = 1) {
       }
       await waitForStableAgent(box, engDeadlineMs);
       try {
-        const engRes = await EnsureSpotifyEngine(box.host, box.port);
+        // "Spotify engine: missing, waiting for the target state" described the
+        // speaker, not what the app was doing, so the ~16 MB delivery that
+        // follows looked like nothing was happening (Jens, watching a live run).
+        // Say that it is queued, then that it is being sent; the row's bar is
+        // already fed by the transfer's own progress events.
+        phase('engineQueued');
+        const engRes = await gated(() => {
+          phase('engineUploading');
+          return EnsureSpotifyEngine(box.host, box.port);
+        });
         // A build that carries no engine cannot deliver one, so waiting the
         // full window would only burn ten minutes to reach the same answer.
         if (engRes && /no embedded engine/i.test(engRes)) {
@@ -3807,7 +3880,7 @@ async function updateAllBoxes() {
   // at all. It still records the target first, like every other speaker in the
   // run, so a window closed halfway is noticed afterwards instead of looking
   // like nothing ever happened.
-  const runEngineOnly = async (b) => {
+  const runEngineOnly = async (b, gate) => {
     setRow(b.host, { phaseText: t('updateAll.phase.engineOnly'), indet: true });
     let outcome = 'failed';
     try {
@@ -3815,7 +3888,7 @@ async function updateAllBoxes() {
         b.deviceID || '', getBoxLabel(b), true);
     } catch {}
     try {
-      const res = await EnsureSpotifyEngine(b.host, b.port);
+      const res = await gate.run(() => EnsureSpotifyEngine(b.host, b.port));
       if (/no embedded engine/i.test(String(res || ''))) {
         // This app build carries no engine, so there is nothing to deliver.
         outcome = 'partial';
@@ -3856,8 +3929,8 @@ async function updateAllBoxes() {
     }
   };
 
-  const runOne = async (b) => {
-    if (engineOnly.has(b.host)) return runEngineOnly(b);
+  const runOne = async (b, gate) => {
+    if (engineOnly.has(b.host)) return runEngineOnly(b, gate);
     setRow(b.host, { phaseText: t('updateAll.phase.uploading'), indet: true });
     let outcome = 'failed';
     try {
@@ -3871,11 +3944,14 @@ async function updateAllBoxes() {
           case 'rebooting': setRow(b.host, { phaseText: t('updateAll.phase.rebooting'), indet: true }); break;
           case 'verifying': setRow(b.host, { phaseText: t('updateAll.phase.verifying', { remaining: formatRemaining(d.remainingMs) }), indet: true }); break;
           case 'retrying': setRow(b.host, { phaseText: t('updateAll.phase.retrying'), indet: true }); break;
+          case 'settling': setRow(b.host, { phaseText: t('updateAll.phase.settling', { remaining: formatRemaining(d.remainingMs) }), indet: true }); break;
+          case 'engineQueued': setRow(b.host, { phaseText: t('updateAll.phase.engineQueued'), indet: true }); break;
+          case 'engineUploading': setRow(b.host, { phaseText: t('updateAll.phase.engineUploading'), pct: 0 }); break;
           case 'spotify': setRow(b.host, { phaseText: d.reachable
             ? t('updateAll.phase.spotifyState', { engine: d.engine })
             : t('updateAll.phase.spotifyUnreachable') }); break;
         }
-      });
+      }, 1, gate);
       outcome = result.outcome;
       // Honesty check: a box can LOSE its just-delivered engine to an extra
       // reboot AFTER the engine step returned (tight-NAND ST30, the Portable's
@@ -3912,10 +3988,11 @@ async function updateAllBoxes() {
     }
   };
 
-  // Bounded worker pool: at most 2 speakers in flight at once.
-  const queue = targets.slice();
-  const worker = async () => { while (queue.length) { await runOne(queue.shift()); } };
-  await Promise.allSettled(Array.from({ length: Math.min(2, targets.length) }, () => worker()));
+  // Every speaker starts at once and they queue only for the push itself, so
+  // the restarts, which are the long part and need no network, all happen
+  // together instead of two at a time (see makeUploadGate).
+  const uploadGate = makeUploadGate(1);
+  await Promise.allSettled(targets.map(b => runOne(b, uploadGate)));
 
   // Batch done: release the global lock, refresh, summarize.
   offProg();
@@ -5453,7 +5530,11 @@ function renderNowPlayingBar() {
   else if (ps === 'PAUSE_STATE') { stateLabel = t('status.paused'); stateClass = 'idle'; }
   else if (srcU === 'STANDBY') { stateLabel = t('status.standby'); stateClass = 'idle'; }
   else { stateLabel = ''; stateClass = 'idle'; }
-  if (srcU === 'AUX') { displayName = t('status.auxInput'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
+  // LOCAL is what a Cinemate calls the very same analogue input, so it gets
+  // the same line rather than falling through to the generic "some source is
+  // active" case, which is why a speaker playing through it showed nothing
+  // useful at all (#491).
+  if (srcU === 'AUX' || srcU === 'LOCAL') { displayName = t('status.auxInput'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (srcU === 'BLUETOOTH') { displayName = t('status.bluetooth'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (isAirplay) { displayName = t('status.airplay'); if (!stateLabel) { stateLabel = t('status.active'); stateClass = 'play'; } }
   else if (srcU && srcU !== 'STANDBY' && srcU !== 'INVALID_SOURCE' && ps !== 'STOP_STATE' && !stateLabel && !displayName) {
@@ -5756,7 +5837,7 @@ async function refreshStatus() {
     // Source buttons: highlight the active source in green.
     document.querySelectorAll('.btn-source').forEach(b => {
       const s = b.dataset.source;
-      const active = (s === 'AUX' && src === 'AUX') ||
+      const active = ((s === 'AUX' || s === 'LOCAL') && (src === 'AUX' || src === 'LOCAL')) ||
                      (s === 'BLUETOOTH' && src === 'BLUETOOTH') ||
                      (s === 'STANDBY' && src === 'STANDBY');
       b.classList.toggle('active', active);

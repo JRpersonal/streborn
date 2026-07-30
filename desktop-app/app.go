@@ -2794,9 +2794,13 @@ func (a *App) SetBoxBass(host string, port int, value int) error {
 	return a.boxPut(host, port, "/api/box/bass", map[string]int{"value": value})
 }
 
-// SelectBoxSource switches the box to a different source: "AUX",
+// SelectBoxSource switches the box to a different source: "AUX", "LOCAL",
 // "BLUETOOTH", "STANDBY". The Stick Agent translates that into the matching
 // /select or /key call to the Bose REST API.
+//
+// AUX and LOCAL are the same analogue input under the two names the firmware
+// uses for it, and they are NOT interchangeable on the wire: the caller passes
+// whichever one the speaker itself reports (#491).
 func (a *App) SelectBoxSource(host string, port int, source string) error {
 	return a.boxPut(host, port, "/api/box/source", map[string]string{"source": source})
 }

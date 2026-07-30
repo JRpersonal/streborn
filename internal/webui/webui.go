@@ -5734,6 +5734,13 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 	switch src {
 	case "AUX":
 		body = `<ContentItem source="AUX" sourceAccount="AUX"></ContentItem>`
+	case "LOCAL":
+		// The same analogue input under the name a Cinemate uses for it. Note
+		// there is no sourceAccount: that is how the speaker itself describes
+		// the source when it is playing through it, and it is the reason the
+		// AUX form cannot simply be reused here (#491, taken from the owner's
+		// own diagnostic: <ContentItem source="LOCAL" isPresetable="true" />).
+		body = `<ContentItem source="LOCAL"></ContentItem>`
 	case "BLUETOOTH", "BT":
 		body = `<ContentItem source="BLUETOOTH" sourceAccount=""></ContentItem>`
 	default:
