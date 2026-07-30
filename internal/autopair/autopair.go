@@ -42,6 +42,9 @@ type Manager struct {
 	logger *slog.Logger
 	cfg    Config
 	client *http.Client
+	// pairClient carries the long deadline for /setMargeAccount; client keeps
+	// the short one for the cheap status read (see pairTimeout).
+	pairClient *http.Client
 	// base is the box's BoseApp REST origin ("http://<host>:8090").
 	// A field (not recomputed per request) so tests can point the
 	// Manager at an httptest server.
@@ -109,12 +112,37 @@ func New(logger *slog.Logger, cfg Config) *Manager {
 		cfg.Email = defaultEmail
 	}
 	return &Manager{
-		logger: logger,
-		cfg:    cfg,
-		client: &http.Client{Timeout: 8 * time.Second},
-		base:   "http://" + cfg.BoxHost + ":8090",
+		logger:     logger,
+		cfg:        cfg,
+		client:     &http.Client{Timeout: statusTimeout},
+		pairClient: &http.Client{Timeout: pairTimeout},
+		base:       "http://" + cfg.BoxHost + ":8090",
 	}
 }
+
+// statusTimeout bounds the cheap /info read. It answers immediately on a
+// healthy box, so a short deadline is right: a box that cannot answer this
+// within a few seconds is busy or booting, and the next tick will retry.
+// Var, not const, so the test can prove the POST outlives it without sleeping
+// for the real deadline.
+var statusTimeout = 8 * time.Second
+
+// pairTimeout bounds the /setMargeAccount POST, which is a different animal
+// from the status read and used to share its 8 s deadline.
+//
+// The box does real work behind that POST and can sit on it for many seconds
+// while it is booting, waking, or busy. When the deadline fired first, the
+// pairing never completed, the box stayed without its account, and from then
+// on it answered every preset press with 1036 NOT_LOGGED_IN until someone
+// pulled the plug. That is #433, and it is what a user's log showed while his
+// speakers kept refusing every station (#510, #511) and one of them had to be
+// downgraded to keep working at all (#428).
+//
+// A long deadline here is safe: the pair cycle is single-flight (inFlight), so
+// a slow POST cannot stack into the storm #375 was about, and the background
+// heartbeat only comes round every few minutes. Finishing late beats not
+// finishing.
+var pairTimeout = 60 * time.Second
 
 // IsPaired reads /info and checks whether margeAccountUUID is set.
 func (m *Manager) IsPaired(ctx context.Context) (bool, error) {
@@ -150,7 +178,8 @@ func (m *Manager) Pair(ctx context.Context) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/xml")
-	resp, err := m.client.Do(req)
+	// pairClient, not client: this POST gets the long deadline (see pairTimeout).
+	resp, err := m.pairClient.Do(req)
 	if err != nil {
 		return err
 	}

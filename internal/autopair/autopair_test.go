@@ -21,6 +21,7 @@ type fakeBox struct {
 	infoBody  string
 	infoDate  string // optional Date header (the RTC clock gate reads it)
 	infoDelay time.Duration
+	pairDelay time.Duration // how long the box sits on /setMargeAccount
 	pairPosts atomic.Int64
 }
 
@@ -40,6 +41,12 @@ func (f *fakeBox) handler() http.Handler {
 	})
 	mux.HandleFunc("/setMargeAccount", func(w http.ResponseWriter, r *http.Request) {
 		f.pairPosts.Add(1)
+		f.mu.Lock()
+		delay := f.pairDelay
+		f.mu.Unlock()
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 	return mux
@@ -350,5 +357,47 @@ func TestForcePairStampsSuspectAssert(t *testing.T) {
 	}
 	if got := box.pairPosts.Load(); got != 1 {
 		t.Fatalf("an ensure right after a forced re-login must coalesce into its min-gap, got %d POSTs", got)
+	}
+}
+
+// TestPairOutlivesTheStatusDeadline is the regression guard for #433: the box
+// sits on /setMargeAccount for longer than the cheap status read is allowed to
+// take. Both used to share one 8 s deadline, so pairing was cut off, the box
+// kept no account, and every later preset press came back 1036 NOT_LOGGED_IN
+// (#510, #511, and the downgrade in #428).
+func TestPairOutlivesTheStatusDeadline(t *testing.T) {
+	oldStatus, oldPair := statusTimeout, pairTimeout
+	statusTimeout, pairTimeout = 100*time.Millisecond, 3*time.Second
+	t.Cleanup(func() { statusTimeout, pairTimeout = oldStatus, oldPair })
+
+	// Slower than the status deadline, well inside the pair deadline.
+	box := &fakeBox{infoBody: unpairedInfo, pairDelay: 400 * time.Millisecond}
+	m := newTestManager(t, box)
+
+	if err := m.Pair(context.Background()); err != nil {
+		t.Fatalf("a box that answers in %v must still get paired, got: %v", box.pairDelay, err)
+	}
+	if got := box.pairPosts.Load(); got != 1 {
+		t.Fatalf("expected exactly one setMargeAccount POST, got %d", got)
+	}
+}
+
+// TestStatusReadKeepsTheShortDeadline makes sure the long pair deadline was not
+// handed to the status read as well: a wedged box must not hold the pair cycle
+// for a minute on a call that answers instantly when healthy.
+func TestStatusReadKeepsTheShortDeadline(t *testing.T) {
+	oldStatus, oldPair := statusTimeout, pairTimeout
+	statusTimeout, pairTimeout = 100*time.Millisecond, 3*time.Second
+	t.Cleanup(func() { statusTimeout, pairTimeout = oldStatus, oldPair })
+
+	box := &fakeBox{infoBody: pairedInfo, infoDelay: 400 * time.Millisecond}
+	m := newTestManager(t, box)
+
+	start := time.Now()
+	if _, err := m.IsPaired(context.Background()); err == nil {
+		t.Fatal("a status read slower than its deadline must fail, not wait")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("status read waited %v, so it is using the long pair deadline", elapsed)
 	}
 }
