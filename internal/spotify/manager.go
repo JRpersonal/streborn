@@ -1506,6 +1506,21 @@ func (m *Manager) playDenialHint() string {
 		m.mu.Unlock()
 		if !at.IsZero() && time.Since(at) < 15*time.Second &&
 			(strings.Contains(line, "aes key") || strings.Contains(line, "audio key")) {
+			// A key request that failed because the connection to Spotify was
+			// gone is NOT a denial. The engine authenticates first and its
+			// session to Spotify's access point comes up a moment later, so the
+			// first press right after the engine starts can ask for a key over a
+			// connection that is already closed, while the same press seconds
+			// later works. Blaming a missing Premium subscription there sends the
+			// user after a problem they do not have (#512: "the first preset
+			// press plays no Spotify", engine authenticated one second earlier).
+			if strings.Contains(line, "accesspoint closed") ||
+				strings.Contains(line, "connection reset") ||
+				strings.Contains(line, "use of closed network connection") {
+				return "Spotify's connection was not ready yet, so the audio could not be fetched. " +
+					"This usually only hits the first press after the speaker's Spotify engine has started; " +
+					"press the button again in a few seconds."
+			}
 			return "Spotify refused to deliver the audio for this item (audio key denied). " +
 				"This usually means the Spotify account on the speaker has no Premium subscription, " +
 				"which STR's Spotify engine requires; occasionally the item itself is not licensed for streaming."
