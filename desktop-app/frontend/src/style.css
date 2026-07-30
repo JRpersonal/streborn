@@ -543,7 +543,18 @@ body {
 .box-btn.box-add-ip {
   border-style: dashed;
   opacity: 0.72;
-  font-weight: 500;
+  /* A bare "+" needs to read as a button rather than a stray character, so it
+     is squared off and centred at the same height as a speaker pill instead of
+     inheriting the padding meant for a pill with a name in it. */
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+  min-width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .box-btn.box-add-ip:hover { opacity: 1; }
 .box-add-ip-row { display: inline-flex; margin-top: 0; vertical-align: middle; }
@@ -1366,6 +1377,9 @@ html.a11y-contrast .btn-warning:disabled {
 
 /* ---------- Box Einstellungen View ---------- */
 #view-settings h2 { margin: 0 0 8px 0; color: var(--brand); font-size: 18px; }
+/* The library tab acts on one speaker (play, and presets are stored on it), so
+   it carries the same speaker picker as speaker settings and shares its look. */
+.library-box-switcher,
 .settings-box-switcher {
   display: flex;
   align-items: center;
@@ -1376,6 +1390,7 @@ html.a11y-contrast .btn-warning:disabled {
   border: 1px solid var(--brand-border);
   border-radius: 6px;
 }
+.library-box-switcher select,
 .settings-box-switcher select {
   flex: 1;
   background: var(--c-bg);

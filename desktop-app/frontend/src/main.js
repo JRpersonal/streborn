@@ -346,7 +346,7 @@ initSpotifyView({
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
 initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab });
-initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget });
+initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab });
 initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, boxFetch, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initPodcastsView();
 

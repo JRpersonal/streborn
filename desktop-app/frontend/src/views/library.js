@@ -15,7 +15,7 @@
 // (libState/LIB_PAGE/LIB_MAX) are pure data and safe at module scope.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, showError, showToast } from '../utils.js';
+import { $, escapeHtml, escapeAttr, showError, showToast, getBoxLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
 import {
   ListMediaServers,
@@ -38,6 +38,9 @@ let deps = {
   // box is a zone follower, #70). Overridden by main.js; the fallback keeps
   // the old behavior if the dep is ever missing.
   effectivePlayTarget: () => state.currentBox,
+  // Told about a speaker picked here so the music tab and the setup target
+  // follow along, the same lock-step speaker settings already does.
+  speakerPicked() {},
 };
 export function initLibraryView(d) {
   deps = { ...deps, ...d };
@@ -402,7 +405,7 @@ function librarySaveAsPreset(item) {
   const srv = libState.servers.find(s => s.udn === libState.currentUDN);
   const source = (srv && (srv.friendlyName || srv.address)) || '';
   deps.showSlotPicker({
-    title: t('library.assignTitle'),
+    title: t('library.assignTitle', { name: getBoxLabel(state.currentBox) }),
     subtitle: [item.artist, item.title].filter(Boolean).join(' — ') || item.title || '',
     onPick: async (i) => {
       await SaveLibraryPreset(state.currentBox.host, state.currentBox.port, i,
@@ -501,10 +504,26 @@ function libRefilter() {
 function renderLibrary() {
   const el = $('view-library');
   if (!el) return;
+  // Which speaker this tab acts on has to be visible here. Playing a track and
+  // saving a preset both go to the speaker picked on the music tab, and presets
+  // live on that speaker, so choosing a preset slot from the library meant
+  // choosing blind: nothing on this page said which speaker would get it (Jens,
+  // 2026-07-30). Same control as speaker settings, and it moves the shared
+  // selection so the whole app stays in lock-step.
+  const boxOpts = state.boxes.length
+    ? state.boxes.map(b => {
+        const sel = state.currentBox && b.deviceID === state.currentBox.deviceID ? ' selected' : '';
+        return `<option value="${escapeAttr(b.deviceID || '')}"${sel}>${escapeHtml(getBoxLabel(b))}</option>`;
+      }).join('')
+    : `<option value="">${escapeHtml(t('library.noSpeaker'))}</option>`;
   const intro = `
     <div class="library-header">
       <h2>${escapeHtml(t('library.title'))}</h2>
       <p class="library-sub">${escapeHtml(t('library.subtitle'))}</p>
+      <div class="library-box-switcher">
+        <span class="muted small">${escapeHtml(t('library.forSpeaker'))}</span>
+        <select id="libraryBoxSelect">${boxOpts}</select>
+      </div>
     </div>`;
 
   if (libState.loading) {
@@ -608,6 +627,16 @@ function renderLibrary() {
   el.innerHTML = intro + serverPicker + manualAdd + body;
 
   // Wire interactions.
+  const boxSel = $('libraryBoxSelect');
+  if (boxSel) {
+    boxSel.onchange = () => {
+      const box = state.boxes.find(b => (b.deviceID || '') === boxSel.value);
+      if (!box) return;
+      state.currentBox = box;
+      deps.speakerPicked(box);
+      renderLibrary();
+    };
+  }
   const sel = $('libServerSelect');
   if (sel) sel.onchange = () => libraryPickServer(sel.value);
   const ref = $('libRefreshBtn');
