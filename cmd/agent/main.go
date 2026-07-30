@@ -1927,7 +1927,13 @@ func isPlayableURL(u string) bool {
 // peerEntry accumulates what we know about one other STR speaker across mDNS
 // sweeps, so a peer missed in a single lossy round is not dropped from the list.
 type peerEntry struct {
-	name      string
+	name string
+	// deviceID is the speaker's own identity, which survives an address
+	// change. The roster is keyed by IP, so without it a speaker that moves
+	// (cable to Wi-Fi, a new DHCP lease) arrives as a brand new entry under a
+	// stand-in name while its old entry lingers alongside, and the owner sees
+	// both a wrong name and a duplicate until the stale one ages out (#494).
+	deviceID  string
 	port      int // last web port that answered (0 = never reached)
 	lastSeen  time.Time
 	reachable bool // answered a web-port probe on the most recent sweep
@@ -1953,8 +1959,45 @@ const peersStorePath = "/mnt/nv/streborn/peers.json"
 type peerDiskEntry struct {
 	IP       string    `json:"ip"`
 	Name     string    `json:"name"`
+	DeviceID string    `json:"deviceID,omitempty"`
 	Port     int       `json:"port"`
 	LastSeen time.Time `json:"lastSeen"`
+}
+
+// adoptPeerEntryLocked returns the roster entry for ip, moving an existing
+// entry over when the SAME speaker has simply changed address.
+//
+// The roster is keyed by IP, so without this a speaker that moves (cable to
+// Wi-Fi, a fresh DHCP lease) arrives as a brand new entry: it shows up under
+// the stand-in name it announces until its real name is fetched, while its old
+// entry lingers beside it as a stale twin. The owner sees a wrong name and a
+// duplicate for as long as that takes (#494, reported again on v0.9.25 after
+// the stand-in names themselves were fixed). The device ID survives the
+// address change, so the entry follows the speaker and keeps the name that was
+// already known.
+//
+// Caller holds peersMu.
+func adoptPeerEntryLocked(ip, deviceID string) *peerEntry {
+	e := peersByIP[ip]
+	if e == nil {
+		if deviceID != "" {
+			for oldIP, old := range peersByIP {
+				if old.deviceID == deviceID && oldIP != ip {
+					e = old
+					delete(peersByIP, oldIP)
+					break
+				}
+			}
+		}
+		if e == nil {
+			e = &peerEntry{}
+		}
+		peersByIP[ip] = e
+	}
+	if deviceID != "" {
+		e.deviceID = deviceID
+	}
+	return e
 }
 
 // loadPersistedPeers seeds peersByIP from NAND at agent start. Entries come
@@ -1976,7 +2019,7 @@ func loadPersistedPeers(logger *slog.Logger) {
 		if d.IP == "" || now.Sub(d.LastSeen) > peerTTL {
 			continue
 		}
-		peersByIP[d.IP] = &peerEntry{name: d.Name, port: d.Port, lastSeen: d.LastSeen}
+		peersByIP[d.IP] = &peerEntry{name: d.Name, deviceID: d.DeviceID, port: d.Port, lastSeen: d.LastSeen}
 		n++
 	}
 	peersMu.Unlock()
@@ -1993,11 +2036,11 @@ func savePersistedPeersLocked(logger *slog.Logger) {
 	list := make([]peerDiskEntry, 0, len(peersByIP))
 	fp := ""
 	for ip, e := range peersByIP {
-		list = append(list, peerDiskEntry{IP: ip, Name: e.name, Port: e.port, LastSeen: e.lastSeen})
+		list = append(list, peerDiskEntry{IP: ip, Name: e.name, DeviceID: e.deviceID, Port: e.port, LastSeen: e.lastSeen})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].IP < list[j].IP })
 	for _, d := range list {
-		fp += d.IP + "|" + d.Name + "|" + strconv.Itoa(d.Port) + ";"
+		fp += d.IP + "|" + d.Name + "|" + d.DeviceID + "|" + strconv.Itoa(d.Port) + ";"
 	}
 	if fp == peersSavedFP && time.Since(peersSavedAt) < 6*time.Hour {
 		return
@@ -2193,8 +2236,8 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		ch, err := discovery.Browse(bctx, logger)
 		mine := ownIPv4s()
 		type found struct {
-			ip, name string
-			port     int
+			ip, name, deviceID string
+			port               int
 		}
 		var fresh []found
 		if err == nil {
@@ -2229,7 +2272,7 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 						name = friendly
 					}
 				}
-				fresh = append(fresh, found{ip: ip, name: name, port: reachableWebPort(ip)})
+				fresh = append(fresh, found{ip: ip, name: name, deviceID: inst.DeviceID, port: reachableWebPort(ip)})
 			}
 		} else {
 			logger.Debug("peers browse failed", "err", err)
@@ -2239,11 +2282,7 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		peersMu.Lock()
 		now := time.Now()
 		for _, f := range fresh {
-			e := peersByIP[f.ip]
-			if e == nil {
-				e = &peerEntry{}
-				peersByIP[f.ip] = e
-			}
+			e := adoptPeerEntryLocked(f.ip, f.deviceID)
 			// Never let a placeholder overwrite a name we already know: mDNS can
 			// answer with the instance name only, and replacing "Kitchen" with
 			// "str-192.0.2.5" is the #494 defect arriving by the back door.
