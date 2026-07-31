@@ -95,6 +95,11 @@ const flushThreshold = 256 * 1024
 // minutes of buffer the unpaced passthrough used to hand the box.
 const oggLeadCapSec = 10
 
+// maxFlushAge bounds how long a partial batch may sit before it is flushed to
+// the box anyway. Under realtime pacing the size threshold alone would turn
+// delivery into one 256 KB lump per ~11 s and let the box run dry in between.
+const maxFlushAge = 2 * time.Second
+
 // Manager supervises one go-librespot process and brokers its PCM output
 // (as a live WAV stream) to at most one HTTP consumer (the speaker),
 // plus drives playback through go-librespot's local HTTP API.
@@ -954,6 +959,9 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	var granOffset, leadBaseGran int64
 	var leadBaseAt time.Time
 	leadAnchored := false
+	// pendingSince stamps the oldest byte in the batch, for the flush-age
+	// bound below.
+	pendingSince := time.Now()
 	for {
 		page, err := readOggPage(r)
 		if err != nil {
@@ -1074,10 +1082,20 @@ func (m *Manager) runOnce(ctx context.Context) error {
 				}
 			}
 			// Batch pages into large writes (see flushThreshold) so the box
-			// gets large chunks, not a tiny chunk per page.
+			// gets large chunks, not a tiny chunk per page. With the realtime
+			// pacing above, the size threshold alone is a trap: at ~187 kbps it
+			// takes ~11 s to fill 256 KB, so the box received its audio as one
+			// lump per ~11 s, ran dry in between, and a skip landing in the gap
+			// starved it into detaching (live 2026-08-01 01:13, followed by a
+			// recovery recall that read as a double skip). A flush-age bound
+			// keeps the flow continuous; the chunks stay far above the
+			// per-page writes the size threshold exists to prevent.
+			if len(pending) == 0 {
+				pendingSince = time.Now()
+			}
 			pending = append(pending, page...)
 			forwarded += int64(len(page))
-			if len(pending) >= flushBytes {
+			if len(pending) >= flushBytes || time.Since(pendingSince) > maxFlushAge {
 				m.forward(sink, pending)
 				pending = pending[:0]
 			}
