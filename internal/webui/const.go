@@ -274,12 +274,12 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <div class="card">
 <div class="label" id="lblPlayback">Playback</div>
 <div class="row c2" style="margin-bottom:8px">
-<button class="btn" id="btnPrev" onclick="skip(this,'/api/prev')" style="gap:6px" aria-label="Previous" title="Previous"><span aria-hidden="true" style="font-size:19px">&#9198;</span><span id="btnPrevLbl">Previous</span></button>
-<button class="btn" id="btnNext" onclick="skip(this,'/api/next')" style="gap:6px" aria-label="Next" title="Next"><span id="btnNextLbl">Next</span><span aria-hidden="true" style="font-size:19px">&#9197;</span></button>
+<button class="btn" id="btnPrev" onclick="skip(this,'/api/prev')" style="gap:6px" aria-label="Previous" title="Previous"><span aria-hidden="true" style="font-size:19px">&#9198;&#65039;</span><span id="btnPrevLbl">Previous</span></button>
+<button class="btn" id="btnNext" onclick="skip(this,'/api/next')" style="gap:6px" aria-label="Next" title="Next"><span id="btnNextLbl">Next</span><span aria-hidden="true" style="font-size:19px">&#9197;&#65039;</span></button>
 </div>
 <div class="row c2">
-<button class="btn" id="btnPause" onclick="togglePlayPause(this)" style="gap:6px" aria-label="Pause" title="Pause"><span id="btnPauseIcon" aria-hidden="true" style="font-size:19px">&#9208;</span><span id="btnPauseLbl">Pause</span></button>
-<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')" style="gap:6px" aria-label="Stop" title="Stop"><span aria-hidden="true" style="font-size:19px">&#9209;</span><span id="btnStopLbl">Stop</span></button>
+<button class="btn" id="btnPause" onclick="togglePlayPause(this)" style="gap:6px" aria-label="Pause" title="Pause"><span id="btnPauseIcon" aria-hidden="true" style="font-size:19px">&#9208;&#65039;</span><span id="btnPauseLbl">Pause</span></button>
+<button class="btn" id="btnStop" onclick="pp(this,'/api/stop')" style="gap:6px" aria-label="Stop" title="Stop"><span aria-hidden="true" style="font-size:19px">&#9209;&#65039;</span><span id="btnStopLbl">Stop</span></button>
 </div>
 </div>
 
@@ -547,7 +547,11 @@ function applyTransportUI(state) {
   var lbl = document.getElementById('btnPauseLbl');
   if (lbl) lbl.textContent = paused ? T.play : T.pause;
   var ic = document.getElementById('btnPauseIcon');
-  if (ic) ic.innerHTML = paused ? '&#9205;' : '&#9208;';
+  // Play must be U+25B6+VS16: it is the only glyph of this set with an emoji
+  // form on iOS, where the neighbours (23EE/23ED/23F8/23F9, VS16-pinned in the
+  // markup) render as emoji anyway. Plain U+23F5 fell back to a text-style
+  // triangle there and looked like a foreign icon set (#382).
+  if (ic) ic.innerHTML = paused ? '&#9654;&#65039;' : '&#9208;&#65039;';
   b.setAttribute('aria-label', paused ? T.play : T.pause);
   b.title = paused ? T.play : T.pause;
 }
