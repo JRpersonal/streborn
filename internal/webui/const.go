@@ -89,7 +89,16 @@ header .brand span { color:var(--accent); }
 /* The speaker name is the page's identity (one saved app per speaker), so it
    reads as a headline: bright, semi-bold, and it WRAPS instead of getting cut
    off - multi-word room names were ellipsized before. */
-header .dev { margin-left:auto; min-width:0; font-size:15px; font-weight:600; color:var(--fg); text-align:right; overflow-wrap:anywhere; line-height:1.25; }
+header .devwrap { margin-left:auto; position:relative; min-width:0; }
+header .dev { min-width:0; font-size:15px; font-weight:600; color:var(--fg); text-align:right; overflow-wrap:anywhere; line-height:1.25; background:none; border:0; padding:4px 2px; font-family:inherit; cursor:default; display:flex; align-items:center; gap:5px; }
+header .dev .chev { font-size:10px; color:var(--muted); flex:none; display:none; }
+header .dev.haspeers { cursor:pointer; }
+header .dev.haspeers .chev { display:inline; }
+.devmenu { position:absolute; right:0; top:calc(100% + 8px); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:8px; z-index:60; min-width:210px; max-width:80vw; display:flex; flex-direction:column; gap:6px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+/* An explicit display beats the hidden attribute, which left the menu
+   permanently open (caught in the live browser check): restore it. */
+.devmenu[hidden] { display:none; }
+.devmenu a.btn, .devmenu span.btn { justify-content:flex-start; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin:12px 0; }
 .nowcard { padding:14px 16px; background:linear-gradient(180deg,var(--nowgrad1),var(--nowgrad2)); }
 .nowcard .now { display:block; color:var(--accent); font-weight:600; font-size:18px; line-height:1.25; }
@@ -211,7 +220,10 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <header>
 <img src="/icon.png" alt="STR">
 <div class="brand">ST <span>Reborn</span></div>
-<div class="dev" id="dev"></div>
+<div class="devwrap">
+<button type="button" class="dev" id="dev" aria-haspopup="listbox" aria-expanded="false"><span id="devName"></span><span class="chev" aria-hidden="true">&#9662;</span></button>
+<div class="devmenu" id="devMenu" role="listbox" hidden></div>
+</div>
 <button type="button" class="pwr" id="powerBtn" onclick="togglePower()" aria-label="Power" aria-pressed="true" title="Power"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="2.5" x2="12" y2="12"></line><path d="M7.5 6.3a7 7 0 1 0 9 0"></path></svg></button>
 <div class="a11y">
 <button type="button" class="a11y-trigger" id="a11yTrigger" aria-haspopup="dialog" aria-expanded="false" aria-label="Display &amp; accessibility" title="Display &amp; accessibility">Aa</button>
@@ -361,6 +373,9 @@ function applyStaticI18n() {
   // aria-hidden span. applyTransportUI swaps the pause glyph to play when paused.
   set('btnPauseLbl', T.pause); set('btnStopLbl', T.stop);
   set('lblPresets', T.presets); set('lblPeers', T.peers);
+  // The switcher reuses the "Other speakers" label so it needs no new string.
+  var devBtn = document.getElementById('dev');
+  if (devBtn) devBtn.setAttribute('aria-label', T.peers);
   set('lblSupport', T.support); set('lblTip', T.tip);
   set('lblBass', T.bass);
   set('lblWedge', T.wedgeTitle);
@@ -595,7 +610,11 @@ async function loadSettings() {
     var card = document.getElementById('inputs');
     if (card && card.parentElement) card.parentElement.style.display = (have.BLUETOOTH || have.AUX) ? '' : 'none';
   }
-  if (s.info && s.info.name) { var d = document.getElementById('dev'); d.textContent = s.info.name; d.title = s.info.name; }
+  if (s.info && s.info.name) {
+    var dn = document.getElementById('devName');
+    if (dn && dn.textContent !== s.info.name) { dn.textContent = s.info.name; renderDevMenu(); }
+    document.getElementById('dev').title = s.info.name;
+  }
   if (s.volume && typeof s.volume.actual === 'number') {
     volLast = s.volume.actual;
     var el = document.getElementById('vol'); el.value = s.volume.actual;
@@ -730,23 +749,56 @@ async function pollProg() {
 }
 setInterval(renderProg, 1000);
 
+// peerBtn builds one speaker entry, shared by the bottom card and the header
+// switcher so the two can never drift: same source list, same dim rule.
+function peerBtn(p) {
+  const a = document.createElement('a'); a.className = 'btn peer'; a.rel = 'noopener';
+  // reachable is omitted by older agents -> treat as online. An offline peer
+  // (seen recently over mDNS but not answering now) is still shown, dimmed and
+  // non-clickable, so a speaker briefly missed by a sweep does not vanish.
+  const online = p.reachable !== false;
+  if (online) { a.href = p.url; }
+  else { a.setAttribute('aria-disabled', 'true'); a.style.opacity = '0.5'; a.style.pointerEvents = 'none'; a.title = (p.name || p.url); }
+  a.innerHTML = '<span class="dot"' + (online ? '' : ' style="background:#9ca3af"') + '></span>' + escapeHtml(p.name || p.url);
+  return a;
+}
+
+var peersList = [];
+
+// renderDevMenu fills the header speaker switcher (tap the speaker's name)
+// from the SAME list as the "Other speakers" card, mirroring the desktop
+// app's speaker dropdown: this speaker first, marked, then the others.
+// Hidden entirely on a single-speaker home.
+function renderDevMenu() {
+  var btn = document.getElementById('dev');
+  var menu = document.getElementById('devMenu');
+  if (!btn || !menu) return;
+  var has = peersList.length > 0;
+  btn.classList.toggle('haspeers', has);
+  if (!has) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); return; }
+  menu.innerHTML = '';
+  var cur = document.createElement('span');
+  cur.className = 'btn peer active';
+  cur.setAttribute('role', 'option');
+  cur.setAttribute('aria-selected', 'true');
+  cur.innerHTML = '<span class="dot"></span>' + escapeHtml(document.getElementById('devName').textContent || 'ST Reborn');
+  menu.appendChild(cur);
+  peersList.forEach(function(p){
+    var a = peerBtn(p);
+    a.setAttribute('role', 'option');
+    menu.appendChild(a);
+  });
+}
+
 async function loadPeers() {
   // Forward-compatible: the /api/peers endpoint is added with the peer-browse
   // step; until then this 404s and the section stays hidden.
   const list = await api('/api/peers');
+  peersList = list || [];
+  renderDevMenu();
   if (!list || !list.length) return;
   const box = document.getElementById('peers'); box.innerHTML = '';
-  list.forEach(function(p){
-    const a = document.createElement('a'); a.className = 'btn peer'; a.rel = 'noopener';
-    // reachable is omitted by older agents -> treat as online. An offline peer
-    // (seen recently over mDNS but not answering now) is still shown, dimmed and
-    // non-clickable, so a speaker briefly missed by a sweep does not vanish.
-    const online = p.reachable !== false;
-    if (online) { a.href = p.url; }
-    else { a.setAttribute('aria-disabled', 'true'); a.style.opacity = '0.5'; a.style.pointerEvents = 'none'; a.title = (p.name || p.url); }
-    a.innerHTML = '<span class="dot"' + (online ? '' : ' style="background:#9ca3af"') + '></span>' + escapeHtml(p.name || p.url);
-    box.appendChild(a);
-  });
+  list.forEach(function(p){ box.appendChild(peerBtn(p)); });
   document.getElementById('peersCard').style.display = 'block';
 }
 // The picker self-heals while the page is open: the first render right after
@@ -818,6 +870,24 @@ async function loadVersion() {
   sync('data-scale', a11yGetScale());
   sync('data-theme', a11yGetTheme());
   document.addEventListener('click', function(e) { if (!e.target.closest('.a11y')) close(); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
+})();
+
+// Header speaker switcher: tapping the speaker's name opens the same list the
+// "Other speakers" card shows, so the phone page mirrors the desktop app's
+// speaker dropdown. Inert (plain label) while no peers are known.
+(function() {
+  var btn = document.getElementById('dev');
+  var menu = document.getElementById('devMenu');
+  if (!btn || !menu) return;
+  function close() { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+  btn.addEventListener('click', function() {
+    if (!btn.classList.contains('haspeers')) return;
+    var open = menu.hidden;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', function(e) { if (!e.target.closest('.devwrap')) close(); });
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
 })();
 
