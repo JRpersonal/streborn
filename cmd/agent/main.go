@@ -2091,7 +2091,9 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 			peersByIP[ip] = e
 			added++
 		}
-		if s.Name != "" {
+		// Same guard as the mDNS merge: a placeholder seed must never clobber a
+		// real name (#494 by the back door).
+		if s.Name != "" && (!placeholderPeerName(s.Name) || e.name == "" || placeholderPeerName(e.name)) {
 			e.name = s.Name
 		}
 		if s.Port != 0 && e.port == 0 {
@@ -2100,6 +2102,14 @@ func seedPeers(seeds []webui.PeerSeed, logger *slog.Logger) {
 		if e.lastSeen.Before(now) {
 			e.lastSeen = now
 		}
+		// The app reached this speaker moments ago, or it would not be in the
+		// seed. That sighting outranks our own dial probe: two rhino ST10s
+		// cannot reach each other's web port at all (live 2026-07-31, every
+		// other pairing works), so their sister entries sat dimmed as
+		// "str-<ip>" forever even though the PHONE reading the picker reaches
+		// both speakers fine. Reachability for the picker means "a client can
+		// open this link", and the app just proved that.
+		e.reachable = true
 	}
 	savePersistedPeersLocked(logger)
 	peersMu.Unlock()
@@ -2486,12 +2496,20 @@ func reachableWebPort(ip string) int {
 }
 
 func dialable(ip string, port int) bool {
-	c, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", ip, port), 300*time.Millisecond)
-	if err != nil {
-		return false
+	// One fast attempt, then one patient retry. A speaker in Wi-Fi power save
+	// (an idle rhino ST10 wakes its radio per DTIM beacon) can take longer
+	// than 300 ms to move a first SYN in either direction, and a single tight
+	// attempt then reads a healthy speaker as permanently unreachable
+	// (fleet comparison 2026-07-31). The slow retry only runs when the fast
+	// path failed, so the common case stays cheap.
+	for _, tmo := range []time.Duration{300 * time.Millisecond, 1200 * time.Millisecond} {
+		c, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", ip, port), tmo)
+		if err == nil {
+			_ = c.Close()
+			return true
+		}
 	}
-	_ = c.Close()
-	return true
+	return false
 }
 
 // OnRemoteSkip handles the SoundTouch remote's next/prev track keys. The box

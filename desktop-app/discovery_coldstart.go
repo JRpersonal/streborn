@@ -149,16 +149,25 @@ func (a *App) distributeKnownSpeakers() {
 	var targets []seed
 	for _, e := range a.discCache {
 		b := e.box
-		if b.Host == "" || b.Kind == "stock" {
+		// Offline speakers are not seeded: an agent counts a seed as a live
+		// sighting (it un-dims the entry), and the app vouching for a speaker
+		// it cannot currently reach would be false evidence.
+		if b.Host == "" || b.Kind == "stock" || b.Offline {
 			continue
 		}
 		port := b.Port
 		if port == 0 {
 			port = 8888
 		}
-		name := b.Name
+		// Prefer the display name. b.Name is the mDNS instance / "str-<ip>"
+		// stand-in for a TCP-fallback find, and it is never empty there, so the
+		// old Name-first order seeded the whole fleet with the stand-in even
+		// though FriendlyName was already known. On speakers that cannot reach
+		// each other directly (live 2026-07-31: the two rhino ST10s), this seed
+		// is the ONLY name source, and the placeholder stuck forever.
+		name := b.FriendlyName
 		if name == "" {
-			name = b.FriendlyName
+			name = b.Name
 		}
 		s := seed{Name: name, Host: b.Host, Port: port}
 		seeds = append(seeds, s)
