@@ -120,6 +120,12 @@ type Server struct {
 	// source itself). nil when Spotify is not configured; the transport handler
 	// then falls back to skipping the STR play queue.
 	spotifySkip func(ctx context.Context, forward bool) error
+	// spotifySkipCh/spotifySkipOnce back the async skip queue: presses are
+	// acknowledged immediately and drained back-to-back by one worker, so a
+	// slow go-librespot ack can never stack button presses into a minute-long
+	// serial wait (live Portable, 2026-07-31). See enqueueSpotifySkip.
+	spotifySkipCh   chan bool
+	spotifySkipOnce sync.Once
 	// spotifyReady reports whether go-librespot has finished authenticating, so
 	// a soft Spotify recall can wait out a cold start instead of pointing the box
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify

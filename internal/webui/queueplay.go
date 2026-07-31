@@ -596,25 +596,57 @@ func (s *Server) transportSkip(ctx context.Context, forward bool) (source string
 	// must still skip a paused playlist. boxSourceIsSpotify catches that case by
 	// reading the box's now_playing location.
 	if s.spotifySkip != nil && (s.spotifyIsStreaming() || s.boxSourceIsSpotify(ctx)) {
-		err := s.spotifySkip(ctx, forward)
-		if err != nil && isTimeoutErr(err) {
-			// go-librespot performs the skip but holds its /player/next response
-			// while the next track loads, past the API client's timeout; the track
-			// still changes. Report success rather than a spurious error, only a
-			// real transport failure (go-librespot down) propagates.
-			s.logger.Info("spotify skip: go-librespot slow to ack, skip issued", "forward", forward)
-			s.spotifyRecoverAfterSkip()
-			return "spotify", nil
-		}
-		if err == nil {
-			s.spotifyRecoverAfterSkip()
-		}
-		return "spotify", err
+		s.enqueueSpotifySkip(forward)
+		return "spotify", nil
 	}
 	if _, _, err := s.queueSkip(forward); err != nil {
 		return "queue", err
 	}
 	return "queue", nil
+}
+
+// enqueueSpotifySkip acknowledges a Spotify Next/Prev press immediately and
+// hands it to a single worker. The synchronous form waited on go-librespot's
+// /player/next reply, which the engine holds while the next track loads: on a
+// slow speaker every press blocked its HTTP handler ~5 s and rapid presses
+// stacked into a serial half-minute wait the user read as a dead button (live
+// Portable, 2026-07-31, four presses). The queue is capped small: a press
+// beyond three waiting skips would fire long after the user stopped caring,
+// as a surprise track change.
+func (s *Server) enqueueSpotifySkip(forward bool) {
+	s.spotifySkipOnce.Do(func() {
+		s.spotifySkipCh = make(chan bool, 3)
+		go s.spotifySkipWorker()
+	})
+	select {
+	case s.spotifySkipCh <- forward:
+	default:
+		s.logger.Info("spotify skip: queue full, extra press dropped", "forward", forward)
+	}
+}
+
+// spotifySkipWorker drains queued skips back-to-back. Each go-librespot call
+// gets a short deadline: the engine performs the skip on receipt and only the
+// REPLY is slow (it arrives with the loaded track), so waiting longer buys
+// nothing. An engine that is actually down surfaces as a non-timeout error;
+// the post-drain recover then repairs a box left not playing via the proven
+// clean slot recall.
+func (s *Server) spotifySkipWorker() {
+	for forward := range s.spotifySkipCh {
+		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+		err := s.spotifySkip(ctx, forward)
+		cancel()
+		switch {
+		case err == nil:
+		case isTimeoutErr(err):
+			s.logger.Info("spotify skip: go-librespot slow to ack, skip issued", "forward", forward)
+		default:
+			s.logger.Warn("spotify skip failed", "forward", forward, "err", err)
+		}
+		if len(s.spotifySkipCh) == 0 {
+			s.spotifyRecoverAfterSkip()
+		}
+	}
 }
 
 // slotFromSpotifyStreamURL extracts the preset slot N from a per-slot Spotify Ogg
