@@ -521,6 +521,9 @@ func run() error {
 			return spotifyMgr.Streaming() && !spotifyMgr.StreamStalled()
 		}),
 		webui.WithSpotifySkip(func(ctx context.Context, forward bool) error {
+			// Arm the skip-cut first, so the boundary this skip produces drops
+			// the old track's unsent tail instead of playing it out.
+			spotifyMgr.NoteSkip()
 			if forward {
 				return spotifyMgr.Next(ctx)
 			}

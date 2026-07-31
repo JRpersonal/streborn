@@ -88,6 +88,13 @@ const vorbisRate = 44100
 // override: /mnt/nv/streborn/spotify-flush-kb. Header replay is exempt.
 const flushThreshold = 256 * 1024
 
+// oggLeadCapSec is how many seconds of audio the box may hold ahead of
+// realtime playback (see the pacing block in runOnce). Large enough to ride
+// out Wi-Fi hiccups and give a fresh attachment an instant prefill, small
+// enough that a track skip becomes audible in seconds rather than after the
+// minutes of buffer the unpaced passthrough used to hand the box.
+const oggLeadCapSec = 10
+
 // Manager supervises one go-librespot process and brokers its PCM output
 // (as a live WAV stream) to at most one HTTP consumer (the speaker),
 // plus drives playback through go-librespot's local HTTP API.
@@ -224,6 +231,10 @@ type Manager struct {
 	// on the same box that plays fine). Reset on every attach, logged on
 	// detach. Guarded by m.mu like the sink itself.
 	sinkAttachedAt   time.Time
+	// skipCutUntil arms the boundary skip-cut: a BOS arriving before this
+	// moment was caused by a user skip, so the old track's unsent tail is
+	// dropped instead of flushed (NoteSkip / skipCutArmed).
+	skipCutUntil time.Time
 	sinkBytes        int64
 	sinkPages        int64
 	sinkFirstAudioAt time.Time
@@ -899,6 +910,22 @@ func (m *Manager) runOnce(ctx context.Context) error {
 		}
 	}
 
+	// leadCapSec bounds how far AHEAD of realtime the box is fed. go-librespot's
+	// passthrough emits a track as fast as Spotify's CDN serves it, and the box
+	// happily buffers MINUTES of audio, so a track skip only became audible once
+	// all that old audio had played out (live Portable 2026-08-01: skip executed
+	// at 00:03:49, heard minutes later). Radio streams prove the box plays
+	// perfectly at realtime, so after the initial lead the forward loop paces
+	// pages to realtime + this lead. Tunable via NAND for field sweeps; 0
+	// disables the pacing entirely.
+	leadCapSec := float64(oggLeadCapSec)
+	if b, err := os.ReadFile("/mnt/nv/streborn/spotify-lead-sec"); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && n >= 0 && n <= 300 {
+			leadCapSec = float64(n)
+			m.logger.Info("spotify: stream lead cap overridden", "sec", n)
+		}
+	}
+
 	// Drain go-librespot's Ogg output page by page and forward whole pages to
 	// the box. While no box is attached, capture the current track's header
 	// pages and pause go-librespot so it does not race to the end of the
@@ -920,6 +947,13 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// BOS) and box (re)attaches are logged with byte/granule context.
 	trackNum := 0
 	var forwarded int64
+	// Realtime pacing state (see leadCapSec above). Granules reset per track,
+	// so granOffset accumulates finished tracks into one continuous timeline;
+	// the anchor is set once per sink attachment at the first audio page, so
+	// the lead cannot creep up by one cap per track boundary.
+	var granOffset, leadBaseGran int64
+	var leadBaseAt time.Time
+	leadAnchored := false
 	for {
 		page, err := readOggPage(r)
 		if err != nil {
@@ -943,6 +977,7 @@ func (m *Manager) runOnce(ctx context.Context) error {
 				"track", trackNum+1, "prevTrackKB", trackBody/1024,
 				"prevMaxGran", maxGran, "forwardedKB", forwarded/1024)
 			trackNum++
+			granOffset += maxGran // finished track extends the continuous timeline
 			hdr = append([]byte(nil), page...)
 			capturing = true
 			trackBody, maxGran = 0, 0
@@ -989,9 +1024,43 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			// chunk and the new track audibly restarts (live-observed, ~1 in 3
 			// tracks). Flushing the tail first makes the BOS begin on a clean
 			// chunk boundary so the decoder re-inits cleanly.
+			//
+			// Skip cut: when this boundary was CAUSED by a user skip, the old
+			// track's unsent tail is noise the user asked to get away from, so
+			// it is dropped instead of flushed and the new track starts that
+			// much sooner. A natural track end never has an armed skip window,
+			// so song endings are never clipped.
 			if htype&0x02 != 0 && len(pending) > 0 {
-				m.forward(sink, pending)
-				pending = pending[:0]
+				if m.skipCutArmed() {
+					m.logger.Info("spotify: skip cut, dropped the old track's unsent tail", "droppedKB", len(pending)/1024)
+					pending = pending[:0]
+				} else {
+					m.forward(sink, pending)
+					pending = pending[:0]
+				}
+			}
+			// Realtime pacing: anchor once per attachment at the first audio
+			// page, then hold each page until its position on the continuous
+			// timeline is within leadCapSec of wall clock. A detach mid-wait
+			// (box paused or dropped the stream) bails out immediately.
+			if gran > 0 && leadCapSec > 0 {
+				timeline := granOffset + gran
+				if !leadAnchored {
+					leadBaseGran, leadBaseAt, leadAnchored = timeline, time.Now(), true
+				}
+				for {
+					ahead := float64(timeline-leadBaseGran)/float64(vorbisRate) - time.Since(leadBaseAt).Seconds()
+					if ahead <= leadCapSec || ctx.Err() != nil {
+						break
+					}
+					time.Sleep(min(time.Duration((ahead-leadCapSec)*float64(time.Second)), 250*time.Millisecond))
+					m.mu.Lock()
+					stillAttached := m.sink == sink
+					m.mu.Unlock()
+					if !stillAttached {
+						break
+					}
+				}
 			}
 			// Batch pages into large writes (see flushThreshold) so the box
 			// gets large chunks, not a tiny chunk per page.
@@ -1003,6 +1072,7 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			}
 			continue
 		}
+		leadAnchored = false // no consumer: next attachment re-anchors fresh
 		// No consumer: drop any half-filled batch so a freshly attaching box
 		// starts clean, then once a track's headers are captured pause
 		// go-librespot so it stops producing (no racing) until a box attaches
@@ -1326,6 +1396,24 @@ func (m *Manager) seekFailedSince(t time.Time) bool {
 // its buffer drains.
 func (m *Manager) Next(ctx context.Context) error { return m.apiPost(ctx, "/player/next", "") }
 func (m *Manager) Prev(ctx context.Context) error { return m.apiPost(ctx, "/player/prev", "") }
+
+// NoteSkip arms the skip-cut window: the next track boundary within it was
+// user-requested, so the forward loop drops the old track's unsent tail
+// instead of playing it out. Called by the webui skip worker right before
+// /player/next|prev.
+func (m *Manager) NoteSkip() {
+	m.mu.Lock()
+	m.skipCutUntil = time.Now().Add(8 * time.Second)
+	m.mu.Unlock()
+}
+
+// skipCutArmed reports whether a track boundary arriving now was caused by a
+// user skip (see NoteSkip).
+func (m *Manager) skipCutArmed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return time.Now().Before(m.skipCutUntil)
+}
 
 // Pause and Resume mirror the obvious controls.
 func (m *Manager) Pause(ctx context.Context) error {
