@@ -1029,15 +1029,26 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			// track's unsent tail is noise the user asked to get away from, so
 			// it is dropped instead of flushed and the new track starts that
 			// much sooner. A natural track end never has an armed skip window,
-			// so song endings are never clipped.
-			if htype&0x02 != 0 && len(pending) > 0 {
+			// so song endings are never clipped. The cut disarms here and the
+			// pacing re-anchors, so the new track gets its instant prefill.
+			if htype&0x02 != 0 {
 				if m.skipCutArmed() {
-					m.logger.Info("spotify: skip cut, dropped the old track's unsent tail", "droppedKB", len(pending)/1024)
+					m.logger.Info("spotify: skip cut, boundary reached; dropped the old track's unsent tail", "droppedKB", len(pending)/1024)
 					pending = pending[:0]
-				} else {
+					m.clearSkipCut()
+					leadAnchored = false
+				} else if len(pending) > 0 {
 					m.forward(sink, pending)
 					pending = pending[:0]
 				}
+			} else if m.skipCutArmed() && gran > 0 {
+				// Stale audio between the user's skip and the new track's
+				// boundary. The first version PACED these pages to realtime, so
+				// the boundary reached the box up to a full lead cap late and
+				// the skip felt >20 s (Jens, live 2026-08-01 00:30). They carry
+				// nothing the user wants to hear: drop them outright and race
+				// to the boundary.
+				continue
 			}
 			// Realtime pacing: anchor once per attachment at the first audio
 			// page, then hold each page until its position on the continuous
@@ -1397,22 +1408,30 @@ func (m *Manager) seekFailedSince(t time.Time) bool {
 func (m *Manager) Next(ctx context.Context) error { return m.apiPost(ctx, "/player/next", "") }
 func (m *Manager) Prev(ctx context.Context) error { return m.apiPost(ctx, "/player/prev", "") }
 
-// NoteSkip arms the skip-cut window: the next track boundary within it was
-// user-requested, so the forward loop drops the old track's unsent tail
-// instead of playing it out. Called by the webui skip worker right before
-// /player/next|prev.
+// NoteSkip arms the skip-cut window: until the next track boundary (or the
+// window's expiry) the forward loop drops the old track's audio instead of
+// playing it out. Called by the webui skip worker right before
+// /player/next|prev. Sized above the slowest observed engine track load
+// (11 s, Portable 2026-08-01) so the boundary always lands inside it.
 func (m *Manager) NoteSkip() {
 	m.mu.Lock()
-	m.skipCutUntil = time.Now().Add(8 * time.Second)
+	m.skipCutUntil = time.Now().Add(15 * time.Second)
 	m.mu.Unlock()
 }
 
-// skipCutArmed reports whether a track boundary arriving now was caused by a
-// user skip (see NoteSkip).
+// skipCutArmed reports whether an armed user skip is awaiting its track
+// boundary; clearSkipCut disarms it the moment that boundary arrives, so the
+// new track's pages are never mistaken for stale ones.
 func (m *Manager) skipCutArmed() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return time.Now().Before(m.skipCutUntil)
+}
+
+func (m *Manager) clearSkipCut() {
+	m.mu.Lock()
+	m.skipCutUntil = time.Time{}
+	m.mu.Unlock()
 }
 
 // Pause and Resume mirror the obvious controls.

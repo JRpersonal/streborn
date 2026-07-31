@@ -638,6 +638,9 @@ func (s *Server) spotifySkipWorker() {
 		cancel()
 		switch {
 		case err == nil:
+			// Log EVERY executed skip: a fast ack used to leave no trace, so a
+			// user's repeated presses were invisible in the bundle.
+			s.logger.Info("spotify skip: issued", "forward", forward)
 		case isTimeoutErr(err):
 			s.logger.Info("spotify skip: go-librespot slow to ack, skip issued", "forward", forward)
 		default:
