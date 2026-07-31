@@ -214,7 +214,11 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	// never block the (more important) agent update.
 	a.stageSidecarBeforeReboot(host, port)
 
-	if perr := a.updateAgentPreflight(host, port); perr != nil {
+	perr := a.updateAgentPreflight(host, port)
+	if perr != nil {
+		perr = a.preflightSettleRetry(host, port, perr)
+	}
+	if perr != nil {
 		a.recordOTA(host, "HTTP preflight rejected -> trying SSH: "+perr.Error())
 		a.logger.Warn("update agent: HTTP preflight rejected, switching to SSH-OTA",
 			"host", host, "port", port, "reason", perr)
@@ -891,10 +895,64 @@ func (a *App) updateAgentPreflight(host string, port int) error {
 	}
 	var probe map[string]any
 	if jerr := json.Unmarshal(body, &probe); jerr != nil || probe["version"] == nil {
-		return fmt.Errorf("listener on %s is not STR (ct=%q body=%q) — likely Bose SoftwareUpdate, agent OTA via HTTP would hit the 1.5 KB POST buffer",
-			host, resp.Header.Get("Content-Type"), snip)
+		return fmt.Errorf("%w on %s (ct=%q body=%q) — likely Bose SoftwareUpdate, agent OTA via HTTP would hit the 1.5 KB POST buffer",
+			errPreflightNotSTR, host, resp.Header.Get("Content-Type"), snip)
 	}
 	return nil
+}
+
+// errPreflightNotSTR marks a preflight reply that positively identified a
+// non-STR listener (a 200 whose body is not the agent's version JSON: Bose's
+// own SoftwareUpdate service). That verdict is permanent for this boot, so
+// the settle-retry below must not wait on it.
+var errPreflightNotSTR = errors.New("listener is not STR")
+
+// otaPreflightSettleWindow / otaPreflightSettleStep bound the preflight
+// re-poll before the SSH-OTA escalation. A power-cycled speaker has its agent
+// answering well inside two minutes; a genuinely shim-less box just spends
+// this window before the SSH fallback it would have taken anyway.
+const (
+	otaPreflightSettleWindow = 2 * time.Minute
+	otaPreflightSettleStep   = 10 * time.Second
+)
+
+// preflightSettleRetry re-polls a rejected preflight before the caller
+// escalates to SSH-OTA. Live 2026-07-31 (support mail, "SoundTouch 79E31A"):
+// the user power-cycled the speaker and clicked update ~15 s into the boot.
+// The agent was not listening yet, the box's own :17008 listener answered the
+// version read with a bare 400, and the app escalated straight to the SSH
+// path — whose :17000 stick-free unlock REBOOTS the box and whose pre-clean
+// drops the Spotify engine when NAND is tight — all for a speaker that would
+// have answered normally a minute later. Waiting is strictly cheaper than
+// that cascade. A positive Bose-SoftwareUpdate identification
+// (errPreflightNotSTR) stays a hard rejection: on a shim-less Series-I box
+// waiting cannot help.
+func (a *App) preflightSettleRetry(host string, port int, perr error) error {
+	if errors.Is(perr, errPreflightNotSTR) {
+		return perr
+	}
+	a.recordOTA(host, fmt.Sprintf("preflight rejected (%v) -> waiting up to %s for the speaker to settle (a booting speaker answers only once its agent is up) before anything invasive", perr, otaPreflightSettleWindow))
+	a.logger.Info("update agent: preflight rejected, settle-polling before the SSH escalation", "host", host, "err", perr)
+	deadline := time.Now().Add(otaPreflightSettleWindow)
+	for time.Now().Before(deadline) {
+		select {
+		case <-a.appCtx().Done():
+			return perr
+		case <-time.After(otaPreflightSettleStep):
+		}
+		if err := a.updateAgentPreflight(host, port); err == nil {
+			a.recordOTA(host, "preflight: speaker settled, continuing over HTTP")
+			a.logger.Info("update agent: speaker settled during the preflight re-poll, staying on the HTTP path", "host", host)
+			return nil
+		} else if errors.Is(err, errPreflightNotSTR) {
+			// The listener resolved into a definite non-STR identity; stop waiting.
+			return err
+		} else {
+			perr = err
+		}
+	}
+	a.recordOTA(host, "preflight: speaker did not settle within the window, falling back to SSH: "+perr.Error())
+	return perr
 }
 
 func (a *App) updateAgentViaHTTP(host string, port int, bin []byte) (bodySent bool, err error) {
@@ -1083,9 +1141,18 @@ func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 		"rm -f /mnt/nv/sp-oauth.out /mnt/nv/streborn/cap*.ogg /mnt/nv/streborn/bin/*.new 2>/dev/null; "+
 		"free=$(df -k /mnt/nv 2>/dev/null | tail -1 | awk '{print $(NF-2)}'); "+
 		"if [ \"${free:-0}\" -lt \"%d\" ]; then rm -f /mnt/nv/streborn/bin/go-librespot /mnt/nv/streborn/bin/go-librespot.sha256 2>/dev/null; fi; "+
-		"mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new", needKB)
-	if out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second); err != nil {
+		"mkdir -p /mnt/nv/streborn/bin && cat > /mnt/nv/streborn/bin/streborn-armv7l.new && "+
+		"sync && echo STR_UPLOADED_$(wc -c < /mnt/nv/streborn/bin/streborn-armv7l.new)", needKB)
+	out, err := boxSSHUploadStdin(host, uploadCmd, bytes.NewReader(bin), 120*time.Second)
+	if err != nil {
 		return fmt.Errorf("ssh upload (%d bytes) failed: %v (%s)", len(bin), err, strings.TrimSpace(out))
+	}
+	// The session can end "successfully" while the file never landed (stream cut,
+	// ENOSPC, or a reboot racing the write — live 2026-07-31: verify found no .new
+	// at all after a clean-looking upload). The command therefore syncs and echoes
+	// the on-box byte count; anything else means the box does not hold the binary.
+	if !strings.Contains(out, fmt.Sprintf("STR_UPLOADED_%d", len(bin))) {
+		return fmt.Errorf("ssh upload did not land intact: expected %d bytes on the box, session said %q — NAND full or the stream was cut (the speaker keeps its current agent)", len(bin), lastN(strings.TrimSpace(out), 160))
 	}
 	// Content-verify before the atomic rename so a half-uploaded OR corrupted
 	// file never becomes the live agent. A size check alone cannot do that
