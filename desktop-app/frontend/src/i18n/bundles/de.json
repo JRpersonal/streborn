@@ -878,6 +878,7 @@
   "fw.step4": "Alternative ohne App: USB-Update-Tool von Bose laden, Firmware auf einen anderen Stick schreiben und in den Lautsprecher stecken:",
   "fw.boseGuideLink": "Bose-Anleitung zum Firmware-Update öffnen",
   "fw.hint": "Hinweis: Bose-Update-Server könnten je nach Region noch online sein, auch wenn das Cloud-Streaming abgeschaltet ist. Falls der App-Weg nicht klappt, ist das USB-Tool der zuverlässigste Weg.",
+  "fw.faqTip": "Tipp: Wenn das Update hängt, beschreiben die FAQ einen Umweg über ein Downgrade:",
   "setup.heading": "STR installieren",
   "setup.cardPitch": "STR über dein Netzwerk zu {{model}} hinzufügen. Kein USB-Stick nötig.",
   "setup.cardNameLabel": "Name des Lautsprechers",

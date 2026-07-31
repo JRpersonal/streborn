@@ -878,6 +878,7 @@
   "fw.step4": "Without the app: download the USB update tool from Bose, write the firmware to another stick, plug it into the speaker:",
   "fw.boseGuideLink": "Open Bose's firmware update guide",
   "fw.hint": "Note: Bose update servers may still be online in some regions even though the cloud streaming has shut down. If the app route fails, the USB tool is the most reliable path.",
+  "fw.faqTip": "Tip: if the update gets stuck, the FAQ describes a workaround via a downgrade:",
   "setup.heading": "Install STR",
   "setup.cardPitch": "Add STR to {{model}} over your network. No USB stick needed.",
   "setup.cardNameLabel": "Speaker name",

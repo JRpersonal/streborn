@@ -24,7 +24,7 @@ import {
   showToast,
   compareVerBuild,
 } from '../utils.js';
-import { t, tLookup } from '../i18n/index.js';
+import { t, tLookup, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
 // The box-to-box preset copy continues past rejected slots and reports them
 // as one combined error; reconstructing "how many still copied" from that
@@ -942,7 +942,7 @@ function renderBoxSettings(s, box) {
   // Outdated-firmware banner links: open the Bose support guide / USB download
   // directory in the user's browser (Wails BrowserOpenURL) instead of leaving
   // them as plain text the user has to retype (Jens, 2026-06-27).
-  for (const id of ['fwGuideLink', 'fwUsbLink']) {
+  for (const id of ['fwGuideLink', 'fwUsbLink', 'fwFaqLink']) {
     const el = $(id);
     if (el) el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
   }
@@ -2265,9 +2265,19 @@ const LATEST_FW = {
 // in a per-model article later if needed. Shown as a clickable link in the
 // outdated-firmware banner (Jens, 2026-06-27: link the Bose support article).
 const BOSE_FW_SUPPORT_URL = 'https://support.bose.com/s/article/soundtouch-20-iii-updating-the-software-or-firmware-of-your-product?language=en_US';
-// The Bose USB firmware download directory referenced in step 4, made clickable
-// so the user does not have to retype it.
-const BOSE_FW_USB_URL = 'https://downloads.bose.com/ced/soundtouch/soundtouch_usb/';
+// Bose's official "Bose Software Updater" download page, referenced in step 4
+// and made clickable so the user does not have to retype it. The old direct
+// USB directory (downloads.bose.com/ced/soundtouch/soundtouch_usb/) went dead:
+// empty listing, index answers 403 even with a browser user agent (checked
+// 2026-07-31). btu.bose.com is the page Bose itself points users to.
+const BOSE_FW_USB_URL = 'https://btu.bose.com/';
+
+// The website FAQ, which carries the downgrade workaround for a firmware
+// update that hangs. The German site is a first-class translation, everyone
+// else gets the English page.
+function strFaqURL() {
+  return getLocale() === 'de' ? 'https://st-reborn.de/de/#faq' : 'https://st-reborn.de/#faq';
+}
 
 // fwVersionTuple extracts the first 3 numbers from
 // "27.0.6.46330.5043500" for comparison. Returns null on an unknown
@@ -2318,10 +2328,11 @@ function fwUpdateHint(info) {
           <li>${escapeHtml(t('fw.step1'))}</li>
           <li>${escapeHtml(t('fw.step2'))}</li>
           <li>${escapeHtml(t('fw.step3'))}</li>
-          <li>${t('fw.step4')} <a href="#" class="link" id="fwUsbLink" data-url="${escapeHtml(BOSE_FW_USB_URL)}">downloads.bose.com/ced/soundtouch/soundtouch_usb/</a></li>
+          <li>${t('fw.step4')} <a href="#" class="link" id="fwUsbLink" data-url="${escapeHtml(BOSE_FW_USB_URL)}">btu.bose.com</a></li>
         </ol>
         <p><a href="#" class="btn btn-mini" id="fwGuideLink" data-url="${escapeHtml(BOSE_FW_SUPPORT_URL)}">${escapeHtml(t('fw.boseGuideLink'))}</a></p>
         <small class="muted small">${escapeHtml(t('fw.hint'))}</small>
+        <small class="muted small">${escapeHtml(t('fw.faqTip'))} <a href="#" class="link" id="fwFaqLink" data-url="${escapeHtml(strFaqURL())}">st-reborn.de</a></small>
       </div>
     </div>`;
 }

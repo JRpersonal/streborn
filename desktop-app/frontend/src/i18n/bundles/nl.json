@@ -793,6 +793,7 @@
   "fw.step4": "Zonder de app: download de USB-updatetool van Bose, schrijf de firmware naar een andere stick en plaats die in de speaker:",
   "fw.boseGuideLink": "Bose-handleiding voor firmware-update openen",
   "fw.hint": "Let op: Bose-updateservers zijn in sommige regio's mogelijk nog online, ook al is de cloud-streaming gestopt. Als de app-route faalt, is de USB-tool de betrouwbaarste weg.",
+  "fw.faqTip": "Tip: als de update vastloopt, beschrijft de FAQ een omweg via een downgrade:",
   "setup.heading": "STR installeren",
   "setup.cardPitch": "Voeg STR toe aan {{model}} via je netwerk. Geen USB-stick nodig.",
   "setup.cardNameLabel": "Naam van de speaker",

@@ -793,6 +793,7 @@
   "fw.step4": "Sin la aplicación: descarga la herramienta de actualización USB de Bose, escribe el firmware en otra memoria, conéctala al altavoz:",
   "fw.boseGuideLink": "Abrir la guía de actualización de firmware de Bose",
   "fw.hint": "Nota: los servidores de actualización de Bose pueden seguir en línea en algunas regiones aunque la transmisión en la nube se haya cerrado. Si la vía de la aplicación falla, la herramienta USB es el método más fiable.",
+  "fw.faqTip": "Consejo: si la actualización se atasca, las FAQ describen una solución mediante un downgrade:",
   "setup.heading": "Instalar STR",
   "setup.cardPitch": "Añade STR a {{model}} a través de tu red. No se necesita memoria USB.",
   "setup.cardNameLabel": "Nombre del altavoz",

@@ -793,6 +793,7 @@
   "fw.step4": "Uygulama olmadan: Bose USB güncelleme aracını indirin, yazılımı başka bir belleğe yazın ve onu hoparlöre takın:",
   "fw.boseGuideLink": "Bose ürün yazılımı güncelleme kılavuzunu aç",
   "fw.hint": "Not: Bose güncelleme sunucuları bazı bölgelerde, bulut akışı durmuş olsa da hâlâ çevrimiçi olabilir. Uygulama üzerinden yol başarısız olursa, USB aracı en güvenilir olanıdır.",
+  "fw.faqTip": "İpucu: Güncelleme takılırsa, SSS bölümünde sürüm düşürme yoluyla bir çözüm anlatılıyor:",
   "setup.heading": "STR'yi kur",
   "setup.cardPitch": "{{model}} için ağınız üzerinden STR ekleyin. USB bellek gerekmez.",
   "setup.cardNameLabel": "Hoparlör adı",

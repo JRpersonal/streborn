@@ -793,6 +793,7 @@
   "fw.step4": "Bez lietotnes: lejupielādējiet Bose USB atjaunināšanas rīku, ierakstiet programmatūru citā zibatmiņā un ievietojiet to skaļrunī:",
   "fw.boseGuideLink": "Atvērt Bose aparātprogrammatūras atjaunināšanas ceļvedi",
   "fw.hint": "Piezīme: Bose atjaunināšanas serveri dažos reģionos var vēl būt tiešsaistē, lai gan mākoņa straume ir pārtraukta. Ja ceļš caur lietotni neizdodas, USB rīks ir visuzticamākais.",
+  "fw.faqTip": "Padoms: ja atjauninājums iestrēgst, BUJ aprakstīts risinājums, izmantojot vecākas versijas instalēšanu:",
   "setup.heading": "Instalēt STR",
   "setup.cardPitch": "Pievienojiet STR skaļrunim {{model}} caur savu tīklu. USB zibatmiņa nav vajadzīga.",
   "setup.cardNameLabel": "Skaļruņa nosaukums",

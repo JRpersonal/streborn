@@ -793,6 +793,7 @@
   "fw.step4": "Be programos: atsisiųskite Bose USB atnaujinimo įrankį, įrašykite programinę įrangą į kitą atmintinę ir įkiškite ją į garsiakalbį:",
   "fw.boseGuideLink": "Atidaryti Bose programinės įrangos naujinimo vadovą",
   "fw.hint": "Pastaba: Bose atnaujinimų serveriai kai kuriuose regionuose gali būti dar prisijungę, nors debesies srautas nutrauktas. Jei kelias per programą nepavyksta, USB įrankis yra patikimiausias.",
+  "fw.faqTip": "Patarimas: jei atnaujinimas užstringa, DUK aprašytas sprendimas per senesnės versijos įdiegimą:",
   "setup.heading": "Įdiegti STR",
   "setup.cardPitch": "Pridėkite STR prie {{model}} per savo tinklą. USB atmintinės nereikia.",
   "setup.cardNameLabel": "Garsiakalbio pavadinimas",
