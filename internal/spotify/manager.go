@@ -133,6 +133,12 @@ type Manager struct {
 	// those or every device activation rewrites the followers' individually
 	// set levels.
 	selfVolUntil time.Time
+	// Connect intent (see SetConnectIntentHooks): hooks into the box-side
+	// stop/play latches, plus the stamp that filters the engine's echoes of
+	// STR's OWN /player commands out of the intent signal.
+	connectPauseFn   func(event string)
+	connectPlayFn    func()
+	lastOwnPlayerCmd time.Time
 	// volFanCh feeds the fan-out worker with latest-value coalescing, so the
 	// go-librespot event loop never blocks on follower HTTP calls (an offline
 	// follower costs seconds, and a slider drag emits event bursts).
@@ -2627,6 +2633,81 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// Connect-intent plumbing: a pause/stop/transfer pressed in the Spotify app
+// reaches STR only as a go-librespot event - no gabbo key frame, no STR
+// endpoint. These hooks feed it into the box-side stop/play latches so the
+// starved box's subsequent source drop reads as deliberate, not as a
+// spontaneous firmware off that the auto-revive would undo (#78: "playback
+// could not be stopped from the Spotify app; only pulling power helped").
+
+// ownEngineCmdIntentWindow: engine state events this soon after one of STR's
+// own /player transport commands are echoes of that command (a recall loads
+// the context paused, pauses again belt-and-braces, then resumes), not the
+// user acting in the Spotify app. Sized to cover the slowest staged recall:
+// play -> waitContextLoaded (5s) -> replay-from-top -> shuffle -> resume.
+const ownEngineCmdIntentWindow = 15 * time.Second
+
+// SetConnectIntentHooks wires deliberate playback intent from the Spotify app
+// into the box-side latches. onPause fires on paused/stopped/inactive events
+// outside the own-command window; onPlay fires on active/playing. nil-safe.
+func (m *Manager) SetConnectIntentHooks(onPause func(event string), onPlay func()) {
+	m.mu.Lock()
+	m.connectPauseFn = onPause
+	m.connectPlayFn = onPlay
+	m.mu.Unlock()
+}
+
+// noteOwnPlayerCmd stamps STR's own engine transport commands so their echoed
+// state events are not misread as Spotify-app intent. Volume is excluded: it
+// carries no transport intent, and stamping it would mask a real pause the
+// user presses right after adjusting the volume.
+func (m *Manager) noteOwnPlayerCmd(path string) {
+	if !strings.HasPrefix(path, "/player/") || path == "/player/volume" {
+		return
+	}
+	m.mu.Lock()
+	m.lastOwnPlayerCmd = time.Now()
+	m.mu.Unlock()
+}
+
+func (m *Manager) ownPlayerCmdRecent() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.lastOwnPlayerCmd.IsZero() && time.Since(m.lastOwnPlayerCmd) < ownEngineCmdIntentWindow
+}
+
+// handleEnginePlaybackEnd forwards a paused/stopped/inactive engine event as
+// deliberate user intent, unless it is the echo of STR's own staged command.
+func (m *Manager) handleEnginePlaybackEnd(evType string) {
+	if m.ownPlayerCmdRecent() {
+		m.logger.Debug("spotify: engine state event inside own-command window, not user intent", "event", evType)
+		return
+	}
+	m.mu.Lock()
+	fn := m.connectPauseFn
+	m.mu.Unlock()
+	if fn == nil {
+		return
+	}
+	// INFO on purpose: this line is the bundle-forensics marker that separates
+	// "user stopped via the Spotify app" from the firmware self-off (#419
+	// family) when a diagnostic arrives.
+	m.logger.Info("spotify: Spotify app ended playback on this box, arming the deliberate-stop latch", "event", evType)
+	fn(evType)
+}
+
+// handleEnginePlaybackStart clears the stop latch when playback starts or the
+// device becomes active again, so the recovery paths a deliberate stop parked
+// come back to life for the play the user just asked for.
+func (m *Manager) handleEnginePlaybackStart() {
+	m.mu.Lock()
+	fn := m.connectPlayFn
+	m.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
 // watchVolume subscribes to go-librespot's /events WebSocket and mirrors every
 // Spotify-app volume change onto the box. go-librespot runs with
 // external_volume, so a Connect volume command does not touch its audio; it
@@ -2680,8 +2761,15 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			// jump the speaker to 100% first.
 			m.maybeActivate()
 			go m.syncVolumeFromBox(context.Background())
+			m.handleEnginePlaybackStart()
 		case "playing":
 			m.maybeActivate()
+			m.handleEnginePlaybackStart()
+		case "paused", "stopped", "inactive":
+			// The Spotify app paused/stopped playback on this box, or moved it
+			// to another device. Forward as deliberate intent (guarded against
+			// echoes of STR's own staged recalls inside).
+			m.handleEnginePlaybackEnd(ev.Type)
 		case "will_play":
 			// A track is about to play; if its context (playlist/album) differs
 			// from the last one, the app switched playlists. Re-point the box so
@@ -2884,6 +2972,7 @@ func (m *Manager) apiPost(ctx context.Context, path string, body string) error {
 }
 
 func (m *Manager) apiPostC(ctx context.Context, client *http.Client, path string, body string) error {
+	m.noteOwnPlayerCmd(path)
 	var r io.Reader
 	if body != "" {
 		r = strings.NewReader(body)

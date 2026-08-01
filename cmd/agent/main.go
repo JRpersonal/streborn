@@ -746,6 +746,19 @@ func run() error {
 		// webui play-queue instead of the single-track recall.
 		recallSlot: webuiSrv.RecallSlot,
 	}
+	// A pause, stop or transfer-away pressed in the SPOTIFY app arrives only as
+	// a go-librespot event: no gabbo key frame, no STR endpoint. Without this
+	// wiring the starved box's source drop classified as a spontaneous firmware
+	// off and the auto-revive switched the speaker right back on ("playback
+	// cannot be stopped from the Spotify app", #78). OnUserStop stamps BOTH
+	// latches (hardware-verify stand-down + webui NoteUserStop), exactly like a
+	// gabbo STOP_STATE; a Connect play/active clears the webui latch again so
+	// the app-initiated resume paths keep working. Echoes of STR's own staged
+	// recall commands are filtered inside the manager.
+	spotifyMgr.SetConnectIntentHooks(
+		func(event string) { wsHandler.OnUserStop(context.Background()) },
+		webuiSrv.ClearUserStop,
+	)
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
 	// it actually plays instead of staying on the current source (#14).
