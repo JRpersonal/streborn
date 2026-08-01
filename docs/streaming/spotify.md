@@ -13,6 +13,34 @@ port 4070, no stored account). librespot is kept as the future-proof
 fallback (built + run-verified on the box, 5.5 MB) for if/when Spotify
 ever drops the frozen eSDK. The rest of this document is the spike trail.
 
+## Known limitation: accounts in Spotify's PlayPlay-DRM cohort (2026)
+
+Since roughly December 2025 Spotify has been forcing a per-account DRM
+migration: accounts created after a cutoff somewhere in 2024/2025 get
+**every** legacy AES audio-key request refused with `code 1`, while older
+accounts on the same device, track, and network keep playing. This hits
+every open-source Spotify Connect client (go-librespot, librespot-org,
+spotifyd); official/eSDK partner clients use the licensed PlayPlay path
+and are unaffected, so the box's NATIVE Spotify Connect keeps working for
+exactly the accounts that fail on STR's engine.
+
+Signature in the agent log: engine authenticates fine (`authenticated AP`,
+`authenticated Login5`), then `failed retrieving aes key with code 1` on
+every track ("skipping track ... stopping after N consecutive unplayable
+tracks"), often plus `context resolve: 403` and a `429` from the put-state
+fallout. Premium status does not matter; family sub-accounts created
+recently (e.g. the "Basic Family" plan, which only exists since Nov 2025)
+are typical victims.
+
+There is no engine-side fix: OAuth re-login, credential resets, bitrate
+and client-token changes are all documented not to help, and implementing
+PlayPlay upstream was rejected as a DMCA hazard (go-librespot#317). Our
+fork already carries the mitigations that exist (alternative-track
+relinking, PR #267; skip-on-refusal, commit bad77f3). Discriminator for
+support: a pre-2024 account plays on the same (STR) device while the new
+account does not. Upstream tracking: librespot-org/librespot#1649,
+devgianlu/go-librespot#279. First field case: #78 (2026-08-01).
+
 ## Decision update (2026-06-04): go-librespot is the open backend, not librespot-org
 
 The earlier spike picked librespot-org (MIT) as the sidecar. Building the
