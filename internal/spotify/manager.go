@@ -235,11 +235,11 @@ type Manager struct {
 	// gave up (field 2026-07-27: a preset that "plays a few seconds", another
 	// on the same box that plays fine). Reset on every attach, logged on
 	// detach. Guarded by m.mu like the sink itself.
-	sinkAttachedAt   time.Time
+	sinkAttachedAt time.Time
 	// skipCutUntil arms the boundary skip-cut: a BOS arriving before this
 	// moment was caused by a user skip, so the old track's unsent tail is
 	// dropped instead of flushed (NoteSkip / skipCutArmed).
-	skipCutUntil time.Time
+	skipCutUntil     time.Time
 	sinkBytes        int64
 	sinkPages        int64
 	sinkFirstAudioAt time.Time
@@ -936,7 +936,7 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// pages and pause go-librespot so it does not race to the end of the
 	// playlist unheard; ServeOgg resumes it and replays the headers when a
 	// box joins, so a mid-track joiner can still decode.
-	r := bufio.NewReaderSize(stdout, 256*1024)
+	r := newOggPageReader(stdout, m.logger)
 	var hdr []byte
 	capturing := false
 	paused := false
@@ -963,7 +963,7 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	// bound below.
 	pendingSince := time.Now()
 	for {
-		page, err := readOggPage(r)
+		page, err := r.ReadPage()
 		if err != nil {
 			break
 		}
@@ -1189,54 +1189,139 @@ func (m *Manager) forward(sink io.Writer, p []byte) {
 	}
 }
 
-// readOggPage reads one complete Ogg page from r, syncing to the "OggS"
-// capture pattern. The returned slice is a whole page (27-byte header +
-// segment table + body).
-func readOggPage(r *bufio.Reader) ([]byte, error) {
-	for { // sync to "OggS"
-		b, err := r.ReadByte()
-		if err != nil {
-			return nil, err
+// oggCRCTable implements the Ogg page checksum: CRC-32 with polynomial
+// 0x04c11db7, initial value 0, no bit reversal, no final XOR (RFC 3533
+// appendix A), computed over the whole page with the CRC field zeroed.
+var oggCRCTable = func() (t [256]uint32) {
+	for i := range t {
+		r := uint32(i) << 24
+		for k := 0; k < 8; k++ {
+			if r&0x80000000 != 0 {
+				r = (r << 1) ^ 0x04c11db7
+			} else {
+				r <<= 1
+			}
 		}
-		if b != 'O' {
-			continue
+		t[i] = r
+	}
+	return
+}()
+
+// oggPageCRC computes the RFC 3533 checksum of a whole assembled page,
+// treating the page's own CRC field (bytes 22..25) as zero.
+func oggPageCRC(page []byte) uint32 {
+	var crc uint32
+	for i, b := range page {
+		if i >= 22 && i < 26 {
+			b = 0
 		}
-		p, err := r.Peek(3)
-		if err != nil {
-			return nil, err
-		}
-		if p[0] == 'g' && p[1] == 'g' && p[2] == 'S' {
-			if _, err := r.Discard(3); err != nil {
+		crc = (crc << 8) ^ oggCRCTable[byte(crc>>24)^b]
+	}
+	return crc
+}
+
+// oggPageReader reads whole Ogg pages from the engine's output and VERIFIES
+// each page's checksum. The verification is not pedantry: when go-librespot
+// swaps passthrough sources mid-page (a user skip replaces the source at an
+// arbitrary chunk offset), the truncated old page's declared body length
+// swallows the NEXT track's BOS and header pages, and the drain then splices
+// the new track's audio into the old logical stream: no boundary log, the
+// skip-cut never disarms, and the box decodes a frankenstein stream
+// (field-verified 2026-08-01). A swallowed page cannot checksum correctly,
+// so on a CRC mismatch the reader pushes everything after the capture
+// pattern back and rescans INSIDE those bytes for the real page start,
+// recovering the swallowed BOS regardless of engine version.
+type oggPageReader struct {
+	r      *bufio.Reader
+	push   []byte // bytes to re-serve before r (resync after a CRC mismatch)
+	logger *slog.Logger
+}
+
+func newOggPageReader(r io.Reader, logger *slog.Logger) *oggPageReader {
+	return &oggPageReader{r: bufio.NewReaderSize(r, 256*1024), logger: logger}
+}
+
+func (o *oggPageReader) readByte() (byte, error) {
+	if len(o.push) > 0 {
+		b := o.push[0]
+		o.push = o.push[1:]
+		return b, nil
+	}
+	return o.r.ReadByte()
+}
+
+func (o *oggPageReader) readFull(p []byte) error {
+	n := copy(p, o.push)
+	o.push = o.push[n:]
+	if n == len(p) {
+		return nil
+	}
+	_, err := io.ReadFull(o.r, p[n:])
+	return err
+}
+
+// ReadPage returns the next checksum-valid Ogg page (27-byte header +
+// segment table + body), resyncing past corrupt/spliced framing.
+func (o *oggPageReader) ReadPage() ([]byte, error) {
+	for {
+		// Sync to the "OggS" capture pattern with a rolling window.
+		var w [4]byte
+		n := 0
+		for {
+			b, err := o.readByte()
+			if err != nil {
 				return nil, err
 			}
-			break
+			if n < 4 {
+				w[n] = b
+				n++
+			} else {
+				w[0], w[1], w[2], w[3] = w[1], w[2], w[3], b
+			}
+			if n == 4 && w[0] == 'O' && w[1] == 'g' && w[2] == 'g' && w[3] == 'S' {
+				break
+			}
 		}
+		// 23 bytes after "OggS": version, header_type, granule(8), serial(4),
+		// page_seq(4), crc(4), page_segments(1).
+		rest := make([]byte, 23)
+		if err := o.readFull(rest); err != nil {
+			return nil, err
+		}
+		numSegs := int(rest[22])
+		segs := make([]byte, numSegs)
+		if err := o.readFull(segs); err != nil {
+			return nil, err
+		}
+		bodyLen := 0
+		for _, s := range segs {
+			bodyLen += int(s)
+		}
+		body := make([]byte, bodyLen)
+		if err := o.readFull(body); err != nil {
+			return nil, err
+		}
+		page := make([]byte, 0, 4+23+numSegs+bodyLen)
+		page = append(page, 'O', 'g', 'g', 'S')
+		page = append(page, rest...)
+		page = append(page, segs...)
+		page = append(page, body...)
+		if oggPageCRC(page) == binary.LittleEndian.Uint32(page[22:26]) {
+			return page, nil
+		}
+		// Spliced/corrupt page: rescan everything after the capture pattern.
+		// The swallowed real page (usually the next track's BOS) begins
+		// somewhere inside these bytes and will checksum correctly once the
+		// scan lands on it. Each retry consumes at least the leading four
+		// pattern bytes, so this terminates.
+		if o.logger != nil {
+			o.logger.Warn("spotify: dropped a page with a bad checksum, rescanning for the real page start (mid-page source handoff)", "pageBytes", len(page))
+		}
+		back := make([]byte, 0, len(page)-4+len(o.push))
+		back = append(back, page[4:]...)
+		back = append(back, o.push...)
+		o.push = back
 	}
-	// 23 bytes after "OggS": version, header_type, granule(8), serial(4),
-	// page_seq(4), crc(4), page_segments(1).
-	rest := make([]byte, 23)
-	if _, err := io.ReadFull(r, rest); err != nil {
-		return nil, err
-	}
-	numSegs := int(rest[22])
-	segs := make([]byte, numSegs)
-	if _, err := io.ReadFull(r, segs); err != nil {
-		return nil, err
-	}
-	bodyLen := 0
-	for _, s := range segs {
-		bodyLen += int(s)
-	}
-	body := make([]byte, bodyLen)
-	if _, err := io.ReadFull(r, body); err != nil {
-		return nil, err
-	}
-	page := make([]byte, 0, 4+23+numSegs+bodyLen)
-	page = append(page, 'O', 'g', 'g', 'S')
-	page = append(page, rest...)
-	page = append(page, segs...)
-	page = append(page, body...)
-	return page, nil
 }
 
 // PlayOptions tunes a Spotify context recall.

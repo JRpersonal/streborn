@@ -1,7 +1,6 @@
 package spotify
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -28,12 +27,14 @@ func makeOggPage(headerType byte, granule int64, body []byte) []byte {
 	var g [8]byte
 	binary.LittleEndian.PutUint64(g[:], uint64(granule))
 	p = append(p, g[:]...)
-	p = append(p, 1, 2, 3, 4)             // serial
-	p = append(p, 0, 0, 0, 0)             // page seq
-	p = append(p, 0xDE, 0xAD, 0xBE, 0xEF) // crc (unchecked here)
-	p = append(p, 1)                      // page_segments = 1
+	p = append(p, 1, 2, 3, 4) // serial
+	p = append(p, 0, 0, 0, 0) // page seq
+	p = append(p, 0, 0, 0, 0) // crc, filled below
+	p = append(p, 1)          // page_segments = 1
 	p = append(p, byte(len(body)))
 	p = append(p, body...)
+	// Real RFC 3533 checksum: the drain verifies it since the spliced-BOS fix.
+	binary.LittleEndian.PutUint32(p[22:26], oggPageCRC(p))
 	return p
 }
 
@@ -49,9 +50,9 @@ func TestReadOggPageRoundtrip(t *testing.T) {
 	for _, p := range pages {
 		stream = append(stream, p...)
 	}
-	r := bufio.NewReader(bytes.NewReader(stream))
+	r := newOggPageReader(bytes.NewReader(stream), nil)
 	for i, want := range pages {
-		got, err := readOggPage(r)
+		got, err := r.ReadPage()
 		if err != nil {
 			t.Fatalf("page %d: %v", i, err)
 		}
@@ -72,13 +73,13 @@ func TestHeaderCapture(t *testing.T) {
 	bos2 := makeOggPage(0x02, 0, []byte("id2")) // next track resets capture
 
 	stream := bytes.Join([][]byte{bos, setup, audio1, audio2, bos2}, nil)
-	r := bufio.NewReader(bytes.NewReader(stream))
+	r := newOggPageReader(bytes.NewReader(stream), nil)
 
 	var hdr []byte
 	capturing := false
 	var committed []byte
 	for {
-		page, err := readOggPage(r)
+		page, err := r.ReadPage()
 		if err != nil {
 			break
 		}
