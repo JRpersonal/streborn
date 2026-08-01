@@ -1,10 +1,10 @@
 diff --git a/player/player.go b/player/player.go
-index 2766de6..fba5aa5 100644
+index 267be20..c4bb81b 100644
 --- a/player/player.go
 +++ b/player/player.go
-@@ -175,7 +175,11 @@ func NewPlayer(opts *Options) (*Player, error) {
- 		audioKey:                  opts.AudioKey,
+@@ -200,7 +200,11 @@ func NewPlayer(opts *Options) (*Player, error) {
  		events:                    opts.Events,
+ 		cache:                     opts.Cache,
  		cdnQuarantine:             make(map[string]time.Time),
 -		flacEnabled:               opts.FlacEnabled,
 +		// Passthrough hands the raw Ogg Vorbis container to the pipe; a FLAC
@@ -15,7 +15,7 @@ index 2766de6..fba5aa5 100644
  		passthrough:               opts.AudioOutputPipePassthrough,
  		normalisationEnabled:      opts.NormalisationEnabled,
  		normalisationUseAlbumGain: opts.NormalisationUseAlbumGain,
-@@ -722,6 +726,12 @@ func (p *Player) NewStream(ctx context.Context, client *http.Client, spotId libr
+@@ -848,6 +852,12 @@ func (p *Player) NewStream(ctx context.Context, client *http.Client, spotId libr
  			stream = vorbisStream
  		}
  	} else if audioFormat == AudioFormatFLAC {
