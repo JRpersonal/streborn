@@ -35,6 +35,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
+	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
@@ -149,6 +150,15 @@ type Server struct {
 	// the other boxes (#45 root cause: account=""). nil until wired.
 	spotifyExportCred func() ([]byte, error)
 	spotifyImportCred func(ctx context.Context, data []byte) error
+	// margeGroupGet/Set/Clear bridge the marge stereo-pair record so the
+	// pairing flow can install the SAME canonical pair document on both
+	// members' marges (each box's firmware otherwise re-creates the record
+	// from its own point of view and the RIGHT box stores itself as master).
+	// The desktop app relays the document to the partner because agent-to-
+	// agent HTTP is blocked between series-I boxes. nil until wired.
+	margeGroupGet   func() (xmlDoc string, canonical bool, ok bool)
+	margeGroupSet   func(xmlDoc string) error
+	margeGroupClear func(reason string)
 	// spotifySetRecalling marks an in-flight recall so ServeOgg drives the new
 	// track from its start instead of resuming mid-position. nil when Spotify is
 	// not configured.
@@ -721,6 +731,17 @@ func WithSpotifyCanRecall(f func(ctx context.Context) bool) Option {
 	return func(s *Server) { s.spotifyCanRecall = f }
 }
 
+// WithMargeGroups bridges the marge stereo-pair record (get/set/clear) so the
+// pairing and dissolve flows keep BOTH members' marges on one canonical pair
+// document, and /api/marge/group lets the desktop app relay it to the partner.
+func WithMargeGroups(get func() (string, bool, bool), set func(string) error, clear func(string)) Option {
+	return func(s *Server) {
+		s.margeGroupGet = get
+		s.margeGroupSet = set
+		s.margeGroupClear = clear
+	}
+}
+
 // WithSpotifyExportCred registers the function that returns this box's active
 // go-librespot credential so it can be copied to other speakers (#45 sync).
 func WithSpotifyExportCred(f func() ([]byte, error)) Option {
@@ -891,6 +912,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/zone/purge", s.handleZonePurge)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
+	mux.HandleFunc("/api/marge/group", s.handleMargeGroupDoc)
 	mux.HandleFunc("/api/webhooks", s.handleWebhooks)
 	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
@@ -920,6 +942,13 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	if s.spotifyExportCred != nil || s.spotifyImportCred != nil {
 		mux.HandleFunc("/spotify/credential", s.handleSpotifyCredential)
+		// Alias: the desktop app's preset-copy flow called this spelling for
+		// weeks while only /spotify/credential was served; the catch-all index
+		// answered it with 200 + HTML, which read as success and silently
+		// transferred nothing (the "Spotify preset needs the app once" field
+		// reports). Serve both so no client generation can fall through to the
+		// index again.
+		mux.HandleFunc("/api/spotify/credential", s.handleSpotifyCredential)
 	}
 
 	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
@@ -6380,14 +6409,48 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		"left", master.DeviceID, "leftIP", master.IP, "right", partner.DeviceID, "rightIP", partner.IP)
 	members := []boxapi.ZoneMember{master, partner}
 	if err := c.AddGroup(ctx, name, master.DeviceID, members); err != nil {
-		s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
-		http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
-		return
+		// 5510 GROUP_ALREADY_EXISTS: a stale pair (half-dissolved, or left over
+		// from a pre-shutdown Bose-app pairing) blocks every new /addGroup until
+		// someone clears it. The user just asked for a NEW pair with exactly
+		// these two speakers, so clear the stale pair on both firmwares and
+		// retry once (field: Dirk's ST10 could never re-pair, 2026-07-31).
+		// The heal runs on its own detached budget: the handler ctx may have
+		// only a couple of seconds left by now, and aborting between the
+		// removeGroup and the retry would destroy the old pair without
+		// forming the new one.
+		if isGroupExistsErr(err) {
+			hctx, hcancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+			s.healStaleStereoGroups(hctx, c, partner)
+			err = c.AddGroup(hctx, name, master.DeviceID, members)
+			hcancel()
+		}
+		if err != nil {
+			s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
+			http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
+			return
+		}
 	}
 	g, err := c.GetGroup(ctx)
 	if err != nil {
+		// Paired, but the read-back failed (slow box, expiring ctx). The
+		// canonical document depends only on data known BEFORE the read-back,
+		// so still install and relay it — skipping it here left the partner's
+		// marge on its self-centered record exactly on the slowest boxes.
 		s.logger.Warn("stereo: paired but getGroup read-back failed", "err", err)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stereo": true})
+		canonicalDoc := marge.CanonicalGroupXML(name, master.DeviceID, master.IP, partner.DeviceID, partner.IP)
+		if s.margeGroupSet != nil {
+			if serr := s.margeGroupSet(canonicalDoc); serr != nil {
+				s.logger.Warn("stereo: could not install the canonical pair document on the local marge", "err", serr)
+			}
+		}
+		pctx, pcancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		partnerSynced := s.pushGroupDocToPartner(pctx, partner.IP, canonicalDoc)
+		pcancel()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "stereo": true,
+			"canonicalGroup": canonicalDoc, "partnerIP": partner.IP,
+			"partnerMargeSynced": partnerSynced,
+		})
 		return
 	}
 	// Assert the firmware actually bound BOTH channels. /addGroup can return 200
@@ -6403,7 +6466,121 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		return
 	}
 	s.logger.Info("stereo: paired", "id", g.ID, "members", len(g.Members))
-	writeJSON(w, http.StatusOK, g)
+
+	// Install ONE canonical pair document on both members' marges. Left alone,
+	// each firmware re-creates the record on its own marge from its own point
+	// of view and the RIGHT box stores ITSELF as master/LEFT (field: Rolf's
+	// pair, GroupService.xml id="str-grp-<rightID>"), which desyncs the pair
+	// after standby and blocks re-pairing. The direct push to the partner's
+	// agent fails between series-I boxes (their firewall drops agent-to-agent
+	// HTTP), so the response also carries the document for the desktop app to
+	// relay; partnerMargeSynced tells it whether the relay is still needed.
+	canonicalDoc := marge.CanonicalGroupXML(name, master.DeviceID, master.IP, partner.DeviceID, partner.IP)
+	if s.margeGroupSet != nil {
+		if err := s.margeGroupSet(canonicalDoc); err != nil {
+			s.logger.Warn("stereo: could not install the canonical pair document on the local marge", "err", err)
+		}
+	}
+	partnerSynced := s.pushGroupDocToPartner(ctx, partner.IP, canonicalDoc)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "stereo": true, "id": g.ID, "name": g.Name, "members": g.Members,
+		"canonicalGroup": canonicalDoc, "partnerIP": partner.IP,
+		"partnerMargeSynced": partnerSynced,
+	})
+}
+
+// isGroupExistsErr reports whether an /addGroup error is the firmware's 5510
+// GROUP_ALREADY_EXISTS rejection.
+func isGroupExistsErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToUpper(err.Error())
+	return strings.Contains(msg, "5510") || strings.Contains(msg, "GROUP_ALREADY_EXISTS")
+}
+
+// healStaleStereoGroups clears a stale stereo pair from both speakers'
+// firmwares (and this box's marge record) so a fresh /addGroup can proceed.
+// The partner's firmware API (:8090) is reachable even between series-I boxes;
+// only the agent ports are firewalled there.
+func (s *Server) healStaleStereoGroups(ctx context.Context, c *boxapi.Client, partner boxapi.ZoneMember) {
+	s.logger.Warn("stereo: firmware reports GROUP_ALREADY_EXISTS (5510), clearing the stale pair on both speakers and retrying")
+	if g, err := c.GetGroup(ctx); err == nil && (g.ID != "" || len(g.Members) > 0) {
+		s.logger.Info("stereo: stale pair on this speaker", "id", g.ID, "master", g.MasterDeviceID, "members", len(g.Members))
+	}
+	if err := c.RemoveGroup(ctx); err != nil {
+		s.logger.Warn("stereo: stale-pair removeGroup failed on this speaker", "err", err)
+	}
+	if partner.IP != "" {
+		pc := boxapi.New(partner.IP)
+		if pg, err := pc.GetGroup(ctx); err == nil && (pg.ID != "" || len(pg.Members) > 0) {
+			s.logger.Info("stereo: stale pair on the partner", "id", pg.ID, "master", pg.MasterDeviceID, "members", len(pg.Members))
+			if err := pc.RemoveGroup(ctx); err != nil {
+				s.logger.Warn("stereo: stale-pair removeGroup failed on the partner", "err", err, "partnerIP", partner.IP)
+			}
+		}
+	}
+	if s.margeGroupClear != nil {
+		s.margeGroupClear("stale pair heal (5510)")
+	}
+	// Give the firmware a moment to settle the teardown before the retry; a
+	// back-to-back addGroup right after removeGroup has been seen to 500.
+	select {
+	case <-ctx.Done():
+	case <-time.After(1200 * time.Millisecond):
+	}
+}
+
+// pushGroupDocToPartner installs (doc != "") or clears (doc == "") the
+// canonical pair document on the partner's marge via its agent. Best-effort:
+// between series-I boxes the agent port is firewalled and the desktop app
+// relays instead (the caller reports that via partnerMargeSynced/-Cleared).
+func (s *Server) pushGroupDocToPartner(ctx context.Context, partnerIP, doc string) bool {
+	if partnerIP == "" {
+		return false
+	}
+	// Short per-port budget: on series-I (the only stereo hardware) a blocked
+	// agent port black-holes the SYN, and this push runs inside the pairing
+	// response — an open LAN port answers in milliseconds.
+	client := &http.Client{Timeout: 800 * time.Millisecond}
+	for _, port := range []string{"8888", "17008"} {
+		url := "http://" + net.JoinHostPort(partnerIP, port) + "/api/marge/group"
+		var req *http.Request
+		var err error
+		if doc == "" {
+			req, err = http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+		} else {
+			req, err = http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(doc))
+			if req != nil {
+				req.Header.Set("Content-Type", "application/xml")
+			}
+		}
+		if err != nil {
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		// An agent that predates /api/marge/group answers via its catch-all
+		// index: 200 + text/html. Only the real endpoint's JSON counts, or a
+		// "success" here would suppress the desktop app's relay while the
+		// partner stored nothing.
+		ok := resp.StatusCode == http.StatusOK &&
+			strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json")
+		tooOld := resp.StatusCode == http.StatusOK && !ok
+		resp.Body.Close()
+		if ok {
+			s.logger.Info("stereo: partner marge updated directly", "partnerIP", partnerIP, "port", port, "cleared", doc == "")
+			return true
+		}
+		if tooOld {
+			s.logger.Warn("stereo: partner agent predates the pair-document relay (answered HTML), update the partner speaker", "partnerIP", partnerIP, "port", port)
+			return false
+		}
+	}
+	s.logger.Info("stereo: partner marge not reachable directly (expected between series-I speakers), the desktop app will relay", "partnerIP", partnerIP)
+	return false
 }
 
 // mirrorToSlaves points each slave's box at the master's current stream URL over
@@ -6636,29 +6813,133 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if stereo {
-		// A stereo pair is a firmware-native L/R group, so tear it down with the
-		// matching endpoint (GET /removeGroup), not the multiroom /removeZoneSlave.
-		// Always clear our store afterwards so we stop honoring the pair.
-		s.logger.Info("stereo: dissolving pair via /removeGroup (beta)", "master", master.DeviceID)
-		if err := c.RemoveGroup(ctx); err != nil {
-			s.logger.Warn("stereo: removeGroup failed (the user may need to undo the pair in the Bose app)", "err", err)
-		}
-		if s.zones != nil {
-			if err := s.zones.Clear(); err != nil {
-				s.logger.Warn("stereo: clear store failed", "err", err)
-			}
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "stereo": true})
-		return
-	}
-	if master.DeviceID == "" {
+	// The persisted store can be empty here (a slave got the dissolve, or the
+	// agent was reinstalled) while the FIRMWARE still holds state. Consult the
+	// live zone first, then the live stereo group, before deciding there is
+	// nothing to do: field bundles showed a box logging
+	// `zone: dissolving (beta) master="" slaves=0` in an endless retry storm
+	// because the dissolve never looked past the empty store.
+	if !stereo && master.DeviceID == "" {
 		if z, err := c.GetZone(ctx); err == nil && z.Master != "" {
 			master = boxapi.ZoneMember{DeviceID: z.Master, IP: z.SenderIP}
 			for _, m := range z.Members {
 				slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
 			}
 		}
+	}
+	// The stereo escalation is gated on explicit caller intent (?stereo=1, set
+	// by the app's undo-stereo-pair button): a plain multiroom dissolve that
+	// happens to hit a box in a firmware pair must keep its pre-existing
+	// no-op semantics instead of silently destroying the pair.
+	if !stereo && master.DeviceID == "" && r.URL.Query().Get("stereo") == "1" {
+		if g, err := c.GetGroup(ctx); err == nil && (g.ID != "" || len(g.Members) > 0) {
+			// A firmware-native stereo pair with no persisted zone: dissolve it
+			// as a pair. The members are partitioned relative to THIS box, not
+			// the group master — the dissolve may run on the RIGHT/slave box
+			// (the store only exists on the master), where "everyone but the
+			// master" would be ourselves and the remote teardown would clear
+			// this box twice while the real partner kept the pair.
+			stereo = true
+			selfID := s.localDeviceID(ctx, c, "")
+			master = boxapi.ZoneMember{DeviceID: g.MasterDeviceID}
+			slaves = nil
+			for _, m := range g.Members {
+				if strings.EqualFold(m.DeviceID, g.MasterDeviceID) {
+					master.IP = m.IP
+				}
+				if selfID != "" {
+					if strings.EqualFold(m.DeviceID, selfID) {
+						continue // ourselves; the partner is the OTHER member
+					}
+				} else if strings.EqualFold(m.DeviceID, g.MasterDeviceID) {
+					continue // self unknown: fall back to assuming we lead
+				}
+				slaves = append(slaves, m)
+			}
+			s.logger.Info("stereo: no persisted zone but the firmware reports a pair, dissolving that",
+				"id", g.ID, "master", g.MasterDeviceID, "self", selfID, "members", len(g.Members))
+		}
+	}
+	if stereo {
+		// A stereo pair is a firmware-native L/R group, so tear it down with the
+		// matching endpoint (GET /removeGroup), not the multiroom /removeZoneSlave.
+		// The PARTNER's firmware keeps its own copy of the pair (GroupService),
+		// and a partner left uncleared answers every later /addGroup with 5510
+		// GROUP_ALREADY_EXISTS — so clear both firmwares and both marge records,
+		// not just our own. Always clear our store afterwards so we stop
+		// honoring the pair.
+		partnerIP, partnerID := "", ""
+		if len(slaves) > 0 {
+			partnerIP, partnerID = slaves[0].IP, slaves[0].DeviceID
+		}
+		s.logger.Info("stereo: dissolving pair via /removeGroup (beta)", "master", master.DeviceID, "partnerIP", partnerIP)
+		if err := c.RemoveGroup(ctx); err != nil {
+			s.logger.Warn("stereo: removeGroup failed (the user may need to undo the pair in the Bose app)", "err", err)
+		}
+		if partnerIP != "" {
+			// The stored partner IP can be stale (DHCP renewal since pairing):
+			// confirm the box at that address IS the recorded partner before
+			// tearing its pair down. A mismatch is reported, not acted on.
+			pc := boxapi.New(partnerIP)
+			skipRemote := false
+			if partnerID != "" {
+				if pinfo, perr := pc.GetInfo(ctx); perr == nil &&
+					strings.TrimSpace(pinfo.DeviceID) != "" && !strings.EqualFold(pinfo.DeviceID, partnerID) {
+					s.logger.Warn("stereo: box at the stored partner IP is a DIFFERENT speaker, skipping its teardown",
+						"partnerIP", partnerIP, "expected", partnerID, "found", pinfo.DeviceID)
+					skipRemote = true
+				}
+			}
+			if skipRemote {
+				partnerIP = ""
+			} else if err := pc.RemoveGroup(ctx); err != nil {
+				s.logger.Warn("stereo: removeGroup on the partner failed", "err", err, "partnerIP", partnerIP)
+			} else {
+				s.logger.Info("stereo: partner firmware pair cleared", "partnerIP", partnerIP)
+			}
+		}
+		if s.margeGroupClear != nil {
+			s.margeGroupClear("dissolve")
+		}
+		partnerCleared := s.pushGroupDocToPartner(ctx, partnerIP, "")
+		if s.zones != nil {
+			if err := s.zones.Clear(); err != nil {
+				s.logger.Warn("stereo: clear store failed", "err", err)
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "stereo": true,
+			"partnerIP": partnerIP, "partnerDeviceID": partnerID,
+			"partnerMargeCleared": partnerCleared,
+		})
+		return
+	}
+	if master.DeviceID == "" && len(slaves) == 0 {
+		// Nothing to act on: no persisted zone, firmware zone empty. Say so
+		// once instead of pretending to dissolve — and still clear the store
+		// so a repeating caller stops finding stale state to retry on.
+		firmwarePair := false
+		if g, err := c.GetGroup(ctx); err == nil && (g.ID != "" || len(g.Members) > 0) {
+			// A plain dissolve leaves a firmware stereo pair alone (the
+			// escalation above needs ?stereo=1); report it so the caller can
+			// tell "standalone" from "paired but not asked to unpair".
+			firmwarePair = true
+			s.logger.Info("zone: nothing to dissolve, but the firmware holds a stereo pair (use the undo-pair action to dissolve it)", "id", g.ID)
+		} else if err == nil && s.margeGroupClear != nil {
+			// Firmware has neither zone nor group: a stored marge pair record
+			// is provably phantom in this state (a factory reset wipes the
+			// firmware pairing but not /mnt/nv/streborn), so drop it — the
+			// explicit escape hatch.
+			s.margeGroupClear("nothing to dissolve (firmware reports no pair)")
+		}
+		if !firmwarePair {
+			s.logger.Info("zone: nothing to dissolve (no persisted zone, firmware reports no zone and no group)")
+		}
+		if s.zones != nil {
+			_ = s.zones.Clear()
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nothing": true, "firmwarePair": firmwarePair})
+		return
 	}
 	s.logger.Info("zone: dissolving (beta)", "master", master.DeviceID, "slaves", len(slaves))
 	if master.DeviceID != "" && len(slaves) > 0 {
@@ -6711,6 +6992,46 @@ func (s *Server) handleBoxGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, g)
+}
+
+// handleMargeGroupDoc exposes this box's marge stereo-pair record so both
+// members of a pair can be kept on ONE canonical document. GET returns the
+// stored record; POST installs a canonical document (body = the group XML);
+// DELETE clears the record (dissolve). The desktop app is the usual caller:
+// it relays the master's document to the partner because agent-to-agent HTTP
+// is blocked between series-I boxes.
+func (s *Server) handleMargeGroupDoc(w http.ResponseWriter, r *http.Request) {
+	if s.margeGroupGet == nil || s.margeGroupSet == nil || s.margeGroupClear == nil {
+		http.Error(w, "marge group bridge not wired", http.StatusNotImplemented)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		xmlDoc, canonical, ok := s.margeGroupGet()
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]any{"ok": false, "error": "no pair record stored"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "xml": xmlDoc, "canonical": canonical})
+	case http.MethodPost, http.MethodPut:
+		body, err := io.ReadAll(io.LimitReader(r.Body, 64*1024))
+		if err != nil || len(bytes.TrimSpace(body)) == 0 {
+			http.Error(w, "empty group document", http.StatusBadRequest)
+			return
+		}
+		if err := s.margeGroupSet(string(body)); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.logger.Info("stereo: canonical pair document installed on this marge (relay)")
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	case http.MethodDelete:
+		s.margeGroupClear("relay dissolve")
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	default:
+		w.Header().Set("Allow", "GET, POST, DELETE")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 // sysBlockRoot, mediaRoot and nvRoot are the sysfs block-device root, the mount

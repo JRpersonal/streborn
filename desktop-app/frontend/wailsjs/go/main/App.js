@@ -90,6 +90,10 @@ export function DiscoverBoxes(arg1) {
   return window['go']['main']['App']['DiscoverBoxes'](arg1);
 }
 
+export function DissolveStereoPair(arg1, arg2) {
+  return window['go']['main']['App']['DissolveStereoPair'](arg1, arg2);
+}
+
 export function DissolveZone(arg1, arg2) {
   return window['go']['main']['App']['DissolveZone'](arg1, arg2);
 }

@@ -2168,7 +2168,49 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 	if len(notReady) > 0 {
 		out["notReady"] = notReady
 	}
+	// Stereo pairs: the master's agent installs ONE canonical pair document on
+	// both members' marges so the RIGHT box cannot re-create the record with
+	// itself as master (the divergence that desyncs pairs after standby). The
+	// agent cannot reach the partner's agent between series-I speakers (their
+	// firewall drops agent-to-agent HTTP), so when it reports the direct push
+	// failed, the app relays the document — the PC reaches every agent.
+	if spec.Stereo {
+		a.relayStereoGroupDoc(out)
+	}
 	return out, nil
+}
+
+// relayStereoGroupDoc pushes the canonical stereo-pair document (returned by
+// the master agent's pairing response) to the partner's agent when the master
+// could not deliver it directly. Best-effort: the pair itself already formed;
+// a failed relay only leaves the partner's marge record uncorrected until the
+// next pairing action or app-driven repair.
+func (a *App) relayStereoGroupDoc(out map[string]any) {
+	synced, _ := out["partnerMargeSynced"].(bool)
+	doc, _ := out["canonicalGroup"].(string)
+	partnerIP, _ := out["partnerIP"].(string)
+	if synced || doc == "" || partnerIP == "" {
+		return
+	}
+	resp, err := a.boxDo(partnerIP, 0, http.MethodPost, "/api/marge/group", "application/xml", doc)
+	if err != nil {
+		a.logger.Warn("stereo: relaying the pair document to the partner agent failed", "partnerIP", partnerIP, "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		a.logger.Warn("stereo: partner agent rejected the pair document relay", "partnerIP", partnerIP, "status", resp.StatusCode)
+		return
+	}
+	// An agent that predates /api/marge/group answers via its catch-all index:
+	// 200 + text/html. Only the endpoint's JSON reply proves the record landed
+	// (same false-success class as the /spotify/credential path fix).
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		a.logger.Warn("stereo: partner agent is too old for the pair-document relay (answered non-JSON), update the partner speaker", "partnerIP", partnerIP, "contentType", ct)
+		return
+	}
+	a.logger.Info("stereo: pair document relayed to the partner agent", "partnerIP", partnerIP)
+	out["partnerMargeSynced"] = true
 }
 
 // DissolveZone tears down the multiroom zone led by masterHost (#70 beta).
@@ -2188,7 +2230,67 @@ func (a *App) DissolveZone(masterHost string, masterPort int) error {
 		a.logger.Info("zone: dissolve rejected", "master", masterHost, "err", herr)
 		return herr
 	}
+	// A dissolved stereo pair must also drop the partner's marge pair record;
+	// the agent tries directly and reports whether the app needs to relay the
+	// delete (series-I speakers cannot reach each other's agents).
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	a.relayStereoPairClear(out)
 	a.logger.Info("zone: dissolved", "master", masterHost)
+	return nil
+}
+
+// relayStereoPairClear relays the pair-record DELETE to the partner's agent
+// when a stereo dissolve response says the agent could not clear it directly.
+func (a *App) relayStereoPairClear(out map[string]any) {
+	if stereo, _ := out["stereo"].(bool); !stereo {
+		return
+	}
+	if cleared, _ := out["partnerMargeCleared"].(bool); cleared {
+		return
+	}
+	partnerIP, _ := out["partnerIP"].(string)
+	if partnerIP == "" {
+		return
+	}
+	dresp, derr := a.boxDo(partnerIP, 0, http.MethodDelete, "/api/marge/group", "", "")
+	switch {
+	case derr != nil:
+		a.logger.Warn("stereo: clearing the partner's pair record failed", "partnerIP", partnerIP, "err", derr)
+	// The catch-all index of a pre-relay agent answers 200+HTML; only the
+	// endpoint's JSON reply proves the clear happened.
+	case dresp.StatusCode != http.StatusOK,
+		!strings.HasPrefix(dresp.Header.Get("Content-Type"), "application/json"):
+		a.logger.Warn("stereo: partner agent did not confirm the pair-record clear (too old, or an error)",
+			"partnerIP", partnerIP, "status", dresp.StatusCode, "contentType", dresp.Header.Get("Content-Type"))
+		dresp.Body.Close()
+	default:
+		dresp.Body.Close()
+		a.logger.Info("stereo: pair record cleared on the partner agent (relay)", "partnerIP", partnerIP)
+	}
+}
+
+// DissolveStereoPair undoes a stereo pair from either member. It is the
+// stereo-intent variant of DissolveZone: the agent only escalates a dissolve
+// to the firmware's /getGroup teardown when the caller explicitly asked for a
+// pair to be undone (?stereo=1), so a plain multiroom dissolve can never
+// destroy a stereo pair as a side effect.
+func (a *App) DissolveStereoPair(host string, port int) error {
+	resp, err := a.boxDoTimeout(host, port, http.MethodDelete, "/api/box/zone?stereo=1", "", "", zoneCallTimeout)
+	if err != nil {
+		a.logger.Info("stereo: dissolve failed", "host", host, "err", err)
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		herr := readHTTPError(resp)
+		a.logger.Info("stereo: dissolve rejected", "host", host, "err", herr)
+		return herr
+	}
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	a.relayStereoPairClear(out)
+	a.logger.Info("stereo: pair dissolved", "host", host)
 	return nil
 }
 
@@ -2515,7 +2617,14 @@ func hasSpotifyPreset(presets []Preset) bool {
 // target on a different account gets the source's login, which matches the
 // user intent of copying that source's presets.
 func (a *App) transferSpotifyCredential(srcHost string, srcPort int, dstHost string, dstPort int) {
-	resp, err := a.boxDo(srcHost, srcPort, http.MethodGet, "/api/spotify/credential", "", "")
+	// The agent serves this on /spotify/credential (same endpoint
+	// SyncSpotifyLogin uses). This function called /api/spotify/credential for
+	// weeks, which the agent's catch-all index answered with 200 + HTML: the
+	// copy then logged success while transferring nothing, and every copied
+	// Spotify preset stayed dead until the user picked the target in the
+	// Spotify app once. Newer agents alias both spellings, but use the
+	// canonical path so older agents in the field work too.
+	resp, err := a.boxDo(srcHost, srcPort, http.MethodGet, "/spotify/credential", "", "")
 	if err != nil {
 		a.logger.Warn("copy presets: source Spotify credential not readable", "src", srcHost, "err", err)
 		return
@@ -2526,12 +2635,19 @@ func (a *App) transferSpotifyCredential(srcHost string, srcPort int, dstHost str
 		a.logger.Info("copy presets: source has no stored Spotify login, skipping credential transfer", "src", srcHost, "status", resp.StatusCode)
 		return
 	}
+	// Guard against ever falling through to a catch-all HTML page again: the
+	// credential endpoint answers application/octet-stream, an index answers
+	// text/html. Posting HTML onward would corrupt the target's login.
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/octet-stream") {
+		a.logger.Warn("copy presets: source answered the credential read with the wrong content type, not transferring", "src", srcHost, "contentType", ct)
+		return
+	}
 	blob, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if err != nil || len(blob) == 0 {
 		a.logger.Warn("copy presets: reading the Spotify credential failed", "src", srcHost, "err", err)
 		return
 	}
-	postResp, err := a.boxDo(dstHost, dstPort, http.MethodPost, "/api/spotify/credential", "application/octet-stream", string(blob))
+	postResp, err := a.boxDo(dstHost, dstPort, http.MethodPost, "/spotify/credential", "application/octet-stream", string(blob))
 	if err != nil {
 		a.logger.Warn("copy presets: Spotify credential transfer to the target failed", "dst", dstHost, "err", err)
 		return

@@ -131,6 +131,7 @@ export {
   GetZoneState,
   FormZone,
   DissolveZone,
+  DissolveStereoPair,
   SyncSpotifyLogin,
 } from '../wailsjs/go/main/App';
 

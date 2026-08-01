@@ -113,11 +113,19 @@ func (s *Store) Set(z Zone) error {
 	return s.Save()
 }
 
-// Clear drops the membership (back to standalone) and persists.
+// Clear drops the membership (back to standalone) and persists. An
+// already-empty store returns without writing: repeated dissolve calls on a
+// standalone box (field: dissolve retry storms) must not cost a NAND write
+// each, and an in-memory-nil store already mirrors the standalone on-disk
+// state.
 func (s *Store) Clear() error {
 	s.mu.Lock()
+	wasSet := s.zone != nil
 	s.zone = nil
 	s.mu.Unlock()
+	if !wasSet {
+		return nil
+	}
 	return s.Save()
 }
 

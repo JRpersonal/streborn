@@ -49,6 +49,8 @@ export function DeleteRecentCard(arg1:string,arg2:number,arg3:string,arg4:string
 
 export function DiscoverBoxes(arg1:number):Promise<Array<main.BoxInfo>>;
 
+export function DissolveStereoPair(arg1:string,arg2:number):Promise<void>;
+
 export function DissolveZone(arg1:string,arg2:number):Promise<void>;
 
 export function DownloadUpdate(arg1:string):Promise<string>;

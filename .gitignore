@@ -74,3 +74,4 @@ Thumbs.db
 # agent memory/notes). MUST NEVER be committed.
 .claude/
 .gotmp/
+testbuilds/

@@ -329,6 +329,11 @@ func run() error {
 		marge.WithDeviceID(deviceID),
 		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
 		marge.WithReflectSourceFormatPath("/mnt/nv/streborn/reflect-format"),
+		// Persist the stereo-pair record so the firmware's group poll keeps
+		// getting the same answer across agent restarts (a "not grouped"
+		// fallback after a restart is what invited the firmware to re-create
+		// the record from its own point of view).
+		marge.WithGroupPath("/mnt/nv/streborn/marge-group.json"),
 		// The box re-reads its cloud presets from marge during every
 		// setMargeAccount re-onboarding. Answering with an empty <presets/>
 		// made the firmware WIPE its own hardware-key registrations after
@@ -373,6 +378,49 @@ func run() error {
 	webui.RegisterDebugSection("marge_recent_requests", func() any {
 		return margeSrv.RecentRequestLines(60)
 	})
+	// The stereo-pair record as THIS box's marge stores it. A bundle from each
+	// member shows in one glance whether the pair view diverged (the RIGHT box
+	// storing itself as master was invisible without SSH before this).
+	webui.RegisterDebugSection("marge_group", func() any {
+		xmlDoc, canonical, ok := margeSrv.GroupSnapshot()
+		if !ok {
+			return map[string]any{"present": false}
+		}
+		return map[string]any{"present": true, "canonical": canonical, "xml": xmlDoc}
+	})
+	// A pair record restored from NAND can describe a pair that no longer
+	// exists: a Bose factory reset wipes the firmware's own pairing
+	// (GroupService) but not /mnt/nv/streborn. Once the firmware answers, two
+	// consecutive empty /getGroup reads 30s apart with still no live
+	// confirmation (no firmware group post, no canonical install) drop the
+	// phantom record, so the group poll stops resurrecting a dead pair.
+	// Reads only; the single NAND write is the one-time record removal.
+	if margeSrv.GroupRestoredUnconfirmed() {
+		go func() {
+			c := boxapi.New(*boxHost)
+			emptyReads := 0
+			for i := 0; i < 40; i++ { // give a slow boot up to ~20 min
+				time.Sleep(30 * time.Second)
+				if !margeSrv.GroupRestoredUnconfirmed() {
+					return // confirmed by a live signal meanwhile
+				}
+				gctx, gcancel := context.WithTimeout(context.Background(), 6*time.Second)
+				g, err := c.GetGroup(gctx)
+				gcancel()
+				if err != nil {
+					emptyReads = 0 // firmware not answering yet; start over
+					continue
+				}
+				if g.ID != "" || len(g.Members) > 0 {
+					return // firmware still paired: the restored record is real
+				}
+				if emptyReads++; emptyReads >= 2 {
+					margeSrv.ClearGroup("firmware reports no pair after restart (factory reset?)")
+					return
+				}
+			}
+		}()
+	}
 	webui.RegisterDebugSection("clock_status", clockStatusSnapshot)
 	// dns_status makes the #487 fault class visible in one glance: a bundle
 	// with an empty nameserver list explains dead radio, a stuck clock, an
@@ -551,6 +599,7 @@ func run() error {
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
+		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup),
 		webui.WithRecent(recentStore))
 
 	// Re-assert a persisted multiroom group (native or mirror) so it survives

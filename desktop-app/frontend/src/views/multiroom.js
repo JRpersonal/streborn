@@ -8,7 +8,7 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel, showToast } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { FormZone, DissolveZone, WakeBox, BrowserOpenURL } from '../api.js';
+import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive } from '../groups.js';
@@ -234,12 +234,29 @@ async function doFormStereo(pairCands) {
   try {
     // The picked left speaker is the master (LEFT channel); the agent assigns
     // the partner the RIGHT channel.
-    await FormZone(left.host, left.port, {
+    const res = await FormZone(left.host, left.port, {
       master: { deviceID: left.deviceID, ip: left.host },
       slaves: [{ deviceID: right.deviceID, ip: right.host }],
       name: '', stereo: true,
     });
-    state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoFormed'))}</div>`;
+    // The agent answers 200 with ok:false when the firmware silently dropped a
+    // member (incomplete pair) - and FormZone answers ok:false with notReady
+    // when the partner's agent was still starting. Neither is success: only
+    // one speaker would play, so show what actually happened.
+    if (res && res.ok === false) {
+      const notReady = Array.isArray(res.notReady) ? res.notReady : [];
+      if (!res.error && notReady.length) {
+        const names = notReady
+          .map(ip => { const b = pairCands.find(x => x.host === ip); return b ? zoneLabel(b) : ip; })
+          .join(', ');
+        state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.notReady', { names }))}</div>`;
+      } else {
+        const err = res.error || t('multiroom.formedNone');
+        state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err }))}</div>`;
+      }
+    } else {
+      state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoFormed'))}</div>`;
+    }
   } catch (e) {
     state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
@@ -331,7 +348,10 @@ async function doDissolveStereo(pairCands) {
   }
   $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
   try {
-    await DissolveZone(master.host, master.port);
+    // The stereo-intent endpoint: it also dissolves a firmware pair the agent
+    // has no persisted record of (agent reinstalled, pair formed elsewhere),
+    // which the plain dissolve deliberately leaves alone.
+    await DissolveStereoPair(master.host, master.port);
     state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`;
     showToast(t('multiroom.stereoDissolved'));
   } catch (e) {
