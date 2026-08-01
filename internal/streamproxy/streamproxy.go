@@ -277,6 +277,11 @@ type Server struct {
 	// display, no audio, clean log).
 	fetchMu   sync.Mutex
 	lastFetch time.Time
+	// openFetches counts proxied stream connections currently being served
+	// (slot or raw). While one is open, LastActivity reports activity "now":
+	// the box is demonstrably pulling audio this very moment, regardless of
+	// how long ago the connection was OPENED.
+	openFetches int
 	slotFetch [7]time.Time // index 1..6: when the box last OPENED the slot
 	// slotFetchEnd / slotOpen make the per-slot signal liveness-aware: a
 	// 36ms-2.4s fetch that dies in the box's re-login source bounce used to
@@ -917,11 +922,25 @@ func (s *Server) clearFailure(url string) {
 
 // Register registers /stream/<slot> as well as /stream/raw for ad-hoc URLs
 // (e.g. from the radio search) on the supplied mux.
-// noteFetch records that the box opened a proxied stream just now.
-func (s *Server) noteFetch() {
+// noteFetchOpen records that the box opened a proxied stream just now and
+// marks the connection open; the returned func marks it closed and re-stamps
+// the activity, so "served until the connection dropped a moment ago" reads
+// as fresh. A bare open-time stamp was not enough: a radio stream holds ONE
+// long GET for its whole playback, so after 9m42s of flawless audio the
+// spontaneous-off recovery read lastFetch as ten minutes stale and stood
+// down, leaving the speaker dead after a firmware source-drop (#491
+// Cinemate, field bundle 2026-08-01).
+func (s *Server) noteFetchOpen() func() {
 	s.fetchMu.Lock()
 	s.lastFetch = time.Now()
+	s.openFetches++
 	s.fetchMu.Unlock()
+	return func() {
+		s.fetchMu.Lock()
+		s.lastFetch = time.Now()
+		s.openFetches--
+		s.fetchMu.Unlock()
+	}
 }
 
 // noteSlotFetch records that the box opened THIS slot's proxied stream. Called
@@ -1014,12 +1033,17 @@ func (s *Server) SetBoxStateFn(fn func() string) {
 	s.boxStateFn = fn
 }
 
-// LastActivity reports when the box last opened any proxied stream and when
-// the last terminal upstream failure happened (zero times = never). Consumed
-// by the webui's wedge detector.
+// LastActivity reports when the box was last SERVED by any proxied stream
+// (activity is "now" while a connection is open, the close moment after it
+// ends, the open moment otherwise) and when the last terminal upstream
+// failure happened (zero times = never). Consumed by the webui's wedge
+// detector, the recall inert-check and the spontaneous-off recovery.
 func (s *Server) LastActivity() (lastFetch, lastFailure time.Time) {
 	s.fetchMu.Lock()
 	lastFetch = s.lastFetch
+	if s.openFetches > 0 {
+		lastFetch = time.Now()
+	}
 	s.fetchMu.Unlock()
 	s.errMu.Lock()
 	lastFailure = s.lastErr.when
@@ -1133,7 +1157,7 @@ func (s *Server) handleBitrate(w http.ResponseWriter, r *http.Request) {
 // play path so Bose's UPnP can receive HTTPS streams via us as well. The
 // URL arrives as a ?u=<base64url> parameter.
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
-	s.noteFetch()
+	defer s.noteFetchOpen()()
 	enc := r.URL.Query().Get("u")
 	if enc == "" {
 		http.Error(w, "u missing", http.StatusBadRequest)
@@ -1227,7 +1251,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	s.noteFetch()
+	defer s.noteFetchOpen()()
 	slotStr := strings.TrimPrefix(r.URL.Path, "/stream/")
 	slot, err := strconv.Atoi(slotStr)
 	if err != nil || slot < 1 || slot > 6 {
