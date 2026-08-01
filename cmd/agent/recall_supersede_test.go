@@ -165,6 +165,33 @@ func TestStandbyDeferralResetsRoutineBudget(t *testing.T) {
 	}
 }
 
+// A deferred URGENT ask must reset the urgent budget too: the 1036 asker
+// fires on a box that is already awake (no wake hook is coming for it), so
+// after a deferral on a transient probe error the next 1036 is the only
+// natural retrigger, and the burned 60s budget would silence it.
+func TestStandbyDeferralResetsUrgentBudget(t *testing.T) {
+	presetResyncAsk.Store(false)
+	presetResyncLast.Store(0)
+	presetResyncUrgentLast.Store(0)
+	t.Cleanup(func() {
+		presetResyncAsk.Store(false)
+		presetResyncLast.Store(0)
+		presetResyncUrgentLast.Store(0)
+	})
+
+	requestPresetKeyResyncUrgent(nil, "1036")
+	if !presetResyncAsk.Load() {
+		t.Fatal("fresh urgent ask must be accepted")
+	}
+	presetResyncAsk.Store(false) // consumed by the reconcile...
+	deferPresetResyncForStandby(slog.New(slog.NewTextHandler(io.Discard, nil)), "")
+
+	requestPresetKeyResyncUrgent(nil, "1036") // ...and the next 1036 re-asks
+	if !presetResyncAsk.Load() {
+		t.Fatal("follow-up 1036 was swallowed by the urgent budget after a deferral")
+	}
+}
+
 // TestNudgeStuckSource pins the sys-power-nudge decision: exactly one nudge
 // per recall, only at the third attempt, only while the box reports
 // INVALID_SOURCE (the mojo/ST30 wedge where the box inertly ACKs every push
