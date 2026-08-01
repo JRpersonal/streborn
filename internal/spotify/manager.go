@@ -449,6 +449,13 @@ func (m *Manager) configYAML(name string, initialVol int) string {
 	b.WriteString("  enabled: true\n")
 	fmt.Fprintf(&b, "  address: %s\n", host)
 	fmt.Fprintf(&b, "  port: %s\n", port)
+	// Pin upstream's disk audio cache OFF. Its default is already false, but
+	// the default must never decide this: STR sets HOME to the NAND config
+	// dir, so an enabled cache would resolve its XDG default directory onto
+	// NAND with a 1 GB size limit and grind the box's flash. Older engine
+	// builds without the key ignore it (non-strict koanf loader).
+	b.WriteString("cache:\n")
+	b.WriteString("  enabled: false\n")
 	b.WriteString("credentials:\n")
 	b.WriteString("  type: zeroconf\n")
 	b.WriteString("  zeroconf:\n")
