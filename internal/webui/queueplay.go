@@ -663,15 +663,12 @@ func slotFromSpotifyStreamURL(u string) int {
 	return n
 }
 
-// spotifyRecoverAfterSkip is the SOFT-skip (app Next/Prev button) safety net. The
-// soft skip keeps the box attached and plays through the track change fine, so
-// this normally just confirms the box is playing and stands down. The HARDWARE
-// remote key no longer reaches here at all: boxws routes it to HardwareSkip, which
-// does a clean slot recall (the box tears its own UPnP source down on a hardware
-// skip and only a full recall clears that). On the rare occasion a soft skip does
-// leave the box not playing, recover with that SAME clean slot recall. Stand down
-// the instant the box is genuinely playing so a working soft skip is never
-// disrupted.
+// spotifyRecoverAfterSkip is the safety net after ANY Spotify skip. The app's
+// soft skip keeps the box attached and normally plays straight through; the
+// hardware key tears the box's source down and HardwareSkip lightly
+// re-attaches it. Both paths funnel through the skip worker, which calls this
+// once the queue drains: when the box ends up genuinely playing, stand down;
+// when it does not, recover with the proven clean slot recall.
 func (s *Server) spotifyRecoverAfterSkip() {
 	if s.renderer == nil {
 		return
@@ -746,47 +743,79 @@ func (s *Server) TransportSkip(ctx context.Context, forward bool) (string, error
 	return s.transportSkip(ctx, forward)
 }
 
-// HardwareSkip handles the SoundTouch remote's physical Next/Prev keys, which
-// take a DIFFERENT path from the app's soft skip (TransportSkip). On the app skip
-// the box stays attached to the Ogg stream and a go-librespot skip plays straight
-// through. On the hardware key the box first runs its OWN native skip on the UPnP
-// source, fails (QPLAY_SKIP_*_FAILED) and tears the source down to INVALID_SOURCE
-// while go-librespot is still playing. A go-librespot skip layered on top then
-// races: the engine advances (tripping the #14 auto-repoint to the slot-less
-// stream), a delayed preset re-press restarts the engine again, and the box
-// attaches mid-double-restart to a mismatched-header Ogg, wedging on a 3102
-// decoder error (played the new track for a second, then stopped: live ST30,
-// 2026-07-14). A SINGLE clean slot recall, exactly the app's /api/play/<slot>
-// path, recovers reliably to PLAY_STATE where the skip+recovery does not. For a
-// shuffle preset (slots 4/5) it lands a fresh random track, a real "next"; a
-// resume preset restarts its context. So for a Spotify preset, recall the slot
-// cleanly instead of skipping; non-Spotify sources keep the queue-skip path.
+// HardwareSkip handles the SoundTouch remote's physical Next/Prev keys. On the
+// hardware key the box first runs its OWN native skip on the UPnP source, fails
+// (QPLAY_SKIP_*_FAILED) and tears the source down to INVALID_SOURCE while
+// go-librespot is still playing, so unlike the app's soft skip the box has to
+// be re-attached afterwards.
+//
+// History: this used to detour through a full clean slot recall, because a
+// skip layered on the teardown made the box re-attach to a mid-transition Ogg
+// with mismatched headers and wedge on a 3102 decoder error (live ST30,
+// 2026-07-14). That failure class is gone: the engine hands passthrough
+// sources over only at Ogg page boundaries and the drain checksums every page
+// before forwarding it, so the stream a re-attaching box sees is always
+// well-formed. The recall detour's cost had meanwhile become worse than its
+// protection: on a resume preset it reloaded the context and RESTARTED the
+// current track from zero, so the remote's Next never actually advanced, with
+// buffer-replay judder on top (live Portable, 2026-08-01). Now the engine
+// skips exactly like the app path, and the box is lightly re-attached to the
+// same slot stream; the post-drain safety net (spotifyRecoverAfterSkip) still
+// falls back to the proven clean recall when the box does not come back
+// playing.
 func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error) {
 	slot := s.currentSpotifySlot()
 	if slot < 1 || slot > 6 {
 		return s.transportSkip(ctx, forward)
 	}
-	// Hold the competing auto-repoint off for the whole recovery: the box is
+	// Hold the competing auto-repoint off for the whole handover: the box is
 	// tearing its UPnP source down right now while go-librespot still plays, so
-	// maybeActivate is primed to fire the instant it sees no sink. Suppressing
-	// first keeps it from re-pointing the box at the slot-less stream and racing
-	// the clean recall below.
+	// maybeActivate is primed to fire the instant it sees no sink.
 	if s.spotifySuppressActivate != nil {
 		s.spotifySuppressActivate(12 * time.Second)
 	}
-	// A single clean slot recall (identical to /api/play/<slot>) is the ONLY
-	// reliable recovery. A tempting "fast path" - advance the engine one track in
-	// the already-loaded context (/player/next) and just re-point the box, skipping
-	// the recall's full context reload - was tried and WEDGES the box: without the
-	// paused context reload the box re-attaches to a mid-transition Ogg and stalls
-	// (INVALID_SOURCE, ~20s to recover via fallback), slower than the recall it was
-	// meant to beat (live ST30, 2026-07-14). The context reload IS the mechanism
-	// that hands the box a clean track boundary, so it cannot be skipped. The
-	// recovery time (box teardown ~3s + recall, ~6s warm / ~12s cold) is the floor
-	// for this firmware.
-	s.recallSlotClean(ctx, slot)
-	s.logger.Info("hardware skip: clean Spotify slot recall (native skip on a UPnP source cannot skip; recall recovers)", "slot", slot, "forward", forward)
-	return "spotify-recall", nil
+	s.enqueueSpotifySkip(forward)
+	go s.reattachAfterHardwareSkip(slot)
+	s.logger.Info("hardware skip: engine skip issued, re-attaching the box to the slot stream", "slot", slot, "forward", forward)
+	return "spotify-skip", nil
+}
+
+// reattachAfterHardwareSkip re-points the box at the SAME slot stream after
+// its own hardware-key teardown flap settles, without reloading the Spotify
+// context (a context reload restarts a resume preset's current track from
+// zero). Best effort: when the push fails or the box does not end up playing,
+// the skip worker's post-drain recovery performs the clean slot recall.
+func (s *Server) reattachAfterHardwareSkip(slot int) {
+	if s.renderer == nil {
+		return
+	}
+	// Let the box finish its own INVALID_SOURCE bounce first; pushing into the
+	// teardown gets swallowed.
+	time.Sleep(1500 * time.Millisecond)
+	s.lastPlayMu.Lock()
+	var boxURL, title, art, mime string
+	if s.lastPlay != nil {
+		boxURL, title, art, mime = s.lastPlay.boxURL, s.lastPlay.title, s.lastPlay.art, s.lastPlay.mime
+	}
+	s.lastPlayMu.Unlock()
+	if boxURL == "" || slotFromSpotifyStreamURL(boxURL) != slot {
+		return // playback changed while the flap settled; nothing to re-attach
+	}
+	s.boxCmdMu.Lock()
+	defer s.boxCmdMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	var err error
+	if mime != "" {
+		err = s.renderer.PlayURLMime(ctx, boxURL, title, art, mime)
+	} else {
+		err = s.renderer.PlayURL(ctx, boxURL, title, art)
+	}
+	if err != nil {
+		s.logger.Warn("hardware skip: re-attach push failed (the recovery net will recall)", "slot", slot, "err", err)
+		return
+	}
+	s.logger.Info("hardware skip: box re-attached to the slot stream", "slot", slot)
 }
 
 // currentSpotifySlot returns the preset slot (1-6) the box is currently playing a
