@@ -38,6 +38,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 	"github.com/JRpersonal/streborn/internal/boxws"
 	"github.com/JRpersonal/streborn/internal/clocksync"
 	"github.com/JRpersonal/streborn/internal/dnsboot"
@@ -388,6 +389,30 @@ func run() error {
 		}
 		return map[string]any{"present": true, "canonical": canonical, "xml": xmlDoc}
 	})
+	// Box-write ledger (#instrument-dont-guess): every write STR performs
+	// against the box firmware is counted with the box's source at write
+	// time. One aggregated WARN per hour at most (a write-free hour logs
+	// nothing - the healthy overnight state), running totals in
+	// /api/debug/state, and a boot-reason marker so a bundle distinguishes
+	// "the box rebooted" from "only the agent respawned" - together they make
+	// "who wrote to the box at 3am and was it asleep" a one-grep answer.
+	bootReason := agentBootReason()
+	logger.Info("box-write ledger armed", "bootReason", bootReason)
+	webui.RegisterDebugSection("box_write_ledger", func() any {
+		return map[string]any{
+			"bootReason": bootReason,
+			"totals":     boxwrites.Totals(),
+		}
+	})
+	go func() {
+		for {
+			time.Sleep(time.Hour)
+			if line := boxwrites.Format(boxwrites.SnapshotReset()); line != "" {
+				logger.Warn("box-write ledger: writes in the last hour", "writes", line)
+			}
+		}
+	}()
+
 	// A pair record restored from NAND can describe a pair that no longer
 	// exists: a Bose factory reset wipes the firmware's own pairing
 	// (GroupService) but not /mnt/nv/streborn. Once the firmware answers, two
@@ -761,7 +786,7 @@ func run() error {
 	// A completed (re-)onboarding wipes the box's hardware-key preset
 	// registrations; re-register them right away instead of waiting for the
 	// reconcile cadence.
-	autoPair.SetOnPaired(func() { requestPresetKeyResyncUrgent(logger) })
+	autoPair.SetOnPaired(func() { requestPresetKeyResyncUrgent(logger, "paired") })
 	// Let the WebUI fill the Wi-Fi signal from the gabbo stream on BCO
 	// boxes, whose /networkInfo reports no signal.
 	webuiSrv.SetWifiSignalFn(wsClient.LastWifiSignal)
@@ -2628,7 +2653,7 @@ func (h *presetWsHandler) OnSourceRejected(_ context.Context) {
 	// registrations (field bundles: "missing=5/6" healed right after every
 	// "forced re-login sent"). Schedule the heal proactively; own short
 	// budget, so a routine ask cannot starve it.
-	requestPresetKeyResyncUrgent(h.logger)
+	requestPresetKeyResyncUrgent(h.logger, "1036")
 }
 
 // lastSourceRejectTime returns when the box last rejected STR's source (zero if
@@ -2662,7 +2687,21 @@ func (h *presetWsHandler) OnThumbActivity(ctx context.Context) {
 	// is exactly this trigger. The missing-only reconcile never heals that
 	// state, so ask it for one forced full re-sync (rate-limited). If the
 	// press really was a thumbs key, the extra AddPreset round is harmless.
-	requestPresetKeyResync(h.logger)
+	//
+	// Standby gate: phantom userActivityUpdate frames are field-confirmed
+	// (2026-07-25) and this was the one asker with no gate at all, so a 3am
+	// phantom frame could schedule a full key sweep. A REAL press means a user
+	// at an awake box; a frame from a box idling in STANDBY is noise. Off the
+	// WS hot path.
+	go func() {
+		src, _, status := h.nowPlayingSummary()
+		playing := status == "PLAY_STATE" || status == "BUFFERING_STATE"
+		if src == "STANDBY" && !playing {
+			h.logger.Info("thumb frame while the box idles in STANDBY (phantom), not scheduling a key re-sync")
+			return
+		}
+		requestPresetKeyResync(h.logger, "thumb")
+	}()
 	if h.webhooks == nil {
 		return
 	}
@@ -2682,9 +2721,14 @@ var (
 	presetResyncAsk        atomic.Bool
 	presetResyncLast       atomic.Int64 // unix seconds of the last accepted routine request
 	presetResyncUrgentLast atomic.Int64 // unix seconds of the last accepted urgent request
+	// presetResyncAsker names the origin of the pending ask (thumb / 1036 /
+	// paired / power-wake / standby-exit / reconnect), so the standby deferral
+	// WARN and the forced-pass log say WHICH trigger wanted to write - the one
+	// fact overnight field bundles could never answer.
+	presetResyncAsker atomic.Value // string
 )
 
-func requestPresetKeyResync(logger *slog.Logger) {
+func requestPresetKeyResync(logger *slog.Logger, asker string) {
 	const minGapSec = 2 * 60
 	now := time.Now().Unix()
 	last := presetResyncLast.Load()
@@ -2694,9 +2738,10 @@ func requestPresetKeyResync(logger *slog.Logger) {
 	if !presetResyncLast.CompareAndSwap(last, now) {
 		return
 	}
+	presetResyncAsker.Store(asker)
 	presetResyncAsk.Store(true)
 	if logger != nil {
-		logger.Info("preset self-heal: scheduling a full box preset re-sync (#342)")
+		logger.Info("preset self-heal: scheduling a full box preset re-sync (#342)", "asker", asker)
 	}
 }
 
@@ -2704,7 +2749,7 @@ func requestPresetKeyResync(logger *slog.Logger) {
 // a box-side key wipe is EXPECTED (a 1036 rejection / forced re-login, a fresh
 // pairing): it uses its own short budget so it cannot be starved by a routine
 // ask, and the reconcile's 10s wake bounds how often the forced pass can run.
-func requestPresetKeyResyncUrgent(logger *slog.Logger) {
+func requestPresetKeyResyncUrgent(logger *slog.Logger, asker string) {
 	const minGapSec = 60
 	now := time.Now().Unix()
 	last := presetResyncUrgentLast.Load()
@@ -2714,10 +2759,29 @@ func requestPresetKeyResyncUrgent(logger *slog.Logger) {
 	if !presetResyncUrgentLast.CompareAndSwap(last, now) {
 		return
 	}
+	presetResyncAsker.Store(asker)
 	presetResyncAsk.Store(true)
 	if logger != nil {
-		logger.Info("preset self-heal: urgent full box preset re-sync scheduled (re-login/pairing wipes the key registrations)")
+		logger.Info("preset self-heal: urgent full box preset re-sync scheduled (re-login/pairing wipes the key registrations)", "asker", asker)
 	}
+}
+
+// deferPresetResyncForStandby drops a pending re-sync ask because the box is
+// (or seems to be) in standby: a full AddPreset sweep into a sleeping box
+// resets the firmware's deep-standby countdown and heals nothing a sleeping
+// box can use (#119; the v0.9.17 reconnect writes provably kept boxes awake
+// for days). The wake moment re-asks via OnStandbyExit/OnPowerWake, so the
+// routine budget is reset here or a deferral seconds before a wake would
+// swallow the wake's own re-ask.
+func deferPresetResyncForStandby(logger *slog.Logger, src string) {
+	asker, _ := presetResyncAsker.Load().(string)
+	presetResyncLast.Store(0)
+	reason := "box idles in STANDBY"
+	if src == "" {
+		reason = "box state unreadable, holding writes"
+	}
+	logger.Warn("preset re-sync deferred: "+reason+", holding the key writes for the wake (#119)",
+		"asker", asker)
 }
 
 // OnPowerKey fires the configured "power" webhook on a power-off (standby)
@@ -2749,7 +2813,7 @@ func (h *presetWsHandler) OnPowerWake(_ context.Context) {
 	// 5-minute reconcile tick, and "after power-on only the first program
 	// plays"). Ask for a full re-sync right at the wake so the keys work
 	// within seconds instead of minutes. Rate-limited internally.
-	requestPresetKeyResync(h.logger)
+	requestPresetKeyResync(h.logger, "power-wake")
 	// The fake marge login decays across the same power cycles: re-check the
 	// pairing right at the wake. On a healthy box this is one /info read; on
 	// a login-suspect box (a recent 1036 NOT_LOGGED_IN) it re-asserts the
@@ -2809,7 +2873,7 @@ func (h *presetWsHandler) OnConnected(_ context.Context) {
 // that silently de-registered the key layer during standby (#487, where dead
 // presses emit no frame and no other trigger ever fires).
 func (h *presetWsHandler) OnStandbyExit(_ context.Context) {
-	requestPresetKeyResync(h.logger)
+	requestPresetKeyResync(h.logger, "standby-exit")
 	// The user just switched the box on. If the firmware had dropped a stream
 	// while the box was off, STR replays it NOW - on the user's own action -
 	// instead of powering the speaker on by itself (#487).
@@ -2836,7 +2900,7 @@ func (h *presetWsHandler) resyncUnlessIdleStandby() {
 			return
 		}
 	}
-	requestPresetKeyResync(h.logger)
+	requestPresetKeyResync(h.logger, "reconnect")
 }
 
 // logStandbyRaceSignature records (log-only) whether, shortly after a gabbo
@@ -3759,7 +3823,21 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			// Dead-key self-heal (#342): a hardware press produced no
 			// selection frame, so the box's key layer likely lost its
 			// registrations even though /presets still lists them.
-			force = true
+			//
+			// Standby gate at the EXECUTION, for every asker (#119): the
+			// OnConnected gate covered only its own ask, while 1036-urgent,
+			// paired-urgent, thumb and late standby-exit asks all wrote into a
+			// sleeping box, and a failed probe used to count as awake. A
+			// deferred ask is DROPPED, not re-armed - the wake itself re-asks
+			// via OnStandbyExit/OnPowerWake (deferPresetResyncForStandby
+			// resets the routine budget so that re-ask is accepted), and
+			// re-arming would turn the 10s wake-poll into an all-night probe
+			// loop.
+			if src := boxNowPlayingSource(boxHost); src == "STANDBY" || src == "" {
+				deferPresetResyncForStandby(logger, src)
+			} else {
+				force = true
+			}
 		}
 		// Periodic dead-key insurance while the box is AWAKE (#487): the
 		// firmware can silently de-register the hardware key layer while
@@ -3854,6 +3932,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		// could never fire, so healed slots never logged and - worse -
 		// persistent AddPreset failures were swallowed silently, invisible
 		// in every diagnostic bundle (#342).
+		boxwrites.NoteN("addpreset", boxNowPlayingSource(boxHost), len(missing))
 		errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
 		for _, spec := range missing {
 			if serr, failed := errs[spec.Slot]; failed {
@@ -3879,6 +3958,7 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 			continue
 		}
 		rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		boxwrites.Note("removepreset", boxNowPlayingSource(boxHost))
 		if rerr := boxcli.RemovePreset(rctx, boxHost, slot); rerr != nil {
 			logger.Warn("preset reconcile: could not remove a stale STR preset", "slot", slot, "err", rerr)
 		} else {
@@ -4504,6 +4584,24 @@ func memoryGuardCheck(logger *slog.Logger, sp *spotify.Manager, boxHost string) 
 	_ = exec.Command("sync").Run()
 	if err := exec.Command("reboot").Run(); err != nil {
 		logger.Error("memory guard: reboot failed", "err", err)
+	}
+}
+
+// agentBootReason distinguishes a real box boot from an agent-only respawn
+// (watchdog, OOM kill, OTA restart) at agent startup, via the box's own
+// /proc/uptime (the agent runs on the box). The distinction matters for the
+// overnight preset-loss forensics: start-time writes after a nightly
+// agent-only respawn hit a box that was asleep, while after a real boot the
+// box is awake anyway.
+func agentBootReason() string {
+	up := readUptimeSec()
+	switch {
+	case up < 0:
+		return "unknown"
+	case up < 600:
+		return fmt.Sprintf("box-boot (uptime %ds)", up)
+	default:
+		return fmt.Sprintf("agent-respawn (box already up %dh%02dm)", up/3600, (up%3600)/60)
 	}
 }
 

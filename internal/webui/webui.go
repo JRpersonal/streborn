@@ -35,6 +35,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxsnapshot"
 	"github.com/JRpersonal/streborn/internal/boxurl"
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
@@ -3599,6 +3600,9 @@ func (s *Server) RunDeferredResume() {
 	defer s.boxCmdMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	// Ledger: the one autonomous UPnP push the agent performs (all other
+	// pushes are user actions). Source is by definition just-out-of-standby.
+	boxwrites.Note("upnp-resume", "standby-exit")
 	var err error
 	if d.mime != "" {
 		err = s.renderer.PlayURLMime(ctx, d.boxURL, d.title, d.art, d.mime)

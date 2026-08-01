@@ -21,6 +21,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 )
 
 const (
@@ -172,6 +174,11 @@ func hasMargeUUID(body []byte) bool {
 // Pair triggers the pair flow via POST to /setMargeAccount.
 // Success = box answers 200 OK (margeAccountUUID is set afterwards).
 func (m *Manager) Pair(ctx context.Context) error {
+	// Ledger: a completed re-onboarding wipes the box's hardware-key
+	// registrations and resets the standby countdown, so every attempt is
+	// counted (source unknown here; the timestamped log line beside the
+	// ledger carries the context).
+	boxwrites.Note("setmarge", "")
 	body := buildPairXML(m.cfg.AccountID, m.cfg.AuthToken, m.cfg.Email)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.base+"/setMargeAccount", strings.NewReader(body))
 	if err != nil {
