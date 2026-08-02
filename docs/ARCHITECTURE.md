@@ -327,7 +327,34 @@ to do'". The spy log is the development tool that drives which
 endpoints get real responses next; everything else gets a generic
 `<ack/>` so the firmware does not retry.
 
-### 5. First install (USB stick)
+### 5. First install (network install, the normal path)
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant App as Desktop app
+  participant TAP as Bose TAP shell :17000
+  participant Box as Speaker (stock, on Wi-Fi)
+  participant NAND as /mnt/nv/streborn/
+  User->>App: Pick the speaker from the list<br/>("ready for STR"), start install
+  App->>TAP: envswitch boseurls / accountid injection<br/>(desktop-app/telnet_enable_ssh.go)
+  TAP->>Box: sys reboot
+  Box->>Box: comes up with sshd open<br/>(no stick involved)
+  App->>Box: SSH: stage streborn-armv7l + run-override.sh
+  Box->>NAND: write agent, rc.local chain, presets
+  App->>Box: SSH: reboot
+  Box->>NAND: Bose init runs /mnt/nv/rc.local<br/>-> run-override.sh
+  Box->>Box: region, name, agent start, mDNS :8888
+  App->>Box: poll :8888 / :17008 until the agent answers
+  Note over Box: SSH closes again on the next stickless boot<br/>(opt-in marker only, see THREAT-MODEL.md)
+```
+
+This is what the "install" button does on a speaker that has never seen
+STR: no stick, no second device, no physical access. It is also the only
+path for the models that never read a USB stick at boot (ST300, Wave,
+SA-4/SA-5, CineMate).
+
+### 5b. First install (USB stick, fallback and recovery)
 
 ```mermaid
 sequenceDiagram

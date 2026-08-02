@@ -125,7 +125,7 @@ Confirmed from a 2026-07-22 mail bundle:
   firmware is the same 2022-08-04 `27.0.6.46330.5043500` build as the other
   models.
 
-## Wave SoundTouch IV
+## Wave SoundTouch (Series III and IV)
 
 Observed live in a 2026-07-04 diagnostic bundle (#182): `moduleType=sm2`,
 `variant=lisa`, `variantMode=NoAP`, SCM firmware 27.0.6.46330.5043500 (the
@@ -146,6 +146,13 @@ firmware 27.0.6.46330.5043500, `PackagedProduct` 04.04.08 and an SCM +
 SMSC dual `networkInfo` - i.e. the Wave, like the ST20 and ST30, exists in
 both an `sm2` and an `scm` chassis generation. The `scm` Wave takes the
 `:17008` REDIRECT path.
+
+Generations seen so far: the #182 reports are Wave **Series IV** units,
+and a Wave **Series III** owner reported a successful install and preset
+storage in discussion #508 (its playback issue was the box-side preset
+refusal family, not a chassis incompatibility). Both generations present
+the same `lisa` fingerprint to STR, which is why the model table lists
+"Series III and IV" and the agent makes no distinction between them.
 
 ## Lifestyle (SoundTouch console)
 

@@ -22,7 +22,7 @@ a realistic install path for the first time.
 | **SoundTouch 10** | TI AM335x ARMv7l, module SM2, variant `rhino` (Series-II) | **Verified** |
 | **SoundTouch Portable** | TI AM335x ARMv7l, BCO coprocessor, variant `taigan` | **Verified** |
 | **SoundTouch 20** | TI AM335x ARMv7l, module `scm` + SMSC, variant `spotty` (BCO) | **Working (contributor-confirmed; final stability confirmation in progress)** |
-| **SoundTouch 20** | TI AM335x ARMv7l, module SM2 (codename still `spotty`) | **Expected**: provisions Wi-Fi the Series-II way (real `wlan0`), but `run.sh` still applies the whitelisted-chassis reachability path (REDIRECT `:17008`->`:8888`) because the codename is `spotty`. Awaiting a live SM2-ST20 report. |
+| **SoundTouch 20** | TI AM335x ARMv7l, module SM2 (codename still `spotty`) | **Working (user-confirmed)**: two live SM2-ST20 fingerprints have arrived from the field. It provisions Wi-Fi the Series-II way (real `wlan0`), while `run.sh` still applies the whitelisted-chassis reachability path (REDIRECT `:17008`->`:8888`) because the codename is `spotty` - harmless where the chipset does not need it. Caveat: one unit on the older firmware 27.0.3 was unstable; 27.0.6 is the target for this chassis as for every other. |
 | **SoundTouch 30** | TI AM335x ARMv7l, module SM2 **or** `scm` (both observed), variant `mojo` | **Working** (sm2: live-confirmed via the #123 diagnostic, 2026-06-10; scm: maintainer network-installed one end to end 2026-07-09 in ~3.5 min - the first observed scm-module ST30) |
 | **SoundTouch 300** | AM335x ARMv7l, module `sm2`, variant `ginger` | **Working (maintainer + user-confirmed)**: the stick-free network install brings the agent up and serving on a factory-reset unit (2026-07-08); a user then ran it end to end (PC and phone control, presets 1-6) 2026-07-11. The stick was never an option on this model (it does not read USB at boot). The one-time reboot-cascade caveat (alternating amber LED, needing a manual power-cycle after an install or update while `shepherdd` sat in `--recovery`, #372) no longer applies as of v0.9.7: `ginger` now also waits for the Bose stack before the fragile reboot, so no power-cycle is needed (see the Wave row). |
 | **Wave SoundTouch** | AM335x ARMv7l, module `scm` **or** `sm2` (both observed live), variant `lisa` + SMSC | **Working (maintainer + contributor-confirmed)**: maintainer network-installed end to end 2026-07-09; two independent #182 users then confirmed it on their own Wave IV units (2026-07-09 and 2026-07-11) - presets, NAS/DLNA playback, grouping with an ST20, and the IR remote's preset keys 1-6 recall STR presets once the source is cycled to SoundTouch (same gabbo path as the front-panel buttons). The network install (v0.9.0+) is the only first-install path: the Wave never reads a USB stick at boot. The old one-time caveat (the first-install reboot cascade tripped Bose's `shepherdd` into `--recovery`, needing a single power-cycle) is fixed (#372): the agent waits for the Bose stack (:8090) to come up before its fragile post-install or post-update reboot, so `shepherdd` marks the boot healthy and does not fall into `--recovery`. First shipped for `lisa` in v0.9.2 and generalized in v0.9.7 (`a56b0ae`) to every chassis except the hardware-verified fast ones (`rhino`, `mojo`, `taigan`), which covers `ginger`/ST300 as well. The IR remote's AM/FM/DIGITAL RADIO sources are the Wave head unit's own tuner and are invisible to STR; STR cannot bind streaming presets to them (the gabbo hook is read-only). |
@@ -37,12 +37,21 @@ per-model release aliases are byte-identical copies for convenience.
 
 ### Status definitions
 
-- **Verified** , exercised live on real hardware: clean bootstrap, the
-  speaker provisions onto Wi-Fi, the agent serves WebUI/Marge/BMX without
-  crashing, radio + presets work, and it survives a reboot/standby cycle.
-- **Working (confirmation in progress)** , provisions and plays on real
-  hardware via a trusted contributor; a final end-to-end stability pass
-  on the current release is still being confirmed.
+- **Verified** , exercised live on real hardware by the maintainer: clean
+  bootstrap, the speaker provisions onto Wi-Fi, the agent serves
+  WebUI/Marge/BMX without crashing, radio + presets work, and it survives
+  a reboot/standby cycle.
+- **Working (...)** , runs end to end on real hardware; the parenthesis
+  names who established that and therefore how strong the evidence is:
+  - *maintainer* , the maintainer installed and exercised this chassis
+    himself (strongest evidence short of Verified, which additionally
+    requires the full reboot/standby/outage cycle).
+  - *contributor-confirmed* , a trusted contributor ran it end to end and
+    reported back in detail.
+  - *user-confirmed* , an owner reported a working install with enough
+    detail (or a diagnostic bundle) to trust the report.
+  - *confirmation in progress* , plays on real hardware, but the final
+    end-to-end stability pass on the current release is still pending.
 - **Expected** , same hardware platform as a verified model, no live
   proof yet.
 - **Unknown** , different or unconfirmed hardware; no guarantee.
@@ -53,7 +62,11 @@ SoundTouch speakers on AM335x split into two families that STR has to
 provision and reach completely differently. Both run the same agent
 binary; the difference is in how Wi-Fi and external reachability work.
 
-### Series-II (classic): `rhino` (ST10) and `mojo` (ST30), module SM2
+### Series-II (classic): module SM2 with a real `wlan0`
+
+Chassis in this family: `rhino` (ST10), `mojo` (sm2 ST30), `spotty` (sm2
+ST20), `ginger` (ST300), `burns` (SA-5), and the `sm2` variants of the
+Wave and CineMate (`lisa`).
 
 - Real `wlan0` interface; STR provisions Wi-Fi the documented way
   (`/addWirelessProfile` over the box's HTTP API, or `wpa_supplicant`).
@@ -65,7 +78,10 @@ binary; the difference is in how Wi-Fi and external reachability work.
   the `:17008` REDIRECT (a harmless no-op if its chipset does not need
   it). Wi-Fi provisioning still follows the `wlan0` path.
 
-### BCO (AirPlay-capable): `taigan` (Portable) / `scm`+`spotty` (ST20)
+### BCO / whitelisted chassis: Wi-Fi through a coprocessor
+
+Chassis in this family: `taigan` (Portable), `scm`+`spotty` (ST20), and
+the `scm` variants of the ST30, the Wave (`lisa`) and the SA-4.
 
 These speakers drive Wi-Fi through a separate coprocessor exposed as
 `eth0` (USB-CDC-Ethernet), and the chipset firewalls inbound TCP: the

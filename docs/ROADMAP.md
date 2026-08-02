@@ -49,27 +49,23 @@ Each item is a single reviewable PR; line numbers as of v0.7.21.
 
 **Correctness-adjacent (do first, small):**
 
-1. `runSSHWithFlags`/`runSSHWithFlagsStdin` race on `c.Process` and
-   can nil-deref panic when the timeout beats `Start()` (4-8 s
-   timeouts in use). Rewrite both on `exec.CommandContext`
-   (`desktop-app/install_str.go:669-732`). Same PR: nil-ctx guard
-   (`appCtx()` helper) for the five `a.ctx` parents, and start the
-   LAN-sweep drain before spawning (`app.go:737-784`).
+1. **done** — `runSSHWithFlags`/`runSSHWithFlagsStdin` were rewritten on
+   `exec.CommandContext`, the `appCtx()` nil-ctx guard shipped, and the
+   LAN-sweep drain starts before spawning.
 2. Unify the six hand-rolled reboot variants and five SSH-handshake
    policies on the hardened forms (`sync; /sbin/reboot` detached;
    4x retry handshake) — the #114 lesson is currently unapplied on
    the uninstall/factory-reset/OTA paths.
-3. `webui.handleBoxSyncPresets` pushes the raw `StreamURL` instead of
-   the proxy slot URL (`webui.go:2071-2102`) — latent bug the
-   stream-URL single-source below would have prevented.
-4. Replace `boxws`'s whole-frame `strings.Contains` sniffing with one
-   typed `xml.Unmarshal` per frame: a track title containing
-   `STOP_STATE` can fire the user-stop suppressor today. This is also
-   the landing spot for the planned `presetsUpdated` parsing.
-5. Extend the SSRF dial guard to `internal/upnp`'s playlist fetches
-   (currently naked clients) via a shared `netutil` guarded-client
-   helper; fixes a short-read bug in `extractStreamFromPlaylist` on
-   the way.
+3. **done** — the box preset sync pushes the proxy slot URL, not the raw
+   `StreamURL` (the handler now lives in `internal/webui/presets_http.go`
+   after the 14-file split).
+4. **done** — `boxws` parses typed frames instead of sniffing whole-frame
+   substrings, so a track title containing `STOP_STATE` can no longer fire
+   the user-stop suppressor; `presetsUpdated` parsing landed on the same
+   seam (`internal/boxws/frames.go`).
+5. **done** — the SSRF dial guard moved into `internal/netutil` and is
+   shared by the stream proxy and `internal/upnp`'s playlist fetches; the
+   `extractStreamFromPlaylist` short read was fixed with it.
 
 **Structure (mechanical, medium):**
 
@@ -93,11 +89,11 @@ Each item is a single reviewable PR; line numbers as of v0.7.21.
 
 **Guardrails (CI, small):**
 
-10. CI is blind to the `desktop-app` Go module (no vet/test/lint runs
-    there; a live `go vet` finding exists) — add working-directory
-    steps. Add a `wails generate module` freshness check (known
-    recurring gotcha) and an i18n key-completeness report. Run
-    `busybox sh -n` over `run.sh` next to shellcheck.
+10. **partly done** — CI now builds, vets and tests the `desktop-app`
+    module, and `busybox sh -n` runs over `run.sh` next to shellcheck.
+    Still open: the `wails generate module` freshness check and the
+    i18n key-completeness report (the completeness gap #514 closed by
+    hand is exactly what that report would catch automatically).
 11. Tests for the privacy sanitizers in `logexport.go`
     (anonymize IP/MAC/SSID/serial) — a silent regression there leaks
     user data into public issue attachments. Then: boxws frame

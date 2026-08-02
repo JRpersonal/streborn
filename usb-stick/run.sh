@@ -1404,11 +1404,11 @@ if [ -f "$PIDFILE" ]; then
     rm -f "$PIDFILE"
 fi
 
-# === Apply optional update ===
-if [ -x "$STICK/update.sh" ]; then
-    log "checking for update via $STICK/update.sh"
-    "$STICK/update.sh" 2>&1 | tee -a "$LOG" || true
-fi
+# The stick-side update.sh hook was removed in v0.9.28: it pulled a binary
+# from GitHub Releases at boot with no checksum or attestation check, which
+# is a second, unauthenticated update channel next to the app's OTA (and it
+# bypassed the shared app/agent version stamp). Agent updates come from the
+# desktop app only.
 
 # === Wi-Fi provisioning from wlan.conf on the stick (multi-approach) ===
 #
