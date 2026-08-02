@@ -284,7 +284,20 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 		// in standby gets its re-sync from the standby-exit hook the moment
 		// it wakes.
 		if !force && time.Since(lastAwakeForce) > 20*time.Minute {
-			if src := boxNowPlayingSource(boxHost); src != "" && src != "STANDBY" {
+			src := boxNowPlayingSource(boxHost)
+			switch {
+			case src == "" || src == "STANDBY":
+				// asleep or unreadable: the standby-exit hook owns the wake
+			case !resyncSafeSource(src):
+				// The box is on a source the USER chose. AddPreset names
+				// UPNP, and the firmware activates that source on the write:
+				// a field bundle caught the insurance pass yanking a running
+				// BLUETOOTH session to UPNP 43 ms after the re-sync line
+				// (2026-08-02). Dead-key insurance is not worth interrupting
+				// what someone is listening to; the next wake, press or
+				// maintenance tick on our own source re-registers the keys.
+				logger.Info("preset reconcile: periodic awake re-sync skipped, the box is on a user-chosen source", "source", src)
+			default:
 				force = true
 				logger.Info("preset reconcile: periodic awake re-sync (dead-key insurance, #487)")
 			}
@@ -325,6 +338,20 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 // reconcileOnce returns true once the box is out of OOB and reachable.
 // When forceFull is set it re-pushes EVERY stick preset rather than only
 // the slots missing from the box's /presets list (see fullDone above).
+// resyncSafeSource reports whether a preset re-sync may run while the box is
+// on this source. AddPreset names UPNP and the firmware activates that source
+// on the write, so a re-sync is only safe when the box is idle or already on
+// STR's own source. Anything the user picked (Bluetooth, AUX, the box's own
+// Spotify, a Wave's tuner) would be yanked away mid-listen.
+func resyncSafeSource(src string) bool {
+	switch src {
+	case "UPNP", "INVALID_SOURCE":
+		return true
+	default:
+		return false
+	}
+}
+
 func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool) bool {
 	stick := store.All()
 	if len(stick) == 0 {
@@ -377,8 +404,22 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		// could never fire, so healed slots never logged and - worse -
 		// persistent AddPreset failures were swallowed silently, invisible
 		// in every diagnostic bundle (#342).
-		boxwrites.NoteN("addpreset", boxNowPlayingSource(boxHost), len(missing))
+		// Forensics for the "the speaker turns itself on" reports (#486 and
+		// the 2026-08-02 bundle): AddPreset names UPNP as its source, and the
+		// firmware appears to ACTIVATE that source on the write, so a re-sync
+		// into a sleeping box can wake it. The ledger already records the
+		// source before the write; capture it again right after so a bundle
+		// shows the flip as cause and effect instead of correlation, and name
+		// which slot the batch started with (the flip lands ~23-43 ms in, i.e.
+		// during the FIRST AddPreset, not the batch as a whole).
+		srcBefore := boxNowPlayingSource(boxHost)
+		boxwrites.NoteN("addpreset", srcBefore, len(missing))
 		errs := boxcli.SyncAllPresets(context.Background(), boxHost, missing)
+		if srcAfter := boxNowPlayingSource(boxHost); srcAfter != srcBefore {
+			logger.Warn("preset forensics: the box changed source across a preset write",
+				"before", srcBefore, "after", srcAfter, "slots", len(missing),
+				"firstSlot", missing[0].Slot, "forced", forceFull)
+		}
 		for _, spec := range missing {
 			if serr, failed := errs[spec.Slot]; failed {
 				syncFailed = true
