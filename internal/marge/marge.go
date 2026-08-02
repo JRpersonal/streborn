@@ -84,6 +84,10 @@ type Server struct {
 	// registered holds the source accounts the box registered through its
 	// addSource callback this run (see respondAddSource).
 	registered []registeredSource
+
+	// forward relays the box's cloud traffic to a developer machine when set
+	// (see forward.go). Empty = answer locally. Never persisted.
+	forward string
 }
 
 // SpyEntry is a single logged HTTP request.

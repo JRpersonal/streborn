@@ -498,16 +498,68 @@ func (s *Server) respondAccountSources(w http.ResponseWriter, _ *http.Request) {
 	regs := make([]registeredSource, len(s.registered))
 	copy(regs, s.registered)
 	s.mu.RUnlock()
+	format := sourcesListFormat()
 	var b strings.Builder
 	for _, r := range regs {
-		b.WriteString(`<source id="` + xmlEscapeText(r.ID) + `" type="Audio" status="READY">` +
-			`<credential type="" text=""/><name>` + xmlEscapeText(r.Name) + `</name>` +
-			`<username>` + xmlEscapeText(r.Username) + `</username>` +
-			`<sourceproviderid>` + xmlEscapeText(r.ProviderID) + `</sourceproviderid>` +
-			`<sourcename>` + xmlEscapeText(r.SourceName) + `</sourcename></source>`)
+		b.WriteString(renderAccountSource(format, r))
 	}
-	s.logger.Info("account sources list served", slog.String("comp", "marge"), slog.Int("count", len(regs)))
+	inner := b.String()
+	var body string
+	switch format {
+	case "wrap":
+		body = `<?xml version="1.0" encoding="UTF-8" ?><response status="OK"><sources>` + inner + `</sources></response>`
+	case "account":
+		body = `<?xml version="1.0" encoding="UTF-8" ?><account><sources>` + inner + `</sources></account>`
+	case "fullaccount":
+		body = `<?xml version="1.0" encoding="UTF-8" ?><fullAccount><mode><text>global</text></mode><sources>` + inner + `</sources></fullAccount>`
+	case "flat":
+		body = `<?xml version="1.0" encoding="UTF-8" ?>` + inner
+	default:
+		body = `<?xml version="1.0" encoding="UTF-8" ?><sources>` + inner + `</sources>`
+	}
+	s.logger.Info("account sources list served", slog.String("comp", "marge"),
+		slog.Int("count", len(regs)), slog.String("format", format))
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	w.Header().Set("METHOD_NAME", "getSources")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?><sources>` + b.String() + `</sources>`))
+	_, _ = w.Write([]byte(body))
+}
+
+// renderAccountSource renders one registered source. The firmware is picky
+// about which attributes it accepts, so the sweep varies them.
+func renderAccountSource(format string, r registeredSource) string {
+	switch format {
+	case "minimal":
+		return `<source id="` + xmlEscapeText(r.ID) + `" type="Audio"><username>` +
+			xmlEscapeText(r.Username) + `</username><sourceproviderid>` +
+			xmlEscapeText(r.ProviderID) + `</sourceproviderid></source>`
+	case "named":
+		return `<source id="` + xmlEscapeText(r.ID) + `" type="` + xmlEscapeText(r.SourceName) + `" status="READY">` +
+			`<credential type="" text=""/><name>` + xmlEscapeText(r.Name) + `</name><username>` +
+			xmlEscapeText(r.Username) + `</username><sourceproviderid>` + xmlEscapeText(r.ProviderID) +
+			`</sourceproviderid><sourcename>` + xmlEscapeText(r.SourceName) + `</sourcename></source>`
+	default:
+		return `<source id="` + xmlEscapeText(r.ID) + `" type="Audio" status="READY">` +
+			`<credential type="" text=""/><name>` + xmlEscapeText(r.Name) + `</name><username>` +
+			xmlEscapeText(r.Username) + `</username><sourceproviderid>` + xmlEscapeText(r.ProviderID) +
+			`</sourceproviderid><sourcename>` + xmlEscapeText(r.SourceName) + `</sourcename></source>`
+	}
+}
+
+// sourcesListFormat selects the account-sources shape for the hardware sweep:
+// the env var first, then a file so a running margelab can be switched between
+// attempts without a restart. Values: default, wrap, account, fullaccount,
+// flat, minimal, named.
+func sourcesListFormat() string {
+	if v := strings.TrimSpace(os.Getenv("STR_SOURCES_FORMAT")); v != "" {
+		return v
+	}
+	if p := strings.TrimSpace(os.Getenv("STR_SOURCES_FORMAT_FILE")); p != "" {
+		if b, err := os.ReadFile(p); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				return v
+			}
+		}
+	}
+	return "default"
 }
