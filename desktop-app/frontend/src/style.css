@@ -1350,6 +1350,9 @@ html.a11y-contrast .btn-warning:disabled {
 .credit-by { color: var(--c-muted); }
 .credit-license { color: var(--c-muted); font-size: 11px; margin-left: 6px; }
 .credit-role { color: var(--c-muted); font-size: 12px; margin-top: 1px; }
+.credit-section { font-size: 13px; font-weight: 600; margin: 18px 0 2px; }
+.credit-section-intro { color: var(--c-muted); font-size: 12px; margin: 0 0 6px; }
+.credit-donate { font-size: 11px; margin-left: 6px; }
 .pick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
 .pick-slot { background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 6px; padding: 12px; cursor: pointer; color: var(--c-text); min-height: 70px; }
 .pick-slot:hover { background: var(--c-surface-3); border-color: var(--brand); }
