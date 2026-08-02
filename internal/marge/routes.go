@@ -57,12 +57,26 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	// The box's own source-account registration. Must sit BEFORE the generic
 	// /streaming/account case, which used to swallow it with a bare ack so no
 	// source account was ever confirmed (see respondAddSource).
+	// Both of these MUST return. Without it the handler writes its response and
+	// then falls out of this switch into the legacy fallback below, where the
+	// path still contains "source" and respondSources appends a SECOND document
+	// to the same body. The box then receives one response containing two XML
+	// declarations and two root elements - measured on an ST10, 2026-08-02:
+	//
+	//	<?xml?><sources><source ...LOCAL_INTERNET_RADIO...></sources>
+	//	<?xml?><sources deviceID="..."/>
+	//
+	// which is not well-formed XML at all, and whose trailing element is an
+	// EMPTY source list. That is a prime suspect for the source registration
+	// being lost on some boots while succeeding on others.
 	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/source") && r.Method == http.MethodPost:
 		s.respondAddSource(w, r)
+		return
 
 	// The list the box fetches right after its addSource was confirmed.
 	case strings.HasPrefix(path, "/streaming/account/") && strings.HasSuffix(strings.TrimSuffix(path, "/"), "/sources"):
 		s.respondAccountSources(w, r)
+		return
 
 	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/device") && r.Method == http.MethodPost:
 		s.respondAddDevice(w, r)

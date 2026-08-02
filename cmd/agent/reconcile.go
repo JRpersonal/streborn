@@ -493,6 +493,8 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 				if len(lost) > 0 {
 					disableNativePresets(fmt.Sprintf("slots %v stayed empty after a native write", lost))
 					syncFailed = true // keep the fast cadence so UPnP is restored now
+				} else {
+					noteNativeWriteLanded()
 				}
 			}
 		}

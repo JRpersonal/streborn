@@ -51,13 +51,27 @@ var nativeReady struct {
 	checked time.Time
 	ok      bool
 	// disabled latches native presets off for the rest of this agent run once
-	// the box has proven it will not store them. It is deliberately sticky:
-	// the failure mode is silent (the CLI reports success and the slot stays
-	// empty), so retrying forever would leave every hardware key dead while
-	// the log claimed six successful syncs.
+	// the box has proven it will not store them. The failure mode is silent
+	// (the CLI reports success and the slot stays empty), so something has to
+	// stop the agent retrying a write that never lands.
 	disabled bool
 	why      string
+	// failures counts CONSECUTIVE sweeps whose native writes did not land.
+	// Latching on the first one was wrong: measured on an ST10 (2026-08-03),
+	// six seconds after a reboot three of six slots silently failed to store,
+	// which permanently disabled native presets for that whole agent run even
+	// though the box was fine moments later. The firmware is documented as
+	// accepting GET /presets while still rejecting writes for a while after
+	// boot, so a single miss is a timing artefact, not a verdict. Nothing is
+	// at risk while we retry: every sweep that finds a native slot the box
+	// cannot take puts it straight back on the UPnP form, so the hardware keys
+	// keep working throughout.
+	failures int
 }
+
+// nativeFailureBudget is how many consecutive sweeps may fail to store a native
+// preset before the agent stops trying for this run.
+const nativeFailureBudget = 3
 
 // disableNativePresets latches the native preset form off after the box was
 // measured to ignore it, so the next sweep restores the UPnP form and the
@@ -65,13 +79,35 @@ var nativeReady struct {
 func disableNativePresets(reason string) {
 	nativeReady.Lock()
 	already := nativeReady.disabled
-	nativeReady.disabled = true
-	nativeReady.why = reason
-	nativeReady.Unlock()
-	if l := nativeReadyLogger; l != nil && !already {
-		l.Warn("native presets: the box accepted the command but stored nothing, falling back to UPnP presets for this run so the hardware keys keep working",
-			"reason", reason)
+	nativeReady.failures++
+	n := nativeReady.failures
+	if n >= nativeFailureBudget {
+		nativeReady.disabled = true
+		nativeReady.why = reason
 	}
+	nativeReady.Unlock()
+	l := nativeReadyLogger
+	if l == nil || already {
+		return
+	}
+	if n >= nativeFailureBudget {
+		l.Warn("native presets: the box keeps accepting the command without storing it, falling back to UPnP presets for this run so the hardware keys keep working",
+			"reason", reason, "consecutiveFailures", n)
+		return
+	}
+	// Not a verdict yet: right after a boot the firmware accepts preset writes
+	// it does not actually keep. Say so, and retry on the next sweep.
+	l.Warn("native presets: a native write did not land, retrying on the next sweep (the slots are on the UPnP form meanwhile, so the keys work)",
+		"reason", reason, "attempt", n, "of", nativeFailureBudget)
+}
+
+// noteNativeWriteLanded records a sweep whose native writes stuck, clearing the
+// consecutive-failure count so an early-boot miss cannot accumulate across an
+// otherwise healthy run.
+func noteNativeWriteLanded() {
+	nativeReady.Lock()
+	nativeReady.failures = 0
+	nativeReady.Unlock()
 }
 
 // nativePresetsDisabled reports the latch state, for diagnostics.
