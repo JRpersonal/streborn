@@ -265,6 +265,12 @@ func WithMargeGroups(get func() (string, bool, bool), set func(string) error, cl
 	}
 }
 
+// WithMargeForward registers the marge stub's developer relay switch, enabling
+// POST /api/debug/marge-lab. Unset leaves the endpoint disabled.
+func WithMargeForward(f func(target string) error) Option {
+	return func(s *Server) { s.margeForward = f }
+}
+
 // WithSpotifyExportCred registers the function that returns this box's active
 // go-librespot credential so it can be copied to other speakers (#45 sync).
 func WithSpotifyExportCred(f func() ([]byte, error)) Option {

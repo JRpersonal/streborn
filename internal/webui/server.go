@@ -136,6 +136,9 @@ type Server struct {
 	margeGroupGet   func() (xmlDoc string, canonical bool, ok bool)
 	margeGroupSet   func(xmlDoc string) error
 	margeGroupClear func(reason string)
+	// margeForward registers (or clears) a developer machine the box's cloud
+	// conversation is relayed to. nil disables the endpoint. See margelab.go.
+	margeForward func(target string) error
 	// spotifySetRecalling marks an in-flight recall so ServeOgg drives the new
 	// track from its start instead of resuming mid-position. nil when Spotify is
 	// not configured.
@@ -620,6 +623,13 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
+
+	// LOCAL_INTERNET_RADIO: the adapter endpoints the BMX service registry
+	// points at, so the box can resolve and play a native radio ContentItem
+	// (see lir.go).
+	mux.HandleFunc("/lir/", s.handleLIRStation)
+	mux.HandleFunc("/core02/svc-bmx-adapter-orion/prod/orion/station", s.handleOrionStation)
+	mux.HandleFunc("/core02/svc-bmx-adapter-orion/prod/orion/token", s.handleOrionToken)
 	mux.HandleFunc("/api/debug/marge-lab", s.handleMargeLab)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
 

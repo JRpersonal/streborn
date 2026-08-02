@@ -41,24 +41,29 @@ func (s *Server) respondStreamingSupport(w http.ResponseWriter, _ *http.Request)
 //
 // askAgainAfter triggers the polling interval. Without the value the
 // polling stops immediately.
-func (s *Server) respondBmxRegistry(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) respondBmxRegistry(w http.ResponseWriter, r *http.Request) {
+	// Served in the firmware's own schema (see bmxservices.go). The two
+	// placeholders point back at this agent so the box reaches our adapters.
+	// Always the agent's own webui port on loopback: that is where the BMX
+	// adapter endpoints live (internal/webui/lir.go). Deriving it from the
+	// request Host would point at the marge port instead, which serves the
+	// cloud stub and not the adapters, and the box would silently fail to
+	// resolve a station.
+	base := "http://127.0.0.1:8888"
+	_ = r
+	body := strings.ReplaceAll(bmxServicesJSON, "{BMX_SERVER}", base)
+	body = strings.ReplaceAll(body, "{MEDIA_SERVER}", base+"/media")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{
-  "services": [
-    {"name": "streaming", "url": "https://streaming.bose.com", "version": "v1.2", "askAgainAfter": 3600},
-    {"name": "content", "url": "https://content.api.bose.io", "version": "v1", "askAgainAfter": 3600},
-    {"name": "marge", "url": "https://streaming.bose.com", "version": "v1", "askAgainAfter": 3600},
-    {"name": "TUNEIN", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "INTERNET_RADIO", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"id": {"name": "LOCAL_INTERNET_RADIO", "value": 11}, "name": "LOCAL_INTERNET_RADIO", "value": 11, "url": "https://content.api.bose.io", "baseURL": "https://content.api.bose.io/core02/svc-bmx-adapter-orion/prod/orion", "assets": {"name": "Custom Stations"}, "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600, "authenticationModel": {"anonymousAccount": {"autoCreate": true, "enabled": true}}},
-    {"name": "IHEART", "url": "https://api2.iheart.com", "baseURL": "https://api2.iheart.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "SPOTIFY", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "DEEZER", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600}
-  ],
-  "askAgainAfter": 3600,
-  "ts": ` + fmt.Sprintf("%d", time.Now().Unix()) + `
-}`))
+	_, _ = w.Write([]byte(body))
+}
+
+// respondBmxAvailability answers GET /bmx/registry/v1/servicesAvailability,
+// which the registry's own _links block points at and STR never served.
+func (s *Server) respondBmxAvailability(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"services":[{"canAdd":true,"canRemove":false,"service":"TUNEIN"}]}`))
 }
 
 // respondBmxGeneric is the catchall for other /bmx/* paths.
@@ -98,10 +103,35 @@ func (s *Server) respondSourceProviders(w http.ResponseWriter, _ *http.Request) 
 		}
 		extra.WriteString(`<sourceprovider id="` + id + `"><name>` + xmlEscapeText(r.Name) + `</name></sourceprovider>`)
 	}
-	// without response wrapper, since AddDevice wrap201 is only relevant for the
-	// initial pair call.
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="STORED_MUSIC"><name>Stored Music</name></sourceprovider>` + extra.String() + `</sourceProviders>`))
+	// This catalogue is what the account's <sourceproviderid> values resolve
+	// against, so the ids MUST be the firmware's NUMBERS, not names: STR used
+	// to answer id="TUNEIN" while an account source said 11, and a reference
+	// that resolves to nothing leaves the source unregistered. The full list is
+	// sent (not only the ids STR uses) so the firmware does not take a
+	// "usual ids missing" path, and the declaration is the standalone form the
+	// real cloud used. The timestamps are constant; the firmware only stores
+	// them.
+	const spTS = "2012-09-19T12:43:00.000+00:00"
+	providers := []struct{ ID, Name string }{
+		{"1", "PANDORA"}, {"2", "INTERNET_RADIO"}, {"3", "OFF"}, {"4", "LOCAL"},
+		{"5", "AIRPLAY"}, {"6", "CURRATED_RADIO"}, {"7", "STORED_MUSIC"},
+		{"8", "SLAVE_SOURCE"}, {"9", "AUX"}, {"10", "RECOMMENDED_INTERNET_RADIO"},
+		{"11", "LOCAL_INTERNET_RADIO"}, {"12", "GLOBAL_INTERNET_RADIO"},
+		{"13", "HELLO"}, {"14", "DEEZER"}, {"15", "SPOTIFY"}, {"16", "IHEART"},
+		{"17", "SIRIUSXM"}, {"18", "GOOGLE_PLAY_MUSIC"}, {"19", "QQMUSIC"},
+		{"20", "AMAZON"}, {"21", "LOCAL_MUSIC"}, {"22", "WBMX"},
+		{"23", "SOUNDCLOUD"}, {"24", "TIDAL"}, {"25", "TUNEIN"},
+	}
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" standalone="yes"?><sourceProviders>`)
+	for _, p := range providers {
+		b.WriteString(`<sourceprovider id="` + p.ID + `"><createdOn>` + spTS +
+			`</createdOn><name>` + p.Name + `</name><updatedOn>` + spTS +
+			`</updatedOn></sourceprovider>`)
+	}
+	b.WriteString(extra.String())
+	b.WriteString(`</sourceProviders>`)
+	_, _ = w.Write([]byte(b.String()))
 }
 
 // respondAddDevice is the response to the AddDevice sync that the box triggers
@@ -314,14 +344,40 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request)
 	// only when a Deezer reflection was configured, so on a normal box the
 	// account advertised no sources at all - and a source the account does
 	// not name is one the firmware will not keep.
-	srcBlock := "\n  <sources>" + staticRadioSourceXML() + s.reflectedSourcesXML() + "\n  </sources>"
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
-<account status="ACTIVE">
-  <uuid>streborn-local-account</uuid>
-  <email>local@streborn</email>
-  <token>local-token-v1</token>
-  <created>2026-01-01T00:00:00Z</created>` + srcBlock + `
-</account>`))
+	// The account schema is the one captured from the real cloud, not a
+	// hand-invented one: <id> (not <uuid>), <accountStatus>ENABLED</...> as an
+	// ELEMENT (not a status attribute), plus mode / preferredLanguage /
+	// providerSettings, and the standalone XML declaration. STR's earlier shape
+	// looked plausible but shared almost no element names with it, which is the
+	// likely reason the firmware never picked up the <sources> block inside.
+	// The <devices> block is part of the captured schema and is emitted even
+	// when we know little about the box: the firmware looks for its OWN device
+	// entry in the account it just fetched, and an account that does not list
+	// it is not an account it belongs to.
+	s.mu.RLock()
+	devID := s.deviceID
+	s.mu.RUnlock()
+	const accTS = "2020-01-01T00:00:00.000+00:00"
+	devices := "<devices/>"
+	if devID != "" {
+		devices = `<devices><device deviceid="` + xmlEscapeText(devID) + `">` +
+			`<attachedProduct product_code=""><components/><productlabel></productlabel>` +
+			`<serialnumber></serialnumber></attachedProduct>` +
+			`<createdOn>` + accTS + `</createdOn>` +
+			`<recents/>` +
+			`<serialnumber>` + xmlEscapeText(devID) + `</serialnumber>` +
+			`<updatedOn>` + accTS + `</updatedOn>` +
+			`</device></devices>`
+	}
+	_, _ = w.Write([]byte(`<?xml version="1.0" standalone="yes"?>` +
+		`<account><id>stick@local</id>` +
+		`<accountStatus>ENABLED</accountStatus>` +
+		devices +
+		`<mode>global</mode>` +
+		`<preferredLanguage>en</preferredLanguage>` +
+		`<providerSettings/>` +
+		`<sources>` + staticRadioSourceXML() + s.reflectedSourcesXML() + `</sources>` +
+		`</account>`))
 }
 
 func (s *Server) respondPresets(w http.ResponseWriter) {
@@ -572,11 +628,15 @@ func sourcesListFormat() string {
 // must appear in BOTH the account response and the account source list, or the
 // firmware drops the source again on its next poll.
 func staticRadioSourceXML() string {
-	return "\n    <source id=\"3\" type=\"Audio\">" +
-		"<credential type=\"\" text=\"\"/>" +
-		"<name>Custom Stations</name>" +
-		"<username></username>" +
-		"<sourceproviderid>11</sourceproviderid>" +
-		"<sourcename>LOCAL_INTERNET_RADIO</sourcename>" +
-		"</source>"
+	const ts = "2020-01-01T00:00:00.000+00:00"
+	return `<source id="3" type="Audio">` +
+		`<createdOn>` + ts + `</createdOn>` +
+		`<credential type="token"></credential>` +
+		`<name>Local Internet Radio</name>` +
+		`<sourceproviderid>11</sourceproviderid>` +
+		`<sourcename>LOCAL_INTERNET_RADIO</sourcename>` +
+		`<sourceSettings/>` +
+		`<updatedOn>` + ts + `</updatedOn>` +
+		`<username></username>` +
+		`</source>`
 }
