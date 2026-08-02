@@ -76,7 +76,11 @@ the desktop app falls back to a configured external path.
 
 - **Language.** All code, comments, identifiers, commit messages,
   and PR descriptions are in English. User-facing UI strings live
-  in i18n bundles (English and German first-class).
+  in i18n bundles. Every new key must be added to **all** bundles in
+  `desktop-app/frontend/src/i18n/bundles/` (12 locales today): English and
+  German written by hand, the other locales translated with the same care.
+  A key that exists only in `en.json` silently falls back to English for
+  everyone else, which is the gap #514 had to close repeatedly.
 - **Go.** `gofmt` clean, `go vet ./...` clean, `golangci-lint`
   clean. Tests in `_test.go` next to the code they cover. Logging
   via `log/slog`.

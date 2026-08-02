@@ -12,3 +12,8 @@
 /cmd/agent/              @JRpersonal
 /internal/tlsgen/        @JRpersonal
 /internal/marge/         @JRpersonal
+# Security-critical per docs/THREAT-MODEL.md: pairing/TLS trust and the
+# on-box firewall + TLS setup scripts.
+/internal/autopair/           @JRpersonal
+/usb-stick/setup-tls.sh       @JRpersonal
+/usb-stick/iptables-setup.sh  @JRpersonal
