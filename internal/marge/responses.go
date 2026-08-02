@@ -3,6 +3,8 @@
 package marge
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"log/slog"
@@ -160,11 +162,61 @@ func addDeviceFormat() string {
 	return v
 }
 
+// deviceIDFromAddDeviceBody pulls the deviceid the box states about itself out
+// of the addDevice POST body:
+//
+//	<device deviceid="AABBCCDDEEFF"><name>..</name><macaddress>..</macaddress></device>
+//
+// Returns "" when the body is absent, unreadable or shaped differently, so a
+// firmware that posts something else simply leaves the current id in place.
+func deviceIDFromAddDeviceBody(r *http.Request) string {
+	if r.Body == nil {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 8*1024))
+	if err != nil {
+		return ""
+	}
+	// The body is consumed here, so hand a fresh reader back to the rest of the
+	// handler chain; nothing downstream reads it today, but a silent one-shot
+	// body would be a nasty trap for whoever adds that later.
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	var doc struct {
+		DeviceID string `xml:"deviceid,attr"`
+	}
+	if err := xml.Unmarshal(body, &doc); err != nil {
+		return ""
+	}
+	id := strings.ToUpper(strings.TrimSpace(doc.DeviceID))
+	// Guard against a placeholder or an obviously malformed value: the id is a
+	// 12-char MAC in hex with no separators.
+	if len(id) != 12 {
+		return ""
+	}
+	for _, c := range id {
+		if !strings.ContainsRune("0123456789ABCDEF", c) {
+			return ""
+		}
+	}
+	return id
+}
+
 func (s *Server) respondAddDevice(w http.ResponseWriter, r *http.Request) {
 	format := addDeviceFormat()
 	token := os.Getenv("STICK_MARGE_TOKEN")
 	if token == "" {
 		token = "11111111-1111-1111-1111-111111111111"
+	}
+	// The box states its own id in this POST, and it does so seconds BEFORE it
+	// fetches the account. That makes this the earliest authoritative correction
+	// for a deviceID the agent could only guess at startup, and it costs
+	// nothing: the body is already being read. Without it the account payload
+	// can name a different id than the box has, the firmware does not find
+	// itself in <devices>, and it silently drops the whole account - taking the
+	// source registration, and with it the hardware preset keys, down with it.
+	if id := deviceIDFromAddDeviceBody(r); id != "" && s.SetDeviceID(id) {
+		s.logger.Warn("marge: adopting the deviceID the box reported for itself (the startup guess named a different interface)",
+			slog.String("comp", "marge"), slog.String("deviceID", id))
 	}
 	s.logger.Info("addDevice response sent",
 		slog.String("comp", "marge"),
