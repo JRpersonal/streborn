@@ -405,17 +405,26 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	// and a present slot is never re-written.
 	strSlots := map[int]bool{}
 	var missing []boxcli.PresetSpec
-	migrated := 0
+	migrated, reverted := 0, 0
 	for _, p := range stick {
 		strSlots[p.Slot] = true
 		native := nativePresetLocation(context.Background(), boxHost, p)
 		loc, onBox := boxLocs[p.Slot]
-		upgradable := onBox && native != "" && !isNativeRadioLocation(loc) &&
-			isOwnBoxPresetLocation(loc)
-		if upgradable {
+		boxHasNative := onBox && isNativeRadioLocation(loc)
+		upgradable := onBox && native != "" && !boxHasNative && isOwnBoxPresetLocation(loc)
+		// The reverse case matters just as much: the slot is stored natively but
+		// this box can no longer take that form (the radio source did not
+		// register on this boot, or the native write was latched off). Leaving it
+		// would point a hardware key at a source the box cannot enter, which is a
+		// DEAD key - strictly worse than the UPnP form it replaced. Put it back.
+		stale := boxHasNative && native == ""
+		switch {
+		case upgradable:
 			migrated++
+		case stale:
+			reverted++
 		}
-		if forceFull || !onBox || upgradable {
+		if forceFull || !onBox || upgradable || stale {
 			missing = append(missing, boxcli.PresetSpec{
 				Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 				NativeLocation: native,
@@ -425,6 +434,10 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	if migrated > 0 {
 		logger.Info("preset migration: rewriting UPnP slots as native radio stations, so the box activates its own hardware keys instead of refusing them (1036)",
 			"slots", migrated)
+	}
+	if reverted > 0 {
+		logger.Warn("preset migration: the box no longer offers the native radio source, putting those slots back on the UPnP form so the keys keep working",
+			"slots", reverted)
 	}
 	syncFailed := false
 	if len(missing) > 0 {

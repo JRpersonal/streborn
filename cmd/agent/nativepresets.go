@@ -182,6 +182,9 @@ func wroteNative(specs []boxcli.PresetSpec) bool {
 // service baseUrl on purpose: a full URL makes the firmware concatenate the
 // two and resolve nothing.
 func nativePresetLocation(ctx context.Context, boxHost string, p presets.Preset) string {
+	if !nativeStorable(p) {
+		return ""
+	}
 	if !nativeRadioReady(ctx, boxHost) {
 		return ""
 	}
@@ -190,4 +193,21 @@ func nativePresetLocation(ctx context.Context, boxHost string, p presets.Preset)
 		return ""
 	}
 	return webui.OrionStationLocation(stream, p.Name)
+}
+
+// nativeStorable reports whether a preset may be stored on the native radio
+// source.
+//
+// Spotify presets may NOT, and the reason is the very property that makes the
+// native form good for radio: the box activates it entirely by itself, so STR
+// stands back and does not run its recall path. A radio stream needs nothing
+// more than that. A Spotify preset does: something has to tell the local
+// Spotify engine WHICH playlist to load, and that only happens on STR's recall
+// path. Stored natively, the box would faithfully play the Spotify proxy URL
+// and get whatever the engine happened to be playing before - or silence.
+//
+// Everything else STR stores (radio stations and play queues) is a plain
+// stream from the box's point of view and converts cleanly.
+func nativeStorable(p presets.Preset) bool {
+	return !strings.EqualFold(strings.TrimSpace(p.Type), "spotify")
 }
