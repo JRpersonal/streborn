@@ -530,3 +530,54 @@ func TestDiskSpaceGate(t *testing.T) {
 		t.Error("after setLowDisk(false): lowDisk=true, want false")
 	}
 }
+
+// TestConnectIntentHooks covers the #78 stop-signal path: a pause/stop pressed
+// in the Spotify app must arm the deliberate-stop latch, while the engine's
+// echoes of STR's own staged recall commands (which load contexts paused) must
+// not, or every preset recall would stand its own verify down.
+func TestConnectIntentHooks(t *testing.T) {
+	m := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var pauses []string
+	plays := 0
+	m.SetConnectIntentHooks(func(ev string) { pauses = append(pauses, ev) }, func() { plays++ })
+
+	// Echo case: a paused event right after STR's own /player command is
+	// recall staging, not user intent.
+	m.noteOwnPlayerCmd("/player/play")
+	m.handleEnginePlaybackEnd("paused")
+	if len(pauses) != 0 {
+		t.Fatalf("staged-recall echo armed the stop latch: %v", pauses)
+	}
+
+	// Outside the own-command window the same events are the Spotify app's
+	// deliberate stop and must fire the hook, with the event name attached
+	// (it is the bundle-forensics discriminator).
+	m.mu.Lock()
+	m.lastOwnPlayerCmd = time.Now().Add(-ownEngineCmdIntentWindow - time.Second)
+	m.mu.Unlock()
+	for _, ev := range []string{"paused", "stopped", "inactive"} {
+		m.handleEnginePlaybackEnd(ev)
+	}
+	if len(pauses) != 3 || pauses[0] != "paused" || pauses[2] != "inactive" {
+		t.Fatalf("deliberate Spotify-app stop did not reach the hook: %v", pauses)
+	}
+
+	// Volume carries no transport intent: it must not re-open the suppression
+	// window (a user often pauses right after adjusting the volume).
+	m.noteOwnPlayerCmd("/player/volume")
+	m.handleEnginePlaybackEnd("paused")
+	if len(pauses) != 4 {
+		t.Fatalf("a /player/volume call suppressed a real pause: %v", pauses)
+	}
+
+	// Play/active clears the latch via the play hook.
+	m.handleEnginePlaybackStart()
+	if plays != 1 {
+		t.Fatalf("play hook fired %d times, want 1", plays)
+	}
+
+	// nil hooks must be safe (agent runs without wiring in tests/tools).
+	m.SetConnectIntentHooks(nil, nil)
+	m.handleEnginePlaybackEnd("paused")
+	m.handleEnginePlaybackStart()
+}
