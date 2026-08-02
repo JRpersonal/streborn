@@ -15,42 +15,42 @@
   <img src="docs/screenshots/OS%20Hero/app-listen.jpg" alt="ST Reborn desktop app" width="820">
 </p>
 
-Bose discontinued their SoundTouch cloud service in February 2026. STR keeps the speakers usable: a USB stick installs a small Go agent onto the speaker that stands in for the discontinued cloud locally, talks to the speaker over the home network, and brings back internet radio, Spotify, your own media library, multiroom, and the hardware preset buttons. **Once the agent is installed, the stick can be removed**: the agent persists on the speaker and survives reboots.
+Bose discontinued their SoundTouch cloud service in February 2026 and switched the servers off for good on 6 May 2026. STR keeps the speakers usable: a small Go agent is installed onto the speaker itself, stands in for the discontinued cloud locally, and brings back internet radio, Spotify, your own media library, multiroom, and the hardware preset buttons. **The install runs over your home network from the desktop app**, so no USB stick and no second device are needed. The agent persists on the speaker and starts with it on every boot.
 
 ## How it works in one paragraph
 
-After the first boot with the stick attached, the agent copies itself into the speaker's persistent storage and from then on starts automatically every time the speaker powers on, no stick required for normal use. It hosts a stand-in for the Bose cloud on the loopback interface and redirects the relevant DNS names so the speaker treats it as the real cloud. Playback then happens over UPnP AVTransport on the speaker, which is supported natively, whether the source is an internet radio station, a Spotify playlist, or a track from a media server on your own network. The hardware preset buttons are wired through the speaker's local WebSocket, so a button press recalls the saved source; the same bus lets a remote key fire a webhook to control your smart home. Several speakers can be grouped into a multiroom zone or a stereo pair.
+The desktop app finds the speaker on the network, reaches it on its setup port and copies the agent into the speaker's persistent storage. From then on it starts automatically every time the speaker powers on. A USB stick is still supported as a fallback and recovery path, but it is no longer the normal way to install. It hosts a stand-in for the Bose cloud on the loopback interface and redirects the relevant DNS names so the speaker treats it as the real cloud. Playback then happens over UPnP AVTransport on the speaker, which is supported natively, whether the source is an internet radio station, a Spotify playlist, or a track from a media server on your own network. The hardware preset buttons are wired through the speaker's local WebSocket, so a button press recalls the saved source; the same bus lets a remote key fire a webhook to control your smart home. Several speakers can be grouped into a multiroom zone or a stereo pair.
 
 ## Screenshots
 
-The desktop app: browse and assign presets, search internet radio, control Spotify, browse your local media library, manage speaker settings, and prepare the USB stick.
+The desktop app: browse and assign presets, search internet radio, control Spotify, browse your local media library, manage speaker settings, and install STR onto a speaker over the network.
 
 | | | |
 |:--:|:--:|:--:|
 | [![Presets and playback](docs/screenshots/OS%20Hero/app-listen.jpg)](docs/screenshots/OS%20Hero/app-listen.jpg) | [![Internet radio search](docs/screenshots/OS%20Hero/app-search.jpg)](docs/screenshots/OS%20Hero/app-search.jpg) | [![Speaker settings](docs/screenshots/OS%20Hero/app-settings1.jpg)](docs/screenshots/OS%20Hero/app-settings1.jpg) |
 | Presets and playback | Internet radio search | Speaker settings |
 | [![DLNA library](docs/screenshots/OS%20Hero/app-library.jpg)](docs/screenshots/OS%20Hero/app-library.jpg) | [![USB stick setup](docs/screenshots/OS%20Hero/app-stick-step1.jpg)](docs/screenshots/OS%20Hero/app-stick-step1.jpg) | [![Stick: Wi-Fi, name, region](docs/screenshots/OS%20Hero/app-stick-step2.jpg)](docs/screenshots/OS%20Hero/app-stick-step2.jpg) |
-| DLNA music library | USB stick setup | Wi-Fi, name, region |
+| DLNA music library | Install and setup | Wi-Fi, name, region |
 
-The interface is available in eleven languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
+The interface is available in twelve languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish, Arabic). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
 
-## Status (June 2026)
+## Status (August 2026)
 
 STR is pre-1.0. This section is the honest snapshot. No marketing.
 
 ### What works
 
-- Discovery of installed sticks over mDNS, list view in the desktop app. Speakers without STR show up too, marked "ready for STR", and can be installed in-app.
+- Discovery of speakers running STR over mDNS, list view in the desktop app. Speakers without STR show up too, marked "ready for STR", and can be installed in-app.
 - Playback control: play / pause / stop / volume / bass / source switch (AUX, Bluetooth, Standby) via the speaker's existing UPnP AVTransport endpoint on port 8091. I never route audio through the dead Bose cloud.
 - Radio search via radio-browser.info, queried directly by the desktop app (no API key); only the final stream URL goes to the speaker. HLS-only stations (BBC and co.) are converted on the fly by the agent's stream proxy. On a blocked or dead stream the app automatically tries another listing of the same station.
-- Six preset slots, persisted on the stick agent. Hardware preset buttons 1 to 6 work after install via a hook into Bose's WebSocket bus (gabbo). Existing non-STR presets (e.g. Deezer) are left untouched.
+- Six preset slots, persisted by the agent on the speaker. Hardware preset buttons 1 to 6 work after install via a hook into Bose's WebSocket bus (gabbo). Existing non-STR presets (e.g. Deezer) are left untouched.
 - Spotify Connect (beta): a supervised go-librespot sidecar on the speaker. Spotify playlists, albums, and tracks save to preset slots and the hardware buttons, with multi-account switching and live now-playing. The raw Ogg stream is decoded by the speaker, never by the dead cloud.
 - Local media library: browse media servers on your home network over DLNA / UPnP AV (SSDP discovery, ContentDirectory browse), including FRITZ!Box, Synology, Plex and miniDLNA, and save any track as a preset. Lossless files (FLAC) play directly; the agent's stream proxy feeds the box.
 - Multiroom zones and stereo pairs (beta): group several speakers to play in sync, or pair two as a left/right stereo pair. Groups persist on the speaker and reform automatically after a reboot, standby cycle, or Wi-Fi outage.
 - Smart-home triggers (webhooks): turn a remote-control key, the power button, or an AUX change into a user-configured HTTP call, so a press can drive Home Assistant, ioBroker, Node-RED, or anything with an HTTP endpoint.
 - OTA agent updates from the desktop app, with an SSH fallback and a pre-reboot stick refresh so the update cannot be reverted by the boot sync. Build stamp comparison catches version drift.
 - WLAN reconfigure from the desktop app. I rewrite `/etc/wpa_supplicant.conf` in full because appending breaks Wi-Fi.
-- Setup wizard for the USB stick, including preset region, friendly name, box language, and Wi-Fi credentials. FAT32 formatting helper bundled.
+- Setup wizard for the install, including preset region, friendly name, box language, and Wi-Fi credentials. The network install is the normal path; the USB stick route (with a bundled FAT32 formatting helper) remains available as a fallback.
 - Diagnostics export (anonymised), true factory reset, and a full "Uninstall STR" that returns the speaker to stock.
 
 ### In the works
@@ -64,14 +64,16 @@ STR is pre-1.0. This section is the honest snapshot. No marketing.
 | Model                       | Status                   |
 | --------------------------- | ------------------------ |
 | SoundTouch 10               | ✅ Verified on hardware  |
-| SoundTouch 20               | ✅ Works (same platform) |
-| SoundTouch 30               | ✅ Works (same platform) |
+| SoundTouch 20               | ✅ Works (contributor-confirmed) |
+| SoundTouch 30               | ✅ Works (confirmed on hardware) |
 | SoundTouch Portable         | ✅ Verified on hardware  |
-| Wave SoundTouch series IV   | ✅ Works (network install) |
+| Wave SoundTouch series III and IV | ✅ Works (network install) |
 | SoundTouch 300              | ✅ Works (network install) |
-| SoundTouch SA-5 amplifier   | ❌ Not supported yet     |
+| Bose SA-4 amplifier         | ✅ Works (network install) |
+| Bose SA-5 amplifier         | ✅ Works (network install) |
+| CineMate 520 and 130        | ✅ Works (network install) |
 
-Per-model detail and the variant fingerprints are in [`docs/MODELS.md`](./docs/MODELS.md). If you own a model marked "Not supported yet", I would like to hear from you so we can work out how close it is. The SoundTouch SA-5 amplifier has a tracking issue to talk it through: #274.
+Per-model detail and the variant fingerprints are in [`docs/MODELS.md`](./docs/MODELS.md). The SoundTouch 300, the SA-4 and SA-5 amplifiers, the Wave systems and the CineMate soundbars never read a USB stick at boot, so the network install is what made these models possible in the first place. If you own a model that is not listed here, I would like to hear from you so we can work out how close it is.
 
 ### What I do for security
 
@@ -80,8 +82,8 @@ Per-model detail and the variant fingerprints are in [`docs/MODELS.md`](./docs/M
 
 ### What I do not do for security yet
 
-- No client authentication on the stick web UI (`:8888`). Any device on the LAN that can reach the speaker can edit presets and trigger playback.
-- No encryption between the desktop app and the stick. Both sit on the LAN, the LAN is the trust boundary.
+- No client authentication on the agent's web UI (`:8888`). Any device on the LAN that can reach the speaker can edit presets and trigger playback.
+- No encryption between the desktop app and the agent. Both sit on the LAN, the LAN is the trust boundary.
 - No verification of the stock speaker firmware integrity.
 - No sandboxing of the desktop application.
 
@@ -100,13 +102,13 @@ Implication: a speaker being passed on or sold needs a separate "Uninstall STR" 
 
 Per my own criteria in [`CLAUDE.md`](./CLAUDE.md):
 
-1. Two models verified end to end: met (ST10 and Portable verified, ST20 contributor-confirmed, ST30 live with the final pass pending; see [`docs/MODELS.md`](./docs/MODELS.md)).
+1. Two models verified end to end: met (ST10 and Portable verified, ST20 contributor-confirmed with the final stability pass pending, ST30 working on both module variants; see [`docs/MODELS.md`](./docs/MODELS.md)).
 2. Hardware preset buttons need to survive cold boot, standby cycle, and Wi-Fi outage. I observe this working, but I do not yet have a regression test that pins it.
 3. First-install experience: SmartScreen and Gatekeeper documentation on the website Verify page with the exact click path and a linked SHA256 plus Sigstore attestation. Partially in place, not finalised.
 4. Threat model document published. Present in [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md). It does not yet cover the persistence-across-factory-reset point above, which I owe.
 5. Legal pages on the website (imprint, privacy, both German). Some sections still contain placeholders.
 
-Code signing, notarization, additional models beyond the 1.0 threshold, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0.
+Notarization (macOS), additional models beyond the 1.0 threshold, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0. Windows code signing already ships: release binaries are Authenticode-signed with a Certum open-source certificate.
 
 ## Quick start for developers
 
@@ -157,6 +159,8 @@ Every release on GitHub Releases is built by the official workflow and ships wit
 ```bash
 gh attestation verify STR-Windows-vX.Y.Z.exe --owner JRpersonal
 ```
+
+Windows builds are additionally Authenticode-signed with a Certum open-source code-signing certificate; check the signature in the file's Properties > Digital Signatures tab or with `signtool verify /pa`.
 
 For the threat model and the vulnerability reporting process see [SECURITY.md](./SECURITY.md) and [docs/THREAT-MODEL.md](./docs/THREAT-MODEL.md).
 

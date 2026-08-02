@@ -193,10 +193,10 @@ and installed end to end since:
 | `scm` | `lisa` | `SoundTouch SA-4` | SCM, PackagedProduct, **Lightswitch**, **SMSC** | **validated** — a user network-installed STR end to end 2026-07-09. The stick was never an option (it does not read USB at boot); the stick-free `:17000` network install is the path. |
 | `scm` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, Lightswitch, SMSC | **validated** — the agent runs via the `:17008` REDIRECT like the `scm` ST20; stick-free network install confirmed end to end (#182, 2026-07-09 and 2026-07-11). |
 | `sm2` | `lisa` | `Wave SoundTouch` | SCM, PackagedProduct, SMSC | **validated** — seen 2026-07-04 (#182, `variantMode=NoAP`): the Wave ships on BOTH module types. Stick-free network install confirmed end to end (#182, 2026-07-09 and 2026-07-11: presets, NAS/DLNA playback, ST20 grouping). |
-| `sm2` | `burns` | `SoundTouch SA-5` | SCM, PackagedProduct, SMSC | seen 2026-07-04 (#274 fleet bundle): fw 27.0.6, no STR, stick never read. Agent should run, first-install path still unvalidated. |
-| `sm2` | `lisa` | `CineMate 520` | SCM, PackagedProduct | **validated** — a user network-installed STR end to end 2026-07-09. Other CineMate models remain untested. |
+| `sm2` | `burns` | `SoundTouch SA-5` | SCM, PackagedProduct, SMSC | **validated** — an owner runs STR v0.9.25 end to end (#274, 2026-08-01): network install, app + phone-remote control and Now Playing. Known gap: the SA-5 reports three AUX inputs where STR models one (#390). |
+| `sm2` | `lisa` | `CineMate 520` | SCM, PackagedProduct | **validated** — a user network-installed STR end to end 2026-07-09. The CineMate 130 is separately user-confirmed (#491, v0.9.27, 2026-08-01; full fingerprint pending from the #491 diagnostics — reports its TV/AUX input as source `LOCAL`). Other CineMate models remain untested. |
 
-The Wave, SA-4, and CineMate 520 are now **Working** (docs/MODELS.md); the untested-model UI warning was removed in v0.9.2 (#283 follow-up). The SA-5 (`burns`) remains unvalidated. Note: in a diagnostic a stock `scm/lisa` box shows `reachable8888=true` because that field probes **:17008**, where Bose's own SoftwareUpdate answers; the authoritative "STR present" signal is the `strDetected` field, not `reachable8888`.
+The Wave, SA-4, and CineMate 520 are now **Working** (docs/MODELS.md); the untested-model UI warning was removed in v0.9.2 (#283 follow-up). The SA-5 (`burns`) is now also user-confirmed (#274, 2026-08-01). Note: in a diagnostic a stock `scm/lisa` box shows `reachable8888=true` because that field probes **:17008**, where Bose's own SoftwareUpdate answers; the authoritative "STR present" signal is the `strDetected` field, not `reachable8888`.
 
 ## Why this matters for STR
 

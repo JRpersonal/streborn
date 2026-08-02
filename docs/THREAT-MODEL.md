@@ -14,14 +14,16 @@ companion.
 
 STR runs in a residential LAN and consists of:
 
-1. A small Go agent installed onto a Bose SoundTouch speaker via a
-   USB stick. After the install the agent runs from the speaker's
-   own persistent storage; the stick is only needed for the initial
-   setup. Agent updates are delivered over the LAN by the desktop
-   app (a stick that is still inserted gets refreshed so it cannot
-   revert the update on the next boot).
-2. A cross-platform desktop application that discovers sticks via
-   mDNS and offers a web UI.
+1. A small Go agent installed onto a Bose SoundTouch speaker,
+   normally over the network by the desktop app (via the speaker's
+   setup service on `:17000`); a USB stick remains available as the
+   fallback and recovery install path. After the install the agent
+   runs from the speaker's own persistent storage. Agent updates are
+   delivered over the LAN by the desktop app (a stick that is still
+   inserted gets refreshed so it cannot revert the update on the
+   next boot).
+2. A cross-platform desktop application that discovers running
+   agents via mDNS and offers a web UI.
 3. A static website that hosts downloads and documentation.
 
 The agent emulates a handful of cloud endpoints which the speaker
@@ -46,12 +48,12 @@ as a DNS server for any other device, and does not phone home.
   app's webview and into the speaker (playback + presets), so they are
   treated as an attacker-controlled input boundary.
 - **Bundled go-librespot sidecar and its credentials.** The Spotify
-  Connect beta runs a third-party GPL binary on the speaker, built by
-  this repo's CI from a pinned fork and Sigstore-attested, and
-  persists Spotify credentials on the speaker's NAND for preset
-  recall. Anyone with the (pre-1.0 open) root SSH access can read
-  those credentials, which strengthens the case for the SSH hardening
-  below.
+  Connect integration runs a third-party GPL binary on the speaker,
+  built by this repo's CI from a pinned fork and Sigstore-attested,
+  and persists Spotify credentials on the speaker's NAND for preset
+  recall. Anyone with root SSH access (open while the install stick
+  is inserted, or when the persistent opt-in marker is set) can read
+  those credentials, which is part of why SSH is kept opt-in.
 
 Each boundary is covered in detail in
 [`SECURITY.md`](../SECURITY.md).
@@ -102,18 +104,17 @@ STR:
   control playback. This is unchanged by STR.
 - The speakers ship with a passwordless `root` account, and Bose's
   init starts an SSH service when a `remote_services` marker is
-  present on a mounted USB stick. **Pre-1.0, STR itself keeps that
-  SSH service running on every boot** (`ensure_sshd_running` in
-  `usb-stick/run.sh`), stick or no stick: when an install or update
-  leaves the agent down, SSH is the only channel that still lets the
-  desktop app pull diagnostics and repair the box, and the project
-  currently weights that recovery path over closing the port. This is
-  an STR-maintained LAN exposure, mitigated only by network
-  isolation; it flips to opt-in (stick marker) as part of the v1.0
-  hardening roadmap below. The desktop app's yellow banner is a
-  stick-removal reminder keyed on the stick's mount state; it is NOT
-  an SSH-state indicator, and SSH remains open after the stick is
-  removed.
+  present on a mounted USB stick. STR follows that gate: SSH is open
+  while the STR stick is inserted (install / recovery / diagnostics)
+  and closes again on the next stickless reboot; STR no longer
+  forces SSH open on every boot. A maintainer who needs persistent
+  debug SSH on a stickless box can opt back in by creating
+  `/mnt/nv/streborn/enable-ssh` (or a `/mnt/nv/remote_services`
+  marker); a reboot does not close SSH in that case. The desktop
+  app's yellow banner reflects the actual SSH state the agent
+  reports: it recommends a restart while SSH is still open after the
+  stick was pulled, and shows a distinct notice when the persistent
+  marker is set.
 
 If your speaker is on a network with untrusted devices (guest Wi-Fi,
 shared student housing, public-facing IoT segment), put it on a
@@ -148,9 +149,9 @@ coordinated review per `.github/CODEOWNERS`.
 - STR does not encrypt traffic between the desktop app and the
   stick. Both sit on the same LAN, and the LAN is the trust
   boundary.
-- STR does not authenticate clients of the stick web UI. Any device
-  on the LAN that can reach the stick on `:8888` can edit presets
-  and trigger playback.
+- STR does not authenticate clients of the agent web UI. Any device
+  on the LAN that can reach the agent (`:8888`, or `:17008` on
+  SMSC-chassis boxes) can edit presets and trigger playback.
 - STR does not sandbox the desktop application. It runs with the
   privileges of the user who launched it.
 - STR does not attempt to verify the integrity of the stock speaker

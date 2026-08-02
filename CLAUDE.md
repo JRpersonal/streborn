@@ -12,17 +12,19 @@ them back **without any Bose cloud dependency**.
 
 ### Components
 
-- **Stick Agent**: a small Go binary delivered via a USB stick used
-  for the initial install. The agent copies itself to the speaker's
-  NAND on first boot and from then on runs entirely from there, so
-  the stick can be removed for normal operation. It stands in for
-  `streaming.bose.com` and the Bose `bmx-cloud` services locally so
-  the speaker pairs and accepts presets.
+- **Stick Agent**: a small Go binary running on the speaker. The
+  normal first install happens over the network (the speaker's
+  setup port); the USB stick remains the fallback and recovery
+  path. The agent lives on the speaker's NAND and runs entirely
+  from there, so no stick is needed for normal operation. It stands
+  in for `streaming.bose.com` and the Bose `bmx-cloud` services
+  locally so the speaker pairs and accepts presets.
 - **Desktop App (ST Reborn)**: Wails application for Windows, macOS,
   Linux. Discovers running agents on the LAN via mDNS, ships a web
   UI for browsing internet radio, managing presets, and controlling
-  playback. Also performs the initial USB-stick provisioning and
-  later OTA agent updates.
+  playback. Also performs the initial install (network install by
+  default, USB-stick provisioning as the fallback) and later OTA
+  agent updates.
 - **Website**: Astro site (English and German) at `st-reborn.de`
   with downloads, FAQ, privacy, imprint. Maintained in a separate
   repository.
@@ -134,8 +136,9 @@ measurable, not aspirational:
 5. **Legal pages complete.** Website imprint, privacy policy, and
    their German equivalents have no placeholder text.
 
-Code signing, notarization, additional models, and Wails sandboxing
-are post-1.0. Forward-looking ideas beyond v1.0, currently an iOS
+macOS notarization, additional models, and Wails sandboxing are
+post-1.0 (Windows installers are already Certum-signed since
+v0.9.20). Forward-looking ideas beyond v1.0, currently an iOS
 PWA proposal and a factory-reset wizard for the desktop app, live
 in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

@@ -99,7 +99,8 @@ The box display/voice language is the Bose `sysLanguage` integer (full
 enum 0..25 resolved; English = 3, German = 2, Danish = 1, ...). STR no
 longer hard-codes one language: the setup wizard picks it from the
 chosen country, refined by the app's UI language, and the box-language
-picker lists all 25 languages by their native name. Speakers with no
+picker lists all 24 defined languages by their native name (0 is the
+factory sentinel and 14 is undefined, so neither is offered). Speakers with no
 matching language fall back to English (for a Ukrainian UI the box
 display falls back to Russian, which is more readable than English,
 while the app UI itself never offers Russian).
