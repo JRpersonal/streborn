@@ -150,6 +150,14 @@ func (s *Server) noteRecallExhaustedWithSource(source string) {
 	// verify exhausts ~26s after the press.
 	if s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
 		s.logger.Info("recall exhausted during a not-logged-in window; not counting a wedge strike (login failure, not a wedge)")
+		// It is not a wedge, but it is not nothing either: the box refused
+		// the recall because it thinks it is signed out, and the cure is the
+		// same soft restart the refusal banner offers. Until now this branch
+		// latched NOTHING, and the 1036 storm marker needs six rejections in
+		// ten minutes, so a user whose box refused "only" three times saw no
+		// message at all while no preset played (field: ST10, 2026-08-02,
+		// three rejections across two minutes, then a plug pull).
+		s.noteRefusalStrike("login")
 		return
 	}
 	if s.streamActivityFn != nil {
@@ -250,9 +258,9 @@ func (s *Server) noteSilentRefusalCandidate() {
 	if !s.nonUserStandbyDropRecent(wedgeStrikeWindow) {
 		return
 	}
-	if s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
-		return
-	}
+	// A recent 1036 does NOT excuse this any more: it used to hand the
+	// messaging to the storm marker, which only fires at six rejections in
+	// ten minutes and therefore left the three-rejection case silent.
 	if s.streamActivityFn != nil {
 		fetch, fail := s.streamActivityFn()
 		if (!fetch.IsZero() && time.Since(fetch) < wedgeStrikeWindow) ||
@@ -260,6 +268,14 @@ func (s *Server) noteSilentRefusalCandidate() {
 			return
 		}
 	}
+	s.noteRefusalStrike("silent")
+}
+
+// noteRefusalStrike counts one refused recall toward the restart hint and
+// latches it on the second consecutive one. kind names the observed flavour
+// for the bundle: "silent" (source self-dropped, no 1036) or "login" (the box
+// answered 1036). Both end in the same advice, so they share one latch.
+func (s *Server) noteRefusalStrike(kind string) {
 	s.refusal.mu.Lock()
 	s.refusal.strikes++
 	latch := s.refusal.strikes >= refusalStrikesToLatch && !s.refusal.latched
@@ -270,11 +286,11 @@ func (s *Server) noteSilentRefusalCandidate() {
 	strikes := s.refusal.strikes
 	s.refusal.mu.Unlock()
 	if latch {
-		// Bundle-forensics marker: this line separates the silent-refusal
-		// family from a wedge and from the 1036 storm in a diagnostic.
-		s.logger.Warn("box refuses recalls silently: source self-drops to STANDBY with no 1036 and no stream fetch; surfacing the restart hint", "strikes", strikes)
+		// Bundle-forensics marker: this line separates the refusal family
+		// from a wedge and names which flavour was observed.
+		s.logger.Warn("box refuses recalls: surfacing the restart hint", "kind", kind, "strikes", strikes)
 	} else {
-		s.logger.Warn("silent recall refusal suspected (strike recorded)", "strikes", strikes)
+		s.logger.Warn("recall refusal suspected (strike recorded)", "kind", kind, "strikes", strikes)
 	}
 }
 
