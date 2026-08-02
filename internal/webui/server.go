@@ -620,6 +620,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
+	mux.HandleFunc("/api/debug/marge-lab", s.handleMargeLab)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
 
 	// Stream proxy: stable URLs for radio streams with token expiry.
