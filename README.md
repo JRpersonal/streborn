@@ -32,9 +32,9 @@ The desktop app: browse and assign presets, search internet radio, control Spoti
 | [![DLNA library](docs/screenshots/OS%20Hero/app-library.jpg)](docs/screenshots/OS%20Hero/app-library.jpg) | [![USB stick setup](docs/screenshots/OS%20Hero/app-stick-step1.jpg)](docs/screenshots/OS%20Hero/app-stick-step1.jpg) | [![Stick: Wi-Fi, name, region](docs/screenshots/OS%20Hero/app-stick-step2.jpg)](docs/screenshots/OS%20Hero/app-stick-step2.jpg) |
 | DLNA music library | Install and setup | Wi-Fi, name, region |
 
-The interface is available in eleven languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
+The interface is available in twelve languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish, Arabic). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
 
-## Status (June 2026)
+## Status (August 2026)
 
 STR is pre-1.0. This section is the honest snapshot. No marketing.
 
@@ -64,8 +64,8 @@ STR is pre-1.0. This section is the honest snapshot. No marketing.
 | Model                       | Status                   |
 | --------------------------- | ------------------------ |
 | SoundTouch 10               | ✅ Verified on hardware  |
-| SoundTouch 20               | ✅ Works (same platform) |
-| SoundTouch 30               | ✅ Works (same platform) |
+| SoundTouch 20               | ✅ Works (contributor-confirmed) |
+| SoundTouch 30               | ✅ Works (confirmed on hardware) |
 | SoundTouch Portable         | ✅ Verified on hardware  |
 | Wave SoundTouch series III and IV | ✅ Works (network install) |
 | SoundTouch 300              | ✅ Works (network install) |
@@ -82,8 +82,8 @@ Per-model detail and the variant fingerprints are in [`docs/MODELS.md`](./docs/M
 
 ### What I do not do for security yet
 
-- No client authentication on the stick web UI (`:8888`). Any device on the LAN that can reach the speaker can edit presets and trigger playback.
-- No encryption between the desktop app and the stick. Both sit on the LAN, the LAN is the trust boundary.
+- No client authentication on the agent's web UI (`:8888`). Any device on the LAN that can reach the speaker can edit presets and trigger playback.
+- No encryption between the desktop app and the agent. Both sit on the LAN, the LAN is the trust boundary.
 - No verification of the stock speaker firmware integrity.
 - No sandboxing of the desktop application.
 
@@ -102,13 +102,13 @@ Implication: a speaker being passed on or sold needs a separate "Uninstall STR" 
 
 Per my own criteria in [`CLAUDE.md`](./CLAUDE.md):
 
-1. Two models verified end to end: met (ST10 and Portable verified, ST20 contributor-confirmed, ST30 live with the final pass pending; see [`docs/MODELS.md`](./docs/MODELS.md)).
+1. Two models verified end to end: met (ST10 and Portable verified, ST20 contributor-confirmed with the final stability pass pending, ST30 working on both module variants; see [`docs/MODELS.md`](./docs/MODELS.md)).
 2. Hardware preset buttons need to survive cold boot, standby cycle, and Wi-Fi outage. I observe this working, but I do not yet have a regression test that pins it.
 3. First-install experience: SmartScreen and Gatekeeper documentation on the website Verify page with the exact click path and a linked SHA256 plus Sigstore attestation. Partially in place, not finalised.
 4. Threat model document published. Present in [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md). It does not yet cover the persistence-across-factory-reset point above, which I owe.
 5. Legal pages on the website (imprint, privacy, both German). Some sections still contain placeholders.
 
-Code signing, notarization, additional models beyond the 1.0 threshold, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0.
+Notarization (macOS), additional models beyond the 1.0 threshold, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0. Windows code signing already ships: release binaries are Authenticode-signed with a Certum open-source certificate.
 
 ## Quick start for developers
 
@@ -159,6 +159,8 @@ Every release on GitHub Releases is built by the official workflow and ships wit
 ```bash
 gh attestation verify STR-Windows-vX.Y.Z.exe --owner JRpersonal
 ```
+
+Windows builds are additionally Authenticode-signed with a Certum open-source code-signing certificate; check the signature in the file's Properties > Digital Signatures tab or with `signtool verify /pa`.
 
 For the threat model and the vulnerability reporting process see [SECURITY.md](./SECURITY.md) and [docs/THREAT-MODEL.md](./docs/THREAT-MODEL.md).
 

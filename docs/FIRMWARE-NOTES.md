@@ -88,7 +88,9 @@ log-churn source that rotated the 32 KB NAND log in ~3.5 h.
 
 ## Reaching the agent on BCO speakers (chipset whitelist)
 
-On the newer "BCO" chassis (Portable, and the scm/spotty ST20 revision)
+On the newer "BCO" chassis (the Portable, and every `scm`-module
+chassis observed so far — the scm revisions of the ST20, ST30 and Wave,
+plus the SA-4 — as well as `sm2` boxes carrying the SMSC bridge)
 the network chipset only routes inbound external TCP to listeners owned
 by a Bose binary. A normal listener like the STR agent on `:8888` is not
 reachable from the LAN as-is. STR works around this two ways:
@@ -152,7 +154,7 @@ streams) plays but HTTPS radio (e.g. Virgin Radio) and the Spotify sidecar's
 The stream proxy mitigates this for radio: when the local clock is
 implausibly old it still verifies the certificate chain to the system roots
 and the hostname, but relaxes the time-validity window (see
-`clockTolerantTLS` in `internal/streamproxy/streamproxy.go`). Verification
+`clockTolerantTLSConfig` in `internal/streamproxy/tlsclock.go`). Verification
 tightens again automatically once the clock is corrected. The agent
 additionally corrects an implausibly old clock at start and keeps retrying
 from an HTTP Date header until a sane time is set

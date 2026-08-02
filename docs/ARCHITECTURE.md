@@ -66,7 +66,7 @@ recall, and the smart-home webhooks all run on the LAN.
 |---|---|---|---|
 | **Stick agent** | `cmd/agent/`, `internal/` | Go binary on the speaker NAND, started by `/mnt/nv/streborn/run-override.sh` from Bose `rc.local` | Emulates the Bose cloud (marge, BMX), proxies radio streams (incl. HLS conversion), owns the preset store, announces over mDNS, hooks the speaker's WebSocket bus to re-enable hardware preset buttons, manages multiroom zones (NAND `zones.json`, auto-reform), and fires user-configured webhooks on box events (NAND `webhooks.json`). On whitelisted chassis it also installs the iptables PREROUTING REDIRECTs that make it LAN-reachable, and serves the `:17002` BatteryMonitor fallback on the Portable. |
 | **Spotify plane (beta)** | `internal/spotify/`, `go-librespot` binary on NAND | go-librespot runs as a Spotify Connect receiver, supervised by the agent's `spotify.Manager` | Spotify Connect on the speaker without the Bose cloud. go-librespot decodes nothing: with the fork's `audio_output_pipe_passthrough` it writes the raw Ogg/Vorbis bitstream to a pipe; the agent serves it at `/spotify/stream.ogg` on :8888 and points the box's UPnP renderer there. Preset recall drives go-librespot's local play API (no token plane). Multi-account is done by swapping credentials + restarting go-librespot (fragile, see fork issue #1). |
-| **Desktop app** | `desktop-app/` | Wails app (Go backend + Vite frontend), built for Windows, macOS, Linux | Discovers agents over mDNS, talks to them by REST, ships a UI for radio search (app-side, direct to radio-browser.info), presets, playback (with the live now-playing track + bitrate), a DLNA media library, Spotify Connect (beta), multiroom (beta), settings, webhooks (smart-home triggers), diagnostics export, OTA agent updates, USB stick provisioning, and box maintenance (true factory reset, uninstall STR, setup-AP Wi-Fi push). |
+| **Desktop app** | `desktop-app/` | Wails app (Go backend + Vite frontend), built for Windows, macOS, Linux | Discovers agents over mDNS, talks to them by REST, ships a UI for radio search (app-side, direct to radio-browser.info), presets, playback (with the live now-playing track + bitrate), a DLNA media library, Spotify Connect (beta), multiroom (beta), settings, webhooks (smart-home triggers), diagnostics export, OTA agent updates, network first-install (stick-free `:17000` unlock, USB stick as fallback), and box maintenance (true factory reset, uninstall STR, setup-AP Wi-Fi push). |
 | **Local library (DLNA)** | `dlna/` (top level so Wails can import it) | Imported by the desktop app | SSDP discovery + ContentDirectory browse of LAN media servers (FRITZ!Box, Synology, Plex, miniDLNA). The app saves a track's stream URL as a normal preset; the box pulls it via the streamproxy. |
 | **Multiroom (beta)** | `internal/zones/`, `internal/boxapi` zone primitives | Agent endpoints `/api/box/zone` + `/api/box/group` | Groups speakers via the box's native `/setZone` (firmware-synced) or a per-agent mirror fallback, plus stereo pairs. Membership persists in `/mnt/nv/streborn/zones.json` and auto-reforms after reboot/standby/Wi-Fi outage. |
 | **Setup wizard** | `sticksetup/`, `cmd/winformat/` (in-app); `setup/` (legacy PowerShell) | Embedded in the desktop app; `winformat.exe` handles FAT32 formatting | Prepares a FAT32 USB stick with Wi-Fi credentials, region, friendly name, language, and the bootstrap shell scripts, then drives the install over SSH. The standalone PowerShell wizard in `setup/` is legacy. |
@@ -99,16 +99,16 @@ ioBroker, Node-RED, or any HTTP endpoint on the LAN.
 |---|---|---|
 | Stick agent language | Go 1.25+ (module `github.com/JRpersonal/streborn`) | Static single binary cross-compiles to `linux/arm/v7` from any host. No runtime on the speaker beyond BusyBox. |
 | Desktop backend | Go via Wails v2 (`github.com/wailsapp/wails/v2`); own module, imports the shared top-level packages `discovery/`, `dlna/`, `radiobrowser/`, `sticksetup/`, `wifiprofiles/` | Same language as the agent. Go forbids importing the agent module's `internal/`, which is why the shared packages are top-level. |
-| Desktop frontend | Vite 6 + vanilla JS (no framework), i18n layer with 11 locales (EN, DE, ES, FR, JA, LT, LV, NL, PL, TR, UK) | Keeps the binary small and the build chain dependency-light. No React/Vue tax for the UI. |
+| Desktop frontend | Vite 8 + vanilla JS (no framework), i18n layer with 12 locales (EN, DE, ES, FR, JA, LT, LV, NL, PL, TR, UK, AR), including right-to-left layout for Arabic | Keeps the binary small and the build chain dependency-light. No React/Vue tax for the UI. |
 | mDNS | `github.com/grandcat/zeroconf` | Pure Go, dual stack, works on all three desktop OSes and on the speaker. |
 | WebSocket | `github.com/gorilla/websocket` | Reuses the gabbo subprotocol the Bose firmware expects on `:8080`. |
 | Radio source | `radio-browser.info` HTTP API | Free, no key, community-maintained. Replaces the dead Bose TuneIn integration. The stream proxy also reads the live ICY `StreamTitle` so the app can show the current track. |
 | Spotify | `go-librespot` (fork `JRpersonal/go-librespot`, Ogg passthrough patch) | Open-source Spotify Connect client in Go. Passthrough avoids decoding on the weak ARM CPU: the raw Ogg/Vorbis is handed straight to the box, which decodes it. The passthrough patch is offered upstream as `devgianlu/go-librespot` PR #316. |
 | Setup wizard host script | PowerShell 5.1 on Windows | Ships with every Windows; no Python install required for the user. |
 | FAT32 helper | Custom Go tool (`cmd/winformat`) | Avoids elevation prompts and shell quoting around `diskutil` / `format`. |
-| Distribution | Portable `.exe` + `.zip` (Windows), `.dmg` via `hdiutil` (macOS), `.tar.gz` with a per-user `install.sh` (Linux) | No installer framework; code signing is deferred on cost (#72), so the Verify page documents the SmartScreen/Gatekeeper click-paths instead. |
+| Distribution | Portable `.exe` + `.zip` (Windows), `.dmg` via `hdiutil` (macOS), `.tar.gz` with a per-user `install.sh` (Linux) | No installer framework. The Windows build is code-signed with a Certum "Open Source" certificate in a dedicated `sign-windows` release job; macOS notarization is still deferred, so the Verify page documents the Gatekeeper click-path. |
 | CI | GitHub Actions, all actions SHA-pinned | Build provenance via Sigstore (`actions/attest-build-provenance`). |
-| Verification | SHA256 + Sigstore today; code signing deferred on cost (see #72) | Verify page documents the click-paths through SmartScreen and Gatekeeper. |
+| Verification | SHA256 + Sigstore attestations, plus a Certum code signature on the Windows build | Signed Windows builds show a verified publisher; the Verify page still documents the Gatekeeper click-path for the unnotarized macOS build. |
 
 ## Network ports
 
@@ -132,7 +132,7 @@ firmware ports are stock. External reachability splits by chassis:
 
 | Port | Listener | Role | LAN reachable |
 |---|---|---|---|
-| 22 | sshd (Bose, started by STR) | **Pre-1.0: open on every boot.** `run.sh` (`ensure_sshd_running`) starts sshd unconditionally and deliberately never stops it, so diagnostics and SSH repair work even when the agent is down. Becomes opt-in via a stick marker as part of the v1.0 hardening (see `THREAT-MODEL.md`). | LAN |
+| 22 | sshd (Bose, started by STR) | **Opt-in.** `run.sh` (`ensure_sshd_running`) force-starts sshd only when the NAND marker `/mnt/nv/streborn/enable-ssh` is present. Otherwise SSH follows Bose's own gate: open while an STR stick with `remote_services` is inserted, closed on a stickless steady-state boot. The trade-off is that SSH diagnostics and the SSH-OTA fallback need the stick plugged back in (see `THREAT-MODEL.md`). | LAN (only while enabled) |
 | 80 | _(nobody , firmware OUTBOUND)_ | **Not a listener.** This is the firmware's **outbound** HTTP cloud call (to `streaming.bose.com`). iptables NAT-redirects it to STR's :9080; **STR never binds :80** and the firmware does not listen on it. Listed only because STR claims this outbound traffic. | outbound (firmware) -> redirected to :9080 |
 | 443 | STR marge HTTPS | TLS cloud-stub for `streaming.bose.com` after the Hosts redirect. | loopback (firmware) |
 | 3678 | go-librespot local API (started by STR) | The agent's `spotify.Manager` drives playback here (`/player/play`, shuffle, next, volume) and reads track events. | loopback |
@@ -144,6 +144,7 @@ firmware ports are stock. External reachability splits by chassis:
 | 8443 | STR marge HTTPS (alt) | Same handler as :443; used when :443 cannot be claimed. | sm2: direct (INPUT ACCEPT) / whitelisted chassis: loopback |
 | 8888 | STR webui + streamproxy | `/api/*` for the desktop app, the `/stream/<slot>` radio reverse proxy that survives CDN token expiry, and `/spotify/stream.ogg` (the raw Ogg the box pulls for Spotify). HLS playlists are converted to one continuous ADTS/MP3 stream; `/api/stream-status` reports upstream failures. | sm2: direct (INPUT ACCEPT) / whitelisted chassis: via :17008 REDIRECT |
 | 9080 | STR marge HTTP | Plain-text marge target after the firmware's outbound :80 is NAT-redirected. | sm2: direct (INPUT ACCEPT) / whitelisted chassis: loopback |
+| 17000 | TAP command shell (Bose) | Stock telnet-style diagnostic shell (`envswitch`, `sys configuration`, `sys reboot`). The desktop app drives it for the stick-free SSH unlock during a network install and for uninstall/repair (`desktop-app/telnet_enable_ssh.go`, `internal/boxcli`). STR does not bind it. | LAN |
 | 17002 | STR BatteryMonitor fallback | **Portable only.** Bound when the Bose `BatteryMonitor` service is wedged, so BoseApp's battery client connects instead of connect-storming a dead port. This is the ~27 min reboot fix (v0.6.18); see [`FIRMWARE-NOTES.md`](./FIRMWARE-NOTES.md). | loopback (firmware) |
 | 17008 | SoftwareUpdate (Bose) | On whitelisted chassis (taigan, spotty, scm) this is STR's external entry point: the PREROUTING REDIRECT sends external :17008 to loopback :8888, which is how the desktop app reaches the agent. | external entry (whitelisted chassis) |
 | 40020 | scmmond (Bose) | System-control / battery-MCU manager that feeds `BatteryMonitor`. STR does not bind it. | internal |
@@ -176,7 +177,7 @@ sequenceDiagram
   Agent->>Net: Announce _streborn._tcp.local<br/>TXT: deviceID, model, version, name
   App->>Net: Browse _streborn._tcp.local
   Net-->>App: Service records
-  App->>App: Deduplicate + classify str/stock<br/>(desktop-app/app.go)
+  App->>App: Deduplicate + classify str/stock<br/>(desktop-app/app_discovery.go)
   App->>Agent: GET /api/status (over LAN)
   Agent-->>App: XML now_playing (proxied from the box :8090, cached)
   Note over App,Agent: presets and agent version are separate calls<br/>(/api/presets, /api/agent/version)
@@ -351,9 +352,12 @@ sequenceDiagram
   Note over Box: From now on /mnt/nv/rc.local -> run-override.sh<br/>starts the agent on every boot. No stick needed.
 ```
 
-The first install needs the SSH channel that Bose opens only while the
-box boots with a `remote_services` stick inserted: that is the only way
-to run the first command (`install.sh`) on a factory box and seed
+The first install needs a shell on the box. The app opens one
+stick-free over the Bose `:17000` TAP shell (`envswitch boseurls` /
+`accountid` injection, see `desktop-app/telnet_enable_ssh.go`) and then
+runs the install over SSH. Where that unlock does not take, the
+fallback is the SSH channel Bose opens while the box boots with a
+`remote_services` stick inserted, which runs `install.sh` and seeds
 `/mnt/nv/rc.local`. From the second boot on, Bose's own init runs the
 NAND `rc.local` and no SSH is involved. Moving the first install off SSH
 is evaluated in
@@ -523,15 +527,15 @@ configuration plus the agent binary that gets copied into NAND.
 | You want to... | Read this |
 |---|---|
 | ...trace a hardware button press end to end | `internal/boxws/boxws.go`, then `internal/upnp/upnp.go` |
-| ...understand the marge cloud emulation | `internal/marge/marge.go` + `templates.go`; check the spy log on `:9080/__spy/log` (same handler on the marge TLS port; the BMX stub on `:8081` serves `/healthz` only) |
+| ...understand the marge cloud emulation | `internal/marge/` (`routes.go` for the route table, `responses.go` + `templates.go` for the stub bodies, `group.go` for multiroom, `spy.go` for the spy log); check the spy log on `:9080/__spy/log` (same handler on the marge TLS port; the BMX stub on `:8081` serves `/healthz` only) |
 | ...see how presets are stored | `internal/presets/presets.go` |
-| ...follow a Spotify recall (play, shuffle, multi-account, Ogg serve) | `internal/spotify/manager.go`; the recall hook is in `cmd/agent/main.go` (`playSpotifyPreset`, `verifySpotifyPlaying`) |
+| ...follow a Spotify recall (play, shuffle, multi-account, Ogg serve) | `internal/spotify/` (`manager.go` supervision, `recall.go` play/shuffle, `accounts.go` multi-account, `serve.go` + `ogg.go` the stream); the recall hook is in `cmd/agent/wshandler.go` (`playSpotifyPreset`, `verifySpotifyPlaying`) |
 | ...trace the radio stream proxy + ICY title | `internal/streamproxy/streamproxy.go` (HLS conversion: `hls.go` + `mpegts.go`) |
 | ...follow the desktop-app boot | `desktop-app/main.go`, then `desktop-app/frontend/src/main.js` |
 | ...inspect the stick boot sequence | `usb-stick/rc.local`, `usb-stick/run.sh`, `usb-stick/install.sh` |
 | ...understand discovery semantics | `discovery/` (top level so Wails can import it) |
 | ...follow the app-side radio search | `desktop-app/radio.go` -> `radiobrowser/` |
-| ...browse the DLNA library | `dlna/dlna.go`, App methods in `desktop-app/app.go` |
+| ...browse the DLNA library | `dlna/dlna.go`, App methods in `desktop-app/app_library.go` |
 | ...trace multiroom zones | `internal/zones/zones.go`, `/api/box/zone` in `internal/webui` |
 | ...check the release pipeline | `.github/workflows/release.yml`, `Makefile` (`wails-build`, `agent-embed`) |
 

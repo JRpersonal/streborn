@@ -46,11 +46,10 @@ extra Wails toolchain dependencies.
 git clone https://github.com/JRpersonal/streborn.git
 cd streborn
 
-# Sanity check (Linux). On Windows/macOS hosts the agent's Linux-only
-# syscalls make `go build ./...` fail in internal/webui; cross-compile
-# instead (GOOS=linux GOARCH=arm GOARM=5 go build ./... or make build-arm)
-# and run go test on the packages that build on your host. GOARM=5
-# (softfloat) is intentional: some early SoundTouch CPUs lack working
+# Sanity check. Both modules build natively on Linux, macOS, and Windows
+# (Linux-only syscalls sit behind build tags). The speaker binary is still
+# a cross-compile: GOOS=linux GOARCH=arm GOARM=5, or just `make build-arm`.
+# GOARM=5 (softfloat) is intentional: some early SoundTouch CPUs lack working
 # VFP and a hardware-float agent SIGILLs at startup (issue #302).
 go build ./...
 go test ./...
@@ -107,6 +106,10 @@ the desktop app falls back to a configured external path.
   - Use a non-user-facing type (`chore`, `ci`, `build`, `test`,
     `refactor`, `docs`, `style`) for work that should NOT appear in the
     notes; those are dropped from the changelog automatically.
+  - If one squashed commit ships several user-visible changes, name the
+    extras as `Release-Note: type(scope): summary` trailers in the
+    commit body; each trailer is parsed like a subject and lands in the
+    notes.
 
   See [`docs/RELEASE-NOTES.md`](docs/RELEASE-NOTES.md) for the full
   pipeline.
@@ -117,9 +120,8 @@ the desktop app falls back to a configured external path.
 
 Tick these in your PR description:
 
-- [ ] `go vet ./...` and `go test ./...` pass locally (on
-      Windows/macOS: for the packages that build on your host, plus
-      the ARM cross-compile).
+- [ ] `go vet ./...` and `go test ./...` pass locally, and
+      `make build-arm` cross-compiles cleanly.
 - [ ] If the change touches the stick agent, I have either tested
       on real hardware or noted in the PR that I have not.
 - [ ] No personal data, real LAN IPs, MAC addresses, or device

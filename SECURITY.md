@@ -35,13 +35,13 @@ credited unless they prefer to stay anonymous.
 
 ## Threat Model
 
-STR (SoundTouch Reborn) installs a small agent onto a Bose SoundTouch speaker via a USB stick that is used for the initial install. After the install, the agent runs from the speaker's own persistent storage and the stick can be removed. It also ships a desktop application and a website.
+STR (SoundTouch Reborn) installs a small agent onto a Bose SoundTouch speaker, normally over the network from the desktop app; a USB stick serves as the fallback and recovery install path. After the install, the agent runs from the speaker's own persistent storage. It also ships a desktop application and a website.
 
 Critical trust boundaries:
 
 1. **Binary release** users download to their machine
 2. **Code that runs on the speaker** with root privileges
-3. **TLS certificate authority** that the stick installs in the speaker's trust store
+3. **TLS certificate authority** that the agent installs in the speaker's trust store
 4. **GitHub repository** and its build artifacts
 5. **Website** that hosts download links and donation channels
 
@@ -129,8 +129,8 @@ The full breakdown is in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry
 
 ## Known Limitations
 
-- **Pre-1.0 SSH posture (hardening pending):** the agent keeps the speaker's SSH service running on every boot so diagnostics and repair work even when the agent is down; the firmware root account uses a well-known default with no password. Any LAN device can reach a root shell on the speaker while it is powered. Planned v1.0 hardening makes SSH opt-in via a stick marker. Until then, run the speaker on a trusted network or its own VLAN.
-- Windows installers are currently **not code signed** with an EV certificate. Windows SmartScreen may warn on first download. Plans exist to acquire an EV code signing certificate once donations cover the annual cost.
+- **SSH follows the USB stick:** the firmware root account uses a well-known default with no password, so STR keeps SSH opt-in. SSH is only started while the STR stick is inserted (Bose's `remote_services` marker) and closes again on the next stickless reboot; the agent no longer keeps it open on every boot. A persistent opt-in marker (`/mnt/nv/streborn/enable-ssh`) exists for maintainers and is flagged in the desktop app. While SSH is open, run the speaker on a trusted network or its own VLAN.
+- Windows releases are **code signed** with a Certum Open Source code signing certificate (since v0.9.20), so SmartScreen shows a verified publisher. SHA256 sums and Sigstore attestations additionally cover every release artifact.
 - macOS builds are **not notarized** yet. Same reason.
 - The desktop app does not implement application sandboxing. Future versions may use OS provided sandboxing.
 

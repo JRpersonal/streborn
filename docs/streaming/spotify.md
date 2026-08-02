@@ -1,6 +1,10 @@
 # Spotify Connect: integration spike
 
-Status: spike / design. Tracks #78. No code shipped yet.
+Status: shipped. Spotify Connect went live as a beta in v0.7.0 and has been
+hardened through the v0.9.x line (go-librespot sidecar, see the decision
+update below); #78 carries the history. The rest of this document is the
+spike trail plus the shipping notes, kept for the reasoning behind the
+architecture.
 
 ## TL;DR (updated after live testing)
 

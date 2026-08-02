@@ -24,6 +24,15 @@ user-facing commit types: `feat` -> New features, `fix` -> Fixes,
 Noise (`chore`, `ci`, `build`, `test`, `style`, `refactor`, `docs`) is
 dropped so the reader sees only what tells them whether to upgrade.
 
+Commit bodies can extend or retract the list. A
+`Release-Note: type(scope): summary` trailer anywhere in a body adds an
+extra entry, parsed exactly like a subject (useful when a squash merge
+collapses several user-visible changes into one subject; the carrier
+commit's own type may be non-user-facing). A
+`Release-Note-Drop: <summary>` trailer withdraws a previously announced
+entry by its rendered summary, case-insensitively, for work that changed
+course before the release went out.
+
 The release workflow (`.github/workflows/release.yml`) runs it in the
 `release` job:
 
@@ -119,7 +128,7 @@ The website is already notified on each release via
 
 ## What the desktop app already does (this repo)
 
-- `CheckAppUpdate` (desktop-app/app.go) forwards the endpoint's full JSON
+- `CheckAppUpdate` (desktop-app/app_appinfo.go) forwards the endpoint's full JSON
   to the frontend (including `notesUrl` when present).
 - The update banner (desktop-app/frontend/src/main.js, `checkAppUpdate`)
   is kept discreet: version plus a single "What's new" link to the
