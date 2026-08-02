@@ -44,6 +44,16 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	// AddDevice sync: /streaming/account/<accountId>/device/ POST
 	// The box calls this after POST /setMargeAccount on the box itself.
 	// The response must be adddeviceresponse XML with a margetoken element.
+	// The box's own source-account registration. Must sit BEFORE the generic
+	// /streaming/account case, which used to swallow it with a bare ack so no
+	// source account was ever confirmed (see respondAddSource).
+	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/source") && r.Method == http.MethodPost:
+		s.respondAddSource(w, r)
+
+	// The list the box fetches right after its addSource was confirmed.
+	case strings.HasPrefix(path, "/streaming/account/") && strings.HasSuffix(strings.TrimSuffix(path, "/"), "/sources"):
+		s.respondAccountSources(w, r)
+
 	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/device") && r.Method == http.MethodPost:
 		s.respondAddDevice(w, r)
 		return

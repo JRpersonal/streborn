@@ -4,6 +4,7 @@ package marge
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -148,6 +149,19 @@ func (s *Server) respondAddDevice(w http.ResponseWriter, r *http.Request) {
 	//   </device>
 	// margetoken is an optional string, so an attribute.
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	// The association handshake is header-driven, not only body-driven: the
+	// firmware reads the token from a Credentials header and identifies the
+	// answered call from METHOD_NAME, the way the real cloud replied. Sending
+	// the token ONLY inside the XML (what STR did until now) can leave the
+	// MargeClient short of a completed association, and every later
+	// setMargeAccount then starts a fresh onboarding instead of re-affirming
+	// the existing one - which is exactly the source bounce and self-off that
+	// made STR remove its login maintenance (see project_selfoff_login_
+	// maintenance). Additive: the body stays byte-identical, so a firmware
+	// that only reads the XML is unaffected.
+	w.Header().Set("Credentials", "Bearer "+token)
+	w.Header().Set("METHOD_NAME", "addDevice")
+	w.Header().Set("Location", r.URL.Path)
 
 	status := http.StatusOK
 	if strings.Contains(format, "201") {
@@ -409,4 +423,91 @@ func (s *Server) respondConfigStatus(w http.ResponseWriter) {
 	} else {
 		_, _ = w.Write([]byte(SoundTouchNotConfiguredXML))
 	}
+}
+
+// respondAddSource answers the box's OWN source-account registration callback,
+// POST /streaming/account/<accountId>/source.
+//
+// This is the step that decides whether a preset may be activated by the box
+// itself. The firmware posts the account it wants for a source
+// (<username>UUID/0</username>) and only marks that source READY once the
+// cloud confirms it; from then on its own /select of a ContentItem carrying
+// that sourceAccount is legal. STR answered this path through the generic
+// catchall with {"status":"ok"}, so no source account was ever confirmed -
+// which is why STR's presets carry the pseudo-account "UPnPUserName" that
+// appears in no source list, and why the box answers its own preset
+// activation with 1036 UNABLE_TO_PROCESS_NOT_LOGGED_IN: not "this box is
+// signed out" but "this preset's account is not a registered source".
+//
+// The reply mirrors the addDevice shape: 201, the METHOD_NAME header naming
+// the answered call, an ETag, and a <source> element echoing the username the
+// box asked for.
+func (s *Server) respondAddSource(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 8*1024))
+	username := firstXMLValue(string(body), "username")
+	providerID := firstXMLValue(string(body), "sourceproviderid")
+	s.logger.Info("addSource callback answered", slog.String("comp", "marge"),
+		slog.String("path", r.URL.Path), slog.String("username", username),
+		slog.String("askedProvider", providerID))
+	s.mu.Lock()
+	s.registered = append(s.registered, registeredSource{
+		ID: "1", Username: username, ProviderID: "7",
+		Name: "Stored Music", SourceName: "STORED_MUSIC",
+	})
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	w.Header().Set("METHOD_NAME", "addSource")
+	w.Header().Set("ETag", `"str-source-1"`)
+	w.Header().Set("Location", r.URL.Path)
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>` +
+		`<source id="1" type="Audio"><credential type="" text=""/>` +
+		`<name>Stored Music</name><username>` + xmlEscapeText(username) + `</username>` +
+		`<sourceproviderid>7</sourceproviderid><sourcename>STORED_MUSIC</sourcename></source>`))
+}
+
+// firstXMLValue pulls the text of the first <tag>...</tag> out of a body
+// without a full parse (the firmware's XML is tiny and hand-rolled).
+func firstXMLValue(body, tag string) string {
+	open, close := "<"+tag+">", "</"+tag+">"
+	i := strings.Index(body, open)
+	if i < 0 {
+		return ""
+	}
+	rest := body[i+len(open):]
+	j := strings.Index(rest, close)
+	if j < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:j])
+}
+
+// respondAccountSources answers GET /streaming/account/<accountId>/sources,
+// the list the box fetches right AFTER its addSource callback was confirmed.
+//
+// Measured on an ST10 (2026-08-02): POST .../source is followed within 600 ms
+// by GET .../sources. Until now that landed in the generic account catchall,
+// so the box got no list back and never promoted the account it had just
+// registered to READY - the last missing link in the chain that makes a
+// preset's sourceAccount a real, activatable account.
+//
+// Sources registered through addSource are remembered in memory per account
+// so this list can name them; a reboot re-runs the registration.
+func (s *Server) respondAccountSources(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	regs := make([]registeredSource, len(s.registered))
+	copy(regs, s.registered)
+	s.mu.RUnlock()
+	var b strings.Builder
+	for _, r := range regs {
+		b.WriteString(`<source id="` + xmlEscapeText(r.ID) + `" type="Audio" status="READY">` +
+			`<credential type="" text=""/><name>` + xmlEscapeText(r.Name) + `</name>` +
+			`<username>` + xmlEscapeText(r.Username) + `</username>` +
+			`<sourceproviderid>` + xmlEscapeText(r.ProviderID) + `</sourceproviderid>` +
+			`<sourcename>` + xmlEscapeText(r.SourceName) + `</sourcename></source>`)
+	}
+	s.logger.Info("account sources list served", slog.String("comp", "marge"), slog.Int("count", len(regs)))
+	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?><sources>` + b.String() + `</sources>`))
 }
