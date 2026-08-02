@@ -80,6 +80,10 @@ type Server struct {
 	// so a restored record can describe a pair that no longer exists; the
 	// agent clears it when the firmware reports no group after startup.
 	groupRestored bool
+
+	// registered holds the source accounts the box registered through its
+	// addSource callback this run (see respondAddSource).
+	registered []registeredSource
 }
 
 // SpyEntry is a single logged HTTP request.
@@ -224,4 +228,10 @@ func (s *Server) SetPresets(p []Preset) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.presets = p
+}
+
+// registeredSource is one source account the box registered via its addSource
+// callback, kept so the follow-up GET .../sources can list it back.
+type registeredSource struct {
+	ID, Username, ProviderID, Name, SourceName string
 }
