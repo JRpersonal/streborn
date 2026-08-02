@@ -74,6 +74,10 @@ type Server struct {
 	group          *groupRecord
 	groupCanonical bool
 	groupPath      string
+	// deviceIDPath persists the device id the box confirmed about itself, so
+	// the first account request of the next boot is already answered with it
+	// rather than with the interface-MAC guess. See deviceid_persist.go.
+	deviceIDPath string
 	// groupRestored marks a record restored from NAND that no live signal has
 	// confirmed yet (no firmware post, no canonical install this run). A Bose
 	// factory reset wipes the firmware's own pairing but not /mnt/nv/streborn,
@@ -120,12 +124,15 @@ func (s *Server) SetDeviceID(id string) bool {
 		return false
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.deviceID == id {
-		return false
-	}
+	changed := s.deviceID != id
 	s.deviceID = id
-	return true
+	s.mu.Unlock()
+	if changed {
+		// Only on an actual change: this is a NAND write, and a speaker's
+		// standby countdown restarts on every write to it.
+		s.persistDeviceID(id)
+	}
+	return changed
 }
 
 // DeviceID returns the id currently used in responses.
@@ -212,6 +219,10 @@ func New(logger *slog.Logger, opts ...Option) *Server {
 		opt(s)
 	}
 	s.loadGroup()
+	// After the options, so a previously confirmed id supersedes the MAC guess
+	// passed via WithDeviceID, and before the listener binds, so the first
+	// request of this boot is already answered with it.
+	s.loadDeviceID()
 	return s
 }
 

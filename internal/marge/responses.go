@@ -187,9 +187,19 @@ func deviceIDFromAddDeviceBody(r *http.Request) string {
 	if err := xml.Unmarshal(body, &doc); err != nil {
 		return ""
 	}
-	id := strings.ToUpper(strings.TrimSpace(doc.DeviceID))
-	// Guard against a placeholder or an obviously malformed value: the id is a
-	// 12-char MAC in hex with no separators.
+	return ValidDeviceID(doc.DeviceID)
+}
+
+// ValidDeviceID normalises a box-stated device id and rejects anything that is
+// not one: uppercase, 12 characters, hex only, no separators. Returns "" for an
+// unusable value, so a caller can simply keep whatever it already had.
+//
+// Worth validating rather than trusting: a wrong id here is not a cosmetic
+// defect, it makes the firmware discard the entire account payload and take the
+// hardware preset buttons down with it, and a malformed value would be far
+// harder to spot afterwards than a rejected one.
+func ValidDeviceID(raw string) string {
+	id := strings.ToUpper(strings.TrimSpace(raw))
 	if len(id) != 12 {
 		return ""
 	}

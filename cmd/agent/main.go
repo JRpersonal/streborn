@@ -328,6 +328,7 @@ func run() error {
 		// fallback after a restart is what invited the firmware to re-create
 		// the record from its own point of view).
 		marge.WithGroupPath("/mnt/nv/streborn/marge-group.json"),
+		marge.WithDeviceIDPath("/mnt/nv/streborn/deviceid"),
 		// The box re-reads its cloud presets from marge during every
 		// setMargeAccount re-onboarding. Answering with an empty <presets/>
 		// made the firmware WIPE its own hardware-key registrations after

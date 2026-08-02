@@ -4,6 +4,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -73,6 +75,39 @@ func TestDeviceIDFromAddDeviceBody(t *testing.T) {
 				t.Fatalf("body was consumed: got %q, want %q", rest, tc.body)
 			}
 		})
+	}
+}
+
+// A confirmed id must survive a restart, or every boot re-opens the window in
+// which the account names an id the box does not recognise.
+func TestDeviceIDPersistsAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "deviceid")
+
+	first := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithDeviceID("10CEA9E8CF31"), WithDeviceIDPath(path))
+	first.SetDeviceID("94E36DF9CE40")
+
+	// A fresh server with the same wrong guess must come up with the stored id.
+	second := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithDeviceID("10CEA9E8CF31"), WithDeviceIDPath(path))
+	if got := second.DeviceID(); got != "94E36DF9CE40" {
+		t.Fatalf("after restart DeviceID() = %q, want the confirmed id", got)
+	}
+
+	// A corrupt file must not strand the agent: the guess has to survive.
+	if err := os.WriteFile(path, []byte("nonsense"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	third := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithDeviceID("10CEA9E8CF31"), WithDeviceIDPath(path))
+	if got := third.DeviceID(); got != "10CEA9E8CF31" {
+		t.Fatalf("a corrupt stored id must fall back to the guess, got %q", got)
+	}
+
+	// No path configured must not panic or write anywhere.
+	plain := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("10CEA9E8CF31"))
+	if !plain.SetDeviceID("94E36DF9CE40") {
+		t.Fatal("SetDeviceID must still work without persistence")
 	}
 }
 

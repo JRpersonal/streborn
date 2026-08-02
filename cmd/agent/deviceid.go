@@ -45,15 +45,18 @@ func correctDeviceIDFromBox(ctx context.Context, m *marge.Server, boxHost string
 		c, cancel := context.WithTimeout(ctx, 5*time.Second)
 		info, err := client.GetInfo(c)
 		cancel()
-		if err == nil && info.DeviceID != "" {
-			if m.SetDeviceID(info.DeviceID) {
+		// Validate rather than trust: boxapi only trims the attribute, and a
+		// malformed id would be written straight into the account payload,
+		// where it fails exactly like the wrong one it was meant to replace.
+		if id := marge.ValidDeviceID(info.DeviceID); err == nil && id != "" {
+			if m.SetDeviceID(id) {
 				// WARN, not INFO: this is the moment a speaker's emulated
 				// account becomes valid for it, and a diagnostic bundle needs
 				// to show whether it happened and how long it took.
 				logger.Warn("marge: corrected the deviceID from the box itself (the startup guess named a different network interface)",
-					"deviceID", info.DeviceID, "afterAttempts", i+1)
+					"deviceID", id, "afterAttempts", i+1)
 			} else {
-				logger.Info("marge: the box confirms the deviceID the agent already used", "deviceID", info.DeviceID)
+				logger.Info("marge: the box confirms the deviceID the agent already used", "deviceID", id)
 			}
 			return
 		}
