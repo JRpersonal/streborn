@@ -341,8 +341,15 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 // resyncSafeSource reports whether a preset re-sync may run while the box is
 // on this source. AddPreset names UPNP and the firmware activates that source
 // on the write, so a re-sync is only safe when the box is idle or already on
-// STR's own source. Anything the user picked (Bluetooth, AUX, the box's own
-// Spotify, a Wave's tuner) would be yanked away mid-listen.
+// STR's own source. Anything the user picked would be yanked away mid-listen.
+//
+// Deliberately an ALLOWLIST, never a list of sources to avoid: the input
+// sources are named differently per model and we do not know them all. A
+// CineMate reports its TV input as LOCAL where an ST10 says AUX, an SA-5
+// answers AUX with sourceAccount AUX1..AUX3, and the Wave's tuner sources are
+// invisible to STR entirely. With an allowlist an unknown name is treated as
+// "the user chose this", which costs at most one deferred key refresh; a
+// denylist would silently interrupt every model whose source name we forgot.
 func resyncSafeSource(src string) bool {
 	switch src {
 	case "UPNP", "INVALID_SOURCE":
