@@ -50,6 +50,7 @@ func (s *Server) respondBmxRegistry(w http.ResponseWriter, _ *http.Request) {
     {"name": "marge", "url": "https://streaming.bose.com", "version": "v1", "askAgainAfter": 3600},
     {"name": "TUNEIN", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
     {"name": "INTERNET_RADIO", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
+    {"name": "LOCAL_INTERNET_RADIO", "url": "https://content.api.bose.io", "baseURL": "https://content.api.bose.io", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
     {"name": "IHEART", "url": "https://api2.iheart.com", "baseURL": "https://api2.iheart.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
     {"name": "SPOTIFY", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
     {"name": "DEEZER", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600}
@@ -99,7 +100,7 @@ func (s *Server) respondSourceProviders(w http.ResponseWriter, _ *http.Request) 
 	// without response wrapper, since AddDevice wrap201 is only relevant for the
 	// initial pair call.
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="STORED_MUSIC"><name>Stored Music</name></sourceprovider>` + extra.String() + `</sourceProviders>`))
+<sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="LOCAL_INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="STORED_MUSIC"><name>Stored Music</name></sourceprovider>` + extra.String() + `</sourceProviders>`))
 }
 
 // respondAddDevice is the response to the AddDevice sync that the box triggers
@@ -199,16 +200,67 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
 <fullAccount>
   <mode><text>global</text></mode>
-  <sources>
-    <source id="TuneInUser" type="INTERNET_RADIO">
-      <credential type="" text=""/>
-      <name>TuneIn Radio</name>
-      <username>TuneInUser</username>
-      <sourceproviderid>INTERNET_RADIO</sourceproviderid>
-      <sourcename>TuneIn Radio</sourcename>
-    </source>
+  <sources>` + s.radioSourceXML() + `
   </sources>
 </fullAccount>`))
+}
+
+// radioSourceXML renders the native internet-radio source advertised in the
+// account. Its shape is swept on hardware via the same marker file as the
+// reflected-source sweep, because the box today does NOT list INTERNET_RADIO
+// in /sources although we advertise it - and a native radio preset can only
+// activate once the box accepts this source. Values (marker file content or
+// STR_RADIO_SOURCE_FORMAT):
+//
+//	default    - the historical shape (INTERNET_RADIO / TuneInUser)
+//	status     - default + status="READY"
+//	tunein     - source type TUNEIN with a TuneIn account name
+//	tuneinboth - both a TUNEIN and an INTERNET_RADIO source
+//	anon       - INTERNET_RADIO with an anonymous auto-create credential
+//	minimal    - id + type + name only
+//
+// Anything unknown falls back to "default", so a stale marker cannot break a
+// user's box.
+func (s *Server) radioSourceXML() string {
+	src := func(id, typ, name, extraAttr, cred string) string {
+		return "\n    <source id=\"" + id + "\" type=\"" + typ + "\"" + extraAttr + ">" +
+			cred + "<name>" + name + "</name><username>" + id + "</username>" +
+			"<sourceproviderid>" + typ + "</sourceproviderid><sourcename>" + name + "</sourcename></source>"
+	}
+	const emptyCred = "<credential type=\"\" text=\"\"/>"
+	switch s.radioSourceFormat() {
+	case "status":
+		return src("TuneInUser", "INTERNET_RADIO", "TuneIn Radio", " status=\"READY\"", emptyCred)
+	case "tunein":
+		return src("TuneInUserName", "TUNEIN", "TuneIn Radio", " status=\"READY\"", emptyCred)
+	case "tuneinboth":
+		return src("TuneInUserName", "TUNEIN", "TuneIn Radio", " status=\"READY\"", emptyCred) +
+			src("TuneInUser", "INTERNET_RADIO", "Internet Radio", " status=\"READY\"", emptyCred)
+	case "anon":
+		return src("TuneInUser", "INTERNET_RADIO", "TuneIn Radio", " status=\"READY\"",
+			"<credential type=\"ANONYMOUS\" text=\"\"/><anonymousAccount autoCreate=\"true\"/>")
+	case "minimal":
+		return "\n    <source id=\"TuneInUser\" type=\"INTERNET_RADIO\"><name>TuneIn Radio</name>" +
+			"<sourceproviderid>INTERNET_RADIO</sourceproviderid></source>"
+	default:
+		return src("TuneInUser", "INTERNET_RADIO", "TuneIn Radio", "", emptyCred)
+	}
+}
+
+// radioSourceFormat reads the sweep selector: env first (dev), then the NAND
+// marker file (on-box sweeps without a rebuild), else "default".
+func (s *Server) radioSourceFormat() string {
+	if v := strings.TrimSpace(os.Getenv("STR_RADIO_SOURCE_FORMAT")); v != "" {
+		return v
+	}
+	if s.radioFormatPath != "" {
+		if b, err := os.ReadFile(s.radioFormatPath); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				return v
+			}
+		}
+	}
+	return "default"
 }
 
 // reflectedSourcesXML renders the reflected account-linked cloud sources (Deezer

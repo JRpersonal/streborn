@@ -312,6 +312,7 @@ func run() error {
 		marge.WithDeviceID(deviceID),
 		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
 		marge.WithReflectSourceFormatPath("/mnt/nv/streborn/reflect-format"),
+		marge.WithRadioSourceFormatPath("/mnt/nv/streborn/radio-source-format"),
 		// Persist the stereo-pair record so the firmware's group poll keeps
 		// getting the same answer across agent restarts (a "not grouped"
 		// fallback after a restart is what invited the firmware to re-create

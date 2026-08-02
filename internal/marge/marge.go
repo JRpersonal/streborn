@@ -50,6 +50,11 @@ type Server struct {
 	// the Deezer source-revival sweep change the shape with a single file write
 	// and a box re-sync, no env var or launch-script edit. Empty = env var only.
 	reflectFormatPath string
+	// radioFormatPath points at an optional NAND marker file selecting the
+	// shape of the native internet-radio source in the account response, so
+	// the shape the box finally accepts can be swept on real hardware without
+	// rebuilding the agent. Unset/absent keeps the historical shape.
+	radioFormatPath string
 
 	// requestLog stores the last N requests for debug purposes
 	// (accessible via /__spy/log on the same listener).
@@ -136,6 +141,12 @@ func WithReflectSourcesPath(path string) Option {
 // the reflected-source XML shape, for the Deezer source-revival sweep.
 func WithReflectSourceFormatPath(path string) Option {
 	return func(s *Server) { s.reflectFormatPath = path }
+}
+
+// WithRadioSourceFormatPath wires the NAND marker file whose content selects
+// the native internet-radio source shape, for the native-preset sweep.
+func WithRadioSourceFormatPath(path string) Option {
+	return func(s *Server) { s.radioFormatPath = path }
 }
 
 // WithGroupPath wires the file the stereo-pair group record is persisted to,
