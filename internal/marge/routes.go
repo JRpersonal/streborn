@@ -70,6 +70,9 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/streaming/account") || strings.HasPrefix(path, "/streaming/auth"):
 		s.respondMargeAccountFull(w, r)
 		return
+	case strings.Contains(path, "/servicesAvailability"):
+		s.respondBmxAvailability(w, r)
+		return
 	case strings.HasPrefix(path, "/bmx/registry/"):
 		s.respondBmxRegistry(w, r)
 		return

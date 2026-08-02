@@ -1,64 +1,48 @@
 package webui
 
-// Developer escape hatch: point this speaker's cloud emulation at a marge
+// Developer escape hatch: relay this speaker's cloud conversation to a marge
 // stub running on a developer machine.
 //
-// Finding the response shapes the firmware accepts (the account handshake,
-// the source list, ...) is a search, and doing it on the box costs an agent
-// build, an OTA and a reboot per attempt. With this endpoint the box's Bose
-// hostnames resolve to a developer PC instead of 127.0.0.1, so the same
-// search costs a process restart on that PC (see cmd/margelab).
+// Finding the response shapes the firmware accepts (the account handshake, the
+// source list, ...) is a search, and each on-box attempt costs an agent build,
+// an OTA and a reboot. With a lab machine registered here the same search
+// costs a process restart on that machine (see cmd/margelab).
 //
-// Deliberately NOT persisted: the redirect lives in /etc/hosts only until the
-// next boot, when run.sh rewrites the file. A forgotten experiment therefore
-// heals itself, and no user box can be left pointing at a stranger's machine.
-// The target must be a private LAN address, so this cannot redirect a speaker
-// to the internet.
+// The box is unaware: the agent keeps terminating TLS for streaming.bose.com
+// with the CA already in the box's trust store and only forwards the decrypted
+// request. Nothing is exported and nothing is installed on the box.
+//
+// Off by default and never persisted, so a forgotten experiment heals itself
+// on the next boot; the target must be a private LAN address.
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
-
-	"github.com/JRpersonal/streborn/internal/hosts"
 )
 
-// handleMargeLab points the Bose hostnames at a developer machine (POST with
-// {"ip":"192.168.x.y"}) or back at the box itself (empty ip / DELETE).
+// handleMargeLab registers a developer machine to relay the box's cloud
+// conversation to (POST {"target":"192.168.1.5:9080"}), or clears the relay
+// (DELETE, or an empty target).
 func (s *Server) handleMargeLab(w http.ResponseWriter, r *http.Request) {
+	if s.margeForward == nil {
+		http.Error(w, "marge forwarding not wired in this build", http.StatusServiceUnavailable)
+		return
+	}
 	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
 		http.Error(w, "POST or DELETE", http.StatusMethodNotAllowed)
 		return
 	}
-	target := "127.0.0.1"
+	target := ""
 	if r.Method == http.MethodPost {
 		var in struct {
-			IP string `json:"ip"`
+			Target string `json:"target"`
 		}
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in)
-		if in.IP != "" {
-			ip := net.ParseIP(in.IP)
-			if ip == nil || ip.To4() == nil {
-				http.Error(w, "ip must be an IPv4 address", http.StatusBadRequest)
-				return
-			}
-			if !ip.IsPrivate() && !ip.IsLoopback() {
-				http.Error(w, "refusing a non-private target", http.StatusBadRequest)
-				return
-			}
-			target = ip.String()
-		}
+		target = in.Target
 	}
-	entries := hosts.DefaultEntries()
-	for i := range entries {
-		entries[i].IP = target
-	}
-	mgr := hosts.New("/etc/hosts", s.logger)
-	if err := mgr.Apply(entries); err != nil {
-		s.logger.Warn("marge lab: rewriting the hosts file failed", "target", target, "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := s.margeForward(target); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.logger.Warn("marge lab: Bose hostnames now resolve to a developer machine (until the next boot)", "target", target)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "target": target})
 }
