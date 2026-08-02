@@ -19,6 +19,16 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	// If the box does connect there, the request falls into the catchall
 	// default with a generic 200 OK <ack/>.
 
+	// Developer relay (see forward.go): when a lab machine is registered, the
+	// whole conversation goes there and its answer is returned verbatim. The
+	// agent still terminates TLS, so the box is unaware. A failed relay falls
+	// through to the local handlers below.
+	if target := s.forwardTarget(); target != "" {
+		if s.relay(w, r, target) {
+			return
+		}
+	}
+
 	// Real Bose cloud endpoints from captured traffic
 	switch {
 	case strings.HasPrefix(path, "/streaming/support/power_on"):
