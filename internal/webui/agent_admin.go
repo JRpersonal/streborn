@@ -140,6 +140,15 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 			}
 		}
 	}
+	// Silent-refusal latch: the 1036 storm's quiet sibling (the box drops its
+	// source on its own for every recall without ever sending a 1036). Same
+	// remedy, so the desktop app joins it into the storm banner.
+	if active, since := s.RecallRefusal(); active {
+		out["presetRefusal"] = "active"
+		if !since.IsZero() {
+			out["presetRefusalSinceSec"] = strconv.FormatInt(int64(time.Since(since).Seconds()), 10)
+		}
+	}
 	// The foreign (neither STR's nor Bose's) top-level /mnt/nv dirs, names only.
 	// Cheap: one readdir, no recursive sizing, so it is fine on every version
 	// poll. These are leftovers of OTHER SoundTouch mods that eat the NAND the

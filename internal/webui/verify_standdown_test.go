@@ -102,3 +102,61 @@ func TestLoginErrorWindows(t *testing.T) {
 		t.Fatal("an old login error must not suppress wedge accounting")
 	}
 }
+
+// TestSilentRefusalLatch covers the quiet sibling of the 1036 storm: recalls
+// that exhaust while the box dropped its source to STANDBY on its own (no
+// adjacent key press, no 1036). Field case 2026-08-01: two independent ST10s
+// failed every recall this way and the app showed nothing, because the
+// standby read as a user power-off and no 1036 ever fired.
+func TestSilentRefusalLatch(t *testing.T) {
+	disc := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	// User power-off: STANDBY with no non-user drop classified -> ignored.
+	s := &Server{logger: disc}
+	s.noteRecallExhaustedWithSource("STANDBY")
+	if active, _ := s.RecallRefusal(); active {
+		t.Fatal("user power-off must not latch the refusal state")
+	}
+
+	// Box self-drop (classifier stamped non-user): two strikes latch.
+	s.NoteNonUserStandbyDrop()
+	s.noteRecallExhaustedWithSource("STANDBY")
+	if active, _ := s.RecallRefusal(); active {
+		t.Fatal("one silent failure must stay quiet")
+	}
+	s.NoteNonUserStandbyDrop()
+	s.noteRecallExhaustedWithSource("STANDBY")
+	if active, _ := s.RecallRefusal(); !active {
+		t.Fatal("two consecutive silent failures must latch the refusal state")
+	}
+
+	// Observed playback clears it.
+	s.NoteBoxHealthy()
+	if active, _ := s.RecallRefusal(); active {
+		t.Fatal("playback must clear the refusal state")
+	}
+
+	// A recent 1036 attributes the failure to the login: the storm banner owns
+	// that messaging, no refusal strike.
+	s2 := &Server{logger: disc}
+	s2.NoteNonUserStandbyDrop()
+	s2.NoteBoxLoginError()
+	s2.noteRecallExhaustedWithSource("STANDBY")
+	s2.NoteNonUserStandbyDrop()
+	s2.noteRecallExhaustedWithSource("STANDBY")
+	if active, _ := s2.RecallRefusal(); active {
+		t.Fatal("1036-attributed failures must not latch the silent-refusal state")
+	}
+
+	// Recent stream activity absolves: the content failed, not the box.
+	s3 := &Server{logger: disc}
+	now := time.Now()
+	s3.SetStreamActivityFn(func() (time.Time, time.Time) { return now, time.Time{} })
+	s3.NoteNonUserStandbyDrop()
+	s3.noteRecallExhaustedWithSource("STANDBY")
+	s3.NoteNonUserStandbyDrop()
+	s3.noteRecallExhaustedWithSource("STANDBY")
+	if active, _ := s3.RecallRefusal(); active {
+		t.Fatal("recent stream activity must absolve the silent failures")
+	}
+}

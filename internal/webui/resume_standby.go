@@ -895,6 +895,10 @@ func (s *Server) HandleEnterStandby() {
 		return
 	}
 	if recallActive && (!newKeySinceRecall || !keyAdjacentToFlip) && !deliberateStop {
+		// Feed the refusal accounting: this drop is NOT a user power-off, so
+		// an exhausted verify seeing STANDBY must not excuse itself with "the
+		// user switched it off" (silent-refusal family, see wedge.go).
+		s.NoteNonUserStandbyDrop()
 		s.logger.Info("standby bounce: source dropped during the user's own recall with no adjacent new key press, leaving transport and latches alone (#419)")
 		return
 	}

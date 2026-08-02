@@ -117,12 +117,29 @@ func (s *Server) SetStreamActivityFn(fn func() (lastFetch, lastFailure time.Time
 // whether this failure looks like the box (not the station) and counts a
 // strike; the second consecutive strike latches wedged.
 func (s *Server) NoteRecallExhausted() {
-	// A user power-off mid-recall exhausts the verify too; standby is not a
-	// wedge. Read the live state once, best-effort.
+	// Read the live state once, best-effort; the decision lives in
+	// noteRecallExhaustedWithSource so it is testable without a box.
 	npCtx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	np := s.snapshotNowPlaying(npCtx)
 	cancel()
-	if np.Source == "STANDBY" || np.Source == "" {
+	s.noteRecallExhaustedWithSource(np.Source)
+}
+
+func (s *Server) noteRecallExhaustedWithSource(source string) {
+	if source == "" {
+		return
+	}
+	if source == "STANDBY" {
+		// A user power-off mid-recall exhausts the verify too; that standby
+		// is not a wedge. But when HandleEnterStandby just classified the
+		// drop as NOT a user power-off (the #419 mid-recall branch: no
+		// adjacent key press), the standby is the box giving up on its own -
+		// the silent variant of the not-logged-in refusal family, which never
+		// sends a 1036 and therefore never trips the storm banner. Count it
+		// toward its own latch so the app can finally say "restart the
+		// speaker" instead of failing without a word (field: two independent
+		// ST10 reports, 2026-08-01).
+		s.noteSilentRefusalCandidate()
 		return
 	}
 	// A recall that exhausted while the box was rejecting sources as
@@ -175,6 +192,99 @@ func (s *Server) NoteBoxHealthy() {
 	if wasWedged {
 		s.logger.Info("box wedge cleared: playback observed")
 	}
+	s.refusal.mu.Lock()
+	wasRefusing := s.refusal.latched
+	s.refusal.strikes = 0
+	s.refusal.latched = false
+	s.refusal.since = time.Time{}
+	s.refusal.lastNonUserDrop = time.Time{}
+	s.refusal.mu.Unlock()
+	if wasRefusing {
+		s.logger.Info("silent recall refusal cleared: playback observed")
+	}
+}
+
+// refusalState tracks recalls that exhausted while the box dropped its source
+// to STANDBY on its own (no adjacent key press, no 1036): the silent variant
+// of the not-logged-in refusal family. It sneaks past both existing detectors
+// - no 1036 means no storm, and the self-drop to STANDBY made the exhausted
+// verify look like a user power-off - so users saw no message at all while
+// nothing played. The latched state is surfaced on the version envelope next
+// to the 1036 storm and joins the app's storm banner, whose soft-restart
+// button is the right remedy (a plug pull also clears it but poisons the box
+// clock, #419 F4).
+type refusalState struct {
+	mu              sync.Mutex
+	strikes         int
+	latched         bool
+	since           time.Time
+	lastNonUserDrop time.Time
+}
+
+// refusalStrikesToLatch mirrors wedgeStrikesToLatch: two consecutive silent
+// failures latch, a single odd failure stays quiet.
+const refusalStrikesToLatch = 2
+
+// NoteNonUserStandbyDrop records that HandleEnterStandby classified a
+// UPNP->STANDBY drop as NOT a user power-off (#419 mid-recall branch), so an
+// exhausted verify seeing STANDBY can tell "the box gave up on its own" from
+// "the user switched it off".
+func (s *Server) NoteNonUserStandbyDrop() {
+	s.refusal.mu.Lock()
+	s.refusal.lastNonUserDrop = time.Now()
+	s.refusal.mu.Unlock()
+}
+
+func (s *Server) nonUserStandbyDropRecent(window time.Duration) bool {
+	s.refusal.mu.Lock()
+	defer s.refusal.mu.Unlock()
+	return !s.refusal.lastNonUserDrop.IsZero() && time.Since(s.refusal.lastNonUserDrop) < window
+}
+
+// noteSilentRefusalCandidate decides whether an exhausted recall that ended in
+// STANDBY counts toward the silent-refusal latch. Same absolution ladder as
+// the wedge: a user power-off (no non-user drop classified), a recent 1036
+// (the storm banner owns that messaging), or recent stream activity (a content
+// problem, not the box) all keep it quiet.
+func (s *Server) noteSilentRefusalCandidate() {
+	if !s.nonUserStandbyDropRecent(wedgeStrikeWindow) {
+		return
+	}
+	if s.loginErrorRecentWithin(loginErrWedgeSkipWindow) {
+		return
+	}
+	if s.streamActivityFn != nil {
+		fetch, fail := s.streamActivityFn()
+		if (!fetch.IsZero() && time.Since(fetch) < wedgeStrikeWindow) ||
+			(!fail.IsZero() && time.Since(fail) < wedgeStrikeWindow) {
+			return
+		}
+	}
+	s.refusal.mu.Lock()
+	s.refusal.strikes++
+	latch := s.refusal.strikes >= refusalStrikesToLatch && !s.refusal.latched
+	if latch {
+		s.refusal.latched = true
+		s.refusal.since = time.Now()
+	}
+	strikes := s.refusal.strikes
+	s.refusal.mu.Unlock()
+	if latch {
+		// Bundle-forensics marker: this line separates the silent-refusal
+		// family from a wedge and from the 1036 storm in a diagnostic.
+		s.logger.Warn("box refuses recalls silently: source self-drops to STANDBY with no 1036 and no stream fetch; surfacing the restart hint", "strikes", strikes)
+	} else {
+		s.logger.Warn("silent recall refusal suspected (strike recorded)", "strikes", strikes)
+	}
+}
+
+// RecallRefusal reports whether the silent-refusal state is latched, and since
+// when. Surfaced on the version envelope so the desktop app can join it into
+// the storm banner (same remedy: a soft restart).
+func (s *Server) RecallRefusal() (active bool, since time.Time) {
+	s.refusal.mu.Lock()
+	defer s.refusal.mu.Unlock()
+	return s.refusal.latched, s.refusal.since
 }
 
 // BoxStateHint reports the speaker-side condition that would make streams fail

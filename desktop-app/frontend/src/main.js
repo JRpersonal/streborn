@@ -1850,7 +1850,9 @@ function checkBoxIssueBanner() {
   // and the remedy people find on their own, pulling the plug, resets the box
   // clock and poisons the next boot, while a soft restart clears it (#419
   // Finding 4). Saying so at the moment it happens is the whole point.
-  const storm = boxes.filter(b => b && b.storm1036);
+  // recallRefusal is the storm's quiet sibling (no 1036 ever fires, the box
+  // just drops its source for every recall); same remedy, same banner.
+  const storm = boxes.filter(b => b && (b.storm1036 || b.recallRefusal));
   const msgs = [];
   if (conflict.length) {
     const names = conflict.map(b => getBoxLabel(b)).join(', ');

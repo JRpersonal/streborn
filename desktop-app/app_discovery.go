@@ -116,6 +116,11 @@ type BoxInfo struct {
 	// reboot. Storm1036SinceSec is how long it has been going.
 	Storm1036         bool `json:"storm1036,omitempty"`
 	Storm1036SinceSec int  `json:"storm1036SinceSec,omitempty"`
+	// RecallRefusal is the storm's quiet sibling: the agent latched
+	// consecutive recalls whose source self-dropped to STANDBY without a
+	// single 1036. Joined into the same banner (a soft restart clears both).
+	RecallRefusal         bool `json:"recallRefusal,omitempty"`
+	RecallRefusalSinceSec int  `json:"recallRefusalSinceSec,omitempty"`
 	// WLANCredsMissing is true when STR has no saved Wi-Fi on the box: it only
 	// stays online while the stick or an ethernet cable is inserted and strands
 	// the user on the next cold boot. The UI warns the user to run STR's own
@@ -812,6 +817,8 @@ func classifyKnownBox(cached, probed BoxInfo, probeOK, bosePortOpen bool) (recor
 	cached.WLANCredsMissing = false
 	cached.Storm1036 = false
 	cached.Storm1036SinceSec = 0
+	cached.RecallRefusal = false
+	cached.RecallRefusalSinceSec = 0
 	if bosePortOpen {
 		return cached, true, false
 	}
@@ -965,6 +972,8 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		out.BoxHealth = b.BoxHealth
 		out.Storm1036 = b.Storm1036
 		out.Storm1036SinceSec = b.Storm1036SinceSec
+		out.RecallRefusal = b.RecallRefusal
+		out.RecallRefusalSinceSec = b.RecallRefusalSinceSec
 	default:
 		if out.ConflictingMod == "" {
 			out.ConflictingMod = b.ConflictingMod
@@ -972,6 +981,10 @@ func mergeSameKind(a, b BoxInfo) BoxInfo {
 		if !out.Storm1036 {
 			out.Storm1036 = b.Storm1036
 			out.Storm1036SinceSec = b.Storm1036SinceSec
+		}
+		if !out.RecallRefusal {
+			out.RecallRefusal = b.RecallRefusal
+			out.RecallRefusalSinceSec = b.RecallRefusalSinceSec
 		}
 		if !out.WLANCredsMissing {
 			out.WLANCredsMissing = b.WLANCredsMissing
@@ -1341,6 +1354,11 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		Storm1036:      jsonStringField(s, "preset1036Storm") == "active",
 		Storm1036SinceSec: func() int {
 			n, _ := strconv.Atoi(jsonStringField(s, "preset1036SinceSec"))
+			return n
+		}(),
+		RecallRefusal: jsonStringField(s, "presetRefusal") == "active",
+		RecallRefusalSinceSec: func() int {
+			n, _ := strconv.Atoi(jsonStringField(s, "presetRefusalSinceSec"))
 			return n
 		}(),
 		WLANCredsMissing: jsonStringField(s, "wlanCreds") == "missing",

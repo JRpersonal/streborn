@@ -258,6 +258,11 @@ type Server struct {
 	wedge            wedgeState
 	streamActivityFn func() (lastFetch, lastFailure time.Time)
 
+	// refusal tracks the silent variant of the not-logged-in refusal family:
+	// recalls that exhaust while the box drops its source to STANDBY on its
+	// own, without ever sending a 1036. See wedge.go / RecallRefusal.
+	refusal refusalState
+
 	// loginErr tracks the last time the box rejected a source as not-logged-in
 	// (errorUpdate 1036), so verifyRecall stands its retry down while a forced
 	// re-login runs instead of thrashing the box. See wedge.go / NoteBoxLoginError.
