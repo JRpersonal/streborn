@@ -627,6 +627,17 @@ func sourcesListFormat() string {
 // provider id 11, sourcename LOCAL_INTERNET_RADIO, and an EMPTY username. It
 // must appear in BOTH the account response and the account source list, or the
 // firmware drops the source again on its next poll.
+// UPNP is deliberately NOT registered here, and must not be added back.
+// Measured on an ST10 (FW 27.0.6, 2026-08-02): registering it as an account
+// source with provider id 21 changed nothing. The box still answered its own
+// hardware preset with 1036 / UpnpRcvdContentItemInWrongState and flapped
+// UPNP -> INVALID_SOURCE -> UPNP. The decisive observation is that
+// GET /sources reports UPNP as status="UNAVAILABLE" even WHILE it is the
+// actively playing source, so the firmware's availability check can never
+// pass. UPNP is the box's local MediaRenderer: it moves only when an external
+// controller sets the AVTransport URI, and "WrongState" refers to that
+// transport state machine, not to a login. Serving it as an account source is
+// what the firmware answers with INVALID_SOURCE.
 func staticRadioSourceXML() string {
 	const ts = "2020-01-01T00:00:00.000+00:00"
 	return `<source id="3" type="Audio">` +
