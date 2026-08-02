@@ -24,7 +24,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -137,15 +136,30 @@ func (s *Server) handleOrionStation(w http.ResponseWriter, r *http.Request) {
 }
 
 // OrionStationLocation builds the ContentItem location for a stream URL, the
-// way the firmware expects it (base64 JSON in the data parameter).
-func OrionStationLocation(base, streamURL, name string) string {
+// way the firmware expects it: base64 JSON in a data parameter, on a path
+// RELATIVE to the BMX service baseUrl.
+//
+// Two things here are load-bearing and both were learned the hard way.
+//
+// The path must stay relative. The service entry already declares
+// baseUrl ".../core02/svc-bmx-adapter-orion/prod/orion", so a location
+// carrying that prefix again makes the firmware request the concatenation and
+// resolve nothing.
+//
+// The payload uses the unpadded URL-safe alphabet. The location travels to the
+// box as one positional argument of a TAP CLI line ("ws AddPreset ..."), and
+// the standard alphabet's "+" and "/" plus percent-escaping made the CLI
+// accept the command and store NOTHING - it reported success and left the slot
+// empty, which is far worse than an error. Unpadded URL-safe base64 is
+// alphanumeric plus "-" and "_", so it survives tokenisation intact.
+// handleOrionStation accepts every alphabet, so this stays compatible with
+// locations written by older builds.
+func OrionStationLocation(streamURL, name string) string {
 	payload, _ := json.Marshal(map[string]any{
 		"streamUrl": streamURL, "name": name, "imageUrl": "",
 		"streamType": "liveRadio", "isRealtime": true,
 	})
-	return strings.TrimSuffix(base, "/") +
-		"/core02/svc-bmx-adapter-orion/prod/orion/station?data=" +
-		url.QueryEscape(base64.StdEncoding.EncodeToString(payload))
+	return "/station?data=" + base64.RawURLEncoding.EncodeToString(payload)
 }
 
 // handleOrionToken answers the token endpoint the BMX service registry points

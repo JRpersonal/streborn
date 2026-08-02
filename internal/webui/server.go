@@ -176,6 +176,12 @@ type Server struct {
 	// nil until wired by cmd/agent.
 	boxNameFn func() (name, model string)
 
+	// nativePresetLocator decides whether a preset can be stored as a native
+	// LOCAL_INTERNET_RADIO station (returning its orion location) instead of a
+	// UPnP stream that the box refuses to activate on its own. nil until wired
+	// by cmd/agent, and nil on the desktop side, where "" keeps the UPnP form.
+	nativePresetLocator func(name, streamURL string) string
+
 	// now_playing micro-cache. The Bose firmware app (:8090) on BCO
 	// speakers cannot sustain a high request rate, so /api/status caches
 	// the last good now_playing body for statusCacheTTL and serves repeat
@@ -631,6 +637,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/core02/svc-bmx-adapter-orion/prod/orion/station", s.handleOrionStation)
 	mux.HandleFunc("/core02/svc-bmx-adapter-orion/prod/orion/token", s.handleOrionToken)
 	mux.HandleFunc("/api/debug/marge-lab", s.handleMargeLab)
+	mux.HandleFunc("/api/debug/native-preset-probe", s.handleNativeProbe)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
 
 	// Stream proxy: stable URLs for radio streams with token expiry.

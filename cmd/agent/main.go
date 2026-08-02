@@ -607,6 +607,7 @@ func run() error {
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
 		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup),
+		webui.WithMargeForward(margeSrv.SetForward),
 		webui.WithRecent(recentStore))
 
 	// Re-assert a persisted multiroom group (native or mirror) so it survives
@@ -960,6 +961,17 @@ func run() error {
 		ann := mdnsAnnouncer
 		mdnsMu.Unlock()
 		return ann.Snapshot()
+	})
+	// Let the web UI's preset sync store slots natively too, on the same terms
+	// as the agent's own reconcile: only when the box reports the radio source
+	// registered, otherwise "" and the UPnP form is kept.
+	setNativeReadyLogger(logger)
+	boxcli.SetDiagLogger(logger)
+	webuiSrv.SetNativePresetLocatorFn(func(name, streamURL string) string {
+		if !nativeRadioReady(context.Background(), *boxHost) {
+			return ""
+		}
+		return webui.OrionStationLocation(streamURL, name)
 	})
 	wg.Add(1)
 	go func() {

@@ -149,6 +149,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	for _, p := range store.All() {
 		specs = append(specs, boxcli.PresetSpec{
 			Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
+			NativeLocation: nativePresetLocation(context.Background(), boxHost, p),
 		})
 	}
 	if len(specs) == 0 {
@@ -364,6 +365,12 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	if len(stick) == 0 {
 		return false
 	}
+	// A forced full re-sync is exactly the moment the box's source registration
+	// may have changed (it follows a re-association or a box that just became
+	// ready), so do not decide the preset form from a stale cached verdict.
+	if forceFull {
+		invalidateNativeRadioReady()
+	}
 	// Do not push presets while the box is still in out-of-box setup.
 	// In OOB the Marge state machine is NotAssociated, so every
 	// AddPreset fails with "MargeHSM is in the wrong state" and just
@@ -390,15 +397,34 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	}
 	// Add the STR store presets the box is missing (or all, on a forced full
 	// re-sync). strSlots also drives the prune pass below.
+	//
+	// A slot the box already has is rewritten in one more case: it still holds
+	// the old UPnP form while this box can take a native radio station. That is
+	// the migration for every speaker installed before native presets existed.
+	// Without it nothing would ever change on them, because the slot is present
+	// and a present slot is never re-written.
 	strSlots := map[int]bool{}
 	var missing []boxcli.PresetSpec
+	migrated := 0
 	for _, p := range stick {
 		strSlots[p.Slot] = true
-		if _, onBox := boxLocs[p.Slot]; forceFull || !onBox {
+		native := nativePresetLocation(context.Background(), boxHost, p)
+		loc, onBox := boxLocs[p.Slot]
+		upgradable := onBox && native != "" && !isNativeRadioLocation(loc) &&
+			isOwnBoxPresetLocation(loc)
+		if upgradable {
+			migrated++
+		}
+		if forceFull || !onBox || upgradable {
 			missing = append(missing, boxcli.PresetSpec{
 				Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
+				NativeLocation: native,
 			})
 		}
+	}
+	if migrated > 0 {
+		logger.Info("preset migration: rewriting UPnP slots as native radio stations, so the box activates its own hardware keys instead of refusing them (1036)",
+			"slots", migrated)
 	}
 	syncFailed := false
 	if len(missing) > 0 {
@@ -433,6 +459,28 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 				logger.Warn("preset reconcile: AddPreset failed", "slot", spec.Slot, "err", serr)
 			} else {
 				logger.Info("preset reconcile healed", "slot", spec.Slot)
+			}
+		}
+		// Read the slots back before believing the sweep. A native AddPreset
+		// the firmware does not like is accepted at the CLI and stores
+		// NOTHING, which reads as six healed slots in the log while every
+		// hardware key is dead. Only a readback can tell those apart, and the
+		// cost is one HTTP call per sweep that actually wrote something.
+		if wroteNative(missing) {
+			if after, aerr := fetchBoxPresets(boxHost); aerr == nil {
+				var lost []int
+				for _, spec := range missing {
+					if spec.NativeLocation == "" {
+						continue
+					}
+					if _, ok := after[spec.Slot]; !ok {
+						lost = append(lost, spec.Slot)
+					}
+				}
+				if len(lost) > 0 {
+					disableNativePresets(fmt.Sprintf("slots %v stayed empty after a native write", lost))
+					syncFailed = true // keep the fast cadence so UPnP is restored now
+				}
 			}
 		}
 	}

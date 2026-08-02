@@ -48,10 +48,12 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 		// the box defeats the whole point of the proxy slot (token-expiry
 		// survival) and a Spotify preset would have no playable box-side source
 		// at all. This path must match the per-slot SetSlot sync above.
+		stream := boxPresetURL(p.Slot, p.Type == "spotify")
 		specs = append(specs, boxcli.PresetSpec{
-			Slot:      p.Slot,
-			Name:      p.Name,
-			StreamURL: boxPresetURL(p.Slot, p.Type == "spotify"),
+			Slot:           p.Slot,
+			Name:           p.Name,
+			StreamURL:      stream,
+			NativeLocation: s.nativePresetLocation(p.Name, stream),
 		})
 	}
 	syncCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)

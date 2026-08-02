@@ -22,10 +22,18 @@ func isSTRStreamURL(u string) bool {
 // station URL that merely contains "/stream/".
 var ownBoxPresetLocRe = regexp.MustCompile(`^http://127\.0\.0\.1:\d+/(?:stream/[1-6]|spotify/stream(?:-[1-6])?\.ogg)$`)
 
+// ownNativePresetLocPrefix is the second shape STR writes: a native
+// LOCAL_INTERNET_RADIO station whose descriptor is served by this agent's own
+// orion adapter. It is relative on purpose (the firmware resolves it against
+// the BMX service baseUrl). The prune must recognise it too, or a native slot
+// the store no longer backs would survive as a dead hardware key forever.
+const ownNativePresetLocPrefix = "/core02/svc-bmx-adapter-orion/prod/orion/station?data="
+
 // isOwnBoxPresetLocation reports whether loc is a box-preset location STR
 // itself wrote (strict match), the only shape the prune may remove.
 func isOwnBoxPresetLocation(loc string) bool {
-	return ownBoxPresetLocRe.MatchString(loc)
+	return ownBoxPresetLocRe.MatchString(loc) ||
+		strings.HasPrefix(loc, ownNativePresetLocPrefix)
 }
 
 // isPlayableURL reports whether u is an absolute HTTP(S) URL the UPnP renderer can

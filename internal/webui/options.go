@@ -27,6 +27,24 @@ func (s *Server) SetWifiSignalFn(fn func() string) { s.wifiSignalFn = fn }
 // this after the announcer is up.
 func (s *Server) SetBoxNameFn(fn func() (name, model string)) { s.boxNameFn = fn }
 
+// SetNativePresetLocatorFn wires the decision of whether a preset slot can be
+// stored as a native LOCAL_INTERNET_RADIO station instead of a UPnP stream.
+// The function returns the orion station location, or "" when the box has not
+// registered the radio source and the slot must keep the UPnP form. cmd/agent
+// owns that probe because it also owns the box host and the association state.
+func (s *Server) SetNativePresetLocatorFn(fn func(name, streamURL string) string) {
+	s.nativePresetLocator = fn
+}
+
+// nativePresetLocation asks the wired locator for a slot's native location,
+// returning "" when no locator is wired (the desktop-side and test servers).
+func (s *Server) nativePresetLocation(name, streamURL string) string {
+	if s.nativePresetLocator == nil {
+		return ""
+	}
+	return s.nativePresetLocator(name, streamURL)
+}
+
 // Option is a functional option for New.
 type Option func(*Server)
 
