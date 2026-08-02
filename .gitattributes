@@ -52,3 +52,4 @@ usb-stick/rc.local text eol=lf
 # transforming a real ELF the moment CI fills it in.
 desktop-app/agentbin/streborn-armv7l binary
 sticksetup/embedded/winformat.exe    binary
+*.html text eol=lf
