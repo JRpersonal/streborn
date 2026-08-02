@@ -51,6 +51,7 @@ func (s *Server) respondBmxRegistry(w http.ResponseWriter, _ *http.Request) {
     {"name": "marge", "url": "https://streaming.bose.com", "version": "v1", "askAgainAfter": 3600},
     {"name": "TUNEIN", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
     {"name": "INTERNET_RADIO", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
+    {"id": {"name": "LOCAL_INTERNET_RADIO", "value": 11}, "name": "LOCAL_INTERNET_RADIO", "value": 11, "url": "https://content.api.bose.io", "baseURL": "https://content.api.bose.io/core02/svc-bmx-adapter-orion/prod/orion", "assets": {"name": "Custom Stations"}, "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600, "authenticationModel": {"anonymousAccount": {"autoCreate": true, "enabled": true}}},
     {"name": "IHEART", "url": "https://api2.iheart.com", "baseURL": "https://api2.iheart.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
     {"name": "SPOTIFY", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
     {"name": "DEEZER", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600}
@@ -213,14 +214,7 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
 <fullAccount>
   <mode><text>global</text></mode>
-  <sources>
-    <source id="TuneInUser" type="INTERNET_RADIO">
-      <credential type="" text=""/>
-      <name>TuneIn Radio</name>
-      <username>TuneInUser</username>
-      <sourceproviderid>INTERNET_RADIO</sourceproviderid>
-      <sourcename>TuneIn Radio</sourcename>
-    </source>
+  <sources>` + staticRadioSourceXML() + `
   </sources>
 </fullAccount>`))
 }
@@ -315,10 +309,12 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request)
 	// via its own cached token. Best-effort + experimental: the exact schema the
 	// box consumes here is unverified; this is a no-op when nothing is reflected
 	// (the safe default on a fresh install or a box that never had a cloud src).
-	srcBlock := ""
-	if sx := s.reflectedSourcesXML(); sx != "" {
-		srcBlock = "\n  <sources>" + sx + "\n  </sources>"
-	}
+	// The account ALWAYS carries the native internet-radio source, plus any
+	// reflected account-linked cloud sources. Until now this block existed
+	// only when a Deezer reflection was configured, so on a normal box the
+	// account advertised no sources at all - and a source the account does
+	// not name is one the firmware will not keep.
+	srcBlock := "\n  <sources>" + staticRadioSourceXML() + s.reflectedSourcesXML() + "\n  </sources>"
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <account status="ACTIVE">
   <uuid>streborn-local-account</uuid>
@@ -503,7 +499,7 @@ func (s *Server) respondAccountSources(w http.ResponseWriter, _ *http.Request) {
 	for _, r := range regs {
 		b.WriteString(renderAccountSource(format, r))
 	}
-	inner := b.String()
+	inner := staticRadioSourceXML() + b.String()
 	var body string
 	switch format {
 	case "wrap":
@@ -562,4 +558,25 @@ func sourcesListFormat() string {
 		}
 	}
 	return "default"
+}
+
+// staticRadioSourceXML is the LOCAL_INTERNET_RADIO source the account always
+// advertises. It is what lets the box play custom internet radio natively
+// again: the BMX service entry carries anonymousAccount.autoCreate+enabled, so
+// the firmware creates the account for this source ITSELF - no addSource
+// round-trip and no login, which is why a ContentItem on this source cannot
+// fail the not-logged-in check that breaks UPNP presets (1036).
+//
+// The shape is the one community implementations converged on: the numeric
+// provider id 11, sourcename LOCAL_INTERNET_RADIO, and an EMPTY username. It
+// must appear in BOTH the account response and the account source list, or the
+// firmware drops the source again on its next poll.
+func staticRadioSourceXML() string {
+	return "\n    <source id=\"3\" type=\"Audio\">" +
+		"<credential type=\"\" text=\"\"/>" +
+		"<name>Custom Stations</name>" +
+		"<username></username>" +
+		"<sourceproviderid>11</sourceproviderid>" +
+		"<sourcename>LOCAL_INTERNET_RADIO</sourcename>" +
+		"</source>"
 }
