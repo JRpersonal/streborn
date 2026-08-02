@@ -62,6 +62,10 @@ export function ClassifyOTAResult(arg1, arg2) {
   return window['go']['main']['App']['ClassifyOTAResult'](arg1, arg2);
 }
 
+export function ClassifyStreamURL(arg1) {
+  return window['go']['main']['App']['ClassifyStreamURL'](arg1);
+}
+
 export function ClearRecent(arg1, arg2) {
   return window['go']['main']['App']['ClearRecent'](arg1, arg2);
 }

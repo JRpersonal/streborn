@@ -345,6 +345,8 @@
   "search.relaxedHint": "品質フィルターに完全に一致する結果がないため、未確認の結果も表示しています。",
   "search.relaxedHintDismiss": "閉じる",
   "search.playUrlCard": "このストリームURLを再生",
+  "search.urlIsWebsite": "これは局のウェブサイトであり、音声ストリームではありません。ここから保存したプリセットは再生できません。",
+  "search.urlIsWebsiteHint": "代わりに局名で検索してください。ほとんどの局は有効なストリームとともに登録されています。",
   "search.allGenres": "すべて",
   "search.fewerGenres": "少なく",
   "search.moreGenres": "ジャンルを増やす ({{n}})",

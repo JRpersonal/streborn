@@ -312,3 +312,43 @@ func (a *App) BrowseLibrary(udn, objectID string, start, count int) (LibraryPage
 	}
 	return page, nil
 }
+
+// StreamURLKind classifies a pasted URL so the search view can refuse a
+// website before it becomes a preset that can never play.
+//
+// Field case (2026-08-02): a user pasted station HOMEPAGE addresses
+// (www.radiohamburg.de/) into the search box, saved the resulting
+// play-this-URL card to three hardware keys, and then reported "presets do
+// not work". Nothing downstream could tell him why, because a homepage
+// answers 200 and only the Content-Type reveals that it is HTML, not audio.
+type StreamURLKind struct {
+	// Kind is "stream" (playable audio), "playlist" (m3u/pls, the agent
+	// resolves it), "website" (HTML - the station's page, not its stream),
+	// or "unknown" (unreachable or no usable Content-Type; never blocks).
+	Kind        string `json:"kind"`
+	ContentType string `json:"contentType"`
+	Status      int    `json:"status"`
+}
+
+// ClassifyStreamURL fetches just the headers of url and reports whether it
+// looks like audio, a playlist, or a website. Deliberately permissive: any
+// failure returns "unknown" so an offline station or an odd server never
+// stops the user from saving a URL that actually works.
+func (a *App) ClassifyStreamURL(url string) StreamURLKind {
+	status, ctype := a.headStatusType(url)
+	out := StreamURLKind{Kind: "unknown", ContentType: ctype, Status: status}
+	ct := strings.ToLower(strings.TrimSpace(strings.SplitN(ctype, ";", 2)[0]))
+	switch {
+	case ct == "":
+		// No Content-Type at all: many SHOUTcast servers answer this way.
+		// Treat as unknown, never as a website.
+	case strings.HasPrefix(ct, "audio/"), ct == "application/ogg", ct == "application/octet-stream":
+		out.Kind = "stream"
+	case ct == "application/vnd.apple.mpegurl", ct == "application/x-mpegurl",
+		ct == "audio/x-mpegurl", ct == "audio/x-scpls", ct == "application/pls+xml":
+		out.Kind = "playlist"
+	case strings.HasPrefix(ct, "text/html"), strings.HasPrefix(ct, "application/xhtml"):
+		out.Kind = "website"
+	}
+	return out
+}

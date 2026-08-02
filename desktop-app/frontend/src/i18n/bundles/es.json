@@ -345,6 +345,8 @@
   "search.relaxedHint": "No hay coincidencias exactas con los filtros de calidad - también se muestran resultados sin verificar.",
   "search.relaxedHintDismiss": "Ocultar",
   "search.playUrlCard": "Reproducir esta URL de stream",
+  "search.urlIsWebsite": "Esa es la página web de la emisora, no su flujo de audio. Una presintonía guardada desde ahí nunca podrá reproducirse.",
+  "search.urlIsWebsiteHint": "Busca la emisora por su nombre — la mayoría ya están en el directorio con un flujo que funciona.",
   "search.allGenres": "Todos",
   "search.fewerGenres": "Menos",
   "search.moreGenres": "Más géneros ({{n}})",

@@ -345,6 +345,8 @@
   "search.relaxedHint": "Aucune correspondance exacte avec les filtres de qualité - les résultats non vérifiés sont aussi affichés.",
   "search.relaxedHintDismiss": "Masquer",
   "search.playUrlCard": "Lire cette URL de flux",
+  "search.urlIsWebsite": "Il s’agit du site web de la station, pas de son flux audio. Un préréglage enregistré à partir de cette adresse ne pourra jamais jouer.",
+  "search.urlIsWebsiteHint": "Cherchez plutôt la station par son nom — la plupart des stations figurent déjà dans l’annuaire avec un flux fonctionnel.",
   "search.allGenres": "Tous",
   "search.fewerGenres": "Moins",
   "search.moreGenres": "Plus de genres ({{n}})",

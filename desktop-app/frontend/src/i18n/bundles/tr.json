@@ -345,6 +345,8 @@
   "search.relaxedHint": "Kalite filtreleriyle tam eşleşme yok - doğrulanmamış sonuçlar da gösteriliyor.",
   "search.relaxedHintDismiss": "Gizle",
   "search.playUrlCard": "Bu yayın URL'sini çal",
+  "search.urlIsWebsite": "Bu, istasyonun web sitesi; ses yayını değil. Buradan kaydedilen bir ön ayar asla çalamaz.",
+  "search.urlIsWebsiteHint": "Bunun yerine istasyonu adıyla arayın — çoğu istasyon dizinde çalışan bir yayınla zaten mevcut.",
   "search.allGenres": "Tümü",
   "search.fewerGenres": "Daha az",
   "search.moreGenres": "Daha fazla tür ({{n}})",

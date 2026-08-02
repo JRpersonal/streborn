@@ -373,6 +373,8 @@
   "search.relaxedHint": "No exact matches with the quality filters - showing unverified results too.",
   "search.relaxedHintDismiss": "Dismiss",
   "search.playUrlCard": "Play this stream URL",
+  "search.urlIsWebsite": "That is the station’s website, not its audio stream. A preset saved from it can never play.",
+  "search.urlIsWebsiteHint": "Try searching for the station by name instead — most stations are already in the directory with a working stream.",
   "search.allGenres": "All",
   "search.fewerGenres": "Fewer",
   "search.moreGenres": "More genres ({{n}})",

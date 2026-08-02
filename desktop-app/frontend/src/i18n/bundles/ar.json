@@ -345,6 +345,8 @@
   "search.relaxedHint": "لا توجد نتائج مطابقة تمامًا مع مرشحات الجودة - تُعرض أيضًا نتائج غير متحقق منها.",
   "search.relaxedHintDismiss": "إخفاء",
   "search.playUrlCard": "تشغيل رابط البث هذا",
+  "search.urlIsWebsite": "هذا موقع المحطة وليس بثها الصوتي. الإعداد المسبق المحفوظ منه لن يعمل أبداً.",
+  "search.urlIsWebsiteHint": "ابحث عن المحطة باسمها — معظم المحطات موجودة في الدليل ببث يعمل.",
   "search.allGenres": "الكل",
   "search.fewerGenres": "أقلّ",
   "search.moreGenres": "مزيد من الأنواع ({{n}})",
