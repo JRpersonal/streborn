@@ -38,6 +38,10 @@ type nativeProbeResult struct {
 // handleNativeProbe answers POST /api/debug/native-preset-probe with
 // body {"slot": 6} (slot defaults to 6).
 func (s *Server) handleNativeProbe(w http.ResponseWriter, r *http.Request) {
+	// Writes and deletes preset slots: never reachable on a user's speaker.
+	if !s.requireDevTools(w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return

@@ -24,6 +24,11 @@ import (
 // conversation to (POST {"target":"192.168.1.5:9080"}), or clears the relay
 // (DELETE, or an empty target).
 func (s *Server) handleMargeLab(w http.ResponseWriter, r *http.Request) {
+	// Redirects the speaker's whole cloud conversation to another machine:
+	// never reachable on a user's speaker.
+	if !s.requireDevTools(w, r) {
+		return
+	}
 	if s.margeForward == nil {
 		http.Error(w, "marge forwarding not wired in this build", http.StatusServiceUnavailable)
 		return
