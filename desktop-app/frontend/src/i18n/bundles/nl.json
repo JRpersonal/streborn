@@ -345,6 +345,8 @@
   "search.relaxedHint": "Geen exacte treffers met de kwaliteitsfilters - ook ongecontroleerde resultaten worden getoond.",
   "search.relaxedHintDismiss": "Verbergen",
   "search.playUrlCard": "Deze stream-URL afspelen",
+  "search.urlIsWebsite": "Dat is de website van de zender, niet de audiostream. Een preset die hiervan wordt opgeslagen kan nooit afspelen.",
+  "search.urlIsWebsiteHint": "Zoek de zender liever op naam — de meeste zenders staan al met een werkende stream in de map.",
   "search.allGenres": "Alle",
   "search.fewerGenres": "Minder",
   "search.moreGenres": "Meer genres ({{n}})",

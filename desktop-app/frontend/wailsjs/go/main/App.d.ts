@@ -35,6 +35,8 @@ export function CheckStick(arg1:string):Promise<sticksetup.StickCheck>;
 
 export function ClassifyOTAResult(arg1:string,arg2:number):Promise<string>;
 
+export function ClassifyStreamURL(arg1:string):Promise<main.StreamURLKind>;
+
 export function ClearRecent(arg1:string,arg2:number):Promise<void>;
 
 export function ClearUpdateIntent(arg1:string,arg2:number):Promise<void>;

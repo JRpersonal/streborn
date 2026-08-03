@@ -373,6 +373,8 @@
   "search.relaxedHint": "Keine exakten Treffer mit den Qualitätsfiltern - es werden auch ungeprüfte Ergebnisse angezeigt.",
   "search.relaxedHintDismiss": "Ausblenden",
   "search.playUrlCard": "Diese Stream-URL abspielen",
+  "search.urlIsWebsite": "Das ist die Webseite des Senders, nicht sein Audio-Stream. Ein daraus gespeichertes Preset kann nie abspielen.",
+  "search.urlIsWebsiteHint": "Such den Sender stattdessen ueber seinen Namen — die meisten Sender stehen mit funktionierendem Stream im Verzeichnis.",
   "search.allGenres": "Alle",
   "search.fewerGenres": "Weniger",
   "search.moreGenres": "Mehr Genres ({{n}})",

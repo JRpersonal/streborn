@@ -345,6 +345,8 @@
   "search.relaxedHint": "Brak dokładnych trafień przy filtrach jakości - pokazujemy też niezweryfikowane wyniki.",
   "search.relaxedHintDismiss": "Ukryj",
   "search.playUrlCard": "Odtwórz ten adres URL strumienia",
+  "search.urlIsWebsite": "To strona internetowa stacji, a nie jej strumień audio. Preset zapisany z tego adresu nigdy nie zagra.",
+  "search.urlIsWebsiteHint": "Poszukaj stacji po nazwie — większość stacji jest już w katalogu z działającym strumieniem.",
   "search.allGenres": "Wszystkie",
   "search.fewerGenres": "Mniej",
   "search.moreGenres": "Więcej gatunków ({{n}})",

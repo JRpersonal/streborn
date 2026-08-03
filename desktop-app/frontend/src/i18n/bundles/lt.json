@@ -345,6 +345,8 @@
   "search.relaxedHint": "Tikslių atitikmenų su kokybės filtrais nėra - rodomi ir nepatikrinti rezultatai.",
   "search.relaxedHintDismiss": "Slėpti",
   "search.playUrlCard": "Groti šį srauto URL",
+  "search.urlIsWebsite": "Tai stoties svetainė, o ne jos garso srautas. Iš jos išsaugotas išankstinis nustatymas niekada negros.",
+  "search.urlIsWebsiteHint": "Geriau ieškokite stoties pagal pavadinimą — dauguma stotys jau yra kataloge su veikiančiu srautu.",
   "search.allGenres": "Visi",
   "search.fewerGenres": "Mažiau",
   "search.moreGenres": "Daugiau žanrų ({{n}})",

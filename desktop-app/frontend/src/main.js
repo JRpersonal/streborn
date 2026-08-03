@@ -96,6 +96,7 @@ import {
   RadioSearch,
   RadioSearchDetailed,
   RadioStationsByURL,
+  ClassifyStreamURL,
   isMissingBinding,
   RadioTags,
   RadioLanguages,
@@ -6186,7 +6187,25 @@ async function searchByStreamURL(url) {
   } catch {
     list = [];
   }
-  if (list.length === 0) list = [syntheticStationForURL(url)];
+  if (list.length === 0) {
+    // Nothing in the directory: before offering the play-this-URL card, ask
+    // the backend what the URL actually serves. A station HOMEPAGE answers
+    // 200 and looks fine, but saving it to a preset produces a key that can
+    // never play - a field case cost a user three dead hardware keys and two
+    // support rounds (2026-08-02). Only an explicit "website" verdict blocks;
+    // unknown/unreachable still renders the card, so an offline station or an
+    // odd server never stops a URL that actually works.
+    let kind = null;
+    try { kind = await ClassifyStreamURL(url); } catch { kind = null; }
+    if (kind && kind.kind === 'website') {
+      $('searchResults').innerHTML =
+        `<div class="muted">${escapeHtml(t('search.urlIsWebsite'))}</div>`
+        + `<div class="muted" style="margin-top:.5rem">${escapeHtml(t('search.urlIsWebsiteHint'))}</div>`;
+      state.searchResults = [];
+      return;
+    }
+    list = [syntheticStationForURL(url)];
+  }
   state.searchResults = list;
   renderSearchResults();
 }

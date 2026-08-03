@@ -180,6 +180,14 @@ export function RadioStationsByURL(streamURL) {
   return callOptionalBinding('RadioStationsByURL', [streamURL]);
 }
 
+// ClassifyStreamURL reports what a pasted URL actually serves:
+// {kind: "stream"|"playlist"|"website"|"unknown", contentType, status}.
+// Optional binding, so an older backend simply yields null and the caller
+// falls back to its previous behaviour.
+export function ClassifyStreamURL(streamURL) {
+  return callOptionalBinding('ClassifyStreamURL', [streamURL]);
+}
+
 // boxURL builds an absolute URL for an agent endpoint on a given box.
 // Centralised so the host/port pattern is in one place and switching
 // to HTTPS later only takes touching this helper.
