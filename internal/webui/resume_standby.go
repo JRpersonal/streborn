@@ -740,6 +740,11 @@ const (
 	// actively pulling a stream this recently, so STR only ever resumes music
 	// the drop actually interrupted, never long-idle boxes.
 	spontResumeStreamWindow = 60 * time.Second
+	// clockJumpAgeFloor: an "age" beyond this cannot be a real gap between a
+	// stream fetch and a source drop within one agent run; it means the wall
+	// clock moved under us (no battery RTC: these boxes boot in 2015 until
+	// NTP lands). Used only to log the honest reason.
+	clockJumpAgeFloor = 24 * time.Hour
 )
 
 // recallOwnsRetryWindow is how long after a user-started play the recall's own
@@ -1011,9 +1016,22 @@ func (s *Server) handleSpontaneousSourceOff(sinceKey time.Duration) {
 		return
 	}
 	fetch, _ := s.streamActivityFn()
-	if fetch.IsZero() || time.Since(fetch) > spontResumeStreamWindow {
+	if age := time.Since(fetch); fetch.IsZero() || age > spontResumeStreamWindow {
+		// An age far beyond any plausible uptime means the stamp was taken
+		// before the box corrected its clock, not that the stream is old:
+		// these speakers have no battery RTC and boot in 2015 until NTP
+		// lands, which produced a "did not serve recently" stand-down with
+		// lastFetchAgoS of about twenty years (field: ST10, 2026-08-02).
+		// The verdict stays the same - a stand-down never wakes a box, and
+		// deep standby is sacred - but the log must not blame the stream for
+		// what is a clock jump, or the next bundle gets read wrong.
+		if age > clockJumpAgeFloor {
+			s.logger.Info("spontaneous-off recovery: stream-activity stamp predates a clock correction, standing down (not a stale stream)",
+				"lastFetchAgoS", int(age.Seconds()))
+			return
+		}
 		s.logger.Info("spontaneous-off recovery: the stream proxy did not serve this box recently, standing down",
-			"lastFetchAgoS", int(time.Since(fetch).Seconds()), "windowS", int(spontResumeStreamWindow.Seconds()))
+			"lastFetchAgoS", int(age.Seconds()), "windowS", int(spontResumeStreamWindow.Seconds()))
 		return
 	}
 	// Single-flight + crash-loop guard. The #381 attempt counter caps a

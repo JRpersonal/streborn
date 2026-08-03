@@ -136,16 +136,19 @@ func TestSilentRefusalLatch(t *testing.T) {
 		t.Fatal("playback must clear the refusal state")
 	}
 
-	// A recent 1036 attributes the failure to the login: the storm banner owns
-	// that messaging, no refusal strike.
+	// A recent 1036 used to hand the messaging to the storm marker and latch
+	// nothing here. The field disproved that contract on 2026-08-02: the storm
+	// marker needs six rejections in ten minutes, a box that refused three
+	// times left its owner with no message at all, and the cure (soft restart)
+	// is identical either way. So a 1036-attributed refusal now latches too.
 	s2 := &Server{logger: disc}
 	s2.NoteNonUserStandbyDrop()
 	s2.NoteBoxLoginError()
 	s2.noteRecallExhaustedWithSource("STANDBY")
 	s2.NoteNonUserStandbyDrop()
 	s2.noteRecallExhaustedWithSource("STANDBY")
-	if active, _ := s2.RecallRefusal(); active {
-		t.Fatal("1036-attributed failures must not latch the silent-refusal state")
+	if active, _ := s2.RecallRefusal(); !active {
+		t.Fatal("1036-attributed refusals must latch the restart hint too")
 	}
 
 	// Recent stream activity absolves: the content failed, not the box.
@@ -158,5 +161,35 @@ func TestSilentRefusalLatch(t *testing.T) {
 	s3.noteRecallExhaustedWithSource("STANDBY")
 	if active, _ := s3.RecallRefusal(); active {
 		t.Fatal("recent stream activity must absolve the silent failures")
+	}
+}
+
+// TestLoginRefusalLatchesToo closes the gap the 2026-08-02 field bundle
+// exposed: a box that answers 1036 for every press latched NOTHING (the wedge
+// path skips it as a login failure, and the 1036 storm marker needs six
+// rejections in ten minutes), so a user with three rejections saw no banner
+// and no restart button - in the one case where the soft restart is the cure.
+func TestLoginRefusalLatchesToo(t *testing.T) {
+	s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	// Box awake (not STANDBY) and a fresh 1036: the wedge attribution skips,
+	// but the refusal latch must count it.
+	s.NoteBoxLoginError()
+	s.noteRecallExhaustedWithSource("INVALID_SOURCE")
+	if active, _ := s.RecallRefusal(); active {
+		t.Fatal("one refused recall must stay quiet")
+	}
+	s.NoteBoxLoginError()
+	s.noteRecallExhaustedWithSource("INVALID_SOURCE")
+	if active, _ := s.RecallRefusal(); !active {
+		t.Fatal("two consecutive 1036-refused recalls must latch the restart hint")
+	}
+	// The wedge state must NOT latch from these: the advice differs (a wedge
+	// needs a power-cycle, a login refusal a soft restart).
+	if status, _ := s.BoxHealth(); status != "ok" {
+		t.Fatalf("login refusals must not latch a wedge, got %q", status)
+	}
+	s.NoteBoxHealthy()
+	if active, _ := s.RecallRefusal(); active {
+		t.Fatal("observed playback must clear the refusal latch")
 	}
 }
