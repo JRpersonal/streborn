@@ -376,6 +376,13 @@ func run() error {
 	// revert, and the clock verdict correlates 1036 storms / dead-playback
 	// boots with a plug-pull RTC loss (#419 Finding 4). Registered before the
 	// listeners spawn so the very first debug fetch already carries them.
+	// Whether this speaker's hardware keys run on the native path or still
+	// depend on the 1036 recovery machinery. Every incoming bundle becomes a
+	// data point for deciding when that machinery can be retired.
+	nativeStatusHost := *boxHost
+	webui.RegisterDebugSection("native_presets", func() any {
+		return nativePresetStatus(nativeStatusHost)
+	})
 	webui.RegisterDebugSection("marge_recent_requests", func() any {
 		return margeSrv.RecentRequestLines(60)
 	})

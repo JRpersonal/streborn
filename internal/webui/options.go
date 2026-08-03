@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/autopair"
+	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -43,6 +44,32 @@ func (s *Server) nativePresetLocation(name, streamURL string) string {
 		return ""
 	}
 	return s.nativePresetLocator(name, streamURL)
+}
+
+// writeBoxPreset stores one slot on the box in the best form this speaker
+// accepts: a native radio station where the box has that source registered, the
+// UPnP stream otherwise.
+//
+// Saving a preset went straight to the UPnP form, so a station the user had
+// just saved reacted on the slow path (an error the agent recovers from, about
+// eight seconds) until the next reconcile sweep upgraded it. Pressing the key
+// right after saving is exactly what a user does, so it is worth getting right
+// at the moment of the save rather than a cycle later.
+//
+// isSpotify slots are never native: the box activates a native item entirely by
+// itself, and a Spotify preset needs STR to tell the local engine which
+// playlist to load.
+func (s *Server) writeBoxPreset(ctx context.Context, slot int, name, streamURL string, isSpotify bool) error {
+	if !isSpotify {
+		if loc := s.nativePresetLocation(name, streamURL); loc != "" {
+			if err := boxcli.AddPresetNative(ctx, s.boxHost, slot, name, loc); err == nil {
+				return nil
+			}
+			// Fall through to the UPnP form: a key that costs a recovery round
+			// beats one that was never written.
+		}
+	}
+	return boxcli.AddPreset(ctx, s.boxHost, slot, name, streamURL)
 }
 
 // Option is a functional option for New.

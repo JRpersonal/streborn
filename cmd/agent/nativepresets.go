@@ -117,6 +117,48 @@ func nativePresetsDisabled() (bool, string) {
 	return nativeReady.disabled, nativeReady.why
 }
 
+// nativePresetStatus is the /api/debug/state section that says, per speaker,
+// whether the hardware keys run on the native path or still need the recovery
+// machinery.
+//
+// This exists to answer one question with evidence rather than opinion: when
+// can the 1036 recovery code be deleted? That is only safe once field bundles
+// show the fallback never firing on any chassis, and nothing in a bundle says
+// that today. Read-only, cheap, and it makes every incoming bundle a data point.
+func nativePresetStatus(boxHost string) any {
+	nativeReady.Lock()
+	disabled, why, fails, ok, checked := nativeReady.disabled, nativeReady.why,
+		nativeReady.failures, nativeReady.ok, nativeReady.checked
+	nativeReady.Unlock()
+
+	st := map[string]any{
+		"sourceRegistered":    ok,
+		"latchedOff":          disabled,
+		"consecutiveFailures": fails,
+	}
+	if why != "" {
+		st["latchReason"] = why
+	}
+	if !checked.IsZero() {
+		st["lastCheck"] = checked.Format(time.RFC3339)
+	}
+	// The form each slot is ACTUALLY stored in on the box, which is the number
+	// that decides whether the recovery paths are still load-bearing.
+	if locs, err := fetchBoxPresets(boxHost); err == nil {
+		native, upnp := 0, 0
+		for _, loc := range locs {
+			if isNativeRadioLocation(loc) {
+				native++
+			} else {
+				upnp++
+			}
+		}
+		st["slotsNative"] = native
+		st["slotsUPnP"] = upnp
+	}
+	return st
+}
+
 // nativeRadioReady reports whether the box has LOCAL_INTERNET_RADIO registered
 // and READY, which is the precondition for storing native presets. The answer
 // is cached: this is consulted once per preset slot in a sync sweep, and the
