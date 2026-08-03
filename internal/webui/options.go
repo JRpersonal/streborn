@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/autopair"
+	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -26,6 +27,50 @@ func (s *Server) SetWifiSignalFn(fn func() string) { s.wifiSignalFn = fn }
 // currently knows (typically the mDNS announcer snapshot). cmd/agent calls
 // this after the announcer is up.
 func (s *Server) SetBoxNameFn(fn func() (name, model string)) { s.boxNameFn = fn }
+
+// SetNativePresetLocatorFn wires the decision of whether a preset slot can be
+// stored as a native LOCAL_INTERNET_RADIO station instead of a UPnP stream.
+// The function returns the orion station location, or "" when the box has not
+// registered the radio source and the slot must keep the UPnP form. cmd/agent
+// owns that probe because it also owns the box host and the association state.
+func (s *Server) SetNativePresetLocatorFn(fn func(name, streamURL string) string) {
+	s.nativePresetLocator = fn
+}
+
+// nativePresetLocation asks the wired locator for a slot's native location,
+// returning "" when no locator is wired (the desktop-side and test servers).
+func (s *Server) nativePresetLocation(name, streamURL string) string {
+	if s.nativePresetLocator == nil {
+		return ""
+	}
+	return s.nativePresetLocator(name, streamURL)
+}
+
+// writeBoxPreset stores one slot on the box in the best form this speaker
+// accepts: a native radio station where the box has that source registered, the
+// UPnP stream otherwise.
+//
+// Saving a preset went straight to the UPnP form, so a station the user had
+// just saved reacted on the slow path (an error the agent recovers from, about
+// eight seconds) until the next reconcile sweep upgraded it. Pressing the key
+// right after saving is exactly what a user does, so it is worth getting right
+// at the moment of the save rather than a cycle later.
+//
+// isSpotify slots are never native: the box activates a native item entirely by
+// itself, and a Spotify preset needs STR to tell the local engine which
+// playlist to load.
+func (s *Server) writeBoxPreset(ctx context.Context, slot int, name, streamURL string, isSpotify bool) error {
+	if !isSpotify {
+		if loc := s.nativePresetLocation(name, streamURL); loc != "" {
+			if err := boxcli.AddPresetNative(ctx, s.boxHost, slot, name, loc); err == nil {
+				return nil
+			}
+			// Fall through to the UPnP form: a key that costs a recovery round
+			// beats one that was never written.
+		}
+	}
+	return boxcli.AddPreset(ctx, s.boxHost, slot, name, streamURL)
+}
 
 // Option is a functional option for New.
 type Option func(*Server)
@@ -263,6 +308,12 @@ func WithMargeGroups(get func() (string, bool, bool), set func(string) error, cl
 		s.margeGroupSet = set
 		s.margeGroupClear = clear
 	}
+}
+
+// WithMargeForward registers the marge stub's developer relay switch, enabling
+// POST /api/debug/marge-lab. Unset leaves the endpoint disabled.
+func WithMargeForward(f func(target string) error) Option {
+	return func(s *Server) { s.margeForward = f }
 }
 
 // WithSpotifyExportCred registers the function that returns this box's active

@@ -3,7 +3,10 @@
 package marge
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -40,23 +43,29 @@ func (s *Server) respondStreamingSupport(w http.ResponseWriter, _ *http.Request)
 //
 // askAgainAfter triggers the polling interval. Without the value the
 // polling stops immediately.
-func (s *Server) respondBmxRegistry(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) respondBmxRegistry(w http.ResponseWriter, r *http.Request) {
+	// Served in the firmware's own schema (see bmxservices.go). The two
+	// placeholders point back at this agent so the box reaches our adapters.
+	// Always the agent's own webui port on loopback: that is where the BMX
+	// adapter endpoints live (internal/webui/lir.go). Deriving it from the
+	// request Host would point at the marge port instead, which serves the
+	// cloud stub and not the adapters, and the box would silently fail to
+	// resolve a station.
+	base := "http://127.0.0.1:8888"
+	_ = r
+	body := strings.ReplaceAll(bmxServicesJSON, "{BMX_SERVER}", base)
+	body = strings.ReplaceAll(body, "{MEDIA_SERVER}", base+"/media")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{
-  "services": [
-    {"name": "streaming", "url": "https://streaming.bose.com", "version": "v1.2", "askAgainAfter": 3600},
-    {"name": "content", "url": "https://content.api.bose.io", "version": "v1", "askAgainAfter": 3600},
-    {"name": "marge", "url": "https://streaming.bose.com", "version": "v1", "askAgainAfter": 3600},
-    {"name": "TUNEIN", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "INTERNET_RADIO", "url": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "baseURL": "https://7f5055e9ff15f2a5035a488b81ec10f4.api.radiotime.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "IHEART", "url": "https://api2.iheart.com", "baseURL": "https://api2.iheart.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "SPOTIFY", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600},
-    {"name": "DEEZER", "url": "https://streaming.bose.com", "baseURL": "https://streaming.bose.com", "version": "v1", "apikey": "stick-fake-key", "askAgainAfter": 3600}
-  ],
-  "askAgainAfter": 3600,
-  "ts": ` + fmt.Sprintf("%d", time.Now().Unix()) + `
-}`))
+	_, _ = w.Write([]byte(body))
+}
+
+// respondBmxAvailability answers GET /bmx/registry/v1/servicesAvailability,
+// which the registry's own _links block points at and STR never served.
+func (s *Server) respondBmxAvailability(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"services":[{"canAdd":true,"canRemove":false,"service":"TUNEIN"}]}`))
 }
 
 // respondBmxGeneric is the catchall for other /bmx/* paths.
@@ -96,10 +105,35 @@ func (s *Server) respondSourceProviders(w http.ResponseWriter, _ *http.Request) 
 		}
 		extra.WriteString(`<sourceprovider id="` + id + `"><name>` + xmlEscapeText(r.Name) + `</name></sourceprovider>`)
 	}
-	// without response wrapper, since AddDevice wrap201 is only relevant for the
-	// initial pair call.
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<sourceProviders><sourceprovider id="TUNEIN"><name>TuneIn Radio</name></sourceprovider><sourceprovider id="INTERNET_RADIO"><name>Internet Radio</name></sourceprovider><sourceprovider id="STORED_MUSIC"><name>Stored Music</name></sourceprovider>` + extra.String() + `</sourceProviders>`))
+	// This catalogue is what the account's <sourceproviderid> values resolve
+	// against, so the ids MUST be the firmware's NUMBERS, not names: STR used
+	// to answer id="TUNEIN" while an account source said 11, and a reference
+	// that resolves to nothing leaves the source unregistered. The full list is
+	// sent (not only the ids STR uses) so the firmware does not take a
+	// "usual ids missing" path, and the declaration is the standalone form the
+	// real cloud used. The timestamps are constant; the firmware only stores
+	// them.
+	const spTS = "2012-09-19T12:43:00.000+00:00"
+	providers := []struct{ ID, Name string }{
+		{"1", "PANDORA"}, {"2", "INTERNET_RADIO"}, {"3", "OFF"}, {"4", "LOCAL"},
+		{"5", "AIRPLAY"}, {"6", "CURRATED_RADIO"}, {"7", "STORED_MUSIC"},
+		{"8", "SLAVE_SOURCE"}, {"9", "AUX"}, {"10", "RECOMMENDED_INTERNET_RADIO"},
+		{"11", "LOCAL_INTERNET_RADIO"}, {"12", "GLOBAL_INTERNET_RADIO"},
+		{"13", "HELLO"}, {"14", "DEEZER"}, {"15", "SPOTIFY"}, {"16", "IHEART"},
+		{"17", "SIRIUSXM"}, {"18", "GOOGLE_PLAY_MUSIC"}, {"19", "QQMUSIC"},
+		{"20", "AMAZON"}, {"21", "LOCAL_MUSIC"}, {"22", "WBMX"},
+		{"23", "SOUNDCLOUD"}, {"24", "TIDAL"}, {"25", "TUNEIN"},
+	}
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" standalone="yes"?><sourceProviders>`)
+	for _, p := range providers {
+		b.WriteString(`<sourceprovider id="` + p.ID + `"><createdOn>` + spTS +
+			`</createdOn><name>` + p.Name + `</name><updatedOn>` + spTS +
+			`</updatedOn></sourceprovider>`)
+	}
+	b.WriteString(extra.String())
+	b.WriteString(`</sourceProviders>`)
+	_, _ = w.Write([]byte(b.String()))
 }
 
 // respondAddDevice is the response to the AddDevice sync that the box triggers
@@ -128,11 +162,71 @@ func addDeviceFormat() string {
 	return v
 }
 
+// deviceIDFromAddDeviceBody pulls the deviceid the box states about itself out
+// of the addDevice POST body:
+//
+//	<device deviceid="AABBCCDDEEFF"><name>..</name><macaddress>..</macaddress></device>
+//
+// Returns "" when the body is absent, unreadable or shaped differently, so a
+// firmware that posts something else simply leaves the current id in place.
+func deviceIDFromAddDeviceBody(r *http.Request) string {
+	if r.Body == nil {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 8*1024))
+	if err != nil {
+		return ""
+	}
+	// The body is consumed here, so hand a fresh reader back to the rest of the
+	// handler chain; nothing downstream reads it today, but a silent one-shot
+	// body would be a nasty trap for whoever adds that later.
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	var doc struct {
+		DeviceID string `xml:"deviceid,attr"`
+	}
+	if err := xml.Unmarshal(body, &doc); err != nil {
+		return ""
+	}
+	return ValidDeviceID(doc.DeviceID)
+}
+
+// ValidDeviceID normalises a box-stated device id and rejects anything that is
+// not one: uppercase, 12 characters, hex only, no separators. Returns "" for an
+// unusable value, so a caller can simply keep whatever it already had.
+//
+// Worth validating rather than trusting: a wrong id here is not a cosmetic
+// defect, it makes the firmware discard the entire account payload and take the
+// hardware preset buttons down with it, and a malformed value would be far
+// harder to spot afterwards than a rejected one.
+func ValidDeviceID(raw string) string {
+	id := strings.ToUpper(strings.TrimSpace(raw))
+	if len(id) != 12 {
+		return ""
+	}
+	for _, c := range id {
+		if !strings.ContainsRune("0123456789ABCDEF", c) {
+			return ""
+		}
+	}
+	return id
+}
+
 func (s *Server) respondAddDevice(w http.ResponseWriter, r *http.Request) {
 	format := addDeviceFormat()
 	token := os.Getenv("STICK_MARGE_TOKEN")
 	if token == "" {
 		token = "11111111-1111-1111-1111-111111111111"
+	}
+	// The box states its own id in this POST, and it does so seconds BEFORE it
+	// fetches the account. That makes this the earliest authoritative correction
+	// for a deviceID the agent could only guess at startup, and it costs
+	// nothing: the body is already being read. Without it the account payload
+	// can name a different id than the box has, the firmware does not find
+	// itself in <devices>, and it silently drops the whole account - taking the
+	// source registration, and with it the hardware preset keys, down with it.
+	if id := deviceIDFromAddDeviceBody(r); id != "" && s.SetDeviceID(id) {
+		s.logger.Warn("marge: adopting the deviceID the box reported for itself (the startup guess named a different interface)",
+			slog.String("comp", "marge"), slog.String("deviceID", id))
 	}
 	s.logger.Info("addDevice response sent",
 		slog.String("comp", "marge"),
@@ -148,6 +242,19 @@ func (s *Server) respondAddDevice(w http.ResponseWriter, r *http.Request) {
 	//   </device>
 	// margetoken is an optional string, so an attribute.
 	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	// The association handshake is header-driven, not only body-driven: the
+	// firmware reads the token from a Credentials header and identifies the
+	// answered call from METHOD_NAME, the way the real cloud replied. Sending
+	// the token ONLY inside the XML (what STR did until now) can leave the
+	// MargeClient short of a completed association, and every later
+	// setMargeAccount then starts a fresh onboarding instead of re-affirming
+	// the existing one - which is exactly the source bounce and self-off that
+	// made STR remove its login maintenance (see project_selfoff_login_
+	// maintenance). Additive: the body stays byte-identical, so a firmware
+	// that only reads the XML is unaffected.
+	w.Header().Set("Credentials", "Bearer "+token)
+	w.Header().Set("METHOD_NAME", "addDevice")
+	w.Header().Set("Location", r.URL.Path)
 
 	status := http.StatusOK
 	if strings.Contains(format, "201") {
@@ -199,14 +306,7 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
 <fullAccount>
   <mode><text>global</text></mode>
-  <sources>
-    <source id="TuneInUser" type="INTERNET_RADIO">
-      <credential type="" text=""/>
-      <name>TuneIn Radio</name>
-      <username>TuneInUser</username>
-      <sourceproviderid>INTERNET_RADIO</sourceproviderid>
-      <sourcename>TuneIn Radio</sourcename>
-    </source>
+  <sources>` + staticRadioSourceXML() + `
   </sources>
 </fullAccount>`))
 }
@@ -301,17 +401,45 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request)
 	// via its own cached token. Best-effort + experimental: the exact schema the
 	// box consumes here is unverified; this is a no-op when nothing is reflected
 	// (the safe default on a fresh install or a box that never had a cloud src).
-	srcBlock := ""
-	if sx := s.reflectedSourcesXML(); sx != "" {
-		srcBlock = "\n  <sources>" + sx + "\n  </sources>"
+	// The account ALWAYS carries the native internet-radio source, plus any
+	// reflected account-linked cloud sources. Until now this block existed
+	// only when a Deezer reflection was configured, so on a normal box the
+	// account advertised no sources at all - and a source the account does
+	// not name is one the firmware will not keep.
+	// The account schema is the one captured from the real cloud, not a
+	// hand-invented one: <id> (not <uuid>), <accountStatus>ENABLED</...> as an
+	// ELEMENT (not a status attribute), plus mode / preferredLanguage /
+	// providerSettings, and the standalone XML declaration. STR's earlier shape
+	// looked plausible but shared almost no element names with it, which is the
+	// likely reason the firmware never picked up the <sources> block inside.
+	// The <devices> block is part of the captured schema and is emitted even
+	// when we know little about the box: the firmware looks for its OWN device
+	// entry in the account it just fetched, and an account that does not list
+	// it is not an account it belongs to.
+	s.mu.RLock()
+	devID := s.deviceID
+	s.mu.RUnlock()
+	const accTS = "2020-01-01T00:00:00.000+00:00"
+	devices := "<devices/>"
+	if devID != "" {
+		devices = `<devices><device deviceid="` + xmlEscapeText(devID) + `">` +
+			`<attachedProduct product_code=""><components/><productlabel></productlabel>` +
+			`<serialnumber></serialnumber></attachedProduct>` +
+			`<createdOn>` + accTS + `</createdOn>` +
+			`<recents/>` +
+			`<serialnumber>` + xmlEscapeText(devID) + `</serialnumber>` +
+			`<updatedOn>` + accTS + `</updatedOn>` +
+			`</device></devices>`
 	}
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
-<account status="ACTIVE">
-  <uuid>streborn-local-account</uuid>
-  <email>local@streborn</email>
-  <token>local-token-v1</token>
-  <created>2026-01-01T00:00:00Z</created>` + srcBlock + `
-</account>`))
+	_, _ = w.Write([]byte(`<?xml version="1.0" standalone="yes"?>` +
+		`<account><id>stick@local</id>` +
+		`<accountStatus>ENABLED</accountStatus>` +
+		devices +
+		`<mode>global</mode>` +
+		`<preferredLanguage>en</preferredLanguage>` +
+		`<providerSettings/>` +
+		`<sources>` + staticRadioSourceXML() + s.reflectedSourcesXML() + `</sources>` +
+		`</account>`))
 }
 
 func (s *Server) respondPresets(w http.ResponseWriter) {
@@ -409,4 +537,179 @@ func (s *Server) respondConfigStatus(w http.ResponseWriter) {
 	} else {
 		_, _ = w.Write([]byte(SoundTouchNotConfiguredXML))
 	}
+}
+
+// respondAddSource answers the box's OWN source-account registration callback,
+// POST /streaming/account/<accountId>/source.
+//
+// This is the step that decides whether a preset may be activated by the box
+// itself. The firmware posts the account it wants for a source
+// (<username>UUID/0</username>) and only marks that source READY once the
+// cloud confirms it; from then on its own /select of a ContentItem carrying
+// that sourceAccount is legal. STR answered this path through the generic
+// catchall with {"status":"ok"}, so no source account was ever confirmed -
+// which is why STR's presets carry the pseudo-account "UPnPUserName" that
+// appears in no source list, and why the box answers its own preset
+// activation with 1036 UNABLE_TO_PROCESS_NOT_LOGGED_IN: not "this box is
+// signed out" but "this preset's account is not a registered source".
+//
+// The reply mirrors the addDevice shape: 201, the METHOD_NAME header naming
+// the answered call, an ETag, and a <source> element echoing the username the
+// box asked for.
+func (s *Server) respondAddSource(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 8*1024))
+	username := firstXMLValue(string(body), "username")
+	providerID := firstXMLValue(string(body), "sourceproviderid")
+	s.logger.Info("addSource callback answered", slog.String("comp", "marge"),
+		slog.String("path", r.URL.Path), slog.String("username", username),
+		slog.String("askedProvider", providerID))
+	s.mu.Lock()
+	s.registered = append(s.registered, registeredSource{
+		ID: "1", Username: username, ProviderID: "7",
+		Name: "Stored Music", SourceName: "STORED_MUSIC",
+	})
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	w.Header().Set("METHOD_NAME", "addSource")
+	w.Header().Set("ETag", `"str-source-1"`)
+	w.Header().Set("Location", r.URL.Path)
+	w.WriteHeader(http.StatusCreated)
+	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>` +
+		`<source id="1" type="Audio"><credential type="" text=""/>` +
+		`<name>Stored Music</name><username>` + xmlEscapeText(username) + `</username>` +
+		`<sourceproviderid>7</sourceproviderid><sourcename>STORED_MUSIC</sourcename></source>`))
+}
+
+// firstXMLValue pulls the text of the first <tag>...</tag> out of a body
+// without a full parse (the firmware's XML is tiny and hand-rolled).
+func firstXMLValue(body, tag string) string {
+	open, close := "<"+tag+">", "</"+tag+">"
+	i := strings.Index(body, open)
+	if i < 0 {
+		return ""
+	}
+	rest := body[i+len(open):]
+	j := strings.Index(rest, close)
+	if j < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:j])
+}
+
+// respondAccountSources answers GET /streaming/account/<accountId>/sources,
+// the list the box fetches right AFTER its addSource callback was confirmed.
+//
+// Measured on an ST10 (2026-08-02): POST .../source is followed within 600 ms
+// by GET .../sources. Until now that landed in the generic account catchall,
+// so the box got no list back and never promoted the account it had just
+// registered to READY - the last missing link in the chain that makes a
+// preset's sourceAccount a real, activatable account.
+//
+// Sources registered through addSource are remembered in memory per account
+// so this list can name them; a reboot re-runs the registration.
+func (s *Server) respondAccountSources(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	regs := make([]registeredSource, len(s.registered))
+	copy(regs, s.registered)
+	s.mu.RUnlock()
+	format := sourcesListFormat()
+	var b strings.Builder
+	for _, r := range regs {
+		b.WriteString(renderAccountSource(format, r))
+	}
+	inner := staticRadioSourceXML() + b.String()
+	var body string
+	switch format {
+	case "wrap":
+		body = `<?xml version="1.0" encoding="UTF-8" ?><response status="OK"><sources>` + inner + `</sources></response>`
+	case "account":
+		body = `<?xml version="1.0" encoding="UTF-8" ?><account><sources>` + inner + `</sources></account>`
+	case "fullaccount":
+		body = `<?xml version="1.0" encoding="UTF-8" ?><fullAccount><mode><text>global</text></mode><sources>` + inner + `</sources></fullAccount>`
+	case "flat":
+		body = `<?xml version="1.0" encoding="UTF-8" ?>` + inner
+	default:
+		body = `<?xml version="1.0" encoding="UTF-8" ?><sources>` + inner + `</sources>`
+	}
+	s.logger.Info("account sources list served", slog.String("comp", "marge"),
+		slog.Int("count", len(regs)), slog.String("format", format))
+	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
+	w.Header().Set("METHOD_NAME", "getSources")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(body))
+}
+
+// renderAccountSource renders one registered source. The firmware is picky
+// about which attributes it accepts, so the sweep varies them.
+func renderAccountSource(format string, r registeredSource) string {
+	switch format {
+	case "minimal":
+		return `<source id="` + xmlEscapeText(r.ID) + `" type="Audio"><username>` +
+			xmlEscapeText(r.Username) + `</username><sourceproviderid>` +
+			xmlEscapeText(r.ProviderID) + `</sourceproviderid></source>`
+	case "named":
+		return `<source id="` + xmlEscapeText(r.ID) + `" type="` + xmlEscapeText(r.SourceName) + `" status="READY">` +
+			`<credential type="" text=""/><name>` + xmlEscapeText(r.Name) + `</name><username>` +
+			xmlEscapeText(r.Username) + `</username><sourceproviderid>` + xmlEscapeText(r.ProviderID) +
+			`</sourceproviderid><sourcename>` + xmlEscapeText(r.SourceName) + `</sourcename></source>`
+	default:
+		return `<source id="` + xmlEscapeText(r.ID) + `" type="Audio" status="READY">` +
+			`<credential type="" text=""/><name>` + xmlEscapeText(r.Name) + `</name><username>` +
+			xmlEscapeText(r.Username) + `</username><sourceproviderid>` + xmlEscapeText(r.ProviderID) +
+			`</sourceproviderid><sourcename>` + xmlEscapeText(r.SourceName) + `</sourcename></source>`
+	}
+}
+
+// sourcesListFormat selects the account-sources shape for the hardware sweep:
+// the env var first, then a file so a running margelab can be switched between
+// attempts without a restart. Values: default, wrap, account, fullaccount,
+// flat, minimal, named.
+func sourcesListFormat() string {
+	if v := strings.TrimSpace(os.Getenv("STR_SOURCES_FORMAT")); v != "" {
+		return v
+	}
+	if p := strings.TrimSpace(os.Getenv("STR_SOURCES_FORMAT_FILE")); p != "" {
+		if b, err := os.ReadFile(p); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				return v
+			}
+		}
+	}
+	return "default"
+}
+
+// staticRadioSourceXML is the LOCAL_INTERNET_RADIO source the account always
+// advertises. It is what lets the box play custom internet radio natively
+// again: the BMX service entry carries anonymousAccount.autoCreate+enabled, so
+// the firmware creates the account for this source ITSELF - no addSource
+// round-trip and no login, which is why a ContentItem on this source cannot
+// fail the not-logged-in check that breaks UPNP presets (1036).
+//
+// The shape is the one community implementations converged on: the numeric
+// provider id 11, sourcename LOCAL_INTERNET_RADIO, and an EMPTY username. It
+// must appear in BOTH the account response and the account source list, or the
+// firmware drops the source again on its next poll.
+// UPNP is deliberately NOT registered here, and must not be added back.
+// Measured on an ST10 (FW 27.0.6, 2026-08-02): registering it as an account
+// source with provider id 21 changed nothing. The box still answered its own
+// hardware preset with 1036 / UpnpRcvdContentItemInWrongState and flapped
+// UPNP -> INVALID_SOURCE -> UPNP. The decisive observation is that
+// GET /sources reports UPNP as status="UNAVAILABLE" even WHILE it is the
+// actively playing source, so the firmware's availability check can never
+// pass. UPNP is the box's local MediaRenderer: it moves only when an external
+// controller sets the AVTransport URI, and "WrongState" refers to that
+// transport state machine, not to a login. Serving it as an account source is
+// what the firmware answers with INVALID_SOURCE.
+func staticRadioSourceXML() string {
+	const ts = "2020-01-01T00:00:00.000+00:00"
+	return `<source id="3" type="Audio">` +
+		`<createdOn>` + ts + `</createdOn>` +
+		`<credential type="token"></credential>` +
+		`<name>Local Internet Radio</name>` +
+		`<sourceproviderid>11</sourceproviderid>` +
+		`<sourcename>LOCAL_INTERNET_RADIO</sourcename>` +
+		`<sourceSettings/>` +
+		`<updatedOn>` + ts + `</updatedOn>` +
+		`<username></username>` +
+		`</source>`
 }

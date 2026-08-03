@@ -136,6 +136,9 @@ type Server struct {
 	margeGroupGet   func() (xmlDoc string, canonical bool, ok bool)
 	margeGroupSet   func(xmlDoc string) error
 	margeGroupClear func(reason string)
+	// margeForward registers (or clears) a developer machine the box's cloud
+	// conversation is relayed to. nil disables the endpoint. See margelab.go.
+	margeForward func(target string) error
 	// spotifySetRecalling marks an in-flight recall so ServeOgg drives the new
 	// track from its start instead of resuming mid-position. nil when Spotify is
 	// not configured.
@@ -172,6 +175,12 @@ type Server struct {
 	// the cross-LAN /info probe is slow right after an OTA restart (#108).
 	// nil until wired by cmd/agent.
 	boxNameFn func() (name, model string)
+
+	// nativePresetLocator decides whether a preset can be stored as a native
+	// LOCAL_INTERNET_RADIO station (returning its orion location) instead of a
+	// UPnP stream that the box refuses to activate on its own. nil until wired
+	// by cmd/agent, and nil on the desktop side, where "" keeps the UPnP form.
+	nativePresetLocator func(name, streamURL string) string
 
 	// now_playing micro-cache. The Bose firmware app (:8090) on BCO
 	// speakers cannot sustain a high request rate, so /api/status caches
@@ -620,6 +629,15 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/webhooks/test", s.handleWebhooksTest)
 	mux.HandleFunc("/api/stick/status", s.handleStickStatus)
 	mux.HandleFunc("/api/debug/state", s.handleDebugState)
+
+	// LOCAL_INTERNET_RADIO: the adapter endpoints the BMX service registry
+	// points at, so the box can resolve and play a native radio ContentItem
+	// (see lir.go).
+	mux.HandleFunc("/lir/", s.handleLIRStation)
+	mux.HandleFunc("/core02/svc-bmx-adapter-orion/prod/orion/station", s.handleOrionStation)
+	mux.HandleFunc("/core02/svc-bmx-adapter-orion/prod/orion/token", s.handleOrionToken)
+	mux.HandleFunc("/api/debug/marge-lab", s.handleMargeLab)
+	mux.HandleFunc("/api/debug/native-preset-probe", s.handleNativeProbe)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
 
 	// Stream proxy: stable URLs for radio streams with token expiry.

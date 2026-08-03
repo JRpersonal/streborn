@@ -140,8 +140,11 @@ type Client struct {
 	// down, so STR does not thrash a box that keeps rejecting the UPnP source
 	// (repeated re-pushes flap the source and can wedge the box). Rate-limited
 	// via lastLoginErrFire.
-	loginErrMu       sync.Mutex
-	onLoginError     func()
+	loginErrMu   sync.Mutex
+	onLoginError func()
+	// onSourcesChanged fires when the box announces a changed source list.
+	// Guarded by loginErrMu, like onLoginError.
+	onSourcesChanged func()
 	lastLoginErrFire time.Time
 }
 
@@ -156,6 +159,32 @@ func (c *Client) SetOnLoginError(fn func()) {
 	c.loginErrMu.Lock()
 	c.onLoginError = fn
 	c.loginErrMu.Unlock()
+}
+
+// SetOnSourcesChanged registers a callback fired when the box announces that its
+// source list changed (<sourcesUpdated/>).
+//
+// This is the box telling us the exact moment its registered sources became
+// different, and it matters for preset form: whether a preset can be stored as
+// a native radio station depends on the radio source being registered, and that
+// registration completes a few seconds AFTER the agent's own startup check runs.
+// Without this signal the agent keeps a stale "not available" answer until its
+// cache expires and writes UPnP presets in the meantime. The callback runs in
+// its own goroutine so the read loop is never blocked.
+func (c *Client) SetOnSourcesChanged(fn func()) {
+	c.loginErrMu.Lock()
+	c.onSourcesChanged = fn
+	c.loginErrMu.Unlock()
+}
+
+// fireSourcesChanged invokes the sources-changed callback, if one is registered.
+func (c *Client) fireSourcesChanged() {
+	c.loginErrMu.Lock()
+	fn := c.onSourcesChanged
+	c.loginErrMu.Unlock()
+	if fn != nil {
+		go fn()
+	}
 }
 
 // fireLoginError invokes the registered not-logged-in callback, at most once per

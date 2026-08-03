@@ -779,6 +779,57 @@ const OSS_CREDITS = [
   { name: 'DuckDuckGo icons', license: 'service', url: 'https://duckduckgo.com', role: 'station logos' },
 ];
 
+// Projects that contributed KNOWLEDGE rather than code. STR ships none of their
+// source, but several of its central mechanisms would not exist without their
+// published findings, so they are credited in their own section. `donate` is
+// filled in only where the project actually accepts support; most of them do
+// not, which is worth seeing.
+const RESEARCH_CREDITS = [
+  {
+    name: 'Bose-SoundTouch', by: 'gesellix',
+    url: 'https://github.com/gesellix/Bose-SoundTouch',
+    donate: 'https://github.com/sponsors/gesellix',
+    role: 'Documented the account and service schema that lets a speaker register its sources again, which is what makes the preset buttons work without the Bose cloud.',
+  },
+  {
+    name: 'SixBack', by: 'Dirk Tostmann',
+    url: 'https://github.com/tostmann/SixBack',
+    donate: 'https://paypal.me/busware',
+    role: 'Showed how a speaker distinguishes a source it does not know from one it cannot log into, which is why STR can now tell those two failures apart.',
+  },
+  {
+    name: 'soundcork', by: 'deborahgu',
+    url: 'https://github.com/deborahgu/soundcork',
+    role: 'Wrote down the Bose cloud API from real speaker traffic, the reference STR checks its own emulation against.',
+  },
+  {
+    name: 'BoseSoundtouch', by: 'TimoGo',
+    url: 'https://github.com/TimoGo/BoseSoundtouch',
+    role: 'Documented the speaker command sequence for joining a Wi-Fi network, including the detail the official service manual leaves out.',
+  },
+  {
+    name: 'Soundtouch-without-the-app', by: 'bosefirmware',
+    url: 'https://github.com/bosefirmware/Soundtouch-without-the-app',
+    role: 'Collected the firmware images and cloud-free operating notes STR uses to tell speaker generations apart.',
+  },
+  {
+    name: 'bosesoundtouchapi', by: 'thlucas1',
+    url: 'https://github.com/thlucas1/bosesoundtouchapi',
+    role: 'The most complete public description of the speaker’s own control API.',
+  },
+  {
+    name: 'libsoundtouch', by: 'CharlesBlonde',
+    url: 'https://github.com/CharlesBlonde/libsoundtouch',
+    role: 'The original community library for these speakers, and the first description of their live event stream.',
+  },
+  {
+    name: 'opencloudtouch',
+    url: 'https://github.com/opencloudtouch/opencloudtouch',
+    donate: 'https://www.buymeacoffee.com/b49rjg5k6vj',
+    role: 'A parallel effort to keep these speakers alive after the shutdown, and a useful cross-check on findings.',
+  },
+];
+
 // showCredits opens the open-source credits dialog from the footer link.
 function showCredits() {
   const modal = $('creditsModal');
@@ -786,13 +837,19 @@ function showCredits() {
   if (!modal || !body) return;
   $('creditsTitle').textContent = t('credits.title');
   $('creditsIntro').textContent = t('credits.intro');
-  body.innerHTML = OSS_CREDITS.map(c => {
-    const by = c.by ? ` <span class="credit-by">${escapeHtml(t('credits.by'))} ${escapeHtml(c.by)}</span>` : '';
-    return `<div class="credit-row">`
-      + `<div><a href="#" class="footer-link credit-name" data-url="${escapeAttr(c.url)}">${escapeHtml(c.name)}</a>${by}`
-      + ` <span class="credit-license">${escapeHtml(c.license)}</span></div>`
-      + `<div class="credit-role">${escapeHtml(c.role)}</div></div>`;
-  }).join('');
+  const row = (c, extra) => `<div class="credit-row">`
+    + `<div><a href="#" class="footer-link credit-name" data-url="${escapeAttr(c.url)}">${escapeHtml(c.name)}</a>`
+    + (c.by ? ` <span class="credit-by">${escapeHtml(t('credits.by'))} ${escapeHtml(c.by)}</span>` : '')
+    + extra + `</div>`
+    + `<div class="credit-role">${escapeHtml(c.role)}</div></div>`;
+  body.innerHTML = OSS_CREDITS.map(c =>
+    row(c, ` <span class="credit-license">${escapeHtml(c.license)}</span>`)
+  ).join('')
+    + `<h3 class="credit-section">${escapeHtml(t('credits.researchTitle'))}</h3>`
+    + `<p class="credit-section-intro">${escapeHtml(t('credits.researchIntro'))}</p>`
+    + RESEARCH_CREDITS.map(c => row(c, c.donate
+      ? ` <a href="#" class="footer-link credit-name credit-donate" data-url="${escapeAttr(c.donate)}">${escapeHtml(t('credits.donate'))}</a>`
+      : '')).join('');
   body.querySelectorAll('.credit-name[data-url]').forEach(a => {
     a.onclick = (e) => { e.preventDefault(); BrowserOpenURL(a.dataset.url); };
   });

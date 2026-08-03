@@ -288,6 +288,17 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// name), NOT a content substring, so it keeps the title false-positive
 			// protection the typed parse added.
 			switch rootLocalName(s) {
+			case "sourcesUpdated":
+				// The box announces that its registered source list changed.
+				// Typed rather than left to fall through as an unrecognized
+				// frame, because it is the signal that decides how presets are
+				// stored: the radio source registers a few seconds after the
+				// agent's startup check, and without this the agent keeps a
+				// stale "not available" verdict and writes UPnP presets that
+				// the box then refuses to activate itself.
+				c.logger.Info("box ws: the box changed its registered sources")
+				c.fireSourcesChanged()
+				return
 			case "userActivityUpdate":
 				// Lone thumb ping (see noteUserActivity). Regressed for bare frames
 				// when the parser went typed; this restores it (live box log

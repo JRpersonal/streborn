@@ -19,6 +19,16 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	// If the box does connect there, the request falls into the catchall
 	// default with a generic 200 OK <ack/>.
 
+	// Developer relay (see forward.go): when a lab machine is registered, the
+	// whole conversation goes there and its answer is returned verbatim. The
+	// agent still terminates TLS, so the box is unaware. A failed relay falls
+	// through to the local handlers below.
+	if target := s.forwardTarget(); target != "" {
+		if s.relay(w, r, target) {
+			return
+		}
+	}
+
 	// Real Bose cloud endpoints from captured traffic
 	switch {
 	case strings.HasPrefix(path, "/streaming/support/power_on"):
@@ -44,11 +54,38 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	// AddDevice sync: /streaming/account/<accountId>/device/ POST
 	// The box calls this after POST /setMargeAccount on the box itself.
 	// The response must be adddeviceresponse XML with a margetoken element.
+	// The box's own source-account registration. Must sit BEFORE the generic
+	// /streaming/account case, which used to swallow it with a bare ack so no
+	// source account was ever confirmed (see respondAddSource).
+	// Both of these MUST return. Without it the handler writes its response and
+	// then falls out of this switch into the legacy fallback below, where the
+	// path still contains "source" and respondSources appends a SECOND document
+	// to the same body. The box then receives one response containing two XML
+	// declarations and two root elements - measured on an ST10, 2026-08-02:
+	//
+	//	<?xml?><sources><source ...LOCAL_INTERNET_RADIO...></sources>
+	//	<?xml?><sources deviceID="..."/>
+	//
+	// which is not well-formed XML at all, and whose trailing element is an
+	// EMPTY source list. That is a prime suspect for the source registration
+	// being lost on some boots while succeeding on others.
+	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/source") && r.Method == http.MethodPost:
+		s.respondAddSource(w, r)
+		return
+
+	// The list the box fetches right after its addSource was confirmed.
+	case strings.HasPrefix(path, "/streaming/account/") && strings.HasSuffix(strings.TrimSuffix(path, "/"), "/sources"):
+		s.respondAccountSources(w, r)
+		return
+
 	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/device") && r.Method == http.MethodPost:
 		s.respondAddDevice(w, r)
 		return
 	case strings.HasPrefix(path, "/streaming/account") || strings.HasPrefix(path, "/streaming/auth"):
 		s.respondMargeAccountFull(w, r)
+		return
+	case strings.Contains(path, "/servicesAvailability"):
+		s.respondBmxAvailability(w, r)
 		return
 	case strings.HasPrefix(path, "/bmx/registry/"):
 		s.respondBmxRegistry(w, r)

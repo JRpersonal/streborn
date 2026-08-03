@@ -221,6 +221,17 @@ func run() error {
 
 	// Determine the DeviceID from the MAC so marge responses return the
 	// real box ID. If no MAC is found, continue with an empty ID.
+	//
+	// This is only the STARTING value, and it is a guess: it takes a MAC from
+	// the first interface it finds. A speaker with two network interfaces has
+	// two MACs and uses exactly one of them as its identity (measured on an
+	// ST10: it reports networkInfo type="SCM" 94E3... as its deviceID and
+	// type="SMSC" 10CE... as the other), so the guess can name the wrong one.
+	// That matters more than it looks: the id goes into the <devices> block of
+	// the emulated account, the firmware discards an account in which it cannot
+	// find itself, and the discarded account is what registers the radio source
+	// behind the hardware preset keys. correctDeviceIDFromBox below replaces
+	// the guess with the box's own answer as soon as it responds.
 	deviceID, err := sysinfo.DeviceID(nil)
 	if err != nil {
 		logger.Warn("could not determine DeviceID", "err", err)
@@ -317,6 +328,7 @@ func run() error {
 		// fallback after a restart is what invited the firmware to re-create
 		// the record from its own point of view).
 		marge.WithGroupPath("/mnt/nv/streborn/marge-group.json"),
+		marge.WithDeviceIDPath("/mnt/nv/streborn/deviceid"),
 		// The box re-reads its cloud presets from marge during every
 		// setMargeAccount re-onboarding. Answering with an empty <presets/>
 		// made the firmware WIPE its own hardware-key registrations after
@@ -352,12 +364,25 @@ func run() error {
 		CreatedAt:    "2026-01-01T00:00:00Z",
 	})
 
+	// Replace the MAC-derived deviceID guess with the box's own answer as soon
+	// as its firmware responds. Runs in the background so a slow-booting box
+	// never delays the listeners; the box's addDevice POST corrects the value
+	// too, so this is the first of two independent paths to the right id.
+	go correctDeviceIDFromBox(context.Background(), margeSrv, *boxHost, logger)
+
 	// Forensic sections for /api/debug/state. The marge trail (millisecond
 	// timestamps) is what lets a bundle answer whether the box exchanged
 	// anything with marge inside the ~200 ms window of a Wave sysLanguage
 	// revert, and the clock verdict correlates 1036 storms / dead-playback
 	// boots with a plug-pull RTC loss (#419 Finding 4). Registered before the
 	// listeners spawn so the very first debug fetch already carries them.
+	// Whether this speaker's hardware keys run on the native path or still
+	// depend on the 1036 recovery machinery. Every incoming bundle becomes a
+	// data point for deciding when that machinery can be retired.
+	nativeStatusHost := *boxHost
+	webui.RegisterDebugSection("native_presets", func() any {
+		return nativePresetStatus(nativeStatusHost)
+	})
 	webui.RegisterDebugSection("marge_recent_requests", func() any {
 		return margeSrv.RecentRequestLines(60)
 	})
@@ -607,6 +632,7 @@ func run() error {
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
 		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup),
+		webui.WithMargeForward(margeSrv.SetForward),
 		webui.WithRecent(recentStore))
 
 	// Re-assert a persisted multiroom group (native or mirror) so it survives
@@ -803,6 +829,10 @@ func run() error {
 	// STR self-heals instead of thrashing the box into a wedge (rate-limited in
 	// boxws).
 	wsClient.SetOnLoginError(webuiSrv.NoteBoxLoginError)
+	// The box registering a source is what decides whether presets can be stored
+	// natively, so re-probe the moment it says the list changed instead of waiting
+	// for the cached verdict to expire.
+	wsClient.SetOnSourcesChanged(invalidateNativeRadioReady)
 
 	// Seed the box-native preset snapshot once at start and, if the NAND preset
 	// store came up empty while the box still lists STR presets, restore what
@@ -960,6 +990,17 @@ func run() error {
 		ann := mdnsAnnouncer
 		mdnsMu.Unlock()
 		return ann.Snapshot()
+	})
+	// Let the web UI's preset sync store slots natively too, on the same terms
+	// as the agent's own reconcile: only when the box reports the radio source
+	// registered, otherwise "" and the UPnP form is kept.
+	setNativeReadyLogger(logger)
+	boxcli.SetDiagLogger(logger)
+	webuiSrv.SetNativePresetLocatorFn(func(name, streamURL string) string {
+		if !nativeRadioReady(context.Background(), *boxHost) {
+			return ""
+		}
+		return webui.OrionStationLocation(streamURL, name)
 	})
 	wg.Add(1)
 	go func() {

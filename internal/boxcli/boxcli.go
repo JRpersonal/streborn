@@ -281,27 +281,147 @@ func RemovePreset(ctx context.Context, host string, slot int) error {
 	return err
 }
 
+// diagLogger receives the diagnostics this package cannot return through its
+// existing signatures (the per-slot native-preset fallback). nil until wired,
+// which keeps every existing caller and the tests unchanged.
+var diagLogger *slog.Logger
+
+// SetDiagLogger wires the logger used for per-slot preset diagnostics.
+func SetDiagLogger(l *slog.Logger) { diagLogger = l }
+
+// AddPresetNative stores a preset as a native LOCAL_INTERNET_RADIO station
+// instead of a UPnP stream. This is the difference between a hardware key the
+// box can press itself and one it refuses.
+//
+// A UPNP preset makes the box answer its own key press with 1036
+// UNABLE_TO_PROCESS_NOT_LOGGED_IN / UpnpRcvdContentItemInWrongState, because
+// UPNP is the box's local MediaRenderer and never reports itself available (it
+// stays status="UNAVAILABLE" in GET /sources even while it is the playing
+// source). Everything STR does to recover from that - clearing the transport,
+// re-pushing, verifying - exists only because of it, and it costs ~8 s per
+// press. A LOCAL_INTERNET_RADIO station registered through the emulated
+// account is READY, so the box activates it itself in about 2 s and STR does
+// not have to intervene at all.
+//
+// location must be the orion station location built by
+// webui.OrionStationLocation, RELATIVE to the BMX service baseUrl. The source
+// account is deliberately EMPTY: that is what the firmware itself reports for
+// this source, and any other value puts it back in the refusing state.
+func AddPresetNative(ctx context.Context, host string, slot int, name, location string) error {
+	if location == "" || slot < 1 || slot > 6 {
+		return fmt.Errorf("AddPresetNative: location and slot 1..6 required")
+	}
+	// The account argument is the literal "none", and that detail is the whole
+	// difference between a working migration and six dead hardware keys.
+	//
+	// This source needs an EMPTY sourceAccount, but the TAP CLI cannot be given
+	// one: `""` is collapsed by its tokeniser, so the box answers "Incorrect
+	// number of arguments. 6 required, 5 supplied." and stores nothing - while
+	// the socket still reports success, which is what made an earlier attempt
+	// log six healed slots over an empty preset list. Measured on an ST10
+	// (2026-08-02): "none" occupies the argument and the firmware stores
+	// sourceAccount="" from it, which is exactly the shape that plays.
+	cmd := fmt.Sprintf(`ws AddPreset LOCAL_INTERNET_RADIO stationurl %s "%s" none %d`,
+		location, name, slot)
+	out, err := Send(ctx, host, cmd)
+	if err != nil {
+		return err
+	}
+	// The TAP CLI answers a rejected AddPreset with a usage/error line and a
+	// zero exit at the socket level, so "no transport error" does NOT mean the
+	// slot was written: an early attempt reported six successful syncs while
+	// the box stored nothing at all. Surface the reply so the caller can fall
+	// back, and so a diagnostic bundle shows what the box said.
+	if reply := strings.TrimSpace(out); nativeAddRejected(reply) {
+		return fmt.Errorf("box refused the native preset for slot %d: %s", slot, firstLine(reply))
+	}
+	return nil
+}
+
+// nativeAddRejected reports whether a TAP reply to AddPreset indicates the
+// command was not accepted. Matching is deliberately loose and case-insensitive:
+// the firmware's wording differs per chassis, and treating an unrecognised
+// complaint as success is the failure mode that hides a dead hardware key.
+func nativeAddRejected(reply string) bool {
+	l := strings.ToLower(reply)
+	// "Incorrect number of arguments" is the observed rejection wording and the
+	// one that previously passed as success.
+	for _, bad := range []string{"incorrect number", "usage", "error", "invalid", "unknown", "fail", "not supported", "wrong state"} {
+		if strings.Contains(l, bad) {
+			return true
+		}
+	}
+	return false
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
 // PresetSpec is a box preset specification for SyncAllPresets.
 type PresetSpec struct {
 	Slot      int    // 1..6
 	Name      string // displayed name (quoted if it contains a space)
 	StreamURL string // direct stream URL for UPnP
+	// NativeLocation, when set, stores the slot as a native
+	// LOCAL_INTERNET_RADIO station instead of a UPnP stream. Empty means the
+	// caller could not confirm the box has that source registered, and the
+	// UPnP form is used.
+	NativeLocation string
 }
 
-// SyncAllPresets sends all presets as UPNP source ContentItems to the
-// box. Should run after a box boot (the box needs ~10s until the CLI
-// server has come up) and whenever the stick preset store is updated.
+// SyncAllPresets sends all presets to the box, natively where the box has the
+// radio source registered and as UPnP ContentItems everywhere else. Should run
+// after a box boot (the box needs ~10s until the CLI server has come up) and
+// whenever the stick preset store is updated.
 //
 // errs is a map of slot -> error for individual slots; continued after
 // errors.
+// WriteGap is the pause between two preset writes.
+//
+// Every AddPreset is its own TAP connection, and six of them back to back is
+// exactly what the losing sweeps looked like on an ST10: the first writes of
+// the first sweep after a boot were accepted and then not stored, while the
+// same commands succeeded moments later. Spacing them costs about a second
+// across a full sweep and removes a whole class of silent loss. It is a
+// variable so a test can drop it to zero.
+var WriteGap = 250 * time.Millisecond
+
 func SyncAllPresets(ctx context.Context, host string, presets []PresetSpec) map[int]error {
 	errs := map[int]error{}
-	for _, p := range presets {
+	for i, p := range presets {
 		if p.StreamURL == "" || p.Slot < 1 || p.Slot > 6 {
 			continue
 		}
+		if i > 0 && WriteGap > 0 {
+			select {
+			case <-ctx.Done():
+				return errs
+			case <-time.After(WriteGap):
+			}
+		}
 		c, cancel := context.WithTimeout(ctx, 4*time.Second)
-		if err := AddPreset(c, host, p.Slot, p.Name, p.StreamURL); err != nil {
+		var err error
+		if p.NativeLocation != "" {
+			err = AddPresetNative(c, host, p.Slot, p.Name, p.NativeLocation)
+			if err != nil {
+				// Never leave a slot empty because the native form was
+				// refused: a working key that costs a recovery round beats a
+				// dead one. Say so, though - a silent fallback would look
+				// exactly like a successful migration in a bundle.
+				if diagLogger != nil {
+					diagLogger.Warn("native preset refused by the box, storing the UPnP form for this slot instead",
+						"slot", p.Slot, "err", err)
+				}
+				err = AddPreset(c, host, p.Slot, p.Name, p.StreamURL)
+			}
+		} else {
+			err = AddPreset(c, host, p.Slot, p.Name, p.StreamURL)
+		}
+		if err != nil {
 			errs[p.Slot] = err
 		}
 		cancel()

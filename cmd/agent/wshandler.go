@@ -465,6 +465,23 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	// art entry, so we must actively pack the album art URL into the DIDL-Lite
 	// metadata via our PlayURL call, otherwise the display (ST20/30) shows no
 	// logo.
+	// A NATIVE radio preset needs no help: the box resolves the station through
+	// the agent's own BMX adapter and fetches the stream itself, which is the
+	// whole point of storing presets on the native source (no 1036, no verify,
+	// no re-push). Measured 2026-08-02: 200 ms after the press the box had
+	// resolved the station and the stream proxy was serving - and STR then
+	// overrode it 0.5 s later with its legacy UPnP recall, because the location
+	// is not one of STR's own stream URLs. Stand back instead.
+	if isNativeRadioLocation(location) {
+		h.logger.Info("hardware preset: native radio preset, the box activates it itself",
+			"slot", slot, "location", location)
+		if h.noteRecentPreset != nil {
+			if p, ok := h.store.Get(slot); ok {
+				h.noteRecentPreset(p)
+			}
+		}
+		return
+	}
 	url := location
 	name := title
 	icon := ""
@@ -1424,4 +1441,13 @@ func (h *presetWsHandler) nowPlayingSummary() (string, string, string) {
 func (h *presetWsHandler) inertAckNudge(source string, slot int, url string, pressAt time.Time) bool {
 	return source == "UPNP" && streamPath(url) != "" &&
 		!h.slotPulledSince(slot, pressAt) && !h.slotFetchLiveNow(slot)
+}
+
+// isNativeRadioLocation reports whether a box ContentItem location points at
+// the agent's own BMX radio adapter (see internal/webui/lir.go). Such a preset
+// is activated and fetched by the BOX; STR must not push a competing UPnP
+// recall on top of it.
+func isNativeRadioLocation(loc string) bool {
+	return strings.HasPrefix(loc, "/station?data=") ||
+		strings.Contains(loc, "/svc-bmx-adapter-orion/prod/orion/station")
 }

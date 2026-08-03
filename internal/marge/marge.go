@@ -74,12 +74,24 @@ type Server struct {
 	group          *groupRecord
 	groupCanonical bool
 	groupPath      string
+	// deviceIDPath persists the device id the box confirmed about itself, so
+	// the first account request of the next boot is already answered with it
+	// rather than with the interface-MAC guess. See deviceid_persist.go.
+	deviceIDPath string
 	// groupRestored marks a record restored from NAND that no live signal has
 	// confirmed yet (no firmware post, no canonical install this run). A Bose
 	// factory reset wipes the firmware's own pairing but not /mnt/nv/streborn,
 	// so a restored record can describe a pair that no longer exists; the
 	// agent clears it when the firmware reports no group after startup.
 	groupRestored bool
+
+	// registered holds the source accounts the box registered through its
+	// addSource callback this run (see respondAddSource).
+	registered []registeredSource
+
+	// forward relays the box's cloud traffic to a developer machine when set
+	// (see forward.go). Empty = answer locally. Never persisted.
+	forward string
 }
 
 // SpyEntry is a single logged HTTP request.
@@ -93,6 +105,42 @@ type SpyEntry struct {
 
 // Option is a functional option pattern for the configuration.
 type Option func(*Server)
+
+// SetDeviceID replaces the deviceID used in responses, and reports whether the
+// value actually changed.
+//
+// This has to be mutable, and the reason is worth stating: the id is what the
+// firmware looks for in the <devices> block of the account payload, and when it
+// does not find ITSELF there it discards the whole payload - including the
+// <sources> block that registers the radio source, which is what makes the
+// hardware preset keys work. The startup value is a guess derived from a
+// network interface MAC, and on a speaker with two interfaces (measured on an
+// ST10: SCM 94E3..., SMSC 10CE...) the guess picks the wrong one. The box knows
+// its own id and states it twice - in GET /info and in the addDevice POST it
+// sends seconds before it asks for the account - so both of those correct us.
+func (s *Server) SetDeviceID(id string) bool {
+	id = strings.ToUpper(strings.TrimSpace(id))
+	if id == "" {
+		return false
+	}
+	s.mu.Lock()
+	changed := s.deviceID != id
+	s.deviceID = id
+	s.mu.Unlock()
+	if changed {
+		// Only on an actual change: this is a NAND write, and a speaker's
+		// standby countdown restarts on every write to it.
+		s.persistDeviceID(id)
+	}
+	return changed
+}
+
+// DeviceID returns the id currently used in responses.
+func (s *Server) DeviceID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.deviceID
+}
 
 // WithDeviceID sets the deviceID used in responses.
 func WithDeviceID(id string) Option {
@@ -171,6 +219,10 @@ func New(logger *slog.Logger, opts ...Option) *Server {
 		opt(s)
 	}
 	s.loadGroup()
+	// After the options, so a previously confirmed id supersedes the MAC guess
+	// passed via WithDeviceID, and before the listener binds, so the first
+	// request of this boot is already answered with it.
+	s.loadDeviceID()
 	return s
 }
 
@@ -224,4 +276,10 @@ func (s *Server) SetPresets(p []Preset) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.presets = p
+}
+
+// registeredSource is one source account the box registered via its addSource
+// callback, kept so the follow-up GET .../sources can list it back.
+type registeredSource struct {
+	ID, Username, ProviderID, Name, SourceName string
 }

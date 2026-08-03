@@ -149,6 +149,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 	for _, p := range store.All() {
 		specs = append(specs, boxcli.PresetSpec{
 			Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
+			NativeLocation: nativePresetLocation(context.Background(), boxHost, p),
 		})
 	}
 	if len(specs) == 0 {
@@ -364,6 +365,12 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	if len(stick) == 0 {
 		return false
 	}
+	// A forced full re-sync is exactly the moment the box's source registration
+	// may have changed (it follows a re-association or a box that just became
+	// ready), so do not decide the preset form from a stale cached verdict.
+	if forceFull {
+		invalidateNativeRadioReady()
+	}
 	// Do not push presets while the box is still in out-of-box setup.
 	// In OOB the Marge state machine is NotAssociated, so every
 	// AddPreset fails with "MargeHSM is in the wrong state" and just
@@ -390,15 +397,47 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 	}
 	// Add the STR store presets the box is missing (or all, on a forced full
 	// re-sync). strSlots also drives the prune pass below.
+	//
+	// A slot the box already has is rewritten in one more case: it still holds
+	// the old UPnP form while this box can take a native radio station. That is
+	// the migration for every speaker installed before native presets existed.
+	// Without it nothing would ever change on them, because the slot is present
+	// and a present slot is never re-written.
 	strSlots := map[int]bool{}
 	var missing []boxcli.PresetSpec
+	migrated, reverted := 0, 0
 	for _, p := range stick {
 		strSlots[p.Slot] = true
-		if _, onBox := boxLocs[p.Slot]; forceFull || !onBox {
+		native := nativePresetLocation(context.Background(), boxHost, p)
+		loc, onBox := boxLocs[p.Slot]
+		boxHasNative := onBox && isNativeRadioLocation(loc)
+		upgradable := onBox && native != "" && !boxHasNative && isOwnBoxPresetLocation(loc)
+		// The reverse case matters just as much: the slot is stored natively but
+		// this box can no longer take that form (the radio source did not
+		// register on this boot, or the native write was latched off). Leaving it
+		// would point a hardware key at a source the box cannot enter, which is a
+		// DEAD key - strictly worse than the UPnP form it replaced. Put it back.
+		stale := boxHasNative && native == ""
+		switch {
+		case upgradable:
+			migrated++
+		case stale:
+			reverted++
+		}
+		if forceFull || !onBox || upgradable || stale {
 			missing = append(missing, boxcli.PresetSpec{
 				Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
+				NativeLocation: native,
 			})
 		}
+	}
+	if migrated > 0 {
+		logger.Info("preset migration: rewriting UPnP slots as native radio stations, so the box activates its own hardware keys instead of refusing them (1036)",
+			"slots", migrated)
+	}
+	if reverted > 0 {
+		logger.Warn("preset migration: the box no longer offers the native radio source, putting those slots back on the UPnP form so the keys keep working",
+			"slots", reverted)
 	}
 	syncFailed := false
 	if len(missing) > 0 {
@@ -433,6 +472,27 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 				logger.Warn("preset reconcile: AddPreset failed", "slot", spec.Slot, "err", serr)
 			} else {
 				logger.Info("preset reconcile healed", "slot", spec.Slot)
+			}
+		}
+		// Read the slots back before believing the sweep, and re-write the ones
+		// that did not land. A native AddPreset the firmware does not like is
+		// accepted at the CLI and stores NOTHING, which reads as six healed
+		// slots in the log while the hardware keys are dead.
+		//
+		// Retrying matters because the misses are not random: measured on an
+		// ST10 across several reboots, it is the FIRST writes of the first
+		// sweep after a boot that vanish (the store is written in a fixed
+		// order and slots 2 and 3 lead it), while the UPnP form for the very
+		// same slots succeeds moments later. So the firmware is briefly
+		// willing to take a preset but not yet able to keep a native one, even
+		// though it already advertises the radio source as READY. A short
+		// backoff turns that into a non-event.
+		if wroteNative(missing) {
+			if lost := verifyNativeWrites(boxHost, missing, logger); len(lost) > 0 {
+				disableNativePresets(fmt.Sprintf("slots %v stayed empty after a native write", lost))
+				syncFailed = true // keep the fast cadence so UPnP is restored now
+			} else {
+				noteNativeWriteLanded()
 			}
 		}
 	}
