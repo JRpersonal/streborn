@@ -111,7 +111,7 @@
   "multiroom.modeMirror": "Mirror (each speaker plays the same stream)",
   "multiroom.modeHelp": "Native lets the speaker firmware sync the group (best when it works). Mirror has each speaker pull the same stream itself (works more widely, may not be perfectly in sync). Try both and send logs.",
   "multiroom.stereoHeading": "Stereo pair",
-  "multiroom.stereoNote": "Use two SoundTouch 10 speakers as a real left/right stereo pair, each playing its own channel. STR drives the speaker's built-in pairing directly, so no Bose account is needed. Only the SoundTouch 10 can do this. To undo a pair (including one made in the Bose app), use Ungroup above. This is new, so please send logs.",
+  "multiroom.stereoNote": "Use two SoundTouch 10 speakers as a real left/right stereo pair, each playing its own channel. STR drives the speaker's built-in pairing directly, so no Bose account is needed. Only the SoundTouch 10 can do this. To undo a pair (including one made in the Bose app), use \"Undo stereo pair\". This is new, so please send logs.",
   "multiroom.stereoNeedTwo": "Needs two SoundTouch 10 speakers.",
   "multiroom.stereoLeft": "Left speaker",
   "multiroom.stereoRight": "Right speaker",
