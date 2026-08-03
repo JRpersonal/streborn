@@ -474,28 +474,25 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 				logger.Info("preset reconcile healed", "slot", spec.Slot)
 			}
 		}
-		// Read the slots back before believing the sweep. A native AddPreset
-		// the firmware does not like is accepted at the CLI and stores
-		// NOTHING, which reads as six healed slots in the log while every
-		// hardware key is dead. Only a readback can tell those apart, and the
-		// cost is one HTTP call per sweep that actually wrote something.
+		// Read the slots back before believing the sweep, and re-write the ones
+		// that did not land. A native AddPreset the firmware does not like is
+		// accepted at the CLI and stores NOTHING, which reads as six healed
+		// slots in the log while the hardware keys are dead.
+		//
+		// Retrying matters because the misses are not random: measured on an
+		// ST10 across several reboots, it is the FIRST writes of the first
+		// sweep after a boot that vanish (the store is written in a fixed
+		// order and slots 2 and 3 lead it), while the UPnP form for the very
+		// same slots succeeds moments later. So the firmware is briefly
+		// willing to take a preset but not yet able to keep a native one, even
+		// though it already advertises the radio source as READY. A short
+		// backoff turns that into a non-event.
 		if wroteNative(missing) {
-			if after, aerr := fetchBoxPresets(boxHost); aerr == nil {
-				var lost []int
-				for _, spec := range missing {
-					if spec.NativeLocation == "" {
-						continue
-					}
-					if _, ok := after[spec.Slot]; !ok {
-						lost = append(lost, spec.Slot)
-					}
-				}
-				if len(lost) > 0 {
-					disableNativePresets(fmt.Sprintf("slots %v stayed empty after a native write", lost))
-					syncFailed = true // keep the fast cadence so UPnP is restored now
-				} else {
-					noteNativeWriteLanded()
-				}
+			if lost := verifyNativeWrites(boxHost, missing, logger); len(lost) > 0 {
+				disableNativePresets(fmt.Sprintf("slots %v stayed empty after a native write", lost))
+				syncFailed = true // keep the fast cadence so UPnP is restored now
+			} else {
+				noteNativeWriteLanded()
 			}
 		}
 	}

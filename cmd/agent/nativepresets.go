@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -242,6 +243,94 @@ func probeNativeRadioReady(ctx context.Context, boxHost string) bool {
 		}
 	}
 	return false
+}
+
+// nativeRetryWait is the pause before the single re-write of a slot that did not
+// land. Measured on an ST10: the first native writes of the first sweep after a
+// boot vanish while the same command succeeds a second or two later, so the
+// wait is deliberately short - the goal is to ride out a settling
+// firmware, not to hammer it.
+var nativeRetryWait = 1 * time.Second
+
+// verifyNativeWrites reads the slots back and re-writes the native ones that
+// did not land, returning the slots that never made it.
+//
+// One readback covers the whole batch, so a healthy sweep costs a single extra
+// HTTP call; only a sweep that actually lost something pays for retries. That
+// matters because the Bose firmware app cannot sustain a high request rate on
+// some chassis, which is why this does not verify slot by slot.
+func verifyNativeWrites(boxHost string, specs []boxcli.PresetSpec, logger *slog.Logger) []int {
+	pending := map[int]boxcli.PresetSpec{}
+	for _, s := range specs {
+		if s.NativeLocation != "" {
+			pending[s.Slot] = s
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	missingNow := func() []int {
+		after, err := fetchBoxPresets(boxHost)
+		if err != nil {
+			return nil // cannot tell; treat as "no evidence of loss"
+		}
+		var out []int
+		for slot := range pending {
+			if loc, ok := after[slot]; !ok || !isNativeRadioLocation(loc) {
+				out = append(out, slot)
+			}
+		}
+		sort.Ints(out)
+		return out
+	}
+
+	lost := missingNow()
+	if len(lost) == 0 {
+		return nil
+	}
+	// A native write that did not land leaves the slot EMPTY, not on its old
+	// value, so every one of these slots is a dead hardware key right now. That
+	// is why this retries once, quickly, and then stops: measured across four
+	// reboots on an ST10, a single re-write after one second recovered every
+	// loss (always slots 2 and 3, the first two in the write order). Waiting out
+	// a longer backoff would only extend the window in which a key does nothing.
+	logger.Info("preset write: some slots did not keep the native form, re-writing them once",
+		"slots", lost)
+	time.Sleep(nativeRetryWait)
+	for _, slot := range lost {
+		spec := pending[slot]
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := boxcli.AddPresetNative(ctx, boxHost, slot, spec.Name, spec.NativeLocation); err != nil {
+			logger.Warn("preset write: the box refused a native re-write", "slot", slot, "err", err)
+		}
+		cancel()
+		// Space the commands out: each one is its own TAP connection, and six
+		// back-to-back connects is what the losing sweeps looked like.
+		time.Sleep(boxcli.WriteGap)
+	}
+	if lost = missingNow(); len(lost) == 0 {
+		logger.Info("preset write: every slot kept the native form after one re-write")
+		return nil
+	}
+
+	// Still empty. Put the UPnP form in NOW rather than leaving dead keys while
+	// the next sweep comes around: a key that costs a recovery round is far
+	// better than one that does nothing. The next sweep sees a UPnP slot on a
+	// box that can take native and tries the upgrade again, and the
+	// consecutive-failure latch stops that repeating forever.
+	logger.Warn("preset write: slots still not stored, restoring the UPnP form so the keys are not dead",
+		"slots", lost)
+	for _, slot := range lost {
+		spec := pending[slot]
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := boxcli.AddPreset(ctx, boxHost, slot, spec.Name, spec.StreamURL); err != nil {
+			logger.Warn("preset write: could not restore the UPnP form either", "slot", slot, "err", err)
+		}
+		cancel()
+		time.Sleep(boxcli.WriteGap)
+	}
+	return lost
 }
 
 // wroteNative reports whether a sync batch contained at least one native

@@ -380,11 +380,28 @@ type PresetSpec struct {
 //
 // errs is a map of slot -> error for individual slots; continued after
 // errors.
+// WriteGap is the pause between two preset writes.
+//
+// Every AddPreset is its own TAP connection, and six of them back to back is
+// exactly what the losing sweeps looked like on an ST10: the first writes of
+// the first sweep after a boot were accepted and then not stored, while the
+// same commands succeeded moments later. Spacing them costs about a second
+// across a full sweep and removes a whole class of silent loss. It is a
+// variable so a test can drop it to zero.
+var WriteGap = 250 * time.Millisecond
+
 func SyncAllPresets(ctx context.Context, host string, presets []PresetSpec) map[int]error {
 	errs := map[int]error{}
-	for _, p := range presets {
+	for i, p := range presets {
 		if p.StreamURL == "" || p.Slot < 1 || p.Slot > 6 {
 			continue
+		}
+		if i > 0 && WriteGap > 0 {
+			select {
+			case <-ctx.Done():
+				return errs
+			case <-time.After(WriteGap):
+			}
 		}
 		c, cancel := context.WithTimeout(ctx, 4*time.Second)
 		var err error
