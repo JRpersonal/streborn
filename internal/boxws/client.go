@@ -88,6 +88,13 @@ type Client struct {
 	// standby handling entirely. Guarded by mu.
 	lastUpnpActiveAt time.Time
 
+	// lastNativeActiveAt is when the box last stopped being on a native radio
+	// station. Used to tell a station the box ABANDONED (it reaches
+	// INVALID_SOURCE shortly after) from the normal teardown of a preset
+	// change (which returns to the native source within a few hundred ms).
+	// Guarded by mu.
+	lastNativeActiveAt time.Time
+
 	// upnpEpisode is true while the box sits in the INVALID_SOURCE (or
 	// subsequent STANDBY) state it entered FROM STR's UPNP source. The
 	// rolling upnpFlapWindow only covers the fast give-up flap; a struggling
@@ -145,6 +152,9 @@ type Client struct {
 	// onSourcesChanged fires when the box announces a changed source list.
 	// Guarded by loginErrMu, like onLoginError.
 	onSourcesChanged func()
+	// onNativeDropped fires when the box abandons a native radio station it had
+	// just accepted. Guarded by loginErrMu.
+	onNativeDropped  func()
 	lastLoginErrFire time.Time
 }
 
@@ -175,6 +185,25 @@ func (c *Client) SetOnSourcesChanged(fn func()) {
 	c.loginErrMu.Lock()
 	c.onSourcesChanged = fn
 	c.loginErrMu.Unlock()
+}
+
+// SetOnNativeDropped registers a callback fired when the box leaves a native
+// radio station on its own, i.e. it accepted the station and then abandoned it.
+// The agent counts these to decide whether this speaker can keep native presets
+// at all. Runs in its own goroutine so the read loop is never blocked.
+func (c *Client) SetOnNativeDropped(fn func()) {
+	c.loginErrMu.Lock()
+	c.onNativeDropped = fn
+	c.loginErrMu.Unlock()
+}
+
+func (c *Client) fireNativeDropped() {
+	c.loginErrMu.Lock()
+	fn := c.onNativeDropped
+	c.loginErrMu.Unlock()
+	if fn != nil {
+		go fn()
+	}
 }
 
 // fireSourcesChanged invokes the sources-changed callback, if one is registered.

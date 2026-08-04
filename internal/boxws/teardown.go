@@ -26,6 +26,13 @@ const (
 	// source a STANDBY entry still counts as an STR-driven power-off (the
 	// UPNP -> INVALID_SOURCE -> STANDBY give-up completes within ~1-2s).
 	upnpFlapWindow = 5 * time.Second
+	// nativeDropWindow bounds how long after the box left a native radio
+	// station a jump to INVALID_SOURCE still counts as the box abandoning that
+	// station rather than an unrelated later event. The observed failure took
+	// about a second from leaving the source to INVALID_SOURCE; the window is
+	// generous because the alternative, missing the evidence, leaves a speaker
+	// stuck on a form it cannot keep.
+	nativeDropWindow = 10 * time.Second
 	// ownCmdKeyVeto: a physical key press this close to the STOP_STATE means
 	// the stop came from the user (remote/box stop key), NOT from STR's own
 	// command, even inside ownCmdTeardownWindow. The firmware sends a

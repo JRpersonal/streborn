@@ -103,6 +103,37 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				if src == "AUX" {
 					c.handler.OnSourceAux(ctx)
 				}
+				// A native radio station the box abandons on its own. Measured on
+				// a SoundTouch 20 (2nd gen, v0.9.30): every one of twelve native
+				// presses ended LOCAL_INTERNET_RADIO -> INVALID_SOURCE within a
+				// few seconds, and only the re-push recovery got audio back,
+				// while the same build on the owner's ST30 dropped once in eight.
+				// The write succeeded on both, so the write-side latch never saw
+				// anything wrong. This is the playback-side counterpart: a box
+				// that will not KEEP a native station has to fall back to the
+				// UPnP form, which works there.
+				// The discriminator is reaching INVALID_SOURCE, not leaving the
+				// native source: a normal preset change also goes
+				// LOCAL_INTERNET_RADIO -> UPNP and back within a few hundred
+				// milliseconds, and counting that would disable native presets
+				// on a perfectly healthy speaker. The failure route observed on
+				// the ST20 was LOCAL_INTERNET_RADIO -> UPNP -> INVALID_SOURCE a
+				// few seconds after the station started, so the stamp below
+				// covers the direct and the indirect route alike.
+				if prev == "LOCAL_INTERNET_RADIO" {
+					c.mu.Lock()
+					c.lastNativeActiveAt = time.Now()
+					c.mu.Unlock()
+				}
+				if src == "INVALID_SOURCE" {
+					c.mu.Lock()
+					recent := !c.lastNativeActiveAt.IsZero() &&
+						time.Since(c.lastNativeActiveAt) < nativeDropWindow
+					c.mu.Unlock()
+					if recent {
+						c.fireNativeDropped()
+					}
+				}
 				// #197: some ST20 (scm) firmware oscillates UPNP->STANDBY->UPNP on a
 				// power-off, re-selecting STR's UPnP source so the speaker switches
 				// itself back on. When STR's own source (UPNP) drops to STANDBY, give
