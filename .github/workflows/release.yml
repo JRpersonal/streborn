@@ -848,6 +848,30 @@ jobs:
             -trimpath \
             -clean
 
+      - name: Ad-hoc sign the app bundle
+        # The bundle used to ship with no signature at all. Not being NOTARIZED
+        # is expected and documented (that needs a paid Apple account); being
+        # UNSIGNED is a different problem, and it is what breaks the escape
+        # hatch we point users at.
+        #
+        # macOS records a Gatekeeper exemption ("Open Anyway") against the app's
+        # code-signing identity. An unsigned bundle has none, so the exemption
+        # has nothing to attach to: the user clicks Open Anyway, the icon bounces
+        # in the Dock, and the app never opens - no error, nothing to act on.
+        # Reported on macOS Tahoe 26.5.2 (2026-08-04); the user got in only by
+        # turning Gatekeeper off system-wide, which is not something anyone
+        # should have to do to run this.
+        #
+        # An ad-hoc signature (-s -) gives the bundle a stable identity without
+        # any certificate or Apple account. It does not remove the first-launch
+        # warning - only notarization does - but it makes Open Anyway work as
+        # documented.
+        run: |
+          APP="desktop-app/build/bin/ST Reborn.app"
+          codesign --force --deep --sign - "$APP"
+          # Fail the build rather than ship an unverifiable bundle again.
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
       - name: Free disk space for DMG
         # Runs AFTER the build (which needs the toolchain) and BEFORE packaging,
         # since hdiutil/ditto are plain /usr/bin system tools. The first attempt
