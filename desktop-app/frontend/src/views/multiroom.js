@@ -378,9 +378,15 @@ async function doFormZone(strBoxes) {
 // was not paired, both returned "nothing to dissolve", the app reported
 // success, and the pair was still there in the Bose app (field, 2026-08-04).
 async function doDissolveStereo(pairCands) {
-  const live = pairMemberBoxes(stereoPairOf(state.zoneLive), state.boxes || [])
-    .map(x => x.box).filter(Boolean);
-  const master = live.find(b => pairCands.some(c => c.deviceID === b.deviceID))
+  // The MASTER first, and not just as a preference: on real hardware only the
+  // master's firmware reports the pair at all. Asked about its group, the
+  // right-hand speaker answers that it is in none, so a dissolve sent there
+  // returns "nothing to undo" while the pair is very much alive (live on two
+  // SoundTouch 10s, 2026-08-04).
+  const pair = stereoPairOf(state.zoneLive);
+  const live = pairMemberBoxes(pair, state.boxes || []).map(x => x.box).filter(Boolean);
+  const masterUp = String((pair && pair.master) || '').toUpperCase();
+  const master = live.find(b => String(b.deviceID || '').toUpperCase() === masterUp)
     || live[0]
     || pairCands.find(b => b.deviceID === ($('stereoLeft') || {}).value);
   if (!master) {

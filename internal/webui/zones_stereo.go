@@ -546,6 +546,16 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	s.logger.Info("stereo: pairing via /addGroup (beta)", "name", name,
 		"left", master.DeviceID, "leftIP", master.IP, "right", partner.DeviceID, "rightIP", partner.IP)
 	members := []boxapi.ZoneMember{master, partner}
+	// Own budget, detached from the handler's. Pairing is the last step of the
+	// form, so by the time it runs, a slow probe earlier in the same request
+	// can have spent nearly the whole budget: live on two SoundTouch 10s the
+	// partner's /info took its full 6 s, /addGroup started with 4 s left, and
+	// the handler deadline killed it mid-call. The firmware went on to form the
+	// pair 4 s later and the speakers announced it, but the user had already
+	// been told the pairing failed.
+	actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	defer acancel()
+	ctx = actx
 	if err := c.AddGroup(ctx, name, master.DeviceID, members); err != nil {
 		// 5510 GROUP_ALREADY_EXISTS: a stale pair (half-dissolved, or left over
 		// from a pre-shutdown Bose-app pairing) blocks every new /addGroup until
@@ -563,9 +573,24 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			hcancel()
 		}
 		if err != nil {
-			s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
-			http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
-			return
+			// Before reporting a failure, ASK the speaker. A timed-out or reset
+			// /addGroup does not mean the firmware did nothing: it kept going and
+			// formed the pair after the call had already been abandoned (live,
+			// two SoundTouch 10s, 2026-08-04). Reporting failure for a pair that
+			// exists is worse than the timeout itself, because the user's next
+			// move is to pair again, which the firmware then rejects with
+			// GROUP_ALREADY_EXISTS.
+			cctx, ccancel := context.WithTimeout(context.WithoutCancel(ctx), 6*time.Second)
+			g, gerr := c.GetGroup(cctx)
+			ccancel()
+			if gerr == nil && len(g.Members) == 2 {
+				s.logger.Warn("stereo: addGroup reported an error but the speaker formed the pair anyway, treating it as paired",
+					"err", err, "id", g.ID)
+			} else {
+				s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
+				http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
+				return
+			}
 		}
 	}
 	g, err := c.GetGroup(ctx)
