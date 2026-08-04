@@ -833,6 +833,9 @@ func run() error {
 	// natively, so re-probe the moment it says the list changed instead of waiting
 	// for the cached verdict to expire.
 	wsClient.SetOnSourcesChanged(invalidateNativeRadioReady)
+	// A speaker that accepts a native station and then abandons it gets its
+	// presets put back on the UPnP form (see noteNativeStreamDropped).
+	wsClient.SetOnNativeDropped(noteNativeStreamDropped)
 
 	// Seed the box-native preset snapshot once at start and, if the NAND preset
 	// store came up empty while the box still lists STR presets, restore what

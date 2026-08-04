@@ -102,6 +102,57 @@ func disableNativePresets(reason string) {
 		"reason", reason, "attempt", n, "of", nativeFailureBudget)
 }
 
+// nativeDropBudget is how many times the box may abandon a native station it
+// just accepted before the agent stops storing presets that way on this
+// speaker.
+const nativeDropBudget = 4
+
+var nativeDrops struct {
+	sync.Mutex
+	n int
+}
+
+// noteNativeStreamDropped records the box leaving a native station on its own.
+//
+// This is the playback-side counterpart to the write-side latch. A speaker can
+// accept the native preset perfectly and then refuse to KEEP it: measured on a
+// SoundTouch 20 (2nd generation, v0.9.30), all twelve native presses ended in
+// the box abandoning the station within seconds, rescued only by STR's re-push,
+// while the same build on the owner's ST30 dropped once in eight presses. The
+// write-side latch saw nothing, because the writes were fine.
+//
+// After a few drops the speaker is put back on the UPnP form, which works there.
+// A slower path is a far better outcome than a station that keeps falling over.
+func noteNativeStreamDropped() {
+	nativeDrops.Lock()
+	nativeDrops.n++
+	n := nativeDrops.n
+	nativeDrops.Unlock()
+	if n < nativeDropBudget {
+		return
+	}
+	if disabled, _ := nativePresetsDisabled(); disabled {
+		return
+	}
+	if l := nativeReadyLogger; l != nil {
+		l.Warn("native presets: this speaker keeps dropping the station it just started, switching its presets back to the slower form that works here",
+			"drops", n)
+	}
+	// Latch immediately: unlike a lost write, this is not a boot-window
+	// artefact that a retry fixes. The next reconcile sweep then sees native
+	// unavailable and rewrites every slot in the UPnP form.
+	forceDisableNativePresets("box repeatedly abandoned a native station it had accepted")
+}
+
+// forceDisableNativePresets latches native presets off at once, for evidence
+// that does not improve on a retry.
+func forceDisableNativePresets(reason string) {
+	nativeReady.Lock()
+	nativeReady.disabled = true
+	nativeReady.why = reason
+	nativeReady.Unlock()
+}
+
 // noteNativeWriteLanded records a sweep whose native writes stuck, clearing the
 // consecutive-failure count so an early-boot miss cannot accumulate across an
 // otherwise healthy run.
