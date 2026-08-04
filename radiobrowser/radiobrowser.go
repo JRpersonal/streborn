@@ -693,6 +693,13 @@ func (c *Client) tryMirror(parent context.Context, base, path string, out any) e
 	client := c.HTTP
 	if u, perr := url.Parse(base); perr == nil && net.ParseIP(u.Hostname()) != nil {
 		client = c.ipHTTP
+		// ...and the HTTP Host header has to name the hostname too. Pinning
+		// only the TLS ServerName fixed certificate validation and left the
+		// request addressed to the bare IP, so the server's virtual-host
+		// routing answered "404 page not found" and the last-resort mirror
+		// still never worked. Reported from the field on v0.9.32:
+		// "radio directory unreachable: mirror https://91.98.4.78/json: 404".
+		req.Host = ipMirrorServerName
 	}
 	resp, err := client.Do(req)
 	if err != nil {
