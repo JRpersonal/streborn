@@ -3414,11 +3414,28 @@ async function doBoxUpdate(targetBox) {
     const v = await BoxAgentVersion(targetBox.host, targetBox.port);
     const free = parseInt(v.nandFreeBytes || '', 10);
     const agentBytes = (state.appInfo && state.appInfo.agentBinBytes) || 0;
-    if (Number.isFinite(free) && free > 0 && agentBytes > 0 && free < agentBytes) {
+    // Count the space the update frees BEFORE it needs it. The agent drops the
+    // Spotify engine to make room and reinstalls it afterwards, so a speaker
+    // with the engine installed effectively has that much more headroom.
+    // Comparing raw free space against the whole agent asked users to approve
+    // an update that was never at risk: a field case warned at 12.0 MB free for
+    // a 12.3 MB update on a speaker carrying a 16 MB engine, and the user went
+    // looking on the web to find out whether it was safe to continue.
+    const engineBytes = (v.goLibrespot === 'present')
+      ? (parseInt(v.goLibrespotSizeBytes || '', 10) || 0) : 0;
+    const effectiveFree = (Number.isFinite(free) ? free : 0) + engineBytes;
+    if (Number.isFinite(free) && free > 0 && agentBytes > 0 && effectiveFree < agentBytes) {
       const fmtMB = (n) => (n / 1048576).toFixed(1);
+      // Only one thing here is ever the user's to act on: other SoundTouch
+      // software occupying the storage. Name it when it is there, because then
+      // the warning carries an instruction instead of a decision they have no
+      // basis to make.
+      const foreign = foreignSoftwareLabel(v);
       const ok = await confirmWarn(
         t('update.tightNandTitle'),
-        t('update.tightNandBody', { freeMB: fmtMB(free), needMB: fmtMB(agentBytes) })
+        foreign
+          ? t('update.tightNandNamedBody', { freeMB: fmtMB(free), needMB: fmtMB(agentBytes), software: foreign })
+          : t('update.tightNandBody', { freeMB: fmtMB(free), needMB: fmtMB(agentBytes) })
       );
       if (!ok) return; // user cancelled: no OTA, no reboot
     }
