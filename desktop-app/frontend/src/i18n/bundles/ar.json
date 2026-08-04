@@ -188,6 +188,8 @@
   "banner.sshRecommend": "وصول SSH إلى هذه السمّاعة مفتوح. أعِد تشغيل السمّاعة مرة واحدة لإغلاقه من جديد، وإلا فقد يصل إليها آخرون على شبكتك.",
   "banner.sshPersistentNote": "تم ترك وصول SSH مفتوحًا بشكل دائم عمدًا على هذه السمّاعة (علامة remote_services دائمة). احذف /mnt/nv/remote_services (و /mnt/nv/streborn/enable-ssh) لإغلاقه عند إعادة التشغيل التالية.",
   "banner.appUpdateAvail": "يتوفّر إصدار جديد من التطبيق:",
+  "banner.dismiss": "إخفاء",
+  "banner.dismissTitle": "أخفِ هذا الإشعار. سيظهر مجددًا مع إصدار لاحق.",
   "banner.download": "تنزيل",
   "banner.whatsNew": "ما الجديد",
   "modal.warnTitle": "تحذير",

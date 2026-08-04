@@ -188,6 +188,8 @@
   "banner.sshRecommend": "SSH-toegang tot deze speaker staat open. Start de speaker één keer opnieuw op om die weer te sluiten, anders is hij bereikbaar voor anderen op je netwerk.",
   "banner.sshPersistentNote": "SSH-toegang is op deze speaker bewust permanent open (persistente remote_services-marker). Verwijder /mnt/nv/remote_services (en /mnt/nv/streborn/enable-ssh) om hem bij de volgende herstart te sluiten.",
   "banner.appUpdateAvail": "Nieuwe app-versie beschikbaar:",
+  "banner.dismiss": "Verbergen",
+  "banner.dismissTitle": "Verberg deze melding. Hij komt terug bij een latere versie.",
   "banner.download": "Downloaden",
   "banner.whatsNew": "Wat is nieuw",
   "modal.warnTitle": "Waarschuwing",

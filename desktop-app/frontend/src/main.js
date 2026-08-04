@@ -197,6 +197,8 @@ import {
   compareVerBuild,
   getBoxLabel,
   savePresetCase,
+  dismissNotice,
+  noticeDismissed,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -1008,6 +1010,15 @@ async function checkAppUpdate() {
     if (!m || typeof m !== 'object' || typeof m.version !== 'string' || !m.version) return;
     const banner = $('appUpdateBanner');
     if (!banner) return;
+    // An app update outranks the speaker updates and hides their prompts (see
+    // speakerUpdatePromptsMuted). Set before the dismissal check: the ORDER
+    // holds either way, and a user who clicked the app notice away has not
+    // stopped needing the app first.
+    state.appUpdateVersion = m.version;
+    if (noticeDismissed('appUpdate', m.version)) {
+      banner.classList.add('hidden');
+      return;
+    }
     // Keep the banner discreet: version, a single "What's new" LINK to
     // the release notes (not the notes inline, which took too much space
     // and does not interest every user), and the download button.
@@ -1042,12 +1053,23 @@ async function checkAppUpdate() {
     banner.innerHTML = `
       <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#8593;</span><span><b>${escapeHtml(t('banner.appUpdateAvail'))}</b> ${escapeHtml(m.version)} &middot; <a href="#" id="appUpdateNotes" class="footer-link">${escapeHtml(t('banner.whatsNew'))}</a></span></div>
       <button class="btn btn-primary app-update-btn" id="appUpdateBtn">${escapeHtml(installLabel)}</button>
+      <button class="banner-close" id="appUpdateDismiss" aria-label="${escapeAttr(t('banner.dismiss'))}" title="${escapeAttr(t('banner.dismissTitle'))}">&times;</button>
     `;
     banner.classList.remove('hidden');
     const notesLink = $('appUpdateNotes');
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
     const dl = $('appUpdateBtn');
     if (dl) dl.onclick = () => runAppUpdate(m.version, dl, installLabel, isMacOS, dlUrl || latestUrl);
+    // Clicking it away is allowed and remembered. It stays away for this
+    // version and the next one, and comes back on the one after that.
+    const x = $('appUpdateDismiss');
+    if (x) x.onclick = () => {
+      dismissNotice('appUpdate', m.version);
+      banner.classList.add('hidden');
+      // The speaker prompts stay muted: the app is still the thing to do first.
+      // They return once the app is current.
+      maybeShowSpeakerUpdateCard();
+    };
   } catch (e) {
     try { console.warn('checkAppUpdate failed', e); } catch {}
   }
@@ -1685,6 +1707,9 @@ function maybeShowSpeakerUpdateCard() {
   const el = $('speakerUpdateCard');
   if (!el || speakerUpdateCardShown) return;
   if (!state.appInfo || !state.appInfo.version) return;
+  // App first: while the app itself is out of date this card stays away, so
+  // the user is never shown two update prompts and left to guess the order.
+  if (speakerUpdatePromptsMuted()) { el.classList.add('hidden'); return; }
   const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
   // No speakers behind (or none discovered yet): stay silent and re-check on
   // the next discovery cycle, so a box that appears late is still covered.
@@ -2127,13 +2152,14 @@ function renderBoxSelect() {
     // one: a glanceable "update available" cue right on the speaker button
     // itself, in addition to the settings-tab badge and the music-tab
     // banner (#108).
-    const updCls = boxNeedsUpdate(b) ? ' needs-update' : '';
+    const showUpd = boxNeedsUpdate(b) && !speakerUpdatePromptsMuted();
+    const updCls = showUpd ? ' needs-update' : '';
     // A WORD, not a dot: the blue dot that used to sit here reads as decoration
     // to non-technical users. A screenshot from a user whose speaker had been
     // three versions behind for days showed the dot in plain sight, twice, while
     // he was writing to ask why his speaker kept switching itself off
     // (2026-07-27). The tooltip spells out both versions.
-    const updDot = boxNeedsUpdate(b)
+    const updDot = showUpd
       ? `<span class="box-update-chip" role="button" tabindex="0" data-host="${b.host}" data-port="${b.port}" title="${escapeAttr(t('speaker.updateChipTitle', { box: b.version || '?', app: (state.appInfo && state.appInfo.version) || '?' }))}">${escapeHtml(t('speaker.updateChip'))}</span>`
       : '';
     // Small speaker icon on a tile whose speaker is currently playing, so the
@@ -2670,6 +2696,20 @@ function renderLanguageOptions() {
 //
 // Returns false for stock boxes (no agent yet — that is a "needs install"
 // case, handled separately) and when the app version is not yet known.
+// speakerUpdatePromptsMuted reports whether the SPEAKER update prompts should
+// stay quiet because the APP itself is out of date.
+//
+// Both notices at once left people guessing which to click first, and the wrong
+// order is the harmful one: updating a speaker from an old app installs that
+// old app's bundled speaker software, so the speaker is behind again the moment
+// the app is updated. App first, speakers second (Jens, 2026-08-04).
+//
+// This mutes the PROMPTS, not the ability. Speaker Settings still offers the
+// update, so anyone who deliberately wants it can still have it.
+function speakerUpdatePromptsMuted() {
+  return !!state.appUpdateVersion;
+}
+
 function boxNeedsUpdate(b) {
   if (!b || b.kind === 'stock' || !b.version) return false;
   const appVer   = state.appInfo && state.appInfo.version;
@@ -2688,7 +2728,7 @@ function boxNeedsUpdate(b) {
 function updateSettingsTabBadge() {
   const btn = document.querySelector('.tab-btn[data-view="settings"]');
   if (!btn) return;
-  const needsUpdate = state.boxes.some(boxNeedsUpdate);
+  const needsUpdate = !speakerUpdatePromptsMuted() && state.boxes.some(boxNeedsUpdate);
   btn.classList.toggle('has-update', needsUpdate);
 }
 

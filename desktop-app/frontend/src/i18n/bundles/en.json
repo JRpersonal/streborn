@@ -195,6 +195,8 @@
   "banner.sshRecommend": "SSH access to this speaker is open. Restart the speaker once to close it again, otherwise it can be reached by others on your network.",
   "banner.sshPersistentNote": "SSH access is deliberately left open on this speaker (persistent remote_services marker). Remove /mnt/nv/remote_services (and /mnt/nv/streborn/enable-ssh) to close it on the next restart.",
   "banner.appUpdateAvail": "New app version available:",
+  "banner.dismiss": "Dismiss",
+  "banner.dismissTitle": "Hide this notice. It comes back with a later version.",
   "banner.download": "Download",
   "banner.whatsNew": "What's new",
   "banner.installNow": "Install now",

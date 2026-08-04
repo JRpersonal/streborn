@@ -188,6 +188,8 @@
   "banner.sshRecommend": "このスピーカーへの SSH アクセスが開いています。スピーカーを一度再起動して閉じてください。そのままだとネットワーク上の他の人からアクセスされる可能性があります。",
   "banner.sshPersistentNote": "このスピーカーではSSHアクセスが意図的に常時開放されています（永続的なremote_servicesマーカー）。次回の再起動で閉じるには /mnt/nv/remote_services（および /mnt/nv/streborn/enable-ssh）を削除してください。",
   "banner.appUpdateAvail": "アプリの新しいバージョンがあります:",
+  "banner.dismiss": "非表示",
+  "banner.dismissTitle": "このお知らせを非表示にします。後のバージョンで再び表示されます。",
   "banner.download": "ダウンロード",
   "banner.whatsNew": "新着情報",
   "modal.warnTitle": "警告",

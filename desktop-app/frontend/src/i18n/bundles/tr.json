@@ -188,6 +188,8 @@
   "banner.sshRecommend": "Bu hoparlöre SSH erişimi açık. Tekrar kapatmak için hoparlörü bir kez yeniden başlatın, aksi halde ağınızdaki başkaları ona erişebilir.",
   "banner.sshPersistentNote": "Bu hoparlörde SSH erişimi bilinçli olarak kalıcı biçimde açık bırakıldı (kalıcı remote_services işareti). Bir sonraki yeniden başlatmada kapatmak için /mnt/nv/remote_services (ve /mnt/nv/streborn/enable-ssh) dosyalarını silin.",
   "banner.appUpdateAvail": "Yeni uygulama sürümü mevcut:",
+  "banner.dismiss": "Gizle",
+  "banner.dismissTitle": "Bu bildirimi gizle. Daha sonraki bir sürümde tekrar görünür.",
   "banner.download": "İndir",
   "banner.whatsNew": "Yenilikler",
   "modal.warnTitle": "Uyarı",

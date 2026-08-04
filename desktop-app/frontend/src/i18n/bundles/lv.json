@@ -188,6 +188,8 @@
   "banner.sshRecommend": "SSH piekļuve šim skaļrunim ir atvērta. Vienreiz pārstartējiet skaļruni, lai to atkal aizvērtu, citādi tam var piekļūt citi jūsu tīklā.",
   "banner.sshPersistentNote": "SSH piekļuve šajā skaļrunī ir apzināti atstāta pastāvīgi atvērta (pastāvīgs remote_services marķieris). Izdzēsiet /mnt/nv/remote_services (un /mnt/nv/streborn/enable-ssh), lai to aizvērtu nākamajā restartā.",
   "banner.appUpdateAvail": "Pieejama jauna lietotnes versija:",
+  "banner.dismiss": "Slēpt",
+  "banner.dismissTitle": "Slēpt šo paziņojumu. Tas atgriezīsies ar vēlāku versiju.",
   "banner.download": "Lejupielādēt",
   "banner.whatsNew": "Kas jauns",
   "modal.warnTitle": "Brīdinājums",

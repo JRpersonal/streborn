@@ -188,6 +188,8 @@
   "banner.sshRecommend": "SSH prieiga prie šio garsiakalbio yra atvira. Vieną kartą paleiskite garsiakalbį iš naujo, kad ją vėl uždarytumėte, kitaip jį gali pasiekti kiti jūsų tinkle.",
   "banner.sshPersistentNote": "SSH prieiga šioje kolonėlėje sąmoningai palikta nuolat atvira (nuolatinis remote_services žymuo). Pašalinkite /mnt/nv/remote_services (ir /mnt/nv/streborn/enable-ssh), kad ji užsidarytų po kito paleidimo iš naujo.",
   "banner.appUpdateAvail": "Galima nauja programos versija:",
+  "banner.dismiss": "Slėpti",
+  "banner.dismissTitle": "Slėpti šį pranešimą. Jis vėl pasirodys su vėlesne versija.",
   "banner.download": "Atsisiųsti",
   "banner.whatsNew": "Kas naujo",
   "modal.warnTitle": "Įspėjimas",

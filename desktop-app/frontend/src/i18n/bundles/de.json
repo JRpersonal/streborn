@@ -195,6 +195,8 @@
   "banner.sshRecommend": "Der SSH-Zugang zu diesem Lautsprecher ist offen. Starte den Lautsprecher einmal neu, um ihn wieder zu schließen. Sonst kann er von anderen im Netzwerk erreicht werden.",
   "banner.sshPersistentNote": "Der SSH-Zugang ist auf diesem Lautsprecher bewusst dauerhaft offen (persistenter remote_services-Marker). Lösche /mnt/nv/remote_services (und /mnt/nv/streborn/enable-ssh), um ihn beim nächsten Neustart zu schließen.",
   "banner.appUpdateAvail": "Neue App-Version verfügbar:",
+  "banner.dismiss": "Ausblenden",
+  "banner.dismissTitle": "Diesen Hinweis ausblenden. Er kommt mit einer späteren Version wieder.",
   "banner.download": "Download",
   "banner.whatsNew": "Was ist neu",
   "banner.installNow": "Jetzt installieren",

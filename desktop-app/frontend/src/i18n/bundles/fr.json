@@ -188,6 +188,8 @@
   "banner.sshRecommend": "L'accès SSH à cette enceinte est ouvert. Redémarrez l'enceinte une fois pour le refermer, sinon elle reste accessible aux autres sur votre réseau.",
   "banner.sshPersistentNote": "L'accès SSH est volontairement laissé ouvert en permanence sur cette enceinte (marqueur remote_services persistant). Supprimez /mnt/nv/remote_services (et /mnt/nv/streborn/enable-ssh) pour le fermer au prochain redémarrage.",
   "banner.appUpdateAvail": "Nouvelle version de l'application disponible :",
+  "banner.dismiss": "Masquer",
+  "banner.dismissTitle": "Masquer cet avis. Il revient avec une version ultérieure.",
   "banner.download": "Télécharger",
   "banner.whatsNew": "Nouveautés",
   "modal.warnTitle": "Avertissement",

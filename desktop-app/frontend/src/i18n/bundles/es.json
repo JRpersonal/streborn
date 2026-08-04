@@ -188,6 +188,8 @@
   "banner.sshRecommend": "El acceso SSH a este altavoz está abierto. Reinicia el altavoz una vez para cerrarlo de nuevo; de lo contrario, otras personas de tu red pueden acceder a él.",
   "banner.sshPersistentNote": "El acceso SSH está deliberadamente abierto de forma permanente en este altavoz (marcador remote_services persistente). Elimina /mnt/nv/remote_services (y /mnt/nv/streborn/enable-ssh) para cerrarlo en el próximo reinicio.",
   "banner.appUpdateAvail": "Nueva versión de la aplicación disponible:",
+  "banner.dismiss": "Ocultar",
+  "banner.dismissTitle": "Oculta este aviso. Vuelve a aparecer con una versión posterior.",
   "banner.download": "Descargar",
   "banner.whatsNew": "Novedades",
   "modal.warnTitle": "Advertencia",

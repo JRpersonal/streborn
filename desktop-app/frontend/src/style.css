@@ -1940,6 +1940,23 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
 .box-wedge-banner b { color: #431407; }
 .app-update-text { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .app-update-icon { font-size: 18px; font-weight: 700; line-height: 1; flex: 0 0 auto; }
+/* Dismiss control: a plain close cross at the far end of the banner, sized to
+   be an easy target without competing with the install button next to it. */
+.banner-close {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 20px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.banner-close:hover { opacity: 1; background: rgba(120, 80, 0, 0.12); }
+.banner-close:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+html.a11y-contrast .banner-close:hover { background: rgba(255, 224, 102, 0.2); }
 .app-update-banner .footer-link { color: #7a5300; text-decoration: underline; }
 .app-update-banner .footer-link:hover { color: #5a3d00; }
 html.a11y-contrast .app-update-banner { background: #000; color: #ffe066; border-bottom-color: #fff; }

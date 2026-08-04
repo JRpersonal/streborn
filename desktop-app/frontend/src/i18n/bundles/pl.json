@@ -188,6 +188,8 @@
   "banner.sshRecommend": "Dostęp SSH do tego głośnika jest otwarty. Uruchom głośnik raz ponownie, aby go z powrotem zamknąć, w przeciwnym razie inni w sieci mogą się z nim połączyć.",
   "banner.sshPersistentNote": "Dostęp SSH jest na tym głośniku celowo trwale otwarty (trwały znacznik remote_services). Usuń /mnt/nv/remote_services (oraz /mnt/nv/streborn/enable-ssh), aby zamknąć go przy następnym restarcie.",
   "banner.appUpdateAvail": "Dostępna nowa wersja aplikacji:",
+  "banner.dismiss": "Ukryj",
+  "banner.dismissTitle": "Ukryj to powiadomienie. Wróci przy późniejszej wersji.",
   "banner.download": "Pobierz",
   "banner.whatsNew": "Co nowego",
   "modal.warnTitle": "Ostrzeżenie",
