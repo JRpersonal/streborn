@@ -1240,5 +1240,6 @@
   "spotify.engineTooFull": "Not enough free space on the speaker for the Spotify engine. Remove other SoundTouch add-ons from it to free space, then try again.",
   "spotify.engineTooFullNamed": "Not enough free space for the Spotify engine. Remove this other SoundTouch software from the speaker first: {{software}}. Then try again.",
   "spotify.engineInstallFailed": "Could not install the Spotify engine. Please try again.",
-  "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen."
+  "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen.",
+  "update.tightNandNamedBody": "Garsiakalbis praneša tik apie {{freeMB}} MB laisvos vietos, o naujinimui reikia apie {{needMB}} MB. Šiame garsiakalbyje vietą užima kita SoundTouch programinė įranga ({{software}}). Pašalink ją ir naujinimui užteks vietos; kitaip naujinimas pats atlaisvins vietos ir gali kelis kartus paleisti garsiakalbį iš naujo. Naujinti dabar?"
 }

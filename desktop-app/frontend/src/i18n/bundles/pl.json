@@ -1240,5 +1240,6 @@
   "spotify.engineTooFull": "Not enough free space on the speaker for the Spotify engine. Remove other SoundTouch add-ons from it to free space, then try again.",
   "spotify.engineTooFullNamed": "Not enough free space for the Spotify engine. Remove this other SoundTouch software from the speaker first: {{software}}. Then try again.",
   "spotify.engineInstallFailed": "Could not install the Spotify engine. Please try again.",
-  "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen."
+  "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen.",
+  "update.tightNandNamedBody": "Głośnik zgłasza tylko {{freeMB}} MB wolnego miejsca, a aktualizacja potrzebuje około {{needMB}} MB. Inne oprogramowanie SoundTouch ({{software}}) zajmuje miejsce na tym głośniku. Usuń je, a aktualizacja będzie miała miejsce; w przeciwnym razie aktualizacja sama zwolni miejsce i może kilka razy zrestartować głośnik. Zaktualizować teraz?"
 }

@@ -1240,5 +1240,6 @@
   "spotify.engineTooFull": "Nicht genug freier Speicher auf dem Lautsprecher für die Spotify-Engine. Entferne andere SoundTouch-Zusatzsoftware davon, um Platz zu schaffen, und versuche es erneut.",
   "spotify.engineTooFullNamed": "Nicht genug freier Speicher für die Spotify-Engine. Entferne zuerst diese andere SoundTouch-Software vom Lautsprecher: {{software}}. Danach erneut versuchen.",
   "spotify.engineInstallFailed": "Die Spotify-Engine konnte nicht installiert werden. Bitte erneut versuchen.",
-  "spotify.engineDeferredVisible": "Lautsprecher aktualisiert. Die Spotify-Engine ist noch nicht installiert - du kannst sie auf dem Lautsprecher-Bildschirm installieren."
+  "spotify.engineDeferredVisible": "Lautsprecher aktualisiert. Die Spotify-Engine ist noch nicht installiert - du kannst sie auf dem Lautsprecher-Bildschirm installieren.",
+  "update.tightNandNamedBody": "Der Lautsprecher meldet nur {{freeMB}} MB freien Speicher, das Update braucht etwa {{needMB}} MB. Auf dem Lautsprecher liegt andere SoundTouch Software ({{software}}) und belegt Platz. Wenn du sie entfernst, hat das Update genug Raum. Sonst räumt das Update selbst auf und startet den Lautsprecher unter Umständen mehrmals neu. Jetzt aktualisieren?"
 }
