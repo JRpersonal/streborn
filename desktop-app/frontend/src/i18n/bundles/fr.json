@@ -1245,5 +1245,9 @@
   "spotify.engineTooFullNamed": "Not enough free space for the Spotify engine. Remove this other SoundTouch software from the speaker first: {{software}}. Then try again.",
   "spotify.engineInstallFailed": "Could not install the Spotify engine. Please try again.",
   "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen.",
-  "update.tightNandNamedBody": "L’enceinte ne signale que {{freeMB}} Mo libres et la mise à jour a besoin d’environ {{needMB}} Mo. Un autre logiciel SoundTouch ({{software}}) occupe de la place sur cette enceinte. Supprimez-le et la mise à jour aura la place ; sinon la mise à jour libérera elle-même de l’espace et pourra redémarrer l’enceinte plusieurs fois. Mettre à jour maintenant ?"
+  "update.tightNandNamedBody": "L’enceinte ne signale que {{freeMB}} Mo libres et la mise à jour a besoin d’environ {{needMB}} Mo. Un autre logiciel SoundTouch ({{software}}) occupe de la place sur cette enceinte. Supprimez-le et la mise à jour aura la place ; sinon la mise à jour libérera elle-même de l’espace et pourra redémarrer l’enceinte plusieurs fois. Mettre à jour maintenant ?",
+  "controls.balanceCentre": "Balance : centrée",
+  "controls.balanceLeft": "Balance : {{n}} à gauche",
+  "controls.balanceRight": "Balance : {{n}} à droite",
+  "controls.balanceTitle": "La balance gauche/droite de cette paire stéréo, telle que l’enceinte l’indique. Elle se modifie dans l’application Bose SoundTouch."
 }

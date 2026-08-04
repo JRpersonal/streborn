@@ -1245,5 +1245,9 @@
   "spotify.engineTooFullNamed": "Not enough free space for the Spotify engine. Remove this other SoundTouch software from the speaker first: {{software}}. Then try again.",
   "spotify.engineInstallFailed": "Could not install the Spotify engine. Please try again.",
   "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen.",
-  "update.tightNandNamedBody": "يبلغ مكبر الصوت عن {{freeMB}} ميغابايت فقط من المساحة الحرة، والتحديث يحتاج نحو {{needMB}} ميغابايت. يوجد برنامج SoundTouch آخر ({{software}}) يشغل مساحة على هذا المكبر. أزله وسيتوفر للتحديث مكان، وإلا فسيحرر التحديث المساحة بنفسه وقد يعيد تشغيل المكبر أكثر من مرة. هل تريد التحديث الآن؟"
+  "update.tightNandNamedBody": "يبلغ مكبر الصوت عن {{freeMB}} ميغابايت فقط من المساحة الحرة، والتحديث يحتاج نحو {{needMB}} ميغابايت. يوجد برنامج SoundTouch آخر ({{software}}) يشغل مساحة على هذا المكبر. أزله وسيتوفر للتحديث مكان، وإلا فسيحرر التحديث المساحة بنفسه وقد يعيد تشغيل المكبر أكثر من مرة. هل تريد التحديث الآن؟",
+  "controls.balanceCentre": "التوازن: في الوسط",
+  "controls.balanceLeft": "التوازن: {{n}} يسارًا",
+  "controls.balanceRight": "التوازن: {{n}} يمينًا",
+  "controls.balanceTitle": "توازن اليسار واليمين لهذا الزوج الستيريو، كما تذكره السماعة. يمكن تغييره في تطبيق Bose SoundTouch."
 }

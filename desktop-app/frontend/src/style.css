@@ -924,6 +924,18 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .btn-source-icon { display: inline-flex; align-items: center; justify-content: center; padding: 6px 8px; }
 .btn-source-icon svg { display: block; }
 .volume-control { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 1; min-width: 180px; max-width: 300px; }
+
+/* Stereo balance next to the volume. Read-only on purpose (the firmware takes
+   no write we could make work), so it is styled as a quiet label rather than a
+   control, and it is hidden entirely unless the speaker is the master of a
+   stereo pair. */
+.vol-balance {
+  font-size: 12px;
+  color: var(--c-muted);
+  white-space: nowrap;
+  margin-left: 10px;
+}
+.vol-balance.hidden { display: none; }
 .volume-control .vol-icon { font-size: 16px; opacity: 0.7; }
 /* Music tab volume slider: native control with accent-color so the
    filled portion on the left renders in brand blue — matches the

@@ -1168,6 +1168,7 @@ $('view-box').innerHTML = `
         <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" title="${escapeAttr(t('controls.volumeWheelHint'))}" />
         <button class="btn btn-mini vol-step" id="volUp" aria-label="${escapeAttr(t('controls.volumeUp'))}" title="${escapeAttr(t('controls.volumeUp'))}">+</button>
         <span class="vol-val" id="musicVolumeVal">--</span>
+        <span class="vol-balance hidden" id="musicBalance"></span>
       </div>
     </div>
     <div class="grid" id="presets"></div>
@@ -2333,6 +2334,10 @@ function selectBox(box) {
   // blank it on every call.
   const switched = !state.currentBox || state.currentBox.host !== (box && box.host);
   state.currentBox = box;
+  // Stereo balance is per-speaker and only exists on the master of a pair, so
+  // it is re-read whenever the selected speaker changes. Not on the status
+  // poll: the speaker does not answer this one while it is asleep.
+  setTimeout(() => { refreshBalance().catch(() => {}); }, 0);
   if (box && box.deviceID) saveLastBox(box.deviceID);
   // Tab-selection lock-step: the speaker picked here is preselected in the
   // Settings and Setup tabs too (their pickers re-render on every tab entry),
@@ -5695,6 +5700,42 @@ function renderNowPlayingBar() {
     if (main) main.innerHTML = statusHTML;
     requestAnimationFrame(() => applyTrackScroll('.status-bar .now'));
   }
+}
+
+// Stereo balance, read-only.
+//
+// Balance exists only while two speakers are paired, and only the MASTER of the
+// pair reports it; ask the other one and it says it has none. Range and centre
+// come from the speaker (-7..+7, 0 centred on a SoundTouch 10) rather than from
+// a constant, because a widely-copied community value of -50..+50 does not
+// match what the firmware actually says.
+//
+// Shown, not settable. The firmware accepts no write we could get to work: every
+// attempt hung and left the speaker's balance endpoint unresponsive until it was
+// woken again. Displaying it still earns its place, because a pair that was set
+// off-centre in the old Bose app otherwise just sounds lopsided for no visible
+// reason.
+//
+// Fetched on demand, never on the status poll: the speaker does not answer this
+// while it is in deep standby, it simply hangs.
+async function refreshBalance() {
+  const el = $('musicBalance');
+  if (!el) return;
+  const box = state.currentBox;
+  if (!box || box.kind === 'stock') { el.classList.add('hidden'); return; }
+  let b = null;
+  try {
+    const r = await boxFetch(box, '/api/box/balance');
+    b = await r.json();
+  } catch { /* asleep or unreachable: show nothing rather than an error */ }
+  if (!b || !b.available) { el.classList.add('hidden'); return; }
+  const v = Number(b.actual) || 0;
+  el.textContent = v === 0
+    ? t('controls.balanceCentre')
+    : (v < 0 ? t('controls.balanceLeft', { n: Math.abs(v) })
+             : t('controls.balanceRight', { n: v }));
+  el.title = t('controls.balanceTitle');
+  el.classList.remove('hidden');
 }
 
 // Track progress (#399). The speaker's own AVTransport clock is the source of

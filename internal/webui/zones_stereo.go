@@ -80,6 +80,40 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleBoxBalance reports the left/right balance of a stereo pair.
+//
+// GET /api/box/balance -> {"available":bool,"min":-7,"max":7,"actual":0,...}
+//
+// Deliberately its OWN endpoint rather than a field on the zone read, and
+// deliberately on a short budget. The firmware's /balance does not answer at
+// all while the speaker is in deep standby: it does not refuse, it hangs (12 s
+// and counting, measured 2026-08-04). The zone read is polled by the app every
+// few seconds, so folding balance into it would have put a multi-second stall
+// into a hot path for every speaker that happens to be asleep.
+//
+// Read-only for now. The firmware accepts no write over this API that we could
+// make work: every POST /balance hung the same way, including the exact body
+// the community reference sends, and left the endpoint unresponsive until the
+// speaker was woken again. So STR reports what the balance IS, which is enough
+// to explain a pair that sounds lopsided because it was set in the Bose app,
+// and does not pretend to offer a control that would not work.
+func (s *Server) handleBoxBalance(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	b, err := boxapi.New(s.boxHost).GetBalance(ctx)
+	if err != nil {
+		// A speaker asleep or otherwise not answering is not an error worth
+		// showing: report "no balance to display" and let the caller move on.
+		s.logger.Debug("balance: not readable", "err", err)
+		writeJSON(w, http.StatusOK, map[string]any{"available": false, "reason": "unreachable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, b)
+}
+
 type zoneMemberReq struct {
 	DeviceID string `json:"deviceID"`
 	IP       string `json:"ip"`

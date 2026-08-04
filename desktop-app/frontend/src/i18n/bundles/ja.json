@@ -1245,5 +1245,9 @@
   "spotify.engineTooFullNamed": "Not enough free space for the Spotify engine. Remove this other SoundTouch software from the speaker first: {{software}}. Then try again.",
   "spotify.engineInstallFailed": "Could not install the Spotify engine. Please try again.",
   "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen.",
-  "update.tightNandNamedBody": "スピーカーの空き容量は {{freeMB}} MB ですが、更新には約 {{needMB}} MB が必要です。このスピーカーでは別の SoundTouch ソフトウェア ({{software}}) が容量を使っています。削除すれば更新に十分な空きができます。削除しない場合、更新が自分で容量を空け、スピーカーが複数回再起動することがあります。今すぐ更新しますか?"
+  "update.tightNandNamedBody": "スピーカーの空き容量は {{freeMB}} MB ですが、更新には約 {{needMB}} MB が必要です。このスピーカーでは別の SoundTouch ソフトウェア ({{software}}) が容量を使っています。削除すれば更新に十分な空きができます。削除しない場合、更新が自分で容量を空け、スピーカーが複数回再起動することがあります。今すぐ更新しますか?",
+  "controls.balanceCentre": "バランス: 中央",
+  "controls.balanceLeft": "バランス: 左に {{n}}",
+  "controls.balanceRight": "バランス: 右に {{n}}",
+  "controls.balanceTitle": "このステレオペアの左右バランス。スピーカーが報告した値です。変更は Bose SoundTouch アプリで行えます。"
 }

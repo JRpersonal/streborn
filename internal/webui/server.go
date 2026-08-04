@@ -635,6 +635,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/announce/audio", s.handleAnnounceAudio)
 	mux.HandleFunc("/api/box/sync-presets", s.handleBoxSyncPresets)
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
+	mux.HandleFunc("/api/box/balance", s.handleBoxBalance)
 	mux.HandleFunc("/api/box/zone/purge", s.handleZonePurge)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/marge/group", s.handleMargeGroupDoc)

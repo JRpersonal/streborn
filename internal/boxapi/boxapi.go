@@ -727,3 +727,45 @@ func stripBuildSuffix(s string) string {
 	}
 	return s
 }
+
+// Balance is the left/right offset of a stereo pair. It exists only while two
+// speakers are paired: an unpaired speaker reports Available == false, and so
+// does the RIGHT-hand speaker of a pair. Only the master carries it.
+//
+// Measured live on two SoundTouch 10s (2026-08-04): Min -7, Max +7, Default 0,
+// negative to the left. Note that a widely-referenced community implementation
+// assumes -50..+50; the firmware itself does not agree, so use the Min/Max the
+// speaker reports rather than a constant.
+type Balance struct {
+	Available bool `json:"available"`
+	Min       int  `json:"min"`
+	Max       int  `json:"max"`
+	Default   int  `json:"default"`
+	Target    int  `json:"target"`
+	Actual    int  `json:"actual"`
+}
+
+// GetBalance reads /balance.
+//
+// CAUTION: this endpoint does NOT answer while the speaker is in deep standby.
+// It does not refuse, it hangs until the caller gives up (12 s and counting,
+// live). Never put it on a polled path, and always give it its own short
+// budget. Reading it after a wake works normally.
+func (c *Client) GetBalance(ctx context.Context) (Balance, error) {
+	var raw struct {
+		Available string `xml:"balanceAvailable"`
+		Min       int    `xml:"balanceMin"`
+		Max       int    `xml:"balanceMax"`
+		Default   int    `xml:"balanceDefault"`
+		Target    int    `xml:"targetBalance"`
+		Actual    int    `xml:"actualBalance"`
+	}
+	if err := c.getXML(ctx, "/balance", &raw); err != nil {
+		return Balance{}, err
+	}
+	return Balance{
+		Available: strings.EqualFold(strings.TrimSpace(raw.Available), "true"),
+		Min:       raw.Min, Max: raw.Max, Default: raw.Default,
+		Target: raw.Target, Actual: raw.Actual,
+	}, nil
+}

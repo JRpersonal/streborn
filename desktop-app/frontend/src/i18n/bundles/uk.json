@@ -1245,5 +1245,9 @@
   "spotify.engineTooFullNamed": "Not enough free space for the Spotify engine. Remove this other SoundTouch software from the speaker first: {{software}}. Then try again.",
   "spotify.engineInstallFailed": "Could not install the Spotify engine. Please try again.",
   "spotify.engineDeferredVisible": "Speaker updated. The Spotify engine is not installed yet - you can install it from this speaker's screen.",
-  "update.tightNandNamedBody": "Колонка повідомляє лише {{freeMB}} МБ вільної памʼяті, а оновленню потрібно близько {{needMB}} МБ. Інше програмне забезпечення SoundTouch ({{software}}) займає місце на цій колонці. Видали його, і оновленню вистачить місця; інакше оновлення звільнить місце саме і може кілька разів перезапустити колонку. Оновити зараз?"
+  "update.tightNandNamedBody": "Колонка повідомляє лише {{freeMB}} МБ вільної памʼяті, а оновленню потрібно близько {{needMB}} МБ. Інше програмне забезпечення SoundTouch ({{software}}) займає місце на цій колонці. Видали його, і оновленню вистачить місця; інакше оновлення звільнить місце саме і може кілька разів перезапустити колонку. Оновити зараз?",
+  "controls.balanceCentre": "Баланс: по центру",
+  "controls.balanceLeft": "Баланс: {{n}} ліворуч",
+  "controls.balanceRight": "Баланс: {{n}} праворуч",
+  "controls.balanceTitle": "Баланс лівого та правого каналів цієї стереопари. Змінюється в додатку Bose SoundTouch."
 }
