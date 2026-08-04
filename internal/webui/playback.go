@@ -173,6 +173,26 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	if mime == "" {
 		mime = upnp.MimeForCodec(req.Codec)
 	}
+	// A station started from the app (the play button in the radio search) goes
+	// the same way a preset key does when the speaker can take it: the speaker
+	// activates the station and fetches the stream itself. Only radio qualifies;
+	// a network library file is a finite ranged file and must keep the direct
+	// route (#139). Any refusal falls through to the UPnP push below.
+	if !playDirect && req.Mime == "" {
+		if loc := s.nativePresetLocation(req.Title, playURL); loc != "" {
+			if err := s.selectNativeStation(playCtx, loc, req.Title); err == nil {
+				s.logger.Info("play request: started natively, the speaker fetches the stream itself",
+					"title", req.Title, "url", req.URL)
+				s.setLastPlay(playURL, req.Title, req.Icon, mime)
+				s.recentNoteCard("radio", req.URL, req.Title, req.Icon, req.URL, "", req.Homepage)
+				writeJSON(w, http.StatusOK, map[string]string{"status": "playing", "url": req.URL})
+				return
+			} else {
+				s.logger.Warn("play request: the speaker refused the native station, falling back to the UPnP push",
+					"title", req.Title, "err", err)
+			}
+		}
+	}
 	var playErr error
 	if mime != "" {
 		playErr = s.renderer.PlayURLMime(playCtx, playURL, req.Title, req.Icon, mime)
@@ -466,6 +486,28 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// Use the stream proxy URL so playback continues even after token
 	// expiry (Bose sees the stable loopback URL).
 	playURL := boxurl.StreamSlot(slot)
+	// Start it the way the speaker's own key would, when this speaker can take
+	// the native form. Otherwise the app path pushes UPnP over a station the
+	// speaker is already playing natively, which drops the audio and flips the
+	// source back to the form the native work exists to avoid. Falls through to
+	// the UPnP push on any refusal, so a speaker that cannot do this keeps
+	// exactly today's behaviour. See nativeselect.go.
+	if loc := s.nativePresetLocation(p.Name, playURL); loc != "" {
+		if err := s.selectNativeStation(playCtx, loc, p.Name); err == nil {
+			s.logger.Info("preset slot recall (app): started natively, the speaker fetches the stream itself",
+				"slot", slot, "name", p.Name)
+			// Still record it as the last play: the power-on resume reads this,
+			// and skipping it would silently cost the user their "switch on and
+			// the last station comes back" behaviour.
+			s.setLastPlay(playURL, p.Name, p.Art, upnp.MimeForCodecOrURL(p.Codec, p.StreamURL))
+			s.recentNoteCard("radio", p.StreamURL, p.Name, p.Art, p.StreamURL, "", p.Homepage) // #135
+			writeJSON(w, http.StatusOK, map[string]any{"status": "playing", "slot": slot, "name": p.Name})
+			return
+		} else {
+			s.logger.Warn("preset slot recall (app): the speaker refused the native station, falling back to the UPnP push",
+				"slot", slot, "name", p.Name, "err", err)
+		}
+	}
 	// A preset saved from an AAC/HE-AAC station carries its codec: label the
 	// stream audio/aac in the DIDL so the box picks the right decoder. The
 	// fixed audio/mpeg label made those stations play silence (#252). A preset
