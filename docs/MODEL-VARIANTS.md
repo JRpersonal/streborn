@@ -156,18 +156,23 @@ the same `lisa` fingerprint to STR, which is why the model table lists
 
 ## Lifestyle (SoundTouch console)
 
-First fingerprint from a 2026-07-22 mail bundle (STR was NOT installed on
-this box; observed via the stock probes only):
+Two variants observed. STR is confirmed RUNNING on both (2026-08-03):
 
 | `type` | `moduleType` | SCM `softwareVersion` | `variant` | Components present | `networkInfo` entries | `countryCode` / `regionCode` |
 | --- | --- | --- | --- | --- | --- | --- |
 | `Lifestyle` | `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | `bardeen` | SCM, PackagedProduct (`1.16.7.5043495`) | 2 (SCM + SMSC) | `GB` / `GB` |
+| `Lifestyle` | `scm` | `27.0.6.46330.5043500` | `lisa` | SCM, PackagedProduct, Lightswitch, SMSC | 2 (SCM + SMSC) | (mixed) |
 
 - The bundle also showed a stale `margeURL` pointing at a LAN host that no
   longer exists (a previous STR/mod install on another machine), with an
   empty `margeAccountUUID` - a setup probe against such a console should
   expect leftover cloud config from earlier experiments.
-- STR has never run on a `bardeen`; no support claim is implied by this row.
+- STR runs on both variants. Confirmed 2026-08-03 from v0.9.28 diagnostics of
+  two independent owners (`lisa` and `bardeen`), each with the agent up, the
+  engine present and presets registered, plus a third owner reporting a
+  Lifestyle 535 with a SoundTouch 20 Series II adapter working. An earlier
+  answer that Lifestyle consoles and adapters were unsupported was wrong and
+  has been corrected in `docs/MODELS.md`.
 
 ## How to read a new bundle
 
