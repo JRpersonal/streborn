@@ -1114,11 +1114,13 @@ $('view-box').innerHTML = `
     <p>${escapeHtml(t('speaker.choose'))}</p>
   </div>
   <div id="boxControls" class="hidden">
-    <div class="status-bar" id="statusBar" role="status" aria-live="polite"></div>
-    <div class="track-progress hidden" id="trackProgress">
-      <span class="track-time" id="trackElapsed">0:00</span>
-      <div class="track-bar" id="trackBar"><div class="track-bar-fill" id="trackBarFill"></div></div>
-      <span class="track-time" id="trackTotal"></span>
+    <div class="status-bar" id="statusBar" role="status" aria-live="polite">
+      <div class="status-main" id="statusMain"></div>
+      <div class="track-progress hidden" id="trackProgress">
+        <span class="track-time" id="trackElapsed">0:00</span>
+        <div class="track-bar" id="trackBar"><div class="track-bar-fill" id="trackBarFill"></div></div>
+        <span class="track-time" id="trackTotal"></span>
+      </div>
     </div>
     <div class="group-control" id="groupControl"></div>
     <div class="controls">
@@ -5642,9 +5644,13 @@ function renderNowPlayingBar() {
   }
   // Only rewrite the DOM when the line changes, so the marquee animation is not
   // restarted on every poll (it would never get to scroll).
+  // Written into .status-main, NOT into the bar itself: the elapsed time and
+  // the progress bar are siblings inside the same bar now, and replacing the
+  // bar's whole content would delete them on every status poll.
   if (statusHTML !== state.lastStatusHTML) {
     state.lastStatusHTML = statusHTML;
-    bar.innerHTML = statusHTML;
+    const main = $('statusMain');
+    if (main) main.innerHTML = statusHTML;
     requestAnimationFrame(() => applyTrackScroll('.status-bar .now'));
   }
 }

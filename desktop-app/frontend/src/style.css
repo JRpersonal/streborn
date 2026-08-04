@@ -893,7 +893,12 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .library-empty-folder { color: var(--c-muted); font-style: italic; padding: 12px 0; }
 
 /* ---------- Status Bar (Signal-Farben!) ---------- */
-.status-bar { background: var(--c-surface); padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; min-height: 36px; display: flex; align-items: center; font-size: 13px; }
+.status-bar { background: var(--c-surface); padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; min-height: 36px; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+/* The status text and the playing time share the bar. The time used to sit
+   on its own row underneath, which cost a full line of the window for one
+   small clock, and for radio (no track length) that row held nothing but
+   the clock. */
+.status-main { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; }
 .status-bar .now { color: var(--signal-green); font-weight: 600; }
 .status-bar small { margin-left: 8px; color: var(--c-muted); }
 .status-bar .muted { color: var(--c-faint); }
@@ -2147,14 +2152,25 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
 .track-progress {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 6px 0 10px;
+  gap: 8px;
+  /* Inside the status bar now: no margins of its own, and it never grows at
+     the expense of the station name (which marquees when it runs out of
+     room). */
+  margin: 0;
+  flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
 }
-.track-time { font-size: 12px; color: var(--c-text-dim, #888); min-width: 34px; }
-.track-time:last-child { text-align: right; }
+/* A fixed, modest width so the bar stays readable without pushing the track
+   line out. Radio has no length, so the bar is hidden and only the clock is
+   left, which is then just a few characters wide. */
+.track-progress .track-bar { flex: 0 0 96px; width: 96px; }
+.track-progress .track-bar.hidden { display: none; }
+.track-time { font-size: 12px; color: var(--c-text-dim, #888); white-space: nowrap; }
+/* No min-width: the clock is right next to the station name now, and 34px
+   of reserved space left a visible gap for a radio stream, which shows
+   only the elapsed time and an empty total. */
+.track-time:empty { display: none; }
 .track-bar {
-  flex: 1;
   height: 4px;
   border-radius: 2px;
   background: var(--c-border, #d8d8d8);
