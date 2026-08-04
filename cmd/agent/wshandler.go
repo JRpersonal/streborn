@@ -475,9 +475,19 @@ func (h *presetWsHandler) recallPreset(ctx context.Context, seq uint64, pressAt 
 	if isNativeRadioLocation(location) {
 		h.logger.Info("hardware preset: native radio preset, the box activates it itself",
 			"slot", slot, "location", location)
-		if h.noteRecentPreset != nil {
-			if p, ok := h.store.Get(slot); ok {
+		if p, ok := h.store.Get(slot); ok {
+			if h.noteRecentPreset != nil {
 				h.noteRecentPreset(p)
+			}
+			// Record it as the last play even though STR does not drive this
+			// one. Standing back must not mean forgetting what is playing: the
+			// power-on resume and the box-side-drop recovery both read this
+			// record, and leaving it on the PREVIOUS station makes them bring
+			// that older station back. A user reported exactly that, a rare
+			// jump back to the station played before (Portable, v0.9.30).
+			if h.noteLastPlay != nil {
+				h.noteLastPlay(boxPresetURL(p), p.Name, p.Art,
+					upnp.MimeForCodecOrURL(p.Codec, p.StreamURL))
 			}
 		}
 		return
