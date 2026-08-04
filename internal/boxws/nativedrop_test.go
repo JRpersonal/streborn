@@ -88,5 +88,6 @@ func (nopHandlerForDrop) OnThumbActivity(context.Context)                       
 func (nopHandlerForDrop) OnPowerKey(context.Context)                            {}
 func (nopHandlerForDrop) OnSourceAux(context.Context)                           {}
 func (nopHandlerForDrop) OnZoneChanged(context.Context, ZoneState)              {}
+func (nopHandlerForDrop) OnGroupChanged(context.Context, GroupState)            {}
 func (nopHandlerForDrop) OnPowerWake(context.Context)                           {}
 func (nopHandlerForDrop) OnPresetsChanged(context.Context, []BoxPreset)         {}

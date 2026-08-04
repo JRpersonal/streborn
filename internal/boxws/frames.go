@@ -104,6 +104,20 @@ type gabboFrame struct {
 	// <zone/> (Master == "") means the zone dissolved (#70, Klaus 2026-06-12).
 	ZoneUpdated *wsZone `xml:"zoneUpdated>zone"`
 
+	// GroupUpdated carries the STEREO PAIR, which the firmware keeps separate
+	// from the zone: pairing two speakers emits groupUpdated, not zoneUpdated,
+	// and /getZone keeps reporting no members throughout. An empty <group />
+	// means the pair was torn down.
+	//
+	// Both speakers emit their own frame, which is what makes this the reliable
+	// place to notice a teardown. Undoing a pair in the BOSE app tells STR's
+	// cloud stand-in on the master only, so the other speaker kept its pair
+	// record forever - and a speaker that believes it is still half of a pair
+	// is no longer offered for pairing (field, 2026-08-04, three SoundTouch
+	// 10s). The frames were arriving the whole time and were logged as
+	// unrecognized.
+	GroupUpdated *wsGroupUpdated `xml:"groupUpdated"`
+
 	// LanguageUpdated carries the box's sysLanguage whenever it changes. Parsed
 	// typed (not left as an unrecognized frame) because the Wave firmware
 	// overwrites a user's language save within ~40-200 ms (2 then 3 back to
@@ -113,6 +127,59 @@ type gabboFrame struct {
 		Sys string `xml:"sysLanguage"`
 	} `xml:"languageUpdated"`
 }
+
+// wsGroupUpdated is the <groupUpdated> body. A self-closing <group /> still
+// yields a non-nil Group with no id and no roles: that is the teardown signal.
+type wsGroupUpdated struct {
+	Group *struct {
+		ID     string `xml:"id,attr"`
+		Name   string `xml:"name"`
+		Master string `xml:"masterDeviceId"`
+		Roles  []struct {
+			DeviceID string `xml:"deviceId"`
+			Role     string `xml:"role"`
+			IP       string `xml:"ipAddress"`
+		} `xml:"roles>groupRole"`
+	} `xml:"group"`
+}
+
+// toState flattens the frame into a GroupState.
+func (g *wsGroupUpdated) toState() GroupState {
+	var st GroupState
+	if g == nil || g.Group == nil {
+		return st
+	}
+	st.ID = strings.TrimSpace(g.Group.ID)
+	st.Name = strings.TrimSpace(g.Group.Name)
+	st.Master = strings.TrimSpace(g.Group.Master)
+	for _, r := range g.Group.Roles {
+		st.Members = append(st.Members, GroupMember{
+			DeviceID: strings.TrimSpace(r.DeviceID),
+			Role:     strings.TrimSpace(r.Role),
+			IP:       strings.TrimSpace(r.IP),
+		})
+	}
+	return st
+}
+
+// GroupState is a stereo pair as the box reports it. Paired reports whether a
+// pair exists at all; the zero value means the pair was torn down.
+type GroupState struct {
+	ID      string
+	Name    string
+	Master  string
+	Members []GroupMember
+}
+
+// GroupMember is one speaker in a stereo pair, with its LEFT/RIGHT role.
+type GroupMember struct {
+	DeviceID string
+	Role     string
+	IP       string
+}
+
+// Paired reports whether this state describes an existing pair.
+func (g GroupState) Paired() bool { return g.ID != "" || len(g.Members) > 0 }
 
 // wsZone is the <zone> body of a zoneUpdated frame. Bose puts the master's
 // deviceID in the master attr, its LAN IP in senderIPAddress, whether THIS box

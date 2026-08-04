@@ -301,6 +301,20 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		if c.handler != nil {
 			c.handler.OnZoneChanged(ctx, z)
 		}
+	case f.GroupUpdated != nil:
+		// The box's stereo pair changed. Both members emit their own frame, so
+		// this is where a teardown becomes visible on BOTH speakers - including
+		// one done in the Bose app, which never reaches STR any other way.
+		known = true
+		g := f.GroupUpdated.toState()
+		if !g.Paired() {
+			c.logger.Info("box ws: groupUpdated -> stereo pair dissolved")
+		} else {
+			c.logger.Info("box ws: groupUpdated", "id", g.ID, "master", g.Master, "members", len(g.Members))
+		}
+		if c.handler != nil {
+			c.handler.OnGroupChanged(ctx, g)
+		}
 	case f.LanguageUpdated != nil:
 		known = true
 		c.noteLanguageUpdated(strings.TrimSpace(f.LanguageUpdated.Sys))

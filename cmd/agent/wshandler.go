@@ -68,6 +68,11 @@ type presetWsHandler struct {
 	// webhooks fires the user-configured HTTP request on a "thumb" trigger (a
 	// lone userActivityUpdate, see OnThumbActivity). nil-safe.
 	webhooks *webhooks.Store
+	// margeGroupClear drops STR's stereo-pair record for this speaker. Called
+	// when the BOX itself reports its pair torn down, which is how a teardown
+	// done in the Bose app (or one that reached only the other member) reaches
+	// STR at all. nil-safe.
+	margeGroupClear func(reason string)
 	// noteLastPlay records a hardware-preset recall as the webui's lastPlay so
 	// the auto-re-push and the wake-resume know what to resume (the hardware path
 	// plays straight through the renderer, bypassing the webui's own lastPlay).
@@ -928,6 +933,37 @@ func (h *presetWsHandler) OnZoneChanged(_ context.Context, z boxws.ZoneState) {
 		return
 	}
 	h.logger.Info("zone changed", "master", z.Master, "senderIsMaster", z.SenderIsMaster, "members", len(z.Members))
+}
+
+// OnGroupChanged reacts to the box's stereo pair changing. The one action taken
+// is on a TEARDOWN: drop STR's own pair record for this speaker.
+//
+// Every speaker in a pair keeps a copy of the pair document in STR's cloud
+// stand-in, and until now only the speaker the teardown was issued THROUGH ever
+// cleared it. Undo the pair in the Bose app and the other speaker kept its copy
+// indefinitely; the same happened when a dissolve reached only one member. A
+// speaker that still believes it is half of a pair is not offered for pairing
+// again, which is how a user with three SoundTouch 10s ended up unable to pair
+// at all (field, 2026-08-04).
+//
+// The frame is emitted by each member's own firmware about itself, so acting on
+// it needs no reachability between the speakers - which is exactly what is
+// missing between series-I boxes.
+//
+// Only the teardown is acted on. A pair being FORMED must not write a record
+// here: the master installs one canonical document on both speakers, and
+// letting the right-hand speaker write its own view is the divergence that
+// desynced pairs in the first place.
+func (h *presetWsHandler) OnGroupChanged(_ context.Context, g boxws.GroupState) {
+	if g.Paired() {
+		h.logger.Info("stereo pair changed on the box", "id", g.ID, "master", g.Master, "members", len(g.Members))
+		return
+	}
+	if h.margeGroupClear == nil {
+		h.logger.Info("stereo pair dissolved on the box (no marge record to clear)")
+		return
+	}
+	h.margeGroupClear("the box reported its stereo pair dissolved")
 }
 
 // spotifyStreamURL is the agent-local URL the box's UPnP renderer fetches for

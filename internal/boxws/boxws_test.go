@@ -22,6 +22,7 @@ type recHandler struct {
 	enterStandby  int
 	skips         []bool
 	zones         []ZoneState
+	groups        []GroupState
 	boxPresets    [][]BoxPreset
 	sourceRejects int
 	mu            sync.Mutex
@@ -43,8 +44,11 @@ func (h *recHandler) OnThumbActivity(context.Context)              { h.mu.Lock()
 func (h *recHandler) OnPowerKey(context.Context)                   { h.powerKeys++ }
 func (h *recHandler) OnSourceAux(context.Context)                  { h.sourceAux++ }
 func (h *recHandler) OnZoneChanged(_ context.Context, z ZoneState) { h.zones = append(h.zones, z) }
-func (h *recHandler) OnPowerWake(context.Context)                  { h.powerWakes++ }
-func (h *recHandler) OnEnterStandby(context.Context)               { h.enterStandby++ }
+func (h *recHandler) OnGroupChanged(_ context.Context, g GroupState) {
+	h.groups = append(h.groups, g)
+}
+func (h *recHandler) OnPowerWake(context.Context)    { h.powerWakes++ }
+func (h *recHandler) OnEnterStandby(context.Context) { h.enterStandby++ }
 func (h *recHandler) OnPresetsChanged(_ context.Context, p []BoxPreset) {
 	h.boxPresets = append(h.boxPresets, p)
 }

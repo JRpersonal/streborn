@@ -687,6 +687,10 @@ func run() error {
 		// Spotify preset with a single clean slot recall instead (see its doc).
 		onRemoteSkip: webuiSrv.HardwareSkip,
 		webhooks:     webhooksStore,
+		// A pair torn down anywhere (the Bose app included) clears STR's record
+		// on the speaker that reports it, so no speaker is left believing it is
+		// still half of a pair and therefore unpairable.
+		margeGroupClear: margeSrv.ClearGroup,
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back. Returns the recall generation for supersession.
 		noteLastPlay: webuiSrv.NoteLastPlay,
