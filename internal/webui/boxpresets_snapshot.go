@@ -53,7 +53,7 @@ func (s *Server) handleBoxSyncPresets(w http.ResponseWriter, r *http.Request) {
 			Slot:           p.Slot,
 			Name:           p.Name,
 			StreamURL:      stream,
-			NativeLocation: s.nativePresetLocation(p.Name, stream),
+			NativeLocation: s.nativePresetLocation(p.Name, stream, p.Art),
 		})
 	}
 	syncCtx, cancel := context.WithTimeout(r.Context(), 30*time.Second)

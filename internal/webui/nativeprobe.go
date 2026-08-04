@@ -75,7 +75,7 @@ func (s *Server) handleNativeProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	loc := OrionStationLocation(stream, name)
+	loc := OrionStationLocation(stream, name, "")
 	full := "http://127.0.0.1:8888/core02/svc-bmx-adapter-orion/prod/orion" + loc
 	q := func(v string) string { return `"` + v + `"` }
 	slot := strconv.Itoa(in.Slot)

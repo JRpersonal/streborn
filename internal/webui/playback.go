@@ -179,7 +179,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	// a network library file is a finite ranged file and must keep the direct
 	// route (#139). Any refusal falls through to the UPnP push below.
 	if !playDirect && req.Mime == "" {
-		if loc := s.nativePresetLocation(req.Title, playURL); loc != "" {
+		if loc := s.nativePresetLocation(req.Title, playURL, req.Icon); loc != "" {
 			if err := s.selectNativeStation(playCtx, loc, req.Title); err == nil {
 				s.logger.Info("play request: started natively, the speaker fetches the stream itself",
 					"title", req.Title, "url", req.URL)
@@ -492,7 +492,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// source back to the form the native work exists to avoid. Falls through to
 	// the UPnP push on any refusal, so a speaker that cannot do this keeps
 	// exactly today's behaviour. See nativeselect.go.
-	if loc := s.nativePresetLocation(p.Name, playURL); loc != "" {
+	if loc := s.nativePresetLocation(p.Name, playURL, p.Art); loc != "" {
 		if err := s.selectNativeStation(playCtx, loc, p.Name); err == nil {
 			s.logger.Info("preset slot recall (app): started natively, the speaker fetches the stream itself",
 				"slot", slot, "name", p.Name)

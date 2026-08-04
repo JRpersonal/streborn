@@ -999,11 +999,11 @@ func run() error {
 	// registered, otherwise "" and the UPnP form is kept.
 	setNativeReadyLogger(logger)
 	boxcli.SetDiagLogger(logger)
-	webuiSrv.SetNativePresetLocatorFn(func(name, streamURL string) string {
+	webuiSrv.SetNativePresetLocatorFn(func(name, streamURL, art string) string {
 		if !nativeRadioReady(context.Background(), *boxHost) {
 			return ""
 		}
-		return webui.OrionStationLocation(streamURL, name)
+		return webui.OrionStationLocation(streamURL, name, art)
 	})
 	wg.Add(1)
 	go func() {

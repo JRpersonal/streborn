@@ -180,7 +180,7 @@ type Server struct {
 	// LOCAL_INTERNET_RADIO station (returning its orion location) instead of a
 	// UPnP stream that the box refuses to activate on its own. nil until wired
 	// by cmd/agent, and nil on the desktop side, where "" keeps the UPnP form.
-	nativePresetLocator func(name, streamURL string) string
+	nativePresetLocator func(name, streamURL, art string) string
 
 	// now_playing micro-cache. The Bose firmware app (:8090) on BCO
 	// speakers cannot sustain a high request rate, so /api/status caches

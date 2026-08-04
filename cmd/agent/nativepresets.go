@@ -410,7 +410,7 @@ func nativePresetLocation(ctx context.Context, boxHost string, p presets.Preset)
 	if stream == "" {
 		return ""
 	}
-	return webui.OrionStationLocation(stream, p.Name)
+	return webui.OrionStationLocation(stream, p.Name, p.Art)
 }
 
 // nativeStorable reports whether a preset may be stored on the native radio

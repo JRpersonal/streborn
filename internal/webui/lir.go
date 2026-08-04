@@ -154,12 +154,28 @@ func (s *Server) handleOrionStation(w http.ResponseWriter, r *http.Request) {
 // alphanumeric plus "-" and "_", so it survives tokenisation intact.
 // handleOrionStation accepts every alphabet, so this stays compatible with
 // locations written by older builds.
-func OrionStationLocation(streamURL, name string) string {
+// art is the station logo the speaker shows next to the name. Passing it
+// matters: the UPnP path always carried the artwork, and leaving it empty here
+// silently cost users the station logo on the speaker's display when their
+// presets converted to the native form (reported on a SoundTouch 20, 2026-08-04:
+// "the logo that was there before does not appear anymore"). Empty is still
+// accepted, for stations that simply have no image.
+func OrionStationLocation(streamURL, name, art string) string {
 	payload, _ := json.Marshal(map[string]any{
-		"streamUrl": streamURL, "name": name, "imageUrl": "",
+		"streamUrl": streamURL, "name": name, "imageUrl": firstArtURL(art),
 		"streamType": "liveRadio", "isRealtime": true,
 	})
 	return "/station?data=" + base64.RawURLEncoding.EncodeToString(payload)
+}
+
+// firstArtURL takes the first entry of STR's pipe-separated art fallback chain.
+// Presets store several candidate logo URLs separated by "|" so the app can try
+// the next when one 404s; the speaker understands exactly one.
+func firstArtURL(art string) string {
+	if i := strings.IndexByte(art, '|'); i >= 0 {
+		return art[:i]
+	}
+	return art
 }
 
 // handleOrionToken answers the token endpoint the BMX service registry points

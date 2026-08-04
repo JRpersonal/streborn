@@ -107,7 +107,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			// it at this slot's stream proxy URL like every other preset.
 			if s.boxHost != "" {
 				boxCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-				if err := s.writeBoxPreset(boxCtx, slot, p.Name, boxPresetURL(slot, false), false); err != nil {
+				if err := s.writeBoxPreset(boxCtx, slot, p.Name, boxPresetURL(slot, false), p.Art, false); err != nil {
 					s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
 				}
 				cancel()
@@ -284,7 +284,7 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 			// instead of failing on /stream/<slot> (no Spotify source) and
 			// flashing "service unavailable" (#22).
 			proxyURL := boxPresetURL(slot, p.Type == "spotify")
-			if err := s.writeBoxPreset(boxCtx, slot, p.Name, proxyURL, p.Type == "spotify"); err != nil {
+			if err := s.writeBoxPreset(boxCtx, slot, p.Name, proxyURL, p.Art, p.Type == "spotify"); err != nil {
 				s.logger.Warn("box preset sync failed", "slot", slot, "err", err)
 			}
 			cancel()
