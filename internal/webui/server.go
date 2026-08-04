@@ -638,6 +638,10 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/core02/svc-bmx-adapter-orion/prod/orion/token", s.handleOrionToken)
 	mux.HandleFunc("/api/debug/marge-lab", s.handleMargeLab)
 	mux.HandleFunc("/api/debug/native-preset-probe", s.handleNativeProbe)
+	// Radio service icons the BMX registry points the speaker at. Must be a
+	// real route: without it these fall through to the catchall and the speaker
+	// receives an HTML page where it asked for an image.
+	mux.HandleFunc(bmxIconPrefix, s.handleBMXIcon)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
 
 	// Stream proxy: stable URLs for radio streams with token expiry.
