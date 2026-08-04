@@ -1011,7 +1011,7 @@ async function checkAppUpdate() {
     const banner = $('appUpdateBanner');
     if (!banner) return;
     // An app update outranks the speaker updates and hides their prompts (see
-    // speakerUpdatePromptsMuted). Set before the dismissal check: the ORDER
+    // speakerUpdateCardMuted). Set before the dismissal check: the ORDER
     // holds either way, and a user who clicked the app notice away has not
     // stopped needing the app first.
     state.appUpdateVersion = m.version;
@@ -1709,7 +1709,7 @@ function maybeShowSpeakerUpdateCard() {
   if (!state.appInfo || !state.appInfo.version) return;
   // App first: while the app itself is out of date this card stays away, so
   // the user is never shown two update prompts and left to guess the order.
-  if (speakerUpdatePromptsMuted()) { el.classList.add('hidden'); return; }
+  if (speakerUpdateCardMuted()) { el.classList.add('hidden'); return; }
   const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
   // No speakers behind (or none discovered yet): stay silent and re-check on
   // the next discovery cycle, so a box that appears late is still covered.
@@ -2152,7 +2152,7 @@ function renderBoxSelect() {
     // one: a glanceable "update available" cue right on the speaker button
     // itself, in addition to the settings-tab badge and the music-tab
     // banner (#108).
-    const showUpd = boxNeedsUpdate(b) && !speakerUpdatePromptsMuted();
+    const showUpd = boxNeedsUpdate(b);
     const updCls = showUpd ? ' needs-update' : '';
     // A WORD, not a dot: the blue dot that used to sit here reads as decoration
     // to non-technical users. A screenshot from a user whose speaker had been
@@ -2696,17 +2696,19 @@ function renderLanguageOptions() {
 //
 // Returns false for stock boxes (no agent yet — that is a "needs install"
 // case, handled separately) and when the app version is not yet known.
-// speakerUpdatePromptsMuted reports whether the SPEAKER update prompts should
-// stay quiet because the APP itself is out of date.
+// speakerUpdateCardMuted reports whether the speaker-update CARD should stay
+// away because the app itself is out of date.
 //
-// Both notices at once left people guessing which to click first, and the wrong
+// Both cards at once left people guessing which to act on first, and the wrong
 // order is the harmful one: updating a speaker from an old app installs that
 // old app's bundled speaker software, so the speaker is behind again the moment
-// the app is updated. App first, speakers second (Jens, 2026-08-04).
+// the app is updated. App first, speakers second.
 //
-// This mutes the PROMPTS, not the ability. Speaker Settings still offers the
-// update, so anyone who deliberately wants it can still have it.
-function speakerUpdatePromptsMuted() {
+// ONLY the card. The small "Update" next to a speaker and the mark on the
+// Speaker Settings tab always stay: they report what state a speaker is IN, and
+// a state indicator that comes and goes with an unrelated notice is worse than
+// the ordering problem it was meant to solve. Hiding those was too broad.
+function speakerUpdateCardMuted() {
   return !!state.appUpdateVersion;
 }
 
@@ -2728,7 +2730,7 @@ function boxNeedsUpdate(b) {
 function updateSettingsTabBadge() {
   const btn = document.querySelector('.tab-btn[data-view="settings"]');
   if (!btn) return;
-  const needsUpdate = !speakerUpdatePromptsMuted() && state.boxes.some(boxNeedsUpdate);
+  const needsUpdate = state.boxes.some(boxNeedsUpdate);
   btn.classList.toggle('has-update', needsUpdate);
 }
 
