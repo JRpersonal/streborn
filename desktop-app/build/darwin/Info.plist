@@ -7,8 +7,19 @@
         <string>{{.Info.ProductName}}</string>
         <key>CFBundleExecutable</key>
         <string>{{.OutputFilename}}</string>
+        <!-- A real reverse-DNS identifier, not the Wails template default. That
+             default expands to "com.wails.ST Reborn", WITH A SPACE, which is not
+             a valid bundle identifier: Apple specifies alphanumerics, hyphens
+             and periods. macOS keys a lot on this string, including the
+             local-network permission below and the Gatekeeper decision, so it
+             has to be well formed before the app is signed and notarized.
+
+             Changing it makes macOS treat this as a different app, so an
+             existing install is asked for local-network access once more. That
+             happens anyway the moment the signing identity changes from ad-hoc
+             to a real certificate, so it costs nothing extra to fix it here. -->
         <key>CFBundleIdentifier</key>
-        <string>com.wails.{{.Name}}</string>
+        <string>de.st-reborn.app</string>
         <key>CFBundleVersion</key>
         <string>{{.Info.ProductVersion}}</string>
         <key>CFBundleGetInfoString</key>
@@ -46,10 +57,25 @@
              template funcs that version lacks, e.g. safeBundleID (v2.13+). -->
         <key>NSLocalNetworkUsageDescription</key>
         <string>ST Reborn discovers and controls your SoundTouch speakers on your local network.</string>
+        <!-- ALL FOUR types discovery/discovery.go browses, not just two. macOS
+             only permits the service types listed here, so the two that were
+             missing simply never resolved: speakers still running the pre-rename
+             agent (_soundtouchstick._tcp) and stock speakers that announce under
+             the alternate spelling (_bose-soundtouch._tcp) were invisible on a
+             Mac while they showed up fine on Windows. Keep this list in step
+             with ServiceType / LegacyServiceType / StockServiceType and
+             StockServiceTypeAliases. -->
         <key>NSBonjourServices</key>
         <array>
             <string>_streborn._tcp</string>
+            <string>_soundtouchstick._tcp</string>
             <string>_soundtouch._tcp</string>
+            <string>_bose-soundtouch._tcp</string>
         </array>
+        <!-- The app writes the installer onto a USB stick under /Volumes, which
+             macOS 13+ gates behind a removable-volumes permission. Without this
+             key the prompt appears with no explanation of what is being asked. -->
+        <key>NSRemovableVolumesUsageDescription</key>
+        <string>ST Reborn writes the speaker installer onto your USB stick.</string>
     </dict>
 </plist>
