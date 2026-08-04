@@ -569,6 +569,10 @@ func (s *Server) setLastPlay(boxURL, title, art, mime string) uint64 {
 	// Persist so the power-on resume survives an agent restart over a long
 	// standby (#119). Plays are user-paced, so this is a rare, cheap NAND write.
 	s.persistLastPlay(boxURL, title, art, mime, now, 0, time.Time{})
+	// If this speaker leads a mirror group, bring the others onto the new
+	// stream now rather than at the next 5-minute reconcile. See
+	// kickMirrorAfterPlay for why that wait reads to users as a lost group.
+	s.kickMirrorAfterPlay()
 	return gen
 }
 

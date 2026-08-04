@@ -162,7 +162,10 @@ func (s *Server) handleOrionStation(w http.ResponseWriter, r *http.Request) {
 // accepted, for stations that simply have no image.
 func OrionStationLocation(streamURL, name, art string) string {
 	payload, _ := json.Marshal(map[string]any{
-		"streamUrl": streamURL, "name": name, "imageUrl": firstArtURL(art),
+		// Through the art proxy: the speaker fetches this image itself and
+		// cannot do https, which is why the audio goes through a proxy too.
+		"streamUrl": streamURL, "name": name,
+		"imageUrl":   ArtProxyURL("http://"+boxurl.Authority, firstArtURL(art)),
 		"streamType": "liveRadio", "isRealtime": true,
 	})
 	return "/station?data=" + base64.RawURLEncoding.EncodeToString(payload)

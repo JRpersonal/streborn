@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/autopair"
@@ -260,6 +261,17 @@ type Server struct {
 	// tick skipped it, so the skip is logged at INFO only on a state change
 	// (#342). Touched only by the single reconcile goroutine — no lock.
 	mirrorSkips map[string]string
+
+	// mirrorKick asks the reconcile goroutine for an out-of-turn round right
+	// after a fresh play, so a group re-forms in seconds instead of on the next
+	// 5-minute tick. Capacity 1 and non-blocking sends: several plays in quick
+	// succession collapse into one round. Going through the SAME goroutine is
+	// deliberate — it keeps mirrorSkips lock-free and makes two mirror pushes
+	// at once impossible.
+	mirrorKick chan struct{}
+	// mirrorKickPending is true between scheduling a kick and sending it, so a
+	// burst of plays produces one reconcile rather than one per play.
+	mirrorKickPending atomic.Bool
 
 	// wedge tracks the "box accepts transport pushes but never plays" state
 	// that only a power-cycle clears; streamActivityFn (the stream proxy's
@@ -541,7 +553,8 @@ func (s *Server) ensureBoxReady(ctx context.Context) {
 
 // New creates a new webui server.
 func New(addr string, logger *slog.Logger, opts ...Option) *Server {
-	s := &Server{addr: addr, logger: logger, queue: newPlayQueue()}
+	s := &Server{addr: addr, logger: logger, queue: newPlayQueue(),
+		mirrorKick: make(chan struct{}, 1)}
 	for _, o := range opts {
 		o(s)
 	}
@@ -642,6 +655,8 @@ func (s *Server) Run(ctx context.Context) error {
 	// real route: without it these fall through to the catchall and the speaker
 	// receives an HTML page where it asked for an image.
 	mux.HandleFunc(bmxIconPrefix, s.handleBMXIcon)
+	// Station artwork over plain HTTP: the speaker cannot fetch https itself.
+	mux.HandleFunc(artProxyPath, s.handleArt)
 	mux.HandleFunc("/api/debug/probe", s.handleDebugProbe)
 
 	// Stream proxy: stable URLs for radio streams with token expiry.

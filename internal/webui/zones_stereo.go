@@ -880,9 +880,55 @@ func (s *Server) PeriodicZoneReconcile() {
 	s.reconcileZoneOnce()
 	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
-	for range t.C {
+	for {
+		select {
+		case <-t.C:
+		case <-s.mirrorKick:
+		}
 		s.reconcileZoneOnce()
 	}
+}
+
+// kickMirrorAfterPlay asks for an out-of-turn reconcile shortly after a fresh
+// play, so the other speakers in a group join within seconds.
+//
+// Waiting for the 5-minute tick is what users experience as losing their
+// group. The speakers come out of standby, the user presses play on the main
+// one, and for up to five minutes it is the only one playing - long enough
+// that people conclude the group is gone, start the desktop app and build it
+// again. It is asked about constantly ("can the group be stored permanently on
+// the speakers so I don't have to start the PC after every standby", 2026-08-04).
+//
+// The delay lets the master's stream actually start: the reconcile requires the
+// master to be audibly playing the stream it was told to play, and a speaker
+// reports the new stream in now_playing a few seconds after the push.
+//
+// Nothing here weakens the #342 guards. This only changes WHEN a round runs;
+// which speakers it touches is still slaveMirrorAction's decision, so a speaker
+// in standby is left asleep and one playing its own source is left alone.
+func (s *Server) kickMirrorAfterPlay() {
+	if s.zones == nil || s.mirrorKick == nil {
+		return
+	}
+	if z, ok := s.zones.Get(); !ok || !z.Mirror() {
+		return // standalone, or a native zone / stereo pair: not our business
+	}
+	// One pending kick at a time. Skipping a play that lands inside the window
+	// loses nothing: the round reads the speaker's live state when it runs, so
+	// it acts on the LATEST stream either way. Deduplicating here rather than
+	// at the send is what keeps a burst of plays (a user stepping through
+	// presets) to a single reconcile.
+	if !s.mirrorKickPending.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		time.Sleep(6 * time.Second)
+		s.mirrorKickPending.Store(false)
+		select {
+		case s.mirrorKick <- struct{}{}:
+		default: // a round is already queued and has not started yet
+		}
+	}()
 }
 
 func (s *Server) reconcileZoneOnce() {
