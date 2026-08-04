@@ -56,10 +56,15 @@ func (s *Server) handleBMXIcon(w http.ResponseWriter, r *http.Request) {
 		s.logger.Info("bmx icon: the speaker fetched a radio service icon", "path", path)
 	}
 
-	// No caching while the display layout is still being worked out: a cached
-	// icon makes every change look like it had no effect, which is exactly the
-	// kind of false signal that wastes a debugging round.
-	w.Header().Set("Cache-Control", "no-store")
+	// The mark is fixed in the binary, so it can be cached for as long as this
+	// agent build runs. (It was no-store while the display layout was being
+	// worked out: a cached icon makes every change look like it had no effect.
+	// Keep no-store with the dev tools on, for the same reason.)
+	if devToolsEnabled() {
+		w.Header().Set("Cache-Control", "no-store")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+	}
 	// Diagnostic mode: serve a frame and a per-asset corner mark so it is
 	// visible WHICH of the six assets the display actually shows and how much
 	// of it survives. Enabled with the dev tools, off for users.
