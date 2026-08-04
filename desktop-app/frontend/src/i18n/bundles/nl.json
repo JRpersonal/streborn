@@ -219,7 +219,7 @@
   "speakerUpdate.later": "Later",
   "speakerUpdate.starting": "Update voor {{name}} wordt gestart …",
   "speaker.updateChip": "Update",
-  "speaker.updateChipTitle": "Luidspreker draait {{box}}, app draait {{app}}. Klik om bij te werken.",
+  "speaker.updateChipTitle": "Luidspreker draait {{box}}, app draait {{app}}. Klik om de luidsprekerinstellingen te openen.",
   "speaker.playingNow": "Speelt nu",
   "speaker.groupLabelTitle": "Multiroomgroep geleid door {{name}}",
   "speaker.editTitle": "Instellingen voor deze speaker",

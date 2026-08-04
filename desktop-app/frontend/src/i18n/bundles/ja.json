@@ -219,7 +219,7 @@
   "speakerUpdate.later": "あとで",
   "speakerUpdate.starting": "{{name}} の更新を開始しています …",
   "speaker.updateChip": "更新",
-  "speaker.updateChipTitle": "スピーカーは {{box}}、アプリは {{app}} です。クリックで更新します。",
+  "speaker.updateChipTitle": "スピーカーは {{box}}、アプリは {{app}} です。クリックするとスピーカー設定を開きます。",
   "speaker.playingNow": "再生中",
   "speaker.groupLabelTitle": "{{name}} が主導するマルチルームグループ",
   "speaker.editTitle": "このスピーカーの設定",

@@ -219,7 +219,7 @@
   "speakerUpdate.later": "Plus tard",
   "speakerUpdate.starting": "Démarrage de la mise à jour pour {{name}} …",
   "speaker.updateChip": "Mise à jour",
-  "speaker.updateChipTitle": "L’enceinte est en {{box}}, l’application en {{app}}. Clique pour mettre à jour.",
+  "speaker.updateChipTitle": "L’enceinte est en {{box}}, l’application en {{app}}. Clique pour ouvrir les réglages de l’enceinte.",
   "speaker.playingNow": "En lecture",
   "speaker.groupLabelTitle": "Groupe multiroom dirigé par {{name}}",
   "speaker.editTitle": "Réglages de cette enceinte",

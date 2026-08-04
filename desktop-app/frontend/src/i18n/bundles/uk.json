@@ -219,7 +219,7 @@
   "speakerUpdate.later": "Пізніше",
   "speakerUpdate.starting": "Запускаю оновлення для {{name}} …",
   "speaker.updateChip": "Оновлення",
-  "speaker.updateChipTitle": "Колонка має {{box}}, застосунок {{app}}. Натисни, щоб оновити.",
+  "speaker.updateChipTitle": "На колонці {{box}}, у застосунку {{app}}. Натисніть, щоб відкрити налаштування колонки.",
   "speaker.playingNow": "Зараз відтворює",
   "speaker.groupLabelTitle": "Мультирум-група під керуванням {{name}}",
   "speaker.editTitle": "Налаштування цієї колонки",

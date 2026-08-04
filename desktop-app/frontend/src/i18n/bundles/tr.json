@@ -219,7 +219,7 @@
   "speakerUpdate.later": "Daha sonra",
   "speakerUpdate.starting": "{{name}} için güncelleme başlatılıyor …",
   "speaker.updateChip": "Güncelleme",
-  "speaker.updateChipTitle": "Hoparlör {{box}}, uygulama {{app}} sürümünde. Güncellemek için tıkla.",
+  "speaker.updateChipTitle": "Hoparlörde {{box}}, uygulamada {{app}} var. Hoparlör ayarlarını açmak için tıklayın.",
   "speaker.playingNow": "Şu an çalıyor",
   "speaker.groupLabelTitle": "{{name}} tarafından yönetilen çoklu oda grubu",
   "speaker.editTitle": "Bu hoparlörün ayarları",

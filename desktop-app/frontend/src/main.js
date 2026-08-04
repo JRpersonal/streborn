@@ -2239,29 +2239,25 @@ function renderBoxSelect() {
     };
   });
   // Gear click: set settingsBox and switch the tab.
-  // The "Update" chip is a button, like the gear: clicking it starts this
-  // speaker's update right away instead of making the user hunt for it in
-  // Speaker Settings. Keyboard-reachable (Enter/Space) for the same reason
-  // the gear is.
+  // The "Update" chip TAKES YOU THERE, it does not start the update. It used
+  // to fire the update on the spot, from a tab where nothing about updating is
+  // shown: one click on a small word next to a speaker name and the speaker
+  // restarts. Updating a speaker takes minutes and reboots it, so it should be
+  // a decision made on the page that explains it, not a side effect of a click
+  // meant to find out what the chip even means.
   sel.querySelectorAll('.box-update-chip').forEach(chip => {
-    const start = (e) => {
+    const open = (e) => {
       e.stopPropagation();
       e.preventDefault();
       const host = chip.dataset.host;
       const port = parseInt(chip.dataset.port, 10);
       const box = (state.boxes || []).find(b => b.host === host && b.port === port);
       if (!box) return;
-      // Switch to Speaker Settings for this box FIRST: that is where the
-      // update progress renders (the music view has no progress elements), so
-      // starting the OTA from here without switching looked like the click had
-      // done nothing at all.
       state.settingsBox = box;
       switchView('settings');
-      showToast(t('speakerUpdate.starting', { name: getBoxLabel(box) }));
-      doBoxUpdate(box).catch(showError);
     };
-    chip.onclick = start;
-    chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') start(e); };
+    chip.onclick = open;
+    chip.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); };
   });
   sel.querySelectorAll('.box-edit').forEach(icon => {
     icon.onclick = (e) => {

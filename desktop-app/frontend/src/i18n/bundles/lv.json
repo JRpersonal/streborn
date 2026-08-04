@@ -219,7 +219,7 @@
   "speakerUpdate.later": "Vēlāk",
   "speakerUpdate.starting": "Sāku {{name}} atjaunināšanu …",
   "speaker.updateChip": "Atjauninājums",
-  "speaker.updateChipTitle": "Skaļrunī ir {{box}}, lietotnē {{app}}. Noklikšķini, lai atjauninātu.",
+  "speaker.updateChipTitle": "Skaļrunī ir {{box}}, lietotnē {{app}}. Noklikšķiniet, lai atvērtu skaļruņa iestatījumus.",
   "speaker.playingNow": "Šobrīd atskaņo",
   "speaker.groupLabelTitle": "Vairāku telpu grupa, kuru vada {{name}}",
   "speaker.editTitle": "Šī skaļruņa iestatījumi",

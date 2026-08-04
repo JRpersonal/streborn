@@ -219,7 +219,7 @@
   "speakerUpdate.later": "لاحقًا",
   "speakerUpdate.starting": "جارٍ بدء تحديث {{name}} …",
   "speaker.updateChip": "تحديث",
-  "speaker.updateChipTitle": "مكبر الصوت على {{box}} والتطبيق على {{app}}. انقر للتحديث.",
+  "speaker.updateChipTitle": "السماعة تعمل بـ {{box}} والتطبيق بـ {{app}}. انقر لفتح إعدادات السماعة.",
   "speaker.playingNow": "قيد التشغيل الآن",
   "speaker.groupLabelTitle": "مجموعة متعددة الغرف بقيادة {{name}}",
   "speaker.editTitle": "إعدادات هذه السمّاعة",
