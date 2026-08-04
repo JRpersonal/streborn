@@ -7,6 +7,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -383,5 +384,50 @@ func TestBuildStickProbeCmdScansFallbackDirectories(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "MISSING") {
 		t.Error("stick probe does not emit MISSING marker which lets the caller distinguish 'no stick' from 'ssh died'")
+	}
+}
+
+// TestPreflightFailuresCarryTheFirmwareNote guards the gap that made a user
+// disable his antivirus for nothing.
+//
+// InstallSTROnBox reads the speaker's Bose firmware first and builds fwNote
+// when it is older than the last Bose release. That note used to be appended
+// only in the branches past a successful SSH handshake, so every PREFLIGHT
+// failure dropped it - and preflight is exactly where an ancient firmware
+// shows up. A SoundTouch 30 on firmware 10.0.11 (2015) failed three installs
+// and was told each time that a firewall or the wrong Wi-Fi was the likely
+// cause, while "outdated=true" sat in the log unseen (field, 2026-08-04).
+//
+// This reads the source rather than calling the function because every
+// preflight branch needs a reachable speaker in a specific broken state. The
+// property is structural anyway: a new branch must not be able to forget.
+func TestPreflightFailuresCarryTheFirmwareNote(t *testing.T) {
+	src, err := os.ReadFile("install_str.go")
+	if err != nil {
+		t.Fatalf("read install_str.go: %v", err)
+	}
+	code := string(src)
+	start := strings.Index(code, `res.Step = "preflight"`)
+	end := strings.Index(code, `res.Step = "ssh-handshake"`)
+	if start < 0 || end <= start {
+		t.Fatal("could not locate the preflight block; if the steps were renamed, update this test")
+	}
+	block := code[start:end]
+
+	var bare []string
+	for _, line := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "res.Message = ") {
+			continue
+		}
+		if !strings.Contains(trimmed, "withFW(") {
+			bare = append(bare, trimmed)
+		}
+	}
+	if len(bare) == 0 && !strings.Contains(block, "withFW(") {
+		t.Fatal("no withFW() call in the preflight block at all - the firmware note is not reaching the user")
+	}
+	for _, b := range bare {
+		t.Errorf("preflight message does not go through withFW(), so an outdated firmware stays hidden: %s", b)
 	}
 }
