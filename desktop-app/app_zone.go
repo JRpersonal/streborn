@@ -298,6 +298,15 @@ func (a *App) DissolveStereoPair(host string, port int) error {
 	}
 	var out map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&out)
+	// The agent answers 200 {"ok":true,"nothing":true} when the speaker was not
+	// in a pair at all. Reporting that as "pair undone" is how a user came to
+	// press undo twice, get a success message twice, and still find the pair
+	// intact in the Bose app: both calls had gone to an uninvolved speaker
+	// (field, 2026-08-04). Say what actually happened.
+	if nothing, _ := out["nothing"].(bool); nothing {
+		a.logger.Info("stereo: nothing to dissolve, this speaker is not in a pair", "host", host)
+		return fmt.Errorf("stereo-not-paired")
+	}
 	a.relayStereoPairClear(out)
 	a.logger.Info("stereo: pair dissolved", "host", host)
 	return nil

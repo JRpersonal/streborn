@@ -11,7 +11,7 @@ import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, stereoPairOf, pairMemberBoxes } from '../groups.js';
 
 // Injected main.js helpers (see initMultiroomView).
 let deps = {
@@ -119,10 +119,36 @@ export function renderMultiroom(fetchLive) {
   // copy). \b10\b matches "SoundTouch 10" but not 20/30/300/Portable.
   const pairCands = strBoxes.filter(b => /\b10\b/.test(b.model || ''));
   const canPair = pairCands.length >= 2;
+  // Which two speakers the dropdowns show, in order of trust: the pair that is
+  // actually live on the speakers, then what the user last picked, then the
+  // first two candidates. The last one used to be the ONLY rule, so with three
+  // SoundTouch 10s the controls sat on two speakers that were not the paired
+  // ones and every repaint put them back there ("die Lautsprecherauswahl
+  // springt immer auf den nicht gepaarten Lautsprecher", field 2026-08-04).
+  const livePair = stereoPairOf(state.zoneLive);
+  const liveBoxes = pairMemberBoxes(livePair, strBoxes).map(x => x.box).filter(Boolean);
+  const stillThere = (id) => id && pairCands.some(b => b.deviceID === id);
+  const pairPick = [0, 1].map(i => {
+    if (liveBoxes[i]) return liveBoxes[i].deviceID;
+    const remembered = i === 0 ? state.stereoLeft : state.stereoRight;
+    if (stillThere(remembered)) return remembered;
+    return pairCands[i] ? pairCands[i].deviceID : '';
+  });
+  state.stereoLeft = pairPick[0];
+  state.stereoRight = pairPick[1];
   const pairOpts = (sel) => pairCands
-    .map((b, i) => `<option value="${escapeAttr(b.deviceID)}" ${i === sel ? 'selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`)
+    .map(b => `<option value="${escapeAttr(b.deviceID)}"${b.deviceID === pairPick[sel] ? ' selected' : ''}>${escapeHtml(zoneLabel(b))}</option>`)
     .join('') || `<option>${escapeHtml(t('multiroom.noSpeaker'))}</option>`;
   const pairDis = canPair ? '' : ' disabled';
+  // Say whether a pair exists at all. Until now the section gave no sign
+  // either way, so a user could not tell a dissolve that did nothing from one
+  // that worked.
+  const pairStatus = livePair
+    ? `<div class="muted small">${escapeHtml(t('multiroom.stereoCurrent', {
+        names: pairMemberBoxes(livePair, strBoxes)
+          .map(x => x.box ? zoneLabel(x.box) : (x.member.ip || x.member.deviceID)).join(' + '),
+      }))}</div>`
+    : `<div class="muted small">${escapeHtml(t('multiroom.stereoNoPair'))}</div>`;
 
   root.innerHTML = beta + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
@@ -144,6 +170,7 @@ export function renderMultiroom(fetchLive) {
        <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></b>
        <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
        ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
+       ${canPair ? pairStatus : ''}
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoLeft'))}</span>
          <select id="stereoLeft"${pairDis}>${pairOpts(0)}</select></label>
        <label class="zone-field"><span>${escapeHtml(t('multiroom.stereoRight'))}</span>
@@ -192,6 +219,11 @@ export function renderMultiroom(fetchLive) {
     $('zoneUngroup').onclick = () => doDissolveZone(strBoxes);
   }
   if (canPair) {
+    // Remember the user's choice so the next repaint (they happen on every
+    // live-zone poll) does not throw it away.
+    const left = $('stereoLeft'), right = $('stereoRight');
+    if (left) left.onchange = () => { state.stereoLeft = left.value; };
+    if (right) right.onchange = () => { state.stereoRight = right.value; };
     $('stereoCreate').onclick = () => doFormStereo(pairCands);
     // A pair could be created but never undone: the button to make one sat
     // right there while its counterpart did not exist, so the only way out
@@ -338,8 +370,18 @@ async function doFormZone(strBoxes) {
 // feature. A user asked for exactly this, having watched the pair come apart
 // with no sign that it had (2026-07-31). The toast makes it visible even when
 // the stereo section has scrolled out of view.
+//
+// It also has to go to a speaker that is actually IN the pair. It used to aim
+// at state.zoneMaster, the MULTIROOM master selection, which defaults to the
+// first speaker in the list and has nothing to do with the pair. A user with
+// three SoundTouch 10s pressed undo twice; both calls went to a speaker that
+// was not paired, both returned "nothing to dissolve", the app reported
+// success, and the pair was still there in the Bose app (field, 2026-08-04).
 async function doDissolveStereo(pairCands) {
-  const master = pairCands.find(b => b.deviceID === state.zoneMaster)
+  const live = pairMemberBoxes(stereoPairOf(state.zoneLive), state.boxes || [])
+    .map(x => x.box).filter(Boolean);
+  const master = live.find(b => pairCands.some(c => c.deviceID === b.deviceID))
+    || live[0]
     || pairCands.find(b => b.deviceID === ($('stereoLeft') || {}).value);
   if (!master) {
     state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
@@ -355,7 +397,15 @@ async function doDissolveStereo(pairCands) {
     state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`;
     showToast(t('multiroom.stereoDissolved'));
   } catch (e) {
-    state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+    // "This speaker is not in a pair" is not an error the user should read as
+    // a failure, and it must not read as success either (which is what it used
+    // to do, because the agent answers 200 for it).
+    if (String((e && e.message) || e || '').includes('stereo-not-paired')) {
+      state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
+      showToast(t('multiroom.stereoNothingToUndo'));
+    } else {
+      state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+    }
   }
   renderMultiroom(true);
 }

@@ -95,6 +95,8 @@
   "multiroom.noZone": "Şu anda grup yok.",
   "multiroom.stereoDissolved": "Stereo çift ayrıldı. Her iki hoparlör yeniden tek başına çalıyor.",
   "multiroom.stereoNothingToUndo": "Şu anda ayrılacak bir stereo çift yok.",
+  "multiroom.stereoCurrent": "Şu anki stereo çift: {{names}}",
+  "multiroom.stereoNoPair": "Şu anda bu hoparlörlerde stereo çift yok.",
   "multiroom.zoneDissolved": "Grup dağıtıldı. Hoparlörler yeniden tek başına çalıyor.",
   "multiroom.formed": "Grup oluşturuldu. Ana hoparlör diğerlerine akış gönderir. Sessiz kalırlarsa, ana hoparlörün gerçekten çaldığından emin olun, sonra günlükleri gönderin.",
   "multiroom.formFailed": "Grup değiştirilemedi: {{err}}",

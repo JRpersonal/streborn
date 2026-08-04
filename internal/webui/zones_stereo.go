@@ -55,7 +55,29 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, http.StatusOK, z)
+	// A stereo pair is a firmware GROUP, not a zone, so /getZone says nothing
+	// about it: a paired speaker reports {"members":[]} exactly like a
+	// standalone one. That left the desktop app unable to see which speakers
+	// were paired, so its pair controls just offered the first two candidates
+	// and its "undo pair" went to whichever speaker the multiroom master
+	// selection happened to point at. A user with three SoundTouch 10s pressed
+	// undo twice, both times against a speaker that was not in the pair, and
+	// the pair stayed up while the app reported success (field, 2026-08-04).
+	//
+	// Reported alongside the zone so one poll answers both. Best-effort: a box
+	// that does not answer /getGroup simply reports no pair, which is what
+	// every caller assumed until now anyway.
+	// Embedded, so the zone fields keep their exact previous JSON shape
+	// (omitempty and all) and only gain a sibling.
+	out := struct {
+		boxapi.Zone
+		Stereo *boxapi.Group `json:"stereo,omitempty"`
+	}{Zone: z}
+	if g, gerr := c.GetGroup(ctx); gerr == nil && (g.ID != "" || len(g.Members) > 0) {
+		g := g
+		out.Stereo = &g
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type zoneMemberReq struct {

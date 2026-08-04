@@ -99,6 +99,8 @@
   "multiroom.noZone": "No group right now.",
   "multiroom.stereoDissolved": "Stereo pair undone. Both speakers play on their own again.",
   "multiroom.stereoNothingToUndo": "There is no stereo pair to undo right now.",
+  "multiroom.stereoCurrent": "Stereo pair right now: {{names}}",
+  "multiroom.stereoNoPair": "No stereo pair on these speakers right now.",
   "multiroom.zoneDissolved": "Group dissolved. The speakers play on their own again.",
   "multiroom.formed": "Group created. The main speaker streams to the others. If they stay silent, make sure the main speaker is actually playing, then send logs.",
   "multiroom.formFailed": "Could not change the group: {{err}}",

@@ -95,6 +95,8 @@
   "multiroom.noZone": "Šiuo metu grupės nėra.",
   "multiroom.stereoDissolved": "Stereo pora išardyta. Abi kolonėlės vėl groja atskirai.",
   "multiroom.stereoNothingToUndo": "Šiuo metu nėra stereo poros, kurią būtų galima išardyti.",
+  "multiroom.stereoCurrent": "Dabartinė stereo pora: {{names}}",
+  "multiroom.stereoNoPair": "Šiuo metu šiuose garsiakalbiuose stereo poros nėra.",
   "multiroom.zoneDissolved": "Grupė išardyta. Kolonėlės vėl groja atskirai.",
   "multiroom.formed": "Grupė sukurta. Pagrindinis garsiakalbis transliuoja į kitus. Jei jie tyli, įsitikinkite, kad pagrindinis garsiakalbis tikrai groja, ir atsiųskite žurnalus.",
   "multiroom.formFailed": "Nepavyko pakeisti grupės: {{err}}",

@@ -99,6 +99,8 @@
   "multiroom.noZone": "Gerade keine Gruppe.",
   "multiroom.stereoDissolved": "Stereopaar aufgelöst. Beide Lautsprecher spielen wieder einzeln.",
   "multiroom.stereoNothingToUndo": "Es gibt gerade kein Stereopaar zum Auflösen.",
+  "multiroom.stereoCurrent": "Aktuelles Stereopaar: {{names}}",
+  "multiroom.stereoNoPair": "Auf diesen Lautsprechern gibt es gerade kein Stereopaar.",
   "multiroom.zoneDissolved": "Gruppe aufgelöst. Die Lautsprecher spielen wieder einzeln.",
   "multiroom.formed": "Gruppe erstellt. Der Haupt-Lautsprecher streamt zu den anderen. Wenn sie stumm bleiben, prüfe, ob der Haupt-Lautsprecher wirklich spielt, und schick mir die Logs.",
   "multiroom.formFailed": "Gruppe konnte nicht geändert werden: {{err}}",
