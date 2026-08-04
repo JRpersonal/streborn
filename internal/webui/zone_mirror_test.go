@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/zones"
@@ -228,5 +229,99 @@ func TestHandleZonePurge(t *testing.T) {
 		if w.Code != 400 {
 			t.Fatalf("status = %d, want 400", w.Code)
 		}
+	})
+}
+
+// A mirror group used to re-form only on the 5-minute reconcile tick. After a
+// standby cycle that meant the user pressed play and the other speakers stayed
+// silent for up to five minutes, which people read as the group being gone: they
+// start the desktop app and rebuild it. kickMirrorAfterPlay asks for an
+// out-of-turn round instead, but ONLY for a mirror group led by this speaker -
+// a native zone and a stereo pair are re-formed by the firmware, and kicking
+// those would fight it.
+func TestKickMirrorAfterPlay(t *testing.T) {
+	newServer := func(t *testing.T, z *zones.Zone) *Server {
+		t.Helper()
+		store, err := zones.Load(filepath.Join(t.TempDir(), "zones.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if z != nil {
+			if err := store.Set(*z); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return &Server{
+			zones:      store,
+			mirrorKick: make(chan struct{}, 1),
+			logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}
+	}
+	// The kick is deliberately delayed (the master's stream has to start before
+	// a reconcile can see it playing), so a positive case has to wait for it.
+	kicked := func(s *Server) bool {
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) {
+			select {
+			case <-s.mirrorKick:
+				return true
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		return false
+	}
+	mirror := zones.Zone{
+		Master: "AABBCCDDEEFF", MasterIP: "192.168.1.50", Mode: "mirror",
+		Slaves: []zones.Member{{DeviceID: "112233445566", IP: "192.168.1.60"}},
+	}
+
+	t.Run("mirror group is kicked", func(t *testing.T) {
+		s := newServer(t, &mirror)
+		s.kickMirrorAfterPlay()
+		if !kicked(s) {
+			t.Error("no reconcile requested; the group would stay half-silent until the 5-minute tick")
+		}
+	})
+
+	t.Run("standalone speaker is not kicked", func(t *testing.T) {
+		s := newServer(t, nil)
+		s.kickMirrorAfterPlay()
+		select {
+		case <-s.mirrorKick:
+			t.Error("reconcile requested for a speaker that is not in a group")
+		case <-time.After(9 * time.Second):
+		}
+	})
+
+	t.Run("native zone is left to the firmware", func(t *testing.T) {
+		native := mirror
+		native.Mode = "native"
+		s := newServer(t, &native)
+		s.kickMirrorAfterPlay()
+		select {
+		case <-s.mirrorKick:
+			t.Error("reconcile requested for a native zone; the firmware owns that one")
+		case <-time.After(9 * time.Second):
+		}
+	})
+
+	t.Run("repeated plays collapse into one round", func(t *testing.T) {
+		s := newServer(t, &mirror)
+		for i := 0; i < 5; i++ {
+			s.kickMirrorAfterPlay()
+		}
+		if !kicked(s) {
+			t.Fatal("no reconcile requested at all")
+		}
+		select {
+		case <-s.mirrorKick:
+			t.Error("a second round queued; five quick plays must collapse into one")
+		case <-time.After(2 * time.Second):
+		}
+	})
+
+	t.Run("a speaker with no kick channel does not panic", func(t *testing.T) {
+		s := &Server{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+		s.kickMirrorAfterPlay()
 	})
 }

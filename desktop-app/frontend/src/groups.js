@@ -256,3 +256,63 @@ export function resetZoneLivePoll() {
   _fetchedAt = 0;
   _inFlight = null;
 }
+
+// ---- Stereo pairs ----
+//
+// A stereo pair is a firmware GROUP, not a multiroom zone. /getZone reports
+// {"members":[]} on a paired speaker exactly as on a standalone one, so the
+// zone data says nothing about pairs. The agent reports the firmware group
+// alongside the zone as `stereo`; everything below reads that.
+//
+// Without it the Multi-Room tab was blind: its pair dropdowns just offered the
+// first two candidate speakers and its "undo pair" targeted whichever speaker
+// the multiroom master selection pointed at. With three SoundTouch 10s that is
+// usually not a paired one, so undo was sent to an uninvolved speaker twice in
+// a row while the pair stayed up (field, 2026-08-04).
+
+// stereoPairOf returns the live firmware stereo pair as
+// {id, master, members:[{deviceID, ip, role}]}, or null when no speaker
+// reports one. Any member's self-report describes the whole pair, so the
+// first one found wins.
+export function stereoPairOf(zoneLive) {
+  for (const key of Object.keys(zoneLive || {})) {
+    const st = (zoneLive[key] || {}).stereo;
+    if (st && ((st.members || []).length || st.id)) {
+      return {
+        id: st.id || '',
+        master: String(st.master || '').toUpperCase(),
+        members: st.members || [],
+      };
+    }
+  }
+  return null;
+}
+
+// pairMemberBoxes maps a live pair onto discovered boxes, in LEFT/RIGHT order
+// (unknown roles keep their reported order). Matches by deviceID first and by
+// IP second: on two-chip chassis the firmware's deviceID differs from the
+// mDNS-derived one, the same mismatch groupMembersOf handles.
+export function pairMemberBoxes(pair, boxes) {
+  if (!pair) return [];
+  const ordered = [...(pair.members || [])].sort((a, b) => {
+    const rank = (m) => (String((m && m.role) || '').toUpperCase() === 'LEFT' ? 0
+      : String((m && m.role) || '').toUpperCase() === 'RIGHT' ? 1 : 2);
+    return rank(a) - rank(b);
+  });
+  return ordered.map(m => {
+    const idUp = String((m && m.deviceID) || '').toUpperCase();
+    const ip = (m && m.ip) || '';
+    const box = (boxes || []).find(b => b && b.kind !== 'stock'
+      && ((idUp && String(b.deviceID || '').toUpperCase() === idUp) || (ip && b.host === ip))) || null;
+    return { member: m, box };
+  });
+}
+
+// inStereoPair reports whether a discovered box is a member of the live pair.
+export function inStereoPair(box, pair) {
+  if (!box || !pair) return false;
+  const idUp = String(box.deviceID || '').toUpperCase();
+  return (pair.members || []).some(m =>
+    (idUp && String((m && m.deviceID) || '').toUpperCase() === idUp) ||
+    (box.host && (m && m.ip) === box.host));
+}

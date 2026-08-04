@@ -792,10 +792,24 @@ jobs:
   build-desktop-macos:
     needs: [build-agent, build-go-librespot]
     runs-on: macos-latest
+    # Signing waits on Apple's timestamp authority and notarization waits on
+    # Apple's notary service, both of which can stall. Without a ceiling a stall
+    # holds the whole release for the six-hour default (sign-windows carries the
+    # same guard for the same reason).
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
       attestations: write
+    # Exported so the publish job can refuse to ship an unnotarized DMG the same
+    # way it refuses an unsigned Windows build. Two outputs, not one: `configured`
+    # says the Apple credentials exist at all, `notarized` says notarization
+    # actually succeeded. The guard fires only when the credentials ARE
+    # configured, so a release still works before they are set up and hard-fails
+    # the moment notarization silently stops working afterwards.
+    outputs:
+      configured: ${{ steps.applegate.outputs.configured }}
+      notarized: ${{ steps.notarize.outputs.notarized }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -848,6 +862,149 @@ jobs:
             -trimpath \
             -clean
 
+      - name: Apple signing gate
+        id: applegate
+        # Job-level `if:` cannot read secrets, so the presence of the Apple
+        # credentials is exported as an output, exactly like the Windows signing
+        # gate does with CERT_THUMBPRINT. Everything Apple-related below hangs off
+        # this, so a fork, a dry-run, or a checkout without the secrets still
+        # produces a working (ad-hoc signed) build instead of a red job.
+        env:
+          P12: ${{ secrets.APPLE_CERT_P12 }}
+          KEY: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "${P12}" ] && [ -n "${KEY}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Apple signing credentials are not configured; falling back to an ad-hoc signature."
+          fi
+
+      - name: Import the Developer ID certificate
+        if: steps.applegate.outputs.configured == 'true'
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          # Generated here rather than kept as a secret: it protects a keychain
+          # that lives for one job on a VM that is destroyed afterwards, so a
+          # stored secret would add rotation surface for nothing. Masked at once
+          # so no later error path can print it.
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+
+          # Into RUNNER_TEMP, never the workspace: upload-artifact globs are
+          # workspace-relative and release-out/ is uploaded.
+          printf '%s' "$APPLE_CERT_P12" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # The default keychain re-locks after 300s idle, which lands mid-build
+          # in a job this long and fails signing with an unhelpful error.
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security
+          # The step everyone forgets. Without it codesign trips the keychain ACL
+          # and raises a GUI password prompt, which on a headless runner means the
+          # job hangs to the timeout instead of failing.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          # -s REPLACES the search list, so re-append what was there.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          IDENTITY="$(security find-identity -p codesigning -v "$KEYCHAIN_PATH" | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)"/\1/')"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No 'Developer ID Application' identity in the imported certificate. Apple Development and Apple Distribution certificates cannot be used to notarize."
+            security find-identity -p codesigning -v "$KEYCHAIN_PATH" || true
+            exit 1
+          fi
+          echo "Signing identity: $IDENTITY"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          rm -f "$CERT_PATH"
+
+      - name: Sign the app bundle
+        # No --deep: Apple's own guidance is that it is the wrong tool, and a
+        # Wails bundle has no nested code to reach anyway. The check below fails
+        # the build if that ever stops being true, because the parts would then
+        # need signing individually, innermost first.
+        #
+        # No --entitlements either. Entitlements grant EXCEPTIONS to the hardened
+        # runtime, and this app needs none: no cgo, no third-party dylibs, no JIT.
+        # The usual "network client" entitlement would be both unnecessary here
+        # (nothing is sandboxed) and wrong for an app that also listens for
+        # inbound connections and multicast.
+        #
+        # --timestamp and --options runtime are not optional: Apple rejects a
+        # submission that lacks either.
+        run: |
+          set -euo pipefail
+          APP="desktop-app/build/bin/ST Reborn.app"
+
+          NESTED="$(find "$APP/Contents" -type d -name '*.framework' -o -type d -name '*.appex' -o -type d -name '*.bundle' 2>/dev/null || true)"
+          if [ -n "$NESTED" ]; then
+            echo "::error::The bundle now contains nested code, which must be signed innermost-first before the bundle itself:"
+            echo "$NESTED"
+            exit 1
+          fi
+
+          if [ "${{ steps.applegate.outputs.configured }}" = "true" ]; then
+            codesign --force --timestamp --options runtime --keychain "$KEYCHAIN_PATH" --sign "$SIGN_IDENTITY" "$APP"
+          else
+            # No credentials: an ad-hoc signature still gives the bundle a stable
+            # identity, which is what makes "Open Anyway" work at all. It cannot
+            # be notarized, so the first-launch warning stays.
+            codesign --force --sign - "$APP"
+          fi
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Notarize and staple the app
+        if: steps.applegate.outputs.configured == 'true'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        # The app is notarized and stapled BEFORE the DMG is built, so the copy
+        # the user drags into their Applications folder carries its own ticket.
+        # Stapling only the DMG passes every check and then fails on a machine
+        # that is offline at first launch: Gatekeeper cannot look the ticket up,
+        # refuses the app, and it bounces in the Dock and never opens. That is
+        # exactly the symptom this whole change exists to remove.
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$KEY"
+          echo "APPLE_KEY_FILE=$KEY" >> "$GITHUB_ENV"
+
+          APP="desktop-app/build/bin/ST Reborn.app"
+          ZIP="$RUNNER_TEMP/app-for-notarization.zip"
+          # ditto, not zip: plain zip drops the symlinks and metadata a bundle
+          # needs, and the notary service rejects what comes out.
+          ditto -c -k --keepParent "$APP" "$ZIP"
+
+          set +e
+          xcrun notarytool submit "$ZIP" --key "$KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/app-submit.json"
+          RC=$?
+          set -e
+          cat "$RUNNER_TEMP/app-submit.json" || true
+          SUB_ID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("id",""))' "$RUNNER_TEMP/app-submit.json" 2>/dev/null || true)"
+          STATUS="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("status",""))' "$RUNNER_TEMP/app-submit.json" 2>/dev/null || true)"
+          # Always fetch the log, not only on failure: Apple returns warnings on
+          # accepted submissions too, and a step that runs only on the failure
+          # path is a step that has never been exercised when you need it.
+          if [ -n "$SUB_ID" ]; then
+            xcrun notarytool log "$SUB_ID" --key "$KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" "$RUNNER_TEMP/notary-app.json" || true
+            cat "$RUNNER_TEMP/notary-app.json" || true
+          fi
+          # Never trust the exit code alone: check the status word as well.
+          if [ "$RC" -ne 0 ] || [ "$STATUS" != "Accepted" ]; then
+            echo "::error::Notarization of the app was not accepted (status='$STATUS', rc=$RC). See the log above."
+            exit 1
+          fi
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+
       - name: Free disk space for DMG
         # Runs AFTER the build (which needs the toolchain) and BEFORE packaging,
         # since hdiutil/ditto are plain /usr/bin system tools. The first attempt
@@ -856,17 +1013,34 @@ jobs:
         # the DMG still ran out of space. Reclaim the large, WRITABLE extra Xcode
         # installs instead (the build is already done) so hdiutil has scratch room
         # for the universal-binary DMG. Best-effort: never fail on a miss.
+        #
+        # The ACTIVE Xcode is now excluded. notarytool is not a standalone tool:
+        # xcrun resolves it inside the selected developer directory, so deleting
+        # every Xcode here would remove the tool the DMG notarization below needs
+        # and turn a working release into a confusing "notarytool not found".
         run: |
           df -h /
-          sudo rm -rf /Applications/Xcode_*.app || true
+          ACTIVE="$(xcode-select -p 2>/dev/null || true)"
+          echo "active developer dir: ${ACTIVE:-none}"
+          for x in /Applications/Xcode_*.app; do
+            [ -e "$x" ] || continue
+            case "$ACTIVE" in
+              "$x"/*) echo "keeping active $x"; continue ;;
+            esac
+            sudo rm -rf "$x" || true
+          done
           rm -rf ~/Library/Developer/Xcode/DerivedData/* || true
           rm -rf ~/Library/Developer/CoreSimulator/Devices/* || true
+          # Prove the tool survived rather than finding out 20 minutes later.
+          xcrun --find notarytool
           df -h /
 
       - name: Package as DMG
         run: |
           mkdir -p release-out
-          # ditto preserves extended attrs and resource forks.
+          # ditto preserves extended attrs and resource forks. It also carries the
+          # stapled notarization ticket, which lives in the bundle: a plain cp -r
+          # would leave the shipped app without one.
           ditto "desktop-app/build/bin/ST Reborn.app" "release-out/dmg-stage/ST Reborn.app"
           ln -s /Applications "release-out/dmg-stage/Applications"
           # Build the DMG via an EXPLICITLY sized read-write image, then convert to
@@ -889,9 +1063,111 @@ jobs:
           hdiutil convert "release-out/STR-macOS-rw.dmg" -format UDZO -ov -o "release-out/STR-macOS.dmg"
           rm -f "release-out/STR-macOS-rw.dmg"
           rm -rf release-out/dmg-stage
+
+      - name: Notarize and staple the DMG
+        id: notarize
+        if: steps.applegate.outputs.configured == 'true'
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        # Sign, notarize and staple the disk image itself, on top of the app
+        # inside it. Both tickets matter: the DMG's covers the download the user
+        # opens, the app's covers the copy they drag out of it.
+        #
+        # ALL of this has to finish before the checksum and the attestation below,
+        # because stapling rewrites the file. A ticket added after the hash was
+        # taken would publish a SHA256 that matches nothing anyone downloads, and
+        # the Verify page would report a tampered file for a perfectly good build.
+        run: |
+          set -euo pipefail
+          DMG="release-out/STR-macOS.dmg"
+
+          # notarytool takes a read-only UDIF image; the read-write one it was
+          # built from is rejected. The convert above produces UDZO, so assert it
+          # rather than discovering it from Apple's error message.
+          hdiutil imageinfo "$DMG" | grep -i "Format:" || true
+          if ! hdiutil imageinfo "$DMG" | grep -qi "Format: UDZO"; then
+            echo "::error::The DMG is not a compressed read-only image; notarytool will reject it."
+            exit 1
+          fi
+
+          codesign --force --timestamp --keychain "$KEYCHAIN_PATH" \
+            --identifier "de.st-reborn.app.dmg" --sign "$SIGN_IDENTITY" "$DMG"
+
+          set +e
+          xcrun notarytool submit "$DMG" --key "$APPLE_KEY_FILE" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/dmg-submit.json"
+          RC=$?
+          set -e
+          cat "$RUNNER_TEMP/dmg-submit.json" || true
+          SUB_ID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("id",""))' "$RUNNER_TEMP/dmg-submit.json" 2>/dev/null || true)"
+          STATUS="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("status",""))' "$RUNNER_TEMP/dmg-submit.json" 2>/dev/null || true)"
+          if [ -n "$SUB_ID" ]; then
+            xcrun notarytool log "$SUB_ID" --key "$APPLE_KEY_FILE" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" "$RUNNER_TEMP/notary-dmg.json" || true
+            cat "$RUNNER_TEMP/notary-dmg.json" || true
+          fi
+          if [ "$RC" -ne 0 ] || [ "$STATUS" != "Accepted" ]; then
+            echo "::error::Notarization of the DMG was not accepted (status='$STATUS', rc=$RC). See the log above."
+            exit 1
+          fi
+          xcrun stapler staple "$DMG"
+          echo "notarized=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the shipped app, not just the container
+        if: steps.applegate.outputs.configured == 'true'
+        # Every check so far looked at the disk image. An app with the hardened
+        # runtime missing, or carrying an entitlement it must not have, passes all
+        # of them and then fails the moment a user double-clicks it. So mount what
+        # is actually being shipped and assert on the app inside.
+        run: |
+          set -euo pipefail
+          DMG="release-out/STR-macOS.dmg"
+          xcrun stapler validate "$DMG"
+
+          MNT="$RUNNER_TEMP/verify-mnt"
+          mkdir -p "$MNT"
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT"
+          APP="$MNT/ST Reborn.app"
+
+          echo "--- signature ---"
+          codesign -dv --verbose=4 "$APP" 2>&1 | tee "$RUNNER_TEMP/sig.txt"
+          grep -q "flags=.*runtime" "$RUNNER_TEMP/sig.txt" || {
+            echo "::error::The shipped app does not have the hardened runtime enabled."
+            hdiutil detach "$MNT" || true; exit 1; }
+          grep -q "Authority=Developer ID Application" "$RUNNER_TEMP/sig.txt" || {
+            echo "::error::The shipped app is not signed with a Developer ID Application certificate."
+            hdiutil detach "$MNT" || true; exit 1; }
+
+          echo "--- entitlements (expected: none) ---"
+          codesign -d --entitlements - "$APP" 2>&1 | tee "$RUNNER_TEMP/ents.txt" || true
+          for bad in com.apple.security.app-sandbox com.apple.security.get-task-allow; do
+            if grep -q "$bad" "$RUNNER_TEMP/ents.txt"; then
+              echo "::error::The shipped app carries $bad, which breaks it for users."
+              hdiutil detach "$MNT" || true; exit 1
+            fi
+          done
+
+          echo "--- ticket + Gatekeeper ---"
+          xcrun stapler validate "$APP"
+          spctl -a -vvv -t exec "$APP"
+
+          hdiutil detach "$MNT"
+
+      - name: Checksum the DMG
+        # AFTER stapling: a ticket is written into the file, so a hash taken
+        # before it would not match the published download.
+        run: |
           cd release-out
           shasum -a 256 "STR-macOS.dmg" > "STR-macOS.dmg.sha256"
           cat "STR-macOS.dmg.sha256"
+
+      - name: Remove the signing keychain
+        if: always()
+        # Defence in depth: the runner is ephemeral, but a future artifact glob or
+        # a debug step could widen its reach mid-job. The credentials live in
+        # RUNNER_TEMP rather than the workspace for the same reason.
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/cert.p12" 2>/dev/null || true
 
       - name: Sigstore attestation
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
@@ -1325,6 +1601,27 @@ jobs:
             exit 1
           fi
           echo "Windows build is signed."
+
+      - name: Refuse to publish an unnotarized macOS build
+        # The macOS counterpart of the guard above, with one difference: it only
+        # bites once the Apple credentials are actually configured. Before that a
+        # release still ships (ad-hoc signed, as it did before), and afterwards a
+        # notarization that silently stops working blocks the release instead of
+        # publishing a download that Gatekeeper refuses.
+        if: github.event.inputs.version != ''
+        env:
+          MAC_CONFIGURED: ${{ needs.build-desktop-macos.outputs.configured }}
+          MAC_NOTARIZED: ${{ needs.build-desktop-macos.outputs.notarized }}
+        run: |
+          if [ "${MAC_CONFIGURED}" = "true" ] && [ "${MAC_NOTARIZED}" != "true" ]; then
+            echo "::error::Apple credentials are configured but the macOS build was not notarized. Refusing to publish a build that Gatekeeper will block. Check the build-desktop-macos job log."
+            exit 1
+          fi
+          if [ "${MAC_CONFIGURED}" != "true" ]; then
+            echo "::warning::Apple credentials are not configured; the macOS build is ad-hoc signed and shows the unidentified-developer warning on first launch."
+          else
+            echo "macOS build is signed and notarized."
+          fi
 
       - name: Publish GitHub Release
         # Only on a real release: a dispatch with a version input. A no-version

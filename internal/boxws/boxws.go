@@ -67,6 +67,13 @@ type Handler interface {
 	// the zone was dissolved.
 	OnZoneChanged(ctx context.Context, z ZoneState)
 
+	// OnGroupChanged is fired when the box's STEREO PAIR changes (groupUpdated).
+	// The firmware keeps pairs separate from zones, so this is the only event
+	// that reports one. g.Paired() == false means the pair was torn down, from
+	// whichever app did it - including the Bose app, which STR cannot observe
+	// any other way.
+	OnGroupChanged(ctx context.Context, g GroupState)
+
 	// OnPowerWake is fired when the box comes out of standby: either via a
 	// powerStateUpdated (NOT STANDBY) on firmware that sends it, OR, on
 	// SoundTouch firmware that does NOT send a powerStateUpdated (Portable/

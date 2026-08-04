@@ -96,6 +96,16 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 				". Update the speaker in the Bose SoundTouch app first, then run the install again."
 		}
 	}
+	// Every message this function can end on gets the firmware note. It used to
+	// be appended only in the late branches, all of them past a successful SSH
+	// handshake, so a box that failed the PREFLIGHT never mentioned its firmware
+	// at all. That is the exact case where it matters most: a SoundTouch 30 on
+	// firmware 10.0.11 (2015) failed the stick-free unlock three times, and the
+	// user was told each time that a firewall or the wrong Wi-Fi was the likely
+	// cause. He turned his firewall off for nothing while the app had read
+	// "outdated=true" from the speaker seconds earlier and kept it to itself
+	// (field report 2026-08-04).
+	withFW := func(msg string) string { return msg + fwNote }
 
 	// Step 0a: preflight TCP reachability on the SSH port. SSH failing with a
 	// bare "exit status 255" and no stderr is the opaque error users hit when
@@ -104,6 +114,9 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	// Checking :22 first lets us return a human instruction instead of the
 	// raw SSH exit code.
 	res.Step = "preflight"
+	// Set when the failed stick-free unlock made us reboot the speaker: the
+	// reachability probes below then measure a booting speaker, not the network.
+	rebootedByUs := false
 	if !tcpReachable(host, 22, 4*time.Second) {
 		// :22 closed does NOT necessarily mean the box is off the network.
 		// Bose only opens sshd while the box boots with the stick inserted
@@ -116,9 +129,9 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// blaming the network.
 		if tcpReachable(host, 8888, 3*time.Second) {
 			res.Code = "already-installed"
-			res.Message = "The speaker at " + host + " already answers on the STR agent port (8888), " +
+			res.Message = withFW("The speaker at " + host + " already answers on the STR agent port (8888), " +
 				"so it looks like STR is installed already. Refresh the speaker list. " +
-				"If you meant to reinstall, reboot the speaker with the STR stick plugged in first."
+				"If you meant to reinstall, reboot the speaker with the STR stick plugged in first.")
 			a.logger.Warn("install_str: preflight, :22 closed but :8888 up (already installed?)", "host", host)
 			return res, nil
 		}
@@ -177,6 +190,7 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			// install. Best-effort.
 			a.restoreStockBoseURLsAndReboot(host)
 			res.Log = tlog
+			rebootedByUs = true
 			a.logger.Info("install_str: :17000 stick-free unlock did not open SSH; restored stock URLs, giving stick guidance", "host", host)
 		}
 
@@ -186,9 +200,9 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		onLAN := tcpReachable(host, 8090, 3*time.Second)
 		if onLAN {
 			res.Code = "install-window-closed"
-			res.Message = "The speaker at " + host + " is on the network, but the install access (SSH) is closed. " +
+			res.Message = withFW("The speaker at " + host + " is on the network, but the install access (SSH) is closed. " +
 				"Bose only opens it while the speaker boots with the STR stick plugged in. " +
-				"Power the speaker off, insert the STR stick, power it back on, then install."
+				"Power the speaker off, insert the STR stick, power it back on, then install.")
 			a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut; stick-free :17000 unlock did not open SSH)", "host", host)
 		} else if tcpReachable(host, 8091, 3*time.Second) {
 			// :22, :8090 and :8888 are all closed, but the box still answers
@@ -203,18 +217,32 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			// keep the stick in so the reboot also re-runs the install if the
 			// STR agent itself stopped.
 			res.Code = "control-unresponsive"
-			res.Message = "The speaker at " + host + " is on your network (it still answers on the media port 8091), " +
+			res.Message = withFW("The speaker at " + host + " is on your network (it still answers on the media port 8091), " +
 				"but its control software has stopped responding (no answer on the STR agent, the Bose port 8090, or SSH). " +
-				"Power the speaker fully off and back on with the STR stick plugged in, then refresh the speaker list and try again."
+				"Power the speaker fully off and back on with the STR stick plugged in, then refresh the speaker list and try again.")
 			if strings.Contains(strings.ToLower(model), "portable") {
 				res.Message += " The Portable never fully powers off while it still has battery: hold the AUX button for about 10 seconds to force a restart."
 			}
 			a.logger.Warn("install_str: preflight, box answers UPnP :8091 but not :22/:8090/:8888 (control stack wedged; advising power-cycle)", "host", host)
+		} else if rebootedByUs {
+			// WE rebooted this speaker moments ago, as part of undoing the
+			// failed unlock. Of course nothing answers yet. Blaming a firewall
+			// here is not just unhelpful, it is actively misleading: a user
+			// with a SoundTouch 30 on 2015 firmware disabled his antivirus and
+			// tried three more times because the app said that was the likely
+			// cause, while the actual finding (a decade-old firmware) went
+			// only into the log (field report 2026-08-04).
+			res.Code = "restarting-after-unlock"
+			res.Message = withFW("The speaker did not open its install access, so ST Reborn put its original settings back and restarted it. " +
+				"It is still booting, which is why it does not answer right now. " +
+				"Give it about two minutes, then refresh the speaker list and try the install again. " +
+				"If it keeps failing, install from the USB stick: power the speaker off, plug the stick in, power it back on.")
+			a.logger.Warn("install_str: preflight after our own post-unlock reboot, box still booting (not a network fault)", "host", host)
 		} else {
 			res.Code = "not-reachable"
-			res.Message = "The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at " + host + "). " +
+			res.Message = withFW("The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at " + host + "). " +
 				"Most often this is a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks: allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi (not a guest network). " +
-				"If it still fails, bring the speaker onto Wi-Fi with the Bose SoundTouch app, then reboot it with the STR stick plugged in and try again."
+				"If it still fails, bring the speaker onto Wi-Fi with the Bose SoundTouch app, then reboot it with the STR stick plugged in and try again.")
 			a.logger.Warn("install_str: preflight failed, box not reachable on :22, :8090 or :8091", "host", host)
 		}
 		return res, nil

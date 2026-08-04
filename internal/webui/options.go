@@ -33,17 +33,17 @@ func (s *Server) SetBoxNameFn(fn func() (name, model string)) { s.boxNameFn = fn
 // The function returns the orion station location, or "" when the box has not
 // registered the radio source and the slot must keep the UPnP form. cmd/agent
 // owns that probe because it also owns the box host and the association state.
-func (s *Server) SetNativePresetLocatorFn(fn func(name, streamURL string) string) {
+func (s *Server) SetNativePresetLocatorFn(fn func(name, streamURL, art string) string) {
 	s.nativePresetLocator = fn
 }
 
 // nativePresetLocation asks the wired locator for a slot's native location,
 // returning "" when no locator is wired (the desktop-side and test servers).
-func (s *Server) nativePresetLocation(name, streamURL string) string {
+func (s *Server) nativePresetLocation(name, streamURL, art string) string {
 	if s.nativePresetLocator == nil {
 		return ""
 	}
-	return s.nativePresetLocator(name, streamURL)
+	return s.nativePresetLocator(name, streamURL, art)
 }
 
 // writeBoxPreset stores one slot on the box in the best form this speaker
@@ -59,9 +59,9 @@ func (s *Server) nativePresetLocation(name, streamURL string) string {
 // isSpotify slots are never native: the box activates a native item entirely by
 // itself, and a Spotify preset needs STR to tell the local engine which
 // playlist to load.
-func (s *Server) writeBoxPreset(ctx context.Context, slot int, name, streamURL string, isSpotify bool) error {
+func (s *Server) writeBoxPreset(ctx context.Context, slot int, name, streamURL, art string, isSpotify bool) error {
 	if !isSpotify {
-		if loc := s.nativePresetLocation(name, streamURL); loc != "" {
+		if loc := s.nativePresetLocation(name, streamURL, art); loc != "" {
 			if err := boxcli.AddPresetNative(ctx, s.boxHost, slot, name, loc); err == nil {
 				return nil
 			}

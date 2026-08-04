@@ -332,3 +332,29 @@ func TestByURLEmptyInput(t *testing.T) {
 		t.Errorf("requests = %d, want 0", f.requestCount())
 	}
 }
+
+// The last-resort mirror is a bare IP, and a bare IP in the Host header is not
+// enough for the server's virtual-host routing: it answered every request with
+// a 404, so the fallback that exists for exactly the case where DNS is broken
+// never worked. Pinning the TLS ServerName alone did not fix it (field report
+// on v0.9.32: "radio directory unreachable: mirror https://91.98.4.78/json:
+// 404"); the HTTP Host header has to name the hostname too.
+func TestIPMirrorSendsHostname(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Host
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, "[]")
+	}))
+	defer srv.Close()
+
+	// httptest serves on 127.0.0.1, which is the IP-literal case.
+	c := &Client{HTTP: srv.Client(), ipHTTP: srv.Client(), mirrors: []string{srv.URL + "/json"}}
+	var out []Station
+	if err := c.tryMirror(context.Background(), srv.URL+"/json", "/stations", &out); err != nil {
+		t.Fatalf("tryMirror: %v", err)
+	}
+	if got != ipMirrorServerName {
+		t.Errorf("Host = %q, want %q", got, ipMirrorServerName)
+	}
+}

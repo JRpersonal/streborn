@@ -16,6 +16,9 @@ import {
   resolveBoxByRef,
   fetchZoneLive,
   resetZoneLivePoll,
+  stereoPairOf,
+  pairMemberBoxes,
+  inStereoPair,
 } from './groups.js';
 
 // Placeholder LAN (192.0.2.0/24, RFC 5737) and deviceIDs only.
@@ -329,5 +332,68 @@ describe('fetchZoneLive', () => {
       : okZone(liveMap()[master.deviceID]);
     await fetchZoneLive([master, boxA], { maxAgeMs: 0 }, fetcher);
     expect(masterOf(boxA.deviceID, state.zoneLive)).toBe(master.deviceID); // membership held
+  });
+});
+
+// A stereo pair is a firmware GROUP, not a zone: /getZone reports
+// {"members":[]} on a paired speaker exactly as on a standalone one. The agent
+// therefore reports the firmware group as `stereo` alongside the zone, and the
+// helpers below are what let the Multi-Room tab see a pair at all. Without
+// them the tab offered the first two candidate speakers and sent "undo pair"
+// to whichever speaker the multiroom master selection pointed at - which, with
+// three SoundTouch 10s, was twice a speaker that was not in the pair while the
+// app reported success (field, 2026-08-04).
+describe('stereoPairOf', () => {
+  const pairEntry = {
+    master: '',
+    members: [],
+    stereo: {
+      id: 'str-grp-AAA', master: 'AAA',
+      members: [
+        { deviceID: 'BBB', ip: '192.0.2.32', role: 'RIGHT' },
+        { deviceID: 'AAA', ip: '192.0.2.19', role: 'LEFT' },
+      ],
+    },
+  };
+
+  it('returns null when no speaker reports a pair', () => {
+    expect(stereoPairOf({ AAA: { members: [] }, BBB: { members: [] } })).toBe(null);
+    expect(stereoPairOf({})).toBe(null);
+    expect(stereoPairOf(null)).toBe(null);
+  });
+
+  it('finds the pair from any member self-report', () => {
+    const pair = stereoPairOf({ CCC: { members: [] }, BBB: pairEntry });
+    expect(pair.master).toBe('AAA');
+    expect(pair.members).toHaveLength(2);
+  });
+
+  it('orders members LEFT before RIGHT regardless of report order', () => {
+    const boxes = [
+      { deviceID: 'AAA', host: '192.0.2.19', kind: 'str' },
+      { deviceID: 'BBB', host: '192.0.2.32', kind: 'str' },
+      { deviceID: 'CCC', host: '192.0.2.55', kind: 'str' },
+    ];
+    const mapped = pairMemberBoxes(stereoPairOf({ AAA: pairEntry }), boxes);
+    expect(mapped.map(x => x.box.deviceID)).toEqual(['AAA', 'BBB']);
+  });
+
+  it('matches a member by IP when the deviceID differs (two-chip chassis)', () => {
+    const boxes = [{ deviceID: 'MDNS-DERIVED', host: '192.0.2.32', kind: 'str' }];
+    const mapped = pairMemberBoxes(stereoPairOf({ AAA: pairEntry }), boxes);
+    expect(mapped.find(x => x.box)?.box.deviceID).toBe('MDNS-DERIVED');
+  });
+
+  it('keeps an undiscovered member as a null box rather than dropping it', () => {
+    const mapped = pairMemberBoxes(stereoPairOf({ AAA: pairEntry }), []);
+    expect(mapped).toHaveLength(2);
+    expect(mapped.every(x => x.box === null)).toBe(true);
+  });
+
+  it('tells a paired speaker from an uninvolved one', () => {
+    const pair = stereoPairOf({ AAA: pairEntry });
+    expect(inStereoPair({ deviceID: 'AAA', host: '192.0.2.19' }, pair)).toBe(true);
+    expect(inStereoPair({ deviceID: 'CCC', host: '192.0.2.55' }, pair)).toBe(false);
+    expect(inStereoPair({ deviceID: 'CCC', host: '192.0.2.55' }, null)).toBe(false);
   });
 });

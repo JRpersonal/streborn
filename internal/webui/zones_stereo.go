@@ -55,7 +55,29 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, http.StatusOK, z)
+	// A stereo pair is a firmware GROUP, not a zone, so /getZone says nothing
+	// about it: a paired speaker reports {"members":[]} exactly like a
+	// standalone one. That left the desktop app unable to see which speakers
+	// were paired, so its pair controls just offered the first two candidates
+	// and its "undo pair" went to whichever speaker the multiroom master
+	// selection happened to point at. A user with three SoundTouch 10s pressed
+	// undo twice, both times against a speaker that was not in the pair, and
+	// the pair stayed up while the app reported success (field, 2026-08-04).
+	//
+	// Reported alongside the zone so one poll answers both. Best-effort: a box
+	// that does not answer /getGroup simply reports no pair, which is what
+	// every caller assumed until now anyway.
+	// Embedded, so the zone fields keep their exact previous JSON shape
+	// (omitempty and all) and only gain a sibling.
+	out := struct {
+		boxapi.Zone
+		Stereo *boxapi.Group `json:"stereo,omitempty"`
+	}{Zone: z}
+	if g, gerr := c.GetGroup(ctx); gerr == nil && (g.ID != "" || len(g.Members) > 0) {
+		g := g
+		out.Stereo = &g
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type zoneMemberReq struct {
@@ -524,6 +546,16 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	s.logger.Info("stereo: pairing via /addGroup (beta)", "name", name,
 		"left", master.DeviceID, "leftIP", master.IP, "right", partner.DeviceID, "rightIP", partner.IP)
 	members := []boxapi.ZoneMember{master, partner}
+	// Own budget, detached from the handler's. Pairing is the last step of the
+	// form, so by the time it runs, a slow probe earlier in the same request
+	// can have spent nearly the whole budget: live on two SoundTouch 10s the
+	// partner's /info took its full 6 s, /addGroup started with 4 s left, and
+	// the handler deadline killed it mid-call. The firmware went on to form the
+	// pair 4 s later and the speakers announced it, but the user had already
+	// been told the pairing failed.
+	actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	defer acancel()
+	ctx = actx
 	if err := c.AddGroup(ctx, name, master.DeviceID, members); err != nil {
 		// 5510 GROUP_ALREADY_EXISTS: a stale pair (half-dissolved, or left over
 		// from a pre-shutdown Bose-app pairing) blocks every new /addGroup until
@@ -541,9 +573,24 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			hcancel()
 		}
 		if err != nil {
-			s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
-			http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
-			return
+			// Before reporting a failure, ASK the speaker. A timed-out or reset
+			// /addGroup does not mean the firmware did nothing: it kept going and
+			// formed the pair after the call had already been abandoned (live,
+			// two SoundTouch 10s, 2026-08-04). Reporting failure for a pair that
+			// exists is worse than the timeout itself, because the user's next
+			// move is to pair again, which the firmware then rejects with
+			// GROUP_ALREADY_EXISTS.
+			cctx, ccancel := context.WithTimeout(context.WithoutCancel(ctx), 6*time.Second)
+			g, gerr := c.GetGroup(cctx)
+			ccancel()
+			if gerr == nil && len(g.Members) == 2 {
+				s.logger.Warn("stereo: addGroup reported an error but the speaker formed the pair anyway, treating it as paired",
+					"err", err, "id", g.ID)
+			} else {
+				s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
+				http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
+				return
+			}
 		}
 	}
 	g, err := c.GetGroup(ctx)
@@ -858,9 +905,55 @@ func (s *Server) PeriodicZoneReconcile() {
 	s.reconcileZoneOnce()
 	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
-	for range t.C {
+	for {
+		select {
+		case <-t.C:
+		case <-s.mirrorKick:
+		}
 		s.reconcileZoneOnce()
 	}
+}
+
+// kickMirrorAfterPlay asks for an out-of-turn reconcile shortly after a fresh
+// play, so the other speakers in a group join within seconds.
+//
+// Waiting for the 5-minute tick is what users experience as losing their
+// group. The speakers come out of standby, the user presses play on the main
+// one, and for up to five minutes it is the only one playing - long enough
+// that people conclude the group is gone, start the desktop app and build it
+// again. It is asked about constantly ("can the group be stored permanently on
+// the speakers so I don't have to start the PC after every standby", 2026-08-04).
+//
+// The delay lets the master's stream actually start: the reconcile requires the
+// master to be audibly playing the stream it was told to play, and a speaker
+// reports the new stream in now_playing a few seconds after the push.
+//
+// Nothing here weakens the #342 guards. This only changes WHEN a round runs;
+// which speakers it touches is still slaveMirrorAction's decision, so a speaker
+// in standby is left asleep and one playing its own source is left alone.
+func (s *Server) kickMirrorAfterPlay() {
+	if s.zones == nil || s.mirrorKick == nil {
+		return
+	}
+	if z, ok := s.zones.Get(); !ok || !z.Mirror() {
+		return // standalone, or a native zone / stereo pair: not our business
+	}
+	// One pending kick at a time. Skipping a play that lands inside the window
+	// loses nothing: the round reads the speaker's live state when it runs, so
+	// it acts on the LATEST stream either way. Deduplicating here rather than
+	// at the send is what keeps a burst of plays (a user stepping through
+	// presets) to a single reconcile.
+	if !s.mirrorKickPending.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		time.Sleep(6 * time.Second)
+		s.mirrorKickPending.Store(false)
+		select {
+		case s.mirrorKick <- struct{}{}:
+		default: // a round is already queued and has not started yet
+		}
+	}()
 }
 
 func (s *Server) reconcileZoneOnce() {
