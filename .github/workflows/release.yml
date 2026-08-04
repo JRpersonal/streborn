@@ -37,6 +37,19 @@ on:
         description: 'Release version (vX.Y.Z, e.g. v0.3.0). Leave empty for a build-only dry-run.'
         required: false
         type: string
+      notarize:
+        # An escape hatch, not a preference. Apple's notary service can sit on a
+        # submission for over an hour without returning a verdict (three in a
+        # row on 2026-08-04, while Apple reported the service healthy), and the
+        # macOS wait then holds a release that is finished and green on every
+        # other platform. Turning this off ships the Mac app ad-hoc signed, the
+        # way it shipped before notarization existed: users see the
+        # unidentified-developer warning again, which the website still
+        # documents. Leave it ON unless notarization is actually blocking.
+        description: 'Notarize the macOS build with Apple. Turn off to ship without it when Apple is slow.'
+        required: false
+        default: true
+        type: boolean
   schedule:
     # Weekly automatic dry-run, Sundays 04:30 UTC. Catches breakage
     # introduced by Dependabot bumps of release-only actions
@@ -873,8 +886,12 @@ jobs:
         env:
           P12: ${{ secrets.APPLE_CERT_P12 }}
           KEY: ${{ secrets.APPLE_API_KEY_P8 }}
+          WANTED: ${{ inputs.notarize }}
         run: |
-          if [ -n "${P12}" ] && [ -n "${KEY}" ]; then
+          if [ "${WANTED}" = "false" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Notarization was switched off for this run. The macOS build ships ad-hoc signed and shows the unidentified-developer warning on first launch."
+          elif [ -n "${P12}" ] && [ -n "${KEY}" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
