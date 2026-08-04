@@ -147,6 +147,15 @@ jobs:
           shellcheck --version
           shellcheck -s sh --severity=error usb-stick/*.sh usb-stick/rc.local
 
+      # CI's own shell, held to a stricter standard than the on-box scripts.
+      # These run on a GitHub runner with real bash, not the speaker's BusyBox,
+      # so none of the intentional ash idioms apply and the default severity is
+      # appropriate. Added when the release pipeline grew a shell script of its
+      # own (the notarization wait); before that, CI shell lived inline in the
+      # workflows and was linted by nothing.
+      - name: shellcheck (CI scripts)
+        run: shellcheck -s bash .github/scripts/*.sh
+
       # BusyBox parse gate: shellcheck uses its own parser, which is not the
       # ash the speaker actually runs. A construct ash rejects (and refuses to
       # exec, leaving the box dead on boot) can pass shellcheck. Run the real

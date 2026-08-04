@@ -795,8 +795,9 @@ jobs:
     # Signing waits on Apple's timestamp authority and notarization waits on
     # Apple's notary service, both of which can stall. Without a ceiling a stall
     # holds the whole release for the six-hour default (sign-windows carries the
-    # same guard for the same reason).
-    timeout-minutes: 60
+    # same guard for the same reason). Two submissions, each allowed to wait out
+    # a slow queue (see .github/scripts/notarize.sh), plus the build itself.
+    timeout-minutes: 200
     permissions:
       contents: read
       id-token: write
@@ -976,34 +977,8 @@ jobs:
           KEY="$RUNNER_TEMP/AuthKey.p8"
           printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$KEY"
           echo "APPLE_KEY_FILE=$KEY" >> "$GITHUB_ENV"
-
-          APP="desktop-app/build/bin/ST Reborn.app"
-          ZIP="$RUNNER_TEMP/app-for-notarization.zip"
-          # ditto, not zip: plain zip drops the symlinks and metadata a bundle
-          # needs, and the notary service rejects what comes out.
-          ditto -c -k --keepParent "$APP" "$ZIP"
-
-          set +e
-          xcrun notarytool submit "$ZIP" --key "$KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/app-submit.json"
-          RC=$?
-          set -e
-          cat "$RUNNER_TEMP/app-submit.json" || true
-          SUB_ID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("id",""))' "$RUNNER_TEMP/app-submit.json" 2>/dev/null || true)"
-          STATUS="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("status",""))' "$RUNNER_TEMP/app-submit.json" 2>/dev/null || true)"
-          # Always fetch the log, not only on failure: Apple returns warnings on
-          # accepted submissions too, and a step that runs only on the failure
-          # path is a step that has never been exercised when you need it.
-          if [ -n "$SUB_ID" ]; then
-            xcrun notarytool log "$SUB_ID" --key "$KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" "$RUNNER_TEMP/notary-app.json" || true
-            cat "$RUNNER_TEMP/notary-app.json" || true
-          fi
-          # Never trust the exit code alone: check the status word as well.
-          if [ "$RC" -ne 0 ] || [ "$STATUS" != "Accepted" ]; then
-            echo "::error::Notarization of the app was not accepted (status='$STATUS', rc=$RC). See the log above."
-            exit 1
-          fi
-          xcrun stapler staple "$APP"
-          xcrun stapler validate "$APP"
+          export APPLE_KEY_FILE="$KEY"
+          .github/scripts/notarize.sh "desktop-app/build/bin/ST Reborn.app"
 
       - name: Free disk space for DMG
         # Runs AFTER the build (which needs the toolchain) and BEFORE packaging,
@@ -1074,42 +1049,27 @@ jobs:
         # inside it. Both tickets matter: the DMG's covers the download the user
         # opens, the app's covers the copy they drag out of it.
         #
-        # ALL of this has to finish before the checksum and the attestation below,
-        # because stapling rewrites the file. A ticket added after the hash was
-        # taken would publish a SHA256 that matches nothing anyone downloads, and
-        # the Verify page would report a tampered file for a perfectly good build.
+        # ALL of this has to finish before the checksum and the attestation
+        # below, because stapling rewrites the file. A ticket added after the
+        # hash was taken would publish a SHA256 that matches nothing anyone
+        # downloads, and the Verify page would report a tampered file for a
+        # perfectly good build.
         run: |
           set -euo pipefail
           DMG="release-out/STR-macOS.dmg"
 
           # notarytool takes a read-only UDIF image; the read-write one it was
-          # built from is rejected. The convert above produces UDZO, so assert it
-          # rather than discovering it from Apple's error message.
+          # built from is rejected. The convert above produces UDZO, so assert
+          # it rather than learning it from Apple's error message.
           hdiutil imageinfo "$DMG" | grep -i "Format:" || true
           if ! hdiutil imageinfo "$DMG" | grep -qi "Format: UDZO"; then
             echo "::error::The DMG is not a compressed read-only image; notarytool will reject it."
             exit 1
           fi
 
-          codesign --force --timestamp --keychain "$KEYCHAIN_PATH" \
-            --identifier "de.st-reborn.app.dmg" --sign "$SIGN_IDENTITY" "$DMG"
+          codesign --force --timestamp --keychain "$KEYCHAIN_PATH"             --identifier "de.st-reborn.app.dmg" --sign "$SIGN_IDENTITY" "$DMG"
 
-          set +e
-          xcrun notarytool submit "$DMG" --key "$APPLE_KEY_FILE" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/dmg-submit.json"
-          RC=$?
-          set -e
-          cat "$RUNNER_TEMP/dmg-submit.json" || true
-          SUB_ID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("id",""))' "$RUNNER_TEMP/dmg-submit.json" 2>/dev/null || true)"
-          STATUS="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("status",""))' "$RUNNER_TEMP/dmg-submit.json" 2>/dev/null || true)"
-          if [ -n "$SUB_ID" ]; then
-            xcrun notarytool log "$SUB_ID" --key "$APPLE_KEY_FILE" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" "$RUNNER_TEMP/notary-dmg.json" || true
-            cat "$RUNNER_TEMP/notary-dmg.json" || true
-          fi
-          if [ "$RC" -ne 0 ] || [ "$STATUS" != "Accepted" ]; then
-            echo "::error::Notarization of the DMG was not accepted (status='$STATUS', rc=$RC). See the log above."
-            exit 1
-          fi
-          xcrun stapler staple "$DMG"
+          .github/scripts/notarize.sh "$DMG"
           echo "notarized=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify the shipped app, not just the container
