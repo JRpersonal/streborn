@@ -1706,15 +1706,25 @@ function applyBoxList(list) {
 let speakerUpdateCardShown = false;
 function maybeShowSpeakerUpdateCard() {
   const el = $('speakerUpdateCard');
-  if (!el || speakerUpdateCardShown) return;
+  if (!el) return;
   if (!state.appInfo || !state.appInfo.version) return;
   // App first: while the app itself is out of date this card stays away, so
   // the user is never shown two update prompts and left to guess the order.
   if (speakerUpdateCardMuted()) { el.classList.add('hidden'); return; }
   const outdated = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
-  // No speakers behind (or none discovered yet): stay silent and re-check on
-  // the next discovery cycle, so a box that appears late is still covered.
-  if (!outdated.length) return;
+
+  // Nothing behind any more: TAKE THE CARD AWAY. This runs before the
+  // once-per-start latch on purpose. The latch used to short-circuit the whole
+  // function, so once the card had been shown there was no path that could ever
+  // hide it again: the user updated every speaker, the update finished, and the
+  // card still sat there asking them to do what they had just done (Jens,
+  // 2026-08-05, right after updating all four of his).
+  if (!outdated.length) { el.classList.add('hidden'); return; }
+
+  // Some are still behind. If the card is already up, refresh the list rather
+  // than leave a stale one naming speakers that are now current.
+  const visible = !el.classList.contains('hidden');
+  if (speakerUpdateCardShown && !visible) return; // asked once, they said later
   speakerUpdateCardShown = true;
 
   const list = outdated
