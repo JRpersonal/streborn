@@ -1,0 +1,114 @@
+# Notarization probe: is it our package, or is it the account?
+#
+# Three submissions of the real app sat at "In Progress" for over twelve hours
+# on 2026-08-04 without ever producing a verdict, while Apple reported the
+# notary service healthy. A rejection would have come back as "Invalid" with a
+# log; nothing came back at all.
+#
+# That leaves two very different explanations and no way to tell them apart
+# from the logs we have: something about OUR bundle makes the service stall, or
+# nothing this team submits gets processed. So this submits the smallest thing
+# that can be notarized at all: a bundle containing one tiny C program, signed
+# exactly the way the real app is signed.
+#
+# If this one comes back, the problem is in our package and we go looking there.
+# If it hangs the same way, the package is ruled out and the support case is
+# about the account. Either answer is worth the ten minutes.
+#
+# Manual only. This is a diagnostic, not part of any release.
+name: Notary probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build a minimal app bundle
+        # Deliberately trivial: one C file, no frameworks, no resources, no
+        # embedded binaries. Everything our real bundle has that this one lacks
+        # becomes a suspect if this probe succeeds.
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/Probe.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cat > "$RUNNER_TEMP/probe.c" <<'EOF'
+          int main(void) { return 0; }
+          EOF
+          clang -arch x86_64 -arch arm64 -o "$APP/Contents/MacOS/Probe" "$RUNNER_TEMP/probe.c"
+          cat > "$APP/Contents/Info.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleName</key><string>Probe</string>
+            <key>CFBundleExecutable</key><string>Probe</string>
+            <key>CFBundleIdentifier</key><string>de.st-reborn.probe</string>
+            <key>CFBundleVersion</key><string>1.0</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+          </dict></plist>
+          EOF
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          file "$APP/Contents/MacOS/Probe"
+          du -sh "$APP"
+
+      - name: Import the Developer ID certificate
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/probe.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          printf '%s' "$APPLE_CERT_P12" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          IDENTITY="$(security find-identity -p codesigning -v "$KEYCHAIN_PATH" | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)"/\1/')"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          rm -f "$CERT_PATH"
+
+      - name: Sign it exactly like the real app
+        run: |
+          set -euo pipefail
+          codesign --force --timestamp --options runtime --keychain "$KEYCHAIN_PATH" --sign "$SIGN_IDENTITY" "$APP"
+          codesign -dv --verbose=4 "$APP" 2>&1 | grep -E "Authority|flags"
+
+      - name: Submit and wait
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        # A shorter ceiling than the release uses. The question here is not
+        # "did it eventually pass" but "does anything come back at all", and
+        # twenty minutes is already well past Apple's stated expectation.
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$KEY"
+          export APPLE_KEY_FILE="$KEY"
+          export NOTARY_DEADLINE_MIN=20
+          .github/scripts/notarize.sh "$APP"
+
+      - name: Remove the keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/probe.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/cert.p12" 2>/dev/null || true
