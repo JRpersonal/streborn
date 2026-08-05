@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "Balans: gecentreerd",
   "controls.balanceLeft": "Balans: {{n}} naar links",
   "controls.balanceRight": "Balans: {{n}} naar rechts",
-  "controls.balanceTitle": "De links-rechtsbalans van dit stereopaar, zoals de luidspreker die meldt. Wijzigen kan in de Bose SoundTouch-app."
+  "controls.balanceTitle": "De links-rechtsbalans van dit stereopaar, zoals de luidspreker die meldt. Wijzigen kan in de Bose SoundTouch-app.",
+  "speaker.stereoPairTitle": "Deze twee luidsprekers vormen een stereopaar. Ze spelen samen, en de presettoetsen lopen via de hoofdluidspreker van het paar.",
+  "setup.installOfflineOthersLive": "Deze luidspreker reageert momenteel niet, dus er is nog niets om op te installeren. Het ligt niet aan je firewall of antivirus: ST Reborn praat op dit moment via dezelfde verbinding met je andere luidsprekers. Controleer of deze luidspreker stroom heeft en aan staat, of hij op hetzelfde wifi-netwerk zit als de andere en niet op een gastnetwerk, en of de Bose SoundTouch-app hem nog vindt. Ververs daarna de lijst en probeer het opnieuw."
 }

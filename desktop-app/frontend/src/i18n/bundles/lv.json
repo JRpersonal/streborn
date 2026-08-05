@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "Balāss: centrā",
   "controls.balanceLeft": "Balāss: {{n}} pa kreisi",
   "controls.balanceRight": "Balāss: {{n}} pa labi",
-  "controls.balanceTitle": "Šī stereo pāra kreisās un labās puses balāss, kā to ziņo skaļrunis. To var mainīt Bose SoundTouch lietotnē."
+  "controls.balanceTitle": "Šī stereo pāra kreisās un labās puses balāss, kā to ziņo skaļrunis. To var mainīt Bose SoundTouch lietotnē.",
+  "speaker.stereoPairTitle": "Šie divi skaļruņi veido stereo pāri. Tiē atskaņo kopā, un iestatījumu taustiņus apstrādā pāra galvenais skaļrunis.",
+  "setup.installOfflineOthersLive": "Šis skaļrunis pašlaik neatbild, tāpēc vēl nav, uz kā instalēt. Vaina nav jūsu ugunsmūrī vai antivīrusā: ST Reborn tieši šobrīd pa to pašu savienojumu sarunājas ar jūsu pārējiem skaļruņiem. Pārbaudiet, vai šim skaļrunim ir strāva un vai tas deg, vai tas ir tajā pašā Wi-Fi tīklā, kur pārējie, nevis viesu tīklā, un vai Bose SoundTouch lietotne to joprojām atrod. Pēc tam atsvaidziniet sarakstu un mēģiniet vēlreiz."
 }

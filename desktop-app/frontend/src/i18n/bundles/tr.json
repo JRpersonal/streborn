@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "Denge: ortada",
   "controls.balanceLeft": "Denge: {{n}} sola",
   "controls.balanceRight": "Denge: {{n}} sağa",
-  "controls.balanceTitle": "Bu stereo çiftin sol/sağ dengesi, hoparlörün bildirdiği şekilde. Bose SoundTouch uygulamasından değiştirilebilir."
+  "controls.balanceTitle": "Bu stereo çiftin sol/sağ dengesi, hoparlörün bildirdiği şekilde. Bose SoundTouch uygulamasından değiştirilebilir.",
+  "speaker.stereoPairTitle": "Bu iki hoparlör bir stereo çift oluşturur. Birlikte çalarlar ve hazır ayar tuşları çiftin ana hoparlörü üzerinden işler.",
+  "setup.installOfflineOthersLive": "Bu hoparlör şu anda yanıt vermiyor, dolayısıyla kuruluma uygun bir hedef yok. Güvenlik duvarınız veya virüs korumanız değil: ST Reborn tam da şu anda aynı bağlantı üzerinden diğer hoparlörlerinizle konuşuyor. Bu hoparlörün elektriği olduğunu ve ışığının yandığını, diğerleriyle aynı Wi-Fi ağında ve misafir ağında olmadığını, Bose SoundTouch uygulamasının onu hâlâ bulduğunu kontrol edin. Sonra listeyi yenileyip tekrar deneyin."
 }

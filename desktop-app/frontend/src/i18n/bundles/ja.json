@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "バランス: 中央",
   "controls.balanceLeft": "バランス: 左に {{n}}",
   "controls.balanceRight": "バランス: 右に {{n}}",
-  "controls.balanceTitle": "このステレオペアの左右バランス。スピーカーが報告した値です。変更は Bose SoundTouch アプリで行えます。"
+  "controls.balanceTitle": "このステレオペアの左右バランス。スピーカーが報告した値です。変更は Bose SoundTouch アプリで行えます。",
+  "speaker.stereoPairTitle": "この2つのスピーカーはステレオペアとして連携しています。一緒に再生し、プリセットボタンはペアの主スピーカーが処理します。",
+  "setup.installOfflineOthersLive": "このスピーカーは現在応答していないため、インストール先がありません。ファイアウォールやウイルス対策ソフトの問題ではありません。ST Reborn は今まさに同じ接続で他のスピーカーと通信しています。このスピーカーに電源が入りランプが点灯しているか、他と同じ Wi-Fi（ゲストネットワークではない）に接続されているか、Bose SoundTouch アプリがまだ見つけられるかを確認し、スピーカー一覧を更新してからもう一度お試しください。"
 }

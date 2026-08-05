@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "Balans: wyśrodkowany",
   "controls.balanceLeft": "Balans: {{n}} w lewo",
   "controls.balanceRight": "Balans: {{n}} w prawo",
-  "controls.balanceTitle": "Balans lewo-prawo tej pary stereo, tak jak podaje go głośnik. Można go zmienić w aplikacji Bose SoundTouch."
+  "controls.balanceTitle": "Balans lewo-prawo tej pary stereo, tak jak podaje go głośnik. Można go zmienić w aplikacji Bose SoundTouch.",
+  "speaker.stereoPairTitle": "Te dwa głośniki tworzą parę stereo. Grają razem, a przyciski presetów obsługuje główny głośnik pary.",
+  "setup.installOfflineOthersLive": "Ten głośnik w tej chwili nie odpowiada, więc nie ma jeszcze na czym instalować. To nie jest wina zapory ani antywirusa: ST Reborn właśnie teraz rozmawia z pozostałymi głośnikami przez to samo połączenie. Sprawdź, czy ten głośnik ma zasilanie i się świeci, czy jest w tej samej sieci Wi-Fi co pozostałe i nie w sieci dla gości, oraz czy aplikacja Bose SoundTouch nadal go znajduje. Potem odśwież listę i spróbuj ponownie."
 }

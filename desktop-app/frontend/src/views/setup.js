@@ -1934,6 +1934,26 @@ async function verifyInstalledState(box, onState) {
       (state.appInfo && state.appInfo.version) || '', foundBox.deviceID || '',
       foundBox.friendlyName || foundBox.name || foundBox.host, true);
   } catch {}
+  // A speaker that is not answering at all cannot be installed onto, and the
+  // failure it produces blames the wrong thing. The install ends in "this is
+  // usually a firewall or antivirus", which is provably false whenever the app
+  // is talking to another speaker at the same moment over the very same
+  // network path. A user with three working speakers and one silent one then
+  // goes hunting through his antivirus settings for nothing (field 2026-08-05:
+  // "an der vierten beisse ich mir die Zaehne aus", two attempts a minute
+  // apart, every port on that speaker dead while the others answered fine).
+  //
+  // So say what is actually true before starting: this speaker is not
+  // answering, and here is why we know it is not your PC.
+  const othersLive = (state.boxes || []).some(b =>
+    b && b.host && b.host !== foundBox.host && !b.offline);
+  if (foundBox.offline && othersLive) {
+    clearInterval(timerHandle);
+    if (offProgress) offProgress();
+    render(`<div class="setup-err">${escapeHtml(t('setup.installOfflineOthersLive'))}</div>`);
+    return;
+  }
+
   try { SetOTARunning(true); } catch {}
   try {
     result = await InstallSTROnBox(foundBox.host, foundBox.model || foundBox.type || '');

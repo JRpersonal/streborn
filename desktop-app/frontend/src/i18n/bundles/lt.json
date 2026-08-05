@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "Balansas: viduryje",
   "controls.balanceLeft": "Balansas: {{n}} į kairę",
   "controls.balanceRight": "Balansas: {{n}} į dešinę",
-  "controls.balanceTitle": "Šios stereo poros kairės ir dešinės balansas, kaip jį nurodo garsiakalbis. Keičiamas Bose SoundTouch programoje."
+  "controls.balanceTitle": "Šios stereo poros kairės ir dešinės balansas, kaip jį nurodo garsiakalbis. Keičiamas Bose SoundTouch programoje.",
+  "speaker.stereoPairTitle": "Šie du garsiakalbiai sudaro stereo porą. Jie groja kartu, o išankstinių nustatymų mygtukus tvarko pagrindinis poros garsiakalbis.",
+  "setup.installOfflineOthersLive": "Šis garsiakalbis šiuo metu neatsako, tad kol kas nėra į ką diegti. Tai ne jūsų užkarda ar antivirusinė: ST Reborn kaip tik dabar per tą patį ryšį bendrauja su kitais jūsų garsiakalbiais. Patikrinkite, ar šis garsiakalbis turi maitinimą ir šviečia, ar jis tame pačiame Wi-Fi tinkle kaip kiti, o ne svečių tinkle, ir ar Bose SoundTouch programėlė vis dar jį randa. Tada atnaujinkite sąrašą ir bandykite dar kartą."
 }

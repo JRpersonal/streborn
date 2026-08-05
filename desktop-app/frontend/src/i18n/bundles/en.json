@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "Balance: centred",
   "controls.balanceLeft": "Balance: {{n}} left",
   "controls.balanceRight": "Balance: {{n}} right",
-  "controls.balanceTitle": "The left/right balance of this stereo pair, as the speaker reports it. It can be changed in the Bose SoundTouch app."
+  "controls.balanceTitle": "The left/right balance of this stereo pair, as the speaker reports it. It can be changed in the Bose SoundTouch app.",
+  "speaker.stereoPairTitle": "These two speakers are paired as one stereo pair. They play together, and preset keys are handled by the main speaker of the pair.",
+  "setup.installOfflineOthersLive": "This speaker is not answering at the moment, so there is nothing to install onto yet. It is not your firewall or antivirus: ST Reborn is talking to your other speakers over the same connection right now. Check that this speaker has power and its light is on, that it is on the same Wi-Fi as the others and not a guest network, and that the Bose SoundTouch app still finds it. Then refresh the speaker list and try again."
 }

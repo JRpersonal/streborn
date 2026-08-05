@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "Balance: centrado",
   "controls.balanceLeft": "Balance: {{n}} a la izquierda",
   "controls.balanceRight": "Balance: {{n}} a la derecha",
-  "controls.balanceTitle": "El balance izquierda/derecha de esta pareja estéreo, según lo indica el altavoz. Se cambia en la app Bose SoundTouch."
+  "controls.balanceTitle": "El balance izquierda/derecha de esta pareja estéreo, según lo indica el altavoz. Se cambia en la app Bose SoundTouch.",
+  "speaker.stereoPairTitle": "Estos dos altavoces forman una pareja estéreo. Suenan juntos, y las teclas de presintonía pasan por el altavoz principal de la pareja.",
+  "setup.installOfflineOthersLive": "Este altavoz no responde en este momento, así que todavía no hay nada sobre lo que instalar. No es tu cortafuegos ni tu antivirus: ST Reborn está hablando ahora mismo con tus otros altavoces por la misma conexión. Comprueba que este altavoz tiene corriente y está encendido, que está en la misma red Wi-Fi que los demás y no en una red de invitados, y que la app Bose SoundTouch lo sigue encontrando. Después actualiza la lista de altavoces e inténtalo de nuevo."
 }

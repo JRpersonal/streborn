@@ -1249,5 +1249,7 @@
   "controls.balanceCentre": "Balance: Mitte",
   "controls.balanceLeft": "Balance: {{n}} nach links",
   "controls.balanceRight": "Balance: {{n}} nach rechts",
-  "controls.balanceTitle": "Die Links-rechts-Balance dieses Stereopaars, so wie der Lautsprecher sie meldet. Ändern lässt sie sich in der Bose SoundTouch App."
+  "controls.balanceTitle": "Die Links-rechts-Balance dieses Stereopaars, so wie der Lautsprecher sie meldet. Ändern lässt sie sich in der Bose SoundTouch App.",
+  "speaker.stereoPairTitle": "Diese beiden Lautsprecher sind zu einem Stereopaar verbunden. Sie spielen gemeinsam, und die Preset-Tasten laufen über den Haupt-Lautsprecher des Paares.",
+  "setup.installOfflineOthersLive": "Dieser Lautsprecher antwortet gerade nicht, es gibt also noch nichts, worauf installiert werden könnte. An deiner Firewall oder deinem Virenschutz liegt es nicht: ST Reborn spricht in diesem Moment über dieselbe Verbindung mit deinen anderen Lautsprechern. Prüf, ob dieser Lautsprecher Strom hat und leuchtet, ob er im selben WLAN ist wie die anderen und nicht im Gastnetz, und ob die Bose SoundTouch App ihn noch findet. Dann die Lautsprecherliste aktualisieren und es erneut versuchen."
 }
