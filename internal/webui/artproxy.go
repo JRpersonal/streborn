@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -25,6 +26,11 @@ import (
 // arriving as the audio does.
 
 const artProxyPath = "/art"
+
+var (
+	artLogMu  sync.Mutex
+	artLogged = map[string]bool{}
+)
 
 // ArtProxyURL wraps an image URL so the speaker can fetch it over plain HTTP.
 // Returns "" for an empty input, and passes a plain-HTTP URL through unchanged
@@ -88,6 +94,27 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not an image", http.StatusBadGateway)
 		return
 	}
+	// Log the first fetch per image, once. A successful fetch used to log
+	// nothing at all, so the log could not answer the one question that
+	// matters when a station logo does not show up: did the speaker even ask?
+	// Without this, "no lines about /art" reads as "never requested" when it
+	// may equally mean "requested and served fine" (field report 2026-08-05,
+	// the logo above the station name gone). Rate-limited per URL so a speaker
+	// that re-fetches on every track change cannot fill the NAND log.
+	artLogMu.Lock()
+	first := !artLogged[target]
+	if first {
+		if len(artLogged) > 64 {
+			artLogged = map[string]bool{}
+		}
+		artLogged[target] = true
+	}
+	artLogMu.Unlock()
+	if first {
+		s.logger.Info("art proxy: the speaker fetched a station logo",
+			"url", target, "contentType", ct, "status", resp.StatusCode)
+	}
+
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	// Bounded: a station logo is small, and an unbounded copy onto a speaker

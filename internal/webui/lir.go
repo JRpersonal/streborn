@@ -171,14 +171,49 @@ func OrionStationLocation(streamURL, name, art string) string {
 	return "/station?data=" + base64.RawURLEncoding.EncodeToString(payload)
 }
 
-// firstArtURL takes the first entry of STR's pipe-separated art fallback chain.
-// Presets store several candidate logo URLs separated by "|" so the app can try
-// the next when one 404s; the speaker understands exactly one.
+// firstArtURL picks ONE logo out of STR's pipe-separated fallback chain, the
+// only thing the speaker understands.
+//
+// Not simply the first one. The chain is ordered by how likely a URL is to
+// belong to the station, not by whether anything can draw it, and the front of
+// it is very often a vector logo or a 16-pixel favicon: the first entry for
+// Energy NRJ is an .svg, for Absolut Relax an .ico. The speaker takes the URL
+// (now_playing comes back with artImageStatus="IMAGE_PRESENT"), and then
+// nothing appears, because a display cannot render either of those. Reported as
+// "the logo above the station name does not show up any more" (2026-08-05).
+//
+// So: prefer the first entry that looks like an ordinary raster image, and only
+// fall back to the head of the chain when none of them does. Extension-based on
+// purpose. The alternative is fetching every candidate to sniff its type, which
+// would turn saving a preset into a series of network round trips.
 func firstArtURL(art string) string {
-	if i := strings.IndexByte(art, '|'); i >= 0 {
-		return art[:i]
+	parts := strings.Split(art, "|")
+	for _, p := range parts {
+		if isRasterImageURL(p) {
+			return strings.TrimSpace(p)
+		}
 	}
-	return art
+	return strings.TrimSpace(parts[0])
+}
+
+// isRasterImageURL reports whether a URL ends in an extension a speaker display
+// can actually draw. Query strings and fragments are ignored, plenty of logo
+// URLs carry a cache-busting parameter.
+func isRasterImageURL(raw string) bool {
+	u := strings.TrimSpace(raw)
+	if u == "" {
+		return false
+	}
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	u = strings.ToLower(u)
+	for _, ext := range []string{".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"} {
+		if strings.HasSuffix(u, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // handleOrionToken answers the token endpoint the BMX service registry points
