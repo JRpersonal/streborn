@@ -823,7 +823,7 @@ jobs:
     # the moment notarization silently stops working afterwards.
     outputs:
       configured: ${{ steps.applegate.outputs.configured }}
-      notarized: ${{ steps.notarize.outputs.notarized }}
+      notarized: ${{ steps.notarize.outputs.notary_result }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -995,6 +995,12 @@ jobs:
           printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$KEY"
           echo "APPLE_KEY_FILE=$KEY" >> "$GITHUB_ENV"
           export APPLE_KEY_FILE="$KEY"
+          # 30 minutes, then ship without it. Apple took 27 to 28 hours over
+          # the first three submissions from this Developer ID and accepted
+          # every one of them, so a long wait says nothing about the build. A
+          # release that is done on every other platform does not sit behind it.
+          export NOTARY_DEADLINE_MIN=30
+          export NOTARY_ON_TIMEOUT=continue
           .github/scripts/notarize.sh "desktop-app/build/bin/ST Reborn.app"
 
       - name: Free disk space for DMG
@@ -1086,11 +1092,16 @@ jobs:
 
           codesign --force --timestamp --keychain "$KEYCHAIN_PATH"             --identifier "de.st-reborn.app.dmg" --sign "$SIGN_IDENTITY" "$DMG"
 
+          export NOTARY_DEADLINE_MIN=30
+          export NOTARY_ON_TIMEOUT=continue
           .github/scripts/notarize.sh "$DMG"
-          echo "notarized=true" >> "$GITHUB_OUTPUT"
+          # notary_result is written by the script: accepted / timeout.
+          # A rejection never reaches here, it exits non-zero.
 
       - name: Verify the shipped app, not just the container
-        if: steps.applegate.outputs.configured == 'true'
+        # Only when notarization actually happened. After a timeout the build
+        # is signed but carries no ticket, and stapler would rightly refuse it.
+        if: steps.applegate.outputs.configured == 'true' && steps.notarize.outputs.notary_result == 'accepted'
         # Every check so far looked at the disk image. An app with the hardened
         # runtime missing, or carrying an entitlement it must not have, passes all
         # of them and then fails the moment a user double-clicks it. So mount what
@@ -1590,15 +1601,21 @@ jobs:
           MAC_CONFIGURED: ${{ needs.build-desktop-macos.outputs.configured }}
           MAC_NOTARIZED: ${{ needs.build-desktop-macos.outputs.notarized }}
         run: |
-          if [ "${MAC_CONFIGURED}" = "true" ] && [ "${MAC_NOTARIZED}" != "true" ]; then
-            echo "::error::Apple credentials are configured but the macOS build was not notarized. Refusing to publish a build that Gatekeeper will block. Check the build-desktop-macos job log."
-            exit 1
-          fi
-          if [ "${MAC_CONFIGURED}" != "true" ]; then
-            echo "::warning::Apple credentials are not configured; the macOS build is ad-hoc signed and shows the unidentified-developer warning on first launch."
-          else
-            echo "macOS build is signed and notarized."
-          fi
+          # A REJECTION blocks: Apple looked at the build and refused it, and
+          # the macOS job fails outright in that case, so this never sees
+          # "rejected" as a result. A TIMEOUT does not block: the submission is
+          # still queued at Apple and says nothing about the build, and holding
+          # a finished release for it helps nobody.
+          case "${MAC_CONFIGURED}:${MAC_NOTARIZED}" in
+            true:accepted)
+              echo "macOS build is signed, notarized and stapled." ;;
+            true:timeout)
+              echo "::warning::Apple did not return a verdict in time. The macOS build ships signed but NOT notarized, so it shows the first-launch warning. The submission is still queued at Apple; the website's macOS instructions stay as they are for this release." ;;
+            true:*)
+              echo "::warning::The macOS build was signed but notarization did not complete (result: '${MAC_NOTARIZED}'). It ships without a ticket." ;;
+            *)
+              echo "::warning::Apple credentials are not configured; the macOS build is ad-hoc signed and shows the unidentified-developer warning on first launch." ;;
+          esac
 
       - name: Publish GitHub Release
         # Only on a real release: a dispatch with a version input. A no-version

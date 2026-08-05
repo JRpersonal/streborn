@@ -207,12 +207,24 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		"previous_log":   readTail("/mnt/nv/streborn/previous.log"),
 		"setup_log":      readTail("/mnt/nv/streborn/setup.log"),
 		"boot_log":       readTail("/mnt/nv/streborn/boot.log"),
-		"wpa_supplicant": readTail("/mnt/nv/wpa_supplicant.conf"),
-		"region_txt":     readTail("/mnt/nv/streborn/region.txt"),
-		"name_txt":       readTail("/mnt/nv/streborn/name.txt"),
-		"stick_listing":  listDir("/media/sda1"),
-		"media_listing":  listDir("/media"),
-		"nv_listing":     listDir("/mnt/nv/streborn"),
+		// wpaConfPath, not a second literal. This read pointed at
+		// /mnt/nv/wpa_supplicant.conf while the code that WRITES the file uses
+		// /etc/wpa_supplicant.conf, so every bundle ever collected carried
+		// "no such file or directory" here and nobody noticed. The one question
+		// it exists to answer, how many networks a speaker is configured for,
+		// was therefore never answerable from a bundle (found 2026-08-05 while
+		// testing exactly that theory against nine speakers).
+		"wpa_supplicant": readTail(wpaConfPath),
+		// What the speaker is REALLY configured for. The file above only shows
+		// what was persisted, and on at least one chassis that is the untouched
+		// vendor template while the speaker is on Wi-Fi via a network added at
+		// runtime. See wlanlist.go.
+		"wlan_configured": listConfiguredWLANs(context.Background(), wpaConfPath),
+		"region_txt":      readTail("/mnt/nv/streborn/region.txt"),
+		"name_txt":        readTail("/mnt/nv/streborn/name.txt"),
+		"stick_listing":   listDir("/media/sda1"),
+		"media_listing":   listDir("/media"),
+		"nv_listing":      listDir("/mnt/nv/streborn"),
 		// The /mnt/nv ROOT, not just STR's own subdir: a stock or STR-only box
 		// carries only Bose's persistent state and streborn/ here, so anything
 		// else (e.g. an aftertouch/ dir) is a leftover from another mod that can

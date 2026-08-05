@@ -26,8 +26,18 @@ ARTIFACT="${1:?usage: notarize.sh <path>}"
 
 # Apple's own guidance is that most submissions finish within 15 minutes. This
 # is the ceiling for the pathological case, not the expected wait.
-DEADLINE_MIN="${NOTARY_DEADLINE_MIN:-75}"
+DEADLINE_MIN="${NOTARY_DEADLINE_MIN:-30}"
 POLL_SECONDS=30
+# What to do when Apple has not answered by the deadline: "fail" stops the
+# release, "continue" ships the build unnotarized and says so.
+#
+# Continue is the right default for this project. Apple took 27 to 28 HOURS
+# over the first three submissions from a new Developer ID, all three of which
+# were eventually Accepted, so the build was never the problem: waiting was.
+# A release that is finished and green on every other platform must not sit
+# behind that. An unnotarized Mac build still installs, it just shows the
+# first-launch warning the website documents.
+ON_TIMEOUT="${NOTARY_ON_TIMEOUT:-fail}"
 
 auth=(--key "$APPLE_KEY_FILE" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID")
 work="$(mktemp -d)"
@@ -65,6 +75,14 @@ deadline=$(( $(date +%s) + DEADLINE_MIN * 60 ))
 status="In Progress"
 while [ "$status" = "In Progress" ] || [ -z "$status" ]; do
   if [ "$(date +%s)" -ge "$deadline" ]; then
+    if [ "$ON_TIMEOUT" = "continue" ]; then
+      # NOT an error. The submission keeps going at Apple and will very likely
+      # be accepted; it simply will not be part of this build. Recorded so the
+      # publish guard can tell this apart from a rejection, which must block.
+      echo "::warning::Apple has not returned a verdict for $id within ${DEADLINE_MIN} minutes. Shipping this build WITHOUT notarization. The submission is still queued at Apple; check it later with: xcrun notarytool info $id"
+      [ -n "${GITHUB_OUTPUT:-}" ] && echo "notary_result=timeout" >> "$GITHUB_OUTPUT"
+      exit 0
+    fi
     echo "::error::Apple has not returned a verdict for $id within ${DEADLINE_MIN} minutes. The submission is still queued there; re-run the release, or check it later with: xcrun notarytool info $id"
     exit 1
   fi
@@ -86,10 +104,15 @@ xcrun notarytool log "$id" "${auth[@]}" "$work/log.json" || true
 cat "$work/log.json" || true
 
 if [ "$status" != "Accepted" ]; then
+  # A REJECTION always stops the release, whatever ON_TIMEOUT says. Apple
+  # looked at the build and refused it, and shipping something Gatekeeper has
+  # explicitly rejected would be worse than shipping something it has not seen.
   echo "::error::Notarization of $(basename "$ARTIFACT") ended as '$status'. The reason is in the log above."
+  [ -n "${GITHUB_OUTPUT:-}" ] && echo "notary_result=rejected" >> "$GITHUB_OUTPUT"
   exit 1
 fi
 
 xcrun stapler staple "$ARTIFACT"
 xcrun stapler validate "$ARTIFACT"
+[ -n "${GITHUB_OUTPUT:-}" ] && echo "notary_result=accepted" >> "$GITHUB_OUTPUT"
 echo "$(basename "$ARTIFACT"): notarized and stapled"
