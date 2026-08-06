@@ -535,6 +535,17 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	master.Role = "LEFT"
 	partner := slaves[0]
 	partner.Role = "RIGHT"
+	// The partner's address arrives in the request body and is then dialled
+	// several times over: its /info is read, the pair document is pushed to it,
+	// and a stale pair is removed from it. A stereo partner is by definition
+	// another speaker on this LAN, so anything else is either a mistake or an
+	// attempt to aim the speaker at a host it has no business reaching. Rejecting
+	// it here covers every one of those dials with a single check.
+	if partner.IP != "" && !isLANPeer(partner.IP) {
+		s.logger.Warn("stereo: refusing a partner address that is not on the local network", "partnerIP", partner.IP)
+		http.Error(w, "the partner speaker must be on the local network", http.StatusBadRequest)
+		return
+	}
 	if name == "" {
 		name = "Stereo pair"
 	}
