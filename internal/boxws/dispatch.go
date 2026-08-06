@@ -127,6 +127,11 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// the ST20 was LOCAL_INTERNET_RADIO -> UPNP -> INVALID_SOURCE a
 				// few seconds after the station started, so the stamp below
 				// covers the direct and the indirect route alike.
+				if src == "LOCAL_INTERNET_RADIO" {
+					c.mu.Lock()
+					c.nativeStartedAt = time.Now()
+					c.mu.Unlock()
+				}
 				if prev == "LOCAL_INTERNET_RADIO" {
 					c.mu.Lock()
 					c.lastNativeActiveAt = time.Now()
@@ -138,6 +143,30 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 						time.Since(c.lastNativeActiveAt) < nativeDropWindow
 					c.mu.Unlock()
 					if recent {
+						c.fireNativeDropped()
+					}
+				}
+				// The other way a speaker abandons a native station: straight to
+				// STANDBY, never touching INVALID_SOURCE. The guard above missed
+				// that route entirely, so a speaker that cannot keep native
+				// stations never learned it and went silent on every single press
+				// (field 2026-08-06, a newly added ST10: "normal playback does not
+				// work either, the device switches to standby immediately").
+				//
+				// STANDBY is ambiguous where INVALID_SOURCE is not, because a user
+				// switching the speaker off looks the same. The discriminator is
+				// TIME, not the activity frame: that frame is known to fire from
+				// STR's own writes and to appear with nobody near the box. Nobody
+				// powers a speaker off within a breath of starting a station, so a
+				// station that lasted less than nativeStandbyDropWindow was
+				// dropped by the firmware. The reported case lasted 862 ms.
+				if src == "STANDBY" && prev == "LOCAL_INTERNET_RADIO" {
+					c.mu.Lock()
+					started := c.nativeStartedAt
+					c.mu.Unlock()
+					if !started.IsZero() && time.Since(started) < nativeStandbyDropWindow {
+						c.logger.Warn("box ws: the speaker dropped a native station to standby right after starting it, counting it as a native failure",
+							"lastedMs", time.Since(started).Milliseconds())
 						c.fireNativeDropped()
 					}
 				}

@@ -33,6 +33,16 @@ const (
 	// generous because the alternative, missing the evidence, leaves a speaker
 	// stuck on a form it cannot keep.
 	nativeDropWindow = 10 * time.Second
+	// nativeStandbyDropWindow bounds the OTHER way a speaker abandons a native
+	// station: straight to STANDBY without ever touching INVALID_SOURCE.
+	//
+	// Deliberately much shorter than the window above, because STANDBY is
+	// ambiguous and INVALID_SOURCE is not: a user switching the speaker off
+	// produces the identical transition. Only the time tells them apart, and
+	// nobody powers a speaker off within a breath of starting a station. The
+	// reported failure lasted 862 ms; four seconds leaves room for a slow box
+	// while staying far below any human reaction to music starting.
+	nativeStandbyDropWindow = 4 * time.Second
 	// ownCmdKeyVeto: a physical key press this close to the STOP_STATE means
 	// the stop came from the user (remote/box stop key), NOT from STR's own
 	// command, even inside ownCmdTeardownWindow. The firmware sends a
