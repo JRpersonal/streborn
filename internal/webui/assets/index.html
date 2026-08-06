@@ -66,11 +66,6 @@ header .dev { min-width:0; font-size:15px; font-weight:600; color:var(--fg); tex
 header .dev .chev { font-size:10px; color:var(--muted); flex:none; display:none; }
 header .dev.haspeers { cursor:pointer; }
 header .dev.haspeers .chev { display:inline; }
-.devmenu { position:absolute; right:0; top:calc(100% + 8px); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:8px; z-index:60; min-width:210px; max-width:80vw; display:flex; flex-direction:column; gap:6px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
-/* An explicit display beats the hidden attribute, which left the menu
-   permanently open (caught in the live browser check): restore it. */
-.devmenu[hidden] { display:none; }
-.devmenu a.btn, .devmenu span.btn { justify-content:flex-start; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin:12px 0; }
 .nowcard { padding:14px 16px; background:linear-gradient(180deg,var(--nowgrad1),var(--nowgrad2)); }
 .nowcard .now { display:block; color:var(--accent); font-weight:600; font-size:18px; line-height:1.25; }
@@ -90,13 +85,7 @@ button.btn, a.btn { display:flex; align-items:center; justify-content:center; mi
 button.btn.active, a.btn.active { border-color:var(--accent); color:var(--accent); }
 button.btn:active { background:var(--press); }
 @media (hover:hover) { button.btn:hover, a.btn:hover { background:var(--hover); } .preset:hover { background:var(--hover); } }
-.vol { display:flex; align-items:center; gap:12px; }
-.vol .volstep { flex-shrink:0; padding:6px 12px; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
-.vol input[type=range] { flex:1 1 auto; min-width:0; }
-.vol input[type=range] { flex:1; accent-color:var(--accent); height:44px; }
-.vol input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:24px; height:24px; border-radius:50%; background:var(--accent); }
-.vol input[type=range]::-moz-range-thumb { width:24px; height:24px; border:0; border-radius:50%; background:var(--accent); }
-.vol .val { width:36px; text-align:right; font-variant-numeric:tabular-nums; color:var(--fg); }
+.volrock .volstep { flex-shrink:0; padding:6px 12px; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
 .preset { background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:14px; cursor:pointer; min-height:80px; display:flex; flex-direction:column; justify-content:center; transition:background .15s; }
 .preset:active { background:var(--press); }
@@ -146,6 +135,103 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 @keyframes ptr-rot { from { transform:rotate(0); } to { transform:rotate(360deg); } }
 /* Respect the OS "reduce motion" setting. */
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
+
+/* ---------------------------------------------------------------------------
+   Tab shell.
+
+   The page used to be one scrolling column of nine cards. Group control, radio
+   search and diagnostics would have made it fourteen, burying the two things
+   people actually open this for: start something, change the volume. So the
+   page is split into destinations reached from a bar in the thumb zone.
+
+   The bar lives INSIDE body on purpose. body carries the a11y zoom, so at 1.30x
+   the bar, its height and main's bottom padding all scale by the same factor and
+   stay in step; a bar outside the zoomed subtree would keep its 1.0x height
+   while the content grew, and content would hide underneath it with no way to
+   scroll it back into view. That failure mode would cost a user their remote
+   until the next OTA, so it is worth the one-line explanation.
+   --------------------------------------------------------------------------- */
+main { padding-bottom:calc(76px + env(safe-area-inset-bottom)); }
+.panel[hidden] { display:none; }
+.tabbar {
+  position:fixed; left:0; right:0; bottom:0; z-index:70;
+  display:flex; background:var(--card); border-top:1px solid var(--line);
+  padding:4px calc(4px + env(safe-area-inset-left)) calc(4px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-right));
+}
+.tabbar button {
+  flex:1; min-width:0; min-height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  background:none; border:0; border-radius:8px; color:var(--muted); font-family:inherit; font-size:11px; line-height:1.15; cursor:pointer;
+  padding:4px 2px; position:relative;
+}
+.tabbar button .ti { font-size:19px; line-height:1; }
+/* The label wraps rather than being clipped: German is the widest locale here
+   and a silently truncated nav label is worse than a two-line one. */
+.tabbar button .tl { overflow-wrap:anywhere; text-align:center; }
+.tabbar button[aria-selected="true"] { color:var(--accent); }
+.tabbar button[aria-selected="true"] .tl { font-weight:600; }
+.tabbar button:active { background:var(--press); }
+@media (hover:hover) { .tabbar button:hover { background:var(--hover); } }
+/* A dot that means something: the speaker is in a group right now. */
+.tabdot { position:absolute; top:6px; right:calc(50% - 18px); width:8px; height:8px; border-radius:50%; background:var(--accent); }
+html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(--accent); outline-offset:-3px; }
+
+/* One-time hint that the bar exists at all. Someone who has used the single
+   scrolling page for months will not go looking for tabs; shown once ever,
+   dismissed by any tap, never shown again. */
+#coach { position:fixed; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom)); z-index:80;
+  background:var(--card); border:1px solid var(--accent); border-radius:10px; padding:12px 14px; font-size:14px; line-height:1.35;
+  box-shadow:0 10px 30px rgba(0,0,0,.45); }
+#coach[hidden] { display:none; }
+#coach .ok { display:block; margin-top:10px; width:100%; min-height:44px; background:var(--card2); color:var(--accent); border:1px solid var(--accent); border-radius:8px; font-family:inherit; font-size:14px; cursor:pointer; }
+
+/* Volume scope: which speakers the slider is about to move. An explicit row
+   because it must never lie, and because a stereo pair is a THIRD scope that a
+   silent takeover has nowhere to put. */
+.scope { display:flex; gap:6px; margin-bottom:10px; }
+.scope button { flex:1; min-width:0; min-height:40px; padding:6px 4px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; line-height:1.15; cursor:pointer; overflow-wrap:anywhere; }
+.scope button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+.scope[hidden] { display:none; }
+/* Volume in two rows: the rockers get full width so they survive 320px at 1.30x
+   zoom, where a single row collapsed the slider to a couple of thumb widths. */
+.volrock { display:grid; grid-template-columns:auto 1fr 1fr; gap:8px; margin-bottom:8px; }
+.volrock .btn { min-height:52px; font-size:22px; }
+.volrock #volMute { font-size:18px; padding:6px 14px; }
+.volslide { display:flex; align-items:center; gap:12px; }
+.volslide input[type=range] { flex:1 1 auto; min-width:0; accent-color:var(--accent); height:44px; }
+.volslide input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:24px; height:24px; border-radius:50%; background:var(--accent); }
+.volslide input[type=range]::-moz-range-thumb { width:24px; height:24px; border:0; border-radius:50%; background:var(--accent); }
+.volslide .val { width:40px; text-align:right; font-variant-numeric:tabular-nums; }
+
+/* A line of state under a heading, so a panel can answer without being opened. */
+.sum { font-size:13px; color:var(--muted); margin:-4px 0 10px; line-height:1.35; }
+
+/* Group members. Each row is a name plus its own slider; the rows are updated
+   IN PLACE while dragging, never rebuilt, or the drag is torn out from under
+   the finger on exactly the old phones this project serves. */
+.member { padding:10px 0; border-top:1px solid var(--line); }
+.member:first-child { border-top:0; }
+.member .mtop { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.member .mname { flex:1; min-width:0; overflow-wrap:anywhere; font-size:14px; }
+.member .mtag { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:5px; padding:1px 5px; flex:none; }
+.member .mval { font-variant-numeric:tabular-nums; color:var(--muted); font-size:13px; min-width:32px; text-align:right; }
+.member input[type=range] { width:100%; accent-color:var(--accent); height:36px; }
+.member.off { opacity:.5; }
+
+/* Radio search results. */
+.srch { display:flex; gap:8px; margin-bottom:10px; }
+.srch input[type=search] { flex:1; min-width:0; min-height:44px; padding:10px 12px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:15px; }
+.station { display:flex; align-items:center; gap:8px; padding:10px 0; border-top:1px solid var(--line); }
+.station:first-child { border-top:0; }
+.station .sname { flex:1; min-width:0; overflow-wrap:anywhere; }
+.station .sname small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+.station .btn { flex:none; min-height:44px; padding:8px 12px; font-size:13px; }
+/* The slot picker shows what each key currently holds, so "save" never silently
+   overwrites a station someone still wants. */
+.slotpick { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.slotpick button { min-height:56px; text-align:left; padding:8px 10px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; line-height:1.25; cursor:pointer; overflow-wrap:anywhere; }
+.slotpick button .sn { display:block; color:var(--muted); font-size:11px; }
+.msg { font-size:13px; line-height:1.4; color:var(--muted); margin-top:8px; }
+.msg.bad { color:var(--accent); }
 </style>
 <script>
 // Display preferences (text size + theme). Applied to <html> here in <head>,
@@ -193,8 +279,7 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <img src="/icon.png" alt="STR">
 <div class="brand">ST <span>Reborn</span></div>
 <div class="devwrap">
-<button type="button" class="dev" id="dev" aria-haspopup="listbox" aria-expanded="false"><span id="devName"></span><span class="chev" aria-hidden="true">&#9662;</span></button>
-<div class="devmenu" id="devMenu" role="listbox" hidden></div>
+<button type="button" class="dev" id="dev"><span id="devName"></span><span class="chev" aria-hidden="true">&#9662;</span></button>
 </div>
 <button type="button" class="pwr" id="powerBtn" onclick="togglePower()" aria-label="Power" aria-pressed="true" title="Power"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="2.5" x2="12" y2="12"></line><path d="M7.5 6.3a7 7 0 1 0 9 0"></path></svg></button>
 <div class="a11y">
@@ -221,6 +306,10 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 </header>
 
 <main>
+
+<!-- ===================== PLAY ===================== -->
+<section class="panel" id="panelPlay" role="tabpanel" aria-labelledby="tabPlay">
+
 <div class="card" id="wedgeCard" style="display:none; border-color:#d97706;">
 <div class="label" id="lblWedge">Speaker not responding</div>
 <div id="wedgeText" style="font-size:13px; line-height:1.4;"></div>
@@ -238,21 +327,23 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 
 <div class="card">
 <div class="label" id="lblVol">Volume</div>
-<div class="vol">
-<button class="btn volstep" id="volMute" onclick="toggleMute()" aria-label="Mute" title="Mute" style="font-size:16px">&#128266;</button>
+<!-- Which speakers this slider moves. Hidden entirely while the speaker plays
+     alone, so a single-speaker home never sees a control it cannot use. -->
+<div class="scope" id="volScope" role="group" aria-labelledby="lblVol" hidden>
+<button type="button" data-scope="one" aria-pressed="true" id="scopeOne">This speaker</button>
+<button type="button" data-scope="group" aria-pressed="false" id="scopeGroup">Group</button>
+<button type="button" data-scope="pair" aria-pressed="false" id="scopePair" hidden>Pair</button>
+</div>
+<div class="volrock">
+<button class="btn volstep" id="volMute" onclick="toggleMute()" aria-label="Mute" title="Mute">&#128266;</button>
 <button class="btn volstep" id="volDown" aria-label="Quieter">&minus;</button>
-<input type="range" id="vol" min="0" max="100" value="0" aria-label="Volume" oninput="onVol(this.value)">
 <button class="btn volstep" id="volUp" aria-label="Louder">+</button>
+</div>
+<div class="volslide">
+<input type="range" id="vol" min="0" max="100" value="0" aria-label="Volume" oninput="onVol(this.value)">
 <span class="val" id="volval">0</span>
 </div>
-</div>
-
-<div class="card">
-<div class="label" id="lblInput">Input</div>
-<div class="row c2" id="inputs">
-<button class="btn" id="btnSrcBt" onclick="setSource('BLUETOOTH',this)">Bluetooth</button>
-<button class="btn" id="btnSrcAux" onclick="setSource('AUX',this)">AUX</button>
-</div>
+<div class="msg" id="volScopeHint" hidden></div>
 </div>
 
 <div class="card">
@@ -270,18 +361,66 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <div class="label" id="lblPresets" style="margin:18px 12px 8px">Presets</div>
 <div class="grid" id="presets"></div>
 
+<!-- Inputs sit just below the fold rather than in More: occasional, but AUX
+     users are a small and vocal group and one short scroll beats a tab hunt. -->
+<div class="card">
+<div class="label" id="lblInput">Input</div>
+<div class="row c2" id="inputs">
+<button class="btn" id="btnSrcBt" onclick="setSource('BLUETOOTH',this)">Bluetooth</button>
+<button class="btn" id="btnSrcAux" onclick="setSource('AUX',this)">AUX</button>
+</div>
+</div>
+
+</section>
+
+<!-- ===================== BROWSE ===================== -->
+<section class="panel" id="panelBrowse" role="tabpanel" aria-labelledby="tabBrowse" hidden>
+<div class="card">
+<div class="label" id="lblFind">Find a station</div>
+<div class="sum" id="lblFindSum">Search the worldwide station directory and play it here.</div>
+<div class="srch">
+<input type="search" id="q" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Search stations" placeholder="Station name">
+<button class="btn" id="btnSearch" style="flex:none;padding:10px 16px" aria-label="Search"><span id="lblSearch">Search</span></button>
+</div>
+<div id="results"></div>
+<div class="msg" id="searchMsg"></div>
+</div>
+</section>
+
+<!-- ===================== SPEAKERS ===================== -->
+<section class="panel" id="panelSpeakers" role="tabpanel" aria-labelledby="tabSpeakers" hidden>
+
+<div class="card" id="groupCard" style="display:none">
+<div class="label" id="lblGroup">Group</div>
+<div class="sum" id="groupSum"></div>
+<div id="members"></div>
+<button class="btn" id="btnUngroup" style="width:100%;margin-top:12px"><span id="lblUngroup">Dissolve group</span></button>
+</div>
+
 <div class="card" id="peersCard">
 <div class="label" id="lblPeers">Other speakers</div>
 <div class="row" id="peers"></div>
+<div class="msg" id="lblPeersHint">Tap a speaker to control it.</div>
 </div>
+
+</section>
+
+<!-- ===================== MORE ===================== -->
+<section class="panel" id="panelMore" role="tabpanel" aria-labelledby="tabMore" hidden>
 
 <div class="card" id="bassCard" style="display:none">
 <div class="label" id="lblBass">Bass</div>
-<div class="vol"><input type="range" id="bass" min="-9" max="0" value="0" aria-label="Bass" oninput="onBass(this.value)"><span class="val" id="bassval">0</span></div>
+<div class="volslide"><input type="range" id="bass" min="-9" max="0" value="0" aria-label="Bass" oninput="onBass(this.value)"><span class="val" id="bassval">0</span></div>
 </div>
-</main>
 
-<footer>
+<div class="card">
+<div class="label" id="lblDiag">Report a problem</div>
+<div class="sum" id="lblDiagSum">Saves a file describing this speaker's state. Send it with your report and I can see what happened.</div>
+<button class="btn" id="btnDiag" style="width:100%"><span id="lblDiagBtn">Save diagnostic file</span></button>
+<div class="msg" id="diagMsg"></div>
+</div>
+
+<div class="card">
 <div class="label" id="lblSupport" style="margin-bottom:8px">You like ST Reborn?</div>
 <div class="sponsors">
 <a class="btn" href="https://github.com/sponsors/JRpersonal" target="_blank" rel="noopener">&#9829; GitHub</a>
@@ -293,10 +432,28 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 <div class="label" id="lblShareHead" style="margin-bottom:8px">…and if you really love it?</div>
 <div class="sponsors" id="shareBtns"></div>
 </div>
+</div>
+
+<footer>
 <a class="web" href="https://st-reborn.de" target="_blank" rel="noopener">st-reborn.de</a>
 <span class="ver" id="ver"></span>
 <span class="hint" id="lblTip">Tip: use your browser menu and "Add to Home Screen" to keep this as an app.</span>
 </footer>
+
+</section>
+</main>
+
+<div id="coach" hidden>
+<span id="coachText"></span>
+<button type="button" class="ok" id="coachOk">OK</button>
+</div>
+
+<nav class="tabbar" role="tablist" aria-label="Sections">
+<button type="button" id="tabPlay" role="tab" aria-selected="true" aria-controls="panelPlay" data-tab="Play"><span class="ti" aria-hidden="true">&#9654;&#65039;</span><span class="tl" id="tlPlay">Play</span></button>
+<button type="button" id="tabBrowse" role="tab" aria-selected="false" aria-controls="panelBrowse" data-tab="Browse"><span class="ti" aria-hidden="true">&#128269;</span><span class="tl" id="tlBrowse">Find</span></button>
+<button type="button" id="tabSpeakers" role="tab" aria-selected="false" aria-controls="panelSpeakers" data-tab="Speakers" hidden><span class="ti" aria-hidden="true">&#128266;</span><span class="tl" id="tlSpeakers">Speakers</span><span class="tabdot" id="tabDot" hidden></span></button>
+<button type="button" id="tabMore" role="tab" aria-selected="false" aria-controls="panelMore" data-tab="More"><span class="ti" aria-hidden="true">&#9776;</span><span class="tl" id="tlMore">More</span></button>
+</nav>
 
 <script>
 // Page localization. The whole remote is translated client-side from the phone's
@@ -319,6 +476,24 @@ var I18N = {
   lv:{now:"Tagad atskaņo",loading:"Ielādē…",vol:"Skaļums",mute:"Izslēgt skaņu",quieter:"Klusāk",louder:"Skaļāk",bass:"Basi",wedgeTitle:"Skaļrunis nereaģē",wedgeText:"Skaļrunis pašlaik nepieņem atskaņošanu. Uz brīdi atvienojiet to no strāvas un pievienojiet atkal - pēc tam tas darbosies normāli.",input:"Ievade",standby:"Gaidstāve",playback:"Atskaņošana",pause:"Pauze",play:"Atskaņot",stop:"Apturēt",presets:"Iepriekšiestatījumi",peers:"Citi skaļruņi",support:"Atbalstīt ST Reborn",tip:"Padoms: pārlūka izvēlnē izvēlieties „Pievienot sākuma ekrānam“ (nevis grāmatzīmi), lai saglabātu kā lietotni.",empty:"tukšs",presetWord:"Iestatījums",starting:"Sākas",pleaseWait:"lūdzu, uzgaidiet",cantStart:"Neizdevās sākt",tapAgain:"pieskarieties vēlreiz",idle:"Dīkstāvē",playing:"Atskaņo",paused:"Pauzēts",stopped:"Apturēts",buffering:"Buferē",power:"Barošana",prev:"Iepriekšējais",next:"Nākamais",shareDonate:"Vai tev patīk ST Reborn?",shareTrigger:"Kopīgot STR",shareHead:"…un ja tas tev tiešām patīk?",shareMsg:"ST Reborn atdzīvina manas Bose SoundTouch bez Bose mākoņa."},
   uk:{now:"Зараз грає",loading:"Завантаження…",vol:"Гучність",mute:"Без звуку",quieter:"Тихіше",louder:"Гучніше",bass:"Баси",wedgeTitle:"Динамік не відповідає",wedgeText:"Динамік зараз не приймає відтворення. На мить вимкніть його з розетки та увімкніть знову - після цього він працюватиме нормально.",input:"Вхід",standby:"Очікування",playback:"Відтворення",pause:"Пауза",play:"Відтворити",stop:"Стоп",presets:"Пресети",peers:"Інші колонки",support:"Підтримати ST Reborn",tip:"Порада: у меню браузера виберіть „Додати на головний екран“ (не Закладку), щоб зберегти як застосунок.",empty:"порожньо",presetWord:"Пресет",starting:"Запуск",pleaseWait:"зачекайте",cantStart:"Не вдалося запустити",tapAgain:"торкніться ще раз",idle:"Очікування",playing:"Відтворення",paused:"Призупинено",stopped:"Зупинено",buffering:"Буферизація",power:"Живлення",prev:"Назад",next:"Далі",shareDonate:"Тобі подобається ST Reborn?",shareTrigger:"Поділитися STR",shareHead:"…а якщо він тобі справді до вподоби?",shareMsg:"ST Reborn повертає до життя мої Bose SoundTouch без хмари Bose."}
 };
+// Strings for the tab shell and the sections it made room for. Kept as a second
+// dictionary rather than extended into the one above: those lines are already
+// enormous, and a separate block is reviewable and merges into T identically.
+// {n} is substituted at use time.
+var I18N2 = {
+  en:{tPlay:"Play",tFind:"Find",tSpk:"Speakers",tMore:"More",scOne:"This speaker",scGroup:"Group",scPair:"Pair",grp:"Group",grpSum:"{n} speakers playing together",grpFollow:"This speaker follows {name}. Dissolve the group there.",ungroup:"Dissolve group",find:"Find a station",findSum:"Search the worldwide station directory and play it here.",searchBtn:"Search",qph:"Station name",searching:"Searching…",noRes:"Nothing found. Try a shorter word.",netFail:"Could not reach the station directory. Check that this phone has internet.",saveKey:"Save",pickSlot:"Which key should hold it?",saved:"Saved to key {n}",saveFail:"Could not save that station.",diag:"Report a problem",diagSum:"Saves a file describing this speaker's state. Send it with your report and I can see what happened.",diagBtn:"Save diagnostic file",diagOk:"File saved. Attach it to your report.",diagFail:"Could not read the speaker's state.",peersHint:"Tap a speaker to control it.",coach:"Stations, speakers and settings are in the bar below."},
+  de:{tPlay:"Spielen",tFind:"Suchen",tSpk:"Boxen",tMore:"Mehr",scOne:"Diese Box",scGroup:"Gruppe",scPair:"Paar",grp:"Gruppe",grpSum:"{n} Lautsprecher spielen zusammen",grpFollow:"Diese Box folgt {name}. Auflösen geht dort.",ungroup:"Gruppe auflösen",find:"Sender suchen",findSum:"Durchsuche das weltweite Senderverzeichnis und spiel den Sender hier ab.",searchBtn:"Suchen",qph:"Sendername",searching:"Suche…",noRes:"Nichts gefunden. Probier ein kürzeres Wort.",netFail:"Das Senderverzeichnis ist nicht erreichbar. Prüf, ob dieses Handy Internet hat.",saveKey:"Merken",pickSlot:"Auf welche Taste?",saved:"Auf Taste {n} gelegt",saveFail:"Der Sender ließ sich nicht speichern.",diag:"Problem melden",diagSum:"Speichert eine Datei mit dem Zustand dieses Lautsprechers. Schick sie mit deiner Meldung, dann sehe ich, was passiert ist.",diagBtn:"Diagnosedatei speichern",diagOk:"Datei gespeichert. Häng sie an deine Meldung.",diagFail:"Der Zustand des Lautsprechers ließ sich nicht lesen.",peersHint:"Tippe einen Lautsprecher an, um ihn zu steuern.",coach:"Sender, Lautsprecher und Einstellungen findest du unten in der Leiste."},
+  nl:{tPlay:"Spelen",tFind:"Zoeken",tSpk:"Speakers",tMore:"Meer",scOne:"Deze speaker",scGroup:"Groep",scPair:"Paar",grp:"Groep",grpSum:"{n} speakers spelen samen",grpFollow:"Deze speaker volgt {name}. Daar kun je de groep opheffen.",ungroup:"Groep opheffen",find:"Zender zoeken",findSum:"Doorzoek de wereldwijde zenderlijst en speel hier af.",searchBtn:"Zoeken",qph:"Zendernaam",searching:"Zoeken…",noRes:"Niets gevonden. Probeer een korter woord.",netFail:"De zenderlijst is niet bereikbaar. Controleer of deze telefoon internet heeft.",saveKey:"Bewaren",pickSlot:"Op welke toets?",saved:"Op toets {n} gezet",saveFail:"De zender kon niet worden bewaard.",diag:"Probleem melden",diagSum:"Bewaart een bestand met de toestand van deze speaker. Stuur het mee, dan zie ik wat er gebeurde.",diagBtn:"Diagnosebestand bewaren",diagOk:"Bestand bewaard. Voeg het toe aan je melding.",diagFail:"De toestand van de speaker kon niet gelezen worden.",peersHint:"Tik op een speaker om die te bedienen.",coach:"Zenders, speakers en instellingen staan in de balk hieronder."},
+  fr:{tPlay:"Lecture",tFind:"Chercher",tSpk:"Enceintes",tMore:"Plus",scOne:"Cette enceinte",scGroup:"Groupe",scPair:"Paire",grp:"Groupe",grpSum:"{n} enceintes jouent ensemble",grpFollow:"Cette enceinte suit {name}. Dissolvez le groupe là-bas.",ungroup:"Dissoudre le groupe",find:"Chercher une station",findSum:"Cherchez dans l'annuaire mondial des stations et écoutez ici.",searchBtn:"Chercher",qph:"Nom de la station",searching:"Recherche…",noRes:"Rien trouvé. Essayez un mot plus court.",netFail:"L'annuaire des stations est injoignable. Vérifiez qu'internet fonctionne sur ce téléphone.",saveKey:"Garder",pickSlot:"Sur quelle touche ?",saved:"Placée sur la touche {n}",saveFail:"Impossible d'enregistrer cette station.",diag:"Signaler un problème",diagSum:"Enregistre un fichier décrivant l'état de cette enceinte. Joignez-le à votre message et je verrai ce qui s'est passé.",diagBtn:"Enregistrer le fichier de diagnostic",diagOk:"Fichier enregistré. Joignez-le à votre message.",diagFail:"Impossible de lire l'état de l'enceinte.",peersHint:"Touchez une enceinte pour la commander.",coach:"Stations, enceintes et réglages se trouvent dans la barre du bas."},
+  es:{tPlay:"Reproducir",tFind:"Buscar",tSpk:"Altavoces",tMore:"Más",scOne:"Este altavoz",scGroup:"Grupo",scPair:"Pareja",grp:"Grupo",grpSum:"{n} altavoces suenan juntos",grpFollow:"Este altavoz sigue a {name}. Deshaz el grupo allí.",ungroup:"Deshacer el grupo",find:"Buscar emisora",findSum:"Busca en el directorio mundial de emisoras y escúchala aquí.",searchBtn:"Buscar",qph:"Nombre de la emisora",searching:"Buscando…",noRes:"No se encontró nada. Prueba con una palabra más corta.",netFail:"No se puede acceder al directorio de emisoras. Comprueba que este teléfono tenga internet.",saveKey:"Guardar",pickSlot:"¿En qué tecla?",saved:"Guardada en la tecla {n}",saveFail:"No se pudo guardar esa emisora.",diag:"Informar de un problema",diagSum:"Guarda un archivo con el estado de este altavoz. Envíalo con tu aviso y podré ver qué pasó.",diagBtn:"Guardar archivo de diagnóstico",diagOk:"Archivo guardado. Adjúntalo a tu aviso.",diagFail:"No se pudo leer el estado del altavoz.",peersHint:"Toca un altavoz para controlarlo.",coach:"Emisoras, altavoces y ajustes están en la barra de abajo."},
+  pl:{tPlay:"Odtwarzaj",tFind:"Szukaj",tSpk:"Głośniki",tMore:"Więcej",scOne:"Ten głośnik",scGroup:"Grupa",scPair:"Para",grp:"Grupa",grpSum:"{n} głośniki grają razem",grpFollow:"Ten głośnik podąża za {name}. Rozwiąż grupę tam.",ungroup:"Rozwiąż grupę",find:"Znajdź stację",findSum:"Przeszukaj światowy katalog stacji i odtwórz tutaj.",searchBtn:"Szukaj",qph:"Nazwa stacji",searching:"Szukam…",noRes:"Nic nie znaleziono. Spróbuj krótszego słowa.",netFail:"Katalog stacji jest nieosiągalny. Sprawdź, czy telefon ma internet.",saveKey:"Zapisz",pickSlot:"Na którym przycisku?",saved:"Zapisano na przycisku {n}",saveFail:"Nie udało się zapisać tej stacji.",diag:"Zgłoś problem",diagSum:"Zapisuje plik ze stanem tego głośnika. Dołącz go do zgłoszenia, a zobaczę, co się stało.",diagBtn:"Zapisz plik diagnostyczny",diagOk:"Plik zapisany. Dołącz go do zgłoszenia.",diagFail:"Nie udało się odczytać stanu głośnika.",peersHint:"Dotknij głośnika, aby nim sterować.",coach:"Stacje, głośniki i ustawienia są na pasku poniżej."},
+  tr:{tPlay:"Çal",tFind:"Bul",tSpk:"Hoparlörler",tMore:"Daha fazla",scOne:"Bu hoparlör",scGroup:"Grup",scPair:"Çift",grp:"Grup",grpSum:"{n} hoparlör birlikte çalıyor",grpFollow:"Bu hoparlör {name} cihazını izliyor. Grubu orada dağıtın.",ungroup:"Grubu dağıt",find:"İstasyon bul",findSum:"Dünya çapındaki istasyon dizininde ara ve burada çal.",searchBtn:"Ara",qph:"İstasyon adı",searching:"Aranıyor…",noRes:"Bir şey bulunamadı. Daha kısa bir kelime deneyin.",netFail:"İstasyon dizinine ulaşılamıyor. Bu telefonun internete bağlı olduğunu kontrol edin.",saveKey:"Kaydet",pickSlot:"Hangi tuşa?",saved:"{n} numaralı tuşa kaydedildi",saveFail:"Bu istasyon kaydedilemedi.",diag:"Sorun bildir",diagSum:"Bu hoparlörün durumunu anlatan bir dosya kaydeder. Bildiriminizle gönderin, ne olduğunu görebileyim.",diagBtn:"Tanılama dosyasını kaydet",diagOk:"Dosya kaydedildi. Bildiriminize ekleyin.",diagFail:"Hoparlörün durumu okunamadı.",peersHint:"Kontrol etmek için bir hoparlöre dokunun.",coach:"İstasyonlar, hoparlörler ve ayarlar aşağıdaki çubukta."},
+  ar:{tPlay:"تشغيل",tFind:"بحث",tSpk:"السمّاعات",tMore:"المزيد",scOne:"هذه السمّاعة",scGroup:"المجموعة",scPair:"الزوج",grp:"المجموعة",grpSum:"{n} سمّاعات تعمل معاً",grpFollow:"هذه السمّاعة تتبع {name}. فُكّ المجموعة من هناك.",ungroup:"فَكّ المجموعة",find:"ابحث عن محطة",findSum:"ابحث في دليل المحطات العالمي وشغّلها هنا.",searchBtn:"بحث",qph:"اسم المحطة",searching:"جارٍ البحث…",noRes:"لم يُعثر على شيء. جرّب كلمة أقصر.",netFail:"تعذّر الوصول إلى دليل المحطات. تأكّد من اتصال هذا الهاتف بالإنترنت.",saveKey:"حفظ",pickSlot:"على أي زر؟",saved:"حُفظت على الزر {n}",saveFail:"تعذّر حفظ هذه المحطة.",diag:"الإبلاغ عن مشكلة",diagSum:"يحفظ ملفاً يصف حالة هذه السمّاعة. أرسله مع بلاغك لأرى ما حدث.",diagBtn:"حفظ ملف التشخيص",diagOk:"تم حفظ الملف. أرفقه ببلاغك.",diagFail:"تعذّرت قراءة حالة السمّاعة.",peersHint:"انقر على سمّاعة للتحكم بها.",coach:"المحطات والسمّاعات والإعدادات في الشريط بالأسفل."},
+  ja:{tPlay:"再生",tFind:"さがす",tSpk:"スピーカー",tMore:"その他",scOne:"このスピーカー",scGroup:"グループ",scPair:"ペア",grp:"グループ",grpSum:"{n} 台がいっしょに再生中",grpFollow:"このスピーカーは {name} に従っています。解除はそちらで行えます。",ungroup:"グループを解除",find:"放送局をさがす",findSum:"世界の放送局リストから探して、ここで再生します。",searchBtn:"検索",qph:"放送局名",searching:"検索中…",noRes:"見つかりませんでした。短い言葉でお試しください。",netFail:"放送局リストに接続できません。この端末がインターネットにつながっているか確認してください。",saveKey:"登録",pickSlot:"どのボタンに登録しますか？",saved:"ボタン {n} に登録しました",saveFail:"この放送局を登録できませんでした。",diag:"問題を報告",diagSum:"このスピーカーの状態を書いたファイルを保存します。報告に添えていただければ、何が起きたか分かります。",diagBtn:"診断ファイルを保存",diagOk:"保存しました。報告に添付してください。",diagFail:"スピーカーの状態を読み取れませんでした。",peersHint:"スピーカーをタップすると操作できます。",coach:"放送局・スピーカー・設定は下のバーにあります。"},
+  lt:{tPlay:"Groti",tFind:"Ieškoti",tSpk:"Kolonėlės",tMore:"Daugiau",scOne:"Ši kolonėlė",scGroup:"Grupė",scPair:"Pora",grp:"Grupė",grpSum:"{n} kolonėlės groja kartu",grpFollow:"Ši kolonėlė seka {name}. Grupę išardykite ten.",ungroup:"Išardyti grupę",find:"Rasti stotį",findSum:"Ieškokite pasauliniame stočių kataloge ir klausykite čia.",searchBtn:"Ieškoti",qph:"Stoties pavadinimas",searching:"Ieškoma…",noRes:"Nieko nerasta. Pabandykite trumpesnį žodį.",netFail:"Stočių katalogas nepasiekiamas. Patikrinkite, ar telefonas turi internetą.",saveKey:"Įrašyti",pickSlot:"Į kurį mygtuką?",saved:"Įrašyta į mygtuką {n}",saveFail:"Nepavyko įrašyti šios stoties.",diag:"Pranešti apie problemą",diagSum:"Įrašo failą su šios kolonėlės būsena. Atsiųskite jį kartu su pranešimu ir pamatysiu, kas nutiko.",diagBtn:"Įrašyti diagnostikos failą",diagOk:"Failas įrašytas. Pridėkite jį prie pranešimo.",diagFail:"Nepavyko nuskaityti kolonėlės būsenos.",peersHint:"Bakstelėkite kolonėlę, kad ją valdytumėte.",coach:"Stotys, kolonėlės ir nustatymai yra juostoje apačioje."},
+  lv:{tPlay:"Atskaņot",tFind:"Meklēt",tSpk:"Skaļruņi",tMore:"Vairāk",scOne:"Šis skaļrunis",scGroup:"Grupa",scPair:"Pāris",grp:"Grupa",grpSum:"{n} skaļruņi atskaņo kopā",grpFollow:"Šis skaļrunis seko {name}. Grupu izjauc tur.",ungroup:"Izjaukt grupu",find:"Meklēt staciju",findSum:"Meklē pasaules staciju katalogā un klausies šeit.",searchBtn:"Meklēt",qph:"Stacijas nosaukums",searching:"Meklē…",noRes:"Nekas netika atrasts. Pamēģini īsāku vārdu.",netFail:"Staciju katalogs nav sasniedzams. Pārbaudi, vai šim tālrunim ir internets.",saveKey:"Saglabāt",pickSlot:"Uz kuru taustiņu?",saved:"Saglabāts uz taustiņa {n}",saveFail:"Šo staciju neizdevās saglabāt.",diag:"Ziņot par problēmu",diagSum:"Saglabā failu ar šī skaļruņa stāvokli. Nosūti to kopā ar ziņojumu, un es redzēšu, kas notika.",diagBtn:"Saglabāt diagnostikas failu",diagOk:"Fails saglabāts. Pievieno to ziņojumam.",diagFail:"Neizdevās nolasīt skaļruņa stāvokli.",peersHint:"Pieskaries skaļrunim, lai to vadītu.",coach:"Stacijas, skaļruņi un iestatījumi ir joslā apakšā."},
+  uk:{tPlay:"Грати",tFind:"Пошук",tSpk:"Колонки",tMore:"Більше",scOne:"Ця колонка",scGroup:"Група",scPair:"Пара",grp:"Група",grpSum:"{n} колонки грають разом",grpFollow:"Ця колонка слідує за {name}. Розпустіть групу там.",ungroup:"Розпустити групу",find:"Знайти станцію",findSum:"Шукайте у світовому каталозі станцій і слухайте тут.",searchBtn:"Пошук",qph:"Назва станції",searching:"Пошук…",noRes:"Нічого не знайдено. Спробуйте коротше слово.",netFail:"Каталог станцій недоступний. Перевірте, чи має цей телефон інтернет.",saveKey:"Зберегти",pickSlot:"На яку кнопку?",saved:"Збережено на кнопку {n}",saveFail:"Не вдалося зберегти цю станцію.",diag:"Повідомити про проблему",diagSum:"Зберігає файл зі станом цієї колонки. Надішліть його разом із повідомленням, і я побачу, що сталося.",diagBtn:"Зберегти файл діагностики",diagOk:"Файл збережено. Додайте його до повідомлення.",diagFail:"Не вдалося прочитати стан колонки.",peersHint:"Торкніться колонки, щоб керувати нею.",coach:"Станції, колонки та налаштування — на панелі внизу."}
+};
 // Pick the best matching locale from the phone and build T (chosen strings with
 // English fall-through per key). Runs immediately so the dynamic helpers below
 // can use T as soon as they execute.
@@ -332,8 +507,17 @@ var T = (function(){
   try { document.documentElement.lang = code; } catch (e) {}
   var base = I18N.en, sel = I18N[code] || base, out = {};
   for (var k in base) out[k] = (sel[k] != null ? sel[k] : base[k]);
+  // Same per-key English fall-through for the second dictionary, so a locale
+  // that is missing one new string shows English for that string only.
+  var base2 = I18N2.en, sel2 = I18N2[code] || base2;
+  for (var k2 in base2) out[k2] = (sel2[k2] != null ? sel2[k2] : base2[k2]);
   return out;
 })();
+// fmt fills {n}/{name} placeholders. Values are inserted as TEXT by every
+// caller, never as markup.
+function fmt(s, vals) {
+  return String(s).replace(/\{(\w+)\}/g, function(_, k){ return vals[k] != null ? String(vals[k]) : ''; });
+}
 // applyStaticI18n fills the fixed labels/buttons from T. The English text stays
 // in the HTML as the no-JS fallback; this overwrites it once on load.
 function applyStaticI18n() {
@@ -367,6 +551,20 @@ function applyStaticI18n() {
   var nx = document.getElementById('btnNext'); if (nx) { nx.setAttribute('aria-label', T.next); nx.title = T.next; }
   var st = document.getElementById('status'); if (st) st.innerHTML = '<span class="now">' + escapeHtml(T.loading) + '</span>';
   set('lblSupport', T.shareDonate); set('lblShareTrigger', T.shareTrigger); set('lblShareHead', T.shareHead);
+  // Tab shell and the sections it made room for.
+  set('tlPlay', T.tPlay); set('tlBrowse', T.tFind); set('tlSpeakers', T.tSpk); set('tlMore', T.tMore);
+  [['tabPlay',T.tPlay],['tabBrowse',T.tFind],['tabSpeakers',T.tSpk],['tabMore',T.tMore]].forEach(function(p){
+    var el = document.getElementById(p[0]); if (el) el.setAttribute('aria-label', p[1]);
+  });
+  set('scopeOne', T.scOne); set('scopeGroup', T.scGroup); set('scopePair', T.scPair);
+  set('lblGroup', T.grp); set('lblUngroup', T.ungroup);
+  set('lblFind', T.find); set('lblFindSum', T.findSum); set('lblSearch', T.searchBtn);
+  set('lblPeersHint', T.peersHint);
+  set('lblDiag', T.diag); set('lblDiagSum', T.diagSum); set('lblDiagBtn', T.diagBtn);
+  var q = document.getElementById('q');
+  if (q) { q.placeholder = T.qph; q.setAttribute('aria-label', T.find); }
+  var bs = document.getElementById('btnSearch'); if (bs) bs.setAttribute('aria-label', T.searchBtn);
+  var bd = document.getElementById('btnDiag'); if (bd) bd.setAttribute('aria-label', T.diagBtn);
   buildShareButtons();
 }
 
@@ -422,7 +620,16 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;',
 function decodeEntities(s){ var el = document.createElement('textarea'); el.innerHTML = String(s); return el.value; }
 
 var volTimer = null, volLast = -1, muteSaved = -1, volSentAt = 0;
-function volSend(v) { volLast = +v; volSentAt = Date.now(); api('/api/box/volume','PUT',{value:+v}); }
+// The slider moves whatever the scope row says it moves. With no group there is
+// no scope row and this is the plain per-speaker PUT it always was; in a group
+// or a stereo pair the same value goes to every member. Absolute, not
+// offset-preserving: that is what the agent's endpoint does, and promising more
+// in the UI than the box delivers is how controls stop being believed.
+function volSend(v) {
+  volLast = +v; volSentAt = Date.now();
+  if (volScope === 'one' || !zone.grouped) api('/api/box/volume', 'PUT', { value: +v });
+  else api('/api/box/zone/volume', 'POST', { value: +v });
+}
 function onVol(v) {
   document.getElementById('volval').textContent = v;
   // Any move to an audible level ends a mute (#385): the saved level is stale.
@@ -737,29 +944,14 @@ function peerBtn(p) {
 
 var peersList = [];
 
-// renderDevMenu fills the header speaker switcher (tap the speaker's name)
-// from the SAME list as the "Other speakers" card, mirroring the desktop
-// app's speaker dropdown: this speaker first, marked, then the others.
-// Hidden entirely on a single-speaker home.
+// The header used to open its own speaker dropdown: a second overlay, a second
+// focus trap and a second copy of the peer list. The Speakers tab now owns that
+// list, so the name is simply a shortcut to it. One list, one place, and the
+// dropdown's whole failure surface is gone.
 function renderDevMenu() {
   var btn = document.getElementById('dev');
-  var menu = document.getElementById('devMenu');
-  if (!btn || !menu) return;
-  var has = peersList.length > 0;
-  btn.classList.toggle('haspeers', has);
-  if (!has) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); return; }
-  menu.innerHTML = '';
-  var cur = document.createElement('span');
-  cur.className = 'btn peer active';
-  cur.setAttribute('role', 'option');
-  cur.setAttribute('aria-selected', 'true');
-  cur.innerHTML = '<span class="dot"></span>' + escapeHtml(document.getElementById('devName').textContent || 'ST Reborn');
-  menu.appendChild(cur);
-  peersList.forEach(function(p){
-    var a = peerBtn(p);
-    a.setAttribute('role', 'option');
-    menu.appendChild(a);
-  });
+  if (!btn) return;
+  btn.classList.toggle('haspeers', peersList.length > 0);
 }
 
 async function loadPeers() {
@@ -768,7 +960,17 @@ async function loadPeers() {
   const list = await api('/api/peers');
   peersList = list || [];
   renderDevMenu();
-  if (!list || !list.length) return;
+  // A home with one speaker gets three tabs, not four. A tab that can only ever
+  // say "there is nothing here" is worse than no tab: it invites a tap, answers
+  // nothing, and teaches the user that the bar is not worth exploring. It
+  // appears on its own the moment a second speaker answers.
+  var tab = document.getElementById('tabSpeakers');
+  var has = !!(list && list.length) || zone.grouped;
+  if (tab) {
+    tab.hidden = !has;
+    if (!has && tab.getAttribute('aria-selected') === 'true') showTab('Play');
+  }
+  if (!list || !list.length) { document.getElementById('peersCard').style.display = 'none'; return; }
   const box = document.getElementById('peers'); box.innerHTML = '';
   list.forEach(function(p){ box.appendChild(peerBtn(p)); });
   document.getElementById('peersCard').style.display = 'block';
@@ -845,28 +1047,22 @@ async function loadVersion() {
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
 })();
 
-// Header speaker switcher: tapping the speaker's name opens the same list the
-// "Other speakers" card shows, so the phone page mirrors the desktop app's
-// speaker dropdown. Inert (plain label) while no peers are known.
+// Tapping the speaker's name jumps to the Speakers tab, where the peer list and
+// the group live. Inert (a plain label) while this speaker is alone.
 (function() {
   var btn = document.getElementById('dev');
-  var menu = document.getElementById('devMenu');
-  if (!btn || !menu) return;
-  function close() { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+  if (!btn) return;
   btn.addEventListener('click', function() {
     if (!btn.classList.contains('haspeers')) return;
-    var open = menu.hidden;
-    menu.hidden = !open;
-    btn.setAttribute('aria-expanded', String(open));
+    showTab('Speakers');
+    dismissCoach();
   });
-  document.addEventListener('click', function(e) { if (!e.target.closest('.devwrap')) close(); });
-  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
 })();
 
 // refreshAll re-fetches every panel at once (used by pull-to-refresh and on
 // regaining foreground), with a short minimum so the spinner does not flash.
 function refreshAll(){
-  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion()]).catch(function(){});
+  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion(), loadZone()]).catch(function(){});
   var minSpin = new Promise(function(r){ setTimeout(r, 500); });
   return Promise.all([work, minSpin]);
 }
@@ -909,8 +1105,407 @@ document.addEventListener('visibilitychange', function(){
   }, {passive:true});
 })();
 
-applyStaticI18n(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion();
+/* ===========================================================================
+   Tab shell
+   =========================================================================== */
+var TAB_IDS = ['Play', 'Browse', 'Speakers', 'More'];
+function showTab(name) {
+  TAB_IDS.forEach(function(t){
+    var btn = document.getElementById('tab' + t), pan = document.getElementById('panel' + t);
+    if (!btn || !pan) return;
+    var on = (t === name);
+    btn.setAttribute('aria-selected', String(on));
+    pan.hidden = !on;
+  });
+  // Each destination starts at its own top; carrying the previous panel's
+  // scroll offset over lands the user halfway down a list they never scrolled.
+  window.scrollTo(0, 0);
+  if (name === 'Speakers') loadZone();
+}
+(function wireTabs(){
+  TAB_IDS.forEach(function(t){
+    var b = document.getElementById('tab' + t);
+    if (b) b.addEventListener('click', function(){ showTab(t); dismissCoach(); });
+  });
+})();
+
+/* The reserved space under the content is MEASURED from the bar, never assumed.
+   The CSS reserves a sensible amount, but the bar's real height depends on the
+   text size, on how a locale wraps its labels, and on how a given browser
+   combines position:fixed with the a11y zoom, which is the one behaviour old
+   Android WebViews are known to get wrong. If that assumption were wrong the
+   last card would sit under the bar with no way to scroll it out, and on a page
+   delivered by OTA the user would be stuck with it until the next update. So
+   the number comes from the element itself.
+
+   getBoundingClientRect reports post-zoom pixels while a padding set here is
+   itself multiplied by the zoom, so the measurement is divided back out. */
+function syncTabbarSpace() {
+  var bar = document.querySelector('.tabbar'), m = document.querySelector('main');
+  if (!bar || !m) return;
+  var s = (typeof a11yGetScale === 'function') ? a11yGetScale() : 1;
+  var z = s === 2 ? 1.15 : (s === 3 ? 1.30 : 1);
+  var h = bar.getBoundingClientRect().height / z;
+  if (h > 0) m.style.paddingBottom = Math.ceil(h + 16) + 'px';
+}
+window.addEventListener('resize', syncTabbarSpace);
+window.addEventListener('orientationchange', function(){ setTimeout(syncTabbarSpace, 250); });
+// The text-size buttons change the bar's height, so re-measure after they run.
+(function hookScaleForSpace(){
+  var orig = window.a11ySetScale;
+  if (typeof orig !== 'function') return;
+  window.a11ySetScale = function(n){ orig(n); setTimeout(syncTabbarSpace, 0); };
+})();
+
+/* One-time hint. Someone who has used the single scrolling page for months has
+   no reason to look for a bar; shown once ever, then never again. */
+function dismissCoach() {
+  var c = document.getElementById('coach');
+  if (c) c.hidden = true;
+  try { localStorage.setItem('coachSeen', '1'); } catch (e) {}
+}
+(function maybeCoach(){
+  var seen = false;
+  try { seen = localStorage.getItem('coachSeen') === '1'; } catch (e) {}
+  if (seen) return;
+  var c = document.getElementById('coach'), t = document.getElementById('coachText'), ok = document.getElementById('coachOk');
+  if (!c || !t || !ok) return;
+  t.textContent = T.coach;
+  c.hidden = false;
+  ok.addEventListener('click', dismissCoach);
+})();
+
+/* ===========================================================================
+   Group: who is playing together, and what the volume slider moves
+
+   The scope row is explicit rather than a silent takeover, because a speaker is
+   either in a plain group or in a stereo PAIR, never both, and a slider that
+   quietly changes meaning cannot say which. It is hidden entirely while the
+   speaker plays alone, so a single-speaker home never meets it.
+   =========================================================================== */
+var zone = { grouped:false, stereo:false, members:[], master:false, masterName:'' };
+var volScope = 'one';
+var memberDragging = null; // ip whose slider the finger is on right now
+
+function applyScopeUI() {
+  var row = document.getElementById('volScope');
+  var bG = document.getElementById('scopeGroup'), bP = document.getElementById('scopePair'), bO = document.getElementById('scopeOne');
+  if (!row || !bG || !bP || !bO) return;
+  row.hidden = !zone.grouped;
+  if (!zone.grouped) { volScope = 'one'; return; }
+  // Group and pair are the same membership seen two ways, so only one of the
+  // two ever appears. Offering both would invite the question "what is the
+  // difference", which has no answer.
+  bG.hidden = zone.stereo;
+  bP.hidden = !zone.stereo;
+  var wide = zone.stereo ? 'pair' : 'group';
+  if (volScope !== 'one' && volScope !== wide) volScope = wide;
+  bO.setAttribute('aria-pressed', String(volScope === 'one'));
+  bG.setAttribute('aria-pressed', String(volScope === 'group'));
+  bP.setAttribute('aria-pressed', String(volScope === 'pair'));
+  bG.textContent = T.scGroup + (zone.members.length ? ' ' + zone.members.length : '');
+  bP.textContent = T.scPair;
+  bO.textContent = T.scOne;
+  var hint = document.getElementById('volScopeHint');
+  if (hint) {
+    hint.hidden = (volScope === 'one');
+    hint.textContent = fmt(T.grpSum, { n: zone.members.length });
+  }
+}
+(function wireScope(){
+  ['scopeOne','scopeGroup','scopePair'].forEach(function(id){
+    var b = document.getElementById(id);
+    if (!b) return;
+    b.addEventListener('click', function(){
+      volScope = b.getAttribute('data-scope');
+      applyScopeUI();
+      // Show what the newly chosen scope currently sits at, so the number under
+      // the slider is never about the other scope.
+      if (volScope === 'one') { loadSettings(); } else { loadZone(); }
+    });
+  });
+})();
+
+// renderMembers builds the rows once and afterwards only writes values into
+// them. Rebuilding the DOM on every poll tears a slider out from under a
+// finger mid-drag, which on the phones this project serves is the difference
+// between a control that works and one that "jumps around".
+var memberRows = {};
+function renderMembers() {
+  var box = document.getElementById('members');
+  if (!box) return;
+  var want = zone.members.map(function(m){ return m.ip; }).join(',');
+  if (box.getAttribute('data-ips') !== want) {
+    box.innerHTML = '';
+    memberRows = {};
+    zone.members.forEach(function(m){
+      var row = document.createElement('div');
+      row.className = 'member';
+      var top = document.createElement('div'); top.className = 'mtop';
+      var nm = document.createElement('span'); nm.className = 'mname'; nm.textContent = m.name || m.ip;
+      top.appendChild(nm);
+      if (m.isMaster) { var tag = document.createElement('span'); tag.className = 'mtag'; tag.textContent = '1'; top.appendChild(tag); }
+      var val = document.createElement('span'); val.className = 'mval';
+      top.appendChild(val);
+      row.appendChild(top);
+      var sl = document.createElement('input');
+      sl.type = 'range'; sl.min = '0'; sl.max = '100'; sl.value = String(m.volume >= 0 ? m.volume : 0);
+      sl.setAttribute('aria-label', (m.name || m.ip));
+      sl.addEventListener('pointerdown', function(){ memberDragging = m.ip; });
+      ['pointerup','pointercancel','pointerleave'].forEach(function(ev){
+        sl.addEventListener(ev, function(){ if (memberDragging === m.ip) memberDragging = null; });
+      });
+      sl.addEventListener('input', function(){ val.textContent = sl.value; memberVol(m.ip, sl.value); });
+      row.appendChild(sl);
+      box.appendChild(row);
+      memberRows[m.ip] = { row: row, slider: sl, val: val };
+    });
+    box.setAttribute('data-ips', want);
+  }
+  zone.members.forEach(function(m){
+    var r = memberRows[m.ip];
+    if (!r) return;
+    r.row.classList.toggle('off', m.volume < 0);
+    r.val.textContent = m.volume >= 0 ? String(m.volume) : '--';
+    if (memberDragging !== m.ip && m.volume >= 0) r.slider.value = String(m.volume);
+  });
+}
+
+var memberTimers = {};
+function memberVol(ip, v) {
+  if (memberTimers[ip]) clearTimeout(memberTimers[ip]);
+  memberTimers[ip] = setTimeout(function(){ api('/api/box/zone/volume', 'POST', { ip: ip, value: +v }); }, 250);
+}
+
+async function loadZone() {
+  var z = await api('/api/box/zone/volume');
+  var card = document.getElementById('groupCard');
+  var tab = document.getElementById('tabSpeakers'), dot = document.getElementById('tabDot');
+  if (!z || !z.grouped) {
+    zone = { grouped:false, stereo:false, members:[], master:false, masterName:'' };
+    if (card) card.style.display = 'none';
+    if (dot) dot.hidden = true;
+    applyScopeUI();
+    return;
+  }
+  zone.grouped = true;
+  zone.stereo = !!z.stereo;
+  zone.members = z.members || [];
+  var self = zone.members.filter(function(m){ return m.isSelf; })[0];
+  zone.master = !!(self && self.isMaster);
+  var mas = zone.members.filter(function(m){ return m.isMaster; })[0];
+  zone.masterName = mas ? (mas.name || mas.ip) : '';
+  if (card) card.style.display = '';
+  if (dot) dot.hidden = false;
+  if (tab) tab.hidden = false;
+  var sum = document.getElementById('groupSum');
+  if (sum) sum.textContent = fmt(T.grpSum, { n: zone.members.length });
+  renderMembers();
+  // Dissolving is a DELETE against the MASTER, and a follower cannot reach a
+  // sibling from this page. Rather than offering a button that would fail,
+  // a follower is told where the group can be taken apart.
+  var btn = document.getElementById('btnUngroup');
+  if (btn) {
+    btn.style.display = zone.master ? '' : 'none';
+    if (!zone.master && sum) sum.textContent += ' ' + fmt(T.grpFollow, { name: zone.masterName });
+  }
+  if (volScope !== 'one' && typeof z.average === 'number' && z.average >= 0) {
+    var el = document.getElementById('vol');
+    if (el) { el.value = z.average; document.getElementById('volval').textContent = z.average; volLast = z.average; }
+  }
+  applyScopeUI();
+}
+(function wireUngroup(){
+  var b = document.getElementById('btnUngroup');
+  if (!b) return;
+  b.addEventListener('click', async function(){
+    press(b);
+    await api('/api/box/zone', 'DELETE');
+    setTimeout(loadZone, 1500);
+    setTimeout(loadZone, 4000);
+  });
+})();
+
+/* ===========================================================================
+   Radio search
+
+   Run entirely in the phone's browser against radio-browser.info, so the
+   speaker gains no new outbound calls, no new dependency and not one byte of
+   NAND. Only the chosen station's URL is handed to the speaker, exactly as the
+   desktop app does it today. The page is served over http and this fetch is
+   https, which browsers allow (the blocked direction is the other one).
+   =========================================================================== */
+var RB_MIRRORS = ['https://all.api.radio-browser.info', 'https://de1.api.radio-browser.info'];
+var lastResults = [];
+
+function searchMsg(text, bad) {
+  var el = document.getElementById('searchMsg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'msg' + (bad ? ' bad' : '');
+}
+
+async function searchStations() {
+  var q = (document.getElementById('q').value || '').trim();
+  if (!q) return;
+  document.getElementById('results').innerHTML = '';
+  searchMsg(T.searching, false);
+  var path = '/json/stations/search?limit=25&hidebroken=true&order=clickcount&reverse=true&name=' + encodeURIComponent(q);
+  for (var i = 0; i < RB_MIRRORS.length; i++) {
+    try {
+      var r = await fetch(RB_MIRRORS[i] + path, { headers: { 'Accept': 'application/json' } });
+      if (!r.ok) continue;
+      var list = await r.json();
+      lastResults = Array.isArray(list) ? list : [];
+      renderResults();
+      return;
+    } catch (e) { /* try the next mirror */ }
+  }
+  searchMsg(T.netFail, true);
+}
+
+function renderResults() {
+  var box = document.getElementById('results');
+  box.innerHTML = '';
+  if (!lastResults.length) { searchMsg(T.noRes, false); return; }
+  searchMsg('', false);
+  lastResults.forEach(function(st, idx){
+    var url = st.url_resolved || st.url;
+    if (!url) return;
+    var row = document.createElement('div'); row.className = 'station';
+    var nm = document.createElement('div'); nm.className = 'sname';
+    nm.textContent = st.name || url;
+    var sub = document.createElement('small');
+    sub.textContent = [st.country, st.codec, st.bitrate ? st.bitrate + ' kbps' : ''].filter(Boolean).join(' · ');
+    nm.appendChild(sub);
+    row.appendChild(nm);
+    var bPlay = document.createElement('button');
+    bPlay.className = 'btn'; bPlay.type = 'button';
+    bPlay.setAttribute('aria-label', T.play + ': ' + (st.name || ''));
+    bPlay.textContent = T.play;
+    bPlay.addEventListener('click', function(){ playStation(idx, bPlay); });
+    row.appendChild(bPlay);
+    var bSave = document.createElement('button');
+    bSave.className = 'btn'; bSave.type = 'button';
+    bSave.setAttribute('aria-label', T.saveKey + ': ' + (st.name || ''));
+    bSave.textContent = T.saveKey;
+    bSave.addEventListener('click', function(){ openSlotPicker(idx); });
+    row.appendChild(bSave);
+    box.appendChild(row);
+  });
+}
+
+async function playStation(idx, btn) {
+  var st = lastResults[idx];
+  if (!st) return;
+  press(btn);
+  var ok = await api('/api/play', 'POST', {
+    url: st.url_resolved || st.url,
+    title: st.name || '',
+    icon: st.favicon || '',
+    uuid: st.stationuuid || '',
+    homepage: st.homepage || '',
+    codec: st.codec || ''
+  });
+  if (ok) { showTab('Play'); setNow(T.starting + ' ' + (st.name || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); }
+  else { searchMsg(T.cantStart, true); }
+}
+
+// The picker names what each key currently holds, so "save" can never silently
+// overwrite a station somebody still wants.
+async function openSlotPicker(idx) {
+  var st = lastResults[idx];
+  if (!st) return;
+  var existing = await api('/api/presets') || [];
+  var box = document.getElementById('results');
+  box.innerHTML = '';
+  searchMsg(T.pickSlot, false);
+  var grid = document.createElement('div'); grid.className = 'slotpick';
+  for (var i = 1; i <= 6; i++) {
+    (function(n){
+      var cur = existing.filter(function(p){ return p.slot === n; })[0];
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = '';
+      var sn = document.createElement('span'); sn.className = 'sn'; sn.textContent = '#' + n;
+      var nm = document.createElement('span'); nm.textContent = cur ? (cur.name || '') : T.empty;
+      b.appendChild(sn); b.appendChild(nm);
+      b.addEventListener('click', function(){ saveToSlot(n, st); });
+      grid.appendChild(b);
+    })(i);
+  }
+  box.appendChild(grid);
+}
+
+async function saveToSlot(n, st) {
+  var body = {
+    slot: n, type: 'radio',
+    name: st.name || '',
+    stream_url: st.url_resolved || st.url,
+    art: st.favicon || '',
+    codec: st.codec || '',
+    homepage: st.homepage || ''
+  };
+  if (st.bitrate) body.bitrate = st.bitrate;
+  var r = await fetch('/api/presets/' + n, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  if (r.ok) {
+    searchMsg(fmt(T.saved, { n: n }), false);
+    document.getElementById('results').innerHTML = '';
+    loadPresets();
+    return;
+  }
+  // The agent refuses a save it can prove will never play (e.g. a station whose
+  // address is really its home page) and says why. Show the speaker's own
+  // sentence rather than a generic failure.
+  var detail = '';
+  try { var j = await r.json(); detail = j.error || ''; } catch (e) {}
+  searchMsg(detail || T.saveFail, true);
+}
+
+(function wireSearch(){
+  var b = document.getElementById('btnSearch'), q = document.getElementById('q');
+  if (b) b.addEventListener('click', function(){ searchStations(); });
+  if (q) q.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); searchStations(); } });
+})();
+
+/* ===========================================================================
+   Diagnostics from the phone
+
+   Until now every bug report needed a PC, because the diagnostic export lives
+   in the desktop app. A reporter without one had nothing to send. This writes
+   the speaker's own debug state to a file the phone can attach to a mail.
+   =========================================================================== */
+(function wireDiag(){
+  var b = document.getElementById('btnDiag');
+  if (!b) return;
+  b.addEventListener('click', async function(){
+    var msg = document.getElementById('diagMsg');
+    press(b);
+    try {
+      var r = await fetch('/api/debug/state');
+      if (!r.ok) throw new Error('status ' + r.status);
+      var txt = await r.text();
+      var name = 'str-diagnostic-' + (document.getElementById('devName').textContent || 'speaker').replace(/[^A-Za-z0-9-]/g, '_') + '.json';
+      var url = URL.createObjectURL(new Blob([txt], { type: 'application/json' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+      if (msg) { msg.className = 'msg'; msg.textContent = T.diagOk; }
+    } catch (e) {
+      if (msg) { msg.className = 'msg bad'; msg.textContent = T.diagFail; }
+    }
+  });
+})();
+
+applyStaticI18n(); syncTabbarSpace(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion(); loadZone();
 setInterval(function(){ refreshStatus(); refreshWedge(); }, 5000);
+// The group is polled far more slowly than the transport: it changes when
+// somebody forms or dissolves one, not second by second, and every poll costs
+// the speaker a round trip to each member.
+setInterval(function(){ if (!document.getElementById('panelSpeakers').hidden || zone.grouped) loadZone(); }, 15000);
 </script>
 </body>
 </html>
