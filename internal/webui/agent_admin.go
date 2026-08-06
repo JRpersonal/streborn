@@ -348,7 +348,7 @@ func ensureSSHDRunning(logger *slog.Logger) bool {
 // On success the stick still returns 200 OK and then exits. The
 // rc.local bootstrap starts the new agent.
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
-	body, ok := readUploadedELF(w, r, s.logger, "agent-update")
+	body, ok := s.readUploadedELF(w, r, s.logger, "agent-update")
 	if !ok {
 		return
 	}
@@ -508,7 +508,7 @@ func uploadMemKB() (avail, total int64) {
 	return
 }
 
-func readUploadedELF(w http.ResponseWriter, r *http.Request, logger *slog.Logger, what string) ([]byte, bool) {
+func (s *Server) readUploadedELF(w http.ResponseWriter, r *http.Request, logger *slog.Logger, what string) ([]byte, bool) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return nil, false
 	}
@@ -516,6 +516,12 @@ func readUploadedELF(w http.ResponseWriter, r *http.Request, logger *slog.Logger
 		http.Error(w, "update only allowed from LAN", http.StatusForbidden)
 		return nil, false
 	}
+	// Quieten the speaker before the transfer starts, not after: the audio and
+	// the upload otherwise compete for the same radio and the same CPU, and the
+	// audio is what loses. Deliberately after the method and LAN checks, so a
+	// stray request cannot silence a speaker without even being a real upload.
+	// See hushforupload.go.
+	s.hushForUpload(what)
 	const maxSize = 30 * 1024 * 1024
 	// Log the whole upload lifecycle. The #466 bundles showed the app-side
 	// view of a dying post-OTA push (RST after ~107 s) while the box-side log
@@ -1312,7 +1318,7 @@ var nandHasRoom = func(dir string, need int64) bool {
 // running process until it exits, so killing+relaunching it on the write releases
 // that ~10 MB immediately instead of holding it until the next reboot.
 func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
-	body, ok := readUploadedELF(w, r, s.logger, "sidecar")
+	body, ok := s.readUploadedELF(w, r, s.logger, "sidecar")
 	if !ok {
 		return
 	}
