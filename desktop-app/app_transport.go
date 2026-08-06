@@ -194,5 +194,36 @@ func reachabilityHint(err error) error {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return err
 	}
+	// A speaker that ANSWERED cannot be behind a firewall that blocks this app,
+	// and the hint below then sends the user hunting through antivirus settings
+	// for nothing. Field report 2026-08-06: an update failed with
+	// `status 400 ... body=""` on every attempt over two days, and the advice
+	// under it talked about firewalls and separate Wi-Fi networks while the
+	// speaker was replying to each request. That is the same wrong-blame the
+	// install path already had to fix.
+	//
+	// An HTTP status means the connection was made and something answered. What
+	// answered was not STR: on a speaker whose agent is not up, the firmware's
+	// own listener replies with a bare status. So say that instead.
+	if answeredNotSTR(err) {
+		return fmt.Errorf("%w\n\nThe speaker answered, so this is not your firewall and not a Wi-Fi problem: something on the speaker replied to every request. What answered was not ST Reborn, which is what a speaker looks like while it is still starting up, or when its ST Reborn software did not come up at all. Unplug the speaker for ten seconds, plug it back in, wait about three minutes until it is fully up, and try the update again", err)
+	}
 	return fmt.Errorf("%w\n\nThe app could not reach the speaker. This is usually a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks. Allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi network", err)
+}
+
+// answeredNotSTR reports whether the failure carries evidence that the speaker
+// replied: an HTTP status line rather than a connection that never completed.
+// Matched on the shapes this project's own errors carry ("status 400 on <ip>",
+// "status 404", "unexpected status"), because those are the ones that reach a
+// user, and deliberately NOT on timeouts or refusals, which really can be a
+// firewall.
+// A status anywhere in the chain wins even when the run also contains a
+// timeout. The field report ends in an SSH timeout, but the preflight before it
+// got a 400: the speaker demonstrably answered, so the firewall advice is wrong
+// regardless of how the attempt finished.
+func answeredNotSTR(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "status 4") ||
+		strings.Contains(msg, "status 5") ||
+		strings.Contains(msg, "unexpected status")
 }

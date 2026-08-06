@@ -370,3 +370,52 @@ export function noticeDismissed(kind, version) {
 export function clearNoticeDismissal(kind) {
   storeDel(dismissKey(kind));
 }
+
+// activeSlotFromLocation extracts the slot number from a stream proxy
+// URL like http://127.0.0.1:8888/stream/3. Since build 2335 the
+// speaker's content items always run through the proxy, so the older
+// direct-URL comparison no longer matches. The slot match keeps the
+// green "playing" highlight stable even when the real CDN URL
+// rotates its tokens.
+export function activeSlotFromLocation(loc) {
+  if (!loc) return null;
+  // Spotify presets point the box at the per-slot /spotify/stream-<slot>.ogg
+  // (both the hardware and the soft recall), so the slot is in the URL: prefer
+  // it so the right Spotify tile lights up even when several presets share the
+  // generic "Spotify" now-playing name.
+  const sp = loc.match(/\/spotify\/stream-(\d+)\.ogg/);
+  if (sp) return parseInt(sp[1], 10);
+  const m = loc.match(/\/stream\/(\d+)(?:[/?#]|$)/);
+  if (m) return parseInt(m[1], 10);
+  // A NATIVE radio preset does not carry the proxy URL in its location at all:
+  // the speaker plays it itself and the content item is the ORION descriptor
+  // /station?data=<base64url JSON>, with the proxy URL inside the payload. The
+  // plain match above therefore stopped finding anything the moment presets
+  // migrated to the native form, so no tile lit up and the app looked like it
+  // had lost track of what was playing (reported in discussion #555:
+  // "die Sender werden nicht mehr als abgespielt angezeigt", with the speaker
+  // reporting source=LOCAL_INTERNET_RADIO, PLAY_STATE and the station name).
+  return slotFromOrionStation(loc);
+}
+
+// slotFromOrionStation digs the slot out of an ORION station descriptor, or
+// returns null when the location is not one. Failure is silent on purpose: this
+// runs on every status poll and a malformed payload must cost a highlight, not
+// throw inside the render.
+export function slotFromOrionStation(loc) {
+  const d = loc.match(/[?&]data=([A-Za-z0-9\-_=+/]+)/);
+  if (!d) return null;
+  try {
+    // The agent writes unpadded base64url; older builds wrote the standard
+    // alphabet. Accept both, like the agent's own decoder does.
+    let b64 = d[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const payload = JSON.parse(atob(b64));
+    const url = payload && payload.streamUrl;
+    if (!url) return null;
+    const m = String(url).match(/\/stream\/(\d+)(?:[/?#]|$)/);
+    return m ? parseInt(m[1], 10) : null;
+  } catch {
+    return null;
+  }
+}

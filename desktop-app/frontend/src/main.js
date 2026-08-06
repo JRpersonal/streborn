@@ -199,6 +199,7 @@ import {
   savePresetCase,
   dismissNotice,
   noticeDismissed,
+  activeSlotFromLocation,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -4422,24 +4423,6 @@ async function healPresetLogos() {
 // these in internal/boxurl. Keep the two in sync.
 const BOX_LOOPBACK = 'http://127.0.0.1:8888';
 const boxSpotifyDefaultUrl = () => `${BOX_LOOPBACK}/spotify/stream.ogg`;
-
-// activeSlotFromLocation extracts the slot number from a stream proxy
-// URL like http://127.0.0.1:8888/stream/3. Since build 2335 the
-// speaker's content items always run through the proxy, so the older
-// direct-URL comparison no longer matches. The slot match keeps the
-// green "playing" highlight stable even when the real CDN URL
-// rotates its tokens.
-function activeSlotFromLocation(loc) {
-  if (!loc) return null;
-  // Spotify presets point the box at the per-slot /spotify/stream-<slot>.ogg
-  // (both the hardware and the soft recall), so the slot is in the URL: prefer
-  // it so the right Spotify tile lights up even when several presets share the
-  // generic "Spotify" now-playing name.
-  const sp = loc.match(/\/spotify\/stream-(\d+)\.ogg/);
-  if (sp) return parseInt(sp[1], 10);
-  const m = loc.match(/\/stream\/(\d+)(?:[/?#]|$)/);
-  return m ? parseInt(m[1], 10) : null;
-}
 
 // decodeProxyUrl unwraps a stream-proxy URL
 // (http://<host>:8888/stream/raw?u=<base64url real URL>) back to the real

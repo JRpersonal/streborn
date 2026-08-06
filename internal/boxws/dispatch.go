@@ -23,11 +23,18 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	// they short-circuit before the typed parse.
 	switch {
 	case strings.Contains(s, "QPLAY_SKIP_NEXT_FAILED"):
+		// A skip key is a CONCRETE event, so the userActivityUpdate the firmware
+		// sends alongside it is explained and must not also be read as a thumb
+		// press. Without this the remote's skip keys fired the thumb webhook as
+		// well: reported on 2026-08-06, "my ST20s do skip through songs using
+		// the remote, but doing so also triggers the webhook" (#536).
+		c.noteExplainedActivity()
 		if c.handler != nil {
 			c.handler.OnRemoteSkip(ctx, true)
 		}
 		return
 	case strings.Contains(s, "QPLAY_SKIP_PREV_FAILED"):
+		c.noteExplainedActivity()
 		if c.handler != nil {
 			c.handler.OnRemoteSkip(ctx, false)
 		}
