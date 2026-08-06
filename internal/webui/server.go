@@ -41,8 +41,10 @@ type Server struct {
 	// zones persists this box's multiroom membership so a zone auto-reforms
 	// after reboot/standby (#70). nil when not wired; zone write endpoints
 	// then still drive the box but do not persist.
-	zones       *zones.Store
-	renderer    *upnp.Renderer
+	zones    *zones.Store
+	renderer *upnp.Renderer
+	// sleep is the armed sleep timer, if any. See sleeptimer.go.
+	sleep       sleepState
 	autoPair    *autopair.Manager
 	regionMu    sync.RWMutex
 	region      string // ISO 3166-1 alpha-2 from the setup wizard, empty if unknown
@@ -637,6 +639,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/zone", s.handleBoxZone)
 	mux.HandleFunc("/api/box/balance", s.handleBoxBalance)
 	mux.HandleFunc("/api/box/zone/volume", s.handleZoneVolume)
+	mux.HandleFunc("/api/box/sleep", s.handleSleep)
 	mux.HandleFunc("/api/box/zone/purge", s.handleZonePurge)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/marge/group", s.handleMargeGroupDoc)
