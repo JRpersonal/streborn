@@ -394,6 +394,7 @@
   "update.appBehindLine": "The speaker runs {{boxVersion}}, newer than this app ({{appVersion}}). Please update the app first.",
   "update.appBehindShort": "Speaker newer than the app, please update the app (app: {{appVersion}})",
   "update.uploading": "Uploading (about 1 min)...",
+  "update.runningBtn": "Updating…",
   "update.uploadedToast": "Update uploaded. The speaker reboots and takes up to a few minutes to answer again.",
   "update.rebooting": "Speaker is rebooting and reconnecting (usually 2-4 min)...",
   "update.oldBuildWait": "Speaker still answers the old build, {{remaining}} left...",

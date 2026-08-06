@@ -394,6 +394,7 @@
   "update.appBehindLine": "Der Lautsprecher läuft {{boxVersion}}, neuer als diese App ({{appVersion}}). Bitte zuerst die App aktualisieren.",
   "update.appBehindShort": "Lautsprecher neuer als die App, bitte die App aktualisieren (App: {{appVersion}})",
   "update.uploading": "Wird hochgeladen (ca. 1 Min.)...",
+  "update.runningBtn": "Aktualisiert…",
   "update.uploadedToast": "Update hochgeladen. Der Lautsprecher startet neu und braucht jetzt bis zu einige Minuten, bis er wieder antwortet.",
   "update.rebooting": "Lautsprecher startet neu und verbindet sich wieder (meist 2-4 Min.)...",
   "update.oldBuildWait": "Lautsprecher antwortet noch alter Build, noch {{remaining}} ...",

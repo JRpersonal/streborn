@@ -361,6 +361,7 @@
   "update.refreshBtn": "Atnaujinti",
   "update.rebootNote": "Atnaujinimo metu garsiakalbis paleidžiamas iš naujo - priklausomai nuo atnaujinimo vieną ar du kartus - ir prisijungia pats. Tai ne atstatymas: išsaugoti nustatymai ir stotys lieka. Jei po kelių minučių jis negrįžta arba garsiakalbio lemputės mirksi geltonai, trumpam atjunkite jį nuo maitinimo ir vėl prijunkite.",
   "update.uploading": "Įkeliama (apie 1 min.)...",
+  "update.runningBtn": "Atnaujinama…",
   "update.uploadedToast": "Atnaujinimas įkeltas. Garsiakalbis paleidžiamas iš naujo ir gali užtrukti iki kelių minučių, kol vėl atsakys.",
   "update.rebooting": "Garsiakalbis paleidžiamas iš naujo ir jungiasi (paprastai 2-4 min.)...",
   "update.oldBuildWait": "Garsiakalbis vis dar atsako sena versija, liko {{remaining}}...",
