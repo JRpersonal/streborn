@@ -214,7 +214,16 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// it exists to answer, how many networks a speaker is configured for,
 		// was therefore never answerable from a bundle (found 2026-08-05 while
 		// testing exactly that theory against nine speakers).
-		"wpa_supplicant": readTail(wpaConfPath),
+		//
+		// REDACTED AT THE SOURCE. That file holds the user's Wi-Fi password in
+		// psk="...", and this endpoint answers an unauthenticated GET on the
+		// LAN and is the body of every diagnostic bundle mailed in or attached
+		// to an issue. Fixing the path above turned a read that had always
+		// failed into a live disclosure, so the secret is removed here rather
+		// than downstream: the desktop app scrubs bundles too, but a value with
+		// a space in it (a perfectly ordinary passphrase) survived its pattern,
+		// and nothing scrubs a plain curl against this port at all.
+		"wpa_supplicant": redactWPASecrets(readTail(wpaConfPath)),
 		// What the speaker is REALLY configured for. The file above only shows
 		// what was persisted, and on at least one chassis that is the untouched
 		// vendor template while the speaker is on Wi-Fi via a network added at
