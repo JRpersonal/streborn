@@ -102,6 +102,13 @@ type Client struct {
 	// Guarded by mu.
 	lastNativeActiveAt time.Time
 
+	// nativeStartedAt is when the box last ENTERED the native radio source.
+	// lastNativeActiveAt records when it left, which cannot tell how long the
+	// station actually lasted; this can. A speaker that drops the station it
+	// started a second ago has abandoned it, whoever it hands over to.
+	// Guarded by mu.
+	nativeStartedAt time.Time
+
 	// upnpEpisode is true while the box sits in the INVALID_SOURCE (or
 	// subsequent STANDBY) state it entered FROM STR's UPNP source. The
 	// rolling upnpFlapWindow only covers the fast give-up flap; a struggling
