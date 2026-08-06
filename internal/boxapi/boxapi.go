@@ -564,6 +564,33 @@ func (c *Client) LeaveSetup(ctx context.Context) error {
 	return c.postXML(ctx, "/setup", `<setupState state="SETUP_LEAVE" />`)
 }
 
+// Standby puts the speaker into Bose standby, the real power-off rather than a
+// transport stop.
+//
+// GET, not POST: the firmware answers /standby with 400 on a POST. That is the
+// same call the webui's power-off makes, lifted here so it can also be aimed at
+// ANOTHER speaker, which is what a sleep timer covering a whole group needs.
+//
+// Idempotent from the caller's side: a speaker already in standby answers 200
+// and stays where it is. The caller still has to check first, because on some
+// chassis a request into a sleeping box is what wakes it.
+func (c *Client) Standby(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url("/standby"), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("box /standby: %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
 // SetVolume sets the target volume (0-100).
 func (c *Client) SetVolume(ctx context.Context, v int) error {
 	if v < 0 {
