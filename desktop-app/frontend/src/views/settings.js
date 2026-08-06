@@ -970,8 +970,8 @@ function renderBoxSettings(s, box) {
       // downgrade it, so show "update the app" with no button (#105).
       const cmp = compareVerBuild(appVer, appBuild, boxVer, boxBuild);
       const otaBtn = () => (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host)
-        ? `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`
-        : `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button>`;
+        ? `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.runningBtn'))}</button><div class="op-status" id="stickInfoUpdateStatus">${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</div>`
+        : `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button><div class="op-status" id="stickInfoUpdateStatus"></div>`;
       if (cmp === 0) {
         const buildSuffix = boxBuild ? ` (Build ${escapeHtml(boxBuild)})` : '';
         if (v.goLibrespot === 'missing') {

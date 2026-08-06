@@ -954,6 +954,24 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 .btn { background: var(--c-surface-2); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
 .btn:hover { background: var(--c-border); }
 .btn-mini { padding: 4px 10px; font-size: 13px; }
+/* A button is a label, never a status display.
+   Progress text used to be written INTO the update button. The messages are
+   whole sentences ("the speaker is restarting and reconnecting, usually 2-4
+   minutes"), so a btn-mini wrapped them over several lines, grew to match, and
+   pushed everything around it as the text changed from phase to phase.
+   Status now lives here instead: directly under the button, full width so a
+   short phase fits on one line, and with a reserved height so the panel does
+   not move every time the message does. Long enough for two lines because
+   German is the widest locale and some phases carry a countdown. */
+.op-status {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--c-muted);
+  margin-top: 6px;
+  min-height: calc(2 * 1.35 * 12px);
+  overflow-wrap: anywhere;
+}
+.op-status:empty { display: none; }
 /* Active state for ON/OFF toggle pairs (clock display, airplay opt): the
    current state is shown by highlighting the active button, like the
    source buttons, so no separate status line is needed. */

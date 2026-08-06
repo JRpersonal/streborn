@@ -2885,9 +2885,9 @@ async function checkBoxUpdate() {
   const otaElsewhere = state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== state.currentBox.host;
   const renderUpdateBtn = () => {
     if (otaElsewhere) {
-      return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn" disabled>${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</button>`;
+      return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn" disabled>${escapeHtml(t('update.runningBtn'))}</button><div class="op-status" id="boxUpdateStatus">${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</div>`;
     }
-    return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtnSpeaker'))}</button>`;
+    return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtnSpeaker'))}</button><div class="op-status" id="boxUpdateStatus"></div>`;
   };
   // "Update all speakers" (beta): offered next to the single-speaker button when
   // two or more speakers are behind, so a multi-speaker household updates them in
@@ -2910,7 +2910,8 @@ async function checkBoxUpdate() {
         <b>${escapeHtml(t('update.inProgressTitle', { name: boxName }))}</b><br>
         <small class="muted">${escapeHtml(t('update.rebootNote'))}</small>
       </div>
-      <button class="btn btn-primary btn-mini" id="boxUpdateBtn" disabled>${escapeHtml(t('update.uploading'))}</button>
+      <button class="btn btn-primary btn-mini" id="boxUpdateBtn" disabled>${escapeHtml(t('update.runningBtn'))}</button>
+      <div class="op-status" id="boxUpdateStatus">${escapeHtml(t('update.uploading'))}</div>
     `;
     banner.classList.remove('hidden');
     return;
@@ -3544,20 +3545,35 @@ async function doBoxUpdate(targetBox) {
     return (state.settingsBox && state.settingsBox.host === t) ||
            (state.currentBox && state.currentBox.host === t);
   };
+  // The progress text used to be written INTO the button. These messages are
+  // whole sentences (up to 124 characters in German), so a btn-mini wrapped
+  // them over several lines, grew to fit, and shoved the surrounding layout
+  // around every time the phase changed. A button is a label; the status
+  // belongs beside it. Both buttons now have an .op-status line under them
+  // with a reserved height, so the panel stays still while the text changes.
+  const statusLines = () => ['boxUpdateStatus', 'stickInfoUpdateStatus'].map(id => $(id)).filter(Boolean);
   const setStatus = (text) => {
     if (!lookingAtTarget()) return;
     // Idempotent: only touch the DOM when a value actually changes. The 1 s
     // countdown tick called this every second during the post-update wait, and
     // re-setting `disabled` each time re-triggered the button's CSS transition,
     // which read as a per-second flicker through the whole 2nd (Spotify) upload.
+    const busy = t('update.runningBtn');
     buttons().forEach(b => {
-      if (b.textContent !== text) b.textContent = text;
+      if (b.textContent !== busy) b.textContent = busy;
       if (!b.disabled) b.disabled = true;
+    });
+    statusLines().forEach(el => {
+      if (el.textContent !== text) el.textContent = text;
+      // The full sentence stays reachable on hover for anything the two
+      // reserved lines cannot hold.
+      if (el.title !== text) el.title = text;
     });
   };
   const reset = () => {
     if (!state.currentBox || state.currentBox.host !== state.otaTargetHost) return;
     buttons().forEach(b => { b.disabled = false; b.textContent = t('update.refreshBtnSpeaker'); });
+    statusLines().forEach(el => { el.textContent = ''; el.title = ''; });
   };
   // Mark this box as the OTA target AND flip the global in-flight
   // flag BEFORE first setStatus() so checkBoxUpdate() and the
