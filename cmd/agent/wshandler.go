@@ -1101,39 +1101,40 @@ func (h *presetWsHandler) readBoxVolume() int {
 	return 0
 }
 
-// restorePreRecallVolume re-applies the volume the box had before a recall when
-// a 1036-standby recovery reset it (the box forgets its volume across standby and
-// comes back at its own default after STR wakes it). No-op when the volume is
-// unknown or unchanged, so the happy path (no standby) never touches it.
+// restorePreRecallVolume no longer changes the volume. It observes and records
+// what the box did across a recall recovery, and nothing more.
 //
-// The pre-recall snapshot is NOT always the user's chosen level: a press right
-// after a deep standby reads the box's own low wake default (10 on a spotty
-// ST20), and blindly re-applying that forced the level back DOWN over the
-// user's manual correction during the ~25 s recovery window (#435 bundle,
-// "from=34 to=10", twice). A physical volume change emits a
-// userActivityUpdate, so any user activity after the press (plus a small
-// epsilon, since the press itself emits one) means the CURRENT level is the
-// user's choice and the restore stands down.
+// It used to re-apply the level the box had before the recall, because a
+// 1036-standby recovery brings some speakers back at their own default (~30)
+// and a recovered preset could blast the room (v0.9.18, reported on a
+// Portable). To avoid fighting a level the user had just chosen, it stood down
+// whenever a userActivityUpdate arrived after the press.
+//
+// That guard cannot be trusted. On 2026-08-05 a field bundle showed the box
+// emitting userActivityUpdate as a consequence of STR's OWN write into it, and
+// phantom frames with nobody near the speaker were already on file from
+// 2026-07-25 (see project_autoresume_stop_discriminator). The signal that was
+// supposed to distinguish "the user chose this level" from "the box defaulted
+// to it" does neither reliably, and the same bundle class already caught the
+// restore pushing a level DOWN over a user's correction ("from=34 to=10",
+// twice).
+//
+// A control that cannot tell whose intent it is enforcing should not enforce
+// one. The speaker's own volume behaviour now stands, which is also what a
+// Bose speaker did before STR existed. The observation stays because it is the
+// only way to see from a diagnostic bundle whether loud wake-ups return.
 func (h *presetWsHandler) restorePreRecallVolume(pressAt time.Time, preVol int) {
 	if preVol <= 0 || h.boxHost == "" {
 		return
 	}
-	if h.userAdjustedSince(pressAt) {
-		h.logger.Info("volume restore stood down: user adjusted the box during the recovery", "preVol", preVol)
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c := boxapi.New(h.boxHost)
-	cur, err := c.GetVolume(ctx)
+	cur, err := boxapi.New(h.boxHost).GetVolume(ctx)
 	if err != nil || cur.Target == preVol {
 		return
 	}
-	if err := c.SetVolume(ctx, preVol); err != nil {
-		h.logger.Warn("volume restore after recall failed", "want", preVol, "err", err)
-		return
-	}
-	h.logger.Info("restored user volume after a recall recovery reset it", "from", cur.Target, "to", preVol)
+	h.logger.Info("volume changed across a recall recovery; leaving the speaker's own level alone",
+		"before", preVol, "after", cur.Target, "userActivitySincePress", h.userAdjustedSince(pressAt))
 }
 
 // verifyPlayURL confirms the box started playing a UPnP (radio) recall and
