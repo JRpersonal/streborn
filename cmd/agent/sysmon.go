@@ -182,24 +182,110 @@ func pollBoxInfo(ctx context.Context, boxHost, region string, ann *discovery.Ann
 	}
 }
 
-// logResourceHealth records a one-line snapshot of available memory and
-// system load. On this hardware (~120 MB RAM, no swap) a slow leak ends
-// in an OOM freeze; this heartbeat makes the RAM/load trend leading up to
-// such a freeze visible in the on-box log for post-mortem analysis.
-// Best-effort: missing /proc entries just log -1.
+// resource-health logging state. Guarded by its own mutex; the health loop is
+// the only writer today, but the values are also read from the memory guard's
+// goroutine in tests.
+var (
+	resHealthMu       sync.Mutex
+	resHealthLastAt   time.Time
+	resHealthLastMem  int64
+	resHealthLastRSS  int64
+	resHealthLastThr  int64
+	resHealthHaveLast bool
+)
+
+// Thresholds for "something actually moved". Relative, because the interesting
+// signal is a trend, not an absolute number, and absolute numbers differ per
+// model.
+const (
+	resHealthMemDelta   = 0.08 // 8 % change in MemAvailable
+	resHealthRSSDelta   = 0.15 // 15 % change in the agent's own RSS
+	resHealthLowWater   = 0.20 // below 20 % free, every reading is interesting
+	resHealthAnchorEach = time.Hour
+)
+
+// logResourceHealth records a snapshot of available memory and system load WHEN
+// IT CHANGED. On this hardware (~120 MB RAM, no swap) a slow leak ends in an
+// OOM freeze, and the trend leading up to it is the thing worth having.
+//
+// It used to write one line every five minutes regardless. That reads as
+// harmless (12 lines an hour) until you look at what it costs where it matters:
+// the NAND log is a 32 KB ring and the only log that survives a reboot on a box
+// with no shell. Measured on a Portable 2026-08-06, routine heartbeats were
+// 29.6 % of that window, and on an idle box the whole window reaches back only
+// about seven hours. That is why the Lifestyle reboot-loop investigation ran
+// out of history: the cause had already rolled out.
+//
+// So: log the first reading, log whenever memory or the agent's own footprint
+// moves meaningfully, log every reading once free memory is low, and otherwise
+// drop one anchor an hour so a flat box still shows a trend line. Everything
+// else goes to Debug, where it costs nothing on NAND. No forensic signal is
+// lost; the flat repeats that were burying it are.
 func logResourceHealth(logger *slog.Logger) {
 	avail, total := readMemKB()
 	rss, threads := readSelfRSS()
-	logger.Info("resource health",
+	// The agent's own RSS and thread count travel with every line. If
+	// memAvailable trends down while these stay flat, the leak is BoseApp's
+	// (firmware); if these climb too, it is ours. That attributes the leak
+	// preceding the recurring BoseApp freeze without guesswork.
+	attrs := []any{
 		"memAvailableKB", avail,
 		"memTotalKB", total,
 		"loadavg", readLoadAvg(),
-		// The agent's own RSS and thread count. If memAvailable trends
-		// down while these stay flat, the leak is BoseApp's (firmware);
-		// if these climb too, it is ours. This attributes the leak that
-		// precedes the recurring BoseApp freeze without guesswork.
 		"agentRSSKB", rss,
-		"agentThreads", threads)
+		"agentThreads", threads,
+	}
+	why, worth := resourceHealthWorthLogging(avail, total, rss, threads, time.Now())
+	if !worth {
+		logger.Debug("resource health", attrs...)
+		return
+	}
+	logger.Info("resource health", append(attrs, "why", why)...)
+}
+
+// resourceHealthWorthLogging decides, and records the new baseline when it says
+// yes. Split out so the decision is testable without touching /proc.
+func resourceHealthWorthLogging(avail, total, rss, threads int64, now time.Time) (string, bool) {
+	resHealthMu.Lock()
+	defer resHealthMu.Unlock()
+	keep := func(why string) (string, bool) {
+		resHealthLastAt, resHealthLastMem, resHealthLastRSS, resHealthLastThr = now, avail, rss, threads
+		resHealthHaveLast = true
+		return why, true
+	}
+	if !resHealthHaveLast {
+		return keep("first")
+	}
+	// A box running low is the case this instrument exists for: never quiet it.
+	if total > 0 && float64(avail) < resHealthLowWater*float64(total) {
+		return keep("low-memory")
+	}
+	if moved(resHealthLastMem, avail, resHealthMemDelta) {
+		return keep("memory-moved")
+	}
+	if moved(resHealthLastRSS, rss, resHealthRSSDelta) {
+		return keep("agent-rss-moved")
+	}
+	if threads != resHealthLastThr {
+		return keep("threads-changed")
+	}
+	if now.Sub(resHealthLastAt) >= resHealthAnchorEach {
+		return keep("hourly-anchor")
+	}
+	return "", false
+}
+
+// moved reports a relative change of at least frac. A previous value of 0 (or a
+// failed read, which logs -1) counts as moved so the first real reading lands.
+func moved(prev, cur int64, frac float64) bool {
+	if prev <= 0 {
+		return cur > 0
+	}
+	d := float64(cur-prev) / float64(prev)
+	if d < 0 {
+		d = -d
+	}
+	return d >= frac
 }
 
 // memory-guard tunables. The Spotify Ogg path leaves a residual box-side

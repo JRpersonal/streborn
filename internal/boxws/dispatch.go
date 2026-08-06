@@ -431,10 +431,20 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 					return
 				}
 			}
-			// Surface anything still unrecognized so we can map the events STR does
-			// not yet handle (the preset long-press store gesture). INFO and rare,
-			// so it stays in a diagnostic bundle without spamming the NAND log.
-			c.logger.Info("box ws unrecognized frame", "bytes", len(data), "body", preview(data, 1800))
+			// Surface anything still unrecognized so we can map the events STR
+			// does not yet handle (the preset long-press store gesture).
+			//
+			// "rare" was the assumption, and it was wrong. Some of these repeat
+			// forever: a Portable emits userInactivityUpdate every few minutes,
+			// and sourcesUpdated / swUpdateStatusUpdated / balanceUpdated arrive
+			// on every source change. Measured 2026-08-06, unrecognized frames
+			// were 15.6 % of the 32 KB NAND log, the only log that survives a
+			// reboot on a box with no shell, at up to 1800 bytes per line.
+			//
+			// The forensic value is in learning that a frame SHAPE exists, not
+			// in the hundredth copy of it. So the first of each shape is logged
+			// in full, and repeats are counted and reported once an hour.
+			c.logUnrecognizedFrame(data)
 		}
 		return
 	}
@@ -502,5 +512,77 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	if c.handler != nil {
 		c.handler.OnPresetSelected(ctx, slot,
 			pe.ContentItem.Location, pe.ContentItem.ItemName)
+	}
+}
+
+// unknownSummaryEvery bounds how often the repeat counts are rolled up. Long
+// enough that a chatty box costs one line an hour, short enough that a bundle
+// pulled during a fault still shows what has been arriving.
+const unknownSummaryEvery = time.Hour
+
+// frameShape names a frame by its first element, which is what makes two frames
+// "the same kind": the bodies differ per device and per value, the shape does
+// not. Falls back to a short prefix when no element name can be read, so an
+// unparseable frame still groups with its own kind instead of being unique
+// every time (which would defeat the whole point).
+func frameShape(data []byte) string {
+	s := string(data)
+	i := strings.IndexByte(s, '<')
+	if i < 0 {
+		return strings.TrimSpace(preview(data, 24))
+	}
+	rest := s[i+1:]
+	end := strings.IndexAny(rest, " \t\r\n/>")
+	if end <= 0 {
+		return strings.TrimSpace(preview(data, 24))
+	}
+	name := rest[:end]
+	// An <updates> wrapper says nothing; the interesting name is the child.
+	if name == "updates" {
+		if j := strings.IndexByte(rest, '<'); j >= 0 {
+			inner := rest[j+1:]
+			if e := strings.IndexAny(inner, " \t\r\n/>"); e > 0 {
+				return "updates/" + inner[:e]
+			}
+		}
+	}
+	return name
+}
+
+// logUnrecognizedFrame logs the FIRST frame of each shape in full and counts
+// the rest, rolling the counts up once an hour.
+//
+// The old behaviour logged every one at up to 1800 bytes. On a Portable that
+// was 15.6 % of the 32 KB NAND ring (measured 2026-08-06), i.e. it was
+// consuming the very history a post-mortem needs, to repeat facts already in
+// the log. Learning that a shape exists is the whole forensic value here.
+func (c *Client) logUnrecognizedFrame(data []byte) {
+	shape := frameShape(data)
+	c.mu.Lock()
+	if c.unknownFrames == nil {
+		c.unknownFrames = map[string]int{}
+	}
+	c.unknownFrames[shape]++
+	n := c.unknownFrames[shape]
+	var summary []any
+	now := time.Now()
+	if n > 1 && !c.unknownSummaryAt.IsZero() && now.Sub(c.unknownSummaryAt) >= unknownSummaryEvery {
+		c.unknownSummaryAt = now
+		for k, v := range c.unknownFrames {
+			summary = append(summary, k, v)
+		}
+	} else if c.unknownSummaryAt.IsZero() {
+		c.unknownSummaryAt = now
+	}
+	c.mu.Unlock()
+
+	if n == 1 {
+		c.logger.Info("box ws unrecognized frame (first of this shape)",
+			"shape", shape, "bytes", len(data), "body", preview(data, 1800))
+	} else {
+		c.logger.Debug("box ws unrecognized frame", "shape", shape, "count", n)
+	}
+	if len(summary) > 0 {
+		c.logger.Info("box ws unrecognized frames so far", summary...)
 	}
 }

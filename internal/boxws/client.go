@@ -54,6 +54,13 @@ type Client struct {
 	// rather than repeatedly while AUX stays the active source.
 	lastSource string
 
+	// unknownFrames counts the frame shapes STR does not handle, keyed by the
+	// element name, so the first of each shape can be logged in full and the
+	// repeats only counted. unknownSummaryAt times the periodic roll-up.
+	// Guarded by mu.
+	unknownFrames    map[string]int
+	unknownSummaryAt time.Time
+
 	// lastInvalidSourceAt / lastPresetPressAt time the box's own UPnP-source
 	// teardown. On scm/mojo firmware (ST30) a preset switch AND an involuntary
 	// stream drop both tear STR's UPNP source down through INVALID_SOURCE and
