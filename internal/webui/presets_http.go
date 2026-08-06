@@ -207,6 +207,23 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		// The URL survived every structural gate above, so it is a well-formed
+		// http(s) link to something. Last question: is that something actually a
+		// stream? A field bundle carried three presets pointing at the station's
+		// HOME PAGE, which save cleanly and can never play. The probe refuses only
+		// on positive evidence of a web page and allows every uncertain answer, so
+		// a station that is merely down or speaks legacy ICY still saves.
+		if p.Type != "spotify" && p.StreamURL != "" {
+			if looksLikeWebPage(r.Context(), p.StreamURL) {
+				s.logger.Warn("preset save refused: the URL answers as a web page, not a stream",
+					"slot", slot, "name", p.Name, "url", p.StreamURL)
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error": "That address is the station's website, not its stream, so the key would never play. Search for the station in ST Reborn and save it from the search result.",
+					"code":  "stream-url-is-webpage",
+				})
+				return
+			}
+		}
 		// Stamp the account a Spotify preset belongs to (go-librespot's current
 		// login) so a later recall can switch back to it on a multi-account box
 		// (#27). Two cases: (a) no account yet, fill it from the current login;

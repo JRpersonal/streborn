@@ -133,7 +133,8 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 // day it was written.
 //
 // Station artwork lives on the public internet, so the fix is simply to refuse
-// everything else. The check sits in the DIALER rather than on the URL string,
+// everything else. The preset-URL probe reuses this guard for the same reason,
+// which is why the messages name the check and not one caller. The check sits in the DIALER rather than on the URL string,
 // which is what makes it hold: it sees the address actually being connected
 // to, so a hostname that resolves to 127.0.0.1, a redirect into the network,
 // and an IPv6 or IPv4-mapped form of the same address are all caught, and none
@@ -141,11 +142,11 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 func publicOnlyControl(_ string, address string, _ syscall.RawConn) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
-		return fmt.Errorf("art proxy: unparseable address %q", address)
+		return fmt.Errorf("public-only dial: unparseable address %q", address)
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		return fmt.Errorf("art proxy: unresolved address %q", host)
+		return fmt.Errorf("public-only dial: unresolved address %q", host)
 	}
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
@@ -153,12 +154,12 @@ func publicOnlyControl(_ string, address string, _ syscall.RawConn) error {
 	switch {
 	case ip.IsLoopback(), ip.IsPrivate(), ip.IsLinkLocalUnicast(), ip.IsLinkLocalMulticast(),
 		ip.IsInterfaceLocalMulticast(), ip.IsMulticast(), ip.IsUnspecified():
-		return fmt.Errorf("art proxy: refusing to fetch from %s (not a public address)", ip)
+		return fmt.Errorf("public-only dial: refusing %s (not a public address)", ip)
 	}
 	// Carrier-grade NAT (100.64.0.0/10). Not covered by IsPrivate, and it is
 	// where a router's own management interface often lives.
 	if v4 := ip.To4(); v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
-		return fmt.Errorf("art proxy: refusing to fetch from %s (carrier-grade NAT range)", ip)
+		return fmt.Errorf("public-only dial: refusing %s (carrier-grade NAT range)", ip)
 	}
 	return nil
 }
