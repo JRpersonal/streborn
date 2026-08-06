@@ -25,7 +25,9 @@ package webui
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -44,12 +46,41 @@ const presetProbeTimeout = 4 * time.Second
 // server labels them like one.
 var playlistExts = map[string]bool{".pls": true, ".m3u": true, ".m3u8": true, ".asx": true, ".xspf": true}
 
-// presetProbeClient is a seam for the tests and nothing else. The guarded
-// client refuses loopback by design, and a test server IS loopback, so without
-// this every test would exercise the "unreachable, allow it" branch and prove
-// nothing about the classification. Production always uses the guarded client.
+// probeClient dials PUBLIC addresses only, a stricter rule than the stream
+// proxy's, which deliberately allows private LAN ranges so a user's own local
+// Icecast or DLNA server keeps playing.
+//
+// The probe can afford the stricter rule precisely because it fails open: a
+// preset pointing at a LAN stream comes back "could not tell" and saves exactly
+// as before. Nothing legitimate is lost, and in exchange the save endpoint stops
+// being a way for anyone who can reach the agent's port to make the SPEAKER
+// probe arbitrary hosts inside the network. CodeQL flagged that
+// (go/request-forgery) the first time this shipped, and it was right to.
+//
+// The check lives in the DIALER, not on the URL string: it sees the address
+// actually being connected to, so a hostname resolving to 127.0.0.1, an
+// IPv4-mapped IPv6 form, and a redirect back into the network are all caught.
+var probeClient = &http.Client{
+	Transport: &http.Transport{
+		DialContext:         (&net.Dialer{Timeout: presetProbeTimeout, Control: publicOnlyControl}).DialContext,
+		TLSHandshakeTimeout: presetProbeTimeout,
+	},
+	CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+		if len(via) >= 4 {
+			return errors.New("preset probe: too many redirects")
+		}
+		return nil
+	},
+}
+
+// presetProbeClient is a seam for the tests and nothing else. The real client
+// refuses loopback, and a test server IS loopback, so without this every test
+// would exercise the "unreachable, allow it" branch and prove nothing about the
+// classification. Production always uses probeClient.
 var presetProbeClient = func(timeout time.Duration) *http.Client {
-	return netutil.GuardedClient(timeout)
+	c := *probeClient
+	c.Timeout = timeout
+	return &c
 }
 
 // looksLikeWebPage reports whether url positively answers as a web page rather
