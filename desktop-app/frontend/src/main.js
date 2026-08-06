@@ -218,6 +218,7 @@ import {
   resolveBoxByRef,
   stereoPairOf,
   pairMemberBoxes,
+  balanceSourceBox,
 } from './groups.js';
 
 // Pure decisions of the search flow (URL-paste detection, the synthetic
@@ -880,6 +881,12 @@ async function renderFooter() {
   links.push(`<a href="#" id="footerWorldMap" class="footer-link" title="${escapeAttr(t('worldMap.inviteBtn'))}">🌍 ${escapeHtml(t('footer.worldMap'))}</a>`);
   links.push(`<a href="#" id="footerSaveLogs" class="footer-link" title="${escapeAttr(t('footer.saveLogsHint'))}">${escapeHtml(t('footer.saveLogs'))}</a>`);
   links.push(`<a href="#" id="footerCredits" class="footer-link">${escapeHtml(t('footer.credits'))}</a>`);
+  // Where to report something. Asked for on 2026-08-06: "maybe the ST Reborn app
+  // should have some kind of Support/Help menu item which points the user to
+  // github to log issues and send feedback". Until then the only route was
+  // knowing the project is on GitHub and finding it there, which a user who
+  // installed the app from the website has no reason to know.
+  links.push(`<a href="#" id="footerReport" class="footer-link">${escapeHtml(t('footer.reportProblem'))}</a>`);
   links.push(`<a href="#" id="footerShare" class="footer-link">${escapeHtml(t('share.footer'))}</a>`);
   const buildStr = i.build && i.build !== 'dev' ? ` <span class="build-stamp">(Build ${escapeHtml(i.build)})</span>` : '';
   // Clicking the version opens the release notes. For a clean tagged
@@ -904,6 +911,11 @@ async function renderFooter() {
   if (verLink) verLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(releaseNotesUrl); };
   const creditsLink = $('footerCredits');
   if (creditsLink) creditsLink.onclick = (e) => { e.preventDefault(); showCredits(); };
+  // Straight to the issue list rather than the repository front page: a user
+  // with a problem wants to see whether it is already reported and to write it
+  // down, not to read a README.
+  const reportLink = $('footerReport');
+  if (reportLink) reportLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(`${repo}/issues`); };
   const shareLink = $('footerShare');
   if (shareLink) shareLink.onclick = (e) => { e.preventDefault(); openShareModal(); };
   const worldMapLink = $('footerWorldMap');
@@ -1093,6 +1105,30 @@ function fmtRate(bps) {
   return Math.max(0, Math.round(bps)) + ' B/s';
 }
 
+// showMacHandoff turns the update banner into the standing instruction for the
+// one step macOS leaves to the user: drag the new app out of the mounted .dmg.
+//
+// It replaces the banner rather than adding a second notice, because at this
+// point the "install now" button has done everything it can and re-pressing it
+// only downloads the same file again. The button here is short on purpose (Jens'
+// rule: a button carries a few words, never a status message) and re-opens the
+// downloaded file for anyone who closed the Finder window before reading it.
+//
+// Nothing dismisses this by itself. The banner is rebuilt from scratch by the
+// next update check, which finds the app already current once the user has
+// dragged it across, so the instruction disappears exactly when it is obsolete.
+function showMacHandoff(path) {
+  const banner = $('appUpdateBanner');
+  if (!banner) { showToast(t('banner.macDownloaded')); return; }
+  banner.innerHTML = `
+    <div class="app-update-text"><span class="app-update-icon" aria-hidden="true">&#10003;</span><span><b>${escapeHtml(t('banner.macReadyTitle'))}</b> ${escapeHtml(t('banner.macDownloaded'))}</span></div>
+    <button class="btn btn-primary app-update-btn" id="appUpdateReveal">${escapeHtml(t('banner.macShowFile'))}</button>
+  `;
+  banner.classList.remove('hidden');
+  const rv = $('appUpdateReveal');
+  if (rv && path) rv.onclick = () => { RevealUpdateFile(path).catch(() => {}); };
+}
+
 async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
   btn.disabled = true;
   const off = EventsOn('app:update:progress', (p) => {
@@ -1106,10 +1142,18 @@ async function runAppUpdate(version, btn, installLabel, isMacOS, fallbackUrl) {
     btn.textContent = t('banner.installing');
     await ApplyUpdate(path);
     // Reached only on macOS (Linux/Windows relaunch+quit inside ApplyUpdate).
+    //
+    // The last step is the user's: drag the app out of the mounted .dmg. Saying
+    // that in a toast did not work, because ApplyUpdate opens the .dmg and
+    // Finder's window comes up over ours, exactly where the toast sits, and the
+    // toast is gone by the time the user looks back. Reported 2026-08-06 with a
+    // screenshot showing the Finder window on top of it: "I feel that this
+    // notice is easy to miss". So the instruction takes over the update banner
+    // and stays there until the new version is actually running.
     if (isMacOS) {
       btn.disabled = false;
       btn.textContent = installLabel;
-      showToast(t('banner.macDownloaded'));
+      showMacHandoff(path);
     }
   } catch (e) {
     showError(t('banner.updateFailed', { err: String(e) }));
@@ -2123,6 +2167,16 @@ function renderBoxSelect() {
   // preset on the pair is refused by the firmware (#528) with nothing on screen
   // explaining why. Framing them like a group says what is going on.
   const livePair = stereoPairOf(zlMap);
+  // Balance is read once when the selected speaker changes, never on the status
+  // poll (the speaker hangs on that endpoint while it is asleep). Pairing and
+  // unpairing happen without changing the selection, so without this the value
+  // would stay stale, or stay hidden for a pair formed after the speaker was
+  // picked. Keyed on the pair identity, so an unchanged pair re-reads nothing.
+  const pairStamp = livePair ? `${livePair.id}|${livePair.master}` : '';
+  if (pairStamp !== state.lastBalancePair) {
+    state.lastBalancePair = pairStamp;
+    setTimeout(() => { refreshBalance().catch(() => {}); }, 0);
+  }
   const pairBoxes = pairMemberBoxes(livePair, state.boxes).map(x => x.box).filter(Boolean);
   const pairHosts = new Set(pairBoxes.map(b => b.host));
   const pairMasterBox = pairBoxes.find(b =>
@@ -5741,10 +5795,14 @@ function renderNowPlayingBar() {
 // Stereo balance, read-only.
 //
 // Balance exists only while two speakers are paired, and only the MASTER of the
-// pair reports it; ask the other one and it says it has none. Range and centre
-// come from the speaker (-7..+7, 0 centred on a SoundTouch 10) rather than from
-// a constant, because a widely-copied community value of -50..+50 does not
-// match what the firmware actually says.
+// pair reports it; ask the other one and it says it has none. The picker lists
+// the two halves of a pair individually and marks neither as the master, so
+// asking the selected speaker meant the balance simply vanished for whoever
+// picked the other half, and the feature looked absent (reported 2026-08-06).
+// balanceSourceBox therefore routes the question to the pair's master whichever
+// half is selected. Range and centre come from the speaker (-7..+7, 0 centred
+// on a SoundTouch 10) rather than from a constant, because a widely-copied
+// community value of -50..+50 does not match what the firmware actually says.
 //
 // Shown, not settable. The firmware accepts no write we could get to work: every
 // attempt hung and left the speaker's balance endpoint unresponsive until it was
@@ -5757,8 +5815,10 @@ function renderNowPlayingBar() {
 async function refreshBalance() {
   const el = $('musicBalance');
   if (!el) return;
-  const box = state.currentBox;
-  if (!box || box.kind === 'stock') { el.classList.add('hidden'); return; }
+  const selected = state.currentBox;
+  if (!selected || selected.kind === 'stock') { el.classList.add('hidden'); return; }
+  const box = balanceSourceBox(selected, stereoPairOf(state.zoneLive || {}), state.boxes) || selected;
+  if (box.kind === 'stock') { el.classList.add('hidden'); return; }
   let b = null;
   try {
     const r = await boxFetch(box, '/api/box/balance');

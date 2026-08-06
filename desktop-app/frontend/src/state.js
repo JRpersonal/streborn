@@ -8,6 +8,9 @@ export const state = {
   view: 'box',
   boxes: [],
   currentBox: null,
+  // Identity of the stereo pair the balance display was last read for, so
+  // forming or dissolving a pair re-reads it while an unchanged pair does not.
+  lastBalancePair: null,
   // Recently-played view scope (#221): an explicit speaker pick instead of
   // implicitly following the Music-tab box. recentAllBoxes merges every STR
   // speaker; otherwise recentBoxKey (deviceID or host:port) selects one, falling

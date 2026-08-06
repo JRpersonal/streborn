@@ -2033,6 +2033,11 @@ html.a11y-contrast .app-update-banner .footer-link { color: #ffe066; }
   100% { left: 130%; }
 }
 .app-update-btn::before { content: "\2193"; margin-right: 7px; font-weight: 700; }
+/* The macOS hand-off button reopens an already-downloaded file: no download
+   arrow, and no sheen either, because nothing is urgent once the download is
+   done and the instruction beside it is what deserves the attention. */
+#appUpdateReveal::before { content: none; }
+#appUpdateReveal::after { animation: none; display: none; }
 
 .format-toggle {
   display: flex;
