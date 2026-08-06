@@ -193,12 +193,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	var playErr error
-	if mime != "" {
-		playErr = s.renderer.PlayURLMime(playCtx, playURL, req.Title, req.Icon, mime)
-	} else {
-		playErr = s.renderer.PlayURL(playCtx, playURL, req.Title, req.Icon)
-	}
+	playErr := s.playWithWrongStateRepair(playCtx, playURL, req.Title, req.Icon, mime)
 	if playErr != nil {
 		if isGroupedRejection(playErr) {
 			s.writeGroupedPlayError(w, playErr)
@@ -513,12 +508,7 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 	// fixed audio/mpeg label made those stations play silence (#252). A preset
 	// stored without a codec falls back to reading it off the station URL.
 	mime := upnp.MimeForCodecOrURL(p.Codec, p.StreamURL)
-	var playErr error
-	if mime != "" {
-		playErr = s.renderer.PlayURLMime(playCtx, playURL, p.Name, p.Art, mime)
-	} else {
-		playErr = s.renderer.PlayURL(playCtx, playURL, p.Name, p.Art)
-	}
+	playErr := s.playWithWrongStateRepair(playCtx, playURL, p.Name, p.Art, mime)
 	if playErr != nil {
 		// Log the failed radio recall: this 502 used to be returned with no
 		// agent-side trace at all, so a remote diagnostic bundle showed a recall
