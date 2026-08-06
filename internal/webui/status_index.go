@@ -3,6 +3,8 @@
 package webui
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -223,7 +225,7 @@ func (s *Server) remoteDisplayName() string {
 	return strings.TrimSpace(name)
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	page := indexHTML
 	// Stamp the speaker's name into the page identity so "Add to Home Screen"
@@ -239,7 +241,34 @@ func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 			`<meta name="apple-mobile-web-app-title" content="ST Reborn">`,
 			`<meta name="apple-mobile-web-app-title" content="`+esc+`">`, 1)
 	}
+	// The page carried NO caching instruction at all: no Cache-Control, no
+	// ETag, no Last-Modified. A browser then applies its own heuristic and may
+	// hold the page for a long time, so an agent update that changes the remote
+	// stays invisible until someone knows to force a reload. Caught live on
+	// 2026-08-06: the box was already serving a corrected page while the
+	// browser kept showing the old one. On a page saved to the home screen that
+	// is worse, because there is no reload button to reach for.
+	//
+	// no-cache, not no-store: the browser must revalidate every time, but a
+	// speaker that has not changed answers 304 with no body, so the common case
+	// stays as cheap as a cache hit. The tag covers the name substitution above,
+	// since two speakers serve different bytes from the same build.
+	etag := indexETag(page)
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	_, _ = fmt.Fprint(w, page)
+}
+
+// indexETag is a strong validator for the exact bytes served. Hashing a ~110 KB
+// string per request is cheap next to the transfer it can save, and it keeps
+// the tag honest when the page is rewritten per speaker.
+func indexETag(page string) string {
+	sum := sha256.Sum256([]byte(page))
+	return `"` + hex.EncodeToString(sum[:8]) + `"`
 }
 
 // handlePeers lists the other STR speakers on the LAN so the page can offer
