@@ -397,6 +397,9 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 	}
 	tick := time.NewTicker(cur)
 	defer tick.Stop()
+	// The pairing state the last heartbeat reported. Empty means "nothing said
+	// yet", so the first heartbeat always lands and a bundle has its baseline.
+	lastHeartbeatState := ""
 	for {
 		m.tickCount++
 		// The first cycle after start forces a re-assert even when the box
@@ -414,8 +417,23 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 					state = "not paired"
 				}
 			}
-			m.logger.Warn("autopair phase: heartbeat",
-				"tick", m.tickCount, "state", state, "interval", cur.String())
+			// A heartbeat that says the same thing as the last one is not worth
+			// a line, and certainly not a WARN. It fired every five minutes
+			// regardless: measured on a Portable 2026-08-06 these were part of
+			// the 29.6 % of the 32 KB NAND ring taken by pure routine, in the
+			// one log that survives a reboot on a box with no shell.
+			//
+			// A CHANGE is the notable event and keeps its WARN, so a box that
+			// silently loses its pairing still stands out in a bundle. Steady
+			// state goes to Debug, where it costs no NAND.
+			if state != lastHeartbeatState {
+				m.logger.Warn("autopair phase: heartbeat",
+					"tick", m.tickCount, "state", state, "was", lastHeartbeatState, "interval", cur.String())
+				lastHeartbeatState = state
+			} else {
+				m.logger.Debug("autopair phase: heartbeat",
+					"tick", m.tickCount, "state", state, "interval", cur.String())
+			}
 		}
 		// Settle to the steady interval once the fast post-boot window elapses;
 		// a box not yet observed paired holds the fast cadence longer (capped).
