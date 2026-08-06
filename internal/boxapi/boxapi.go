@@ -564,6 +564,23 @@ func (c *Client) LeaveSetup(ctx context.Context) error {
 	return c.postXML(ctx, "/setup", `<setupState state="SETUP_LEAVE" />`)
 }
 
+// Key sends one Bose remote key to the speaker: a press followed by a release,
+// which is what the firmware expects and what the physical remote does.
+//
+// This is the only way to control playback the speaker runs ITSELF. STR's
+// transport controls drive the UPnP renderer, which is correct while STR pushes
+// the audio and does nothing at all once the box plays a native radio station
+// on its own: that is the box's own player, not the UPnP one.
+func (c *Client) Key(ctx context.Context, key string) error {
+	for _, state := range []string{"press", "release"} {
+		body := fmt.Sprintf(`<key state="%s" sender="Gabbo">%s</key>`, state, xmlEscape(key))
+		if err := c.postXML(ctx, "/key", body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Standby puts the speaker into Bose standby, the real power-off rather than a
 // transport stop.
 //
