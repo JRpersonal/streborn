@@ -49,6 +49,81 @@ func isGroupedRejection(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "member of group")
 }
 
+// isWrongStateRejection reports whether a play failure is the box refusing
+// SetAVTransportURI because its OWN transport is in the wrong state: the
+// firmware answers UPnP 501 "Action request came in wrong state" (also seen as
+// UpnpRcvdContentItemInWrongState) while it still holds a ContentItem it cannot
+// activate - a dead-cloud item, or the teardown of a recall that has not
+// finished yet.
+//
+// Matched on the description, never on the code: this firmware answers 501 for
+// several unrelated conditions, and the group refusal above is the other one.
+//
+// Both spellings count. The SOAP fault says "Action request came in wrong
+// state" while the box's own gabbo frames call the same condition
+// UpnpRcvdContentItemInWrongState, and an error can reach here carrying either.
+func isWrongStateRejection(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "wrong state") || strings.Contains(s, "wrongstate")
+}
+
+// clearTransportForReplay forces the box's UPnP transport out of a stuck
+// wrong-state: a Stop followed by an empty SetAVTransportURI so the firmware
+// releases the ContentItem it keeps trying to self-activate. Best-effort, both
+// calls are advisory and a wedged renderer may ACK them without acting, so
+// neither error is fatal. Mirrors the hardware-recall repair in cmd/agent
+// (clearTransportForRePush).
+func (s *Server) clearTransportForReplay(ctx context.Context) {
+	if s.renderer == nil {
+		return
+	}
+	if err := s.renderer.Stop(ctx); err != nil {
+		s.logger.Debug("wrong-state repair: transport stop returned (expected when nothing is playing)", "err", err)
+	}
+	if err := s.renderer.ClearURI(ctx); err != nil {
+		s.logger.Debug("wrong-state repair: clear transport URI returned", "err", err)
+	}
+}
+
+// playWithWrongStateRepair pushes a stream to the box and, when the box refuses
+// it because its transport sits in the wrong state, empties that transport and
+// pushes once more.
+//
+// Why this exists: the identical repair already ran for HARDWARE key presses
+// (cmd/agent verifyPlayURL), but a play started from the app went straight out
+// as SetAVTransportURI + Play and the raw SOAP fault was handed to the user.
+// Field report 2026-08-05 (DLF Nova, v0.9.34): the first Play answered 501
+// "Action request came in wrong state" and the speaker stayed silent, the
+// second attempt played. That is exactly the state a Stop + ClearURI clears, so
+// the user should not have to be the retry loop.
+//
+// One retry, not a loop: if an emptied transport still refuses, the cause is
+// not the stuck ContentItem and hammering it would only delay the error the
+// caller needs to show.
+func (s *Server) playWithWrongStateRepair(ctx context.Context, url, title, art, mime string) error {
+	push := func() error {
+		if mime != "" {
+			return s.renderer.PlayURLMime(ctx, url, title, art, mime)
+		}
+		return s.renderer.PlayURL(ctx, url, title, art)
+	}
+	err := push()
+	if !isWrongStateRejection(err) {
+		return err
+	}
+	s.logger.Warn("play: the speaker refused the stream in a wrong transport state, clearing the transport and pushing again",
+		"title", title, "err", err)
+	s.clearTransportForReplay(ctx)
+	if err := push(); err != nil {
+		return err
+	}
+	s.logger.Info("play: the clean-slate retry started the stream the box had just refused", "title", title)
+	return nil
+}
+
 // writeGroupedPlayError answers a play request the box rejected as a group
 // follower (#70) with a structured 409 instead of the raw SOAP fault, so the
 // app can tell the user to drive the group's lead speaker (and offer to jump
