@@ -165,10 +165,68 @@ func OrionStationLocation(streamURL, name, art string) string {
 		// Through the art proxy: the speaker fetches this image itself and
 		// cannot do https, which is why the audio goes through a proxy too.
 		"streamUrl": streamURL, "name": name,
-		"imageUrl":   ArtProxyURL("http://"+boxurl.Authority, firstArtURL(art)),
+		"imageUrl":   stationImageURL(art),
 		"streamType": "liveRadio", "isRealtime": true,
 	})
 	return "/station?data=" + base64.RawURLEncoding.EncodeToString(payload)
+}
+
+// strLogoPath is the STR icon the agent already serves, 192x192 PNG over plain
+// http from the speaker itself: raster, right-sized, no external fetch and no
+// https the firmware cannot do.
+const strLogoPath = "/icon.png"
+
+// stationImageURL is what the speaker's display gets told to draw.
+//
+// Stations without a logo are common: a live payload from a Portable
+// (2026-08-06) carried imageUrl:"" for 1LIVE while WDR 5 on the next slot had
+// its own icon. An empty value leaves the display blank next to the station
+// name, which reads as something being broken rather than as the station simply
+// having no picture. So STR's own logo stands in.
+//
+// The substitution is deliberately narrow: it happens only when there is NO
+// image, or when every candidate carries an extension a display provably cannot
+// draw (.svg, .ico). A URL with no extension at all keeps its place, because
+// plenty of perfectly drawable logos are served without one and replacing those
+// would take a working picture away.
+func stationImageURL(art string) string {
+	if u := ArtProxyURL("http://"+boxurl.Authority, firstArtURL(art)); u != "" && !onlyUndrawableArt(art) {
+		return u
+	}
+	return "http://" + boxurl.Authority + strLogoPath
+}
+
+// onlyUndrawableArt reports whether every entry in the fallback chain is a
+// format a speaker display cannot render. Extension-based like
+// isRasterImageURL, and for the same reason: sniffing each candidate would turn
+// saving a preset into a series of network round trips.
+func onlyUndrawableArt(art string) bool {
+	seen := false
+	for _, p := range strings.Split(art, "|") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		seen = true
+		if isRasterImageURL(p) || !hasUndrawableExt(p) {
+			return false
+		}
+	}
+	return seen
+}
+
+func hasUndrawableExt(raw string) bool {
+	u := strings.TrimSpace(raw)
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	u = strings.ToLower(u)
+	for _, ext := range []string{".svg", ".svgz", ".ico"} {
+		if strings.HasSuffix(u, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // firstArtURL picks ONE logo out of STR's pipe-separated fallback chain, the
