@@ -99,8 +99,22 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 		}
 		logger.Info("leave-setup: cleared the box's stuck out-of-box SETUP source so it can play (no power-cycle needed)")
 	}
-	// Prompt initial sweep: a handful of tries over the first ~2 minutes.
-	for i := 0; i < 8; i++ {
+	// Prompt initial sweep. This used to be eight tries over two minutes, which
+	// is the wrong shape: a box does not only enter SETUP during boot. One seen
+	// on 2026-08-06 entered it forty seconds AFTER the fast window closed and
+	// then sat there unattended for two minutes and thirteen seconds, because
+	// the next check was five minutes out. It happened to leave on its own.
+	//
+	// Forty tries over ten minutes covers the whole settling period after a
+	// fresh install, which is when this actually happens. The check costs one
+	// local /now_playing read that returns immediately, and it is a READ: it
+	// cannot touch the deep-standby countdown the way a write would.
+	//
+	// The slow maintenance poll below is deliberately left at five minutes. It
+	// exists for the rare case of a box re-entering SETUP long after boot, and
+	// tightening it would multiply a background poll on a speaker with 120 MB
+	// of RAM for a case the wider window above already covers.
+	for i := 0; i < 40; i++ {
 		select {
 		case <-ctx.Done():
 			return
