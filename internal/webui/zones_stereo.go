@@ -1185,6 +1185,11 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("zone: dissolving (beta)", "master", master.DeviceID, "slaves", len(slaves))
+	// What the master is playing RIGHT NOW, before anything is torn down. It is
+	// the only way to tell, afterwards, whether a member that is still making
+	// noise is carrying the group's content or something of its own. See
+	// dissolvestragglers.go.
+	masterLocation := playingLocation(ctx, s.boxHost)
 	if master.DeviceID != "" && len(slaves) > 0 {
 		// Loop until the firmware reports an empty zone (or the ctx deadline): a
 		// single RemoveZoneSlave can leave a straggler, which forced a SECOND
@@ -1205,6 +1210,10 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 			s.logger.Info("zone: members still present after removeZoneSlave, retrying", "remaining", len(cur), "attempt", attempt)
 		}
 	}
+	// The teardown above only reaches members the MASTER registered. One it
+	// never registered still got audio and would play on in an empty room, so
+	// silence any that are demonstrably still on the group's stream.
+	s.stopStragglers(ctx, masterLocation, slaves)
 	if s.zones != nil {
 		if err := s.zones.Clear(); err != nil {
 			s.logger.Warn("zone: clear store failed", "err", err)
