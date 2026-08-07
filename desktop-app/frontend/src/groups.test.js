@@ -10,6 +10,7 @@ import {
   groupMembersOf,
   resolvePlayTarget,
   mergeZoneLive,
+  balanceSourceBox,
   applyOptimisticZone,
   sameBoxIdentity,
   parsePlayRejection,
@@ -395,5 +396,43 @@ describe('stereoPairOf', () => {
     expect(inStereoPair({ deviceID: 'AAA', host: '192.0.2.19' }, pair)).toBe(true);
     expect(inStereoPair({ deviceID: 'CCC', host: '192.0.2.55' }, pair)).toBe(false);
     expect(inStereoPair({ deviceID: 'CCC', host: '192.0.2.55' }, null)).toBe(false);
+  });
+});
+
+// Only the master of a stereo pair reports a balance. The picker offers both
+// halves separately, so selecting the other one must still answer for the pair
+// rather than showing nothing (reported 2026-08-06).
+describe('balanceSourceBox', () => {
+  const left = { deviceID: 'AAA', host: '192.0.2.10', kind: 'str' };
+  const right = { deviceID: 'BBB', host: '192.0.2.11', kind: 'str' };
+  const lone = { deviceID: 'CCC', host: '192.0.2.12', kind: 'str' };
+  const pair = {
+    id: 'pair-1',
+    master: 'AAA',
+    members: [
+      { deviceID: 'AAA', ip: '192.0.2.10', role: 'LEFT' },
+      { deviceID: 'BBB', ip: '192.0.2.11', role: 'RIGHT' },
+    ],
+  };
+  const boxes = [left, right, lone];
+
+  it('asks the master when the non-master half is selected', () => {
+    expect(balanceSourceBox(right, pair, boxes)).toBe(left);
+  });
+
+  it('asks the master when the master itself is selected', () => {
+    expect(balanceSourceBox(left, pair, boxes)).toBe(left);
+  });
+
+  it('leaves a speaker outside the pair answering for itself', () => {
+    expect(balanceSourceBox(lone, pair, boxes)).toBe(lone);
+  });
+
+  it('answers for the speaker itself when there is no pair', () => {
+    expect(balanceSourceBox(right, null, boxes)).toBe(right);
+  });
+
+  it('falls back to the selected speaker when the master is not discovered', () => {
+    expect(balanceSourceBox(right, pair, [right])).toBe(right);
   });
 });

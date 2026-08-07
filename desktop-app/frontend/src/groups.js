@@ -316,3 +316,25 @@ export function inStereoPair(box, pair) {
     (idUp && String((m && m.deviceID) || '').toUpperCase() === idUp) ||
     (box.host && (m && m.ip) === box.host));
 }
+
+// balanceSourceBox picks which speaker to ask for a stereo pair's balance.
+//
+// Only the MASTER of a pair reports a balance; ask the other half and it says
+// it has none. The picker offers the two speakers of a pair individually, with
+// nothing marking which one is the master, so a user who selects the other half
+// sees no balance at all and concludes the feature is missing. Reported
+// 2026-08-06: "There are two speakers in a stereo pair, but there is no way to
+// select a stereo pair entity. I am selecting one of the speakers within the
+// stereo pair."
+//
+// So the question "what is this pair's balance" is answered from the master
+// whichever half is selected. A speaker that is not in a pair answers for
+// itself, which is also the only way an unpaired speaker can report "none".
+export function balanceSourceBox(selected, pair, boxes) {
+  if (!selected) return null;
+  if (!pair || !inStereoPair(selected, pair)) return selected;
+  const master = pairMemberBoxes(pair, boxes)
+    .map(x => x.box)
+    .find(b => b && String(b.deviceID || '').toUpperCase() === String(pair.master || '').toUpperCase());
+  return master || selected;
+}
