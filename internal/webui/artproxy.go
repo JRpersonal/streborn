@@ -115,11 +115,95 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 			"url", target, "contentType", ct, "status", resp.StatusCode)
 	}
 
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Cache-Control", "public, max-age=86400")
 	// Bounded: a station logo is small, and an unbounded copy onto a speaker
 	// with little memory is not worth the risk.
-	_, _ = io.Copy(w, io.LimitReader(resp.Body, 2<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil || len(body) == 0 {
+		s.logger.Info("art proxy: image body could not be read", "url", target, "err", err)
+		http.Error(w, "image unreadable", http.StatusBadGateway)
+		return
+	}
+
+	out, outCT, note := drawableImage(body)
+	if note != "" && first {
+		s.logger.Info("art proxy: substituted the station logo", "url", target, "reason", note)
+	}
+	w.Header().Set("Content-Type", outCT)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(out)
+}
+
+// drawableImage returns the bytes to serve for a fetched logo, their content
+// type, and a non-empty note when the original had to be replaced.
+//
+// The speaker's display draws ordinary raster formats and nothing else, so
+// something has to decide whether a logo is usable. That decision used to be
+// made from the URL's file extension, at preset-save time, because sniffing
+// each candidate would have meant a network round trip per station. It was
+// wrong often enough to matter: the icon service STR falls back to serves
+// PNG bytes under a .ico URL, so stations whose only logo came from it
+// (Sunshine Live among them) had a perfectly drawable picture thrown away and
+// replaced with STR's own logo. Reported 2026-08-07 by an owner who could
+// compare a not-yet-updated speaker side by side.
+//
+// The proxy already fetches the image, so the evidence is right here and costs
+// nothing extra. Deciding it from the bytes also holds the other way round: a
+// .png URL that actually serves an SVG no longer reaches the display as
+// something it cannot draw.
+func drawableImage(body []byte) (out []byte, contentType, note string) {
+	switch {
+	case len(body) >= 8 && string(body[:8]) == "\x89PNG\r\n\x1a\n":
+		return body, "image/png", ""
+	case len(body) >= 3 && body[0] == 0xFF && body[1] == 0xD8 && body[2] == 0xFF:
+		return body, "image/jpeg", ""
+	case len(body) >= 6 && (string(body[:6]) == "GIF87a" || string(body[:6]) == "GIF89a"):
+		return body, "image/gif", ""
+	case len(body) >= 2 && body[0] == 'B' && body[1] == 'M':
+		return body, "image/bmp", ""
+	case len(body) >= 12 && string(body[:4]) == "RIFF" && string(body[8:12]) == "WEBP":
+		return body, "image/webp", ""
+	}
+	// An .ico is a container, and since Vista its entries are very often whole
+	// PNGs. Handing the container to the display shows nothing; the PNG inside
+	// it draws fine, so unwrap it rather than give up on the station's own logo.
+	if png := pngInsideICO(body); png != nil {
+		return png, "image/png", ""
+	}
+	// SVG, an .ico holding only old-style bitmaps, or something unrecognised.
+	// STR's logo stands in, because an empty tile next to a station name reads
+	// as a fault rather than as a station having no picture.
+	return iconPNG, "image/png", "not a format the display can draw"
+}
+
+// pngInsideICO returns the largest PNG embedded in an ICO container, or nil.
+//
+// Layout: a 6-byte header (reserved, type=1, image count) followed by one
+// 16-byte directory entry per image, each ending in the entry's byte length
+// and offset. Entries are either a PNG or an old-style bitmap; only the former
+// is useful here, and there is no need to decode it, just to find it.
+func pngInsideICO(b []byte) []byte {
+	const hdr, entry = 6, 16
+	if len(b) < hdr || b[0] != 0 || b[1] != 0 || b[2] != 1 || b[3] != 0 {
+		return nil // not an ICO
+	}
+	count := int(b[4]) | int(b[5])<<8
+	if count <= 0 || len(b) < hdr+count*entry {
+		return nil
+	}
+	var best []byte
+	for i := 0; i < count; i++ {
+		e := b[hdr+i*entry:]
+		size := int(e[8]) | int(e[9])<<8 | int(e[10])<<16 | int(e[11])<<24
+		off := int(e[12]) | int(e[13])<<8 | int(e[14])<<16 | int(e[15])<<24
+		if size <= 0 || off < 0 || off > len(b) || off+size > len(b) {
+			continue
+		}
+		img := b[off : off+size]
+		if len(img) >= 8 && string(img[:8]) == "\x89PNG\r\n\x1a\n" && len(img) > len(best) {
+			best = img
+		}
+	}
+	return best
 }
 
 // The address check, and why this endpoint needs one.
