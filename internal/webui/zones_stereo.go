@@ -158,7 +158,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("zone: forming (beta)", "mode", mode, "master", master.DeviceID, "masterIP", master.IP,
 		"slaves", len(slaves), "stereo", req.Stereo, "name", req.Name)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), zoneFormBudget(len(slaves)))
 	defer cancel()
 	c := boxapi.New(s.boxHost)
 
@@ -1295,4 +1295,43 @@ func (s *Server) handleMargeGroupDoc(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, POST, DELETE")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// zoneFormBudget is how long the whole form is allowed to take, as a function
+// of how many speakers are joining.
+//
+// It used to be a flat ten seconds, and that one budget covers everything the
+// form does: waking the master, reading the live zone, removing members the
+// user dropped, the /setZone drive itself, and the read that confirms it. The
+// firmware gets slower as the group grows, so the fixed budget turned into a
+// ceiling on group size rather than a safety net.
+//
+// A twelve-speaker household measured it exactly on 2026-08-08, adding one
+// speaker at a time and waiting between each:
+//
+//	1 to 5 slaves   formed in 4 to 8 seconds
+//	6 slaves        formed, but took 22 seconds
+//	7 slaves        failed every time, always "setZone: context deadline
+//	                exceeded", five attempts in a row
+//
+// Nothing was wrong with the eighth speaker: the same fleet had formed a group
+// of twelve earlier that afternoon, when the box happened to answer quickly.
+// The owner's conclusion was that STR cannot do more than six, which is exactly
+// what a fixed budget looks like from outside.
+//
+// So the budget grows with the group. The ceiling stays below the desktop
+// app's own 45 s call timeout, because an agent that answers after the app has
+// given up is worse than one that fails: the app would report failure for a
+// group the firmware went on to build.
+func zoneFormBudget(slaves int) time.Duration {
+	const (
+		base    = 10 * time.Second
+		perSlve = 4 * time.Second
+		ceiling = 38 * time.Second // the app gives up at 45 s
+	)
+	d := base + time.Duration(slaves)*perSlve
+	if d > ceiling {
+		return ceiling
+	}
+	return d
 }
