@@ -4751,7 +4751,40 @@ async function loadGroupMemberVolumes(members) {
 // the master's own member list — so a follower whose single zone poll failed
 // or that briefly dropped out of discovery is preserved instead of being
 // silently kicked by an unrelated add/remove.
-async function toggleGroupMember(host, port) {
+// Group edits run strictly one at a time.
+//
+// Forming a zone drives the master's firmware and takes a few seconds: eleven
+// speakers took eighteen. Nothing stopped a second click starting a second
+// drive on top of the first, and an owner who taps again because nothing has
+// visibly happened is the normal case, not an unusual one. A field log from a
+// twelve-speaker household (2026-08-08) shows the shape exactly: the group of
+// twelve formed perfectly, then ten overlapping requests for a smaller group
+// inside nineteen seconds, after which the master's /setZone stopped answering
+// at all and every attempt after that timed out.
+//
+// Serialising is most of the fix: each edit still happens, it just waits its
+// turn, and the queued one recomputes the membership when it actually runs, so
+// it sees the result of the edit before it.
+//
+// The rest is refusing a repeat for a speaker whose edit has not finished. That
+// is a toggle, so without it a second impatient tap on the same speaker would
+// faithfully undo the first, and the owner who tapped twice because it felt
+// slow would end up with the speaker they wanted OUT of the group. A later tap,
+// once the first has completed, is a real change of mind and still works.
+const groupOpPending = new Set();
+let groupOpChain = Promise.resolve();
+
+function toggleGroupMember(host, port) {
+  if (groupOpPending.has(host)) return groupOpChain;
+  groupOpPending.add(host);
+  groupOpChain = groupOpChain
+    .then(() => runGroupMemberToggle(host, port))
+    .catch(() => {})
+    .finally(() => groupOpPending.delete(host));
+  return groupOpChain;
+}
+
+async function runGroupMemberToggle(host, port) {
   // Edit the group the selection belongs to: when a follower is selected, its
   // master is the box that must receive the FormZone/DissolveZone (a follower
   // rejects zone control), so resolve to it first.
