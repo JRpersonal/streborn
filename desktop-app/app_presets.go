@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Preset Format passt zu internal/presets.Preset JSON.
@@ -121,6 +122,22 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 	if err != nil {
 		return 0, fmt.Errorf("read source presets: %w", err)
 	}
+	// Wait for the target before writing anything to it. The natural order of
+	// work is "update this speaker, then put my stations on it", and an update
+	// ends in a reboot: the speaker answers pings while its agent is not
+	// listening yet. Every slot then failed in turn, each one logged and
+	// skipped so the transfer could continue, and the user was left with a
+	// speaker whose store was simply empty. Seen whole in a 2026-08-08 bundle
+	// from a twelve-speaker household: a copy started 72 seconds after the
+	// target booted lost all six slots, and a second one six minutes after
+	// another box booted lost two of six.
+	//
+	// Waiting is the entire fix. Nothing here is expensive or invasive, and a
+	// speaker that never comes back is worth one clear refusal rather than six
+	// separate failures and an empty result.
+	if err := a.waitCopyTargetReady(dstHost, dstPort); err != nil {
+		return 0, err
+	}
 	copied := 0
 	var slotErrs []string
 	for _, p := range presets {
@@ -132,7 +149,17 @@ func (a *App) CopyPresetsAcrossBoxes(srcHost string, srcPort int, dstHost string
 		// their fields (type, uri, account, art, bitrate, shuffle, items)
 		// with no field mapping. A rejected slot is reported but must not
 		// abort the transfer: the remaining slots still copy.
-		if err := a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p); err != nil {
+		err := a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p)
+		// A speaker can also go away DURING the copy: the same bundle shows a
+		// target that took six slots and dropped two of them mid-run. One
+		// re-wait and one retry costs nothing on the happy path and turns that
+		// into a complete transfer.
+		if err != nil && isTransportNotReady(err) {
+			if werr := a.waitCopyTargetReady(dstHost, dstPort); werr == nil {
+				err = a.boxPut(dstHost, dstPort, fmt.Sprintf("%s/%d", presetAPIPath, p.Slot), p)
+			}
+		}
+		if err != nil {
 			a.logger.Warn("copy presets: slot rejected by the target",
 				"src", srcHost, "dst", dstHost, "slot", p.Slot, "type", p.Type, "err", err)
 			slotErrs = append(slotErrs, fmt.Sprintf("preset %d (%s): %v", p.Slot, p.Name, err))
@@ -232,4 +259,54 @@ func (a *App) DeletePreset(host string, port int, slot int) error {
 		return readHTTPError(resp)
 	}
 	return nil
+}
+
+// copyTargetSettleWindow / copyTargetSettleStep bound the wait for a copy
+// target's agent. Matched to the OTA preflight's window, and for the same
+// reason: a speaker that has just rebooted has its agent answering well inside
+// two minutes, and the copy is normally started right after an update.
+const (
+	copyTargetSettleWindow = 2 * time.Minute
+	copyTargetSettleStep   = 3 * time.Second
+)
+
+// copyTargetProbe is a seam. The readiness check reaches the agent on its two
+// fixed firmware ports, which httptest cannot hand out, so a test that did not
+// replace this would silently take the "never ready" path and prove nothing.
+var copyTargetProbe func(a *App, host string, port int) bool
+
+// waitCopyTargetReady blocks until the target speaker's agent answers, or the
+// settle window runs out. Returns nil as soon as it is ready.
+//
+// The error deliberately does not mention firewalls. The app has just been
+// talking to this speaker (that is how the user picked it as a copy target),
+// so the one explanation the old message pushed is the one explanation that
+// cannot be true.
+func (a *App) waitCopyTargetReady(host string, port int) error {
+	ready := func() bool {
+		if copyTargetProbe != nil {
+			return copyTargetProbe(a, host, port)
+		}
+		return a.waitAgentReady(host, port)
+	}
+	if ready() {
+		return nil
+	}
+	a.logger.Info("copy presets: target is not answering yet, waiting for it to finish starting up",
+		"dst", host, "window", copyTargetSettleWindow)
+	deadline := time.Now().Add(copyTargetSettleWindow)
+	for time.Now().Before(deadline) {
+		select {
+		case <-a.appCtx().Done():
+			return fmt.Errorf("copy cancelled while waiting for %s", host)
+		case <-time.After(copyTargetSettleStep):
+		}
+		if ready() {
+			a.logger.Info("copy presets: target settled, starting the transfer", "dst", host)
+			return nil
+		}
+	}
+	a.logger.Warn("copy presets: target never answered within the settle window; nothing was written",
+		"dst", host, "window", copyTargetSettleWindow)
+	return fmt.Errorf("the target speaker is not answering yet. It is probably still starting up after an update: wait until it plays again, then copy the presets once more")
 }
