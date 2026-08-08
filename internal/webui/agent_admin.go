@@ -3,6 +3,7 @@
 package webui
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -668,11 +669,38 @@ var engineStopHook func() bool
 // filesystem's own verdict on the actual write (a real ENOSPC / short write)
 // maps to errInsufficientNAND now.
 func writeBinaryAtomic(dst string, body []byte) error {
-	dir := filepath.Dir(dst)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir parent: %w", err)
+	tmp, dir, st, err := prepareBinaryWrite(dst, int64(len(body)))
+	if err != nil {
+		return err
 	}
-	tmp := dst + ".new"
+	if err := writeFileSynced(tmp, body, 0o755); err != nil {
+		// A mid-stream ENOSPC leaves a truncated tmp; remove it so no partial
+		// .new survives for the next attempt.
+		_ = os.Remove(tmp)
+		return classifyNANDWriteErr("write tmp", err, dir, int64(len(body)), st.engineStopped, st.engineReclaim, st.predictedFull)
+	}
+	return finishBinaryWrite(tmp, dst, dir, int64(len(body)), st)
+}
+
+// nandWriteState carries what the reclaim preamble learned into the error
+// classification, so a failure can still say whether the engine was dropped
+// and whether statfs had predicted the shortage.
+type nandWriteState struct {
+	engineStopped bool
+	engineReclaim string
+	predictedFull bool
+}
+
+// prepareBinaryWrite is everything writeBinaryAtomic does BEFORE the bytes
+// move: the parent directory, the stale temp, and the reclaim cascade that
+// makes room. Shared with the streaming variant so the two cannot drift on the
+// space handling, which is the part that took the longest to get right.
+func prepareBinaryWrite(dst string, need int64) (tmp, dir string, st nandWriteState, err error) {
+	dir = filepath.Dir(dst)
+	if err = os.MkdirAll(dir, 0o755); err != nil {
+		return "", "", st, fmt.Errorf("mkdir parent: %w", err)
+	}
+	tmp = dst + ".new"
 	// Drop this target's stale temp, then proactively reclaim regenerable junk on
 	// EVERY OTA write (not only when already tight), so a previous failed
 	// attempt's leftovers, a stale OTHER-binary .new, or oversized logs never eat
@@ -680,7 +708,6 @@ func writeBinaryAtomic(dst string, body []byte) error {
 	// files or the live binaries.
 	_ = os.Remove(tmp)
 	reclaimNAND()
-	need := int64(len(body))
 	engineStopped := false
 	engineReclaim := ""
 	predictedFull := false
@@ -729,15 +756,14 @@ func writeBinaryAtomic(dst string, body []byte) error {
 				"needKB", need/1024, "availKB", avail/1024)
 		}
 	}
-	if err := writeFileSynced(tmp, body, 0o755); err != nil {
-		// A mid-stream ENOSPC leaves a truncated tmp; remove it so no partial
-		// .new survives for the next attempt.
-		_ = os.Remove(tmp)
-		return classifyNANDWriteErr("write tmp", err, dir, need, engineStopped, engineReclaim, predictedFull)
-	}
+	return tmp, dir, nandWriteState{engineStopped, engineReclaim, predictedFull}, nil
+}
+
+// finishBinaryWrite renames the completed temp into place and journals it.
+func finishBinaryWrite(tmp, dst, dir string, need int64, st nandWriteState) error {
 	if err := os.Rename(tmp, dst); err != nil {
 		_ = os.Remove(tmp)
-		return classifyNANDWriteErr("rename", err, dir, need, engineStopped, engineReclaim, predictedFull)
+		return classifyNANDWriteErr("rename", err, dir, need, st.engineStopped, st.engineReclaim, st.predictedFull)
 	}
 	// fsync the parent directory so the rename itself reaches the UBIFS
 	// journal. Without this the whole write + rename can sit in the page
@@ -1318,19 +1344,19 @@ var nandHasRoom = func(dir string, need int64) bool {
 // running process until it exits, so killing+relaunching it on the write releases
 // that ~10 MB immediately instead of holding it until the next reboot.
 func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
-	body, ok := s.readUploadedELF(w, r, s.logger, "sidecar")
+	// Streamed, not buffered. This is the ~16 MB engine and the box has ~120 MB
+	// of RAM: holding it in memory first was enough to reboot a speaker that
+	// happened to be busy (see streamBinaryAtomic). The agent-update endpoint
+	// deliberately still buffers, because its fallback tiers need the bytes
+	// again after the write.
+	sum, size, ok := s.streamUploadedELF(w, r, s.logger, "sidecar", goLibrespotBinPath)
 	if !ok {
-		return
-	}
-	if err := writeBinaryAtomic(goLibrespotBinPath, body); err != nil {
-		http.Error(w, err.Error(), nandWriteHTTPStatus(err))
 		return
 	}
 	// Stamp the content hash next to the binary so the next /api/agent/version
 	// reports it and the desktop app skips re-pushing this ~10 MB binary when the
 	// box already has the embedded build.
-	sum := sha256.Sum256(body)
-	if err := os.WriteFile(goLibrespotBinPath+".sha256", []byte(hex.EncodeToString(sum[:])), 0o644); err != nil {
+	if err := os.WriteFile(goLibrespotBinPath+".sha256", []byte(sum), 0o644); err != nil {
 		s.logger.Warn("go-librespot sidecar: hash marker write failed (non-fatal)", "err", err)
 	}
 	// Flush now: an agent OTA often reboots the box right after this delivery,
@@ -1341,7 +1367,7 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 	// The engine is back, so the "it was taken away for an update" marker has
 	// served its purpose. Clearing it stops the app from re-delivering forever.
 	clearEngineDroppedMarker()
-	s.logger.Info("go-librespot sidecar written via OTA", "size", len(body))
+	s.logger.Info("go-librespot sidecar written via OTA", "size", size)
 	// Activate the freshly delivered engine live: restart the supervised
 	// go-librespot so it re-execs the new binary, with no box reboot. A first-time
 	// delivery to a box that had no engine is already picked up by the manager's
@@ -1375,4 +1401,107 @@ func isLocalLAN(remoteAddr string) bool {
 		return false
 	}
 	return ip.IsPrivate() || ip.IsLoopback()
+}
+
+// streamBinaryAtomic writes dst from a reader instead of from a buffer, and
+// returns the SHA256 of what it wrote.
+//
+// It exists because the sidecar engine is ~16 MB and the box has ~120 MB of
+// RAM in total. Holding the whole upload in memory before writing it was
+// enough to kill the agent on a speaker that happened to be busy: a 2026-08-08
+// bundle from a Lifestyle 535 adapter caught it exactly, with the box's own log
+// showing MemAvailable falling from 27 MB to 11 MB as the body arrived, and the
+// speaker rebooting about eighty seconds later. Four pushes in a row died that
+// way and the owner saw his speaker restart each time. An earlier fix
+// (2026-07-30) removed io.ReadAll's doubling peak, which halved the cost but
+// left the 16 MB itself in memory.
+//
+// The bytes now go straight to the temp file the atomic write was going to use
+// anyway, so peak memory is a 32 KB copy buffer. The reclaim cascade in front
+// of it is shared verbatim with writeBinaryAtomic, because the space handling
+// is the part of this path that was hardest to get right and must not fork.
+//
+// need is the expected size (Content-Length) and is used only to make room; the
+// actual size written is returned.
+func streamBinaryAtomic(dst string, src io.Reader, need int64) (sum string, n int64, err error) {
+	tmp, dir, st, err := prepareBinaryWrite(dst, need)
+	if err != nil {
+		return "", 0, err
+	}
+	h := sha256.New()
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil {
+		return "", 0, classifyNANDWriteErr("open tmp", err, dir, need, st.engineStopped, st.engineReclaim, st.predictedFull)
+	}
+	n, err = io.Copy(f, io.TeeReader(src, h))
+	if err == nil {
+		// fsync before close, for the same reason writeFileSynced does it: an
+		// unsynced write does not survive the reboot that follows an OTA.
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		// A mid-stream ENOSPC leaves a truncated tmp; remove it so no partial
+		// .new survives for the next attempt.
+		_ = os.Remove(tmp)
+		return "", n, classifyNANDWriteErr("write tmp", err, dir, need, st.engineStopped, st.engineReclaim, st.predictedFull)
+	}
+	if err := finishBinaryWrite(tmp, dst, dir, need, st); err != nil {
+		return "", n, err
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
+}
+
+// streamUploadedELF is readUploadedELF for a caller that does not need the
+// bytes afterwards: same guards, same logging, but the body goes to dst as it
+// arrives rather than into memory first.
+//
+// The ELF check still happens before anything is written, by peeking the first
+// four bytes; a body that is not a binary never reaches the flash.
+func (s *Server) streamUploadedELF(w http.ResponseWriter, r *http.Request, logger *slog.Logger, what, dst string) (sum string, size int64, ok bool) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return "", 0, false
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "update only allowed from LAN", http.StatusForbidden)
+		return "", 0, false
+	}
+	s.hushForUpload(what)
+	const maxSize = 30 * 1024 * 1024
+	memAtStart, memTotal := uploadMemKB()
+	logger.Info("upload started", "endpoint", what,
+		"contentLength", r.ContentLength, "remote", r.RemoteAddr,
+		"memAvailableKB", memAtStart, "memTotalKB", memTotal, "streamed", true)
+	upr := &uploadProgressReader{
+		r: io.LimitReader(r.Body, maxSize+1), start: time.Now(), logger: logger, what: what,
+	}
+	br := bufio.NewReaderSize(upr, 4096)
+	magic, err := br.Peek(4)
+	if err != nil || magic[0] != 0x7f || magic[1] != 'E' || magic[2] != 'L' || magic[3] != 'F' {
+		http.Error(w, "not an ELF binary", http.StatusBadRequest)
+		return "", 0, false
+	}
+	sum, size, werr := streamBinaryAtomic(dst, br, r.ContentLength)
+	memAfter, _ := uploadMemKB()
+	if werr != nil {
+		logger.Warn("upload write failed", "endpoint", what, "bytes", size,
+			"elapsedMs", time.Since(upr.start).Milliseconds(),
+			"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart, "err", werr)
+		http.Error(w, werr.Error(), nandWriteHTTPStatus(werr))
+		return "", size, false
+	}
+	logger.Info("upload body received", "endpoint", what,
+		"bytes", size, "elapsedMs", time.Since(upr.start).Milliseconds(),
+		"memAvailableKB", memAfter, "memAvailableAtStartKB", memAtStart)
+	if size > maxSize {
+		http.Error(w, "binary too big", http.StatusRequestEntityTooLarge)
+		return "", size, false
+	}
+	if size < 1024 {
+		http.Error(w, "binary too small", http.StatusBadRequest)
+		return "", size, false
+	}
+	return sum, size, true
 }
