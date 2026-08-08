@@ -171,6 +171,43 @@ func OrionStationLocation(streamURL, name, art string) string {
 	return "/station?data=" + base64.RawURLEncoding.EncodeToString(payload)
 }
 
+// StationLocationCarriesStandInLogo reports whether an already-stored station
+// location tells the display to draw STR's own logo rather than the station's.
+//
+// It exists so a slot written by an older agent can be recognised and put
+// right. A preset the box already holds in native form is never rewritten,
+// which is correct (a write wakes the speaker and resets its standby
+// countdown, and rewriting on every boot for nothing would be a bug of its
+// own). But it means a slot that lost its logo to the old extension check
+// keeps STR's stand-in for good, and the owner has no way to tell why one
+// station has a picture and the next one does not.
+//
+// Deliberately answers only this one question. Comparing whole locations would
+// rewrite slots for any harmless difference and could ping-pong; "the stored
+// one is our stand-in" is a condition that stops being true the moment the
+// rewrite lands, so the repair happens once per slot and then never again.
+func StationLocationCarriesStandInLogo(loc string) bool {
+	const p = "/station?data="
+	i := strings.Index(loc, p)
+	if i < 0 {
+		return false
+	}
+	raw := loc[i+len(p):]
+	dec, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		if dec, err = base64.URLEncoding.DecodeString(raw); err != nil {
+			return false // unreadable: leave it alone rather than guess
+		}
+	}
+	var st struct {
+		ImageURL string `json:"imageUrl"`
+	}
+	if err := json.Unmarshal(dec, &st); err != nil {
+		return false
+	}
+	return strings.HasSuffix(st.ImageURL, strLogoPath)
+}
+
 // strLogoPath is the STR icon the agent already serves, 192x192 PNG over plain
 // http from the speaker itself: raster, right-sized, no external fetch and no
 // https the firmware cannot do.
