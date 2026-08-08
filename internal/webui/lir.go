@@ -189,44 +189,17 @@ const strLogoPath = "/icon.png"
 // draw (.svg, .ico). A URL with no extension at all keeps its place, because
 // plenty of perfectly drawable logos are served without one and replacing those
 // would take a working picture away.
+// Which candidate to point at is still an extension question, because choosing
+// among URLs without fetching them is all that can be done cheaply. Whether the
+// chosen one is actually drawable is NOT: that is settled from the bytes, in
+// the art proxy, which is fetching the image anyway (see drawableImage). The
+// veto that used to sit here judged by extension and threw away real pictures,
+// most visibly the PNGs the fallback icon service serves under a .ico URL.
 func stationImageURL(art string) string {
-	if u := ArtProxyURL("http://"+boxurl.Authority, firstArtURL(art)); u != "" && !onlyUndrawableArt(art) {
+	if u := ArtProxyURL("http://"+boxurl.Authority, firstArtURL(art)); u != "" {
 		return u
 	}
 	return "http://" + boxurl.Authority + strLogoPath
-}
-
-// onlyUndrawableArt reports whether every entry in the fallback chain is a
-// format a speaker display cannot render. Extension-based like
-// isRasterImageURL, and for the same reason: sniffing each candidate would turn
-// saving a preset into a series of network round trips.
-func onlyUndrawableArt(art string) bool {
-	seen := false
-	for _, p := range strings.Split(art, "|") {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		seen = true
-		if isRasterImageURL(p) || !hasUndrawableExt(p) {
-			return false
-		}
-	}
-	return seen
-}
-
-func hasUndrawableExt(raw string) bool {
-	u := strings.TrimSpace(raw)
-	if i := strings.IndexAny(u, "?#"); i >= 0 {
-		u = u[:i]
-	}
-	u = strings.ToLower(u)
-	for _, ext := range []string{".svg", ".svgz", ".ico"} {
-		if strings.HasSuffix(u, ext) {
-			return true
-		}
-	}
-	return false
 }
 
 // firstArtURL picks ONE logo out of STR's pipe-separated fallback chain, the

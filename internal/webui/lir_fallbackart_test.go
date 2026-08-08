@@ -67,39 +67,26 @@ func TestStationWithARealLogoKeepsIt(t *testing.T) {
 	}
 }
 
-// A chain made only of formats a display cannot draw is the same blank screen
-// as no logo at all, so it gets the same treatment.
-func TestStationWithOnlyUndrawableLogosFallsBack(t *testing.T) {
+// A logo whose URL merely LOOKS undrawable is still handed to the proxy, which
+// is fetching it anyway and can see what it really is. Judging this by
+// extension here threw away real pictures: the icon service STR falls back to
+// answers .ico URLs with PNG bytes, so Sunshine Live lost its logo while
+// MANGORADIO, whose logo happens to end in .webp, kept one (reported
+// 2026-08-07). What a display cannot draw is now decided in drawableImage.
+func TestUndrawableLookingURLsStillReachTheProxy(t *testing.T) {
 	for _, art := range []string{
-		"https://cdn.example/logo.svg",
+		"https://icons.duckduckgo.com/ip3/www.sunshine-live.de.ico",
 		"https://cdn.example/favicon.ico",
 		"https://cdn.example/logo.svg|https://cdn.example/favicon.ico",
 		"https://cdn.example/logo.SVG?v=2",
 	} {
 		loc := OrionStationLocation("http://box/stream/1", "Test", art)
 		got, _ := decodeStation(t, loc)["imageUrl"].(string)
-		if !strings.HasSuffix(got, strLogoPath) {
-			t.Errorf("art %q gave imageUrl %q, want the STR logo", art, got)
+		if strings.HasSuffix(got, strLogoPath) {
+			t.Errorf("art %q was replaced by the STR logo before anything looked at the image", art)
 		}
-	}
-}
-
-func TestOnlyUndrawableArt(t *testing.T) {
-	cases := []struct {
-		art  string
-		want bool
-	}{
-		{"", false}, // nothing at all is handled by the empty path, not here
-		{"https://x/logo.svg", true},
-		{"https://x/logo.ico", true},
-		{"https://x/logo.png", false},
-		{"https://x/logo", false},
-		{"https://x/a.svg|https://x/b.png", false},
-		{"https://x/a.svg|https://x/b.ico", true},
-	}
-	for _, tc := range cases {
-		if got := onlyUndrawableArt(tc.art); got != tc.want {
-			t.Errorf("onlyUndrawableArt(%q) = %v, want %v", tc.art, got, tc.want)
+		if !strings.Contains(got, artProxyPath+"?u=") {
+			t.Errorf("art %q gave imageUrl %q, want it routed through the art proxy", art, got)
 		}
 	}
 }
