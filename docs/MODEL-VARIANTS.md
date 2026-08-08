@@ -174,6 +174,28 @@ Two variants observed. STR is confirmed RUNNING on both (2026-08-03):
   answer that Lifestyle consoles and adapters were unsupported was wrong and
   has been corrected in `docs/MODELS.md`.
 
+## SoundTouch Wireless Link Adapter
+
+One variant observed, both units in the same fleet. STR is confirmed RUNNING
+(2026-08-08):
+
+| `type` | `moduleType` | SCM `softwareVersion` | `variant` | `variantMode` | Components present | `networkInfo` entries | `countryCode` / `regionCode` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `SoundTouch Wireless Link Adapter` | `sm2` | `27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29` | `binky` | `normal` | SCM, PackagedProduct | 2 (SCM + SMSC) | `GB` / `GB` |
+
+- `binky` is a variant codename this project had not seen before 2026-08-08.
+  It is on the LATEST official firmware, so nothing here needs the outdated
+  path.
+- Two `networkInfo` entries (SCM + SMSC) while `moduleType` is `sm2`: the same
+  shape as the `bardeen` Lifestyle console, NOT the `scm` chassis. Both units
+  answered on `:8888` directly, with `:17008` never needed, so it takes the
+  sm2 code path despite carrying an SMSC interface. Do not assume the SMSC
+  entry alone implies the `:17008` REDIRECT.
+- The adapter has no speaker of its own. From STR it is an ordinary SoundTouch
+  speaker: agent up, `boxHealth: ok`, Spotify engine present, and both units
+  joined a native multiroom group as followers under a SoundTouch Portable
+  master, each verified individually.
+
 ## How to read a new bundle
 
 The relevant fields are inside each `box-N.json` under `boseInfoXml`. Decode the XML and extract:
