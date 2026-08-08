@@ -109,3 +109,54 @@ func TestPhoneRemoteHidesUnavailableSources(t *testing.T) {
 		}
 	}
 }
+
+// TestPhoneRemoteNamesAStereoPairAsAPair guards the 2026-08-07 report: a stereo
+// pair IS a firmware group internally, and the Speakers card said so out loud,
+// heading a working pair with "Group / 2 speakers playing together / Dissolve
+// group". The owner read that as STR having misunderstood their setup. The
+// volume scope row already distinguished the two, so only the card was wrong.
+func TestPhoneRemoteNamesAStereoPairAsAPair(t *testing.T) {
+	for _, want := range []string{
+		"lbl.textContent = zone.stereo ? T.scPair : T.grp",
+		"lblUn.textContent = zone.stereo ? T.unpair : T.ungroup",
+		"sum.textContent = zone.stereo ? T.pairSum : fmt(T.grpSum",
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("the Speakers card does not switch to pair wording: missing %q", want)
+		}
+	}
+	// The scope hint sits above the slider and described a pair as a group too.
+	if !strings.Contains(indexHTML, "hint.textContent = zone.stereo ? T.pairSum : fmt(T.grpSum") {
+		t.Error("the volume scope hint still calls a stereo pair a group")
+	}
+}
+
+// TestPhoneRemoteSleepFailureIsVisible guards the other half of the same sweep:
+// api() answers null on an error status, and a path an older agent does not know
+// falls through to the index handler and answers 200 with the page itself as a
+// string. Both used to leave sleepEndsAt at 0 and silently reset the card, so a
+// tap that failed was indistinguishable from one that did nothing (#487).
+func TestPhoneRemoteSleepFailureIsVisible(t *testing.T) {
+	if !strings.Contains(indexHTML, "typeof st.active === 'boolean'") {
+		t.Error("setSleep does not check that the reply is actually a timer state (the 200+HTML trap)")
+	}
+	if !strings.Contains(indexHTML, "sum.textContent = T.sleepFail") {
+		t.Error("a failed arming attempt still says nothing to the user")
+	}
+}
+
+// TestPhoneRemoteLocalesCarryTheNewKeys keeps the three strings added for the
+// two fixes above translated everywhere, rather than falling through to English
+// on nine of the twelve bundles.
+func TestPhoneRemoteLocalesCarryTheNewKeys(t *testing.T) {
+	bundles := strings.Count(indexHTML, "now:\"")
+	if bundles == 0 {
+		t.Fatal("could not find any locale bundle in indexHTML")
+	}
+	for _, key := range []string{"pairSum", "unpair", "sleepFail"} {
+		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
+		if got != bundles {
+			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
+		}
+	}
+}
