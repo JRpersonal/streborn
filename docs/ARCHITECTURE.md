@@ -8,57 +8,89 @@ on **components, tech stack, and data flow**.
 
 ## Big picture
 
+Three things talk to each other, and exactly three of them can reach the
+public internet. The diagram is arranged so that is readable at a glance:
+**every arrow that crosses the dashed line is an outbound internet
+connection, and it is labelled with what it carries.** Nothing else leaves
+your network.
+
 ```mermaid
 flowchart LR
-  subgraph Home["Home LAN"]
-    direction LR
-    User["User"]
-    Desktop["ST Reborn (desktop app)<br/>Wails: Go backend + Vite/vanilla JS frontend"]
-
-    subgraph Speaker["Bose SoundTouch (sm2: ST10 rhino, ST30 mojo / whitelisted: Portable taigan, ST20 spotty+scm)"]
+  subgraph Home["🏠 Your home network"]
+    direction TB
+    Desktop["💻 ST Reborn app<br/>Windows / macOS / Linux"]
+    Phone["📱 Phone remote<br/>a web page the speaker serves<br/>no app store, no account"]
+    NAS["🗄️ Your media server<br/>optional: FRITZ!Box, Synology, Plex"]
+    subgraph Speaker["🔊 Bose SoundTouch speaker"]
       direction TB
-      BoseFW["Bose firmware (stock)<br/>gabbo :8080, BoseApp :8090, UPnP :8091,<br/>SoftwareUpdate :17008, BatteryMonitor :17002, scmmond :40020"]
-      Agent["STR stick agent (Go, ARMv7l)<br/>webui+streamproxy+/spotify/stream :8888, marge :9080/:443, BMX :8081,<br/>:17002 battery fallback, mDNS, gabbo hook, iptables REDIRECTs"]
-      GLR["go-librespot (Spotify Connect)<br/>local API :3678, raw Ogg via pipe"]
-      NAND[("/mnt/nv/streborn/<br/>agent binary, go-librespot, CA, presets.json, region.txt")]
-      Hosts[("/etc/hosts (bind mount)<br/>streaming.bose.com, *.bose.io, TuneIn partner -> 127.0.0.1")]
+      Agent["STR agent<br/>phone remote  ·  stream proxy<br/>presets  ·  local cloud stand-in"]
+      BoseFW["Bose firmware, untouched<br/>audio, buttons, display"]
+      GLR["go-librespot<br/>Spotify Connect"]
     end
   end
 
-  subgraph External["Public internet"]
-    direction LR
-    RadioBrowser["radio-browser.info<br/>HTTP API, no key"]
-    GitHubRel["github.com/JRpersonal/streborn<br/>releases + attestations"]
-    UpstreamCDN["Radio station CDN<br/>(Icecast, streamonkey, ...)"]
-    SpotifyAP["Spotify access points<br/>(go-librespot Connect)"]
+  subgraph Net["🌐 Public internet"]
+    direction TB
+    RB["radio-browser.info<br/>station directory"]
+    CDN["Radio station servers"]
+    Logos["Station websites<br/>logo images"]
+    SpotifyAP["Spotify"]
+    GH["github.com<br/>STR releases"]
+    Time["Time check<br/>cloudflare, google, ..."]
   end
 
-  User -- click --> Desktop
-  Desktop <-- "REST :8888 (sm2 direct)<br/>or :17008 (whitelisted chassis, iptables REDIRECT to :8888)" --> Agent
-  Desktop -- "mDNS _streborn._tcp" --> Agent
-  Agent -- "WebSocket :8080 (gabbo)" --> BoseFW
-  Agent -- "AVTransport :8091 (UPnP)" --> BoseFW
-  Agent -- "REST :8090 (info, sources, presets, zone)" --> BoseFW
-  BoseFW -- ":17002 battery client (Portable, when BatteryMonitor is wedged)" --> Agent
-  BoseFW -. "outbound cloud calls (:80 -> :9080, :443) redirected via Hosts + iptables" .-> Agent
-  Desktop <-- "GET stations / tags / langs (radio search, app-side)" --> RadioBrowser
-  BoseFW <-- "play stream URL" --> UpstreamCDN
-  Agent -- "supervises, drives :3678" --> GLR
-  GLR <-- "Spotify Connect (audio + control)" --> SpotifyAP
-  BoseFW -- "GET /spotify/stream.ogg (UPnP)" --> Agent
-  Desktop <-- "release manifest, SHA256, Sigstore" --> GitHubRel
+  Desktop <--> Agent
+  Phone <--> Agent
+  NAS --> Agent
+  Agent <--> BoseFW
+  Agent <--> GLR
 
-  style Home fill:#cfe8ff,stroke:#1f6feb,color:#000
+  Desktop -. "station search" .-> RB
+  Desktop -. "update check" .-> GH
+  Phone -. "station search" .-> RB
+  Agent -. "the audio stream" .-> CDN
+  Agent -. "station logos" .-> Logos
+  Agent -. "clock, after a power cut" .-> Time
+  GLR -. "Spotify audio" .-> SpotifyAP
+
+  style Home fill:#cfe8ff,stroke:#1f6feb,stroke-width:3px,color:#000
   style Speaker fill:#eaf3ff,stroke:#1f6feb,color:#000
-  style External fill:#f3f4f6,stroke:#9ca3af,color:#000
+  style Net fill:#fff4e5,stroke:#d97706,stroke-width:3px,stroke-dasharray:8 5,color:#000
 ```
 
-The blue area is everything that survives without the public
-internet. Once the agent is installed, the speaker plays internet
-radio, Spotify, and tracks from your own media servers without any
-Bose cloud; the only outbound calls are the upstream radio CDN and the
-Spotify access points serving audio bytes. Multiroom grouping, preset
-recall, and the smart-home webhooks all run on the LAN.
+### Who reaches the internet, and who does not
+
+| Reaches the internet | For what | When |
+|---|---|---|
+| **Desktop app** | radio-browser.info | only while you search for a station |
+| **Desktop app** | github.com | update check, and downloading a new version |
+| **Phone remote** | radio-browser.info | only while you search for a station, **from the phone itself**, not through the speaker |
+| **Speaker (agent)** | the radio station's server | while a station plays |
+| **Speaker (agent)** | station websites | to fetch the logo shown on the display |
+| **Speaker (agent)** | a few well-known hosts | one time check after a power cut: the speaker has no clock battery, and a wrong clock breaks HTTPS and Spotify |
+| **Speaker (go-librespot)** | Spotify | while Spotify plays |
+
+Never reaches the internet: **the Bose firmware**. That is the point of the
+project. Its cloud calls are redirected to the agent on the speaker itself
+(`/etc/hosts` plus iptables), so `streaming.bose.com` and the `bmx-cloud`
+services resolve to `127.0.0.1` and are answered locally. The speaker works
+with the internet unplugged, apart from the audio itself.
+
+**No STR component ever calls a Bose server, and none calls a server run by
+this project.** There is no STR account, no telemetry, and no analytics. The
+releases come from GitHub and the station directory is a public community
+service; both are third parties you can verify for yourself.
+
+### Which port, and why two of them
+
+The desktop app and the phone remote reach the agent on **`:8888`** on sm2
+chassis (ST10 `rhino`, sm2 ST30/ST20) and on **`:17008`** on whitelisted
+chassis (Portable `taigan`, scm ST20/ST30, Wave `lisa`), where an iptables
+PREROUTING REDIRECT forwards `:17008` to `:8888` because the chipset firewall
+drops the direct port. Both apps try one and fall back to the other, so this
+is invisible in normal use. It matters when reading a log: an address with
+`:17008` in it is the same agent, reached the long way round. See
+[`MODEL-VARIANTS.md`](./MODEL-VARIANTS.md).
 
 ## Components
 
