@@ -83,6 +83,11 @@ header .dev.haspeers .chev { display:inline; }
 .row.c3 { grid-template-columns:1fr 1fr 1fr; }
 button.btn, a.btn { display:flex; align-items:center; justify-content:center; min-height:44px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px; font-size:14px; cursor:pointer; text-decoration:none; transition:background .15s,border-color .15s,color .15s; }
 button.btn.active, a.btn.active { border-color:var(--accent); color:var(--accent); }
+/* The sleep timer's ARMED choice. Its own class on purpose: .active is the
+   600 ms flash every button gets on a tap, so a lasting state cannot be kept
+   in it. Reading .active as "armed" is what made every tap cancel instead of
+   arm. */
+button.btn.armed { border-color:var(--accent); color:var(--accent); font-weight:600; }
 button.btn:active { background:var(--press); }
 @media (hover:hover) { button.btn:hover, a.btn:hover { background:var(--hover); } .preset:hover { background:var(--hover); } }
 .volrock .volstep { flex-shrink:0; padding:6px 12px; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
@@ -1529,7 +1534,8 @@ async function saveToSlot(n, st) {
    once after a change: a page left open on a bedside table must not be the
    reason a speaker never reaches deep standby.
    =========================================================================== */
-var sleepEndsAt = 0; // epoch ms, 0 = not armed
+var sleepEndsAt = 0;   // epoch ms, 0 = not armed
+var sleepArmedMin = 0; // which choice is armed, so the button can show it
 
 function renderSleep() {
   var sum = document.getElementById('sleepSum');
@@ -1538,10 +1544,17 @@ function renderSleep() {
   if (!sum || !off) return;
   if (wrap) wrap.hidden = !zone.grouped;
   var choices = document.querySelectorAll('#sleepChoices .btn');
+  // The armed choice is painted from the state, never left behind by a click
+  // handler: press() wipes its own class after 600 ms, so a highlight set at
+  // click time disappeared on its own even when the timer was running.
+  [].forEach.call(choices, function(b) {
+    var on = !!sleepEndsAt && Number(b.getAttribute('data-min')) === sleepArmedMin;
+    b.classList.toggle('armed', on);
+  });
   if (!sleepEndsAt) {
     sum.textContent = T.sleepSum;
     off.hidden = true;
-    [].forEach.call(choices, function(b){ b.classList.remove('active'); });
+    sleepArmedMin = 0;
     return;
   }
   var left = Math.max(0, Math.round((sleepEndsAt - Date.now()) / 1000));
@@ -1594,19 +1607,27 @@ async function setSleep(minutes) {
   document.querySelectorAll('#sleepChoices .btn').forEach(function(b){
     b.addEventListener('click', function(){
       press(b);
-      // Tapping the running choice again cancels, so the same control both
-      // arms and disarms without a second thing to find.
+      // Tapping the RUNNING choice again cancels, so the same control both arms
+      // and disarms without a second thing to find.
+      //
+      // That state lives in its own class. It used to be read out of .active,
+      // which press() has just added one line above as the 600 ms tap flash:
+      // the test was therefore always true, every tap took the cancel branch
+      // and sent minutes=0, and the timer could not be armed at all. The
+      // speaker said nothing about it either, because cancelling when nothing
+      // is running is a no-op. Reported as "doing nothing when I click on it"
+      // (#487), and the box log in the 2026-08-08 bundle carries no armed line
+      // because none was ever asked for.
       var mins = Number(b.getAttribute('data-min'));
-      if (b.classList.contains('active')) { setSleep(0); b.classList.remove('active'); return; }
-      document.querySelectorAll('#sleepChoices .btn').forEach(function(o){ o.classList.remove('active'); });
-      b.classList.add('active');
+      if (b.classList.contains('armed')) { sleepArmedMin = 0; setSleep(0); return; }
+      sleepArmedMin = mins;
       setSleep(mins);
     });
   });
   var off = document.getElementById('btnSleepOff');
   if (off) off.addEventListener('click', function(){
     press(off);
-    document.querySelectorAll('#sleepChoices .btn').forEach(function(o){ o.classList.remove('active'); });
+    sleepArmedMin = 0;
     setSleep(0);
   });
 })();
