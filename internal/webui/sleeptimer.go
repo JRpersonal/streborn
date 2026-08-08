@@ -82,6 +82,13 @@ func (s *Server) handleSleep(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.Minutes <= 0 {
+			// Log the ASK, not just the effect. Cancelling when nothing runs is
+			// a no-op, and cancelSleep stays quiet for it, so a phone that kept
+			// sending minutes=0 by mistake left no trace at all: a 2026-08-08
+			// bundle from an owner reporting "it does nothing" contained not one
+			// sleep line to explain why (#487). What was requested is now always
+			// on the record.
+			s.logger.Info("sleep timer: cancel requested", "group", req.Group)
 			s.cancelSleep("user")
 			writeJSON(w, http.StatusOK, s.sleepStatus())
 			return

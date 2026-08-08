@@ -160,3 +160,44 @@ func TestPhoneRemoteLocalesCarryTheNewKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestPhoneRemoteSleepArmingIsNotSelfCancelling guards the defect that made the
+// sleep timer unusable from the day it shipped: press() adds .active as a
+// 600 ms tap flash, and the click handler read .active as "this choice is
+// already running". The test was therefore always true, every tap took the
+// cancel branch and sent minutes=0, and no timer could ever be armed. The
+// speaker stayed silent about it too, because cancelling nothing is a no-op
+// (#487, bundle 2026-08-08 with not one sleep line in the agent log).
+func TestPhoneRemoteSleepArmingIsNotSelfCancelling(t *testing.T) {
+	i := strings.Index(indexHTML, "function wireSleep(")
+	if i < 0 {
+		t.Fatal("phone remote has no sleep wiring")
+	}
+	end := strings.Index(indexHTML[i:], "})();")
+	if end < 0 {
+		t.Fatal("could not delimit wireSleep")
+	}
+	wire := indexHTML[i : i+end]
+
+	if strings.Contains(wire, "classList.contains('active')") {
+		t.Error("the armed check still reads .active, the class press() sets on every tap: every press cancels instead of arming")
+	}
+	if !strings.Contains(wire, "classList.contains('armed')") {
+		t.Error("the armed state is not kept in its own class")
+	}
+	if !strings.Contains(wire, "setSleep(mins)") {
+		t.Error("the handler never arms the chosen duration")
+	}
+}
+
+// The armed highlight must be painted from the state, not left behind by the
+// click handler: press() removes its class after 600 ms, so a highlight applied
+// at click time vanished while the timer was still running.
+func TestPhoneRemoteSleepHighlightComesFromState(t *testing.T) {
+	if !strings.Contains(indexHTML, `b.classList.toggle('armed', on)`) {
+		t.Error("renderSleep does not paint the armed choice from the timer state")
+	}
+	if !strings.Contains(indexHTML, "button.btn.armed") {
+		t.Error("the armed choice has no styling of its own")
+	}
+}
