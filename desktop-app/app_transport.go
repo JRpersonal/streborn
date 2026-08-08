@@ -4,6 +4,7 @@ package main
 // agent HTTP transport: base URLs, the per-host port cache, and boxDo with port fallback.
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -58,6 +59,66 @@ func altAgentPort(p int) int {
 	return 8888
 }
 
+// altAgentPortFor is a seam. The two agent ports are fixed numbers, so a test
+// that wants to exercise the fallback across two servers cannot use httptest,
+// which hands out a random loopback port. Tests replace this to name a port
+// they control; nothing in the app ever assigns to it.
+var altAgentPortFor = altAgentPort
+
+// notTheAgent reports whether a response plainly did not come from the STR
+// agent, so the port that produced it must not be cached or trusted.
+//
+// This only ever fires on /api/ paths, which are ours alone: any other path may
+// legitimately be served by whatever else is on the box.
+//
+// Two shapes are recognised, both observed in the field:
+//
+//   - 404. The Bose firmware on :8090 answers unknown /api/ paths with it, and
+//     caching that port made a post-OTA name/Wi-Fi write silently fail.
+//   - A 4xx with no body at all. Every refusal the agent itself produces goes
+//     through http.Error and therefore carries a reason; a bare status line
+//     with an empty body is a minimal firmware listener, not us. Field report
+//     2026-08-07: a speaker answered `status 400 ... body=""` to every request
+//     for two days across three app versions, because the first such 400 was
+//     cached as the agent's port and boxDo then returned it immediately
+//     without ever trying the other candidate. The agent was on the other one.
+//
+// A 5xx is deliberately NOT included: the agent does return bodiless 5xx in
+// places, and a struggling agent is still the agent. Treating it as a stranger
+// would send the app to the wrong port at exactly the wrong moment.
+func notTheAgent(resp *http.Response, path string) bool {
+	if resp == nil || !strings.HasPrefix(path, "/api/") {
+		return false
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return true
+	}
+	return resp.StatusCode >= 400 && resp.StatusCode < 500 && bodyIsEmpty(resp)
+}
+
+// bodyIsEmpty reports whether resp has no body, without consuming it: the
+// response may still be handed back to the caller as the best answer we got.
+// A body of unknown length is peeked one byte deep and the byte is put back.
+func bodyIsEmpty(resp *http.Response) bool {
+	if resp.ContentLength == 0 {
+		return true
+	}
+	if resp.ContentLength > 0 || resp.Body == nil {
+		return false
+	}
+	br := bufio.NewReader(resp.Body)
+	_, err := br.Peek(1)
+	resp.Body = readCloser{Reader: br, Closer: resp.Body}
+	return err == io.EOF
+}
+
+// readCloser rejoins a buffered reader to the original body's Closer, so the
+// peeked byte is still delivered and the connection is still released.
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
 // candidatePorts is the ordered, deduped list of agent ports to try for a
 // host: the cached working port first (if any), then the caller's port,
 // then the alternate. So the common case is one direct hit; a wrong/stale
@@ -70,7 +131,7 @@ func (a *App) candidatePorts(host string, port int) []int {
 	if cp, ok := a.cachedPort(host); ok {
 		order = append(order, cp)
 	}
-	order = append(order, port, altAgentPort(port))
+	order = append(order, port, altAgentPortFor(port))
 	seen := map[int]bool{}
 	out := order[:0]
 	for _, p := range order {
@@ -122,13 +183,13 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 		client = &c
 	}
 	var lastErr error
-	// stale404 holds a 404 that came from a port which is NOT the STR agent (the
-	// Bose stock firmware answers unknown /api/ paths on :8090 with 404). It is
-	// kept only as a fallback so a genuine agent 404 (a real missing resource) is
-	// still surfaced when no better port answers.
-	var stale404 *http.Response
+	// stranger holds the best answer from a port that is NOT the STR agent (see
+	// notTheAgent). It is kept only as a fallback, so a genuine agent 404 or 400
+	// is still surfaced when no other port answers at all, and it is never
+	// cached: caching it is what let one bare 400 capture a host for two days.
+	var stranger *http.Response
 	cands := a.candidatePorts(host, port)
-	for i, p := range cands {
+	for _, p := range cands {
 		url := fmt.Sprintf("http://%s:%d%s", host, p, path)
 		var rdr io.Reader
 		if body != "" {
@@ -136,8 +197,8 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 		}
 		req, err := http.NewRequestWithContext(a.appCtx(), method, url, rdr)
 		if err != nil {
-			if stale404 != nil {
-				stale404.Body.Close()
+			if stranger != nil {
+				stranger.Body.Close()
 			}
 			return nil, err
 		}
@@ -146,37 +207,35 @@ func (a *App) boxDoTimeout(host string, port int, method, path, contentType, bod
 		}
 		resp, err := client.Do(req)
 		if err == nil {
-			// A 404 on an /api/ path means this port is not the STR agent: the
-			// Bose firmware on :8090 answers unknown /api/ paths with 404, and
-			// caching :8090 here made a post-OTA name/Wi-Fi write silently fail
-			// (the box still carried its pre-install stock port). Skip the port
-			// and try the next candidate; only fall back to the 404 if nothing
-			// better answers, so a real agent 404 is not masked.
-			if resp.StatusCode == http.StatusNotFound && strings.HasPrefix(path, "/api/") && i < len(cands)-1 {
-				if stale404 != nil {
-					stale404.Body.Close()
+			// Something answered, but not necessarily us. A port that is
+			// demonstrably not the agent must neither be cached nor end the
+			// search, or the real agent on the other port is never reached.
+			// Keep the reply as a fallback and carry on.
+			if notTheAgent(resp, path) {
+				if stranger != nil {
+					stranger.Body.Close()
 				}
-				stale404 = resp
+				stranger = resp
 				a.forgetPort(host)
 				continue
 			}
 			a.rememberPort(host, p)
-			if stale404 != nil {
-				stale404.Body.Close()
+			if stranger != nil {
+				stranger.Body.Close()
 			}
 			return resp, nil
 		}
 		lastErr = err
 		if !isTransportNotReady(err) {
-			if stale404 != nil {
-				return stale404, nil
+			if stranger != nil {
+				return stranger, nil
 			}
 			return nil, err
 		}
 		a.forgetPort(host)
 	}
-	if stale404 != nil {
-		return stale404, nil
+	if stranger != nil {
+		return stranger, nil
 	}
 	return nil, reachabilityHint(lastErr)
 }
@@ -206,10 +265,20 @@ func reachabilityHint(err error) error {
 	// answered was not STR: on a speaker whose agent is not up, the firmware's
 	// own listener replies with a bare status. So say that instead.
 	if answeredNotSTR(err) {
-		return fmt.Errorf("%w\n\nThe speaker answered, so this is not your firewall and not a Wi-Fi problem: something on the speaker replied to every request. What answered was not ST Reborn, which is what a speaker looks like while it is still starting up, or when its ST Reborn software did not come up at all. Unplug the speaker for ten seconds, plug it back in, wait about three minutes until it is fully up, and try the update again", err)
+		return fmt.Errorf("%w\n\n%s", err, answeredNotSTRAdvice)
 	}
-	return fmt.Errorf("%w\n\nThe app could not reach the speaker. This is usually a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks. Allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi network", err)
+	return fmt.Errorf("%w\n\n%s", err, firewallAdvice)
 }
+
+// The two closing paragraphs a user reads under a failed update. They are
+// constants because the update report has to be able to recognise the wrong one
+// and swap it for the right one (see stripWrongBlame): a copy of the text in
+// two places would drift and the swap would quietly stop working.
+const (
+	firewallAdvice = "The app could not reach the speaker. This is usually a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks. Allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi network"
+
+	answeredNotSTRAdvice = "The speaker answered, so this is not your firewall and not a Wi-Fi problem: something on the speaker replied to every request. What answered was not ST Reborn, which is what a speaker looks like while it is still starting up, or when its ST Reborn software did not come up at all. Unplug the speaker for ten seconds, plug it back in, wait about three minutes until it is fully up, and try the update again"
+)
 
 // answeredNotSTR reports whether the failure carries evidence that the speaker
 // replied: an HTTP status line rather than a connection that never completed.
