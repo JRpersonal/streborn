@@ -418,13 +418,29 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 		// would point a hardware key at a source the box cannot enter, which is a
 		// DEAD key - strictly worse than the UPnP form it replaced. Put it back.
 		stale := boxHasNative && native == ""
+		// A slot the box already holds natively is otherwise left alone, and
+		// that is right: every write wakes the speaker and restarts its standby
+		// countdown. One case has to be an exception. Until v0.9.36 a station
+		// logo was judged by the file extension of its URL, so stations whose
+		// logo came from the icon fallback (it answers .ico URLs with PNG bytes)
+		// had STR's stand-in written into the slot. The judgement is fixed, but
+		// the slot keeps what it was given, and the owner sees one station with
+		// a picture and the next without and cannot tell why.
+		//
+		// So: repair a slot that carries our stand-in when the preset now
+		// resolves to a real picture. The condition stops holding as soon as the
+		// rewrite lands, so this is one write per affected slot, once, and never
+		// a recurring one.
+		relogo := boxHasNative && native != "" &&
+			webui.StationLocationCarriesStandInLogo(loc) &&
+			!webui.StationLocationCarriesStandInLogo(native)
 		switch {
 		case upgradable:
 			migrated++
 		case stale:
 			reverted++
 		}
-		if forceFull || !onBox || upgradable || stale {
+		if forceFull || !onBox || upgradable || stale || relogo {
 			missing = append(missing, boxcli.PresetSpec{
 				Slot: p.Slot, Name: p.Name, StreamURL: boxPresetURL(p),
 				NativeLocation: native,
