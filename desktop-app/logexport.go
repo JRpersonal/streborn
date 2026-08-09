@@ -131,7 +131,7 @@ Boxes asked: %d
 Contents:
   README.txt            this file
   app.log               desktop app log (rolling, up to 2 MB)
-  box-<n>.json          per-box snapshot (Bose /info + STR /api/status + /api/agent/version + /api/box/zone)
+  box-<n>.json          per-box snapshot (Bose /info + /sources + STR /api/status + /api/agent/version + /api/box/zone)
   stick-<n>/setup.log   FAT32 setup.log if an STR stick is plugged into this PC
   stick-<n>/_meta.json  drive metadata (path, label, free space)
   manifest.json         summary
@@ -139,8 +139,9 @@ Contents:
 Privacy:
   When Anonymized=true (default), LAN IPs are masked to 192.0.2.x,
   MAC addresses / device IDs / serial numbers / friendly names are
-  hashed (first 8 chars of SHA256), and SSID-looking strings in the
-  app log are scrubbed. Even so, please skim the files before
+  hashed (first 8 chars of SHA256), linked streaming accounts appear
+  as ACCT#<hash> instead of the account name, and SSID-looking strings
+  in the app log are scrubbed. Even so, please skim the files before
   attaching to a public issue.
 `, time.Now().UTC().Format(time.RFC3339), runtime.GOOS, runtime.GOARCH, appVersion, req.Anonymize, len(req.BoxHosts), boxSummary.String())
 	if err := writeZipEntry(zw, "README.txt", []byte(readme)); err != nil {
@@ -346,8 +347,22 @@ type boxIndexEntry struct {
 }
 
 type boxSnapshot struct {
-	Host        string         `json:"host"`
-	BoseInfo    string         `json:"boseInfoXml"`
+	Host     string `json:"host"`
+	BoseInfo string `json:"boseInfoXml"`
+	// BoseSources is the firmware's own /sources list: every input and service
+	// slot the box has, with the source name, the account, the READY/UNAVAILABLE
+	// status and the isLocal flag. It is the only record of what a box can
+	// actually switch to, and its absence has already cost us a diagnosis: a
+	// CineMate 130 owner reported that the "offer every input" feature still
+	// showed him Bluetooth alone (discussion #577), and his bundle could not say
+	// why, because nothing in it described his inputs. What a soundbar reports
+	// for its HDMI sockets is exactly the evidence the filter in
+	// internal/webui/assets/index.html (isPhysicalInput) was written without.
+	//
+	// It also settles source questions in general: /sources status is a
+	// connection indicator, not a capability, so seeing the real list stops us
+	// reading UNAVAILABLE as "this box cannot do that".
+	BoseSources string         `json:"boseSourcesXml,omitempty"`
 	STRStatus   string         `json:"strStatusJson"`
 	STRAgentVer map[string]any `json:"strAgentVersion"`
 	// STRZone is the box's live multiroom zone (GET /api/box/zone via the
@@ -451,6 +466,11 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	s.Reachable8091 = portOpen(host, 8091, 1200)
 	if s.Reachable8090 {
 		s.BoseInfo = httpGetText(fmt.Sprintf("http://%s:8090/info", host), 4096)
+		// 16 KB, not the 4 KB /info gets: a speaker's list is ~1.5 KB, but a
+		// soundbar adds a sourceItem per socket and every linked service, and
+		// truncating this one costs the entries at the end of the list, which is
+		// where the firmware puts the ones we have never seen.
+		s.BoseSources = httpGetText(fmt.Sprintf("http://%s:8090/sources", host), 16*1024)
 	}
 	if s.Reachable8888 {
 		base := fmt.Sprintf("http://%s:%d", host, strPort)
@@ -653,6 +673,9 @@ func sanitizeLog(b []byte) []byte {
 func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 	s.Host = maskIP(s.Host)
 	s.BoseInfo = anonymizeBoseInfoXML(s.BoseInfo)
+	// /sources names the linked streaming accounts, so it needs its own pass:
+	// the shared one would leave a Deezer id and its nickname in the clear.
+	s.BoseSources = anonymizeBoseSourcesXML(s.BoseSources)
 	s.STRStatus = anonymizeText(s.STRStatus)
 	// The zone JSON carries member IPs and device IDs.
 	s.STRZone = anonymizeText(s.STRZone)
@@ -757,6 +780,73 @@ func anonymizeBoseInfoXML(xml string) string {
 	})
 	out = ipv4Regex.ReplaceAllStringFunc(out, func(ip string) string { return maskIP(ip) })
 	return out
+}
+
+var sourceItemRegex = regexp.MustCompile(`<sourceItem\b[^>]*(?:/>|>[^<]*</sourceItem>)`)
+var sourceAccountAttrRegex = regexp.MustCompile(`sourceAccount="([^"]*)"`)
+var sourceItemTextRegex = regexp.MustCompile(`>([^<>]+)</sourceItem>`)
+var allDigitsRegex = regexp.MustCompile(`^[0-9]{6,}$`)
+
+// looksLikeAccountIdentity decides whether a /sources value identifies a person
+// rather than a socket. Getting this wrong in either direction has a cost, so
+// the rule is written around what real boxes report:
+//
+//   - Names ending in "UserName" are firmware placeholders for an unlinked slot
+//     (QPlay1UserName, SpotifyConnectUserName, StoredMusicUserName,
+//     AirPlay2DefaultUserName). They name nobody and must survive, because the
+//     input filter keys on exactly this suffix.
+//   - A linked service reports the real account: a Deezer numeric id, a Spotify
+//     user id, or an address. Those are hashed.
+//   - A physical socket's account is its own short label (AUX, AUX1, TV,
+//     CBL-Sat). Those survive, and they are the reason to capture /sources at
+//     all: hashing them would leave the bundle unable to answer which inputs a
+//     soundbar has.
+func looksLikeAccountIdentity(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" || strings.HasSuffix(v, "UserName") {
+		return false
+	}
+	if strings.Contains(v, "@") || allDigitsRegex.MatchString(v) {
+		return true
+	}
+	// Opaque service ids are long and unbroken; socket labels are short.
+	return len(v) >= 16 && !strings.ContainsAny(v, " \t")
+}
+
+// anonymizeBoseSourcesXML hashes the account identities in /sources and leaves
+// the structure intact. The deviceID attribute, IPs and MACs are handled by the
+// shared scrubPII pass; what is left is sourceAccount and the display name, and
+// on a linked service the display name is the account nickname that belongs to
+// the same person as the account id. So when the account is judged personal,
+// its display name goes with it.
+func anonymizeBoseSourcesXML(xml string) string {
+	if xml == "" {
+		return ""
+	}
+	return sourceItemRegex.ReplaceAllStringFunc(scrubPII(xml), func(item string) string {
+		acct := ""
+		if m := sourceAccountAttrRegex.FindStringSubmatch(item); m != nil {
+			acct = m[1]
+		}
+		// The display name alone rarely looks personal ("DeezerUser" is a
+		// nickname that no pattern catches), so the account decides for both.
+		if !looksLikeAccountIdentity(acct) && !looksLikeAccountIdentity(displayNameOf(item)) {
+			return item
+		}
+		item = sourceAccountAttrRegex.ReplaceAllString(item,
+			`sourceAccount="ACCT#`+hashShort(acct)+`"`)
+		return sourceItemTextRegex.ReplaceAllStringFunc(item, func(m string) string {
+			v := sourceItemTextRegex.FindStringSubmatch(m)[1]
+			return `>ACCT#` + hashShort(v) + `</sourceItem>`
+		})
+	})
+}
+
+func displayNameOf(item string) string {
+	if m := sourceItemTextRegex.FindStringSubmatch(item); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 func maskIP(ip string) string {

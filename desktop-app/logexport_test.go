@@ -87,6 +87,64 @@ func TestAnonymizeBoseInfoXML(t *testing.T) {
 	}
 }
 
+// TestAnonymizeBoseSourcesXML pins both halves of the /sources pass, because
+// both can fail silently: over-scrubbing leaves the bundle unable to say which
+// inputs a box has (the reason the field exists), and under-scrubbing publishes
+// somebody's streaming account on a GitHub issue.
+func TestAnonymizeBoseSourcesXML(t *testing.T) {
+	// Verbatim shapes from a SoundTouch 30 and a SoundTouch 10, plus the linked
+	// Deezer and soundbar-socket entries we do not have hardware for.
+	xml := `<sources deviceID="000C8A96488D">` +
+		`<sourceItem source="AUX" sourceAccount="AUX" status="READY" isLocal="true" multiroomallowed="true">AUX IN</sourceItem>` +
+		`<sourceItem source="PRODUCT" sourceAccount="TV" status="READY" isLocal="true" multiroomallowed="false">CBL-Sat</sourceItem>` +
+		`<sourceItem source="BLUETOOTH" status="UNAVAILABLE" isLocal="true" multiroomallowed="true" />` +
+		`<sourceItem source="QPLAY" sourceAccount="QPlay1UserName" status="UNAVAILABLE" isLocal="true" multiroomallowed="true">QPlay1UserName</sourceItem>` +
+		`<sourceItem source="SPOTIFY" sourceAccount="SpotifyConnectUserName" status="UNAVAILABLE" isLocal="false" multiroomallowed="true">SpotifyConnectUserName</sourceItem>` +
+		`<sourceItem source="DEEZER" sourceAccount="1456373802" status="READY" isLocal="false" multiroomallowed="true">DeezerUser</sourceItem>` +
+		`<sourceItem source="PANDORA" sourceAccount="listener@example.com" status="READY" isLocal="false" multiroomallowed="true">listener@example.com</sourceItem>` +
+		`</sources>`
+	got := anonymizeBoseSourcesXML(xml)
+
+	// The account id, the nickname that belongs to it, the address, and the
+	// device id must all be gone.
+	for _, leaked := range []string{`1456373802`, `DeezerUser`, `listener@example.com`, `000C8A96488D`} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("anonymized /sources still contains %q:\n%s", leaked, got)
+		}
+	}
+	// Everything that describes the box rather than its owner must survive.
+	for _, kept := range []string{
+		`source="AUX"`, `sourceAccount="AUX"`, `>AUX IN<`,
+		`source="PRODUCT"`, `sourceAccount="TV"`, `>CBL-Sat<`,
+		`source="BLUETOOTH"`, `isLocal="true"`, `status="UNAVAILABLE"`,
+		`sourceAccount="QPlay1UserName"`, `sourceAccount="SpotifyConnectUserName"`,
+	} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("anonymized /sources dropped %q:\n%s", kept, got)
+		}
+	}
+	if anonymizeBoseSourcesXML("") != "" {
+		t.Error("empty input must stay empty")
+	}
+}
+
+func TestLooksLikeAccountIdentity(t *testing.T) {
+	personal := []string{"1456373802", "user@example.com", "31abcdefghijklmnop"}
+	notPersonal := []string{"", "AUX", "AUX1", "TV", "CBL-Sat", "BD-DVD", "HDMI 1",
+		"QPlay1UserName", "SpotifyConnectUserName", "AirPlay2DefaultUserName",
+		"StoredMusicUserName"}
+	for _, v := range personal {
+		if !looksLikeAccountIdentity(v) {
+			t.Errorf("%q should be treated as an account identity", v)
+		}
+	}
+	for _, v := range notPersonal {
+		if looksLikeAccountIdentity(v) {
+			t.Errorf("%q must not be treated as an account identity", v)
+		}
+	}
+}
+
 func TestAnonymizeText(t *testing.T) {
 	got := anonymizeText("box 192.168.0.5 mac de:ad:be:ef:00:11 ssid=Cafe")
 	for _, leaked := range []string{"192.168.0.5", "de:ad:be:ef:00:11", "Cafe"} {
