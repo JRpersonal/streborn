@@ -179,7 +179,6 @@ export function renderMultiroom(fetchLive) {
 
      <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--c-border);padding-top:16px">
 
-  if (livePair) fillPairBalance(livePair, strBoxes).catch(() => {});
        <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></b>
        <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
        ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
@@ -194,6 +193,9 @@ export function renderMultiroom(fetchLive) {
        </div>
        <div id="stereoResult">${state.stereoMsg || ''}</div>
      </div>`;
+
+  // Read-only, filled after the markup exists, and only when a pair does.
+  if (livePair) fillPairBalance(livePair, strBoxes).catch(() => {});
 
   const issueLink = $('multiroomIssueLink');
   if (issueLink) issueLink.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL('https://github.com/JRpersonal/streborn/issues/70'); } catch {} };
