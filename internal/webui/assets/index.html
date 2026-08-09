@@ -788,11 +788,97 @@ async function togglePower() {
   setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 4000);
 }
 // setSource selects an input and keeps that button highlighted until another is chosen.
-async function setSource(s, btn) {
+async function setSource(s, btn, account) {
   document.querySelectorAll('#inputs .btn').forEach(function(e){ e.classList.remove('active'); });
   if (btn) btn.classList.add('active');
-  await api('/api/box/source','PUT',{source:s});
+  await api('/api/box/source','PUT',{source:s, sourceAccount: account || ''});
   setTimeout(refreshStatus, 1200);
+}
+
+// STR's own sources and the firmware's bookkeeping entries are not inputs a
+// person can switch to, so they never become buttons. Everything else the box
+// reports as local IS one: the names differ per model and cannot be listed
+// ahead of time (a CineMate calls its analogue input LOCAL where a SoundTouch
+// 10 says AUX, and a soundbar's sockets arrive as PRODUCT with the socket in
+// sourceAccount), so this is a list of what we know is NOT an input rather
+// than a guess at what is.
+var NOT_AN_INPUT = {
+  UPNP:1, LOCAL_INTERNET_RADIO:1, STORED_MUSIC:1, STORED_MUSIC_MEDIA_SERVER:1,
+  STORED_MUSIC_MEDIA_RENDERER:1, STANDBY:1, INVALID_SOURCE:1, NOTIFICATION:1,
+  UPDATE:1, SETUP:1
+};
+
+// isPhysicalInput decides what becomes a button, and both halves were measured
+// on real speakers (2026-08-09, Portable + SoundTouch 10 + SoundTouch 30)
+// rather than assumed:
+//
+//   - isLocal alone is NOT enough. QPlay reports isLocal=true on every one of
+//     those boxes and is a network protocol, not a socket; taking isLocal at
+//     face value would have put two buttons labelled "QPlay1UserName" under
+//     everybody's inputs.
+//   - status is NOT a filter. The SoundTouch 10's Bluetooth is a real input
+//     reporting UNAVAILABLE simply because nothing is paired to it, and an
+//     HDMI socket with the television off can be expected to look the same.
+//     Filtering on status would hide exactly the input the user wants back.
+//
+// What separates them cleanly is the account: the firmware gives every service
+// slot an account ending in "UserName" (QPlay1UserName, UPnPUserName,
+// SpotifyConnectUserName, StoredMusicUserName), and a physical socket never
+// has one. That rule needs no list of input names, which matters because the
+// input names are the part we cannot know in advance.
+function isPhysicalInput(x) {
+  var name = String((x && x.source) || '').toUpperCase();
+  if (!name || !x.isLocal || NOT_AN_INPUT[name]) return false;
+  return !/UserName$/.test(String(x.sourceAccount || ''));
+}
+
+// renderInputs builds one button per physical input the speaker actually has.
+//
+// It used to be two fixed buttons, Bluetooth and AUX, which is every input a
+// speaker has and no input a soundbar has. A CineMate 130 owner reported the
+// consequence on 2026-08-08: his box has TV, CBL-Sat, BD-DVD, Game and Aux on
+// the back, and once he switched to radio he had to reach for the infrared
+// remote to get his television sound back, because STR offered him no way
+// back. The SoundTouch 300 has the same shape of inputs.
+//
+// The label comes from the speaker, not from us: the box's own display name is
+// what the owner named that socket, so "CBL-Sat" stays "CBL-Sat".
+function renderInputs(sources) {
+  var card = document.getElementById('inputs');
+  if (!card) return;
+  var inputs = (sources || []).filter(isPhysicalInput);
+  var wrap = card.parentElement;
+  if (!inputs.length) {
+    card.innerHTML = '';
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
+  if (wrap) wrap.style.display = '';
+  card.innerHTML = '';
+  inputs.forEach(function(x) {
+    var b = document.createElement('button');
+    b.className = 'btn';
+    b.type = 'button';
+    b.textContent = inputLabel(x);
+    b.addEventListener('click', function(){ setSource(x.source, b, x.sourceAccount); });
+    card.appendChild(b);
+  });
+  // Two per row reads well up to four inputs; a soundbar with five or six
+  // needs the narrower grid or the labels wrap to two lines each.
+  card.className = inputs.length > 4 ? 'row c3' : 'row c2';
+}
+
+// inputLabel prefers what the speaker calls the socket, because that is what
+// its owner named it: a CineMate reports "CBL-Sat" and it should say CBL-Sat.
+// Bluetooth and AUX stay untranslated deliberately, like the other brand names
+// on this page.
+function inputLabel(x) {
+  var src = String(x.source || '').toUpperCase();
+  if (src === 'BLUETOOTH') return 'Bluetooth';
+  var shown = String(x.displayName || '').trim();
+  if (shown) return shown;
+  if (x.sourceAccount) return String(x.sourceAccount);
+  return src === 'LOCAL' ? 'AUX' : src;
 }
 
 async function loadSettings() {
@@ -801,15 +887,7 @@ async function loadSettings() {
   // Hide input buttons for sources this box does not offer (#417/#418: the
   // Wave pedestal has no selectable AUX, some models no Bluetooth). The box's
   // own source list is authoritative; an empty/missing list changes nothing.
-  if (Array.isArray(s.sources) && s.sources.length) {
-    var have = {};
-    s.sources.forEach(function(x){ have[String(x.source||'').toUpperCase()] = true; });
-    var bt = document.getElementById('btnSrcBt'), ax = document.getElementById('btnSrcAux');
-    if (bt) bt.style.display = have.BLUETOOTH ? '' : 'none';
-    if (ax) ax.style.display = have.AUX ? '' : 'none';
-    var card = document.getElementById('inputs');
-    if (card && card.parentElement) card.parentElement.style.display = (have.BLUETOOTH || have.AUX) ? '' : 'none';
-  }
+  if (Array.isArray(s.sources)) renderInputs(s.sources);
   if (s.info && s.info.name) {
     var dn = document.getElementById('devName');
     if (dn && dn.textContent !== s.info.name) { dn.textContent = s.info.name; renderDevMenu(); }

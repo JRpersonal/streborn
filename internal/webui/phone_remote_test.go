@@ -99,14 +99,22 @@ func TestPhoneRemoteLocalesHavePlayLabel(t *testing.T) {
 	}
 }
 
-// TestPhoneRemoteHidesUnavailableSources guards #417/#418: the input buttons
-// must be gated on the box's own /sources list so a Wave (no selectable AUX
-// through the pedestal) does not offer a dead AUX button.
+// TestPhoneRemoteHidesUnavailableSources guards #417/#418: a speaker must never
+// be offered an input it does not have, such as the Wave whose pedestal has no
+// selectable AUX.
+//
+// The mechanism changed when soundbar inputs arrived: instead of two fixed
+// buttons whose visibility was toggled, the buttons ARE the box's own list, so
+// an input that is absent from that list cannot be rendered in the first place.
+// The guarantee is the same and stronger, so this test now guards the source of
+// the buttons rather than the old visibility toggles.
 func TestPhoneRemoteHidesUnavailableSources(t *testing.T) {
-	for _, tok := range []string{`id="btnSrcAux"`, `id="btnSrcBt"`, "have.AUX", "have.BLUETOOTH", "s.sources"} {
-		if !strings.Contains(indexHTML, tok) {
-			t.Fatalf("phone remote missing source-availability gating token %q (#417/#418)", tok)
-		}
+	if !strings.Contains(indexHTML, "s.sources") || !strings.Contains(indexHTML, "renderInputs(s.sources)") {
+		t.Fatal("the input buttons are no longer built from the box's own source list (#417/#418)")
+	}
+	// Nothing may render an input that is not in the list the box reported.
+	if strings.Contains(indexHTML, `id="btnSrcAux"`) && !strings.Contains(indexHTML, "card.innerHTML = ''") {
+		t.Fatal("the static fallback buttons are never replaced by the box's real list (#417/#418)")
 	}
 }
 

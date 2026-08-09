@@ -5,6 +5,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -368,7 +369,8 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Source string `json:"source"`
+		Source        string `json:"source"`
+		SourceAccount string `json:"sourceAccount"`
 	}
 	if !decodeJSONRequest(w, r, 256, &req) {
 		return
@@ -404,20 +406,8 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body string
-	switch src {
-	case "AUX":
-		body = `<ContentItem source="AUX" sourceAccount="AUX"></ContentItem>`
-	case "LOCAL":
-		// The same analogue input under the name a Cinemate uses for it. Note
-		// there is no sourceAccount: that is how the speaker itself describes
-		// the source when it is playing through it, and it is the reason the
-		// AUX form cannot simply be reused here (#491, taken from the owner's
-		// own diagnostic: <ContentItem source="LOCAL" isPresetable="true" />).
-		body = `<ContentItem source="LOCAL"></ContentItem>`
-	case "BLUETOOTH", "BT":
-		body = `<ContentItem source="BLUETOOTH" sourceAccount=""></ContentItem>`
-	default:
+	body, ok := s.contentItemForSource(r.Context(), src, req.SourceAccount)
+	if !ok {
 		http.Error(w, "unsupported source: "+src, http.StatusBadRequest)
 		return
 	}
@@ -762,4 +752,76 @@ func writeFlagFile(path, val string) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// contentItemForSource builds the /select ContentItem for a source the user
+// picked, and reports false for anything this speaker does not actually offer.
+//
+// It used to be a switch over AUX, LOCAL and BLUETOOTH, which is every input a
+// speaker has and no input a soundbar has. A CineMate 130 owner (2026-08-08)
+// has TV, CBL-Sat, BD-DVD, Game and Aux on the back of his box and could reach
+// none of them from STR: once he switched to radio he had to get up and use the
+// infrared remote to get his television sound back. The SoundTouch 300 has the
+// same shape of inputs.
+//
+// The names cannot be hardcoded, and that is the whole lesson of the source
+// handling elsewhere in this codebase: a CineMate calls its analogue input
+// LOCAL where a SoundTouch 10 says AUX, an SA-5 answers AUX with sourceAccount
+// AUX1 to AUX3, and a soundbar's HDMI inputs arrive as PRODUCT with the socket
+// in sourceAccount. So the box's own /sources list decides.
+//
+// Validating against that list is also what makes this safe to accept from a
+// client at all: source and sourceAccount end up inside an XML attribute, and
+// echoing an arbitrary string there would let a caller write the ContentItem.
+// Only values the speaker itself reported are ever used, and they are taken
+// from the speaker's copy rather than from the request.
+func (s *Server) contentItemForSource(ctx context.Context, src, account string) (string, bool) {
+	item := func(source, acct string) string {
+		if acct == "" {
+			// No sourceAccount at all, which is how a CineMate describes its
+			// own analogue input and the reason the AUX form cannot simply be
+			// reused for it (#491).
+			return `<ContentItem source="` + xmlAttr(source) + `"></ContentItem>`
+		}
+		return `<ContentItem source="` + xmlAttr(source) + `" sourceAccount="` + xmlAttr(acct) + `"></ContentItem>`
+	}
+
+	sctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	if settings, err := boxapi.New(s.boxHost).LoadSettings(sctx); err == nil && len(settings.Sources) > 0 {
+		for _, have := range settings.Sources {
+			if !strings.EqualFold(have.Source, src) {
+				continue
+			}
+			// An empty account in the request matches the box's entry for this
+			// source, whatever it is: the phone sends what it was given, and a
+			// source with exactly one account needs no disambiguation.
+			if account != "" && !strings.EqualFold(have.SourceAccount, account) {
+				continue
+			}
+			return item(have.Source, have.SourceAccount), true
+		}
+		// The box answered with a list and this source was not in it.
+		return "", false
+	}
+
+	// The box's list could not be read. Fall back to the three forms that were
+	// hardcoded before, so a speaker that is slow to answer /sources keeps the
+	// inputs it has always had rather than losing them to a timeout.
+	switch strings.ToUpper(src) {
+	case "AUX":
+		return `<ContentItem source="AUX" sourceAccount="AUX"></ContentItem>`, true
+	case "LOCAL":
+		return `<ContentItem source="LOCAL"></ContentItem>`, true
+	case "BLUETOOTH", "BT":
+		return `<ContentItem source="BLUETOOTH" sourceAccount=""></ContentItem>`, true
+	}
+	return "", false
+}
+
+// xmlAttr escapes a value for use inside a double-quoted XML attribute.
+func xmlAttr(v string) string {
+	var b strings.Builder
+	_ = xml.EscapeText(&b, []byte(v))
+	return strings.ReplaceAll(b.String(), `"`, "&#34;")
 }
