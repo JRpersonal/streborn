@@ -484,6 +484,11 @@ func browsePeers(ctx context.Context, logger *slog.Logger) []webui.PeerLink {
 		out = append(out, webui.PeerLink{
 			Name: e.name,
 			URL:  fmt.Sprintf("http://%s:%d/", ip, port),
+			// Carried so the phone can put this speaker into a group: the
+			// firmware names zone members by device, and this entry already
+			// holds the id from the speaker's mDNS record.
+			DeviceID: e.deviceID,
+			IP:       ip,
 			// A peer confirmed within peerDimAfter is clickable; anything older
 			// stays listed (sticky by design) but dims until it answers again.
 			Reachable: e.reachable && now.Sub(e.lastSeen) <= peerDimAfter,

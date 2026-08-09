@@ -202,6 +202,13 @@ func WithSpotifyStop(f func() bool) Option {
 type PeerLink struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+	// DeviceID is how the firmware names this speaker in a zone. The phone
+	// needs it to ask for a group at all: /setZone identifies every member by
+	// device, and the phone was the only client that could not name one.
+	DeviceID string `json:"deviceID,omitempty"`
+	// IP is the address a zone member is reached at, split out of URL so the
+	// phone does not have to parse it back out of a string.
+	IP string `json:"ip,omitempty"`
 	// Reachable is false for a peer that was seen recently over mDNS but did not
 	// answer a web-port probe on the last sweep. Such peers are still listed (so a
 	// speaker briefly missed by a lossy mDNS round does not vanish and reappear,

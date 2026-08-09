@@ -209,3 +209,74 @@ func TestPhoneRemoteSleepHighlightComesFromState(t *testing.T) {
 		t.Error("the armed choice has no styling of its own")
 	}
 }
+
+// TestPhoneRemoteCanFormAndUndoGroups guards the feature #400 asked for: from
+// the phone, pull another speaker into a group and drop it again.
+func TestPhoneRemoteCanFormAndUndoGroups(t *testing.T) {
+	for _, want := range []string{
+		"function peerRow(",       // the name plus a join control beside it
+		"function canJoinPeer(",   // who may be joined at all
+		"function joinPeer(",      // POST /api/box/zone
+		"function leavePeer(",     // drop one member
+		"peerRow(p)",              // actually used by the peer list
+		"'/api/box/zone', 'POST'", // forms the zone
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("phone group editing is missing %q", want)
+		}
+	}
+	// The tap on the name must keep switching to that speaker: the join control
+	// is additive, and overloading the tap was the thing this design rejected.
+	if !strings.Contains(indexHTML, "if (online) { a.href = p.url; }") {
+		t.Error("tapping a peer no longer switches the remote to it")
+	}
+}
+
+// The two cases that deliberately cannot join (decided 2026-08-09): a speaker
+// that is half of a stereo pair, where a third speaker has no clear meaning,
+// and a follower, which cannot take zone commands at all.
+func TestPhoneRemoteRefusesToGroupPairsAndFollowers(t *testing.T) {
+	i := strings.Index(indexHTML, "function canJoinPeer(")
+	if i < 0 {
+		t.Fatal("canJoinPeer is missing")
+	}
+	body := indexHTML[i : i+700]
+	if !strings.Contains(body, "if (zone.stereo) return false") {
+		t.Error("a stereo pair half can be pulled into a group, which has no defined meaning")
+	}
+	if !strings.Contains(body, "if (zone.grouped && !zone.master) return false") {
+		t.Error("a follower offers a join control it cannot honour")
+	}
+	if !strings.Contains(body, "!p.deviceID") {
+		t.Error("a peer with no deviceID is offered, but /setZone cannot name it")
+	}
+}
+
+// The lesson from the 2026-08-08 twelve-speaker log, now in the client that is
+// most exposed to it: group edits run one at a time and a repeat on a speaker
+// whose change is still running is refused, not queued.
+func TestPhoneRemoteSerialisesGroupEdits(t *testing.T) {
+	if !strings.Contains(indexHTML, "function queueGroupOp(") {
+		t.Fatal("group edits are not serialised")
+	}
+	if !strings.Contains(indexHTML, "if (groupBusy[key]) return groupChain;") {
+		t.Error("a repeat tap during a pending change is not refused, so taps can stack into overlapping /setZone drives")
+	}
+	if !strings.Contains(indexHTML, "groupChain = groupChain.then(") {
+		t.Error("group edits are not chained, so two can run at once")
+	}
+}
+
+// Every string the feature adds must exist in all twelve locales.
+func TestPhoneRemoteLocalesCarryTheGroupKeys(t *testing.T) {
+	bundles := strings.Count(indexHTML, "now:\"")
+	if bundles == 0 {
+		t.Fatal("could not find any locale bundle in indexHTML")
+	}
+	for _, key := range []string{"joinTitle", "joinAria", "joining", "joinFail", "leaveAria"} {
+		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
+		if got != bundles {
+			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
+		}
+	}
+}
