@@ -142,8 +142,13 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if req.Master.DeviceID == "" || len(req.Slaves) == 0 {
-		http.Error(w, "master deviceID and at least one slave are required", http.StatusBadRequest)
+	// The master's deviceID is optional. It is resolved from this box's own
+	// firmware /info a few lines below and the supplied value is overwritten
+	// anyway, so requiring it only kept out the one client that cannot know it:
+	// the phone remote is served BY the master and has no reason to be told
+	// which speaker it is running on.
+	if len(req.Slaves) == 0 {
+		http.Error(w, "at least one slave is required", http.StatusBadRequest)
 		return
 	}
 	mode := req.Mode
@@ -171,6 +176,42 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// is fatal: the firmware never recognizes itself as master, so the zone reads
 	// back empty (the "0.8.x regression" deqw and Albrecht hit was really this).
 	master.DeviceID = s.localDeviceID(ctx, c, master.DeviceID)
+
+	// The same correction for the SLAVES, for the same reason and from the same
+	// evidence. A speaker has two MACs and only one of them is the SoundTouch
+	// deviceID the firmware keys /setZone on; mDNS announces the other. The
+	// master's side of this was fixed long ago and called fatal, but a slave
+	// named by the wrong id is quietly just as broken: the master registers a
+	// member, the follower never recognises itself, and the zone reads back
+	// with the member "missing" while looking fine on the master.
+	//
+	// Measured 2026-08-09 on a SoundTouch 10, which reports deviceID
+	// EC24B8B790CC while announcing 7CEC79F9ECA2 over mDNS: a group formed from
+	// the phone came back ok=false, verified=0, and the follower's own /getZone
+	// said {"members":[]}.
+	//
+	// Each slave is asked directly, by IP, which is the one identifier that is
+	// never ambiguous. Sequential rather than parallel on purpose: this runs
+	// inside the form budget, /info answers in milliseconds on a reachable box,
+	// and a fleet-wide fan-out on a speaker with 120 MB of RAM buys nothing.
+	for i := range slaves {
+		if slaves[i].IP == "" {
+			continue
+		}
+		ictx, icancel := context.WithTimeout(ctx, 2*time.Second)
+		info, err := boxapi.New(slaves[i].IP).GetInfo(ictx)
+		icancel()
+		if err != nil {
+			continue // unreachable right now: keep what the caller supplied
+		}
+		real := strings.TrimSpace(info.DeviceID)
+		if real == "" || strings.EqualFold(real, slaves[i].DeviceID) {
+			continue
+		}
+		s.logger.Info("zone: corrected a member's deviceID from its own firmware /info (the caller had the chassis wlan0/SMSC MAC, not the SoundTouch ID)",
+			"ip", slaves[i].IP, "supplied", slaves[i].DeviceID, "firmware", real)
+		slaves[i].DeviceID = real
+	}
 
 	// A stereo pair is a firmware-native L/R group (POST /addGroup), not a
 	// multiroom zone. It needs exactly one partner; the master is the LEFT
