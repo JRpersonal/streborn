@@ -23,7 +23,7 @@ func TestStoredGroupIsCheckedAgainstTheSpeaker(t *testing.T) {
 		t.Fatalf("read source: %v", err)
 	}
 	if !contains(src, "GetZone(ctx)") {
-		t.Error("groupMembers never asks the speaker whether the stored group is still there")
+		t.Error("nothing asks the speaker whether the stored group is still there")
 	}
 	if !contains(src, `live.Master == "" && len(live.Members) == 0`) {
 		t.Error("an empty firmware zone does not make the stored group report standalone")
@@ -32,7 +32,7 @@ func TestStoredGroupIsCheckedAgainstTheSpeaker(t *testing.T) {
 	// and this runs whenever the phone opens its Speakers tab.
 	for _, w := range []string{"SetZone(", "RemoveZoneSlave(", "AddZoneSlave("} {
 		if contains(src, w) {
-			t.Errorf("groupMembers' file performs %s; the cross-check must never write to the speaker", w)
+			t.Errorf("the zone-volume file performs %s; the cross-check must never write to the speaker", w)
 		}
 	}
 }

@@ -71,34 +71,6 @@ func (s *Server) groupMembers() ([]zoneMemberVolume, bool, bool) {
 	if !ok || len(z.Slaves) == 0 {
 		return nil, false, false
 	}
-	// Ask the speaker whether the group is actually there.
-	//
-	// The stored document exists so a group survives a reboot or a standby and
-	// re-forms itself, which is right. But nothing used to check it against the
-	// firmware, so when a group went away without STR writing the file (a failed
-	// re-form, a firmware that dropped the zone, a factory reset) the file kept
-	// insisting and the phone kept drawing a group card for it.
-	//
-	// Seen on the maintainer's own speakers 2026-08-09: the living room reported
-	// itself master of a group with the bathroom, the portable reported itself
-	// master of a group with the living room, the bathroom reported nothing, and
-	// the living room's own firmware answered <zone /> to all of it. The card was
-	// real; the group was not. Pressing play sent audio to a zone that did not
-	// exist, which from the sofa looks exactly like "the speaker is broken".
-	//
-	// A read, never a write: this must not be the reason a speaker stays awake,
-	// so it only reports the truth and leaves repairing to the paths that already
-	// do it.
-	if s.boxHost != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		live, err := boxapi.New(s.boxHost).GetZone(ctx)
-		cancel()
-		if err == nil && live.Master == "" && len(live.Members) == 0 {
-			s.logger.Info("zone: the stored group is not on the speaker any more, reporting standalone",
-				"storedMaster", z.Master, "storedSlaves", len(z.Slaves))
-			return nil, false, false
-		}
-	}
 	out := []zoneMemberVolume{{
 		Name: s.groupSelfName(z), IP: s.boxHost, DeviceID: z.Master,
 		IsSelf: true, IsMaster: true, Volume: -1,
@@ -145,8 +117,50 @@ func (s *Server) peerName(m zones.Member) string {
 	return m.IP
 }
 
+// storedGroupIsLive reports whether the speaker still has the group the stored
+// zone document describes.
+//
+// The document exists so a group survives a reboot or a standby and re-forms
+// itself, which is right. But nothing checked it against the speaker, so when a
+// group went away without STR writing the file (a re-form that failed, a
+// firmware that dropped the zone, a factory reset) the file kept insisting and
+// the phone kept drawing a group card for it. Pressing play then sent audio into
+// a zone the firmware never had, which from the sofa is indistinguishable from a
+// broken speaker.
+//
+// Seen on three speakers at once, 2026-08-09: the living room reported itself
+// leading a group with the bathroom, the portable reported itself leading one
+// with the living room, the bathroom reported nothing, and the living room's own
+// firmware answered <zone /> to all of it.
+//
+// Only the DISPLAY asks this. The sleep timer keeps using the stored document
+// when it switches a group off, because there the file is the record of what
+// STR grouped and switching off one speaker too many is harmless.
+//
+// A read and nothing else: it runs whenever the phone opens its Speakers tab,
+// and a write there would reset the deep-standby countdown.
+func (s *Server) storedGroupIsLive() bool {
+	if s.boxHost == "" {
+		return true // cannot ask; trust the file rather than hide a real group
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	live, err := boxapi.New(s.boxHost).GetZone(ctx)
+	if err != nil {
+		return true // unreachable right now is not evidence the group is gone
+	}
+	if live.Master == "" && len(live.Members) == 0 {
+		s.logger.Info("zone: the stored group is not on the speaker any more, reporting standalone")
+		return false
+	}
+	return true
+}
+
 func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
 	members, grouped, stereo := s.groupMembers()
+	if grouped && !s.storedGroupIsLive() {
+		grouped = false
+	}
 	if !grouped {
 		writeJSON(w, http.StatusOK, map[string]any{"grouped": false})
 		return
