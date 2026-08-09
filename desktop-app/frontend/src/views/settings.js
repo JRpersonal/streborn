@@ -30,6 +30,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // as one combined error; reconstructing "how many still copied" from that
 // message is a pure decision in copyreport.js (vitest-covered).
 import { summarizePresetCopyError, countValidPresetSlots } from '../copyreport.js';
+import { balanceSourceBox, stereoPairOf } from '../groups.js';
 import {
   BoxSettings,
   BoxAgentVersion,
@@ -320,6 +321,10 @@ export async function loadBoxSettings() {
       }
       state.settingsReconnect = null;
       renderBoxSettings(s, state.settingsBox);
+      // Read-only, and only present on a stereo pair, so it is filled after the
+      // markup exists rather than being part of it.
+      refreshBoxBalanceRow(state.settingsBox, stereoPairOf(state.zoneLive || {}), state.boxes)
+        .catch(() => {});
       return;
     } catch (e) {
       lastErr = e;
@@ -553,6 +558,9 @@ function renderBoxSettings(s, box) {
       <div class="setting-row">
         <input type="range" id="boxVolume" min="0" max="100" value="${vol.actual || 0}" />
         <span class="setting-value" id="boxVolumeVal">${vol.actual || 0}</span>
+      </div>
+      <div class="setting-row" id="boxBalanceRow" hidden>
+        <span class="muted small" id="boxBalance"></span>
       </div>
       ${vol.muted ? `<small class="muted small">${escapeHtml(t('settingsView.muted'))}</small>` : ''}
     </div>
@@ -2432,3 +2440,31 @@ const debouncedSetBass = debounce(async (box, defaultBass) => {
     await SetBoxBass(box.host, box.port, rel + (defaultBass || 0));
   } catch (e) { showError(e); }
 }, 200);
+
+// The stereo balance, shown where people look for it.
+//
+// It has been on the Play page next to the volume since v0.9.35, and the owner
+// who asked for it went to Speaker settings twice and reported it missing, on
+// the very version that added it (#70, 2026-08-08). A feature nobody can find
+// is not shipped. Read-only on purpose: the firmware accepts no write that
+// sticks, which the tooltip says.
+export async function refreshBoxBalanceRow(box, pair, boxes) {
+  const row = document.getElementById('boxBalanceRow');
+  const el = document.getElementById('boxBalance');
+  if (!row || !el) return;
+  const src = balanceSourceBox(box, pair, boxes) || box;
+  if (!src || src.kind === 'stock') { row.hidden = true; return; }
+  let b = null;
+  try {
+    const r = await boxFetch(src, '/api/box/balance');
+    b = await r.json();
+  } catch { /* asleep or unreachable: show nothing rather than an error */ }
+  if (!b || !b.available) { row.hidden = true; return; }
+  const v = Number(b.actual) || 0;
+  el.textContent = v === 0
+    ? t('controls.balanceCentre')
+    : (v < 0 ? t('controls.balanceLeft', { n: Math.abs(v) })
+             : t('controls.balanceRight', { n: v }));
+  el.title = t('controls.balanceTitle');
+  row.hidden = false;
+}

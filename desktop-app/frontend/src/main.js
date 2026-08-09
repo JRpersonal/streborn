@@ -344,7 +344,7 @@ import {
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
 initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav });
-initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox });
+initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, boxFetch });
 initSpotifyView({
   switchView,
   // Live STR speaker list for the "sync Spotify login to all speakers" action.
@@ -1215,7 +1215,7 @@ $('view-box').innerHTML = `
         <input type="range" id="musicVolume" min="0" max="100" step="1" aria-label="${escapeAttr(t('controls.volume'))}" title="${escapeAttr(t('controls.volumeWheelHint'))}" />
         <button class="btn btn-mini vol-step" id="volUp" aria-label="${escapeAttr(t('controls.volumeUp'))}" title="${escapeAttr(t('controls.volumeUp'))}">+</button>
         <span class="vol-val" id="musicVolumeVal">--</span>
-        <span class="vol-balance hidden" id="musicBalance"></span>
+        
       </div>
     </div>
     <div class="grid" id="presets"></div>

@@ -150,9 +150,20 @@ export function renderMultiroom(fetchLive) {
       }))}</div>`
     : `<div class="muted small">${escapeHtml(t('multiroom.stereoNoPair'))}</div>`;
 
+  // The pair's balance belongs here, where the pair is made and undone, and
+  // nowhere near a volume slider: it is a READ-OUT, not a control. The firmware
+  // accepts no balance write that sticks (every attempt hung the endpoint until
+  // the speaker was woken), so shown beside a slider it reads as a control that
+  // is broken. An owner said exactly that: "steht neben dem Lautstaerkeregler
+  // und hat auch keinen Effekt" (2026-08-09), and #70 asked twice where it was.
+  const pairBalance = livePair
+    ? `<div class="muted small" id="pairBalance" hidden></div>`
+    : '';
+
   root.innerHTML = beta + topbar + previewNote + updateWarn +
     `<div class="zone-pick-hint muted small">${escapeHtml(t('multiroom.pickHint'))}</div>
      <div class="zone-cards">${cards}</div>
+     ${pairBalance}
      <div class="zone-controls">
        <div class="zone-field"><span>${escapeHtml(t('multiroom.modeLabel'))}</span>
          <div class="seg">${modeBtn('native', t('multiroom.modeNative'))}${modeBtn('mirror', t('multiroom.modeMirror'))}</div>
@@ -167,6 +178,8 @@ export function renderMultiroom(fetchLive) {
      </div>
 
      <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--c-border);padding-top:16px">
+
+  if (livePair) fillPairBalance(livePair, strBoxes).catch(() => {});
        <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></b>
        <div class="muted small">${escapeHtml(t('multiroom.stereoNote'))}</div>
        ${canPair ? '' : `<div class="setup-warn small">${escapeHtml(t('multiroom.stereoNeedTwo'))}</div>`}
@@ -427,4 +440,29 @@ async function doDissolveZone(strBoxes) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
   renderMultiroom(true);
+}
+
+// fillPairBalance shows the pair's balance as information, with where to change
+// it, because here it cannot be changed. Asked from the pair's MASTER whichever
+// half is selected: only the master reports one (#70).
+async function fillPairBalance(pair, boxes) {
+  const el = document.getElementById('pairBalance');
+  if (!el || !pair) return;
+  const master = pairMemberBoxes(pair, boxes).map(x => x.box)
+    .find(b => b && String(b.deviceID || '').toUpperCase() === String(pair.master || '').toUpperCase());
+  const src = master || pairMemberBoxes(pair, boxes).map(x => x.box).find(Boolean);
+  if (!src || src.kind === 'stock') return;
+  let b = null;
+  try {
+    const r = await deps.boxFetch(src, '/api/box/balance');
+    b = await r.json();
+  } catch { /* asleep or unreachable: show nothing rather than an error */ }
+  if (!b || !b.available) return;
+  const v = Number(b.actual) || 0;
+  const reading = v === 0
+    ? t('controls.balanceCentre')
+    : (v < 0 ? t('controls.balanceLeft', { n: Math.abs(v) })
+             : t('controls.balanceRight', { n: v }));
+  el.textContent = reading + '. ' + t('controls.balanceTitle');
+  el.hidden = false;
 }

@@ -43,3 +43,20 @@ func readSourceFile(name string) (string, error) {
 }
 
 func contains(hay, needle string) bool { return strings.Contains(hay, needle) }
+
+// A stereo pair must never be judged by /getZone. It is a firmware group made
+// with /addGroup, and /getZone answers <zone /> for a perfectly healthy pair.
+// Applying the liveness check to one reported a working pair as standalone six
+// seconds after it was created, caught live on two SoundTouch 10s 2026-08-09:
+//
+//	19:44:48  stereo: paired id=str-grp-... members=2
+//	19:44:54  zone: the stored group is not on the speaker any more
+func TestStereoPairIsNotJudgedByGetZone(t *testing.T) {
+	src, err := readSourceFile("zonevolume.go")
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	if !contains(src, "grouped && !stereo && !s.storedGroupIsLive()") {
+		t.Error("the zone liveness check still applies to stereo pairs, which /getZone never reports")
+	}
+}

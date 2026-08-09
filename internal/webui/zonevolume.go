@@ -158,7 +158,12 @@ func (s *Server) storedGroupIsLive() bool {
 
 func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
 	members, grouped, stereo := s.groupMembers()
-	if grouped && !s.storedGroupIsLive() {
+	// A stereo pair is NOT a zone. It is a firmware group created with
+	// /addGroup, and /getZone answers <zone /> for a perfectly healthy pair, so
+	// the liveness check below must never be applied to one: doing so reported
+	// a working pair as standalone seconds after it was created (caught live on
+	// two SoundTouch 10s, 2026-08-09).
+	if grouped && !stereo && !s.storedGroupIsLive() {
 		grouped = false
 	}
 	if !grouped {
