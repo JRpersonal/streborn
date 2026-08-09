@@ -160,9 +160,27 @@ func localIPForBox(host string) (string, error) {
 func buildBootstrapEnableSSHCommands(base string) []string {
 	inj := base + remoteServicesInjection
 	upd := base + "update"
+	// ORDER MATTERS: sys configuration FIRST, envswitch LAST.
+	//
+	// envswitch commits the runtime layer as it stands when it runs, so a
+	// sys configuration write issued AFTER it does not survive the reboot. We
+	// had it the other way round, which meant the second write was decorative:
+	// the fallback we believed we had for chassis we cannot measure was never
+	// actually there.
+	//
+	// Measured by @bitranox on a SoundTouch 20 (variant spotty, FW 27.0.6) and
+	// reported in gesellix/Bose-SoundTouch#471. The method is why this is
+	// trusted: an already-migrated box was POISONED first, all four URLs set to
+	// an unreachable address and confirmed to survive a reboot of their own, so
+	// a pass could not be inherited from existing config. With this order all
+	// four URLs survived; with envswitch first they did not.
+	//
+	// It also matters beyond the fallback: bmxRegistryUrl and statsServerUrl
+	// have no envswitch form at all, so sys configuration is the only way to
+	// set them, and on the old order it never persisted.
 	return []string{
-		`envswitch boseurls set "` + inj + `" "` + upd + `"`,
 		`sys configuration margeServerUrl "` + inj + `"`,
+		`envswitch boseurls set "` + inj + `" "` + upd + `"`,
 	}
 }
 

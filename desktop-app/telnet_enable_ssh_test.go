@@ -78,9 +78,15 @@ func TestBuildBootstrapEnableSSHCommands(t *testing.T) {
 		t.Fatalf("want 2 commands, got %d: %v", len(cmds), cmds)
 	}
 	inj := base + remoteServicesInjection
+	// ORDER IS PART OF THE CONTRACT: sys configuration first, envswitch last.
+	// envswitch commits the runtime layer as it stands when it runs, so a
+	// sys configuration write after it does not survive the reboot
+	// (measured on a SoundTouch 20 with a poisoned box,
+	// gesellix/Bose-SoundTouch#471). The old order made the second write
+	// decorative.
 	want := []string{
-		`envswitch boseurls set "` + inj + `" "` + base + `update"`,
 		`sys configuration margeServerUrl "` + inj + `"`,
+		`envswitch boseurls set "` + inj + `" "` + base + `update"`,
 	}
 	for i := range want {
 		if cmds[i] != want[i] {
