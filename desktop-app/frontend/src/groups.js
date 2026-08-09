@@ -280,7 +280,12 @@ export function stereoPairOf(zoneLive) {
     if (st && ((st.members || []).length || st.id)) {
       return {
         id: st.id || '',
-        master: String(st.master || '').toUpperCase(),
+        // The agent names this field masterDeviceID. Reading only st.master
+        // left pair.master empty on every pair, so "ask the pair's MASTER for
+        // the balance" silently asked whichever half happened to be selected,
+        // which is the bug that was supposed to be fixed (#70). Both spellings
+        // are accepted so an older agent keeps working.
+        master: String(st.masterDeviceID || st.master || '').toUpperCase(),
         members: st.members || [],
       };
     }
