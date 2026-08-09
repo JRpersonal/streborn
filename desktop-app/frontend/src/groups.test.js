@@ -436,3 +436,24 @@ describe('balanceSourceBox', () => {
     expect(balanceSourceBox(right, pair, [right])).toBe(right);
   });
 });
+
+describe('stereoPairOf master field', () => {
+  it('reads the masterDeviceID the agent actually sends', () => {
+    const zoneLive = {
+      A: {
+        members: [],
+        stereo: {
+          id: 'str-grp-AA', name: 'Stereo pair', masterDeviceID: 'AA',
+          members: [{ deviceID: 'AA', ip: '192.0.2.1', role: 'LEFT' },
+                    { deviceID: 'BB', ip: '192.0.2.2', role: 'RIGHT' }],
+        },
+      },
+    };
+    expect(stereoPairOf(zoneLive).master).toBe('AA');
+  });
+
+  it('still accepts the older master spelling', () => {
+    const zoneLive = { A: { stereo: { id: 'x', master: 'cc', members: [] } } };
+    expect(stereoPairOf(zoneLive).master).toBe('CC');
+  });
+});
