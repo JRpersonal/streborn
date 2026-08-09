@@ -20,6 +20,7 @@ import {
   stereoPairOf,
   pairMemberBoxes,
   inStereoPair,
+  stereoUndoTargets,
 } from './groups.js';
 
 // Placeholder LAN (192.0.2.0/24, RFC 5737) and deviceIDs only.
@@ -41,6 +42,36 @@ function liveMap() {
     [boxB.deviceID]: { master: master.deviceID, senderIP: master.host, members },
   };
 }
+
+describe('stereoUndoTargets', () => {
+  const pair = {
+    id: 'str-grp-1', master: master.deviceID,
+    members: [
+      { deviceID: master.deviceID, ip: master.host, role: 'LEFT' },
+      { deviceID: boxA.deviceID, ip: boxA.host, role: 'RIGHT' },
+    ],
+  };
+  it('returns both halves, master first', () => {
+    expect(stereoUndoTargets(pair, [boxA, boxB, master])).toEqual([master, boxA]);
+  });
+  it('still returns the other half when the master is not discovered', () => {
+    // The leftover case: the half that answers is not the recorded master.
+    expect(stereoUndoTargets(pair, [boxA, boxB])).toEqual([boxA]);
+  });
+  it('skips stock speakers, which have no agent to ask', () => {
+    const stockPair = {
+      master: stock.deviceID,
+      members: [
+        { deviceID: stock.deviceID, ip: stock.host, role: 'LEFT' },
+        { deviceID: boxA.deviceID, ip: boxA.host, role: 'RIGHT' },
+      ],
+    };
+    expect(stereoUndoTargets(stockPair, [stock, boxA])).toEqual([boxA]);
+  });
+  it('is empty without a pair', () => {
+    expect(stereoUndoTargets(null, [master, boxA])).toEqual([]);
+  });
+});
 
 describe('zoneBoxes', () => {
   it('keeps only STR boxes with host and deviceID', () => {

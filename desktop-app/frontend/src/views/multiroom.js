@@ -11,7 +11,7 @@ import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, stereoPairOf, pairMemberBoxes } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, stereoPairOf, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
 
 // Injected main.js helpers (see initMultiroomView).
 let deps = {
@@ -392,41 +392,58 @@ async function doFormZone(strBoxes) {
 // three SoundTouch 10s pressed undo twice; both calls went to a speaker that
 // was not paired, both returned "nothing to dissolve", the app reported
 // success, and the pair was still there in the Bose app (field, 2026-08-04).
+// EVERY member of the pair gets the undo, master first, because the pair does
+// not reliably live where we expected. The rule used to be "ask the master, only
+// its firmware reports the pair", and that held while a pair was healthy. It
+// does not hold once one half has let go: measured 2026-08-10 on two SoundTouch
+// 10s, the MASTER answered /getGroup with an empty group while the right-hand
+// speaker still held the whole document naming the master as LEFT. Every undo
+// went to the master, was told there was nothing to undo, and the app then said
+// both "current stereo pair: ..." and "there is no stereo pair to undo" in the
+// same panel. Sending it to the other half cleared both speakers at once.
+//
+// So neither half can be assumed to be the one holding it. Asking both is
+// harmless (a speaker not in a pair answers "nothing to undo" and is left
+// alone) and it is the only way a one-sided leftover can be cleared at all.
 async function doDissolveStereo(pairCands) {
-  // The MASTER first, and not just as a preference: on real hardware only the
-  // master's firmware reports the pair at all. Asked about its group, the
-  // right-hand speaker answers that it is in none, so a dissolve sent there
-  // returns "nothing to undo" while the pair is very much alive (live on two
-  // SoundTouch 10s, 2026-08-04).
   const pair = stereoPairOf(state.zoneLive);
-  const live = pairMemberBoxes(pair, state.boxes || []).map(x => x.box).filter(Boolean);
-  const masterUp = String((pair && pair.master) || '').toUpperCase();
-  const master = live.find(b => String(b.deviceID || '').toUpperCase() === masterUp)
-    || live[0]
-    || pairCands.find(b => b.deviceID === ($('stereoLeft') || {}).value);
-  if (!master) {
+  const targets = stereoUndoTargets(pair, state.boxes || []);
+  if (!targets.length) {
+    const guess = pairCands.find(b => b.deviceID === ($('stereoLeft') || {}).value);
+    if (guess) targets.push(guess);
+  }
+  if (!targets.length) {
     state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
     renderMultiroom(false);
     return;
   }
   $('stereoResult').innerHTML = `<div class="muted">${escapeHtml(t('common.loading'))}</div>`;
-  try {
-    // The stereo-intent endpoint: it also dissolves a firmware pair the agent
-    // has no persisted record of (agent reinstalled, pair formed elsewhere),
-    // which the plain dissolve deliberately leaves alone.
-    await DissolveStereoPair(master.host, master.port);
+  let dissolved = false;
+  let failure = null;
+  for (const box of targets) {
+    try {
+      // The stereo-intent endpoint: it also dissolves a firmware pair the agent
+      // has no persisted record of (agent reinstalled, pair formed elsewhere),
+      // which the plain dissolve deliberately leaves alone.
+      await DissolveStereoPair(box.host, box.port);
+      dissolved = true;
+    } catch (e) {
+      // "This speaker is not in a pair" is not an error the user should read as
+      // a failure, and it must not read as success either (which is what it used
+      // to do, because the agent answers 200 for it). With more than one target
+      // it is also the EXPECTED answer from the half that already let go, so it
+      // never stops the sweep.
+      if (!String((e && e.message) || e || '').includes('stereo-not-paired')) failure = e;
+    }
+  }
+  if (dissolved) {
     state.stereoMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.stereoDissolved'))}</div>`;
     showToast(t('multiroom.stereoDissolved'));
-  } catch (e) {
-    // "This speaker is not in a pair" is not an error the user should read as
-    // a failure, and it must not read as success either (which is what it used
-    // to do, because the agent answers 200 for it).
-    if (String((e && e.message) || e || '').includes('stereo-not-paired')) {
-      state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
-      showToast(t('multiroom.stereoNothingToUndo'));
-    } else {
-      state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
-    }
+  } else if (failure) {
+    state.stereoMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`;
+  } else {
+    state.stereoMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.stereoNothingToUndo'))}</div>`;
+    showToast(t('multiroom.stereoNothingToUndo'));
   }
   renderMultiroom(true);
 }

@@ -322,6 +322,30 @@ export function inStereoPair(box, pair) {
     (box.host && (m && m.ip) === box.host));
 }
 
+// stereoUndoTargets lists the speakers an "undo pair" has to be sent to, master
+// first.
+//
+// It returns BOTH halves rather than the master alone. "Only the master's
+// firmware reports the pair" was true of a healthy pair and is not true of a
+// broken one: measured 2026-08-10 on two SoundTouch 10s, the master answered
+// /getGroup with an empty group while the other half still held the whole
+// document naming the master as LEFT. An undo aimed at the master was told
+// there was nothing to undo, so the leftover could not be cleared from the app
+// at all, and the panel contradicted itself, naming the pair and denying it in
+// the same breath.
+//
+// Master first because on a healthy pair it is the half that owns the pair, and
+// asking it first keeps the common case a single call's worth of work. Asking
+// the other half after costs nothing: a speaker that is not in a pair answers
+// "nothing to undo" and is left untouched.
+export function stereoUndoTargets(pair, boxes) {
+  const live = pairMemberBoxes(pair, boxes).map(x => x.box)
+    .filter(b => b && b.kind !== 'stock');
+  const masterUp = String((pair && pair.master) || '').toUpperCase();
+  const isMaster = (b) => masterUp && String(b.deviceID || '').toUpperCase() === masterUp;
+  return [...live.filter(isMaster), ...live.filter(b => !isMaster(b))];
+}
+
 // balanceSourceBox picks which speaker to ask for a stereo pair's balance.
 //
 // Only the MASTER of a pair reports a balance; ask the other half and it says
