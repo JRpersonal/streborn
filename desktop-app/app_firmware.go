@@ -16,8 +16,12 @@ import (
 
 // GetPresets calls GET /api/presets of the given stick.
 // latestBoseFirmware is the final firmware Bose shipped for every SoundTouch
-// model (27.0.6, 2022-08-04). There is nothing newer; an older box can be
-// brought up to it with the Bose app.
+// model (27.0.6, 2022-08-04). There is nothing newer.
+//
+// An older box has to be brought up to it with Bose's USB update tool, NOT with
+// the SoundTouch app: the app fetched firmware from the Bose cloud, so that
+// route died with the shutdown. See the fw.* strings for the guidance users
+// actually get.
 const latestBoseFirmware = "27.0.6"
 
 // FirmwareInfo is a speaker's Bose firmware + model, read from its :8090/info.

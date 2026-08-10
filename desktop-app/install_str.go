@@ -92,8 +92,17 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		a.logger.Info("install_str: box firmware", "host", host, "model", fw.Model,
 			"firmware", fw.Firmware, "moduleType", fw.ModuleType, "variant", fw.Variant, "outdated", fw.Outdated)
 		if fw.Outdated && fw.Short != "" {
-			fwNote = " The speaker firmware is " + fw.Short + ", older than the latest Bose firmware " + latestBoseFirmware +
-				". Update the speaker in the Bose SoundTouch app first, then run the install again."
+			// NOT "update it in the SoundTouch app". That was this note's advice
+			// until 2026-08-10 and it is a dead end: the app delivered firmware
+			// from the Bose cloud, and the cloud is gone. A SoundTouch 30 owner
+			// on 10.0.11 followed it for a week, went through the community
+			// downgrade guide as well, and his speaker never moved off the 2015
+			// firmware, because the one route that still works was never named.
+			// The Firmware section in the speaker settings already says this
+			// properly, with the link; the note points there rather than
+			// repeating a shortened version of it.
+			fwNote = " The speaker firmware is " + fw.Short + ", older than Bose's last firmware " + latestBoseFirmware +
+				", and STR needs it updated first. Since the Bose cloud shut down the SoundTouch app usually cannot deliver a firmware update any more, so use Bose's USB update tool: the Firmware section in the speaker settings has the steps and the link."
 		}
 	}
 	// Every message this function can end on gets the firmware note. It used to
