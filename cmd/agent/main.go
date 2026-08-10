@@ -28,6 +28,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/dnsboot"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
+	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/shepherd"
@@ -301,6 +302,16 @@ func run() error {
 	zonesStore, zErr := zones.Load("/mnt/nv/streborn/zones.json")
 	if zErr != nil {
 		logger.Warn("zones config load failed, continuing standalone", "err", zErr)
+	}
+
+	// DLNA/UPnP media servers the user turned into native music sources. The
+	// speaker drops the registration about a minute into every boot (it re-checks
+	// the account against marge, whose record of it was in memory and went away
+	// with the restart), so STR remembers the choice and puts it back. A load
+	// error is non-fatal: start with nothing enabled.
+	mediaServerStore, msErr := mediaservers.Load("/mnt/nv/streborn/mediaservers.json")
+	if msErr != nil {
+		logger.Warn("media server config load failed, starting with none enabled", "err", msErr)
 	}
 
 	// Recently-played ring (#135), persisted on NAND (debounced; see the recent
@@ -631,6 +642,14 @@ func run() error {
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
+		webui.WithMediaServers(mediaServerStore),
+		webui.WithStoredMusicPublisher(func(list []webui.StoredMusicSource) {
+			out := make([]marge.StoredMusicSource, 0, len(list))
+			for _, m := range list {
+				out = append(out, marge.StoredMusicSource{Account: m.Account, Name: m.Name})
+			}
+			margeSrv.SetStoredMusicSources(out)
+		}),
 		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup),
 		webui.WithMargeForward(margeSrv.SetForward),
 		webui.WithRecent(recentStore))
@@ -640,6 +659,14 @@ func run() error {
 	// No-op when standalone. Lives on the server so the mirror path can reach
 	// the current stream + the UPnP renderer.
 	go webuiSrv.PeriodicZoneReconcile()
+
+	// Publish the user's DLNA/UPnP music sources into the marge account, which
+	// the box polls for itself at boot and keeps whatever it finds there, exactly
+	// the way radio arrives. That is the entire persistence mechanism: no write
+	// to the speaker, so nothing here can disturb its standby countdown. Done
+	// synchronously and early, because the box's account poll comes seconds
+	// after its own boot.
+	webuiSrv.PublishMediaServers()
 
 	// Auto-leave the out-of-box SETUP source. A box that installed STR over the
 	// network but never finished Bose's app-driven onboarding keeps the SETUP

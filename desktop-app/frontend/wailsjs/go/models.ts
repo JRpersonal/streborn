@@ -78,6 +78,32 @@ export namespace main {
 	        this.portVerified = source["portVerified"];
 	    }
 	}
+	export class BoxMediaServer {
+	    id: string;
+	    ip: string;
+	    manufacturer: string;
+	    modelName: string;
+	    friendlyName: string;
+	    registered: boolean;
+	    enabled: boolean;
+	    status: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BoxMediaServer(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.ip = source["ip"];
+	        this.manufacturer = source["manufacturer"];
+	        this.modelName = source["modelName"];
+	        this.friendlyName = source["friendlyName"];
+	        this.registered = source["registered"];
+	        this.enabled = source["enabled"];
+	        this.status = source["status"];
+	    }
+	}
 	export class BoxPresetInfo {
 	    slot: number;
 	    source: string;

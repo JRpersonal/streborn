@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -306,7 +307,7 @@ func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
 <fullAccount>
   <mode><text>global</text></mode>
-  <sources>` + staticRadioSourceXML() + `
+  <sources>` + staticRadioSourceXML() + s.storedMusicXML() + `
   </sources>
 </fullAccount>`))
 }
@@ -438,7 +439,7 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request)
 		`<mode>global</mode>` +
 		`<preferredLanguage>en</preferredLanguage>` +
 		`<providerSettings/>` +
-		`<sources>` + staticRadioSourceXML() + s.reflectedSourcesXML() + `</sources>` +
+		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedSourcesXML() + `</sources>` +
 		`</account>`))
 }
 
@@ -617,7 +618,7 @@ func (s *Server) respondAccountSources(w http.ResponseWriter, _ *http.Request) {
 	for _, r := range regs {
 		b.WriteString(renderAccountSource(format, r))
 	}
-	inner := staticRadioSourceXML() + b.String()
+	inner := staticRadioSourceXML() + s.storedMusicXML() + b.String()
 	var body string
 	switch format {
 	case "wrap":
@@ -712,4 +713,90 @@ func staticRadioSourceXML() string {
 		`<updatedOn>` + ts + `</updatedOn>` +
 		`<username></username>` +
 		`</source>`
+}
+
+// storedMusicSourcesXML renders the user's DLNA/UPnP media servers as account
+// sources, so the box PICKS THEM UP ITSELF instead of being told about them.
+//
+// This is the same channel radio arrives on. The box polls
+// GET /streaming/account/<id>/full at boot (measured in the marge request log:
+// two /full reads within a second of the account handshake, and no /sources read
+// at all unless an addSource just happened), and it keeps whatever that document
+// advertises. Sitting in that document is therefore all a source needs; a push
+// to /setMusicServiceAccount only matters for making a NEW server usable within
+// the current session, before the next poll.
+//
+// The element set and order are copied from staticRadioSourceXML deliberately.
+// A source rendered into /full that omits an element the firmware expects is the
+// one documented way to make the whole account document fail rather than just
+// that entry, so the safe move is to differ from the known-good source in
+// nothing but the three values that have to change: the numeric provider id 7,
+// the sourcename STORED_MUSIC, and the username, which is the media server's
+// UPnP id with "/0" appended.
+//
+// ids start at 10 so they cannot collide with the radio source's fixed id 3.
+func storedMusicSourcesXML(list []registeredSource) string {
+	if len(list) == 0 {
+		return ""
+	}
+	const ts = "2020-01-01T00:00:00.000+00:00"
+	var b strings.Builder
+	for i, r := range list {
+		name := r.Name
+		if strings.TrimSpace(name) == "" {
+			name = "Music library"
+		}
+		b.WriteString(`<source id="` + strconv.Itoa(10+i) + `" type="Audio">` +
+			`<createdOn>` + ts + `</createdOn>` +
+			`<credential type="token"></credential>` +
+			`<name>` + xmlEscapeText(name) + `</name>` +
+			`<sourceproviderid>7</sourceproviderid>` +
+			`<sourcename>STORED_MUSIC</sourcename>` +
+			`<sourceSettings/>` +
+			`<updatedOn>` + ts + `</updatedOn>` +
+			`<username>` + xmlEscapeText(r.Username) + `</username>` +
+			`</source>`)
+	}
+	return b.String()
+}
+
+// storedMusicXML is the current media-server source block for the account
+// responses, under the read lock.
+func (s *Server) storedMusicXML() string {
+	s.mu.RLock()
+	list := make([]registeredSource, len(s.storedMusic))
+	copy(list, s.storedMusic)
+	s.mu.RUnlock()
+	return storedMusicSourcesXML(list)
+}
+
+// SetStoredMusicSources publishes the user's enabled media servers so every
+// account response advertises them. The agent calls this at startup from the
+// persisted store, and again whenever the user enables or removes one.
+//
+// Replaces the whole set: the store is the authority on what the user wants.
+func (s *Server) SetStoredMusicSources(servers []StoredMusicSource) {
+	list := make([]registeredSource, 0, len(servers))
+	for _, srv := range servers {
+		if strings.TrimSpace(srv.Account) == "" {
+			continue
+		}
+		list = append(list, registeredSource{
+			Username: srv.Account, ProviderID: "7",
+			Name: srv.Name, SourceName: "STORED_MUSIC",
+		})
+	}
+	s.mu.Lock()
+	s.storedMusic = list
+	s.mu.Unlock()
+	s.logger.Info("media server sources published to the account", slog.String("comp", "marge"),
+		slog.Int("count", len(list)))
+}
+
+// StoredMusicSource is one media server the account advertises. Account is the
+// media server's UPnP id with "/0" appended, exactly as the box reports the id
+// in /listMediaServers.
+type StoredMusicSource struct {
+	Account string
+	Name    string
 }

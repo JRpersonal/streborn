@@ -15,6 +15,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
@@ -41,8 +42,16 @@ type Server struct {
 	// zones persists this box's multiroom membership so a zone auto-reforms
 	// after reboot/standby (#70). nil when not wired; zone write endpoints
 	// then still drive the box but do not persist.
-	zones    *zones.Store
-	renderer *upnp.Renderer
+	zones *zones.Store
+	// mediaServers remembers which DLNA/UPnP media servers the user turned into
+	// native music sources, because the speaker forgets them on reboot. nil when
+	// not wired; the endpoints then still drive the box but nothing is restored
+	// after a restart.
+	mediaServers *mediaservers.Store
+	// publishStoredMusic hands the enabled media servers to the marge account
+	// responses so the box picks them up on its own poll. nil when not wired.
+	publishStoredMusic func([]StoredMusicSource)
+	renderer           *upnp.Renderer
 	// sleep is the armed sleep timer, if any. See sleeptimer.go.
 	sleep       sleepState
 	autoPair    *autopair.Manager
@@ -629,6 +638,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/airplay-opt", s.handleBoxAirplayOpt)
 	mux.HandleFunc("/api/box/resume-on-power-on", s.handleResumeOnPowerOn)
 	mux.HandleFunc("/api/box/display-track", s.handleDisplayTrack)
+	mux.HandleFunc("/api/box/mediaservers", s.handleMediaServers)
 	mux.HandleFunc("/api/box/presets", s.handleBoxPresets)
 	mux.HandleFunc("/api/box/presets/recall", s.handleBoxPresetRecall)
 	mux.HandleFunc("/api/box/snapshot", s.handleBoxSnapshot)

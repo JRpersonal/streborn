@@ -49,6 +49,8 @@ export function DeletePreset(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function DeleteRecentCard(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
 
+export function DisableBoxMediaServer(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
+
 export function DiscoverBoxes(arg1:number):Promise<Array<main.BoxInfo>>;
 
 export function DissolveStereoPair(arg1:string,arg2:number):Promise<void>;
@@ -58,6 +60,8 @@ export function DissolveZone(arg1:string,arg2:number):Promise<void>;
 export function DownloadUpdate(arg1:string):Promise<string>;
 
 export function EjectDrive(arg1:string):Promise<void>;
+
+export function EnableBoxMediaServer(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
 
 export function EnsureSpotifyEngine(arg1:string,arg2:number):Promise<string>;
 
@@ -96,6 +100,8 @@ export function GetZoneState(arg1:string,arg2:number):Promise<Record<string, any
 export function InstallSTROnBox(arg1:string,arg2:string):Promise<main.InstallResult>;
 
 export function IsBoseStick(arg1:string):Promise<boolean>;
+
+export function ListBoxMediaServers(arg1:string,arg2:number):Promise<Array<main.BoxMediaServer>>;
 
 export function ListDrives():Promise<Array<sticksetup.Drive>>;
 
