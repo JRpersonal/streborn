@@ -771,6 +771,34 @@ func (c *Client) postXML(ctx context.Context, path, body string) error {
 	return nil
 }
 
+// postXMLInto POSTs body and decodes the XML reply into dst. Same contract as
+// postXML otherwise: a >=400 status carries the box's own error text, which is
+// where the firmware puts its "field not found" parse complaints.
+func (c *Client) postXMLInto(ctx context.Context, path, body string, dst any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(path), strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("box %s: %d: %s", path, resp.StatusCode, string(b))
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	return xml.Unmarshal(ensureUTF8(raw), dst)
+}
+
 func xmlEscape(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", `'`, "&apos;")
 	return r.Replace(s)

@@ -3,6 +3,7 @@ package boxapi
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -118,6 +119,102 @@ func (c *Client) UnregisterMediaServer(ctx context.Context, m MediaServer) error
 	}
 	return c.postXML(ctx, "/removeMusicServiceAccount",
 		musicServiceAccountBody("STORED_MUSIC", name, acct))
+}
+
+// MediaItem is one entry from a media server: a folder to descend into or a
+// track to play.
+type MediaItem struct {
+	Name string `json:"name"`
+	// Type is the firmware's own word: "dir" for a container, "track" for
+	// something playable. Anything else is passed through untouched.
+	Type string `json:"type"`
+	// Location addresses the item inside the server ("4:cont1:20:0:0:" for a
+	// folder, "5:audio5:part11:11:5 TRACK" for a track). Opaque: build nothing
+	// from it, hand it back as-is.
+	Location string `json:"location"`
+	Playable bool   `json:"playable"`
+}
+
+// BrowseMediaServer lists one container of a registered media server.
+//
+// An empty location browses the root. To descend, pass an item's Location and
+// Name back.
+//
+// The request shape is NOT obvious and the firmware rejects every variation.
+// Measured 2026-08-10: the container must be an <item> carrying <name> and
+// <type> BEFORE its <ContentItem>. A bare <ContentItem> as a direct child of
+// <navigate>, or a <mediaItemContainer>, both answer
+// 500 "field not found on 'navigate'". None of this is in Bose's public API
+// document; the shape comes from thlucas1/bosesoundtouchapi plus live probing.
+func (c *Client) BrowseMediaServer(ctx context.Context, account, location, name string, start, count int) ([]MediaItem, int, error) {
+	if strings.TrimSpace(account) == "" {
+		return nil, 0, fmt.Errorf("no media server account")
+	}
+	if start < 1 {
+		start = 1
+	}
+	if count <= 0 || count > 200 {
+		count = 100
+	}
+	var b strings.Builder
+	b.WriteString(`<navigate source="STORED_MUSIC" sourceAccount="` + xmlEscape(account) + `">`)
+	b.WriteString(`<startItem>` + strconv.Itoa(start) + `</startItem>`)
+	b.WriteString(`<numItems>` + strconv.Itoa(count) + `</numItems>`)
+	if strings.TrimSpace(location) != "" {
+		if strings.TrimSpace(name) == "" {
+			name = "Folder"
+		}
+		b.WriteString(`<item Playable="1"><name>` + xmlEscape(name) + `</name><type>dir</type>` +
+			`<ContentItem source="STORED_MUSIC" type="dir" location="` + xmlEscape(location) +
+			`" sourceAccount="` + xmlEscape(account) + `" isPresetable="true"><itemName>` +
+			xmlEscape(name) + `</itemName></ContentItem></item>`)
+	}
+	b.WriteString(`</navigate>`)
+
+	var raw struct {
+		TotalItems int `xml:"totalItems"`
+		Items      []struct {
+			Playable string `xml:"Playable,attr"`
+			Name     string `xml:"name"`
+			Type     string `xml:"type"`
+			// The item's OWN ContentItem is the DIRECT child; the one nested
+			// inside mediaItemContainer describes the PARENT container and must
+			// never be mistaken for it. Selecting only direct children keeps the
+			// parent out, and the last direct child is the item's own.
+			Content []struct {
+				Location string `xml:"location,attr"`
+				Type     string `xml:"type,attr"`
+			} `xml:"ContentItem"`
+		} `xml:"items>item"`
+	}
+	if err := c.postXMLInto(ctx, "/navigate", b.String(), &raw); err != nil {
+		return nil, 0, err
+	}
+	out := make([]MediaItem, 0, len(raw.Items))
+	for _, it := range raw.Items {
+		loc := ""
+		if n := len(it.Content); n > 0 {
+			loc = it.Content[n-1].Location
+		}
+		out = append(out, MediaItem{
+			Name: strings.TrimSpace(it.Name), Type: strings.TrimSpace(it.Type),
+			Location: loc, Playable: it.Playable == "1",
+		})
+	}
+	return out, raw.TotalItems, nil
+}
+
+// PlayMediaItem points the speaker at one item of a media server. The location
+// is the one BrowseMediaServer returned; the firmware activates it itself, so
+// nothing is streamed through STR.
+func (c *Client) PlayMediaItem(ctx context.Context, account, location, name string) error {
+	if strings.TrimSpace(account) == "" || strings.TrimSpace(location) == "" {
+		return fmt.Errorf("media item needs an account and a location")
+	}
+	return c.postXML(ctx, "/select",
+		`<ContentItem source="STORED_MUSIC" location="`+xmlEscape(location)+
+			`" sourceAccount="`+xmlEscape(account)+`" isPresetable="true"><itemName>`+
+			xmlEscape(name)+`</itemName></ContentItem>`)
 }
 
 // RegisteredMediaServerAccounts returns the sourceAccount of every STORED_MUSIC

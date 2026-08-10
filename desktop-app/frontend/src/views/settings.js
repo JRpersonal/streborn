@@ -23,6 +23,7 @@ import {
   showError,
   showToast,
   compareVerBuild,
+  getBoxLabel,
 } from '../utils.js';
 import { t, tLookup, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -540,6 +541,10 @@ async function fillMusicLib(box) {
     list.innerHTML = `<div class="muted small">${escapeHtml(t('settingsView.musicLibNone'))}</div>`;
     return;
   }
+  // The other STR speakers, for the "add to all" action. Stock speakers have no
+  // agent to tell, and this box is handled separately so it is never asked twice.
+  const otherBoxes = (state.boxes || []).filter(b =>
+    b && b.kind !== 'stock' && b.host && b.host !== box.host);
   list.innerHTML = servers.map((srv, i) => {
     const name = srv.friendlyName || srv.modelName || srv.id;
     const where = srv.manufacturer ? `${srv.manufacturer}${srv.ip ? ' · ' + srv.ip : ''}` : (srv.ip || '');
@@ -551,10 +556,51 @@ async function fillMusicLib(box) {
         <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(name)}</div>
         <small class="muted small">${escapeHtml(where)}${stateLabel ? ' · ' + escapeHtml(stateLabel) : ''}</small>
       </div>
-      <button class="btn btn-mini${srv.enabled ? '' : ' btn-primary'}" data-mlidx="${i}">${
-        escapeHtml(srv.enabled ? t('settingsView.musicLibRemove') : t('settingsView.musicLibAdd'))}</button>
+      <div style="display:flex;gap:6px;flex:none">
+        ${otherBoxes.length ? `<button class="btn btn-mini" data-mlall="${i}">${
+          escapeHtml(t('settingsView.musicLibAddAll'))}</button>` : ''}
+        <button class="btn btn-mini${srv.enabled ? '' : ' btn-primary'}" data-mlidx="${i}">${
+          escapeHtml(srv.enabled ? t('settingsView.musicLibRemove') : t('settingsView.musicLibAdd'))}</button>
+      </div>
     </div>`;
   }).join('');
+
+  // "Add to all speakers". On real Bose a media server belonged to the ACCOUNT
+  // and every speaker had it; in STR each speaker runs its own agent, so the
+  // same setting has to be written once per speaker. Doing that by hand for a
+  // household of eight is the kind of chore the app should absorb.
+  //
+  // Every speaker discovers the server itself, and the id is the server's UPnP
+  // UDN, which is the same everywhere, so the entry is valid on all of them.
+  // A speaker that already has it answers "nothing to push" and is left alone.
+  list.querySelectorAll('[data-mlall]').forEach(btn => {
+    btn.onclick = async () => {
+      const srv = servers[Number(btn.getAttribute('data-mlall'))];
+      if (!srv) return;
+      const msg = $('musicLibMsg');
+      btn.disabled = true;
+      if (msg) msg.innerHTML = `<div class="muted small">${escapeHtml(t('common.loading'))}</div>`;
+      let ok = 0;
+      const failed = [];
+      for (const b of [box, ...otherBoxes]) {
+        try {
+          await EnableBoxMediaServer(b.host, b.port, srv.id, srv.friendlyName || '');
+          ok++;
+        } catch {
+          // Named, not swallowed: a speaker that was asleep or off is exactly
+          // the one the user needs to know about, and the rest still succeed.
+          failed.push(getBoxLabel(b));
+        }
+      }
+      if (msg) {
+        msg.innerHTML = failed.length
+          ? `<div class="setup-warn">${escapeHtml(t('settingsView.musicLibAllPartial', { ok, failed: failed.join(', ') }))}</div>`
+          : `<div class="setup-ok">${escapeHtml(t('settingsView.musicLibAllDone', { ok }))}</div>`;
+      }
+      btn.disabled = false;
+      fillMusicLib(box).catch(() => {});
+    };
+  });
 
   list.querySelectorAll('[data-mlidx]').forEach(btn => {
     btn.onclick = async () => {
