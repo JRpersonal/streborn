@@ -10,6 +10,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/autopair"
 	"github.com/JRpersonal/streborn/internal/boxcli"
+	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/streamproxy"
@@ -84,6 +85,13 @@ func WithPresets(p *presets.Store) Option {
 // a reboot/standby and auto-reform (#70).
 func WithZones(z *zones.Store) Option {
 	return func(s *Server) { s.zones = z }
+}
+
+// WithMediaServers wires the store of DLNA/UPnP media servers the user enabled
+// as native music sources, so they are restored after a reboot (the speaker
+// itself drops them a minute or so into every boot).
+func WithMediaServers(m *mediaservers.Store) Option {
+	return func(s *Server) { s.mediaServers = m }
 }
 
 // WithBoxHost sets the Bose box IP/hostname for UPnP calls.

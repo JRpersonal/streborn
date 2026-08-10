@@ -172,32 +172,45 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 	}
 
 	// Sources
-	{
-		var raw struct {
-			Items []struct {
-				Source        string `xml:"source,attr"`
-				SourceAccount string `xml:"sourceAccount,attr"`
-				Status        string `xml:"status,attr"`
-				IsLocal       string `xml:"isLocal,attr"`
-				Multiroom     string `xml:"multiroomallowed,attr"`
-				Name          string `xml:",chardata"`
-			} `xml:"sourceItem"`
-		}
-		if err := get("/sources", &raw); err == nil {
-			for _, it := range raw.Items {
-				s.Sources = append(s.Sources, Source{
-					Source:        it.Source,
-					SourceAccount: it.SourceAccount,
-					Status:        it.Status,
-					IsLocal:       strings.EqualFold(it.IsLocal, "true"),
-					Multiroom:     strings.EqualFold(it.Multiroom, "true"),
-					DisplayName:   strings.TrimSpace(it.Name),
-				})
-			}
-		}
+	if srcs, err := c.GetSources(ctx); err == nil {
+		s.Sources = srcs
 	}
 
 	return s, nil
+}
+
+// GetSources reads /sources: every input and service slot the box has.
+//
+// Remember that `status` is a CONNECTION indicator, not a capability. A
+// SoundTouch 10's Bluetooth reports UNAVAILABLE simply because nothing is
+// paired to it, and UPNP reports UNAVAILABLE even while it is the actively
+// playing source. Never diagnose a source as unusable from this field alone.
+func (c *Client) GetSources(ctx context.Context) ([]Source, error) {
+	var raw struct {
+		Items []struct {
+			Source        string `xml:"source,attr"`
+			SourceAccount string `xml:"sourceAccount,attr"`
+			Status        string `xml:"status,attr"`
+			IsLocal       string `xml:"isLocal,attr"`
+			Multiroom     string `xml:"multiroomallowed,attr"`
+			Name          string `xml:",chardata"`
+		} `xml:"sourceItem"`
+	}
+	if err := c.getXML(ctx, "/sources", &raw); err != nil {
+		return nil, err
+	}
+	out := make([]Source, 0, len(raw.Items))
+	for _, it := range raw.Items {
+		out = append(out, Source{
+			Source:        it.Source,
+			SourceAccount: it.SourceAccount,
+			Status:        it.Status,
+			IsLocal:       strings.EqualFold(it.IsLocal, "true"),
+			Multiroom:     strings.EqualFold(it.Multiroom, "true"),
+			DisplayName:   strings.TrimSpace(it.Name),
+		})
+	}
+	return out, nil
 }
 
 // GetInfo reads /info and returns the static box description incl.

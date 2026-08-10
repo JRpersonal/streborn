@@ -90,6 +90,10 @@ export function DeleteRecentCard(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['DeleteRecentCard'](arg1, arg2, arg3, arg4);
 }
 
+export function DisableBoxMediaServer(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['DisableBoxMediaServer'](arg1, arg2, arg3, arg4);
+}
+
 export function DiscoverBoxes(arg1) {
   return window['go']['main']['App']['DiscoverBoxes'](arg1);
 }
@@ -108,6 +112,10 @@ export function DownloadUpdate(arg1) {
 
 export function EjectDrive(arg1) {
   return window['go']['main']['App']['EjectDrive'](arg1);
+}
+
+export function EnableBoxMediaServer(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['EnableBoxMediaServer'](arg1, arg2, arg3, arg4);
 }
 
 export function EnsureSpotifyEngine(arg1, arg2) {
@@ -184,6 +192,10 @@ export function InstallSTROnBox(arg1, arg2) {
 
 export function IsBoseStick(arg1) {
   return window['go']['main']['App']['IsBoseStick'](arg1);
+}
+
+export function ListBoxMediaServers(arg1, arg2) {
+  return window['go']['main']['App']['ListBoxMediaServers'](arg1, arg2);
 }
 
 export function ListDrives() {

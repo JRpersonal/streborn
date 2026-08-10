@@ -69,6 +69,9 @@ import {
   SetBoxBass,
   ListWiFiProfiles,
   TryWiFiPassword,
+  ListBoxMediaServers,
+  EnableBoxMediaServer,
+  DisableBoxMediaServer,
 } from '../api.js';
 
 // isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
@@ -502,6 +505,80 @@ function groupSettingsSections() {
   body.appendChild(frag);
 }
 
+// fillMusicLib lists the media servers this speaker can see and lets the user
+// turn one into a source the SPEAKER plays by itself.
+//
+// The speaker finds DLNA/UPnP servers on the network on its own, but it will not
+// play from one until that server is registered as a music account. Once it is,
+// the speaker browses and plays it natively and the library also appears in the
+// original Bose app. Verified against a FRITZ!Box and a Synology NAS.
+//
+// Enabling is NOT instant. The speaker accepts the registration at once and then
+// confirms the account with STR before the source becomes usable, which took
+// minutes on real hardware. So the row shows what the user asked for
+// (`enabled`), with a separate note for "on the speaker" vs "being set up",
+// rather than a state that would read as failure for the first few minutes.
+async function fillMusicLib(box) {
+  const list = $('musicLibList');
+  const section = $('musicLibSection');
+  if (!list) return;
+  if (!box || !box.host || box.kind === 'stock') {
+    if (section) section.style.display = 'none';
+    return;
+  }
+  let servers = [];
+  try {
+    servers = (await ListBoxMediaServers(box.host, box.port)) || [];
+  } catch {
+    // An older agent has no such endpoint. Nothing useful to say, so say
+    // nothing and leave the section out.
+    if (section) section.style.display = 'none';
+    return;
+  }
+  if (section) section.style.display = '';
+  if (!servers.length) {
+    list.innerHTML = `<div class="muted small">${escapeHtml(t('settingsView.musicLibNone'))}</div>`;
+    return;
+  }
+  list.innerHTML = servers.map((srv, i) => {
+    const name = srv.friendlyName || srv.modelName || srv.id;
+    const where = srv.manufacturer ? `${srv.manufacturer}${srv.ip ? ' · ' + srv.ip : ''}` : (srv.ip || '');
+    const stateLabel = srv.enabled
+      ? (srv.registered ? t('settingsView.musicLibActive') : t('settingsView.musicLibPending'))
+      : '';
+    return `<div class="setting-row" style="justify-content:space-between;align-items:center;gap:10px">
+      <div style="min-width:0">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(name)}</div>
+        <small class="muted small">${escapeHtml(where)}${stateLabel ? ' · ' + escapeHtml(stateLabel) : ''}</small>
+      </div>
+      <button class="btn btn-mini${srv.enabled ? '' : ' btn-primary'}" data-mlidx="${i}">${
+        escapeHtml(srv.enabled ? t('settingsView.musicLibRemove') : t('settingsView.musicLibAdd'))}</button>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('[data-mlidx]').forEach(btn => {
+    btn.onclick = async () => {
+      const srv = servers[Number(btn.getAttribute('data-mlidx'))];
+      if (!srv) return;
+      const msg = $('musicLibMsg');
+      btn.disabled = true;
+      try {
+        if (srv.enabled) {
+          await DisableBoxMediaServer(box.host, box.port, srv.id, srv.friendlyName || '');
+          if (msg) msg.innerHTML = '';
+        } else {
+          await EnableBoxMediaServer(box.host, box.port, srv.id, srv.friendlyName || '');
+          if (msg) msg.innerHTML = `<div class="setup-ok">${escapeHtml(t('settingsView.musicLibWait'))}</div>`;
+        }
+      } catch (e) {
+        if (msg) msg.innerHTML = `<div class="setup-err">${escapeHtml(String(e))}</div>`;
+      }
+      btn.disabled = false;
+      fillMusicLib(box).catch(() => {});
+    };
+  });
+}
+
 function renderBoxSettings(s, box) {
   const info = s.info || {};
   const vol = s.volume || {};
@@ -841,6 +918,13 @@ function renderBoxSettings(s, box) {
       ${sources.some(x => x.source === 'AIRPLAY' && x.status !== 'READY') ? `<small class="muted small">${escapeHtml(t('settingsView.airplayHint'))}</small>` : ''}
     </div>
 
+    <div class="settings-section" id="musicLibSection">
+      <h3>${escapeHtml(t('settingsView.musicLibHeading'))}</h3>
+      <div id="musicLibList" class="muted small">${escapeHtml(t('common.loading'))}</div>
+      <div id="musicLibMsg"></div>
+      <small class="muted small">${escapeHtml(t('settingsView.musicLibHelp'))}</small>
+    </div>
+
     <div class="settings-section">
       <h3>${escapeHtml(t('settingsView.regionHeading'))}</h3>
       <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.regionCurrent'))}</span><span class="kv-val" id="currentAppRegion">${escapeHtml(t('common.loading'))}</span></div>
@@ -901,6 +985,11 @@ function renderBoxSettings(s, box) {
       </div>
     </div>
   `;
+
+  // Music library. Filled AFTER the markup exists, never from inside the
+  // template literal: a call placed in there renders as literal text on the
+  // page instead of running.
+  fillMusicLib(box).catch(() => {});
 
   // Phone control: build this speaker's web-remote URL from its reachable
   // host:port (probeSTR records the right port: 8888 direct or 17008 redirect)
