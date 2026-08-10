@@ -310,13 +310,13 @@ jobs:
           fi
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: out/streborn-${{ matrix.suffix }}
 
       - name: Sigstore attestation (shim)
         if: matrix.suffix == 'armv7l'
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: out/str-shim.so
 
@@ -410,7 +410,7 @@ jobs:
           echo "size: $(stat -c %s dist/go-librespot-armv7l) bytes"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/go-librespot-armv7l
 
@@ -546,7 +546,7 @@ jobs:
           cat "STR-Windows.zip.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             release-out/STR-Windows.exe
@@ -621,7 +621,7 @@ jobs:
           Get-ChildItem
 
       - name: Sigstore attestation (signed)
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             release-out/STR-Windows-signed.exe
@@ -785,7 +785,7 @@ jobs:
           cat "STR-Linux-x64.tar.gz.sha256"
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release-out/STR-Linux-x64.tar.gz
 
@@ -1158,7 +1158,7 @@ jobs:
           rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/cert.p12" 2>/dev/null || true
 
       - name: Sigstore attestation
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release-out/STR-macOS.dmg
 
@@ -1390,7 +1390,7 @@ jobs:
           cat manifest.json
 
       - name: Attest manifest
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: dist/manifest.json
 
