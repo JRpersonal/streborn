@@ -29,7 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Skaļrunis pašlaik neatbild, gaida",
   "updateAll.phase.done": "Pabeigts",
   "updateAll.phase.deferred": "Atjaunināts, Spotify sekos",
-  "updateAll.phase.timeout": "Aizņem ilgāk nekā gaidīts",
+  "updateAll.phase.timeout": "Aizņem ilgāk nekā gaidīts. Ja ierīce izslēdzās pati, ieslēdziet to atkal, un atjauninājums parasti pabeidzas.",
   "updateAll.phase.failed": "Neizdevās",
   "locale.label": "Latviešu",
   "common.allCountries": "visas valstis",

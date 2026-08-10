@@ -29,7 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "El altavoz no responde ahora mismo, esperando",
   "updateAll.phase.done": "Listo",
   "updateAll.phase.deferred": "Actualizado, Spotify a continuación",
-  "updateAll.phase.timeout": "Tarda más de lo esperado",
+  "updateAll.phase.timeout": "Está tardando más de lo esperado. Si el equipo se apagó solo, vuelve a encenderlo y la actualización suele completarse.",
   "updateAll.phase.failed": "Error",
   "locale.label": "Español",
   "common.allCountries": "todos los países",

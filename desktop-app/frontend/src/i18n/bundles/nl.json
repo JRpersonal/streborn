@@ -29,7 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Luidspreker antwoordt nu niet, wachten",
   "updateAll.phase.done": "Klaar",
   "updateAll.phase.deferred": "Bijgewerkt, Spotify volgt",
-  "updateAll.phase.timeout": "Duurt langer dan verwacht",
+  "updateAll.phase.timeout": "Duurt langer dan verwacht. Als het toestel zichzelf heeft uitgeschakeld, zet het weer aan, dan wordt de update meestal voltooid.",
   "updateAll.phase.failed": "Mislukt",
   "locale.label": "Nederlands",
   "common.allCountries": "alle landen",

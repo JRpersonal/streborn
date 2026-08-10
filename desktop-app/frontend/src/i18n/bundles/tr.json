@@ -29,7 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Hoparlör şu anda yanıt vermiyor, bekleniyor",
   "updateAll.phase.done": "Tamam",
   "updateAll.phase.deferred": "Güncellendi, Spotify birazdan",
-  "updateAll.phase.timeout": "Beklenenden uzun sürüyor",
+  "updateAll.phase.timeout": "Beklenenden uzun sürüyor. Cihaz kendini kapattıysa tekrar açın, güncelleme genelde o zaman tamamlanır.",
   "updateAll.phase.failed": "Başarısız",
   "locale.label": "Türkçe",
   "common.allCountries": "tüm ülkeler",
