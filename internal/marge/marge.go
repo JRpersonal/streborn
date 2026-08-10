@@ -89,6 +89,12 @@ type Server struct {
 	// addSource callback this run (see respondAddSource).
 	registered []registeredSource
 
+	// storedMusic holds the DLNA/UPnP media servers the user enabled, published
+	// into every account response so the box picks them up on its own poll
+	// instead of being pushed to. Seeded at startup from the agent's persisted
+	// store; see SetStoredMusicSources.
+	storedMusic []registeredSource
+
 	// forward relays the box's cloud traffic to a developer machine when set
 	// (see forward.go). Empty = answer locally. Never persisted.
 	forward string

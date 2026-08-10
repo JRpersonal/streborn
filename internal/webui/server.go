@@ -48,7 +48,10 @@ type Server struct {
 	// not wired; the endpoints then still drive the box but nothing is restored
 	// after a restart.
 	mediaServers *mediaservers.Store
-	renderer     *upnp.Renderer
+	// publishStoredMusic hands the enabled media servers to the marge account
+	// responses so the box picks them up on its own poll. nil when not wired.
+	publishStoredMusic func([]StoredMusicSource)
+	renderer           *upnp.Renderer
 	// sleep is the armed sleep timer, if any. See sleeptimer.go.
 	sleep       sleepState
 	autoPair    *autopair.Manager

@@ -643,6 +643,13 @@ func run() error {
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
 		webui.WithMediaServers(mediaServerStore),
+		webui.WithStoredMusicPublisher(func(list []webui.StoredMusicSource) {
+			out := make([]marge.StoredMusicSource, 0, len(list))
+			for _, m := range list {
+				out = append(out, marge.StoredMusicSource{Account: m.Account, Name: m.Name})
+			}
+			margeSrv.SetStoredMusicSources(out)
+		}),
 		webui.WithMargeGroups(margeSrv.GroupSnapshot, margeSrv.SetCanonicalGroup, margeSrv.ClearGroup),
 		webui.WithMargeForward(margeSrv.SetForward),
 		webui.WithRecent(recentStore))
@@ -653,21 +660,13 @@ func run() error {
 	// the current stream + the UPnP renderer.
 	go webuiSrv.PeriodicZoneReconcile()
 
-	// Put the user's DLNA/UPnP music sources back after this restart. Once, not
-	// on a timer, and it reads before it writes: a write resets the speaker's
-	// standby countdown, and on the normal path nothing is missing so nothing is
-	// written. Delayed because the box needs its own boot before it can answer,
-	// and re-registering is pointless until its firmware is up.
-	go func() {
-		select {
-		case <-time.After(90 * time.Second):
-		case <-context.Background().Done():
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		webuiSrv.ReapplyMediaServers(ctx)
-	}()
+	// Publish the user's DLNA/UPnP music sources into the marge account, which
+	// the box polls for itself at boot and keeps whatever it finds there, exactly
+	// the way radio arrives. That is the entire persistence mechanism: no write
+	// to the speaker, so nothing here can disturb its standby countdown. Done
+	// synchronously and early, because the box's account poll comes seconds
+	// after its own boot.
+	webuiSrv.PublishMediaServers()
 
 	// Auto-leave the out-of-box SETUP source. A box that installed STR over the
 	// network but never finished Bose's app-driven onboarding keeps the SETUP

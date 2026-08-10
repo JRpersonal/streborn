@@ -75,23 +75,39 @@ func (s *Server) handleMediaServers(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
 		srv := boxapi.MediaServer{ID: strings.TrimSpace(req.ID), FriendlyName: req.Name}
-		if err := c.RegisterMediaServer(ctx, srv); err != nil {
-			s.logger.Warn("media server: the speaker refused the registration", "err", err, "id", srv.ID)
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
+		// Store and publish FIRST. This is the durable half: once the server is
+		// in the account document, the speaker picks it up on its own poll and
+		// keeps it through every reboot. It cannot fail on the box, so doing it
+		// first means a refused push below still leaves the user with a setting
+		// that works, just not until the speaker next reads its account.
 		if s.mediaServers != nil {
 			if err := s.mediaServers.Add(mediaservers.Server{ID: srv.ID, Name: srv.FriendlyName}); err != nil {
-				// The box HAS the source; failing the whole call would tell the
-				// user it did not work. Say it will not survive a reboot instead.
-				s.logger.Warn("media server: registered on the speaker but could not be remembered", "err", err, "id", srv.ID)
+				s.logger.Warn("media server: could not remember the server", "err", err, "id", srv.ID)
 			}
 		}
-		s.logger.Info("media server: registered as a native music source", "id", srv.ID, "name", srv.FriendlyName)
-		// The source does not appear at once: the speaker confirms the account
-		// with marge first, which took minutes when measured. Say so rather than
-		// letting the UI report a source that is not there yet.
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pending": true})
+		s.publishMediaServers()
+
+		// Then make it usable NOW rather than at the next boot. Skipped when the
+		// speaker already has the account, which is the normal state after a
+		// restart: pushing it again answers 500 / 1024 and would report a
+		// perfectly healthy source as a failure.
+		pending := false
+		if have, herr := c.RegisteredMediaServerAccounts(ctx); herr == nil && have[srv.SourceAccount()] {
+			s.logger.Info("media server: already known to the speaker, nothing to push", "id", srv.ID)
+		} else if err := c.RegisterMediaServer(ctx, srv); err != nil {
+			// Not an error the user needs to see as failure: the setting is
+			// stored, so the library turns up after the speaker's next restart.
+			s.logger.Warn("media server: the speaker refused the immediate registration, it will appear after a restart",
+				"err", err, "id", srv.ID)
+			pending = true
+		} else {
+			// The speaker accepted it but the source is not usable yet: it
+			// confirms the account with marge first, which took minutes when
+			// measured. Never report this as ready.
+			pending = true
+		}
+		s.logger.Info("media server: enabled as a native music source", "id", srv.ID, "name", srv.FriendlyName)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pending": pending})
 
 	case http.MethodDelete:
 		id := strings.TrimSpace(r.URL.Query().Get("id"))
@@ -116,6 +132,9 @@ func (s *Server) handleMediaServers(w http.ResponseWriter, r *http.Request) {
 			if err := s.mediaServers.Remove(id); err != nil {
 				s.logger.Warn("media server: could not forget the server", "err", err, "id", id)
 			}
+			// Stop advertising it before telling the box to drop it, or its next
+			// account poll would put it straight back.
+			s.publishMediaServers()
 		}
 		if err := c.UnregisterMediaServer(ctx, boxapi.MediaServer{ID: id, FriendlyName: name}); err != nil {
 			s.logger.Warn("media server: the speaker refused the removal", "err", err, "id", id)
@@ -174,41 +193,32 @@ func (s *Server) mediaServerViews(ctx context.Context, c *boxapi.Client) ([]medi
 	return out, nil
 }
 
-// ReapplyMediaServers puts the user's enabled media servers back after a
-// restart, once.
+// publishMediaServers hands the current set to the marge account responses, so
+// the box PICKS THE SERVERS UP ITSELF on its next account poll.
 //
-// It READS first and only writes for a server that is actually missing. That
-// ordering is the point: a write to the box resets its standby countdown, and a
-// speaker that is never allowed to reach deep standby is a bug we have shipped
-// before (#472). On the normal path, where nothing is missing, this costs one
-// read and no writes at all.
+// This is the whole persistence mechanism, and it is a pull, not a push. The box
+// reads GET /streaming/account/<id>/full at boot and keeps whatever sources that
+// document advertises; radio has always arrived that way. So a media server that
+// sits in the account document is simply there after every reboot, with no write
+// to the speaker at all, which also means nothing here can touch its standby
+// countdown.
 //
-// Deliberately not on a timer. Once per agent start is enough, because the only
-// thing that drops the registration is a restart.
-func (s *Server) ReapplyMediaServers(ctx context.Context) {
-	if s.mediaServers == nil || s.boxHost == "" {
+// The push to /setMusicServiceAccount is kept for the moment the user enables a
+// server, and only for that: it makes the new source usable within the current
+// session instead of at the next boot.
+func (s *Server) publishMediaServers() {
+	if s.mediaServers == nil || s.publishStoredMusic == nil {
 		return
 	}
-	want := s.mediaServers.List()
-	if len(want) == 0 {
-		return
-	}
-	c := boxapi.New(s.boxHost)
-	have, err := c.RegisteredMediaServerAccounts(ctx)
-	if err != nil {
-		s.logger.Warn("media server: could not read the speaker's sources, leaving the registrations alone", "err", err)
-		return
-	}
-	for _, srv := range want {
+	list := s.mediaServers.List()
+	out := make([]StoredMusicSource, 0, len(list))
+	for _, srv := range list {
 		m := boxapi.MediaServer{ID: srv.ID, FriendlyName: srv.Name}
-		if have[m.SourceAccount()] {
-			continue
-		}
-		if err := c.RegisterMediaServer(ctx, m); err != nil {
-			s.logger.Warn("media server: could not restore the music source after the restart",
-				"err", err, "id", srv.ID, "name", srv.Name)
-			continue
-		}
-		s.logger.Info("media server: music source restored after the restart", "id", srv.ID, "name", srv.Name)
+		out = append(out, StoredMusicSource{Account: m.SourceAccount(), Name: srv.Name})
 	}
+	s.publishStoredMusic(out)
 }
+
+// PublishMediaServers is publishMediaServers for cmd/agent to call once at
+// startup, after the marge bridge is wired.
+func (s *Server) PublishMediaServers() { s.publishMediaServers() }

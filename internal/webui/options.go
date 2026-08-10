@@ -94,6 +94,19 @@ func WithMediaServers(m *mediaservers.Store) Option {
 	return func(s *Server) { s.mediaServers = m }
 }
 
+// StoredMusicSource is one media server the marge account advertises. Account
+// is the server's UPnP id with "/0" appended.
+type StoredMusicSource struct {
+	Account string
+	Name    string
+}
+
+// WithStoredMusicPublisher wires the marge bridge that publishes the enabled
+// media servers into the account document the box polls.
+func WithStoredMusicPublisher(f func([]StoredMusicSource)) Option {
+	return func(s *Server) { s.publishStoredMusic = f }
+}
+
 // WithBoxHost sets the Bose box IP/hostname for UPnP calls.
 func WithBoxHost(host string) Option {
 	return func(s *Server) {
