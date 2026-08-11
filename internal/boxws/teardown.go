@@ -96,7 +96,7 @@ func (c *Client) stopStateIsTeardown(np *wsNowPlaying) (bool, string) {
 	ownCmdSet := !c.lastOwnCmdAt.IsZero()
 	c.mu.Unlock()
 	if pressSet && sincePress < presetTeardownWindow {
-		return true, "hardware preset pressed " + sincePress.Round(time.Millisecond).String() + " ago"
+		return true, "preset selected " + sincePress.Round(time.Millisecond).String() + " ago"
 	}
 	if invalidSet && sinceInvalid < invalidSourceTeardownWindow {
 		return true, "source flapped to INVALID_SOURCE " + sinceInvalid.Round(time.Millisecond).String() + " ago"

@@ -534,7 +534,14 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		}
 		return
 	}
-	c.logger.Info("hardware preset pressed",
+	// Named for what was OBSERVED, not for what is assumed. The firmware sends
+	// the same event whether the trigger was the speaker's own keys, the IR
+	// remote, or the Bose app on someone's phone, and calling it a hardware
+	// press invites exactly one wrong conclusion: that the owner standing in
+	// the room did it. That misreading cost a round trip on a report where
+	// stations kept switching by themselves (#510, 2026-08-11), and the honest
+	// line is the one that keeps the question open.
+	c.logger.Info("preset selected on the speaker (keys, remote or another app)",
 		"slot", slot,
 		"location", pe.ContentItem.Location,
 		"source", pe.ContentItem.Source,
