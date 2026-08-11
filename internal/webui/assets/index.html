@@ -1041,6 +1041,23 @@ async function playSlot(n, tile, name) {
   else { setNow(T.cantStart, T.tapAgain); if (tile) tile.classList.remove('active'); }
 }
 
+// currentSong returns the live ICY title of the running stream, or ''.
+//
+// Best-effort by design: a station that sends no metadata, a source that is not
+// radio, or an agent that is busy all return nothing, and the caller then shows
+// the play state exactly as it did before. The title is only used while the
+// speaker is actually playing, so a stale song never lingers under a stopped
+// speaker.
+async function currentSong() {
+  try {
+    const r = await fetch('/api/stream/title');
+    if (!r.ok) return '';
+    const j = await r.json();
+    const s = (j && j.title ? String(j.title) : '').trim();
+    return s;
+  } catch (e) { return ''; }
+}
+
 async function refreshStatus() {
   const r = await fetch('/api/status'); const t = await r.text();
   const m = t.match(/<itemName>([^<]+)<\/itemName>/) || t.match(/<track>([^<]+)<\/track>/);
@@ -1061,7 +1078,18 @@ async function refreshStatus() {
   const upSrc = src.toUpperCase();
   const idleSrc = upSrc === 'INVALID_SOURCE' || upSrc === 'STANDBY' || upSrc === '';
   const bigName = name || (idleSrc ? '' : src) || T.idle;
-  setNow(bigName, human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
+  // Second line: the song, when the speaker is playing one, otherwise the play
+  // state as before.
+  //
+  // The song cannot come from the box. Since a radio preset is started by the
+  // speaker itself, its now_playing carries the STATION in both itemName and
+  // track, so a phone reading only that shows "1LIVE" and never what is
+  // actually on (#593). What knows the song is STR's own stream proxy, which
+  // reads the ICY title out of the stream, and the desktop app has shown it
+  // from there all along. This asks the same place.
+  const playing = state === 'PLAY_STATE' || state === 'BUFFERING_STATE';
+  const song = playing ? await currentSong() : '';
+  setNow(bigName, song || human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
   tp.playing = (state === 'PLAY_STATE' || state === 'BUFFERING_STATE');
   var key = name + '|' + src;
   if (key !== tp.key) { tp.key = key; tp.sec = 0; tp.dur = 0; tp.at = 0; }
