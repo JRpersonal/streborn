@@ -310,6 +310,24 @@ type Server struct {
 	lastUserStopMu sync.Mutex
 	lastUserStop   time.Time
 
+	// lastExplicitStop is the narrower signal: a stop or pause that came in as a
+	// REQUEST (the app, the phone remote, a webhook), never the box's own
+	// STOP_STATE. The two must be told apart, because a speaker that collapses
+	// while resuming emits a STOP_STATE on the way down, and lastUserStop
+	// therefore says "the user stopped this" exactly when the user did not. Any
+	// recovery that reads lastUserStop as intent stands down at the moment it is
+	// needed, which is how the paused library track stayed silent (2026-08-11).
+	lastExplicitStopMu sync.Mutex
+	lastExplicitStop   time.Time
+
+	// pausePos is how far into the track the speaker was when the user paused,
+	// read before the pause is issued. It is what lets a resume that has to
+	// re-push the file continue where the listener stopped instead of starting
+	// the track over. Zero for radio and for anything the box reports no
+	// position for.
+	pausePosMu sync.Mutex
+	pausePos   time.Duration
+
 	// lastStandbyStop debounces the #197 standby-bounce mitigation: some ST20
 	// (scm) firmware oscillates UPNP->STANDBY->UPNP on a power-off, re-selecting
 	// STR's UPnP source so the box turns itself back on. HandleEnterStandby clears

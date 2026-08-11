@@ -609,6 +609,24 @@ func (s *Server) NoteUserStop() {
 	s.lastUserStopMu.Unlock()
 }
 
+// NoteExplicitStop records a stop or pause that arrived as a REQUEST. Callers
+// that infer a stop from the box's own state must not call it; see the
+// lastExplicitStop field for why the distinction exists.
+func (s *Server) NoteExplicitStop() {
+	s.lastExplicitStopMu.Lock()
+	s.lastExplicitStop = time.Now()
+	s.lastExplicitStopMu.Unlock()
+}
+
+// explicitStopAfter reports whether the user asked for a pause or a stop after
+// t. Absolute rather than a rolling window, so a caller that waits does not see
+// its own answer expire.
+func (s *Server) explicitStopAfter(t time.Time) bool {
+	s.lastExplicitStopMu.Lock()
+	defer s.lastExplicitStopMu.Unlock()
+	return !s.lastExplicitStop.IsZero() && s.lastExplicitStop.After(t)
+}
+
 // ClearUserStop cancels a recorded user-stop so a manual resume re-enables the
 // guarded auto-re-push immediately instead of staying suppressed for the
 // userStopWindow.
