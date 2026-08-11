@@ -964,6 +964,7 @@
   "setup.stickLargeFat32": "C'est une grande clé (plus de 32 Go). Les grandes clés sont souvent formatées d'une manière que l'enceinte ne peut pas lire. Elle sera reformatée en FAT32 compatible pendant la préparation ; toutes les données de la clé sont perdues.",
   "setup.installDone": "STR est installé et fonctionne sur l'enceinte.",
   "setup.installDoneHint": "Passez à l'onglet Écouter de la musique pour commencer à jouer.",
+  "setup.installedEngineMissing": "ST Reborn est installé et fonctionne. Seul le composant Spotify n'est pas encore sur l'enceinte : lancez une fois la mise à jour de l'enceinte depuis l'application et il sera installé.",
   "setup.playHowTitle": "Comment écouter de la musique",
   "setup.playHowStep1": "Dans l'onglet Écouter de la musique, affectez vos stations radio ou Spotify aux touches 1 à 6.",
   "setup.playHowStep2": "Appuyez sur cette touche (1 à 6) sur l'enceinte elle-même pour démarrer la lecture.",

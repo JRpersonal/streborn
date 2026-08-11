@@ -964,6 +964,7 @@
   "setup.stickLargeFat32": "Dit is een grote stick (meer dan 32 GB). Grote sticks zijn vaak geformatteerd op een manier die de speaker niet kan lezen. Hij wordt tijdens de voorbereiding opnieuw geformatteerd naar een compatibel FAT32; alle gegevens op de stick gaan verloren.",
   "setup.installDone": "STR is geïnstalleerd en draait op de speaker.",
   "setup.installDoneHint": "Ga naar het tabblad Muziek luisteren om af te spelen.",
+  "setup.installedEngineMissing": "ST Reborn is geïnstalleerd en werkt. Alleen het Spotify-onderdeel staat nog niet op de speaker: start in de app eenmalig de speaker-update, dan wordt het alsnog geplaatst.",
   "setup.playHowTitle": "Zo speel je muziek af",
   "setup.playHowStep1": "Zet in het tabblad Muziek luisteren je radiozenders of Spotify op de toetsen 1 tot 6.",
   "setup.playHowStep2": "Druk op die toets (1 tot 6) op de speaker zelf om het afspelen te starten.",

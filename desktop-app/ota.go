@@ -20,6 +20,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -85,6 +86,47 @@ func (a *App) recordNANDHeadroom(host string, port int, need int64) {
 // agent's sidecar reclaim cascade); needBytes already includes the caller's
 // margin and MUST come through nandNeedCompressed (raw sizes over-refuse,
 // see there).
+// agentUploadAttempts is how often the agent binary is offered over HTTP before
+// the flow reaches for SSH or gives up.
+//
+// The write on the box is atomic: the bytes go to a .new file which is then
+// renamed over the live binary. That last step can fail for reasons that have
+// nothing to do with this attempt, and a donor's SoundTouch 20 showed one
+// (2026-08-11): "rename /mnt/nv/streborn/bin/streborn-armv7l.new ...: no such
+// file or directory", on a box with 21 MB free. He retried by hand and it went
+// through. A flow that gives up where the owner succeeds by pressing the same
+// button again is doing less than the person in front of it.
+//
+// Only a clean server-side error is retried. A mid-upload connection drop keeps
+// its SSH fallback, and a refusal (4xx, e.g. the LAN guard) is an answer, not an
+// accident, so repeating it would only waste the owner's time.
+const agentUploadAttempts = 3
+
+// uploadAgentWithRetries pushes the agent over HTTP, retrying a server-side
+// failure. Returns whether the whole body reached the box on the last attempt.
+func (a *App) uploadAgentWithRetries(host string, port int, bin []byte) (bodySent bool, err error) {
+	for attempt := 1; ; attempt++ {
+		bodySent, err = a.updateAgentViaHTTP(host, port, bin)
+		if err == nil || attempt >= agentUploadAttempts || !isRetryableAgentWriteErr(err) {
+			return bodySent, err
+		}
+		a.recordOTA(host, fmt.Sprintf("upload attempt %d of %d failed on the box (%v), trying again",
+			attempt, agentUploadAttempts, err))
+		a.logger.Info("update agent: retrying the upload after a box-side write failure",
+			"host", host, "attempt", attempt, "err", err)
+		time.Sleep(time.Duration(attempt) * 4 * time.Second)
+	}
+}
+
+// isRetryableAgentWriteErr reports whether the agent answered with a server-side
+// error, which is the class worth offering again.
+func isRetryableAgentWriteErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return regexp.MustCompile(`status 5\d\d`).MatchString(err.Error())
+}
+
 func nandFits(freeBytes, reclaimableBytes, needBytes int64) bool {
 	if freeBytes <= 0 {
 		return true
@@ -240,7 +282,7 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 		a.logger.Info("update agent: SSH-OTA succeeded", "host", host, "bytes", len(bin))
 		return nil
 	}
-	if bodySent, err := a.updateAgentViaHTTP(host, port, bin); err != nil {
+	if bodySent, err := a.uploadAgentWithRetries(host, port, bin); err != nil {
 		// A connection drop AFTER the whole binary reached the box is the
 		// self-replacing agent applying it and rebooting, which severs the reply
 		// before the 200 can arrive. The binary is on the box and the version

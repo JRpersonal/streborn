@@ -964,6 +964,7 @@
   "setup.stickLargeFat32": "Tai didelė atmintinė (daugiau nei 32 GB). Didelės atmintinės dažnai suformatuotos taip, kad kolonėlė negali jų nuskaityti. Paruošimo metu ji bus performatuota į suderinamą FAT32; visi atmintinės duomenys bus prarasti.",
   "setup.installDone": "STR įdiegtas ir veikia garsiakalbyje.",
   "setup.installDoneHint": "Norėdami pradėti groti, eikite į skirtuką Klausytis muzikos.",
+  "setup.installedEngineMissing": "ST Reborn įdiegtas ir veikia. Tik Spotify komponento garsiakalbyje dar nėra: programėlėje kartą paleiskite garsiakalbio atnaujinimą ir jis bus pristatytas.",
   "setup.playHowTitle": "Kaip groti muziką",
   "setup.playHowStep1": "Skirtuke Klausytis muzikos priskirkite radijo stotis arba Spotify mygtukams nuo 1 iki 6.",
   "setup.playHowStep2": "Paspauskite tą mygtuką (nuo 1 iki 6) ant paties garsiakalbio, kad pradėtumėte grojimą.",

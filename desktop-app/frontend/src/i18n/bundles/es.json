@@ -964,6 +964,7 @@
   "setup.stickLargeFat32": "Esta memoria es grande (más de 32 GB). Las memorias grandes suelen formatearse de un modo que el altavoz no puede leer. Se reformateará a un FAT32 compatible durante la preparación; se perderán todos los datos de la memoria.",
   "setup.installDone": "STR está instalado y funcionando en el altavoz.",
   "setup.installDoneHint": "Cambia a la pestaña Escuchar música para empezar a reproducir.",
+  "setup.installedEngineMissing": "ST Reborn está instalado y funcionando. Solo falta el componente de Spotify en el altavoz: ejecuta una vez la actualización del altavoz desde la aplicación y se instalará.",
   "setup.playHowTitle": "Cómo reproducir música",
   "setup.playHowStep1": "En la pestaña Escuchar música, pon tus emisoras de radio o Spotify en los botones 1 a 6.",
   "setup.playHowStep2": "Pulsa ese botón (1 a 6) en el propio altavoz para iniciar la reproducción.",

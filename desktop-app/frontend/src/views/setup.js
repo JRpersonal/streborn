@@ -1890,12 +1890,26 @@ function wireInstallFailureReport() {
 // this flow because nothing is allowed to deliver it afterwards in the
 // background.
 async function verifyInstalledState(box, onState) {
-  const deadline = Date.now() + 600_000;
+  // Ten minutes is the budget for a speaker that comes back promptly. It is not
+  // the budget for one that does not: a donor's SoundTouch 20 took just over
+  // twenty minutes to return after its update, the window closed at ten, and
+  // everything the app said after that was about a speaker it had stopped
+  // listening to. So the clock is extended each time the speaker proves it is
+  // still working on it, up to a hard ceiling.
+  const hardStop = Date.now() + 1_800_000;
+  let deadline = Date.now() + 600_000;
   let attempt = 0;
-  while (Date.now() < deadline) {
+  let lastLive = null;
+  while (Date.now() < deadline && Date.now() < hardStop) {
     attempt++;
     let live = null;
     try { live = await BoxAgentVersion(box.host, box.port || 0); } catch {}
+    if (live && live.version) {
+      lastLive = live;
+      // Alive and answering: whatever is left to do (the engine) is worth a
+      // fresh window rather than the remains of the old one.
+      deadline = Math.min(hardStop, Date.now() + 300_000);
+    }
     if (onState) onState({ attempt, reachable: !!live, remainingMs: deadline - Date.now(),
       version: (live && live.version) || '', engine: (live && live.goLibrespot) || 'unknown' });
     // Both halves, never one: a speaker can report the engine present while
@@ -1913,10 +1927,27 @@ async function verifyInstalledState(box, onState) {
       } catch (e) {
         const m = String((e && e.message) || e || '');
         // Too full to ever fit: retrying cannot help, only freeing space can.
-        if (/insufficient nand|no space|507/i.test(m)) return { ok: false, reason: m };
+        // Still an INSTALLED speaker, so it is reported as one, with the
+        // engine named as the part that is missing.
+        if (/insufficient nand|no space|507/i.test(m)) {
+          return { ok: true, version: live, engineMissing: true, engineReason: m };
+        }
       }
     }
     await new Promise(r => setTimeout(r, Math.min(20_000, 3_000 * attempt)));
+  }
+  // The window closed. Whether that is a failure depends entirely on what the
+  // speaker last said about itself.
+  //
+  // A donor's SoundTouch 20 was reported as a failed installation while STR was
+  // running on it perfectly: the agent had come up on the new version, but it
+  // had dropped the Spotify engine to make room for its own update, so the
+  // "engine present" condition never became true and the whole install timed
+  // out (2026-08-11). He was told to send in logs for a speaker that was
+  // already working. Spotify is one optional component of an install; it
+  // cannot be the thing that decides whether the install happened.
+  if (lastLive && lastLive.version) {
+    return { ok: true, version: lastLive, engineMissing: true, engineReason: 'engine not delivered inside the install window' };
   }
   return { ok: false, reason: 'timeout waiting for the speaker to reach the installed state' };
 }
@@ -2076,6 +2107,13 @@ async function verifyInstalledState(box, onState) {
     wireInstallFailureReport();
     return;
   }
+  // Installed, but without the Spotify engine. The speaker works; only Spotify
+  // is missing, and running the speaker update once delivers it (nothing does
+  // that in the background, by design). Said here as a note, because calling
+  // this a failed install sends people hunting for a fault they do not have.
+  const engineNote = installed.engineMissing
+    ? `<div class="setup-warn">${escapeHtml(t('setup.installedEngineMissing'))}</div>`
+    : '';
 
   let unplugLine = '';
   let provisionFailed = false;
@@ -2199,6 +2237,7 @@ async function verifyInstalledState(box, onState) {
   const failDetails = Object.values(failReasons)
     .map(f => `<div class="setup-warn-detail muted small">${escapeHtml(f.label)}: ${escapeHtml(f.reason)}</div>`).join('');
   render(`<div class="setup-ok">${escapeHtml(t('setup.installDone'))}</div>` +
+         engineNote +
          (unplugLine ? `<div class="setup-unplug">${escapeHtml(unplugLine)}</div>` : '') +
          (provisionFailed ? `<div class="setup-warn">${escapeHtml(t('setup.provisionSomeFailed'))}${failDetails}</div>` : '') +
          `<div class="muted small">${escapeHtml(t('setup.installDoneHint'))}</div>` +

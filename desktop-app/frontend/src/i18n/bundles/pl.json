@@ -964,6 +964,7 @@
   "setup.stickLargeFat32": "To duży pendrive (ponad 32 GB). Duże pendrive'y są często sformatowane w sposób, którego głośnik nie potrafi odczytać. Podczas przygotowania zostanie sformatowany na zgodny FAT32; wszystkie dane na pendrive zostaną utracone.",
   "setup.installDone": "STR jest zainstalowane i działa na głośniku.",
   "setup.installDoneHint": "Przejdź do zakładki Słuchaj muzyki, aby rozpocząć odtwarzanie.",
+  "setup.installedEngineMissing": "ST Reborn jest zainstalowany i działa. Brakuje tylko komponentu Spotify na głośniku: uruchom raz aktualizację głośnika w aplikacji, a zostanie dostarczony.",
   "setup.playHowTitle": "Jak odtwarzać muzykę",
   "setup.playHowStep1": "W zakładce Słuchaj muzyki przypisz stacje radiowe lub Spotify do przycisków 1 do 6.",
   "setup.playHowStep2": "Naciśnij ten przycisk (1 do 6) na samym głośniku, aby rozpocząć odtwarzanie.",

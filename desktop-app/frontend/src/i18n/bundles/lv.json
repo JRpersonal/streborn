@@ -964,6 +964,7 @@
   "setup.stickLargeFat32": "Šī ir liela zibatmiņa (vairāk nekā 32 GB). Lielas zibatmiņas bieži ir formatētas tā, ka skaļrunis tās nevar nolasīt. Sagatavošanas laikā tā tiks pārformatēta uz saderīgu FAT32; visi dati zibatmiņā tiks zaudēti.",
   "setup.installDone": "STR instalēts un darbojas skaļrunī.",
   "setup.installDoneHint": "Pārslēdzieties uz cilni Klausīties mūziku, lai sāktu atskaņot.",
+  "setup.installedEngineMissing": "ST Reborn ir uzstādīts un darbojas. Tikai Spotify komponente vēl nav skaļrunī: palaidiet lietotnē skaļruņa atjauninājumu vienu reizi, un tā tiks piegādāta.",
   "setup.playHowTitle": "Kā atskaņot mūziku",
   "setup.playHowStep1": "Cilnē Klausīties mūziku piešķiriet radio stacijas vai Spotify pogām no 1 līdz 6.",
   "setup.playHowStep2": "Nospiediet šo pogu (no 1 līdz 6) uz paša skaļruņa, lai sāktu atskaņošanu.",

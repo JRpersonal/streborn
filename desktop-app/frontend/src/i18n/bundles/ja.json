@@ -964,6 +964,7 @@
   "setup.stickLargeFat32": "これは大容量メモリ (32GB超) です。大容量メモリはスピーカーが読めない形式でフォーマットされていることがよくあります。準備時に、互換性のあるFAT32に再フォーマットされます。メモリ内のすべてのデータは失われます。",
   "setup.installDone": "STRがスピーカーにインストールされ、動作しています。",
   "setup.installDoneHint": "再生を始めるには「音楽を聴く」タブに切り替えてください。",
+  "setup.installedEngineMissing": "ST Reborn はインストールされ、動作しています。スピーカーにまだ入っていないのは Spotify のコンポーネントだけです。アプリでスピーカーの更新を一度実行すると配信されます。",
   "setup.playHowTitle": "音楽の再生方法",
   "setup.playHowStep1": "「音楽を聴く」タブで、ラジオ放送局やSpotifyをボタン1〜6に割り当てます。",
   "setup.playHowStep2": "スピーカー本体のそのボタン (1〜6) を押すと再生が始まります。",

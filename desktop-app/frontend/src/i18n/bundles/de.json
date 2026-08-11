@@ -1045,6 +1045,7 @@
   "setup.installBoxBusy": "Lautsprecher ist erreichbar, aber noch mit dem Hochfahren beschäftigt (Systemlast {{load}}). Warte, bis er Kapazität frei hat, dann wird installiert. Notfalls Start in {{secs}} s.",
   "setup.installDone": "STR ist auf dem Lautsprecher installiert und läuft.",
   "setup.installDoneHint": "Wechsle zum Tab Musik hören, um loszulegen.",
+  "setup.installedEngineMissing": "ST Reborn ist installiert und läuft. Nur die Spotify Komponente liegt noch nicht auf dem Lautsprecher: starte in der App einmal das Lautsprecher-Update, dann wird sie nachgeliefert.",
   "setup.playHowTitle": "So spielst du Musik ab",
   "setup.playHowStep1": "Im Tab Musik hören deine Radiosender oder Spotify auf die Tasten 1 bis 6 legen.",
   "setup.playHowStep2": "Diese Taste (1 bis 6) am Lautsprecher selbst drücken, um die Wiedergabe zu starten.",

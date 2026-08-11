@@ -964,6 +964,7 @@
   "setup.stickLargeFat32": "Bu büyük bir bellek (32 GB üzeri). Büyük bellekler genellikle hoparlörün okuyamayacağı şekilde biçimlendirilir. Hazırlık sırasında uyumlu bir FAT32'ye yeniden biçimlendirilecek; bellekteki tüm veriler kaybolur.",
   "setup.installDone": "STR kuruldu ve hoparlörde çalışıyor.",
   "setup.installDoneHint": "Çalmaya başlamak için Müzik dinle sekmesine geçin.",
+  "setup.installedEngineMissing": "ST Reborn kuruldu ve çalışıyor. Yalnızca Spotify bileşeni henüz hoparlörde değil: uygulamadan hoparlör güncellemesini bir kez çalıştırın, bileşen yüklenecektir.",
   "setup.playHowTitle": "Müzik nasıl çalınır",
   "setup.playHowStep1": "Müzik dinle sekmesinde radyo istasyonlarınızı veya Spotify'ı 1'den 6'ya kadar olan tuşlara atayın.",
   "setup.playHowStep2": "Çalmayı başlatmak için hoparlörün üzerindeki o tuşa (1'den 6'ya) basın.",
