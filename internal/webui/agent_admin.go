@@ -1400,7 +1400,61 @@ func isLocalLAN(remoteAddr string) bool {
 	if ip == nil {
 		return false
 	}
-	return ip.IsPrivate() || ip.IsLoopback()
+	if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+		return true
+	}
+	// Not a private address, which is NOT the same as not local.
+	//
+	// A field report (2026-08-11, Wave SoundTouch) came from a home network
+	// numbered 192.210.1.0/24, public address space used as a LAN. The app sat
+	// on that same wire, three metres from the speaker, and every update was
+	// refused with "update only allowed from LAN" because the check only knew
+	// the RFC1918 ranges. The same hole hits carrier-grade NAT (100.64.0.0/10),
+	// which is not private either, and any network an admin numbered by hand.
+	// For those owners STR simply could not be updated at all.
+	//
+	// So ask the real question instead of the proxy one: is the caller on a
+	// network this speaker itself has an address in. That is the trust boundary
+	// the message always claimed. It widens the gate to a speaker's own subnet
+	// even when that subnet is public, which is a deliberate trade: a box with a
+	// public address is directly exposed with or without this, and refusing its
+	// owner an update does not change that.
+	return sameSubnetAsAnInterface(ip)
+}
+
+// sameSubnetAsAnInterface reports whether ip falls inside one of the networks
+// this machine (the speaker) has an address in. Interfaces are read per call:
+// this runs on admin endpoints only, a handful of times per update, and a
+// cached answer would go stale exactly when the network changed.
+func sameSubnetAsAnInterface(ip net.IP) bool {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, ifi := range ifaces {
+		if ifi.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := ifi.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			n, ok := a.(*net.IPNet)
+			if !ok || n.IP.IsLoopback() {
+				continue
+			}
+			// A /32 (or /128) carries no subnet, so Contains would only ever
+			// match the box itself and tells us nothing about the caller.
+			if ones, bits := n.Mask.Size(); ones == bits {
+				continue
+			}
+			if n.Contains(ip) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // streamBinaryAtomic writes dst from a reader instead of from a buffer, and
