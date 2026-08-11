@@ -196,6 +196,12 @@ var errInsufficientNAND = errors.New("insufficient NAND space")
 // rename, SIGTERM the running agent. run.sh's boot watchdog respawns it
 // from the new file within seconds.
 func (a *App) UpdateBoxAgent(host string, port int) (err error) {
+	release, busyErr := writesInFlight.claim(host, "an update")
+	if busyErr != nil {
+		a.recordOTA(host, "start: refused, "+busyErr.Error())
+		return busyErr
+	}
+	defer release()
 	bin := agentbin.Bytes()
 	if len(bin) == 0 {
 		a.recordOTA(host, "start: aborted, no embedded agent binary in this build")

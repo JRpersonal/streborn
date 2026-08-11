@@ -77,6 +77,15 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 	if host == "" {
 		return res, fmt.Errorf("host is required")
 	}
+	// One writer per speaker, see boxbusy.go: two installs racing each other
+	// corrupted the atomic write and cost a donor twenty minutes of reboots.
+	release, busyErr := writesInFlight.claim(host, "an install")
+	if busyErr != nil {
+		res.Step = "busy"
+		res.Message = busyErr.Error()
+		return res, busyErr
+	}
+	defer release()
 	a.logger.Info("install_str: starting", "host", host, "model", model)
 	a.installStart = time.Now()
 	a.installPhase = ""
