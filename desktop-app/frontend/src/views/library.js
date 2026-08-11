@@ -27,6 +27,7 @@ import {
   SaveLibraryPreset,
   SaveFolderPreset,
   Status,
+  EnableBoxMediaServer,
 } from '../api.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
@@ -126,6 +127,46 @@ async function libraryAddManualServer(value, btn) {
     renderLibrary();
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+// libraryPutServerOnSpeakers registers the selected media server as a music
+// source on every ST Reborn speaker, so it appears in the speaker's own menu
+// (and therefore in the Bose app too) whether or not this app is running.
+//
+// The id the speakers use is the UPnP UDN WITHOUT the "uuid:" prefix, while the
+// PC's own discovery reports it with the prefix, so it is stripped here. Every
+// speaker sees the same server under the same id, which is what makes one
+// button enough for the whole house.
+async function libraryPutServerOnSpeakers(btn) {
+  const srv = libState.servers.find(s => s.udn === libState.currentUDN);
+  const msg = $('libOnSpeakersMsg');
+  if (!srv) return;
+  const id = String(srv.udn || '').replace(/^uuid:/i, '');
+  const boxes = (state.boxes || []).filter(b => b && b.host && b.kind !== 'stock' && !b.offline);
+  if (!boxes.length) {
+    if (msg) msg.innerHTML = `<span class="setup-warn">${escapeHtml(t('library.onSpeakersNoBoxes'))}</span>`;
+    return;
+  }
+  btn.disabled = true;
+  if (msg) msg.innerHTML = `<span class="muted small">${escapeHtml(t('common.loading'))}</span>`;
+  let ok = 0;
+  const failed = [];
+  for (const b of boxes) {
+    try {
+      await EnableBoxMediaServer(b.host, b.port || 0, id, srv.friendlyName || '');
+      ok++;
+    } catch {
+      // A speaker that is asleep or off is exactly the one worth naming; the
+      // others still get the server.
+      failed.push(getBoxLabel(b));
+    }
+  }
+  btn.disabled = false;
+  if (msg) {
+    msg.innerHTML = failed.length
+      ? `<span class="setup-warn">${escapeHtml(t('library.onSpeakersPartly', { ok, failed: failed.join(', ') }))}</span>`
+      : `<span class="setup-ok">${escapeHtml(t('library.onSpeakersDone', { n: ok }))}</span>`;
   }
 }
 
@@ -559,13 +600,30 @@ function renderLibrary() {
     const removeBtn = cur && cur.manual
       ? `<button class="btn btn-mini btn-secondary" id="libManualRemoveBtn" title="${escapeAttr(t('library.removeServerBtn'))}">&#10005;</button>`
       : '';
+    // Put the selected server on the speakers themselves.
+    //
+    // Browsing here runs on the PC, so the moment the app is closed the music
+    // is gone from the speaker's own menu. Making the server a source ON the
+    // speaker is a different thing entirely, and it lived only in Speaker
+    // settings, one speaker at a time, where nobody looking at their library
+    // would think to look. An owner wrote in with exactly that gap: his media
+    // servers were no longer offered on the speaker and he had no idea the app
+    // could put them back.
+    //
+    // Whole-household by default, because a server belongs to the house rather
+    // than to one speaker, and every speaker discovers it under the same id.
+    const onSpeakersBtn = libState.currentUDN
+      ? `<button class="btn btn-mini" id="libOnSpeakersBtn" title="${escapeAttr(t('library.onSpeakersHint'))}">${escapeHtml(t('library.onSpeakersBtn'))}</button>`
+      : '';
     serverPicker = `
       <div class="library-server-row">
         <label class="library-label">${escapeHtml(t('library.server'))}</label>
         <select class="library-select" id="libServerSelect">${opts}</select>
         <button class="btn btn-mini" id="libRefreshBtn" title="${escapeAttr(t('library.refresh'))}">&#8634;</button>
+        ${onSpeakersBtn}
         ${removeBtn}
-      </div>`;
+      </div>
+      <div class="library-onspeakers-msg" id="libOnSpeakersMsg"></div>`;
   }
 
   // Manual fallback (#341): always available, discreet. For servers the
@@ -641,6 +699,8 @@ function renderLibrary() {
   if (sel) sel.onchange = () => libraryPickServer(sel.value);
   const ref = $('libRefreshBtn');
   if (ref) ref.onclick = () => loadMediaServers();
+  const onSpk = $('libOnSpeakersBtn');
+  if (onSpk) onSpk.onclick = () => libraryPutServerOnSpeakers(onSpk);
   const addBtn = $('libManualAddBtn');
   const addInput = $('libManualUrl');
   if (addBtn && addInput) {
