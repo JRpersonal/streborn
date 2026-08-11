@@ -138,9 +138,9 @@ ioBroker, Node-RED, or any HTTP endpoint on the LAN.
 | Spotify | `go-librespot` (fork `JRpersonal/go-librespot`, Ogg passthrough patch) | Open-source Spotify Connect client in Go. Passthrough avoids decoding on the weak ARM CPU: the raw Ogg/Vorbis is handed straight to the box, which decodes it. The passthrough patch is offered upstream as `devgianlu/go-librespot` PR #316. |
 | Setup wizard host script | PowerShell 5.1 on Windows | Ships with every Windows; no Python install required for the user. |
 | FAT32 helper | Custom Go tool (`cmd/winformat`) | Avoids elevation prompts and shell quoting around `diskutil` / `format`. |
-| Distribution | Portable `.exe` + `.zip` (Windows), `.dmg` via `hdiutil` (macOS), `.tar.gz` with a per-user `install.sh` (Linux) | No installer framework. The Windows build is code-signed with a Certum "Open Source" certificate in a dedicated `sign-windows` release job; macOS notarization is still deferred, so the Verify page documents the Gatekeeper click-path. |
+| Distribution | Portable `.exe` + `.zip` (Windows), `.dmg` via `hdiutil` (macOS), `.tar.gz` with a per-user `install.sh` (Linux) | No installer framework. The Windows build is code-signed with a Certum "Open Source" certificate in a dedicated `sign-windows` release job; the macOS app and the DMG are Developer ID signed and notarized by Apple in the macOS build job, each with its own stapled ticket. |
 | CI | GitHub Actions, all actions SHA-pinned | Build provenance via Sigstore (`actions/attest-build-provenance`). |
-| Verification | SHA256 + Sigstore attestations, plus a Certum code signature on the Windows build | Signed Windows builds show a verified publisher; the Verify page still documents the Gatekeeper click-path for the unnotarized macOS build. |
+| Verification | SHA256 + Sigstore attestations, plus a Certum code signature on Windows and Apple notarization on macOS | Signed Windows builds show a verified publisher, notarized macOS builds open without a Gatekeeper warning. The Verify page still documents both warnings, because SmartScreen keeps warning until the signature accrues reputation, and a build can ship without an Apple ticket when the notary service stalls. |
 
 ## Network ports
 

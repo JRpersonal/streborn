@@ -9,8 +9,13 @@ For the security-specific roadmap see
 
 ## Post-1.0 (already named in CLAUDE.md)
 
-- macOS code signing and notarization. (Windows installers are
-  Certum-signed since v0.9.20.)
+- In-app self-update on macOS. The download is Developer ID signed and
+  notarized since v0.9.33, so Gatekeeper is no longer the blocker;
+  what is missing is replacing a running `.app` bundle in place, so
+  the macOS updater stays assisted (download, verify, open the DMG).
+  (Code signing itself is DONE on both desktop platforms: Windows
+  Certum-signed since v0.9.20, macOS signed and notarized since
+  v0.9.33.)
 - Promote the remaining model statuses to Verified (Portable is
   Verified, ST20 spotty contributor-confirmed, ST30 live-confirmed;
   see [`MODELS.md`](MODELS.md)).

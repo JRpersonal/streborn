@@ -801,7 +801,8 @@ jobs:
 
   # 2d. Build the Wails desktop app for macOS. Universal binary
   # covers both Intel and Apple Silicon. Wrap in a DMG so end
-  # users can drag-drop. Not signed or notarized (post-1.0).
+  # users can drag-drop. Signed with a Developer ID certificate and notarized by
+  # Apple when the credentials are configured, see the applegate step below.
   build-desktop-macos:
     needs: [build-agent, build-go-librespot]
     runs-on: macos-latest
@@ -1401,10 +1402,11 @@ jobs:
         # (the release is created later in this same job), so there is no release
         # object for it to edit. Instead the notes step below links to the
         # permanent per-hash report (virustotal.com/gui/file/<sha256>), which is
-        # also what the website renders from manifest.json's sha256. The
-        # unsigned Windows/macOS apps draw heuristic false-positives in some
-        # engines, so a public scan link per release is the rebuttal a user can
-        # check. Runs before the notes so the links resolve at publish time.
+        # also what the website renders from manifest.json's sha256. A young
+        # signature draws heuristic false-positives in some engines (signing
+        # raised the floor, it did not remove them), so a public scan link per
+        # release stays the rebuttal a user can check for themselves. Runs
+        # before the notes so the links resolve at publish time.
         # Skipped automatically when VT_API_KEY is absent (forks, dry-run), and
         # never fails the release.
         if: |
@@ -1425,10 +1427,10 @@ jobs:
 
       - name: VirusTotal gate (stop the release on heavy detection)
         # Waits for the scans of the just-uploaded desktop apps to complete and
-        # stops the release if an artifact is flagged by too many engines. The
-        # apps are unsigned (code signing is post-1.0), so a handful of heuristic
-        # false-positives is normal and must NOT block a release; only a broad
-        # detection (>= 10 engines OR >= 15% of them calling it malicious) does.
+        # stops the release if an artifact is flagged by too many engines. A
+        # handful of heuristic false-positives is normal for a desktop app with
+        # a young signature and must NOT block a release; only a broad detection
+        # (>= 10 engines OR >= 15% of them calling it malicious) does.
         # If VirusTotal does not finish in the time budget we proceed and warn,
         # so a VT outage never holds a release hostage. Skipped without VT_API_KEY.
         if: |
@@ -1467,8 +1469,8 @@ jobs:
             fi
             pct=0; if [ "${total:-0}" -gt 0 ]; then pct=$(( mal * 100 / total )); fi
             echo "$f: $mal/$total engines malicious (${pct}%)"
-            # Name the flagging engines + their detection names, so an unsigned-app
-            # heuristic false-positive can be reported to the vendor, and a real
+            # Name the flagging engines + their detection names, so a heuristic
+            # false-positive can be reported to the vendor, and a real
             # detection is identifiable at a glance instead of just a count.
             if [ "${mal:-0}" -gt 0 ]; then
               printf '%s' "$resp" | jq -r '.data.attributes.last_analysis_results | to_entries[] | select(.value.category=="malicious" or .value.category=="suspicious") | "    \(.value.category): \(.key) -> \(.value.result)"' 2>/dev/null || true
@@ -1482,7 +1484,7 @@ jobs:
             echo "::error::VirusTotal gate: a release artifact is flagged above the threshold. Release stopped, investigate the report before retrying."
             exit 1
           fi
-          echo "VirusTotal gate passed (unsigned-app heuristic false-positives are below the threshold)."
+          echo "VirusTotal gate passed (heuristic false-positives are below the threshold)."
 
       - name: Generate release notes
         working-directory: dist
@@ -1491,6 +1493,13 @@ jobs:
           # Presence toggles the signing paragraph in the notes below so they
           # match what the Windows build job actually did with the same secret.
           CERT_THUMBPRINT: ${{ secrets.CERT_THUMBPRINT }}
+          # The same idea for the Mac half, from the macOS job's own outputs
+          # rather than a fixed sentence. The notes used to state "macOS builds
+          # are not notarized yet" unconditionally, and kept saying it for every
+          # release after notarization started working, on downloads that
+          # Gatekeeper opens without a word.
+          MAC_CONFIGURED: ${{ needs.build-desktop-macos.outputs.configured }}
+          MAC_NOTARIZED: ${{ needs.build-desktop-macos.outputs.notarized }}
         run: |
           {
             echo "## STR ${VERSION}"
@@ -1539,22 +1548,31 @@ jobs:
           \`\`\`
 
           MD
-          # Signing status: written from the same secret that gates the signing
-          # steps in the Windows build job, so the notes never claim a state the
-          # binaries do not have.
+          # Signing status, one line per platform, each written from the same
+          # signal that gates the signing work in that platform's build job, so
+          # the notes cannot claim a state the binaries do not have. The macOS
+          # cases mirror the "Refuse to publish an unnotarized macOS build"
+          # guard below: accepted means a stapled ticket shipped, timeout means
+          # the submission is still queued at Apple and the build went out
+          # signed but without a ticket.
+          echo "### Code signing"
+          echo
           if [ -n "${CERT_THUMBPRINT}" ]; then
-            cat <<MD
-          ### Code signing
-
-          The Windows app is signed with a Certum Open Source code signing certificate. SmartScreen may still warn while the new signature builds download reputation. macOS builds are not notarized yet; Gatekeeper may warn (documented on the website Verify page).
-          MD
+            echo "**Windows:** signed with a Certum Open Source code signing certificate. SmartScreen may still warn while the signature builds download reputation."
           else
-            cat <<MD
-          ### Not yet code-signed
-
-          Windows installers in this build are not code-signed; SmartScreen may warn on first download. macOS builds are not notarized yet; Gatekeeper may warn. Both are documented on the website Verify page.
-          MD
+            echo "**Windows:** this build is not code-signed, so SmartScreen warns on first download."
           fi
+          echo
+          case "${MAC_CONFIGURED}:${MAC_NOTARIZED}" in
+            true:accepted)
+              echo "**macOS:** signed with a Developer ID certificate and notarized by Apple. The app and the disk image each carry a stapled ticket, so Gatekeeper opens them without a warning, offline included." ;;
+            true:*)
+              echo "**macOS:** signed with a Developer ID certificate, but Apple's notary service did not return a verdict in time for this build, so Gatekeeper warns on first launch." ;;
+            *)
+              echo "**macOS:** this build is ad-hoc signed and not notarized, so Gatekeeper warns on first launch." ;;
+          esac
+          echo
+          echo "Any warning you do see, and the exact click path past it, is documented on the website Verify page."
           # VirusTotal: linked to the permanent per-hash report so it survives and
           # matches what the website renders from manifest.json's sha256. Only when
           # VT_API_KEY is set (the upload step above ran), else the links would 404.

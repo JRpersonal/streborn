@@ -131,7 +131,7 @@ The full breakdown is in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry
 
 - **SSH follows the USB stick:** the firmware root account uses a well-known default with no password, so STR keeps SSH opt-in. SSH is only started while the STR stick is inserted (Bose's `remote_services` marker) and closes again on the next stickless reboot; the agent no longer keeps it open on every boot. A persistent opt-in marker (`/mnt/nv/streborn/enable-ssh`) exists for maintainers and is flagged in the desktop app. While SSH is open, run the speaker on a trusted network or its own VLAN.
 - Windows releases are **code signed** with a Certum Open Source code signing certificate (since v0.9.20), so SmartScreen shows a verified publisher. SHA256 sums and Sigstore attestations additionally cover every release artifact.
-- macOS builds are **not notarized** yet. Same reason.
+- macOS releases are **signed with a Developer ID certificate and notarized by Apple** (since v0.9.33). The app and the disk image each carry a stapled ticket, so Gatekeeper opens them without a warning, offline included. If Apple's notary service does not return a verdict in time for a given build, that release ships signed but without a ticket, and its release notes say so.
 - The desktop app does not implement application sandboxing. Future versions may use OS provided sandboxing.
 
 ## Changelog
@@ -139,3 +139,4 @@ The full breakdown is in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md#telemetry
 - 2026 May 15: initial security policy.
 - 2026 Jun 03: documented the privacy/telemetry posture, added OpenSSF Scorecard, and listed the per-push checks (golangci-lint, govulncheck, CodeQL, Secret Scanning + Push Protection).
 - 2026 Jun 12: corrected the privacy section (app-side radio search, Spotify sidecar), documented the pre-1.0 SSH posture, noted the update-check endpoint, fixed the attestation example to the versioned asset name.
+- 2026 Aug 11: recorded macOS Developer ID signing and Apple notarization, shipping since v0.9.33. The previous "not notarized yet" line had outlived the fact.

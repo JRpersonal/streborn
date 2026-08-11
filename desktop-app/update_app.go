@@ -3,18 +3,21 @@ package main
 // In-app self-update (#71), phase 1: download the matching release asset for the
 // host OS, verify its SHA256 against the release manifest, then install it.
 //
-// Install capability differs by OS, driven by how the app is shipped (a raw,
-// UNSIGNED binary on every platform, signing is cost-deferred):
+// Install capability differs by OS, driven by how the app is shipped (a
+// portable binary or image per platform, code-signed since v0.9.20 on Windows
+// and v0.9.33 on macOS):
 //   - Linux  : the asset is a .tar.gz with the binary inside. A running binary
 //              can be replaced on Linux, so STR swaps itself and relaunches.
 //   - Windows: the asset is the portable .exe. A running .exe cannot be
 //              overwritten but CAN be renamed, so STR renames itself to .old,
 //              drops the new .exe in place and relaunches; the .old is removed on
 //              the next start.
-//   - macOS  : the asset is a .dmg. An unsigned, un-notarized .app downloaded
-//              this way is blocked by Gatekeeper, so STR only downloads+verifies
-//              and opens the .dmg for the user to drag into Applications. Full
-//              auto-replace waits for notarization.
+//   - macOS  : the asset is a .dmg. STR downloads and verifies it, then opens it
+//              for the user to drag into Applications. Gatekeeper is no longer
+//              the reason: the app and the image are Developer ID signed and
+//              notarized (v0.9.33+). What is still missing is the in-place
+//              replacement of a running .app BUNDLE, which is a different job
+//              from swapping a single file and is not written yet.
 //
 // The check itself (CheckAppUpdate) is unchanged; this adds the download/verify/
 // apply half the banner previously delegated to "open the website".
@@ -134,8 +137,8 @@ func updateAssetKey() string {
 }
 
 // canSelfReplace reports whether STR can install an update in place on this OS.
-// macOS cannot until the .app is notarized (Gatekeeper blocks a downloaded,
-// unsigned bundle), so there it stays assisted.
+// macOS stays assisted: the download is notarized and would open fine, but
+// replacing a running .app bundle is unwritten work, not a signing problem.
 func canSelfReplace() bool { return runtime.GOOS == "linux" || runtime.GOOS == "windows" }
 
 // UpdateAsset is the resolved download for the host OS, returned to the frontend
@@ -378,7 +381,8 @@ func assetExt() string {
 
 // ApplyUpdate installs a file produced by DownloadUpdate. On Linux and Windows it
 // replaces the running binary and relaunches; on macOS it opens the .dmg for the
-// user to drag into Applications (Gatekeeper blocks an unsigned auto-replace).
+// user to drag into Applications (replacing a running .app bundle in place is
+// not written yet, see canSelfReplace).
 func (a *App) ApplyUpdate(downloadedPath string) error {
 	if _, err := os.Stat(downloadedPath); err != nil {
 		return fmt.Errorf("downloaded file missing: %w", err)

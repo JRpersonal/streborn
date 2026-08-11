@@ -108,7 +108,7 @@ Per my own criteria in [`CLAUDE.md`](./CLAUDE.md):
 4. Threat model document published. Present in [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md). It does not yet cover the persistence-across-factory-reset point above, which I owe.
 5. Legal pages on the website (imprint, privacy, both German). Some sections still contain placeholders.
 
-Notarization (macOS), additional models beyond the 1.0 threshold, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0. Windows code signing already ships: release binaries are Authenticode-signed with a Certum open-source certificate.
+Additional models beyond the 1.0 threshold, sandboxing the Wails app, and the hardening steps (token auth on `:8888`, iptables egress lockdown, automatic `passwd root` on install) I see as post-1.0. Code signing ships on both desktop platforms already: Windows binaries are Authenticode-signed with a Certum open-source certificate, and the macOS app and disk image are Developer ID signed and notarized by Apple.
 
 ## Quick start for developers
 

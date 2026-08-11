@@ -1056,7 +1056,8 @@ async function checkAppUpdate() {
     // out in the notice instead of reading as a faint secondary control.
     // In-app update (#71): download the matching asset, verify its SHA256, then
     // install. Linux/Windows self-replace and relaunch; macOS downloads+verifies
-    // and opens the .dmg (Gatekeeper blocks an unsigned auto-replace). The button
+    // and opens the .dmg (replacing a running .app bundle is unwritten work, not
+    // a Gatekeeper problem: the build is notarized). The button
     // always shows now: the asset URL + hash are resolved from the release
     // manifest in the backend, so it no longer depends on the manifest carrying a
     // downloadUrl. notesUrl / releases page stays as the manual fallback.
