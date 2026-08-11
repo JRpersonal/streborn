@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -150,6 +151,44 @@ func TestAnonymizeText(t *testing.T) {
 	for _, leaked := range []string{"192.168.0.5", "de:ad:be:ef:00:11", "Cafe"} {
 		if strings.Contains(got, leaked) {
 			t.Errorf("anonymizeText leaked %q: %s", leaked, got)
+		}
+	}
+}
+
+// TestAnonymizeDebugState_ScrubsSSIDValues guards the leak found in the #592
+// bundle: wlan_configured lists the speaker's stored networks as structured
+// JSON, so each network name is a bare string value under an "ssid" key. The
+// SSID hint pattern needs the word in the text itself, so those names travelled
+// into a bundle attached to a public issue while the README promised they never
+// leave the host. The scrub has to key on the FIELD, not on the value.
+func TestAnonymizeDebugState_ScrubsSSIDValues(t *testing.T) {
+	in := map[string]any{
+		"wlan_configured": map[string]any{
+			"tool": "BoseApp-Persistence",
+			"networks": []any{
+				map[string]any{"id": float64(0), "ssid": "2WIRE904", "current": false},
+				map[string]any{"id": float64(1), "ssid": "SomeHouseholdName", "current": true},
+			},
+		},
+		"wpa_supplicant": "network={\n\tssid=\"HomeNet\"\n\tpsk=\"hunter2\"\n}",
+		"presets":        map[string]any{"1": "NDR 2"},
+	}
+	out := anonymizeDebugState(in)
+	blob, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(blob)
+	for _, leaked := range []string{"2WIRE904", "SomeHouseholdName", "HomeNet", "hunter2"} {
+		if strings.Contains(got, leaked) {
+			t.Errorf("anonymizeDebugState leaked %q:\n%s", leaked, got)
+		}
+	}
+	// Everything that is not a secret must survive, or the bundle stops being
+	// worth reading.
+	for _, keep := range []string{"BoseApp-Persistence", "NDR 2"} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("anonymizeDebugState dropped %q:\n%s", keep, got)
 		}
 	}
 }

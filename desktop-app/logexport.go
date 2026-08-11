@@ -723,12 +723,32 @@ func anonymizeText(s string) string {
 	return scrubPII(s)
 }
 
+// sensitiveValueKeyRegex names the JSON keys whose VALUE is personal even though
+// the value itself carries no hint of what it is.
+//
+// scrubPII can only work on the string in front of it, and a bare "MyHomeNet"
+// looks like nothing: the SSID hint pattern needs the word "ssid" to be IN the
+// text, which is true for a config FILE and false for structured JSON, where
+// "ssid" is the key and the network name is a plain value one level down. So
+// debugState.wlan_configured.networks[].ssid walked straight through a scrub the
+// bundle README promises ("SSIDs and Wi-Fi passwords never leave the host"), and
+// a reporter's four household network names ended up in a bundle attached to a
+// public issue (2026-08-11, #592). Keying the scrub on the FIELD closes that,
+// and it closes it for any future field with the same shape.
+var sensitiveValueKeyRegex = regexp.MustCompile(`(?i)^(ssid|ssid_name|psk|passphrase|password|passwd|pwd|wifi_?password|pre_?shared_?key)$`)
+
 // anonymizeDebugState walks the /api/debug/state map and scrubs
 // every string value. Nested maps and slices are walked
 // recursively. Non-string leaves are untouched (booleans, numbers).
+// A string sitting under a sensitive key is dropped entirely rather than
+// scrubbed, because its value IS the secret.
 func anonymizeDebugState(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
+		if s, ok := v.(string); ok && s != "" && sensitiveValueKeyRegex.MatchString(k) {
+			out[k] = "<REDACTED>"
+			continue
+		}
 		out[k] = anonymizeAny(v)
 	}
 	return out
