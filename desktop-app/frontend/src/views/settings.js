@@ -80,6 +80,11 @@ import {
 // expanding the injected-helper surface.
 const isMacOS = /Mac OS X|Macintosh/.test(navigator.userAgent);
 
+// Where the voice-control explanation lives. In the repo for now so the link
+// works the day the button ships; move it to the website page when that exists
+// and this one line follows.
+const VOICE_GUIDE_URL = 'https://github.com/JRpersonal/streborn/blob/main/docs/ALEXA.md';
+
 // Injected main.js helpers (see initSettingsView). These stay in main.js because
 // they are shared across views; the settings code calls them as deps.<name>.
 let deps = {
@@ -894,6 +899,14 @@ function renderBoxSettings(s, box) {
       </div>
     </details>
 
+    <details class="settings-section settings-expert">
+      <summary class="settings-expert-summary">${escapeHtml(t('settingsView.voiceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
+      <small class="muted small expert-intro">${escapeHtml(t('settingsView.voiceHelp'))}</small>
+      <div class="setting-row">
+        <button class="btn btn-mini" id="voiceGuideBtn">${escapeHtml(t('settingsView.voiceGuideBtn'))}</button>
+      </div>
+    </details>
+
     ${(() => {
       // Box-to-box preset copy (Expert): source is THIS speaker (the one whose
       // settings are open), the user picks a target to push keys 1-6 onto. Only
@@ -1088,6 +1101,17 @@ function renderBoxSettings(s, box) {
   for (const id of ['fwGuideLink', 'fwUsbLink', 'fwFaqLink']) {
     const el = $(id);
     if (el) el.onclick = (e) => { e.preventDefault(); try { BrowserOpenURL(el.dataset.url); } catch {} };
+  }
+  // Voice control: STR itself will never speak to Alexa (the old skill was
+  // Bose's cloud talking to Bose's cloud, and a new one would mean an account,
+  // a public endpoint and a bill). What does work is a hub the user runs at
+  // home, so the app says so once, in the expert area, and hands over to the
+  // written guide rather than trying to explain a Home Assistant setup in a
+  // settings panel. One constant, so the target can move to the website later
+  // without hunting through the UI.
+  {
+    const vg = $('voiceGuideBtn');
+    if (vg) vg.onclick = () => { try { BrowserOpenURL(VOICE_GUIDE_URL); } catch {} };
   }
 
   // Status block: software version + USB stick mount.
