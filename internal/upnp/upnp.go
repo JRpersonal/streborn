@@ -109,12 +109,35 @@ func (r *Renderer) PlayURL(ctx context.Context, streamURL, title, iconURL string
 	return nil
 }
 
+// TrackMeta describes a FINITE piece of audio: a file with a known length that
+// the server will serve byte ranges from. Radio has neither, so it leaves this
+// zero and the DIDL stays exactly as it was.
+//
+// It matters more than it looks. Without a duration the speaker reports a total
+// time of zero and treats the file as an open-ended stream: the app cannot show
+// a track length, the queue watcher has to guess at end-of-track from a frozen
+// position (the #380/#381 workaround), and a paused track has no position to go
+// back to. Measured on a Portable against a Synology media server: identical URL,
+// identical bytes, `duration` alone in the DIDL turned total=0 into total=18.
+type TrackMeta struct {
+	Duration time.Duration
+	// Seekable adds DLNA.ORG_OP=01, which tells the renderer the source honours
+	// byte ranges, so it may re-request from an offset instead of only ever
+	// reading a stream front to back.
+	Seekable bool
+}
+
 // SetURIMime is SetURI with an explicit DIDL res protocolInfo mime.
 func (r *Renderer) SetURIMime(ctx context.Context, streamURL, metaTitle, iconURL, mime string) error {
+	return r.SetURITrack(ctx, streamURL, metaTitle, iconURL, mime, TrackMeta{})
+}
+
+// SetURITrack is SetURIMime for content whose length is known.
+func (r *Renderer) SetURITrack(ctx context.Context, streamURL, metaTitle, iconURL, mime string, track TrackMeta) error {
 	if idx := strings.Index(iconURL, "|"); idx >= 0 {
 		iconURL = iconURL[:idx]
 	}
-	meta := buildDIDLMime(streamURL, metaTitle, iconURL, mime)
+	meta := buildDIDLMime(streamURL, metaTitle, iconURL, mime, track)
 	body := fmt.Sprintf(`<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><CurrentURI>%s</CurrentURI><CurrentURIMetaData>%s</CurrentURIMetaData></u:SetAVTransportURI></s:Body></s:Envelope>`,
 		xmlEscape(streamURL), xmlEscape(meta))
 	return r.soapCall(ctx, "SetAVTransportURI", body)
@@ -125,13 +148,27 @@ func (r *Renderer) SetURIMime(ctx context.Context, streamURL, metaTitle, iconURL
 // skips ResolveStreamURL, which is for radio playlist/HTTPS quirks and
 // would only add a needless reachability probe to a known loopback URL.
 func (r *Renderer) PlayURLMime(ctx context.Context, streamURL, title, iconURL, mime string) error {
-	if err := r.SetURIMime(ctx, streamURL, title, iconURL, mime); err != nil {
+	return r.PlayURLTrack(ctx, streamURL, title, iconURL, mime, TrackMeta{})
+}
+
+// PlayURLTrack is PlayURLMime for a file of known length, see TrackMeta.
+func (r *Renderer) PlayURLTrack(ctx context.Context, streamURL, title, iconURL, mime string, track TrackMeta) error {
+	if err := r.SetURITrack(ctx, streamURL, title, iconURL, mime, track); err != nil {
 		return fmt.Errorf("SetURI: %w", err)
 	}
 	if err := r.Play(ctx); err != nil {
 		return fmt.Errorf("Play: %w", err)
 	}
 	return nil
+}
+
+// Seek moves the current track to an absolute offset from its start. Only
+// meaningful for content the renderer knows the length of (see TrackMeta);
+// against a stream the firmware answers with a wrong-state fault.
+func (r *Renderer) Seek(ctx context.Context, at time.Duration) error {
+	body := `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Seek xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Unit>REL_TIME</Unit><Target>` +
+		clockString(at) + `</Target></u:Seek></s:Body></s:Envelope>`
+	return r.soapCall(ctx, "Seek", body)
 }
 
 // ResolveStreamURL prepares a station URL for the box:
@@ -365,14 +402,14 @@ func isAlnum(b byte) bool {
 // to detect the stream codec. If iconURL is set it is embedded as
 // upnp:albumArtURI so the box shows a station logo.
 func buildDIDL(streamURL, title, iconURL string) string {
-	return buildDIDLMime(streamURL, title, iconURL, "audio/mpeg")
+	return buildDIDLMime(streamURL, title, iconURL, "audio/mpeg", TrackMeta{})
 }
 
 // buildDIDLMime is buildDIDL with an explicit res protocolInfo mime. Radio
 // streams use audio/mpeg; the Spotify loopback stream is a live WAV, so it
 // passes audio/wav (the box was verified to play that, see the spotify
 // spike).
-func buildDIDLMime(streamURL, title, iconURL, mime string) string {
+func buildDIDLMime(streamURL, title, iconURL, mime string, track TrackMeta) string {
 	if title == "" {
 		title = "Stream"
 	}
@@ -383,7 +420,34 @@ func buildDIDLMime(streamURL, title, iconURL, mime string) string {
 	if iconURL != "" {
 		art = `<upnp:albumArtURI dlna:profileID="JPEG_TN" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">` + xmlEscapeAttr(iconURL) + `</upnp:albumArtURI>`
 	}
-	return `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>` + xmlEscapeAttr(title) + `</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class>` + art + `<res protocolInfo="http-get:*:` + mime + `:*">` + xmlEscapeAttr(streamURL) + `</res></item></DIDL-Lite>`
+	// The fourth protocolInfo field stays "*" for a stream. For a real file it
+	// carries the DLNA operations flag, and deliberately NOTHING else: a
+	// DLNA.ORG_PN profile name is format-specific, and a wrong one is worse than
+	// none because a renderer may refuse the item outright. Verified against the
+	// firmware with and without it, both accepted, so the guess is not worth
+	// making. The FLAGS value is the usual streaming-mode constant.
+	extra := "*"
+	if track.Seekable {
+		extra = "DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+	}
+	attrs := ""
+	if track.Duration > 0 {
+		attrs = ` duration="` + clockString(track.Duration) + `"`
+	}
+	return `<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="-1" restricted="1"><dc:title>` + xmlEscapeAttr(title) + `</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class>` + art + `<res protocolInfo="http-get:*:` + mime + `:` + extra + `"` + attrs + `>` + xmlEscapeAttr(streamURL) + `</res></item></DIDL-Lite>`
+}
+
+// clockString renders a duration as the H:MM:SS.mmm the UPnP clock format wants
+// (both the DIDL duration attribute and a Seek target use it).
+func clockString(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	h := int(d / time.Hour)
+	m := int(d/time.Minute) % 60
+	s := int(d/time.Second) % 60
+	ms := int(d/time.Millisecond) % 1000
+	return fmt.Sprintf("%d:%02d:%02d.%03d", h, m, s, ms)
 }
 
 // xmlEscape escapes special characters for XML element content.

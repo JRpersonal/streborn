@@ -14,6 +14,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxurl"
 	"github.com/JRpersonal/streborn/internal/presets"
+	"github.com/JRpersonal/streborn/internal/upnp"
 )
 
 // presetItemsToQueue maps a queue preset's stored tracks to the play-queue item
@@ -94,7 +95,7 @@ const (
 // library file the box can range-read) vs the loopback proxy (radio / HTTPS)
 // exactly like handlePlay, and records it as the last play. The caller must
 // hold boxCmdMu.
-func (s *Server) pushStream(ctx context.Context, url, title, art, mime string) error {
+func (s *Server) pushStream(ctx context.Context, url, title, art, mime string, dur time.Duration) error {
 	playDirect := mime != "" && isPlainHTTPURL(url)
 	playURL := boxurl.RawStream(url)
 	if playDirect {
@@ -102,7 +103,14 @@ func (s *Server) pushStream(ctx context.Context, url, title, art, mime string) e
 	}
 	var err error
 	if mime != "" {
-		err = s.renderer.PlayURLMime(ctx, playURL, title, art, mime)
+		// Tell the speaker what it is being handed. A direct library file has a
+		// length and a server that serves byte ranges, and saying so is what
+		// gives the box a real total time and a position it can return to; a
+		// proxied stream has neither, so it keeps the old stream-shaped metadata.
+		err = s.renderer.PlayURLTrack(ctx, playURL, title, art, mime, upnp.TrackMeta{
+			Duration: dur,
+			Seekable: playDirect,
+		})
 	} else {
 		err = s.renderer.PlayURL(ctx, playURL, title, art)
 	}
@@ -163,7 +171,7 @@ func (s *Server) startQueueLocked(ctx context.Context, items []queueItem, start 
 	} else {
 		s.recentClearQueueCard()
 	}
-	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime); err != nil {
+	if err := s.pushStream(ctx, it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
 		return err
 	}
 	s.setQueueTiming(it.Duration)
@@ -256,7 +264,7 @@ func (s *Server) advanceAndPlay(natural bool, gen int) {
 		return
 	}
 	s.ClearUserStop()
-	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime); err != nil {
+	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
 		s.logger.Warn("queue advance: play failed", "title", it.Title, "err", err)
 		return
 	}
@@ -284,7 +292,7 @@ func (s *Server) queueSkip(forward bool) (queueItem, bool, error) {
 		return queueItem{}, false, nil
 	}
 	s.ClearUserStop()
-	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime); err != nil {
+	if err := s.pushStream(s.queueCtx(), it.URL, it.Title, it.Art, it.Mime, it.Duration); err != nil {
 		return queueItem{}, false, err
 	}
 	s.setQueueTiming(it.Duration)

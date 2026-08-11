@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestXMLEscape(t *testing.T) {
@@ -25,6 +26,7 @@ func TestBuildDIDLMimeWellFormed(t *testing.T) {
 		"Rock & Roll <Live>",
 		"http://logo.example/a&b.jpg",
 		"audio/ogg",
+		TrackMeta{},
 	)
 	if err := xml.Unmarshal([]byte(got), new(struct{})); err != nil {
 		t.Fatalf("DIDL is not well-formed XML: %v\n%s", err, got)
@@ -76,5 +78,60 @@ func TestBuildDIDLDefaults(t *testing.T) {
 	}
 	if !strings.Contains(got, "audio/mpeg") {
 		t.Errorf("default mime should be audio/mpeg:\n%s", got)
+	}
+}
+
+// A finite file has to reach the speaker as a finite file. Without the duration
+// the firmware reports a total time of zero and treats the track as an
+// open-ended stream: no length in the app, no position to return to after a
+// pause, and the queue left guessing when the track ended. Measured against a
+// Portable: the duration attribute alone turned total=0 into total=18.
+func TestBuildDIDLMimeCarriesTrackLengthAndSeekability(t *testing.T) {
+	got := buildDIDLMime(
+		"http://nas.example/m/15.mp3", "One Alpha", "", "audio/mpeg",
+		TrackMeta{Duration: 3*time.Minute + 25*time.Second, Seekable: true},
+	)
+	if err := xml.Unmarshal([]byte(got), new(struct{})); err != nil {
+		t.Fatalf("DIDL is not well-formed XML: %v\n%s", err, got)
+	}
+	if !strings.Contains(got, `duration="0:03:25.000"`) {
+		t.Errorf("track length missing from the res element:\n%s", got)
+	}
+	if !strings.Contains(got, "DLNA.ORG_OP=01") {
+		t.Errorf("range-seek flag missing from protocolInfo:\n%s", got)
+	}
+	// A DLNA.ORG_PN profile is format-specific and a wrong one can get the item
+	// refused outright, so STR must not guess one.
+	if strings.Contains(got, "DLNA.ORG_PN") {
+		t.Errorf("a guessed DLNA profile name leaked into protocolInfo:\n%s", got)
+	}
+}
+
+// Radio is the other half of the contract: no length, no seeking, and the
+// metadata must stay byte-for-byte what it always was.
+func TestBuildDIDLMimeLeavesStreamsAsStreams(t *testing.T) {
+	got := buildDIDLMime("http://cdn.example/live", "1LIVE", "", "audio/mpeg", TrackMeta{})
+	if !strings.Contains(got, "http-get:*:audio/mpeg:*") {
+		t.Errorf("a stream must keep the wildcard protocolInfo:\n%s", got)
+	}
+	if strings.Contains(got, "duration=") || strings.Contains(got, "DLNA.ORG") {
+		t.Errorf("a stream must carry neither a length nor DLNA flags:\n%s", got)
+	}
+}
+
+func TestClockString(t *testing.T) {
+	for _, c := range []struct {
+		in   time.Duration
+		want string
+	}{
+		{0, "0:00:00.000"},
+		{5 * time.Second, "0:00:05.000"},
+		{75 * time.Second, "0:01:15.000"},
+		{2*time.Hour + 3*time.Minute + 4*time.Second + 500*time.Millisecond, "2:03:04.500"},
+		{-1 * time.Second, "0:00:00.000"},
+	} {
+		if got := clockString(c.in); got != c.want {
+			t.Errorf("clockString(%v) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
