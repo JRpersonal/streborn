@@ -196,16 +196,55 @@ export function translateTags(tagsCsv) {
 
 // ---------- Country code → flag emoji ----------
 // ISO 3166-1 alpha-2 to regional indicator symbol (Unicode flag).
-// Windows system fonts ship no country-flag emoji (regional indicators
-// render blank/letters), and a native <select> cannot host the inline
-// SVG flags used in the header. So on Windows the country dropdowns show
-// names without a flag rather than a broken glyph.
+// Whether these draw as a flag depends on the FONTS on the machine, not on the
+// operating system: Microsoft's Segoe UI Emoji ships no regional indicators, so
+// a stock Windows shows two letters, while a Windows with a flag-capable emoji
+// font installed shows the flag like macOS and most Linux desktops do. The
+// dropdowns therefore measure instead of guessing (flagsRenderNatively); the
+// language picker sidesteps the question entirely with inline SVG, which is why
+// it shows flags everywhere including on a stock Windows.
 export const IS_WINDOWS = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent || '');
 
+// flagsSupportedFromWidths decides, from two text measurements, whether the
+// font actually draws country flags.
+//
+// A font that has them composes the two regional indicators into ONE glyph, so
+// the pair is about as wide as a single indicator. A font that does not draws
+// two separate letter boxes, so the pair is about twice as wide. Measuring beats
+// asking the platform: the same Windows 11 build shows flags on one machine and
+// letters on another depending on which fonts are installed, and a user report
+// of exactly that pair (2026-08-12) is what retired the user-agent check.
+export function flagsSupportedFromWidths(pairWidth, singleWidth) {
+  if (!(pairWidth > 0) || !(singleWidth > 0)) return false;
+  return pairWidth < singleWidth * 1.5;
+}
+
+// flagsRenderNatively measures once per session whether emoji flags are drawn.
+// Falls back to "no" whenever it cannot measure (no DOM, no canvas), which is
+// the safe direction: a missing flag costs a little colour, a broken one looks
+// like a bug in the app.
+let flagSupportCache = null;
+export function flagsRenderNatively() {
+  if (flagSupportCache !== null) return flagSupportCache;
+  flagSupportCache = false;
+  try {
+    if (typeof document === 'undefined') return flagSupportCache;
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return flagSupportCache;
+    ctx.font = '16px sans-serif';
+    const pair = ctx.measureText('\u{1F1E9}\u{1F1EA}').width;
+    const single = ctx.measureText('\u{1F1E9}').width;
+    flagSupportCache = flagsSupportedFromWidths(pair, single);
+  } catch { /* keep the safe default */ }
+  return flagSupportCache;
+}
+
 // optFlag returns the emoji flag plus a trailing space for use in a
-// <select> <option>, or '' on Windows (where it would render blank).
+// <select> <option>, or '' where the font would draw two letters instead.
+// A native <option> cannot host the inline SVG the language picker uses, so
+// this is emoji or nothing.
 export function optFlag(cc) {
-  if (IS_WINDOWS) return '';
+  if (!flagsRenderNatively()) return '';
   const f = flagFromCC(cc);
   return f ? f + ' ' : '';
 }
