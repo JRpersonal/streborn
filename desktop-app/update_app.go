@@ -12,12 +12,13 @@ package main
 //              overwritten but CAN be renamed, so STR renames itself to .old,
 //              drops the new .exe in place and relaunches; the .old is removed on
 //              the next start.
-//   - macOS  : the asset is a .dmg. STR downloads and verifies it, then opens it
-//              for the user to drag into Applications. Gatekeeper is no longer
-//              the reason: the app and the image are Developer ID signed and
-//              notarized (v0.9.33+). What is still missing is the in-place
-//              replacement of a running .app BUNDLE, which is a different job
-//              from swapping a single file and is not written yet.
+//   - macOS  : the asset is a .zip of the signed and stapled .app, and STR
+//              swaps the running bundle for it (see update_macos.go). The .dmg
+//              stays published for first installs and is the fallback whenever
+//              the swap is not possible: an app started from the mounted image,
+//              a folder the user cannot write, or a release from before the zip
+//              existed. Then it behaves as it always did and just opens the
+//              image for the user to drag the app in.
 //
 // The check itself (CheckAppUpdate) is unchanged; this adds the download/verify/
 // apply half the banner previously delegated to "open the website".
@@ -125,21 +126,63 @@ func newGETRequest(ctx context.Context, url string) (*http.Request, error) {
 
 // updateAssetKey maps the host OS to the manifest.json artifact key.
 func updateAssetKey() string {
+	keys := updateAssetKeys()
+	if len(keys) == 0 {
+		return ""
+	}
+	return keys[0]
+}
+
+// updateAssetKeys lists the manifest artifact keys for the host OS in order of
+// preference. Only macOS has more than one: the .zip carries the same signed and
+// stapled app as the .dmg but can be swapped in place, so it is preferred, while
+// the .dmg stays the fallback for releases built before the zip existed and for
+// installations that cannot self-replace anyway.
+func updateAssetKeys() []string {
 	switch runtime.GOOS {
 	case "windows":
-		return "desktop_windows"
+		return []string{"desktop_windows"}
 	case "darwin":
-		return "desktop_macos"
+		if canSelfReplaceDarwin() {
+			return []string{"desktop_macos_zip", "desktop_macos"}
+		}
+		return []string{"desktop_macos"}
 	case "linux":
-		return "desktop_linux"
+		return []string{"desktop_linux"}
 	}
-	return ""
+	return nil
 }
 
 // canSelfReplace reports whether STR can install an update in place on this OS.
-// macOS stays assisted: the download is notarized and would open fine, but
-// replacing a running .app bundle is unwritten work, not a signing problem.
-func canSelfReplace() bool { return runtime.GOOS == "linux" || runtime.GOOS == "windows" }
+//
+// The answer is per INSTALLATION, not per platform. Windows ships a portable
+// .exe that users keep somewhere of their own, and its rename trick reports a
+// clear error if that place is protected. Linux and macOS are asked properly:
+// the swap needs a writable directory, and on macOS one that is not the mounted
+// disk image, so an app launched straight out of the DMG keeps the assisted
+// flow and is told to drag it into Applications once.
+func canSelfReplace() bool {
+	switch runtime.GOOS {
+	case "windows":
+		return true
+	case "linux":
+		// Same question macOS asks, for the same reason: a binary installed
+		// into /opt or /usr/local by root cannot be swapped by the user running
+		// it, and finding that out only when the rename fails means the user
+		// has already sat through a download and pressed Install.
+		exe, err := os.Executable()
+		if err != nil {
+			return false
+		}
+		if r, e := filepath.EvalSymlinks(exe); e == nil {
+			exe = r
+		}
+		return dirWritable(filepath.Dir(exe))
+	case "darwin":
+		return canSelfReplaceDarwin()
+	}
+	return false
+}
 
 // UpdateAsset is the resolved download for the host OS, returned to the frontend
 // so it can show the size/version and decide between "Install now" (self-replace)
@@ -174,8 +217,8 @@ func releaseManifestLatestURL() string {
 // download for the host OS. Errors when the OS is unsupported or the manifest
 // lacks the asset (a malformed/old release).
 func (a *App) ResolveUpdateAsset(version string) (UpdateAsset, error) {
-	key := updateAssetKey()
-	if key == "" {
+	keys := updateAssetKeys()
+	if len(keys) == 0 {
 		return UpdateAsset{}, fmt.Errorf("unsupported OS %q", runtime.GOOS)
 	}
 	fetch := func(url string) (UpdateAsset, error) {
@@ -206,9 +249,23 @@ func (a *App) ResolveUpdateAsset(version string) (UpdateAsset, error) {
 		if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&m); err != nil {
 			return UpdateAsset{}, err
 		}
-		art, ok := m.Artifacts[key]
-		if !ok || art.URL == "" || art.SHA256 == "" {
-			return UpdateAsset{}, fmt.Errorf("release %s has no %s asset", m.Version, key)
+		// First key that the release actually carries wins, so a macOS app
+		// asking for the swappable .zip still updates from a release that only
+		// published the .dmg.
+		var art struct {
+			URL      string `json:"url"`
+			SHA256   string `json:"sha256"`
+			Filename string `json:"filename"`
+		}
+		var picked string
+		for _, k := range keys {
+			if a, ok := m.Artifacts[k]; ok && a.URL != "" && a.SHA256 != "" {
+				art, picked = a, k
+				break
+			}
+		}
+		if picked == "" {
+			return UpdateAsset{}, fmt.Errorf("release %s has no %s asset", m.Version, keys[0])
 		}
 		return UpdateAsset{
 			Version:     m.Version,
@@ -389,8 +446,16 @@ func (a *App) ApplyUpdate(downloadedPath string) error {
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		// Assisted: just surface the verified .dmg; the user drags the new app in.
-		return a.RevealUpdateFile(downloadedPath)
+		// In place when this installation allows it and the release carries the
+		// .zip; otherwise the assisted flow, unchanged. The fallback is not a
+		// nicety: it is what makes the swap safe to ship, since every refusal
+		// (running from the DMG, an unwritable folder, a signature that does not
+		// verify) lands the user exactly where they were before.
+		if err := a.applyDarwin(downloadedPath); err != nil {
+			a.logger.Info("macOS in-place update not possible, falling back to the assisted install", "reason", err)
+			return a.RevealUpdateFile(downloadedPath)
+		}
+		return nil
 	case "windows":
 		return a.applyWindows(downloadedPath)
 	case "linux":
@@ -479,9 +544,15 @@ func (a *App) relaunchAndQuit(exe string) {
 		a.logger.Warn("relaunch helper failed to start; please start the app manually", "err", err)
 		return
 	}
+	a.quitAfterRelaunchArmed(pid)
+}
+
+// quitAfterRelaunchArmed gives the just-started relaunch helper a moment to be
+// definitely running, then quits so the single-instance lock is released and the
+// helper can start the new version. Shared with the macOS bundle swap, which
+// arms its own helper (open -n on the bundle) but ends the same way.
+func (a *App) quitAfterRelaunchArmed(pid int) {
 	a.logger.Info("update applied; relaunch helper armed, quitting so it can start the new version", "pid", pid)
-	// Small grace so the helper is definitely running, then quit to release the
-	// single-instance lock; the helper does the rest once we are gone.
 	go func() {
 		time.Sleep(400 * time.Millisecond)
 		wailsrt.Quit(a.appCtx())
@@ -622,4 +693,22 @@ func extractLargestFile(tgz, dst string) error {
 		return closeErr
 	}
 	return fmt.Errorf("archive entry vanished between passes")
+}
+
+// dirWritable reports whether this process can actually create a file in dir.
+//
+// It writes and removes a probe file rather than reading permission bits: mode
+// bits alone lie often enough to matter here (group membership, ACLs, a
+// read-only mount, a directory owned by another admin), and the update is about
+// to depend on the answer. The probe is the same question the install will ask,
+// just asked while backing out is still free.
+func dirWritable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".streborn-write-probe-")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
 }
