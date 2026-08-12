@@ -1222,14 +1222,19 @@ func nandReportLine() string {
 // into its files, since the two big binaries live there), biggest first.
 func strDirEntries() []nandEntry {
 	var list []nandEntry
-	for _, sub := range []string{strNANDDir, filepath.Join(strNANDDir, "bin")} {
+	// lib/ is broken out for the same reason bin/ is: it holds files of about a
+	// megabyte each on a volume where a megabyte decides whether an update fits,
+	// and rolled up as one directory total nobody can see WHAT is in there. A
+	// field bundle (#534, two ST10s, 664 KB apart) came down to lib being 818 KB
+	// on one box and 1.8 MB on the other, and the bundle could not say why.
+	for _, sub := range []string{strNANDDir, filepath.Join(strNANDDir, "bin"), filepath.Join(strNANDDir, "lib")} {
 		ents, err := os.ReadDir(sub)
 		if err != nil {
 			continue
 		}
 		for _, e := range ents {
-			if sub == strNANDDir && e.Name() == "bin" {
-				continue // broken out via the second pass
+			if sub == strNANDDir && (e.Name() == "bin" || e.Name() == "lib") {
+				continue // broken out via the later passes
 			}
 			p := filepath.Join(sub, e.Name())
 			rel, rerr := filepath.Rel(nandRoot, p)
@@ -1241,6 +1246,71 @@ func strDirEntries() []nandEntry {
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Bytes > list[j].Bytes })
 	return list
+}
+
+// softwareUpdateBinPath is the Bose binary the LD_PRELOAD shim replaces by
+// bind-mounting a wrapper over it (see usb-stick/run.sh, shim_stage_wrapper).
+const softwareUpdateBinPath = "/opt/Bose/SoftwareUpdate"
+
+// reclaimUnusedShimStage drops the shim's staged pair when the shim is not in
+// use: lib/SoftwareUpdate-real, a full copy of the Bose binary, and the
+// lib/SU-wrapper.sh that execs it.
+//
+// The stage is only live while a bind mount sits on /opt/Bose/SoftwareUpdate.
+// Without that mount the copy is a spare nobody reads, and it is close to a
+// megabyte on the one volume where a megabyte decides whether an agent update
+// fits beside its own temp copy. Current run.sh skips the whole shim on every
+// chassis STR supports (sm2 opens :8888 with iptables, BCO uses the :17008
+// redirect), so on a box installed back when it did stage, the pair has been
+// dead weight ever since. Measured on two ST10s in one household, #534: 818 KB
+// of lib on one, 1.8 MB on the other, and the second was the box that kept
+// warning about storage during updates.
+//
+// Guarded, not unconditional: with the mount active, /opt/Bose/SoftwareUpdate
+// IS the wrapper and this copy is the only remaining original, so removing it
+// would break what the wrapper execs. It also stays a reclaim rather than a
+// startup cleanup, so it only ever runs when a write actually needs the room,
+// and a stick boot re-stages it if a future box needs the shim after all.
+func reclaimUnusedShimStage() {
+	if shimBindMountActive() {
+		return
+	}
+	libDir := filepath.Join(strNANDDir, "lib")
+	for _, name := range []string{"SoftwareUpdate-real", "SU-wrapper.sh"} {
+		p := filepath.Join(libDir, name)
+		st, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if err := os.Remove(p); err == nil {
+			slog.Info("nand reclaim: dropped an unused shim stage file",
+				"path", p, "bytes", st.Size())
+		}
+	}
+}
+
+// shimBindMountActive reports whether something is mounted over the Bose
+// SoftwareUpdate binary, i.e. whether the shim wrapper is live right now.
+// Unreadable /proc/mounts counts as active: the safe answer is to keep the file.
+func shimBindMountActive() bool {
+	b, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return true
+	}
+	return mountActiveIn(string(b))
+}
+
+// mountActiveIn is the /proc/mounts parse, split out so the guard is testable
+// off-box: the mount point is the SECOND field and must match exactly, since
+// "<path>-real" is a different file that happens to share the prefix.
+func mountActiveIn(procMounts string) bool {
+	for _, line := range strings.Split(procMounts, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == softwareUpdateBinPath {
+			return true
+		}
+	}
+	return false
 }
 
 // reclaimNAND frees obvious, regenerable junk so a tight OTA write has room:
@@ -1265,6 +1335,7 @@ func reclaimNAND() {
 	}
 	_ = os.Remove(filepath.Join(strNANDDir, "agent.log.1"))
 	_ = os.Remove(filepath.Join(nandRoot, "sp-oauth.out"))
+	reclaimUnusedShimStage()
 	// Stranded SSH-repair staging dir: the desktop app stages the ~28 MB install
 	// file set into <base>/streborn-install and the install copies it into
 	// /mnt/nv/streborn, but an older app left the staging copy behind, filling the
