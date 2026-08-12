@@ -192,6 +192,51 @@ mechanisms are explicitly out of scope for STR; a deep-sleeping speaker
 being unreachable over the network is correct behavior, surfaced in the
 UIs as a dimmed sticky tile.
 
+## The speaker display shows the source logo, never the station logo
+
+On a native radio preset the speaker's own display shows the STR mark for
+every station. This is not a bug in the artwork URL and it is not a
+substitution: **the firmware never fetches per-station art on this path.**
+
+What it does fetch, once, 0.2 s after it reads the BMX service registry
+during pairing, is the two service icons
+(`/media/bmx-icons/orion/monochrome_v2.png`,
+`/media/bmx-icons/tunein/monochromePng.png`), and STR serves the STR mark
+there (`internal/webui/bmxicons.go`). That icon is the picture on the
+display: it belongs to the SOURCE, not to what is playing.
+
+Meanwhile `now_playing` carries a correct per-station URL and the firmware
+declares `artImageStatus="IMAGE_PRESENT"` for it, then never requests it.
+Measured on a Portable (taigan) and an ST30 (mojo/scm); the same two icon
+fetches appear on an ST10 (rhino). Before presets became native, playback
+went through UPnP, where the artwork travels inside the DIDL metadata,
+which the firmware does render. That is why the logos used to be there.
+
+Three routes have been tried and all are closed:
+
+1. **Fix the ContentItem art URL.** Nothing to fix: fetching the stored
+   URLs through the box's own proxy returns the real images, and the
+   stored preset slots carry correct URLs.
+2. **Serve the current station's logo at the BMX icon path.** The asset
+   is fetched once per source registration. A probe build with
+   `askAgainAfter: 60` and a counter in the icon path proved the firmware
+   re-reads the registry on the dot every 60 s and still fetches the icon
+   only for the FIRST offer, not in standby and not during playback. Only
+   an unpair/re-pair triggers another fetch, which cannot be done per
+   station change.
+3. **Deliver art in the marge recents answer.** The per-station recents
+   POST is the only message the box sends marge on a station change, so
+   its answer is the only per-station channel. A probe build answered it
+   with the box's own record plus five artwork fields, each pointing at a
+   different URL (`art`, `imageurl`, `imageUrl`, `logo`, and a
+   `ContentItem/containerArt`, the spelling the preset documents use).
+   The speaker fetched none of the five, on two station changes
+   (ST30, 2026-08-12). The firmware's own recents record carries no
+   artwork field either.
+
+Do not re-open any of these without new firmware evidence. Deep RE of the
+native path is blocked, see the native-preset notes.
+
 ## See also
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the component map, ports,

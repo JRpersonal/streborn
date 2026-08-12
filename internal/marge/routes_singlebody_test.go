@@ -41,6 +41,7 @@ func TestEveryMargeRouteWritesOneDocument(t *testing.T) {
 		{http.MethodPost, "/streaming/support/power_on"},
 		{http.MethodGet, "/bmx/registry/v1/services"},
 		{http.MethodGet, "/bmx/registry/v1/servicesAvailability"},
+		{http.MethodPost, "/streaming/account/stick@local/device/94E36DF9CE40/recent"},
 	}
 
 	for _, rt := range routes {
@@ -59,5 +60,53 @@ func TestEveryMargeRouteWritesOneDocument(t *testing.T) {
 				t.Fatalf("JSON response has XML appended:\n%s", body)
 			}
 		})
+	}
+}
+
+// The per-station recents report must be answered with recents.
+//
+// Its path carries "/device" and it is a POST, so it matched the AddDevice case
+// and was answered with an adddeviceresponse and a marge token: the pairing
+// state machine's answer, handed to the box every time a user started a
+// station. Harmless in practice on the firmware measured (ST30, 2026-08-12),
+// but the ordering is a trap for the next person adding a /device route, so it
+// is pinned here.
+func TestRecentsPostIsAnsweredWithRecents(t *testing.T) {
+	s := New(slog.New(slog.NewTextHandler(io.Discard, nil)), WithDeviceID("000C8A96488D"))
+	s.SetAccount(&AccountInfo{AccountEmail: "stick@local"})
+
+	const posted = `<?xml version="1.0" encoding="UTF-8" ?><recent>` +
+		`<lastplayedat>2026-08-12T04:49:18+00:00</lastplayedat><sourceid>3</sourceid>` +
+		`<name>WDR2</name><location>/station?data=abc</location>` +
+		`<contentItemType>stationurl</contentItemType></recent>`
+
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost,
+		"/streaming/account/stick@local/device/000C8A96488D/recent", strings.NewReader(posted)))
+
+	body := w.Body.String()
+	if strings.Contains(body, "adddeviceresponse") || strings.Contains(body, "margetoken") {
+		t.Fatalf("recents POST answered with the AddDevice document:\n%s", body)
+	}
+	if !strings.Contains(body, "<recents") {
+		t.Fatalf("recents POST must be answered with a recents document, got:\n%s", body)
+	}
+}
+
+func TestInnerText(t *testing.T) {
+	const doc = `<recent><name>WDR2</name><contentItemType>stationurl</contentItemType></recent>`
+	if got := innerText([]byte(doc), "name"); got != "WDR2" {
+		t.Fatalf("name = %q, want WDR2", got)
+	}
+	if got := innerText([]byte(doc), "contentItemType"); got != "stationurl" {
+		t.Fatalf("contentItemType = %q, want stationurl", got)
+	}
+	// A field the document does not carry (artwork, for one) must come back
+	// empty rather than trip the parser.
+	if got := innerText([]byte(doc), "containerArt"); got != "" {
+		t.Fatalf("missing field = %q, want empty", got)
+	}
+	if got := innerText([]byte(`<name>unterminated`), "name"); got != "" {
+		t.Fatalf("unterminated tag = %q, want empty", got)
 	}
 }

@@ -475,6 +475,49 @@ func (s *Server) respondRecents(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(EmptyRecentsXML))
 }
 
+// logRecentPayload records what the box tells marge when a station starts.
+//
+// This is the ONLY per-station message in the whole marge conversation:
+// everything else happens at boot or at pairing. It is therefore the line that
+// answers "did the speaker actually change station at 06:45:14, and to what"
+// in a diagnostic bundle, and it is written once per station change, not on a
+// poll. The record the firmware sends carries a name, a location and a type
+// and NO artwork field, which is part of why the station display cannot be
+// given a per-station logo (see docs/FIRMWARE-NOTES.md).
+func (s *Server) logRecentPayload(r *http.Request) {
+	if r == nil || r.Body == nil {
+		return
+	}
+	// The spy middleware has already buffered and restored the body, so reading
+	// it here is safe and does not starve any later handler.
+	body, err := io.ReadAll(io.LimitReader(r.Body, 8<<10))
+	if err != nil {
+		return
+	}
+	s.logger.Info("marge recents: the box reported what it just started playing",
+		slog.String("station", innerText(body, "name")),
+		slog.String("contentItemType", innerText(body, "contentItemType")),
+		slog.Int("bytes", len(body)))
+}
+
+// innerText pulls the text of the first <tag>...</tag> out of an XML document
+// without a full parse. Enough for the few short fields of a recents record,
+// and it cannot fail on a document shape we have not seen.
+func innerText(doc []byte, tag string) string {
+	s := string(doc)
+	open, closing := "<"+tag+">", "</"+tag+">"
+	i := strings.Index(s, open)
+	if i < 0 {
+		return ""
+	}
+	rest := s[i+len(open):]
+	j := strings.Index(rest, closing)
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
 func (s *Server) respondServiceAvailability(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	tpl, err := template.New("svc").Parse(ServiceAvailabilityXMLTemplate)

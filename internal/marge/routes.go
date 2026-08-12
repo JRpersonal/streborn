@@ -51,6 +51,19 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/streaming/account/") && strings.Contains(path, "/group"):
 		s.handleMargeGroup(w, r)
 		return
+	// The box's per-station report: POST /streaming/account/<acct>/device/<dev>/recent
+	// when a station starts playing. It contains "/device" and is a POST, so
+	// without this case it lands in the AddDevice branch below and is answered
+	// with an adddeviceresponse carrying a marge token - an answer to a question
+	// it did not ask, handed to the state machine that owns the pairing. The
+	// firmware tolerated it (measured on an ST30, 2026-08-12: the recents POST
+	// has been getting the addDevice answer all along and nothing visibly broke),
+	// but answering the recents endpoint with recents is what it asked for.
+	case strings.Contains(path, "/recent") && r.Method == http.MethodPost:
+		s.logRecentPayload(r)
+		s.respondRecents(w)
+		return
+
 	// AddDevice sync: /streaming/account/<accountId>/device/ POST
 	// The box calls this after POST /setMargeAccount on the box itself.
 	// The response must be adddeviceresponse XML with a margetoken element.
@@ -100,6 +113,7 @@ func (s *Server) handleCatchall(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(path, "preset"):
 		s.respondPresets(w)
 	case strings.Contains(path, "recent"):
+		s.logRecentPayload(r)
 		s.respondRecents(w)
 	case strings.Contains(path, "service") && strings.Contains(path, "avail"):
 		s.respondServiceAvailability(w)
