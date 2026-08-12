@@ -1076,8 +1076,9 @@ async function checkAppUpdate() {
     if (notesLink) notesLink.onclick = (e) => { e.preventDefault(); BrowserOpenURL(notesUrl); };
     const dl = $('appUpdateBtn');
     if (dl) dl.onclick = () => runAppUpdate(m.version, dl, installLabel, isMacOS, dlUrl || latestUrl);
-    // Clicking it away is allowed and remembered. It stays away for this
-    // version and the next one, and comes back on the one after that.
+    // Clicking it away is allowed and remembered, for THIS version only. The
+    // next release is news again and says so; the user dismisses that one in
+    // turn or installs it.
     const x = $('appUpdateDismiss');
     if (x) x.onclick = () => {
       dismissNotice('appUpdate', m.version);
@@ -3167,13 +3168,22 @@ async function waitForStableAgent(box, deadlineMs, stableMs = 30_000, minUptimeS
   return false;
 }
 
-// runBoxUpdate runs the per-box OTA sequence for the "update all speakers" batch
-// (updateAllBoxes). It owns NO UI and NO lock: the caller drives status via
-// onPhase(phase, data) and owns the batch lock + the live byte-progress
-// (box:update:progress, now host-tagged). It is a faithful copy of the core
-// sequence inside doBoxUpdate (the single-speaker path) — KEEP THE TWO IN SYNC;
-// doBoxUpdate is deliberately left untouched as the battle-tested single-box flow.
-// Resolves to { outcome, version }:
+// runBoxUpdate runs the per-box OTA sequence. It is the ONE implementation of
+// that sequence: the "update all speakers" batch (updateAllBoxes) and the
+// single-speaker button (doBoxUpdate) both go through here.
+//
+// It used to be a copy of the sequence inside doBoxUpdate, carrying a
+// "KEEP THE TWO IN SYNC" note that reality did not honour: #360's stability
+// window and #466's settle-gated engine window were each fixed in the batch
+// first and only ported to the single path later, so for a while updating one
+// speaker behaved worse than updating six. The batch sequence is the one that
+// has been run across the whole fleet, so it is the one that survives, and the
+// single path now differs only in how it reports (buttons and toasts instead of
+// overlay rows).
+//
+// It owns NO UI and NO lock: the caller drives status via onPhase(phase, data)
+// and owns the lock + the live byte-progress (box:update:progress, host-tagged).
+// Resolves to { outcome, version, engineDelivered?, engineTooFull? }:
 //   'done'    agent updated (engine present, or freshly delivered)
 //   'partial' agent updated but the engine could not be delivered in-window
 //             (self-heals next time the speaker is opened)
@@ -3182,7 +3192,10 @@ async function waitForStableAgent(box, deadlineMs, stableMs = 30_000, minUptimeS
 // timeout-class rejection is NOT a failure (the box is usually still applying it)
 // and falls through to the version poll, the real success signal.
 // phases: 'uploading' -> 'rebooting' -> 'verifying'{remainingMs} ->
-//   'spotify'{attempt, remainingMs} -> resolve.
+//   'settling'{remainingMs} -> 'confirmed'{version} -> 'engineQueued' ->
+//   'engineUploading' -> 'spotify'{attempt, remainingMs, reachable, version,
+//   engine} -> resolve. 'retrying'{attempt} restarts the sequence once.
+// A caller may ignore any phase it has no use for.
 // speakerReachedTarget answers the only question that matters at the end of an
 // install or an update: is this speaker actually where it was meant to be.
 //
@@ -3288,7 +3301,11 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   const stabilityMs = 50_000;
   let stableSince = 0, sawSecondDrop = false;
   while (Date.now() < deadlineMs) {
-    phase('verifying', { remainingMs: deadlineMs - Date.now() });
+    // Only while we are still waiting for the box to come back. Once it has and
+    // we are merely holding it for the stability window, 'settling' below owns
+    // the line: emitting both every pass made the text flap between "restarting" and
+    // "back up, confirming" twice every two seconds.
+    if (!stableSince) phase('verifying', { remainingMs: deadlineMs - Date.now() });
     await sleep(2_000);
     try {
       const v = await BoxAgentVersion(box.host, box.port);
@@ -3348,6 +3365,10 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
   }
   clearOTAStuck(box);
   try { RecordOTAOutcome(box.host, `confirmed: box is on build ${confirmedVer.build || '?'} (stability window passed)`); } catch {}
+  // The agent half is done and proven. Say so now rather than at the very end:
+  // the engine step below can run for another ten minutes, and a user watching a
+  // single speaker has earned the news that the update itself landed.
+  phase('confirmed', { version: confirmedVer });
   // Post-reboot Spotify engine reconcile: covers the one-time pre-v0.8.22
   // upgrade case (#240, engine missing) AND a present-but-outdated engine on a
   // tight box whose pre-reboot staging was deferred (the old engine's space is
@@ -3362,6 +3383,11 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
     // window first costs a minute in the good case and wins the bad ones.
     const engDeadlineMs = Date.now() + 600_000;
     let attempt = 0;
+    // What actually happened to the engine, so the caller can say it. "Delivered"
+    // and "was already current" both end as a done update but only one of them is
+    // worth telling the user about, and "no room left" is the one case where the
+    // user has something to do about it.
+    let engineDelivered = false, engineTooFull = false;
     while (Date.now() < engDeadlineMs) {
       attempt++;
       // Report the live state on every pass, not just "attempt 3": the user
@@ -3382,7 +3408,7 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
       const verdict = speakerReachedTarget(live, preVersion, true);
       if (verdict.done) {
         try { ClearUpdateIntent(box.host, box.port); } catch {}
-        return { outcome: 'done', version: live };
+        return { outcome: 'done', version: live, engineDelivered };
       }
       await waitForStableAgent(box, engDeadlineMs);
       try {
@@ -3400,22 +3426,24 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
         // full window would only burn ten minutes to reach the same answer.
         if (engRes && /no embedded engine/i.test(engRes)) {
           try { ClearUpdateIntent(box.host, box.port); } catch {}
-          return { outcome: 'done', version: live || confirmedVer };
+          return { outcome: 'done', version: live || confirmedVer, engineDelivered };
         }
+        // "current" means nothing was sent: the engine was already the right one.
+        if (engRes !== 'current') engineDelivered = true;
         // Do not take the delivery's word for it. The update may only be
         // called finished when the speaker itself reports the state it was
         // supposed to end up in.
         const check = await BoxAgentVersion(box.host, box.port).catch(() => null);
         if (check && check.goLibrespot === 'present') {
           try { ClearUpdateIntent(box.host, box.port); } catch {}
-          return { outcome: 'done', version: check };
+          return { outcome: 'done', version: check, engineDelivered };
         }
         continue; // delivered but not visible yet: stay in the loop
       } catch (engErr) {
         const m = String((engErr && engErr.message) || engErr || '');
         // Too full even counting the reclaimable old engine: retrying cannot
         // help, only freeing space can. The agent update itself succeeded.
-        if (/insufficient nand|no space|507/i.test(m)) break;
+        if (/insufficient nand|no space|507/i.test(m)) { engineTooFull = true; break; }
         try { console.warn(`spotify engine delivery attempt ${attempt} failed (will retry)`, engErr); } catch {}
         // Mid-stream drop: the box rebooted or reset the stream. Loop straight
         // back: the top-of-loop settle gate does the waiting (reachable,
@@ -3430,7 +3458,7 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
     // The agent is on the target build but the engine is not there. The
     // record stays, so the next time this speaker is seen the app finishes
     // the job instead of leaving it half-done.
-    return { outcome: 'partial', version: confirmedVer, unmet: 'spotify-engine' };
+    return { outcome: 'partial', version: confirmedVer, unmet: 'spotify-engine', engineTooFull };
   }
   try { ClearUpdateIntent(box.host, box.port); } catch {}
   return { outcome: 'done', version: confirmedVer };
@@ -3654,6 +3682,10 @@ async function doBoxUpdate(targetBox) {
   // interrupt the agent exec and may leave the box half-flashed.
   state.otaInProgress = true;
   setStatus(t('update.uploading'));
+  // The post-reboot Spotify engine delivery streams its ~16 MB through this
+  // same channel. It does NOT restart the speaker (a current agent swaps the
+  // engine in place), so the progress line must not promise one.
+  let engineStreaming = false;
   // Live upload progress + throughput while the ~10 MB agent streams to the box,
   // so a slow link shows movement instead of a frozen "Uploading...".
   const offBoxUp = EventsOn('box:update:progress', (p) => {
@@ -3663,7 +3695,7 @@ async function doBoxUpdate(targetBox) {
     // the backend's UpdateBoxAgent call hangs another ~minute. Flip the label
     // to "restarting" the moment the upload completes instead of leaving the
     // user on "uploading" through the reboot the app cannot yet see.
-    if (p.pct >= 100) { setStatus(t('update.rebooting')); return; }
+    if (p.pct >= 100 && !engineStreaming) { setStatus(t('update.rebooting')); return; }
     const rate = p.bytesPerSec ? ' (' + fmtRate(p.bytesPerSec) + ')' : '';
     setStatus(t('update.uploadingPct', { pct: p.pct }) + rate);
   });
@@ -3671,20 +3703,6 @@ async function doBoxUpdate(targetBox) {
   // Swap the banner heading to "updating" right away (the otaHere branch in
   // checkBoxUpdate), so it no longer reads "update available" while the OTA runs.
   checkBoxUpdate();
-  const appBuild  = state.appInfo && state.appInfo.build;
-  // Record what the box runs RIGHT NOW, before the push. The post-OTA success
-  // signal is "the box is reachable AND no longer reports this pre-OTA build".
-  // That is far more robust than the old exact-match-on-appBuild test: when the
-  // app and the embedded agent carry slightly different build stamps the exact
-  // match never fired, so the box came back fully updated but the poll ran to
-  // its 6-minute ceiling and the button stayed greyed the whole time (Jens,
-  // live 2026-06-17: "the box is long since rebooted and even shows the clock
-  // again, but the app still says 'still answering old build, 3:35 left'").
-  let preBuild = '', preVersion = '';
-  try {
-    const pv = await BoxAgentVersion(targetBox.host, targetBox.port);
-    if (pv) { preBuild = pv.build || ''; preVersion = pv.version || ''; }
-  } catch { /* box version unknown pre-OTA: fall back to the appBuild match */ }
   let boxWasTouched = false;
   // From here on the speaker itself is involved: anything that fails after the
   // transfer started may leave it mid-restart, which is when the power-cycle
@@ -3693,205 +3711,100 @@ async function doBoxUpdate(targetBox) {
   // touched the speaker, and telling those users to pull the plug is both
   // pointless and alarming.
   boxWasTouched = true;
+  // Countdown ticker for the phases that carry a deadline. runBoxUpdate reports
+  // about every two seconds; the seconds in between are ticked here so the
+  // remaining time counts down smoothly instead of jumping in steps.
+  let tickHandle = null, tickRender = null;
+  const stopTick = () => {
+    if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+    tickRender = null;
+  };
+  const startTick = (render) => {
+    tickRender = render;
+    render();
+    if (!tickHandle) tickHandle = setInterval(() => { if (tickRender) tickRender(); }, 1000);
+  };
+  const countdown = (remainingMs, key) => {
+    const dl = Date.now() + (remainingMs || 0);
+    startTick(() => setStatus(t(key, { remaining: formatRemaining(dl - Date.now()) })));
+  };
+  let uploadedToastShown = false;
   try {
-    await UpdateBoxAgent(targetBox.host, targetBox.port);
-    // Agent has accepted the binary. It will detach, sleep ~70 s
-    // (TIME_WAIT for listener ports — see internal/webui handleAgentUpdate),
-    // then exec the new binary. During that whole window the box is
-    // unreachable; the previous UI would re-enable the button after a
-    // fixed 13 s timer, which invited the user to click again while
-    // the agent was still mid-restart.
-    showToast(t('update.uploadedToast'));
-    setStatus(t('update.rebooting'));
-    // Active poll: hit /api/agent/version until the box answers as updated. The
-    // success signal is "box reachable AND its reported build/version is no
-    // longer the pre-OTA one" (or, when we have it, an exact match to the app's
-    // own build). The loop breaks the instant that happens, so the user never
-    // waits past the real reconnect: the deadline below is only a give-up
-    // ceiling, not a fixed wait. Poll every 2 s so the button frees within a
-    // couple of seconds of the new agent answering, not up to 5 s later. The
-    // ceiling is 6 minutes: a BCO box (Portable, ST20-spotty) can reboot TWICE
-    // post-OTA (the OTA reboot, then a bootstrap-sync reboot when the new
-    // binary's embedded run.sh differs from NAND — project_ota_only_replaces_binary),
-    // each boot taking ~40 s to the agent plus ~85 s until the :17008 REDIRECT
-    // makes it reachable, plus the box's slow BoseApp. As long as the box is
-    // unreachable or still reports the pre-OTA build, the buttons stay locked.
-    const deadlineMs = Date.now() + 360_000;
-    const pollIntervalMs = 2_000;
-    const renderStatus = () => {
-      const remaining = formatRemaining(deadlineMs - Date.now());
-      setStatus(t('update.waitingForSpeaker', { remaining }));
-    };
-    renderStatus();
-    const tickHandle = setInterval(renderStatus, 1000);
-    let confirmed = false;
-    let confirmedVer = null;
-    // updated() decides whether a version reading means the OTA landed. Prefer
-    // an exact match to the app's build; otherwise any change away from the
-    // pre-OTA build/version. The pre-OTA values must be non-empty for the
-    // "changed" branch, else an unknown pre-OTA value would falsely confirm on
-    // the OLD agent that is still answering during the brief pre-reboot window.
-    const updated = (v) => {
-      if (!v) return false;
-      if (appBuild && v.build === appBuild) return true;
-      if (preBuild && v.build && v.build !== preBuild) return true;
-      if (preVersion && v.version && v.version !== preVersion) return true;
-      return false;
-    };
-    // Bootstrap-reboot stability window, ported from runBoxUpdate (#360 fixed
-    // only the batch path despite the KEEP-IN-SYNC note): the first boot after
-    // an OTA can deliberately reboot ONCE more when the new agent refreshed
-    // run-override.sh/rc.local on the NAND. Confirming on the FIRST version
-    // match fired the ~16 MB engine push straight into that window, and on a
-    // Wi-Fi-fragile ST20 the cut upload plus the extra reboot took the box off
-    // the network for good (deqw, 2026-07-12). Confirm only after the box
-    // stays reachable on the new version for a full window.
-    const stabilityMs = 50_000;
-    let stableSince = 0, sawSecondDrop = false;
-    try {
-      while (Date.now() < deadlineMs) {
-        await sleep(pollIntervalMs);
-        try {
-          const v = await BoxAgentVersion(targetBox.host, targetBox.port);
-          if (updated(v)) {
-            if (!stableSince) stableSince = Date.now();
-            const windowDone = sawSecondDrop || (Date.now() - stableSince >= stabilityMs);
-            if (windowDone) {
-              confirmed = true;
-              confirmedVer = v;
-              break;
-            }
-          } else {
-            stableSince = 0;
-          }
-        } catch {
-          // Unreachable: still mid-first-reboot, or the bootstrap reboot just
-          // took the box down again after we already saw the new version.
-          if (stableSince) sawSecondDrop = true;
-          stableSince = 0;
-        }
-        renderStatus();
+    // One speaker and a whole house run the SAME sequence: runBoxUpdate. This
+    // path only differs in how it reports - a button, a status line and toasts
+    // instead of the overlay's rows. No upload gate is passed: a single speaker
+    // has nothing to queue behind.
+    const result = await runBoxUpdate(targetBox, (ph, d) => {
+      switch (ph) {
+        case 'uploading':
+          stopTick();
+          setStatus(t('update.uploading'));
+          break;
+        case 'rebooting':
+          stopTick();
+          // The binary is on the speaker now. Said once, at the moment it
+          // becomes true, so the user knows the transfer is behind them: the
+          // agent detaches, waits out TIME_WAIT on its listener ports (see
+          // internal/webui handleAgentUpdate) and only then execs the new
+          // binary, so the speaker is away for minutes with nothing to show.
+          if (!uploadedToastShown) { uploadedToastShown = true; showToast(t('update.uploadedToast')); }
+          setStatus(t('update.rebooting'));
+          break;
+        case 'verifying': countdown(d.remainingMs, 'update.waitingForSpeaker'); break;
+        // The speaker IS back on the new version and is only being held for the
+        // stability window before we believe it (a BCO box can reboot a second
+        // time on its own). Saying "restarting" through that window reads as if
+        // the app had not noticed the speaker was back.
+        case 'settling': countdown(d.remainingMs, 'updateAll.phase.settling'); break;
+        case 'retrying':
+          stopTick();
+          uploadedToastShown = false;
+          showToast(t('update.retrying'));
+          setStatus(t('update.retrying'));
+          break;
+        case 'confirmed':
+          stopTick();
+          showToast(t('update.doneToast'));
+          break;
+        case 'engineQueued': stopTick(); setStatus(t('updateAll.phase.engineQueued')); break;
+        case 'engineUploading':
+          stopTick();
+          engineStreaming = true;
+          setStatus(t('updateAll.phase.engineUploading'));
+          break;
+        case 'spotify':
+          engineStreaming = false;
+          countdown(d.remainingMs, 'update.spotifyFinalStep');
+          break;
       }
-    } finally {
-      clearInterval(tickHandle);
-    }
-    if (confirmed) {
-      clearOTAStuck(targetBox);
-      try { RecordOTAOutcome(targetBox.host, `confirmed: box is on build ${(confirmedVer && confirmedVer.build) || '?'} (stability window passed)`); } catch {}
-      showToast(t('update.doneToast'));
-      // The box just came up on the new, sidecar-capable agent. If it still
-      // reports the Spotify engine missing, this is the one-time legacy case
-      // (#240): it was upgraded FROM a pre-v0.8.22 agent that had no sidecar
-      // endpoint, so the engine could not be staged before the reboot and must be
-      // delivered now, after the restart. Make that final step VISIBLE and
-      // trackable rather than a silent blocking call: show a distinct status with
-      // a live countdown and per-attempt feedback, retry every 2 s, and stop the
-      // instant it lands. The box is already confirmed up (the version poll above
-      // broke on reachability), so delivery normally succeeds on the first try;
-      // the loop only covers a box that drops the ~16 MB push while still
-      // settling. The agent's Spotify manager picks up the binary live, no extra
-      // reboot. Best-effort: it must never turn a successful agent update into an
-      // error.
-      if (confirmedVer && confirmedVer.goLibrespot) {
-        // 10 min window with a settle gate before every push, mirroring
-        // runBoxUpdate (#466): the box reliably reboots or resets large
-        // uploads in its first post-OTA minutes, so the old 240 s window
-        // spent itself on two doomed ~107 s streams and gave up.
-        const engDeadlineMs = Date.now() + 600_000;
-        let engDone = false;
-        let engDelivered = false;
-        let engTooFull = false;
-        let engAttempt = 0;
-        const renderEng = () => {
-          const remaining = formatRemaining(engDeadlineMs - Date.now());
-          setStatus(t('update.spotifyFinalStep', { remaining }));
-        };
-        renderEng();
-        const engTick = setInterval(renderEng, 1000);
-        try {
-          while (Date.now() < engDeadlineMs) {
-            engAttempt++;
-            await waitForStableAgent(targetBox, engDeadlineMs);
-            renderEng();
-            try {
-              const engRes = await EnsureSpotifyEngine(targetBox.host, targetBox.port);
-              engDone = true;
-              // "current" = nothing was pushed (engine already up to date);
-              // everything else means the engine actually got (re)delivered.
-              engDelivered = engRes !== 'current';
-              break;
-            } catch (engErr) {
-              const m = String((engErr && engErr.message) || engErr || '');
-              // Genuinely too full to hold the ~16 MB engine even after the agent
-              // fit (the engine was dropped to make room). Retrying cannot help —
-              // only freeing space can — so stop the 240 s loop now and report a
-              // clean partial: the agent update SUCCEEDED, Spotify just needs room
-              // (#119). Anything else is the box still settling: keep retrying.
-              if (/insufficient nand|no space|507/i.test(m)) { engTooFull = true; break; }
-              try { console.warn(`post-update Spotify engine delivery attempt ${engAttempt} failed (will retry)`, engErr); } catch {}
-              // Mid-stream drop: the box rebooted or reset the stream. Loop
-              // straight back; the top-of-loop settle gate does the waiting.
-              if (isEngineStreamDrop(m)) continue;
-            }
-            // Exponential backoff (2s -> 30s cap, #270): a box that is still
-            // settling after the reboot gains nothing from a 2s hammer.
-            await sleep(Math.min(30_000, 2_000 * Math.pow(2, engAttempt - 1)));
-            renderEng();
-          }
-        } finally {
-          clearInterval(engTick);
-        }
-        if (engDone && engDelivered) {
-          showToast(t('update.spotifyDoneToast'));
-        } else if (engDone) {
-          // Engine was already current: nothing to announce.
-        } else if (engTooFull) {
-          // Agent updated fine, but the box is out of room for the engine. Name
-          // the OTHER SoundTouch software eating the NAND so the user knows what
-          // to remove; retrying is pointless until they free space.
-          const foreign = foreignSoftwareLabel(confirmedVer);
-          showToast(foreign
-            ? t('spotify.engineTooFullNamed', { software: foreign })
-            : t('spotify.engineTooFull'));
-        } else {
-          // Could not land within the window; the engine is still missing but the
-          // agent update itself succeeded. No silent retry - the speaker screen
-          // now shows a visible "Install Spotify engine" action.
-          showToast(t('spotify.engineDeferredVisible'));
-        }
+    });
+    stopTick();
+    const confirmedVer = (result && result.version) || null;
+    const confirmed = !!confirmedVer;
+    if (result && result.outcome === 'done') {
+      // The update itself was announced when the speaker was confirmed. Only an
+      // engine that was actually (re)delivered is worth a second toast; one that
+      // was already current is not news.
+      if (result.engineDelivered) showToast(t('update.spotifyDoneToast'));
+    } else if (result && result.outcome === 'partial') {
+      // Agent updated, Spotify engine outstanding.
+      if (result.engineTooFull) {
+        // Retrying cannot help, only freeing space can. Name the OTHER
+        // SoundTouch software eating the NAND so the user knows what to remove.
+        const foreign = foreignSoftwareLabel(confirmedVer);
+        showToast(foreign
+          ? t('spotify.engineTooFullNamed', { software: foreign })
+          : t('spotify.engineTooFull'));
+      } else {
+        // No silent retry: the speaker's own screen now carries a visible
+        // "Install Spotify engine" action.
+        showToast(t('spotify.engineDeferredVisible'));
       }
     } else {
-      // Journal the real verdict, classify why, and feed the loop breaker.
-      // A "cannot help to retry" classification switches the banner to the
-      // diagnostic state instead of re-offering the same push.
-      let cls = '';
-      try { cls = await ClassifyOTAResult(targetBox.host, targetBox.port); } catch {}
-      if (cls === 'confirmed') {
-        clearOTAStuck(targetBox);
-        showToast(t('update.doneToast'));
-      } else if (cls === 'not-landed') {
-        // The speaker took the whole file and the new software never reached
-        // its disk: the write squeezed itself into the last megabyte and
-        // stalled, so the speaker rebooted onto its old version. That is
-        // marginal, not permanent, and the identical push usually wins the
-        // second time, so retry once here instead of telling the user it took
-        // too long and leaving them to press the button again. Updating a
-        // whole house does the same (runBoxUpdate), and this is the same
-        // routine, so both paths behave identically.
-        showToast(t('update.retrying'));
-        let retry = null;
-        try { retry = await runBoxUpdate(targetBox, null); } catch { /* handled below */ }
-        if (retry && retry.version) {
-          clearOTAStuck(targetBox);
-          showToast(t('update.doneToast'));
-        } else {
-          noteOTAFailure(targetBox, cls);
-          showToast(t('update.tookLongerToast'));
-        }
-      } else {
-        noteOTAFailure(targetBox, cls || 'unreachable');
-        showToast(t('update.tookLongerToast'));
-      }
+      // Timed out. runBoxUpdate has already journaled the verdict, classified
+      // why, retried the one class of failure a retry actually fixes, and fed
+      // the loop breaker, so all that is left here is to say so.
+      showToast(t('update.tookLongerToast'));
     }
     // The SoundTouch 300 drops into its blinking update-pending state after an
     // OTA and needs a manual power-cycle to finish; the agent cannot clear it, so
@@ -3913,7 +3826,7 @@ async function doBoxUpdate(targetBox) {
       // after OTA the screen kept the old version until a manual refresh).
       // This also overrides a discovery-stickiness cache entry that might
       // still carry the pre-OTA version for a box that just rebooted.
-      if (confirmed && confirmedVer) {
+      if (confirmed) {
         const patchVer = (b) => {
           if (b && b.host === targetBox.host) {
             if (confirmedVer.version) b.version = confirmedVer.version;
@@ -3950,6 +3863,9 @@ async function doBoxUpdate(targetBox) {
     }
     reset();
   } finally {
+    // Stop the countdown ticker on every exit, including a throw mid-poll:
+    // an interval left running keeps writing status into a finished update.
+    stopTick();
     if (typeof offBoxUp === 'function') offBoxUp();
     // Always clear the OTA-in-flight gate so the SSH banner can
     // come back if it still applies, even if we threw mid-poll.

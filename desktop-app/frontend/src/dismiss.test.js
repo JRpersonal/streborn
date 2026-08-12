@@ -1,7 +1,8 @@
-// A dismissed notice must come back, but not on the very next version: a click
-// on "not now" for 0.9.33 should not mean the 0.9.34 notice appears the next
-// day. It covers the dismissed version and the one after, and returns on the
-// version after that (Jens, 2026-08-04).
+// A dismissed notice covers exactly the version it was dismissed at. Clicking
+// "0.9.33 is out" away is an answer about 0.9.33; 0.9.34 is new news and must
+// appear. The earlier rule swallowed the next version too, so a single click
+// silenced two releases and the notice looked like it never came back (Jens,
+// 2026-08-12).
 import { describe, it, expect, beforeEach } from 'vitest';
 import { dismissNotice, noticeDismissed, clearNoticeDismissal } from './utils.js';
 
@@ -18,22 +19,30 @@ describe('dismissible notices', () => {
     expect(noticeDismissed('app', '0.9.33')).toBe(true);
   });
 
-  it('still hides the next version, then shows the one after', () => {
+  it('shows the very next version again', () => {
     dismissNotice('app', '0.9.33');
-    expect(noticeDismissed('app', '0.9.34')).toBe(true);
-    expect(noticeDismissed('app', '0.9.35')).toBe(false);
+    expect(noticeDismissed('app', '0.9.34')).toBe(false);
   });
 
-  it('counts distinct versions, not repeated offers of the same one', () => {
+  it('lets every following version be dismissed on its own', () => {
     dismissNotice('app', '0.9.33');
-    for (let i = 0; i < 20; i++) expect(noticeDismissed('app', '0.9.34')).toBe(true);
+    expect(noticeDismissed('app', '0.9.34')).toBe(false);
+    dismissNotice('app', '0.9.34');
+    expect(noticeDismissed('app', '0.9.34')).toBe(true);
     expect(noticeDismissed('app', '0.9.35')).toBe(false);
   });
 
   it('works across a minor bump, where version arithmetic would not', () => {
     dismissNotice('app', '0.9.34');
-    expect(noticeDismissed('app', '0.10.0')).toBe(true);
-    expect(noticeDismissed('app', '0.10.1')).toBe(false);
+    expect(noticeDismissed('app', '0.10.0')).toBe(false);
+  });
+
+  it('does not resurrect a dismissal after a newer version was offered', () => {
+    dismissNotice('app', '0.9.33');
+    expect(noticeDismissed('app', '0.9.34')).toBe(false);
+    // The record is gone, so even the originally dismissed version shows again
+    // rather than staying silently hidden forever.
+    expect(noticeDismissed('app', '0.9.33')).toBe(false);
   });
 
   it('keeps notices of different kinds apart', () => {

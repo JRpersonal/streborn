@@ -293,16 +293,18 @@ export function showToast(msg, ms = -1) {
 
 // ---- Dismissible notices ----
 //
-// A notice the user clicked away must stay away, but not forever: the point of
-// dismissing "version X is out" is "not now", not "never tell me again". So a
-// dismissal covers the version it was made for AND the next one, and the
-// notice comes back on the version after that (Jens, 2026-08-04: dismissed
-// messages stay hidden until the version after next).
+// A dismissal covers EXACTLY the version it was made for. Clicking "version X
+// is out" away means "not this one, not now"; the next version is a new piece
+// of news and gets to say so, and the user clicks that one away in turn or
+// installs it.
 //
-// Counting distinct versions offered since the dismissal, rather than doing
-// arithmetic on version numbers, keeps this correct across 0.9.34 -> 0.10.0
-// and any other jump: two new versions have gone by either way.
-const DISMISS_SPAN = 2;
+// This used to swallow the next version too, so a user who dismissed once
+// stopped hearing about the release after it as well and only saw the notice
+// again two versions later. That reads as "the update notice never comes back"
+// (Jens, 2026-08-12), which is exactly what a release notice must not do.
+//
+// The comparison is a plain string equality on the version, never arithmetic,
+// so 0.9.34 -> 0.10.0 needs no special case: it is simply a different version.
 
 function dismissKey(kind) { return 'str.dismissed.' + kind; }
 
@@ -335,34 +337,26 @@ function readDismissal(kind) {
     if (!raw) return null;
     const d = JSON.parse(raw);
     if (!d || typeof d.version !== 'string' || !d.version) return null;
-    return { version: d.version, since: Array.isArray(d.since) ? d.since.filter(v => typeof v === 'string') : [] };
+    return { version: d.version };
   } catch { return null; }
 }
 
 // dismissNotice records that the user clicked this notice away at `version`.
 export function dismissNotice(kind, version) {
   if (!version) return;
-  storeSet(dismissKey(kind), JSON.stringify({ version: String(version), since: [] }));
+  storeSet(dismissKey(kind), JSON.stringify({ version: String(version) }));
 }
 
 // noticeDismissed reports whether the notice for `version` is currently
-// dismissed. Call it on every offer: it also records that this version was
-// offered, which is what lets the notice come back later.
+// dismissed, which is true only for the exact version that was clicked away.
+// Any other version clears the record on the way past, so nothing stale is left
+// behind for a version that will never be offered again.
 export function noticeDismissed(kind, version) {
   const d = readDismissal(kind);
   if (!d || !version) return false;
-  const v = String(version);
-  if (v === d.version) return true;
-  if (!d.since.includes(v)) {
-    d.since.push(v);
-    storeSet(dismissKey(kind), JSON.stringify(d));
-  }
-  if (d.since.length >= DISMISS_SPAN) {
-    // Two versions have come and gone: the dismissal has run its course.
-    storeDel(dismissKey(kind));
-    return false;
-  }
-  return true;
+  if (String(version) === d.version) return true;
+  storeDel(dismissKey(kind));
+  return false;
 }
 
 // clearNoticeDismissal forgets a dismissal, e.g. once the user acts on the
