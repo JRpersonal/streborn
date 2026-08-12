@@ -113,6 +113,19 @@ func (s *Server) SetStreamActivityFn(fn func() (lastFetch, lastFailure time.Time
 	s.streamActivityFn = fn
 }
 
+// stationRefusedRecently reports whether the stream proxy failed on its upstream
+// inside the strike window, i.e. the station refused us rather than the box
+// misbehaving. The proxy records a failure for a non-200 upstream status
+// (401/403/404/410 and friends) as well as for a dead host, so this covers both
+// the taken-down station and the one that started demanding credentials.
+func (s *Server) stationRefusedRecently() bool {
+	if s.streamActivityFn == nil {
+		return false
+	}
+	_, fail := s.streamActivityFn()
+	return !fail.IsZero() && time.Since(fail) < wedgeStrikeWindow
+}
+
 // NoteRecallExhausted is called when a play/recall verify gave up. It decides
 // whether this failure looks like the box (not the station) and counts a
 // strike; the second consecutive strike latches wedged.
@@ -140,6 +153,24 @@ func (s *Server) noteRecallExhaustedWithSource(source string) {
 		// speaker" instead of failing without a word (field: two independent
 		// ST10 reports, 2026-08-01).
 		s.noteSilentRefusalCandidate()
+		return
+	}
+	// The station is checked BEFORE the login window, because a 1036 arrives on
+	// practically every hardware press on some boxes and would otherwise claim
+	// every failure for the login family.
+	//
+	// A station whose upstream refuses us cannot be fixed by anything the user
+	// does to the speaker. Live case (#582, ST10, 2026-08-12): slot 4 pointed
+	// at a URL answering 401 on every fetch, so every recall ran push, 401,
+	// AUDIO_ERROR_BAD_URL, source drop, retry, five times over, and STR ended
+	// it with "restart the speaker" while slots 1 and 5 played fine seconds
+	// earlier through the same box and the same 1036s. Telling someone to
+	// power-cycle a healthy speaker because one station went dead is the worst
+	// kind of wrong answer: it costs them time and teaches them to distrust the
+	// next message.
+	if s.stationRefusedRecently() {
+		s.logger.Info("recall exhausted right after the station refused the stream; not a box problem",
+			"hint", "the station URL is answering an error, not the speaker")
 		return
 	}
 	// A recall that exhausted while the box was rejecting sources as

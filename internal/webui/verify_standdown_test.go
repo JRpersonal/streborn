@@ -193,3 +193,39 @@ func TestLoginRefusalLatchesToo(t *testing.T) {
 		t.Fatal("observed playback must clear the refusal latch")
 	}
 }
+
+// A station that answers an HTTP error must never be reported as a speaker
+// problem. Field case #582 (ST10, 2026-08-12): preset 4 pointed at a URL
+// serving 401 on every fetch, so every recall exhausted, and STR latched the
+// "restart the speaker" hint while the neighbouring presets played fine
+// seconds earlier through the same box. The 1036 that rides along on every
+// press of that firmware must not claim the failure for the login family
+// either, which is why the station check runs first.
+func TestStationRefusalIsNotABoxProblem(t *testing.T) {
+	disc := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	s := &Server{logger: disc}
+	failedNow := time.Now()
+	s.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Time{}, failedNow })
+	// The 1036 is present, as it is on the real box, and must not decide this.
+	s.NoteBoxLoginError()
+	s.noteRecallExhaustedWithSource("UPNP")
+	s.NoteBoxLoginError()
+	s.noteRecallExhaustedWithSource("UPNP")
+	if active, _ := s.RecallRefusal(); active {
+		t.Fatal("a station refusing the stream must not latch the restart hint")
+	}
+
+	// The same two exhaustions with no station failure in the window DO latch:
+	// this is the case the hint exists for.
+	s2 := &Server{logger: disc}
+	old := time.Now().Add(-wedgeStrikeWindow - time.Second)
+	s2.SetStreamActivityFn(func() (time.Time, time.Time) { return time.Time{}, old })
+	s2.NoteBoxLoginError()
+	s2.noteRecallExhaustedWithSource("UPNP")
+	s2.NoteBoxLoginError()
+	s2.noteRecallExhaustedWithSource("UPNP")
+	if active, _ := s2.RecallRefusal(); !active {
+		t.Fatal("a box that refuses recalls with no station failure must still latch the hint")
+	}
+}
