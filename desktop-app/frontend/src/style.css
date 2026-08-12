@@ -1398,7 +1398,13 @@ html.a11y-contrast .btn-warning:disabled {
 .warn-title { color: var(--signal-red) !important; display: flex; align-items: center; gap: 8px; margin: 0 0 8px 0; }
 .warn-icon { font-size: 24px; }
 .warn-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-.error-text { width: 100%; min-height: 110px; background: var(--c-bg); color: var(--signal-red); border: 1px solid var(--c-border-2); border-radius: 4px; padding: 8px; font-family: ui-monospace, "Consolas", monospace; font-size: 12px; resize: vertical; }
+/* Error detail text. The message itself is normal text colour, NOT the signal
+   red: red on the near-black surface measures about 3.5:1, under the 4.5:1 that
+   small text needs, and a user photographed exactly this and called it hard to
+   read (#582, 2026-08-12). The red moves to the frame, where a thick saturated
+   line carries the "something failed" meaning without having to be legible as
+   letters, and the modal's own warning title says it in words anyway. */
+.error-text { width: 100%; min-height: 110px; background: var(--c-bg); color: var(--c-text); border: 1px solid var(--c-border-2); border-left: 3px solid var(--signal-red); border-radius: 4px; padding: 8px; font-family: ui-monospace, "Consolas", monospace; font-size: 12px; resize: vertical; }
 
 .box-hint { background: var(--c-surface); padding: 24px; border-radius: 8px; text-align: center; color: var(--c-muted); margin-top: 8px; font-size: 13px; }
 .box-hint p { margin: 0; }
@@ -2093,6 +2099,77 @@ html.a11y-contrast .app-update-banner .footer-link { color: #ffe066; }
 .phone-qr { width: 160px; height: 160px; background: #fff; border-radius: 8px; padding: 6px; }
 .phone-url-row { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 200px; }
 .phone-url { font-size: 12px; color: var(--c-text); background: var(--c-surface-2); border: 1px solid var(--c-border); padding: 6px 8px; border-radius: 5px; word-break: break-all; flex: 1; }
+
+/* "Put it on the home screen": the two click paths plus two home-screen
+   sketches, folded away behind a summary so the card stays a QR code for
+   everyone who only wants to scan it. */
+.phone-howto { margin-top: 10px; }
+.phone-howto > summary {
+  cursor: pointer; font-size: 12px; color: var(--brand-text);
+  padding: 4px 0; list-style: revert;
+}
+.phone-howto > summary:hover { text-decoration: underline; }
+.phone-howto-body { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
+.phone-paths { display: flex; gap: 12px; flex-wrap: wrap; }
+.phone-path {
+  flex: 1 1 260px; min-width: 240px;
+  background: var(--c-surface-2); border: 1px solid var(--c-border);
+  border-radius: 8px; padding: 10px 12px;
+}
+.phone-path-ios { border-top: 2px solid #5b9ad6; }
+.phone-path-and { border-top: 2px solid #66b183; }
+.phone-path-head {
+  font-size: 12.5px; font-weight: 600; color: var(--c-text);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.phone-chip {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  padding: 2px 6px; border-radius: 10px;
+  background: var(--c-surface); border: 1px solid var(--c-border); color: var(--c-muted);
+}
+.phone-path ol { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.phone-path li { font-size: 12px; color: var(--c-text); line-height: 1.4; }
+.phone-path-note { margin: 8px 0 0; font-size: 11.5px; color: var(--c-muted); line-height: 1.4; }
+/* Home-screen sketches. Deliberately small and flat: they exist to show that
+   the icon lands among ordinary apps, not to imitate a phone. */
+.phone-shots { display: flex; gap: 12px; flex-wrap: wrap; }
+.phone-shot { margin: 0; width: 160px; display: flex; flex-direction: column; gap: 6px; }
+.phone-shot figcaption { font-size: 11px; color: var(--c-muted); line-height: 1.35; }
+.hs {
+  border-radius: 16px; padding: 10px 9px 9px; min-height: 150px;
+  display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid rgba(255, 255, 255, .12);
+}
+.hs-ios { background: linear-gradient(165deg, #5b6b8c, #2d3550 62%, #1d2236); }
+.hs-and { background: linear-gradient(165deg, #3f5a4b, #233528 60%, #18241b); }
+.hs-time { color: rgba(255, 255, 255, .92); font-size: 9px; font-weight: 600; text-align: center; }
+.hs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 6px; flex: 1; align-content: start; }
+.hs-app { display: block; position: relative; }
+.hs-ico {
+  display: block; width: 26px; height: 26px; border-radius: 7px;
+  background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .18);
+  object-fit: cover;
+}
+.hs-ico.rnd { border-radius: 50%; }
+.hs-real { background: none; border-color: rgba(255, 255, 255, .35); }
+.hs-ico-missing { background: rgba(255, 255, 255, .16); }
+.hs-name {
+  display: block; margin-top: 3px; font-size: 7px; line-height: 1.1;
+  color: rgba(255, 255, 255, .9); text-align: center;
+}
+/* The one tile that is the point of the picture gets a ring around it. The
+   ring is pinned to the icon's own height so it does not swallow the name
+   underneath, which is half of what the sketch is showing. */
+.hs-ring::after {
+  content: ""; position: absolute; inset: -4px -4px auto -4px; height: 26px;
+  border-radius: 11px; outline: 2px solid #ffd9a0;
+}
+.hs-ring.rnd::after { border-radius: 50%; }
+.hs-dock {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+  background: rgba(255, 255, 255, .14); border-radius: 12px; padding: 6px;
+}
+.hs-pill { height: 3px; width: 52px; border-radius: 99px; background: rgba(255, 255, 255, .55); margin: 0 auto; }
 
 /* Phone-control: a prominent, always-visible feature card (not buried in a
    group) since the phone remote is a headline feature. */

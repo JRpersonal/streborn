@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "Balāss: {{n}} pa labi",
   "controls.balanceTitle": "Šī stereo pāra kreisās un labās puses balāss, kā to ziņo skaļrunis. To var mainīt Bose SoundTouch lietotnē.",
   "speaker.stereoPairTitle": "Šie divi skaļruņi veido stereo pāri. Tiē atskaņo kopā, un iestatījumu taustiņus apstrādā pāra galvenais skaļrunis.",
-  "setup.installOfflineOthersLive": "Šis skaļrunis pašlaik neatbild, tāpēc vēl nav, uz kā instalēt. Vaina nav jūsu ugunsmūrī vai antivīrusā: ST Reborn tieši šobrīd pa to pašu savienojumu sarunājas ar jūsu pārējiem skaļruņiem. Pārbaudiet, vai šim skaļrunim ir strāva un vai tas deg, vai tas ir tajā pašā Wi-Fi tīklā, kur pārējie, nevis viesu tīklā, un vai Bose SoundTouch lietotne to joprojām atrod. Pēc tam atsvaidziniet sarakstu un mēģiniet vēlreiz."
+  "setup.installOfflineOthersLive": "Šis skaļrunis pašlaik neatbild, tāpēc vēl nav, uz kā instalēt. Vaina nav jūsu ugunsmūrī vai antivīrusā: ST Reborn tieši šobrīd pa to pašu savienojumu sarunājas ar jūsu pārējiem skaļruņiem. Pārbaudiet, vai šim skaļrunim ir strāva un vai tas deg, vai tas ir tajā pašā Wi-Fi tīklā, kur pārējie, nevis viesu tīklā, un vai Bose SoundTouch lietotne to joprojām atrod. Pēc tam atsvaidziniet sarakstu un mēģiniet vēlreiz.",
+  "settingsView.phoneHowtoSummary": "Pievieno telefona sākuma ekrānam (4 soļi)",
+  "settingsView.phoneIosTitle": "iPhone un iPad",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "Noskenē QR kodu ar kameru un pieskaries paziņojumam, kas parādās.",
+  "settingsView.phoneIos2": "Pieskaries kopīgošanas pogai apakšā, kvadrātam ar bultu uz augšu.",
+  "settingsView.phoneIos3": "Ritini uz leju un pieskaries <b>Pievienot sākuma ekrānam</b>.",
+  "settingsView.phoneIos4": "Augšā pa labi pieskaries <b>Pievienot</b>.",
+  "settingsView.phoneIosNote": "Tikai Safari: iOS sistēmā Chrome un Firefox nevar pievienot tīmekļa lietotni sākuma ekrānam.",
+  "settingsView.phoneAndroidTitle": "Android",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "Noskenē QR kodu ar kameru un atver saiti pārlūkā Chrome.",
+  "settingsView.phoneAndroid2": "Augšā pa labi pieskaries trim punktiem.",
+  "settingsView.phoneAndroid3": "Pieskaries <b>Instalēt lietotni</b>, vecākās versijās <b>Pievienot sākuma ekrānam</b>.",
+  "settingsView.phoneAndroid4": "Apstiprini ar <b>Instalēt</b>.",
+  "settingsView.phoneAndroidNote": "Dažas kameras atver saiti citā pārlūkā. Instalēšanu piedāvā tikai Chrome.",
+  "settingsView.phoneShotIos": "iPhone: sava ikona, atveras bez pārlūka joslas.",
+  "settingsView.phoneShotAndroid": "Android: instalēta ar Chrome, tāpēc redzama arī lietotņu sarakstā."
 }

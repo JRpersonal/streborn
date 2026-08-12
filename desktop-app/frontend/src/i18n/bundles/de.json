@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "Balance: {{n}} nach rechts",
   "controls.balanceTitle": "Die Links-rechts-Balance dieses Stereopaars, so wie der Lautsprecher sie meldet. Ändern lässt sie sich in der Bose SoundTouch App.",
   "speaker.stereoPairTitle": "Diese beiden Lautsprecher sind zu einem Stereopaar verbunden. Sie spielen gemeinsam, und die Preset-Tasten laufen über den Haupt-Lautsprecher des Paares.",
-  "setup.installOfflineOthersLive": "Dieser Lautsprecher antwortet gerade nicht, es gibt also noch nichts, worauf installiert werden könnte. An deiner Firewall oder deinem Virenschutz liegt es nicht: ST Reborn spricht in diesem Moment über dieselbe Verbindung mit deinen anderen Lautsprechern. Prüf, ob dieser Lautsprecher Strom hat und leuchtet, ob er im selben WLAN ist wie die anderen und nicht im Gastnetz, und ob die Bose SoundTouch App ihn noch findet. Dann die Lautsprecherliste aktualisieren und es erneut versuchen."
+  "setup.installOfflineOthersLive": "Dieser Lautsprecher antwortet gerade nicht, es gibt also noch nichts, worauf installiert werden könnte. An deiner Firewall oder deinem Virenschutz liegt es nicht: ST Reborn spricht in diesem Moment über dieselbe Verbindung mit deinen anderen Lautsprechern. Prüf, ob dieser Lautsprecher Strom hat und leuchtet, ob er im selben WLAN ist wie die anderen und nicht im Gastnetz, und ob die Bose SoundTouch App ihn noch findet. Dann die Lautsprecherliste aktualisieren und es erneut versuchen.",
+  "settingsView.phoneHowtoSummary": "Auf den Startbildschirm des Handys legen (4 Schritte)",
+  "settingsView.phoneIosTitle": "iPhone und iPad",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "Den QR-Code mit der Kamera scannen und auf den Hinweis tippen, der erscheint.",
+  "settingsView.phoneIos2": "Unten auf das Teilen-Symbol tippen, das Quadrat mit dem Pfeil nach oben.",
+  "settingsView.phoneIos3": "Nach unten scrollen und auf <b>Zum Home-Bildschirm</b> tippen.",
+  "settingsView.phoneIos4": "Oben rechts auf <b>Hinzufügen</b> tippen.",
+  "settingsView.phoneIosNote": "Nur mit Safari: Chrome und Firefox können unter iOS keine Web-App auf den Startbildschirm legen.",
+  "settingsView.phoneAndroidTitle": "Android",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "Den QR-Code mit der Kamera scannen und den Link in Chrome öffnen.",
+  "settingsView.phoneAndroid2": "Oben rechts auf die drei Punkte tippen.",
+  "settingsView.phoneAndroid3": "Auf <b>App installieren</b> tippen, bei älteren Versionen <b>Zum Startbildschirm hinzufügen</b>.",
+  "settingsView.phoneAndroid4": "Mit <b>Installieren</b> bestätigen.",
+  "settingsView.phoneAndroidNote": "Manche Kameras öffnen den Link in einem anderen Browser. Nur Chrome bietet die Installation an.",
+  "settingsView.phoneShotIos": "iPhone: eigenes Symbol, öffnet ohne Browserleiste.",
+  "settingsView.phoneShotAndroid": "Android: über Chrome installiert, damit auch in der App-Übersicht."
 }

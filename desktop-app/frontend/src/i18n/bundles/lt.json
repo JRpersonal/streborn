@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "Balansas: {{n}} į dešinę",
   "controls.balanceTitle": "Šios stereo poros kairės ir dešinės balansas, kaip jį nurodo garsiakalbis. Keičiamas Bose SoundTouch programoje.",
   "speaker.stereoPairTitle": "Šie du garsiakalbiai sudaro stereo porą. Jie groja kartu, o išankstinių nustatymų mygtukus tvarko pagrindinis poros garsiakalbis.",
-  "setup.installOfflineOthersLive": "Šis garsiakalbis šiuo metu neatsako, tad kol kas nėra į ką diegti. Tai ne jūsų užkarda ar antivirusinė: ST Reborn kaip tik dabar per tą patį ryšį bendrauja su kitais jūsų garsiakalbiais. Patikrinkite, ar šis garsiakalbis turi maitinimą ir šviečia, ar jis tame pačiame Wi-Fi tinkle kaip kiti, o ne svečių tinkle, ir ar Bose SoundTouch programėlė vis dar jį randa. Tada atnaujinkite sąrašą ir bandykite dar kartą."
+  "setup.installOfflineOthersLive": "Šis garsiakalbis šiuo metu neatsako, tad kol kas nėra į ką diegti. Tai ne jūsų užkarda ar antivirusinė: ST Reborn kaip tik dabar per tą patį ryšį bendrauja su kitais jūsų garsiakalbiais. Patikrinkite, ar šis garsiakalbis turi maitinimą ir šviečia, ar jis tame pačiame Wi-Fi tinkle kaip kiti, o ne svečių tinkle, ir ar Bose SoundTouch programėlė vis dar jį randa. Tada atnaujinkite sąrašą ir bandykite dar kartą.",
+  "settingsView.phoneHowtoSummary": "Įdėkite į telefono pradžios ekraną (4 žingsniai)",
+  "settingsView.phoneIosTitle": "iPhone ir iPad",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "Nuskaitykite QR kodą kamera ir bakstelėkite pasirodžiusį pranešimą.",
+  "settingsView.phoneIos2": "Bakstelėkite bendrinimo mygtuką apačioje, kvadratą su rodykle į viršų.",
+  "settingsView.phoneIos3": "Slinkite žemyn ir bakstelėkite <b>Į pradžios ekraną</b>.",
+  "settingsView.phoneIos4": "Viršuje dešinėje bakstelėkite <b>Pridėti</b>.",
+  "settingsView.phoneIosNote": "Tik Safari: iOS sistemoje Chrome ir Firefox negali įdėti žiniatinklio programos į pradžios ekraną.",
+  "settingsView.phoneAndroidTitle": "Android",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "Nuskaitykite QR kodą kamera ir atidarykite nuorodą su Chrome.",
+  "settingsView.phoneAndroid2": "Viršuje dešinėje bakstelėkite tris taškus.",
+  "settingsView.phoneAndroid3": "Bakstelėkite <b>Įdiegti programą</b>, senesnėse versijose <b>Pridėti į pradžios ekraną</b>.",
+  "settingsView.phoneAndroid4": "Patvirtinkite mygtuku <b>Įdiegti</b>.",
+  "settingsView.phoneAndroidNote": "Kai kurios kameros atidaro nuorodą kitoje naršyklėje. Įdiegimą siūlo tik Chrome.",
+  "settingsView.phoneShotIos": "iPhone: sava piktograma, atsidaro be naršyklės juostos.",
+  "settingsView.phoneShotAndroid": "Android: įdiegta per Chrome, todėl matoma ir programų sąraše."
 }

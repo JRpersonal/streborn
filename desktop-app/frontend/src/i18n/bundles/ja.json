@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "バランス: 右に {{n}}",
   "controls.balanceTitle": "このステレオペアの左右バランス。スピーカーが報告した値です。変更は Bose SoundTouch アプリで行えます。",
   "speaker.stereoPairTitle": "この2つのスピーカーはステレオペアとして連携しています。一緒に再生し、プリセットボタンはペアの主スピーカーが処理します。",
-  "setup.installOfflineOthersLive": "このスピーカーは現在応答していないため、インストール先がありません。ファイアウォールやウイルス対策ソフトの問題ではありません。ST Reborn は今まさに同じ接続で他のスピーカーと通信しています。このスピーカーに電源が入りランプが点灯しているか、他と同じ Wi-Fi（ゲストネットワークではない）に接続されているか、Bose SoundTouch アプリがまだ見つけられるかを確認し、スピーカー一覧を更新してからもう一度お試しください。"
+  "setup.installOfflineOthersLive": "このスピーカーは現在応答していないため、インストール先がありません。ファイアウォールやウイルス対策ソフトの問題ではありません。ST Reborn は今まさに同じ接続で他のスピーカーと通信しています。このスピーカーに電源が入りランプが点灯しているか、他と同じ Wi-Fi（ゲストネットワークではない）に接続されているか、Bose SoundTouch アプリがまだ見つけられるかを確認し、スピーカー一覧を更新してからもう一度お試しください。",
+  "settingsView.phoneHowtoSummary": "スマホのホーム画面に追加する（4ステップ）",
+  "settingsView.phoneIosTitle": "iPhone / iPad",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "カメラでQRコードを読み取り、表示されたバナーをタップします。",
+  "settingsView.phoneIos2": "下部の共有ボタン（上向き矢印の四角）をタップします。",
+  "settingsView.phoneIos3": "下にスクロールして<b>ホーム画面に追加</b>をタップします。",
+  "settingsView.phoneIos4": "右上の<b>追加</b>をタップします。",
+  "settingsView.phoneIosNote": "Safariのみ: iOSのChromeやFirefoxではウェブアプリをホーム画面に追加できません。",
+  "settingsView.phoneAndroidTitle": "Android",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "カメラでQRコードを読み取り、リンクをChromeで開きます。",
+  "settingsView.phoneAndroid2": "右上の三点メニューをタップします。",
+  "settingsView.phoneAndroid3": "<b>アプリをインストール</b>（古いバージョンでは<b>ホーム画面に追加</b>）をタップします。",
+  "settingsView.phoneAndroid4": "<b>インストール</b>で確定します。",
+  "settingsView.phoneAndroidNote": "カメラによっては別のブラウザで開きます。インストールを提案するのはChromeだけです。",
+  "settingsView.phoneShotIos": "iPhone: 専用アイコンで、ブラウザのバーなしで開きます。",
+  "settingsView.phoneShotAndroid": "Android: Chromeでインストールするので、アプリ一覧にも並びます。"
 }

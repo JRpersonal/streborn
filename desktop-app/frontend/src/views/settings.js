@@ -1042,6 +1042,7 @@ function renderBoxSettings(s, box) {
           <button class="btn btn-mini" id="phoneUrlCopy">${escapeHtml(t('common.copy'))}</button>
         </div>
       </div>
+      ${phoneHomeScreenBlock()}
     </div>
   `;
 
@@ -1074,6 +1075,14 @@ function renderBoxSettings(s, box) {
       const img = $('phoneQrImg');
       if (img && data) img.src = data;
     } catch (e) { try { console.warn('phone QR failed', e); } catch {} }
+    // The home-screen sketches show the icon the phone will actually end up
+    // with: the agent serves it at /icon.png, the same file the manifest points
+    // at. A speaker that is asleep or gone simply leaves the tile blank rather
+    // than showing a broken image.
+    document.querySelectorAll('[data-role=phoneShotIcon]').forEach((el) => {
+      el.onerror = () => { el.classList.add('hs-ico-missing'); el.removeAttribute('src'); };
+      el.src = url + 'icon.png';
+    });
   })();
 
   groupSettingsSections();
@@ -2466,6 +2475,85 @@ function isFwOutdated(info) {
     if (have[i] > wantT[i]) return false;
   }
   return false;
+}
+
+// phoneHomeScreenBlock renders what the bare QR code never said out loud: the
+// phone page IS an app, and here are the taps that put it on a home screen.
+//
+// A user asked for an iOS and Android app while his speakers were already
+// serving one, which is the whole problem in one sentence: the capability
+// shipped (manifest, icon, fullscreen flag), the invitation did not. A QR code
+// with a single line under it leaves the reader at the door.
+//
+// Both platforms are shown side by side rather than behind a switch, because
+// people hand the phone to someone else and a switch left on the wrong platform
+// becomes a support message. The two sketches carry the part no sentence can:
+// the speaker's own icon sitting on a home screen among the apps people already
+// have. The icon is the REAL one the agent serves at /icon.png (painted in
+// afterwards), never a drawing, so what is promised here cannot drift from what
+// the phone ends up showing.
+function phoneHomeScreenBlock() {
+  const dummy = (cls) => `<span class="hs-ico ${cls}"></span>`;
+  const step = (key) => `<li>${t(key)}</li>`;
+  return `
+    <details class="phone-howto" id="phoneHowto">
+      <summary>${escapeHtml(t('settingsView.phoneHowtoSummary'))}</summary>
+      <div class="phone-howto-body">
+        <div class="phone-paths">
+          <div class="phone-path phone-path-ios">
+            <div class="phone-path-head">
+              ${escapeHtml(t('settingsView.phoneIosTitle'))}
+              <span class="phone-chip">${escapeHtml(t('settingsView.phoneIosChip'))}</span>
+            </div>
+            <ol>
+              ${step('settingsView.phoneIos1')}
+              ${step('settingsView.phoneIos2')}
+              ${step('settingsView.phoneIos3')}
+              ${step('settingsView.phoneIos4')}
+            </ol>
+            <p class="phone-path-note">${t('settingsView.phoneIosNote')}</p>
+          </div>
+          <div class="phone-path phone-path-and">
+            <div class="phone-path-head">
+              ${escapeHtml(t('settingsView.phoneAndroidTitle'))}
+              <span class="phone-chip">${escapeHtml(t('settingsView.phoneAndroidChip'))}</span>
+            </div>
+            <ol>
+              ${step('settingsView.phoneAndroid1')}
+              ${step('settingsView.phoneAndroid2')}
+              ${step('settingsView.phoneAndroid3')}
+              ${step('settingsView.phoneAndroid4')}
+            </ol>
+            <p class="phone-path-note">${t('settingsView.phoneAndroidNote')}</p>
+          </div>
+        </div>
+        <div class="phone-shots">
+          <figure class="phone-shot">
+            <div class="hs hs-ios">
+              <div class="hs-time">9:41</div>
+              <div class="hs-grid">
+                ${dummy('')}${dummy('')}${dummy('')}
+                <span class="hs-app hs-ring"><img class="hs-ico hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
+              </div>
+              <div class="hs-dock">${dummy('')}${dummy('')}${dummy('')}${dummy('')}</div>
+            </div>
+            <figcaption>${escapeHtml(t('settingsView.phoneShotIos'))}</figcaption>
+          </figure>
+          <figure class="phone-shot">
+            <div class="hs hs-and">
+              <div class="hs-time">9:41</div>
+              <div class="hs-grid">
+                ${dummy('rnd')}${dummy('rnd')}
+                <span class="hs-app hs-ring rnd"><img class="hs-ico rnd hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
+                ${dummy('rnd')}
+              </div>
+              <div class="hs-pill"></div>
+            </div>
+            <figcaption>${escapeHtml(t('settingsView.phoneShotAndroid'))}</figcaption>
+          </figure>
+        </div>
+      </div>
+    </details>`;
 }
 
 // fwStatusInline renders the firmware row.

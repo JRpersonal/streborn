@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "Balance: {{n}} right",
   "controls.balanceTitle": "The left/right balance of this stereo pair, as the speaker reports it. It can be changed in the Bose SoundTouch app.",
   "speaker.stereoPairTitle": "These two speakers are paired as one stereo pair. They play together, and preset keys are handled by the main speaker of the pair.",
-  "setup.installOfflineOthersLive": "This speaker is not answering at the moment, so there is nothing to install onto yet. It is not your firewall or antivirus: ST Reborn is talking to your other speakers over the same connection right now. Check that this speaker has power and its light is on, that it is on the same Wi-Fi as the others and not a guest network, and that the Bose SoundTouch app still finds it. Then refresh the speaker list and try again."
+  "setup.installOfflineOthersLive": "This speaker is not answering at the moment, so there is nothing to install onto yet. It is not your firewall or antivirus: ST Reborn is talking to your other speakers over the same connection right now. Check that this speaker has power and its light is on, that it is on the same Wi-Fi as the others and not a guest network, and that the Bose SoundTouch app still finds it. Then refresh the speaker list and try again.",
+  "settingsView.phoneHowtoSummary": "Put it on the phone's home screen (4 taps)",
+  "settingsView.phoneIosTitle": "iPhone and iPad",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "Scan the QR code with the camera and tap the banner that appears.",
+  "settingsView.phoneIos2": "Tap the share button in the bottom bar, the square with the arrow pointing up.",
+  "settingsView.phoneIos3": "Scroll down and tap <b>Add to Home Screen</b>.",
+  "settingsView.phoneIos4": "Tap <b>Add</b> at the top right.",
+  "settingsView.phoneIosNote": "Safari only: on iOS, Chrome and Firefox cannot put a web app on the home screen.",
+  "settingsView.phoneAndroidTitle": "Android",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "Scan the QR code with the camera and open the link in Chrome.",
+  "settingsView.phoneAndroid2": "Tap the three dots at the top right.",
+  "settingsView.phoneAndroid3": "Tap <b>Install app</b>, or <b>Add to home screen</b> on older versions.",
+  "settingsView.phoneAndroid4": "Confirm with <b>Install</b>.",
+  "settingsView.phoneAndroidNote": "Some cameras open the link in another browser. Only Chrome offers the install.",
+  "settingsView.phoneShotIos": "iPhone: its own icon, opens with no browser bar.",
+  "settingsView.phoneShotAndroid": "Android: installed through Chrome, so it is in the app drawer too."
 }

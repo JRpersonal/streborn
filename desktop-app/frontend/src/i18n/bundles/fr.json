@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "Balance : {{n}} à droite",
   "controls.balanceTitle": "La balance gauche/droite de cette paire stéréo, telle que l’enceinte l’indique. Elle se modifie dans l’application Bose SoundTouch.",
   "speaker.stereoPairTitle": "Ces deux enceintes forment une paire stéréo. Elles jouent ensemble, et les touches de présélection passent par l’enceinte principale de la paire.",
-  "setup.installOfflineOthersLive": "Cette enceinte ne répond pas pour le moment, il n'y a donc rien sur quoi installer. Ce n'est pas votre pare-feu ni votre antivirus : ST Reborn communique en ce moment même avec vos autres enceintes par la même connexion. Vérifiez que cette enceinte est alimentée et allumée, qu'elle est sur le même Wi-Fi que les autres et pas sur un réseau invité, et que l'application Bose SoundTouch la trouve encore. Actualisez ensuite la liste des enceintes et réessayez."
+  "setup.installOfflineOthersLive": "Cette enceinte ne répond pas pour le moment, il n'y a donc rien sur quoi installer. Ce n'est pas votre pare-feu ni votre antivirus : ST Reborn communique en ce moment même avec vos autres enceintes par la même connexion. Vérifiez que cette enceinte est alimentée et allumée, qu'elle est sur le même Wi-Fi que les autres et pas sur un réseau invité, et que l'application Bose SoundTouch la trouve encore. Actualisez ensuite la liste des enceintes et réessayez.",
+  "settingsView.phoneHowtoSummary": "L'ajouter à l'écran d'accueil du téléphone (4 étapes)",
+  "settingsView.phoneIosTitle": "iPhone et iPad",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "Scannez le QR code avec l'appareil photo et touchez la bannière qui apparaît.",
+  "settingsView.phoneIos2": "Touchez le bouton de partage en bas, le carré avec la flèche vers le haut.",
+  "settingsView.phoneIos3": "Faites défiler vers le bas et touchez <b>Sur l'écran d'accueil</b>.",
+  "settingsView.phoneIos4": "Touchez <b>Ajouter</b> en haut à droite.",
+  "settingsView.phoneIosNote": "Safari uniquement : sur iOS, Chrome et Firefox ne peuvent pas ajouter une web app à l'écran d'accueil.",
+  "settingsView.phoneAndroidTitle": "Android",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "Scannez le QR code avec l'appareil photo et ouvrez le lien dans Chrome.",
+  "settingsView.phoneAndroid2": "Touchez les trois points en haut à droite.",
+  "settingsView.phoneAndroid3": "Touchez <b>Installer l'application</b>, ou <b>Ajouter à l'écran d'accueil</b> sur les versions plus anciennes.",
+  "settingsView.phoneAndroid4": "Confirmez avec <b>Installer</b>.",
+  "settingsView.phoneAndroidNote": "Certains appareils photo ouvrent le lien dans un autre navigateur. Seul Chrome propose l'installation.",
+  "settingsView.phoneShotIos": "iPhone : icône dédiée, s'ouvre sans barre de navigateur.",
+  "settingsView.phoneShotAndroid": "Android : installée via Chrome, donc présente aussi dans la liste des applications."
 }

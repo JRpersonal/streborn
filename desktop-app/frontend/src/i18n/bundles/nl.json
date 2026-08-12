@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "Balans: {{n}} naar rechts",
   "controls.balanceTitle": "De links-rechtsbalans van dit stereopaar, zoals de luidspreker die meldt. Wijzigen kan in de Bose SoundTouch-app.",
   "speaker.stereoPairTitle": "Deze twee luidsprekers vormen een stereopaar. Ze spelen samen, en de presettoetsen lopen via de hoofdluidspreker van het paar.",
-  "setup.installOfflineOthersLive": "Deze luidspreker reageert momenteel niet, dus er is nog niets om op te installeren. Het ligt niet aan je firewall of antivirus: ST Reborn praat op dit moment via dezelfde verbinding met je andere luidsprekers. Controleer of deze luidspreker stroom heeft en aan staat, of hij op hetzelfde wifi-netwerk zit als de andere en niet op een gastnetwerk, en of de Bose SoundTouch-app hem nog vindt. Ververs daarna de lijst en probeer het opnieuw."
+  "setup.installOfflineOthersLive": "Deze luidspreker reageert momenteel niet, dus er is nog niets om op te installeren. Het ligt niet aan je firewall of antivirus: ST Reborn praat op dit moment via dezelfde verbinding met je andere luidsprekers. Controleer of deze luidspreker stroom heeft en aan staat, of hij op hetzelfde wifi-netwerk zit als de andere en niet op een gastnetwerk, en of de Bose SoundTouch-app hem nog vindt. Ververs daarna de lijst en probeer het opnieuw.",
+  "settingsView.phoneHowtoSummary": "Op het startscherm van je telefoon zetten (4 stappen)",
+  "settingsView.phoneIosTitle": "iPhone en iPad",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "Scan de QR-code met de camera en tik op de melding die verschijnt.",
+  "settingsView.phoneIos2": "Tik onderaan op het deel-symbool, het vierkant met de pijl omhoog.",
+  "settingsView.phoneIos3": "Scroll omlaag en tik op <b>Zet op beginscherm</b>.",
+  "settingsView.phoneIos4": "Tik rechtsboven op <b>Voeg toe</b>.",
+  "settingsView.phoneIosNote": "Alleen Safari: op iOS kunnen Chrome en Firefox geen web-app op het startscherm zetten.",
+  "settingsView.phoneAndroidTitle": "Android",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "Scan de QR-code met de camera en open de link in Chrome.",
+  "settingsView.phoneAndroid2": "Tik rechtsboven op de drie puntjes.",
+  "settingsView.phoneAndroid3": "Tik op <b>App installeren</b>, bij oudere versies <b>Toevoegen aan startscherm</b>.",
+  "settingsView.phoneAndroid4": "Bevestig met <b>Installeren</b>.",
+  "settingsView.phoneAndroidNote": "Sommige camera's openen de link in een andere browser. Alleen Chrome biedt de installatie aan.",
+  "settingsView.phoneShotIos": "iPhone: eigen pictogram, opent zonder browserbalk.",
+  "settingsView.phoneShotAndroid": "Android: via Chrome geïnstalleerd, dus ook in de app-lade."
 }

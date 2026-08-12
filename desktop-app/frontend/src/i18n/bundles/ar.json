@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "التوازن: {{n}} يمينًا",
   "controls.balanceTitle": "توازن اليسار واليمين لهذا الزوج الستيريو، كما تذكره السماعة. يمكن تغييره في تطبيق Bose SoundTouch.",
   "speaker.stereoPairTitle": "هاتان السماعتان مقترنتان كزوج ستيريو. تعملان معًا، وأزرار الإعدادات المسبقة تمر عبر السماعة الرئيسية للزوج.",
-  "setup.installOfflineOthersLive": "لا تستجيب هذه السماعة حاليًا، لذلك لا يوجد ما يمكن التثبيت عليه بعد. السبب ليس جدار الحماية أو مكافح الفيروسات: يتواصل ST Reborn الآن مع سماعاتك الأخرى عبر الاتصال نفسه. تحقق من أن هذه السماعة موصولة بالكهرباء ومضاءة، وأنها على شبكة Wi-Fi نفسها وليست شبكة ضيوف، وأن تطبيق Bose SoundTouch ما زال يعثر عليها. ثم حدّث قائمة السماعات وحاول مرة أخرى."
+  "setup.installOfflineOthersLive": "لا تستجيب هذه السماعة حاليًا، لذلك لا يوجد ما يمكن التثبيت عليه بعد. السبب ليس جدار الحماية أو مكافح الفيروسات: يتواصل ST Reborn الآن مع سماعاتك الأخرى عبر الاتصال نفسه. تحقق من أن هذه السماعة موصولة بالكهرباء ومضاءة، وأنها على شبكة Wi-Fi نفسها وليست شبكة ضيوف، وأن تطبيق Bose SoundTouch ما زال يعثر عليها. ثم حدّث قائمة السماعات وحاول مرة أخرى.",
+  "settingsView.phoneHowtoSummary": "أضفه إلى شاشة هاتفك الرئيسية (4 خطوات)",
+  "settingsView.phoneIosTitle": "آيفون وآيباد",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "امسح رمز QR بالكاميرا ثم اضغط على الشريط الذي يظهر.",
+  "settingsView.phoneIos2": "اضغط على زر المشاركة في الأسفل، المربع الذي يحمل سهماً لأعلى.",
+  "settingsView.phoneIos3": "مرر لأسفل واضغط <b>إضافة إلى الشاشة الرئيسية</b>.",
+  "settingsView.phoneIos4": "اضغط <b>إضافة</b> في الأعلى على اليمين.",
+  "settingsView.phoneIosNote": "‏Safari فقط: لا يستطيع Chrome أو Firefox على iOS إضافة تطبيق ويب إلى الشاشة الرئيسية.",
+  "settingsView.phoneAndroidTitle": "أندرويد",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "امسح رمز QR بالكاميرا وافتح الرابط في Chrome.",
+  "settingsView.phoneAndroid2": "اضغط على النقاط الثلاث في الأعلى.",
+  "settingsView.phoneAndroid3": "اضغط <b>تثبيت التطبيق</b>، أو <b>إضافة إلى الشاشة الرئيسية</b> في الإصدارات الأقدم.",
+  "settingsView.phoneAndroid4": "أكّد بالضغط على <b>تثبيت</b>.",
+  "settingsView.phoneAndroidNote": "بعض الكاميرات تفتح الرابط في متصفح آخر، وChrome وحده يعرض التثبيت.",
+  "settingsView.phoneShotIos": "آيفون: أيقونة خاصة، ويفتح بدون شريط المتصفح.",
+  "settingsView.phoneShotAndroid": "أندرويد: يُثبَّت عبر Chrome، فيظهر أيضاً في قائمة التطبيقات."
 }

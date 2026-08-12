@@ -1275,5 +1275,22 @@
   "controls.balanceRight": "Denge: {{n}} sağa",
   "controls.balanceTitle": "Bu stereo çiftin sol/sağ dengesi, hoparlörün bildirdiği şekilde. Bose SoundTouch uygulamasından değiştirilebilir.",
   "speaker.stereoPairTitle": "Bu iki hoparlör bir stereo çift oluşturur. Birlikte çalarlar ve hazır ayar tuşları çiftin ana hoparlörü üzerinden işler.",
-  "setup.installOfflineOthersLive": "Bu hoparlör şu anda yanıt vermiyor, dolayısıyla kuruluma uygun bir hedef yok. Güvenlik duvarınız veya virüs korumanız değil: ST Reborn tam da şu anda aynı bağlantı üzerinden diğer hoparlörlerinizle konuşuyor. Bu hoparlörün elektriği olduğunu ve ışığının yandığını, diğerleriyle aynı Wi-Fi ağında ve misafir ağında olmadığını, Bose SoundTouch uygulamasının onu hâlâ bulduğunu kontrol edin. Sonra listeyi yenileyip tekrar deneyin."
+  "setup.installOfflineOthersLive": "Bu hoparlör şu anda yanıt vermiyor, dolayısıyla kuruluma uygun bir hedef yok. Güvenlik duvarınız veya virüs korumanız değil: ST Reborn tam da şu anda aynı bağlantı üzerinden diğer hoparlörlerinizle konuşuyor. Bu hoparlörün elektriği olduğunu ve ışığının yandığını, diğerleriyle aynı Wi-Fi ağında ve misafir ağında olmadığını, Bose SoundTouch uygulamasının onu hâlâ bulduğunu kontrol edin. Sonra listeyi yenileyip tekrar deneyin.",
+  "settingsView.phoneHowtoSummary": "Telefonun ana ekranına ekle (4 adım)",
+  "settingsView.phoneIosTitle": "iPhone ve iPad",
+  "settingsView.phoneIosChip": "Safari",
+  "settingsView.phoneIos1": "QR kodu kamerayla tara ve çıkan bildirime dokun.",
+  "settingsView.phoneIos2": "Alttaki paylaş simgesine dokun, yukarı oklu kare.",
+  "settingsView.phoneIos3": "Aşağı kaydır ve <b>Ana Ekrana Ekle</b> öğesine dokun.",
+  "settingsView.phoneIos4": "Sağ üstte <b>Ekle</b> öğesine dokun.",
+  "settingsView.phoneIosNote": "Yalnızca Safari: iOS'ta Chrome ve Firefox bir web uygulamasını ana ekrana ekleyemez.",
+  "settingsView.phoneAndroidTitle": "Android",
+  "settingsView.phoneAndroidChip": "Chrome",
+  "settingsView.phoneAndroid1": "QR kodu kamerayla tara ve bağlantıyı Chrome'da aç.",
+  "settingsView.phoneAndroid2": "Sağ üstteki üç noktaya dokun.",
+  "settingsView.phoneAndroid3": "<b>Uygulamayı yükle</b> öğesine dokun, eski sürümlerde <b>Ana ekrana ekle</b>.",
+  "settingsView.phoneAndroid4": "<b>Yükle</b> ile onayla.",
+  "settingsView.phoneAndroidNote": "Bazı kameralar bağlantıyı başka bir tarayıcıda açar. Kurulumu yalnızca Chrome sunar.",
+  "settingsView.phoneShotIos": "iPhone: kendi simgesi, tarayıcı çubuğu olmadan açılır.",
+  "settingsView.phoneShotAndroid": "Android: Chrome ile kurulur, uygulama çekmecesinde de görünür."
 }
