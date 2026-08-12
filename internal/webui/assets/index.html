@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1a1a1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -35,17 +35,41 @@ html.a11y-contrast {
 }
 /* Text size. The page uses pixel sizes throughout, so scaling root font-size
    would not reach them; zoom scales the whole rendered page (text, controls,
-   hit targets) uniformly. */
-html.a11y-scale-l  body { zoom:1.15; }
-html.a11y-scale-xl body { zoom:1.30; }
+   hit targets) uniformly.
+
+   Applied to body's CHILDREN, never to body itself. A zoomed element becomes
+   the coordinate system for any position:fixed inside it, so with the zoom one
+   level up, the tab bar's "bottom:0" resolved against the zoomed viewport and
+   the bar floated above the real bottom edge, by roughly a quarter of the
+   screen at 1.3x. Zooming the bar itself instead scales it exactly the same
+   way while leaving it anchored to the display. */
+html.a11y-scale-l  body > * { zoom:1.15; }
+html.a11y-scale-xl body > * { zoom:1.30; }
 * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-/* iOS Safari reads a fast second tap on a control as double-tap-to-zoom, so
-   hammering the volume +/- steppers zoomed the page instead of stepping
-   again. touch-action:manipulation disables double-tap zoom ON THE CONTROLS
-   and removes the ~350 ms tap delay, so rapid taps land as taps - while
-   pinch-zoom on the page stays available (accessibility; deliberately NOT
-   the maximum-scale=1 sledgehammer). */
-button, a, input, select, label { touch-action: manipulation; }
+/* The page should behave like the app it is, not like a document that happens
+   to be on a phone. Zooming is what gives a web page away: a stray pinch leaves
+   the remote sitting at 1.4x with the controls half off screen, and a fast
+   second tap on the volume steppers used to zoom instead of stepping.
+   pan-x pan-y allows scrolling and nothing else, so pinch-zoom and double-tap
+   zoom are both gone and the ~350 ms tap delay with them.
+
+   This was deliberately NOT done for a long time, because taking zoom away from
+   a user who needs it is a real cost. What changed is that the page carries its
+   own answer: the settings offer three text sizes (up to 1.3x) and a
+   high-contrast theme, which survive a reload and do not leave half the
+   interface outside the viewport the way a pinch does. iOS Safari ignores
+   user-scalable on purpose, so the gesture handlers further down finish the job
+   there. */
+html { touch-action: pan-x pan-y; }
+button, a, input, select, label { touch-action: pan-x pan-y; }
+/* Sliders give the VERTICAL direction back to the page. A group screen is a
+   column of volume sliders, so a thumb coming down to scroll lands on one far
+   more often than not, and with the default handling that finger both scrolls
+   and drags: the room gets louder because someone wanted to look further down
+   the list. pan-y lets the browser claim a vertical gesture (it then sends the
+   slider a pointercancel, which the guard below listens for) while a sideways
+   drag still belongs to the slider. */
+input[type=range] { touch-action: pan-y; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 html.a11y-contrast :focus-visible { outline-color:#fff; }
 /* Pad every edge by the device safe-area inset on top of the base 16px. The
@@ -54,6 +78,12 @@ html.a11y-contrast :focus-visible { outline-color:#fff; }
    bar; without the top inset the header collides with the clock. The insets are
    0 on hardware that has none, so the base 16px is unchanged there. */
 body { margin:0; padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); background:var(--bg); color:var(--fg); max-width:620px; margin:0 auto; }
+/* Always fill the display, even when a panel holds two lines of content. A page
+   shorter than the screen cannot scroll, and a browser that cannot scroll keeps
+   its own bottom toolbar expanded, which pushes a fixed bar up by exactly that
+   toolbar. dvh follows the toolbars as they collapse and expand; the vh line
+   above it is the fallback for engines without dvh. */
+body { min-height:100vh; min-height:100dvh; }
 header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 header img { width:30px; height:30px; border-radius:7px; }
 header .brand { font-size:18px; font-weight:700; letter-spacing:.2px; }
@@ -658,6 +688,84 @@ function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;',
 function decodeEntities(s){ var el = document.createElement('textarea'); el.innerHTML = String(s); return el.value; }
 
 var volTimer = null, volLast = -1, muteSaved = -1, volSentAt = 0;
+
+/* ---- Sliders that survive a scrolling thumb -------------------------------
+A range input changes its value the instant a finger touches it, and on a group
+screen full of sliders that is the normal way to start a scroll. The result was
+a room getting louder because someone wanted to see the speaker further down.
+
+The CSS above hands vertical gestures to the page. This decides when a touch is
+allowed to reach the SPEAKER, which is the half that matters: nothing is sent
+while a finger is down and the gesture is still ambiguous. The thumb may follow
+the finger meanwhile, that is only pixels, and it snaps back the moment the
+gesture turns out to be a scroll.
+
+  - a sideways drag beyond a few pixels is a deliberate slide: it arms, sends
+    live from then on, and feels exactly as it did before,
+  - a downward or upward move is a scroll: the value is put back and nothing
+    was ever sent,
+  - a tap that goes down and comes up without wandering is deliberate: it sends
+    on release.
+
+Mouse and keyboard are armed from the start, so the desktop browser and
+accessibility tools are untouched. */
+var sliderGuards = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+var SLIDE_ARM_PX = 6;   // sideways travel that means "I am using the slider"
+var SLIDE_SCROLL_PX = 8; // vertical travel that means "I am scrolling the page"
+
+// sliderBlocked reports whether this slider's current gesture must not reach
+// the speaker yet. Callers that are NOT the slider (steppers, mute, presets)
+// never see a blocked state, because no gesture is in progress on the element.
+function sliderBlocked(el) {
+  if (!el || !sliderGuards) return false;
+  var g = sliderGuards.get(el);
+  return !!(g && g.down && (g.cancelled || !g.armed));
+}
+
+// scrollSafeSlider guards one range input. send(value) is called when a
+// gesture is confirmed; label(value) redraws any value text.
+function scrollSafeSlider(el, send, label) {
+  if (!el || !sliderGuards) return;
+  var g = { down: false, armed: true, cancelled: false, startVal: null, x0: 0, y0: 0 };
+  sliderGuards.set(el, g);
+  var revert = function() {
+    if (g.startVal === null) return;
+    el.value = g.startVal;
+    if (label) label(el.value);
+  };
+  el.addEventListener('pointerdown', function(e) {
+    g.down = true;
+    g.cancelled = false;
+    g.startVal = el.value;
+    g.x0 = e.clientX; g.y0 = e.clientY;
+    // Only touch is ambiguous. A mouse press on a slider is a slider press.
+    g.armed = (e.pointerType !== 'touch');
+  });
+  el.addEventListener('pointermove', function(e) {
+    if (!g.down || g.armed || g.cancelled) return;
+    var dx = Math.abs(e.clientX - g.x0), dy = Math.abs(e.clientY - g.y0);
+    if (dy > SLIDE_SCROLL_PX && dy > dx) { g.cancelled = true; revert(); return; }
+    if (dx > SLIDE_ARM_PX) { g.armed = true; send(el.value); }
+  });
+  // The browser took the gesture over for scrolling: put the value back and
+  // stay quiet. This is the case the whole guard exists for.
+  ['pointercancel', 'pointerleave'].forEach(function(ev) {
+    el.addEventListener(ev, function() {
+      if (!g.down) return;
+      g.cancelled = true;
+      revert();
+      g.down = false;
+    });
+  });
+  el.addEventListener('pointerup', function() {
+    if (!g.down) return;
+    g.down = false;
+    if (g.cancelled) return;
+    // Either a confirmed drag (already sending live) or a deliberate tap that
+    // has been held back until now. Both end with the value the user chose.
+    send(el.value);
+  });
+}
 // The slider moves whatever the scope row says it moves. With no group there is
 // no scope row and this is the plain per-speaker PUT it always was; in a group
 // or a stereo pair the same value goes to every member. Absolute, not
@@ -669,6 +777,9 @@ function volSend(v) {
   else api('/api/box/zone/volume', 'POST', { value: +v });
 }
 function onVol(v) {
+  // A finger resting on the slider to scroll must not move the speaker; the
+  // guard releases the value once the gesture is a slide or a tap.
+  if (sliderBlocked(document.getElementById('vol'))) return;
   document.getElementById('volval').textContent = v;
   // Any move to an audible level ends a mute (#385): the saved level is stale.
   if (+v > 0 && muteSaved >= 0) {
@@ -722,6 +833,22 @@ function bindVolHold(id, d) {
 }
 bindVolHold('volUp', 1);
 bindVolHold('volDown', -1);
+// The two sliders that sit on the scrolling part of the page. The member
+// sliders are guarded where they are built, since they come and go with the
+// group.
+scrollSafeSlider(document.getElementById('vol'), function(v){ onVol(v); },
+  function(v){ var d = document.getElementById('volval'); if (d) d.textContent = v; });
+scrollSafeSlider(document.getElementById('bass'), function(v){ onBass(v); },
+  function(v){ var d = document.getElementById('bassval'); if (d) d.textContent = v; });
+// iOS ignores user-scalable=no on purpose, so the pinch is refused here instead.
+// gesturestart and its siblings are WebKit-only events that fire for a two
+// finger zoom and for nothing else, so preventing them leaves scrolling, taps
+// and every one-finger gesture exactly as they are. Together with the
+// touch-action rule up top the remote no longer zooms on any platform, and the
+// text-size setting in More is the way to make it bigger.
+['gesturestart', 'gesturechange', 'gestureend'].forEach(function(ev) {
+  document.addEventListener(ev, function(e) { e.preventDefault(); }, { passive: false });
+});
 // Mute toggle on the speaker glyph (#385): volume 0 and back, via the same
 // debounced volume PUT, so it works on every agent version.
 function toggleMute() {
@@ -743,6 +870,7 @@ function toggleMute() {
 // stage never render a dead control.
 var bassTimer = null, bassLast = null;
 function onBass(v) {
+  if (sliderBlocked(document.getElementById('bass'))) return;
   document.getElementById('bassval').textContent = v;
   if (bassTimer) clearTimeout(bassTimer);
   bassTimer = setTimeout(function(){ if (+v !== bassLast) { bassLast = +v; api('/api/box/bass','PUT',{value:+v}); } }, 250);
@@ -1582,7 +1710,13 @@ function renderMembers() {
       ['pointerup','pointercancel','pointerleave'].forEach(function(ev){
         sl.addEventListener(ev, function(){ if (memberDragging === m.ip) memberDragging = null; });
       });
-      sl.addEventListener('input', function(){ val.textContent = sl.value; memberVol(m.ip, sl.value); });
+      sl.addEventListener('input', function(){
+        val.textContent = sl.value;
+        if (!sliderBlocked(sl)) memberVol(m.ip, sl.value);
+      });
+      // Every member row is one more slider under a scrolling thumb, which is
+      // exactly the screen this guard was written for.
+      scrollSafeSlider(sl, function(v){ memberVol(m.ip, v); }, function(v){ val.textContent = v; });
       row.appendChild(sl);
       box.appendChild(row);
       memberRows[m.ip] = { row: row, slider: sl, val: val };

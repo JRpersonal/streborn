@@ -280,3 +280,86 @@ func TestPhoneRemoteLocalesCarryTheGroupKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestPhoneRemoteSlidersSurviveScrolling guards the group screen: it is a column
+// of volume sliders, so a thumb coming down to scroll lands on one, and a range
+// input takes that touch as a value change. Users scrolled a member list and
+// made the room louder (Jens, 2026-08-13).
+//
+// Two halves have to be present. The CSS gives the vertical direction back to
+// the page, which is what makes the browser send the slider a pointercancel
+// instead of a drag; the guard decides when a touch may reach the speaker at
+// all. Either one alone leaves the bug in place, so both are pinned here.
+func TestPhoneRemoteSlidersSurviveScrolling(t *testing.T) {
+	if !strings.Contains(indexHTML, "input[type=range] { touch-action: pan-y; }") {
+		t.Fatal("range inputs must leave vertical panning to the page (touch-action: pan-y)")
+	}
+	if !strings.Contains(indexHTML, "function scrollSafeSlider(") ||
+		!strings.Contains(indexHTML, "function sliderBlocked(") {
+		t.Fatal("indexHTML is missing the slider scroll guard")
+	}
+	// A guard nothing consults is decoration. Every path that can move a
+	// speaker from a slider has to ask it: the main volume, the bass, and the
+	// per-member sliders of a group.
+	for _, call := range []string{
+		"if (sliderBlocked(document.getElementById('vol'))) return;",
+		"if (sliderBlocked(document.getElementById('bass'))) return;",
+		"if (!sliderBlocked(sl)) memberVol(m.ip, sl.value);",
+	} {
+		if !strings.Contains(indexHTML, call) {
+			t.Fatalf("a slider send path does not consult the scroll guard: %s", call)
+		}
+	}
+	// The cancel path is the one the browser uses when it claims the gesture.
+	if !strings.Contains(indexHTML, "'pointercancel'") {
+		t.Fatal("the guard must react to pointercancel, which is how the browser announces a scroll")
+	}
+}
+
+// TestPhoneRemoteDoesNotZoom guards the app feel: a stray pinch used to leave
+// the remote at 1.4x with half the controls off screen, and it is the one thing
+// that gives a web page away on a phone (Jens, 2026-08-13).
+//
+// Three parts, because no single one covers every engine: the touch-action rule
+// (Chromium and friends), the viewport meta (Android browsers), and the WebKit
+// gesture events, which is the only lever on iOS since Safari ignores
+// user-scalable by design.
+func TestPhoneRemoteDoesNotZoom(t *testing.T) {
+	if !strings.Contains(indexHTML, "html { touch-action: pan-x pan-y; }") {
+		t.Fatal("the page must allow panning only, so pinch and double-tap zoom are off")
+	}
+	if !strings.Contains(indexHTML, "user-scalable=no") || !strings.Contains(indexHTML, "maximum-scale=1") {
+		t.Fatal("the viewport meta must refuse scaling")
+	}
+	if !strings.Contains(indexHTML, "'gesturestart', 'gesturechange', 'gestureend'") {
+		t.Fatal("iOS needs the WebKit gesture events prevented; it ignores user-scalable")
+	}
+	// Taking zoom away is only acceptable because the page carries its own
+	// text sizes. If those ever go, this test should fail and force the
+	// decision to be made again.
+	if !strings.Contains(indexHTML, "a11y-scale-xl") {
+		t.Fatal("the built-in text sizes are what make refusing pinch-zoom acceptable")
+	}
+}
+
+// TestPhoneRemoteTabbarStaysAtTheBottom guards two ways the bar left the bottom
+// edge: a zoomed ANCESTOR (the text-size setting used to zoom body, which made
+// the fixed bar resolve bottom:0 against the zoomed viewport and float roughly
+// a quarter of the screen up at 1.3x), and a page shorter than the display,
+// where a browser that cannot scroll keeps its own toolbar expanded.
+func TestPhoneRemoteTabbarStaysAtTheBottom(t *testing.T) {
+	if !strings.Contains(indexHTML, "position:fixed; left:0; right:0; bottom:0") {
+		t.Fatal("the tab bar must be pinned to the viewport")
+	}
+	// The zoom must never sit on an ANCESTOR of the fixed bar.
+	if strings.Contains(indexHTML, "html.a11y-scale-l  body { zoom") ||
+		strings.Contains(indexHTML, "html.a11y-scale-xl body { zoom") {
+		t.Fatal("the text-size zoom is back on body, which unpins the fixed tab bar")
+	}
+	if !strings.Contains(indexHTML, "html.a11y-scale-xl body > * { zoom:1.30; }") {
+		t.Fatal("the text-size zoom must apply to body's children, not to body")
+	}
+	if !strings.Contains(indexHTML, "min-height:100dvh") {
+		t.Fatal("a short page must still fill the display, or the browser toolbar lifts the bar")
+	}
+}
