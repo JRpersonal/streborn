@@ -4,6 +4,7 @@ name: release
 #   - streborn-armv7l                  (stick agent for the Bose speaker hardware)
 #   - STR-Windows-vX.Y.Z.exe           (desktop app, Windows x64)
 #   - STR-macOS-vX.Y.Z.dmg             (desktop app, universal Mac binary inside a DMG)
+#   - STR-macOS-vX.Y.Z.zip             (same signed app, for the in-app update's bundle swap)
 #   - STR-Linux-x64-vX.Y.Z.tar.gz      (desktop app, Linux x64)
 #   - SHA256SUMS                       (combined checksums)
 #   - manifest.json                    (machine-readable index for the website)
@@ -1141,13 +1142,41 @@ jobs:
 
           hdiutil detach "$MNT"
 
-      - name: Checksum the DMG
+      - name: Package the app as a ZIP for the in-app update
+        # The DMG is for humans: it carries the Applications symlink and the
+        # drag-and-drop gesture people know. The ZIP is for the app itself,
+        # which since v0.9.42 replaces its own bundle instead of asking the
+        # user to drag it in again on every release (see
+        # desktop-app/update_macos.go).
+        #
+        # ditto, not zip: a bundle carries symlinks, extended attributes and a
+        # code signature, and a plain zip quietly breaks the signature so the
+        # swapped-in copy would be refused. --keepParent puts the .app itself in
+        # the archive rather than its contents.
+        #
+        # Built from the SAME stapled bundle the DMG was staged from, so the
+        # ticket rides along inside and the extracted copy opens offline. No
+        # second notarization round is needed for the archive; Apple notarizes
+        # what is in it, not the container.
+        run: |
+          set -euo pipefail
+          APP="desktop-app/build/bin/ST Reborn.app"
+          /usr/bin/ditto -c -k --keepParent "$APP" "release-out/STR-macOS.zip"
+          # Prove the archive still holds a valid signature: an unpack here is
+          # cheap, and finding this out on a user's Mac is not.
+          rm -rf "$RUNNER_TEMP/zipcheck"
+          /usr/bin/ditto -x -k "release-out/STR-macOS.zip" "$RUNNER_TEMP/zipcheck"
+          codesign --verify --strict --verbose=2 "$RUNNER_TEMP/zipcheck/ST Reborn.app"
+          rm -rf "$RUNNER_TEMP/zipcheck"
+
+      - name: Checksum the DMG and the ZIP
         # AFTER stapling: a ticket is written into the file, so a hash taken
         # before it would not match the published download.
         run: |
           cd release-out
           shasum -a 256 "STR-macOS.dmg" > "STR-macOS.dmg.sha256"
-          cat "STR-macOS.dmg.sha256"
+          shasum -a 256 "STR-macOS.zip" > "STR-macOS.zip.sha256"
+          cat "STR-macOS.dmg.sha256" "STR-macOS.zip.sha256"
 
       - name: Remove the signing keychain
         if: always()
@@ -1161,7 +1190,9 @@ jobs:
       - name: Sigstore attestation
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: release-out/STR-macOS.dmg
+          subject-path: |
+            release-out/STR-macOS.dmg
+            release-out/STR-macOS.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -1170,6 +1201,8 @@ jobs:
           path: |
             release-out/STR-macOS.dmg
             release-out/STR-macOS.dmg.sha256
+            release-out/STR-macOS.zip
+            release-out/STR-macOS.zip.sha256
           if-no-files-found: error
           retention-days: 90
 
@@ -1264,6 +1297,7 @@ jobs:
           mv "STR-Windows.exe"      "STR-Windows-${VERSION}.exe"
           mv "STR-Windows.zip"      "STR-Windows-${VERSION}.zip"
           mv "STR-macOS.dmg"        "STR-macOS-${VERSION}.dmg"
+          mv "STR-macOS.zip"        "STR-macOS-${VERSION}.zip"
           mv "STR-Linux-x64.tar.gz" "STR-Linux-x64-${VERSION}.tar.gz"
           ls -la
 
@@ -1330,6 +1364,13 @@ jobs:
                 "platform": "macos",
                 "arch": "universal",
                 "filename": "STR-macOS-${VERSION}.dmg"
+              },
+              "desktop_macos_zip": {
+                "url": "${BASE}/STR-macOS-${VERSION}.zip",
+                "sha256": "$(sha STR-macOS-${VERSION}.zip)",
+                "platform": "macos",
+                "arch": "universal",
+                "filename": "STR-macOS-${VERSION}.zip"
               },
               "desktop_linux": {
                 "url": "${BASE}/STR-Linux-x64-${VERSION}.tar.gz",
@@ -1662,6 +1703,7 @@ jobs:
             dist/STR-Windows-*.exe
             dist/STR-Windows-*.zip
             dist/STR-macOS-*.dmg
+            dist/STR-macOS-*.zip
             dist/STR-Linux-x64-*.tar.gz
             dist/streborn-armv7l
             dist/streborn-arm64
