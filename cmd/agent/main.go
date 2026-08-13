@@ -475,6 +475,16 @@ func run() error {
 			"default_gateway": dnsboot.DefaultGateway(),
 		}
 	})
+	// tls_trust is the counterpart for the fault class dns_status cannot
+	// see: the box resolves and connects fine, but its overlaid trust
+	// store no longer carries the vendor's public roots, so every https
+	// station AND the Spotify engine die with the same
+	// "certificate signed by unknown authority". Without this section a
+	// bundle shows only that terse error and it reads like a station
+	// problem.
+	webui.RegisterDebugSection("tls_trust", func() any {
+		return tlsgen.TrustStoreSnapshot(tlsgen.ReadRootCAPEM(*tlsDir))
+	})
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
 	// The AutoPair manager is created up here so it can also be used in the
 	// WS and webui handlers.
