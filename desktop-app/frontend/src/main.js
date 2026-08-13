@@ -4167,6 +4167,49 @@ function updateBoxUiVisibility() {
 }
 
 let loadedPresetsBoxKey = null;
+// presetSignature reduces the preset list to what a tile actually draws, so a
+// re-read that returns the same thing costs one comparison and no redraw.
+function presetSignature(list) {
+  return (list || [])
+    .map(p => [p.slot, p.type || '', p.name || '', p.stream_url || '', p.art || ''].join(''))
+    .join('');
+}
+
+let _lastPresetCheck = 0;
+// How often the preset list is re-read from the speaker. Deliberately slower
+// than the status poll: this only has to catch a change made somewhere else,
+// which is a human pressing save on their phone, and nothing here is worth
+// another request per status tick.
+const PRESET_RECHECK_MS = 15000;
+
+// refreshPresetsIfChanged re-reads the presets and redraws only when they
+// differ from what is on screen. Fired from the status poll, never awaited.
+//
+// It reads the agent's own preset store, not the Bose firmware, so it does not
+// add to the :8090 load that keeps the status cadence deliberately slow.
+async function refreshPresetsIfChanged() {
+  const box = state.currentBox;
+  if (!box || state.view !== 'box') return;
+  if (Date.now() - _lastPresetCheck < PRESET_RECHECK_MS) return;
+  _lastPresetCheck = Date.now();
+  let fresh;
+  try {
+    fresh = await GetPresets(box.host, box.port) || [];
+  } catch {
+    return; // a missed poll changes nothing; the next one tries again
+  }
+  if (state.currentBox !== box) return; // speaker switched while we were reading
+  // Same transient-empty guard loadPresets uses: a busy speaker can answer
+  // with zero presets while its store reloads, and taking that at face value
+  // is what used to make the whole grid vanish.
+  if (fresh.length === 0 && state.presets.length > 0) return;
+  if (presetSignature(fresh) === presetSignature(state.presets)) return;
+  state.presets = fresh;
+  renderPresets();
+  healPresetLogos();
+  loadBoxPresets();
+}
+
 async function loadPresets(retry = 0) {
   if (!state.currentBox) return;
   // Drop another box's box-native presets the moment we switch, so a Deezer tile
@@ -4193,6 +4236,9 @@ async function loadPresets(retry = 0) {
       return;
     }
     state.presets = fresh;
+    // This IS a fresh read, so the background re-check starts its interval
+    // from here instead of firing again right after a box switch or a save.
+    _lastPresetCheck = Date.now();
     renderPresets();
     healPresetLogos();
     loadBoxPresets();
@@ -5869,6 +5915,11 @@ async function refreshStatus() {
   // Track position rides the same cadence, not awaited so a slow AVTransport
   // read cannot delay the status poll.
   pollTrackPosition();
+  // This app is not the only thing that writes presets: the phone remote saves
+  // to the same speaker, and until now the tiles here kept whatever they were
+  // loaded with, so a key reassigned from the phone showed the old station
+  // until the speaker was reselected.
+  refreshPresetsIfChanged();
   try {
     const xml = await Status(state.currentBox.host, state.currentBox.port);
     _statusFailCount = 0; // the box answered: it is reachable at its current IP
