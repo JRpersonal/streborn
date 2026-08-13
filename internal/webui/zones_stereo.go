@@ -195,6 +195,20 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// never ambiguous. Sequential rather than parallel on purpose: this runs
 	// inside the form budget, /info answers in milliseconds on a reachable box,
 	// and a fleet-wide fan-out on a speaker with 120 MB of RAM buys nothing.
+	// Falling back to the caller's value when that read fails is not safe, and
+	// two field bundles on the same day showed why (#544 and a 7-speaker fleet,
+	// both 2026-08-13). A member that is waking or busy right after an OTA
+	// answers :8090 a few seconds late, the correction was skipped, and the
+	// wrong id went into /setZone: the master enrolls a member nobody answers
+	// for, its own zone reads back one member short, and the speaker sits there
+	// showing "Select a source". In the 7-speaker log the correction is visible
+	// firing for .26 at 18:38:10 and then NOT firing for the very same speaker
+	// 25 seconds later, when its :8090 timed out, which put both that box and
+	// one other into the group under their wlan0 MAC.
+	//
+	// So remember what a speaker's firmware said last time and use that when it
+	// cannot be asked right now. The map is keyed by IP, the same identifier the
+	// read uses, and it is only ever written from a firmware answer.
 	for i := range slaves {
 		if slaves[i].IP == "" {
 			continue
@@ -202,11 +216,30 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		ictx, icancel := context.WithTimeout(ctx, 2*time.Second)
 		info, err := boxapi.New(slaves[i].IP).GetInfo(ictx)
 		icancel()
-		if err != nil {
-			continue // unreachable right now: keep what the caller supplied
+		real := ""
+		if err == nil {
+			real = strings.TrimSpace(info.DeviceID)
+			if real != "" {
+				s.rememberMemberDeviceID(slaves[i].IP, real)
+			}
 		}
-		real := strings.TrimSpace(info.DeviceID)
-		if real == "" || strings.EqualFold(real, slaves[i].DeviceID) {
+		if real == "" {
+			cached, ok := s.cachedMemberDeviceID(slaves[i].IP)
+			if !ok {
+				// Never seen this speaker answer: the caller's value is all
+				// there is, and refusing the member outright would break the
+				// common case where it is already correct.
+				continue
+			}
+			if strings.EqualFold(cached, slaves[i].DeviceID) {
+				continue
+			}
+			s.logger.Warn("zone: member did not answer its firmware /info, using the deviceID it reported earlier instead of the caller's",
+				"ip", slaves[i].IP, "supplied", slaves[i].DeviceID, "cached", cached, "err", err)
+			slaves[i].DeviceID = cached
+			continue
+		}
+		if strings.EqualFold(real, slaves[i].DeviceID) {
 			continue
 		}
 		s.logger.Info("zone: corrected a member's deviceID from its own firmware /info (the caller had the chassis wlan0/SMSC MAC, not the SoundTouch ID)",
@@ -605,6 +638,32 @@ func (s *Server) localDeviceID(ctx context.Context, c *boxapi.Client, supplied s
 			"supplied", supplied, "firmware", real)
 	}
 	return real
+}
+
+// rememberMemberDeviceID records what a member speaker's own firmware answered
+// for its deviceID, keyed by the IP it was asked on. Only ever called with a
+// firmware answer, so the cache cannot be poisoned by a caller-supplied value.
+func (s *Server) rememberMemberDeviceID(ip, deviceID string) {
+	if ip == "" || deviceID == "" {
+		return
+	}
+	s.memberIDsMu.Lock()
+	defer s.memberIDsMu.Unlock()
+	if s.memberIDs == nil {
+		s.memberIDs = make(map[string]string)
+	}
+	s.memberIDs[ip] = deviceID
+}
+
+// cachedMemberDeviceID returns the last deviceID a speaker at this IP reported
+// for itself, and whether there was one. Used when its /info does not answer in
+// time during zone forming, so a busy member is still enrolled under the ID its
+// firmware actually keys on.
+func (s *Server) cachedMemberDeviceID(ip string) (string, bool) {
+	s.memberIDsMu.RLock()
+	defer s.memberIDsMu.RUnlock()
+	v, ok := s.memberIDs[ip]
+	return v, ok
 }
 
 // formStereoPair drives POST /addGroup to make a real left/right stereo pair
