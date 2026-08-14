@@ -362,7 +362,25 @@ type boxSnapshot struct {
 	// It also settles source questions in general: /sources status is a
 	// connection indicator, not a capability, so seeing the real list stops us
 	// reading UNAVAILABLE as "this box cannot do that".
-	BoseSources string         `json:"boseSourcesXml,omitempty"`
+	BoseSources string `json:"boseSourcesXml,omitempty"`
+	// BoxSnapshot is the agent's write-once capture of the box as it was BEFORE
+	// STR took over its cloud endpoints: the presets and sources it had, and
+	// which of those are account-linked services STR cannot serve itself.
+	//
+	// It answers the one question BoseSources cannot. A box with no Deezer
+	// entry in /sources looks identical whether it never had one or whether the
+	// account takeover dropped it, and only the snapshot says which. That
+	// distinction is what a reporter's mail asks every time, and no bundle has
+	// ever carried it, which is why the Deezer path is still unverified: a
+	// Deezer preset points straight at api.deezer.com with no Bose host in it,
+	// so the speaker plays it from a token it holds itself, and whether STR can
+	// hand that back depends entirely on what was captured before the takeover.
+	// A snapshot that lists the service also means the re-advertise file was
+	// seeded from it, since the capture does both in one step.
+	//
+	// It names linked accounts, so it goes through the same anonymisation as
+	// /sources.
+	BoxSnapshot string         `json:"strBoxSnapshotJson,omitempty"`
 	STRStatus   string         `json:"strStatusJson"`
 	STRAgentVer map[string]any `json:"strAgentVersion"`
 	// STRZone is the box's live multiroom zone (GET /api/box/zone via the
@@ -475,6 +493,10 @@ func captureBoxSnapshot(host string) boxSnapshot {
 	if s.Reachable8888 {
 		base := fmt.Sprintf("http://%s:%d", host, strPort)
 		s.STRStatus = httpGetText(base+"/api/status", 4096)
+		// The pre-takeover capture. Best-effort: agents older than the snapshot
+		// answer 404, and a box whose capture never completed answers
+		// {"captured":false}, which is itself worth having in the bundle.
+		s.BoxSnapshot = httpGetText(base+"/api/box/snapshot", 16*1024)
 		// Live multiroom zone, best-effort (empty on stock boxes, agents
 		// without the zone API, or a zone read the box firmware rejects).
 		s.STRZone = httpGetText(base+"/api/box/zone", 4096)
@@ -676,6 +698,9 @@ func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 	// /sources names the linked streaming accounts, so it needs its own pass:
 	// the shared one would leave a Deezer id and its nickname in the clear.
 	s.BoseSources = anonymizeBoseSourcesXML(s.BoseSources)
+	// The pre-takeover capture names the same linked accounts as /sources, in
+	// JSON rather than XML, so it needs the equivalent pass.
+	s.BoxSnapshot = anonymizeBoxSnapshotJSON(s.BoxSnapshot)
 	s.STRStatus = anonymizeText(s.STRStatus)
 	// The zone JSON carries member IPs and device IDs.
 	s.STRZone = anonymizeText(s.STRZone)
@@ -713,6 +738,74 @@ func anonymizeSnapshot(s boxSnapshot) boxSnapshot {
 		s.SSHFallback.WlanMode = anonymizeText(s.SSHFallback.WlanMode)
 	}
 	return s
+}
+
+// accountKeys are the snapshot fields holding a linked-service account id.
+var accountKeys = map[string]bool{"sourceAccount": true, "account": true}
+
+// anonymizeBoxSnapshotJSON hashes the linked-account identities in the
+// pre-takeover capture and leaves everything else, so the bundle still says
+// which services and presets the box had.
+//
+// Deliberately conservative in one direction: a value that does not look like
+// an account identity survives, because the point of carrying this file is to
+// read the source names (DEEZER, AMAZON) and preset slots, and hashing those
+// would make it useless. Anything unparseable is dropped rather than passed
+// through, since a blob we cannot walk is a blob we cannot promise is clean.
+func anonymizeBoxSnapshotJSON(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	var v any
+	if err := json.Unmarshal([]byte(scrubPII(s)), &v); err != nil {
+		return `{"note":"snapshot omitted: not parseable as JSON, so it could not be checked for account identities"}`
+	}
+	out, err := json.Marshal(hashAccountFields(v))
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// hashAccountFields walks the decoded JSON and replaces the account-bearing
+// string fields that look personal.
+//
+// The account decides for its own object, exactly as in the /sources pass: a
+// display name like "DeezerUser" is a nickname that no pattern catches on its
+// own, but it belongs to the same listener as the id next to it. A preset's
+// "name" is the station or playlist title rather than a nickname, so it is
+// judged on its own merits and normally survives, which is what lets a bundle
+// still show WHICH preset was lost.
+func hashAccountFields(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		personal := false
+		for k := range accountKeys {
+			if s, ok := t[k].(string); ok && looksLikeAccountIdentity(s) {
+				personal = true
+			}
+		}
+		for k, inner := range t {
+			s, isStr := inner.(string)
+			switch {
+			case isStr && accountKeys[k] && looksLikeAccountIdentity(s):
+				t[k] = "ACCT#" + hashShort(s)
+			case isStr && k == "displayName" && (personal || looksLikeAccountIdentity(s)):
+				t[k] = "ACCT#" + hashShort(s)
+			case isStr && k == "name" && looksLikeAccountIdentity(s):
+				t[k] = "ACCT#" + hashShort(s)
+			default:
+				t[k] = hashAccountFields(inner)
+			}
+		}
+		return t
+	case []any:
+		for i := range t {
+			t[i] = hashAccountFields(t[i])
+		}
+		return t
+	}
+	return v
 }
 
 // anonymizeText scrubs IPs, MACs, device IDs, friendly names, and SSID hints

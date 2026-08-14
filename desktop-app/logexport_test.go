@@ -294,3 +294,47 @@ func TestDiagnosticDefaultName_FallbackWithoutBoxes(t *testing.T) {
 		t.Errorf("diagnosticDefaultName(nil) = %q, want %q", got, want)
 	}
 }
+
+// The pre-takeover capture is the evidence that says whether a box ever had an
+// account-linked service, which is the question a Deezer report turns on. It
+// also names the listener, and bundles get attached to public issues, so the
+// service and slot must survive while the account and its nickname do not.
+func TestAnonymizeBoxSnapshotJSON(t *testing.T) {
+	in := `{"capturedAt":1750000000,"deviceID":"000C8A96488D",
+	  "presets":[{"slot":3,"source":"DEEZER","type":"tracklistRadio",
+	    "location":"https://api.deezer.com/user/me/flow",
+	    "sourceAccount":"1456373802","name":"Flux"}],
+	  "sources":[{"source":"DEEZER","sourceAccount":"1456373802","status":"READY","displayName":"DeezerUser"},
+	             {"source":"AUX","sourceAccount":"AUX","status":"READY","displayName":"AUX IN"}],
+	  "lostServices":["DEEZER"]}`
+
+	out := anonymizeBoxSnapshotJSON(in)
+
+	for _, leaked := range []string{"1456373802", "DeezerUser"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("account identity %q survived anonymisation:\n%s", leaked, out)
+		}
+	}
+	// What the bundle is carried FOR has to still be readable.
+	for _, kept := range []string{"DEEZER", "tracklistRadio", "api.deezer.com", "lostServices", `"slot":3`, "Flux"} {
+		if !strings.Contains(out, kept) {
+			t.Errorf("anonymisation removed %q, which is the evidence we need:\n%s", kept, out)
+		}
+	}
+	// A socket label is not a person and hashing it would cost us the input list.
+	if !strings.Contains(out, `"AUX"`) || !strings.Contains(out, "AUX IN") {
+		t.Errorf("a physical input was hashed as if it were an account:\n%s", out)
+	}
+}
+
+// Unparseable input must not be passed through: a blob we cannot walk is a blob
+// we cannot promise carries no account.
+func TestAnonymizeBoxSnapshotJSONDropsWhatItCannotCheck(t *testing.T) {
+	out := anonymizeBoxSnapshotJSON(`not json at all, account=1456373802`)
+	if strings.Contains(out, "1456373802") {
+		t.Errorf("unparseable snapshot leaked its content: %s", out)
+	}
+	if anonymizeBoxSnapshotJSON("   ") != "" {
+		t.Error("an absent snapshot should stay absent")
+	}
+}
