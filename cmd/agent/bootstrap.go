@@ -75,10 +75,62 @@ func repairTrustStoreWhenBootstrapIsDone(ctx context.Context, caDir string, logg
 		case <-time.After(delay):
 		}
 		results := tlsgen.RepairTrustStore(tlsgen.ReadRootCAPEM(caDir), logger)
+		if anyStoreRepaired(results) {
+			restartForRepairedTrustStore(logger)
+			return
+		}
 		if trustStoresHealthy(results) {
 			return
 		}
 	}
+}
+
+// trustRestartStamp marks that this boot has already restarted for a repair.
+// On tmpfs: it must not survive a reboot, because a fresh boot rebuilds the
+// broken overlay and legitimately earns another restart.
+const trustRestartStamp = "/tmp/streborn-trust-restarted"
+
+// restartForRepairedTrustStore exits so the boot script's watchdog respawns
+// the agent, and with it the Spotify engine.
+//
+// Repairing the FILES is not enough, which a field bundle proved: the fixed
+// build reported both stores healthy and the speaker still failed every
+// handshake. Go reads the system trust store once per process and caches it,
+// so the agent and go-librespot were both started by a boot script that had
+// already mounted the broken overlay, and both went on using the poisoned copy
+// they had cached long before the repair touched the file. Nothing re-reads it,
+// so nothing changes until the processes are new.
+//
+// Restarting is safe here in a way it would not be normally: a box that
+// reaches this path trusts nothing, so no stream is playing to interrupt.
+// Guarded to once per boot, because a restart that keeps repeating is worse
+// than a speaker that trusts nothing.
+func restartForRepairedTrustStore(logger *slog.Logger) {
+	if _, err := os.Stat(trustRestartStamp); err == nil {
+		logger.Warn("trust store repaired again after a restart this boot, not restarting a second time (the boot script is rebuilding it)")
+		return
+	}
+	if err := os.WriteFile(trustRestartStamp, []byte(time.Now().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+		logger.Warn("trust store repair: cannot write the restart guard, staying up rather than risking a restart loop", "err", err)
+		return
+	}
+	logger.Warn("trust store repaired, restarting so this process and the Spotify engine read the fixed store (Go caches it once per process)")
+	// Flush before pulling the rug out, the same way every other exit path
+	// here does.
+	_ = exec.Command("sync").Run()
+	time.Sleep(500 * time.Millisecond)
+	os.Exit(0)
+}
+
+// anyStoreRepaired reports whether the pass actually rebuilt something, which
+// is what makes the cached-pool restart necessary.
+func anyStoreRepaired(results []tlsgen.TrustRepairResult) bool {
+	for _, r := range results {
+		if r.Outcome == tlsgen.TrustRepairRepaired {
+			return true
+		}
+	}
+	return false
 }
 
 // trustStoresHealthy reports whether every store either carries public roots

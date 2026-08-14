@@ -152,7 +152,7 @@ func repairOne(path string, slot int, rootCAPEM []byte, ops mountOps, logger *sl
 	}
 	res.RootsBefore = publicRootCount(before, rootCAPEM)
 	res.RootsAfter = res.RootsBefore
-	if res.RootsBefore > 0 {
+	if res.RootsBefore >= minPlausiblePublicRoots {
 		res.Outcome = TrustRepairHealthy
 		return res
 	}
@@ -187,7 +187,7 @@ func repairOne(path string, slot int, rootCAPEM []byte, ops mountOps, logger *sl
 		return res
 	}
 	res.FirmwareRoots = strings.Count(string(firmware), pemCertHeader)
-	if publicRootCount(firmware, rootCAPEM) == 0 {
+	if publicRootCount(firmware, rootCAPEM) < minPlausiblePublicRoots {
 		// Nothing to rebuild from. The broken overlay at least carried our
 		// root, so put it back rather than leave the speaker with less than
 		// it started with.
@@ -223,7 +223,7 @@ func repairOne(path string, slot int, rootCAPEM []byte, ops mountOps, logger *sl
 
 	// Confirm through the mount, the same way the box's TLS clients will.
 	res.RootsAfter = publicRootCountAt(path, rootCAPEM)
-	if res.RootsAfter == 0 {
+	if res.RootsAfter < minPlausiblePublicRoots {
 		res.Outcome = TrustRepairFailed
 		res.Err = "the rebuilt overlay still shows no public roots"
 		logger.Error("trust store repair: rebuilt overlay reads back empty", "path", path, "overlay", overlay)
@@ -269,6 +269,19 @@ func appendRootBlock(bundle, rootCAPEM []byte) []byte {
 	b.WriteString("# <<< STR Root CA <<<\n")
 	return b.Bytes()
 }
+
+// minPlausiblePublicRoots is the smallest number of public roots a real
+// firmware bundle can be believed to hold.
+//
+// "More than zero" is not the right test, and a field bundle proved it: an
+// ST20 on the fixed build reported ca-bundle.crt with TWO certificates, STR's
+// root plus a single survivor. One public root passed the old check as
+// healthy, the repair skipped the file, and the speaker went on failing every
+// handshake. Both stores on a working box of the same firmware carry 158 and
+// 165. Anything in single digits is the same corruption caught one step later,
+// not a legitimately small trust store, and treating it as healthy is how a
+// broken box gets told it is fine.
+const minPlausiblePublicRoots = 10
 
 // publicRootCount counts the certificates in bundle that are not STR's own
 // root. That is the figure that decides whether the box can reach the
