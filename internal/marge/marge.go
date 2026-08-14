@@ -56,6 +56,11 @@ type Server struct {
 	requestLog    []SpyEntry
 	requestLogMax int
 
+	// registryFetches / lastRegistryFetch count the box's own requests for the
+	// BMX service list (see spy.go).
+	registryFetches   int
+	lastRegistryFetch time.Time
+
 	// group holds the stereo-pair (L/R) record the ST10 firmware created "on
 	// marge" via POST /streaming/account/<acct>/group/, the cloud half of the
 	// box's /addGroup. nil means no pair.

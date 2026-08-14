@@ -848,6 +848,25 @@ func run() error {
 	// stamp the same classifier.
 	renderer.OnTransportCommand = wsClient.NoteOwnTransportCommand
 	webuiSrv.SetTransportCommandHook(wsClient.NoteOwnTransportCommand)
+	// bmx_adapter answers the two questions a failed hardware preset press
+	// raises and no bundle could answer before (#600): what the speaker itself
+	// complained about and what it was acting on at the time, and whether it
+	// ever fetched the service list that tells it where STR's adapters live.
+	// A native radio preset's location is RELATIVE to the baseUrl in that
+	// list, so registryFetches=0 means the speaker cannot resolve a press at
+	// all, however healthy everything else looks.
+	webui.RegisterDebugSection("bmx_adapter", func() any {
+		fetches, last := margeSrv.RegistryFetches()
+		lastStr := ""
+		if !last.IsZero() {
+			lastStr = last.Format(time.RFC3339)
+		}
+		return map[string]any{
+			"registryFetches":   fetches,
+			"lastRegistryFetch": lastStr,
+			"boxErrors":         wsClient.BoxErrors(),
+		}
+	})
 	// The standby classifier reads the same stamp: a source flip right after
 	// STR's own push (a wake-resume/recall the firmware rejects) must not be
 	// classified as a user power-off.

@@ -54,6 +54,12 @@ func (s *Server) respondBmxRegistry(w http.ResponseWriter, r *http.Request) {
 	// resolve a station.
 	base := "http://127.0.0.1:8888"
 	_ = r
+	// Count it. This response is what tells the box where the BMX adapters
+	// live, and a native radio preset carries a location RELATIVE to that
+	// baseUrl, so a box that never asks for this list cannot resolve a preset
+	// press at all. Issue #600 turned on exactly that question and the bundle
+	// could only answer it by inference from an empty request trail.
+	s.noteRegistryFetch()
 	body := strings.ReplaceAll(bmxServicesJSON, "{BMX_SERVER}", base)
 	body = strings.ReplaceAll(body, "{MEDIA_SERVER}", base+"/media")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -45,6 +45,21 @@ type Client struct {
 	// storm so bundles can correlate it with the boot clock and marge trail.
 	err1036Times   []time.Time
 	lastStormLogAt time.Time
+	// boxErrors is a small ring of the errors the BOX reported, newest last.
+	// The log already carries each one, but a bundle then needs someone to
+	// find them by eye among thousands of lines, and the code alone does not
+	// say what the box was doing at the time. A hardware preset press that
+	// dies on 4502 BMX_JSON_PARSE_ERROR (issue #600) is the case in point:
+	// the speaker activated a native radio preset, failed to parse whatever
+	// came back, and dropped to INVALID_SOURCE, and answering "what did it
+	// fetch, and had it ever fetched the service registry?" from the log was
+	// impossible. Pairing each error with the location the box was acting on
+	// makes the next bundle say it directly.
+	boxErrors []BoxErrorNote
+	// lastSelectionLoc / lastSelectionAt are the location and moment of the
+	// last preset the box selected, used to attribute an error to a press.
+	lastSelectionLoc string
+	lastSelectionAt  time.Time
 	// prevEndedIdle marks that the previous WS session ended in a plain idle
 	// read timeout, so the next "connected" phase marker logs at Debug instead
 	// of churning the NAND log. Only touched from the Run loop goroutine.
@@ -321,6 +336,63 @@ const (
 // hangs off it): it timestamps the storm START so bundles can correlate it
 // with the boot clock state (plug-pull RTC loss poisons the firmware, #419
 // Finding 4), TLS handshake failures on marge-tls, and the marge trail.
+// BoxErrorNote is one error the box reported over its WebSocket, kept with
+// the preset location the box was acting on so a bundle can tell a failure
+// that followed a preset press apart from one that came out of nowhere.
+type BoxErrorNote struct {
+	When   string `json:"when"`
+	Value  string `json:"value"`
+	Name   string `json:"name"`
+	Detail string `json:"detail,omitempty"`
+	// ActingOn is the location of the last preset the box selected before this
+	// error, empty when the error did not follow a selection.
+	ActingOn string `json:"actingOn,omitempty"`
+	// SinceSelectionMs is how long after that selection the error arrived.
+	SinceSelectionMs int64 `json:"sinceSelectionMs,omitempty"`
+}
+
+// maxBoxErrors bounds the ring. These are rare on a healthy speaker and the
+// interesting ones cluster around a single press, so a short tail is enough
+// and cannot grow the debug payload without limit on a box that storms.
+const maxBoxErrors = 12
+
+// noteBoxError records a box-reported error next to what the box was doing.
+func (c *Client) noteBoxError(value, name, detail string) {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := BoxErrorNote{
+		When:   now.Format(time.RFC3339Nano),
+		Value:  value,
+		Name:   name,
+		Detail: detail,
+	}
+	if !c.lastSelectionAt.IsZero() {
+		n.ActingOn = c.lastSelectionLoc
+		n.SinceSelectionMs = now.Sub(c.lastSelectionAt).Milliseconds()
+	}
+	c.boxErrors = append(c.boxErrors, n)
+	if len(c.boxErrors) > maxBoxErrors {
+		c.boxErrors = c.boxErrors[len(c.boxErrors)-maxBoxErrors:]
+	}
+}
+
+// BoxErrors returns a copy of the recorded box errors, oldest first.
+func (c *Client) BoxErrors() []BoxErrorNote {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]BoxErrorNote(nil), c.boxErrors...)
+}
+
+// NoteSelection records the preset location the box just selected, so an error
+// arriving milliseconds later can be attributed to it.
+func (c *Client) NoteSelection(loc string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastSelectionLoc = loc
+	c.lastSelectionAt = time.Now()
+}
+
 func (c *Client) note1036() {
 	now := time.Now()
 	c.mu.Lock()

@@ -399,6 +399,9 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				if v, name, sev, detail := parseBoxError(s); v != "" {
 					c.logger.Warn("box ws: box reported error",
 						"value", v, "name", name, "severity", sev, "detail", detail)
+					// Also keep it with what the box was acting on, so a bundle
+					// does not need the reader to find these by eye (#600).
+					c.noteBoxError(v, name, detail)
 					if v == "1036" {
 						c.note1036()
 					}
@@ -547,6 +550,9 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 		"source", pe.ContentItem.Source,
 		"title", pe.ContentItem.ItemName,
 	)
+	// Remember what the box is acting on, so an error frame arriving a moment
+	// later is recorded against this selection instead of standing alone (#600).
+	c.NoteSelection(pe.ContentItem.Location)
 	// Stamp the press so the STOP_STATE this switch teardown emits a moment later
 	// is recognised as teardown, not a user stop (see stopStateIsTeardown).
 	c.mu.Lock()
