@@ -111,7 +111,7 @@ body {
   min-height: 100vh;
 }
 
-/* ---------- Layout: App truly zentriert, Donate als Overlay ---------- */
+/* ---------- Layout: the app column is centred, the donate rail overlays ---------- */
 
 .layout {
   display: block;
@@ -241,10 +241,25 @@ body {
 .donate-side .share-trigger:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--brand) 18%, transparent); }
 .donate-side .share-trigger .share-heart { color: var(--brand); }
 
-/* Bei zu schmalen Fenstern ueberlappt der Donate sonst die App
-   — dann ausblenden, der Footer Link bleibt als Backup. */
-@media (max-width: 1080px) {
-  .donate-side { display: none; }
+/* The donate rail is an overlay: it is position: fixed and reserves no space,
+   so the centered app column runs straight under it as soon as the window is
+   not wide enough for both. It is therefore HIDDEN BY DEFAULT and shown only
+   where there is provably room, rather than shown by default and hidden when
+   the window looks narrow.
+
+   That inversion is the fix. The old rule hid it below 1080px, and the app
+   column needs 720px with 170px of rail beside it, so the arithmetic left ten
+   pixels of slack. A macOS window with permanent scrollbars eats more than
+   that on its own, and a Mac user's screenshot showed the preset tiles drawn
+   straight over the rail (discussion #597). Ten pixels was never a margin, it
+   was a coincidence.
+
+   1200px keeps a real gap: 720 for the column, 186 for the rail and its
+   margin on each side, and about a hundred left over for scrollbars, zoom and
+   whatever the platform adds. Below that the footer donate link carries it. */
+.donate-side { display: none; }
+@media (min-width: 1200px) {
+  .donate-side { display: flex; }
 }
 
 /* Share modal: one tile per platform. Each tile opens the browser share on this
@@ -1011,8 +1026,8 @@ html.a11y-contrast .btn-warning:disabled {
 .actions-divider { grid-column: 1 / -1; margin: 4px 0; border: 0; border-top: 1px solid var(--c-surface-3); }
 
 /* ---------- Preset Grid ---------- */
-/* 3 Spalten passend zur Hardware (1 2 3 / 4 5 6). Auf schmalen Fenstern
-   fallen wir auf 2 Spalten zurueck. */
+/* Three columns, matching the hardware keys (1 2 3 / 4 5 6). Narrow windows
+   fall back to two. */
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 @media (max-width: 560px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

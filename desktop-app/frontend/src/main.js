@@ -961,6 +961,21 @@ async function renderFooter() {
   // app version is finally known.
   updateSettingsTabBadge();
   if (state.boxes.length) renderBoxSelect();
+  // Same race, and it was costing the user the better part of a minute right
+  // after they had updated the app, which is exactly when the speakers are
+  // behind and the prompt matters most.
+  //
+  // Both prompts need two facts: the app's version (this function, an await)
+  // and the speakers' versions (a discovery pass). They were only ever
+  // re-evaluated at the END of a discovery pass, so whenever appInfo lost that
+  // race the card was skipped and nothing looked at it again until the NEXT
+  // pass happened along. The delay was never a timer; it was a second sweep.
+  // Now that both facts are in hand, ask immediately. Both are idempotent and
+  // cheap, and both hide themselves when nothing is behind.
+  if (state.boxes.length) {
+    try { maybeShowSpeakerUpdateCard(); } catch {}
+    try { checkBoxUpdate(); } catch {}
+  }
 }
 
 // Donate sidebar — three branded buttons that open in the system
