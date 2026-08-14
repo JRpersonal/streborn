@@ -1375,8 +1375,21 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		if info.Model != "" {
 			box.Model = info.Model
 		}
-		box.DeviceID = info.DeviceID
-		box.SerialNumber = info.SerialNumber
+		// Same guard as the two fields above, which these two lacked: a
+		// /info that answers but carries no deviceID blanked the one the
+		// agent had just reported, and a box with an empty deviceID drops
+		// out of every zone operation (the members are addressed by it).
+		// The stock deviceID is still preferred whenever it HAS a value:
+		// it is the SoundTouch ID the firmware's zone protocol keys on,
+		// while the agent may report its wlan0 MAC, which on a two-chip
+		// chassis is a different address (#544, Wave in a zone with an
+		// ST20 master: the master formed a zone the Wave never joined).
+		if info.DeviceID != "" {
+			box.DeviceID = info.DeviceID
+		}
+		if info.SerialNumber != "" {
+			box.SerialNumber = info.SerialNumber
+		}
 	}
 	return box, true
 }

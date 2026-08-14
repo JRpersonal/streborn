@@ -15,15 +15,26 @@ import (
 )
 
 // PlaySlot triggert POST /api/play/<slot>.
+//
+// Every exit is logged. A slot recall used to be the only play path that
+// wrote nothing at all to the app log, so a failed one left no trace on
+// either side: the box log shows no incoming request (the app never got
+// that far) and the app log shows nothing either. A bundle taken right
+// after a failing preset press was therefore unreadable (#582, shorty310:
+// two tiles showing "speaker is still starting" with an idle box log).
 func (a *App) PlaySlot(host string, port int, slot int) error {
 	resp, err := a.playPost(host, port, fmt.Sprintf("/api/play/%d", slot), "")
 	if err != nil {
+		a.logger.Info("play: slot failed", "host", host, "port", port, "slot", slot, "err", err)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", friendlyError(resp))
+		msg := friendlyError(resp)
+		a.logger.Info("play: slot rejected", "host", host, "slot", slot, "status", resp.StatusCode, "err", msg)
+		return fmt.Errorf("%s", msg)
 	}
+	a.logger.Info("play: slot accepted", "host", host, "slot", slot)
 	return nil
 }
 
@@ -85,6 +96,13 @@ func (a *App) playPost(host string, port int, path, body string) (*http.Response
 // if it stays unreachable within the budget.
 func (a *App) waitAgentReady(host string, port int) bool {
 	deadline := time.Now().Add(4 * time.Second)
+	started := time.Now()
+	// Kept for the give-up log line: without them a "box_not_ready" is a
+	// dead end in a bundle, because it names neither the ports that were
+	// tried nor why they did not answer (#582).
+	var tried []int
+	var lastErr error
+	var lastBody string
 	for {
 		// Try each candidate port; the one that answers is cached so the
 		// subsequent play (and every later call) goes straight to it. This
@@ -98,8 +116,20 @@ func (a *App) waitAgentReady(host string, port int) bool {
 				a.rememberPort(host, p)
 				return true
 			}
+			tried = append(tried, p)
+			lastErr = err
+			if err == nil {
+				// Answered, but not with an agent version: a bare 400 from the
+				// box's own :17008 listener while the agent is not up yet, or a
+				// stock-firmware 404. The body separates the two.
+				lastBody = string(body)
+			}
 		}
 		if !time.Now().Before(deadline) {
+			a.logger.Warn("play: agent readiness probe gave up, reporting the box as not ready",
+				"host", host, "port", port, "portsTried", tried,
+				"elapsedMs", time.Since(started).Milliseconds(),
+				"lastErr", lastErr, "lastBody", truncForLog(lastBody, 120))
 			return false
 		}
 		select {

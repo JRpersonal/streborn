@@ -1137,9 +1137,32 @@ async function refreshWedge() {
   } catch (e) {}
 }
 
+// presetSig reduces the list to what a tile shows, so a re-read that returns
+// the same thing does not rebuild the grid underneath the user's finger.
+function presetSig(list) {
+  return (list || []).map(function (p) { return p.slot + ' ' + (p.name || ''); }).join('');
+}
+var lastPresetSig = null;
+
 async function loadPresets() {
-  const list = await api('/api/presets') || [];
+  const raw = await api('/api/presets');
+  const list = raw || [];
   const grid = document.getElementById('presets');
+  // A failed read (api returns null) must not blank a grid that is already
+  // showing presets. That matters now the list is re-read in the background:
+  // one timed-out poll would otherwise wipe the tiles until the next one.
+  if (!raw && grid.children.length) return;
+  const sig = presetSig(list);
+  if (sig === lastPresetSig && grid.children.length) return;
+  lastPresetSig = sig;
+  // The tapped tile keeps its highlight across a rebuild: the grid is redrawn
+  // whenever the desktop app changes a preset, and losing the marker then
+  // would look like the speaker forgot what it is playing.
+  const activeSlot = (function () {
+    const tiles = grid.querySelectorAll('.preset');
+    for (let i = 0; i < tiles.length; i++) if (tiles[i].classList.contains('active')) return i + 1;
+    return 0;
+  })();
   grid.innerHTML = '';
   for (let i = 1; i <= 6; i++) {
     const p = list.find(x => x.slot === i);
@@ -1153,6 +1176,7 @@ async function loadPresets() {
       div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(nm) + '</div>';
     }
     else { div.innerHTML = '<div class="num">#' + i + '</div><div class="name">' + escapeHtml(T.empty) + '</div>'; }
+    if (i === activeSlot) div.classList.add('active');
     grid.appendChild(div);
   }
 }
@@ -2108,6 +2132,12 @@ setInterval(function(){ refreshStatus(); refreshWedge(); }, 5000);
 // somebody forms or dissolves one, not second by second, and every poll costs
 // the speaker a round trip to each member.
 setInterval(function(){ if (!document.getElementById('panelSpeakers').hidden || zone.grouped) loadZone(); }, 15000);
+// Presets change from the desktop app too, and this page used to keep whatever
+// it loaded on open. Re-read on the same slow cadence as the group: it only has
+// to catch somebody pressing save elsewhere, and the grid is left alone unless
+// the names actually differ. The read hits the agent's own store, not the Bose
+// firmware, so it adds nothing to the load the transport poll is rationed for.
+setInterval(function(){ loadPresets().catch(function(){}); }, 15000);
 </script>
 </body>
 </html>

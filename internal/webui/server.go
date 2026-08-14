@@ -43,6 +43,16 @@ type Server struct {
 	// after reboot/standby (#70). nil when not wired; zone write endpoints
 	// then still drive the box but do not persist.
 	zones *zones.Store
+	// memberIDs remembers, per member IP, the SoundTouch deviceID that
+	// speaker's own firmware reported. Zone forming corrects the caller's
+	// deviceID from a live /info read, because a two-chip chassis announces
+	// its wlan0 MAC over mDNS and that is not the ID /setZone keys on. When
+	// that read times out (a member waking, or busy right after an OTA) the
+	// correction used to be skipped and the wrong ID went into the group, so
+	// a phantom member was enrolled that never joined. This cache carries the
+	// answer from the last successful read across such a moment.
+	memberIDs   map[string]string
+	memberIDsMu sync.RWMutex
 	// mediaServers remembers which DLNA/UPnP media servers the user turned into
 	// native music sources, because the speaker forgets them on reboot. nil when
 	// not wired; the endpoints then still drive the box but nothing is restored

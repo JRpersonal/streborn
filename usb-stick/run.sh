@@ -4197,16 +4197,52 @@ done
 if [ -r "$ROOT_CA" ]; then
     log "root CA available after ${WAIT}s, applying bind mount"
 
+    # Order matters: an overlay left over from an earlier run has to be
+    # unmounted BEFORE the copy. While it is still mounted, "$target" and
+    # "$bundle" are the same inode, so the copy reads and writes one file and
+    # can leave it empty; what then gets mounted is our own root CA and
+    # nothing else, and the box stops trusting every public certificate. Both
+    # https stations and the Spotify engine then fail with the same
+    # "certificate signed by unknown authority" (ST20 field report,
+    # 2026-08-13). The name is a plain counter for the same reason: one hex
+    # digit of an md5 collides one time in sixteen, and a collision made both
+    # targets share one overlay file.
+    #
+    # The overlay is installed only once it demonstrably still carries the
+    # firmware's own roots. A box that trusts the public internet but not us
+    # is far less broken than the reverse: it plays radio and Spotify, and the
+    # agent re-appends its root to the live overlay anyway.
+    ca_slot=0
     for target in /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/certs/ca-certificates.crt; do
-        if [ ! -f "$target" ]; then continue; fi
-        bundle="/tmp/streborn-bundle$(echo "$target" | md5sum | head -c 1).crt"
-        cp "$target" "$bundle" 2>/dev/null
-        cat "$ROOT_CA" >> "$bundle"
-        echo "# <<< STR Root CA <<<" >> "$bundle"
-        if mount | grep -q "$target"; then
+        ca_slot=$((ca_slot+1))
+        [ -f "$target" ] || continue
+        bundle="/tmp/streborn-bundle$ca_slot.crt"
+        if mount | grep -q " $target "; then
             umount "$target" 2>/dev/null
         fi
-        mount --bind "$bundle" "$target" 2>/dev/null && echo "bind mount active: $bundle -> $target"
+        rm -f "$bundle"
+        if ! cp "$target" "$bundle" 2>/dev/null; then
+            log "trust store: cannot copy $target, leaving the firmware bundle in place"
+            continue
+        fi
+        roots=$(grep -c "BEGIN CERTIFICATE" "$bundle" 2>/dev/null)
+        [ -n "$roots" ] || roots=0
+        if [ "$roots" -lt 1 ]; then
+            log "trust store: copy of $target holds no certificate, leaving the firmware bundle in place"
+            rm -f "$bundle"
+            continue
+        fi
+        {
+            echo ""
+            echo "# >>> STR Root CA >>>"
+            cat "$ROOT_CA"
+            echo "# <<< STR Root CA <<<"
+        } >> "$bundle"
+        if mount --bind "$bundle" "$target" 2>/dev/null; then
+            log "trust store: overlay active on $target ($roots public roots plus STR)"
+        else
+            log "trust store: bind mount on $target failed, firmware bundle still in place"
+        fi
     done
 fi
 

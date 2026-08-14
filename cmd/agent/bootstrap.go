@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/tlsgen"
 	usbstick "github.com/JRpersonal/streborn/usb-stick"
 )
 
@@ -51,6 +52,47 @@ func loadRegion(path string, logger *slog.Logger) string {
 	}
 	logger.Info("region loaded", "country", out)
 	return out
+}
+
+// trustRepairAttempts are the delays after agent start at which the trust
+// store is checked. The boot script mounts its own overlay AFTER starting the
+// agent: it waits for the root CA (up to 20s) and then mounts, so checking
+// before that would inspect a store the script is about to replace. The first
+// delay clears that window with room to spare; the second covers a boot slow
+// enough to miss it. Two bounded attempts, not a poll: this corruption is
+// created at boot and never mid-run.
+var trustRepairAttempts = []time.Duration{60 * time.Second, 5 * time.Minute}
+
+// repairTrustStoreWhenBootstrapIsDone checks the box's trust stores once the
+// boot script has finished with them and rebuilds any that lost the vendor's
+// public roots. Stops as soon as every store is healthy, which on a healthy
+// box is the first look.
+func repairTrustStoreWhenBootstrapIsDone(ctx context.Context, caDir string, logger *slog.Logger) {
+	for _, delay := range trustRepairAttempts {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		results := tlsgen.RepairTrustStore(tlsgen.ReadRootCAPEM(caDir), logger)
+		if trustStoresHealthy(results) {
+			return
+		}
+	}
+}
+
+// trustStoresHealthy reports whether every store either carries public roots
+// or does not exist on this chassis. A store we could not fix keeps the
+// retry alive; one we did fix ends it.
+func trustStoresHealthy(results []tlsgen.TrustRepairResult) bool {
+	for _, r := range results {
+		switch r.Outcome {
+		case tlsgen.TrustRepairHealthy, tlsgen.TrustRepairAbsent, tlsgen.TrustRepairRepaired:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // syncRunOverrideFromStick keeps the NAND run-override.sh in sync with

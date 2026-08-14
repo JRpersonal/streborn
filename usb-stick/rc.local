@@ -96,21 +96,21 @@ if [ -f /media/sda1/run.sh ]; then
     echo "$(date): /mnt/nv/streborn/run-override.sh redeployed from stick (effective this boot)" >> "$LOGDIR/boot.log"
 fi
 
-# NAND Override hat Prioritaet. Damit koennen Updates ueberleben auch
-# wenn die SD Karte read only ist oder eine alte run.sh hat.
+# The NAND override wins. That is what lets an update survive an SD card
+# that is read only or still carries an old run.sh.
 NAND_OVERRIDE="/mnt/nv/streborn/run-override.sh"
 if [ -x "$NAND_OVERRIDE" ]; then
-    echo "$(date): NAND override aktiv, nutze $NAND_OVERRIDE" >> "$LOGDIR/boot.log"
+    echo "$(date): NAND override active, using $NAND_OVERRIDE" >> "$LOGDIR/boot.log"
     nohup "$NAND_OVERRIDE" > "$LOGDIR/run.out" 2>&1 &
     exit 0
 fi
 
-# Fallback ohne NAND override: stick run.sh direkt starten falls da.
+# Fallback without a NAND override: start the stick's run.sh directly if present.
 if [ -x /media/sda1/run.sh ]; then
-    echo "$(date): kein NAND override, nutze /media/sda1/run.sh" >> "$LOGDIR/boot.log"
+    echo "$(date): no NAND override, using /media/sda1/run.sh" >> "$LOGDIR/boot.log"
     nohup /media/sda1/run.sh > "$LOGDIR/run.out" 2>&1 &
     exit 0
 fi
 
-echo "$(date): weder NAND override noch /media/sda1/run.sh — USB Stick fehlt" >> "$LOGDIR/boot.log"
+echo "$(date): neither a NAND override nor /media/sda1/run.sh, USB stick missing" >> "$LOGDIR/boot.log"
 exit 1

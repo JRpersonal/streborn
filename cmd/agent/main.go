@@ -475,6 +475,23 @@ func run() error {
 			"default_gateway": dnsboot.DefaultGateway(),
 		}
 	})
+	// tls_trust is the counterpart for the fault class dns_status cannot
+	// see: the box resolves and connects fine, but its overlaid trust
+	// store no longer carries the vendor's public roots, so every https
+	// station AND the Spotify engine die with the same
+	// "certificate signed by unknown authority". Without this section a
+	// bundle shows only that terse error and it reads like a station
+	// problem.
+	// "repair" says whether the agent had to rebuild a store and whether that
+	// worked, which "stores" alone cannot show: a repaired box and a box that
+	// was never broken both read healthy afterwards.
+	webui.RegisterDebugSection("tls_trust", func() any {
+		root := tlsgen.ReadRootCAPEM(*tlsDir)
+		return map[string]any{
+			"stores": tlsgen.TrustStoreSnapshot(root),
+			"repair": tlsgen.LastTrustRepair(),
+		}
+	})
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
 	// The AutoPair manager is created up here so it can also be used in the
 	// WS and webui handlers.
@@ -1114,6 +1131,17 @@ func run() error {
 	// the old run-override.sh from the very first setup runs forever and new
 	// setup wizard configs are ignored.
 	go syncRunOverrideFromStick(logger)
+
+	// Repair a trust store that lost the vendor's public roots, which kills
+	// every https station AND the Spotify engine with the same terse
+	// "certificate signed by unknown authority". The boot script no longer
+	// produces that state, but it is the only thing that ever did and an
+	// over-the-air update cannot deliver a boot script: it replaces the agent
+	// binary, and the NAND copy of run-override.sh is refreshed from a USB
+	// stick alone. Without this the affected speakers would re-break at every
+	// boot for good, however many updates they took. See
+	// internal/tlsgen/trustrepair.go.
+	go repairTrustStoreWhenBootstrapIsDone(ctx, *tlsDir, logger.With("comp", "tlsgen"))
 
 	// TLS termination for marge on 8443. iptables redirects the real box
 	// request from 443 to it. Skip when TLS is disabled.
