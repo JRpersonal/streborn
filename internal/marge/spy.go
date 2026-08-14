@@ -111,3 +111,28 @@ func (s *Server) handleSpyLog(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "----------------------------------------")
 	}
 }
+
+// --- BMX registry fetch counter ---------------------------------------------
+//
+// The registry response carries the baseUrl the box resolves a native radio
+// preset's relative location against. A box that never fetches it cannot
+// resolve a preset press, and the failure surfaces far away from the cause:
+// the speaker reports a JSON parse error and drops to INVALID_SOURCE, which
+// reads like a broken station (#600). One counter and one timestamp turn that
+// into a fact a bundle states outright.
+
+// noteRegistryFetch records that the box asked for the BMX service list.
+func (s *Server) noteRegistryFetch() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.registryFetches++
+	s.lastRegistryFetch = time.Now()
+}
+
+// RegistryFetches reports how often the box has asked for the BMX service list
+// since this agent started, and when it last did. count 0 means never.
+func (s *Server) RegistryFetches() (count int, last time.Time) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.registryFetches, s.lastRegistryFetch
+}

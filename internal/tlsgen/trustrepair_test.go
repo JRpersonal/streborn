@@ -2,6 +2,7 @@ package tlsgen
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -14,11 +15,21 @@ func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-const (
-	testSTRRoot = "-----BEGIN CERTIFICATE-----\nSTRROOTCA\n-----END CERTIFICATE-----\n"
-	testPublic  = "-----BEGIN CERTIFICATE-----\nDIGICERTG2\n-----END CERTIFICATE-----\n" +
-		"-----BEGIN CERTIFICATE-----\nISRGROOTX1\n-----END CERTIFICATE-----\n"
-)
+const testSTRRoot = "-----BEGIN CERTIFICATE-----\nSTRROOTCA\n-----END CERTIFICATE-----\n"
+
+// wantPublic is how many public roots testPublic carries. It has to clear
+// minPlausiblePublicRoots, because the repair judges a store by whether it
+// holds a believable NUMBER of public roots rather than merely one.
+const wantPublic = minPlausiblePublicRoots + 2
+
+// testPublic stands in for a real firmware bundle.
+var testPublic = func() string {
+	out := ""
+	for i := 0; i < wantPublic; i++ {
+		out += fmt.Sprintf("-----BEGIN CERTIFICATE-----\nPUBLICROOT%02d\n-----END CERTIFICATE-----\n", i)
+	}
+	return out
+}()
 
 // fakeMounts models a bind mount over a single file: the "mounted" content
 // shadows the pristine file, and unmounting reveals it again. That is the
@@ -109,13 +120,13 @@ func TestRepairRebuildsAStoreThatHoldsOnlyOurOwnRoot(t *testing.T) {
 	if res[0].RootsBefore != 0 {
 		t.Errorf("RootsBefore = %d, want 0 public roots before the repair", res[0].RootsBefore)
 	}
-	if res[0].RootsAfter != 2 {
-		t.Errorf("RootsAfter = %d, want the 2 public roots back", res[0].RootsAfter)
+	if res[0].RootsAfter != wantPublic {
+		t.Errorf("RootsAfter = %d, want the %d public roots back", res[0].RootsAfter, wantPublic)
 	}
 	// The box has to trust the internet AND us: dropping our root would
 	// break the Bose-domain server cert instead.
 	live := readFile(t, f.path)
-	if !strings.Contains(live, "DIGICERTG2") || !strings.Contains(live, "ISRGROOTX1") {
+	if !strings.Contains(live, "PUBLICROOT00") || !strings.Contains(live, "PUBLICROOT05") {
 		t.Error("repaired store lost the firmware's public roots")
 	}
 	if !strings.Contains(live, "STRROOTCA") {
@@ -170,8 +181,8 @@ func TestRepairLeavesTheFirmwareBundleLiveWhenRemountFails(t *testing.T) {
 	if res[0].Outcome != TrustRepairFailed {
 		t.Fatalf("outcome = %q, want %q", res[0].Outcome, TrustRepairFailed)
 	}
-	if res[0].RootsAfter != 2 {
-		t.Errorf("RootsAfter = %d, want the firmware's 2 public roots live", res[0].RootsAfter)
+	if res[0].RootsAfter != wantPublic {
+		t.Errorf("RootsAfter = %d, want the firmware's %d public roots live", res[0].RootsAfter, wantPublic)
 	}
 	if strings.Contains(readFile(t, f.path), "STRROOTCA") {
 		t.Error("expected the pristine firmware bundle, not the broken overlay")
@@ -246,8 +257,8 @@ func TestRepairWithoutOurRootStillRestoresThePublicRoots(t *testing.T) {
 	if res[0].Outcome != TrustRepairRepaired {
 		t.Fatalf("outcome = %q (err %q), want %q", res[0].Outcome, res[0].Err, TrustRepairRepaired)
 	}
-	if res[0].RootsAfter != 2 {
-		t.Errorf("RootsAfter = %d, want 2", res[0].RootsAfter)
+	if res[0].RootsAfter != wantPublic {
+		t.Errorf("RootsAfter = %d, want %d", res[0].RootsAfter, wantPublic)
 	}
 }
 
@@ -275,5 +286,43 @@ func TestAppendRootBlockSeparatesTheMarkerFromABundleWithoutATrailingNewline(t *
 	}
 	if !strings.Contains(out, "# >>> STR Root CA >>>") || !strings.Contains(out, "# <<< STR Root CA <<<") {
 		t.Errorf("missing the markers the boot script writes:\n%s", out)
+	}
+}
+
+// The field case the first version of this repair walked straight past: an
+// ST20 on the fixed build reported ca-bundle.crt holding TWO certificates,
+// STR's root plus one survivor. "More than zero public roots" called that
+// healthy, the file was left alone, and the speaker went on failing every
+// handshake while the diagnostic said it was fine.
+func TestRepairRebuildsAStoreLeftWithASingleSurvivingRoot(t *testing.T) {
+	const oneSurvivor = "-----BEGIN CERTIFICATE-----\nLONESURVIVOR\n-----END CERTIFICATE-----\n"
+	f := newFakeMounts(t, testPublic, oneSurvivor+testSTRRoot)
+
+	res := repairTrustStorePaths([]string{f.path}, []byte(testSTRRoot), f.ops(), quietLogger())
+
+	if res[0].Outcome != TrustRepairRepaired {
+		t.Fatalf("outcome = %q (err %q), want %q: one public root is the same corruption, not a healthy store",
+			res[0].Outcome, res[0].Err, TrustRepairRepaired)
+	}
+	if res[0].RootsBefore != 1 {
+		t.Errorf("RootsBefore = %d, want the single survivor counted", res[0].RootsBefore)
+	}
+	if res[0].RootsAfter != wantPublic {
+		t.Errorf("RootsAfter = %d, want the firmware's %d roots back", res[0].RootsAfter, wantPublic)
+	}
+}
+
+// A store that is merely SMALL but believable must still be left alone, so the
+// threshold cannot be read as "rebuild anything that is not the biggest".
+func TestRepairLeavesAPlausibleStoreAlone(t *testing.T) {
+	f := newFakeMounts(t, testPublic, testPublic+testSTRRoot)
+
+	res := repairTrustStorePaths([]string{f.path}, []byte(testSTRRoot), f.ops(), quietLogger())
+
+	if res[0].Outcome != TrustRepairHealthy {
+		t.Fatalf("outcome = %q, want %q", res[0].Outcome, TrustRepairHealthy)
+	}
+	if f.unmounts != 0 || f.binds != 0 {
+		t.Error("a store with a believable number of roots must not be touched")
 	}
 }
