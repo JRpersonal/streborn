@@ -422,6 +422,13 @@ func run() error {
 			"totals":     boxwrites.Totals(),
 		}
 	})
+	// Why the PREVIOUS run stopped. Read before the new heartbeat overwrites
+	// what the dead process left, and before anything else can crash. An agent
+	// that vanishes and is respawned by the watchdog otherwise leaves no trace
+	// at all: a live Portable did exactly that mid-Spotify on 2026-08-14 and
+	// the log could only say the process was gone. See crashforensics.go.
+	noteAgentStart(bootReason, logger)
+	webui.RegisterDebugSection("last_exit", lastExitSnapshot)
 	go func() {
 		for {
 			time.Sleep(time.Hour)
@@ -989,6 +996,15 @@ func run() error {
 	// makes the RAM/load trend before a freeze visible in the on-box log
 	// for post-mortem. Negligible NAND traffic (12 lines/hour), now that
 	// the per-second connectionState spam is gone.
+	// The heartbeat rides alongside the health loop but at its own cadence: the
+	// health log answers "is this box trending toward trouble", the heartbeat
+	// answers "what did the process look like in the half minute before it was
+	// killed", and only the second one survives the kill.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runHeartbeat(ctx.Done(), spotifyMgr.Streaming, logger)
+	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
