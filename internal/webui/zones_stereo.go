@@ -680,6 +680,32 @@ func (s *Server) cachedMemberDeviceID(ip string) (string, bool) {
 // and persists it so it is honored on dissolve. master becomes LEFT, the single
 // partner becomes RIGHT. The firmware decides whether the box can pair (ST10
 // only); its error is returned verbatim to the app so testers see the truth.
+// dropStereoDocAfterFailure removes the pair document that was written before
+// the firmware was asked.
+//
+// Writing it first is deliberate: a timed-out /addGroup can still have formed
+// the pair, and the dissolve path needs to know it is a pair. What was missing
+// is the other half. When the firmware refuses, or binds only one channel, the
+// document stayed on NAND and the speaker then behaved as if it were half of a
+// pair for good: a permanent pair card in the app, a volume scope that writes
+// to a speaker in another room, and, silently, power-on resume disabled,
+// because boxInZone reads the store alone. The user had been told the pairing
+// failed, so they had no reason to press "undo".
+func (s *Server) dropStereoDocAfterFailure(why string) {
+	if s.zones == nil {
+		return
+	}
+	z, ok := s.zones.Get()
+	if !ok || !z.Stereo {
+		return // nothing of ours to take back
+	}
+	if err := s.zones.Clear(); err != nil {
+		s.logger.Warn("stereo: could not remove the pair document after a failed pairing", "err", err, "why", why)
+		return
+	}
+	s.logger.Info("stereo: pairing failed, the pair document was removed again", "why", why)
+}
+
 func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember, slaves []boxapi.ZoneMember, name string) {
 	if len(slaves) != 1 {
 		http.Error(w, "a stereo pair needs exactly one partner speaker", http.StatusBadRequest)
@@ -786,6 +812,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 					"err", err, "id", g.ID)
 			} else {
 				s.logger.Warn("stereo: addGroup failed (only the ST10 supports stereo pairs)", "err", err)
+				s.dropStereoDocAfterFailure("addGroup refused")
 				http.Error(w, "addGroup: "+err.Error(), http.StatusBadGateway)
 				return
 			}
@@ -820,6 +847,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// speaker played. A real stereo pair must read back exactly two members.
 	if len(g.Members) != 2 {
 		s.logger.Warn("stereo: firmware formed an INCOMPLETE pair (a speaker was dropped)", "id", g.ID, "members", len(g.Members))
+		s.dropStereoDocAfterFailure("the firmware bound only one channel")
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": false, "stereo": true, "members": len(g.Members),
 			"error": "the speaker did not accept the pair. Both speakers must be set up and on the same account, and only the SoundTouch 10 supports stereo pairs.",
@@ -1354,6 +1382,10 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	// noise is carrying the group's content or something of its own. See
 	// dissolvestragglers.go.
 	masterLocation := playingLocation(ctx, s.boxHost)
+	// What the caller is told at the end. Empty means the speaker confirmed the
+	// zone is gone; anything else names the reason it could not be confirmed.
+	dissolveUnverified := ""
+	remaining := 0
 	if master.DeviceID != "" && len(slaves) > 0 {
 		// Loop until the firmware reports an empty zone (or the ctx deadline): a
 		// single RemoveZoneSlave can leave a straggler, which forced a SECOND
@@ -1367,12 +1399,20 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 				s.logger.Warn("zone: removeZoneSlave failed", "err", err, "attempt", attempt)
 			}
 			z, err := c.GetZone(ctx)
-			if err != nil || z.Master == "" || len(z.Members) == 0 {
-				break // zone gone (or unreadable): done
+			if err != nil {
+				// Unreadable is not the same as gone. Saying "dissolved" here is
+				// how a group that is still playing was reported as taken apart.
+				dissolveUnverified = err.Error()
+				break
+			}
+			if z.Master == "" || len(z.Members) == 0 {
+				cur = nil
+				break // the speaker confirms it: the zone is gone
 			}
 			cur = z.Members
 			s.logger.Info("zone: members still present after removeZoneSlave, retrying", "remaining", len(cur), "attempt", attempt)
 		}
+		remaining = len(cur)
 	}
 	// The teardown above only reaches members the MASTER registered. One it
 	// never registered still got audio and would play on in an empty room, so
@@ -1389,7 +1429,21 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	if master.DeviceID != "" || master.IP != "" {
 		s.purgePeerZones(master, slaves)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	// Report what actually happened. This used to answer ok:true whatever the
+	// firmware said, so a dissolve that removed nothing, and one whose result
+	// could not be read at all, both looked like success, and the user pressed
+	// the button again on a group that was still playing.
+	resp := map[string]any{"ok": dissolveUnverified == "" && remaining == 0}
+	if remaining > 0 {
+		resp["remaining"] = remaining
+		resp["error"] = "the speaker still reports members in the group"
+		s.logger.Warn("zone: dissolve did not empty the group", "remaining", remaining)
+	}
+	if dissolveUnverified != "" {
+		resp["unverified"] = dissolveUnverified
+		s.logger.Warn("zone: dissolve could not be confirmed", "err", dissolveUnverified)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleBoxGroup reads the box's current stereo pair group.
