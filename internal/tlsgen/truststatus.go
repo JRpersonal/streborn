@@ -2,6 +2,8 @@ package tlsgen
 
 import (
 	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,11 +42,22 @@ type TrustStoreStatus struct {
 	// Bytes is the size the agent reads THROUGH any bind mount, i.e.
 	// the overlay's size, not the pristine firmware bundle's.
 	Bytes int64 `json:"bytes"`
-	// RootCount is the number of PEM certificates in the file. A
-	// healthy box shows a three-digit count; 1 means the overlay
-	// contains STR's own root and nothing else, which is the broken
-	// state described above.
+	// RootCount is the number of PEM certificate HEADERS in the file. It
+	// says how much looks like a certificate, not how much is one, so
+	// never triage on it alone: see UsableRootCount.
 	RootCount int `json:"root_count"`
+	// UsableRootCount is the number of certificates Go actually accepts
+	// out of this file, parsed the same way crypto/x509 parses it when
+	// it builds the system pool.
+	//
+	// The two numbers came apart on a support case and cost three
+	// releases (ST20, 2026-08-15). The bundle reported 158 roots and was
+	// read as healthy, so all three fixes went looking elsewhere, while
+	// every TLS handshake on that speaker kept failing. A count of PEM
+	// headers cannot distinguish a working store from a file full of
+	// certificate-shaped text, and the failing store is exactly the one
+	// where that distinction decides the case.
+	UsableRootCount int `json:"usable_root_count"`
 	// HasSTRRoot reports whether STR's own root CA made it in. It has
 	// to be there for the box to accept our Bose-domain server cert.
 	HasSTRRoot bool `json:"has_str_root"`
@@ -56,10 +69,33 @@ type TrustStoreStatus struct {
 	Err string `json:"err,omitempty"`
 }
 
-// pemCertHeader is what we count. Counting headers rather than parsing
-// every certificate keeps this cheap enough to run on every
-// /api/debug/state call on a speaker CPU.
 const pemCertHeader = "-----BEGIN CERTIFICATE-----"
+
+// usableRoots counts the certificates crypto/x509 would take out of this
+// file when it builds the system pool. AppendCertsFromPEM does exactly
+// this walk and silently drops whatever fails to parse, so counting the
+// same way is the only number that predicts whether a handshake works.
+//
+// It parses on every call. On a speaker CPU a full 166-root bundle costs
+// single-digit milliseconds, which the earlier header count was not worth
+// saving.
+func usableRoots(body []byte) int {
+	n := 0
+	for rest := body; len(rest) > 0; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			continue
+		}
+		if _, err := x509.ParseCertificate(block.Bytes); err == nil {
+			n++
+		}
+	}
+	return n
+}
 
 // TrustStoreSnapshot inspects the trust store paths STR overlays and
 // returns one entry per path, in the order of DefaultTrustStorePaths.
@@ -85,17 +121,22 @@ func trustStoreSnapshotPaths(paths []string, rootCAPEM []byte) []TrustStoreStatu
 		s.Exists = true
 		s.Bytes = int64(len(body))
 		s.RootCount = strings.Count(string(body), pemCertHeader)
+		s.UsableRootCount = usableRoots(body)
 		if len(bytes.TrimSpace(rootCAPEM)) > 0 {
 			s.HasSTRRoot = bytes.Contains(body, bytes.TrimSpace(rootCAPEM))
 		}
-		// The public roots are what a stream or the Spotify engine needs.
-		// Subtracting STR's own root avoids calling a store healthy just
-		// because we put one certificate in it.
-		public := s.RootCount
+		// The public roots are what a stream or the Spotify engine needs,
+		// and only the ones that parse count. Subtracting STR's own root
+		// avoids calling a store healthy just because we put one
+		// certificate in it.
+		public := s.UsableRootCount
 		if s.HasSTRRoot && public > 0 {
 			public--
 		}
-		s.PublicRootsMissing = public == 0
+		// Same threshold the repair uses. The two disagreed until now, so
+		// a store the repair considered broken was reported as fine in the
+		// bundle, which is the worst of both.
+		s.PublicRootsMissing = public < minPlausiblePublicRoots
 		out = append(out, s)
 	}
 	return out

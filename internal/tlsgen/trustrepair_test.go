@@ -15,18 +15,21 @@ func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-const testSTRRoot = "-----BEGIN CERTIFICATE-----\nSTRROOTCA\n-----END CERTIFICATE-----\n"
+var testSTRRoot = mustRoot("str-root-ca")
 
 // wantPublic is how many public roots testPublic carries. It has to clear
 // minPlausiblePublicRoots, because the repair judges a store by whether it
 // holds a believable NUMBER of public roots rather than merely one.
 const wantPublic = minPlausiblePublicRoots + 2
 
-// testPublic stands in for a real firmware bundle.
+// testPublic stands in for a real firmware bundle. These are real
+// certificates: the repair now judges a store by what crypto/x509 can parse
+// out of it, so certificate-shaped placeholder text would make every fixture
+// here look like the corruption it is meant to model.
 var testPublic = func() string {
 	out := ""
 	for i := 0; i < wantPublic; i++ {
-		out += fmt.Sprintf("-----BEGIN CERTIFICATE-----\nPUBLICROOT%02d\n-----END CERTIFICATE-----\n", i)
+		out += mustRoot(fmt.Sprintf("public-root-%02d", i))
 	}
 	return out
 }()
@@ -126,11 +129,14 @@ func TestRepairRebuildsAStoreThatHoldsOnlyOurOwnRoot(t *testing.T) {
 	// The box has to trust the internet AND us: dropping our root would
 	// break the Bose-domain server cert instead.
 	live := readFile(t, f.path)
-	if !strings.Contains(live, "PUBLICROOT00") || !strings.Contains(live, "PUBLICROOT05") {
+	if !strings.Contains(live, testPublic) {
 		t.Error("repaired store lost the firmware's public roots")
 	}
-	if !strings.Contains(live, "STRROOTCA") {
+	if !strings.Contains(live, testSTRRoot) {
 		t.Error("repaired store lost STR's own root")
+	}
+	if got := usableRoots([]byte(live)); got != wantPublic+1 {
+		t.Errorf("usable roots = %d, want the %d firmware roots plus ours", got, wantPublic)
 	}
 	if f.unmounts != 1 || f.binds != 1 {
 		t.Errorf("unmounts=%d binds=%d, want exactly one of each", f.unmounts, f.binds)
@@ -161,7 +167,7 @@ func TestRepairRestoresTheOverlayWhenTheFirmwareBundleIsEmptyToo(t *testing.T) {
 	if res[0].Outcome != TrustRepairFirmwareEmpty {
 		t.Fatalf("outcome = %q, want %q", res[0].Outcome, TrustRepairFirmwareEmpty)
 	}
-	if !strings.Contains(readFile(t, f.path), "STRROOTCA") {
+	if !strings.Contains(readFile(t, f.path), testSTRRoot) {
 		t.Error("the rollback must put STR's root back, the box had it before")
 	}
 	if f.binds != 1 {
@@ -184,7 +190,7 @@ func TestRepairLeavesTheFirmwareBundleLiveWhenRemountFails(t *testing.T) {
 	if res[0].RootsAfter != wantPublic {
 		t.Errorf("RootsAfter = %d, want the firmware's %d public roots live", res[0].RootsAfter, wantPublic)
 	}
-	if strings.Contains(readFile(t, f.path), "STRROOTCA") {
+	if strings.Contains(readFile(t, f.path), testSTRRoot) {
 		t.Error("expected the pristine firmware bundle, not the broken overlay")
 	}
 }
@@ -295,7 +301,7 @@ func TestAppendRootBlockSeparatesTheMarkerFromABundleWithoutATrailingNewline(t *
 // healthy, the file was left alone, and the speaker went on failing every
 // handshake while the diagnostic said it was fine.
 func TestRepairRebuildsAStoreLeftWithASingleSurvivingRoot(t *testing.T) {
-	const oneSurvivor = "-----BEGIN CERTIFICATE-----\nLONESURVIVOR\n-----END CERTIFICATE-----\n"
+	oneSurvivor := mustRoot("lone-survivor")
 	f := newFakeMounts(t, testPublic, oneSurvivor+testSTRRoot)
 
 	res := repairTrustStorePaths([]string{f.path}, []byte(testSTRRoot), f.ops(), quietLogger())

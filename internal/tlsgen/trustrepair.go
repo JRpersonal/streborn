@@ -161,7 +161,7 @@ func repairOne(path string, slot int, rootCAPEM []byte, ops mountOps, logger *sl
 	// before touching anything: if the repair wedges the speaker, the log
 	// still shows what it was about to do.
 	logger.Warn("trust store lost its public roots, repairing",
-		"path", path, "bytes", len(before), "certificates", strings.Count(string(before), pemCertHeader))
+		"path", path, "bytes", len(before), "certificateHeaders", strings.Count(string(before), pemCertHeader), "usableCertificates", usableRoots(before))
 
 	if !ops.isMountPoint(path) {
 		// Nothing mounted: this emptiness is the firmware's own file, on a
@@ -186,7 +186,7 @@ func repairOne(path string, slot int, rootCAPEM []byte, ops mountOps, logger *sl
 		logger.Error("trust store repair: firmware bundle unreadable after unmount", "path", path, "err", err)
 		return res
 	}
-	res.FirmwareRoots = strings.Count(string(firmware), pemCertHeader)
+	res.FirmwareRoots = usableRoots(firmware)
 	if publicRootCount(firmware, rootCAPEM) < minPlausiblePublicRoots {
 		// Nothing to rebuild from. The broken overlay at least carried our
 		// root, so put it back rather than leave the speaker with less than
@@ -283,12 +283,15 @@ func appendRootBlock(bundle, rootCAPEM []byte) []byte {
 // broken box gets told it is fine.
 const minPlausiblePublicRoots = 10
 
-// publicRootCount counts the certificates in bundle that are not STR's own
-// root. That is the figure that decides whether the box can reach the
+// publicRootCount counts the USABLE certificates in bundle that are not STR's
+// own root. That is the figure that decides whether the box can reach the
 // internet: a store holding only our root passes a naive "is it empty" check
-// and still fails every public handshake.
+// and still fails every public handshake, and so does a store full of text
+// that merely looks like certificates. Counting headers here would also let
+// the repair rebuild a store from a firmware bundle Go cannot read and then
+// report that as repaired.
 func publicRootCount(bundle, rootCAPEM []byte) int {
-	n := strings.Count(string(bundle), pemCertHeader)
+	n := usableRoots(bundle)
 	if n > 0 && len(bytes.TrimSpace(rootCAPEM)) > 0 && bytes.Contains(bundle, bytes.TrimSpace(rootCAPEM)) {
 		n--
 	}
