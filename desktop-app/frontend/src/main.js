@@ -201,6 +201,7 @@ import {
   noticeDismissed,
   activeSlotFromLocation,
   orionStationPayload,
+  clearNoticeDismissal,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -1032,14 +1033,44 @@ function renderDonateSidebar() {
   if (shareBtn) shareBtn.onclick = openShareModal;
 }
 
-async function checkAppUpdate() {
+// renderAppUpdateCheckLink leaves a quiet way back to the update notice in the
+// place the banner would occupy.
+//
+// Dismissing the notice used to be one-way. The version check ran 8 s after
+// start and then every twelve hours, and a dismissal was remembered for that
+// version, so somebody who clicked it away, or who went back to an older
+// build, had nothing left to press and no way to be offered the update again
+// (discussion #597: "How do I force it to check for updates?"). A manual
+// check also ignores the stored dismissal, because a person pressing this has
+// just answered the question the dismissal was standing in for.
+function renderAppUpdateCheckLink(banner, note) {
+  if (!banner) return;
+  banner.classList.add('app-update-quiet');
+  banner.classList.remove('hidden');
+  banner.innerHTML = `<a href="#" id="appUpdateCheckLink" class="footer-link">${escapeHtml(t('banner.checkForAppUpdate'))}</a>`
+    + (note ? `<span class="app-update-quiet-note">${escapeHtml(note)}</span>` : '');
+  const link = $('appUpdateCheckLink');
+  if (link) link.onclick = (e) => {
+    e.preventDefault();
+    link.textContent = t('banner.checkingForAppUpdate');
+    try { clearNoticeDismissal('appUpdate'); } catch {}
+    checkAppUpdate(true);
+  };
+}
+
+async function checkAppUpdate(manual) {
   // Entirely best-effort: an unreachable endpoint or a garbage payload
   // must never break the UI. Validate every field defensively and stay
   // silent on any failure.
+  const banner = $('appUpdateBanner');
   try {
     const m = await CheckAppUpdate();
-    if (!m || typeof m !== 'object' || typeof m.version !== 'string' || !m.version) return;
-    const banner = $('appUpdateBanner');
+    if (!m || typeof m !== 'object' || typeof m.version !== 'string' || !m.version) {
+      // Nothing newer. Say so when the user asked; otherwise just leave the
+      // way back on screen.
+      renderAppUpdateCheckLink(banner, manual ? t('banner.appIsCurrent') : '');
+      return;
+    }
     if (!banner) return;
     // An app update outranks the speaker updates and hides their prompts (see
     // speakerUpdateCardMuted). Set before the dismissal check: the ORDER
@@ -1047,9 +1078,10 @@ async function checkAppUpdate() {
     // stopped needing the app first.
     state.appUpdateVersion = m.version;
     if (noticeDismissed('appUpdate', m.version)) {
-      banner.classList.add('hidden');
+      renderAppUpdateCheckLink(banner, '');
       return;
     }
+    banner.classList.remove('app-update-quiet');
     // Keep the banner discreet: version, a single "What's new" LINK to
     // the release notes (not the notes inline, which took too much space
     // and does not interest every user), and the download button.
@@ -1098,13 +1130,16 @@ async function checkAppUpdate() {
     const x = $('appUpdateDismiss');
     if (x) x.onclick = () => {
       dismissNotice('appUpdate', m.version);
-      banner.classList.add('hidden');
+      // Not hidden: the quiet link stays so the notice can be brought back.
+      renderAppUpdateCheckLink(banner, '');
       // The speaker prompts stay muted: the app is still the thing to do first.
       // They return once the app is current.
       maybeShowSpeakerUpdateCard();
     };
   } catch (e) {
     try { console.warn('checkAppUpdate failed', e); } catch {}
+    // A check that could not run must not swallow the control that triggers it.
+    try { renderAppUpdateCheckLink(banner, ''); } catch {}
   }
 }
 
@@ -1295,7 +1330,17 @@ $('searchOrder').value = state.searchOrder;
 $('searchOnlyOK').checked = state.searchOnlyOK;
 $('searchOnlyBose').checked = state.searchOnlyBose;
 
-$('refreshBtn').onclick = discoverBoxes;
+// The refresh button also re-asks whether a newer app exists, and forgets any
+// earlier dismissal while doing so. Until now the app version was only checked
+// 8 s after start and then every 12 hours, so a user who had put the notice
+// away, or who moved back to an older build, had no way to be offered the
+// update again and pressing refresh appeared to do nothing at all (discussion
+// #597: "How do I force it to check for updates?"). Somebody pressing refresh
+// is asking, so a stored "not now" must not answer for them.
+$('refreshBtn').onclick = () => {
+  try { clearNoticeDismissal('appUpdate'); checkAppUpdate(); } catch {}
+  discoverBoxes();
+};
 
 // Globaler Security Reboot Knopf (im Top Banner)
 const gsb = $('globalSecurityRebootBtn');

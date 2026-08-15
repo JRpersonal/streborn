@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "Confirmez avec <b>Installer</b>.",
   "settingsView.phoneAndroidNote": "Certains appareils photo ouvrent le lien dans un autre navigateur. Seul Chrome propose l'installation.",
   "settingsView.phoneShotIos": "iPhone : icône dédiée, s'ouvre sans barre de navigateur.",
-  "settingsView.phoneShotAndroid": "Android : installée via Chrome, donc présente aussi dans la liste des applications."
+  "settingsView.phoneShotAndroid": "Android : installée via Chrome, donc présente aussi dans la liste des applications.",
+  "banner.checkForAppUpdate": "Rechercher des mises à jour",
+  "banner.checkingForAppUpdate": "Recherche…",
+  "banner.appIsCurrent": "Votre application est à jour."
 }

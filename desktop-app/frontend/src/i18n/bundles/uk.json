@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "Підтвердьте кнопкою <b>Встановити</b>.",
   "settingsView.phoneAndroidNote": "Деякі камери відкривають посилання в іншому браузері. Встановлення пропонує лише Chrome.",
   "settingsView.phoneShotIos": "iPhone: власна іконка, відкривається без панелі браузера.",
-  "settingsView.phoneShotAndroid": "Android: встановлено через Chrome, тому є і в списку застосунків."
+  "settingsView.phoneShotAndroid": "Android: встановлено через Chrome, тому є і в списку застосунків.",
+  "banner.checkForAppUpdate": "Перевірити оновлення застосунку",
+  "banner.checkingForAppUpdate": "Перевірка…",
+  "banner.appIsCurrent": "Ваш застосунок актуальний."
 }

@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "أكّد بالضغط على <b>تثبيت</b>.",
   "settingsView.phoneAndroidNote": "بعض الكاميرات تفتح الرابط في متصفح آخر، وChrome وحده يعرض التثبيت.",
   "settingsView.phoneShotIos": "آيفون: أيقونة خاصة، ويفتح بدون شريط المتصفح.",
-  "settingsView.phoneShotAndroid": "أندرويد: يُثبَّت عبر Chrome، فيظهر أيضاً في قائمة التطبيقات."
+  "settingsView.phoneShotAndroid": "أندرويد: يُثبَّت عبر Chrome، فيظهر أيضاً في قائمة التطبيقات.",
+  "banner.checkForAppUpdate": "البحث عن تحديثات التطبيق",
+  "banner.checkingForAppUpdate": "جارٍ البحث…",
+  "banner.appIsCurrent": "تطبيقك محدَّث."
 }

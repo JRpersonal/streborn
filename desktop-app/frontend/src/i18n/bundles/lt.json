@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "Patvirtinkite mygtuku <b>Įdiegti</b>.",
   "settingsView.phoneAndroidNote": "Kai kurios kameros atidaro nuorodą kitoje naršyklėje. Įdiegimą siūlo tik Chrome.",
   "settingsView.phoneShotIos": "iPhone: sava piktograma, atsidaro be naršyklės juostos.",
-  "settingsView.phoneShotAndroid": "Android: įdiegta per Chrome, todėl matoma ir programų sąraše."
+  "settingsView.phoneShotAndroid": "Android: įdiegta per Chrome, todėl matoma ir programų sąraše.",
+  "banner.checkForAppUpdate": "Ieškoti programos naujinių",
+  "banner.checkingForAppUpdate": "Ieškoma…",
+  "banner.appIsCurrent": "Programa yra naujausia."
 }

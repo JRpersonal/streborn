@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "Potwierdź przyciskiem <b>Zainstaluj</b>.",
   "settingsView.phoneAndroidNote": "Niektóre aparaty otwierają link w innej przeglądarce. Instalację oferuje tylko Chrome.",
   "settingsView.phoneShotIos": "iPhone: własna ikona, otwiera się bez paska przeglądarki.",
-  "settingsView.phoneShotAndroid": "Android: zainstalowana przez Chrome, więc jest też w szufladzie aplikacji."
+  "settingsView.phoneShotAndroid": "Android: zainstalowana przez Chrome, więc jest też w szufladzie aplikacji.",
+  "banner.checkForAppUpdate": "Sprawdź aktualizacje aplikacji",
+  "banner.checkingForAppUpdate": "Sprawdzanie…",
+  "banner.appIsCurrent": "Aplikacja jest aktualna."
 }

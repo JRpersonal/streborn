@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "Apstiprini ar <b>Instalēt</b>.",
   "settingsView.phoneAndroidNote": "Dažas kameras atver saiti citā pārlūkā. Instalēšanu piedāvā tikai Chrome.",
   "settingsView.phoneShotIos": "iPhone: sava ikona, atveras bez pārlūka joslas.",
-  "settingsView.phoneShotAndroid": "Android: instalēta ar Chrome, tāpēc redzama arī lietotņu sarakstā."
+  "settingsView.phoneShotAndroid": "Android: instalēta ar Chrome, tāpēc redzama arī lietotņu sarakstā.",
+  "banner.checkForAppUpdate": "Meklēt lietotnes atjauninājumus",
+  "banner.checkingForAppUpdate": "Meklē…",
+  "banner.appIsCurrent": "Lietotne ir aktuāla."
 }

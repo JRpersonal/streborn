@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "Bevestig met <b>Installeren</b>.",
   "settingsView.phoneAndroidNote": "Sommige camera's openen de link in een andere browser. Alleen Chrome biedt de installatie aan.",
   "settingsView.phoneShotIos": "iPhone: eigen pictogram, opent zonder browserbalk.",
-  "settingsView.phoneShotAndroid": "Android: via Chrome geïnstalleerd, dus ook in de app-lade."
+  "settingsView.phoneShotAndroid": "Android: via Chrome geïnstalleerd, dus ook in de app-lade.",
+  "banner.checkForAppUpdate": "Zoeken naar app-updates",
+  "banner.checkingForAppUpdate": "Zoeken…",
+  "banner.appIsCurrent": "Je app is up-to-date."
 }

@@ -1990,6 +1990,23 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
 .box-wedge-banner { background: #fdba74; color: #431407; }
 .box-wedge-banner b { color: #431407; }
 .app-update-text { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The quiet state of the same slot: no banner, just a way back to the update
+   notice for anyone who dismissed it or moved back to an older build. It has
+   to be findable and must not compete with the speaker list, so it keeps the
+   page background and footer-link sizing. */
+.app-update-banner.app-update-quiet {
+  background: none;
+  color: var(--c-text-dim);
+  border: none;
+  box-shadow: none;
+  animation: none;
+  padding: 6px 18px;
+  justify-content: flex-end;
+  gap: 10px;
+  font-size: 12px;
+}
+.app-update-banner.app-update-quiet .footer-link { font-size: 12px; }
+.app-update-quiet-note { color: var(--c-text-dim); }
 .app-update-icon { font-size: 18px; font-weight: 700; line-height: 1; flex: 0 0 auto; }
 /* Dismiss control: a plain close cross at the far end of the banner, sized to
    be an easy target without competing with the install button next to it. */

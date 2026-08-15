@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "Confirma con <b>Instalar</b>.",
   "settingsView.phoneAndroidNote": "Algunas cámaras abren el enlace en otro navegador. Solo Chrome ofrece la instalación.",
   "settingsView.phoneShotIos": "iPhone: icono propio, se abre sin barra del navegador.",
-  "settingsView.phoneShotAndroid": "Android: instalada con Chrome, así que también está en el cajón de aplicaciones."
+  "settingsView.phoneShotAndroid": "Android: instalada con Chrome, así que también está en el cajón de aplicaciones.",
+  "banner.checkForAppUpdate": "Buscar actualizaciones de la app",
+  "banner.checkingForAppUpdate": "Buscando…",
+  "banner.appIsCurrent": "Tu aplicación está actualizada."
 }
