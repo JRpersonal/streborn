@@ -178,7 +178,7 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		}
 		hctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		conn := tls.Client(raw, clockTolerantTLSConfig(host))
+		conn := tls.Client(raw, clockTolerantTLSConfig(host, logger))
 		if err := conn.HandshakeContext(hctx); err != nil {
 			_ = raw.Close()
 			return nil, err
