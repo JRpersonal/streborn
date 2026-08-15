@@ -807,7 +807,25 @@ function scrollSafeSlider(el, send, label) {
 // baseline also survives the ends: members that run into 0 or 100 would
 // otherwise lose their spacing for good, whereas from a baseline, returning the
 // slider to where it was restores exactly the levels the user dialled in.
-var grpVol = { base: {}, at: null };
+var grpVol = { base: {}, at: null, want: {}, sentAt: 0 };
+
+// grpVolSettling reports whether our own writes are still on their way to the
+// speakers. A refresh landing inside this window carries levels from BEFORE
+// those writes, so anything it says about the group is out of date.
+var GRP_VOL_SETTLE_MS = 1500;
+function grpVolSettling() { return Date.now() - grpVol.sentAt < GRP_VOL_SETTLE_MS; }
+
+// grpVolChangedElsewhere reports whether a member sits at a level we did not
+// ask for, which is the only reason to throw the captured balance away. A
+// member we never wrote to does not count: it has no requested value to
+// disagree with.
+function grpVolChangedElsewhere() {
+  return (zone.members || []).some(function(m){
+    if (!m.ip || typeof m.volume !== 'number' || m.volume < 0) return false;
+    var want = grpVol.want[m.ip];
+    return typeof want === 'number' && Math.abs(m.volume - want) > 1;
+  });
+}
 
 function captureGroupBaseline(anchor) {
   grpVol.base = {};
@@ -822,10 +840,12 @@ function volSend(v) {
   if (volScope === 'one' || !zone.grouped) { api('/api/box/volume', 'PUT', { value: +v }); return; }
   if (grpVol.at === null) captureGroupBaseline(+v);
   var delta = +v - grpVol.at;
+  grpVol.sentAt = Date.now();
   (zone.members || []).forEach(function(m){
     if (!m.ip) return;
     var base = (typeof grpVol.base[m.ip] === 'number') ? grpVol.base[m.ip] : +v;
     var want = Math.max(0, Math.min(100, Math.round(base + delta)));
+    grpVol.want[m.ip] = want;
     api('/api/box/zone/volume', 'POST', { ip: m.ip, value: want });
   });
 }
@@ -1936,9 +1956,21 @@ async function loadZone() {
   // A member changed on its own (or from another phone) makes the captured
   // balance stale: re-anchor so the next group move offsets from what is
   // actually set, the way setMemberVolume does on the desktop.
-  if (grpVol.at !== null && memberDragging === null) grpVol.at = null;
+  //
+  // Only for a change we did not make. This used to re-anchor on EVERY
+  // refresh, which meant a poll landing mid-drag re-anchored from levels our
+  // own writes had already moved. Each following drag event then measured its
+  // offset from a moved baseline and gave away most of the travel: dragging to
+  // 53 across five speakers arrived at 39 (live 2026-08-15). While our writes
+  // are still settling, this refresh knows less than we do.
+  if (grpVol.at !== null && memberDragging === null && !grpVolSettling() && grpVolChangedElsewhere()) {
+    grpVol.at = null;
+    grpVol.want = {};
+  }
   var shown = (typeof z.loudest === 'number' && z.loudest >= 0) ? z.loudest : z.average;
-  if (volScope !== 'one' && typeof shown === 'number' && shown >= 0) {
+  // Same reason: pulling the thumb back to a pre-write level mid-gesture is
+  // what the finger feels as the slider fighting back.
+  if (volScope !== 'one' && typeof shown === 'number' && shown >= 0 && !grpVolSettling()) {
     var el = document.getElementById('vol');
     if (el) { el.value = shown; document.getElementById('volval').textContent = shown; volLast = shown; }
   }
