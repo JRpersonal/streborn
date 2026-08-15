@@ -1047,7 +1047,12 @@ function renderAppUpdateCheckLink(banner, note) {
   if (!banner) return;
   banner.classList.add('app-update-quiet');
   banner.classList.remove('hidden');
-  banner.innerHTML = `<a href="#" id="appUpdateCheckLink" class="footer-link">${escapeHtml(t('banner.checkForAppUpdate'))}</a>`
+  // Name the version next to the link. On its own the link was a stray line
+  // above everything else with nothing to explain why it was there; with the
+  // installed version in front of it, the line says what it is about.
+  const cur = (state.appInfo && state.appInfo.version) ? String(state.appInfo.version) : '';
+  banner.innerHTML = (cur ? `<span class="app-update-quiet-ver">${escapeHtml(t('setup.versionLabel', { version: cur }))}</span>` : '')
+    + `<a href="#" id="appUpdateCheckLink" class="footer-link">${escapeHtml(t('banner.checkForAppUpdate'))}</a>`
     + (note ? `<span class="app-update-quiet-note">${escapeHtml(note)}</span>` : '');
   const link = $('appUpdateCheckLink');
   if (link) link.onclick = (e) => {

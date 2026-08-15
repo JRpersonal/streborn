@@ -120,10 +120,14 @@ body {
 }
 .donate-side {
   position: fixed;
-  left: 10px;
+  left: 0.625rem;
   top: 50%;
   transform: translateY(-50%);
-  width: 160px;
+  /* rem, not px: at a larger text size the same words need more room, and a
+     fixed 160px made the buttons spill out of the panel and over the column
+     (reported for "Large" and "Extra Large", discussion #597). */
+  width: 10rem;
+  box-sizing: border-box;
   padding: 14px 10px;
   display: flex;
   flex-direction: column;
@@ -258,8 +262,16 @@ body {
    margin on each side, and about a hundred left over for scrollbars, zoom and
    whatever the platform adds. Below that the footer donate link carries it. */
 .donate-side { display: none; }
-@media (min-width: 1200px) {
+/* The rail is an overlay, so nothing used to stop the centred column sliding
+   under it; the 1200px threshold was the margin that made that unlikely rather
+   than impossible. Now the layout RESERVES the rail's width, so an overlap
+   cannot happen and the rail fits a much smaller window. That matters because
+   it disappeared as soon as the window was pulled down to its minimum.
+   Threshold and widths are in em/rem, so both grow with the text size instead
+   of leaving the same pixels to hold larger words. */
+@media (min-width: 62em) {
   .donate-side { display: flex; }
+  .layout { padding-left: 11.5rem; }
 }
 
 /* Share modal: one tile per platform. Each tile opens the browser share on this
@@ -2000,9 +2012,13 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
   border: none;
   box-shadow: none;
   animation: none;
+  /* Aligned with the content column rather than flush against the window
+     edge, where it read as a stray line above the page. */
   padding: 6px 18px;
-  justify-content: flex-end;
-  gap: 10px;
+  max-width: 720px;
+  margin: 0 auto;
+  justify-content: flex-start;
+  gap: 8px;
   font-size: 12px;
 }
 .app-update-banner.app-update-quiet .footer-link { font-size: 12px; }

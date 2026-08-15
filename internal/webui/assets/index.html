@@ -126,6 +126,11 @@ button.btn.armed { border-color:var(--accent); color:var(--accent); font-weight:
 .joinbtn { border-color:var(--accent); color:var(--accent); }
 .leavebtn { width:38px; font-size:20px; color:var(--muted); margin-left:auto; }
 .joinbtn[disabled], .leavebtn[disabled] { opacity:.55; }
+/* Inside the group card the button carries the speaker's name, so it needs to
+   size to its text instead of the 46px square used next to a peer row. */
+.joinbtn-named { width:auto; padding:0 12px; font-size:14px; height:38px; }
+#groupAdd { gap:8px; flex-wrap:wrap; margin-top:10px; }
+#groupAdd:empty { display:none; }
 button.btn:active { background:var(--press); }
 @media (hover:hover) { button.btn:hover, a.btn:hover { background:var(--hover); } .preset:hover { background:var(--hover); } }
 .volrock .volstep { flex-shrink:0; padding:6px 12px; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
@@ -453,6 +458,7 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <div class="sum" id="groupSum"></div>
 <div class="msg" id="groupNote" hidden></div>
 <div id="members"></div>
+<div class="row" id="groupAdd"></div>
 <button class="btn" id="btnUngroup" style="width:100%;margin-top:12px"><span id="lblUngroup">Dissolve group</span></button>
 </div>
 
@@ -1564,6 +1570,9 @@ async function loadPeers() {
   // step; until then this 404s and the section stays hidden.
   const list = await api('/api/peers');
   peersList = list || [];
+  // The group card offers the joinable ones too, so it has to follow a peer
+  // appearing or going away.
+  try { renderGroupAdd(); } catch (e) {}
   renderDevMenu();
   // A home with one speaker gets three tabs, not four. A tab that can only ever
   // say "there is nothing here" is worse than no tab: it invites a tap, answers
@@ -1839,6 +1848,37 @@ function applyScopeUI() {
   });
 })();
 
+// renderGroupAdd offers the speakers that could still join, inside the group
+// card itself.
+//
+// Adding one was only possible from the "other speakers" card further down the
+// page, which is where you go to CONTROL another speaker. Somebody looking at
+// their group and wanting a third room in it had no reason to scroll past it,
+// so the group looked closed. Each member row already carries a minus to drop
+// it; this is the other half of that pair.
+//
+// It reuses joinPeer and canJoinPeer, so the rules about stereo pairs and
+// followers hold here without being restated.
+function renderGroupAdd() {
+  var box = document.getElementById('groupAdd');
+  if (!box) return;
+  var joinable = (peersList || []).filter(canJoinPeer);
+  var want = joinable.map(function(p){ return p.ip; }).join(',');
+  if (box.getAttribute('data-ips') === want) return;
+  box.setAttribute('data-ips', want);
+  box.innerHTML = '';
+  joinable.forEach(function(p){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn joinbtn joinbtn-named';
+    b.textContent = '+ ' + (p.name || p.ip || '');
+    b.title = T.joinTitle || 'Play together';
+    b.setAttribute('aria-label', fmt(T.joinAria || 'Add {{name}} to the group', { name: p.name || p.ip || '' }));
+    b.addEventListener('click', function(){ joinPeer(p, b); });
+    box.appendChild(b);
+  });
+}
+
 // renderMembers builds the rows once and afterwards only writes values into
 // them. Rebuilding the DOM on every poll tears a slider out from under a
 // finger mid-drag, which on the phones this project serves is the difference
@@ -1941,6 +1981,7 @@ async function loadZone() {
   var lblUn = document.getElementById('lblUngroup');
   if (lblUn) lblUn.textContent = zone.stereo ? T.unpair : T.ungroup;
   renderMembers();
+  renderGroupAdd();
   // Dissolving is a DELETE against the MASTER, and a follower cannot reach a
   // sibling from this page. Rather than offering a button that would fail,
   // a follower is told where the group can be taken apart.

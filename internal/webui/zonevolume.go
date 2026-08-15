@@ -27,6 +27,7 @@ import (
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/zones"
+	"strings"
 )
 
 // zoneMemberVolume is one speaker of the group as the phone page sees it.
@@ -158,6 +159,17 @@ func (s *Server) storedGroupIsLive() bool {
 
 func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
 	members, grouped, stereo := s.groupMembers()
+	// The firmware outranks the stored document. A speaker that follows
+	// somebody else reports THAT group, whether or not it has a document of
+	// its own, and a stale document claiming leadership is overruled.
+	if !stereo {
+		lctx, lcancel := context.WithTimeout(r.Context(), 3*time.Second)
+		live, isFollower := s.liveGroupView(lctx)
+		lcancel()
+		if isFollower {
+			members, grouped = live, true
+		}
+	}
 	// A stereo pair is NOT a zone. It is a firmware group created with
 	// /addGroup, and /getZone answers <zone /> for a perfectly healthy pair, so
 	// the liveness check below must never be applied to one: doing so reported
@@ -278,4 +290,95 @@ func (s *Server) zoneVolumeSet(w http.ResponseWriter, r *http.Request) {
 		"ok": len(failed) == 0, "value": req.Value,
 		"changed": len(targets) - len(failed), "failed": failed,
 	})
+}
+
+// The two firmware reads liveGroupView makes, behind seams. boxapi pins port
+// 8090, which a test cannot serve, and the same swap is what the other box
+// tests in this package use.
+var (
+	fetchZone = func(ctx context.Context, host string) (boxapi.Zone, error) {
+		return boxapi.New(host).GetZone(ctx)
+	}
+	fetchDeviceID = func(ctx context.Context, host string) string {
+		info, err := boxapi.New(host).GetInfo(ctx)
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(info.DeviceID)
+	}
+)
+
+// liveGroupView reports the group this speaker is actually in, as seen by the
+// speaker that leads it, or false when this speaker is not following anybody.
+//
+// Why it exists. groupMembers reads the STORED zone document, which only the
+// speaker that FORMED the group has. That produced three different answers to
+// the same question on one fleet (live 2026-08-15, five speakers in one group
+// led by the Portable):
+//
+//   the leader          reported the group correctly
+//   a speaker holding a stale document from an earlier session claimed to
+//                       LEAD a group somebody else leads, listing itself as
+//                       master while playing as a follower
+//   the other three     reported "not grouped" while playing the group's music
+//
+// The firmware knows better on every one of them: a follower's own /getZone
+// carries the real master's deviceID and, in senderIPAddress, the address to
+// reach it at. So the leader is asked for the member list and every speaker
+// answers with the same group.
+//
+// senderIsMaster is deliberately not consulted. It reads "true" on a follower
+// on these chassis, which is exactly the trap that made a follower look like a
+// leader in the first place; the deviceIDs are unambiguous.
+func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool) {
+	if s.boxHost == "" {
+		return nil, false
+	}
+	live, err := fetchZone(ctx, s.boxHost)
+	if err != nil || strings.TrimSpace(live.Master) == "" {
+		return nil, false
+	}
+	ownID := fetchDeviceID(ctx, s.boxHost)
+	if ownID == "" || strings.EqualFold(ownID, strings.TrimSpace(live.Master)) {
+		// We lead it, or the speaker cannot say who it is. Either way the
+		// stored document is the better source and the caller keeps it.
+		return nil, false
+	}
+	masterIP := strings.TrimSpace(live.SenderIP)
+	if masterIP == "" {
+		return nil, false
+	}
+	mz, err := fetchZone(ctx, masterIP)
+	if err != nil {
+		// The leader is not answering. Report what is certain: this speaker
+		// follows, and who it follows. A short list beats "not grouped" while
+		// the group's music is playing.
+		return []zoneMemberVolume{
+			{Name: s.peerName(zones.Member{IP: masterIP}), IP: masterIP, DeviceID: live.Master, IsMaster: true, Volume: -1},
+			{Name: s.groupSelfName(zones.Zone{}), IP: s.boxHost, DeviceID: ownID, IsSelf: true, Volume: -1},
+		}, true
+	}
+	// The leader lists its followers, not itself, so it is added first.
+	out := []zoneMemberVolume{{
+		Name: s.peerName(zones.Member{IP: masterIP}), IP: masterIP, DeviceID: live.Master,
+		IsMaster: true, Volume: -1,
+	}}
+	for _, m := range mz.Members {
+		if strings.TrimSpace(m.IP) == "" {
+			continue
+		}
+		self := ownID != "" && strings.EqualFold(strings.TrimSpace(m.DeviceID), ownID)
+		ip := m.IP
+		name := s.peerName(zones.Member{IP: m.IP})
+		if self {
+			// Talk to ourselves over the loopback the rest of this file uses,
+			// and use the name this speaker calls itself.
+			ip = s.boxHost
+			name = s.groupSelfName(zones.Zone{})
+		}
+		out = append(out, zoneMemberVolume{
+			Name: name, IP: ip, DeviceID: m.DeviceID, Role: m.Role, IsSelf: self, Volume: -1,
+		})
+	}
+	return out, true
 }
