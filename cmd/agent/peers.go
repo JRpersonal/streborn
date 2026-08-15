@@ -251,22 +251,8 @@ func probeStalePeers(logger *slog.Logger) {
 		return
 	}
 	peersProbing = true
-	type cand struct {
-		ip   string
-		seen time.Time
-	}
-	var stale []cand
-	now := time.Now()
-	for ip, e := range peersByIP {
-		if now.Sub(e.lastSeen) > 30*time.Second {
-			stale = append(stale, cand{ip: ip, seen: e.lastSeen})
-		}
-	}
+	stale := probeCandidatesLocked()
 	peersMu.Unlock()
-	sort.Slice(stale, func(i, j int) bool { return stale[i].seen.Before(stale[j].seen) })
-	if len(stale) > 8 {
-		stale = stale[:8]
-	}
 	go func() {
 		defer func() {
 			peersMu.Lock()
@@ -274,7 +260,7 @@ func probeStalePeers(logger *slog.Logger) {
 			peersMu.Unlock()
 		}()
 		for _, c := range stale {
-			port := reachableWebPort(c.ip)
+			port := reachableWebPort(c)
 			if port == 0 {
 				continue
 			}
@@ -286,12 +272,18 @@ func probeStalePeers(logger *slog.Logger) {
 			// where a name belongs (#494, seen live 2026-07-28).
 			var friendly string
 			peersMu.Lock()
-			if e := peersByIP[c.ip]; e != nil && placeholderPeerName(e.name) {
+			// An EMPTY name counts too, and used to be the worse case of the
+			// two: a nameless entry is skipped by the listing further down, so
+			// the speaker was not merely shown badly, it was not shown at all,
+			// and nothing ever came back to fix it. Live on 2026-08-15: after a
+			// reboot one speaker restored five peers from NAND and offered four,
+			// and the missing one was up, reachable and named the whole time.
+			if e := peersByIP[c]; e != nil && (e.name == "" || placeholderPeerName(e.name)) {
 				peersMu.Unlock()
-				friendly = peerFriendlyName(c.ip)
+				friendly = peerFriendlyName(c)
 				peersMu.Lock()
 			}
-			if e := peersByIP[c.ip]; e != nil {
+			if e := peersByIP[c]; e != nil {
 				e.lastSeen = time.Now()
 				e.reachable = true
 				e.port = port
@@ -615,4 +607,37 @@ func dialable(ip string, port int) bool {
 		}
 	}
 	return false
+}
+
+// probeCandidates picks the peers worth asking. A nameless one is included
+// whatever its age: the listing skips an entry with no name, and this is the
+// only path that ever learns one, so leaving it out hides the speaker for good.
+// Capped, because this runs on a speaker with 120 MB of RAM.
+func probeCandidates() []string {
+	peersMu.Lock()
+	defer peersMu.Unlock()
+	return probeCandidatesLocked()
+}
+
+func probeCandidatesLocked() []string {
+	type cand struct {
+		ip   string
+		seen time.Time
+	}
+	var out []cand
+	now := time.Now()
+	for ip, e := range peersByIP {
+		if e.name == "" || now.Sub(e.lastSeen) > 30*time.Second {
+			out = append(out, cand{ip: ip, seen: e.lastSeen})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].seen.Before(out[j].seen) })
+	if len(out) > 8 {
+		out = out[:8]
+	}
+	ips := make([]string, 0, len(out))
+	for _, c := range out {
+		ips = append(ips, c.ip)
+	}
+	return ips
 }
