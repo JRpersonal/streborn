@@ -230,6 +230,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			}
 			if json.Unmarshal(ev.Data, &wp) == nil && wp.ContextURI != "" {
 				m.mu.Lock()
+				prevContext := m.lastContext
 				changed := m.lastContext != "" && wp.ContextURI != m.lastContext
 				m.lastContext = wp.ContextURI
 				if changed {
@@ -240,7 +241,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 				}
 				m.mu.Unlock()
 				if changed {
-					m.repointBox()
+					m.repointBox(prevContext, wp.ContextURI)
 				}
 			}
 		case "metadata":

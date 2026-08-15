@@ -475,7 +475,7 @@ func (m *Manager) maybeActivate() {
 // repointBox re-points the box at the Spotify stream even if it is already
 // attached, so a playlist switch from the app flushes the box buffer and plays
 // the new stream promptly. Debounced and shares lastActivate with maybeActivate.
-func (m *Manager) repointBox() {
+func (m *Manager) repointBox(from, to string) {
 	m.mu.Lock()
 	cb := m.onActivate
 	if cb == nil || time.Since(m.lastActivate) < 5*time.Second ||
@@ -499,6 +499,14 @@ func (m *Manager) repointBox() {
 		m.engineHotUntil = t
 	}
 	m.mu.Unlock()
-	m.logger.Info("spotify: playlist context changed, re-pointing box to play the new stream")
+	// Name both contexts. This re-point tears the box's Ogg fetch down and
+	// opens a new one, which the listener hears as the next song arriving
+	// abruptly, so the first question about it is always "switched from what
+	// to what?" and the line could not answer it. A generated radio playlist
+	// running out and Spotify continuing under an autoplay context looks
+	// identical here to somebody picking a new playlist in the app; the two
+	// URIs tell them apart (live 2026-08-15 17:40:52).
+	m.logger.Info("spotify: playlist context changed, re-pointing box to play the new stream",
+		"fromContext", from, "toContext", to)
 	go cb(context.Background())
 }
