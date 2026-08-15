@@ -14,6 +14,7 @@ import (
 
 	"github.com/JRpersonal/streborn/dlna"
 	"github.com/JRpersonal/streborn/sticksetup"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App is the central state struct.
@@ -178,6 +179,75 @@ func (a *App) startup(ctx context.Context) {
 		"build", appBuild,
 		"logFile", LogFilePath(),
 		"agentbinAvailable", agentbin.Available())
+	a.fitWindowToScreen()
+}
+
+// fitWindowToScreen keeps the title bar reachable.
+//
+// The configured window size is in device-independent pixels, and a scaled
+// display has far fewer of them than its resolution suggests: 1920x1080 at
+// 150% leaves 1280x720, minus the taskbar. A window taller than that, centred
+// by the platform, ends up with its top edge above the screen, and then it
+// cannot be dragged, moved or maximised, because the bar you would grab is
+// off-screen (live 2026-08-15, caused by raising the default height to 820).
+//
+// So the window is measured against the screen it is on and, when it does not
+// fit, shrunk to fit and pinned to the top edge. Pinning to the top rather
+// than centring is deliberate: losing a strip at the bottom costs content,
+// losing the strip at the top costs control of the window.
+//
+// Entirely best-effort. A screen the runtime cannot report leaves the window
+// exactly as the platform placed it.
+func (a *App) fitWindowToScreen() {
+	defer func() {
+		if r := recover(); r != nil {
+			a.logger.Warn("could not fit the window to the screen", "panic", r)
+		}
+	}()
+	screens, err := runtime.ScreenGetAll(a.ctx)
+	if err != nil || len(screens) == 0 {
+		return
+	}
+	screen := screens[0]
+	for _, s := range screens {
+		if s.IsCurrent {
+			screen = s
+			break
+		}
+	}
+	if screen.Width <= 0 || screen.Height <= 0 {
+		return
+	}
+	w, h := runtime.WindowGetSize(a.ctx)
+	// Leave room for the taskbar and the window frame. ScreenGetAll reports
+	// the full screen rather than the work area, and on Windows it reports
+	// PHYSICAL pixels while the window is sized in device-independent ones,
+	// so on a scaled display this comparison is generous and the shrink
+	// rarely triggers. The pinning below is what actually saves the window
+	// there, which is why the opening height is kept modest as well.
+	const chrome = 80
+	maxH := screen.Height - chrome
+	maxW := screen.Width
+	newW, newH := w, h
+	if newH > maxH {
+		newH = maxH
+	}
+	if newW > maxW {
+		newW = maxW
+	}
+	if newW != w || newH != h {
+		runtime.WindowSetSize(a.ctx, newW, newH)
+		a.logger.Info("window shrunk to fit the screen",
+			"screenW", screen.Width, "screenH", screen.Height,
+			"fromW", w, "fromH", h, "toW", newW, "toH", newH)
+	}
+	x, _ := runtime.WindowGetPosition(a.ctx)
+	if x < 0 {
+		x = 0
+	}
+	// Top edge on the screen edge, always. This is the whole point of the
+	// function: the title bar has to be grabbable.
+	runtime.WindowSetPosition(a.ctx, x, 0)
 }
 
 // LogClientError records an error the frontend caught (a global

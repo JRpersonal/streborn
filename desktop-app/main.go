@@ -80,10 +80,15 @@ func main() {
 		// below its own threshold, so a fresh install never showed the rail at
 		// all and users only met it after widening the window by hand
 		// (discussion #597).
+		// The minimums stay well below the opening size. A minimum is a trap
+		// on a scaled display, where 1920x1080 at 150% leaves 1280x720 device
+		// independent pixels: a window that cannot be made smaller than the
+		// screen cannot be moved back onto it either. fitWindowToScreen in
+		// app.go is the second half of this, and pins the top edge.
 		Width:     1240,
-		Height:    820,
-		MinWidth:  1200,
-		MinHeight: 720,
+		Height:    740,
+		MinWidth:  1000,
+		MinHeight: 600,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
