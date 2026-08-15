@@ -126,6 +126,11 @@ button.btn.armed { border-color:var(--accent); color:var(--accent); font-weight:
 .joinbtn { border-color:var(--accent); color:var(--accent); }
 .leavebtn { width:38px; font-size:20px; color:var(--muted); margin-left:auto; }
 .joinbtn[disabled], .leavebtn[disabled] { opacity:.55; }
+/* Inside the group card the button carries the speaker's name, so it needs to
+   size to its text instead of the 46px square used next to a peer row. */
+.joinbtn-named { width:auto; padding:0 12px; font-size:14px; height:38px; }
+#groupAdd { gap:8px; flex-wrap:wrap; margin-top:10px; }
+#groupAdd:empty { display:none; }
 button.btn:active { background:var(--press); }
 @media (hover:hover) { button.btn:hover, a.btn:hover { background:var(--hover); } .preset:hover { background:var(--hover); } }
 .volrock .volstep { flex-shrink:0; padding:6px 12px; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
@@ -453,6 +458,7 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <div class="sum" id="groupSum"></div>
 <div class="msg" id="groupNote" hidden></div>
 <div id="members"></div>
+<div class="row" id="groupAdd"></div>
 <button class="btn" id="btnUngroup" style="width:100%;margin-top:12px"><span id="lblUngroup">Dissolve group</span></button>
 </div>
 
@@ -807,7 +813,25 @@ function scrollSafeSlider(el, send, label) {
 // baseline also survives the ends: members that run into 0 or 100 would
 // otherwise lose their spacing for good, whereas from a baseline, returning the
 // slider to where it was restores exactly the levels the user dialled in.
-var grpVol = { base: {}, at: null };
+var grpVol = { base: {}, at: null, want: {}, sentAt: 0 };
+
+// grpVolSettling reports whether our own writes are still on their way to the
+// speakers. A refresh landing inside this window carries levels from BEFORE
+// those writes, so anything it says about the group is out of date.
+var GRP_VOL_SETTLE_MS = 1500;
+function grpVolSettling() { return Date.now() - grpVol.sentAt < GRP_VOL_SETTLE_MS; }
+
+// grpVolChangedElsewhere reports whether a member sits at a level we did not
+// ask for, which is the only reason to throw the captured balance away. A
+// member we never wrote to does not count: it has no requested value to
+// disagree with.
+function grpVolChangedElsewhere() {
+  return (zone.members || []).some(function(m){
+    if (!m.ip || typeof m.volume !== 'number' || m.volume < 0) return false;
+    var want = grpVol.want[m.ip];
+    return typeof want === 'number' && Math.abs(m.volume - want) > 1;
+  });
+}
 
 function captureGroupBaseline(anchor) {
   grpVol.base = {};
@@ -822,10 +846,16 @@ function volSend(v) {
   if (volScope === 'one' || !zone.grouped) { api('/api/box/volume', 'PUT', { value: +v }); return; }
   if (grpVol.at === null) captureGroupBaseline(+v);
   var delta = +v - grpVol.at;
+  grpVol.sentAt = Date.now();
   (zone.members || []).forEach(function(m){
     if (!m.ip) return;
-    var base = (typeof grpVol.base[m.ip] === 'number') ? grpVol.base[m.ip] : +v;
+    // Fall back to the ANCHOR, not to the slider's current value. A member
+    // that reported -1 (standby, waking, busy) has no baseline, and using the
+    // live value there added the whole drag on top of itself and sent that one
+    // speaker toward 100 while the others moved by the delta.
+    var base = (typeof grpVol.base[m.ip] === 'number') ? grpVol.base[m.ip] : grpVol.at;
     var want = Math.max(0, Math.min(100, Math.round(base + delta)));
+    grpVol.want[m.ip] = want;
     api('/api/box/zone/volume', 'POST', { ip: m.ip, value: want });
   });
 }
@@ -1239,13 +1269,42 @@ async function loadPresets() {
 // "Starting..." status) so the user sees the press land, then confirms via the
 // existing 5s status poll. No extra box request beyond the play + one refresh,
 // so it adds no polling load on the speaker.
+// pendingStart holds the tapped key highlighted until the speaker confirms it
+// or until it is clear the stream never came up.
+//
+// The highlight follows what the SPEAKER reports, and a speaker reports the
+// PREVIOUS station until the new stream actually starts. The first status poll
+// therefore took the frame straight back off the key the user had just
+// pressed, a second after pressing it, and put it back several seconds later
+// when the audio arrived. What the user saw was the press being rejected.
+//
+// Twenty seconds is deliberately generous: an https station that has to be
+// resolved, connected and buffered takes a few seconds on this hardware, and
+// nothing is lost by waiting longer before calling it a failure. If the
+// speaker never gets there, the frame comes off AND the reason is said out
+// loud, which is the case that was silent before.
+var pendingStart = { slot: 0, until: 0 };
+var PENDING_START_MS = 20000;
+
+function clearPendingStart() { pendingStart = { slot: 0, until: 0 }; }
+
 async function playSlot(n, tile, name) {
   document.querySelectorAll('.preset.active').forEach(function(e){ e.classList.remove('active'); });
   if (tile) tile.classList.add('active');
   setNow((name ? T.starting + ' ' + name : T.starting), T.pleaseWait);
+  pendingStart = { slot: n, until: Date.now() + PENDING_START_MS };
   const r = await api('/api/play/' + n, 'POST');
-  if (r) { setTimeout(refreshStatus, 1200); setTimeout(refreshStatus, 3000); }
-  else { setNow(T.cantStart, T.tapAgain); if (tile) tile.classList.remove('active'); }
+  if (r) {
+    // Poll across the whole window rather than twice at the start: the point
+    // is to notice the moment the stream arrives, whenever that is.
+    [1200, 3000, 6000, 10000, 15000, PENDING_START_MS + 1000].forEach(function(ms){
+      setTimeout(refreshStatus, ms);
+    });
+  } else {
+    clearPendingStart();
+    setNow(T.cantStart, T.tapAgain);
+    if (tile) tile.classList.remove('active');
+  }
 }
 
 // currentSong returns the live ICY title of the running stream, or ''.
@@ -1312,6 +1371,16 @@ function markPlaying(loc) {
   var grid = document.getElementById('presets');
   if (!grid) return;
   var n = playingSlot(loc, lastPresetList);
+  if (pendingStart.slot) {
+    if (n === pendingStart.slot) {
+      clearPendingStart(); // the speaker got there
+    } else if (Date.now() < pendingStart.until) {
+      n = pendingStart.slot; // still on its way, keep the press visible
+    } else {
+      clearPendingStart();
+      setNow(T.cantStart, T.tapAgain); // it never started, and now it says so
+    }
+  }
   var tiles = grid.querySelectorAll('.preset');
   for (var i = 0; i < tiles.length; i++) {
     if (i + 1 === n) tiles[i].classList.add('active');
@@ -1544,6 +1613,9 @@ async function loadPeers() {
   // step; until then this 404s and the section stays hidden.
   const list = await api('/api/peers');
   peersList = list || [];
+  // The group card offers the joinable ones too, so it has to follow a peer
+  // appearing or going away.
+  try { renderGroupAdd(); } catch (e) {}
   renderDevMenu();
   // A home with one speaker gets three tabs, not four. A tab that can only ever
   // say "there is nothing here" is worse than no tab: it invites a tap, answers
@@ -1819,6 +1891,37 @@ function applyScopeUI() {
   });
 })();
 
+// renderGroupAdd offers the speakers that could still join, inside the group
+// card itself.
+//
+// Adding one was only possible from the "other speakers" card further down the
+// page, which is where you go to CONTROL another speaker. Somebody looking at
+// their group and wanting a third room in it had no reason to scroll past it,
+// so the group looked closed. Each member row already carries a minus to drop
+// it; this is the other half of that pair.
+//
+// It reuses joinPeer and canJoinPeer, so the rules about stereo pairs and
+// followers hold here without being restated.
+function renderGroupAdd() {
+  var box = document.getElementById('groupAdd');
+  if (!box) return;
+  var joinable = (peersList || []).filter(canJoinPeer);
+  var want = joinable.map(function(p){ return p.ip; }).join(',');
+  if (box.getAttribute('data-ips') === want) return;
+  box.setAttribute('data-ips', want);
+  box.innerHTML = '';
+  joinable.forEach(function(p){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn joinbtn joinbtn-named';
+    b.textContent = '+ ' + (p.name || p.ip || '');
+    b.title = T.joinTitle || 'Play together';
+    b.setAttribute('aria-label', fmt(T.joinAria || 'Add {{name}} to the group', { name: p.name || p.ip || '' }));
+    b.addEventListener('click', function(){ joinPeer(p, b); });
+    box.appendChild(b);
+  });
+}
+
 // renderMembers builds the rows once and afterwards only writes values into
 // them. Rebuilding the DOM on every poll tears a slider out from under a
 // finger mid-drag, which on the phones this project serves is the difference
@@ -1921,6 +2024,7 @@ async function loadZone() {
   var lblUn = document.getElementById('lblUngroup');
   if (lblUn) lblUn.textContent = zone.stereo ? T.unpair : T.ungroup;
   renderMembers();
+  renderGroupAdd();
   // Dissolving is a DELETE against the MASTER, and a follower cannot reach a
   // sibling from this page. Rather than offering a button that would fail,
   // a follower is told where the group can be taken apart.
@@ -1936,9 +2040,21 @@ async function loadZone() {
   // A member changed on its own (or from another phone) makes the captured
   // balance stale: re-anchor so the next group move offsets from what is
   // actually set, the way setMemberVolume does on the desktop.
-  if (grpVol.at !== null && memberDragging === null) grpVol.at = null;
+  //
+  // Only for a change we did not make. This used to re-anchor on EVERY
+  // refresh, which meant a poll landing mid-drag re-anchored from levels our
+  // own writes had already moved. Each following drag event then measured its
+  // offset from a moved baseline and gave away most of the travel: dragging to
+  // 53 across five speakers arrived at 39 (live 2026-08-15). While our writes
+  // are still settling, this refresh knows less than we do.
+  if (grpVol.at !== null && memberDragging === null && !grpVolSettling() && grpVolChangedElsewhere()) {
+    grpVol.at = null;
+    grpVol.want = {};
+  }
   var shown = (typeof z.loudest === 'number' && z.loudest >= 0) ? z.loudest : z.average;
-  if (volScope !== 'one' && typeof shown === 'number' && shown >= 0) {
+  // Same reason: pulling the thumb back to a pre-write level mid-gesture is
+  // what the finger feels as the slider fighting back.
+  if (volScope !== 'one' && typeof shown === 'number' && shown >= 0 && !grpVolSettling()) {
     var el = document.getElementById('vol');
     if (el) { el.value = shown; document.getElementById('volval').textContent = shown; volLast = shown; }
   }

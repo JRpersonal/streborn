@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "<b>Yükle</b> ile onayla.",
   "settingsView.phoneAndroidNote": "Bazı kameralar bağlantıyı başka bir tarayıcıda açar. Kurulumu yalnızca Chrome sunar.",
   "settingsView.phoneShotIos": "iPhone: kendi simgesi, tarayıcı çubuğu olmadan açılır.",
-  "settingsView.phoneShotAndroid": "Android: Chrome ile kurulur, uygulama çekmecesinde de görünür."
+  "settingsView.phoneShotAndroid": "Android: Chrome ile kurulur, uygulama çekmecesinde de görünür.",
+  "banner.checkForAppUpdate": "Uygulama güncellemelerini denetle",
+  "banner.checkingForAppUpdate": "Denetleniyor…",
+  "banner.appIsCurrent": "Uygulamanız güncel."
 }

@@ -7,6 +7,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -37,7 +39,7 @@ func clockUntrustworthy() bool { return time.Now().Before(minPlausibleClock) }
 // weaken MITM protection. host is passed explicitly (not read from
 // ConnectionState.ServerName) so a bare-IP upstream, which sends no SNI, is
 // still verified against the certificate's IP SANs.
-func clockTolerantTLSConfig(host string) *tls.Config {
+func clockTolerantTLSConfig(host string, logger *slog.Logger) *tls.Config {
 	return &tls.Config{
 		ServerName: host, // SNI for a hostname; ignored on the wire for an IP literal
 		// h2 stays available (DialTLSContext otherwise defaults to HTTP/1.1 only).
@@ -47,9 +49,49 @@ func clockTolerantTLSConfig(host string) *tls.Config {
 		InsecureSkipVerify: true, //nolint:gosec // VerifyConnection re-implements chain+host verification below.
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			roots, _ := x509.SystemCertPool()
-			return verifyChainClockTolerant(cs.PeerCertificates, host, roots, time.Now(), clockUntrustworthy())
+			err := verifyChainClockTolerant(cs.PeerCertificates, host, roots, time.Now(), clockUntrustworthy())
+			if err != nil {
+				logRejectedChain(logger, host, cs.PeerCertificates, roots, err)
+			}
+			return err
 		},
 	}
+}
+
+// logRejectedChain records WHICH certificate a rejected station presented.
+//
+// Without it, "x509: certificate signed by unknown authority" is the same
+// sentence whatever the cause, and a support bundle cannot tell three very
+// different situations apart:
+//
+//   - the speaker is missing one specific certificate authority (a support
+//     case where two stations under DigiCert Global Root G2 failed while a
+//     station under Amazon Root CA 1 played on the same box, same minute),
+//   - the speaker's trust store is broken as a whole,
+//   - something on the owner's network hands out its own certificate, in
+//     which case no change we ship will ever help and we should stop trying.
+//
+// The issuer name on the failure line separates all three. Failure path only,
+// so a healthy speaker pays nothing.
+func logRejectedChain(logger *slog.Logger, host string, certs []*x509.Certificate, roots *x509.CertPool, cause error) {
+	if logger == nil || len(certs) == 0 {
+		return
+	}
+	chain := make([]string, 0, len(certs))
+	for _, c := range certs {
+		chain = append(chain, c.Subject.CommonName+" <- "+c.Issuer.CommonName)
+	}
+	poolSize := -1 // -1 = the system pool was unavailable, which is itself the finding
+	if roots != nil {
+		poolSize = len(roots.Subjects()) //nolint:staticcheck // the only way to count a pool, failure path only
+	}
+	logger.Warn("this speaker refused a station's certificate, here is what the station presented",
+		"host", host,
+		"leaf", certs[0].Subject.CommonName,
+		"issuer", certs[0].Issuer.CommonName,
+		"chain", strings.Join(chain, " | "),
+		"rootsInPool", poolSize,
+		"reason", cause.Error())
 }
 
 // verifyChainClockTolerant verifies leaf (certs[0]) against roots and host at

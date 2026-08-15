@@ -70,9 +70,25 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "ST Reborn " + appVersion,
-		Width:  1100,
-		Height: 780,
+		Title: "ST Reborn " + appVersion,
+		// The window opens wide enough for the donate rail, and cannot be
+		// dragged narrower than it needs.
+		//
+		// The rail is an overlay pinned to the left edge and appears from
+		// 1200 CSS px, which the layout needs for a 720 px column plus the
+		// 160 px rail and its margins. The window used to open at 1100, i.e.
+		// below its own threshold, so a fresh install never showed the rail at
+		// all and users only met it after widening the window by hand
+		// (discussion #597).
+		// The minimums stay well below the opening size. A minimum is a trap
+		// on a scaled display, where 1920x1080 at 150% leaves 1280x720 device
+		// independent pixels: a window that cannot be made smaller than the
+		// screen cannot be moved back onto it either. fitWindowToScreen in
+		// app.go is the second half of this, and pins the top edge.
+		Width:     1240,
+		Height:    740,
+		MinWidth:  1000,
+		MinHeight: 600,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

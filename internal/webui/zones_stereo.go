@@ -70,6 +70,16 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	// every caller assumed until now anyway.
 	// Embedded, so the zone fields keep their exact previous JSON shape
 	// (omitempty and all) and only gain a sibling.
+	// A FOLLOWER's own /getZone lists only itself, so a caller asking one
+	// speaker saw a group of one while the group had five members. The
+	// desktop app reads this endpoint, which is why it showed some speakers
+	// and not others depending on which one it happened to ask (live
+	// 2026-08-15). The leader has the full list, and a follower carries its
+	// address, so it is fetched and reported here. The speaker's OWN master
+	// and sender fields are kept, so nothing that relies on them changes.
+	if full, ok := s.leaderZone(ctx, z); ok {
+		z.Members = full
+	}
 	out := struct {
 		boxapi.Zone
 		Stereo *boxapi.Group `json:"stereo,omitempty"`
@@ -1477,4 +1487,32 @@ func zoneFormBudget(slaves int) time.Duration {
 		return ceiling
 	}
 	return d
+}
+
+// leaderZone returns the full member list of the group described by z, when z
+// is a FOLLOWER's view of it.
+//
+// A follower's /getZone names the master and carries its address in
+// senderIPAddress, but lists only the follower itself as a member. Anything
+// reading that alone sees a one-speaker group, which is what made the desktop
+// app show a different set of speakers depending on which one it asked.
+//
+// Returns false when this speaker leads the group, when it is in none, or when
+// the leader cannot be reached: in all three the caller keeps the speaker's own
+// answer, which is either already right or the best that is available.
+func (s *Server) leaderZone(ctx context.Context, z boxapi.Zone) ([]boxapi.ZoneMember, bool) {
+	master := strings.TrimSpace(z.Master)
+	senderIP := strings.TrimSpace(z.SenderIP)
+	if master == "" || senderIP == "" {
+		return nil, false
+	}
+	ownID := fetchDeviceID(ctx, s.boxHost)
+	if ownID == "" || strings.EqualFold(ownID, master) {
+		return nil, false // we lead it, or cannot tell who we are
+	}
+	lz, err := fetchZone(ctx, senderIP)
+	if err != nil || len(lz.Members) == 0 {
+		return nil, false
+	}
+	return lz.Members, true
 }

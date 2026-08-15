@@ -13,6 +13,22 @@ import (
 	"time"
 )
 
+// normalizeContextURI unwraps an ephemeral autoplay STATION context
+// (spotify:station:playlist:X -> spotify:playlist:X).
+//
+// Play stores the unwrapped form, and go-librespot then announces the wrapped
+// one for the very same context. Comparing the two raw strings therefore read
+// as "the playlist changed" on the FIRST track of every recall, which armed a
+// re-point that cut that track off (reported live 2026-08-15: "the last track
+// ends too early to play the next one, and only on the very first track").
+func normalizeContextURI(uri string) string {
+	u := strings.TrimSpace(uri)
+	if rest, ok := strings.CutPrefix(u, "spotify:station:"); ok && rest != "" {
+		return "spotify:" + rest
+	}
+	return u
+}
+
 // PlayOptions tunes a Spotify context recall.
 type PlayOptions struct {
 	// Shuffle starts the context on a random track with shuffle enabled, the
@@ -475,7 +491,7 @@ func (m *Manager) maybeActivate() {
 // repointBox re-points the box at the Spotify stream even if it is already
 // attached, so a playlist switch from the app flushes the box buffer and plays
 // the new stream promptly. Debounced and shares lastActivate with maybeActivate.
-func (m *Manager) repointBox() {
+func (m *Manager) repointBox(from, to string) {
 	m.mu.Lock()
 	cb := m.onActivate
 	if cb == nil || time.Since(m.lastActivate) < 5*time.Second ||
@@ -499,6 +515,38 @@ func (m *Manager) repointBox() {
 		m.engineHotUntil = t
 	}
 	m.mu.Unlock()
-	m.logger.Info("spotify: playlist context changed, re-pointing box to play the new stream")
+	// Name both contexts. This re-point tears the box's Ogg fetch down and
+	// opens a new one, which the listener hears as the next song arriving
+	// abruptly, so the first question about it is always "switched from what
+	// to what?" and the line could not answer it. A generated radio playlist
+	// running out and Spotify continuing under an autoplay context looks
+	// identical here to somebody picking a new playlist in the app; the two
+	// URIs tell them apart (live 2026-08-15 17:40:52).
+	m.logger.Info("spotify: playlist context changed, re-pointing box to play the new stream",
+		"fromContext", from, "toContext", to)
 	go cb(context.Background())
+}
+
+// repointForPendingContext performs a re-point that will_play announced
+// earlier, now that the announced track is actually playing.
+//
+// The split exists because will_play describes the NEXT track. On a generated
+// radio playlist that announcement arrives while the current song still has
+// time to run, and re-pointing there tore the box off the stream and made the
+// engine start the announced track early: the listener heard the speaker skip
+// on its own (live 2026-08-15 17:40:52). Acting on "playing" / "metadata"
+// instead keeps a deliberate playlist switch from the app just as prompt,
+// because those follow it within moments, while a prefetch announcement now
+// costs nothing until the track really begins.
+//
+// Safe to call on every event: it does nothing when no re-point is held.
+func (m *Manager) repointForPendingContext() {
+	m.mu.Lock()
+	from, to := m.pendingRepointFrom, m.pendingRepointTo
+	m.pendingRepointFrom, m.pendingRepointTo = "", ""
+	m.mu.Unlock()
+	if to == "" {
+		return
+	}
+	m.repointBox(from, to)
 }

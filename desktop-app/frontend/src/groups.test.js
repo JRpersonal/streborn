@@ -198,7 +198,11 @@ describe('mergeZoneLive', () => {
       { status: 'fulfilled', value: prev[boxB.deviceID] },
     ];
     const merged = mergeZoneLive(prev, [master, boxA, boxB], results);
-    expect(merged[boxA.deviceID]).toBe(prev[boxA.deviceID]);
+    // Equality, not identity: a carried entry now records WHEN the speaker
+    // stopped answering, so it can be dropped once that is no longer a gap but
+    // an absence. The membership it carries is what matters here.
+    expect(merged[boxA.deviceID]).toMatchObject(prev[boxA.deviceID]);
+    expect(typeof merged[boxA.deviceID].staleSince).toBe('number');
   });
   it('keeps an optimistic null through a failed poll (known standalone)', () => {
     const prev = { [boxA.deviceID]: null };

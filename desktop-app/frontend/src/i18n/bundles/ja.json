@@ -1293,5 +1293,8 @@
   "settingsView.phoneAndroid4": "<b>インストール</b>で確定します。",
   "settingsView.phoneAndroidNote": "カメラによっては別のブラウザで開きます。インストールを提案するのはChromeだけです。",
   "settingsView.phoneShotIos": "iPhone: 専用アイコンで、ブラウザのバーなしで開きます。",
-  "settingsView.phoneShotAndroid": "Android: Chromeでインストールするので、アプリ一覧にも並びます。"
+  "settingsView.phoneShotAndroid": "Android: Chromeでインストールするので、アプリ一覧にも並びます。",
+  "banner.checkForAppUpdate": "アプリの更新を確認",
+  "banner.checkingForAppUpdate": "確認中…",
+  "banner.appIsCurrent": "アプリは最新です。"
 }

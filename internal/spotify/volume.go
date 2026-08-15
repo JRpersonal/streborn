@@ -216,6 +216,7 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 		case "playing":
 			m.maybeActivate()
 			m.handleEnginePlaybackStart()
+			m.repointForPendingContext()
 		case "paused", "stopped", "inactive":
 			// The Spotify app paused/stopped playback on this box, or moved it
 			// to another device. Forward as deliberate intent (guarded against
@@ -230,8 +231,25 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			}
 			if json.Unmarshal(ev.Data, &wp) == nil && wp.ContextURI != "" {
 				m.mu.Lock()
-				changed := m.lastContext != "" && wp.ContextURI != m.lastContext
+				prevContext := m.lastContext
+				playingNow := m.curName
+				// Compare the NORMALIZED contexts: a recall stores the
+				// unwrapped playlist and the engine announces the station
+				// wrapper for the same thing.
+				changed := prevContext != "" &&
+					normalizeContextURI(wp.ContextURI) != normalizeContextURI(prevContext)
+				// A recall drives the box itself, and the re-point it would
+				// otherwise trigger used to be suppressed by the debounce in
+				// repointBox. Holding the announcement outlives that window, so
+				// the recall has to be excluded here instead of there.
+				inRecall := time.Since(m.lastActivate) < 5*time.Second
 				m.lastContext = wp.ContextURI
+				if changed && !inRecall {
+					m.pendingRepointFrom, m.pendingRepointTo = prevContext, wp.ContextURI
+				}
+				if changed && inRecall {
+					changed = false
+				}
 				if changed {
 					// New context: drop the previous track so noteResume cannot
 					// pair this context with the old track before its own
@@ -240,7 +258,12 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 				}
 				m.mu.Unlock()
 				if changed {
-					m.repointBox()
+					// Deliberately not re-pointing here: see
+					// pendingRepointFrom. Record what the engine announced,
+					// including what is playing right now, so a bundle shows
+					// whether the announcement arrived mid-song.
+					m.logger.Info("spotify: the engine announced a different playlist for the next track, holding the re-point until it starts",
+						"fromContext", prevContext, "toContext", wp.ContextURI, "playingNow", playingNow)
 				}
 			}
 		case "metadata":
@@ -263,6 +286,10 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 			}
 			m.mu.Unlock()
 			m.notifyTrack()
+			// metadata arrives for the track that is actually playing, so it
+			// is the second place a held re-point becomes due. Whichever of
+			// the two events lands first wins; the other finds nothing left.
+			m.repointForPendingContext()
 			// Remember this track as the resume point for its context, so a
 			// later default recall continues here instead of restarting the
 			// playlist (the events stream covers the no-desktop-app case).
