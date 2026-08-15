@@ -466,6 +466,15 @@ func (a *App) pushSidecarIfNeeded(host string, port int) (delivered bool, err er
 
 	a.recordOTA(host, fmt.Sprintf("sidecar: pushing go-librespot (%d bytes, sha %s)", len(bin), want[:12]))
 	if _, _, err := a.streamPostBinary(host, port, "/api/agent/sidecar", bin); err != nil {
+		// The speaker refuses the engine while its own update is running,
+		// because that update reclaims the engine's space and would delete what
+		// we just delivered. Not a failure: deliver it again once the new
+		// version reports itself. Anything else is a real problem.
+		if strings.Contains(err.Error(), "update-in-flight") {
+			a.recordOTA(host, "sidecar: the speaker is mid-update and would discard the engine; delivering it after the restart")
+			a.logger.Info("sidecar push deferred: the speaker reports an update in flight", "host", host)
+			return false, nil
+		}
 		a.recordOTA(host, "sidecar: push failed (agent OTA still proceeds): "+err.Error())
 		a.logger.Warn("sidecar push failed; agent OTA continues, Spotify may stay unavailable until next OTA", "host", host, "err", err)
 		return false, fmt.Errorf("sidecar upload failed: %w", err)

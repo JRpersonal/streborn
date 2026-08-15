@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -348,11 +349,31 @@ func ensureSSHDRunning(logger *slog.Logger) bool {
 //
 // On success the stick still returns 200 OK and then exits. The
 // rc.local bootstrap starts the new agent.
+// updateInFlight is set while an agent update is writing the new binary and
+// heading for its restart.
+//
+// It exists because the update DELETES the Spotify engine when NAND is tight:
+// it stops the engine and reclaims its ~16 MB to make room for the new binary.
+// An engine delivered into that window is therefore thrown away moments later,
+// and the speaker comes back without one. That is not hypothetical, it cost a
+// SoundTouch 30 its engine twice in one day, both times because a client
+// pushed the engine while the update it had just started was still running.
+//
+// A client cannot see this from the outside: the old agent keeps answering
+// normally right up to the restart, so every check it can make says the
+// speaker is ready. So the agent has to say no.
+var updateInFlight atomic.Bool
+
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	body, ok := s.readUploadedELF(w, r, s.logger, "agent-update")
 	if !ok {
 		return
 	}
+	// From here the engine may be reclaimed at any moment and the process may
+	// exit. Cleared again only on the paths that give up WITHOUT restarting,
+	// so a failed update does not leave the speaker refusing engine deliveries
+	// until its next reboot.
+	updateInFlight.Store(true)
 	const dst = agentBinNANDPath
 	err := writeBinaryAtomic(dst, body)
 	// Tier 2 (#270): a NAND that UBIFS parked read-only fails the write (or,
@@ -363,6 +384,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		if remountNANDRW(s.logger) {
 			err = writeBinaryAtomic(dst, body)
 		} else {
+			updateInFlight.Store(false)
 			http.Error(w, errNANDReadOnly.Error(), http.StatusInsufficientStorage)
 			return
 		}
@@ -399,6 +421,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
+		updateInFlight.Store(false)
 		http.Error(w, err.Error(), nandWriteHTTPStatus(err))
 		return
 	}
@@ -417,6 +440,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if verr = verifyBinaryOnFlash(dst, body); verr != nil {
 			s.logger.Error("agent update: flash verify failed twice, refusing to reboot", "err", verr)
+			updateInFlight.Store(false)
 			http.Error(w, "update did not persist to flash: "+verr.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1415,6 +1439,20 @@ var nandHasRoom = func(dir string, need int64) bool {
 // running process until it exits, so killing+relaunching it on the write releases
 // that ~10 MB immediately instead of holding it until the next reboot.
 func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
+	// Refuse while an agent update is running. The update reclaims the engine's
+	// ~16 MB when NAND is tight, so an engine delivered now is deleted a moment
+	// later and the speaker restarts without one. The caller cannot see that
+	// from outside, because the old agent answers normally until the restart,
+	// so the answer has to come from here. Deliver it again once the new
+	// version reports itself, which is what the update flow already does.
+	if updateInFlight.Load() {
+		s.logger.Info("sidecar refused: an agent update is in flight, the engine would be reclaimed by it")
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":  "update-in-flight",
+			"error": "An update is installing on this speaker. Deliver the Spotify engine again once the speaker reports the new version.",
+		})
+		return
+	}
 	// Streamed, not buffered. This is the ~16 MB engine and the box has ~120 MB
 	// of RAM: holding it in memory first was enough to reboot a speaker that
 	// happened to be busy (see streamBinaryAtomic). The agent-update endpoint

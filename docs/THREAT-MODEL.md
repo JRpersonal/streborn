@@ -116,6 +116,26 @@ STR:
   stick was pulled, and shows a distinct notice when the persistent
   marker is set.
 
+- **The agent can also be asked to open SSH, by anyone on the LAN.**
+  `POST /api/agent/enable-ssh` writes the `remote_services` marker and
+  starts sshd, and its only gate is that the caller's address is on the
+  local network. There is no authentication, and the root account has no
+  password, so any device already on the network can obtain a root shell
+  on the speaker. The endpoint exists because the desktop app needs it to
+  uninstall STR from a stickless speaker, which otherwise cannot be
+  undone without opening the box up.
+
+  This is worth stating plainly because it is easy to describe STR as
+  "keeping SSH closed" and be wrong: the stick gate is one of two ways in,
+  and the other one needs nothing but LAN access. It also raises what an
+  attacker on the LAN gets, from controlling playback (which the stock
+  firmware already allows, see above) to running code as root.
+
+  The practical mitigation is the same one that covers the unauthenticated
+  firmware services: keep the speakers on a network segment you trust. A
+  segment, not a guest network, since guest networks usually isolate
+  clients from one another and that breaks discovery and multiroom.
+
 If your speaker is on a network with untrusted devices (guest Wi-Fi,
 shared student housing, public-facing IoT segment), put it on a
 dedicated VLAN or trusted SSID before installing STR. The same
