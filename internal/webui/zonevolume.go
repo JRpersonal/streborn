@@ -316,11 +316,11 @@ var (
 // the same question on one fleet (live 2026-08-15, five speakers in one group
 // led by the Portable):
 //
-//   the leader          reported the group correctly
-//   a speaker holding a stale document from an earlier session claimed to
-//                       LEAD a group somebody else leads, listing itself as
-//                       master while playing as a follower
-//   the other three     reported "not grouped" while playing the group's music
+//	the leader          reported the group correctly
+//	a speaker holding a stale document from an earlier session claimed to
+//	                    LEAD a group somebody else leads, listing itself as
+//	                    master while playing as a follower
+//	the other three     reported "not grouped" while playing the group's music
 //
 // The firmware knows better on every one of them: a follower's own /getZone
 // carries the real master's deviceID and, in senderIPAddress, the address to

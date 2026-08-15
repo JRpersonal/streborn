@@ -160,3 +160,47 @@ func TestAFollowerWithoutTheLeadersAddressReportsNothing(t *testing.T) {
 		t.Error("no address for the leader means no group can be reported")
 	}
 }
+
+// The desktop app reads /api/box/zone, which returned the speaker's own view.
+// On a follower that is a group of one, so the app showed a different set of
+// speakers depending on which one it happened to ask.
+func TestTheZoneReadReportsTheWholeGroupFromAFollower(t *testing.T) {
+	withSpeakers(t,
+		map[string]boxapi.Zone{
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
+			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}, {DeviceID: livingID, IP: "192.168.178.44"}}},
+		},
+		map[string]string{livingHost: livingID, leaderIP: leaderID})
+
+	s := quietServer(livingHost)
+	own := boxapi.Zone{Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}}
+	members, ok := s.leaderZone(context.Background(), own)
+	if !ok {
+		t.Fatal("a follower must be able to report the whole group")
+	}
+	if len(members) != 2 {
+		t.Fatalf("want both members of the group, got %d: %+v", len(members), members)
+	}
+}
+
+// The leader's own answer is already complete and must not be replaced by a
+// call to itself.
+func TestTheLeaderKeepsItsOwnMemberList(t *testing.T) {
+	withSpeakers(t,
+		map[string]boxapi.Zone{livingHost: {Master: leaderID, SenderIP: leaderIP}},
+		map[string]string{livingHost: leaderID})
+
+	own := boxapi.Zone{Master: leaderID, SenderIP: leaderIP,
+		Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}}
+	if _, ok := quietServer(livingHost).leaderZone(context.Background(), own); ok {
+		t.Error("the leader already has the full list, it must not ask anybody")
+	}
+}
+
+// A standalone speaker has no leader to ask, and must not be turned into one.
+func TestAStandaloneZoneReadIsLeftAlone(t *testing.T) {
+	withSpeakers(t, map[string]boxapi.Zone{livingHost: {}}, map[string]string{livingHost: livingID})
+	if _, ok := quietServer(livingHost).leaderZone(context.Background(), boxapi.Zone{}); ok {
+		t.Error("no master means nothing to fetch")
+	}
+}
