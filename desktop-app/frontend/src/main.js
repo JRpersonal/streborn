@@ -4925,6 +4925,15 @@ function renderPresets() {
   if (activeSlot !== null) {
     const ap = state.presets.find(x => x.slot === activeSlot);
     if (ap) activeStreamURL = ap.stream_url;
+  } else {
+    // A native preset whose descriptor carries the RAW proxy form rather than a
+    // per-slot one: the slot lookup finds nothing, and the location is the
+    // descriptor rather than a URL, so neither of the matches above can fire
+    // and no tile lit up while the speaker was plainly playing one of them.
+    // The real station URL is inside the descriptor, and that does match what
+    // the key holds.
+    const orion = orionStationPayload(state.nowLocation);
+    if (orion && orion.streamUrl) activeStreamURL = decodeProxyUrl(orion.streamUrl);
   }
   for (let i = 1; i <= 6; i++) {
     const p = state.presets.find(x => x.slot === i);

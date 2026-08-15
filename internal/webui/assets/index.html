@@ -1169,6 +1169,7 @@ function presetSig(list) {
   return (list || []).map(function (p) { return p.slot + ' ' + (p.name || ''); }).join('');
 }
 var lastPresetSig = null;
+var lastPresetList = [];
 
 async function loadPresets() {
   const raw = await api('/api/presets');
@@ -1181,6 +1182,7 @@ async function loadPresets() {
   const sig = presetSig(list);
   if (sig === lastPresetSig && grid.children.length) return;
   lastPresetSig = sig;
+  lastPresetList = list;
   // The tapped tile keeps its highlight across a rebuild: the grid is redrawn
   // whenever the desktop app changes a preset, and losing the marker then
   // would look like the speaker forgot what it is playing.
@@ -1236,10 +1238,65 @@ async function currentSong() {
   } catch (e) { return ''; }
 }
 
+// Which preset key is actually playing, from what the speaker reports.
+//
+// Until now the highlight only ever followed the tile the user tapped HERE, so
+// pressing a key on the speaker itself left the wrong one marked (#606): the
+// page showed the new station in the title and kept the old key highlighted.
+//
+// The speaker's location says it, in one of three shapes. A preset STR proxies
+// per slot carries /stream/<n>. A Spotify preset carries the per-slot ogg. A
+// NATIVE radio preset carries none of that: the speaker fetches the stream
+// itself and the location is the ORION descriptor, with the real stream URL
+// packed inside, so that one is matched by URL against the known presets.
+// Returns 0 when nothing matches, which clears the highlight rather than
+// leaving a stale one.
+function playingSlot(loc, list) {
+  if (!loc) return 0;
+  var m = loc.match(/\/spotify\/stream-(\d+)\.ogg/) || loc.match(/\/stream\/(\d+)(?:[/?#]|$)/);
+  if (m) return parseInt(m[1], 10);
+  var d = loc.match(/[?&]data=([A-Za-z0-9\-_=+/]+)/);
+  if (!d) return 0;
+  var url = '';
+  try {
+    var b64 = d[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    url = (JSON.parse(atob(b64)) || {}).streamUrl || '';
+  } catch (e) { return 0; }
+  var viaSlot = url.match(/\/stream\/(\d+)(?:[/?#]|$)/);
+  if (viaSlot) return parseInt(viaSlot[1], 10);
+  // The raw-proxy form: unwrap it and compare with what each key holds.
+  var real = url;
+  try {
+    var u = new URL(url, 'http://x');
+    if (u.pathname === '/stream/raw') {
+      var enc = u.searchParams.get('u');
+      if (enc) real = atob(enc.replace(/-/g, '+').replace(/_/g, '/'));
+    }
+  } catch (e) {}
+  for (var i = 0; i < (list || []).length; i++) {
+    if (list[i] && list[i].stream_url && list[i].stream_url === real) return list[i].slot;
+  }
+  return 0;
+}
+
+// markPlaying moves the highlight to the key the speaker is on.
+function markPlaying(loc) {
+  var grid = document.getElementById('presets');
+  if (!grid) return;
+  var n = playingSlot(loc, lastPresetList);
+  var tiles = grid.querySelectorAll('.preset');
+  for (var i = 0; i < tiles.length; i++) {
+    if (i + 1 === n) tiles[i].classList.add('active');
+    else tiles[i].classList.remove('active');
+  }
+}
+
 async function refreshStatus() {
   const r = await fetch('/api/status'); const t = await r.text();
   const m = t.match(/<itemName>([^<]+)<\/itemName>/) || t.match(/<track>([^<]+)<\/track>/);
   const src = (t.match(/source="([^"]+)"/) || [])[1] || '';
+  markPlaying((t.match(/location="([^"]*)"/) || [])[1] || '');
   const state = (t.match(/<playStatus>([^<]+)<\/playStatus>/) || [])[1] || '';
   const name = m ? decodeEntities(m[1]) : '';
   // Track power state for the header toggle: the box is "on" unless it is in
