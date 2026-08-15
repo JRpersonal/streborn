@@ -126,16 +126,53 @@ export function resolvePlayTarget(box, zoneLive, boxes) {
 //     next chip toggle silently kick the follower from the zone,
 //   - boxes absent from this round's list are dropped,
 //   - a box that has never answered stays absent (unknown, not standalone).
-export function mergeZoneLive(prev, boxes, results) {
+// ZONE_CARRY_MS is how long a speaker's last known zone survives while the
+// speaker itself does not answer. Carrying it over covers a poll that lost a
+// race or a speaker that is briefly busy; carrying it forever is how a group
+// outlived the speakers in it (live 2026-08-15: a speaker had been offline for
+// hours and the app still showed it grouped with another, complete with a
+// group volume slider and no frames, because its entry was renewed from itself
+// on every round). Ninety seconds is several poll rounds, well past any
+// transient, and far short of "all evening".
+export const ZONE_CARRY_MS = 90 * 1000;
+
+// zoneSaysNoGroup reports whether an answer means "this speaker is in no
+// group". A speaker that ANSWERED is the authority on the group it supposedly
+// leads, which is what makes it safe to drop the stale entries pointing at it.
+function zoneSaysNoGroup(z) {
+  if (!z) return false;
+  return !String(z.master || '') && !((z.members || []).length);
+}
+
+export function mergeZoneLive(prev, boxes, results, now = Date.now()) {
   const map = {};
+  const answeredEmpty = new Set();
   (boxes || []).forEach((b, i) => {
     const r = results && results[i];
     if (r && r.status === 'fulfilled' && r.value) {
+      // A fresh answer is stored exactly as it came, with no bookkeeping added.
       map[b.deviceID] = r.value;
-    } else if (prev && Object.prototype.hasOwnProperty.call(prev, b.deviceID)) {
-      map[b.deviceID] = prev[b.deviceID];
+      if (zoneSaysNoGroup(r.value)) answeredEmpty.add(String(b.deviceID).toUpperCase());
+      return;
     }
+    if (!prev || !Object.prototype.hasOwnProperty.call(prev, b.deviceID)) return;
+    const carried = prev[b.deviceID];
+    // A null entry means "known standalone" and is set deliberately by
+    // applyOptimisticZone. It says something, so it is kept as it is.
+    if (!carried) { map[b.deviceID] = carried; return; }
+    // The clock starts at the first round this speaker missed, not at the last
+    // one it answered: that is the moment the entry stopped being observed.
+    const staleSince = typeof carried.staleSince === 'number' ? carried.staleSince : now;
+    if (now - staleSince < ZONE_CARRY_MS) map[b.deviceID] = { ...carried, staleSince };
   });
+  // Drop what the speakers themselves contradict: an entry naming a master
+  // that just told us it has no group describes a group that no longer exists.
+  if (answeredEmpty.size) {
+    for (const id of Object.keys(map)) {
+      const e = map[id];
+      if (e && answeredEmpty.has(String(e.master || '').toUpperCase())) delete map[id];
+    }
+  }
   return map;
 }
 

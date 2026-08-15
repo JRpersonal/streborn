@@ -187,7 +187,13 @@ func (s *Server) fireSleep(gen uint64) {
 	if !group {
 		return
 	}
-	members, grouped, _ := s.groupMembers()
+	// The same resolver the volume control uses. Reading membership from the
+	// stored document here meant the "switch the whole group off" box was
+	// OFFERED from the live view and ACTED ON from the document, so on a
+	// follower it switched off one speaker.
+	sctx, scancel := context.WithTimeout(context.Background(), 3*time.Second)
+	members, grouped, _ := s.groupView(sctx)
+	scancel()
 	if !grouped {
 		return
 	}

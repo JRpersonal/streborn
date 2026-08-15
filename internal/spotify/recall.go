@@ -13,6 +13,22 @@ import (
 	"time"
 )
 
+// normalizeContextURI unwraps an ephemeral autoplay STATION context
+// (spotify:station:playlist:X -> spotify:playlist:X).
+//
+// Play stores the unwrapped form, and go-librespot then announces the wrapped
+// one for the very same context. Comparing the two raw strings therefore read
+// as "the playlist changed" on the FIRST track of every recall, which armed a
+// re-point that cut that track off (reported live 2026-08-15: "the last track
+// ends too early to play the next one, and only on the very first track").
+func normalizeContextURI(uri string) string {
+	u := strings.TrimSpace(uri)
+	if rest, ok := strings.CutPrefix(u, "spotify:station:"); ok && rest != "" {
+		return "spotify:" + rest
+	}
+	return u
+}
+
 // PlayOptions tunes a Spotify context recall.
 type PlayOptions struct {
 	// Shuffle starts the context on a random track with shuffle enabled, the

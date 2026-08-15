@@ -204,3 +204,44 @@ func TestAStandaloneZoneReadIsLeftAlone(t *testing.T) {
 		t.Error("no master means nothing to fetch")
 	}
 }
+
+// The regression the audit caught the same day it was introduced: the read was
+// moved onto the firmware and the write was left on the stored document, so a
+// follower drew a full group card whose every press came back 409. Whatever
+// the page is allowed to SHOW, it has to be allowed to SET.
+func TestWhatTheGroupViewShowsIsWhatCanBeSet(t *testing.T) {
+	withSpeakers(t,
+		map[string]boxapi.Zone{
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
+			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}, {DeviceID: livingID, IP: "192.168.178.44"}}},
+		},
+		map[string]string{livingHost: livingID, leaderIP: leaderID})
+
+	// A follower has no stored document at all, which is the whole point.
+	s := quietServer(livingHost)
+	members, grouped, stereo := s.groupView(context.Background())
+	if !grouped {
+		t.Fatal("a follower must be reported as grouped, it is playing the group's music")
+	}
+	if stereo {
+		t.Error("a multiroom zone is not a stereo pair")
+	}
+	if len(members) != 3 {
+		t.Fatalf("want the leader and both followers, got %d: %+v", len(members), members)
+	}
+	// Every row the page draws must be addressable by the write path.
+	for _, m := range members {
+		if m.IP == "" {
+			t.Errorf("a member with no address can be shown but never set: %+v", m)
+		}
+	}
+}
+
+// A speaker in no group answers the same way to both, so the page draws
+// nothing and the write path refuses.
+func TestAStandaloneSpeakerIsNotGroupedForEitherPath(t *testing.T) {
+	withSpeakers(t, map[string]boxapi.Zone{livingHost: {}}, map[string]string{livingHost: livingID})
+	if _, grouped, _ := quietServer(livingHost).groupView(context.Background()); grouped {
+		t.Error("no group means no group, for the reader and the writer alike")
+	}
+}

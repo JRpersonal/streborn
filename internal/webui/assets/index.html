@@ -849,7 +849,11 @@ function volSend(v) {
   grpVol.sentAt = Date.now();
   (zone.members || []).forEach(function(m){
     if (!m.ip) return;
-    var base = (typeof grpVol.base[m.ip] === 'number') ? grpVol.base[m.ip] : +v;
+    // Fall back to the ANCHOR, not to the slider's current value. A member
+    // that reported -1 (standby, waking, busy) has no baseline, and using the
+    // live value there added the whole drag on top of itself and sent that one
+    // speaker toward 100 while the others moved by the delta.
+    var base = (typeof grpVol.base[m.ip] === 'number') ? grpVol.base[m.ip] : grpVol.at;
     var want = Math.max(0, Math.min(100, Math.round(base + delta)));
     grpVol.want[m.ip] = want;
     api('/api/box/zone/volume', 'POST', { ip: m.ip, value: want });

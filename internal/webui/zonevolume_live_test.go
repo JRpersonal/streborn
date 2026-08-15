@@ -1,7 +1,11 @@
 package webui
 
 import (
+	"context"
+	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/zones"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -51,12 +55,30 @@ func contains(hay, needle string) bool { return strings.Contains(hay, needle) }
 //
 //	19:44:48  stereo: paired id=str-grp-... members=2
 //	19:44:54  zone: the stored group is not on the speaker any more
+//
+// Asserted through the resolver rather than by grepping the source: the check
+// has moved once already, and a test that reads the code cannot tell a
+// refactor from a regression.
 func TestStereoPairIsNotJudgedByGetZone(t *testing.T) {
-	src, err := readSourceFile("zonevolume.go")
+	dir := t.TempDir()
+	st, err := zones.Load(filepath.Join(dir, "zones.json"))
 	if err != nil {
-		t.Fatalf("read source: %v", err)
+		t.Fatalf("zone store: %v", err)
 	}
-	if !contains(src, "grouped && !stereo && !s.storedGroupIsLive()") {
-		t.Error("the zone liveness check still applies to stereo pairs, which /getZone never reports")
+	if err := st.Set(zones.Zone{Master: "DEV-SELF", MasterIP: "192.0.2.10", Stereo: true,
+		Slaves: []zones.Member{{DeviceID: "DEV-RIGHT", IP: "192.0.2.20", Role: "right"}}}); err != nil {
+		t.Fatalf("store the pair: %v", err)
+	}
+	// What a healthy pair's firmware answers: nothing at all about a zone.
+	withSpeakers(t, map[string]boxapi.Zone{"192.0.2.10": {}}, map[string]string{"192.0.2.10": "DEV-SELF"})
+
+	s := quietServer("192.0.2.10")
+	s.zones = st
+	members, grouped, stereo := s.groupView(context.Background())
+	if !grouped || !stereo {
+		t.Fatalf("a healthy stereo pair read as grouped=%v stereo=%v, and an empty /getZone must not decide that", grouped, stereo)
+	}
+	if len(members) != 2 {
+		t.Errorf("want both halves of the pair, got %d: %+v", len(members), members)
 	}
 }

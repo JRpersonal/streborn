@@ -65,3 +65,25 @@ func waitFor(t *testing.T, got *atomic.Int32, want int32, what string) {
 	}
 	t.Fatalf("%s: got %d, want %d", what, got.Load(), want)
 }
+
+// The first track of every recall was cut off, and only the first: Play stores
+// the unwrapped playlist while the engine announces the station wrapper for
+// the same context, so the two strings differed and a re-point was armed.
+func TestTheStationWrapperIsNotAPlaylistChange(t *testing.T) {
+	cases := []struct {
+		stored, announced string
+		same              bool
+	}{
+		{"spotify:playlist:6xKB", "spotify:station:playlist:6xKB", true},
+		{"spotify:station:playlist:6xKB", "spotify:playlist:6xKB", true},
+		{"spotify:playlist:6xKB", "spotify:playlist:6xKB", true},
+		{"spotify:playlist:6xKB", "spotify:playlist:OTHER", false},
+		{"spotify:album:1", "spotify:playlist:1", false},
+	}
+	for _, c := range cases {
+		got := normalizeContextURI(c.stored) == normalizeContextURI(c.announced)
+		if got != c.same {
+			t.Errorf("%q vs %q: same=%v, want %v", c.stored, c.announced, got, c.same)
+		}
+	}
+}

@@ -146,7 +146,7 @@ func (s *Server) storedGroupIsLive() bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	live, err := boxapi.New(s.boxHost).GetZone(ctx)
+	live, err := fetchZone(ctx, s.boxHost)
 	if err != nil {
 		return true // unreachable right now is not evidence the group is gone
 	}
@@ -158,26 +158,10 @@ func (s *Server) storedGroupIsLive() bool {
 }
 
 func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
-	members, grouped, stereo := s.groupMembers()
-	// The firmware outranks the stored document. A speaker that follows
-	// somebody else reports THAT group, whether or not it has a document of
-	// its own, and a stale document claiming leadership is overruled.
-	if !stereo {
-		lctx, lcancel := context.WithTimeout(r.Context(), 3*time.Second)
-		live, isFollower := s.liveGroupView(lctx)
-		lcancel()
-		if isFollower {
-			members, grouped = live, true
-		}
-	}
-	// A stereo pair is NOT a zone. It is a firmware group created with
-	// /addGroup, and /getZone answers <zone /> for a perfectly healthy pair, so
-	// the liveness check below must never be applied to one: doing so reported
-	// a working pair as standalone seconds after it was created (caught live on
-	// two SoundTouch 10s, 2026-08-09).
-	if grouped && !stereo && !s.storedGroupIsLive() {
-		grouped = false
-	}
+	gctx, gcancel := context.WithTimeout(r.Context(), 3*time.Second)
+	members, grouped, stereo := s.groupView(gctx)
+	gcancel()
+	_ = stereo // groupView already applied the stereo exception
 	if !grouped {
 		writeJSON(w, http.StatusOK, map[string]any{"grouped": false})
 		return
@@ -229,6 +213,33 @@ func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// groupView is the ONE answer to "which speakers is this one grouped with".
+//
+// It has to be one, because a reader and a writer that disagree produce a
+// control that draws itself and then refuses every press. That is exactly what
+// happened when the read was moved onto the firmware and the write was left on
+// the stored document: on a follower the phone drew a full group card with
+// live levels, and every volume it sent came back 409 "not in a group",
+// including the follower's own (caught by the audit the same day, before
+// anybody reported it).
+//
+// Order: a stereo pair is the firmware's own concept and the stored document
+// describes it, so it wins. Otherwise the firmware outranks the document,
+// because only the speaker that FORMED the group has one.
+func (s *Server) groupView(ctx context.Context) ([]zoneMemberVolume, bool, bool) {
+	members, grouped, stereo := s.groupMembers()
+	if stereo {
+		return members, grouped, true
+	}
+	if live, isFollower := s.liveGroupView(ctx); isFollower {
+		return live, true, false
+	}
+	if grouped && !s.storedGroupIsLive() {
+		return nil, false, false
+	}
+	return members, grouped, false
+}
+
 func (s *Server) zoneVolumeSet(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		IP    string `json:"ip"`
@@ -242,7 +253,9 @@ func (s *Server) zoneVolumeSet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "value must be 0..100", http.StatusBadRequest)
 		return
 	}
-	members, grouped, _ := s.groupMembers()
+	vctx, vcancel := context.WithTimeout(r.Context(), 3*time.Second)
+	members, grouped, _ := s.groupView(vctx)
+	vcancel()
 	if !grouped {
 		http.Error(w, "this speaker is not in a group", http.StatusConflict)
 		return

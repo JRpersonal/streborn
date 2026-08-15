@@ -233,10 +233,22 @@ func (m *Manager) volumeStream(ctx context.Context, url string) error {
 				m.mu.Lock()
 				prevContext := m.lastContext
 				playingNow := m.curName
-				changed := m.lastContext != "" && wp.ContextURI != m.lastContext
+				// Compare the NORMALIZED contexts: a recall stores the
+				// unwrapped playlist and the engine announces the station
+				// wrapper for the same thing.
+				changed := prevContext != "" &&
+					normalizeContextURI(wp.ContextURI) != normalizeContextURI(prevContext)
+				// A recall drives the box itself, and the re-point it would
+				// otherwise trigger used to be suppressed by the debounce in
+				// repointBox. Holding the announcement outlives that window, so
+				// the recall has to be excluded here instead of there.
+				inRecall := time.Since(m.lastActivate) < 5*time.Second
 				m.lastContext = wp.ContextURI
-				if changed {
+				if changed && !inRecall {
 					m.pendingRepointFrom, m.pendingRepointTo = prevContext, wp.ContextURI
+				}
+				if changed && inRecall {
+					changed = false
 				}
 				if changed {
 					// New context: drop the previous track so noteResume cannot

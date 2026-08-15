@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/zones"
+
+	"github.com/JRpersonal/streborn/internal/boxapi"
 )
 
 // fakeZoneStore gives the server a persisted group with the given member IPs.
@@ -242,6 +244,13 @@ func TestSleepGroupSwitchesEveryMemberOff(t *testing.T) {
 	f.install(t)
 	s := newSleepServer()
 	s.zones = fakeZoneStore(t, "192.0.2.20", "192.0.2.30")
+	// The group resolver asks the firmware whether the stored group is still
+	// live, so the speaker has to answer. Without this the test waits on a
+	// real connection to an unroutable address.
+	withSpeakers(t,
+		map[string]boxapi.Zone{"192.0.2.10": {Master: "DEV-SELF", Members: []boxapi.ZoneMember{
+			{DeviceID: "DEV-192.0.2.20", IP: "192.0.2.20"}, {DeviceID: "DEV-192.0.2.30", IP: "192.0.2.30"}}}},
+		map[string]string{"192.0.2.10": "DEV-SELF"})
 
 	s.armSleep(10*time.Millisecond, true)
 	if !waitFor(func() bool { return len(f.offList()) == 3 }) {
@@ -263,6 +272,13 @@ func TestSleepGroupCarriesOnPastAnUnreachableMember(t *testing.T) {
 	f.install(t)
 	s := newSleepServer()
 	s.zones = fakeZoneStore(t, "192.0.2.20", "192.0.2.30")
+	// The group resolver asks the firmware whether the stored group is still
+	// live, so the speaker has to answer. Without this the test waits on a
+	// real connection to an unroutable address.
+	withSpeakers(t,
+		map[string]boxapi.Zone{"192.0.2.10": {Master: "DEV-SELF", Members: []boxapi.ZoneMember{
+			{DeviceID: "DEV-192.0.2.20", IP: "192.0.2.20"}, {DeviceID: "DEV-192.0.2.30", IP: "192.0.2.30"}}}},
+		map[string]string{"192.0.2.10": "DEV-SELF"})
 
 	s.armSleep(10*time.Millisecond, true)
 	if !waitFor(func() bool { return len(f.offList()) == 2 }) {
