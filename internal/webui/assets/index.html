@@ -712,6 +712,10 @@ accessibility tools are untouched. */
 var sliderGuards = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
 var SLIDE_ARM_PX = 6;   // sideways travel that means "I am using the slider"
 var SLIDE_SCROLL_PX = 8; // vertical travel that means "I am scrolling the page"
+// How far a single TAP on the track may raise the volume. Big enough to be a
+// useful jump, small enough that landing on the wrong part of the bar is a
+// surprise you can undo rather than one the neighbours hear.
+var TAP_MAX_RAISE = 10;
 
 // sliderBlocked reports whether this slider's current gesture must not reach
 // the speaker yet. Callers that are NOT the slider (steppers, mute, presets)
@@ -759,10 +763,32 @@ function scrollSafeSlider(el, send, label) {
   });
   el.addEventListener('pointerup', function() {
     if (!g.down) return;
+    var wasTap = !g.armed; // never wandered far enough to become a drag
     g.down = false;
     if (g.cancelled) return;
     // Either a confirmed drag (already sending live) or a deliberate tap that
-    // has been held back until now. Both end with the value the user chose.
+    // has been held back until now. Both end with the value the user chose,
+    // except for the one case where "the value the user chose" is a guess the
+    // browser made for them.
+    //
+    // A range input jumps straight to wherever the track was touched. On a
+    // drag that is what you want and you watch it happen. On a TAP it means a
+    // finger landing near the right-hand end takes the room from quiet to
+    // full, with nothing in between and no chance to react. That is not a
+    // hypothetical: it is how a user set 100% by accident.
+    //
+    // So a tap may raise the volume only by a bounded step. Dragging is
+    // untouched, because a drag arrives as a stream of small moves and the
+    // ear follows it. Lowering is untouched too: quieter is never the
+    // accident worth guarding against, and a tap to the far left as a
+    // panic "make it stop" has to keep working.
+    if (wasTap && g.startVal !== null) {
+      var from = parseInt(g.startVal, 10), to = parseInt(el.value, 10);
+      if (!isNaN(from) && !isNaN(to) && to - from > TAP_MAX_RAISE) {
+        el.value = from + TAP_MAX_RAISE;
+        if (label) label(el.value);
+      }
+    }
     send(el.value);
   });
 }

@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "Bu işlem, {{target}} üzerindeki 1'den 6'ya kadar olan ön ayarları bu hoparlörün ön ayarlarıyla değiştirir.",
   "settingsView.copyPresetsDone": "{{n}} ön ayar {{target}} hoparlörüne kopyalandı.",
   "settingsView.firmwareLabel": "Hoparlör yazılımı",
-  "settingsView.rebootHelp": "Hoparlörü yeniden başlatır. Yeni hazırlanmış bir USB belleği yeni taktığınızda ve hoparlörün yeni ayarları hemen almasını istediğinizde kullanın.",
+  "settingsView.rebootHelp": "Hoparlörü yeniden başlatır. Yanıt vermeyi bıraktığında veya yalnızca yeniden başlatmayla etkinleşen bir değişiklikten sonra kullan.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",

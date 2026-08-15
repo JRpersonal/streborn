@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "Spowoduje to zastąpienie stacji 1-6 na głośniku {{target}} stacjami z tego głośnika.",
   "settingsView.copyPresetsDone": "Skopiowano {{n}} zaprogramowanych stacji do {{target}}.",
   "settingsView.firmwareLabel": "Oprogramowanie głośnika",
-  "settingsView.rebootHelp": "Uruchamia głośnik ponownie. Użyj tego, gdy właśnie włożyłeś świeżo przygotowany pendrive USB i chcesz, by głośnik od razu pobrał nowe ustawienia.",
+  "settingsView.rebootHelp": "Uruchamia głośnik ponownie. Użyj tego, gdy przestanie odpowiadać lub po zmianie, która działa dopiero po restarcie.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",

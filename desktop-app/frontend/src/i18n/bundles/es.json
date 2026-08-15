@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "Esto reemplaza las presintonías 1 a 6 de {{target}} con las de este altavoz.",
   "settingsView.copyPresetsDone": "Se copiaron {{n}} presintonías a {{target}}.",
   "settingsView.firmwareLabel": "Firmware del altavoz",
-  "settingsView.rebootHelp": "Reiniciar el altavoz. Úsalo cuando acabas de conectar una memoria USB recién preparada y quieres que el altavoz adopte los nuevos ajustes ahora.",
+  "settingsView.rebootHelp": "Reinicia el altavoz. Úsalo si deja de responder o después de un cambio que solo se aplica al reiniciar.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",

@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "Cela remplace les préréglages 1 à 6 sur {{target}} par ceux de cette enceinte.",
   "settingsView.copyPresetsDone": "{{n}} préréglages copiés vers {{target}}.",
   "settingsView.firmwareLabel": "Logiciel de l'enceinte",
-  "settingsView.rebootHelp": "Redémarrer l'enceinte. À utiliser lorsque vous venez de brancher une clé USB fraîchement préparée et que vous voulez que l'enceinte prenne en compte les nouveaux réglages maintenant.",
+  "settingsView.rebootHelp": "Redémarre l'enceinte. À utiliser si elle ne répond plus, ou après un réglage qui ne prend effet qu'au redémarrage.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",
