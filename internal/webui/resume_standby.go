@@ -547,6 +547,72 @@ func (s *Server) displayTrackText(streamTitle string) string {
 // false (treat as standalone): a missing zone read should not silently disable
 // the feature for the standalone majority, and the per-box opt-out is the
 // backstop for the rare paired box that also fails the read.
+// zoneRoleFromMaster decides this speaker's role in a zone by comparing the
+// zone's master against the speaker's own id.
+//
+// The deviceIDs are compared rather than the firmware's own senderIsMaster
+// attribute, and that is deliberate. On the Lifestyle/ST20 pair in the field
+// report the attribute reads the opposite way round to its name: the speaker
+// that FORMED the zone and leads it logs senderIsMaster=false, and the
+// follower logs true. Whatever the firmware means by "sender" there, the
+// master's deviceID is unambiguous and every chassis agrees on it.
+//
+// known is false when the answer cannot be trusted: no zone, or either id
+// missing. Callers must decide their own safe direction rather than reading
+// an unknown as "standalone".
+func zoneRoleFromMaster(masterID, selfID string) (follower, known bool) {
+	masterID = strings.TrimSpace(masterID)
+	selfID = strings.TrimSpace(selfID)
+	if masterID == "" {
+		return false, false // not in a zone at all
+	}
+	if selfID == "" {
+		return false, false // in a zone, but we cannot tell which end
+	}
+	return !strings.EqualFold(masterID, selfID), true
+}
+
+// zonePushWouldFightGroup reports whether pushing this speaker a stream of its
+// own would fight a group, and why. The policy lives here rather than at the
+// call site, because the two failure directions are not symmetrical and the
+// choice between them is the whole point.
+//
+// The distinction boxInZone cannot make: a MASTER that loses its stream still
+// has to recover it, and the whole group is listening to that one, so it must
+// keep its watchdog. A FOLLOWER must never be handed a stream of its own,
+// because the firmware is already playing what the master sends.
+//
+// Where the answer is uncertain the direction depends on what is uncertain:
+//
+//   - The zone cannot be read at all: treat as standalone and allow the push.
+//     Most speakers are standalone, and a momentary /getZone failure must not
+//     quietly disable stream recovery for them. Same reasoning as boxInZone.
+//   - The speaker IS in a zone but its own id cannot be established: stand
+//     down. Being in a group is already the risky state, and here the choice
+//     is only between a station the user restarts and a push that fights a
+//     group that is currently playing.
+func (s *Server) zonePushWouldFightGroup() (standDown bool, reason string) {
+	if s.boxHost == "" {
+		return false, ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	c := boxapi.New(s.boxHost)
+	z, err := c.GetZone(ctx)
+	if err != nil {
+		return false, "" // unreadable: the standalone majority keeps recovery
+	}
+	follower, known := zoneRoleFromMaster(z.Master, s.localDeviceID(ctx, c, ""))
+	switch {
+	case !known && strings.TrimSpace(z.Master) != "":
+		return true, "in a group but cannot tell whether this speaker leads or follows"
+	case follower:
+		return true, "this speaker is a group follower, its audio comes from the master"
+	default:
+		return false, ""
+	}
+}
+
 func (s *Server) boxInZone() bool {
 	if s.boxHost == "" {
 		return false
@@ -1398,6 +1464,27 @@ func (s *Server) maybeRePush() {
 			s.lastPlay.rePushes = 0
 		}
 		s.lastPlayMu.Unlock()
+		return
+	}
+
+	// A speaker that has just JOINED a group looks exactly like one whose
+	// stream dropped: it leaves its own source, the proxy connection ends, and
+	// this watchdog arms. It is not a drop. The follower's audio now comes from
+	// the master, and pushing it its own previous station fights the group. The
+	// firmware says so plainly, and a field report caught it a second after the
+	// group formed (Lifestyle 535 with an ST20, 2026-08-14):
+	//
+	//   source changed  LOCAL_INTERNET_RADIO -> UPNP
+	//   re-push: box dropped the stream while idle, resuming  url=.../stream/3
+	//   re-push failed: SetURI: soap SetAVTransportURI status 500
+	//
+	// Only the FOLLOWER stands down. A master that loses its stream still has
+	// to recover it, and the whole group is listening to that one. An
+	// indeterminate answer also stands down: this runs on a speaker that is
+	// idle, so the cost of not pushing is a station the user restarts, while
+	// the cost of pushing into a group is the fight above.
+	if standDown, why := s.zonePushWouldFightGroup(); standDown {
+		s.logger.Info("re-push: not resuming, " + why)
 		return
 	}
 
