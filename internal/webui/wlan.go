@@ -123,9 +123,21 @@ func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 		sctx, scancel := context.WithTimeout(r.Context(), 12*time.Second)
 		ssids, serr := boxapi.New(s.boxHost).SiteSurvey(sctx)
 		scancel()
-		if serr != nil {
+		switch {
+		case serr != nil:
 			s.logger.Warn("WLAN switch preflight: site survey failed, proceeding without it", "err", serr)
-		} else {
+		case len(ssids) == 0:
+			// An EMPTY survey is not evidence that the target is missing, it is
+			// the absence of evidence, and refusing on it told a user the
+			// opposite of the truth. A speaker on ethernet with no Wi-Fi
+			// configured scans and finds nothing at all, and the refusal then
+			// said "the speaker cannot see Vodafone-0674, SoundTouch only
+			// supports 2.4 GHz. Networks the speaker sees: -" while listing
+			// nothing. He was trying to correct a mistyped password on a
+			// cabled ST20, which is exactly when this has to work (mail,
+			// 2026-08-15).
+			s.logger.Info("WLAN switch preflight: the speaker reported no networks at all, cannot verify, proceeding")
+		default:
 			visible := false
 			for _, sid := range ssids {
 				if sid == req.SSID {
