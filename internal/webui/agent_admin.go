@@ -1685,13 +1685,33 @@ func (s *Server) refuseNonLAN(w http.ResponseWriter, r *http.Request, what strin
 	if host, _, err := net.SplitHostPort(caller); err == nil {
 		caller = host
 	}
-	local := localSubnets()
+	local := localSubnetsFn()
+	// "I cannot tell" is not "you are not local", and saying the second when
+	// the first is true sends the owner looking at his router for a problem
+	// that is on the speaker. A speaker that cannot enumerate its own
+	// interfaces refuses EVERY caller, including the one standing next to it.
+	//
+	// It still refuses: this endpoint writes a binary and runs it as root, so
+	// the unknown case is not one to wave through. What changes is that it says
+	// which of the two happened, and that a restart is the thing to try.
+	if len(local) == 0 {
+		s.logger.Warn("refused: this speaker cannot read its own network configuration, so it cannot tell whether the caller is local",
+			"endpoint", what, "caller", caller)
+		http.Error(w, fmt.Sprintf(
+			"update refused: this speaker cannot read its own network configuration right now, so it cannot tell whether %s is on its network. Restart the speaker and try again.",
+			caller), http.StatusForbidden)
+		return
+	}
 	s.logger.Warn("refused: the caller is not on any network this speaker has an address in",
 		"endpoint", what, "caller", caller, "speakerNetworks", strings.Join(local, ","))
 	http.Error(w, fmt.Sprintf(
 		"update only allowed from LAN: this speaker sees the request coming from %s, which is not on any network it has an address in (%s)",
 		caller, strings.Join(local, ", ")), http.StatusForbidden)
 }
+
+// localSubnetsFn is localSubnets behind a seam, so the "cannot tell" branch
+// can be tested without breaking the machine running the tests.
+var localSubnetsFn = localSubnets
 
 // localSubnets lists the networks the speaker has an address in, for the
 // refusal message. Best effort: an empty list is itself informative, since a
