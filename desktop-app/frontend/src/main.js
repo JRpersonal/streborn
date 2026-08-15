@@ -4769,6 +4769,11 @@ async function loadGroupMemberVolumes(members) {
       }
     } catch {}
   }));
+  // Re-anchor from the freshly read levels, but never while the user is
+  // touching the panel: doing that mid-drag measured the next move against
+  // levels our own writes had already changed, which is how a drag gave away
+  // most of its travel.
+  if (groupPanelBusy()) return;
   const slider = $('groupVolume');
   captureGroupBaseline(slider ? parseInt(slider.value, 10) : 0);
 }
@@ -4878,6 +4883,30 @@ async function runGroupMemberToggle(host, port) {
   renderGroupControl();
 }
 
+// groupPanelState remembers what the panel currently shows and whether the user
+// is touching it, so a repaint cannot happen underneath a finger.
+//
+// The panel used to be rebuilt from scratch on every call, and it is called
+// from the zone poll AND from renderPresets, which fires on things as unrelated
+// as a Spotify cover change. A rebuild replaces the slider element, reseeds it
+// from the master's own volume slider, and re-anchors the balance from levels
+// our in-flight writes have already moved. Dragging to 53 across five speakers
+// arrived at 39. The phone got these guards on 2026-08-15; this is the same
+// treatment for the desktop.
+const groupPanelState = { signature: '', dragging: false, wroteAt: 0 };
+const GROUP_PANEL_SETTLE_MS = 1500;
+
+// groupPanelBusy reports whether a rebuild would land on top of the user. A
+// drag in progress is obvious; the settle window covers the moment between our
+// write and the poll that reflects it.
+function groupPanelBusy() {
+  return groupPanelState.dragging || (Date.now() - groupPanelState.wroteAt < GROUP_PANEL_SETTLE_MS);
+}
+
+// noteGroupPanelWrite marks the moment a volume left the app, so the next poll
+// does not overrule it.
+function noteGroupPanelWrite() { groupPanelState.wroteAt = Date.now(); }
+
 // renderGroupControl paints the group chips + (when a group is active) the group
 // volume slider into #groupControl, based on the selected box.
 function renderGroupControl() {
@@ -4895,7 +4924,15 @@ function renderGroupControl() {
   const others = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.host !== box.host);
   if (others.length === 0) { cont.innerHTML = ''; return; }
   const slaves = currentGroupSlaves();
-  const inGroup = new Set(slaves.map(b => b.host));
+  // The tick must come from the SAME list the click acts on. It used to be
+  // painted from each speaker's own zone self-report while toggleGroupMember
+  // works from groupMembersOf, which is the union of that and the master's
+  // member list. A follower the master knows about but which does not report
+  // itself therefore drew a "+", and pressing it re-formed the group WITHOUT
+  // that speaker and stopped its music: the button did the opposite of what it
+  // showed. Three of five speakers were in exactly that state on 2026-08-15.
+  const editable = groupMembersOf(box, state.zoneLive, state.boxes);
+  const inGroup = new Set(editable.map(m => m.ip).filter(Boolean));
   const chips = others.map(b => {
     const on = inGroup.has(b.host);
     const label = getBoxLabel(b);
@@ -4926,6 +4963,18 @@ function renderGroupControl() {
   const memberNote = isMember
     ? `<div class="group-member-note muted small">${escapeHtml(t('group.memberOf', { name: getBoxLabel(box) }))}</div>`
     : '';
+  // Rebuild only when the panel would actually look different, and never while
+  // the user is touching it. Everything below re-binds handlers to elements the
+  // rebuild creates, so skipping here keeps the live ones and their state.
+  const signature = JSON.stringify([box.host, isMember, others.map(b => b.host), slaves.map(b => b.host)]);
+  if (signature === groupPanelState.signature && cont.querySelector('.group-chips')) {
+    // Same speakers as last time: only write the values into the rows that
+    // already exist, and not even that while a finger is on a slider.
+    if (!groupPanelBusy() && members.length) loadGroupMemberVolumes(members);
+    return;
+  }
+  if (groupPanelBusy() && cont.querySelector('.group-chips')) return;
+  groupPanelState.signature = signature;
   cont.innerHTML = `<span class="group-label muted small">${escapeHtml(t('group.label'))}</span>`
     + memberNote
     + `<div class="group-chips">${chips}</div>${volRow}`;
@@ -4934,13 +4983,26 @@ function renderGroupControl() {
   });
   const vol = $('groupVolume');
   const seed = $('musicVolume');
-  if (vol && seed && seed.value) vol.value = seed.value; // start at the master's level
+  if (vol && seed && seed.value && !groupPanelBusy()) vol.value = seed.value; // start at the master's level
   if (vol) {
-    vol.onpointerdown = () => captureGroupBaseline(parseInt(vol.value, 10));
-    vol.oninput = () => setGroupVolume(parseInt(vol.value, 10));
+    vol.onpointerdown = () => {
+      groupPanelState.dragging = true;
+      captureGroupBaseline(parseInt(vol.value, 10));
+    };
+    const endDrag = () => { groupPanelState.dragging = false; noteGroupPanelWrite(); };
+    vol.onpointerup = endDrag;
+    vol.onpointercancel = endDrag;
+    vol.onblur = endDrag;
+    vol.oninput = () => { noteGroupPanelWrite(); setGroupVolume(parseInt(vol.value, 10)); };
   }
   cont.querySelectorAll('.group-member-vol input[type=range]').forEach(el => {
+    el.onpointerdown = () => { groupPanelState.dragging = true; };
+    const endMemberDrag = () => { groupPanelState.dragging = false; noteGroupPanelWrite(); };
+    el.onpointerup = endMemberDrag;
+    el.onpointercancel = endMemberDrag;
+    el.onblur = endMemberDrag;
     el.oninput = () => {
+      noteGroupPanelWrite();
       const lbl = document.getElementById('memberVolVal-' + cssId(el.dataset.host));
       if (lbl) lbl.textContent = el.value;
       setMemberVolume(el.dataset.host, parseInt(el.dataset.port, 10), parseInt(el.value, 10));
