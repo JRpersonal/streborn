@@ -65,6 +65,7 @@ export {
   SetAppLocale,
   SuggestBoxLanguage,
   ListWiFiProfiles,
+  BoxWifiScan,
   TryWiFiPassword,
   ListBoxMediaServers,
   EnableBoxMediaServer,

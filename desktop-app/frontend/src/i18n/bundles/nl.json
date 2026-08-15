@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- kies een wifi of typ er hieronder een -",
   "settingsView.wlanRefreshTitle": "Wifi-lijst van deze pc opnieuw laden",
   "settingsView.wlanListRefreshed": "{{n}} wifi-netwerken geladen",
+  "settingsView.wlanListFromSpeaker": "Netwerken die de speaker ziet: {{n}}",
   "settingsView.wlanSsidPlaceholder": "Wifi-naam (SSID)",
   "settingsView.wlanPassPlaceholder": "Wifi-wachtwoord (laat leeg voor een open netwerk)",
   "settingsView.wlanShowPass": "Wachtwoord tonen",

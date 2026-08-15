@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- Wi-Fiを選ぶか、下に入力してください -",
   "settingsView.wlanRefreshTitle": "このPCからWi-Fi一覧を再読み込み",
   "settingsView.wlanListRefreshed": "{{n}} 件のWi-Fiネットワークを読み込みました",
+  "settingsView.wlanListFromSpeaker": "スピーカーが見つけたネットワーク: {{n}}",
   "settingsView.wlanSsidPlaceholder": "Wi-Fi名 (SSID)",
   "settingsView.wlanPassPlaceholder": "Wi-Fiパスワード (オープンネットワークの場合は空欄)",
   "settingsView.wlanShowPass": "パスワードを表示",

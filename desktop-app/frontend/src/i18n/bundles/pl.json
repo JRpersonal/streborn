@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- wybierz Wi-Fi lub wpisz poniżej -",
   "settingsView.wlanRefreshTitle": "Załaduj ponownie listę Wi-Fi tego komputera",
   "settingsView.wlanListRefreshed": "Załadowano {{n}} sieci Wi-Fi",
+  "settingsView.wlanListFromSpeaker": "Sieci widoczne dla głośnika: {{n}}",
   "settingsView.wlanSsidPlaceholder": "Nazwa Wi-Fi (SSID)",
   "settingsView.wlanPassPlaceholder": "Hasło Wi-Fi (zostaw puste dla sieci otwartej)",
   "settingsView.wlanShowPass": "Pokaż hasło",

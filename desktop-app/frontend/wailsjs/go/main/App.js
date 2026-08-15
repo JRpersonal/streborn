@@ -46,6 +46,10 @@ export function BoxSnapshot(arg1, arg2) {
   return window['go']['main']['App']['BoxSnapshot'](arg1, arg2);
 }
 
+export function BoxWifiScan(arg1, arg2) {
+  return window['go']['main']['App']['BoxWifiScan'](arg1, arg2);
+}
+
 export function BrowseLibrary(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['BrowseLibrary'](arg1, arg2, arg3, arg4);
 }

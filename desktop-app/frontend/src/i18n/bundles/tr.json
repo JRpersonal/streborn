@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- bir Wi-Fi seçin veya aşağıya girin -",
   "settingsView.wlanRefreshTitle": "Bu bilgisayarın Wi-Fi listesini yeniden yükle",
   "settingsView.wlanListRefreshed": "{{n}} Wi-Fi ağı yüklendi",
+  "settingsView.wlanListFromSpeaker": "Hoparlörün gördüğü ağlar: {{n}}",
   "settingsView.wlanSsidPlaceholder": "Wi-Fi adı (SSID)",
   "settingsView.wlanPassPlaceholder": "Wi-Fi parolası (açık ağ için boş bırakın)",
   "settingsView.wlanShowPass": "Parolayı göster",

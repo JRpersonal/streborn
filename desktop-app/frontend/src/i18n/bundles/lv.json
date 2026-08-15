@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- atlasiet Wi-Fi vai ievadiet zemāk -",
   "settingsView.wlanRefreshTitle": "Pārlādēt šī datora Wi-Fi sarakstu",
   "settingsView.wlanListRefreshed": "Ielādēti {{n}} Wi-Fi tīkli",
+  "settingsView.wlanListFromSpeaker": "Tīkli, ko redz skaļrunis: {{n}}",
   "settingsView.wlanSsidPlaceholder": "Wi-Fi nosaukums (SSID)",
   "settingsView.wlanPassPlaceholder": "Wi-Fi parole (atstājiet tukšu atvērtam tīklam)",
   "settingsView.wlanShowPass": "Rādīt paroli",

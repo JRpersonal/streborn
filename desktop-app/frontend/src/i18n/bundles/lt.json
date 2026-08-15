@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- pasirinkite Wi-Fi arba įveskite žemiau -",
   "settingsView.wlanRefreshTitle": "Iš naujo įkelti šio kompiuterio Wi-Fi sąrašą",
   "settingsView.wlanListRefreshed": "Įkelta {{n}} Wi-Fi tinklų",
+  "settingsView.wlanListFromSpeaker": "Tinklai, kuriuos mato garsiakalbis: {{n}}",
   "settingsView.wlanSsidPlaceholder": "Wi-Fi pavadinimas (SSID)",
   "settingsView.wlanPassPlaceholder": "Wi-Fi slaptažodis (palikite tuščią atviram tinklui)",
   "settingsView.wlanShowPass": "Rodyti slaptažodį",

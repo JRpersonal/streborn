@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- اختر Wi-Fi أو اكتب واحدًا أدناه -",
   "settingsView.wlanRefreshTitle": "إعادة تحميل قائمة Wi-Fi من هذا الحاسوب",
   "settingsView.wlanListRefreshed": "حُمّلت {{n}} شبكة Wi-Fi",
+  "settingsView.wlanListFromSpeaker": "الشبكات التي يراها مكبر الصوت: {{n}}",
   "settingsView.wlanSsidPlaceholder": "اسم Wi-Fi (SSID)",
   "settingsView.wlanPassPlaceholder": "كلمة مرور Wi-Fi (اتركها فارغة لشبكة مفتوحة)",
   "settingsView.wlanShowPass": "إظهار كلمة المرور",

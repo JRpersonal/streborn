@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- choisissez un Wi-Fi ou saisissez-en un ci-dessous -",
   "settingsView.wlanRefreshTitle": "Recharger la liste Wi-Fi depuis ce PC",
   "settingsView.wlanListRefreshed": "{{n}} réseaux Wi-Fi chargés",
+  "settingsView.wlanListFromSpeaker": "Réseaux visibles par l'enceinte : {{n}}",
   "settingsView.wlanSsidPlaceholder": "Nom du Wi-Fi (SSID)",
   "settingsView.wlanPassPlaceholder": "Mot de passe Wi-Fi (laisser vide pour un réseau ouvert)",
   "settingsView.wlanShowPass": "Afficher le mot de passe",

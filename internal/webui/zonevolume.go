@@ -191,11 +191,14 @@ func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
-	sum, n := 0, 0
+	sum, n, loudest := 0, 0, -1
 	for _, m := range members {
 		if m.Volume >= 0 {
 			sum += m.Volume
 			n++
+			if m.Volume > loudest {
+				loudest = m.Volume
+			}
 		}
 	}
 	avg := -1
@@ -203,8 +206,14 @@ func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
 		avg = sum / n
 	}
 	sort.SliceStable(members, func(a, b int) bool { return members[a].IsMaster && !members[b].IsMaster })
+	// Both figures, because they answer different questions. The average says
+	// what the group sits at on balance; the loudest says how loud the room
+	// actually is, which is what a group slider should read when the speakers
+	// are deliberately at different levels. A slider showing the average of 40
+	// and 10 reads 25, and nothing in the room is playing at 25.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"grouped": true, "stereo": stereo, "members": members, "average": avg,
+		"grouped": true, "stereo": stereo, "members": members,
+		"average": avg, "loudest": loudest,
 	})
 }
 

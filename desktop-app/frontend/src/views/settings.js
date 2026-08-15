@@ -69,6 +69,7 @@ import {
   SetBoxVolume,
   SetBoxBass,
   ListWiFiProfiles,
+  BoxWifiScan,
   TryWiFiPassword,
   ListBoxMediaServers,
   EnableBoxMediaServer,
@@ -2262,14 +2263,40 @@ function wireWlanSwitch(box) {
       loadBoxWlanList();
     }
   };
+  // Ask the SPEAKER what it can see, not the computer.
+  //
+  // These are different lists, and only the speaker's decides whether a switch
+  // can work. Offering the computer's known networks meant a user picked one,
+  // committed, and only then learned the speaker could not see it, which is
+  // where the "SoundTouch only supports 2.4 GHz" explanation came from. A
+  // 5 GHz network is simply not in the speaker's list, so the rule does not
+  // have to be taught at all.
+  //
+  // The computer's list stays as the fallback for a speaker that cannot
+  // survey, and typing a name by hand still works for a hidden network.
   async function loadBoxWlanList() {
     const sel = $('boxWlanSelect');
     const rb = $('boxWlanRefresh');
     if (rb) rb.classList.add('spinning'); // visible feedback: the button spins while loading
-    try {
-      const profiles = await ListWiFiProfiles() || [];
+    const fill = (names) => {
       sel.innerHTML = `<option value="">${escapeHtml(t('settingsView.wlanPickPlaceholder'))}</option>` +
-        profiles.map(p => `<option value="${escapeAttr(p.ssid)}">${escapeHtml(p.ssid)}</option>`).join('');
+        names.map(n => `<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`).join('');
+    };
+    try {
+      const box = state.settingsBox;
+      let seen = [];
+      if (box && box.host) {
+        // The survey holds the radio for about five seconds, which is why this
+        // is tied to the refresh button rather than run on its own.
+        try { seen = await BoxWifiScan(box.host, box.port) || []; } catch { seen = []; }
+      }
+      if (seen.length) {
+        fill(seen);
+        showToast(t('settingsView.wlanListFromSpeaker', { n: seen.length }));
+        return;
+      }
+      const profiles = await ListWiFiProfiles() || [];
+      fill(profiles.map(p => p.ssid));
       showToast(t('settingsView.wlanListRefreshed', { n: profiles.length }));
     } catch {
       sel.innerHTML = `<option value="">${escapeHtml(t('setup.wlanListUnavailable'))}</option>`;

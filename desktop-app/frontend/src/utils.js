@@ -397,7 +397,27 @@ export function activeSlotFromLocation(loc) {
 // runs on every status poll and a malformed payload must cost a highlight, not
 // throw inside the render.
 export function slotFromOrionStation(loc) {
-  const d = loc.match(/[?&]data=([A-Za-z0-9\-_=+/]+)/);
+  const payload = orionStationPayload(loc);
+  const url = payload && payload.streamUrl;
+  if (!url) return null;
+  const m = String(url).match(/\/stream\/(\d+)(?:[/?#]|$)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// orionStationPayload decodes the ORION station descriptor the speaker reports
+// while it plays a native radio preset, or returns null for any other location.
+//
+// The descriptor is the ONLY record of what is playing in that case: the
+// speaker fetches the stream itself, so its now-playing location is the
+// envelope rather than a URL anything can play. Everything needed to save the
+// station again is inside it, which is what makes saving from a native preset
+// possible at all: the display name, the logo, and the stream URL (itself one
+// of STR's proxy forms, which decodeProxyUrl unwraps).
+//
+// Failure is silent on purpose: this runs on every status poll, and a
+// malformed payload must cost a highlight, not throw inside the render.
+export function orionStationPayload(loc) {
+  const d = (loc || '').match(/[?&]data=([A-Za-z0-9\-_=+/]+)/);
   if (!d) return null;
   try {
     // The agent writes unpadded base64url; older builds wrote the standard
@@ -405,10 +425,7 @@ export function slotFromOrionStation(loc) {
     let b64 = d[1].replace(/-/g, '+').replace(/_/g, '/');
     while (b64.length % 4) b64 += '=';
     const payload = JSON.parse(atob(b64));
-    const url = payload && payload.streamUrl;
-    if (!url) return null;
-    const m = String(url).match(/\/stream\/(\d+)(?:[/?#]|$)/);
-    return m ? parseInt(m[1], 10) : null;
+    return (payload && typeof payload === 'object') ? payload : null;
   } catch {
     return null;
   }

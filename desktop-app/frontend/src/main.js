@@ -200,6 +200,7 @@ import {
   dismissNotice,
   noticeDismissed,
   activeSlotFromLocation,
+  orionStationPayload,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -4924,6 +4925,15 @@ function renderPresets() {
   if (activeSlot !== null) {
     const ap = state.presets.find(x => x.slot === activeSlot);
     if (ap) activeStreamURL = ap.stream_url;
+  } else {
+    // A native preset whose descriptor carries the RAW proxy form rather than a
+    // per-slot one: the slot lookup finds nothing, and the location is the
+    // descriptor rather than a URL, so neither of the matches above can fire
+    // and no tile lit up while the speaker was plainly playing one of them.
+    // The real station URL is inside the descriptor, and that does match what
+    // the key holds.
+    const orion = orionStationPayload(state.nowLocation);
+    if (orion && orion.streamUrl) activeStreamURL = decodeProxyUrl(orion.streamUrl);
   }
   for (let i = 1; i <= 6; i++) {
     const p = state.presets.find(x => x.slot === i);
@@ -5351,6 +5361,39 @@ async function saveCurrentToSlot(slot) {
   // Case B: speaker is playing a stream that does NOT go through
   // our proxy (for example a station started directly via the radio
   // search). Use state.nowLocation / nowName / nowIcon as before.
+  //
+  // Unless it is a NATIVE radio preset, where the speaker fetches the stream
+  // itself and its location is the ORION descriptor rather than a URL. Saving
+  // that verbatim posts "/station?data=..." as the stream, which the speaker
+  // rightly refuses:
+  //
+  //   status 422 {"code":"stream-url-invalid","error":"This selection can't be
+  //   saved as a preset (no playable stream)."}
+  //
+  // Reported on #608, and it hit every hold-to-save on a speaker whose presets
+  // had migrated to the native form: the "+" button kept working because that
+  // path uses the app's own record of the station instead of the speaker's.
+  // The descriptor carries the name, the logo and the stream URL, so unwrap it
+  // and save what is actually playing. slotFromOrionStation already handles
+  // the case where that stream URL is a per-slot proxy; this is the rest of
+  // them, above all the /stream/raw form.
+  const orion = orionStationPayload(state.nowLocation);
+  if (orion && orion.streamUrl) {
+    const oname = orion.name || state.nowName || t('preset.placeholderSender');
+    try {
+      await SetPreset(
+        state.currentBox.host, state.currentBox.port,
+        slot, oname, decodeProxyUrl(orion.streamUrl), orion.imageUrl || state.nowIcon || '',
+        state.nowBitrate || 0, '', ''
+      );
+      showToast(t('preset.savedToKey', { n: slot, name: oname }));
+      await loadPresets();
+    } catch (err) {
+      showError(t('preset.saveFailed', { err: String(err) }));
+    }
+    return;
+  }
+
   const name = state.nowName || t('preset.placeholderSender');
   // The codec is only known when this stream is the one the app itself
   // started (radio-browser reported it at play time); the box does not
