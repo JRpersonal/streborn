@@ -860,7 +860,7 @@
   "settingsView.copyPresetsSomeFailed": "Some presets could not be copied to {{target}}: {{detail}}",
   "settingsView.copyPresetsAllSlotIssues": "Presets copied, but some were rejected: {{detail}}",
   "settingsView.firmwareLabel": "Speaker firmware",
-  "settingsView.rebootHelp": "Restart the speaker. Use this when you have just plugged in a freshly prepared USB stick and want the speaker to pick up the new settings now.",
+  "settingsView.rebootHelp": "Restart the speaker. Use this if it stops responding, or after a change that only takes effect on a restart.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",

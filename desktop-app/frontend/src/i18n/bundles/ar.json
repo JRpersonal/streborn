@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "هذا يستبدل الإعدادات المسبقة 1 إلى 6 على {{target}} بإعدادات هذه السمّاعة.",
   "settingsView.copyPresetsDone": "نُسخت {{n}} إعداد مسبق إلى {{target}}.",
   "settingsView.firmwareLabel": "برنامج السمّاعة",
-  "settingsView.rebootHelp": "إعادة تشغيل السمّاعة. استخدم هذا عندما تكون قد وصّلت للتوّ ذاكرة USB مجهّزة حديثًا وتريد أن تأخذ السمّاعة الإعدادات الجديدة الآن.",
+  "settingsView.rebootHelp": "يعيد تشغيل مكبر الصوت. استخدم هذا إذا توقف عن الاستجابة، أو بعد تغيير لا يسري إلا بعد إعادة التشغيل.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",

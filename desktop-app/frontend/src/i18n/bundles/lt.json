@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "Tai pakeis garsiakalbio {{target}} išankstinius nustatymus nuo 1 iki 6 šio garsiakalbio nustatymais.",
   "settingsView.copyPresetsDone": "Nukopijuota {{n}} išankstinių nustatymų į {{target}}.",
   "settingsView.firmwareLabel": "Kolonėlės programinė įranga",
-  "settingsView.rebootHelp": "Paleidžia garsiakalbį iš naujo. Naudokite, kai ką tik įkišote naujai paruoštą USB atmintinę ir norite, kad garsiakalbis iškart paimtų naujus nustatymus.",
+  "settingsView.rebootHelp": "Iš naujo paleidžia garsiakalbį. Naudokite, jei jis nustojo reaguoti arba po pakeitimo, kuris įsigalioja tik po paleidimo iš naujo.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",

@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "Це замінить пресети 1-6 на {{target}} пресетами з цієї колонки.",
   "settingsView.copyPresetsDone": "Скопійовано пресети ({{n}}) на {{target}}.",
   "settingsView.firmwareLabel": "Прошивка колонки",
-  "settingsView.rebootHelp": "Перезапустити колонку. Використовуйте, коли щойно вставили свіжопідготовлений USB-накопичувач і хочете, щоб колонка прийняла нові налаштування зараз.",
+  "settingsView.rebootHelp": "Перезапускає динамік. Скористайтеся цим, якщо він перестав відповідати або після зміни, яка діє лише після перезапуску.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",

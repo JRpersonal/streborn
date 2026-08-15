@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "Hiermee worden presets 1 tot 6 op {{target}} vervangen door de presets van deze speaker.",
   "settingsView.copyPresetsDone": "{{n}} presets gekopieerd naar {{target}}.",
   "settingsView.firmwareLabel": "Speaker-firmware",
-  "settingsView.rebootHelp": "Herstart de speaker. Gebruik dit wanneer je net een vers voorbereide USB-stick hebt geplaatst en wilt dat de speaker de nieuwe instellingen nu oppikt.",
+  "settingsView.rebootHelp": "Start de speaker opnieuw op. Gebruik dit als hij niet meer reageert, of na een wijziging die pas na een herstart werkt.",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",

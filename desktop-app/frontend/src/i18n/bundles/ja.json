@@ -780,7 +780,7 @@
   "settingsView.copyPresetsConfirmBody": "{{target}} のプリセット1〜6を、このスピーカーのプリセットで置き換えます。",
   "settingsView.copyPresetsDone": "{{n}} 件のプリセットを {{target}} にコピーしました。",
   "settingsView.firmwareLabel": "スピーカーのファームウェア",
-  "settingsView.rebootHelp": "スピーカーを再起動します。準備したてのUSBメモリを挿し、新しい設定を今すぐ反映させたいときに使います。",
+  "settingsView.rebootHelp": "スピーカーを再起動します。応答しなくなったときや、再起動後にのみ有効になる変更を行ったあとに使用します。",
   "settingsView.removeConflictBtn": "Remove {{mod}} leftovers",
   "settingsView.removeConflictHelp": "Delete the leftovers of {{mod}} (another SoundTouch tool) that clash with STR. Only {{mod}}'s own files are removed; your Wi-Fi, presets and STR stay untouched.",
   "settingsView.removeConflictConfirm": "Remove the {{mod}} leftovers from {{name}}? Only {{mod}}'s own files are deleted; STR, your Wi-Fi and presets are kept.",
