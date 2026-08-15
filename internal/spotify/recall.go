@@ -510,3 +510,27 @@ func (m *Manager) repointBox(from, to string) {
 		"fromContext", from, "toContext", to)
 	go cb(context.Background())
 }
+
+// repointForPendingContext performs a re-point that will_play announced
+// earlier, now that the announced track is actually playing.
+//
+// The split exists because will_play describes the NEXT track. On a generated
+// radio playlist that announcement arrives while the current song still has
+// time to run, and re-pointing there tore the box off the stream and made the
+// engine start the announced track early: the listener heard the speaker skip
+// on its own (live 2026-08-15 17:40:52). Acting on "playing" / "metadata"
+// instead keeps a deliberate playlist switch from the app just as prompt,
+// because those follow it within moments, while a prefetch announcement now
+// costs nothing until the track really begins.
+//
+// Safe to call on every event: it does nothing when no re-point is held.
+func (m *Manager) repointForPendingContext() {
+	m.mu.Lock()
+	from, to := m.pendingRepointFrom, m.pendingRepointTo
+	m.pendingRepointFrom, m.pendingRepointTo = "", ""
+	m.mu.Unlock()
+	if to == "" {
+		return
+	}
+	m.repointBox(from, to)
+}

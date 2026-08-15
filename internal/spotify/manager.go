@@ -205,6 +205,19 @@ type Manager struct {
 	// playlist) the box is re-pointed at the stream so it drops its buffer and
 	// plays the new playlist promptly instead of finishing the old buffer.
 	lastContext string
+	// pendingRepointFrom/To hold a context change announced by will_play that
+	// has not been acted on yet.
+	//
+	// will_play says what the engine is going to play NEXT, which on a
+	// generated radio playlist arrives while the current song is still
+	// running. Re-pointing there tore the box off the stream mid-song, and
+	// the engine then started the announced track: the song the listener was
+	// hearing was cut off BY the re-point, which reads as the speaker
+	// skipping on its own (live 2026-08-15 17:40:52, reported as "the
+	// previous track was not over yet"). The re-point now waits for that
+	// track to actually start.
+	pendingRepointFrom string
+	pendingRepointTo   string
 	// headerPages holds the current track's Ogg header pages (the BOS page
 	// with the Vorbis identification header plus the comment/setup pages).
 	// The drain captures them as they stream past; ServeOgg replays them to
