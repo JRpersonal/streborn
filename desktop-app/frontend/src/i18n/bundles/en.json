@@ -791,6 +791,7 @@
   "settingsView.wlanPickPlaceholder": "- pick a Wi-Fi or type one below -",
   "settingsView.wlanRefreshTitle": "Reload Wi-Fi list from this PC",
   "settingsView.wlanListRefreshed": "{{n}} Wi-Fi networks loaded",
+  "settingsView.wlanListFromSpeaker": "Networks the speaker can see: {{n}}",
   "settingsView.wlanSsidPlaceholder": "Wi-Fi name (SSID)",
   "settingsView.wlanPassPlaceholder": "Wi-Fi password (leave empty for an open network)",
   "settingsView.wlanShowPass": "Show password",

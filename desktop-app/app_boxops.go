@@ -254,3 +254,32 @@ func pickReachableIP(ips []string) string {
 		return ""
 	}
 }
+
+// BoxWifiScan asks the SPEAKER which Wi-Fi networks it can see.
+//
+// This is the list that decides whether a switch can work, and it is not the
+// list the computer sees. The app used to offer the computer's own known
+// networks and only find out afterwards that the speaker could not see the
+// chosen one, which is how users met the "SoundTouch only supports 2.4 GHz"
+// refusal at the worst possible moment: after committing.
+//
+// Best effort by design. A speaker that cannot survey returns an empty list
+// rather than an error, and the caller falls back to letting the user type a
+// name; the switch itself still runs its own pre-flight.
+func (a *App) BoxWifiScan(host string, port int) ([]string, error) {
+	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/wlan/scan", "", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, readHTTPError(resp)
+	}
+	var out struct {
+		SSIDs []string `json:"ssids"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.SSIDs, nil
+}

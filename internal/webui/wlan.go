@@ -37,6 +37,43 @@ import (
 // box leaves the current network as it switches, so the client must rediscover
 // it on the new IP rather than wait on this request. LAN-only so a stray
 // internet call can never move the speaker's Wi-Fi.
+// handleBoxWLANScan answers GET /api/box/wlan/scan with the networks the
+// SPEAKER can see, which is not the same list as the one the phone or the
+// computer sees and is the only list that matters here.
+//
+// The survey was already being run, but only to REFUSE a switch after the user
+// had typed a network in: the app offered the computer's own known networks,
+// the user picked one, and the speaker then said it could not see it. That is
+// the wrong way round. Asking the speaker first means the user only ever sees
+// what is actually reachable, and the "SoundTouch only supports 2.4 GHz"
+// explanation stops being something they have to know: a 5 GHz network simply
+// is not in the list.
+//
+// Only on request. The survey puts the radio into a scan for about five
+// seconds, so it must stay tied to the user pressing refresh rather than
+// running on its own.
+func (s *Server) handleBoxWLANScan(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !isLocalLAN(r.RemoteAddr) {
+		http.Error(w, "wlan scan only allowed from LAN", http.StatusForbidden)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	ssids, err := boxapi.New(s.boxHost).SiteSurvey(ctx)
+	if err != nil {
+		// A speaker that cannot survey is not a speaker that cannot switch: the
+		// caller falls back to letting the user type a name, and the switch has
+		// its own pre-flight. So this is a soft failure with an empty list.
+		s.logger.Info("wlan scan: site survey failed", "err", err)
+		writeJSON(w, http.StatusOK, map[string]any{"ssids": []string{}, "scanned": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ssids": ssids, "scanned": true})
+}
+
 func (s *Server) handleBoxWLAN(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPut) {
 		return

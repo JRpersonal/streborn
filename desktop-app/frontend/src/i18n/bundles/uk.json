@@ -727,6 +727,7 @@
   "settingsView.wlanPickPlaceholder": "- виберіть Wi-Fi або введіть нижче -",
   "settingsView.wlanRefreshTitle": "Перезавантажити список Wi-Fi з цього ПК",
   "settingsView.wlanListRefreshed": "Завантажено мереж Wi-Fi: {{n}}",
+  "settingsView.wlanListFromSpeaker": "Мережі, які бачить динамік: {{n}}",
   "settingsView.wlanSsidPlaceholder": "Ім'я Wi-Fi (SSID)",
   "settingsView.wlanPassPlaceholder": "Пароль Wi-Fi (залиште порожнім для відкритої мережі)",
   "settingsView.wlanShowPass": "Показати пароль",

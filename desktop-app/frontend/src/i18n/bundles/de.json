@@ -791,6 +791,7 @@
   "settingsView.wlanPickPlaceholder": "- WLAN auswählen oder unten eintippen -",
   "settingsView.wlanRefreshTitle": "WLAN-Liste vom PC neu laden",
   "settingsView.wlanListRefreshed": "{{n}} WLAN-Profile geladen",
+  "settingsView.wlanListFromSpeaker": "Netzwerke, die der Lautsprecher sieht: {{n}}",
   "settingsView.wlanSsidPlaceholder": "WLAN-Name (SSID)",
   "settingsView.wlanPassPlaceholder": "WLAN-Passwort (leer für offenes WLAN)",
   "settingsView.wlanShowPass": "Passwort anzeigen",
