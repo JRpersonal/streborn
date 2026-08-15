@@ -141,3 +141,67 @@ func trustStoreSnapshotPaths(paths []string, rootCAPEM []byte) []TrustStoreStatu
 	}
 	return out
 }
+
+// WellKnownRoot names one widely used certificate authority and whether this
+// speaker has it.
+//
+// "certificate signed by unknown authority" names the authority the STATION
+// presented; it cannot say whether the speaker has it. On an ST20 whose store
+// held 157 usable certificates, two of the most common roots in the world were
+// nevertheless absent, and there was no way to see that from a bundle. These
+// few names are the ones behind most internet radio and the streaming
+// services, so their presence answers "is this speaker's set simply too old?"
+// in one line.
+type WellKnownRoot struct {
+	Name    string `json:"name"`
+	Present bool   `json:"present"`
+}
+
+// wellKnownRootCNs are matched against a certificate's Subject CommonName.
+var wellKnownRootCNs = []string{
+	"DigiCert Global Root G2",
+	"DigiCert Global Root CA",
+	"ISRG Root X1",
+	"Amazon Root CA 1",
+	"Baltimore CyberTrust Root",
+	"GlobalSign Root CA",
+	"USERTrust RSA Certification Authority",
+	"Go Daddy Root Certificate Authority - G2",
+}
+
+// WellKnownRoots reports which of the common authorities this speaker's trust
+// stores carry, across ALL of them: crypto/x509 reads one store file and then
+// unions both certificate directories, so a root present in any of them counts.
+func WellKnownRoots() []WellKnownRoot {
+	return wellKnownRootsIn(DefaultTrustStorePaths)
+}
+
+func wellKnownRootsIn(paths []string) []WellKnownRoot {
+	have := map[string]bool{}
+	for _, p := range paths {
+		body, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		for rest := body; len(rest) > 0; {
+			var block *pem.Block
+			block, rest = pem.Decode(rest)
+			if block == nil {
+				break
+			}
+			if block.Type != "CERTIFICATE" {
+				continue
+			}
+			c, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				continue
+			}
+			have[strings.TrimSpace(c.Subject.CommonName)] = true
+		}
+	}
+	out := make([]WellKnownRoot, 0, len(wellKnownRootCNs))
+	for _, cn := range wellKnownRootCNs {
+		out = append(out, WellKnownRoot{Name: cn, Present: have[cn]})
+	}
+	return out
+}
