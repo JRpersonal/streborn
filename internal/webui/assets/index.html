@@ -1442,9 +1442,17 @@ function zoneHasMember(p) {
 var groupBusy = {};
 var groupChain = Promise.resolve();
 
-function queueGroupOp(key, fn) {
+function queueGroupOp(key, fn, btn) {
   if (groupBusy[key]) return groupChain;
   groupBusy[key] = true;
+  // Mark the button NOW, not when the operation reaches the front of the
+  // queue. Adding two speakers one after the other put the second request in
+  // the queue and left its button looking untouched, so the second tap gave no
+  // sign it had registered while the first was still forming the group. The
+  // whole reason this queue exists is that people tap again when nothing
+  // visibly happens, and the pending press was the one case still doing that
+  // to them.
+  if (btn) { btn.textContent = '···'; btn.disabled = true; }
   groupChain = groupChain.then(fn).catch(function(){}).then(function(){
     delete groupBusy[key];
     return loadZone().catch(function(){});
@@ -1454,7 +1462,6 @@ function queueGroupOp(key, fn) {
 
 function joinPeer(p, btn) {
   queueGroupOp(p.deviceID || p.ip, function(){
-    if (btn) { btn.textContent = '···'; btn.disabled = true; }
     setGroupNote(fmt(T.joining || '{{name}} is joining. This takes a few seconds.', { name: p.name || '' }));
     var members = (zone.members || []).filter(function(m){ return !m.isSelf; })
       .map(function(m){ return { deviceID: m.deviceID, ip: m.ip }; });
@@ -1462,17 +1469,16 @@ function joinPeer(p, btn) {
     return api('/api/box/zone', 'POST', { slaves: members, mode: 'native' }).then(function(res){
       setGroupNote(res ? '' : (T.joinFail || 'That speaker could not be added.'));
     });
-  });
+  }, btn);
 }
 
 function leavePeer(m, btn) {
   queueGroupOp(m.deviceID || m.ip, function(){
-    if (btn) { btn.textContent = '···'; btn.disabled = true; }
     var rest = (zone.members || []).filter(function(x){ return !x.isSelf && x.ip !== m.ip; })
       .map(function(x){ return { deviceID: x.deviceID, ip: x.ip }; });
     if (!rest.length) return api('/api/box/zone', 'DELETE');
     return api('/api/box/zone', 'POST', { slaves: rest, mode: 'native' });
-  });
+  }, btn);
 }
 
 function setGroupNote(text) {
@@ -1736,7 +1742,13 @@ function dismissCoach() {
    speaker plays alone, so a single-speaker home never meets it.
    =========================================================================== */
 var zone = { grouped:false, stereo:false, members:[], master:false, masterName:'' };
+// Which speakers the volume slider moves. Starts on the whole group whenever
+// one exists: somebody who has grouped speakers is listening to the group, so
+// the volume control should move what they are listening to. It only stays on
+// the single speaker if the user says so, and that choice then sticks for the
+// session rather than being undone by the next zone poll.
 var volScope = 'one';
+var volScopeChosen = false; // the user picked a scope by hand
 var memberDragging = null; // ip whose slider the finger is on right now
 
 function applyScopeUI() {
@@ -1744,14 +1756,15 @@ function applyScopeUI() {
   var bG = document.getElementById('scopeGroup'), bP = document.getElementById('scopePair'), bO = document.getElementById('scopeOne');
   if (!row || !bG || !bP || !bO) return;
   row.hidden = !zone.grouped;
-  if (!zone.grouped) { volScope = 'one'; return; }
+  if (!zone.grouped) { volScope = 'one'; volScopeChosen = false; return; }
   // Group and pair are the same membership seen two ways, so only one of the
   // two ever appears. Offering both would invite the question "what is the
   // difference", which has no answer.
   bG.hidden = zone.stereo;
   bP.hidden = !zone.stereo;
   var wide = zone.stereo ? 'pair' : 'group';
-  if (volScope !== 'one' && volScope !== wide) volScope = wide;
+  if (!volScopeChosen) volScope = wide;
+  else if (volScope !== 'one' && volScope !== wide) volScope = wide;
   bO.setAttribute('aria-pressed', String(volScope === 'one'));
   bG.setAttribute('aria-pressed', String(volScope === 'group'));
   bP.setAttribute('aria-pressed', String(volScope === 'pair'));
@@ -1770,6 +1783,7 @@ function applyScopeUI() {
     if (!b) return;
     b.addEventListener('click', function(){
       volScope = b.getAttribute('data-scope');
+      volScopeChosen = true;
       applyScopeUI();
       // Show what the newly chosen scope currently sits at, so the number under
       // the slider is never about the other scope.
