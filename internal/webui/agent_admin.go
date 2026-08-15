@@ -538,7 +538,7 @@ func (s *Server) readUploadedELF(w http.ResponseWriter, r *http.Request, logger 
 		return nil, false
 	}
 	if !isLocalLAN(r.RemoteAddr) {
-		http.Error(w, "update only allowed from LAN", http.StatusForbidden)
+		s.refuseNonLAN(w, r, what)
 		return nil, false
 	}
 	// Quieten the speaker before the transfer starts, not after: the audio and
@@ -1628,7 +1628,7 @@ func (s *Server) streamUploadedELF(w http.ResponseWriter, r *http.Request, logge
 		return "", 0, false
 	}
 	if !isLocalLAN(r.RemoteAddr) {
-		http.Error(w, "update only allowed from LAN", http.StatusForbidden)
+		s.refuseNonLAN(w, r, what)
 		return "", 0, false
 	}
 	s.hushForUpload(what)
@@ -1667,4 +1667,76 @@ func (s *Server) streamUploadedELF(w http.ResponseWriter, r *http.Request, logge
 		return "", size, false
 	}
 	return sum, size, true
+}
+
+// refuseNonLAN answers a request the LAN gate turned away, and records WHY.
+//
+// The refusal used to be silent: http.Error and nothing else. A user whose
+// update was refused therefore sent a diagnostic bundle containing no trace of
+// it at all, so the only way to work out what happened was to ask him to try
+// again and describe it. One reporter went through ten attempts and a mail
+// exchange before his Wave updated (2026-08-15), and his bundle could not say
+// which address had been turned away or what the speaker considered local.
+//
+// Both figures are in the answer as well as the log, because the person who
+// needs them is usually reading the app's error message rather than a bundle.
+func (s *Server) refuseNonLAN(w http.ResponseWriter, r *http.Request, what string) {
+	caller := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(caller); err == nil {
+		caller = host
+	}
+	local := localSubnetsFn()
+	// "I cannot tell" is not "you are not local", and saying the second when
+	// the first is true sends the owner looking at his router for a problem
+	// that is on the speaker. A speaker that cannot enumerate its own
+	// interfaces refuses EVERY caller, including the one standing next to it.
+	//
+	// It still refuses: this endpoint writes a binary and runs it as root, so
+	// the unknown case is not one to wave through. What changes is that it says
+	// which of the two happened, and that a restart is the thing to try.
+	if len(local) == 0 {
+		s.logger.Warn("refused: this speaker cannot read its own network configuration, so it cannot tell whether the caller is local",
+			"endpoint", what, "caller", caller)
+		http.Error(w, fmt.Sprintf(
+			"update refused: this speaker cannot read its own network configuration right now, so it cannot tell whether %s is on its network. Restart the speaker and try again.",
+			caller), http.StatusForbidden)
+		return
+	}
+	s.logger.Warn("refused: the caller is not on any network this speaker has an address in",
+		"endpoint", what, "caller", caller, "speakerNetworks", strings.Join(local, ","))
+	http.Error(w, fmt.Sprintf(
+		"update only allowed from LAN: this speaker sees the request coming from %s, which is not on any network it has an address in (%s)",
+		caller, strings.Join(local, ", ")), http.StatusForbidden)
+}
+
+// localSubnetsFn is localSubnets behind a seam, so the "cannot tell" branch
+// can be tested without breaking the machine running the tests.
+var localSubnetsFn = localSubnets
+
+// localSubnets lists the networks the speaker has an address in, for the
+// refusal message. Best effort: an empty list is itself informative, since a
+// speaker whose interfaces cannot be read refuses everything.
+func localSubnets() []string {
+	var out []string
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return out
+	}
+	for _, ifi := range ifaces {
+		if ifi.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := ifi.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			n, ok := a.(*net.IPNet)
+			if !ok || n.IP.IsLoopback() {
+				continue
+			}
+			out = append(out, n.String())
+		}
+	}
+	return out
 }
