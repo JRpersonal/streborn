@@ -1269,13 +1269,42 @@ async function loadPresets() {
 // "Starting..." status) so the user sees the press land, then confirms via the
 // existing 5s status poll. No extra box request beyond the play + one refresh,
 // so it adds no polling load on the speaker.
+// pendingStart holds the tapped key highlighted until the speaker confirms it
+// or until it is clear the stream never came up.
+//
+// The highlight follows what the SPEAKER reports, and a speaker reports the
+// PREVIOUS station until the new stream actually starts. The first status poll
+// therefore took the frame straight back off the key the user had just
+// pressed, a second after pressing it, and put it back several seconds later
+// when the audio arrived. What the user saw was the press being rejected.
+//
+// Twenty seconds is deliberately generous: an https station that has to be
+// resolved, connected and buffered takes a few seconds on this hardware, and
+// nothing is lost by waiting longer before calling it a failure. If the
+// speaker never gets there, the frame comes off AND the reason is said out
+// loud, which is the case that was silent before.
+var pendingStart = { slot: 0, until: 0 };
+var PENDING_START_MS = 20000;
+
+function clearPendingStart() { pendingStart = { slot: 0, until: 0 }; }
+
 async function playSlot(n, tile, name) {
   document.querySelectorAll('.preset.active').forEach(function(e){ e.classList.remove('active'); });
   if (tile) tile.classList.add('active');
   setNow((name ? T.starting + ' ' + name : T.starting), T.pleaseWait);
+  pendingStart = { slot: n, until: Date.now() + PENDING_START_MS };
   const r = await api('/api/play/' + n, 'POST');
-  if (r) { setTimeout(refreshStatus, 1200); setTimeout(refreshStatus, 3000); }
-  else { setNow(T.cantStart, T.tapAgain); if (tile) tile.classList.remove('active'); }
+  if (r) {
+    // Poll across the whole window rather than twice at the start: the point
+    // is to notice the moment the stream arrives, whenever that is.
+    [1200, 3000, 6000, 10000, 15000, PENDING_START_MS + 1000].forEach(function(ms){
+      setTimeout(refreshStatus, ms);
+    });
+  } else {
+    clearPendingStart();
+    setNow(T.cantStart, T.tapAgain);
+    if (tile) tile.classList.remove('active');
+  }
 }
 
 // currentSong returns the live ICY title of the running stream, or ''.
@@ -1342,6 +1371,16 @@ function markPlaying(loc) {
   var grid = document.getElementById('presets');
   if (!grid) return;
   var n = playingSlot(loc, lastPresetList);
+  if (pendingStart.slot) {
+    if (n === pendingStart.slot) {
+      clearPendingStart(); // the speaker got there
+    } else if (Date.now() < pendingStart.until) {
+      n = pendingStart.slot; // still on its way, keep the press visible
+    } else {
+      clearPendingStart();
+      setNow(T.cantStart, T.tapAgain); // it never started, and now it says so
+    }
+  }
   var tiles = grid.querySelectorAll('.preset');
   for (var i = 0; i < tiles.length; i++) {
     if (i + 1 === n) tiles[i].classList.add('active');
