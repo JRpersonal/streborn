@@ -6,6 +6,7 @@ package spotify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -230,6 +231,11 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 
 	done := make(chan struct{})
 	cw := &closeNotifyWriter{w: w, done: done}
+	// Hand the ResponseWriter back before returning, and wait for any write
+	// the engine goroutine has in flight. Without this the handler can return
+	// while a write is still running, which is a segfault rather than an
+	// error. See the type's comment.
+	defer cw.retire()
 	m.mu.Lock()
 	oldSink, _ := m.sink.(*closeNotifyWriter) // previous consumer, if any
 	reattach := m.sink != nil                 // a consumer was already attached = box re-fetched
@@ -355,20 +361,56 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 		"firstAudioAfterMs", firstAudioMs, "kbps", kbps)
 }
 
+// errSinkRetired is returned by a writer whose handler has gone. forward()
+// treats any write error as "this box is gone", which is exactly right here.
+var errSinkRetired = errors.New("spotify: the box's stream connection is gone")
+
 // closeNotifyWriter signals done on the first failed write so ServeOgg
 // returns when the box drops the connection.
+//
+// It also owns the lifetime of the underlying http.ResponseWriter. That
+// matters more than it sounds: the pages are written by the ENGINE goroutine,
+// not by the HTTP handler, and net/http hands the response's buffered writer
+// back to a pool and nils its destination the moment the handler returns.
+// A write arriving after that is not an error, it is a segfault, and it takes
+// the whole agent down. On 2026-08-15 16:51:03 a box detached mid-track, the
+// handler returned, the engine wrote one more batch, and the agent died,
+// which stopped the music on all five speakers in the group at once.
 type closeNotifyWriter struct {
 	w    io.Writer
 	done chan struct{}
 	once sync.Once
+
+	// wmu serialises writes against retirement, so a write is either
+	// completely before the handler returns or refused outright. It is held
+	// across the write itself on purpose: retire() has to WAIT for a write in
+	// flight, not merely set a flag it might race with.
+	wmu     sync.Mutex
+	retired bool
 }
 
 func (c *closeNotifyWriter) Write(p []byte) (int, error) {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	if c.retired {
+		return 0, errSinkRetired
+	}
 	n, err := c.w.Write(p)
 	if err != nil {
 		c.once.Do(func() { close(c.done) })
 	}
 	return n, err
+}
+
+// retire gives the http.ResponseWriter back. It blocks until any write in
+// flight has finished and refuses every write after it, so ServeOgg MUST call
+// it before returning: past that point the writer belongs to net/http again
+// and touching it is undefined.
+func (c *closeNotifyWriter) retire() {
+	c.wmu.Lock()
+	c.retired = true
+	c.wmu.Unlock()
+	c.once.Do(func() { close(c.done) })
 }
 
 // closeConn tears the connection down from the manager side, used to enforce
@@ -378,6 +420,11 @@ func (c *closeNotifyWriter) closeConn() {
 }
 
 func (c *closeNotifyWriter) Flush() {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	if c.retired {
+		return
+	}
 	if f, ok := c.w.(http.Flusher); ok {
 		f.Flush()
 	}
