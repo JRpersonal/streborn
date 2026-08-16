@@ -192,6 +192,41 @@ jobs:
   # at PR time rather than at the next release. The build only
   # exercises the Vite pipeline; the Wails-Go glue is covered by
   # release.yml's full desktop builds on tag push.
+  artefacts:
+    name: No build output committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Two go:embed targets are tracked as EMPTY stubs so a clean checkout
+      # compiles, and CI overwrites them with the real binaries in a later job.
+      # A local `make wails-build` fills them and deletes frontend/dist/.gitkeep,
+      # and committing that state puts a 13 MB binary in the history and breaks
+      # `go build` on a fresh clone. Caught by hand three times in one evening
+      # (2026-08-15), which is three times too many.
+      - name: The embed stubs are still stubs
+        run: |
+          set -e
+          fail=0
+          for f in desktop-app/agentbin/streborn-armv7l sticksetup/embedded/winformat.exe; do
+            if [ ! -f "$f" ]; then
+              echo "::error file=$f::tracked stub is missing"; fail=1; continue
+            fi
+            size=$(wc -c < "$f")
+            if [ "$size" -ne 0 ]; then
+              echo "::error file=$f::this is a tracked EMPTY stub, but it holds $size bytes. Restore it with: git checkout origin/main -- $f"
+              fail=1
+            fi
+          done
+          if [ ! -f desktop-app/frontend/dist/.gitkeep ]; then
+            echo "::error file=desktop-app/frontend/dist/.gitkeep::deleted by a local frontend build, and go:embed needs it. Restore it with: git checkout origin/main -- desktop-app/frontend/dist/.gitkeep"
+            fail=1
+          fi
+          [ "$fail" -eq 0 ] && echo "embed stubs empty, dist/.gitkeep present"
+          exit $fail
+
   frontend:
     name: Frontend build
     runs-on: ubuntu-latest
@@ -209,6 +244,20 @@ jobs:
       - name: Install frontend deps
         working-directory: desktop-app/frontend
         run: npm ci --no-audit --no-fund
+
+      # A var() pointing at a token that is defined nowhere is not a CSS error:
+      # the declaration is dropped and the element inherits whatever is around
+      # it. Four rules asked for a colour that never existed, and it took a
+      # user on macOS to notice (#597). The rule set is deliberately small,
+      # correctness only, no formatting.
+      # Correctness only, no formatting. On its first run this found a call to
+      # an undefined function in the stereo balance row: it threw every time,
+      # the catch around it swallowed the error, and the row was silently never
+      # shown. Unused bindings are warnings, so the report stays readable
+      # without a mechanical cleanup blocking a PR.
+      - name: Lint frontend
+        working-directory: desktop-app/frontend
+        run: npm run lint
 
       - name: Build frontend
         working-directory: desktop-app/frontend

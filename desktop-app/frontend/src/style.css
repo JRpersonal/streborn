@@ -692,7 +692,7 @@ body {
   cursor: pointer;
 }
 .box-update-chip:hover { background: #1c62c4; }
-.box-update-chip:focus-visible { outline: 2px solid var(--c-fg); outline-offset: 2px; }
+.box-update-chip:focus-visible { outline: 2px solid var(--c-text); outline-offset: 2px; }
 
 /* The once-per-start speaker-update card. Deliberately calm: it sits above the
    content like the other banners, is never modal, and disappears for good once
@@ -996,7 +996,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   color: var(--c-muted);
   margin-top: 6px;
   min-height: calc(2 * 1.35 * 12px);
-  overflow-wrap: anywhere;
+  /* break-word, not anywhere: a narrow column used to be filled by splitting
+     words across lines, which is unreadable. A long unbroken token still
+     breaks, an ordinary sentence does not. */
+  overflow-wrap: break-word;
 }
 .op-status:empty { display: none; }
 /* Active state for ON/OFF toggle pairs (clock display, airplay opt): the
@@ -1178,7 +1181,9 @@ html.a11y-contrast .btn-warning:disabled {
 /* ---------- Search ---------- */
 .search { background: var(--c-surface); padding: 8px 10px; border-radius: 6px; margin-top: 6px; }
 .search h3 { margin: 0 0 8px 0; font-size: 13px; color: var(--c-muted); font-weight: 500; }
-.search h3 small { color: var(--c-border-2); font-weight: normal; font-size: 10px; }
+/* --c-border-2 is a BORDER colour. Used as text it fell below readable
+   contrast, which showed up first on macOS (discussion #597). */
+.search h3 small { color: var(--c-muted); font-weight: normal; font-size: 11px; }
 .search-input-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .search-input-row input { flex: 1; min-width: 130px; background: var(--c-bg); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 4px; padding: 8px; font-size: 13px; }
 .search-input-row input:focus { outline: none; border-color: var(--brand); }
@@ -1786,7 +1791,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .wlan-row .btn-mini, .wlan-row .btn-icon-sm { flex-shrink: 0; }
 .btn-icon-sm { background: var(--brand-bg-soft); color: var(--brand-text); border: 1px solid var(--brand-border); border-radius: 4px; width: 36px; padding: 0; cursor: pointer; font-size: 14px; }
 #wlanSection input:focus, #wlanSection select:focus { outline: none; border-color: var(--brand); }
-#wlanSection h3 small { color: var(--c-border-2); font-weight: normal; font-size: 11px; }
+#wlanSection h3 small { color: var(--c-muted); font-weight: normal; font-size: 11px; }
 .setup-result { margin-top: 12px; font-size: 13px; }
 
 /* OTA-first setup: the network-install hero is the prominent primary action for
@@ -1957,7 +1962,13 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
 .fw-update-howto { margin-top: 6px; }
 .update-info { background: var(--brand-bg); border: 1px solid var(--brand-border); color: var(--brand-text); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; }
 .update-info small { color: var(--brand-text-mid); }
-.update-banner { background: var(--brand-bg); border: 1px solid var(--brand-border); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+/* The row holds a message, one or two buttons and a progress line. Without
+   wrapping, the progress line was the last item in a space-between row and got
+   whatever width was left: "Wird hochgeladen (ca. 1 Min.)..." came out one
+   syllable per line, four words tall (screenshot 2026-08-16). It now takes a
+   line of its own instead of a column of leftovers. */
+.update-banner { background: var(--brand-bg); border: 1px solid var(--brand-border); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.update-banner .op-status { flex: 1 0 100%; margin-top: 0; }
 .update-banner b { color: var(--brand-text); }
 .update-banner small { color: var(--brand-text-mid); margin-left: 6px; }
 /* OTA status prose (setStatus) lands in these buttons. Bound their width and
@@ -2007,8 +2018,13 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
    to be findable and must not compete with the speaker list, so it keeps the
    page background and footer-link sizing. */
 .app-update-banner.app-update-quiet {
+  /* Not sticky. The banner floats above the page because an available update
+     has to stay visible while you scroll; the quiet line is a footnote and
+     floating made it sit on top of the content underneath (reported for both
+     the scrolled page and a narrow window, discussion #597). */
+  position: static;
   background: none;
-  color: var(--c-text-dim);
+  color: var(--c-muted);
   border: none;
   box-shadow: none;
   animation: none;
@@ -2022,7 +2038,7 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
   font-size: 12px;
 }
 .app-update-banner.app-update-quiet .footer-link { font-size: 12px; }
-.app-update-quiet-note { color: var(--c-text-dim); }
+.app-update-quiet-note { color: var(--c-muted); }
 .app-update-icon { font-size: 18px; font-weight: 700; line-height: 1; flex: 0 0 auto; }
 /* Dismiss control: a plain close cross at the far end of the banner, sized to
    be an easy target without competing with the install button next to it. */

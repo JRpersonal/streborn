@@ -2730,7 +2730,11 @@ export async function refreshBoxBalanceRow(box, pair, boxes) {
   if (!src || src.kind === 'stock') { row.hidden = true; return; }
   let b = null;
   try {
-    const r = await boxFetch(src, '/api/box/balance');
+    // deps.boxFetch, like every other call in this file. Without the prefix
+    // this threw on every run, the catch below swallowed it, and the balance
+    // row of a stereo pair was therefore never shown. Found by the linter on
+    // its first run, 2026-08-16.
+    const r = await deps.boxFetch(src, '/api/box/balance');
     b = await r.json();
   } catch { /* asleep or unreachable: show nothing rather than an error */ }
   if (!b || !b.available) { row.hidden = true; return; }
