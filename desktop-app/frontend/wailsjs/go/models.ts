@@ -460,6 +460,7 @@ export namespace main {
 	    context: string;
 	    account: string;
 	    premiumRequired: boolean;
+	    audioKeyRefused: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SpotifyNow(source);
@@ -474,6 +475,7 @@ export namespace main {
 	        this.context = source["context"];
 	        this.account = source["account"];
 	        this.premiumRequired = source["premiumRequired"];
+	        this.audioKeyRefused = source["audioKeyRefused"];
 	    }
 	}
 	export class SpotifySyncTarget {
