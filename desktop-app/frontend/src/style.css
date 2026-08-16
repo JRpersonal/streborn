@@ -1178,7 +1178,9 @@ html.a11y-contrast .btn-warning:disabled {
 /* ---------- Search ---------- */
 .search { background: var(--c-surface); padding: 8px 10px; border-radius: 6px; margin-top: 6px; }
 .search h3 { margin: 0 0 8px 0; font-size: 13px; color: var(--c-muted); font-weight: 500; }
-.search h3 small { color: var(--c-border-2); font-weight: normal; font-size: 10px; }
+/* --c-border-2 is a BORDER colour. Used as text it fell below readable
+   contrast, which showed up first on macOS (discussion #597). */
+.search h3 small { color: var(--c-muted); font-weight: normal; font-size: 11px; }
 .search-input-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .search-input-row input { flex: 1; min-width: 130px; background: var(--c-bg); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 4px; padding: 8px; font-size: 13px; }
 .search-input-row input:focus { outline: none; border-color: var(--brand); }
@@ -1786,7 +1788,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .wlan-row .btn-mini, .wlan-row .btn-icon-sm { flex-shrink: 0; }
 .btn-icon-sm { background: var(--brand-bg-soft); color: var(--brand-text); border: 1px solid var(--brand-border); border-radius: 4px; width: 36px; padding: 0; cursor: pointer; font-size: 14px; }
 #wlanSection input:focus, #wlanSection select:focus { outline: none; border-color: var(--brand); }
-#wlanSection h3 small { color: var(--c-border-2); font-weight: normal; font-size: 11px; }
+#wlanSection h3 small { color: var(--c-muted); font-weight: normal; font-size: 11px; }
 .setup-result { margin-top: 12px; font-size: 13px; }
 
 /* OTA-first setup: the network-install hero is the prominent primary action for
@@ -2007,8 +2009,13 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
    to be findable and must not compete with the speaker list, so it keeps the
    page background and footer-link sizing. */
 .app-update-banner.app-update-quiet {
+  /* Not sticky. The banner floats above the page because an available update
+     has to stay visible while you scroll; the quiet line is a footnote and
+     floating made it sit on top of the content underneath (reported for both
+     the scrolled page and a narrow window, discussion #597). */
+  position: static;
   background: none;
-  color: var(--c-text-dim);
+  color: var(--c-muted);
   border: none;
   box-shadow: none;
   animation: none;
@@ -2022,7 +2029,7 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
   font-size: 12px;
 }
 .app-update-banner.app-update-quiet .footer-link { font-size: 12px; }
-.app-update-quiet-note { color: var(--c-text-dim); }
+.app-update-quiet-note { color: var(--c-muted); }
 .app-update-icon { font-size: 18px; font-weight: 700; line-height: 1; flex: 0 0 auto; }
 /* Dismiss control: a plain close cross at the far end of the banner, sized to
    be an easy target without competing with the install button next to it. */
