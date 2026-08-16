@@ -124,6 +124,7 @@
   "multiroom.liveInGroup": "bir grupta",
   "multiroom.liveLeading": "{{n}} hoparlörün anası",
   "multiroom.liveStandalone": "gruplanmadı",
+  "multiroom.liveNoAnswer": "şu anda yanıt vermiyor",
   "multiroom.updateWarn": "Bazı hoparlörler daha eski bir ST Reborn çalıştırıyor. Gruplamadan önce her birini açın ve en yeni sürümü almak için güncelleme afişini kullanın, aksi halde gruplama çalışmayabilir.",
   "multiroom.updateFirst": "Önce güncelle",
   "multiroom.formedN": "Grup etkin: {{n}} hoparlör katıldı. Biri sessiz kalırsa, açık olduğunu ve ana hoparlörün çaldığını kontrol edin.",

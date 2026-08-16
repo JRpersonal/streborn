@@ -129,6 +129,7 @@
   "multiroom.liveInGroup": "in a group",
   "multiroom.liveLeading": "main of {{n}}",
   "multiroom.liveStandalone": "not grouped",
+  "multiroom.liveNoAnswer": "not answering right now",
   "multiroom.updateWarn": "Some speakers run an older ST Reborn. Open each one and use its update banner to get the latest before grouping, otherwise grouping may not work.",
   "multiroom.updateFirst": "Update first",
   "multiroom.formedN": "Group active: {{n}} speaker(s) joined. If one stays silent, check it is on and the main speaker is playing.",

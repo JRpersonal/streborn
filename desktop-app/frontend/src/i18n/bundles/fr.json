@@ -124,6 +124,7 @@
   "multiroom.liveInGroup": "dans un groupe",
   "multiroom.liveLeading": "principale de {{n}}",
   "multiroom.liveStandalone": "non groupée",
+  "multiroom.liveNoAnswer": "ne répond pas pour le moment",
   "multiroom.updateWarn": "Certaines enceintes utilisent une version plus ancienne de ST Reborn. Ouvre chacune et utilise son bandeau de mise à jour pour passer à la dernière version avant de grouper, sinon le groupement risque de ne pas fonctionner.",
   "multiroom.updateFirst": "Mettre à jour d'abord",
   "multiroom.formedN": "Groupe actif : {{n}} enceinte(s) jointe(s). Si l'une reste muette, vérifie qu'elle est allumée et que l'enceinte principale joue.",
