@@ -250,9 +250,14 @@ jobs:
       # it. Four rules asked for a colour that never existed, and it took a
       # user on macOS to notice (#597). The rule set is deliberately small,
       # correctness only, no formatting.
-      - name: Lint stylesheets
+      # Correctness only, no formatting. On its first run this found a call to
+      # an undefined function in the stereo balance row: it threw every time,
+      # the catch around it swallowed the error, and the row was silently never
+      # shown. Unused bindings are warnings, so the report stays readable
+      # without a mechanical cleanup blocking a PR.
+      - name: Lint frontend
         working-directory: desktop-app/frontend
-        run: npm run lint:css
+        run: npm run lint
 
       - name: Build frontend
         working-directory: desktop-app/frontend

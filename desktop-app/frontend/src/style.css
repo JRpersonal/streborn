@@ -996,7 +996,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   color: var(--c-muted);
   margin-top: 6px;
   min-height: calc(2 * 1.35 * 12px);
-  overflow-wrap: anywhere;
+  /* break-word, not anywhere: a narrow column used to be filled by splitting
+     words across lines, which is unreadable. A long unbroken token still
+     breaks, an ordinary sentence does not. */
+  overflow-wrap: break-word;
 }
 .op-status:empty { display: none; }
 /* Active state for ON/OFF toggle pairs (clock display, airplay opt): the
@@ -1959,7 +1962,13 @@ select option { background-color: var(--c-bg); color: var(--c-text); }
 .fw-update-howto { margin-top: 6px; }
 .update-info { background: var(--brand-bg); border: 1px solid var(--brand-border); color: var(--brand-text); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; }
 .update-info small { color: var(--brand-text-mid); }
-.update-banner { background: var(--brand-bg); border: 1px solid var(--brand-border); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+/* The row holds a message, one or two buttons and a progress line. Without
+   wrapping, the progress line was the last item in a space-between row and got
+   whatever width was left: "Wird hochgeladen (ca. 1 Min.)..." came out one
+   syllable per line, four words tall (screenshot 2026-08-16). It now takes a
+   line of its own instead of a column of leftovers. */
+.update-banner { background: var(--brand-bg); border: 1px solid var(--brand-border); padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.update-banner .op-status { flex: 1 0 100%; margin-top: 0; }
 .update-banner b { color: var(--brand-text); }
 .update-banner small { color: var(--brand-text-mid); margin-left: 6px; }
 /* OTA status prose (setStatus) lands in these buttons. Bound their width and
