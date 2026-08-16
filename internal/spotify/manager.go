@@ -130,6 +130,29 @@ type Manager struct {
 	lastPlayFailLine string
 	lastPlayFailAt   time.Time
 	// lastSeekFailAt remembers when go-librespot last reported it could not seek to
+	// lastCtxResolveFailAt is when go-librespot last failed to resolve the
+	// continuation of a context ("failed resolving station"). That happens when
+	// a generated radio playlist runs out, and the engine then STOPS. Without
+	// this the stop was indistinguishable from somebody pressing stop in the
+	// Spotify app, so STR armed its deliberate-stop latch and the music simply
+	// ended, on every speaker of the group at once (live 2026-08-15 16:56 and
+	// 2026-08-16 16:58, both times reported as something else).
+	lastCtxResolveFailAt time.Time
+
+	// Spotify refusing the audio key for track after track. The engine logs one
+	// warning per track and gives up after a run of them, which from the sofa
+	// looks like a playlist racing past without a note ever playing, with
+	// nothing on screen saying why. Two reports so far (#78 and an
+	// eleven-speaker fleet on 2026-08-16), both with the native Bose Spotify
+	// entry still playing the same account fine, because Bose is a licensed
+	// client and this engine is not.
+	//
+	// Latched with a timestamp rather than a bare flag: a single refusal can be
+	// one unavailable track, and a user who fixes the cause must not be told
+	// about it forever.
+	lastKeyRefusalAt   time.Time
+	keyRefusalRun      int
+	keyRefusalGaveUpAt time.Time
 	// the requested resume track (skip_to_uri) because that track is no longer in
 	// the context (a volatile Radio/Daily-Mix playlist whose track set drifted).
 	// Play uses it to replay the context from the top instead of leaving the box on

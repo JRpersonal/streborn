@@ -346,7 +346,17 @@ import {
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
 initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav });
-initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, boxFetch });
+// openSpeakerSettings selects a speaker and shows its settings, which is where
+// its update lives. The Multi-Room tab needs it: a card that says a speaker
+// must be updated first has to be able to take the owner there.
+function openSpeakerSettings(box) {
+  if (!box) return;
+  try { selectBox(box); } catch { /* selection is best effort */ }
+  state.settingsBox = box;
+  switchView('settings');
+}
+
+initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, boxFetch, switchView, openSpeakerSettings });
 initSpotifyView({
   switchView,
   // Live STR speaker list for the "sync Spotify login to all speakers" action.
@@ -1374,7 +1384,16 @@ if (gsd) gsd.onclick = () => {
   const gb = $('globalSecurityBanner');
   if (gb) gb.classList.add('hidden');
 };
-$('pauseBtn').onclick = () => action(state.nowPlayState === 'PAUSE_STATE' ? 'resume' : 'pause');
+// A STOPPED stream resumes too. Only a paused one counted, so after Stop the
+// button still read Pause and sent pause to a transport that had already
+// stopped: nothing happened and there was no way back to the music. Same fault,
+// same fix as the phone remote.
+$('pauseBtn').onclick = () => action(stoppedOrPaused(state.nowPlayState) ? 'resume' : 'pause');
+
+// stoppedOrPaused reports whether the transport should offer Play. INVALID_SOURCE
+// is deliberately excluded: nothing is loaded there, so Play would promise
+// something that cannot happen.
+function stoppedOrPaused(ps) { return ps === 'PAUSE_STATE' || ps === 'STOP_STATE'; }
 $('stopBtn').onclick = () => action('stop');
 // Track skip for a Spotify playlist (the DLNA folder queue has its own controls
 // in #queueControls). The agent's /api/next//api/prev are source-aware.
@@ -1720,7 +1739,21 @@ async function discoverBoxes() {
     // new name via mDNS, search again every 4 s (driven by pendingNames).
     scheduleNextAutoRefresh();
   } catch (e) {
-    if (!hadBoxes) $('boxSelect').textContent = t('common.error') + ': ' + e;
+    // Do NOT overwrite the picker with the raw exception. That took the retry
+    // button and the connect-by-IP field away with it, so a blocked first
+    // discovery left nothing to press. Repaint the picker and put the
+    // exception underneath, folded away, where it helps a bug report without
+    // being the whole screen.
+    if (!hadBoxes) {
+      try { renderBoxSelect(); } catch { /* keep whatever is on screen */ }
+      const hint = $('boxHint');
+      if (hint) {
+        hint.innerHTML = `<p>${escapeHtml(t('speaker.choose'))}</p>`
+          + `<details class="muted small"><summary>${escapeHtml(t('common.error'))}</summary>`
+          + `<div>${escapeHtml(String(e))}</div></details>`;
+        hint.classList.remove('hidden');
+      }
+    }
   } finally {
     const rb = $('refreshBtn');
     if (rb) rb.classList.remove('spinning');
@@ -4225,12 +4258,25 @@ async function updateAllBoxes() {
 function updateBoxUiVisibility() {
   const hasBox = !!state.currentBox;
   const hasSTR = state.boxes.some(b => b.kind !== 'stock');
-  // Show controls only when a selected STR speaker exists. Show the
-  // "pick a speaker" hint when STR speakers exist but none is
-  // selected; stock-only LAN scenarios fall through to the empty
-  // state rendered by renderBoxSelect (the badge speaks for itself).
+  const stockOnly = !hasSTR && (state.boxes || []).some(b => b && b.kind === 'stock');
   $('boxControls').classList.toggle('hidden', !hasBox);
-  $('boxHint').classList.toggle('hidden', !hasSTR || hasBox);
+  const hint = $('boxHint');
+  if (!hint) return;
+  // Three states, not two. The third is somebody's FIRST time: their speaker is
+  // on the network and still runs the Bose firmware, so there is nothing to
+  // control yet. That used to leave the page blank with no hint of what to do,
+  // which is the one moment a new user decides whether this product works.
+  if (stockOnly && !hasBox) {
+    hint.innerHTML = `<p><b>${escapeHtml(t('speaker.stockConfirmTitle'))}</b></p>`
+      + `<p class="muted">${escapeHtml(t('speaker.stockTooltip'))}</p>`
+      + `<button class="btn btn-primary" id="boxHintSetup">${escapeHtml(t('speaker.stockConfirmCta'))}</button>`;
+    hint.classList.remove('hidden');
+    const go = $('boxHintSetup');
+    if (go) go.onclick = () => switchView('setup');
+    return;
+  }
+  hint.innerHTML = `<p>${escapeHtml(t('speaker.choose'))}</p>`;
+  hint.classList.toggle('hidden', !hasSTR || hasBox);
 }
 
 let loadedPresetsBoxKey = null;
@@ -4809,29 +4855,86 @@ async function loadGroupMemberVolumes(members) {
 const groupOpPending = new Set();
 let groupOpChain = Promise.resolve();
 
+// Several chips clicked in a row become ONE group edit.
+//
+// Each click used to drive its own zone form, and a zone form takes seconds and
+// interrupts the audio, so adding three speakers meant three interruptions and
+// three repaints while the owner was still clicking. The phone remote already
+// behaves the way people expect: every press is acknowledged at once and the
+// speakers join together.
+//
+// So a click marks the chip immediately and records the intent, and the edit
+// runs once the clicking stops. The window is short enough that a single click
+// still feels immediate.
+const GROUP_EDIT_COALESCE_MS = 600;
+const pendingGroupEdits = new Map(); // host -> port
+let groupEditTimer = null;
+
 function toggleGroupMember(host, port) {
   if (groupOpPending.has(host)) return groupOpChain;
-  groupOpPending.add(host);
-  groupOpChain = groupOpChain
-    .then(() => runGroupMemberToggle(host, port))
-    .catch(() => {})
-    .finally(() => groupOpPending.delete(host));
+  // Toggling the same speaker twice before the edit runs is a change of mind,
+  // and the two cancel out rather than queueing.
+  if (pendingGroupEdits.has(host)) pendingGroupEdits.delete(host);
+  else pendingGroupEdits.set(host, port);
+  markGroupChipPending();
+  if (groupEditTimer) clearTimeout(groupEditTimer);
+  groupEditTimer = setTimeout(runPendingGroupEdits, GROUP_EDIT_COALESCE_MS);
   return groupOpChain;
 }
 
-async function runGroupMemberToggle(host, port) {
+// markGroupChipPending gives the click its feedback straight away: the chip
+// shows the state it is about to have, so a second click is never made because
+// the first looked ignored.
+function markGroupChipPending() {
+  document.querySelectorAll('.group-chip').forEach(chip => {
+    // Marked while the click is WAITING for the batch AND while the batch is
+    // running. Keying it on the waiting list alone made the mark disappear at
+    // the very moment the work started, which is when the user most needs to
+    // see that something is happening: forming a group across five speakers
+    // takes several seconds.
+    const h = chip.dataset.host;
+    chip.classList.toggle('pending', pendingGroupEdits.has(h) || groupOpPending.has(h));
+  });
+}
+
+function runPendingGroupEdits() {
+  groupEditTimer = null;
+  const edits = [...pendingGroupEdits.entries()];
+  pendingGroupEdits.clear();
+  if (edits.length === 0) return;
+  edits.forEach(([h]) => groupOpPending.add(h));
+  markGroupChipPending();
+  groupOpChain = groupOpChain
+    .then(() => runGroupMemberToggle(edits))
+    .catch(() => {})
+    .finally(() => {
+      edits.forEach(([h]) => groupOpPending.delete(h));
+      markGroupChipPending();
+    });
+  return groupOpChain;
+}
+
+// runGroupMemberToggle applies a whole batch of toggles as ONE zone edit.
+// edits is [[host, port], ...]; a single click is simply a batch of one.
+async function runGroupMemberToggle(edits) {
   // Edit the group the selection belongs to: when a follower is selected, its
   // master is the box that must receive the FormZone/DissolveZone (a follower
   // rejects zone control), so resolve to it first.
   const box = groupControlBox();
   if (!box || box.kind === 'stock') return;
-  const target = (state.boxes || []).find(b => b.host === host);
-  if (!target) return;
+  const targets = edits
+    .map(([h]) => (state.boxes || []).find(b => b.host === h))
+    .filter(Boolean);
+  if (targets.length === 0) return;
   const members = groupMembersOf(box, state.zoneLive, state.boxes);
-  const wasIn = members.some(m => m.ip === host);
-  const next = wasIn
-    ? members.filter(m => m.ip !== host)
-    : [...members, { deviceID: target.deviceID, ip: target.host, box: target }];
+  // Apply every toggle to one membership list, so the speakers join or leave
+  // together instead of one zone form per click.
+  const next = targets.reduce((acc, tgt) => acc.some(m => m.ip === tgt.host)
+    ? acc.filter(m => m.ip !== tgt.host)
+    : [...acc, { deviceID: tgt.deviceID, ip: tgt.host, box: tgt }], members);
+  const removed = targets.filter(tgt => members.some(m => m.ip === tgt.host) && !next.some(m => m.ip === tgt.host));
+  const target = targets[0];
+  const wasIn = removed.length > 0 && targets.length === 1;
   try {
     if (next.length === 0) {
       await DissolveZone(box.host, box.port);
@@ -4849,7 +4952,20 @@ async function runGroupMemberToggle(host, port) {
       // the speaker still answers STR (the agent stays up in standby), so the
       // firmware would add it to the zone but it stays silent. Waking an
       // already-awake box is a fast no-op, so this is safe to do for all members.
-      await Promise.allSettled(next.filter(m => m.box).map(m => WakeBox(m.box.host, m.box.port)));
+      //
+      // All at once, then a single retry for the ones that did not take it.
+      // One wake per speaker with no retry meant a speaker that was busy at
+      // that moment was enrolled asleep and stayed silent, and doing them in
+      // sequence would add every speaker's wake time to the wait before the
+      // group even starts forming.
+      const wakeTargets = next.filter(m => m.box);
+      const wakeOnce = (list) => Promise.allSettled(list.map(m => WakeBox(m.box.host, m.box.port)))
+        .then(rs => list.filter((_, i) => rs[i].status === 'rejected'));
+      const failed = await wakeOnce(wakeTargets);
+      if (failed.length) {
+        console.warn('group: retrying wake for', failed.map(m => m.ip));
+        await wakeOnce(failed);
+      }
       const res = await FormZone(box.host, box.port, {
         master: { deviceID: box.deviceID, ip: box.host },
         slaves: next.map(m => ({ deviceID: m.deviceID, ip: m.ip })),
@@ -4864,8 +4980,13 @@ async function runGroupMemberToggle(host, port) {
         renderGroupControl();
         return;
       }
-      if (wasIn) { try { await Stop(target.host, target.port); } catch {} } // a removed speaker stops
-      showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
+      // Every speaker taken out of the group stops, not only the first one.
+      await Promise.allSettled(removed.map(tgt => Stop(tgt.host, tgt.port)));
+      if (targets.length === 1) {
+        showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
+      } else {
+        showToast(t('group.batchToast', { count: targets.length }));
+      }
     }
     // Optimistic zone update so the chips + frames + Multi-Room summary
     // reflect the change at once, in the same shape a real poll returns
@@ -5877,7 +5998,7 @@ function renderNowPlayingBar() {
   // Pause (#202).
   const ppBtn = $('pauseBtn');
   if (ppBtn) {
-    ppBtn.innerHTML = ps === 'PAUSE_STATE'
+    ppBtn.innerHTML = stoppedOrPaused(ps)
       ? '&#9205; ' + escapeHtml(t('controls.play'))
       : '&#9208; ' + escapeHtml(t('controls.pause'));
   }
@@ -5935,7 +6056,7 @@ function renderNowPlayingBar() {
   bar.className = 'status-bar status-' + stateClass;
   // Glyph reflects the actual transport state so play vs pause is not conveyed
   // by colour alone (accessibility): play arrow normally, pause bars when paused.
-  const stateGlyph = ps === 'PAUSE_STATE' ? '&#9208;' : '&#9205;';
+  const stateGlyph = stoppedOrPaused(ps) ? '&#9208;' : '&#9205;';
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"
@@ -6161,6 +6282,20 @@ async function refreshStatus() {
           state.nowSpotifyCover = np.cover || '';
           state.nowSpotifyContext = np.context || '';
           state.nowSpotifyAccount = np.account || '';
+          // Spotify refused the audio key for track after track. Without this
+          // the playlist just races past in silence and the speaker looks
+          // broken, when in fact Spotify is refusing this engine for this
+          // account. Said once per episode: the condition clears itself on the
+          // speaker after ten quiet minutes, and repeating it every three
+          // seconds would be worse than the silence.
+          if (np.audioKeyRefused) {
+            if (!state.spotifyKeyRefusalShown) {
+              state.spotifyKeyRefusalShown = true;
+              showError(t('spotify.audioKeyRefused'));
+            }
+          } else {
+            state.spotifyKeyRefusalShown = false;
+          }
           // The now-playing line redraws every status poll, but the tile cover
           // only redraws on renderPresets. Re-render when the cover changes so
           // the preset logo tracks the song in step with the title instead of

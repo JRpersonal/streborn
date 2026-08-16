@@ -169,6 +169,12 @@ let deps = {
   // API. Used to PUT /api/box/wlan right after a network install so a
   // cable-installed speaker joins Wi-Fi. Wired in main.js.
   boxFetch: async () => ({ ok: false }),
+  // speakerPicked(box): focus this speaker across the tabs (it sets
+  // state.settingsBox and state.currentBox), so leaving Setup for another tab
+  // lands on the speaker the user just pointed at. It was already being called
+  // from the target picker but was missing from this list, which made it look
+  // optional; the no-op default keeps every call site safe either way.
+  speakerPicked: () => {},
 };
 export function initSetupView(d) {
   deps = { ...deps, ...d };
@@ -729,11 +735,16 @@ let networkInstallRunning = false;
 
 // renderPrimaryAction paints the OTA-first primary action above the (collapsed)
 // USB-stick wizard. For a reachable stock box it shows the network-install hero
-// whose button installs STR over the network with no stick; for str /
-// factory-reset / no target it clears the hero and opens the stick <details> so
-// the wizard is the primary surface (str stick-update / brand-new-speaker
-// territory). Called at the end of renderSetupTargetPicker, so it repaints on
-// every target change.
+// whose button installs STR over the network with no stick; for a box that
+// already runs STR it says so and offers the way on to that speaker's settings;
+// for factory-reset / no target it clears the area. Called at the end of
+// renderSetupTargetPicker, so it repaints on every target change.
+//
+// The stick <details> is never forced open here. It used to be opened for every
+// non-stock target, which meant a first-time owner whose speaker was found on
+// the network was shown the whole stick wizard before anything else, even
+// though the stick is only the fallback path. It now stays where the user left
+// it: closed until they open the "prepare a USB stick instead" summary.
 function renderPrimaryAction() {
   const host = $('setupPrimaryAction');
   const details = $('setupStickDetails');
@@ -745,16 +756,23 @@ function renderPrimaryAction() {
     // runs on every discovery refresh (every few seconds); rebuilding would wipe
     // the user's typed/selected Wi-Fi, name and language mid-interaction and could
     // eat the install click (the button element gets replaced under the pointer).
-    // Only (re)build when the target box actually changes.
+    // Only (re)build when the target box actually changes. data-kind is part of
+    // the check because the STR card below reuses the same .setup-hero styling,
+    // and a speaker that was factory-reset comes back as a stock box under the
+    // host its STR card still carries.
     const existingHero = host.querySelector('.setup-hero');
-    if (existingHero && existingHero.getAttribute('data-host') === b.host) {
-      if (details) details.open = false;
+    if (existingHero
+        && existingHero.getAttribute('data-kind') === 'stock'
+        && existingHero.getAttribute('data-host') === b.host) {
+      // Nothing to repaint, and deliberately no touch of the stick <details>:
+      // this runs every few seconds, so collapsing it here would slam shut the
+      // fallback that a failed install had just opened for the user.
       return;
     }
     const model = b.model || 'SoundTouch';
     const curName = b.friendlyName || b.name || '';
     host.innerHTML =
-      `<div class="setup-hero" data-host="${escapeAttr(b.host)}">` +
+      `<div class="setup-hero" data-kind="stock" data-host="${escapeAttr(b.host)}">` +
         `<p class="setup-hero-body">${escapeHtml(t('setup.cardPitch', { model }))}</p>` +
         `<div class="setup-hero-field">` +
           `<label class="setup-hero-wifi-label" for="netBoxName">${escapeHtml(t('setup.cardNameLabel'))}</label>` +
@@ -812,9 +830,42 @@ function renderPrimaryAction() {
       if (dz) tzSel.value = dz;
     }
     if (details) details.open = false;
+  } else if (sel && sel.kind === 'str' && sel.box) {
+    // The speaker already runs STR, so there is nothing to install. Without this
+    // branch the whole area went blank and the only thing left on screen was the
+    // stick wizard, which reads as "prepare a stick" to somebody who is in fact
+    // already done. Say plainly that it is installed and hand them on to that
+    // speaker's settings, where the name, Wi-Fi and language live.
+    const b = sel.box;
+    const existingHero = host.querySelector('.setup-hero');
+    if (existingHero
+        && existingHero.getAttribute('data-kind') === 'str'
+        && existingHero.getAttribute('data-host') === b.host) {
+      return;
+    }
+    host.innerHTML =
+      `<div class="setup-hero" data-kind="str" data-host="${escapeAttr(b.host)}">` +
+        `<h3>${escapeHtml(t('setup.targetCardKindSTR'))}</h3>` +
+        `<p class="setup-hero-body">${escapeHtml(t('setup.awaitAlreadyStr'))}</p>` +
+        `<button class="btn btn-primary" id="setupStrSettings">${escapeHtml(t('nav.speakerSettings'))}</button>` +
+      `</div>`;
+    const settingsBtn = $('setupStrSettings');
+    if (settingsBtn) settingsBtn.onclick = () => {
+      // Focus the speaker before switching: the Settings tab renders whatever
+      // state.settingsBox holds, so without this it could open on a different
+      // speaker than the one the card names.
+      deps.speakerPicked(b);
+      deps.switchView('settings');
+    };
   } else {
     host.innerHTML = '';
-    if (details) details.open = true;
+    // Nothing to act on yet. If no speaker was found at all, the stick IS the
+    // route: a speaker that is new or factory reset does not appear on the
+    // network until it has been set up, so opening the stick section here is
+    // guidance rather than clutter. Once a speaker HAS been found, the section
+    // stays closed, because then the stick is the fallback and not the path.
+    const foundAny = (state.boxes || []).some(b => b && b.host);
+    if (details) details.open = !foundAny;
   }
 }
 

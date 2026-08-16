@@ -1829,7 +1829,12 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .group-control .muted { padding: 0; }
 .group-label { line-height: 1.2; }
 .group-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.group-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; font-size: 12px; line-height: 1.5; border: 1px solid var(--c-border); border-radius: 14px; background: var(--c-surface); color: var(--c-text); cursor: pointer; }
+
+/* A chip whose click has been accepted but whose group edit has not run yet.
+   The clicks are collected for a moment so several speakers join together
+   instead of one zone form per click, and without this the chip would look
+   unchanged and invite a second click. */
+.group-chip.pending { outline: 2px solid var(--brand); outline-offset: 1px; opacity: .85; }.group-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; font-size: 12px; line-height: 1.5; border: 1px solid var(--c-border); border-radius: 14px; background: var(--c-surface); color: var(--c-text); cursor: pointer; }
 .group-chip:hover { border-color: var(--brand); }
 .group-chip.in-group { border-color: var(--signal-green); background: rgba(102, 204, 102, 0.12); color: var(--signal-green); }
 .group-chip-mark { font-weight: 700; opacity: 0.85; }
@@ -2432,3 +2437,13 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   resize: vertical;
 }
 .failreport-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Two classes the parallel work introduced without a rule, so they inherited
+   whatever was nearby. */
+.help-more > summary { list-style: none; padding: 2px 0; }
+.help-more > summary::-webkit-details-marker { display: none; }
+.help-more > summary::before { content: "B8 "; }
+.help-more[open] > summary::before { content: "BE "; }
+/* A speaker that is not answering reads differently from one that is simply
+   not in the group: the first is a fault, the second is a state. */
+.zone-live.zone-live-noanswer { color: var(--c-faint); font-style: italic; }

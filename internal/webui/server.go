@@ -561,7 +561,14 @@ func (s *Server) handleBoxWake(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"awake": true})
 }
 
-func (s *Server) ensureBoxReady(ctx context.Context) {
+func (s *Server) ensureBoxReady(ctx context.Context) { _ = s.ensureBoxReadyErr(ctx) }
+
+// ensureBoxReadyErr is ensureBoxReady for the callers that must know whether
+// the box actually came back, rather than driving on into a speaker that is not
+// answering. Forming a group is the case that pays for this: the wake failing
+// is the earliest honest sign that the rest of the drive will fail too.
+func (s *Server) ensureBoxReadyErr(ctx context.Context) error {
+	var wakeErr error
 	if s.boxHost != "" {
 		// Detach from the caller's request context: a slow wake must not be
 		// cancellable by the app giving up on the play POST, because the very
@@ -573,6 +580,7 @@ func (s *Server) ensureBoxReady(ctx context.Context) {
 		wakeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 8*time.Second)
 		if err := boxcli.WakeAndWait(wakeCtx, s.boxHost, 6*time.Second, s.logger); err != nil {
 			s.logger.Warn("Box could not be woken from STANDBY", "err", err)
+			wakeErr = err
 		}
 		cancel()
 	}
@@ -588,6 +596,7 @@ func (s *Server) ensureBoxReady(ctx context.Context) {
 			s.autoPair.TriggerNow(pairCtx)
 		}()
 	}
+	return wakeErr
 }
 
 // New creates a new webui server.
@@ -653,6 +662,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
 	mux.HandleFunc("/api/agent/enable-ssh", s.handleAgentEnableSSH)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
+	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
 	mux.HandleFunc("/api/box/volume", s.handleBoxVolume)
 	mux.HandleFunc("/api/box/bass", s.handleBoxBass)

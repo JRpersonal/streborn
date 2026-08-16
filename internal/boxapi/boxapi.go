@@ -854,3 +854,21 @@ func (c *Client) GetBalance(ctx context.Context) (Balance, error) {
 		Target: raw.Target, Actual: raw.Actual,
 	}, nil
 }
+
+// GetSysLanguage reads the speaker's display language as the firmware's own
+// integer (2 = German, 3 = English, and so on; the full table lives in the
+// desktop app's settings view).
+//
+// It exists so the phone remote can speak the language the OWNER set on the
+// speaker. Until now that page took its language from the browser alone, so a
+// household that had set the speaker to German still got an English remote if
+// the phone was English, with no way to change it (support mail 2026-08-16).
+func (c *Client) GetSysLanguage(ctx context.Context) (int, error) {
+	var raw struct {
+		Sys int `xml:",chardata"`
+	}
+	if err := c.getXML(ctx, "/language", &raw); err != nil {
+		return 0, err
+	}
+	return raw.Sys, nil
+}

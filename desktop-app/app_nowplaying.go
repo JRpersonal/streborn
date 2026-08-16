@@ -121,6 +121,11 @@ type SpotifyNow struct {
 	// cannot do the autonomous on-demand playback a preset recall needs (#45). The
 	// Spotify view shows a "recall needs Premium" note when set.
 	PremiumRequired bool `json:"premiumRequired"`
+	// AudioKeyRefused is true when Spotify just refused the audio key for a run
+	// of tracks, which the listener sees as a playlist racing past in silence.
+	// Nothing on the speaker causes it and nothing on the speaker fixes it, so
+	// the app's job is only to say what happened.
+	AudioKeyRefused bool `json:"audioKeyRefused"`
 }
 
 func (a *App) SpotifyNowPlaying(host string, port int) SpotifyNow {

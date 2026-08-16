@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -81,21 +82,48 @@ func strInSlice(s []string, v string) bool {
 // members and tell the user which speaker is still starting. Empty IPs are
 // skipped (cannot be probed) and left for the caller to pass through.
 func (a *App) ensureZoneMembersReady(ips []string) memberReadiness {
-	var res memberReadiness
-	for _, ip := range ips {
+	// Probe every member AT THE SAME TIME. Each still gets its own 8 s budget,
+	// but the gate now costs one member's time instead of the sum of all of
+	// them.
+	//
+	// The old loop was sequential, on the assumption that a ready speaker
+	// answers in well under a second. That holds for a speaker that is already
+	// awake, and not for one that just came out of standby, which is the
+	// NORMAL case here because the group form wakes them first. Measured with
+	// five speakers on 2026-08-16: 13.5 seconds of probing between the last
+	// speaker waking and the group forming, while the forming itself took 1.1.
+	type result struct {
+		ip string
+		ok bool
+	}
+	out := make([]result, len(ips))
+	var wg sync.WaitGroup
+	for i, ip := range ips {
 		if ip == "" {
 			continue
 		}
-		// ~8 s budget per member; a ready box answers on the first attempt in
-		// well under a second, so the common case adds almost no latency.
-		ctx, cancel := context.WithTimeout(a.appCtx(), 8*time.Second)
-		_, ok := probeSTRWithRetry(ctx, ip, 3)
-		cancel()
-		if ok {
-			res.Ready = append(res.Ready, ip)
+		wg.Add(1)
+		go func(i int, ip string) {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(a.appCtx(), 8*time.Second)
+			defer cancel()
+			_, ok := probeSTRWithRetry(ctx, ip, 3)
+			out[i] = result{ip: ip, ok: ok}
+		}(i, ip)
+	}
+	wg.Wait()
+	// Collected in the caller's order, so the log and the reported lists do not
+	// depend on which speaker happened to answer first.
+	var res memberReadiness
+	for _, r := range out {
+		if r.ip == "" {
+			continue
+		}
+		if r.ok {
+			res.Ready = append(res.Ready, r.ip)
 		} else {
-			a.logger.Warn("zone: member not STR-ready, will not enroll it (mid-restart?)", "ip", ip)
-			res.NotReady = append(res.NotReady, ip)
+			a.logger.Warn("zone: member not STR-ready, will not enroll it (mid-restart?)", "ip", r.ip)
+			res.NotReady = append(res.NotReady, r.ip)
 		}
 	}
 	return res

@@ -87,3 +87,34 @@ func TestTheStationWrapperIsNotAPlaylistChange(t *testing.T) {
 		}
 	}
 }
+
+// Twice in two days the music stopped on every speaker of a group at once, and
+// twice it was reported as something else: a preset press the first time, a
+// volume change the second. Both times the log said the same thing, that the
+// engine could not resolve what follows the playlist and stopped, and STR read
+// that stop as the listener stopping it and parked its recovery.
+func TestAPlaylistRunningOutIsNotAUserStop(t *testing.T) {
+	var latched atomic.Int32
+	m := &Manager{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	m.connectPauseFn = func(string) { latched.Add(1) }
+
+	m.lastCtxResolveFailAt = time.Now()
+	m.handleEnginePlaybackEnd("stopped")
+	if latched.Load() != 0 {
+		t.Error("a stop right after the engine gave up on the continuation must not arm the deliberate-stop latch")
+	}
+
+	// A stop long after that failure IS the listener, and must still latch.
+	m.lastCtxResolveFailAt = time.Now().Add(-time.Hour)
+	m.handleEnginePlaybackEnd("stopped")
+	if latched.Load() != 1 {
+		t.Errorf("a genuine stop must still latch, got %d", latched.Load())
+	}
+
+	// And so is a stop with no such failure recorded at all.
+	m.lastCtxResolveFailAt = time.Time{}
+	m.handleEnginePlaybackEnd("paused")
+	if latched.Load() != 2 {
+		t.Errorf("a pause with no resolve failure must latch, got %d", latched.Load())
+	}
+}
