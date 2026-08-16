@@ -928,6 +928,14 @@ func (s *Server) pushGroupDocToPartner(ctx context.Context, partnerIP, doc strin
 	if partnerIP == "" {
 		return false
 	}
+	// The partner of a stereo pair is on the local network, always. Requiring
+	// that keeps a caller from pointing this push at an address off the LAN:
+	// the path and the two ports are fixed, so the reach was already narrow,
+	// but "narrow" is not a reason to leave it open.
+	if !isPrivateHost(partnerIP) {
+		s.logger.Warn("stereo: refusing to push the pair document off the local network", "partnerIP", partnerIP)
+		return false
+	}
 	// Short per-port budget: on series-I (the only stereo hardware) a blocked
 	// agent port black-holes the SYN, and this push runs inside the pairing
 	// response — an open LAN port answers in milliseconds.
@@ -1569,4 +1577,15 @@ func (s *Server) leaderZone(ctx context.Context, z boxapi.Zone) ([]boxapi.ZoneMe
 		return nil, false
 	}
 	return lz.Members, true
+}
+
+// isPrivateHost reports whether host is a literal address on this machine's own
+// network. A name is refused rather than resolved: resolution here would be a
+// second chance to point the push somewhere else.
+func isPrivateHost(host string) bool {
+	ip := net.ParseIP(strings.TrimSpace(host))
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }
