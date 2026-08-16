@@ -124,6 +124,7 @@
   "multiroom.liveInGroup": "w grupie",
   "multiroom.liveLeading": "główny z {{n}}",
   "multiroom.liveStandalone": "niezgrupowany",
+  "multiroom.liveNoAnswer": "teraz nie odpowiada",
   "multiroom.updateWarn": "Niektóre głośniki mają starszą wersję ST Reborn. Otwórz każdy z osobna i użyj jego banera aktualizacji, aby pobrać najnowszą wersję przed grupowaniem, inaczej grupowanie może nie zadziałać.",
   "multiroom.updateFirst": "Najpierw zaktualizuj",
   "multiroom.formedN": "Grupa aktywna: dołączono {{n}} głośnik(ów). Jeśli jeden milczy, sprawdź, czy jest włączony i czy główny głośnik odtwarza.",

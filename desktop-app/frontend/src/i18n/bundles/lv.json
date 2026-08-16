@@ -124,6 +124,7 @@
   "multiroom.liveInGroup": "grupā",
   "multiroom.liveLeading": "galvenais grupā ({{n}})",
   "multiroom.liveStandalone": "nav sagrupēts",
+  "multiroom.liveNoAnswer": "pašlaik neatbild",
   "multiroom.updateWarn": "Daži skaļruņi darbojas ar vecāku ST Reborn. Pirms grupēšanas atveriet katru no tiem un izmantojiet tā atjaunināšanas joslu, lai iegūtu jaunāko versiju, citādi grupēšana var nedarboties.",
   "multiroom.updateFirst": "Vispirms atjaunināt",
   "multiroom.formedN": "Grupa aktīva: pievienojušies {{n}} skaļruņi. Ja kāds paliek kluss, pārbaudiet, vai tas ir ieslēgts un galvenais skaļrunis atskaņo.",

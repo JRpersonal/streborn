@@ -124,6 +124,7 @@
   "multiroom.liveInGroup": "grupėje",
   "multiroom.liveLeading": "pagrindinis iš {{n}}",
   "multiroom.liveStandalone": "nesugrupuotas",
+  "multiroom.liveNoAnswer": "šiuo metu neatsako",
   "multiroom.updateWarn": "Kai kurie garsiakalbiai veikia su senesniu ST Reborn. Prieš grupuodami atverkite kiekvieną ir per jo atnaujinimo juostą įdiekite naujausią versiją, kitaip grupavimas gali neveikti.",
   "multiroom.updateFirst": "Pirma atnaujinti",
   "multiroom.formedN": "Grupė aktyvi: prisijungė {{n}} garsiakalbis (-iai). Jei vienas tyli, patikrinkite, ar jis įjungtas ir ar pagrindinis garsiakalbis groja.",
