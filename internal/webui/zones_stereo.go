@@ -331,12 +331,26 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// the same silence 25 s after the user pressed the button. The user waits
 	// half a minute for an error the first eight seconds already knew about,
 	// and by then the group that WAS working is gone.
+	// A failed wake alone is NOT a reason to stop. A speaker can be slow out of
+	// standby and still form the group perfectly well once /setZone reaches it,
+	// and refusing there would break grouping from standby, which works today.
+	// The condition worth stopping on is the speaker not answering AT ALL,
+	// which is what the field log showed: two reads of /now_playing timed out,
+	// the wake had no source to report, and everything after that was doomed.
+	// So the wake failing is only the prompt to ask one cheap question.
 	if err := s.ensureBoxReadyErr(ctx); err != nil {
-		s.logger.Warn("zone: the speaker leading the group is not answering, not sending setZone",
-			"err", err, "master", master.DeviceID, "prevMembers", len(prevLive.Members))
-		s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
-		http.Error(w, "the speaker leading the group is not answering: "+err.Error(), http.StatusBadGateway)
-		return
+		pctx, pcancel := context.WithTimeout(ctx, 2*time.Second)
+		_, perr := c.GetInfo(pctx)
+		pcancel()
+		if perr != nil {
+			s.logger.Warn("zone: the speaker leading the group is not answering at all, not sending setZone",
+				"wakeErr", err, "probeErr", perr, "master", master.DeviceID, "prevMembers", len(prevLive.Members))
+			s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
+			http.Error(w, "the speaker leading the group is not answering: "+perr.Error(), http.StatusBadGateway)
+			return
+		}
+		s.logger.Info("zone: the speaker did not report waking, but it is answering, so the group is formed anyway",
+			"wakeErr", err, "master", master.DeviceID)
 	}
 
 	// Remove members the user dropped from the group. /setZone only ADDS the
