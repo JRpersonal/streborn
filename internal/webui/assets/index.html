@@ -572,8 +572,18 @@ var I18N2 = {
 // Pick the best matching locale from the phone and build T (chosen strings with
 // English fall-through per key). Runs immediately so the dynamic helpers below
 // can use T as soon as they execute.
-var T = (function(){
+// pickDict builds the active dictionary. A function, not a one-off, because
+// the speaker's language arrives a moment after the page opens and the labels
+// are then rebuilt from it.
+function pickDict(){
+  // The SPEAKER's language comes first when it is known. The owner set it in
+  // the app, it is the same for everybody in the household, and the phone is
+  // often in another language than the speakers: a German household with an
+  // English phone got an English remote and had no way to change it, because
+  // this page has no language picker (support mail 2026-08-16). The browser's
+  // languages remain the fallback, and are used until the speaker answers.
   var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
+  if (boxLang) langs = [boxLang].concat(Array.prototype.slice.call(langs));
   var code = 'en';
   for (var i = 0; i < langs.length; i++) {
     var pri = String(langs[i] || '').toLowerCase().split('-')[0];
@@ -587,9 +597,30 @@ var T = (function(){
   var base2 = I18N2.en, sel2 = I18N2[code] || base2;
   for (var k2 in base2) out[k2] = (sel2[k2] != null ? sel2[k2] : base2[k2]);
   return out;
-})();
+}
+var T = pickDict();
 // fmt fills {n}/{name} placeholders. Values are inserted as TEXT by every
 // caller, never as markup.
+// boxLang is the speaker's own display language as a two-letter code, or ''
+// until it has been read. The firmware reports an integer; this is the table
+// the desktop app resolved in full.
+var boxLang = '';
+var BOSE_LANG_CODES = {
+  1: 'da', 2: 'de', 3: 'en', 4: 'es', 5: 'fr', 6: 'it',
+  7: 'nl', 8: 'sv', 9: 'ja', 10: 'zh', 11: 'zh', 12: 'ko',
+};
+
+// loadBoxLanguage asks the speaker once. Best effort: an older agent has no
+// such endpoint and a speaker that does not answer leaves the browser's
+// language in charge, which is what happened before this existed.
+async function loadBoxLanguage() {
+  try {
+    const r = await api('/api/box/language');
+    const n = r && Number(r.sysLanguage);
+    if (n && BOSE_LANG_CODES[n]) boxLang = BOSE_LANG_CODES[n];
+  } catch (e) { /* keep the browser's language */ }
+}
+
 function fmt(s, vals) {
   // Both {name} and {{name}} are in the dictionaries, and matching only the
   // first form left the outer braces standing: the group card literally read
@@ -1732,7 +1763,14 @@ async function loadVersion() {
     lv:{t:"Attēlojums un pieejamība",sz:"Teksta izmērs",n:"Normāls",l:"Liels",x:"Ļoti liels",th:"Motīvs",d:"Tumšs",li:"Gaišs",c:"Augsts kontrasts"},
     uk:{t:"Відображення та доступність",sz:"Розмір тексту",n:"Звичайний",l:"Великий",x:"Дуже великий",th:"Тема",d:"Темна",li:"Світла",c:"Високий контраст"}
   };
+  // The SPEAKER's language comes first when it is known. The owner set it in
+  // the app, it is the same for everybody in the household, and the phone is
+  // often in another language than the speakers: a German household with an
+  // English phone got an English remote and had no way to change it, because
+  // this page has no language picker (support mail 2026-08-16). The browser's
+  // languages remain the fallback, and are used until the speaker answers.
   var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
+  if (boxLang) langs = [boxLang].concat(Array.prototype.slice.call(langs));
   var code = 'en';
   for (var i = 0; i < langs.length; i++) {
     var pri = String(langs[i] || '').toLowerCase().split('-')[0];
@@ -2446,6 +2484,10 @@ async function setSleep(minutes) {
   });
 })();
 
+// Ask the speaker for its language first, then paint the labels. It is one
+// short local request, and getting it before the first paint avoids the page
+// visibly changing language a moment after it opens.
+loadBoxLanguage().then(function(){ T = pickDict(); applyStaticI18n(); });
 applyStaticI18n(); syncTabbarSpace(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion(); loadZone(); loadSleep(); loadMusicLib();
 setInterval(function(){ refreshStatus(); refreshWedge(); }, 5000);
 // The group is polled far more slowly than the transport: it changes when

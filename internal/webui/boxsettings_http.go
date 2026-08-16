@@ -825,3 +825,28 @@ func xmlAttr(v string) string {
 	_ = xml.EscapeText(&b, []byte(v))
 	return strings.ReplaceAll(b.String(), `"`, "&#34;")
 }
+
+// handleBoxLanguage answers the speaker's display language, so the phone
+// remote can follow it instead of the browser's.
+//
+// GET /api/box/language -> {"sysLanguage": 2}
+func (s *Server) handleBoxLanguage(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if s.boxHost == "" {
+		http.Error(w, "box host not configured", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	n, err := boxapi.New(s.boxHost).GetSysLanguage(ctx)
+	if err != nil {
+		// Not an error worth showing: the page simply keeps the browser's
+		// language, which is what it did before this existed.
+		s.logger.Debug("box language not readable", "err", err)
+		writeJSON(w, http.StatusOK, map[string]any{"sysLanguage": 0})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sysLanguage": n})
+}

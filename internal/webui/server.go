@@ -653,6 +653,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/agent/sidecar", s.handleAgentSidecar)
 	mux.HandleFunc("/api/agent/enable-ssh", s.handleAgentEnableSSH)
 	mux.HandleFunc("/api/box/settings", s.handleBoxSettings)
+	mux.HandleFunc("/api/box/language", s.handleBoxLanguage)
 	mux.HandleFunc("/api/box/name", s.handleBoxName)
 	mux.HandleFunc("/api/box/volume", s.handleBoxVolume)
 	mux.HandleFunc("/api/box/bass", s.handleBoxBass)
