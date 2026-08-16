@@ -136,7 +136,17 @@ func (m *Manager) handleEnginePlaybackEnd(evType string) {
 	}
 	m.mu.Lock()
 	fn := m.connectPauseFn
+	ctxFailedAt := m.lastCtxResolveFailAt
 	m.mu.Unlock()
+	// A stop that follows the engine failing to resolve the continuation of a
+	// playlist is the playlist running out, not the listener stopping it.
+	// Arming the deliberate-stop latch there parks the recovery paths and the
+	// music just ends, on every speaker of a group at once.
+	if !ctxFailedAt.IsZero() && time.Since(ctxFailedAt) < 15*time.Second {
+		m.logger.Warn("spotify: playback stopped because the playlist ran out and the engine could not resolve what follows, NOT because anybody stopped it",
+			"event", evType, "sinceResolveFailMs", time.Since(ctxFailedAt).Milliseconds())
+		return
+	}
 	if fn == nil {
 		return
 	}

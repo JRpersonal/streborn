@@ -1004,7 +1004,13 @@ function skip(btn, path) { press(btn); api(path, 'POST'); setTimeout(refreshStat
 // tap sends the right command even between status polls.
 var paused = false;
 function applyTransportUI(state) {
-  paused = (state === 'PAUSE_STATE');
+  // A stopped stream offers Play, exactly like a paused one. Only PAUSE_STATE
+  // counted before, so after pressing Stop the button still read Pause and
+  // sent /api/pause to a transport that was already stopped: the control did
+  // nothing and there was no way back to the music without picking a key
+  // again. INVALID_SOURCE is deliberately NOT included: nothing is loaded
+  // there, so Play would promise something that cannot happen.
+  paused = (state === 'PAUSE_STATE' || state === 'STOP_STATE');
   var b = document.getElementById('btnPause');
   if (!b) return;
   // Swap both the glyph and the label so a paused stream offers Play (#382): the

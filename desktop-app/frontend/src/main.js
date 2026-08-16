@@ -1720,7 +1720,21 @@ async function discoverBoxes() {
     // new name via mDNS, search again every 4 s (driven by pendingNames).
     scheduleNextAutoRefresh();
   } catch (e) {
-    if (!hadBoxes) $('boxSelect').textContent = t('common.error') + ': ' + e;
+    // Do NOT overwrite the picker with the raw exception. That took the retry
+    // button and the connect-by-IP field away with it, so a blocked first
+    // discovery left nothing to press. Repaint the picker and put the
+    // exception underneath, folded away, where it helps a bug report without
+    // being the whole screen.
+    if (!hadBoxes) {
+      try { renderBoxSelect(); } catch { /* keep whatever is on screen */ }
+      const hint = $('boxHint');
+      if (hint) {
+        hint.innerHTML = `<p>${escapeHtml(t('speaker.choose'))}</p>`
+          + `<details class="muted small"><summary>${escapeHtml(t('common.error'))}</summary>`
+          + `<div>${escapeHtml(String(e))}</div></details>`;
+        hint.classList.remove('hidden');
+      }
+    }
   } finally {
     const rb = $('refreshBtn');
     if (rb) rb.classList.remove('spinning');
@@ -4225,12 +4239,25 @@ async function updateAllBoxes() {
 function updateBoxUiVisibility() {
   const hasBox = !!state.currentBox;
   const hasSTR = state.boxes.some(b => b.kind !== 'stock');
-  // Show controls only when a selected STR speaker exists. Show the
-  // "pick a speaker" hint when STR speakers exist but none is
-  // selected; stock-only LAN scenarios fall through to the empty
-  // state rendered by renderBoxSelect (the badge speaks for itself).
+  const stockOnly = !hasSTR && (state.boxes || []).some(b => b && b.kind === 'stock');
   $('boxControls').classList.toggle('hidden', !hasBox);
-  $('boxHint').classList.toggle('hidden', !hasSTR || hasBox);
+  const hint = $('boxHint');
+  if (!hint) return;
+  // Three states, not two. The third is somebody's FIRST time: their speaker is
+  // on the network and still runs the Bose firmware, so there is nothing to
+  // control yet. That used to leave the page blank with no hint of what to do,
+  // which is the one moment a new user decides whether this product works.
+  if (stockOnly && !hasBox) {
+    hint.innerHTML = `<p><b>${escapeHtml(t('speaker.stockConfirmTitle'))}</b></p>`
+      + `<p class="muted">${escapeHtml(t('speaker.stockTooltip'))}</p>`
+      + `<button class="btn btn-primary" id="boxHintSetup">${escapeHtml(t('speaker.stockConfirmCta'))}</button>`;
+    hint.classList.remove('hidden');
+    const go = $('boxHintSetup');
+    if (go) go.onclick = () => switchView('setup');
+    return;
+  }
+  hint.innerHTML = `<p>${escapeHtml(t('speaker.choose'))}</p>`;
+  hint.classList.toggle('hidden', !hasSTR || hasBox);
 }
 
 let loadedPresetsBoxKey = null;

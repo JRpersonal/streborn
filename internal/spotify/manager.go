@@ -130,6 +130,14 @@ type Manager struct {
 	lastPlayFailLine string
 	lastPlayFailAt   time.Time
 	// lastSeekFailAt remembers when go-librespot last reported it could not seek to
+	// lastCtxResolveFailAt is when go-librespot last failed to resolve the
+	// continuation of a context ("failed resolving station"). That happens when
+	// a generated radio playlist runs out, and the engine then STOPS. Without
+	// this the stop was indistinguishable from somebody pressing stop in the
+	// Spotify app, so STR armed its deliberate-stop latch and the music simply
+	// ended, on every speaker of the group at once (live 2026-08-15 16:56 and
+	// 2026-08-16 16:58, both times reported as something else).
+	lastCtxResolveFailAt time.Time
 	// the requested resume track (skip_to_uri) because that track is no longer in
 	// the context (a volatile Radio/Daily-Mix playlist whose track set drifted).
 	// Play uses it to replay the context from the top instead of leaving the box on

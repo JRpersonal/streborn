@@ -618,6 +618,15 @@ func (m *Manager) noteLibrespotLine(line string) {
 		m.lastSeekFailAt = time.Now()
 		m.mu.Unlock()
 	}
+	// The engine could not work out what to play after the current context ran
+	// out. It stops afterwards, and that stop must not be read as the listener
+	// having stopped it.
+	if strings.Contains(lc, "failed resolving station") || strings.Contains(lc, "context resolve") {
+		m.mu.Lock()
+		m.lastCtxResolveFailAt = time.Now()
+		m.mu.Unlock()
+		m.logger.Warn("spotify: the engine could not resolve what to play after this playlist, so playback is about to stop", "line", line)
+	}
 	// Connect-desync markers (upstream go-librespot #300): a "put connect
 	// state" timeout desyncs the device from the Spotify cluster - the app's
 	// buttons go dead/laggy, the device flaps in the picker, the engine can
