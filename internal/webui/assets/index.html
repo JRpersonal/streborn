@@ -1470,7 +1470,13 @@ async function refreshStatus() {
   // reads the ICY title out of the stream, and the desktop app has shown it
   // from there all along. This asks the same place.
   const playing = state === 'PLAY_STATE' || state === 'BUFFERING_STATE';
-  const song = playing ? await currentSong() : '';
+  // Only ask when the speaker is playing something the stream proxy serves.
+  // The proxy reports the title of the LAST stream it carried, so on AUX,
+  // Bluetooth or a NAS track the phone went on showing the radio song from
+  // before: an SA-5 owner switched to a line input and the remote still read
+  // "The Beatles - Help!", through source changes and an app restart (#274).
+  const proxySrc = upSrc === 'UPNP' || upSrc === 'LOCAL_INTERNET_RADIO';
+  const song = (playing && proxySrc) ? await currentSong() : '';
   setNow(bigName, song || human[state] || (state ? state.replace('_STATE','').toLowerCase() : T.stopped));
   tp.playing = (state === 'PLAY_STATE' || state === 'BUFFERING_STATE');
   var key = name + '|' + src;
