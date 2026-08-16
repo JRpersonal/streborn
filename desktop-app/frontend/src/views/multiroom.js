@@ -527,8 +527,10 @@ async function doDissolveZone(strBoxes) {
   // Send it to the speaker that leads the LIVE group, not to whichever one the
   // star happens to sit on. Dissolving through an uninvolved speaker did
   // nothing and still reported success, so the group played on.
-  const liveID = liveZoneMaster(strBoxes);
-  const master = strBoxes.find(b => b.deviceID === (liveID || state.zoneMaster));
+  // liveZoneMaster hands back the speaker itself, and it prefers the selected
+  // one when that one really does lead. Only when nothing leads does the star
+  // decide, and then there is nothing live to disagree with.
+  const master = liveZoneMaster(strBoxes) || strBoxes.find(b => b.deviceID === state.zoneMaster);
   if (!master) return;
   try {
     const res = await DissolveZone(master.host, master.port);
@@ -544,18 +546,6 @@ async function doDissolveZone(strBoxes) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
   renderMultiroom(true);
-}
-
-// liveZoneMaster returns the deviceID of the speaker that actually leads a
-// group right now, from the live zone reports, or '' when nobody does.
-function liveZoneMaster(strBoxes) {
-  const zl = state.zoneLive || {};
-  for (const b of strBoxes || []) {
-    const e = zl[b.deviceID];
-    const m = e && e.master ? String(e.master).toUpperCase() : '';
-    if (m) return (strBoxes.find(x => String(x.deviceID).toUpperCase() === m) || {}).deviceID || '';
-  }
-  return '';
 }
 
 // fillPairBalance shows the pair's balance as information, with where to change

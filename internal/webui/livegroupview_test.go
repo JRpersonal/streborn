@@ -387,10 +387,13 @@ func TestASpeakerListedTwiceGetsOneRow(t *testing.T) {
 	}
 }
 
-// The two speakers disagree about the membership, so only the part this one
-// knows first hand can be shown. Adding a row for ourselves anyway would draw a
-// membership that neither speaker reported.
-func TestALeaderListWithoutThisSpeakerIsNotUsed(t *testing.T) {
+// A leader that does not list this speaker is missing ONE row, not wrong about
+// the whole group. This speaker's own firmware named that leader, so the
+// membership was reported, by the speaker we asked first. Throwing the list
+// away instead turned a five speaker group into two rows on the phone whenever
+// a leader answered with an empty deviceID for a member, which the two-chip
+// chassis here have done before.
+func TestASpeakerMissingFromTheLeadersListIsAddedNotDropped(t *testing.T) {
 	withSpeakers(t,
 		map[string]boxapi.Zone{
 			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
@@ -402,18 +405,22 @@ func TestALeaderListWithoutThisSpeakerIsNotUsed(t *testing.T) {
 	if !isFollower {
 		t.Fatal("this speaker's own firmware names a master, it follows")
 	}
-	if len(members) != 2 {
-		t.Fatalf("want the leader and this speaker, got %d: %+v", len(members), members)
+	if len(members) != 3 {
+		t.Fatalf("want the leader, the member it did list, and this speaker, got %d: %+v", len(members), members)
 	}
 	if !strings.EqualFold(members[0].DeviceID, leaderID) || !members[0].IsMaster {
-		t.Errorf("the leader must still be named: %+v", members[0])
+		t.Errorf("the leader must come first: %+v", members[0])
 	}
-	if !members[1].IsSelf || members[1].IP != livingHost {
-		t.Errorf("this speaker must be its own second row, addressable: %+v", members[1])
-	}
+	selfRows := 0
 	for _, m := range members {
-		if strings.EqualFold(m.DeviceID, bathID) {
-			t.Errorf("a member of a list this speaker is not in must not be shown: %+v", m)
+		if m.IsSelf {
+			selfRows++
+			if m.IP != livingHost {
+				t.Errorf("this speaker's row must be addressable: %+v", m)
+			}
 		}
+	}
+	if selfRows != 1 {
+		t.Errorf("want exactly one row for this speaker, got %d", selfRows)
 	}
 }

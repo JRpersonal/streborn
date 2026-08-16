@@ -462,12 +462,22 @@ func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool, o
 			Name: name, IP: ip, DeviceID: m.DeviceID, Role: m.Role, IsSelf: self, Volume: -1,
 		})
 	}
-	// This speaker has to be in the group it says it follows. If the leader's
-	// list leaves it out, the two disagree and only the first hand part is
-	// safe: adding a row for ourselves anyway would show a membership neither
-	// speaker reported.
+	// This speaker has to be in the group it says it follows. When the leader's
+	// list leaves it out, add it rather than throwing the list away.
+	//
+	// Our OWN firmware named that leader, so the membership is not unreported:
+	// one of the two speakers reported it, and it is the one we asked first.
+	// Collapsing to the two certain rows instead would turn a five speaker
+	// group into two on the phone whenever a leader answers with an empty
+	// deviceID for a member, which is exactly what the two-chip chassis here
+	// (Portable, ST20 spotty) have done before.
 	if !selfSeen {
-		return certain, true, own
+		out = append(out, zoneMemberVolume{
+			Name: s.groupSelfName(zones.Zone{}), IP: s.boxHost, DeviceID: ownID,
+			IsSelf: true, Volume: -1,
+		})
+		s.logger.Info("zone: the leader did not list this speaker, adding it from its own report",
+			"master", master, "ownID", ownID)
 	}
 	return out, true, own
 }

@@ -859,6 +859,13 @@ function renderPrimaryAction() {
     };
   } else {
     host.innerHTML = '';
+    // Nothing to act on yet. If no speaker was found at all, the stick IS the
+    // route: a speaker that is new or factory reset does not appear on the
+    // network until it has been set up, so opening the stick section here is
+    // guidance rather than clutter. Once a speaker HAS been found, the section
+    // stays closed, because then the stick is the fallback and not the path.
+    const foundAny = (state.boxes || []).some(b => b && b.host);
+    if (details) details.open = !foundAny;
   }
 }
 

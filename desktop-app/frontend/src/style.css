@@ -2437,3 +2437,13 @@ html.a11y-contrast *:focus-visible { outline-color: #fff !important; }
   resize: vertical;
 }
 .failreport-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Two classes the parallel work introduced without a rule, so they inherited
+   whatever was nearby. */
+.help-more > summary { list-style: none; padding: 2px 0; }
+.help-more > summary::-webkit-details-marker { display: none; }
+.help-more > summary::before { content: "B8 "; }
+.help-more[open] > summary::before { content: "BE "; }
+/* A speaker that is not answering reads differently from one that is simply
+   not in the group: the first is a fault, the second is a state. */
+.zone-live.zone-live-noanswer { color: var(--c-faint); font-style: italic; }
