@@ -44,7 +44,12 @@ export function renderMultiroom(fetchLive) {
   if (!state.zoneSlaves) state.zoneSlaves = {};
   if (!state.zoneMode) state.zoneMode = 'native';
   if (!state.zoneMaster || !strBoxes.some(b => b.deviceID === state.zoneMaster)) {
-    state.zoneMaster = strBoxes.length ? strBoxes[0].deviceID : '';
+    // Prefer the speaker that ACTUALLY leads a live group. Falling straight to
+    // the first one discovered meant the star, and with it the dissolve, sat on
+    // whichever speaker happened to be first in the list while another one led
+    // the group, so the page described a group nobody was in.
+    const live = liveZoneMaster(strBoxes);
+    state.zoneMaster = live || (strBoxes.length ? strBoxes[0].deviceID : '');
   }
   const anyOutdated = strBoxes.some(b => deps.boxNeedsUpdate(b));
 
@@ -85,7 +90,11 @@ export function renderMultiroom(fetchLive) {
         const foot = isMaster
           ? `<span class="zone-badge">${escapeHtml(t('multiroom.mainBadge'))}</span>`
           : `<button class="zone-makemain" data-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.makeMain'))}</button>`;
-        const upd = outdated ? `<span class="zone-update-badge">${escapeHtml(t('multiroom.updateFirst'))}</span>` : '';
+        // A BUTTON, not a span. It looked exactly like the button beside it and
+        // did nothing, and the click fell through to the card, which selected
+        // the outdated speaker for the group anyway: the control did the
+        // opposite of what it said.
+        const upd = outdated ? `<button class="zone-update-badge" data-update-id="${escapeAttr(b.deviceID)}">${escapeHtml(t('multiroom.updateFirst'))}</button>` : '';
         return `<div class="zone-card${isMaster ? ' master' : ''}${selected ? ' selected' : ''}${outdated ? ' outdated' : ''}" data-id="${escapeAttr(b.deviceID)}" role="button" tabindex="0">
             <span class="zone-card-tick">${selected ? '&#10003;' : (isMaster ? '&#9733;' : '')}</span>
             <div class="zone-card-name">${escapeHtml(zoneLabel(b))} ${model}</div>
@@ -213,6 +222,14 @@ export function renderMultiroom(fetchLive) {
   // only (no fetch) so toggling is instant.
   root.querySelectorAll('.zone-card').forEach(card => {
     card.onclick = (e) => {
+      const up = e.target.closest('.zone-update-badge');
+      if (up) {
+        e.stopPropagation();
+        const target = (deps.allBoxes ? deps.allBoxes() : []).find(b => b.deviceID === up.dataset.updateId)
+          || strBoxes.find(b => b.deviceID === up.dataset.updateId);
+        if (target && deps.openSpeakerSettings) deps.openSpeakerSettings(target);
+        return;
+      }
       const mk = e.target.closest('.zone-makemain');
       if (mk) {
         state.zoneMaster = mk.dataset.id;
@@ -449,16 +466,38 @@ async function doDissolveStereo(pairCands) {
 }
 
 async function doDissolveZone(strBoxes) {
-  const master = strBoxes.find(b => b.deviceID === state.zoneMaster);
+  // Send it to the speaker that leads the LIVE group, not to whichever one the
+  // star happens to sit on. Dissolving through an uninvolved speaker did
+  // nothing and still reported success, so the group played on.
+  const liveID = liveZoneMaster(strBoxes);
+  const master = strBoxes.find(b => b.deviceID === (liveID || state.zoneMaster));
   if (!master) return;
   try {
-    await DissolveZone(master.host, master.port);
-    state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`;
-    showToast(t('multiroom.zoneDissolved'));
+    const res = await DissolveZone(master.host, master.port);
+    // The speaker says whether the group is really gone. It reports the members
+    // it could not remove, and whether it could read the result at all.
+    if (res && res.ok === false) {
+      state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.dissolveIncomplete'))}</div>`;
+    } else {
+      state.zoneMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.zoneDissolved'))}</div>`;
+      showToast(t('multiroom.zoneDissolved'));
+    }
   } catch (e) {
     state.zoneMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
   }
   renderMultiroom(true);
+}
+
+// liveZoneMaster returns the deviceID of the speaker that actually leads a
+// group right now, from the live zone reports, or '' when nobody does.
+function liveZoneMaster(strBoxes) {
+  const zl = state.zoneLive || {};
+  for (const b of strBoxes || []) {
+    const e = zl[b.deviceID];
+    const m = e && e.master ? String(e.master).toUpperCase() : '';
+    if (m) return (strBoxes.find(x => String(x.deviceID).toUpperCase() === m) || {}).deviceID || '';
+  }
+  return '';
 }
 
 // fillPairBalance shows the pair's balance as information, with where to change

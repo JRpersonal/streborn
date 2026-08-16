@@ -346,7 +346,17 @@ import {
 // before without reimplementing them. All hoisted function declarations, safe
 // to pass here.
 initRecentView({ showSlotPicker, playStation, openPick, toggleFav, isFav });
-initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, boxFetch });
+// openSpeakerSettings selects a speaker and shows its settings, which is where
+// its update lives. The Multi-Room tab needs it: a card that says a speaker
+// must be updated first has to be able to take the owner there.
+function openSpeakerSettings(box) {
+  if (!box) return;
+  try { selectBox(box); } catch { /* selection is best effort */ }
+  state.settingsBox = box;
+  switchView('settings');
+}
+
+initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, boxFetch, switchView, openSpeakerSettings });
 initSpotifyView({
   switchView,
   // Live STR speaker list for the "sync Spotify login to all speakers" action.
@@ -4836,29 +4846,79 @@ async function loadGroupMemberVolumes(members) {
 const groupOpPending = new Set();
 let groupOpChain = Promise.resolve();
 
+// Several chips clicked in a row become ONE group edit.
+//
+// Each click used to drive its own zone form, and a zone form takes seconds and
+// interrupts the audio, so adding three speakers meant three interruptions and
+// three repaints while the owner was still clicking. The phone remote already
+// behaves the way people expect: every press is acknowledged at once and the
+// speakers join together.
+//
+// So a click marks the chip immediately and records the intent, and the edit
+// runs once the clicking stops. The window is short enough that a single click
+// still feels immediate.
+const GROUP_EDIT_COALESCE_MS = 600;
+const pendingGroupEdits = new Map(); // host -> port
+let groupEditTimer = null;
+
 function toggleGroupMember(host, port) {
   if (groupOpPending.has(host)) return groupOpChain;
-  groupOpPending.add(host);
-  groupOpChain = groupOpChain
-    .then(() => runGroupMemberToggle(host, port))
-    .catch(() => {})
-    .finally(() => groupOpPending.delete(host));
+  // Toggling the same speaker twice before the edit runs is a change of mind,
+  // and the two cancel out rather than queueing.
+  if (pendingGroupEdits.has(host)) pendingGroupEdits.delete(host);
+  else pendingGroupEdits.set(host, port);
+  markGroupChipPending();
+  if (groupEditTimer) clearTimeout(groupEditTimer);
+  groupEditTimer = setTimeout(runPendingGroupEdits, GROUP_EDIT_COALESCE_MS);
   return groupOpChain;
 }
 
-async function runGroupMemberToggle(host, port) {
+// markGroupChipPending gives the click its feedback straight away: the chip
+// shows the state it is about to have, so a second click is never made because
+// the first looked ignored.
+function markGroupChipPending() {
+  document.querySelectorAll('.group-chip').forEach(chip => {
+    chip.classList.toggle('pending', pendingGroupEdits.has(chip.dataset.host));
+  });
+}
+
+function runPendingGroupEdits() {
+  groupEditTimer = null;
+  const edits = [...pendingGroupEdits.entries()];
+  pendingGroupEdits.clear();
+  if (edits.length === 0) return;
+  edits.forEach(([h]) => groupOpPending.add(h));
+  groupOpChain = groupOpChain
+    .then(() => runGroupMemberToggle(edits))
+    .catch(() => {})
+    .finally(() => {
+      edits.forEach(([h]) => groupOpPending.delete(h));
+      markGroupChipPending();
+    });
+  return groupOpChain;
+}
+
+// runGroupMemberToggle applies a whole batch of toggles as ONE zone edit.
+// edits is [[host, port], ...]; a single click is simply a batch of one.
+async function runGroupMemberToggle(edits) {
   // Edit the group the selection belongs to: when a follower is selected, its
   // master is the box that must receive the FormZone/DissolveZone (a follower
   // rejects zone control), so resolve to it first.
   const box = groupControlBox();
   if (!box || box.kind === 'stock') return;
-  const target = (state.boxes || []).find(b => b.host === host);
-  if (!target) return;
+  const targets = edits
+    .map(([h]) => (state.boxes || []).find(b => b.host === h))
+    .filter(Boolean);
+  if (targets.length === 0) return;
   const members = groupMembersOf(box, state.zoneLive, state.boxes);
-  const wasIn = members.some(m => m.ip === host);
-  const next = wasIn
-    ? members.filter(m => m.ip !== host)
-    : [...members, { deviceID: target.deviceID, ip: target.host, box: target }];
+  // Apply every toggle to one membership list, so the speakers join or leave
+  // together instead of one zone form per click.
+  const next = targets.reduce((acc, tgt) => acc.some(m => m.ip === tgt.host)
+    ? acc.filter(m => m.ip !== tgt.host)
+    : [...acc, { deviceID: tgt.deviceID, ip: tgt.host, box: tgt }], members);
+  const removed = targets.filter(tgt => members.some(m => m.ip === tgt.host) && !next.some(m => m.ip === tgt.host));
+  const target = targets[0];
+  const wasIn = removed.length > 0 && targets.length === 1;
   try {
     if (next.length === 0) {
       await DissolveZone(box.host, box.port);
@@ -4891,8 +4951,13 @@ async function runGroupMemberToggle(host, port) {
         renderGroupControl();
         return;
       }
-      if (wasIn) { try { await Stop(target.host, target.port); } catch {} } // a removed speaker stops
-      showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
+      // Every speaker taken out of the group stops, not only the first one.
+      await Promise.allSettled(removed.map(tgt => Stop(tgt.host, tgt.port)));
+      if (targets.length === 1) {
+        showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
+      } else {
+        showToast(t('group.batchToast', { count: targets.length }));
+      }
     }
     // Optimistic zone update so the chips + frames + Multi-Room summary
     // reflect the change at once, in the same shape a real poll returns
