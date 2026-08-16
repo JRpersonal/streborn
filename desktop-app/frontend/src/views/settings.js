@@ -971,7 +971,11 @@ function renderBoxSettings(s, box) {
           const cls = ready ? 'src-ok' : (viaSTR ? 'src-ok src-via-str' : (localFw ? 'src-ok' : 'src-unav'));
           const label = sourceLabel(src.source);
           const statusLabel = ready ? t('settingsView.sourceActive') : (viaSTR ? t('settingsView.sourceViaSTR') : (localFw ? t('settingsView.sourceAvailable') : t('settingsView.sourceInactive')));
-          return `<div class="source-pill ${cls}" title="${escapeAttr(sourceHint(src.source) || src.sourceAccount || '')}">${escapeHtml(label)} <small>${escapeHtml(statusLabel)}</small></div>`;
+          // Name the socket when there is more than one of the same kind,
+          // otherwise three identical "AUX" pills say nothing.
+          const acc = physicalInputAccount(src);
+          const shown = acc && acc.toUpperCase() !== String(src.source).toUpperCase() ? `${label} (${acc})` : label;
+          return `<div class="source-pill ${cls}" title="${escapeAttr(sourceHint(src.source) || src.sourceAccount || '')}">${escapeHtml(shown)} <small>${escapeHtml(statusLabel)}</small></div>`;
         }).join('')}
       </div>
       <small class="muted small">${escapeHtml(t('settingsView.spotifyHint'))}</small>
@@ -2633,6 +2637,22 @@ function sourceHint(key) {
 // entries of the same source type into a single pill and prefers
 // READY over UNAVAILABLE. The result is then sorted with READY
 // first.
+// physicalInputAccount returns the account of a source when that account names
+// a distinct physical socket rather than a linked service.
+//
+// An SA-5 has three line inputs and reports all of them as source "AUX",
+// distinguished only by the account (Phono, AUX 2, AUX 3). Grouping by the
+// source alone folded the three into one, so the app offered a single AUX while
+// the phone remote listed all three and switching between them worked (#274).
+// Services must NOT be split this way: their account is a hashed identifier or
+// a "...UserName" placeholder and would produce one pill per stored login.
+function physicalInputAccount(src) {
+  const acc = String((src && src.sourceAccount) || '').trim();
+  if (!acc) return '';
+  if (/^ACCT#/i.test(acc) || /UserName$/i.test(acc)) return '';
+  return acc;
+}
+
 function rollupSources(raw) {
   const grouped = {};
   for (const src of raw) {
@@ -2643,9 +2663,11 @@ function rollupSources(raw) {
     // Showing it as "active" only confuses users (Discussion #170), so hide the
     // dead source like NOTIFICATION rather than imply it is usable.
     if (src.source === 'ALEXA') continue;
-    const existing = grouped[src.source];
+    const acc = physicalInputAccount(src);
+    const key = acc ? src.source + '|' + acc : src.source;
+    const existing = grouped[key];
     if (!existing || (src.status === 'READY' && existing.status !== 'READY')) {
-      grouped[src.source] = src;
+      grouped[key] = src;
     }
   }
   return Object.values(grouped).sort((a, b) => {
