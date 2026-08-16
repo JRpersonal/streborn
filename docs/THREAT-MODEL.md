@@ -141,6 +141,43 @@ shared student housing, public-facing IoT segment), put it on a
 dedicated VLAN or trusted SSID before installing STR. The same
 advice applies whether or not STR is installed.
 
+## Supplied certificate roots
+
+Some speakers were manufactured with a certificate store that is missing widely
+used authorities. On the `scm` chassis, `/etc/pki/tls/certs/ca-bundle.crt`
+carries 2 certificates where the `sm2` chassis carries 166, and the thin set
+lacks DigiCert Global Root G2 and ISRG Root X1. Such a speaker refuses most
+https radio stations, and the Spotify engine fails on its first call. The file
+belongs to the read-only firmware, a factory reset does not touch it, and
+Bose's update servers no longer answer, so nothing on the speaker can restore
+it.
+
+The agent therefore carries a pinned set of public root certificates
+(`internal/tlsgen/extraroots.pem`, Mozilla's roots via the curl project, see
+[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)). At startup it reads the
+speaker's own stores, appends only the roots that are genuinely absent, writes
+the result to tmpfs and points its own process at it with `SSL_CERT_FILE`. The
+Spotify engine inherits that through the environment.
+
+What this means for trust:
+
+- **The speaker's own trust is unchanged.** Nothing is mounted, nothing under
+  `/etc` is modified, nothing is written to NAND. The Bose firmware, its app
+  and its native services keep exactly the certificate authorities Bose
+  shipped, and remain as limited as before.
+- **It is additive, never subtractive.** `SSL_CERT_FILE` replaces only the file
+  half of Go's certificate loader; the directory scan is governed by
+  `SSL_CERT_DIR`, which STR never sets. The composed bundle is the speaker's
+  own store plus the missing roots, and it is read back and counted before it
+  is used: if it would hold fewer usable certificates than the store it was
+  built from, it is discarded and nothing changes.
+- **The set is frozen between releases.** An authority that is distrusted after
+  a build keeps being trusted by STR's own connections until the speaker is
+  updated. The set is deliberately short so it can be reviewed, and
+  authorities that the wider ecosystem is retiring are not included.
+- **It can be refused.** A file at `/mnt/nv/streborn/no-extra-roots` stops it,
+  and the diagnostic reports whether anything was added and why not.
+
 ## Hardening roadmap
 
 The following items are planned before STR is recommended for users

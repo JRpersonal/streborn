@@ -185,6 +185,17 @@ func run() error {
 	logger := newLogger(*logLevel)
 	logger.Info("streborn starting", "version", version)
 
+	// FIRST, before anything can open a TLS connection. crypto/x509 builds the
+	// system pool once per process and caches it, so this has to happen while
+	// nothing has needed it yet; a later call would look correct in a test and
+	// do nothing at all on the speaker.
+	//
+	// On a speaker whose own store is complete this finds nothing to add and
+	// changes nothing. On the scm chassis, whose ca-bundle.crt carries 2
+	// certificates instead of 166, it is the difference between playing
+	// internet radio and refusing every station.
+	tlsgen.ApplySupplementalRoots(logger.With("comp", "tlsgen"))
+
 	// Self-heal the bootstrap layer if the agent OTA brought a newer
 	// binary onto a box whose run.sh / rc.local still date from an
 	// older release. Without this, an HTTP- or SSH-OTA only refreshes
@@ -502,6 +513,10 @@ func run() error {
 			// hold 157 of them and still be missing the two that most internet
 			// radio depends on.
 			"wellKnownRoots": tlsgen.WellKnownRoots(),
+			// What STR added for its own connections, and why it did not when
+			// it did not. A speaker that needed nothing reports applied=false
+			// with a reason, which is the normal and healthy answer.
+			"supplement": tlsgen.LastSupplement(),
 		}
 	})
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))
