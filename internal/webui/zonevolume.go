@@ -140,21 +140,46 @@ func (s *Server) peerName(m zones.Member) string {
 //
 // A read and nothing else: it runs whenever the phone opens its Speakers tab,
 // and a write there would reset the deep-standby countdown.
-func (s *Server) storedGroupIsLive() bool {
-	if s.boxHost == "" {
-		return true // cannot ask; trust the file rather than hide a real group
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	live, err := fetchZone(ctx, s.boxHost)
-	if err != nil {
-		return true // unreachable right now is not evidence the group is gone
+//
+// It takes the answer liveGroupView already got instead of asking again. Two
+// reads of the same speaker a fraction of a second apart are two different
+// answers, and the second one decided: a speaker whose zone read fine for
+// liveGroupView could still have its group thrown away here because the follow
+// up read came back empty. One read, one verdict.
+func (s *Server) storedGroupIsLive(own ownZoneAnswer) bool {
+	live := own.zone
+	if !own.read {
+		if s.boxHost == "" {
+			return true // cannot ask; trust the file rather than hide a real group
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		z, err := fetchZone(ctx, s.boxHost)
+		if err != nil {
+			return true // unreachable right now is not evidence the group is gone
+		}
+		live = z
 	}
 	if live.Master == "" && len(live.Members) == 0 {
-		s.logger.Info("zone: the stored group is not on the speaker any more, reporting standalone")
+		// Only speakers that actually held a group document lost anything. On
+		// one that never had one the line described an incident that never
+		// happened, once per poll of the phone's Speakers tab, which is exactly
+		// the noise that hides the real occurrence.
+		if s.hasStoredGroup() {
+			s.logger.Info("zone: the stored group is not on the speaker any more, reporting standalone")
+		}
 		return false
 	}
 	return true
+}
+
+// hasStoredGroup reports whether STR's own zone document describes a group.
+func (s *Server) hasStoredGroup() bool {
+	if s.zones == nil {
+		return false
+	}
+	z, ok := s.zones.Get()
+	return ok && len(z.Slaves) > 0
 }
 
 func (s *Server) zoneVolumeGet(w http.ResponseWriter, r *http.Request) {
@@ -231,10 +256,11 @@ func (s *Server) groupView(ctx context.Context) ([]zoneMemberVolume, bool, bool)
 	if stereo {
 		return members, grouped, true
 	}
-	if live, isFollower := s.liveGroupView(ctx); isFollower {
+	live, isFollower, own := s.liveGroupView(ctx)
+	if isFollower {
 		return live, true, false
 	}
-	if grouped && !s.storedGroupIsLive() {
+	if grouped && !s.storedGroupIsLive(own) {
 		return nil, false, false
 	}
 	return members, grouped, false
@@ -321,6 +347,15 @@ var (
 	}
 )
 
+// ownZoneAnswer is what this speaker's own firmware said about its zone, passed
+// from the one place that reads it to the one that would otherwise repeat the
+// read. read is false when the speaker was never asked or did not answer, and
+// zone is meaningless then.
+type ownZoneAnswer struct {
+	read bool
+	zone boxapi.Zone
+}
+
 // liveGroupView reports the group this speaker is actually in, as seen by the
 // speaker that leads it, or false when this speaker is not following anybody.
 //
@@ -343,49 +378,83 @@ var (
 // senderIsMaster is deliberately not consulted. It reads "true" on a follower
 // on these chassis, which is exactly the trap that made a follower look like a
 // leader in the first place; the deviceIDs are unambiguous.
-func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool) {
+//
+// The third return carries this speaker's own zone read on to the caller, so
+// the stored-group cross-check can use it instead of asking a second time.
+func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool, ownZoneAnswer) {
 	if s.boxHost == "" {
-		return nil, false
+		return nil, false, ownZoneAnswer{}
 	}
 	live, err := fetchZone(ctx, s.boxHost)
-	if err != nil || strings.TrimSpace(live.Master) == "" {
-		return nil, false
+	if err != nil {
+		return nil, false, ownZoneAnswer{}
+	}
+	own := ownZoneAnswer{read: true, zone: live}
+	master := strings.TrimSpace(live.Master)
+	if master == "" {
+		return nil, false, own
 	}
 	ownID := fetchDeviceID(ctx, s.boxHost)
-	if ownID == "" || strings.EqualFold(ownID, strings.TrimSpace(live.Master)) {
+	if ownID == "" || strings.EqualFold(ownID, master) {
 		// We lead it, or the speaker cannot say who it is. Either way the
 		// stored document is the better source and the caller keeps it.
-		return nil, false
+		return nil, false, own
 	}
 	masterIP := strings.TrimSpace(live.SenderIP)
 	if masterIP == "" {
-		return nil, false
+		return nil, false, own
 	}
+	// What this speaker knows first hand: it follows, and whom. Used whenever
+	// the leader's own answer cannot be trusted, because a short list beats
+	// "not grouped" while the group's music is playing.
+	certain := []zoneMemberVolume{
+		{Name: s.peerName(zones.Member{IP: masterIP}), IP: masterIP, DeviceID: live.Master, IsMaster: true, Volume: -1},
+		{Name: s.groupSelfName(zones.Zone{}), IP: s.boxHost, DeviceID: ownID, IsSelf: true, Volume: -1},
+	}
+
 	mz, err := fetchZone(ctx, masterIP)
 	if err != nil {
-		// The leader is not answering. Report what is certain: this speaker
-		// follows, and who it follows. A short list beats "not grouped" while
-		// the group's music is playing.
-		return []zoneMemberVolume{
-			{Name: s.peerName(zones.Member{IP: masterIP}), IP: masterIP, DeviceID: live.Master, IsMaster: true, Volume: -1},
-			{Name: s.groupSelfName(zones.Zone{}), IP: s.boxHost, DeviceID: ownID, IsSelf: true, Volume: -1},
-		}, true
+		return certain, true, own // the leader is not answering
 	}
+	// Both speakers have to name the same leader. When they do not, the list
+	// that came back belongs to some other group: the address in senderIPAddress
+	// is the one that sent the last zone message, and after a group is handed
+	// over or torn down and rebuilt that speaker is in a different group than
+	// the one this speaker still thinks it is in. Adopting it puts strangers on
+	// the page and takes their volume away from whoever is listening to them.
+	if !strings.EqualFold(strings.TrimSpace(mz.Master), master) {
+		return certain, true, own
+	}
+
 	// The leader lists its followers, not itself, so it is added first.
-	out := []zoneMemberVolume{{
-		Name: s.peerName(zones.Member{IP: masterIP}), IP: masterIP, DeviceID: live.Master,
-		IsMaster: true, Volume: -1,
-	}}
+	out := []zoneMemberVolume{certain[0]}
+	// Nothing in the firmware promises the list is free of repeats, and a
+	// speaker that appears twice gets two rows on the page and two volume calls
+	// from one press of the group slider. The master seeds both sets, because a
+	// leader that does include itself would otherwise get a second row that
+	// contradicts the first about who leads.
+	seenIP := map[string]bool{masterIP: true}
+	seenID := map[string]bool{strings.ToUpper(master): true}
+	var selfSeen bool
 	for _, m := range mz.Members {
-		if strings.TrimSpace(m.IP) == "" {
+		ip := strings.TrimSpace(m.IP)
+		if ip == "" {
 			continue
 		}
-		self := ownID != "" && strings.EqualFold(strings.TrimSpace(m.DeviceID), ownID)
-		ip := m.IP
-		name := s.peerName(zones.Member{IP: m.IP})
+		id := strings.ToUpper(strings.TrimSpace(m.DeviceID))
+		if seenIP[ip] || (id != "" && seenID[id]) {
+			continue
+		}
+		seenIP[ip] = true
+		if id != "" {
+			seenID[id] = true
+		}
+		self := id != "" && strings.EqualFold(id, ownID)
+		name := s.peerName(zones.Member{IP: ip})
 		if self {
 			// Talk to ourselves over the loopback the rest of this file uses,
 			// and use the name this speaker calls itself.
+			selfSeen = true
 			ip = s.boxHost
 			name = s.groupSelfName(zones.Zone{})
 		}
@@ -393,5 +462,12 @@ func (s *Server) liveGroupView(ctx context.Context) ([]zoneMemberVolume, bool) {
 			Name: name, IP: ip, DeviceID: m.DeviceID, Role: m.Role, IsSelf: self, Volume: -1,
 		})
 	}
-	return out, true
+	// This speaker has to be in the group it says it follows. If the leader's
+	// list leaves it out, the two disagree and only the first hand part is
+	// safe: adding a row for ourselves anyway would show a membership neither
+	// speaker reported.
+	if !selfSeen {
+		return certain, true, own
+	}
+	return out, true, own
 }

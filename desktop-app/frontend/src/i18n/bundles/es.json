@@ -125,6 +125,7 @@
   "multiroom.liveInGroup": "en un grupo",
   "multiroom.liveLeading": "principal de {{n}}",
   "multiroom.liveStandalone": "sin agrupar",
+  "multiroom.liveNoAnswer": "no responde ahora mismo",
   "multiroom.updateWarn": "Algunos altavoces tienen una versión más antigua de ST Reborn. Abre cada uno y usa su aviso de actualización para tener la última antes de agrupar, de lo contrario el grupo puede no funcionar.",
   "multiroom.updateFirst": "Actualizar primero",
   "multiroom.formedN": "Grupo activo: {{n}} altavoz(es) unido(s). Si uno se queda en silencio, comprueba que esté encendido y que el altavoz principal esté reproduciendo.",

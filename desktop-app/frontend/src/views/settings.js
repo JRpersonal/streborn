@@ -631,6 +631,109 @@ async function fillMusicLib(box) {
   });
 }
 
+// Long help text: the opening sentence stays, the rest folds away.
+//
+// Several panels open with a paragraph the user has to read past before
+// reaching anything they can actually change. Counted against the shipped
+// bundles, the intro of "Play a custom URL from a preset" is 535 characters in
+// English and 630 in German, the webhook one 496 and 592, and voice control 401
+// and 486. The app is capped at 720 px (#app in style.css), which leaves a
+// settings panel roughly 650 px, so that is five to six lines of prose before
+// the first select box. Folding everything after the opening sentence into a
+// closed disclosure deletes nothing (the reasoning is one click away) and lets
+// the panel start with its controls instead of with an essay.
+//
+// The measurement runs per translation rather than once in English, because
+// German runs about twenty percent longer for the same sentence: the same
+// paragraph honestly deserves folding in one language and not in another.
+
+// Roughly how many Latin characters fit on one line of 12px help text in the
+// 650 px a settings panel leaves. Three of those lines is where a hint stops
+// reading as a hint, so anything wider gets folded.
+const HELP_LINE_WIDTH = 105;
+const HELP_FOLD_WIDTH = HELP_LINE_WIDTH * 3;
+
+// CJK scripts draw their characters full width, about twice a Latin letter, so
+// counting characters alone would make the Japanese bundle look half as long as
+// it renders and leave its longest paragraphs unfolded. Count those double.
+const WIDE_CHAR = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/;
+function renderedWidth(text) {
+  let width = 0;
+  for (const ch of String(text || '')) width += WIDE_CHAR.test(ch) ? 2 : 1;
+  return width;
+}
+
+// A Latin full stop only ends a sentence when a space follows it, otherwise
+// "192.0.2.1" and "st-reborn.de" would each read as several sentences. The CJK
+// stops carry no following space and end a sentence on their own.
+const SENTENCE_END = '.!?。！？';
+const SENTENCE_END_WIDE = '。！？';
+const BRACKET_OPEN = '([（【';
+const BRACKET_CLOSE = ')]）】';
+
+// Words that end in a full stop without ending the sentence. The shipped
+// bundles only need the dotted forms ("e.g.", German "z.B."), which always have
+// a single letter in front of the final dot, plus this handful of spelled-out
+// abbreviations that the translations use before an example.
+const ABBREVIATIONS = new Set(['etc', 'vs', 'ca', 'approx', 'bzw', 'usw', 'ggf', 'evtl', 'itd', 'itp', 'np', 'pvz', 'piem']);
+
+// endsAbbreviation reports whether the full stop at dotAt closes an
+// abbreviation rather than a sentence. The single-letter test is deliberately
+// limited to Latin script: Arabic and Cyrillic are full of two-letter words,
+// and a script-blind version of this rule skipped the real end of the Arabic
+// voice-control sentence and folded a sentence too late.
+function endsAbbreviation(text, dotAt) {
+  let start = dotAt - 1;
+  while (start >= 0 && !/[\s.]/.test(text[start])) start--;
+  const word = text.slice(start + 1, dotAt);
+  if (!word) return false;
+  if (/^[A-Za-z]$/.test(word)) return true;
+  return ABBREVIATIONS.has(word.toLowerCase());
+}
+
+// splitHelpText returns the opening sentence and the remainder, or null when
+// there is no honest place to cut. Terminators inside brackets are ignored: an
+// aside like "(e.g. a smart-home toggle, or waking a PC)" is not two sentences.
+// Both halves have to carry real content, so a stray early stop cannot leave a
+// three-word teaser above a fold.
+function splitHelpText(text) {
+  const s = String(text || '').trim();
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (BRACKET_OPEN.includes(ch)) { depth++; continue; }
+    if (BRACKET_CLOSE.includes(ch)) { if (depth > 0) depth--; continue; }
+    if (depth > 0 || !SENTENCE_END.includes(ch)) continue;
+    if (!SENTENCE_END_WIDE.includes(ch)) {
+      const next = s[i + 1];
+      if (next !== ' ' && next !== '\u00a0') continue;
+      if (endsAbbreviation(s, i)) continue;
+    }
+    const head = s.slice(0, i + 1).trim();
+    const rest = s.slice(i + 1).trim();
+    if (renderedWidth(head) < 40 || renderedWidth(rest) < 40) continue;
+    return { head, rest };
+  }
+  return null;
+}
+
+// helpBlock renders a panel's explanatory paragraph, folding everything past
+// the opening sentence when the paragraph is long enough to matter. Short hints
+// come back untouched, so the call sites do not have to guess which is which.
+// The toggle reuses the existing "Details" string rather than introducing a
+// thirteenth translation of "show more", and copies the markup of the nested
+// disclosure the announcement panel already ships so both look the same.
+function helpBlock(text, tag = 'small', cls = 'muted small expert-intro') {
+  const raw = String(text || '');
+  const parts = renderedWidth(raw) > HELP_FOLD_WIDTH ? splitHelpText(raw) : null;
+  if (!parts) return `<${tag} class="${cls}">${escapeHtml(raw)}</${tag}>`;
+  return `<${tag} class="${cls}" style="margin-bottom:4px">${escapeHtml(parts.head)}</${tag}>
+      <details class="help-more" style="margin:0 0 8px">
+        <summary class="muted small" style="cursor:pointer">${escapeHtml(t('setupAPPush.detailsToggle'))}</summary>
+        <small class="muted small" style="display:block;margin-top:4px">${escapeHtml(parts.rest)}</small>
+      </details>`;
+}
+
 function renderBoxSettings(s, box) {
   const info = s.info || {};
   const vol = s.volume || {};
@@ -802,7 +905,7 @@ function renderBoxSettings(s, box) {
 
     <details class="settings-section settings-expert" id="announceSection">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.announceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
-      <small class="muted small expert-intro">${escapeHtml(t('settingsView.announceHelp'))}</small>
+      ${helpBlock(t('settingsView.announceHelp'))}
       <div class="setting-row" style="margin-top:8px">
         <input type="text" id="announceText" class="text-input" maxlength="200" value="${escapeAttr(t('settingsView.announceDefault'))}" placeholder="${escapeAttr(t('settingsView.announcePlaceholder'))}" style="flex:1" />
         <select id="announceLang" style="flex:0 0 130px;" title="${escapeAttr(t('settingsView.announceLangLabel'))}">
@@ -840,7 +943,7 @@ function renderBoxSettings(s, box) {
 
     <details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.webhookHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
-      <small class="muted small expert-intro">${escapeHtml(t('settingsView.webhookHelp'))}</small>
+      ${helpBlock(t('settingsView.webhookHelp'))}
       <div class="setting-row">
         <select id="webhookTarget" style="flex:1;">
           <option value="thumb">${escapeHtml(t('settingsView.webhookKeyThumb'))}</option>
@@ -902,7 +1005,7 @@ function renderBoxSettings(s, box) {
 
     <details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.voiceHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
-      <small class="muted small expert-intro">${escapeHtml(t('settingsView.voiceHelp'))}</small>
+      ${helpBlock(t('settingsView.voiceHelp'))}
       <div class="setting-row">
         <button class="btn btn-mini" id="voiceGuideBtn">${escapeHtml(t('settingsView.voiceGuideBtn'))}</button>
       </div>
@@ -927,7 +1030,7 @@ function renderBoxSettings(s, box) {
         : '';
       return `<details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.copyPresetsHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
-      <small class="muted small expert-intro">${escapeHtml(t('settingsView.copyPresetsHelp'))}</small>
+      ${helpBlock(t('settingsView.copyPresetsHelp'))}
       <div class="setting-row">
         <select id="copyPresetTarget" style="flex:1;">${allOpt}${opts}</select>
         <button class="btn btn-mini btn-warning" id="copyPresetBtn">${escapeHtml(t('settingsView.copyPresetsBtn'))}</button>
@@ -937,7 +1040,7 @@ function renderBoxSettings(s, box) {
 
     <details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.urlPresetHeading'))} <span class="expert-badge">${escapeHtml(t('settingsView.expertBadge'))}</span></summary>
-      <small class="muted small expert-intro">${escapeHtml(t('settingsView.urlPresetHelp'))}</small>
+      ${helpBlock(t('settingsView.urlPresetHelp'))}
       <div class="setting-row">
         <select id="urlPresetSlot" style="flex:0 0 130px;">
           ${[1, 2, 3, 4, 5, 6].map(n => `<option value="${n}">${escapeHtml(t('preset.key', { n }))}</option>`).join('')}
@@ -1020,7 +1123,7 @@ function renderBoxSettings(s, box) {
     </div>
     <details class="settings-section settings-expert">
       <summary class="settings-expert-summary">${escapeHtml(t('settingsView.restoreHeading'))} <span class="exp-badge">${escapeHtml(t('settingsView.experimentalBadge'))}</span></summary>
-      <p class="muted small">${escapeHtml(t('settingsView.restoreHelp'))}</p>
+      ${helpBlock(t('settingsView.restoreHelp'), 'p', 'muted small')}
       <label class="muted small" for="boxRestoreXml">${escapeHtml(t('settingsView.restoreXmlLabel'))}</label>
       <textarea id="boxRestoreXml" rows="5" placeholder="${escapeAttr(t('settingsView.restoreImportPlaceholder'))}" style="width:100%;margin-top:4px"></textarea>
       <div class="setting-row" style="margin-top:6px">

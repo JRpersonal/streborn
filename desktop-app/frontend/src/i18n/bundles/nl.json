@@ -125,6 +125,7 @@
   "multiroom.liveInGroup": "in een groep",
   "multiroom.liveLeading": "hoofd van {{n}}",
   "multiroom.liveStandalone": "niet gegroepeerd",
+  "multiroom.liveNoAnswer": "reageert nu niet",
   "multiroom.updateWarn": "Sommige speakers draaien een oudere ST Reborn. Open elke speaker en gebruik de updatebanner om de nieuwste versie te halen voordat je groepeert, anders werkt het groeperen mogelijk niet.",
   "multiroom.updateFirst": "Eerst bijwerken",
   "multiroom.formedN": "Groep actief: {{n}} speaker(s) toegevoegd. Als er een stil blijft, controleer dan of die aanstaat en of de hoofdspeaker afspeelt.",

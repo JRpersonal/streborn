@@ -125,6 +125,7 @@
   "multiroom.liveInGroup": "グループ内",
   "multiroom.liveLeading": "{{n}} 台のメイン",
   "multiroom.liveStandalone": "グループ化されていません",
+  "multiroom.liveNoAnswer": "現在応答なし",
   "multiroom.updateWarn": "一部のスピーカーは古いST Rebornで動作しています。グループ化する前に、それぞれを開いて更新バナーから最新版にしてください。そうしないとグループ化がうまくいかないことがあります。",
   "multiroom.updateFirst": "先に更新",
   "multiroom.formedN": "グループが有効です: {{n}} 台のスピーカーが参加しました。1台だけ音が出ない場合は、電源が入っているか、メインのスピーカーが再生中かを確認してください。",

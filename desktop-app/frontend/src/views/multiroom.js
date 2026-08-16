@@ -11,7 +11,7 @@ import { t } from '../i18n/index.js';
 import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
-import { masterOf as zoneMasterOf, fetchZoneLive, stereoPairOf, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
+import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairOf, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
 
 // Injected main.js helpers (see initMultiroomView).
 let deps = {
@@ -29,6 +29,35 @@ export function initMultiroomView(d) {
 // name (Michal's group menu showing str-192.168.x.y). Fall back to name/host only
 // when no friendly name resolved. Matches the box switcher and the recent view.
 function zoneLabel(b) { return getBoxLabel(b); }
+
+// liveZoneMaster returns the speaker that is leading a group RIGHT NOW, or
+// null when the speakers report none. It reads the same cached self-reports
+// the cards do, so the summary above the grid and the badges inside it can
+// never disagree.
+//
+// The picked master goes first only as a tie-break: when it is leading, the
+// summary describes the group the user is looking at rather than an equally
+// live one somewhere else in the list.
+function liveZoneMaster(strBoxes) {
+  const leads = (b) => {
+    const m = zoneMasterOf(b.deviceID, state.zoneLive);
+    return !!m && m === String(b.deviceID || '').toUpperCase();
+  };
+  const picked = strBoxes.find(b => b.deviceID === state.zoneMaster);
+  if (picked && leads(picked)) return picked;
+  const leader = strBoxes.find(leads);
+  if (leader) return leader;
+  // Last resort, from the followers' side: a follower names its master even
+  // when that master's own poll came back empty-handed, and a group whose
+  // leader was briefly busy is still a group the user should be told about.
+  for (const b of strBoxes) {
+    const m = zoneMasterOf(b.deviceID, state.zoneLive);
+    if (!m) continue;
+    const mb = strBoxes.find(x => String(x.deviceID || '').toUpperCase() === m);
+    if (mb) return mb;
+  }
+  return null;
+}
 
 // renderMultiroom paints the Multi-Room view. fetchLive triggers a non-blocking
 // parallel poll of every speaker's live zone after paint (skipped on repaints).
@@ -67,10 +96,25 @@ export function renderMultiroom(fetchLive) {
   const updateWarn = anyOutdated ?
     `<div class="setup-warn small" style="margin-bottom:10px">${escapeHtml(t('multiroom.updateWarn'))}</div>` : '';
 
-  // Per-card live status from the last parallel fetch (undefined = not fetched).
+  // Per-card live status from the last parallel fetch. EVERY card gets this
+  // row, always. It used to be dropped entirely for a speaker that had not
+  // answered the poll, so those cards were one line shorter than the rest: the
+  // grid then had cards of two different heights and the second row of cards
+  // started at a ragged edge. A missing answer is also the one state a user
+  // most needs told, and silence was the worst way to tell it, because a card
+  // with no status line looks exactly like a card whose status is still
+  // loading.
+  //
+  // Three states, and they are what the speaker itself reports: it leads a
+  // group, it follows one, or it is on its own. A speaker with no entry in the
+  // map has told us nothing (never answered, or its last answer aged out of
+  // the carry window in groups.js), so it is reported as not answering rather
+  // than quietly counted as standalone.
   const liveLine = (b) => {
     const zl = state.zoneLive[b.deviceID];
-    if (zl === undefined) return '';
+    if (zl === undefined) {
+      return `<div class="zone-live">&#9675; ${escapeHtml(t('multiroom.liveNoAnswer'))}</div>`;
+    }
     const m = zoneMasterOf(b.deviceID, state.zoneLive);
     if (m) {
       const isLead = m === (b.deviceID || '').toUpperCase();
@@ -107,19 +151,33 @@ export function renderMultiroom(fetchLive) {
   const dis = enough ? '' : ' disabled';
   const modeBtn = (m, lbl) => `<button class="seg-btn${state.zoneMode === m ? ' active' : ''}" data-mode="${m}">${escapeHtml(lbl)}</button>`;
 
-  // Summary line for the chosen master, computed from the cached live map
-  // via the same masterOf helper the frames and chips use.
-  const masterBox = strBoxes.find(b => b.deviceID === state.zoneMaster);
-  const ml = masterBox ? state.zoneLive[masterBox.deviceID] : undefined;
+  // Summary line: the group that is LIVE on the speakers, not the group the
+  // card selection would make. It used to read state.zoneMaster only, which is
+  // the star the user last tapped and defaults to the first speaker in the
+  // list, so with the star on a speaker that is on its own the line announced
+  // "no group right now" while another speaker was leading two others right
+  // there in the same grid. Undoing a stereo pair was taught the same lesson
+  // (doDissolveStereo below): what is true is what the speakers report, not
+  // what the picker points at.
+  const masterBox = liveZoneMaster(strBoxes);
+  // "No group" is a claim about the speakers, so it needs both to be earned:
+  // at least one speaker must have answered (before that the app knows
+  // nothing), and none of them may be reporting a master. The second half
+  // covers a group led by a speaker this PC has not discovered: there is no
+  // name to put in the line, but the group is real and denying it would
+  // contradict the cards, which say "in a group" for its members.
+  const anyAnswered = strBoxes.some(b => state.zoneLive[b.deviceID] !== undefined);
+  const anyGrouped = strBoxes.some(b => zoneMasterOf(b.deviceID, state.zoneLive));
   let currentHtml = '';
-  if (masterBox && zoneMasterOf(masterBox.deviceID, state.zoneLive)) {
-    const names = (ml.members || []).map(m => {
-      const b = strBoxes.find(x => (x.deviceID || '').toUpperCase() === (m.deviceID || '').toUpperCase());
-      return b ? zoneLabel(b) : (m.ip || m.deviceID);
-    });
+  if (masterBox) {
+    // groupMembersOf unions the master's own member list with the followers'
+    // self-reports, so a member whose master missed a poll (or the other way
+    // round) still shows up by name instead of dropping out of the line.
+    const names = groupMembersOf(masterBox, state.zoneLive, strBoxes)
+      .map(m => m.box ? zoneLabel(m.box) : (m.ip || m.deviceID));
     currentHtml = `<b>${escapeHtml(t('multiroom.currentZone'))}:</b> ` +
       escapeHtml(zoneLabel(masterBox) + (names.length ? ' + ' + names.join(', ') : ''));
-  } else if (ml !== undefined) {
+  } else if (anyAnswered && !anyGrouped) {
     currentHtml = escapeHtml(t('multiroom.noZone'));
   }
 

@@ -125,6 +125,7 @@
   "multiroom.liveInGroup": "ضمن مجموعة",
   "multiroom.liveLeading": "رئيسية لـ {{n}}",
   "multiroom.liveStandalone": "غير مجمّعة",
+  "multiroom.liveNoAnswer": "لا يستجيب حاليًا",
   "multiroom.updateWarn": "بعض السمّاعات تعمل بإصدار أقدم من ST Reborn. افتح كل واحدة واستخدم شريط التحديث الخاص بها للحصول على الأحدث قبل التجميع، وإلا فقد لا يعمل التجميع.",
   "multiroom.updateFirst": "حدّث أولًا",
   "multiroom.formedN": "المجموعة نشطة: انضمّت {{n}} سمّاعة. إذا بقيت إحداها صامتة، فتحقّق من أنها مشغّلة وأن السمّاعة الرئيسية تعمل.",

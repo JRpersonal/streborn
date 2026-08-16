@@ -76,15 +76,32 @@ html.a11y-contrast :focus-visible { outline-color:#fff; }
    page is PWA "standalone" with a black-translucent status bar, so on a notch /
    Dynamic Island phone (e.g. iPhone) iOS draws the content behind the status
    bar; without the top inset the header collides with the clock. The insets are
-   0 on hardware that has none, so the base 16px is unchanged there. */
-body { margin:0; padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); background:var(--bg); color:var(--fg); max-width:620px; margin:0 auto; }
+   0 on hardware that has none, so the base 16px is unchanged there.
+
+   The TOP edge is the exception: its padding lives on the header instead (see
+   below), because the header is sticky and a gap owned by body would let cards
+   scroll through the status-bar strip above the pinned header. */
+body { margin:0; padding:0 calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); background:var(--bg); color:var(--fg); max-width:620px; margin:0 auto; }
 /* Always fill the display, even when a panel holds two lines of content. A page
    shorter than the screen cannot scroll, and a browser that cannot scroll keeps
    its own bottom toolbar expanded, which pushes a fixed bar up by exactly that
    toolbar. dvh follows the toolbars as they collapse and expand; the vh line
    above it is the fallback for engines without dvh. */
 body { min-height:100vh; min-height:100dvh; }
-header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+/* The header stays on screen while the page scrolls, because it is the only
+   place that names the speaker being controlled. A phone typically carries one
+   saved remote per speaker, all of them identical below the header, and the
+   presets and the transport buttons sit far enough down that the name had
+   already scrolled off by the time they were pressed: the kitchen speaker was
+   being stopped from what looked exactly like the bedroom's page. Pinning the
+   header puts the answer next to the button at the moment of the tap.
+
+   top:0 plus the safe-area padding moved here from body means the pinned bar
+   covers the status-bar strip on a notched phone rather than letting cards slide
+   visibly underneath the clock. The offset is a plain 0, so it survives the
+   a11y zoom on body's children unchanged; the padding scales with the zoom
+   exactly like the header's own text does. */
+header { position:sticky; top:0; z-index:55; background:var(--bg); display:flex; align-items:center; gap:10px; padding-top:calc(16px + env(safe-area-inset-top)); padding-bottom:8px; margin-bottom:6px; }
 header img { width:30px; height:30px; border-radius:7px; }
 header .brand { font-size:18px; font-weight:700; letter-spacing:.2px; }
 header .brand span { color:var(--accent); }
@@ -92,7 +109,7 @@ header .brand span { color:var(--accent); }
    reads as a headline: bright, semi-bold, and it WRAPS instead of getting cut
    off - multi-word room names were ellipsized before. */
 header .devwrap { margin-left:auto; position:relative; min-width:0; }
-header .dev { min-width:0; font-size:15px; font-weight:600; color:var(--fg); text-align:right; overflow-wrap:anywhere; line-height:1.25; background:none; border:0; padding:4px 2px; font-family:inherit; cursor:default; display:flex; align-items:center; gap:5px; }
+header .dev { min-width:0; min-height:44px; font-size:15px; font-weight:600; color:var(--fg); text-align:right; overflow-wrap:anywhere; line-height:1.25; background:none; border:0; padding:4px 2px; font-family:inherit; cursor:default; display:flex; align-items:center; gap:5px; }
 header .dev .chev { font-size:10px; color:var(--muted); flex:none; display:none; }
 header .dev.haspeers { cursor:pointer; }
 header .dev.haspeers .chev { display:inline; }
@@ -150,15 +167,23 @@ button.btn:active { background:var(--press); }
 .peer { display:flex; align-items:center; gap:8px; }
 .peer .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); flex:none; }
 .sponsors { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:340px; margin:0 auto 8px; }
-.sponsors a.btn { min-height:40px; font-size:13px; background:transparent; border-color:var(--line); color:var(--muted); font-weight:500; }
+.sponsors a.btn { min-height:44px; font-size:13px; background:transparent; border-color:var(--line); color:var(--muted); font-weight:500; }
 @media (hover:hover) { .sponsors a.btn:hover { background:var(--card2); color:var(--fg); } }
 footer { margin-top:18px; text-align:center; font-size:12px; color:var(--muted); }
-footer .web { display:inline-block; margin-top:4px; color:var(--accent); text-decoration:none; }
+/* The one link on the page a finger has to find, so it gets a full 44px row of
+   its own instead of the bare 18px line of text it used to be. */
+footer .web { display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:0 12px; color:var(--accent); text-decoration:none; }
 footer .web:hover { text-decoration:underline; }
 footer .ver { display:block; margin-top:8px; }
-footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
-/* Power on/off toggle, pinned to the header's right next to "Aa". */
-.pwr { display:inline-flex; align-items:center; justify-content:center; flex:none; min-height:36px; min-width:40px; padding:6px 10px; margin-right:8px; background:var(--card2); color:var(--muted); border:1px solid var(--line); border-radius:8px; cursor:pointer; transition:background .15s,border-color .15s,color .15s; }
+/* No extra fade on this line. At 70% opacity the grey text mixed down to about
+   #767676 on the dark background, which is 3.8:1 and below the 4.5:1 floor; the
+   plain --muted token is 6.5:1 there and still reads as secondary. */
+footer .hint { display:block; margin-top:6px; color:var(--muted); }
+/* Power on/off toggle, pinned to the header's right next to "Aa". Both of those
+   header controls used to be 36px tall, below what a thumb reliably hits, and
+   this one switches the speaker off, so both are now a 44px square. The header
+   row was already that tall once the name button grew, so nothing moves. */
+.pwr { display:inline-flex; align-items:center; justify-content:center; flex:none; min-height:44px; min-width:44px; padding:6px 10px; margin-right:8px; background:var(--card2); color:var(--muted); border:1px solid var(--line); border-radius:8px; cursor:pointer; transition:background .15s,border-color .15s,color .15s; }
 .pwr svg { display:block; }
 .pwr.on { border-color:var(--accent); color:var(--accent); }
 .pwr.active { background:var(--press); }
@@ -166,7 +191,7 @@ footer .hint { display:block; margin-top:6px; color:var(--muted); opacity:.7; }
 @media (hover:hover) { .pwr:hover { background:var(--hover); } }
 /* "Aa" display-options menu (text size + theme), pinned to the header's right. */
 .a11y { position:relative; flex:none; }
-.a11y-trigger { display:inline-flex; align-items:center; min-height:36px; padding:6px 11px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-size:15px; font-weight:700; letter-spacing:-.5px; cursor:pointer; }
+.a11y-trigger { display:inline-flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; padding:6px 11px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-size:15px; font-weight:700; letter-spacing:-.5px; cursor:pointer; }
 .a11y-trigger:active { background:var(--press); }
 .a11y-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:50; padding:12px; min-width:228px; background:var(--card); border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.5); }
 .a11y-menu[hidden] { display:none; }
@@ -239,7 +264,7 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
    because it must never lie, and because a stereo pair is a THIRD scope that a
    silent takeover has nowhere to put. */
 .scope { display:flex; gap:6px; margin-bottom:10px; }
-.scope button { flex:1; min-width:0; min-height:40px; padding:6px 4px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; line-height:1.15; cursor:pointer; overflow-wrap:anywhere; }
+.scope button { flex:1; min-width:0; min-height:44px; padding:6px 4px; background:var(--card2); color:var(--fg); border:1px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; line-height:1.15; cursor:pointer; overflow-wrap:anywhere; }
 .scope button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
 .scope[hidden] { display:none; }
 /* Volume in two rows: the rockers get full width so they survive 320px at 1.30x
@@ -283,6 +308,14 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 .slotpick button .sn { display:block; color:var(--muted); font-size:11px; }
 .msg { font-size:13px; line-height:1.4; color:var(--muted); margin-top:8px; }
 .msg.bad { color:var(--accent); }
+/* The sleep timer's group opt-in. The whole label is the tap target (the box
+   itself is only 22px), so the row is given a full 44px of height.
+   Its layout lives here and not in a style attribute because an inline display
+   outranks the browser's own rule for the hidden attribute, and this row is
+   hidden by exactly that attribute whenever the speaker is playing alone; the
+   [hidden] line keeps that working now that a display is declared. */
+#sleepGroupWrap { display:flex; align-items:center; gap:8px; margin-top:10px; min-height:44px; }
+#sleepGroupWrap[hidden] { display:none; }
 </style>
 <script>
 // Display preferences (text size + theme). Applied to <html> here in <head>,
@@ -420,7 +453,7 @@ html.a11y-contrast .tabbar button[aria-selected="true"] { outline:2px solid var(
 <button class="btn" type="button" data-min="30">30</button>
 <button class="btn" type="button" data-min="60">60</button>
 </div>
-<label class="msg" id="sleepGroupWrap" hidden style="display:flex;align-items:center;gap:8px;margin-top:10px">
+<label class="msg" id="sleepGroupWrap" hidden>
 <input type="checkbox" id="sleepGroup" style="width:22px;height:22px;accent-color:var(--accent)">
 <span id="lblSleepGroup">Whole group</span>
 </label>
