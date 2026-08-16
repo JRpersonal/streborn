@@ -1,14 +1,17 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/zones"
 )
 
 // withSpeakers answers the two firmware reads liveGroupView makes from a map,
@@ -36,6 +39,7 @@ const (
 	leaderID   = "08DF1F0C9870"
 	livingID   = "000C8A96488D"
 	bathID     = "EC24B8B790CC"
+	strangerID = "A1B2C3D4E5F6" // a speaker in somebody else's group
 	leaderIP   = "192.168.178.79"
 	livingHost = "127.0.0.1"
 )
@@ -55,7 +59,7 @@ func TestAFollowerReportsTheGroupItIsActuallyIn(t *testing.T) {
 		map[string]string{livingHost: livingID, leaderIP: leaderID})
 
 	s := quietServer(livingHost)
-	members, isFollower := s.liveGroupView(context.Background())
+	members, isFollower, _ := s.liveGroupView(context.Background())
 	if !isFollower {
 		t.Fatal("a speaker whose firmware names another master must report as a follower")
 	}
@@ -95,7 +99,7 @@ func TestTheLeaderIsDecidedByDeviceIDNotBySenderIsMaster(t *testing.T) {
 		},
 		map[string]string{livingHost: leaderID}) // this speaker IS the leader
 
-	if _, isFollower := quietServer(livingHost).liveGroupView(context.Background()); isFollower {
+	if _, isFollower, _ := quietServer(livingHost).liveGroupView(context.Background()); isFollower {
 		t.Error("a speaker whose own deviceID is the master must not be demoted to a follower")
 	}
 }
@@ -106,7 +110,7 @@ func TestAStandaloneSpeakerIsNotAFollower(t *testing.T) {
 		map[string]boxapi.Zone{livingHost: {}},
 		map[string]string{livingHost: livingID})
 
-	if _, isFollower := quietServer(livingHost).liveGroupView(context.Background()); isFollower {
+	if _, isFollower, _ := quietServer(livingHost).liveGroupView(context.Background()); isFollower {
 		t.Error("an empty zone is not a group")
 	}
 }
@@ -118,7 +122,7 @@ func TestASpeakerThatCannotIdentifyItselfStaysWithTheStoredDocument(t *testing.T
 		map[string]boxapi.Zone{livingHost: {Master: leaderID, SenderIP: leaderIP}},
 		map[string]string{livingHost: ""})
 
-	if _, isFollower := quietServer(livingHost).liveGroupView(context.Background()); isFollower {
+	if _, isFollower, _ := quietServer(livingHost).liveGroupView(context.Background()); isFollower {
 		t.Error("without its own deviceID the speaker cannot tell, so it must not claim to follow")
 	}
 }
@@ -133,7 +137,7 @@ func TestAnUnreachableLeaderStillLeavesAGroup(t *testing.T) {
 		},
 		map[string]string{livingHost: livingID})
 
-	members, isFollower := quietServer(livingHost).liveGroupView(context.Background())
+	members, isFollower, _ := quietServer(livingHost).liveGroupView(context.Background())
 	if !isFollower {
 		t.Fatal("an unreachable leader is not evidence the group is gone")
 	}
@@ -156,7 +160,7 @@ func TestAFollowerWithoutTheLeadersAddressReportsNothing(t *testing.T) {
 		map[string]boxapi.Zone{livingHost: {Master: leaderID}},
 		map[string]string{livingHost: livingID})
 
-	if _, isFollower := quietServer(livingHost).liveGroupView(context.Background()); isFollower {
+	if _, isFollower, _ := quietServer(livingHost).liveGroupView(context.Background()); isFollower {
 		t.Error("no address for the leader means no group can be reported")
 	}
 }
@@ -243,5 +247,173 @@ func TestAStandaloneSpeakerIsNotGroupedForEitherPath(t *testing.T) {
 	withSpeakers(t, map[string]boxapi.Zone{livingHost: {}}, map[string]string{livingHost: livingID})
 	if _, grouped, _ := quietServer(livingHost).groupView(context.Background()); grouped {
 		t.Error("no group means no group, for the reader and the writer alike")
+	}
+}
+
+// The stored-group cross-check used to read the speaker's own zone a second
+// time, a fraction of a second after liveGroupView had just read it, and the
+// second answer decided. Two reads are two chances for an empty one, and an
+// empty one throws the group off the page.
+func TestTheStoredGroupCheckReusesTheAnswerAlreadyRead(t *testing.T) {
+	store, err := zones.Load(filepath.Join(t.TempDir(), "zones.json"))
+	if err != nil {
+		t.Fatalf("zone store: %v", err)
+	}
+	if err := store.Set(zones.Zone{Master: leaderID, MasterIP: livingHost,
+		Slaves: []zones.Member{{DeviceID: bathID, IP: "192.168.178.48"}}}); err != nil {
+		t.Fatalf("store the group: %v", err)
+	}
+	// This speaker leads the group, so liveGroupView reads its zone and hands
+	// the answer on rather than reporting a follower.
+	withSpeakers(t,
+		map[string]boxapi.Zone{livingHost: {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}}},
+		map[string]string{livingHost: leaderID})
+	inner := fetchZone
+	var reads int
+	fetchZone = func(ctx context.Context, host string) (boxapi.Zone, error) {
+		if host == livingHost {
+			reads++
+		}
+		return inner(ctx, host)
+	}
+
+	s := quietServer(livingHost)
+	s.zones = store
+	members, grouped, _ := s.groupView(context.Background())
+	if !grouped {
+		t.Fatalf("the firmware confirmed the group, it must be reported: %+v", members)
+	}
+	if reads != 1 {
+		t.Errorf("the speaker's own zone was read %d times for one view, want 1", reads)
+	}
+}
+
+// The line reads as a group that went missing, so a speaker that never had one
+// must not print it. It ran on every poll of the phone's Speakers tab, which is
+// the noise that buries the one occurrence that matters.
+func TestNoGroupIsReportedLostWhenNoneWasStored(t *testing.T) {
+	const lost = "not on the speaker any more"
+	var log bytes.Buffer
+	s := &Server{logger: slog.New(slog.NewTextHandler(&log, nil)), boxHost: livingHost}
+
+	// What a standalone speaker's firmware answers, already read.
+	standalone := ownZoneAnswer{read: true}
+	if s.storedGroupIsLive(standalone) {
+		t.Error("an empty firmware zone is not a group")
+	}
+	if strings.Contains(log.String(), lost) {
+		t.Errorf("a speaker that never stored a group cannot have lost one: %s", log.String())
+	}
+
+	store, err := zones.Load(filepath.Join(t.TempDir(), "zones.json"))
+	if err != nil {
+		t.Fatalf("zone store: %v", err)
+	}
+	if err := store.Set(zones.Zone{Master: leaderID, MasterIP: livingHost,
+		Slaves: []zones.Member{{DeviceID: bathID, IP: "192.168.178.48"}}}); err != nil {
+		t.Fatalf("store the group: %v", err)
+	}
+	s.zones = store
+	log.Reset()
+	if s.storedGroupIsLive(standalone) {
+		t.Error("the stored group is not on the speaker, so it must not be reported")
+	}
+	if !strings.Contains(log.String(), lost) {
+		t.Errorf("a stored group the speaker has dropped is worth a line: %s", log.String())
+	}
+}
+
+// senderIPAddress is whoever sent the last zone message, not proof of who leads
+// now. After a group is torn down and rebuilt around a different speaker that
+// address answers with somebody else's group, and adopting its members puts
+// strangers on the page and takes their volume away from whoever is listening
+// to them.
+func TestALeaderThatNamesADifferentMasterIsNotAdopted(t *testing.T) {
+	withSpeakers(t,
+		map[string]boxapi.Zone{
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
+			// That address has since joined a group led by a third speaker.
+			leaderIP: {Master: bathID, Members: []boxapi.ZoneMember{{DeviceID: leaderID, IP: leaderIP}, {DeviceID: strangerID, IP: "192.168.178.58"}}},
+		},
+		map[string]string{livingHost: livingID, leaderIP: leaderID})
+
+	members, isFollower, _ := quietServer(livingHost).liveGroupView(context.Background())
+	if !isFollower {
+		t.Fatal("this speaker still follows, only the other list is unusable")
+	}
+	if len(members) != 2 {
+		t.Fatalf("want only what this speaker knows first hand, got %d: %+v", len(members), members)
+	}
+	for _, m := range members {
+		if strings.EqualFold(m.DeviceID, strangerID) {
+			t.Errorf("a speaker from the other group must not appear: %+v", m)
+		}
+	}
+	if !members[1].IsSelf {
+		t.Errorf("this speaker must be in its own group: %+v", members[1])
+	}
+}
+
+// A speaker listed twice gets two rows on the page, and one press of the group
+// slider then sends it the same change twice.
+func TestASpeakerListedTwiceGetsOneRow(t *testing.T) {
+	withSpeakers(t,
+		map[string]boxapi.Zone{
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
+			leaderIP: {Master: leaderID, Members: []boxapi.ZoneMember{
+				{DeviceID: bathID, IP: "192.168.178.48"},
+				{DeviceID: livingID, IP: "192.168.178.44"},
+				{DeviceID: bathID, IP: "192.168.178.48"},
+				{DeviceID: leaderID, IP: leaderIP}, // the leader listing itself
+			}},
+		},
+		map[string]string{livingHost: livingID, leaderIP: leaderID})
+
+	members, isFollower, _ := quietServer(livingHost).liveGroupView(context.Background())
+	if !isFollower {
+		t.Fatal("this speaker follows the leader")
+	}
+	if len(members) != 3 {
+		t.Fatalf("want the leader and its two followers once each, got %d: %+v", len(members), members)
+	}
+	rows := map[string]int{}
+	for _, m := range members {
+		rows[strings.ToUpper(m.DeviceID)]++
+	}
+	for id, n := range rows {
+		if n != 1 {
+			t.Errorf("speaker %s got %d rows", id, n)
+		}
+	}
+}
+
+// The two speakers disagree about the membership, so only the part this one
+// knows first hand can be shown. Adding a row for ourselves anyway would draw a
+// membership that neither speaker reported.
+func TestALeaderListWithoutThisSpeakerIsNotUsed(t *testing.T) {
+	withSpeakers(t,
+		map[string]boxapi.Zone{
+			livingHost: {Master: leaderID, SenderIP: leaderIP, Members: []boxapi.ZoneMember{{DeviceID: livingID, IP: "192.168.178.44"}}},
+			leaderIP:   {Master: leaderID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}},
+		},
+		map[string]string{livingHost: livingID, leaderIP: leaderID})
+
+	members, isFollower, _ := quietServer(livingHost).liveGroupView(context.Background())
+	if !isFollower {
+		t.Fatal("this speaker's own firmware names a master, it follows")
+	}
+	if len(members) != 2 {
+		t.Fatalf("want the leader and this speaker, got %d: %+v", len(members), members)
+	}
+	if !strings.EqualFold(members[0].DeviceID, leaderID) || !members[0].IsMaster {
+		t.Errorf("the leader must still be named: %+v", members[0])
+	}
+	if !members[1].IsSelf || members[1].IP != livingHost {
+		t.Errorf("this speaker must be its own second row, addressable: %+v", members[1])
+	}
+	for _, m := range members {
+		if strings.EqualFold(m.DeviceID, bathID) {
+			t.Errorf("a member of a list this speaker is not in must not be shown: %+v", m)
+		}
 	}
 }
