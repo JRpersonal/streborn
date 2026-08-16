@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "أندرويد: يُثبَّت عبر Chrome، فيظهر أيضاً في قائمة التطبيقات.",
   "banner.checkForAppUpdate": "البحث عن تحديثات التطبيق",
   "banner.checkingForAppUpdate": "جارٍ البحث…",
-  "banner.appIsCurrent": "تطبيقك محدَّث."
+  "banner.appIsCurrent": "تطبيقك محدَّث.",
+  "spotify.audioKeyRefused": "رفض Spotify تشغيل هذه المقاطع عبر ST Reborn، فتخطّى قائمة التشغيل بالكامل دون أن يصدر أي صوت. يحدث ذلك مع حساب Spotify المجاني، ومع بعض حسابات Premium الأحدث التي لم يعد Spotify يسمح للمشغّلات مفتوحة المصدر ببثّها. أما إدخال Spotify الخاص بالسمّاعة نفسها، الذي بدون (STR)، فما زال يشغّل الحساب نفسه."
 }

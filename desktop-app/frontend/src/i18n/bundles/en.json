@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "Android: installed through Chrome, so it is in the app drawer too.",
   "banner.checkForAppUpdate": "Check for app updates",
   "banner.checkingForAppUpdate": "Checking…",
-  "banner.appIsCurrent": "Your app is up to date."
+  "banner.appIsCurrent": "Your app is up to date.",
+  "spotify.audioKeyRefused": "Spotify refused to play these tracks through ST Reborn. It skipped the whole playlist without playing a note. This happens with a free Spotify account, and with some newer Premium accounts that Spotify no longer allows open-source players to stream. Your speaker's own Spotify entry, the one without (STR), still plays the same account."
 }

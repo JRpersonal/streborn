@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "Android: įdiegta per Chrome, todėl matoma ir programų sąraše.",
   "banner.checkForAppUpdate": "Ieškoti programos naujinių",
   "banner.checkingForAppUpdate": "Ieškoma…",
-  "banner.appIsCurrent": "Programa yra naujausia."
+  "banner.appIsCurrent": "Programa yra naujausia.",
+  "spotify.audioKeyRefused": "Spotify atsisakė groti šiuos kūrinius per ST Reborn ir peršoko visą grojaraštį, neišleidęs nė garso. Taip nutinka su nemokama Spotify paskyra ir su kai kuriomis naujesnėmis Premium paskyromis, kurių Spotify nebeleidžia atviro kodo grotuvams. Paties garsiakalbio Spotify įrašas, tas be (STR), tą pačią paskyrą groja toliau."
 }

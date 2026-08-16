@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "Android: über Chrome installiert, damit auch in der App-Übersicht.",
   "banner.checkForAppUpdate": "Nach App-Updates suchen",
   "banner.checkingForAppUpdate": "Suche…",
-  "banner.appIsCurrent": "Deine App ist aktuell."
+  "banner.appIsCurrent": "Deine App ist aktuell.",
+  "spotify.audioKeyRefused": "Spotify hat das Abspielen dieser Titel über ST Reborn verweigert. Die ganze Playlist wurde übersprungen, ohne dass ein Ton kam. Das passiert bei einem kostenlosen Spotify-Konto und bei manchen neueren Premium-Konten, die Spotify für quelloffene Abspieler gesperrt hat. Der Spotify-Eintrag des Lautsprechers ohne (STR) spielt dasselbe Konto weiterhin ab."
 }

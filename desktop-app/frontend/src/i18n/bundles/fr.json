@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "Android : installée via Chrome, donc présente aussi dans la liste des applications.",
   "banner.checkForAppUpdate": "Rechercher des mises à jour",
   "banner.checkingForAppUpdate": "Recherche…",
-  "banner.appIsCurrent": "Votre application est à jour."
+  "banner.appIsCurrent": "Votre application est à jour.",
+  "spotify.audioKeyRefused": "Spotify a refusé de lire ces titres via ST Reborn et a sauté toute la playlist sans jouer une seule note. Cela arrive avec un compte Spotify gratuit, et avec certains comptes Premium récents que Spotify n'autorise plus pour les lecteurs open source. L'entrée Spotify de l'enceinte elle-même, celle sans (STR), lit toujours le même compte."
 }

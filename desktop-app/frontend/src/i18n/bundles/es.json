@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "Android: instalada con Chrome, así que también está en el cajón de aplicaciones.",
   "banner.checkForAppUpdate": "Buscar actualizaciones de la app",
   "banner.checkingForAppUpdate": "Buscando…",
-  "banner.appIsCurrent": "Tu aplicación está actualizada."
+  "banner.appIsCurrent": "Tu aplicación está actualizada.",
+  "spotify.audioKeyRefused": "Spotify se ha negado a reproducir estas canciones a través de ST Reborn y ha saltado toda la lista sin sonar ni una nota. Ocurre con una cuenta gratuita de Spotify y con algunas cuentas Premium nuevas que Spotify ya no permite reproducir a los reproductores de código abierto. La entrada de Spotify del propio altavoz, la que no lleva (STR), sigue reproduciendo la misma cuenta."
 }

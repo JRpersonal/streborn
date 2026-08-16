@@ -174,6 +174,13 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		// appearing unavailable; LowDiskFreeKB is the free space at the last check.
 		LowDisk       bool  `json:"lowDisk"`
 		LowDiskFreeKB int64 `json:"lowDiskFreeKB"`
+		// AudioKeyRefused is true when Spotify has just refused the audio key
+		// for a run of tracks, which the listener experiences as a playlist
+		// racing past without a note playing. The apps show what happened
+		// instead of leaving the silence unexplained. The speaker's own Spotify
+		// entry keeps working on the same account, so the message has to say
+		// that too or it reads as "Spotify is broken".
+		AudioKeyRefused bool `json:"audioKeyRefused"`
 	}{
 		Ready:           m.Ready(),
 		Bitrate:         m.Bitrate(),
@@ -186,6 +193,7 @@ func (m *Manager) ServeInfo(w http.ResponseWriter, r *http.Request) {
 		PremiumRequired: m.PremiumRequired(),
 		LowDisk:         lowDisk,
 		LowDiskFreeKB:   lowDiskFreeKB,
+		AudioKeyRefused: m.AudioKeyRefused(),
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }

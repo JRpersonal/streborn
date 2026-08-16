@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "Android: instalēta ar Chrome, tāpēc redzama arī lietotņu sarakstā.",
   "banner.checkForAppUpdate": "Meklēt lietotnes atjauninājumus",
   "banner.checkingForAppUpdate": "Meklē…",
-  "banner.appIsCurrent": "Lietotne ir aktuāla."
+  "banner.appIsCurrent": "Lietotne ir aktuāla.",
+  "spotify.audioKeyRefused": "Spotify atteicās atskaņot šos ierakstus caur ST Reborn un izlaida visu atskaņošanas sarakstu, neatskaņojot nevienu noti. Tā notiek ar bezmaksas Spotify kontu un ar dažiem jaunākiem Premium kontiem, kurus Spotify vairs neatļauj atvērtā pirmkoda atskaņotājiem. Paša skaļruņa Spotify ieraksts, tas bez (STR), to pašu kontu atskaņo joprojām."
 }

@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "Android: Chrome ile kurulur, uygulama çekmecesinde de görünür.",
   "banner.checkForAppUpdate": "Uygulama güncellemelerini denetle",
   "banner.checkingForAppUpdate": "Denetleniyor…",
-  "banner.appIsCurrent": "Uygulamanız güncel."
+  "banner.appIsCurrent": "Uygulamanız güncel.",
+  "spotify.audioKeyRefused": "Spotify bu parçaları ST Reborn üzerinden çalmayı reddetti ve tek bir nota bile çalmadan bütün çalma listesini atladı. Bu, ücretsiz bir Spotify hesabında ve Spotify'ın artık açık kaynak oynatıcılara izin vermediği bazı yeni Premium hesaplarda olur. Hoparlörün kendi Spotify girişi, yani (STR) yazmayan, aynı hesabı çalmaya devam eder."
 }

@@ -592,6 +592,15 @@ func (m *Manager) runOnce(ctx context.Context) error {
 // here while the API answers a bare 500 — a field report (#311) needed a full
 // diagnostic round just to see it. playDenialHint turns that memory into a
 // human-readable suffix on the play error.
+const (
+	// A run of refusals is only a run while they keep arriving. The engine
+	// walks a playlist in well under a second per refused track, so anything
+	// with a gap this large is a new episode.
+	keyRefusalRunGap = 30 * time.Second
+	// Enough in a row that a single unavailable track cannot trip it.
+	keyRefusalRunTrips = 5
+)
+
 func (m *Manager) noteLibrespotLine(line string) {
 	lc := strings.ToLower(line)
 	if strings.Contains(lc, "free") && (strings.Contains(lc, "not support") || strings.Contains(lc, "premium")) {
@@ -627,6 +636,32 @@ func (m *Manager) noteLibrespotLine(line string) {
 		m.mu.Unlock()
 		m.logger.Warn("spotify: the engine could not resolve what to play after this playlist, so playback is about to stop", "line", line)
 	}
+	// Spotify refused the audio key for a track. One is unremarkable: a single
+	// track can be unavailable in a region. A run of them is the account being
+	// refused wholesale, and that is what a listener experiences as a playlist
+	// racing past in silence.
+	if strings.Contains(lc, "audio key") && (strings.Contains(lc, "refused") || strings.Contains(lc, "failed retrieving")) {
+		m.mu.Lock()
+		if time.Since(m.lastKeyRefusalAt) > keyRefusalRunGap {
+			m.keyRefusalRun = 0
+		}
+		m.keyRefusalRun++
+		m.lastKeyRefusalAt = time.Now()
+		run := m.keyRefusalRun
+		m.mu.Unlock()
+		if run == keyRefusalRunTrips {
+			m.logger.Warn("spotify: Spotify is refusing the audio key for track after track, so nothing plays through this engine; the speaker's own Spotify entry is unaffected",
+				"tracksInARow", run)
+		}
+	}
+	// The engine gave up on a whole run. This is the moment the user is left
+	// with silence, so it is the one worth showing.
+	if strings.Contains(lc, "consecutive unplayable tracks") {
+		m.mu.Lock()
+		m.keyRefusalGaveUpAt = time.Now()
+		m.mu.Unlock()
+	}
+
 	// Connect-desync markers (upstream go-librespot #300): a "put connect
 	// state" timeout desyncs the device from the Spotify cluster - the app's
 	// buttons go dead/laggy, the device flaps in the picker, the engine can

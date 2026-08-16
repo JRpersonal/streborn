@@ -1299,5 +1299,6 @@
   "settingsView.phoneShotAndroid": "Android: встановлено через Chrome, тому є і в списку застосунків.",
   "banner.checkForAppUpdate": "Перевірити оновлення застосунку",
   "banner.checkingForAppUpdate": "Перевірка…",
-  "banner.appIsCurrent": "Ваш застосунок актуальний."
+  "banner.appIsCurrent": "Ваш застосунок актуальний.",
+  "spotify.audioKeyRefused": "Spotify відмовився програвати ці треки через ST Reborn і проскочив увесь плейлист, не зігравши жодної ноти. Так буває з безкоштовним обліковим записом Spotify і з деякими новішими записами Premium, які Spotify більше не дозволяє програвачам з відкритим кодом. Власний запис Spotify на колонці, той без (STR), той самий обліковий запис програє далі."
 }

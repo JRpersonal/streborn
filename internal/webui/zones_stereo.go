@@ -267,6 +267,19 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// What the user already had, read BEFORE anything is changed. Adding a
+	// speaker to a group that is playing must not be able to end with no group
+	// at all, and on 2026-08-16 it did: a working pair, a third speaker added,
+	// and 24 s later the firmware had dissolved the pair while the master's
+	// :8090 stopped answering mid-drive. The music stopped in both rooms and
+	// nothing put it back. Keeping the previous group here is what makes the
+	// restore below possible.
+	prevDoc, hadPrevDoc := zones.Zone{}, false
+	if s.zones != nil {
+		prevDoc, hadPrevDoc = s.zones.Get()
+	}
+	prevLive, _ := c.GetZone(ctx)
+
 	// Persist first so a transient drive error still leaves the group on record
 	// for the reconcile loop to retry. Only the master persists.
 	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name}
@@ -311,7 +324,20 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// Never form against a standby master: the firmware then wakes INTO its
 	// stale UPnP item, throws the 1036 wrong-state error and self-dissolves
 	// the fresh zone ~300ms after reporting ok (#70, observed live).
-	s.ensureBoxReady(ctx)
+	//
+	// When the wake fails, stop here. Driving /setZone into a speaker that just
+	// refused to answer buys nothing: measured on an eleven-speaker fleet
+	// 2026-08-16, the wake failed at 8 s, /setZone was sent anyway and died of
+	// the same silence 25 s after the user pressed the button. The user waits
+	// half a minute for an error the first eight seconds already knew about,
+	// and by then the group that WAS working is gone.
+	if err := s.ensureBoxReadyErr(ctx); err != nil {
+		s.logger.Warn("zone: the speaker leading the group is not answering, not sending setZone",
+			"err", err, "master", master.DeviceID, "prevMembers", len(prevLive.Members))
+		s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
+		http.Error(w, "the speaker leading the group is not answering: "+err.Error(), http.StatusBadGateway)
+		return
+	}
 
 	// Remove members the user dropped from the group. /setZone only ADDS the
 	// listed slaves, it never removes one, so re-forming with a smaller list -
@@ -350,6 +376,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 
 	if err := c.SetZone(ctx, master, slaves); err != nil {
 		s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
+		s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
 		http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -1588,4 +1615,76 @@ func isPrivateHost(host string) bool {
 		return false
 	}
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+}
+
+// restorePreviousZone puts back what the user had before a form that failed.
+//
+// The case it exists for, from an eleven-speaker fleet on 2026-08-16: a pair
+// was playing, a third speaker was added, the master's own :8090 stopped
+// answering during the drive, and the firmware dissolved the pair. The form
+// returned an error, which is honest, but the user was left with silence in two
+// rooms and a stored document describing a three-speaker group that had never
+// existed. Adding a speaker has to be able to fail without costing the group
+// that was already working.
+//
+// Two separate repairs, because they can fail independently:
+//
+//   - The stored document goes back to what it was. Leaving the new one in
+//     place would have the reconcile loop, whenever a user turns it on, keep
+//     driving toward a group the firmware refused.
+//   - If this speaker led a live group before the attempt and no longer leads
+//     one, form that old group again.
+//
+// Nothing here is retried in a loop. If the speaker is genuinely wedged, one
+// attempt says so in the log and the user is told to try again; hammering a box
+// that stopped answering is what turns one bad minute into several.
+func (s *Server) restorePreviousZone(ctx context.Context, c *boxapi.Client, master boxapi.ZoneMember,
+	prevDoc zones.Zone, hadPrevDoc bool, prevLive boxapi.Zone) {
+	s.restorePreviousZoneVia(ctx, c.GetZone, c.SetZone, master, prevDoc, hadPrevDoc, prevLive)
+}
+
+// restorePreviousZoneVia is the body of restorePreviousZone with the two
+// firmware calls passed in, so the decision can be tested without a speaker.
+// The client hard-codes port 8090, which a test listener cannot claim.
+func (s *Server) restorePreviousZoneVia(ctx context.Context,
+	getZone func(context.Context) (boxapi.Zone, error),
+	setZone func(context.Context, boxapi.ZoneMember, []boxapi.ZoneMember) error,
+	master boxapi.ZoneMember, prevDoc zones.Zone, hadPrevDoc bool, prevLive boxapi.Zone) {
+	if s.zones != nil {
+		var err error
+		if hadPrevDoc {
+			err = s.zones.Set(prevDoc)
+		} else {
+			err = s.zones.Clear()
+		}
+		if err != nil {
+			s.logger.Warn("zone: could not put the previous group document back", "err", err)
+		}
+	}
+
+	if len(prevLive.Members) == 0 {
+		return // there was no live group to lose
+	}
+	// Only the speaker that led the old group can rebuild it. A follower asking
+	// for this would be forming a second group around itself, which is a
+	// different group than the one the user lost.
+	if !strings.EqualFold(strings.TrimSpace(prevLive.Master), strings.TrimSpace(master.DeviceID)) {
+		return
+	}
+
+	// The handler's budget is usually spent by the time we get here, which is
+	// exactly why the restore needs its own.
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	defer cancel()
+
+	if live, err := getZone(rctx); err == nil && len(live.Members) > 0 {
+		return // the firmware still has a group, nothing was lost
+	}
+	s.logger.Warn("zone: the group that was playing is gone after the failed change, forming it again",
+		"master", master.DeviceID, "members", len(prevLive.Members))
+	if err := setZone(rctx, master, prevLive.Members); err != nil {
+		s.logger.Warn("zone: could not form the previous group again", "err", err, "master", master.DeviceID)
+		return
+	}
+	s.logger.Info("zone: the previous group is back", "master", master.DeviceID, "members", len(prevLive.Members))
 }

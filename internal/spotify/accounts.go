@@ -407,3 +407,25 @@ func (m *Manager) ImportCredential(ctx context.Context, data []byte) error {
 	}
 	return nil
 }
+
+// AudioKeyRefused reports whether Spotify has just refused the audio key for a
+// run of tracks, which is the signature of an account this engine is not
+// allowed to stream: a free account, or one in the cohort Spotify moved to its
+// newer DRM, where every request of this kind is refused regardless of Premium.
+//
+// Deliberately short-lived. The user is told while the silence is fresh and the
+// message goes away by itself, because the cause is on Spotify's side and there
+// is nothing on the speaker that clearing it would fix. The window is generous
+// enough that switching to the app and back still shows it.
+func (m *Manager) AudioKeyRefused() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.keyRefusalRun < keyRefusalRunTrips {
+		return false
+	}
+	last := m.lastKeyRefusalAt
+	if !m.keyRefusalGaveUpAt.IsZero() && m.keyRefusalGaveUpAt.After(last) {
+		last = m.keyRefusalGaveUpAt
+	}
+	return time.Since(last) < 10*time.Minute
+}

@@ -6282,6 +6282,20 @@ async function refreshStatus() {
           state.nowSpotifyCover = np.cover || '';
           state.nowSpotifyContext = np.context || '';
           state.nowSpotifyAccount = np.account || '';
+          // Spotify refused the audio key for track after track. Without this
+          // the playlist just races past in silence and the speaker looks
+          // broken, when in fact Spotify is refusing this engine for this
+          // account. Said once per episode: the condition clears itself on the
+          // speaker after ten quiet minutes, and repeating it every three
+          // seconds would be worse than the silence.
+          if (np.audioKeyRefused) {
+            if (!state.spotifyKeyRefusalShown) {
+              state.spotifyKeyRefusalShown = true;
+              showError(t('spotify.audioKeyRefused'));
+            }
+          } else {
+            state.spotifyKeyRefusalShown = false;
+          }
           // The now-playing line redraws every status poll, but the tile cover
           // only redraws on renderPresets. Re-render when the cover changes so
           // the preset logo tracks the song in step with the title instead of
