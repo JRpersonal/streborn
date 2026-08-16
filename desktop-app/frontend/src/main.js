@@ -1384,7 +1384,16 @@ if (gsd) gsd.onclick = () => {
   const gb = $('globalSecurityBanner');
   if (gb) gb.classList.add('hidden');
 };
-$('pauseBtn').onclick = () => action(state.nowPlayState === 'PAUSE_STATE' ? 'resume' : 'pause');
+// A STOPPED stream resumes too. Only a paused one counted, so after Stop the
+// button still read Pause and sent pause to a transport that had already
+// stopped: nothing happened and there was no way back to the music. Same fault,
+// same fix as the phone remote.
+$('pauseBtn').onclick = () => action(stoppedOrPaused(state.nowPlayState) ? 'resume' : 'pause');
+
+// stoppedOrPaused reports whether the transport should offer Play. INVALID_SOURCE
+// is deliberately excluded: nothing is loaded there, so Play would promise
+// something that cannot happen.
+function stoppedOrPaused(ps) { return ps === 'PAUSE_STATE' || ps === 'STOP_STATE'; }
 $('stopBtn').onclick = () => action('stop');
 // Track skip for a Spotify playlist (the DLNA folder queue has its own controls
 // in #queueControls). The agent's /api/next//api/prev are source-aware.
@@ -4878,7 +4887,13 @@ function toggleGroupMember(host, port) {
 // the first looked ignored.
 function markGroupChipPending() {
   document.querySelectorAll('.group-chip').forEach(chip => {
-    chip.classList.toggle('pending', pendingGroupEdits.has(chip.dataset.host));
+    // Marked while the click is WAITING for the batch AND while the batch is
+    // running. Keying it on the waiting list alone made the mark disappear at
+    // the very moment the work started, which is when the user most needs to
+    // see that something is happening: forming a group across five speakers
+    // takes several seconds.
+    const h = chip.dataset.host;
+    chip.classList.toggle('pending', pendingGroupEdits.has(h) || groupOpPending.has(h));
   });
 }
 
@@ -4888,6 +4903,7 @@ function runPendingGroupEdits() {
   pendingGroupEdits.clear();
   if (edits.length === 0) return;
   edits.forEach(([h]) => groupOpPending.add(h));
+  markGroupChipPending();
   groupOpChain = groupOpChain
     .then(() => runGroupMemberToggle(edits))
     .catch(() => {})
@@ -4936,7 +4952,20 @@ async function runGroupMemberToggle(edits) {
       // the speaker still answers STR (the agent stays up in standby), so the
       // firmware would add it to the zone but it stays silent. Waking an
       // already-awake box is a fast no-op, so this is safe to do for all members.
-      await Promise.allSettled(next.filter(m => m.box).map(m => WakeBox(m.box.host, m.box.port)));
+      //
+      // All at once, then a single retry for the ones that did not take it.
+      // One wake per speaker with no retry meant a speaker that was busy at
+      // that moment was enrolled asleep and stayed silent, and doing them in
+      // sequence would add every speaker's wake time to the wait before the
+      // group even starts forming.
+      const wakeTargets = next.filter(m => m.box);
+      const wakeOnce = (list) => Promise.allSettled(list.map(m => WakeBox(m.box.host, m.box.port)))
+        .then(rs => list.filter((_, i) => rs[i].status === 'rejected'));
+      const failed = await wakeOnce(wakeTargets);
+      if (failed.length) {
+        console.warn('group: retrying wake for', failed.map(m => m.ip));
+        await wakeOnce(failed);
+      }
       const res = await FormZone(box.host, box.port, {
         master: { deviceID: box.deviceID, ip: box.host },
         slaves: next.map(m => ({ deviceID: m.deviceID, ip: m.ip })),
@@ -5969,7 +5998,7 @@ function renderNowPlayingBar() {
   // Pause (#202).
   const ppBtn = $('pauseBtn');
   if (ppBtn) {
-    ppBtn.innerHTML = ps === 'PAUSE_STATE'
+    ppBtn.innerHTML = stoppedOrPaused(ps)
       ? '&#9205; ' + escapeHtml(t('controls.play'))
       : '&#9208; ' + escapeHtml(t('controls.pause'));
   }
@@ -6027,7 +6056,7 @@ function renderNowPlayingBar() {
   bar.className = 'status-bar status-' + stateClass;
   // Glyph reflects the actual transport state so play vs pause is not conveyed
   // by colour alone (accessibility): play arrow normally, pause bars when paused.
-  const stateGlyph = ps === 'PAUSE_STATE' ? '&#9208;' : '&#9205;';
+  const stateGlyph = stoppedOrPaused(ps) ? '&#9208;' : '&#9205;';
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"
