@@ -1,0 +1,99 @@
+{
+  "source": "desktop-app/cacert.pem",
+  "mozillaDate": "Thu May 14 03:12:02 2026 GMT",
+  "licence": "MPL-2.0",
+  "roots": [
+    {
+      "name": "ISRG Root X1",
+      "sha256": "96bcec06264976f37460779acf28c5a7cfe8a3c0aae11a8ffcee05c0bddf08c6"
+    },
+    {
+      "name": "ISRG Root X2",
+      "sha256": "69729b8e15a86efc177a57afb7171dfc64add28c2fca8cf1507e34453ccb1470"
+    },
+    {
+      "name": "DigiCert Global Root G2",
+      "sha256": "cb3ccbb76031e5e0138f8dd39a23f9de47ffc35e43c1144cea27d46a5ab1cb5f"
+    },
+    {
+      "name": "DigiCert Global Root G3",
+      "sha256": "31ad6648f8104138c738f39ea4320133393e3a18cc02296ef97c2ac9ef6731d0"
+    },
+    {
+      "name": "DigiCert Trusted Root G4",
+      "sha256": "552f7bdcf1a7af9e6ce672017f4f12abf77240c78e761ac203d1d9d20ac89988"
+    },
+    {
+      "name": "GTS Root R1",
+      "sha256": "d947432abde7b7fa90fc2e6b59101b1280e0e1c7e4e40fa3c6887fff57a7f4cf"
+    },
+    {
+      "name": "GTS Root R3",
+      "sha256": "34d8a73ee208d9bcdb0d956520934b4e40e69482596e8b6f73c8426b010a6f48"
+    },
+    {
+      "name": "GTS Root R4",
+      "sha256": "349dfa4058c5e263123b398ae795573c4e1313c83fe68f93556cd5e8031b3c7d"
+    },
+    {
+      "name": "Amazon Root CA 1",
+      "sha256": "8ecde6884f3d87b1125ba31ac3fcb13d7016de7f57cc904fe1cb97c6ae98196e"
+    },
+    {
+      "name": "Amazon Root CA 2",
+      "sha256": "1ba5b2aa8c65401a82960118f80bec4f62304d83cec4713a19c39c011ea46db4"
+    },
+    {
+      "name": "Amazon Root CA 3",
+      "sha256": "18ce6cfe7bf14e60b2e347b8dfe868cb31d02ebb3ada271569f50343b46db3a4"
+    },
+    {
+      "name": "Amazon Root CA 4",
+      "sha256": "e35d28419ed02025cfa69038cd623962458da5c695fbdea3c22b0bfb25897092"
+    },
+    {
+      "name": "GlobalSign Root CA - R3",
+      "sha256": "cbb522d7b7f127ad6a0113865bdf1cd4102e7d0759af635a7cf4720dc963c53b"
+    },
+    {
+      "name": "GlobalSign Root CA - R6",
+      "sha256": "2cabeafe37d06ca22aba7391c0033d25982952c453647349763a3ab5ad6ccf69"
+    },
+    {
+      "name": "GlobalSign ECC Root CA - R5",
+      "sha256": "179fbc148a3dd00fd24ea13458cc43bfa7f59c8182d783a513f6ebec100c8924"
+    },
+    {
+      "name": "USERTrust RSA Certification Authority",
+      "sha256": "e793c9b02fd8aa13e21c31228accb08119643b749c898964b1746d46c3d4cbd2"
+    },
+    {
+      "name": "USERTrust ECC Certification Authority",
+      "sha256": "4ff460d54b9c86dabfbcfc5712e0400d2bed3fbc4d4fbdaa86e06adcd2a9ad7a"
+    },
+    {
+      "name": "Sectigo Public Server Authentication Root R46",
+      "sha256": "7bb647a62aeeac88bf257aa522d01ffea395e0ab45c73f93f65654ec38f25a06"
+    },
+    {
+      "name": "Sectigo Public Server Authentication Root E46",
+      "sha256": "c90f26f0fb1b4018b22227519b5ca2b53e2ca5b3be5cf18efe1bef47380c5383"
+    },
+    {
+      "name": "Go Daddy Root Certificate Authority - G2",
+      "sha256": "45140b3247eb9cc8c5b4f0d7b53091f73292089e6e5a63e2749dd3aca9198eda"
+    },
+    {
+      "name": "Starfield Root Certificate Authority - G2",
+      "sha256": "2ce1cb0bf9d2f9e102993fbe215152c3b2dd0cabde1c68e5319b839154dbb7f5"
+    },
+    {
+      "name": "Certum Trusted Network CA",
+      "sha256": "5c58468d55f58e497e743982d2b50010b6d165374acf83a7d4a32db768c4408e"
+    },
+    {
+      "name": "Certum Trusted Network CA 2",
+      "sha256": "b676f2eddae8775cd36cb0f63cd1d4603961f49e6265ba013a2f0307b6d0b804"
+    }
+  ]
+}

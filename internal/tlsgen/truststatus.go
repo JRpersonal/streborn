@@ -176,6 +176,26 @@ func WellKnownRoots() []WellKnownRoot {
 	return wellKnownRootsIn(DefaultTrustStorePaths)
 }
 
+// wellKnownRootsInBytes reports the common authorities present in a PEM blob,
+// used by the test that guards the shipped bundle.
+func wellKnownRootsInBytes(body []byte) []string {
+	var out []string
+	for rest := body; len(rest) > 0; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		if c, err := x509.ParseCertificate(block.Bytes); err == nil {
+			out = append(out, strings.TrimSpace(c.Subject.CommonName))
+		}
+	}
+	return out
+}
+
 func wellKnownRootsIn(paths []string) []WellKnownRoot {
 	have := map[string]bool{}
 	for _, p := range paths {

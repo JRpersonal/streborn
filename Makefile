@@ -114,6 +114,13 @@ wails-build: winformat-embed agent-embed
 		-trimpath \
 		-clean
 
+# Regenerate the supplemental root certificates the agent embeds, from the
+# tracked Mozilla bundle. The pinned list lives in the script, so every change
+# to what STR trusts is a reviewed edit rather than a silent refresh.
+ca-roots:
+	python internal/tlsgen/extractroots.py
+
+
 test:
 	$(GO) test ./...
 
