@@ -954,7 +954,7 @@
   "setup.targetMustPick": "Please pick a target speaker first.",
   "setup.targetFactoryLabel": "New or factory-reset speaker",
   "setup.goBtnFactory": "Prepare USB stick for new speaker",
-  "setup.installWillTargetFactory": "After boot from this stick, STR brings the speaker onto your Wi-Fi automatically, then installs.",
+  "setup.installWillTargetFactory": "After the speaker starts up with this stick plugged in, STR brings it onto your Wi-Fi automatically, then installs.",
   "setup.step1Heading": "1. Pick USB stick",
   "setup.searchAgain": "Search again",
   "setup.searchingSticks": "Looking for USB sticks...",

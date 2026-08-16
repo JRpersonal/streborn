@@ -954,7 +954,7 @@
   "setup.targetMustPick": "Bitte zuerst ein Ziel auswählen.",
   "setup.targetFactoryLabel": "Neuer oder zurückgesetzter Lautsprecher",
   "setup.goBtnFactory": "USB-Stick für neuen Lautsprecher vorbereiten",
-  "setup.installWillTargetFactory": "Nach Boot vom Stick bringt STR den Lautsprecher automatisch in dein WLAN und installiert dann.",
+  "setup.installWillTargetFactory": "Sobald der Lautsprecher mit diesem Stick startet, bringt STR ihn automatisch in dein WLAN und installiert dann.",
   "setup.step1Heading": "1. USB-Stick auswählen",
   "setup.searchAgain": "Neu suchen",
   "setup.searchingSticks": "Suche nach USB-Sticks ...",
