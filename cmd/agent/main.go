@@ -497,6 +497,11 @@ func run() error {
 		return map[string]any{
 			"stores": tlsgen.TrustStoreSnapshot(root),
 			"repair": tlsgen.LastTrustRepair(),
+			// Which common authorities this speaker actually has. A count of
+			// certificates says nothing about WHICH ones, and a speaker can
+			// hold 157 of them and still be missing the two that most internet
+			// radio depends on.
+			"wellKnownRoots": tlsgen.WellKnownRoots(),
 		}
 	})
 	bmxSrv := bmx.New(logger.With("comp", "bmx"))

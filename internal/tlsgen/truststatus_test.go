@@ -46,6 +46,13 @@ func mustRoot(cn string) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
 
+// namedRoot mints a self-signed certificate with a chosen common name, so a
+// test can place a specific authority in a specific store.
+func namedRoot(t *testing.T, cn string) string {
+	t.Helper()
+	return mustRoot(cn)
+}
+
 // publicRoots returns enough real roots to clear minPlausiblePublicRoots, so
 // a test store looks like a firmware bundle rather than like a repair that
 // only put our own root back.
@@ -162,5 +169,33 @@ func TestReadRootCAPEMReturnsNilWithoutACA(t *testing.T) {
 	writeFile(t, filepath.Join(dir, rootCAFile), root)
 	if b := ReadRootCAPEM(dir); string(b) != root {
 		t.Errorf("root CA not read back verbatim: %q", string(b))
+	}
+}
+
+// A count of certificates says nothing about WHICH ones. An ST20 held 157
+// usable roots and was still missing the two that most internet radio chains
+// to, and no bundle could show that.
+func TestWellKnownRootsAreReportedAcrossAllStores(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "ca-certificates.crt")
+	second := filepath.Join(dir, "ca-bundle.crt")
+	// Split them across the two files on purpose: crypto/x509 reads one store
+	// file and then unions both certificate directories, so a root in either
+	// one counts.
+	writeFile(t, first, namedRoot(t, "ISRG Root X1"))
+	writeFile(t, second, namedRoot(t, "Amazon Root CA 1"))
+
+	got := map[string]bool{}
+	for _, r := range wellKnownRootsIn([]string{first, second}) {
+		got[r.Name] = r.Present
+	}
+	if !got["ISRG Root X1"] {
+		t.Error("a root in the first store must be reported as present")
+	}
+	if !got["Amazon Root CA 1"] {
+		t.Error("a root in the second store must be reported as present too")
+	}
+	if got["DigiCert Global Root G2"] {
+		t.Error("a root that is in neither store must be reported as absent, that is the whole point")
 	}
 }
