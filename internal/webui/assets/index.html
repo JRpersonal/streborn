@@ -622,7 +622,21 @@ function pickDict(){
   // this page has no language picker (support mail 2026-08-16). The browser's
   // languages remain the fallback, and are used until the speaker answers.
   var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
-  if (boxLang) langs = [boxLang].concat(Array.prototype.slice.call(langs));
+  // The speaker wins, with one exception: English is the factory setting, so a
+  // speaker reporting English usually means nobody ever touched it rather than
+  // that somebody chose it. A phone in another language is the stronger signal
+  // then, and it is what the owner is holding. Measured against the two mails
+  // that produced this code: a German household with an English phone has its
+  // speakers on German, so the speaker still wins and the remote is German; a
+  // German phone in front of an untouched English speaker now gets German too,
+  // which is what it had before v0.9.48.
+  //
+  // Anyone who really wants English on a non-English phone says so in the
+  // picker below, and that choice beats both.
+  var phoneLang = String(langs[0] || "").toLowerCase().split("-")[0];
+  if (boxLang && !(boxLang === "en" && phoneLang && phoneLang !== "en" && I18N[phoneLang])) {
+    langs = [boxLang].concat(Array.prototype.slice.call(langs));
+  }
   // A choice made on THIS phone beats both. Without it the page served
   // whoever happened to be in the majority and hurt the other half: first a
   // German household with an English phone got an English remote, then the
