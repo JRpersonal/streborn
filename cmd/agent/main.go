@@ -881,6 +881,13 @@ func run() error {
 		func(event string) { wsHandler.OnUserStop(context.Background()) },
 		webuiSrv.ClearUserStop,
 	)
+	// What the phones actually ask for, alongside what the speaker reports. The
+	// remote picks its language from the browser and from the speaker, and the
+	// browser value is flattened to en-US by anti-fingerprinting settings in some
+	// browsers. How often that hits real users is not worth reasoning about, so it
+	// is recorded: the next report about a remote in the wrong language arrives
+	// with the evidence attached.
+	webui.RegisterDebugSection("phone_languages", func() any { return webuiSrv.PhoneLanguages() })
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
 	// it actually plays instead of staying on the current source (#14).
