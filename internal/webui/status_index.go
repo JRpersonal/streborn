@@ -226,6 +226,7 @@ func (s *Server) remoteDisplayName() string {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	s.notePhoneLanguage(r.Header.Get("Accept-Language"))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	page := indexHTML
 	// Stamp the speaker's name into the page identity so "Add to Home Screen"
@@ -389,4 +390,48 @@ func (s *Server) handleIconLarge(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=604800, immutable")
 	_, _ = w.Write(iconLargePNG)
+}
+
+// notePhoneLanguage remembers what the browser asked for, so a diagnostic can
+// answer a question that was otherwise only ever argued about: can the phone
+// be trusted to say which language it wants?
+//
+// The remote decides its language from navigator.languages, and that value is
+// flattened to en-US by browsers configured against fingerprinting. How often
+// that happens to real users is not something to reason about, so the header
+// the same request already carries is recorded instead. Accept-Language is
+// sent without any JavaScript and is the independent second opinion.
+//
+// Nothing reads this to make a decision. It exists so the next report about a
+// remote in the wrong language arrives with evidence attached.
+func (s *Server) notePhoneLanguage(header string) {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		header = "(none sent)"
+	}
+	s.phoneLangMu.Lock()
+	defer s.phoneLangMu.Unlock()
+	if s.phoneLangSeen == nil {
+		s.phoneLangSeen = map[string]int{}
+	}
+	// Bounded: a page reload must not turn this into a log of every visit, and
+	// a household has a handful of phones, not hundreds.
+	if len(s.phoneLangSeen) >= 12 {
+		if _, known := s.phoneLangSeen[header]; !known {
+			return
+		}
+	}
+	s.phoneLangSeen[header]++
+}
+
+// PhoneLanguages reports what the browsers that opened the remote asked for,
+// with a count each.
+func (s *Server) PhoneLanguages() map[string]int {
+	s.phoneLangMu.Lock()
+	defer s.phoneLangMu.Unlock()
+	out := make(map[string]int, len(s.phoneLangSeen))
+	for k, v := range s.phoneLangSeen {
+		out[k] = v
+	}
+	return out
 }

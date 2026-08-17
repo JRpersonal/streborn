@@ -144,6 +144,12 @@ type Server struct {
 	// free/open and so cannot do the autonomous recall playback (#45). nil until
 	// wired; the recall handler uses it to return a clear "needs Premium" error.
 	spotifyPremiumRequired func() bool
+
+	// phoneLangSeen counts the Accept-Language values the remote page was asked
+	// for, so a diagnostic shows what the phones actually claim rather than what
+	// we assume they claim. See notePhoneLanguage.
+	phoneLangMu   sync.Mutex
+	phoneLangSeen map[string]int
 	// spotifyExportCred / spotifyImportCred move the go-librespot login between
 	// speakers so a user logs into Spotify ONCE and STR copies the credential to
 	// the other boxes (#45 root cause: account=""). nil until wired.
