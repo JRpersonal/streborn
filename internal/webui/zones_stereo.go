@@ -339,9 +339,7 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// the wake had no source to report, and everything after that was doomed.
 	// So the wake failing is only the prompt to ask one cheap question.
 	if err := s.ensureBoxReadyErr(ctx); err != nil {
-		pctx, pcancel := context.WithTimeout(ctx, 2*time.Second)
-		_, perr := c.GetInfo(pctx)
-		pcancel()
+		perr := s.speakerStaysSilent(ctx, c)
 		if perr != nil {
 			s.logger.Warn("zone: the speaker leading the group is not answering at all, not sending setZone",
 				"wakeErr", err, "probeErr", perr, "master", master.DeviceID, "prevMembers", len(prevLive.Members))
@@ -1676,6 +1674,55 @@ func isPrivateHost(host string) bool {
 		return false
 	}
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+}
+
+// speakerStaysSilent reports whether the speaker really has stopped answering,
+// as opposed to being slow for a moment. It returns the last error when every
+// attempt failed, and nil as soon as one succeeds.
+//
+// The first version of this asked ONCE with a two second budget, and that was
+// wrong in a way that reached users: a speaker waking up, or busy starting a
+// stream, misses two seconds easily, and the group was then refused with "the
+// speaker leading the group is not answering" while it was answering fine a
+// moment later. Reported the day it shipped, by the same person whose log the
+// guard was built from.
+//
+// The evidence it was built for looked nothing like two seconds: a speaker
+// that answered nothing at all for twenty five seconds, across several reads,
+// while the firmware tore the group down around it. So the question has to be
+// asked the way that fault presents itself, over a span rather than once.
+func (s *Server) speakerStaysSilent(ctx context.Context, c *boxapi.Client) error {
+	return s.staysSilentVia(ctx, func(pctx context.Context) error {
+		_, err := c.GetInfo(pctx)
+		return err
+	}, 3, time.Second)
+}
+
+// staysSilentVia is speakerStaysSilent with the read and the timings passed in,
+// so the decision can be tested without a speaker and without waiting.
+func (s *Server) staysSilentVia(ctx context.Context, probe func(context.Context) error, attempts int, gap time.Duration) error {
+	var last error
+	for i := 0; i < attempts; i++ {
+		if i > 0 && gap > 0 {
+			select {
+			case <-ctx.Done():
+				return last
+			case <-time.After(gap):
+			}
+		}
+		pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		err := probe(pctx)
+		cancel()
+		if err == nil {
+			if i > 0 {
+				s.logger.Info("zone: the speaker was slow to answer, not silent, continuing",
+					"attempt", i+1)
+			}
+			return nil
+		}
+		last = err
+	}
+	return last
 }
 
 // restorePreviousZone puts back what the user had before a form that failed.
