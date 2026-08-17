@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/grandcat/zeroconf"
 )
 
@@ -548,7 +549,7 @@ func pickAnnounceIfaces(logger *slog.Logger) []net.Interface {
 		if iface.Flags&net.FlagUp == 0 {
 			continue
 		}
-		if iface.Name == "usb0" || strings.HasPrefix(iface.Name, "usb") {
+		if netutil.IsGadgetIface(iface.Name) {
 			logger.Debug("mDNS skip USB gadget interface", slog.String("iface", iface.Name))
 			continue
 		}
@@ -560,11 +561,7 @@ func pickAnnounceIfaces(logger *slog.Logger) []net.Interface {
 			if !ok {
 				continue
 			}
-			if ipnet.IP.To4() == nil {
-				continue
-			}
-			s := ipnet.IP.String()
-			if strings.HasPrefix(s, "203.0.113.") {
+			if !netutil.UsableLANIPv4(ipnet.IP) {
 				continue
 			}
 			hasUsable = true
@@ -637,4 +634,23 @@ func unescapeTXT(s string) string {
 		i++
 	}
 	return b.String()
+}
+
+// AnnounceIfaceNames returns the interfaces STR announces on, by name.
+//
+// It exists so the Spotify engine can be pinned to the SAME set. Measured on a
+// SoundTouch 30 on 2026-08-17: STR's own service answered four browses out of
+// four while the engine's Spotify entry answered none, on the same box, through
+// the same library, in the same second. The only difference was the interface
+// list: this selection, against a single name picked as "the first one with a
+// routable address". Interface names on these speakers are not to be reasoned
+// about, a wireless speaker can carry its radio as eth0, so the honest answer
+// is to advertise everywhere rather than to guess which one counts.
+func AnnounceIfaceNames(logger *slog.Logger) []string {
+	ifaces := pickAnnounceIfaces(logger)
+	out := make([]string, 0, len(ifaces))
+	for _, i := range ifaces {
+		out = append(out, i.Name)
+	}
+	return out
 }

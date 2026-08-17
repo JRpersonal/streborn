@@ -7,6 +7,7 @@ package spotify
 import (
 	"context"
 	"fmt"
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -110,6 +111,21 @@ func primaryZeroconfIface() string {
 		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 || ifc.Flags&net.FlagMulticast == 0 {
 			continue
 		}
+		// Skip the USB gadget. Every one of these speakers carries a usb0
+		// interface that is up, multicast capable, and holds 203.0.113.1,
+		// an address from the range reserved for documentation. Go reports
+		// that address as an ordinary global unicast one, so the plain
+		// "first interface with a routable address" test could hand the
+		// Spotify engine the USB port, and the engine then advertises where
+		// nobody is listening: the entry never reaches the network and the
+		// speaker is simply absent from Spotify. Measured on a SoundTouch 30
+		// on 2026-08-17, where STR own service answered four browses out of
+		// four and the Spotify entry answered none, on the same box in the
+		// same second. STR own announcer has excluded these since long
+		// before that; the engine simply never got the same treatment.
+		if netutil.IsGadgetIface(ifc.Name) {
+			continue
+		}
 		addrs, err := ifc.Addrs()
 		if err != nil {
 			continue
@@ -119,9 +135,12 @@ func primaryZeroconfIface() string {
 			if !ok {
 				continue
 			}
-			if v4 := n.IP.To4(); v4 != nil && v4.IsGlobalUnicast() && !v4.IsLinkLocalUnicast() {
-				return ifc.Name
+			// By address as well as by name, so a gadget under any other name
+			// is caught too.
+			if !netutil.UsableLANIPv4(n.IP) {
+				continue
 			}
+			return ifc.Name
 		}
 	}
 	return ""

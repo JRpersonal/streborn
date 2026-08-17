@@ -28,6 +28,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"golang.org/x/net/ipv4"
 )
 
@@ -350,7 +351,10 @@ func candidateIPv4Interfaces() []ifaceIPv4 {
 			if ip4 == nil {
 				continue
 			}
-			if ip4.IsLoopback() || ip4.IsLinkLocalUnicast() || ip4.IsLinkLocalMulticast() {
+			// The USB gadget is up and carries a routable looking address, so
+			// without this it became a candidate and the speaker could offer
+			// media at an address no client on the home network can reach.
+			if !netutil.UsableLANIPv4(ip4) {
 				continue
 			}
 			out = append(out, ifaceIPv4{iface: iface, ip: ip4})

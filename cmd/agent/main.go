@@ -31,6 +31,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/marge"
 	"github.com/JRpersonal/streborn/internal/mdnshost"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
 	"github.com/JRpersonal/streborn/internal/shepherd"
@@ -1366,32 +1367,7 @@ func run() error {
 // an ethernet port that is up and disconnected while it runs on Wi-Fi, and that
 // port is exactly the wrong answer.
 func routableIPv4() net.IP {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil
-	}
-	for i := range ifaces {
-		in := &ifaces[i]
-		if in.Flags&net.FlagUp == 0 || in.Flags&net.FlagLoopback != 0 || in.Flags&net.FlagMulticast == 0 {
-			continue
-		}
-		addrs, err := in.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, a := range addrs {
-			ipnet, ok := a.(*net.IPNet)
-			if !ok {
-				continue
-			}
-			ip := ipnet.IP.To4()
-			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-				continue
-			}
-			return ip
-		}
-	}
-	return nil
+	return netutil.FirstLANIPv4()
 }
 
 // mdnsHostLabel is this speaker's own mDNS label, set only once the responder

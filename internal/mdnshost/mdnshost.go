@@ -333,6 +333,7 @@ func (r *Responder) Stats() map[string]any {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return map[string]any{
+		"interfaces":       interfaceInventory(),
 		"name":             r.fqdn,
 		"address":          r.ip.String(),
 		"queriesSeen":      r.seenQueries,
@@ -371,4 +372,40 @@ func ifaceFor(addr net.IP) (*net.Interface, error) {
 		}
 	}
 	return nil, fmt.Errorf("mdnshost: no up multicast interface carries %s", addr)
+}
+
+// interfaceInventory lists what this speaker actually has, because the
+// interface a service is pinned to is the open question and the names cannot
+// be reasoned about: a wireless speaker can carry its radio as eth0, and the
+// two chip chassis carry two interfaces on a single address. The Spotify
+// engine is pinned to ONE interface, deliberately, to stop those chassis
+// advertising twice. On a SoundTouch 30 that pin appears to select an
+// interface that never answers, so the entry is invisible while STR own
+// service, which advertises on all of them, answers every time. This is the
+// data needed to tell those apart instead of trading one fault for another.
+func interfaceInventory() []map[string]any {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(ifaces))
+	for i := range ifaces {
+		in := &ifaces[i]
+		addrs, _ := in.Addrs()
+		ips := make([]string, 0, len(addrs))
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil {
+				ips = append(ips, n.IP.String())
+			}
+		}
+		out = append(out, map[string]any{
+			"name":      in.Name,
+			"mac":       in.HardwareAddr.String(),
+			"up":        in.Flags&net.FlagUp != 0,
+			"multicast": in.Flags&net.FlagMulticast != 0,
+			"loopback":  in.Flags&net.FlagLoopback != 0,
+			"ipv4":      ips,
+		})
+	}
+	return out
 }

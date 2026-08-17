@@ -205,6 +205,10 @@ func (a *App) doAction(host string, port int, action string) error {
 //  2. Link local: 169.254/16
 //  3. Public IPs (unlikely)
 //
+// The same rule lives in internal/netutil/lanaddr.go for the agent side. The
+// desktop app is a separate module and cannot import it, so the two are kept
+// in step by hand: change one, change the other.
+//
 // Skip: 203.0.113/24 (Documentation TEST-NET-3, box USB gadget),
 // 127/8 loopback.
 func pickReachableIP(ips []string) string {

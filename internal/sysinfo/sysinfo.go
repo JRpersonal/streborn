@@ -6,6 +6,7 @@ package sysinfo
 import (
 	"errors"
 	"fmt"
+	"github.com/JRpersonal/streborn/internal/netutil"
 	"net"
 	"strings"
 )
@@ -89,7 +90,9 @@ func IPOf(name string) (string, error) {
 		if ip4 == nil {
 			continue
 		}
-		if ip4.IsLoopback() || ip4.IsLinkLocalUnicast() {
+		// Skip the USB gadget: reporting 203.0.113.1 as the speaker address
+		// would mislead every diagnosis made from the bundle afterwards.
+		if !netutil.UsableLANIPv4(ip4) {
 			continue
 		}
 		return ip4.String(), nil
