@@ -38,7 +38,11 @@
   --c-text: #eee;           /* primary text */
   --c-text-2: #ccc;         /* secondary text */
   --c-muted: #aaa;          /* muted / sublabels */
-  --c-faint: #777;          /* faint / hints */
+  /* #898989, not #777: hint text at 11px has to clear 4.5:1 against both the
+     page (#1a1a1a) and a card (#222), and #777 reached only 3.89 and 3.55.
+     Reported for the footer, but the token is used for hints throughout, so
+     the fix belongs here rather than on one selector. */
+  --c-faint: #898989;       /* faint / hints */
 }
 
 /* Light theme. Greyscale tokens flip to a light palette and the brand/
@@ -2134,8 +2138,12 @@ html.a11y-contrast .app-update-banner .footer-link { color: #ffe066; }
 /* ---------- Footer ---------- */
 .app-footer { margin-top: 14px; padding: 10px 16px; border-top: 1px solid var(--c-surface-2); display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--c-faint); flex-wrap: wrap; gap: 6px; }
 .footer-left b { color: var(--c-muted); font-weight: 500; }
-.footer-fine { color: var(--c-border-2); font-size: 10px; margin-top: 2px; }
-.footer-left .build-stamp { color: var(--c-border-2); }
+/* These two used a BORDER colour as a text colour, which is what made them
+   unreadable: border tokens are picked to sit quietly against a background,
+   not to be read. At 10px on the page that measured 2.33:1 in the dark theme
+   and 2.04:1 in the light one, against a 4.5:1 minimum (discussion #597). */
+.footer-fine { color: var(--c-faint); font-size: 10px; margin-top: 2px; }
+.footer-left .build-stamp { color: var(--c-faint); }
 .footer-right a { color: var(--c-muted); text-decoration: none; cursor: pointer; }
 .footer-right a:hover { color: var(--brand); text-decoration: underline; }
 
