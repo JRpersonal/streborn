@@ -43,6 +43,9 @@
      Reported for the footer, but the token is used for hints throughout, so
      the fix belongs here rather than on one selector. */
   --c-faint: #898989;       /* faint / hints */
+  --c-pill-alpha: #ef9a9a;   /* stage pills, see .alpha-pill */
+  --c-pill-planned: #b0bec5;
+  --c-pill-beta: #ffb74d;
 }
 
 /* Light theme. Greyscale tokens flip to a light palette and the brand/
@@ -50,6 +53,11 @@
    color-scheme:light makes native <select>/scrollbars render light too. */
 html.a11y-light {
   color-scheme: light;
+  /* Darkened so the pills stay readable on white: the dark theme values
+     measured about 2 to 1 here. */
+  --c-pill-alpha: #a01b12;
+  --c-pill-planned: #41545c;
+  --c-pill-beta: #8a4b00;
   --c-bg: #ffffff;
   --c-surface: #f5f5f6;
   --c-surface-2: #ececee;
@@ -771,7 +779,7 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   padding: 1px 5px;
   border-radius: 6px;
   background: rgba(255, 165, 0, 0.18);
-  color: #ffb74d;
+  color: var(--c-pill-beta);
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
@@ -780,15 +788,18 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
 }
 /* Alpha pill: same shape, redder accent to signal that this is more
  * experimental than BETA and may not work at all yet. */
+/* The stage pills carried colours chosen against a dark page and never
+   adjusted, so on white they measured about 2 to 1 (#630). Each now has a
+   token, darkened for the light theme further down. */
 .alpha-pill {
   background: rgba(244, 67, 54, 0.22);
-  color: #ef9a9a;
+  color: var(--c-pill-alpha);
 }
 /* Planned pill: muted blue/grey to signal "not built yet, gathering
  * feedback" — distinct from BETA (works, rough) and ALPHA (experimental). */
 .planned-pill {
   background: rgba(120, 144, 156, 0.20);
-  color: #b0bec5;
+  color: var(--c-pill-planned);
 }
 
 /* ---------- Podcasts placeholder (feedback page) ---------- */
@@ -1752,8 +1763,10 @@ html.a11y-contrast .btn-warning:disabled {
 .rc-tracks { border-top: 1px solid var(--c-surface-2); padding: 4px 12px 8px 64px; }
 .rc-track { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 13px; padding: 3px 0; }
 .rc-tr-main { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.rc-tr-lead { color: #e8e8e8; }
-.rc-tr-sub { color: #8a8a8a; margin-left: 8px; }
+/* The artist line was near white, which is invisible on a light card
+   (#632). Both of these now follow the theme. */
+.rc-tr-lead { color: var(--c-text); }
+.rc-tr-sub { color: var(--c-muted); margin-left: 8px; }
 .rc-tr-time { color: var(--c-muted); flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .recent-card.rc-now { border-color: var(--signal-green); box-shadow: 0 0 12px rgba(102, 204, 102, 0.25); }
 .rc-now-badge { color: var(--signal-green); font-size: 11px; font-weight: 600; white-space: nowrap; margin-left: 6px; }
@@ -2166,7 +2179,9 @@ html.a11y-contrast .app-update-banner .footer-link { color: #ffe066; }
   user-select: none;
   list-style: revert;
 }
-.settings-group > summary.settings-group-summary:hover { color: #fff; }
+/* Not #fff: on a light background that is white on white, and the label
+   vanished under the pointer (#631). */
+.settings-group > summary.settings-group-summary:hover { color: var(--c-text); }
 .settings-group[open] > summary.settings-group-summary { border-bottom: 1px solid #2c2c2c; margin-bottom: 8px; }
 .settings-group > .settings-section,
 .settings-group > .settings-expert { margin: 8px; }
