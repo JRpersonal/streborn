@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -28,6 +29,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/dnsboot"
 	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/marge"
+	"github.com/JRpersonal/streborn/internal/mdnshost"
 	"github.com/JRpersonal/streborn/internal/mediaservers"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
@@ -564,6 +566,28 @@ func run() error {
 	// kernel + NEON as the Portable where Spotify works).
 	syscheck.Run(logger, goLibrespotPath)
 	spotifyMgr := spotify.New(goLibrespotPath, "/mnt/nv/streborn/sp-cache", "ST Reborn", spotifyBox, logger.With("comp", "spotify"))
+
+	// Answer for this speaker's own mDNS name BEFORE the engine is told to
+	// advertise it. The order is the safety property, not a detail: the engine
+	// names the box's Linux hostname today, which is the Bose chassis codename,
+	// and nothing on the network answers a query for it. Pointing the engine at
+	// a new name that is equally unanswered would be a step backwards, because
+	// the codename at least still sits in some routers' caches. So the name is
+	// only handed over once it means something, and a responder that cannot
+	// start leaves everything exactly as it is today.
+	if label := mdnshost.LabelFor(deviceID); label != "" {
+		if ip := routableIPv4(); ip != nil {
+			if resp, err := mdnshost.Start(context.Background(), logger.With("comp", "mdnshost"), label, ip); err != nil {
+				logger.Warn("mdns host: not answering for this speaker's own name, leaving the engine on the chassis name",
+					"err", err, "label", label)
+			} else {
+				spotifyMgr.SetZeroconfHost(resp.Label())
+				defer func() { _ = resp.Close() }()
+			}
+		} else {
+			logger.Warn("mdns host: no routable address yet, leaving the engine on the chassis name", "label", label)
+		}
+	}
 	// Mirror a Spotify Connect volume change onto the whole multiroom group:
 	// go-librespot runs only on the master, so feed it the current followers'
 	// IPs. LIVE-verified on every use: zones.json deliberately outlives the
@@ -1319,4 +1343,38 @@ func run() error {
 
 	logger.Info("streborn exited")
 	return firstErr
+}
+
+// routableIPv4 returns the address this speaker is reachable on, which is the
+// address its own mDNS name has to resolve to. Chosen by walking the interfaces
+// rather than by asking the kernel for a route, because a SoundTouch 30 keeps
+// an ethernet port that is up and disconnected while it runs on Wi-Fi, and that
+// port is exactly the wrong answer.
+func routableIPv4() net.IP {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	for i := range ifaces {
+		in := &ifaces[i]
+		if in.Flags&net.FlagUp == 0 || in.Flags&net.FlagLoopback != 0 || in.Flags&net.FlagMulticast == 0 {
+			continue
+		}
+		addrs, err := in.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipnet.IP.To4()
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			return ip
+		}
+	}
+	return nil
 }

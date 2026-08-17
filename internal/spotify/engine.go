@@ -341,6 +341,21 @@ func (m *Manager) runOnce(ctx context.Context) error {
 	m.mu.Unlock()
 	cmd := exec.CommandContext(runCtx, m.binPath, "--config_dir", m.configDir)
 	cmd.Env = append(os.Environ(), "HOME="+m.configDir)
+	// Point the engine's Spotify Connect advert at a name this speaker actually
+	// answers for. Without it the advert names the box's Linux hostname, which
+	// on this hardware is the Bose chassis codename (mojo, rhino, taigan): a
+	// name no responder on the network answers, and one that three SoundTouch
+	// 10s on the same network all claim at once.
+	//
+	// This is only ever set once the agent's own responder is up and answering
+	// for the label, so the worst case is exactly the behaviour without it. The
+	// value is the bare label on purpose: the engine's mDNS library appends the
+	// domain itself, and handing it "name.local" yields "name.local.local".
+	if host := m.zeroconfHost(); host != "" {
+		cmd.Env = append(cmd.Env, "PULSAR_ZEROCONF_HOST="+host)
+		m.logger.Info("spotify: the engine will advertise a name this speaker answers for",
+			"host", host+".local")
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

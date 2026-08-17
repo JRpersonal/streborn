@@ -139,6 +139,10 @@ type Manager struct {
 	// 2026-08-16 16:58, both times reported as something else).
 	lastCtxResolveFailAt time.Time
 
+	// zeroconfLabel is the bare mDNS label the engine advertises as its SRV
+	// target, empty until the agent's own responder is answering for it.
+	zeroconfLabel string
+
 	// Spotify refusing the audio key for track after track. The engine logs one
 	// warning per track and gives up after a run of them, which from the sofa
 	// looks like a playlist racing past without a note ever playing, with
@@ -310,4 +314,25 @@ func New(binPath, configDir, fallbackName string, box *boxapi.Client, logger *sl
 		m.hdrPersisted = true
 	}
 	return m
+}
+
+// SetZeroconfHost gives the engine the bare mDNS label this speaker answers
+// for. The caller must only supply it once its own responder is live: an engine
+// pointed at a name nobody answers is worse off than one pointed at the chassis
+// codename, because at least the codename is sometimes still in a router's
+// cache.
+//
+// Takes effect at the next engine start. Nothing here restarts it: the engine
+// is started once at boot, and forcing an extra restart to apply a name would
+// cost audio for a cosmetic-looking reason.
+func (m *Manager) SetZeroconfHost(label string) {
+	m.mu.Lock()
+	m.zeroconfLabel = label
+	m.mu.Unlock()
+}
+
+func (m *Manager) zeroconfHost() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.zeroconfLabel
 }

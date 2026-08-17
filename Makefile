@@ -25,6 +25,11 @@ BIN_DIR     := bin
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BUILD_STAMP ?= $(shell date '+%Y-%m-%d-%H%M')
 LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.buildStamp=$(BUILD_STAMP)
+# Do not try to keep symbols in the desktop app by removing -s -w here: Wails
+# appends its own "-w -s" after ours whenever it builds in production mode
+# (wails v2.13.0 pkg/commands/build/base.go:255), so the flags come back and the
+# binary is byte for byte identical. Measured 2026-08-17 while looking for ways
+# to reduce antivirus false positives on the Windows build.
 APP_LDFLAGS := -s -w -X main.appVersion=$(VERSION) -X main.appBuild=$(BUILD_STAMP)
 GO          ?= go
 
