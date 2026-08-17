@@ -75,6 +75,29 @@ const libState = {
 const LIB_PAGE = 200;
 const LIB_MAX = 2500;
 
+// The media server the user last browsed. Stored in the app rather than on a
+// speaker: it is a preference of this person at this computer, and the
+// speakers are shared.
+const LIB_SERVER_KEY = 'str.library.lastServerUDN';
+
+function rememberedServerUDN() {
+  try {
+    return localStorage.getItem(LIB_SERVER_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function rememberServerUDN(udn) {
+  if (!udn) return;
+  try {
+    localStorage.setItem(LIB_SERVER_KEY, udn);
+  } catch {
+    // A blocked storage is not worth an error: the user simply gets the
+    // list again next time, which is exactly today's behaviour.
+  }
+}
+
 export async function openLibrary() {
   renderLibrary();
   if (libState.servers.length === 0) {
@@ -90,9 +113,22 @@ async function loadMediaServers() {
   try {
     const list = await ListMediaServers(3);
     libState.servers = list || [];
-    if (libState.servers.length === 1) {
-      libState.currentUDN = libState.servers[0].udn;
-      libState.stack = [{ id: '0', title: libState.servers[0].friendlyName || '' }];
+    // Open the server the user actually uses, rather than always asking.
+    // Reported by a user whose router offers a media server he never plays
+    // from: with two on the network he had to pick the right one every single
+    // time, although the answer had been the same for months (#629).
+    //
+    // Remembering the last choice rather than offering a hide list: it needs
+    // nothing set up, it is right from the second visit, and a server that
+    // disappears simply falls back to the list instead of leaving a stale
+    // exclusion behind that nobody remembers making.
+    const preferred = rememberedServerUDN();
+    const auto = libState.servers.length === 1
+      ? libState.servers[0]
+      : libState.servers.find(s => s.udn === preferred);
+    if (auto) {
+      libState.currentUDN = auto.udn;
+      libState.stack = [{ id: '0', title: auto.friendlyName || '' }];
       await libraryBrowseCurrent();
       return;
     }
@@ -120,6 +156,7 @@ async function libraryAddManualServer(value, btn) {
     const i = libState.servers.findIndex(s => s.udn === srv.udn);
     if (i >= 0) libState.servers[i] = srv; else libState.servers.push(srv);
     libState.currentUDN = srv.udn;
+    rememberServerUDN(srv.udn);
     libState.stack = [{ id: '0', title: srv.friendlyName || '' }];
     await libraryBrowseCurrent();
   } catch (e) {
@@ -190,6 +227,7 @@ async function libraryPickServer(udn) {
   const srv = libState.servers.find(s => s.udn === udn);
   if (!srv) return;
   libState.currentUDN = udn;
+  rememberServerUDN(udn);
   libState.stack = [{ id: '0', title: srv.friendlyName || '' }];
   await libraryBrowseCurrent();
 }
