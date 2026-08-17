@@ -618,6 +618,12 @@ func New(addr string, logger *slog.Logger, opts ...Option) *Server {
 // bundle shows which step the agent reached. Without these markers an
 // agent that bound :8090 but silently failed :8888 looked identical
 // in the bundle to one that crashed mid-init.
+const (
+	// See the construction inside Run for why these two and no others.
+	agentReadHeaderTimeout = 10 * time.Second
+	agentIdleTimeout       = 120 * time.Second
+)
+
 func (s *Server) Run(ctx context.Context) error {
 	s.logger.Warn("webui phase: Run entered", "addr", s.addr)
 	s.baseCtx = ctx
@@ -745,7 +751,30 @@ func (s *Server) Run(ctx context.Context) error {
 		mux.HandleFunc("/api/spotify/credential", s.handleSpotifyCredential)
 	}
 
-	srv := &http.Server{Addr: s.addr, Handler: corsMiddleware(mux)}
+	// Bound the two phases a peer can stall in, and only those two (#434).
+	//
+	// Without a header timeout, a peer that accepts the connection and then
+	// says nothing holds a handler goroutine for as long as it likes. On a
+	// whitelisted chassis the firmware REDIRECT can leave exactly that kind of
+	// half open connection behind, and the symptom is nasty: the port still
+	// accepts, so the speaker looks reachable, while nothing is served, the
+	// hardware keys stop working, and no diagnostic can be captured because
+	// capturing one needs this very server. The marge servers have had a
+	// header timeout since they were written; this one never did.
+	//
+	// ReadTimeout and WriteTimeout are deliberately NOT set. This server also
+	// carries the radio stream proxy and the Spotify audio passthrough, which
+	// are meant to run for hours, and it receives the agent and engine uploads,
+	// which are 13 and 16 MB over a speaker Wi-Fi link. Either timeout would
+	// cut the music or fail an update, so the fix is limited to the phases that
+	// are genuinely bounded: reading the request head, and sitting idle between
+	// keep alive requests.
+	srv := &http.Server{
+		Addr:              s.addr,
+		Handler:           corsMiddleware(mux),
+		ReadHeaderTimeout: agentReadHeaderTimeout,
+		IdleTimeout:       agentIdleTimeout,
+	}
 	s.logger.Warn("webui phase: mux ready, calling ListenTCP", "addr", s.addr)
 	// SO_REUSEADDR so the agent can rebind after a watchdog respawn
 	// while the previous listener is still in TIME_WAIT.
