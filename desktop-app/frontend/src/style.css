@@ -283,7 +283,12 @@ body {
    of leaving the same pixels to hold larger words. */
 @media (min-width: 62em) {
   .donate-side { display: flex; }
-  .layout { padding-left: 11.5rem; }
+  /* BOTH sides, not just the left. Reserving only the rail side pushed the
+     centred column half a rail to the right, and the window stopped looking
+     centred, which is how this was reported. Reserving the same width on
+     both keeps the column optically in the middle of the window AND clear of
+     the rail, which is what the two fixes were each trying to do alone. */
+  .layout { padding-left: 11.5rem; padding-right: 11.5rem; }
 }
 
 /* Share modal: one tile per platform. Each tile opens the browser share on this
