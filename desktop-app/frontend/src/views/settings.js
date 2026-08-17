@@ -1182,6 +1182,18 @@ function renderBoxSettings(s, box) {
       const data = await PhoneQR(url);
       const img = $('phoneQrImg');
       if (img && data) img.src = data;
+      // Tapping the code opens the instructions underneath. People point a
+      // phone at it first and look for the next step second, and the summary
+      // line was the only way in.
+      if (img) {
+        img.style.cursor = 'pointer';
+        img.onclick = () => {
+          const how = $('phoneHowto');
+          if (!how) return;
+          how.open = true;
+          how.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        };
+      }
     } catch (e) { try { console.warn('phone QR failed', e); } catch {} }
     // The home-screen sketches show the icon the phone will actually end up
     // with: the agent serves it at /icon.png, the same file the manifest points
@@ -2646,6 +2658,17 @@ function phoneHomeScreenBlock() {
               ${step('settingsView.phoneIos4')}
             </ol>
             <p class="phone-path-note">${t('settingsView.phoneIosNote')}</p>
+            <figure class="phone-shot">
+              <div class="hs hs-ios">
+                <div class="hs-time">9:41</div>
+                <div class="hs-grid">
+                ${dummy('')}${dummy('')}${dummy('')}
+                  <span class="hs-app hs-ring"><img class="hs-ico hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
+                </div>
+                <div class="hs-dock">${dummy('')}${dummy('')}${dummy('')}${dummy('')}</div>
+              </div>
+              <figcaption>${escapeHtml(t('settingsView.phoneShotIos'))}</figcaption>
+            </figure>
           </div>
           <div class="phone-path phone-path-and">
             <div class="phone-path-head">
@@ -2659,32 +2682,19 @@ function phoneHomeScreenBlock() {
               ${step('settingsView.phoneAndroid4')}
             </ol>
             <p class="phone-path-note">${t('settingsView.phoneAndroidNote')}</p>
-          </div>
-        </div>
-        <div class="phone-shots">
-          <figure class="phone-shot">
-            <div class="hs hs-ios">
-              <div class="hs-time">9:41</div>
-              <div class="hs-grid">
-                ${dummy('')}${dummy('')}${dummy('')}
-                <span class="hs-app hs-ring"><img class="hs-ico hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
-              </div>
-              <div class="hs-dock">${dummy('')}${dummy('')}${dummy('')}${dummy('')}</div>
-            </div>
-            <figcaption>${escapeHtml(t('settingsView.phoneShotIos'))}</figcaption>
-          </figure>
-          <figure class="phone-shot">
-            <div class="hs hs-and">
-              <div class="hs-time">9:41</div>
-              <div class="hs-grid">
+            <figure class="phone-shot">
+              <div class="hs hs-and">
+                <div class="hs-time">9:41</div>
+                <div class="hs-grid">
                 ${dummy('rnd')}${dummy('rnd')}
-                <span class="hs-app hs-ring rnd"><img class="hs-ico rnd hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
+                  <span class="hs-app hs-ring rnd"><img class="hs-ico rnd hs-real" data-role="phoneShotIcon" alt="" /><span class="hs-name">ST Reborn</span></span>
                 ${dummy('rnd')}
+                </div>
+                <div class="hs-pill"></div>
               </div>
-              <div class="hs-pill"></div>
-            </div>
-            <figcaption>${escapeHtml(t('settingsView.phoneShotAndroid'))}</figcaption>
-          </figure>
+              <figcaption>${escapeHtml(t('settingsView.phoneShotAndroid'))}</figcaption>
+            </figure>
+          </div>
         </div>
       </div>
     </details>`;
