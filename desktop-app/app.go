@@ -215,19 +215,25 @@ func (a *App) fitWindowToScreen() {
 			break
 		}
 	}
-	if screen.Width <= 0 || screen.Height <= 0 {
+	// Size is the screen in LOGICAL pixels, which is the same space the window
+	// is measured in. The older Width and Height fields are physical pixels on
+	// Windows, so on a scaled display they described a screen larger than the
+	// one the window lives on and the shrink below almost never triggered.
+	// Falling back to them keeps this working if Size ever comes back empty.
+	screenW, screenH := screen.Size.Width, screen.Size.Height
+	if screenW <= 0 || screenH <= 0 {
+		screenW, screenH = screen.Width, screen.Height //nolint:staticcheck // documented fallback
+	}
+	if screenW <= 0 || screenH <= 0 {
 		return
 	}
 	w, h := runtime.WindowGetSize(a.ctx)
-	// Leave room for the taskbar and the window frame. ScreenGetAll reports
-	// the full screen rather than the work area, and on Windows it reports
-	// PHYSICAL pixels while the window is sized in device-independent ones,
-	// so on a scaled display this comparison is generous and the shrink
-	// rarely triggers. The pinning below is what actually saves the window
-	// there, which is why the opening height is kept modest as well.
+	// Leave room for the taskbar and the window frame. ScreenGetAll reports the
+	// full screen rather than the work area, so this is deliberately generous;
+	// the pinning below is what keeps the title bar reachable.
 	const chrome = 80
-	maxH := screen.Height - chrome
-	maxW := screen.Width
+	maxH := screenH - chrome
+	maxW := screenW
 	newW, newH := w, h
 	if newH > maxH {
 		newH = maxH
@@ -238,7 +244,7 @@ func (a *App) fitWindowToScreen() {
 	if newW != w || newH != h {
 		runtime.WindowSetSize(a.ctx, newW, newH)
 		a.logger.Info("window shrunk to fit the screen",
-			"screenW", screen.Width, "screenH", screen.Height,
+			"screenW", screenW, "screenH", screenH,
 			"fromW", w, "fromH", h, "toW", newW, "toH", newH)
 	}
 	x, _ := runtime.WindowGetPosition(a.ctx)
