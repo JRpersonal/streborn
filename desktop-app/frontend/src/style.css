@@ -2230,12 +2230,28 @@ html.a11y-contrast .app-update-banner .footer-link { color: #ffe066; }
 /* Home-screen sketches. Deliberately small and flat: they exist to show that
    the icon lands among ordinary apps, not to imitate a phone. */
 .phone-shots { display: flex; gap: 12px; flex-wrap: wrap; }
-.phone-shot { margin: 0; width: 160px; display: flex; flex-direction: column; gap: 6px; }
+.phone-shot { margin: 10px 0 0; width: 132px; display: flex; flex-direction: column; gap: 6px; }
 .phone-shot figcaption { font-size: 11px; color: var(--c-muted); line-height: 1.35; }
+/* The sketch should read as a phone at a glance, not as a coloured box: a tall
+   portrait shape, a dark bezel around a rounded screen, and the one detail
+   each platform is known by, a notch on the iPhone and a punch hole on the
+   Android. Everything here is drawn in CSS, so it costs no image and follows
+   the theme. */
 .hs {
-  border-radius: 16px; padding: 10px 9px 9px; min-height: 150px;
+  position: relative;
+  aspect-ratio: 9 / 17;
+  border-radius: 20px; padding: 16px 10px 10px; min-height: 190px;
   display: flex; flex-direction: column; gap: 10px;
-  border: 1px solid rgba(255, 255, 255, .12);
+  border: 3px solid #0d0d0f;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .16), 0 4px 10px rgba(0, 0, 0, .35);
+}
+/* The notch, and the punch hole for the other one. */
+.hs::before {
+  content: ""; position: absolute; top: 3px; left: 50%; transform: translateX(-50%);
+  width: 42%; height: 9px; background: #0d0d0f; border-radius: 0 0 8px 8px;
+}
+.hs-and::before {
+  width: 7px; height: 7px; top: 5px; border-radius: 50%;
 }
 .hs-ios { background: linear-gradient(165deg, #5b6b8c, #2d3550 62%, #1d2236); }
 .hs-and { background: linear-gradient(165deg, #3f5a4b, #233528 60%, #18241b); }

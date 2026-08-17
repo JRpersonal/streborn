@@ -151,18 +151,44 @@ function isRoutableHost(h) {
 // before the pickReachableIP filter existed; without filtering here
 // the bad entry survives every relaunch and breaks the volume slider
 // and preset playback until the next successful discovery overwrite.
+// A speaker's momentary CONDITION is not part of its identity and must not
+// survive in the cache. Reported by a user whose speaker had refused every
+// station days earlier: the warning was still on screen after the fault was
+// fixed, after the speaker was restarted, and after the app was restarted,
+// because it was being read back out of this cache on every launch. His
+// speaker reported boxHealth ok and no refusal at all; the state lived on his
+// PC, which is why restarting the speaker could never help.
+//
+// The cache exists so the speaker list appears instantly instead of after four
+// seconds of mDNS. Names, addresses and models are worth keeping for that.
+// Anything that says how a speaker is doing RIGHT NOW is not, and discovery
+// fills it in a moment later anyway.
+const TRANSIENT_BOX_FIELDS = ['storm1036', 'storm1036SinceSec', 'recallRefusal',
+  'recallRefusalSinceSec', 'boxHealth', 'conflictingMod', 'updateAvailable',
+  'noWifi', 'wedged'];
+
+function withoutTransientState(b) {
+  const out = { ...b };
+  for (const k of TRANSIENT_BOX_FIELDS) delete out[k];
+  return out;
+}
+
 export function loadCachedBoxes() {
   try {
     const raw = localStorage.getItem('cachedBoxes');
     if (!raw) return [];
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
-    return arr.filter(b => b && isRoutableHost(b.host));
+    return arr.filter(b => b && isRoutableHost(b.host)).map(withoutTransientState);
   } catch { return []; }
 }
 export function saveCachedBoxes(list) {
   try {
-    const clean = (list || []).filter(b => b && isRoutableHost(b.host));
+    // Stripped on the way in as well, so a cache written by this version
+    // cannot carry a condition forward even if the reader ever changes.
+    const clean = (list || [])
+      .filter(b => b && isRoutableHost(b.host))
+      .map(withoutTransientState);
     localStorage.setItem('cachedBoxes', JSON.stringify(clean));
   } catch {}
 }
