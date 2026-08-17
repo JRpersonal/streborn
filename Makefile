@@ -52,7 +52,7 @@ WINFORMAT_OUT := sticksetup/embedded/winformat.exe
 AGENT_EMBED_OUT := desktop-app/agentbin/streborn-armv7l
 
 .PHONY: all build build-arm build-arm64 build-all \
-        winformat-embed agent-embed wails-dev wails-build \
+        winformat-embed agent-embed winres wails-dev wails-build \
         test vet tidy clean
 
 all: build
@@ -111,13 +111,27 @@ wails-dev: winformat-embed agent-embed
 		-ldflags "$(APP_LDFLAGS)" \
 		-reloaddirs ".."
 
+# Generate the Windows resource ourselves: icon, manifest AND the version
+# block. Wails writes the first two and silently skips the third, which left
+# every released Windows binary with no publisher, product name or version at
+# all. That is what the first-run warning shows, and it is one of the things an
+# antivirus heuristic weighs. The Go linker refuses two resource sections, so
+# this replaces the Wails one and the build below passes -nopackage. Windows
+# only: on macOS packaging is what builds the .app bundle.
+winres:
+	cd desktop-app && $(GO) run ./cmd/winresgen \
+		-out rsrc_windows_amd64.syso \
+		-version "$(VERSION)" \
+		-comments "SoundTouch Reborn. Unofficial, not affiliated with or endorsed by Bose."
+
 # Production-style local build. Embed slots populated, version
 # stamps wired in. Outputs to desktop-app/build/bin/.
-wails-build: winformat-embed agent-embed
+wails-build: winformat-embed agent-embed winres
 	cd desktop-app && wails build \
 		-ldflags "$(APP_LDFLAGS)" \
 		-trimpath \
-		-clean
+		-clean \
+		-nopackage
 
 # Regenerate the supplemental root certificates the agent embeds, from the
 # tracked Mozilla bundle. The pinned list lives in the script, so every change

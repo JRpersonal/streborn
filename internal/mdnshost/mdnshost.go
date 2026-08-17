@@ -98,6 +98,17 @@ type Responder struct {
 
 	mu sync.RWMutex
 	ip net.IP
+
+	// Counters, exposed in the diagnostic bundle. They exist for one open
+	// question: a SoundTouch 30 here announces its Spotify entry so rarely that
+	// four browses in a row find nothing, while its engine runs, is logged in
+	// and answers on its own port. Either the questions never reach that box or
+	// its answers never leave it, and no amount of reasoning tells the two
+	// apart. This responder sits on the same socket and can say which.
+	seenQueries   int64 // mDNS questions of any kind that reached us
+	ownQueries    int64 // questions about our name
+	answersSent   int64
+	announcements int64
 }
 
 // Start brings the responder up. It returns an error rather than a disabled
@@ -205,6 +216,9 @@ func (r *Responder) serve() {
 		if msg.Response {
 			continue
 		}
+		r.mu.Lock()
+		r.seenQueries += int64(len(msg.Question))
+		r.mu.Unlock()
 		r.handle(&msg, src)
 	}
 }
@@ -231,6 +245,10 @@ func (r *Responder) handle(msg *dns.Msg, src *net.UDPAddr) {
 	if len(answers) == 0 {
 		return
 	}
+	r.mu.Lock()
+	r.ownQueries += int64(len(answers))
+	r.answersSent++
+	r.mu.Unlock()
 	resp := new(dns.Msg)
 	resp.SetReply(msg)
 	resp.Question = nil
@@ -301,6 +319,27 @@ func (r *Responder) sendAnnouncement() {
 		return
 	}
 	_, _ = r.conn.WriteToUDP(packed, &net.UDPAddr{IP: net.ParseIP(mdnsAddr), Port: mdnsPort})
+	r.mu.Lock()
+	r.announcements++
+	r.mu.Unlock()
+}
+
+// Stats reports what this responder has seen, for the diagnostic bundle. The
+// telling number is seenQueries: a speaker whose adverts never show up while
+// this counter climbs is being asked and failing to be heard, and one where it
+// stays at zero is never being asked in the first place. Those are different
+// faults with different fixes.
+func (r *Responder) Stats() map[string]any {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return map[string]any{
+		"name":             r.fqdn,
+		"address":          r.ip.String(),
+		"queriesSeen":      r.seenQueries,
+		"queriesForUs":     r.ownQueries,
+		"answersSent":      r.answersSent,
+		"announcementsOut": r.announcements,
+	}
 }
 
 // ifaceFor finds the interface carrying the given address, so the multicast

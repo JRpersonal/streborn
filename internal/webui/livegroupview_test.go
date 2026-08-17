@@ -424,3 +424,53 @@ func TestASpeakerMissingFromTheLeadersListIsAddedNotDropped(t *testing.T) {
 		t.Errorf("want exactly one row for this speaker, got %d", selfRows)
 	}
 }
+
+// leaderZone answers the same question as liveGroupView, for the phone. Until
+// today it did so with none of the checks, so one speaker could produce two
+// different groups depending on which surface asked.
+func TestLeaderZoneRefusesAGroupThatNamesADifferentLeader(t *testing.T) {
+	// The leader we were told to follow now leads somebody else's group.
+	withSpeakers(t,
+		map[string]boxapi.Zone{
+			livingHost: {Master: leaderID, SenderIP: leaderIP},
+			leaderIP:   {Master: strangerID, Members: []boxapi.ZoneMember{{DeviceID: bathID, IP: "192.168.178.48"}}},
+		},
+		map[string]string{livingHost: livingID, leaderIP: strangerID})
+
+	s := quietServer(livingHost)
+	if _, ok := s.leaderZone(context.Background(), boxapi.Zone{Master: leaderID, SenderIP: leaderIP}); ok {
+		t.Error("a member list from a group with a different leader was adopted")
+	}
+}
+
+// A leader that does not list us must not collapse the group: our own firmware
+// is what named that leader. Repeats in the list must not become extra rows.
+func TestLeaderZoneAddsThisSpeakerWhenTheLeaderOmitsIt(t *testing.T) {
+	withSpeakers(t,
+		map[string]boxapi.Zone{
+			livingHost: {Master: leaderID, SenderIP: leaderIP},
+			leaderIP: {Master: leaderID, Members: []boxapi.ZoneMember{
+				{DeviceID: bathID, IP: "192.168.178.48"},
+				{DeviceID: bathID, IP: "192.168.178.48"},
+			}},
+		},
+		map[string]string{livingHost: livingID, leaderIP: leaderID})
+
+	members, ok := quietServer(livingHost).leaderZone(context.Background(),
+		boxapi.Zone{Master: leaderID, SenderIP: leaderIP})
+	if !ok {
+		t.Fatal("the group was dropped although the leader agreed about who leads")
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected the other member plus this speaker, got %d: %+v", len(members), members)
+	}
+	var self bool
+	for _, m := range members {
+		if m.DeviceID == livingID {
+			self = true
+		}
+	}
+	if !self {
+		t.Errorf("this speaker is missing from its own group: %+v", members)
+	}
+}

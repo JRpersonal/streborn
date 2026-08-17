@@ -514,6 +514,25 @@ jobs:
         run: |
           go test -tags=release_assert -run TestWinformatEmbedIsNonEmptyInReleaseBuild ./sticksetup/...
 
+      # The Windows binary carried no version information at all: reading its
+      # resources showed an icon and a manifest and no version block, so Explorer
+      # and the first-run warning had no publisher or product name to show, and an
+      # antivirus heuristic sees an executable that says nothing about itself.
+      # Wails is meant to write it from build/windows/info.json and silently does
+      # not. So STR writes the whole resource, and the build below passes
+      # -nopackage because the Go linker refuses a second resource section.
+      - name: Generate the Windows resource (icon, manifest, version)
+        working-directory: desktop-app
+        env:
+          VERSION: ${{ needs.build-agent.outputs.version }}
+        shell: bash
+        run: |
+          go run ./cmd/winresgen \
+            -out rsrc_windows_amd64.syso \
+            -version "${VERSION}" \
+            -comments "SoundTouch Reborn. Unofficial, not affiliated with or endorsed by Bose."
+          ls -l rsrc_windows_amd64.syso
+
       - name: Build Windows desktop app
         working-directory: desktop-app
         env:
@@ -525,7 +544,8 @@ jobs:
             -platform windows/amd64 \
             -ldflags "-s -w -X main.appVersion=${VERSION} -X main.appBuild=${BUILD_STAMP}" \
             -trimpath \
-            -clean
+            -clean \
+            -nopackage
 
       - name: Rename and hash output
         shell: bash

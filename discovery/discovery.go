@@ -103,6 +103,15 @@ type Config struct {
 	// indicators can detect stamp drift between two binaries that
 	// happen to share the same git-describe version string.
 	Build string
+	// HostName is the bare mDNS label this speaker answers for, e.g.
+	// "str-f9eca2". Empty means the library falls back to the box's Linux
+	// hostname, which on SoundTouch hardware is the Bose chassis codename and
+	// is neither unique nor answered by anybody: three SoundTouch 10s on one
+	// network all announce themselves as rhino.local. Set this ONLY once
+	// something is actually answering address queries for the label, because a
+	// name nobody answers is worse than the codename, which at least still
+	// sits in some routers' caches.
+	HostName string
 }
 
 // Announce starts an mDNS server that announces the stick. Stop with
@@ -139,7 +148,19 @@ func (a *Announcer) register() error {
 	}
 	ifaces := pickAnnounceIfaces(a.logger)
 
-	server, err := zeroconf.Register(a.cfg.InstanceName, ServiceType, Domain, a.cfg.Port, txt, ifaces)
+	// register the service under a name that resolves. See Config.HostName:
+	// with an empty HostName this is the plain Register the library has always
+	// done, so a speaker that cannot answer for a name of its own keeps exactly
+	// today's behaviour.
+	reg := func(service string) (*zeroconf.Server, error) {
+		if a.cfg.HostName != "" {
+			return zeroconf.RegisterProxy(a.cfg.InstanceName, service, Domain, a.cfg.Port,
+				a.cfg.HostName, nil, txt, ifaces)
+		}
+		return zeroconf.Register(a.cfg.InstanceName, service, Domain, a.cfg.Port, txt, ifaces)
+	}
+
+	server, err := reg(ServiceType)
 	if err != nil {
 		return fmt.Errorf("mDNS register: %w", err)
 	}
@@ -147,7 +168,7 @@ func (a *Announcer) register() error {
 
 	// Legacy announce is best-effort: if it fails we keep the current
 	// one running rather than aborting the whole agent startup.
-	legacy, lerr := zeroconf.Register(a.cfg.InstanceName, LegacyServiceType, Domain, a.cfg.Port, txt, ifaces)
+	legacy, lerr := reg(LegacyServiceType)
 	if lerr != nil {
 		a.logger.Warn("legacy mDNS register failed, continuing with current only",
 			slog.String("legacy", LegacyServiceType), slog.Any("err", lerr))

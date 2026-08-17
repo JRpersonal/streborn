@@ -1617,7 +1617,54 @@ func (s *Server) leaderZone(ctx context.Context, z boxapi.Zone) ([]boxapi.ZoneMe
 	if err != nil || len(lz.Members) == 0 {
 		return nil, false
 	}
-	return lz.Members, true
+	// Both speakers have to name the same leader. senderIPAddress is whoever
+	// sent the last zone message, and after a group is handed over or torn down
+	// and rebuilt, that speaker is in a DIFFERENT group than the one this
+	// speaker still believes it is in. Adopting that list puts strangers on the
+	// page. liveGroupView has refused this since yesterday; this path answers
+	// the same question for the phone and did not, so the two could draw two
+	// different groups from one speaker.
+	if !strings.EqualFold(strings.TrimSpace(lz.Master), master) {
+		return nil, false
+	}
+	// The firmware promises nothing about repeats, and a speaker listed twice
+	// becomes two rows and two volume calls from one press of the group slider.
+	// The leader seeds both sets, because a leader that does list itself would
+	// otherwise contradict its own first row about who leads.
+	seenIP := map[string]bool{senderIP: true}
+	seenID := map[string]bool{strings.ToUpper(master): true}
+	out := make([]boxapi.ZoneMember, 0, len(lz.Members))
+	var selfSeen bool
+	for _, m := range lz.Members {
+		ip := strings.TrimSpace(m.IP)
+		id := strings.ToUpper(strings.TrimSpace(m.DeviceID))
+		if (ip != "" && seenIP[ip]) || (id != "" && seenID[id]) {
+			continue
+		}
+		if ip != "" {
+			seenIP[ip] = true
+		}
+		if id != "" {
+			seenID[id] = true
+		}
+		if strings.EqualFold(id, ownID) || ip == s.boxHost {
+			selfSeen = true
+		}
+		out = append(out, m)
+	}
+	// A leader that does not list us is not proof we left: our own firmware is
+	// what named that leader. Dropping the list here would collapse a five
+	// speaker group to nothing on the phone whenever a leader answers with an
+	// empty identifier for one member, which the two chip chassis have done.
+	if !selfSeen {
+		out = append(out, boxapi.ZoneMember{DeviceID: ownID, IP: s.boxHost})
+		s.logger.Info("zone: the leader did not list this speaker, adding it from its own report",
+			"master", master, "leaderIP", senderIP, "members", len(out))
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
 }
 
 // isPrivateHost reports whether host is a literal address on this machine's own

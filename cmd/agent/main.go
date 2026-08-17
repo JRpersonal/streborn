@@ -582,6 +582,20 @@ func run() error {
 					"err", err, "label", label)
 			} else {
 				spotifyMgr.SetZeroconfHost(resp.Label())
+				// The agent's own service gets the same treatment. Its entry
+				// names the chassis codename today just like the Spotify one
+				// did, so three SoundTouch 10s announce themselves under one
+				// name. It is less visible than the Spotify fault only because
+				// the desktop app takes the address out of the service answer
+				// instead of looking the name up.
+				mdnsHostLabel = resp.Label()
+				// Put the counters in the diagnostic bundle. The open question
+				// they answer: a SoundTouch 30 here is missing from four
+				// browses in a row while its engine runs and is logged in. If
+				// queriesSeen climbs on that box, the questions arrive and the
+				// answers are getting lost; if it stays at zero, the box is
+				// never being asked. Those are different faults.
+				webui.RegisterDebugSection("mdns_host", func() any { return resp.Stats() })
 				defer func() { _ = resp.Close() }()
 			}
 		} else {
@@ -1150,6 +1164,7 @@ func run() error {
 		ann, err := discovery.Announce(
 			logger.With("comp", "discovery"),
 			discovery.Config{
+				HostName:     mdnsHostLabel,
 				Port:         8888,
 				DeviceID:     deviceID,
 				FriendlyName: "Bose SoundTouch " + lastN(deviceID, 6),
@@ -1378,3 +1393,8 @@ func routableIPv4() net.IP {
 	}
 	return nil
 }
+
+// mdnsHostLabel is this speaker's own mDNS label, set only once the responder
+// for it is live. Empty means every announcement falls back to the box's Linux
+// hostname exactly as before, which is the safe half of this change.
+var mdnsHostLabel string
