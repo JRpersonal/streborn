@@ -234,25 +234,32 @@ wifi_failover_seed() {
         if wget -qO- -T 2 "http://127.0.0.1:8090/info" >/dev/null 2>&1; then break; fi
         sleep 3; _fs_w=$((_fs_w + 3))
     done
-    # Positive evidence gate: any sign of an existing profile -> hands off.
+    # Positive evidence gate, in two halves. Any sign of an existing profile in
+    # ANY store bails: NetManager's DB, the BCO AirplayConfiguration.xml (a
+    # Wi-Fi-provisioned taigan/BCO box keeps its ONLY profile there while TAP
+    # still answers an empty <WiFiProfiles />, so skipping this check would
+    # have re-programmed a live association), and the TAP runtime view. Then
+    # the box must ADDITIONALLY say wifiProfileCount="0" itself - an explicit
+    # zero, not silence - before anything is written. Unreadable = hands off.
     _profile_xml="/mnt/nv/BoseApp-Persistence/1/NetworkProfiles.xml"
     if [ -s "$_profile_xml" ] && grep -q "<profile " "$_profile_xml" 2>/dev/null; then
         return 0
     fi
-    _fs_empty=""; _fs_src=""
+    _airplay_xml="/mnt/nv/BoseApp-Persistence/1/AirplayConfiguration.xml"
+    if [ -s "$_airplay_xml" ] && grep -q 'PersistentWifiProfile' "$_airplay_xml" 2>/dev/null \
+        && grep -q 'ssid="[^"]' "$_airplay_xml" 2>/dev/null; then
+        return 0
+    fi
     _fs_tap=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ')
     case "$_fs_tap" in
         *"<profile "*|*"<profile>"*) return 0 ;;
-        *WiFiProfiles*) _fs_empty=1; _fs_src="tap" ;;
     esac
-    if [ -z "$_fs_empty" ]; then
-        _fs_ni=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | head -c 400)
-        case "$_fs_ni" in
-            *'wifiProfileCount="0"'*) _fs_empty=1; _fs_src="http" ;;
-            *'wifiProfileCount="'*) return 0 ;;
-        esac
-    fi
-    [ -n "$_fs_empty" ] || return 0
+    _fs_ni=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | head -c 400)
+    _fs_src="http"
+    case "$_fs_ni" in
+        *'wifiProfileCount="0"'*) ;;
+        *) return 0 ;;
+    esac
     setup_log "wifi failover seed: box online with NO stored Wi-Fi profile (src=$_fs_src) - seeding '$_fs_ssid' so a later cable pull can fail over (non-destructive)"
     if [ -z "$_fs_taigan" ]; then
         _fs_es=$(printf '%s' "$_fs_ssid" | sed -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")
