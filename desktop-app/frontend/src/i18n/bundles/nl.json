@@ -719,6 +719,8 @@
   "settingsView.webhookTestOk": "Testaanvraag verstuurd (HTTP {{status}}).",
   "settingsView.webhookTestFailed": "Test mislukt: {{err}}",
   "settingsView.wlanHeading": "Wifi",
+  "settingsView.netHeading": "Netwerk",
+  "settingsView.wlanWired": "Verbonden via netwerkkabel",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IP-adres",
   "settingsView.wlanSignal": "Signaal",

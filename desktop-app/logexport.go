@@ -499,7 +499,10 @@ func captureBoxSnapshot(host string) boxSnapshot {
 		s.BoxSnapshot = httpGetText(base+"/api/box/snapshot", 16*1024)
 		// Live multiroom zone, best-effort (empty on stock boxes, agents
 		// without the zone API, or a zone read the box firmware rejects).
-		s.STRZone = httpGetText(base+"/api/box/zone", 4096)
+		// 10 s, not the 4 s default: agents up to v0.9.49 answer this after
+		// ~6 s on scm/BCO chassis (the firmware /getGroup hang), which is why
+		// no group bundle from those fleets ever carried strZoneJson.
+		s.STRZone = httpGetTextTimeout(base+"/api/box/zone", 4096, 10*time.Second)
 		raw := httpGetText(base+"/api/agent/version", 1024)
 		if raw != "" {
 			_ = json.Unmarshal([]byte(raw), &s.STRAgentVer)

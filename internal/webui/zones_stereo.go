@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -84,11 +85,54 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 		boxapi.Zone
 		Stereo *boxapi.Group `json:"stereo,omitempty"`
 	}{Zone: z}
-	if g, gerr := c.GetGroup(ctx); gerr == nil && (g.ID != "" || len(g.Members) > 0) {
-		g := g
-		out.Stereo = &g
+	// The pair read gets its own SHORT budget, never the zone's. The firmware's
+	// /getGroup HANGS on scm/BCO chassis — no refusal, just silence (12 s and
+	// counting on an awake scm ST30, 2026-08-18, while its /getZone answered in
+	// 28 ms). Chained on the zone ctx it ate the whole 6 s budget, the desktop
+	// app's 6 s client always gave up first, and so no non-ST10 speaker EVER
+	// delivered a live zone to the app: both group screens then ran on
+	// optimistic data alone (Bernard's two-screens-disagree family). After a
+	// few consecutive hangs the read is paused for a while — the answer cannot
+	// change while the firmware refuses to give one.
+	if s.groupReadAllowed() {
+		gctx, gcancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+		g, gerr := c.GetGroup(gctx)
+		gcancel()
+		s.noteGroupReadResult(gerr)
+		if gerr == nil && (g.ID != "" || len(g.Members) > 0) {
+			out.Stereo = &g
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// groupReadAllowed reports whether the stereo /getGroup read should be tried,
+// i.e. it is not currently paused after consecutive firmware hangs.
+func (s *Server) groupReadAllowed() bool {
+	s.groupReadMu.Lock()
+	defer s.groupReadMu.Unlock()
+	return time.Now().After(s.groupReadSkipUntil)
+}
+
+// noteGroupReadResult tracks consecutive /getGroup timeouts and pauses the
+// read once the firmware has proven it will not answer. The pause is short
+// (5 min): a deep-standby speaker hangs this endpoint too and must get its
+// pair read back soon after waking.
+func (s *Server) noteGroupReadResult(err error) {
+	s.groupReadMu.Lock()
+	defer s.groupReadMu.Unlock()
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		s.groupReadFails = 0
+		return
+	}
+	s.groupReadFails++
+	if s.groupReadFails < 3 {
+		return
+	}
+	s.groupReadSkipUntil = time.Now().Add(5 * time.Minute)
+	s.groupReadFails = 0
+	s.logger.Info("zone: the firmware's /getGroup keeps hanging (known on scm/BCO chassis), pausing the stereo-pair read",
+		"pauseMin", 5)
 }
 
 // handleBoxBalance reports the left/right balance of a stereo pair.
@@ -171,8 +215,15 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	for _, m := range req.Slaves {
 		slaves = append(slaves, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
 	}
+	// Log WHO, not just how many: the 2026-08-18 third-speaker bundle could
+	// not say which box was being added, because every log line carried only
+	// slaves=2.
+	slaveIDs := make([]string, 0, len(slaves))
+	for _, m := range slaves {
+		slaveIDs = append(slaveIDs, m.DeviceID+"@"+m.IP)
+	}
 	s.logger.Info("zone: forming (beta)", "mode", mode, "master", master.DeviceID, "masterIP", master.IP,
-		"slaves", len(slaves), "stereo", req.Stereo, "name", req.Name)
+		"slaves", len(slaves), "slaveList", strings.Join(slaveIDs, ","), "stereo", req.Stereo, "name", req.Name)
 
 	ctx, cancel := context.WithTimeout(r.Context(), zoneFormBudget(len(slaves)))
 	defer cancel()
@@ -267,6 +318,24 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ask the leader ONE cheap question before touching anything. On 2026-08-18
+	// a fleet bundle showed the leader's BoseApp (:8090) frozen for minutes
+	// BEFORE the user added a third speaker: the form then burned ~30 s in
+	// timing-out pre-reads and the playing 2-box group was lost along the way.
+	// A leader whose :8090 does not answer cannot take a /setZone anyway, so
+	// fail fast here, with the stored document and the live group untouched.
+	// Mirror mode is exempt: it streams to each member directly and does not
+	// need the leader's :8090. (A reboot of the leading speaker clears this
+	// firmware freeze; the wedge is documented in status_index.go.)
+	if mode != "mirror" {
+		if perr := s.speakerStaysSilent(ctx, c); perr != nil {
+			s.logger.Warn("zone: the speaker leading the group is not answering, not starting the group change",
+				"probeErr", perr, "master", master.DeviceID)
+			http.Error(w, "the speaker leading the group is not answering: "+perr.Error(), http.StatusBadGateway)
+			return
+		}
+	}
+
 	// What the user already had, read BEFORE anything is changed. Adding a
 	// speaker to a group that is playing must not be able to end with no group
 	// at all, and on 2026-08-16 it did: a working pair, a third speaker added,
@@ -278,7 +347,24 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	if s.zones != nil {
 		prevDoc, hadPrevDoc = s.zones.Get()
 	}
-	prevLive, _ := c.GetZone(ctx)
+	prevLive, prevLiveErr := c.GetZone(ctx)
+	if prevLiveErr != nil {
+		// A swallowed error here left the restore blind on 2026-08-18: the
+		// leader's :8090 died between the probe above and this read, prevLive
+		// came back empty, and restorePreviousZone concluded "there was no live
+		// group to lose". Fall back to the stored document, which describes the
+		// group the user last asked for, so the restore still knows what to put
+		// back once the leader answers again.
+		s.logger.Warn("zone: could not read the live group before changing it, falling back to the stored document for the restore",
+			"err", prevLiveErr)
+		if hadPrevDoc && !prevDoc.Stereo && len(prevDoc.Slaves) > 0 &&
+			strings.EqualFold(strings.TrimSpace(prevDoc.Master), strings.TrimSpace(master.DeviceID)) {
+			prevLive.Master = prevDoc.Master
+			for _, m := range prevDoc.Slaves {
+				prevLive.Members = append(prevLive.Members, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+			}
+		}
+	}
 
 	// Persist first so a transient drive error still leaves the group on record
 	// for the reconcile loop to retry. Only the master persists.
@@ -816,7 +902,15 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 	// the handler deadline killed it mid-call. The firmware went on to form the
 	// pair 4 s later and the speakers announced it, but the user had already
 	// been told the pairing failed.
-	actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	// 30 s, not 20: the firmware runs a pairing op for a fixed ~20 s before it
+	// answers /addGroup at all (measured on a failing pair, eight identical
+	// attempts, 2026-08-18 — every groupUpdated arrived exactly ~20 s after the
+	// POST). Until the boxapi client cap was removed this budget silently died
+	// at 6 s anyway ("Client.Timeout exceeded while awaiting headers" in every
+	// bundle), so no field run has ever actually waited for the firmware's own
+	// verdict; 30 s finally collects it, including the error XML that names the
+	// reject reason on a refusing box.
+	actx, acancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer acancel()
 	ctx = actx
 	if err := c.AddGroup(ctx, name, master.DeviceID, members); err != nil {
@@ -842,10 +936,20 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			// two SoundTouch 10s, 2026-08-04). Reporting failure for a pair that
 			// exists is worse than the timeout itself, because the user's next
 			// move is to pair again, which the firmware then rejects with
-			// GROUP_ALREADY_EXISTS.
-			cctx, ccancel := context.WithTimeout(context.WithoutCancel(ctx), 6*time.Second)
-			g, gerr := c.GetGroup(cctx)
-			ccancel()
+			// GROUP_ALREADY_EXISTS. One immediate read is not enough: the
+			// firmware's pairing op takes ~20 s, so a read 40 ms after a lost
+			// reply always saw "no group" — poll for a while instead.
+			var g boxapi.Group
+			gerr := errors.New("not read")
+			for vDeadline := time.Now().Add(12 * time.Second); ; {
+				cctx, ccancel := context.WithTimeout(context.WithoutCancel(ctx), 6*time.Second)
+				g, gerr = c.GetGroup(cctx)
+				ccancel()
+				if (gerr == nil && len(g.Members) == 2) || time.Now().After(vDeadline) {
+					break
+				}
+				time.Sleep(2 * time.Second)
+			}
 			if gerr == nil && len(g.Members) == 2 {
 				s.logger.Warn("stereo: addGroup reported an error but the speaker formed the pair anyway, treating it as paired",
 					"err", err, "id", g.ID)

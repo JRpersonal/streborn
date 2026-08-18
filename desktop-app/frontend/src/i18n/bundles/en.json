@@ -783,6 +783,8 @@
   "settingsView.webhookTestOk": "Test request sent (HTTP {{status}}).",
   "settingsView.webhookTestFailed": "Test failed: {{err}}",
   "settingsView.wlanHeading": "Wi-Fi",
+  "settingsView.netHeading": "Network",
+  "settingsView.wlanWired": "Connected via network cable",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IP address",
   "settingsView.wlanSignal": "Signal",

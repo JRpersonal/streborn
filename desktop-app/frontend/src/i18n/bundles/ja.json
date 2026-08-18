@@ -719,6 +719,8 @@
   "settingsView.webhookTestOk": "テストリクエストを送信しました（HTTP {{status}}）。",
   "settingsView.webhookTestFailed": "テストに失敗しました: {{err}}",
   "settingsView.wlanHeading": "Wi-Fi",
+  "settingsView.netHeading": "ネットワーク",
+  "settingsView.wlanWired": "ネットワークケーブルで接続中",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IPアドレス",
   "settingsView.wlanSignal": "信号",

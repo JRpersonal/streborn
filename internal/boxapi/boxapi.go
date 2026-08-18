@@ -25,11 +25,33 @@ type Client struct {
 }
 
 // New creates a client with defaults.
+//
+// The client deliberately carries NO http.Client Timeout: that field caps the
+// whole request regardless of any context deadline, which silently defeated
+// every deliberately longer budget a caller passed (the stereo /addGroup
+// patience of 20 s died at exactly 6 s in every field bundle, 2026-08-18 —
+// the firmware spends ~20 s on a pairing op before it answers). The deadline
+// comes from the caller's context instead; callCtx supplies the old 6 s
+// default for callers that set none, so nothing can hang forever.
 func New(host string) *Client {
 	return &Client{
 		Host: host,
-		HTTP: &http.Client{Timeout: 6 * time.Second},
+		HTTP: &http.Client{},
 	}
+}
+
+// defaultCallTimeout bounds a boxapi call whose caller passed a context
+// without a deadline. See New for why the bound lives here and not on the
+// http.Client.
+const defaultCallTimeout = 6 * time.Second
+
+// callCtx returns ctx unchanged when it already carries a deadline, and a
+// defaultCallTimeout-bounded child otherwise.
+func callCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultCallTimeout)
 }
 
 // ---------- Data model ----------
@@ -605,6 +627,8 @@ func (c *Client) Key(ctx context.Context, key string) error {
 // and stays where it is. The caller still has to check first, because on some
 // chassis a request into a sleeping box is what wakes it.
 func (c *Client) Standby(ctx context.Context) error {
+	ctx, cancel := callCtx(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url("/standby"), nil)
 	if err != nil {
 		return err
@@ -672,6 +696,8 @@ func (c *Client) url(path string) string {
 // (the box would otherwise leave its current network and fail to join the new
 // one, forcing a Bose-app re-pair).
 func (c *Client) SiteSurvey(ctx context.Context) ([]string, error) {
+	ctx, cancel := callCtx(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url("/performWirelessSiteSurvey"), strings.NewReader(`<PerformWirelessSiteSurvey timeout="5"/>`))
 	if err != nil {
 		return nil, err
@@ -707,6 +733,8 @@ func (c *Client) SiteSurvey(ctx context.Context) ([]string, error) {
 }
 
 func (c *Client) getXML(ctx context.Context, path string, dst any) error {
+	ctx, cancel := callCtx(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(path), nil)
 	if err != nil {
 		return err
@@ -754,6 +782,8 @@ func ensureUTF8(b []byte) []byte {
 }
 
 func (c *Client) postXML(ctx context.Context, path, body string) error {
+	ctx, cancel := callCtx(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(path), strings.NewReader(body))
 	if err != nil {
 		return err
@@ -775,6 +805,8 @@ func (c *Client) postXML(ctx context.Context, path, body string) error {
 // postXML otherwise: a >=400 status carries the box's own error text, which is
 // where the firmware puts its "field not found" parse complaints.
 func (c *Client) postXMLInto(ctx context.Context, path, body string, dst any) error {
+	ctx, cancel := callCtx(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(path), strings.NewReader(body))
 	if err != nil {
 		return err

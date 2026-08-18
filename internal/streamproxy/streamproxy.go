@@ -606,6 +606,12 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		brSettle = 4 * time.Second
 		brWindow = 6 * time.Second
 	)
+	// upstreamStallAfter is how long the copy loop tolerates Read() returning
+	// nothing before the stall watchdog closes the upstream connection. Five
+	// seconds is several buffers' worth at any real bitrate, so it never fires
+	// on a healthy stream, and it is short enough that the internal reconnect
+	// lands before the box gives up on its own connection.
+	const upstreamStallAfter = 5 * time.Second
 	streamStart := time.Now()
 	var winBytes int64
 	var winStart time.Time
@@ -630,17 +636,85 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	connStart := time.Now()
 	var connBytes int64
 	gotData := false
+	// Rolling short-window byte count: the number that decides between "the
+	// box bailed at full data rate" and "the upstream starved the box" is the
+	// delivery rate AT the drop moment, and until #510 no end-of-stream line
+	// carried it. Coarse on purpose (one window, no ring): recentBytes counts
+	// the CURRENT window, recentStart says how old it is.
+	var recentBytes int64
+	recentStart := time.Now()
+	// Stall watchdog (#510): a silent upstream stall (no FIN, no RST, no
+	// bytes) blocked this loop in Read() forever, because streams are endless
+	// by design and the body has no read deadline. The box then starved on an
+	// open, byte-less connection: measured live 2026-08-18, an ST20 sat in
+	// BUFFERING_STATE for minutes on exactly such a connection. The watchdog
+	// closes the upstream body after upstreamStallAfter without a completed
+	// read; the Read unblocks with an error, the normal reconnect path takes
+	// over, and the box's own connection stays open throughout.
+	lastReadNano := new(int64)
+	*lastReadNano = time.Now().UnixNano()
+	var lastReadMu sync.Mutex
+	touchRead := func() {
+		lastReadMu.Lock()
+		*lastReadNano = time.Now().UnixNano()
+		lastReadMu.Unlock()
+	}
+	sinceRead := func() time.Duration {
+		lastReadMu.Lock()
+		defer lastReadMu.Unlock()
+		return time.Duration(time.Now().UnixNano() - *lastReadNano)
+	}
+	watchdogDone := make(chan struct{})
+	defer close(watchdogDone)
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-watchdogDone:
+				return
+			case <-ticker.C:
+				if sinceRead() >= upstreamStallAfter {
+					s.logger.Warn("stream proxy upstream stalled (no bytes), closing the upstream connection to force a reconnect",
+						"url", url, "stalledSec", int(sinceRead().Seconds()),
+						"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
+					_ = resp.Body.Close()
+					return
+				}
+			}
+		}
+	}()
+	// connSummary is the end-of-connection forensic line for the paths that
+	// used to discard the telemetry (the box closing, ctx cancel): duration,
+	// total bytes, average rate, and the recent-window delivery.
+	connSummary := func(why string) {
+		secs := time.Since(connStart).Seconds()
+		kbps := 0
+		if secs > 0 {
+			kbps = int(float64(connBytes) * 8 / 1000 / secs)
+		}
+		s.logger.Info("stream proxy conn summary", "why", why, "url", url,
+			"connectedSec", int(secs), "bytes", connBytes, "avgKbps", kbps,
+			"recentBytes", recentBytes, "recentWindowSec", int(time.Since(recentStart).Seconds()))
+	}
 	for {
 		n, readErr := src.Read(buf)
 		if n > 0 {
+			touchRead()
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
 				// Bose closed the connection
+				connSummary("bose closed")
 				return false, nil
 			}
 			if flusher != nil {
 				flusher.Flush()
 			}
 			connBytes += int64(n)
+			recentBytes += int64(n)
+			if time.Since(recentStart) >= 10*time.Second {
+				recentBytes = 0
+				recentStart = time.Now()
+			}
 			gotData = true
 			s.markByteDelivery() // records "last byte to box" wall clock across reconnects
 			if !measured && time.Since(streamStart) >= brSettle {
@@ -665,6 +739,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		if readErr != nil {
 			// Bose has closed — NO retry, otherwise an endless loop
 			if errors.Is(readErr, context.Canceled) || ctx.Err() != nil {
+				connSummary("ctx canceled")
 				return false, nil
 			}
 			if readErr == io.EOF {

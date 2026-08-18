@@ -156,10 +156,26 @@ func WakeAndWaitAbort(ctx context.Context, host string, maxWait time.Duration, l
 			return nil
 		}
 		if err != nil {
-			logPhase("wake phase: pre-check read failed", "attempt", i, "err", err.Error())
-		} else {
-			logPhase("wake phase: STANDBY, sending sys power", "attempt", i, "source", state)
+			// The box's power state is UNKNOWN, and `sys power` is a TOGGLE:
+			// sent blind it switches a PLAYING box off. Measured live 2026-08-18
+			// (ST20 leading a playing 2-box zone whose BoseApp :8090 froze): the
+			// pre-check read timed out, the blind toggle went out anyway, and 66ms
+			// later the master dropped UPNP -> STANDBY and the zone dissolved. So
+			// a failed read never earns a toggle; keep asking until the deadline
+			// and report the unreadable state instead.
+			logPhase("wake phase: state read failed, withholding the power toggle (unknown state)", "attempt", i, "err", err.Error())
+			if time.Now().After(deadline) {
+				return fmt.Errorf("box power state unreadable, power toggle withheld: %w", err)
+			}
+			select {
+			case <-ctx.Done():
+				logPhase("wake phase: ctx cancelled (state unknown)", "attempt", i, "err", ctx.Err().Error())
+				return ctx.Err()
+			case <-time.After(700 * time.Millisecond):
+			}
+			continue
 		}
+		logPhase("wake phase: STANDBY, sending sys power", "attempt", i, "source", state)
 		if abort != nil && abort() {
 			logPhase("wake phase: abort signalled (caller stood down), not toggling", "attempt", i)
 			return nil

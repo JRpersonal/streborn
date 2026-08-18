@@ -98,6 +98,33 @@ export function rememberServerUDN(udn) {
   }
 }
 
+// The folder the user last had open, alongside the server it belongs to
+// (#642): reopening the library lands where they left off instead of at the
+// server root. One path, not one per server: the request was "continue where
+// I was", and a map of stale paths for servers no longer around is exactly
+// the kind of leftover the server memory above deliberately avoids.
+const LIB_PATH_KEY = 'str.library.lastPath';
+
+function rememberPath() {
+  try {
+    localStorage.setItem(LIB_PATH_KEY, JSON.stringify({
+      udn: libState.currentUDN,
+      stack: (libState.stack || []).map(s => ({ id: s.id, title: s.title })),
+    }));
+  } catch { /* same trade-off as rememberServerUDN */ }
+}
+
+function rememberedPathFor(udn) {
+  try {
+    const p = JSON.parse(localStorage.getItem(LIB_PATH_KEY) || 'null');
+    if (p && p.udn === udn && Array.isArray(p.stack) && p.stack.length > 1 &&
+        p.stack.every(s => s && typeof s.id === 'string')) {
+      return p.stack;
+    }
+  } catch { /* corrupt entry: fall back to the root */ }
+  return null;
+}
+
 export async function openLibrary() {
   renderLibrary();
   if (libState.servers.length === 0) {
@@ -128,7 +155,8 @@ async function loadMediaServers() {
       : libState.servers.find(s => s.udn === preferred);
     if (auto) {
       libState.currentUDN = auto.udn;
-      libState.stack = [{ id: '0', title: auto.friendlyName || '' }];
+      libState.stack = rememberedPathFor(auto.udn) ||
+        [{ id: '0', title: auto.friendlyName || '' }];
       await libraryBrowseCurrent();
       return;
     }
@@ -228,7 +256,8 @@ async function libraryPickServer(udn) {
   if (!srv) return;
   libState.currentUDN = udn;
   rememberServerUDN(udn);
-  libState.stack = [{ id: '0', title: srv.friendlyName || '' }];
+  libState.stack = rememberedPathFor(udn) ||
+    [{ id: '0', title: srv.friendlyName || '' }];
   await libraryBrowseCurrent();
 }
 
@@ -272,6 +301,15 @@ async function libraryBrowseCurrent() {
       }
     }
   } catch (e) {
+    // A remembered folder can stop existing: DLNA object ids are not
+    // guaranteed stable across a server restart. Fall back to the server
+    // root once instead of showing an error for a folder the user never
+    // asked for this session (#642).
+    if (libState.stack.length > 1 && top !== libState.stack[0]) {
+      libState.stack = libState.stack.slice(0, 1);
+      await libraryBrowseCurrent();
+      return;
+    }
     showError(`BrowseLibrary: ${e}`);
   } finally {
     if (token === libState.browseToken) {
@@ -279,6 +317,7 @@ async function libraryBrowseCurrent() {
       libState.loadingMore = false;
       libState.page = acc.returned ? acc : (libState.page || null);
       renderLibrary();
+      if (!libState.loading && acc.returned >= 0 && libState.currentUDN) rememberPath();
     }
   }
 }

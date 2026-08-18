@@ -452,6 +452,20 @@ type Server struct {
 	// ignored/pruned. Guarded by boxPresetsMu.
 	deletedBoxSlots map[int]time.Time
 
+	// The stereo /getGroup hang tracker (see handleZoneGet): consecutive
+	// timeouts and the pause window they earn. Guarded by groupReadMu.
+	groupReadMu        sync.Mutex
+	groupReadFails     int
+	groupReadSkipUntil time.Time
+
+	// BoseApp (:8090) outage episodes, fed by the /api/status fetch path. The
+	// 2026-08-18 ST20 freeze was only provable by counting statusStaleWarned
+	// transitions by hand; this records the episodes so a bundle answers "how
+	// long and how often was the firmware webserver dead" directly. Guarded by
+	// statusMu. boseappDownSince is zero while :8090 answers.
+	boseappDownSince time.Time
+	boseappOutages   []boseappOutage
+
 	// queue is the agent-side DLNA library play queue (#202 follow-up). It
 	// auto-advances on track end so a NAS/FRITZ!Box folder plays through like the
 	// original SoundTouch box-side queue, even with the desktop app closed. A

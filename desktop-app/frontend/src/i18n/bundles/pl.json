@@ -719,6 +719,8 @@
   "settingsView.webhookTestOk": "Wysłano żądanie testowe (HTTP {{status}}).",
   "settingsView.webhookTestFailed": "Test nie powiódł się: {{err}}",
   "settingsView.wlanHeading": "Wi-Fi",
+  "settingsView.netHeading": "Sieć",
+  "settingsView.wlanWired": "Połączono kablem sieciowym",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "Adres IP",
   "settingsView.wlanSignal": "Sygnał",

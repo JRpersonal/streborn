@@ -201,6 +201,82 @@ goform_wlan_push() {
     return 1
 }
 
+# wifi_failover_seed SSID PASS IS_TAIGAN
+# Non-destructive Wi-Fi failover seed for a box that is ONLINE without any
+# stored Wi-Fi profile - the LAN-cable-only box (live case 2026-08-18, scm
+# ST20: set up over ethernet, TAP `network wifi profiles info` answered an
+# empty <WiFiProfiles />, and pulling the cable left the box with nothing to
+# fall back to, blinking orange). The hands-off replay boot used to end
+# without ever giving such a box its Wi-Fi, even though NAND wlan-creds hold
+# the user's network; the M0a-prelease failover seed (same two steps, live
+# verified on the scm ST30 2026-07-09) only fires on app-apply or fresh-stick
+# boots, never on the everyday replay boot.
+#
+# Strictly gated on POSITIVE evidence that the box holds no Wi-Fi profile at
+# all: an empty profile store is simultaneously the proof that the current
+# lease is the cable (a box associated to Wi-Fi cannot have zero profiles) and
+# the proof that there is nothing to disturb. Silence from every probe means
+# hands off (the v0.9.7 rule stays intact for every provisioned box). The two
+# writes are the proven non-destructive pair: /addWirelessProfile (NetManager
+# DB entry; skipped on taigan where it silently fails) + goform_wlan_push
+# (programs the SMSC/JukeBlox coprocessor; no-ops where no :80 handler
+# answers). No teardown, no reboot, the working ethernet is untouched; the box
+# merely gains a network to fail over to when the cable goes. Post-state is
+# logged so the next diagnostic bundle proves whether the seed LANDED on this
+# chassis. Defined at top level (sibling-subshell scope trap).
+wifi_failover_seed() {
+    _fs_ssid="$1"; _fs_pass="$2"; _fs_taigan="$3"
+    [ -n "$_fs_ssid" ] || return 0
+    # Wait (bounded) for BoseApp :8090 - the hands-off branch can run before
+    # the Bose HTTP stack finishes coming up, same race M0a-refresh had.
+    _fs_w=0
+    while [ "$_fs_w" -lt 45 ]; do
+        if wget -qO- -T 2 "http://127.0.0.1:8090/info" >/dev/null 2>&1; then break; fi
+        sleep 3; _fs_w=$((_fs_w + 3))
+    done
+    # Positive evidence gate, in two halves. Any sign of an existing profile in
+    # ANY store bails: NetManager's DB, the BCO AirplayConfiguration.xml (a
+    # Wi-Fi-provisioned taigan/BCO box keeps its ONLY profile there while TAP
+    # still answers an empty <WiFiProfiles />, so skipping this check would
+    # have re-programmed a live association), and the TAP runtime view. Then
+    # the box must ADDITIONALLY say wifiProfileCount="0" itself - an explicit
+    # zero, not silence - before anything is written. Unreadable = hands off.
+    _profile_xml="/mnt/nv/BoseApp-Persistence/1/NetworkProfiles.xml"
+    if [ -s "$_profile_xml" ] && grep -q "<profile " "$_profile_xml" 2>/dev/null; then
+        return 0
+    fi
+    _airplay_xml="/mnt/nv/BoseApp-Persistence/1/AirplayConfiguration.xml"
+    if [ -s "$_airplay_xml" ] && grep -q 'PersistentWifiProfile' "$_airplay_xml" 2>/dev/null \
+        && grep -q 'ssid="[^"]' "$_airplay_xml" 2>/dev/null; then
+        return 0
+    fi
+    _fs_tap=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ')
+    case "$_fs_tap" in
+        *"<profile "*|*"<profile>"*) return 0 ;;
+    esac
+    _fs_ni=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | head -c 400)
+    _fs_src="http"
+    case "$_fs_ni" in
+        *'wifiProfileCount="0"'*) ;;
+        *) return 0 ;;
+    esac
+    setup_log "wifi failover seed: box online with NO stored Wi-Fi profile (src=$_fs_src) - seeding '$_fs_ssid' so a later cable pull can fail over (non-destructive)"
+    if [ -z "$_fs_taigan" ]; then
+        _fs_es=$(printf '%s' "$_fs_ssid" | sed -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")
+        _fs_ep=$(printf '%s' "$_fs_pass" | sed -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")
+        _fs_resp=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
+            --post-data="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$_fs_es\" password=\"$_fs_ep\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>" \
+            "http://127.0.0.1:8090/addWirelessProfile" 2>&1)
+        setup_log "wifi failover seed: /addWirelessProfile rc=$? response='$(echo "$_fs_resp" | head -c 200)'"
+    fi
+    goform_wlan_push "$_fs_ssid" "$_fs_pass"
+    # Outcome evidence for the next bundle: did the profile land?
+    sleep 5
+    _fs_after=$(printf 'network wifi profiles info\n' | nc -w 3 127.0.0.1 17000 2>/dev/null | tr '\n' ' ' | head -c 200)
+    _fs_ni2=$(wget -qO- -T 3 "http://127.0.0.1:8090/networkInfo" 2>/dev/null | head -c 400 | sed -n 's/.*\(wifiProfileCount="[0-9]*"\).*/\1/p')
+    setup_log "wifi failover seed: post-state tap='$_fs_after' networkInfo=${_fs_ni2:-unreadable}"
+}
+
 # Earliest breadcrumb: prove run.sh actually started and stamp the box
 # fingerprint (kernel + Bose variant/firmware) up front, BEFORE the ~170 lines
 # of provisioning logic that could abort. A genuinely failed ST10 boot left a
@@ -1799,6 +1875,12 @@ if [ -n "$SSID" ] && [ -n "$PASS" ]; then
         *replay*)
             if wait_for_sta_lease 90; then
                 setup_log "hands-off: box came online by itself ($(current_sta_lease 2>/dev/null)) - no boot-time Wi-Fi provisioning (v0.9.7)"
+                # LAN-cable-only exception: a box that is online WITHOUT any
+                # stored Wi-Fi profile gets the known network seeded as a
+                # failover, non-destructively (see wifi_failover_seed). A
+                # provisioned box is untouched - the seed's first probe
+                # bails on any sign of an existing profile.
+                ( wifi_failover_seed "$SSID" "$PASS" "$IS_TAIGAN" ) &
             else
                 setup_log "hands-off: no lease after 90s - starting the pure-rescue goform watchdog (non-destructive re-push only, no profile writes)"
                 (

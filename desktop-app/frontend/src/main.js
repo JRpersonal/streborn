@@ -5871,7 +5871,14 @@ function scheduleLiveTitle() {
     if (state.currentBox !== box) { liveTitleActive = false; return; }   // speaker changed
     const loc = state.nowLocation || '';
     if (loc === '') { liveTitleActive = false; return; }                 // playback stopped
-    const isRadio = /\/stream\//.test(loc) && !/\/spotify\/stream/.test(loc);
+    // Slot-based, not a raw /stream/ match: a NATIVE radio preset carries the
+    // ORION "/station?data=<base64>" descriptor, which the raw regex never
+    // matched, so on native playback this loop spun without ever fetching a
+    // title and the Play tab showed no artist/track at all (#597).
+    // activeSlotFromLocation decodes the descriptor (the #555 fix) and also
+    // correctly yields null for a native station pointing straight at a CDN,
+    // where the proxy has no title to offer.
+    const isRadio = !/\/spotify\//.test(loc) && activeSlotFromLocation(loc) !== null;
     if (isRadio) {
       let title = '';
       try { title = (await StreamTitle(box.host, box.port)) || ''; } catch {}
@@ -6016,7 +6023,10 @@ function renderNowPlayingBar() {
       ? `${state.nowSpotifyArtist} - ${state.nowSpotifyTrack}`
       : state.nowSpotifyTrack;
     displayName = name ? `${t('status.playlistLabel')}: "${name}" · ${song}` : song;
-  } else if (/\/stream\//.test(loc) && !/\/spotify\/stream/.test(loc) && state.nowTitle) {
+  } else if (!/\/spotify\//.test(loc) && activeSlotFromLocation(loc) !== null && state.nowTitle) {
+    // Slot-based like the title poller above: the raw /stream/ regex missed
+    // NATIVE radio locations (ORION descriptor), so the status line dropped
+    // the artist/track exactly when the box played natively (#597).
     displayName = name ? `${t('status.stationLabel')}: "${name}" · ${state.nowTitle}` : state.nowTitle;
   }
   // Match the source case-insensitively: the firmware is not consistent about
