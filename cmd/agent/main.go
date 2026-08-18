@@ -343,6 +343,12 @@ func run() error {
 		hostsMgr = hosts.New(*hostsPath, logger)
 	}
 
+	// Box-owned presets STR did not write (Deezer, TuneIn, STORED_MUSIC, ...),
+	// preserved so the marge preset answer below cannot starve them out of the
+	// box's own list (see foreignpresets.go).
+	foreignPresets := newForeignPresetStore("/mnt/nv/streborn/foreign-presets.json",
+		logger.With("comp", "foreignpresets"))
+
 	// Initialize subsystems
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
@@ -363,7 +369,9 @@ func run() error {
 		marge.WithPresetSource(func() []marge.Preset {
 			all := store.All()
 			out := make([]marge.Preset, 0, len(all))
+			taken := make(map[int]bool, len(all))
 			for _, p := range all {
+				taken[p.Slot] = true
 				out = append(out, marge.Preset{
 					ID:            p.Slot,
 					Source:        "UPNP",
@@ -374,7 +382,10 @@ func run() error {
 					ContainerArt:  margeXMLEscape(firstArtURL(p.Art)),
 				})
 			}
-			return out
+			// The box's OWN presets STR did not write ride along, or the
+			// firmware drops them on its next cloud re-read (a Deezer slot 3
+			// vanished exactly that way, 2026-08-17).
+			return append(out, foreignPresets.MargePresets(taken)...)
 		}))
 	// A configured account makes every legacy account/config probe answer
 	// "signed in": some firmwares poll marge account endpoints that fell into
@@ -863,6 +874,7 @@ func run() error {
 				})
 			}
 			webuiSrv.NoteBoxPresets(out)
+			foreignPresets.NoteBoxList(out)
 		},
 		// Let a hardware press of a queue preset (a saved DLNA folder) start the
 		// webui play-queue instead of the single-track recall.
@@ -888,6 +900,11 @@ func run() error {
 	// is recorded: the next report about a remote in the wrong language arrives
 	// with the evidence attached.
 	webui.RegisterDebugSection("phone_languages", func() any { return webuiSrv.PhoneLanguages() })
+	// The :8090 outage record (the 2026-08-18 ST20 zone-leader freeze was only
+	// provable by hand-counting stale-status WARNs) and the box-owned preset
+	// slots STR preserves in the marge answer (the Deezer slot-3 loss class).
+	webui.RegisterDebugSection("boseapp_health", func() any { return webuiSrv.BoseAppHealth() })
+	webui.RegisterDebugSection("foreign_presets", foreignPresets.DebugState)
 	// When the user starts playback from the Spotify app (selecting this device)
 	// while the box is on another source, point the box at the Spotify stream so
 	// it actually plays instead of staying on the current source (#14).
@@ -988,7 +1005,14 @@ func run() error {
 	// preset list - before the recovery had its one chance to snapshot it.
 	seedFirstRead := make(chan struct{})
 	go seedBoxPresetsAndRecoverStore(store, recentStore, *boxHost,
-		func(bps []webui.BoxPreset) { webuiSrv.NoteBoxPresets(bps) },
+		func(bps []webui.BoxPreset) {
+			webuiSrv.NoteBoxPresets(bps)
+			// Seed the foreign-preset preservation from the same first read, so
+			// the very first re-onboarding after agent start already serves the
+			// box-owned slots (the wipe this guards against happens exactly
+			// there; NoteBoxList unescapes the regex-captured values).
+			foreignPresets.NoteBoxList(bps)
+		},
 		logger.With("comp", "presetrecovery"),
 		func() { close(seedFirstRead) })
 
