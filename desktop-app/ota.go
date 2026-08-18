@@ -533,6 +533,19 @@ func (a *App) stageSidecarBeforeReboot(host string, port int) {
 		a.recordOTA(host, "sidecar: box on a pre-sidecar agent, cannot stage over HTTP pre-reboot; will deliver after the box is on the new agent")
 		return
 	}
+	// Version gate (field 2026-08-18, an ST20 stuck on v0.9.14 in an endless
+	// update loop): agents before v0.9.26 collect an upload via growth-doubling
+	// io.ReadAll, so the ~16 MB engine body peaks near 33 MB of RAM and the
+	// watchdog reboots the SPEAKER mid-push — every retry then led with the
+	// engine push and killed the box before the agent update could even start.
+	// Those agents must never be fed the engine pre-reboot; the post-reboot
+	// delivery to the NEW agent (which streams to disk) is the path that works.
+	if bv := strings.TrimSpace(ver["version"]); bv != "" && versionLess(bv, "v0.9.26") {
+		a.recordOTA(host, "sidecar: box agent "+bv+" predates the streamed upload path (v0.9.26) and dies under a 16 MB push; deferring the engine to the post-reboot delivery")
+		a.logger.Info("stageSidecarBeforeReboot: agent too old for a pre-reboot engine push, deferring to post-OTA delivery",
+			"host", host, "agent", bv)
+		return
+	}
 	// Space gate (#ST30 Daniel). Staging the ~10 MB sidecar pre-reboot lands it
 	// on disk BEFORE the agent .new (~12 MB) is written, so on a tight box (e.g. a
 	// SoundTouch 30, ~31 MB NAND) the two second copies cannot coexist and the
