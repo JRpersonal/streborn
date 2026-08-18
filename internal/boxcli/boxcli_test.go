@@ -23,6 +23,7 @@ type fakeBox struct {
 	cliLn    net.Listener
 	selfWoke atomic.Bool  // the box left standby on its own (user button press)
 	powerCmd atomic.Int32 // number of `sys power` commands received
+	frozen   atomic.Bool  // BoseApp wedge: :8090 accepts TCP but never answers
 }
 
 func (b *fakeBox) awake() bool { return b.selfWoke.Load() || b.powerCmd.Load() > 0 }
@@ -41,7 +42,11 @@ func startFakeBox(t *testing.T) *fakeBox {
 	b := &fakeBox{httpLn: httpLn, cliLn: cliLn}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/now_playing", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/now_playing", func(w http.ResponseWriter, r *http.Request) {
+		if b.frozen.Load() {
+			<-r.Context().Done() // hold the reply until the client gives up
+			return
+		}
 		src := "STANDBY"
 		if b.awake() {
 			src = "UPNP"
@@ -94,6 +99,26 @@ func TestWakeAndWaitDoesNotToggleSelfWake(t *testing.T) {
 	}
 	if n := b.powerCmd.Load(); n != 0 {
 		t.Fatalf("WakeAndWait sent %d `sys power` toggle(s) to a self-waking box; want 0 (toggling cancels the user's wake)", n)
+	}
+}
+
+// TestWakeAndWaitWithholdsToggleOnUnknownState pins the 2026-08-18 field
+// failure: an ST20 led a PLAYING 2-box zone, its BoseApp :8090 froze (accepts
+// TCP, never answers), and the wake helper — unable to read the state — sent
+// the `sys power` toggle anyway, switching the playing master OFF and
+// dissolving the group. A state that cannot be read must never be toggled:
+// WakeAndWait has to return an error without a single `sys power` going out.
+func TestWakeAndWaitWithholdsToggleOnUnknownState(t *testing.T) {
+	b := startFakeBox(t)
+	b.frozen.Store(true)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := WakeAndWait(ctx, "127.0.0.1", 4*time.Second, nil); err == nil {
+		t.Fatalf("WakeAndWait reported success against a frozen :8090; want an unreadable-state error")
+	}
+	if n := b.powerCmd.Load(); n != 0 {
+		t.Fatalf("WakeAndWait sent %d `sys power` toggle(s) while the box state was unreadable; want 0 (a blind toggle switches a playing box off)", n)
 	}
 }
 
