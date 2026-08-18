@@ -37,7 +37,14 @@ type ZoneSpec struct {
 // (GET /api/box/zone) -> {master, senderIP, members[]}. Self-heals across
 // :8888/:17008 like the other box calls.
 func (a *App) GetZoneState(host string, port int) (map[string]any, error) {
-	resp, err := a.boxDo(host, port, http.MethodGet, "/api/box/zone", "", "")
+	// 10 s, not the shared 6 s: agents up to v0.9.49 chained the firmware's
+	// /getGroup — which HANGS on scm/BCO chassis — into this read, so their
+	// answer arrives after ~6.0-6.1 s and the shared client always gave up a
+	// hair first. Net effect: no non-ST10 speaker ever delivered a live zone
+	// to the app and the group screens ran on optimistic data alone (the
+	// two-screens-disagree family, 2026-08-18). Newer agents answer in ~2 s
+	// worst case; the headroom keeps the poll working against older ones.
+	resp, err := a.boxDoTimeout(host, port, http.MethodGet, "/api/box/zone", "", "", 10*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +146,13 @@ func (a *App) FormZone(masterHost string, masterPort int, spec ZoneSpec) (result
 	// failure (e.g. the firmware refusing /addGroup) left no trace at all. The
 	// error returned to the frontend already carries the agent's "addGroup: ..."
 	// / "setZone: ..." text, so this records the real firmware reason.
+	slaveIDs := make([]string, 0, len(spec.Slaves))
+	for _, m := range spec.Slaves {
+		slaveIDs = append(slaveIDs, m.DeviceID+"@"+m.IP)
+	}
 	a.logger.Info("FormZone: forming (stereo=alpha, zone=beta)", "masterHost", masterHost,
 		"master", spec.Master.DeviceID, "masterIP", spec.Master.IP, "slaves", len(spec.Slaves),
-		"stereo", spec.Stereo, "mode", spec.Mode)
+		"slaveList", strings.Join(slaveIDs, ","), "stereo", spec.Stereo, "mode", spec.Mode)
 	defer func() {
 		if err != nil {
 			a.logger.Warn("FormZone: failed", "stereo", spec.Stereo, "master", spec.Master.DeviceID, "err", err)

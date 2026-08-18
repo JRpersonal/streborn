@@ -77,8 +77,13 @@ export function renderMultiroom(fetchLive) {
     // the first one discovered meant the star, and with it the dissolve, sat on
     // whichever speaker happened to be first in the list while another one led
     // the group, so the page described a group nobody was in.
+    // liveZoneMaster returns the box OBJECT; zoneMaster holds a deviceID
+    // string everywhere else (card badges compare, doFormZone looks it up).
+    // Assigning the object (v0.9.48) made every comparison false: no card
+    // ever showed MAIN and forming silently no-oped on fleets with a live
+    // zone answer.
     const live = liveZoneMaster(strBoxes);
-    state.zoneMaster = live || (strBoxes.length ? strBoxes[0].deviceID : '');
+    state.zoneMaster = (live && live.deviceID) || (strBoxes.length ? strBoxes[0].deviceID : '');
   }
   const anyOutdated = strBoxes.some(b => deps.boxNeedsUpdate(b));
 
