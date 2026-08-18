@@ -141,3 +141,43 @@ func TestSlotPulledSinceLiveness(t *testing.T) {
 		t.Fatal("a sustained finished session must count as playback")
 	}
 }
+
+// TestUpstreamStallForcesReconnect pins the #510 stall watchdog: an upstream
+// that goes silent WITHOUT closing (no FIN, no RST) used to block the copy
+// loop in Read() forever, starving the box on an open, byte-less connection
+// (live 2026-08-18: an ST20 in BUFFERING_STATE for minutes). The watchdog has
+// to close the upstream after a few silent seconds so the normal reconnect
+// path takes over while the box's own connection stays open.
+func TestUpstreamStallForcesReconnect(t *testing.T) {
+	stallRelease := make(chan struct{})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(make([]byte, 4096))
+		w.(http.Flusher).Flush()
+		<-stallRelease // stall: connection stays open, no further bytes
+	}))
+	defer func() { close(stallRelease); up.Close() }()
+
+	s := New(presets.New(), silentLogger())
+	// The production client refuses loopback dials (SSRF guard); the watchdog
+	// under test sits below the client, so a plain client keeps the test local.
+	s.client = &http.Client{}
+
+	req := httptest.NewRequest(http.MethodGet, "/raw", nil)
+	rw := httptest.NewRecorder()
+	start := time.Now()
+	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, true)
+	if elapsed := time.Since(start); elapsed > 15*time.Second {
+		t.Fatalf("stall took %s to detect; the watchdog should fire after ~5s", elapsed)
+	}
+	if !boseAlive {
+		t.Fatalf("streamOne reported the box gone; a stalled UPSTREAM must ask for a reconnect instead")
+	}
+	if err == nil {
+		t.Fatalf("expected the stall-closed read error, got nil")
+	}
+	if rw.Body.Len() == 0 {
+		t.Fatalf("the bytes before the stall never reached the client")
+	}
+}
