@@ -151,6 +151,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// every /api/status poll forever.
 	cl := &http.Client{Timeout: 5 * time.Second}
 	resp, err := cl.Get(fmt.Sprintf("http://%s:8090/now_playing", s.boxHost))
+	s.noteBoseAppFetch(err == nil)
 	if err != nil {
 		// Fall back to the last cached body on a box error so a brief BoseApp
 		// hiccup does not blank the now-playing display. The body must stay
@@ -202,6 +203,61 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(body)
+}
+
+// boseappOutage is one closed episode of the firmware webserver (:8090) not
+// answering, as observed by the /api/status fetch path.
+type boseappOutage struct {
+	Start   string `json:"start"`
+	End     string `json:"end"`
+	Seconds int    `json:"seconds"`
+}
+
+// boseappOutageKeep bounds the episode ring; the freeze family produces a
+// handful of long episodes, not thousands, so a short ring is plenty.
+const boseappOutageKeep = 10
+
+// noteBoseAppFetch feeds the :8090 outage tracker with one fetch verdict.
+func (s *Server) noteBoseAppFetch(ok bool) {
+	now := time.Now()
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	if ok {
+		if !s.boseappDownSince.IsZero() {
+			s.boseappOutages = append(s.boseappOutages, boseappOutage{
+				Start:   s.boseappDownSince.Format(time.RFC3339),
+				End:     now.Format(time.RFC3339),
+				Seconds: int(now.Sub(s.boseappDownSince).Seconds()),
+			})
+			if len(s.boseappOutages) > boseappOutageKeep {
+				s.boseappOutages = s.boseappOutages[len(s.boseappOutages)-boseappOutageKeep:]
+			}
+			s.boseappDownSince = time.Time{}
+		}
+		return
+	}
+	if s.boseappDownSince.IsZero() {
+		s.boseappDownSince = now
+	}
+}
+
+// BoseAppHealth is the /api/debug/state section with the :8090 outage record:
+// whether the firmware webserver is answering right now, for how long it has
+// been dead if not, and the recent closed outage episodes. Observation is
+// demand-driven (the app's status poll), so gaps with no polling show no data
+// rather than false uptime.
+func (s *Server) BoseAppHealth() any {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	out := map[string]any{
+		"currentlyDown": !s.boseappDownSince.IsZero(),
+		"episodes":      append([]boseappOutage(nil), s.boseappOutages...),
+	}
+	if !s.boseappDownSince.IsZero() {
+		out["downSince"] = s.boseappDownSince.Format(time.RFC3339)
+		out["downForSec"] = int(time.Since(s.boseappDownSince).Seconds())
+	}
+	return out
 }
 
 // ---- Helpers ----
