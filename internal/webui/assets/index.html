@@ -2018,7 +2018,15 @@ function applyScopeUI() {
   var bG = document.getElementById('scopeGroup'), bP = document.getElementById('scopePair'), bO = document.getElementById('scopeOne');
   if (!row || !bG || !bP || !bO) return;
   row.hidden = !zone.grouped;
-  if (!zone.grouped) { volScope = 'one'; volScopeChosen = false; return; }
+  if (!zone.grouped) {
+    volScope = 'one'; volScopeChosen = false;
+    // The hint is a SIBLING of the scope row, so hiding the row does not take
+    // it along: after a dissolve the "N speakers playing together" line stayed
+    // on the Play tab until the page was reopened (#640).
+    var goneHint = document.getElementById('volScopeHint');
+    if (goneHint) goneHint.hidden = true;
+    return;
+  }
   // Group and pair are the same membership seen two ways, so only one of the
   // two ever appears. Offering both would invite the question "what is the
   // difference", which has no answer.
