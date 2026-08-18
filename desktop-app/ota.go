@@ -246,6 +246,33 @@ func (a *App) UpdateBoxAgent(host string, port int) (err error) {
 	a.notePostOTA(host)
 	a.refreshStick(host)
 
+	// Pre-v0.9.26 agents cannot SURVIVE the HTTP push: they collect an upload
+	// via growth-doubling ReadAll, so the ~13.6 MB agent body peaks near 27 MB
+	// of RAM and the box's watchdog reboots the SPEAKER mid-receive or
+	// mid-apply. Field case 2026-08-18: an ST20 on v0.9.14 looped forever -
+	// upload, crash, reboot, still old, app correctly re-offers, repeat. For
+	// those agents the update goes over SSH instead: ask the OLD agent to open
+	// sshd via its tiny /api/agent/enable-ssh POST (present since long before
+	// v0.9.14; costs no memory), then stream the binary to NAND over SSH with
+	// the old agent's dying upload path never involved. The sshd marker lives
+	// in tmpfs, so SSH closes itself again on the post-swap reboot. Any
+	// failure here falls through to the normal HTTP path, which is exactly
+	// today's behaviour - this detour can only improve things.
+	if ver, verr := a.BoxAgentVersion(host, port); verr == nil {
+		if bv := strings.TrimSpace(ver["version"]); bv != "" && versionLess(bv, "v0.9.26") {
+			a.recordOTA(host, "agent "+bv+" predates the streamed upload path (v0.9.26): updating over SSH, the old agent dies receiving large HTTP bodies")
+			a.logger.Info("update agent: old agent, using SSH instead of the HTTP push", "host", host, "agent", bv)
+			a.enableAgentSSH(host, port)
+			if sshErr := a.updateAgentViaSSH(host, bin); sshErr == nil {
+				a.logger.Info("update agent: SSH-OTA for old agent succeeded", "host", host, "bytes", len(bin))
+				return nil
+			} else {
+				a.recordOTA(host, "old-agent SSH update failed, falling back to the HTTP path: "+sshErr.Error())
+				a.logger.Warn("update agent: SSH-OTA for old agent failed, falling back to HTTP", "host", host, "err", sshErr)
+			}
+		}
+	}
+
 	// Deliver the go-librespot Spotify sidecar BEFORE the agent binary push, and
 	// copy everything onto the box so it reboots exactly once with all files
 	// already in place — no post-reboot re-install (better UX). The agent binary
@@ -1150,6 +1177,26 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 // it from the new file. Each step's failure is reported with concrete
 // context so the desktop's error toast tells the user what to look at
 // instead of "ssh: exit 1".
+// enableAgentSSH asks the running agent to start the box's sshd via its
+// /api/agent/enable-ssh endpoint (LAN-gated agent-side; the marker it writes
+// lives in tmpfs, so sshd stays closed again after the next reboot). Used
+// before an SSH-OTA against a pre-v0.9.26 agent whose HTTP upload path cannot
+// be trusted with large bodies. Best-effort: updateAgentViaSSH retries its
+// handshake and has its own :17000 escalation, so a failure here costs
+// nothing.
+func (a *App) enableAgentSSH(host string, port int) {
+	resp, err := a.boxDo(host, port, http.MethodPost, "/api/agent/enable-ssh", "", "")
+	if err != nil {
+		a.logger.Info("enable-ssh: agent endpoint not reachable", "host", host, "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	a.logger.Info("enable-ssh: requested from agent", "host", host, "status", resp.StatusCode, "resp", strings.TrimSpace(string(body)))
+	// Give sshd a moment to bind before the handshake probes start.
+	time.Sleep(2 * time.Second)
+}
+
 func (a *App) updateAgentViaSSH(host string, bin []byte) error {
 	// 4 spaced attempts (sshHandshake): the OTA path runs when the box is
 	// busiest, exactly where the one-shot 8 s attempt used to flake (#114).
