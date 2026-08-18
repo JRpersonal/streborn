@@ -17,6 +17,14 @@
 !/desktop-app/build/darwin/
 /desktop-app/build/darwin/*
 !/desktop-app/build/darwin/Info.plist
+# The Windows icon and manifest are sources too, not build output: the resource
+# generator reads them, and it runs BEFORE wails, so nothing recreates them on a
+# clean checkout. Missing them is what broke the first release that used the
+# generator, in CI only, where the build directory does not exist.
+!/desktop-app/build/windows/
+/desktop-app/build/windows/*
+!/desktop-app/build/windows/icon.ico
+!/desktop-app/build/windows/wails.exe.manifest
 /desktop-app/frontend/dist/
 /desktop-app/frontend/node_modules/
 /desktop-app/desktop-app/
