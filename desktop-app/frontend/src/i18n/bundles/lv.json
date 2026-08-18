@@ -719,6 +719,8 @@
   "settingsView.webhookTestOk": "Pārbaudes pieprasījums nosūtīts (HTTP {{status}}).",
   "settingsView.webhookTestFailed": "Pārbaude neizdevās: {{err}}",
   "settingsView.wlanHeading": "Wi-Fi",
+  "settingsView.netHeading": "Tīkls",
+  "settingsView.wlanWired": "Savienots ar tīkla kabeli",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IP adrese",
   "settingsView.wlanSignal": "Signāls",

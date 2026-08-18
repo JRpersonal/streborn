@@ -474,6 +474,7 @@ function groupSettingsSections() {
     [t('settingsView.bassHeading')]: 'basics',
     [t('settingsView.clockHeading')]: 'sound',
     [t('settingsView.wlanHeading')]: 'network',
+    [t('settingsView.netHeading')]: 'network',
     [t('settingsView.langHeading')]: 'basics',
     [t('settingsView.regionHeading')]: 'network',
     [t('settingsView.sourcesHeading')]: 'info',
@@ -750,6 +751,14 @@ function renderBoxSettings(s, box) {
   const wifi = (net.interfaces || []).find(i =>
     (i.type === 'WIFI_INTERFACE' && i.state === 'NETWORK_WIFI_CONNECTED') ||
     (i.state === 'NETWORK_ETHERNET_CONNECTED' && i.ipAddress));
+  // A connected ETHERNET_INTERFACE is ambiguous: on BCO chassis it IS the
+  // Wi-Fi coprocessor, but on a box that also lists a real WIFI_INTERFACE
+  // (SA-5, sm2 ST20/ST30 on a cable) it is a genuine wired link, and calling
+  // that "Wi-Fi connected" with the wired IP was wrong (#641). The presence
+  // of a separate WIFI_INTERFACE in the box's own list is the discriminator:
+  // BCO boxes have none at all.
+  const hasRealWifiIface = (net.interfaces || []).some(i => i.type === 'WIFI_INTERFACE');
+  const isWired = !!(wifi && wifi.type !== 'WIFI_INTERFACE' && hasRealWifiIface);
   const signalLabel = {
     'EXCELLENT_SIGNAL': t('signal.excellent'),
     'GOOD_SIGNAL': t('signal.good'),
@@ -760,7 +769,7 @@ function renderBoxSettings(s, box) {
   // BCO boxes (scm ST20, Portable) expose Wi-Fi as an ethernet coprocessor
   // and report no signal class. Show an honest note instead of a bare "-"
   // so it does not read like a missing/failed reading (issue #90).
-  const isCoprocessorWifi = wifi && wifi.type !== 'WIFI_INTERFACE';
+  const isCoprocessorWifi = wifi && wifi.type !== 'WIFI_INTERFACE' && !hasRealWifiIface;
   const signalText = signalLabel[wifi && wifi.signal] || (wifi && wifi.signal) ||
     (isCoprocessorWifi ? t('signal.notReported') : '-');
   const uid = uidSuffixFor(box);
@@ -813,13 +822,16 @@ function renderBoxSettings(s, box) {
     </div>
 
     <div class="settings-section">
-      <h3>${escapeHtml(t('settingsView.wlanHeading'))}</h3>
-      ${wifi ? `
+      <h3>${escapeHtml(t(isWired ? 'settingsView.netHeading' : 'settingsView.wlanHeading'))}</h3>
+      ${wifi ? (isWired ? `
+        <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanIp'))}</span><span class="kv-val">${escapeHtml(wifi.ipAddress || '-')}</span></div>
+        <div class="muted small">${escapeHtml(t('settingsView.wlanWired'))}</div>
+      ` : `
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSsid'))}</span><span class="kv-val">${escapeHtml(wifi.ssid || '-')}</span></div>
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanIp'))}</span><span class="kv-val">${escapeHtml(wifi.ipAddress || '-')}</span></div>
         <div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanSignal'))}</span><span class="kv-val">${escapeHtml(signalText)}</span></div>
         ${wifi.frequencyKHz ? `<div class="kv-row"><span class="kv-key">${escapeHtml(t('settingsView.wlanFrequency'))}</span><span class="kv-val">${(wifi.frequencyKHz/1000).toFixed(0)} MHz</span></div>` : ''}
-      ` : `<div class="muted small">${escapeHtml(t('settingsView.wlanNotConnected'))}</div>`}
+      `) : `<div class="muted small">${escapeHtml(t('settingsView.wlanNotConnected'))}</div>`}
       <small class="muted small" style="display:block;margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchHint'))}</small>
       <button class="btn" id="wlanSwitchToggle" style="margin-top:8px">${escapeHtml(t('settingsView.wlanSwitchToggle'))}</button>
       <div id="wlanSwitchForm" class="hidden" style="margin-top:8px">

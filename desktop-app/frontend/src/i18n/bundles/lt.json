@@ -719,6 +719,8 @@
   "settingsView.webhookTestOk": "Bandomoji užklausa išsiųsta (HTTP {{status}}).",
   "settingsView.webhookTestFailed": "Bandymas nepavyko: {{err}}",
   "settingsView.wlanHeading": "Wi-Fi",
+  "settingsView.netHeading": "Tinklas",
+  "settingsView.wlanWired": "Prijungta tinklo kabeliu",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IP adresas",
   "settingsView.wlanSignal": "Signalas",

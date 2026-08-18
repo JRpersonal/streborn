@@ -719,6 +719,8 @@
   "settingsView.webhookTestOk": "Test isteği gönderildi (HTTP {{status}}).",
   "settingsView.webhookTestFailed": "Test başarısız oldu: {{err}}",
   "settingsView.wlanHeading": "Wi-Fi",
+  "settingsView.netHeading": "Ağ",
+  "settingsView.wlanWired": "Ağ kablosuyla bağlı",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IP adresi",
   "settingsView.wlanSignal": "Sinyal",

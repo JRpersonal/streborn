@@ -719,6 +719,8 @@
   "settingsView.webhookTestOk": "Тестовий запит надіслано (HTTP {{status}}).",
   "settingsView.webhookTestFailed": "Помилка перевірки: {{err}}",
   "settingsView.wlanHeading": "Wi-Fi",
+  "settingsView.netHeading": "Мережа",
+  "settingsView.wlanWired": "Підключено мережевим кабелем",
   "settingsView.wlanSsid": "SSID",
   "settingsView.wlanIp": "IP-адреса",
   "settingsView.wlanSignal": "Сигнал",
