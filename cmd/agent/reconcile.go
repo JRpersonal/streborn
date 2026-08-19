@@ -318,6 +318,24 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			}
 			continue
 		}
+		// A forced full pass must not run INTO a live hardware recall: the six
+		// AddPresets activate sources and yank the transport the recall is
+		// driving (live ST30 2026-08-19: the wake-press recall and the
+		// box-became-ready full re-sync interleaved, the source flapped
+		// UPNP/LOCAL_INTERNET_RADIO/INVALID_SOURCE, and the press ended in
+		// silence plus a skip storm). Wait the recall out, bounded: the verify
+		// loops stamp activity for at most ~25 s, and the re-sync still runs
+		// right afterwards, so nothing is lost, only ordered.
+		if force {
+			waitedForRecall := false
+			for waited := time.Duration(0); recallActiveWithin(15*time.Second) && waited < 60*time.Second; waited += 2 * time.Second {
+				waitedForRecall = true
+				time.Sleep(2 * time.Second)
+			}
+			if waitedForRecall {
+				logger.Info("preset reconcile: forced pass waited for a live hardware recall to finish before writing")
+			}
+		}
 		ready := reconcileOnce(store, boxHost, logger, force)
 		fullDone = ready
 		if ready {

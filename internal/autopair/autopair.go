@@ -74,6 +74,18 @@ type Manager struct {
 	// tickCount is only touched by RunBackground's own goroutine.
 	tickCount int
 
+	// firstAssertDone records that the start-up account re-assert actually
+	// RAN (the setMargeAccount POST went through), as opposed to having been
+	// attempted. Forcing only on tick 1 was not enough: on a freshly booted
+	// box the POST can time out against the still-settling firmware, every
+	// later tick then saw the box's stale "paired" and no-oped, the firmware
+	// never re-onboarded with the local marge, and group operations failed
+	// with 5580 GROUP_CREATE_GROUP_ON_MARGE_ERROR for as long as the box was
+	// up (field case 2026-08-19: a stereo pair refused for 20+ minutes while
+	// autopair reported state=paired throughout). The flag keeps the force on
+	// until a re-assert lands.
+	firstAssertDone atomic.Bool
+
 	// onPaired fires when the box transitions from unpaired to paired (a
 	// completed (re-)onboarding). The firmware wipes its hardware-key preset
 	// registrations during exactly that onboarding, so the agent hooks this to
@@ -258,16 +270,56 @@ func (m *Manager) ensure(ctx context.Context, force bool) error {
 	}
 	switch {
 	case paired:
-		m.logger.Warn("autopair phase: first cycle after start, re-asserting the account (clears a stale paired state and the dead-cloud amber icon)", "accountID", m.cfg.AccountID)
+		// A retried re-assert can land minutes after boot, when the user may
+		// already be listening, and re-onboarding a PLAYING box bounces its
+		// active source (the 0.9.17 self-off lesson). Only re-assert an
+		// already-paired box while it is idle; a playing box keeps its music
+		// and the pending flag keeps the retry alive for a quieter tick.
+		if src, idle := m.boxIdleForReassert(ctx); !idle {
+			m.logger.Info("autopair phase: start-up re-assert deferred, the box is playing; retrying on a later tick", "source", src)
+			return nil
+		}
+		m.logger.Warn("autopair phase: re-asserting the account (clears a stale paired state, the dead-cloud amber icon, and a boot-window re-assert that never landed)", "accountID", m.cfg.AccountID)
 	default:
 		m.logger.Warn("autopair phase: box not paired, starting auto pair", "accountID", m.cfg.AccountID)
 	}
 	if err := m.Pair(ctx); err != nil {
 		return fmt.Errorf("pair: %w", err)
 	}
+	// Either path ends in a completed setMargeAccount round trip, which is
+	// exactly what the start-up re-assert exists to guarantee.
+	m.firstAssertDone.Store(true)
 	m.logger.Warn("autopair phase: box paired successfully", "accountID", m.cfg.AccountID)
 	return nil
 }
+
+// boxIdleForReassert reports whether the box is idle enough to survive an
+// account re-assert without losing audio, plus the source it saw. Idle means
+// no active source (standby, nothing selected, or setup). A failed read
+// counts as NOT idle: the retry is free, a bounced source is not.
+func (m *Manager) boxIdleForReassert(ctx context.Context) (string, bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.base+"/now_playing", nil)
+	if err != nil {
+		return "", false
+	}
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return "unreadable", false
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	src := ""
+	if mm := nowPlayingSourceRe.FindSubmatch(body); mm != nil {
+		src = string(mm[1])
+	}
+	switch src {
+	case "", "STANDBY", "INVALID_SOURCE", "SETUP":
+		return src, true
+	}
+	return src, false
+}
+
+var nowPlayingSourceRe = regexp.MustCompile(`source="([^"]*)"`)
 
 // recordPairedState emits a phase marker on every transition (paired
 // <-> not paired). The first observation also counts as a transition,
@@ -402,11 +454,12 @@ func (m *Manager) RunBackground(ctx context.Context, startDelay, interval time.D
 	lastHeartbeatState := ""
 	for {
 		m.tickCount++
-		// The first cycle after start forces a re-assert even when the box
-		// reports paired: see ensure() for the two live failure modes a
-		// stale "paired" hides (amber cloud icon after reboot, ST300 silent
-		// login loss).
-		if err := m.ensure(ctx, m.tickCount == 1); err != nil {
+		// Until the start-up re-assert has actually LANDED, every cycle keeps
+		// forcing it even when the box reports paired: see ensure() for the
+		// failure modes a stale "paired" hides (amber cloud icon after
+		// reboot, ST300 silent login loss, and the 5580 group refusals of a
+		// box whose boot-window re-assert timed out).
+		if err := m.ensure(ctx, !m.firstAssertDone.Load()); err != nil {
 			m.logger.Warn("auto pair failed, will retry next tick", "err", err)
 		} else if m.tickCount%heartbeatEvery == 0 {
 			state := "unknown"

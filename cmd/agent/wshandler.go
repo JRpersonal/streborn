@@ -392,7 +392,25 @@ func (h *presetWsHandler) OnPresetsChanged(_ context.Context, presets []boxws.Bo
 	}
 }
 
+// lastRecallActivity stamps every moment a hardware recall is actively driving
+// the box (press entry and each verify attempt), so the preset reconcile can
+// hold its full re-sync out of a recall's way. Live ST30 2026-08-19: the
+// user's wake-press recall and the box-became-ready full re-sync ran
+// interleaved, the six AddPresets and the recall yanked the source back and
+// forth (UPNP/LOCAL_INTERNET_RADIO/INVALID_SOURCE), and the recall lost.
+var lastRecallActivity atomic.Int64
+
+func noteRecallActivity() { lastRecallActivity.Store(time.Now().UnixNano()) }
+
+// recallActiveWithin reports whether a hardware recall showed activity within
+// the last d.
+func recallActiveWithin(d time.Duration) bool {
+	ns := lastRecallActivity.Load()
+	return ns != 0 && time.Since(time.Unix(0, ns)) < d
+}
+
 func (h *presetWsHandler) OnPresetSelected(ctx context.Context, slot int, location, title string) {
+	noteRecallActivity()
 	// Press time is taken while still on the gabbo read loop, so every
 	// stand-down check anchors to when the user actually pressed, not to when
 	// STR got around to the recall.
@@ -1168,6 +1186,7 @@ func (h *presetWsHandler) verifyPlayURL(seq, gen uint64, pressAt time.Time, slot
 	// network and playback subsystem back up before it accepts the stream (#183).
 	nudged := false
 	for attempt := 1; attempt <= 5; attempt++ {
+		noteRecallActivity()
 		time.Sleep(5 * time.Second)
 		// A newer press or app recall owns the transport now: this loop's URL is
 		// stale, and re-pushing it would flip the box back to the previous
@@ -1393,6 +1412,7 @@ func (h *presetWsHandler) verifySpotifyPlaying(seq, gen uint64, pressAt time.Tim
 	// tick forces a re-point instead of trusting the box's playing-looking state.
 	lastRejectSeen := pressAt
 	for attempt := 1; attempt <= 3; attempt++ {
+		noteRecallActivity()
 		time.Sleep(5 * time.Second)
 		// A newer press or app recall owns the transport: re-pointing at this
 		// Spotify slot now would yank the user's newest choice (e.g. a radio
@@ -1462,6 +1482,24 @@ func (h *presetWsHandler) verifySpotifyPlaying(seq, gen uint64, pressAt time.Tim
 		// location so two Spotify presets do not collide on one URL (#22).
 		_ = h.renderer.PlayURLMime(ctx, boxurl.SpotifySlot(slot), p.Name, p.Art, "audio/ogg")
 		cancel()
+	}
+	// Give-up teardown: with the box never having attached, a still-"playing"
+	// engine has NO consumer, and its passthrough then chews through the whole
+	// playlist at download speed while the auto-attach re-fires every few
+	// seconds (live ST30 2026-08-19: 30+ tracks skipped in 25 minutes after a
+	// refused recall, forwardedKB frozen throughout). Pause the engine so the
+	// storm ends with the recall; the next press or app play un-pauses it via
+	// PlayAccount. Only when the box really fetched nothing: if it holds an
+	// open pull, audio may be seconds away and pausing would kill it.
+	if h.spotify != nil && !h.slotFetchLiveNow(slot) {
+		pctx, pcancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if perr := h.spotify.Pause(pctx); perr == nil {
+			h.logger.Warn("spotify recall still not playing after retries; pausing the engine so it does not skip through the playlist with no listener", "slot", slot)
+		} else {
+			h.logger.Warn("spotify recall still not playing after retries (engine pause failed)", "slot", slot, "err", perr)
+		}
+		pcancel()
+		return
 	}
 	h.logger.Warn("spotify recall still not playing after retries", "slot", slot)
 }
