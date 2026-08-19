@@ -1521,8 +1521,9 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 // The returned restore func is never nil and safe to defer.
 func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 	restore = func() {}
-	if _, err := os.Stat("/sys/class/net/wlan0"); err != nil {
-		return restore
+	iface := wirelessIface()
+	if iface == "" {
+		return restore // wired or no readable wireless interface
 	}
 	if src := s.boxSourceNow(); src != "STANDBY" {
 		return restore
@@ -1532,8 +1533,8 @@ func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 		off, on []string
 	}
 	tools := []tool{
-		{"iwconfig", []string{"wlan0", "power", "off"}, []string{"wlan0", "power", "on"}},
-		{"iw", []string{"dev", "wlan0", "set", "power_save", "off"}, []string{"dev", "wlan0", "set", "power_save", "on"}},
+		{"iwconfig", []string{iface, "power", "off"}, []string{iface, "power", "on"}},
+		{"iw", []string{"dev", iface, "set", "power_save", "off"}, []string{"dev", iface, "set", "power_save", "on"}},
 	}
 	for _, t := range tools {
 		if out, err := exec.Command(t.name, t.off...).CombinedOutput(); err == nil {
@@ -1556,6 +1557,23 @@ func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
 	s.logger.Info("upload: no wireless power-save toggle in this firmware, transferring at the throttled rate",
 		"endpoint", endpoint)
 	return restore
+}
+
+// wirelessIface names the box's wireless interface, or "" when there is none.
+// The name is NOT uniform across chassis - the sm2 boxes expose wlan0 while
+// the BCO/taigan chipset surfaces its WLAN as eth0 - so read the kernel's
+// own list (/proc/net/wireless) instead of guessing.
+func wirelessIface() string {
+	b, err := os.ReadFile("/proc/net/wireless")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if i := strings.IndexByte(line, ':'); i > 0 {
+			return strings.TrimSpace(line[:i])
+		}
+	}
+	return ""
 }
 
 // isLocalLAN true if the request comes from a private LAN IP
