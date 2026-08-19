@@ -708,7 +708,11 @@ func (s *Server) reattachAfterSoftSkip() {
 		// deadline, so "recent" counts too. No boundary within the wait means
 		// the engine never delivered the track: keep the buffered stream (the
 		// old, slow-but-safe behavior) and let the recovery net decide.
-		deadline := time.Now().Add(6 * time.Second)
+		// The window sits above the slowest observed engine load (11.3 s,
+		// live Portable 2026-08-19 on a cold merged engine): waiting costs
+		// nothing, the box plays its buffer meanwhile, and a late push still
+		// beats the in-band switch by the remaining buffer length.
+		deadline := time.Now().Add(12 * time.Second)
 		for {
 			if s.spotifySkipBoundary != nil {
 				if b := s.spotifySkipBoundary(); b.After(armedAt.Add(-3 * time.Second)) {
