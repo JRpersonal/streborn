@@ -726,6 +726,14 @@ func (s *Server) reattachAfterSoftSkip() {
 			}
 			if time.Now().After(deadline) {
 				s.logger.Info("skip: no track boundary within the wait, keeping the box's buffered stream")
+				// Nothing was pushed: release the burst debounce so the NEXT
+				// skip may re-push, instead of silently inheriting this
+				// attempt's give-up for another eight seconds.
+				s.skipRepushMu.Lock()
+				if s.lastSkipRepushAt.Equal(armedAt) || s.lastSkipRepushAt.Before(armedAt) {
+					s.lastSkipRepushAt = time.Time{}
+				}
+				s.skipRepushMu.Unlock()
 				return
 			}
 			time.Sleep(200 * time.Millisecond)
