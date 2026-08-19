@@ -29,6 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "スピーカーが応答しません。待機中",
   "updateAll.phase.done": "完了",
   "updateAll.phase.deferred": "更新済み、Spotify は後で",
+  "updateAll.phase.engineMissing": "更新されましたが、Spotifyが届きませんでした。もう一度アップデートを実行してください。",
   "updateAll.phase.timeout": "予想より時間がかかっています。本体の電源が切れた場合は、もう一度電源を入れると通常は更新が完了します。",
   "updateAll.phase.failed": "失敗",
   "locale.label": "日本語",

@@ -29,6 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Głośnik teraz nie odpowiada, czekam",
   "updateAll.phase.done": "Gotowe",
   "updateAll.phase.deferred": "Zaktualizowano, Spotify wkrótce",
+  "updateAll.phase.engineMissing": "Zaktualizowano, ale Spotify nie dotarł. Po prostu uruchom aktualizację ponownie.",
   "updateAll.phase.timeout": "Trwa dłużej niż zwykle. Jeśli urządzenie samo się wyłączyło, włącz je ponownie, wtedy aktualizacja zwykle się kończy.",
   "updateAll.phase.failed": "Niepowodzenie",
   "locale.label": "Polski",

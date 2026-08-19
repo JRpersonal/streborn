@@ -29,6 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Luidspreker antwoordt nu niet, wachten",
   "updateAll.phase.done": "Klaar",
   "updateAll.phase.deferred": "Bijgewerkt, Spotify volgt",
+  "updateAll.phase.engineMissing": "Bijgewerkt, maar Spotify is niet aangekomen. Start de update gewoon opnieuw.",
   "updateAll.phase.timeout": "Duurt langer dan verwacht. Als het toestel zichzelf heeft uitgeschakeld, zet het weer aan, dan wordt de update meestal voltooid.",
   "updateAll.phase.failed": "Mislukt",
   "locale.label": "Nederlands",
