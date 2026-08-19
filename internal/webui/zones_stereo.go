@@ -929,6 +929,23 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			err = c.AddGroup(hctx, name, master.DeviceID, members)
 			hcancel()
 		}
+		// 5580 GROUP_CREATE_GROUP_ON_MARGE_ERROR: the firmware could not
+		// register the pair with its marge because its session is stale - the
+		// box REPORTS paired while it never re-onboarded with the local marge
+		// (its request trail is empty). Field case 2026-08-19: the master's
+		// boot-window account re-assert had timed out and every pairing
+		// attempt for 20+ minutes answered 5580. Re-log the box in and retry
+		// once; the fresh session is what the group create needs.
+		if isMargeGroupErr(err) && s.autoPair != nil {
+			s.logger.Warn("stereo: the speaker could not register the pair with its marge session (5580), re-logging it in and retrying once", "err", err)
+			fctx, fcancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+			s.autoPair.ForcePair(fctx)
+			// The box re-onboards with marge in the seconds AFTER the POST
+			// answers; give that a moment so the retry meets a live session.
+			time.Sleep(8 * time.Second)
+			err = c.AddGroup(fctx, name, master.DeviceID, members)
+			fcancel()
+		}
 		if err != nil {
 			// Before reporting a failure, ASK the speaker. A timed-out or reset
 			// /addGroup does not mean the firmware did nothing: it kept going and
@@ -1029,6 +1046,17 @@ func isGroupExistsErr(err error) bool {
 	}
 	msg := strings.ToUpper(err.Error())
 	return strings.Contains(msg, "5510") || strings.Contains(msg, "GROUP_ALREADY_EXISTS")
+}
+
+// isMargeGroupErr reports whether an /addGroup error is the firmware's 5580
+// GROUP_CREATE_GROUP_ON_MARGE_ERROR: the box could not register the group
+// with its marge, which on an STR box means its marge session is stale.
+func isMargeGroupErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToUpper(err.Error())
+	return strings.Contains(msg, "5580") || strings.Contains(msg, "GROUP_CREATE_GROUP_ON_MARGE_ERROR")
 }
 
 // healStaleStereoGroups clears a stale stereo pair from both speakers'

@@ -23,6 +23,10 @@ type fakeBox struct {
 	infoDelay time.Duration
 	pairDelay time.Duration // how long the box sits on /setMargeAccount
 	pairPosts atomic.Int64
+	// pairStatus lets a test make /setMargeAccount fail (0 = 200 OK).
+	pairStatus int
+	// nowPlaying is served on /now_playing (empty = 404, which reads as idle).
+	nowPlaying string
 }
 
 func (f *fakeBox) handler() http.Handler {
@@ -47,7 +51,23 @@ func (f *fakeBox) handler() http.Handler {
 		if delay > 0 {
 			time.Sleep(delay)
 		}
-		w.WriteHeader(http.StatusOK)
+		f.mu.Lock()
+		st := f.pairStatus
+		f.mu.Unlock()
+		if st == 0 {
+			st = http.StatusOK
+		}
+		w.WriteHeader(st)
+	})
+	mux.HandleFunc("/now_playing", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		np := f.nowPlaying
+		f.mu.Unlock()
+		if np == "" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(np))
 	})
 	return mux
 }
@@ -399,5 +419,60 @@ func TestStatusReadKeepsTheShortDeadline(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
 		t.Fatalf("status read waited %v, so it is using the long pair deadline", elapsed)
+	}
+}
+
+// TestStartupReassertRetriesUntilLanded pins the 2026-08-19 field failure: the
+// start-up re-assert timed out against the still-booting firmware, every later
+// tick saw the stale "paired" and no-oped, and the box answered group creates
+// with 5580 for as long as it was up. The force flag must stay on until a
+// re-assert actually lands, and turn off afterwards.
+func TestStartupReassertRetriesUntilLanded(t *testing.T) {
+	box := &fakeBox{infoBody: pairedInfo, pairStatus: http.StatusInternalServerError}
+	m := newTestManager(t, box)
+
+	// Tick 1: the forced re-assert runs and FAILS (boot-window class).
+	if err := m.ensure(context.Background(), !m.firstAssertDone.Load()); err == nil {
+		t.Fatalf("ensure should report the failed re-assert")
+	}
+	if m.firstAssertDone.Load() {
+		t.Fatalf("a failed re-assert must keep the flag pending")
+	}
+
+	// Tick 2: the box has settled; the retry must still be FORCED and land.
+	box.mu.Lock()
+	box.pairStatus = http.StatusOK
+	box.mu.Unlock()
+	if err := m.ensure(context.Background(), !m.firstAssertDone.Load()); err != nil {
+		t.Fatalf("retried re-assert: %v", err)
+	}
+	if !m.firstAssertDone.Load() {
+		t.Fatalf("a landed re-assert must mark the flag done")
+	}
+
+	// Tick 3: done - a paired box is a no-op again (the v0.9.0 contract).
+	if err := m.ensure(context.Background(), !m.firstAssertDone.Load()); err != nil {
+		t.Fatalf("steady tick: %v", err)
+	}
+	if got := box.pairPosts.Load(); got != 2 {
+		t.Fatalf("want exactly 2 setMargeAccount POSTs (fail + landed), got %d", got)
+	}
+}
+
+// TestStartupReassertDefersWhilePlaying: a retried re-assert can land minutes
+// after boot with the user already listening, and re-onboarding a playing box
+// bounces its source (the 0.9.17 self-off lesson). While the box plays, the
+// re-assert defers and the flag stays pending.
+func TestStartupReassertDefersWhilePlaying(t *testing.T) {
+	box := &fakeBox{infoBody: pairedInfo, nowPlaying: `<nowPlaying source="LOCAL_INTERNET_RADIO"></nowPlaying>`}
+	m := newTestManager(t, box)
+	if err := m.ensure(context.Background(), true); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if got := box.pairPosts.Load(); got != 0 {
+		t.Fatalf("re-assert must not run against a playing box, got %d POSTs", got)
+	}
+	if m.firstAssertDone.Load() {
+		t.Fatalf("a deferred re-assert must keep the flag pending")
 	}
 }
