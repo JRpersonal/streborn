@@ -1,8 +1,8 @@
 diff --git a/player/player.go b/player/player.go
-index 267be20..c4bb81b 100644
+index cf58c4b..7ad63bf 100644
 --- a/player/player.go
 +++ b/player/player.go
-@@ -200,7 +200,11 @@ func NewPlayer(opts *Options) (*Player, error) {
+@@ -195,7 +195,11 @@ func NewPlayer(opts *Options) (*Player, error) {
  		events:                    opts.Events,
  		cache:                     opts.Cache,
  		cdnQuarantine:             make(map[string]time.Time),
@@ -11,12 +11,12 @@ index 267be20..c4bb81b 100644
 +		// selection could not be passed through (different container) nor
 +		// decoded in the STR build (the FLAC decoder is stubbed out), so pin
 +		// the format selection to Vorbis whenever passthrough is enabled.
-+		flacEnabled:               opts.FlacEnabled && !opts.AudioOutputPipePassthrough,
- 		passthrough:               opts.AudioOutputPipePassthrough,
++		flacEnabled:               opts.FlacEnabled && opts.AudioBackend != output.BackendPipePassthrough,
+ 		passthrough:               opts.AudioBackend == output.BackendPipePassthrough,
  		normalisationEnabled:      opts.NormalisationEnabled,
  		normalisationUseAlbumGain: opts.NormalisationUseAlbumGain,
-@@ -848,6 +852,12 @@ func (p *Player) NewStream(ctx context.Context, client *http.Client, spotId libr
- 			stream = vorbisStream
+@@ -922,6 +926,12 @@ func (p *Player) NewStream(ctx context.Context, client *http.Client, spotId libr
+ 			sampleRate = vorbisStream.SampleRate
  		}
  	} else if audioFormat == AudioFormatFLAC {
 +		if p.passthrough {

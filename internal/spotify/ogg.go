@@ -274,3 +274,23 @@ func (m *Manager) clearSkipCut() {
 	m.skipCutUntil = time.Time{}
 	m.mu.Unlock()
 }
+
+// noteSkipBoundary stamps the moment a user skip's track boundary was actually
+// forwarded; LastSkipBoundary exposes it. The soft-skip re-push waits for this
+// before tearing the box's buffer down: pushing earlier throws the buffered
+// safety margin away while the engine is still loading the new track, and a
+// slow load (CDN hiccup, session tug-of-war) then starves the fresh
+// attachment into a detach + recovery recall (live Portable 2026-08-19).
+func (m *Manager) noteSkipBoundary() {
+	m.mu.Lock()
+	m.lastSkipBoundary = time.Now()
+	m.mu.Unlock()
+}
+
+// LastSkipBoundary returns when a user skip last reached its track boundary
+// in the forwarded stream (zero time when none has yet).
+func (m *Manager) LastSkipBoundary() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastSkipBoundary
+}

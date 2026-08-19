@@ -285,6 +285,22 @@ func WithSpotifyContext(ctxURI func() string) Option {
 	return func(s *Server) { s.spotifyContext = ctxURI }
 }
 
+// WithSpotifyShuffle registers the resolver for go-librespot's live shuffle
+// state, used by the preset-save path to stamp the shuffle flag onto a Spotify
+// preset saved from the running playback (long-press save / desktop save of
+// what is playing). Without it such a save always produced a resume preset
+// that replayed the identical track order on every press.
+func WithSpotifyShuffle(shuffle func(ctx context.Context) bool) Option {
+	return func(s *Server) { s.spotifyShuffle = shuffle }
+}
+
+// WithSpotifySkipBoundary registers the resolver for when a user skip's track
+// boundary last reached the forwarded Ogg stream. The soft-skip re-push waits
+// for it before dropping the box's buffered audio.
+func WithSpotifySkipBoundary(boundary func() time.Time) Option {
+	return func(s *Server) { s.spotifySkipBoundary = boundary }
+}
+
 // WithSpotifyMeta registers the resolver for a Spotify context's stable cover
 // image and human title, stamped onto a newly saved Spotify preset.
 func WithSpotifyMeta(meta func(ctx context.Context, uri string) (cover, title string)) Option {

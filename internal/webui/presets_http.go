@@ -237,8 +237,13 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		// Account + cover are best-effort enrichment: use a fresh background
 		// context, not r.Context(), so a client that disconnects right after the
 		// PUT (e.g. a raw one-shot request) does not cancel them mid-fetch.
+		// savingLiveContext: the preset being saved IS the content go-librespot
+		// is playing right now. Compare NORMALIZED contexts: the engine may
+		// announce the ephemeral station wrapper for the playlist the save
+		// path already unwrapped above.
+		savingLiveContext := p.Type == "spotify" && p.URI != "" &&
+			s.spotifyContext != nil && normalizeSpotifyURI(s.spotifyContext()) == p.URI
 		if p.Type == "spotify" && s.spotifyUser != nil {
-			savingLiveContext := p.URI != "" && s.spotifyContext != nil && s.spotifyContext() == p.URI
 			if p.Account == "" || savingLiveContext {
 				uctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				if u := s.spotifyUser(uctx); u != "" && u != p.Account {
@@ -249,6 +254,21 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 				}
 				cancel()
 			}
+		}
+		// Carry the LIVE shuffle state onto a preset saved from the running
+		// playback, so a playlist the user listens to shuffled recalls
+		// shuffled. Without this a long-press save always produced a resume
+		// preset that replayed the identical track order on every press (live
+		// ST30 2026-08-19, slot 4 "Rock"). Upgrade-only: an explicit shuffle
+		// carried in by the client (e.g. the box-to-box preset copy) is kept,
+		// and a failed read never clears anything.
+		if savingLiveContext && !p.Shuffle && s.spotifyShuffle != nil {
+			shctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			if s.spotifyShuffle(shctx) {
+				p.Shuffle = true
+				s.logger.Info("preset save: carried the live shuffle state onto the preset", "slot", slot)
+			}
+			cancel()
 		}
 		// Give a Spotify preset a stable tile logo (the playlist image, #24) and a
 		// real name (the playlist title), so the box display and the tile show

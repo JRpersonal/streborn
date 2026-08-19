@@ -5,6 +5,7 @@ package webui
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -25,6 +26,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/boxcli"
 )
 
 // handleAgentVersion returns the running stick agent version. Used by
@@ -365,6 +368,10 @@ func ensureSSHDRunning(logger *slog.Logger) bool {
 var updateInFlight atomic.Bool
 
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
+	// Waking first makes the transfer itself ~17x faster (see
+	// wakeBoxForUpload); no restore here, the update's reboot lands the box
+	// in standby anyway.
+	s.wakeBoxForUpload("agent-update")
 	body, ok := s.readUploadedELF(w, r, s.logger, "agent-update")
 	if !ok {
 		return
@@ -1458,8 +1465,12 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 	// happened to be busy (see streamBinaryAtomic). The agent-update endpoint
 	// deliberately still buffers, because its fallback tiers need the bytes
 	// again after the write.
+	woke := s.wakeBoxForUpload("sidecar")
 	sum, size, ok := s.streamUploadedELF(w, r, s.logger, "sidecar", goLibrespotBinPath)
 	if !ok {
+		if woke {
+			go s.restoreStandbyAfterUpload("sidecar")
+		}
 		return
 	}
 	// Stamp the content hash next to the binary so the next /api/agent/version
@@ -1493,6 +1504,78 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 		"status":   "ok",
 		"reloaded": strconv.FormatBool(reloaded),
 	})
+	if woke {
+		go s.restoreStandbyAfterUpload("sidecar")
+	}
+}
+
+// wakeBoxForUpload lifts the box out of network standby before a large
+// upload and reports whether THIS call woke it. The WLAN driver keeps the
+// radio in power-save while the box idles in standby, which throttles an
+// inbound transfer to ~40 KB/s; awake, the identical 16.5 MB engine push ran
+// at ~750 KB/s (timed A/B on the Portable, 2026-08-19 - Jens' hypothesis,
+// live-confirmed). That crawl is what made field engine deliveries take
+// minutes and trip client timeouts. The wake is silent (leaving standby does
+// not resume playback) and bounded. #487's "never power an off box
+// automatically" governs playback recovery; an update/delivery the user
+// initiated is the user operating the speaker, and the sidecar path puts the
+// box back to standby afterwards when this call initiated the wake.
+func (s *Server) wakeBoxForUpload(endpoint string) (woke bool) {
+	if s.boxHost == "" || s.boxSourceNow() != "STANDBY" {
+		return false
+	}
+	s.logger.Info("upload: waking the box out of standby first (idle WLAN power-save throttles the transfer ~17x)",
+		"endpoint", endpoint)
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	if err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger); err != nil {
+		s.logger.Warn("upload: wake failed, transferring anyway", "endpoint", endpoint, "err", err)
+		return false
+	}
+	return true
+}
+
+// restoreStandbyAfterUpload sends the box back to standby after an upload
+// whose wake THIS agent initiated - unless someone started actually using
+// the speaker meanwhile (playing/buffering, or it is already in standby).
+// `sys power` is a toggle, so the not-playing check keeps this from ever
+// switching a box ON.
+func (s *Server) restoreStandbyAfterUpload(endpoint string) {
+	// Let the reply flush and the hot-swap settle before toggling.
+	time.Sleep(3 * time.Second)
+	src := s.boxSourceNow()
+	if src == "" || src == "STANDBY" {
+		return
+	}
+	if s.boxIsAudiblyBusy() {
+		s.logger.Info("upload: leaving the box awake, it is in use", "endpoint", endpoint, "source", src)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if err := boxcli.PowerOn(ctx, s.boxHost); err != nil {
+		s.logger.Warn("upload: standby restore failed", "endpoint", endpoint, "err", err)
+		return
+	}
+	s.logger.Info("upload: box returned to standby after the transfer", "endpoint", endpoint)
+}
+
+// boxIsAudiblyBusy reports whether the box's now_playing shows audio flowing
+// or starting (PLAY_STATE/BUFFERING_STATE), i.e. a user is actually
+// listening.
+func (s *Server) boxIsAudiblyBusy() bool {
+	if s.boxHost == "" {
+		return false
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	str := string(b)
+	return strings.Contains(str, "PLAY_STATE") || strings.Contains(str, "BUFFERING_STATE")
 }
 
 // isLocalLAN true if the request comes from a private LAN IP

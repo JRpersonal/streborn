@@ -644,6 +644,7 @@ func (s *Server) spotifySkipWorker() {
 		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 		err := s.spotifySkip(ctx, forward)
 		cancel()
+		issued := err == nil || isTimeoutErr(err)
 		switch {
 		case err == nil:
 			// Log EVERY executed skip: a fast ack used to leave no trace, so a
@@ -655,9 +656,95 @@ func (s *Server) spotifySkipWorker() {
 			s.logger.Warn("spotify skip failed", "forward", forward, "err", err)
 		}
 		if len(s.spotifySkipCh) == 0 {
+			if issued {
+				s.reattachAfterSoftSkip()
+			}
 			s.spotifyRecoverAfterSkip()
 		}
 	}
+}
+
+// reattachAfterSoftSkip re-points the box at the SAME Spotify stream right
+// after an app (soft) skip. The soft skip keeps the box attached, and the box
+// holds the realtime-pacing lead (~10 s of the old track) in its own buffer,
+// so the new track only became audible once all of that had played out: the
+// press read as dead and the user pressed again (live ST30 2026-08-19, the
+// audible change landed ~13 s after the press and the second skip was heard
+// as "no effect"). Re-fetching the stream makes the box drop that buffer, so
+// the skip is audible right after the engine loads the track (a brief gap,
+// like a playlist switch). One re-push per press burst; the hardware path
+// re-attaches in its own flow (the box tears its source down itself), so a
+// recent hardware skip stands this down.
+func (s *Server) reattachAfterSoftSkip() {
+	if s.renderer == nil || !s.spotifyIsStreaming() {
+		// A paused/detached box is deliberately left alone: a re-push sends
+		// Play, and a skip on a paused playlist must not force playback.
+		return
+	}
+	s.skipRepushMu.Lock()
+	recentHW := time.Since(s.hwSkipAt) < 15*time.Second
+	recentPush := time.Since(s.lastSkipRepushAt) < 8*time.Second
+	if !recentHW && !recentPush {
+		s.lastSkipRepushAt = time.Now()
+	}
+	s.skipRepushMu.Unlock()
+	if recentHW || recentPush {
+		return
+	}
+	// Hold the competing auto-repoint off across the deliberate detach gap the
+	// re-push causes, exactly like the hardware path.
+	if s.spotifySuppressActivate != nil {
+		s.spotifySuppressActivate(12 * time.Second)
+	}
+	armedAt := time.Now()
+	go func() {
+		// Drop the box's buffer only once the NEW track is actually flowing:
+		// the skip cut races stale pages to the boundary, and pushing before
+		// it arrives throws the buffered safety margin away while the engine
+		// is still loading - a slow load (CDN hiccup, another device pulling
+		// the account session) then starves the fresh attachment into a
+		// detach + recovery recall (live Portable 2026-08-19). The boundary
+		// may already have passed while the worker waited out its 1.5 s ack
+		// deadline, so "recent" counts too. No boundary within the wait means
+		// the engine never delivered the track: keep the buffered stream (the
+		// old, slow-but-safe behavior) and let the recovery net decide.
+		// The window sits above the slowest observed engine load (11.3 s,
+		// live Portable 2026-08-19 on a cold merged engine): waiting costs
+		// nothing, the box plays its buffer meanwhile, and a late push still
+		// beats the in-band switch by the remaining buffer length.
+		deadline := time.Now().Add(12 * time.Second)
+		for {
+			if s.spotifySkipBoundary != nil {
+				if b := s.spotifySkipBoundary(); b.After(armedAt.Add(-3 * time.Second)) {
+					break
+				}
+			} else {
+				// No boundary signal wired (tests, degraded startup): the
+				// fixed short delay of the first implementation.
+				time.Sleep(1500 * time.Millisecond)
+				break
+			}
+			if time.Now().After(deadline) {
+				s.logger.Info("skip: no track boundary within the wait, keeping the box's buffered stream")
+				// Nothing was pushed: release the burst debounce so the NEXT
+				// skip may re-push, instead of silently inheriting this
+				// attempt's give-up for another eight seconds.
+				s.skipRepushMu.Lock()
+				if s.lastSkipRepushAt.Equal(armedAt) || s.lastSkipRepushAt.Before(armedAt) {
+					s.lastSkipRepushAt = time.Time{}
+				}
+				s.skipRepushMu.Unlock()
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		// A deliberate stop while we waited wins: the push sends Play and
+		// would force audio back on.
+		if s.userStoppedRecently() {
+			return
+		}
+		s.repushSpotifyStream("soft skip", 0)
+	}()
 }
 
 // slotFromSpotifyStreamURL extracts the preset slot N from a per-slot Spotify Ogg
@@ -699,6 +786,19 @@ func (s *Server) spotifyRecoverAfterSkip() {
 			return
 		}
 		// Soft skip (and any box that re-synced on its own): already playing, leave it.
+		if s.boxSpotifyReallyPlaying() {
+			s.NoteBoxHealthy()
+			return
+		}
+		// Not playing at the first look: the skip re-push lands ~1.5 s after
+		// the drain and the box then needs a few seconds to re-buffer into
+		// PLAY_STATE, so a single early check would fire a recall that
+		// restarts the track the user just skipped to. One more beat, then
+		// decide for real.
+		time.Sleep(4 * time.Second)
+		if s.userStoppedRecently() || s.recentLoginError() {
+			return
+		}
 		if s.boxSpotifyReallyPlaying() {
 			s.NoteBoxHealthy()
 			return
@@ -782,6 +882,11 @@ func (s *Server) HardwareSkip(ctx context.Context, forward bool) (string, error)
 	if s.spotifySuppressActivate != nil {
 		s.spotifySuppressActivate(12 * time.Second)
 	}
+	// Mark the hardware flow so the skip worker's soft-skip re-push stands
+	// down: this path re-attaches the box itself, one push is enough.
+	s.skipRepushMu.Lock()
+	s.hwSkipAt = time.Now()
+	s.skipRepushMu.Unlock()
 	s.enqueueSpotifySkip(forward)
 	go s.reattachAfterHardwareSkip(slot)
 	s.logger.Info("hardware skip: engine skip issued, re-attaching the box to the slot stream", "slot", slot, "forward", forward)
@@ -800,14 +905,30 @@ func (s *Server) reattachAfterHardwareSkip(slot int) {
 	// Let the box finish its own INVALID_SOURCE bounce first; pushing into the
 	// teardown gets swallowed.
 	time.Sleep(1500 * time.Millisecond)
+	s.repushSpotifyStream("hardware skip", slot)
+}
+
+// repushSpotifyStream pushes the Spotify stream the box last played back at
+// it (SetURI + Play of the SAME URL), making the box drop its buffered audio
+// and rejoin the live stream. Shared by the hardware-skip re-attach (the box
+// tore its source down itself) and the soft-skip re-push (the box is attached
+// but buffering the old track). requireSlot > 0 additionally demands playback
+// is still on that slot's stream; 0 accepts any Spotify stream, the slot-less
+// app-driven one included. Best effort: on failure the skip worker's recovery
+// net performs the clean slot recall.
+func (s *Server) repushSpotifyStream(why string, requireSlot int) {
 	s.lastPlayMu.Lock()
 	var boxURL, title, art, mime string
 	if s.lastPlay != nil {
 		boxURL, title, art, mime = s.lastPlay.boxURL, s.lastPlay.title, s.lastPlay.art, s.lastPlay.mime
 	}
 	s.lastPlayMu.Unlock()
-	if boxURL == "" || slotFromSpotifyStreamURL(boxURL) != slot {
+	if boxURL == "" || !strings.Contains(boxURL, "spotify/stream") {
 		return // playback changed while the flap settled; nothing to re-attach
+	}
+	slot := slotFromSpotifyStreamURL(boxURL)
+	if requireSlot > 0 && slot != requireSlot {
+		return
 	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
@@ -820,10 +941,10 @@ func (s *Server) reattachAfterHardwareSkip(slot int) {
 		err = s.renderer.PlayURL(ctx, boxURL, title, art)
 	}
 	if err != nil {
-		s.logger.Warn("hardware skip: re-attach push failed (the recovery net will recall)", "slot", slot, "err", err)
+		s.logger.Warn("skip: re-attach push failed (the recovery net will recall)", "why", why, "slot", slot, "err", err)
 		return
 	}
-	s.logger.Info("hardware skip: box re-attached to the slot stream", "slot", slot)
+	s.logger.Info("skip: box re-attached to the Spotify stream", "why", why, "slot", slot)
 }
 
 // currentSpotifySlot returns the preset slot (1-6) the box is currently playing a

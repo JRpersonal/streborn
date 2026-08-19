@@ -105,6 +105,10 @@ type Server struct {
 	// from another household member's session gets that member's account, not a
 	// stale one). nil when Spotify is not configured.
 	spotifyContext func() string
+	// spotifyShuffle reports go-librespot's live shuffle state, used by the
+	// preset-save path to stamp the shuffle flag onto a Spotify preset saved
+	// from the running playback. nil when Spotify is not configured.
+	spotifyShuffle func(ctx context.Context) bool
 	// spotifyMeta resolves a stable cover image URL and the human title for a
 	// Spotify context URI (the playlist image + name), stamped onto a newly
 	// saved Spotify preset so its tile has a steady logo and a real name (not a
@@ -126,6 +130,19 @@ type Server struct {
 	// serial wait (live Portable, 2026-07-31). See enqueueSpotifySkip.
 	spotifySkipCh   chan bool
 	spotifySkipOnce sync.Once
+	// skipRepushMu guards the skip re-attach bookkeeping: hwSkipAt marks a
+	// recent hardware skip (whose flow re-attaches the box itself), and
+	// lastSkipRepushAt debounces the soft-skip re-push so a burst of presses
+	// tears the box's stream down at most once. See reattachAfterSoftSkip.
+	skipRepushMu     sync.Mutex
+	hwSkipAt         time.Time
+	lastSkipRepushAt time.Time
+	// spotifySkipBoundary reports when a user skip's track boundary last
+	// reached the forwarded stream; the soft-skip re-push waits for it so the
+	// box's buffer is only dropped once the new track is actually flowing.
+	// nil when Spotify is not configured (the re-push then stays on a fixed
+	// short delay).
+	spotifySkipBoundary func() time.Time
 	// spotifyReady reports whether go-librespot has finished authenticating, so
 	// a soft Spotify recall can wait out a cold start instead of pointing the box
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify
