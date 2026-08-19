@@ -72,18 +72,32 @@ export function renderMultiroom(fetchLive) {
   if (!state.zoneLive) state.zoneLive = {};
   if (!state.zoneSlaves) state.zoneSlaves = {};
   if (!state.zoneMode) state.zoneMode = 'native';
+  // The MAIN star follows the LIVE leader on every repaint, not only when
+  // nothing was selected yet. Guarding this on "zoneMaster unset" left the
+  // Multiroom screen on its stale default while a group led by another
+  // speaker played, so it named a different main speaker than the music tab
+  // (field re-test on v0.9.50, 2026-08-19: the display-loss half was healed,
+  // this half persisted, reproduced with both group directions). The one
+  // thing that may override the live leader is the USER's own hand-pick: it
+  // is the pending choice for the next group and must not be snatched away
+  // by the poll, so it pins until it either became the live leader or every
+  // group is gone.
+  const liveNow = liveZoneMaster(strBoxes);
+  const anyLive = strBoxes.some(b => zoneMasterOf(b.deviceID, state.zoneLive));
+  if (state.zoneMasterPicked && (!anyLive || (liveNow && liveNow.deviceID === state.zoneMaster))) {
+    state.zoneMasterPicked = false;
+  }
+  if (liveNow && !state.zoneMasterPicked) {
+    state.zoneMaster = liveNow.deviceID;
+  }
   if (!state.zoneMaster || !strBoxes.some(b => b.deviceID === state.zoneMaster)) {
-    // Prefer the speaker that ACTUALLY leads a live group. Falling straight to
-    // the first one discovered meant the star, and with it the dissolve, sat on
-    // whichever speaker happened to be first in the list while another one led
-    // the group, so the page described a group nobody was in.
+    // No live group and nothing valid selected: default to the first speaker.
     // liveZoneMaster returns the box OBJECT; zoneMaster holds a deviceID
     // string everywhere else (card badges compare, doFormZone looks it up).
     // Assigning the object (v0.9.48) made every comparison false: no card
     // ever showed MAIN and forming silently no-oped on fleets with a live
     // zone answer.
-    const live = liveZoneMaster(strBoxes);
-    state.zoneMaster = (live && live.deviceID) || (strBoxes.length ? strBoxes[0].deviceID : '');
+    state.zoneMaster = (liveNow && liveNow.deviceID) || (strBoxes.length ? strBoxes[0].deviceID : '');
   }
   const anyOutdated = strBoxes.some(b => deps.boxNeedsUpdate(b));
 
@@ -296,6 +310,9 @@ export function renderMultiroom(fetchLive) {
       const mk = e.target.closest('.zone-makemain');
       if (mk) {
         state.zoneMaster = mk.dataset.id;
+        // A hand-pick pins the star against the live-leader tracking above,
+        // so preparing the next group is not undone by the running one.
+        state.zoneMasterPicked = true;
         delete state.zoneSlaves[state.zoneMaster];
         renderMultiroom();
         return;
