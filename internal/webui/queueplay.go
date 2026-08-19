@@ -696,11 +696,41 @@ func (s *Server) reattachAfterSoftSkip() {
 	if s.spotifySuppressActivate != nil {
 		s.spotifySuppressActivate(12 * time.Second)
 	}
+	armedAt := time.Now()
 	go func() {
-		// Give the engine the moment it needs to reach the new track's
-		// boundary (the skip cut races stale pages to it), so the re-attached
-		// box starts on the track the user skipped to.
-		time.Sleep(1500 * time.Millisecond)
+		// Drop the box's buffer only once the NEW track is actually flowing:
+		// the skip cut races stale pages to the boundary, and pushing before
+		// it arrives throws the buffered safety margin away while the engine
+		// is still loading - a slow load (CDN hiccup, another device pulling
+		// the account session) then starves the fresh attachment into a
+		// detach + recovery recall (live Portable 2026-08-19). The boundary
+		// may already have passed while the worker waited out its 1.5 s ack
+		// deadline, so "recent" counts too. No boundary within the wait means
+		// the engine never delivered the track: keep the buffered stream (the
+		// old, slow-but-safe behavior) and let the recovery net decide.
+		deadline := time.Now().Add(6 * time.Second)
+		for {
+			if s.spotifySkipBoundary != nil {
+				if b := s.spotifySkipBoundary(); b.After(armedAt.Add(-3 * time.Second)) {
+					break
+				}
+			} else {
+				// No boundary signal wired (tests, degraded startup): the
+				// fixed short delay of the first implementation.
+				time.Sleep(1500 * time.Millisecond)
+				break
+			}
+			if time.Now().After(deadline) {
+				s.logger.Info("skip: no track boundary within the wait, keeping the box's buffered stream")
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		// A deliberate stop while we waited wins: the push sends Play and
+		// would force audio back on.
+		if s.userStoppedRecently() {
+			return
+		}
 		s.repushSpotifyStream("soft skip", 0)
 	}()
 }

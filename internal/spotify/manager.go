@@ -223,6 +223,7 @@ type Manager struct {
 	// moment was caused by a user skip, so the old track's unsent tail is
 	// dropped instead of flushed (NoteSkip / skipCutArmed).
 	skipCutUntil     time.Time
+	lastSkipBoundary time.Time
 	sinkBytes        int64
 	sinkPages        int64
 	sinkFirstAudioAt time.Time

@@ -137,6 +137,12 @@ type Server struct {
 	skipRepushMu     sync.Mutex
 	hwSkipAt         time.Time
 	lastSkipRepushAt time.Time
+	// spotifySkipBoundary reports when a user skip's track boundary last
+	// reached the forwarded stream; the soft-skip re-push waits for it so the
+	// box's buffer is only dropped once the new track is actually flowing.
+	// nil when Spotify is not configured (the re-push then stays on a fixed
+	// short delay).
+	spotifySkipBoundary func() time.Time
 	// spotifyReady reports whether go-librespot has finished authenticating, so
 	// a soft Spotify recall can wait out a cold start instead of pointing the box
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify

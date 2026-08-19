@@ -294,6 +294,13 @@ func WithSpotifyShuffle(shuffle func(ctx context.Context) bool) Option {
 	return func(s *Server) { s.spotifyShuffle = shuffle }
 }
 
+// WithSpotifySkipBoundary registers the resolver for when a user skip's track
+// boundary last reached the forwarded Ogg stream. The soft-skip re-push waits
+// for it before dropping the box's buffered audio.
+func WithSpotifySkipBoundary(boundary func() time.Time) Option {
+	return func(s *Server) { s.spotifySkipBoundary = boundary }
+}
+
 // WithSpotifyMeta registers the resolver for a Spotify context's stable cover
 // image and human title, stamped onto a newly saved Spotify preset.
 func WithSpotifyMeta(meta func(ctx context.Context, uri string) (cover, title string)) Option {

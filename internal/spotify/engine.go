@@ -515,6 +515,7 @@ func (m *Manager) runOnce(ctx context.Context) error {
 					m.logger.Info("spotify: skip cut, boundary reached; dropped the old track's unsent tail", "droppedKB", len(pending)/1024)
 					pending = pending[:0]
 					m.clearSkipCut()
+					m.noteSkipBoundary()
 					leadAnchored = false
 				} else if len(pending) > 0 {
 					m.forward(sink, pending)
