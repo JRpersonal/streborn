@@ -695,6 +695,7 @@ func run() error {
 		}),
 		webui.WithSpotifyUser(spotifyMgr.CurrentUsername),
 		webui.WithSpotifyContext(spotifyMgr.PlayingContext),
+		webui.WithSpotifyShuffle(spotifyMgr.ShufflingContext),
 		webui.WithSpotifyMeta(spotifyMgr.PlaylistMeta),
 		// "Streaming" must mean audio is actually flowing, not merely that the
 		// box holds the connection open: a stalled sink (attached, zero audio

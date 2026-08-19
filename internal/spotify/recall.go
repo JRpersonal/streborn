@@ -270,6 +270,27 @@ func (m *Manager) PlayingContext() string {
 	return m.lastContext
 }
 
+// ShufflingContext reports whether the live go-librespot session is currently
+// playing its context shuffled, straight from GET /status. The preset-save
+// path stamps this onto a Spotify preset saved from the running playback, so
+// a playlist the user listens to shuffled recalls shuffled (a long-press save
+// used to always produce a resume preset that replayed the identical order
+// every press, live ST30 2026-08-19). False on any error: a failed read must
+// never invent a shuffle preset.
+func (m *Manager) ShufflingContext(ctx context.Context) bool {
+	b, err := m.apiGet(ctx, "/status")
+	if err != nil {
+		return false
+	}
+	var st struct {
+		ShuffleContext bool `json:"shuffle_context"`
+	}
+	if json.Unmarshal(b, &st) != nil {
+		return false
+	}
+	return st.ShuffleContext
+}
+
 // ErrNoSpotifySession is returned by PlayAccount when the speaker holds no live
 // Spotify session and none could be re-established (no persisted credential, or
 // the credential no longer authenticates, e.g. another controller took the
