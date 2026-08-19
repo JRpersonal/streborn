@@ -5,7 +5,6 @@ package webui
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -26,8 +25,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-
-	"github.com/JRpersonal/streborn/internal/boxcli"
 )
 
 // handleAgentVersion returns the running stick agent version. Used by
@@ -368,10 +365,10 @@ func ensureSSHDRunning(logger *slog.Logger) bool {
 var updateInFlight atomic.Bool
 
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
-	// Waking first makes the transfer itself ~17x faster (see
-	// wakeBoxForUpload); no restore here, the update's reboot lands the box
-	// in standby anyway.
-	s.wakeBoxForUpload("agent-update")
+	// Lifting wireless power-save first makes the transfer ~17x faster on a
+	// box idling in standby (see boostUploadThroughput); the update's reboot
+	// resets the toggle, the deferred restore covers the failure paths.
+	defer s.boostUploadThroughput("agent-update")()
 	body, ok := s.readUploadedELF(w, r, s.logger, "agent-update")
 	if !ok {
 		return
@@ -1465,12 +1462,9 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 	// happened to be busy (see streamBinaryAtomic). The agent-update endpoint
 	// deliberately still buffers, because its fallback tiers need the bytes
 	// again after the write.
-	woke := s.wakeBoxForUpload("sidecar")
+	defer s.boostUploadThroughput("sidecar")()
 	sum, size, ok := s.streamUploadedELF(w, r, s.logger, "sidecar", goLibrespotBinPath)
 	if !ok {
-		if woke {
-			go s.restoreStandbyAfterUpload("sidecar")
-		}
 		return
 	}
 	// Stamp the content hash next to the binary so the next /api/agent/version
@@ -1504,78 +1498,64 @@ func (s *Server) handleAgentSidecar(w http.ResponseWriter, r *http.Request) {
 		"status":   "ok",
 		"reloaded": strconv.FormatBool(reloaded),
 	})
-	if woke {
-		go s.restoreStandbyAfterUpload("sidecar")
-	}
 }
 
-// wakeBoxForUpload lifts the box out of network standby before a large
-// upload and reports whether THIS call woke it. The WLAN driver keeps the
-// radio in power-save while the box idles in standby, which throttles an
-// inbound transfer to ~40 KB/s; awake, the identical 16.5 MB engine push ran
-// at ~750 KB/s (timed A/B on the Portable, 2026-08-19 - Jens' hypothesis,
-// live-confirmed). That crawl is what made field engine deliveries take
-// minutes and trip client timeouts. The wake is silent (leaving standby does
-// not resume playback) and bounded. #487's "never power an off box
-// automatically" governs playback recovery; an update/delivery the user
-// initiated is the user operating the speaker, and the sidecar path puts the
-// box back to standby afterwards when this call initiated the wake.
-func (s *Server) wakeBoxForUpload(endpoint string) (woke bool) {
-	if s.boxHost == "" || s.boxSourceNow() != "STANDBY" {
-		return false
+// boostUploadThroughput lifts the WLAN driver out of power-save for the
+// duration of a large upload. While the box idles in standby the driver
+// throttles an inbound transfer to ~40 KB/s; the identical 16.5 MB engine
+// push runs at ~750 KB/s once the radio is awake (timed A/B on the Portable,
+// 2026-08-19 - Jens' hypothesis, live-confirmed). That crawl is what made
+// field engine deliveries take minutes and trip client timeouts (#597
+// family).
+//
+// This is deliberately a DRIVER-level toggle, not a box wake: `sys power`
+// wakes the box into its last source, and a radio station then audibly
+// resumes playing (power-on resume, live 2026-08-19) - an engine delivery
+// at night must never start music. Toggling wireless power-save is silent,
+// touches nothing the user can perceive, and is restored right after the
+// transfer (a reboot resets it anyway). Boxes without wlan0 (wired) and
+// boxes that are awake already transfer at full speed and are left alone.
+// Best-effort: without iwconfig/iw in the firmware the transfer proceeds at
+// the throttled rate, exactly as before.
+//
+// The returned restore func is never nil and safe to defer.
+func (s *Server) boostUploadThroughput(endpoint string) (restore func()) {
+	restore = func() {}
+	if _, err := os.Stat("/sys/class/net/wlan0"); err != nil {
+		return restore
 	}
-	s.logger.Info("upload: waking the box out of standby first (idle WLAN power-save throttles the transfer ~17x)",
+	if src := s.boxSourceNow(); src != "STANDBY" {
+		return restore
+	}
+	type tool struct {
+		name    string
+		off, on []string
+	}
+	tools := []tool{
+		{"iwconfig", []string{"wlan0", "power", "off"}, []string{"wlan0", "power", "on"}},
+		{"iw", []string{"dev", "wlan0", "set", "power_save", "off"}, []string{"dev", "wlan0", "set", "power_save", "on"}},
+	}
+	for _, t := range tools {
+		if out, err := exec.Command(t.name, t.off...).CombinedOutput(); err == nil {
+			s.logger.Info("upload: wireless power-save off for the transfer (idle throttles it ~17x)",
+				"endpoint", endpoint, "tool", t.name)
+			tt := t
+			return func() {
+				if out, err := exec.Command(tt.name, tt.on...).CombinedOutput(); err != nil {
+					s.logger.Warn("upload: could not re-enable wireless power-save (a reboot resets it)",
+						"endpoint", endpoint, "tool", tt.name, "err", err, "out", strings.TrimSpace(string(out)))
+					return
+				}
+				s.logger.Info("upload: wireless power-save restored", "endpoint", endpoint)
+			}
+		} else {
+			s.logger.Debug("upload: power-save toggle unavailable", "tool", t.name, "err", err,
+				"out", strings.TrimSpace(string(out)))
+		}
+	}
+	s.logger.Info("upload: no wireless power-save toggle in this firmware, transferring at the throttled rate",
 		"endpoint", endpoint)
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-	defer cancel()
-	if err := boxcli.WakeAndWait(ctx, s.boxHost, 8*time.Second, s.logger); err != nil {
-		s.logger.Warn("upload: wake failed, transferring anyway", "endpoint", endpoint, "err", err)
-		return false
-	}
-	return true
-}
-
-// restoreStandbyAfterUpload sends the box back to standby after an upload
-// whose wake THIS agent initiated - unless someone started actually using
-// the speaker meanwhile (playing/buffering, or it is already in standby).
-// `sys power` is a toggle, so the not-playing check keeps this from ever
-// switching a box ON.
-func (s *Server) restoreStandbyAfterUpload(endpoint string) {
-	// Let the reply flush and the hot-swap settle before toggling.
-	time.Sleep(3 * time.Second)
-	src := s.boxSourceNow()
-	if src == "" || src == "STANDBY" {
-		return
-	}
-	if s.boxIsAudiblyBusy() {
-		s.logger.Info("upload: leaving the box awake, it is in use", "endpoint", endpoint, "source", src)
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-	defer cancel()
-	if err := boxcli.PowerOn(ctx, s.boxHost); err != nil {
-		s.logger.Warn("upload: standby restore failed", "endpoint", endpoint, "err", err)
-		return
-	}
-	s.logger.Info("upload: box returned to standby after the transfer", "endpoint", endpoint)
-}
-
-// boxIsAudiblyBusy reports whether the box's now_playing shows audio flowing
-// or starting (PLAY_STATE/BUFFERING_STATE), i.e. a user is actually
-// listening.
-func (s *Server) boxIsAudiblyBusy() bool {
-	if s.boxHost == "" {
-		return false
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + s.boxHost + ":8090/now_playing")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	str := string(b)
-	return strings.Contains(str, "PLAY_STATE") || strings.Contains(str, "BUFFERING_STATE")
+	return restore
 }
 
 // isLocalLAN true if the request comes from a private LAN IP
