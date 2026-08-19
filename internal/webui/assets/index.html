@@ -62,6 +62,13 @@ html.a11y-scale-xl body > * { zoom:1.30; }
    there. */
 html { touch-action: pan-x pan-y; }
 button, a, input, select, label { touch-action: pan-x pan-y; }
+/* A remote control is buttons, not a document: without this an accidental
+   double-tap (or a long-press that missed a key) SELECTED label text and the
+   browser popped its copy/share context menu over the remote, which makes no
+   sense mid-interaction. Inputs keep selection, they need a caret; the
+   preset long-press save has its own handlers and is unaffected. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea { -webkit-user-select: text; user-select: text; }
 /* Sliders give the VERTICAL direction back to the page. A group screen is a
    column of volume sliders, so a thumb coming down to scroll lands on one far
    more often than not, and with the default handling that finger both scrolls
