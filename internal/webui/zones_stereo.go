@@ -957,7 +957,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 			// firmware's pairing op takes ~20 s, so a read 40 ms after a lost
 			// reply always saw "no group" — poll for a while instead.
 			var g boxapi.Group
-			gerr := errors.New("not read")
+			var gerr error
 			for vDeadline := time.Now().Add(12 * time.Second); ; {
 				cctx, ccancel := context.WithTimeout(context.WithoutCancel(ctx), 6*time.Second)
 				g, gerr = c.GetGroup(cctx)
