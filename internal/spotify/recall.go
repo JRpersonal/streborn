@@ -134,6 +134,18 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 			m.waitContextLoaded(ctx, 5*time.Second)
 		}
 	}
+	// A shuffle recall first turns shuffle OFF explicitly: go-librespot's
+	// ToggleShuffle is a no-op when the context is already shuffled, so a
+	// repeated press of the same shuffle preset kept the OLD order and the
+	// single skip below landed on the same track every time ("shuffle always
+	// plays the same sequence", live Portable 2026-08-19). The off-then-on
+	// round trip forces a re-shuffle with a fresh seed; on a freshly loaded
+	// context the off half is a no-op and costs one cheap API call.
+	if opts.Shuffle {
+		if err := m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`); err != nil {
+			m.logger.Debug("spotify: shuffle_context pre-clear failed", "err", err)
+		}
+	}
 	// Set shuffle EXPLICITLY to the desired state every recall. Setting it to
 	// false is what clears a stale shuffle left on by a previous shuffled recall
 	// (the cross-recall stickiness that made an unshuffled preset still shuffle

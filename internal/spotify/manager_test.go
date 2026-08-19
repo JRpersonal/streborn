@@ -316,9 +316,21 @@ func TestPlayShuffleStartsRandom(t *testing.T) {
 	if strings.Contains(playBody, "skip_to_uri") {
 		t.Errorf("shuffle recall must NOT resume a track, play body = %s", playBody)
 	}
-	shufBody, ok := bodyForPath(*calls, "/player/shuffle_context")
-	if !ok || !strings.Contains(shufBody, `"shuffle_context":true`) {
-		t.Errorf("shuffle recall must set shuffle ON, got %q ok=%v", shufBody, ok)
+	// The shuffle calls must END on true, and a false must precede it: the
+	// off-then-on round trip is what forces a FRESH order. go-librespot's
+	// ToggleShuffle no-ops on an already-shuffled context, so without the
+	// pre-clear a repeated press of the same shuffle preset replayed the same
+	// sequence every time (live Portable, 2026-08-19).
+	var shufBodies []string
+	for i, p := range pathsOf(*calls) {
+		if p == "/player/shuffle_context" {
+			shufBodies = append(shufBodies, (*calls)[i].body)
+		}
+	}
+	if len(shufBodies) < 2 ||
+		!strings.Contains(shufBodies[len(shufBodies)-1], `"shuffle_context":true`) ||
+		!strings.Contains(shufBodies[len(shufBodies)-2], `"shuffle_context":false`) {
+		t.Errorf("shuffle recall must clear shuffle and re-enable it (fresh order), got %v", shufBodies)
 	}
 	sawNext := false
 	for _, p := range pathsOf(*calls) {

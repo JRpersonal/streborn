@@ -588,6 +588,48 @@ func Browse(ctx context.Context, srv Server, objectID string, start, count int) 
 	return parseBrowseResponse(raw)
 }
 
+// Search calls ContentDirectory:Search on the server, looking for audio items
+// whose title contains query. Not every server implements the Search action
+// (it is optional in the ContentDirectory spec); those answer a SOAP fault,
+// surfaced here as an error, and the caller falls back to a bounded browse
+// walk. containerID "0" searches the whole library.
+func Search(ctx context.Context, srv Server, query string, count int) (BrowseResult, error) {
+	if srv.CDSControlURL == "" {
+		return BrowseResult{}, fmt.Errorf("server has no ContentDirectory control URL")
+	}
+	if count <= 0 {
+		count = 50
+	}
+	// The criteria value is itself quoted inside the XML: escape the quotes a
+	// user could type so they cannot terminate the criteria string.
+	criteria := `upnp:class derivedfrom "object.item.audioItem" and dc:title contains "` +
+		strings.ReplaceAll(query, `"`, `\"`) + `"`
+	body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Search xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ContainerID>0</ContainerID><SearchCriteria>%s</SearchCriteria><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>%d</RequestedCount><SortCriteria></SortCriteria></u:Search></s:Body></s:Envelope>`,
+		xmlEscape(criteria), count)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.CDSControlURL, strings.NewReader(body))
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	req.Header.Set("Content-Type", `text/xml; charset="utf-8"`)
+	req.Header.Set("SOAPACTION", `"urn:schemas-upnp-org:service:ContentDirectory:1#Search"`)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return BrowseResult{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return BrowseResult{}, fmt.Errorf("search status %d: %s", resp.StatusCode, truncate(string(raw), 240))
+	}
+	return parseSearchResponse(raw)
+}
+
 // soapBrowseEnvelope is the relevant subset of a Browse SOAP
 // response.
 type soapBrowseEnvelope struct {
@@ -599,6 +641,31 @@ type soapBrowseEnvelope struct {
 			TotalMatches   int    `xml:"TotalMatches"`
 		} `xml:"BrowseResponse"`
 	} `xml:"Body"`
+}
+
+// soapSearchEnvelope mirrors soapBrowseEnvelope for the Search action; the
+// embedded DIDL-Lite payload is identical.
+type soapSearchEnvelope struct {
+	XMLName xml.Name `xml:"Envelope"`
+	Body    struct {
+		SearchResponse struct {
+			Result         string `xml:"Result"`
+			NumberReturned int    `xml:"NumberReturned"`
+			TotalMatches   int    `xml:"TotalMatches"`
+		} `xml:"SearchResponse"`
+	} `xml:"Body"`
+}
+
+// parseSearchResponse decodes a Search SOAP response. Same shape as Browse,
+// different response element; the DIDL conversion is shared (didlToResult).
+func parseSearchResponse(raw []byte) (BrowseResult, error) {
+	raw = stripIllegalXMLChars(raw)
+	var env soapSearchEnvelope
+	if err := xml.Unmarshal(raw, &env); err != nil {
+		return BrowseResult{}, fmt.Errorf("soap envelope: %w", err)
+	}
+	r := env.Body.SearchResponse
+	return didlToResult(r.Result, r.TotalMatches, r.NumberReturned)
 }
 
 // didlLite mirrors the embedded DIDL-Lite XML returned in <Result>.
@@ -677,22 +744,22 @@ func parseBrowseResponse(raw []byte) (BrowseResult, error) {
 	if err := xml.Unmarshal(raw, &env); err != nil {
 		return BrowseResult{}, fmt.Errorf("soap envelope: %w", err)
 	}
-	res := env.Body.BrowseResponse.Result
+	r := env.Body.BrowseResponse
+	return didlToResult(r.Result, r.TotalMatches, r.NumberReturned)
+}
+
+// didlToResult converts the DIDL-Lite payload embedded in a Browse or Search
+// response into a BrowseResult.
+func didlToResult(res string, total, returned int) (BrowseResult, error) {
+	out := BrowseResult{TotalMatches: total, Returned: returned}
 	if res == "" {
-		return BrowseResult{
-			TotalMatches: env.Body.BrowseResponse.TotalMatches,
-			Returned:     env.Body.BrowseResponse.NumberReturned,
-		}, nil
+		return out, nil
 	}
 	var didl didlLite
 	// The DIDL-Lite inside <Result> can carry the same bad characters once it is
 	// un-escaped, so sanitise it too before the second parse.
 	if err := xml.Unmarshal(stripIllegalXMLChars([]byte(res)), &didl); err != nil {
 		return BrowseResult{}, fmt.Errorf("didl-lite: %w", err)
-	}
-	out := BrowseResult{
-		TotalMatches: env.Body.BrowseResponse.TotalMatches,
-		Returned:     env.Body.BrowseResponse.NumberReturned,
 	}
 	for _, c := range didl.Containers {
 		out.Containers = append(out.Containers, Container{
