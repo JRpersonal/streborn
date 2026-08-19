@@ -343,13 +343,15 @@ jobs:
           retention-days: 90
 
   # 2a-bis. Build the go-librespot Spotify Connect sidecar (GPL-3.0) from STR's
-  # own fork JRpersonal/go-librespot (master carries the Ogg-passthrough), the
-  # same static-musl arm/v7 way as go-librespot.yml: an emulated Alpine container
-  # so it runs on the speaker's ancient glibc. Built on EVERY release (not only
-  # on manual dispatch) so the sidecar actually ships: the desktop jobs embed it
-  # and the agent stick/OTA delivers it. This is the fix for Spotify never working
-  # on a normally-installed box (#45/#105): the binary was previously never
-  # delivered by the installer or OTA at all.
+  # own fork JRpersonal/go-librespot (master carries the Ogg-passthrough), with
+  # the SAME lean recipe as go-librespot.yml: pure Go, CGO_ENABLED=0, GOARM=5
+  # softfloat (hardware-verified on the Portable 2026-08-01). The previous
+  # hardfloat cgo/Alpine build carried the latent-SIGILL class on early
+  # SoundTouch CPUs without working VFP (#302). Built on EVERY release (not
+  # only on manual dispatch) so the sidecar actually ships: the desktop jobs
+  # embed it and the agent stick/OTA delivers it. This is the fix for Spotify
+  # never working on a normally-installed box (#45/#105): the binary was
+  # previously never delivered by the installer or OTA at all.
   build-go-librespot:
     needs: verify-source
     runs-on: ubuntu-latest
@@ -358,47 +360,34 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - name: Set up QEMU (arm/v7 emulation)
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
-        with:
-          platforms: arm
+      - name: Checkout STR (for the lean-prep script + cgo-free patch)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Clone go-librespot (our fork) + strip ALSA
+      - name: Clone go-librespot (our fork) + strip cgo decoders
         run: |
           git clone --depth 1 --branch master https://github.com/JRpersonal/go-librespot go-librespot
           echo "Built from JRpersonal/go-librespot master at $(git -C go-librespot rev-parse HEAD)"
           mkdir -p dist
-          # ALSA backend removed: STR drives the pipe backend only, and Alpine
-          # ships no static libasound, which would block the fully static link.
-          # Identical to go-librespot.yml; the Ogg-passthrough is already in the
-          # fork source, so no patch is applied.
-          rm -f go-librespot/output/driver-alsa.go go-librespot/output/mixer-alsa.go
-          cat > go-librespot/output/driver-alsa-noalsa.go <<'GO'
-          //go:build !android && !darwin && !js && !windows && !nintendosdk
+          # The strip/stub/patch prep is shared with go-librespot.yml via one
+          # script, so the two lean builds cannot drift apart.
+          sh .github/scripts/golibrespot-lean-prep.sh
 
-          package output
+      - name: Set up Go (engine)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go-librespot/go.mod
+          cache-dependency-path: go-librespot/go.sum
 
-          import "fmt"
+      - name: Test the pure-Go Ogg parser
+        working-directory: go-librespot
+        run: CGO_ENABLED=0 go test ./vorbis/
 
-          func newAlsaOutput(*NewOutputOptions) (Output, error) {
-          	return nil, fmt.Errorf("alsa backend not compiled in this build")
-          }
-          GO
-
-      - name: Build (static musl, cgo, arm/v7)
+      - name: Build (pure Go, static, softfloat arm)
+        working-directory: go-librespot
         run: |
-          docker run --rm --platform linux/arm/v7 \
-            -v "$PWD/go-librespot:/src" -v "$PWD/dist:/dist" \
-            -w /src golang:1.25-alpine sh -euxc '
-              apk add --no-cache build-base git \
-                libogg-dev libvorbis-dev flac-dev \
-                libogg-static libvorbis-static flac-static
-              CGO_ENABLED=1 go build -trimpath -buildvcs=false \
-                -tags "osusergo netgo" \
-                -ldflags "-s -w -linkmode external -extldflags \"-static\"" \
-                -o /dist/go-librespot-armv7l ./cmd/daemon
-              /dist/go-librespot-armv7l --help >/dev/null 2>&1 || true
-            '
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5 \
+            go build -trimpath -buildvcs=false -ldflags "-s -w" \
+            -o ../dist/go-librespot-armv7l ./cmd/daemon
 
       - name: Collect + checksum
         run: |
