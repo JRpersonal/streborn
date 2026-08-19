@@ -253,6 +253,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("stream proxy raw start", "url", url)
+	defer s.clearTitleOnEnd(url)
 	start := time.Now()
 	s.resetAudioGap()
 	headersSent := false
@@ -350,6 +351,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	defer s.clearTitleOnEnd(p.StreamURL)
 
 	// We do exactly one GET to the CDN and copy bytes to Bose. When the CDN
 	// returns EOF (token expiry), we reconnect internally and keep streaming —

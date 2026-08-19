@@ -60,6 +60,23 @@ func (s *Server) clearTitleForNewURL(url string) {
 	s.titleMu.Unlock()
 }
 
+// clearTitleOnEnd drops the title when the proxy stops carrying url. Without
+// it CurrentTitle kept reporting the LAST stream's song forever, and a client
+// that cannot tell radio-via-proxy from other playback showed it under
+// whatever came next: the phone remote's source gate cured the line inputs,
+// but a NAS track plays over the same UPnP source as proxied radio, so the
+// old radio song sat under it (SA-5, #274, still with v0.9.52). Guarded by
+// URL so a handler that outlived a station switch cannot wipe the successor's
+// title; curTitleURL stays, so a plain reconnect refills on the next metadata
+// block instead of blanking through the flap.
+func (s *Server) clearTitleOnEnd(url string) {
+	s.titleMu.Lock()
+	if url == s.curTitleURL {
+		s.curTitle = ""
+	}
+	s.titleMu.Unlock()
+}
+
 // icyConn wraps a net.Conn so a legacy SHOUTcast "ICY 200 OK" response line is
 // rewritten to "HTTP/1.0 200 OK" on the first read, letting Go's net/http parse
 // the response instead of rejecting it. All bytes after the status line (headers,
