@@ -4151,7 +4151,7 @@ async function updateAllBoxes() {
         } catch { /* still settling: trust the delivery */ }
         outcome = stillMissing ? 'partial' : 'done';
         if (stillMissing) {
-          setRow(b.host, { phaseText: t('updateAll.phase.deferred'), pct: 100, barClass: 'ua-defer' });
+          setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
         } else {
           setRow(b.host, { phaseText: t('updateAll.phase.engineDone'), pct: 100, barClass: 'ua-done' });
           try { ClearUpdateIntent(b.host, b.port); } catch {}
@@ -4219,7 +4219,7 @@ async function updateAllBoxes() {
       if (outcome !== 'failed' && (b.model || '').includes('300')) {
         setRow(b.host, { phaseText: t('update.st300PowerCycle'), pct: 100, barClass: 'ua-defer' });
       } else if (outcome === 'done') setRow(b.host, { phaseText: t('updateAll.phase.done'), pct: 100, barClass: 'ua-done' });
-      else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.deferred'), pct: 100, barClass: 'ua-defer' });
+      else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
       else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
     } catch (e) {
       outcome = 'failed';

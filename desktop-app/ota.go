@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/JRpersonal/streborn/sticksetup"
@@ -1090,11 +1091,14 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	// percentage and live throughput (the box reads the body as we send it),
 	// instead of a blind "uploading" spinner that looks frozen on a slow link.
 	prog := newTransferProgress(a, "box:update:progress", total, host)
-	beat := make(chan struct{}, 1)
 	uploadDone := make(chan struct{})
 	finished := false
+	// transferred feeds the stall watchdog below with the cumulative byte
+	// count the HTTP transport has consumed.
+	var transferred atomic.Int64
 	body := &countingReader{r: bytes.NewReader(bin), onProgress: func(n int64) {
 		prog.report(n)
+		transferred.Store(n)
 		if n >= total {
 			// Body fully streamed. Stop the upload-stall watchdog so the box's
 			// NAND-write + reply window (bounded by ResponseHeaderTimeout) is not
@@ -1104,11 +1108,6 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 				finished = true
 				close(uploadDone)
 			}
-			return
-		}
-		select {
-		case beat <- struct{}{}:
-		default:
 		}
 	}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
@@ -1118,29 +1117,33 @@ func (a *App) streamPostBinary(host string, port int, path string, bin []byte) (
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = total
 
-	// Upload-stall watchdog: cancel only if no bytes move for 60 s while the body
-	// is still being sent. Exits cleanly once the upload completes or the context
-	// is done, so it never trips during the post-upload NAND write.
+	// Upload-stall watchdog. Two shapes of a dead transfer, both paid for:
+	// total silence, and the TRICKLE - a Wi-Fi black hole where the OS keeps
+	// retransmitting a few bytes at a time, so a beat-reset watchdog is fed
+	// forever while nothing real moves (field 2026-08-19: an engine push sat
+	// 15 minutes at 12.6 of 16.5 MB until macOS's own TCP give-up surfaced as
+	// a broken pipe; the speaker had aborted 12 minutes earlier). The check is
+	// therefore a progress RATE: every 30 s the transferred count must have
+	// grown by a real amount, or the transfer is dead and waiting helps nobody.
 	go func() {
-		t := time.NewTimer(60 * time.Second)
+		const window = 30 * time.Second
+		const minProgress = 64 * 1024 // bytes per window; any live link beats this
+		t := time.NewTicker(window)
 		defer t.Stop()
+		last := int64(0)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-uploadDone:
 				return
-			case <-beat:
-				if !t.Stop() {
-					select {
-					case <-t.C:
-					default:
-					}
-				}
-				t.Reset(60 * time.Second)
 			case <-t.C:
-				cancel()
-				return
+				cur := transferred.Load()
+				if cur-last < minProgress {
+					cancel()
+					return
+				}
+				last = cur
 			}
 		}
 	}()

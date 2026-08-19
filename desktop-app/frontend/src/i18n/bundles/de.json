@@ -29,6 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Lautsprecher antwortet gerade nicht, warte",
   "updateAll.phase.done": "Fertig",
   "updateAll.phase.deferred": "Aktualisiert, Spotify folgt",
+  "updateAll.phase.engineMissing": "Aktualisiert, aber Spotify ist nicht angekommen. Starte das Update einfach noch einmal.",
   "updateAll.phase.timeout": "Dauert länger als erwartet. Falls sich die Anlage abgeschaltet hat, schalte sie wieder ein, dann läuft das Update meist durch.",
   "updateAll.phase.failed": "Fehlgeschlagen",
   "locale.label": "Deutsch",

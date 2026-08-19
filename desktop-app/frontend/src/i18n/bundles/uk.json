@@ -29,6 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Колонка зараз не відповідає, чекаю",
   "updateAll.phase.done": "Готово",
   "updateAll.phase.deferred": "Оновлено, Spotify далі",
+  "updateAll.phase.engineMissing": "Оновлено, але Spotify не надійшов. Просто запусти оновлення ще раз.",
   "updateAll.phase.timeout": "Триває довше, ніж очікувалося. Якщо пристрій вимкнувся сам, увімкніть його знову, і оновлення зазвичай завершується.",
   "updateAll.phase.failed": "Помилка",
   "locale.label": "Українська",

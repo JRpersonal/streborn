@@ -29,6 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Kolonėlė dabar neatsako, laukiama",
   "updateAll.phase.done": "Atlikta",
   "updateAll.phase.deferred": "Atnaujinta, Spotify netrukus",
+  "updateAll.phase.engineMissing": "Atnaujinta, bet „Spotify“ neatkeliavo. Tiesiog paleisk atnaujinimą dar kartą.",
   "updateAll.phase.timeout": "Trunka ilgiau nei tikėtasi. Jei įrenginys išsijungė, įjunkite jį vėl, tada atnaujinimas paprastai užbaigiamas.",
   "updateAll.phase.failed": "Nepavyko",
   "locale.label": "Lietuvių",

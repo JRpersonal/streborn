@@ -29,6 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "مكبر الصوت لا يستجيب الآن، انتظار",
   "updateAll.phase.done": "تم",
   "updateAll.phase.deferred": "تم التحديث، Spotify لاحقًا",
+  "updateAll.phase.engineMissing": "تم التحديث، لكن Spotify لم يصل. أعد تشغيل التحديث فحسب.",
   "updateAll.phase.timeout": "يستغرق وقتاً أطول من المتوقع. إذا أطفأ الجهاز نفسه، أعد تشغيله وعادةً ما يكتمل التحديث.",
   "updateAll.phase.failed": "فشل",
   "locale.label": "العربية",

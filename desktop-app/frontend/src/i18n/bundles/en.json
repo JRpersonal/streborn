@@ -29,6 +29,7 @@
   "updateAll.phase.spotifyUnreachable": "Speaker is not answering right now, waiting",
   "updateAll.phase.done": "Done",
   "updateAll.phase.deferred": "Updated, Spotify follows",
+  "updateAll.phase.engineMissing": "Updated, but Spotify did not arrive. Run the update again to retry.",
   "updateAll.phase.timeout": "Taking longer than expected. If the speaker switched itself off, switch it on again and the update usually finishes.",
   "updateAll.phase.failed": "Failed",
   "locale.label": "English",
