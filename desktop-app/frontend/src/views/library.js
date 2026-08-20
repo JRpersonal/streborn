@@ -28,6 +28,7 @@ import {
   SaveFolderPreset,
   Status,
   EnableBoxMediaServer,
+  boxFetch,
 } from '../api.js';
 
 // Injected main.js helpers (see initLibraryView). These stay in main.js because
@@ -126,12 +127,34 @@ function rememberedPathFor(udn) {
 }
 
 export async function openLibrary() {
+  syncPlayModeFromBox();
   renderLibrary();
   if (libState.servers.length === 0) {
     await loadMediaServers();
   } else if (libState.currentUDN) {
     await libraryBrowseCurrent();
   }
+}
+
+// The queue's shuffle/repeat mode is sticky on the SPEAKER: the agent persists
+// the last explicit choice and applies it to every queue start, hardware key
+// presses included. Mirror it into the toggles when the library opens, so the
+// UI shows the mode the next press will actually use instead of silently
+// resetting to off (the "Zufall un-ticks itself" report, 2026-08-20). Fire and
+// forget; an older agent without the endpoint just keeps the local defaults.
+async function syncPlayModeFromBox() {
+  const box = state.currentBox;
+  if (!box || box.kind === 'stock') return;
+  try {
+    const r = await boxFetch(box, '/api/queue/mode', {}, 4000);
+    if (!r.ok) return;
+    const m = await r.json();
+    if (m && typeof m.shuffle !== 'undefined') {
+      libState.shuffle = !!m.shuffle;
+      libState.repeat = m.repeat || 'off';
+      renderLibrary();
+    }
+  } catch { /* box asleep or older agent: keep the local defaults */ }
 }
 
 async function loadMediaServers() {
@@ -794,16 +817,29 @@ function renderLibrary() {
   if (playFolderBtn) playFolderBtn.onclick = () => libraryPlayFolder();
   const saveFolderBtn = el.querySelector('.lib-save-folder-btn');
   if (saveFolderBtn) saveFolderBtn.onclick = () => librarySaveFolderAsPreset();
+  // The toggles push their choice to the speaker right away (best-effort), so
+  // it sticks for the hardware keys too, even when no folder play follows.
+  const pushMode = (path, body) => {
+    const box = state.currentBox;
+    if (!box || box.kind === 'stock') return;
+    boxFetch(box, path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }, 4000).catch(() => { /* box asleep or older agent */ });
+  };
   const qShuffleBtn = el.querySelector('.lib-queue-shuffle');
   if (qShuffleBtn) qShuffleBtn.onclick = () => {
     libState.shuffle = !libState.shuffle;
     qShuffleBtn.classList.toggle('active', libState.shuffle);
+    pushMode('/api/queue/shuffle', { on: libState.shuffle });
   };
   const qRepeatBtn = el.querySelector('.lib-queue-repeat');
   if (qRepeatBtn) qRepeatBtn.onclick = () => {
     libState.repeat = libState.repeat === 'off' ? 'all' : libState.repeat === 'all' ? 'one' : 'off';
     qRepeatBtn.classList.toggle('active', libState.repeat !== 'off');
     qRepeatBtn.innerHTML = `&#128257; ${escapeHtml(t('controls.repeat'))}${libState.repeat === 'one' ? ' ¹' : ''}`;
+    pushMode('/api/queue/repeat', { mode: libState.repeat });
   };
   wireLibraryRows(el);
   const libSearch = $('libSearch');
