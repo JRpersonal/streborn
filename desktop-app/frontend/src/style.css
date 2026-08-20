@@ -1090,7 +1090,7 @@ html.a11y-contrast .btn-warning:disabled {
 .preset:hover { background: var(--c-surface-3); }
 .preset:active { background: var(--c-surface-3); }
 .preset.empty { color: var(--c-faint); border-style: dashed; }
-/* preset.playing nutzt SIGNAL-GREEN — bleibt grün als "spielt" Marker */
+/* preset.playing uses SIGNAL-GREEN: stays green as the "playing" marker */
 .preset.playing {
   background: linear-gradient(135deg, #1f2f1f 0%, #2a3a2a 100%);
   border-color: var(--signal-green);
@@ -1103,6 +1103,17 @@ html.a11y-contrast .btn-warning:disabled {
   box-shadow: 0 0 10px rgba(204, 102, 102, 0.25);
 }
 .preset.error .name { color: #fcc; }
+/* The playing/error tiles above hardcode DARK gradients. In the light theme
+   the sublabels (.num, bitrate, hint) switch to dark light-theme greys, which
+   vanished on those dark tiles; the tiles must flip with the theme. */
+html.a11y-light .preset.playing {
+  background: linear-gradient(135deg, #e4f2e4 0%, #d3e8d3 100%);
+}
+html.a11y-light .preset.playing .name { color: #0f5132; }
+html.a11y-light .preset.error {
+  background: linear-gradient(135deg, #f8e6e6 0%, #f0d8d8 100%);
+}
+html.a11y-light .preset.error .name { color: #991b1b; }
 .preset.long-press {
   transform: scale(0.96);
   box-shadow: 0 0 16px rgba(107, 221, 255, 0.4);
@@ -1185,7 +1196,10 @@ html.a11y-contrast .btn-warning:disabled {
 
 .preset-hint {
   font-size: 10px;
-  color: var(--c-border-2);
+  /* --c-faint, not a border token: border colours are tuned to sit quietly
+     against the background and measured 2:1 as text in the light theme
+     (same class of bug as the footer, fixed 2026-08-17). */
+  color: var(--c-faint);
   margin-top: 2px;
 }
 .long-press-bar {
