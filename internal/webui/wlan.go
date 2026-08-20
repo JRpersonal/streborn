@@ -259,6 +259,7 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			// rewrites the firmware's own profile, and the marker is consumed on
 			// read so this cannot loop.
 			touchWLANApplyMarker()
+			renewDHCPLease()
 		case wpaCannotApply:
 			// The conf could not be written live (read-only /etc and the
 			// bind-mount overlay both failed). The new creds are already on NAND,
@@ -504,6 +505,20 @@ func (s *Server) restoreWPAConfAndReload(iface string) {
 		_ = os.Remove(wpaBackupPath)
 	}
 	reloadWPA(iface)
+}
+
+// renewDHCPLease forces a fresh DHCP round after a confirmed live Wi-Fi move.
+// Association alone keeps the OLD lease: that goes unnoticed while the old and
+// new network share a subnet, and strands the box the moment they do not
+// (field report 2026-08-21: a VLAN-separated UniFi setup, the speaker joined
+// the new network but kept the old address and became unreachable). BusyBox
+// udhcpc releases its lease on SIGUSR2 and re-discovers on SIGUSR1; a box
+// without udhcpc makes both calls harmless no-ops (the BCO path applies its
+// change via reboot and never gets here).
+func renewDHCPLease() {
+	_ = exec.Command("killall", "-USR2", "udhcpc").Run()
+	time.Sleep(time.Second)
+	_ = exec.Command("killall", "-USR1", "udhcpc").Run()
 }
 
 // rebootBox triggers a detached reboot so BCO boxes apply the persisted creds
