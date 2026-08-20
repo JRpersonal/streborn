@@ -59,13 +59,20 @@ func (s *Server) RecallSlot(ctx context.Context, slot int) (handled bool) {
 	// re-pushing its old URL over this queue start.
 	s.bumpRecallGen()
 	s.ensureBoxReady(ctx)
-	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", p.Shuffle)
+	// A key press carries no mode choice of its own, so the sticky play mode
+	// applies when one was ever chosen; the slot's stored shuffle and repeat-off
+	// stay the defaults on a box whose owner never touched the toggles.
+	shuffle, rep := p.Shuffle, repeatOff
+	if ps, pr, ok := s.loadPlayMode(); ok {
+		shuffle, rep = ps, pr
+	}
+	s.logger.Info("preset slot recall (hardware): queue", "slot", slot, "tracks", len(items), "shuffle", shuffle, "repeat", rep.String())
 	// Record the saved folder as a Recently-played card (#220), keyed on the slot
 	// so repeated recalls of the same preset group together.
 	card := recentCardCtx{key: fmt.Sprintf("queue:slot:%d", slot), name: p.Name, art: p.Art}
 	// -1 = the user recalled the whole preset without picking a track, so with
 	// shuffle on the queue may start anywhere (#490).
-	if err := s.startQueue(ctx, items, -1, p.Shuffle, repeatOff, card); err != nil {
+	if err := s.startQueue(ctx, items, -1, shuffle, rep, card); err != nil {
 		s.logger.Warn("hardware queue recall failed", "slot", slot, "err", err)
 	}
 	return true
@@ -505,11 +512,15 @@ type queueCard struct {
 }
 
 type queueStartRequest struct {
-	Items   []queueStartItem `json:"items"`
-	Start   int              `json:"start"`
-	Shuffle bool             `json:"shuffle"`
-	Repeat  string           `json:"repeat"`
-	Card    queueCard        `json:"card"`
+	Items []queueStartItem `json:"items"`
+	Start int              `json:"start"`
+	// Pointers so an absent field is distinguishable from an explicit "off":
+	// an explicit value wins and becomes the sticky play mode, an absent one
+	// inherits it (see playmode.go). Older apps always send both explicitly,
+	// which keeps their behaviour exactly as it was.
+	Shuffle *bool     `json:"shuffle"`
+	Repeat  *string   `json:"repeat"`
+	Card    queueCard `json:"card"`
 }
 
 func toQueueItems(in []queueStartItem) []queueItem {
@@ -549,12 +560,24 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		card := recentCardCtx{key: req.Card.Key, name: req.Card.Name, art: req.Card.Art}
+		// Resolve the play mode: explicit request values win and become the new
+		// sticky mode; absent ones inherit the persisted choice (playmode.go).
+		shuffle, rep, _ := s.loadPlayMode()
+		if req.Shuffle != nil {
+			shuffle = *req.Shuffle
+		}
+		if req.Repeat != nil {
+			rep = parseRepeat(*req.Repeat)
+		}
+		if req.Shuffle != nil || req.Repeat != nil {
+			s.savePlayMode(shuffle, rep)
+		}
 		// Detach the queue start from the request context (#252): the standby
 		// wake inside startQueue can outlast the app's HTTP timeout, and the
 		// first track's push must still reach the box after the app gave up.
 		playCtx, playCancel := context.WithTimeout(context.WithoutCancel(r.Context()), playDetachTimeout)
 		defer playCancel()
-		if err := s.startQueue(playCtx, items, req.Start, req.Shuffle, parseRepeat(req.Repeat), card); err != nil {
+		if err := s.startQueue(playCtx, items, req.Start, shuffle, rep, card); err != nil {
 			if isGroupedRejection(err) {
 				s.writeGroupedPlayError(w, err)
 				return
@@ -1066,7 +1089,11 @@ func (s *Server) handleQueueShuffle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.queue.setShuffle(req.On)
-	writeJSON(w, http.StatusOK, s.queue.snapshot())
+	// An explicit toggle is the user's standing choice: persist it so the next
+	// queue start (a hardware key press included) keeps it (see playmode.go).
+	snap := s.queue.snapshot()
+	s.savePlayMode(snap.Shuffle, parseRepeat(snap.Repeat))
+	writeJSON(w, http.StatusOK, snap)
 }
 
 func (s *Server) handleQueueRepeat(w http.ResponseWriter, r *http.Request) {
@@ -1080,5 +1107,7 @@ func (s *Server) handleQueueRepeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.queue.setRepeat(parseRepeat(req.Mode))
-	writeJSON(w, http.StatusOK, s.queue.snapshot())
+	snap := s.queue.snapshot()
+	s.savePlayMode(snap.Shuffle, parseRepeat(snap.Repeat))
+	writeJSON(w, http.StatusOK, snap)
 }

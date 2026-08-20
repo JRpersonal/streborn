@@ -414,6 +414,10 @@ type Server struct {
 	// Empty falls back to defaultResumeOnPowerOnPath.
 	resumeOnPowerOnPath string
 
+	// playModePath persists the sticky queue play mode (shuffle/repeat), see
+	// playmode.go. Empty falls back to defaultPlayModePath.
+	playModePath string
+
 	// displayTrackPath persists the per-box opt-IN for "show the live radio track
 	// on the speaker's display" (default OFF; file absent or "0"). Pushing the ICY
 	// title to the box re-issues SetAVTransportURI, which makes the box re-buffer
@@ -694,6 +698,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/queue/prev", s.handleQueuePrev)
 	mux.HandleFunc("/api/queue/shuffle", s.handleQueueShuffle)
 	mux.HandleFunc("/api/queue/repeat", s.handleQueueRepeat)
+	mux.HandleFunc("/api/queue/mode", s.handleQueueMode)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/position", s.handlePosition)
 	mux.HandleFunc("/api/recent", s.handleRecent)
