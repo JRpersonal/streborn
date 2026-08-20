@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +27,43 @@ func firstAttr(doc, name string) string {
 		return rest[:j]
 	}
 	return ""
+}
+
+// firstElem extracts the first simple element's text (e.g. <itemName>X</itemName>)
+// from a now_playing document. Empty if absent.
+func firstElem(doc, name string) string {
+	key := "<" + name + ">"
+	i := strings.Index(doc, key)
+	if i < 0 {
+		return ""
+	}
+	rest := doc[i+len(key):]
+	if j := strings.IndexByte(rest, '<'); j >= 0 {
+		return rest[:j]
+	}
+	return ""
+}
+
+// probeClient is shared by every now_playing probe. Some of them sit on
+// 10-second reconcile cadences, so the client (and its connection pool) is
+// allocated once instead of per call.
+var probeClient = &http.Client{Timeout: 4 * time.Second}
+
+// fetchNowPlaying reads the box's :8090/now_playing document once. Every
+// probe below is a pure verdict over this document, so each stays testable
+// against canned XML without hardware or a fixed :8090 listener. ok is false
+// on any transport error, which every verdict maps to its zero value.
+func fetchNowPlaying(boxHost string) (doc string, ok bool) {
+	if boxHost == "" {
+		boxHost = "127.0.0.1"
+	}
+	resp, err := probeClient.Get("http://" + boxHost + ":8090/now_playing")
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	return string(b), true
 }
 
 // boxInSetupOOB reports whether BoseApp's /setup says the box is still
@@ -58,21 +94,11 @@ func lastN(s string, n int) string {
 // boxNowPlayingSource returns the source attribute of the box's now_playing
 // (e.g. "SETUP", "STANDBY", "UPNP", "INVALID_SOURCE"), or "" on any error.
 func boxNowPlayingSource(boxHost string) string {
-	if boxHost == "" {
-		boxHost = "127.0.0.1"
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
-	if err != nil {
+	doc, ok := fetchNowPlaying(boxHost)
+	if !ok {
 		return ""
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	m := regexp.MustCompile(`source="([^"]*)"`).FindSubmatch(b)
-	if len(m) == 2 {
-		return string(m[1])
-	}
-	return ""
+	return firstAttr(doc, "source")
 }
 
 // leaveSetupSourceWatcher clears a stuck out-of-box SETUP source so the box can
@@ -140,18 +166,14 @@ func leaveSetupSourceWatcher(ctx context.Context, boxHost string, logger *slog.L
 // source), so the memory guard never reboots mid-playback. Best-effort: any
 // error or a non-play state counts as not playing.
 func boxIsPlaying(boxHost string) bool {
-	if boxHost == "" {
-		boxHost = "127.0.0.1"
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	s := string(b)
-	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+	doc, ok := fetchNowPlaying(boxHost)
+	return ok && nowPlayingIsPlaying(doc)
+}
+
+// nowPlayingIsPlaying is boxIsPlaying's verdict over an already-fetched
+// now_playing document: a play or buffering state on any source.
+func nowPlayingIsPlaying(doc string) bool {
+	return strings.Contains(doc, "PLAY_STATE") || strings.Contains(doc, "BUFFERING_STATE")
 }
 
 // boxNowPlayingSummary returns compact now_playing evidence for the recall
@@ -162,27 +184,17 @@ func boxIsPlaying(boxHost string) bool {
 // #469/Wave 2026-07-25), and whether a verify success was the box's stale
 // same-slot ContentItem rather than a real fetch (#419 Finding 1).
 func boxNowPlayingSummary(boxHost string) (source, itemName, playStatus string) {
-	if boxHost == "" {
-		boxHost = "127.0.0.1"
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
-	if err != nil {
+	doc, ok := fetchNowPlaying(boxHost)
+	if !ok {
 		return "", "", ""
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	s := string(b)
-	if m := regexp.MustCompile(`source="([^"]*)"`).FindStringSubmatch(s); len(m) == 2 {
-		source = m[1]
-	}
-	if m := regexp.MustCompile(`<itemName>([^<]*)</itemName>`).FindStringSubmatch(s); len(m) == 2 {
-		itemName = m[1]
-	}
-	if m := regexp.MustCompile(`<playStatus>([^<]*)</playStatus>`).FindStringSubmatch(s); len(m) == 2 {
-		playStatus = m[1]
-	}
-	return source, itemName, playStatus
+	return nowPlayingSummary(doc)
+}
+
+// nowPlayingSummary is boxNowPlayingSummary's verdict over an already-fetched
+// now_playing document.
+func nowPlayingSummary(doc string) (source, itemName, playStatus string) {
+	return firstAttr(doc, "source"), firstElem(doc, "itemName"), firstElem(doc, "playStatus")
 }
 
 // nudgeStuckSource is the sys-power-nudge decision: the box still reports
@@ -207,17 +219,8 @@ func nudgeStuckSource(attempt int, nudged bool, source string) bool {
 // location at all falls back to the plain play-state verdict, so a model that
 // simply does not report a location does not end up in an endless re-push loop.
 func boxPlayingURL(boxHost, wantURL string) bool {
-	if boxHost == "" {
-		boxHost = "127.0.0.1"
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	return nowPlayingIsURL(string(b), wantURL)
+	doc, ok := fetchNowPlaying(boxHost)
+	return ok && nowPlayingIsURL(doc, wantURL)
 }
 
 // nowPlayingIsURL is boxPlayingURL's verdict over an already-fetched
@@ -259,21 +262,14 @@ func streamPath(u string) string {
 // playing Spotify, and re-pointing on that flap re-attaches the box and
 // restarts the track. The now_playing location tells the two apart.
 func boxPlayingSpotify(boxHost string) bool {
-	if boxHost == "" {
-		boxHost = "127.0.0.1"
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	s := string(b)
-	if !strings.Contains(s, "spotify/stream") {
-		return false
-	}
-	return strings.Contains(s, "PLAY_STATE") || strings.Contains(s, "BUFFERING_STATE")
+	doc, ok := fetchNowPlaying(boxHost)
+	return ok && nowPlayingIsSpotify(doc)
+}
+
+// nowPlayingIsSpotify is boxPlayingSpotify's verdict over an already-fetched
+// now_playing document: STR's Spotify stream in a play or buffering state.
+func nowPlayingIsSpotify(doc string) bool {
+	return strings.Contains(doc, "spotify/stream") && nowPlayingIsPlaying(doc)
 }
 
 // boxReallyPlayingSpotify is the strict form of boxPlayingSpotify: the box is on
@@ -282,16 +278,13 @@ func boxPlayingSpotify(boxHost string) bool {
 // a box that has genuinely started playing after a transient 1036 wrong-state flap
 // on a preset->preset switch.
 func boxReallyPlayingSpotify(boxHost string) bool {
-	if boxHost == "" {
-		boxHost = "127.0.0.1"
-	}
-	cl := &http.Client{Timeout: 4 * time.Second}
-	resp, err := cl.Get("http://" + boxHost + ":8090/now_playing")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	s := string(b)
-	return strings.Contains(s, "spotify/stream") && strings.Contains(s, "PLAY_STATE")
+	doc, ok := fetchNowPlaying(boxHost)
+	return ok && nowPlayingReallySpotify(doc)
+}
+
+// nowPlayingReallySpotify is boxReallyPlayingSpotify's verdict over an
+// already-fetched now_playing document: the Spotify stream in PLAY_STATE
+// proper, not merely BUFFERING.
+func nowPlayingReallySpotify(doc string) bool {
+	return strings.Contains(doc, "spotify/stream") && strings.Contains(doc, "PLAY_STATE")
 }

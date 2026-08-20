@@ -302,34 +302,9 @@ func runSSHWithFlagsStdin(flags []string, host, cmd string, in io.Reader, timeou
 	// bytes have been consumed for `timeout`.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	beat := make(chan struct{}, 1)
-	in = &countingReader{r: in, onProgress: func(int64) {
-		select {
-		case beat <- struct{}{}:
-		default:
-		}
-	}}
-	go func() {
-		t := time.NewTimer(timeout)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-beat:
-				if !t.Stop() {
-					select {
-					case <-t.C:
-					default:
-					}
-				}
-				t.Reset(timeout)
-			case <-t.C:
-				cancel()
-				return
-			}
-		}
-	}()
+	var beat <-chan struct{}
+	in, beat = beatingReader(in)
+	go watchStall(ctx, cancel, beat, timeout)
 	args := append(append([]string{}, flags...), "root@"+host, cmd)
 	c := exec.CommandContext(ctx, "ssh", args...)
 	hideCmdWindow(c)
@@ -717,33 +692,19 @@ func runNativeSession(sess *ssh.Session, cmd string, stdin io.Reader, timeout ti
 		// data (ssh flow control), so a beat tracks real upload throughput; a real
 		// freeze stops the beats and trips the timer. A short command (stdin == nil)
 		// keeps the total timeout below.
-		beat := make(chan struct{}, 1)
-		sess.Stdin = &countingReader{r: stdin, onProgress: func(int64) {
-			select {
-			case beat <- struct{}{}:
-			default:
-			}
-		}}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		src, beat := beatingReader(stdin)
+		sess.Stdin = src
 		go func() { out, e := sess.CombinedOutput(cmd); ch <- res{out, e} }()
-		t := time.NewTimer(timeout)
-		defer t.Stop()
-		for {
-			select {
-			case r := <-ch:
-				return string(r.out), r.err
-			case <-beat:
-				if !t.Stop() {
-					select {
-					case <-t.C:
-					default:
-					}
-				}
-				t.Reset(timeout)
-			case <-t.C:
-				_ = sess.Signal(ssh.SIGKILL)
-				_ = sess.Close()
-				return "", fmt.Errorf("ssh native upload stalled (no progress for %s)", timeout)
-			}
+		go watchStall(ctx, cancel, beat, timeout)
+		select {
+		case r := <-ch:
+			return string(r.out), r.err
+		case <-ctx.Done():
+			_ = sess.Signal(ssh.SIGKILL)
+			_ = sess.Close()
+			return "", fmt.Errorf("ssh native upload stalled (no progress for %s)", timeout)
 		}
 	}
 	go func() { out, e := sess.CombinedOutput(cmd); ch <- res{out, e} }()

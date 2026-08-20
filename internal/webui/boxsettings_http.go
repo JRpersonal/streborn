@@ -382,24 +382,11 @@ func (s *Server) handleBoxSource(w http.ResponseWriter, r *http.Request) {
 	}
 	client := &http.Client{Timeout: 6 * time.Second}
 
-	// Special case STANDBY: no ContentItem source at Bose. /key POWER
-	// only triggers the LED animation, /standby is the real endpoint —
-	// and Bose expects **GET**, not POST (POST returns 400).
+	// Special case STANDBY: no ContentItem source at Bose, boxStandby is the
+	// real power-off.
 	if src == "STANDBY" {
-		// An app-initiated standby is a deliberate stop: arm the latch BEFORE
-		// the call so the UPNP->STANDBY flip it causes is not classified as a
-		// spontaneous firmware drop and auto-resumed (#419).
-		s.NoteUserStop()
-		u := fmt.Sprintf("http://%s:8090/standby", s.boxHost)
-		resp, err := client.Get(u)
-		if err != nil {
-			http.Error(w, "box unreachable: "+err.Error(), http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode >= 400 {
-			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-			http.Error(w, "box error: "+string(respBody), http.StatusBadGateway)
+		if msg := s.boxStandby(); msg != "" {
+			http.Error(w, msg, http.StatusBadGateway)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"source": "STANDBY"})
@@ -467,21 +454,8 @@ func (s *Server) handleBoxPower(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !req.On {
-		// Power off: Bose /standby expects GET (POST returns 400). Same call the
-		// Standby input uses; the real power-off, unlike Stop/Pause. Arm the
-		// deliberate-stop latch BEFORE the call so the UPNP->STANDBY flip it
-		// causes is not classified as a spontaneous firmware drop (#419).
-		s.NoteUserStop()
-		client := &http.Client{Timeout: 6 * time.Second}
-		resp, err := client.Get(fmt.Sprintf("http://%s:8090/standby", s.boxHost))
-		if err != nil {
-			http.Error(w, "box unreachable: "+err.Error(), http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode >= 400 {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-			http.Error(w, "box error: "+string(body), http.StatusBadGateway)
+		if msg := s.boxStandby(); msg != "" {
+			http.Error(w, msg, http.StatusBadGateway)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"on": false})
@@ -615,13 +589,10 @@ func (s *Server) handleBoxAirplayOpt(w http.ResponseWriter, r *http.Request) {
 			// Attribute absent (older file): add it to the root element.
 			out = strings.Replace(out, "<AirplayConfiguration ", `<AirplayConfiguration BCOResetTimerEnabled="`+val+`" `, 1)
 		}
-		tmp := path + ".str-new"
-		if err := os.WriteFile(tmp, []byte(out), 0o644); err != nil {
-			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if err := os.Rename(tmp, path); err != nil {
-			http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
+		// writeFileAtomic, never writeFlagFile: a trailing newline must not be
+		// appended to the XML BoseApp parses at boot.
+		if err := writeFileAtomic(path, []byte(out)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		_ = exec.Command("sync").Run()
@@ -661,21 +632,12 @@ func (s *Server) handleResumeOnPowerOn(w http.ResponseWriter, r *http.Request) {
 		if path == "" {
 			path = defaultResumeOnPowerOnPath
 		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
 		val := "1"
 		if !body.Enabled {
 			val = "0"
 		}
-		tmp := path + ".str-new"
-		if err := os.WriteFile(tmp, []byte(val+"\n"), 0o644); err != nil {
-			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if err := os.Rename(tmp, path); err != nil {
-			http.Error(w, "rename: "+err.Error(), http.StatusInternalServerError)
+		if err := persistFlagFile(path, val); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		_ = exec.Command("sync").Run()
@@ -709,23 +671,19 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 		if path == "" {
 			path = defaultDisplayTrackPath
 		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			http.Error(w, "mkdir: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
 		val := "0"
 		if body.Enabled {
 			val = "1"
 		}
-		if err := writeFlagFile(path, val); err != nil {
-			http.Error(w, "write: "+err.Error(), http.StatusInternalServerError)
+		if err := persistFlagFile(path, val); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// Persist the display mode too, when a valid one is supplied.
 		mode := strings.ToLower(strings.TrimSpace(body.Mode))
 		if mode == "title" || mode == "artist" || mode == "both" {
 			if err := writeFlagFile(modePathFor(path), mode); err != nil {
-				http.Error(w, "write mode: "+err.Error(), http.StatusInternalServerError)
+				http.Error(w, "mode: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
 		}
@@ -745,13 +703,57 @@ func (s *Server) handleDisplayTrack(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// boxStandby puts the box into Bose standby, the real power-off. /key POWER
+// only triggers the LED animation, /standby is the real endpoint, and Bose
+// expects **GET**, not POST (POST returns 400). Unlike Stop/Pause, which only
+// halt the transport, this actually switches the speaker off.
+//
+// An app-initiated standby is a deliberate stop: the latch is armed BEFORE
+// the call so the UPNP->STANDBY flip it causes is not classified as a
+// spontaneous firmware drop and auto-resumed (#419).
+//
+// Returns "" on success, else the message for the handler's 502.
+func (s *Server) boxStandby() string {
+	s.NoteUserStop()
+	client := &http.Client{Timeout: 6 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://%s:8090/standby", s.boxHost))
+	if err != nil {
+		return "box unreachable: " + err.Error()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return "box error: " + string(respBody)
+	}
+	return ""
+}
+
+// writeFileAtomic writes data to path via a temp file and rename, so a crash
+// mid-write never leaves a torn file. Callers on NAND follow up with one sync.
+func writeFileAtomic(path string, data []byte) error {
+	tmp := path + ".str-new"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
+}
+
 // writeFlagFile atomically writes a one-line value to a NAND flag file.
 func writeFlagFile(path, val string) error {
-	tmp := path + ".str-new"
-	if err := os.WriteFile(tmp, []byte(val+"\n"), 0o644); err != nil {
-		return err
+	return writeFileAtomic(path, []byte(val+"\n"))
+}
+
+// persistFlagFile is writeFlagFile plus creating the directory, for handlers
+// that may run before the flag's directory exists. The caller keeps the single
+// trailing sync (a handler writing two flag files syncs ONCE, after both).
+func persistFlagFile(path, val string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir: %w", err)
 	}
-	return os.Rename(tmp, path)
+	return writeFlagFile(path, val)
 }
 
 // contentItemForSource builds the /select ContentItem for a source the user

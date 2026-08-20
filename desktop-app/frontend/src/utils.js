@@ -430,3 +430,12 @@ export function orionStationPayload(loc) {
     return null;
   }
 }
+
+// balanceLabel renders a stereo-balance reading (-7..+7, 0 = centred) as the
+// localized label the three balance displays share.
+export function balanceLabel(v) {
+  return v === 0
+    ? t('controls.balanceCentre')
+    : (v < 0 ? t('controls.balanceLeft', { n: Math.abs(v) })
+             : t('controls.balanceRight', { n: v }));
+}

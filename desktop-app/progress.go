@@ -97,6 +97,18 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// beatingReader wraps r so every chunk read sends a non-blocking heartbeat,
+// the producer shape watchStall consumes.
+func beatingReader(r io.Reader) (io.Reader, <-chan struct{}) {
+	beat := make(chan struct{}, 1)
+	return &countingReader{r: r, onProgress: func(int64) {
+		select {
+		case beat <- struct{}{}:
+		default:
+		}
+	}}, beat
+}
+
 // watchStall cancels via cancel() when no heartbeat arrives on beat within idle,
 // turning a frozen transfer (connection alive but no bytes) into a prompt error
 // the caller can retry, instead of waiting out a long overall deadline. Returns

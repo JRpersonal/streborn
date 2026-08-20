@@ -3,7 +3,7 @@
 // Extracted from the main.js monolith, same pattern as views/recent.js and
 // views/multiroom.js: the module pulls shared things (state, utils, i18n, api,
 // localization) from their own modules and receives the few main.js-local
-// helpers it needs (switchView, discoverBoxes, boxFetch, ...) via
+// helpers it needs (switchView, discoverBoxes, ...) via
 // initSettingsView, so it never imports back into main.js (which would create a
 // cycle). New views should follow this pattern so main.js stops growing.
 //
@@ -24,6 +24,7 @@ import {
   showToast,
   compareVerBuild,
   getBoxLabel,
+  balanceLabel,
 } from '../utils.js';
 import { t, tLookup, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -74,6 +75,8 @@ import {
   ListBoxMediaServers,
   EnableBoxMediaServer,
   DisableBoxMediaServer,
+  boxFetch,
+  readBoxBalance,
 } from '../api.js';
 
 // isMacOS is re-derived locally (the same pure check main.js uses) so the WLAN
@@ -93,7 +96,6 @@ let deps = {
   updateFilterIndicators: () => {},
   discoverBoxes: async () => {},
   renderBoxSelect: () => {},
-  boxFetch: async () => ({ ok: false }),
   localizeLanguageName: (n) => n,
   doBoxUpdate: async () => {},
   loadPresets: async () => {},
@@ -1314,7 +1316,7 @@ function renderBoxSettings(s, box) {
     let sshOpen = false;
     let sshPersistent = false;
     try {
-      const r = await deps.boxFetch(box, '/api/stick/status');
+      const r = await boxFetch(box, '/api/stick/status');
       const ct = r.headers.get('content-type') || '';
       if (r.ok && ct.includes('json')) {
         const data = await r.json();
@@ -1350,7 +1352,7 @@ function renderBoxSettings(s, box) {
         }
       } else {
         // Fallback: debug/state listing for older agents.
-        const rd = await deps.boxFetch(box, '/api/debug/state');
+        const rd = await boxFetch(box, '/api/debug/state');
         if (rd.ok && (rd.headers.get('content-type') || '').includes('json')) {
           const d = await rd.json();
           const listing = d.stick_listing;
@@ -2301,7 +2303,7 @@ function renderBoxSettings(s, box) {
         ? `${optFlag(cc)}${escapeHtml(c.name)} (${escapeHtml(cc)})`
         : escapeHtml(cc || t('common.unknown'));
     };
-    deps.boxFetch(box, '/api/region').then(r => r.ok ? r.json() : null).then(data => {
+    boxFetch(box, '/api/region').then(r => r.ok ? r.json() : null).then(data => {
       if (data && data.country) {
         regSel.value = data.country;
         updateCurrentDisplay(data.country);
@@ -2312,7 +2314,7 @@ function renderBoxSettings(s, box) {
     $('appRegionSave').onclick = async () => {
       const cc = regSel.value;
       try {
-        const r = await deps.boxFetch(box, '/api/region', {
+        const r = await boxFetch(box, '/api/region', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ country: cc }),
@@ -2464,7 +2466,7 @@ function wireWlanSwitch(box) {
       t('settingsView.wlanConfirmBody', { ssid: escapeHtml(ssid) })
     );
     if (!ok) return;
-    const putWlan = (force) => deps.boxFetch(box, '/api/box/wlan', {
+    const putWlan = (force) => boxFetch(box, '/api/box/wlan', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ssid, password: pass, hidden, force: hidden || force }),
@@ -2875,21 +2877,9 @@ export async function refreshBoxBalanceRow(box, pair, boxes) {
   if (!row || !el) return;
   const src = balanceSourceBox(box, pair, boxes) || box;
   if (!src || src.kind === 'stock') { row.hidden = true; return; }
-  let b = null;
-  try {
-    // deps.boxFetch, like every other call in this file. Without the prefix
-    // this threw on every run, the catch below swallowed it, and the balance
-    // row of a stereo pair was therefore never shown. Found by the linter on
-    // its first run, 2026-08-16.
-    const r = await deps.boxFetch(src, '/api/box/balance');
-    b = await r.json();
-  } catch { /* asleep or unreachable: show nothing rather than an error */ }
-  if (!b || !b.available) { row.hidden = true; return; }
-  const v = Number(b.actual) || 0;
-  el.textContent = v === 0
-    ? t('controls.balanceCentre')
-    : (v < 0 ? t('controls.balanceLeft', { n: Math.abs(v) })
-             : t('controls.balanceRight', { n: v }));
+  const v = await readBoxBalance(src);
+  if (v === null) { row.hidden = true; return; }
+  el.textContent = balanceLabel(v);
   el.title = t('controls.balanceTitle');
   row.hidden = false;
 }
