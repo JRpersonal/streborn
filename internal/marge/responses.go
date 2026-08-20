@@ -293,98 +293,66 @@ func (s *Server) respondAddDevice(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(body))
 }
 
-// respondAccountFull responds to /streaming/account/<id>/full with minimal
-// FullAccount XML. The box uses this after AddDevice to load the account settings,
-// devices and sources.
-func (s *Server) respondAccountFull(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/vnd.bose.streaming-v1.2+xml")
-	w.WriteHeader(http.StatusOK)
-	// FullAccount.proto: account { mode, devices, sources, providerSettings, ... }
-	// Sources contains MargeSource.source with type=INTERNET_RADIO and
-	// sourceproviderid=INTERNET_RADIO. This should make the box register the
-	// source as available.
-	// ProtoToMarkup convention:
-	//   string field → attribute
-	//   Common.String field → child element with text content
-	//   message field → nested child element
-	// The root element is not called "fullAccount" but matches the message
-	// name "account" or the parent field name. Here we try
-	// <fullAccount> as root (matches the filename convention).
-	_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8" ?>
-<fullAccount>
-  <mode><text>global</text></mode>
-  <sources>` + staticRadioSourceXML() + s.storedMusicXML() + `
-  </sources>
-</fullAccount>`))
+// numericProviderID maps a source enum name to the firmware's own numeric
+// provider id (the catalogue respondSourceProviders sends). The account
+// document's <sourceproviderid> resolves against those NUMBERS: the two
+// sources hardware provably registers as READY (LOCAL_INTERNET_RADIO,
+// STORED_MUSIC) both use them, while the earlier reflected shape wrote the
+// NAME there and never registered.
+var numericProviderID = map[string]string{
+	"PANDORA": "1", "INTERNET_RADIO": "2", "LOCAL_INTERNET_RADIO": "11",
+	"DEEZER": "14", "SPOTIFY": "15", "IHEART": "16", "SIRIUSXM": "17",
+	"GOOGLE_PLAY_MUSIC": "18", "QQMUSIC": "19", "AMAZON": "20",
+	"SOUNDCLOUD": "23", "TIDAL": "24", "TUNEIN": "25",
 }
 
-// reflectedSourcesXML renders the reflected account-linked cloud sources (Deezer
-// "Path A") as <source> elements for the account response, or "" when none are
-// reflected. Shared so the live account handler and tests agree on the shape.
-// reflectSourceFormat selects the XML shape of a reflected account source via
-// the STR_REFLECT_SOURCE_FORMAT env var (or, if unset, the reflectFormatPath
-// marker file), so the shape the box accepts as a READY
-// (playable) source can be swept on hardware, the same way addDeviceFormat sweeps
-// the addDevice reply. The box marking a re-advertised account source (Deezer)
-// READY again would mean the source went UNAVAILABLE only because STR stopped
-// advertising it, not because the cached account login expired. Empty/"default"
-// keeps the original shape, so this is a no-op unless explicitly set.
-// Values: "default" (empty credential), "status" (+ status="READY"),
-// "statususer" (status + a non-empty username credential), "minimal" (id+type+name).
-func (s *Server) reflectSourceFormat() string {
-	if v := strings.TrimSpace(os.Getenv("STR_REFLECT_SOURCE_FORMAT")); v != "" {
-		return v
-	}
-	if s.reflectFormatPath != "" {
-		if b, err := os.ReadFile(s.reflectFormatPath); err == nil {
-			if v := strings.TrimSpace(string(b)); v != "" {
-				return v
+// reflectedFullSourcesXML renders the reflected account-linked cloud sources
+// (Deezer "Path A") for the /full account document, which is the document the
+// box actually polls at boot and keeps ("a source the account does not name is
+// one the firmware will not keep"). Until now the reflection lived only in the
+// sourceproviders catalogue and the marge-account body, so a Deezer source
+// survived as an entry but went UNAVAILABLE at the next boot sync (live case:
+// an ST with status="UNAVAILABLE" while the same account on a stock adapter
+// stayed READY, 2026-08-21).
+//
+// The element set and order are copied from staticRadioSourceXML deliberately,
+// the same rule storedMusicSourcesXML follows: a source in /full that omits an
+// element the firmware expects fails the WHOLE document. Only three values
+// differ per source: the numeric provider id, the sourcename enum, and the
+// username (the account the box already holds). ids start at 100, clear of the
+// radio source (3) and the media servers (10+). A source whose enum has no
+// known numeric id is skipped rather than guessed: a wrong reference risks the
+// whole account document.
+func (s *Server) reflectedFullSourcesXML() string {
+	const ts = "2020-01-01T00:00:00.000+00:00"
+	var b strings.Builder
+	i := 0
+	for _, r := range s.reflected() {
+		typ := strings.ToUpper(strings.TrimSpace(r.Source))
+		pid, ok := numericProviderID[typ]
+		if !ok {
+			if j := strings.IndexByte(typ, '_'); j > 0 {
+				pid, ok = numericProviderID[typ[:j]]
+			}
+			if !ok {
+				continue
 			}
 		}
-	}
-	return "default"
-}
-
-// renderReflectedSource renders one reflected account source as a <source>
-// element in the chosen format. "default" reproduces the historical shape
-// byte-for-byte.
-func renderReflectedSource(format, acct, typ, name string) string {
-	switch format {
-	case "status":
-		return "\n    <source id=\"" + acct + "\" type=\"" + typ + "\" status=\"READY\">" +
-			"<credential type=\"\" text=\"\"/><name>" + name + "</name>" +
-			"<username>" + acct + "</username><sourceproviderid>" + typ + "</sourceproviderid>" +
-			"<sourcename>" + name + "</sourcename></source>"
-	case "statususer":
-		return "\n    <source id=\"" + acct + "\" type=\"" + typ + "\" status=\"READY\">" +
-			"<credential type=\"USERNAME\" text=\"" + acct + "\"/><name>" + name + "</name>" +
-			"<username>" + acct + "</username><sourceproviderid>" + typ + "</sourceproviderid>" +
-			"<sourcename>" + name + "</sourcename></source>"
-	case "minimal":
-		return "\n    <source id=\"" + acct + "\" type=\"" + typ + "\">" +
-			"<name>" + name + "</name><sourceproviderid>" + typ + "</sourceproviderid></source>"
-	default: // "default": the original shape
-		return "\n    <source id=\"" + acct + "\" type=\"" + typ + "\">" +
-			"<credential type=\"\" text=\"\"/><name>" + name + "</name>" +
-			"<username>" + acct + "</username><sourceproviderid>" + typ + "</sourceproviderid>" +
-			"<sourcename>" + name + "</sourcename></source>"
-	}
-}
-
-func (s *Server) reflectedSourcesXML() string {
-	format := s.reflectSourceFormat()
-	var b strings.Builder
-	for _, r := range s.reflected() {
-		typ := xmlEscapeText(strings.ToUpper(strings.TrimSpace(r.Source)))
-		if typ == "" {
-			continue
-		}
-		acct := xmlEscapeText(r.Account)
-		name := xmlEscapeText(r.Name)
+		name := strings.TrimSpace(r.Name)
 		if name == "" {
 			name = typ
 		}
-		b.WriteString(renderReflectedSource(format, acct, typ, name))
+		b.WriteString(`<source id="` + strconv.Itoa(100+i) + `" type="Audio">` +
+			`<createdOn>` + ts + `</createdOn>` +
+			`<credential type="token"></credential>` +
+			`<name>` + xmlEscapeText(name) + `</name>` +
+			`<sourceproviderid>` + pid + `</sourceproviderid>` +
+			`<sourcename>` + xmlEscapeText(typ) + `</sourcename>` +
+			`<sourceSettings/>` +
+			`<updatedOn>` + ts + `</updatedOn>` +
+			`<username>` + xmlEscapeText(r.Account) + `</username>` +
+			`</source>`)
+		i++
 	}
 	return b.String()
 }
@@ -445,7 +413,7 @@ func (s *Server) respondMargeAccountFull(w http.ResponseWriter, _ *http.Request)
 		`<mode>global</mode>` +
 		`<preferredLanguage>en</preferredLanguage>` +
 		`<providerSettings/>` +
-		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedSourcesXML() + `</sources>` +
+		`<sources>` + staticRadioSourceXML() + s.storedMusicXML() + s.reflectedFullSourcesXML() + `</sources>` +
 		`</account>`))
 }
 
