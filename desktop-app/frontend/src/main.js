@@ -113,6 +113,8 @@ import {
   DissolveZone,
   WakeBox,
   EventsOn,
+  boxFetch,
+  readBoxBalance,
 } from './api.js';
 
 // Global frontend crash capture, registered as early as possible.
@@ -202,6 +204,7 @@ import {
   activeSlotFromLocation,
   orionStationPayload,
   clearNoticeDismissal,
+  balanceLabel,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -356,7 +359,7 @@ function openSpeakerSettings(box) {
   switchView('settings');
 }
 
-initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, boxFetch, switchView, openSpeakerSettings });
+initMultiroomView({ boxNeedsUpdate, discoverBoxes, selectBox, switchView, openSpeakerSettings });
 initSpotifyView({
   switchView,
   // Live STR speaker list for the "sync Spotify login to all speakers" action.
@@ -364,9 +367,9 @@ initSpotifyView({
     .filter(b => b && b.kind !== 'stock' && b.deviceID && b.host)
     .map(b => ({ host: b.host, port: b.port, name: getBoxLabel(b) })),
 });
-initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, boxFetch, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab });
+initSettingsView({ switchView, updateFilterIndicators, discoverBoxes, renderBoxSelect, localizeLanguageName, doBoxUpdate, updateAllBoxes, boxNeedsUpdate, loadPresets, getRoomNames, speakerPicked: speakerPickedInTab });
 initLibraryView({ showSlotPicker, formatDuration, effectivePlayTarget, speakerPicked: speakerPickedInTab });
-initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, boxFetch, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
+initSetupView({ switchView, discoverBoxes, doBoxUpdate, getRoomNames, celebrateProvision: inviteWorldMapAfterProvision, speakerPicked: speakerPickedInTab });
 initPodcastsView();
 
 // __nextLogoFallback walks a preset logo <img>'s data-fallbacks list (a
@@ -2619,32 +2622,7 @@ async function updateSourceButtonVisibility() {
   }
 }
 
-// boxFetch is a self-healing fetch for the agent's plain-HTTP endpoints
-// (region, radio search/tags/languages, stick status). Unlike the Go
-// bindings it cannot reuse boxDo, so it replicates the same resilience in
-// JS: a hard timeout, so a flaky port can never hang the UI forever (the
-// "region keeps loading" bug on BCO boxes), plus a :8888 <-> :17008
-// failover for BCO speakers where only one of the two answers. The first
-// reachable port is remembered on the box so later calls go straight to it.
-async function boxFetch(box, path, opts = {}, timeoutMs = 8000) {
-  if (!box) throw new Error('no box');
-  const ports = [...new Set([box.port, 17008, 8888].filter(Boolean))];
-  let lastErr;
-  for (const p of ports) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const r = await fetch(`http://${box.host}:${p}${path}`, { ...opts, signal: ctrl.signal });
-      clearTimeout(timer);
-      if (p !== box.port) box.port = p; // remember the reachable port
-      return r;
-    } catch (e) {
-      clearTimeout(timer);
-      lastErr = e;
-    }
-  }
-  throw lastErr || new Error('box unreachable');
-}
+// boxFetch lives in api.js next to boxURL, imported above.
 
 let regionLoaded = false;
 async function loadStickRegion() {
@@ -6117,17 +6095,9 @@ async function refreshBalance() {
   if (!selected || selected.kind === 'stock') { el.classList.add('hidden'); return; }
   const box = balanceSourceBox(selected, stereoPairOf(state.zoneLive || {}), state.boxes) || selected;
   if (box.kind === 'stock') { el.classList.add('hidden'); return; }
-  let b = null;
-  try {
-    const r = await boxFetch(box, '/api/box/balance');
-    b = await r.json();
-  } catch { /* asleep or unreachable: show nothing rather than an error */ }
-  if (!b || !b.available) { el.classList.add('hidden'); return; }
-  const v = Number(b.actual) || 0;
-  el.textContent = v === 0
-    ? t('controls.balanceCentre')
-    : (v < 0 ? t('controls.balanceLeft', { n: Math.abs(v) })
-             : t('controls.balanceRight', { n: v }));
+  const v = await readBoxBalance(box);
+  if (v === null) { el.classList.add('hidden'); return; }
+  el.textContent = balanceLabel(v);
   el.title = t('controls.balanceTitle');
   el.classList.remove('hidden');
 }

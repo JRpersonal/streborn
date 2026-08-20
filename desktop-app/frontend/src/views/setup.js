@@ -72,6 +72,7 @@ import {
   EventsOn,
   BrowserOpenURL,
   PhoneQR,
+  boxFetch,
 } from '../api.js';
 
 // Official Bose SoundTouch app store listings (verified live 2026-07-09). The
@@ -165,10 +166,6 @@ let deps = {
   // box is successfully provisioned with STR (the most reliable "alive again"
   // moment). Wired in main.js; no-op default so the view never depends on it.
   celebrateProvision: () => {},
-  // boxFetch(box, path, opts): self-healing fetch to the installed agent's HTTP
-  // API. Used to PUT /api/box/wlan right after a network install so a
-  // cable-installed speaker joins Wi-Fi. Wired in main.js.
-  boxFetch: async () => ({ ok: false }),
   // speakerPicked(box): focus this speaker across the tabs (it sets
   // state.settingsBox and state.currentBox), so leaving Setup for another tab
   // lands on the speaker the user just pointed at. It was already being called
@@ -2205,7 +2202,7 @@ async function verifyInstalledState(box, onState) {
           // "WLAN switch refused ... visible=[]"), silently breaking the
           // Wi-Fi save; on a first install the cable stays in anyway, so the
           // strand-protection the preflight exists for does not apply.
-          const wr = await deps.boxFetch(agentBox, '/api/box/wlan', {
+          const wr = await boxFetch(agentBox, '/api/box/wlan', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ssid: wifiForBox.ssid, password: wifiForBox.pass, hidden: !!wifiForBox.hidden, force: true }),
@@ -2254,7 +2251,7 @@ async function verifyInstalledState(box, onState) {
     // the steps below; the per-step retries give more chances.
     const readyDeadline = Date.now() + 90 * 1000;
     while (Date.now() < readyDeadline) {
-      try { const r = await deps.boxFetch(agentBox, '/api/status', {}); if (r && r.ok) break; } catch {}
+      try { const r = await boxFetch(agentBox, '/api/status', {}); if (r && r.ok) break; } catch {}
       await sleep(3000);
     }
     waitingAgent = false;

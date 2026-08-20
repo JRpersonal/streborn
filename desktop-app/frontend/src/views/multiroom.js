@@ -6,9 +6,9 @@
 // discoverBoxes) via initMultiroomView, so it never imports back into main.js.
 
 import { state } from '../state.js';
-import { $, escapeHtml, escapeAttr, getBoxLabel, showToast } from '../utils.js';
+import { $, escapeHtml, escapeAttr, getBoxLabel, showToast, balanceLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL } from '../api.js';
+import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairOf, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
@@ -580,17 +580,8 @@ async function fillPairBalance(pair, boxes) {
     .find(b => b && String(b.deviceID || '').toUpperCase() === String(pair.master || '').toUpperCase());
   const src = master || pairMemberBoxes(pair, boxes).map(x => x.box).find(Boolean);
   if (!src || src.kind === 'stock') return;
-  let b = null;
-  try {
-    const r = await deps.boxFetch(src, '/api/box/balance');
-    b = await r.json();
-  } catch { /* asleep or unreachable: show nothing rather than an error */ }
-  if (!b || !b.available) return;
-  const v = Number(b.actual) || 0;
-  const reading = v === 0
-    ? t('controls.balanceCentre')
-    : (v < 0 ? t('controls.balanceLeft', { n: Math.abs(v) })
-             : t('controls.balanceRight', { n: v }));
-  el.textContent = reading + '. ' + t('controls.balanceTitle');
+  const v = await readBoxBalance(src);
+  if (v === null) return;
+  el.textContent = balanceLabel(v) + '. ' + t('controls.balanceTitle');
   el.hidden = false;
 }

@@ -199,3 +199,40 @@ export function boxURL(box, path) {
   if (!box) return '';
   return `http://${box.host}:${box.port}${path}`;
 }
+
+// boxFetch is a self-healing fetch for the agent's plain-HTTP endpoints
+// (region, radio search/tags/languages, stick status, WLAN). Unlike the Go
+// bindings it cannot reuse boxDo, so it replicates the same resilience in
+// JS: a hard timeout, so a flaky port can never hang the UI forever (the
+// "region keeps loading" bug on BCO boxes), plus a :8888 <-> :17008
+// failover for BCO speakers where only one of the two answers. The first
+// reachable port is remembered on the box so later calls go straight to it.
+export async function boxFetch(box, path, opts = {}, timeoutMs = 8000) {
+  if (!box) throw new Error('no box');
+  const ports = [...new Set([box.port, 17008, 8888].filter(Boolean))];
+  let lastErr;
+  for (const p of ports) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(`http://${box.host}:${p}${path}`, { ...opts, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (p !== box.port) box.port = p; // remember the reachable port
+      return r;
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('box unreachable');
+}
+
+// readBoxBalance reads a speaker's stereo balance, or null when the speaker
+// does not report one or cannot be asked right now.
+export async function readBoxBalance(box) {
+  try {
+    const r = await boxFetch(box, '/api/box/balance');
+    const b = await r.json();
+    return (b && b.available) ? (Number(b.actual) || 0) : null;
+  } catch { return null; /* asleep or unreachable: show nothing rather than an error */ }
+}
