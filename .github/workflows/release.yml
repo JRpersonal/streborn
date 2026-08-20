@@ -439,7 +439,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "stable"
+          # Pinned, not "stable": the hosted runners moved to Go 1.27.0 on
+          # 2026-08-21 and the pinned wails CLI v2.12.0 dies under it with
+          # `internal error: package "embed" without types` before compiling
+          # anything. 1.26.x is the combination every release up to v0.9.52
+          # shipped with. Lift the pin together with a tested wails CLI bump.
+          go-version: "1.26.x"
           cache: true
 
       - name: Setup Node
@@ -668,7 +673,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "stable"
+          # Pinned, not "stable": the hosted runners moved to Go 1.27.0 on
+          # 2026-08-21 and the pinned wails CLI v2.12.0 dies under it with
+          # `internal error: package "embed" without types` before compiling
+          # anything. 1.26.x is the combination every release up to v0.9.52
+          # shipped with. Lift the pin together with a tested wails CLI bump.
+          go-version: "1.26.x"
           cache: true
 
       - name: Setup Node
@@ -844,7 +854,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "stable"
+          # Pinned, not "stable": the hosted runners moved to Go 1.27.0 on
+          # 2026-08-21 and the pinned wails CLI v2.12.0 dies under it with
+          # `internal error: package "embed" without types` before compiling
+          # anything. 1.26.x is the combination every release up to v0.9.52
+          # shipped with. Lift the pin together with a tested wails CLI bump.
+          go-version: "1.26.x"
           cache: true
 
       - name: Setup Node
