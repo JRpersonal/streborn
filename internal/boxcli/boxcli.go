@@ -246,6 +246,21 @@ func PresetKey(ctx context.Context, host string, slot int, mode string) error {
 	return err
 }
 
+// tapLabel makes a preset name safe as a quoted TAP CLI argument. The
+// tokeniser splits on the label's OWN quotes, so a station name like
+// `CFSM 107.5 "2Day FM"` turns the command into too many arguments and the
+// box stores nothing while the socket reports success (#654). Newlines end
+// the command line early, same effect. A label that cleans down to nothing
+// gets the fallback, because an empty `""` is collapsed by the tokeniser
+// and shifts every following argument.
+func tapLabel(name, fallback string) string {
+	name = strings.NewReplacer("\"", "", "\n", " ", "\r", " ").Replace(name)
+	if name = strings.TrimSpace(name); name == "" {
+		return fallback
+	}
+	return name
+}
+
 // AddPreset stores a preset on the box so the hardware keys can trigger
 // a `nowSelectionUpdated` event with the ContentItem. We set all presets
 // as a UPNP source because that is what the box is most likely to accept
@@ -258,7 +273,7 @@ func AddPreset(ctx context.Context, host string, slot int, name, streamURL strin
 	// LABEL must be in quotes, otherwise the box splits it at the space.
 	// LOCATION should have no quotes.
 	cmd := fmt.Sprintf(`ws AddPreset UPNP audio %s "%s" UPnPUserName %d`,
-		streamURL, name, slot)
+		streamURL, tapLabel(name, fmt.Sprintf("Preset %d", slot)), slot)
 	_, err := Send(ctx, host, cmd)
 	return err
 }
@@ -276,7 +291,7 @@ func AddPresetRaw(ctx context.Context, host string, slot int, source, typ, locat
 	typ = clean(typ)
 	location = clean(location)
 	account = clean(account)
-	name = clean(name)
+	name = tapLabel(name, fmt.Sprintf("Preset %d", slot))
 	if source == "" || location == "" || slot < 1 || slot > 6 {
 		return fmt.Errorf("AddPresetRaw: source, location and slot 1..6 required")
 	}
@@ -338,7 +353,7 @@ func AddPresetNative(ctx context.Context, host string, slot int, name, location 
 	// (2026-08-02): "none" occupies the argument and the firmware stores
 	// sourceAccount="" from it, which is exactly the shape that plays.
 	cmd := fmt.Sprintf(`ws AddPreset LOCAL_INTERNET_RADIO stationurl %s "%s" none %d`,
-		location, name, slot)
+		location, tapLabel(name, fmt.Sprintf("Preset %d", slot)), slot)
 	out, err := Send(ctx, host, cmd)
 	if err != nil {
 		return err
