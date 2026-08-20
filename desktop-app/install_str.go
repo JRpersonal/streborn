@@ -393,6 +393,12 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		switch {
 		case strings.Contains(err.Error(), "timeout"):
 			res.Code = "install-timeout"
+		// Before the I/O-error case on purpose: install.sh's own failure text
+		// guesses "(stick I/O error?)" even when the copy died on ENOSPC, so an
+		// out-of-space box was blamed on the stick (live case 2026-08-20: 4.7 MB
+		// free of 31.6 MB on a stock ST10, stick perfectly readable).
+		case strings.Contains(lowOut, "no space left on device"):
+			res.Code = "nand-full"
 		case strings.Contains(lowOut, "input/output error"), strings.Contains(lowOut, "i/o error"):
 			// Media-level read failure of install.sh. Distinguish the two causes:
 			// a USB power/enumeration dropout (the ST30's port cannot keep VBUS up
@@ -410,6 +416,9 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		hint := classifySSHError(out, err)
 		if res.Code == "stick-usb-power" {
 			hint = usbPowerHint
+		}
+		if res.Code == "nand-full" {
+			hint = "the speaker's internal storage is full, so STR does not fit (the stick is fine). Something besides the Bose firmware already occupies it, often an earlier third-party SoundTouch tool. The diagnostic in this report lists the largest folders under '# nv usage'."
 		}
 		res.Message = "install.sh execution failed: " + hint
 		// The rich diagnostics must also reach str.log, not only res.Log:
@@ -1224,6 +1233,11 @@ func boxInstallDiag(host string) string {
 		"echo '# block devices'; ls -la /dev/sd* /dev/mmcblk* 2>&1",
 		"echo '# mounts'; mount 2>&1",
 		"echo '# df'; df -h 2>&1",
+		// The largest NAND entries, so a "No space left on device" report names
+		// WHAT occupies /mnt/nv (a stock box with a full NAND usually carries a
+		// third-party mod or leftovers no listing ever showed; live case
+		// 2026-08-20: 25 of 31 MB used on a box with no STR and no way to tell).
+		"echo '# nv usage (largest last)'; du -a /mnt/nv 2>/dev/null | sort -n | tail -25",
 		"echo '# stick contents'; ls -la /media/sda1 /mnt/usb /run/media/* 2>&1 | head -40",
 		// install.sh head + line-ending/exec evidence: exit 126 is usually a
 		// CRLF script the box's BusyBox refuses, a non-executable/no-exec mount,
