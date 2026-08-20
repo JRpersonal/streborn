@@ -124,9 +124,23 @@ func TestReflectDeezerSource(t *testing.T) {
 	if !strings.Contains(sp, `id="DEEZER"`) {
 		t.Fatalf("sourceproviders missing DEEZER: %s", sp)
 	}
+	// The reflected source must sit in the account document in EXACTLY the
+	// element set the two hardware-proven sources use: numeric provider id 14,
+	// the enum in <sourcename>, the account in <username>, full element set
+	// (see reflectedFullSourcesXML). The earlier name-id shape survived here as
+	// an entry but the box downgraded the source to UNAVAILABLE at every boot
+	// sync (live case 2026-08-21).
 	full := get("/streaming/account/1456373802/full")
-	if !strings.Contains(full, `type="DEEZER"`) || !strings.Contains(full, "1456373802") {
-		t.Fatalf("account/full missing reflected Deezer source: %s", full)
+	for _, want := range []string{
+		`<sourceproviderid>14</sourceproviderid>`,
+		`<sourcename>DEEZER</sourcename>`,
+		`<username>1456373802</username>`,
+		`<sourceSettings/>`,
+		`<credential type="token"></credential>`,
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("account/full missing %s in reflected Deezer source: %s", want, full)
+		}
 	}
 
 	// Without a reflect file: no Deezer is advertised (safe default).

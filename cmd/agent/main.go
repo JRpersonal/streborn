@@ -353,7 +353,6 @@ func run() error {
 	margeSrv := marge.New(logger.With("comp", "marge"),
 		marge.WithDeviceID(deviceID),
 		marge.WithReflectSourcesPath(boxsnapshot.ReflectPath()),
-		marge.WithReflectSourceFormatPath("/mnt/nv/streborn/reflect-format"),
 		// Persist the stereo-pair record so the firmware's group poll keeps
 		// getting the same answer across agent restarts (a "not grouped"
 		// fallback after a restart is what invited the firmware to re-create

@@ -45,12 +45,6 @@ type Server struct {
 	// missing file = no reflection (the safe default).
 	reflectPath string
 
-	// reflectFormatPath points at an optional NAND marker file whose content
-	// selects the reflected-source XML shape (see reflectSourceFormat). It lets
-	// the Deezer source-revival sweep change the shape with a single file write
-	// and a box re-sync, no env var or launch-script edit. Empty = env var only.
-	reflectFormatPath string
-
 	// requestLog stores the last N requests for debug purposes
 	// (accessible via /__spy/log on the same listener).
 	requestLog    []SpyEntry
@@ -189,12 +183,6 @@ func WithSources(items []SourceItem) Option {
 // pre-existing account-linked cloud sources (Deezer "Path A").
 func WithReflectSourcesPath(path string) Option {
 	return func(s *Server) { s.reflectPath = path }
-}
-
-// WithReflectSourceFormatPath wires the NAND marker file whose content selects
-// the reflected-source XML shape, for the Deezer source-revival sweep.
-func WithReflectSourceFormatPath(path string) Option {
-	return func(s *Server) { s.reflectFormatPath = path }
 }
 
 // WithGroupPath wires the file the stereo-pair group record is persisted to,
