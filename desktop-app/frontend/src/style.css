@@ -1722,8 +1722,11 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .setup-target-card.selected .stc-radio::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--brand, #58a); }
 .stc-label { font-size: 14px; color: var(--c-text); }
 .stc-badge { font-size: 10px; background: var(--c-surface-3); color: var(--c-text); border: 1px solid var(--c-border); padding: 2px 6px; border-radius: 10px; white-space: nowrap; }
-.stc-badge.badge-warn { background: #d97706; }
-.stc-badge.badge-ok { background: #2a7f3f; }
+/* Fixed text colours, independent of the theme's --c-text: the orange chip
+   needs DARK text (white/#eee measures ~2.9:1 on it), the green chip needs
+   WHITE text (dark theme text passes, the light theme's near-black is 3.3:1). */
+.stc-badge.badge-warn { background: #d97706; color: #1c1917; }
+.stc-badge.badge-ok { background: #2a7f3f; color: #fff; }
 .stc-sublabel { font-size: 11px; color: var(--c-muted); margin-top: 3px; }
 .setup-target-empty { padding: 8px 4px; }
 .setup-target-factory-help { background: var(--c-bg); border: 1px dashed var(--c-border); border-radius: 4px; padding: 8px 10px; margin-top: 6px; }
@@ -1800,7 +1803,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .drive-path { font-size: 14px; color: var(--c-text); }
 .drive-meta { font-size: 11px; color: var(--c-muted); }
 .badge { font-size: 10px; background: #58a; color: #fff; padding: 2px 6px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
-.badge-warn { background: #d97706; }
+.badge-warn { background: #d97706; color: #1c1917; }
 /* Hard-demote notice on the Wi-Fi-only (no-stick) onboarding panel. */
 .setup-ap-push-warn { margin: 6px 0 8px; padding: 8px 10px; background: #2f1f0f; border-left: 3px solid #d97706; border-radius: 4px; color: #fbbf24; font-size: 12px; }
 .security-warn { margin-top: 10px; padding: 10px 12px; background: linear-gradient(135deg, #2f1f0f 0%, #3a2a1a 100%); border-left: 3px solid #d97706; border-radius: 4px; }
