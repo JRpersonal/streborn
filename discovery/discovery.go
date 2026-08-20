@@ -195,6 +195,34 @@ func (a *Announcer) register() error {
 	return nil
 }
 
+// shutdownServersLocked stops both mDNS servers and reports whether any was
+// running. Caller must hold a.mu.
+func (a *Announcer) shutdownServersLocked() bool {
+	stopped := false
+	if a.server != nil {
+		a.server.Shutdown()
+		a.server = nil
+		stopped = true
+	}
+	if a.legacyServer != nil {
+		a.legacyServer.Shutdown()
+		a.legacyServer = nil
+		stopped = true
+	}
+	return stopped
+}
+
+// reannounceLocked logs the trigger, tears both servers down, and registers
+// again with the (already mutated) config. Caller must hold a.mu.
+func (a *Announcer) reannounceLocked(reason, oldV, newV string) error {
+	a.logger.Warn("mDNS phase: re-announce trigger",
+		slog.String("reason", reason),
+		slog.String("old", oldV),
+		slog.String("new", newV))
+	a.shutdownServersLocked()
+	return a.register()
+}
+
 // UpdateFriendlyName updates the display name in the TXT record and
 // re-announces both service types. No-op if the name has not changed.
 func (a *Announcer) UpdateFriendlyName(name string) error {
@@ -206,20 +234,9 @@ func (a *Announcer) UpdateFriendlyName(name string) error {
 	if name == a.cfg.FriendlyName {
 		return nil
 	}
-	a.logger.Warn("mDNS phase: re-announce trigger",
-		slog.String("reason", "friendlyName change"),
-		slog.String("old", a.cfg.FriendlyName),
-		slog.String("new", name))
+	old := a.cfg.FriendlyName
 	a.cfg.FriendlyName = name
-	if a.server != nil {
-		a.server.Shutdown()
-		a.server = nil
-	}
-	if a.legacyServer != nil {
-		a.legacyServer.Shutdown()
-		a.legacyServer = nil
-	}
-	return a.register()
+	return a.reannounceLocked("friendlyName change", old, name)
 }
 
 // UpdateModel updates the model field in the TXT record and re-announces
@@ -238,20 +255,9 @@ func (a *Announcer) UpdateModel(model string) error {
 	if model == a.cfg.Model {
 		return nil
 	}
-	a.logger.Warn("mDNS phase: re-announce trigger",
-		slog.String("reason", "model change"),
-		slog.String("old", a.cfg.Model),
-		slog.String("new", model))
+	old := a.cfg.Model
 	a.cfg.Model = model
-	if a.server != nil {
-		a.server.Shutdown()
-		a.server = nil
-	}
-	if a.legacyServer != nil {
-		a.legacyServer.Shutdown()
-		a.legacyServer = nil
-	}
-	return a.register()
+	return a.reannounceLocked("model change", old, model)
 }
 
 // Snapshot returns the friendlyName and model currently held in the TXT
@@ -276,18 +282,7 @@ func (a *Announcer) Close() {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	stopped := false
-	if a.server != nil {
-		a.server.Shutdown()
-		a.server = nil
-		stopped = true
-	}
-	if a.legacyServer != nil {
-		a.legacyServer.Shutdown()
-		a.legacyServer = nil
-		stopped = true
-	}
-	if stopped {
+	if a.shutdownServersLocked() {
 		a.logger.Warn("mDNS phase: announce stopped")
 	}
 }
