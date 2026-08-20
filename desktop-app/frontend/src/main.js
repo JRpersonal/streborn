@@ -344,6 +344,7 @@ import {
   loadWifiProfiles,
   refreshDrives,
   initSetupView,
+  installRunActive,
 } from './views/setup.js';
 // Inject the main.js-local helpers the views reuse so they behave exactly as
 // before without reimplementing them. All hoisted function declarations, safe
@@ -1762,6 +1763,25 @@ async function discoverBoxes() {
     if (rb) rb.classList.remove('spinning');
   }
 }
+
+// Periodic background refresh (2026-08-20): the app used to learn a speaker's
+// new agent version only when the user pressed Refresh, so an app left open
+// all day kept showing "needs update" for speakers that were long done. Every
+// minute, re-probe the KNOWN speakers directly (no mDNS sweep, the same quick
+// path the Refresh button uses first) and re-evaluate the update banner.
+// Skipped while an OTA or an install runs so the probe never lands on a
+// speaker mid-flash, and skipped while no speaker is known (the recovery
+// burst owns the empty case).
+setInterval(async () => {
+  if (state.otaInProgress || installRunActive() || !state.boxes.length) return;
+  try {
+    const quick = await RefreshKnownBoxes();
+    if (quick && quick.length) {
+      applyBoxList(quick);
+      checkBoxUpdate();
+    }
+  } catch { /* transient network trouble: the next tick retries */ }
+}, 60000);
 
 // applyBoxList folds a freshly probed box list into state + the UI. Shared by
 // the known-first quick refresh and the full discovery so both render

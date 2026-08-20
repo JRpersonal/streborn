@@ -730,6 +730,10 @@ function updateSetupGoButtonLabel() {
 // true while startNetworkInstall runs, disabling the button.
 let networkInstallRunning = false;
 
+// installRunActive tells main.js's periodic background refresh whether an
+// install is running, so the refresh never probes a speaker mid-install.
+export function installRunActive() { return networkInstallRunning; }
+
 // renderPrimaryAction paints the OTA-first primary action above the (collapsed)
 // USB-stick wizard. For a reachable stock box it shows the network-install hero
 // whose button installs STR over the network with no stick; for a box that
@@ -1644,6 +1648,11 @@ const INSTALL_HELP_STEPS = {
   // Usually a large stick force-formatted to FAT32 with a block size the
   // speaker can't read (the 64 GB case), or a faulty stick.
   'stick-io-error': ['reformatApp', 'usbPicky', 'smallerStick', 'differentStick', 'logs'],
+  // The speaker's internal storage is full (ENOSPC during the NAND copy): the
+  // stick is fine and reformatting would not help, so no stick advice here.
+  // The result message names the cause; the report's '# nv usage' section
+  // lists what occupies the space.
+  'nand-full': ['logs'],
   // USB power dropout, not a faulty stick: the speaker's port could not keep the
   // stick powered under read load (dmesg VBUS_ERROR / error -110), so it
   // disconnected mid-install. The same stick installs fine on ST10/ST20, so the
