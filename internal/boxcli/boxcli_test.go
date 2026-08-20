@@ -138,3 +138,24 @@ func TestWakeAndWaitTogglesWhenAsleep(t *testing.T) {
 		t.Fatalf("WakeAndWait sent %d `sys power` toggle(s) to an asleep box; want >=1", n)
 	}
 }
+
+// TestTapLabel covers the names that broke TAP tokenisation in the field:
+// quotes inside a station name shifted the argument boundaries so the box
+// stored nothing while reporting success (#654, `CFSM 107.5 "2Day FM"`).
+func TestTapLabel(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{`CFSM 107.5 "2Day FM" Cranbrook, BC`, `CFSM 107.5 2Day FM Cranbrook, BC`},
+		{"Line\nBreak\rName", "Line Break Name"},
+		{"  plain name  ", "plain name"},
+		{`"`, "Preset 3"},
+		{"", "Preset 3"},
+		{"   ", "Preset 3"},
+	}
+	for _, c := range cases {
+		if got := tapLabel(c.in, "Preset 3"); got != c.want {
+			t.Errorf("tapLabel(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

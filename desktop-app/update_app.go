@@ -451,7 +451,10 @@ func (a *App) ApplyUpdate(downloadedPath string) error {
 		// nicety: it is what makes the swap safe to ship, since every refusal
 		// (running from the DMG, an unwritable folder, a signature that does not
 		// verify) lands the user exactly where they were before.
-		if err := a.applyDarwin(downloadedPath); err != nil {
+		// The non-darwin stub of applyDarwin always errors, which makes this
+		// comparison "always true" to a linter running on Linux; on macOS
+		// builds it is a real branch.
+		if err := a.applyDarwin(downloadedPath); err != nil { //nolint:staticcheck // SA4023: false positive from the cross-platform stub
 			a.logger.Info("macOS in-place update not possible, falling back to the assisted install", "reason", err)
 			return a.RevealUpdateFile(downloadedPath)
 		}
