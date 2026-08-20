@@ -28,10 +28,13 @@ import (
 //     reboots to apply them through the proven boot-time provisioning path.
 //
 // In ALL cases the SSID/PASS are written to the canonical NAND wlan-creds that
-// the boot path replays, so the change survives a reboot. The previous version
-// only wrote a runtime wpa file at the wrong path and never updated wlan-creds,
-// so a reboot reverted it AND on BCO boxes it poked a non-existent
-// wpa_supplicant and silently did nothing while reporting success.
+// the boot path replays, AND the one-shot apply marker is dropped so the next
+// boot actively programs the new network once (the firmware's own profile
+// store still holds the old one and wins the boot association otherwise,
+// #461). The previous version only wrote a runtime wpa file at the wrong path
+// and never updated wlan-creds, so a reboot reverted it AND on BCO boxes it
+// poked a non-existent wpa_supplicant and silently did nothing while
+// reporting success.
 //
 // The switch runs in the background and the response returns immediately: the
 // box leaves the current network as it switches, so the client must rediscover
@@ -246,6 +249,16 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface)
 			_ = os.Remove(wlanCredsPath + ".bak")
 			_ = os.Remove(wpaBackupPath)
+			// Drop the apply marker even though the LIVE switch succeeded: the
+			// firmware keeps its own network profile store and re-associates to
+			// the OLD network at boot, where run.sh's hands-off replay sees a
+			// working network and deliberately stays out. Without the marker the
+			// speaker therefore woke up back on the old Wi-Fi after every reboot
+			// (#461; field bundles 2026-08-20, "FB40 kommt immer wieder"). With
+			// it, the next boot actively programs the new SSID once, which also
+			// rewrites the firmware's own profile, and the marker is consumed on
+			// read so this cannot loop.
+			touchWLANApplyMarker()
 		case wpaCannotApply:
 			// The conf could not be written live (read-only /etc and the
 			// bind-mount overlay both failed). The new creds are already on NAND,
