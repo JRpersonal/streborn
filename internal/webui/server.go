@@ -193,6 +193,9 @@ type Server struct {
 	// the competing #14 auto-attach cannot race the clean slot recall while the box
 	// is tearing its UPnP source down. nil when Spotify is not configured.
 	spotifySuppressActivate func(time.Duration)
+	// spotifyExpectReattach marks the next Ogg re-attach as deliberate (an
+	// STR re-push), keeping it out of the engine's storm damping.
+	spotifyExpectReattach func(time.Duration)
 	// spotifyInfo answers GET /spotify/info with the live Spotify state
 	// (ready, measured bitrate, device name) the UI reads to show the real
 	// stream bitrate on a Spotify preset tile. nil when not configured.

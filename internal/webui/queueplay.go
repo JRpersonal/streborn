@@ -955,6 +955,18 @@ func (s *Server) repushSpotifyStream(why string, requireSlot int) {
 	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
+	// This push makes the box drop and re-fetch the Ogg stream; announce the
+	// re-attach so the engine's storm damping does not count STR's own work.
+	if s.spotifyExpectReattach != nil {
+		s.spotifyExpectReattach(15 * time.Second)
+	}
+	// Re-arm the auto-repoint hold HERE, at the moment of the push: the arm
+	// at the start of the soft-skip flow can expire during the up-to-12 s
+	// track-boundary wait, leaving the detach gap this push causes uncovered
+	// (SuppressActivate only ever extends, so the early arm stays harmless).
+	if s.spotifySuppressActivate != nil {
+		s.spotifySuppressActivate(12 * time.Second)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	var err error
