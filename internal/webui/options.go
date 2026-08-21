@@ -17,6 +17,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/zones"
+	"github.com/JRpersonal/streborn/internal/zonetemplates"
 )
 
 // SetWifiSignalFn wires a provider for the latest Wi-Fi signal class
@@ -85,6 +86,13 @@ func WithPresets(p *presets.Store) Option {
 // a reboot/standby and auto-reform (#70).
 func WithZones(z *zones.Store) Option {
 	return func(s *Server) { s.zones = z }
+}
+
+// WithZoneTemplates wires the group-template store (named constellations plus
+// the single permanent group, beta). nil-safe: without it the template
+// endpoints answer 503 and the permanent engine stays off.
+func WithZoneTemplates(t *zonetemplates.Store) Option {
+	return func(s *Server) { s.tpls = t }
 }
 
 // WithMediaServers wires the store of DLNA/UPnP media servers the user enabled
@@ -301,6 +309,21 @@ func WithSpotifySkipBoundary(boundary func() time.Time) Option {
 	return func(s *Server) { s.spotifySkipBoundary = boundary }
 }
 
+// WithSpotifyArmRecallCut registers the hook that arms the engine's boundary
+// cut for a preset recall, so the box's fresh attachment never re-buffers the
+// old track's audio while the new context loads.
+func WithSpotifyArmRecallCut(arm func()) Option {
+	return func(s *Server) { s.spotifyArmRecallCut = arm }
+}
+
+// WithSpotifyBoundaryStaleKB registers the resolver for how many stale
+// (pre-boundary) KB the box's current attachment was fed before the last cut
+// boundary; the recall re-push uses it to skip the buffer-dropping push when
+// the cut already kept the box clean.
+func WithSpotifyBoundaryStaleKB(staleKB func() int64) Option {
+	return func(s *Server) { s.spotifyBoundaryStaleKB = staleKB }
+}
+
 // WithSpotifyMeta registers the resolver for a Spotify context's stable cover
 // image and human title, stamped onto a newly saved Spotify preset.
 func WithSpotifyMeta(meta func(ctx context.Context, uri string) (cover, title string)) Option {
@@ -376,6 +399,13 @@ func WithSpotifyImportCred(f func(ctx context.Context, data []byte) error) Optio
 // ServeOgg drives the new track from its start.
 func WithSpotifySetRecalling(setRecalling func()) Option {
 	return func(s *Server) { s.spotifySetRecalling = setRecalling }
+}
+
+// WithSpotifyExpectReattach registers the hook that marks the next box
+// re-attach to the Ogg stream as deliberate (STR's own re-push), so the
+// engine's re-attach storm damping does not count it.
+func WithSpotifyExpectReattach(expect func(time.Duration)) Option {
+	return func(s *Server) { s.spotifyExpectReattach = expect }
 }
 
 // WithSpotifySuppressActivate registers the hook that holds go-librespot's

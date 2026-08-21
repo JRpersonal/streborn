@@ -770,6 +770,79 @@ func (s *Server) reattachAfterSoftSkip() {
 	}()
 }
 
+// reattachAfterRecall re-pushes the slot's Spotify stream after a preset
+// recall, and ONLY when stale pre-boundary audio actually reached the box's
+// fresh attachment. The recall arms the engine's boundary cut before the box
+// re-fetches the stream, so in the common case the attachment stays clean
+// (staleKB ~0) and no push happens at all: a needless push would flap a stream
+// that is already playing the right track. Only when the cut could not keep
+// the buffer clean (late arm, early wrong BOS, cut expiry) is the box's buffer
+// dropped, sharing the soft-skip burst debounce so recall and skip re-pushes
+// cannot double-tear the stream. Runs in its own goroutine (caller spawns it).
+func (s *Server) reattachAfterRecall(gen uint64, started time.Time, slot int, armedAt time.Time) {
+	if s.renderer == nil || s.spotifySkipBoundary == nil {
+		return
+	}
+	// Same boundary-wait budget as the soft skip: above the slowest observed
+	// engine track load, so a landed boundary is always seen. The recall's
+	// boundary always follows armedAt (the cut was armed before the play was
+	// issued), so no backwards slack is needed here.
+	wait := s.recallReattachWait
+	if wait == 0 {
+		wait = 12 * time.Second
+	}
+	deadline := time.Now().Add(wait)
+	for s.spotifySkipBoundary().Before(armedAt) {
+		if time.Now().After(deadline) {
+			// The engine never delivered the new track: keep the box's
+			// buffered stream and let the recall verify own the recovery.
+			s.logger.Info("recall: no track boundary within the wait, keeping the box's buffered stream")
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	staleKB := int64(0)
+	if s.spotifyBoundaryStaleKB != nil {
+		staleKB = s.spotifyBoundaryStaleKB()
+	}
+	if staleKB < 64 { // under ~3s of audio: the cut kept the box clean
+		s.logger.Info("recall: clean boundary handover, no re-push needed", "staleKB", staleKB)
+		return
+	}
+	// A deliberate stop wins (the push sends Play), and a box that just
+	// rejected the source as not-logged-in (1036) must not be re-pushed into
+	// its re-login bounce.
+	if s.userStoppedRecently() || s.recentLoginError() {
+		return
+	}
+	// A newer play or a power-off supersedes this recall's re-push.
+	if s.recallStandDownReason(gen, started) != "" {
+		return
+	}
+	// Share the soft-skip burst debounce: a skip re-push and a recall re-push
+	// within the window would tear the box's stream down twice back to back.
+	// Deliberately does NOT consult hwSkipAt: a hardware preset PRESS is not a
+	// hardware SKIP, and its own flow ends right here.
+	s.skipRepushMu.Lock()
+	recent := time.Since(s.lastSkipRepushAt) < 8*time.Second
+	if !recent {
+		s.lastSkipRepushAt = time.Now()
+	}
+	s.skipRepushMu.Unlock()
+	if recent {
+		return
+	}
+	s.repushSpotifyStream("recall stale buffer", slot)
+}
+
+// ReattachAfterSpotifyRecall exposes the recall re-push gate to the hardware
+// preset path (cmd/agent), which mirrors the app recall and needs the same
+// "only push when stale audio reached the box" decision. Blocking (boundary
+// wait); the caller runs it in a goroutine.
+func (s *Server) ReattachAfterSpotifyRecall(gen uint64, started time.Time, slot int, armedAt time.Time) {
+	s.reattachAfterRecall(gen, started, slot, armedAt)
+}
+
 // slotFromSpotifyStreamURL extracts the preset slot N from a per-slot Spotify Ogg
 // URL (".../spotify/stream-N.ogg"), or 0 if the URL is the slot-less default.
 func slotFromSpotifyStreamURL(u string) int {
@@ -955,6 +1028,18 @@ func (s *Server) repushSpotifyStream(why string, requireSlot int) {
 	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
+	// This push makes the box drop and re-fetch the Ogg stream; announce the
+	// re-attach so the engine's storm damping does not count STR's own work.
+	if s.spotifyExpectReattach != nil {
+		s.spotifyExpectReattach(15 * time.Second)
+	}
+	// Re-arm the auto-repoint hold HERE, at the moment of the push: the arm
+	// at the start of the soft-skip flow can expire during the up-to-12 s
+	// track-boundary wait, leaving the detach gap this push causes uncovered
+	// (SuppressActivate only ever extends, so the early arm stays harmless).
+	if s.spotifySuppressActivate != nil {
+		s.spotifySuppressActivate(12 * time.Second)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	var err error

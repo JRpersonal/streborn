@@ -97,7 +97,12 @@ type Manager struct {
 	configVol    int       // initial_volume currently written to config.yml
 	sink         io.Writer // current HTTP consumer, nil when none
 	lastAttachAt time.Time // when the box last attached to the Ogg stream (re-attach storm detection)
-	cmd          *exec.Cmd
+	lastDetachAt time.Time // when the box last detached; the warm-recall gate's "streaming until a moment ago"
+	// expectReattachUntil marks the next re-attach as deliberately caused by
+	// STR's own re-push (one-shot, see ExpectReattach), keeping it out of the
+	// storm accounting.
+	expectReattachUntil time.Time
+	cmd                 *exec.Cmd
 	// runCancel restarts the current go-librespot process when called: it
 	// cancels the per-process context so the supervise loop relaunches it.
 	// Used to re-apply a changed device_name (go-librespot reads its name only
@@ -138,6 +143,26 @@ type Manager struct {
 	// ended, on every speaker of the group at once (live 2026-08-15 16:56 and
 	// 2026-08-16 16:58, both times reported as something else).
 	lastCtxResolveFailAt time.Time
+	// lastTrackLoadFailAt is when go-librespot last failed to LOAD a track
+	// ("failed advancing to next track" / "failed loading current track"), a
+	// transient Spotify-side failure mid-playlist. The stop that follows must
+	// not arm the deliberate-stop latch (live 2026-08-21: a six-speaker group
+	// fell silent after six songs), and one bounded auto-advance tries the
+	// NEXT track instead. lastAutoAdvanceAt rate-limits that advance so an
+	// account whose every track fails (PlayPlay cohort) cannot skip-storm.
+	lastTrackLoadFailAt time.Time
+	lastAutoAdvanceAt   time.Time
+	// lastEngineActiveAt is the last moment the engine demonstrably played:
+	// a playing/active event or a fresh Ogg track boundary. The delayed
+	// auto-advance below compares it against the stop moment, because the
+	// engine frequently RECOVERS from a "failed advancing" on its own a few
+	// seconds later (live 2026-08-21 13:33, three times in one playlist);
+	// advancing then skips the very track the engine just loaded, heard as
+	// "the next song plays two seconds and jumps to the one after".
+	lastEngineActiveAt time.Time
+	// selfRecoveryWait overrides how long the auto-advance waits for that
+	// self-recovery; 0 means the production default. Injected by tests.
+	selfRecoveryWait time.Duration
 
 	// zeroconfLabel is the bare mDNS label the engine advertises as its SRV
 	// target, empty until the agent's own responder is answering for it.
@@ -224,10 +249,16 @@ type Manager struct {
 	// dropped instead of flushed (NoteSkip / skipCutArmed).
 	skipCutUntil     time.Time
 	lastSkipBoundary time.Time
-	sinkBytes        int64
-	sinkPages        int64
-	sinkFirstAudioAt time.Time
-	sinkLastPageAt   time.Time
+	// lastBoundaryStaleBytes snapshots, at the moment a cut boundary was
+	// stamped, how much non-header audio the current attachment had already
+	// been fed. ~0 means the cut kept the box's buffer clean, so the recall
+	// re-push can stand down instead of flapping the stream for nothing
+	// (LastBoundaryStaleKB).
+	lastBoundaryStaleBytes int64
+	sinkBytes              int64
+	sinkPages              int64
+	sinkFirstAudioAt       time.Time
+	sinkLastPageAt         time.Time
 	// lastContext is the Spotify context (playlist/album) URI go-librespot last
 	// announced via will_play. When it changes (the app switched to another
 	// playlist) the box is re-pointed at the stream so it drops its buffer and

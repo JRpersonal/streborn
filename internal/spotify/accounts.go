@@ -293,11 +293,18 @@ func (m *Manager) captureLoop(ctx context.Context) {
 // public playlists still work). Otherwise it swaps the credential and restarts
 // go-librespot, waiting until it re-auths as the target.
 func (m *Manager) SwitchAccount(ctx context.Context, username string) (bool, error) {
+	return m.switchAccountFrom(ctx, m.currentUsername(ctx), username)
+}
+
+// switchAccountFrom is SwitchAccount with the active account already probed
+// (cur, "" when unknown/down). The recall preamble passes its single /status
+// result in, so a warm same-account recall spends no extra round trip here.
+func (m *Manager) switchAccountFrom(ctx context.Context, cur, username string) (bool, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return false, nil
 	}
-	if cur := m.currentUsername(ctx); cur == username {
+	if cur == username {
 		return false, nil // already this account: no switch, no restart
 	}
 	data, err := os.ReadFile(filepath.Join(m.credStore, sanitizeUser(username)+".json"))

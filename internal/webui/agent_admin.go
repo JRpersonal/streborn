@@ -83,6 +83,9 @@ func (s *Server) handleAgentVersion(w http.ResponseWriter, _ *http.Request) {
 	// older agents that bind the binary only at process start (#240).
 	if s.spotifyReload != nil {
 		out["engineHotSwap"] = "true"
+		// Present from the group-templates feature on; the desktop gates its
+		// templates UI on this so old agents never receive template calls.
+		out["zoneTemplates"] = "true"
 	}
 	// Box uptime, so the desktop app can sequence the post-OTA engine delivery
 	// deterministically (#466): the first ~2-3 minutes after a post-OTA boot are

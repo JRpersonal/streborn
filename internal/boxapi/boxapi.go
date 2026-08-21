@@ -683,6 +683,30 @@ func (c *Client) SetBass(ctx context.Context, b int) error {
 	return c.postXML(ctx, "/bass", body)
 }
 
+// AddWirelessProfile writes SSID/password into NetManager's OWN profile store,
+// the list the firmware picks from at boot before STR's agent is even running.
+//
+// This is the ONLY channel that can author an entry there. NetworkProfiles.xml
+// keeps its passphrases AES-encrypted, so STR can read that file but can never
+// create an entry in it, and the firmware exposes no per-profile delete at all
+// (/supportedURLs carries addWirelessProfile, getActiveWirelessProfile,
+// performWirelessSiteSurvey, setWiFiRadio and networkInfo, and nothing that
+// removes one). So this call adds; it never replaces.
+//
+// The body is the shape proven on live hardware by run.sh's M1 approach
+// (usb-stick/run.sh:2515), timeout attribute included: that number is the
+// firmware's own budget for the operation, not the caller's, which comes from
+// ctx.
+//
+// Known to be refused on the taigan chassis (HTTP 500 regardless of the body,
+// see run.sh's M1 notes), so callers must treat an error as "this chassis
+// cannot", never as fatal.
+func (c *Client) AddWirelessProfile(ctx context.Context, ssid, password string) error {
+	body := `<AddWirelessProfile timeout="30"><profile ssid="` + xmlEscape(ssid) +
+		`" password="` + xmlEscape(password) + `" securityType="wpa_or_wpa2" /></AddWirelessProfile>`
+	return c.postXML(ctx, "/addWirelessProfile", body)
+}
+
 // ---------- helpers ----------
 
 func (c *Client) url(path string) string {

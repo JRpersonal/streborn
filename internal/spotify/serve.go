@@ -253,6 +253,12 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 		sinceLast = time.Since(m.lastAttachAt)
 	}
 	m.lastAttachAt = time.Now()
+	// A re-attach STR's own re-push announced (ExpectReattach) is deliberate:
+	// consume the one-shot mark and keep it out of the storm accounting.
+	deliberate := time.Now().Before(m.expectReattachUntil)
+	if deliberate {
+		m.expectReattachUntil = time.Time{}
+	}
 	m.mu.Unlock()
 	// Single-connection invariant: tear down the previous box connection now.
 	// A box stuck in INVALID_SOURCE re-fetches the stream repeatedly; if the old
@@ -270,7 +276,7 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	// re-pointing so it stops shoving the box back into the same failing state.
 	// A rapid re-attach grows the backoff (capped); a healthy, spaced-out attach
 	// resets it so normal playlist switches stay responsive.
-	if reattach && sinceLast > 0 && sinceLast < spotifyStormWindow {
+	if reattach && !deliberate && sinceLast > 0 && sinceLast < spotifyStormWindow {
 		m.mu.Lock()
 		if m.activateBackoff < spotifyActivateBackoffBase {
 			m.activateBackoff = spotifyActivateBackoffBase
@@ -367,6 +373,13 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	m.logger.Info("spotify: box detached from Ogg stream",
 		"attachedMs", attachedMs, "forwardedKB", bytes/1024, "pages", pages,
 		"firstAudioAfterMs", firstAudioMs, "kbps", kbps)
+	// Stamp the detach so the warm-recall gate can tell "streaming until a
+	// moment ago" (our own URI re-push tears the sink down right before the
+	// engine call) from "long idle" - lastAttachAt cannot: it ages while a
+	// stable sink plays for minutes.
+	m.mu.Lock()
+	m.lastDetachAt = time.Now()
+	m.mu.Unlock()
 }
 
 // errSinkRetired is returned by a writer whose handler has gone. forward()
