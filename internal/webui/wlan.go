@@ -8,10 +8,19 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+)
+
+// The two facts the firmware reports about its OWN network store: how many
+// profiles it holds, and which one it considers active. Both decide whether a
+// Wi-Fi move will survive the next power cycle.
+var (
+	wifiProfileCountRe = regexp.MustCompile(`wifiProfileCount="(\d+)"`)
+	activeProfileRe    = regexp.MustCompile(`(?s)<ssid>(.*?)</ssid>`)
 )
 
 // handleBoxWLAN sets the box's WLAN configuration at runtime.
@@ -249,6 +258,12 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface)
 			_ = os.Remove(wlanCredsPath + ".bak")
 			_ = os.Remove(wpaBackupPath)
+			// Teach the firmware's OWN store the new network NOW, while the
+			// box is up and reachable, instead of hoping the next boot does
+			// it: deferring that to the boot marker below is what left a
+			// reporter's speakers back on the old Wi-Fi after every power
+			// cycle (see programFirmwareWifiProfile).
+			s.programFirmwareWifiProfile(ssid, password)
 			// Drop the apply marker even though the LIVE switch succeeded: the
 			// firmware keeps its own network profile store and re-associates to
 			// the OLD network at boot, where run.sh's hands-off replay sees a
@@ -286,11 +301,99 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 		}
 	default:
 		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid)
+		// Same store, one last chance to record the new network before the
+		// reboot. Known to fail on taigan; logged either way and never
+		// allowed to hold up the reboot that actually applies the move.
+		s.programFirmwareWifiProfile(ssid, password)
 		// Mark this as an active apply so run.sh programs the new SSID on boot
 		// instead of replaying the old network hands-off (#184).
 		touchWLANApplyMarker()
 		rebootBox()
 	}
+}
+
+// programFirmwareWifiProfile teaches the SPEAKER'S OWN network store the new
+// Wi-Fi, by the same call the stock Bose setup page uses
+// (POST :8090/addWirelessProfile, the NetManager profile DB).
+//
+// This is what makes a move survive a power cycle. STR wrote only
+// wpa_supplicant.conf and left the firmware store alone, so the box
+// associated with the new network immediately and then, at the next cold
+// boot, restored its own stored profile and came back on the OLD network. A
+// reporter with seven speakers chased that for weeks and proved it in five
+// diagnostic bundles on 2026-08-21: right after the move his box carried
+// exactly one network block in the file STR writes, and after the power cycle
+// that file held none while the running supplicant carried two networks, the
+// old one included. It only ever stuck where the old network was out of range.
+//
+// Best-effort by design and never fatal: the call is known to fail on some
+// chassis (taigan answers 500, see run.sh), and the live switch has already
+// succeeded by the time we get here. Every outcome is logged with the box's
+// own before/after profile count, so the next diagnostic bundle settles this
+// in one look.
+func (s *Server) programFirmwareWifiProfile(ssid, password string) {
+	if s.boxHost == "" {
+		return
+	}
+	before := wifiProfileCount(s.boxHost)
+	body := fmt.Sprintf(`<AddWirelessProfile timeout="15"><profile ssid=%q password=%q securityType="wpa_or_wpa2" /></AddWirelessProfile>`, ssid, password)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"http://"+s.boxHost+":8090/addWirelessProfile", strings.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "text/xml")
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		s.logger.Warn("WLAN: could not teach the speaker's own network store the new Wi-Fi; a cold boot may return to the old network",
+			"err", err, "ssid", ssid, "profilesBefore", before)
+		return
+	}
+	defer resp.Body.Close()
+	after := wifiProfileCount(s.boxHost)
+	if resp.StatusCode >= 300 {
+		s.logger.Warn("WLAN: the speaker refused the profile for its own network store; a cold boot may return to the old network",
+			"status", resp.StatusCode, "ssid", ssid, "profilesBefore", before, "profilesAfter", after)
+		return
+	}
+	s.logger.Info("WLAN: taught the speaker's own network store the new Wi-Fi (survives a power cycle)",
+		"ssid", ssid, "profilesBefore", before, "profilesAfter", after, "activeProfile", activeWifiProfile(s.boxHost))
+}
+
+// wifiProfileCount reads how many networks the firmware has stored, straight
+// from its own /networkInfo (the wifiProfileCount attribute). -1 when
+// unreadable.
+func wifiProfileCount(host string) int {
+	b, err := boxGet(context.Background(), "http://"+host+":8090/networkInfo", 8<<10)
+	if err != nil {
+		return -1
+	}
+	m := wifiProfileCountRe.FindSubmatch(b)
+	if m == nil {
+		return -1
+	}
+	n := 0
+	if _, err := fmt.Sscanf(string(m[1]), "%d", &n); err != nil {
+		return -1
+	}
+	return n
+}
+
+// activeWifiProfile reports the SSID the firmware considers its active stored
+// profile ("" when unreadable): the second half of the boot-persistence
+// evidence.
+func activeWifiProfile(host string) string {
+	b, err := boxGet(context.Background(), "http://"+host+":8090/getActiveWirelessProfile", 8<<10)
+	if err != nil {
+		return ""
+	}
+	m := activeProfileRe.FindSubmatch(b)
+	if m == nil {
+		return ""
+	}
+	return string(m[1])
 }
 
 // backupAndWriteWlanCreds writes the canonical NAND wlan-creds (the SSID=/PASS=
