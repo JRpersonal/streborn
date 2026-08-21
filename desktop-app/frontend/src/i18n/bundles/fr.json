@@ -1169,6 +1169,8 @@
   "multiroom.templatesHeading": "Modèles de groupe",
   "multiroom.templatesNote": "Enregistre une combinaison d'enceintes une seule fois et retrouve-la en un clic. Les modèles sont stockés sur l'enceinte principale du groupe.",
   "multiroom.templatesRestore": "Restaurer les modèles",
+   "multiroom.templatesEmptyHelp": "Aucun modèle pour l'instant : choisissez l'enceinte principale (étoile), cochez les membres, saisissez un nom ci-dessous et enregistrez. Un modèle enregistré peut être marqué Permanent, le groupe se reforme alors tout seul après un redémarrage.",
+   "multiroom.templatesUnreachable": "Les modèles de cette enceinte sont illisibles pour le moment ; nouvel essai en cours.",
   "multiroom.templatesRestoreOffer": "Cette enceinte n'a aucun modèle, mais {{n}} étaient enregistrés. Les restaurer ?",
   "preset.boxNativeHint": "appuie pour lire sur l'enceinte",
   "preset.boxRecallFailed": "Impossible de lancer ce préréglage de l'enceinte : {{err}}",

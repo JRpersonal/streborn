@@ -154,6 +154,8 @@
   "multiroom.templatesAgentOld": "This speaker's agent is too old for templates. Update it from the speaker settings.",
   "multiroom.templatesRestoreOffer": "This speaker has no templates, but {{n}} were saved before. Restore them?",
   "multiroom.templatesRestore": "Restore templates",
+   "multiroom.templatesEmptyHelp": "No template yet: pick the main speaker (star), tick the members, enter a name below and save. A saved template can be marked Permanent, and the group then re-forms by itself after restarts.",
+   "multiroom.templatesUnreachable": "This speaker's templates cannot be read right now; retrying.",
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Pair the speaker once in the Spotify mobile app, then send any Spotify track to it from your phone.",
   "spotify.bullet1": "Use the speaker as a Spotify Connect target.",

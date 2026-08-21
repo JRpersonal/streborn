@@ -1169,6 +1169,8 @@
   "multiroom.templatesHeading": "Szablony grup",
   "multiroom.templatesNote": "Zapisz kombinację głośników raz i przywracaj ją jednym kliknięciem. Szablony są przechowywane na głównym głośniku grupy.",
   "multiroom.templatesRestore": "Przywróć szablony",
+   "multiroom.templatesEmptyHelp": "Nie ma jeszcze szablonu: wybierz główny głośnik (gwiazdka), zaznacz członków, wpisz poniżej nazwę i zapisz. Zapisany szablon można oznaczyć jako Stały, wtedy grupa odtworzy się sama po restarcie.",
+   "multiroom.templatesUnreachable": "Szablonów tego głośnika nie można teraz odczytać; ponawiam próbę.",
   "multiroom.templatesRestoreOffer": "Ten głośnik nie ma szablonów, ale {{n}} było wcześniej zapisanych. Przywrócić je?",
   "preset.boxNativeHint": "dotknij, aby odtworzyć na głośniku",
   "preset.boxRecallFailed": "Nie udało się uruchomić tego presetu głośnika: {{err}}",
