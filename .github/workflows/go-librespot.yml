@@ -57,7 +57,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'JRpersonal/go-librespot ref to build (branch/tag/sha; master carries the Ogg-passthrough)'
+        description: 'JRpersonal/go-librespot ref to build. Leave at master unless you know why: master is the ONLY branch that carries the Ogg-passthrough AND the merged upstream. Building an older topic branch produces an engine that starts and then refuses every track ("vorbis decoder not compiled in this build"), which costs a deploy round to notice (2026-08-21).'
         required: true
         default: 'master'
 

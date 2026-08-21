@@ -84,6 +84,26 @@ zeroconf + persist credentials), `ServeWAV` streams the audio, `Play`
 drives recall; `cmd/agent` + `internal/webui` route both hardware and
 software Spotify preset presses to `Play(uri)` + `/spotify/stream`.
 
+### Where the engine comes from (build it from `master`, nothing else)
+
+The speaker's engine is built by `.github/workflows/go-librespot.yml` from
+**`JRpersonal/go-librespot` `master`**. That branch, and only that branch,
+carries both halves the box needs: the Ogg-passthrough (the box decodes,
+the engine never does) and the merged upstream. Every other branch in the
+fork is history.
+
+Building an older topic branch is not a harmless mistake, because the
+failure looks like a box problem: the engine starts, authenticates, and
+then refuses every single track with `failed initializing ogg vorbis
+stream: vorbis decoder not compiled in this build (pipe passthrough
+only)`, while the speaker just sits on a byte-less stream and dies with
+`3101 AUDIO_ERROR_BAD_URL`. That cost a deploy round on 2026-08-21.
+
+Rule of thumb: fix it on `master`, run the workflow with the default ref,
+verify the artifact's SHA256, hot-swap it onto a test box
+(`POST :PORT/api/agent/sidecar`, no reboot needed), then listen through at
+least two track changes before believing it.
+
 ### Before shipping go-librespot (standing gate)
 
 1. **Security audit of the go-librespot source** at the pinned tag:
