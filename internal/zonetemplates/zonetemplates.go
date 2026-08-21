@@ -174,7 +174,7 @@ func (s *Store) Upsert(t Template) (Template, error) {
 	now := nowUTC()
 
 	s.mu.Lock()
-	idx := -1
+	var idx int
 	if t.ID != "" {
 		idx = s.indexByIDLocked(t.ID)
 		if idx < 0 {
