@@ -44,6 +44,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/webui"
 	"github.com/JRpersonal/streborn/internal/zones"
+	"github.com/JRpersonal/streborn/internal/zonetemplates"
 )
 
 // version is the semver version. The build date is set separately via
@@ -316,6 +317,13 @@ func run() error {
 	zonesStore, zErr := zones.Load("/mnt/nv/streborn/zones.json")
 	if zErr != nil {
 		logger.Warn("zones config load failed, continuing standalone", "err", zErr)
+	}
+
+	// Group templates + the single permanent group (beta), persisted on the
+	// master's NAND so the desktop app and the phone remote see one list.
+	tplStore, tErr := zonetemplates.Load("/mnt/nv/streborn/zone-templates.json")
+	if tErr != nil {
+		logger.Warn("zone templates load failed, continuing without stored templates", "err", tErr)
 	}
 
 	// DLNA/UPnP media servers the user turned into native music sources. The
@@ -721,6 +729,12 @@ func run() error {
 		webui.WithSpotifyExportCred(spotifyMgr.ExportCredential),
 		webui.WithSpotifyImportCred(spotifyMgr.ImportCredential),
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
+		// Recall boundary cut: armed with SetRecalling so a preset re-press
+		// never feeds the box the old track's audio during the load preamble;
+		// the stale-KB probe lets the recall re-push stand down when the cut
+		// kept the box clean.
+		webui.WithSpotifyArmRecallCut(spotifyMgr.ArmRecallCut),
+		webui.WithSpotifyBoundaryStaleKB(spotifyMgr.LastBoundaryStaleKB),
 		webui.WithSpotifySuppressActivate(spotifyMgr.SuppressActivate),
 		webui.WithSpotifyExpectReattach(spotifyMgr.ExpectReattach),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
@@ -738,6 +752,7 @@ func run() error {
 		}),
 		webui.WithWebhooks(webhooksStore),
 		webui.WithZones(zonesStore),
+		webui.WithZoneTemplates(tplStore),
 		webui.WithMediaServers(mediaServerStore),
 		webui.WithStoredMusicPublisher(func(list []webui.StoredMusicSource) {
 			out := make([]marge.StoredMusicSource, 0, len(list))
@@ -755,6 +770,10 @@ func run() error {
 	// No-op when standalone. Lives on the server so the mirror path can reach
 	// the current stream + the UPnP renderer.
 	go webuiSrv.PeriodicZoneReconcile()
+	go webuiSrv.PermanentZoneKeeper()
+	webui.RegisterDebugSection("zone_templates", func() any {
+		return webuiSrv.ZoneTemplatesDebug()
+	})
 
 	// Publish the user's DLNA/UPnP music sources into the marge account, which
 	// the box polls for itself at boot and keeps whatever it finds there, exactly
@@ -817,6 +836,10 @@ func run() error {
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back. Returns the recall generation for supersession.
 		noteLastPlay: webuiSrv.NoteLastPlay,
+		// Conditional post-recall re-push (shared with the app path): drop the
+		// box's buffer only when stale pre-boundary audio reached it despite
+		// the armed recall cut.
+		repushAfterRecall: webuiSrv.ReattachAfterSpotifyRecall,
 		// Supersession: a hardware verify stands down as soon as a newer play
 		// (hardware or app) bumps the shared recall generation, mirroring the
 		// soft path's verifyRecall guard ("pressed 2, got 1").

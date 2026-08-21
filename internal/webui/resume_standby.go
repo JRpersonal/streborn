@@ -34,6 +34,10 @@ import (
 // it resumes; a box that is part of a zone does NOT (see boxInZone). Plus the
 // per-box opt-out below.
 func (s *Server) ResumeLastPlay() {
+	// The permanent group (beta) re-forms when this master comes back;
+	// debounced, and independent of the resume opt-out below (the group is
+	// membership, not playback).
+	s.KickPermanentWake()
 	if s.renderer == nil {
 		return
 	}
@@ -237,6 +241,9 @@ func lastPlayURL(lp *lastPlayInfo) string {
 // ResumeLastPlay it does NOT clear the user-stop: a reconnect is not the explicit
 // "play it again" a real power press is.
 func (s *Server) RecoverAfterReconnect() {
+	// See ResumeLastPlay: the permanent group (beta) re-forms on this
+	// come-back signal too, independent of the playback recovery below.
+	s.KickPermanentWake()
 	if s.renderer == nil {
 		return
 	}
@@ -884,6 +891,9 @@ func (s *Server) NoteUserPlay() {
 	s.lastStandbyStop = time.Time{}
 	s.standbyStopMu.Unlock()
 	s.ClearUserStop()
+	// The permanent group (beta) is asserted around the play the user just
+	// started, async and debounced; see kickPermanentAssert.
+	s.kickPermanentAssert()
 }
 
 // HandleEnterStandby reacts to the box's own UPnP source dropping to STANDBY
@@ -1287,6 +1297,8 @@ func (s *Server) armDeferredResume(boxURL, title, art, mime string, capturedTS t
 // instead of STR waking the speaker. All the usual guards still apply: a
 // deliberate stop, a zone, a newer play, an opt-out or an expired arm cancel it.
 func (s *Server) RunDeferredResume() {
+	// See ResumeLastPlay: another come-back signal for the permanent group.
+	s.KickPermanentWake()
 	s.deferredMu.Lock()
 	d := s.deferred
 	s.deferred = nil

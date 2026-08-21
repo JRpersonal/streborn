@@ -110,6 +110,34 @@ Each item is a single reviewable PR; line numbers as of v0.7.21.
 
 ## Under consideration
 
+### Android app for the phone remote (chosen direction, not scheduled)
+
+The speaker already serves a complete phone remote and a correct PWA
+manifest, and on an iPhone "Add to Home Screen" gives a proper
+full-screen app. On Android it does not: Chrome installs a page as an
+app only from a trusted HTTPS origin, and the speaker serves the remote
+over plain HTTP on the LAN, so Chrome falls back to a shortcut that
+opens in a tab with the address bar (reported in #538).
+
+Everything that would fix that inside the browser costs more than it
+buys. A publicly-trusted certificate for a LAN address means either the
+Plex model (a public DNS zone resolving to private IPs plus a wildcard
+certificate, whose private key would then sit inside a binary every user
+holds) or a root CA the user installs on the phone, whose key would live
+on a speaker. Both trade a real security property for a cosmetic one.
+
+**Direction: a small Android app that shows the speaker's own remote
+without the browser chrome** (Jens, 2026-08-21). It needs no HTTPS, it
+is the thing the reporter asked for by name, and it can reuse the
+existing QR/discovery flow to find the speaker. Deliberately not
+scheduled yet: it adds a third platform to build, sign and distribute.
+
+Open questions before it gets scheduled: distribution (Play listing with
+its fee, review and privacy declarations, versus a sideloaded APK and
+its unknown-sources warning), how the app finds speakers (QR, manual IP,
+or its own mDNS, which a native app CAN do), and whether it stays a thin
+wrapper or grows its own UI later.
+
 ### iOS web app (PWA) installable from the website
 
 Idea: the user opens `st-reborn.de` on an iPhone, taps "Add to Home

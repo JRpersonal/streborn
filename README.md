@@ -126,7 +126,7 @@ make wails-build
 
 Requirements: Go 1.25 or newer, Node 20 or newer, Wails CLI v2 for the desktop app. Note: on Windows/macOS hosts the agent itself only cross-compiles (`make build-arm`); plain `go build ./...` fails on its Linux-only syscalls.
 
-The website (st-reborn.de) lives in a separate repository, [`JRpersonal/streborn-website`](https://github.com/JRpersonal/streborn-website). A release here triggers a build there via `repository_dispatch`.
+The website ([st-reborn.de](https://st-reborn.de)) is built from a separate, private repository. A release here triggers a build there via `repository_dispatch`.
 
 ## Architecture
 

@@ -153,15 +153,20 @@ func TestPhoneRemoteSleepFailureIsVisible(t *testing.T) {
 	}
 }
 
-// TestPhoneRemoteLocalesCarryTheNewKeys keeps the three strings added for the
-// two fixes above translated everywhere, rather than falling through to English
-// on nine of the twelve bundles.
+// TestPhoneRemoteLocalesCarryTheNewKeys keeps the strings added after the
+// bundles were first filled translated everywhere, rather than falling through
+// to English on nine of the twelve bundles: the three from the sleep/pair
+// fixes above, and the ten from the group-templates card (beta, 2026-08-21).
 func TestPhoneRemoteLocalesCarryTheNewKeys(t *testing.T) {
 	bundles := strings.Count(indexHTML, "now:\"")
 	if bundles == 0 {
 		t.Fatal("could not find any locale bundle in indexHTML")
 	}
-	for _, key := range []string{"pairSum", "unpair", "sleepFail"} {
+	for _, key := range []string{
+		"pairSum", "unpair", "sleepFail",
+		"tmpl", "tmplSum", "tmplActivate", "tmplActivating", "tmplFail",
+		"tmplSave", "tmplSaveName", "tmplSaved", "tmplDelete", "tmplPermanent",
+	} {
 		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
 		if got != bundles {
 			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
@@ -277,6 +282,23 @@ func TestPhoneRemoteLocalesCarryTheGroupKeys(t *testing.T) {
 		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
 		if got != bundles {
 			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
+		}
+	}
+}
+
+// TestPhoneRemoteTemplatesCard guards the group-templates card (beta): the
+// card exists, an agent from before the feature is detected by shape (its
+// answer to the API path is the page itself, 200 + HTML, so only a real
+// template list may show the card), and activation runs through the serialised
+// group-op queue rather than firing a parallel /setZone drive.
+func TestPhoneRemoteTemplatesCard(t *testing.T) {
+	for _, want := range []string{
+		`id="tmplCard"`,
+		`Array.isArray(r.templates)`,
+		`queueGroupOp('tmpl:'`,
+	} {
+		if !strings.Contains(indexHTML, want) {
+			t.Errorf("phone group templates missing %q", want)
 		}
 	}
 }

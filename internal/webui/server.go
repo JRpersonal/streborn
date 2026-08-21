@@ -23,6 +23,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/zones"
+	"github.com/JRpersonal/streborn/internal/zonetemplates"
 )
 
 // Server kapselt den Webui HTTP Server.
@@ -50,6 +51,17 @@ type Server struct {
 	// taps then cost one drive, not N).
 	zoneFormSerial sync.Mutex
 	zoneFormSeq    atomic.Uint64
+	// tpls persists the named group templates and the single permanent group
+	// (beta) on the master's NAND. nil when not wired; the template endpoints
+	// then answer 503 and the permanent engine stays off.
+	tpls *zonetemplates.Store
+	// Permanent-group engine state: the boot re-form runs once per process
+	// (permBootDone), asserts are debounced (permAssertMu/permLastAssert),
+	// and the keeper's last verdict is surfaced for diagnostics.
+	permBootDone   atomic.Bool
+	permAssertMu   sync.Mutex
+	permLastAssert time.Time
+	permLastWatch  atomic.Value // string
 	// memberIDs remembers, per member IP, the SoundTouch deviceID that
 	// speaker's own firmware reported. Zone forming corrects the caller's
 	// deviceID from a live /info read, because a two-chip chassis announces
@@ -150,6 +162,19 @@ type Server struct {
 	// nil when Spotify is not configured (the re-push then stays on a fixed
 	// short delay).
 	spotifySkipBoundary func() time.Time
+	// spotifyArmRecallCut arms the engine's boundary cut for a preset recall,
+	// so the box's fresh attachment is never fed the OLD track's audio while
+	// the new context loads. Armed before PlayURLMime, next to
+	// spotifySetRecalling. nil when Spotify is not configured.
+	spotifyArmRecallCut func()
+	// spotifyBoundaryStaleKB reports how many stale (pre-boundary) KB the
+	// box's current attachment was fed before the last cut boundary. The
+	// recall re-push reads it: ~0 means the cut kept the box clean and no
+	// buffer-dropping re-push is needed. nil when Spotify is not configured.
+	spotifyBoundaryStaleKB func() int64
+	// recallReattachWait overrides reattachAfterRecall's boundary-wait budget.
+	// Test seam only; zero means the production 12s.
+	recallReattachWait time.Duration
 	// spotifyReady reports whether go-librespot has finished authenticating, so
 	// a soft Spotify recall can wait out a cold start instead of pointing the box
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify
@@ -749,6 +774,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/zone/volume", s.handleZoneVolume)
 	mux.HandleFunc("/api/box/sleep", s.handleSleep)
 	mux.HandleFunc("/api/box/zone/purge", s.handleZonePurge)
+	mux.HandleFunc("/api/box/zone/templates", s.handleZoneTemplates)
+	mux.HandleFunc("/api/box/zone/templates/", s.handleZoneTemplateItem)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/marge/group", s.handleMargeGroupDoc)
 	mux.HandleFunc("/api/webhooks", s.handleWebhooks)

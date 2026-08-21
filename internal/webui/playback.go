@@ -384,6 +384,15 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 		if s.spotifySetRecalling != nil {
 			s.spotifySetRecalling()
 		}
+		// Arm the engine's boundary cut BEFORE the box re-fetches the stream
+		// (the PlayURLMime below): the fresh attachment arrives ~1s after the
+		// press and would otherwise be fed the OLD track's audio for the whole
+		// context-load preamble, which the box then audibly replays before the
+		// new track (the 20+s same-preset re-press, live Portable 2026-08-21).
+		if s.spotifyArmRecallCut != nil {
+			s.spotifyArmRecallCut()
+		}
+		armedAt := time.Now()
 		slotURL := boxurl.SpotifySlot(slot)
 		if err := s.renderer.PlayURLMime(playCtx, slotURL, p.Name, p.Art, "audio/ogg"); err != nil {
 			if isGroupedRejection(err) {
@@ -412,17 +421,26 @@ func (s *Server) handlePlaySlot(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			keyDenied := false
-			if err := s.spotifyPlay(bg, uri, account, shuffle); err != nil {
+			playErr := s.spotifyPlay(bg, uri, account, shuffle)
+			if playErr != nil {
 				// An audio-key denial means Spotify refuses this account/session
 				// the decryption keys: every additional Play just triggers
 				// another engine skip-storm (one key request per track) and feeds
 				// the account throttle that keeps the denial alive (429, field
 				// 2026-07-26: 51-track storms per press). Remember it so the
 				// verify below never fires the recovery re-Play into that state.
-				keyDenied = strings.Contains(err.Error(), "audio key denied")
-				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err, "keyDenied", keyDenied)
+				keyDenied = strings.Contains(playErr.Error(), "audio key denied")
+				s.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", playErr, "keyDenied", keyDenied)
 			}
 			s.logger.Info("spotify soft recall: context load issued", "slot", slot, "warm", warm, "loadAfterMs", time.Since(t0).Milliseconds())
+			// The context loaded: once its track boundary lands in the
+			// forwarded stream, re-push the box IF stale audio reached its
+			// buffer anyway (with the cut working, the common case needs no
+			// push at all). Skipped on a failed play: no boundary is coming,
+			// the verify below owns recovery.
+			if playErr == nil {
+				go s.reattachAfterRecall(gen, recallStart, slot, armedAt)
+			}
 			s.verifyRecall(gen, recallStart, slotURL, func(ctx context.Context, lastAttempt bool) {
 				// Re-point the box at the stream WITHOUT re-Play on the early
 				// tries: ServeOgg resumes go-librespot on attach, so this
