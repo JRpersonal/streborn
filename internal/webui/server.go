@@ -43,6 +43,13 @@ type Server struct {
 	// after reboot/standby (#70). nil when not wired; zone write endpoints
 	// then still drive the box but do not persist.
 	zones *zones.Store
+	// zoneFormSerial serializes zone form/dissolve drives so two member
+	// changes never interleave against the firmware; zoneFormSeq stamps each
+	// arriving form request so a request that waited behind a newer one can
+	// stand down and let the newest full member list win (rapid successive
+	// taps then cost one drive, not N).
+	zoneFormSerial sync.Mutex
+	zoneFormSeq    atomic.Uint64
 	// memberIDs remembers, per member IP, the SoundTouch deviceID that
 	// speaker's own firmware reported. Zone forming corrects the caller's
 	// deviceID from a live /info read, because a two-chip chassis announces

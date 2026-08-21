@@ -118,3 +118,85 @@ func TestAPlaylistRunningOutIsNotAUserStop(t *testing.T) {
 		t.Errorf("a pause with no resolve failure must latch, got %d", latched.Load())
 	}
 }
+
+// The sibling false signal, caught live 2026-08-21: the engine failed to LOAD
+// the next track mid-playlist ("failed advancing to next track"), stopped, and
+// STR read that stop as the listener stopping playback in the Spotify app. A
+// six-speaker group fell silent after six songs with no recovery.
+func TestATrackLoadFailureIsNotAUserStop(t *testing.T) {
+	var latched atomic.Int32
+	m := &Manager{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	m.connectPauseFn = func(string) { latched.Add(1) }
+
+	m.lastTrackLoadFailAt = time.Now()
+	m.handleEnginePlaybackEnd("stopped")
+	if latched.Load() != 0 {
+		t.Error("a stop right after a track-load failure must not arm the deliberate-stop latch")
+	}
+	if m.lastAutoAdvanceAt.IsZero() {
+		t.Error("the load-fail stop must attempt one auto-advance (stamp missing)")
+	}
+
+	// A second load-fail stop inside the rate window must not advance again.
+	prev := m.lastAutoAdvanceAt
+	m.lastTrackLoadFailAt = time.Now()
+	m.handleEnginePlaybackEnd("stopped")
+	if !m.lastAutoAdvanceAt.Equal(prev) {
+		t.Error("auto-advance must be rate-limited to one per window")
+	}
+	if latched.Load() != 0 {
+		t.Error("the rate-limited second stop must still not latch")
+	}
+
+	// A stop long after the failure IS the listener, and must still latch.
+	m.lastTrackLoadFailAt = time.Now().Add(-time.Hour)
+	m.handleEnginePlaybackEnd("stopped")
+	if latched.Load() != 1 {
+		t.Errorf("a genuine stop must still latch, got %d", latched.Load())
+	}
+}
+
+// The engine frequently recovers from a load failure on its own a few seconds
+// later. An immediate auto-advance then skips the very track it just loaded:
+// two seconds of the next song, then the one after (live 2026-08-21, three
+// times in one playlist). The advance must wait and stand down on recovery.
+func TestAutoAdvanceStandsDownWhenTheEngineRecovers(t *testing.T) {
+	m, calls, cleanup := mockLibrespot(t)
+	defer cleanup()
+	m.selfRecoveryWait = 50 * time.Millisecond
+
+	m.lastTrackLoadFailAt = time.Now()
+	m.handleEnginePlaybackEnd("stopped")
+	// The engine loads the next track by itself before the wait ends. The
+	// small sleep keeps the two stamps in distinct clock ticks (Windows'
+	// timer granularity); in production the recovery arrives seconds later.
+	time.Sleep(20 * time.Millisecond)
+	m.handleEnginePlaybackStart()
+
+	time.Sleep(250 * time.Millisecond)
+	for _, p := range pathsOf(*calls) {
+		if p == "/player/next" {
+			t.Fatal("the engine recovered on its own, the auto-advance must not skip")
+		}
+	}
+}
+
+func TestAutoAdvanceFiresWhenTheEngineStaysDown(t *testing.T) {
+	m, calls, cleanup := mockLibrespot(t)
+	defer cleanup()
+	m.selfRecoveryWait = 50 * time.Millisecond
+
+	m.lastTrackLoadFailAt = time.Now()
+	m.handleEnginePlaybackEnd("stopped")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, p := range pathsOf(*calls) {
+			if p == "/player/next" {
+				return // advanced, as it must
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("engine stayed down but the auto-advance never skipped")
+}
