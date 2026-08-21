@@ -318,6 +318,37 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Coalesce rapid successive form requests (adding speakers one tap after
+	// another): every caller sends the FULL member list it wants, so the
+	// newest request carries the newest intent and older ones can stand down.
+	// Each arrival takes a sequence number; after a short settle it waits its
+	// turn on the serial lock, and a request that is no longer the newest
+	// answers with the live zone instead of driving a stale list. Without
+	// this, N quick taps ran N full drives back to back (live 2026-08-21,
+	// three drives in 20 s, each one restarting the master's stream).
+	mySeq := s.zoneFormSeq.Add(1)
+	select {
+	case <-time.After(zoneCoalesceSettle):
+	case <-ctx.Done():
+		http.Error(w, "canceled", http.StatusRequestTimeout)
+		return
+	}
+	s.zoneFormSerial.Lock()
+	defer s.zoneFormSerial.Unlock()
+	if latest := s.zoneFormSeq.Load(); latest != mySeq {
+		liveNow, lerr := c.GetZone(ctx)
+		s.logger.Info("zone: form request superseded by a newer member list, standing down", "seq", mySeq, "latest", latest)
+		if lerr != nil {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native", "superseded": true})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "mode": "native", "superseded": true,
+			"master": liveNow.Master, "senderIP": liveNow.SenderIP, "members": liveNow.Members,
+		})
+		return
+	}
+
 	// Ask the leader ONE cheap question before touching anything. On 2026-08-18
 	// a fleet bundle showed the leader's BoseApp (:8090) frozen for minutes
 	// BEFORE the user added a third speaker: the form then burned ~30 s in
@@ -437,46 +468,54 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 			"wakeErr", err, "master", master.DeviceID)
 	}
 
-	// Remove members the user dropped from the group. /setZone only ADDS the
-	// listed slaves, it never removes one, so re-forming with a smaller list -
-	// exactly how the app removes a member (uncheck + apply) - leaves the dropped
-	// box in the firmware zone: it "briefly leaves then comes back" (Albrecht,
-	// 7-box fleet, 2026-07-14). Read the live zone and RemoveZoneSlave anyone no
-	// longer wanted. Match on IP, the chassis-stable key: a two-chip box (Portable,
-	// ST20 BCO) announces its wlan0 MAC over discovery, which is NOT the SCM
-	// deviceID the firmware lists for it, so a deviceID-only match would wrongly
-	// keep the dropped box. Best-effort, before the add below.
-	if live, gerr := c.GetZone(ctx); gerr == nil && live.Master != "" && len(live.Members) > 0 {
-		wantIP := make(map[string]bool, len(slaves))
-		wantDev := make(map[string]bool, len(slaves))
-		for _, sl := range slaves {
-			if sl.IP != "" {
-				wantIP[sl.IP] = true
-			}
-			if sl.DeviceID != "" {
-				wantDev[strings.ToLower(sl.DeviceID)] = true
-			}
-		}
-		var toRemove []boxapi.ZoneMember
-		for _, m := range live.Members {
-			keep := (m.IP != "" && wantIP[m.IP]) || (m.DeviceID != "" && wantDev[strings.ToLower(m.DeviceID)])
-			if !keep {
-				toRemove = append(toRemove, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
-			}
-		}
-		if len(toRemove) > 0 {
-			s.logger.Info("zone: dropping members no longer in the group before re-forming", "count", len(toRemove), "master", master.DeviceID)
-			if err := c.RemoveZoneSlave(ctx, master, toRemove); err != nil {
-				s.logger.Warn("zone: reconcile removeZoneSlave failed", "err", err)
-			}
+	// Read the live zone ONCE: it carries both the members the user dropped
+	// (which /setZone alone never removes - "briefly leaves then comes back",
+	// Albrecht, 7-box fleet, 2026-07-14) and the decision between the
+	// incremental join path and a full re-form. Matching is IP-or-deviceID,
+	// with IP as the chassis-stable key: a two-chip box (Portable, ST20 BCO)
+	// announces its wlan0 MAC over discovery, which is NOT the SCM deviceID
+	// the firmware lists for it, so a deviceID-only match would wrongly treat
+	// a live member as new (or keep a dropped one).
+	live, liveErr := c.GetZone(ctx)
+	zoneExists := liveErr == nil && live.Master != "" && len(live.Members) > 0 &&
+		strings.EqualFold(strings.TrimSpace(live.Master), strings.TrimSpace(master.DeviceID))
+	toAdd, toRemove := zoneDiff(live, slaves)
+	if liveErr == nil && live.Master != "" && len(live.Members) > 0 && len(toRemove) > 0 {
+		s.logger.Info("zone: dropping members no longer in the group", "count", len(toRemove), "master", master.DeviceID)
+		if err := c.RemoveZoneSlave(ctx, master, toRemove); err != nil {
+			s.logger.Warn("zone: removeZoneSlave failed", "err", err)
 		}
 	}
 
-	if err := c.SetZone(ctx, master, slaves); err != nil {
-		s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
-		s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
-		http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
-		return
+	// When this master already leads a live zone, join new members with
+	// /addZoneSlave instead of re-forming the whole zone: the firmware keeps
+	// the master's source running through an incremental join (the original
+	// Bose app added members this way, without interrupting the music), while
+	// a full /setZone re-form ended in the stream restart below on every tap.
+	// Any error falls back to the proven full re-form, so the worst case is
+	// exactly the old behavior.
+	usedIncremental := false
+	if zoneExists {
+		switch {
+		case len(toAdd) == 0:
+			s.logger.Info("zone: requested group already live, nothing to drive", "master", master.DeviceID, "members", len(live.Members)-len(toRemove))
+			usedIncremental = true
+		default:
+			if err := c.AddZoneSlave(ctx, master, toAdd); err != nil {
+				s.logger.Warn("zone: addZoneSlave failed, falling back to a full setZone", "err", err, "adding", len(toAdd))
+			} else {
+				s.logger.Info("zone: added members to the live group without re-forming", "adding", len(toAdd), "master", master.DeviceID)
+				usedIncremental = true
+			}
+		}
+	}
+	if !usedIncremental {
+		if err := c.SetZone(ctx, master, slaves); err != nil {
+			s.logger.Warn("zone: setZone failed", "err", err, "master", master.DeviceID)
+			s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
+			http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
+			return
+		}
 	}
 	z2, err := c.GetZone(ctx)
 	if err != nil {
@@ -491,6 +530,39 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// own /getZone (verifyFollowersJoined), polled with a short retry because a
 	// slave's self-report lags forming by ~100ms to several seconds. The master's
 	// read-back is kept only as supplementary diagnostics (masterMissing).
+	fetchFollower := func(fctx context.Context, ip string) (boxapi.Zone, error) {
+		return boxapi.New(ip).GetZone(fctx)
+	}
+	// On the incremental path only the members that were actually ADDED need
+	// the follower poll: the pre-existing ones are in the live zone already,
+	// and polling them again burned the form budget for nothing (the very
+	// bug the twelve-speaker fleet hit on 2026-08-09).
+	verifyTargets := slaves
+	if usedIncremental {
+		verifyTargets = toAdd
+	}
+	missing, unverifiable := []string{}, []string{}
+	if len(verifyTargets) > 0 {
+		missing, unverifiable = verifyFollowersJoined(ctx, s.logger, z2.Master, verifyTargets, fetchFollower)
+	}
+	// Incremental join where NOT ONE added member confirmed: distrust
+	// /addZoneSlave on this firmware and run the proven full re-form once.
+	if usedIncremental && len(toAdd) > 0 && len(missing) == len(toAdd) {
+		s.logger.Warn("zone: no added member confirmed the incremental join, re-forming the whole zone once", "adding", len(toAdd))
+		if err := c.SetZone(ctx, master, slaves); err != nil {
+			s.logger.Warn("zone: fallback setZone failed", "err", err, "master", master.DeviceID)
+			s.restorePreviousZone(ctx, c, master, prevDoc, hadPrevDoc, prevLive)
+			http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		usedIncremental = false
+		if z2, err = c.GetZone(ctx); err != nil {
+			s.logger.Warn("zone: formed but getZone read-back failed", "err", err)
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native"})
+			return
+		}
+		missing, unverifiable = verifyFollowersJoined(ctx, s.logger, z2.Master, slaves, fetchFollower)
+	}
 	masterLive := make(map[string]bool, len(z2.Members))
 	for _, m := range z2.Members {
 		masterLive[strings.ToLower(m.DeviceID)] = true
@@ -501,9 +573,8 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 			masterMissing = append(masterMissing, sl.DeviceID)
 		}
 	}
-	missing, unverifiable := verifyFollowersJoined(ctx, s.logger, z2.Master, slaves, func(fctx context.Context, ip string) (boxapi.Zone, error) {
-		return boxapi.New(ip).GetZone(fctx)
-	})
+	// Pre-existing members of an incremental join count as verified: only the
+	// added ones were polled, so "missing" can only name those.
 	verified := len(slaves) - len(missing)
 	// Regression guard (#70 / Albrecht 0.8.x): if the master's own read-back shows
 	// no members and no master after SetZone, the firmware never actually formed a
@@ -545,6 +616,17 @@ func (s *Server) resumeAfterZoneForm(lp lastPlayInfo) {
 	time.Sleep(1500 * time.Millisecond)
 	if s.userStoppedRecently() {
 		s.logger.Info("zone: not restarting playback after forming, user stopped meanwhile")
+		return
+	}
+	// The re-push exists for the fresh-zone case, where /setZone tears the
+	// master's UPnP session down (1036 wrong-state) and the room goes silent.
+	// An incremental join, and often an additive re-form over a live zone,
+	// leaves the stream running - restarting it then IS the audible gap the
+	// user reports. So ask the box: still playing after the settle means the
+	// stream survived and the push would only interrupt it. An unreadable or
+	// idle box falls through to the push, the historical safe behavior.
+	if standby, busy := s.boxPlayState(); busy && !standby {
+		s.logger.Info("zone: stream survived the group change, not restarting playback")
 		return
 	}
 	s.boxCmdMu.Lock()
@@ -1410,6 +1492,11 @@ func (s *Server) reconcileZoneOnce() {
 
 // handleZoneDissolve tears down the zone this box leads and stops re-forming it.
 func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
+	// Same serial lock as handleZoneForm: a dissolve arriving between two
+	// member changes executes in arrival order and never interleaves with a
+	// drive against the firmware.
+	s.zoneFormSerial.Lock()
+	defer s.zoneFormSerial.Unlock()
 	c := boxapi.New(s.boxHost)
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
@@ -1709,6 +1796,50 @@ func (s *Server) handleMargeGroupDoc(w http.ResponseWriter, r *http.Request) {
 // app's own 45 s call timeout, because an agent that answers after the app has
 // given up is worse than one that fails: the app would report failure for a
 // group the firmware went on to build.
+// zoneCoalesceSettle is how long a form request waits before checking whether
+// a newer one arrived: rapid successive taps (adding speakers one after
+// another) then merge into the newest request's full list instead of running
+// one drive per tap.
+const zoneCoalesceSettle = 700 * time.Millisecond
+
+// zoneDiff splits the requested member list against the live firmware zone:
+// toAdd are requested members not yet in the zone, toRemove are live members
+// no longer requested. Matching is IP-or-deviceID; IP is the chassis-stable
+// key (a two-chip box announces its wlan0 MAC over discovery, which is not
+// the SCM deviceID the firmware lists). With no live zone every requested
+// member is toAdd and nothing is toRemove.
+func zoneDiff(live boxapi.Zone, want []boxapi.ZoneMember) (toAdd, toRemove []boxapi.ZoneMember) {
+	wantIP := make(map[string]bool, len(want))
+	wantDev := make(map[string]bool, len(want))
+	for _, m := range want {
+		if m.IP != "" {
+			wantIP[m.IP] = true
+		}
+		if m.DeviceID != "" {
+			wantDev[strings.ToLower(m.DeviceID)] = true
+		}
+	}
+	liveIP := make(map[string]bool, len(live.Members))
+	liveDev := make(map[string]bool, len(live.Members))
+	for _, m := range live.Members {
+		if m.IP != "" {
+			liveIP[m.IP] = true
+		}
+		if m.DeviceID != "" {
+			liveDev[strings.ToLower(m.DeviceID)] = true
+		}
+		if !((m.IP != "" && wantIP[m.IP]) || (m.DeviceID != "" && wantDev[strings.ToLower(m.DeviceID)])) {
+			toRemove = append(toRemove, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
+		}
+	}
+	for _, m := range want {
+		if !((m.IP != "" && liveIP[m.IP]) || (m.DeviceID != "" && liveDev[strings.ToLower(m.DeviceID)])) {
+			toAdd = append(toAdd, m)
+		}
+	}
+	return toAdd, toRemove
+}
+
 func zoneFormBudget(slaves int) time.Duration {
 	const (
 		base    = 10 * time.Second
