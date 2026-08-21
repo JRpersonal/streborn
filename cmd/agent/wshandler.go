@@ -101,6 +101,12 @@ type presetWsHandler struct {
 	// noteRecentPreset records a hardware-preset press into the recently-played
 	// ring (#135). Wired to webui.NoteRecentPreset. nil-safe.
 	noteRecentPreset func(presets.Preset)
+	// repushAfterRecall re-pushes the slot's Spotify stream once a hardware
+	// recall's track boundary lands, and only when stale pre-boundary audio
+	// reached the box's attachment despite the armed cut (the app path runs
+	// the identical gate). Blocking; called in a goroutine. Wired to
+	// webui.ReattachAfterSpotifyRecall. nil-safe.
+	repushAfterRecall func(gen uint64, started time.Time, slot int, armedAt time.Time)
 	// onPowerWake is invoked when the box leaves standby on a power press: a
 	// powerStateUpdated on firmware that sends it, or the DO_NOT_RESUME selection
 	// restore on firmware that does not (Portable/taigan). Resumes the last
@@ -1043,8 +1049,13 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 
 	// Mark a recall BEFORE the box attaches (PlayURLMime below / the box's own
 	// self-activation) so ServeOgg does not resume the old mid-position track;
-	// Play drives the new shuffled track from its start.
+	// Play drives the new shuffled track from its start. Arm the boundary cut
+	// in the same breath: the fresh attachment must never be fed the OLD
+	// track's audio while the new context loads (the 20+s same-preset
+	// re-press, live Portable 2026-08-21).
 	h.spotify.SetRecalling()
+	h.spotify.ArmRecallCut()
+	armedAt := time.Now()
 	playCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	// Show the preset on the box display IMMEDIATELY: point the box at this
@@ -1084,6 +1095,12 @@ func (h *presetWsHandler) playSpotifyPreset(ctx context.Context, seq uint64, pre
 	// (shuffle off, in-order); a shuffle preset starts on a fresh random track.
 	if err := h.spotify.PlayAccount(playCtx, p.URI, p.Account, spotify.PlayOptions{Shuffle: p.Shuffle}); err != nil {
 		h.logger.Warn("spotify play (initial) failed, will verify+retry", "slot", slot, "err", err)
+	} else if h.repushAfterRecall != nil {
+		// The context loaded: mirror the app path's conditional post-boundary
+		// re-push, which drops the box's buffer only when stale pre-boundary
+		// audio reached it despite the armed cut. gen lives in the same
+		// generation space as the webui's recalls (NoteLastPlay).
+		go h.repushAfterRecall(gen, pressAt, slot, armedAt)
 	}
 	// Verify+retry in the background: the first press after a cold boot races
 	// go-librespot's auth, so the box gets no audio and the user had to press

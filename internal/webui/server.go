@@ -143,6 +143,19 @@ type Server struct {
 	// nil when Spotify is not configured (the re-push then stays on a fixed
 	// short delay).
 	spotifySkipBoundary func() time.Time
+	// spotifyArmRecallCut arms the engine's boundary cut for a preset recall,
+	// so the box's fresh attachment is never fed the OLD track's audio while
+	// the new context loads. Armed before PlayURLMime, next to
+	// spotifySetRecalling. nil when Spotify is not configured.
+	spotifyArmRecallCut func()
+	// spotifyBoundaryStaleKB reports how many stale (pre-boundary) KB the
+	// box's current attachment was fed before the last cut boundary. The
+	// recall re-push reads it: ~0 means the cut kept the box clean and no
+	// buffer-dropping re-push is needed. nil when Spotify is not configured.
+	spotifyBoundaryStaleKB func() int64
+	// recallReattachWait overrides reattachAfterRecall's boundary-wait budget.
+	// Test seam only; zero means the production 12s.
+	recallReattachWait time.Duration
 	// spotifyReady reports whether go-librespot has finished authenticating, so
 	// a soft Spotify recall can wait out a cold start instead of pointing the box
 	// at a not-yet-flowing stream (which starves and detaches). nil when Spotify
