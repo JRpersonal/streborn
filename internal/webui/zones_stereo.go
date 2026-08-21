@@ -257,6 +257,11 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// the template activation and the permanent-group engine can run the same
 	// field-hardened drive without an HTTP request behind it.
 	res := s.driveZone(ctx, master, slaves, req.Name, mode, zoneDriveOpts{coalesce: true, persist: true, resume: true, wake: true, reason: "form"})
+	if res.errText == "" && res.status == http.StatusOK {
+		// The user's explicit full member list defines who is deliberately
+		// out of the permanent group (beta); see notePermanentMembership.
+		s.notePermanentMembership(master, slaves)
+	}
 	res.write(w)
 }
 
@@ -1046,6 +1051,13 @@ func (s *Server) PeriodicZoneReconcile() {
 		return
 	}
 	time.Sleep(45 * time.Second) // let the box finish booting
+	// The permanent group (beta) re-forms ONCE per process here, on the same
+	// proven firmware-ready delay. It never rides the 5-minute tick below:
+	// the tick-driven re-assert is exactly what dragged deliberately-removed
+	// speakers back and got the periodic reconcile disabled.
+	if s.permBootDone.CompareAndSwap(false, true) {
+		s.permReformIfZoneEmpty("boot")
+	}
 	s.reconcileZoneOnce()
 	t := time.NewTicker(5 * time.Minute)
 	defer t.Stop()
@@ -1344,6 +1356,17 @@ func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
 	if s.zones != nil {
 		if err := s.zones.Clear(); err != nil {
 			s.logger.Warn("zone: clear store failed", "err", err)
+		}
+	}
+	// A dissolve is the user saying "no group now": it also switches the
+	// permanent group (beta) off. The template survives; silently re-forming
+	// on the next preset press would recreate exactly the dragged-back-in
+	// behavior the periodic reconcile was disabled for.
+	if s.tpls != nil {
+		if permTpl, ok := s.tpls.Permanent(); ok {
+			if err := s.tpls.SetPermanent(permTpl.ID, false); err == nil {
+				s.logger.Info("zone templates: permanent group disabled by dissolve (beta)", "template", permTpl.Name)
+			}
 		}
 	}
 	// Also clear the group from every member's own persisted store
