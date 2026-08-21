@@ -467,6 +467,19 @@ func (m *Manager) SuppressActivate(d time.Duration) {
 	m.mu.Unlock()
 }
 
+// ExpectReattach marks the NEXT box re-attach inside window as deliberate,
+// caused by STR's own re-push, so ServeOgg's storm damping does not count it.
+// The soft-skip re-push legitimately re-attaches as often as every 8 s, well
+// inside the 20 s storm window; counting those grew the activate backoff and
+// held the auto-repoint off for up to a minute after two ordinary skips.
+// One-shot: a genuine INVALID_SOURCE storm re-attaches repeatedly and only
+// the announced one is excused.
+func (m *Manager) ExpectReattach(window time.Duration) {
+	m.mu.Lock()
+	m.expectReattachUntil = time.Now().Add(window)
+	m.mu.Unlock()
+}
+
 // recalling reports whether a recall is currently in progress.
 func (m *Manager) recalling() bool {
 	m.mu.Lock()

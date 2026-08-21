@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // SetOnTitle registers a callback invoked when the live ICY StreamTitle of
@@ -60,6 +61,28 @@ func (s *Server) clearTitleForNewURL(url string) {
 	s.titleMu.Unlock()
 }
 
+// titleEndGrace is how long after a handler ends the title survives while a
+// successor handler of the SAME stream may still take over. An immediate wipe
+// fed a self-sustaining stutter loop with the on-display track push enabled
+// (v0.9.53, #119): the push re-issues the URI, the box drops and re-fetches
+// the same stream, the OLD handler's wipe then emptied the title, and the
+// next (unchanged) metadata block counted as a change and re-fired the push,
+// re-buffering the box once per throttle window. A takeover bumps the url's
+// generation and cancels the pending wipe; a stream that truly ended has no
+// successor and goes blank after the grace, so #274 stays fixed.
+const titleEndGrace = 5 * time.Second
+
+// noteStreamStart marks a handler taking (over) url; called at every proxy
+// handler start so a pending end-of-stream title wipe knows it is stale.
+func (s *Server) noteStreamStart(url string) {
+	s.titleMu.Lock()
+	if s.titleGens == nil {
+		s.titleGens = make(map[string]uint64)
+	}
+	s.titleGens[url]++
+	s.titleMu.Unlock()
+}
+
 // clearTitleOnEnd drops the title when the proxy stops carrying url. Without
 // it CurrentTitle kept reporting the LAST stream's song forever, and a client
 // that cannot tell radio-via-proxy from other playback showed it under
@@ -67,14 +90,27 @@ func (s *Server) clearTitleForNewURL(url string) {
 // but a NAS track plays over the same UPnP source as proxied radio, so the
 // old radio song sat under it (SA-5, #274, still with v0.9.52). Guarded by
 // URL so a handler that outlived a station switch cannot wipe the successor's
-// title; curTitleURL stays, so a plain reconnect refills on the next metadata
-// block instead of blanking through the flap.
+// title, and DELAYED by titleEndGrace so a box re-fetch of the same stream
+// (display push, brief flap) keeps the title instead of re-firing it.
 func (s *Server) clearTitleOnEnd(url string) {
 	s.titleMu.Lock()
+	gen := s.titleGens[url]
+	s.titleMu.Unlock()
+	time.AfterFunc(titleEndGrace, func() { s.wipeTitleIfUnclaimed(url, gen) })
+}
+
+// wipeTitleIfUnclaimed is clearTitleOnEnd's delayed half: it wipes only when
+// no successor handler for url has started since the snapshot was taken.
+func (s *Server) wipeTitleIfUnclaimed(url string, gen uint64) {
+	s.titleMu.Lock()
+	defer s.titleMu.Unlock()
+	if s.titleGens[url] != gen {
+		return
+	}
+	delete(s.titleGens, url)
 	if url == s.curTitleURL {
 		s.curTitle = ""
 	}
-	s.titleMu.Unlock()
 }
 
 // icyConn wraps a net.Conn so a legacy SHOUTcast "ICY 200 OK" response line is

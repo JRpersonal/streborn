@@ -123,6 +123,10 @@ type Server struct {
 	titleMu     sync.Mutex
 	curTitle    string
 	curTitleURL string
+	// titleGens counts handler starts per stream URL so a handler that ends
+	// can tell whether a successor already took the same stream over (see
+	// clearTitleOnEnd; the wipe is delayed and cancelled by a takeover).
+	titleGens map[string]uint64
 	// onTitle, if set, is called whenever the live StreamTitle changes to a
 	// non-empty value. Used to push the radio track text to the box display.
 	onTitle func(title string)
@@ -253,6 +257,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("stream proxy raw start", "url", url)
+	s.noteStreamStart(url)
 	defer s.clearTitleOnEnd(url)
 	start := time.Now()
 	s.resetAudioGap()
@@ -352,6 +357,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.noteStreamStart(p.StreamURL)
 	defer s.clearTitleOnEnd(p.StreamURL)
 
 	// We do exactly one GET to the CDN and copy bytes to Bose. When the CDN
@@ -615,6 +621,16 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// on a healthy stream, and it is short enough that the internal reconnect
 	// lands before the box gives up on its own connection.
 	const upstreamStallAfter = 5 * time.Second
+	// Below the watchdog threshold, a short upstream starve (Wi-Fi hiccup,
+	// CDN pause) is audible as a brief stutter but used to leave no log line
+	// at all, so a diagnostic bundle could not confirm or time a reported
+	// "stream stockt kurzzeitig" (#119, 2026-08-21). Log each recovered gap
+	// over audioGapLogAfter, capped per connection so a flapping link cannot
+	// spam the NAND log.
+	const (
+		audioGapLogAfter = 2 * time.Second
+		audioGapLogMax   = 10
+	)
 	streamStart := time.Now()
 	var winBytes int64
 	var winStart time.Time
@@ -646,6 +662,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	// the CURRENT window, recentStart says how old it is.
 	var recentBytes int64
 	recentStart := time.Now()
+	gapLogged := 0
 	// Stall watchdog (#510): a silent upstream stall (no FIN, no RST, no
 	// bytes) blocked this loop in Read() forever, because streams are endless
 	// by design and the body has no read deadline. The box then starved on an
@@ -703,6 +720,12 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	for {
 		n, readErr := src.Read(buf)
 		if n > 0 {
+			if gap := sinceRead(); gap >= audioGapLogAfter && gapLogged < audioGapLogMax {
+				gapLogged++
+				s.logger.Warn("stream proxy audio delivery gap (recovered)", "url", url,
+					"gapMs", gap.Milliseconds(), "connectedSec", int(time.Since(connStart).Seconds()),
+					"bytes", connBytes, "gapNr", gapLogged)
+			}
 			touchRead()
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
 				// Bose closed the connection
