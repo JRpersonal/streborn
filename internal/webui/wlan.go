@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 )
 
 // The two facts the firmware reports about its OWN network store: how many
@@ -256,15 +257,23 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 	case "wpa":
 		switch s.applyWlanWPALive(iface, ssid, password, hidden) {
 		case wpaConfirmed:
-			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface)
+			s.logger.Info("WLAN: live switch confirmed", "ssid", ssid, "iface", iface, "wantTag", ssidTag(ssid))
 			_ = os.Remove(wlanCredsPath + ".bak")
 			_ = os.Remove(wpaBackupPath)
+			// Record the STANDING intent, and ONLY here: the association is
+			// verified, so a wrong password can never arm the boot guard into
+			// chasing a network the speaker will never join (wlanguard.go).
+			s.armWlanTarget(ssid, password, hidden, "live")
 			// Teach the firmware's OWN store the new network NOW, while the
 			// box is up and reachable, instead of hoping the next boot does
 			// it: deferring that to the boot marker below is what left a
 			// reporter's speakers back on the old Wi-Fi after every power
-			// cycle (see programFirmwareWifiProfile).
-			s.programFirmwareWifiProfile(ssid, password)
+			// cycle (see commitFirmwareProfile).
+			s.commitFirmwareProfile(context.Background(), ssid, password)
+			// And drop the old network from the RUNNING supplicant, where
+			// NetManager injected it at boot, so it stops being a roam
+			// candidate for the rest of this uptime.
+			s.pruneRunningNetworks(iface, ssid)
 			// Drop the apply marker even though the LIVE switch succeeded: the
 			// firmware keeps its own network profile store and re-associates to
 			// the OLD network at boot, where run.sh's hands-off replay sees a
@@ -290,11 +299,16 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			// so reboot and let run.sh's boot path provision them (M3 applies the
 			// same bind workaround from a clean boot). Keep the new creds: do NOT
 			// roll back.
-			s.logger.Warn("WLAN: cannot switch live, rebooting to apply new network via boot path", "ssid", ssid)
+			s.logger.Warn("WLAN: cannot switch live, rebooting to apply new network via boot path", "ssid", ssid, "wantTag", ssidTag(ssid))
 			// Drop the rollback backup before the reboot: we are committing the new
 			// creds via the boot path, so a stale backup must not survive on NAND and
 			// be used to roll a future switch back to this now-superseded conf.
 			_ = os.Remove(wpaBackupPath)
+			// Record the intent as WEAK: the move was requested but never
+			// observed, because nothing here could read the association back.
+			// The next boot's guard will be the first thing that can confirm
+			// it, and it must not present this as a verified move.
+			s.armWlanTarget(ssid, password, hidden, "weak")
 			// Mark this as an active apply so run.sh programs the new SSID on boot
 			// instead of replaying the old network hands-off (#184).
 			touchWLANApplyMarker()
@@ -304,16 +318,27 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			// the box stays on its previous network instead of unreachable. The
 			// agent runs ON the box, so it can do this even while the box is
 			// briefly off the LAN.
-			s.logger.Warn("WLAN: new network did not associate, rolling back to previous", "ssid", ssid)
+			s.logger.Warn("WLAN: new network did not associate, rolling back to previous", "ssid", ssid, "wantTag", ssidTag(ssid))
 			restoreWlanCreds()
 			s.restoreWPAConfAndReload(iface)
+			// A failed switch must never arm the boot guard: the network the
+			// user typed is not one this speaker could join, so correcting
+			// towards it after every power cycle would only take the speaker
+			// off the network it can actually reach.
+			if err := clearWlanTarget(); err != nil {
+				s.logger.Warn("WLAN: could not clear the intended-network record after a failed switch", "err", err)
+			}
 		}
 	default:
-		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid)
+		s.logger.Info("WLAN: BCO chassis, rebooting to apply via boot path", "ssid", ssid, "wantTag", ssidTag(ssid))
 		// Same store, one last chance to record the new network before the
 		// reboot. Known to fail on taigan; logged either way and never
 		// allowed to hold up the reboot that actually applies the move.
-		s.programFirmwareWifiProfile(ssid, password)
+		s.commitFirmwareProfile(context.Background(), ssid, password)
+		// Weak intent: this chassis has no runtime channel at all, so the move
+		// is requested here and can only ever be checked against the firmware's
+		// STORED profile after the reboot, never against a real association.
+		s.armWlanTarget(ssid, password, hidden, "weak")
 		// Mark this as an active apply so run.sh programs the new SSID on boot
 		// instead of replaying the old network hands-off (#184).
 		touchWLANApplyMarker()
@@ -321,9 +346,9 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 	}
 }
 
-// programFirmwareWifiProfile teaches the SPEAKER'S OWN network store the new
-// Wi-Fi, by the same call the stock Bose setup page uses
-// (POST :8090/addWirelessProfile, the NetManager profile DB).
+// commitFirmwareProfile teaches the SPEAKER'S OWN network store the new Wi-Fi
+// (boxapi.AddWirelessProfile -> POST :8090/addWirelessProfile, the NetManager
+// profile DB the stock Bose setup page writes).
 //
 // This is what makes a move survive a power cycle. STR wrote only
 // wpa_supplicant.conf and left the firmware store alone, so the box
@@ -335,40 +360,37 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 // that file held none while the running supplicant carried two networks, the
 // old one included. It only ever stuck where the old network was out of range.
 //
+// It ADDS, it does not replace: the firmware exposes no per-profile delete, so
+// the old network stays a boot candidate and the boot guard (wlanguard.go) is
+// the second half of the fix.
+//
 // Best-effort by design and never fatal: the call is known to fail on some
 // chassis (taigan answers 500, see run.sh), and the live switch has already
 // succeeded by the time we get here. Every outcome is logged with the box's
 // own before/after profile count, so the next diagnostic bundle settles this
 // in one look.
-func (s *Server) programFirmwareWifiProfile(ssid, password string) {
+func (s *Server) commitFirmwareProfile(ctx context.Context, ssid, password string) {
 	if s.boxHost == "" {
 		return
 	}
 	before := wifiProfileCount(s.boxHost)
-	body := fmt.Sprintf(`<AddWirelessProfile timeout="15"><profile ssid=%q password=%q securityType="wpa_or_wpa2" /></AddWirelessProfile>`, ssid, password)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// The box's own budget for the operation is in the request body; this is
+	// ours, and it deliberately keeps the BCO path's reboot from being held up
+	// for longer than it already was.
+	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://"+s.boxHost+":8090/addWirelessProfile", strings.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "text/xml")
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-	if err != nil {
+	if err := boxapi.New(s.boxHost).AddWirelessProfile(cctx, ssid, password); err != nil {
+		// The error carries the box's own status and reply text, which is where
+		// the firmware puts its refusals.
 		s.logger.Warn("WLAN: could not teach the speaker's own network store the new Wi-Fi; a cold boot may return to the old network",
-			"err", err, "ssid", ssid, "profilesBefore", before)
+			"err", err, "ssid", ssid, "wantTag", ssidTag(ssid),
+			"profilesBefore", before, "profilesAfter", wifiProfileCount(s.boxHost))
 		return
 	}
-	defer resp.Body.Close()
-	after := wifiProfileCount(s.boxHost)
-	if resp.StatusCode >= 300 {
-		s.logger.Warn("WLAN: the speaker refused the profile for its own network store; a cold boot may return to the old network",
-			"status", resp.StatusCode, "ssid", ssid, "profilesBefore", before, "profilesAfter", after)
-		return
-	}
+	boxwrites.Note("wlan-profile", "add")
 	s.logger.Info("WLAN: taught the speaker's own network store the new Wi-Fi (survives a power cycle)",
-		"ssid", ssid, "profilesBefore", before, "profilesAfter", after, "activeProfile", activeWifiProfile(s.boxHost))
+		"ssid", ssid, "wantTag", ssidTag(ssid), "profilesBefore", before,
+		"profilesAfter", wifiProfileCount(s.boxHost), "activeProfile", activeWifiProfile(s.boxHost))
 }
 
 // wifiProfileCount reads how many networks the firmware has stored, straight
@@ -443,6 +465,21 @@ const (
 	wpaNotAssociated                       // conf written, but no association -> roll back
 	wpaCannotApply                         // conf could not be written live -> reboot to apply
 )
+
+// String names the outcome for the log, so a bundle reads "result=confirmed"
+// rather than an integer nobody can map back.
+func (r wpaApplyResult) String() string {
+	switch r {
+	case wpaConfirmed:
+		return "confirmed"
+	case wpaNotAssociated:
+		return "not-associated"
+	case wpaCannotApply:
+		return "cannot-apply"
+	default:
+		return "unknown"
+	}
+}
 
 // applyWlanWPALive writes the new wpa_supplicant.conf, reloads wpa_supplicant,
 // and reports whether the box associated to the new SSID within the timeout. The

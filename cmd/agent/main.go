@@ -769,6 +769,13 @@ func run() error {
 	// the current stream + the UPnP renderer.
 	go webuiSrv.PeriodicZoneReconcile()
 
+	// Check which Wi-Fi the speaker actually came up on, and move it back if
+	// the firmware picked the old network out of its own profile store. Runs
+	// only after a real box boot (the guard checks bootReason itself) and only
+	// when the user has moved this speaker at least once; a healthy boot costs
+	// one wpa_cli status read. See internal/webui/wlanguard.go.
+	go webuiSrv.StartWLANBootGuard(context.Background(), bootReason)
+
 	// Publish the user's DLNA/UPnP music sources into the marge account, which
 	// the box polls for itself at boot and keeps whatever it finds there, exactly
 	// the way radio arrives. That is the entire persistence mechanism: no write

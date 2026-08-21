@@ -21,9 +21,19 @@ package webui
 // tells you what was persisted, and the control interface tells you what the
 // speaker is actually using. Both are worth having, and they disagree.
 //
-// Read-only on purpose. Removing a network is the point of the exercise, but it
-// is also a way to lock a speaker out of the only network it can reach, so it
-// waits until this has reported real data from real speakers.
+// The data arrived, and it moved the answer. Five bundles, seven speakers,
+// 2026-08-21: fileBlocks=0 on every single one while wpa_cli listed two to
+// four live networks. The on-disk conf is not the candidate list at boot — the
+// FIRMWARE's own profile store is, and NetManager injects it into the running
+// supplicant over the control interface. Which is why this file now reports
+// that store on EVERY chassis, not only on the ones without wpa_cli: until
+// today no rhino/sm2 bundle had ever carried the one list that decides which
+// network a speaker wakes up on.
+//
+// Still read-only. Removing a network from the firmware's store is a way to
+// lock a speaker out of the only network it can reach, so the correction runs
+// through the live supplicant instead (wlanguard.go), where a failure is
+// recoverable and a reboot undoes it.
 
 import (
 	"context"
@@ -38,8 +48,13 @@ import (
 
 // wlanNetwork is one configured network as wpa_supplicant reports it.
 type wlanNetwork struct {
-	ID      int    `json:"id"`
-	SSID    string `json:"ssid"`
+	ID   int    `json:"id"`
+	SSID string `json:"ssid"`
+	// SSIDTag is the network's identity in a diagnostic bundle. The bundle
+	// scrubber replaces the value of a field named exactly "ssid" with
+	// <REDACTED>, which is right and must stay, and is also why four networks
+	// used to be four indistinguishable blanks. See ssidTag.
+	SSIDTag string `json:"ssidTag,omitempty"`
 	BSSID   string `json:"bssid,omitempty"`
 	Flags   string `json:"flags,omitempty"`
 	Current bool   `json:"current"`
@@ -53,6 +68,12 @@ type wlanConfigured struct {
 	Tool      string        `json:"tool"`
 	Interface string        `json:"interface,omitempty"`
 	Networks  []wlanNetwork `json:"networks"`
+	// Stored is the FIRMWARE's own profile store, read on every chassis. It is
+	// the list NetManager picks from at boot, so it, not Networks, is what
+	// decides which network a speaker wakes up on. On a coprocessor chassis it
+	// repeats what Networks already holds, on purpose: the field then means one
+	// single thing everywhere rather than "sometimes present".
+	Stored []wlanNetwork `json:"stored"`
 	// FileBlocks counts network={} blocks in the persisted config, so the two
 	// sources can be compared at a glance.
 	FileBlocks int    `json:"fileBlocks"`
@@ -103,8 +124,29 @@ var wlanNetLine = regexp.MustCompile(`^(\d+)\t([^\t]*)\t([^\t]*)\t?(.*)$`)
 // nothing on a whole model line.
 var wlanInterfaces = []string{"wlan0", "eth0", "wlan1", "ra0"}
 
-// listConfiguredWLANs asks wpa_supplicant what it is configured for.
+// listConfiguredWLANs reports both halves of the answer: what the running
+// supplicant carries, and what the firmware has on file.
+//
+// The second half used to be missing on wpa boxes. The runtime read returned
+// as soon as wpa_cli answered, so bcoStoredProfiles never ran on a rhino/sm2
+// chassis and no bundle from one ever carried the firmware's own store — the
+// list that actually decides the boot association. That single early return is
+// what kept #461/#479 unanswerable for six weeks.
 func listConfiguredWLANs(ctx context.Context, confPath string) wlanConfigured {
+	out := listRunningWLANs(ctx, confPath)
+	out.Stored = bcoStoredProfiles()
+	if out.Stored == nil {
+		// An empty list, never null: "the store holds nothing" is a finding and
+		// must not render as a missing field.
+		out.Stored = []wlanNetwork{}
+	}
+	tagNetworks(out.Networks)
+	tagNetworks(out.Stored)
+	return out
+}
+
+// listRunningWLANs asks wpa_supplicant what it is configured for.
+func listRunningWLANs(ctx context.Context, confPath string) wlanConfigured {
 	out := wlanConfigured{Networks: []wlanNetwork{}}
 	if b, err := os.ReadFile(confPath); err == nil {
 		txt := string(b)
@@ -137,28 +179,53 @@ func listConfiguredWLANs(ctx context.Context, confPath string) wlanConfigured {
 			continue
 		}
 		out.Interface = iface
-		for _, line := range strings.Split(string(raw), "\n") {
-			line = strings.TrimRight(line, "\r")
-			if line == "" || strings.HasPrefix(line, "network id") || strings.HasPrefix(line, "Selected") {
-				continue
-			}
-			m := wlanNetLine.FindStringSubmatch(line)
-			if m == nil {
-				continue
-			}
-			id, cerr := strconv.Atoi(m[1])
-			if cerr != nil {
-				continue
-			}
-			flags := strings.TrimSpace(m[4])
-			out.Networks = append(out.Networks, wlanNetwork{
-				ID: id, SSID: m[2], BSSID: strings.TrimSpace(m[3]), Flags: flags,
-				Current: strings.Contains(flags, "[CURRENT]"),
-			})
-		}
+		out.Networks = append(out.Networks, parseWPANetworkList(string(raw))...)
 		return out
 	}
 	out.Err = "wpa_cli found no control interface (tried " + strings.Join(wlanInterfaces, ", ") + ")"
+	return out
+}
+
+// parseWPANetworkList turns "wpa_cli list_networks" output into networks. Pure,
+// so both the diagnostic read and the guard's pruning decision share one parse
+// and it can be tested without a live supplicant.
+func parseWPANetworkList(raw string) []wlanNetwork {
+	var out []wlanNetwork
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" || strings.HasPrefix(line, "network id") || strings.HasPrefix(line, "Selected") {
+			continue
+		}
+		m := wlanNetLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		id, cerr := strconv.Atoi(m[1])
+		if cerr != nil {
+			continue
+		}
+		flags := strings.TrimSpace(m[4])
+		out = append(out, wlanNetwork{
+			ID: id, SSID: m[2], BSSID: strings.TrimSpace(m[3]), Flags: flags,
+			Current: strings.Contains(flags, "[CURRENT]"),
+		})
+	}
+	return out
+}
+
+// tagNetworks stamps each network with its scrub-proof identity, in place.
+func tagNetworks(nets []wlanNetwork) {
+	for i := range nets {
+		nets[i].SSIDTag = ssidTag(nets[i].SSID)
+	}
+}
+
+// ssidTagsOf is the same for a log field: a list of tags, no network names.
+func ssidTagsOf(nets []wlanNetwork) []string {
+	out := make([]string, 0, len(nets))
+	for _, n := range nets {
+		out = append(out, ssidTag(n.SSID))
+	}
 	return out
 }
 

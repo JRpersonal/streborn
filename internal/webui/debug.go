@@ -234,11 +234,18 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// that file gets mailed in and attached to public issues; the desktop
 		// app's field-keyed scrub never sees it.
 		"wlan_configured": listConfiguredWLANs(context.Background(), wpaConfPath).redacted(),
-		"region_txt":      readTail("/mnt/nv/streborn/region.txt"),
-		"name_txt":        readTail("/mnt/nv/streborn/name.txt"),
-		"stick_listing":   listDir("/media/sda1"),
-		"media_listing":   listDir("/media"),
-		"nv_listing":      listDir("/mnt/nv/streborn"),
+		// Which network the user CHOSE for this speaker, and what the last
+		// power-on concluded about whether it actually came up on it. Redacted
+		// at the source for the same reason as the file above: the record holds
+		// the passphrase, and this endpoint answers an unauthenticated LAN GET.
+		// The tag is enough to tell it apart from the networks in
+		// wlan_configured, which is the only question a bundle has to answer.
+		"wlan_target":   wlanTargetDebug(),
+		"region_txt":    readTail("/mnt/nv/streborn/region.txt"),
+		"name_txt":      readTail("/mnt/nv/streborn/name.txt"),
+		"stick_listing": listDir("/media/sda1"),
+		"media_listing": listDir("/media"),
+		"nv_listing":    listDir("/mnt/nv/streborn"),
 		// The /mnt/nv ROOT, not just STR's own subdir: a stock or STR-only box
 		// carries only Bose's persistent state and streborn/ here, so anything
 		// else (e.g. an aftertouch/ dir) is a leftover from another mod that can
