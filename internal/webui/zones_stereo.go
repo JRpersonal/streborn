@@ -555,7 +555,6 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "setZone: "+err.Error(), http.StatusBadGateway)
 			return
 		}
-		usedIncremental = false
 		if z2, err = c.GetZone(ctx); err != nil {
 			s.logger.Warn("zone: formed but getZone read-back failed", "err", err)
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "native"})
@@ -1828,12 +1827,12 @@ func zoneDiff(live boxapi.Zone, want []boxapi.ZoneMember) (toAdd, toRemove []box
 		if m.DeviceID != "" {
 			liveDev[strings.ToLower(m.DeviceID)] = true
 		}
-		if !((m.IP != "" && wantIP[m.IP]) || (m.DeviceID != "" && wantDev[strings.ToLower(m.DeviceID)])) {
+		if (m.IP == "" || !wantIP[m.IP]) && (m.DeviceID == "" || !wantDev[strings.ToLower(m.DeviceID)]) {
 			toRemove = append(toRemove, boxapi.ZoneMember{DeviceID: m.DeviceID, IP: m.IP})
 		}
 	}
 	for _, m := range want {
-		if !((m.IP != "" && liveIP[m.IP]) || (m.DeviceID != "" && liveDev[strings.ToLower(m.DeviceID)])) {
+		if (m.IP == "" || !liveIP[m.IP]) && (m.DeviceID == "" || !liveDev[strings.ToLower(m.DeviceID)]) {
 			toAdd = append(toAdd, m)
 		}
 	}
