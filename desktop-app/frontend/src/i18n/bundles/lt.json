@@ -1169,6 +1169,8 @@
   "multiroom.templatesHeading": "Grupių šablonai",
   "multiroom.templatesNote": "Išsaugok garsiakalbių derinį vieną kartą ir susigrąžink jį vienu spustelėjimu. Šablonai saugomi pagrindiniame grupės garsiakalbyje.",
   "multiroom.templatesRestore": "Atkurti šablonus",
+   "multiroom.templatesEmptyHelp": "Šablono dar nėra: pasirinkite pagrindinį garsiakalbį (žvaigždutė), pažymėkite narius, žemiau įveskite pavadinimą ir išsaugokite. Išsaugotą šabloną galima pažymėti kaip Nuolatinį, tada grupė po perkrovimo susiformuoja pati.",
+   "multiroom.templatesUnreachable": "Šio garsiakalbio šablonų šiuo metu nepavyksta nuskaityti; bandoma dar kartą.",
   "multiroom.templatesRestoreOffer": "Šiame garsiakalbyje šablonų nėra, bet anksčiau buvo išsaugota {{n}}. Atkurti?",
   "preset.boxNativeHint": "spustelėk, kad grotų garsiakalbyje",
   "preset.boxRecallFailed": "Nepavyko paleisti šio garsiakalbio nustatymo: {{err}}",

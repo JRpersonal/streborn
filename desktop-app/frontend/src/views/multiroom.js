@@ -402,12 +402,17 @@ function zoneTemplatesSection(strBoxes) {
     `<div class="muted small">${escapeHtml(t('multiroom.templatesNote'))}</div>`;
   let body;
   const cap = state.zoneTplCaps[masterBox.deviceID];
-  if (deps.boxNeedsUpdate(masterBox) || cap === 'false') {
-    // The picked master's agent predates the templates endpoints (or is
-    // outdated anyway): calling them would hit the index catch-all.
+  if (cap === 'false') {
+    // The picked master's agent predates the templates endpoints: calling
+    // them would hit the index catch-all. (A pending app/agent build-stamp
+    // difference alone must NOT park the section: the list call carries its
+    // own agent-too-old guard, so cap only goes 'false' on real evidence.)
     body = `<div class="setup-warn small">${escapeHtml(t('multiroom.templatesAgentOld'))}</div>`;
+  } else if (cap === 'error') {
+    body = `<div class="setup-warn small">${escapeHtml(t('multiroom.templatesUnreachable'))}</div>`;
   } else if (cap !== 'true') {
-    // Capability not probed yet (refreshZoneTemplates fills it in).
+    // Capability not probed yet (refreshZoneTemplates fills it in); the
+    // fetch resolves this to true/false/error, never leaves it here.
     body = `<div class="muted small">${escapeHtml(t('common.loading'))}</div>`;
   } else {
     const entry = state.zoneTemplates[masterBox.deviceID] || {};
@@ -442,7 +447,13 @@ function zoneTemplatesSection(strBoxes) {
           style="flex:1;min-width:0;background:var(--c-bg);border:1px solid var(--c-border);color:var(--c-text);border-radius:4px;padding:6px 8px;font-size:13px">
         <button id="tplSave" class="btn btn-mini">${escapeHtml(t('multiroom.templateSave'))}</button>
       </div>`;
-    body = rows + restore + saveRow +
+    // First-use guidance: with no template yet, say HOW to create one and
+    // how the permanent group is reached from here (the note below explains
+    // only what "permanent" does, not where to find it).
+    const emptyHelp = (entry.fetched && !tpls.length && !mir.length)
+      ? `<div class="muted small">${escapeHtml(t('multiroom.templatesEmptyHelp'))}</div>`
+      : '';
+    body = emptyHelp + rows + restore + saveRow +
       `<div id="tplResult">${state.zoneTemplateMsg || ''}</div>` +
       `<div class="muted small">${escapeHtml(t('multiroom.permanentNote'))}</div>`;
   }
@@ -483,7 +494,7 @@ function wireZoneTemplateHandlers(strBoxes) {
 async function refreshZoneTemplates() {
   const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.deviceID);
   const masterBox = tplMasterBox(strBoxes);
-  if (!masterBox || deps.boxNeedsUpdate(masterBox)) return;
+  if (!masterBox) return;
   if (!state.zoneTplCaps) state.zoneTplCaps = {};
   if (!state.zoneTemplates) state.zoneTemplates = {};
   if (!state.zoneTplMirror) state.zoneTplMirror = {};
@@ -491,13 +502,26 @@ async function refreshZoneTemplates() {
   if (state.zoneTplCaps[masterBox.deviceID] === undefined) {
     try {
       const v = await BoxAgentVersion(masterBox.host, masterBox.port);
-      state.zoneTplCaps[masterBox.deviceID] = (v && v.zoneTemplates === 'true') ? 'true' : 'false';
-      changed = true;
-    } catch { /* unreachable right now: stay unknown, the next poll retries */ }
+      state.zoneTplCaps[masterBox.deviceID] = (v && v.zoneTemplates === 'true') ? 'true' : 'probe-missing';
+    } catch {
+      // Unreachable this instant: do NOT park the section in "loading".
+      // The list call below carries the real agent-too-old guard and
+      // resolves the state either way.
+      state.zoneTplCaps[masterBox.deviceID] = 'probe-failed';
+    }
+    changed = true;
   }
-  if (state.zoneTplCaps[masterBox.deviceID] === 'true') {
+  const capNow = state.zoneTplCaps[masterBox.deviceID];
+  if (capNow === 'true' || capNow === 'probe-failed' || capNow === 'probe-missing') {
     try {
       const r = await ListZoneTemplates(masterBox.host, masterBox.port);
+      // The list answered as JSON: this agent has the feature, whatever the
+      // earlier capability probe thought (a stale/failed probe or a pending
+      // app/agent stamp difference must not hide working templates).
+      if (capNow !== 'true') {
+        state.zoneTplCaps[masterBox.deviceID] = 'true';
+        changed = true;
+      }
       const tpls = (r && Array.isArray(r.templates)) ? r.templates : [];
       const next = {
         templates: tpls,
@@ -524,11 +548,20 @@ async function refreshZoneTemplates() {
     } catch (e) {
       // The Go side answers a typed "agent-too-old" error when the endpoint
       // came back as the index catch-all (200 + HTML): render the update
-      // hint instead of an empty list that looks like data.
+      // hint instead of an empty list that looks like data. Any OTHER error
+      // surfaces as a visible unreachable hint, never as eternal loading;
+      // the state resets to undefined so the next poll retries the probe.
       if (String((e && e.message) || e || '').includes('agent-too-old')) {
         state.zoneTplCaps[masterBox.deviceID] = 'false';
-        changed = true;
+      } else {
+        state.zoneTplCaps[masterBox.deviceID] = 'error';
+        setTimeout(() => {
+          if (state.zoneTplCaps[masterBox.deviceID] === 'error') {
+            delete state.zoneTplCaps[masterBox.deviceID];
+          }
+        }, 15000);
       }
+      changed = true;
     }
   }
   if (changed) renderMultiroom(false);

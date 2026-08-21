@@ -1169,6 +1169,8 @@
   "multiroom.templatesHeading": "Groepssjablonen",
   "multiroom.templatesNote": "Sla een luidsprekercombinatie één keer op en haal hem met één klik terug. Sjablonen worden op de hoofdluidspreker van de groep bewaard.",
   "multiroom.templatesRestore": "Sjablonen terugzetten",
+   "multiroom.templatesEmptyHelp": "Nog geen sjabloon: kies de hoofdluidspreker (ster), vink de leden aan, voer hieronder een naam in en sla op. Een opgeslagen sjabloon kun je als Permanent markeren, de groep vormt zich dan na een herstart vanzelf opnieuw.",
+   "multiroom.templatesUnreachable": "De sjablonen van deze luidspreker zijn nu niet leesbaar; opnieuw proberen.",
   "multiroom.templatesRestoreOffer": "Deze luidspreker heeft geen sjablonen, maar er waren er {{n}} opgeslagen. Terugzetten?",
   "preset.boxNativeHint": "tik om af te spelen op de luidspreker",
   "preset.boxRecallFailed": "Kon dit luidspreker-preset niet starten: {{err}}",

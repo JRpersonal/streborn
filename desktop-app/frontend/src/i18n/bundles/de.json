@@ -154,6 +154,8 @@
   "multiroom.templatesAgentOld": "Der Agent dieses Lautsprechers ist zu alt für Vorlagen. Bitte in den Lautsprecher-Einstellungen aktualisieren.",
   "multiroom.templatesRestoreOffer": "Auf diesem Lautsprecher sind keine Vorlagen, aber {{n}} waren gespeichert. Wiederherstellen?",
   "multiroom.templatesRestore": "Vorlagen wiederherstellen",
+   "multiroom.templatesEmptyHelp": "Noch keine Vorlage: Hauptlautsprecher (Stern) wählen, Mitglieder anhaken, unten einen Namen eingeben und speichern. Eine gespeicherte Vorlage lässt sich als Dauerhaft markieren, die Gruppe bildet sich dann nach Neustarts von selbst wieder.",
+   "multiroom.templatesUnreachable": "Die Vorlagen dieses Lautsprechers sind gerade nicht lesbar, neuer Versuch läuft.",
   "spotify.heading": "Spotify Connect",
   "spotify.intro1": "Lautsprecher einmal in der Spotify-App koppeln, danach beliebige Spotify-Tracks vom Handy aus dorthin senden.",
   "spotify.bullet1": "Lautsprecher als Spotify-Connect-Ziel nutzen.",

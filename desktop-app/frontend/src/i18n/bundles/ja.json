@@ -1169,6 +1169,8 @@
   "multiroom.templatesHeading": "グループテンプレート",
   "multiroom.templatesNote": "スピーカーの組み合わせを一度保存すれば、ワンクリックで呼び戻せます。テンプレートはグループのメインスピーカーに保存されます。",
   "multiroom.templatesRestore": "テンプレートを復元",
+   "multiroom.templatesEmptyHelp": "まだテンプレートがありません。メインスピーカー（星印）を選び、メンバーにチェックを入れ、下に名前を入力して保存してください。保存したテンプレートは「常設」に設定でき、再起動後もグループが自動的に復元されます。",
+   "multiroom.templatesUnreachable": "このスピーカーのテンプレートを現在読み取れません。再試行しています。",
   "multiroom.templatesRestoreOffer": "このスピーカーにテンプレートはありませんが、以前 {{n}} 件保存されていました。復元しますか?",
   "preset.boxNativeHint": "タップしてスピーカーで再生",
   "preset.boxRecallFailed": "このスピーカープリセットを開始できませんでした: {{err}}",

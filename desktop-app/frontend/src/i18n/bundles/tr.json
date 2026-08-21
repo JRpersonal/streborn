@@ -1169,6 +1169,8 @@
   "multiroom.templatesHeading": "Grup şablonları",
   "multiroom.templatesNote": "Bir hoparlör kombinasyonunu bir kez kaydet, tek tıkla geri getir. Şablonlar grubun ana hoparlöründe saklanır.",
   "multiroom.templatesRestore": "Şablonları geri yükle",
+   "multiroom.templatesEmptyHelp": "Henüz şablon yok: ana hoparlörü (yıldız) seçin, üyeleri işaretleyin, aşağıya bir ad girin ve kaydedin. Kaydedilen bir şablon Kalıcı olarak işaretlenebilir; grup yeniden başlatmalardan sonra kendiliğinden yeniden kurulur.",
+   "multiroom.templatesUnreachable": "Bu hoparlörün şablonları şu anda okunamıyor; yeniden deneniyor.",
   "multiroom.templatesRestoreOffer": "Bu hoparlörde şablon yok, ama daha önce {{n}} şablon kaydedilmişti. Geri yüklensin mi?",
   "preset.boxNativeHint": "hoparlörde çalmak için dokun",
   "preset.boxRecallFailed": "Bu hoparlör preseti başlatılamadı: {{err}}",

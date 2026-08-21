@@ -1169,6 +1169,8 @@
   "multiroom.templatesHeading": "Grupu veidnes",
   "multiroom.templatesNote": "Saglabā skaļruņu kombināciju vienu reizi un atgriez to ar vienu klikšķi. Veidnes glabājas grupas galvenajā skaļrunī.",
   "multiroom.templatesRestore": "Atjaunot veidnes",
+   "multiroom.templatesEmptyHelp": "Vēl nav veidnes: izvēlieties galveno skaļruni (zvaigznīte), atzīmējiet dalībniekus, ievadiet nosaukumu zemāk un saglabājiet. Saglabātu veidni var atzīmēt kā Pastāvīgu, tad grupa pēc restarta izveidojas pati.",
+   "multiroom.templatesUnreachable": "Šī skaļruņa veidnes pašlaik nevar nolasīt; mēģinu vēlreiz.",
   "multiroom.templatesRestoreOffer": "Šim skaļrunim nav veidņu, bet iepriekš bija saglabātas {{n}}. Atjaunot tās?",
   "preset.boxNativeHint": "pieskaries, lai atskaņotu skaļrunī",
   "preset.boxRecallFailed": "Neizdevās palaist šo skaļruņa iestatījumu: {{err}}",

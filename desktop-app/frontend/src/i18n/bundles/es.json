@@ -1169,6 +1169,8 @@
   "multiroom.templatesHeading": "Plantillas de grupo",
   "multiroom.templatesNote": "Guarda una combinación de altavoces una sola vez y recupérala con un clic. Las plantillas se guardan en el altavoz principal del grupo.",
   "multiroom.templatesRestore": "Restaurar plantillas",
+   "multiroom.templatesEmptyHelp": "Aún no hay plantilla: elige el altavoz principal (estrella), marca los miembros, escribe un nombre abajo y guarda. Una plantilla guardada puede marcarse como Permanente y el grupo se vuelve a formar solo tras un reinicio.",
+   "multiroom.templatesUnreachable": "Las plantillas de este altavoz no se pueden leer ahora mismo; reintentando.",
   "multiroom.templatesRestoreOffer": "Este altavoz no tiene plantillas, pero había {{n}} guardadas. ¿Restaurarlas?",
   "preset.boxNativeHint": "toca para reproducir en el altavoz",
   "preset.boxRecallFailed": "No se pudo iniciar este preset del altavoz: {{err}}",
