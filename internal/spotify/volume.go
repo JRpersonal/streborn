@@ -137,6 +137,7 @@ func (m *Manager) handleEnginePlaybackEnd(evType string) {
 	m.mu.Lock()
 	fn := m.connectPauseFn
 	ctxFailedAt := m.lastCtxResolveFailAt
+	loadFailedAt := m.lastTrackLoadFailAt
 	m.mu.Unlock()
 	// A stop that follows the engine failing to resolve the continuation of a
 	// playlist is the playlist running out, not the listener stopping it.
@@ -145,6 +146,33 @@ func (m *Manager) handleEnginePlaybackEnd(evType string) {
 	if !ctxFailedAt.IsZero() && time.Since(ctxFailedAt) < 15*time.Second {
 		m.logger.Warn("spotify: playback stopped because the playlist ran out and the engine could not resolve what follows, NOT because anybody stopped it",
 			"event", evType, "sinceResolveFailMs", time.Since(ctxFailedAt).Milliseconds())
+		return
+	}
+	// A stop after a transient track-LOAD failure is the same false signal
+	// mid-playlist (live 2026-08-21: six-speaker group silent after six
+	// songs). Do not arm the latch; instead try the NEXT track once, bounded
+	// to one advance per two minutes so an account whose every load fails
+	// cannot skip-storm through the playlist.
+	if !loadFailedAt.IsZero() && time.Since(loadFailedAt) < 15*time.Second {
+		m.mu.Lock()
+		canAutoAdvance := m.lastAutoAdvanceAt.IsZero() || time.Since(m.lastAutoAdvanceAt) > 2*time.Minute
+		if canAutoAdvance {
+			m.lastAutoAdvanceAt = time.Now()
+		}
+		m.mu.Unlock()
+		m.logger.Warn("spotify: playback stopped because a track failed to load, NOT because anybody stopped it",
+			"event", evType, "sinceLoadFailMs", time.Since(loadFailedAt).Milliseconds(), "autoAdvance", canAutoAdvance)
+		if canAutoAdvance && m.client != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := m.Next(ctx); err != nil {
+					m.logger.Warn("spotify: auto-advance past the unloadable track failed", "err", err)
+				} else {
+					m.logger.Info("spotify: auto-advanced past the unloadable track, playback continues")
+				}
+			}()
+		}
 		return
 	}
 	if fn == nil {

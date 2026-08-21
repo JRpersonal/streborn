@@ -118,3 +118,40 @@ func TestAPlaylistRunningOutIsNotAUserStop(t *testing.T) {
 		t.Errorf("a pause with no resolve failure must latch, got %d", latched.Load())
 	}
 }
+
+// The sibling false signal, caught live 2026-08-21: the engine failed to LOAD
+// the next track mid-playlist ("failed advancing to next track"), stopped, and
+// STR read that stop as the listener stopping playback in the Spotify app. A
+// six-speaker group fell silent after six songs with no recovery.
+func TestATrackLoadFailureIsNotAUserStop(t *testing.T) {
+	var latched atomic.Int32
+	m := &Manager{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	m.connectPauseFn = func(string) { latched.Add(1) }
+
+	m.lastTrackLoadFailAt = time.Now()
+	m.handleEnginePlaybackEnd("stopped")
+	if latched.Load() != 0 {
+		t.Error("a stop right after a track-load failure must not arm the deliberate-stop latch")
+	}
+	if m.lastAutoAdvanceAt.IsZero() {
+		t.Error("the load-fail stop must attempt one auto-advance (stamp missing)")
+	}
+
+	// A second load-fail stop inside the rate window must not advance again.
+	prev := m.lastAutoAdvanceAt
+	m.lastTrackLoadFailAt = time.Now()
+	m.handleEnginePlaybackEnd("stopped")
+	if !m.lastAutoAdvanceAt.Equal(prev) {
+		t.Error("auto-advance must be rate-limited to one per window")
+	}
+	if latched.Load() != 0 {
+		t.Error("the rate-limited second stop must still not latch")
+	}
+
+	// A stop long after the failure IS the listener, and must still latch.
+	m.lastTrackLoadFailAt = time.Now().Add(-time.Hour)
+	m.handleEnginePlaybackEnd("stopped")
+	if latched.Load() != 1 {
+		t.Errorf("a genuine stop must still latch, got %d", latched.Load())
+	}
+}

@@ -652,6 +652,18 @@ func (m *Manager) noteLibrespotLine(line string) {
 		m.mu.Unlock()
 		m.logger.Warn("spotify: the engine could not resolve what to play after this playlist, so playback is about to stop", "line", line)
 	}
+	// The engine could not LOAD the next track (a transient Spotify-side
+	// failure mid-playlist, distinct from the context running out above). It
+	// stops afterwards, and that stop must not arm the deliberate-stop latch:
+	// live 2026-08-21 a group of six speakers fell silent after six songs
+	// because "failed advancing to next track" was read as the listener
+	// stopping playback in the Spotify app.
+	if strings.Contains(lc, "failed advancing to next track") || strings.Contains(lc, "failed loading current track") {
+		m.mu.Lock()
+		m.lastTrackLoadFailAt = time.Now()
+		m.mu.Unlock()
+		m.logger.Warn("spotify: the engine failed loading the next track, so playback is about to stop mid-playlist", "line", line)
+	}
 	// Spotify refused the audio key for a track. One is unremarkable: a single
 	// track can be unavailable in a region. A run of them is the account being
 	// refused wholesale, and that is what a listener experiences as a playlist
