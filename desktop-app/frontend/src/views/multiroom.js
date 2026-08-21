@@ -385,10 +385,17 @@ async function refreshZoneLive() {
 // the section offers to push the mirrored templates back.
 
 // tplMasterBox is the speaker whose templates the section shows: the picked
-// master (the star), which renderMultiroom already tracks onto the live
-// leader when the user has not pinned one.
+// master (the star), else the speaker that is leading a group right now, else
+// the speaker the app is currently on. Falling back matters: after an app
+// restart nothing is pinned, and with only the star as the source the whole
+// section silently vanished ("die Gruppen-Vorlagen sind nicht mehr sichtbar",
+// live 2026-08-21) instead of showing the templates the speaker holds.
 function tplMasterBox(strBoxes) {
-  return strBoxes.find(b => b.deviceID === state.zoneMaster) || null;
+  const byID = (id) => strBoxes.find(b => String(b.deviceID || '').toUpperCase() === String(id || '').toUpperCase());
+  return byID(state.zoneMaster) ||
+    liveZoneMaster(strBoxes) ||
+    byID(state.currentBox && state.currentBox.deviceID) ||
+    strBoxes[0] || null;
 }
 
 // zoneTemplatesSection builds the section markup. Pure string builder off
