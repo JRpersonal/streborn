@@ -97,7 +97,11 @@ type Manager struct {
 	configVol    int       // initial_volume currently written to config.yml
 	sink         io.Writer // current HTTP consumer, nil when none
 	lastAttachAt time.Time // when the box last attached to the Ogg stream (re-attach storm detection)
-	cmd          *exec.Cmd
+	// expectReattachUntil marks the next re-attach as deliberately caused by
+	// STR's own re-push (one-shot, see ExpectReattach), keeping it out of the
+	// storm accounting.
+	expectReattachUntil time.Time
+	cmd                 *exec.Cmd
 	// runCancel restarts the current go-librespot process when called: it
 	// cancels the per-process context so the supervise loop relaunches it.
 	// Used to re-apply a changed device_name (go-librespot reads its name only

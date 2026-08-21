@@ -378,6 +378,13 @@ func WithSpotifySetRecalling(setRecalling func()) Option {
 	return func(s *Server) { s.spotifySetRecalling = setRecalling }
 }
 
+// WithSpotifyExpectReattach registers the hook that marks the next box
+// re-attach to the Ogg stream as deliberate (STR's own re-push), so the
+// engine's re-attach storm damping does not count it.
+func WithSpotifyExpectReattach(expect func(time.Duration)) Option {
+	return func(s *Server) { s.spotifyExpectReattach = expect }
+}
+
 // WithSpotifySuppressActivate registers the hook that holds go-librespot's
 // auto-repoint off for a window, so the hardware-skip recovery's clean slot
 // recall is not raced by the #14 auto-attach.
