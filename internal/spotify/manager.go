@@ -97,6 +97,7 @@ type Manager struct {
 	configVol    int       // initial_volume currently written to config.yml
 	sink         io.Writer // current HTTP consumer, nil when none
 	lastAttachAt time.Time // when the box last attached to the Ogg stream (re-attach storm detection)
+	lastDetachAt time.Time // when the box last detached; the warm-recall gate's "streaming until a moment ago"
 	// expectReattachUntil marks the next re-attach as deliberately caused by
 	// STR's own re-push (one-shot, see ExpectReattach), keeping it out of the
 	// storm accounting.

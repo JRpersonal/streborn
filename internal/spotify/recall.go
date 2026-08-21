@@ -80,13 +80,14 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// The webui recall re-pushes the URI to the box BEFORE this call, which
 	// makes the box drop and re-fetch the Ogg stream: at this instant the
 	// sink is usually nil even though music played until a second ago. A
-	// fresh attachment therefore counts as warm too - the tear-down was our
-	// own doing, the engine kept playing through it. (Measured live: the
-	// sink-only gate never fired and every re-press paid the full cold
-	// staging, 8 s instead of 4.)
-	recentlyAttached := !m.lastAttachAt.IsZero() && time.Since(m.lastAttachAt) < 15*time.Second
+	// DETACH moments ago therefore counts as warm too - that tear-down was
+	// the recall's own doing, the engine kept playing through it. (Two live
+	// rounds proved the lessons: the sink-only gate never fired, and a
+	// lastAttachAt window did not either, because a stable sink attaches
+	// once and then plays for minutes.)
+	recentlyDetached := !m.lastDetachAt.IsZero() && time.Since(m.lastDetachAt) < 15*time.Second
 	m.mu.Unlock()
-	if same && ((m.Streaming() && !m.StreamStalled()) || recentlyAttached) {
+	if same && ((m.Streaming() && !m.StreamStalled()) || recentlyDetached) {
 		return m.replayWarm(ctx, uri, opts)
 	}
 	// Arm the boundary cut for the cold path too: the box re-attaches within a
