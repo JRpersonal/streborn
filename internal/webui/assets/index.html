@@ -2024,7 +2024,7 @@ async function loadVersion() {
 // refreshAll re-fetches every panel at once (used by pull-to-refresh and on
 // regaining foreground), with a short minimum so the spinner does not flash.
 function refreshAll(){
-  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion(), loadZone(), loadSleep(), loadMusicLib(), loadTemplates()]).catch(function(){});
+  var work = Promise.all([loadSettings(), loadPresets(), refreshStatus(), refreshWedge(), loadPeers(), loadVersion(), loadZone().then(loadTemplates), loadSleep(), loadMusicLib()]).catch(function(){});
   var minSpin = new Promise(function(r){ setTimeout(r, 500); });
   return Promise.all([work, minSpin]);
 }
@@ -2242,6 +2242,7 @@ save the current line-up under a name. An agent from before the feature
 answers the API path with the page itself (200 + HTML) and an error answers
 null, so the card hides unless the reply is actually a template list. */
 var tmpls = [];
+var tmplPaintKey = '';
 async function loadTemplates() {
   var card = document.getElementById('tmplCard');
   if (!card) return;
@@ -2255,8 +2256,15 @@ async function loadTemplates() {
   var sb = document.getElementById('btnTmplSave');
   if (sb) sb.hidden = !showSave;
   if (!showSave) { var sr = document.getElementById('tmplSaveRow'); if (sr) sr.hidden = true; }
+  // Repaint the rows only when the data changed: the 15 s poll must not
+  // rebuild buttons under a finger or wipe an in-flight pending marker.
+  var key = (r.permanentId || '') + '|' + tmpls.map(function(t){ return t.id + ':' + t.name; }).join(',');
+  if (key === tmplPaintKey) return;
+  tmplPaintKey = key;
   renderTmplRows(r.permanentId || '');
 }
+
+function reloadTemplates() { tmplPaintKey = ''; return loadTemplates(); }
 
 function tmplNote(text) {
   var el = document.getElementById('tmplMsg');
@@ -2319,7 +2327,7 @@ function activateTemplate(t, btn) {
       // rebuilds these rows, so the '···' the queue put on the button would
       // stay. Restore it and re-read the list in one go.
       if (btn) { btn.disabled = false; btn.textContent = T.tmplActivate; }
-      return loadTemplates().catch(function(){});
+      return reloadTemplates().catch(function(){});
     });
   }, btn);
 }
@@ -2338,7 +2346,7 @@ function saveTemplate(name) {
       var inp = document.getElementById('tmplName');
       if (inp) inp.value = '';
     }
-    return loadTemplates().catch(function(){});
+    return reloadTemplates().catch(function(){});
   });
 }
 
@@ -2347,14 +2355,14 @@ function deleteTemplate(t, btn) {
   api('/api/box/zone/templates/' + encodeURIComponent(t.id), 'DELETE').then(function(){
     // Whatever the answer said, the re-read shows the truth: the row gone on
     // success, still there on failure.
-    return loadTemplates().catch(function(){});
+    return reloadTemplates().catch(function(){});
   });
 }
 
 function setTemplatePermanent(t, on, btn) {
   if (btn) btn.disabled = true;
   api('/api/box/zone/templates/' + encodeURIComponent(t.id) + '/permanent', 'POST', { permanent: on }).then(function(){
-    return loadTemplates().catch(function(){});
+    return reloadTemplates().catch(function(){});
   });
 }
 
@@ -2927,12 +2935,12 @@ function fillLangPick(){
     T = pickDict(); applyStaticI18n(); fillLangPick();
   };
 }
-applyStaticI18n(); syncTabbarSpace(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion(); loadZone(); loadSleep(); loadMusicLib(); loadTemplates(); loadPlayMode().catch(function(){});
+applyStaticI18n(); syncTabbarSpace(); loadSettings(); loadPresets(); refreshStatus(); refreshWedge(); loadPeers(); loadVersion(); loadZone().then(loadTemplates).catch(function(){}); loadSleep(); loadMusicLib(); loadPlayMode().catch(function(){});
 setInterval(function(){ refreshStatus(); refreshWedge(); }, 5000);
 // The group is polled far more slowly than the transport: it changes when
 // somebody forms or dissolves one, not second by second, and every poll costs
 // the speaker a round trip to each member.
-setInterval(function(){ if (!document.getElementById('panelSpeakers').hidden || zone.grouped) { loadZone(); loadTemplates(); } }, 15000);
+setInterval(function(){ if (!document.getElementById('panelSpeakers').hidden || zone.grouped) { loadZone().then(loadTemplates).catch(function(){}); } }, 15000);
 // Presets change from the desktop app too, and this page used to keep whatever
 // it loaded on open. Re-read on the same slow cadence as the group: it only has
 // to catch somebody pressing save elsewhere, and the grid is left alone unless

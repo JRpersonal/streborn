@@ -36,6 +36,14 @@ type zoneDriveOpts struct {
 	// reason tags the log lines: "form" | "activate" | "boot" |
 	// "standby-wake" | "preplay" | "wake-rejoin".
 	reason string
+	// preflight, when set (background drives only), runs AFTER the serial
+	// lock is acquired and returns the fresh slave list to drive, or
+	// ok=false to stand down. A background drive can queue on the lock
+	// behind a user form or a dissolve that changes everything its list was
+	// computed from: without this recheck it would re-add a member the user
+	// just removed, drop one the user just added, or re-form a group the
+	// user just dissolved.
+	preflight func() ([]boxapi.ZoneMember, bool)
 }
 
 // zoneDriveResult carries the drive's outcome in the exact shape
@@ -152,6 +160,11 @@ func (s *Server) driveZone(ctx context.Context, master boxapi.ZoneMember, slaves
 		}
 		s.zoneFormSerial.Lock()
 		defer s.zoneFormSerial.Unlock()
+		// The wait for the lock is not cancellable, so honor a caller that
+		// gave up while a long drive (user or background) held it.
+		if ctx.Err() != nil {
+			return zoneDriveResult{status: http.StatusRequestTimeout, errText: "canceled"}
+		}
 		if latest := s.zoneFormSeq.Load(); latest != mySeq {
 			liveNow, lerr := c.GetZone(ctx)
 			s.logger.Info("zone: form request superseded by a newer member list, standing down", "seq", mySeq, "latest", latest)
@@ -165,9 +178,20 @@ func (s *Server) driveZone(ctx context.Context, master boxapi.ZoneMember, slaves
 		}
 	} else {
 		// Background drives skip the settle but still serialize against user
-		// actions and each other.
+		// actions and each other, and re-validate their list under the lock.
 		s.zoneFormSerial.Lock()
 		defer s.zoneFormSerial.Unlock()
+		if ctx.Err() != nil {
+			return zoneDriveResult{status: http.StatusRequestTimeout, errText: "canceled"}
+		}
+		if opts.preflight != nil {
+			fresh, ok := opts.preflight()
+			if !ok {
+				s.logger.Info("zone: background drive stood down after re-checking under the lock", "reason", opts.reason)
+				return zoneDriveResult{status: http.StatusOK, body: map[string]any{"ok": true, "stoodDown": true}}
+			}
+			slaves = fresh
+		}
 		s.logger.Info("zone: forming (beta)", "mode", mode, "master", master.DeviceID, "masterIP", master.IP,
 			"slaves", len(slaves), "reason", opts.reason)
 	}

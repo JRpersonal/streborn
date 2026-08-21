@@ -103,6 +103,13 @@ func (s *Server) handleZoneTemplateSave(w http.ResponseWriter, r *http.Request) 
 	// the firmware actually keys on. Master.IP is a hint only; every client
 	// already talks to this agent at an address it knows.
 	masterID := s.localDeviceID(ctx, boxapi.New(s.boxHost), "")
+	if masterID == "" {
+		// A template with an empty master would make the permanent engine's
+		// master check meaningless; refuse while the firmware is unreadable
+		// (wedged or still booting) instead of persisting a broken record.
+		http.Error(w, "the speaker's firmware is not answering, try again in a moment", http.StatusServiceUnavailable)
+		return
+	}
 	masterIP := ""
 	if s.zones != nil {
 		if z, ok := s.zones.Get(); ok && strings.EqualFold(strings.TrimSpace(z.Master), strings.TrimSpace(masterID)) {

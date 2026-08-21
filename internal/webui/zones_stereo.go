@@ -257,9 +257,11 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	// the template activation and the permanent-group engine can run the same
 	// field-hardened drive without an HTTP request behind it.
 	res := s.driveZone(ctx, master, slaves, req.Name, mode, zoneDriveOpts{coalesce: true, persist: true, resume: true, wake: true, reason: "form"})
-	if res.errText == "" && res.status == http.StatusOK {
+	if res.errText == "" && res.status == http.StatusOK && res.body["superseded"] != true {
 		// The user's explicit full member list defines who is deliberately
-		// out of the permanent group (beta); see notePermanentMembership.
+		// out of the permanent group (beta); see notePermanentMembership. A
+		// superseded request never drove its list, so it must not write out
+		// entries either: the newer request's list is the user's intent.
 		s.notePermanentMembership(master, slaves)
 	}
 	res.write(w)

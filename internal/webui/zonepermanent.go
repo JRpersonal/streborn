@@ -103,42 +103,91 @@ func (s *Server) permEligibleMembers(ctx context.Context, members []zonetemplate
 
 // permReformIfZoneEmpty re-forms the permanent group when the firmware zone
 // is EMPTY: the post-reboot and post-standby case, and nothing else. A live
-// zone of any shape is never touched from here.
-func (s *Server) permReformIfZoneEmpty(trigger string) {
+// zone of any shape is never touched from here. Returns true only when a
+// drive actually ran, so the callers' debounce can be released after a
+// stand-down (a swallowed no-op wake kick used to eat the play-time assert
+// that fired right after, and the group never formed).
+func (s *Server) permReformIfZoneEmpty(trigger string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	tpl, ok := s.permTarget(ctx)
 	if !ok {
-		return
+		return false
 	}
 	c := boxapi.New(s.boxHost)
 	live, err := c.GetZone(ctx)
 	if err != nil {
 		s.logger.Info("zone permanent: could not read the live zone, not re-forming", "err", err, "trigger", trigger)
-		return
+		return false
 	}
 	if live.Master != "" && len(live.Members) > 0 {
-		return // a zone already exists: never touch it here
+		return false // a zone already exists: never touch it here
 	}
 	// A master that is itself asleep stays asleep: forming would be pointless
 	// (the next preset press re-asserts anyway) and this path must never be
 	// the reason a box cannot reach deep standby.
 	if np := fetchNowPlaying(ctx, s.boxHost); np.Source == "" || np.Source == "STANDBY" {
-		return
+		return false
 	}
 	eligible, skipped := s.permEligibleMembers(ctx, tpl.Members)
 	if len(eligible) == 0 {
 		s.logger.Info("zone permanent: no member awake to re-form with, waiting for members to wake (beta)", "trigger", trigger, "skipped", skipped)
-		return
+		return false
 	}
 	s.logger.Info("zone permanent: re-forming the permanent group (beta)", "trigger", trigger, "template", tpl.Name, "members", len(eligible), "skipped", skipped)
 	res := s.driveZone(ctx, boxapi.ZoneMember{DeviceID: tpl.Master.DeviceID, IP: tpl.Master.IP}, eligible, tpl.Name, "native",
-		zoneDriveOpts{coalesce: false, persist: true, resume: false, wake: false, reason: trigger})
+		zoneDriveOpts{coalesce: false, persist: true, resume: false, wake: false, reason: trigger,
+			preflight: s.permReformPreflight(ctx, eligible)})
 	if res.errText != "" {
 		s.logger.Warn("zone permanent: re-form failed, next trigger event retries (beta)", "trigger", trigger, "err", res.errText)
 	}
 	// No retry here on purpose: the next trigger event (wake, play, keeper
 	// tick finding a live zone to add to) is the retry.
+	return res.body == nil || res.body["stoodDown"] != true
+}
+
+// permReformPreflight re-validates a queued re-form under the serial lock: a
+// user form or dissolve may have run while this drive waited. The permanent
+// flag must still stand, the firmware zone must still be empty, and every
+// member must still be in the template and not deliberately out. The
+// awake/asleep probes are NOT repeated (their result ages by seconds either
+// way); the races that matter are flag, zone, and out list.
+func (s *Server) permReformPreflight(ctx context.Context, eligible []boxapi.ZoneMember) func() ([]boxapi.ZoneMember, bool) {
+	return func() ([]boxapi.ZoneMember, bool) {
+		tpl, ok := s.permTarget(ctx)
+		if !ok {
+			return nil, false
+		}
+		live, err := boxapi.New(s.boxHost).GetZone(ctx)
+		if err != nil || (live.Master != "" && len(live.Members) > 0) {
+			return nil, false
+		}
+		fresh := s.filterStillWanted(tpl, eligible)
+		if len(fresh) == 0 {
+			return nil, false
+		}
+		return fresh, true
+	}
+}
+
+// filterStillWanted keeps only members that are still in the template and
+// not deliberately out.
+func (s *Server) filterStillWanted(tpl zonetemplates.Template, members []boxapi.ZoneMember) []boxapi.ZoneMember {
+	inTemplate := func(m boxapi.ZoneMember) bool {
+		for _, tm := range tpl.Members {
+			if (m.IP != "" && tm.IP == m.IP) || (m.DeviceID != "" && tm.DeviceID != "" && strings.EqualFold(tm.DeviceID, m.DeviceID)) {
+				return true
+			}
+		}
+		return false
+	}
+	out := make([]boxapi.ZoneMember, 0, len(members))
+	for _, m := range members {
+		if inTemplate(m) && !s.tpls.IsOut(m.DeviceID, m.IP) {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // KickPermanentWake schedules the standby-wake re-form, debounced so the
@@ -154,7 +203,15 @@ func (s *Server) KickPermanentWake() {
 	}
 	s.permLastAssert = time.Now()
 	s.permAssertMu.Unlock()
-	go s.permReformIfZoneEmpty("standby-wake")
+	go func() {
+		if !s.permReformIfZoneEmpty("standby-wake") {
+			// Nothing was driven: release the debounce so the play-time
+			// assert that typically follows a wake is not swallowed.
+			s.permAssertMu.Lock()
+			s.permLastAssert = time.Time{}
+			s.permAssertMu.Unlock()
+		}
+	}()
 }
 
 // kickPermanentAssert runs after the user starts playback on this box: the
@@ -176,20 +233,46 @@ func (s *Server) kickPermanentAssert() {
 	}
 	s.permLastAssert = time.Now()
 	s.permAssertMu.Unlock()
-	go s.permAssertOnce()
+	go func() {
+		if !s.permAssertOnce() {
+			s.permAssertMu.Lock()
+			s.permLastAssert = time.Time{}
+			s.permAssertMu.Unlock()
+		}
+	}()
 }
 
-func (s *Server) permAssertOnce() {
+func (s *Server) permAssertOnce() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	tpl, ok := s.permTarget(ctx)
 	if !ok {
-		return
+		return false
+	}
+	// The play that triggered this assert may not have WOKEN the box yet: a
+	// hardware preset notes the play before the recall's wake runs. Forming
+	// against a standby master is the proven 1036 self-dissolve trap, so
+	// wait briefly for the box to come up instead of racing its wake.
+	awake := false
+	for i := 0; i < 10; i++ {
+		np := fetchNowPlaying(ctx, s.boxHost)
+		if np.Source != "" && np.Source != "STANDBY" {
+			awake = true
+			break
+		}
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+			return false
+		}
+	}
+	if !awake {
+		return false
 	}
 	c := boxapi.New(s.boxHost)
 	live, err := c.GetZone(ctx)
 	if err != nil {
-		return
+		return false
 	}
 	self := tpl.Master.DeviceID
 	zoneLive := live.Master != "" && len(live.Members) > 0 && strings.EqualFold(strings.TrimSpace(live.Master), strings.TrimSpace(self))
@@ -203,7 +286,34 @@ func (s *Server) permAssertOnce() {
 	}
 	eligible, _ := s.permEligibleMembers(ctx, want)
 	if len(eligible) == 0 {
-		return
+		return false
+	}
+	// Under the serial lock the world may have changed (a user form, a
+	// dissolve): re-validate and rebuild the list from the then-current
+	// zone. A dissolve also clears the permanent flag, which permTarget
+	// re-checks, so a queued assert cannot re-form a just-dissolved group.
+	preflight := func() ([]boxapi.ZoneMember, bool) {
+		tpl2, ok2 := s.permTarget(ctx)
+		if !ok2 {
+			return nil, false
+		}
+		live2, lerr := boxapi.New(s.boxHost).GetZone(ctx)
+		if lerr != nil {
+			return nil, false
+		}
+		stillAbsent := make([]boxapi.ZoneMember, 0, len(eligible))
+		for _, m := range s.filterStillWanted(tpl2, eligible) {
+			if !zoneHasMember(live2, m.DeviceID, m.IP) {
+				stillAbsent = append(stillAbsent, m)
+			}
+		}
+		if len(stillAbsent) == 0 {
+			return nil, false
+		}
+		if live2.Master != "" && len(live2.Members) > 0 && strings.EqualFold(strings.TrimSpace(live2.Master), strings.TrimSpace(tpl2.Master.DeviceID)) {
+			return append(zoneMembersOf(live2), stillAbsent...), true
+		}
+		return stillAbsent, true
 	}
 	if zoneLive {
 		// Seamless: join into the existing (possibly playing) zone via the
@@ -211,17 +321,18 @@ func (s *Server) permAssertOnce() {
 		// the drive's diff only ADDS.
 		full := append(zoneMembersOf(live), eligible...)
 		s.logger.Info("zone permanent: asserting the permanent group around the user's play (beta)", "adding", len(eligible))
-		s.driveZone(ctx, boxapi.ZoneMember{DeviceID: tpl.Master.DeviceID, IP: tpl.Master.IP}, full, tpl.Name, "native",
-			zoneDriveOpts{coalesce: false, persist: false, resume: false, wake: false, reason: "preplay"})
-		return
+		res := s.driveZone(ctx, boxapi.ZoneMember{DeviceID: tpl.Master.DeviceID, IP: tpl.Master.IP}, full, tpl.Name, "native",
+			zoneDriveOpts{coalesce: false, persist: false, resume: false, wake: false, reason: "preplay", preflight: preflight})
+		return res.body == nil || res.body["stoodDown"] != true
 	}
 	// Fresh form at play time (the boot re-form found nobody awake earlier).
 	// resume:true is essential: the drive's own capture plus the conditional
 	// restart is what heals the 1036 tear-down when the user's stream landed
 	// before the SetZone.
 	s.logger.Info("zone permanent: forming the permanent group for the user's play (beta)", "members", len(eligible))
-	s.driveZone(ctx, boxapi.ZoneMember{DeviceID: tpl.Master.DeviceID, IP: tpl.Master.IP}, eligible, tpl.Name, "native",
-		zoneDriveOpts{coalesce: false, persist: true, resume: true, wake: false, reason: "preplay"})
+	res := s.driveZone(ctx, boxapi.ZoneMember{DeviceID: tpl.Master.DeviceID, IP: tpl.Master.IP}, eligible, tpl.Name, "native",
+		zoneDriveOpts{coalesce: false, persist: true, resume: true, wake: false, reason: "preplay", preflight: preflight})
+	return res.body == nil || res.body["stoodDown"] != true
 }
 
 // zoneHasMember reports whether the live zone lists the member, IP first
@@ -312,9 +423,33 @@ func (s *Server) permWatchOnce() {
 	s.logger.Info("zone permanent: member woke, joining it into the running group (beta)", "members", strings.Join(ids, ","))
 	s.permLastWatch.Store("joining: " + strings.Join(ids, ","))
 	// Incremental AddZoneSlave under the hood: the running music never stops.
+	// The preflight rebuilds the list under the serial lock: a user form or a
+	// dissolve may have queued ahead of this drive, and the join must apply
+	// to the zone as it is THEN, or stand down entirely.
 	s.driveZone(ctx, boxapi.ZoneMember{DeviceID: tpl.Master.DeviceID, IP: tpl.Master.IP},
 		append(zoneMembersOf(live), eligible...), tpl.Name, "native",
-		zoneDriveOpts{coalesce: false, persist: false, resume: false, wake: false, reason: "wake-rejoin"})
+		zoneDriveOpts{coalesce: false, persist: false, resume: false, wake: false, reason: "wake-rejoin",
+			preflight: func() ([]boxapi.ZoneMember, bool) {
+				tpl2, ok2 := s.permTarget(ctx)
+				if !ok2 {
+					return nil, false
+				}
+				live2, lerr := boxapi.New(s.boxHost).GetZone(ctx)
+				if lerr != nil || live2.Master == "" || len(live2.Members) == 0 ||
+					!strings.EqualFold(strings.TrimSpace(live2.Master), strings.TrimSpace(tpl2.Master.DeviceID)) {
+					return nil, false // the watch only ever ADDS to a live zone
+				}
+				stillAbsent := make([]boxapi.ZoneMember, 0, len(eligible))
+				for _, m := range s.filterStillWanted(tpl2, eligible) {
+					if !zoneHasMember(live2, m.DeviceID, m.IP) {
+						stillAbsent = append(stillAbsent, m)
+					}
+				}
+				if len(stillAbsent) == 0 {
+					return nil, false
+				}
+				return append(zoneMembersOf(live2), stillAbsent...), true
+			}})
 }
 
 // notePermanentMembership keeps the deliberately-out list in sync with the

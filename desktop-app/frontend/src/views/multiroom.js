@@ -499,15 +499,28 @@ async function refreshZoneTemplates() {
     try {
       const r = await ListZoneTemplates(masterBox.host, masterBox.port);
       const tpls = (r && Array.isArray(r.templates)) ? r.templates : [];
-      state.zoneTemplates[masterBox.deviceID] = {
+      const next = {
         templates: tpls,
         permanentId: (r && r.permanentId) || '',
         fetched: true,
       };
-      if (!tpls.length) {
-        try { state.zoneTplMirror[masterBox.deviceID] = (await ZoneTemplateMirror(masterBox.deviceID)) || []; } catch {}
+      // Honor the "repaints only when something changed" promise above: the
+      // zone poll runs this every cycle, and an unconditional repaint would
+      // rebuild the tab's DOM under the user's mouse each time.
+      const prev = state.zoneTemplates[masterBox.deviceID];
+      if (JSON.stringify(prev) !== JSON.stringify(next)) {
+        state.zoneTemplates[masterBox.deviceID] = next;
+        changed = true;
       }
-      changed = true;
+      if (!tpls.length) {
+        try {
+          const mirror = (await ZoneTemplateMirror(masterBox.deviceID)) || [];
+          if (JSON.stringify(state.zoneTplMirror[masterBox.deviceID]) !== JSON.stringify(mirror)) {
+            state.zoneTplMirror[masterBox.deviceID] = mirror;
+            changed = true;
+          }
+        } catch {}
+      }
     } catch (e) {
       // The Go side answers a typed "agent-too-old" error when the endpoint
       // came back as the index catch-all (200 + HTML): render the update
