@@ -162,7 +162,7 @@ func (m *Manager) handleEnginePlaybackEnd(evType string) {
 		wait := m.selfRecoveryWait
 		m.mu.Unlock()
 		if wait == 0 {
-			wait = 7 * time.Second
+			wait = 15 * time.Second
 		}
 		m.logger.Warn("spotify: playback stopped because a track failed to load, NOT because anybody stopped it",
 			"event", evType, "sinceLoadFailMs", time.Since(loadFailedAt).Milliseconds(), "autoAdvance", canAutoAdvance)
@@ -170,15 +170,30 @@ func (m *Manager) handleEnginePlaybackEnd(evType string) {
 			// The engine frequently recovers from a load failure on its own a
 			// few seconds later; an immediate /player/next then skips the very
 			// track it just loaded (2 s of the next song, then the one after,
-			// live 2026-08-21). So wait first, and advance only when the
-			// engine demonstrably did NOT come back on its own.
+			// live 2026-08-21). POLL for that recovery through the whole
+			// window instead of one look after a fixed sleep: live 14:16:51
+			// the recovery landed 150 ms AFTER the single 7 s check and the
+			// advance skipped the freshly recovered track anyway. A genuinely
+			// dead engine stays dead; waiting the full window adds nothing to
+			// a silence that is already there.
 			stoppedAt := time.Now()
 			go func() {
-				time.Sleep(wait)
-				m.mu.Lock()
-				recovered := m.lastEngineActiveAt.After(stoppedAt)
-				m.mu.Unlock()
-				if recovered {
+				recovered := func() bool {
+					m.mu.Lock()
+					defer m.mu.Unlock()
+					return m.lastEngineActiveAt.After(stoppedAt)
+				}
+				deadline := time.Now().Add(wait)
+				for time.Now().Before(deadline) {
+					if recovered() {
+						m.logger.Info("spotify: engine recovered the next track on its own, no auto-advance needed")
+						return
+					}
+					time.Sleep(500 * time.Millisecond)
+				}
+				// Last look immediately before the skip, so a recovery that
+				// beat the POST by a hair still wins.
+				if recovered() {
 					m.logger.Info("spotify: engine recovered the next track on its own, no auto-advance needed")
 					return
 				}
