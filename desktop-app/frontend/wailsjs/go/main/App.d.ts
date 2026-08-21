@@ -5,6 +5,8 @@ import {sticksetup} from '../models';
 import {wifiprofiles} from '../models';
 import {radiobrowser} from '../models';
 
+export function ActivateZoneTemplate(arg1:string,arg2:number,arg3:string):Promise<Record<string, any>>;
+
 export function AddBoxByIP(arg1:string):Promise<main.BoxInfo>;
 
 export function AddMediaServerByURL(arg1:string):Promise<main.LibraryServer>;
@@ -50,6 +52,8 @@ export function CurrentWiFi():Promise<string>;
 export function DeletePreset(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function DeleteRecentCard(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
+
+export function DeleteZoneTemplate(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function DisableBoxMediaServer(arg1:string,arg2:number,arg3:string,arg4:string):Promise<void>;
 
@@ -110,6 +114,8 @@ export function ListDrives():Promise<Array<sticksetup.Drive>>;
 export function ListMediaServers(arg1:number):Promise<Array<main.LibraryServer>>;
 
 export function ListWiFiProfiles():Promise<Array<wifiprofiles.Profile>>;
+
+export function ListZoneTemplates(arg1:string,arg2:number):Promise<Record<string, any>>;
 
 export function LogClientError(arg1:string):Promise<void>;
 
@@ -193,6 +199,8 @@ export function SaveSpotifyPreset(arg1:string,arg2:number,arg3:number,arg4:strin
 
 export function SaveWebhookConfig(arg1:string,arg2:number,arg3:Record<string, any>):Promise<void>;
 
+export function SaveZoneTemplate(arg1:string,arg2:number,arg3:main.ZoneTemplate):Promise<Record<string, any>>;
+
 export function SelectBoxSource(arg1:string,arg2:number,arg3:string):Promise<void>;
 
 export function SendAnnounce(arg1:string,arg2:number,arg3:string,arg4:string,arg5:number):Promise<void>;
@@ -216,6 +224,8 @@ export function SetClockDisplay(arg1:string,arg2:boolean,arg3:string,arg4:number
 export function SetDisplayTrack(arg1:string,arg2:number,arg3:boolean,arg4:string):Promise<void>;
 
 export function SetOTARunning(arg1:boolean):Promise<void>;
+
+export function SetPermanentZoneTemplate(arg1:string,arg2:number,arg3:string,arg4:boolean):Promise<Record<string, any>>;
 
 export function SetPreset(arg1:string,arg2:number,arg3:number,arg4:string,arg5:string,arg6:string,arg7:number,arg8:string,arg9:string):Promise<void>;
 
@@ -278,3 +288,5 @@ export function WriteRegionConfig(arg1:string,arg2:string):Promise<void>;
 export function WriteStickFiles(arg1:string):Promise<Array<string>>;
 
 export function WriteWLANConfig(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function ZoneTemplateMirror(arg1:string):Promise<Array<main.ZoneTemplate>>;

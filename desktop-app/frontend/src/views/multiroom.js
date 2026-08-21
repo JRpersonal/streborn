@@ -8,7 +8,11 @@
 import { state } from '../state.js';
 import { $, escapeHtml, escapeAttr, getBoxLabel, showToast, balanceLabel } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL, readBoxBalance } from '../api.js';
+import {
+  FormZone, DissolveZone, DissolveStereoPair, WakeBox, BrowserOpenURL, readBoxBalance,
+  BoxAgentVersion, ListZoneTemplates, SaveZoneTemplate, DeleteZoneTemplate,
+  SetPermanentZoneTemplate, ActivateZoneTemplate, ZoneTemplateMirror,
+} from '../api.js';
 // Group membership + the shared zoneLive poll live in groups.js: ONE
 // implementation for this tab, the music-tab frames and the group chips.
 import { masterOf as zoneMasterOf, fetchZoneLive, groupMembersOf, stereoPairOf, pairMemberBoxes, stereoUndoTargets } from '../groups.js';
@@ -72,6 +76,14 @@ export function renderMultiroom(fetchLive) {
   if (!state.zoneLive) state.zoneLive = {};
   if (!state.zoneSlaves) state.zoneSlaves = {};
   if (!state.zoneMode) state.zoneMode = 'native';
+  // Group templates (beta): all transient section state lives on state.* so
+  // the wholesale innerHTML rebuild below cannot lose it. zoneTplCaps caches
+  // the per-master zoneTemplates capability from /api/agent/version;
+  // zoneTemplates the fetched lists; zoneTplMirror the local backup offered
+  // for re-seeding after a speaker factory reset.
+  if (!state.zoneTemplates) state.zoneTemplates = {};
+  if (!state.zoneTplCaps) state.zoneTplCaps = {};
+  if (!state.zoneTplMirror) state.zoneTplMirror = {};
   // The MAIN star follows the LIVE leader on every repaint, not only when
   // nothing was selected yet. Guarding this on "zoneMaster unset" left the
   // Multiroom screen on its stale default while a group led by another
@@ -263,6 +275,8 @@ export function renderMultiroom(fetchLive) {
        <div id="zoneCurrent" class="muted small" style="margin-top:10px">${currentHtml}</div>
      </div>
 
+     ${zoneTemplatesSection(strBoxes)}
+
      <div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--c-border);padding-top:16px">
 
        <b>${escapeHtml(t('multiroom.stereoHeading'))} <span class="beta-pill alpha-pill">${escapeHtml(t('common.alpha'))}</span></b>
@@ -343,6 +357,7 @@ export function renderMultiroom(fetchLive) {
     // the zone section already offers, applied to the speakers chosen above.
     $('stereoDissolve').onclick = () => doDissolveStereo(pairCands);
   }
+  wireZoneTemplateHandlers(strBoxes);
 
   // Live status: parallel, non-blocking, after paint. Never blocks the tab.
   if (fetchLive && strBoxes.length) setTimeout(() => refreshZoneLive(), 0);
@@ -356,6 +371,285 @@ export function renderMultiroom(fetchLive) {
 async function refreshZoneLive() {
   const ran = await fetchZoneLive(state.boxes, { maxAgeMs: 0, minBoxes: 1 });
   if (ran) renderMultiroom(false);
+  // Group templates ride the same poll: capability probe + list fetch for the
+  // picked master, repainting only when something actually changed.
+  refreshZoneTemplates().catch(() => {});
+}
+
+// ---- Group templates (beta) ----
+//
+// Named speaker constellations, stored on the MASTER's agent (NAND) so the
+// desktop app and the phone remote see the same list. The app is a remote
+// control plus a local backup: ListZoneTemplates mirrors the list into the
+// config dir, and when a factory-reset speaker comes back with an empty list
+// the section offers to push the mirrored templates back.
+
+// tplMasterBox is the speaker whose templates the section shows: the picked
+// master (the star), which renderMultiroom already tracks onto the live
+// leader when the user has not pinned one.
+function tplMasterBox(strBoxes) {
+  return strBoxes.find(b => b.deviceID === state.zoneMaster) || null;
+}
+
+// zoneTemplatesSection builds the section markup. Pure string builder off
+// state.* only: the view rebuilds innerHTML wholesale on every repaint, so
+// nothing here may live in the DOM.
+function zoneTemplatesSection(strBoxes) {
+  const masterBox = tplMasterBox(strBoxes);
+  if (!masterBox) return '';
+  const head =
+    `<b>${escapeHtml(t('multiroom.templatesHeading'))} <span class="beta-pill">${escapeHtml(t('common.beta'))}</span></b>` +
+    `<div class="muted small">${escapeHtml(t('multiroom.templatesNote'))}</div>`;
+  let body;
+  const cap = state.zoneTplCaps[masterBox.deviceID];
+  if (deps.boxNeedsUpdate(masterBox) || cap === 'false') {
+    // The picked master's agent predates the templates endpoints (or is
+    // outdated anyway): calling them would hit the index catch-all.
+    body = `<div class="setup-warn small">${escapeHtml(t('multiroom.templatesAgentOld'))}</div>`;
+  } else if (cap !== 'true') {
+    // Capability not probed yet (refreshZoneTemplates fills it in).
+    body = `<div class="muted small">${escapeHtml(t('common.loading'))}</div>`;
+  } else {
+    const entry = state.zoneTemplates[masterBox.deviceID] || {};
+    const tpls = entry.templates || [];
+    const memberName = (m) => {
+      const b = strBoxes.find(x => String(x.deviceID || '').toUpperCase() === String(m.deviceID || '').toUpperCase());
+      return b ? zoneLabel(b) : (m.ip || m.deviceID || '');
+    };
+    const rows = tpls.map(tp => {
+      const perm = !!tp.id && tp.id === entry.permanentId;
+      const chip = perm ? ` <span class="zone-badge">${escapeHtml(t('multiroom.permanentActive'))}</span>` : '';
+      const names = (tp.members || []).map(memberName).join(', ');
+      return `<div class="zone-tpl-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:140px"><b>${escapeHtml(tp.name || '')}</b>${chip}
+            <div class="muted small">${escapeHtml(names)}</div></div>
+          <button class="btn btn-mini tpl-activate" data-id="${escapeAttr(tp.id)}">${escapeHtml(t('multiroom.templateActivate'))}</button>
+          <button class="btn btn-mini tpl-permanent" data-id="${escapeAttr(tp.id)}">${escapeHtml(t('multiroom.permanentLabel'))}${perm ? ' &#10003;' : ''}</button>
+          <button class="btn btn-mini tpl-delete" data-id="${escapeAttr(tp.id)}">${escapeHtml(t('multiroom.templateDelete'))}</button>
+        </div>`;
+    }).join('');
+    // Re-seed offer: the agent has no templates but the local mirror does,
+    // which is what a true factory reset / reinstall looks like.
+    const mir = state.zoneTplMirror[masterBox.deviceID] || [];
+    const restore = (entry.fetched && !tpls.length && mir.length)
+      ? `<div class="setup-warn small">${escapeHtml(t('multiroom.templatesRestoreOffer', { n: mir.length }))} ` +
+        `<button id="tplRestore" class="btn btn-mini">${escapeHtml(t('multiroom.templatesRestore'))}</button></div>`
+      : '';
+    const saveRow = `<div class="zone-actions">
+        <input id="tplName" type="text" maxlength="48"
+          placeholder="${escapeAttr(t('multiroom.templateNamePlaceholder'))}"
+          value="${escapeAttr(state.zoneTplName || '')}"
+          style="flex:1;min-width:0;background:var(--c-bg);border:1px solid var(--c-border);color:var(--c-text);border-radius:4px;padding:6px 8px;font-size:13px">
+        <button id="tplSave" class="btn btn-mini">${escapeHtml(t('multiroom.templateSave'))}</button>
+      </div>`;
+    body = rows + restore + saveRow +
+      `<div id="tplResult">${state.zoneTemplateMsg || ''}</div>` +
+      `<div class="muted small">${escapeHtml(t('multiroom.permanentNote'))}</div>`;
+  }
+  return `<div class="zone-controls" style="margin-top:22px;border-top:1px solid var(--c-border);padding-top:16px">
+      ${head}${body}
+    </div>`;
+}
+
+// wireZoneTemplateHandlers attaches the section's handlers after each
+// innerHTML rebuild (same pattern as the zone/stereo buttons above).
+function wireZoneTemplateHandlers(strBoxes) {
+  const masterBox = tplMasterBox(strBoxes);
+  if (!masterBox) return;
+  const nameIn = $('tplName');
+  if (nameIn) nameIn.oninput = () => { state.zoneTplName = nameIn.value; };
+  const save = $('tplSave');
+  if (save) save.onclick = () => doSaveZoneTemplate(strBoxes, masterBox);
+  const restore = $('tplRestore');
+  if (restore) restore.onclick = () => doRestoreZoneTemplates(masterBox);
+  const root = $('view-multiroom');
+  if (!root) return;
+  root.querySelectorAll('.tpl-activate').forEach(btn => {
+    btn.onclick = () => doActivateZoneTemplate(strBoxes, masterBox, btn.dataset.id);
+  });
+  root.querySelectorAll('.tpl-permanent').forEach(btn => {
+    btn.onclick = () => doToggleZoneTemplatePermanent(masterBox, btn.dataset.id);
+  });
+  root.querySelectorAll('.tpl-delete').forEach(btn => {
+    btn.onclick = () => doDeleteZoneTemplate(masterBox, btn.dataset.id);
+  });
+}
+
+// refreshZoneTemplates probes the picked master's agent capability once per
+// speaker (cached on state), then fetches its template list. The list read
+// also refreshes the local mirror on the Go side; when the agent list is
+// empty the mirror is loaded so the re-seed offer can render. Repaints only
+// when something changed, so the zone poll cannot flicker the tab.
+async function refreshZoneTemplates() {
+  const strBoxes = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && b.deviceID);
+  const masterBox = tplMasterBox(strBoxes);
+  if (!masterBox || deps.boxNeedsUpdate(masterBox)) return;
+  if (!state.zoneTplCaps) state.zoneTplCaps = {};
+  if (!state.zoneTemplates) state.zoneTemplates = {};
+  if (!state.zoneTplMirror) state.zoneTplMirror = {};
+  let changed = false;
+  if (state.zoneTplCaps[masterBox.deviceID] === undefined) {
+    try {
+      const v = await BoxAgentVersion(masterBox.host, masterBox.port);
+      state.zoneTplCaps[masterBox.deviceID] = (v && v.zoneTemplates === 'true') ? 'true' : 'false';
+      changed = true;
+    } catch { /* unreachable right now: stay unknown, the next poll retries */ }
+  }
+  if (state.zoneTplCaps[masterBox.deviceID] === 'true') {
+    try {
+      const r = await ListZoneTemplates(masterBox.host, masterBox.port);
+      const tpls = (r && Array.isArray(r.templates)) ? r.templates : [];
+      state.zoneTemplates[masterBox.deviceID] = {
+        templates: tpls,
+        permanentId: (r && r.permanentId) || '',
+        fetched: true,
+      };
+      if (!tpls.length) {
+        try { state.zoneTplMirror[masterBox.deviceID] = (await ZoneTemplateMirror(masterBox.deviceID)) || []; } catch {}
+      }
+      changed = true;
+    } catch (e) {
+      // The Go side answers a typed "agent-too-old" error when the endpoint
+      // came back as the index catch-all (200 + HTML): render the update
+      // hint instead of an empty list that looks like data.
+      if (String((e && e.message) || e || '').includes('agent-too-old')) {
+        state.zoneTplCaps[masterBox.deviceID] = 'false';
+        changed = true;
+      }
+    }
+  }
+  if (changed) renderMultiroom(false);
+}
+
+// doSaveZoneTemplate saves the CURRENT card selection (star = master, ticked
+// cards = members) under the entered name. Exactly the member list
+// doFormZone would send, so what you saved is what activation forms.
+async function doSaveZoneTemplate(strBoxes, masterBox) {
+  const name = (state.zoneTplName || '').trim();
+  const sel = state.zoneSlaves || {};
+  const members = strBoxes
+    .filter(b => b.deviceID !== state.zoneMaster && sel[b.deviceID])
+    .map(b => ({ deviceID: b.deviceID, ip: b.host }));
+  if (!name || !members.length) {
+    state.zoneTemplateMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.templateNeedSelection'))}</div>`;
+    renderMultiroom(false);
+    return;
+  }
+  try {
+    await SaveZoneTemplate(masterBox.host, masterBox.port, {
+      id: '', name,
+      master: { deviceID: masterBox.deviceID, ip: masterBox.host },
+      members, permanent: false,
+    });
+    state.zoneTplName = '';
+    state.zoneTemplateMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.templateSaved', { name }))}</div>`;
+  } catch (e) {
+    state.zoneTemplateMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
+  renderMultiroom(false);
+  refreshZoneTemplates().catch(() => {});
+}
+
+// doActivateZoneTemplate forms the template's group in one tap. The agent
+// drives the zone form and answers the same body shape as forming by hand,
+// so the feedback contract below is doFormZone's verbatim: trust the
+// followers' verification, name what did not join.
+async function doActivateZoneTemplate(strBoxes, masterBox, id) {
+  const entry = state.zoneTemplates[masterBox.deviceID] || {};
+  const tpl = (entry.templates || []).find(x => x.id === id);
+  if (!tpl) return;
+  state.zoneTemplateMsg = `<div class="muted">${escapeHtml(t('multiroom.templateActivating', { name: tpl.name }))}</div>`;
+  renderMultiroom(false);
+  try {
+    const res = await ActivateZoneTemplate(masterBox.host, masterBox.port, id);
+    const total = (tpl.members || []).length;
+    const notReady = (res && Array.isArray(res.notReady)) ? res.notReady : [];
+    const missing = (res && Array.isArray(res.missing)) ? res.missing : [];
+    const verified = (res && typeof res.verified === 'number')
+      ? res.verified
+      : Math.max(0, total - missing.length - notReady.length);
+    const notReadyNames = notReady
+      .map(ip => { const b = strBoxes.find(x => x.host === ip); return b ? zoneLabel(b) : ip; })
+      .join(', ');
+    if (res && res.ok === false && res.error) {
+      state.zoneTemplateMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: res.error }))}</div>`;
+    } else if (verified <= 0 && notReady.length) {
+      state.zoneTemplateMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.notReady', { names: notReadyNames }))}</div>`;
+    } else if (verified <= 0) {
+      state.zoneTemplateMsg = `<div class="setup-warn">${escapeHtml(t('multiroom.formedNone'))}</div>`;
+    } else if (missing.length || notReady.length) {
+      let msg = t('multiroom.formedPartial', { joined: verified, total });
+      if (notReady.length) msg += ' ' + t('multiroom.notReady', { names: notReadyNames });
+      state.zoneTemplateMsg = `<div class="setup-warn">${escapeHtml(msg)}</div>`;
+    } else {
+      state.zoneTemplateMsg = `<div class="setup-ok">${escapeHtml(t('multiroom.formedN', { n: verified }))}</div>`;
+    }
+    // Same follow-through as forming by hand: playback control moves to the
+    // group master so the next play command reaches the group.
+    if (state.currentBox && state.currentBox.host !== masterBox.host) {
+      deps.selectBox(masterBox);
+    }
+  } catch (e) {
+    state.zoneTemplateMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
+  renderMultiroom(true);
+}
+
+// doToggleZoneTemplatePermanent flips the one permanent group on or off.
+// Radio-style: setting a template permanent clears the flag everywhere else
+// (the agent enforces it and answers the resulting permanentId).
+async function doToggleZoneTemplatePermanent(masterBox, id) {
+  const entry = state.zoneTemplates[masterBox.deviceID] || {};
+  const on = entry.permanentId !== id;
+  try {
+    const res = await SetPermanentZoneTemplate(masterBox.host, masterBox.port, id, on);
+    entry.permanentId = (res && res.permanentId) || '';
+    state.zoneTemplates[masterBox.deviceID] = entry;
+    state.zoneTemplateMsg = '';
+  } catch (e) {
+    state.zoneTemplateMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
+  renderMultiroom(false);
+  refreshZoneTemplates().catch(() => {});
+}
+
+// doDeleteZoneTemplate removes a template from the agent (and, on the Go
+// side, from the local mirror, so the re-seed offer cannot bring it back).
+async function doDeleteZoneTemplate(masterBox, id) {
+  try {
+    await DeleteZoneTemplate(masterBox.host, masterBox.port, id);
+    const entry = state.zoneTemplates[masterBox.deviceID];
+    if (entry) entry.templates = (entry.templates || []).filter(x => x.id !== id);
+    state.zoneTemplateMsg = '';
+  } catch (e) {
+    state.zoneTemplateMsg = `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(e) }))}</div>`;
+  }
+  renderMultiroom(false);
+  refreshZoneTemplates().catch(() => {});
+}
+
+// doRestoreZoneTemplates pushes the locally mirrored templates back to a
+// master whose own list came back empty (factory reset / reinstall). The
+// permanent flag is deliberately NOT restored: a reset counts as consent
+// reset, the user re-enables it by hand.
+async function doRestoreZoneTemplates(masterBox) {
+  const mir = (state.zoneTplMirror && state.zoneTplMirror[masterBox.deviceID]) || [];
+  if (!mir.length) return;
+  let failure = null;
+  for (const tp of mir) {
+    try {
+      await SaveZoneTemplate(masterBox.host, masterBox.port, {
+        id: '', name: tp.name,
+        master: { deviceID: masterBox.deviceID, ip: masterBox.host },
+        members: tp.members || [], permanent: false,
+      });
+    } catch (e) { failure = e; }
+  }
+  state.zoneTemplateMsg = failure
+    ? `<div class="setup-err">${escapeHtml(t('multiroom.formFailed', { err: String(failure) }))}</div>`
+    : `<div class="setup-ok">${escapeHtml(t('multiroom.templateSaved', { name: mir.map(x => x.name).join(', ') }))}</div>`;
+  renderMultiroom(false);
+  refreshZoneTemplates().catch(() => {});
 }
 
 // doFormStereo creates a real left/right stereo pair on two SoundTouch 10s
