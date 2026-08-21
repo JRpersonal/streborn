@@ -373,6 +373,13 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	m.logger.Info("spotify: box detached from Ogg stream",
 		"attachedMs", attachedMs, "forwardedKB", bytes/1024, "pages", pages,
 		"firstAudioAfterMs", firstAudioMs, "kbps", kbps)
+	// Stamp the detach so the warm-recall gate can tell "streaming until a
+	// moment ago" (our own URI re-push tears the sink down right before the
+	// engine call) from "long idle" - lastAttachAt cannot: it ages while a
+	// stable sink plays for minutes.
+	m.mu.Lock()
+	m.lastDetachAt = time.Now()
+	m.mu.Unlock()
 }
 
 // errSinkRetired is returned by a writer whose handler has gone. forward()

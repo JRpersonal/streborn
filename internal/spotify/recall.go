@@ -70,6 +70,45 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// Mark a recall in progress so ServeOgg does not resume the OLD (mid) track
 	// when the box attaches; this path drives the chosen track from its start.
 	m.SetRecalling()
+	// Warm same-context fast path: the requested context is ALREADY loaded and
+	// audibly streaming to a sink, so the paused-load/pause/wait staging below
+	// buys nothing and costs ~7-9s (the "pressing the playing preset again
+	// takes 20+s" report, live Portable 2026-08-21). A stalled stream
+	// (attached but silent) deliberately falls through to the cold reload.
+	m.mu.Lock()
+	same := m.lastContext != "" && normalizeContextURI(m.lastContext) == uri
+	// The webui recall re-pushes the URI to the box BEFORE this call, which
+	// makes the box drop and re-fetch the Ogg stream: at this instant the
+	// sink is usually nil even though music played until a second ago. A
+	// DETACH moments ago therefore counts as warm too - that tear-down was
+	// the recall's own doing, the engine kept playing through it. (Two live
+	// rounds proved the lessons: the sink-only gate never fired, and a
+	// lastAttachAt window did not either, because a stable sink attaches
+	// once and then plays for minutes.)
+	recentlyDetached := !m.lastDetachAt.IsZero() && time.Since(m.lastDetachAt) < 15*time.Second
+	m.mu.Unlock()
+	if same && ((m.Streaming() && !m.StreamStalled()) || recentlyDetached) {
+		// One cheap proof that the engine still HOLDS the context before
+		// taking the shortcut. Spotify can pull the session out from under
+		// the engine ("playback was transferred to <unknown>"), which leaves
+		// it logged in with an EMPTY queue: shuffle/next/resume then do
+		// nothing at all, the box sits on a byte-less stream for 30 s and
+		// dies with 3101 AUDIO_ERROR_BAD_URL. Live 2026-08-21, three presses
+		// in a row, every one of them silent. Without a loaded track the
+		// cold path below is the only thing that can rebuild the queue.
+		sctx, scancel := context.WithTimeout(ctx, 3*time.Second)
+		_, _, _, hasTrack := m.liveNowPlaying(sctx)
+		scancel()
+		if hasTrack {
+			return m.replayWarm(ctx, uri, opts)
+		}
+		m.logger.Info("spotify: the engine holds no track (session transferred away?), taking the full recall instead of the fast path")
+	}
+	// Arm the boundary cut for the cold path too: the box re-attaches within a
+	// second of the press and would otherwise re-buffer the OLD track's audio
+	// for the whole load preamble. Idempotent re-arm (the recall entry points
+	// already armed before their PlayURLMime).
+	m.ArmRecallCut()
 	// Point the resume tracker at the context we are loading right now and drop
 	// the previous track. The will_play event that normally sets lastContext can
 	// lag or be missed, so without this a metadata/status event arriving after
@@ -99,6 +138,9 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	playAt := time.Now()
 	playBody, _ := json.Marshal(playReq)
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", string(playBody)); err != nil {
+		// The play never happened, so no track boundary (BOS) is coming: an
+		// armed cut would now drop whatever IS still playing for up to 30s.
+		m.clearSkipCut()
 		// The API 500 is bare; the reason (e.g. Spotify's audio-key denial on
 		// a non-Premium account, #311) only appears on go-librespot's stderr.
 		// Attach it so the app's error message explains itself.
@@ -169,6 +211,40 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	m.logger.Info("spotify: recall play", "uri", uri, "shuffle", opts.Shuffle, "resumeTrack", resumeURI != "")
 	// Debounce the will_play context change this recall triggers (this path
 	// already drives the box separately, so no extra re-point needed).
+	m.mu.Lock()
+	m.lastActivate = time.Now()
+	m.mu.Unlock()
+	return nil
+}
+
+// replayWarm handles a recall of the context that is already loaded and
+// streaming, without the paused reload staging. Shuffle preset: reseed
+// (off->on, the fresh-order guarantee, live Portable 2026-08-19) plus one
+// /player/next; the caller-armed recall cut then turns the resulting BOS into
+// drop + re-anchor + boundary stamp, so the next track is audible in seconds.
+// Resume preset: there is nothing to reload; clear the cut (no BOS is coming,
+// an armed cut would drop the live audio) and just ensure shuffle is off and
+// playback runs. Deliberate semantics change: re-pressing an already-playing
+// resume preset no longer restarts the current track from 0:00.
+func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions) error {
+	// Same bookkeeping as the cold path: retarget the resume tracker and drop
+	// the stale track so a late metadata event cannot corrupt the resume store.
+	m.mu.Lock()
+	m.lastContext = uri
+	m.curTrackURI = ""
+	m.mu.Unlock()
+	if opts.Shuffle {
+		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
+		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`)
+		_ = m.apiPost(ctx, "/player/next", "")
+	} else {
+		m.clearSkipCut()
+		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
+	}
+	// No-op while playing; recovers an engine another controller paused.
+	_ = m.apiPost(ctx, "/player/resume", "")
+	m.logger.Info("spotify: warm same-context recall (fast path)", "uri", uri, "shuffle", opts.Shuffle)
+	// Debounce the will_play repoint exactly like the cold path does.
 	m.mu.Lock()
 	m.lastActivate = time.Now()
 	m.mu.Unlock()
@@ -375,13 +451,19 @@ func (m *Manager) CanRecall(ctx context.Context) bool {
 // used by both the hardware-button and the desktop/API paths, so both honour
 // the preset's shuffle flag and the per-context resume point identically.
 func (m *Manager) PlayAccount(ctx context.Context, uri, account string, opts PlayOptions) error {
+	// ONE /status probe for the whole preamble. The diagnostic log line, the
+	// account switch and the session gate each probed on their own, which on a
+	// slow engine turned the recall preamble into three serial 5s-timeout
+	// windows before /player/play was even sent (part of the 20+s same-preset
+	// re-press, live Portable 2026-08-21).
+	cur := m.currentUsername(ctx)
 	// Diagnostic: log the live session state at the recall boundary so a bundle
 	// disambiguates "never logged in" vs "dead session" vs "playing fine" without
 	// guesswork (every Spotify-recall investigation hit this blind spot).
 	m.logger.Info("spotify: recall start", "uri", uri, "wantAccount", account,
-		"sessionUser", m.currentUsername(ctx), "loggedIn", m.LoggedIn())
+		"sessionUser", cur, "loggedIn", m.LoggedIn())
 	if account != "" {
-		if _, err := m.SwitchAccount(ctx, account); err != nil {
+		if _, err := m.switchAccountFrom(ctx, cur, account); err != nil {
 			m.logger.Warn("spotify: account switch failed, playing with current account", "account", account, "err", err)
 		}
 	}
@@ -393,10 +475,25 @@ func (m *Manager) PlayAccount(ctx context.Context, uri, account string, opts Pla
 	// for the cold/dropped case; a box that is genuinely not logged in (or whose
 	// credential a takeover invalidated) yields ErrNoSpotifySession so the caller
 	// shows the tap-once hint instead of silently playing nothing.
-	if !m.ensureSession(ctx) {
+	if !m.ensureSessionWith(ctx, cur) {
+		// The recall aborts before /player/play, so no track boundary (BOS) is
+		// coming: disarm the recall cut the entry point armed, or it would drop
+		// whatever is still playing for up to 30s.
+		m.clearSkipCut()
 		return ErrNoSpotifySession
 	}
 	return m.Play(ctx, uri, opts)
+}
+
+// ensureSessionWith is ensureSession fed with an already-probed username, so
+// the common warm recall (live session, no account restart) needs no extra
+// /status round trip. Any restart since the probe (a cross-account switch)
+// invalidates it, and the full ensureSession then re-verifies the session.
+func (m *Manager) ensureSessionWith(ctx context.Context, cur string) bool {
+	if cur != "" && !m.recallRestartedRecently() {
+		return true
+	}
+	return m.ensureSession(ctx)
 }
 
 // noteResume records the current track as the resume point for the current
