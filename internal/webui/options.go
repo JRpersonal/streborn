@@ -17,6 +17,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/zones"
+	"github.com/JRpersonal/streborn/internal/zonetemplates"
 )
 
 // SetWifiSignalFn wires a provider for the latest Wi-Fi signal class
@@ -85,6 +86,13 @@ func WithPresets(p *presets.Store) Option {
 // a reboot/standby and auto-reform (#70).
 func WithZones(z *zones.Store) Option {
 	return func(s *Server) { s.zones = z }
+}
+
+// WithZoneTemplates wires the group-template store (named constellations plus
+// the single permanent group, beta). nil-safe: without it the template
+// endpoints answer 503 and the permanent engine stays off.
+func WithZoneTemplates(t *zonetemplates.Store) Option {
+	return func(s *Server) { s.tpls = t }
 }
 
 // WithMediaServers wires the store of DLNA/UPnP media servers the user enabled

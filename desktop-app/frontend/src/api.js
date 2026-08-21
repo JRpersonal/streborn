@@ -137,6 +137,12 @@ export {
   DissolveZone,
   DissolveStereoPair,
   SyncSpotifyLogin,
+  ListZoneTemplates,
+  SaveZoneTemplate,
+  DeleteZoneTemplate,
+  SetPermanentZoneTemplate,
+  ActivateZoneTemplate,
+  ZoneTemplateMirror,
 } from '../wailsjs/go/main/App';
 
 export { BrowserOpenURL, EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
