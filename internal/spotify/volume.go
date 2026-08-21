@@ -159,11 +159,29 @@ func (m *Manager) handleEnginePlaybackEnd(evType string) {
 		if canAutoAdvance {
 			m.lastAutoAdvanceAt = time.Now()
 		}
+		wait := m.selfRecoveryWait
 		m.mu.Unlock()
+		if wait == 0 {
+			wait = 7 * time.Second
+		}
 		m.logger.Warn("spotify: playback stopped because a track failed to load, NOT because anybody stopped it",
 			"event", evType, "sinceLoadFailMs", time.Since(loadFailedAt).Milliseconds(), "autoAdvance", canAutoAdvance)
 		if canAutoAdvance && m.client != nil {
+			// The engine frequently recovers from a load failure on its own a
+			// few seconds later; an immediate /player/next then skips the very
+			// track it just loaded (2 s of the next song, then the one after,
+			// live 2026-08-21). So wait first, and advance only when the
+			// engine demonstrably did NOT come back on its own.
+			stoppedAt := time.Now()
 			go func() {
+				time.Sleep(wait)
+				m.mu.Lock()
+				recovered := m.lastEngineActiveAt.After(stoppedAt)
+				m.mu.Unlock()
+				if recovered {
+					m.logger.Info("spotify: engine recovered the next track on its own, no auto-advance needed")
+					return
+				}
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				if err := m.Next(ctx); err != nil {
@@ -191,6 +209,7 @@ func (m *Manager) handleEnginePlaybackEnd(evType string) {
 func (m *Manager) handleEnginePlaybackStart() {
 	m.mu.Lock()
 	fn := m.connectPlayFn
+	m.lastEngineActiveAt = time.Now()
 	m.mu.Unlock()
 	if fn != nil {
 		fn()

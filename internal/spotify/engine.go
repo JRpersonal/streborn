@@ -455,6 +455,12 @@ func (m *Manager) runOnce(ctx context.Context) error {
 			m.logger.Info("spotify: track boundary (BOS)",
 				"track", trackNum+1, "prevTrackKB", trackBody/1024,
 				"prevMaxGran", maxGran, "forwardedKB", forwarded/1024)
+			// A fresh logical stream means the engine is demonstrably
+			// delivering audio: that is the recovery signal the delayed
+			// auto-advance checks before skipping (see handleEnginePlaybackEnd).
+			m.mu.Lock()
+			m.lastEngineActiveAt = time.Now()
+			m.mu.Unlock()
 			trackNum++
 			granOffset += maxGran // finished track extends the continuous timeline
 			hdr = append([]byte(nil), page...)

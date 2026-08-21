@@ -147,6 +147,17 @@ type Manager struct {
 	// account whose every track fails (PlayPlay cohort) cannot skip-storm.
 	lastTrackLoadFailAt time.Time
 	lastAutoAdvanceAt   time.Time
+	// lastEngineActiveAt is the last moment the engine demonstrably played:
+	// a playing/active event or a fresh Ogg track boundary. The delayed
+	// auto-advance below compares it against the stop moment, because the
+	// engine frequently RECOVERS from a "failed advancing" on its own a few
+	// seconds later (live 2026-08-21 13:33, three times in one playlist);
+	// advancing then skips the very track the engine just loaded, heard as
+	// "the next song plays two seconds and jumps to the one after".
+	lastEngineActiveAt time.Time
+	// selfRecoveryWait overrides how long the auto-advance waits for that
+	// self-recovery; 0 means the production default. Injected by tests.
+	selfRecoveryWait time.Duration
 
 	// zeroconfLabel is the bare mDNS label the engine advertises as its SRV
 	// target, empty until the agent's own responder is answering for it.
