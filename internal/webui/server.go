@@ -23,6 +23,7 @@ import (
 	"github.com/JRpersonal/streborn/internal/upnp"
 	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/zones"
+	"github.com/JRpersonal/streborn/internal/zonetemplates"
 )
 
 // Server kapselt den Webui HTTP Server.
@@ -50,6 +51,17 @@ type Server struct {
 	// taps then cost one drive, not N).
 	zoneFormSerial sync.Mutex
 	zoneFormSeq    atomic.Uint64
+	// tpls persists the named group templates and the single permanent group
+	// (beta) on the master's NAND. nil when not wired; the template endpoints
+	// then answer 503 and the permanent engine stays off.
+	tpls *zonetemplates.Store
+	// Permanent-group engine state: the boot re-form runs once per process
+	// (permBootDone), asserts are debounced (permAssertMu/permLastAssert),
+	// and the keeper's last verdict is surfaced for diagnostics.
+	permBootDone   atomic.Bool
+	permAssertMu   sync.Mutex
+	permLastAssert time.Time
+	permLastWatch  atomic.Value // string
 	// memberIDs remembers, per member IP, the SoundTouch deviceID that
 	// speaker's own firmware reported. Zone forming corrects the caller's
 	// deviceID from a live /info read, because a two-chip chassis announces
@@ -746,6 +758,8 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("/api/box/zone/volume", s.handleZoneVolume)
 	mux.HandleFunc("/api/box/sleep", s.handleSleep)
 	mux.HandleFunc("/api/box/zone/purge", s.handleZonePurge)
+	mux.HandleFunc("/api/box/zone/templates", s.handleZoneTemplates)
+	mux.HandleFunc("/api/box/zone/templates/", s.handleZoneTemplateItem)
 	mux.HandleFunc("/api/box/group", s.handleBoxGroup)
 	mux.HandleFunc("/api/marge/group", s.handleMargeGroupDoc)
 	mux.HandleFunc("/api/webhooks", s.handleWebhooks)
