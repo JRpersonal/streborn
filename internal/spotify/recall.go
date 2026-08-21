@@ -88,7 +88,21 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	recentlyDetached := !m.lastDetachAt.IsZero() && time.Since(m.lastDetachAt) < 15*time.Second
 	m.mu.Unlock()
 	if same && ((m.Streaming() && !m.StreamStalled()) || recentlyDetached) {
-		return m.replayWarm(ctx, uri, opts)
+		// One cheap proof that the engine still HOLDS the context before
+		// taking the shortcut. Spotify can pull the session out from under
+		// the engine ("playback was transferred to <unknown>"), which leaves
+		// it logged in with an EMPTY queue: shuffle/next/resume then do
+		// nothing at all, the box sits on a byte-less stream for 30 s and
+		// dies with 3101 AUDIO_ERROR_BAD_URL. Live 2026-08-21, three presses
+		// in a row, every one of them silent. Without a loaded track the
+		// cold path below is the only thing that can rebuild the queue.
+		sctx, scancel := context.WithTimeout(ctx, 3*time.Second)
+		_, _, _, hasTrack := m.liveNowPlaying(sctx)
+		scancel()
+		if hasTrack {
+			return m.replayWarm(ctx, uri, opts)
+		}
+		m.logger.Info("spotify: the engine holds no track (session transferred away?), taking the full recall instead of the fast path")
 	}
 	// Arm the boundary cut for the cold path too: the box re-attaches within a
 	// second of the press and would otherwise re-buffer the OLD track's audio

@@ -208,10 +208,13 @@ func TestPlayAccountAbortDisarmsCut(t *testing.T) {
 	}
 }
 
-// TestPlayAccountWarmSingleStatusProbe: the warm recall preamble must cost
-// exactly ONE /status round trip (the old shape probed three times, each a
-// potential 5s timeout on a slow engine).
-func TestPlayAccountWarmSingleStatusProbe(t *testing.T) {
+// TestPlayAccountWarmStatusProbeBudget: the warm recall preamble must stay
+// cheap. The old shape probed /status three times, each a potential 5s
+// timeout on a slow engine. Two are legitimate now: the session check, and
+// the proof that the engine still HOLDS a track before the fast path is
+// taken (a transferred-away session leaves it logged in with an empty queue,
+// where the fast path produces silence).
+func TestPlayAccountWarmStatusProbeBudget(t *testing.T) {
 	var (
 		mu          sync.Mutex
 		statusCount int
@@ -237,8 +240,51 @@ func TestPlayAccountWarmSingleStatusProbe(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if statusCount != 1 {
-		t.Errorf("warm PlayAccount made %d /status probes, want exactly 1", statusCount)
+	if statusCount != 2 {
+		t.Errorf("warm PlayAccount made %d /status probes, want exactly 2 (session + queue proof)", statusCount)
+	}
+}
+
+// A warm re-press must NOT take the fast path when the engine holds no track:
+// Spotify can transfer the session away mid-session, leaving the engine
+// logged in with an empty queue where shuffle/next/resume do nothing and the
+// box sits on a byte-less stream until it dies with 3101 (live 2026-08-21,
+// three silent presses in a row).
+func TestWarmRecallFallsBackWhenTheEngineHoldsNoTrack(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		paths []string
+	)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		if r.URL.Path == "/status" {
+			// Logged in, but no track: the transferred-away shape.
+			_, _ = w.Write([]byte(`{"username":"u"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+	m := New("", filepath.Join(t.TempDir(), "cfg"), "", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m.apiAddr = strings.TrimPrefix(ts.URL, "http://")
+	const ctxURI = "spotify:playlist:abc"
+	makeWarm(m, ctxURI)
+
+	if err := m.Play(context.Background(), ctxURI, PlayOptions{Shuffle: true}); err != nil {
+		t.Fatalf("Play: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	sawPlay := false
+	for _, p := range paths {
+		if p == "/player/play" {
+			sawPlay = true
+		}
+	}
+	if !sawPlay {
+		t.Errorf("an engine without a track must get the full recall (a /player/play), got %v", paths)
 	}
 }
 
