@@ -248,10 +248,16 @@ type Manager struct {
 	// dropped instead of flushed (NoteSkip / skipCutArmed).
 	skipCutUntil     time.Time
 	lastSkipBoundary time.Time
-	sinkBytes        int64
-	sinkPages        int64
-	sinkFirstAudioAt time.Time
-	sinkLastPageAt   time.Time
+	// lastBoundaryStaleBytes snapshots, at the moment a cut boundary was
+	// stamped, how much non-header audio the current attachment had already
+	// been fed. ~0 means the cut kept the box's buffer clean, so the recall
+	// re-push can stand down instead of flapping the stream for nothing
+	// (LastBoundaryStaleKB).
+	lastBoundaryStaleBytes int64
+	sinkBytes              int64
+	sinkPages              int64
+	sinkFirstAudioAt       time.Time
+	sinkLastPageAt         time.Time
 	// lastContext is the Spotify context (playlist/album) URI go-librespot last
 	// announced via will_play. When it changes (the app switched to another
 	// playlist) the box is re-pointed at the stream so it drops its buffer and

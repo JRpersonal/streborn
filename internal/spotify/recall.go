@@ -70,6 +70,22 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	// Mark a recall in progress so ServeOgg does not resume the OLD (mid) track
 	// when the box attaches; this path drives the chosen track from its start.
 	m.SetRecalling()
+	// Warm same-context fast path: the requested context is ALREADY loaded and
+	// audibly streaming to a sink, so the paused-load/pause/wait staging below
+	// buys nothing and costs ~7-9s (the "pressing the playing preset again
+	// takes 20+s" report, live Portable 2026-08-21). A stalled stream
+	// (attached but silent) deliberately falls through to the cold reload.
+	m.mu.Lock()
+	same := m.lastContext != "" && normalizeContextURI(m.lastContext) == uri
+	m.mu.Unlock()
+	if same && m.Streaming() && !m.StreamStalled() {
+		return m.replayWarm(ctx, uri, opts)
+	}
+	// Arm the boundary cut for the cold path too: the box re-attaches within a
+	// second of the press and would otherwise re-buffer the OLD track's audio
+	// for the whole load preamble. Idempotent re-arm (the recall entry points
+	// already armed before their PlayURLMime).
+	m.ArmRecallCut()
 	// Point the resume tracker at the context we are loading right now and drop
 	// the previous track. The will_play event that normally sets lastContext can
 	// lag or be missed, so without this a metadata/status event arriving after
@@ -99,6 +115,9 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	playAt := time.Now()
 	playBody, _ := json.Marshal(playReq)
 	if err := m.apiPostC(ctx, m.playClient, "/player/play", string(playBody)); err != nil {
+		// The play never happened, so no track boundary (BOS) is coming: an
+		// armed cut would now drop whatever IS still playing for up to 30s.
+		m.clearSkipCut()
 		// The API 500 is bare; the reason (e.g. Spotify's audio-key denial on
 		// a non-Premium account, #311) only appears on go-librespot's stderr.
 		// Attach it so the app's error message explains itself.
@@ -169,6 +188,40 @@ func (m *Manager) Play(ctx context.Context, uri string, opts PlayOptions) error 
 	m.logger.Info("spotify: recall play", "uri", uri, "shuffle", opts.Shuffle, "resumeTrack", resumeURI != "")
 	// Debounce the will_play context change this recall triggers (this path
 	// already drives the box separately, so no extra re-point needed).
+	m.mu.Lock()
+	m.lastActivate = time.Now()
+	m.mu.Unlock()
+	return nil
+}
+
+// replayWarm handles a recall of the context that is already loaded and
+// streaming, without the paused reload staging. Shuffle preset: reseed
+// (off->on, the fresh-order guarantee, live Portable 2026-08-19) plus one
+// /player/next; the caller-armed recall cut then turns the resulting BOS into
+// drop + re-anchor + boundary stamp, so the next track is audible in seconds.
+// Resume preset: there is nothing to reload; clear the cut (no BOS is coming,
+// an armed cut would drop the live audio) and just ensure shuffle is off and
+// playback runs. Deliberate semantics change: re-pressing an already-playing
+// resume preset no longer restarts the current track from 0:00.
+func (m *Manager) replayWarm(ctx context.Context, uri string, opts PlayOptions) error {
+	// Same bookkeeping as the cold path: retarget the resume tracker and drop
+	// the stale track so a late metadata event cannot corrupt the resume store.
+	m.mu.Lock()
+	m.lastContext = uri
+	m.curTrackURI = ""
+	m.mu.Unlock()
+	if opts.Shuffle {
+		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
+		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":true}`)
+		_ = m.apiPost(ctx, "/player/next", "")
+	} else {
+		m.clearSkipCut()
+		_ = m.apiPost(ctx, "/player/shuffle_context", `{"shuffle_context":false}`)
+	}
+	// No-op while playing; recovers an engine another controller paused.
+	_ = m.apiPost(ctx, "/player/resume", "")
+	m.logger.Info("spotify: warm same-context recall (fast path)", "uri", uri, "shuffle", opts.Shuffle)
+	// Debounce the will_play repoint exactly like the cold path does.
 	m.mu.Lock()
 	m.lastActivate = time.Now()
 	m.mu.Unlock()
@@ -375,13 +428,19 @@ func (m *Manager) CanRecall(ctx context.Context) bool {
 // used by both the hardware-button and the desktop/API paths, so both honour
 // the preset's shuffle flag and the per-context resume point identically.
 func (m *Manager) PlayAccount(ctx context.Context, uri, account string, opts PlayOptions) error {
+	// ONE /status probe for the whole preamble. The diagnostic log line, the
+	// account switch and the session gate each probed on their own, which on a
+	// slow engine turned the recall preamble into three serial 5s-timeout
+	// windows before /player/play was even sent (part of the 20+s same-preset
+	// re-press, live Portable 2026-08-21).
+	cur := m.currentUsername(ctx)
 	// Diagnostic: log the live session state at the recall boundary so a bundle
 	// disambiguates "never logged in" vs "dead session" vs "playing fine" without
 	// guesswork (every Spotify-recall investigation hit this blind spot).
 	m.logger.Info("spotify: recall start", "uri", uri, "wantAccount", account,
-		"sessionUser", m.currentUsername(ctx), "loggedIn", m.LoggedIn())
+		"sessionUser", cur, "loggedIn", m.LoggedIn())
 	if account != "" {
-		if _, err := m.SwitchAccount(ctx, account); err != nil {
+		if _, err := m.switchAccountFrom(ctx, cur, account); err != nil {
 			m.logger.Warn("spotify: account switch failed, playing with current account", "account", account, "err", err)
 		}
 	}
@@ -393,10 +452,25 @@ func (m *Manager) PlayAccount(ctx context.Context, uri, account string, opts Pla
 	// for the cold/dropped case; a box that is genuinely not logged in (or whose
 	// credential a takeover invalidated) yields ErrNoSpotifySession so the caller
 	// shows the tap-once hint instead of silently playing nothing.
-	if !m.ensureSession(ctx) {
+	if !m.ensureSessionWith(ctx, cur) {
+		// The recall aborts before /player/play, so no track boundary (BOS) is
+		// coming: disarm the recall cut the entry point armed, or it would drop
+		// whatever is still playing for up to 30s.
+		m.clearSkipCut()
 		return ErrNoSpotifySession
 	}
 	return m.Play(ctx, uri, opts)
+}
+
+// ensureSessionWith is ensureSession fed with an already-probed username, so
+// the common warm recall (live session, no account restart) needs no extra
+// /status round trip. Any restart since the probe (a cross-account switch)
+// invalidates it, and the full ensureSession then re-verifies the session.
+func (m *Manager) ensureSessionWith(ctx context.Context, cur string) bool {
+	if cur != "" && !m.recallRestartedRecently() {
+		return true
+	}
+	return m.ensureSession(ctx)
 }
 
 // noteResume records the current track as the resume point for the current

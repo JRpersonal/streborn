@@ -729,6 +729,12 @@ func run() error {
 		webui.WithSpotifyExportCred(spotifyMgr.ExportCredential),
 		webui.WithSpotifyImportCred(spotifyMgr.ImportCredential),
 		webui.WithSpotifySetRecalling(spotifyMgr.SetRecalling),
+		// Recall boundary cut: armed with SetRecalling so a preset re-press
+		// never feeds the box the old track's audio during the load preamble;
+		// the stale-KB probe lets the recall re-push stand down when the cut
+		// kept the box clean.
+		webui.WithSpotifyArmRecallCut(spotifyMgr.ArmRecallCut),
+		webui.WithSpotifyBoundaryStaleKB(spotifyMgr.LastBoundaryStaleKB),
 		webui.WithSpotifySuppressActivate(spotifyMgr.SuppressActivate),
 		webui.WithSpotifyExpectReattach(spotifyMgr.ExpectReattach),
 		webui.WithSpotifyInfo(spotifyMgr.ServeInfo),
@@ -830,6 +836,10 @@ func run() error {
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back. Returns the recall generation for supersession.
 		noteLastPlay: webuiSrv.NoteLastPlay,
+		// Conditional post-recall re-push (shared with the app path): drop the
+		// box's buffer only when stale pre-boundary audio reached it despite
+		// the armed recall cut.
+		repushAfterRecall: webuiSrv.ReattachAfterSpotifyRecall,
 		// Supersession: a hardware verify stands down as soon as a newer play
 		// (hardware or app) bumps the shared recall generation, mirroring the
 		// soft path's verifyRecall guard ("pressed 2, got 1").

@@ -260,6 +260,22 @@ func (m *Manager) NoteSkip() {
 	m.mu.Unlock()
 }
 
+// ArmRecallCut arms the boundary cut for a preset recall, so the box never
+// re-buffers the OLD track's audio while the new context loads. The window is
+// 30s, longer than NoteSkip's 15s: the recall preamble may include an account
+// restart (~8s) plus the play POST before the new context's BOS can arrive.
+// Extends only, never shrinks, so a re-arm mid-recall cannot cut the window
+// short. Every recall path that arms this and then aborts before /player/play
+// MUST disarm (clearSkipCut): an armed cut with no BOS coming drops live audio
+// until the window expires.
+func (m *Manager) ArmRecallCut() {
+	m.mu.Lock()
+	if t := time.Now().Add(30 * time.Second); t.After(m.skipCutUntil) {
+		m.skipCutUntil = t
+	}
+	m.mu.Unlock()
+}
+
 // skipCutArmed reports whether an armed user skip is awaiting its track
 // boundary; clearSkipCut disarms it the moment that boundary arrives, so the
 // new track's pages are never mistaken for stale ones.
@@ -284,6 +300,11 @@ func (m *Manager) clearSkipCut() {
 func (m *Manager) noteSkipBoundary() {
 	m.mu.Lock()
 	m.lastSkipBoundary = time.Now()
+	// Snapshot how much non-header audio this attachment received before the
+	// boundary (the per-attach counters reset in ServeOgg). The header
+	// subtraction is conservative: it can only under-count the stale audio,
+	// which errs toward NOT tearing the box's buffer down.
+	m.lastBoundaryStaleBytes = max(0, m.sinkBytes-int64(len(m.headerPages)))
 	m.mu.Unlock()
 }
 
@@ -293,4 +314,14 @@ func (m *Manager) LastSkipBoundary() time.Time {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.lastSkipBoundary
+}
+
+// LastBoundaryStaleKB reports the stale (pre-boundary) KB the current sink was
+// fed before the last cut boundary landed. It gates the recall re-push: ~0
+// means the armed cut kept the box's buffer clean, so no re-push (and no
+// audible stream flap) is needed.
+func (m *Manager) LastBoundaryStaleKB() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastBoundaryStaleBytes / 1024
 }

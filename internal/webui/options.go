@@ -309,6 +309,21 @@ func WithSpotifySkipBoundary(boundary func() time.Time) Option {
 	return func(s *Server) { s.spotifySkipBoundary = boundary }
 }
 
+// WithSpotifyArmRecallCut registers the hook that arms the engine's boundary
+// cut for a preset recall, so the box's fresh attachment never re-buffers the
+// old track's audio while the new context loads.
+func WithSpotifyArmRecallCut(arm func()) Option {
+	return func(s *Server) { s.spotifyArmRecallCut = arm }
+}
+
+// WithSpotifyBoundaryStaleKB registers the resolver for how many stale
+// (pre-boundary) KB the box's current attachment was fed before the last cut
+// boundary; the recall re-push uses it to skip the buffer-dropping push when
+// the cut already kept the box clean.
+func WithSpotifyBoundaryStaleKB(staleKB func() int64) Option {
+	return func(s *Server) { s.spotifyBoundaryStaleKB = staleKB }
+}
+
 // WithSpotifyMeta registers the resolver for a Spotify context's stable cover
 // image and human title, stamped onto a newly saved Spotify preset.
 func WithSpotifyMeta(meta func(ctx context.Context, uri string) (cover, title string)) Option {
