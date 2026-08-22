@@ -46,6 +46,11 @@
   --c-pill-alpha: #ef9a9a;   /* stage pills, see .alpha-pill */
   --c-pill-planned: #b0bec5;
   --c-pill-beta: #ffb74d;
+  /* Group-identity colours, slots 2-4 (slot 1 is --brand). Dark-surface
+     values: 6.89:1, 5.57:1 and 5.18:1 on --c-surface. */
+  --group-c2: #d6a23d;
+  --group-c3: #2aa9a9;
+  --group-c4: #b27fd0;
 }
 
 /* Light theme. Greyscale tokens flip to a light palette and the brand/
@@ -53,6 +58,12 @@
    color-scheme:light makes native <select>/scrollbars render light too. */
 html.a11y-light {
   color-scheme: light;
+  /* Group-identity colours darkened for the white surface, the same treatment
+     the brand and signal accents get above: 5.07:1, 4.69:1 and 5.86:1 on
+     --c-surface, so the 11px group caption clears AA. */
+  --group-c2: #8a6112;
+  --group-c3: #0d7a80;
+  --group-c4: #7d4a96;
   /* Darkened so the pills stay readable on white: the dark theme values
      measured about 2 to 1 here. */
   --c-pill-alpha: #a01b12;
@@ -85,6 +96,11 @@ html.a11y-light {
    Also honoured automatically below when the OS asks for more contrast. */
 html.a11y-contrast {
   color-scheme: dark;
+  /* Group-identity colours at this theme's brightness: 12.39:1, 13.23:1 and
+     10.96:1 on black, so the frames stay as loud as everything else here. */
+  --group-c2: #f0c05a;
+  --group-c3: #5fe0e0;
+  --group-c4: #e0a8ea;
   --c-bg: #000000;
   --c-surface: #000000;
   --c-surface-2: #111111;
@@ -656,18 +672,41 @@ body {
 .box-model { color: var(--c-muted); font-size: 11px; font-weight: 500; margin-left: 8px; }
 /* Multiroom group frame (#70): speakers sharing a live zone are clustered and
    wrapped in a colored border so the group reads as one block on the music tab.
-   Display only; grouping is done in the Multi-Room tab. Four fixed, globally
-   neutral colors; a 5th group would reuse color 1. */
+   Display only; grouping is done in the Multi-Room tab.
+
+   These four are IDENTITY colours, never signals. The first slot used to be
+   #d64545, a saturated red close enough to --signal-red to be read as one, and
+   because main.js hands the first group slot 1 and most homes have exactly one
+   group, that red frame with its matching red caption was what almost every
+   user saw around a perfectly healthy zone (Jens, 2026-08-22: "die
+   Umrahmungsfarbe der Gruppen ist rot und signalisiert Warnung"). It also
+   paired red with green, which collapses to one colour under deuteranopia and
+   protanopia, so the four "identity" colours were effectively two for a
+   red-green colour-blind user.
+
+   Slot 1 is now --brand itself: it is the app's own "this one is picked"
+   colour (.seg-btn.active, .zone-card.master, .box-group-master all use it), it
+   is defined per theme so it carries correct contrast into light and
+   high-contrast for free, and for the one-group case it makes the frame read as
+   chrome rather than as a code to decode. The other three are built on the
+   blue/yellow axis that survives dichromacy, ordered so the two most-used slots
+   sit furthest apart, and re-tuned per theme below because no single hex clears
+   AA on both a near-black and a near-white surface. Nothing here is within
+   reach of --signal-red or --signal-green in any theme. */
 .box-group { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 7px; border: 2px solid var(--bg-color, var(--c-border-2)); border-radius: 8px; }
-.box-group-c1 { --bg-color: #d64545; }
-.box-group-c2 { --bg-color: #3d7fd6; }
-.box-group-c3 { --bg-color: #3fae5a; }
-.box-group-c4 { --bg-color: #d6a23d; }
+.box-group-c1 { --bg-color: var(--brand); }
+.box-group-c2 { --bg-color: var(--group-c2); }
+.box-group-c3 { --bg-color: var(--group-c3); }
+.box-group-c4 { --bg-color: var(--group-c4); }
 /* Star on the group's master speaker pill. */
 .box-group-master { color: var(--brand); margin-right: 4px; font-size: 12px; }
 /* Group name header on the multiroom frame — full width so the pills wrap
    below it; coloured to match the frame so the zone is obvious at a glance. */
-.box-group-label { flex-basis: 100%; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--bg-color, var(--c-muted)); opacity: 0.9; margin: 0 2px 1px; }
+/* No opacity here. Blending the caption 10% into the surface cost about half a
+   contrast point (the 11px label dropped from 4.15:1 to 3.62:1 on the dark
+   surface), and now that the palette is tuned per theme there is no reason to
+   pay for it twice. */
+.box-group-label { flex-basis: 100%; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--bg-color, var(--c-muted)); margin: 0 2px 1px; }
 .box-group-label svg { flex: 0 0 auto; }
 /* Small speaker icon on a tile whose speaker is currently playing. */
 /* Green, matching the "playing" status bar (--signal-green), so the icon means
@@ -1442,7 +1481,6 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .ua-row.ua-failed .ua-bar-fill { background: #c44; width: 100%; }
 .ua-row.ua-indet .ua-bar-fill { width: 40%; background: var(--brand); animation: ua-indet 1.2s ease-in-out infinite; }
 @keyframes ua-indet { 0% { margin-inline-start: -40%; } 100% { margin-inline-start: 100%; } }
-.beta-tag { font-size: 10px; background: #c9933a; color: #111; border-radius: 3px; padding: 1px 5px; margin-inline-start: 4px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
 
 .credits-list { max-height: 50vh; overflow-y: auto; margin-bottom: 14px; }
 .credit-row { padding: 7px 0; border-bottom: 1px solid var(--c-border); font-size: 13px; }
@@ -1462,8 +1500,34 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .ps-name { font-size: 13px; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; }
 
 .warn-title { color: var(--signal-red) !important; display: flex; align-items: center; gap: 8px; margin: 0 0 8px 0; }
+/* Routine confirmations (updating the speakers) reuse this modal but must not
+   look like an alarm: brand colour, no triangle, and the confirm button is a
+   primary CTA instead of the red "proceed anyway". */
+.warn-title.warn-title-calm { color: var(--brand) !important; }
 .warn-icon { font-size: 24px; }
 .warn-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+/* Structured confirmation body: a short lead sentence, then the speakers it
+   applies to as a real list. The plain-text bodies used to be pushed through
+   innerHTML with "
+" separators, which HTML collapses into whitespace, so a
+   four-speaker prompt arrived as one unbroken wall of text. */
+.warn-body-rich { max-height: 46vh; overflow-y: auto; }
+.warn-body-rich p { margin: 0 0 6px 0; font-size: 14px; line-height: 1.45; }
+/* Logical properties, never left/right: the app ships Arabic and sets dir=rtl on
+   the document, so a physical padding-left with a left-positioned marker puts
+   the bullet on the wrong side of its own text for those users. */
+.warn-body-rich ul { margin: 0 0 14px 0; padding: 0; list-style: none; }
+.warn-body-rich ul:last-child { margin-bottom: 0; }
+.warn-body-rich li {
+  font-size: 14px; font-weight: 600; padding: 5px 10px; margin-bottom: 4px;
+  border-radius: 6px; background: var(--c-surface-3, rgba(255,255,255,.05));
+}
+.warn-body-rich .warn-notes { margin-top: 2px; }
+.warn-body-rich .warn-notes li {
+  font-weight: 400; font-size: 13px; color: var(--c-muted);
+  background: none; padding: 0; padding-inline-start: 14px; position: relative;
+}
+.warn-body-rich .warn-notes li::before { content: '\2022'; position: absolute; inset-inline-start: 2px; }
 /* Error detail text. The message itself is normal text colour, NOT the signal
    red: red on the near-black surface measures about 3.5:1, under the 4.5:1 that
    small text needs, and a user photographed exactly this and called it hard to
@@ -1875,7 +1939,14 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
    unchanged and invite a second click. */
 .group-chip.pending { outline: 2px solid var(--brand); outline-offset: 1px; opacity: .85; }.group-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; font-size: 12px; line-height: 1.5; border: 1px solid var(--c-border); border-radius: 14px; background: var(--c-surface); color: var(--c-text); cursor: pointer; }
 .group-chip:hover { border-color: var(--brand); }
-.group-chip.in-group { border-color: var(--signal-green); background: rgba(102, 204, 102, 0.12); color: var(--signal-green); }
+/* Membership is a SELECTION, not a success and not a status. --signal-green is
+   reserved for "playing / online ok / success", and on this very tab
+   .box-playing already uses it to mean "this speaker is playing right now", so
+   green here said two different things at once. It also made a chip flip from
+   brand blue (.group-chip.pending, one rule below) to green as the click
+   landed, which reads as a state change that never happened. Brand, like every
+   other "this one is picked" in the app. */
+.group-chip.in-group { border-color: var(--brand); background: var(--brand-bg); color: var(--brand); }
 .group-chip-mark { font-weight: 700; opacity: 0.85; }
 /* The group volume is a separate control, so set it apart from the chips above. */
 .group-vol-row { display: flex; align-items: center; gap: 8px; max-width: 360px; margin-top: 6px; }
@@ -1925,12 +1996,17 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .zone-card { position: relative; min-width: 150px; max-width: 230px; padding: 12px 14px; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface-2); color: var(--c-text); cursor: pointer; transition: border-color .12s, background .12s, box-shadow .12s; }
 .zone-card:hover { background: var(--c-border); }
 .zone-card.master { background: var(--brand-bg); border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
-.zone-card.selected { border-color: #4caf50; box-shadow: 0 0 0 1px #4caf50 inset; }
+/* Was hard-coded Material green #4caf50: an ok/success colour used for a pure
+   selection state, in the same grid where .zone-card.master marks itself with
+   --brand, so one card grid spoke two selection languages. It also ignored the
+   themes entirely and measured 2.55:1 on the light surface, i.e. the selected
+   border was all but invisible in light mode. */
+.zone-card.selected { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
 .zone-card-name { font-weight: 600; font-size: 13px; }
 .zone-card-host { display: block; opacity: 0.6; font-size: 10px; margin-top: 2px; }
 .zone-card-tick { position: absolute; top: 8px; right: 10px; font-size: 14px; line-height: 1; }
 .zone-card.master .zone-card-tick { color: var(--brand); }
-.zone-card.selected .zone-card-tick { color: #4caf50; }
+.zone-card.selected .zone-card-tick { color: var(--brand); }
 .zone-card-foot { margin-top: 10px; }
 .zone-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: var(--brand); color: var(--c-bg); font-weight: 600; }
 .zone-makemain { font-size: 10px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--c-border-2); background: transparent; color: var(--c-muted); cursor: pointer; }
@@ -1941,7 +2017,10 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .seg-btn.active { background: var(--brand-bg); color: var(--brand-text); }
 .zone-topbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .zone-live { font-size: 11px; margin-top: 6px; color: var(--c-muted); }
-.zone-live.in { color: #4caf50; }
+/* "In a live zone" IS a status, so green is right here — but through the token,
+   so the light and high-contrast themes get their tuned values instead of the
+   2.55:1 the raw #4caf50 measured on white. */
+.zone-live.in { color: var(--signal-green); }
 .zone-update-badge { display: inline-block; margin-left: 6px; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: #5a3a1a; color: #f8c66c; }
 .zone-card.outdated { border-style: dashed; }
 /* Linux/GTK fix (reported on Zorin 18.1): native <select> and especially the

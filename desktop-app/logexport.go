@@ -646,7 +646,65 @@ func pullSSHFallback(host string) *sshFallback {
 var ipv4Regex = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
 var macRegex = regexp.MustCompile(`(?i)\b([0-9A-F]{2}[:-]){5}[0-9A-F]{2}\b`)
 var deviceIDRegex = regexp.MustCompile(`(?i)\b[0-9A-F]{12}\b`)
-var ssidHintRegex = regexp.MustCompile(`(?i)(ssid|ssid_name|wpa-psk\s+\S+|psk=)[^\s]*`)
+
+// ssidRedactRegex is the SINGLE pass that removes network names and Wi-Fi
+// secrets from anything leaving the host. One pass, not three, because the
+// marker it writes contains the word "ssid" itself: a second pattern run over
+// the result matches its own output and mangles it ("<<SSID-REDACTED>").
+//
+// Three shapes, in order of specificity:
+//
+//  1. key="value" - how the firmware echoes a profile back
+//     (<profile ssid="Home Network 5G" password="..." />). The bare form below
+//     truncates such a value at its first space, so the tail of any network
+//     name containing a space used to ship in clear.
+//  2. seeding 'value' - the box's boot script logs the Wi-Fi failover seed
+//     with the network name in single quotes and no "ssid" token anywhere on
+//     the line, so nothing caught it. A real household network name shipped
+//     inside a user's bundle that way (found 2026-08-22), against the bundle
+//     README's promise that SSIDs and Wi-Fi passwords never leave the host.
+//     The boot script no longer logs the name, but a speaker on an older agent
+//     already has the line on its NAND and hands it to the next bundle.
+//  3. the bare key form, which is what the original pattern covered.
+//
+// Deliberately narrow: only these shapes. A general "anything in quotes" rule
+// would gut radio station names and preset labels, which are what a bundle is
+// usually read for.
+// The marker is the FIRST alternative on purpose. It contains the word "ssid"
+// itself, so without it the bare-key alternative matches INSIDE an already
+// redacted marker and grows a "<" on every pass ("<<SSID-REDACTED>"). Text does
+// go through this more than once: sanitizeLog and anonymizeText both call
+// scrubPII, and nested structures are walked field by field. Matching the
+// marker and handing it back untouched is what makes the pass idempotent.
+// Every quoted value is bounded to its own LINE, and an unterminated one is
+// redacted to the end of that line. Go's negated classes match newlines, so
+// `[^"]*` on an unterminated attribute ran to the next quote anywhere later in
+// the blob and swallowed whole log lines in between - and the scrub sees the
+// box's setup log as one 64 KB blob, where truncation is routine: the boot
+// script cuts a profile dump at 300 bytes and the seed response at 200, both of
+// which land mid-attribute. Falling through to the bare-key alternative then
+// leaked the tail. The seeding value stops at a newline rather than at the
+// LAST quote on its line rather than the first, so a network called "Bob's
+// WiFi" does not ship its tail; the unterminated case is a separate
+// alternative so a terminated value does not greedily eat the rest of the
+// line with it.
+var ssidRedactRegex = regexp.MustCompile(`(?im)<SSID-REDACTED>|\b(?:ssid|password|passphrase|psk)\s*=\s*"[^"\n]*(?:"|$)|\bseeding\s+'[^\n]*'|\bseeding\s+'[^\n]*$|\b(?:ssid|ssid_name|wpa-psk\s+\S+|psk=)[^\s]*`)
+
+const ssidRedacted = "<SSID-REDACTED>"
+
+// redactSSIDs applies ssidRedactRegex, keeping the "seeding" verb so the line
+// still reads as an event rather than turning into a bare marker.
+func redactSSIDs(s string) string {
+	return ssidRedactRegex.ReplaceAllStringFunc(s, func(m string) string {
+		if strings.EqualFold(m, ssidRedacted) {
+			return m // already redacted, leave it exactly as it is
+		}
+		if len(m) >= 8 && strings.EqualFold(m[:8], "seeding ") {
+			return "seeding '" + ssidRedacted + "'"
+		}
+		return ssidRedacted
+	})
+}
 
 // nameTagRegex catches the speaker's user-chosen friendly name as it appears in
 // gabbo frame bodies captured in the box debug state / agent log
@@ -686,7 +744,7 @@ func scrubPII(s string) string {
 		sub := friendlyNameJSONRegex.FindStringSubmatch(m)
 		return sub[1] + "NAME#" + hashShort(sub[2]) + sub[3]
 	})
-	s = ssidHintRegex.ReplaceAllString(s, "<SSID-REDACTED>")
+	s = redactSSIDs(s)
 	s = userPathRegex.ReplaceAllString(s, "${1}<user>")
 	return s
 }

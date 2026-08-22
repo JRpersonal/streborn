@@ -193,8 +193,12 @@ function wireWarn() {
   const cancel = $('warnCancel');
   const confirm = $('warnConfirm');
   if (confirm) warnConfirmDefaults = { label: confirm.textContent, cls: confirm.className };
-  if (cancel)  cancel.onclick  = () => { closeWarn(); if (warnResolve) warnResolve(false); };
-  if (confirm) confirm.onclick = () => { closeWarn(); if (warnResolve) warnResolve(true); };
+  // Clear the resolver as it fires: a stray second click on the same button
+  // must not resolve an already-settled promise, and the displacement path
+  // above relies on warnResolve being null once a prompt has been answered.
+  const settle = (v) => { const r = warnResolve; warnResolve = null; closeWarn(); if (r) r(v); };
+  if (cancel)  cancel.onclick  = () => settle(false);
+  if (confirm) confirm.onclick = () => settle(true);
 }
 
 // confirmWarn(title, bodyHtml, opts?)
@@ -205,6 +209,11 @@ function wireWarn() {
 //                     localized "Proceed anyway").
 //   opts.confirmClass class for the confirm button (default: btn-danger).
 //                     Pass 'btn btn-primary' for an encouraging CTA.
+//   opts.calm         true drops the red alarm colour from the title. The modal
+//                     doubles as the confirmation for ROUTINE actions (updating
+//                     the speakers), and a red-on-triangle "warning" for the
+//                     normal, recommended thing to do reads as "something is
+//                     wrong here" and stops users from doing it.
 export function confirmWarn(title, bodyHtml, opts) {
   opts = opts || {};
   wireWarn();
@@ -215,7 +224,12 @@ export function confirmWarn(title, bodyHtml, opts) {
     const icon = (opts.icon === null) ? ''
       : '<span class="warn-icon">' + (opts.icon || '&#9888;') + '</span> ';
     t.innerHTML = icon + escapeHtml(title);
+    // Reset on every call: the modal is shared, so a calm prompt must not
+    // leave the next destructive one without its alarm colour.
+    t.classList.toggle('warn-title-calm', !!opts.calm);
   }
+  const body = $('warnBody');
+  if (body) body.classList.toggle('warn-body-rich', !!opts.rich);
   const confirm = $('warnConfirm');
   if (confirm && warnConfirmDefaults) {
     confirm.textContent = opts.confirmLabel || warnConfirmDefaults.label;
@@ -223,6 +237,13 @@ export function confirmWarn(title, bodyHtml, opts) {
   }
   $('warnBody').innerHTML = bodyHtml;
   m.classList.remove('hidden');
+  // One modal, one resolver. A second prompt raised while the first is still
+  // open used to overwrite the resolver, so the first promise never settled and
+  // its caller waited forever with a lock held. Settle the displaced one as
+  // "cancelled": its prompt is off screen, so the user never answered it.
+  const displaced = warnResolve;
+  warnResolve = null;
+  if (displaced) { try { displaced(false); } catch { /* caller's problem */ } }
   return new Promise(res => { warnResolve = res; });
 }
 
@@ -289,6 +310,14 @@ export function showToast(msg, ms = -1) {
     ms = Math.min(8000, Math.max(2600, 1200 + words * 320));
   }
   toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// hideToast takes a sticky toast (showToast(msg, 0)) back down. Used by the
+// long pre-flight checks that keep a "working on it" line up while they run.
+export function hideToast() {
+  const t = $('toast');
+  if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+  if (t) t.classList.remove('show');
 }
 
 // ---- Dismissible notices ----

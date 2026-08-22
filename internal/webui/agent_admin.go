@@ -840,19 +840,40 @@ func syncDir(dir string) {
 // cache … even when the flash writeback silently failed" — applied to the
 // OTA path. Only called right before a reboot, so dropping the page cache is
 // free. Returns nil when the on-flash bytes match.
+//
+// It STREAMS the re-read through the hasher instead of loading the file.
+// os.ReadFile allocated a second full copy of the binary while the upload copy
+// was still pinned by handleAgentUpdate, so the peak was two whole agent
+// binaries plus the page cache we had just dropped. At 14.6 MB per copy on a
+// box with 122 MB of RAM and 19-31 MB actually available after an upload, that
+// is the cliff three of ten speakers went over during Juergen's 2026-08-22
+// batch update: one ST20 had its agent killed here outright (its log stops
+// between "upload body received" at memAvailableKB=19228 and the
+// "flash-verified" line that never came, and run-override.sh respawned it 103 s
+// later already running the NEW binary, so the write itself had landed), and
+// two ST10s stalled inside this step long enough to blow the app's 180 s
+// response-header timeout and never came back at all. A fixed 512 KB window
+// takes the verify's own cost from 14.6 MB to half a megabyte.
 func verifyBinaryOnFlash(dst string, body []byte) error {
 	_ = exec.Command("sync").Run()
 	// Best-effort: /proc/sys/vm/drop_caches needs root (the agent is root on
 	// the box) but does not exist in tests.
 	_ = os.WriteFile("/proc/sys/vm/drop_caches", []byte("3"), 0o200)
-	got, err := os.ReadFile(dst)
+	f, err := os.Open(dst)
+	if err != nil {
+		return fmt.Errorf("flash verify re-read: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	n, err := io.CopyBuffer(h, f, make([]byte, 512*1024))
 	if err != nil {
 		return fmt.Errorf("flash verify re-read: %w", err)
 	}
 	want := sha256.Sum256(body)
-	have := sha256.Sum256(got)
+	var have [sha256.Size]byte
+	copy(have[:], h.Sum(nil))
 	if want != have {
-		return fmt.Errorf("flash verify: on-flash binary differs from the upload (%d vs %d bytes) — the NAND write did not persist", len(got), len(body))
+		return fmt.Errorf("flash verify: on-flash binary differs from the upload (%d vs %d bytes) — the NAND write did not persist", n, len(body))
 	}
 	return nil
 }

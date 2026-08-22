@@ -67,8 +67,14 @@ export function renderSpotifyAlpha() {
       const res = await SyncSpotifyLogin(boxes);
       const n = (res && Array.isArray(res.synced)) ? res.synced.length : 0;
       const failed = (res && res.failed) ? Object.keys(res.failed).length : 0;
-      if (n > 0 && failed === 0) showToast(t('spotify.syncDone', { n }));
-      else if (n > 0) showToast(t('spotify.syncPartial', { n, failed }));
+      // Name the SOURCE speaker. The backend picks it itself (the first
+      // speaker that turns out to hold a Spotify login), and saying only "copied
+      // to 4 speakers" left the user unable to tell what had just been copied
+      // from where, or which speaker to log in differently if the answer was
+      // wrong (asked in as many words, 2026-08-22).
+      const src = (res && res.source) || '';
+      if (n > 0 && failed === 0) showToast(src ? t('spotify.syncDoneFrom', { n, source: src }) : t('spotify.syncDone', { n }));
+      else if (n > 0) showToast(src ? t('spotify.syncPartialFrom', { n, failed, source: src }) : t('spotify.syncPartial', { n, failed }));
       else showToast(t('spotify.syncNone'));
     } catch (e) {
       const s = String(e);

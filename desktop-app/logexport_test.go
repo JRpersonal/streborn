@@ -338,3 +338,57 @@ func TestAnonymizeBoxSnapshotJSONDropsWhatItCannotCheck(t *testing.T) {
 		t.Error("an absent snapshot should stay absent")
 	}
 }
+
+// TestScrubPII_SSIDWithoutAKeyBesideIt guards the leak found on 2026-08-22: a
+// real household network name shipped inside a user's bundle because the box's
+// boot script logs the Wi-Fi failover seed as "seeding 'MyNetwork'", with no
+// "ssid" token anywhere on the line for the key-based pattern to catch. The
+// bundle README promises SSIDs never leave the host, so this is the promise
+// itself under test.
+func TestScrubPII_SSIDWithoutAKeyBesideIt(t *testing.T) {
+	in := "wifi failover seed: box online with NO stored Wi-Fi profile (src=http) - " +
+		"seeding 'Livebox-D7WD0_5GHz' so a later cable pull can fail over (non-destructive)"
+	got := scrubPII(in)
+	if strings.Contains(got, "Livebox-D7WD0_5GHz") {
+		t.Fatalf("the network name survived the scrub:\n%s", got)
+	}
+	if !strings.Contains(got, "<SSID-REDACTED>") {
+		t.Fatalf("expected a redaction marker:\n%s", got)
+	}
+}
+
+// An SSID or password inside an XML attribute, which is how the firmware echoes
+// a profile back. The bare hint pattern truncates such a value at its first
+// space, so a network called "家 WLAN 5G" used to ship its tail in clear.
+func TestScrubPII_SSIDAttributeWithSpaces(t *testing.T) {
+	in := `<profile ssid="Home Network 5G" password="hunter two" securityType="wpa_or_wpa2" />`
+	got := scrubPII(in)
+	for _, leak := range []string{"Home Network 5G", "hunter two", "Network 5G", "two"} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("%q survived the scrub:\n%s", leak, got)
+		}
+	}
+	if !strings.Contains(got, "<SSID-REDACTED>") {
+		t.Fatalf("expected a redaction marker:\n%s", got)
+	}
+	// The surrounding markup has to survive, or the bundle stops being readable.
+	if !strings.Contains(got, "securityType=") {
+		t.Fatalf("the scrub ate the surrounding markup:\n%s", got)
+	}
+	// The marker must not eat itself. It contains the word "ssid", so a second
+	// pattern run over the result used to match its own output and produce
+	// "<<SSID-REDACTED>"; the scrub is one pass now, and this proves it.
+	if again := scrubPII(got); again != got {
+		t.Fatalf("scrub is not idempotent:\n%s\n%s", got, again)
+	}
+}
+
+// The scrub must not eat what a bundle is actually read for. Radio station and
+// preset names are free text in quotes and have to survive.
+func TestScrubPII_LeavesStationNamesAlone(t *testing.T) {
+	in := `preset 3 recalled: 'Radio Swiss Jazz' via UPnP, station "BBC Radio 4" queued`
+	got := scrubPII(in)
+	if !strings.Contains(got, "Radio Swiss Jazz") || !strings.Contains(got, "BBC Radio 4") {
+		t.Fatalf("station names must survive the scrub:\n%s", got)
+	}
+}
