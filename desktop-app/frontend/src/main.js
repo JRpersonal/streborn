@@ -5068,6 +5068,10 @@ async function runGroupMemberToggle(edits) {
     ? acc.filter(m => m.ip !== tgt.host)
     : [...acc, { deviceID: tgt.deviceID, ip: tgt.host, box: tgt }], members);
   const removed = targets.filter(tgt => members.some(m => m.ip === tgt.host) && !next.some(m => m.ip === tgt.host));
+  // The speakers that just JOINED, symmetric with `removed` and derived from
+  // the same two lists so it stays right for a coalesced batch where some chips
+  // add and some remove in one edit.
+  const added = targets.filter(tgt => !members.some(m => m.ip === tgt.host));
   const target = targets[0];
   const wasIn = removed.length > 0 && targets.length === 1;
   try {
@@ -5117,6 +5121,33 @@ async function runGroupMemberToggle(edits) {
       }
       // Every speaker taken out of the group stops, not only the first one.
       await Promise.allSettled(removed.map(tgt => Stop(tgt.host, tgt.port)));
+      // Speakers that just joined start at the group's volume. The master's own
+      // agent does this too and is the authority (it can tell a confirmed join
+      // from a failed one, which the app cannot); this covers a group whose
+      // master still runs an older agent, and seeds the panel so the new
+      // member's slider shows the right number straight away instead of the
+      // level it happened to wake up at.
+      //
+      // Never the speakers that were already in the group: the group slider is
+      // relative on purpose, and one absolute number written across every
+      // member destroys the per-speaker balance behind it (#401).
+      if (added.length) {
+        try {
+          const ms = await BoxSettings(box.host, box.port);
+          // Target over actual, matching the agent: a muted or mid-ramp master
+          // reports actual 0 while target still carries the real level.
+          const mv = (ms && ms.volume && (ms.volume.target || ms.volume.actual)) || 0;
+          // A master that reports nothing usable must not silence the joiner:
+          // a speaker that is provably in the group and provably silent is the
+          // hardest thing there is to tell apart from one that never joined.
+          if (mv > 0) {
+            const joined = added.filter(tgt => !(res && Array.isArray(res.notReady)
+              && res.notReady.some(nr => nr === tgt.host || (nr && nr.ip === tgt.host))));
+            await Promise.allSettled(joined.map(tgt => SetBoxVolume(tgt.host, tgt.port, mv)));
+            joined.forEach(tgt => { groupVol.members[tgt.host] = mv; });
+          }
+        } catch { /* the agent is the authority; this is only the seed */ }
+      }
       if (targets.length === 1) {
         showToast(t(wasIn ? 'group.removedToast' : 'group.addedToast', { name: getBoxLabel(target) }));
       } else {

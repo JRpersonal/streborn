@@ -397,6 +397,18 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Who is actually JOINING. Computed HERE, from the only before-picture that
+	// exists prior to any change: the mirror branch below returns before toAdd is
+	// ever calculated, and after the drive the live zone already contains the new
+	// members. Only these get the group's volume - handing it to members that
+	// were already in the group would flatten the per-speaker balance the
+	// relative group slider exists to preserve (#401).
+	newlyJoined, joinSetTrusted := newlyJoinedMembers(slaves, prevLive, prevLiveErr, prevDoc, hadPrevDoc)
+	if !joinSetTrusted {
+		s.logger.Info("zone: no reliable before-picture of this group, leaving every member's volume alone")
+		newlyJoined = nil
+	}
+
 	// Persist first so a transient drive error still leaves the group on record
 	// for the reconcile loop to retry. Only the master persists.
 	z := zones.Zone{Master: master.DeviceID, MasterIP: master.IP, Mode: mode, Name: req.Name}
@@ -413,6 +425,14 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		// Deliberate user action: push unconditionally (reconcile=false), the
 		// user just asked for exactly this group.
 		s.mirrorToSlaves(ctx, z, false)
+		// Detached: the volume match settles for a couple of seconds and the form
+		// budget is already capped at 38s against an app that gives up at 45s.
+		// It also must not race mirrorToSlaves' own PlayURL push, which is the
+		// play-start a raw volume write is documented to kill - the applier's
+		// settle covers that.
+		if len(newlyJoined) > 0 {
+			go s.matchNewMembersToMasterVolume(newlyJoined, mySeq)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "mode": "mirror"})
 		return
 	}
@@ -591,6 +611,15 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		"masterMissing", strings.Join(masterMissing, ","),
 		"verified", verified, "missing", strings.Join(missing, ","),
 		"unverifiable", strings.Join(unverifiable, ","))
+	// Verify-first. A member that never confirmed the join (missing) must not be
+	// given the group's level: that is a speaker in another room, in no group at
+	// all, jumping to the living room's volume. Same for a zone the firmware
+	// never actually formed.
+	if masterFormed && verified > 0 {
+		if joining := dropMembers(newlyJoined, missing); len(joining) > 0 {
+			go s.matchNewMembersToMasterVolume(joining, mySeq)
+		}
+	}
 	if resume != nil && masterFormed {
 		go s.resumeAfterZoneForm(*resume)
 	}
