@@ -400,9 +400,29 @@ func (a *App) RecordOTAOutcome(host, verdict string) {
 //	"not-landed"         box answers with the old version and does not have
 //	                     the pushed binary on disk
 //	"unreachable"        box does not answer at all
+//	"agent-gone"         the SPEAKER answers (its own Bose web API is up) but
+//	                     STR's agent is not running on it. A power cycle is the
+//	                     fix, and it is the only thing that is.
 func (a *App) ClassifyOTAResult(host string, port int) string {
 	ver, err := a.BoxAgentVersion(host, port)
 	if err != nil {
+		// Ask the SPEAKER, not our agent. A box that answers its own Bose web
+		// API is demonstrably powered, on the LAN, and reachable from this PC,
+		// so every word of the firewall/Wi-Fi advice is wrong for it - the one
+		// thing missing is STR. Juergen's 2026-08-22 batch update ended with
+		// three speakers in exactly this state, and the report told him to go
+		// looking through his antivirus settings while the speakers sat there
+		// answering Bose's ports the whole time. He power-cycled one on
+		// instinct and it came straight back.
+		//
+		// This must be a REAL HTTP exchange, never a bare TCP connect: on the
+		// whitelisted chassis Bose's own SoftwareUpdate daemon accepts a
+		// connection on :17008 and then never answers, which is what made the
+		// verify probe time out rather than fail fast in the first place.
+		if a.boxAnswersBoseAPI(host) {
+			a.recordOTA(host, "outcome: NOT CONFIRMED - the speaker is up and answering its Bose web API on :8090, but STR's agent is not running on it; a power cycle is needed: "+err.Error())
+			return "agent-gone"
+		}
 		a.recordOTA(host, "outcome: NOT CONFIRMED - box unreachable after the verify window: "+err.Error())
 		return "unreachable"
 	}
@@ -421,6 +441,23 @@ func (a *App) ClassifyOTAResult(host string, port int) string {
 	}
 	a.recordOTA(host, "outcome: NOT CONFIRMED - box still runs "+ver["version"]+" build "+ver["build"]+" and does not report the pushed binary on disk")
 	return "not-landed"
+}
+
+// boxAnswersBoseAPI reports whether the SPEAKER's own web server is alive, as
+// opposed to STR's agent. /info is the cheapest endpoint the Bose firmware
+// serves and it answers on every model and every chassis, firewalled or not,
+// which is exactly why STR's discovery leans on it.
+//
+// Used to tell two failures apart that look identical from the agent's port:
+// a speaker that is off the network (or behind a firewall) and a speaker that
+// is perfectly fine with only STR missing. Those need opposite advice, and
+// giving the wrong one costs the user an evening.
+func (a *App) boxAnswersBoseAPI(host string) bool {
+	if host == "" {
+		return false
+	}
+	_, err := a.boseGet(host, "/info")
+	return err == nil
 }
 
 // pushSidecarIfNeeded delivers the embedded go-librespot Spotify sidecar to the

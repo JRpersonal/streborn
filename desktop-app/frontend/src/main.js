@@ -3502,6 +3502,14 @@ async function runBoxUpdate(box, onPhase, attempt = 1, gate = null) {
     }
     if (!confirmedVer) {
       try { noteOTAFailure(box, cls); } catch {}
+      // "agent-gone" is the speaker answering its OWN Bose web API while STR's
+      // agent is not running on it. That is not a timeout and not a network
+      // problem: the box is up, on the LAN, and reachable from this PC. It is
+      // also the one outcome with an exact, reliable fix, so it gets its own
+      // result instead of being folded into the generic "took longer than
+      // expected" line that sent a user hunting through his antivirus settings
+      // while three speakers sat there answering Bose's ports (2026-08-22).
+      if (cls === 'agent-gone') return { outcome: 'agentGone', version: null };
       return { outcome: 'timeout', version: null };
     }
   }
@@ -3942,6 +3950,11 @@ async function doBoxUpdate(targetBox) {
         // "Install Spotify engine" action.
         showToast(t('spotify.engineDeferredVisible'));
       }
+    } else if (result && result.outcome === 'agentGone') {
+      // The speaker is up and answering its own Bose web API; only STR is not
+      // running on it. That has one exact fix and the user can do it in ten
+      // seconds, so say it plainly instead of "took longer than expected".
+      showToast(t('update.agentGoneToast', { name: getBoxLabel(targetBox) }));
     } else {
       // Timed out. runBoxUpdate has already journaled the verdict, classified
       // why, retried the one class of failure a retry actually fixes, and fed
@@ -4184,6 +4197,7 @@ async function runUpdateAllBoxes(onStart) {
     for (const r of rowState.values()) {
       if (r.outcome === 'done') done++;
       else if (r.outcome === 'failed') fail++;
+      else if (r.outcome === 'agentGone') fail++;
       else if (r.outcome === 'partial' || r.outcome === 'timeout') defer++;
       else busy++;
     }
@@ -4330,6 +4344,7 @@ async function runUpdateAllBoxes(onStart) {
         setRow(b.host, { phaseText: t('update.st300PowerCycle'), pct: 100, barClass: 'ua-defer' });
       } else if (outcome === 'done') setRow(b.host, { phaseText: t('updateAll.phase.done'), pct: 100, barClass: 'ua-done' });
       else if (outcome === 'partial') setRow(b.host, { phaseText: t('updateAll.phase.engineMissing'), pct: 100, barClass: 'ua-defer' });
+      else if (outcome === 'agentGone') setRow(b.host, { phaseText: t('updateAll.phase.agentGone'), barClass: 'ua-failed' });
       else setRow(b.host, { phaseText: t('updateAll.phase.timeout'), barClass: 'ua-defer' });
     } catch (e) {
       outcome = 'failed';
