@@ -28,7 +28,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +48,32 @@ var (
 	}
 	setMemberVolumeFn = setJoinerVolume
 )
+
+// lanPeerAddr parses a member address from the request body and returns it ONLY
+// if it is a bare LAN IP. The parsed value is what every caller uses from then
+// on, never the original string.
+//
+// Re-serialising through netip.Addr is the point, not decoration. The address
+// is attacker-influenced (it arrives in the zone-form body) and ends up in a
+// URL, so a boolean "looks fine" check leaves the raw string in the request:
+// anything that is not exactly an IP - a host name, a port, a credential, a
+// path fragment - would travel straight into it. After this the value is a
+// canonical IP or nothing at all, which is what makes the URL safe to build and
+// the value safe to log.
+func lanPeerAddr(host string) (netip.Addr, bool) {
+	a, err := netip.ParseAddr(strings.TrimSpace(host))
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	a = a.Unmap()
+	if a.IsLoopback() || a.IsUnspecified() || a.IsMulticast() || a.Zone() != "" {
+		return netip.Addr{}, false
+	}
+	if !a.IsPrivate() && !a.IsLinkLocalUnicast() {
+		return netip.Addr{}, false
+	}
+	return a, true
+}
 
 // joinVolumeMu serializes appliers. Two overlapping group edits (the chips
 // coalesce, and a second edit can arrive while the first applier is still in
@@ -131,13 +159,21 @@ func dropMembers(members []boxapi.ZoneMember, ids []string) []boxapi.ZoneMember 
 // agent over its Bose port for the reason in the file header. Copied in shape
 // from internal/spotify/volume.go setFollowerVolume, which solved the same
 // problem for the same firmware flaw.
-func setJoinerVolume(ctx context.Context, ip string, pct int) error {
+func setJoinerVolume(ctx context.Context, addr netip.Addr, pct int) error {
+	// Second gate, on purpose. The caller already filtered the list, but this
+	// function is reachable from anywhere in the package and the address it
+	// dials comes from a request body, so it re-checks rather than trusting
+	// that every future caller will remember.
+	if !addr.IsValid() {
+		return fmt.Errorf("refusing to set the volume on an invalid address")
+	}
+	host := addr.String()
 	body := fmt.Sprintf(`{"value":%d}`, pct)
 	var lastErr error
 	for _, port := range []string{"17008", "8888"} {
 		rctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		req, err := http.NewRequestWithContext(rctx, http.MethodPut,
-			"http://"+ip+":"+port+"/api/box/volume", strings.NewReader(body))
+			"http://"+net.JoinHostPort(host, port)+"/api/box/volume", strings.NewReader(body))
 		if err != nil {
 			cancel()
 			return err
@@ -158,7 +194,7 @@ func setJoinerVolume(ctx context.Context, ip string, pct int) error {
 	}
 	// No reachable STR agent on the member (a stock speaker, or one still
 	// starting): drive the Bose port directly rather than give up.
-	if err := boxapi.New(ip).SetVolume(ctx, pct); err != nil {
+	if err := boxapi.New(host).SetVolume(ctx, pct); err != nil {
 		return fmt.Errorf("%w (agent fallback: %v)", err, lastErr)
 	}
 	return nil
@@ -200,14 +236,17 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 		return
 	}
 
-	type target struct{ ip, id string }
+	type target struct {
+		addr netip.Addr
+		id   string
+	}
 	list := make([]target, 0, len(members))
 	for _, m := range members {
-		ip := strings.TrimSpace(m.IP)
-		if ip == "" || !isLANPeer(ip) {
+		addr, ok := lanPeerAddr(m.IP)
+		if !ok {
 			continue
 		}
-		list = append(list, target{ip: ip, id: m.DeviceID})
+		list = append(list, target{addr: addr, id: m.DeviceID})
 	}
 	if len(list) == 0 {
 		return
@@ -218,8 +257,8 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 		wg.Add(1)
 		go func(tg target) {
 			defer wg.Done()
-			if err := setMemberVolumeFn(ctx, tg.ip, want); err != nil {
-				s.logger.Warn("zone: could not set a joining member's volume", "ip", tg.ip, "err", err)
+			if err := setMemberVolumeFn(ctx, tg.addr, want); err != nil {
+				s.logger.Warn("zone: could not set a joining member's volume", "ip", tg.addr.String(), "err", err)
 			}
 		}(tg)
 	}
@@ -242,7 +281,7 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 	}
 	corrected := 0
 	for _, tg := range list {
-		got, rerr := readMemberVolumeFn(ctx, tg.ip)
+		got, rerr := readMemberVolumeFn(ctx, tg.addr.String())
 		if rerr != nil {
 			continue
 		}
@@ -256,11 +295,11 @@ func (s *Server) matchNewMembersToMasterVolume(members []boxapi.ZoneMember, seq 
 		// Only the wake-default revert is corrected. Anything else stays.
 		if !looksLikeWakeDefault(have) {
 			s.logger.Info("zone: leaving a joining member's volume alone, it was changed after we set it",
-				"ip", tg.ip, "set", want, "now", have)
+				"ip", tg.addr.String(), "set", want, "now", have)
 			continue
 		}
-		if err := setMemberVolumeFn(ctx, tg.ip, want); err != nil {
-			s.logger.Warn("zone: could not re-apply a joining member's volume", "ip", tg.ip, "err", err)
+		if err := setMemberVolumeFn(ctx, tg.addr, want); err != nil {
+			s.logger.Warn("zone: could not re-apply a joining member's volume", "ip", tg.addr.String(), "err", err)
 			continue
 		}
 		corrected++

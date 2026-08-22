@@ -1481,7 +1481,6 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .ua-row.ua-failed .ua-bar-fill { background: #c44; width: 100%; }
 .ua-row.ua-indet .ua-bar-fill { width: 40%; background: var(--brand); animation: ua-indet 1.2s ease-in-out infinite; }
 @keyframes ua-indet { 0% { margin-inline-start: -40%; } 100% { margin-inline-start: 100%; } }
-.beta-tag { font-size: 10px; background: #c9933a; color: #111; border-radius: 3px; padding: 1px 5px; margin-inline-start: 4px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; }
 
 .credits-list { max-height: 50vh; overflow-y: auto; margin-bottom: 14px; }
 .credit-row { padding: 7px 0; border-bottom: 1px solid var(--c-border); font-size: 13px; }
@@ -1514,7 +1513,10 @@ html.a11y-light .preset.error .name { color: #991b1b; }
    four-speaker prompt arrived as one unbroken wall of text. */
 .warn-body-rich { max-height: 46vh; overflow-y: auto; }
 .warn-body-rich p { margin: 0 0 6px 0; font-size: 14px; line-height: 1.45; }
-.warn-body-rich ul { margin: 0 0 14px 0; padding-left: 0; list-style: none; }
+/* Logical properties, never left/right: the app ships Arabic and sets dir=rtl on
+   the document, so a physical padding-left with a left-positioned marker puts
+   the bullet on the wrong side of its own text for those users. */
+.warn-body-rich ul { margin: 0 0 14px 0; padding: 0; list-style: none; }
 .warn-body-rich ul:last-child { margin-bottom: 0; }
 .warn-body-rich li {
   font-size: 14px; font-weight: 600; padding: 5px 10px; margin-bottom: 4px;
@@ -1523,9 +1525,9 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .warn-body-rich .warn-notes { margin-top: 2px; }
 .warn-body-rich .warn-notes li {
   font-weight: 400; font-size: 13px; color: var(--c-muted);
-  background: none; padding: 0 0 0 14px; position: relative;
+  background: none; padding: 0; padding-inline-start: 14px; position: relative;
 }
-.warn-body-rich .warn-notes li::before { content: '2'; position: absolute; left: 2px; }
+.warn-body-rich .warn-notes li::before { content: '\2022'; position: absolute; inset-inline-start: 2px; }
 /* Error detail text. The message itself is normal text colour, NOT the signal
    red: red on the near-black surface measures about 3.5:1, under the 4.5:1 that
    small text needs, and a user photographed exactly this and called it hard to

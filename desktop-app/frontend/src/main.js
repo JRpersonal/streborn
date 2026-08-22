@@ -2449,15 +2449,25 @@ function renderBoxSelect() {
     sel.innerHTML = state.boxes.map(pill).join('') + addIpTile();
   } else {
     // Key the frame colour to the GROUP, not to its position in the list. With
-    // (i % 4) + 1 a zone changed colour whenever a speaker dropped off the LAN
-    // or discovery reordered, which is the opposite of what an identity colour
-    // is for: the one thing it has to do is stay the same. A cheap hash over
-    // the master's device id is stable for as long as the zone exists.
+    // (i % 4) + 1 a zone changed colour whenever another zone lost a member and
+    // dropped out of the list, which is the one thing an identity colour must
+    // not do.
+    //
+    // The hash is only a PREFERENCE, though. Taken raw it collides: with four
+    // slots and four zones two of them share a colour more often than not, and
+    // the old positional scheme at least guaranteed four distinct colours for
+    // four groups. So hash first, then linear-probe into the next free slot, so
+    // a zone keeps its colour across refreshes AND simultaneous zones stay
+    // distinguishable up to the four the palette holds.
     const colorOf = {};
+    const taken = new Set();
     for (const m of groups) {
       let h = 0;
       for (let i = 0; i < m.length; i++) h = (h * 31 + m.charCodeAt(i)) >>> 0;
-      colorOf[m] = (h % 4) + 1;
+      let slot = h % 4;
+      for (let k = 0; k < 4 && taken.has(slot); k++) slot = (slot + 1) % 4;
+      taken.add(slot);
+      colorOf[m] = slot + 1;
     }
     let html = '';
     for (const m of groups) {
@@ -5141,8 +5151,29 @@ async function runGroupMemberToggle(edits) {
           // a speaker that is provably in the group and provably silent is the
           // hardest thing there is to tell apart from one that never joined.
           if (mv > 0) {
-            const joined = added.filter(tgt => !(res && Array.isArray(res.notReady)
-              && res.notReady.some(nr => nr === tgt.host || (nr && nr.ip === tgt.host))));
+            // Two different "did not join" answers, and both have to be
+            // subtracted. notReady is the app's own pre-flight drop: the agent
+            // never answered, so the speaker was not sent to the firmware at
+            // all. missing is the master's verify-first verdict for a slave it
+            // DID send but whose own zone read never named the master. The
+            // agent skips exactly that set in its own applier, so writing it
+            // here would hand the group's level to a speaker sitting in another
+            // room in no group at all.
+            //
+            // missing carries deviceIDs, not addresses, and on a two-chip
+            // chassis the firmware's id is not the one discovery knows, so it
+            // is resolved through the members list the agent returned.
+            const notReady = new Set((res && Array.isArray(res.notReady) ? res.notReady : [])
+              .map(nr => (nr && nr.ip) || nr).filter(Boolean));
+            const missingIDs = new Set((res && Array.isArray(res.missing) ? res.missing : [])
+              .map(id => String(id).toLowerCase()));
+            const missingIPs = new Set((res && Array.isArray(res.members) ? res.members : [])
+              .filter(m => m && m.deviceID && missingIDs.has(String(m.deviceID).toLowerCase()))
+              .map(m => m.ip).filter(Boolean));
+            const joined = added.filter(tgt =>
+              !notReady.has(tgt.host) &&
+              !missingIPs.has(tgt.host) &&
+              !missingIDs.has(String(tgt.deviceID || '').toLowerCase()));
             await Promise.allSettled(joined.map(tgt => SetBoxVolume(tgt.host, tgt.port, mv)));
             joined.forEach(tgt => { groupVol.members[tgt.host] = mv; });
           }

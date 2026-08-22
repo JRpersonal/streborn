@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"testing"
 
@@ -171,7 +172,8 @@ func (f *fakeVolumes) read(_ context.Context, host string) (boxapi.Volume, error
 	return boxapi.Volume{Target: v, Actual: v}, nil
 }
 
-func (f *fakeVolumes) set(_ context.Context, host string, pct int) error {
+func (f *fakeVolumes) set(_ context.Context, addr netip.Addr, pct int) error {
+	host := addr.String()
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.writes = append(f.writes, host)
@@ -300,5 +302,57 @@ func TestMatchNewMembersLeavesAHumanChangeAlone(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("a level changed by someone else must not be overruled, got %d writes", n)
+	}
+}
+
+// The address a joining member is dialled at comes from the zone-form request
+// body and ends up in a URL, so it has to be a bare LAN IP and nothing else.
+// A boolean "looks fine" check would leave the raw string in the request; this
+// returns a re-serialised address or nothing.
+func TestLanPeerAddrRejectsEverythingButALANIP(t *testing.T) {
+	good := []string{"192.168.178.49", "10.0.0.1", "172.16.5.5", "169.254.1.2", " 192.168.1.7 "}
+	for _, in := range good {
+		if a, ok := lanPeerAddr(in); !ok || !a.IsValid() {
+			t.Errorf("lanPeerAddr(%q) should be accepted", in)
+		}
+	}
+	bad := []string{
+		"", "   ",
+		"8.8.8.8",                 // public
+		"127.0.0.1",               // loopback
+		"0.0.0.0",                 // unspecified
+		"224.0.0.1",               // multicast
+		"192.168.1.1:8080",        // carries a port
+		"evil.example.com",        // a name, not an IP
+		"192.168.1.1/../../etc",   // path fragment
+		"user@192.168.1.1",        // credential
+		"192.168.1.1 192.168.1.2", // two of them
+		"fe80::1%eth0",            // zoned
+		"[192.168.1.1]",           // bracketed
+	}
+	for _, in := range bad {
+		if _, ok := lanPeerAddr(in); ok {
+			t.Errorf("lanPeerAddr(%q) should be rejected", in)
+		}
+	}
+}
+
+// A member whose address is not a LAN IP is skipped entirely, not dialled.
+func TestMatchNewMembersSkipsANonLANMember(t *testing.T) {
+	f := newFakeVolumes()
+	f.level["192.168.10.10"] = 20
+	withFakeVolumes(t, f)
+
+	s := newJoinVolServer("192.168.10.10")
+	s.matchNewMembersToMasterVolume([]boxapi.ZoneMember{
+		{DeviceID: "AA", IP: "8.8.8.8"},
+		{DeviceID: "BB", IP: "evil.example.com"},
+		{DeviceID: "CC", IP: ""},
+	}, s.zoneFormSeq.Load())
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.writes) != 0 {
+		t.Fatalf("no non-LAN member may be dialled, wrote %v", f.writes)
 	}
 }

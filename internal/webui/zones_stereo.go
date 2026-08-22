@@ -1520,6 +1520,13 @@ func (s *Server) reconcileZoneOnce() {
 
 // handleZoneDissolve tears down the zone this box leads and stops re-forming it.
 func (s *Server) handleZoneDissolve(w http.ResponseWriter, r *http.Request) {
+	// A dissolve is a membership change like any form, so stamp the sequence:
+	// a join-volume applier still sitting in its settle has to stand down
+	// instead of writing the group's level onto a speaker that just left it.
+	// Before the serial lock on purpose, so it also supersedes a form that is
+	// still inside its coalesce window rather than only one already past its
+	// own check.
+	s.zoneFormSeq.Add(1)
 	// Same serial lock as handleZoneForm: a dissolve arriving between two
 	// member changes executes in arrival order and never interleaves with a
 	// drive against the firmware.

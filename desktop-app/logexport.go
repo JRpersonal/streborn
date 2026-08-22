@@ -676,7 +676,19 @@ var deviceIDRegex = regexp.MustCompile(`(?i)\b[0-9A-F]{12}\b`)
 // go through this more than once: sanitizeLog and anonymizeText both call
 // scrubPII, and nested structures are walked field by field. Matching the
 // marker and handing it back untouched is what makes the pass idempotent.
-var ssidRedactRegex = regexp.MustCompile(`(?i)<SSID-REDACTED>|\b(?:ssid|password|passphrase|psk)\s*=\s*"[^"]*"|\bseeding\s+'[^']{1,64}'|\b(?:ssid|ssid_name|wpa-psk\s+\S+|psk=)[^\s]*`)
+// Every quoted value is bounded to its own LINE, and an unterminated one is
+// redacted to the end of that line. Go's negated classes match newlines, so
+// `[^"]*` on an unterminated attribute ran to the next quote anywhere later in
+// the blob and swallowed whole log lines in between - and the scrub sees the
+// box's setup log as one 64 KB blob, where truncation is routine: the boot
+// script cuts a profile dump at 300 bytes and the seed response at 200, both of
+// which land mid-attribute. Falling through to the bare-key alternative then
+// leaked the tail. The seeding value stops at a newline rather than at the
+// LAST quote on its line rather than the first, so a network called "Bob's
+// WiFi" does not ship its tail; the unterminated case is a separate
+// alternative so a terminated value does not greedily eat the rest of the
+// line with it.
+var ssidRedactRegex = regexp.MustCompile(`(?im)<SSID-REDACTED>|\b(?:ssid|password|passphrase|psk)\s*=\s*"[^"\n]*(?:"|$)|\bseeding\s+'[^\n]*'|\bseeding\s+'[^\n]*$|\b(?:ssid|ssid_name|wpa-psk\s+\S+|psk=)[^\s]*`)
 
 const ssidRedacted = "<SSID-REDACTED>"
 
