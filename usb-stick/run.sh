@@ -260,14 +260,24 @@ wifi_failover_seed() {
         *'wifiProfileCount="0"'*) ;;
         *) return 0 ;;
     esac
-    setup_log "wifi failover seed: box online with NO stored Wi-Fi profile (src=$_fs_src) - seeding '$_fs_ssid' so a later cable pull can fail over (non-destructive)"
+    # The network NAME never goes into the log. This line ships inside every
+    # diagnostic bundle, whose README promises that SSIDs and Wi-Fi passwords
+    # never leave the host, and it was the one place that broke the promise (a
+    # real household network name found in a user's bundle, 2026-08-22). The
+    # length is what a diagnosis actually needs, and it is what the wlan.conf
+    # line above already logs.
+    setup_log "wifi failover seed: box online with NO stored Wi-Fi profile (src=$_fs_src) - seeding the stored network (name_length=${#_fs_ssid}) so a later cable pull can fail over (non-destructive)"
     if [ -z "$_fs_taigan" ]; then
         _fs_es=$(printf '%s' "$_fs_ssid" | sed -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")
         _fs_ep=$(printf '%s' "$_fs_pass" | sed -e 's/\&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g")
         _fs_resp=$(wget -qO- -T 6 --header="Content-Type: text/xml" \
             --post-data="<AddWirelessProfile timeout=\"5\"><profile ssid=\"$_fs_es\" password=\"$_fs_ep\" securityType=\"wpa_or_wpa2\" /></AddWirelessProfile>" \
             "http://127.0.0.1:8090/addWirelessProfile" 2>&1)
-        setup_log "wifi failover seed: /addWirelessProfile rc=$? response='$(echo "$_fs_resp" | head -c 200)'"
+        # Strip any ssid=/password= attribute the firmware echoes back before it
+        # reaches the log, same reason as above.
+        _fs_rc=$?
+        _fs_safe=$(echo "$_fs_resp" | head -c 200 | sed -e 's/ssid="[^"]*"/ssid="<redacted>"/g' -e 's/password="[^"]*"/password="<redacted>"/g')
+        setup_log "wifi failover seed: /addWirelessProfile rc=$_fs_rc response='$_fs_safe'"
     fi
     goform_wlan_push "$_fs_ssid" "$_fs_pass"
     # Outcome evidence for the next bundle: did the profile land?
