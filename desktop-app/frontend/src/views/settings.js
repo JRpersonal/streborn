@@ -1279,8 +1279,16 @@ function renderBoxSettings(s, box) {
       // is newer than the box. When the box is newer than the app, an OTA would
       // downgrade it, so show "update the app" with no button (#105).
       const cmp = compareVerBuild(appVer, appBuild, boxVer, boxBuild);
-      const otaBtn = () => (state.otaInProgress && state.otaTargetHost && state.otaTargetHost !== box.host)
-        ? `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.runningBtn'))}</button><div class="op-status" id="stickInfoUpdateStatus">${escapeHtml(t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</div>`
+      // Three states, not two. The third is "the update running right now is
+      // THIS speaker's": this panel is rendered from an async fetch chain, so it
+      // regularly lands seconds after doBoxUpdate has already started, and a
+      // fresh ENABLED "Update" button with an empty status line over a speaker
+      // that is at that moment being flashed reads as "the click did nothing"
+      // and invites a second press (Jens, 2026-08-22).
+      const otaHere = state.otaInProgress && state.otaTargetHost === box.host;
+      const otaElsewhere = state.otaInProgress && state.otaTargetHost && !otaHere;
+      const otaBtn = () => (otaHere || otaElsewhere)
+        ? `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn" disabled>${escapeHtml(t('update.runningBtn'))}</button><div class="op-status" id="stickInfoUpdateStatus">${escapeHtml(otaHere ? t('update.uploading') : t('update.otherBoxRunning', { name: state.otaTargetName || '...' }))}</div>`
         : `<button class="btn btn-mini btn-primary" id="stickInfoUpdateBtn">${escapeHtml(t('update.refreshBtn'))}</button><div class="op-status" id="stickInfoUpdateStatus"></div>`;
       if (cmp === 0) {
         const buildSuffix = boxBuild ? ` (Build ${escapeHtml(boxBuild)})` : '';
@@ -1418,7 +1426,7 @@ function renderBoxSettings(s, box) {
     try {
       const n = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && deps.boxNeedsUpdate && deps.boxNeedsUpdate(b)).length;
       if (n >= 2 && !state.otaInProgress && deps.updateAllBoxes) {
-        updateAllBtn = `<button class="btn btn-mini btn-secondary" id="settingsUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: n }))} <span class="beta-tag">${escapeHtml(t('common.beta'))}</span></button>`;
+        updateAllBtn = `<button class="btn btn-mini btn-secondary" id="settingsUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: n }))}</button>`;
       }
     } catch { /* box list not ready */ }
 

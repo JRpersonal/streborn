@@ -1462,8 +1462,31 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 .ps-name { font-size: 13px; font-weight: 600; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; }
 
 .warn-title { color: var(--signal-red) !important; display: flex; align-items: center; gap: 8px; margin: 0 0 8px 0; }
+/* Routine confirmations (updating the speakers) reuse this modal but must not
+   look like an alarm: brand colour, no triangle, and the confirm button is a
+   primary CTA instead of the red "proceed anyway". */
+.warn-title.warn-title-calm { color: var(--brand) !important; }
 .warn-icon { font-size: 24px; }
 .warn-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+/* Structured confirmation body: a short lead sentence, then the speakers it
+   applies to as a real list. The plain-text bodies used to be pushed through
+   innerHTML with "
+" separators, which HTML collapses into whitespace, so a
+   four-speaker prompt arrived as one unbroken wall of text. */
+.warn-body-rich { max-height: 46vh; overflow-y: auto; }
+.warn-body-rich p { margin: 0 0 6px 0; font-size: 14px; line-height: 1.45; }
+.warn-body-rich ul { margin: 0 0 14px 0; padding-left: 0; list-style: none; }
+.warn-body-rich ul:last-child { margin-bottom: 0; }
+.warn-body-rich li {
+  font-size: 14px; font-weight: 600; padding: 5px 10px; margin-bottom: 4px;
+  border-radius: 6px; background: var(--c-surface-3, rgba(255,255,255,.05));
+}
+.warn-body-rich .warn-notes { margin-top: 2px; }
+.warn-body-rich .warn-notes li {
+  font-weight: 400; font-size: 13px; color: var(--c-muted);
+  background: none; padding: 0 0 0 14px; position: relative;
+}
+.warn-body-rich .warn-notes li::before { content: '2'; position: absolute; left: 2px; }
 /* Error detail text. The message itself is normal text colour, NOT the signal
    red: red on the near-black surface measures about 3.5:1, under the 4.5:1 that
    small text needs, and a user photographed exactly this and called it hard to

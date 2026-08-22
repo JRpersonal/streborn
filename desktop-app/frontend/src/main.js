@@ -196,6 +196,7 @@ import {
   closeWarn,
   showError,
   showToast,
+  hideToast,
   compareVerBuild,
   getBoxLabel,
   savePresetCase,
@@ -571,7 +572,7 @@ document.querySelector('#app').innerHTML = `
 
   <div class="modal hidden" id="updateAllOverlay">
     <div class="modal-content ua-modal">
-      <h3>${escapeHtml(t('updateAll.title'))} <span class="beta-tag">${escapeHtml(t('common.beta'))}</span></h3>
+      <h3>${escapeHtml(t('updateAll.title'))}</h3>
       <p class="modal-sub" id="uaSummary"></p>
       <div id="uaList" class="ua-list"></div>
       <div class="warn-buttons">
@@ -1923,18 +1924,61 @@ function maybeShowSpeakerUpdateCard() {
   const go = $('sucUpdate');
   if (go) {
     go.onclick = async () => {
-      hide();
-      // One speaker: the normal single-box update (it shows its own progress
-      // and prompts). Several: the existing update-all flow, which pre-checks
-      // sticks and weak Wi-Fi once instead of per speaker.
+      // Do NOT hide first. The card used to disappear on the click and only
+      // then start working; every path that then declined to start (an update
+      // already running, the speakers turning out to be current, a pre-flight
+      // the user cancelled) left the user staring at the tab they were on with
+      // the prompt gone for the rest of the session, because the
+      // once-per-start latch never brings it back. It hides when the update is
+      // actually under way, and stays put otherwise (Jens, 2026-08-22).
+      const label = go.textContent;
+      const restore = () => { go.disabled = false; go.textContent = label; };
+      // Re-resolve against the CURRENT box list. `outdated` is a snapshot from
+      // render time, and a discovery pass landing between render and click
+      // replaces every object in state.boxes: the stale copies can carry an
+      // address the speaker has already left. This is the "shortly after the
+      // app started, while the scan is still running" case.
+      const wanted = new Set(outdated.map(b => b.host));
+      const live = (state.boxes || []).filter(b => b && b.kind !== 'stock' && !b.offline && boxNeedsUpdate(b));
+      const targets = live.filter(b => wanted.has(b.host));
+      const pick = targets.length ? targets : live;
+      if (!pick.length) {
+        // Two different empties, and telling them apart matters. No speakers on
+        // the list at all means the sweep is mid-cycle or the LAN dropped them:
+        // keep the card up and say the speakers are not reachable. A populated
+        // list with nothing behind means they really are current, and the card
+        // has done its job.
+        const anyBox = (state.boxes || []).some(b => b && b.kind !== 'stock');
+        showToast(anyBox ? t('updateAll.noneToUpdate') : t('speakerUpdate.notReachable'));
+        if (anyBox) hide();
+        return;
+      }
+      go.disabled = true;
+      go.textContent = t('speakerUpdate.working');
       try {
-        if (outdated.length === 1) {
+        if (pick.length === 1) {
+          const box = pick[0];
+          // Point Speaker Settings AT THE SPEAKER BEING UPDATED before
+          // switching. doBoxUpdate only paints its progress while the user is
+          // looking at the target box, so landing on whichever speaker the
+          // settings tab happened to have selected ran the whole OTA with no
+          // visible sign of it at all: the exact "nothing happens" report.
+          state.settingsBox = box;
+          showToast(t('speakerUpdate.starting', { name: getBoxLabel(box) }));
           switchView('settings');
-          await doBoxUpdate(outdated[0]);
+          hide();
+          await doBoxUpdate(box);
         } else {
-          await updateAllBoxes();
+          // updateAllBoxes probes every speaker (version, USB stick, Wi-Fi
+          // quality) before it can ask, which is seconds of silence on a busy
+          // LAN. It keeps its own "checking" toast up; the card stays on screen
+          // in its working state until that flow commits or backs out.
+          const started = await updateAllBoxes(hide);
+          if (!started) restore();
+          return;
         }
-      } catch (e) { showError(e); }
+      } catch (e) { showError(e); restore(); return; }
+      restore();
     };
   }
 }
@@ -3044,12 +3088,12 @@ async function checkBoxUpdate() {
     }
     return `<button class="btn btn-primary btn-mini" id="boxUpdateBtn">${escapeHtml(t('update.refreshBtnSpeaker'))}</button><div class="op-status" id="boxUpdateStatus"></div>`;
   };
-  // "Update all speakers" (beta): offered next to the single-speaker button when
+  // "Update all speakers": offered next to the single-speaker button when
   // two or more speakers are behind, so a multi-speaker household updates them in
   // one click instead of one at a time. Hidden while any OTA is already running.
   const eligibleCount = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && boxNeedsUpdate(b) && !otaStuck(b)).length;
   const renderUpdateAllBtn = () => (eligibleCount >= 2 && !state.otaInProgress)
-    ? `<button class="btn btn-secondary btn-mini" id="boxUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: eligibleCount }))} <span class="beta-tag">${escapeHtml(t('common.beta'))}</span></button>`
+    ? `<button class="btn btn-secondary btn-mini" id="boxUpdateAllBtn">${escapeHtml(t('updateAll.button', { count: eligibleCount }))}</button>`
     : '';
   const wireUpdateAllBtn = () => { const b = $('boxUpdateAllBtn'); if (b) b.onclick = updateAllBoxes; };
   const boxName = getBoxLabel(state.currentBox);
@@ -3979,16 +4023,52 @@ async function doBoxUpdate(targetBox) {
   }
 }
 
-// updateAllBoxes (beta) updates every eligible speaker in one click with a live
+// updateAllBoxes updates every eligible speaker in one click with a live
 // per-box multi-progress overlay. Built for a household with several speakers,
 // some on weak Wi-Fi: it asks ONCE up front, runs a BOUNDED pool (2 at a time, so
 // concurrent ~16 MB Spotify-engine pushes do not saturate a weak shared AP and
 // trip the 60 s upload-stall watchdog), and never lets one slow/failed box block
 // the rest. Calls runBoxUpdate directly (not doBoxUpdate) so it does not contend
 // on the single-box global lock, which it holds for the whole batch.
-async function updateAllBoxes() {
-  if (state.otaInProgress) return;
+//
+// Returns true when a batch was actually started, false when it backed out
+// (already running, nothing to do, user cancelled). Callers that took a button
+// or a card off screen for it need that answer to put it back. onStart fires
+// the moment the batch is committed, for callers that want to get out of the
+// way then rather than minutes later when the whole batch is done.
+// Re-entrancy latch, set BEFORE the first await and cleared in the finally at
+// the very bottom. state.otaInProgress is not enough: it is only raised AFTER
+// the confirmation, and everything before it (a version read per speaker, a
+// stick check and a Wi-Fi read per target) is seconds of network work during
+// which a second click sails straight past that check. Two overlapping runs
+// then queue two confirmations on a modal that keeps ONE resolver, so the
+// second prompt arrived after the batch was already done and asked the user to
+// update speakers they had just updated (Jens, 2026-08-22).
+let updateAllBusy = false;
+async function updateAllBoxes(onStart) {
+  // Saying so out loud, not returning silently: a second press on a dead-looking
+  // button is exactly what the single-box path already learned to answer.
+  if (updateAllBusy || state.otaInProgress) {
+    showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('updateAll.batchLabel') }));
+    return false;
+  }
+  updateAllBusy = true;
+  try {
+    return await runUpdateAllBoxes(onStart);
+  } finally {
+    updateAllBusy = false;
+  }
+}
+
+// runUpdateAllBoxes is the body; updateAllBoxes above is the guard around it.
+async function runUpdateAllBoxes(onStart) {
   const candidates = (state.boxes || []).filter(b => b && b.kind !== 'stock' && b.host && !otaStuck(b));
+  // Everything from here to the confirmation is network work: one version read
+  // per speaker, then a stick check and a Wi-Fi read per update target. On a
+  // busy LAN, or right after start while discovery is still sweeping, that is
+  // several seconds in which the click produced nothing at all on screen. Keep
+  // a line up for the whole pre-flight so the app is visibly working.
+  showToast(t('updateAll.checking'), 0);
   // Ask every speaker that is NOT behind whether it still has its Spotify
   // engine, so one that quietly lost it is repaired by this run instead of
   // being skipped (splitUpdateTargets carries the reasoning). One version read
@@ -4007,7 +4087,7 @@ async function updateAllBoxes() {
     rows.push({ box: b, needsUpdate, engineMissing });
   }
   const { updateTargets, engineTargets, targets } = splitUpdateTargets(rows);
-  if (targets.length === 0) { showToast(t('updateAll.noneToUpdate')); return; }
+  if (targets.length === 0) { hideToast(); showToast(t('updateAll.noneToUpdate')); return false; }
   // Hosts that only need the engine put back, not a whole agent update.
   const engineOnly = new Set(engineTargets.map(b => b.host));
 
@@ -4029,17 +4109,49 @@ async function updateAllBoxes() {
       if (sig === 'MARGINAL_SIGNAL' || sig === 'POOR_SIGNAL') notes.push(t('updateAll.noteWeakWifi', { name: getBoxLabel(b) }));
     } catch { /* signal unknown: do not block */ }
   }
-  const list = updateTargets.map(b => '• ' + getBoxLabel(b)).join('\n');
-  const engineList = engineTargets.map(b => '• ' + getBoxLabel(b)).join('\n');
+  hideToast();
+  // The prompt used to be one plain string with "\n" separators pushed through
+  // innerHTML, where HTML collapses newlines: four speakers plus two notes
+  // arrived as a single unbroken paragraph under a red warning triangle and a
+  // red "proceed anyway" button. Updating the speakers is the normal,
+  // recommended thing to do, so it gets a calm heading, one short sentence per
+  // group, the speakers as an actual list, and a primary "update now" button.
+  // Names come from the speakers themselves and are escaped: they end up in
+  // innerHTML.
+  const nameList = (arr, cls) =>
+    `<ul${cls ? ` class="${cls}"` : ''}>` +
+    arr.map(x => `<li>${escapeHtml(typeof x === 'string' ? x : getBoxLabel(x))}</li>`).join('') +
+    '</ul>';
   // Two groups with two different promises: the first restarts, the second
   // normally does not. Saying which is which up front is the difference between
   // a run the user can predict and one that surprises them.
   let body = '';
-  if (updateTargets.length) body += t('updateAll.confirmBody', { count: updateTargets.length, list });
-  if (engineTargets.length) body += (body ? '\n\n' : '') + t('updateAll.confirmBodyEngine', { count: engineTargets.length, list: engineList });
-  if (notes.length) body += '\n\n' + notes.join('\n');
+  if (updateTargets.length) {
+    body += `<p>${escapeHtml(t('updateAll.confirmLead'))}</p>`
+      + nameList(updateTargets);
+  }
+  if (engineTargets.length) {
+    body += `<p>${escapeHtml(t('updateAll.confirmLeadEngine'))}</p>`
+      + nameList(engineTargets);
+  }
+  if (notes.length) body += nameList(notes, 'warn-notes');
   const confirmTitle = updateTargets.length ? t('updateAll.confirmTitle') : t('updateAll.confirmTitleEngine');
-  if (!(await confirmWarn(confirmTitle, body))) return;
+  const confirmed = await confirmWarn(confirmTitle, body, {
+    icon: null,
+    calm: true,
+    rich: true,
+    confirmLabel: updateTargets.length ? t('updateAll.confirmBtn') : t('updateAll.confirmBtnEngine'),
+    confirmClass: 'btn btn-primary',
+  });
+  if (!confirmed) return false;
+  // The prompt can sit on screen for a while. Anything that started an OTA in
+  // the meantime (the single-speaker button, a resumed update intent) owns the
+  // speakers now, so do not push a second batch over it.
+  if (state.otaInProgress) {
+    showToast(t('update.alreadyRunning', { name: state.otaTargetName || t('updateAll.batchLabel') }));
+    return false;
+  }
+  try { if (onStart) onStart(); } catch { /* caller's UI concern only */ }
 
   // Hold the single-box global lock for the whole batch: the single-speaker
   // buttons then render "update running" and the SSH "remove stick" banner stays
@@ -4251,6 +4363,7 @@ async function updateAllBoxes() {
   checkSshBanner();
   const c = counts();
   showToast(t('updateAll.doneToast', { done: c.done, deferred: c.defer, failed: c.fail }));
+  return true;
 }
 
 function updateBoxUiVisibility() {
