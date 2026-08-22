@@ -2448,8 +2448,17 @@ function renderBoxSelect() {
   if (groups.length === 0) {
     sel.innerHTML = state.boxes.map(pill).join('') + addIpTile();
   } else {
+    // Key the frame colour to the GROUP, not to its position in the list. With
+    // (i % 4) + 1 a zone changed colour whenever a speaker dropped off the LAN
+    // or discovery reordered, which is the opposite of what an identity colour
+    // is for: the one thing it has to do is stay the same. A cheap hash over
+    // the master's device id is stable for as long as the zone exists.
     const colorOf = {};
-    groups.forEach((m, i) => { colorOf[m] = (i % 4) + 1; });
+    for (const m of groups) {
+      let h = 0;
+      for (let i = 0; i < m.length; i++) h = (h * 31 + m.charCodeAt(i)) >>> 0;
+      colorOf[m] = (h % 4) + 1;
+    }
     let html = '';
     for (const m of groups) {
       const members = state.boxes.filter(b => masterOf(b) === m);
