@@ -651,7 +651,10 @@ body {
 }
 .box-btn:hover { background: var(--c-border); }
 .box-btn.active { background: var(--brand-bg); border-color: var(--brand); color: var(--brand-text); }
-.box-btn small { display: block; opacity: 0.6; font-size: 10px; }
+/* Solid muted colour, never opacity: opacity multiplies against the parent's
+   already-muted colour, and in the light theme that produced #999a9f on the
+   #f5f5f6 tile, a 2.6:1 contrast the reporter could not read (#692). */
+.box-btn small { display: block; color: var(--c-muted); font-size: 10px; }
 .box-edit {
   position: absolute;
   right: 6px;
@@ -1791,7 +1794,9 @@ html.a11y-light .preset.error .name { color: #991b1b; }
 /* Fixed text colours, independent of the theme's --c-text: the orange chip
    needs DARK text (white/#eee measures ~2.9:1 on it), the green chip needs
    WHITE text (dark theme text passes, the light theme's near-black is 3.3:1). */
-.stc-badge.badge-warn { background: #d97706; color: #1c1917; }
+/* Black, not near-black, and semibold: 10px regular on this amber measured
+   5.4:1 and a reporter still could not read it (#692). */
+.stc-badge.badge-warn { background: #d97706; color: #000; font-weight: 600; }
 .stc-badge.badge-ok { background: #2a7f3f; color: #fff; }
 .stc-sublabel { font-size: 11px; color: var(--c-muted); margin-top: 3px; }
 .setup-target-empty { padding: 8px 4px; }
@@ -1869,7 +1874,7 @@ code { background: var(--c-bg); padding: 1px 4px; border-radius: 3px; font-size:
 .drive-path { font-size: 14px; color: var(--c-text); }
 .drive-meta { font-size: 11px; color: var(--c-muted); }
 .badge { font-size: 10px; background: #58a; color: #fff; padding: 2px 6px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
-.badge-warn { background: #d97706; color: #1c1917; }
+.badge-warn { background: #d97706; color: #000; font-weight: 600; }
 /* Hard-demote notice on the Wi-Fi-only (no-stick) onboarding panel. */
 .setup-ap-push-warn { margin: 6px 0 8px; padding: 8px 10px; background: #2f1f0f; border-left: 3px solid #d97706; border-radius: 4px; color: #fbbf24; font-size: 12px; }
 .security-warn { margin-top: 10px; padding: 10px 12px; background: linear-gradient(135deg, #2f1f0f 0%, #3a2a1a 100%); border-left: 3px solid #d97706; border-radius: 4px; }
