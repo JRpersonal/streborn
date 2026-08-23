@@ -26,6 +26,7 @@ import lt from './bundles/lt.json';
 import lv from './bundles/lv.json';
 import tr from './bundles/tr.json';
 import ar from './bundles/ar.json';
+import zhHant from './bundles/zh-Hant.json';
 
 // Each bundle covers the full UI chrome; missing keys fall back to
 // English. The large country/genre/lang reference tables are not
@@ -34,7 +35,7 @@ import ar from './bundles/ar.json';
 // language; the Bose box sysLanguage enum has no Ukrainian, so a UA box
 // display falls back to English (deliberately NOT Russian). See
 // project_bose_language_enum.
-const BUNDLES = { en, de, fr, es, ja, uk, nl, pl, lt, lv, tr, ar };
+const BUNDLES = { en, de, fr, es, ja, uk, nl, pl, lt, lv, tr, ar, 'zh-Hant': zhHant };
 
 // RTL_LOCALES drive the document text direction. Arabic is right-to-left; every
 // other shipped locale is left-to-right. applyDirection mirrors the whole UI by
@@ -63,6 +64,20 @@ export const AVAILABLE_LOCALES = Object.freeze(
     .sort((a, b) => a.label.localeCompare(b.label)),
 );
 
+// REGION_LOCALES maps a full navigator.language to a bundle whose code is not
+// just the language part. Chinese is the case that needs it: the bundle is
+// zh-Hant (Traditional, as written in Taiwan and Hong Kong), and the plain
+// "cut at the dash" lookup below turns zh-TW into "zh", which matches no
+// bundle at all, so a Taiwanese user would have silently landed on English.
+// Simplified is deliberately NOT aliased here: zh-CN is a different script and
+// gets English until someone contributes zh-Hans.
+const REGION_LOCALES = Object.freeze({
+  'zh-tw': 'zh-Hant',
+  'zh-hk': 'zh-Hant',
+  'zh-mo': 'zh-Hant',
+  'zh-hant': 'zh-Hant',
+});
+
 const LS_KEY = 'locale';
 const FALLBACK = 'en';
 
@@ -75,6 +90,8 @@ function detectInitialLocale() {
     // through to navigator detection.
   }
   const nav = (typeof navigator !== 'undefined' && navigator.language) || '';
+  const region = REGION_LOCALES[nav.toLowerCase()];
+  if (region && BUNDLES[region]) return region;
   const short = nav.toLowerCase().split('-')[0];
   if (short && BUNDLES[short]) return short;
   return FALLBACK;

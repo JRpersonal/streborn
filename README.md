@@ -32,7 +32,7 @@ The desktop app: browse and assign presets, search internet radio, control Spoti
 | [![DLNA library](docs/screenshots/OS%20Hero/app-library.jpg)](docs/screenshots/OS%20Hero/app-library.jpg) | [![USB stick setup](docs/screenshots/OS%20Hero/app-stick-step1.jpg)](docs/screenshots/OS%20Hero/app-stick-step1.jpg) | [![Stick: Wi-Fi, name, region](docs/screenshots/OS%20Hero/app-stick-step2.jpg)](docs/screenshots/OS%20Hero/app-stick-step2.jpg) |
 | DLNA music library | Install and setup | Wi-Fi, name, region |
 
-The interface is available in twelve languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish, Arabic). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
+The interface is available in thirteen languages (English, German, French, Spanish, Japanese, Ukrainian, Dutch, Polish, Lithuanian, Latvian, Turkish, Arabic, Traditional Chinese). The full per-language screenshot set lives in [`docs/screenshots/`](docs/screenshots/) and is regenerated automatically with `npm run shoot` in `desktop-app/frontend/screenshots/`, a headless Playwright harness that mocks the backend with demo data, so no speaker is needed.
 
 ## Status (August 2026)
 
