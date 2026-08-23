@@ -11,6 +11,16 @@ port numbers, process states). It contains **no** Bose code, no
 firmware binaries, and no decompilation. All device identifiers, IPs,
 and MACs are placeholders.
 
+In August 2026 these notes were cross-checked against the official
+Bose SoundTouch Web API reference (v1.1, dated 2026-04-01). Entries
+from that pass carry one of two provenance markers. **Doc-confirmed**
+means that reference states the same thing; only its identifiers are
+reproduced here, never its text. **Field wins** means the doc says one
+thing, the live FW 27.0.6 fleet demonstrably does another, and STR
+follows the field observation, with the citation given. The field-wins
+entries are the valuable ones: do not "fix" STR toward the doc on any
+of them.
+
 ## The Portable ~27-minute reboot loop (and how STR fixes it)
 
 **Symptom.** On the SoundTouch Portable, internet radio would stop and
@@ -86,6 +96,60 @@ persistent; the firmware answers protocol pings indefinitely. Every gap
 had been a 10-14 s window that lost a hardware press (#435 feeder) and a
 log-churn source that rotated the 32 KB NAND log in ~3.5 h.
 
+### The official notification names (doc-confirmed)
+
+The official doc confirms the `gabbo` subprotocol on `:8080` and maps
+its internal notification names onto the wire elements STR parses:
+
+| Doc notification name   | Wire element                |
+| ----------------------- | --------------------------- |
+| VolumeChange            | `volumeUpdated`             |
+| BassChange              | `bassUpdated`               |
+| NetworkConnectionStatus | `connectionStateUpdated`    |
+| NowSelectionChange      | `nowSelectionUpdated` (a `preset` child carrying a `ContentItem`) |
+| SourcesChange           | `sourcesUpdated`            |
+| InfoChange              | `infoUpdated`               |
+| ZoneMapChange           | `zoneUpdated`               |
+| PresetsChangedNotifyUI  | `presetsUpdated`            |
+| NowPlayingChange        | `nowPlayingUpdated`         |
+| AcctModeChangedNotifyUI | `acctModeUpdated`           |
+
+The doc additionally lists `swUpdateStatusUpdated`,
+`siteSurveyResultsUpdated`, and `recentsUpdated`.
+
+### The doc's blind spots (field-only frames)
+
+The doc's notification chapter is provably not exhaustive for
+FW 27.0.6. All of these are field-observed and appear nowhere in the
+doc: `presetSelectionUpdated`, `powerStateUpdated`, `groupUpdated`,
+`languageUpdated`, `balanceUpdated`, `userInactivityUpdate`, the
+bare-root forms of `userActivityUpdate` and `errorUpdate`, and the
+`signal` attribute on `connectionStateUpdated`. The blind spot runs the
+other way too: no field log has ever shown the doc's value-carrying
+`<updates><volume>` frame, which would surface in the
+unrecognized-frame log as shape `updates/volume` and never has.
+Consequence: the unrecognized-frame capture stays; the doc's list can
+never replace it.
+
+### Frame shape traps
+
+- **`zoneUpdated` carries a body (field wins).** The doc shows the
+  frame bodyless in every sample. FW 27.0.6 sends a full `<zone>`
+  body, and an empty `<zone/>` is the dissolution signal (#70, field
+  capture 2026-06-12). Do not simplify the parse toward the doc.
+- **`playStatus` is dual-shape (field wins).** The doc shows it as a
+  child element only; live firmware builds also ship it as an
+  attribute. The dual capture in `wsNowPlaying` stays.
+- **`ContentItem` case trap (doc-confirmed shapes).** `presetsUpdated`
+  nests `ContentItem`; `recentsUpdated` nests lowercase `contentItem`.
+  Go's `encoding/xml` matches case-sensitively, so a future recents
+  parser must not reuse `wsPreset`.
+- **`updatedOn` vs `updateOn` (doc-internal typo).** The doc's presets
+  endpoint chapter spells the timestamp attribute `updateOn` while its
+  notification chapter spells it `updatedOn`. STR emits `updatedOn`,
+  the spelling proven against the installed base; do not "correct" it
+  to the other one.
+
 ## Reaching the agent on BCO speakers (chipset whitelist)
 
 On the newer "BCO" chassis (the Portable, and every `scm`-module
@@ -120,7 +184,122 @@ Bose's internal HTTP library (used by `BoseApp` on `:8090` and the
 SoftwareUpdate service on `:17008`) caps a POST at ~1536 bytes including
 the request line and headers. Any STR call routed through `:17008`
 without an active shim must stay under that, which is why the agent OTA
-has an SSH fallback for the binary upload.
+has an SSH fallback for the binary upload. The official Web API doc
+documents no request size limit anywhere; the measured cap is field
+knowledge and stands.
+
+## The `:8090` HTTP API vs the official doc
+
+### The error envelope and the code table
+
+An HTTP error is an `<errors deviceID="...">` envelope wrapping one or
+more `<error value="..." name="..." severity="...">` elements; a
+malformed request can instead get a bare `<error>` body with no
+envelope (doc-confirmed). The gabbo `errorUpdate` frame shares only the
+inner `<error>` element shape; the doc's own section on that frame is
+empty in the text extraction we have.
+
+The doc names exactly one error code: 1019 `CLIENT_XML_ERROR`. Every
+other code STR handles is field-learned and appears nowhere in the
+doc, which makes this table the authoritative list:
+
+| Code | Name (field-learned) | Where it shows up |
+| ---- | -------------------- | ----------------- |
+| 1005 | `UNKNOWN_SOURCE_ERROR` | selecting a source the firmware has no live registration for |
+| 1036 | `UNABLE_TO_PROCESS_NOT_LOGGED_IN` | recalling or selecting a source without a live marge login; often paired with an `UpnpRcvdContentItemInWrongState` marker |
+| 3101 | `AUDIO_ERROR_BAD_URL` | stale or unplayable stream URL on recall |
+| 3103 | `AUDIO_ERROR_TIMEOUT` | the stream did not start in time |
+| 4502 | `BMX_JSON_PARSE_ERROR` | malformed body on the BMX JSON paths (#600) |
+| 5510 | `GROUP_ALREADY_EXISTS` | `/addGroup` against a stale stereo pair |
+| 5580 | `GROUP_CREATE_GROUP_ON_MARGE_ERROR` | `/addGroup` while the box's marge session is broken |
+
+### Status enums: values doc-confirmed, one semantic field-corrected
+
+- **`PLAY_STATUS` is a closed five-value enum** (doc-confirmed):
+  `PLAY_STATE`, `PAUSE_STATE`, `STOP_STATE`, `BUFFERING_STATE`,
+  `INVALID_PLAY_STATUS`. STR's busy/idle discriminators over it are
+  therefore provably exhaustive, not best-effort.
+- **`ART_STATUS`** (doc-confirmed): `INVALID`, `SHOW_DEFAULT_IMAGE`,
+  `DOWNLOADING`, `IMAGE_PRESENT`. Field caveat: `IMAGE_PRESENT`
+  promises nothing about rendering. The speaker reports it for SVG and
+  ICO URLs its display cannot draw, and on native radio it reports it
+  and then never fetches the image at all (see the display-logo
+  section below). STR's raster preference at preset-save time stays.
+- **`SOURCE_STATUS` is exactly `{UNAVAILABLE, READY}`**
+  (doc-confirmed), **but its meaning is not what the doc says (field
+  wins).** The doc reads the `/sources` status as availability; on
+  27.0.6 it is a connection indicator. `UPNP` reports `UNAVAILABLE`
+  while it is actively playing, and unpaired Bluetooth reports
+  `UNAVAILABLE` too. This mismatch is the root of the native-vs-UPnP
+  preset split and the whole 1036 story, so STR applies it per path:
+  `READY` is required before writing native `LOCAL_INTERNET_RADIO`
+  presets, and `UNAVAILABLE` is treated as dead only for
+  account-linked cloud presets during write-back, because the firmware
+  itself drops those. The doc also omits the `isLocal` and
+  `multiroomallowed` attributes STR parses off `/sources`.
+
+### Endpoint truths
+
+- **`/setZone` takes a slaves-only member list (field wins).** The
+  doc's zone samples put the master into the member list. FW 27.0.6 on
+  `rhino` and `spotty` silently rejects that body: after commit
+  df7764a shipped the doc shape, a live fleet check showed an empty
+  liveMaster and zero live members everywhere, and 7e58171 reverted
+  it. Do not "align" the zone body with the doc.
+- **`/nowPlaying` vs `/now_playing`.** The doc spells the playback
+  read `/nowPlaying` and offers `/trackInfo` as an identical-shape
+  alias. The underscore `/now_playing` STR uses everywhere is a live
+  firmware alias the doc omits; both spellings answer on live boxes,
+  while `/trackInfo` rests on the doc's word alone, untested here.
+  Renaming for conformance would be churn with zero gain.
+- **`/presets` is officially GET-only** (doc-confirmed). The TAP CLI
+  write path STR uses is the only preset write path there is, not a
+  workaround for a missed HTTP call.
+- **`/key` press-then-release with a `sender` attribute** is exactly
+  what STR sends (doc-confirmed). The doc has no power endpoint beyond
+  the POWER key and defines no power-state notification. The field is
+  split by firmware build: some send the field-only
+  `powerStateUpdated` (blind-spot list above) on a power press, while
+  the Portable (taigan) on 27.0.6 sends no dedicated power frame at
+  all (verified live 2026-06-13); a press then surfaces only through
+  generic frames (a now-selection restore, a `userActivityUpdate`,
+  varying per chassis), which is why `internal/boxws` listens for the
+  dedicated frame and its stand-ins alike. The real
+  power-off STR relies on is the undocumented GET `/standby`, where
+  POST answers 400.
+- **`/volume` POST accepts a `muteenabled` child**, applied before the
+  volume value; per the doc the box unmutes only when the posted
+  volume exceeds the current one. Unverified on 27.0.6: STR never
+  writes mute, so nothing depends on it. Recorded so nobody trusts it
+  untested.
+
+### Endpoints the doc does not know exist
+
+None of these appear in the doc at all; they are field knowledge:
+`/standby`, `/balance`, the `/getGroup` family, `/networkInfo`,
+`/clockDisplay`, `/language`, `/setup`, `/getActiveWirelessProfile`,
+`/performWirelessSiteSurvey`, `/listMediaServers`,
+`/setMusicServiceAccount`, `/navigate`, `/supportedURLs`,
+`/setMargeAccount`.
+
+## Discovery on the wire: mDNS and SSDP
+
+- **mDNS `_soundtouch._tcp.local` is the sanctioned service type**
+  (doc-confirmed), and STR browses it already. The
+  `_bose-soundtouch._tcp` alias STR also browses appears nowhere in
+  the doc: it rests on field observation alone, so keep it or drop it
+  on field evidence only, never on the doc's authority.
+- **SSDP identifiers** (doc-confirmed on paper, not yet
+  Wireshark-verified on FW 27.0.6): speakers are providers under
+  `urn:schemas-upnp-org:device:MediaRenderer:1`, send NOTIFY
+  `ssdp:alive` / `ssdp:byebye`, and advertise a `CACHE-CONTROL`
+  max-age of at least 1800 s. Until a packet capture on 27.0.6
+  confirms this, treat it as the doc's word, not the fleet's.
+- **Announce expiry (field wins, deliberately).** The doc mandates
+  dropping a device when its max-age expires. STR retains expired
+  announces for 24 hours on purpose, because one lost multicast
+  datagram once cost a user their media library (#341). The deviation
+  is intentional and stays.
 
 ## NAND override beats the SD card
 
