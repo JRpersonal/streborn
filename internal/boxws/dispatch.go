@@ -363,6 +363,32 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 	case f.LanguageUpdated != nil:
 		known = true
 		c.noteLanguageUpdated(strings.TrimSpace(f.LanguageUpdated.Sys))
+	case f.SourcesUpdated != nil:
+		// The wrapped form of the sources-changed signal; the bare-root form is
+		// recovered below. Same callback as the bare form: this is what flips
+		// the "native radio ready" verdict, and until this parse existed the
+		// wrapped-form chassis never fired it, so the agent kept a stale "not
+		// available" answer past the radio source's late registration and wrote
+		// UPnP presets during that window. Debug where the bare case logs Info:
+		// the Portable emits this frame on every source change and the NAND
+		// ring keeps Info and above.
+		known = true
+		c.logger.Debug("box ws: the box changed its registered sources (wrapped form)")
+		c.fireSourcesChanged()
+	case f.SwUpdateStatus != nil, f.SiteSurveyResults != nil,
+		f.RecentsUpdated != nil, f.InfoUpdated != nil:
+		// Documented no-ops, known and ignored (see the field comments in
+		// frames.go for why each carries nothing STR wants, including why
+		// recentsUpdated's value-carrying body is discarded on purpose).
+		// Deliberately NOT noteExplainedActivity: swUpdateStatusUpdated fires
+		// on source changes, not user presses, and feeding it to the thumb
+		// heuristic would swallow real thumb presses. Debug only; these repeat
+		// with routine housekeeping and must not churn the NAND ring.
+		known = true
+		c.logger.Debug("box ws: documented no-op frame", "shape", frameShape(data))
+	case f.AcctModeUpdated != nil:
+		known = true
+		c.noteAcctModeUpdated()
 	}
 
 	pe := f.NowSelection
@@ -388,6 +414,22 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 				// the box then refuses to activate itself.
 				c.logger.Info("box ws: the box changed its registered sources")
 				c.fireSourcesChanged()
+				return
+			case "swUpdateStatusUpdated", "siteSurveyResultsUpdated",
+				"recentsUpdated", "infoUpdated":
+				// The same documented no-ops arrive bare-root on some chassis (a
+				// bare <swUpdateStatusUpdated/> is field-measured noise on every
+				// source change). Same handling as the wrapped forms in the
+				// switch above: known, ignored, Debug only, and never
+				// noteExplainedActivity.
+				c.logger.Debug("box ws: documented no-op frame", "shape", frameShape(data))
+				return
+			case "acctModeUpdated":
+				// Bare-root twin of the wrapped case above (sourcesUpdated shows
+				// the firmware uses both forms for the same event, so cover both
+				// here too). The dedupe inside noteAcctModeUpdated is shared
+				// across the forms.
+				c.noteAcctModeUpdated()
 				return
 			case "userActivityUpdate":
 				// Lone thumb ping (see noteUserActivity). Regressed for bare frames
@@ -488,6 +530,10 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 			// on every source change. Measured 2026-08-06, unrecognized frames
 			// were 15.6 % of the 32 KB NAND log, the only log that survives a
 			// reboot on a box with no shell, at up to 1800 bytes per line.
+			// (sourcesUpdated and swUpdateStatusUpdated have since been typed
+			// above; balanceUpdated and userInactivityUpdate still land here,
+			// deliberately: the doc's frame list is provably incomplete for
+			// 27.0.6, so this capture is how new shapes get discovered.)
 			//
 			// The forensic value is in learning that a frame SHAPE exists, not
 			// in the hundredth copy of it. So the first of each shape is logged

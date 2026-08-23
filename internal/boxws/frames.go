@@ -126,6 +126,40 @@ type gabboFrame struct {
 	LanguageUpdated *struct {
 		Sys string `xml:"sysLanguage"`
 	} `xml:"languageUpdated"`
+
+	// SourcesUpdated is the WRAPPED form of the sources-changed signal
+	// (<updates><sourcesUpdated/></updates>, doc 13.1.11). The box also sends
+	// it as a bare root element, recovered in the bare-root switch; both forms
+	// are on the wire. Only the bare form was handled at first, and three days
+	// later the wrapped one was measured as unrecognized noise on a live
+	// Portable, one per source change (2026-08-06), meaning the sources-changed
+	// callback never fired on wrapped-form chassis at all.
+	SourcesUpdated *struct{} `xml:"sourcesUpdated"`
+
+	// Known-and-ignored frames, named so routine box housekeeping stops
+	// surfacing as unmapped events in bundles and the hourly roll-up. The doc
+	// marks swUpdateStatusUpdated and siteSurveyResultsUpdated as requiring no
+	// client action, and swUpdateStatusUpdated rides along with every source
+	// change in the field. RecentsUpdated's documented body carries the box's
+	// new recents list; it is deliberately discarded because STR has no
+	// consumer for it (STR's own recents store is fed from its recall paths
+	// and the Spotify hook, never from the box). InfoUpdated just says a /info
+	// field such as the device name changed, which STR re-reads on demand.
+	// NONE of these feed noteExplainedActivity: they accompany source changes
+	// and box housekeeping, not user presses, and marking them "explained"
+	// would suppress real thumb detections.
+	SwUpdateStatus    *struct{} `xml:"swUpdateStatusUpdated"`
+	SiteSurveyResults *struct{} `xml:"siteSurveyResultsUpdated"`
+	RecentsUpdated    *struct{} `xml:"recentsUpdated"`
+	InfoUpdated       *struct{} `xml:"infoUpdated"`
+
+	// AcctModeUpdated announces that the box's cloud-account association
+	// changed (doc 13.1.3). Stated plainly: no field bundle has ever shown
+	// this frame on 27.0.6 and it may never fire. It is parsed anyway because
+	// the install pins acctMode=local, so IF it fires it is a direct marker of
+	// the association flipping, which would timestamp the state behind a 1036
+	// storm independently of the first rejected recall.
+	AcctModeUpdated *struct{} `xml:"acctModeUpdated"`
 }
 
 // wsGroupUpdated is the <groupUpdated> body. A self-closing <group /> still

@@ -46,6 +46,10 @@ type Client struct {
 	// storm so bundles can correlate it with the boot clock and marge trail.
 	err1036Times   []time.Time
 	lastStormLogAt time.Time
+	// lastAcctModeLogAt gates the acctModeUpdated INFO line so a flapping box
+	// cannot spam the NAND ring (the frame's cadence on 27.0.6 is unknown; it
+	// has never appeared in a field bundle). Guarded by mu.
+	lastAcctModeLogAt time.Time
 	// boxErrors is a small ring of the errors the BOX reported, newest last.
 	// The log already carries each one, but a bundle then needs someone to
 	// find them by eye among thousands of lines, and the code alone does not
@@ -342,6 +346,32 @@ func (c *Client) noteLanguageUpdated(v string) {
 		return
 	}
 	c.logger.Info("box ws: languageUpdated", "sysLanguage", v, "prev", prev)
+}
+
+// acctModeLogEvery bounds the acctModeUpdated INFO line. The frame's cadence
+// on 27.0.6 is unknown because it has never been seen in a field bundle, so
+// the gate is insurance against a flapping box turning a diagnostic timestamp
+// into NAND churn.
+const acctModeLogEvery = 5 * time.Minute
+
+// noteAcctModeUpdated records that the box announced a change of its cloud
+// account association (acctModeUpdated, in either wire form). Stated plainly:
+// no field bundle has ever shown this frame on 27.0.6 and it may never fire.
+// It exists so that IF it does, the association flip behind a 1036 storm gets
+// its own timestamp to correlate with clock_status and the marge trail, the
+// way the storm WARN already tells bundle readers to (the install pins
+// acctMode=local, so a later frame is a direct flip marker). INFO on purpose:
+// rare by construction, and being visible in a bundle is the whole point.
+func (c *Client) noteAcctModeUpdated() {
+	now := time.Now()
+	c.mu.Lock()
+	if !c.lastAcctModeLogAt.IsZero() && now.Sub(c.lastAcctModeLogAt) < acctModeLogEvery {
+		c.mu.Unlock()
+		return
+	}
+	c.lastAcctModeLogAt = now
+	c.mu.Unlock()
+	c.logger.Info("box ws: box account association changed")
 }
 
 // storm1036Threshold / storm1036Window / storm1036LogEvery bound the 1036-storm
