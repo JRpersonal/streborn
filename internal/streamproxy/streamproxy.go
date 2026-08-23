@@ -256,7 +256,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	s.logger.Info("stream proxy raw start", "url", url)
+	s.logger.Info("stream proxy raw start", append([]any{"url", url}, requestFacts(r)...)...)
 	s.noteStreamStart(url)
 	defer s.clearTitleOnEnd(url)
 	start := time.Now()
@@ -318,6 +318,47 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	s.logger.Warn("stream proxy gave up reconnecting", "kind", "raw", "attempts", 60, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
 }
 
+// requestFacts describes the box's OWN request for a stream, as slog attributes
+// appended to the line each handler already logs when a stream starts.
+//
+// It exists because of a report that the log could not answer. A CineMate owner
+// found that every station recalled from a preset key was abandoned after about
+// a second, while the SAME station started from the search box played for
+// minutes: four dead preset fetches against six healthy search fetches in one
+// diagnostic, the dead ones at 780 kbps (a buffer pulled as fast as the link
+// allows, then dropped) and the healthy ones at the station's real 130 kbps.
+// The preset slots were correct, and both paths converge on the same streaming
+// code once the URL is resolved, so whatever differs is in what the BOX did.
+// None of that was recorded, so the bundle showed the symptom four times over
+// and still could not say why.
+//
+// These are the facts that separate the two paths, and every one of them is
+// already sitting in the request:
+//
+//	from   loopback or the box's LAN address, i.e. which side of the box asked
+//	host   the host it was told to use, i.e. which URL form it was handed
+//	proto  an HTTP/1.0 client without keep-alive gives up differently
+//	ua     which firmware component is doing the fetching
+//	range  a ranged request is a downloader, not a player
+//	icyReq whether it asked for stream metadata
+//
+// Deliberately cheap: no extra request, no timer, nothing written to the
+// speaker's flash, and no new log LINE. It rides on one that was being written
+// anyway, once per stream start.
+func requestFacts(r *http.Request) []any {
+	if r == nil {
+		return nil
+	}
+	return []any{
+		"from", r.RemoteAddr,
+		"host", r.Host,
+		"proto", r.Proto,
+		"ua", r.UserAgent(),
+		"range", r.Header.Get("Range"),
+		"icyReq", r.Header.Get("Icy-MetaData"),
+	}
+}
+
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	defer s.noteFetchOpen()()
 	slotStr := strings.TrimPrefix(r.URL.Path, "/stream/")
@@ -339,7 +380,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	p.StreamURL = s.resolvePresetURL(slot, p.StreamURL)
 	s.noteSlotFetch(slot)
 	defer s.noteSlotFetchDone(slot)
-	s.logger.Info("stream proxy start", "slot", slot, "name", p.Name)
+	s.logger.Info("stream proxy start", append([]any{"slot", slot, "name", p.Name}, requestFacts(r)...)...)
 
 	if isDASHURL(p.StreamURL) {
 		s.logger.Warn("stream proxy: DASH preset not supported yet, refusing", "slot", slot, "url", p.StreamURL)

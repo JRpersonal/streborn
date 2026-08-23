@@ -2203,7 +2203,18 @@ async function verifyInstalledState(box, onState) {
   // The install reported success. That is not the same as the speaker being
   // in the state it was supposed to reach, and nothing will fix it later in
   // the background, so the flow stays here until the speaker itself says so.
-  const installed = await verifyInstalledState(foundBox, (st) => {
+  // Verify against the AGENT, not the stock box record. foundBox still carries
+  // the pre-install Bose port :8090 that probeStock stamped, and
+  // candidatePorts(host, 8090) yields [8090, 8888]: it can never reach :17008,
+  // so on a BCO/whitelisted chassis (Portable taigan, ST20 scm) a fully
+  // successful install was reported as "The installation did not complete".
+  // Worse, :8090 ANSWERS, with a 404, so the failure report's closing probe
+  // printed "NOT REACHABLE (status 404)" and blamed the speaker. A field report
+  // on 2026-08-22 carried exactly that, down to the "speaker : <ip>:8090" line.
+  // port 0 gives candidatePorts [17008, 8888], which is both agent ports. The
+  // same trap, with the same fix, is documented on agentBox thirty lines below.
+  const agentPortBox = { ...foundBox, port: 0 };
+  const installed = await verifyInstalledState(agentPortBox, (st) => {
     render(`<div class="muted">${escapeHtml(st.reachable
       ? t('updateAll.phase.spotifyState', { engine: st.engine })
       : t('updateAll.phase.spotifyUnreachable'))}</div>`);
@@ -2211,8 +2222,8 @@ async function verifyInstalledState(box, onState) {
   try { SetOTARunning(false); } catch {}
   if (!installed.ok) {
     render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>` + installFailureReportHtml());
-    wireInstallFailureReport(foundBox);
-    fillFailReport(foundBox, 'install:verify', installed.reason || '');
+    wireInstallFailureReport(agentPortBox);
+    fillFailReport(agentPortBox, 'install:verify', installed.reason || '');
     return;
   }
   // Installed, but without the Spotify engine. The speaker works; only Spotify

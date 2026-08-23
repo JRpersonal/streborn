@@ -546,7 +546,7 @@ func run() error {
 	// Bose state resets are healed automatically — the user normally never
 	// needs to press the "repair hardware buttons" button.
 	go initialBoxPresetSync(store, *boxHost, logger)
-	go periodicPresetReconcile(store, *boxHost, logger)
+	go periodicPresetReconcile(store, *boxHost, logger, webhooksStore)
 
 	// Read the region from a file on start (provisioned by the setup wizard).
 	region := loadRegion(*regionFile, logger)

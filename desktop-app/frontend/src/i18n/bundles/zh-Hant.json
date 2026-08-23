@@ -897,7 +897,7 @@
   "settingsView.removeSTRBtn": "移除 STR（喇叭變回單純的 Bose）",
   "settingsView.removeSTRHelp": "完整移除 STR。如果喇叭上還插著 USB 隨身碟，請先拔掉，不然喇叭下次開機又會再裝一次 STR。",
   "settingsView.removeSTRConfirmTitle": "移除 STR 並變回 Bose？",
-  "settingsView.removeSTRConfirmBody": "{{name}} 會變回一台單純的 Bose 喇叭：STR 代理程式、它的預設和設定都會移除，Bose 的網路／帳號狀態也會回復原廠。之後想再用 STR，直接在這個應用程式裡透過你的網路重新安裝就好。<b>如果喇叭上還插著 USB 隨身碟，請先拔掉</b>，不然喇叭下次開機又會再裝一次 STR。要繼續嗎？",
+  "settingsView.removeSTRConfirmBody": "{{name}} 會變回一台單純的 Bose 喇叭：STR 代理程式、它的預設和設定都會移除。喇叭會保留 Wi-Fi、名稱和語言，所以會留在你的網路上。之後想再用 STR，直接在這個應用程式裡透過你的網路重新安裝就好。<b>如果喇叭上還插著 USB 隨身碟，請先拔掉</b>，不然喇叭下次開機又會再裝一次 STR。要繼續嗎？",
   "settingsView.removeSTRRunning": "正在移除 STR ...",
   "settingsView.removeSTRDoneToast": "STR 已移除（{{n}} 項）。喇叭正在重新開機變回單純的 Bose，請等大約 60 秒。",
   "settingsView.removeSTRStickPresent": "USB 隨身碟還插在喇叭上。請先拔掉再試一次，不然喇叭重新開機時會從隨身碟再裝一次 STR。",

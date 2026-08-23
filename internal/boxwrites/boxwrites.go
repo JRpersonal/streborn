@@ -17,12 +17,22 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
 	mu     sync.Mutex
 	hour   = map[string]int{} // reset by SnapshotReset (the hourly WARN)
 	totals = map[string]int{} // since agent start (the debug section)
+	// lastAt is when a KIND was last written, ignoring the source suffix. The
+	// ledger was a pure counter until a speaker started being blamed for STR's
+	// own writes: an AddPreset sweep makes the firmware activate UPNP and the
+	// box leaves whatever it was playing, which the native-preset watchdog then
+	// counted as "this speaker cannot keep a native station" (ST20, 2026-08-22,
+	// a station recorded as lasting 188 ms). Enough of those strikes latch the
+	// native path off for a user whose speaker was never at fault. Knowing WHEN
+	// we last wrote is what lets a watchdog tell its own footprint apart.
+	lastAt = map[string]time.Time{}
 )
 
 // Note records one write of the given kind (e.g. "addpreset", "setmarge",
@@ -46,7 +56,20 @@ func NoteN(kind, source string, n int) {
 	mu.Lock()
 	hour[key] += n
 	totals[key] += n
+	lastAt[kind] = time.Now()
 	mu.Unlock()
+}
+
+// WroteWithin reports whether a write of this kind happened in the last d.
+// A watchdog that reacts to what the BOX did calls this to recognise its own
+// side effect: the firmware activates UPNP on an AddPreset and abandons the
+// current source, milliseconds later, with no way to tell that apart from the
+// speaker failing on its own.
+func WroteWithin(kind string, d time.Duration) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	t, ok := lastAt[kind]
+	return ok && time.Since(t) < d
 }
 
 // SnapshotReset returns the writes since the last call and starts a fresh

@@ -232,6 +232,24 @@ func (s *Store) ButtonReplaceEnabled(id string) bool {
 	return ok && t.Mode == ModeReplace
 }
 
+// ReplacePresetSlots returns the preset key slots (1..6) that carry an enabled
+// webhook in replace mode, ascending. The preset reconcile needs the whole set
+// at once to decide which keys must hold a placeholder so the box reports their
+// press at all (#536); asking per slot would mean six lock round-trips per pass.
+// A nil Store answers nil, so a caller that has no webhook config stays simple.
+func (s *Store) ReplacePresetSlots() []int {
+	if s == nil {
+		return nil
+	}
+	var slots []int
+	for slot := 1; slot <= 6; slot++ {
+		if s.ButtonReplaceEnabled(fmt.Sprintf("preset%d", slot)) {
+			slots = append(slots, slot)
+		}
+	}
+	return slots
+}
+
 // FireButton fires the webhook configured for id if enabled. Rate-limited per
 // id. Returns whether a configured+enabled action existed, so the caller can
 // log a press even when it was rate-limited.

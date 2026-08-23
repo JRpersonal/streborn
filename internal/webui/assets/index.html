@@ -2506,10 +2506,18 @@ async function playLibTrack(idx, btn) {
   var it = lastLibResults[idx];
   if (!it) return;
   press(btn);
+  // mime is what tells the agent this is a FILE, not a radio stream. Without
+  // it the track is routed through the stream proxy, which is built for endless
+  // radio: it reads the EOF that ends a file as a dropout, reconnects, and the
+  // song starts again from the beginning. Reported from an iPhone on v0.9.55,
+  // "it only buffers a tiny bit of a song up until about 95 seconds then the
+  // song repeats". The desktop Library has always sent it (#139); the search
+  // results here carry it too and simply dropped it on the floor.
   var ok = await api('/api/play', 'POST', {
     url: it.url,
     title: it.title || '',
-    icon: it.art || ''
+    icon: it.art || '',
+    mime: it.mime || ''
   });
   if (ok) { showTab('Play'); setNow(T.starting + ' ' + (it.title || ''), T.pleaseWait); setTimeout(refreshStatus, 1500); setTimeout(refreshStatus, 3500); }
   else { searchMsg(T.cantStart, true); }

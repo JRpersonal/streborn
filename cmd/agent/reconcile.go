@@ -19,8 +19,46 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxwrites"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
+	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/webui"
 )
+
+// webhookPlaceholderName is what a "webhook only" key shows on the box display.
+// The slot has no station behind it, so the name is all the user ever sees of
+// it; anything longer is truncated by the firmware anyway.
+const webhookPlaceholderName = "Webhook"
+
+// webhookOnlySlots returns the preset keys that are configured as "webhook only"
+// (replace mode) yet have no STR preset behind them.
+//
+// This is the #536 case. An EMPTY preset key is refused by the speaker itself:
+// it blinks orange and emits no presetSelectionUpdated frame at all, and
+// OnPresetSelected, which is what fires the per-key webhook, therefore never
+// runs. Two reporters hit it independently (an ST10 on 2026-08-05, an ST20 and
+// an ST30 on 2026-08-22) and in both bundles the agent log carries no press
+// event whatsoever, while the box's WebSocket bus is plainly connected and
+// delivering other frames. So the webhook is not failing, it is never reached.
+//
+// The fix is to keep something in the slot so the firmware treats the key as
+// assigned and reports the press; the replace-mode branch in OnPresetSelected
+// then withholds the playback, which is exactly what the mode promised.
+func webhookOnlySlots(wh *webhooks.Store, stick []presets.Preset) []int {
+	slots := wh.ReplacePresetSlots()
+	if len(slots) == 0 {
+		return nil
+	}
+	stored := make(map[int]bool, len(stick))
+	for _, p := range stick {
+		stored[p.Slot] = true
+	}
+	out := slots[:0:0]
+	for _, slot := range slots {
+		if !stored[slot] {
+			out = append(out, slot)
+		}
+	}
+	return out
+}
 
 // presetResyncAsk flags one forced full box-preset re-sync for the periodic
 // reconcile (the #342 dead-key self-heal). presetResyncLast rate-limits the
@@ -197,7 +235,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 // boxcli.AddPreset. This way the fix applies automatically without user
 // action when, e.g., the Bose firmware has lost individual entries after a
 // standby cycle.
-func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger) {
+func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger, wh *webhooks.Store) {
 	// fullDone tracks whether we have done a full re-sync since the box
 	// last became ready. The boot-time preset sync can run before the
 	// box's preset / hardware-button subsystem is fully up; the slots
@@ -223,8 +261,15 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 	fullDone := false
 	everFullDone := false
 	lastAwakeForce := time.Now()
+	// forceHeld carries a forced pass across iterations while it waits for
+	// playback to stop. The ask that armed it has already been consumed, so
+	// without this the deferral would DROP the re-sync instead of delaying it,
+	// and nothing would re-ask when the music ends. forceHeldSince anchors the
+	// ceiling to the first hold, not to the latest retry.
+	forceHeld := false
+	var forceHeldSince time.Time
 	for {
-		force := !fullDone
+		force := !fullDone || forceHeld
 		retryDeferred := false
 		if force && everFullDone {
 			// A steady-state retry force (failed AddPresets, a transient
@@ -289,6 +334,16 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			switch {
 			case src == "" || src == "STANDBY":
 				// asleep or unreadable: the standby-exit hook owns the wake
+			case boxIsPlaying(boxHost):
+				// The source NAME alone stopped being enough when presets moved
+				// to the native form. UPNP used to mean "STR's leftover source,
+				// nothing playing" and is on the allowlist for that reason; on a
+				// native box UPNP is STR's own LIVE stream, so the allowlist was
+				// waving the insurance pass straight through a running station.
+				// The allowlist stays (a PAUSED Bluetooth session must still be
+				// left alone, which a play test alone would not catch); this is
+				// the second condition, not a replacement for it.
+				logger.Info("preset reconcile: periodic awake re-sync skipped, the speaker is playing", "source", src)
 			case !resyncSafeSource(src):
 				// The box is on a source the USER chose. AddPreset names
 				// UPNP, and the firmware activates that source on the write:
@@ -335,8 +390,32 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			if waitedForRecall {
 				logger.Info("preset reconcile: forced pass waited for a live hardware recall to finish before writing")
 			}
+			// ... and it must not run into live AUDIO either. A recall is over
+			// in seconds; a station plays for hours, and the write ends it.
+			src, playing, playKnown := boxSourceAndPlaying(boxHost)
+			hold, ceilingHit := forcedWriteHold(playing, playKnown, everFullDone, forceHeldSince, time.Now())
+			switch {
+			case hold:
+				if forceHeldSince.IsZero() {
+					forceHeldSince = time.Now()
+					logger.Info("preset reconcile: forced pass held, the speaker is playing and the write would take the stream down",
+						"source", src, "ceiling", forcedPlayHoldCeiling.String())
+				}
+				forceHeld = true
+				// Short retry, not the maintenance cadence: the moment the
+				// music stops the keys should be registered, and one
+				// now_playing read per interval only happens while a pass is
+				// actually waiting.
+				time.Sleep(forcedPlayHoldRetry)
+				continue
+			case ceilingHit:
+				logger.Warn("preset reconcile: forced pass ran despite playback, the hold ceiling passed and the hardware keys have to be registered",
+					"source", src, "heldFor", time.Since(forceHeldSince).Round(time.Second).String())
+			}
+			forceHeld = false
+			forceHeldSince = time.Time{}
 		}
-		ready := reconcileOnce(store, boxHost, logger, force)
+		ready := reconcileOnce(store, boxHost, logger, force, wh)
 		fullDone = ready
 		if ready {
 			everFullDone = true
@@ -378,9 +457,60 @@ func resyncSafeSource(src string) bool {
 	}
 }
 
-func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool) bool {
+// forcedPlayHoldCeiling bounds how long a forced re-sync may wait for playback
+// to stop. Hardware keys that are not registered are silent damage nobody sees
+// until they press one, so the wait must end. Five minutes is long enough to
+// cover a track, short enough that a key is never dead for a whole album.
+const forcedPlayHoldCeiling = 5 * time.Minute
+
+// forcedPlayHoldRetry is how often the held pass re-asks the box. One
+// now_playing read per interval, and only while a forced pass is actually
+// waiting, so a speaker that is not being written to is never polled for this.
+const forcedPlayHoldRetry = 30 * time.Second
+
+// forcedWriteHold decides whether a forced full re-sync must wait because audio
+// is flowing right now.
+//
+// The write itself is the problem, not the source it happens on: six AddPresets
+// name UPNP and the firmware activates that source, so the box leaves whatever
+// it is rendering. Until now only the 20-minute insurance pass was gated at all
+// (resyncSafeSource, on the source NAME), while every FORCED asker - power-wake,
+// standby-exit, reconnect, paired, 1036 - wrote unconditionally.
+//
+// Field evidence, ST20 on v0.9.55, 2026-08-22 20:55: the user switched the box
+// on, STR resumed his station over UPnP and it was playing (ICY titles at
+// :27.5 and :29.4), then the power-wake re-sync wrote six slots at :32.4. The
+// source flipped UPNP -> LOCAL_INTERNET_RADIO -> STANDBY within 290 ms and the
+// music was gone after six seconds. STR's own forensics line names it:
+// "the box changed source across a preset write, before=UPNP after=STANDBY".
+//
+// A hold, never a skip: the keys still have to end up registered, so the wait
+// is bounded and the pass runs anyway once the ceiling passes.
+//
+// The FIRST full registration after the agent starts is never held. A
+// just-started agent may find the box already playing, and holding there would
+// leave the hardware keys unregistered for the whole session - the regression
+// #4 was about. everFullDone false means that first pass has not happened yet.
+func forcedWriteHold(playing, playKnown, everFullDone bool, heldSince, now time.Time) (hold, ceilingHit bool) {
+	if !everFullDone || !playKnown || !playing {
+		return false, false
+	}
+	if heldSince.IsZero() {
+		return true, false
+	}
+	if now.Sub(heldSince) >= forcedPlayHoldCeiling {
+		return false, true
+	}
+	return true, false
+}
+
+func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store) bool {
 	stick := store.All()
-	if len(stick) == 0 {
+	// Keys configured as "webhook only" need a placeholder even when the store
+	// is completely empty, which is the shape the second #536 reporter was in:
+	// no presets anywhere, six dead keys, and a webhook that could never fire.
+	hookSlots := webhookOnlySlots(wh, stick)
+	if len(stick) == 0 && len(hookSlots) == 0 {
 		return false
 	}
 	// A forced full re-sync is exactly the moment the box's source registration
@@ -464,6 +594,43 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 				NativeLocation: native,
 			})
 		}
+	}
+	// Claim the "webhook only" keys AFTER the store loop, so a slot that has a
+	// real preset is never treated as one (webhookOnlySlots already excludes
+	// those, this ordering just keeps strSlots authoritative for the prune).
+	//
+	// strSlots is set for every hook slot, including the ones left alone below,
+	// so the prune cannot delete the placeholder it just wrote. Turning the
+	// webhook off drops the slot out of hookSlots again, which drops it out of
+	// strSlots, and the existing prune pass removes the placeholder by itself.
+	placeholders := 0
+	for _, slot := range hookSlots {
+		strSlots[slot] = true
+		loc, onBox := boxLocs[slot]
+		switch {
+		case onBox && !isOwnBoxPresetLocation(loc):
+			// A foreign entry (a box-cached Deezer or TuneIn preset) already
+			// occupies the key, so the firmware reports the press and the
+			// webhook is reached. Never overwrite what the user has there.
+			continue
+		case onBox && isNativeRadioLocation(loc):
+			// A leftover native station from an earlier install: the firmware
+			// plays that form ITSELF, so replace mode could not withhold it.
+			// Rewrite it in the UPnP form STR drives.
+		case onBox && !forceFull:
+			continue
+		}
+		// NativeLocation is deliberately left empty. A native slot is played by
+		// the box without asking STR, so the one thing replace mode has to do,
+		// withhold the audio, would be impossible.
+		missing = append(missing, boxcli.PresetSpec{
+			Slot: slot, Name: webhookPlaceholderName, StreamURL: boxurl.StreamSlot(slot),
+		})
+		placeholders++
+	}
+	if placeholders > 0 {
+		logger.Info("preset reconcile: placing a placeholder on webhook-only keys, an empty key is refused by the box and never reports its press (#536)",
+			"slots", placeholders)
 	}
 	if migrated > 0 {
 		logger.Info("preset migration: rewriting UPnP slots as native radio stations, so the box activates its own hardware keys instead of refusing them (1036)",

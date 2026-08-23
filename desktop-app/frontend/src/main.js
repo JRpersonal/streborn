@@ -579,7 +579,13 @@ document.querySelector('#app').innerHTML = `
       <p class="modal-sub" id="uaSummary"></p>
       <div id="uaList" class="ua-list"></div>
       <div class="warn-buttons">
-        <button class="btn" id="uaClose" disabled>${escapeHtml(t('common.close'))}</button>
+        <!-- Never disabled. Closing only HIDES this window, it does not cancel
+             the run, so disabling it protects nothing and can strand the user:
+             the button was greyed while any row had no final outcome, and a
+             speaker that drops off the Wi-Fi mid-update never gets one, so the
+             window could not be dismissed at all. Reported 2026-08-23 by an
+             owner whose speakers were dropping off a congested network. -->
+        <button class="btn" id="uaClose">${escapeHtml(t('common.close'))}</button>
       </div>
     </div>
   </div>
@@ -4263,8 +4269,6 @@ async function runUpdateAllBoxes(onStart) {
     const c = counts();
     const sum = $('uaSummary');
     if (sum) sum.textContent = t('updateAll.summary', { done: c.done, deferred: c.defer, failed: c.fail, total: targets.length });
-    const closeBtn = $('uaClose');
-    if (closeBtn) closeBtn.disabled = c.busy > 0;
   };
   const setRow = (host, { phaseText, pct, barClass, indet } = {}) => {
     const r = rowState.get(host); if (!r) return;
@@ -4429,7 +4433,6 @@ async function runUpdateAllBoxes(onStart) {
   state.otaTargetHost = null;
   state.otaTargetName = null;
   renderSummary();
-  if ($('uaClose')) $('uaClose').disabled = false;
   try { await discoverBoxes(); checkBoxUpdate(); if (state.view === 'settings') loadBoxSettings(); } catch { /* boxes still rebooting */ }
   checkSshBanner();
   const c = counts();

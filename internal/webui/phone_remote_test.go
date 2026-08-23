@@ -364,6 +364,36 @@ func TestPhoneRemoteTabbarStaysAtTheBottom(t *testing.T) {
 	}
 }
 
+// #139 fixed the "a library file replays or garbles mid-track" bug by handing a
+// plain-HTTP file to the box directly instead of through the stream proxy,
+// which is built for endless radio and reads the EOF that ends a file as a
+// dropout. That fix keys entirely off the MIME the caller sends.
+//
+// The phone remote never sent it, so every NAS track played from a phone took
+// the radio route and started over. Reported from an iPhone on v0.9.55: "it
+// only buffers a tiny bit of a song up until about 95 seconds then the song
+// repeats". The search results already carried the MIME.
+func TestPhonePlaysALibraryTrackAsAFileNotAStation(t *testing.T) {
+	page := string(indexHTML)
+	i := strings.Index(page, "async function playLibTrack")
+	if i < 0 {
+		t.Fatal("playLibTrack is gone; the library play path moved")
+	}
+	body := page[i : i+900]
+	if !strings.Contains(body, "mime:") {
+		t.Error("playLibTrack sends no mime, so the agent routes the file through the radio proxy and it repeats")
+	}
+	// The station play path must NOT gain one: a MIME there makes the agent
+	// treat a stream as a finite file and skip the native radio route (#252).
+	j := strings.Index(page, "async function playStation")
+	if j < 0 {
+		t.Fatal("playStation is gone")
+	}
+	if strings.Contains(page[j:j+700], "mime:") {
+		t.Error("playStation must not send a mime; radio derives it from the codec")
+	}
+}
+
 // TestPhoneRemoteEmptyLibrarySearchIsHonest guards the third half of #666: the
 // page printed "Nothing found on your media servers" for three different
 // situations, and only one of them was that. A server the agent never reached,

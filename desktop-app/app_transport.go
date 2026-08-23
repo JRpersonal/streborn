@@ -119,11 +119,34 @@ type readCloser struct {
 	io.Closer
 }
 
+// The speaker's own Bose ports. Neither one ever runs the STR agent: :8090 is
+// the Bose web API (it answers /api/* with a 404, which is worse than silence
+// because a caller can mistake it for a live answer) and :8091 is its UPnP
+// renderer.
+const (
+	bosePort     = 8090
+	boseUPnPPort = 8091
+)
+
 // candidatePorts is the ordered, deduped list of agent ports to try for a
 // host: the cached working port first (if any), then the caller's port,
 // then the alternate. So the common case is one direct hit; a wrong/stale
 // port costs one extra fast attempt and then self-corrects via the cache.
 func (a *App) candidatePorts(host string, port int) []int {
+	// A BOSE port is never an agent candidate. probeStock stamps a pre-install
+	// box record with :8090, and a caller that passes that record on used to get
+	// [8090, 8888]: :17008 unreachable, so a BCO/whitelisted chassis could not be
+	// found at all, and :8090 in front answering /api/* with a 404 that the
+	// caller then has to interpret. The install's verify step did exactly that
+	// and reported a fully successful install as failed (field report
+	// 2026-08-22, whose own header line read "speaker : <ip>:8090").
+	//
+	// Named ports only, not "anything that is not 8888/17008": the caller's port
+	// is a deliberate seam (see altAgentPortFor) that the transport tests drive
+	// with an httptest listener, and swallowing it would silence them.
+	if port == bosePort || port == boseUPnPPort {
+		port = 0
+	}
 	if port == 0 {
 		port = 17008
 	}

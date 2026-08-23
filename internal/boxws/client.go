@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/boxwrites"
 	"github.com/gorilla/websocket"
 )
 
@@ -224,6 +225,27 @@ func (c *Client) SetOnNativeDropped(fn func()) {
 	c.loginErrMu.Lock()
 	c.onNativeDropped = fn
 	c.loginErrMu.Unlock()
+}
+
+// ownPresetWriteWindow is how long after an AddPreset sweep a source flap is
+// read as STR's own footprint rather than as the speaker failing.
+//
+// The sweep writes six slots and takes several seconds; the firmware activates
+// UPNP on the FIRST write, so the flap lands at the start and the sweep is
+// still running long after. Measured on an ST20 (2026-08-22): re-sync at
+// 20:55:32.422, source gone 101 ms later, last slot confirmed at 20:55:38.293.
+const ownPresetWriteWindow = 15 * time.Second
+
+// nativeDropIsOurOwnWrite reports whether a native station that just vanished
+// was taken down by STR's own preset write.
+//
+// The native-drop watchdog latches native presets OFF after enough strikes, and
+// a strike is meant to mean "this speaker cannot hold a native station". A
+// preset sweep produces the identical frame sequence, so a speaker that was
+// working perfectly collected strikes for a fault that was ours. The field case
+// recorded a station as lasting 188 ms, 101 ms after our own re-sync line.
+func (c *Client) nativeDropIsOurOwnWrite() bool {
+	return boxwrites.WroteWithin("addpreset", ownPresetWriteWindow)
 }
 
 func (c *Client) fireNativeDropped() {
