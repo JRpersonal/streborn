@@ -1154,23 +1154,44 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 
 // isGroupExistsErr reports whether an /addGroup error is the firmware's 5510
 // GROUP_ALREADY_EXISTS rejection.
+//
+// The typed envelope is consulted first. The old substring match ran over the
+// WHOLE error string, which embeds the reply body, and the body's errors
+// element carries the box's raw 12-hex MAC as deviceID: a MAC containing the
+// digit run 5510 satisfied the check on EVERY failed /addGroup of that box,
+// forever, and this helper's hit triggers healStaleStereoGroups, which
+// dissolves pairs on BOTH speakers. About one box in seven thousand per code,
+// invisible until it is somebody's living room. The substring fallback stays
+// only for the untyped path (a bare error body parses to Value ""), where the
+// name match cannot collide with a MAC and the numeric match is the risk we
+// have always carried there.
 func isGroupExistsErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToUpper(err.Error())
-	return strings.Contains(msg, "5510") || strings.Contains(msg, "GROUP_ALREADY_EXISTS")
+	return boxErrCodeIs(err, "5510", "GROUP_ALREADY_EXISTS")
 }
 
 // isMargeGroupErr reports whether an /addGroup error is the firmware's 5580
 // GROUP_CREATE_GROUP_ON_MARGE_ERROR: the box could not register the group
 // with its marge, which on an STR box means its marge session is stale.
+// Same typed-first contract as isGroupExistsErr, and the same MAC trap: this
+// helper's hit arms the ForcePair retry path.
 func isMargeGroupErr(err error) bool {
+	return boxErrCodeIs(err, "5580", "GROUP_CREATE_GROUP_ON_MARGE_ERROR")
+}
+
+// boxErrCodeIs is the shared decision behind the two helpers above: the typed
+// envelope decides when the reply carried one, the substring fallback only
+// covers untyped errors (transport failures, bare error bodies), where a MAC
+// cannot leak into the match via the envelope's deviceID.
+func boxErrCodeIs(err error, value, name string) bool {
 	if err == nil {
 		return false
 	}
+	var be *boxapi.BoxError
+	if errors.As(err, &be) && be.Value != "" {
+		return be.Value == value || strings.EqualFold(be.Name, name)
+	}
 	msg := strings.ToUpper(err.Error())
-	return strings.Contains(msg, "5580") || strings.Contains(msg, "GROUP_CREATE_GROUP_ON_MARGE_ERROR")
+	return strings.Contains(msg, value) || strings.Contains(msg, name)
 }
 
 // healStaleStereoGroups clears a stale stereo pair from both speakers'
