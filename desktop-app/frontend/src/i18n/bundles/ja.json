@@ -814,7 +814,7 @@
   "settingsView.removeSTRBtn": "STRを削除 (スピーカーを通常のBoseに戻す)",
   "settingsView.removeSTRHelp": "STRを完全に削除します。先にUSBメモリをスピーカーから抜いてください。抜かないと次回の再起動時にSTRが再インストールされます。",
   "settingsView.removeSTRConfirmTitle": "STRを削除してBoseに戻しますか?",
-  "settingsView.removeSTRConfirmBody": "{{name}} は通常のBoseスピーカーに戻ります: STRエージェント、そのプリセットと設定が削除され、Boseのネットワーク/アカウントの状態が工場出荷時にリセットされます。STRを再び使うにはメモリから再インストールします。<b>先にUSBメモリをスピーカーから抜いてください</b>。抜かないと次回の再起動時にBoseがSTRを再インストールします。続行しますか?",
+  "settingsView.removeSTRConfirmBody": "{{name}} は通常の Bose スピーカーに戻ります。STR エージェント、そのプリセットと設定が削除されます。Wi-Fi、名前、言語はそのまま残るので、スピーカーはネットワークに接続されたままです。STR をまた使いたくなったら、このアプリからネットワーク経由で再度インストールするだけです。<b>スピーカーに USB メモリーが挿さっている場合は、先に抜いてください</b>。挿したままだと次回起動時に STR が再インストールされます。続けますか？",
   "settingsView.removeSTRRunning": "STRを削除中...",
   "settingsView.removeSTRDoneToast": "STRを削除しました ({{n}} 件)。スピーカーは通常のBoseに再起動中です。約60秒お待ちください。",
   "settingsView.removeSTRStickPresent": "USBメモリがまだスピーカーに挿さっています。先に抜いてから再試行してください。抜かないと再起動時にスピーカーがメモリからSTRを再インストールします。",

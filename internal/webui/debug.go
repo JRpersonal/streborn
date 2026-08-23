@@ -228,7 +228,11 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// what was persisted, and on at least one chassis that is the untouched
 		// vendor template while the speaker is on Wi-Fi via a network added at
 		// runtime. See wlanlist.go.
-		"wlan_configured": listConfiguredWLANs(context.Background(), wpaConfPath),
+		// Network NAMES are redacted here, not downstream. This body is what the
+		// phone remote's "Save diagnostic file" button downloads verbatim, and
+		// that file gets mailed in and attached to public issues; the desktop
+		// app's field-keyed scrub never sees it.
+		"wlan_configured": listConfiguredWLANs(context.Background(), wpaConfPath).redacted(),
 		"region_txt":      readTail("/mnt/nv/streborn/region.txt"),
 		"name_txt":        readTail("/mnt/nv/streborn/name.txt"),
 		"stick_listing":   listDir("/media/sda1"),

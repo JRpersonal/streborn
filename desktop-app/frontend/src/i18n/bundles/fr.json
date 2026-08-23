@@ -814,7 +814,7 @@
   "settingsView.removeSTRBtn": "Supprimer STR (l'enceinte redevient une Bose standard)",
   "settingsView.removeSTRHelp": "Supprime complètement STR. Retirez d'abord la clé USB de l'enceinte, sinon elle réinstalle STR au prochain redémarrage.",
   "settingsView.removeSTRConfirmTitle": "Supprimer STR et revenir à Bose ?",
-  "settingsView.removeSTRConfirmBody": "{{name}} sera ramenée à une simple enceinte Bose : l'agent STR, ses préréglages et ses réglages sont supprimés et l'état réseau/compte Bose est réinitialisé aux valeurs d'usine. Pour réutiliser STR, vous devriez le réinstaller depuis une clé. <b>Retirez d'abord la clé USB de l'enceinte</b>, sinon Bose réinstalle STR au prochain redémarrage. Continuer ?",
+  "settingsView.removeSTRConfirmBody": "{{name}} redeviendra une enceinte Bose ordinaire : l'agent STR, ses préréglages et ses réglages sont supprimés. L'enceinte garde son Wi-Fi, son nom et sa langue, elle reste donc sur ton réseau. Pour réutiliser STR, tu le réinstalles simplement depuis cette application, par le réseau. <b>Si une clé USB est encore branchée sur l'enceinte, retire-la d'abord</b>, sinon l'enceinte réinstalle STR au prochain démarrage. Continuer ?",
   "settingsView.removeSTRRunning": "Suppression de STR...",
   "settingsView.removeSTRDoneToast": "STR supprimé ({{n}} éléments). L'enceinte redémarre en Bose standard, patientez environ 60 secondes.",
   "settingsView.removeSTRStickPresent": "La clé USB est toujours dans l'enceinte. Retirez-la d'abord, puis réessayez, sinon l'enceinte réinstalle STR depuis la clé au redémarrage.",
