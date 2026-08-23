@@ -1307,12 +1307,14 @@ func probeSTR(ctx context.Context, ip string) (BoxInfo, bool) {
 		p := port
 		go func() {
 			url := fmt.Sprintf("http://%s:%d/api/agent/version", ip, p)
-			// 3 s, not 1.2 s: under sustained box load (BoseApp churning
-			// CPU, loadavg 3-4) the agent's reply can take >1.2 s, and a
-			// missed probe relabels a flashed speaker as "needs install".
-			// The version endpoint is tiny, so a generous timeout only
-			// costs latency on a genuinely dead host.
-			body, err := httpGetSmall(ctx, url, 3*time.Second, 1024)
+			// The budget below covers the ANSWER; connecting has its own,
+			// much shorter one (probeDialTimeout). A speaker that accepts
+			// the connection is there, and under sustained box load
+			// (BoseApp churning CPU, loadavg 3-4) it can take seconds to
+			// reply. A missed probe relabels a flashed speaker as "needs
+			// install", so the answer is worth waiting for; a host that is
+			// not there still fails in about a second, at the dial.
+			body, err := httpGetSmall(ctx, url, probeAnswerBudget, 1024)
 			if err != nil || !strings.Contains(string(body), `"version"`) {
 				hits <- result{}
 				return
@@ -1564,6 +1566,39 @@ func (a *App) enrichBoxWithStockInfo(ctx context.Context, b BoxInfo) BoxInfo {
 // underlying error (client.Do, status, read) instead of a bare bool so probe
 // callers can log WHAT failed; a swallowed error made a macOS local-network
 // privacy denial indistinguishable from a plain timeout in diagnostics (#420).
+// probeDialTimeout is how long a probe waits to CONNECT, as opposed to how long
+// it then waits for an answer. The two are separate on purpose.
+//
+// A host that accepts the connection is there; only its reply is slow. A host
+// that is absent, asleep or on another network refuses or drops the SYN, and
+// that verdict arrives in milliseconds on a LAN. Sharing one budget between the
+// two meant the generous half had to be paid on every dead address in a sweep,
+// so the budget was kept small, so a speaker that was merely BUSY got written
+// off as gone.
+//
+// That is not hypothetical. The budget was already raised once, from 1.2 s to
+// 3 s, because a speaker under load answered too slowly and a missed probe
+// relabelled a flashed speaker as "needs install". On 2026-08-23 a healthy ST10
+// answered its version endpoint in 3.3 seconds, so the same fault came back at
+// the new threshold. Chasing the number is the wrong move; splitting the two
+// timeouts removes the trade-off instead.
+const probeDialTimeout = 1200 * time.Millisecond
+
+// probeAnswerBudget is how long a probe waits for a speaker that HAS answered
+// the connection to produce its reply. Generous, because it is only ever spent
+// on a host that is demonstrably present.
+const probeAnswerBudget = 8 * time.Second
+
+// probeTransport is shared by every discovery probe so the connection pool is
+// reused across a sweep instead of one transport per address.
+var probeTransport = &http.Transport{
+	DialContext:         (&net.Dialer{Timeout: probeDialTimeout, KeepAlive: 30 * time.Second}).DialContext,
+	MaxIdleConns:        64,
+	IdleConnTimeout:     30 * time.Second,
+	TLSHandshakeTimeout: probeDialTimeout,
+	DisableCompression:  true,
+}
+
 func httpGetSmall(ctx context.Context, url string, timeout time.Duration, max int64) ([]byte, error) {
 	c, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -1571,7 +1606,7 @@ func httpGetSmall(ctx context.Context, url string, timeout time.Duration, max in
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Timeout: timeout, Transport: probeTransport}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
