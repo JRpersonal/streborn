@@ -250,13 +250,47 @@ func pickReachableIP(ips []string) string {
 	switch {
 	case lan != "":
 		return lan
-	case linkLocal != "":
+	case linkLocal != "" && hostHasLinkLocalIPv4():
+		// A 169.254 address is only worth anything when THIS machine is on
+		// link-local too, which happens on a direct cable with no DHCP. From a
+		// normal LAN it is unroutable, so listing it produces a speaker that
+		// can never be reached.
+		//
+		// It also produced a DUPLICATE. A speaker whose DHCP fails announces a
+		// self-assigned address, STR records it, the speaker later gets a real
+		// lease and announces that too, and the same box then sat in the list
+		// twice under two addresses. Reported 2026-08-23 by an owner whose
+		// speakers were dropping off a congested Wi-Fi: "one speaker showed up
+		// twice in the Update list, with two different IP addresses, one
+		// correct, one in the 169.254.0.0 self-assigned subnet", and it blocked
+		// Update All.
 		return linkLocal
 	case public != "":
 		return public
 	default:
 		return ""
 	}
+}
+
+// hostHasLinkLocalIPv4 reports whether this machine carries a 169.254 address
+// of its own, i.e. whether a link-local speaker could be reached from here at
+// all. A seam so pickReachableIP stays testable without touching the machine's
+// real interfaces.
+var hostHasLinkLocalIPv4 = func() bool {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		if ip4 := ipnet.IP.To4(); ip4 != nil && ip4.IsLinkLocalUnicast() {
+			return true
+		}
+	}
+	return false
 }
 
 // BoxWifiScan asks the SPEAKER which Wi-Fi networks it can see.

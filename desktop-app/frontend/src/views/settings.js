@@ -25,6 +25,7 @@ import {
   compareVerBuild,
   getBoxLabel,
   balanceLabel,
+  encodeURIStrict,
 } from '../utils.js';
 import { t, tLookup, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -1596,8 +1597,10 @@ function renderBoxSettings(s, box) {
             'Diagnostic logs were saved to:\n' + res.savePath + '\n\n' +
             'IMPORTANT: please attach that file to this email before sending.\n';
           try {
+            // encodeURIStrict, not encodeURIComponent: Wails refuses a URL
+            // carrying a bare parenthesis, and this body has one.
             BrowserOpenURL('mailto:str@sichtbar-app.de?subject=' +
-              encodeURIComponent(subject) + '&body=' + encodeURIComponent(body));
+              encodeURIStrict(subject) + '&body=' + encodeURIStrict(body));
           } catch {}
           showToast(t('settingsView.emailSupportToast', { path: res.savePath }));
         }

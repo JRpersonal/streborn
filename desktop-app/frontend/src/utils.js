@@ -164,6 +164,25 @@ export function splitUpdateTargets(rows) {
   return { updateTargets, engineTargets, targets: updateTargets.concat(engineTargets) };
 }
 
+// encodeURIStrict is encodeURIComponent plus the six characters JS deliberately
+// leaves alone: ! ' ( ) * ~
+//
+// Wails' own URL validator rejects a URL containing any of ; | ` $ \ < > * { }
+// [ ] ( ) ~ ! space tab CR LF before it ever reaches the OS handler, and it
+// runs on BrowserOpenURL. So the "Email support" button, whose body says
+// "(Please describe the problem here.)", was refused on every Windows machine
+// with "Invalid URL shell metacharacters not allowed": one plain parenthesis.
+// The mail window never opened and the user had to write it by hand, which is
+// visible in a field log from 2026-08-22, on the line right after the bundle
+// was written.
+//
+// Percent-encoding those six is valid everywhere a percent-encoded octet is,
+// so mail clients receive the same text.
+export function encodeURIStrict(s) {
+  return encodeURIComponent(s).replace(/[!'()*~]/g,
+    (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
 export function formatRemaining(ms) {
   const total = Math.max(0, Math.ceil(ms / 1000));
   const m = Math.floor(total / 60);

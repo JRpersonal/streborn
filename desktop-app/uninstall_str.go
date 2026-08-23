@@ -52,6 +52,44 @@ type UninstallSTRResult struct {
 // After the reboot the speaker is a normal (cloudless) Bose device with no STR,
 // still on Wi-Fi, ready to be re-onboarded with the Bose app or to have STR
 // reinstalled.
+// uninstallScript is the whole uninstall, run as one script on the speaker.
+// Package level so a test can assert what it reports; the Go side cannot tell
+// "removed nothing because it failed" from "removed nothing because there was
+// nothing there" unless the script says which.
+const uninstallScript = `set -u
+if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ] || [ -e /media/sda1/streborn ]; then
+  echo "STR_UNINSTALL_ABORT_STICK_PRESENT"
+  exit 0
+fi
+REMOVED=""
+# Stop the running agent so it cannot rewrite anything mid-uninstall.
+pkill -TERM streborn-armv7l 2>/dev/null
+sleep 1
+pkill -KILL streborn-armv7l 2>/dev/null
+# Remove the STR install + the NAND override entry point.
+if [ -d /mnt/nv/streborn ]; then rm -rf /mnt/nv/streborn && REMOVED="$REMOVED /mnt/nv/streborn"; fi
+if [ -f /mnt/nv/rc.local ]; then rm -f /mnt/nv/rc.local && REMOVED="$REMOVED /mnt/nv/rc.local"; fi
+# STR/go-librespot traces that live OUTSIDE /mnt/nv/streborn, so the rm -rf above
+# leaves them behind: go-librespot's Spotify oauth dump (can be multi-MB) and a
+# stranded SSH-repair install-staging dir. Uninstall is "back to stock", so drop
+# every trace, not just the install dir.
+if [ -f /mnt/nv/sp-oauth.out ]; then rm -f /mnt/nv/sp-oauth.out && REMOVED="$REMOVED /mnt/nv/sp-oauth.out"; fi
+if [ -d /mnt/nv/streborn-install ]; then rm -rf /mnt/nv/streborn-install && REMOVED="$REMOVED /mnt/nv/streborn-install"; fi
+# STR Remove deliberately does NOT touch the Bose network/account state.
+# Wiping NetworkProfiles.xml (as this used to, for a "factory OOB" reset) drops
+# the box off Wi-Fi into the Bose setup AP, so it vanishes from the LAN - that
+# must never happen on an uninstall. The box keeps its Wi-Fi, name and language
+# and simply becomes a normal (cloudless) Bose speaker again, still on the LAN
+# and discoverable, so STR can be reinstalled. A full network/account wipe is
+# TrueFactoryReset's job, not this.
+# Drop the STR marge redirect from /etc/hosts. It is a tmpfs bind-mount,
+# so unbind it now; a reboot clears it regardless.
+umount /etc/hosts 2>/dev/null || true
+sync
+if [ -z "$REMOVED" ] && [ ! -d /mnt/nv/streborn ] && [ ! -f /mnt/nv/rc.local ]; then echo "STR_UNINSTALL_ALREADY_CLEAN"; fi
+echo "STR_UNINSTALL_REMOVED:$REMOVED"
+`
+
 func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	res := UninstallSTRResult{Step: "start"}
 	if host == "" {
@@ -111,38 +149,7 @@ func (a *App) UninstallSTR(host string) UninstallSTRResult {
 	// /media/sda1), so we never remove STR only to have Bose reinstall it
 	// from the stick on the next boot.
 	res.Step = "uninstall"
-	const script = `set -u
-if [ -e /media/sda1/run.sh ] || [ -e /media/sda1/streborn-armv7l ] || [ -e /media/sda1/streborn ]; then
-  echo "STR_UNINSTALL_ABORT_STICK_PRESENT"
-  exit 0
-fi
-REMOVED=""
-# Stop the running agent so it cannot rewrite anything mid-uninstall.
-pkill -TERM streborn-armv7l 2>/dev/null
-sleep 1
-pkill -KILL streborn-armv7l 2>/dev/null
-# Remove the STR install + the NAND override entry point.
-if [ -d /mnt/nv/streborn ]; then rm -rf /mnt/nv/streborn && REMOVED="$REMOVED /mnt/nv/streborn"; fi
-if [ -f /mnt/nv/rc.local ]; then rm -f /mnt/nv/rc.local && REMOVED="$REMOVED /mnt/nv/rc.local"; fi
-# STR/go-librespot traces that live OUTSIDE /mnt/nv/streborn, so the rm -rf above
-# leaves them behind: go-librespot's Spotify oauth dump (can be multi-MB) and a
-# stranded SSH-repair install-staging dir. Uninstall is "back to stock", so drop
-# every trace, not just the install dir.
-if [ -f /mnt/nv/sp-oauth.out ]; then rm -f /mnt/nv/sp-oauth.out && REMOVED="$REMOVED /mnt/nv/sp-oauth.out"; fi
-if [ -d /mnt/nv/streborn-install ]; then rm -rf /mnt/nv/streborn-install && REMOVED="$REMOVED /mnt/nv/streborn-install"; fi
-# STR Remove deliberately does NOT touch the Bose network/account state.
-# Wiping NetworkProfiles.xml (as this used to, for a "factory OOB" reset) drops
-# the box off Wi-Fi into the Bose setup AP, so it vanishes from the LAN - that
-# must never happen on an uninstall. The box keeps its Wi-Fi, name and language
-# and simply becomes a normal (cloudless) Bose speaker again, still on the LAN
-# and discoverable, so STR can be reinstalled. A full network/account wipe is
-# TrueFactoryReset's job, not this.
-# Drop the STR marge redirect from /etc/hosts. It is a tmpfs bind-mount,
-# so unbind it now; a reboot clears it regardless.
-umount /etc/hosts 2>/dev/null || true
-sync
-echo "STR_UNINSTALL_REMOVED:$REMOVED"
-`
+	script := uninstallScript
 	out, err := boxSSHOutput(host, script, 40*time.Second)
 	res.Log = out
 	if err != nil {
@@ -163,11 +170,28 @@ echo "STR_UNINSTALL_REMOVED:$REMOVED"
 			res.RemovedFiles = append(res.RemovedFiles, strings.Fields(strings.TrimPrefix(line, "STR_UNINSTALL_REMOVED:"))...)
 		}
 	}
-	if len(res.RemovedFiles) == 0 {
+	// Nothing removed is only a failure when there was something to remove.
+	// Running Remove on a speaker that is ALREADY clean is the most ordinary
+	// thing in the world: a user who saw no confirmation the first time presses
+	// it again. That produced a red error, and worse, this early return skipped
+	// everything below it. So the app went on remembering a stock speaker as an
+	// STR one (see forgetSTRDeviceByHost) and the reboot that closes root SSH
+	// never ran.
+	//
+	// A reporter walked straight into it on 2026-08-23 and then asked the exact
+	// question the bug produces: why did one speaker flip to "READY FOR STR" by
+	// itself while the other needed the app restarted. The first came off in one
+	// go, the second was the second attempt.
+	alreadyClean := strings.Contains(out, "STR_UNINSTALL_ALREADY_CLEAN")
+	if len(res.RemovedFiles) == 0 && !alreadyClean {
 		res.Message = "uninstall returned no removed-file list — script may have failed silently. See log."
 		return res
 	}
-	a.logger.Info("uninstall_str: removed", "host", host, "removedCount", len(res.RemovedFiles))
+	if alreadyClean {
+		a.logger.Info("uninstall_str: speaker was already clean, nothing to remove", "host", host)
+	} else {
+		a.logger.Info("uninstall_str: removed", "host", host, "removedCount", len(res.RemovedFiles))
+	}
 
 	// The box is going back to stock, so drop its confirmed-STR identity memory:
 	// otherwise discovery would keep relabelling the now-stock speaker as STR for
@@ -181,6 +205,13 @@ echo "STR_UNINSTALL_REMOVED:$REMOVED"
 
 	res.Step = "done"
 	res.OK = true
+	if alreadyClean {
+		res.Message = "This speaker already had no STR on it, so there was nothing to remove. " +
+			"It is rebooting into factory Bose state; wait about 60 s. To bring STR back, " +
+			"install it again from this app."
+		a.logger.Info("uninstall_str: done, speaker was already clean", "host", host)
+		return res
+	}
 	res.Message = fmt.Sprintf("STR removed (%d entries) and the speaker is rebooting into "+
 		"factory Bose state. Wait ~60 s. The speaker no longer runs STR; onboard it again "+
 		"with the Bose iOS app, or re-insert a prepared STR stick to bring STR back.",

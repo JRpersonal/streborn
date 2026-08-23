@@ -19,8 +19,46 @@ import (
 	"github.com/JRpersonal/streborn/internal/boxwrites"
 	"github.com/JRpersonal/streborn/internal/presets"
 	"github.com/JRpersonal/streborn/internal/recent"
+	"github.com/JRpersonal/streborn/internal/webhooks"
 	"github.com/JRpersonal/streborn/internal/webui"
 )
+
+// webhookPlaceholderName is what a "webhook only" key shows on the box display.
+// The slot has no station behind it, so the name is all the user ever sees of
+// it; anything longer is truncated by the firmware anyway.
+const webhookPlaceholderName = "Webhook"
+
+// webhookOnlySlots returns the preset keys that are configured as "webhook only"
+// (replace mode) yet have no STR preset behind them.
+//
+// This is the #536 case. An EMPTY preset key is refused by the speaker itself:
+// it blinks orange and emits no presetSelectionUpdated frame at all, and
+// OnPresetSelected, which is what fires the per-key webhook, therefore never
+// runs. Two reporters hit it independently (an ST10 on 2026-08-05, an ST20 and
+// an ST30 on 2026-08-22) and in both bundles the agent log carries no press
+// event whatsoever, while the box's WebSocket bus is plainly connected and
+// delivering other frames. So the webhook is not failing, it is never reached.
+//
+// The fix is to keep something in the slot so the firmware treats the key as
+// assigned and reports the press; the replace-mode branch in OnPresetSelected
+// then withholds the playback, which is exactly what the mode promised.
+func webhookOnlySlots(wh *webhooks.Store, stick []presets.Preset) []int {
+	slots := wh.ReplacePresetSlots()
+	if len(slots) == 0 {
+		return nil
+	}
+	stored := make(map[int]bool, len(stick))
+	for _, p := range stick {
+		stored[p.Slot] = true
+	}
+	out := slots[:0:0]
+	for _, slot := range slots {
+		if !stored[slot] {
+			out = append(out, slot)
+		}
+	}
+	return out
+}
 
 // presetResyncAsk flags one forced full box-preset re-sync for the periodic
 // reconcile (the #342 dead-key self-heal). presetResyncLast rate-limits the
@@ -197,7 +235,7 @@ func initialBoxPresetSync(store *presets.Store, boxHost string, logger *slog.Log
 // boxcli.AddPreset. This way the fix applies automatically without user
 // action when, e.g., the Bose firmware has lost individual entries after a
 // standby cycle.
-func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger) {
+func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.Logger, wh *webhooks.Store) {
 	// fullDone tracks whether we have done a full re-sync since the box
 	// last became ready. The boot-time preset sync can run before the
 	// box's preset / hardware-button subsystem is fully up; the slots
@@ -377,7 +415,7 @@ func periodicPresetReconcile(store *presets.Store, boxHost string, logger *slog.
 			forceHeld = false
 			forceHeldSince = time.Time{}
 		}
-		ready := reconcileOnce(store, boxHost, logger, force)
+		ready := reconcileOnce(store, boxHost, logger, force, wh)
 		fullDone = ready
 		if ready {
 			everFullDone = true
@@ -466,9 +504,13 @@ func forcedWriteHold(playing, playKnown, everFullDone bool, heldSince, now time.
 	return true, false
 }
 
-func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool) bool {
+func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, forceFull bool, wh *webhooks.Store) bool {
 	stick := store.All()
-	if len(stick) == 0 {
+	// Keys configured as "webhook only" need a placeholder even when the store
+	// is completely empty, which is the shape the second #536 reporter was in:
+	// no presets anywhere, six dead keys, and a webhook that could never fire.
+	hookSlots := webhookOnlySlots(wh, stick)
+	if len(stick) == 0 && len(hookSlots) == 0 {
 		return false
 	}
 	// A forced full re-sync is exactly the moment the box's source registration
@@ -552,6 +594,43 @@ func reconcileOnce(store *presets.Store, boxHost string, logger *slog.Logger, fo
 				NativeLocation: native,
 			})
 		}
+	}
+	// Claim the "webhook only" keys AFTER the store loop, so a slot that has a
+	// real preset is never treated as one (webhookOnlySlots already excludes
+	// those, this ordering just keeps strSlots authoritative for the prune).
+	//
+	// strSlots is set for every hook slot, including the ones left alone below,
+	// so the prune cannot delete the placeholder it just wrote. Turning the
+	// webhook off drops the slot out of hookSlots again, which drops it out of
+	// strSlots, and the existing prune pass removes the placeholder by itself.
+	placeholders := 0
+	for _, slot := range hookSlots {
+		strSlots[slot] = true
+		loc, onBox := boxLocs[slot]
+		switch {
+		case onBox && !isOwnBoxPresetLocation(loc):
+			// A foreign entry (a box-cached Deezer or TuneIn preset) already
+			// occupies the key, so the firmware reports the press and the
+			// webhook is reached. Never overwrite what the user has there.
+			continue
+		case onBox && isNativeRadioLocation(loc):
+			// A leftover native station from an earlier install: the firmware
+			// plays that form ITSELF, so replace mode could not withhold it.
+			// Rewrite it in the UPnP form STR drives.
+		case onBox && !forceFull:
+			continue
+		}
+		// NativeLocation is deliberately left empty. A native slot is played by
+		// the box without asking STR, so the one thing replace mode has to do,
+		// withhold the audio, would be impossible.
+		missing = append(missing, boxcli.PresetSpec{
+			Slot: slot, Name: webhookPlaceholderName, StreamURL: boxurl.StreamSlot(slot),
+		})
+		placeholders++
+	}
+	if placeholders > 0 {
+		logger.Info("preset reconcile: placing a placeholder on webhook-only keys, an empty key is refused by the box and never reports its press (#536)",
+			"slots", placeholders)
 	}
 	if migrated > 0 {
 		logger.Info("preset migration: rewriting UPnP slots as native radio stations, so the box activates its own hardware keys instead of refusing them (1036)",

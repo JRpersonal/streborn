@@ -1234,6 +1234,29 @@ func (s *Server) nudgeDeadSource() {
 	}
 }
 
+// resumeSafeSource reports whether STR may push a dropped stream back while the
+// box reports this source.
+//
+// An ALLOWLIST, never a list of sources to avoid, for the same reason the
+// preset reconcile uses one (see resyncSafeSource in cmd/agent): input sources
+// are named differently per model and we do not know them all. A Wave calls its
+// tuner LOCAL, a CineMate calls its TV input LOCAL too, an SA-5 answers AUX with
+// three different sourceAccounts, and a Wave's CD is invisible to STR entirely.
+// With an allowlist an unrecognised name counts as "the user chose this", and
+// the cost is one station the user restarts himself. A denylist would silently
+// override every source name we forgot.
+//
+// The empty string is safe on purpose: it means the probe failed, and a failed
+// probe must not disable the recovery. See the call site.
+func resumeSafeSource(src string) bool {
+	switch src {
+	case "", "UPNP", "INVALID_SOURCE", "STANDBY", "LOCAL_INTERNET_RADIO":
+		return true
+	default:
+		return false
+	}
+}
+
 // boxSourceNow reads the box's current source attribute ("" on any error).
 // Used by the spontaneous-off recovery to tell "the firmware dropped the
 // source while the box stayed awake" (recoverable right now) from "the box is
@@ -1464,6 +1487,35 @@ func (s *Server) maybeRePush() {
 			s.lastPlay.rePushes = 0
 		}
 		s.lastPlayMu.Unlock()
+		return
+	}
+
+	// The user switching to one of the speaker's OWN sources looks exactly like
+	// a dropped stream too, and busy above does not catch it: a Wave's built-in
+	// tuner (source LOCAL) reports no PLAY_STATE at all, because it is not a
+	// transport the firmware exposes. So the watchdog read "the stream died
+	// while the box sat idle" and pushed the station back on top of the radio
+	// the user had just tuned to.
+	//
+	// Reported as "I switch from SoundTouch to FM and it jumps straight back,
+	// the second press sticks", and his diagnostic has the whole sequence
+	// (Wave, 2026-08-23):
+	//
+	//   17:59:13.454  source changed  LOCAL_INTERNET_RADIO -> LOCAL
+	//   17:59:15.539  re-push: box dropped the stream while idle, resuming
+	//   17:59:15.674  source changed  LOCAL -> UPNP
+	//
+	// Two seconds, and he is back on the station he was leaving. Whether it
+	// happened at all depended on a race: the same log shows an earlier switch
+	// where the box's STOP_STATE was read as a deliberate stop and the push
+	// correctly stood down. That is the "sometimes it sticks" he described.
+	//
+	// An unreadable source deliberately does NOT stand down. This must only
+	// suppress a recovery when the box positively names a source the user
+	// chose; a probe that failed says nothing, and treating silence as "leave
+	// it alone" would quietly disable the recovery this whole path exists for.
+	if src := s.boxSourceNow(); !resumeSafeSource(src) {
+		s.logger.Info("re-push: not resuming, the speaker is on a source the user chose", "source", src)
 		return
 	}
 
