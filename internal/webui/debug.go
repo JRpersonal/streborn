@@ -245,6 +245,16 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// remnants without SSH (do NOT blanket-wipe /mnt/nv: it holds the box's
 		// own Wi-Fi/AirPlay/account persistence).
 		"nv_root_listing": listDir("/mnt/nv"),
+		// The speaker's OWN log directory, by name and size. It is not STR's and
+		// STR does not read it, but it shares the same 32 MB volume and it can
+		// run away: one speaker arrived with it at 37 MB on a volume of 31.6,
+		// with no room left for the Spotify engine, while four identical
+		// speakers beside it had it empty (2026-08-23). The bundle could show
+		// the SIZE and nothing else, so "are these the firmware's own logs or
+		// something another mod left behind" could not be answered at all, and
+		// the owner could not be told where his storage had gone. The names
+		// answer both.
+		"boselog_listing": listDir("/mnt/nv/BoseLog"),
 		"proc_mounts":     readTail("/proc/mounts"),
 		// Writable-volume usage: df for /mnt/nv + / and the per-entry sizes that
 		// answer "is this box genuinely tighter or carrying foreign firmware

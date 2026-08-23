@@ -225,6 +225,15 @@ func probeKnownSpeakers(ctx context.Context, logger *slog.Logger, hits chan<- Bo
 		if host == "" {
 			continue
 		}
+		// A self-assigned address that got persisted while the speaker's DHCP
+		// was failing must not come back as a speaker on every cold start. It
+		// is unroutable from a normal LAN, and the same box reappears under its
+		// real address anyway, so probing it only produces a second, dead entry
+		// in the list (2026-08-23 report: one speaker listed twice, once on
+		// 169.254, blocking Update All).
+		if ip := net.ParseIP(host); ip != nil && ip.IsLinkLocalUnicast() && !hostHasLinkLocalIPv4() {
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

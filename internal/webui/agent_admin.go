@@ -1403,6 +1403,56 @@ func reclaimNAND() {
 			}
 		}
 	}
+	capBoseLogs(filepath.Join(nandRoot, "BoseLog"))
+}
+
+const (
+	// boseLogCapAt is the size a single file in Bose's log directory may reach
+	// before it is trimmed, and boseLogKeep is what survives. Generous on
+	// purpose: this is somebody else's log and the point is to stop it eating
+	// the volume, not to keep it tidy.
+	boseLogCapAt = 1 << 20 // 1 MiB
+	boseLogKeep  = 1 << 18 // 256 KiB
+)
+
+// capBoseLogs bounds the speaker's OWN log directory.
+//
+// /mnt/nv/BoseLog belongs to the Bose firmware, not to STR, and STR neither
+// writes nor reads it. It does share the same ~32 MB volume, and it can run
+// away: a diagnostic from 2026-08-23 showed BoseLog at tens of megabytes on a
+// speaker whose whole volume is 31.58 MiB, and that speaker had no room left
+// for the Spotify engine while four identical ones next to it had an empty
+// BoseLog. Those are logs for a cloud that was switched off in February.
+//
+// Trimmed the same way STR's own logs are, by keeping the tail instead of
+// deleting the file. The inode survives, so a Bose process holding it open goes
+// on appending, and nothing has to be restarted. Only files past the cap are
+// touched, so an ordinary log directory is left exactly as it is, and only
+// regular files directly inside it: no recursion, no directories removed,
+// nothing else of Bose's ever touched.
+func capBoseLogs(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		fi, ferr := e.Info()
+		if ferr != nil || !fi.Mode().IsRegular() || fi.Size() <= boseLogCapAt {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		b, rerr := os.ReadFile(p)
+		if rerr != nil || int64(len(b)) <= boseLogKeep {
+			continue
+		}
+		if werr := os.WriteFile(p, b[int64(len(b))-boseLogKeep:], fi.Mode().Perm()); werr == nil {
+			slog.Info("nand: trimmed an oversized Bose log so it stops filling the speaker's storage",
+				"file", e.Name(), "wasBytes", fi.Size(), "keptBytes", boseLogKeep)
+		}
+	}
 }
 
 // ReclaimNAND frees regenerable NAND junk (stale OTA temps, the ~28 MB
