@@ -894,7 +894,7 @@
   "settingsView.removeSTRBtn": "Remove STR (speaker goes back to plain Bose)",
   "settingsView.removeSTRHelp": "Removes STR completely. If a USB stick is still plugged into the speaker, take it out first, otherwise the speaker installs STR again on the next restart.",
   "settingsView.removeSTRConfirmTitle": "Remove STR and return to Bose?",
-  "settingsView.removeSTRConfirmBody": "{{name}} will be returned to a plain Bose speaker: the STR agent, its presets and settings are removed and the Bose network/account state is reset to factory. To use STR again you would simply install it again from this app, over your network. <b>If a USB stick is still plugged into the speaker, take it out first</b>, otherwise the speaker installs STR again on the next restart. Continue?",
+  "settingsView.removeSTRConfirmBody": "{{name}} will be returned to a plain Bose speaker: the STR agent, its presets and its settings are removed. The speaker keeps its Wi-Fi, its name and its language, so it stays on your network. To use STR again you would simply install it again from this app, over your network. <b>If a USB stick is still plugged into the speaker, take it out first</b>, otherwise the speaker installs STR again on the next restart. Continue?",
   "settingsView.removeSTRRunning": "Removing STR...",
   "settingsView.removeSTRDoneToast": "STR removed ({{n}} items). The speaker is rebooting into plain Bose, wait about 60 seconds.",
   "settingsView.removeSTRStickPresent": "The USB stick is still in the speaker. Pull it out first, then try again, otherwise the speaker reinstalls STR from the stick on reboot.",

@@ -59,6 +59,43 @@ type wlanConfigured struct {
 	Err        string `json:"err,omitempty"`
 }
 
+// wlanRedacted is what replaces a network name or a hardware address on its way
+// into the diagnostic state.
+const wlanRedacted = "<REDACTED>"
+
+// redacted returns the same picture with the network NAMES and the hardware
+// addresses removed.
+//
+// The desktop app has scrubbed these since #592, keyed on the field name, and
+// its bundle README promises that SSIDs never leave the host. The speaker's own
+// state was still handed out in clear, and the phone remote's "Save diagnostic
+// file" button downloads exactly that body, unscrubbed, as
+// str-diagnostic-<name>.json. A user mailed one in on 2026-08-22 with his
+// household network name in it, and the endpoint answers an unauthenticated GET
+// on the LAN besides. So it is removed here, at the source, the same way the
+// wpa_supplicant secrets one line above it already are.
+//
+// Everything a diagnosis actually uses survives: which tool and interface
+// reported, how many networks are configured, which one is current, their flags,
+// and the block count from the file. What a name adds is the one thing that is
+// nobody else's business.
+func (w wlanConfigured) redacted() wlanConfigured {
+	nets := make([]wlanNetwork, len(w.Networks))
+	for i, n := range w.Networks {
+		if n.SSID != "" {
+			n.SSID = wlanRedacted
+		}
+		// "any" is wpa_supplicant's wildcard, not an address, and losing it
+		// would hide that no BSSID is pinned.
+		if n.BSSID != "" && !strings.EqualFold(n.BSSID, "any") {
+			n.BSSID = wlanRedacted
+		}
+		nets[i] = n
+	}
+	w.Networks = nets
+	return w
+}
+
 var wlanNetLine = regexp.MustCompile(`^(\d+)\t([^\t]*)\t([^\t]*)\t?(.*)$`)
 
 // wlanInterfaces are tried in order. taigan calls its wireless interface eth0,

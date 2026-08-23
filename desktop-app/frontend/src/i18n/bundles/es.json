@@ -814,7 +814,7 @@
   "settingsView.removeSTRBtn": "Eliminar STR (el altavoz vuelve a ser un Bose normal)",
   "settingsView.removeSTRHelp": "Elimina STR por completo. Retira primero la memoria USB del altavoz, de lo contrario reinstala STR en el próximo reinicio.",
   "settingsView.removeSTRConfirmTitle": "¿Eliminar STR y volver a Bose?",
-  "settingsView.removeSTRConfirmBody": "{{name}} volverá a ser un altavoz Bose normal: se eliminan el agente STR, sus preajustes y ajustes, y el estado de red/cuenta de Bose se restablece de fábrica. Para volver a usar STR tendrías que reinstalarlo desde una memoria. <b>Retira primero la memoria USB del altavoz</b>, o Bose reinstalará STR en el próximo reinicio. ¿Continuar?",
+  "settingsView.removeSTRConfirmBody": "{{name}} volverá a ser un altavoz Bose normal: se eliminan el agente STR, sus presintonías y sus ajustes. El altavoz conserva su Wi-Fi, su nombre y su idioma, así que sigue en tu red. Para volver a usar STR basta con instalarlo de nuevo desde esta aplicación, por la red. <b>Si todavía hay un lápiz USB en el altavoz, quítalo primero</b>, o el altavoz volverá a instalar STR en el siguiente reinicio. ¿Continuar?",
   "settingsView.removeSTRRunning": "Eliminando STR...",
   "settingsView.removeSTRDoneToast": "STR eliminado ({{n}} elementos). El altavoz se está reiniciando como Bose normal, espera unos 60 segundos.",
   "settingsView.removeSTRStickPresent": "La memoria USB sigue en el altavoz. Retírala primero y vuelve a intentarlo, de lo contrario el altavoz reinstala STR desde la memoria al reiniciarse.",

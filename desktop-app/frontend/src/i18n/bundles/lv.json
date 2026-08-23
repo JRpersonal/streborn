@@ -814,7 +814,7 @@
   "settingsView.removeSTRBtn": "Noņemt STR (atpakaļ uz Bose)",
   "settingsView.removeSTRHelp": "Noņem STR un atgriež skaļruni parastā Bose rūpnīcas stāvoklī. Vispirms izņemiet USB zibatmiņu no skaļruņa, citādi nākamajā startēšanā tas atkal instalēs STR. Atšķirībā no atiestatīšanas augšpusē, kas STR atstāj instalētu.",
   "settingsView.removeSTRConfirmTitle": "Noņemt STR un atgriezties uz Bose?",
-  "settingsView.removeSTRConfirmBody": "{{name}} tiks atgriezts parastā Bose skaļrunī: STR aģents, tā iestatījumi un konfigurācija tiks noņemti, un Bose tīkla/konta statuss tiks atiestatīts uz rūpnīcas. Lai atkal izmantotu STR, tas būtu jāinstalē no zibatmiņas no jauna. <b>Vispirms izņemiet USB zibatmiņu no skaļruņa</b>, citādi Bose nākamajā startēšanā atkal instalēs STR. Turpināt?",
+  "settingsView.removeSTRConfirmBody": "{{name}} atkal kļūs par parastu Bose skaļruni: STR aģents, tā iepriekšiestatījumi un iestatījumi tiek noņemti. Skaļrunis saglabā savu Wi-Fi, nosaukumu un valodu, tāpēc paliek tavā tīklā. Lai atkal lietotu STR, tu to vienkārši instalē no jauna no šīs lietotnes, pa tīklu. <b>Ja skaļrunī vēl ir USB atmiņa, vispirms izņem to</b>, citādi skaļrunis nākamajā startēšanas reizē STR uzinstalēs atkal. Turpināt?",
   "settingsView.removeSTRRunning": "Notiek STR noņemšana...",
   "settingsView.removeSTRDoneToast": "STR noņemts ({{n}} elementi). Skaļrunis tiek restartēts kā parasts Bose, pagaidiet apmēram 60 sekundes.",
   "settingsView.removeSTRStickPresent": "USB zibatmiņa joprojām ir skaļrunī. Vispirms to izņemiet un mēģiniet vēlreiz, citādi skaļrunis startēšanā atkal instalēs STR no zibatmiņas.",
