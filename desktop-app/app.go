@@ -232,6 +232,50 @@ func (a *App) fitWindowToScreen() {
 	// full screen rather than the work area, so this is deliberately generous;
 	// the pinning below is what keeps the title bar reachable.
 	const chrome = 80
+	newW, newH := fitWindowSize(w, h, screenW, screenH, chrome)
+	if newW == w && newH == h {
+		// The window already fits. Leave it exactly where the platform put it.
+		//
+		// It used to be repositioned unconditionally, and that is what made the
+		// app unusable on a second monitor (#681: "window flickers when opening,
+		// immediately disappears"). The two runtime calls are NOT in the same
+		// coordinate space on Windows. WindowGetPosition returns
+		// GetWindowRect().Left, an absolute virtual-desktop coordinate, while
+		// WindowSetPosition ends in winc's ControlBase.SetPos, which does
+		// SetWindowPos(..., workRect.Left+x, ...) and therefore treats x as an
+		// offset INTO the current monitor's work area. Reading absolute and
+		// writing relative adds the monitor origin a second time: a window
+		// centred on a screen at +1920 reads x=2260 and is re-placed at 4180,
+		// past the end of the desktop. With one screen workRect.Left is 0 and
+		// the bug is invisible, which is why it survived several releases.
+		//
+		// Wails creates the window with CW_USEDEFAULT and then centres it, so
+		// which monitor it lands on varies per launch. That is the reporter's
+		// "sometimes it works".
+		return
+	}
+	runtime.WindowSetSize(a.ctx, newW, newH)
+	// The window did not fit, so it may well be hanging off the bottom with its
+	// title bar out of reach, which is the whole reason this function exists.
+	// (0, 0) is the one position that is correct in BOTH spaces: on Windows it
+	// resolves to the current monitor's work-area top-left, and on macOS and
+	// Linux WindowSetPosition passes straight through to the platform setter.
+	// Never feed a value read back from WindowGetPosition into it.
+	runtime.WindowSetPosition(a.ctx, 0, 0)
+	a.logger.Info("window shrunk to fit the screen and pinned to the work-area corner",
+		"screenW", screenW, "screenH", screenH,
+		"fromW", w, "fromH", h, "toW", newW, "toH", newH)
+}
+
+// fitWindowSize is the pure half of fitWindowToScreen: how large may the window
+// be on a screen of this size. chrome is the room left for the taskbar and the
+// window frame, deliberately generous because ScreenGetAll reports the full
+// screen rather than the work area.
+//
+// Separated out so the "it already fits, do not touch it" case has a test. That
+// case is load-bearing: repositioning a window that fitted is what pushed it off
+// a second monitor entirely (#681).
+func fitWindowSize(w, h, screenW, screenH, chrome int) (int, int) {
 	maxH := screenH - chrome
 	maxW := screenW
 	newW, newH := w, h
@@ -241,19 +285,7 @@ func (a *App) fitWindowToScreen() {
 	if newW > maxW {
 		newW = maxW
 	}
-	if newW != w || newH != h {
-		runtime.WindowSetSize(a.ctx, newW, newH)
-		a.logger.Info("window shrunk to fit the screen",
-			"screenW", screenW, "screenH", screenH,
-			"fromW", w, "fromH", h, "toW", newW, "toH", newH)
-	}
-	x, _ := runtime.WindowGetPosition(a.ctx)
-	if x < 0 {
-		x = 0
-	}
-	// Top edge on the screen edge, always. This is the whole point of the
-	// function: the title bar has to be grabbable.
-	runtime.WindowSetPosition(a.ctx, x, 0)
+	return newW, newH
 }
 
 // LogClientError records an error the frontend caught (a global

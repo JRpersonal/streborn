@@ -419,6 +419,9 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		if err := s.zones.Set(z); err != nil {
 			s.logger.Warn("zone: persist failed", "err", err)
 		}
+		// A freshly formed group starts from a clean slate, so a doubt recorded
+		// against an earlier group can never be spent on this one (boxInZone).
+		s.forgetZoneDocDoubt()
 	}
 
 	if mode == "mirror" {
@@ -1000,6 +1003,7 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		if err := s.zones.Set(z); err != nil {
 			s.logger.Warn("stereo: persist failed", "err", err)
 		}
+		s.forgetZoneDocDoubt()
 	}
 
 	s.logger.Info("stereo: pairing via /addGroup (beta)", "name", name,
@@ -2066,6 +2070,7 @@ func (s *Server) restorePreviousZoneVia(ctx context.Context,
 		if err != nil {
 			s.logger.Warn("zone: could not put the previous group document back", "err", err)
 		}
+		s.forgetZoneDocDoubt()
 	}
 
 	if len(prevLive.Members) == 0 {

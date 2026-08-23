@@ -2,8 +2,10 @@ package dlna
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -132,5 +134,50 @@ func TestStripIllegalXMLChars(t *testing.T) {
 		if got := string(stripIllegalXMLChars([]byte(tc.in))); got != tc.want {
 			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestSearchCriteriaCoversArtistAndAlbum guards the #666 half that lives in this
+// package: the phone remote's fast path used to ask only for dc:title, so a
+// query for an artist or an album name came back empty from a server that has
+// the track (measured on a FRITZ!Box 6690: the artist query went from zero hits
+// to one when the criteria was widened). The desktop Library filters a loaded
+// folder over title, artist and album, so the two must ask the same question.
+func TestSearchCriteriaCoversArtistAndAlbum(t *testing.T) {
+	// The body travels over a channel rather than a plain variable: the handler
+	// runs on its own goroutine.
+	bodies := make(chan string, 4)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies <- string(b)
+		w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+		w.Write([]byte(`<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:SearchResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><Result></Result><NumberReturned>0</NumberReturned><TotalMatches>0</TotalMatches></u:SearchResponse></s:Body></s:Envelope>`))
+	}))
+	defer ts.Close()
+
+	srv := Server{CDSControlURL: ts.URL}
+	if _, err := Search(context.Background(), srv, `Adri"anne`, 10); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	got := <-bodies
+	for _, want := range []string{"dc:title contains", "upnp:artist contains", "upnp:album contains"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the widened criteria is missing %q: %s", want, got)
+		}
+	}
+	// A quote the user typed must stay escaped so it cannot terminate the
+	// criteria string.
+	if !strings.Contains(got, `Adri\&#34;anne`) && !strings.Contains(got, `Adri\"anne`) {
+		t.Errorf("a typed quote is not escaped in the criteria: %s", got)
+	}
+
+	// The narrow retry, for servers that index nothing but the title, must stay
+	// title-only: it is what makes them answer at all.
+	if _, err := SearchTitleOnly(context.Background(), srv, "symbol", 10); err != nil {
+		t.Fatalf("title-only search: %v", err)
+	}
+	got = <-bodies
+	if strings.Contains(got, "upnp:artist contains") {
+		t.Errorf("SearchTitleOnly must not widen the criteria: %s", got)
 	}
 }

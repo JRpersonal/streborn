@@ -105,7 +105,14 @@ func TestLiveUpdateContract(t *testing.T) {
 		// 5. The failure path must produce something the user can send.
 		rep := a.UpdateFailureReport(host, port, "live-contract", "target state not reached", target)
 		t.Logf("failure report:\n%s", rep)
-		for _, must := range []string{"ST Reborn update report", "speaker", "wanted version"} {
+		// The header says "failure report" since 2026-08-23: the same builder
+		// now serves the install screens too. The network facts are asserted
+		// as well because they are what the report was rewritten for; the
+		// advice section is NOT, because a speaker that answers its version
+		// probe produces a report with no advice at all, which is correct.
+		for _, must := range []string{
+			"ST Reborn failure report", "speaker", "wanted version", "network facts",
+		} {
 			if !strings.Contains(rep, must) {
 				t.Errorf("the failure report is missing %q, which is what makes it useful", must)
 			}

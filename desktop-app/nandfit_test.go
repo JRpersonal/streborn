@@ -119,3 +119,72 @@ func TestInsufficientNANDSentinelWraps(t *testing.T) {
 		t.Errorf("a transport failure must not match the space sentinel")
 	}
 }
+
+// storagePreflight is the verdict the pre-OTA dialog renders. It exists because
+// the frontend used to compute its own and disagreed with the gate that
+// actually runs the push. The cases below are the two disagreements, plus the
+// fail-open contract they must not break.
+func TestStoragePreflight(t *testing.T) {
+	const mb = int64(1024 * 1024)
+	// The field shape from the 2026-08-22 screenshot: 10.5 MB free reported,
+	// a 13.9 MB embedded agent, no engine on the box.
+	t.Run("shows the credited need, not the raw binary size", func(t *testing.T) {
+		agent := 139 * mb / 10 // 13.9 MB, the embedded agent in that build
+		pf := storagePreflight(map[string]string{"nandFreeBytes": strconv.FormatInt(105*mb/10, 10)}, agent, 16*mb)
+		if !pf.Tight {
+			t.Fatalf("10.5 MB free against a 13.9 MB agent must still read tight, got %+v", pf)
+		}
+		// The old JS put the RAW agent size in front of the user (13.9 MB).
+		if pf.NeedBytes >= agent {
+			t.Errorf("NeedBytes = %d must be below the raw agent size %d (the compression credit)", pf.NeedBytes, agent)
+		}
+		// About 10.7 MB: 13.9 * 0.7 + 1 MB margin. Pin the band, not the byte.
+		if pf.NeedBytes < 105*mb/10 || pf.NeedBytes > 11*mb {
+			t.Errorf("NeedBytes = %d, want roughly 10.7 MB", pf.NeedBytes)
+		}
+		if pf.FreeBytes != 105*mb/10 {
+			t.Errorf("FreeBytes = %d, want the speaker's own figure passed through", pf.FreeBytes)
+		}
+	})
+	// An agent too old to report goLibrespotSizeBytes still has an engine on
+	// the box that the reclaim cascade drops before the write. The JS copy gave
+	// that speaker zero credit and called it tight.
+	t.Run("old agent with an engine gets the reclaim credit", func(t *testing.T) {
+		ver := map[string]string{"nandFreeBytes": strconv.FormatInt(6*mb, 10), "goLibrespot": "present"}
+		pf := storagePreflight(ver, 14*mb, 16*mb)
+		if pf.ReclaimableBytes != 16*mb {
+			t.Errorf("ReclaimableBytes = %d, want the embedded engine size as the estimate", pf.ReclaimableBytes)
+		}
+		if pf.Tight {
+			t.Errorf("6 MB free plus a 16 MB reclaimable engine covers a %d B need, got tight", pf.NeedBytes)
+		}
+	})
+	// Fail open, exactly like nandFits: no usable free figure never warns.
+	t.Run("fails open on an unusable free figure", func(t *testing.T) {
+		for _, raw := range []string{"", "unknown", "-3", "12.5"} {
+			if pf := storagePreflight(map[string]string{"nandFreeBytes": raw}, 14*mb, 16*mb); pf.Tight {
+				t.Errorf("nandFreeBytes=%q must not produce a warning", raw)
+			}
+		}
+	})
+	// Dev build with the empty go:embed stub: nothing is pushed, nothing is tight.
+	t.Run("no embedded agent never warns", func(t *testing.T) {
+		pf := storagePreflight(map[string]string{"nandFreeBytes": "1"}, 0, 0)
+		if pf.Tight || pf.NeedBytes != 0 {
+			t.Errorf("empty embed must stay silent, got %+v", pf)
+		}
+	})
+	// The dialog names the other SoundTouch software from these two fields, so
+	// they must survive the trip unchanged (the label mapping lives in the UI).
+	t.Run("carries the foreign-software fields through", func(t *testing.T) {
+		ver := map[string]string{
+			"nandFreeBytes":  strconv.FormatInt(2*mb, 10),
+			"conflictingMod": "soundtouch-plus",
+			"foreignDirs":    "bosespotify",
+		}
+		pf := storagePreflight(ver, 14*mb, 16*mb)
+		if pf.ConflictingMod != "soundtouch-plus" || pf.ForeignDirs != "bosespotify" {
+			t.Errorf("foreign fields must pass through verbatim, got %+v", pf)
+		}
+	})
+}

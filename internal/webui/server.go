@@ -50,6 +50,14 @@ type Server struct {
 	// taps then cost one drive, not N).
 	zoneFormSerial sync.Mutex
 	zoneFormSeq    atomic.Uint64
+	// zoneDocDoubt holds the fingerprint of the stored group document that the
+	// speaker's own firmware has already contradicted once (see boxInZone). It
+	// is the FIRST of the two observations needed before that document is
+	// dropped, and it is deliberately NOT persisted: losing it in a crash or a
+	// restart costs one more observation, whereas persisting it could carry a
+	// wrong verdict across a restart. Only the resulting clear reaches NAND.
+	zoneDocDoubt   string
+	zoneDocDoubtMu sync.Mutex
 	// memberIDs remembers, per member IP, the SoundTouch deviceID that
 	// speaker's own firmware reported. Zone forming corrects the caller's
 	// deviceID from a live /info read, because a two-chip chassis announces
@@ -65,6 +73,13 @@ type Server struct {
 	// not wired; the endpoints then still drive the box but nothing is restored
 	// after a restart.
 	mediaServers *mediaservers.Store
+	// mediaLoc remembers, per media server UDN, the device-description URL the
+	// last successful discovery resolved. A phone library search whose single
+	// M-SEARCH round goes unanswered then re-probes that address directly
+	// instead of reporting the server missing, which on the desktop side was
+	// #341 and here made a search look like an empty library (#666).
+	mediaLoc   map[string]string
+	mediaLocMu sync.Mutex
 	// publishStoredMusic hands the enabled media servers to the marge account
 	// responses so the box picks them up on its own poll. nil when not wired.
 	publishStoredMusic func([]StoredMusicSource)

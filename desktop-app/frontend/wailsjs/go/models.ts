@@ -9,7 +9,6 @@ export namespace main {
 	    donateUrl: string;
 	    donateSlogan: string;
 	    updateManifestUrl: string;
-	    agentBinBytes: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -25,7 +24,6 @@ export namespace main {
 	        this.donateUrl = source["donateUrl"];
 	        this.donateSlogan = source["donateSlogan"];
 	        this.updateManifestUrl = source["updateManifestUrl"];
-	        this.agentBinBytes = source["agentBinBytes"];
 	    }
 	}
 	export class BoxInfo {
@@ -492,6 +490,28 @@ export namespace main {
 	        this.host = source["host"];
 	        this.port = source["port"];
 	        this.name = source["name"];
+	    }
+	}
+	export class StoragePreflight {
+	    tight: boolean;
+	    freeBytes: number;
+	    needBytes: number;
+	    reclaimableBytes: number;
+	    conflictingMod?: string;
+	    foreignDirs?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new StoragePreflight(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tight = source["tight"];
+	        this.freeBytes = source["freeBytes"];
+	        this.needBytes = source["needBytes"];
+	        this.reclaimableBytes = source["reclaimableBytes"];
+	        this.conflictingMod = source["conflictingMod"];
+	        this.foreignDirs = source["foreignDirs"];
 	    }
 	}
 	export class StreamURLKind {

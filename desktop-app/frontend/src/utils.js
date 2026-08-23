@@ -487,3 +487,55 @@ export function balanceLabel(v) {
     : (v < 0 ? t('controls.balanceLeft', { n: Math.abs(v) })
              : t('controls.balanceRight', { n: v }));
 }
+
+// bassControlsDisabled is the ONE gate every bass control in the settings view
+// reads: the slider, the "default" reset button next to it, and the reset
+// handler itself.
+//
+// bass.available is boxapi's reading of the speaker's own /bassCapabilities
+// (bassAvailable), and it is false BOTH when the speaker says it has no
+// adjustable bass and when that capabilities read did not come back at all.
+// The two are indistinguishable from here, which is why nothing downstream may
+// claim more than "not reported". Either way there is no bass level for STR to
+// set: the range collapses to 0..0 and a POST of the default can only be a
+// no-op. The slider has always been greyed out on that reading; the reset
+// button was not, so it stayed clickable next to a dead slider. A Lifestyle 650
+// owner is looking at exactly that pair (mail with photo, 2026-08-22: slider
+// greyed at 0..0, "Standard" button live), on a system whose bass sits in the
+// separate bass module.
+//
+// What the mail does NOT establish is what the speaker answers to that POST,
+// so do not write "it returns 502" into this file: the agent maps every
+// SetBass failure to 502, but nobody has seen this speaker's reply. The gate
+// stands on the capability reading alone.
+//
+// Keeping the decision here rather than inline in the template is what makes it
+// testable: the settings view renders through innerHTML and the vitest
+// environment is deliberately DOM-free, so a shared helper is the only place
+// the gate can be pinned down.
+export function bassControlsDisabled(bass) {
+  return !(bass && bass.available);
+}
+
+// shouldAdoptPresetArt answers one question the preset grid and the status poll
+// have to agree on: may the logo of the station playing right now be written
+// onto the key it was recalled from? Yes only while that key has no logo of its
+// own, so the tile takes the speaker's <art> once and then keeps the value it
+// saved, and never for a Spotify key (those draw the Spotify logo on purpose,
+// and SetPreset is radio-only, so writing art there would clobber the URI).
+//
+// It matters that this is a shared gate: the grid uses it to decide what to
+// draw, and refreshStatus uses it to decide whether a redraw is worth it at
+// all. Until 2026-08-23 the grid was rebuilt every 12 s by the live-title
+// poller and a late <art> tag was picked up by accident; the key stopped
+// showing the running title that day (duplicate ticker, user report), the
+// rebuild went with it, and a logo arriving one poll after the location had
+// nothing left to trigger it.
+//
+// Extracted rather than written inline for the same reason as
+// bassControlsDisabled: renderPresets builds its markup through innerHTML and
+// the vitest environment is deliberately DOM-free, so a helper is the only
+// place this rule can be pinned down by a test.
+export function shouldAdoptPresetArt(icon, preset) {
+  return !!icon && !!preset && !preset.art && preset.type !== 'spotify';
+}

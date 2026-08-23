@@ -73,6 +73,30 @@ var stickProbePaths = []string{
 // user where it stopped, and captures SSH stderr into res.Log so the user can
 // see the actual failure reason instead of an opaque exit code.
 func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
+	// The OTA journal is the only record of an attempt that survives the app
+	// being restarted, and the failure report prints it under "what the update
+	// did". Until now nothing in the install path ever wrote to it (every one
+	// of the recordOTA call sites was in the update path), so that section was
+	// empty for every install failure, which is the exact case the report is
+	// most often sent for. Three lines per install: it is written once per
+	// user-initiated install, so it costs the box nothing and this PC a few
+	// bytes.
+	a.recordOTA(host, "install: started (model="+model+")")
+	res, err := a.installSTROnBox(host, model)
+	switch {
+	case err != nil:
+		a.recordOTA(host, "install: FAILED step="+res.Step+" code="+res.Code+" err="+err.Error())
+	case !res.OK:
+		a.recordOTA(host, "install: FAILED step="+res.Step+" code="+res.Code)
+	default:
+		a.recordOTA(host, "install: OK (step="+res.Step+")")
+	}
+	return res, err
+}
+
+// installSTROnBox is InstallSTROnBox's body; the exported name is the journal
+// wrapper above so no return path can forget to record its outcome.
+func (a *App) installSTROnBox(host, model string) (InstallResult, error) {
 	res := InstallResult{Step: "start"}
 	if host == "" {
 		return res, fmt.Errorf("host is required")
@@ -147,9 +171,8 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		// blaming the network.
 		if tcpReachable(host, 8888, 3*time.Second) {
 			res.Code = "already-installed"
-			res.Message = withFW("The speaker at " + host + " already answers on the STR agent port (8888), " +
-				"so it looks like STR is installed already. Refresh the speaker list. " +
-				"If you meant to reinstall, reboot the speaker with the STR stick plugged in first.")
+			res.Message = withFW("The speaker at "+host+" already answers on the STR agent port (8888), "+
+				"so it looks like STR is installed already.") + "\n\n" + alreadyInstalledAdvice
 			a.logger.Warn("install_str: preflight, :22 closed but :8888 up (already installed?)", "host", host)
 			return res, nil
 		}
@@ -218,9 +241,8 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 		onLAN := tcpReachable(host, 8090, 3*time.Second)
 		if onLAN {
 			res.Code = "install-window-closed"
-			res.Message = withFW("The speaker at " + host + " is on the network, but the install access (SSH) is closed. " +
-				"Bose only opens it while the speaker boots with the STR stick plugged in. " +
-				"Power the speaker off, insert the STR stick, power it back on, then install.")
+			res.Message = withFW("The speaker at "+host+" is on the network, but the install access (SSH) is closed.") +
+				"\n\n" + installWindowClosedAdvice
 			a.logger.Warn("install_str: preflight, box reachable on :8090 but :22 closed (install window shut; stick-free :17000 unlock did not open SSH)", "host", host)
 		} else if tcpReachable(host, 8091, 3*time.Second) {
 			// :22, :8090 and :8888 are all closed, but the box still answers
@@ -235,12 +257,17 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			// keep the stick in so the reboot also re-runs the install if the
 			// STR agent itself stopped.
 			res.Code = "control-unresponsive"
-			res.Message = withFW("The speaker at " + host + " is on your network (it still answers on the media port 8091), " +
-				"but its control software has stopped responding (no answer on the STR agent, the Bose port 8090, or SSH). " +
-				"Power the speaker fully off and back on with the STR stick plugged in, then refresh the speaker list and try again.")
+			// The Portable sentence is appended to the ADVICE paragraph, not to
+			// the whole message: the failure report lifts advice paragraphs out
+			// of the message and reprints them under the facts, and a sentence
+			// glued on after that split would be orphaned in the middle.
+			advice := controlUnresponsiveAdvice
 			if strings.Contains(strings.ToLower(model), "portable") {
-				res.Message += " The Portable never fully powers off while it still has battery: hold the AUX button for about 10 seconds to force a restart."
+				advice += " The Portable never fully powers off while it still has battery: hold the AUX button for about 10 seconds to force a restart."
 			}
+			res.Message = withFW("The speaker at "+host+" is on your network (it still answers on the media port 8091), "+
+				"but its control software has stopped responding (no answer on the STR agent, the Bose port 8090, or SSH).") +
+				"\n\n" + advice
 			a.logger.Warn("install_str: preflight, box answers UPnP :8091 but not :22/:8090/:8888 (control stack wedged; advising power-cycle)", "host", host)
 		} else if rebootedByUs {
 			// WE rebooted this speaker moments ago, as part of undoing the
@@ -251,16 +278,14 @@ func (a *App) InstallSTROnBox(host, model string) (InstallResult, error) {
 			// cause, while the actual finding (a decade-old firmware) went
 			// only into the log (field report 2026-08-04).
 			res.Code = "restarting-after-unlock"
-			res.Message = withFW("The speaker did not open its install access, so ST Reborn put its original settings back and restarted it. " +
-				"It is still booting, which is why it does not answer right now. " +
-				"Give it about two minutes, then refresh the speaker list and try the install again. " +
-				"If it keeps failing, install from the USB stick: power the speaker off, plug the stick in, power it back on.")
+			res.Message = withFW("The speaker did not open its install access, so ST Reborn put its original settings back and restarted it. "+
+				"It is still booting, which is why it does not answer right now.") +
+				"\n\n" + restartingAfterUnlockAdvice
 			a.logger.Warn("install_str: preflight after our own post-unlock reboot, box still booting (not a network fault)", "host", host)
 		} else {
 			res.Code = "not-reachable"
-			res.Message = withFW("The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at " + host + "). " +
-				"Most often this is a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks: allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi (not a guest network). " +
-				"If it still fails, bring the speaker onto Wi-Fi with the Bose SoundTouch app, then reboot it with the STR stick plugged in and try again.")
+			res.Message = withFW("The speaker is not reachable on the network (no answer on SSH port 22, the Bose port 8090, or the media port 8091 at "+host+").") +
+				"\n\n" + notReachableAdvice
 			a.logger.Warn("install_str: preflight failed, box not reachable on :22, :8090 or :8091", "host", host)
 		}
 		return res, nil

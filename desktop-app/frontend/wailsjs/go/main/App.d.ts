@@ -27,6 +27,8 @@ export function BoxSettings(arg1:string,arg2:number):Promise<Record<string, any>
 
 export function BoxSnapshot(arg1:string,arg2:number):Promise<Record<string, any>>;
 
+export function BoxStoragePreflight(arg1:string,arg2:number):Promise<main.StoragePreflight>;
+
 export function BoxWifiScan(arg1:string,arg2:number):Promise<Array<string>>;
 
 export function BrowseLibrary(arg1:string,arg2:string,arg3:number,arg4:number):Promise<main.LibraryPage>;

@@ -820,6 +820,11 @@ func run() error {
 		// on the speaker that reports it, so no speaker is left believing it is
 		// still half of a pair and therefore unpairable.
 		margeGroupClear: margeSrv.ClearGroup,
+		// A zone the FIRMWARE dropped by itself never reached STR's own group
+		// document, which then kept the power-on resume switched off for good.
+		// The forming frame goes to the same place so a dissolve the firmware
+		// emits mid-change is not held against the group it then forms.
+		zoneChanged: webuiSrv.NoteBoxZoneState,
 		// Record hardware-preset recalls so the wake-resume + auto-re-push know
 		// what to bring back. Returns the recall generation for supersession.
 		noteLastPlay: webuiSrv.NoteLastPlay,

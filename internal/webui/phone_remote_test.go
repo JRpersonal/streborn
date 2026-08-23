@@ -161,7 +161,7 @@ func TestPhoneRemoteLocalesCarryTheNewKeys(t *testing.T) {
 	if bundles == 0 {
 		t.Fatal("could not find any locale bundle in indexHTML")
 	}
-	for _, key := range []string{"pairSum", "unpair", "sleepFail"} {
+	for _, key := range []string{"pairSum", "unpair", "sleepFail", "libOffline", "libPartial"} {
 		got := len(regexp.MustCompile(key+`:"`).FindAllString(indexHTML, -1))
 		if got != bundles {
 			t.Errorf("%s: %d locale bundles but %d keys", key, bundles, got)
@@ -391,5 +391,66 @@ func TestPhonePlaysALibraryTrackAsAFileNotAStation(t *testing.T) {
 	}
 	if strings.Contains(page[j:j+700], "mime:") {
 		t.Error("playStation must not send a mime; radio derives it from the codec")
+	}
+}
+
+// TestPhoneRemoteEmptyLibrarySearchIsHonest guards the third half of #666: the
+// page printed "Nothing found on your media servers" for three different
+// situations, and only one of them was that. A server the agent never reached,
+// and a search that could only cover part of the library, both read to the
+// reporter as "your NAS is empty" while the desktop app was showing him the
+// very song he had searched for.
+func TestPhoneRemoteEmptyLibrarySearchIsHonest(t *testing.T) {
+	i := strings.Index(indexHTML, "async function searchLibrary(")
+	if i < 0 {
+		t.Fatal("the phone remote has no library search")
+	}
+	end := strings.Index(indexHTML[i:], "async function playLibTrack(")
+	if end < 0 {
+		end = 4000
+	}
+	fn := indexHTML[i : i+end]
+
+	// The offline list the handler returns must reach the user.
+	if !strings.Contains(fn, "r.offline") {
+		t.Error("searchLibrary still drops the offline server list, so an unreachable NAS looks like an empty one")
+	}
+	if !strings.Contains(fn, "T.libOffline") {
+		t.Error("a server that did not answer gets no message of its own")
+	}
+	// So must a search that only covered part of the library.
+	if !strings.Contains(fn, "r.partial") || !strings.Contains(fn, "T.libPartial") {
+		t.Error("a partial search is presented as a complete one")
+	}
+	// The plain no-match wording stays, but only for an actual no-match.
+	if !strings.Contains(fn, "T.libNone") {
+		t.Error("the genuine no-match message is gone")
+	}
+	if strings.Contains(fn, "msg.textContent = T.libNone; msg.hidden = false;") {
+		t.Error("libNone is still printed unconditionally for every empty answer (#666 regression)")
+	}
+}
+
+// TestPhoneRemoteLibrarySearchDropsStaleAnswers guards the other way #666 could
+// still show "the wrong song sometimes". The library search is fired without
+// being awaited and, since the walk exists, may take tens of seconds; two
+// searches in a row can therefore land out of order. Without a token the older
+// answer repaints the list and replaces lastLibResults, so the rows on screen
+// and the track behind the Play button come from different queries.
+func TestPhoneRemoteLibrarySearchDropsStaleAnswers(t *testing.T) {
+	i := strings.Index(indexHTML, "async function searchLibrary(")
+	if i < 0 {
+		t.Fatal("the phone remote has no library search")
+	}
+	end := strings.Index(indexHTML[i:], "async function playLibTrack(")
+	if end < 0 {
+		end = 4000
+	}
+	fn := indexHTML[i : i+end]
+	if !strings.Contains(fn, "libToken") {
+		t.Fatal("searchLibrary has no generation guard: a slow answer can overwrite a newer one")
+	}
+	if !strings.Contains(fn, "if (token !== libToken) return;") {
+		t.Error("the generation is taken but never checked after the await")
 	}
 }

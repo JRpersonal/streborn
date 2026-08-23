@@ -73,6 +73,13 @@ type presetWsHandler struct {
 	// done in the Bose app (or one that reached only the other member) reaches
 	// STR at all. nil-safe.
 	margeGroupClear func(reason string)
+	// zoneChanged tells the webui what the BOX itself just announced about its
+	// zone (the master, empty when the zone is gone). A dissolve records the
+	// contradiction against STR's stored group document, which is only dropped
+	// once a live /getZone on a resume path agrees; a frame that names a master
+	// withdraws that doubt again, because the firmware also emits a dissolve on
+	// its way through a group change. See webui.NoteBoxZoneState. nil-safe.
+	zoneChanged func(master string)
 	// noteLastPlay records a hardware-preset recall as the webui's lastPlay so
 	// the auto-re-push and the wake-resume know what to resume (the hardware path
 	// plays straight through the renderer, bypassing the webui's own lastPlay).
@@ -944,19 +951,33 @@ func (h *presetWsHandler) OnSourceAux(ctx context.Context) {
 	}
 }
 
-// OnZoneChanged records the box's live multiroom/stereo-pair membership. Log
-// only on purpose: the box may have formed this zone itself (AfterTouch / Bose
-// app), and STR must NOT feed a box-native group into the reconcile store, or
-// PeriodicZoneReconcile would try to re-form it via /setZone and fight the
-// firmware's own pairing. The desktop multiroom tab already reads the live zone
-// via /getZone polling and can dissolve it; this typed log makes box-formed
-// groups visible in a diagnostic bundle instead of an "unrecognized frame".
+// OnZoneChanged records the box's live multiroom/stereo-pair membership. A zone
+// being FORMED is still log-only on purpose: the box may have formed it itself
+// (AfterTouch / Bose app), and STR must NOT feed a box-native group into the
+// reconcile store, or PeriodicZoneReconcile would try to re-form it via /setZone
+// and fight the firmware's own pairing. The desktop multiroom tab already reads
+// the live zone via /getZone polling and can dissolve it; this typed log makes
+// box-formed groups visible in a diagnostic bundle instead of an "unrecognized
+// frame".
+//
+// What IS handed on either way is the bare fact of what the firmware just said,
+// because nothing acted on a DISSOLVE before: when the firmware dropped a zone
+// by itself STR's own group document stayed on NAND for good and silently
+// disabled the power-on resume (ST20, 2026-08-22: dissolved at 14:08, still
+// standing down as "in a zone" at 20:55). It only records the contradiction; the
+// document is dropped by the resume path once a live read agrees with the frame.
+// The forming frame is passed on for the same accounting, and only for that: it
+// withdraws a doubt the firmware's own mid-change dissolve had recorded against
+// a group that then formed fine. Neither call writes to the reconcile store.
 func (h *presetWsHandler) OnZoneChanged(_ context.Context, z boxws.ZoneState) {
 	if z.Master == "" {
 		h.logger.Info("zone changed: dissolved")
-		return
+	} else {
+		h.logger.Info("zone changed", "master", z.Master, "senderIsMaster", z.SenderIsMaster, "members", len(z.Members))
 	}
-	h.logger.Info("zone changed", "master", z.Master, "senderIsMaster", z.SenderIsMaster, "members", len(z.Members))
+	if h.zoneChanged != nil {
+		h.zoneChanged(z.Master)
+	}
 }
 
 // OnGroupChanged reacts to the box's stereo pair changing. The one action taken
