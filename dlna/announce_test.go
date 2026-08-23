@@ -111,3 +111,59 @@ func TestParseMaxAge(t *testing.T) {
 		}
 	}
 }
+
+// Every SoundTouch speaker announces itself over SSDP with the constant
+// uuid:BO5EBO5E-F00D-F00D-FEED-<deviceID> prefix (measured 2026-08-24 on three
+// chassis families, FW 27.0.6). The Bose-host accessor must return exactly the
+// speakers, never the neighbourhood's other UPnP devices, and a byebye must
+// retire the speaker like any other announcement.
+func TestAnnounceCache_BoseHosts(t *testing.T) {
+	c := &announceCache{entries: map[string]announceEntry{}}
+	now := time.Now()
+
+	speaker := notifyPacket(
+		"CACHE-CONTROL: max-age=1800",
+		"LOCATION: http://192.0.2.44:8091/XD/BO5EBO5E-F00D-F00D-FEED-AABBCCDDEEFF.xml",
+		"NT: urn:schemas-upnp-org:device:MediaRenderer:1",
+		"NTS: ssdp:alive",
+		"USN: uuid:BO5EBO5E-F00D-F00D-FEED-AABBCCDDEEFF::urn:schemas-upnp-org:device:MediaRenderer:1",
+	)
+	tv := notifyPacket(
+		"CACHE-CONTROL: max-age=1800",
+		"LOCATION: http://192.0.2.99:9197/dmr",
+		"NT: urn:schemas-upnp-org:device:MediaRenderer:1",
+		"NTS: ssdp:alive",
+		"USN: uuid:12345678-aaaa-bbbb-cccc-dddddddddddd::urn:schemas-upnp-org:device:MediaRenderer:1",
+	)
+	c.handlePacket(speaker, now)
+	c.handlePacket(tv, now)
+
+	hosts := c.boseHosts(now)
+	if len(hosts) != 1 || hosts[0] != "192.0.2.44" {
+		t.Fatalf("boseHosts = %v, want exactly the speaker's host", hosts)
+	}
+
+	// The same speaker announces several service variants under one uuid; the
+	// host must not be duplicated.
+	svc := notifyPacket(
+		"CACHE-CONTROL: max-age=1800",
+		"LOCATION: http://192.0.2.44:8091/XD/BO5EBO5E-F00D-F00D-FEED-AABBCCDDEEFF.xml",
+		"NT: urn:schemas-upnp-org:service:AVTransport:1",
+		"NTS: ssdp:alive",
+		"USN: uuid:BO5EBO5E-F00D-F00D-FEED-AABBCCDDEEFF::urn:schemas-upnp-org:service:AVTransport:1",
+	)
+	c.handlePacket(svc, now)
+	if hosts := c.boseHosts(now); len(hosts) != 1 {
+		t.Fatalf("after a second service announcement: hosts = %v, want one", hosts)
+	}
+
+	byebye := notifyPacket(
+		"NT: urn:schemas-upnp-org:device:MediaRenderer:1",
+		"NTS: ssdp:byebye",
+		"USN: uuid:BO5EBO5E-F00D-F00D-FEED-AABBCCDDEEFF::urn:schemas-upnp-org:device:MediaRenderer:1",
+	)
+	c.handlePacket(byebye, now)
+	if hosts := c.boseHosts(now); len(hosts) != 0 {
+		t.Fatalf("after byebye: hosts = %v, want none", hosts)
+	}
+}

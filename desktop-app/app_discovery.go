@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/JRpersonal/streborn/discovery"
+	"github.com/JRpersonal/streborn/dlna"
 )
 
 // discEntry is one cached discovery result plus when it was last
@@ -295,6 +296,58 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 			upsert(probed)
 		}
 	}()
+	// Third source, costing the LAN nothing: the speakers announce THEMSELVES.
+	// Every SoundTouch on FW 27.0.6 sends periodic SSDP ssdp:alive NOTIFYs for
+	// its :8091 MediaRenderer (measured 2026-08-24 across ST30, ST10 and
+	// Portable), and the dlna package's passive listener has been collecting
+	// them for the app's whole lifetime anyway (#341). That reaches two boxes
+	// the paths above structurally miss: a speaker on a LAN where mDNS is dead
+	// (instancesFromMDNS=0 every cycle, the recurring router-setup case) that
+	// is ALSO outside the sweep's /24, and one the 12 s sweep budget skipped.
+	// Announcements are candidates, never results: each host is probed through
+	// the same classification as a sweep hit, so a stale announcement costs one
+	// failed probe and can never show a speaker that is not there. Self-assigned
+	// addresses are skipped for the reason discovery_coldstart already skips
+	// them: unroutable from an ordinary LAN, and the same box re-announces its
+	// real lease anyway.
+	var ssdpHits int
+	fbWG.Add(1)
+	go func() {
+		defer fbWG.Done()
+		hosts := dlna.AnnouncedBoseHosts()
+		// Bounded so a hostile or absurd multicast neighbourhood cannot turn
+		// discovery into a probe storm; a home fleet is single digits.
+		if len(hosts) > 24 {
+			hosts = hosts[:24]
+		}
+		var wg sync.WaitGroup
+		for _, h := range hosts {
+			if ip := net.ParseIP(h); ip == nil || ip.IsLoopback() ||
+				(ip.IsLinkLocalUnicast() && !hostHasLinkLocalIPv4()) {
+				continue
+			}
+			host := h
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				var found BoxInfo
+				ok := false
+				if b, hit := probeSTR(fallbackCtx, host); hit {
+					found, ok = b, true
+				} else if b, hit := probeStock(fallbackCtx, host); hit {
+					found, ok = b, true
+				}
+				if !ok {
+					return
+				}
+				fbMu.Lock()
+				ssdpHits++
+				upsert(found)
+				fbMu.Unlock()
+			}()
+		}
+		wg.Wait()
+	}()
 	fbWG.Wait()
 	fallbackCancel()
 	// The known-speaker probes finished long ago (single 3 s probes launched
@@ -304,7 +357,7 @@ func (a *App) DiscoverBoxes(timeoutSec int) ([]BoxInfo, error) {
 		knownFound++
 		upsert(b)
 	}
-	a.logger.Info("discovery: TCP fallback done", "stockHits", stockHits, "strHits", strHits, "knownDirect", knownFound)
+	a.logger.Info("discovery: TCP fallback done", "stockHits", stockHits, "strHits", strHits, "ssdpHits", ssdpHits, "knownDirect", knownFound)
 	a.logger.Info("discovery: returning", "totalBoxes", len(seen), "fromMDNS", mdnsHits)
 
 	// Enrich every box with the serial number and model from
