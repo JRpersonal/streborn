@@ -24,7 +24,7 @@ const BASE = `http://127.0.0.1:${PORT}/`;
 
 // All shipped UI locales. Override with SHOOT_LANGS=ar,de (comma-separated) to
 // re-shoot only some languages without regenerating the whole set.
-const ALL_LANGS = ['en', 'de', 'fr', 'es', 'ja', 'uk', 'nl', 'pl', 'lt', 'lv', 'tr', 'ar'];
+const ALL_LANGS = ['en', 'de', 'fr', 'es', 'ja', 'uk', 'nl', 'pl', 'lt', 'lv', 'tr', 'ar', 'zh-Hant'];
 const LANGS = (process.env.SHOOT_LANGS && process.env.SHOOT_LANGS.trim())
   ? process.env.SHOOT_LANGS.split(',').map((s) => s.trim()).filter(Boolean)
   : ALL_LANGS;
