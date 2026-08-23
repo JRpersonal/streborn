@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "Duim-toetsen (afstandsbediening)",
   "settingsView.webhookModeAdditional": "Origineel behouden + webhook",
   "settingsView.webhookModeReplace": "Alleen webhook",
-  "settingsView.webhookModePresetNote": "In de modus Alleen webhook vuurt de toets de webhook af en speelt niets, of er nu een zender op staat of niet.",
+  "settingsView.webhookModePresetNote": "Wil je dat de toets stil blijft in de modus Alleen webhook, laat dan zijn STR-preset leeg. De speaker meldt de druk nog steeds, dus de webhook gaat af.",
   "settingsView.webhookModeAuxPowerNote": "Alleen aanvullend: de webhook vuurt naast de originele functie, die niet te onderdrukken is.",
   "settingsView.webhookUrlRequired": "Voer eerst een webhook-URL in.",
   "settingsView.webhookTypeHttp": "HTTP webhook",

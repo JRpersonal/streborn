@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "Klawisze kciuka (pilot)",
   "settingsView.webhookModeAdditional": "Zachowaj oryginal + webhook",
   "settingsView.webhookModeReplace": "Tylko webhook",
-  "settingsView.webhookModePresetNote": "W trybie Tylko webhook klawisz wyzwala webhook i niczego nie odtwarza, niezależnie od tego, czy jest na nim zapisana stacja.",
+  "settingsView.webhookModePresetNote": "Aby klawisz milczał w trybie Tylko webhook, zostaw jego preset STR pusty. Głośnik i tak zgłosi naciśnięcie, więc webhook zadziała.",
   "settingsView.webhookModeAuxPowerNote": "Tylko dodatkowo: webhook uruchamia sie obok oryginalnej funkcji, ktorej nie mozna wylaczyc.",
   "settingsView.webhookUrlRequired": "Najpierw podaj adres URL webhooka.",
   "settingsView.webhookTypeHttp": "HTTP webhook",

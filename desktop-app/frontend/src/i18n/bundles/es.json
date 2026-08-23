@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "Teclas de pulgar (mando)",
   "settingsView.webhookModeAdditional": "Mantener original + webhook",
   "settingsView.webhookModeReplace": "Solo webhook",
-  "settingsView.webhookModePresetNote": "En el modo Solo webhook, la tecla dispara el webhook y no reproduce nada, tenga o no una emisora guardada.",
+  "settingsView.webhookModePresetNote": "Para que la tecla quede en silencio en el modo Solo webhook, deja vacía su presintonía STR. El altavoz sigue informando de la pulsación, así que el webhook se dispara.",
   "settingsView.webhookModeAuxPowerNote": "Solo adicional: el webhook se dispara junto a la funcion original, que no se puede suprimir.",
   "settingsView.webhookUrlRequired": "Primero introduce una URL de webhook.",
   "settingsView.webhookTypeHttp": "HTTP webhook",

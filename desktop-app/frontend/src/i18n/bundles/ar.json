@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "أزرار الإعجاب (جهاز التحكّم)",
   "settingsView.webhookModeAdditional": "الإبقاء على الأصلي + webhook",
   "settingsView.webhookModeReplace": "Webhook فقط",
-  "settingsView.webhookModePresetNote": "في وضع «Webhook فقط» يُطلق المفتاح الـ webhook ولا يشغّل أي شيء، سواء كانت هناك محطة محفوظة عليه أم لا.",
+  "settingsView.webhookModePresetNote": "لكي يبقى المفتاح صامتاً في وضع «Webhook فقط»، اترك إعداده المسبق في STR فارغاً. يظل مكبر الصوت يُبلغ عن الضغطة، فيُطلق الـ webhook.",
   "settingsView.webhookModeAuxPowerNote": "إضافي فقط: يُطلق الـ webhook إلى جانب الوظيفة الأصلية، التي لا يمكن إيقافها.",
   "settingsView.webhookUrlRequired": "أدخل رابط webhook أولًا.",
   "settingsView.webhookTypeHttp": "Webhook عبر HTTP",

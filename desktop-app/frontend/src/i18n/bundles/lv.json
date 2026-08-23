@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "Ikskja taustini (pults)",
   "settingsView.webhookModeAdditional": "Saglabat originalu + webhook",
   "settingsView.webhookModeReplace": "Tikai webhook",
-  "settingsView.webhookModePresetNote": "Režīmā Tikai webhook taustiņš aktivizē webhook un neko neatskaņo neatkarīgi no tā, vai tajā ir saglabāta stacija.",
+  "settingsView.webhookModePresetNote": "Lai taustiņš režīmā Tikai webhook paliktu kluss, atstāj tā STR iepriekšiestatījumu tukšu. Skaļrunis tāpat ziņo par nospiešanu, tāpēc webhook nostrādā.",
   "settingsView.webhookModeAuxPowerNote": "Tikai papildus: vebhuks nostrada lidzas originalajai funkcijai, ko nevar nomakt.",
   "settingsView.webhookUrlRequired": "Vispirms ievadi tīmekļa āķa URL.",
   "settingsView.webhookTypeHttp": "HTTP webhook",

@@ -777,7 +777,7 @@
   "settingsView.webhookKeyThumb": "Thumbs keys (remote)",
   "settingsView.webhookModeAdditional": "Keep original + webhook",
   "settingsView.webhookModeReplace": "Webhook only",
-  "settingsView.webhookModePresetNote": "In Webhook only mode the key fires the webhook and plays nothing, whether or not a station is saved on it.",
+  "settingsView.webhookModePresetNote": "For the key to stay silent in Webhook only mode, leave its STR preset empty. The speaker still reports the press, so the webhook fires.",
   "settingsView.webhookModeAuxPowerNote": "Additional only: the webhook fires alongside the original function, which cannot be suppressed.",
   "settingsView.webhookUrlRequired": "Enter a webhook URL first.",
   "settingsView.webhookTypeHttp": "HTTP webhook",

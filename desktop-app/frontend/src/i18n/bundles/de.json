@@ -777,7 +777,7 @@
   "settingsView.webhookKeyThumb": "Daumen-Tasten (Fernbedienung)",
   "settingsView.webhookModeAdditional": "Original behalten + Webhook",
   "settingsView.webhookModeReplace": "Nur Webhook",
-  "settingsView.webhookModePresetNote": "Im Modus Nur Webhook löst die Taste den Webhook aus und spielt nichts, egal ob ein Sender darauf liegt.",
+  "settingsView.webhookModePresetNote": "Damit die Taste im Modus Nur Webhook stumm bleibt, lass ihr STR-Preset leer. Der Lautsprecher meldet den Tastendruck trotzdem, der Webhook wird also ausgelöst.",
   "settingsView.webhookModeAuxPowerNote": "Nur zusätzlich: der Webhook feuert neben der Originalfunktion, die sich nicht unterdrücken lässt.",
   "settingsView.webhookUrlRequired": "Bitte zuerst eine Webhook-URL eingeben.",
   "settingsView.webhookTypeHttp": "HTTP-Webhook",

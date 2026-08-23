@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "Touches pouces (telecommande)",
   "settingsView.webhookModeAdditional": "Garder l'original + webhook",
   "settingsView.webhookModeReplace": "Webhook seul",
-  "settingsView.webhookModePresetNote": "En mode Webhook seul, la touche déclenche le webhook et ne joue rien, qu'une station y soit enregistrée ou non.",
+  "settingsView.webhookModePresetNote": "Pour que la touche reste muette en mode Webhook seul, laisse son préréglage STR vide. L'enceinte signale quand même l'appui, le webhook part donc bien.",
   "settingsView.webhookModeAuxPowerNote": "Additionnel uniquement : le webhook se déclenche en plus de la fonction d'origine, qui ne peut pas être supprimée.",
   "settingsView.webhookUrlRequired": "Saisis d'abord une URL de webhook.",
   "settingsView.webhookTypeHttp": "Webhook HTTP",

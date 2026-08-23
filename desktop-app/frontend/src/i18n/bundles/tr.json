@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "Basparmak tuslari (kumanda)",
   "settingsView.webhookModeAdditional": "Orijinali koru + webhook",
   "settingsView.webhookModeReplace": "Yalnızca webhook",
-  "settingsView.webhookModePresetNote": "Yalnızca webhook modunda tuş webhook'u tetikler ve hiçbir şey çalmaz, üzerinde kayıtlı bir istasyon olsa da olmasa da.",
+  "settingsView.webhookModePresetNote": "Yalnızca webhook modunda tuşun sessiz kalması için STR ön ayarını boş bırak. Hoparlör basışı yine de bildirir, böylece webhook tetiklenir.",
   "settingsView.webhookModeAuxPowerNote": "Yalnizca ek: webhook orijinal islevle birlikte tetiklenir, bu islev bastirilamaz.",
   "settingsView.webhookUrlRequired": "Önce bir webhook adresi gir.",
   "settingsView.webhookTypeHttp": "HTTP webhook",

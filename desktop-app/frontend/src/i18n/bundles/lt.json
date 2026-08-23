@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "Nykscio klavisai (pultas)",
   "settingsView.webhookModeAdditional": "Palikti originala + webhook",
   "settingsView.webhookModeReplace": "Tik webhook",
-  "settingsView.webhookModePresetNote": "Režimu Tik webhook klavišas paleidžia webhook ir nieko negroja, nesvarbu, ar jame įrašyta stotis.",
+  "settingsView.webhookModePresetNote": "Kad klavišas režimu Tik webhook tylėtų, palik jo STR išankstinį nustatymą tuščią. Kolonėlė vis tiek praneša apie paspaudimą, tad webhook suveikia.",
   "settingsView.webhookModeAuxPowerNote": "Tik papildomai: webhook suveikia kartu su originalia funkcija, kurios negalima nuslopinti.",
   "settingsView.webhookUrlRequired": "Pirmiausia įveskite tinklo nuorodos (webhook) URL.",
   "settingsView.webhookTypeHttp": "HTTP webhook",

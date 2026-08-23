@@ -713,7 +713,7 @@
   "settingsView.webhookKeyThumb": "Клавіші великого пальця (пульт)",
   "settingsView.webhookModeAdditional": "Зберегти оригінал + вебхук",
   "settingsView.webhookModeReplace": "Лише webhook",
-  "settingsView.webhookModePresetNote": "У режимі «Лише webhook» клавіша надсилає webhook і нічого не відтворює, незалежно від того, чи збережено на ній станцію.",
+  "settingsView.webhookModePresetNote": "Щоб клавіша мовчала в режимі «Лише webhook», залиш її пресет STR порожнім. Колонка все одно повідомляє про натискання, тож webhook спрацьовує.",
   "settingsView.webhookModeAuxPowerNote": "Лише додатково: вебхук спрацьовує разом з оригінальною функцією, яку не можна придушити.",
   "settingsView.webhookUrlRequired": "Спершу введіть URL вебхука.",
   "settingsView.webhookTypeHttp": "HTTP webhook",
