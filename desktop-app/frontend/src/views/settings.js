@@ -27,6 +27,7 @@ import {
   balanceLabel,
   encodeURIStrict,
   bassControlsDisabled,
+  bassSliderProps,
 } from '../utils.js';
 import { t, tLookup, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -743,6 +744,10 @@ function renderBoxSettings(s, box) {
   const info = s.info || {};
   const vol = s.volume || {};
   const bass = s.bass || {};
+  // Range, step and position of the bass slider all come from the shared
+  // mapping: tone-controls speakers report a step above 1 that the slider
+  // must honor (see bassSliderProps in utils.js).
+  const bassProps = bassSliderProps(bass);
   const net = s.network || {};
   const sources = rollupSources(s.sources || []);
   // Series-II boxes expose Wi-Fi as a WIFI_INTERFACE in
@@ -814,12 +819,12 @@ function renderBoxSettings(s, box) {
       <h3>${escapeHtml(t('settingsView.bassHeading'))}</h3>
       <div class="setting-row">
         <input type="range" id="boxBass"
-               min="${(bass.min || 0) - (bass.default || 0)}"
-               max="${(bass.max || 0) - (bass.default || 0)}"
-               step="1"
-               value="${(bass.actual || 0) - (bass.default || 0)}"
+               min="${bassProps.min}"
+               max="${bassProps.max}"
+               step="${bassProps.step}"
+               value="${bassProps.value}"
                ${bassControlsDisabled(bass) ? 'disabled' : ''} />
-        <span class="setting-value" id="boxBassVal">${formatRel((bass.actual || 0) - (bass.default || 0))}</span>
+        <span class="setting-value" id="boxBassVal">${formatRel(bassProps.value)}</span>
         <button class="btn btn-mini" id="boxBassReset" title="${escapeAttr(t('settingsView.bassResetTitle'))}" ${bassControlsDisabled(bass) ? 'disabled' : ''}>${escapeHtml(t('settingsView.bassResetBtn'))}</button>
       </div>
       ${bassControlsDisabled(bass)
