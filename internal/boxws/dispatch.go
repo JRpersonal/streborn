@@ -143,7 +143,11 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 						time.Since(c.lastNativeActiveAt) < nativeDropWindow
 					c.mu.Unlock()
 					if recent {
-						c.fireNativeDropped()
+						if c.nativeDropIsOurOwnWrite() {
+							c.logger.Info("box ws: a native station ended right after OUR preset write, not counting it against the speaker")
+						} else {
+							c.fireNativeDropped()
+						}
 					}
 				}
 				// The other way a speaker abandons a native station: straight to
@@ -165,9 +169,14 @@ func (c *Client) handleMessage(ctx context.Context, data []byte) {
 					started := c.nativeStartedAt
 					c.mu.Unlock()
 					if !started.IsZero() && time.Since(started) < nativeStandbyDropWindow {
-						c.logger.Warn("box ws: the speaker dropped a native station to standby right after starting it, counting it as a native failure",
-							"lastedMs", time.Since(started).Milliseconds())
-						c.fireNativeDropped()
+						if c.nativeDropIsOurOwnWrite() {
+							c.logger.Info("box ws: a native station went to standby right after OUR preset write, not counting it against the speaker",
+								"lastedMs", time.Since(started).Milliseconds())
+						} else {
+							c.logger.Warn("box ws: the speaker dropped a native station to standby right after starting it, counting it as a native failure",
+								"lastedMs", time.Since(started).Milliseconds())
+							c.fireNativeDropped()
+						}
 					}
 				}
 				// #197: some ST20 (scm) firmware oscillates UPNP->STANDBY->UPNP on a

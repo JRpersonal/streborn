@@ -176,6 +176,18 @@ func nowPlayingIsPlaying(doc string) bool {
 	return strings.Contains(doc, "PLAY_STATE") || strings.Contains(doc, "BUFFERING_STATE")
 }
 
+// boxSourceAndPlaying returns the active source AND whether audio is flowing,
+// from a single now_playing read. The preset reconcile needs both to decide
+// whether it may write, and two separate probes would be two requests at a
+// moment when the box is already busy rendering.
+func boxSourceAndPlaying(boxHost string) (src string, playing, ok bool) {
+	doc, got := fetchNowPlaying(boxHost)
+	if !got {
+		return "", false, false
+	}
+	return firstAttr(doc, "source"), nowPlayingIsPlaying(doc), true
+}
+
 // boxNowPlayingSummary returns compact now_playing evidence for the recall
 // settle logs: the active source, the box's own itemName (what a display model
 // like the Wave/ST20 shows) and the playStatus. It answers two open field
