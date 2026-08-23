@@ -178,6 +178,84 @@ func reclaimableEngineBytes(ver map[string]string, embeddedEngineSize int64) int
 	return embeddedEngineSize
 }
 
+// StoragePreflight is the answer to "is this speaker's storage too tight for
+// the agent update", plus the numbers the confirmation dialog shows and the
+// foreign-software fields it names. It exists so the dialog RENDERS a verdict
+// instead of computing a second one.
+//
+// Until 2026-08-23 the frontend re-derived this in JavaScript and got it wrong
+// twice. It compared the RAW embedded agent size against the box's free
+// figure, so a user was told his update "needs about 13.9 MB" when the
+// compression-credited need (nandNeedCompressed) is about 10.7 MB, and he was
+// left hunting for 3 MB that were never required (screenshot, 2026-08-22). And
+// its engine credit only counted goLibrespotSizeBytes, so a speaker whose agent
+// is too old to report that field got zero reclaim credit and was called tight
+// even with a full engine sitting on it, ready to be dropped by the reclaim
+// cascade. Both differences are gone by construction now: this is the same
+// nandFits/nandNeedCompressed/reclaimableEngineBytes trio every other app-side
+// space gate goes through.
+type StoragePreflight struct {
+	// Tight is the only verdict. False means "do not warn", including every
+	// unknown case (nandFits fails open).
+	Tight bool `json:"tight"`
+	// FreeBytes is what the box reported, verbatim, so the dialog shows the
+	// speaker's own figure and not a derived one.
+	FreeBytes int64 `json:"freeBytes"`
+	// NeedBytes is the compression-credited footprint of the update, i.e. what
+	// the write really costs the volume, not the size of the binary in the app.
+	NeedBytes int64 `json:"needBytes"`
+	// ReclaimableBytes is the headroom the update frees before it needs it (a
+	// present engine). Carried for the OTA journal and for support questions
+	// about why a seemingly tight box was not warned about.
+	ReclaimableBytes int64 `json:"reclaimableBytes"`
+	// ConflictingMod and ForeignDirs are passed through untouched from the
+	// agent's version report so the dialog can name the other SoundTouch
+	// software with ONE round trip. The name mapping stays in the frontend
+	// (foreignSoftwareLabel), which is where the display table lives.
+	ConflictingMod string `json:"conflictingMod,omitempty"`
+	ForeignDirs    string `json:"foreignDirs,omitempty"`
+}
+
+// storagePreflight is the pure decision behind BoxStoragePreflight, kept
+// separate from the HTTP read so the field shapes agents actually send are
+// testable.
+//
+// agentLen <= 0 is the dev build with the empty go:embed stub: there is no
+// binary to push, so nothing is tight (the same guard agentbin.Available()
+// gives the rest of the app). Note the asymmetry that comes with it: on a dev
+// build engineLen is a 0-byte stub too, so the reclaim fallback for old agents
+// contributes nothing and a dev build can read TIGHTER than a release build.
+// That is inherent to running without the embeds, not a bug to chase.
+func storagePreflight(ver map[string]string, agentLen, engineLen int64) StoragePreflight {
+	pf := StoragePreflight{
+		ConflictingMod: ver["conflictingMod"],
+		ForeignDirs:    ver["foreignDirs"],
+	}
+	// Same ParseInt-and-ignore-the-error sequence as every other gate: a
+	// missing or garbled nandFreeBytes lands on 0, which nandFits reads as
+	// "unknown, do not block".
+	pf.FreeBytes, _ = strconv.ParseInt(ver["nandFreeBytes"], 10, 64)
+	if agentLen <= 0 {
+		return pf
+	}
+	pf.NeedBytes = nandNeedCompressed(agentLen)
+	pf.ReclaimableBytes = reclaimableEngineBytes(ver, engineLen)
+	pf.Tight = !nandFits(pf.FreeBytes, pf.ReclaimableBytes, pf.NeedBytes)
+	return pf
+}
+
+// BoxStoragePreflight reads the box's agent version and returns the storage
+// verdict for the update confirmation dialog. The caller swallows the error:
+// a speaker that cannot be asked keeps the fail-open contract of every other
+// space gate and is never blocked from updating.
+func (a *App) BoxStoragePreflight(host string, port int) (StoragePreflight, error) {
+	ver, err := a.BoxAgentVersion(host, port)
+	if err != nil {
+		return StoragePreflight{}, err
+	}
+	return storagePreflight(ver, int64(len(agentbin.Bytes())), int64(len(agentbin.GoLibrespotBytes()))), nil
+}
+
 // errInsufficientNAND marks a push refused by the NAND space gate. Free
 // space cannot change within an OTA's retry window, so retry loops stop on
 // it instead of backing off and re-asking a question whose answer stays no.

@@ -43,6 +43,7 @@ import {
   AppInfo,
   EjectDrive,
   BoxAgentVersion,
+  BoxStoragePreflight,
   UpdateBoxAgent,
   EnsureSpotifyEngine,
   RecordOTAOutcome,
@@ -206,6 +207,7 @@ import {
   orionStationPayload,
   clearNoticeDismissal,
   balanceLabel,
+  shouldAdoptPresetArt,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -311,6 +313,7 @@ import { shareModalHTML, shareTriggerHTML, wireShareModal, openShareModal } from
 import { renderMultiroom, initMultiroomView } from './views/multiroom.js';
 import { renderSpotifyAlpha, initSpotifyView } from './views/spotify.js';
 import { renderPodcasts, initPodcastsView } from './views/podcasts.js';
+import { appendSavedBundlePath, failReportSaveHosts } from './failreport.js';
 // App-wide accessibility prefs (text size + theme). Applied to <html> before
 // the skeleton renders so the first paint already reflects the chosen size and
 // theme. The matching CSS lives in style.css (html.a11y-*).
@@ -3060,6 +3063,15 @@ async function superviseUpdateIntent(box) {
 // retry was pointless and hid the real cause. If the box is too full, we name
 // the OTHER SoundTouch software eating the space so the user knows what to
 // remove; otherwise we confirm success. Re-renders the banner afterwards.
+//
+// The two branches say different things on purpose. The agent emits
+// conflictingMod/foreignDirs only when something foreign is actually sitting in
+// /mnt/nv, so an empty label means either "nothing to remove" or "the version
+// read failed", never "you have add-ons". Until 2026-08-23 both branches told
+// the user to remove other SoundTouch add-ons, and a user whose speaker was
+// clean went looking for them and wrote in about it ("Getting rid of add-ons",
+// 2026-08-22). The unnamed branch now asks for the diagnostic logs instead,
+// which is the only thing that can actually find the space.
 async function installSpotifyEngineVisible(box) {
   if (!box || !box.host) return;
   const btn = $('boxInstallEngineBtn');
@@ -3658,23 +3670,44 @@ async function showUpdateFailureReport(box, phase, errMsg) {
       <textarea class="failreport-text" id="failReportText" readonly rows="14">${escapeHtml(report)}</textarea>
       <div class="failreport-actions">
         <button class="btn btn-primary btn-mini" id="failReportCopy">${escapeHtml(t('update.reportCopy'))}</button>
+        <button class="btn btn-mini" id="failReportSaveLogs">${escapeHtml(t('footer.saveLogs'))}</button>
         <button class="btn btn-mini" id="failReportMail">${escapeHtml(t('update.reportMail'))}</button>
         <button class="btn btn-secondary btn-mini" id="failReportClose">${escapeHtml(t('common.close'))}</button>
       </div>
+      <p class="muted small">${escapeHtml(t('update.reportAttachHint'))}</p>
     </div>`;
   host.classList.remove('hidden');
   const ta = $('failReportText');
+  // Read the textarea rather than the closure: saving the diagnostic bundle
+  // rewrites the closing block to name the file that was just written, and the
+  // copied text has to carry that path, not the version from before the save.
+  const currentText = () => (ta && ta.value) || report;
   const copy = $('failReportCopy');
   if (copy) copy.onclick = async () => {
-    try { await navigator.clipboard.writeText(report); }
+    try { await navigator.clipboard.writeText(currentText()); }
     catch { if (ta) { ta.select(); document.execCommand('copy'); } }
     copy.textContent = t('update.reportCopied');
+  };
+  // The update modal gets the same one-click bundle as the install screens.
+  // A failed OTA is the other moment a user has no idea where the diagnostic
+  // file would be, and the report itself now points at this button.
+  const saveLogs = $('failReportSaveLogs');
+  if (saveLogs) saveLogs.onclick = async () => {
+    saveLogs.classList.add('working');
+    try {
+      const r = await SaveDiagnosticBundle(failReportSaveHosts(box, state.boxes), true);
+      if (r && r.savePath) {
+        showToast(t('footer.saveLogsDone', { path: r.savePath, size: Math.round((r.bytes || 0) / 1024) }));
+        if (ta) ta.value = appendSavedBundlePath(currentText(), r.savePath);
+      }
+    } catch (e) { showError(String(e)); }
+    finally { saveLogs.classList.remove('working'); }
   };
   const mail = $('failReportMail');
   if (mail) mail.onclick = () => {
     try {
       BrowserOpenURL('mailto:str@sichtbar-app.de?subject=' +
-        encodeURIComponent('ST Reborn update failed') + '&body=' + encodeURIComponent(report));
+        encodeURIComponent('ST Reborn update failed') + '&body=' + encodeURIComponent(currentText()));
     } catch {}
   };
   const close = $('failReportClose');
@@ -3746,32 +3779,31 @@ async function doBoxUpdate(targetBox) {
   // user stays in control: show the real numbers and what will happen (more
   // than one restart, Spotify engine reinstalled after the restart) and let
   // them decide. An unknown free figure (older agent) never blocks.
+  //
+  // The verdict AND the numbers come from BoxStoragePreflight, i.e. from the
+  // same Go gate the push itself goes through. This used to be computed here
+  // in JavaScript and it disagreed with the Go side twice: it compared the raw
+  // embedded agent size instead of the compression-credited need, so a user was
+  // told his update needed 13.9 MB when the real need was about 10.7 MB
+  // (screenshot, 2026-08-22), and it credited a present engine only when the
+  // agent reported goLibrespotSizeBytes, so an older agent with a full engine
+  // on the box got no reclaim credit at all. Nothing is derived here any more:
+  // this renders what the gate says.
   try {
-    const v = await BoxAgentVersion(targetBox.host, targetBox.port);
-    const free = parseInt(v.nandFreeBytes || '', 10);
-    const agentBytes = (state.appInfo && state.appInfo.agentBinBytes) || 0;
-    // Count the space the update frees BEFORE it needs it. The agent drops the
-    // Spotify engine to make room and reinstalls it afterwards, so a speaker
-    // with the engine installed effectively has that much more headroom.
-    // Comparing raw free space against the whole agent asked users to approve
-    // an update that was never at risk: a field case warned at 12.0 MB free for
-    // a 12.3 MB update on a speaker carrying a 16 MB engine, and the user went
-    // looking on the web to find out whether it was safe to continue.
-    const engineBytes = (v.goLibrespot === 'present')
-      ? (parseInt(v.goLibrespotSizeBytes || '', 10) || 0) : 0;
-    const effectiveFree = (Number.isFinite(free) ? free : 0) + engineBytes;
-    if (Number.isFinite(free) && free > 0 && agentBytes > 0 && effectiveFree < agentBytes) {
-      const fmtMB = (n) => (n / 1048576).toFixed(1);
+    const pf = await BoxStoragePreflight(targetBox.host, targetBox.port);
+    if (pf && pf.tight) {
+      const fmtMB = (n) => ((n || 0) / 1048576).toFixed(1);
       // Only one thing here is ever the user's to act on: other SoundTouch
       // software occupying the storage. Name it when it is there, because then
       // the warning carries an instruction instead of a decision they have no
-      // basis to make.
-      const foreign = foreignSoftwareLabel(v);
+      // basis to make. The label mapping stays here; the preflight carries the
+      // agent's raw conflictingMod/foreignDirs fields through untouched.
+      const foreign = foreignSoftwareLabel(pf);
       const ok = await confirmWarn(
         t('update.tightNandTitle'),
         foreign
-          ? t('update.tightNandNamedBody', { freeMB: fmtMB(free), needMB: fmtMB(agentBytes), software: foreign })
-          : t('update.tightNandBody', { freeMB: fmtMB(free), needMB: fmtMB(agentBytes) })
+          ? t('update.tightNandNamedBody', { freeMB: fmtMB(pf.freeBytes), needMB: fmtMB(pf.needBytes), software: foreign })
+          : t('update.tightNandBody', { freeMB: fmtMB(pf.freeBytes), needMB: fmtMB(pf.needBytes) })
       );
       if (!ok) return; // user cancelled: no OTA, no reboot
     }
@@ -3960,6 +3992,11 @@ async function doBoxUpdate(targetBox) {
       if (result.engineTooFull) {
         // Retrying cannot help, only freeing space can. Name the OTHER
         // SoundTouch software eating the NAND so the user knows what to remove.
+        // With no name (nothing foreign reported, or no version to read) there
+        // is nothing to point at, so that branch asks for the diagnostic logs
+        // rather than sending the owner of a clean speaker hunting for add-ons
+        // that are not there (user mail, 2026-08-22). See
+        // installSpotifyEngineVisible for the full note.
         const foreign = foreignSoftwareLabel(confirmedVer);
         showToast(foreign
           ? t('spotify.engineTooFullNamed', { software: foreign })
@@ -5413,7 +5450,9 @@ function renderPresets() {
         addCands(SPOTIFY_LOGO);
       } else if (p.art) {
         addCands(p.art);
-      } else if (isActive && state.nowIcon) {
+      } else if (isActive && shouldAdoptPresetArt(state.nowIcon, p)) {
+        // Same gate refreshStatus uses to decide whether a late-arriving logo
+        // is worth a redraw, so the two cannot drift apart.
         addCands(state.nowIcon);
         // Auto-persist so the preset has its logo on the next load.
         p.art = state.nowIcon;
@@ -5452,6 +5491,18 @@ function renderPresets() {
           SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, p.art || '', state.nowBitrate, p.homepage || '', p.codec || '').catch(() => {});
         }
       }
+      // A key shows what is SAVED on it: a short, static name, plus the markers
+      // that say it is the one playing (the green .playing tile and the
+      // Playing/Buffering/Paused line from presetStateLabel). It deliberately
+      // carries NO live track line. Until 2026-08-23 the active key also
+      // rendered state.nowTitle and marqueed it, but a tile is one third of the
+      // window minus a 32px logo, so practically every "Artist - Title"
+      // overflowed and scrolled, while the now-playing bar a few centimetres
+      // above scrolled the identical string ("the app looks busy ... why
+      // display the same information in two places? The song title/artist
+      // almost always scrolls in the preset key area because the space is not
+      // wide enough for the string", user report 2026-08-23). The running title
+      // now lives only in that bar, which is the full window wide.
       div.innerHTML = `
         <div class="preset-head"><span class="num">${escapeHtml(t('preset.key', { n: i }))}</span><span class="del" data-slot="${i}" title="${escapeAttr(t('preset.deleteTitle'))}">&times;</span></div>
         <div class="preset-body">
@@ -5460,7 +5511,6 @@ function renderPresets() {
             <div class="name">${escapeHtml(p.name || t('preset.key', { n: i }))}</div>
             ${p.type === 'spotify' && p.account ? `<div class="preset-account">${escapeHtml(p.account)}</div>` : ''}
             ${p.source ? `<div class="preset-source" title="${escapeAttr(p.source)}">${escapeHtml(t('preset.sourceBadge', { source: p.source }))}</div>` : ''}
-            ${isActive && state.nowTitle && p.type !== 'spotify' ? `<div class="preset-track" title="${escapeAttr(state.nowTitle)}"><span class="track-inner">${escapeHtml(state.nowTitle)}</span></div>` : ''}
             <div class="preset-bitrate">${tileBitrate ? tileBitrate + ' kbit/s' : '- kbit/s'}</div>
             ${stateLabel}
           </div>
@@ -5524,18 +5574,18 @@ function renderPresets() {
       } catch (err) { showError(err); }
     };
   });
-  // Marquee any now-playing track line that overflows its tile, so the full
-  // "Artist - Title" is readable without hovering. Deferred to the next frame
-  // so the layout (scrollWidth/clientWidth) is settled after the innerHTML
-  // rebuild above.
-  requestAnimationFrame(() => applyTrackScroll('.preset-track'));
+  // No marquee pass here: nothing in a tile scrolls any more (see the tile
+  // template above). The saved name wraps and the badge lines clip, so a
+  // rebuilt grid needs no measuring frame.
 }
 
-// applyTrackScroll turns an overflowing .preset-track into a gentle marquee:
-// it pauses at the start, scrolls left until the end is visible, pauses, then
-// jumps back to the start and repeats. Lines that fit are left static. Only
-// the active tile carries a track line, so this measures one element.
-function applyTrackScroll(selector = '.preset-track, .status-bar .now') {
+// applyTrackScroll turns an overflowing line into a gentle marquee: it pauses
+// at the start, scrolls left until the end is visible, pauses, then jumps back
+// to the start and repeats. Lines that fit are left static. Since 2026-08-23
+// the now-playing bar above the preset grid is the only marquee in the app;
+// the preset keys stay still (user report, same date), so this measures one
+// element.
+function applyTrackScroll(selector = '.status-bar .now') {
   document.querySelectorAll(selector).forEach(box => {
     const inner = box.querySelector('.track-inner');
     if (!inner) return;
@@ -6048,8 +6098,8 @@ function scheduleLiveBitrate() {
 }
 
 // scheduleLiveTitle polls the agent's live ICY StreamTitle for the radio
-// station currently playing and reflects it into the active preset tile as the
-// now-playing track. Unlike the bitrate (stable, read once) the title changes
+// station currently playing and reflects it into the now-playing bar above the
+// preset grid. Unlike the bitrate (stable, read once) the title changes
 // per song, so this re-polls every 12 s while a proxied radio stream is the
 // active source. It stops when the speaker changes or playback stops; Spotify
 // is skipped (it shows its own track via /spotify/info).
@@ -6082,8 +6132,13 @@ function scheduleLiveTitle() {
       if (state.currentBox !== box) { liveTitleActive = false; return; }
       if (title !== state.nowTitle) {
         state.nowTitle = title;
-        renderPresets();
-        renderNowPlayingBar(); // keep the status line in sync with the tile
+        // Only the status line. The preset grid is NOT rebuilt here any more:
+        // since the keys stopped showing the live title (2026-08-23) a rebuild
+        // would re-create six <img class="preset-logo"> every 12 s for a value
+        // no tile displays. The tile's own inputs have their own triggers: the
+        // highlight from stateChanged in refreshStatus, the bitrate from
+        // scheduleLiveBitrate.
+        renderNowPlayingBar();
       }
     }
     // Poll fast (every 2 s) while there is no title yet, so a just-started
@@ -6187,9 +6242,10 @@ function resetNowPlaying() {
 
 // renderNowPlayingBar paints the now-playing status line purely from cached
 // state (no network), so it can be called both from the status poll and from
-// the live-title poller the moment a track arrives, keeping the status line in
-// sync with the preset tile. Guarded on the rendered HTML so it does not
-// restart the marquee animation when nothing changed.
+// the live-title poller the moment a track arrives, instead of the track only
+// appearing on the next poll. Since 2026-08-23 this bar is the only place the
+// running title is shown. Guarded on the rendered HTML so it does not restart
+// the marquee animation when nothing changed.
 function renderNowPlayingBar() {
   const bar = $('statusBar');
   if (!bar) return;
@@ -6267,7 +6323,8 @@ function renderNowPlayingBar() {
   let statusHTML;
   if (displayName) {
     // displayName sits in a .track-inner so a too-long "Station: ... · track"
-    // marquees inside .now, exactly like the preset tiles.
+    // marquees inside .now. This bar is the full window wide, which is why it
+    // is the one place that carries the running title (report 2026-08-23).
     statusHTML = `<span class="now"><span class="track-inner">${stateGlyph} ${escapeHtml(displayName)}</span></span>${stateLabel ? ' <small>' + escapeHtml(stateLabel) + '</small>' : ''}${brLabel}`;
   } else if (stateLabel) {
     statusHTML = `<span class="muted">${escapeHtml(stateLabel)}</span>`;
@@ -6507,6 +6564,16 @@ async function refreshStatus() {
       state.nowSpotifyArtist = '';
       state.nowSpotifyCover = '';
     }
+    // The tile adopts state.nowIcon (and persists it) only while the active
+    // preset still has no stored art. That render used to come for free from
+    // the 12 s live-title rebuild; since the key stopped showing the running
+    // title (2026-08-23) nothing repaints the grid between two status changes,
+    // so a speaker that reports an empty <art> on the poll which first shows
+    // the new location and fills it in a poll later would leave the key on its
+    // fallback favicon for the rest of the song, with the real logo never
+    // saved. False again the moment the art is stored, so this renders once
+    // per station, not once per poll.
+    let iconAdoptable = false;
     // Update state.nowIcon. Prefer the art tag from now_playing.
     // If that is empty AND we are playing through the stream proxy,
     // adopt the logo of the source preset. Bose UPnP items emitted
@@ -6522,6 +6589,7 @@ async function refreshStatus() {
       } else if (!newLoc) {
         state.nowIcon = '';
       }
+      iconAdoptable = shouldAdoptPresetArt(state.nowIcon, ap);
       // Keep the now-playing bitrate in sync with the active preset
       // (hardware key press or app restart did not go through the play
       // path that sets it). Cleared when nothing is playing.
@@ -6551,7 +6619,7 @@ async function refreshStatus() {
           (activeSlotFromLocation(newLoc) !== null || /\/spotify\/stream/.test(newLoc))) {
         scheduleLiveBitrate();
       }
-      // Keep the live radio track flowing into the active tile for playback
+      // Keep the live radio track flowing into the now-playing bar for playback
       // STR did not itself start (hardware key, app restart). Self-guarded, so
       // calling it on every poll is safe; it no-ops while already polling.
       if ((ps === 'PLAY_STATE' || ps === 'BUFFERING_STATE') &&
@@ -6589,13 +6657,13 @@ async function refreshStatus() {
       }
     }
 
-    if (stateChanged && state.presets.length > 0) {
+    if ((stateChanged || iconAdoptable) && state.presets.length > 0) {
       renderPresets();
     }
 
     // Now-playing status line. Rendered from cached state so the live-title
-    // poller can refresh it the instant a track arrives (in sync with the
-    // preset tile), not only on the next status poll.
+    // poller can refresh it the instant a track arrives, not only on the next
+    // status poll. It is the only place the running title is shown.
     renderNowPlayingBar();
 
     // Source buttons: highlight the active source in green.

@@ -167,9 +167,19 @@ func (s *Server) storedGroupIsLive(own ownZoneAnswer) bool {
 		// the noise that hides the real occurrence.
 		if s.hasStoredGroup() {
 			s.logger.Info("zone: the stored group is not on the speaker any more, reporting standalone")
+			// Record the contradiction for boxInZone, which is where the document
+			// is actually dropped. For fifteen of these lines in one evening
+			// (ST20, 2026-08-22) nothing acted, and the same stale document was
+			// still suppressing that speaker's power-on resume at 20:55. This
+			// stays a READ of the box and of NAND: the mark is in memory, so the
+			// deep-standby countdown this path must not reset stays untouched.
+			s.noteZoneDocDoubt()
 		}
 		return false
 	}
+	// The speaker does report a zone, so whatever doubt an earlier empty read
+	// left behind is void.
+	s.forgetZoneDocDoubt()
 	return true
 }
 

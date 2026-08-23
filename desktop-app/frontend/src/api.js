@@ -54,6 +54,7 @@ export {
   AppInfo,
   EjectDrive,
   BoxAgentVersion,
+  BoxStoragePreflight,
   UpdateBoxAgent,
   EnsureSpotifyEngine,
   RecordOTAOutcome,

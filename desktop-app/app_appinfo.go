@@ -14,8 +14,6 @@ import (
 	"runtime"
 	"strings"
 	"time"
-
-	"streborn-app/agentbin"
 )
 
 // AppVersion returns the semver version of the running app.
@@ -39,10 +37,14 @@ type AppInfo struct {
 	DonateURL         string `json:"donateUrl"`
 	DonateSlogan      string `json:"donateSlogan"`
 	UpdateManifestURL string `json:"updateManifestUrl"`
-	// AgentBinBytes is the size of the embedded agent binary this app pushes
-	// on a speaker update (0 on dev builds with the empty stub). The frontend
-	// uses it for the storage pre-flight before an OTA.
-	AgentBinBytes int64 `json:"agentBinBytes"`
+	// No agent-binary size here on purpose. It used to be exported so the
+	// frontend could run its own pre-OTA storage check, and that check compared
+	// the RAW size against the box's free figure and told a user his update
+	// needed 13.9 MB when the real, compression-credited need was about 10.7 MB
+	// (2026-08-22). The verdict now comes from BoxStoragePreflight, which goes
+	// through the same nandNeedCompressed gate as the push itself; handing the
+	// raw size back to the UI again would only invite that second, wrong
+	// implementation to grow back.
 }
 
 // Versions are set via -ldflags X in the build; defaults are for
@@ -70,7 +72,6 @@ func (a *App) AppInfo() AppInfo {
 		// then returns a small JSON manifest. See CheckAppUpdate for the
 		// request/response contract.
 		UpdateManifestURL: "https://st-reborn.de/api/update-check.php",
-		AgentBinBytes:     int64(len(agentbin.Bytes())),
 	}
 }
 

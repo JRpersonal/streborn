@@ -9,12 +9,15 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/JRpersonal/streborn/internal/boxapi"
 	"github.com/JRpersonal/streborn/internal/boxcli"
 	"github.com/JRpersonal/streborn/internal/boxwrites"
+	"github.com/JRpersonal/streborn/internal/zones"
 )
 
 // ResumeLastPlay re-pushes the last stream STR played: the power-on resume. On
@@ -539,14 +542,6 @@ func (s *Server) displayTrackText(streamTitle string) string {
 	return strings.TrimSpace(streamTitle)
 }
 
-// boxInZone reports whether the speaker is currently part of a multiroom zone or
-// stereo pair, read live from the box (/getZone). It is the power-on resume's
-// self-wake guard: a standalone box can only leave standby by a user power press
-// (safe to resume), but a zone member may have been woken by its pair (Klaus'
-// spontaneous playback), so it must not auto-resume. On a read error it returns
-// false (treat as standalone): a missing zone read should not silently disable
-// the feature for the standalone majority, and the per-box opt-out is the
-// backstop for the rare paired box that also fails the read.
 // zoneRoleFromMaster decides this speaker's role in a zone by comparing the
 // zone's master against the speaker's own id.
 //
@@ -613,29 +608,189 @@ func (s *Server) zonePushWouldFightGroup() (standDown bool, reason string) {
 	}
 }
 
+// boxInZone reports whether the speaker is currently part of a multiroom zone or
+// stereo pair. It is the power-on resume's self-wake guard: a standalone box can
+// only leave standby by a user power press (safe to resume), but a zone member
+// may have been woken by its pair (Klaus' spontaneous playback), so it must not
+// auto-resume.
+//
+// Both sources are consulted, because neither alone is right. STR's persisted
+// document is the only record a mirror group or a stereo pair has, and it also
+// covers a native zone that is still forming (a live /getZone legitimately reads
+// empty mid-handshake). The speaker's own firmware, on the other hand, is the
+// only thing that knows when a native zone went away without STR writing the
+// file. On a read error with no document it still treats the box as standalone:
+// a missing zone read must not silently disable the feature for the standalone
+// majority, and the per-box opt-out is the backstop for the rare paired box that
+// also fails the read.
 func (s *Server) boxInZone() bool {
 	if s.boxHost == "" {
 		return false
 	}
-	// Persisted membership first: a box we recorded as part of a zone or stereo
-	// pair must stand down from power-on resume even if the live /getZone races a
-	// zone that is still forming (it legitimately reads empty mid-handshake) or
-	// the read errors. This closes the self-wake gap where a member woken by its
-	// pair resumed because the live read came back empty. Fail-safe direction:
-	// silence beats spontaneous playback.
+	var (
+		doc    zones.Zone
+		hasDoc bool
+	)
 	if s.zones != nil {
-		if _, ok := s.zones.Get(); ok {
-			return true
-		}
+		doc, hasDoc = s.zones.Get()
+	}
+	// A stereo pair and a mirror group stay persisted-first, unconditionally.
+	// Neither of them is a firmware ZONE: a pair lives in /getGroup (a healthy
+	// L/R pair answers <zone /> on every chassis, which is why groupView
+	// short-circuits on Stereo too), and a mirror group is STR's own construct
+	// that the firmware never hears about at all. An empty /getZone is therefore
+	// no evidence against either, and judging them by it would delete the only
+	// record those groups have.
+	if hasDoc && (doc.Stereo || doc.Mirror()) {
+		return true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	z, err := boxapi.New(s.boxHost).GetZone(ctx)
+	z, err := fetchZone(ctx, s.boxHost)
 	if err != nil {
+		// Unreadable is not evidence the group is gone. A speaker that is asleep,
+		// busy, or still refusing :8090 right after the agent started (field
+		// 19:34:20, two seconds after start, /info still "connection refused")
+		// must keep its document, or a temporary read error would turn into a
+		// resume that fights the group master. Without a document the standalone
+		// majority keeps its resume, as before.
+		if hasDoc {
+			return true
+		}
 		s.logger.Info("wake resume: zone read failed, treating box as standalone", "err", err)
 		return false
 	}
-	return z.Master != ""
+	if z.Master != "" || len(z.Members) > 0 {
+		s.forgetZoneDocDoubt() // the speaker confirms the group; any earlier doubt is void
+		return true
+	}
+	if !hasDoc {
+		return false
+	}
+
+	// Here is the bug this whole block exists for. The speaker answered, and it
+	// answered that it is in no zone, while STR still holds a native group
+	// document for it. Nothing acted on that contradiction: boxInZone trusted the
+	// document, so power-on resume and the reconnect recovery stood down forever,
+	// invisibly. Field evidence (ST20, 2026-08-22): the firmware dropped the zone
+	// by itself at 14:08 ("box ws: zoneUpdated -> zone dissolved"), the phone page
+	// then logged "the stored group is not on the speaker any more" fifteen times
+	// that evening, and at 20:55:26 the wake still logged "box is in a zone /
+	// stereo pair, not auto-resuming" with a valid last-play waiting.
+	//
+	// CLEARING the document is deliberate, over an in-memory "ignore it" override.
+	// An override evaporates on the next agent restart and the speaker silently
+	// goes back to never resuming; it also leaves every OTHER reader of the
+	// document (the sleep timer, the mirror reconcile, the phone's group card, the
+	// zone volume writes) believing in a group that does not exist. Clearing fixes
+	// the state itself, and the corrected state is what survives a crash or a
+	// restart.
+	//
+	// Two observations, not one, and they must be about the SAME document (see
+	// zoneDocFingerprint). One successful empty read is exactly what a zone still
+	// forming produces mid-handshake, and that race is the reason this function
+	// was persisted-first in the first place. So the first contradiction changes
+	// nothing at all: today's fail-safe answer is returned unchanged and only a
+	// mark is left behind. The mark is in-memory ON PURPOSE: losing it in a crash
+	// costs one more observation, while only the clear itself, which is the
+	// CORRECT state, is ever written to NAND.
+	if !s.noteZoneDocDoubt() {
+		s.logger.Info("wake resume: the speaker reports no zone but a group document is stored, standing down once more before dropping it",
+			"master", doc.Master, "slaves", len(doc.Slaves))
+		return true
+	}
+	if err := s.zones.Clear(); err != nil {
+		s.logger.Warn("zone: could not drop the stored group the speaker no longer has", "err", err)
+		return true // the document is still there, so keep answering as before
+	}
+	s.forgetZoneDocDoubt()
+	s.logger.Warn("zone: the speaker confirmed twice it is not in the stored group, dropped the document so power-on resume works again",
+		"master", doc.Master, "slaves", len(doc.Slaves))
+	return false
+}
+
+// zoneDocFingerprint identifies the stored group document, so a doubt recorded
+// about one group is never spent on a different one. Without it, a doubt armed
+// against a group that was then torn down and replaced would let the FIRST empty
+// read of the fresh group delete it, which is precisely the mid-handshake race
+// the two-observation rule protects.
+func zoneDocFingerprint(z zones.Zone) string {
+	ids := make([]string, 0, len(z.Slaves))
+	for _, m := range z.Slaves {
+		ids = append(ids, strings.ToUpper(strings.TrimSpace(m.DeviceID)))
+	}
+	sort.Strings(ids) // membership, not the order it happens to be stored in
+	return strings.ToUpper(strings.TrimSpace(z.Master)) + "|" + z.Mode +
+		"|" + strconv.FormatBool(z.Stereo) + "|" + strings.Join(ids, ",")
+}
+
+// noteZoneDocDoubt records that something contradicted the stored group document
+// and reports whether the SAME document had already been contradicted before,
+// i.e. whether this is the second observation and the document may be dropped.
+//
+// Stereo and mirror documents are never doubted here: nothing that reads
+// /getZone can speak for them (see boxInZone).
+func (s *Server) noteZoneDocDoubt() bool {
+	if s.zones == nil {
+		return false
+	}
+	z, ok := s.zones.Get()
+	if !ok || z.Stereo || z.Mirror() {
+		return false
+	}
+	fp := zoneDocFingerprint(z)
+	s.zoneDocDoubtMu.Lock()
+	defer s.zoneDocDoubtMu.Unlock()
+	already := s.zoneDocDoubt != "" && s.zoneDocDoubt == fp
+	s.zoneDocDoubt = fp
+	return already
+}
+
+// forgetZoneDocDoubt drops any recorded doubt. Called when the speaker itself
+// reports a zone, and whenever STR writes a group document, so a freshly formed
+// group always starts from a clean slate.
+func (s *Server) forgetZoneDocDoubt() {
+	s.zoneDocDoubtMu.Lock()
+	s.zoneDocDoubt = ""
+	s.zoneDocDoubtMu.Unlock()
+}
+
+// NoteBoxZoneState records what the speaker's own firmware just announced about
+// its zone (the gabbo zoneUpdated frame); master is empty when the frame says
+// the zone is gone.
+//
+// A DISSOLVE is the firmware contradicting the stored document first hand, so it
+// counts as one observation, but it never clears anything by itself: the
+// document is only dropped once a live /getZone read on a resume path agrees
+// with it. The frame also fires when STR dissolves the group itself, in which
+// case the document is cleared by that path anyway and there is nothing left to
+// doubt.
+//
+// A frame that NAMES a master withdraws the doubt again, and that half is not
+// cosmetic. The firmware emits a dissolve on its way THROUGH a group change as
+// well: /setZone tears the previous zone down before building the new one, and a
+// freshly formed zone self-dissolves ~300 ms after reporting ok when the master
+// wakes into a stale UPnP item (#70, observed live). Both of those frames arrive
+// AFTER handleZoneForm has already persisted the new document (it persists
+// first, on purpose), so the doubt would be left armed against a group that then
+// formed perfectly well, and the next empty /getZone anywhere would delete a
+// live group's document on a single observation. That is exactly the
+// mid-handshake race the two-observation rule exists to survive.
+func (s *Server) NoteBoxZoneState(master string) {
+	if s.zones == nil {
+		return
+	}
+	if strings.TrimSpace(master) != "" {
+		s.forgetZoneDocDoubt()
+		return
+	}
+	z, ok := s.zones.Get()
+	if !ok || z.Stereo || z.Mirror() {
+		return
+	}
+	s.noteZoneDocDoubt()
+	s.logger.Info("zone: the speaker reported its zone dissolved while a group document is still stored",
+		"master", z.Master, "slaves", len(z.Slaves))
 }
 
 // resumeOnPowerOnEnabled reports whether "resume the last station on power-on"

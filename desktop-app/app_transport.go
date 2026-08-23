@@ -280,6 +280,29 @@ const (
 	answeredNotSTRAdvice = "The speaker answered, so this is not your firewall and not a Wi-Fi problem: something on the speaker replied to every request. What answered was not ST Reborn, which is what a speaker looks like while it is still starting up, or when its ST Reborn software did not come up at all. Unplug the speaker for ten seconds, plug it back in, wait about three minutes until it is fully up, and try the update again"
 )
 
+// The advice paragraphs the install preflight can end on. They used to be
+// written inline, run together with the sentence of fact above them into one
+// block of prose. The failure report has to lift the advice out of the middle
+// of the text and reprint it under the measured facts (the report a user
+// mailed in on 2026-08-23 was advice at the top, one timeout string, and
+// nothing measurable at all), and it can only do that against constants it can
+// recognise, so each one lives here next to the two the transport layer uses,
+// under the same rule: one definition, never a second copy that drifts.
+//
+// The fact half stays at the call site because it names the address; only the
+// advice, which is the same sentence for every speaker, is shared.
+const (
+	notReachableAdvice = "Most often this is a firewall or antivirus blocking ST Reborn, or this PC and the speaker being on different Wi-Fi networks: allow ST Reborn through your firewall/antivirus (or turn it off briefly to test), and make sure both are on the same Wi-Fi (not a guest network). If it still fails, bring the speaker onto Wi-Fi with the Bose SoundTouch app, then reboot it with the STR stick plugged in and try again."
+
+	installWindowClosedAdvice = "Bose only opens the install access while the speaker boots with the STR stick plugged in. Power the speaker off, insert the STR stick, power it back on, then install."
+
+	controlUnresponsiveAdvice = "Power the speaker fully off and back on with the STR stick plugged in, then refresh the speaker list and try again."
+
+	restartingAfterUnlockAdvice = "Give it about two minutes, then refresh the speaker list and try the install again. If it keeps failing, install from the USB stick: power the speaker off, plug the stick in, power it back on."
+
+	alreadyInstalledAdvice = "Refresh the speaker list. If you meant to reinstall, reboot the speaker with the STR stick plugged in first."
+)
+
 // answeredNotSTR reports whether the failure carries evidence that the speaker
 // replied: an HTTP status line rather than a connection that never completed.
 // Matched on the shapes this project's own errors carry ("status 400 on <ip>",

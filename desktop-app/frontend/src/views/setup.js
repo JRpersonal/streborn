@@ -37,6 +37,7 @@ import { COUNTRIES, optFlag } from '../localization.js';
 // language dropdown and the name combobox are shared between Settings and Setup);
 // reuse them rather than duplicating.
 import { langOptionsHtml, wireCombobox } from './settings.js';
+import { appendSavedBundlePath, failReportSaveHosts } from '../failreport.js';
 import {
   ListDrives,
   WriteStickFiles,
@@ -1692,9 +1693,12 @@ function installHelpHtml(code, isNetwork) {
     ? (INSTALL_HELP_STEPS_NET[code] || NET_HELP_DEFAULT)
     : (INSTALL_HELP_STEPS[code] || ['freshBoot', 'wifi', 'stick', 'logs']);
   const items = steps.map(s => `<li>${escapeHtml(t('setup.help.' + s))}</li>`).join('');
+  // No save button here any more: the failure report block below the checklist
+  // now carries it, and it is rendered on ALL THREE failure paths rather than
+  // only this one. Two buttons doing the same thing on one screen is how the
+  // other two paths ended up with none.
   return `<div class="setup-help"><b>${escapeHtml(t('setup.helpTitle'))}</b><ul>${items}</ul>`
-    + `<p class="small">${escapeHtml(t('setup.helpLogsInstruction'))}</p>`
-    + `<button class="btn btn-mini" id="installSaveLogs">${escapeHtml(t('footer.saveLogs'))}</button></div>`;
+    + `<p class="small">${escapeHtml(t('setup.helpLogsInstruction'))}</p></div>`;
 }
 
 // waitForBoxAfterSetup runs after the user has confirmed the stick
@@ -1914,31 +1918,92 @@ async function waitForBoxAfterSetup({ ssid, pass, html, knownBox, wifiForBox, na
     }
     renderChecklist();
   });
-// installFailureReportHtml renders the copyable account of an install that did
-// not reach its goal, the same one the update flow shows. A user should never
-// have to describe a failure they cannot see.
-async function installFailureReportHtml(box, phase, errMsg) {
-  if (!box || !box.host) return '';
-  let report = '';
-  try { report = await UpdateFailureReport(box.host, box.port || 0, phase, errMsg, ''); } catch { return ''; }
-  if (!report) return '';
+// installFailureReportHtml renders the shell of the copyable account of an
+// install that did not reach its goal, the same one the update flow shows. A
+// user should never have to describe a failure they cannot see.
+//
+// The shell is SYNCHRONOUS and the text arrives afterwards (fillFailReport).
+// Gathering the facts now costs a couple of seconds of probes, and holding the
+// whole failure screen blank for those seconds, on a screen the user is
+// already staring at after a failure, reads as a second hang.
+//
+// The Save-diagnostics button lives here rather than only in the help
+// checklist because all three ways an install can end up here need it: the
+// thrown-error path and the verify path used to render this block with no
+// button at all, and the report's own closing line then pointed at a file the
+// user had no way to produce.
+function installFailureReportHtml() {
   return `<div class="failreport-inline">`
     + `<p class="muted small">${escapeHtml(t('update.reportHelp'))}</p>`
-    + `<textarea class="failreport-text" id="setupFailReport" readonly rows="12">${escapeHtml(report)}</textarea>`
-    + `<button class="btn btn-mini" id="setupFailCopy">${escapeHtml(t('update.reportCopy'))}</button>`
+    + `<div class="muted small" id="setupFailPending">${escapeHtml(t('update.reportCollecting'))}</div>`
+    + `<textarea class="failreport-text hidden" id="setupFailReport" readonly rows="14"></textarea>`
+    + `<div class="failreport-actions">`
+    + `<button class="btn btn-mini" id="setupFailCopy" disabled>${escapeHtml(t('update.reportCopy'))}</button> `
+    + `<button class="btn btn-mini" id="setupFailSaveLogs">${escapeHtml(t('footer.saveLogs'))}</button>`
+    + `</div>`
+    + `<p class="muted small">${escapeHtml(t('update.reportAttachHint'))}</p>`
     + `</div>`;
 }
 
-// wireInstallFailureReport makes the copy button work after the HTML landed.
-function wireInstallFailureReport() {
+// fillFailReport asks the backend for the report and drops it into the shell.
+// Best effort throughout: a report that cannot be produced leaves the save
+// button, which is the half that still works without the speaker.
+async function fillFailReport(box, phase, errMsg) {
+  const ta = document.getElementById('setupFailReport');
+  const pending = document.getElementById('setupFailPending');
+  const copy = document.getElementById('setupFailCopy');
+  if (!ta) return;
+  let report = '';
+  if (box && box.host) {
+    try {
+      report = await UpdateFailureReport(box.host, box.port || 0, phase, errMsg, '');
+    } catch { report = ''; }
+  }
+  // The screen may have moved on (a retry, the SSH repair) while the probes
+  // ran; do not resurrect a block that is no longer in the document.
+  if (!ta.isConnected) return;
+  if (pending) pending.classList.add('hidden');
+  if (!report) return;
+  ta.value = report;
+  ta.classList.remove('hidden');
+  if (copy) copy.disabled = false;
+}
+
+// wireInstallFailureReport makes the copy and save buttons work after the HTML
+// landed. Takes the speaker so the bundle pulls its box-side logs when SSH is
+// still open, which it usually is right after a failed install.
+function wireInstallFailureReport(box) {
   const btn = document.getElementById('setupFailCopy');
   const ta = document.getElementById('setupFailReport');
-  if (!btn || !ta) return;
-  btn.onclick = async () => {
-    try { await navigator.clipboard.writeText(ta.value); }
-    catch { ta.select(); document.execCommand('copy'); }
-    btn.textContent = t('update.reportCopied');
-  };
+  if (btn && ta) {
+    btn.onclick = async () => {
+      try { await navigator.clipboard.writeText(ta.value); }
+      catch { ta.select(); document.execCommand('copy'); }
+      btn.textContent = t('update.reportCopied');
+    };
+  }
+  const save = document.getElementById('setupFailSaveLogs');
+  if (save) save.onclick = () => saveFailReportBundle(save, box, ta);
+}
+
+// saveFailReportBundle writes the full diagnostic bundle from a failure screen
+// and then rewrites the report so it names the file that now exists.
+//
+// A failed install is exactly when a user has no idea where to find that file,
+// and the previous closing line ("together with the diagnostic file if you
+// were able to save one") was a wish, not a path. README + app.log are always
+// written, so a speaker that never became reachable still produces a bundle
+// carrying everything the APP knows.
+async function saveFailReportBundle(btn, box, ta) {
+  btn.classList.add('working');
+  try {
+    const r = await SaveDiagnosticBundle(failReportSaveHosts(box, state.boxes), true);
+    if (r && r.savePath) {
+      showToast(t('footer.saveLogsDone', { path: r.savePath, size: Math.round((r.bytes || 0) / 1024) }));
+      if (ta && ta.value) ta.value = appendSavedBundlePath(ta.value, r.savePath);
+    }
+  } catch (e) { showError(String(e)); }
+  finally { btn.classList.remove('working'); }
 }
 
 // verifyInstalledState holds the install open until the speaker really is
@@ -2050,7 +2115,9 @@ async function verifyInstalledState(box, onState) {
     if (offProgress) offProgress();
     try { SetOTARunning(false); } catch {}
     render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg: String(err) }))}</div>`
-      + await installFailureReportHtml(foundBox, 'install', String(err)));
+      + installFailureReportHtml());
+    wireInstallFailureReport(foundBox);
+    fillFailReport(foundBox, 'install', String(err));
     return;
   }
   clearInterval(timerHandle);
@@ -2080,9 +2147,10 @@ async function verifyInstalledState(box, onState) {
     // a full mains power-cycle (live-proven). Shown on every failure screen.
     const powerCycleHint = powerCycleAdviceHtml(foundBox);
     try { SetOTARunning(false); } catch {}
-    const failReport = await installFailureReportHtml(foundBox, 'install:' + ((result && result.code) || 'unknown'), msg);
-    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>` + help + repairBtn + powerCycleHint + failReport + log);
-    wireInstallFailureReport();
+    render(`<div class="setup-err">${escapeHtml(t('setup.installFailed', { msg }))}</div>`
+      + help + repairBtn + powerCycleHint + installFailureReportHtml() + log);
+    wireInstallFailureReport(foundBox);
+    fillFailReport(foundBox, 'install:' + ((result && result.code) || 'unknown'), msg);
     // If the network path genuinely cannot proceed (no install window, box not
     // reachable, controls wedged), reveal the USB-stick fallback (relocated into
     // <details id="setupStickDetails">) so the user has an immediate next step.
@@ -2115,23 +2183,6 @@ async function verifyInstalledState(box, onState) {
         }
       };
     }
-    const dlBtn = $('installSaveLogs');
-    if (dlBtn) {
-      dlBtn.onclick = async () => {
-        dlBtn.classList.add('working');
-        try {
-          // Pass the box we just tried to install on first, plus any others, so
-          // the bundle pulls its box-side setup.log / boot.log / agent.log /
-          // dmesg over SSH (SSH is still open right after a failed install).
-          // README + app.log are always written, so a file is produced even
-          // with no stick in the PC and no reachable box.
-          const hosts = [foundBox && foundBox.host, ...((state.boxes || []).map(b => b && b.host))].filter(Boolean);
-          const r = await SaveDiagnosticBundle([...new Set(hosts)], true);
-          if (r && r.savePath) showToast(t('footer.saveLogsDone', { path: r.savePath, size: Math.round((r.bytes || 0) / 1024) }));
-        } catch (e) { showError(String(e)); }
-        finally { dlBtn.classList.remove('working'); }
-      };
-    }
     return;
   }
   // After a successful install, spell out HOW to play. Users repeatedly went
@@ -2159,9 +2210,9 @@ async function verifyInstalledState(box, onState) {
   });
   try { SetOTARunning(false); } catch {}
   if (!installed.ok) {
-    const rep = await installFailureReportHtml(foundBox, 'install:verify', installed.reason || '');
-    render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>` + rep);
-    wireInstallFailureReport();
+    render(`<div class="setup-err">${escapeHtml(t('setup.installIncomplete'))}</div>` + installFailureReportHtml());
+    wireInstallFailureReport(foundBox);
+    fillFailReport(foundBox, 'install:verify', installed.reason || '');
     return;
   }
   // Installed, but without the Spotify engine. The speaker works; only Spotify

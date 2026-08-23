@@ -734,6 +734,25 @@ var userPathRegex = regexp.MustCompile(`(?i)([/\\]+(?:Users|home)[/\\]+)([^/\\\s
 // sanitizeLog scrubbed them (see #187/#197 diagnostic bundles).
 func scrubPII(s string) string {
 	s = ipv4Regex.ReplaceAllStringFunc(s, func(ip string) string { return maskIP(ip) })
+	return scrubIdentities(s)
+}
+
+// scrubIdentities is every pass scrubPII makes EXCEPT the IP masking, in the
+// same order, so the two can never drift apart.
+//
+// It exists for the one text blob that must keep its addresses: the copyable
+// failure report (updatereport.go). That report is shown to the user about
+// their OWN equipment and the real IPs are the whole point of it, so maskIP
+// would blank exactly the values it was written to display. Everything else
+// scrubPII removes still has to go, and until 2026-08-23 none of it did: the
+// report pasted an app-log tail through redactSSIDs alone, which left the
+// Windows account name (userPathRegex), the speaker's MAC and its Bose
+// deviceID, and the user-chosen friendly name in a text meant to be mailed.
+// The report masks the ARP hardware address down to its vendor prefix for
+// exactly that reason and then carried the same address unmasked two sections
+// further down. That is the hole the comment above scrubPII warns about, so
+// the fix is a shared pass rather than a second copy of the regex list.
+func scrubIdentities(s string) string {
 	s = macRegex.ReplaceAllStringFunc(s, func(m string) string { return "MAC#" + hashShort(m) })
 	s = deviceIDRegex.ReplaceAllStringFunc(s, func(m string) string { return "DEV#" + hashShort(m) })
 	s = nameTagRegex.ReplaceAllStringFunc(s, func(m string) string {

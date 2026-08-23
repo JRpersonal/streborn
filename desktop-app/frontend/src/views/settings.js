@@ -25,6 +25,7 @@ import {
   compareVerBuild,
   getBoxLabel,
   balanceLabel,
+  bassControlsDisabled,
 } from '../utils.js';
 import { t, tLookup, getLocale } from '../i18n/index.js';
 import { COUNTRIES, optFlag } from '../localization.js';
@@ -816,11 +817,26 @@ function renderBoxSettings(s, box) {
                max="${(bass.max || 0) - (bass.default || 0)}"
                step="1"
                value="${(bass.actual || 0) - (bass.default || 0)}"
-               ${bass.available ? '' : 'disabled'} />
+               ${bassControlsDisabled(bass) ? 'disabled' : ''} />
         <span class="setting-value" id="boxBassVal">${formatRel((bass.actual || 0) - (bass.default || 0))}</span>
-        <button class="btn btn-mini" id="boxBassReset" title="${escapeAttr(t('settingsView.bassResetTitle'))}">${escapeHtml(t('settingsView.bassResetBtn'))}</button>
+        <button class="btn btn-mini" id="boxBassReset" title="${escapeAttr(t('settingsView.bassResetTitle'))}" ${bassControlsDisabled(bass) ? 'disabled' : ''}>${escapeHtml(t('settingsView.bassResetBtn'))}</button>
       </div>
-      <small class="muted small">${escapeHtml(t('settingsView.bassHelp'))}</small>
+      ${bassControlsDisabled(bass)
+        // Say WHY the row is dead. Greying the controls without a word is what
+        // put a Lifestyle 650 owner in the inbox on 2026-08-22: his mail (with
+        // a photo of this exact row) reported the slider and the Bass button
+        // greyed out and unusable. He could see the state, not the reason.
+        // bassHelp explains how to USE the slider, so it is replaced rather
+        // than joined here: instructions for a control that cannot move are
+        // the wrong text to put under it.
+        //
+        // The wording says "does not report", not "has no bass hardware".
+        // bassAvailable=false is also what a /bassCapabilities read that never
+        // came back looks like from here (see bassControlsDisabled), and on
+        // his system the bass genuinely lives in a separate module, so the
+        // line must not claim to know which of those it is.
+        ? `<small class="muted small">${escapeHtml(t('settingsView.bassUnavailable'))}</small>`
+        : `<small class="muted small">${escapeHtml(t('settingsView.bassHelp'))}</small>`}
     </div>
 
     <div class="settings-section">
@@ -2383,6 +2399,15 @@ function renderBoxSettings(s, box) {
     throttledSetBass(box.host, box.port, rel + (bass.default || 0));
   };
   $('boxBassReset').onclick = async () => {
+    // Second half of the same gate as the rendered disabled attribute. On a
+    // speaker that does not report an adjustable bass the range collapses to
+    // 0..0, so this button could only ever post the default back at a level
+    // the speaker says it does not have. It was ungated until 2026-08-23 and
+    // sat live next to a greyed slider on a Lifestyle 650 (mail with photo,
+    // 2026-08-22). Repeated here rather than trusted to the attribute alone:
+    // the disabled attribute is markup, and a click that reaches this handler
+    // from a stale render must not get through either.
+    if (bassControlsDisabled(bass)) return;
     $('boxBass').value = 0;
     $('boxBassVal').textContent = formatRel(0);
     try {

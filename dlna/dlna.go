@@ -589,21 +589,56 @@ func Browse(ctx context.Context, srv Server, objectID string, start, count int) 
 }
 
 // Search calls ContentDirectory:Search on the server, looking for audio items
-// whose title contains query. Not every server implements the Search action
-// (it is optional in the ContentDirectory spec); those answer a SOAP fault,
-// surfaced here as an error, and the caller falls back to a bounded browse
-// walk. containerID "0" searches the whole library.
+// whose title, artist OR album contains query. Not every server implements the
+// Search action (it is optional in the ContentDirectory spec); those answer a
+// SOAP fault, surfaced here as an error, and the caller falls back to a bounded
+// browse walk. The search always starts at container "0", the whole library.
+//
+// The criteria used to be title-only, which made the phone remote answer the
+// same question differently from the desktop Library: the desktop loads a
+// folder and filters it over title, artist and album (#666). Measured against
+// the FRITZ!Box 6690 media server, a query for the artist "AVM" returned zero
+// hits with the title-only criteria and one hit with this one, although the
+// track's upnp:artist is "AVM GmbH".
 func Search(ctx context.Context, srv Server, query string, count int) (BrowseResult, error) {
+	q := escapeCriteriaValue(query)
+	return searchWithCriteria(ctx, srv,
+		`upnp:class derivedfrom "object.item.audioItem" and (dc:title contains "`+q+
+			`" or upnp:artist contains "`+q+`" or upnp:album contains "`+q+`")`, count)
+}
+
+// SearchTitleOnly is the narrow form of Search, for servers that index titles
+// and nothing else. Those reject the widened criteria outright (UPnPError 708,
+// "unsupported or invalid search criteria") rather than answering it, so a
+// caller whose widened Search failed asks again this way before falling back to
+// the far more expensive browse walk.
+func SearchTitleOnly(ctx context.Context, srv Server, query string, count int) (BrowseResult, error) {
+	return searchWithCriteria(ctx, srv,
+		`upnp:class derivedfrom "object.item.audioItem" and dc:title contains "`+
+			escapeCriteriaValue(query)+`"`, count)
+}
+
+// escapeCriteriaValue guards the criteria string itself: the value is quoted
+// inside the criteria, which is in turn XML-escaped into the SOAP body, so a
+// quote the user typed must not be able to terminate the criteria string.
+//
+// The backslash goes first, and it is not decoration. UPnP criteria use the
+// backslash as the escape character, so escaping only the quote turns a query
+// ending in a backslash into `contains "x\"`, whose closing quote is now read
+// as an escaped one: the criteria is unterminated and the server faults on a
+// query the user simply typed. Escaping the backslash first makes that `x\\`,
+// which closes correctly.
+func escapeCriteriaValue(query string) string {
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(query)
+}
+
+func searchWithCriteria(ctx context.Context, srv Server, criteria string, count int) (BrowseResult, error) {
 	if srv.CDSControlURL == "" {
 		return BrowseResult{}, fmt.Errorf("server has no ContentDirectory control URL")
 	}
 	if count <= 0 {
 		count = 50
 	}
-	// The criteria value is itself quoted inside the XML: escape the quotes a
-	// user could type so they cannot terminate the criteria string.
-	criteria := `upnp:class derivedfrom "object.item.audioItem" and dc:title contains "` +
-		strings.ReplaceAll(query, `"`, `\"`) + `"`
 	body := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:Search xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ContainerID>0</ContainerID><SearchCriteria>%s</SearchCriteria><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>%d</RequestedCount><SortCriteria></SortCriteria></u:Search></s:Body></s:Envelope>`,
 		xmlEscape(criteria), count)
 
