@@ -25,6 +25,34 @@ describe('savePresetCase', () => {
     expect(savePresetCase('http://radio.example.com/live.mp3', null, freshPlay, NOW, FRESH_MS)).toBe('direct');
     expect(savePresetCase('', null, null, NOW, FRESH_MS)).toBe('direct');
   });
+
+  // #696: a NATIVE ad-hoc play reports the ORION descriptor, which carries no
+  // slot, so sourceSlot is null and the old decision fell to 'direct'. That
+  // path saved the descriptor's box-loopback art-proxy URL as the key's
+  // artwork (dead from the user's machine, so the tile ended on the grey
+  // chevron), even though the app had started the station seconds earlier
+  // and holds its full logo chain. When the box report resolves to the SAME
+  // URL the app played (the caller passes it as nowStreamUrl), the app's
+  // record must win.
+  describe('native ad-hoc play, no slot in the location (#696)', () => {
+    const orionLoc = '/station?data=irrelevant-here-the-caller-decodes-it';
+    it('prefers the fresh app record when the box plays exactly that URL', () => {
+      expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS, freshPlay.url)).toBe('app-play');
+    });
+    it('still trusts the box report when it plays something else', () => {
+      // No wake-resume race to excuse a mismatch here (unlike #252's proxy
+      // branch): a station started from a hardware key or another client
+      // must be saved as the box reports it.
+      expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS, 'http://other.example.com/live')).toBe('direct');
+    });
+    it('still trusts the box report when the app record has gone stale', () => {
+      expect(savePresetCase(orionLoc, null, stalePlay, NOW, FRESH_MS, stalePlay.url)).toBe('direct');
+    });
+    it('falls back to direct when the caller cannot resolve the box URL', () => {
+      expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS, '')).toBe('direct');
+      expect(savePresetCase(orionLoc, null, freshPlay, NOW, FRESH_MS)).toBe('direct');
+    });
+  });
 });
 
 // The bass slider and the "default" reset button next to it must read the SAME

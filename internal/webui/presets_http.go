@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +77,17 @@ func (s *Server) handlePresetSlot(w http.ResponseWriter, r *http.Request) {
 		if p.Type == "" {
 			p.Type = "radio"
 		}
+		// Art pointing at THIS agent's own art proxy (or its /icon.png
+		// stand-in) is the box-display form, not the station's artwork: the
+		// proxy URL is built for the SPEAKER (lir.go stationImageURL) and only
+		// resolves on the box's loopback. Desktop apps up to v0.9.56 persisted
+		// exactly that on a hold-to-save (they copied the playing ORION
+		// descriptor's imageUrl), which left every such key's tile on the grey
+		// chevron because the URL is dead from the user's machine (#696, six
+		// ST10 keys). The store keeps the origin image URL, same rule as the
+		// self-proxy stream heal below; the box side re-wraps at write time
+		// anyway, so the display loses nothing.
+		p.Art = healSelfArtProxy(p.Art)
 		// A queue preset (a saved DLNA folder, #queue-preset) has no single
 		// StreamURL/URI: it carries an ordered Items list and a Shuffle flag and
 		// recalls into the agent play-queue. It skips the radio/spotify URL gates
@@ -455,4 +467,64 @@ func legacySpotifyURI(streamURL string) string {
 		}
 	}
 	return ""
+}
+
+// healSelfArtProxy rewrites preset art that points back at this agent so the
+// store holds the station's ORIGIN image URL, the art analogue of the
+// self-proxy stream heal (#252) above. Desktop apps up to v0.9.56 hold-saved
+// the playing ORION descriptor's imageUrl, which is the loopback art-proxy
+// wrapper stationImageURL builds for the SPEAKER's display; from the user's
+// machine that URL is dead, so the app tile fell through to a grey-chevron
+// placeholder (#696). Healing here (not only in the app) means a fixed agent
+// stores clean art no matter how old the client that saved is.
+//
+// Per candidate of the pipe-separated chain: an /art?u= wrapper is unwrapped
+// back to the image URL it carries whatever its host says, because the
+// desktop app persists the wrapper with whichever authority the descriptor
+// carried and a LAN-addressed one dies with the next DHCP lease; the
+// /icon.png stand-in (STR's own logo, put in place by the agent when a
+// station has no art, never chosen by the user) and broken wrappers are
+// dropped; every other value passes through untouched. An input with nothing
+// to heal comes back byte-identical.
+func healSelfArtProxy(art string) string {
+	var out []string
+	keep := func(c string) {
+		for _, have := range out {
+			if have == c {
+				return
+			}
+		}
+		out = append(out, c)
+	}
+	for _, c := range strings.Split(art, "|") {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		u, err := url.Parse(c)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			keep(c) // data: URIs and anything unparsable are not ours to judge
+			continue
+		}
+		if u.Path == artProxyPath {
+			if enc := u.Query().Get("u"); enc != "" {
+				for _, d := range []*base64.Encoding{base64.RawURLEncoding, base64.URLEncoding} {
+					if b, err := d.DecodeString(enc); err == nil && isHTTPURL(string(b)) {
+						keep(string(b))
+						break
+					}
+				}
+			}
+			continue // a wrapper never survives as-is, decoded or broken
+		}
+		// Same authority test as selfProxySlot: the agent's own ports, or a
+		// loopback host (the wrapper is written with boxurl.Authority, but be
+		// as tolerant here as the stream heal is).
+		if u.Port() == "8888" || u.Port() == "17008" ||
+			u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1" {
+			continue // box-local (above all /icon.png): not the station's art
+		}
+		keep(c)
+	}
+	return strings.Join(out, "|")
 }
