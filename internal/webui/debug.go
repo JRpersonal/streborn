@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JRpersonal/streborn/internal/hosts"
 	"github.com/JRpersonal/streborn/internal/netutil"
 )
 
@@ -255,7 +256,21 @@ func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
 		// the owner could not be told where his storage had gone. The names
 		// answer both.
 		"boselog_listing": listDir("/mnt/nv/BoseLog"),
-		"proc_mounts":     readTail("/proc/mounts"),
+		// The hosts picture, three views (#698). hosts_live is what the box's
+		// resolver actually reads (the bind-mounted /etc/hosts). hosts_original
+		// is run.sh's verbatim boot copy of the persistent file, which is where
+		// a rival mod's redirect block (OpenCloudTouch's "# OCT-START" block on
+		// the reporter's migrated ST10) stays visible: the persistent file
+		// lives on the read-only rootfs and is deliberately never cleaned, only
+		// neutralized in the live copy. hosts_filtered is what the agent's
+		// hosts filter dropped this boot. Together a bundle proves both the
+		// leftover and its neutralization without SSH, where before all three
+		// were invisible and the box silently hammered the dead rival server
+		// (BoseApp and STSCertified in SYN_SENT).
+		"hosts_live":     readTail(hostsLivePath),
+		"hosts_original": readTail(hostsOriginalPath),
+		"hosts_filtered": hosts.ForeignFiltered(),
+		"proc_mounts":    readTail("/proc/mounts"),
 		// Writable-volume usage: df for /mnt/nv + / and the per-entry sizes that
 		// answer "is this box genuinely tighter or carrying foreign firmware
 		// leftovers" without needing SSH (#ST30 OTA no-space, 2026-06-24).

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -259,6 +260,14 @@ func (s *Server) applyWLANChange(iface, mech, ssid, password string, hidden bool
 			// rewrites the firmware's own profile, and the marker is consumed on
 			// read so this cannot loop.
 			touchWLANApplyMarker()
+			// Make the firmware's OWN store rank the new network highest (#697):
+			// NetManager keeps the old profile in NetworkProfiles.xml at a higher
+			// priority than the new one, so every boot (and every runtime
+			// reassertion of its stored state) put the speaker silently back on
+			// the old Wi-Fi. Only here, after a CONFIRMED association: a wrong
+			// password must leave the old ranking intact as the fallback, which
+			// is why the wpaCannotApply and rollback arms never touch it.
+			s.raiseFirmwareProfilePriority(ssid)
 			renewDHCPLease()
 		case wpaCannotApply:
 			// The conf could not be written live (read-only /etc and the
@@ -417,6 +426,12 @@ func wpaAddNetwork(iface, ssid, password string, hidden bool) bool {
 		out, _ := exec.Command("wpa_cli", append([]string{"-i", iface}, args...)...).Output()
 		return strings.TrimSpace(string(out))
 	}
+	return wpaAddNetworkVia(run, ssid, password, hidden)
+}
+
+// wpaAddNetworkVia is the command sequence of wpaAddNetwork with the wpa_cli
+// runner injected, so the sequence itself stays unit-testable off-box.
+func wpaAddNetworkVia(run func(args ...string) string, ssid, password string, hidden bool) bool {
 	id := run("add_network")
 	if id == "" || strings.Contains(id, "FAIL") {
 		return false
@@ -432,6 +447,12 @@ func wpaAddNetwork(iface, ssid, password string, hidden bool) bool {
 	if hidden {
 		run("set_network", id, "scan_ssid", "1")
 	}
+	// Without an explicit priority the added block sits at 0, BELOW the blocks
+	// NetManager injects from its own store (priority 1 observed in #697's
+	// list_networks: the old SSID ended up [CURRENT] over the freshly added
+	// one). Set it before enable/select so save_config persists the winning
+	// rank in the same write.
+	run("set_network", id, "priority", strconv.Itoa(wlanChosenPriority))
 	run("enable_network", id)
 	run("select_network", id)
 	run("save_config")
@@ -546,6 +567,15 @@ func buildWPAConfig(ssid, psk string, hidden bool) string {
 		b.WriteString("    psk=\"" + escapeWPAValue(psk) + "\"\n")
 		b.WriteString("    key_mgmt=WPA-PSK\n")
 	}
+	// The single block must not only exist but WIN. The conf is written with
+	// one network on purpose (dead networks first is the documented failure
+	// mode), yet NetManager injects its own stored profiles into the RUNNING
+	// supplicant on top of it, and those carry the firmware's ranking: on the
+	// #697 ST10 the injected old SSID sat at priority 1 and became [CURRENT]
+	// while this block, at the implicit default of 0, lost the selection. An
+	// explicit priority strictly above every value the firmware has been seen
+	// to write (0 and 1) keeps wpa_supplicant on the network the user chose.
+	b.WriteString("    priority=" + strconv.Itoa(wlanChosenPriority) + "\n")
 	b.WriteString("}\n")
 	return b.String()
 }

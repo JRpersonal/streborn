@@ -229,6 +229,8 @@ import {
   clearNoticeDismissal,
   balanceLabel,
   shouldAdoptPresetArt,
+  appArtFromBoxArt,
+  artCarriesBoxForm,
 } from './utils.js';
 
 // Group membership (who follows master X) and the shared zoneLive poll live
@@ -4704,7 +4706,19 @@ let healingInProgress = false;
 async function healPresetLogos() {
   if (healingInProgress) return;
   if (!state.currentBox) return;
-  const missing = state.presets.filter(p => !p.art && p.name);
+  // "No logo" includes two shapes older saves left behind (#696 aftermath):
+  // art that is ONLY box-local (the agent's /icon.png stand-in or a broken
+  // art-proxy wrapper), which renders artless on every machine but this box,
+  // and art still CARRYING any box-form candidate (see artCarriesBoxForm).
+  // The latter must be re-looked-up, not merely unwrapped at render:
+  // unwrapping yields the single URL the agent had picked as box-drawable,
+  // and on the reporter's playing key that is a DuckDuckGo icon URL answering
+  // 404 with the grey-chevron image body (probed 2026-08-24), which the
+  // webview draws without firing onerror, so the tile's cascade ends on the
+  // chevron anyway. Healing writes a full real chain once and the filter goes
+  // false, so this adds no recurring work for healthy keys.
+  const missing = state.presets.filter(p =>
+    p.name && (!appArtFromBoxArt(p.art) || artCarriesBoxForm(p.art)));
   if (missing.length === 0) return;
   healingInProgress = true;
   try {
@@ -5467,20 +5481,30 @@ function renderPresets() {
           if (t && !presetCandidates.includes(t)) presetCandidates.push(t);
         }
       };
+      // For a native play the box's <art> tag is the agent's own loopback
+      // art-proxy URL (built for the speaker's display); adopting THAT would
+      // persist a URL that is dead from this machine and hand the tile to the
+      // DDG grey-chevron fallback, the exact poisoning the hold-save had
+      // (#696). Unwrap first, and gate + persist on the unwrapped value.
+      const adoptIcon = appArtFromBoxArt(state.nowIcon);
       if (p.type === 'spotify') {
         // Show the Spotify logo so the tile is instantly recognisable as a
         // Spotify playlist; the account name is shown small under the title.
         // (Chosen over the album/playlist cover, which changes or lags.)
         addCands(SPOTIFY_LOGO);
       } else if (p.art) {
-        addCands(p.art);
-      } else if (isActive && shouldAdoptPresetArt(state.nowIcon, p)) {
+        // Same unwrap on the STORED art: keys hold-saved by v0.9.56 and older
+        // already carry the box-loopback wrapper (the reporter's six keys in
+        // the #696 bundle do), so unwrapping at render gives them back their
+        // real image URL without rewriting the store.
+        addCands(appArtFromBoxArt(p.art));
+      } else if (isActive && shouldAdoptPresetArt(adoptIcon, p)) {
         // Same gate refreshStatus uses to decide whether a late-arriving logo
         // is worth a redraw, so the two cannot drift apart.
-        addCands(state.nowIcon);
+        addCands(adoptIcon);
         // Auto-persist so the preset has its logo on the next load.
-        p.art = state.nowIcon;
-        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, state.nowIcon, p.bitrate || 0, p.homepage || '', p.codec || '').catch(() => {});
+        p.art = adoptIcon;
+        SetPreset(state.currentBox.host, state.currentBox.port, p.slot, p.name, p.stream_url, adoptIcon, p.bitrate || 0, p.homepage || '', p.codec || '').catch(() => {});
       }
       const streamHost = extractHost(p.stream_url);
       const hostsToTry = [];
@@ -5736,7 +5760,19 @@ async function saveCurrentToSlot(slot) {
   // Which save path applies is a pure decision (savePresetCase in utils.js,
   // unit-tested): spotify / app-play / copy-slot / direct.
   const sourceSlot = activeSlotFromLocation(state.nowLocation);
-  const saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS);
+  // What the box report actually resolves to: a NATIVE ad-hoc play reports
+  // the ORION descriptor (no slot in it, so sourceSlot is null) and a
+  // non-native one the /stream/raw wrapper; both unwrap to the exact URL the
+  // app handed to PlayURL. Passing it lets savePresetCase tell "the box is
+  // playing what the app just started" (save the app's own record, with the
+  // station's real logo chain) from "someone started something else". Without
+  // it every hold-save of an app-started native play fell to 'direct' and
+  // persisted the descriptor's box-loopback art-proxy URL as the key's
+  // artwork, dead from this machine, so the tile ended on the grey chevron
+  // (#696).
+  const nowOrion = orionStationPayload(state.nowLocation);
+  const nowStreamUrl = decodeProxyUrl((nowOrion && nowOrion.streamUrl) || state.nowLocation);
+  const saveCase = savePresetCase(state.nowLocation, sourceSlot, state.lastAppPlay, Date.now(), APP_PLAY_FRESH_MS, nowStreamUrl);
 
   // Case Spotify: the speaker is playing a Spotify playlist. Save a REAL
   // Spotify preset (type=spotify with the playlist URI), not a radio link to
@@ -5885,10 +5921,19 @@ async function saveCurrentToSlot(slot) {
   const orion = orionStationPayload(state.nowLocation);
   if (orion && orion.streamUrl) {
     const oname = orion.name || state.nowName || t('preset.placeholderSender');
+    // The descriptor's imageUrl is built for the SPEAKER, not for us: it is
+    // the agent's loopback art proxy (or its /icon.png stand-in), which only
+    // resolves on the box itself. Persisting it verbatim was the #696 bug:
+    // every hold-saved key held art that is dead from the user's machine, the
+    // tile's <img> fell through to the DuckDuckGo stream-host icon, and DDG's
+    // 404 body is the grey chevron the webview renders without firing onerror
+    // (see app_library.go). Unwrap to the real image URL; when that leaves
+    // nothing (stand-in logo), try the now-playing icon the same way.
+    const oart = appArtFromBoxArt(orion.imageUrl) || appArtFromBoxArt(state.nowIcon);
     try {
       await SetPreset(
         state.currentBox.host, state.currentBox.port,
-        slot, oname, decodeProxyUrl(orion.streamUrl), orion.imageUrl || state.nowIcon || '',
+        slot, oname, decodeProxyUrl(orion.streamUrl), oart,
         state.nowBitrate || 0, '', ''
       );
       showToast(t('preset.savedToKey', { n: slot, name: oname }));
@@ -5906,9 +5951,13 @@ async function saveCurrentToSlot(slot) {
   const appRec = state.lastAppPlay;
   const codec = (appRec && appRec.url === decodeProxyUrl(state.nowLocation)) ? (appRec.codec || '') : '';
   try {
+    // state.nowIcon carries the box's <art> tag, which for anything the agent
+    // wrapped is its loopback art-proxy URL: unwrap so the store keeps the
+    // real image URL, never a URL only the box can fetch (#696, same poison
+    // shape as the orion branch above).
     await SetPreset(
       state.currentBox.host, state.currentBox.port,
-      slot, name, decodeProxyUrl(state.nowLocation), state.nowIcon || '', state.nowBitrate || 0, '', codec
+      slot, name, decodeProxyUrl(state.nowLocation), appArtFromBoxArt(state.nowIcon), state.nowBitrate || 0, '', codec
     );
     showToast(t('preset.savedToKey', { n: slot, name }));
     await loadPresets();
@@ -6613,7 +6662,12 @@ async function refreshStatus() {
       } else if (!newLoc) {
         state.nowIcon = '';
       }
-      iconAdoptable = shouldAdoptPresetArt(state.nowIcon, ap);
+      // Mirror of the grid's adopt gate in renderPresets: judge the UNWRAPPED
+      // icon, because for a native play the box's <art> is the agent's own
+      // loopback art-proxy URL and can leave nothing adoptable once unwrapped
+      // (#696). Judging the raw value here while the grid persists the
+      // unwrapped one would re-render for an adopt that never happens.
+      iconAdoptable = shouldAdoptPresetArt(appArtFromBoxArt(state.nowIcon), ap);
       // Keep the now-playing bitrate in sync with the active preset
       // (hardware key press or app restart did not go through the play
       // path that sets it). Cleared when nothing is playing.

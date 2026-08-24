@@ -125,12 +125,26 @@ export function sleep(ms) {
 //   'direct'    a non-proxy stream — save the box-reported now-playing.
 // sourceSlot is activeSlotFromLocation(nowLocation), passed in so the caller
 // computes it once; null means "not a proxy location".
-export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs) {
+// nowStreamUrl is the real upstream URL the box report resolves to (the
+// caller unwraps the ORION descriptor and the /stream/raw proxy; '' when
+// unknown). It exists because a NATIVE ad-hoc play has no slot: the box
+// reports the descriptor, sourceSlot is null, and this function used to fall
+// through to 'direct' even when the app itself had started the station
+// seconds earlier. 'direct' then persisted the descriptor's box-loopback
+// art-proxy URL as the key's artwork, which is dead from the user's machine,
+// so every hold-saved key lost its logo to the grey-chevron fallback (#696,
+// six ST10 keys, MacBook). Unlike the proxy branch above, the app record is
+// trusted here ONLY when it matches what the box actually plays: there is no
+// wake-resume race to excuse a mismatch (#252's reason does not apply), so a
+// station someone started elsewhere still saves from the box report.
+export function savePresetCase(nowLocation, sourceSlot, lastAppPlay, nowMs, freshMs, nowStreamUrl) {
   if (/\/spotify\/stream|\/playback\/container/.test(nowLocation || '')) return 'spotify';
+  const fresh = !!(lastAppPlay && lastAppPlay.url && nowMs - lastAppPlay.at < freshMs);
   if (sourceSlot !== null && sourceSlot !== undefined) {
-    if (lastAppPlay && lastAppPlay.url && nowMs - lastAppPlay.at < freshMs) return 'app-play';
+    if (fresh) return 'app-play';
     return 'copy-slot';
   }
+  if (fresh && nowStreamUrl && lastAppPlay.url === nowStreamUrl) return 'app-play';
   return 'direct';
 }
 
@@ -566,4 +580,90 @@ export function bassSliderProps(bass) {
 // place this rule can be pinned down by a test.
 export function shouldAdoptPresetArt(icon, preset) {
   return !!icon && !!preset && !preset.art && preset.type !== 'spotify';
+}
+
+// appArtFromBoxArt turns art the way the BOX carries it into art the app may
+// persist or draw. It is the artwork mirror of decodeProxyUrl (main.js): the
+// preset store must hold the station's real image URL, never one of the
+// agent's own wrappers.
+//
+// Two box-only shapes exist, both built for the SPEAKER's display by
+// internal/webui/lir.go (the speaker fetches its artwork itself and cannot do
+// https, so the agent wraps the image in its loopback art proxy):
+//   http://127.0.0.1:8888/art?u=<base64url real URL>   the wrapped station art
+//   http://127.0.0.1:8888/icon.png                     STR's stand-in logo
+// Both reach the app through the ORION descriptor's imageUrl and through the
+// box's now-playing <art> tag. Persisted app-side they are poison: 127.0.0.1
+// is not the agent on the user's machine, so the tile's <img> errors over to
+// the DuckDuckGo stream-host icon, whose 404 answer is a grey-chevron image
+// body the webview renders without firing onerror (see app_library.go). That
+// is exactly how six hold-saved keys on an ST10 lost their artwork while the
+// one station whose stream host has a real DDG icon, WDCB 90.9, kept it
+// (#696).
+//
+// So, per candidate of the pipe-separated chain: an /art?u= wrapper (any
+// host: the LAN form dies with the next DHCP lease, and the store rule is the
+// origin URL, same as for streams) is unwrapped back to the real image URL; a
+// box-loopback URL that is not a wrapper (above all the /icon.png stand-in,
+// which is STR's logo, not the station's) is dropped; everything else,
+// including data: URIs and unparsable values, passes through untouched.
+// boxArtKind classifies one parsed art candidate: 'wrapper' for the agent's
+// /art?u= form, 'local' for any other box-loopback URL (above all the
+// /icon.png stand-in), null for everything else, non-URLs included, which are
+// not the box's shapes. Shared by appArtFromBoxArt (which rewrites) and
+// artCarriesBoxForm (which only detects), so the two can never disagree on
+// what counts as box-form.
+function boxArtKind(u) {
+  if (!u || (u.protocol !== 'http:' && u.protocol !== 'https:')) return null;
+  if (u.pathname === '/art' && u.searchParams.has('u')) return 'wrapper';
+  if (u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '[::1]' || u.hostname === '::1') {
+    return 'local';
+  }
+  return null;
+}
+
+export function appArtFromBoxArt(art) {
+  const out = [];
+  for (const c of String(art || '').split('|')) {
+    const cand = c.trim();
+    if (!cand) continue;
+    let u = null;
+    try { u = new URL(cand); } catch { /* not a URL: keep as-is below */ }
+    const kind = boxArtKind(u);
+    if (kind === 'wrapper') {
+      try {
+        // Unpadded base64url, like the agent writes it; pad and swap the
+        // alphabet the same way orionStationPayload does.
+        let b64 = u.searchParams.get('u').replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        const real = atob(b64);
+        if (/^https?:\/\//i.test(real)) { if (!out.includes(real)) out.push(real); }
+      } catch { /* undecodable wrapper: certainly not station art, drop */ }
+      continue;
+    }
+    if (kind === 'local') {
+      continue; // box-local, unreachable from the app and not the station's art
+    }
+    if (!out.includes(cand)) out.push(cand);
+  }
+  return out.join('|');
+}
+
+// artCarriesBoxForm reports whether a stored art chain holds ANY box-form
+// candidate (the agent's /art?u= wrapper or a box-loopback URL). A key saved
+// that way needs a real logo re-lookup, not only the render-time unwrap:
+// unwrapping gives back the ONE URL the agent had picked as box-drawable, and
+// for the #696 reporter's playing key that is a DuckDuckGo icon URL which
+// answers 404 (probed 2026-08-24), whose body is the grey-chevron image the
+// webview draws without firing onerror, so the tile's fallback cascade ends
+// right there. Only healPresetLogos can put a full working chain back.
+export function artCarriesBoxForm(art) {
+  for (const c of String(art || '').split('|')) {
+    const cand = c.trim();
+    if (!cand) continue;
+    let u = null;
+    try { u = new URL(cand); } catch { continue; }
+    if (boxArtKind(u) !== null) return true;
+  }
+  return false;
 }
