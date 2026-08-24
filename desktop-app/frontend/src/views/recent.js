@@ -214,7 +214,15 @@ function cardWebURL(c) {
 // (or the remembered slot, so a next/prev that drops the slot still counts)
 // against the card's preset slot, since nowName for Spotify is the song, not the
 // playlist. Best-effort: a card with no matching preset slot cannot be matched.
-function cardIsPlaying(c) {
+//
+// state.nowName / nowLocation describe the CURRENT speaker only, so a card from
+// any other speaker can never match them: without this guard, viewing speaker
+// B's history while speaker A plays a station that also sits in B's history put
+// the badge on the wrong card (#710). A non-current speaker's cards simply show
+// no badge; polling every box's now-playing just for it is not worth the box
+// traffic.
+export function cardIsPlaying(c) {
+  if (!state.currentBox || c.boxKey !== recentBoxKey(state.currentBox)) return false;
   const loc = state.nowLocation || '';
   if (c.source === 'spotify') {
     if (!/\/spotify\/stream/.test(loc)) return false;
