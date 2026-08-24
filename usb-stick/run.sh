@@ -1547,6 +1547,74 @@ WLAN_SOURCE=""
 # credential channel was empty on the next boot, and the box dropped
 # straight into Setup-AP. Centralising persistence here means every
 # M-winner benefits without per-branch boilerplate.
+
+# assert_profile_priority makes the JUST-PROVISIONED network the one the
+# firmware prefers, in NetManager's own store. #697: a deliberate switch left
+# the OLD profile at priority="1" while the new one landed at "0" (NetManager
+# adds at 0), so the box silently rejoined the old network on the next boot.
+# The reporter proved the end state on his own box: chosen high, others zero.
+# Runs ONLY in a provisioning run's winner path, right after persist_wlan_creds,
+# never on an ordinary boot, so a network change made elsewhere later is not
+# fought. The agent applies the same ranking on a runtime switch; this covers
+# the first switch to a never-stored network, whose profile only exists in the
+# store AFTER NetManager processed the add in this very run.
+#
+# awk with RS=">", not sed: the profile tags in the field file span several
+# lines (the #697 report shows the attributes on separate lines), and record-
+# splitting on the tag terminator makes each tag one record regardless of its
+# line layout. Everything outside the matched priority attribute is passed
+# through byte for byte; the store's AES ciphertext attributes must survive
+# untouched. The SSID comparison is literal (index, not regex) so metacharacters
+# in a network name cannot derail it, and the attribute NAME is matched in
+# either case while the value must match exactly.
+assert_profile_priority() {
+    [ -n "$SSID" ] || return 0
+    for _pp_f in /mnt/nv/BoseApp-Persistence/*/NetworkProfiles.xml; do
+        [ -s "$_pp_f" ] || continue
+        grep -q "<profile " "$_pp_f" 2>/dev/null || continue
+        awk -v want="$SSID" '
+            BEGIN { RS = ">"; ORS = ">" }
+            {
+                rec = $0
+                if (rec ~ /^[ \t\r\n]*<profile /) {
+                    lower = tolower(rec)
+                    hit = 0
+                    # literal SSID match against SSID="..."/ssid="..."
+                    pat = "ssid=\"" tolower(want) "\""
+                    if (index(lower, pat) > 0) hit = 1
+                    pri = hit ? "10" : "0"
+                    if (rec ~ /priority[ \t\r\n]*=[ \t\r\n]*"[^"]*"/) {
+                        sub(/priority[ \t\r\n]*=[ \t\r\n]*"[^"]*"/, "priority=\"" pri "\"", rec)
+                    } else {
+                        sub(/^([ \t\r\n]*<profile )/, "&priority=\"" pri "\" ", rec)
+                    }
+                }
+                printf "%s", rec ORS
+            }
+        ' "$_pp_f" > "$_pp_f.strnew" 2>/dev/null
+        # awk appends one trailing ORS the file did not have; drop the last byte
+        # only when the original did not end in the terminator.
+        if [ -s "$_pp_f.strnew" ]; then
+            _pp_orig_tail=$(tail -c 1 "$_pp_f" 2>/dev/null)
+            if [ "$_pp_orig_tail" != ">" ]; then
+                # trim the synthetic trailing ">" via head on byte count
+                _pp_len=$(wc -c < "$_pp_f.strnew")
+                head -c "$((_pp_len - 1))" "$_pp_f.strnew" > "$_pp_f.strnew2" 2>/dev/null \
+                    && mv "$_pp_f.strnew2" "$_pp_f.strnew"
+            fi
+            if ! cmp -s "$_pp_f" "$_pp_f.strnew"; then
+                mv "$_pp_f.strnew" "$_pp_f" && sync 2>/dev/null
+                setup_log "profile-priority: '$SSID' outranked in $(basename "$(dirname "$_pp_f")")/NetworkProfiles.xml (#697)"
+            else
+                rm -f "$_pp_f.strnew" 2>/dev/null
+            fi
+        else
+            rm -f "$_pp_f.strnew" 2>/dev/null
+        fi
+    done
+    return 0
+}
+
 persist_wlan_creds() {
     [ -n "$SSID" ] || return 0
     [ -n "$PASS" ] || return 0
@@ -3064,7 +3132,7 @@ WPAEOF
     # TFR left the box with no credential source at all.
     case "$WINNER" in
         none|ethernet-only) ;;
-        *) persist_wlan_creds ;;
+        *) persist_wlan_creds; assert_profile_priority ;;
     esac
 
     # Last-resort AirplayConfiguration reboot for NON-BCO boxes: if no
@@ -3163,6 +3231,34 @@ fi
 mount | grep -q '/etc/hosts' || {
     cp /etc/hosts /tmp/hosts.original 2>/dev/null
     cp /etc/hosts /tmp/hosts.live 2>/dev/null
+    # #698: a box migrated from OpenCloudTouch still carries that mod's
+    # "# OCT-START".."# OCT-END" redirect block (Bose hostnames -> the mod's
+    # LAN server) in the persistent /etc/hosts on the read-only rootfs.
+    # Seeded verbatim it wins first-match resolution over STR's appended
+    # block: the reporter's ST10 had BoseApp and STSCertified in SYN_SENT
+    # against the dead OCT server on every boot. Strip it from the LIVE copy
+    # before the bind mount so even the resolutions between now and agent
+    # start are clean; the agent's hosts.Apply repeats the filter more
+    # generically at start. hosts.original deliberately keeps the block: it
+    # is the detection evidence for the "OpenCloudTouch leftovers" warning.
+    # The persistent file itself stays untouched. Cleaning it would mean
+    # remounting the rootfs rw, which is firmware bending and off the table
+    # by standing rule; do not "improve" this that way. Neutralizing the
+    # live copy each boot is the fix.
+    # Both markers must exist before the range delete runs: with no matching
+    # end address sed deletes to end of file, which would swallow every line
+    # below the opening marker (the same guard hosts.Apply has in Go). A
+    # truncated block is left for the agent's per-line filter instead.
+    if grep -q '^# OCT-START' /tmp/hosts.live 2>/dev/null \
+       && grep -q '^# OCT-END' /tmp/hosts.live 2>/dev/null; then
+        if sed '/^# OCT-START/,/^# OCT-END/d' /tmp/hosts.live > /tmp/hosts.live.new 2>/dev/null \
+           && mv /tmp/hosts.live.new /tmp/hosts.live 2>/dev/null; then
+            log "OpenCloudTouch hosts redirect block stripped from live hosts copy (#698)"
+        else
+            rm -f /tmp/hosts.live.new 2>/dev/null
+            log "OCT hosts strip: sed/mv failed, live hosts left as copied (agent filters at start)"
+        fi
+    fi
     mount --bind /tmp/hosts.live /etc/hosts 2>/dev/null
 }
 

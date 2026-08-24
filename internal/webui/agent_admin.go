@@ -25,6 +25,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/JRpersonal/streborn/internal/hosts"
 )
 
 // handleAgentVersion returns the running stick agent version. Used by
@@ -1043,26 +1045,77 @@ func hasSavedWLANCreds() bool {
 // leftovers (an /mnt/nv/aftertouch directory) carried neither. Detection now
 // keys on AfterTouch's actual footprint: its NAND directory, its resolv.conf
 // override, and an rc.local hook mentioning it. Best-effort.
+//
+// #698 added OpenCloudTouch (SoundTouch Hybrid). If both tools somehow left
+// artifacts, AfterTouch wins the single return value; the desktop app shows
+// the string verbatim, so no i18n is involved.
 func detectConflictingMod() string {
-	if fi, err := os.Stat(filepath.Join(nandRoot, "aftertouch")); err == nil && fi.IsDir() {
+	if detectAfterTouch() {
 		return "AfterTouch"
 	}
+	if detectOpenCloudTouch() {
+		return "OpenCloudTouch"
+	}
+	return ""
+}
+
+func detectAfterTouch() bool {
+	if fi, err := os.Stat(filepath.Join(nandRoot, "aftertouch")); err == nil && fi.IsDir() {
+		return true
+	}
 	if _, err := os.Stat(filepath.Join(nandRoot, "aftertouch.resolv.conf")); err == nil {
-		return "AfterTouch"
+		return true
 	}
 	// STR's own rc.local never references the rival tool, so a hook line in
 	// the boot script is an unambiguous fingerprint.
 	if b, err := os.ReadFile(filepath.Join(nandRoot, "rc.local")); err == nil &&
 		strings.Contains(strings.ToLower(string(b)), "aftertouch") {
-		return "AfterTouch"
+		return true
 	}
-	return ""
+	return false
+}
+
+// octBackupPath and hostsLivePath / hostsOriginalPath are vars so the
+// OpenCloudTouch detection test can point them at a temp tree; in production
+// they are the real paths. hostsOriginalPath is run.sh's verbatim boot copy
+// of the persistent /etc/hosts, taken BEFORE the OCT block is stripped from
+// the live copy, so it is where the leftover stays visible for diagnostics.
+var (
+	octBackupPath     = "/mnt/nv/OverrideSdkPrivateCfg.xml.oct-backup"
+	hostsLivePath     = "/etc/hosts"
+	hostsOriginalPath = "/tmp/hosts.original"
+)
+
+// detectOpenCloudTouch reports OpenCloudTouch (SoundTouch Hybrid) leftovers
+// (#698). The mod's footprint on the reporter's migrated ST10 was its
+// SDK-config backup on NAND and a "# OCT-START".."# OCT-END" redirect block
+// in the persistent /etc/hosts, which kept BoseApp and STSCertified in
+// SYN_SENT against the mod's long-dead LAN server. Only that one box has
+// been measured; other OCT installs may differ.
+//
+// The hosts block counts here only while it is LIVE, i.e. still present in
+// the bind-mounted /etc/hosts the resolver actually reads. run.sh strips it
+// at boot and hosts.Apply filters it at agent start, so on a healthy fixed
+// box the live file is clean and only the removable backup file keeps the
+// warning up. Keying on the verbatim boot copy instead would pin the banner
+// forever: the persistent block sits on the read-only rootfs and removing it
+// would need a rw remount, firmware bending, off the table by standing rule.
+// The boot copy is still surfaced in /api/debug/state for bundles.
+func detectOpenCloudTouch() bool {
+	if _, err := os.Stat(octBackupPath); err == nil {
+		return true
+	}
+	if b, err := os.ReadFile(hostsLivePath); err == nil && hosts.ContainsOCTBlock(b) {
+		return true
+	}
+	return false
 }
 
 // handleRemoveConflictingMod removes the leftovers of a rival cloud-free
-// SoundTouch tool (AfterTouch) that clash with STR: its /mnt/nv/aftertouch
-// directory, its resolv.conf override, and any aftertouch hook line in rc.local.
-// It touches ONLY those artifacts, never the rest of /mnt/nv (which holds the
+// SoundTouch tool that clash with STR: AfterTouch's /mnt/nv/aftertouch
+// directory, its resolv.conf override, and any aftertouch hook line in
+// rc.local, plus OpenCloudTouch's SDK-config backup on NAND (#698). It
+// touches ONLY those artifacts, never the rest of /mnt/nv (which holds the
 // box's own Wi-Fi/AirPlay/account persistence and STR's own streborn/ dir). The
 // desktop app surfaces this as a one-click button so users never need SSH; a
 // reboot afterwards fully clears the rival tool's already-running processes.
@@ -1119,6 +1172,23 @@ func (s *Server) handleRemoveConflictingMod(w http.ResponseWriter, r *http.Reque
 			}
 			removed = append(removed, fmt.Sprintf("rc.local (%d line)", dropped))
 		}
+	}
+	// 4. OpenCloudTouch's SDK-config backup on NAND (#698). Its OTHER
+	// fingerprint, the redirect block in the persistent /etc/hosts, is NOT
+	// removable from here: the file sits on the read-only rootfs and cleaning
+	// it would mean remounting the rootfs rw, which is firmware bending and
+	// off the table by standing rule (the reporter's own workaround did
+	// exactly that; do not "improve" this handler that way). The block is
+	// neutralized instead: run.sh strips it from the live hosts copy at boot
+	// and hosts.Apply filters it at agent start, and detectOpenCloudTouch
+	// only counts the LIVE file, so removing this backup is enough for
+	// stillDetected to converge to false on a healthy box.
+	if _, err := os.Stat(octBackupPath); err == nil {
+		if err := os.Remove(octBackupPath); err != nil {
+			http.Error(w, "could not remove OCT backup: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		removed = append(removed, filepath.Base(octBackupPath))
 	}
 	_ = exec.Command("sync").Run()
 	s.logger.Info("removed conflicting-mod leftovers", "mod", mod, "removed", removed)
