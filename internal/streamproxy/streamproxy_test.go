@@ -1,10 +1,15 @@
 package streamproxy
 
 import (
+	"bytes"
+	"encoding/base64"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -179,5 +184,122 @@ func TestUpstreamStallForcesReconnect(t *testing.T) {
 	}
 	if rw.Body.Len() == 0 {
 		t.Fatalf("the bytes before the stall never reached the client")
+	}
+}
+
+// TestFilePresetSurvivesBoxBackpressureAndEndsCleanly reproduces the kitbos
+// field case (2026-08-24): a preset pointing at a finite recording on a DLNA
+// server. The file arrives much faster than real time, the box buffers
+// minutes ahead and stops accepting bytes, and the stall watchdog must NOT
+// read that write-side backpressure as an upstream stall. It must also end
+// the stream after the last byte instead of refetching the file from zero.
+// Needs real sockets (a Recorder never blocks a write), so the proxy is
+// mounted on a live httptest server and the test reads like the box: a
+// burst, then long pauses.
+func TestFilePresetSurvivesBoxBackpressureAndEndsCleanly(t *testing.T) {
+	const fileSize = 24 << 20
+	payload := bytes.Repeat([]byte{0xA5}, fileSize)
+	var upstreamHits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits.Add(1)
+		w.Header().Set("Content-Type", "audio/mp4")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Content-Length", strconv.Itoa(fileSize))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	defer up.Close()
+
+	s := New(presets.New(), silentLogger())
+	s.client = &http.Client{} // bypass the SSRF guard for loopback, like the stall test
+	// Shrunk so the 1.4 s pauses below span several thresholds; the
+	// production value would need pauses beyond five seconds per phase.
+	s.upstreamStallAfter = 300 * time.Millisecond
+
+	mux := http.NewServeMux()
+	s.Register(mux)
+	proxy := httptest.NewServer(mux)
+	defer proxy.Close()
+
+	resp, err := http.Get(proxy.URL + "/stream/raw?u=" + base64.RawURLEncoding.EncodeToString([]byte(up.URL)))
+	if err != nil {
+		t.Fatalf("GET via proxy: %v", err)
+	}
+	defer resp.Body.Close()
+
+	total := 0
+	buf := make([]byte, 64<<10)
+	for phase := 0; phase < 2; phase++ {
+		n, rerr := io.ReadFull(resp.Body, buf)
+		total += n
+		if rerr != nil {
+			t.Fatalf("read during phase %d after %d bytes: %v", phase, total, rerr)
+		}
+		time.Sleep(1400 * time.Millisecond)
+	}
+	rest, rerr := io.ReadAll(resp.Body)
+	total += len(rest)
+	if rerr != nil {
+		t.Fatalf("draining the stream after %d bytes: %v", total, rerr)
+	}
+	if total != fileSize {
+		t.Fatalf("box side received %d bytes, want exactly %d: a watchdog-forced reconnect refetched the file mid-stream", total, fileSize)
+	}
+	if hits := upstreamHits.Load(); hits != 1 {
+		t.Fatalf("upstream fetched %d times, want exactly 1 (no reconnect on a healthy finite file)", hits)
+	}
+}
+
+// TestCompletedFileEndsWithoutReconnect pins the EOF classification: a finite
+// file (Content-Length reached, Accept-Ranges advertised) ends the stream
+// with the file-complete sentinel so the callers skip both the reconnect and
+// the onDisconnect re-push.
+func TestCompletedFileEndsWithoutReconnect(t *testing.T) {
+	payload := bytes.Repeat([]byte{0x42}, 8192)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/mp4")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
+	}))
+	defer up.Close()
+
+	s := New(presets.New(), silentLogger())
+	s.client = &http.Client{}
+
+	req := httptest.NewRequest(http.MethodGet, "/raw", nil)
+	rw := httptest.NewRecorder()
+	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, true)
+	if boseAlive {
+		t.Fatalf("a completely delivered file must not ask for a reconnect")
+	}
+	if !errors.Is(err, errUpstreamFileComplete) {
+		t.Fatalf("want errUpstreamFileComplete, got %v", err)
+	}
+	if rw.Body.Len() != len(payload) {
+		t.Fatalf("delivered %d bytes, want %d", rw.Body.Len(), len(payload))
+	}
+}
+
+// TestEOFWithoutRangesStillReconnects pins the radio half: an upstream that
+// ends WITHOUT advertising byte ranges (the normal live-stream shape, e.g. a
+// CDN closing on token expiry) keeps asking for the gap-free reconnect.
+func TestEOFWithoutRangesStillReconnects(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(bytes.Repeat([]byte{0x17}, 4096))
+	}))
+	defer up.Close()
+
+	s := New(presets.New(), silentLogger())
+	s.client = &http.Client{}
+
+	req := httptest.NewRequest(http.MethodGet, "/raw", nil)
+	rw := httptest.NewRecorder()
+	boseAlive, err := s.streamOne(req.Context(), rw, req, up.URL, true)
+	if !boseAlive || err != nil {
+		t.Fatalf("a live-stream EOF must request a reconnect with no error, got boseAlive=%v err=%v", boseAlive, err)
 	}
 }

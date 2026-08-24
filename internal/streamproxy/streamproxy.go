@@ -137,6 +137,13 @@ type Server struct {
 	// over ~1s is the audible dropout users report (#185).
 	gapMu         sync.Mutex
 	lastByteToBox time.Time
+
+	// upstreamStallAfter is how long the copy loop tolerates being blocked
+	// inside an upstream Read before the stall watchdog closes the
+	// connection to force a reconnect. A field rather than a const so the
+	// backpressure regression test can shrink it; New sets the production
+	// value.
+	upstreamStallAfter time.Duration
 }
 
 // SetOnDisconnect registers a callback invoked whenever the box closes a
@@ -208,6 +215,11 @@ func New(store *presets.Store, logger *slog.Logger) *Server {
 		},
 		lastFail:   make(map[string]time.Time),
 		measuredBr: make(map[string]int),
+		// Five seconds is several buffers' worth at any real bitrate, so the
+		// watchdog never fires on a healthy live stream, and it is short
+		// enough that the internal reconnect lands before the box gives up
+		// on its own connection.
+		upstreamStallAfter: 5 * time.Second,
 	}
 }
 
@@ -291,6 +303,12 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 				s.recordFailure(url, err)
 				http.Error(w, hlsNotPlayableMsg, http.StatusUnsupportedMediaType)
 			}
+			return
+		}
+		if errors.Is(lastErr, errUpstreamFileComplete) {
+			// The whole file went out; the box finishes its buffer and stops
+			// on its own. Not a disconnect, so no onDisconnect re-push.
+			s.logger.Info("stream proxy end: upstream file complete", "kind", "raw", "elapsed", time.Since(start).Round(time.Second).String())
 			return
 		}
 		if !boseAlive {
@@ -448,6 +466,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		if errors.Is(err, errUpstreamFileComplete) {
+			// The whole file went out; the box finishes its buffer and stops
+			// on its own. Not a disconnect, so no onDisconnect re-push (which
+			// would restart the finished recording from the top).
+			s.logger.Info("stream proxy end: upstream file complete", "slot", slot, "elapsed", time.Since(start).Round(time.Second).String())
+			return
+		}
 		if !boseAlive {
 			// Bose closed the connection (standby, station switch). A normal
 			// end, kept clearly distinct from the give-up case below, so the
@@ -469,6 +494,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// path (e.g. a flaky cable) rather than the box itself.
 	s.logger.Warn("stream proxy gave up reconnecting", "slot", slot, "attempts", 60, "elapsed", time.Since(start).Round(time.Second).String(), "lastErr", errStr(lastErr))
 }
+
+// errUpstreamFileComplete signals that the upstream was a finite file
+// (Content-Length reached, byte ranges supported) and every byte has been
+// forwarded to the box. The stream is finished: no reconnect, and no
+// onDisconnect re-push, so the box simply plays out its buffer and stops at
+// the end of the recording.
+var errUpstreamFileComplete = errors.New("upstream file delivered completely")
 
 // streamOne does one round trip to the upstream and copies the body to w.
 // It returns boseAlive=true when the connection to Bose is still open (a
@@ -656,12 +688,6 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 		brSettle = 4 * time.Second
 		brWindow = 6 * time.Second
 	)
-	// upstreamStallAfter is how long the copy loop tolerates Read() returning
-	// nothing before the stall watchdog closes the upstream connection. Five
-	// seconds is several buffers' worth at any real bitrate, so it never fires
-	// on a healthy stream, and it is short enough that the internal reconnect
-	// lands before the box gives up on its own connection.
-	const upstreamStallAfter = 5 * time.Second
 	// Below the watchdog threshold, a short upstream starve (Wi-Fi hiccup,
 	// CDN pause) is audible as a brief stutter but used to leave no log line
 	// at all, so a diagnostic bundle could not confirm or time a reported
@@ -715,15 +741,46 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 	lastReadNano := new(int64)
 	*lastReadNano = time.Now().UnixNano()
 	var lastReadMu sync.Mutex
+	// readWaitStart is non-zero only while the copy loop sits inside
+	// src.Read without a productive result. The watchdog counts THIS time,
+	// never the time the loop spends blocked in w.Write on box backpressure:
+	// a finite file (a NAS recording behind a DLNA server) arrives faster
+	// than real time, the box buffers minutes ahead and then stops accepting
+	// bytes, and the old bytes-since-last-read clock read exactly that as an
+	// upstream stall. Measured live 2026-08-24 (kitbos bundle): the watchdog
+	// killed a healthy MiniDLNA transfer 9 s into a 20 minute file, every
+	// reconnect refetched it from byte 0, and once the box's ~4 minute
+	// buffer drained the decoder fell silent while now_playing kept saying
+	// PLAY.
+	var readWaitStart time.Time
 	touchRead := func() {
 		lastReadMu.Lock()
 		*lastReadNano = time.Now().UnixNano()
+		readWaitStart = time.Time{}
+		lastReadMu.Unlock()
+	}
+	// enterRead keeps the FIRST entry time across Read calls that return
+	// (0, nil), so a pathological upstream dribbling empty reads still trips
+	// the watchdog; only a productive read (touchRead) resets the clock.
+	enterRead := func() {
+		lastReadMu.Lock()
+		if readWaitStart.IsZero() {
+			readWaitStart = time.Now()
+		}
 		lastReadMu.Unlock()
 	}
 	sinceRead := func() time.Duration {
 		lastReadMu.Lock()
 		defer lastReadMu.Unlock()
 		return time.Duration(time.Now().UnixNano() - *lastReadNano)
+	}
+	readBlocked := func() time.Duration {
+		lastReadMu.Lock()
+		defer lastReadMu.Unlock()
+		if readWaitStart.IsZero() {
+			return 0
+		}
+		return time.Since(readWaitStart)
 	}
 	watchdogDone := make(chan struct{})
 	defer close(watchdogDone)
@@ -735,9 +792,9 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			case <-watchdogDone:
 				return
 			case <-ticker.C:
-				if sinceRead() >= upstreamStallAfter {
+				if readBlocked() >= s.upstreamStallAfter {
 					s.logger.Warn("stream proxy upstream stalled (no bytes), closing the upstream connection to force a reconnect",
-						"url", url, "stalledSec", int(sinceRead().Seconds()),
+						"url", url, "stalledSec", int(readBlocked().Seconds()),
 						"connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
 					_ = resp.Body.Close()
 					return
@@ -759,6 +816,7 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 			"recentBytes", recentBytes, "recentWindowSec", int(time.Since(recentStart).Seconds()))
 	}
 	for {
+		enterRead()
 		n, readErr := src.Read(buf)
 		if n > 0 {
 			if gap := sinceRead(); gap >= audioGapLogAfter && gapLogged < audioGapLogMax {
@@ -810,6 +868,20 @@ func (s *Server) streamOneDepth(ctx context.Context, w http.ResponseWriter, r *h
 				return false, nil
 			}
 			if readErr == io.EOF {
+				// A finite file that was delivered completely is DONE, not a
+				// broken stream. DLNA file servers advertise Content-Length
+				// plus Accept-Ranges; radio streams do not, so they keep the
+				// reconnect below (CDN token expiry). Reconnecting here
+				// refetched the file from byte 0 into the box's running
+				// decode (kitbos bundle, 2026-08-24), and the sentinel keeps
+				// the caller's onDisconnect re-push out of the ending, which
+				// would otherwise restart the finished recording.
+				if resp.ContentLength > 0 && connBytes >= resp.ContentLength &&
+					strings.EqualFold(strings.TrimSpace(resp.Header.Get("Accept-Ranges")), "bytes") {
+					s.logger.Info("stream proxy upstream file complete, ending the stream",
+						"url", url, "connectedSec", int(time.Since(connStart).Seconds()), "bytes", connBytes)
+					return false, errUpstreamFileComplete
+				}
 				// Clean EOF (typically CDN token expiry). Expected; the reconnect
 				// is gap-free if it lands fast. INFO, with timing so a bundle shows
 				// how often a station forces a reconnect.
