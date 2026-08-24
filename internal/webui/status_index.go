@@ -34,6 +34,7 @@ var countryToLanguage = map[string]string{
 	"IS": "icelandic",
 	"PL": "polish", "CZ": "czech", "SK": "slovak", "HU": "hungarian",
 	"RO": "romanian", "BG": "bulgarian", "HR": "croatian", "SI": "slovenian",
+	"XK": "albanian",
 	"GR": "greek", "TR": "turkish",
 	"RU": "russian", "UA": "ukrainian", "BY": "belarusian",
 	"JP": "japanese", "CN": "chinese", "TW": "chinese", "HK": "chinese",
