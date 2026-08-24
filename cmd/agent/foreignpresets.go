@@ -86,19 +86,28 @@ func isForeignBoxPreset(location string) bool {
 	return location != "" && !isOwnBoxPresetLocation(location) && !isNativeRadioLocation(location)
 }
 
-// NoteBoxList ingests a FULL box preset report (gabbo presetsUpdated frame or
-// the boot seed read) and replaces the foreign set with what the report says.
+// NoteBoxList ingests a box preset report (gabbo presetsUpdated frame or the
+// boot seed read) and updates the foreign set from what the report says.
 //
-// An EMPTY report while entries are held is deliberately ignored: the known
-// firmware wipe (the box dropping its whole list around a re-login) reports
-// exactly that, and honouring it would erase the memory this store exists to
-// keep. A foreign slot therefore only disappears when a NON-empty report no
-// longer carries it - e.g. the user overwrote the slot with an STR preset.
+// A held foreign slot is dropped ONLY when the report assigns that slot to
+// something else (the one gesture that exists: the slot was overwritten). A
+// report that merely does not mention the slot keeps it: around a reboot or
+// re-onboarding the box emits PARTIAL lists while it rebuilds its own store,
+// and trusting one of those erased the memory this store exists to keep
+// (field case 2026-08-24: the boot-window frame carried only the STR slots,
+// the Deezer slot 3 fell out of the store and the next cloud re-read starved
+// it off the box for good). The fully-empty firmware-wipe report is just the
+// extreme partial list and is kept by the same rule.
 func (s *foreignPresetStore) NoteBoxList(bps []webui.BoxPreset) {
 	fresh := map[int]foreignPreset{}
+	reported := map[int]bool{}
 	for _, p := range bps {
+		if p.Slot < 1 || p.Slot > 6 {
+			continue
+		}
+		reported[p.Slot] = true
 		loc := xmlEntityUnescape(p.Location)
-		if p.Slot < 1 || p.Slot > 6 || !isForeignBoxPreset(loc) {
+		if !isForeignBoxPreset(loc) {
 			continue
 		}
 		fresh[p.Slot] = foreignPreset{
@@ -112,8 +121,10 @@ func (s *foreignPresetStore) NoteBoxList(bps []webui.BoxPreset) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(bps) == 0 && len(s.entries) > 0 {
-		return
+	for slot, e := range s.entries {
+		if !reported[slot] {
+			fresh[slot] = e
+		}
 	}
 	if reflect.DeepEqual(fresh, s.entries) {
 		return // no change, no NAND write (presetsUpdated arrives in bursts)

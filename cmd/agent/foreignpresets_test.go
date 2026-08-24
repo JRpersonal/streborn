@@ -38,10 +38,11 @@ func TestIsForeignBoxPreset(t *testing.T) {
 	}
 }
 
-// A full box report replaces the foreign set: STR-written slots are ignored,
-// foreign ones are kept, and a later NON-empty report without a slot drops it
-// (the user overwrote it), while an EMPTY report - the firmware wipe shape -
-// must not erase anything.
+// A box report updates the foreign set: STR-written slots are ignored, foreign
+// ones are kept, and a held slot is dropped only when a report ASSIGNS it to
+// something else. Reports that do not mention a held slot - the empty
+// firmware-wipe shape and the partial lists the box emits while rebuilding its
+// store around a reboot - must not erase anything.
 func TestForeignStoreNoteBoxList(t *testing.T) {
 	s := testForeignStore(t)
 	s.NoteBoxList([]webui.BoxPreset{
@@ -59,7 +60,18 @@ func TestForeignStoreNoteBoxList(t *testing.T) {
 		t.Fatalf("empty report erased the preservation, got %+v", got)
 	}
 
-	// Non-empty report without slot 3: the user overwrote it, so it goes.
+	// Partial non-empty report that does not mention slot 3 (the boot-window
+	// shape from the 2026-08-24 field bundle): the held slot must survive.
+	s.NoteBoxList([]webui.BoxPreset{
+		{Slot: 1, Source: "LOCAL_INTERNET_RADIO", Type: "stationurl", Location: "/station?data=x", Name: "France Inter"},
+		{Slot: 4, Source: "UPNP", Type: "audio", Location: "http://127.0.0.1:8888/stream/4", Name: "Europe 2"},
+	})
+	if got := s.MargePresets(nil); len(got) != 1 || got[0].ID != 3 {
+		t.Fatalf("partial report erased the held slot, got %+v", got)
+	}
+
+	// A report assigning slot 3 to something else: the user overwrote it, so
+	// it goes.
 	s.NoteBoxList([]webui.BoxPreset{
 		{Slot: 3, Source: "UPNP", Type: "audio", Location: "http://127.0.0.1:8888/stream/3", Name: "Now STR"},
 	})
