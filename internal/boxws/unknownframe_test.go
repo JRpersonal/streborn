@@ -10,7 +10,7 @@ import (
 func TestFrameShape(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{`<userInactivityUpdate deviceID="AA" />`, "userInactivityUpdate"},
-		{`<updates deviceID="AA"><sourcesUpdated /></updates>`, "updates/sourcesUpdated"},
+		{`<updates deviceID="AA"><userInactivityUpdate /></updates>`, "updates/userInactivityUpdate"},
 		{`<updates deviceID='AA'><balanceUpdated></balanceUpdated></updates>`, "updates/balanceUpdated"},
 		{`<SoundTouchSdkInfo serverVersion="4" />`, "SoundTouchSdkInfo"},
 		{`<swUpdateStatusUpdated/>`, "swUpdateStatusUpdated"},
@@ -39,13 +39,17 @@ func TestUnrecognizedFrameLogsTheFirstOfEachShapeOnly(t *testing.T) {
 	var buf bytes.Buffer
 	c := &Client{logger: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))}
 
+	// balanceUpdated stands in for the frames that STILL fall through: the doc's
+	// frame list is provably incomplete for 27.0.6 (balanceUpdated and
+	// userInactivityUpdate are field-only), which is why this path must survive
+	// the typed no-op handling of sourcesUpdated / swUpdateStatusUpdated.
 	inactivity := []byte(`<userInactivityUpdate deviceID="08DF1F0C9870" />`)
 	for i := 0; i < 40; i++ {
 		c.logUnrecognizedFrame(inactivity)
 	}
-	c.logUnrecognizedFrame([]byte(`<updates deviceID="AA"><sourcesUpdated /></updates>`))
+	c.logUnrecognizedFrame([]byte(`<updates deviceID="AA"><balanceUpdated /></updates>`))
 	for i := 0; i < 10; i++ {
-		c.logUnrecognizedFrame([]byte(`<updates deviceID="BB"><sourcesUpdated /></updates>`))
+		c.logUnrecognizedFrame([]byte(`<updates deviceID="BB"><balanceUpdated /></updates>`))
 	}
 
 	out := buf.String()
@@ -56,7 +60,7 @@ func TestUnrecognizedFrameLogsTheFirstOfEachShapeOnly(t *testing.T) {
 	if n := strings.Count(out, "box ws unrecognized frame"); n != 2 {
 		t.Errorf("%d INFO lines for 51 frames, want 2\n%s", n, out)
 	}
-	for _, want := range []string{"userInactivityUpdate", "updates/sourcesUpdated"} {
+	for _, want := range []string{"userInactivityUpdate", "updates/balanceUpdated"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("shape %q never reached the log", want)
 		}

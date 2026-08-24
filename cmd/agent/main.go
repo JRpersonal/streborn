@@ -186,6 +186,13 @@ func run() error {
 	}
 
 	logger := newLogger(*logLevel)
+	// The process default routes into the same destination as the named logger.
+	// Library code falls back to slog.Default() when no logger was handed to it
+	// (the boxapi client's 2xx error-envelope survey is the case that exposed
+	// this), and without this line that output went to bare stderr, of which a
+	// diagnostic bundle keeps almost nothing. The survey exists to be read out
+	// of bundles across the fleet, so it has to land where bundles look.
+	slog.SetDefault(logger)
 	logger.Info("streborn starting", "version", version)
 
 	// FIRST, before anything can open a TLS connection. crypto/x509 builds the

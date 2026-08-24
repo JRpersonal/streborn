@@ -517,6 +517,34 @@ export function bassControlsDisabled(bass) {
   return !(bass && bass.available);
 }
 
+// bassSliderProps is the ONE mapping between the speaker's bass reading and
+// the settings slider. The slider is RELATIVE to the speaker's default
+// (0 = default), which is why min/max/value all subtract it; the change
+// handlers add it back before posting.
+//
+// step exists because of the capability-gated tone-controls bass route
+// (home-theater systems; the greyed-slider Lifestyle 650 mail of 2026-08-22
+// is the field case): that route imposes a write granularity that can exceed
+// 1, and a slider stepping by 1 would post values the firmware is free to
+// refuse. The agent maps that route's default to 0, so relative equals
+// absolute there. Classic boxes report no step and keep the historic step
+// of 1.
+//
+// Shared helper rather than inline template math for the same reason as
+// bassControlsDisabled above: the settings view renders through innerHTML
+// and the vitest environment is deliberately DOM-free, so this is the only
+// place the mapping can be pinned by a test.
+export function bassSliderProps(bass) {
+  const b = bass || {};
+  const def = b.default || 0;
+  return {
+    min: (b.min || 0) - def,
+    max: (b.max || 0) - def,
+    step: b.step > 1 ? b.step : 1,
+    value: (b.actual || 0) - def,
+  };
+}
+
 // shouldAdoptPresetArt answers one question the preset grid and the status poll
 // have to agree on: may the logo of the station playing right now be written
 // onto the key it was recalled from? Yes only while that key has no logo of its

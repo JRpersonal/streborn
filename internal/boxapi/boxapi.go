@@ -12,8 +12,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -22,6 +24,19 @@ import (
 type Client struct {
 	Host string // e.g. "127.0.0.1" or the box IP
 	HTTP *http.Client
+	// Log receives the client's diagnostics (currently the 2xx error-envelope
+	// detection). A field rather than a constructor argument so the many
+	// boxapi.New call sites stay as they are; nil falls back to the process
+	// default logger.
+	Log *slog.Logger
+}
+
+// logger returns the client's log destination, defaulting to slog.Default().
+func (c *Client) logger() *slog.Logger {
+	if c.Log != nil {
+		return c.Log
+	}
+	return slog.Default()
 }
 
 // New creates a client with defaults.
@@ -86,12 +101,18 @@ type Volume struct {
 
 // Bass + capabilities combined.
 type Bass struct {
-	Target  int  `json:"target"`
-	Actual  int  `json:"actual"`
-	Min     int  `json:"min"`
-	Max     int  `json:"max"`
-	Default int  `json:"default"`
-	Avail   bool `json:"available"`
+	Target  int `json:"target"`
+	Actual  int `json:"actual"`
+	Min     int `json:"min"`
+	Max     int `json:"max"`
+	Default int `json:"default"`
+	// Step is the granularity the firmware imposes on a bass write. The
+	// classic /bass route reports none (0; the app's slider treats that as
+	// 1). The capability-gated tone-controls route of home-theater systems
+	// reports it explicitly and it can exceed 1, and a write off the grid is
+	// the firmware's to refuse, so the slider must honor it.
+	Step  int  `json:"step"`
+	Avail bool `json:"available"`
 }
 
 // Network is the active Wi-Fi state.
@@ -170,7 +191,8 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 			Target int `xml:"targetbass"`
 			Actual int `xml:"actualbass"`
 		}
-		if err := get("/bass", &bass); err == nil {
+		bassRead := get("/bass", &bass) == nil
+		if bassRead {
 			s.Bass.Target = bass.Target
 			s.Bass.Actual = bass.Actual
 		}
@@ -185,6 +207,17 @@ func (c *Client) LoadSettings(ctx context.Context) (Settings, error) {
 			s.Bass.Max = caps.Max
 			s.Bass.Default = caps.Default
 			s.Bass.Avail = strings.EqualFold(caps.Available, "true")
+		}
+		// Home-theater systems keep their adjustable bass behind the
+		// /capabilities gate instead: a Lifestyle 650 answers
+		// bassAvailable=false and its slider sat greyed at 0..0 (support mail
+		// with photo, 2026-08-22) while the documented tone-controls route was
+		// never asked. Probe that route only when the classic one reported
+		// nothing, so the one-piece boxes never pay the extra request.
+		if !s.Bass.Avail || !bassRead {
+			if tc, ok := c.toneControlsBass(ctx); ok {
+				s.Bass = tc
+			}
 		}
 	}
 
@@ -410,9 +443,11 @@ func (c *Client) GetZone(ctx context.Context) (Zone, error) {
 	}
 	for _, m := range raw.Members {
 		dev := strings.TrimSpace(m.DeviceID)
-		// The firmware /getZone body lists the master as a member too (and STR now
-		// sends it that way in /setZone). Members here means the SLAVES, so drop the
-		// master entry: keeps len(Members)==len(slaves) for every consumer (the
+		// The firmware /getZone body lists the master as a member too. STR's own
+		// /setZone body does NOT: it sends the slaves only, because the
+		// master-in-members shape was silently rejected fleet-wide (df7764a,
+		// reverted in 7e58171; see SetZone). Members here means the SLAVES, so drop
+		// the master entry: keeps len(Members)==len(slaves) for every consumer (the
 		// reconcile guard, the "main of {n}" label, the box-selector group count),
 		// regardless of whether a given model echoes the master back.
 		if z.Master != "" && strings.EqualFold(dev, z.Master) {
@@ -676,9 +711,102 @@ func (c *Client) GetVolume(ctx context.Context) (Volume, error) {
 	}, nil
 }
 
+// toneControlsHosts remembers, per box host, the verdict of the
+// /capabilities probe for audioproducttonecontrols. The capability set is a
+// firmware property of the box, so a process-lifetime cache is safe. It
+// exists for two reasons: LoadSettings runs on the agent's 30 s pollBoxInfo
+// ticker and a box without the capability must not be re-probed every cycle,
+// and SetBass runs on a FRESH Client per webui request and needs the routing
+// verdict without a probe of its own on the hot slider path. Only a definite
+// verdict is stored; a transport error stores nothing so a later call may
+// probe again.
+var toneControlsHosts sync.Map // host string -> bool
+
+// toneControlsBass reads the bass block of the capability-gated
+// /audioproducttonecontrols route (home-theater systems; the Lifestyle 650
+// mail of 2026-08-22 is the field case). ok is false when the box does not
+// advertise the capability or the read fails, so the caller keeps the classic
+// bass state byte for byte, greyed slider included.
+//
+// The gate comes first because that is the doc's contract for these URLs:
+// access them only when /capabilities lists them. Its verdict is cached per
+// host (toneControlsHosts); the value read itself is not, values change.
+func (c *Client) toneControlsBass(ctx context.Context) (Bass, bool) {
+	verdict, cached := toneControlsHosts.Load(c.Host)
+	if cached && !verdict.(bool) {
+		return Bass{}, false
+	}
+	if !cached {
+		var caps struct {
+			Capabilities []struct {
+				Name string `xml:"name,attr"`
+			} `xml:"capability"`
+		}
+		// Any failed probe stores no verdict, an HTTP error status included:
+		// the box web server answers errors while the firmware is still
+		// booting, and caching one stray boot-window reply would misroute the
+		// box for the whole process lifetime. Do not "optimize" a 404 into a
+		// cached negative; the retry costs one GET inside a poll cycle that
+		// already runs, and only on boxes whose classic bass route reported
+		// nothing.
+		if err := c.getXML(ctx, "/capabilities", &caps); err != nil {
+			return Bass{}, false
+		}
+		advertised := false
+		for _, entry := range caps.Capabilities {
+			if strings.EqualFold(strings.TrimSpace(entry.Name), "audioproducttonecontrols") {
+				advertised = true
+				break
+			}
+		}
+		toneControlsHosts.Store(c.Host, advertised)
+		if !advertised {
+			return Bass{}, false
+		}
+	}
+	var tc struct {
+		Bass *struct {
+			Value int `xml:"value,attr"`
+			Min   int `xml:"minValue,attr"`
+			Max   int `xml:"maxValue,attr"`
+			Step  int `xml:"step,attr"`
+		} `xml:"bass"`
+	}
+	// A missing <bass> element (a system with only treble) or a collapsed
+	// range means there is nothing to adjust; reporting Avail=true there
+	// would un-grey a slider that cannot move.
+	if err := c.getXML(ctx, "/audioproducttonecontrols", &tc); err != nil || tc.Bass == nil || tc.Bass.Min == tc.Bass.Max {
+		return Bass{}, false
+	}
+	step := tc.Bass.Step
+	if step < 1 {
+		step = 1
+	}
+	// This route has no bassDefault; 0 is its neutral point, so mapping the
+	// default to 0 keeps the app's relative slider (0 = default) honest and
+	// makes relative equal to absolute here.
+	return Bass{
+		Target: tc.Bass.Value, Actual: tc.Bass.Value,
+		Min: tc.Bass.Min, Max: tc.Bass.Max,
+		Default: 0, Step: step, Avail: true,
+	}, true
+}
+
 // SetBass sets the bass value (range from bassCapabilities — typical
 // ST10 range -9..0).
+//
+// On a box whose /capabilities probe advertised audioproducttonecontrols
+// (see toneControlsBass) the value goes through that route's POST instead;
+// omitting <treble> there leaves the treble untouched, which is that route's
+// partial-update contract. The verdict comes from the per-host cache because
+// this Client is constructed fresh for every webui request and must not
+// probe on the hot slider path; a cache miss means the classic route,
+// exactly today's behavior.
 func (c *Client) SetBass(ctx context.Context, b int) error {
+	if verdict, ok := toneControlsHosts.Load(c.Host); ok && verdict.(bool) {
+		body := fmt.Sprintf(`<audioproducttonecontrols><bass value="%d" /></audioproducttonecontrols>`, b)
+		return c.postXML(ctx, "/audioproducttonecontrols", body)
+	}
 	body := fmt.Sprintf(`<bass>%d</bass>`, b)
 	return c.postXML(ctx, "/bass", body)
 }
@@ -796,7 +924,15 @@ func (c *Client) postXML(ctx context.Context, path, body string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("box %s: %d: %s", path, resp.StatusCode, string(b))
+		return newBoxError(path, resp.StatusCode, b)
+	}
+	// The 2xx body used to be dropped unread. Read it and flag an error
+	// envelope hiding in it (see noteErrorEnvelope): the firmware can answer
+	// 200 while refusing the call, and until the fleet survey settles what
+	// each chassis puts into these bodies, detection stays log-only and the
+	// call still reports success.
+	if b, rerr := io.ReadAll(io.LimitReader(resp.Body, 64*1024)); rerr == nil {
+		c.noteErrorEnvelope(path, b)
 	}
 	return nil
 }
@@ -819,7 +955,7 @@ func (c *Client) postXMLInto(ctx context.Context, path, body string, dst any) er
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("box %s: %d: %s", path, resp.StatusCode, string(b))
+		return newBoxError(path, resp.StatusCode, b)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	if err != nil {
@@ -828,6 +964,9 @@ func (c *Client) postXMLInto(ctx context.Context, path, body string, dst any) er
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
 	}
+	// Log-only, like postXML: a 2xx error envelope is flagged for the fleet
+	// survey but the reply is still decoded into dst as it always was.
+	c.noteErrorEnvelope(path, raw)
 	return xml.Unmarshal(ensureUTF8(raw), dst)
 }
 

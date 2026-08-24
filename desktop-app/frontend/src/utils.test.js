@@ -1,7 +1,7 @@
 // Tests for the pure decision helpers in utils.js.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { savePresetCase, bassControlsDisabled } from './utils.js';
+import { savePresetCase, bassControlsDisabled, bassSliderProps } from './utils.js';
 
 const FRESH_MS = 2 * 60 * 1000;
 const NOW = 1_000_000_000;
@@ -83,6 +83,43 @@ describe('bassControlsDisabled', () => {
     expect(help, 'the usage help must still exist for speakers that DO have bass').toBeGreaterThan(-1);
     expect(section.slice(Math.min(help, reason), Math.max(help, reason)))
       .toMatch(/[?:]/); // the two sit on opposite sides of one conditional
+  });
+});
+
+// The bass slider's range, step and position come from one shared mapping.
+// The slider is relative to the speaker's default (0 = default); step exists
+// for the capability-gated tone-controls route (the Lifestyle 650 case),
+// whose write granularity can exceed 1. The agent maps that route's default
+// to 0, so relative equals absolute there.
+describe('bassSliderProps', () => {
+  it('maps the classic reading relative to the default with step 1', () => {
+    expect(bassSliderProps({ available: true, min: -9, max: 0, default: 0, actual: -4 }))
+      .toEqual({ min: -9, max: 0, step: 1, value: -4 });
+    // a non-zero default shifts the whole scale so 0 keeps meaning "default"
+    expect(bassSliderProps({ available: true, min: -5, max: 5, default: 2, actual: 4 }))
+      .toEqual({ min: -7, max: 3, step: 1, value: 2 });
+  });
+  it('passes a tone-controls step above 1 through', () => {
+    expect(bassSliderProps({ available: true, min: -100, max: 100, default: 0, step: 50, actual: 50 }))
+      .toEqual({ min: -100, max: 100, step: 50, value: 50 });
+  });
+  it('falls back to step 1 when the speaker reports none', () => {
+    expect(bassSliderProps({ min: -9, max: 0, step: 0, actual: 0 })).toMatchObject({ step: 1 });
+    expect(bassSliderProps({})).toEqual({ min: 0, max: 0, step: 1, value: 0 });
+    expect(bassSliderProps(undefined)).toEqual({ min: 0, max: 0, step: 1, value: 0 });
+  });
+  // Source check in the style of the gate check above: the slider must take
+  // all four properties from the helper. Until 2026-08-24 the template
+  // hardcoded step="1", which posts values a tone-controls speaker is free
+  // to refuse.
+  it('the settings view slider takes min/max/step/value from this helper', () => {
+    const src = readFileSync(new URL('./views/settings.js', import.meta.url), 'utf8');
+    const slider = src.match(/<input type="range" id="boxBass"[\s\S]*?\/>/);
+    expect(slider, 'the bass slider markup must still be findable').not.toBeNull();
+    expect(slider[0]).not.toContain('step="1"');
+    for (const key of ['min', 'max', 'step', 'value']) {
+      expect(slider[0]).toContain('${bassProps.' + key + '}');
+    }
   });
 });
 

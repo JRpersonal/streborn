@@ -32,6 +32,7 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -139,6 +140,57 @@ func (c *announceCache) candidateLocations(now time.Time) []string {
 			continue
 		}
 		out = append(out, loc)
+	}
+	return out
+}
+
+// boseUSNPrefix is the device-UUID prefix every SoundTouch speaker uses in its
+// SSDP announcements: uuid:BO5EBO5E-F00D-F00D-FEED-<deviceID>. Measured live on
+// 2026-08-24 across three chassis families (ST30 mojo, ST10 rhino, Portable
+// taigan, all FW 27.0.6): each emitted ssdp:alive NOTIFYs for
+// urn:schemas-upnp-org:device:MediaRenderer:1 with this constant, the speaker's
+// own deviceID as the UUID tail, and Location pointing at its :8091 UPnP
+// description. The official Web API doc (v1.1, section 6.1.2) names the URN but
+// not the UUID; the fingerprint is field knowledge.
+const boseUSNPrefix = "uuid:bo5ebo5e"
+
+// AnnouncedBoseHosts returns the host addresses of every SoundTouch speaker the
+// passive NOTIFY listener has heard from, deduped, freshest lifetime rules as
+// candidateLocations. This is the discovery path that still works when mDNS is
+// dead on the LAN (many router setups answer no _streborn._tcp at all,
+// instancesFromMDNS=0 every cycle) and the /24 sweep misses a speaker on
+// another subnet: the speaker itself keeps announcing over multicast
+// regardless, and this process already listens (StartAnnounceListener runs for
+// the app's lifetime). Callers must still PROBE each host before showing
+// anything; an SSDP announcement proves a Bose device spoke, never that it is
+// reachable or what runs on it.
+func AnnouncedBoseHosts() []string {
+	return announces.boseHosts(time.Now())
+}
+
+// boseHosts is AnnouncedBoseHosts over one cache instance, split out so the
+// filter is testable the way the rest of this file is, on a local cache.
+func (c *announceCache) boseHosts(now time.Time) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	seen := map[string]bool{}
+	var out []string
+	for loc, e := range c.entries {
+		if now.After(e.expires.Add(announceExpiredRetention)) {
+			continue // candidateLocations owns the delete; stay read-only here
+		}
+		if !strings.HasPrefix(strings.ToLower(e.usn), boseUSNPrefix) {
+			continue
+		}
+		u, err := url.Parse(loc)
+		if err != nil || u.Hostname() == "" {
+			continue
+		}
+		h := u.Hostname()
+		if !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
 	}
 	return out
 }
