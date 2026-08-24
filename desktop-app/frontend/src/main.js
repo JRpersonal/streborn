@@ -156,9 +156,30 @@ import {
     if (typeof document !== 'undefined' && document.body) add();
     else if (typeof window !== 'undefined') window.addEventListener('DOMContentLoaded', add);
   };
+  // Wails' own callback registry drops in-flight call IDs when the webview
+  // context is replaced underneath it - a zoom or text-size change, a resize, a
+  // reload - while Go calls are still outstanding. What surfaces is
+  // "Callback 'main.App.CheckAppUpdate-3018697214' not registered!!!" thrown
+  // from wails/runtime.js. Nothing in the app is broken by it: the answer to a
+  // call nobody is waiting for any more is discarded, and the next poll simply
+  // asks again.
+  //
+  // It still goes to the log, because a burst of them means the webview is
+  // being recycled far more than it should be, and that IS worth seeing in a
+  // diagnostic. It must not raise the red overlay though. A user changed the
+  // text size, got a wall of red he had never seen, and reported it as a fault
+  // (#676, and the same thing in discussion #597 on macOS). An error banner
+  // that cries wolf about internal plumbing teaches people to ignore it, which
+  // costs us the one time it matters.
+  const isFrameworkNoise = (detail) => {
+    const d = String(detail || '');
+    return /Callback\s+'[^']*'\s+not registered/i.test(d) ||
+           (/wails\/runtime\.js/i.test(d) && /not registered/i.test(d));
+  };
   const report = (kind, detail) => {
     try { LogClientError(`${kind}: ${detail}`); } catch {}
     try { console.error(kind, detail); } catch {}
+    if (isFrameworkNoise(detail)) return;
     const key = kind + ':' + String(detail).slice(0, 200);
     if (!seen.has(key)) { seen.add(key); showBanner(`STR ${kind}:\n${detail}`); }
   };
