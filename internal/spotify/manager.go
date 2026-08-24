@@ -89,6 +89,13 @@ type Manager struct {
 	connectPauseFn   func(event string)
 	connectPlayFn    func()
 	lastOwnPlayerCmd time.Time
+	// lastConnectPauseAt is when a REAL pause/stop/transfer from the Spotify
+	// app was last seen (echoes of STR's own commands excluded). ServeOgg's
+	// attach-resume gate reads it: the box starved by that pause drains its
+	// buffer and re-fetches the stream, and resuming the engine for that fetch
+	// restarted the very playback the user just paused (Klaus, 2026-08).
+	// Cleared as soon as the engine reports playback started.
+	lastConnectPauseAt time.Time
 	// volFanCh feeds the fan-out worker with latest-value coalescing, so the
 	// go-librespot event loop never blocks on follower HTTP calls (an offline
 	// follower costs seconds, and a slider drag emits event bursts).
