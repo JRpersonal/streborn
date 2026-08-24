@@ -249,8 +249,17 @@ export function optFlag(cc) {
   return f ? f + ' ' : '';
 }
 
+// FLAGLESS_CODES: codes whose regional indicator pair composes into a
+// flag in NO mainstream emoji font. Kosovo (XK) is a user assigned ISO
+// code and its flag emoji was never added to Unicode, so even a flag
+// capable font draws two dotted letter boxes where every neighbouring
+// country shows a flag. Returning no flag on purpose keeps the entry
+// clean instead of decorated with glyph debris.
+const FLAGLESS_CODES = new Set(['XK']);
+
 export function flagFromCC(cc) {
   if (!cc || cc.length !== 2) return '';
+  if (FLAGLESS_CODES.has(cc.toUpperCase())) return '';
   const A = 0x1F1E6;
   const c0 = cc.toUpperCase().charCodeAt(0) - 65;
   const c1 = cc.toUpperCase().charCodeAt(1) - 65;
@@ -318,6 +327,15 @@ const COUNTRIES_RAW = [
   { cc: 'GR', key: 'greece' },
   { cc: 'HR', key: 'croatia' },
   { cc: 'SI', key: 'slovenia' },
+  // Western Balkans: reported missing by a Kosovar user (2026-08-23).
+  // Kosovo was absent entirely although radio-browser carries 18
+  // stations under XK, and the neighbours were missing with it.
+  { cc: 'RS', key: 'serbia' },
+  { cc: 'AL', key: 'albania' },
+  { cc: 'BA', key: 'bosnia and herzegovina' },
+  { cc: 'MK', key: 'north macedonia' },
+  { cc: 'ME', key: 'montenegro' },
+  { cc: 'XK', key: 'kosovo' },
   { cc: 'TR', key: 'turkey' },
   { cc: 'RU', key: 'russia' },
   { cc: 'UA', key: 'ukraine' },

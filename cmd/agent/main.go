@@ -914,7 +914,31 @@ func run() error {
 	// the app-initiated resume paths keep working. Echoes of STR's own staged
 	// recall commands are filtered inside the manager.
 	spotifyMgr.SetConnectIntentHooks(
-		func(event string) { wsHandler.OnUserStop(context.Background()) },
+		func(event string) {
+			wsHandler.OnUserStop(context.Background())
+			// Durable half of the app-pause fix (Klaus, 2026-08): with the
+			// engine paused the box keeps its UPnP selection, drains its
+			// buffer on the starved stream and re-fetches it, which used to
+			// attach-resume the engine and restart the music the user just
+			// paused. Actively stop the box transport so it stops fetching at
+			// all. The STOP_STATE the box answers with is excused by the
+			// own-transport-command classifier wired below, exactly like every
+			// other SOAP Stop STR sends. Gated on Streaming(): an engine event
+			// arriving while the box plays a NON-Spotify source (radio after a
+			// source switch) must not stop that source. Async so a slow box
+			// cannot stall the engine's event loop this hook runs on.
+			if spotifyMgr.Streaming() {
+				go func() {
+					sctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+					defer cancel()
+					if err := renderer.Stop(sctx); err != nil {
+						logger.Debug("spotify: stopping the box transport after a Spotify-app pause failed", "err", err, "event", event)
+						return
+					}
+					logger.Info("spotify: Spotify-app pause, stopped the box transport so the starved stream is not re-fetched", "event", event)
+				}()
+			}
+		},
 		webuiSrv.ClearUserStop,
 	)
 	// What the phones actually ask for, alongside what the speaker reports. The

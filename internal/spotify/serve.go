@@ -338,9 +338,24 @@ func (m *Manager) ServeOgg(w http.ResponseWriter, r *http.Request) {
 	// cross-account recall: SwitchAccount restarted go-librespot and left it paused
 	// in the restart gap, so on the box's re-fetch resume it or it hangs buffering
 	// on a paused stream (observed: preset stuck after playing another account).
-	if !m.recalling() || (reattach && m.recallRestartedRecently()) {
+	// One more exception, in the other direction: a REAL pause pressed in the
+	// SPOTIFY APP moments ago, with nothing having started playback since,
+	// makes this fetch the starved box refilling after its buffer ran dry, not
+	// anybody asking for music. Resuming here defeated the pause: the music
+	// restarted on its own seconds after the user paused it, and the resume's
+	// echo window then swallowed their next pause too (Klaus, 2026-08). Leave
+	// the engine paused; a recall (a hardware preset press must still
+	// attach-resume, the #45 class this resume exists for), a Connect play, or
+	// the stamp's expiry lifts the gate, and with no recent pause the
+	// behaviour below is exactly as before. INFO on purpose: this line is the
+	// bundle marker proving the pause was respected.
+	if m.connectPauseStands() && !m.recalling() {
+		m.logger.Info("spotify: box re-fetched the stream right after a Spotify-app pause, leaving the engine paused", "reattach", reattach)
+	} else if !m.recalling() || (reattach && m.recallRestartedRecently()) {
 		rctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-		_ = m.Resume(rctx)
+		// Resume WITHOUT stamping the own-command echo window: see apiPostQuiet
+		// for why a stamped resume here cost the user their next pause.
+		_ = m.apiPostQuiet(rctx, "/player/resume", "")
 		cancel()
 	}
 

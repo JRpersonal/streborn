@@ -5,6 +5,7 @@ package webui
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -568,9 +569,16 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	if len(verifyTargets) > 0 {
 		missing, unverifiable = verifyFollowersJoined(ctx, s.logger, z2.Master, verifyTargets, fetchFollower)
 	}
+	// Whether the change HELD as an incremental join over the live zone. Starts
+	// from usedIncremental and is withdrawn by the fallback below: after the
+	// full re-form the members were rebuilt by /setZone, so the resume decision
+	// must treat it like a fresh form, not like a join that kept the stream
+	// flowing to everyone.
+	heldIncremental := usedIncremental
 	// Incremental join where NOT ONE added member confirmed: distrust
 	// /addZoneSlave on this firmware and run the proven full re-form once.
 	if usedIncremental && len(toAdd) > 0 && len(missing) == len(toAdd) {
+		heldIncremental = false
 		s.logger.Warn("zone: no added member confirmed the incremental join, re-forming the whole zone once", "adding", len(toAdd))
 		if err := c.SetZone(ctx, master, slaves); err != nil {
 			s.logger.Warn("zone: fallback setZone failed", "err", err, "master", master.DeviceID)
@@ -624,7 +632,12 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if resume != nil && masterFormed {
-		go s.resumeAfterZoneForm(*resume)
+		// resume is the copy of lastPlay taken before the drive, so it is both
+		// the stream to push and the staleness reference. Only a change that
+		// held as an incremental join may skip the push when the master's
+		// stream survived; on a fresh (or re-formed) zone the members have
+		// nothing yet (Martin, 2026-08-24).
+		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: resume, survivorReachesMembers: heldIncremental})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": ok, "mode": "native", "master": z2.Master, "senderIP": z2.SenderIP,
@@ -634,38 +647,86 @@ func (s *Server) handleZoneForm(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// resumeAfterZoneForm re-pushes the stream that was playing on this box before
-// a native zone form tore it down (see handleZoneForm). The firmware needs a
-// settle moment after /setZone before it accepts a new SetURI - pushing too
-// early just re-triggers the 1036 wrong-state error - so wait, then push under
-// the box command lock, standing down when the user stopped meanwhile or a
-// newer play superseded the captured one.
-func (s *Server) resumeAfterZoneForm(lp lastPlayInfo) {
+// zoneResume is what resumeAfterZoneForm needs to restore playback after a
+// group change: the stream to push, the staleness reference, and whether a
+// stream that survived the change already serves every member.
+type zoneResume struct {
+	// push is the stream to (re)start on this box after the change. Usually
+	// this box's own captured lastPlay; for a stereo pair it can also be the
+	// PARTNER's stream (issue #705, the partner was the one playing).
+	push lastPlayInfo
+	// ref is this box's lastPlay entry as it stood when the capture was taken,
+	// nil when there was none. The resume stands down when the live lastPlay no
+	// longer matches ref, because that means a user play landed in between and
+	// pushing the capture would clobber it (#252). Kept separate from push so a
+	// partner-derived capture, which never was this box's lastPlay, still gets
+	// exactly that guard instead of always looking superseded.
+	ref *lastPlayInfo
+	// survivorReachesMembers says a stream that survived the group change is
+	// already reaching every member, so a re-push would only be an audible gap:
+	// true for an incremental join over a live zone (the firmware keeps the
+	// master's source running and the existing members keep hearing it,
+	// v0.9.56) and for a firmware stereo pair (the pair is one logical device;
+	// in the #705 bundle the partner flipped to GROUP_SLAVE the moment the
+	// pair formed). False for a fresh full /setZone form: there the members
+	// have nothing yet, and skipping the push because the MASTER kept playing
+	// left them silent (Martin, 2026-08-24: regroup mid-stream, members mute
+	// until a manual play).
+	survivorReachesMembers bool
+}
+
+// resumeRefSuperseded reports whether this box's live lastPlay entry no longer
+// matches the one captured when the group change began, i.e. a user play landed
+// in between. Unlike resumeIsStale it treats "no entry then, no entry now" as
+// NOT superseded: a partner-derived stereo resume (#705) must be able to fire
+// on a master that never played anything itself.
+func resumeRefSuperseded(ref, cur *lastPlayInfo) bool {
+	if ref == nil {
+		return cur != nil
+	}
+	if cur == nil {
+		return true
+	}
+	return cur.boxURL != ref.boxURL || !cur.ts.Equal(ref.ts)
+}
+
+// resumeAfterZoneForm (re)starts the stream that was playing before a group
+// change tore it down or left members without it (see handleZoneForm and
+// formStereoPair). The firmware needs a settle moment after /setZone before it
+// accepts a new SetURI, pushing too early just re-triggers the 1036 wrong-state
+// error, so wait, then push under the box command lock, standing down when the
+// user stopped meanwhile or a newer play superseded the captured one.
+func (s *Server) resumeAfterZoneForm(rz zoneResume) {
 	if s.renderer == nil {
 		return
 	}
+	lp := rz.push
 	time.Sleep(1500 * time.Millisecond)
 	if s.userStoppedRecently() {
 		s.logger.Info("zone: not restarting playback after forming, user stopped meanwhile")
 		return
 	}
-	// The re-push exists for the fresh-zone case, where /setZone tears the
-	// master's UPnP session down (1036 wrong-state) and the room goes silent.
-	// An incremental join, and often an additive re-form over a live zone,
-	// leaves the stream running - restarting it then IS the audible gap the
-	// user reports. So ask the box: still playing after the settle means the
-	// stream survived and the push would only interrupt it. An unreadable or
+	// The re-push exists for the members that have nothing yet. When the change
+	// was an incremental join (or a firmware stereo pair), a master still
+	// playing after the settle kept its stream through the change and every
+	// member already hears it, so the push would only interrupt it. On a FRESH
+	// full form that logic was wrong: the master kept playing but the freshly
+	// joined members had no stream at all, and this very skip left them silent
+	// (Martin, 2026-08-24). So the survived-stream skip only applies when the
+	// caller knows the surviving stream reaches the members. An unreadable or
 	// idle box falls through to the push, the historical safe behavior.
-	if standby, busy := s.boxPlayState(); busy && !standby {
-		s.logger.Info("zone: stream survived the group change, not restarting playback")
-		return
+	if rz.survivorReachesMembers {
+		if standby, busy := s.boxPlayState(); busy && !standby {
+			s.logger.Info("zone: stream survived the group change, not restarting playback")
+			return
+		}
 	}
 	s.boxCmdMu.Lock()
 	defer s.boxCmdMu.Unlock()
 	s.lastPlayMu.Lock()
 	cur := s.lastPlay
 	s.lastPlayMu.Unlock()
-	if resumeIsStale(lp.boxURL, lp.ts, cur) {
+	if resumeRefSuperseded(rz.ref, cur) {
 		s.logger.Info("zone: not restarting playback after forming, a newer play superseded it",
 			"captured", lp.boxURL, "current", lastPlayURL(cur))
 		return
@@ -992,6 +1053,58 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		}
 	}
 
+	// What was playing, captured from BOTH speakers BEFORE the firmware is
+	// asked. Pairing had none of the wake and resume machinery the zone form
+	// has, and issue #705 is the price: the user paired one second after a
+	// dissolve had put the master into standby, the firmware synced the fresh
+	// pair to the master's power state, and the partner, which was audibly
+	// playing its preset, followed it into standby one second after pairing
+	// (partner log 2026-08-24 18:50:39 source LOCAL_INTERNET_RADIO to STANDBY,
+	// then 18:50:40.485 "re-push: box went to standby, not resuming"). Both
+	// speakers silent, reported as "stereo werkt niet" although both
+	// /addGroup calls had succeeded.
+	//
+	// The master's own capture mirrors handleZoneForm. The partner capture is
+	// the #705 half: the master was in standby, so only the partner knows what
+	// the user was listening to, and after pairing the pair can only be driven
+	// through the master (LEFT). The partner's stream URL is loopback on the
+	// PARTNER, so it is rewritten to the partner's LAN address the same way the
+	// mirror path already lets one box pull another's stream proxy.
+	s.lastPlayMu.Lock()
+	var masterRef *lastPlayInfo
+	if s.lastPlay != nil {
+		cp := *s.lastPlay
+		masterRef = &cp
+	}
+	s.lastPlayMu.Unlock()
+	var resume *lastPlayInfo
+	if _, busy := s.boxPlayState(); busy {
+		resume = masterRef
+	}
+	if resume == nil && partner.IP != "" {
+		if pr := partnerResumeForPair(fetchNowPlaying(ctx, partner.IP), partner.IP); pr != nil {
+			s.logger.Info("stereo: captured the partner's stream to restart on the pair (the master is not playing)",
+				"partnerIP", partner.IP, "url", pr.boxURL, "title", pr.title)
+			resume = pr
+		}
+	}
+
+	// Never pair against a standby master, for the same reason the zone form
+	// wakes it (handleZoneForm): in #705 the standby master dragged the whole
+	// fresh pair into standby. As there, a failed wake alone is not a reason to
+	// stop; only a speaker that answers nothing at all is.
+	if err := s.ensureBoxReadyErr(ctx); err != nil {
+		perr := s.speakerStaysSilent(ctx, c)
+		if perr != nil {
+			s.logger.Warn("stereo: the speaker is not answering at all, not sending addGroup",
+				"wakeErr", err, "probeErr", perr, "left", master.DeviceID)
+			http.Error(w, "the speaker is not answering: "+perr.Error(), http.StatusBadGateway)
+			return
+		}
+		s.logger.Info("stereo: the speaker did not report waking, but it is answering, so the pairing goes ahead",
+			"wakeErr", err, "left", master.DeviceID)
+	}
+
 	// Persist before driving the firmware so the dissolve path knows it is a
 	// stereo pair even after an agent restart. Stereo pairs are firmware-native,
 	// so the reconcile loop leaves them alone (the box re-forms across reboots).
@@ -1108,6 +1221,11 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		pctx, pcancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		partnerSynced := s.pushGroupDocToPartner(pctx, partner.IP, canonicalDoc)
 		pcancel()
+		// Same restart as on the confirmed path below: a failed read-back
+		// still very likely paired (that is why this path answers ok).
+		if resume != nil {
+			go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: true})
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": true, "stereo": true,
 			"canonicalGroup": canonicalDoc, "partnerIP": partner.IP,
@@ -1145,6 +1263,15 @@ func (s *Server) formStereoPair(w http.ResponseWriter, ctx context.Context, c *b
 		}
 	}
 	partnerSynced := s.pushGroupDocToPartner(ctx, partner.IP, canonicalDoc)
+	// Restart what was playing before the pairing (#705). A pair is one logical
+	// device to the firmware, so a master stream that SURVIVED the pairing
+	// already serves both channels (in the #705 bundle the partner flipped to
+	// GROUP_SLAVE while the master kept its stream); resumeAfterZoneForm
+	// therefore keeps its survived-stream skip here and only pushes when the
+	// pair sits silent, which is exactly the #705 failure.
+	if resume != nil {
+		go s.resumeAfterZoneForm(zoneResume{push: *resume, ref: masterRef, survivorReachesMembers: true})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "stereo": true, "id": g.ID, "name": g.Name, "members": g.Members,
 		"canonicalGroup": canonicalDoc, "partnerIP": partner.IP,
@@ -1192,6 +1319,97 @@ func boxErrCodeIs(err error, value, name string) bool {
 	}
 	msg := strings.ToUpper(err.Error())
 	return strings.Contains(msg, value) || strings.Contains(msg, name)
+}
+
+// partnerResumeForPair derives, from the PARTNER speaker's live now_playing,
+// the stream the freshly formed pair should play when the master itself has
+// nothing to resume. This is the #705 half of the pairing resume: the master
+// sat in standby after a dissolve while the partner was audibly playing its
+// preset, and after pairing the pair can only be driven through the master
+// (LEFT), so what the partner was playing must be captured before /addGroup
+// takes it down. Returns nil when the partner is not audibly playing or its
+// selection carries no URL this box could push (Bluetooth, AUX, native
+// Spotify); forming the pair without a resume is still better than refusing.
+func partnerResumeForPair(np nowPlayingSnapshot, partnerIP string) *lastPlayInfo {
+	if partnerIP == "" || !isPlayingStatus(np.PlayStatus) {
+		return nil
+	}
+	stream, title, art := "", np.ItemName, ""
+	if su, name, img, ok := decodeOrionStationLocation(np.Location); ok {
+		// The native radio shape, the one in the #705 bundle: the location
+		// wraps the stream URL, station name and artwork in base64 JSON.
+		stream, art = su, img
+		if name != "" {
+			title = name
+		}
+	} else if strings.HasPrefix(np.Location, "http://") || strings.HasPrefix(np.Location, "https://") {
+		// A UPnP push carries the stream URL directly in the location.
+		stream = np.Location
+	}
+	stream = lanURLForPeer(stream, partnerIP)
+	if stream == "" {
+		return nil
+	}
+	return &lastPlayInfo{boxURL: stream, title: title, art: lanURLForPeer(art, partnerIP), ts: time.Now()}
+}
+
+// decodeOrionStationLocation unpacks the ContentItem location a native
+// LOCAL_INTERNET_RADIO selection carries ("/station?data=<base64 JSON>", the
+// shape OrionStationLocation writes) into the stream URL, station name and
+// artwork it encodes. ok is false for any other location shape.
+func decodeOrionStationLocation(loc string) (streamURL, name, imageURL string, ok bool) {
+	const p = "/station?data="
+	i := strings.Index(loc, p)
+	if i < 0 {
+		return "", "", "", false
+	}
+	raw := strings.TrimSpace(loc[i+len(p):])
+	// STR writes the unpadded URL safe alphabet, but older builds used others,
+	// so accept every alphabet exactly as handleOrionStation does.
+	var payload []byte
+	for _, dec := range []*base64.Encoding{
+		base64.RawURLEncoding, base64.URLEncoding, base64.StdEncoding, base64.RawStdEncoding,
+	} {
+		if b, err := dec.DecodeString(raw); err == nil {
+			payload = b
+			break
+		}
+	}
+	if payload == nil {
+		return "", "", "", false
+	}
+	var st struct {
+		StreamURL string `json:"streamUrl"`
+		Name      string `json:"name"`
+		ImageURL  string `json:"imageUrl"`
+	}
+	if err := json.Unmarshal(payload, &st); err != nil || st.StreamURL == "" {
+		return "", "", "", false
+	}
+	return st.StreamURL, st.Name, st.ImageURL, true
+}
+
+// lanURLForPeer rewrites a URL that addresses the PEER speaker's own loopback
+// (its agent serves streams and artwork on http://127.0.0.1:8888) into one
+// this box can fetch across the LAN: the peer's IP on the :17008 redirect,
+// the same route mirror slaves already use to pull a master's stream proxy
+// (see mirrorStreamPort). A URL that is already externally reachable is
+// returned unchanged; anything unfetchable yields "".
+func lanURLForPeer(raw, peerIP string) string {
+	if raw == "" || peerIP == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	if (ip != nil && ip.IsLoopback()) || strings.EqualFold(host, "localhost") {
+		u.Host = net.JoinHostPort(peerIP, mirrorStreamPort)
+		return u.String()
+	}
+	return raw
 }
 
 // healStaleStereoGroups clears a stale stereo pair from both speakers'

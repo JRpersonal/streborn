@@ -93,16 +93,38 @@ func TestZoneDiffEmptyLiveZoneAddsEverything(t *testing.T) {
 	}
 }
 
-// The stream-survival gate: after a group change the master that is still
-// audibly playing must NOT get the re-push (that push IS the audible gap on
-// incremental joins); an idle box falls through to the push, the historical
-// safe behavior for the fresh-zone 1036 case.
-func TestResumeAfterZoneFormSkipsWhenStreamSurvived(t *testing.T) {
+// The stream-survival gate: after an INCREMENTAL join the master that is still
+// audibly playing must NOT get the re-push (the existing members keep hearing
+// the surviving stream, so that push IS the audible gap); an idle box falls
+// through to the push, the historical safe behavior for the fresh-zone 1036
+// case.
+func TestResumeAfterZoneFormSkipsWhenStreamSurvivedAnIncrementalJoin(t *testing.T) {
 	s, rec := newPlayTestServer(t)
 	s.playStateFn = func() (bool, bool) { return false, true } // playing
-	s.resumeAfterZoneForm(lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "x"})
+	s.resumeAfterZoneForm(zoneResume{
+		push:                   lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "x"},
+		survivorReachesMembers: true,
+	})
 	if rec.count() != 0 {
-		t.Fatalf("stream survived but the resume pushed anyway: %v", rec.list())
+		t.Fatalf("stream survived an incremental join but the resume pushed anyway: %v", rec.list())
+	}
+}
+
+// On a FRESH full form the members have nothing yet, so a master stream that
+// survived the change must be re-pushed anyway to reach them. The v0.9.56 skip
+// fired here too, and a user who grouped mid-stream got playing master plus
+// silent members until a manual play (Martin, 2026-08-24).
+func TestResumeAfterZoneFormPushesTheSurvivorOnAFreshForm(t *testing.T) {
+	s, rec := newPlayTestServer(t)
+	s.playStateFn = func() (bool, bool) { return false, true } // still playing
+	lp := lastPlayInfo{boxURL: "http://192.0.2.1:8888/stream/1", title: "x"}
+	s.lastPlayMu.Lock()
+	cp := lp
+	s.lastPlay = &cp
+	s.lastPlayMu.Unlock()
+	s.resumeAfterZoneForm(zoneResume{push: lp, ref: &cp, survivorReachesMembers: false})
+	if !rec.has("SetAVTransportURI") {
+		t.Fatalf("fresh form with a surviving master stream, but no re-push reached the members: %v", rec.list())
 	}
 }
 
@@ -114,7 +136,7 @@ func TestResumeAfterZoneFormPushesWhenBoxWentSilent(t *testing.T) {
 	cp := lp
 	s.lastPlay = &cp // the capture in handleZoneForm is a copy of lastPlay
 	s.lastPlayMu.Unlock()
-	s.resumeAfterZoneForm(lp)
+	s.resumeAfterZoneForm(zoneResume{push: lp, ref: &cp, survivorReachesMembers: true})
 	if !rec.has("SetAVTransportURI") {
 		t.Fatalf("box went silent but no re-push was sent: %v", rec.list())
 	}

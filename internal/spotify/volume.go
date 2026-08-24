@@ -98,6 +98,19 @@ func (m *Manager) syncVolumeFromBox(ctx context.Context) {
 // play -> waitContextLoaded (5s) -> replay-from-top -> shuffle -> resume.
 const ownEngineCmdIntentWindow = 15 * time.Second
 
+// connectPauseHoldWindow: how long a real Spotify-app pause holds ServeOgg's
+// attach-resume off. The box, starved by the pause, plays out its decode
+// buffer for roughly ten to forty seconds and then re-fetches the Ogg stream;
+// resuming the engine for that fetch defeated the pause and the music
+// restarted on its own (Klaus, 2026-08: "pause in the app, the speaker starts
+// again moments later"). Bounded on purpose: the attach-resume is what revives
+// a drain-paused engine when the box re-selects the Spotify source with no
+// recall in flight, so a stale stamp must never park it for good. The stamp is
+// also cleared early the moment the engine reports playback started (a
+// recall's Play, or the user pressing play in the app), so a deliberate
+// restart is never held up by the window.
+const connectPauseHoldWindow = 45 * time.Second
+
 // SetConnectIntentHooks wires deliberate playback intent from the Spotify app
 // into the box-side latches. onPause fires on paused/stopped/inactive events
 // outside the own-command window; onPlay fires on active/playing. nil-safe.
@@ -125,6 +138,16 @@ func (m *Manager) ownPlayerCmdRecent() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return !m.lastOwnPlayerCmd.IsZero() && time.Since(m.lastOwnPlayerCmd) < ownEngineCmdIntentWindow
+}
+
+// connectPauseStands reports whether a real Spotify-app pause was seen within
+// connectPauseHoldWindow and playback has not started since. ServeOgg gates
+// its attach-resume on it so the starved box's buffer-drain re-fetch does not
+// restart what the user just paused.
+func (m *Manager) connectPauseStands() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.lastConnectPauseAt.IsZero() && time.Since(m.lastConnectPauseAt) < connectPauseHoldWindow
 }
 
 // handleEnginePlaybackEnd forwards a paused/stopped/inactive engine event as
@@ -208,6 +231,14 @@ func (m *Manager) handleEnginePlaybackEnd(evType string) {
 		}
 		return
 	}
+	// Real Spotify-app intent from here on. Stamp it BEFORE the hook check so
+	// the ServeOgg attach-resume gate holds even where no box latch is wired:
+	// the box, starved by this pause, drains its buffer and re-fetches the
+	// stream, and that fetch must find the silence deliberate instead of
+	// resuming the engine (Klaus, 2026-08).
+	m.mu.Lock()
+	m.lastConnectPauseAt = time.Now()
+	m.mu.Unlock()
 	if fn == nil {
 		return
 	}
@@ -225,6 +256,10 @@ func (m *Manager) handleEnginePlaybackStart() {
 	m.mu.Lock()
 	fn := m.connectPlayFn
 	m.lastEngineActiveAt = time.Now()
+	// Playback is demonstrably running again (a recall's Play, a device
+	// activation, or the user pressing play in the app): any earlier
+	// Spotify-app pause no longer stands, so lift the attach-resume gate.
+	m.lastConnectPauseAt = time.Time{}
 	m.mu.Unlock()
 	if fn != nil {
 		fn()

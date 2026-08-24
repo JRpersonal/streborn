@@ -28,4 +28,12 @@ describe('emoji flag support detection', () => {
     expect(flagFromCC('X')).toBe('');
     expect(flagFromCC('')).toBe('');
   });
+
+  it('withholds the flag where no font composes one (Kosovo)', () => {
+    // XK is a user assigned ISO code whose flag emoji was never added to
+    // Unicode, so even a flag capable font draws two dotted letter boxes
+    // for the pair. The deliberate answer is no flag at all.
+    expect(flagFromCC('XK')).toBe('');
+    expect(flagFromCC('xk')).toBe('');
+  });
 });
