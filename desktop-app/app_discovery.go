@@ -441,9 +441,23 @@ func (a *App) mergeDiscoveryCacheWith(seen map[string]BoxInfo, presenceOnly map[
 			continue
 		}
 		// Same physical box found at a NEW IP this cycle -> this cached record is its
-		// dead old IP. Evict it so the speaker shows once, at its live address.
+		// dead old IP. Carry its display identity over to the live record first:
+		// a speaker that comes back from an install/reboot on a fresh DHCP lease
+		// has no cache entry at the new IP, so the fresh record arrives thin
+		// (agent up, name not readable yet) and deleting the old record with it
+		// threw the name memory away. The tile then renamed to the technical
+		// fallback ("STR-xxxxxx" / "str-<ip>") until the box could serve its
+		// name again (#709, triple-ST10 install). Then evict the dead IP so the
+		// speaker shows once, at its live address.
 		if e.box.DeviceID != "" {
 			if liveHost, moved := freshDevices[e.box.DeviceID]; moved && liveHost != key {
+				if cur, ok := a.discCache[liveHost]; ok {
+					cur.box = mergeBoxInfo(e.box, cur.box)
+					a.discCache[liveHost] = cur
+					if _, inSeen := seen[liveHost]; inSeen {
+						seen[liveHost] = cur.box
+					}
+				}
 				delete(a.discCache, key)
 				continue
 			}

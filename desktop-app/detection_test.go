@@ -288,6 +288,40 @@ func TestDiscoveryDropsStaleIPWhenDeviceMovesToNewIP(t *testing.T) {
 	}
 }
 
+// A device that moves to a new IP mid-reboot arrives THIN (agent answering, name
+// not readable yet). The dead old-IP record must hand its display identity over
+// before it is evicted, or the tile renames to the technical fallback until the
+// box can serve its name again (#709, triple-ST10 install on fresh DHCP leases).
+func TestDiscoveryCarriesNameToNewIP(t *testing.T) {
+	a := &App{
+		discCache: map[string]discEntry{
+			"192.168.0.50": {box: BoxInfo{Kind: "stock", Host: "192.168.0.50", DeviceID: "DEV#MOVE", FriendlyName: "Bose 1", Model: "SoundTouch 10"}, seen: time.Now()},
+		},
+	}
+	// The post-install cycle finds the SAME device at a new IP, freshly flashed:
+	// STR agent up, but no FriendlyName served yet.
+	seen := map[string]BoxInfo{
+		"192.168.0.77": {Kind: "str", Host: "192.168.0.77", DeviceID: "DEV#MOVE", Name: "str-192.168.0.77"},
+	}
+	a.mergeDiscoveryCache(seen)
+	live, ok := seen["192.168.0.77"]
+	if !ok {
+		t.Fatalf("live new-IP entry missing from the returned list")
+	}
+	if live.FriendlyName != "Bose 1" {
+		t.Errorf("FriendlyName = %q, want the old-IP record's %q carried over", live.FriendlyName, "Bose 1")
+	}
+	if live.Kind != "str" || live.Host != "192.168.0.77" {
+		t.Errorf("carried-over identity must not touch Kind/Host, got %+v", live)
+	}
+	if cached := a.discCache["192.168.0.77"].box; cached.FriendlyName != "Bose 1" {
+		t.Errorf("cache at the new IP must carry the name too, got %q", cached.FriendlyName)
+	}
+	if _, stale := a.discCache["192.168.0.50"]; stale {
+		t.Errorf("dead old-IP entry must still be evicted")
+	}
+}
+
 // A cached box the current cycle simply missed (still at the SAME IP, just a flaky
 // cycle) must NOT be evicted by the dedup: only a genuine move to a new IP drops it.
 func TestDiscoveryKeepsCachedBoxOnFlakyCycleSameIP(t *testing.T) {
