@@ -262,6 +262,12 @@ func (s *Server) finishCorrection(ctx context.Context, iface string, tgt wlanTar
 	s.logger.Warn("wlan guard: the speaker came up on another network and was moved back",
 		"wantTag", ssidTag(tgt.SSID), "gotTag", ssidTag(cameUpOn), "attempt", attempt)
 	noteWlanTargetVerdict("moved-back", budgetReset)
+	// Same refresh as the user-initiated live switch (#697): the guard's move
+	// changes the address just as much, and hooking only the wpaConfirmed arm
+	// would leave the boot-guard path with the stale mDNS/peers/REDIRECT state.
+	if s.networkChangedFn != nil {
+		go s.networkChangedFn("wlan guard correction")
+	}
 }
 
 // wlanGuardWeakVerify is the BCO/scm chassis (taigan Portable, mojo ST30).

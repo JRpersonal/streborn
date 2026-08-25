@@ -117,6 +117,9 @@ type Server struct {
 	// peersFn lists the other STR speakers on the LAN for the on-box page's
 	// "Other speakers" section. nil hides the section.
 	peersFn func(ctx context.Context) []PeerLink
+	// networkChangedFn is the post-switch state refresh, fired after a
+	// CONFIRMED live Wi-Fi switch (see SetNetworkChangedFn). nil = no refresh.
+	networkChangedFn func(reason string)
 	// spotifyUser returns go-librespot's currently logged-in account, used to
 	// stamp the account onto a newly saved Spotify preset. nil when Spotify
 	// is not configured.

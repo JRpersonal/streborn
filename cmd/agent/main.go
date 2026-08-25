@@ -593,6 +593,10 @@ func run() error {
 	// the codename at least still sits in some routers' caches. So the name is
 	// only handed over once it means something, and a responder that cannot
 	// start leaves everything exactly as it is today.
+	// Captured for the post-switch network refresh (#697): after a live Wi-Fi
+	// move the responder must be repointed at the new address, or it keeps
+	// answering the box's own name with the boot address, cache-flush bit set.
+	var mdnsHostResp *mdnshost.Responder
 	if label := mdnshost.LabelFor(deviceID); label != "" {
 		if ip := routableIPv4(); ip != nil {
 			if resp, err := mdnshost.Start(context.Background(), logger.With("comp", "mdnshost"), label, ip); err != nil {
@@ -607,6 +611,7 @@ func run() error {
 				// the desktop app takes the address out of the service answer
 				// instead of looking the name up.
 				mdnsHostLabel = resp.Label()
+				mdnsHostResp = resp
 				// Put the counters in the diagnostic bundle. The open question
 				// they answer: a SoundTouch 30 here is missing from four
 				// browses in a row while its engine runs and is logged in. If
@@ -1216,6 +1221,31 @@ func run() error {
 		n, _ := ann.Snapshot()
 		return n
 	}
+	// The roster's second self-signal: the deviceID this agent announces. Same
+	// value the announcer carries in its TXT record, so an entry adopted from
+	// our own stale announcement compares equal even under a placeholder name
+	// and an address we no longer hold (#697).
+	peerSelfDeviceIDFn = func() string { return deviceID }
+	// Post-switch network refresh (#697): fired by the webui after a CONFIRMED
+	// live Wi-Fi switch. Runs on its own goroutine (the webui hook spawns it)
+	// and waits for the new DHCP lease itself before repointing the mDNS
+	// responder, re-registering the announcer, purging the roster's stale
+	// self-entries, and deleting REDIRECT rules for addresses no longer held.
+	webuiSrv.SetNetworkChangedFn(func(reason string) {
+		refreshAfterNetworkChange(reason, netRefreshDeps{
+			setMDNSHostAddr: func(ip net.IP) {
+				if mdnsHostResp != nil {
+					mdnsHostResp.SetAddress(ip)
+				}
+			},
+			reannounce: func(r string) error {
+				mdnsMu.Lock()
+				ann := mdnsAnnouncer
+				mdnsMu.Unlock()
+				return ann.Reannounce(r)
+			},
+		}, logger)
+	})
 	webuiSrv.SetBoxNameFn(func() (string, string) {
 		mdnsMu.Lock()
 		ann := mdnsAnnouncer

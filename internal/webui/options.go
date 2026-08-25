@@ -29,6 +29,15 @@ func (s *Server) SetWifiSignalFn(fn func() string) { s.wifiSignalFn = fn }
 // this after the announcer is up.
 func (s *Server) SetBoxNameFn(fn func() (name, model string)) { s.boxNameFn = fn }
 
+// SetNetworkChangedFn wires the post-switch state refresh (#697): called after
+// a CONFIRMED live Wi-Fi switch (the wpaConfirmed arm and the boot guard's
+// finishCorrection), once the DHCP renew has been requested. cmd/agent owns
+// the refresh because the stale state lives there: the mDNS announcers frozen
+// on the boot address, the peer roster's self-entry at the old IP, and the
+// per-IP REDIRECT rules. The callback is invoked on its own goroutine; it is
+// expected to wait for the new lease itself.
+func (s *Server) SetNetworkChangedFn(fn func(reason string)) { s.networkChangedFn = fn }
+
 // SetNativePresetLocatorFn wires the decision of whether a preset slot can be
 // stored as a native LOCAL_INTERNET_RADIO station instead of a UPnP stream.
 // The function returns the orion station location, or "" when the box has not
