@@ -85,7 +85,17 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 	out := struct {
 		boxapi.Zone
 		Stereo *boxapi.Group `json:"stereo,omitempty"`
+		// Remembered is the persisted zone membership (zones.json) when NO zone
+		// is live: the follower IPs and names, so a client can offer "play
+		// together again" with one tap. The desktop always showed the
+		// remembered group; the phone page could not, and a three-speaker
+		// household read that as the group being gone (mail report,
+		// 2026-08-25). Only the desktop's own store, no probes.
+		Remembered []rememberedMember `json:"remembered,omitempty"`
 	}{Zone: z}
+	if len(z.Members) == 0 {
+		out.Remembered = s.rememberedZoneMembers()
+	}
 	// The pair read gets its own SHORT budget, never the zone's. The firmware's
 	// /getGroup HANGS on scm/BCO chassis — no refusal, just silence (12 s and
 	// counting on an awake scm ST30, 2026-08-18, while its /getZone answered in
@@ -105,6 +115,43 @@ func (s *Server) handleZoneGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// rememberedMember is one follower of the persisted (not currently live) zone.
+type rememberedMember struct {
+	IP       string `json:"ip"`
+	DeviceID string `json:"deviceID,omitempty"`
+	Name     string `json:"name,omitempty"`
+}
+
+// rememberedZoneMembers reads the persisted zone from the store and returns
+// its follower IPs, named from the peer roster where a name is known. Empty
+// when this box is not the remembered master, or remembers no zone, or the
+// remembered pair is a stereo pair (re-forming that is the pair flow's job).
+func (s *Server) rememberedZoneMembers() []rememberedMember {
+	if s.zones == nil {
+		return nil
+	}
+	z, ok := s.zones.Get()
+	if !ok || z.Stereo || len(z.Slaves) == 0 {
+		return nil
+	}
+	names := map[string]string{}
+	if s.peersFn != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		for _, p := range s.peersFn(ctx) {
+			names[p.IP] = p.Name
+		}
+		cancel()
+	}
+	out := make([]rememberedMember, 0, len(z.Slaves))
+	for _, m := range z.Slaves {
+		if m.IP == "" {
+			continue
+		}
+		out = append(out, rememberedMember{IP: m.IP, DeviceID: m.DeviceID, Name: names[m.IP]})
+	}
+	return out
 }
 
 // groupReadAllowed reports whether the stereo /getGroup read should be tried,
