@@ -883,7 +883,10 @@ html.a11y-contrast .speaker-update-card .suc-ver { color: #fff; }
   gap: 6px;
 }
 .alpha-stage p { margin: 12px 0; }
-.alpha-stage a { color: #ffb74d; }
+/* Same amber as the BETA pill, via its token: the literal was chosen against
+   the dark page and measured about 1.6:1 on white (#672 follow-up report,
+   same defect class as #630). The token darkens for the light theme. */
+.alpha-stage a { color: var(--c-pill-beta); }
 .alpha-checklist {
   margin: 16px 0;
   padding-left: 22px;
