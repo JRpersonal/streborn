@@ -1358,6 +1358,12 @@ async function toggleMusicLib(s, btn) {
   musicLibBusy = false;
   btn.disabled = false;
   loadMusicLib();
+  /* The Find tab's browse buttons come straight from the registered store, so
+     an added server is usable there IMMEDIATELY, minutes before the speaker's
+     own source list catches up. Without this refresh, "added, the speaker
+     needs a few minutes" was the only feedback, and two reporters in one day
+     (#721, and mic62 on #666) read that as nothing having happened. */
+  loadBrowseServers().catch(function(){});
 }
 
 // inputLabel prefers what the speaker calls the socket, because that is what
